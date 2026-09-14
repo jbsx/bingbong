@@ -12,6 +12,7 @@
 // and with the flag unset there is no sink at all.
 
 import type { PipelineEvent, UnstampedEvent } from '../pipeline/events'
+import { parseNotFoundMarker } from '../browser/notFoundPage'
 import {
   RUN_TRACE_VERSION,
   TRACE_TOOL_RESULT_MAX_CHARS,
@@ -58,10 +59,14 @@ export function pipelineEventTraceBody(event: PipelineEvent, agentId?: string): 
     return { kind: 'pipeline_event', event, ...stamped }
   }
   const whole = TRACE_WHOLE_RESULT_TOOLS.has(event.name)
+  // The landing is read off the whole result (#239, ADR 0050): the marker
+  // rides the end of an outcome, past the cut on a long page.
+  const notFound = event.ok ? parseNotFoundMarker(event.result) : null
   return {
     kind: 'pipeline_event',
     event: whole ? event : { ...event, result: event.result.slice(0, TRACE_TOOL_RESULT_MAX_CHARS) },
     chars: event.result.length,
+    ...(notFound !== null ? { notFound } : {}),
     ...stamped,
   }
 }

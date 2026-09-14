@@ -3,6 +3,7 @@ import type { ToolCall, ToolResultOutcome } from '../ports/llm'
 import {
   createBlockerGate,
   hostFromUrl,
+  siteOfHost,
   REFUSED_ROUNDS_BEFORE_FINALIZATION,
   subagentBlockerEscalation,
 } from './blockerGate'
@@ -34,6 +35,29 @@ describe('hostFromUrl', () => {
     expect(hostFromUrl('reddit.com')).toBeNull()
     expect(hostFromUrl('')).toBeNull()
     expect(hostFromUrl('about:blank')).toBeNull()
+  })
+})
+
+describe('siteOfHost (#239, ADR 0050)', () => {
+  it('groups one registrable domain’s hosts as one site', () => {
+    expect(siteOfHost('jpl.nasa.gov')).toBe('nasa.gov')
+    expect(siteOfHost('science.nasa.gov')).toBe('nasa.gov')
+    expect(siteOfHost('www.nasa.gov')).toBe('nasa.gov')
+    expect(siteOfHost('WWW.Raspberrypi.com')).toBe('raspberrypi.com')
+    expect(siteOfHost('nasa.gov')).toBe('nasa.gov')
+  })
+
+  it('keeps a second-level suffix under a two-letter top level with its name', () => {
+    expect(siteOfHost('www.rmg.co.uk')).toBe('rmg.co.uk')
+    expect(siteOfHost('musiciansunion.org.uk')).toBe('musiciansunion.org.uk')
+    expect(siteOfHost('shop.abc.net.au')).toBe('abc.net.au')
+    // Not under a two-letter top level: co is an ordinary label here.
+    expect(siteOfHost('a.co.example')).toBe('co.example')
+  })
+
+  it('leaves an IP address or a single label as its own site', () => {
+    expect(siteOfHost('192.168.1.10')).toBe('192.168.1.10')
+    expect(siteOfHost('localhost')).toBe('localhost')
   })
 })
 

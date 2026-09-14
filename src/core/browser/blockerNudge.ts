@@ -60,6 +60,11 @@ export interface BlockerRefFacts {
 export interface BlockerPageFacts {
   url: string
   title: string
+  /**
+   * HTTP status of the top-level response (#239): read by the Not-found
+   * classifier beside this one (notFoundPage.ts), never by a Blocker signal.
+   */
+  status?: number | null
   /** Leading body text — the start of the snapshot's text digest. */
   textDigest?: string
   /** Text of the topmost open dialog. */

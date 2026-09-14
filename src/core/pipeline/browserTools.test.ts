@@ -66,9 +66,12 @@ class FixtureBrowserController implements BrowserController {
     return this.readParts
   }
 
+  /** What a click answers; a landing click reports `urlChanged=true`. */
+  clickResult = 'click outcome'
+
   async click(ref: number): Promise<string> {
     this.clicks.push(ref)
-    return 'click outcome'
+    return this.clickResult
   }
 
   async type(ref: number, text: string): Promise<string> {
@@ -146,6 +149,69 @@ function pipelineWith(browser: BrowserController, calls: AssistantTurn[]) {
   })
   return { llm, pipeline }
 }
+
+describe('a Not-found Landing rides the Action Outcome (#239, ADR 0050)', () => {
+  const ADVICE_NASA =
+    'This address names nothing on nasa.gov. Composed addresses to nasa.gov are now refused for this run: search the site, or open a link you were shown by its href or a click.'
+
+  async function resultsOf(browser: FixtureBrowserController, calls: Extract<AssistantTurn, { kind: 'tool_calls' }>['calls']) {
+    const { pipeline } = pipelineWith(browser, [
+      { kind: 'tool_calls', calls },
+      { kind: 'answer', speak: 'Done.', display: 'Detail.' },
+    ])
+    const events = await collect(pipeline, 'go')
+    return events.filter((event) => event.type === 'tool_result').map((event) => event.result)
+  }
+
+  it('marks a navigate whose top-level response was 404 with the status, the host and the advice', async () => {
+    const browser = new FixtureBrowserController()
+    browser.facts = { url: 'https://www.nasa.gov/press-release/voyager-2013', title: 'NASA', status: 404 }
+
+    const [result] = await resultsOf(browser, [{ id: 'c1', name: 'navigate', args: { url: 'https://www.nasa.gov/press-release/voyager-2013' } }])
+
+    expect(result).toBe(`navigated outcome\nNOT-FOUND:404 www.nasa.gov\n${ADVICE_NASA}`)
+  })
+
+  it('marks a 200 whose title says not found by its title', async () => {
+    const browser = new FixtureBrowserController()
+    browser.facts = { url: 'https://www.raspberrypi.com/documentation/computers/camera.html', title: 'Page not found – Raspberry Pi', status: 200 }
+
+    const [result] = await resultsOf(browser, [{ id: 'c1', name: 'navigate', args: { url: 'https://www.raspberrypi.com/documentation/computers/camera.html' } }])
+
+    expect(result).toContain('\nNOT-FOUND:title www.raspberrypi.com\nThis address names nothing on raspberrypi.com.')
+  })
+
+  it('marks back, forward and a click that left the page, and leaves an ordinary landing and a click that stayed alone', async () => {
+    const browser = new FixtureBrowserController()
+    browser.facts = { url: 'https://science.nasa.gov/voyager-2013', title: 'Page not found - NASA Science', status: 404 }
+    browser.clickResult = 'clicked [7]: urlChanged=true dialogOpen=false; page signature changed; url=https://science.nasa.gov/voyager-2013'
+
+    const results = await resultsOf(browser, [
+      { id: 'c1', name: 'back', args: {} },
+      { id: 'c2', name: 'go_forward', args: {} },
+      { id: 'c3', name: 'click', args: { ref: 7 } },
+    ])
+
+    for (const result of results) expect(result).toContain('\nNOT-FOUND:404 science.nasa.gov\nThis address names nothing on nasa.gov.')
+
+    const ordinary = new FixtureBrowserController()
+    const stayed = new FixtureBrowserController()
+    stayed.facts = { url: 'https://science.nasa.gov/voyager-2013', title: 'Page not found - NASA Science', status: 404 }
+    stayed.clickResult = 'clicked [7]: urlChanged=false dialogOpen=false; no observable change'
+    expect(await resultsOf(ordinary, [{ id: 'c1', name: 'navigate', args: { url: 'youtube.com' } }])).toEqual(['navigated outcome'])
+    expect(await resultsOf(stayed, [{ id: 'c1', name: 'click', args: { ref: 7 } }])).toEqual([stayed.clickResult])
+  })
+
+  it('lets a wall win over a title that also says not found', async () => {
+    const browser = new FixtureBrowserController()
+    browser.facts = { url: 'https://accounts.example.com/login', title: 'Not found', status: 200 }
+
+    const [result] = await resultsOf(browser, [{ id: 'c1', name: 'navigate', args: { url: 'https://accounts.example.com/login' } }])
+
+    expect(result).toContain('BLOCKER:login-wall accounts.example.com')
+    expect(result).not.toContain('NOT-FOUND:')
+  })
+})
 
 describe('browser tools through the pipeline', () => {
   it('read_page surfaces the numbered-ref snapshot as a tool result', async () => {

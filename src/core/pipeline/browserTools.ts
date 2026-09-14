@@ -4,7 +4,9 @@ import type { BrowserController } from '../ports/browser'
 import type { VisionDescriber } from '../ports/vision'
 import { AUTO_VISION_DESCRIBE_MS } from '../ports/vision'
 import { assessBrowserAction } from './riskGate'
-import { classifyBlockerPage, type BlockerClassification } from '../browser/blockerNudge'
+import { classifyBlockerPage, type BlockerClassification, type BlockerPageFacts } from '../browser/blockerNudge'
+import { classifyNotFoundPage, notFoundAdvice } from '../browser/notFoundPage'
+import { siteOfHost } from './blockerGate'
 import { tracedVisionRequest } from '../trace/visionTrace'
 import { traceVisionBudget, visionSeam } from './visionSeam'
 import { reportFault } from '../trace/fault'
@@ -31,24 +33,41 @@ function blockerSuffix(verdict: BlockerClassification): string {
   return `${verdict.marker}\n${verdict.nudge}`
 }
 
+/**
+ * The landing's page facts. A facts failure (the outcome may have degraded
+ * to its concise line) falls back to the URL and title the tab reports.
+ */
+async function landingFacts(browser: BrowserController): Promise<BlockerPageFacts> {
+  try {
+    return await browser.pageFacts()
+  } catch (error) {
+    reportFault('pipeline.browserTools.landingFacts', error)
+    const { url, title } = browser.state()
+    return { url: url ?? '', title: title ?? '' }
+  }
+}
+
+// #239, ADR 0050: a Not-found Page is a fact about the landing, like a
+// wall — the marker line plus one sentence of advice, naming the site.
+function notFoundSuffix(facts: BlockerPageFacts): string | null {
+  const verdict = classifyNotFoundPage(facts)
+  return verdict === null ? null : `${verdict.marker}\n${notFoundAdvice(siteOfHost(verdict.host))}`
+}
+
 // ADR 0007 layer 3 / ADR 0010 choke point 1: after a navigation settles,
 // classify the landing; a walled page gets the marker + nudge appended to
 // the tool result. Since rich Action Outcomes (#113) the navigation verbs
 // collect a fresh snapshot, so the classifier sees the full page facts —
-// digest, dialog, and refs, like read_page — not just URL and title. A
-// facts failure (the outcome may have degraded to its concise line) falls
-// back to the URL/title classification.
-async function withBlockerNudge(browser: BrowserController, action: () => Promise<string>): Promise<string> {
+// digest, dialog, and refs, like read_page — not just URL and title. A page
+// that is not walled but names nothing (#239) gets the Not-found marker
+// instead: a wall is the fact that decides what to do next, so it wins.
+async function withLandingClassification(browser: BrowserController, action: () => Promise<string>): Promise<string> {
   const outcome = await action()
-  let verdict: BlockerClassification | null = null
-  try {
-    verdict = classifyBlockerPage(await browser.pageFacts())
-  } catch (error) {
-    reportFault('pipeline.browserTools.withBlockerNudge', error)
-    const { url, title } = browser.state()
-    verdict = classifyBlockerPage({ url: url ?? '', title: title ?? '' })
-  }
-  return verdict ? `${outcome}\n${blockerSuffix(verdict)}` : outcome
+  const facts = await landingFacts(browser)
+  const wall = classifyBlockerPage(facts)
+  if (wall !== null) return `${outcome}\n${blockerSuffix(wall)}`
+  const notFound = notFoundSuffix(facts)
+  return notFound === null ? outcome : `${outcome}\n${notFound}`
 }
 
 /** The refs each part's last read listed (ADR 0047): near-identical reads are compared part by part. */
@@ -155,6 +174,9 @@ async function assessRefAction(browser: BrowserController, call: ToolCall, tool:
   return assessBrowserAction(call, await browser.describeRef(ref))
 }
 
+/** A click outcome that says the page left for another URL — the only click that settles on a new landing. */
+const CLICK_LEFT_THE_PAGE_RE = /\burlChanged=true\b/
+
 // Orchestrator-facing browser verbs. click/type are risk-gated: the gate
 // classifies the target's snapshot facts (core/pipeline/riskGate.ts) and the
 // pipeline enforces the verdict — confirm for form submits/downloads, hard
@@ -173,13 +195,13 @@ export function createBrowserTools(browser: BrowserController, vision?: VisionDe
       name: 'navigate',
       acquisition: true,
       description:
-        'Navigate the visible browser to a URL. Accepts full URLs (https://…) or search terms. Returns the settled page state — URL, title, page signature, numbered interactive refs (link refs carry their hrefs), and the page text — plus a BLOCKER marker when the landing is walled. Continue directly from the returned refs; the page text is a preview; read_page returns the whole text.',
+        'Navigate the visible browser to a URL. Accepts full URLs (https://…) or search terms. Returns the settled page state — URL, title, page signature, numbered interactive refs (link refs carry their hrefs), and the page text — plus a BLOCKER marker when the landing is walled, or a NOT-FOUND marker when the address names nothing. Continue directly from the returned refs; the page text is a preview; read_page returns the whole text.',
       parameters: {
         url: { type: 'string', description: 'URL or search terms to open, e.g. "https://youtube.com" or "best mechanical keyboards"' },
       },
       execute: (call, context) => {
         resetReads(context)
-        return withBlockerNudge(browser, () => browser.navigate(stringArg(call, 'url', 'navigate')))
+        return withLandingClassification(browser, () => browser.navigate(stringArg(call, 'url', 'navigate')))
       },
     },
     {
@@ -234,7 +256,7 @@ export function createBrowserTools(browser: BrowserController, vision?: VisionDe
       name: 'click',
       acquisition: true,
       description:
-        'Click a ref, then return the URL-change flag, dialog-open flag, clicked state delta, and any coarse page change. When the click meaningfully changes the page (navigation, dialog, state change), the settled page state with fresh refs follows — continue from those refs; the page text is a preview; read_page returns the whole text. An inert click returns only the concise no-change line. A "blocked by overlay" result means something (usually a dialog) covers the target: read the page, handle the dialog, then retry.',
+        'Click a ref, then return the URL-change flag, dialog-open flag, clicked state delta, and any coarse page change. When the click meaningfully changes the page (navigation, dialog, state change), the settled page state with fresh refs follows — continue from those refs; the page text is a preview; read_page returns the whole text. A click that lands on a page that names nothing carries a NOT-FOUND marker. An inert click returns only the concise no-change line. A "blocked by overlay" result means something (usually a dialog) covers the target: read the page, handle the dialog, then retry.',
       parameters: {
         ref: { type: 'integer', description: 'Element ref number from the snapshot, e.g. 7 for the element shown as [7]' },
       },
@@ -242,6 +264,14 @@ export function createBrowserTools(browser: BrowserController, vision?: VisionDe
       async execute(call, context) {
         resetReads(context)
         const result = await browser.click(refArg(call, 'click'))
+        // A click that left the page settled on a new landing, and a
+        // Not-found Page there is the same fact it is after a navigate
+        // (#239). A click that stayed put landed nowhere new. Walls stay
+        // with the navigation verbs and read_page, as ADR 0010 placed them.
+        if (CLICK_LEFT_THE_PAGE_RE.test(result)) {
+          const notFound = notFoundSuffix(await landingFacts(browser))
+          if (notFound !== null) return `${result}\n${notFound}`
+        }
         if (autoVision && /\bno observable change\b/i.test(result)) {
           return `${result}\n${await autoVision(context, 'no observable change')}`
         }
@@ -279,19 +309,19 @@ export function createBrowserTools(browser: BrowserController, vision?: VisionDe
     {
       name: 'back',
       acquisition: true,
-      description: 'Go back one step in browser history, then return the settled page state — new URL, title, page signature, refs, and digest — plus a BLOCKER marker when the landing is walled.',
+      description: 'Go back one step in browser history, then return the settled page state — new URL, title, page signature, refs, and digest — plus a BLOCKER marker when the landing is walled, or a NOT-FOUND marker when it names nothing.',
       execute: (_call, context) => {
         resetReads(context)
-        return withBlockerNudge(browser, () => browser.back())
+        return withLandingClassification(browser, () => browser.back())
       },
     },
     {
       name: 'go_forward',
       acquisition: true,
-      description: 'Go forward one step in browser history, then return the settled page state — new URL, title, page signature, refs, and digest — plus a BLOCKER marker when the landing is walled.',
+      description: 'Go forward one step in browser history, then return the settled page state — new URL, title, page signature, refs, and digest — plus a BLOCKER marker when the landing is walled, or a NOT-FOUND marker when it names nothing.',
       execute: (_call, context) => {
         resetReads(context)
-        return withBlockerNudge(browser, () => browser.forward())
+        return withLandingClassification(browser, () => browser.forward())
       },
     },
   ]

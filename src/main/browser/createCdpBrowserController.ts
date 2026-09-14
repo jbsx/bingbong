@@ -41,6 +41,12 @@ export interface CdpPageDriver {
   goForward(): Promise<void>
   url(): string
   title(): string
+  /**
+   * HTTP status of the top-level response the tab is on (#239, ADR 0050);
+   * null when unknown. Optional: a driver that cannot see responses leaves
+   * the Not-found classification to the title.
+   */
+  status?(): number | null
   /** Makes the page the focused webContents — synthetic keys are dropped otherwise. */
   focus(): void
 }
@@ -1136,7 +1142,10 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
   // ADR 0010 classifier facts off the freshest collected snapshot — free
   // right after readPage() set lastSnapshot; recollects otherwise.
   async function pageFacts() {
-    return blockerFactsFromSnapshot(await currentSnapshot())
+    // The status rides beside the snapshot's facts (#239): the collector
+    // runs in the page and never sees the response the tab was served.
+    const status = page.status?.() ?? null
+    return { ...blockerFactsFromSnapshot(await currentSnapshot()), ...(status !== null ? { status } : {}) }
   }
 
   // The Progress rails' comparison input (#126, ADR 0027): the settled
@@ -1155,7 +1164,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
         reportFault('browser.createCdpBrowserController.readMediaState', error)
         media = null
       }
-      return settledStateFromSnapshot(snapshot, media)
+      return settledStateFromSnapshot(snapshot, media, page.status?.() ?? null)
     } catch (error) {
       reportFault('browser.createCdpBrowserController.settledState', error)
       return null

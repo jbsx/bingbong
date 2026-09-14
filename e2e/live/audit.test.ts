@@ -38,6 +38,7 @@ import {
   type AuditAttempt,
   type AuditJudgement,
   type AuditProvenance,
+  type AuditReview,
   type AuditTraceInput,
 } from './audit.ts'
 import * as auditModule from './audit.ts'
@@ -79,6 +80,8 @@ interface RoundSpec {
     merged?: boolean
     /** The Search Observation the rail recorded for this call (#243) — a trace written after observations were kept. */
     observation?: SearchObservation
+    /** The Not-found Landing the Run Trace records on the result (#239) — a trace written after the field was kept. */
+    notFound?: { basis: string; host: string }
   }[]
   readonly reasoning?: string
 }
@@ -125,6 +128,7 @@ function traceOf(rounds: readonly RoundSpec[], extra: readonly Record<string, un
         at: T0 + spec.at + 3,
         kind: 'pipeline_event',
         event: { type: 'tool_result', turnId: TURN, callId, name: call.name, ok, ...(ok ? { result: call.result ?? 'ok' } : { error: call.error ?? 'refused' }), at: T0 + spec.at + 3 },
+        ...(call.notFound !== undefined ? { notFound: call.notFound } : {}),
       })
     }
   }
@@ -666,6 +670,65 @@ describe('the rail’s Search Observations (#243, ADR 0049)', () => {
     expect(markdown).toContain('- search source rail: the rail’s own Search Observations')
     expect(markdown).toContain('- search source replay: the streak rule re-run over navigate searches')
     expect(markdown).toContain('by search source rail 1, replay 1, none 0')
+  })
+})
+
+describe('Not-found Landings (#239, ADR 0050)', () => {
+  const DEAD_A = 'https://www.jpl.nasa.gov/news/voyager-2013-09'
+  const DEAD_B = 'https://science.nasa.gov/voyager-2013-09'
+  const LANDINGS: RoundSpec[] = [
+    // Recorded as a field on the result: the title alone would not say so.
+    { round: 1, at: 1_000, calls: [{ name: 'navigate', args: { url: DEAD_A }, result: `${PAGE('NASA', DEAD_A, 'dead0001')}\nNOT-FOUND:404 www.jpl.nasa.gov\nadvice`, notFound: { basis: '404', host: 'www.jpl.nasa.gov' } }] },
+    // A trace written before the field: the app's own title rule reads it.
+    { round: 2, at: 2_000, calls: [{ name: 'navigate', args: { url: DEAD_B }, result: PAGE('Page not found - NASA Science', DEAD_B, 'dead0002') }] },
+    { round: 3, at: 3_000, calls: [{ name: 'navigate', args: { url: SPEC_URL }, result: PAGE('Watch spec', SPEC_URL, 'aaaa1111') }] },
+  ]
+
+  it('reads a landing into a notFound call field and Acquisition without Progress, from the field or the title rule', () => {
+    const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(LANDINGS, EXTRA) }))
+    const [first, second, third] = mechanical.rounds
+
+    expect(first).toMatchObject({ kind: 'acquisition_without_progress', reason: 'navigate: landed on a Not-found Page' })
+    expect(first!.calls[0]).toMatchObject({ notFound: '404 www.jpl.nasa.gov', progress: { made: false, reason: 'landed on a Not-found Page' } })
+    expect(second).toMatchObject({ kind: 'acquisition_without_progress', reason: 'navigate: landed on a Not-found Page' })
+    expect(second!.calls[0]).toHaveProperty('notFound', 'title science.nasa.gov')
+    expect(third).toMatchObject({ kind: 'acquisition_with_progress' })
+    expect(third!.calls[0]).not.toHaveProperty('notFound')
+    expect(mechanical.notFoundNavigates).toEqual([1, 2])
+  })
+
+  it('replays a landing between two searches as inspection: the streak goes on', () => {
+    const rounds: RoundSpec[] = [
+      { round: 1, at: 1_000, calls: [{ name: 'navigate', args: { url: SEARCH_A }, result: PAGE('Search', SEARCH_A, 'bbbb0001') }] },
+      { round: 2, at: 2_000, calls: [{ name: 'navigate', args: { url: DEAD_B }, result: PAGE('Page not found - NASA Science', DEAD_B, 'dead0002') }] },
+      { round: 3, at: 3_000, calls: [{ name: 'navigate', args: { url: SEARCH_B }, result: PAGE('Search', SEARCH_B, 'bbbb0002') }] },
+    ]
+    const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(rounds, EXTRA) }))
+    expect(mechanical.rounds[2]!.calls[0]!.search).toMatchObject({ streak: 2 })
+  })
+
+  it('prints the landings per attempt and how many the reviewer judged Off-key, and sums both per population', () => {
+    const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(LANDINGS, EXTRA) }))
+    const judged: AuditJudgement = {
+      searchLoops: [],
+      offKey: [{ round: 2, url: DEAD_B, reason: 'a composed slug for a release that is not there' }],
+      overrules: [],
+      stoppedEarly: { value: false, reason: 'it answered' },
+      verdict: { primary: 'rounds_wasted', primaryReason: 'two guessed addresses', secondary: null, secondaryReason: null },
+      flags: [],
+    }
+    expect(validateJudgement(judged, mechanical).ok).toBe(true)
+    const review: AuditReview = { judgement: judged, caveats: [], model: 'reviewer', served: null, effort: 'high', promptVersion: '1', digestHash: mechanical.digestHash, costUsd: null, durationMs: null, judgedAt: null }
+    const set = buildAuditSet(provenanceOf(), [{ mechanical, review, countsAfterOverrules: countsAfterOverrulesOf(mechanical, judged) }], [])
+
+    expect(set.populations.initial).toMatchObject({ notFoundNavigates: 2, notFoundOffKey: 1 })
+    const markdown = formatAuditSet(set)
+    expect(markdown).toContain('- navigates that landed on a Not-found Page: 2 (round 1, 2)')
+    expect(markdown).toContain('- of those, judged Off-key by the reviewer: 1')
+    expect(markdown).toContain('2 navigate(s) landed on a Not-found Page (1 judged Off-key)')
+
+    const unjudged = formatAuditSet(buildAuditSet(provenanceOf(), [{ mechanical, review: null, countsAfterOverrules: mechanical.counts }], []))
+    expect(unjudged).toContain('- of those, judged Off-key by the reviewer: not judged')
   })
 })
 

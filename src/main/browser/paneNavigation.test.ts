@@ -11,7 +11,11 @@ import { HISTORY_STEP_TIMEOUT_MS, LOAD_TIMEOUT_MS, createPaneNavigation, type Pa
 function fakeWebContents(overrides: Partial<PaneNavigationTarget> = {}) {
   let settleLoad: ((outcome: { ok: true } | { ok: false; error: Error }) => void) | null = null
   let navigated: (() => void) | null = null
+  const didNavigate: Parameters<PaneNavigationTarget['on']>[1][] = []
   const target: PaneNavigationTarget = {
+    on: (_event, listener) => {
+      didNavigate.push(listener)
+    },
     loadURL: () =>
       new Promise<void>((resolve, reject) => {
         settleLoad = (outcome) => (outcome.ok ? resolve() : reject(outcome.error))
@@ -37,8 +41,28 @@ function fakeWebContents(overrides: Partial<PaneNavigationTarget> = {}) {
     landLate: () => settleLoad?.({ ok: true }),
     failLate: (error: Error) => settleLoad?.({ ok: false, error }),
     fireDidNavigate: () => navigated?.(),
+    /** A main-frame navigation commits with this top-level response code. */
+    commit: (url: string, httpResponseCode: number) => {
+      for (const listener of didNavigate) listener({}, url, httpResponseCode)
+    },
   }
 }
+
+describe('the top-level response status (#239, ADR 0050)', () => {
+  it('carries the code of the last main-frame navigation, and knows none before one', () => {
+    const wc = fakeWebContents()
+    const page = createPaneNavigation(wc.target, new FakeClock())
+
+    expect(page.status?.()).toBeNull()
+    wc.commit('https://www.nasa.gov/press-release/voyager-2013', 404)
+    expect(page.status?.()).toBe(404)
+    // A history step or a click that leaves the page fires the same event.
+    wc.commit('https://www.nasa.gov/', 200)
+    expect(page.status?.()).toBe(200)
+    wc.commit('file:///tmp/x.html', 0)
+    expect(page.status?.()).toBeNull()
+  })
+})
 
 describe('createPaneNavigation', () => {
   it('reports a navigation that outlives its bounded wait as unsettled, not as an ended one', async () => {

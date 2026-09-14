@@ -95,6 +95,20 @@ describe('the pipeline_event tap (#185)', () => {
     expect(record.chars).toBe(page.length)
   })
 
+  it('records a Not-found Landing as a field on the call, read before the cut (#239, ADR 0050)', () => {
+    const { records, sink } = collector()
+    const trace = createPipelineEventTraceWriter({ sink, now: () => 0 })
+    const landing = `navigated: url=https://www.nasa.gov/x title="Page Not Found - NASA"\n${'p'.repeat(TRACE_TOOL_RESULT_MAX_CHARS)}\nNOT-FOUND:404 www.nasa.gov\nThis address names nothing on nasa.gov.`
+
+    trace({ type: 'tool_result', turnId: 't-1', callId: 'c-1', name: 'navigate', ok: true, result: landing, at: 1 })
+    trace({ type: 'tool_result', turnId: 't-1', callId: 'c-2', name: 'navigate', ok: true, result: 'navigated: url=https://www.nasa.gov/ title="NASA"', at: 2 })
+    trace({ type: 'tool_result', turnId: 't-1', callId: 'c-3', name: 'navigate', ok: false, error: 'NOT-FOUND:404 www.nasa.gov', at: 3 })
+
+    expect(records[0]).toMatchObject({ notFound: { basis: '404', host: 'www.nasa.gov' } })
+    expect(records[1]).not.toHaveProperty('notFound')
+    expect(records[2]).not.toHaveProperty('notFound')
+  })
+
   it('leaves a short result whole and a non-text result untouched', () => {
     const { records, sink } = collector()
     const trace = createPipelineEventTraceWriter({ sink, now: () => 0 })

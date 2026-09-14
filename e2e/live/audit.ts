@@ -37,6 +37,7 @@
 
 import { createHash } from 'node:crypto'
 import { parseBlockerMarker } from '../../src/core/browser/blockerNudge.ts'
+import { classifyNotFoundPage, type NotFoundBasis, type NotFoundLanding } from '../../src/core/browser/notFoundPage.ts'
 import type { PerfSpanRecord } from '../../src/core/perf/perfTracer'
 import type { PipelineEvent } from '../../src/core/pipeline/events'
 import type { EffortTier } from '../../src/core/pipeline/runPlan'
@@ -147,6 +148,14 @@ export interface AuditCall {
   readonly signature: string | null
   /** A Blocker marker on the result: `<signal> <host>`. */
   readonly wall: string | null
+  /**
+   * The Not-found Landing the call settled on (#239, ADR 0050): `<status|title>
+   * <host>`. Read from the Run Trace's field on the result; a trace written
+   * before the field was kept is read by the app's own title rule over the
+   * page the result names. Present only on a landing, so an attempt with none
+   * keeps the digest it always had.
+   */
+  readonly notFound?: string
   /** An Evidence Checkpoint's verdict: accepted, or the rejection's head. */
   readonly checkpoint: { readonly accepted: boolean; readonly outcome: string } | null
   /** The app's own Notices riding the result, as marker names. */
@@ -286,6 +295,12 @@ export interface AuditMechanical {
   /** Where the search rounds came from (#243) — beside the rounds, never in them, so it re-keys no cached judgement. */
   readonly searchSource: AuditSearchSource
   readonly walledRounds: number
+  /**
+   * The round of every navigate that landed on a Not-found Page, one entry per
+   * navigate (#239, ADR 0050). Beside the rounds, never in them, so counting it
+   * re-keys no cached judgement.
+   */
+  readonly notFoundNavigates: readonly number[]
   readonly latency: { readonly llmMs: number | null; readonly joined: number; readonly unjoined: number }
   readonly usage: { readonly promptTokens: number; readonly completionTokens: number; readonly roundsWithUsage: number }
   readonly subagent: { readonly rounds: number; readonly agents: number; readonly byStop: Readonly<Record<string, number>> }
@@ -381,6 +396,10 @@ export interface AuditPopulation {
   readonly heldPageRoundsWithoutProgress: number
   readonly rejectedCheckpoints: number
   readonly walledRounds: number
+  /** Navigates that landed on a Not-found Page (#239). */
+  readonly notFoundNavigates: number
+  /** Of those, the ones in a round the reviewer judged Off-key; judged attempts only. */
+  readonly notFoundOffKey: number
   readonly subagentRounds: number
   readonly stoppedEarly: number
   readonly overrules: number
@@ -569,7 +588,17 @@ interface RawRound {
   readonly record: TraceLine
   readonly round: number
   readonly attempt: number
-  readonly calls: { call: ToolCallEvent; result: ToolResultEvent | undefined; checkpoint: TraceLine | undefined }[]
+  readonly calls: { call: ToolCallEvent; result: ToolResultEvent | undefined; landing: NotFoundLanding | null; checkpoint: TraceLine | undefined }[]
+}
+
+const NOT_FOUND_BASES: ReadonlySet<string> = new Set<NotFoundBasis>(['404', '410', 'title'])
+
+/** The Not-found Landing a `tool_result` record carries as a field (#239), or null. */
+function landingFieldOf(record: TraceLine): NotFoundLanding | null {
+  const field = record.notFound
+  return isRecord(field) && isString(field.basis) && NOT_FOUND_BASES.has(field.basis) && isString(field.host)
+    ? { basis: field.basis as NotFoundBasis, host: field.host }
+    : null
 }
 
 function eventOf(record: TraceLine): Record<string, unknown> | null {
@@ -579,11 +608,11 @@ function eventOf(record: TraceLine): Record<string, unknown> | null {
 /** Group the turn's orchestrator records into rounds: each `llm_round` owns the tool calls that follow it until the next. */
 function rawRounds(records: readonly TraceLine[]): RawRound[] {
   const rounds: RawRound[] = []
-  const results = new Map<string, ToolResultEvent>()
+  const results = new Map<string, { event: ToolResultEvent; landing: NotFoundLanding | null }>()
   for (const record of records) {
     const event = eventOf(record)
     if (event !== null && event.type === 'tool_result' && isString(event.callId) && !results.has(event.callId) && record.agentId === undefined) {
-      results.set(event.callId, event as unknown as ToolResultEvent)
+      results.set(event.callId, { event: event as unknown as ToolResultEvent, landing: landingFieldOf(record) })
     }
   }
   let current: RawRound | null = null
@@ -606,9 +635,26 @@ function rawRounds(records: readonly TraceLine[]): RawRound[] {
     const event = eventOf(record)
     if (event === null || event.type !== 'tool_call' || current === null) continue
     const call = event as unknown as ToolCallEvent
-    current.calls.push({ call, result: results.get(call.callId), checkpoint: undefined })
+    const settled = results.get(call.callId)
+    current.calls.push({ call, result: settled?.event, landing: settled?.landing ?? null, checkpoint: undefined })
   }
   return rounds
+}
+
+/** The Progress reason of a call that landed on a Not-found Page (ADR 0050): neutral in the app, without Progress here. */
+export const NOT_FOUND_LANDING_REASON = 'landed on a Not-found Page'
+
+/**
+ * A landing on a trace written before the Run Trace kept the field: the app's
+ * own title rule over the page the result names, on the calls that carry the
+ * marker live — the navigation verbs, and a click that left the page.
+ */
+function landingByTitle(name: string, text: string | null, page: { url: string; title: string | null } | null): NotFoundLanding | null {
+  if (page === null || text === null) return null
+  const carries = name === 'navigate' || name === 'back' || name === 'go_forward' || (name === 'click' && text.includes('urlChanged=true'))
+  if (!carries) return null
+  const verdict = classifyNotFoundPage({ url: page.url, title: page.title ?? '' })
+  return verdict === null ? null : { basis: verdict.basis, host: verdict.host }
 }
 
 interface ProgressState {
@@ -654,6 +700,9 @@ function classifyCall(
   const page = result !== undefined && result.ok ? pageOf(text) : null
   const signature = result !== undefined && result.ok ? signatureOf(text) : null
   const wall = text === null ? null : parseBlockerMarker(text)
+  // A wall wins over a landing, as it does live; the recorded field wins over
+  // the title rule, which only reads a trace that predates it.
+  const landing = result !== undefined && result.ok && wall === null ? (entry.landing ?? landingByTitle(call.name, text, page)) : null
   const notices = noticesOf(text)
   const checkpointVerdict =
     checkpoint !== undefined && isString(checkpoint.outcome)
@@ -672,6 +721,7 @@ function classifyCall(
     title: page?.title ?? null,
     signature,
     wall: wall === null ? null : `${wall.signal} ${wall.host}`,
+    ...(landing !== null ? { notFound: `${landing.basis} ${landing.host}` } : {}),
     checkpoint: checkpointVerdict,
     notices,
   }
@@ -697,12 +747,14 @@ function classifyCall(
       state.anchor = continues ? state.anchor : query
       state.lastQuery = query
       search = { query: head(query, 120)!, streak: state.streak }
-    } else {
+    } else if (landing === null) {
+      // A navigate that landed on a Not-found Page is inspection to the rail
+      // (#239, ADR 0050): it never resets the streak.
       state.lastQuery = null
       state.anchor = null
       state.streak = 0
     }
-  } else if (!isSearchInspection(call.name) && call.name !== 'navigate' && !refused && result !== undefined) {
+  } else if (!isSearchInspection(call.name) && call.name !== 'navigate' && !refused && result !== undefined && landing === null) {
     state.lastQuery = null
     state.anchor = null
     state.streak = 0
@@ -722,7 +774,9 @@ function classifyCall(
   const noProgressNotice = notices.includes('no_progress_notice')
   switch (call.name) {
     case 'navigate': {
-      if (landedCanonical !== null && parentUrls !== null && parentUrls.has(landedCanonical)) {
+      if (landing !== null) {
+        progress = { made: false, reason: NOT_FOUND_LANDING_REASON }
+      } else if (landedCanonical !== null && parentUrls !== null && parentUrls.has(landedCanonical)) {
         inherited = true
         progress = { made: false, reason: 'a re-acquisition of a page the initial attempt already checkpointed (inherited)' }
       } else if (landedCanonical !== null && state.acquiredUrls.has(landedCanonical)) {
@@ -765,7 +819,9 @@ function classifyCall(
     case 'type':
     case 'back':
     case 'go_forward': {
-      if (landedCanonical !== null && parentUrls !== null && parentUrls.has(landedCanonical) && !state.acquiredUrls.has(landedCanonical)) {
+      if (landing !== null) {
+        progress = { made: false, reason: NOT_FOUND_LANDING_REASON }
+      } else if (landedCanonical !== null && parentUrls !== null && parentUrls.has(landedCanonical) && !state.acquiredUrls.has(landedCanonical)) {
         inherited = true
         progress = { made: false, reason: 'a re-acquisition of a page the initial attempt already checkpointed (inherited)' }
       } else if (search !== null && search.streak >= SEARCH_STREAK_WITHOUT_PROGRESS) {
@@ -1096,6 +1152,7 @@ export function classifyAttempt(input: AuditTraceInput): AuditMechanical {
     searchLoopHeads: [...heads].sort((left, right) => left - right),
     searchSource: railObservations !== null ? 'rail' : rounds.some((round) => round.tags.search) ? 'replay' : 'none',
     walledRounds: rounds.filter((round) => round.tags.wall).length,
+    notFoundNavigates: rounds.flatMap((round) => round.calls.filter((call) => call.name === 'navigate' && call.notFound !== undefined).map(() => round.round)),
     latency: {
       llmMs: joined.length === 0 ? null : joined.reduce((total, round) => total + round.latencyMs!, 0),
       joined: joined.length,
@@ -1385,6 +1442,11 @@ function mostCalledFirst(counts: ReadonlyMap<string, number>): [string, number][
   return [...counts.entries()].sort(([leftTool, left], [rightTool, right]) => right - left || leftTool.localeCompare(rightTool))
 }
 
+/** The navigates that landed on a Not-found Page in rounds the reviewer judged Off-key (#239). */
+export function notFoundOffKeyOf(mechanical: AuditMechanical, judgement: AuditJudgement): number {
+  return mechanical.notFoundNavigates.filter((round) => judgement.offKey.some((item) => item.round === round)).length
+}
+
 export function populationOf(label: string, attempts: readonly AuditAttempt[]): AuditPopulation {
   const counts = emptyCounts()
   const after = emptyCounts()
@@ -1403,6 +1465,8 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
   let heldPageRounds = 0
   let rejected = 0
   let walled = 0
+  let notFound = 0
+  let notFoundOffKey = 0
   let subagentRounds = 0
   let stoppedEarly = 0
   let overrules = 0
@@ -1429,6 +1493,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
     heldPageRounds += mechanical.heldPageRoundsWithoutProgress
     rejected += mechanical.rejectedCheckpoints
     walled += mechanical.walledRounds
+    notFound += mechanical.notFoundNavigates.length
     subagentRounds += mechanical.subagent.rounds
     if (mechanical.toolRoundBudget !== null && mechanical.toolRoundsUsed >= mechanical.toolRoundBudget) atBudget += 1
     const cause = mechanical.terminal?.finalizationCause ?? 'none'
@@ -1439,6 +1504,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
     primary[judgement.verdict.primary] += 1
     if (judgement.verdict.secondary !== null) secondary[judgement.verdict.secondary] += 1
     offKey += judgement.offKey.length
+    notFoundOffKey += notFoundOffKeyOf(mechanical, judgement)
     searchLoop += new Set(judgement.searchLoops.flatMap((loop) => loop.rounds)).size
     if (judgement.stoppedEarly.value) stoppedEarly += 1
     overrules += judgement.overrules.length
@@ -1465,6 +1531,8 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
     heldPageRoundsWithoutProgress: heldPageRounds,
     rejectedCheckpoints: rejected,
     walledRounds: walled,
+    notFoundNavigates: notFound,
+    notFoundOffKey,
     subagentRounds,
     stoppedEarly,
     overrules,
@@ -1658,7 +1726,7 @@ function judgementLines(populations: readonly AuditPopulation[]): string[] {
   return populations.map(
     (population) =>
       `- ${population.label}: ${population.offKeyRounds} Off-key round(s), ${population.searchLoopRounds} Search Loop round(s) by the reviewer (${population.mechanicalSearchRounds} by the streak rule; attempts by search source ${SEARCH_SOURCES.map((source) => `${source} ${population.searchSources[source]}`).join(', ')}), ` +
-      `${population.inheritedRounds} inherited, ${population.rejectedCheckpoints} rejected Evidence Checkpoint(s), ${population.walledRounds} walled round(s), ${population.subagentRounds} Subagent round(s), ` +
+      `${population.inheritedRounds} inherited, ${population.rejectedCheckpoints} rejected Evidence Checkpoint(s), ${population.walledRounds} walled round(s), ${population.notFoundNavigates} navigate(s) landed on a Not-found Page (${population.notFoundOffKey} judged Off-key), ${population.subagentRounds} Subagent round(s), ` +
       `${population.mergedCheckpoints} merged Evidence Checkpoint(s) (a floor), ${population.heldPageRoundsWithoutProgress} Held Page round(s) without Progress, ` +
       `${population.stoppedEarly} stopped early, ${population.overrules} overrule(s), ${population.flags} flag(s); Finalization Causes: ${Object.entries(population.finalizationCauses)
         .map(([cause, count]) => `${cause} ${count}`)
@@ -1687,6 +1755,9 @@ function attemptSection(attempt: AuditAttempt): string[] {
       `${mechanical.acceptedCheckpoints} accepted (${mechanical.mergedCheckpoints} merged, a floor) and ${mechanical.rejectedCheckpoints} rejected Evidence Checkpoint(s); ${mechanical.inheritedRounds} inherited round(s); ` +
       `${mechanical.heldPageRoundsWithoutProgress} Held Page round(s) without Progress; ${mechanical.walledRounds} walled round(s)`,
   )
+  const landings = mechanical.notFoundNavigates
+  lines.push(`- navigates that landed on a Not-found Page: ${landings.length}${landings.length > 0 ? ` (round ${landings.join(', ')})` : ''}`)
+  lines.push(`- of those, judged Off-key by the reviewer: ${judgement === null ? 'not judged' : notFoundOffKeyOf(mechanical, judgement)}`)
   lines.push(`- kinds: ${ROUND_KINDS.map((kind) => `${KIND_LABELS[kind]} ${mechanical.counts[kind]} (${pct(mechanical.shares[kind])})`).join(' · ')}`)
   lines.push(`- search source ${mechanical.searchSource}: ${SEARCH_SOURCE_NOTES[mechanical.searchSource]}`)
   if (review === null) lines.push('- reviewer: not consulted')
@@ -1713,7 +1784,7 @@ function attemptSection(attempt: AuditAttempt): string[] {
     const inLoop = judgement?.searchLoops.some((loop) => loop.rounds.includes(round.round)) ?? false
     const tools = round.calls.map((call) => `${call.name}${call.refused ? ' ✗' : ''}`).join(', ') || '—'
     const page = round.calls.map((call) => call.url).find((url) => url !== null) ?? '—'
-    const markers = [round.tags.inherited ? 'inherited' : '', round.tags.wall ? 'walled' : '', offKey ? 'off-key' : '', inLoop ? 'search loop' : '', mechanical.searchLoopHeads.includes(round.round) ? 'loop head by the streak rule' : '', round.tags.rejectedCheckpoints > 0 ? `${round.tags.rejectedCheckpoints} rejected checkpoint` : ''].filter((marker) => marker !== '')
+    const markers = [round.tags.inherited ? 'inherited' : '', round.tags.wall ? 'walled' : '', round.calls.some((call) => call.notFound !== undefined) ? 'not found' : '', offKey ? 'off-key' : '', inLoop ? 'search loop' : '', mechanical.searchLoopHeads.includes(round.round) ? 'loop head by the streak rule' : '', round.tags.rejectedCheckpoints > 0 ? `${round.tags.rejectedCheckpoints} rejected checkpoint` : ''].filter((marker) => marker !== '')
     const trace = round.llmRound !== round.round || round.attempt > 1 ? ` (trace ${round.llmRound}.${round.attempt})` : ''
     lines.push(
       `| ${round.round}${trace} | ${KIND_LABELS[round.kind]}${overrule ? ` → ${KIND_LABELS[overrule.kind]}` : ''} | ${tools} | ${head(page, 80)} | ${round.latencyMs ?? '—'} | ${round.reason}${markers.length > 0 ? ` [${markers.join(', ')}]` : ''} |`,

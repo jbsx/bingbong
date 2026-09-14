@@ -9,6 +9,7 @@ import type { WorkingMemorySnapshot } from '../session/workingMemory'
 import { VisionDeadlineError } from '../ports/vision'
 import { ASK_ESCALATION_PREFIX, createAskUserTool, createSubagentAskTool } from '../pipeline/askUserTools'
 import { SEARCH_LOOP_NUDGE_AFTER, SEARCH_LOOP_REFUSE_AFTER } from '../pipeline/searchLoopRail'
+import { composedAddressRefusal } from '../pipeline/composedAddressRail'
 import type { SettledPageState } from '../pipeline/progressFingerprints'
 import { hostFromUrl } from '../pipeline/blockerGate'
 import type { TracedReasoningRound } from '../trace/reasoningTrace'
@@ -863,6 +864,36 @@ describe('runSubagent', () => {
       ok: true,
       result: expect.stringContaining('reword one intent'),
     })
+  })
+
+  it('refuses a second composed address to a site that answered not found (#239, ADR 0050)', async () => {
+    const executed: string[] = []
+    const navigate: Tool = {
+      name: 'navigate',
+      acquisition: true,
+      async execute(callArg) {
+        const url = String(callArg.args.url)
+        executed.push(url)
+        return `navigated: url=${url} title="Page Not Found - NASA"\nNOT-FOUND:404 www.nasa.gov\nThis address names nothing on nasa.gov.`
+      },
+    }
+    const llm = new ScriptedLlm([
+      {
+        kind: 'tool_calls',
+        calls: [
+          { id: 'n1', name: 'navigate', args: { url: 'https://www.jpl.nasa.gov/news/voyager-2013-09' } },
+          { id: 'n2', name: 'navigate', args: { url: 'https://science.nasa.gov/voyager-2013-09' } },
+        ],
+      },
+      { kind: 'answer', speak: 's', display: 'Reported.' },
+    ])
+
+    await runSubagent({ llm, tools: [navigate], clock: new FakeClock() }, { task: 't', isCancelled: () => false })
+
+    // The worker's round runs the rail: the sibling composed address to the
+    // same site is refused inside the round, before it executes.
+    expect(executed).toEqual(['https://www.jpl.nasa.gov/news/voyager-2013-09'])
+    expect(llm.requests[1]?.toolResults?.[1]?.outcome).toMatchObject({ ok: false, error: composedAddressRefusal('nasa.gov') })
   })
 
   it('nudges then refuses an objectively redundant action (#159)', async () => {

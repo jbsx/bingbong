@@ -41,6 +41,13 @@ export interface SettledPageState {
   interactiveDigest?: string
   /** The focused page's media state, when one was read; null when the page has no media element. */
   media?: MediaState | null
+  /**
+   * HTTP status of the top-level response the tab settled on (#239, ADR
+   * 0050), when the surface knows it. Carried, never fingerprinted: a
+   * page's identity is its content, and the Not-found classification reads
+   * the status off the page facts.
+   */
+  status?: number
 }
 
 /**

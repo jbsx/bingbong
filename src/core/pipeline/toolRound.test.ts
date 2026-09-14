@@ -10,6 +10,7 @@ import { createEffortEpoch, finalizationToolRefusal } from './effortEpoch'
 import { createNotices } from './notices'
 import { createObservationLedger, type ObservationInput } from '../session/observationLedger'
 import { createToolRoundExecutor, type ToolRoundCapabilities, type ToolRoundConfig, type ToolRoundOutcome } from './toolRound'
+import { composedAddressRefusal } from './composedAddressRail'
 import type { ToolTraceEvent, VisionTraceIds, VisionTraceReporter } from '../trace/visionTrace'
 import { createSessionEvidence } from '../session/sessionEvidence'
 import type { RunId, SessionId } from '../session/sessionIdentity'
@@ -26,7 +27,7 @@ function call(name: string, args: Record<string, unknown> = {}, id = `${name}-${
   return { id, name, args }
 }
 
-const ALL_RAILS: ToolRoundCapabilities = { searchLoopRail: true, verificationRail: true, noProgressRail: true, perCallGate: true }
+const ALL_RAILS: ToolRoundCapabilities = { searchLoopRail: true, verificationRail: true, noProgressRail: true, composedAddressRail: true, perCallGate: true }
 
 /** A settled page state that never moves — the no-progress rails' worst case. */
 const STUCK: SettledPageState = {
@@ -269,7 +270,7 @@ describe('gate order (#157/AC2, ADR 0010 + ADR 0027)', () => {
     // The no-progress rail is off here: this test is about which of the
     // other two gates answers first, and the flags are how that isolation
     // is expressed (#154).
-    const capabilities: ToolRoundCapabilities = { searchLoopRail: true, verificationRail: true, noProgressRail: false, perCallGate: true }
+    const capabilities: ToolRoundCapabilities = { searchLoopRail: true, verificationRail: true, noProgressRail: false, composedAddressRail: true, perCallGate: true }
 
     // Five similar searches reach the search-loop cap; the sixth is
     // refused by both gates at once. With one vision call left over, the
@@ -319,7 +320,7 @@ describe('the rails observe the raw outcome, ahead of Notices (#157/AC2)', () =>
       call('navigate', { url: `https://s.example/?q=${query.replace(/ /g, '+')}` }),
     )
     const h = harness([scripted('navigate', [])], {
-      capabilities: { searchLoopRail: true, verificationRail: true, noProgressRail: false, perCallGate: true },
+      capabilities: { searchLoopRail: true, verificationRail: true, noProgressRail: false, composedAddressRail: true, perCallGate: true },
     })
 
     const { outcome } = await h.round(calls)
@@ -366,7 +367,7 @@ describe('mid-round trips close the round’s remaining siblings (#157/AC2)', ()
     ]
     const h = harness(tools, {
       currentHost: () => 'www.reddit.com',
-      capabilities: { searchLoopRail: true, verificationRail: true, noProgressRail: false, perCallGate: true },
+      capabilities: { searchLoopRail: true, verificationRail: true, noProgressRail: false, composedAddressRail: true, perCallGate: true },
       trace,
     })
 
@@ -667,6 +668,57 @@ describe('interception and Notice eligibility (#157/AC1)', () => {
 // The Look's Vision Budget record (#186, ADR 0031). The round spends the
 // budget for a `usesVision` tool, so the round records it — the tool only
 // ever sees the refusal as a failed call.
+describe('the Composed Address rail runs per call (#239, ADR 0050)', () => {
+  /** A navigate whose composed slugs under /dead/ land on a Not-found Page. */
+  function navigateTool(trace: string[]): Tool {
+    return {
+      name: 'navigate',
+      acquisition: true,
+      async execute(callArg: ToolCall): Promise<unknown> {
+        const url = String(callArg.args.url)
+        trace.push(`execute:navigate:${url}`)
+        return url.includes('/dead/')
+          ? `navigated: url=${url} title="Page Not Found - NASA"\nNOT-FOUND:404 www.nasa.gov\nThis address names nothing on nasa.gov.`
+          : `navigated: url=${url} title="NASA"\n# NASA — ${url}`
+      },
+    }
+  }
+
+  it('refuses a same-round sibling composed address after the round’s first landing, and two refusals trip no Finalization', async () => {
+    const trace: string[] = []
+    const h = harness([navigateTool(trace)], { trace })
+
+    const first = await h.round([
+      call('navigate', { url: 'https://www.jpl.nasa.gov/dead/voyager-2013-09' }, 'n1'),
+      call('navigate', { url: 'https://science.nasa.gov/dead/voyager-2013-09' }, 'n2'),
+    ])
+    const second = await h.round([
+      call('navigate', { url: 'https://www.nasa.gov/dead/voyager-2013' }, 'n3'),
+      call('navigate', { url: 'https://duckduckgo.com/?q=site%3Anasa.gov+voyager+2013' }, 'n4'),
+    ])
+
+    expect(trace.filter((entry) => entry.startsWith('execute:'))).toEqual([
+      'execute:navigate:https://www.jpl.nasa.gov/dead/voyager-2013-09',
+      'execute:navigate:https://duckduckgo.com/?q=site%3Anasa.gov+voyager+2013',
+    ])
+    expect(errorOf(first.outcome.results[1]!.outcome)).toBe(composedAddressRefusal('nasa.gov'))
+    expect(errorOf(second.outcome.results[0]!.outcome)).toBe(composedAddressRefusal('nasa.gov'))
+    expect(h.epoch.phase.kind).toBe('working')
+  })
+
+  it('is off without the capability', async () => {
+    const trace: string[] = []
+    const h = harness([navigateTool(trace)], { trace, capabilities: { ...ALL_RAILS, composedAddressRail: false } })
+
+    await h.round([
+      call('navigate', { url: 'https://www.jpl.nasa.gov/dead/a' }, 'n1'),
+      call('navigate', { url: 'https://www.jpl.nasa.gov/dead/b' }, 'n2'),
+    ])
+
+    expect(trace.filter((entry) => entry.startsWith('execute:'))).toHaveLength(2)
+  })
+})
+
 describe('vision budget records', () => {
   function reporter(): { traceVision: VisionTraceReporter; reported: ToolTraceEvent[] } {
     const reported: ToolTraceEvent[] = []
@@ -746,6 +798,7 @@ describe('the verification gate sits ahead of the Vision Budget (#212, ADR 0041)
     searchLoopRail: false,
     verificationRail: true,
     noProgressRail: false,
+    composedAddressRail: false,
     perCallGate: true,
   }
 
@@ -802,6 +855,7 @@ describe('an argument refusal is not a Vision Attempt (#236, ADR 0046)', () => {
     searchLoopRail: false,
     verificationRail: true,
     noProgressRail: false,
+    composedAddressRail: false,
     perCallGate: true,
   }
   const MALFORMED = `look: 'region' must be "left,top,width,height"`

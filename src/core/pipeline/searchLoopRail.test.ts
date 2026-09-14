@@ -479,6 +479,21 @@ describe('createSearchLoopRail — the verdict carries what the rail observed (#
   })
 })
 
+describe('createSearchLoopRail — a Not-found Landing is inspection (#239, ADR 0050)', () => {
+  it('continues the streak across a composed navigate that landed not found, and resets on one that landed on a page', async () => {
+    const rail = createSearchLoopRail()
+    await rail.observe(nav('https://duckduckgo.com/?q=voyager+golden+record+2013'), ok)
+    const guess = nav('https://www.nasa.gov/voyager-2013')
+    expect(await rail.observe(guess, { ok: true, result: 'navigated: url=https://www.nasa.gov/voyager-2013 title="Page Not Found - NASA"\nNOT-FOUND:404 www.nasa.gov\nThis address names nothing on nasa.gov.' })).toEqual({ notice: null, observation: null })
+
+    const similar = await rail.observe(nav('https://duckduckgo.com/?q=voyager+golden+record+2013+release'), ok)
+    expect(similar.observation?.streak).toBe(2)
+
+    await rail.observe(nav('https://www.nasa.gov/voyager/'), ok)
+    expect((await rail.observe(nav('https://duckduckgo.com/?q=voyager+golden+record+2013'), ok)).observation?.streak).toBe(1)
+  })
+})
+
 describe('createSearchLoopRail replay of failed run 47 (#82/#83)', () => {
   // The actual 80-call sequence from history.db run 47 (the run that
   // motived #74 and whose navigates-to-search-URLs defeated the old rail):

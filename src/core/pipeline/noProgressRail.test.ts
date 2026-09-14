@@ -272,6 +272,36 @@ describe('no-progress rail — meaningful progression (#126/AC2)', () => {
   })
 })
 
+describe('no-progress rail — a Not-found Landing is neutral (#239, ADR 0050)', () => {
+  const LANDING = state({ url: 'https://www.nasa.gov/voyager-2013', title: 'Page Not Found - NASA', textDigest: 'The page you requested cannot be found.' })
+  const landed = (url: string): ToolResultOutcome => ok(`navigated: url=${url} title="Page Not Found - NASA"\nNOT-FOUND:404 www.nasa.gov\nThis address names nothing on nasa.gov.`)
+
+  it('neither advances nor resets an Approach’s count on a landing', async () => {
+    let current = BASE
+    const rail = createNoProgressRail({ settledState: () => current })
+    const read = call('read_page')
+    const step = async (action: ToolCall, outcome: ToolResultOutcome = ok()): Promise<string | null> => {
+      expect(await rail.gate(action)).toEqual({ ok: true })
+      return rail.observe(action, outcome)
+    }
+
+    expect(await step(read)).toBeNull() // the baseline
+    expect(await step(read)).toMatch(/repeats an equivalent action/) // a repeat read: one no-progress action, nudged
+
+    // A landing on a new state would have read as Progress and reset the
+    // count; a second landing on the same state would have counted.
+    current = LANDING
+    expect(await step(call('navigate', { url: 'https://www.nasa.gov/voyager-2013' }), landed('https://www.nasa.gov/voyager-2013'))).toBeNull()
+    expect(await step(call('navigate', { url: 'https://www.nasa.gov/voyager-2013-09' }), landed('https://www.nasa.gov/voyager-2013-09'))).toBeNull()
+    expect(rail.makingProgress()).toBe(true)
+
+    // The first read of the landing is new material; the repeat is the
+    // second no-progress action — the count the landings left untouched.
+    expect(await step(read)).toBeNull()
+    expect(await step(read)).toMatch(/Change your Approach/)
+  })
+})
+
 describe('no-progress rail — resets (#126/AC3)', () => {
   it('an accepted Evidence Checkpoint resets the no-progress count and approach exhaustion', async () => {
     const rail = createNoProgressRail({ settledState: () => BASE })

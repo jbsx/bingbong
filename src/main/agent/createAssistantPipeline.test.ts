@@ -730,6 +730,7 @@ describe('createAssistantPipeline', () => {
             landLoad = (outcome) => (outcome.ok ? resolve() : reject(outcome.error))
           }),
         navigationHistory: { canGoBack: () => false, canGoForward: () => false, goBack: () => {}, goForward: () => {} },
+        on: () => {},
         once: () => {},
         getURL: () => 'about:blank',
         getTitle: () => '',
@@ -786,6 +787,7 @@ describe('createAssistantPipeline', () => {
             failLoad = reject
           }),
         navigationHistory: { canGoBack: () => false, canGoForward: () => false, goBack: () => {}, goForward: () => {} },
+        on: () => {},
         once: () => {},
         getURL: () => 'about:blank',
         getTitle: () => '',

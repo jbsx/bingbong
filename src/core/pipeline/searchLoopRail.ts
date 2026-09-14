@@ -1,5 +1,6 @@
 import type { ToolCall, ToolResultOutcome } from '../ports/llm'
 import type { SnapshotRef } from '../browser/snapshot'
+import { parseNotFoundMarker } from '../browser/notFoundPage'
 import { isSearchInputRef, refNumberOf, searchQueryFromUrl, typedQuery } from './progressFingerprints'
 import { isSearchInspection, similarQueries, type SearchSignature } from './searchLoopRule'
 import { reportFault } from '../trace/fault'
@@ -116,6 +117,11 @@ export interface SearchLoopRail {
 
 const NO_VERDICT: SearchLoopVerdict = { notice: null, observation: null }
 
+/** Whether a successful call settled on a Not-found Page (#239): its outcome carries the marker. */
+function landedOnNothing(outcome: ToolResultOutcome): boolean {
+  return outcome.ok && typeof outcome.result === 'string' && parseNotFoundMarker(outcome.result) !== null
+}
+
 const NUDGE =
   'The last searches reword one intent (a q= navigate or a search box query) — more searches will not surface new results. Change strategy: open a promising result by its href, read the page (read_page), or answer from what you already have. If you cannot proceed, say so and ask_user.'
 
@@ -201,8 +207,11 @@ export function createSearchLoopRail(deps: SearchLoopRailDeps = {}): SearchLoopR
       if (classified.kind === 'read') return NO_VERDICT
       if (classified.kind === 'other') {
         // A successful escape consumed something, breaking the blind
-        // loop; a failed one changes nothing, so the streak survives.
-        if (outcome.ok) reset()
+        // loop; a failed one changes nothing, so the streak survives. A
+        // call that landed on a Not-found Page (#239, ADR 0050) consumed
+        // nothing either: it has not left the results any more than a
+        // scroll has, so it is inspection — observed, never resetting.
+        if (outcome.ok && !landedOnNothing(outcome)) reset()
         return NO_VERDICT
       }
       // Chain to the previous query and the anchor, not just the streak's

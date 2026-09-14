@@ -1314,7 +1314,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           toolContext,
           decisions,
           interrupts,
-          capabilities: { searchLoopRail: true, verificationRail: true, noProgressRail: true, perCallGate: true },
+          capabilities: { searchLoopRail: true, verificationRail: true, noProgressRail: true, composedAddressRail: true, perCallGate: true },
           intercept: (call) => interceptCall(call),
           // A successful Session Reset (#99) discards the rest of the run.
           terminalResult: (call, outcome) => outcome.ok && toolsByName.get(call.name)?.sessionReset === true,
@@ -1324,6 +1324,11 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             select: (call) => toolsByName.get(call.name)?.sessionReset === true,
             notExecuted: 'not executed: this response carried a session reset, but it failed',
           },
+          // The Composed Address rail's Offered Addresses (#239, ADR 0050):
+          // every source the Session's Evidence cites, read per call so a
+          // source recorded mid-Run counts. A Session that ended offers none.
+          evidenceSourceUrls: () =>
+            evidenceSession?.()?.store.snapshot().observations.flatMap((observation) => observation.references.map((reference) => reference.url)) ?? [],
           // The verification rail's Session seams (#212, ADR 0041). All
           // four resolve per call against the live store rather than
           // against admission: a Candidate this Run has only just

@@ -357,15 +357,18 @@ export class FakeBrowser implements BrowserController, VisualGroundingController
     return this.pageState
   }
 
+  /** The top-level response status the fake page answered with (#239); null — unknown — by default. */
+  status: number | null = null
+
   // ADR 0010 classifier facts, off the overridable snapshot.
   async pageFacts() {
-    return blockerFactsFromSnapshot(this.snapshot)
+    return { ...blockerFactsFromSnapshot(this.snapshot), ...(this.status !== null ? { status: this.status } : {}) }
   }
 
   // The Progress rails' comparison input (#126): the overridable snapshot
   // plus the fake's media state.
   async settledState() {
-    return settledStateFromSnapshot(this.snapshot, this.media)
+    return settledStateFromSnapshot(this.snapshot, this.media, this.status)
   }
 
   async describeRef(ref: number): Promise<SnapshotRef | undefined> {

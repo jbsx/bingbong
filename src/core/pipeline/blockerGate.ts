@@ -106,6 +106,27 @@ export function hostFromUrl(value: string): string | null {
   }
 }
 
+/** Second labels that sit under a two-letter top level as part of the suffix: rmg.co.uk, musiciansunion.org.uk. */
+const SECOND_LEVEL_SUFFIX_LABELS: ReadonlySet<string> = new Set(['co', 'org', 'ac', 'gov', 'net', 'com'])
+
+/**
+ * The site a host belongs to — its registrable domain (#239, ADR 0050) — so
+ * jpl.nasa.gov, www.nasa.gov and science.nasa.gov are one site. The app has
+ * no public-suffix list: three labels when the second from the right is one
+ * of co, org, ac, gov, net or com under a two-letter top level, two
+ * otherwise. An IP address or a single label is its own site.
+ */
+export function siteOfHost(host: string): string {
+  const lowered = host.toLowerCase().replace(/\.$/, '')
+  if (/^\d+(\.\d+){3}$/.test(lowered) || lowered.includes(':')) return lowered
+  const labels = lowered.split('.').filter((label) => label !== '')
+  if (labels.length <= 2) return labels.join('.')
+  const top = labels[labels.length - 1]!
+  const second = labels[labels.length - 2]!
+  const take = top.length === 2 && SECOND_LEVEL_SUFFIX_LABELS.has(second) ? 3 : 2
+  return labels.slice(-take).join('.')
+}
+
 /**
  * The browser verbs (the BrowserController tool surface in browserTools.ts).
  * Exported so toolSurface.test.ts can pin this set against the real

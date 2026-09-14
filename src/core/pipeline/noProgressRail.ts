@@ -1,6 +1,7 @@
 import type { ToolCall, ToolResultOutcome } from '../ports/llm'
 import type { ObservationProducer } from '../session/observationLedger'
 import { SCROLL_END_OF_PAGE } from '../browser/scrollDelta'
+import { parseNotFoundMarker } from '../browser/notFoundPage'
 import { actionFingerprint, pageFingerprint, pageReadPartOf, type SettledPageState } from './progressFingerprints'
 import { classifyToolObservation } from './toolObservations'
 import { reportFault } from '../trace/fault'
@@ -354,6 +355,16 @@ export function createNoProgressRail(deps: NoProgressRailDeps = {}): NoProgressR
         // The baseline read: the state Progress is measured from, not
         // itself an action that failed to make it (#126/AC1 — the first
         // attempt is never redundant or no-progress).
+        lastState = fingerprint
+        return nudge
+      }
+      if (typeof outcome.result === 'string' && parseNotFoundMarker(outcome.result) !== null) {
+        // A Not-found Landing (#239, ADR 0050) is the third neutral case:
+        // not Progress — the page carries nothing — and not a no-progress
+        // action, which would have ended the Voyager Run before its
+        // round-15 success. The accounting neither advances nor resets; the
+        // baseline follows the tab, so the page after it is measured from
+        // where the Run actually stood.
         lastState = fingerprint
         return nudge
       }

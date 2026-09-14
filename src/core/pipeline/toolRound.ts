@@ -10,6 +10,7 @@ import { createVisionBudget, MAX_ORCHESTRATOR_VISION_CALLS } from '../agent/suba
 import { traceSearchObservation, traceVisionBudget } from './visionSeam'
 import { createBlockerGate, orchestratorBlockerEscalation, type BlockerEscalation } from './blockerGate'
 import { createSearchLoopRail } from './searchLoopRail'
+import { createComposedAddressRail } from './composedAddressRail'
 import { createVerificationRail, verificationRouteOf, type VerificationGate, type VerificationRailDeps } from './verificationRail'
 import type { VerificationRoute } from '../session/verificationAttempts'
 import { createNoProgressRail } from './noProgressRail'
@@ -71,6 +72,12 @@ export interface ToolRoundCapabilities {
   readonly verificationRail: boolean
   /** The no-progress rails (#126): gate ahead of risk, observe after execution, trip mid-round. */
   readonly noProgressRail: boolean
+  /**
+   * The Composed Address rail (#239, ADR 0050): gate after the search-loop
+   * gate, so a search never reaches it, and observe beside the search-loop
+   * and no-progress observes. It trips nothing.
+   */
+  readonly composedAddressRail: boolean
   /**
    * The per-call gate (#135/#199): the epoch's boundaries checked before
    * every call in the round begins — its deadline, and for a Subagent its
@@ -217,6 +224,12 @@ export interface ToolRoundConfig {
    * leaves the rail enforcing this Run's own spend and nothing more.
    */
   readonly verification?: VerificationRailDeps
+  /**
+   * The source URLs of the Session's Evidence (#239, ADR 0050): Offered
+   * Addresses for the Composed Address rail. Absent — a caller with no
+   * Session — offers only what this Run was shown.
+   */
+  evidenceSourceUrls?(): readonly string[]
   /** Advisory bookkeeping only — a throwing tracer never fails a round. */
   readonly diagnostics?: {
     readonly tracer?: PerfTracer
@@ -309,6 +322,9 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
     ? createSearchLoopRail(config.describeRef ? { describeRef: config.describeRef } : {})
     : null
   const verificationRail = capabilities.verificationRail ? createVerificationRail(config.verification ?? {}) : null
+  const composedAddressRail = capabilities.composedAddressRail
+    ? createComposedAddressRail(config.evidenceSourceUrls ? { evidenceSourceUrls: () => config.evidenceSourceUrls!() } : {})
+    : null
   /** Which route this call spends, read from the catalog's own flag rather than a name (#212). */
   const routeOf = (call: ToolCall): VerificationRoute | null =>
     verificationRail === null ? null : verificationRouteOf(call, (name) => toolsByName.get(name)?.usesVision === true)
@@ -488,6 +504,15 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
       if (!searchLoopGate.ok) return { ok: false, error: searchLoopGate.reason }
     }
 
+    // The Composed Address rail (#239, ADR 0050): after a site answered not
+    // found for an address the model composed, further composed addresses
+    // to that site are refused. After the search-loop gate, so a search is
+    // never seen by it; it never refuses a search or a click.
+    if (composedAddressRail !== null) {
+      const composedAddressGate = composedAddressRail.gate(call)
+      if (!composedAddressGate.ok) return { ok: false, error: composedAddressGate.reason }
+    }
+
     try {
       interrupts.throwIfStopped()
       // The tool span (#30): one span per gated execution, tool name in
@@ -626,6 +651,11 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
         notices.owe('search_loop', verdict.notice)
         traceSearchObservation(toolContext, call, verdict.observation)
       }
+      // The Composed Address rail (#239, ADR 0050): a result offers the
+      // addresses it showed and the page the tab settled on, and a composed
+      // navigate that landed on a Not-found Page spends its site's
+      // allowance — before the round's next call is gated.
+      composedAddressRail?.observe(call, outcome, sourceUrl ?? null)
       // The verification rail (#212, ADR 0041): a failed check spends its
       // route for the rest of this run, and the words the route reported
       // are handed to the Session verbatim — the rail derives no cause

@@ -18,6 +18,9 @@ export const LOAD_TIMEOUT_MS = 30_000
 /** The same bound for one history step. */
 export const HISTORY_STEP_TIMEOUT_MS = 15_000
 
+/** Electron's `did-navigate` listener, narrowed to the arguments read here. */
+export type DidNavigateListener = (event: unknown, url: string, httpResponseCode: number) => void
+
 /** The webContents members the navigation surface uses. */
 export interface PaneNavigationTarget {
   loadURL(url: string): Promise<void>
@@ -27,6 +30,7 @@ export interface PaneNavigationTarget {
     goBack(): void
     goForward(): void
   }
+  on(event: 'did-navigate', listener: DidNavigateListener): void
   once(event: 'did-navigate', listener: () => void): void
   getURL(): string
   getTitle(): string
@@ -35,6 +39,15 @@ export interface PaneNavigationTarget {
 }
 
 export function createPaneNavigation(wc: PaneNavigationTarget, clock: Clock = systemClock): CdpPageDriver {
+  // The top-level response code of the document the tab is on (#239, ADR
+  // 0050). Every main-frame navigation fires `did-navigate` — a load, a
+  // history step, a click that leaves the page — so one listener keeps it
+  // current; an in-page navigation keeps the document, and so the status.
+  let status: number | null = null
+  wc.on('did-navigate', (_event, _url, httpResponseCode) => {
+    status = typeof httpResponseCode === 'number' && httpResponseCode > 0 ? httpResponseCode : null
+  })
+
   /** One step in history ('back'/'forward'): guarded, awaited, bounded. */
   function historyStep(canGo: boolean, go: () => void, direction: string): Promise<void> {
     if (!canGo) return Promise.reject(new Error(`cannot go ${direction}: no history`))
@@ -52,6 +65,7 @@ export function createPaneNavigation(wc: PaneNavigationTarget, clock: Clock = sy
     goForward: () => historyStep(wc.navigationHistory.canGoForward(), () => wc.navigationHistory.goForward(), 'forward'),
     url: () => wc.getURL(),
     title: () => wc.getTitle(),
+    status: () => status,
     focus: () => {
       if (!wc.isDestroyed()) wc.focus()
     },

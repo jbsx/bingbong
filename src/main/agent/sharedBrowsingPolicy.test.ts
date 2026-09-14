@@ -54,6 +54,14 @@ describe('shared policy on-screen invariants (#83/ADR 0009)', () => {
     expect(line).not.toMatch(/read_page|trailing|separate click/i)
   })
 
+  it.each(ROLE_PROMPTS)('the %s prompt prefers a shown link or a site search to a composed address (#239, ADR 0050)', (_role, prompt) => {
+    const line = prompt.split('\n').find((candidate) => candidate.includes('an address you compose'))
+    expect(line).toBeDefined()
+    expect(line).toMatch(/link you were shown or a search of the site/)
+    expect(line).toMatch(/NOT-FOUND:/)
+    expect(line).toMatch(/address was wrong, so search the site rather than try another/)
+  })
+
   it('uses Action Outcomes directly as the next observation', () => {
     const line = bullet('A browser Action Outcome')
     expect(line).toMatch(/Action Outcome.*next observation/i)

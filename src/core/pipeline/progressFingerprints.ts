@@ -325,8 +325,11 @@ export type { SettledPageState } from '../ports/browser'
 export function settledStateFromSnapshot(
   snapshot: PageSnapshot,
   media: MediaState | null,
+  /** The top-level response status the surface saw (#239); absent or null when it saw none. */
+  status?: number | null,
 ): SettledPageState {
   return {
+    ...(typeof status === 'number' ? { status } : {}),
     url: snapshot.url,
     title: snapshot.title,
     scrollX: snapshot.viewport.scrollX ?? 0,

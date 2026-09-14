@@ -14,6 +14,7 @@
 
 import type { PipelineEvent } from '../pipeline/events'
 import type { SearchSignature } from '../pipeline/searchLoopRail'
+import type { NotFoundLanding } from '../browser/notFoundPage'
 import type { AnswerShape } from '../agent/answerContract'
 import type { AgentRole } from '../agent/modelRouting'
 import type { ReasoningEffort, TokenUsage } from '../ports/llm'
@@ -315,6 +316,13 @@ export interface PipelineEventTraceEvent {
    * joining every round. Absent on every other event.
    */
   readonly models?: RunPlanModels
+  /**
+   * The Not-found Landing a `tool_result` settled on (#239, ADR 0050): what
+   * said the page names nothing, and its host — read off the whole result
+   * before the cut, the way the model read it, so a record never has to be
+   * parsed from truncated text. Absent on every other result and kind.
+   */
+  readonly notFound?: NotFoundLanding
   /**
    * The delegated worker whose Tool Round published this (#185); absent on
    * the Run's own stream. A worker's rounds never reach the main stream —
