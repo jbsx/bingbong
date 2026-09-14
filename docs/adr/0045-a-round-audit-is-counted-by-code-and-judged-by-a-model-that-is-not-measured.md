@@ -16,7 +16,18 @@ the digest counts the reasoning and never quotes it. And the key-text guard
 over the outputs checks the key's own words — facts, constraints, pitfalls,
 uncertainties — not its source statements, which quote public pages that an
 attempt's own Evidence Checkpoints excerpt verbatim; the reviewer's prose is
-still checked against every string.
+still checked against every string. Note of 2026-09-14 (#244): the verdict set gains `answer_omitted`, and
+`stopped_early` narrows to an unsatisfied check that needed a page the Run had
+not read. The audit had handed the reviewer the Grade's unsatisfied checks as
+"checks not reached" and asked whether they were reachable from pages already
+held, so a fact the Answer left unstated from material already read was
+"stopped early" by construction: the Eurostar initial drew that verdict in two
+Baseline passes and, with the same omission, not in the third, decided only by
+whether its budget ran out. The line is now "checks unsatisfied", both
+judgements name their checks as a partition of it, and the reviewer never
+re-judges a check. Outputs judged before #244 carry the old set and aggregate
+only among themselves; the three Baseline sets are re-judged, the fix-issue
+audits are not.
 
 ## Context
 

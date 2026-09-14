@@ -1167,12 +1167,27 @@ _Avoid_: benchmark, eval, comparison
 The classification of every orchestrator Tool Round of a captured attempt by
 the kind of work it did — Acquisition with or without Progress, Collection,
 Bookkeeping, a failed round, Finalization — with a verdict on why the attempt
-ended as it did. The kinds code can check are assigned from the Run Trace and
-never vary between readings; the judgements — a Search Loop, an Off-key
-Acquisition, an early stop, the verdict — belong to a reviewer that is not the
-measured model. It names check ids and pages, never Grading Key text, and it
-counts across attempts without judging across them.
+fell short of its Grade. The kinds code can check are assigned from the Run
+Trace and never vary between readings; the judgements — a Search Loop, an
+Off-key Acquisition, an Early Stop, an Answer Omission, the verdict — belong to
+a reviewer that is not the measured model. It names check ids and pages, never
+Grading Key text, and it counts across attempts without judging across them.
 _Avoid_: waste audit, round classification, trace review
+
+**Early Stop**:
+A Round Audit judgement that a captured attempt ended with Tool Rounds and time
+left while an unsatisfied check of its Grade needed a page the Run had not
+read. Whether that page was findable does not enter: with budget left, not
+finding it is the stop. An attempt that ran to its budget never stopped early.
+_Avoid_: gave up, premature answer, under-used budget
+
+**Answer Omission**:
+A Round Audit judgement that an unsatisfied check of a captured attempt's Grade
+follows from material on a page the Run had read, recorded as Evidence or not,
+and the Answer left it unstated. Independent of how the attempt ended: a Run
+that spent its whole budget can still have omitted. It is a judgement about
+page coverage, never a re-grading of the check.
+_Avoid_: stopped early, thin Answer, composition miss, incomplete Answer
 
 **Off-key**:
 An Acquisition on a page that can carry none of the Grading Key's required
