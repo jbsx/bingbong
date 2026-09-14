@@ -1,4 +1,4 @@
-// The malformed-call correction (#241): a record_evidence or record_candidate
+// The malformed-call rejection (#241): a record_evidence or record_candidate
 // call its parser refuses is told every shape defect it carries, in field
 // order, and shown its own arguments with the fixes applied — the call it
 // should send. Nothing is repaired silently: the check stays in each
@@ -72,12 +72,12 @@ export function withoutField(args: Readonly<Record<string, unknown>>, key: strin
 }
 
 /**
- * The correction a malformed rejection carries: every defect, the corrected
- * call as a JSON block with values in full — a clipped excerpt is a
- * near-miss the tool itself rejects — and, when the repaired call was graded
- * and refused, that refusal in the exact sentence its own class produces.
+ * The error a malformed rejection carries: every defect, the corrected call
+ * as a JSON block with values in full — a clipped excerpt is a near-miss
+ * the tool itself rejects — and, when the repaired call was graded and
+ * refused, that refusal in the exact sentence its own class produces.
  */
-export function malformedCorrection(noun: 'citation' | 'call', diagnosis: ShapeDiagnosis, verdict?: string): string {
+export function malformedError(noun: 'citation' | 'call', diagnosis: ShapeDiagnosis, verdict?: string): string {
   const count = diagnosis.defects.length
   return [
     `the ${noun} is malformed — ${count === 1 ? 'one field' : `${count} fields`} to fix:`,

@@ -19,10 +19,9 @@ import { CANDIDATE_STATUSES, DECISION_AUTHORITIES, MAX_DECISION_REASON_CHARS } f
 import { describeCandidateDecision, type CandidateChangeRefusal, type CandidateDecision } from '../session/candidateDecisions'
 import { MAX_MEMORY_REFERENCES, type MemoryEntryId } from '../session/workingMemory'
 import type { RunId } from '../session/sessionIdentity'
-import { reportFault } from '../trace/fault'
 import {
   inFieldOrder,
-  malformedCorrection,
+  malformedError,
   placeholder,
   stringProblem,
   withField,
@@ -203,7 +202,7 @@ export function diagnoseCandidateCall(args: Readonly<Record<string, unknown>>): 
   }
 
   if (parseSupport(args.supporting_evidence) === null) {
-    const decoded = typeof args.supporting_evidence === 'string' ? decodedJson(args.supporting_evidence) : undefined
+    const decoded = typeof args.supporting_evidence === 'string' ? decodedStringArray(args.supporting_evidence) : undefined
     if (parseSupport(decoded) !== null) {
       flag('supporting_evidence', 'sent as a JSON string — send the array itself')
       corrected = withField(corrected, 'supporting_evidence', decoded)
@@ -223,15 +222,19 @@ export function diagnoseCandidateCall(args: Readonly<Record<string, unknown>>): 
   }
 }
 
-/** A JSON string's value, or undefined when it is not JSON. */
-function decodedJson(text: string): unknown {
-  try {
-    return JSON.parse(text)
-  } catch (error) {
-    reportFault('pipeline.candidateCheckpoint.decodedJson', error)
-    // not a JSON-encoded array — the correction shows a placeholder instead
-    return undefined
-  }
+/** One JSON string literal: printable characters, or the escapes JSON allows. */
+const JSON_STRING = String.raw`"(?:[^"\\\p{Cc}]|\\(?:["\\/bfnrt]|u[0-9a-fA-F]{4}))*"`
+
+/** A JSON array of JSON strings and nothing else — how a stringified supporting_evidence arrives. */
+const JSON_STRING_ARRAY = new RegExp(String.raw`^\s*\[\s*(?:${JSON_STRING}\s*(?:,\s*${JSON_STRING}\s*)*)?\]\s*$`, 'u')
+
+/**
+ * The array a JSON-encoded string array spells, or undefined for any other
+ * text. Matched before parsing, so JSON.parse never meets text it would
+ * refuse: a model's wire mistake is its to fix, not a fault to record.
+ */
+function decodedStringArray(text: string): unknown {
+  return JSON_STRING_ARRAY.test(text) ? JSON.parse(text) : undefined
 }
 
 /** A parsed record_candidate call: a creation or a decision. */
@@ -293,7 +296,7 @@ export function evaluateCandidateCheckpoint(
     return {
       ok: false,
       reason: 'malformed',
-      error: malformedCorrection('call', diagnosis, refusal === null ? undefined : candidateCheckpointMessage(refusal)),
+      error: malformedError('call', diagnosis, refusal === null ? undefined : candidateCheckpointMessage(refusal)),
     }
   }
   const session = deps.session?.() ?? null
@@ -436,7 +439,7 @@ export function candidateCheckpointMessage(outcome: CandidateCheckpointOutcome):
         'Supporting Observations and every earlier decision on it are kept. A decision the user made stands until they reopen it; ' +
         'your own stands for this objective until new evidence overturns it.'
   }
-  // A malformed correction ends on the call to send, or on a grading line
+  // A malformed rejection ends on the call to send, or on a grading line
   // that carries its own full stop (#241).
   return `record_candidate rejected (${outcome.reason}): ${outcome.error}${outcome.reason === 'malformed' ? '' : '.'}`
 }

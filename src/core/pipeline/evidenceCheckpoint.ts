@@ -20,7 +20,7 @@ import {
 import { observedPageTitle } from './fallbackAnswer'
 import {
   inFieldOrder,
-  malformedCorrection,
+  malformedError,
   placeholder,
   stringProblem,
   withField,
@@ -465,7 +465,7 @@ export function evaluateEvidenceCheckpoint(
     return {
       ok: false,
       reason: 'malformed',
-      error: malformedCorrection('citation', diagnosis, refusal === null ? undefined : evidenceCheckpointMessage(refusal)),
+      error: malformedError('citation', diagnosis, refusal === null ? undefined : evidenceCheckpointMessage(refusal)),
     }
   }
   if (citation.kind === 'user') {
@@ -572,7 +572,7 @@ export function evaluateEvidenceCheckpoint(
 
 type SubagentCitation = Extract<EvidenceCitation, { kind: 'subagent' }>
 type WebCitation = Extract<EvidenceCitation, { kind: 'web' }>
-type WorkerObservations = (agentId: string) => readonly ObservationRecord[] | null
+type SubagentObservations = (agentId: string) => readonly ObservationRecord[] | null
 
 /** A user citation's grounding (#122): the user event this Run's ledger retained that supplied its exact words. */
 function groundUserCitation(
@@ -591,10 +591,10 @@ function groundUserCitation(
   return { ok: true, event, producer: userProducer(event)! }
 }
 
-/** A subagent citation's grounding (#123): the named worker's own retained observation of the source. */
+/** A subagent citation's grounding (#123): the named Subagent's own retained observation of the source. */
 function groundSubagentCitation(
   citation: SubagentCitation,
-  workerObservations: WorkerObservations | undefined,
+  workerObservations: SubagentObservations | undefined,
 ): { ok: true; source: ObservationRecord; workerRecords: readonly ObservationRecord[] } | EvidenceCheckpointFailure {
   const workerRecords = workerObservations?.(citation.agentId) ?? null
   if (workerRecords === null) {
@@ -664,7 +664,7 @@ function groundWebCitation(
 function gradeCitation(
   citation: EvidenceCitation,
   records: readonly ObservationRecord[],
-  workerObservations: WorkerObservations | undefined,
+  workerObservations: SubagentObservations | undefined,
 ): EvidenceCheckpointFailure | null {
   const grounding =
     citation.kind === 'user'
@@ -676,6 +676,9 @@ function gradeCitation(
 }
 
 const EVIDENCE_CITATION_KINDS: readonly EvidenceCitationKind[] = ['web', 'user', 'subagent']
+
+/** The record_evidence fields in the order the tool declares them — the order a correction names defects in. */
+const EVIDENCE_TOOL_FIELDS: readonly string[] = ['kind', 'observation', 'source_url', 'excerpt', 'agent_id', 'uncertainty', 'volatile']
 
 /**
  * A malformed record_evidence call read back as the citation it should have
@@ -773,7 +776,7 @@ export function diagnoseEvidenceCall(
     }
     if (kind === 'subagent' && !boundedString(args.agent_id, MAX_PROVENANCE_CHARS)) {
       flag('agent_id', `${stringProblem(args.agent_id, MAX_PROVENANCE_CHARS)} — the subagent whose report grounds this finding`)
-      corrected = withField(corrected, 'agent_id', placeholder('the id of the subagent whose report grounds this finding, e.g. a-1'))
+      corrected = withField(corrected, 'agent_id', placeholder('the id of the subagent whose report grounds this finding'))
       groundable = false
     }
   }
@@ -793,7 +796,7 @@ export function diagnoseEvidenceCall(
   }
 
   return {
-    defects: inFieldOrder(defects, EVIDENCE_CITATION_KEYS),
+    defects: inFieldOrder(defects, EVIDENCE_TOOL_FIELDS),
     corrected,
     // A repair the parser would still refuse is not graded as the call to send.
     groundable: groundable && parseEvidenceCitation(corrected) !== null,
@@ -826,7 +829,7 @@ export function evidenceCheckpointMessage(outcome: EvidenceCheckpointOutcome): s
       ? `Session Evidence already held this Observation: ${outcome.entryId} (provenance recorded).${contradiction}`
       : `Session Evidence recorded: ${outcome.entryId}, grounded in ${outcome.sourceObservationId} at ${outcome.sourceUrl}. It survives this run's outcome.${contradiction}`
   }
-  // A malformed correction ends on the call to send, or on a grading line
+  // A malformed rejection ends on the call to send, or on a grading line
   // that carries its own full stop (#241).
   return `record_evidence rejected (${outcome.reason}): ${outcome.error}${outcome.reason === 'malformed' ? '' : '.'}`
 }

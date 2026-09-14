@@ -906,13 +906,14 @@ describe('a malformed citation is told every defect and shown the call to send (
   })
 
   it('names every defect at once in field order, and grades nothing without a source to grade', () => {
-    const outcome = evaluateEvidenceCheckpoint(callOf({ excerpt: 7, agent_id: '', note: 'x', volatile: 'true' }), {
+    const outcome = evaluateEvidenceCheckpoint(callOf({ excerpt: 7, uncertainty: 7, agent_id: '', note: 'x', volatile: 'true' }), {
       records: [webRecord()],
       commit: commitOver(evidenceHarness()),
     })
     const message = evidenceCheckpointMessage(outcome)
 
-    expect(namedFields(message)).toEqual(['kind', 'observation', 'source_url', 'excerpt', 'agent_id', 'volatile', 'note'])
+    // The tool's declared order: agent_id before uncertainty, undeclared keys last.
+    expect(namedFields(message)).toEqual(['kind', 'observation', 'source_url', 'excerpt', 'agent_id', 'uncertainty', 'volatile', 'note'])
     expect(correctedCall(message)).toEqual({
       kind: 'subagent',
       agent_id: PLACEHOLDER,
