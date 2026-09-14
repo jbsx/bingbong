@@ -436,8 +436,20 @@ unverified, and an unverified named item makes the Run Resolution `partial`,
 never `completed`. The trigger is the command's own enumeration: items found
 along the way are Candidates and keep their own rules. It binds model-written
 Answers only; the Card carries the itemized standings and the Spoken Rendering
-the chosen Answer.
+the chosen Answer. Its checkable form is the Asked Item: the named items are
+Asked Items, and so is each named item's standing under a smallest change.
 _Avoid_: exhaustive answer, completeness check
+
+**Asked Item**:
+One thing the command explicitly requests be reported — an id, a measurement,
+a yes or no, a qualification, a named item's standing — declared by the model
+in the Run's first Run Plan and revised only by a Steering replan. The Answer
+carries a standing for every one of them, `stated` with the statement or
+`unverified` with why, and an unverified Asked Item makes the Run Resolution
+`partial` whatever the model claimed. A Run that hunts and declares none has
+not planned. Direct Actions declare none; Subagents, which write Reports,
+never declare any.
+_Avoid_: ask, requirement, sub-question, deliverable, checklist
 
 **Run Note**:
 A Run's continuity contribution, produced alongside its final Answer without a
