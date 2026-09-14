@@ -716,6 +716,19 @@ The view-facing half of an Answer: markdown shown in the Feed. Replaces the
 live answer stream and the Spoken rendering.
 _Avoid_: display text, answer card
 
+**Identity Slip**:
+An internal identity — a Memory Entry id or a Run Observation id — that the
+model wrote into a user-facing rendering of an Answer, the Card or the Spoken
+Rendering, against the contract that the user never sees one. The rendering
+is repaired at the display boundary and the slip is recorded. In the Card an
+id that names a Session Evidence Observation becomes a link to that
+Observation's source, or a fixed phrase when the Observation is the user's
+own words; in the Spoken Rendering, and for an id the boundary cannot
+resolve, the token is removed. A slip never changes the Answer's declared
+support. A Subagent Report is model-facing, not a rendering, so it carries no
+slip and is not repaired.
+_Avoid_: id leak, hole, scrub, hollowed answer, scrubbed id
+
 **Exhibit**:
 The optional third rendering of an Answer: an interactable HTML page for the
 eye, laid out after the Answer lands and shown in place of its Card while
@@ -1007,7 +1020,9 @@ _Avoid_: research agent, worker, task runner
 **Subagent Report**:
 A Subagent's structured return to its orchestrator, carrying findings, evidence,
 and unresolved items. A Subagent may read only the Memory Entries selected for
-its task and cannot mutate Session Working Memory directly.
+its task and cannot mutate Session Working Memory directly. Its text is
+model-facing and may name Memory Entries by id; the display boundary that
+repairs an Identity Slip does not reach it.
 
 **Delegation Probe**:
 The separate real-model capture (#163) whose corpus exists to provoke

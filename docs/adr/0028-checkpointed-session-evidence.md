@@ -6,6 +6,25 @@ Accepted. ADR 0039 extends this decision with pre-model retention of user
 corrections, explicit Inspection References, and objective-scoped Candidate
 decisions; retaining an utterance does not assert that it has been interpreted.
 
+Note of 2026-09-14 (#246): the display boundary that keeps internal
+identities out of an Answer (#122) deleted the token and tidied the
+punctuation around it. In fix-240-1's Eurostar initial the model wrote three
+Memory Entry ids into its prose; the user read a sentence with three holes
+and no sign of them, and nothing recorded that the boundary had acted. An id
+the model writes into the Card or the Spoken Rendering is an Identity Slip.
+Where a Card's id names a Session Evidence Observation the boundary now
+substitutes a link to that Observation's first reference — its title, else
+its host — or a fixed phrase for a User Observation; an id it cannot resolve,
+a Run Observation id among them, is still deleted, and the Spoken Rendering
+only ever deletes, since a spoken citation is noise. The substitute does not
+enter the Answer's declared support: the Answer Evidence Summary reflects what
+the model declared, and a slip may not rewrite the grounding. Every slip
+leaves a Run Trace record so the Round Audit can count them. A retry round was
+considered and refused: a Finalization round is a high price for a cosmetic
+loss, and the count now says whether the model slips often enough to pay it.
+The Subagent Report is model-facing and outside the boundary. The prompt,
+which already forbids the id twice, is untouched.
+
 ## Context
 
 Run Working State currently discards every tool observation when a Run fails or
