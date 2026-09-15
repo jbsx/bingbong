@@ -944,7 +944,14 @@ Report collected since the last accepted Evidence Checkpoint. A Run Trace below
 version 3 could not record one, so its attempt reads "not recorded" and a
 population says how many of its attempts did. **Rounds cut by the Finalization
 Allowance** are the Finalization rounds whose outcome is `allowance`, read off
-the rounds, so every audit has them. Neither moves the digest.
+the rounds, so every audit has them. Neither moves the digest. Since ADR 0057
+a cut round's `llm_round` record says whether it had streamed (`firstTokenMs`),
+so the audit splits the cut rounds into **cut after a first token**, **cut
+silent**, and **not recorded** — a Run Trace below version 4 — and reports the
+**first-token latency** at the median and ninetieth percentile over each
+population's rounds that streamed, with every round's latency listed beside
+the attempt's rounds. The Fix Ledger reads all of them. None of these moves
+the digest either.
 
 They name check ids and URLs only, never key text: the reviewer is told to
 refer to checks by id, every output is checked for any key string or any run of

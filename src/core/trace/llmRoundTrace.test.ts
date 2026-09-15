@@ -58,6 +58,47 @@ describe('the llm_round collector (#191)', () => {
   })
 })
 
+describe('the first token (#256, ADR 0057)', () => {
+  it('measures it from the reported dispatch, per attempt, given a clock', () => {
+    let now = 1_000
+    const rounds = createLlmRounds({ now: () => now })
+    rounds.onAttempt({ model: 'glm-5.3' })
+    now = 4_200
+    rounds.onDelta({ kind: 'tool_intent', index: 0, name: 'record_evidence', args: '{' })
+    now = 6_000
+    rounds.onDelta({ kind: 'reasoning', text: 'later' })
+    // Any fragment is the first; a later one does not move it.
+    expect(rounds.takeRound('completed')).toMatchObject({ round: 1, attempt: 1, firstTokenMs: 3_200 })
+
+    // An attempt that ended before anything streamed carries none, and the
+    // retry waits again from its own dispatch.
+    rounds.onAttempt({ model: 'glm-5.3' })
+    expect(rounds.takeAttempt()).not.toHaveProperty('firstTokenMs')
+    now = 10_000
+    rounds.onAttempt({ model: 'glm-5.3' })
+    now = 10_500
+    rounds.onDelta({ kind: 'text', text: '{' })
+    expect(rounds.takeRound('allowance')).toMatchObject({ round: 2, attempt: 2, firstTokenMs: 500 })
+  })
+
+  it('measures nothing without a clock, or without a reported dispatch', () => {
+    const unclocked = createLlmRounds()
+    unclocked.onAttempt({ model: 'glm-5.3' })
+    unclocked.onDelta({ kind: 'text', text: 'x' })
+    expect(unclocked.takeRound('completed')).not.toHaveProperty('firstTokenMs')
+
+    const unreported = createLlmRounds({ now: () => 5 })
+    unreported.onDelta({ kind: 'text', text: 'x' })
+    expect(unreported.takeRound('completed')).not.toHaveProperty('firstTokenMs')
+  })
+
+  it('reaches the record, and is absent from one that streamed nothing', () => {
+    const base = { round: 1, attempt: 1, role: 'orchestrator' as const, reasoningChars: 291, request: { toolResults: 20, chars: 90_000 } }
+    expect(llmRoundEvent({ ...base, outcome: 'allowance', firstTokenMs: 8_120 })).toMatchObject({ outcome: 'allowance', firstTokenMs: 8_120 })
+    expect(llmRoundEvent({ ...base, outcome: 'allowance' })).not.toHaveProperty('firstTokenMs')
+  })
+})
+
 describe('what a thrown round is recorded as (#218)', () => {
   it('names the client timeout and the empty completion by their classes, and anything else as failed', () => {
     expect(llmRoundFailure(new LlmRequestTimeoutError(120_000))).toBe('timeout')

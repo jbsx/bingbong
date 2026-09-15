@@ -35,8 +35,10 @@ import type { VisionRunTraceRecord } from './visionTrace'
  * which a version-1 trace cannot say.
  * 3 (#256): a Finalization entry with no `finalization_entry` record never
  * reached its bookkeeping decision, which a version-2 trace cannot say.
+ * 4 (#256, ADR 0057): an `llm_round` with no `firstTokenMs` streamed
+ * nothing before it ended, which a version-3 trace cannot say.
  */
-export const RUN_TRACE_VERSION = 3
+export const RUN_TRACE_VERSION = 4
 
 /** How much of a graded observation's retained text a record keeps. */
 export const TRACE_PAYLOAD_HEAD_CHARS = 500
@@ -228,6 +230,15 @@ export interface LlmRoundEvent {
    * that never streamed at all.
    */
   readonly reasoningChars: number
+  /**
+   * How long the attempt waited for its first streamed fragment (#256, ADR
+   * 0057), reasoning or content or a tool intent, from the moment the
+   * client reported dispatching it. Absent when nothing streamed before
+   * the attempt ended — a cut before the first token, a non-streaming
+   * round, or a client that reported no dispatch — so a cut round's
+   * record says whether the provider had started answering.
+   */
+  readonly firstTokenMs?: number
   /** The model the attempt went to; absent when the client reported none (it threw before dispatch). */
   readonly model?: string
   /** The rung sent: the client's word when it reported one, else the request's. */

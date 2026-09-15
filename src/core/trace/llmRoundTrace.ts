@@ -34,6 +34,13 @@ export interface LlmRound {
   readonly outcome: LlmRoundOutcome
   /** How many characters of reasoning streamed before it ended (#218). */
   readonly reasoningChars: number
+  /**
+   * How long the attempt waited for its first streamed fragment, from the
+   * client's reported dispatch (#256, ADR 0057). Absent when nothing
+   * streamed before the attempt ended, or when the collector has no clock
+   * or the client reported no dispatch.
+   */
+  readonly firstTokenMs?: number
   /** What the client said it dispatched; absent when it threw before reporting. */
   readonly sent?: LlmAttemptSent
   /** The provider's usage; only an attempt that returned a turn has one. */
@@ -49,7 +56,9 @@ export interface LlmRound {
  * the round streams passes through `onDelta`, so the record says how
  * much reasoning an attempt produced before it ended (#218) — the
  * measure that tells a round the deadline cut mid-thought from one the
- * provider answered empty.
+ * provider answered empty — and, given a clock, how long the first
+ * fragment took to arrive (#256): the measure that tells a round cut
+ * while the provider was answering from one cut while it was silent.
  */
 export interface LlmRounds {
   onAttempt(sent: LlmAttemptSent): void
@@ -59,11 +68,16 @@ export interface LlmRounds {
   takeRound(outcome: LlmRoundOutcome, usage?: TokenUsage): LlmRound
 }
 
-export function createLlmRounds(): LlmRounds {
+export function createLlmRounds(deps: { now?: () => number } = {}): LlmRounds {
   let rounds = 0
   let attempts = 0
   let sent: LlmAttemptSent | undefined
   let reasoningChars = 0
+  // When the client reported dispatching the attempt, and how long its
+  // first fragment took from there (#256). Both per attempt: a retry is
+  // dispatched again and waits again.
+  let sentAt: number | undefined
+  let firstTokenMs: number | undefined
   const take = (outcome: LlmRoundOutcome, usage?: TokenUsage): LlmRound => {
     attempts += 1
     const closed: LlmRound = {
@@ -71,18 +85,26 @@ export function createLlmRounds(): LlmRounds {
       attempt: attempts,
       outcome,
       reasoningChars,
+      ...(firstTokenMs !== undefined ? { firstTokenMs } : {}),
       ...(sent !== undefined ? { sent } : {}),
       ...(usage !== undefined ? { usage } : {}),
     }
     sent = undefined
+    sentAt = undefined
+    firstTokenMs = undefined
     reasoningChars = 0
     return closed
   }
   return {
     onAttempt(next) {
       sent = next
+      sentAt = deps.now?.()
+      firstTokenMs = undefined
     },
     onDelta(delta) {
+      // Any fragment is the first token — reasoning, content or a tool
+      // intent — because any of them means the provider has started.
+      if (firstTokenMs === undefined && sentAt !== undefined && deps.now !== undefined) firstTokenMs = Math.max(0, deps.now() - sentAt)
       if (delta.kind === 'reasoning') reasoningChars += delta.text.length
     },
     takeAttempt: () => take('empty'),
@@ -166,6 +188,7 @@ export function llmRoundEvent(input: TracedLlmRound): LlmRoundEvent {
     role: input.role,
     outcome: input.outcome,
     reasoningChars: input.reasoningChars,
+    ...(input.firstTokenMs !== undefined ? { firstTokenMs: input.firstTokenMs } : {}),
     ...(input.sent !== undefined ? { model: input.sent.model } : {}),
     ...(effort !== undefined ? { reasoningEffort: effort } : {}),
     ...(input.usage !== undefined ? { usage: input.usage } : {}),

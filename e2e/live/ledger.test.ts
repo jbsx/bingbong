@@ -64,6 +64,24 @@ describe('bundled checkpoint rounds (#254)', () => {
   })
 })
 
+describe('the first token (#256, ADR 0057)', () => {
+  it('reads the streaming and silent cuts over the rounds, and the latency percentiles as plain counters', () => {
+    const audit = readAudit('audit-fix-252-1.json')
+    const population: AuditPopulation = {
+      ...audit.populations.initial,
+      allowanceFinalizationRoundsStreaming: 2,
+      allowanceFinalizationRoundsSilent: 1,
+      allowanceFinalizationRoundsNotRecorded: 0,
+      firstToken: { rounds: 40, p50: 3_900, p90: 8_100 },
+    }
+    const counters = countersOf(population, [])!
+    expect(counters.find((entry) => entry.label === 'Finalization rounds cut after a first token')).toMatchObject({ value: 2, over: population.rounds, judgement: false })
+    expect(counters.find((entry) => entry.label === 'Finalization rounds cut silent')).toMatchObject({ value: 1, over: population.rounds })
+    expect(counters.find((entry) => entry.label === 'First-token latency p50 (ms)')).toMatchObject({ value: 3_900, judgement: false })
+    expect(counters.find((entry) => entry.label === 'First-token latency p90 (ms)')).toMatchObject({ value: 8_100 })
+  })
+})
+
 describe('family ids', () => {
   it('strips the Pass suffix and keeps a revision letter', () => {
     expect(familyIdOf('fix-240-1')).toEqual({ family: 'fix-240', ordinal: 1 })

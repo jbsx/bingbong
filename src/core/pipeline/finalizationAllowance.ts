@@ -40,7 +40,11 @@ export const REPORT_GRACE_MS = 30_000
  * Tool Round — its model attempts and the tool handling that follows —
  * gets ten seconds. A checkpoint is a short structured call, and an
  * opportunity that cannot be taken inside it is one the Answer is better
- * off inheriting the time from.
+ * off inheriting the time from. Since #256 (ADR 0057) the share is
+ * measured twice over: ten seconds of silence before the round's first
+ * token, and ten more from that token — the pipeline re-arms the watch
+ * on the first streamed fragment, through `bookkeepingMs()`, so the
+ * second run is clamped like the first to the Answer's protected floor.
  */
 export const BOOKKEEPING_ALLOWANCE_MS = 10_000
 

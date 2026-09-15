@@ -20,6 +20,11 @@ which the Run lets go of an action it is still waiting on, and a Steering
 replan that drops the allowance rather than leaving it ticking against
 reopened work. Every Decision below is now implemented.
 
+Amended on 2026-09-15 by ADR 0057 (#256): the bookkeeping share is measured
+twice over — ten seconds of silence before the round's first token, then ten
+more from that token — never past the reserved Answer's protected floor. The
+sixty seconds and the three shares stand.
+
 ## Context
 
 The tier-list search ended with two consecutive two-minute model requests and

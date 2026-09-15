@@ -136,6 +136,8 @@ export const DIGEST_ARG_CHARS = 200
 export const IDENTITY_SLIP_TRACE_VERSION = 2
 /** The Run Trace version from which a Finalization entry records whether it skipped its bookkeeping round (#256). */
 export const FINALIZATION_ENTRY_TRACE_VERSION = 3
+/** The Run Trace version from which an `llm_round` record carries `firstTokenMs` (#256, ADR 0057): below it, no round says whether it streamed before it ended. */
+export const FIRST_TOKEN_TRACE_VERSION = 4
 /** How far apart a perf `llm` span's end and an `llm_round` record may be and still be the same round. */
 const LATENCY_JOIN_TOLERANCE_MS = 2_000
 /** A search that continues a streak of this length rewords the one before it. */
@@ -373,6 +375,21 @@ export interface AuditMechanical {
   /** Finalization rounds that ended `allowance` (#256): cut by their share of the Finalization Allowance. */
   readonly allowanceFinalizationRounds?: number
   /**
+   * Of those, the rounds cut after their first token had streamed (#256, ADR
+   * 0057): the share restarted at the token and still ran out. Null — not
+   * recorded — for a trace below {@link FIRST_TOKEN_TRACE_VERSION}, whose
+   * `llm_round` records carry no `firstTokenMs`, and absent from an audit
+   * written before the field. Beside the rounds, so it re-keys no judgement.
+   */
+  readonly allowanceFinalizationRoundsStreaming?: number | null
+  /**
+   * First-token latency per orchestrator round (#256, ADR 0057): the digest's
+   * round number and how many milliseconds its attempt waited for its first
+   * fragment. Only rounds that streamed something appear. Null for a trace
+   * below {@link FIRST_TOKEN_TRACE_VERSION}. Beside the rounds, never in them.
+   */
+  readonly firstTokens?: readonly { readonly round: number; readonly ms: number }[] | null
+  /**
    * Asked Items (#250, ADR 0052), read from the Run's own events and records
    * and never from Answer text: what the last model Run Plan declared, the
    * standings the final Answer's display carried, and the Answers whose list
@@ -521,6 +538,14 @@ export interface AuditPopulation {
   readonly skippedBookkeepingNotRecorded: number
   /** Finalization rounds cut by the Finalization Allowance over the attempts (#256). */
   readonly allowanceFinalizationRounds: number
+  /** Of those, the rounds cut after their first token had streamed (#256, ADR 0057), over the attempts whose trace recorded it. */
+  readonly allowanceFinalizationRoundsStreaming: number
+  /** Of those, the rounds cut before any fragment streamed, over the same attempts. */
+  readonly allowanceFinalizationRoundsSilent: number
+  /** Cut rounds from attempts whose trace predates `firstTokenMs`: streaming or silent, nobody recorded. */
+  readonly allowanceFinalizationRoundsNotRecorded: number
+  /** First-token latency over the attempts' orchestrator rounds that streamed (#256, ADR 0057): how many, and the median and ninetieth percentile in milliseconds. */
+  readonly firstToken: { readonly rounds: number; readonly p50: number | null; readonly p90: number | null }
   /** Attempts whose model Run Plan declared at least one Asked Item (#250). */
   readonly askedItemsDeclared: number
   /** Attempts whose final Answer carried at least one `unverified` standing (#250). */
@@ -1278,6 +1303,10 @@ export function classifyAttempt(input: AuditTraceInput): AuditMechanical {
   const disposition: AuditDisposition =
     attempt.accepted.status !== 'observed' ? 'acceptance_unconfirmed' : attempt.finalAnswer.status === 'observed' ? 'answered' : 'no_answer'
 
+  // Whether this trace's rounds say when their first fragment arrived (#256,
+  // ADR 0057): read off the version, so a round that streamed nothing is told
+  // from one whose trace could not have said.
+  const firstTokenRecorded = records.some((record) => isFiniteNumber(record.v) && record.v >= FIRST_TOKEN_TRACE_VERSION)
   const withoutHash: Omit<AuditMechanical, 'digestHash'> = {
     attemptId: attempt.attemptId,
     huntId: attempt.huntId,
@@ -1323,6 +1352,14 @@ export function classifyAttempt(input: AuditTraceInput): AuditMechanical {
       ? records.filter((record) => record.kind === 'finalization_entry' && record.agentId === undefined && record.bookkeeping === 'skipped').length
       : null,
     allowanceFinalizationRounds: allowanceFinalizationRoundsOf(rounds),
+    // And of those, the ones cut after a first token had streamed, with every
+    // round's first-token latency beside them (#256, ADR 0057).
+    allowanceFinalizationRoundsStreaming: firstTokenRecorded
+      ? classified.filter(({ round }, index) => index >= finalizationFrom && round.record.outcome === 'allowance' && isFiniteNumber(round.record.firstTokenMs)).length
+      : null,
+    firstTokens: firstTokenRecorded
+      ? classified.flatMap(({ round }, index) => (isFiniteNumber(round.record.firstTokenMs) ? [{ round: index + 1, ms: round.record.firstTokenMs }] : []))
+      : null,
     askedItems: {
       declared: askedDeclared,
       stated: askedStated,
@@ -1380,11 +1417,32 @@ function allowanceFinalizationRoundsOf(rounds: readonly AuditRound[]): number {
   return rounds.filter((round) => round.kind === 'finalization' && round.outcome === 'allowance').length
 }
 
-/** One attempt's Finalization line (#256): its skipped bookkeeping rounds, or "not recorded", and its cut rounds. */
+/** The nearest-rank percentile of some milliseconds (#256, ADR 0057), or null of none. */
+function percentileOf(values: readonly number[], p: number): number | null {
+  if (values.length === 0) return null
+  const sorted = [...values].sort((left, right) => left - right)
+  return sorted[Math.min(sorted.length - 1, Math.max(0, Math.ceil(p * sorted.length) - 1))]!
+}
+
+/** One attempt's Finalization line (#256): its skipped bookkeeping rounds, or "not recorded", its cut rounds, and which of those had streamed (ADR 0057). */
 function finalizationText(mechanical: AuditMechanical): string {
   const skipped = mechanical.skippedBookkeepingRounds ?? null
   const skips = skipped === null ? `skipped bookkeeping rounds not recorded (a Run Trace below version ${FINALIZATION_ENTRY_TRACE_VERSION})` : `${skipped} bookkeeping round(s) skipped`
-  return `${skips}, ${allowanceFinalizationRoundsOf(mechanical.rounds)} round(s) cut by the Finalization Allowance`
+  const cut = allowanceFinalizationRoundsOf(mechanical.rounds)
+  const streaming = mechanical.allowanceFinalizationRoundsStreaming ?? null
+  const split = cut === 0 ? '' : streaming === null ? ' (streaming or silent not recorded)' : ` (${streaming} after a first token, ${cut - streaming} silent)`
+  return `${skips}, ${cut} round(s) cut by the Finalization Allowance${split}`
+}
+
+/** A population's cut rounds (#256) and their split (ADR 0057), with the first-token latency its rounds measured. */
+function populationCutsText(population: AuditPopulation): string {
+  const cut = `${population.allowanceFinalizationRounds} Finalization round(s) cut by the Allowance`
+  const split =
+    population.allowanceFinalizationRounds === 0
+      ? ''
+      : ` (${population.allowanceFinalizationRoundsStreaming} after a first token, ${population.allowanceFinalizationRoundsSilent} silent${population.allowanceFinalizationRoundsNotRecorded > 0 ? `, ${population.allowanceFinalizationRoundsNotRecorded} not recorded` : ''})`
+  const latency = population.firstToken.rounds === 0 ? 'first-token latency not recorded' : `first-token latency p50 ${population.firstToken.p50} ms, p90 ${population.firstToken.p90} ms over ${population.firstToken.rounds} round(s)`
+  return `${cut}${split}; ${latency}`
 }
 
 /** A population's skipped bookkeeping rounds (#256): the count, or "not recorded" when no attempt's trace could hold one. */
@@ -1749,6 +1807,10 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
   let skippedBookkeeping = 0
   let skippedBookkeepingNotRecorded = 0
   let allowanceFinalization = 0
+  let allowanceStreaming = 0
+  let allowanceSilent = 0
+  let allowanceNotRecorded = 0
+  const firstTokens: number[] = []
   let askedItemsDeclared = 0
   let askedItemsUnverified = 0
   let askedItemsShapeFailures = 0
@@ -1794,6 +1856,14 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
     if ((mechanical.skippedBookkeepingRounds ?? null) === null) skippedBookkeepingNotRecorded += 1
     else skippedBookkeeping += mechanical.skippedBookkeepingRounds!
     allowanceFinalization += allowanceFinalizationRoundsOf(mechanical.rounds)
+    // The split (#256, ADR 0057): an attempt whose trace could not say counts its cuts as not recorded, never as silent.
+    const streaming = mechanical.allowanceFinalizationRoundsStreaming ?? null
+    if (streaming === null) allowanceNotRecorded += allowanceFinalizationRoundsOf(mechanical.rounds)
+    else {
+      allowanceStreaming += streaming
+      allowanceSilent += allowanceFinalizationRoundsOf(mechanical.rounds) - streaming
+    }
+    for (const token of mechanical.firstTokens ?? []) firstTokens.push(token.ms)
     if ((mechanical.askedItems?.declared ?? 0) > 0) askedItemsDeclared += 1
     if ((mechanical.askedItems?.unverified ?? 0) > 0) askedItemsUnverified += 1
     askedItemsShapeFailures += mechanical.askedItems?.shapeFailures ?? 0
@@ -1850,6 +1920,10 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
     skippedBookkeepingRounds: skippedBookkeeping,
     skippedBookkeepingNotRecorded,
     allowanceFinalizationRounds: allowanceFinalization,
+    allowanceFinalizationRoundsStreaming: allowanceStreaming,
+    allowanceFinalizationRoundsSilent: allowanceSilent,
+    allowanceFinalizationRoundsNotRecorded: allowanceNotRecorded,
+    firstToken: { rounds: firstTokens.length, p50: percentileOf(firstTokens, 0.5), p90: percentileOf(firstTokens, 0.9) },
     askedItemsDeclared,
     askedItemsUnverified,
     askedItemsShapeFailures,
@@ -2085,7 +2159,7 @@ function judgementLines(populations: readonly AuditPopulation[]): string[] {
       `${population.inheritedRounds} inherited, ${population.rejectedCheckpoints} rejected Evidence Checkpoint(s), ${population.walledRounds} walled round(s), ${population.notFoundNavigates} navigate(s) landed on a Not-found Page (${population.notFoundOffKey} judged Off-key), ${population.rewrittenComposedAddresses ?? 0} Composed Address(es) rewritten into a site search (${population.rewrittenComposedAddressesOffKey ?? 0} judged Off-key), ${population.subagentRounds} Subagent round(s), ` +
       `${population.mergedCheckpoints} merged Evidence Checkpoint(s) (a floor), ${population.heldPageRoundsWithoutProgress} Held Page round(s) without Progress, ${population.bundledCheckpoints} bundled checkpoint round(s), ${populationSlipsText(population)}, ` +
       `${population.malformedAnswers} Malformed Answer(s) (${population.answerRetries} retried), ` +
-      `${populationSkipsText(population)}, ${population.allowanceFinalizationRounds} Finalization round(s) cut by the Allowance, ` +
+      `${populationSkipsText(population)}, ${populationCutsText(population)}, ` +
       `${population.askedItemsDeclared} declared Asked Items (${population.askedItemsUnverified} with an unverified standing, ${population.askedItemsShapeFailures} shape failure(s), ${population.askedItemsShapeRetried} retried), ` +
       `${population.stoppedEarly} stopped early, ${population.answerOmitted} answer omitted, ${population.overrules} overrule(s), ${population.flags} flag(s); Finalization Causes: ${Object.entries(population.finalizationCauses)
         .map(([cause, count]) => `${cause} ${count}`)
