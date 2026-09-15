@@ -655,7 +655,7 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
   // spawning Run handed the trace down. Numbered as the reasoning
   // collector beside it, so the two records of one attempt join.
   const traceLlmRound = options.traceLlmRound
-  const llmRounds = traceLlmRound ? createLlmRounds() : undefined
+  const llmRounds = traceLlmRound ? createLlmRounds({ now: () => clock.now() }) : undefined
   /** Closes one attempt — abandoned or the round's last — and records what it was sent under. */
   /**
    * How a Subagent round ended, for its record (#218). A Stop is named

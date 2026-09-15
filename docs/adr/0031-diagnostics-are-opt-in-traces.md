@@ -218,7 +218,9 @@ incidental — nothing is written unless a developer asked for it.
   #218 (ADR 0043) the record also says how the attempt ended (`outcome`:
   completed, or cut by the deadline, the Finalization Allowance, the
   client's request timeout, a Stop; or empty, or failed) and how many
-  characters of reasoning it streamed first (`reasoningChars`) — because a
+  characters of reasoning it streamed first (`reasoningChars`), and since
+  #256 (ADR 0057) how long its first fragment took to arrive
+  (`firstTokenMs`, absent when nothing streamed) — because a
   round the deadline cut mid-thought and a round the provider answered
   empty had left the same record, and a Session's decay was misread as
   the provider's fault on exactly that. A worker's

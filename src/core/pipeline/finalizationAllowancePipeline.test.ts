@@ -74,6 +74,8 @@ function harness(options: {
   subagentReportsSettled?: () => Promise<void>
   onFinalizationCutoff?: () => void
   tools?: Tool[]
+  /** Wire a detail channel, so the round streams and a scripted round can hand the pipeline deltas (#256, ADR 0057). */
+  streaming?: boolean
 } = {}) {
   const clock = new FakeClock()
   const requests: LlmRequest[] = []
@@ -118,6 +120,7 @@ function harness(options: {
       cutoffs += 1
       options.onFinalizationCutoff?.()
     },
+    ...(options.streaming ? { emitDetail: () => {} } : {}),
   })
   return {
     clock,
@@ -887,5 +890,134 @@ describe('the bookkeeping round, skipped when there is nothing new to record (#2
     expect(h.requests[2]).not.toHaveProperty('answerOnly')
     expect(h.requests[2]!.finalizeInstruction).toBe(finalizeInstruction('deadline_reached'))
     expect(h.entries()).toMatchObject([{ bookkeeping: 'kept', reason: BOOKKEEPING_KEPT_FOR_REPORT_REASON }])
+  })
+})
+
+describe('the bookkeeping share, measured from the first token (#256, ADR 0057)', () => {
+  /** A round that hands the test its request and never returns on its own, so the test can stream into it. */
+  function streamingRound(hold: { request?: LlmRequest }): (request: LlmRequest) => Promise<AssistantTurn> {
+    return (request) => {
+      hold.request = request
+      return abortableRound(request)
+    }
+  }
+  const cutFault = (faults: readonly FaultReport[]): string =>
+    JSON.stringify(faults.find((fault) => fault.site === 'pipeline.createCommandPipeline.bookkeepingAllowanceSpent'))
+
+  it('restarts the share at the first token: a round that starts thinking eight seconds in is cut ten seconds after that, not two', async () => {
+    const hold: { request?: LlmRequest } = {}
+    const h = harness({ streaming: true, subagentReportsSettled: async () => {}, laterRounds: [streamingRound(hold)] })
+    const run = collect(h.pipeline, 'compare vendors')
+    await h.enterFinalization()
+    await settle(() => h.requests.length >= 3)
+
+    // Eight seconds of silence, then the provider begins.
+    h.clock.advance(8_000)
+    await flush()
+    expect(h.requests).toHaveLength(3)
+    hold.request!.onDelta!({ kind: 'reasoning', text: 'the checkpoint that matters most' })
+    // Ten more from that token: the silent share's last two are not what bounds it.
+    h.clock.advance(9_999)
+    await flush()
+    expect(h.requests).toHaveLength(3)
+    h.clock.advance(1)
+    const events = await run
+
+    expect(h.requests).toHaveLength(4)
+    expect(h.requests[3]).toMatchObject({ answerOnly: true })
+    expect(displayText(events)).toBe('Vendor A wins.')
+    expect(cutFault(h.faults)).toContain('after its first token')
+  })
+
+  it('restarts once, on the first fragment of any kind', async () => {
+    const hold: { request?: LlmRequest } = {}
+    const h = harness({ streaming: true, subagentReportsSettled: async () => {}, laterRounds: [streamingRound(hold)] })
+    const run = collect(h.pipeline, 'compare vendors')
+    await h.enterFinalization()
+    await settle(() => h.requests.length >= 3)
+
+    h.clock.advance(3_000)
+    await flush()
+    hold.request!.onDelta!({ kind: 'tool_intent', index: 0, name: 'record_evidence', args: '{' })
+    h.clock.advance(9_000)
+    await flush()
+    // A later fragment does not start it again.
+    hold.request!.onDelta!({ kind: 'text', text: '…' })
+    h.clock.advance(999)
+    await flush()
+    expect(h.requests).toHaveLength(3)
+    h.clock.advance(1)
+    await run
+    expect(h.requests).toHaveLength(4)
+  })
+
+  it('clamps the restarted share to the Answer’s protected floor, as the silent one is', async () => {
+    const hold: { request?: LlmRequest } = {}
+    const h = harness({ streaming: true, subagentReportsSettled: () => new Promise<void>(() => {}), laterRounds: [streamingRound(hold)] })
+    const run = collect(h.pipeline, 'compare vendors')
+    await h.enterFinalization()
+    // A full thirty seconds of grace: forty of the allowance are all bookkeeping may ever reach.
+    await settle(() => h.graceStarted())
+    h.clock.advance(30_000)
+    await settle(() => h.requests.length >= 3)
+
+    h.clock.advance(8_000)
+    await flush()
+    hold.request!.onDelta!({ kind: 'reasoning', text: 'starting late' })
+    // Two seconds are what is left before the cutoff, not ten.
+    h.clock.advance(1_999)
+    await flush()
+    expect(h.requests).toHaveLength(3)
+    h.clock.advance(1)
+    const events = await run
+    expect(h.requests).toHaveLength(4)
+    expect(displayText(events)).toBe('Vendor A wins.')
+  })
+
+  it('cuts a silent round at the end of its share as before, and says so', async () => {
+    const hold: { request?: LlmRequest } = {}
+    const h = harness({ streaming: true, subagentReportsSettled: async () => {}, laterRounds: [streamingRound(hold)] })
+    const run = collect(h.pipeline, 'compare vendors')
+    await h.enterFinalization()
+    await settle(() => h.requests.length >= 3)
+    h.clock.advance(9_999)
+    await flush()
+    expect(h.requests).toHaveLength(3)
+    h.clock.advance(1)
+    await run
+    expect(h.requests).toHaveLength(4)
+    expect(cutFault(h.faults)).toContain('before its first token')
+  })
+
+  it('does not restart the reserved Answer round’s share, which is everything left', async () => {
+    const hold: { request?: LlmRequest } = {}
+    const h = harness({
+      streaming: true,
+      subagentReportsSettled: () => new Promise<void>(() => {}),
+      laterRounds: [
+        async () => {
+          throw new Error('provider said no')
+        },
+        streamingRound(hold),
+      ],
+    })
+    const run = collect(h.pipeline, 'compare vendors')
+    await h.enterFinalization()
+    await settle(() => h.graceStarted())
+    h.clock.advance(30_000)
+    await settle(() => h.requests.length >= 4)
+    expect(h.requests[3]).toMatchObject({ answerOnly: true })
+
+    // Thirty seconds remain. A token five seconds in changes nothing.
+    h.clock.advance(5_000)
+    await flush()
+    hold.request!.onDelta!({ kind: 'text', text: '{"kind":' })
+    h.clock.advance(24_999)
+    await flush()
+    expect(h.requests).toHaveLength(4)
+    h.clock.advance(1)
+    const events = await run
+    expect(displayText(events)).toContain('I have not made progress I can show')
+    expect(h.faults.map((fault) => fault.site)).toContain('pipeline.createCommandPipeline.reservedAnswerAllowanceSpent')
   })
 })

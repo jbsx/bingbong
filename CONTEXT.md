@@ -348,8 +348,10 @@ _Avoid_: failure, timeout
 The shared elapsed-time allowance from Finalization entry until the Answer's
 Card is available, covering Report Grace, bookkeeping, retries, and Answer
 generation but not speech playback. Sixty seconds, split into up to thirty of
-Report Grace, up to ten of bookkeeping, and twenty protected for the reserved
-Answer, which also inherits whatever the earlier shares did not spend. An
+Report Grace, up to ten of bookkeeping — ten of silence, then ten more from
+the round's first token, never past the Answer's floor — and twenty protected
+for the reserved Answer, which also inherits whatever the earlier shares did
+not spend. An
 opportunity with nothing left, or a bookkeeping opportunity with nothing new
 to record, is skipped rather than started. Explicit user
 Pause suspends it; Stop takes precedence; a Steering replan that reopens

@@ -88,6 +88,8 @@ interface RoundSpec {
     rewritten?: { site: string; query: string }
   }[]
   readonly reasoning?: string
+  /** How long the attempt waited for its first fragment (#256, ADR 0057) — a trace written after the field was kept. */
+  readonly firstTokenMs?: number
 }
 
 const PAGE = (title: string, url: string, signature: string, text = ''): string => `navigated: url=${url} title="${title}"\n# ${title} — ${url}\nviewport 985x575 scroll 0/4000\nsignature ${signature}\n[1] link "Home" href="${url}"\npage text:\n${text}`
@@ -109,6 +111,7 @@ function traceOf(rounds: readonly RoundSpec[], extra: readonly Record<string, un
       role: 'orchestrator',
       outcome,
       reasoningChars: 40,
+      ...(spec.firstTokenMs !== undefined ? { firstTokenMs: spec.firstTokenMs } : {}),
       model: 'model-o',
       reasoningEffort: spec.effort ?? 'max',
       ...(outcome === 'completed' ? { usage: { promptTokens: 1000 + spec.round, completionTokens: 50 } } : {}),
@@ -1445,5 +1448,58 @@ describe('the CLI', () => {
 
   it('never tells the reviewer a check was not reached (#244)', () => {
     expect(readFileSync(SCRIPT, 'utf8')).not.toMatch(/not reached/)
+  })
+})
+
+describe('the first token (#256, ADR 0057)', () => {
+  // A record new enough to say its rounds carry `firstTokenMs`.
+  const v4 = { ...identity, v: 4, at: T0 + 13_500, kind: 'finalization_entry', cause: 'budget_exhausted', bookkeeping: 'kept', reason: 'something new' }
+  const CUT_SILENT = ROUNDS.map((spec) => (spec.round === 13 ? { round: 13, at: 14_000, effort: 'low', outcome: 'allowance' } : spec))
+  const CUT_STREAMING = ROUNDS.map((spec) =>
+    spec.round === 13 ? { round: 13, at: 14_000, effort: 'low', outcome: 'allowance', firstTokenMs: 8_120 } : spec.round === 2 ? { ...spec, firstTokenMs: 3_900 } : spec,
+  )
+  const setOf = (mechanical: ReturnType<typeof classifyAttempt>) => buildAuditSet(provenanceOf(), [{ mechanical, review: null, countsAfterOverrules: mechanical.counts }], [])
+
+  it('splits the cut rounds into streaming and silent beside the rounds, and reads an older trace as not recorded', () => {
+    const streaming = classifyAttempt(inputOf({ traceRecords: traceOf(CUT_STREAMING, [...EXTRA, v4]) }))
+    const silent = classifyAttempt(inputOf({ traceRecords: traceOf(CUT_SILENT, [...EXTRA, v4]) }))
+    const old = classifyAttempt(inputOf({ traceRecords: traceOf(CUT_STREAMING, EXTRA) }))
+
+    expect([streaming.allowanceFinalizationRounds, streaming.allowanceFinalizationRoundsStreaming]).toEqual([1, 1])
+    expect([silent.allowanceFinalizationRounds, silent.allowanceFinalizationRoundsStreaming]).toEqual([1, 0])
+    // A version-3 trace's round carries no first token even when the record does: the version says so.
+    expect([old.allowanceFinalizationRounds, old.allowanceFinalizationRoundsStreaming, old.firstTokens]).toEqual([1, null, null])
+    expect(streaming.firstTokens).toEqual([
+      { round: 2, ms: 3_900 },
+      // The digest numbers attempts, and the fixture retries one round before this one.
+      { round: 14, ms: 8_120 },
+    ])
+    expect(silent.firstTokens).toEqual([])
+    // Beside the rounds: the digest a reviewer judged does not move.
+    expect(streaming.rounds).toEqual(old.rounds)
+    expect(streaming.digestHash).toBe(old.digestHash)
+  })
+
+  it('sums the split and the first-token latency per population, and prints them', () => {
+    const set = setOf(classifyAttempt(inputOf({ traceRecords: traceOf(CUT_STREAMING, [...EXTRA, v4]) })))
+    const oldSet = setOf(classifyAttempt(inputOf({ traceRecords: traceOf(CUT_STREAMING, EXTRA) })))
+
+    expect(set.populations.initial).toMatchObject({
+      allowanceFinalizationRounds: 1,
+      allowanceFinalizationRoundsStreaming: 1,
+      allowanceFinalizationRoundsSilent: 0,
+      allowanceFinalizationRoundsNotRecorded: 0,
+      firstToken: { rounds: 2, p50: 3_900, p90: 8_120 },
+    })
+    expect(oldSet.populations.initial).toMatchObject({
+      allowanceFinalizationRounds: 1,
+      allowanceFinalizationRoundsStreaming: 0,
+      allowanceFinalizationRoundsSilent: 0,
+      allowanceFinalizationRoundsNotRecorded: 1,
+      firstToken: { rounds: 0, p50: null, p90: null },
+    })
+    expect(formatAuditSet(set)).toContain('1 Finalization round(s) cut by the Allowance (1 after a first token, 0 silent); first-token latency p50 3900 ms, p90 8120 ms over 2 round(s)')
+    expect(formatAuditSet(set)).toContain('- Finalization: 0 bookkeeping round(s) skipped, 1 round(s) cut by the Finalization Allowance (1 after a first token, 0 silent)')
+    expect(formatAuditSet(oldSet)).toContain('(0 after a first token, 0 silent, 1 not recorded); first-token latency not recorded')
   })
 })

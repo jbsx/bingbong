@@ -9,6 +9,13 @@ nothing new has been acquired since the last accepted Evidence Checkpoint.
 ADR 0038's shares and ADR 0035's Report Grace stand; a collected Subagent
 Report keeps the round, which is the grace's reason.
 
+Amended on 2026-09-15 by ADR 0057 (#256): the skip stands; a kept round's
+share is now measured from its first token. The fix-253-256 capture cut four
+kept rounds at ten seconds, two of them mid-thought, while four others
+completed in five to eight seconds with one or two checkpoints, and the
+premise above that most stopped Runs have checkpointed everything did not
+hold: 8 of 11 entries kept the round.
+
 ## Context
 
 In fix-252, 10 of 18 Runs — every Run that did not end `objective_met` —

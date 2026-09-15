@@ -1129,7 +1129,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
     // model, prompt hash, rung — with the request's shape and the
     // provider's usage. The same one write serves the Run's own rounds and
     // a delegated worker's (handed down as `traceSubagentLlmRound`).
-    const llmRounds = traceRun ? createLlmRounds() : undefined
+    const llmRounds = traceRun ? createLlmRounds({ now: () => clock.now() }) : undefined
     const writeLlmRound =
       traceRun && llmRounds
         ? (round: TracedLlmRound): void => traceRun(() => ({ turnId, ...llmRoundEvent(round) }))
@@ -1687,13 +1687,34 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           // the reserved Answer its round rather than its own — the run
           // still answers, deterministically, inside the allowance.
           let allowanceSpent = false
-          const cancelRoundWatch =
+          const cutRound = (): void => {
+            allowanceSpent = true
+            armedRound.abort()
+          }
+          let cancelRoundWatch =
             roundAllowanceMs === null || run.finalizationAllowance === null
               ? () => {}
-              : run.finalizationAllowance.watch(roundAllowanceMs, () => {
-                  allowanceSpent = true
-                  armedRound.abort()
-                })
+              : run.finalizationAllowance.watch(roundAllowanceMs, cutRound)
+          // The bookkeeping share is measured from the first token (#256,
+          // ADR 0057). The watch above bounds the request's silence: a
+          // bookkeeping round the provider has not begun answering by the
+          // end of its share is cut, as before. Once the round's first
+          // fragment streams — reasoning, content or a tool intent — the
+          // share starts again from that moment, clamped as ever to what
+          // is left before the reserved Answer's protected floor. The
+          // fix-253-256 capture cut four kept rounds at ten seconds, two of
+          // them mid-thought; a checkpoint the provider is already writing
+          // is worth the seconds it has left, and a silent one is not. The
+          // reserved Answer round's share is everything left and does not
+          // restart. A round that streams nothing — no detail channel, no
+          // trace — keeps the single bound.
+          let bookkeepingStreamed = false
+          const onBookkeepingFirstToken = (): void => {
+            if (bookkeepingStreamed || allowanceSpent || roundAllowanceMs === null || run.finalizationAllowance === null) return
+            bookkeepingStreamed = true
+            cancelRoundWatch()
+            cancelRoundWatch = run.finalizationAllowance.watch(run.finalizationAllowance.bookkeepingMs(), cutRound)
+          }
           let turn: AssistantTurn
           // What this round's llm_round records carry (#191): the request's
           // shape and rung as it was sent — captured once the request is
@@ -1829,6 +1850,9 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
               ...(batcher || reasoningRounds || llmRounds
                 ? {
                     onDelta: (delta: LlmStreamDelta): void => {
+                      // The bookkeeping round's first token restarts its
+                      // share (#256, ADR 0057); the reserved round's does not.
+                      if (!reservedRound) onBookkeepingFirstToken()
                       // A reserved round streams nothing (#198, ADR 0034).
                       // The partial Answer streams to the Card as it
                       // arrives and prose streams raw, so a narrating
@@ -1922,7 +1946,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
                 // for the bound rather than the abort error it produced.
                 reportFault(
                   'pipeline.createCommandPipeline.bookkeepingAllowanceSpent',
-                  `the bookkeeping round ran out of Finalization Allowance (${fallbackCause()})`,
+                  `the bookkeeping round ran out of Finalization Allowance ${bookkeepingStreamed ? 'after' : 'before'} its first token (${fallbackCause()})`,
                   { turnId },
                 )
                 finalizationFailure = 'the Finalization bookkeeping round ran out of Finalization Allowance'
