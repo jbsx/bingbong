@@ -59,7 +59,7 @@ export type NoticeKind =
  * only when the crossing happened before the warning could be delivered.
  * A worker's Finalize Instruction (#158) is last of all: it is the only
  * one that ends the loop. The bookkeeping-only Notice (#254) corrects a
- * habit the way the plan nudge does, so it sits beside it.
+ * habit the way the Run Plan's corrective Notice does, so it sits beside it.
  */
 export const NOTICE_PRECEDENCE: readonly NoticeKind[] = [
   'search_loop',

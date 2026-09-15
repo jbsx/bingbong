@@ -1257,7 +1257,7 @@ export function classifyAttempt(input: AuditTraceInput): AuditMechanical {
     rejectedCheckpoints: rounds.reduce((total, round) => total + round.tags.rejectedCheckpoints, 0),
     inheritedRounds: rounds.filter((round) => round.tags.inherited).length,
     mergedCheckpoints,
-    bundledCheckpoints: rounds.filter((round) => (round.kind === 'acquisition_with_progress' || round.kind === 'acquisition_without_progress') && round.tags.acceptedCheckpoints > 0).length,
+    bundledCheckpoints: rounds.filter((round) => isAcquisitionRound(round) && round.tags.acceptedCheckpoints > 0).length,
     heldPageRoundsWithoutProgress,
     mechanicalSearchRounds: new Set([...rewordingRounds, ...heads]).size,
     searchLoopHeads: [...heads].sort((left, right) => left - right),
@@ -1290,6 +1290,11 @@ export function classifyAttempt(input: AuditTraceInput): AuditMechanical {
     checksTotal,
   }
   return { ...withoutHash, digestHash: sha256(JSON.stringify(digestPayloadOf(withoutHash))) }
+}
+
+/** An Acquisition round, with or without Progress (#254). */
+function isAcquisitionRound(round: AuditRound): boolean {
+  return round.kind === 'acquisition_with_progress' || round.kind === 'acquisition_without_progress'
 }
 
 /**

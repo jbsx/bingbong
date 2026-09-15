@@ -188,8 +188,8 @@ export interface Tool {
    */
   acquisition?: boolean
   /**
-   * An Evidence Checkpoint tool (#254): Bookkeeping that records a finding
-   * or a Candidate decision. A Tool Round that accepted a checkpoint and did
+   * A checkpoint tool (#254): Bookkeeping that records an Evidence
+   * Checkpoint or a Candidate decision. A Tool Round that accepted one and did
    * nothing else outside Finalization owes the next round a reminder to
    * checkpoint alongside its action; a successful result is an accepted
    * checkpoint.

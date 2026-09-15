@@ -2,11 +2,12 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import type { AuditAggregate, AuditSetOutput } from './audit.ts'
+import type { AuditAggregate, AuditPopulation, AuditSetOutput } from './audit.ts'
 import {
   HEADLINE_METRICS,
   buildLedger,
   compareFamilies,
+  countersOf,
   defaultReferenceOf,
   familyIdOf,
   markersOf,
@@ -51,6 +52,17 @@ function cut(name: string, provenance: Partial<AuditSetOutput['provenance']>): A
 function file(name: string, json: unknown): LedgerFile {
   return { name, json }
 }
+
+describe('bundled checkpoint rounds (#254)', () => {
+  it('reads the count an audit recorded, over the budgeted rounds', () => {
+    const audit = readAudit('audit-fix-252-1.json')
+    const population: AuditPopulation = { ...audit.populations.initial, bundledCheckpoints: 7 }
+    const counter = countersOf(population, [])!.find((entry) => entry.label === 'Bundled checkpoint rounds')!
+    expect(counter.judgement).toBe(false)
+    expect(counter.value).toBe(7)
+    expect(counter.over).toBe(population.budgetedRounds)
+  })
+})
 
 describe('family ids', () => {
   it('strips the Pass suffix and keeps a revision letter', () => {
