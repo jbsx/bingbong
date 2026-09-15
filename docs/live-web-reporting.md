@@ -936,6 +936,16 @@ round 7, before the record, and re-parsing old Answer text to count it would be
 the audit replaying a decision the Run never recorded (ADR 0049). The set's
 caveats name that occurrence instead, from `PRE_RECORD_MALFORMED_ANSWERS`.
 
+Two more count the Finalization bookkeeping round (#256, ADR 0056).
+**Skipped bookkeeping rounds** are the Run's own `finalization_entry` records
+whose `bookkeeping` is `skipped`: Finalization entries that went straight to
+the reserved Answer because nothing was acquired with Progress and no Subagent
+Report collected since the last accepted Evidence Checkpoint. A Run Trace below
+version 3 could not record one, so its attempt reads "not recorded" and a
+population says how many of its attempts did. **Rounds cut by the Finalization
+Allowance** are the Finalization rounds whose outcome is `allowance`, read off
+the rounds, so every audit has them. Neither moves the digest.
+
 They name check ids and URLs only, never key text: the reviewer is told to
 refer to checks by id, every output is checked for any key string or any run of
 eight consecutive words of one before it is written, and `audit.test.ts`

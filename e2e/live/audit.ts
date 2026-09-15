@@ -134,6 +134,8 @@ export const DIGEST_ARG_CHARS = 200
  * recorded", never zero.
  */
 export const IDENTITY_SLIP_TRACE_VERSION = 2
+/** The Run Trace version from which a Finalization entry records whether it skipped its bookkeeping round (#256). */
+export const FINALIZATION_ENTRY_TRACE_VERSION = 3
 /** How far apart a perf `llm` span's end and an `llm_round` record may be and still be the same round. */
 const LATENCY_JOIN_TOLERANCE_MS = 2_000
 /** A search that continues a streak of this length rewords the one before it. */
@@ -361,6 +363,16 @@ export interface AuditMechanical {
   /** Answer Retries (#245): the turn's `answer_retry` records, on the same terms. */
   readonly answerRetries: number
   /**
+   * Finalization entries that skipped their bookkeeping round (#256, ADR
+   * 0056): the Run's own `finalization_entry` records saying so. Null — not
+   * recorded — for a trace below {@link FINALIZATION_ENTRY_TRACE_VERSION}, and
+   * absent from an audit written before the field. Beside the rounds, never in
+   * them, so it re-keys no cached judgement.
+   */
+  readonly skippedBookkeepingRounds?: number | null
+  /** Finalization rounds that ended `allowance` (#256): cut by their share of the Finalization Allowance. */
+  readonly allowanceFinalizationRounds?: number
+  /**
    * Asked Items (#250, ADR 0052), read from the Run's own events and records
    * and never from Answer text: what the last model Run Plan declared, the
    * standings the final Answer's display carried, and the Answers whose list
@@ -503,6 +515,12 @@ export interface AuditPopulation {
   readonly malformedAnswers: number
   /** Answer Retries over the attempts (#245). */
   readonly answerRetries: number
+  /** Skipped bookkeeping rounds over the attempts whose trace recorded them (#256). */
+  readonly skippedBookkeepingRounds: number
+  /** Attempts whose trace predates the `finalization_entry` record: their skips count nowhere. */
+  readonly skippedBookkeepingNotRecorded: number
+  /** Finalization rounds cut by the Finalization Allowance over the attempts (#256). */
+  readonly allowanceFinalizationRounds: number
   /** Attempts whose model Run Plan declared at least one Asked Item (#250). */
   readonly askedItemsDeclared: number
   /** Attempts whose final Answer carried at least one `unverified` standing (#250). */
@@ -1298,6 +1316,13 @@ export function classifyAttempt(input: AuditTraceInput): AuditMechanical {
     identitySlips,
     malformedAnswers: records.filter((record) => record.kind === 'malformed_answer').length,
     answerRetries: records.filter((record) => record.kind === 'answer_retry').length,
+    // Pass six, beside the rounds (#256, ADR 0056): the Run's own skipped
+    // bookkeeping rounds, where its trace is new enough to have recorded them,
+    // and the Finalization rounds its Allowance cut.
+    skippedBookkeepingRounds: records.some((record) => isFiniteNumber(record.v) && record.v >= FINALIZATION_ENTRY_TRACE_VERSION)
+      ? records.filter((record) => record.kind === 'finalization_entry' && record.agentId === undefined && record.bookkeeping === 'skipped').length
+      : null,
+    allowanceFinalizationRounds: allowanceFinalizationRoundsOf(rounds),
     askedItems: {
       declared: askedDeclared,
       stated: askedStated,
@@ -1348,6 +1373,25 @@ function digestPayloadOf(mechanical: Omit<AuditMechanical, 'digestHash'>): unkno
     checksUnsatisfied: mechanical.checksUnsatisfied,
     subagent: mechanical.subagent,
   }
+}
+
+/** The Finalization rounds the Finalization Allowance cut (#256): read off the rounds, so an audit written before the field still has them. */
+function allowanceFinalizationRoundsOf(rounds: readonly AuditRound[]): number {
+  return rounds.filter((round) => round.kind === 'finalization' && round.outcome === 'allowance').length
+}
+
+/** One attempt's Finalization line (#256): its skipped bookkeeping rounds, or "not recorded", and its cut rounds. */
+function finalizationText(mechanical: AuditMechanical): string {
+  const skipped = mechanical.skippedBookkeepingRounds ?? null
+  const skips = skipped === null ? `skipped bookkeeping rounds not recorded (a Run Trace below version ${FINALIZATION_ENTRY_TRACE_VERSION})` : `${skipped} bookkeeping round(s) skipped`
+  return `${skips}, ${allowanceFinalizationRoundsOf(mechanical.rounds)} round(s) cut by the Finalization Allowance`
+}
+
+/** A population's skipped bookkeeping rounds (#256): the count, or "not recorded" when no attempt's trace could hold one. */
+function populationSkipsText(population: AuditPopulation): string {
+  if (population.attempts > 0 && population.skippedBookkeepingNotRecorded === population.attempts) return 'skipped bookkeeping rounds not recorded'
+  const notRecorded = population.skippedBookkeepingNotRecorded > 0 ? ` (${population.skippedBookkeepingNotRecorded} attempt(s) not recorded)` : ''
+  return `${population.skippedBookkeepingRounds} skipped bookkeeping round(s)${notRecorded}`
 }
 
 /** One attempt's Asked Items line (#250): "not recorded" where the trace predates the field. */
@@ -1702,6 +1746,9 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
   let slipsNotRecorded = 0
   let malformedAnswers = 0
   let answerRetries = 0
+  let skippedBookkeeping = 0
+  let skippedBookkeepingNotRecorded = 0
+  let allowanceFinalization = 0
   let askedItemsDeclared = 0
   let askedItemsUnverified = 0
   let askedItemsShapeFailures = 0
@@ -1743,6 +1790,10 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
     }
     malformedAnswers += mechanical.malformedAnswers
     answerRetries += mechanical.answerRetries
+    // An attempt read from an audit written before #256 has no field at all: not recorded, like a version-2 trace.
+    if ((mechanical.skippedBookkeepingRounds ?? null) === null) skippedBookkeepingNotRecorded += 1
+    else skippedBookkeeping += mechanical.skippedBookkeepingRounds!
+    allowanceFinalization += allowanceFinalizationRoundsOf(mechanical.rounds)
     if ((mechanical.askedItems?.declared ?? 0) > 0) askedItemsDeclared += 1
     if ((mechanical.askedItems?.unverified ?? 0) > 0) askedItemsUnverified += 1
     askedItemsShapeFailures += mechanical.askedItems?.shapeFailures ?? 0
@@ -1796,6 +1847,9 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
     identitySlipsNotRecorded: slipsNotRecorded,
     malformedAnswers,
     answerRetries,
+    skippedBookkeepingRounds: skippedBookkeeping,
+    skippedBookkeepingNotRecorded,
+    allowanceFinalizationRounds: allowanceFinalization,
     askedItemsDeclared,
     askedItemsUnverified,
     askedItemsShapeFailures,
@@ -2031,6 +2085,7 @@ function judgementLines(populations: readonly AuditPopulation[]): string[] {
       `${population.inheritedRounds} inherited, ${population.rejectedCheckpoints} rejected Evidence Checkpoint(s), ${population.walledRounds} walled round(s), ${population.notFoundNavigates} navigate(s) landed on a Not-found Page (${population.notFoundOffKey} judged Off-key), ${population.rewrittenComposedAddresses ?? 0} Composed Address(es) rewritten into a site search (${population.rewrittenComposedAddressesOffKey ?? 0} judged Off-key), ${population.subagentRounds} Subagent round(s), ` +
       `${population.mergedCheckpoints} merged Evidence Checkpoint(s) (a floor), ${population.heldPageRoundsWithoutProgress} Held Page round(s) without Progress, ${population.bundledCheckpoints} bundled checkpoint round(s), ${populationSlipsText(population)}, ` +
       `${population.malformedAnswers} Malformed Answer(s) (${population.answerRetries} retried), ` +
+      `${populationSkipsText(population)}, ${population.allowanceFinalizationRounds} Finalization round(s) cut by the Allowance, ` +
       `${population.askedItemsDeclared} declared Asked Items (${population.askedItemsUnverified} with an unverified standing, ${population.askedItemsShapeFailures} shape failure(s), ${population.askedItemsShapeRetried} retried), ` +
       `${population.stoppedEarly} stopped early, ${population.answerOmitted} answer omitted, ${population.overrules} overrule(s), ${population.flags} flag(s); Finalization Causes: ${Object.entries(population.finalizationCauses)
         .map(([cause, count]) => `${cause} ${count}`)
@@ -2060,6 +2115,7 @@ function attemptSection(attempt: AuditAttempt): string[] {
       `${mechanical.heldPageRoundsWithoutProgress} Held Page round(s) without Progress; ${mechanical.bundledCheckpoints} bundled checkpoint round(s); ${mechanical.walledRounds} walled round(s)`,
   )
   lines.push(`- Malformed Answers: ${mechanical.malformedAnswers} (${mechanical.answerRetries} retried)`)
+  lines.push(`- Finalization: ${finalizationText(mechanical)}`)
   lines.push(`- Asked Items: ${askedItemsText(mechanical.askedItems)}`)
   const landings = mechanical.notFoundNavigates
   lines.push(`- navigates that landed on a Not-found Page: ${landings.length}${landings.length > 0 ? ` (round ${landings.join(', ')})` : ''}`)

@@ -33,8 +33,10 @@ import type { VisionRunTraceRecord } from './visionTrace'
  * meaning changes, or when a record's absence starts to mean something.
  * 2 (#246): an Answer with no `identity_slip` record had no Identity Slip,
  * which a version-1 trace cannot say.
+ * 3 (#256): a Finalization entry with no `finalization_entry` record never
+ * reached its bookkeeping decision, which a version-2 trace cannot say.
  */
-export const RUN_TRACE_VERSION = 2
+export const RUN_TRACE_VERSION = 3
 
 /** How much of a graded observation's retained text a record keeps. */
 export const TRACE_PAYLOAD_HEAD_CHARS = 500
@@ -440,8 +442,23 @@ export interface AskedItemsShapeEvent {
   readonly retried: boolean
 }
 
+/**
+ * Whether a Finalization entry kept its bookkeeping Tool Round (#256, ADR
+ * 0056), and why. Written once per entry that reaches the decision — at the
+ * loop top after the Report Grace, in the orchestrator loop only, since a
+ * Browse Subagent's Finalization never skips. The audit counts the skips.
+ */
+export interface FinalizationEntryEvent {
+  readonly kind: 'finalization_entry'
+  /** The Finalization Cause the entry was made under. */
+  readonly cause: FinalizationCause
+  readonly bookkeeping: 'kept' | 'skipped'
+  readonly reason: string
+}
+
 /** One decision a Run traces, whatever kind it is. */
 export type RunTraceEventBody =
+  | FinalizationEntryEvent
   | EvidenceCheckpointEvent
   | ReasoningEvent
   | PipelineEventTraceEvent
