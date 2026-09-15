@@ -4,7 +4,8 @@ import { reportFault } from '../trace/fault'
 // Issue #154, step 1: the Notices module. Nine model-facing advisory
 // lines ride tool results — the Search Loop rail's Notice, the no-progress
 // Notice, (#240) the Held Page Notice, (#253) the Checkpoint Shape Notice on
-// a checkpoint call applied despite its shape, the Run Plan's corrective Notice, the Effort
+// a checkpoint call applied despite its shape, the Run Plan's corrective Notice,
+// (#254) the bookkeeping-only Notice, the Effort
 // Epoch's budget warning, (#216) its automatic Tier Escalation, its
 // Finalize Instruction, and (#158) the Browse Subagent's own Finalize
 // Instruction. Their precedence
@@ -39,6 +40,7 @@ export type NoticeKind =
   | 'held_page'
   | 'checkpoint_shape'
   | 'run_plan'
+  | 'bookkeeping_only'
   | 'budget'
   | 'tier_escalation'
   | 'finalization'
@@ -56,7 +58,8 @@ export type NoticeKind =
  * warning's question — the deadline decided — and a round can carry both
  * only when the crossing happened before the warning could be delivered.
  * A worker's Finalize Instruction (#158) is last of all: it is the only
- * one that ends the loop.
+ * one that ends the loop. The bookkeeping-only Notice (#254) corrects a
+ * habit the way the plan nudge does, so it sits beside it.
  */
 export const NOTICE_PRECEDENCE: readonly NoticeKind[] = [
   'search_loop',
@@ -64,6 +67,7 @@ export const NOTICE_PRECEDENCE: readonly NoticeKind[] = [
   'held_page',
   'checkpoint_shape',
   'run_plan',
+  'bookkeeping_only',
   'budget',
   'tier_escalation',
   'finalization',
@@ -90,6 +94,9 @@ const RULES: Readonly<Record<NoticeKind, NoticeRule>> = {
   held_page: { persistence: 'immediate', rides: 'success' },
   checkpoint_shape: { persistence: 'immediate', rides: 'success' },
   run_plan: { persistence: 'owed', rides: 'useful_work' },
+  // Owed for one round only: the executor withdraws it at the end of the
+  // round after the one that owed it, delivered or not (#254).
+  bookkeeping_only: { persistence: 'owed', rides: 'success' },
   budget: { persistence: 'owed', rides: 'useful_work' },
   tier_escalation: { persistence: 'owed', rides: 'useful_work' },
   finalization: { persistence: 'owed', rides: 'success' },
