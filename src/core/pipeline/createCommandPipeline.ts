@@ -42,6 +42,9 @@ import {
   createEffortEpoch,
   finalizationDetailSentence,
   deterministicFinalAnswer,
+  BOOKKEEPING_KEPT_FOR_REPORT_REASON,
+  BOOKKEEPING_KEPT_REASON,
+  BOOKKEEPING_SKIPPED_REASON,
   injectedReportDirective,
   requestFinalizeInstruction,
   type EffortEpoch,
@@ -767,6 +770,10 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
     // so a Steering replan that exits Finalization and a later re-entry
     // each get their own wait, exactly as the entry hook fires twice.
     let reportGraceOwed = false
+    // Whether this Finalization entry injected a Subagent Report ahead of its
+    // bookkeeping round (#256, ADR 0056): the report the Report Grace exists
+    // to rescue keeps that round, whatever else there is to record.
+    let reportCollectedThisEntry = false
     /**
      * Drops the allowance (#209): a Steering replan reopened acquisition,
      * or the Run ended. The cutoff watch goes with it — a timer that
@@ -796,6 +803,10 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
         // rail's own answer, read live — the executor that owns the rail
         // is created further down this Run, so this cannot be a value.
         makingProgress: () => toolRound?.makingProgress() ?? false,
+        // What a bookkeeping round would have to record (#256, ADR 0056): a
+        // report this entry collected, or the rail's Progress since the last
+        // accepted checkpoint — live, for the same reason as the line above.
+        somethingToRecord: () => reportCollectedThisEntry || (toolRound?.newSinceCheckpoint() ?? true),
         // An automatic Tier Escalation (#216, ADR 0042). The Run Plan
         // follows the epoch here, at the crossing, because the tier a
         // later report is reviewed against has to be the tier the Run
@@ -830,6 +841,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           })
           run.finalizationAllowance = entered
           reportGraceOwed = true
+          reportCollectedThisEntry = false
           // The cutoff (#209/AC6): once only the reserved Answer's
           // protected share is left, the Run stops waiting on anything
           // else. An action that will not settle keeps its resource
@@ -1529,7 +1541,9 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
                 // invites a checkpoint; once it is Answer-only the report
                 // claims nothing about Bookkeeping, because a call from
                 // there fails the round.
-                const result = `${completed.formattedReport}\n\n${injectedReportDirective(effortEpoch.phase)}`
+                // A report ahead of the bookkeeping round keeps that round (#256).
+                if (effortEpoch.phase.kind === 'finalizing') reportCollectedThisEntry = true
+                const result = `${completed.formattedReport}\n\n${injectedReportDirective(effortEpoch.phase, effortEpoch.bookkeepingRound)}`
                 const outcome: ToolResultOutcome = { ok: true, result }
                 yield { type: 'tool_call', callId: call.id, name: call.name, args: call.args, at: clock.now() }
                 const observed = observe({ producer: 'subagent_report', ok: true, payload: completed.formattedReport })
@@ -1552,6 +1566,29 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           // with reading them. A bounded report that lands after this
           // point is collected by the reserved Answer round instead.
           if (graceJustEnded) deps.onReportGraceEnd?.()
+          // The bookkeeping round, skipped when there is nothing new to record
+          // (#256, ADR 0056): nothing acquired with Progress and no Subagent
+          // Report collected since the last accepted Evidence Checkpoint. In
+          // the fix-252 capture the offered round spent its whole ten-second
+          // share returning nothing on 10 of 18 Runs; skipping it hands that
+          // share to the reserved Answer, whose allowance below is everything
+          // left. Decided here, after the grace and its reports, once per
+          // Finalization entry, and recorded on the trace either way.
+          if (effortEpoch.phase.kind === 'finalizing') {
+            const { cause } = effortEpoch.phase
+            const skipped = effortEpoch.skipBookkeepingRound()
+            traceRun?.(() => ({
+              turnId,
+              kind: 'finalization_entry',
+              cause,
+              bookkeeping: skipped ? 'skipped' : 'kept',
+              reason: skipped
+                ? BOOKKEEPING_SKIPPED_REASON
+                : reportCollectedThisEntry
+                  ? BOOKKEEPING_KEPT_FOR_REPORT_REASON
+                  : BOOKKEEPING_KEPT_REASON,
+            }))
+          }
           // What this round may spend of the Finalization Allowance
           // (#209/AC3): bookkeeping's share while the epoch is finalizing,
           // everything left once it is Answer-only, and nothing at all
@@ -1683,7 +1720,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           // the same moment (#207): the bookkeeping round is told
           // Bookkeeping is still open, the reserved Answer round that no
           // tool round remains.
-          const roundFinalizeInstruction = requestFinalizeInstruction(effortEpoch.phase)
+          const roundFinalizeInstruction = requestFinalizeInstruction(effortEpoch.phase, effortEpoch.bookkeepingRound)
           // Read per round, not per Run (#212): what this round is told
           // about spent routes has to be what the gate it meets will
           // decide from.

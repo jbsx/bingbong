@@ -80,6 +80,9 @@ function isEndOfPageScroll(call: ToolCall, outcome: ToolResultOutcome): boolean 
 /** Bookkeeping whose acceptance is decision-relevant evidence (#126/AC3). */
 const CHECKPOINT_TOOLS: ReadonlySet<string> = new Set(['record_evidence', 'record_candidate'])
 
+/** Collection whose success hands the run a Subagent Report it may still need to record (#256). */
+const COLLECTION_TOOLS: ReadonlySet<string> = new Set(['agent_results'])
+
 /**
  * Bookkeeping whose rejection is a no-Progress action like a rejected
  * checkpoint (#250, ADR 0052) — a Run Plan refused for declaring no Asked
@@ -179,6 +182,17 @@ export interface NoProgressRail {
    * Progress is what clears the Approach accounting.
    */
   makingProgress(): boolean
+  /**
+   * Whether the run has anything a Finalization bookkeeping round could
+   * record (#256, ADR 0056): Progress — the settled state moved, a requested
+   * state change — or the run's first page state read, which is material
+   * though not Progress, or a Subagent Report collected, since the last
+   * accepted Evidence Checkpoint, or since the run began when it never
+   * checkpointed. A checkpoint is Progress too, and the last one is the
+   * reference point. True on an inert rail, which observes nothing and so
+   * cannot vouch that nothing is new.
+   */
+  newSinceCheckpoint(): boolean
 }
 
 /** One action fingerprint's last attempt: the state it started from, and whether its repeat was nudged. */
@@ -218,6 +232,9 @@ export function createNoProgressRail(deps: NoProgressRailDeps = {}): NoProgressR
   // report (#250) — has already escalated in the current Tool Round: the
   // round's later rejections are the same mistake.
   let bookkeepingRejectedThisRound = false
+  // Whether anything new has arrived since the last accepted checkpoint
+  // (#256, ADR 0056): nothing has, before the run's first action.
+  let somethingNew = false
 
   function isPageFacing(name: string): boolean {
     return classifyToolObservation(name).pageFacing
@@ -269,6 +286,12 @@ export function createNoProgressRail(deps: NoProgressRailDeps = {}): NoProgressR
     exhaustedApproaches = 0
   }
 
+  /** Progress that brought the run something new to record (#256) — every kind but a checkpoint. */
+  function progressWithSomethingNew(): void {
+    progress()
+    somethingNew = true
+  }
+
   /** What a successful no-progress action escalates to, if any. */
   function escalate(): string | null {
     noProgress += 1
@@ -308,7 +331,13 @@ export function createNoProgressRail(deps: NoProgressRailDeps = {}): NoProgressR
     },
 
     async observe(call, outcome) {
-      if (settledState === undefined || tripped) return null
+      if (settledState === undefined) return null
+      // What a bookkeeping round would have to record (#256, ADR 0056) is
+      // read ahead of the trip: the trip round's later siblings still run
+      // their bookkeeping and Collection, and the round after it asks.
+      if (outcome.ok && CHECKPOINT_TOOLS.has(call.name)) somethingNew = false
+      if (outcome.ok && COLLECTION_TOOLS.has(call.name)) somethingNew = true
+      if (tripped) return null
       // Accepted Evidence Checkpoints are decision-relevant evidence;
       // rejected ones contribute to no-progress handling (#121/#126/AC3)
       // — once per Tool Round (#197): the round's sibling rejections were
@@ -325,7 +354,7 @@ export function createNoProgressRail(deps: NoProgressRailDeps = {}): NoProgressR
       // A successful requested state change is Progress by definition; a
       // failed one changed nothing and stays neutral.
       if (STATE_CHANGE_TOOLS.has(call.name)) {
-        if (outcome.ok) progress()
+        if (outcome.ok) progressWithSomethingNew()
         return null
       }
       if (!isPageFacing(call.name)) return null
@@ -382,6 +411,9 @@ export function createNoProgressRail(deps: NoProgressRailDeps = {}): NoProgressR
         // itself an action that failed to make it (#126/AC1 — the first
         // attempt is never redundant or no-progress).
         lastState = fingerprint
+        // Not Progress for the Approach accounting, but the first material
+        // the run holds: a bookkeeping round has something to record (#256).
+        somethingNew = true
         return nudge
       }
       if (fingerprint !== lastState && !endOfPage) {
@@ -390,7 +422,7 @@ export function createNoProgressRail(deps: NoProgressRailDeps = {}): NoProgressR
         // exception: its state moved by scroll position alone, and nothing
         // came into view with it (#194).
         lastState = fingerprint
-        progress()
+        progressWithSomethingNew()
         return nudge
       }
       lastState = fingerprint
@@ -430,5 +462,7 @@ export function createNoProgressRail(deps: NoProgressRailDeps = {}): NoProgressR
     finalizationDue: () => tripped,
 
     makingProgress: () => settledState !== undefined && !tripped && exhaustedApproaches === 0,
+
+    newSinceCheckpoint: () => settledState === undefined || somethingNew,
   }
 }

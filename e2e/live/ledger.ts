@@ -549,6 +549,12 @@ export function countersOf(population: AuditPopulation, attempts: readonly Audit
     mechanical('Attempts with Identity Slips not recorded', older.identitySlipsNotRecorded),
     mechanical('Malformed Answers', older.malformedAnswers),
     mechanical('Answer Retries', older.answerRetries),
+    // #256: a population none of whose traces could record a skip reads as nothing, never as zero.
+    mechanical(
+      'Skipped bookkeeping rounds',
+      older.skippedBookkeepingNotRecorded === undefined || older.skippedBookkeepingNotRecorded === population.attempts ? undefined : older.skippedBookkeepingRounds,
+    ),
+    mechanical('Finalization rounds cut by the Allowance', older.allowanceFinalizationRounds, population.rounds),
     mechanical('Subagent rounds', population.subagentRounds, budgeted),
     judged('Stopped early', population.stoppedEarly),
     judged('Answer omitted', older.answerOmitted),

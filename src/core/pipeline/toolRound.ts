@@ -16,7 +16,7 @@ import type { VerificationRoute } from '../session/verificationAttempts'
 import { createNoProgressRail } from './noProgressRail'
 import type { SettledPageState } from './progressFingerprints'
 import type { SnapshotRef } from '../browser/snapshot'
-import { finalizeInstruction, notExecuted, type EffortEpoch, type FinalizationDetail } from './effortEpoch'
+import { finalizeInstruction, notExecuted, type BookkeepingRound, type EffortEpoch, type FinalizationDetail } from './effortEpoch'
 import type { Notices } from './notices'
 import type { ConfirmDecision, RunDecisions } from './decisions'
 import { STEERED_CANCELLED, type Directive, type RunInterrupts } from './interrupts'
@@ -106,7 +106,12 @@ export interface FinalizationWording {
    * The round's closed-tool refusals are this under the `Not executed — `
    * prefix, and the Blocker gate's tripping refusal ends on it.
    */
-  readonly finalizeInstruction: (cause: FinalizationCause | null, detail?: FinalizationDetail) => string
+  readonly finalizeInstruction: (
+    cause: FinalizationCause | null,
+    detail?: FinalizationDetail,
+    /** Whether a bookkeeping round comes next (#256, ADR 0056); a caller that has none may ignore it. */
+    bookkeeping?: BookkeepingRound,
+  ) => string
   /** What the action exhausting the second Approach is told (#126). */
   readonly approachExhausted: string
 }
@@ -264,6 +269,12 @@ export interface ToolRoundExecutor {
    * Progress. A caller running without the rail vouches for nothing.
    */
   makingProgress(): boolean
+  /**
+   * Whether a Finalization bookkeeping round would have anything new to
+   * record (#256, ADR 0056): the no-progress rail's answer, or true where
+   * the round runs no rail and so cannot vouch that nothing is new.
+   */
+  newSinceCheckpoint(): boolean
 }
 
 /**
@@ -316,8 +327,8 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
     config.blockerEscalation ?? orchestratorBlockerEscalation,
     // The tripping refusal's instruction (#202) is the same one the
     // round's closed-tool refusals carry, so the trip round reads as one
-    // reason rather than two.
-    (wall) => finalizeWording('blocker', wall),
+    // reason rather than two — and names the same next round (#256).
+    (wall) => finalizeWording('blocker', wall, effortEpoch.bookkeepingRound),
   )
   const searchLoopRail = capabilities.searchLoopRail
     ? createSearchLoopRail(config.describeRef ? { describeRef: config.describeRef } : {})
@@ -356,14 +367,16 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
     : null
   /**
    * The refusal a closed call answers with, worded for the cause this
-   * epoch is finalizing under (#199). Only read inside Finalization —
-   * the closed-tool check that reaches it is gated on the phase.
+   * epoch is finalizing under (#199) and for the round that comes next
+   * (#256): a bookkeeping round, or — when there is nothing new to record —
+   * the Answer. Only read inside Finalization — the closed-tool check that
+   * reaches it is gated on the phase.
    */
   const closedToolRefusal = (): string =>
     notExecuted(
       effortEpoch.phase.kind === 'working'
         ? finalizeWording(null)
-        : finalizeWording(effortEpoch.phase.cause, effortEpoch.phase.detail),
+        : finalizeWording(effortEpoch.phase.cause, effortEpoch.phase.detail, effortEpoch.bookkeepingRound),
     )
   // The Vision Budget is the round's, so the context tools execute against
   // acquires from it — a caller can never hand a tool a different one.
@@ -740,6 +753,7 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
   return {
     run,
     makingProgress: () => noProgressRail?.makingProgress() ?? false,
+    newSinceCheckpoint: () => noProgressRail?.newSinceCheckpoint() ?? true,
     replan() {
       noProgressRail?.reset()
       blockerGate.replan()

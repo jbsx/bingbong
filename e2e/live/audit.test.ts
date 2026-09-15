@@ -450,9 +450,11 @@ describe('the mechanical classification', () => {
 
   it('counts a loop’s head by the streak rule without touching its kind, its reason or the digest (Decision 8)', () => {
     const mechanical = classifyAttempt(inputOf())
-    // Counting the head re-keys no cached judgement. The pin moved once since,
-    // on purpose: #244 renamed `checksUnsatisfied` and hashed the grade status.
-    expect(mechanical.digestHash).toBe('sha256:ab85fed806eb15cbf49cb047cd7401081f8033507e32e94ee7e9fbabd7d9a147')
+    // Counting the head re-keys no cached judgement. The pin moved twice since,
+    // on purpose: #244 renamed `checksUnsatisfied` and hashed the grade status,
+    // and #256 reworded the Finalize Instruction the fixture's round 13 carries
+    // (a captured trace keeps the words it recorded, so no cache re-keys).
+    expect(mechanical.digestHash).toBe('sha256:2ddc370253e372dd92651a92a1b6771f3d655a0372a906e1bd40fb620210d401')
     // Round 2's search starts the streak round 3's continues.
     expect(mechanical.searchLoopHeads).toEqual([2])
     expect(mechanical.mechanicalSearchRounds).toBe(2)
@@ -750,6 +752,53 @@ describe('Malformed Answers and Answer Retries (#245)', () => {
   })
 })
 
+describe('skipped bookkeeping rounds and Finalization rounds cut by the Allowance (#256, ADR 0056)', () => {
+  const entry = (at: number, bookkeeping: 'kept' | 'skipped', agentId?: string): Record<string, unknown> => ({
+    ...identity,
+    v: 3,
+    at: T0 + at,
+    kind: 'finalization_entry',
+    cause: 'budget_exhausted',
+    bookkeeping,
+    reason: bookkeeping === 'skipped' ? 'nothing new' : 'something new',
+    ...(agentId === undefined ? {} : { agentId }),
+  })
+  // The fixture's bookkeeping round, cut by its share instead of recording anything.
+  const CUT = ROUNDS.map((spec) => (spec.round === 13 ? { round: 13, at: 14_000, effort: 'low', outcome: 'allowance' } : spec))
+
+  it('counts both beside the rounds, and a trace below version 3 recorded no skips at all', () => {
+    const plain = classifyAttempt(inputOf())
+    const cut = classifyAttempt(inputOf({ traceRecords: traceOf(CUT, EXTRA) }))
+    const skipped = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, [...EXTRA, entry(13_500, 'skipped'), entry(2_550, 'skipped', 'a-1')]) }))
+    const kept = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, [...EXTRA, entry(13_500, 'kept')]) }))
+
+    expect([plain.skippedBookkeepingRounds, plain.allowanceFinalizationRounds]).toEqual([null, 0])
+    expect(cut.allowanceFinalizationRounds).toBe(1)
+    // A Subagent's record is not the Run's, and a version-3 trace with no skip counts zero, not nothing.
+    expect(skipped.skippedBookkeepingRounds).toBe(1)
+    expect(kept.skippedBookkeepingRounds).toBe(0)
+    // Beside the rounds, never in them: no class, reason or cached judgement moves.
+    expect(skipped.rounds).toEqual(plain.rounds)
+    expect(skipped.digestHash).toBe(plain.digestHash)
+  })
+
+  it('sums both per population, reads a population of old traces as not recorded, and prints them', () => {
+    const skipped = classifyAttempt(inputOf({ traceRecords: traceOf(CUT, [...EXTRA, entry(13_500, 'skipped')]) }))
+    const old = classifyAttempt(inputOf({ traceRecords: traceOf(CUT, EXTRA) }))
+    const set = buildAuditSet(provenanceOf(), [{ mechanical: skipped, review: null, countsAfterOverrules: skipped.counts }], [])
+    const oldSet = buildAuditSet(provenanceOf(), [{ mechanical: old, review: null, countsAfterOverrules: old.counts }], [])
+
+    expect(set.populations.initial).toMatchObject({ skippedBookkeepingRounds: 1, skippedBookkeepingNotRecorded: 0, allowanceFinalizationRounds: 1 })
+    expect(oldSet.populations.initial).toMatchObject({ skippedBookkeepingRounds: 0, skippedBookkeepingNotRecorded: 1, allowanceFinalizationRounds: 1 })
+    const markdown = formatAuditSet(set)
+    expect(markdown).toContain('- Finalization: 1 bookkeeping round(s) skipped, 1 round(s) cut by the Finalization Allowance')
+    expect(markdown).toMatch(/- initial: .*1 skipped bookkeeping round\(s\), 1 Finalization round\(s\) cut by the Allowance/)
+    const oldMarkdown = formatAuditSet(oldSet)
+    expect(oldMarkdown).toContain('- Finalization: skipped bookkeeping rounds not recorded (a Run Trace below version 3), 1 round(s) cut by the Finalization Allowance')
+    expect(oldMarkdown).toMatch(/- initial: .*skipped bookkeeping rounds not recorded, 1 Finalization round\(s\) cut by the Allowance/)
+  })
+})
+
 describe('the rail’s Search Observations (#243, ADR 0049)', () => {
   const searchesOf = (mechanical: ReturnType<typeof classifyAttempt>) => mechanical.rounds.map((round) => round.calls.map((call) => call.search))
 
@@ -824,7 +873,7 @@ describe('the rail’s Search Observations (#243, ADR 0049)', () => {
     const replayed = classifyAttempt(inputOf())
     expect(railed).toHaveProperty('searchSource', 'rail')
     // The source is not the reviewer's business: the replayed digest is the pinned one.
-    expect(replayed.digestHash).toBe('sha256:ab85fed806eb15cbf49cb047cd7401081f8033507e32e94ee7e9fbabd7d9a147')
+    expect(replayed.digestHash).toBe('sha256:2ddc370253e372dd92651a92a1b6771f3d655a0372a906e1bd40fb620210d401')
     const set = buildAuditSet(
       provenanceOf(),
       [railed, replayed].map((mechanical) => ({ mechanical, review: null, countsAfterOverrules: countsAfterOverrulesOf(mechanical, null) })),

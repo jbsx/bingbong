@@ -380,10 +380,36 @@ function runFinalizationReason(cause: FinalizationCause | null, detail?: Finaliz
   return RUN_FINALIZATION_REASONS[cause]
 }
 
-/** What every Finalize Instruction demands, whatever stopped the run. */
+/**
+ * Whether a Finalization's bookkeeping Tool Round happens (#256, ADR 0056):
+ * `kept` while there is something new to record, or once the round has
+ * run; `skipped` when the application goes straight to the reserved Answer.
+ * Every carrier of the Finalize Instruction is worded by it, so the model is
+ * not offered a round that will not come (see `EffortEpoch.bookkeepingRound`
+ * for the one round whose refusals are written before the decision).
+ */
+export type BookkeepingRound = 'kept' | 'skipped'
+
+/**
+ * What every Finalize Instruction demands while a bookkeeping round is to
+ * come, whatever stopped the run. At most two checkpoints (#256, ADR 0056):
+ * the round has a ten-second share, and a model that starts a long excerpt
+ * bundle inside it returns nothing at all.
+ */
 const FINALIZE_INSTRUCTION_DEMAND =
   'Acquisition tools (browser, vision, media, and delegation) and ask_user are closed; Collection and Bookkeeping ' +
-  'remain open. Finalize now: reply with your final answer JSON and state honestly what was and was not completed.'
+  'remain open for one tool round. Record at most two Evidence Checkpoints, for the findings that matter most. ' +
+  'Finalize now: reply with your final answer JSON and state honestly what was and was not completed.'
+
+/**
+ * What it demands when the bookkeeping round is skipped (#256, ADR 0056):
+ * the Answer is next, and a finding that never became a checkpoint still has
+ * somewhere to go — the Answer's own memory patch and evidence ids.
+ */
+const SKIPPED_BOOKKEEPING_DEMAND =
+  'Acquisition tools (browser, vision, media, and delegation) and ask_user are closed, and no bookkeeping round ' +
+  'follows: nothing new has been acquired to record. Finalize now: reply with your final answer JSON, put any ' +
+  'finding you did not record in its memory_patch and evidence_ids, and state honestly what was and was not completed.'
 
 /**
  * The Finalize Instruction (#117/#201, ADR 0027): rides every tool result
@@ -392,11 +418,17 @@ const FINALIZE_INSTRUCTION_DEMAND =
  * always learns that the Answer round is next. It opens on the cause the
  * run actually stopped for: the closing asks the model to state honestly
  * what it completed, which it can only do from a true premise about why
- * it was stopped.
+ * it was stopped. Its demand is worded for the round that comes next
+ * (#256): a bookkeeping round, or the Answer.
  */
-export function finalizeInstruction(cause: FinalizationCause | null, detail?: FinalizationDetail): string {
+export function finalizeInstruction(
+  cause: FinalizationCause | null,
+  detail?: FinalizationDetail,
+  bookkeeping: BookkeepingRound = 'kept',
+): string {
   const reason = runFinalizationReason(cause, detail)
-  return reason === undefined ? FINALIZE_INSTRUCTION_DEMAND : `${reason} — ${FINALIZE_INSTRUCTION_DEMAND}`
+  const demand = bookkeeping === 'skipped' ? SKIPPED_BOOKKEEPING_DEMAND : FINALIZE_INSTRUCTION_DEMAND
+  return reason === undefined ? demand : `${reason} — ${demand}`
 }
 
 /**
@@ -413,8 +445,12 @@ export function notExecuted(instruction: string): string {
 }
 
 /** The refusal a closed tool call answers with in a Run's Finalization. */
-export function finalizationToolRefusal(cause: FinalizationCause | null, detail?: FinalizationDetail): string {
-  return notExecuted(finalizeInstruction(cause, detail))
+export function finalizationToolRefusal(
+  cause: FinalizationCause | null,
+  detail?: FinalizationDetail,
+  bookkeeping: BookkeepingRound = 'kept',
+): string {
+  return notExecuted(finalizeInstruction(cause, detail, bookkeeping))
 }
 
 /**
@@ -426,8 +462,8 @@ export function finalizationToolRefusal(cause: FinalizationCause | null, detail?
  */
 export const FINALIZATION_REPORT_CHECKPOINT_DIRECTIVE =
   'Acquisition tools (browser, vision, media, and delegation) and ask_user are closed; Collection and Bookkeeping ' +
-  'are open for one more tool round. Record an Evidence Checkpoint for anything in this report worth keeping, then ' +
-  'reply with your final answer JSON and state honestly what was and was not completed.'
+  'are open for one more tool round. Record an Evidence Checkpoint for what in this report matters most, at most ' +
+  'two checkpoints in all, then reply with your final answer JSON and state honestly what was and was not completed.'
 
 /**
  * What the same report says once the run is Answer-only (#200, ADR 0036):
@@ -439,16 +475,43 @@ export const ANSWER_ONLY_REPORT_DIRECTIVE =
   'was not completed.'
 
 /**
+ * The Answer-only wording when the bookkeeping round was skipped (#256, ADR
+ * 0056): no tool round came, so a finding the run never checkpointed goes
+ * into the Answer's memory patch and evidence ids or nowhere.
+ */
+export const SKIPPED_BOOKKEEPING_ANSWER_DIRECTIVE =
+  'No tool round remains — every tool is closed. Reply with your final answer JSON, put any finding you did not ' +
+  'record in its memory_patch and evidence_ids, and state honestly what was and was not completed.'
+
+/** Why a Finalization entry skipped its bookkeeping round, as the Run Trace records it (#256, ADR 0056). */
+export const BOOKKEEPING_SKIPPED_REASON =
+  'nothing acquired with Progress and no Subagent Report collected since the last accepted Evidence Checkpoint'
+
+/** Why one kept it: something new since that checkpoint — or a run with no rail, which cannot vouch that nothing is. */
+export const BOOKKEEPING_KEPT_REASON =
+  'something new — Progress, or a collected Subagent Report — may be unrecorded since the last accepted Evidence Checkpoint'
+
+/** Why one kept it for a report (#256, ADR 0035): what the Report Grace rescued is what the round is for. */
+export const BOOKKEEPING_KEPT_FOR_REPORT_REASON = 'a Subagent Report was collected ahead of the bookkeeping round'
+
+/** The Answer-only directive for how the bookkeeping round went (#256). */
+function answerOnlyDirective(bookkeeping: BookkeepingRound): string {
+  return bookkeeping === 'skipped' ? SKIPPED_BOOKKEEPING_ANSWER_DIRECTIVE : ANSWER_ONLY_REPORT_DIRECTIVE
+}
+
+/**
  * The directive an injected worker report ends with, chosen by the phase
  * the next model round will run under (#200, ADR 0036): a report must
  * only ask for what that round will honour. Only Finalization injects
  * reports, so `finalizing` — a bookkeeping round is next — is the
  * positive case; every other phase a report can reach is Answer-only.
  * It opens on the phase's cause (#201), so a report injected mid-round
- * gives the same reason the round's refusals already gave.
+ * gives the same reason the round's refusals already gave. A report that
+ * reaches a `finalizing` phase keeps its round (#256), so only the
+ * Answer-only wording depends on whether the round was skipped.
  */
-export function injectedReportDirective(phase: EffortPhase): string {
-  return openedOnReason(phase, phase.kind === 'finalizing' ? FINALIZATION_REPORT_CHECKPOINT_DIRECTIVE : ANSWER_ONLY_REPORT_DIRECTIVE)
+export function injectedReportDirective(phase: EffortPhase, bookkeeping: BookkeepingRound = 'kept'): string {
+  return openedOnReason(phase, phase.kind === 'finalizing' ? FINALIZATION_REPORT_CHECKPOINT_DIRECTIVE : answerOnlyDirective(bookkeeping))
 }
 
 /**
@@ -475,13 +538,14 @@ function openedOnReason(phase: EffortPhase, demand: string): string {
  * that never happened, so the request states it directly instead.
  *
  * The bookkeeping round is told Bookkeeping is still open; the reserved
- * Answer round, that no tool round remains. Null while the run is working:
- * only a Finalization round has this to say.
+ * Answer round, that no tool round remains — and, when the bookkeeping
+ * round was skipped (#256), where its unrecorded findings go. Null while
+ * the run is working: only a Finalization round has this to say.
  */
-export function requestFinalizeInstruction(phase: EffortPhase): string | null {
+export function requestFinalizeInstruction(phase: EffortPhase, bookkeeping: BookkeepingRound = 'kept'): string | null {
   if (phase.kind === 'working') return null
-  if (phase.kind === 'finalizing') return finalizeInstruction(phase.cause, phase.detail)
-  return openedOnReason(phase, ANSWER_ONLY_REPORT_DIRECTIVE)
+  if (phase.kind === 'finalizing') return finalizeInstruction(phase.cause, phase.detail, bookkeeping)
+  return openedOnReason(phase, answerOnlyDirective(bookkeeping))
 }
 
 /**
@@ -563,6 +627,31 @@ export interface EffortEpoch {
    * no opportunity to spend before the door opens or after it is gone.
    */
   spendBookkeepingOpportunity(): boolean
+  /**
+   * Whether this Finalization's bookkeeping Tool Round happens (#256, ADR
+   * 0056), as every carrier of the Finalize Instruction words it. Before the
+   * round it is the live `somethingToRecord` answer; once the round has run
+   * — or its opportunity was spent — it is `kept`, and once it was skipped it
+   * stays `skipped`. A Browse Subagent's, and an epoch nobody vouches for,
+   * is always `kept`.
+   *
+   * The pipeline decides at the loop top after the Report Grace, so a
+   * refusal written in the round Finalization is entered during reads the
+   * answer as it stands then: a report the grace delivers can still keep a
+   * round that refusal called skipped — the report's own directive offers
+   * the round — and a checkpoint later in that round can skip one it called
+   * kept. The next round's request always carries the decided wording.
+   */
+  readonly bookkeepingRound: BookkeepingRound
+  /**
+   * The application skips the bookkeeping Tool Round (#256, ADR 0056):
+   * nothing was acquired with Progress and no Subagent Report collected
+   * since the last accepted Evidence Checkpoint, so the run goes straight to
+   * its reserved Answer, which inherits the unspent share. No Tool Round is
+   * counted and no Finalization notice is owed. False — nothing changes —
+   * unless the epoch is `finalizing` and there is nothing to record.
+   */
+  skipBookkeepingRound(): boolean
   declareTier(tier: EffortTier, initialDeclaration?: boolean): boolean
   replan(tier?: EffortTier): boolean
   /**
@@ -647,6 +736,14 @@ export function createEffortEpoch(deps: {
    * exactly as the Finalization hook's is.
    */
   onTierEscalated?: (escalation: TierEscalation) => void
+  /**
+   * Whether the Run has anything new for a bookkeeping round to record
+   * (#256, ADR 0056): something acquired with Progress, or a Subagent Report
+   * collected, since the last accepted Evidence Checkpoint. Read live, like
+   * `makingProgress`. Absent, every Finalization keeps its round — which is
+   * also what a Subagent gets, whose Finalization this never changes.
+   */
+  somethingToRecord?: () => boolean
 }): EffortEpoch {
   // The active-work clock (#117, ADR 0027): accumulates wall time the Run
   // spends working, excluding user-dependent waiting — Confirmation,
@@ -667,6 +764,9 @@ export function createEffortEpoch(deps: {
   const warned: Record<BudgetWarningMilestone, boolean> = { near: false, imminent: false, time: false }
   let pendingWarning: BudgetWarningMilestone | null = null
   let pendingFinalizationNotice = false
+  // Whether this Finalization entry skipped its bookkeeping round (#256):
+  // latched, so the reserved Answer is told the same thing the refusals were.
+  let bookkeepingSkipped = false
   // The automatic Tier Escalation (#216, ADR 0042): once per Run, and the
   // Notice it owes the model until a result can carry it. A Steering
   // replan resets the once — the user has spoken again, so the Run's own
@@ -709,6 +809,7 @@ export function createEffortEpoch(deps: {
   const enterFinalization = (cause: FinalizationCause, detail?: FinalizationDetail): boolean => {
     if (phase.kind !== 'working') return false
     phase = { kind: 'finalizing', cause, ...(detail !== undefined ? { detail } : {}) }
+    bookkeepingSkipped = false
     pendingWarning = null
     // A tier that rose is moot once acquisition is over (#216) — the
     // Finalize Instruction is the only thing this round has to say.
@@ -861,6 +962,19 @@ export function createEffortEpoch(deps: {
       // No round began, so nothing is owed to one: the instruction the
       // failed request carried is the last thing the model was told about
       // this phase, and the reserved Answer round carries its own.
+      pendingFinalizationNotice = false
+      return true
+    },
+    get bookkeepingRound(): BookkeepingRound {
+      if (bookkeepingSkipped) return 'skipped'
+      if (subagent !== undefined || phase.kind === 'answer_only') return 'kept'
+      return deps.somethingToRecord?.() === false ? 'skipped' : 'kept'
+    },
+    skipBookkeepingRound() {
+      if (phase.kind !== 'finalizing' || subagent !== undefined || deps.somethingToRecord?.() !== false) return false
+      phase = { kind: 'answer_only', cause: phase.cause, ...(phase.detail !== undefined ? { detail: phase.detail } : {}) }
+      bookkeepingSkipped = true
+      // No round began, so nothing is owed to one — as for a spent opportunity.
       pendingFinalizationNotice = false
       return true
     },
