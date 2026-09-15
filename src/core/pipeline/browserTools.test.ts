@@ -152,7 +152,7 @@ function pipelineWith(browser: BrowserController, calls: AssistantTurn[]) {
 
 describe('a Not-found Landing rides the Action Outcome (#239, ADR 0050)', () => {
   const ADVICE_NASA =
-    'This address names nothing on nasa.gov. Composed addresses to nasa.gov are now refused for this run: search the site, or open a link you were shown by its href or a click.'
+    'This address names nothing on nasa.gov. A composed address to nasa.gov now runs as a search of the site for this run: search the site, or open a link you were shown by its href or a click.'
 
   async function resultsOf(browser: FixtureBrowserController, calls: Extract<AssistantTurn, { kind: 'tool_calls' }>['calls']) {
     const { pipeline } = pipelineWith(browser, [

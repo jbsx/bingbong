@@ -10,7 +10,6 @@ import type { WorkingMemorySnapshot } from '../session/workingMemory'
 import { VisionDeadlineError } from '../ports/vision'
 import { ASK_ESCALATION_PREFIX, createAskUserTool, createSubagentAskTool } from '../pipeline/askUserTools'
 import { SEARCH_LOOP_NUDGE_AFTER, SEARCH_LOOP_REFUSE_AFTER } from '../pipeline/searchLoopRail'
-import { composedAddressRefusal } from '../pipeline/composedAddressRail'
 import type { SettledPageState } from '../pipeline/progressFingerprints'
 import { hostFromUrl } from '../pipeline/blockerGate'
 import type { TracedReasoningRound } from '../trace/reasoningTrace'
@@ -992,7 +991,7 @@ describe('runSubagent', () => {
     })
   })
 
-  it('refuses a second composed address to a site that answered not found (#239, ADR 0050)', async () => {
+  it('rewrites a second composed address to a site that answered not found into a search of the site (#239, ADR 0050; #255, ADR 0055)', async () => {
     const executed: string[] = []
     const navigate: Tool = {
       name: 'navigate',
@@ -1017,9 +1016,12 @@ describe('runSubagent', () => {
     await runSubagent({ llm, tools: [navigate], clock: new FakeClock() }, { task: 't', isCancelled: () => false })
 
     // The Subagent's round runs the rail: the sibling composed address to the
-    // same site is refused inside the round, before it executes.
-    expect(executed).toEqual(['https://www.jpl.nasa.gov/news/voyager-2013-09'])
-    expect(llm.requests[1]?.toolResults?.[1]?.outcome).toMatchObject({ ok: false, error: composedAddressRefusal('nasa.gov') })
+    // same site runs as a search of the site inside the round.
+    expect(executed).toEqual(['https://www.jpl.nasa.gov/news/voyager-2013-09', 'https://duckduckgo.com/?q=voyager%20site%3Anasa.gov'])
+    expect(llm.requests[1]?.toolResults?.[1]?.outcome).toMatchObject({
+      ok: true,
+      result: expect.stringMatching(/^Rewritten — nasa\.gov already answered not found .*"voyager site:nasa\.gov"/),
+    })
   })
 
   it('offers the URLs its task names and its shared memory cites, even on a site whose allowance is spent (#239)', async () => {
@@ -1056,8 +1058,13 @@ describe('runSubagent', () => {
       { task: 'Open https://science.nasa.gov/mission/voyager/ and report the release date.', memory, isCancelled: () => false },
     )
 
-    expect(executed).toEqual(['https://www.nasa.gov/guess-2013', 'https://science.nasa.gov/mission/voyager/', 'https://www.jpl.nasa.gov/news/voyager-release'])
-    expect(llm.requests[1]?.toolResults?.[3]?.outcome).toMatchObject({ ok: false, error: composedAddressRefusal('nasa.gov') })
+    expect(executed).toEqual([
+      'https://www.nasa.gov/guess-2013',
+      'https://science.nasa.gov/mission/voyager/',
+      'https://www.jpl.nasa.gov/news/voyager-release',
+      'https://duckduckgo.com/?q=guess%20site%3Anasa.gov',
+    ])
+    expect(llm.requests[1]?.toolResults?.[3]?.outcome).toMatchObject({ ok: true, result: expect.stringMatching(/^Rewritten — nasa\.gov .*"guess site:nasa\.gov"/) })
   })
 
   it('nudges then refuses an objectively redundant action (#159)', async () => {

@@ -103,7 +103,7 @@ export function landedOnNotFoundPage(outcome: ToolResultOutcome): boolean {
  */
 export function notFoundAdvice(site: string): string {
   return (
-    `This address names nothing on ${site}. Composed addresses to ${site} are now refused for this run: ` +
+    `This address names nothing on ${site}. A composed address to ${site} now runs as a search of the site for this run: ` +
     'search the site, or open a link you were shown by its href or a click.'
   )
 }

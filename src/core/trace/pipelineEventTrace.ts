@@ -55,8 +55,12 @@ export function tracesPipelineEvent(event: { readonly type: PipelineEvent['type'
  */
 export function pipelineEventTraceBody(event: PipelineEvent, agentId?: string): PipelineEventTraceEvent {
   const stamped = agentId !== undefined ? { agentId } : {}
-  if (event.type !== 'tool_result' || typeof event.result !== 'string') {
-    return { kind: 'pipeline_event', event, ...stamped }
+  if (event.type !== 'tool_result') return { kind: 'pipeline_event', event, ...stamped }
+  // The Composed Address rewrite (#255, ADR 0055), from the Tool Round's own
+  // stamp on the event — a failed search included — beside the landing.
+  const rewritten = event.rewritten !== undefined ? { rewritten: event.rewritten } : {}
+  if (typeof event.result !== 'string') {
+    return { kind: 'pipeline_event', event, ...rewritten, ...stamped }
   }
   const whole = TRACE_WHOLE_RESULT_TOOLS.has(event.name)
   // The landing is read off the whole result (#239, ADR 0050): the marker
@@ -67,6 +71,7 @@ export function pipelineEventTraceBody(event: PipelineEvent, agentId?: string): 
     event: whole ? event : { ...event, result: event.result.slice(0, TRACE_TOOL_RESULT_MAX_CHARS) },
     chars: event.result.length,
     ...(notFound !== null ? { notFound } : {}),
+    ...rewritten,
     ...stamped,
   }
 }
