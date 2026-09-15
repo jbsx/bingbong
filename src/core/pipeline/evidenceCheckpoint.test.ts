@@ -141,9 +141,10 @@ describe('findUserEventObservation', () => {
     expect(findUserEventObservation(records, 'No, the blue one.')?.id).toBe('obs-7')
     expect(findUserEventObservation(records, 'Find a blue mug')?.id).toBe('obs-1')
     expect(findUserEventObservation(records, 'Use Paris instead.')?.id).toBe('obs-8')
-    // Trim-tolerant, but the words themselves must be the user's exact ones.
+    // Whitespace and case tolerant, and the words may sit inside what was
+    // said (#253, ADR 0054) — but they must be the user's own words.
     expect(findUserEventObservation(records, ' No, the blue one. ')?.id).toBe('obs-7')
-    expect(findUserEventObservation(records, 'no, the blue one')).toBeNull()
+    expect(findUserEventObservation(records, 'no, the blue one')?.id).toBe('obs-7')
     expect(findUserEventObservation(records, 'the blue one, actually')).toBeNull()
   })
 
@@ -755,6 +756,298 @@ describe('evidence grading faults (#179)', () => {
   })
 })
 
+describe("the user's words match by containment (#253, ADR 0054)", () => {
+  // The Pi follow-up command, and the four fix-252 citations of it that
+  // were refused though the words the Run heard were inside every one.
+  const PI_FOLLOW_UP =
+    'One more requirement: the camera must fit the unmodified camera lid of the official Raspberry Pi Zero Case, the one intended for Camera Module 2. I cannot alter the lid or mount the camera outside it. Does the Camera Module 3 solution still meet all my requirements? Explain what changes and what does not.'
+  const COMMAND = userRecord({ id: 'obs-1' as ObservationRecord['id'], producer: 'command', payload: PI_FOLLOW_UP })
+
+  function cite(args: Record<string, unknown>, records: ObservationRecord[] = [COMMAND]) {
+    const store = evidenceHarness()
+    const outcome = evaluateEvidenceCheckpoint(callOf(args), {
+      records,
+      commitUser: userEvidenceCommit(() => store, 'run-1' as RunId),
+    })
+    return { outcome, texts: store.snapshot().observations.map((observation) => observation.text) }
+  }
+
+  const accepted: { where: string; args: Record<string, unknown> }[] = [
+    { where: 'fix-252-2: the words wrapped in quotes', args: { kind: 'user', observation: `"${PI_FOLLOW_UP}"` } },
+    {
+      where: 'fix-252-3: the words behind a "verbatim:" lead-in',
+      args: { kind: 'user', observation: `New hard requirement added by the user, verbatim: "${PI_FOLLOW_UP}"` },
+    },
+    {
+      where: 'fix-252-1: a paraphrase, with the words in a stray excerpt',
+      args: {
+        excerpt: PI_FOLLOW_UP,
+        kind: 'user',
+        observation:
+          'User added a hard constraint: the camera must fit the unmodified official Zero Case camera lid (the one for Camera Module 2), no altering or mounting outside; asks whether the Camera Module 3 solution still meets all requirements and what changes vs. what does not.',
+      },
+    },
+    { where: 'fix-252-3: the words in both the observation and a stray excerpt', args: { excerpt: PI_FOLLOW_UP, kind: 'user', observation: PI_FOLLOW_UP } },
+    { where: 'one sentence of what the user said', args: { kind: 'user', observation: 'I cannot alter the lid or mount the camera outside it.' } },
+  ]
+
+  it.each(accepted)('accepts $where, storing the utterance itself', ({ args }) => {
+    const { outcome, texts } = cite(args)
+    expect(outcome).toMatchObject({ ok: true, sourceObservationId: 'obs-1', originProducer: 'command' })
+    expect(texts).toEqual([PI_FOLLOW_UP])
+    // The model is told the canonical shape it should have sent.
+    expect(outcome.ok ? outcome.correction : undefined).toMatch(/kind "user"/)
+  })
+
+  it('names the stray excerpt it ignored', () => {
+    const { outcome } = cite({ excerpt: PI_FOLLOW_UP, kind: 'user', observation: PI_FOLLOW_UP })
+    expect(outcome.ok ? outcome.correction : undefined).toMatch(/excerpt/)
+  })
+
+  it('carries no Notice when the citation already held exactly the words', () => {
+    const { outcome } = cite({ kind: 'user', observation: PI_FOLLOW_UP })
+    expect(outcome).toMatchObject({ ok: true })
+    expect(outcome.ok ? outcome.correction : 'rejected').toBeUndefined()
+  })
+
+  it('still refuses words no user event said, and a stray excerpt that holds none of them', () => {
+    expect(cite({ kind: 'user', observation: 'The user now wants a Camera Module 2 instead.' }).outcome).toMatchObject({
+      ok: false,
+      reason: 'user_text_unverified',
+    })
+    const stray = cite({ kind: 'user', observation: 'The user wants a Camera Module 2.', excerpt: 'wants a Camera Module 2 now' })
+    expect(stray.outcome).toMatchObject({ ok: false, reason: 'malformed' })
+    expect(stray.texts).toEqual([])
+  })
+
+  it('refuses a scrap too short to be the words, and a match that cuts a word in two', () => {
+    expect(cite({ kind: 'user', observation: 'lid' }).outcome).toMatchObject({ ok: false, reason: 'user_text_unverified' })
+    expect(cite({ kind: 'user', observation: 'amera must fit' }).outcome).toMatchObject({ ok: false, reason: 'user_text_unverified' })
+  })
+})
+
+describe('an excerpt is every passage verbatim (#253, ADR 0054)', () => {
+  // The eight fix-252 excerpt_unsupported calls, as the Run Traces carried
+  // them, graded against what those Runs retained from each source.
+  const RMG = 'https://www.rmg.co.uk/collections/objects/rmgc-object-79142'
+  const RMG_READ = webRecord({
+    id: 'obs-10' as ObservationRecord['id'],
+    sourceUrl: RMG,
+    payload: [
+      `# H4 | Royal Museums Greenwich — ${RMG}`,
+      'page text:',
+      'H4',
+      'For more information about using images from our Collection, please contact RMG Images.',
+      'Object details',
+      'ID: | ZAA0037',
+      'Collection: | Timekeeping',
+      'Type: | Marine timekeeper',
+      'Materials: | Brass; Steel Silver Diamond Ruby Enamel Copper Glass',
+      'Display location: | Not on display',
+      'Creator: | Harrison, John',
+      'Places: | Greenwich',
+      'Date made: | 1759',
+      'Exhibition: | Time and Longitude; Ships, Clocks & Stars: The Quest for Longitude',
+      'People: | Royal Greenwich Observatory',
+      'Credit: | National Maritime Museum, Greenwich, London',
+      'Measurements: | Dial diameter: 102 mm;Overall: 165 mm x 124 mm x 28 mm x 1.45 kg',
+      'Parts: | H4 Carrying case for H4 and K1 (ZAA0037.1) Three fragments of mainspring removed from H4 (Mainspring) (ZAA0037.2) Pins (ZAA0037.3) Winding key (ZAA0037.4) Movement (ZAA0037.5) Pair case, dial and hands for H4 (ZAA0037.6) Historic label from H4 (ZAA0037.7) Thumbnail catch (ZAA0037.8)',
+    ].join('\n'),
+  })
+
+  const EUROSTAR = 'https://www.eurostar.com/uk-en/travel-info/travel-planning/luggage'
+  const EUROSTAR_READ = webRecord({
+    id: 'obs-6' as ObservationRecord['id'],
+    sourceUrl: EUROSTAR,
+    payload: `our luggage rules at Eurostar, including sizes, allowances and what you can bring on board.
+How many bags can you take?
+With a standard ticket, you can bring:
+2 x pieces of luggage.
+1 x small item of hand luggage (like a handbag or backpack).
+Children can also bring 1 bag and 1 piece of hand luggage. Folded pushchairs and prams are welcome too – just make sure they're folded down and pop them in the luggage rack for the journey.
+Size limits and dimensions
+Size limits depend on your route. On routes to and from London, you can bring a bag up to a maximum length of 85cm, and on all other routes, 75cm.
+Is there a weight limit?
+Unlike airlines, there's no strict weight limit per bag. If you can carry it safely yourself, you're good to go.
+Eurostar luggage allowance by travel class`,
+  })
+
+  const VOYAGER = 'https://www.jpl.nasa.gov/news/nasas-voyager-1-explores-final-frontier-of-our-solar-bubble/'
+  const VOYAGER_READ = webRecord({
+    id: 'obs-18' as ObservationRecord['id'],
+    sourceUrl: VOYAGER,
+    payload: `the disappearance of charged particles from inside the heliosphere.
+Scientists have seen two of the three signs of interstellar arrival they expected to see: charged particles disappearing as they zoom out along the solar magnetic field, and cosmic rays from far outside zooming in. Scientists have not yet seen the third sign, an abrupt change in the direction of the magnetic field, which would indicate the presence of the interstellar magnetic field.
+"This strange, last region before interstellar space is coming into focus, thanks to Voyager 1, humankind's most distant scout," said Ed Stone, Voyager project scientist at the California Institute of Technology in Pasadena. "If you looked at the cosmic ray and energetic particle data in isolation, you might think Voyager had reached interstellar space, but the team feels Voyager 1 has not yet gotten there because we are still within the domain of the sun's magnetic field." Scientists do not know exactly how far Voyager 1 has to go to reach interstellar space.`,
+  })
+
+  const CAMERA = 'https://www.raspberrypi.com/documentation/computers/camera_software.html'
+  const CAMERA_READ_1 = webRecord({
+    id: 'obs-8' as ObservationRecord['id'],
+    at: 100,
+    sourceUrl: CAMERA,
+    payload: `Quality Camera, and will never support any newer camera modules. Nothing in this document is applicable to the legacy camera stack.
+Edit this on GitHub
+NOTE | From Raspberry Pi OS Bookworm onwards, the camera capture applications are named rpicam-*.
+Raspberry Pi supplies a small set of example rpicam-apps. These CLI applications, built on top of libcamera, capture images and video from a camera.
+These applications include:
+rpicam-hello: A "hello world"-equivalent for cameras, which starts a camera preview stream and displays it on the screen.
+rpicam-jpeg: Runs a preview window, then captures high-resolution still images.
+rpicam-still: Emulates many of the features of the original raspistill application.
+rpicam-vid: Captures video.`,
+  })
+  const CAMERA_READ_2 = webRecord({
+    id: 'obs-9' as ObservationRecord['id'],
+    at: 200,
+    sourceUrl: CAMERA,
+    payload: `The Raspberry Pi implementation of libcamera supports the following cameras:
+Official cameras: OV5647 (V1) IMX219 (V2) IMX708 (V3) IMX477 (HQ) IMX500 (AI) IMX296 (GS)
+Third-party sensors: IMX290 IMX327 IMX378 IMX519 OV9281 VD55G1 VD55G4 VD56G3 VD65G4 VD66GY`,
+  })
+
+  const ZERO_CASE = 'https://www.raspberrypi.com/products/raspberry-pi-zero-case/'
+  const ZERO_CASE_READ = webRecord({
+    id: 'obs-4' as ObservationRecord['id'],
+    sourceUrl: ZERO_CASE,
+    payload: `Specifications
+The Raspberry Pi Zero Case has been designed to fit Raspberry Pi Zero, Raspberry Pi Zero W, and Raspberry Pi Zero 2 W.
+The case consists of two parts. It has a standard base featuring a cut-out to allow access to the GPIO, and a choice of three lids: a plain lid, a GPIO lid (allowing access to the GPIO from above), and a camera lid (which, when used with the short camera cable supplied, allows the standard and NoIR variants of Raspberry Pi Camera Modules 1 and 2 to fit neatly inside it; note that Camera Module 3 is not mechanically compatible with the camera lid).
+Kit includes the following:
+1 x short camera cable`,
+  })
+
+  function checkpoint(records: ObservationRecord[], sourceUrl: string, excerpt: string) {
+    const store = evidenceHarness()
+    const outcome = evaluateEvidenceCheckpoint(callOf({ observation: 'A fact the excerpt grounds.', source_url: sourceUrl, excerpt }), {
+      records,
+      commit: commitOver(store),
+    })
+    return { outcome, store }
+  }
+
+  const accepted: { where: string; records: ObservationRecord[]; url: string; excerpt: string; grounds: string }[] = [
+    {
+      where: 'fix-252-1 longitude watch: table rows with rows skipped',
+      records: [RMG_READ],
+      url: RMG,
+      excerpt:
+        'ID: | ZAA0037\nType: | Marine timekeeper\nCreator: | Harrison, John\nDate made: | 1759\nMeasurements: | Dial diameter: 102 mm;Overall: 165 mm x 124 mm x 28 mm x 1.45 kg\nParts: | H4 Carrying case for H4 and K1 (ZAA0037.1)',
+      grounds: 'obs-10',
+    },
+    {
+      where: 'fix-252-1 longitude watch, again: the heading and the whole parts row',
+      records: [RMG_READ],
+      url: RMG,
+      excerpt:
+        'Object details\nID: | ZAA0037\nCollection: | Timekeeping\nType: | Marine timekeeper\nCreator: | Harrison, John\nDate made: | 1759\nMeasurements: | Dial diameter: 102 mm;Overall: 165 mm x 124 mm x 28 mm x 1.45 kg\nParts: | H4 Carrying case for H4 and K1 (ZAA0037.1) Three fragments of mainspring removed from H4 (Mainspring) (ZAA0037.2) Pins (ZAA0037.3) Winding key (ZAA0037.4) Movement (ZAA0037.5) Pair case, dial and hands for H4 (ZAA0037.6) Historic label from H4 (ZAA0037.7) Thumbnail catch (ZAA0037.8)',
+      grounds: 'obs-10',
+    },
+    {
+      where: 'fix-252-1 longitude watch, a third time: the parts row cut short',
+      records: [RMG_READ],
+      url: RMG,
+      excerpt:
+        'ID: | ZAA0037\nType: | Marine timekeeper\nCreator: | Harrison, John\nDate made: | 1759\nMeasurements: | Dial diameter: 102 mm;Overall: 165 mm x 124 mm x 28 mm x 1.45 kg\nParts: | H4 Carrying case for H4 and K1 (ZAA0037.1) Three fragments of mainspring removed from H4 (Mainspring) (ZAA0037.2)',
+      grounds: 'obs-10',
+    },
+    {
+      where: 'fix-252 Eurostar luggage: sentences skipped between the passages',
+      records: [EUROSTAR_READ],
+      url: EUROSTAR,
+      excerpt:
+        "With a standard ticket, you can bring:\n2 x pieces of luggage.\n1 x small item of hand luggage (like a handbag or backpack).\n\nSize limits and dimensions\nSize limits depend on your route. On routes to and from London, you can bring a bag up to a maximum length of 85cm, and on all other routes, 75cm.\n\nIs there a weight limit?\nUnlike airlines, there's no strict weight limit per bag. If you can carry it safely yourself, you're good to go.",
+      grounds: 'obs-6',
+    },
+    {
+      where: 'fix-252 Voyager: a single dropped comma',
+      records: [VOYAGER_READ],
+      url: VOYAGER,
+      excerpt:
+        'Scientists have seen two of the three signs of interstellar arrival they expected to see: charged particles disappearing as they zoom out along the solar magnetic field and cosmic rays from far outside zooming in. Scientists have not yet seen the third sign, an abrupt change in the direction of the magnetic field, which would indicate the presence of the interstellar magnetic field.',
+      grounds: 'obs-18',
+    },
+    {
+      where: 'fix-252-3 Pi camera: a passage from each of two page reads',
+      records: [CAMERA_READ_1, CAMERA_READ_2],
+      url: CAMERA,
+      excerpt:
+        'From Raspberry Pi OS Bookworm onwards, the camera capture applications are named rpicam-*. | rpicam-still: Emulates many of the features of the original raspistill application. | Official cameras: OV5647 (V1) IMX219 (V2) IMX708 (V3) IMX477 (HQ) IMX500 (AI) IMX296 (GS)',
+      // No one read holds every passage: the newest read holding one grounds it.
+      grounds: 'obs-9',
+    },
+    {
+      where: 'fix-252 Voyager, again: a quoted sentence skipped behind "..."',
+      records: [VOYAGER_READ],
+      url: VOYAGER,
+      excerpt:
+        'Scientists have not yet seen the third sign, an abrupt change in the direction of the magnetic field, which would indicate the presence of the interstellar magnetic field. ... "If you looked at the cosmic ray and energetic particle data in isolation, you might think Voyager had reached interstellar space, but the team feels Voyager 1 has not yet gotten there because we are still within the domain of the sun\'s magnetic field."',
+      grounds: 'obs-18',
+    },
+  ]
+
+  it.each(accepted)('accepts $where', ({ records, url, excerpt, grounds }) => {
+    const { outcome, store } = checkpoint(records, url, excerpt)
+    expect(outcome).toMatchObject({ ok: true, sourceObservationId: grounds })
+    expect(store.snapshot().observations).toHaveLength(1)
+  })
+
+  it('refuses the paraphrased lead-in on a verbatim tail (fix-252 Pi camera)', () => {
+    const { outcome, store } = checkpoint(
+      [ZERO_CASE_READ],
+      ZERO_CASE,
+      'In addition to the Zero camera cable, the case includes a camera lid (which, when used with the short camera cable supplied, allows the standard and NoIR variants of Raspberry Pi Camera Modules 1 and 2 to fit neatly inside it; note that Camera Module 3 is not mechanically compatible with the camera lid).',
+    )
+    expect(outcome).toMatchObject({ ok: false, reason: 'excerpt_unsupported' })
+    expect(store.snapshot().observations).toEqual([])
+  })
+
+  it('refuses an excerpt made only of fragments too short to verify, saying so rather than that it is absent', () => {
+    const { outcome } = checkpoint([RMG_READ], RMG, 'ID: | H4 | mm')
+    expect(outcome).toMatchObject({ ok: false, reason: 'excerpt_unsupported' })
+    expect(outcome.ok ? '' : outcome.error).toContain('too short to verify')
+    expect(outcome.ok ? '' : outcome.error).not.toContain('does not appear')
+  })
+
+  it('refuses an invented short value beside a real passage, and accepts the real one', () => {
+    const acme = webRecord()
+    expect(checkpoint([acme], GROUNDED_ARGS.source_url, 'The Acme router costs\n$99').outcome).toMatchObject({
+      ok: false,
+      reason: 'excerpt_unsupported',
+    })
+    expect(checkpoint([acme], GROUNDED_ARGS.source_url, 'The Acme router costs\n$39').outcome).toMatchObject({ ok: true })
+  })
+
+  it('never reads one number as another when punctuation is stripped', () => {
+    const listing = webRecord({ payload: 'Rated 4.5 stars, ships in 1-2 days, from -5°C.' })
+    const url = GROUNDED_ARGS.source_url
+    expect(checkpoint([listing], url, 'Rated 45 stars').outcome).toMatchObject({ ok: false, reason: 'excerpt_unsupported' })
+    expect(checkpoint([listing], url, 'ships in 12 days').outcome).toMatchObject({ ok: false, reason: 'excerpt_unsupported' })
+    expect(checkpoint([listing], url, 'from 5°C').outcome).toMatchObject({ ok: false, reason: 'excerpt_unsupported' })
+    // A dropped comma, or a range dash for a hyphen, is still the same text.
+    expect(checkpoint([listing], url, 'Rated 4.5 stars ships in 1–2 days').outcome).toMatchObject({ ok: true })
+  })
+
+  it('refuses the whole excerpt when any one passage is not on the page', () => {
+    const { outcome } = checkpoint([RMG_READ], RMG, 'Type: | Marine timekeeper\nWeight: | about a kilogram and a half')
+    expect(outcome).toMatchObject({ ok: false, reason: 'excerpt_unsupported' })
+  })
+
+  it('grounds every passage in the cited source only, never in another page the run read', () => {
+    const elsewhere = webRecord({ ...CAMERA_READ_2, id: 'obs-12' as ObservationRecord['id'], sourceUrl: ZERO_CASE })
+    const { outcome } = checkpoint(
+      [CAMERA_READ_1, elsewhere],
+      CAMERA,
+      'rpicam-still: Emulates many of the features of the original raspistill application. | Official cameras: OV5647 (V1) IMX219 (V2)',
+    )
+    expect(outcome).toMatchObject({ ok: false, reason: 'excerpt_unsupported' })
+  })
+
+  it('tells a refused excerpt to copy every passage verbatim', () => {
+    const { outcome } = checkpoint([RMG_READ], RMG, 'Weight: | about a kilogram and a half')
+    expect(outcome.ok ? '' : outcome.error).toContain('every passage verbatim')
+  })
+})
+
 describe('a malformed citation is told every defect and shown the call to send (#241)', () => {
   /** The fields a correction names, in the order it names them. */
   const namedFields = (message: string): string[] => [...message.matchAll(/^- (\w+):/gm)].map((match) => match[1]!)
@@ -766,14 +1059,6 @@ describe('a malformed citation is told every defect and shown the call to send (
   const VERDICT = 'Graded as corrected, it would still be refused: '
   const PLACEHOLDER = expect.stringMatching(/^<.+>$/)
 
-  const PI_CASE_CONSTRAINT =
-    'the camera must fit the unmodified camera lid of the official Raspberry Pi Zero Case, the one intended for Camera Module 2. I cannot alter the lid or mount the camera outside it.'
-  const EUROSTAR_CONSTRAINT = 'Do not book, buy, log in or contact anyone.'
-  const EUROSTAR_COMMAND = userRecord({
-    id: 'obs-1' as ObservationRecord['id'],
-    producer: 'command',
-    payload: `What are Eurostar's luggage rules for two 70cm suitcases, a daypack and a guitar? ${EUROSTAR_CONSTRAINT}`,
-  })
   const CAMERA_SOFTWARE = 'https://www.raspberrypi.com/documentation/computers/camera_software.html'
   const LEGACY_STACK =
     'This guide no longer covers the legacy camera stack which was available in Bullseye and earlier Raspberry Pi OS releases. The legacy camera stack, using applications like raspivid, raspistill and the …'
@@ -792,53 +1077,9 @@ describe('a malformed citation is told every defect and shown the call to send (
   }
 
   // One row per Baseline mistake, arguments as the Run Traces carried them.
+  // The three kind "user" rows whose stray excerpt held the user's words
+  // are accepted since #253 and live in its containment tests.
   const rows: Row[] = [
-    {
-      where: 'baseline-1 r2: kind "user" carrying an excerpt that holds the user\'s words',
-      args: {
-        excerpt: PI_CASE_CONSTRAINT,
-        kind: 'user',
-        observation:
-          'New hard constraint added by the user for the Pi Zero v1.3 camera objective: the camera must fit the unmodified camera lid of the official Raspberry Pi Zero Case (the lid intended for Camera Module 2)…',
-      },
-      records: [userRecord({ producer: 'steering', payload: PI_CASE_CONSTRAINT })],
-      fields: ['observation', 'excerpt'],
-      corrected: { kind: 'user', observation: PI_CASE_CONSTRAINT },
-    },
-    {
-      where: 'baseline-2 r20: kind "user" carrying an excerpt, beside a glossed observation',
-      args: {
-        kind: 'user',
-        excerpt: EUROSTAR_CONSTRAINT,
-        observation:
-          "User's constraint on the luggage-rules task: no booking, buying, logging in, or contacting anyone — research official rules only. Load in question: two 70cm suitcases + one small daypack + acoustic gu…",
-      },
-      records: [EUROSTAR_COMMAND],
-      fields: ['excerpt'],
-      corrected: {
-        kind: 'user',
-        observation:
-          "User's constraint on the luggage-rules task: no booking, buying, logging in, or contacting anyone — research official rules only. Load in question: two 70cm suitcases + one small daypack + acoustic gu…",
-      },
-      verdict: 'user_text_unverified',
-    },
-    {
-      where: 'baseline-2 r21: the retry, still carrying the excerpt and a gloss after the words',
-      args: {
-        excerpt: EUROSTAR_CONSTRAINT,
-        kind: 'user',
-        observation:
-          'Do not book, buy, log in or contact anyone. — user constraint for the Eurostar luggage task (adult, London–Paris, Eurostar Standard, two 70cm suitcases + small daypack + acoustic guitar in 90cm case).',
-      },
-      records: [EUROSTAR_COMMAND],
-      fields: ['excerpt'],
-      corrected: {
-        kind: 'user',
-        observation:
-          'Do not book, buy, log in or contact anyone. — user constraint for the Eurostar luggage task (adult, London–Paris, Eurostar Standard, two 70cm suitcases + small daypack + acoustic guitar in 90cm case).',
-      },
-      verdict: 'user_text_unverified',
-    },
     {
       where: 'baseline-3 r12: observation missing, the excerpt grounded',
       args: { kind: 'web', excerpt: LEGACY_STACK, source_url: CAMERA_SOFTWARE },

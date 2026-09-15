@@ -193,6 +193,28 @@ describe('evidenceCheckpointEvent', () => {
     expect(event.graded.map((graded) => [graded.observationId, graded.producer])).toEqual([['obs-1', 'command']])
     expect(event.graded[0]!.sourceUrl).toBeUndefined()
   })
+
+  it('records an accepted mis-shaped user citation as accepted and graded, with the Notice it carried (#253)', () => {
+    const command = record({ id: 'obs-1' as ObservationId, producer: 'command', payload: 'find me a router', sourceUrl: undefined })
+    const event = evidenceCheckpointEvent({
+      call: call({ kind: 'user', observation: 'The user asked: "find me a router"', excerpt: 'find me a router' }),
+      outcome: {
+        ok: true,
+        entryId: 'memory-2' as MemoryEntryId,
+        merged: false,
+        sourceObservationId: command.id,
+        originProducer: 'command',
+        contradicts: [],
+        correction: 'Notice: stored the words',
+      },
+      records: [command, PAGE_READ],
+    })
+
+    expect(event.outcome).toBe('accepted')
+    expect(event.correction).toBe('Notice: stored the words')
+    expect(event.graded.map((graded) => [graded.observationId, graded.matched])).toEqual([['obs-1', true]])
+    expect(event.excerpt).toBeUndefined()
+  })
 })
 
 describe('candidateCheckpointEvent', () => {
@@ -225,5 +247,20 @@ describe('candidateCheckpointEvent', () => {
     expect(event.matched).toBe(false)
     expect(event.args).toEqual(args)
     expect(event.entryId).toBeUndefined()
+  })
+
+  it('records a mixed call applied as accepted, with the Notice it carried (#253)', () => {
+    const event = candidateCheckpointEvent({
+      call: { id: 'c-3', name: 'record_candidate', args: { subject: 'Acme router', status: 'accepted', supporting_evidence: ['memory-4'] } },
+      outcome: {
+        ok: true,
+        candidate: { id: 'memory-5' as MemoryEntryId, status: 'active', subject: 'Acme router' },
+        created: true,
+        correction: 'Notice: ignored status',
+      },
+    })
+
+    expect(event.outcome).toBe('accepted')
+    expect(event.correction).toBe('Notice: ignored status')
   })
 })

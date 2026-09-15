@@ -1222,6 +1222,9 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
                   ...(commitSubagent ? { commitSubagent } : {}),
                   ...(deps.subagentObservations ? { workerObservations: deps.subagentObservations } : {}),
                 })
+                // A call applied despite its shape tells the model the
+                // canonical one on this very result (#253, ADR 0054).
+                notices.owe('checkpoint_shape', outcome.ok ? (outcome.correction ?? null) : null)
                 // The Run Trace (#180): what was cited, what it was graded
                 // against, and the verdict — accepted or rejected alike.
                 // The Feed shows only the display line, so a rejected
@@ -1252,6 +1255,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
         const checkpointCandidateHandler: ((call: ToolCall) => CandidateCheckpointOutcome) | undefined = evidenceSession
           ? (call) => {
               const outcome = evaluateCandidateCheckpoint(call, { session: evidenceSession })
+              notices.owe('checkpoint_shape', outcome.ok ? (outcome.correction ?? null) : null)
               continuity?.traceRun?.(() => ({ turnId, ...candidateCheckpointEvent({ call, outcome }) }))
               return outcome
             }

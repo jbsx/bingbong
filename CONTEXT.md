@@ -249,7 +249,9 @@ advising inside it and rides whatever the result it lands on read. A Notice is
 model-facing only: the copy of a terminal result the round hands its caller to
 route onward carries none, while the model-facing copy among the round's
 results still does. The Notice that rides an Action Outcome landing on a
-Held Page names the Observations the Session already holds from it.
+Held Page names the Observations the Session already holds from it. The Notice
+that rides a checkpoint call applied as the call it evidently is names the
+shape the call should have had.
 _Avoid_: nudge, warning text, hint
 
 **Finalize Instruction**:

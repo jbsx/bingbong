@@ -131,6 +131,11 @@ export interface EvidenceCheckpointEvent {
   readonly merged?: boolean
   /** The delegated worker whose observations graded a subagent citation (#123). */
   readonly agentId?: string
+  /**
+   * On an acceptance of a mis-shaped call (#253, ADR 0054), the Notice that
+   * told the model the canonical shape. The outcome still reads 'accepted'.
+   */
+  readonly correction?: string
 }
 
 /**

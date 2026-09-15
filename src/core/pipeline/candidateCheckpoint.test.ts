@@ -201,9 +201,10 @@ describe('evaluateCandidateCheckpoint', () => {
       { subject: 'No support' },
       { subject: 'Acme', supporting_evidence: [] },
       { subject: 'Acme', supporting_evidence: 'memory-1' },
-      { subject: 'Acme', supporting_evidence: [observationId], status: 'accepted' },
       { candidate_id: 'memory-4', status: 'accepted', reason: 'x' },
-      { candidate_id: 'memory-4', status: 'accepted', reason: 'x', supporting_evidence: [observationId], detail: 'x' },
+      // Stray fields beside another defect stay malformed (#253).
+      { candidate_id: 'memory-4', status: 'accepted', reason: 'x', detail: 'x' },
+      { subject: 'Acme', status: 'accepted', supporting_evidence: 'memory-1' },
       { candidate_id: 'memory-4', status: 'dream', reason: 'x', supporting_evidence: [observationId] },
       { subject: '  ', supporting_evidence: [observationId] },
       // A decision with no stated reason is not a decision anything can weigh.
@@ -506,17 +507,9 @@ describe('a malformed Candidate call is told every defect and shown the call to 
     expect(store.candidate(id)!.decisions).toHaveLength(1)
   })
 
-  it('leaves the grading line off when the repaired call grounds, and when nothing supplies a field grading needs', () => {
+  it('leaves the grading line off when nothing supplies a field grading needs', () => {
     const { store, observationId } = seededStore()
     const session = sessionOver(store)
-
-    const creation = candidateCheckpointMessage(evaluateCandidateCheckpoint(callOf({
-      subject: 'Acme wifi router',
-      status: 'active',
-      supporting_evidence: [observationId],
-    }), { session }))
-    expect(namedFields(creation)).toEqual(['status'])
-    expect(creation).not.toContain(VERDICT)
 
     const decision = candidateCheckpointMessage(evaluateCandidateCheckpoint(callOf({
       candidate_id: '',
@@ -538,5 +531,163 @@ describe('a malformed Candidate call is told every defect and shown the call to 
     expect(correctedCall(unsupported)).toEqual({ subject: 'No support', supporting_evidence: [PLACEHOLDER] })
     expect(unsupported).not.toContain(VERDICT)
     expect(store.snapshot().candidates).toEqual([])
+  })
+})
+
+describe('a mixed Candidate call is applied as the call it evidently is (#253, ADR 0054)', () => {
+  const correctedCall = (message: string): Record<string, unknown> | undefined => {
+    const block = /```json\n([\s\S]*?)\n```/.exec(message)
+    return block === null ? undefined : (JSON.parse(block[1]!) as Record<string, unknown>)
+  }
+  const PLACEHOLDER = expect.stringMatching(/^<.+>$/)
+
+  /** Creates one Candidate and hands back its identity. */
+  function created(session: EvidenceSessionSource, observationId: MemoryEntryId, subject = 'Camera Module 2 standard'): MemoryEntryId {
+    const outcome = evaluateCandidateCheckpoint(callOf({ subject, supporting_evidence: [observationId] }), { session })
+    if (!outcome.ok) throw new Error('the Candidate was not created')
+    return outcome.candidate.id
+  }
+
+  it('applies a decision carrying a stray detail as the decision (fix-252-1)', () => {
+    const { store, observationId, laterId } = seededStore()
+    const session = sessionOver(store)
+    const id = created(session, observationId)
+
+    const outcome = evaluateCandidateCheckpoint(callOf({
+      candidate_id: id,
+      detail:
+        'Lid-compatible replacement: Camera Module 2 standard/NoIR, 8 MP IMX219, manually adjustable focus, works with rpicam-apps; case kit supplies the short camera cable. Accepted 2026-09-15.',
+      reason:
+        'Confirmed final: official case page names Modules 1/2 standard/NoIR as lid-compatible with the supplied short cable; CM3 excluded by official note on both pages.',
+      status: 'accepted',
+      supporting_evidence: [laterId, observationId],
+    }), { session })
+
+    expect(outcome).toMatchObject({ ok: true, created: false, candidate: { id, status: 'accepted' } })
+    expect(outcome.ok ? outcome.correction : undefined).toMatch(/ignored detail\. A decision is \{candidate_id, status, reason/)
+    expect(store.candidate(id)!.detail).toBeUndefined()
+  })
+
+  it('applies a decision carrying a stray subject as the decision (fix-252-3)', () => {
+    const { store, observationId } = seededStore()
+    const session = sessionOver(store)
+    const id = created(session, observationId, 'Eurostar Premier luggage')
+
+    const outcome = evaluateCandidateCheckpoint(callOf({
+      authority: 'model',
+      candidate_id: id,
+      reason: 'Eurostar Premier includes 3 luggage pieces + 1 hand item.',
+      status: 'accepted',
+      subject: 'Under Eurostar Premier, the full load fits the published allowance on London–Paris.',
+      supporting_evidence: [observationId],
+    }), { session })
+
+    expect(outcome).toMatchObject({ ok: true, created: false, candidate: { id, status: 'accepted', subject: 'Eurostar Premier luggage' } })
+    expect(outcome.ok ? outcome.correction : undefined).toMatch(/ignored subject/)
+  })
+
+  it('creates a creation carrying a status active, says the decision was not applied, and shows the call that would (fix-252-2)', () => {
+    const { store, observationId, laterId } = seededStore()
+    const outcome = evaluateCandidateCheckpoint(callOf({
+      detail: 'Same load (2×70 cm suitcases, daypack, cased guitar) under a Premier ticket.',
+      status: 'accepted',
+      subject: 'Verdict (Premier ticket): full load fits — no suitcase left behind on London–Paris',
+      supporting_evidence: [laterId, observationId],
+    }), { session: sessionOver(store) })
+
+    expect(outcome).toMatchObject({ ok: true, created: true, candidate: { id: 'memory-4', status: 'active' } })
+    expect(store.candidate('memory-4' as MemoryEntryId)!.decisions).toEqual([])
+    const message = candidateCheckpointMessage(outcome)
+    expect(message).toContain('status "accepted" was not applied')
+    expect(correctedCall(message)).toEqual({
+      candidate_id: 'memory-4',
+      status: 'accepted',
+      reason: PLACEHOLDER,
+      supporting_evidence: [laterId, observationId],
+    })
+    expect(outcome.ok ? outcome.correction : undefined).toMatch(/ignored status\. A creation is \{subject, detail\?, supporting_evidence\}/)
+  })
+
+  it("carries the creation's own reason and authority into the decision it shows", () => {
+    const { store, observationId } = seededStore()
+    const outcome = evaluateCandidateCheckpoint(callOf({
+      subject: 'Acme wifi router',
+      status: 'rejected',
+      reason: 'over budget',
+      authority: 'model',
+      supporting_evidence: [observationId],
+    }), { session: sessionOver(store) })
+
+    expect(correctedCall(candidateCheckpointMessage(outcome))).toEqual({
+      candidate_id: 'memory-4',
+      status: 'rejected',
+      reason: 'over budget',
+      authority: 'model',
+      supporting_evidence: [observationId],
+    })
+  })
+
+  it('shows no decision to send when the stray status was active', () => {
+    const { store, observationId } = seededStore()
+    const outcome = evaluateCandidateCheckpoint(callOf({ subject: 'Acme wifi router', status: 'active', supporting_evidence: [observationId] }), {
+      session: sessionOver(store),
+    })
+
+    expect(outcome).toMatchObject({ ok: true, created: true })
+    expect(candidateCheckpointMessage(outcome)).not.toContain('not applied')
+    expect(outcome.ok ? outcome.correction : undefined).toMatch(/ignored status/)
+  })
+
+  it('carries no Notice on a call that already had its shape', () => {
+    const { store, observationId } = seededStore()
+    const outcome = evaluateCandidateCheckpoint(callOf({ subject: 'Acme wifi router', supporting_evidence: [observationId] }), {
+      session: sessionOver(store),
+    })
+    expect(outcome.ok ? outcome.correction : 'rejected').toBeUndefined()
+  })
+
+  it('refuses an unknown Candidate id, listing the Candidates the Session holds and naming an Observation id for what it is (fix-252-2)', () => {
+    const { store, observationId } = seededStore()
+    const session = sessionOver(store)
+    created(session, observationId, 'Guitar travels as part of the luggage allowance')
+
+    const outcome = evaluateCandidateCheckpoint(callOf({
+      candidate_id: observationId,
+      reason: 'Official Eurostar musical-instruments page states guitars travel as part of the luggage allowance.',
+      status: 'accepted',
+      supporting_evidence: [observationId],
+    }), { session })
+
+    expect(outcome).toMatchObject({ ok: false, reason: 'unknown_candidate' })
+    const error = outcome.ok ? '' : outcome.error
+    expect(error).toContain(`'${observationId}' is an Observation, not a Candidate`)
+    expect(error).toContain('memory-4 (active) "Guitar travels as part of the luggage allowance"')
+  })
+
+  it('says the Session holds no Candidates when it holds none', () => {
+    const { store, observationId } = seededStore()
+    const outcome = evaluateCandidateCheckpoint(callOf({
+      candidate_id: 'memory-99',
+      reason: 'x',
+      status: 'accepted',
+      supporting_evidence: [observationId],
+    }), { session: sessionOver(store) })
+
+    expect(outcome.ok ? '' : outcome.error).toMatch(/holds no Candidates — create one first/)
+  })
+
+  it('still refuses the probing call (fix-252-1)', () => {
+    const { store, observationId } = seededStore()
+    const session = sessionOver(store)
+    const id = created(session, observationId)
+
+    const outcome = evaluateCandidateCheckpoint(callOf({
+      candidate_id: id,
+      reason: 'Testing whether a second decision call is valid on this candidate; not a real decision.',
+      status: 'active',
+      supporting_evidence: [observationId],
+    }), { session })
+
+    expect(outcome).toMatchObject({ ok: false, reason: 'invalid_transition' })
   })
 })

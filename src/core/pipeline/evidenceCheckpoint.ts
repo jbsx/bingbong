@@ -117,6 +117,12 @@ export type EvidenceCheckpointOutcome =
       readonly agentId?: string
       /** Prior Observations this one contradicts — retained, disclosed, never overwritten (#122). */
       readonly contradicts: readonly MemoryEntryId[]
+      /**
+       * The Notice an acceptance of a mis-shaped call carries (#253, ADR
+       * 0054): how the call was read, naming the canonical shape. Absent
+       * when the call already had that shape.
+       */
+      readonly correction?: string
     }
   | EvidenceCheckpointFailure
 
@@ -259,6 +265,13 @@ export function findGroundingObservation(
   const candidates = sourceObservations(records, sourceUrl)
   const found = latest(candidates.filter((record) => excerptSupported(record, excerpt)))
   if (found !== null) return { ok: true, record: found }
+  // Passages from several reads of the one source (#253, ADR 0054): every
+  // passage is still something this Run saw there, and the newest read
+  // holding one of them grounds the citation.
+  if (excerpt !== undefined && passagesHeld(candidates.map(retainedText), excerpt, 'every')) {
+    const spread = latest(candidates.filter((record) => passagesHeld([retainedText(record)], excerpt, 'some')))
+    if (spread !== null) return { ok: true, record: spread }
+  }
   if (candidates.length === 0) return { ok: false, reason: 'unknown_source' }
   const producers: ObservationProducer[] = []
   for (const record of candidates) if (!producers.includes(record.producer)) producers.push(record.producer)
@@ -302,22 +315,98 @@ function userProducer(record: ObservationRecord): UserObservationOrigin['produce
 }
 
 /**
- * The user event that supplied a user citation's exact text (#122): the
- * command, an ask_user answer, or a Steering Directive this Run's ledger
- * retained, matched verbatim after trimming — the model paraphrasing the
- * user is not their words. When several events said the same thing, the
- * most recent one grounds the citation.
+ * The user event that supplied a user citation's words (#122): the command,
+ * an ask_user answer, or a Steering Directive this Run's ledger retained.
+ * Since #253 (ADR 0054) the cited text and what the user said need only
+ * contain each other, whitespace and case tolerant, once wrapping quotes
+ * and a lead-in ending in a colon are stripped — the model paraphrasing the
+ * user is still not their words. An exact match beats the words sitting
+ * inside what was said, which beats what was said sitting inside the
+ * citation; among equals the most recent event grounds it.
  */
 export function findUserEventObservation(
   records: readonly ObservationRecord[],
   text: string,
 ): ObservationRecord | null {
-  const wanted = text.trim()
-  return latest(
-    userEventObservations(records).filter(
-      (record) => typeof record.payload === 'string' && record.payload.trim() === wanted,
-    ),
+  const forms = citedForms(text)
+  const said = new Map<ObservationRecord, string>()
+  for (const record of userEventObservations(records)) {
+    if (typeof record.payload === 'string') said.set(record, normalizeMemoryText(record.payload).trim())
+  }
+  const events = [...said.keys()]
+  return (
+    latest(events.filter((record) => forms.includes(said.get(record)!))) ??
+    latest(events.filter((record) => forms.some((form) => containsWords(said.get(record)!, form)))) ??
+    latest(events.filter((record) => forms.some((form) => containsWords(form, said.get(record)!))))
   )
+}
+
+/** The quote pairs a model wraps the user's words in (#253). */
+const QUOTE_PAIRS: readonly (readonly [string, string])[] = [
+  ['"', '"'],
+  ["'", "'"],
+  ['“', '”'],
+  ['‘', '’'],
+  ['«', '»'],
+  ['`', '`'],
+]
+
+/** A contained side shorter than this, once normalized, is too little to be anyone's words (#253). */
+const MIN_USER_WORDS_CHARS = 4
+
+const WORD_CHAR = /[\p{L}\p{N}_]/u
+
+/** The text inside one pair of wrapping quotes, a trailing full stop after the close allowed; null when unquoted. */
+function unquoted(text: string): string | null {
+  const closed = text.replace(/[.,;:!?]+$/u, '')
+  for (const [open, close] of QUOTE_PAIRS) {
+    if (closed.length > open.length + close.length && closed.startsWith(open) && closed.endsWith(close)) {
+      return closed.slice(open.length, closed.length - close.length)
+    }
+  }
+  return null
+}
+
+/** The ways one cited text may hold the user's words: as sent, after a lead-in's colon, and each unquoted. */
+function citedForms(text: string): string[] {
+  const trimmed = text.trim()
+  const colon = trimmed.indexOf(':')
+  const bases = colon === -1 ? [trimmed] : [trimmed, trimmed.slice(colon + 1)]
+  const forms: string[] = []
+  for (const base of bases) {
+    forms.push(base)
+    const inner = unquoted(base.trim())
+    if (inner !== null) forms.push(inner)
+  }
+  return forms.map((form) => normalizeMemoryText(form).trim()).filter((form) => form !== '')
+}
+
+/** Whether `outer` holds `inner` without cutting a word in two at either end. */
+function containsWords(outer: string, inner: string): boolean {
+  if (inner.length < MIN_USER_WORDS_CHARS) return false
+  const startsWord = WORD_CHAR.test(inner[0]!)
+  const endsWord = WORD_CHAR.test(inner[inner.length - 1]!)
+  for (let at = outer.indexOf(inner); at !== -1; at = outer.indexOf(inner, at + 1)) {
+    const before = outer[at - 1]
+    const after = outer[at + inner.length]
+    const cleanStart = before === undefined || !startsWord || !WORD_CHAR.test(before)
+    const cleanEnd = after === undefined || !endsWord || !WORD_CHAR.test(after)
+    if (cleanStart && cleanEnd) return true
+  }
+  return false
+}
+
+/**
+ * A kind "user" citation whose one mistake is a stray excerpt (#253, ADR
+ * 0054): the citation it is without the excerpt, and the excerpt's text,
+ * which may be where the model put the user's words. Null for any other call.
+ */
+export function userCitationBesideExcerpt(
+  args: Readonly<Record<string, unknown>>,
+): { citation: UserCitation; excerpt: string } | null {
+  if (args.kind !== 'user' || typeof args.excerpt !== 'string' || args.excerpt.trim() === '') return null
+  const citation = parseEvidenceCitation(withoutField(args, 'excerpt'))
+  return citation?.kind === 'user' ? { citation, excerpt: args.excerpt } : null
 }
 
 /**
@@ -331,13 +420,78 @@ export function userEventObservations(records: readonly ObservationRecord[]): re
 
 /**
  * Whether the citation's support holds against the retained source: a text
- * observation demands a verbatim excerpt (whitespace and case tolerant); a
- * structured Action Outcome is its own support, and an excerpt offered
- * against one validates against its serialized state.
+ * observation demands an excerpt whose every passage is verbatim (#253,
+ * ADR 0054); a structured Action Outcome is its own support, and an excerpt
+ * offered against one validates against its serialized state.
  */
 export function excerptSupported(record: ObservationRecord, excerpt: string | undefined): boolean {
   if (excerpt === undefined) return typeof record.payload !== 'string'
-  return normalizeMemoryText(retainedText(record)).includes(normalizeMemoryText(excerpt))
+  return passagesHeld([retainedText(record)], excerpt, 'every')
+}
+
+/** A passage shorter than this, once normalized, says too little to verify (#253). */
+export const MIN_EXCERPT_PASSAGE_CHARS = 4
+
+/** Where a model joins verbatim passages: a line break, a table cell's `|`, or an ellipsis. */
+const PASSAGE_SEAMS = /\r?\n|\||\.\.\.|…/
+
+/** What the second, punctuation-tolerant attempt strips from both sides. */
+const EXCERPT_PUNCTUATION = /[|,.:;"'“”‘’…\-–—]/g
+
+/**
+ * A text with its punctuation stripped, for the tolerant second attempt —
+ * except the marks that make a number what it is: a decimal point, a
+ * thousands comma, or a time's colon between digits, and a minus sign or
+ * range dash before one (as `-`). "12.99" never reads as "1299".
+ */
+function withoutPunctuation(text: string): string {
+  const stripped = text.replace(EXCERPT_PUNCTUATION, (mark: string, at: number, whole: string) => {
+    const before = whole[at - 1] ?? ''
+    const after = whole[at + 1] ?? ''
+    if (/[.,:]/.test(mark) && /\d/.test(before) && /\d/.test(after)) return mark
+    if (/[-–—]/.test(mark) && /\d/.test(after)) return '-'
+    return ''
+  })
+  return normalizeMemoryText(stripped).trim()
+}
+
+/** An excerpt's passages, split at its seams, normalized, empty ones dropped. */
+function excerptPassages(excerpt: string): string[] {
+  return excerpt
+    .split(PASSAGE_SEAMS)
+    .map((passage) => normalizeMemoryText(passage).trim())
+    .filter((passage) => passage !== '')
+}
+
+/** Whether an excerpt holds no passage long enough to verify — refused, but not for being absent (#253). */
+export function excerptTooShort(excerpt: string): boolean {
+  return excerptPassages(excerpt).every((passage) => passage.length < MIN_EXCERPT_PASSAGE_CHARS)
+}
+
+/**
+ * Whether the retained texts hold an excerpt's passages (#253, ADR 0054):
+ * the excerpt split at its seams, every passage found verbatim, whitespace
+ * and case tolerant — and, when that fails, found again with punctuation
+ * stripped from both sides. Only a passage of at least
+ * MIN_EXCERPT_PASSAGE_CHARS counts as support, so an excerpt with none holds
+ * nothing; a shorter one must still be there, or an invented "$99" would
+ * ride in beside a real "Price:". `every` demands all of them; `some` asks
+ * only whether a text holds one supporting passage, which is how a passage
+ * spread over several reads picks its record.
+ */
+function passagesHeld(texts: readonly string[], excerpt: string, quantifier: 'every' | 'some'): boolean {
+  const passages = excerptPassages(excerpt)
+  const supporting = passages.filter((passage) => passage.length >= MIN_EXCERPT_PASSAGE_CHARS)
+  if (supporting.length === 0) return false
+  const heldAs = (form: (text: string) => string): boolean => {
+    const haystacks = texts.map(form)
+    const held = (passage: string): boolean => {
+      const wanted = form(passage)
+      return wanted === '' || haystacks.some((text) => text.includes(wanted))
+    }
+    return quantifier === 'every' ? passages.every(held) : supporting.some((passage) => form(passage) !== '' && held(passage))
+  }
+  return heldAs(normalizeMemoryText) || heldAs(withoutPunctuation)
 }
 
 /** The shared no-Session refusal: the tool reports it when the seam is absent. */
@@ -456,6 +610,15 @@ export function evaluateEvidenceCheckpoint(
 ): EvidenceCheckpointOutcome {
   const citation = parseEvidenceCitation(call.args)
   if (citation === null) {
+    // A user citation carrying a stray excerpt is applied as the citation
+    // it evidently is (#253, ADR 0054) when its observation or the excerpt
+    // holds words the user said this Run.
+    const beside = userCitationBesideExcerpt(call.args)
+    if (beside !== null && deps.commitUser !== undefined) {
+      const inObservation = groundUserCitation(beside.citation.observation, deps.records)
+      const words = inObservation.ok ? inObservation : groundUserCitation(beside.excerpt, deps.records)
+      if (words.ok) return commitUserCitation(beside.citation, words, deps.commitUser, true)
+    }
     // A malformed call stays a rejected checkpoint (#241): the correction
     // names every defect and grades the call it should have been, and
     // nothing it shows is committed.
@@ -472,29 +635,7 @@ export function evaluateEvidenceCheckpoint(
     if (deps.commitUser === undefined) return EVIDENCE_NO_SESSION
     const grounding = groundUserCitation(citation.observation, deps.records)
     if (!grounding.ok) return grounding
-    const { event, producer } = grounding
-    const committed = deps.commitUser({
-      text: citation.observation,
-      ...(citation.uncertainty !== undefined ? { uncertainty: citation.uncertainty } : {}),
-      ...(citation.volatile !== undefined ? { volatile: citation.volatile } : {}),
-      references: [],
-      originEvent: { producer, observationId: event.id },
-    })
-    if (committed === null) {
-      return {
-        ok: false,
-        reason: 'refused',
-        error: EVIDENCE_REFUSED,
-      }
-    }
-    return {
-      ok: true,
-      entryId: committed.observation.id,
-      merged: committed.merged,
-      sourceObservationId: event.id,
-      originProducer: producer,
-      contradicts: committed.contradicts,
-    }
+    return commitUserCitation(citation, grounding, deps.commitUser, false)
   }
   if (citation.kind === 'subagent') {
     const commit = deps.commitSubagent?.(citation.agentId)
@@ -572,13 +713,67 @@ export function evaluateEvidenceCheckpoint(
 
 type SubagentCitation = Extract<EvidenceCitation, { kind: 'subagent' }>
 type WebCitation = Extract<EvidenceCitation, { kind: 'web' }>
+type UserCitation = Extract<EvidenceCitation, { kind: 'user' }>
 type SubagentObservations = (agentId: string) => readonly ObservationRecord[] | null
 
-/** A user citation's grounding (#122): the user event this Run's ledger retained that supplied its exact words. */
+/** The user event a user citation's words were found in. */
+interface UserWords {
+  readonly event: ObservationRecord
+  readonly producer: UserObservationOrigin['producer']
+}
+
+/**
+ * Commits a grounded user citation (#122). The Observation holds the
+ * utterance itself, never the model's wrapper around it (#253, ADR 0054),
+ * so User Observation text is always something the user said; when that
+ * differs from what the call sent, or the call carried a stray excerpt, the
+ * acceptance carries the Notice naming the canonical shape.
+ */
+function commitUserCitation(
+  citation: UserCitation,
+  { event, producer }: UserWords,
+  commit: EvidenceCommit,
+  strayExcerpt: boolean,
+): EvidenceCheckpointOutcome {
+  const text = typeof event.payload === 'string' ? event.payload.trim() : citation.observation
+  const committed = commit({
+    text,
+    ...(citation.uncertainty !== undefined ? { uncertainty: citation.uncertainty } : {}),
+    ...(citation.volatile !== undefined ? { volatile: citation.volatile } : {}),
+    references: [],
+    originEvent: { producer, observationId: event.id },
+  })
+  if (committed === null) {
+    return {
+      ok: false,
+      reason: 'refused',
+      error: EVIDENCE_REFUSED,
+    }
+  }
+  const reshaped = strayExcerpt || text !== citation.observation.trim()
+  return {
+    ok: true,
+    entryId: committed.observation.id,
+    merged: committed.merged,
+    sourceObservationId: event.id,
+    originProducer: producer,
+    contradicts: committed.contradicts,
+    ...(reshaped
+      ? {
+          correction:
+            `Notice: record_evidence stored the user's words exactly as the ${USER_EVENT_LABELS[producer]} said them` +
+            `${strayExcerpt ? ' and ignored the excerpt' : ''}. A kind "user" citation is {kind: "user", observation} ` +
+            "with observation holding only the user's exact words: no quotes, no lead-in, no gloss, no excerpt.",
+        }
+      : {}),
+  }
+}
+
+/** A user citation's grounding (#122): the user event this Run's ledger retained that supplied its words. */
 function groundUserCitation(
   observation: string,
   records: readonly ObservationRecord[],
-): { ok: true; event: ObservationRecord; producer: UserObservationOrigin['producer'] } | EvidenceCheckpointFailure {
+): ({ ok: true } & UserWords) | EvidenceCheckpointFailure {
   const event = findUserEventObservation(records, observation)
   if (event === null) {
     return {
@@ -612,7 +807,9 @@ function groundSubagentCitation(
     return {
       ok: false,
       reason: 'excerpt_unsupported',
-      error: `the excerpt does not appear in anything subagent '${citation.agentId}' retained from '${citation.sourceUrl}' — checked its ${producerList(grounding.producers)} — omit it, or copy it verbatim from the report you are citing`,
+      error: excerptTooShort(citation.excerpt ?? '')
+        ? `${tooShortError(citation.sourceUrl)}, or omit it`
+        : `the excerpt does not appear in anything subagent '${citation.agentId}' retained from '${citation.sourceUrl}' — checked its ${producerList(grounding.producers)} — omit it, or copy it verbatim from the report you are citing`,
     }
   }
   // No excerpt offered: the worker's freshest retention of the source
@@ -626,6 +823,14 @@ function groundSubagentCitation(
     }
   }
   return { ok: true, source, workerRecords }
+}
+
+/**
+ * The refusal of an excerpt too short to verify (#253): not a claim that the
+ * text is absent, which would send the model back to copy the same scrap.
+ */
+function tooShortError(sourceUrl: string): string {
+  return `the excerpt is too short to verify against '${sourceUrl}' — no passage of it has ${MIN_EXCERPT_PASSAGE_CHARS} or more characters; copy a longer verbatim passage that contains it`
 }
 
 /** A web citation's grounding (#179): the newest retention this Run holds that supports it. */
@@ -646,13 +851,16 @@ function groundWebCitation(
     return {
       ok: false,
       reason: 'excerpt_required',
-      error: `the citation carries no excerpt, and nothing this run retained from '${citation.sourceUrl}' grounds one without it — copy a contiguous span verbatim from the tool result you are citing; only a structured action outcome grounds excerptless`,
+      error: `the citation carries no excerpt, and nothing this run retained from '${citation.sourceUrl}' grounds one without it — copy every passage verbatim from the tool result you are citing; only a structured action outcome grounds excerptless`,
     }
+  }
+  if (excerptTooShort(citation.excerpt ?? '')) {
+    return { ok: false, reason: 'excerpt_unsupported', error: tooShortError(citation.sourceUrl) }
   }
   return {
     ok: false,
     reason: 'excerpt_unsupported',
-    error: `the excerpt does not appear in anything this run retained from '${citation.sourceUrl}' — checked its ${producerList(grounding.producers)} — copy it verbatim from the tool result you are citing, or cite the observation's structured outcome`,
+    error: `the excerpt does not appear in anything this run retained from '${citation.sourceUrl}' — checked its ${producerList(grounding.producers)} — copy every passage verbatim from the tool result you are citing (several verbatim passages may be joined with a line break or …), or cite the observation's structured outcome`,
   }
 }
 

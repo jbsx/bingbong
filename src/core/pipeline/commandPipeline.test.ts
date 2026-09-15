@@ -7278,6 +7278,40 @@ describe('grounded Candidates, user corrections, and Answers (#122)', () => {
     ])
   })
 
+  it('applies a creation carrying a status and tells the model the canonical shape on that result (#253)', async () => {
+    const store = storeHarness()
+    const llm = new ScriptedLlm([
+      { kind: 'tool_calls', calls: [{ id: 'c1', name: 'read_page', args: {} }] },
+      { kind: 'tool_calls', calls: [
+        { id: 'c2', name: 'record_evidence', args: { observation: 'The Acme router costs $39.', source_url: PAGE_URL, excerpt: 'Price: $39' } },
+      ] },
+      { kind: 'tool_calls', calls: [
+        { id: 'c3', name: 'record_candidate', args: { subject: 'Acme wifi router', status: 'accepted', reason: 'cheapest', supporting_evidence: ['memory-1'] } },
+      ] },
+      { kind: 'answer', speak: 'The Acme.', display: 'The Acme router.' },
+    ])
+    const pipeline = createCommandPipeline({
+      llm,
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [readPage, createRecordEvidenceTool(), createRecordCandidateTool()],
+      currentPageUrl: () => PAGE_URL,
+    })
+
+    const events = await collectWithContinuity(pipeline, 'find the cheapest router', continuityFor(store))
+
+    const result = events.find((e) => e.type === 'tool_result' && e.callId === 'c3')
+    expect(result).toMatchObject({ ok: true, result: expect.stringContaining('status "accepted" was not applied') })
+    expect(result).toMatchObject({
+      result: expect.stringContaining('\n\nNotice: record_candidate created this Candidate and ignored status, reason.'),
+    })
+    // The Notice is this call's verdict: the checkpoint before it carries none.
+    expect(events.find((e) => e.type === 'tool_result' && e.callId === 'c2')).toMatchObject({
+      result: expect.not.stringContaining('Notice: record_'),
+    })
+    expect(store.snapshot().candidates).toEqual([expect.objectContaining({ id: 'memory-2', status: 'active', decisions: [] })])
+  })
+
   it('refuses a Candidate whose support is not live Session Evidence (#122)', async () => {
     const store = storeHarness()
     const llm = new ScriptedLlm([

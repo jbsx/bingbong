@@ -8,6 +8,7 @@ import {
   parseEvidenceCitation,
   retainedText,
   sourceObservations,
+  userCitationBesideExcerpt,
   userEventObservations,
   type EvidenceCheckpointOutcome,
 } from '../pipeline/evidenceCheckpoint'
@@ -43,7 +44,9 @@ export function evidenceCheckpointEvent(input: {
   workerObservations?: (agentId: string) => readonly ObservationRecord[] | null
 }): EvidenceCheckpointEvent {
   const { call, outcome } = input
-  const citation = parseEvidenceCitation(call.args)
+  // A user citation beside a stray excerpt may be accepted (#253), and
+  // is graded against the user events like any other.
+  const citation = parseEvidenceCitation(call.args) ?? userCitationBesideExcerpt(call.args)?.citation ?? null
   const matchedId = outcome.ok ? outcome.sourceObservationId : null
   const graded =
     citation === null || (!outcome.ok && UNGRADED_REASONS.includes(outcome.reason))
@@ -70,6 +73,7 @@ export function evidenceCheckpointEvent(input: {
     // (#240, ADR 0051): what the Round Audit counts re-recordings by.
     ...(outcome.ok ? { entryId: outcome.entryId, merged: outcome.merged } : {}),
     ...(agentId !== undefined ? { agentId } : {}),
+    ...(outcome.ok && outcome.correction !== undefined ? { correction: outcome.correction } : {}),
   }
 }
 
@@ -94,6 +98,7 @@ export function candidateCheckpointEvent(input: {
     matched: false,
     graded: [],
     ...(outcome.ok ? { entryId: outcome.candidate.id } : {}),
+    ...(outcome.ok && outcome.correction !== undefined ? { correction: outcome.correction } : {}),
   }
 }
 

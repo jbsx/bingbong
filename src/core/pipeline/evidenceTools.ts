@@ -16,8 +16,9 @@ export function createRecordEvidenceTool(): Tool {
     name: 'record_evidence',
     description:
       'Checkpoint one grounded Observation into Session Evidence. Web (default): cite the source_url of a page this ' +
-      'run opened or read, and copy the excerpt verbatim — character-for-character copy-paste from what the tool ' +
-      'result showed there; a paraphrase from memory is rejected (a structured action outcome grounds itself — ' +
+      'run opened or read, and copy every passage of the excerpt verbatim from what the tool result showed there — ' +
+      'several verbatim passages may be joined with a line break or …; a paraphrase from memory is rejected (a ' +
+      'structured action outcome grounds itself — ' +
       'excerpt then optional). User (kind "user"): checkpoint the user\'s exact words — the command, an ask_user ' +
       'answer, or a steering directive this run heard, copied verbatim — so corrections and constraints survive for ' +
       'the whole Session. Subagent (kind "subagent"): checkpoint a finding from a collected report — cite the ' +
@@ -53,9 +54,10 @@ export function createRecordEvidenceTool(): Tool {
       excerpt: {
         type: 'string',
         description:
-          'A contiguous span copied character-for-character from the tool result that observed the source — ' +
-          'copy-paste it; never retype or paraphrase from memory, a near-miss is rejected. If the observed text is ' +
-          'no longer in front of you, re-read the source before citing. Web citations only.',
+          'Every passage verbatim from the tool result that observed the source — copy-paste it; several verbatim ' +
+          'passages may be joined with a line break or …. Never retype or paraphrase from memory: a paraphrased ' +
+          'passage is rejected. If the observed text is no longer in front of you, re-read the source before ' +
+          'citing. Web citations only.',
         required: false,
       },
       agent_id: {
