@@ -13,6 +13,12 @@ ADR 0038 bounds this optional bookkeeping opportunity in elapsed time and makes
 its request failure advance toward an Answer instead of escaping before the
 reserved Answer's fallback. The trip round remains distinct from bookkeeping.
 
+Amended on 2026-09-15 by ADR 0056 (#256): "the round is optional" now reads
+optional for the model, and skipped by the application when nothing new has
+been acquired since the last accepted Evidence Checkpoint. The fix-252
+capture showed the offered round spending its whole share and returning
+nothing on 10 of 18 Runs. Which round it is, when it happens, is unchanged.
+
 ## Context
 
 Finalization has one door and two ways through it. A loop-top rail — the

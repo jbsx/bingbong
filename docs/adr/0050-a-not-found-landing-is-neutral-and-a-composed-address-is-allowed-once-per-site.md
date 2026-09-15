@@ -8,6 +8,12 @@ and Blocker rails, and a third neutral case to Progress. Closes the loss ADR
 0048 accepted: a guessed navigate that lands on a 404 no longer resets a
 Search Loop.
 
+Amended on 2026-09-15 by ADR 0055 (#255): after a site's allowance is spent,
+a Composed Address to that site is rewritten into a search of the site in
+the same round instead of refused. The fix-252 capture showed the refusal
+leaving two moves and the model taking a third, 25 rounds of it. The
+recognition, the neutral landing, the allowance and the site notion stand.
+
 ## Context
 
 Nine navigates in the Baseline landed on a not-found page and were counted as

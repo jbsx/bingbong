@@ -336,9 +336,10 @@ The terminal phase in which a Run stops acquiring evidence and acting on pages,
 then produces the best grounded Answer available. Finalization never asks the
 user a new question once it has been entered. Entering it does not
 cancel a live Subagent: the Run waits the Report Grace for each one's Subagent
-Report before its bookkeeping Tool Round — which is always the first Tool
-Round to begin in Finalization; the round Finalization is entered during is
-never it.
+Report before its bookkeeping Tool Round — which, when it happens, is the
+first Tool Round to begin in Finalization; the round Finalization is entered
+during is never it, and the application skips it when nothing new has been
+acquired since the last accepted Evidence Checkpoint.
 _Avoid_: failure, timeout
 
 **Finalization Allowance**:
@@ -347,7 +348,8 @@ Card is available, covering Report Grace, bookkeeping, retries, and Answer
 generation but not speech playback. Sixty seconds, split into up to thirty of
 Report Grace, up to ten of bookkeeping, and twenty protected for the reserved
 Answer, which also inherits whatever the earlier shares did not spend. An
-opportunity with nothing left is skipped rather than started. Explicit user
+opportunity with nothing left, or a bookkeeping opportunity with nothing new
+to record, is skipped rather than started. Explicit user
 Pause suspends it; Stop takes precedence; a Steering replan that reopens
 acquisition drops it, and a later Finalization entry mints a fresh one.
 _Avoid_: active-work deadline, request timeout
@@ -489,7 +491,8 @@ deterministic fallback Run Note, and logs the degradation.
 The narrow exception to terminal Memory Commit: validated Session Evidence may
 enter Session Working Memory as soon as it is grounded. It preserves verified
 work across later Run failure or cancellation without committing speculative
-Assessments.
+Assessments. Its excerpt is one or more verbatim passages of what the Run
+retained from the source, never a paraphrase.
 _Avoid_: partial Memory Commit, autosave
 
 **Memory Entry**:
@@ -1017,8 +1020,9 @@ _Avoid_: 404 hit, failed navigate, bad guess
 A URL the model navigates to that it was not shown this Run — not an href in a
 result it read, not a page the Run landed on, not a source in Session
 Evidence. An Offered Address is any of those three. A site allows one
-Not-found Landing by a Composed Address per Run; after it, Composed Addresses
-to that site are refused and searches and Offered Addresses stay open. A site
+Not-found Landing by a Composed Address per Run; after it, a Composed Address
+to that site is rewritten into a search of that site, and searches and
+Offered Addresses stay open. A site
 is a registrable domain, so jpl.nasa.gov and science.nasa.gov are one site.
 _Avoid_: guessed URL, made-up URL, typed URL, direct URL
 
