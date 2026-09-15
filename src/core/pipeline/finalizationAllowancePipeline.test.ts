@@ -5,10 +5,19 @@ import { setFaultSink, type FaultReport } from '../trace/fault'
 import type { RunTraceEvent } from '../trace/runTrace'
 import { createCommandPipeline, type CommandPipeline } from './createCommandPipeline'
 import { FINALIZATION_ALLOWANCE_MS, RESERVED_ANSWER_ALLOWANCE_MS } from './finalizationAllowance'
+import {
+  BOOKKEEPING_KEPT_FOR_REPORT_REASON,
+  BOOKKEEPING_KEPT_REASON,
+  BOOKKEEPING_SKIPPED_REASON,
+  FINALIZATION_REPORT_CHECKPOINT_DIRECTIVE,
+  finalizeInstruction,
+  requestFinalizeInstruction,
+} from './effortEpoch'
+import type { SettledPageState } from './progressFingerprints'
 import { createReportRunPlanTool } from './runPlanTools'
 import { FakeClock, RecordingTts, withoutTurnId } from '../testing/doubles'
 import type { PipelineEvent } from './events'
-import type { AssistantTurn, LlmClient, LlmRequest } from '../ports/llm'
+import type { AssistantTurn, LlmClient, LlmRequest, ToolCall } from '../ports/llm'
 import type { Tool } from './tool'
 
 afterEach(() => setFaultSink(null))
@@ -697,5 +706,186 @@ describe('the Finalization Allowance in a Run (#209, ADR 0038)', () => {
     const speak = events.findIndex((event) => event.type === 'speak')
     expect(display).toBeGreaterThanOrEqual(0)
     expect(speak).toBeGreaterThan(display)
+  })
+})
+
+// Issue #256, ADR 0056: the bookkeeping round is skipped when nothing was
+// acquired with Progress and no Subagent Report collected since the last
+// accepted Evidence Checkpoint. In fix-252 the offered round spent its whole
+// share returning nothing on 10 of 18 Runs; the share belongs to the Answer.
+describe('the bookkeeping round, skipped when there is nothing new to record (#256, ADR 0056)', () => {
+  const pageAt = (url: string): SettledPageState => ({ url, title: url, textDigest: `the text of ${url}`, scrollX: 0, scrollY: 0, dialogOpen: false, dialogText: '' })
+  const navigateTo = (id: string, url: string): ToolCall => ({ id, name: 'navigate', args: { url } })
+  const checkpoint = (id: string): ToolCall => ({ id, name: 'record_evidence', args: { kind: 'web', observation: 'Vendor A is cheaper.' } })
+  const REPORT = 'a-1 [browsing] completed — price the vendors\nreport:\nVendor A costs $29.'
+
+  /**
+   * One Run whose first round does `work` — navigates that move the settled
+   * page, checkpoints that are accepted — beside its Run Plan, then blocks on
+   * a round the active-work deadline aborts: Finalization opens on exactly
+   * that history. `laterRounds` answers the rounds after it, as above.
+   */
+  function recorded(work: readonly ToolCall[], options: { laterRounds?: ((request: LlmRequest) => Promise<AssistantTurn>)[]; report?: boolean } = {}) {
+    const clock = new FakeClock()
+    const requests: LlmRequest[] = []
+    const traced: RunTraceEvent[] = []
+    let page: SettledPageState | null = null
+    let reported = false
+    const tools: Tool[] = [
+      createReportRunPlanTool(),
+      {
+        name: 'navigate',
+        acquisition: true,
+        async execute(call) {
+          page = pageAt(String(call.args.url))
+          return `navigated: url=${String(call.args.url)}`
+        },
+      },
+      { name: 'record_evidence', async execute() { return 'Session Evidence recorded: memory-1' } },
+    ]
+    const llm: LlmClient = {
+      async complete(request) {
+        requests.push({ ...request, toolResults: [...request.toolResults] })
+        if (requests.length === 1) {
+          return {
+            kind: 'tool_calls',
+            calls: [{ id: 'p1', name: 'report_run_plan', args: { objective: 'Compare vendors', headline: 'Comparing vendors', effort_tier: 'lookup', asked_items: ['the answer'] } }, ...work],
+          }
+        }
+        if (requests.length === 2) return abortableRound(request)
+        const scripted = options.laterRounds?.[requests.length - 3]
+        return scripted ? scripted(request) : ANSWER
+      },
+    }
+    const pipeline = createCommandPipeline({
+      llm,
+      tts: new RecordingTts(),
+      clock,
+      tools,
+      activeWorkDeadlineMs: 1_000,
+      settledPageState: () => page,
+      ...(options.report
+        ? {
+            collectCompletedSubagentResults: () => {
+              if (reported) return []
+              reported = true
+              return [{ agentId: 'a-1', formattedReport: REPORT }]
+            },
+          }
+        : {}),
+    })
+    let finished = false
+    return {
+      clock,
+      requests,
+      traced,
+      finished: () => finished,
+      run(): Promise<PipelineEvent[]> {
+        const events = (async () => {
+          const collected: PipelineEvent[] = []
+          for await (const raw of pipeline.execute('compare vendors', 'turn-256', false, {
+            snapshot: [],
+            memory: [],
+            commit: () => 'committed',
+            traceRun: (build) => traced.push(build()),
+          })) {
+            collected.push(withoutTurnId(raw))
+          }
+          finished = true
+          return collected
+        })()
+        return events
+      },
+      async enterFinalization(): Promise<void> {
+        await settle(() => requests.length >= 2)
+        // A Run that navigated is making Progress, so its first crossing is
+        // the one Tier Escalation (#216) and re-arms the deadline; the
+        // second crossing is the one that finalizes.
+        clock.advance(1_000)
+        await flush()
+        clock.advance(1_000)
+        await flush()
+      },
+      entries: () => traced.filter((record) => record.kind === 'finalization_entry'),
+    }
+  }
+
+  const bookkeepingCheckpoint = async (): Promise<AssistantTurn> => ({ kind: 'tool_calls', calls: [checkpoint('e9')] })
+
+  it('skips it when the last Progress was an accepted checkpoint, and the reserved Answer inherits its share', async () => {
+    const h = recorded([navigateTo('n1', 'https://vendors.example/a'), checkpoint('e1')], { laterRounds: [abortableRound] })
+    const run = h.run()
+    await h.enterFinalization()
+    await settle(() => h.requests.length >= 3)
+
+    // No bookkeeping request: the next one is the reserved Answer, told that
+    // no round came and where an unrecorded finding goes.
+    expect(h.requests[2]).toMatchObject({
+      answerOnly: true,
+      finalizeInstruction: requestFinalizeInstruction({ kind: 'answer_only', cause: 'deadline_reached' }, 'skipped'),
+    })
+    // Bookkeeping's share flows to the Answer: the whole allowance, not the
+    // twenty seconds it is protected, and not what a spent round would leave.
+    h.clock.advance(FINALIZATION_ALLOWANCE_MS - 1)
+    for (let turn = 0; turn < 20; turn += 1) await flush()
+    expect(h.finished()).toBe(false)
+    h.clock.advance(1)
+    const events = await run
+
+    expect(h.requests).toHaveLength(3)
+    expect(events.at(-1)).toMatchObject({ type: 'done', finalizationCause: 'deadline_reached' })
+    expect(h.entries()).toEqual([
+      { turnId: 'turn-256', kind: 'finalization_entry', cause: 'deadline_reached', bookkeeping: 'skipped', reason: BOOKKEEPING_SKIPPED_REASON },
+    ])
+  })
+
+  it('keeps it after an acquisition with Progress since the checkpoint, asking for at most two checkpoints', async () => {
+    const h = recorded([navigateTo('n1', 'https://vendors.example/a'), checkpoint('e1'), navigateTo('n2', 'https://vendors.example/b')], {
+      laterRounds: [bookkeepingCheckpoint],
+    })
+    const run = h.run()
+    await h.enterFinalization()
+    const events = await run
+
+    expect(h.requests).toHaveLength(4)
+    expect(h.requests[2]).not.toHaveProperty('answerOnly')
+    expect(h.requests[2]!.finalizeInstruction).toBe(finalizeInstruction('deadline_reached'))
+    expect(h.requests[2]!.finalizeInstruction).toMatch(/at most two Evidence Checkpoints/)
+    // The round ran, so the Answer after it is worded as it always was.
+    expect(h.requests[3]).toMatchObject({
+      answerOnly: true,
+      finalizeInstruction: requestFinalizeInstruction({ kind: 'answer_only', cause: 'deadline_reached' }),
+    })
+    expect(displayText(events)).toBe('Vendor A wins.')
+    expect(h.entries()).toEqual([
+      { turnId: 'turn-256', kind: 'finalization_entry', cause: 'deadline_reached', bookkeeping: 'kept', reason: BOOKKEEPING_KEPT_REASON },
+    ])
+  })
+
+  it('keeps it when the run made Progress and never checkpointed at all', async () => {
+    const h = recorded([navigateTo('n1', 'https://vendors.example/a'), navigateTo('n2', 'https://vendors.example/b')], {
+      laterRounds: [bookkeepingCheckpoint],
+    })
+    const run = h.run()
+    await h.enterFinalization()
+    await run
+
+    expect(h.requests).toHaveLength(4)
+    expect(h.requests[2]).not.toHaveProperty('answerOnly')
+    expect(h.entries()).toMatchObject([{ bookkeeping: 'kept', reason: BOOKKEEPING_KEPT_REASON }])
+  })
+
+  it('keeps it for a Subagent Report collected ahead of it, however little else is new', async () => {
+    const h = recorded([navigateTo('n1', 'https://vendors.example/a'), checkpoint('e1')], { laterRounds: [bookkeepingCheckpoint], report: true })
+    const run = h.run()
+    await h.enterFinalization()
+    const events = await run
+
+    const injected = events.find((event) => event.type === 'tool_result' && event.callId === 'finalization-agent-results-a-1')
+    expect(injected).toMatchObject({ ok: true, result: expect.stringContaining(FINALIZATION_REPORT_CHECKPOINT_DIRECTIVE) })
+    expect(h.requests).toHaveLength(4)
+    expect(h.requests[2]).not.toHaveProperty('answerOnly')
+    expect(h.requests[2]!.finalizeInstruction).toBe(finalizeInstruction('deadline_reached'))
+    expect(h.entries()).toMatchObject([{ bookkeeping: 'kept', reason: BOOKKEEPING_KEPT_FOR_REPORT_REASON }])
   })
 })
