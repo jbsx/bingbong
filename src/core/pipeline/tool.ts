@@ -188,6 +188,14 @@ export interface Tool {
    */
   acquisition?: boolean
   /**
+   * An Evidence Checkpoint tool (#254): Bookkeeping that records a finding
+   * or a Candidate decision. A Tool Round that accepted a checkpoint and did
+   * nothing else outside Finalization owes the next round a reminder to
+   * checkpoint alongside its action; a successful result is an accepted
+   * checkpoint.
+   */
+  checkpoint?: boolean
+  /**
    * Offer this tool only in LLM rounds that carry prior Session continuity
    * (spec #24). Rounds without continuity keep today's exact catalog — the
    * provider's empty-completion bug scales with prompt size, and the tool

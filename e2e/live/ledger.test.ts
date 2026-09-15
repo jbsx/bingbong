@@ -192,6 +192,10 @@ describe('the committed Round Audits', () => {
     expect(row.headline.find((entry) => entry.metric.id === 'checks')!.populations.initial.subject.aggregate.over).toBeGreaterThan(0)
     const source = row.counters.find((counter) => counter.label === 'Attempts with search source: rail')!
     expect(source.populations.initial).toEqual({ reference: { value: 0, over: null }, subject: { value: null, over: null }, delta: null })
+    // Bundled checkpoint rounds (#254): every committed audit predates the counter, so both sides read as nothing.
+    const bundled = row.counters.find((counter) => counter.label === 'Bundled checkpoint rounds')!
+    expect(bundled.populations.initial.reference?.value).toBeNull()
+    expect(bundled.populations.initial.subject?.value).toBeNull()
     expect(row.markers.judgement).toEqual([{ axis: 'reviewer prompt', reference: 'audit-p2', subject: 'audit-p1' }])
   })
 

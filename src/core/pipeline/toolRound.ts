@@ -267,6 +267,15 @@ export interface ToolRoundExecutor {
 }
 
 /**
+ * The bookkeeping-only Notice (#254): owed by a Tool Round that recorded
+ * only checkpoints outside Finalization, carried by the next round's first
+ * successful text result. A round costs one unit whatever its sibling count
+ * (ADR 0027), so a checkpoint folded into the action after it saves a round.
+ */
+export const BOOKKEEPING_ONLY_NOTICE =
+  'Your previous Tool Round recorded only checkpoints — a round spent on bookkeeping alone. Checkpoint alongside your next action, in the same response.'
+
+/**
  * What a call names no tool in the catalog answers with. Exported because
  * an adapter can answer for the round (#158: a Subagent has no user, so
  * its decisions seam answers an interactive ask as the tool it is not).
@@ -584,6 +593,12 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
     // before or after — is a discarded sibling.
     const soleIndex = config.soleCall ? turn.calls.findIndex((call) => config.soleCall!.select(call)) : -1
     let end: RoundEnd = { kind: 'continue' }
+    // Bookkeeping alone (#254): whether this round accepted a checkpoint and
+    // did nothing but checkpoint beside it. A call the caller answered itself
+    // (the Run Plan) is neutral; any other call — failed or refused included —
+    // means the round already carried an action.
+    let acceptedCheckpoint = false
+    let onlyCheckpoints = true
 
     for (const [index, call] of turn.calls.entries()) {
       if (soleIndex !== -1 && index !== soleIndex) continue
@@ -691,6 +706,13 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
       if (config.heldObservations !== undefined && classification.pageFacing && outcome.ok) {
         notices.owe('held_page', heldPageLanding(config.heldObservations, sourceUrl ?? null, turnId))
       }
+      if (intercepted === null) {
+        if (toolsByName.get(call.name)?.checkpoint === true) acceptedCheckpoint ||= outcome.ok
+        else onlyCheckpoints = false
+      }
+      // Finalization's bookkeeping round records alone by design (#254): a
+      // reminder owed before the door opened no longer applies.
+      if (isInFinalization()) notices.clear('bookkeeping_only')
       // The one delivery site (#154): every Notice this result can carry
       // rides it in precedence order. Useful work is a successful string
       // result the caller did not answer itself, in a round whose work is
@@ -733,6 +755,13 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
         results.push({ call, outcome: { ok: false, error }, observationId: null })
         yield { type: 'tool_result', callId: call.id, name: call.name, ok: false, error, at: clock.now() }
       }
+    }
+    // The bookkeeping-only Notice (#254) is owed for one round: whatever the
+    // previous round owed and this one could not carry is dropped, never
+    // repeated. A rejected checkpoint's round already carries the rejection.
+    notices.clear('bookkeeping_only')
+    if (end.kind === 'continue' && onlyCheckpoints && acceptedCheckpoint && !isInFinalization()) {
+      notices.owe('bookkeeping_only', BOOKKEEPING_ONLY_NOTICE)
     }
     return { end, results }
   }

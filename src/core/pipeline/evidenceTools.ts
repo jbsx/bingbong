@@ -14,8 +14,10 @@ import { EVIDENCE_NO_SESSION, evidenceCheckpointMessage, type EvidenceCheckpoint
 export function createRecordEvidenceTool(): Tool {
   return {
     name: 'record_evidence',
+    checkpoint: true,
     description:
-      'Checkpoint one grounded Observation into Session Evidence. Web (default): cite the source_url of a page this ' +
+      'Checkpoint one grounded Observation into Session Evidence. Call it alongside your next action in the same ' +
+      'response, never in a round spent on checkpoints alone unless acquisition tools are closed. Web (default): cite the source_url of a page this ' +
       'run opened or read, and copy the excerpt verbatim — character-for-character copy-paste from what the tool ' +
       'result showed there; a paraphrase from memory is rejected (a structured action outcome grounds itself — ' +
       'excerpt then optional). User (kind "user"): checkpoint the user\'s exact words — the command, an ask_user ' +

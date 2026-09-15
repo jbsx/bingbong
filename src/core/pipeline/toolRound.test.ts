@@ -9,7 +9,7 @@ import { FakeClock } from '../testing/doubles'
 import { createEffortEpoch, finalizationToolRefusal } from './effortEpoch'
 import { createNotices } from './notices'
 import { createObservationLedger, type ObservationInput } from '../session/observationLedger'
-import { createToolRoundExecutor, type ToolRoundCapabilities, type ToolRoundConfig, type ToolRoundOutcome } from './toolRound'
+import { BOOKKEEPING_ONLY_NOTICE, createToolRoundExecutor, type ToolRoundCapabilities, type ToolRoundConfig, type ToolRoundOutcome } from './toolRound'
 import { composedAddressRefusal } from './composedAddressRail'
 import type { ToolTraceEvent, VisionTraceIds, VisionTraceReporter } from '../trace/visionTrace'
 import { createSessionEvidence } from '../session/sessionEvidence'
@@ -185,13 +185,17 @@ function scripted(
     result?: string | (() => string)
     assessRisk?: RiskVerdict
     acquisition?: boolean
+    checkpoint?: boolean
     usesVision?: boolean
     admit?: (args: ToolCall['args']) => ToolAdmission | Promise<ToolAdmission>
+    /** The tool throws this message instead of returning a result. */
+    fails?: string
   } = {},
 ): Tool {
   return {
     name,
     ...(options.acquisition ? { acquisition: true } : {}),
+    ...(options.checkpoint ? { checkpoint: true } : {}),
     ...(options.usesVision ? { usesVision: true } : {}),
     ...(options.admit
       ? {
@@ -211,6 +215,7 @@ function scripted(
       : {}),
     async execute(callArg: ToolCall): Promise<unknown> {
       trace.push(`execute:${callArg.name}`)
+      if (options.fails !== undefined) throw new Error(options.fails)
       const result = options.result ?? 'done'
       return typeof result === 'function' ? result() : result
     },
@@ -1122,5 +1127,90 @@ describe('the Held Page Notice rides the landing on a page the Session holds, an
     const h = harness([navigate], { currentPageUrl: () => tab.url })
     const { outcome } = await h.round([call('navigate', { url: HELD })])
     expect(resultOf(outcome.results[0]!.outcome)).toBe('navigate done')
+  })
+})
+
+// #254: a checkpoint rides the next action. A round that recorded only
+// checkpoints outside Finalization owes the next round one reminder; nothing
+// is refused, and the reminder is dropped if the next round has no result
+// that can carry it.
+describe('the bookkeeping-only Notice rides the round after a round of checkpoints alone (#254)', () => {
+  function catalog(options: { checkpointFails?: boolean } = {}): Tool[] {
+    const trace: string[] = []
+    return [
+      scripted('record_evidence', trace, { checkpoint: true, result: 'Session Evidence recorded: memory-1.', ...(options.checkpointFails ? { fails: 'excerpt not found' } : {}) }),
+      scripted('record_candidate', trace, { checkpoint: true, result: 'Candidate recorded: candidate-1.' }),
+      scripted('navigate', trace, { acquisition: true, result: 'navigated' }),
+      scripted('broken', trace, { acquisition: true, fails: 'boom' }),
+    ]
+  }
+  const carries = (outcome: ToolResultOutcome): boolean =>
+    (outcome.ok ? String(outcome.result) : outcome.error).includes(BOOKKEEPING_ONLY_NOTICE)
+
+  it('is owed after a round of accepted checkpoints and rides the next action’s result, once', async () => {
+    const h = harness(catalog(), { capabilities: { ...ALL_RAILS, noProgressRail: false } })
+
+    const bookkeeping = await h.round([call('record_evidence', {}, 'c1'), call('record_candidate', {}, 'c2')])
+    // The round that recorded alone is not told about itself.
+    expect(bookkeeping.outcome.results.some((result) => carries(result.outcome))).toBe(false)
+
+    const next = await h.round([call('navigate', { url: 'https://a.example/' }, 'c3')])
+    expect(resultOf(next.outcome.results[0]!.outcome)).toBe(`navigated\n\n${BOOKKEEPING_ONLY_NOTICE}`)
+
+    const after = await h.round([call('navigate', { url: 'https://b.example/' }, 'c4')])
+    expect(carries(after.outcome.results[0]!.outcome)).toBe(false)
+  })
+
+  it('rides the first successful text result of the next round, past a failed one', async () => {
+    const h = harness(catalog(), { capabilities: { ...ALL_RAILS, noProgressRail: false } })
+    await h.round([call('record_evidence', {}, 'c1')])
+
+    const next = await h.round([call('broken', {}, 'c2'), call('navigate', { url: 'https://a.example/' }, 'c3'), call('navigate', { url: 'https://b.example/' }, 'c4')])
+
+    expect(next.outcome.results.map((result) => carries(result.outcome))).toEqual([false, true, false])
+  })
+
+  it('is dropped, never repeated, when the next round has no result to carry it', async () => {
+    const h = harness(catalog(), { capabilities: { ...ALL_RAILS, noProgressRail: false } })
+    await h.round([call('record_evidence', {}, 'c1')])
+
+    const failed = await h.round([call('broken', {}, 'c2')])
+    expect(carries(failed.outcome.results[0]!.outcome)).toBe(false)
+
+    const later = await h.round([call('navigate', { url: 'https://a.example/' }, 'c3')])
+    expect(carries(later.outcome.results[0]!.outcome)).toBe(false)
+  })
+
+  it('is not owed after a round that carried an action beside its checkpoint', async () => {
+    const h = harness(catalog(), { capabilities: { ...ALL_RAILS, noProgressRail: false } })
+    await h.round([call('navigate', { url: 'https://a.example/' }, 'c1'), call('record_evidence', {}, 'c2')])
+
+    const next = await h.round([call('navigate', { url: 'https://b.example/' }, 'c3')])
+    expect(carries(next.outcome.results[0]!.outcome)).toBe(false)
+  })
+
+  it('is not owed after a round whose only checkpoint was rejected — that round already carries the rejection', async () => {
+    const h = harness(catalog({ checkpointFails: true }), { capabilities: { ...ALL_RAILS, noProgressRail: false } })
+    await h.round([call('record_evidence', {}, 'c1')])
+
+    const next = await h.round([call('navigate', { url: 'https://a.example/' }, 'c2')])
+    expect(carries(next.outcome.results[0]!.outcome)).toBe(false)
+  })
+
+  it('is not owed after the bookkeeping round in Finalization', async () => {
+    const h = harness(catalog(), { capabilities: { ...ALL_RAILS, noProgressRail: false } })
+    h.epoch.enterFinalization('budget_exhausted')
+    await h.round([call('record_evidence', {}, 'c1')])
+
+    expect(h.notices.attach({ ok: true, result: 'later' }, { usefulWork: true })).toEqual({ ok: true, result: 'later' })
+  })
+
+  it('is withdrawn when Finalization is entered before a result carried it', async () => {
+    const h = harness(catalog(), { capabilities: { ...ALL_RAILS, noProgressRail: false } })
+    await h.round([call('record_evidence', {}, 'c1')])
+    h.epoch.enterFinalization('deadline_reached')
+
+    const bookkeeping = await h.round([call('record_evidence', {}, 'c2')])
+    expect(carries(bookkeeping.outcome.results[0]!.outcome)).toBe(false)
   })
 })

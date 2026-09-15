@@ -1,9 +1,10 @@
 import type { ToolResultOutcome } from '../ports/llm'
 import { reportFault } from '../trace/fault'
 
-// Issue #154, step 1: the Notices module. Eight model-facing advisory
+// Issue #154, step 1: the Notices module. Nine model-facing advisory
 // lines ride tool results — the Search Loop rail's Notice, the no-progress
-// Notice, (#240) the Held Page Notice, the Run Plan's corrective Notice, the Effort
+// Notice, (#240) the Held Page Notice, the Run Plan's corrective Notice,
+// (#254) the bookkeeping-only Notice, the Effort
 // Epoch's budget warning, (#216) its automatic Tier Escalation, its
 // Finalize Instruction, and (#158) the Browse Subagent's own Finalize
 // Instruction. Their precedence
@@ -31,12 +32,13 @@ import { reportFault } from '../trace/fault'
 // clock, no tool names — "useful work" is the caller's judgement, passed
 // in per result.
 
-/** The eight Notice kinds, named by their source. */
+/** The nine Notice kinds, named by their source. */
 export type NoticeKind =
   | 'search_loop'
   | 'no_progress'
   | 'held_page'
   | 'run_plan'
+  | 'bookkeeping_only'
   | 'budget'
   | 'tier_escalation'
   | 'finalization'
@@ -53,13 +55,15 @@ export type NoticeKind =
  * warning's question — the deadline decided — and a round can carry both
  * only when the crossing happened before the warning could be delivered.
  * A worker's Finalize Instruction (#158) is last of all: it is the only
- * one that ends the loop.
+ * one that ends the loop. The bookkeeping-only Notice (#254) corrects a
+ * habit the way the plan nudge does, so it sits beside it.
  */
 export const NOTICE_PRECEDENCE: readonly NoticeKind[] = [
   'search_loop',
   'no_progress',
   'held_page',
   'run_plan',
+  'bookkeeping_only',
   'budget',
   'tier_escalation',
   'finalization',
@@ -85,6 +89,9 @@ const RULES: Readonly<Record<NoticeKind, NoticeRule>> = {
   no_progress: { persistence: 'immediate', rides: 'success' },
   held_page: { persistence: 'immediate', rides: 'success' },
   run_plan: { persistence: 'owed', rides: 'useful_work' },
+  // Owed for one round only: the executor withdraws it at the end of the
+  // round after the one that owed it, delivered or not (#254).
+  bookkeeping_only: { persistence: 'owed', rides: 'success' },
   budget: { persistence: 'owed', rides: 'useful_work' },
   tier_escalation: { persistence: 'owed', rides: 'useful_work' },
   finalization: { persistence: 'owed', rides: 'success' },
