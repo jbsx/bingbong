@@ -70,6 +70,8 @@ function harness(
     stoppedWith?: () => Error | undefined
     settledPageState?: () => SettledPageState | null
     activeWorkDeadlineMs?: number
+    /** Whether the Run has anything new to record (#256): what the epoch words its next round by. */
+    somethingToRecord?: () => boolean
     visionCalls?: number
     /** The vision seam (#186): what the round's Vision Budget records through. */
     traceVision?: VisionTraceReporter
@@ -99,6 +101,7 @@ function harness(
   const epoch = createEffortEpoch({
     clock,
     ...(options.activeWorkDeadlineMs !== undefined ? { activeWorkDeadlineMs: options.activeWorkDeadlineMs } : {}),
+    ...(options.somethingToRecord !== undefined ? { somethingToRecord: options.somethingToRecord } : {}),
   })
   const ledger = createObservationLedger({ now: () => clock.now(), generation: 0, isCurrentGeneration: () => true })
   const decisions: RunDecisions = {
@@ -362,6 +365,21 @@ describe('mid-round trips close the round’s remaining siblings (#157/AC2)', ()
     expect(errorOf(outcome.results[5]!.outcome)).not.toContain('work budget is exhausted')
     expect(errorOf(outcome.results[5]!.outcome)).toContain('made no progress')
     expect(trace.filter((entry) => entry === 'execute:navigate')).toHaveLength(5)
+  })
+
+  it('words the refusal for the round that comes next: the bookkeeping round, or the Answer (#256, ADR 0056)', async () => {
+    const tripRound = async (somethingToRecord: boolean): Promise<string> => {
+      const calls = ['a', 'b', 'c', 'd', 'e'].map((slug) => call('navigate', { url: `https://example.com/${slug}` }))
+      const h = harness([scripted('navigate', [], { acquisition: true })], { settledPageState: () => STUCK, somethingToRecord: () => somethingToRecord })
+      const { outcome } = await h.round([...calls, call('navigate', { url: 'https://example.com/late' })])
+      expect(h.epoch.phase).toEqual({ kind: 'finalizing', cause: 'no_progress' })
+      return errorOf(outcome.results[5]!.outcome)
+    }
+
+    expect(await tripRound(true)).toBe(finalizationToolRefusal('no_progress'))
+    const skipped = await tripRound(false)
+    expect(skipped).toBe(finalizationToolRefusal('no_progress', undefined, 'skipped'))
+    expect(skipped).toMatch(/no bookkeeping round follows/)
   })
 
   it('refuses the acquisition siblings after the Blocker trip, on the same wall (#202, ADR 0037)', async () => {

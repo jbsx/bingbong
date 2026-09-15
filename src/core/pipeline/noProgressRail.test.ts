@@ -456,6 +456,78 @@ describe('no-progress rail — resets (#126/AC3)', () => {
   })
 })
 
+// Issue #256, ADR 0056: whether a Finalization bookkeeping round would have
+// anything new to record. The rail's own Progress is the measure, and the
+// last accepted Evidence Checkpoint is the reference point.
+describe('no-progress rail — acquired since the last accepted checkpoint (#256, ADR 0056)', () => {
+  const MOVED = state({ url: 'https://example.com/b', title: 'Another', textDigest: 'Something new.' })
+  const checkpoint = call('record_evidence', { observation: 'fact', source_url: 'https://example.com/a' })
+
+  it('holds nothing before the first action, and the baseline read is acquired', async () => {
+    const rail = createNoProgressRail({ settledState: () => BASE })
+    expect(rail.newSinceCheckpoint()).toBe(false)
+    await rail.observe(call('navigate', { url: 'https://example.com/a' }), ok())
+    expect(rail.newSinceCheckpoint()).toBe(true)
+  })
+
+  it('clears on an accepted checkpoint of either kind, and not on a rejected one', async () => {
+    const rail = createNoProgressRail({ settledState: () => BASE })
+    await rail.observe(call('navigate', { url: 'https://example.com/a' }), ok())
+    await rail.observe(checkpoint, failed('not grounded'))
+    expect(rail.newSinceCheckpoint()).toBe(true)
+    await rail.observe(call('record_candidate', { name: 'Vendor A' }), ok())
+    expect(rail.newSinceCheckpoint()).toBe(false)
+    await rail.observe(call('navigate', { url: 'https://example.com/a' }), ok())
+    await rail.observe(checkpoint, ok())
+    expect(rail.newSinceCheckpoint()).toBe(false)
+  })
+
+  it('counts a settled state that moved after the checkpoint, and not a read that is only neutral', async () => {
+    const rail = createNoProgressRail({ settledState: scriptedStates([BASE, BASE, BASE, MOVED]) })
+    await rail.observe(call('navigate', { url: 'https://example.com/a' }), ok())
+    await rail.observe(checkpoint, ok())
+    // The first read of a state is new material but not Progress (#161); the repeat is inspection.
+    await rail.observe(call('read_page'), ok())
+    await rail.observe(call('read_page'), ok())
+    expect(rail.newSinceCheckpoint()).toBe(false)
+    await rail.observe(call('click', { ref: 4 }), ok())
+    expect(rail.newSinceCheckpoint()).toBe(true)
+  })
+
+  it('counts a requested state change and a collected Subagent Report, and not a failed collection', async () => {
+    const changed = createNoProgressRail({ settledState: () => BASE })
+    await changed.observe(call('set_setting', { key: 'voice', value: 'on' }), ok())
+    expect(changed.newSinceCheckpoint()).toBe(true)
+
+    const collected = createNoProgressRail({ settledState: () => BASE })
+    await collected.observe(call('agent_results', { agent_id: 'a-1' }), failed('no such agent'))
+    expect(collected.newSinceCheckpoint()).toBe(false)
+    await collected.observe(call('agent_results', { agent_id: 'a-1' }), ok('a-1 [browsing] completed — a report'))
+    expect(collected.newSinceCheckpoint()).toBe(true)
+  })
+
+  it('still clears on a checkpoint accepted after the trip, and keeps what it holds across a replan', async () => {
+    const rail = createNoProgressRail({ settledState: () => BASE })
+    await rail.observe(call('navigate', { url: 'https://example.com/a' }), ok())
+    for (let read = 0; read < 5; read += 1) await rail.observe(call('read_page'), ok())
+    expect(rail.finalizationDue()).toBe(true)
+    rail.reset()
+    expect(rail.newSinceCheckpoint()).toBe(true)
+
+    for (let read = 0; read < 5; read += 1) await rail.observe(call('read_page'), ok())
+    expect(rail.finalizationDue()).toBe(true)
+    await rail.observe(checkpoint, ok())
+    expect(rail.newSinceCheckpoint()).toBe(false)
+  })
+
+  it('vouches for nothing when it observes nothing: an inert rail reads as acquired', async () => {
+    const rail = createNoProgressRail()
+    expect(rail.newSinceCheckpoint()).toBe(true)
+    await rail.observe(checkpoint, ok())
+    expect(rail.newSinceCheckpoint()).toBe(true)
+  })
+})
+
 describe('no-progress rail — approach exhaustion and Finalization (#126/AC4)', () => {
   it('instructs an Approach change after two no-progress actions, twice, then trips Finalization', async () => {
     const rail = createNoProgressRail({ settledState: () => BASE })

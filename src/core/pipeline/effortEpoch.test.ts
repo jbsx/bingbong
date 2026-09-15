@@ -15,6 +15,7 @@ import {
   HARD_TOOL_ROUND_CEILING,
   injectedReportDirective,
   RUN_PLAN_REASONING_EFFORT,
+  SKIPPED_BOOKKEEPING_ANSWER_DIRECTIVE,
   SUBAGENT_REASONING_EFFORT,
   TIER_ACTIVE_WORK_DEADLINES_MS,
   LLM_REQUEST_TIMEOUT_MS,
@@ -1529,6 +1530,100 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
     })
   })
 
+  // Issue #256, ADR 0056: the application skips the bookkeeping Tool Round
+  // when there is nothing new to record, and every carrier of the Finalize
+  // Instruction says which round comes next — never a round that will not.
+  describe('the bookkeeping round, skipped when there is nothing new to record (#256, ADR 0056)', () => {
+    const MARK = 'Acquisition tools (browser, vision, media, and delegation) and ask_user are closed'
+    const NO_PROGRESS = 'Two Approaches in a row made no progress — repeated actions stopped producing anything new'
+
+    it('reads the round as kept while there is something to record, and skipped once there is not', () => {
+      let something = true
+      const epoch = createEffortEpoch({ clock: new FakeClock(), initialTier: 'lookup', somethingToRecord: () => something })
+      epoch.enterFinalization('no_progress')
+      expect(epoch.bookkeepingRound).toBe('kept')
+      something = false
+      expect(epoch.bookkeepingRound).toBe('skipped')
+    })
+
+    it('skips to the reserved Answer without counting a Tool Round, and only when there is nothing to record', () => {
+      let something = true
+      const epoch = createEffortEpoch({ clock: new FakeClock(), initialTier: 'lookup', somethingToRecord: () => something })
+      epoch.beginToolRound()
+      epoch.enterFinalization('deadline_reached')
+      expect(epoch.skipBookkeepingRound()).toBe(false)
+      expect(epoch.phase).toEqual({ kind: 'finalizing', cause: 'deadline_reached' })
+
+      something = false
+      const rounds = epoch.cumulativeRounds
+      expect(epoch.skipBookkeepingRound()).toBe(true)
+      expect(epoch.phase).toEqual({ kind: 'answer_only', cause: 'deadline_reached' })
+      expect(epoch.cumulativeRounds).toBe(rounds)
+      expect(epoch.beginToolRound()).toBe(false)
+      expect(epoch.skipBookkeepingRound()).toBe(false)
+      // The skip is latched: what the reserved Answer is told does not move
+      // with what the predicate says afterwards.
+      something = true
+      expect(epoch.bookkeepingRound).toBe('skipped')
+    })
+
+    it('reads a round that ran as kept for the rest of the Finalization, whatever it recorded', () => {
+      let something = true
+      const epoch = createEffortEpoch({ clock: new FakeClock(), initialTier: 'lookup', somethingToRecord: () => something })
+      epoch.enterFinalization('budget_exhausted')
+      epoch.beginToolRound()
+      // The round's checkpoint landed: nothing is left to record, and the round still happened.
+      something = false
+      expect(epoch.bookkeepingRound).toBe('kept')
+      expect(epoch.takeFinalizationNotice()).toBe(finalizeInstruction('budget_exhausted'))
+    })
+
+    it('keeps the round for an epoch nobody vouches for, and a Browse Subagent’s Finalization is unchanged', () => {
+      const lean = createEffortEpoch({ clock: new FakeClock() })
+      lean.enterFinalization('no_progress')
+      expect(lean.bookkeepingRound).toBe('kept')
+      expect(lean.skipBookkeepingRound()).toBe(false)
+
+      const subagentEpoch = createEffortEpoch({
+        clock: new FakeClock(),
+        subagent: { toolRoundBudget: 4, deadline: { expired: () => false } },
+        somethingToRecord: () => false,
+      })
+      subagentEpoch.enterFinalization('no_progress')
+      expect(subagentEpoch.bookkeepingRound).toBe('kept')
+      expect(subagentEpoch.skipBookkeepingRound()).toBe(false)
+      expect(subagentEpoch.phase).toEqual({ kind: 'finalizing', cause: 'no_progress' })
+    })
+
+    it('words the kept round’s instruction to fit its share: at most two checkpoints', () => {
+      const kept = finalizeInstruction('no_progress')
+      expect(kept).toBe(finalizeInstruction('no_progress', undefined, 'kept'))
+      expect(kept).toContain(`${NO_PROGRESS} — ${MARK}`)
+      expect(kept).toMatch(/Collection and Bookkeeping remain open for one tool round/)
+      expect(kept).toMatch(/at most two Evidence Checkpoints/)
+      expect(injectedReportDirective({ kind: 'finalizing', cause: 'no_progress' })).toMatch(/at most two/)
+    })
+
+    it('words every carrier of a skipped round for the Answer that comes next, and where the unrecorded findings go', () => {
+      const skipped = finalizeInstruction('no_progress', undefined, 'skipped')
+      // The audit still finds the instruction by its opening (FINALIZE_INSTRUCTION_MARK).
+      expect(skipped.startsWith(`${NO_PROGRESS} — ${MARK}`)).toBe(true)
+      expect(skipped).toMatch(/no bookkeeping round follows/)
+      expect(skipped).not.toMatch(/Bookkeeping remain open/)
+      expect(skipped).toMatch(/memory_patch and evidence_ids/)
+
+      // The closed tool's refusal, the request, and an injected report.
+      expect(finalizationToolRefusal('no_progress', undefined, 'skipped')).toBe(`Not executed — ${skipped}`)
+      expect(requestFinalizeInstruction({ kind: 'finalizing', cause: 'no_progress' }, 'skipped')).toBe(skipped)
+      const answerOnly = requestFinalizeInstruction({ kind: 'answer_only', cause: 'no_progress' }, 'skipped')
+      expect(answerOnly).toBe(`${NO_PROGRESS}. ${SKIPPED_BOOKKEEPING_ANSWER_DIRECTIVE}`)
+      expect(answerOnly).toMatch(/memory_patch and evidence_ids/)
+      expect(injectedReportDirective({ kind: 'answer_only', cause: 'no_progress' }, 'skipped')).toBe(answerOnly)
+      // A round that ran leaves the Answer-only wording as it was.
+      expect(requestFinalizeInstruction({ kind: 'answer_only', cause: 'no_progress' })).toBe(`${NO_PROGRESS}. ${ANSWER_ONLY_REPORT_DIRECTIVE}`)
+    })
+  })
+
   it('words the finalization refusal as a directive, not a raw error', () => {
     const refusal = finalizationToolRefusal('budget_exhausted')
     expect(refusal).toMatch(/^Not executed — /)
@@ -1556,8 +1651,8 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
     }
     const CLOSING =
       'Acquisition tools (browser, vision, media, and delegation) and ask_user are closed; Collection and ' +
-      'Bookkeeping remain open. Finalize now: reply with your final answer JSON and state honestly what was and ' +
-      'was not completed.'
+      'Bookkeeping remain open for one tool round. Record at most two Evidence Checkpoints, for the findings that ' +
+      'matter most. Finalize now: reply with your final answer JSON and state honestly what was and was not completed.'
 
     it('opens on the true reason and closes on the unchanged demand', () => {
       for (const cause of RUN_CAUSES) {
