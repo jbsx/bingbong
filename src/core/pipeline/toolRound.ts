@@ -10,7 +10,7 @@ import { createVisionBudget, MAX_ORCHESTRATOR_VISION_CALLS } from '../agent/suba
 import { traceSearchObservation, traceVisionBudget } from './visionSeam'
 import { createBlockerGate, orchestratorBlockerEscalation, type BlockerEscalation } from './blockerGate'
 import { createSearchLoopRail } from './searchLoopRail'
-import { createComposedAddressRail } from './composedAddressRail'
+import { createComposedAddressRail, withComposedAddressRewrite } from './composedAddressRail'
 import { createVerificationRail, verificationRouteOf, type VerificationGate, type VerificationRailDeps } from './verificationRail'
 import type { VerificationRoute } from '../session/verificationAttempts'
 import { createNoProgressRail } from './noProgressRail'
@@ -31,9 +31,9 @@ import { heldPageNotice, landedOnAnotherPage } from './heldPage'
 //
 // Vocabulary (CONTEXT.md, Tool Round): one model response's tool calls,
 // executed in order. Every round crosses the same seams in a fixed order —
-// Blocker gate, no-progress gate, risk assessment and Confirmation, the
-// verification gate, the Vision Budget, the search-loop gate, the Composed
-// Address gate, execution, then classify → Observation ledger → Blocker
+// the Composed Address rewrite, Blocker gate, no-progress gate, risk
+// assessment and Confirmation, the verification gate, the Vision Budget, the
+// search-loop gate, execution, then classify → Observation ledger → Blocker
 // observe → the Blocker trip → search-loop observe → Composed Address observe
 // → verification observe → no-progress observe → the no-Progress trip → the
 // Held Page landing → Notices. That
@@ -74,9 +74,10 @@ export interface ToolRoundCapabilities {
   /** The no-progress rails (#126): gate ahead of risk, observe after execution, trip mid-round. */
   readonly noProgressRail: boolean
   /**
-   * The Composed Address rail (#239, ADR 0050): gate after the search-loop
-   * gate, so a search never reaches it, and observe beside the search-loop
-   * and no-progress observes. It trips nothing.
+   * The Composed Address rail (#239, ADR 0050): rewrite ahead of every gate
+   * (#255, ADR 0055), so every gate and rail sees the search a rewritten call
+   * runs as, and observe beside the search-loop and no-progress observes. It
+   * trips nothing.
    */
   readonly composedAddressRail: boolean
   /**
@@ -505,15 +506,6 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
       if (!searchLoopGate.ok) return { ok: false, error: searchLoopGate.reason }
     }
 
-    // The Composed Address rail (#239, ADR 0050): after a site answered not
-    // found for an address the model composed, further composed addresses
-    // to that site are refused. After the search-loop gate, so a search is
-    // never seen by it; it never refuses a search or a click.
-    if (composedAddressRail !== null) {
-      const composedAddressGate = composedAddressRail.gate(call)
-      if (!composedAddressGate.ok) return { ok: false, error: composedAddressGate.reason }
-    }
-
     try {
       interrupts.throwIfStopped()
       // The tool span (#30): one span per gated execution, tool name in
@@ -610,12 +602,20 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
       // bookkeeping remains, and the refusal itself carries the finalize
       // directive.
       const closedTool = intercepted === null && isInFinalization() ? toolsByName.get(call.name) : undefined
+      const closed = closedTool !== undefined && closedInFinalization(closedTool)
+      // The Composed Address rewrite (#255, ADR 0055): after a site's one
+      // Not-found Landing, a composed address to it runs as a search of the
+      // site. The search is the call every gate and rail below sees — it is a
+      // search to all of them — while the model's call keeps its place in the
+      // round, and the result it reads opens with the line saying what ran.
+      const rewrite = intercepted === null && !closed ? (composedAddressRail?.rewrite(call) ?? null) : null
+      const executedCall = rewrite?.call ?? call
       const outcome: ToolResultOutcome =
         intercepted !== null
           ? intercepted
-          : closedTool !== undefined && closedInFinalization(closedTool)
+          : closed
             ? { ok: false, error: closedToolRefusal() }
-            : yield* runGatedTool(call, turnId)
+            : yield* runGatedTool(executedCall, turnId)
 
       // Observation ledger (#111): the raw outcome as the tool produced
       // it, ahead of the Notices attached below — later checkpoint
@@ -634,7 +634,7 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
       // results arm it; a successful different-host browser interaction
       // disarms it. Sees the raw outcome — the Notices attached below
       // change nothing it consumes.
-      blockerGate.observe(call, outcome)
+      blockerGate.observe(executedCall, outcome)
       // The Blocker trip (#202, ADR 0037): a second Tool Round in which
       // this run kept at the same wall ends it. The refusal that tripped
       // already carries the Finalize Instruction; entering here — before
@@ -648,22 +648,23 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
       // it observed in a search is the round's to record (#243, ADR 0049),
       // refused searches included — the rail advanced its streak on them.
       if (searchLoopRail !== null) {
-        const verdict = await searchLoopRail.observe(call, outcome)
+        const verdict = await searchLoopRail.observe(executedCall, outcome)
         notices.owe('search_loop', verdict.notice)
-        traceSearchObservation(toolContext, call, verdict.observation)
+        traceSearchObservation(toolContext, executedCall, verdict.observation)
       }
       // The Composed Address rail (#239, ADR 0050): a result offers the
       // addresses it showed and the page the tab settled on, and a composed
       // navigate that landed on a Not-found Page spends its site's
-      // allowance — before the round's next call is gated.
-      composedAddressRail?.observe(call, outcome, sourceUrl ?? null)
+      // allowance — before the round's next call is rewritten or gated. It
+      // observes the call that ran, so a rewritten one is the search it was.
+      composedAddressRail?.observe(executedCall, outcome, sourceUrl ?? null)
       // The verification rail (#212, ADR 0041): a failed check spends its
       // route for the rest of this run, and the words the route reported
       // are handed to the Session verbatim — the rail derives no cause
       // from them, and the Session retains none.
       if (verificationRail !== null) {
         try {
-          const spent = verificationRail.observe(routeOf(call), outcome, attempted.has(call))
+          const spent = verificationRail.observe(routeOf(executedCall), outcome, attempted.has(executedCall))
           if (spent !== null) {
             config.verification?.retainFailure?.({ ...spent, failure: routeWords(spent.failure) })
           }
@@ -679,7 +680,7 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
       // acquisition siblings of this round are then refused by the
       // closed-tool check above, each carrying the Finalize Instruction.
       if (noProgressRail !== null) {
-        notices.owe('no_progress', await noProgressRail.observe(call, outcome))
+        notices.owe('no_progress', await noProgressRail.observe(executedCall, outcome))
         if (noProgressRail.finalizationDue()) effortEpoch.tripNoProgress()
       }
       // The Held Page landing (#240, ADR 0051): a successful page-facing call
@@ -697,7 +698,9 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
       // not already over — judged after the no-Progress trip above, so the
       // tripping result never carries a plan nudge or budget warning.
       const usefulWork = outcome.ok && typeof outcome.result === 'string' && intercepted === null && !isInFinalization()
-      const modelFacingOutcome = notices.attach(outcome, { usefulWork })
+      // A rewritten call's line opens what the model reads (#255), ahead of every Notice.
+      const readOutcome = rewrite === null ? outcome : withComposedAddressRewrite(outcome, rewrite)
+      const modelFacingOutcome = notices.attach(readOutcome, { usefulWork })
       results.push({ call, outcome: modelFacingOutcome, observationId: observedRecord?.id ?? null })
       yield {
         type: 'tool_result',
@@ -705,6 +708,7 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
         name: call.name,
         ok: modelFacingOutcome.ok,
         ...(modelFacingOutcome.ok ? { result: modelFacingOutcome.result } : { error: modelFacingOutcome.error }),
+        ...(rewrite !== null ? { rewritten: { site: rewrite.site, query: rewrite.query } } : {}),
         at: clock.now(),
       }
       // The result ended the round: it is the last thing the round emits.

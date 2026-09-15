@@ -16,6 +16,7 @@ import type { PipelineEvent } from '../pipeline/events'
 import type { IdentitySlip } from '../pipeline/answerEvidence'
 import type { SearchSignature } from '../pipeline/searchLoopRail'
 import type { NotFoundLanding } from '../browser/notFoundPage'
+import type { ComposedAddressRewriteStamp } from '../pipeline/composedAddressRail'
 import type { AnswerShape } from '../agent/answerContract'
 import type { AgentRole } from '../agent/modelRouting'
 import type { ReasoningEffort, TokenUsage } from '../ports/llm'
@@ -364,6 +365,13 @@ export interface PipelineEventTraceEvent {
    * parsed from truncated text. Absent on every other result and kind.
    */
   readonly notFound?: NotFoundLanding
+  /**
+   * The Composed Address rewrite a `tool_result` opens with (#255, ADR 0055):
+   * the site whose allowance was spent and the search that ran in place of
+   * the address the model composed — the `tool_call` beside it keeps the
+   * address. Absent on every other result and kind.
+   */
+  readonly rewritten?: ComposedAddressRewriteStamp
   /**
    * The delegated worker whose Tool Round published this (#185); absent on
    * the Run's own stream. A worker's rounds never reach the main stream —

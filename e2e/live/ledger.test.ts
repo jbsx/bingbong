@@ -7,6 +7,7 @@ import {
   HEADLINE_METRICS,
   buildLedger,
   compareFamilies,
+  countersOf,
   defaultReferenceOf,
   familyIdOf,
   markersOf,
@@ -58,6 +59,23 @@ describe('family ids', () => {
     expect(familyIdOf('fix-242r-3')).toEqual({ family: 'fix-242r', ordinal: 3 })
     expect(familyIdOf('baseline2-2')).toEqual({ family: 'baseline2', ordinal: 2 })
     expect(familyIdOf('pilot')).toEqual({ family: 'pilot', ordinal: null })
+  })
+})
+
+describe('the rewritten Composed Address counters (#255, ADR 0055)', () => {
+  it('reads the rewrites and their Off-key share, and an audit that predates them as not recorded', () => {
+    const older = readAudit('audit-fix-252-1.json')
+    const rewrittenOf = (population: AuditSetOutput['populations']['initial']) =>
+      countersOf(population, older.attempts).filter((counter) => counter.label.startsWith('Rewritten Composed Addresses'))
+
+    expect(rewrittenOf(older.populations.initial)).toEqual([
+      { label: 'Rewritten Composed Addresses', judgement: false, value: null, over: null },
+      { label: 'Rewritten Composed Addresses judged Off-key', judgement: true, value: null, over: null },
+    ])
+    expect(rewrittenOf({ ...older.populations.initial, rewrittenComposedAddresses: 4, rewrittenComposedAddressesOffKey: 1 })).toEqual([
+      { label: 'Rewritten Composed Addresses', judgement: false, value: 4, over: null },
+      { label: 'Rewritten Composed Addresses judged Off-key', judgement: true, value: 1, over: null },
+    ])
   })
 })
 

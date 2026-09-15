@@ -10,7 +10,8 @@ import { createEffortEpoch, finalizationToolRefusal } from './effortEpoch'
 import { createNotices } from './notices'
 import { createObservationLedger, type ObservationInput } from '../session/observationLedger'
 import { createToolRoundExecutor, type ToolRoundCapabilities, type ToolRoundConfig, type ToolRoundOutcome } from './toolRound'
-import { composedAddressRefusal } from './composedAddressRail'
+import { composedAddressRewriteLine } from './composedAddressRail'
+import { SEARCH_LOOP_REFUSE_AFTER } from './searchLoopRail'
 import type { ToolTraceEvent, VisionTraceIds, VisionTraceReporter } from '../trace/visionTrace'
 import { createSessionEvidence } from '../session/sessionEvidence'
 import type { RunId, SessionId } from '../session/sessionIdentity'
@@ -668,8 +669,10 @@ describe('interception and Notice eligibility (#157/AC1)', () => {
 // The Look's Vision Budget record (#186, ADR 0031). The round spends the
 // budget for a `usesVision` tool, so the round records it — the tool only
 // ever sees the refusal as a failed call.
-describe('the Composed Address rail runs per call (#239, ADR 0050)', () => {
-  /** A navigate whose composed slugs under /dead/ land on a Not-found Page. */
+describe('the Composed Address rail runs per call (#239, ADR 0050; #255, ADR 0055)', () => {
+  const RESULT_HREF = 'https://www.nasa.gov/voyager/golden-record/'
+
+  /** A navigate whose composed slugs under /dead/ land on a Not-found Page, and whose q= searches list one result. */
   function navigateTool(trace: string[]): Tool {
     return {
       name: 'navigate',
@@ -677,44 +680,79 @@ describe('the Composed Address rail runs per call (#239, ADR 0050)', () => {
       async execute(callArg: ToolCall): Promise<unknown> {
         const url = String(callArg.args.url)
         trace.push(`execute:navigate:${url}`)
-        return url.includes('/dead/')
-          ? `navigated: url=${url} title="Page Not Found - NASA"\nNOT-FOUND:404 www.nasa.gov\nThis address names nothing on nasa.gov.`
-          : `navigated: url=${url} title="NASA"\n# NASA — ${url}`
+        if (url.includes('/dead/')) return `navigated: url=${url} title="Page Not Found - NASA"\nNOT-FOUND:404 www.nasa.gov\nThis address names nothing on nasa.gov.`
+        if (url.includes('?q=')) return `navigated: url=${url} title="Search"\n# Search — ${url}\n[1] link "Golden Record" href=${JSON.stringify(RESULT_HREF)}`
+        return `navigated: url=${url} title="NASA"\n# NASA — ${url}`
       },
     }
   }
+  const executed = (trace: readonly string[]): string[] => trace.filter((entry) => entry.startsWith('execute:'))
 
-  it('refuses a same-round sibling composed address after the round’s first landing, and two refusals trip no Finalization', async () => {
+  it('rewrites a same-round sibling composed address after the round’s first landing into a search of the site, told first, and trips no Finalization', async () => {
     const trace: string[] = []
     const h = harness([navigateTool(trace)], { trace })
 
     const first = await h.round([
       call('navigate', { url: 'https://www.jpl.nasa.gov/dead/voyager-2013-09' }, 'n1'),
-      call('navigate', { url: 'https://science.nasa.gov/dead/voyager-2013-09' }, 'n2'),
-    ])
-    const second = await h.round([
-      call('navigate', { url: 'https://www.nasa.gov/dead/voyager-2013' }, 'n3'),
-      call('navigate', { url: 'https://duckduckgo.com/?q=site%3Anasa.gov+voyager+2013' }, 'n4'),
+      call('navigate', { url: 'https://science.nasa.gov/voyager-golden-record' }, 'n2'),
     ])
 
-    expect(trace.filter((entry) => entry.startsWith('execute:'))).toEqual([
-      'execute:navigate:https://www.jpl.nasa.gov/dead/voyager-2013-09',
-      'execute:navigate:https://duckduckgo.com/?q=site%3Anasa.gov+voyager+2013',
+    const search = 'https://duckduckgo.com/?q=voyager%20golden%20record%20site%3Anasa.gov'
+    expect(executed(trace)).toEqual(['execute:navigate:https://www.jpl.nasa.gov/dead/voyager-2013-09', `execute:navigate:${search}`])
+    const rewritten = first.outcome.results[1]!
+    // The model's call keeps its id and the address it wrote; what it reads opens with the rewrite.
+    expect(rewritten.call).toEqual(call('navigate', { url: 'https://science.nasa.gov/voyager-golden-record' }, 'n2'))
+    expect(resultOf(rewritten.outcome).split('\n').slice(0, 2)).toEqual([
+      composedAddressRewriteLine({ site: 'nasa.gov', from: 'https://science.nasa.gov/voyager-golden-record', query: 'voyager golden record site:nasa.gov', url: search, call: rewritten.call }),
+      `navigated: url=${search} title="Search"`,
     ])
-    expect(errorOf(first.outcome.results[1]!.outcome)).toBe(composedAddressRefusal('nasa.gov'))
-    expect(errorOf(second.outcome.results[0]!.outcome)).toBe(composedAddressRefusal('nasa.gov'))
+    // The trace's stamp rides the published result, from the round's own field.
+    const published = first.events.filter((event) => event.type === 'tool_result')
+    expect(published[1]).toMatchObject({ callId: 'n2', rewritten: { site: 'nasa.gov', query: 'voyager golden record site:nasa.gov' } })
+    expect(published[0]).not.toHaveProperty('rewritten')
     expect(h.epoch.phase.kind).toBe('working')
+  })
+
+  it('is a search to the Search Loop rail: it continues a streak, is refused at the cap, and opening a shown result escapes', async () => {
+    const trace: string[] = []
+    const h = harness([navigateTool(trace)], { trace, capabilities: { ...ALL_RAILS, noProgressRail: false } })
+    await h.round([call('navigate', { url: 'https://www.nasa.gov/dead/voyager' }, 'dead')])
+    for (let index = 1; index < SEARCH_LOOP_REFUSE_AFTER; index += 1) {
+      await h.round([call('navigate', { url: 'https://duckduckgo.com/?q=voyager+record' }, `s${index}`)])
+    }
+
+    const atCap = await h.round([call('navigate', { url: 'https://www.nasa.gov/voyager-record' }, 'r1')])
+    const past = await h.round([call('navigate', { url: 'https://www.nasa.gov/voyager/record' }, 'r2')])
+    await h.round([call('navigate', { url: RESULT_HREF }, 'open')])
+    const escaped = await h.round([call('navigate', { url: 'https://www.nasa.gov/voyager/records' }, 'r3')])
+
+    expect(atCap.outcome.results[0]!.outcome.ok).toBe(true)
+    const refused = errorOf(past.outcome.results[0]!.outcome)
+    expect(refused.split('\n')[0]).toMatch(/^Rewritten — nasa\.gov already answered not found/)
+    expect(refused).toContain('Search loop limit')
+    expect(escaped.outcome.results[0]!.outcome.ok).toBe(true)
+    // On the engine the Run last searched with, and the shown result is no composed address.
+    expect(executed(trace).slice(-3)).toEqual([
+      'execute:navigate:https://duckduckgo.com/?q=voyager+record+site%3Anasa.gov',
+      `execute:navigate:${RESULT_HREF}`,
+      'execute:navigate:https://duckduckgo.com/?q=voyager+records+site%3Anasa.gov',
+    ])
   })
 
   it('starts a new executor — a new Run — at zero', async () => {
     const trace: string[] = []
     const spent = harness([navigateTool(trace)], { trace })
     await spent.round([call('navigate', { url: 'https://www.jpl.nasa.gov/dead/a' }, 'n1')])
-    expect(errorOf((await spent.round([call('navigate', { url: 'https://www.jpl.nasa.gov/dead/b' }, 'n2')])).outcome.results[0]!.outcome)).toBe(composedAddressRefusal('nasa.gov'))
+    await spent.round([call('navigate', { url: 'https://www.jpl.nasa.gov/dead/b' }, 'n2')])
 
     const fresh = harness([navigateTool(trace)], { trace })
-    const outcome = await fresh.round([call('navigate', { url: 'https://www.jpl.nasa.gov/dead/b' }, 'n3')])
-    expect(outcome.outcome.results[0]!.outcome.ok).toBe(true)
+    await fresh.round([call('navigate', { url: 'https://www.jpl.nasa.gov/dead/b' }, 'n3')])
+
+    expect(executed(trace)).toEqual([
+      'execute:navigate:https://www.jpl.nasa.gov/dead/a',
+      'execute:navigate:https://duckduckgo.com/?q=dead%20b%20site%3Anasa.gov',
+      'execute:navigate:https://www.jpl.nasa.gov/dead/b',
+    ])
   })
 
   it('is off without the capability', async () => {

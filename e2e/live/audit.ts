@@ -39,6 +39,7 @@
 import { createHash } from 'node:crypto'
 import { parseBlockerMarker } from '../../src/core/browser/blockerNudge.ts'
 import { classifyNotFoundPage, NOT_FOUND_BASES, type NotFoundBasis, type NotFoundLanding } from '../../src/core/browser/notFoundPage.ts'
+import type { ComposedAddressRewriteStamp } from '../../src/core/pipeline/composedAddressRail.ts'
 import type { PerfSpanRecord } from '../../src/core/perf/perfTracer'
 import type { PipelineEvent } from '../../src/core/pipeline/events'
 import type { EffortTier } from '../../src/core/pipeline/runPlan'
@@ -163,6 +164,13 @@ export interface AuditCall {
    * keeps the digest it always had.
    */
   readonly notFound?: string
+  /**
+   * The search a Composed Address was rewritten into (#255, ADR 0055): the
+   * query that ran, read from the Run Trace's field on the result, while
+   * `args` keep the address the model composed. Present only on a rewrite, so
+   * an attempt with none keeps the digest it always had.
+   */
+  readonly rewritten?: string
   /** An Evidence Checkpoint's verdict: accepted, or the rejection's head. */
   readonly checkpoint: { readonly accepted: boolean; readonly outcome: string } | null
   /** The app's own Notices riding the result, as marker names. */
@@ -321,6 +329,13 @@ export interface AuditMechanical {
    */
   readonly notFoundNavigates: readonly number[]
   /**
+   * The round of every Composed Address rewritten into a search of its site,
+   * one entry per call (#255, ADR 0055). Beside the rounds, never in them, so
+   * counting it re-keys no cached judgement. Absent on an audit written
+   * before the counter.
+   */
+  readonly rewrittenComposedAddresses?: readonly number[]
+  /**
    * The Answers that carried an Identity Slip and the ids slipped in them
    * (#246, ADR 0028), counted from the Run's own `identity_slip` records.
    * Null — not recorded — for a trace written below
@@ -465,6 +480,10 @@ export interface AuditPopulation {
   readonly notFoundNavigates: number
   /** Of those, the ones in a round the reviewer judged Off-key; judged attempts only. */
   readonly notFoundOffKey: number
+  /** Composed Addresses rewritten into a search of the site (#255); absent on an audit written before the counter. */
+  readonly rewrittenComposedAddresses?: number
+  /** Of those, the ones in a round the reviewer judged Off-key; judged attempts only. */
+  readonly rewrittenComposedAddressesOffKey?: number
   /** Answers with an Identity Slip over the attempts whose trace recorded them (#246). */
   readonly identitySlipAnswers: number
   /** Ids slipped in those Answers (#246). */
@@ -672,7 +691,13 @@ interface RawRound {
   readonly record: TraceLine
   readonly round: number
   readonly attempt: number
-  readonly calls: { call: ToolCallEvent; result: ToolResultEvent | undefined; landing: NotFoundLanding | null; checkpoint: TraceLine | undefined }[]
+  readonly calls: { call: ToolCallEvent; result: ToolResultEvent | undefined; landing: NotFoundLanding | null; rewritten: ComposedAddressRewriteStamp | null; checkpoint: TraceLine | undefined }[]
+}
+
+/** The Composed Address rewrite a `tool_result` record carries as a field (#255), or null. */
+function rewrittenFieldOf(record: TraceLine): ComposedAddressRewriteStamp | null {
+  const field = record.rewritten
+  return isRecord(field) && isString(field.site) && isString(field.query) ? { site: field.site, query: field.query } : null
 }
 
 /** The Not-found Landing a `tool_result` record carries as a field (#239), or null. */
@@ -690,11 +715,11 @@ function eventOf(record: TraceLine): Record<string, unknown> | null {
 /** Group the turn's orchestrator records into rounds: each `llm_round` owns the tool calls that follow it until the next. */
 function rawRounds(records: readonly TraceLine[]): RawRound[] {
   const rounds: RawRound[] = []
-  const results = new Map<string, { event: ToolResultEvent; landing: NotFoundLanding | null }>()
+  const results = new Map<string, { event: ToolResultEvent; landing: NotFoundLanding | null; rewritten: ComposedAddressRewriteStamp | null }>()
   for (const record of records) {
     const event = eventOf(record)
     if (event !== null && event.type === 'tool_result' && isString(event.callId) && !results.has(event.callId) && record.agentId === undefined) {
-      results.set(event.callId, { event: event as unknown as ToolResultEvent, landing: landingFieldOf(record) })
+      results.set(event.callId, { event: event as unknown as ToolResultEvent, landing: landingFieldOf(record), rewritten: rewrittenFieldOf(record) })
     }
   }
   let current: RawRound | null = null
@@ -718,7 +743,7 @@ function rawRounds(records: readonly TraceLine[]): RawRound[] {
     if (event === null || event.type !== 'tool_call' || current === null) continue
     const call = event as unknown as ToolCallEvent
     const settled = results.get(call.callId)
-    current.calls.push({ call, result: settled?.event, landing: settled?.landing ?? null, checkpoint: undefined })
+    current.calls.push({ call, result: settled?.event, landing: settled?.landing ?? null, rewritten: settled?.rewritten ?? null, checkpoint: undefined })
   }
   return rounds
 }
@@ -778,7 +803,10 @@ function classifyCall(
   // A Bookkeeping tool's error is a rejected Evidence Checkpoint — counted
   // beside the round, not a refusal of the round; a `Not executed —` answer
   // is a refusal whatever the tool.
-  const refused = result !== undefined && ((!result.ok && !BOOKKEEPING_TOOLS.has(call.name)) || (text !== null && text.startsWith(NOT_EXECUTED_PREFIX)))
+  // A rewritten Composed Address (#255, ADR 0055) ran as a search whatever
+  // became of the search, so it is never a refusal: its round is never Failed.
+  const refused =
+    entry.rewritten === null && result !== undefined && ((!result.ok && !BOOKKEEPING_TOOLS.has(call.name)) || (text !== null && text.startsWith(NOT_EXECUTED_PREFIX)))
   const page = result !== undefined && result.ok ? pageOf(text) : null
   const signature = result !== undefined && result.ok ? signatureOf(text) : null
   const wall = text === null ? null : parseBlockerMarker(text)
@@ -804,6 +832,7 @@ function classifyCall(
     signature,
     wall: wall === null ? null : `${wall.signal} ${wall.host}`,
     ...(landing !== null ? { notFound: `${landing.basis} ${landing.host}` } : {}),
+    ...(entry.rewritten !== null ? { rewritten: entry.rewritten.query } : {}),
     checkpoint: checkpointVerdict,
     notices,
   }
@@ -822,7 +851,8 @@ function classifyCall(
     const observed = railObservations.get(call.callId)
     if (observed !== undefined) search = { query: head(observed.query, 120)!, streak: observed.streak, signature: observed.signature }
   } else if (call.name === 'navigate' && !refused) {
-    const query = searchQueryOf(isString(call.args.url) ? call.args.url : '')
+    // A rewritten call replays as the search that ran, not the address it replaced.
+    const query = entry.rewritten?.query ?? searchQueryOf(isString(call.args.url) ? call.args.url : '')
     if (query !== null) {
       const continues = (state.lastQuery !== null && similarQueries(query, state.lastQuery)) || (state.anchor !== null && similarQueries(query, state.anchor))
       state.streak = continues ? state.streak + 1 : 1
@@ -1254,6 +1284,7 @@ export function classifyAttempt(input: AuditTraceInput): AuditMechanical {
     searchSource: railObservations !== null ? 'rail' : rounds.some((round) => round.tags.search) ? 'replay' : 'none',
     walledRounds: rounds.filter((round) => round.tags.wall).length,
     notFoundNavigates: rounds.flatMap((round) => round.calls.filter((call) => call.name === 'navigate' && call.notFound !== undefined).map(() => round.round)),
+    rewrittenComposedAddresses: rounds.flatMap((round) => round.calls.filter((call) => call.rewritten !== undefined).map(() => round.round)),
     identitySlips,
     malformedAnswers: records.filter((record) => record.kind === 'malformed_answer').length,
     answerRetries: records.filter((record) => record.kind === 'answer_retry').length,
@@ -1623,6 +1654,11 @@ export function notFoundOffKeyOf(mechanical: AuditMechanical, judgement: AuditJu
   return mechanical.notFoundNavigates.filter((round) => judgement.offKey.some((item) => item.round === round)).length
 }
 
+/** The rewritten Composed Addresses in rounds the reviewer judged Off-key (#255); an audit written before the counter holds none. */
+export function rewrittenOffKeyOf(mechanical: AuditMechanical, judgement: AuditJudgement): number {
+  return (mechanical.rewrittenComposedAddresses ?? []).filter((round) => judgement.offKey.some((item) => item.round === round)).length
+}
+
 export function populationOf(label: string, attempts: readonly AuditAttempt[]): AuditPopulation {
   const counts = emptyCounts()
   const after = emptyCounts()
@@ -1643,6 +1679,8 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
   let walled = 0
   let notFound = 0
   let notFoundOffKey = 0
+  let rewritten = 0
+  let rewrittenOffKey = 0
   let slipAnswers = 0
   let slipIds = 0
   let slipsNotRecorded = 0
@@ -1680,6 +1718,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
     rejected += mechanical.rejectedCheckpoints
     walled += mechanical.walledRounds
     notFound += mechanical.notFoundNavigates.length
+    rewritten += mechanical.rewrittenComposedAddresses?.length ?? 0
     if (mechanical.identitySlips === null) slipsNotRecorded += 1
     else {
       slipAnswers += mechanical.identitySlips.answers
@@ -1702,6 +1741,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
     if (judgement.verdict.secondary !== null) secondary[judgement.verdict.secondary] += 1
     offKey += judgement.offKey.length
     notFoundOffKey += notFoundOffKeyOf(mechanical, judgement)
+    rewrittenOffKey += rewrittenOffKeyOf(mechanical, judgement)
     searchLoop += new Set(judgement.searchLoops.flatMap((loop) => loop.rounds)).size
     if (judgement.stoppedEarly.value) stoppedEarly += 1
     if (judgement.answerOmitted.value) answerOmitted += 1
@@ -1731,6 +1771,8 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
     walledRounds: walled,
     notFoundNavigates: notFound,
     notFoundOffKey,
+    rewrittenComposedAddresses: rewritten,
+    rewrittenComposedAddressesOffKey: rewrittenOffKey,
     identitySlipAnswers: slipAnswers,
     identitySlipIds: slipIds,
     identitySlipsNotRecorded: slipsNotRecorded,
@@ -1968,7 +2010,7 @@ function judgementLines(populations: readonly AuditPopulation[]): string[] {
   return populations.map(
     (population) =>
       `- ${population.label}: ${population.offKeyRounds} Off-key round(s), ${population.searchLoopRounds} Search Loop round(s) by the reviewer (${population.mechanicalSearchRounds} by the streak rule; attempts by search source ${SEARCH_SOURCES.map((source) => `${source} ${population.searchSources[source]}`).join(', ')}), ` +
-      `${population.inheritedRounds} inherited, ${population.rejectedCheckpoints} rejected Evidence Checkpoint(s), ${population.walledRounds} walled round(s), ${population.notFoundNavigates} navigate(s) landed on a Not-found Page (${population.notFoundOffKey} judged Off-key), ${population.subagentRounds} Subagent round(s), ` +
+      `${population.inheritedRounds} inherited, ${population.rejectedCheckpoints} rejected Evidence Checkpoint(s), ${population.walledRounds} walled round(s), ${population.notFoundNavigates} navigate(s) landed on a Not-found Page (${population.notFoundOffKey} judged Off-key), ${population.rewrittenComposedAddresses ?? 0} Composed Address(es) rewritten into a site search (${population.rewrittenComposedAddressesOffKey ?? 0} judged Off-key), ${population.subagentRounds} Subagent round(s), ` +
       `${population.mergedCheckpoints} merged Evidence Checkpoint(s) (a floor), ${population.heldPageRoundsWithoutProgress} Held Page round(s) without Progress, ${populationSlipsText(population)}, ` +
       `${population.malformedAnswers} Malformed Answer(s) (${population.answerRetries} retried), ` +
       `${population.askedItemsDeclared} declared Asked Items (${population.askedItemsUnverified} with an unverified standing, ${population.askedItemsShapeFailures} shape failure(s), ${population.askedItemsShapeRetried} retried), ` +
@@ -2004,6 +2046,9 @@ function attemptSection(attempt: AuditAttempt): string[] {
   const landings = mechanical.notFoundNavigates
   lines.push(`- navigates that landed on a Not-found Page: ${landings.length}${landings.length > 0 ? ` (round ${landings.join(', ')})` : ''}`)
   lines.push(`- of those, judged Off-key by the reviewer: ${judgement === null ? 'not judged' : notFoundOffKeyOf(mechanical, judgement)}`)
+  const rewrites = mechanical.rewrittenComposedAddresses ?? []
+  lines.push(`- Composed Addresses rewritten into a site search: ${rewrites.length}${rewrites.length > 0 ? ` (round ${rewrites.join(', ')})` : ''}`)
+  lines.push(`- of the rewrites, judged Off-key by the reviewer: ${judgement === null ? 'not judged' : rewrittenOffKeyOf(mechanical, judgement)}`)
   const slips = mechanical.identitySlips
   lines.push(`- Identity Slips: ${slips === null ? `not recorded (a Run Trace below version ${IDENTITY_SLIP_TRACE_VERSION})` : slipCountsText(slips.answers, slips.ids)}`)
   lines.push(`- kinds: ${ROUND_KINDS.map((kind) => `${KIND_LABELS[kind]} ${mechanical.counts[kind]} (${pct(mechanical.shares[kind])})`).join(' · ')}`)
@@ -2034,7 +2079,7 @@ function attemptSection(attempt: AuditAttempt): string[] {
     const inLoop = judgement?.searchLoops.some((loop) => loop.rounds.includes(round.round)) ?? false
     const tools = round.calls.map((call) => `${call.name}${call.refused ? ' ✗' : ''}`).join(', ') || '—'
     const page = round.calls.map((call) => call.url).find((url) => url !== null) ?? '—'
-    const markers = [round.tags.inherited ? 'inherited' : '', round.tags.wall ? 'walled' : '', round.calls.some((call) => call.notFound !== undefined) ? 'not found' : '', offKey ? 'off-key' : '', inLoop ? 'search loop' : '', mechanical.searchLoopHeads.includes(round.round) ? 'loop head by the streak rule' : '', round.tags.rejectedCheckpoints > 0 ? `${round.tags.rejectedCheckpoints} rejected checkpoint` : ''].filter((marker) => marker !== '')
+    const markers = [round.tags.inherited ? 'inherited' : '', round.tags.wall ? 'walled' : '', round.calls.some((call) => call.notFound !== undefined) ? 'not found' : '', round.calls.some((call) => call.rewritten !== undefined) ? 'rewritten' : '', offKey ? 'off-key' : '', inLoop ? 'search loop' : '', mechanical.searchLoopHeads.includes(round.round) ? 'loop head by the streak rule' : '', round.tags.rejectedCheckpoints > 0 ? `${round.tags.rejectedCheckpoints} rejected checkpoint` : ''].filter((marker) => marker !== '')
     const trace = round.llmRound !== round.round || round.attempt > 1 ? ` (trace ${round.llmRound}.${round.attempt})` : ''
     lines.push(
       `| ${round.round}${trace} | ${KIND_LABELS[round.kind]}${overrule ? ` → ${KIND_LABELS[overrule.kind]}` : ''} | ${tools} | ${head(page, 80)} | ${round.latencyMs ?? '—'} | ${round.reason}${markers.length > 0 ? ` [${markers.join(', ')}]` : ''} |`,

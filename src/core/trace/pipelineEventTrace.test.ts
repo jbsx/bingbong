@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { composedAddressRewriteLine } from '../pipeline/composedAddressRail'
 import type { PipelineEvent } from '../pipeline/events'
 import { createPipelineEventTraceWriter, tracesPipelineEvent } from './pipelineEventTrace'
 import { RUN_TRACE_VERSION, TRACE_TOOL_RESULT_MAX_CHARS, type TraceRecord } from './runTrace'
@@ -107,6 +108,22 @@ describe('the pipeline_event tap (#185)', () => {
     expect(records[0]).toMatchObject({ notFound: { basis: '404', host: 'www.nasa.gov' } })
     expect(records[1]).not.toHaveProperty('notFound')
     expect(records[2]).not.toHaveProperty('notFound')
+  })
+
+  it('stamps a Composed Address rewrite from the event’s own field, a failed search included, never from the wording (#255, ADR 0055)', () => {
+    const { records, sink } = collector()
+    const trace = createPipelineEventTraceWriter({ sink, now: () => 0 })
+    const search = 'https://duckduckgo.com/?q=voyager%20site%3Anasa.gov'
+    const stamp = { site: 'nasa.gov', query: 'voyager site:nasa.gov' }
+    const line = composedAddressRewriteLine({ ...stamp, from: 'https://www.nasa.gov/voyager', url: search, call: { id: 'c-1', name: 'navigate', args: { url: search } } })
+
+    trace({ type: 'tool_result', turnId: 't-1', callId: 'c-1', name: 'navigate', ok: true, result: `${line}\nnavigated: url=${search} title="DuckDuckGo"`, rewritten: stamp, at: 1 })
+    trace({ type: 'tool_result', turnId: 't-1', callId: 'c-2', name: 'navigate', ok: false, error: `${line}\nSearch loop limit reached`, rewritten: stamp, at: 2 })
+    trace({ type: 'tool_result', turnId: 't-1', callId: 'c-3', name: 'navigate', ok: true, result: `${line}\nnavigated: url=${search} title="DuckDuckGo"`, at: 3 })
+
+    expect(records[0]).toMatchObject({ rewritten: stamp })
+    expect(records[1]).toMatchObject({ rewritten: stamp })
+    expect(records[2]).not.toHaveProperty('rewritten')
   })
 
   it('leaves a short result whole and a non-text result untouched', () => {
