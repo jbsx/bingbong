@@ -351,7 +351,7 @@ describe('command pipeline', () => {
       }],
       turnId: expect.any(String),
       signal: expect.any(AbortSignal),
-      reasoningEffort: 'high',
+      reasoningEffort: 'medium',
     })
   })
 
@@ -3172,9 +3172,9 @@ describe('command pipeline', () => {
     })
 
     it('runs every round at the tier\u2019s reasoning-effort rung, escalation included (#166)', async () => {
-      // Round one carries a rung with no plan yet declared: the epoch's
-      // default tier is Lookup, so it is that tier's rung. The escalation to
-      // Investigation raises the rung from the very next round.
+      // Rounds one and two run before any Run Plan is declared, at the Run Plan
+      // rung (#252); the declaration in round two's reply hands every
+      // round after it to the Investigation's `max`.
       const llm = new ScriptedLlm([
         workRound(0),
         workRound(1, plan('p1', 'investigation')),
@@ -3185,7 +3185,7 @@ describe('command pipeline', () => {
 
       await collect(pipeline, 'research the thing')
 
-      expect(llm.requests.map((request) => request.reasoningEffort)).toEqual(['high', 'high', 'max', 'max'])
+      expect(llm.requests.map((request) => request.reasoningEffort)).toEqual(['medium', 'medium', 'max', 'max'])
     })
 
     it('thinks at the Finalization rung for the bookkeeping and reserved Answer rounds (#215)', async () => {
@@ -3217,10 +3217,10 @@ describe('command pipeline', () => {
       }
 
       expect(events.at(-1)).toMatchObject({ type: 'done', finalizationCause: 'budget_exhausted' })
-      // Round one runs before any plan is declared, at the default tier's
-      // rung; the declaration raises the next 23 to `max`.
+      // Round one runs before any Run Plan is declared, at the Run Plan rung
+      // (#252); the declaration raises the next 23 to `max`.
       const rungs = llm.requests.map((request) => request.reasoningEffort)
-      expect(rungs).toEqual(['high', ...Array<string>(23).fill('max'), 'low', 'low'])
+      expect(rungs).toEqual(['medium', ...Array<string>(23).fill('max'), 'low', 'low'])
       // Round 25 is the bookkeeping Tool Round, round 26 the reserved Answer.
       expect(llm.requests[24]?.answerOnly).toBeUndefined()
       expect(llm.requests[25]?.answerOnly).toBe(true)

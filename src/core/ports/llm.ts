@@ -28,13 +28,16 @@ export interface ToolResult {
 
 /**
  * How hard the provider should think on one round (#166): the rungs GLM
- * exposes as `reasoning_effort`. A Run's rung is a pure function of its
- * Effort Epoch — its tier's TIER_REASONING_EFFORT while acquiring,
- * FINALIZATION_REASONING_EFFORT once Finalization begins (#215) — so
- * deliberation is bounded by the same declaration that bounds rounds and
- * wall time.
+ * exposes as `reasoning_effort`, in ascending order. A Run's rung is a
+ * pure function of its Effort Epoch — RUN_PLAN_REASONING_EFFORT until its
+ * first Run Plan is declared (#252), its tier's TIER_REASONING_EFFORT
+ * while acquiring after that, FINALIZATION_REASONING_EFFORT once
+ * Finalization begins (#215) — so deliberation is bounded by the same
+ * declaration that bounds rounds and wall time. The type is derived from
+ * the list so the experiment override's parser and the union cannot drift.
  */
-export type ReasoningEffort = 'low' | 'high' | 'max'
+export const REASONING_EFFORTS = ['low', 'medium', 'high', 'max'] as const
+export type ReasoningEffort = (typeof REASONING_EFFORTS)[number]
 
 export interface LlmRequest {
   command: string

@@ -487,9 +487,9 @@ describe('the Run Trace file', () => {
     // Every attempt says what it was sent under; only the ones that
     // returned carry usage — the abandoned attempt never did.
     expect(rounds.map((record) => [record.role, record.model, record.promptHash, record.reasoningEffort])).toEqual([
-      ['orchestrator', 'stub-model', 'hash-1', 'high'],
-      ['orchestrator', 'stub-model', 'hash-1', 'high'],
-      ['orchestrator', 'stub-model', 'hash-1', 'high'],
+      ['orchestrator', 'stub-model', 'hash-1', 'medium'],
+      ['orchestrator', 'stub-model', 'hash-1', 'medium'],
+      ['orchestrator', 'stub-model', 'hash-1', 'medium'],
     ])
     expect(rounds.map((record) => record.usage)).toEqual([
       undefined,

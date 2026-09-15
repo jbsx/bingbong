@@ -168,7 +168,12 @@ and a Browse Subagent — which has no tier — always at `low`. The cheap tiers
 at `low` until the corpus measured it: a Run steered mid-flight then declared
 its fresh plan against the original objective, losing the correction, and
 Lookups wandered to budget exhaustion — while `high` cost nothing in rounds or
-wall time. Finalization rounds are the exception (#215): bookkeeping and the
+wall time. The rounds before the Run's first Run Plan is declared are one
+exception (#252): they think at `medium`, the Run Plan rung, because the opening
+deliberation held a third of every measured Run at `high` while the rounds
+after it barely reason; a Steering replan never returns to that rung, since the
+fresh Run Plan after a directive is the round `low` lost the correction in.
+Finalization rounds are the other exception (#215): bookkeeping and the
 reserved Answer think at their own rung, `low`, whatever the tier, because
 neither acquires anything and both must fit their share of the Finalization
 Allowance. The rung is read from the Effort Epoch as each request is built, so

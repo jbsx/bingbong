@@ -14,6 +14,7 @@ import {
   requestFinalizeInstruction,
   HARD_TOOL_ROUND_CEILING,
   injectedReportDirective,
+  RUN_PLAN_REASONING_EFFORT,
   SUBAGENT_REASONING_EFFORT,
   TIER_ACTIVE_WORK_DEADLINES_MS,
   LLM_REQUEST_TIMEOUT_MS,
@@ -63,13 +64,90 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
       expect(TIER_REASONING_EFFORT).toEqual({ direct_action: 'high', lookup: 'high', investigation: 'max' })
     })
 
-    it('runs an undeclared Run\u2019s first round at the default tier\u2019s rung', () => {
-      // No new rule for round one: a Run with no declared plan already runs
-      // under DEFAULT_EFFORT_TIER, so its rung follows from that alone.
-      const epoch = createEffortEpoch({ clock: new FakeClock() })
+    describe('the Run Plan rung (#252, ADR 0053)', () => {
+      it('thinks at the Run Plan rung until the first Run Plan is declared, then at the tier\u2019s', () => {
+        // The opening round held a third of every measured Run at `high`
+        // (17\u201332k reasoning characters before the first action) while the
+        // rounds after it barely think, so the rounds before the first
+        // declaration get their own rung; the declaration hands over to
+        // the tier's.
+        expect(RUN_PLAN_REASONING_EFFORT).toBe('medium')
+        const epoch = createEffortEpoch({ clock: new FakeClock() })
+        expect(epoch.reasoningEffort).toBe(RUN_PLAN_REASONING_EFFORT)
 
-      expect(epoch.reasoningEffort).toBe(TIER_REASONING_EFFORT[DEFAULT_EFFORT_TIER])
-      expect(epoch.reasoningEffort).toBe('high')
+        // Still undeclared after a round: the rung is the Run Plan's, not the
+        // default tier's.
+        expect(epoch.beginToolRound()).toBe(true)
+        expect(epoch.reasoningEffort).toBe('medium')
+
+        expect(epoch.declareTier('investigation', true)).toBe(true)
+        expect(epoch.reasoningEffort).toBe('max')
+      })
+
+      it('hands a Direct Action or Lookup declaration to `high`', () => {
+        const direct = createEffortEpoch({ clock: new FakeClock() })
+        expect(direct.declareTier('direct_action', true)).toBe(true)
+        expect(direct.reasoningEffort).toBe('high')
+
+        const lookup = createEffortEpoch({ clock: new FakeClock() })
+        expect(lookup.declareTier('lookup', true)).toBe(true)
+        expect(lookup.reasoningEffort).toBe('high')
+      })
+
+      it('never returns to the Run Plan rung after a Steering replan (#252)', () => {
+        // The fresh Run Plan after a directive is the round `low` lost the
+        // correction in; it thinks at the tier's rung whether or not a
+        // Run Plan had been declared before the user spoke.
+        const declared = createEffortEpoch({ clock: new FakeClock() })
+        expect(declared.declareTier('investigation', true)).toBe(true)
+        expect(declared.replan()).toBe(true)
+        expect(declared.tier).toBe(DEFAULT_EFFORT_TIER)
+        expect(declared.reasoningEffort).toBe(TIER_REASONING_EFFORT[DEFAULT_EFFORT_TIER])
+
+        const undeclared = createEffortEpoch({ clock: new FakeClock() })
+        expect(undeclared.reasoningEffort).toBe(RUN_PLAN_REASONING_EFFORT)
+        expect(undeclared.replan()).toBe(true)
+        expect(undeclared.reasoningEffort).toBe('high')
+      })
+
+      it('yields to the Finalization rung when Finalization opens before any declaration', () => {
+        const epoch = createEffortEpoch({ clock: new FakeClock() })
+        epoch.enterFinalization('no_progress')
+        expect(epoch.reasoningEffort).toBe(FINALIZATION_REASONING_EFFORT)
+      })
+
+      it('treats an epoch constructed at a tier as declared', () => {
+        // The pipeline never constructs one this way; tests do, to mean
+        // "an epoch at this tier", and their rung reads as it always did.
+        const epoch = createEffortEpoch({ clock: new FakeClock(), initialTier: 'lookup' })
+        expect(epoch.reasoningEffort).toBe('high')
+      })
+
+      it('is not ended by an automatic Tier Escalation — only a declaration or a replan ends it (#216)', () => {
+        // The deadline's re-arm raises the tier of a Run still making
+        // Progress; it declares nothing, so an undeclared Run keeps the Run
+        // Plan rung until its report_run_plan lands.
+        const clock = new FakeClock()
+        const epoch = createEffortEpoch({ clock, makingProgress: () => true })
+        clock.advance(TIER_ACTIVE_WORK_DEADLINES_MS[DEFAULT_EFFORT_TIER])
+        expect(epoch.decideLoopTop()).toEqual({ kind: 'work' })
+        expect(epoch.tier).toBe('investigation')
+        expect(epoch.reasoningEffort).toBe(RUN_PLAN_REASONING_EFFORT)
+
+        expect(epoch.declareTier('investigation', true)).toBe(true)
+        expect(epoch.reasoningEffort).toBe('max')
+      })
+
+      it('leaves a Browse Subagent’s epoch at its own rung, declared or not', () => {
+        const epoch = createEffortEpoch({
+          clock: new FakeClock(),
+          subagent: { toolRoundBudget: SUBAGENT_LIMITS.maxToolRoundsPerTask, deadline: { expired: () => false } },
+        })
+        expect(epoch.reasoningEffort).toBe(SUBAGENT_REASONING_EFFORT)
+        expect(epoch.beginToolRound()).toBe(true)
+        expect(epoch.declareTier('investigation', true)).toBe(false)
+        expect(epoch.reasoningEffort).toBe('low')
+      })
     })
 
     it('raises the rung from the round after a tier escalation', () => {

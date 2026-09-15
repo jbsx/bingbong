@@ -118,15 +118,16 @@ describe('reasoning effort override (#166)', () => {
     expect(REASONING_EFFORT_ENV_KEY).toBe('BINGBONG_REASONING_EFFORT')
   })
 
-  it('accepts the three rungs the provider defines, case and padding aside', () => {
+  it('accepts the four rungs the provider defines, case and padding aside', () => {
     expect(resolveReasoningEffortOverride({ [REASONING_EFFORT_ENV_KEY]: 'low' })).toBe('low')
     expect(resolveReasoningEffortOverride({ [REASONING_EFFORT_ENV_KEY]: ' HIGH ' })).toBe('high')
     expect(resolveReasoningEffortOverride({ [REASONING_EFFORT_ENV_KEY]: 'Max' })).toBe('max')
+    expect(resolveReasoningEffortOverride({ [REASONING_EFFORT_ENV_KEY]: 'medium' })).toBe('medium')
   })
 
   it('is absent when unset, empty, or not a rung — the tier map then decides', () => {
     expect(resolveReasoningEffortOverride({})).toBeUndefined()
     expect(resolveReasoningEffortOverride({ [REASONING_EFFORT_ENV_KEY]: '   ' })).toBeUndefined()
-    expect(resolveReasoningEffortOverride({ [REASONING_EFFORT_ENV_KEY]: 'medium' })).toBeUndefined()
+    expect(resolveReasoningEffortOverride({ [REASONING_EFFORT_ENV_KEY]: 'ultra' })).toBeUndefined()
   })
 })

@@ -116,7 +116,7 @@ BINGBONG_CONTINUITY_BUDGETS='{"glm-5.3-flash":{"journal":{"high":2400,"reserve":
 ```sh
 BINGBONG_ENV_FILE=…                    # load .env from another path
 BINGBONG_ASK_TIMEOUT_MS=…              # ask_user window (default ~45 s)
-BINGBONG_REASONING_EFFORT=low|high|max # force every round's reasoning rung; unset,
+BINGBONG_REASONING_EFFORT=low|medium|high|max # force every round's reasoning rung; unset,
                                        # the Effort Tier decides (Lookup high, Investigation max)
 
 # Wake

@@ -100,15 +100,33 @@ export const SUBAGENT_REASONING_EFFORT: ReasoningEffort = 'low'
 export const FINALIZATION_REASONING_EFFORT: ReasoningEffort = 'low'
 
 /**
- * The rung a Run's next round thinks at: a function of tier *and* phase
- * (#215), read only through the epoch's `reasoningEffort`. Acquisition
- * rounds — the `working` phase — think at the tier's rung; both
- * Finalization phases think at the Finalization rung. A Browse
- * Subagent's epoch never applies this rule: its rung is
- * SUBAGENT_REASONING_EFFORT in every phase.
+ * The rung a Run thinks at before its first Run Plan is declared (#252,
+ * ADR 0053). The opening round — the one that chooses the tier, the
+ * Asked Items and the first source — ran at the default tier's `high`
+ * and reasoned for 17–32k characters before its first action: a median
+ * of 62 s in the second Baseline and 85 s after #250, a third of every
+ * Run's LLM time, while the rounds after it barely think (an
+ * Investigation's `max` rounds reason ~200 characters in 4.7 s). The
+ * z.ai probe measured `medium` at five to six times fewer reasoning
+ * characters than `high`. The #166 losses at `low` — a Steering replan
+ * declared against the original objective, Lookups wandering — were
+ * rounds after a declaration, which keep the tier's rung; a Steering
+ * replan never returns here.
  */
-function reasoningEffortFor(tier: EffortTier, phase: EffortPhase): ReasoningEffort {
-  return phase.kind === 'working' ? TIER_REASONING_EFFORT[tier] : FINALIZATION_REASONING_EFFORT
+export const RUN_PLAN_REASONING_EFFORT: ReasoningEffort = 'medium'
+
+/**
+ * The rung a Run's next round thinks at: a function of tier, phase, and
+ * whether a Run Plan has been declared (#215, #252), read only through
+ * the epoch's `reasoningEffort`. Acquisition rounds — the `working`
+ * phase — think at the Run Plan rung until the first declaration and at the
+ * tier's rung from then on; both Finalization phases think at the
+ * Finalization rung. A Browse Subagent's epoch never applies this rule:
+ * its rung is SUBAGENT_REASONING_EFFORT in every phase.
+ */
+function reasoningEffortFor(tier: EffortTier, phase: EffortPhase, runPlanDeclared: boolean): ReasoningEffort {
+  if (phase.kind !== 'working') return FINALIZATION_REASONING_EFFORT
+  return runPlanDeclared ? TIER_REASONING_EFFORT[tier] : RUN_PLAN_REASONING_EFFORT
 }
 
 /**
@@ -589,6 +607,12 @@ export interface EffortEpoch {
 export function createEffortEpoch(deps: {
   clock: Clock
   activeWorkDeadlineMs?: number
+  /**
+   * An epoch that starts at a tier, as if declared (#252): production
+   * epochs start undeclared at DEFAULT_EFFORT_TIER and think at the Run Plan
+   * rung until the first Run Plan; tests construct one at a tier to mean
+   * "an epoch at this tier", and its rung is the tier's from the start.
+   */
   initialTier?: EffortTier
   /**
    * The Subagent configuration (#149): present, the epoch is a Browse
@@ -634,6 +658,12 @@ export function createEffortEpoch(deps: {
   let tierRounds = 0
   let cumulativeRounds = 0
   let phase: EffortPhase = { kind: 'working' }
+  // Whether a Run Plan has been declared (#252, ADR 0053): the rounds
+  // before it think at the Run Plan rung. An epoch constructed at a tier
+  // counts as declared, and a Steering replan sets it whether or not a
+  // Run Plan preceded the directive — the fresh Run Plan after a directive is
+  // the round #166 measured `low` losing the correction in.
+  let runPlanDeclared = deps.initialTier !== undefined
   const warned: Record<BudgetWarningMilestone, boolean> = { near: false, imminent: false, time: false }
   let pendingWarning: BudgetWarningMilestone | null = null
   let pendingFinalizationNotice = false
@@ -777,7 +807,7 @@ export function createEffortEpoch(deps: {
       return tier
     },
     get reasoningEffort() {
-      return subagent !== undefined ? SUBAGENT_REASONING_EFFORT : reasoningEffortFor(tier, phase)
+      return subagent !== undefined ? SUBAGENT_REASONING_EFFORT : reasoningEffortFor(tier, phase, runPlanDeclared)
     },
     get tierRounds() {
       return tierRounds
@@ -839,6 +869,9 @@ export function createEffortEpoch(deps: {
       if (subagent !== undefined) return false
       if (phase.kind !== 'working' || (!initialDeclaration && nextTier === tier)) return false
       rearm(nextTier)
+      // The declaration ends the Run Plan rung (#252): from here the tier's
+      // rung applies, this round's request already sent.
+      runPlanDeclared = true
       return true
     },
     replan(nextTier = DEFAULT_EFFORT_TIER) {
@@ -854,6 +887,10 @@ export function createEffortEpoch(deps: {
       // automatic escalation is its own spend, and a corrected objective
       // starts that spend over.
       tierEscalationSpent = false
+      // The fresh Run Plan after a directive thinks at the tier's rung, never
+      // the Run Plan rung (#252, #166): the correction reaches the durable
+      // surface at the rung that held it.
+      runPlanDeclared = true
       rearm(nextTier)
       return true
     },

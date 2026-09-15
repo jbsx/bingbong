@@ -2,7 +2,7 @@
 // role. Everything is config (environment); no model id or provider is baked
 // into code, so swapping providers is a config change.
 
-import type { ReasoningEffort } from '../ports/llm'
+import { REASONING_EFFORTS, type ReasoningEffort } from '../ports/llm'
 import { reportFault } from '../trace/fault'
 
 export type AgentRole = 'orchestrator' | 'subagent' | 'vision'
@@ -116,13 +116,11 @@ export function resolveRoutingStatus(env: Record<string, string | undefined>): R
  * rounds too (#215): a corpus pass at a forced rung is uniform, so the
  * bookkeeping round and the reserved Answer round give up their own
  * `low` for the forced value like every other round. Unset, each
- * round's own rung — the Effort Tier's, or Finalization's — decides.
- * This is how a probe runs the same command at `low` and at `max` on
- * one commit.
+ * round's own rung — the Run Plan's before the first declaration (#252),
+ * the Effort Tier's, or Finalization's — decides. This is how a probe
+ * runs the same command at `low` and at `max` on one commit.
  */
 export const REASONING_EFFORT_ENV_KEY = 'BINGBONG_REASONING_EFFORT'
-
-const REASONING_EFFORTS: readonly ReasoningEffort[] = ['low', 'high', 'max']
 
 /**
  * The override in force, or undefined when none is: an unset, blank, or
