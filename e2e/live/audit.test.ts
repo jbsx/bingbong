@@ -84,6 +84,8 @@ interface RoundSpec {
     observation?: SearchObservation
     /** The Not-found Landing the Run Trace records on the result (#239) — a trace written after the field was kept. */
     notFound?: { basis: string; host: string }
+    /** The Composed Address rewrite the Run Trace records on the result (#255, ADR 0055). */
+    rewritten?: { site: string; query: string }
   }[]
   readonly reasoning?: string
 }
@@ -131,6 +133,7 @@ function traceOf(rounds: readonly RoundSpec[], extra: readonly Record<string, un
         kind: 'pipeline_event',
         event: { type: 'tool_result', turnId: TURN, callId, name: call.name, ok, ...(ok ? { result: call.result ?? 'ok' } : { error: call.error ?? 'refused' }), at: T0 + spec.at + 3 },
         ...(call.notFound !== undefined ? { notFound: call.notFound } : {}),
+        ...(call.rewritten !== undefined ? { rewritten: call.rewritten } : {}),
       })
     }
   }
@@ -949,6 +952,68 @@ describe('Not-found Landings (#239, ADR 0050)', () => {
 
     const unjudged = formatAuditSet(buildAuditSet(provenanceOf(), [{ mechanical, review: null, countsAfterOverrules: mechanical.counts }], []))
     expect(unjudged).toContain('- of those, judged Off-key by the reviewer: not judged')
+  })
+})
+
+describe('Rewritten Composed Addresses (#255, ADR 0055)', () => {
+  const DEAD = 'https://www.nasa.gov/voyager-2013-09'
+  const COMPOSED = 'https://www.nasa.gov/voyager-record'
+  const SEARCH = 'https://duckduckgo.com/?q=voyager%20record%20site%3Anasa.gov'
+  const LINE = `Rewritten — nasa.gov already answered not found for a composed address this run, so ${COMPOSED} was not opened; it ran as a search of the site instead: "voyager record site:nasa.gov". Open a result you were shown rather than composing another address.`
+  const ROUNDS: RoundSpec[] = [
+    { round: 1, at: 1_000, calls: [{ name: 'navigate', args: { url: DEAD }, result: `${PAGE('Page Not Found - NASA', DEAD, 'dead0001')}\nNOT-FOUND:404 www.nasa.gov\nadvice`, notFound: { basis: '404', host: 'www.nasa.gov' } }] },
+    { round: 2, at: 2_000, calls: [{ name: 'navigate', args: { url: COMPOSED }, result: `${LINE}\n${PAGE('DuckDuckGo', SEARCH, 'bbbb0001')}`, rewritten: { site: 'nasa.gov', query: 'voyager record site:nasa.gov' } }] },
+    { round: 3, at: 3_000, calls: [{ name: 'navigate', args: { url: SPEC_URL }, result: PAGE('Watch spec', SPEC_URL, 'aaaa1111') }] },
+  ]
+
+  it('reads a rewrite into a rewritten call field, replayed as the search that ran, and the rewritten round is an acquisition round, never a Failed one', () => {
+    const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, EXTRA) }))
+    const [first, rewritten, third] = mechanical.rounds
+
+    expect(rewritten!.kind).toMatch(/^acquisition_/)
+    expect(rewritten!.calls[0]).toMatchObject({ args: { url: COMPOSED }, refused: false, url: SEARCH, rewritten: 'voyager record site:nasa.gov', search: { query: 'voyager record site:nasa.gov', streak: 1 } })
+    expect(first!.calls[0]).not.toHaveProperty('rewritten')
+    expect(third!.calls[0]).not.toHaveProperty('rewritten')
+    expect(mechanical.rewrittenComposedAddresses).toEqual([2])
+  })
+
+  it('keeps a rewritten round whose search failed out of the Failed rounds', () => {
+    const rounds: RoundSpec[] = [
+      ROUNDS[0]!,
+      { round: 2, at: 2_000, calls: [{ name: 'navigate', args: { url: COMPOSED }, ok: false, error: `${LINE}\nSearch loop limit reached`, rewritten: { site: 'nasa.gov', query: 'voyager record site:nasa.gov' } }] },
+      ROUNDS[2]!,
+    ]
+    const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(rounds, EXTRA) }))
+
+    expect(mechanical.rounds[1]!.kind).not.toBe('failed_round')
+    expect(mechanical.rounds[1]!.calls[0]).toMatchObject({ refused: false, rewritten: 'voyager record site:nasa.gov' })
+    expect(mechanical.rewrittenComposedAddresses).toEqual([2])
+  })
+
+  it('prints the rewrites per attempt and how many the reviewer judged Off-key, and sums both per population', () => {
+    const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, EXTRA) }))
+    const judged: AuditJudgement = {
+      searchLoops: [],
+      offKey: [{ round: 2, url: SEARCH, reason: 'a site search for a path the site does not have' }],
+      overrules: [],
+      stoppedEarly: { value: false, reason: 'it answered', checks: [] },
+      answerOmitted: { value: false, reason: 'fact-02 was on no page it read', checks: [] },
+      verdict: { primary: 'rounds_wasted', primaryReason: 'a guessed address', secondary: null, secondaryReason: null },
+      flags: [],
+    }
+    expect(validateJudgement(judged, mechanical).ok).toBe(true)
+    const review: AuditReview = { judgement: judged, caveats: [], model: 'reviewer', served: null, effort: 'high', promptVersion: '1', digestHash: mechanical.digestHash, costUsd: null, durationMs: null, judgedAt: null }
+    const set = buildAuditSet(provenanceOf(), [{ mechanical, review, countsAfterOverrules: countsAfterOverrulesOf(mechanical, judged) }], [])
+
+    expect(set.populations.initial).toMatchObject({ rewrittenComposedAddresses: 1, rewrittenComposedAddressesOffKey: 1, notFoundNavigates: 1, notFoundOffKey: 0 })
+    const markdown = formatAuditSet(set)
+    expect(markdown).toContain('- Composed Addresses rewritten into a site search: 1 (round 2)')
+    expect(markdown).toContain('- of the rewrites, judged Off-key by the reviewer: 1')
+    expect(markdown).toContain('1 Composed Address(es) rewritten into a site search (1 judged Off-key)')
+    expect(markdown).toContain('[rewritten, off-key]')
+
+    const unjudged = formatAuditSet(buildAuditSet(provenanceOf(), [{ mechanical, review: null, countsAfterOverrules: mechanical.counts }], []))
+    expect(unjudged).toContain('- of the rewrites, judged Off-key by the reviewer: not judged')
   })
 })
 

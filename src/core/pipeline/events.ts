@@ -7,6 +7,7 @@ import type { RunId, SessionGeneration, SessionId, SubmissionId } from '../sessi
 import type { FinalizationCause, RunResolution } from '../session/runJournal'
 import type { EffortTier } from './runPlan'
 import type { AskedItemStanding } from '../agent/askedItems'
+import type { ComposedAddressRewriteStamp } from './composedAddressRail'
 
 /**
  * Ownership metadata on Session-scoped events (#86–#100): every published
@@ -75,6 +76,12 @@ export type PipelineEvent = SessionEventIdentity & (
       ok: boolean
       result?: unknown
       error?: string
+      /**
+       * The Composed Address rewrite this result is for (#255, ADR 0055):
+       * present only when the call ran as a search of the site, so the Run
+       * Trace reads it from the round rather than from the line's wording.
+       */
+      rewritten?: ComposedAddressRewriteStamp
       at: number
     }
   | {

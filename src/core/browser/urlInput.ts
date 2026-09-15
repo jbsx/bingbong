@@ -6,7 +6,8 @@ const IPV4_PATTERN = /^\d{1,3}(\.\d{1,3}){3}(:\d+)?$/
 // version or a numbered term (`v1.3`, `No.1`) is search terms, not a host.
 const DOMAIN_PATTERN = /^[^\s/?#:]+\.(?:[a-z]{2,}|xn--[a-z0-9-]+)(?::\d+)?(?:[/?#]\S*)?$/i
 
-function searchUrl(query: string): string {
+/** The search the browser runs for typed words: DuckDuckGo with the words as `q=`. */
+export function searchUrl(query: string): string {
   return `https://duckduckgo.com/?q=${encodeURIComponent(query)}`
 }
 
