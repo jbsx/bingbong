@@ -9,6 +9,16 @@ observation stands, and this decision fixes what verification admits. It
 touches nothing in ADR 0043: the application still mints a User Observation
 only for a correction handed on from a Run that never answered.
 
+Amended on 2026-09-15 for #257, grilled from the Round Audit of the post-#252
+levers capture (`fix-253-256-1..3`): the punctuation-tolerant attempt also
+strips bracketed reference markers, and the `excerpt_unsupported` refusal
+names each passage that failed beside the retained text nearest to it. The
+capture showed two Runs retrying one source in three consecutive rounds
+each, editing the joiner and the reference markers the refusal and the page
+suggested while the real defect — an interpolated phrase, a sentence deleted
+without a seam — stayed untouched, and both Runs ended `budget_exhausted`.
+What an excerpt is, and that a paraphrase stays refused, are unchanged.
+
 ## Context
 
 After #252 a Run's time is its round count times a provider floor of about
@@ -43,10 +53,24 @@ words the Run heard were inside every one.
 breaks, `|`, `...` and `…`; every fragment of four or more normalized
 characters must appear verbatim, whitespace and case tolerant, in what this
 Run retained from the cited source. When the strict check fails, a second
-attempt strips punctuation from both sides. The excerpt is stored as the
-model gave it: every passage in it is literally on the page, and the joins
-are the model's visible seams. Grounding stays per Run and per source, and a
-paraphrase stays refused.
+attempt strips punctuation and bracketed reference markers — `[84]`, `[a]`,
+`[note 3]`, `[citation needed]` — from both sides: a marker is the page's
+rendering, not its words, as the Run's `|` is its own rendering of a table
+row (#257). The excerpt is stored as the model gave it: every passage in it
+is literally on the page, and the joins are the model's visible seams.
+Grounding stays per Run and per source, and a paraphrase stays refused.
+
+**A refusal names the passage that failed.** When an excerpt is refused as
+unsupported, the refusal names each passage the retained text does not hold
+and, for each, quotes the retained text nearest to it — anchored on the
+longest stretch of the passage that is there, for the passage's length and
+a margin either side — so the model sees its own edit against what the page
+said and corrects that passage, not the joiner. The advice on how passages
+may be joined lives in the tool description, not in the refusal. No source
+is ever closed and no per-source count is kept: a rejected checkpoint
+already counts once per Tool Round against the no-progress rail (#197), and
+in both observed clusters the words were retained and a named passage would
+have been accepted on the next round (#257).
 
 **A mis-shaped checkpoint call is applied as the call it evidently is.** A
 Candidate decision carrying a stray creation field is applied as the
@@ -74,6 +98,10 @@ accepted checkpoint, so the audit no longer counts a rejection.
   pipeline would be rewriting the model's claim.
 - **Punctuation tolerance alone.** Rejected: it admits the dropped comma and
   none of the six stitched excerpts.
+- **Closing a source after its second unsupported excerpt** (#257).
+  Rejected: it would have saved about 23 s across the two observed clusters
+  and lost the evidence in both, and in one the page held every word. A
+  third attempt is right once the model is told which passage failed.
 
 ## Consequences
 
@@ -88,3 +116,10 @@ accepted checkpoint, so the audit no longer counts a rejection.
   Run that keeps mis-shaping its bookkeeping is still visible in the trace
   and can still exhaust an Approach through a genuinely unsupported
   excerpt (#197).
+- A refusal quotes retained text back to the model (#257). It quotes the
+  page the Run already saw, behind a label, so nothing new enters the Run
+  and nothing the model wrote is paraphrased. The audit counts same-source
+  unsupported rounds — a round whose refused excerpt cites the source the
+  previous or next round's refused excerpt cites — and #257 gates on that
+  counter (5 in fix-253-256), not on the raw rejected count, which still
+  holds the first refusal of every genuine paraphrase.
