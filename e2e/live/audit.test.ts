@@ -1336,7 +1336,10 @@ describe('a set and the aggregate', () => {
 describe('the committed audit outputs', () => {
   const files = existsSync(REPORTS_DIR) ? readdirSync(REPORTS_DIR).filter((name) => name.startsWith('audit-')) : []
 
-  it.skipIf(files.length === 0)('carry no key text and nothing under the private root', () => {
+  // Every committed report against every key string: it grows with each audit
+  // set and fits in a second alone, but not in the default five under the
+  // parallel suite's load once the post-#252 levers added their tests.
+  it.skipIf(files.length === 0)('carry no key text and nothing under the private root', { timeout: 30_000 }, () => {
     // The key's own words. Its source statements are not in the list: they
     // quote public pages, and an attempt's Evidence Checkpoint excerpts the
     // same pages verbatim into the digest, which is the audit's business.
