@@ -142,6 +142,11 @@ describe('orchestrator tool surface', () => {
       expect(tool.requiresHistory).not.toBe(true)
       expect(tool.assessRisk).toBeUndefined()
       expect(tool.askUser).toBeUndefined()
+      // Checkpoints ride the next action (#254): the flag the Tool Round reads, and the clause the model reads.
+      expect(tool.checkpoint).toBe(true)
+      expect(tool.description).toContain(
+        'Call it alongside your next action in the same response, never in a round spent on checkpoints alone unless acquisition tools are closed.',
+      )
     }
     // The Candidate decision vocabulary: three verdicts, plus the explicit
     // reopening a scoped decision can be undone by (#208).

@@ -16,8 +16,11 @@ import {
 export function createRecordCandidateTool(): Tool {
   return {
     name: 'record_candidate',
+    checkpoint: true,
     description:
       'Record or decide one Candidate in Session Evidence — a possible answer, item, or option the run is weighing. ' +
+      'Call it alongside your next action in the same response, never in a round spent on checkpoints alone unless ' +
+      'acquisition tools are closed. ' +
       'Create it active with {subject, detail?, supporting_evidence: [Session Evidence observation ids]}; decide it ' +
       'with {candidate_id, status: accepted|rejected|superseded|active, reason, supporting_evidence, authority?} ' +
       'citing fresh Observations that ground the decision. These are the only two shapes and they never mix: no ' +

@@ -296,6 +296,13 @@ export interface AuditMechanical {
    */
   readonly mergedCheckpoints: number
   /**
+   * Acquisition rounds — with or without Progress — carrying an accepted
+   * Evidence Checkpoint beside the action (#254): the checkpoints that rode
+   * the next action instead of a round of their own. Beside the rounds,
+   * outside the digest. Not `mergedCheckpoints`, which counts re-recordings.
+   */
+  readonly bundledCheckpoints: number
+  /**
    * Acquisition rounds without Progress with a call — never a navigate — on a
    * Held Page (#240, ADR 0051): a page the initial attempt checkpointed, or
    * one this attempt checkpointed in an earlier round. Beside the rounds,
@@ -457,6 +464,8 @@ export interface AuditPopulation {
   readonly inheritedRounds: number
   /** Merged Evidence Checkpoints over the attempts (#240): a floor. */
   readonly mergedCheckpoints: number
+  /** Acquisition rounds carrying an accepted Evidence Checkpoint over the attempts (#254). */
+  readonly bundledCheckpoints: number
   /** Held Page rounds without Progress over the attempts (#240). */
   readonly heldPageRoundsWithoutProgress: number
   readonly rejectedCheckpoints: number
@@ -1248,6 +1257,7 @@ export function classifyAttempt(input: AuditTraceInput): AuditMechanical {
     rejectedCheckpoints: rounds.reduce((total, round) => total + round.tags.rejectedCheckpoints, 0),
     inheritedRounds: rounds.filter((round) => round.tags.inherited).length,
     mergedCheckpoints,
+    bundledCheckpoints: rounds.filter((round) => (round.kind === 'acquisition_with_progress' || round.kind === 'acquisition_without_progress') && round.tags.acceptedCheckpoints > 0).length,
     heldPageRoundsWithoutProgress,
     mechanicalSearchRounds: new Set([...rewordingRounds, ...heads]).size,
     searchLoopHeads: [...heads].sort((left, right) => left - right),
@@ -1638,6 +1648,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
   let mechanicalSearch = 0
   let inherited = 0
   let merged = 0
+  let bundled = 0
   let heldPageRounds = 0
   let rejected = 0
   let walled = 0
@@ -1676,6 +1687,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
     sources[mechanical.searchSource] += 1
     inherited += mechanical.inheritedRounds
     merged += mechanical.mergedCheckpoints
+    bundled += mechanical.bundledCheckpoints
     heldPageRounds += mechanical.heldPageRoundsWithoutProgress
     rejected += mechanical.rejectedCheckpoints
     walled += mechanical.walledRounds
@@ -1726,6 +1738,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
     searchSources: sources,
     inheritedRounds: inherited,
     mergedCheckpoints: merged,
+    bundledCheckpoints: bundled,
     heldPageRoundsWithoutProgress: heldPageRounds,
     rejectedCheckpoints: rejected,
     walledRounds: walled,
@@ -1969,7 +1982,7 @@ function judgementLines(populations: readonly AuditPopulation[]): string[] {
     (population) =>
       `- ${population.label}: ${population.offKeyRounds} Off-key round(s), ${population.searchLoopRounds} Search Loop round(s) by the reviewer (${population.mechanicalSearchRounds} by the streak rule; attempts by search source ${SEARCH_SOURCES.map((source) => `${source} ${population.searchSources[source]}`).join(', ')}), ` +
       `${population.inheritedRounds} inherited, ${population.rejectedCheckpoints} rejected Evidence Checkpoint(s), ${population.walledRounds} walled round(s), ${population.notFoundNavigates} navigate(s) landed on a Not-found Page (${population.notFoundOffKey} judged Off-key), ${population.subagentRounds} Subagent round(s), ` +
-      `${population.mergedCheckpoints} merged Evidence Checkpoint(s) (a floor), ${population.heldPageRoundsWithoutProgress} Held Page round(s) without Progress, ${populationSlipsText(population)}, ` +
+      `${population.mergedCheckpoints} merged Evidence Checkpoint(s) (a floor), ${population.heldPageRoundsWithoutProgress} Held Page round(s) without Progress, ${population.bundledCheckpoints} bundled checkpoint round(s), ${populationSlipsText(population)}, ` +
       `${population.malformedAnswers} Malformed Answer(s) (${population.answerRetries} retried), ` +
       `${population.askedItemsDeclared} declared Asked Items (${population.askedItemsUnverified} with an unverified standing, ${population.askedItemsShapeFailures} shape failure(s), ${population.askedItemsShapeRetried} retried), ` +
       `${population.stoppedEarly} stopped early, ${population.answerOmitted} answer omitted, ${population.overrules} overrule(s), ${population.flags} flag(s); Finalization Causes: ${Object.entries(population.finalizationCauses)
@@ -1997,7 +2010,7 @@ function attemptSection(attempt: AuditAttempt): string[] {
   lines.push(
     `- ${mechanical.subagent.rounds} Subagent round(s) over ${mechanical.subagent.agents} Subagent(s)${Object.keys(mechanical.subagent.byStop).length > 0 ? `, stopped by ${Object.entries(mechanical.subagent.byStop).map(([stop, count]) => `${stop} ${count}`).join(', ')}` : ''}; ` +
       `${mechanical.acceptedCheckpoints} accepted (${mechanical.mergedCheckpoints} merged, a floor) and ${mechanical.rejectedCheckpoints} rejected Evidence Checkpoint(s); ${mechanical.inheritedRounds} inherited round(s); ` +
-      `${mechanical.heldPageRoundsWithoutProgress} Held Page round(s) without Progress; ${mechanical.walledRounds} walled round(s)`,
+      `${mechanical.heldPageRoundsWithoutProgress} Held Page round(s) without Progress; ${mechanical.bundledCheckpoints} bundled checkpoint round(s); ${mechanical.walledRounds} walled round(s)`,
   )
   lines.push(`- Malformed Answers: ${mechanical.malformedAnswers} (${mechanical.answerRetries} retried)`)
   lines.push(`- Asked Items: ${askedItemsText(mechanical.askedItems)}`)

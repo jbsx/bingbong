@@ -586,6 +586,60 @@ describe('merged checkpoints and Held Page rounds without Progress (#240, ADR 00
     expect(markdown).toMatch(/- follow_up: .*1 merged Evidence Checkpoint\(s\) \(a floor\), 2 Held Page round\(s\) without Progress/)
     expect(markdown).toContain('2 accepted (1 merged, a floor) and 0 rejected Evidence Checkpoint(s); 2 inherited round(s); 2 Held Page round(s) without Progress;')
   })
+
+  // #254: a checkpoint that rode an action. Not a merge — the two differ on purpose.
+  const BUNDLED_ROUNDS: RoundSpec[] = [
+    // 1: bundled with a navigate that makes Progress.
+    {
+      round: 1,
+      at: 1_000,
+      calls: [
+        { name: 'navigate', args: { url: OTHER_URL }, result: PAGE('Other', OTHER_URL, 'dddd4444') },
+        { name: 'record_evidence', args: { kind: 'web', observation: 'one', source_url: OTHER_URL }, result: recorded('memory-7', OTHER_URL), checkpoint: 'accepted' },
+      ],
+    },
+    // 2: its only checkpoint was rejected — not bundled.
+    {
+      round: 2,
+      at: 2_000,
+      calls: [
+        { name: 'scroll', args: { direction: 'down' }, result: endOfPage },
+        { name: 'record_evidence', args: { kind: 'web', observation: 'two', source_url: OTHER_URL }, ok: false, error: 'record_evidence rejected (excerpt_unsupported): the excerpt does not appear', checkpoint: 'excerpt_unsupported' },
+      ],
+    },
+    // 3: a checkpoint alone — a bookkeeping round, not bundled.
+    { round: 3, at: 3_000, calls: [{ name: 'record_evidence', args: { kind: 'web', observation: 'three', source_url: OTHER_URL }, result: recorded('memory-8', OTHER_URL), checkpoint: 'accepted' }] },
+    // 4: bundled with a read that makes no Progress.
+    {
+      round: 4,
+      at: 4_000,
+      calls: [
+        { name: 'scroll', args: { direction: 'down' }, result: endOfPage },
+        { name: 'record_evidence', args: { kind: 'web', observation: 'four', source_url: OTHER_URL }, result: recorded('memory-9', OTHER_URL), checkpoint: 'accepted' },
+      ],
+    },
+  ]
+
+  it('counts acquisition rounds carrying an accepted checkpoint as bundled, per attempt and per population (#254)', () => {
+    const initial = classifyAttempt(inputOf({ traceRecords: traceOf(BUNDLED_ROUNDS, [EXTRA[0]!]) }))
+    expect(initial.rounds.map((round) => round.kind)).toEqual(['acquisition_with_progress', 'acquisition_without_progress', 'bookkeeping', 'acquisition_without_progress'])
+    expect(initial.bundledCheckpoints).toBe(2)
+    expect(initial.mergedCheckpoints).toBe(0)
+
+    const followUp = followUpOf(BUNDLED_ROUNDS)
+    const set = buildAuditSet(
+      provenanceOf(),
+      [
+        { mechanical: initial, review: null, countsAfterOverrules: initial.counts },
+        { mechanical: followUp, review: null, countsAfterOverrules: followUp.counts },
+      ],
+      [],
+    )
+    expect([set.populations.initial.bundledCheckpoints, set.populations.followUp.bundledCheckpoints]).toEqual([2, followUp.bundledCheckpoints])
+    const markdown = formatAuditSet(set)
+    expect(markdown).toMatch(/- initial: .*Held Page round\(s\) without Progress, 2 bundled checkpoint round\(s\), /)
+    expect(markdown).toContain('Held Page round(s) without Progress; 2 bundled checkpoint round(s); 0 walled round(s)')
+  })
 })
 
 describe('Identity Slips (#246, ADR 0028)', () => {
@@ -630,8 +684,8 @@ describe('Identity Slips (#246, ADR 0028)', () => {
     expect(markdown).toContain('- Identity Slips: 1 Answer(s) with an Identity Slip, 3 id(s) slipped')
     expect(markdown).toContain('- Identity Slips: 0 Answer(s) with an Identity Slip, 0 id(s) slipped')
     expect(markdown).toContain('- Identity Slips: not recorded (a Run Trace below version 2)')
-    expect(markdown).toMatch(/- initial: .*Held Page round\(s\) without Progress, 1 Answer\(s\) with an Identity Slip, 3 id\(s\) slipped, /)
-    expect(markdown).toMatch(/- follow_up: .*Held Page round\(s\) without Progress, Identity Slips not recorded, /)
+    expect(markdown).toMatch(/- initial: .*Held Page round\(s\) without Progress, \d+ bundled checkpoint round\(s\), 1 Answer\(s\) with an Identity Slip, 3 id\(s\) slipped, /)
+    expect(markdown).toMatch(/- follow_up: .*Held Page round\(s\) without Progress, \d+ bundled checkpoint round\(s\), Identity Slips not recorded, /)
 
     const other = buildAuditSet(provenanceOf({ setId: 'set-2', createdAt: '2026-09-12T18:00:00.000Z' }), [initialOf(old)], [])
     const aggregate = buildAuditAggregate([set, other], '2026-09-14T11:00:00.000Z')

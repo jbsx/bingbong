@@ -24,6 +24,7 @@ import type { Tool } from './tool'
 import type { WorkingMemorySnapshot } from '../session/workingMemory'
 import { createSubagentTools } from './subagentTools'
 import { createRecordEvidenceTool } from './evidenceTools'
+import { BOOKKEEPING_ONLY_NOTICE } from './toolRound'
 import { createRecordCandidateTool } from './candidateTools'
 import { webEvidenceCommit } from './evidenceCheckpoint'
 import type { SettledPageState } from './progressFingerprints'
@@ -7906,9 +7907,10 @@ describe('run context compaction (#124)', () => {
     // Idempotent across rounds: the next compaction pass changes nothing.
     expect(resultTextOf(llm.requests[4]!.toolResults[0]!)).toBe(compacted)
     // The checkpoint result, the uncheckpointed read, and the latest
-    // actionable page state remain verbatim.
+    // actionable page state remain verbatim. The read after the round that
+    // only checkpointed carries the bookkeeping-only Notice (#254).
     expect(resultTextOf(llm.requests[4]!.toolResults[1]!)).toContain('Session Evidence recorded')
-    expect(resultTextOf(llm.requests[4]!.toolResults[2]!)).toBe('Settled page state after c3')
+    expect(resultTextOf(llm.requests[4]!.toolResults[2]!)).toBe(`Settled page state after c3\n\n${BOOKKEEPING_ONLY_NOTICE}`)
     expect(resultTextOf(llm.requests[4]!.toolResults[3]!)).toBe('Settled page state after c4')
     // Provider-protocol validity: every assistant call keeps its paired
     // result, in order, with the call untouched.

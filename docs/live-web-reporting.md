@@ -895,6 +895,14 @@ Page: a page the initial attempt checkpointed, or one this attempt checkpointed
 in an earlier round, canonical under the audit's rule. The `inherited` tag is
 unchanged and differs from both on purpose.
 
+A third sits beside them (#254): **bundled checkpoint rounds** are Acquisition
+rounds, with or without Progress, carrying at least one accepted Evidence
+Checkpoint beside the action — the checkpoints that rode the next action rather
+than a round of their own. It is the counter the bookkeeping-only Notice is
+measured by, code-counted and outside the digest like the others, and it is not
+merged checkpoints: those count exact-duplicate re-recordings. An audit written
+before it has no such field, and the Fix Ledger reads that as nothing.
+
 Two more sit beside them for the Answer (#246, ADR 0028): the **Answers with an
 Identity Slip** and the **ids slipped** in them, counted from the Run's own
 `identity_slip` Run Trace records — one per Answer whose Card or Spoken

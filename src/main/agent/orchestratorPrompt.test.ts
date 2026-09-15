@@ -276,6 +276,12 @@ describe('orchestrator prompt round-efficiency teachings (#131)', () => {
     expect(checkpoint).toMatch(/re-read the source only when its text is no longer in front of you/)
   })
 
+  it('teaches checkpoints to ride the next action, as the Run Plan does (#254)', () => {
+    const checkpoint = line('record_evidence checkpoints')
+    expect(checkpoint).toMatch(/Checkpoint alongside your next action in the same response/)
+    expect(checkpoint).toMatch(/never in a round spent on checkpoints alone, which wastes the round, unless acquisition tools are closed/)
+  })
+
   it('teaches the two record_candidate shapes as exclusive', () => {
     const checkpoint = line('record_evidence checkpoints')
     expect(checkpoint).toMatch(/two call shapes never mix/)
