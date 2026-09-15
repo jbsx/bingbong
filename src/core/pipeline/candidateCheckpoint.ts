@@ -47,6 +47,13 @@ export type CandidateCheckpointOutcome =
       readonly created: boolean
       /** How the retained decision reads back (#208): who decided, and under which objective. */
       readonly decision?: string
+      /**
+       * The Notice an acceptance of a mis-shaped call carries (#253, ADR
+       * 0054): which stray fields were ignored, naming the canonical shape.
+       */
+      readonly correction?: string
+      /** The decision a creation carrying a status did not apply, as the call that would (#253). */
+      readonly unappliedDecision?: Record<string, unknown>
     }
   | { ok: false; reason: 'malformed'; error: string }
   | { ok: false; reason: 'no_session'; error: string }
@@ -251,6 +258,88 @@ function statusChange(parsed: Extract<CandidateCall, { action: 'status' }>, runI
   }
 }
 
+/**
+ * A record_candidate call read as the call it evidently is (#253, ADR 0054).
+ * A call that parses is itself. Otherwise `candidate_id` — the one key that
+ * cannot mean creation — makes it a decision and `subject` / `detail` its
+ * strays; without it the call is a creation and the decision keys are the
+ * strays. When dropping the strays leaves a call that parses, that call is
+ * applied; any other defect keeps the call malformed (#241).
+ */
+function readCandidateCall(
+  args: Readonly<Record<string, unknown>>,
+): { parsed: CandidateCall; strays: readonly string[] } | null {
+  const parsed = parseCandidateCall({ ...args })
+  if (parsed !== null) return { parsed, strays: [] }
+  const strays = ('candidate_id' in args ? CREATION_FIELDS : DECISION_FIELDS).filter((field) => field in args)
+  if (strays.length === 0) return null
+  let rest: Record<string, unknown> = { ...args }
+  for (const field of strays) rest = withoutField(rest, field)
+  const reread = parseCandidateCall(rest)
+  return reread === null ? null : { parsed: reread, strays }
+}
+
+/**
+ * What an applied creation that carried decision fields says back (#253):
+ * the Notice naming the creation shape and, when its status would have
+ * decided something, the decision call that would — the model's own reason
+ * and authority, or a placeholder where it sent none.
+ */
+function creationCorrection(
+  args: Readonly<Record<string, unknown>>,
+  parsed: Extract<CandidateCall, { action: 'add' }>,
+  id: MemoryEntryId,
+  strays: readonly string[],
+): { correction?: string; unappliedDecision?: Record<string, unknown> } {
+  if (strays.length === 0) return {}
+  const decides = args.status !== 'active' && CANDIDATE_STATUSES.includes(args.status as CandidateStatus)
+  const reason =
+    typeof args.reason === 'string' && args.reason.trim() !== '' && args.reason.trim().length <= MAX_DECISION_REASON_CHARS
+      ? args.reason.trim()
+      : placeholder('what this decision rests on, in one line')
+  return {
+    correction:
+      `Notice: record_candidate created this Candidate and ignored ${strays.join(', ')}. A creation is ` +
+      '{subject, detail?, supporting_evidence} and always starts active; status, reason, and authority belong to a ' +
+      'decision, sent as its own call once the Candidate exists.',
+    ...(decides
+      ? {
+          unappliedDecision: {
+            candidate_id: id,
+            status: args.status,
+            reason,
+            ...(DECISION_AUTHORITIES.includes(args.authority as DecisionAuthority) ? { authority: args.authority } : {}),
+            supporting_evidence: [...parsed.supportingObservationIds],
+          },
+        }
+      : {}),
+  }
+}
+
+/** How many of the Session's Candidates an unknown-id refusal lists, newest last (#253). */
+const MAX_LISTED_CANDIDATES = 10
+const MAX_LISTED_SUBJECT_CHARS = 80
+
+/**
+ * The unknown-Candidate refusal (#253, ADR 0054): the ids the Session does
+ * hold, so the retry cites one instead of guessing again — and an
+ * Observation's id named for what it is, the commonest wrong guess.
+ */
+function unknownCandidateError(store: SessionEvidenceStore, id: MemoryEntryId): string {
+  const observation = store.observation(id) !== null ? ` — '${id}' is an Observation, not a Candidate` : ''
+  const candidates = store.snapshot().candidates
+  if (candidates.length === 0) {
+    return `no Candidate '${id}' exists in this Session${observation}, and the Session holds no Candidates — create one first with {subject, detail?, supporting_evidence}`
+  }
+  const listed = candidates.slice(-MAX_LISTED_CANDIDATES).map((candidate) => {
+    const subject =
+      candidate.subject.length > MAX_LISTED_SUBJECT_CHARS ? `${candidate.subject.slice(0, MAX_LISTED_SUBJECT_CHARS)}…` : candidate.subject
+    return `${candidate.id} (${candidate.status}) "${subject}"`
+  })
+  const earlier = candidates.length > MAX_LISTED_CANDIDATES ? `, and ${candidates.length - MAX_LISTED_CANDIDATES} earlier` : ''
+  return `no Candidate '${id}' exists in this Session${observation}. The Session holds: ${listed.join('; ')}${earlier} — cite one of those ids, or create the Candidate first`
+}
+
 /** The refusal naming cited ids that are not live Observations; null when every one is. */
 function supportRefusal(store: SessionEvidenceStore, ids: readonly MemoryEntryId[]): CandidateCheckpointOutcome | null {
   if (store.hasObservationSupport(ids)) return null
@@ -276,7 +365,7 @@ function gradeCandidateCall(
   const unsupported = supportRefusal(store, parsed.supportingObservationIds)
   if (unsupported !== null || parsed.action === 'add') return unsupported
   const check = store.checkCandidateStatus(parsed.id, statusChange(parsed, runId))
-  return check.ok ? null : refusalOutcome(check.refusal, parsed.id, check.standing)
+  return check.ok ? null : refusalOutcome(check.refusal, parsed.id, check.standing, store)
 }
 
 /** Runs one Candidate checkpoint end to end against the live Session store. */
@@ -284,8 +373,9 @@ export function evaluateCandidateCheckpoint(
   call: ToolCall,
   deps: { session?: EvidenceSessionSource },
 ): CandidateCheckpointOutcome {
-  const parsed = parseCandidateCall(call.args)
-  if (parsed === null) {
+  // A mixed call is applied as the call it evidently is (#253, ADR 0054).
+  const read = readCandidateCall(call.args)
+  if (read === null) {
     // A malformed call stays a rejected checkpoint (#241): the correction
     // names every defect and grades the call it should have been against
     // the live store, which it leaves exactly as it was.
@@ -302,6 +392,7 @@ export function evaluateCandidateCheckpoint(
   const session = deps.session?.() ?? null
   if (session === null) return CANDIDATE_NO_SESSION
   const { store, runId } = session
+  const { parsed, strays } = read
 
   const unsupported = supportRefusal(store, parsed.supportingObservationIds)
   if (unsupported !== null) return unsupported
@@ -320,14 +411,14 @@ export function evaluateCandidateCheckpoint(
         error: 'the Session refused the Candidate — it ended (reset or lapse), or a field exceeded its bound',
       }
     }
-    return { ok: true, candidate: pick(candidate), created: true }
+    return { ok: true, candidate: pick(candidate), created: true, ...creationCorrection(call.args, parsed, candidate.id, strays) }
   }
 
   // One verdict, reached where the rules are enforced (#208, ADR 0039):
   // the scoping and authority checks belong to the Session's own state, so
   // this asks once and renders the answer rather than re-deriving it.
   const outcome = store.setCandidateStatus(parsed.id, statusChange(parsed, runId))
-  if (!outcome.ok) return refusalOutcome(outcome.refusal, parsed.id, outcome.standing)
+  if (!outcome.ok) return refusalOutcome(outcome.refusal, parsed.id, outcome.standing, store)
   const retained = outcome.candidate.decisions.at(-1)
   return {
     ok: true,
@@ -335,6 +426,13 @@ export function evaluateCandidateCheckpoint(
     created: false,
     ...(retained !== undefined
       ? { decision: describeCandidateDecision(retained, retained.objectiveId) }
+      : {}),
+    ...(strays.length > 0
+      ? {
+          correction:
+            `Notice: record_candidate applied this call as the decision on ${parsed.id} and ignored ${strays.join(', ')}. ` +
+            'A decision is {candidate_id, status, reason, supporting_evidence, authority?}; subject and detail belong only to a creation.',
+        }
       : {}),
   }
 }
@@ -348,13 +446,10 @@ function refusalOutcome(
   refusal: CandidateChangeRefusal,
   id: MemoryEntryId,
   standing: CandidateDecision | undefined,
+  store: SessionEvidenceStore,
 ): CandidateCheckpointOutcome {
   if (refusal === 'unknown_candidate') {
-    return {
-      ok: false,
-      reason: 'unknown_candidate',
-      error: `no Candidate '${id}' exists in this Session — cite the identity its record_candidate call returned`,
-    }
+    return { ok: false, reason: 'unknown_candidate', error: unknownCandidateError(store, id) }
   }
   // The user's authority is cited, never asserted: a decision filed as the
   // user's has to stand on the user's own retained words. Distilled model
@@ -433,8 +528,17 @@ const pick = (candidate: SessionCandidate): Pick<SessionCandidate, 'id' | 'statu
 /** The tool-result text for one outcome: identity on success, correction otherwise. */
 export function candidateCheckpointMessage(outcome: CandidateCheckpointOutcome): string {
   if (outcome.ok) {
+    const created = `Candidate ${outcome.candidate.id} active: ${outcome.candidate.subject}. Cite its identity to decide it later.`
+    if (outcome.created && outcome.unappliedDecision !== undefined) {
+      return [
+        `${created} This call's status "${String(outcome.unappliedDecision.status)}" was not applied — a creation cannot decide. To decide it, send:`,
+        '```json',
+        JSON.stringify(outcome.unappliedDecision, null, 2),
+        '```',
+      ].join('\n')
+    }
     return outcome.created
-      ? `Candidate ${outcome.candidate.id} active: ${outcome.candidate.subject}. Cite its identity to decide it later.`
+      ? created
       : `Candidate ${outcome.candidate.id} ${outcome.candidate.status} — ${outcome.decision ?? 'decided'}. ` +
         'Supporting Observations and every earlier decision on it are kept. A decision the user made stands until they reopen it; ' +
         'your own stands for this objective until new evidence overturns it.'

@@ -269,7 +269,9 @@ describe('orchestrator prompt subagent evidence and freshness (#123)', () => {
 describe('orchestrator prompt round-efficiency teachings (#131)', () => {
   it('teaches verbatim excerpts copied from the observed result, not retyped from memory', () => {
     const checkpoint = line('record_evidence checkpoints')
-    expect(checkpoint).toMatch(/character-for-character/)
+    // #253, ADR 0054: every passage verbatim, seams allowed.
+    expect(checkpoint).toMatch(/every passage copied verbatim/)
+    expect(checkpoint).toMatch(/several verbatim passages may be joined with a line break or …/)
     expect(checkpoint).toMatch(/never retyped or paraphrased from memory/)
     expect(checkpoint).toMatch(/re-read the source only when its text is no longer in front of you/)
   })

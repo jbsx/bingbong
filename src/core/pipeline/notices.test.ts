@@ -28,9 +28,10 @@ describe('Notices', () => {
     notices.owe('subagent_finalization', 'SUBAGENT FINALIZE')
     notices.supply('tier_escalation', () => 'TIER ROSE')
     notices.owe('held_page', 'HELD PAGE')
+    notices.owe('checkpoint_shape', 'CHECKPOINT SHAPE')
 
     expect(text(notices.attach(ok, useful))).toBe(
-      ['page read', 'SEARCH LOOP', 'NO PROGRESS', 'HELD PAGE', 'PLAN', 'BUDGET', 'TIER ROSE', 'FINALIZE', 'SUBAGENT FINALIZE'].join(
+      ['page read', 'SEARCH LOOP', 'NO PROGRESS', 'HELD PAGE', 'CHECKPOINT SHAPE', 'PLAN', 'BUDGET', 'TIER ROSE', 'FINALIZE', 'SUBAGENT FINALIZE'].join(
         '\n\n',
       ),
     )
@@ -38,6 +39,7 @@ describe('Notices', () => {
       'search_loop',
       'no_progress',
       'held_page',
+      'checkpoint_shape',
       'run_plan',
       'budget',
       'tier_escalation',
