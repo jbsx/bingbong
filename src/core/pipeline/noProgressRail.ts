@@ -5,6 +5,7 @@ import { landedOnNotFoundPage } from '../browser/notFoundPage'
 import { actionFingerprint, pageFingerprint, pageReadPartOf, type SettledPageState } from './progressFingerprints'
 import { classifyToolObservation } from './toolObservations'
 import { reportFault } from '../trace/fault'
+import { collectedReportIn } from '../agent/agentResultsHeader'
 
 // Issue #126, ADR 0027: the no-progress rails. The #125 fingerprints
 // (query intent, URL, targeted action, settled page state) become
@@ -336,7 +337,10 @@ export function createNoProgressRail(deps: NoProgressRailDeps = {}): NoProgressR
       // read ahead of the trip: the trip round's later siblings still run
       // their bookkeeping and Collection, and the round after it asks.
       if (outcome.ok && CHECKPOINT_TOOLS.has(call.name)) somethingNew = false
-      if (outcome.ok && COLLECTION_TOOLS.has(call.name)) somethingNew = true
+      // A Collection call counts only when it collected: agent_results also
+      // answers `ok` with a listing of running agents or with nothing to
+      // collect, and neither gives the round anything to record.
+      if (outcome.ok && COLLECTION_TOOLS.has(call.name) && collectedReportIn(outcome.result)) somethingNew = true
       if (tripped) return null
       // Accepted Evidence Checkpoints are decision-relevant evidence;
       // rejected ones contribute to no-progress handling (#121/#126/AC3)

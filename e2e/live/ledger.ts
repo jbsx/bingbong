@@ -515,6 +515,12 @@ export function countersOf(population: AuditPopulation, attempts: readonly Audit
   const roundsOf = (kind: RoundKind): number => (kind === 'finalization' ? population.rounds : budgeted)
   // Read as written: an audit from before a counter existed has no field for it.
   const older = population as Partial<AuditPopulation>
+  // #256, ADR 0057: the streaming-or-silent split reads as nothing on an
+  // audit written before it, and on a population none of whose cut rounds'
+  // traces could say — a fresh audit of old traces counts every cut as not
+  // recorded, and "0 after a first token" would be a claim nobody made.
+  const cuts = older.allowanceFinalizationRounds ?? 0
+  const splitUnrecorded = older.allowanceFinalizationRoundsNotRecorded === undefined || (cuts > 0 && older.allowanceFinalizationRoundsNotRecorded === cuts)
   return [
     mechanical('Attempts', population.attempts),
     judged('Judged attempts', population.judged),
@@ -558,9 +564,8 @@ export function countersOf(population: AuditPopulation, attempts: readonly Audit
       older.skippedBookkeepingNotRecorded === undefined || older.skippedBookkeepingNotRecorded === population.attempts ? undefined : older.skippedBookkeepingRounds,
     ),
     mechanical('Finalization rounds cut by the Allowance', older.allowanceFinalizationRounds, population.rounds),
-    // #256, ADR 0057: the split and the latency read as nothing on an audit written before them.
-    mechanical('Finalization rounds cut after a first token', older.allowanceFinalizationRoundsStreaming, population.rounds),
-    mechanical('Finalization rounds cut silent', older.allowanceFinalizationRoundsSilent, population.rounds),
+    mechanical('Finalization rounds cut after a first token', splitUnrecorded ? undefined : older.allowanceFinalizationRoundsStreaming, population.rounds),
+    mechanical('Finalization rounds cut silent', splitUnrecorded ? undefined : older.allowanceFinalizationRoundsSilent, population.rounds),
     mechanical('First-token latency p50 (ms)', older.firstToken?.p50 ?? undefined),
     mechanical('First-token latency p90 (ms)', older.firstToken?.p90 ?? undefined),
     mechanical('Subagent rounds', population.subagentRounds, budgeted),
