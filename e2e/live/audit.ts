@@ -1294,7 +1294,10 @@ export function classifyAttempt(input: AuditTraceInput): AuditMechanical {
   // Pass five, beside the rounds (#246): the Run's own Identity Slips, where
   // its trace is new enough to have recorded them at all.
   const slipRecords = records.filter((record) => record.kind === 'identity_slip')
-  const identitySlips = records.some((record) => isFiniteNumber(record.v) && record.v >= IDENTITY_SLIP_TRACE_VERSION)
+  // Whether the trace is new enough to have recorded a kind of record at all:
+  // read off the version, so an absence is told from a record nobody could write.
+  const traceAtLeast = (version: number): boolean => records.some((record) => isFiniteNumber(record.v) && record.v >= version)
+  const identitySlips = traceAtLeast(IDENTITY_SLIP_TRACE_VERSION)
     ? { answers: slipRecords.length, ids: slipRecords.reduce((total, record) => total + (Array.isArray(record.slips) ? record.slips.length : 0), 0) }
     : null
 
@@ -1304,9 +1307,9 @@ export function classifyAttempt(input: AuditTraceInput): AuditMechanical {
     attempt.accepted.status !== 'observed' ? 'acceptance_unconfirmed' : attempt.finalAnswer.status === 'observed' ? 'answered' : 'no_answer'
 
   // Whether this trace's rounds say when their first fragment arrived (#256,
-  // ADR 0057): read off the version, so a round that streamed nothing is told
-  // from one whose trace could not have said.
-  const firstTokenRecorded = records.some((record) => isFiniteNumber(record.v) && record.v >= FIRST_TOKEN_TRACE_VERSION)
+  // ADR 0057), so a round that streamed nothing is told from one whose trace
+  // could not have said.
+  const firstTokenRecorded = traceAtLeast(FIRST_TOKEN_TRACE_VERSION)
   const withoutHash: Omit<AuditMechanical, 'digestHash'> = {
     attemptId: attempt.attemptId,
     huntId: attempt.huntId,
@@ -1348,14 +1351,16 @@ export function classifyAttempt(input: AuditTraceInput): AuditMechanical {
     // Pass six, beside the rounds (#256, ADR 0056): the Run's own skipped
     // bookkeeping rounds, where its trace is new enough to have recorded them,
     // and the Finalization rounds its Allowance cut.
-    skippedBookkeepingRounds: records.some((record) => isFiniteNumber(record.v) && record.v >= FINALIZATION_ENTRY_TRACE_VERSION)
+    skippedBookkeepingRounds: traceAtLeast(FINALIZATION_ENTRY_TRACE_VERSION)
       ? records.filter((record) => record.kind === 'finalization_entry' && record.agentId === undefined && record.bookkeeping === 'skipped').length
       : null,
     allowanceFinalizationRounds: allowanceFinalizationRoundsOf(rounds),
     // And of those, the ones cut after a first token had streamed, with every
-    // round's first-token latency beside them (#256, ADR 0057).
+    // round's first-token latency beside them (#256, ADR 0057). Selected from
+    // the same rounds as the count above — `rounds` and `classified` share
+    // an index — so the silent remainder can never go below zero.
     allowanceFinalizationRoundsStreaming: firstTokenRecorded
-      ? classified.filter(({ round }, index) => index >= finalizationFrom && round.record.outcome === 'allowance' && isFiniteNumber(round.record.firstTokenMs)).length
+      ? rounds.filter((round, index) => round.kind === 'finalization' && round.outcome === 'allowance' && isFiniteNumber(classified[index]!.round.record.firstTokenMs)).length
       : null,
     firstTokens: firstTokenRecorded
       ? classified.flatMap(({ round }, index) => (isFiniteNumber(round.record.firstTokenMs) ? [{ round: index + 1, ms: round.record.firstTokenMs }] : []))

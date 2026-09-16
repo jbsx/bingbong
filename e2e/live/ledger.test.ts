@@ -80,6 +80,26 @@ describe('the first token (#256, ADR 0057)', () => {
     expect(counters.find((entry) => entry.label === 'First-token latency p50 (ms)')).toMatchObject({ value: 3_900, judgement: false })
     expect(counters.find((entry) => entry.label === 'First-token latency p90 (ms)')).toMatchObject({ value: 8_100 })
   })
+
+  it('reads the split as nothing when every cut round predates the first-token record, and as zero when there was no cut at all', () => {
+    const audit = readAudit('audit-fix-252-1.json')
+    // A fresh audit of old traces: the cuts are there, and none of them could say.
+    const unrecorded: AuditPopulation = {
+      ...audit.populations.initial,
+      allowanceFinalizationRounds: 3,
+      allowanceFinalizationRoundsStreaming: 0,
+      allowanceFinalizationRoundsSilent: 0,
+      allowanceFinalizationRoundsNotRecorded: 3,
+      firstToken: { rounds: 0, p50: null, p90: null },
+    }
+    const counters = countersOf(unrecorded, [])!
+    expect(counters.find((entry) => entry.label === 'Finalization rounds cut after a first token')!.value).toBeNull()
+    expect(counters.find((entry) => entry.label === 'Finalization rounds cut silent')!.value).toBeNull()
+    expect(counters.find((entry) => entry.label === 'First-token latency p50 (ms)')!.value).toBeNull()
+    // No cut at all is a recorded zero on both sides of the split.
+    const none: AuditPopulation = { ...unrecorded, allowanceFinalizationRounds: 0, allowanceFinalizationRoundsNotRecorded: 0 }
+    expect(countersOf(none, [])!.find((entry) => entry.label === 'Finalization rounds cut after a first token')).toMatchObject({ value: 0 })
+  })
 })
 
 describe('family ids', () => {

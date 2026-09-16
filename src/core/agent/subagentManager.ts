@@ -3,6 +3,7 @@ import { systemClock } from '../ports/clock'
 import type { SessionGeneration, SessionId } from '../session/sessionIdentity'
 import type { WorkingMemorySnapshot } from '../session/workingMemory'
 import { capSentences } from '../agent/answerContract'
+import { agentResultsHeader } from './agentResultsHeader'
 import { SUBAGENT_LIMITS, type SubagentSharedDeadline } from './subagentRails'
 import type { SubagentReasoningTrace } from '../trace/reasoningTrace'
 import type { SubagentLlmRoundTrace } from '../trace/llmRoundTrace'
@@ -612,7 +613,7 @@ export function formatAgentResults(records: SubagentRecord[]): string {
   if (records.length === 0) return 'no subagents have been spawned yet'
   return records
     .map((record) => {
-      const header = `${record.id} [${KIND_LABEL[record.kind]}] ${record.status} — ${record.task}`
+      const header = agentResultsHeader(record.id, KIND_LABEL[record.kind], record.status, record.task)
       if (record.status === 'completed') return `${header}\n${formatReport(record)}`
       if (record.status === 'failed') return `${header}\nfailed: ${record.error ?? 'unknown error'}`
       if (record.status === 'cancelled') return header

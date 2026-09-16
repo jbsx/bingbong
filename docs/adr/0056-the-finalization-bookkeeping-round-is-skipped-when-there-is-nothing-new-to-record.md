@@ -79,3 +79,15 @@ bookkeeping rounds beside `allowance` rounds.
   in fix-252) at zero and reports Finalization seconds per Run and
   deterministic Answers, so a skip that starves an Answer of grounding is
   visible.
+
+## Implementation notes
+
+- The Run's first page-state read counts as something to record, although
+  it is not Progress for the Approach accounting (#126 keeps the baseline
+  read out of the no-progress count): it is the first material the Run
+  holds, and a Run that read one page and never checkpointed keeps its
+  round. A Run that never read anything skips it.
+- A Collection call counts only when it collected a Subagent Report.
+  `agent_results` also answers `ok` with a listing of agents still running,
+  with "no uncollected subagent reports" and with "no subagents have been
+  spawned yet"; the rail reads the reply for a completed entry's header.

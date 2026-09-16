@@ -502,6 +502,14 @@ describe('no-progress rail — acquired since the last accepted checkpoint (#256
     const collected = createNoProgressRail({ settledState: () => BASE })
     await collected.observe(call('agent_results', { agent_id: 'a-1' }), failed('no such agent'))
     expect(collected.newSinceCheckpoint()).toBe(false)
+    // An `ok` reply that collected nothing — nothing spawned, nothing
+    // uncollected, or a listing of agents still running — is not a Report.
+    await collected.observe(call('agent_results'), ok('no subagents have been spawned yet'))
+    expect(collected.newSinceCheckpoint()).toBe(false)
+    await collected.observe(call('agent_results'), ok('no uncollected subagent reports'))
+    expect(collected.newSinceCheckpoint()).toBe(false)
+    await collected.observe(call('agent_results', { agent_id: 'a-1' }), ok('a-1 [browsing] running — a task (still running, last: read_page)'))
+    expect(collected.newSinceCheckpoint()).toBe(false)
     await collected.observe(call('agent_results', { agent_id: 'a-1' }), ok('a-1 [browsing] completed — a report'))
     expect(collected.newSinceCheckpoint()).toBe(true)
   })
