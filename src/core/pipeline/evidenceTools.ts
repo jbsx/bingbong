@@ -19,7 +19,7 @@ export function createRecordEvidenceTool(): Tool {
       'Checkpoint one grounded Observation into Session Evidence. Call it alongside your next action in the same ' +
       'response, never in a round spent on checkpoints alone unless acquisition tools are closed. Web (default): cite the source_url of a page this ' +
       'run opened or read, and copy every passage of the excerpt verbatim from what the tool result showed there — ' +
-      'several verbatim passages may be joined with a line break or …; a paraphrase from memory is rejected (a ' +
+      'several verbatim passages may be joined with a line break, |, ... or …; a paraphrase from memory is rejected (a ' +
       'structured action outcome grounds itself — ' +
       'excerpt then optional). User (kind "user"): checkpoint the user\'s exact words — the command, an ask_user ' +
       'answer, or a steering directive this run heard, copied verbatim — so corrections and constraints survive for ' +
@@ -57,7 +57,7 @@ export function createRecordEvidenceTool(): Tool {
         type: 'string',
         description:
           'Every passage verbatim from the tool result that observed the source — copy-paste it; several verbatim ' +
-          'passages may be joined with a line break or …. Never retype or paraphrase from memory: a paraphrased ' +
+          'passages may be joined with a line break, |, ... or …. Never retype or paraphrase from memory: a paraphrased ' +
           'passage is rejected. If the observed text is no longer in front of you, re-read the source before ' +
           'citing. Web citations only.',
         required: false,

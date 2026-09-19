@@ -28,6 +28,7 @@ import {
   canonicalUrl,
   checkpointedUrlsOf,
   classifyAttempt,
+  sameSourceUnsupportedRoundsOf,
   countsAfterOverrulesOf,
   formatAuditAggregate,
   formatAuditSet,
@@ -41,6 +42,7 @@ import {
   type AuditJudgement,
   type AuditProvenance,
   type AuditReview,
+  type AuditRound,
   type AuditTraceInput,
 } from './audit.ts'
 import * as auditModule from './audit.ts'
@@ -646,7 +648,7 @@ describe('merged checkpoints and Held Page rounds without Progress (#240, ADR 00
     expect([set.populations.initial.bundledCheckpoints, set.populations.followUp.bundledCheckpoints]).toEqual([2, followUp.bundledCheckpoints])
     const markdown = formatAuditSet(set)
     expect(markdown).toMatch(/- initial: .*Held Page round\(s\) without Progress, 2 bundled checkpoint round\(s\), /)
-    expect(markdown).toContain('Held Page round(s) without Progress; 2 bundled checkpoint round(s); 0 walled round(s)')
+    expect(markdown).toContain('Held Page round(s) without Progress; 2 bundled checkpoint round(s); 0 same-source unsupported round(s); 0 walled round(s)')
   })
 })
 
@@ -692,8 +694,8 @@ describe('Identity Slips (#246, ADR 0028)', () => {
     expect(markdown).toContain('- Identity Slips: 1 Answer(s) with an Identity Slip, 3 id(s) slipped')
     expect(markdown).toContain('- Identity Slips: 0 Answer(s) with an Identity Slip, 0 id(s) slipped')
     expect(markdown).toContain('- Identity Slips: not recorded (a Run Trace below version 2)')
-    expect(markdown).toMatch(/- initial: .*Held Page round\(s\) without Progress, \d+ bundled checkpoint round\(s\), 1 Answer\(s\) with an Identity Slip, 3 id\(s\) slipped, /)
-    expect(markdown).toMatch(/- follow_up: .*Held Page round\(s\) without Progress, \d+ bundled checkpoint round\(s\), Identity Slips not recorded, /)
+    expect(markdown).toMatch(/- initial: .*Held Page round\(s\) without Progress, \d+ bundled checkpoint round\(s\), \d+ same-source unsupported round\(s\), 1 Answer\(s\) with an Identity Slip, 3 id\(s\) slipped, /)
+    expect(markdown).toMatch(/- follow_up: .*Held Page round\(s\) without Progress, \d+ bundled checkpoint round\(s\), \d+ same-source unsupported round\(s\), Identity Slips not recorded, /)
 
     const other = buildAuditSet(provenanceOf({ setId: 'set-2', createdAt: '2026-09-12T18:00:00.000Z' }), [initialOf(old)], [])
     const aggregate = buildAuditAggregate([set, other], '2026-09-14T11:00:00.000Z')
@@ -1501,5 +1503,76 @@ describe('the first token (#256, ADR 0057)', () => {
     expect(formatAuditSet(set)).toContain('1 Finalization round(s) cut by the Allowance (1 after a first token, 0 silent); first-token latency p50 3900 ms, p90 8120 ms over 2 round(s)')
     expect(formatAuditSet(set)).toContain('- Finalization: 0 bookkeeping round(s) skipped, 1 round(s) cut by the Finalization Allowance (1 after a first token, 0 silent)')
     expect(formatAuditSet(oldSet)).toContain('(0 after a first token, 0 silent, 1 not recorded); first-token latency not recorded')
+  })
+})
+
+describe('same-source unsupported rounds (#257, ADR 0054)', () => {
+  const WIKI = 'https://en.wikipedia.org/wiki/Voyager_1'
+  const DRAWING = 'https://pip-assets.example/RP-008149.pdf'
+  const unsupported = (url: string, observation: string) => ({
+    name: 'record_evidence',
+    args: { kind: 'web', observation, source_url: url, excerpt: 'not there' },
+    ok: false,
+    error: 'record_evidence rejected (excerpt_unsupported): the excerpt does not appear',
+    checkpoint: 'excerpt_unsupported',
+  })
+  const RETRY_ROUNDS: RoundSpec[] = [
+    // 1–2: one source refused in consecutive rounds — both count.
+    { round: 1, at: 1_000, calls: [{ name: 'navigate', args: { url: DRAWING }, result: PAGE('Drawing', DRAWING, 'aaaa1111') }, unsupported(DRAWING, 'one')] },
+    { round: 2, at: 2_000, calls: [unsupported(DRAWING, 'two')] },
+    // 3: another source, alone — its neighbours refuse nothing of it.
+    { round: 3, at: 3_000, calls: [{ name: 'navigate', args: { url: WIKI }, result: PAGE('Voyager', WIKI, 'bbbb2222') }, unsupported(WIKI, 'three')] },
+    // 4: a malformed rejection of the same source is not an unsupported one, and breaks the run.
+    { round: 4, at: 4_000, calls: [{ name: 'record_evidence', args: { kind: 'web', observation: 'four', source_url: WIKI }, ok: false, error: 'record_evidence rejected (malformed): x', checkpoint: 'malformed' }] },
+    // 5–6: the same source under a tracker and a fragment — canonical, so both count.
+    { round: 5, at: 5_000, calls: [unsupported(WIKI, 'five')] },
+    { round: 6, at: 6_000, calls: [{ name: 'scroll', args: { direction: 'down' }, result: 'scrolled down: x=0 y=277' }, unsupported(`${WIKI}?utm_source=x#Heliopause`, 'six')] },
+    // 7: an accepted checkpoint of that source counts nothing.
+    { round: 7, at: 7_000, calls: [{ name: 'record_evidence', args: { kind: 'web', observation: 'seven', source_url: WIKI }, result: 'Session Evidence recorded: memory-1', checkpoint: 'accepted' }] },
+  ]
+
+  it('counts a round whose refused source the previous or next round also refused, per attempt and per population', () => {
+    const initial = classifyAttempt(inputOf({ traceRecords: traceOf(RETRY_ROUNDS, [EXTRA[0]!]) }))
+    expect(initial.rejectedCheckpoints).toBe(6)
+    expect(initial.sameSourceUnsupportedRounds).toBe(4)
+    expect(sameSourceUnsupportedRoundsOf(initial.rounds)).toBe(4)
+
+    const followUp = classifyAttempt(
+      inputOf({
+        attempt: attemptCapture({ attemptId: 'hunt-x--follow_up', huntId: 'hunt-x', stepId: 'follow_up', relation: 'revised_objective', parentAttemptId: ATTEMPT, terminal: { at: 16_000, finalizationCause: 'objective_met' } }),
+        traceRecords: traceOf(RETRY_ROUNDS.slice(0, 2), [EXTRA[0]!]),
+        parentCheckpointedUrls: new Set([WIKI]),
+      }),
+    )
+    const set = buildAuditSet(
+      provenanceOf(),
+      [
+        { mechanical: initial, review: null, countsAfterOverrules: initial.counts },
+        { mechanical: followUp, review: null, countsAfterOverrules: followUp.counts },
+      ],
+      [],
+    )
+    expect([set.populations.initial.sameSourceUnsupportedRounds, set.populations.followUp.sameSourceUnsupportedRounds]).toEqual([4, 2])
+    const markdown = formatAuditSet(set)
+    expect(markdown).toMatch(/- initial: .*bundled checkpoint round\(s\), 4 same-source unsupported round\(s\), /)
+    expect(markdown).toContain('bundled checkpoint round(s); 4 same-source unsupported round(s); 0 walled round(s)')
+  })
+
+  it('reads a trace whose verdict was the error head, not the reason word, as nothing', () => {
+    const rounds: RoundSpec[] = [
+      { round: 1, at: 1_000, calls: [{ ...unsupported(WIKI, 'one'), checkpoint: undefined }] },
+      { round: 2, at: 2_000, calls: [{ ...unsupported(WIKI, 'two'), checkpoint: undefined }] },
+    ]
+    const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(rounds, [EXTRA[0]!]) }))
+    expect(mechanical.rejectedCheckpoints).toBe(2)
+    expect(mechanical.sameSourceUnsupportedRounds).toBe(0)
+  })
+
+  it('reads 5 recomputed on the committed fix-253-256 audits: pi-camera rounds 22–24 and Voyager rounds 23–24, all in pass 2', () => {
+    const perPass = [1, 2, 3].map((pass) => {
+      const audit = JSON.parse(readFileSync(join(REPORTS_DIR, `audit-fix-253-256-${pass}.json`), 'utf8')) as { attempts: { mechanical: { rounds: AuditRound[] } }[] }
+      return audit.attempts.reduce((total, attempt) => total + sameSourceUnsupportedRoundsOf(attempt.mechanical.rounds), 0)
+    })
+    expect(perPass).toEqual([0, 5, 0])
   })
 })

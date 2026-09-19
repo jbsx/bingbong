@@ -315,6 +315,15 @@ export interface AuditMechanical {
    */
   readonly bundledCheckpoints: number
   /**
+   * Rounds carrying an `excerpt_unsupported` Evidence Checkpoint rejection
+   * whose source the previous or next round's `excerpt_unsupported` rejection
+   * also cites, canonical under the audit's rule (#257, ADR 0054): the
+   * retries of one refused source, which a cluster scores at two or more.
+   * Beside the rounds, outside the digest. Not the raw rejected count, which
+   * keeps the first refusal of every genuine paraphrase.
+   */
+  readonly sameSourceUnsupportedRounds: number
+  /**
    * Acquisition rounds without Progress with a call — never a navigate — on a
    * Held Page (#240, ADR 0051): a page the initial attempt checkpointed, or
    * one this attempt checkpointed in an earlier round. Beside the rounds,
@@ -510,6 +519,8 @@ export interface AuditPopulation {
   readonly mergedCheckpoints: number
   /** Acquisition rounds carrying an accepted Evidence Checkpoint over the attempts (#254). */
   readonly bundledCheckpoints: number
+  /** Same-source unsupported rounds over the attempts (#257). */
+  readonly sameSourceUnsupportedRounds: number
   /** Held Page rounds without Progress over the attempts (#240). */
   readonly heldPageRoundsWithoutProgress: number
   readonly rejectedCheckpoints: number
@@ -1073,6 +1084,35 @@ function withoutProgressOnHeldPage(call: AuditCall, held: ReadonlySet<string>): 
 }
 
 /** The canonical URLs an attempt's accepted Evidence Checkpoints cite — what a follow-up would inherit. */
+/**
+ * The same-source unsupported rounds of an attempt (#257, ADR 0054): a
+ * round carrying an `excerpt_unsupported` rejection whose canonical source
+ * the previous or next round's `excerpt_unsupported` rejection also cites.
+ * Rounds are the digest's own consecutive numbering, so a retry one round
+ * later counts and the same source refused again five rounds on does not.
+ * Read from the trace's verdict word, so a trace whose verdict was the
+ * error's head counts nothing. A cluster scores at least two.
+ */
+export function sameSourceUnsupportedRoundsOf(rounds: readonly AuditRound[]): number {
+  const cited = rounds.map((round) => {
+    const sources = new Set<string>()
+    for (const call of round.calls) {
+      if (call.checkpoint === null || call.checkpoint.accepted || call.checkpoint.outcome !== 'excerpt_unsupported') continue
+      const source = call.args.source_url
+      const canonical = isString(source) ? canonicalUrl(source) : null
+      if (canonical !== null) sources.add(canonical)
+    }
+    return sources
+  })
+  let count = 0
+  cited.forEach((sources, index) => {
+    if (sources.size === 0) return
+    const shared = (other: ReadonlySet<string> | undefined): boolean => other !== undefined && [...sources].some((source) => other.has(source))
+    if (shared(cited[index - 1]) || shared(cited[index + 1])) count += 1
+  })
+  return count
+}
+
 export function checkpointedUrlsOf(traceRecords: readonly object[]): Set<string> {
   const urls = new Set<string>()
   for (const raw of traceRecords as unknown as readonly TraceLine[]) {
@@ -1338,6 +1378,7 @@ export function classifyAttempt(input: AuditTraceInput): AuditMechanical {
     inheritedRounds: rounds.filter((round) => round.tags.inherited).length,
     mergedCheckpoints,
     bundledCheckpoints: rounds.filter((round) => isAcquisitionRound(round) && round.tags.acceptedCheckpoints > 0).length,
+    sameSourceUnsupportedRounds: sameSourceUnsupportedRoundsOf(rounds),
     heldPageRoundsWithoutProgress,
     mechanicalSearchRounds: new Set([...rewordingRounds, ...heads]).size,
     searchLoopHeads: [...heads].sort((left, right) => left - right),
@@ -1797,6 +1838,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
   let inherited = 0
   let merged = 0
   let bundled = 0
+  let sameSourceUnsupported = 0
   let heldPageRounds = 0
   let rejected = 0
   let walled = 0
@@ -1845,6 +1887,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
     inherited += mechanical.inheritedRounds
     merged += mechanical.mergedCheckpoints
     bundled += mechanical.bundledCheckpoints
+    sameSourceUnsupported += mechanical.sameSourceUnsupportedRounds
     heldPageRounds += mechanical.heldPageRoundsWithoutProgress
     rejected += mechanical.rejectedCheckpoints
     walled += mechanical.walledRounds
@@ -1910,6 +1953,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
     inheritedRounds: inherited,
     mergedCheckpoints: merged,
     bundledCheckpoints: bundled,
+    sameSourceUnsupportedRounds: sameSourceUnsupported,
     heldPageRoundsWithoutProgress: heldPageRounds,
     rejectedCheckpoints: rejected,
     walledRounds: walled,
@@ -2162,7 +2206,7 @@ function judgementLines(populations: readonly AuditPopulation[]): string[] {
     (population) =>
       `- ${population.label}: ${population.offKeyRounds} Off-key round(s), ${population.searchLoopRounds} Search Loop round(s) by the reviewer (${population.mechanicalSearchRounds} by the streak rule; attempts by search source ${SEARCH_SOURCES.map((source) => `${source} ${population.searchSources[source]}`).join(', ')}), ` +
       `${population.inheritedRounds} inherited, ${population.rejectedCheckpoints} rejected Evidence Checkpoint(s), ${population.walledRounds} walled round(s), ${population.notFoundNavigates} navigate(s) landed on a Not-found Page (${population.notFoundOffKey} judged Off-key), ${population.rewrittenComposedAddresses ?? 0} Composed Address(es) rewritten into a site search (${population.rewrittenComposedAddressesOffKey ?? 0} judged Off-key), ${population.subagentRounds} Subagent round(s), ` +
-      `${population.mergedCheckpoints} merged Evidence Checkpoint(s) (a floor), ${population.heldPageRoundsWithoutProgress} Held Page round(s) without Progress, ${population.bundledCheckpoints} bundled checkpoint round(s), ${populationSlipsText(population)}, ` +
+      `${population.mergedCheckpoints} merged Evidence Checkpoint(s) (a floor), ${population.heldPageRoundsWithoutProgress} Held Page round(s) without Progress, ${population.bundledCheckpoints} bundled checkpoint round(s), ${population.sameSourceUnsupportedRounds} same-source unsupported round(s), ${populationSlipsText(population)}, ` +
       `${population.malformedAnswers} Malformed Answer(s) (${population.answerRetries} retried), ` +
       `${populationSkipsText(population)}, ${populationCutsText(population)}, ` +
       `${population.askedItemsDeclared} declared Asked Items (${population.askedItemsUnverified} with an unverified standing, ${population.askedItemsShapeFailures} shape failure(s), ${population.askedItemsShapeRetried} retried), ` +
@@ -2191,7 +2235,7 @@ function attemptSection(attempt: AuditAttempt): string[] {
   lines.push(
     `- ${mechanical.subagent.rounds} Subagent round(s) over ${mechanical.subagent.agents} Subagent(s)${Object.keys(mechanical.subagent.byStop).length > 0 ? `, stopped by ${Object.entries(mechanical.subagent.byStop).map(([stop, count]) => `${stop} ${count}`).join(', ')}` : ''}; ` +
       `${mechanical.acceptedCheckpoints} accepted (${mechanical.mergedCheckpoints} merged, a floor) and ${mechanical.rejectedCheckpoints} rejected Evidence Checkpoint(s); ${mechanical.inheritedRounds} inherited round(s); ` +
-      `${mechanical.heldPageRoundsWithoutProgress} Held Page round(s) without Progress; ${mechanical.bundledCheckpoints} bundled checkpoint round(s); ${mechanical.walledRounds} walled round(s)`,
+      `${mechanical.heldPageRoundsWithoutProgress} Held Page round(s) without Progress; ${mechanical.bundledCheckpoints} bundled checkpoint round(s); ${mechanical.sameSourceUnsupportedRounds} same-source unsupported round(s); ${mechanical.walledRounds} walled round(s)`,
   )
   lines.push(`- Malformed Answers: ${mechanical.malformedAnswers} (${mechanical.answerRetries} retried)`)
   lines.push(`- Finalization: ${finalizationText(mechanical)}`)

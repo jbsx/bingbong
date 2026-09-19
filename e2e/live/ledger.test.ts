@@ -64,6 +64,17 @@ describe('bundled checkpoint rounds (#254)', () => {
   })
 })
 
+describe('same-source unsupported rounds (#257, ADR 0054)', () => {
+  it('reads the count an audit recorded, over the budgeted rounds', () => {
+    const audit = readAudit('audit-fix-252-1.json')
+    const population: AuditPopulation = { ...audit.populations.initial, sameSourceUnsupportedRounds: 5 }
+    const counter = countersOf(population, [])!.find((entry) => entry.label === 'Same-source unsupported rounds')!
+    expect(counter.judgement).toBe(false)
+    expect(counter.value).toBe(5)
+    expect(counter.over).toBe(population.budgetedRounds)
+  })
+})
+
 describe('the first token (#256, ADR 0057)', () => {
   it('reads the streaming and silent cuts over the rounds, and the latency percentiles as plain counters', () => {
     const audit = readAudit('audit-fix-252-1.json')
@@ -263,6 +274,10 @@ describe('the committed Round Audits', () => {
     const bundled = row.counters.find((counter) => counter.label === 'Bundled checkpoint rounds')!
     expect(bundled.populations.initial.reference?.value).toBeNull()
     expect(bundled.populations.initial.subject?.value).toBeNull()
+    // Same-source unsupported rounds (#257): likewise, every committed audit predates the counter.
+    const sameSource = row.counters.find((counter) => counter.label === 'Same-source unsupported rounds')!
+    expect(sameSource.populations.initial.reference?.value).toBeNull()
+    expect(sameSource.populations.initial.subject?.value).toBeNull()
     expect(row.markers.judgement).toEqual([{ axis: 'reviewer prompt', reference: 'audit-p2', subject: 'audit-p1' }])
   })
 

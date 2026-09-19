@@ -240,6 +240,8 @@ export type GroundingOutcome =
       readonly reason: 'excerpt_required' | 'excerpt_unsupported'
       /** The producers whose retention was checked, for the correction to name. */
       readonly producers: readonly ObservationProducer[]
+      /** The passages the retention does not hold (#257), each beside the retained text nearest to it; empty when no excerpt was offered. */
+      readonly unsupported: readonly UnsupportedPassage[]
     }
 
 /** The one phrasing of "what was checked" every grading refusal shares. */
@@ -275,7 +277,24 @@ export function findGroundingObservation(
   if (candidates.length === 0) return { ok: false, reason: 'unknown_source' }
   const producers: ObservationProducer[] = []
   for (const record of candidates) if (!producers.includes(record.producer)) producers.push(record.producer)
-  return { ok: false, reason: excerpt === undefined ? 'excerpt_required' : 'excerpt_unsupported', producers }
+  if (excerpt === undefined) return { ok: false, reason: 'excerpt_required', producers, unsupported: [] }
+  return { ok: false, reason: 'excerpt_unsupported', producers, unsupported: unsupportedPassages(candidates.map(retainedText), excerpt) }
+}
+
+/**
+ * The `excerpt_unsupported` refusal (#257, ADR 0054): what was checked, then
+ * every passage the retention does not hold on its own line beside the
+ * retained text nearest to it, then what to do. It quotes only the page the
+ * Run already saw, behind a label, so nothing new enters the Run. How
+ * passages may be joined is the tool description's to say.
+ */
+function unsupportedError(where: string, sourceUrl: string, checked: string, unsupported: readonly UnsupportedPassage[], closing: string): string {
+  const named = unsupported.flatMap((entry) => [`${PASSAGE_LABEL}${entry.passage}`, `${NEAREST_LABEL}${entry.nearest ?? NO_NEAREST}`])
+  return [
+    `the excerpt does not appear in anything ${where} retained from '${sourceUrl}' — checked its ${checked}; the passages the retained text does not hold, each beside the retained text nearest to it:`,
+    ...named,
+    closing,
+  ].join('\n')
 }
 
 /**
@@ -439,13 +458,23 @@ const PASSAGE_SEAMS = /\r?\n|\||\.\.\.|…/
 const EXCERPT_PUNCTUATION = /[|,.:;"'“”‘’…\-–—]/g
 
 /**
- * A text with its punctuation stripped, for the tolerant second attempt —
- * except the marks that make a number what it is: a decimal point, a
- * thousands comma, or a time's colon between digits, and a minus sign or
- * range dash before one (as `-`). "12.99" never reads as "1299".
+ * A page's bracketed reference markers (#257, ADR 0054): `[84]`, `[a]`,
+ * `[note 3]`, `[nb 2]`, `[citation needed]`. The marker is the page's
+ * rendering, not its words, so the tolerant attempt strips it from both
+ * sides. A bracketed number that is content is not told apart: the passage
+ * around it must still be verbatim.
+ */
+const REFERENCE_MARKER = /\[(?:\d{1,4}|[a-z]{1,3}|[a-z-]+ ?\d{1,4}|[a-z]+ needed)\]/gi
+
+/**
+ * A text with its reference markers and punctuation stripped, for the
+ * tolerant second attempt — except the marks that make a number what it
+ * is: a decimal point, a thousands comma, or a time's colon between
+ * digits, and a minus sign or range dash before one (as `-`). "12.99"
+ * never reads as "1299".
  */
 function withoutPunctuation(text: string): string {
-  const stripped = text.replace(EXCERPT_PUNCTUATION, (mark: string, at: number, whole: string) => {
+  const stripped = text.replace(REFERENCE_MARKER, '').replace(EXCERPT_PUNCTUATION, (mark: string, at: number, whole: string) => {
     const before = whole[at - 1] ?? ''
     const after = whole[at + 1] ?? ''
     if (/[.,:]/.test(mark) && /\d/.test(before) && /\d/.test(after)) return mark
@@ -455,12 +484,17 @@ function withoutPunctuation(text: string): string {
   return normalizeMemoryText(stripped).trim()
 }
 
-/** An excerpt's passages, split at its seams, normalized, empty ones dropped. */
-function excerptPassages(excerpt: string): string[] {
+/** An excerpt's passages as the model wrote them, split at its seams, trimmed, empty ones dropped. */
+function writtenPassages(excerpt: string): string[] {
   return excerpt
     .split(PASSAGE_SEAMS)
-    .map((passage) => normalizeMemoryText(passage).trim())
+    .map((passage) => passage.trim())
     .filter((passage) => passage !== '')
+}
+
+/** An excerpt's passages, split at its seams, normalized, empty ones dropped. */
+function excerptPassages(excerpt: string): string[] {
+  return writtenPassages(excerpt).map((passage) => normalizeMemoryText(passage).trim())
 }
 
 /** Whether an excerpt holds no passage long enough to verify — refused, but not for being absent (#253). */
@@ -468,30 +502,160 @@ export function excerptTooShort(excerpt: string): boolean {
   return excerptPassages(excerpt).every((passage) => passage.length < MIN_EXCERPT_PASSAGE_CHARS)
 }
 
+/** The retained texts in both forms a passage is looked for in, computed once per grading. */
+interface Haystacks {
+  readonly plain: readonly string[]
+  readonly tolerant: readonly string[]
+}
+
+function haystacksOf(texts: readonly string[]): Haystacks {
+  return { plain: texts.map(normalizeMemoryText), tolerant: texts.map(withoutPunctuation) }
+}
+
+/**
+ * The one rule for a passage (#253, ADR 0054): found verbatim, whitespace
+ * and case tolerant — or, failing that, found with punctuation and
+ * reference markers stripped from both sides. A passage that is nothing
+ * but punctuation holds nothing and is held by anything.
+ */
+function passageHeld(haystacks: Haystacks, passage: string): boolean {
+  if (haystacks.plain.some((text) => text.includes(passage))) return true
+  const loose = withoutPunctuation(passage)
+  return loose === '' || haystacks.tolerant.some((text) => text.includes(loose))
+}
+
 /**
  * Whether the retained texts hold an excerpt's passages (#253, ADR 0054):
- * the excerpt split at its seams, every passage found verbatim, whitespace
- * and case tolerant — and, when that fails, found again with punctuation
- * stripped from both sides. Only a passage of at least
- * MIN_EXCERPT_PASSAGE_CHARS counts as support, so an excerpt with none holds
- * nothing; a shorter one must still be there, or an invented "$99" would
- * ride in beside a real "Price:". `every` demands all of them; `some` asks
- * only whether a text holds one supporting passage, which is how a passage
- * spread over several reads picks its record.
+ * the excerpt split at its seams, every passage held by the one rule. Only
+ * a passage of at least MIN_EXCERPT_PASSAGE_CHARS counts as support, so an
+ * excerpt with none holds nothing; a shorter one must still be there, or an
+ * invented "$99" would ride in beside a real "Price:". `every` demands all
+ * of them; `some` asks only whether a text holds one supporting passage,
+ * which is how a passage spread over several reads picks its record.
  */
 function passagesHeld(texts: readonly string[], excerpt: string, quantifier: 'every' | 'some'): boolean {
   const passages = excerptPassages(excerpt)
   const supporting = passages.filter((passage) => passage.length >= MIN_EXCERPT_PASSAGE_CHARS)
   if (supporting.length === 0) return false
-  const heldAs = (form: (text: string) => string): boolean => {
-    const haystacks = texts.map(form)
-    const held = (passage: string): boolean => {
-      const wanted = form(passage)
-      return wanted === '' || haystacks.some((text) => text.includes(wanted))
-    }
-    return quantifier === 'every' ? passages.every(held) : supporting.some((passage) => form(passage) !== '' && held(passage))
+  const haystacks = haystacksOf(texts)
+  return quantifier === 'every'
+    ? passages.every((passage) => passageHeld(haystacks, passage))
+    : supporting.some((passage) => withoutPunctuation(passage) !== '' && passageHeld(haystacks, passage))
+}
+
+/** One passage of a refused excerpt the retained text does not hold (#257, ADR 0054). */
+export interface UnsupportedPassage {
+  /** The passage as the model wrote it. */
+  readonly passage: string
+  /** The retained text nearest to it, whitespace collapsed to one line; null when no stretch of the passage anchors one. */
+  readonly nearest: string | null
+}
+
+/** The labels an `excerpt_unsupported` refusal quotes behind (#257, ADR 0054): a passage as written, then the retained text nearest to it. */
+export const PASSAGE_LABEL = 'passage as written: '
+export const NEAREST_LABEL = 'retained text nearest to it: '
+/** What stands behind the second label when nothing anchors a quotation. */
+export const NO_NEAREST = 'none — no stretch of it long enough to anchor on was retained'
+
+/** The shortest retained stretch of a passage that anchors a quotation: about two words, so a lone "from" quotes nothing. */
+const MIN_ANCHOR_CHARS = 12
+/** How far either side of the aligned passage a quotation reaches. */
+const NEAREST_MARGIN_CHARS = 160
+
+/**
+ * The passages of an excerpt the retained texts do not hold, each beside the
+ * retained text nearest to it (#257, ADR 0054). The refusal is built from
+ * this list, so one that names no passage cannot be written. Empty when
+ * every passage is held — which is what `passagesHeld` asks with `every`,
+ * short of the support floor.
+ */
+export function unsupportedPassages(texts: readonly string[], excerpt: string): UnsupportedPassage[] {
+  const haystacks = haystacksOf(texts)
+  const failing: UnsupportedPassage[] = []
+  for (const written of writtenPassages(excerpt)) {
+    const passage = normalizeMemoryText(written).trim()
+    if (passageHeld(haystacks, passage)) continue
+    failing.push({ passage: written, nearest: nearestRetained(texts, haystacks.plain, passage) })
   }
-  return heldAs(normalizeMemoryText) || heldAs(withoutPunctuation)
+  return failing
+}
+
+/**
+ * The retained text nearest to a passage that is not there: anchored on the
+ * longest run of the passage's whole words some retained text holds, the
+ * quotation is that text over the passage's length as if the passage lay
+ * where its anchor does, plus a margin either side. The model sees its own
+ * edit against what the page said. The newest retention holding the anchor
+ * is quoted, as the page had it — case and punctuation kept, whitespace
+ * collapsed so the quotation stays on its line.
+ */
+function nearestRetained(texts: readonly string[], plain: readonly string[], passage: string): string | null {
+  const anchor = longestRetainedStretch(passage, plain)
+  if (anchor === null) return null
+  const haystack = plain[anchor.text]!
+  const at = haystack.indexOf(passage.slice(anchor.start, anchor.end))
+  const from = Math.max(0, at - anchor.start - NEAREST_MARGIN_CHARS)
+  const to = Math.min(haystack.length, at - anchor.start + passage.length + NEAREST_MARGIN_CHARS)
+  return retainedWindow(texts[anchor.text]!, haystack, from, to)
+}
+
+/**
+ * The longest run of whole words of a normalized passage that some
+ * normalized text holds, at least MIN_ANCHOR_CHARS long: its bounds in the
+ * passage and the text (newest first) holding it. Two pointers over the
+ * word starts — a run's every sub-run is held too, so the far pointer never
+ * moves back — and one `includes` per step.
+ */
+function longestRetainedStretch(passage: string, plain: readonly string[]): { start: number; end: number; text: number } | null {
+  const starts: number[] = []
+  const ends: number[] = []
+  for (let index = 0; index < passage.length; index += 1) {
+    if (passage[index] === ' ') continue
+    if (index === 0 || passage[index - 1] === ' ') starts.push(index)
+    if (index === passage.length - 1 || passage[index + 1] === ' ') ends.push(index + 1)
+  }
+  const holder = (stretch: string): number => {
+    for (let text = plain.length - 1; text >= 0; text -= 1) if (plain[text]!.includes(stretch)) return text
+    return -1
+  }
+  let best: { start: number; end: number; text: number } | null = null
+  let far = 0
+  for (let near = 0; near < starts.length; near += 1) {
+    if (far < near) far = near
+    let text = -1
+    while (far < starts.length) {
+      const found = holder(passage.slice(starts[near]!, ends[far]!))
+      if (found < 0) break
+      text = found
+      far += 1
+    }
+    if (far === near) continue
+    const start = starts[near]!
+    const end = ends[far - 1]!
+    if (end - start >= MIN_ANCHOR_CHARS && (best === null || end - start > best.end - best.start)) best = { start, end, text }
+  }
+  return best
+}
+
+/**
+ * A window of a retained text, addressed in its normalized form and quoted
+ * from its raw one: the normalized text is the raw text lowercased with
+ * every whitespace run collapsed, so each normalized index maps to a raw
+ * one — unless lowercasing changed the length, when the normalized form is
+ * quoted instead.
+ */
+function retainedWindow(raw: string, plain: string, from: number, to: number): string {
+  const collapsed = (text: string): string => text.replace(/\s+/g, ' ').trim()
+  if (raw.toLowerCase().length !== raw.length) return collapsed(plain.slice(from, to))
+  const map: number[] = []
+  let inSpace = false
+  for (let index = 0; index < raw.length; index += 1) {
+    const space = /\s/.test(raw[index]!)
+    if (!space || !inSpace) map.push(index)
+    inSpace = space
+  }
+  if (map.length !== plain.length) return collapsed(plain.slice(from, to))
+  return collapsed(raw.slice(map[from] ?? raw.length, to < map.length ? map[to]! : raw.length))
 }
 
 /** The shared no-Session refusal: the tool reports it when the seam is absent. */
@@ -809,7 +973,13 @@ function groundSubagentCitation(
       reason: 'excerpt_unsupported',
       error: excerptTooShort(citation.excerpt ?? '')
         ? `${tooShortError(citation.sourceUrl)}, or omit it`
-        : `the excerpt does not appear in anything subagent '${citation.agentId}' retained from '${citation.sourceUrl}' — checked its ${producerList(grounding.producers)} — omit it, or copy it verbatim from the report you are citing`,
+        : unsupportedError(
+            `subagent '${citation.agentId}'`,
+            citation.sourceUrl,
+            producerList(grounding.producers),
+            grounding.unsupported,
+            'omit the excerpt, or copy every passage verbatim from the report you are citing',
+          ),
     }
   }
   // No excerpt offered: the worker's freshest retention of the source
@@ -860,7 +1030,13 @@ function groundWebCitation(
   return {
     ok: false,
     reason: 'excerpt_unsupported',
-    error: `the excerpt does not appear in anything this run retained from '${citation.sourceUrl}' — checked its ${producerList(grounding.producers)} — copy every passage verbatim from the tool result you are citing (several verbatim passages may be joined with a line break or …), or cite the observation's structured outcome`,
+    error: unsupportedError(
+      'this run',
+      citation.sourceUrl,
+      producerList(grounding.producers),
+      grounding.unsupported,
+      "correct the named passages — copy every passage verbatim from the tool result you are citing, or cite the observation's structured outcome",
+    ),
   }
 }
 

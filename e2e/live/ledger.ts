@@ -546,6 +546,7 @@ export function countersOf(population: AuditPopulation, attempts: readonly Audit
     mechanical('Inherited rounds', population.inheritedRounds, budgeted),
     mechanical('Merged Evidence Checkpoints', older.mergedCheckpoints),
     mechanical('Bundled checkpoint rounds', older.bundledCheckpoints, budgeted),
+    mechanical('Same-source unsupported rounds', older.sameSourceUnsupportedRounds, budgeted),
     mechanical('Held Page rounds without Progress', older.heldPageRoundsWithoutProgress, budgeted),
     mechanical('Rejected Evidence Checkpoints', population.rejectedCheckpoints),
     mechanical('Walled rounds', population.walledRounds, budgeted),

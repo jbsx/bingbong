@@ -903,6 +903,17 @@ measured by, code-counted and outside the digest like the others, and it is not
 merged checkpoints: those count exact-duplicate re-recordings. An audit written
 before it has no such field, and the Fix Ledger reads that as nothing.
 
+A fourth sits beside it (#257, ADR 0054): **same-source unsupported rounds**
+are rounds carrying an `excerpt_unsupported` Evidence Checkpoint rejection
+whose source — canonical under the audit's rule — the previous or next
+round's `excerpt_unsupported` rejection also cites: the retries of one
+refused source, which a cluster scores at two or more. It is the counter the
+passage-naming refusal and the reference-marker tolerance are measured by
+(5 on `fix-253-256`), not the raw rejected count, which keeps the first
+refusal of every genuine paraphrase. Code-counted from the trace's verdict
+word and outside the digest like the others; an audit written before it has
+no such field, and the Fix Ledger reads that as nothing.
+
 Two more sit beside them for the Answer (#246, ADR 0028): the **Answers with an
 Identity Slip** and the **ids slipped** in them, counted from the Run's own
 `identity_slip` Run Trace records — one per Answer whose Card or Spoken

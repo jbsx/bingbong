@@ -11,8 +11,12 @@ import {
   findGroundingObservation,
   findSourceObservation,
   findUserEventObservation,
+  NEAREST_LABEL,
+  NO_NEAREST,
   parseEvidenceCitation,
+  PASSAGE_LABEL,
   subagentEvidenceCommit,
+  unsupportedPassages,
   userEvidenceCommit,
   webEvidenceCommit,
   type EvidenceCommit,
@@ -658,11 +662,14 @@ describe('evidence grading faults (#179)', () => {
         ok: false,
         reason: 'excerpt_required',
         producers: ['page_read', 'look'],
+        unsupported: [],
       })
+      // (#257) the failing passage is named; a scrap of nine characters anchors no quotation.
       expect(findGroundingObservation([PAGE_READ, LATER_LOOK], 'https://shop.example/acme-router', 'costs $59')).toEqual({
         ok: false,
         reason: 'excerpt_unsupported',
         producers: ['page_read', 'look'],
+        unsupported: [{ passage: 'costs $59', nearest: null }],
       })
     })
 
@@ -1191,5 +1198,165 @@ describe('a malformed citation is told every defect and shown the call to send (
       volatile: false,
     })
     expect(message).not.toContain(VERDICT)
+  })
+})
+
+describe('a refused excerpt names the passage that failed (#257, ADR 0054)', () => {
+  // The two fix-253-256 clusters, as the Run Traces and event files carried
+  // them: each Run retried one source in three consecutive rounds, editing
+  // the joiner or the reference markers while the real defect stayed. The
+  // records are what those Runs retained from each source.
+  const DRAWING = 'https://pip-assets.raspberrypi.com/categories/1205-design-files/documents/RP-008149-DS-1-camera-module-2-mechanical-drawing.pdf'
+  const DRAWING_NAVIGATE = webRecord({
+    id: 'obs-20' as ObservationRecord['id'],
+    at: 100,
+    producer: 'action_outcome',
+    sourceUrl: DRAWING,
+    payload: `navigated: url=${DRAWING} title="Allegro"\n#  — ${DRAWING}\nviewport 1280x747 scroll 0/747\nsignature adeed002`,
+  })
+  const DRAWING_LOOK_1 = webRecord({ id: 'obs-21' as ObservationRecord['id'], at: 200, producer: 'look', sourceUrl: DRAWING, payload: '25 × 23.862 × 2' })
+  const DRAWING_LOOK_2 = webRecord({
+    id: 'obs-22' as ObservationRecord['id'],
+    at: 300,
+    producer: 'look',
+    sourceUrl: DRAWING,
+    payload:
+      'The image shows a mechanical drawing with various dimension callouts. The vertical height dimension callout (thickness/height of the assembled camera module) is 5.5 mm. Other numeric dimension callouts visible are: 25, 13.8, 2, 2, 4.7, 14.5, 23.862, 12.5, 8.5, and 20.8.\n\n[region 0,50,100,50 clamped to 15,58,70,35 (at most a quarter of the viewport) shown at 3x; a smaller region is magnified more, up to 4x]',
+  })
+  const DRAWING_RECORDS = [DRAWING_NAVIGATE, DRAWING_LOOK_1, DRAWING_LOOK_2]
+  /** The look answer with ", in mm" interpolated from the model's own question. */
+  const INTERPOLATED =
+    'The vertical height dimension callout (thickness/height of the assembled camera module, in mm) is 5.5 mm. Other numeric dimension callouts visible are: 25, 13.8, 2, 2, 4.7, 14.5, 23.862, 12.5, 8.5, and 20.8.'
+
+  const VOYAGER = 'https://en.wikipedia.org/wiki/Voyager_1'
+  const VOYAGER_READ_A = webRecord({
+    id: 'obs-30' as ObservationRecord['id'],
+    at: 400,
+    sourceUrl: VOYAGER,
+    payload: [
+      'Ed Roelof, a space scientist at Johns Hopkins University and principal investigator for the Low-Energy Charged Particle instrument on the spacecraft, declared that "most scientists involved with Voyager 1 would agree that [these two criteria] have been sufficiently satisfied".[87] However, the last criterion for officially declaring that Voyager 1 had crossed the boundary, the expected change in magnetic field direction (from that of the Sun to that of the interstellar field beyond), had not been observed (the field had changed direction by only 2 degrees),[82] which suggested to some that the nature of the edge of the heliosphere had been misjudged.',
+      'On September 12, 2013, NASA confirmed that Voyager 1 had reached the interstellar medium in August 2012 as previously observed. The generally accepted date of arrival is August 25, 2012 (approximately 10 days before the 35th anniversary of its launch), the date durable changes in the density of energetic particles were first detected.[83][84][85] By this point, most space scientists had abandoned the hypothesis that a change in magnetic field direction must accompany a crossing of the heliopause;[84] a new model of the heliopause predicted that no such change would be found.[96]',
+    ].join('\n'),
+  })
+  const VOYAGER_READ_B = webRecord({
+    id: 'obs-31' as ObservationRecord['id'],
+    at: 500,
+    sourceUrl: VOYAGER,
+    payload: [
+      'A key finding that persuaded many scientists that the heliopause had been crossed was an indirect measurement of an 80-fold increase in electron density, based on the frequency of plasma oscillations observed beginning on April 9, 2013,[84] triggered by a solar outburst that had occurred in March 2012.[81] Electron density is expected to be two orders of magnitude higher outside the heliopause than within.[83]',
+      "Weaker sets of oscillations measured in October and November 2012[93][97] provided additional data. An indirect measurement was required because Voyager 1's plasma spectrometer had stopped working in 1980.[85] In September 2013, NASA released recordings of audio transductions of these plasma waves, the first to be measured in interstellar space.[98]",
+    ].join('\n'),
+  })
+  const VOYAGER_RECORDS = [VOYAGER_READ_A, VOYAGER_READ_B]
+  const VOYAGER_PASSAGE_1 =
+    '"the last criterion for officially declaring that Voyager 1 had crossed the boundary, the expected change in magnetic field direction (from that of the Sun to that of the interstellar field beyond), had not been observed (the field had changed direction by only 2 degrees)"'
+  const VOYAGER_PASSAGE_2 =
+    '"On September 12, 2013, NASA confirmed that Voyager 1 had reached the interstellar medium in August 2012 as previously observed. The generally accepted date of arrival is August 25, 2012"'
+  /** Round 23: the page's reference markers stripped, every word kept. */
+  const VOYAGER_PASSAGE_3_STRIPPED =
+    '"A key finding that persuaded many scientists that the heliopause had been crossed was an indirect measurement of an 80-fold increase in electron density, based on the frequency of plasma oscillations observed beginning on April 9, 2013, triggered by a solar outburst that had occurred in March 2012. Electron density is expected to be two orders of magnitude higher outside the heliopause than within. Weaker sets of oscillations measured in October and November 2012 provided additional data. An indirect measurement was required because Voyager 1\'s plasma spectrometer had stopped working in 1980."'
+  /** Round 24: the markers restored and the "Electron density" sentence deleted. */
+  const VOYAGER_PASSAGE_3_CUT =
+    '"A key finding that persuaded many scientists that the heliopause had been crossed was an indirect measurement of an 80-fold increase in electron density, based on the frequency of plasma oscillations observed beginning on April 9, 2013,[84] triggered by a solar outburst that had occurred in March 2012.[81] Weaker sets of oscillations measured in October and November 2012[93][97] provided additional data. An indirect measurement was required because Voyager 1\'s plasma spectrometer had stopped working in 1980.[85]"'
+
+  function checkpoint(records: ObservationRecord[], sourceUrl: string, excerpt: string) {
+    const store = evidenceHarness()
+    const outcome = evaluateEvidenceCheckpoint(callOf({ observation: 'A fact the excerpt grounds.', source_url: sourceUrl, excerpt }), {
+      records,
+      commit: commitOver(store),
+    })
+    return { outcome, store, error: outcome.ok ? '' : outcome.error }
+  }
+
+  /** The passages a refusal names, each with the retained text it quotes (null when it quotes none). */
+  function named(error: string): { passage: string; nearest: string | null }[] {
+    const entries: { passage: string; nearest: string | null }[] = []
+    const lines = error.split('\n')
+    for (let index = 0; index < lines.length; index += 1) {
+      const line = lines[index]!
+      if (!line.startsWith(PASSAGE_LABEL)) continue
+      const next = lines[index + 1] ?? ''
+      entries.push({
+        passage: line.slice(PASSAGE_LABEL.length),
+        nearest: next.startsWith(NEAREST_LABEL) ? next.slice(NEAREST_LABEL.length) : null,
+      })
+    }
+    return entries
+  }
+
+  it('names the interpolated passage beside the look answer it came from, and only that passage (fix-253-256-2 Pi camera, rounds 22–24)', () => {
+    const retries = [`25 × 23.862 × 2 … ${INTERPOLATED}`, `25 × 23.862 × 2\n${INTERPOLATED}`, `25 × 23.862 × 2 … The image shows a mechanical drawing with various dimension callouts. ${INTERPOLATED}`]
+    for (const excerpt of retries) {
+      const { outcome, error, store } = checkpoint(DRAWING_RECORDS, DRAWING, excerpt)
+      expect(outcome).toMatchObject({ ok: false, reason: 'excerpt_unsupported' })
+      expect(store.snapshot().observations).toEqual([])
+      const entries = named(error)
+      expect(entries).toHaveLength(1)
+      expect(entries[0]!.passage).toContain('camera module, in mm) is 5.5 mm')
+      // The retained span shows the parenthesis as the look answered it.
+      expect(entries[0]!.nearest).toContain('(thickness/height of the assembled camera module) is 5.5 mm')
+      expect(entries[0]!.nearest).not.toContain(', in mm')
+      expect(error).toContain("checked its action outcome, look")
+    }
+  })
+
+  it('accepts the retry whose only difference is the stripped reference markers (fix-253-256-2 Voyager, round 23)', () => {
+    const { outcome, store } = checkpoint(VOYAGER_RECORDS, VOYAGER, [VOYAGER_PASSAGE_1, VOYAGER_PASSAGE_2, VOYAGER_PASSAGE_3_STRIPPED].join(' … '))
+    expect(outcome).toMatchObject({ ok: true, sourceObservationId: 'obs-31' })
+    expect(store.snapshot().observations).toHaveLength(1)
+  })
+
+  it('names the passage with the deleted sentence beside the retained text that still holds it (fix-253-256-2 Voyager, round 24)', () => {
+    const { outcome, error } = checkpoint(VOYAGER_RECORDS, VOYAGER, [VOYAGER_PASSAGE_1, VOYAGER_PASSAGE_2, VOYAGER_PASSAGE_3_CUT].join(' … '))
+    expect(outcome).toMatchObject({ ok: false, reason: 'excerpt_unsupported' })
+    const entries = named(error)
+    expect(entries).toHaveLength(1)
+    expect(entries[0]!.passage).toContain('March 2012.[81] Weaker sets')
+    expect(entries[0]!.nearest).toContain('Electron density is expected to be two orders of magnitude higher outside the heliopause than within.')
+    // The retained text is quoted as the page said it, never lowercased or re-spaced.
+    expect(entries[0]!.nearest).toContain('A key finding that persuaded')
+  })
+
+  it('names a passage with no anchor at all, with no quotation', () => {
+    const { outcome, error } = checkpoint([webRecord()], GROUNDED_ARGS.source_url, 'Free shipping on orders over $25\nNothing like this was ever seen')
+    expect(outcome).toMatchObject({ ok: false, reason: 'excerpt_unsupported' })
+    expect(named(error)).toEqual([{ passage: 'Nothing like this was ever seen', nearest: NO_NEAREST }])
+    expect(error).toContain(`${NEAREST_LABEL}${NO_NEAREST}`)
+  })
+
+  it('names every failing passage, and a refusal always names at least one', () => {
+    const { error } = checkpoint([webRecord()], GROUNDED_ARGS.source_url, 'The Acme router costs $49 | shipping is never free | Free shipping on orders over $25')
+    expect(named(error).map((entry) => entry.passage)).toEqual(['The Acme router costs $49', 'shipping is never free'])
+    expect(named(error)[0]!.nearest).toContain('The Acme router costs $39')
+    expect(unsupportedPassages(['The Acme router costs $39.'], 'The Acme router costs $39')).toEqual([])
+  })
+
+  it('keeps the joiner advice out of the refusal', () => {
+    const { error } = checkpoint([webRecord()], GROUNDED_ARGS.source_url, 'shipping is never free')
+    expect(error).not.toContain('may be joined')
+    expect(error).toContain('copy every passage verbatim')
+  })
+
+  describe('reference-marker tolerance', () => {
+    const page = webRecord({ payload: 'oscillations observed beginning on April 9, 2013,[84] triggered by a solar outburst that had occurred in March 2012.[81] Weaker sets of oscillations measured in October and November 2012[93][97] provided additional data.[note 3][a] The field had changed direction by only 2 degrees[citation needed] by then.' })
+    const url = GROUNDED_ARGS.source_url
+
+    it('accepts an excerpt with the markers stripped by the model', () => {
+      expect(checkpoint([page], url, 'observed beginning on April 9, 2013, triggered by a solar outburst that had occurred in March 2012. Weaker sets of oscillations measured in October and November 2012 provided additional data. The field had changed direction').outcome).toMatchObject({ ok: true })
+    })
+
+    it('accepts an excerpt carrying markers the retained text does not', () => {
+      const plain = webRecord({ payload: 'observed beginning on April 9, 2013, triggered by a solar outburst that had occurred in March 2012.' })
+      expect(checkpoint([plain], url, 'observed beginning on April 9, 2013,[84] triggered by a solar outburst[12] that had occurred in March 2012.[81]').outcome).toMatchObject({ ok: true })
+    })
+
+    it('treats [citation needed], [note 3] and [a] as markers too', () => {
+      expect(checkpoint([page], url, 'provided additional data. The field had changed direction by only 2 degrees by then.').outcome).toMatchObject({ ok: true })
+      expect(checkpoint([page], url, 'provided additional data.[note 3][a] The field had changed direction by only 2 degrees[citation needed] by then.').outcome).toMatchObject({ ok: true })
+    })
+
+    it('still refuses a passage whose words differ once the markers are gone', () => {
+      expect(checkpoint([page], url, 'observed beginning on April 9, 2013, caused by a solar outburst').outcome).toMatchObject({ ok: false, reason: 'excerpt_unsupported' })
+    })
   })
 })

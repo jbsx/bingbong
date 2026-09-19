@@ -112,3 +112,27 @@ describe('record_evidence tool', () => {
     expect(store.snapshot().observations).toEqual([])
   })
 })
+
+describe('the joiner advice lives in the tool, not the refusal (#257, ADR 0054)', () => {
+  it('names all four seams in the tool description and the excerpt parameter', () => {
+    const tool = createRecordEvidenceTool()
+    const seams = 'joined with a line break, |, ... or …'
+    expect(tool.description).toContain(seams)
+    expect(tool.parameters!.excerpt!.description).toContain(seams)
+  })
+
+  it('refuses an unsupported excerpt naming the passage beside the retained text, without the joiner advice', async () => {
+    const store = storeHarness()
+    const tool = createRecordEvidenceTool()
+    let error = ''
+    try {
+      await tool.execute({ id: 'c1', name: 'record_evidence', args: { ...GROUNDED_ARGS, excerpt: 'costs $39\nships tomorrow for free' } }, contextWith(store))
+    } catch (thrown) {
+      error = (thrown as Error).message
+    }
+    expect(error).toContain('record_evidence rejected (excerpt_unsupported)')
+    expect(error).toContain('passage as written: ships tomorrow for free')
+    expect(error).toContain('retained text nearest to it: ')
+    expect(error).not.toContain('may be joined')
+  })
+})
