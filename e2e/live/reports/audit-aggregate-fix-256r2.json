@@ -1,0 +1,1240 @@
+{
+  "kind": "bingbong.live.round-audit-aggregate",
+  "auditVersion": 1,
+  "provenance": {
+    "shared": {
+      "study": "bingbong.live-web.information-hunts",
+      "protocolVersion": "1",
+      "mode": "measured",
+      "promptVersions": [
+        "1"
+      ],
+      "keyVersion": "2.2.2.2",
+      "keyManifestDigest": "sha256:faa25d04e419d6a6f02e51676e8058db5b6d52e3910ec552e275eb142f91b8ed",
+      "gradesReviewers": [
+        "claude-opus-5 via live:grade"
+      ],
+      "roles": [
+        "orchestrator=GLM-5.3",
+        "subagent=GLM-5.3-flash",
+        "vision=GLM-4.6V"
+      ],
+      "reasoningEffortOverride": null,
+      "effortOverrides": [],
+      "adblock": "production_default",
+      "browserSubspans": true,
+      "reviewerModel": "claude-opus-5",
+      "reviewerEffort": "high",
+      "reviewerPromptVersion": "audit-p2"
+    },
+    "sets": [
+      {
+        "setId": "fix-256r2-1",
+        "state": "complete",
+        "createdAt": "2026-09-19T11:41:42.169Z",
+        "commits": [
+          "ddf728b4fde54e5337afb4c3da7a60683181d8b0"
+        ],
+        "dirtyTree": false,
+        "gradesRevision": 1,
+        "auditCommit": "fa923c9f91e0cc281004111faf0292c2126a871f",
+        "auditDirtyTree": false,
+        "generatedAt": "2026-09-19T13:05:22.719Z"
+      },
+      {
+        "setId": "fix-256r2-2",
+        "state": "complete",
+        "createdAt": "2026-09-19T12:04:03.658Z",
+        "commits": [
+          "ddf728b4fde54e5337afb4c3da7a60683181d8b0"
+        ],
+        "dirtyTree": false,
+        "gradesRevision": 1,
+        "auditCommit": "fa923c9f91e0cc281004111faf0292c2126a871f",
+        "auditDirtyTree": false,
+        "generatedAt": "2026-09-19T13:05:22.719Z"
+      },
+      {
+        "setId": "fix-256r2-3",
+        "state": "complete",
+        "createdAt": "2026-09-19T12:24:09.306Z",
+        "commits": [
+          "ddf728b4fde54e5337afb4c3da7a60683181d8b0"
+        ],
+        "dirtyTree": false,
+        "gradesRevision": 1,
+        "auditCommit": "fa923c9f91e0cc281004111faf0292c2126a871f",
+        "auditDirtyTree": false,
+        "generatedAt": "2026-09-19T13:05:22.719Z"
+      }
+    ],
+    "generatedAt": "2026-09-19T13:05:22.719Z"
+  },
+  "populations": {
+    "initial": {
+      "label": "initial",
+      "attempts": 12,
+      "judged": 12,
+      "rounds": 274,
+      "budgetedRounds": 258,
+      "toolRoundsUsed": 256,
+      "counts": {
+        "acquisition_with_progress": 158,
+        "acquisition_without_progress": 63,
+        "collection": 0,
+        "bookkeeping": 31,
+        "failed_round": 6,
+        "finalization": 16
+      },
+      "countsAfterOverrules": {
+        "acquisition_with_progress": 143,
+        "acquisition_without_progress": 77,
+        "collection": 0,
+        "bookkeeping": 32,
+        "failed_round": 6,
+        "finalization": 16
+      },
+      "shares": {
+        "acquisition_with_progress": 0.612,
+        "acquisition_without_progress": 0.244,
+        "collection": 0,
+        "bookkeeping": 0.12,
+        "failed_round": 0.023,
+        "finalization": 0.058
+      },
+      "verdictsPrimary": {
+        "rounds_wasted": 8,
+        "tier_too_small_or_never_escalated": 0,
+        "budget_too_small_for_the_hunt": 0,
+        "stopped_early": 0,
+        "answer_omitted": 4,
+        "failed_rounds": 0
+      },
+      "verdictsSecondary": {
+        "rounds_wasted": 4,
+        "tier_too_small_or_never_escalated": 2,
+        "budget_too_small_for_the_hunt": 0,
+        "stopped_early": 0,
+        "answer_omitted": 1,
+        "failed_rounds": 0
+      },
+      "offKeyRounds": 78,
+      "searchLoopRounds": 45,
+      "mechanicalSearchRounds": 22,
+      "searchSources": {
+        "rail": 12,
+        "replay": 0,
+        "none": 0
+      },
+      "inheritedRounds": 0,
+      "mergedCheckpoints": 1,
+      "bundledCheckpoints": 14,
+      "sameSourceUnsupportedRounds": 0,
+      "heldPageRoundsWithoutProgress": 11,
+      "rejectedCheckpoints": 6,
+      "walledRounds": 3,
+      "notFoundNavigates": 13,
+      "notFoundOffKey": 13,
+      "rewrittenComposedAddresses": 23,
+      "rewrittenComposedAddressesOffKey": 16,
+      "identitySlipAnswers": 1,
+      "identitySlipIds": 1,
+      "identitySlipsNotRecorded": 0,
+      "malformedAnswers": 0,
+      "answerRetries": 2,
+      "skippedBookkeepingRounds": 4,
+      "skippedBookkeepingNotRecorded": 0,
+      "allowanceFinalizationRounds": 1,
+      "allowanceFinalizationRoundsStreaming": 0,
+      "allowanceFinalizationRoundsSilent": 1,
+      "allowanceFinalizationRoundsNotRecorded": 0,
+      "firstToken": {
+        "rounds": 273,
+        "p50": 2947,
+        "p90": 4852
+      },
+      "askedItemsDeclared": 12,
+      "askedItemsUnverified": 6,
+      "askedItemsShapeFailures": 3,
+      "askedItemsShapeRetried": 2,
+      "subagentRounds": 13,
+      "stoppedEarly": 0,
+      "answerOmitted": 5,
+      "overrules": 35,
+      "flags": 75,
+      "finalizationCauses": {
+        "budget_exhausted": 8,
+        "objective_met": 4
+      },
+      "attemptsAtBudget": 8,
+      "toolRounds": [
+        {
+          "tool": "navigate",
+          "rounds": 112,
+          "share": 0.4375
+        },
+        {
+          "tool": "read_page",
+          "rounds": 50,
+          "share": 0.1953125
+        },
+        {
+          "tool": "record_evidence",
+          "rounds": 38,
+          "share": 0.1484375
+        },
+        {
+          "tool": "click",
+          "rounds": 24,
+          "share": 0.09375
+        },
+        {
+          "tool": "scroll",
+          "rounds": 18,
+          "share": 0.0703125
+        },
+        {
+          "tool": "look",
+          "rounds": 12,
+          "share": 0.046875
+        },
+        {
+          "tool": "report_run_plan",
+          "rounds": 12,
+          "share": 0.046875
+        },
+        {
+          "tool": "record_candidate",
+          "rounds": 7,
+          "share": 0.02734375
+        },
+        {
+          "tool": "type",
+          "rounds": 7,
+          "share": 0.02734375
+        },
+        {
+          "tool": "back",
+          "rounds": 2,
+          "share": 0.0078125
+        },
+        {
+          "tool": "agent_results",
+          "rounds": 1,
+          "share": 0.00390625
+        },
+        {
+          "tool": "spawn_agent",
+          "rounds": 1,
+          "share": 0.00390625
+        }
+      ],
+      "perSet": [
+        {
+          "setId": "fix-256r2-1",
+          "population": {
+            "label": "initial",
+            "attempts": 4,
+            "judged": 4,
+            "rounds": 86,
+            "budgetedRounds": 82,
+            "toolRoundsUsed": 81,
+            "counts": {
+              "acquisition_with_progress": 48,
+              "acquisition_without_progress": 19,
+              "collection": 0,
+              "bookkeeping": 12,
+              "failed_round": 3,
+              "finalization": 4
+            },
+            "countsAfterOverrules": {
+              "acquisition_with_progress": 45,
+              "acquisition_without_progress": 22,
+              "collection": 0,
+              "bookkeeping": 12,
+              "failed_round": 3,
+              "finalization": 4
+            },
+            "shares": {
+              "acquisition_with_progress": 0.585,
+              "acquisition_without_progress": 0.232,
+              "collection": 0,
+              "bookkeeping": 0.146,
+              "failed_round": 0.037,
+              "finalization": 0.047
+            },
+            "verdictsPrimary": {
+              "rounds_wasted": 3,
+              "tier_too_small_or_never_escalated": 0,
+              "budget_too_small_for_the_hunt": 0,
+              "stopped_early": 0,
+              "answer_omitted": 1,
+              "failed_rounds": 0
+            },
+            "verdictsSecondary": {
+              "rounds_wasted": 1,
+              "tier_too_small_or_never_escalated": 2,
+              "budget_too_small_for_the_hunt": 0,
+              "stopped_early": 0,
+              "answer_omitted": 0,
+              "failed_rounds": 0
+            },
+            "offKeyRounds": 23,
+            "searchLoopRounds": 12,
+            "mechanicalSearchRounds": 2,
+            "searchSources": {
+              "rail": 4,
+              "replay": 0,
+              "none": 0
+            },
+            "inheritedRounds": 0,
+            "mergedCheckpoints": 1,
+            "bundledCheckpoints": 4,
+            "sameSourceUnsupportedRounds": 0,
+            "heldPageRoundsWithoutProgress": 7,
+            "rejectedCheckpoints": 3,
+            "walledRounds": 1,
+            "notFoundNavigates": 3,
+            "notFoundOffKey": 3,
+            "rewrittenComposedAddresses": 9,
+            "rewrittenComposedAddressesOffKey": 6,
+            "identitySlipAnswers": 1,
+            "identitySlipIds": 1,
+            "identitySlipsNotRecorded": 0,
+            "malformedAnswers": 0,
+            "answerRetries": 1,
+            "skippedBookkeepingRounds": 3,
+            "skippedBookkeepingNotRecorded": 0,
+            "allowanceFinalizationRounds": 0,
+            "allowanceFinalizationRoundsStreaming": 0,
+            "allowanceFinalizationRoundsSilent": 0,
+            "allowanceFinalizationRoundsNotRecorded": 0,
+            "firstToken": {
+              "rounds": 86,
+              "p50": 3361,
+              "p90": 4958
+            },
+            "askedItemsDeclared": 4,
+            "askedItemsUnverified": 2,
+            "askedItemsShapeFailures": 1,
+            "askedItemsShapeRetried": 1,
+            "subagentRounds": 0,
+            "stoppedEarly": 0,
+            "answerOmitted": 1,
+            "overrules": 19,
+            "flags": 24,
+            "finalizationCauses": {
+              "budget_exhausted": 3,
+              "objective_met": 1
+            },
+            "attemptsAtBudget": 3,
+            "toolRounds": [
+              {
+                "tool": "navigate",
+                "rounds": 30,
+                "share": 0.37037037037037035
+              },
+              {
+                "tool": "read_page",
+                "rounds": 19,
+                "share": 0.2345679012345679
+              },
+              {
+                "tool": "record_evidence",
+                "rounds": 16,
+                "share": 0.19753086419753085
+              },
+              {
+                "tool": "click",
+                "rounds": 9,
+                "share": 0.1111111111111111
+              },
+              {
+                "tool": "scroll",
+                "rounds": 6,
+                "share": 0.07407407407407407
+              },
+              {
+                "tool": "report_run_plan",
+                "rounds": 4,
+                "share": 0.04938271604938271
+              },
+              {
+                "tool": "type",
+                "rounds": 3,
+                "share": 0.037037037037037035
+              },
+              {
+                "tool": "look",
+                "rounds": 2,
+                "share": 0.024691358024691357
+              }
+            ]
+          }
+        },
+        {
+          "setId": "fix-256r2-2",
+          "population": {
+            "label": "initial",
+            "attempts": 4,
+            "judged": 4,
+            "rounds": 96,
+            "budgetedRounds": 90,
+            "toolRoundsUsed": 89,
+            "counts": {
+              "acquisition_with_progress": 52,
+              "acquisition_without_progress": 23,
+              "collection": 0,
+              "bookkeeping": 12,
+              "failed_round": 3,
+              "finalization": 6
+            },
+            "countsAfterOverrules": {
+              "acquisition_with_progress": 45,
+              "acquisition_without_progress": 30,
+              "collection": 0,
+              "bookkeeping": 12,
+              "failed_round": 3,
+              "finalization": 6
+            },
+            "shares": {
+              "acquisition_with_progress": 0.578,
+              "acquisition_without_progress": 0.256,
+              "collection": 0,
+              "bookkeeping": 0.133,
+              "failed_round": 0.033,
+              "finalization": 0.063
+            },
+            "verdictsPrimary": {
+              "rounds_wasted": 3,
+              "tier_too_small_or_never_escalated": 0,
+              "budget_too_small_for_the_hunt": 0,
+              "stopped_early": 0,
+              "answer_omitted": 1,
+              "failed_rounds": 0
+            },
+            "verdictsSecondary": {
+              "rounds_wasted": 1,
+              "tier_too_small_or_never_escalated": 0,
+              "budget_too_small_for_the_hunt": 0,
+              "stopped_early": 0,
+              "answer_omitted": 1,
+              "failed_rounds": 0
+            },
+            "offKeyRounds": 31,
+            "searchLoopRounds": 14,
+            "mechanicalSearchRounds": 11,
+            "searchSources": {
+              "rail": 4,
+              "replay": 0,
+              "none": 0
+            },
+            "inheritedRounds": 0,
+            "mergedCheckpoints": 0,
+            "bundledCheckpoints": 5,
+            "sameSourceUnsupportedRounds": 0,
+            "heldPageRoundsWithoutProgress": 4,
+            "rejectedCheckpoints": 2,
+            "walledRounds": 1,
+            "notFoundNavigates": 4,
+            "notFoundOffKey": 4,
+            "rewrittenComposedAddresses": 5,
+            "rewrittenComposedAddressesOffKey": 5,
+            "identitySlipAnswers": 0,
+            "identitySlipIds": 0,
+            "identitySlipsNotRecorded": 0,
+            "malformedAnswers": 0,
+            "answerRetries": 1,
+            "skippedBookkeepingRounds": 0,
+            "skippedBookkeepingNotRecorded": 0,
+            "allowanceFinalizationRounds": 1,
+            "allowanceFinalizationRoundsStreaming": 0,
+            "allowanceFinalizationRoundsSilent": 1,
+            "allowanceFinalizationRoundsNotRecorded": 0,
+            "firstToken": {
+              "rounds": 95,
+              "p50": 2761,
+              "p90": 5074
+            },
+            "askedItemsDeclared": 4,
+            "askedItemsUnverified": 2,
+            "askedItemsShapeFailures": 1,
+            "askedItemsShapeRetried": 1,
+            "subagentRounds": 0,
+            "stoppedEarly": 0,
+            "answerOmitted": 2,
+            "overrules": 7,
+            "flags": 26,
+            "finalizationCauses": {
+              "budget_exhausted": 2,
+              "objective_met": 2
+            },
+            "attemptsAtBudget": 2,
+            "toolRounds": [
+              {
+                "tool": "navigate",
+                "rounds": 40,
+                "share": 0.449438202247191
+              },
+              {
+                "tool": "read_page",
+                "rounds": 17,
+                "share": 0.19101123595505617
+              },
+              {
+                "tool": "record_evidence",
+                "rounds": 13,
+                "share": 0.14606741573033707
+              },
+              {
+                "tool": "click",
+                "rounds": 10,
+                "share": 0.11235955056179775
+              },
+              {
+                "tool": "scroll",
+                "rounds": 6,
+                "share": 0.06741573033707865
+              },
+              {
+                "tool": "record_candidate",
+                "rounds": 4,
+                "share": 0.0449438202247191
+              },
+              {
+                "tool": "report_run_plan",
+                "rounds": 4,
+                "share": 0.0449438202247191
+              },
+              {
+                "tool": "look",
+                "rounds": 2,
+                "share": 0.02247191011235955
+              },
+              {
+                "tool": "type",
+                "rounds": 2,
+                "share": 0.02247191011235955
+              }
+            ]
+          }
+        },
+        {
+          "setId": "fix-256r2-3",
+          "population": {
+            "label": "initial",
+            "attempts": 4,
+            "judged": 4,
+            "rounds": 92,
+            "budgetedRounds": 86,
+            "toolRoundsUsed": 86,
+            "counts": {
+              "acquisition_with_progress": 58,
+              "acquisition_without_progress": 21,
+              "collection": 0,
+              "bookkeeping": 7,
+              "failed_round": 0,
+              "finalization": 6
+            },
+            "countsAfterOverrules": {
+              "acquisition_with_progress": 53,
+              "acquisition_without_progress": 25,
+              "collection": 0,
+              "bookkeeping": 8,
+              "failed_round": 0,
+              "finalization": 6
+            },
+            "shares": {
+              "acquisition_with_progress": 0.674,
+              "acquisition_without_progress": 0.244,
+              "collection": 0,
+              "bookkeeping": 0.081,
+              "failed_round": 0,
+              "finalization": 0.065
+            },
+            "verdictsPrimary": {
+              "rounds_wasted": 2,
+              "tier_too_small_or_never_escalated": 0,
+              "budget_too_small_for_the_hunt": 0,
+              "stopped_early": 0,
+              "answer_omitted": 2,
+              "failed_rounds": 0
+            },
+            "verdictsSecondary": {
+              "rounds_wasted": 2,
+              "tier_too_small_or_never_escalated": 0,
+              "budget_too_small_for_the_hunt": 0,
+              "stopped_early": 0,
+              "answer_omitted": 0,
+              "failed_rounds": 0
+            },
+            "offKeyRounds": 24,
+            "searchLoopRounds": 19,
+            "mechanicalSearchRounds": 9,
+            "searchSources": {
+              "rail": 4,
+              "replay": 0,
+              "none": 0
+            },
+            "inheritedRounds": 0,
+            "mergedCheckpoints": 0,
+            "bundledCheckpoints": 5,
+            "sameSourceUnsupportedRounds": 0,
+            "heldPageRoundsWithoutProgress": 0,
+            "rejectedCheckpoints": 1,
+            "walledRounds": 1,
+            "notFoundNavigates": 6,
+            "notFoundOffKey": 6,
+            "rewrittenComposedAddresses": 9,
+            "rewrittenComposedAddressesOffKey": 5,
+            "identitySlipAnswers": 0,
+            "identitySlipIds": 0,
+            "identitySlipsNotRecorded": 0,
+            "malformedAnswers": 0,
+            "answerRetries": 0,
+            "skippedBookkeepingRounds": 1,
+            "skippedBookkeepingNotRecorded": 0,
+            "allowanceFinalizationRounds": 0,
+            "allowanceFinalizationRoundsStreaming": 0,
+            "allowanceFinalizationRoundsSilent": 0,
+            "allowanceFinalizationRoundsNotRecorded": 0,
+            "firstToken": {
+              "rounds": 92,
+              "p50": 2760,
+              "p90": 4248
+            },
+            "askedItemsDeclared": 4,
+            "askedItemsUnverified": 2,
+            "askedItemsShapeFailures": 1,
+            "askedItemsShapeRetried": 0,
+            "subagentRounds": 13,
+            "stoppedEarly": 0,
+            "answerOmitted": 2,
+            "overrules": 9,
+            "flags": 25,
+            "finalizationCauses": {
+              "budget_exhausted": 3,
+              "objective_met": 1
+            },
+            "attemptsAtBudget": 3,
+            "toolRounds": [
+              {
+                "tool": "navigate",
+                "rounds": 42,
+                "share": 0.4883720930232558
+              },
+              {
+                "tool": "read_page",
+                "rounds": 14,
+                "share": 0.16279069767441862
+              },
+              {
+                "tool": "record_evidence",
+                "rounds": 9,
+                "share": 0.10465116279069768
+              },
+              {
+                "tool": "look",
+                "rounds": 8,
+                "share": 0.09302325581395349
+              },
+              {
+                "tool": "scroll",
+                "rounds": 6,
+                "share": 0.06976744186046512
+              },
+              {
+                "tool": "click",
+                "rounds": 5,
+                "share": 0.05813953488372093
+              },
+              {
+                "tool": "report_run_plan",
+                "rounds": 4,
+                "share": 0.046511627906976744
+              },
+              {
+                "tool": "record_candidate",
+                "rounds": 3,
+                "share": 0.03488372093023256
+              },
+              {
+                "tool": "back",
+                "rounds": 2,
+                "share": 0.023255813953488372
+              },
+              {
+                "tool": "type",
+                "rounds": 2,
+                "share": 0.023255813953488372
+              },
+              {
+                "tool": "agent_results",
+                "rounds": 1,
+                "share": 0.011627906976744186
+              },
+              {
+                "tool": "spawn_agent",
+                "rounds": 1,
+                "share": 0.011627906976744186
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "followUp": {
+      "label": "follow_up",
+      "attempts": 6,
+      "judged": 6,
+      "rounds": 70,
+      "budgetedRounds": 64,
+      "toolRoundsUsed": 64,
+      "counts": {
+        "acquisition_with_progress": 27,
+        "acquisition_without_progress": 13,
+        "collection": 0,
+        "bookkeeping": 23,
+        "failed_round": 1,
+        "finalization": 6
+      },
+      "countsAfterOverrules": {
+        "acquisition_with_progress": 24,
+        "acquisition_without_progress": 16,
+        "collection": 0,
+        "bookkeeping": 23,
+        "failed_round": 1,
+        "finalization": 6
+      },
+      "shares": {
+        "acquisition_with_progress": 0.422,
+        "acquisition_without_progress": 0.203,
+        "collection": 0,
+        "bookkeeping": 0.359,
+        "failed_round": 0.016,
+        "finalization": 0.086
+      },
+      "verdictsPrimary": {
+        "rounds_wasted": 5,
+        "tier_too_small_or_never_escalated": 0,
+        "budget_too_small_for_the_hunt": 0,
+        "stopped_early": 0,
+        "answer_omitted": 1,
+        "failed_rounds": 0
+      },
+      "verdictsSecondary": {
+        "rounds_wasted": 1,
+        "tier_too_small_or_never_escalated": 0,
+        "budget_too_small_for_the_hunt": 0,
+        "stopped_early": 1,
+        "answer_omitted": 0,
+        "failed_rounds": 0
+      },
+      "offKeyRounds": 9,
+      "searchLoopRounds": 3,
+      "mechanicalSearchRounds": 0,
+      "searchSources": {
+        "rail": 3,
+        "replay": 0,
+        "none": 3
+      },
+      "inheritedRounds": 10,
+      "mergedCheckpoints": 0,
+      "bundledCheckpoints": 5,
+      "sameSourceUnsupportedRounds": 0,
+      "heldPageRoundsWithoutProgress": 2,
+      "rejectedCheckpoints": 3,
+      "walledRounds": 1,
+      "notFoundNavigates": 1,
+      "notFoundOffKey": 1,
+      "rewrittenComposedAddresses": 0,
+      "rewrittenComposedAddressesOffKey": 0,
+      "identitySlipAnswers": 1,
+      "identitySlipIds": 1,
+      "identitySlipsNotRecorded": 0,
+      "malformedAnswers": 0,
+      "answerRetries": 0,
+      "skippedBookkeepingRounds": 0,
+      "skippedBookkeepingNotRecorded": 0,
+      "allowanceFinalizationRounds": 0,
+      "allowanceFinalizationRoundsStreaming": 0,
+      "allowanceFinalizationRoundsSilent": 0,
+      "allowanceFinalizationRoundsNotRecorded": 0,
+      "firstToken": {
+        "rounds": 70,
+        "p50": 3789,
+        "p90": 6169
+      },
+      "askedItemsDeclared": 6,
+      "askedItemsUnverified": 0,
+      "askedItemsShapeFailures": 0,
+      "askedItemsShapeRetried": 0,
+      "subagentRounds": 0,
+      "stoppedEarly": 1,
+      "answerOmitted": 1,
+      "overrules": 3,
+      "flags": 27,
+      "finalizationCauses": {
+        "objective_met": 6
+      },
+      "attemptsAtBudget": 0,
+      "toolRounds": [
+        {
+          "tool": "navigate",
+          "rounds": 25,
+          "share": 0.390625
+        },
+        {
+          "tool": "record_candidate",
+          "rounds": 16,
+          "share": 0.25
+        },
+        {
+          "tool": "record_evidence",
+          "rounds": 15,
+          "share": 0.234375
+        },
+        {
+          "tool": "read_page",
+          "rounds": 13,
+          "share": 0.203125
+        },
+        {
+          "tool": "report_run_plan",
+          "rounds": 6,
+          "share": 0.09375
+        },
+        {
+          "tool": "look",
+          "rounds": 3,
+          "share": 0.046875
+        }
+      ],
+      "perSet": [
+        {
+          "setId": "fix-256r2-1",
+          "population": {
+            "label": "follow_up",
+            "attempts": 2,
+            "judged": 2,
+            "rounds": 22,
+            "budgetedRounds": 20,
+            "toolRoundsUsed": 20,
+            "counts": {
+              "acquisition_with_progress": 7,
+              "acquisition_without_progress": 7,
+              "collection": 0,
+              "bookkeeping": 5,
+              "failed_round": 1,
+              "finalization": 2
+            },
+            "countsAfterOverrules": {
+              "acquisition_with_progress": 7,
+              "acquisition_without_progress": 7,
+              "collection": 0,
+              "bookkeeping": 5,
+              "failed_round": 1,
+              "finalization": 2
+            },
+            "shares": {
+              "acquisition_with_progress": 0.35,
+              "acquisition_without_progress": 0.35,
+              "collection": 0,
+              "bookkeeping": 0.25,
+              "failed_round": 0.05,
+              "finalization": 0.091
+            },
+            "verdictsPrimary": {
+              "rounds_wasted": 2,
+              "tier_too_small_or_never_escalated": 0,
+              "budget_too_small_for_the_hunt": 0,
+              "stopped_early": 0,
+              "answer_omitted": 0,
+              "failed_rounds": 0
+            },
+            "verdictsSecondary": {
+              "rounds_wasted": 0,
+              "tier_too_small_or_never_escalated": 0,
+              "budget_too_small_for_the_hunt": 0,
+              "stopped_early": 0,
+              "answer_omitted": 0,
+              "failed_rounds": 0
+            },
+            "offKeyRounds": 3,
+            "searchLoopRounds": 0,
+            "mechanicalSearchRounds": 0,
+            "searchSources": {
+              "rail": 1,
+              "replay": 0,
+              "none": 1
+            },
+            "inheritedRounds": 4,
+            "mergedCheckpoints": 0,
+            "bundledCheckpoints": 3,
+            "sameSourceUnsupportedRounds": 0,
+            "heldPageRoundsWithoutProgress": 2,
+            "rejectedCheckpoints": 1,
+            "walledRounds": 1,
+            "notFoundNavigates": 1,
+            "notFoundOffKey": 1,
+            "rewrittenComposedAddresses": 0,
+            "rewrittenComposedAddressesOffKey": 0,
+            "identitySlipAnswers": 0,
+            "identitySlipIds": 0,
+            "identitySlipsNotRecorded": 0,
+            "malformedAnswers": 0,
+            "answerRetries": 0,
+            "skippedBookkeepingRounds": 0,
+            "skippedBookkeepingNotRecorded": 0,
+            "allowanceFinalizationRounds": 0,
+            "allowanceFinalizationRoundsStreaming": 0,
+            "allowanceFinalizationRoundsSilent": 0,
+            "allowanceFinalizationRoundsNotRecorded": 0,
+            "firstToken": {
+              "rounds": 22,
+              "p50": 4755,
+              "p90": 11105
+            },
+            "askedItemsDeclared": 2,
+            "askedItemsUnverified": 0,
+            "askedItemsShapeFailures": 0,
+            "askedItemsShapeRetried": 0,
+            "subagentRounds": 0,
+            "stoppedEarly": 0,
+            "answerOmitted": 0,
+            "overrules": 0,
+            "flags": 10,
+            "finalizationCauses": {
+              "objective_met": 2
+            },
+            "attemptsAtBudget": 0,
+            "toolRounds": [
+              {
+                "tool": "navigate",
+                "rounds": 8,
+                "share": 0.4
+              },
+              {
+                "tool": "read_page",
+                "rounds": 7,
+                "share": 0.35
+              },
+              {
+                "tool": "record_evidence",
+                "rounds": 7,
+                "share": 0.35
+              },
+              {
+                "tool": "record_candidate",
+                "rounds": 3,
+                "share": 0.15
+              },
+              {
+                "tool": "report_run_plan",
+                "rounds": 2,
+                "share": 0.1
+              }
+            ]
+          }
+        },
+        {
+          "setId": "fix-256r2-2",
+          "population": {
+            "label": "follow_up",
+            "attempts": 2,
+            "judged": 2,
+            "rounds": 29,
+            "budgetedRounds": 27,
+            "toolRoundsUsed": 27,
+            "counts": {
+              "acquisition_with_progress": 15,
+              "acquisition_without_progress": 3,
+              "collection": 0,
+              "bookkeeping": 9,
+              "failed_round": 0,
+              "finalization": 2
+            },
+            "countsAfterOverrules": {
+              "acquisition_with_progress": 12,
+              "acquisition_without_progress": 6,
+              "collection": 0,
+              "bookkeeping": 9,
+              "failed_round": 0,
+              "finalization": 2
+            },
+            "shares": {
+              "acquisition_with_progress": 0.556,
+              "acquisition_without_progress": 0.111,
+              "collection": 0,
+              "bookkeeping": 0.333,
+              "failed_round": 0,
+              "finalization": 0.069
+            },
+            "verdictsPrimary": {
+              "rounds_wasted": 2,
+              "tier_too_small_or_never_escalated": 0,
+              "budget_too_small_for_the_hunt": 0,
+              "stopped_early": 0,
+              "answer_omitted": 0,
+              "failed_rounds": 0
+            },
+            "verdictsSecondary": {
+              "rounds_wasted": 0,
+              "tier_too_small_or_never_escalated": 0,
+              "budget_too_small_for_the_hunt": 0,
+              "stopped_early": 1,
+              "answer_omitted": 0,
+              "failed_rounds": 0
+            },
+            "offKeyRounds": 5,
+            "searchLoopRounds": 3,
+            "mechanicalSearchRounds": 0,
+            "searchSources": {
+              "rail": 1,
+              "replay": 0,
+              "none": 1
+            },
+            "inheritedRounds": 3,
+            "mergedCheckpoints": 0,
+            "bundledCheckpoints": 1,
+            "sameSourceUnsupportedRounds": 0,
+            "heldPageRoundsWithoutProgress": 0,
+            "rejectedCheckpoints": 1,
+            "walledRounds": 0,
+            "notFoundNavigates": 0,
+            "notFoundOffKey": 0,
+            "rewrittenComposedAddresses": 0,
+            "rewrittenComposedAddressesOffKey": 0,
+            "identitySlipAnswers": 0,
+            "identitySlipIds": 0,
+            "identitySlipsNotRecorded": 0,
+            "malformedAnswers": 0,
+            "answerRetries": 0,
+            "skippedBookkeepingRounds": 0,
+            "skippedBookkeepingNotRecorded": 0,
+            "allowanceFinalizationRounds": 0,
+            "allowanceFinalizationRoundsStreaming": 0,
+            "allowanceFinalizationRoundsSilent": 0,
+            "allowanceFinalizationRoundsNotRecorded": 0,
+            "firstToken": {
+              "rounds": 29,
+              "p50": 3633,
+              "p90": 5332
+            },
+            "askedItemsDeclared": 2,
+            "askedItemsUnverified": 0,
+            "askedItemsShapeFailures": 0,
+            "askedItemsShapeRetried": 0,
+            "subagentRounds": 0,
+            "stoppedEarly": 1,
+            "answerOmitted": 0,
+            "overrules": 3,
+            "flags": 9,
+            "finalizationCauses": {
+              "objective_met": 2
+            },
+            "attemptsAtBudget": 0,
+            "toolRounds": [
+              {
+                "tool": "navigate",
+                "rounds": 12,
+                "share": 0.4444444444444444
+              },
+              {
+                "tool": "record_candidate",
+                "rounds": 7,
+                "share": 0.25925925925925924
+              },
+              {
+                "tool": "record_evidence",
+                "rounds": 4,
+                "share": 0.14814814814814814
+              },
+              {
+                "tool": "look",
+                "rounds": 3,
+                "share": 0.1111111111111111
+              },
+              {
+                "tool": "read_page",
+                "rounds": 3,
+                "share": 0.1111111111111111
+              },
+              {
+                "tool": "report_run_plan",
+                "rounds": 2,
+                "share": 0.07407407407407407
+              }
+            ]
+          }
+        },
+        {
+          "setId": "fix-256r2-3",
+          "population": {
+            "label": "follow_up",
+            "attempts": 2,
+            "judged": 2,
+            "rounds": 19,
+            "budgetedRounds": 17,
+            "toolRoundsUsed": 17,
+            "counts": {
+              "acquisition_with_progress": 5,
+              "acquisition_without_progress": 3,
+              "collection": 0,
+              "bookkeeping": 9,
+              "failed_round": 0,
+              "finalization": 2
+            },
+            "countsAfterOverrules": {
+              "acquisition_with_progress": 5,
+              "acquisition_without_progress": 3,
+              "collection": 0,
+              "bookkeeping": 9,
+              "failed_round": 0,
+              "finalization": 2
+            },
+            "shares": {
+              "acquisition_with_progress": 0.294,
+              "acquisition_without_progress": 0.176,
+              "collection": 0,
+              "bookkeeping": 0.529,
+              "failed_round": 0,
+              "finalization": 0.105
+            },
+            "verdictsPrimary": {
+              "rounds_wasted": 1,
+              "tier_too_small_or_never_escalated": 0,
+              "budget_too_small_for_the_hunt": 0,
+              "stopped_early": 0,
+              "answer_omitted": 1,
+              "failed_rounds": 0
+            },
+            "verdictsSecondary": {
+              "rounds_wasted": 1,
+              "tier_too_small_or_never_escalated": 0,
+              "budget_too_small_for_the_hunt": 0,
+              "stopped_early": 0,
+              "answer_omitted": 0,
+              "failed_rounds": 0
+            },
+            "offKeyRounds": 1,
+            "searchLoopRounds": 0,
+            "mechanicalSearchRounds": 0,
+            "searchSources": {
+              "rail": 1,
+              "replay": 0,
+              "none": 1
+            },
+            "inheritedRounds": 3,
+            "mergedCheckpoints": 0,
+            "bundledCheckpoints": 1,
+            "sameSourceUnsupportedRounds": 0,
+            "heldPageRoundsWithoutProgress": 0,
+            "rejectedCheckpoints": 1,
+            "walledRounds": 0,
+            "notFoundNavigates": 0,
+            "notFoundOffKey": 0,
+            "rewrittenComposedAddresses": 0,
+            "rewrittenComposedAddressesOffKey": 0,
+            "identitySlipAnswers": 1,
+            "identitySlipIds": 1,
+            "identitySlipsNotRecorded": 0,
+            "malformedAnswers": 0,
+            "answerRetries": 0,
+            "skippedBookkeepingRounds": 0,
+            "skippedBookkeepingNotRecorded": 0,
+            "allowanceFinalizationRounds": 0,
+            "allowanceFinalizationRoundsStreaming": 0,
+            "allowanceFinalizationRoundsSilent": 0,
+            "allowanceFinalizationRoundsNotRecorded": 0,
+            "firstToken": {
+              "rounds": 19,
+              "p50": 3211,
+              "p90": 4978
+            },
+            "askedItemsDeclared": 2,
+            "askedItemsUnverified": 0,
+            "askedItemsShapeFailures": 0,
+            "askedItemsShapeRetried": 0,
+            "subagentRounds": 0,
+            "stoppedEarly": 0,
+            "answerOmitted": 1,
+            "overrules": 0,
+            "flags": 8,
+            "finalizationCauses": {
+              "objective_met": 2
+            },
+            "attemptsAtBudget": 0,
+            "toolRounds": [
+              {
+                "tool": "record_candidate",
+                "rounds": 6,
+                "share": 0.35294117647058826
+              },
+              {
+                "tool": "navigate",
+                "rounds": 5,
+                "share": 0.29411764705882354
+              },
+              {
+                "tool": "record_evidence",
+                "rounds": 4,
+                "share": 0.23529411764705882
+              },
+              {
+                "tool": "read_page",
+                "rounds": 3,
+                "share": 0.17647058823529413
+              },
+              {
+                "tool": "report_run_plan",
+                "rounds": 2,
+                "share": 0.11764705882352941
+              }
+            ]
+          }
+        }
+      ]
+    }
+  },
+  "rankedCauses": [
+    {
+      "verdict": "rounds_wasted",
+      "count": 13,
+      "initial": 8,
+      "followUp": 5
+    },
+    {
+      "verdict": "answer_omitted",
+      "count": 5,
+      "initial": 4,
+      "followUp": 1
+    },
+    {
+      "verdict": "budget_too_small_for_the_hunt",
+      "count": 0,
+      "initial": 0,
+      "followUp": 0
+    },
+    {
+      "verdict": "failed_rounds",
+      "count": 0,
+      "initial": 0,
+      "followUp": 0
+    },
+    {
+      "verdict": "stopped_early",
+      "count": 0,
+      "initial": 0,
+      "followUp": 0
+    },
+    {
+      "verdict": "tier_too_small_or_never_escalated",
+      "count": 0,
+      "initial": 0,
+      "followUp": 0
+    }
+  ],
+  "caveats": [],
+  "note": "This audit counts and does not judge: every verdict is the reviewer’s for one attempt, and the ranking is arithmetic over those verdicts."
+}
