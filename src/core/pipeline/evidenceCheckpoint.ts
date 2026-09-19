@@ -461,10 +461,11 @@ const EXCERPT_PUNCTUATION = /[|,.:;"'“”‘’…\-–—]/g
  * A page's bracketed reference markers (#257, ADR 0054): `[84]`, `[a]`,
  * `[note 3]`, `[nb 2]`, `[citation needed]`. The marker is the page's
  * rendering, not its words, so the tolerant attempt strips it from both
- * sides. A bracketed number that is content is not told apart: the passage
- * around it must still be verbatim.
+ * sides. Lowercase only, so a bracketed `[USD]` or `[ISO 9001]` is content;
+ * a bracketed number that is content is not told apart: the passage around
+ * it must still be verbatim.
  */
-const REFERENCE_MARKER = /\[(?:\d{1,4}|[a-z]{1,3}|[a-z-]+ ?\d{1,4}|[a-z]+ needed)\]/gi
+const REFERENCE_MARKER = /\[(?:\d{1,4}|[a-z]{1,3}|[a-z-]+ ?\d{1,4}|[a-z]+ needed)\]/g
 
 /**
  * A text with its reference markers and punctuation stripped, for the
@@ -515,13 +516,17 @@ function haystacksOf(texts: readonly string[]): Haystacks {
 /**
  * The one rule for a passage (#253, ADR 0054): found verbatim, whitespace
  * and case tolerant — or, failing that, found with punctuation and
- * reference markers stripped from both sides. A passage that is nothing
- * but punctuation holds nothing and is held by anything.
+ * reference markers stripped from both sides. A scrap of nothing but
+ * punctuation is held by anything; a passage long enough to support the
+ * excerpt that is nothing but punctuation or markers must be there
+ * verbatim, so an excerpt of `[84][85][86]` is refused naming it rather
+ * than held by an empty string (#257).
  */
 function passageHeld(haystacks: Haystacks, passage: string): boolean {
   if (haystacks.plain.some((text) => text.includes(passage))) return true
   const loose = withoutPunctuation(passage)
-  return loose === '' || haystacks.tolerant.some((text) => text.includes(loose))
+  if (loose === '') return passage.length < MIN_EXCERPT_PASSAGE_CHARS
+  return haystacks.tolerant.some((text) => text.includes(loose))
 }
 
 /**
@@ -538,9 +543,7 @@ function passagesHeld(texts: readonly string[], excerpt: string, quantifier: 'ev
   const supporting = passages.filter((passage) => passage.length >= MIN_EXCERPT_PASSAGE_CHARS)
   if (supporting.length === 0) return false
   const haystacks = haystacksOf(texts)
-  return quantifier === 'every'
-    ? passages.every((passage) => passageHeld(haystacks, passage))
-    : supporting.some((passage) => withoutPunctuation(passage) !== '' && passageHeld(haystacks, passage))
+  return quantifier === 'every' ? passages.every((passage) => passageHeld(haystacks, passage)) : supporting.some((passage) => passageHeld(haystacks, passage))
 }
 
 /** One passage of a refused excerpt the retained text does not hold (#257, ADR 0054). */
@@ -592,11 +595,18 @@ export function unsupportedPassages(texts: readonly string[], excerpt: string): 
 function nearestRetained(texts: readonly string[], plain: readonly string[], passage: string): string | null {
   const anchor = longestRetainedStretch(passage, plain)
   if (anchor === null) return null
-  const haystack = plain[anchor.text]!
+  const haystack = plain[anchor.holder]!
   const at = haystack.indexOf(passage.slice(anchor.start, anchor.end))
   const from = Math.max(0, at - anchor.start - NEAREST_MARGIN_CHARS)
   const to = Math.min(haystack.length, at - anchor.start + passage.length + NEAREST_MARGIN_CHARS)
-  return retainedWindow(texts[anchor.text]!, haystack, from, to)
+  return retainedWindow(texts[anchor.holder]!, haystack, from, to)
+}
+
+/** A run of a passage some retained text holds: its bounds in the passage, and which text (an index) holds it. */
+interface Anchor {
+  readonly start: number
+  readonly end: number
+  readonly holder: number
 }
 
 /**
@@ -604,9 +614,11 @@ function nearestRetained(texts: readonly string[], plain: readonly string[], pas
  * normalized text holds, at least MIN_ANCHOR_CHARS long: its bounds in the
  * passage and the text (newest first) holding it. Two pointers over the
  * word starts — a run's every sub-run is held too, so the far pointer never
- * moves back — and one `includes` per step.
+ * moves back — and one `includes` per step. When the far pointer is already
+ * past the near one, the run it left is shorter than the one it was part of
+ * and cannot become the best, so its holder need not be looked up again.
  */
-function longestRetainedStretch(passage: string, plain: readonly string[]): { start: number; end: number; text: number } | null {
+function longestRetainedStretch(passage: string, plain: readonly string[]): Anchor | null {
   const starts: number[] = []
   const ends: number[] = []
   for (let index = 0; index < passage.length; index += 1) {
@@ -614,25 +626,25 @@ function longestRetainedStretch(passage: string, plain: readonly string[]): { st
     if (index === 0 || passage[index - 1] === ' ') starts.push(index)
     if (index === passage.length - 1 || passage[index + 1] === ' ') ends.push(index + 1)
   }
-  const holder = (stretch: string): number => {
+  const holderOf = (stretch: string): number => {
     for (let text = plain.length - 1; text >= 0; text -= 1) if (plain[text]!.includes(stretch)) return text
     return -1
   }
-  let best: { start: number; end: number; text: number } | null = null
+  let best: Anchor | null = null
   let far = 0
   for (let near = 0; near < starts.length; near += 1) {
     if (far < near) far = near
-    let text = -1
+    let holder = -1
     while (far < starts.length) {
-      const found = holder(passage.slice(starts[near]!, ends[far]!))
+      const found = holderOf(passage.slice(starts[near]!, ends[far]!))
       if (found < 0) break
-      text = found
+      holder = found
       far += 1
     }
     if (far === near) continue
     const start = starts[near]!
     const end = ends[far - 1]!
-    if (end - start >= MIN_ANCHOR_CHARS && (best === null || end - start > best.end - best.start)) best = { start, end, text }
+    if (end - start >= MIN_ANCHOR_CHARS && (best === null || end - start > best.end - best.start)) best = { start, end, holder }
   }
   return best
 }

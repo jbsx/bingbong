@@ -1331,6 +1331,15 @@ describe('a refused excerpt names the passage that failed (#257, ADR 0054)', () 
     expect(unsupportedPassages(['The Acme router costs $39.'], 'The Acme router costs $39')).toEqual([])
   })
 
+  it('refuses an excerpt that is nothing but reference markers naming it, never with an empty list', () => {
+    const { outcome, error } = checkpoint([webRecord()], GROUNDED_ARGS.source_url, '[84][85][86]')
+    expect(outcome).toMatchObject({ ok: false, reason: 'excerpt_unsupported' })
+    expect(error).not.toContain('too short')
+    expect(named(error)).toEqual([{ passage: '[84][85][86]', nearest: NO_NEAREST }])
+    // A scrap of punctuation beside a real passage is still tolerated.
+    expect(checkpoint([webRecord()], GROUNDED_ARGS.source_url, 'The Acme router costs $39\n—').outcome).toMatchObject({ ok: true })
+  })
+
   it('keeps the joiner advice out of the refusal', () => {
     const { error } = checkpoint([webRecord()], GROUNDED_ARGS.source_url, 'shipping is never free')
     expect(error).not.toContain('may be joined')

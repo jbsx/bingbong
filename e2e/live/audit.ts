@@ -1083,7 +1083,12 @@ function withoutProgressOnHeldPage(call: AuditCall, held: ReadonlySet<string>): 
   return canonical !== null && held.has(canonical)
 }
 
-/** The canonical URLs an attempt's accepted Evidence Checkpoints cite — what a follow-up would inherit. */
+/** The canonical source a checkpoint call's arguments cite, or null when they cite none the audit can canonicalize. */
+function canonicalSourceOf(args: Readonly<Record<string, unknown>>): string | null {
+  const source = args.source_url
+  return isString(source) ? canonicalUrl(source) : null
+}
+
 /**
  * The same-source unsupported rounds of an attempt (#257, ADR 0054): a
  * round carrying an `excerpt_unsupported` rejection whose canonical source
@@ -1098,8 +1103,7 @@ export function sameSourceUnsupportedRoundsOf(rounds: readonly AuditRound[]): nu
     const sources = new Set<string>()
     for (const call of round.calls) {
       if (call.checkpoint === null || call.checkpoint.accepted || call.checkpoint.outcome !== 'excerpt_unsupported') continue
-      const source = call.args.source_url
-      const canonical = isString(source) ? canonicalUrl(source) : null
+      const canonical = canonicalSourceOf(call.args)
       if (canonical !== null) sources.add(canonical)
     }
     return sources
@@ -1113,12 +1117,12 @@ export function sameSourceUnsupportedRoundsOf(rounds: readonly AuditRound[]): nu
   return count
 }
 
+/** The canonical URLs an attempt's accepted Evidence Checkpoints cite — what a follow-up would inherit. */
 export function checkpointedUrlsOf(traceRecords: readonly object[]): Set<string> {
   const urls = new Set<string>()
   for (const raw of traceRecords as unknown as readonly TraceLine[]) {
     if (raw.kind !== 'evidence_checkpoint' || raw.outcome !== 'accepted' || !isRecord(raw.args)) continue
-    const source = raw.args.source_url
-    const canonical = isString(source) ? canonicalUrl(source) : null
+    const canonical = canonicalSourceOf(raw.args)
     if (canonical !== null) urls.add(canonical)
   }
   return urls
