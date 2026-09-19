@@ -1,0 +1,1079 @@
+{
+  "kind": "bingbong.live.summary",
+  "summaryVersion": 1,
+  "provenance": {
+    "study": "bingbong.live-web.information-hunts",
+    "protocolVersion": "1",
+    "mode": "measured",
+    "adblock": "production_default",
+    "reasoningEffortOverride": null,
+    "effortOverrides": [],
+    "browserSubspans": true,
+    "keyVersion": "2.2.2.2",
+    "keyManifestDigest": "sha256:faa25d04e419d6a6f02e51676e8058db5b6d52e3910ec552e275eb142f91b8ed",
+    "roles": [
+      "orchestrator=GLM-5.3",
+      "subagent=GLM-5.3-flash",
+      "vision=GLM-4.6V"
+    ],
+    "reviewers": [
+      "claude-opus-5 via live:grade"
+    ],
+    "promptVersions": [
+      "1"
+    ],
+    "passes": [
+      {
+        "setId": "fix-257-1",
+        "reportPath": "e2e/live/reports/fix-257-1.json",
+        "createdAt": "2026-09-19T15:24:52.270Z",
+        "state": "complete",
+        "commits": [
+          "5015f6017850420b522172b24fc950f64f37d6f4"
+        ],
+        "dirtyTree": false,
+        "gradesRevision": 1,
+        "reportGeneratedAt": "2026-09-19T16:15:21.186Z"
+      },
+      {
+        "setId": "fix-257-2",
+        "reportPath": "e2e/live/reports/fix-257-2.json",
+        "createdAt": "2026-09-19T15:47:28.877Z",
+        "state": "complete",
+        "commits": [
+          "5015f6017850420b522172b24fc950f64f37d6f4"
+        ],
+        "dirtyTree": false,
+        "gradesRevision": 1,
+        "reportGeneratedAt": "2026-09-19T16:19:33.408Z"
+      },
+      {
+        "setId": "fix-257-3",
+        "reportPath": "e2e/live/reports/fix-257-3.json",
+        "createdAt": "2026-09-19T16:11:27.549Z",
+        "state": "complete",
+        "commits": [
+          "5015f6017850420b522172b24fc950f64f37d6f4"
+        ],
+        "dirtyTree": false,
+        "gradesRevision": 1,
+        "reportGeneratedAt": "2026-09-19T16:23:56.205Z"
+      }
+    ],
+    "generatedAt": "2026-09-19T16:23:57.090Z"
+  },
+  "passes": 3,
+  "tasks": [
+    {
+      "huntId": "compatibility-pi-camera",
+      "stepId": "initial",
+      "relation": "initial",
+      "promptVersion": "1",
+      "rows": [
+        {
+          "setId": "fix-257-1",
+          "attemptId": "compatibility-pi-camera--initial",
+          "disposition": "answered",
+          "grade": "pass",
+          "verifiedSuccess": true,
+          "finalizationCause": "objective_met",
+          "observedAnswerLatencyMs": {
+            "status": "observed",
+            "value": 260076
+          },
+          "successfulTaskCompletionTimeMs": {
+            "status": "observed",
+            "value": 260076
+          },
+          "runDurationMs": {
+            "status": "observed",
+            "value": 260078
+          },
+          "flags": [
+            "truncated_tool_results"
+          ]
+        },
+        {
+          "setId": "fix-257-2",
+          "attemptId": "compatibility-pi-camera--initial",
+          "disposition": "answered",
+          "grade": "pass",
+          "verifiedSuccess": true,
+          "finalizationCause": "budget_exhausted",
+          "observedAnswerLatencyMs": {
+            "status": "observed",
+            "value": 289910
+          },
+          "successfulTaskCompletionTimeMs": {
+            "status": "observed",
+            "value": 289910
+          },
+          "runDurationMs": {
+            "status": "observed",
+            "value": 289913
+          },
+          "flags": []
+        },
+        {
+          "setId": "fix-257-3",
+          "attemptId": "compatibility-pi-camera--initial",
+          "disposition": "answered",
+          "grade": "pass",
+          "verifiedSuccess": true,
+          "finalizationCause": "objective_met",
+          "observedAnswerLatencyMs": {
+            "status": "observed",
+            "value": 276172
+          },
+          "successfulTaskCompletionTimeMs": {
+            "status": "observed",
+            "value": 276172
+          },
+          "runDurationMs": {
+            "status": "observed",
+            "value": 276174
+          },
+          "flags": []
+        }
+      ],
+      "attempts": 3,
+      "answered": 3,
+      "verified": 3,
+      "taskCompletionTimeMs": {
+        "observations": [
+          260076,
+          276172,
+          289910
+        ],
+        "observed": 3,
+        "missing": 0,
+        "passes": 3,
+        "stats": {
+          "minMs": 260076,
+          "medianMs": 276172,
+          "maxMs": 289910
+        }
+      },
+      "unverifiedAnswerLatencyMs": {
+        "observations": [],
+        "observed": 0,
+        "missing": 0,
+        "passes": 3,
+        "stats": null
+      },
+      "runDurationMs": {
+        "observations": [
+          260078,
+          276174,
+          289913
+        ],
+        "observed": 3,
+        "missing": 0,
+        "passes": 3,
+        "stats": {
+          "minMs": 260078,
+          "medianMs": 276174,
+          "maxMs": 289913
+        }
+      },
+      "finalizationCauses": {
+        "budget_exhausted": 1,
+        "objective_met": 2
+      },
+      "flags": {
+        "truncated_tool_results": 1
+      }
+    },
+    {
+      "huntId": "compatibility-pi-camera",
+      "stepId": "follow_up",
+      "relation": "revised_objective",
+      "promptVersion": "1",
+      "rows": [
+        {
+          "setId": "fix-257-1",
+          "attemptId": "compatibility-pi-camera--follow_up",
+          "disposition": "answered",
+          "grade": "useful_partial",
+          "verifiedSuccess": false,
+          "finalizationCause": "objective_met",
+          "observedAnswerLatencyMs": {
+            "status": "observed",
+            "value": 302796
+          },
+          "successfulTaskCompletionTimeMs": {
+            "status": "not_applicable",
+            "reason": "the Answer is not independently verified — a Task Completion Time is earned, not observed"
+          },
+          "runDurationMs": {
+            "status": "observed",
+            "value": 302798
+          },
+          "flags": [
+            "self_declared_completed_but_unverified"
+          ]
+        },
+        {
+          "setId": "fix-257-2",
+          "attemptId": "compatibility-pi-camera--follow_up",
+          "disposition": "answered",
+          "grade": "useful_partial",
+          "verifiedSuccess": false,
+          "finalizationCause": "deadline_reached",
+          "observedAnswerLatencyMs": {
+            "status": "observed",
+            "value": 159261
+          },
+          "successfulTaskCompletionTimeMs": {
+            "status": "not_applicable",
+            "reason": "the Answer is not independently verified — a Task Completion Time is earned, not observed"
+          },
+          "runDurationMs": {
+            "status": "observed",
+            "value": 159262
+          },
+          "flags": [
+            "usage_incomplete"
+          ]
+        },
+        {
+          "setId": "fix-257-3",
+          "attemptId": "compatibility-pi-camera--follow_up",
+          "disposition": "answered",
+          "grade": "useful_partial",
+          "verifiedSuccess": false,
+          "finalizationCause": "deadline_reached",
+          "observedAnswerLatencyMs": {
+            "status": "observed",
+            "value": 338050
+          },
+          "successfulTaskCompletionTimeMs": {
+            "status": "not_applicable",
+            "reason": "the Answer is not independently verified — a Task Completion Time is earned, not observed"
+          },
+          "runDurationMs": {
+            "status": "observed",
+            "value": 338053
+          },
+          "flags": [
+            "usage_incomplete"
+          ]
+        }
+      ],
+      "attempts": 3,
+      "answered": 3,
+      "verified": 0,
+      "taskCompletionTimeMs": {
+        "observations": [],
+        "observed": 0,
+        "missing": 0,
+        "passes": 3,
+        "stats": null
+      },
+      "unverifiedAnswerLatencyMs": {
+        "observations": [
+          159261,
+          302796,
+          338050
+        ],
+        "observed": 3,
+        "missing": 0,
+        "passes": 3,
+        "stats": {
+          "minMs": 159261,
+          "medianMs": 302796,
+          "maxMs": 338050
+        }
+      },
+      "runDurationMs": {
+        "observations": [
+          159262,
+          302798,
+          338053
+        ],
+        "observed": 3,
+        "missing": 0,
+        "passes": 3,
+        "stats": {
+          "minMs": 159262,
+          "medianMs": 302798,
+          "maxMs": 338053
+        }
+      },
+      "finalizationCauses": {
+        "deadline_reached": 2,
+        "objective_met": 1
+      },
+      "flags": {
+        "self_declared_completed_but_unverified": 1,
+        "usage_incomplete": 2
+      }
+    },
+    {
+      "huntId": "historical-longitude-watch",
+      "stepId": "initial",
+      "relation": "initial",
+      "promptVersion": "1",
+      "rows": [
+        {
+          "setId": "fix-257-1",
+          "attemptId": "historical-longitude-watch--initial",
+          "disposition": "answered",
+          "grade": "useful_partial",
+          "verifiedSuccess": false,
+          "finalizationCause": "budget_exhausted",
+          "observedAnswerLatencyMs": {
+            "status": "observed",
+            "value": 156320
+          },
+          "successfulTaskCompletionTimeMs": {
+            "status": "not_applicable",
+            "reason": "the Answer is not independently verified — a Task Completion Time is earned, not observed"
+          },
+          "runDurationMs": {
+            "status": "observed",
+            "value": 156323
+          },
+          "flags": [
+            "usage_incomplete"
+          ]
+        },
+        {
+          "setId": "fix-257-2",
+          "attemptId": "historical-longitude-watch--initial",
+          "disposition": "answered",
+          "grade": "useful_partial",
+          "verifiedSuccess": false,
+          "finalizationCause": "budget_exhausted",
+          "observedAnswerLatencyMs": {
+            "status": "observed",
+            "value": 230166
+          },
+          "successfulTaskCompletionTimeMs": {
+            "status": "not_applicable",
+            "reason": "the Answer is not independently verified — a Task Completion Time is earned, not observed"
+          },
+          "runDurationMs": {
+            "status": "observed",
+            "value": 230169
+          },
+          "flags": []
+        },
+        {
+          "setId": "fix-257-3",
+          "attemptId": "historical-longitude-watch--initial",
+          "disposition": "answered",
+          "grade": "useful_partial",
+          "verifiedSuccess": false,
+          "finalizationCause": "budget_exhausted",
+          "observedAnswerLatencyMs": {
+            "status": "observed",
+            "value": 216830
+          },
+          "successfulTaskCompletionTimeMs": {
+            "status": "not_applicable",
+            "reason": "the Answer is not independently verified — a Task Completion Time is earned, not observed"
+          },
+          "runDurationMs": {
+            "status": "observed",
+            "value": 216833
+          },
+          "flags": [
+            "usage_incomplete"
+          ]
+        }
+      ],
+      "attempts": 3,
+      "answered": 3,
+      "verified": 0,
+      "taskCompletionTimeMs": {
+        "observations": [],
+        "observed": 0,
+        "missing": 0,
+        "passes": 3,
+        "stats": null
+      },
+      "unverifiedAnswerLatencyMs": {
+        "observations": [
+          156320,
+          216830,
+          230166
+        ],
+        "observed": 3,
+        "missing": 0,
+        "passes": 3,
+        "stats": {
+          "minMs": 156320,
+          "medianMs": 216830,
+          "maxMs": 230166
+        }
+      },
+      "runDurationMs": {
+        "observations": [
+          156323,
+          216833,
+          230169
+        ],
+        "observed": 3,
+        "missing": 0,
+        "passes": 3,
+        "stats": {
+          "minMs": 156323,
+          "medianMs": 216833,
+          "maxMs": 230169
+        }
+      },
+      "finalizationCauses": {
+        "budget_exhausted": 3
+      },
+      "flags": {
+        "usage_incomplete": 2
+      }
+    },
+    {
+      "huntId": "rule-eurostar-luggage",
+      "stepId": "initial",
+      "relation": "initial",
+      "promptVersion": "1",
+      "rows": [
+        {
+          "setId": "fix-257-1",
+          "attemptId": "rule-eurostar-luggage--initial",
+          "disposition": "answered",
+          "grade": "useful_partial",
+          "verifiedSuccess": false,
+          "finalizationCause": "budget_exhausted",
+          "observedAnswerLatencyMs": {
+            "status": "observed",
+            "value": 123940
+          },
+          "successfulTaskCompletionTimeMs": {
+            "status": "not_applicable",
+            "reason": "the Answer is not independently verified — a Task Completion Time is earned, not observed"
+          },
+          "runDurationMs": {
+            "status": "observed",
+            "value": 123943
+          },
+          "flags": []
+        },
+        {
+          "setId": "fix-257-2",
+          "attemptId": "rule-eurostar-luggage--initial",
+          "disposition": "answered",
+          "grade": "pass",
+          "verifiedSuccess": true,
+          "finalizationCause": "objective_met",
+          "observedAnswerLatencyMs": {
+            "status": "observed",
+            "value": 225729
+          },
+          "successfulTaskCompletionTimeMs": {
+            "status": "observed",
+            "value": 225729
+          },
+          "runDurationMs": {
+            "status": "observed",
+            "value": 225732
+          },
+          "flags": []
+        },
+        {
+          "setId": "fix-257-3",
+          "attemptId": "rule-eurostar-luggage--initial",
+          "disposition": "answered",
+          "grade": "useful_partial",
+          "verifiedSuccess": false,
+          "finalizationCause": "budget_exhausted",
+          "observedAnswerLatencyMs": {
+            "status": "observed",
+            "value": 234045
+          },
+          "successfulTaskCompletionTimeMs": {
+            "status": "not_applicable",
+            "reason": "the Answer is not independently verified — a Task Completion Time is earned, not observed"
+          },
+          "runDurationMs": {
+            "status": "observed",
+            "value": 234048
+          },
+          "flags": [
+            "self_declared_completed_but_unverified"
+          ]
+        }
+      ],
+      "attempts": 3,
+      "answered": 3,
+      "verified": 1,
+      "taskCompletionTimeMs": {
+        "observations": [
+          225729
+        ],
+        "observed": 1,
+        "missing": 0,
+        "passes": 3,
+        "stats": {
+          "minMs": 225729,
+          "medianMs": 225729,
+          "maxMs": 225729
+        }
+      },
+      "unverifiedAnswerLatencyMs": {
+        "observations": [
+          123940,
+          234045
+        ],
+        "observed": 2,
+        "missing": 0,
+        "passes": 3,
+        "stats": {
+          "minMs": 123940,
+          "medianMs": 178992.5,
+          "maxMs": 234045
+        }
+      },
+      "runDurationMs": {
+        "observations": [
+          123943,
+          225732,
+          234048
+        ],
+        "observed": 3,
+        "missing": 0,
+        "passes": 3,
+        "stats": {
+          "minMs": 123943,
+          "medianMs": 225732,
+          "maxMs": 234048
+        }
+      },
+      "finalizationCauses": {
+        "budget_exhausted": 2,
+        "objective_met": 1
+      },
+      "flags": {
+        "self_declared_completed_but_unverified": 1
+      }
+    },
+    {
+      "huntId": "rule-eurostar-luggage",
+      "stepId": "follow_up",
+      "relation": "revised_objective",
+      "promptVersion": "1",
+      "rows": [
+        {
+          "setId": "fix-257-1",
+          "attemptId": "rule-eurostar-luggage--follow_up",
+          "disposition": "answered",
+          "grade": "pass",
+          "verifiedSuccess": true,
+          "finalizationCause": "objective_met",
+          "observedAnswerLatencyMs": {
+            "status": "observed",
+            "value": 77787
+          },
+          "successfulTaskCompletionTimeMs": {
+            "status": "observed",
+            "value": 77787
+          },
+          "runDurationMs": {
+            "status": "observed",
+            "value": 77789
+          },
+          "flags": []
+        },
+        {
+          "setId": "fix-257-2",
+          "attemptId": "rule-eurostar-luggage--follow_up",
+          "disposition": "answered",
+          "grade": "pass",
+          "verifiedSuccess": true,
+          "finalizationCause": "objective_met",
+          "observedAnswerLatencyMs": {
+            "status": "observed",
+            "value": 78953
+          },
+          "successfulTaskCompletionTimeMs": {
+            "status": "observed",
+            "value": 78953
+          },
+          "runDurationMs": {
+            "status": "observed",
+            "value": 78955
+          },
+          "flags": []
+        },
+        {
+          "setId": "fix-257-3",
+          "attemptId": "rule-eurostar-luggage--follow_up",
+          "disposition": "answered",
+          "grade": "pass",
+          "verifiedSuccess": true,
+          "finalizationCause": "objective_met",
+          "observedAnswerLatencyMs": {
+            "status": "observed",
+            "value": 53776
+          },
+          "successfulTaskCompletionTimeMs": {
+            "status": "observed",
+            "value": 53776
+          },
+          "runDurationMs": {
+            "status": "observed",
+            "value": 53778
+          },
+          "flags": []
+        }
+      ],
+      "attempts": 3,
+      "answered": 3,
+      "verified": 3,
+      "taskCompletionTimeMs": {
+        "observations": [
+          53776,
+          77787,
+          78953
+        ],
+        "observed": 3,
+        "missing": 0,
+        "passes": 3,
+        "stats": {
+          "minMs": 53776,
+          "medianMs": 77787,
+          "maxMs": 78953
+        }
+      },
+      "unverifiedAnswerLatencyMs": {
+        "observations": [],
+        "observed": 0,
+        "missing": 0,
+        "passes": 3,
+        "stats": null
+      },
+      "runDurationMs": {
+        "observations": [
+          53778,
+          77789,
+          78955
+        ],
+        "observed": 3,
+        "missing": 0,
+        "passes": 3,
+        "stats": {
+          "minMs": 53778,
+          "medianMs": 77789,
+          "maxMs": 78955
+        }
+      },
+      "finalizationCauses": {
+        "objective_met": 3
+      },
+      "flags": {}
+    },
+    {
+      "huntId": "superseded-voyager-interstellar",
+      "stepId": "initial",
+      "relation": "initial",
+      "promptVersion": "1",
+      "rows": [
+        {
+          "setId": "fix-257-1",
+          "attemptId": "superseded-voyager-interstellar--initial",
+          "disposition": "answered",
+          "grade": "useful_partial",
+          "verifiedSuccess": false,
+          "finalizationCause": "budget_exhausted",
+          "observedAnswerLatencyMs": {
+            "status": "observed",
+            "value": 319417
+          },
+          "successfulTaskCompletionTimeMs": {
+            "status": "not_applicable",
+            "reason": "the Answer is not independently verified — a Task Completion Time is earned, not observed"
+          },
+          "runDurationMs": {
+            "status": "observed",
+            "value": 319419
+          },
+          "flags": []
+        },
+        {
+          "setId": "fix-257-2",
+          "attemptId": "superseded-voyager-interstellar--initial",
+          "disposition": "answered",
+          "grade": "useful_partial",
+          "verifiedSuccess": false,
+          "finalizationCause": "deadline_reached",
+          "observedAnswerLatencyMs": {
+            "status": "observed",
+            "value": 350820
+          },
+          "successfulTaskCompletionTimeMs": {
+            "status": "not_applicable",
+            "reason": "the Answer is not independently verified — a Task Completion Time is earned, not observed"
+          },
+          "runDurationMs": {
+            "status": "observed",
+            "value": 350823
+          },
+          "flags": [
+            "usage_incomplete"
+          ]
+        },
+        {
+          "setId": "fix-257-3",
+          "attemptId": "superseded-voyager-interstellar--initial",
+          "disposition": "answered",
+          "grade": "useful_partial",
+          "verifiedSuccess": false,
+          "finalizationCause": "budget_exhausted",
+          "observedAnswerLatencyMs": {
+            "status": "observed",
+            "value": 298498
+          },
+          "successfulTaskCompletionTimeMs": {
+            "status": "not_applicable",
+            "reason": "the Answer is not independently verified — a Task Completion Time is earned, not observed"
+          },
+          "runDurationMs": {
+            "status": "observed",
+            "value": 298501
+          },
+          "flags": [
+            "usage_incomplete"
+          ]
+        }
+      ],
+      "attempts": 3,
+      "answered": 3,
+      "verified": 0,
+      "taskCompletionTimeMs": {
+        "observations": [],
+        "observed": 0,
+        "missing": 0,
+        "passes": 3,
+        "stats": null
+      },
+      "unverifiedAnswerLatencyMs": {
+        "observations": [
+          298498,
+          319417,
+          350820
+        ],
+        "observed": 3,
+        "missing": 0,
+        "passes": 3,
+        "stats": {
+          "minMs": 298498,
+          "medianMs": 319417,
+          "maxMs": 350820
+        }
+      },
+      "runDurationMs": {
+        "observations": [
+          298501,
+          319419,
+          350823
+        ],
+        "observed": 3,
+        "missing": 0,
+        "passes": 3,
+        "stats": {
+          "minMs": 298501,
+          "medianMs": 319419,
+          "maxMs": 350823
+        }
+      },
+      "finalizationCauses": {
+        "budget_exhausted": 2,
+        "deadline_reached": 1
+      },
+      "flags": {
+        "usage_incomplete": 2
+      }
+    }
+  ],
+  "sequences": [
+    {
+      "huntId": "compatibility-pi-camera",
+      "rows": [
+        {
+          "setId": "fix-257-1",
+          "initialAttemptId": "compatibility-pi-camera--initial",
+          "followUpAttemptId": "compatibility-pi-camera--follow_up",
+          "initialVerified": true,
+          "followUpVerified": false,
+          "bothVerified": false,
+          "sequenceElapsedMs": {
+            "status": "not_applicable",
+            "reason": "a sequence elapsed time belongs to a pair that both steps passed"
+          }
+        },
+        {
+          "setId": "fix-257-2",
+          "initialAttemptId": "compatibility-pi-camera--initial",
+          "followUpAttemptId": "compatibility-pi-camera--follow_up",
+          "initialVerified": true,
+          "followUpVerified": false,
+          "bothVerified": false,
+          "sequenceElapsedMs": {
+            "status": "not_applicable",
+            "reason": "a sequence elapsed time belongs to a pair that both steps passed"
+          }
+        },
+        {
+          "setId": "fix-257-3",
+          "initialAttemptId": "compatibility-pi-camera--initial",
+          "followUpAttemptId": "compatibility-pi-camera--follow_up",
+          "initialVerified": true,
+          "followUpVerified": false,
+          "bothVerified": false,
+          "sequenceElapsedMs": {
+            "status": "not_applicable",
+            "reason": "a sequence elapsed time belongs to a pair that both steps passed"
+          }
+        }
+      ],
+      "bothVerified": 0,
+      "sequenceElapsedMs": {
+        "observations": [],
+        "observed": 0,
+        "missing": 0,
+        "passes": 3,
+        "stats": null
+      }
+    },
+    {
+      "huntId": "rule-eurostar-luggage",
+      "rows": [
+        {
+          "setId": "fix-257-1",
+          "initialAttemptId": "rule-eurostar-luggage--initial",
+          "followUpAttemptId": "rule-eurostar-luggage--follow_up",
+          "initialVerified": false,
+          "followUpVerified": true,
+          "bothVerified": false,
+          "sequenceElapsedMs": {
+            "status": "not_applicable",
+            "reason": "a sequence elapsed time belongs to a pair that both steps passed"
+          }
+        },
+        {
+          "setId": "fix-257-2",
+          "initialAttemptId": "rule-eurostar-luggage--initial",
+          "followUpAttemptId": "rule-eurostar-luggage--follow_up",
+          "initialVerified": true,
+          "followUpVerified": true,
+          "bothVerified": true,
+          "sequenceElapsedMs": {
+            "status": "observed",
+            "value": 305160
+          }
+        },
+        {
+          "setId": "fix-257-3",
+          "initialAttemptId": "rule-eurostar-luggage--initial",
+          "followUpAttemptId": "rule-eurostar-luggage--follow_up",
+          "initialVerified": false,
+          "followUpVerified": true,
+          "bothVerified": false,
+          "sequenceElapsedMs": {
+            "status": "not_applicable",
+            "reason": "a sequence elapsed time belongs to a pair that both steps passed"
+          }
+        }
+      ],
+      "bothVerified": 1,
+      "sequenceElapsedMs": {
+        "observations": [
+          305160
+        ],
+        "observed": 1,
+        "missing": 0,
+        "passes": 3,
+        "stats": {
+          "minMs": 305160,
+          "medianMs": 305160,
+          "maxMs": 305160
+        }
+      }
+    }
+  ],
+  "populations": {
+    "initial": {
+      "label": "initial",
+      "scheduled": 12,
+      "attempted": 12,
+      "answered": 12,
+      "notReached": 0,
+      "unaccounted": 0,
+      "acceptanceUnconfirmed": 0,
+      "reviewed": 12,
+      "pending": 0,
+      "verifiedSuccess": 4,
+      "timedSuccess": 4,
+      "rate": 0.333,
+      "perPass": [
+        {
+          "setId": "fix-257-1",
+          "verifiedSuccess": 1,
+          "scheduled": 4,
+          "rate": 0.25
+        },
+        {
+          "setId": "fix-257-2",
+          "verifiedSuccess": 2,
+          "scheduled": 4,
+          "rate": 0.5
+        },
+        {
+          "setId": "fix-257-3",
+          "verifiedSuccess": 1,
+          "scheduled": 4,
+          "rate": 0.25
+        }
+      ]
+    },
+    "revisedObjective": {
+      "label": "revised_objective",
+      "scheduled": 6,
+      "attempted": 6,
+      "answered": 6,
+      "notReached": 0,
+      "unaccounted": 0,
+      "acceptanceUnconfirmed": 0,
+      "reviewed": 6,
+      "pending": 0,
+      "verifiedSuccess": 3,
+      "timedSuccess": 3,
+      "rate": 0.5,
+      "perPass": [
+        {
+          "setId": "fix-257-1",
+          "verifiedSuccess": 1,
+          "scheduled": 2,
+          "rate": 0.5
+        },
+        {
+          "setId": "fix-257-2",
+          "verifiedSuccess": 1,
+          "scheduled": 2,
+          "rate": 0.5
+        },
+        {
+          "setId": "fix-257-3",
+          "verifiedSuccess": 1,
+          "scheduled": 2,
+          "rate": 0.5
+        }
+      ]
+    },
+    "corrective": null,
+    "bothStep": {
+      "label": "both_step",
+      "scheduled": 6,
+      "attempted": 6,
+      "answered": 6,
+      "notReached": 0,
+      "unaccounted": 0,
+      "acceptanceUnconfirmed": 0,
+      "reviewed": 6,
+      "pending": 0,
+      "verifiedSuccess": 1,
+      "timedSuccess": 1,
+      "rate": 0.167,
+      "perPass": [
+        {
+          "setId": "fix-257-1",
+          "verifiedSuccess": 0,
+          "scheduled": 2,
+          "rate": 0
+        },
+        {
+          "setId": "fix-257-2",
+          "verifiedSuccess": 1,
+          "scheduled": 2,
+          "rate": 0.5
+        },
+        {
+          "setId": "fix-257-3",
+          "verifiedSuccess": 0,
+          "scheduled": 2,
+          "rate": 0
+        }
+      ]
+    }
+  },
+  "usage": {
+    "byRole": [
+      {
+        "role": "orchestrator",
+        "attemptsObserved": 18,
+        "attemptsUnavailable": 0,
+        "attemptsNotApplicable": 0,
+        "promptTokens": 6570358,
+        "completionTokens": 160411,
+        "rounds": 337,
+        "roundsWithUsage": 331,
+        "complete": false,
+        "incompleteIn": [
+          "fix-257-1",
+          "fix-257-2",
+          "fix-257-3"
+        ],
+        "models": [
+          "GLM-5.3"
+        ]
+      },
+      {
+        "role": "subagent",
+        "attemptsObserved": 4,
+        "attemptsUnavailable": 0,
+        "attemptsNotApplicable": 14,
+        "promptTokens": 884474,
+        "completionTokens": 11073,
+        "rounds": 78,
+        "roundsWithUsage": 78,
+        "complete": true,
+        "incompleteIn": [],
+        "models": [
+          "GLM-5.3-flash"
+        ]
+      },
+      {
+        "role": "vision",
+        "attemptsObserved": 0,
+        "attemptsUnavailable": 18,
+        "attemptsNotApplicable": 0,
+        "promptTokens": 0,
+        "completionTokens": 0,
+        "rounds": 0,
+        "roundsWithUsage": 0,
+        "complete": false,
+        "incompleteIn": [
+          "fix-257-1",
+          "fix-257-2",
+          "fix-257-3"
+        ],
+        "models": []
+      }
+    ],
+    "limits": [
+      "Tokens are summed per role across Passes, not per model: a role that used several models has no per-model split, and none is inferred.",
+      "Vision usage is unavailable by construction — vision records carry request duration and never tokens.",
+      "No cost estimate is produced here; a priced estimate belongs to a single report with an explicit dated price list.",
+      "orchestrator: incomplete in fix-257-1, fix-257-2, fix-257-3, so its tokens are a floor."
+    ]
+  },
+  "statistics": {
+    "percentilesReported": [
+      "min",
+      "median",
+      "max"
+    ],
+    "note": "Min, median and max only, over 3 passes. 3 repeats do not support a p95, a mean or a confidence interval, and none is offered. A median of an even count is the mean of its two middle values."
+  },
+  "attributionNote": "No attribution here: the per-set reports keep the stage tables, and nothing about where the time went is derived across Passes.",
+  "anomalies": [],
+  "warnings": []
+}
