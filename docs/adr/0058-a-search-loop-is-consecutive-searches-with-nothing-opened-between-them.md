@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted on 2026-09-20, grilled from the fix-257 traces after #257 closed.
+Accepted on 2026-09-20 for #259, grilled from the fix-257 traces after #257
+closed; the defect noted on ADR 0050 is #258.
 Amends ADR 0048: the Search Loop rail's streak no longer asks whether two
 searches share a Search Intent, only whether anything was opened between
 them. Escape is unchanged (open a result, back, any successful call that is

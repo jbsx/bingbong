@@ -11,7 +11,7 @@ gains its head. Note of 2026-09-14 (#239, ADR 0050): the loss accepted below
 — a guessed-URL navigate that lands on a 404 still resets the streak — is
 closed. A Not-found Landing is recognised by status and title, and the rail
 treats it as inspection: observed, never resetting. Amended on 2026-09-20 by
-ADR 0058: the streak no longer compares Search Intents — a search after a
+ADR 0058 (#259): the streak no longer compares Search Intents — a search after a
 search with no escape between them continues it, whatever the terms. On the
 fix-257 capture this rule reached streak 3 in none of 18 Runs against 47
 reviewer loop rounds. Search Intent stays as the no-progress fingerprint.
