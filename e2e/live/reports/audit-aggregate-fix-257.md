@@ -1,6 +1,6 @@
 # Round Audit — aggregate over 3 sets (bingbong.live-web.information-hunts)
 
-Generated 2026-09-19T16:51:38.491Z over fix-257-1, fix-257-2, fix-257-3, ordered by capture-set creation. This audit counts and does not judge: every verdict is the reviewer’s for one attempt, and the ranking is arithmetic over those verdicts.
+Generated 2026-09-20T10:32:13.854Z over fix-257-1, fix-257-2, fix-257-3, ordered by capture-set creation. This audit counts and does not judge: every verdict is the reviewer’s for one attempt, and the ranking is arithmetic over those verdicts.
 
 ## Ranked causes
 
@@ -26,9 +26,9 @@ Shared by every set, and checked before anything was counted:
 
 | set | created | state | commit(s) | dirty tree | grades revision | audited at |
 | --- | --- | --- | --- | --- | --- | --- |
-| fix-257-1 | 2026-09-19T15:24:52.270Z | complete | 5015f601 | no | 1 | 4d808f72 |
-| fix-257-2 | 2026-09-19T15:47:28.877Z | complete | 5015f601 | no | 1 | 4d808f72 |
-| fix-257-3 | 2026-09-19T16:11:27.549Z | complete | 5015f601 | no | 1 | 4d808f72 |
+| fix-257-1 | 2026-09-19T15:24:52.270Z | complete | 5015f601 | no | 1 | eb040919 |
+| fix-257-2 | 2026-09-19T15:47:28.877Z | complete | 5015f601 | no | 1 | eb040919 |
+| fix-257-3 | 2026-09-19T16:11:27.549Z | complete | 5015f601 | no | 1 | eb040919 |
 
 ## Populations
 
@@ -46,8 +46,8 @@ Shared by every set, and checked before anything was counted:
 | answer omitted | 4 | 0 | 3 | 0 |
 | failed rounds | 0 | 2 | 0 | 1 |
 
-- initial: 79 Off-key round(s), 47 Search Loop round(s) by the reviewer (22 by the streak rule; attempts by search source rail 12, replay 0, none 0), 0 inherited, 8 rejected Evidence Checkpoint(s), 5 walled round(s), 11 navigate(s) landed on a Not-found Page (11 judged Off-key), 18 Composed Address(es) rewritten into a site search (15 judged Off-key), 65 Subagent round(s), 0 merged Evidence Checkpoint(s) (a floor), 9 Held Page round(s) without Progress, 8 bundled checkpoint round(s), 2 same-source unsupported round(s), 0 Answer(s) with an Identity Slip, 0 id(s) slipped, 0 Malformed Answer(s) (1 retried), 3 skipped bookkeeping round(s), 3 Finalization round(s) cut by the Allowance (1 after a first token, 2 silent); first-token latency p50 4494 ms, p90 6847 ms over 270 round(s), 12 declared Asked Items (7 with an unverified standing, 3 shape failure(s), 1 retried), 0 stopped early, 4 answer omitted, 41 overrule(s), 75 flag(s); Finalization Causes: budget_exhausted 8, deadline_reached 1, objective_met 3
-- follow_up: 6 Off-key round(s), 0 Search Loop round(s) by the reviewer (0 by the streak rule; attempts by search source rail 2, replay 0, none 4), 7 inherited, 3 rejected Evidence Checkpoint(s), 0 walled round(s), 0 navigate(s) landed on a Not-found Page (0 judged Off-key), 0 Composed Address(es) rewritten into a site search (0 judged Off-key), 13 Subagent round(s), 0 merged Evidence Checkpoint(s) (a floor), 2 Held Page round(s) without Progress, 2 bundled checkpoint round(s), 0 same-source unsupported round(s), 1 Answer(s) with an Identity Slip, 1 id(s) slipped, 0 Malformed Answer(s) (1 retried), 1 skipped bookkeeping round(s), 0 Finalization round(s) cut by the Allowance; first-token latency p50 5165 ms, p90 9428 ms over 64 round(s), 6 declared Asked Items (2 with an unverified standing, 2 shape failure(s), 1 retried), 0 stopped early, 3 answer omitted, 4 overrule(s), 26 flag(s); Finalization Causes: deadline_reached 2, objective_met 4
+- initial: 79 Off-key round(s), 47 Search Loop round(s) by the reviewer (22 by the streak rule; attempts by search source rail 12, replay 0, none 0), 0 inherited, 8 rejected Evidence Checkpoint(s), 5 walled round(s), 11 navigate(s) landed on a Not-found Page (11 judged Off-key), 18 Composed Address(es) rewritten into a site search (15 judged Off-key, 4 to an address the Run was shown), 65 Subagent round(s), 0 merged Evidence Checkpoint(s) (a floor), 9 Held Page round(s) without Progress, 8 bundled checkpoint round(s), 2 same-source unsupported round(s), 0 Answer(s) with an Identity Slip, 0 id(s) slipped, 0 Malformed Answer(s) (1 retried), 3 skipped bookkeeping round(s), 3 Finalization round(s) cut by the Allowance (1 after a first token, 2 silent); first-token latency p50 4494 ms, p90 6847 ms over 270 round(s), 12 declared Asked Items (7 with an unverified standing, 3 shape failure(s), 1 retried), 0 stopped early, 4 answer omitted, 41 overrule(s), 75 flag(s); Finalization Causes: budget_exhausted 8, deadline_reached 1, objective_met 3
+- follow_up: 6 Off-key round(s), 0 Search Loop round(s) by the reviewer (0 by the streak rule; attempts by search source rail 2, replay 0, none 4), 7 inherited, 3 rejected Evidence Checkpoint(s), 0 walled round(s), 0 navigate(s) landed on a Not-found Page (0 judged Off-key), 0 Composed Address(es) rewritten into a site search (0 judged Off-key, 0 to an address the Run was shown), 13 Subagent round(s), 0 merged Evidence Checkpoint(s) (a floor), 2 Held Page round(s) without Progress, 2 bundled checkpoint round(s), 0 same-source unsupported round(s), 1 Answer(s) with an Identity Slip, 1 id(s) slipped, 0 Malformed Answer(s) (1 retried), 1 skipped bookkeeping round(s), 0 Finalization round(s) cut by the Allowance; first-token latency p50 5165 ms, p90 9428 ms over 64 round(s), 6 declared Asked Items (2 with an unverified standing, 2 shape failure(s), 1 retried), 0 stopped early, 3 answer omitted, 4 overrule(s), 26 flag(s); Finalization Causes: deadline_reached 2, objective_met 4
 
 ## Tool rounds
 

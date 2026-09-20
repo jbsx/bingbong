@@ -1067,6 +1067,14 @@ describe('Rewritten navigates to a shown address (#258)', () => {
     expect(markdown).toContain('- of the rewrites, to an address the Run was shown, whole or cut: 4 (round 3, 4, 6, 8)')
     expect(markdown).toContain('6 Composed Address(es) rewritten into a site search (0 judged Off-key, 4 to an address the Run was shown)')
   })
+
+  it('reads 4 recomputed on the committed fix-257 audits (#258, AC3)', () => {
+    const perPass = [1, 2, 3].map((pass) => {
+      const audit = JSON.parse(readFileSync(join(REPORTS_DIR, `audit-fix-257-${pass}.json`), 'utf8')) as { attempts: { mechanical: { rewrittenShownAddresses?: number[] } }[] }
+      return audit.attempts.reduce((total, attempt) => total + (attempt.mechanical.rewrittenShownAddresses?.length ?? 0), 0)
+    })
+    expect(perPass.reduce((total, count) => total + count, 0)).toBe(4)
+  })
 })
 
 describe('Rewritten Composed Addresses (#255, ADR 0055)', () => {

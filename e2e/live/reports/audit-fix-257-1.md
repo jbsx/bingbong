@@ -1,13 +1,13 @@
 # Round Audit — bingbong.live-web.information-hunts (fix-257-1)
 
-Generated 2026-09-19T16:51:38.491Z from a capture set created 2026-09-19T15:24:52.270Z (state complete). This audit counts and does not judge: every verdict is the reviewer’s for one attempt, and the ranking is arithmetic over those verdicts.
+Generated 2026-09-20T10:32:13.854Z from a capture set created 2026-09-19T15:24:52.270Z (state complete). This audit counts and does not judge: every verdict is the reviewer’s for one attempt, and the ranking is arithmetic over those verdicts.
 
 ## Provenance
 
 - capture: commit(s) 5015f601; mode measured; protocol 1; prompt version(s) 1
 - routing: orchestrator=GLM-5.3; subagent=GLM-5.3-flash; vision=GLM-4.6V | reasoning override: none | effort overrides: none | adblock: production_default | browser sub-spans: on
 - key 2.2.2.2, manifest sha256:faa25d04…; grades by claude-opus-5 via live:grade (revision 1)
-- reviewer: claude-opus-5 at high, prompt audit-p2; audit run at commit 4d808f72
+- reviewer: claude-opus-5 at high, prompt audit-p2; audit run at commit eb040919
 
 ## Populations
 
@@ -27,8 +27,8 @@ Kinds are mechanical counts; a share is over the budgeted rounds (Finalization o
 | answer omitted | 1 | 0 | 1 | 0 |
 | failed rounds | 0 | 1 | 0 | 0 |
 
-- initial: 24 Off-key round(s), 11 Search Loop round(s) by the reviewer (6 by the streak rule; attempts by search source rail 4, replay 0, none 0), 0 inherited, 1 rejected Evidence Checkpoint(s), 1 walled round(s), 4 navigate(s) landed on a Not-found Page (4 judged Off-key), 6 Composed Address(es) rewritten into a site search (4 judged Off-key), 26 Subagent round(s), 0 merged Evidence Checkpoint(s) (a floor), 2 Held Page round(s) without Progress, 4 bundled checkpoint round(s), 0 same-source unsupported round(s), 0 Answer(s) with an Identity Slip, 0 id(s) slipped, 0 Malformed Answer(s) (0 retried), 1 skipped bookkeeping round(s), 1 Finalization round(s) cut by the Allowance (0 after a first token, 1 silent); first-token latency p50 4182 ms, p90 9720 ms over 74 round(s), 4 declared Asked Items (3 with an unverified standing, 1 shape failure(s), 0 retried), 0 stopped early, 1 answer omitted, 11 overrule(s), 24 flag(s); Finalization Causes: budget_exhausted 3, objective_met 1
-- follow_up: 1 Off-key round(s), 0 Search Loop round(s) by the reviewer (0 by the streak rule; attempts by search source rail 1, replay 0, none 1), 3 inherited, 0 rejected Evidence Checkpoint(s), 0 walled round(s), 0 navigate(s) landed on a Not-found Page (0 judged Off-key), 0 Composed Address(es) rewritten into a site search (0 judged Off-key), 0 Subagent round(s), 0 merged Evidence Checkpoint(s) (a floor), 0 Held Page round(s) without Progress, 1 bundled checkpoint round(s), 0 same-source unsupported round(s), 0 Answer(s) with an Identity Slip, 0 id(s) slipped, 0 Malformed Answer(s) (0 retried), 0 skipped bookkeeping round(s), 0 Finalization round(s) cut by the Allowance; first-token latency p50 5165 ms, p90 10829 ms over 25 round(s), 2 declared Asked Items (0 with an unverified standing, 0 shape failure(s), 0 retried), 0 stopped early, 1 answer omitted, 0 overrule(s), 8 flag(s); Finalization Causes: objective_met 2
+- initial: 24 Off-key round(s), 11 Search Loop round(s) by the reviewer (6 by the streak rule; attempts by search source rail 4, replay 0, none 0), 0 inherited, 1 rejected Evidence Checkpoint(s), 1 walled round(s), 4 navigate(s) landed on a Not-found Page (4 judged Off-key), 6 Composed Address(es) rewritten into a site search (4 judged Off-key, 0 to an address the Run was shown), 26 Subagent round(s), 0 merged Evidence Checkpoint(s) (a floor), 2 Held Page round(s) without Progress, 4 bundled checkpoint round(s), 0 same-source unsupported round(s), 0 Answer(s) with an Identity Slip, 0 id(s) slipped, 0 Malformed Answer(s) (0 retried), 1 skipped bookkeeping round(s), 1 Finalization round(s) cut by the Allowance (0 after a first token, 1 silent); first-token latency p50 4182 ms, p90 9720 ms over 74 round(s), 4 declared Asked Items (3 with an unverified standing, 1 shape failure(s), 0 retried), 0 stopped early, 1 answer omitted, 11 overrule(s), 24 flag(s); Finalization Causes: budget_exhausted 3, objective_met 1
+- follow_up: 1 Off-key round(s), 0 Search Loop round(s) by the reviewer (0 by the streak rule; attempts by search source rail 1, replay 0, none 1), 3 inherited, 0 rejected Evidence Checkpoint(s), 0 walled round(s), 0 navigate(s) landed on a Not-found Page (0 judged Off-key), 0 Composed Address(es) rewritten into a site search (0 judged Off-key, 0 to an address the Run was shown), 0 Subagent round(s), 0 merged Evidence Checkpoint(s) (a floor), 0 Held Page round(s) without Progress, 1 bundled checkpoint round(s), 0 same-source unsupported round(s), 0 Answer(s) with an Identity Slip, 0 id(s) slipped, 0 Malformed Answer(s) (0 retried), 0 skipped bookkeeping round(s), 0 Finalization round(s) cut by the Allowance; first-token latency p50 5165 ms, p90 10829 ms over 25 round(s), 2 declared Asked Items (0 with an unverified standing, 0 shape failure(s), 0 retried), 0 stopped early, 1 answer omitted, 0 overrule(s), 8 flag(s); Finalization Causes: objective_met 2
 
 ## Tool rounds
 
@@ -62,6 +62,7 @@ The rounds outside Finalization that called each tool — a round counts once pe
 - of those, judged Off-key by the reviewer: 1
 - Composed Addresses rewritten into a site search: 2 (round 3, 9)
 - of the rewrites, judged Off-key by the reviewer: 2
+- of the rewrites, to an address the Run was shown, whole or cut: 0
 - Identity Slips: 0 Answer(s) with an Identity Slip, 0 id(s) slipped
 - kinds: Acquisition with Progress 11 (52%) · Acquisition without Progress 5 (24%) · Collection 1 (5%) · Bookkeeping 4 (19%) · Failed round 0 (0%) · Finalization 1 (5%)
 - search source rail: the rail’s own Search Observations
@@ -121,6 +122,7 @@ The rounds outside Finalization that called each tool — a round counts once pe
 - of those, judged Off-key by the reviewer: 0
 - Composed Addresses rewritten into a site search: 0
 - of the rewrites, judged Off-key by the reviewer: 0
+- of the rewrites, to an address the Run was shown, whole or cut: 0
 - Identity Slips: 0 Answer(s) with an Identity Slip, 0 id(s) slipped
 - kinds: Acquisition with Progress 15 (75%) · Acquisition without Progress 2 (10%) · Collection 0 (0%) · Bookkeeping 2 (10%) · Failed round 1 (5%) · Finalization 1 (5%)
 - search source rail: the rail’s own Search Observations
@@ -171,6 +173,7 @@ The rounds outside Finalization that called each tool — a round counts once pe
 - of those, judged Off-key by the reviewer: 0
 - Composed Addresses rewritten into a site search: 0
 - of the rewrites, judged Off-key by the reviewer: 0
+- of the rewrites, to an address the Run was shown, whole or cut: 0
 - Identity Slips: 0 Answer(s) with an Identity Slip, 0 id(s) slipped
 - kinds: Acquisition with Progress 9 (75%) · Acquisition without Progress 3 (25%) · Collection 0 (0%) · Bookkeeping 0 (0%) · Failed round 0 (0%) · Finalization 2 (14%)
 - search source rail: the rail’s own Search Observations
@@ -226,6 +229,7 @@ The rounds outside Finalization that called each tool — a round counts once pe
 - of those, judged Off-key by the reviewer: 2
 - Composed Addresses rewritten into a site search: 1 (round 3)
 - of the rewrites, judged Off-key by the reviewer: 1
+- of the rewrites, to an address the Run was shown, whole or cut: 0
 - Identity Slips: 0 Answer(s) with an Identity Slip, 0 id(s) slipped
 - kinds: Acquisition with Progress 8 (67%) · Acquisition without Progress 2 (17%) · Collection 0 (0%) · Bookkeeping 1 (8%) · Failed round 1 (8%) · Finalization 1 (8%)
 - search source rail: the rail’s own Search Observations
@@ -276,6 +280,7 @@ The rounds outside Finalization that called each tool — a round counts once pe
 - of those, judged Off-key by the reviewer: 0
 - Composed Addresses rewritten into a site search: 0
 - of the rewrites, judged Off-key by the reviewer: 0
+- of the rewrites, to an address the Run was shown, whole or cut: 0
 - Identity Slips: 0 Answer(s) with an Identity Slip, 0 id(s) slipped
 - kinds: Acquisition with Progress 1 (33%) · Acquisition without Progress 1 (33%) · Collection 0 (0%) · Bookkeeping 1 (33%) · Failed round 0 (0%) · Finalization 1 (25%)
 - search source none: no Search Observation in the trace, and no navigate search for the replay to find
@@ -306,6 +311,7 @@ The rounds outside Finalization that called each tool — a round counts once pe
 - of those, judged Off-key by the reviewer: 1
 - Composed Addresses rewritten into a site search: 3 (round 7, 13, 23)
 - of the rewrites, judged Off-key by the reviewer: 1
+- of the rewrites, to an address the Run was shown, whole or cut: 0
 - Identity Slips: 0 Answer(s) with an Identity Slip, 0 id(s) slipped
 - kinds: Acquisition with Progress 16 (67%) · Acquisition without Progress 3 (13%) · Collection 0 (0%) · Bookkeeping 0 (0%) · Failed round 5 (21%) · Finalization 2 (8%)
 - search source rail: the rail’s own Search Observations

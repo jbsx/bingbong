@@ -33,9 +33,9 @@
     "reviewerModel": "claude-opus-5",
     "reviewerEffort": "high",
     "reviewerPromptVersion": "audit-p2",
-    "auditCommit": "4d808f72f9f185ce4215aaf7c4f815824821fd91",
+    "auditCommit": "eb0409191432c1b3db4bd42d80a53e181d451d83",
     "auditDirtyTree": false,
-    "generatedAt": "2026-09-19T16:51:38.491Z"
+    "generatedAt": "2026-09-20T10:32:13.854Z"
   },
   "attempts": [
     {
@@ -1288,6 +1288,7 @@
           2,
           6
         ],
+        "rewrittenShownAddresses": [],
         "identitySlips": {
           "answers": 0,
           "ids": 0
@@ -2287,6 +2288,7 @@
         "walledRounds": 0,
         "notFoundNavigates": [],
         "rewrittenComposedAddresses": [],
+        "rewrittenShownAddresses": [],
         "identitySlips": {
           "answers": 1,
           "ids": 1
@@ -3776,6 +3778,7 @@
           7,
           14
         ],
+        "rewrittenShownAddresses": [],
         "identitySlips": {
           "answers": 0,
           "ids": 0
@@ -5408,6 +5411,9 @@
         "rewrittenComposedAddresses": [
           4
         ],
+        "rewrittenShownAddresses": [
+          4
+        ],
         "identitySlips": {
           "answers": 0,
           "ids": 0
@@ -5991,6 +5997,7 @@
         "walledRounds": 0,
         "notFoundNavigates": [],
         "rewrittenComposedAddresses": [],
+        "rewrittenShownAddresses": [],
         "identitySlips": {
           "answers": 0,
           "ids": 0
@@ -7475,6 +7482,7 @@
         "rewrittenComposedAddresses": [
           17
         ],
+        "rewrittenShownAddresses": [],
         "identitySlips": {
           "answers": 0,
           "ids": 0
@@ -7830,6 +7838,7 @@
       "notFoundOffKey": 4,
       "rewrittenComposedAddresses": 7,
       "rewrittenComposedAddressesOffKey": 6,
+      "rewrittenShownAddresses": 1,
       "identitySlipAnswers": 0,
       "identitySlipIds": 0,
       "identitySlipsNotRecorded": 0,
@@ -7984,6 +7993,7 @@
       "notFoundOffKey": 0,
       "rewrittenComposedAddresses": 0,
       "rewrittenComposedAddressesOffKey": 0,
+      "rewrittenShownAddresses": 0,
       "identitySlipAnswers": 1,
       "identitySlipIds": 1,
       "identitySlipsNotRecorded": 0,
