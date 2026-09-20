@@ -141,6 +141,12 @@ export interface CommandPipelineDeps {
    */
   describeRef?: (ref: number) => Promise<SnapshotRef | undefined>
   /**
+   * The visible tab's whole link hrefs (#258, ADR 0050): what the Composed
+   * Address rail offers from a page, because the printed ref line cuts a
+   * long href. Absent, the rail reads the printed text.
+   */
+  linkHrefs?: () => Promise<readonly string[] | null>
+  /**
    * Live source for the URL of the page the visible browser tab is on
    * (#111): the source URL recorded on page-facing observations in the
    * Run's Observation ledger. Absent, observations carry no source URL.
@@ -1417,6 +1423,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             ? { heldObservations: (url: string) => evidenceSession()?.store.heldObservations(url) ?? [] }
             : {}),
           ...(deps.describeRef ? { describeRef: deps.describeRef } : {}),
+          ...(deps.linkHrefs ? { linkHrefs: deps.linkHrefs } : {}),
           ...(deps.settledPageState ? { settledPageState: deps.settledPageState } : {}),
           ...(deps.tracer !== undefined || deps.browserSubspans !== undefined
             ? {

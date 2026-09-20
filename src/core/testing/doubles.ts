@@ -14,7 +14,7 @@ import type {
 } from '../ports/browser'
 import { settledStateFromSnapshot } from '../pipeline/progressFingerprints'
 import { blockerFactsFromSnapshot } from '../browser/blockerNudge'
-import type { PageSnapshot, SnapshotRef } from '../browser/snapshot'
+import { linkHrefsOf, type PageSnapshot, type SnapshotRef } from '../browser/snapshot'
 import type {
   VisionDescribeRequest,
   VisionLocateRequest,
@@ -373,6 +373,11 @@ export class FakeBrowser implements BrowserController, VisualGroundingController
 
   async describeRef(ref: number): Promise<SnapshotRef | undefined> {
     return this.refs.get(ref)
+  }
+
+  // The Composed Address rail's Offered Addresses (#258), off the overridable snapshot.
+  async linkHrefs(): Promise<readonly string[] | null> {
+    return linkHrefsOf(this.snapshot)
   }
 
   async groundingSnapshot(): Promise<PageSnapshot> {

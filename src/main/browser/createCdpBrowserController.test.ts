@@ -483,6 +483,35 @@ describe('createCdpBrowserController describeRef', () => {
   })
 })
 
+describe('createCdpBrowserController linkHrefs (#258)', () => {
+  const LONG = `https://example.com/${'long-result-address-'.repeat(15)}`
+
+  it('lists the link refs’ whole hrefs off the snapshot the last result printed, without re-collecting', async () => {
+    const cdp = new FakeCdp({ ...youtubeFixture, elements: [link('short'), { ...link('long'), href: LONG }] })
+    const { controller } = makeController({ cdp })
+    const printed = await controller.readPage()
+    const collectsBefore = cdp.collectCalls().length
+
+    const hrefs = await controller.linkHrefs()
+
+    expect(printed).not.toContain(LONG)
+    expect(hrefs).toEqual(['https://example.com/short', LONG])
+    expect(cdp.collectCalls()).toHaveLength(collectsBefore)
+  })
+
+  it('re-collects after an action invalidated the snapshot', async () => {
+    const { cdp, controller } = makeController()
+    await showRefs(controller)
+    await controller.click(1)
+    const collectsBefore = cdp.collectCalls().length
+
+    const hrefs = await controller.linkHrefs()
+
+    expect(cdp.collectCalls()).toHaveLength(collectsBefore + 1)
+    expect(hrefs).not.toBeNull()
+  })
+})
+
 describe('createCdpBrowserController visual point mapping', () => {
   it('registers a hit-tested element as a normal ref that click can use', async () => {
     const { cdp, controller } = makeController()

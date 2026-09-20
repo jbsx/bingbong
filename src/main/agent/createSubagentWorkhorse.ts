@@ -174,6 +174,7 @@ export function createSubagentTaskApi(deps: SubagentWorkhorseDeps): SubagentTask
           // A background worker has no tab, so its rails stay inert.
           ...(controller ? { settledPageState: () => controller.settledState() } : {}),
           ...(controller ? { describeRef: (ref: number) => controller.describeRef(ref) } : {}),
+          ...(controller ? { linkHrefs: () => controller.linkHrefs() } : {}),
           // What the Session holds from the page this Subagent lands on
           // (#240): a tab-less Subagent lands nowhere, so it gets none.
           ...(controller && deps.heldObservations ? { heldObservations: deps.heldObservations } : {}),

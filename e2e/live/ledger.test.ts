@@ -137,6 +137,15 @@ describe('the rewritten Composed Address counters (#255, ADR 0055)', () => {
       { label: 'Rewritten Composed Addresses judged Off-key', judgement: true, value: 1, over: null },
     ])
   })
+
+  it('reads the rewritten navigates to a shown address (#258), and an audit that predates the counter as not recorded', () => {
+    const older = readAudit('audit-fix-257-1.json')
+    const shownOf = (population: AuditSetOutput['populations']['initial']) =>
+      countersOf(population, older.attempts).find((counter) => counter.label === 'Rewritten navigates to a shown address')
+
+    expect(shownOf({ ...older.populations.initial, rewrittenShownAddresses: undefined })).toEqual({ label: 'Rewritten navigates to a shown address', judgement: false, value: null, over: null })
+    expect(shownOf({ ...older.populations.initial, rewrittenShownAddresses: 4 })).toEqual({ label: 'Rewritten navigates to a shown address', judgement: false, value: 4, over: null })
+  })
 })
 
 describe('the committed Round Audits', () => {

@@ -370,6 +370,9 @@ export function createAssistantPipeline(deps: AssistantPipelineDeps): CommandPip
     // Search-loop rail's GUI search signature (#82): typed searches are
     // classified from the typed ref's snapshot facts.
     describeRef: (ref) => controller.describeRef(ref),
+    // The Composed Address rail's Offered Addresses (#258): the tab's link
+    // hrefs whole, where the printed line cuts them.
+    linkHrefs: () => controller.linkHrefs(),
     // Observation ledger source URLs (#111): the visible tab's current page.
     currentPageUrl: () => controller.state().url ?? null,
     // No-progress rails (#126, ADR 0027): the visible tab's settled page

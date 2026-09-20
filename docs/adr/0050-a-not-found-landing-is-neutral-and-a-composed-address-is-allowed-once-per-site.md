@@ -179,3 +179,16 @@ it.
   evidence source URLs.
 - The audit's per-call record already carries `wall` from the trace; the
   landing goes beside it, not into `resultHead`, which is cut at 240 chars.
+- Note of 2026-09-20 (grilled beside the Search Loop rule, #259): the rail collected offered
+  hrefs from the printed snapshot, where an href over 80 characters is cut
+  with an ellipsis, so a long result link was never offered whole. Voyager
+  fix-257 pass 2 round 7 navigated to the exact science.nasa.gov address it
+  had been shown as a result and was rewritten as composed; 4 of the
+  capture's 18 rewrites were addresses shown cut short. The decision stands
+  and the defect is fixed by offering the ref's whole href — the one the
+  risk gate already reads, handed to the rail by the Tool Round through the
+  browser port's `linkHrefs` — and by raising the printed href cap from 80
+  to 200 so a result address is rarely cut. The audit counts rewritten
+  navigates to a shown href (`rewrittenShownAddresses`, keyed on the printed
+  text's whole hrefs and cut prefixes), 4 on fix-257 (Voyager pass 2 rounds
+  7, 10 and 21; Eurostar pass 3 round 4), and the fix gates on 0 (#258).

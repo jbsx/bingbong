@@ -45,6 +45,7 @@ import type { PipelineEvent } from '../../src/core/pipeline/events'
 import type { EffortTier } from '../../src/core/pipeline/runPlan'
 import type { SearchObservation, SearchSignature } from '../../src/core/pipeline/searchLoopRail'
 import { isSearchInspection, SEARCH_SIGNATURES, similarQueries } from '../../src/core/pipeline/searchLoopRule.ts'
+import { normalizeUrlInput } from '../../src/core/browser/urlInput.ts'
 import type { TraceRecord } from '../../src/core/trace/runTrace'
 import type { Validation } from './artifacts.ts'
 import type { LiveGradeEntry, LiveKeyTask } from './grades.ts'
@@ -356,6 +357,15 @@ export interface AuditMechanical {
    */
   readonly rewrittenComposedAddresses?: readonly number[]
   /**
+   * Of those, the round of every rewritten navigate whose address an earlier
+   * successful result of the same Run had printed, whole or cut at the
+   * snapshot's href cap (#258) — one entry per call. The count keys on the
+   * cut href's prefix, since the trace holds only the printed text, so an
+   * address that merely extends a cut link counts too. Beside the rounds,
+   * never in them. Absent on an audit written before the counter.
+   */
+  readonly rewrittenShownAddresses?: readonly number[]
+  /**
    * The Answers that carried an Identity Slip and the ids slipped in them
    * (#246, ADR 0028), counted from the Run's own `identity_slip` records.
    * Null — not recorded — for a trace written below
@@ -533,6 +543,8 @@ export interface AuditPopulation {
   readonly rewrittenComposedAddresses?: number
   /** Of those, the ones in a round the reviewer judged Off-key; judged attempts only. */
   readonly rewrittenComposedAddressesOffKey?: number
+  /** Of the rewrites, the navigates to an address the Run was shown, whole or cut (#258); absent on an audit written before the counter. */
+  readonly rewrittenShownAddresses?: number
   /** Answers with an Identity Slip over the attempts whose trace recorded them (#246). */
   readonly identitySlipAnswers: number
   /** Ids slipped in those Answers (#246). */
@@ -807,6 +819,79 @@ function rawRounds(records: readonly TraceLine[]): RawRound[] {
     const call = event as unknown as ToolCallEvent
     const settled = results.get(call.callId)
     current.calls.push({ call, result: settled?.event, landing: settled?.landing ?? null, rewritten: settled?.rewritten ?? null, checkpoint: undefined })
+  }
+  return rounds
+}
+
+// A link ref's href as the snapshot prints it: JSON-quoted, and cut with an
+// ellipsis past the href cap. The same shape the rail parses (`hrefsIn` in
+// composedAddressRail.ts), kept apart on purpose: the audit is evidence
+// about the rail, and the rail's module cannot load under plain Node, which
+// `scripts/live-audit.ts` must.
+const PRINTED_HREF_RE = /\bhref=("(?:[^"\\]|\\.)*")/g
+const ELLIPSIS = '…'
+
+function printedHrefsIn(text: string): string[] {
+  const hrefs: string[] = []
+  for (const match of text.matchAll(PRINTED_HREF_RE)) {
+    try {
+      const href: unknown = JSON.parse(match[1]!)
+      if (isString(href) && href !== '') hrefs.push(href)
+    } catch {
+      // Not an href line the snapshot printed; nothing was shown here.
+    }
+  }
+  return hrefs
+}
+
+/**
+ * An address as this counter compares it: the browser's own input
+ * normalization, then no hash and no trailing slash — the two differences
+ * the rail's fingerprint folds that a model's spelling of a shown link
+ * actually varies by. Null for what is no URL at all.
+ */
+function comparableAddress(raw: string): string | null {
+  const normalized = normalizeUrlInput(raw)
+  if (normalized === null) return null
+  try {
+    const url = new URL(normalized)
+    url.hash = ''
+    if (url.pathname.length > 1 && url.pathname.endsWith('/')) url.pathname = url.pathname.slice(0, -1)
+    return url.toString()
+  } catch {
+    return null
+  }
+}
+
+/**
+ * The rounds of the rewritten navigates whose address an earlier successful
+ * result of the Run had printed (#258), one entry per call, in order: whole
+ * — matched as a comparable address — or cut, where the address extends the
+ * printed prefix. A result offers to the calls after it, a later call of its
+ * own round included; a failed one showed nothing.
+ */
+function rewrittenShownAddressesOf(raw: readonly RawRound[]): number[] {
+  const whole = new Set<string>()
+  const prefixes: string[] = []
+  const rounds: number[] = []
+  const shown = (address: string): boolean => {
+    const comparable = comparableAddress(address)
+    if (comparable !== null && whole.has(comparable)) return true
+    return prefixes.some((prefix) => address.startsWith(prefix) || (comparable !== null && comparable.startsWith(prefix)))
+  }
+  for (const round of raw) {
+    for (const entry of round.calls) {
+      if (entry.rewritten !== null && isString(entry.call.args.url) && shown(entry.call.args.url)) rounds.push(round.round)
+      const text = entry.result !== undefined && entry.result.ok ? resultText(entry.result.result) : null
+      if (text === null) continue
+      for (const href of printedHrefsIn(text)) {
+        if (href.endsWith(ELLIPSIS)) prefixes.push(href.slice(0, -ELLIPSIS.length))
+        else {
+          const comparable = comparableAddress(href)
+          if (comparable !== null) whole.add(comparable)
+        }
+      }
+    }
   }
   return rounds
 }
@@ -1390,6 +1475,7 @@ export function classifyAttempt(input: AuditTraceInput): AuditMechanical {
     walledRounds: rounds.filter((round) => round.tags.wall).length,
     notFoundNavigates: rounds.flatMap((round) => round.calls.filter((call) => call.name === 'navigate' && call.notFound !== undefined).map(() => round.round)),
     rewrittenComposedAddresses: rounds.flatMap((round) => round.calls.filter((call) => call.rewritten !== undefined).map(() => round.round)),
+    rewrittenShownAddresses: rewrittenShownAddressesOf(raw),
     identitySlips,
     malformedAnswers: records.filter((record) => record.kind === 'malformed_answer').length,
     answerRetries: records.filter((record) => record.kind === 'answer_retry').length,
@@ -1850,6 +1936,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
   let notFoundOffKey = 0
   let rewritten = 0
   let rewrittenOffKey = 0
+  let rewrittenShown = 0
   let slipAnswers = 0
   let slipIds = 0
   let slipsNotRecorded = 0
@@ -1897,6 +1984,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
     walled += mechanical.walledRounds
     notFound += mechanical.notFoundNavigates.length
     rewritten += mechanical.rewrittenComposedAddresses?.length ?? 0
+    rewrittenShown += mechanical.rewrittenShownAddresses?.length ?? 0
     if (mechanical.identitySlips === null) slipsNotRecorded += 1
     else {
       slipAnswers += mechanical.identitySlips.answers
@@ -1965,6 +2053,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
     notFoundOffKey,
     rewrittenComposedAddresses: rewritten,
     rewrittenComposedAddressesOffKey: rewrittenOffKey,
+    rewrittenShownAddresses: rewrittenShown,
     identitySlipAnswers: slipAnswers,
     identitySlipIds: slipIds,
     identitySlipsNotRecorded: slipsNotRecorded,
@@ -2209,7 +2298,7 @@ function judgementLines(populations: readonly AuditPopulation[]): string[] {
   return populations.map(
     (population) =>
       `- ${population.label}: ${population.offKeyRounds} Off-key round(s), ${population.searchLoopRounds} Search Loop round(s) by the reviewer (${population.mechanicalSearchRounds} by the streak rule; attempts by search source ${SEARCH_SOURCES.map((source) => `${source} ${population.searchSources[source]}`).join(', ')}), ` +
-      `${population.inheritedRounds} inherited, ${population.rejectedCheckpoints} rejected Evidence Checkpoint(s), ${population.walledRounds} walled round(s), ${population.notFoundNavigates} navigate(s) landed on a Not-found Page (${population.notFoundOffKey} judged Off-key), ${population.rewrittenComposedAddresses ?? 0} Composed Address(es) rewritten into a site search (${population.rewrittenComposedAddressesOffKey ?? 0} judged Off-key), ${population.subagentRounds} Subagent round(s), ` +
+      `${population.inheritedRounds} inherited, ${population.rejectedCheckpoints} rejected Evidence Checkpoint(s), ${population.walledRounds} walled round(s), ${population.notFoundNavigates} navigate(s) landed on a Not-found Page (${population.notFoundOffKey} judged Off-key), ${population.rewrittenComposedAddresses ?? 0} Composed Address(es) rewritten into a site search (${population.rewrittenComposedAddressesOffKey ?? 0} judged Off-key, ${population.rewrittenShownAddresses ?? 'not counted'} to an address the Run was shown), ${population.subagentRounds} Subagent round(s), ` +
       `${population.mergedCheckpoints} merged Evidence Checkpoint(s) (a floor), ${population.heldPageRoundsWithoutProgress} Held Page round(s) without Progress, ${population.bundledCheckpoints} bundled checkpoint round(s), ${population.sameSourceUnsupportedRounds} same-source unsupported round(s), ${populationSlipsText(population)}, ` +
       `${population.malformedAnswers} Malformed Answer(s) (${population.answerRetries} retried), ` +
       `${populationSkipsText(population)}, ${populationCutsText(population)}, ` +
@@ -2250,6 +2339,8 @@ function attemptSection(attempt: AuditAttempt): string[] {
   const rewrites = mechanical.rewrittenComposedAddresses ?? []
   lines.push(`- Composed Addresses rewritten into a site search: ${rewrites.length}${rewrites.length > 0 ? ` (round ${rewrites.join(', ')})` : ''}`)
   lines.push(`- of the rewrites, judged Off-key by the reviewer: ${judgement === null ? 'not judged' : rewrittenOffKeyOf(mechanical, judgement)}`)
+  const shown = mechanical.rewrittenShownAddresses
+  lines.push(`- of the rewrites, to an address the Run was shown, whole or cut: ${shown === undefined ? 'not counted' : `${shown.length}${shown.length > 0 ? ` (round ${shown.join(', ')})` : ''}`}`)
   const slips = mechanical.identitySlips
   lines.push(`- Identity Slips: ${slips === null ? `not recorded (a Run Trace below version ${IDENTITY_SLIP_TRACE_VERSION})` : slipCountsText(slips.answers, slips.ids)}`)
   lines.push(`- kinds: ${ROUND_KINDS.map((kind) => `${KIND_LABELS[kind]} ${mechanical.counts[kind]} (${pct(mechanical.shares[kind])})`).join(' · ')}`)

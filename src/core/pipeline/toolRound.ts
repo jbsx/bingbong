@@ -220,6 +220,13 @@ export interface ToolRoundConfig {
   readonly heldObservations?: HeldObservationsLookup
   /** Snapshot ref facts: how the search-loop rail recognizes a typed GUI search (#82). */
   describeRef?(ref: number): Promise<SnapshotRef | undefined>
+  /**
+   * The whole hrefs of the visible tab's link refs (#258, ADR 0050): what
+   * the Composed Address rail offers after a successful page-facing call,
+   * because the printed ref line cuts a long href. Null when the page cannot
+   * be read; absent — a caller with no tab — the rail reads the printed text.
+   */
+  linkHrefs?(): Promise<readonly string[] | null>
   /** The visible tab's settled page state: the no-progress rails' comparison input (#126). */
   settledPageState?(): Promise<SettledPageState | null> | SettledPageState | null
   /** How many vision calls this round's budget grants (#83). Defaults to the orchestrator's. */
@@ -347,6 +354,21 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
   const composedAddressRail = capabilities.composedAddressRail
     ? createComposedAddressRail(config.evidenceSourceUrls ? { evidenceSourceUrls: config.evidenceSourceUrls } : {})
     : null
+  /**
+   * The tab's whole link hrefs for the Composed Address rail (#258), or
+   * undefined where the caller has no seam: the rail then reads the printed
+   * text. A seam that throws hands null — the page could not be read — and
+   * the text stands in the same way; the round never fails on it.
+   */
+  async function readLinkHrefs(turnId: string | undefined): Promise<readonly string[] | null | undefined> {
+    if (config.linkHrefs === undefined) return undefined
+    try {
+      return await config.linkHrefs()
+    } catch (error) {
+      reportFault('pipeline.toolRound.linkHrefs', error, { turnId })
+      return null
+    }
+  }
   /** Which route this call spends, read from the catalog's own flag rather than a name (#212). */
   const routeOf = (call: ToolCall): VerificationRoute | null =>
     verificationRail === null ? null : verificationRouteOf(call, (name) => toolsByName.get(name)?.usesVision === true)
@@ -685,7 +707,12 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
       // navigate that landed on a Not-found Page spends its site's
       // allowance — before the round's next call is rewritten or gated. It
       // observes the call that ran, so a rewritten one is the search it was.
-      composedAddressRail?.observe(executedCall, outcome, sourceUrl ?? null)
+      // The links a page-facing call showed are offered whole from the
+      // tab's refs (#258): the printed line cuts a long href.
+      if (composedAddressRail !== null) {
+        const linkHrefs = classification.pageFacing && outcome.ok ? await readLinkHrefs(turnId) : undefined
+        composedAddressRail.observe(executedCall, outcome, sourceUrl ?? null, linkHrefs)
+      }
       // The verification rail (#212, ADR 0041): a failed check spends its
       // route for the rest of this run, and the words the route reported
       // are handed to the Session verbatim — the rail derives no cause

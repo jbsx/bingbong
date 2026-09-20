@@ -1009,6 +1009,66 @@ describe('Not-found Landings (#239, ADR 0050)', () => {
   })
 })
 
+// #258: a rewritten navigate whose address an earlier successful result of
+// the Run had printed, whole or cut at the snapshot's href cap. The count keys
+// on the cut href's prefix — the trace holds only the printed text — which is
+// exactly the defect the fix removes; an address that merely extends the
+// prefix counts too, because the audit cannot tell it from the link's own.
+describe('Rewritten navigates to a shown address (#258)', () => {
+  const LONG = `https://science.nasa.gov/missions/voyager-program/${'nasa-voyager-status-update-on-voyager-1-location-'.repeat(4)}`
+  /** The link as the pre-#258 snapshot printed it: cut at 80 with an ellipsis. */
+  const CUT = `${LONG.slice(0, 79)}…`
+  const SHORT = 'https://www.nasa.gov/news-release/voyager-2013/'
+  const LATER = 'https://www.nasa.gov/news-release/voyager-later/'
+  const DEAD = 'https://www.jpl.nasa.gov/news/voyager-2013-09'
+  const RESULTS = 'https://duckduckgo.com/?q=voyager+status'
+  const results = (hrefs: readonly string[], signature: string): string =>
+    `navigated: url=${RESULTS} title="DuckDuckGo"\n# DuckDuckGo — ${RESULTS}\nsignature ${signature}\n${hrefs.map((href, index) => `[${index + 1}] link "r${index}" href=${JSON.stringify(href)}`).join('\n')}\npage text:\nresults`
+  const rewrite = (url: string, round: number): RoundSpec['calls'] extends readonly (infer C)[] | undefined ? C : never => ({
+    name: 'navigate',
+    args: { url },
+    result: `Rewritten — nasa.gov already answered not found for a composed address this run, so ${url} was not opened; it ran as a search of the site instead: "x site:nasa.gov". Open a result you were shown rather than composing another address.\n${PAGE('DuckDuckGo', `https://duckduckgo.com/?q=x${round}`, `bbbb000${round}`)}`,
+    rewritten: { site: 'nasa.gov', query: 'x site:nasa.gov' },
+  })
+  const ROUNDS: RoundSpec[] = [
+    { round: 1, at: 1_000, calls: [{ name: 'navigate', args: { url: RESULTS }, result: results([CUT, SHORT], 'cccc0001') }] },
+    { round: 2, at: 2_000, calls: [{ name: 'navigate', args: { url: DEAD }, result: `${PAGE('Page Not Found - NASA', DEAD, 'dead0001')}\nNOT-FOUND:404 www.jpl.nasa.gov\nadvice`, notFound: { basis: '404', host: 'www.jpl.nasa.gov' } }] },
+    // Shown cut: the whole address extends the printed prefix.
+    { round: 3, at: 3_000, calls: [rewrite(LONG, 3)] },
+    // Shown whole, matched by fingerprint: a dropped trailing slash is the same address.
+    { round: 4, at: 4_000, calls: [rewrite(SHORT.slice(0, -1), 4)] },
+    // Composed: shown nowhere.
+    { round: 5, at: 5_000, calls: [rewrite('https://www.nasa.gov/voyager-guess', 5)] },
+    // A wrong reconstruction of the cut link counts too: the audit only sees the prefix.
+    { round: 6, at: 6_000, calls: [rewrite(`${LONG}2013/`, 6)] },
+    // Shown only later, and in a failed result before that: not shown when navigated.
+    { round: 7, at: 7_000, calls: [{ name: 'navigate', args: { url: RESULTS }, ok: false, error: `net::ERR_FAILED ${results([LATER], 'cccc0002')}` }, rewrite(LATER, 7)] },
+    { round: 8, at: 8_000, calls: [{ name: 'navigate', args: { url: RESULTS }, result: results([LATER], 'cccc0003') }, rewrite(LATER, 8)] },
+  ]
+
+  it('counts the rewritten navigates whose address an earlier successful result printed, whole or cut, beside the rewrites', () => {
+    const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, EXTRA) }))
+
+    expect(mechanical.rewrittenComposedAddresses).toEqual([3, 4, 5, 6, 7, 8])
+    expect(mechanical.rewrittenShownAddresses).toEqual([3, 4, 6, 8])
+  })
+
+  it('re-keys no cached judgement: the counter lives beside the rounds', () => {
+    const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, EXTRA) }))
+    for (const round of mechanical.rounds) expect(JSON.stringify(round)).not.toContain('rewrittenShown')
+  })
+
+  it('prints the count per attempt and per population, in JSON and Markdown', () => {
+    const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, EXTRA) }))
+    const set = buildAuditSet(provenanceOf(), [{ mechanical, review: null, countsAfterOverrules: mechanical.counts }], [])
+
+    expect(set.populations.initial).toMatchObject({ rewrittenComposedAddresses: 6, rewrittenShownAddresses: 4 })
+    const markdown = formatAuditSet(set)
+    expect(markdown).toContain('- of the rewrites, to an address the Run was shown, whole or cut: 4 (round 3, 4, 6, 8)')
+    expect(markdown).toContain('6 Composed Address(es) rewritten into a site search (0 judged Off-key, 4 to an address the Run was shown)')
+  })
+})
+
 describe('Rewritten Composed Addresses (#255, ADR 0055)', () => {
   const DEAD = 'https://www.nasa.gov/voyager-2013-09'
   const COMPOSED = 'https://www.nasa.gov/voyager-record'
@@ -1059,11 +1119,12 @@ describe('Rewritten Composed Addresses (#255, ADR 0055)', () => {
     const review: AuditReview = { judgement: judged, caveats: [], model: 'reviewer', served: null, effort: 'high', promptVersion: '1', digestHash: mechanical.digestHash, costUsd: null, durationMs: null, judgedAt: null }
     const set = buildAuditSet(provenanceOf(), [{ mechanical, review, countsAfterOverrules: countsAfterOverrulesOf(mechanical, judged) }], [])
 
-    expect(set.populations.initial).toMatchObject({ rewrittenComposedAddresses: 1, rewrittenComposedAddressesOffKey: 1, notFoundNavigates: 1, notFoundOffKey: 0 })
+    expect(set.populations.initial).toMatchObject({ rewrittenComposedAddresses: 1, rewrittenComposedAddressesOffKey: 1, rewrittenShownAddresses: 0, notFoundNavigates: 1, notFoundOffKey: 0 })
     const markdown = formatAuditSet(set)
     expect(markdown).toContain('- Composed Addresses rewritten into a site search: 1 (round 2)')
     expect(markdown).toContain('- of the rewrites, judged Off-key by the reviewer: 1')
-    expect(markdown).toContain('1 Composed Address(es) rewritten into a site search (1 judged Off-key)')
+    expect(markdown).toContain('- of the rewrites, to an address the Run was shown, whole or cut: 0')
+    expect(markdown).toContain('1 Composed Address(es) rewritten into a site search (1 judged Off-key, 0 to an address the Run was shown)')
     expect(markdown).toContain('[rewritten, off-key]')
 
     const unjudged = formatAuditSet(buildAuditSet(provenanceOf(), [{ mechanical, review: null, countsAfterOverrules: mechanical.counts }], []))
@@ -1411,7 +1472,9 @@ describe('the committed audit outputs', () => {
       const text = readFileSync(join(REPORTS_DIR, name), 'utf8')
       expect(keyLeaks(text, keyTexts), name).toEqual([])
       expect(text, name).not.toContain('e2e/live/private')
-      expect(text, name).not.toMatch(/\/home\/[a-z]/)
+      // A local home directory leaks as a path, never inside a URL's own
+      // path (www.nasa.gov/home/hqnews is a public page, fix-256r2).
+      expect(text, name).not.toMatch(/(?<![\w.:-])\/home\/[a-z]/)
     }
   })
 

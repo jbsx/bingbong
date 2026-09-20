@@ -1023,7 +1023,9 @@ _Avoid_: 404 hit, failed navigate, bad guess
 **Composed Address**:
 A URL the model navigates to that it was not shown this Run — not an href in a
 result it read, not a page the Run landed on, not a source in Session
-Evidence. An Offered Address is any of those three. A site allows one
+Evidence. An Offered Address is any of those three, and an href is offered
+whole: the address the link carries, not the shortened form a snapshot may
+print it in. A site allows one
 Not-found Landing by a Composed Address per Run; after it, a Composed Address
 to that site is rewritten into a search of that site, and searches and
 Offered Addresses stay open. A site

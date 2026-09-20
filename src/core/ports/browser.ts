@@ -125,6 +125,13 @@ export interface BrowserController {
   settledState(): Promise<SettledPageState | null>
   /** Facts about a snapshot ref for risk assessment; undefined when the ref no longer resolves. */
   describeRef(ref: number): Promise<SnapshotRef | undefined>
+  /**
+   * Every link ref's whole href off the freshest collected snapshot, in ref
+   * order (#258, ADR 0050): what the Composed Address rail offers from a
+   * page, because the formatted ref line cuts an href over the snapshot's
+   * cap. Read after page-facing actions; null when the page cannot be read.
+   */
+  linkHrefs(): Promise<readonly string[] | null>
 }
 
 /** Extra browser capability required only by visual grounding. */

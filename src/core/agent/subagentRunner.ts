@@ -179,6 +179,11 @@ export interface RunSubagentDeps {
    * only q= navigations count as searches.
    */
   describeRef?(ref: number): Promise<SnapshotRef | undefined>
+  /**
+   * The whole link hrefs of this agent's own tab (#258): what its Composed
+   * Address rail offers from a page. Absent, the rail reads the printed text.
+   */
+  linkHrefs?(): Promise<readonly string[] | null>
 }
 
 export interface RunSubagentOptions {
@@ -636,6 +641,7 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
     ...(deps.currentPageUrl ? { currentPageUrl: deps.currentPageUrl } : {}),
     ...(deps.settledPageState ? { settledPageState: deps.settledPageState } : {}),
     ...(deps.describeRef ? { describeRef: deps.describeRef } : {}),
+    ...(deps.linkHrefs ? { linkHrefs: deps.linkHrefs } : {}),
     ...(deps.heldObservations ? { heldObservations: deps.heldObservations } : {}),
     evidenceSourceUrls: () => offeredByParent,
   })

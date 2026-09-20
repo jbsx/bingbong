@@ -17,6 +17,7 @@ import {
   findSnapshotRef,
   formatPageRead,
   formatPageSnapshot,
+  linkHrefsOf,
   pageReadPartCount,
   parseCollectedPage,
   type PageSnapshot,
@@ -1077,6 +1078,18 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     }
   }
 
+  // The Composed Address rail's Offered Addresses (#258): the whole hrefs the
+  // freshest snapshot's link refs carry — the same snapshot the last result
+  // printed, re-collected only where an action invalidated it.
+  async function linkHrefs(): Promise<readonly string[] | null> {
+    try {
+      return linkHrefsOf(await currentSnapshot())
+    } catch (error) {
+      reportFault('browser.createCdpBrowserController.linkHrefs', error)
+      return null
+    }
+  }
+
   async function groundingSnapshot(): Promise<PageSnapshot> {
     return collectSnapshot()
   }
@@ -1190,6 +1203,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     pageFacts,
     settledState,
     describeRef,
+    linkHrefs,
     groundingSnapshot,
     refAtPoint,
     showRef,

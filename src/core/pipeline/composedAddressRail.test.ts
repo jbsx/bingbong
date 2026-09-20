@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ToolCall, ToolResultOutcome } from '../ports/llm'
+import { MAX_HREF_LENGTH, truncateText } from '../browser/snapshot'
 import {
   composedAddressRewriteLine,
   composedAddressSearchQuery,
@@ -155,6 +156,54 @@ describe('createComposedAddressRail (#239, ADR 0050; #255, ADR 0055)', () => {
 
     expect(rail.rewrite(nav('https://science.nasa.gov/mission/voyager/golden-record/'))).toBeNull()
     expect(rail.rewrite(nav('https://www.nasa.gov/voyager-golden-record'))).not.toBeNull()
+  })
+
+  // #258: the snapshot prints an href over the cap cut with an ellipsis, so
+  // the printed text never carries a long result link whole. Where the caller
+  // hands in the link refs' hrefs, they are what the result offers.
+  describe('a long href is offered whole (#258)', () => {
+    const LONG = `https://science.nasa.gov/missions/voyager-program/${'nasa-voyager-status-update-on-voyager-1-location-'.repeat(4)}`
+    const PRINTED = truncateText(LONG, MAX_HREF_LENGTH)
+
+    it('offers the ref’s whole href where the caller hands the refs in, whatever the printed text cut it to', () => {
+      expect(LONG.length).toBeGreaterThan(MAX_HREF_LENGTH)
+      expect(PRINTED.endsWith('…')).toBe(true)
+      const rail = createComposedAddressRail()
+      const results = nav('https://duckduckgo.com/?q=voyager+status')
+      rail.observe(results, found('https://duckduckgo.com/?q=voyager+status', [PRINTED]), null, [LONG])
+      const guess = nav('https://www.jpl.nasa.gov/news/voyager-2013-09')
+      rail.observe(guess, notFound('https://www.jpl.nasa.gov/news/voyager-2013-09', 'www.jpl.nasa.gov'))
+
+      // The whole address passes; a different address extending the same
+      // printed prefix is still composed, and so is the cut form itself.
+      expect(rail.rewrite(nav(LONG))).toBeNull()
+      expect(rail.rewrite(nav(`${LONG}2013/`))).not.toBeNull()
+      expect(rail.rewrite(nav(PRINTED.slice(0, -1)))).not.toBeNull()
+    })
+
+    it('parses the printed hrefs only where no refs are handed in', () => {
+      const text = found('https://duckduckgo.com/?q=voyager', ['https://www.nasa.gov/news-release/voyager-2013/', PRINTED])
+      const guess = nav('https://www.jpl.nasa.gov/news/voyager-2013-09')
+
+      // No refs: the text is the source, and a cut href offers no whole address.
+      const parsed = createComposedAddressRail()
+      parsed.observe(nav('https://duckduckgo.com/?q=voyager'), text)
+      parsed.observe(guess, notFound('https://www.jpl.nasa.gov/news/voyager-2013-09', 'www.jpl.nasa.gov'))
+      expect(parsed.rewrite(nav('https://www.nasa.gov/news-release/voyager-2013/'))).toBeNull()
+      expect(parsed.rewrite(nav(LONG))).not.toBeNull()
+
+      // Refs handed in, even none: they are the source, not the text.
+      const handed = createComposedAddressRail()
+      handed.observe(nav('https://duckduckgo.com/?q=voyager'), text, null, [])
+      handed.observe(guess, notFound('https://www.jpl.nasa.gov/news/voyager-2013-09', 'www.jpl.nasa.gov'))
+      expect(handed.rewrite(nav('https://www.nasa.gov/news-release/voyager-2013/'))).not.toBeNull()
+
+      // A caller whose page could not be read hands null, and the text stands in.
+      const unread = createComposedAddressRail()
+      unread.observe(nav('https://duckduckgo.com/?q=voyager'), text, null, null)
+      unread.observe(guess, notFound('https://www.jpl.nasa.gov/news/voyager-2013-09', 'www.jpl.nasa.gov'))
+      expect(unread.rewrite(nav('https://www.nasa.gov/news-release/voyager-2013/'))).toBeNull()
+    })
   })
 })
 

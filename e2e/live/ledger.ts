@@ -554,6 +554,7 @@ export function countersOf(population: AuditPopulation, attempts: readonly Audit
     judged('Not-found landings judged Off-key', older.notFoundOffKey),
     mechanical('Rewritten Composed Addresses', older.rewrittenComposedAddresses),
     judged('Rewritten Composed Addresses judged Off-key', older.rewrittenComposedAddressesOffKey),
+    mechanical('Rewritten navigates to a shown address', older.rewrittenShownAddresses),
     mechanical('Identity Slip Answers', older.identitySlipAnswers),
     mechanical('Identity Slip ids', older.identitySlipIds),
     mechanical('Attempts with Identity Slips not recorded', older.identitySlipsNotRecorded),

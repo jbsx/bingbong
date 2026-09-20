@@ -6,6 +6,7 @@ import { blockerFactsFromSnapshot, type BlockerPageFacts } from '../browser/bloc
 import {
   buildPageSnapshot,
   findSnapshotRef,
+  linkHrefsOf,
   formatPageSnapshot,
   parseCollectedPage,
   type CollectedPage,
@@ -127,6 +128,10 @@ class FixtureBrowserController implements BrowserController {
 
   async describeRef(ref: number): Promise<SnapshotRef | undefined> {
     return this.overrides.get(ref) ?? findSnapshotRef(this.snapshot, ref)
+  }
+
+  async linkHrefs(): Promise<readonly string[] | null> {
+    return linkHrefsOf(this.snapshot)
   }
 
 }

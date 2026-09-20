@@ -69,6 +69,8 @@ function harness(
     /** What the interrupts seam raises when asked, as Stop does. Undefined: the run is live. */
     stoppedWith?: () => Error | undefined
     settledPageState?: () => SettledPageState | null
+    /** The visible tab's whole link hrefs (#258): what the Composed Address rail offers from a page. */
+    linkHrefs?: ToolRoundConfig['linkHrefs']
     activeWorkDeadlineMs?: number
     /** Whether the Run has anything new to record (#256): what the epoch words its next round by. */
     somethingToRecord?: () => boolean
@@ -156,6 +158,7 @@ function harness(
     ...(options.soleCall ? { soleCall: options.soleCall } : {}),
     ...(options.currentHost ? { currentHost: options.currentHost } : {}),
     ...(options.settledPageState ? { settledPageState: options.settledPageState } : {}),
+    ...(options.linkHrefs ? { linkHrefs: options.linkHrefs } : {}),
     ...(options.visionCalls !== undefined ? { visionCalls: options.visionCalls } : {}),
     ...(options.verification ? { verification: options.verification } : {}),
     ...(options.currentPageUrl ? { currentPageUrl: options.currentPageUrl } : {}),
@@ -760,6 +763,64 @@ describe('the Composed Address rail runs per call (#239, ADR 0050; #255, ADR 005
       `execute:navigate:${RESULT_HREF}`,
       'execute:navigate:https://duckduckgo.com/?q=voyager+records+site%3Anasa.gov',
     ])
+  })
+
+  it('offers a result link whole from the caller’s link refs, where the printed href was cut (#258)', async () => {
+    const long = `https://science.nasa.gov/missions/voyager-program/${'nasa-voyager-status-update-on-voyager-1-location-'.repeat(4)}`
+    const printed = `${long.slice(0, 199)}…`
+    /** A navigate whose q= search prints one long result cut at the cap, as the snapshot does. */
+    const searchTool = (trace: string[]): Tool => ({
+      name: 'navigate',
+      acquisition: true,
+      async execute(callArg: ToolCall): Promise<unknown> {
+        const url = String(callArg.args.url)
+        trace.push(`execute:navigate:${url}`)
+        if (url.includes('/dead/')) return `navigated: url=${url} title="Page Not Found - NASA"\nNOT-FOUND:404 www.nasa.gov\nThis address names nothing on nasa.gov.`
+        if (url.includes('?q=')) return `navigated: url=${url} title="Search"\n# Search — ${url}\n[1] link "Status update" href=${JSON.stringify(printed)}`
+        return `navigated: url=${url} title="NASA"\n# NASA — ${url}`
+      },
+    })
+    const script = async (h: Harness) => {
+      await h.round([call('navigate', { url: 'https://duckduckgo.com/?q=voyager+status' }, 's')])
+      await h.round([call('navigate', { url: 'https://www.jpl.nasa.gov/dead/voyager-2013-09' }, 'dead')])
+      await h.round([call('navigate', { url: long }, 'open')])
+    }
+
+    // With the seam, the whole address the result carried is no composed address.
+    const withRefs: string[] = []
+    let reads = 0
+    await script(
+      harness([searchTool(withRefs)], {
+        trace: withRefs,
+        linkHrefs: async () => {
+          reads += 1
+          return [long]
+        },
+      }),
+    )
+    expect(executed(withRefs).at(-1)).toBe(`execute:navigate:${long}`)
+    // Read once per successful page-facing call.
+    expect(reads).toBe(3)
+
+    // Without it the rail reads the printed text, where the link was cut, and the navigate is rewritten.
+    const printedOnly: string[] = []
+    await script(harness([searchTool(printedOnly)], { trace: printedOnly }))
+    expect(executed(printedOnly).at(-1)).toMatch(/^execute:navigate:https:\/\/duckduckgo\.com\/\?q=.*site%3Anasa\.gov$/)
+
+    // A seam that throws or cannot read the page hands nothing, and the text stands in.
+    const unread: string[] = []
+    await script(harness([searchTool(unread)], { trace: unread, linkHrefs: async () => null }))
+    expect(executed(unread).at(-1)).toMatch(/^execute:navigate:https:\/\/duckduckgo\.com/)
+    const throwing: string[] = []
+    await script(
+      harness([searchTool(throwing)], {
+        trace: throwing,
+        linkHrefs: async () => {
+          throw new Error('registry died')
+        },
+      }),
+    )
+    expect(executed(throwing).at(-1)).toMatch(/^execute:navigate:https:\/\/duckduckgo\.com/)
   })
 
   it('starts a new executor — a new Run — at zero', async () => {

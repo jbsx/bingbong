@@ -161,7 +161,14 @@ export const MAX_SNAPSHOT_REFS = 75
  * Outcome carries is held to, a scroll's New In View included (#194). */
 export const MAX_SNAPSHOT_TEXT = 1800
 const MAX_LABEL_LENGTH = 80
-const MAX_HREF_LENGTH = 80
+/**
+ * The printed href's cap (#258, ADR 0050): a result address is rarely over
+ * 200 characters, and prompt tokens do not move latency, so a link the model
+ * is shown is nearly always shown whole. The ref keeps the whole href
+ * whatever its length — the risk gate and the Composed Address rail read it
+ * there — and only the formatted line is cut.
+ */
+export const MAX_HREF_LENGTH = 200
 
 const BUTTON_INPUT_TYPES = new Set(['submit', 'button', 'reset', 'image'])
 
@@ -320,10 +327,20 @@ function truncateLabel(label: string): string {
 }
 
 // Display-only truncation (#77): the ref keeps the full href for the risk
-// gate; only the formatted line caps it, so a link-dense SERP stays within
-// format bounds.
+// gate and the Composed Address rail; only the formatted line caps it, so a
+// link-dense SERP stays within format bounds.
 function truncateHref(href: string): string {
   return truncateText(href, MAX_HREF_LENGTH)
+}
+
+/**
+ * Every link ref's whole href, in ref order (#258, ADR 0050): what the
+ * Composed Address rail offers from a page, because the printed ref line
+ * cuts an href over {@link MAX_HREF_LENGTH}. A ref without an href is no
+ * address and is left out.
+ */
+export function linkHrefsOf(snapshot: PageSnapshot): string[] {
+  return snapshot.refs.flatMap((ref) => (ref.href === null ? [] : [ref.href]))
 }
 
 /** A collected page's text: its blocks, the preview, the whole length, and what is in view. */

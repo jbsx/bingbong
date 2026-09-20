@@ -3,10 +3,12 @@ import challengeIframe from './fixtures/challenge-iframe.json'
 import youtubeHome from './fixtures/youtube-home.json'
 import type { CollectedElement, CollectedPage } from './snapshot'
 import {
+  MAX_HREF_LENGTH,
   buildPageSnapshot,
   clickPoint,
   formatPageRead,
   formatPageSnapshot,
+  linkHrefsOf,
   pageReadPartCount,
   pageSignature,
   parseCollectedPage,
@@ -646,21 +648,44 @@ describe('link hrefs', () => {
     expect(text).not.toContain('href=')
   })
 
-  it('truncates very long hrefs', () => {
+  it('prints an href up to the cap whole, and cuts a longer one at it (#258)', () => {
+    expect(MAX_HREF_LENGTH).toBe(200)
+    const whole = `https://example.com/${'w'.repeat(MAX_HREF_LENGTH - 'https://example.com/'.length)}`
+    expect(whole).toHaveLength(MAX_HREF_LENGTH)
     const text = formatPageSnapshot(
       buildPageSnapshot(
         page({
-          elements: [element({ tag: 'a', label: 'Long link', href: `https://example.com/${'x'.repeat(120)}` })],
+          elements: [
+            element({ tag: 'a', label: 'Whole link', href: whole }),
+            element({ tag: 'a', label: 'Long link', href: `https://example.com/${'x'.repeat(300)}` }),
+          ],
         }),
       ),
     )
 
-    expect(text).toContain(`href="https://example.com/${'x'.repeat(59)}…"`)
-    expect(text).not.toContain('x'.repeat(60))
+    expect(text).toContain(`href="${whole}"`)
+    expect(text).toContain(`href="https://example.com/${'x'.repeat(MAX_HREF_LENGTH - 'https://example.com/'.length - 1)}…"`)
+    expect(text).not.toContain('x'.repeat(MAX_HREF_LENGTH))
+  })
+
+  it('lists every link ref’s whole href, in ref order, for the Composed Address rail (#258)', () => {
+    const long = `https://example.com/long/${'z'.repeat(300)}`
+    const snapshot = buildPageSnapshot(
+      page({
+        elements: [
+          element({ tag: 'a', label: 'Long link', href: long }),
+          element({ tag: 'button', label: 'Go' }),
+          element({ tag: 'a', label: 'Anchor' }),
+          element({ tag: 'a', label: 'Short', href: 'https://example.com/short' }),
+        ],
+      }),
+    )
+
+    expect(linkHrefsOf(snapshot)).toEqual([long, 'https://example.com/short'])
   })
 
   it('keeps the full href on the ref — truncation is display-only', () => {
-    const href = `https://example.com/long/${'z'.repeat(120)}`
+    const href = `https://example.com/long/${'z'.repeat(300)}`
     const snapshot = buildPageSnapshot(page({ elements: [element({ tag: 'a', label: 'Long link', href })] }))
 
     expect(snapshot.refs[0]?.href).toBe(href)
@@ -685,10 +710,10 @@ describe('link hrefs', () => {
     expect(snapshot.truncated).toBe(true)
     const refLines = text.split('\n').filter((line) => /^\[\d+\] link /.test(line))
     expect(refLines).toHaveLength(75)
-    // [NN] link (9) + "80-char label" (82) + href="80-char" (88) ≤ 179.
-    for (const line of refLines) expect(line.length).toBeLessThanOrEqual(200)
+    // [NN] link (10) + "80-char label" (82) + href="200-char" (208) ≤ 300.
+    for (const line of refLines) expect(line.length).toBeLessThanOrEqual(300)
     expect(text).toContain('(+45 more not listed)')
-    expect(text).not.toContain('y'.repeat(81))
+    expect(text).not.toContain('y'.repeat(201))
     expect(text).not.toContain('r'.repeat(81))
   })
 })

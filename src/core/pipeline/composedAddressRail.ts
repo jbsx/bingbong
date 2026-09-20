@@ -64,8 +64,17 @@ export interface ComposedAddressRail {
    * becomes the Run's engine, and a navigate to a Composed Address that
    * landed on a Not-found Page spends its site's allowance. `landedUrl` is
    * the page the tab settled on after the call, when the caller knows it.
+   *
+   * `linkHrefs` is every link ref's whole href on the page the result
+   * showed, when the caller can read them (#258): the printed ref line cuts
+   * an href over the snapshot's cap, so an href is offered whole — the
+   * address the link carries, not the form the text prints. Handed in, they
+   * are the hrefs the result offers, even when there are none; absent, or
+   * null because the page could not be read, the printed text is parsed for
+   * them instead. The page headers and `url=` lines are read from the text
+   * either way.
    */
-  observe(call: ToolCall, outcome: ToolResultOutcome, landedUrl?: string | null): void
+  observe(call: ToolCall, outcome: ToolResultOutcome, landedUrl?: string | null, linkHrefs?: readonly string[] | null): void
 }
 
 /**
@@ -242,7 +251,7 @@ export function createComposedAddressRail(deps: ComposedAddressRailDeps = {}): C
       const url = searchUrlOn(query)
       return { site: target.site, from: String(call.args.url), query, url, call: { ...call, args: { ...call.args, url } } }
     },
-    observe(call, outcome, landedUrl) {
+    observe(call, outcome, landedUrl, linkHrefs) {
       // A failed or refused call showed nothing and landed nowhere.
       if (!outcome.ok || typeof outcome.result !== 'string') return
       const text = outcome.result
@@ -254,8 +263,9 @@ export function createComposedAddressRail(deps: ComposedAddressRailDeps = {}): C
         const target = composed(call)
         if (target !== null) spent.add(target.site)
       }
-      // The links a page shows are offered, a not-found page's included.
-      for (const href of hrefsIn(text)) offer(href)
+      // The links a page shows are offered, a not-found page's included —
+      // whole, from the refs, where the caller could read them (#258).
+      for (const href of linkHrefs ?? hrefsIn(text)) offer(href)
       // The page itself is offered only when it names something: an address
       // that answered not found is no address the model was shown, and
       // returning to it is the guess again.
