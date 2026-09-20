@@ -188,4 +188,4 @@ it.
   and the defect is fixed by offering the ref's whole href — the one the
   risk gate already reads — and by raising the printed href cap from 80 to
   200 so a result address is rarely cut. The audit counts rewritten
-  navigates to a shown href, 4 on fix-257, and the fix gates on 0.
+  navigates to a shown href, 4 on fix-257, and the fix gates on 0 (#258).
