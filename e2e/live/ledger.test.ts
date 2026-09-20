@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import type { AuditAggregate, AuditPopulation, AuditSetOutput } from './audit.ts'
+import { replaySearchStreaks, searchLoopCountsOf, type AuditAggregate, type AuditPopulation, type AuditSetOutput } from './audit.ts'
 import {
   HEADLINE_METRICS,
   buildLedger,
@@ -149,22 +149,29 @@ describe('the rewritten Composed Address counters (#255, ADR 0055)', () => {
 })
 
 describe('the streak-rule counters (#259, ADR 0058)', () => {
-  it('reads the rounds at streak 2 and 3 or beyond over the budgeted rounds, and an audit that predates them as not recorded', () => {
+  it('reads the rounds at streak 2 and 3 or beyond over the budgeted rounds, and recounts an audit that predates them under the current rule', () => {
     const older = readAudit('audit-fix-257-1.json')
+    const initials = older.attempts.filter((attempt) => attempt.mechanical.relation === 'initial')
     const streakOf = (population: AuditSetOutput['populations']['initial']) =>
-      countersOf(population, older.attempts).filter((counter) => counter.label.startsWith('Search rounds at streak'))
+      countersOf(population, initials).filter((counter) => counter.label.startsWith('Search rounds at streak'))
     const budgeted = older.populations.initial.budgetedRounds
 
+    // fix-257 was audited under the same-intent rule and carries neither
+    // field: the ledger recounts its rounds by the audit's own replay, so a
+    // capture under the consecutive rule compares like for like with it.
+    const recounted = initials.map((attempt) => searchLoopCountsOf(replaySearchStreaks(attempt.mechanical.rounds)))
+    const sum = (key: 'searchRoundsAtStreak2' | 'searchRoundsAtStreak3') => recounted.reduce((total, counts) => total + counts[key], 0)
+    expect(sum('searchRoundsAtStreak2')).toBeGreaterThan(0)
     expect(streakOf(older.populations.initial)).toEqual([
-      { label: 'Search rounds at streak 2 or beyond', judgement: false, value: null, over: budgeted },
-      { label: 'Search rounds at streak 3 or beyond', judgement: false, value: null, over: budgeted },
+      { label: 'Search rounds at streak 2 or beyond', judgement: false, value: sum('searchRoundsAtStreak2'), over: budgeted },
+      { label: 'Search rounds at streak 3 or beyond', judgement: false, value: sum('searchRoundsAtStreak3'), over: budgeted },
     ])
     expect(streakOf({ ...older.populations.initial, searchRoundsAtStreak2: 12, searchRoundsAtStreak3: 7 })).toEqual([
       { label: 'Search rounds at streak 2 or beyond', judgement: false, value: 12, over: budgeted },
       { label: 'Search rounds at streak 3 or beyond', judgement: false, value: 7, over: budgeted },
     ])
-    // The counter the ledger already compared keeps its name and its reading.
-    expect(countersOf(older.populations.initial, older.attempts).find((counter) => counter.label === 'Search Loop rounds by the streak rule')).toEqual({
+    // The counter the ledger already compared keeps its name and its reading, whichever rule wrote it.
+    expect(countersOf(older.populations.initial, initials).find((counter) => counter.label === 'Search Loop rounds by the streak rule')).toEqual({
       label: 'Search Loop rounds by the streak rule',
       judgement: false,
       value: older.populations.initial.mechanicalSearchRounds,

@@ -9,6 +9,7 @@ import {
   searchStreakAfter,
   searchStreakMoveOf,
   similarQueries,
+  type SearchCallKind,
   type SearchSignature,
 } from './searchLoopRule'
 import { reportFault } from '../trace/fault'
@@ -139,7 +140,7 @@ const REFUSAL = `Search loop limit (${SEARCH_LOOP_REFUSE_AFTER} consecutive simi
  * inspection (observed, never resets), or an escaping call (resets on
  * success only).
  */
-type Classification = { kind: 'search'; query: string; signature: SearchSignature } | { kind: 'inspection' } | { kind: 'other' }
+type Classification = { kind: 'search'; query: string; signature: SearchSignature } | { kind: Exclude<SearchCallKind, 'search'> }
 
 export function createSearchLoopRail(deps: SearchLoopRailDeps = {}): SearchLoopRail {
   let streak = 0

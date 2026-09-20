@@ -32,7 +32,9 @@ import {
   LIVE_AUDIT_AGGREGATE_KIND,
   LIVE_AUDIT_KIND,
   populationOf,
+  replaySearchStreaks,
   ROUND_KINDS,
+  searchLoopCountsOf,
   type AuditAggregate,
   type AuditAttempt,
   type AuditPopulation,
@@ -506,6 +508,21 @@ const GRADE_COUNTERS: readonly { readonly label: string; readonly status: string
   { label: 'Pending attempts', status: 'pending' },
 ]
 
+/**
+ * The rounds at streak 2 and 3 or beyond of an audit written before #259,
+ * recounted from its attempts' rounds under the rail's current rule (ADR
+ * 0058) by the audit's own replay — the rounds as judged are untouched.
+ */
+function recountedStreakRoundsOf(attempts: readonly AuditAttempt[]): Pick<AuditPopulation, 'searchRoundsAtStreak2' | 'searchRoundsAtStreak3'> {
+  const totals = { searchRoundsAtStreak2: 0, searchRoundsAtStreak3: 0 }
+  for (const attempt of attempts) {
+    const counts = searchLoopCountsOf(replaySearchStreaks(attempt.mechanical.rounds))
+    totals.searchRoundsAtStreak2 += counts.searchRoundsAtStreak2
+    totals.searchRoundsAtStreak3 += counts.searchRoundsAtStreak3
+  }
+  return totals
+}
+
 /** Every counter of a population, in a fixed order, for the all-counters expander (#251, Decision 4). */
 export function countersOf(population: AuditPopulation, attempts: readonly AuditAttempt[]): readonly Counter[] {
   const mechanical = (label: string, value: number | undefined, over: number | null = null): Counter => ({ label, judgement: false, value: recorded(value), over })
@@ -521,6 +538,7 @@ export function countersOf(population: AuditPopulation, attempts: readonly Audit
   // recorded, and "0 after a first token" would be a claim nobody made.
   const cuts = older.allowanceFinalizationRounds ?? 0
   const splitUnrecorded = older.allowanceFinalizationRoundsNotRecorded === undefined || (cuts > 0 && older.allowanceFinalizationRoundsNotRecorded === cuts)
+  const streakRounds = older.searchRoundsAtStreak2 === undefined || older.searchRoundsAtStreak3 === undefined ? recountedStreakRoundsOf(attempts) : older
   return [
     mechanical('Attempts', population.attempts),
     judged('Judged attempts', population.judged),
@@ -541,9 +559,13 @@ export function countersOf(population: AuditPopulation, attempts: readonly Audit
     judged('Search Loop rounds', population.searchLoopRounds, budgeted),
     mechanical('Search Loop rounds by the streak rule', population.mechanicalSearchRounds, budgeted),
     // #259, ADR 0058: the streak by the consecutive rule, two counts beside
-    // the one above; an audit written before them reads as nothing.
-    mechanical('Search rounds at streak 2 or beyond', older.searchRoundsAtStreak2, budgeted),
-    mechanical('Search rounds at streak 3 or beyond', older.searchRoundsAtStreak3, budgeted),
+    // the one above. An audit written before them is recounted from its
+    // rounds under the current rule rather than read as nothing, so a
+    // Subject under the rule compares like for like with a Reference
+    // audited under the same-intent one; the counter above stays as the
+    // audit wrote it, whichever rule wrote it.
+    mechanical('Search rounds at streak 2 or beyond', streakRounds.searchRoundsAtStreak2, budgeted),
+    mechanical('Search rounds at streak 3 or beyond', streakRounds.searchRoundsAtStreak3, budgeted),
     mechanical('Attempts with search source: rail', older.searchSources?.rail),
     mechanical('Attempts with search source: replay', older.searchSources?.replay),
     mechanical('Attempts with search source: none', older.searchSources?.none),

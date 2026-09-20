@@ -766,8 +766,10 @@ or beyond plus those heads, and beside it `searchRoundsAtStreak2` and
 `searchRoundsAtStreak3` (#259) count the rounds at streak 2 or beyond and at 3
 or beyond — 3 is the rail's nudge tier, so the second is the rounds the live
 rail nudged or refused on. `replaySearchStreaks` re-derives the streaks of a
-report already written, which is how the committed fix-257 audits were
-recounted under the new rule without re-judging them (`audit.test.ts`). Rounds are numbered by position in the digest,
+report already written: the Fix Ledger uses it to recount an audit that
+predates the two counters when it reads one, so a Subject under the rule
+compares like for like with a Reference audited under the same-intent one,
+and `audit.test.ts` pins the recount of the committed fix-257 audits. Rounds are numbered by position in the digest,
 with the trace's round and attempt beside them, because a retried round repeats
 its number. The same trace classifies identically on every run, and every attempt carries a `digestHash` over the
 digest the reviewer was shown; `audit.test.ts` pins the copied budgets, rungs and
@@ -1055,7 +1057,10 @@ with its share of the budgeted rounds beside the count — useful partials and h
 the headline. A counter an older audit did not record reads as nothing, not
 zero; an audit judged under `audit-p1` has no `answer_omitted` verdict and
 carries its unsatisfied checks as `checksNotReached`, and the ledger reads
-both names.
+both names. One exception (#259, ADR 0058): the two search-streak counters
+of an audit that predates them are recounted from its rounds under the
+rail's current rule, because the rule changed and a nothing there would
+leave a Subject with no like-for-like Reference.
 
 **The markers**, per metric, never a refusal. Judgement metrics (the verdicts,
 Off-key, and in the expander Search Loop, Early Stop, Answer Omission,

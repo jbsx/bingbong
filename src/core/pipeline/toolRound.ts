@@ -541,10 +541,12 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
       if (!grant.ok) return { ok: false, error: grant.reason }
     }
 
-    // Run rails (#74/#82/#83): a blind search loop — consecutive similar
-    // GUI searches (q= navigations, typed search box queries) with
-    // nothing in between — is refused before it executes, like the vision
-    // budget. Any other tool call clears the cap.
+    // Run rails (#74/#82/#83, ADR 0058): a Search Loop — consecutive GUI
+    // searches (q= navigations, typed search box queries) with nothing
+    // opened between them, whatever their terms — is refused before it
+    // executes, like the vision budget. Only escape clears the cap: a
+    // successful call that is not inspection and did not land on a
+    // Not-found Page.
     if (searchLoopRail !== null) {
       const searchLoopGate = await searchLoopRail.gate(call)
       if (!searchLoopGate.ok) return { ok: false, error: searchLoopGate.reason }

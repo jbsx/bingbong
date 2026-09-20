@@ -24,6 +24,9 @@ export const SEARCH_LOOP_NUDGE_AFTER = 3
 /** Consecutive searches with nothing opened between them before the gate refuses the next (#74). */
 export const SEARCH_LOOP_REFUSE_AFTER = 5
 
+/** What the rail read a call as: a search, inspection of a search's results, or any other call. */
+export type SearchCallKind = 'search' | 'inspection' | 'other'
+
 /** What one processed call is to the streak (ADR 0058). */
 export type SearchStreakMove = 'search' | 'escape' | 'hold'
 
@@ -46,7 +49,7 @@ export function searchStreakAfter(streak: number, move: SearchStreakMove): numbe
  * search returned without leaving it; any other call escapes only when it
  * consumed something — it succeeded, and did not land on a Not-found Page.
  */
-export function searchStreakMoveOf(kind: 'search' | 'inspection' | 'other', consumed: boolean): SearchStreakMove {
+export function searchStreakMoveOf(kind: SearchCallKind, consumed: boolean): SearchStreakMove {
   if (kind === 'search') return 'search'
   if (kind === 'inspection') return 'hold'
   return consumed ? 'escape' : 'hold'

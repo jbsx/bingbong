@@ -78,8 +78,12 @@ similarity rides beside the streak as `rewords` from streak 2, and the
 Progress reason of a search at streak 2 or beyond names the rule: "a search
 after a search with nothing opened between them", rewording noted when it
 is one. The digest a reviewer is shown changes accordingly, so a cached
-judgement of an old capture re-keys if that capture is ever re-audited; the
-committed fix-257 audits were recounted from their JSON, never re-judged.
+judgement of an old capture re-keys if that capture is ever re-audited. The
+committed fix-257 audits are unchanged: the Fix Ledger recounts an audit
+that predates the two new counters from its rounds, by the same replay, when
+it reads it (`recountedStreakRoundsOf`), so the marginal against fix-257
+compares the rule with itself; `mechanicalSearchRounds` stays as each audit
+wrote it. The recount is pinned in `audit.test.ts`.
 
 The recount on the audit's own population — the orchestrator's rounds,
 which is what the reviewer's 47 loop rounds are over — is 37 rounds at

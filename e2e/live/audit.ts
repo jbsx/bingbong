@@ -44,7 +44,7 @@ import type { PerfSpanRecord } from '../../src/core/perf/perfTracer'
 import type { PipelineEvent } from '../../src/core/pipeline/events'
 import type { EffortTier } from '../../src/core/pipeline/runPlan'
 import type { SearchObservation, SearchSignature } from '../../src/core/pipeline/searchLoopRail'
-import { isSearchInspection, SEARCH_SIGNATURES, searchStreakAfter, searchStreakMoveOf, similarQueries } from '../../src/core/pipeline/searchLoopRule.ts'
+import { isSearchInspection, SEARCH_LOOP_NUDGE_AFTER, SEARCH_SIGNATURES, searchStreakAfter, searchStreakMoveOf, similarQueries } from '../../src/core/pipeline/searchLoopRule.ts'
 import { normalizeUrlInput } from '../../src/core/browser/urlInput.ts'
 import type { TraceRecord } from '../../src/core/trace/runTrace'
 import type { Validation } from './artifacts.ts'
@@ -143,8 +143,8 @@ export const FIRST_TOKEN_TRACE_VERSION = 4
 const LATENCY_JOIN_TOLERANCE_MS = 2_000
 /** A search at this streak followed a search with nothing opened between them (ADR 0058): no Progress. */
 const SEARCH_STREAK_WITHOUT_PROGRESS = 2
-/** The streak from which a search is a Search Loop round for the second counter (#259): the rail's nudge tier. */
-const SEARCH_STREAK_NUDGED = 3
+/** The streak from which a search is a Search Loop round for the second counter (#259): the rail's own nudge tier, never a copy of it. */
+const SEARCH_STREAK_NUDGED = SEARCH_LOOP_NUDGE_AFTER
 
 // ---------------------------------------------------------------------------
 // Shapes
@@ -962,25 +962,48 @@ export function searchLoopCountsOf(rounds: readonly AuditRound[]): Pick<AuditMec
  * the digest the reviewer saw — and `rewords` is recomputed beside the streak.
  */
 export function replaySearchStreaks(rounds: readonly AuditRound[]): AuditRound[] {
-  let streak = 0
-  let lastSearchQuery: string | null = null
+  const state: SearchStreakState = { streak: 0, lastSearchQuery: null }
   return rounds.map((round) => ({
     ...round,
     calls: round.calls.map((call) => {
-      if (call.search !== null) {
-        streak = searchStreakAfter(streak, 'search')
-        const rewords = streak >= SEARCH_STREAK_WITHOUT_PROGRESS ? { rewords: lastSearchQuery !== null && similarQueries(call.search.query, lastSearchQuery) } : {}
-        lastSearchQuery = call.search.query
-        const search = { query: call.search.query, streak, ...(call.search.signature === undefined ? {} : { signature: call.search.signature }), ...rewords }
-        return { ...call, search }
-      }
-      const consumed = call.ok === true && !call.refused && call.notFound === undefined
-      const move = searchStreakMoveOf(isSearchInspection(call.name) ? 'inspection' : 'other', consumed)
-      streak = searchStreakAfter(streak, move)
-      if (move === 'escape') lastSearchQuery = null
-      return call
+      const search = advanceSearchStreak(state, {
+        name: call.name,
+        consumed: call.ok === true && !call.refused && call.notFound === undefined,
+        search: call.search === null ? null : { query: call.search.query, ...(call.search.signature === undefined ? {} : { signature: call.search.signature }) },
+      })
+      return search === null ? call : { ...call, search }
     }),
   }))
+}
+
+/** The Search Loop rail's streak as the audit replays it, and the streak's last query for `rewords`. */
+interface SearchStreakState {
+  streak: number
+  lastSearchQuery: string | null
+}
+
+/**
+ * One call's step of the streak, shared by the fresh classification and the
+ * recount of a written report so the two cannot drift: a search advances the
+ * streak and yields its search line (`rewords` from streak 2, against the
+ * streak's previous search); any other call holds or, when it consumed
+ * something and is not inspection, escapes. The caller says what the call
+ * was — which only it can read off its source — and whether it consumed.
+ */
+function advanceSearchStreak(
+  state: SearchStreakState,
+  call: { readonly name: string; readonly consumed: boolean; readonly search: { readonly query: string; readonly signature?: SearchSignature } | null },
+): NonNullable<AuditCall['search']> | null {
+  if (call.search !== null) {
+    state.streak = searchStreakAfter(state.streak, 'search')
+    const rewords = state.streak >= SEARCH_STREAK_WITHOUT_PROGRESS ? { rewords: state.lastSearchQuery !== null && similarQueries(call.search.query, state.lastSearchQuery) } : {}
+    state.lastSearchQuery = call.search.query
+    return { query: head(call.search.query, 120)!, streak: state.streak, ...(call.search.signature === undefined ? {} : { signature: call.search.signature }), ...rewords }
+  }
+  const move = searchStreakMoveOf(isSearchInspection(call.name) ? 'inspection' : 'other', call.consumed)
+  state.streak = searchStreakAfter(state.streak, move)
+  if (move === 'escape') state.lastSearchQuery = null
+  return null
 }
 
 /**
@@ -1003,9 +1026,8 @@ interface ProgressState {
   readonly observed: Set<string>
   /** The page the Run is on, as the last successful result said. */
   currentUrl: string | null
-  /** The Search Loop rail's streak, replayed by its rule, and the query of the streak's last search for `rewords`. */
-  lastSearchQuery: string | null
-  streak: number
+  /** The Search Loop rail's streak, replayed by its rule. */
+  readonly search: SearchStreakState
 }
 
 /**
@@ -1088,21 +1110,10 @@ function classifyCall(
     const query = entry.rewritten?.query ?? searchQueryOf(isString(call.args.url) ? call.args.url : '')
     if (query !== null) observed = { query }
   }
-  let search: AuditCall['search'] = null
-  if (observed !== null) {
-    state.streak = searchStreakAfter(state.streak, 'search')
-    const rewords = state.streak >= SEARCH_STREAK_WITHOUT_PROGRESS ? { rewords: state.lastSearchQuery !== null && similarQueries(observed.query, state.lastSearchQuery) } : {}
-    state.lastSearchQuery = observed.query
-    search = { query: head(observed.query, 120)!, streak: state.streak, ...(observed.signature === undefined ? {} : { signature: observed.signature }), ...rewords }
-  } else {
-    // A navigate that landed on a Not-found Page is inspection to the rail
-    // (#239, ADR 0050): it never resets the streak; nor does a refused or
-    // failed call, which consumed nothing.
-    const consumed = result !== undefined && result.ok && !refused && landing === null
-    const move = searchStreakMoveOf(isSearchInspection(call.name) ? 'inspection' : 'other', consumed)
-    state.streak = searchStreakAfter(state.streak, move)
-    if (move === 'escape') state.lastSearchQuery = null
-  }
+  // A navigate that landed on a Not-found Page is inspection to the rail
+  // (#239, ADR 0050): it never resets the streak; nor does a refused or
+  // failed call, which consumed nothing.
+  const search = advanceSearchStreak(state.search, { name: call.name, consumed: result !== undefined && result.ok && !refused && landing === null, search: observed })
 
   // Collection and Bookkeeping make no Progress claim; everything else is
   // Acquisition, the catalog's own tools by flag and any other tool as a
@@ -1342,7 +1353,7 @@ export function classifyAttempt(input: AuditTraceInput): AuditMechanical {
   // from the rail's observations when the attempt carries any (#243).
   const observations = railObservationsOf(records)
   const railObservations = observations.size > 0 ? observations : null
-  const state: ProgressState = { acquiredUrls: new Set(), observed: new Set(), currentUrl: null, lastSearchQuery: null, streak: 0 }
+  const state: ProgressState = { acquiredUrls: new Set(), observed: new Set(), currentUrl: null, search: { streak: 0, lastSearchQuery: null } }
   const classified = raw.map((round) => {
     const calls = round.calls.map((entry) => classifyCall(entry, state, input.parentCheckpointedUrls, railObservations))
     return { round, calls: calls.map((item) => item.call), inherited: calls.some((item) => item.inherited) }
