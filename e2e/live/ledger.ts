@@ -540,6 +540,10 @@ export function countersOf(population: AuditPopulation, attempts: readonly Audit
     judged('Off-key rounds', population.offKeyRounds, budgeted),
     judged('Search Loop rounds', population.searchLoopRounds, budgeted),
     mechanical('Search Loop rounds by the streak rule', population.mechanicalSearchRounds, budgeted),
+    // #259, ADR 0058: the streak by the consecutive rule, two counts beside
+    // the one above; an audit written before them reads as nothing.
+    mechanical('Search rounds at streak 2 or beyond', older.searchRoundsAtStreak2, budgeted),
+    mechanical('Search rounds at streak 3 or beyond', older.searchRoundsAtStreak3, budgeted),
     mechanical('Attempts with search source: rail', older.searchSources?.rail),
     mechanical('Attempts with search source: replay', older.searchSources?.replay),
     mechanical('Attempts with search source: none', older.searchSources?.none),

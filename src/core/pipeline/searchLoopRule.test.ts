@@ -1,10 +1,19 @@
 import { describe, expect, it } from 'vitest'
-import { isSearchInspection, queryTokens, similarQueries } from './searchLoopRule'
+import {
+  isSearchInspection,
+  queryTokens,
+  SEARCH_LOOP_NUDGE_AFTER,
+  SEARCH_LOOP_REFUSE_AFTER,
+  searchStreakAfter,
+  searchStreakMoveOf,
+  similarQueries,
+} from './searchLoopRule'
 
 // Issue #238, ADR 0048: the Search Loop rail's pure rule — what one Search
 // Intent is (its terms with scope removed), and which calls inspect a
 // search's results rather than escape them. The Round Audit replays these
-// same functions over the Run Trace.
+// same functions over the Run Trace. #259 (ADR 0058) added the streak
+// itself: a search after a search continues it, whatever the terms.
 
 describe('queryTokens folds scope out of a Search Intent', () => {
   it('drops a search operator together with its argument', () => {
@@ -89,5 +98,28 @@ describe('isSearchInspection (Decision 5)', () => {
     for (const name of ['click', 'navigate', 'type', 'back', 'go_forward', 'download_url', 'record_evidence']) {
       expect(isSearchInspection(name)).toBe(false)
     }
+  })
+})
+
+describe('the streak (#259, ADR 0058): a search after a search, with nothing opened between them', () => {
+  it('advances on a search, ends on an escape, and holds on anything else', () => {
+    expect(searchStreakAfter(0, 'search')).toBe(1)
+    expect(searchStreakAfter(3, 'search')).toBe(4)
+    expect(searchStreakAfter(3, 'escape')).toBe(0)
+    expect(searchStreakAfter(3, 'hold')).toBe(3)
+  })
+
+  it('reads a call as a move: a search whatever its outcome, inspection holds, another call escapes only when it consumed something', () => {
+    expect(searchStreakMoveOf('search', false)).toBe('search')
+    expect(searchStreakMoveOf('search', true)).toBe('search')
+    expect(searchStreakMoveOf('inspection', true)).toBe('hold')
+    expect(searchStreakMoveOf('other', true)).toBe('escape')
+    // A failed or refused call, or one that landed on a Not-found Page, consumed nothing.
+    expect(searchStreakMoveOf('other', false)).toBe('hold')
+  })
+
+  it('keeps the tiers where #74 set them: nudge at three, refuse at five, and two in a row free', () => {
+    expect(SEARCH_LOOP_NUDGE_AFTER).toBe(3)
+    expect(SEARCH_LOOP_REFUSE_AFTER).toBe(5)
   })
 })

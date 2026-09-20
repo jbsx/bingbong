@@ -2,7 +2,15 @@ import type { ToolCall, ToolResultOutcome } from '../ports/llm'
 import type { SnapshotRef } from '../browser/snapshot'
 import { landedOnNotFoundPage } from '../browser/notFoundPage'
 import { isSearchInputRef, refNumberOf, searchQueryFromUrl, typedQuery } from './progressFingerprints'
-import { isSearchInspection, similarQueries, type SearchSignature } from './searchLoopRule'
+import {
+  isSearchInspection,
+  SEARCH_LOOP_NUDGE_AFTER,
+  SEARCH_LOOP_REFUSE_AFTER,
+  searchStreakAfter,
+  searchStreakMoveOf,
+  similarQueries,
+  type SearchSignature,
+} from './searchLoopRule'
 import { reportFault } from '../trace/fault'
 
 // Issue #74, run rails: the 80-round flail's signature is a blind search
@@ -26,13 +34,12 @@ import { reportFault } from '../trace/fault'
 // observed, never resetting — and only escaping resets: a successful
 // non-read, non-search tool call (opening a result by href or click, any
 // other tool). A failed call consumed nothing, so the model is still blind
-// (run 46: failing tools plus endless reworded searches). Run 47's real
-// rewordings score ~0.4–0.6 against their neighbors, so the threshold sits
-// below the old 0.6 at 0.45; the replay fixture in searchLoopRail.test.ts
-// pins that the actual 80-call sequence produces refusals under the GUI
-// signature alone. Known blind spot, still accepted: synonym rewordings
-// that share no tokens ("best pizza near me" vs "top pizza places nearby")
-// do not chain.
+// (run 46: failing tools plus endless reworded searches). The replay
+// fixture in searchLoopRail.test.ts pins that the actual 80-call sequence
+// produces refusals under the GUI signature alone. Until #259 the streak
+// also asked whether two searches reworded one intent (token similarity at
+// 0.45, tuned to run 47's rewordings); that blind spot — rewordings that
+// share no tokens — is what the live web turned out to be made of.
 //
 // #125 moved the pure signature functions (query tokens and similarity,
 // URL → query extraction, search-input ref classification) into
@@ -53,19 +60,23 @@ import { reportFault } from '../trace/fault'
 // for a call it classified as a search, a Search Observation — the query as
 // the rail read it, the signature it ran under and the streak it left. The
 // Tool Round records the observation to the Run Trace; the rail itself stays
-// free of any trace dependency beyond the fault route, and the Round Audit
-// reads what the rail saw rather than re-deriving it.
+// free of any trace dependency beyond the fault route.
+//
+// #259 (ADR 0058) dropped the same-intent comparison from the streak. On the
+// live web the rewordings of one intent rarely share words — the fix-257
+// capture recorded 103 Search Observations and never reached streak 3 while
+// the reviewer placed 47 rounds in Search Loops — so the streak now asks
+// only what did not happen between two searches: a search after a search
+// with no escape between them is streak + 1, whatever its terms, engine or
+// surface. The rule itself (`searchStreakAfter`, `searchStreakMoveOf`) and
+// the tiers live in searchLoopRule.ts, which the Round Audit replays.
+// Search Intent stays as the no-progress fingerprint; the rail no longer
+// reads it.
 
-/** Consecutive similar searches before the advisory nudge rides the result. */
-export const SEARCH_LOOP_NUDGE_AFTER = 3
-
-/** Consecutive similar searches before the gate refuses further ones. */
-export const SEARCH_LOOP_REFUSE_AFTER = 5
-
-// The rail's public signature surface now lives in progressFingerprints.ts;
-// re-exported here so the module's consumers (and its tests) keep one
-// import path.
-export { similarQueries, searchQueryFromUrl, isSearchInputRef }
+// The tiers and the signature surface live in searchLoopRule.ts and
+// progressFingerprints.ts; re-exported here so the module's consumers (and
+// its tests) keep one import path.
+export { SEARCH_LOOP_NUDGE_AFTER, SEARCH_LOOP_REFUSE_AFTER, similarQueries, searchQueryFromUrl, isSearchInputRef }
 
 export type SearchLoopGate = { ok: true } | { ok: false; reason: string }
 
@@ -101,16 +112,17 @@ export interface SearchLoopRailDeps {
 export interface SearchLoopRail {
   /**
    * Pre-execution gate (vision-budget pattern): refuses a search — q=
-   * navigate or typed search box query — whose intent repeats the current
-   * streak once the cap is reached. Every other call passes untouched.
+   * navigate or typed search box query — once the streak has reached the
+   * cap. Every other call passes untouched.
    */
   gate(call: ToolCall): Promise<SearchLoopGate>
   /**
    * Post-execution observation of every processed tool call — this is what
    * tracks (and resets) the streak. A successful escaping call (anything
-   * but a search or a read) resets it; reads never reset, failed calls
-   * leave it alone. The verdict carries the advisory nudge once the streak
-   * reaches the nudge tier, and a Search Observation for every search (#243).
+   * but a search or inspection) resets it; inspection never resets, failed
+   * calls leave it alone. The verdict carries the advisory nudge once the
+   * streak reaches the nudge tier, and a Search Observation for every
+   * search (#243).
    */
   observe(call: ToolCall, outcome: ToolResultOutcome): Promise<SearchLoopVerdict>
 }
@@ -118,40 +130,23 @@ export interface SearchLoopRail {
 const NO_VERDICT: SearchLoopVerdict = { notice: null, observation: null }
 
 const NUDGE =
-  'The last searches reword one intent (a q= navigate or a search box query) — more searches will not surface new results. Change strategy: open a promising result by its href, read the page (read_page), or answer from what you already have. If you cannot proceed, say so and ask_user.'
+  'The last searches reword one intent (a q= navigate or a search box query) — more searches will not surface new results. Change strategy: open a promising result by its ref or its href, read the page (read_page), or answer from what you already have. If you cannot proceed, say so and ask_user.'
 
-const REFUSAL = `Search loop limit (${SEARCH_LOOP_REFUSE_AFTER} consecutive similar searches — q= navigate or typed search box query) reached for this run — the queries repeat one intent. Change strategy or ask_user; only escaping clears the limit (open a result by its href or a click, or any successful tool call other than read_page, look or scroll).`
+const REFUSAL = `Search loop limit (${SEARCH_LOOP_REFUSE_AFTER} consecutive similar searches — q= navigate or typed search box query) reached for this run — the queries repeat one intent. Change strategy or ask_user; only escaping clears the limit (open a result by its ref or its href, or any successful tool call other than read_page, look or scroll).`
 
 /**
- * What a call is to the rail: a search observation with its query, a read
- * (observed, never resets), or an escaping call (resets on success only).
+ * What a call is to the rail: a search observation with its query,
+ * inspection (observed, never resets), or an escaping call (resets on
+ * success only).
  */
-type Classification = { kind: 'search'; query: string; signature: SearchSignature } | { kind: 'read' } | { kind: 'other' }
+type Classification = { kind: 'search'; query: string; signature: SearchSignature } | { kind: 'inspection' } | { kind: 'other' }
 
 export function createSearchLoopRail(deps: SearchLoopRailDeps = {}): SearchLoopRail {
-  let lastQuery: string | null = null
-  // The streak's first query: rewordings compare against both the previous
-  // query and this anchor, so a drift that wanders one token per call — or
-  // one that drifts out and returns to the original wording — stays caught.
-  let anchor: string | null = null
   let streak = 0
   // describeRef memo between one call's gate and observe: the pipeline
   // classifies every call twice, and the ref's facts cannot change between
   // the pre-execution gate and the post-execution observation.
   let typeMemo: { call: ToolCall; query: string | null } | null = null
-
-  function reset(): void {
-    lastQuery = null
-    anchor = null
-    streak = 0
-  }
-
-  function continuesStreak(query: string): boolean {
-    return (
-      (lastQuery !== null && similarQueries(query, lastQuery)) ||
-      (anchor !== null && similarQueries(query, anchor))
-    )
-  }
 
   async function typeSearchQuery(call: ToolCall): Promise<string | null> {
     if (typeMemo?.call === call) return typeMemo.query
@@ -175,7 +170,7 @@ export function createSearchLoopRail(deps: SearchLoopRailDeps = {}): SearchLoopR
   async function classify(call: ToolCall): Promise<Classification> {
     // Inspection never resets the streak (run 53, ADR 0048): reading,
     // looking at or scrolling a page between reworded searches is not escape.
-    if (isSearchInspection(call.name)) return { kind: 'read' }
+    if (isSearchInspection(call.name)) return { kind: 'inspection' }
     if (call.name === 'navigate') {
       const url = call.args.url
       if (typeof url !== 'string' || url.trim() === '') return { kind: 'other' }
@@ -193,29 +188,18 @@ export function createSearchLoopRail(deps: SearchLoopRailDeps = {}): SearchLoopR
     async gate(call) {
       const classified = await classify(call)
       if (classified.kind !== 'search') return { ok: true }
-      return streak >= SEARCH_LOOP_REFUSE_AFTER && continuesStreak(classified.query)
-        ? { ok: false, reason: REFUSAL }
-        : { ok: true }
+      return streak >= SEARCH_LOOP_REFUSE_AFTER ? { ok: false, reason: REFUSAL } : { ok: true }
     },
     async observe(call, outcome) {
       const classified = await classify(call)
-      if (classified.kind === 'read') return NO_VERDICT
-      if (classified.kind === 'other') {
-        // A successful escape consumed something, breaking the blind
-        // loop; a failed one changes nothing, so the streak survives. A
-        // call that landed on a Not-found Page (#239, ADR 0050) consumed
-        // nothing either: it has not left the results any more than a
-        // scroll has, so it is inspection — observed, never resetting.
-        if (outcome.ok && !landedOnNotFoundPage(outcome)) reset()
-        return NO_VERDICT
-      }
-      // Chain to the previous query and the anchor, not just the streak's
-      // first query — drift must not walk out of the rail in either
-      // direction.
-      const continues = continuesStreak(classified.query)
-      streak = continues ? streak + 1 : 1
-      anchor = continues ? anchor : classified.query
-      lastQuery = classified.query
+      // A successful escape consumed something, breaking the blind loop; a
+      // failed one changes nothing, so the streak survives. A call that
+      // landed on a Not-found Page (#239, ADR 0050) consumed nothing either:
+      // it has not left the results any more than a scroll has, so it is
+      // inspection — observed, never resetting.
+      const consumed = outcome.ok && !landedOnNotFoundPage(outcome)
+      streak = searchStreakAfter(streak, searchStreakMoveOf(classified.kind, consumed))
+      if (classified.kind !== 'search') return NO_VERDICT
       return {
         notice: streak >= SEARCH_LOOP_NUDGE_AFTER ? NUDGE : null,
         observation: { query: classified.query, signature: classified.signature, streak },

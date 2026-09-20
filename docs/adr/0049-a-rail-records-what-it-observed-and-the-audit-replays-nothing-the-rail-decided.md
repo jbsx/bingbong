@@ -8,6 +8,13 @@ what the Round Audit's search replay is for; the Search Loop rail's rule,
 signatures, tiers and threshold are unchanged. #243 blocks #238's capture,
 not its code.
 
+Amended by [ADR 0058](0058-a-search-loop-is-consecutive-searches-with-nothing-opened-between-them.md)
+(#259, 2026-09-20): the audit still takes which calls were searches, their
+query and signature from the observation, but replays the streak by the
+rail's rule instead of reading the recorded number, so a capture taken
+under the older same-intent rule counts under the current one. The
+observation keeps recording the streak the rail left.
+
 ## Context
 
 The Round Audit replays the Search Loop rail's rule over a Run Trace to count

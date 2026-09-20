@@ -44,7 +44,7 @@ import type { PerfSpanRecord } from '../../src/core/perf/perfTracer'
 import type { PipelineEvent } from '../../src/core/pipeline/events'
 import type { EffortTier } from '../../src/core/pipeline/runPlan'
 import type { SearchObservation, SearchSignature } from '../../src/core/pipeline/searchLoopRail'
-import { isSearchInspection, SEARCH_SIGNATURES, similarQueries } from '../../src/core/pipeline/searchLoopRule.ts'
+import { isSearchInspection, SEARCH_SIGNATURES, searchStreakAfter, searchStreakMoveOf, similarQueries } from '../../src/core/pipeline/searchLoopRule.ts'
 import { normalizeUrlInput } from '../../src/core/browser/urlInput.ts'
 import type { TraceRecord } from '../../src/core/trace/runTrace'
 import type { Validation } from './artifacts.ts'
@@ -141,8 +141,10 @@ export const FINALIZATION_ENTRY_TRACE_VERSION = 3
 export const FIRST_TOKEN_TRACE_VERSION = 4
 /** How far apart a perf `llm` span's end and an `llm_round` record may be and still be the same round. */
 const LATENCY_JOIN_TOLERANCE_MS = 2_000
-/** A search that continues a streak of this length rewords the one before it. */
+/** A search at this streak followed a search with nothing opened between them (ADR 0058): no Progress. */
 const SEARCH_STREAK_WITHOUT_PROGRESS = 2
+/** The streak from which a search is a Search Loop round for the second counter (#259): the rail's nudge tier. */
+const SEARCH_STREAK_NUDGED = 3
 
 // ---------------------------------------------------------------------------
 // Shapes
@@ -181,13 +183,17 @@ export interface AuditCall {
   /** The app's own Notices riding the result, as marker names. */
   readonly notices: readonly string[]
   /**
-   * The search this call was and the streak it left. Read from the rail's
-   * Search Observation where the attempt carries them, with the signature the
-   * search ran under (#243, ADR 0049); otherwise replayed from a `navigate`'s
-   * query with no signature, so a replayed attempt's digest is the one it
-   * always had.
+   * The search this call was and the streak it left. Which calls were
+   * searches, and their queries, come from the rail's Search Observations
+   * where the attempt carries them, with the signature the search ran under
+   * (#243, ADR 0049); otherwise from a `navigate`'s query with no signature.
+   * The streak is the rail's rule replayed over those calls (ADR 0058: a
+   * search after a search with nothing opened between them), so a trace
+   * recorded under the older same-intent rule is read by the current one.
+   * From streak 2, `rewords` says whether the search shares a Search Intent
+   * with the one before it — the reviewer's aid, no longer the rule.
    */
-  readonly search: { readonly query: string; readonly streak: number; readonly signature?: SearchSignature } | null
+  readonly search: { readonly query: string; readonly streak: number; readonly signature?: SearchSignature; readonly rewords?: boolean } | null
   /** Why this call did or did not make Progress, in the words of the rule that decided. */
   readonly progress: { readonly made: boolean; readonly reason: string } | null
 }
@@ -331,7 +337,7 @@ export interface AuditMechanical {
    * never in them, so it re-keys no cached judgement.
    */
   readonly heldPageRoundsWithoutProgress: number
-  /** Search Loop rounds by the streak rule: the rounds whose search rewords the one before it, and the heads of those loops. */
+  /** Search Loop rounds by the streak rule: the rounds at streak 2 or beyond, and the heads of those loops. */
   readonly mechanicalSearchRounds: number
   /**
    * The rounds whose search started a streak that went on to reach 2 (ADR
@@ -340,6 +346,14 @@ export interface AuditMechanical {
    * judgement.
    */
   readonly searchLoopHeads: readonly number[]
+  /**
+   * The rounds with a search at streak 2 or beyond, and at 3 or beyond, by
+   * the rail's rule (#259, ADR 0058). Two searches in a row are free to the
+   * rail; 3 is its nudge tier, so the second count is the rounds the live
+   * rail nudged or refused on. Beside the rounds, never in them.
+   */
+  readonly searchRoundsAtStreak2: number
+  readonly searchRoundsAtStreak3: number
   /** Where the search rounds came from (#243) — beside the rounds, never in them, so it re-keys no cached judgement. */
   readonly searchSource: AuditSearchSource
   readonly walledRounds: number
@@ -522,6 +536,9 @@ export interface AuditPopulation {
   readonly offKeyRounds: number
   readonly searchLoopRounds: number
   readonly mechanicalSearchRounds: number
+  /** Rounds at streak 2 or beyond, and at 3 or beyond, by the rail's rule (#259). */
+  readonly searchRoundsAtStreak2: number
+  readonly searchRoundsAtStreak3: number
   /** Attempts by where their search rounds came from (#243). */
   readonly searchSources: Readonly<Record<AuditSearchSource, number>>
   readonly inheritedRounds: number
@@ -899,6 +916,73 @@ function rewrittenShownAddressesOf(raw: readonly RawRound[]): number[] {
 /** The Progress reason of a call that landed on a Not-found Page (ADR 0050): neutral in the app, without Progress here. */
 export const NOT_FOUND_LANDING_REASON = 'landed on a Not-found Page'
 
+/** The Progress reason of a search at streak 2 or beyond (ADR 0058), the similarity beside it for the reviewer. */
+function searchWithoutProgressReason(search: NonNullable<AuditCall['search']>): string {
+  return `a search after a search with nothing opened between them (streak ${search.streak}${search.rewords === true ? ', rewording the one before it' : ''})`
+}
+
+/**
+ * The Search Loop counts by the streak rule over an attempt's rounds (ADR
+ * 0048, ADR 0058): the rounds at streak 2 or beyond and at 3 or beyond, the
+ * heads — a search at streak 2 always follows the streak-1 search that
+ * started it, with no search between — and the members of every streak that
+ * reached 2, heads included, which is `mechanicalSearchRounds`. Reads the
+ * streaks as the rounds carry them; `replaySearchStreaks` re-derives those
+ * for a report written under an older rule.
+ */
+export function searchLoopCountsOf(rounds: readonly AuditRound[]): Pick<AuditMechanical, 'mechanicalSearchRounds' | 'searchLoopHeads' | 'searchRoundsAtStreak2' | 'searchRoundsAtStreak3'> {
+  const heads = new Set<number>()
+  const atStreak2 = new Set<number>()
+  const atStreak3 = new Set<number>()
+  let streakHead: number | null = null
+  for (const round of rounds) {
+    for (const call of round.calls) {
+      if (call.search === null) continue
+      if (call.search.streak === 1) streakHead = round.round
+      else if (call.search.streak === SEARCH_STREAK_WITHOUT_PROGRESS && streakHead !== null) heads.add(streakHead)
+      if (call.search.streak >= SEARCH_STREAK_WITHOUT_PROGRESS) atStreak2.add(round.round)
+      if (call.search.streak >= SEARCH_STREAK_NUDGED) atStreak3.add(round.round)
+    }
+  }
+  return {
+    mechanicalSearchRounds: new Set([...atStreak2, ...heads]).size,
+    searchLoopHeads: [...heads].sort((left, right) => left - right),
+    searchRoundsAtStreak2: atStreak2.size,
+    searchRoundsAtStreak3: atStreak3.size,
+  }
+}
+
+/**
+ * An attempt's rounds with every search's streak re-derived by the rail's
+ * current rule from the calls as audited (ADR 0058): which calls were
+ * searches, which succeeded, and which landed on a Not-found Page. This is
+ * the replay `classifyAttempt` runs on a fresh trace, applied to a report
+ * already written, so a capture audited under the same-intent rule counts
+ * under the consecutive one. Kinds and reasons are left as judged — they are
+ * the digest the reviewer saw — and `rewords` is recomputed beside the streak.
+ */
+export function replaySearchStreaks(rounds: readonly AuditRound[]): AuditRound[] {
+  let streak = 0
+  let lastSearchQuery: string | null = null
+  return rounds.map((round) => ({
+    ...round,
+    calls: round.calls.map((call) => {
+      if (call.search !== null) {
+        streak = searchStreakAfter(streak, 'search')
+        const rewords = streak >= SEARCH_STREAK_WITHOUT_PROGRESS ? { rewords: lastSearchQuery !== null && similarQueries(call.search.query, lastSearchQuery) } : {}
+        lastSearchQuery = call.search.query
+        const search = { query: call.search.query, streak, ...(call.search.signature === undefined ? {} : { signature: call.search.signature }), ...rewords }
+        return { ...call, search }
+      }
+      const consumed = call.ok === true && !call.refused && call.notFound === undefined
+      const move = searchStreakMoveOf(isSearchInspection(call.name) ? 'inspection' : 'other', consumed)
+      streak = searchStreakAfter(streak, move)
+      if (move === 'escape') lastSearchQuery = null
+      return call
+    }),
+  }))
+}
+
 /**
  * A landing on a trace written before the Run Trace kept the field: the app's
  * own title rule over the page the result names, on the calls that carry the
@@ -919,9 +1003,8 @@ interface ProgressState {
   readonly observed: Set<string>
   /** The page the Run is on, as the last successful result said. */
   currentUrl: string | null
-  /** The Search Loop rail's streak, mirrored. */
-  lastQuery: string | null
-  anchor: string | null
+  /** The Search Loop rail's streak, replayed by its rule, and the query of the streak's last search for `rewords`. */
+  lastSearchQuery: string | null
   streak: number
 }
 
@@ -985,39 +1068,40 @@ function classifyCall(
     notices,
   }
 
-  // The search streak. Where the attempt carries the rail's Search
-  // Observations, a call takes what the rail saw — query, signature and
-  // streak, typed and refused searches included — and the replay below never
-  // runs, so no streak is half one source and half the other (#243, ADR
-  // 0049). Otherwise the rule is replayed as the rail keeps it: inspection (a
-  // page read, a Look, a scroll) observes without resetting, a successful
-  // escape resets, a refused call changes nothing. A typed search cannot be
-  // told from such a trace (it keeps no element facts), so a successful type
-  // resets here where the live rail may have counted it.
-  let search: AuditCall['search'] = null
+  // The search streak: the rail's own rule (ADR 0058), replayed over the
+  // calls. Which calls were searches comes from the rail's Search
+  // Observations where the attempt carries them — query and signature, typed
+  // and refused searches included (#243, ADR 0049) — and otherwise from a
+  // `navigate`'s query alone: a trace written before observations were kept
+  // holds no element facts, so a typed search cannot be told from other
+  // typing and a successful type resets here where the live rail may have
+  // counted it. The streak itself is never read off the observation: the
+  // rule is a count of what happened between searches, and replaying it is
+  // what lets a capture taken under the older same-intent rule be read by
+  // the current one. On a trace the current rail wrote the two agree.
+  let observed: { readonly query: string; readonly signature?: SearchSignature } | null = null
   if (railObservations !== null) {
-    const observed = railObservations.get(call.callId)
-    if (observed !== undefined) search = { query: head(observed.query, 120)!, streak: observed.streak, signature: observed.signature }
+    const record = railObservations.get(call.callId)
+    if (record !== undefined) observed = { query: record.query, signature: record.signature }
   } else if (call.name === 'navigate' && !refused) {
     // A rewritten call replays as the search that ran, not the address it replaced.
     const query = entry.rewritten?.query ?? searchQueryOf(isString(call.args.url) ? call.args.url : '')
-    if (query !== null) {
-      const continues = (state.lastQuery !== null && similarQueries(query, state.lastQuery)) || (state.anchor !== null && similarQueries(query, state.anchor))
-      state.streak = continues ? state.streak + 1 : 1
-      state.anchor = continues ? state.anchor : query
-      state.lastQuery = query
-      search = { query: head(query, 120)!, streak: state.streak }
-    } else if (landing === null) {
-      // A navigate that landed on a Not-found Page is inspection to the rail
-      // (#239, ADR 0050): it never resets the streak.
-      state.lastQuery = null
-      state.anchor = null
-      state.streak = 0
-    }
-  } else if (!isSearchInspection(call.name) && call.name !== 'navigate' && !refused && result !== undefined && landing === null) {
-    state.lastQuery = null
-    state.anchor = null
-    state.streak = 0
+    if (query !== null) observed = { query }
+  }
+  let search: AuditCall['search'] = null
+  if (observed !== null) {
+    state.streak = searchStreakAfter(state.streak, 'search')
+    const rewords = state.streak >= SEARCH_STREAK_WITHOUT_PROGRESS ? { rewords: state.lastSearchQuery !== null && similarQueries(observed.query, state.lastSearchQuery) } : {}
+    state.lastSearchQuery = observed.query
+    search = { query: head(observed.query, 120)!, streak: state.streak, ...(observed.signature === undefined ? {} : { signature: observed.signature }), ...rewords }
+  } else {
+    // A navigate that landed on a Not-found Page is inspection to the rail
+    // (#239, ADR 0050): it never resets the streak; nor does a refused or
+    // failed call, which consumed nothing.
+    const consumed = result !== undefined && result.ok && !refused && landing === null
+    const move = searchStreakMoveOf(isSearchInspection(call.name) ? 'inspection' : 'other', consumed)
+    state.streak = searchStreakAfter(state.streak, move)
+    if (move === 'escape') state.lastSearchQuery = null
   }
 
   // Collection and Bookkeeping make no Progress claim; everything else is
@@ -1042,7 +1126,7 @@ function classifyCall(
       } else if (landedCanonical !== null && state.acquiredUrls.has(landedCanonical)) {
         progress = { made: false, reason: 'a navigate to a URL this Run already acquired' }
       } else if (search !== null && search.streak >= SEARCH_STREAK_WITHOUT_PROGRESS) {
-        progress = { made: false, reason: `a search that rewords the one before it (streak ${search.streak})` }
+        progress = { made: false, reason: searchWithoutProgressReason(search) }
       } else if (noProgressNotice) {
         progress = { made: false, reason: 'the app’s own no-progress Notice rode the result' }
       } else {
@@ -1086,7 +1170,7 @@ function classifyCall(
         progress = { made: false, reason: 'a re-acquisition of a page the initial attempt already checkpointed (inherited)' }
       } else if (search !== null && search.streak >= SEARCH_STREAK_WITHOUT_PROGRESS) {
         // Only a typed search the rail observed carries one here (#243).
-        progress = { made: false, reason: `a search that rewords the one before it (streak ${search.streak})` }
+        progress = { made: false, reason: searchWithoutProgressReason(search) }
       } else if (noProgressNotice) {
         progress = { made: false, reason: 'the app’s own no-progress Notice rode the result' }
       } else if (text !== null && (text.includes('page signature changed') || text.includes('urlChanged=true') || text.includes('after page change'))) {
@@ -1258,7 +1342,7 @@ export function classifyAttempt(input: AuditTraceInput): AuditMechanical {
   // from the rail's observations when the attempt carries any (#243).
   const observations = railObservationsOf(records)
   const railObservations = observations.size > 0 ? observations : null
-  const state: ProgressState = { acquiredUrls: new Set(), observed: new Set(), currentUrl: null, lastQuery: null, anchor: null, streak: 0 }
+  const state: ProgressState = { acquiredUrls: new Set(), observed: new Set(), currentUrl: null, lastSearchQuery: null, streak: 0 }
   const classified = raw.map((round) => {
     const calls = round.calls.map((entry) => classifyCall(entry, state, input.parentCheckpointedUrls, railObservations))
     return { round, calls: calls.map((item) => item.call), inherited: calls.some((item) => item.inherited) }
@@ -1394,18 +1478,9 @@ export function classifyAttempt(input: AuditTraceInput): AuditMechanical {
         ? input.task.checks.map((check) => check.checkId)
         : input.grade.checks.filter((check) => !check.satisfied).map((check) => check.checkId)
 
-  // Pass three, after the digest's rounds are built: the heads of the loops
-  // the streak rule caught. A search at streak 2 always follows the streak-1
-  // search that started it, with no search between.
-  const heads = new Set<number>()
-  let streakHead: number | null = null
-  for (const round of rounds) {
-    for (const call of round.calls) {
-      if (call.search === null) continue
-      if (call.search.streak === 1) streakHead = round.round
-      else if (call.search.streak === SEARCH_STREAK_WITHOUT_PROGRESS && streakHead !== null) heads.add(streakHead)
-    }
-  }
+  // Pass three, after the digest's rounds are built: the Search Loop counts
+  // by the streak rule, heads included (ADR 0048, ADR 0058).
+  const searchLoop = searchLoopCountsOf(rounds)
   // Pass four, beside the rounds (#240, ADR 0051): the checkpoints the store
   // merged, and the rounds spent without Progress on a Held Page. The held set
   // at a round is the initial's checkpointed pages plus this attempt's own
@@ -1429,8 +1504,6 @@ export function classifyAttempt(input: AuditTraceInput): AuditMechanical {
   const identitySlips = traceAtLeast(IDENTITY_SLIP_TRACE_VERSION)
     ? { answers: slipRecords.length, ids: slipRecords.reduce((total, record) => total + (Array.isArray(record.slips) ? record.slips.length : 0), 0) }
     : null
-
-  const rewordingRounds = rounds.filter((round) => round.kind === 'acquisition_without_progress' && round.reason.includes('rewords the one before it')).map((round) => round.round)
 
   const disposition: AuditDisposition =
     attempt.accepted.status !== 'observed' ? 'acceptance_unconfirmed' : attempt.finalAnswer.status === 'observed' ? 'answered' : 'no_answer'
@@ -1469,8 +1542,10 @@ export function classifyAttempt(input: AuditTraceInput): AuditMechanical {
     bundledCheckpoints: rounds.filter((round) => isAcquisitionRound(round) && round.tags.acceptedCheckpoints > 0).length,
     sameSourceUnsupportedRounds: sameSourceUnsupportedRoundsOf(rounds),
     heldPageRoundsWithoutProgress,
-    mechanicalSearchRounds: new Set([...rewordingRounds, ...heads]).size,
-    searchLoopHeads: [...heads].sort((left, right) => left - right),
+    mechanicalSearchRounds: searchLoop.mechanicalSearchRounds,
+    searchLoopHeads: searchLoop.searchLoopHeads,
+    searchRoundsAtStreak2: searchLoop.searchRoundsAtStreak2,
+    searchRoundsAtStreak3: searchLoop.searchRoundsAtStreak3,
     searchSource: railObservations !== null ? 'rail' : rounds.some((round) => round.tags.search) ? 'replay' : 'none',
     walledRounds: rounds.filter((round) => round.tags.wall).length,
     notFoundNavigates: rounds.flatMap((round) => round.calls.filter((call) => call.name === 'navigate' && call.notFound !== undefined).map(() => round.round)),
@@ -1925,6 +2000,8 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
   let offKey = 0
   let searchLoop = 0
   let mechanicalSearch = 0
+  let atStreak2 = 0
+  let atStreak3 = 0
   let inherited = 0
   let merged = 0
   let bundled = 0
@@ -1974,6 +2051,8 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
     budgeted += mechanical.budgetedRounds
     toolRoundsUsed += mechanical.toolRoundsUsed
     mechanicalSearch += mechanical.mechanicalSearchRounds
+    atStreak2 += mechanical.searchRoundsAtStreak2
+    atStreak3 += mechanical.searchRoundsAtStreak3
     sources[mechanical.searchSource] += 1
     inherited += mechanical.inheritedRounds
     merged += mechanical.mergedCheckpoints
@@ -2041,6 +2120,8 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
     offKeyRounds: offKey,
     searchLoopRounds: searchLoop,
     mechanicalSearchRounds: mechanicalSearch,
+    searchRoundsAtStreak2: atStreak2,
+    searchRoundsAtStreak3: atStreak3,
     searchSources: sources,
     inheritedRounds: inherited,
     mergedCheckpoints: merged,
@@ -2231,7 +2312,7 @@ const VERDICT_LABELS: Readonly<Record<AuditVerdict, string>> = {
 
 /** What each search source means, as an attempt's report names it (#243). */
 const SEARCH_SOURCE_NOTES: Readonly<Record<AuditSearchSource, string>> = {
-  rail: 'the rail’s own Search Observations',
+  rail: 'the rail’s own Search Observations, the streak replayed by its rule',
   replay: 'the streak rule re-run over navigate searches',
   none: 'no Search Observation in the trace, and no navigate search for the replay to find',
 }
@@ -2297,7 +2378,7 @@ function populationSlipsText(population: AuditPopulation): string {
 function judgementLines(populations: readonly AuditPopulation[]): string[] {
   return populations.map(
     (population) =>
-      `- ${population.label}: ${population.offKeyRounds} Off-key round(s), ${population.searchLoopRounds} Search Loop round(s) by the reviewer (${population.mechanicalSearchRounds} by the streak rule; attempts by search source ${SEARCH_SOURCES.map((source) => `${source} ${population.searchSources[source]}`).join(', ')}), ` +
+      `- ${population.label}: ${population.offKeyRounds} Off-key round(s), ${population.searchLoopRounds} Search Loop round(s) by the reviewer (${population.mechanicalSearchRounds} by the streak rule, heads included: ${population.searchRoundsAtStreak2} at streak 2 or beyond, ${population.searchRoundsAtStreak3} at 3 or beyond; attempts by search source ${SEARCH_SOURCES.map((source) => `${source} ${population.searchSources[source]}`).join(', ')}), ` +
       `${population.inheritedRounds} inherited, ${population.rejectedCheckpoints} rejected Evidence Checkpoint(s), ${population.walledRounds} walled round(s), ${population.notFoundNavigates} navigate(s) landed on a Not-found Page (${population.notFoundOffKey} judged Off-key), ${population.rewrittenComposedAddresses ?? 0} Composed Address(es) rewritten into a site search (${population.rewrittenComposedAddressesOffKey ?? 0} judged Off-key, ${population.rewrittenShownAddresses ?? 'not counted'} to an address the Run was shown), ${population.subagentRounds} Subagent round(s), ` +
       `${population.mergedCheckpoints} merged Evidence Checkpoint(s) (a floor), ${population.heldPageRoundsWithoutProgress} Held Page round(s) without Progress, ${population.bundledCheckpoints} bundled checkpoint round(s), ${population.sameSourceUnsupportedRounds} same-source unsupported round(s), ${populationSlipsText(population)}, ` +
       `${population.malformedAnswers} Malformed Answer(s) (${population.answerRetries} retried), ` +

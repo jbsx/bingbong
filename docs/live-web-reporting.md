@@ -718,7 +718,7 @@ One kind per orchestrator Tool Round, glossary terms only:
 | kind | means |
 | --- | --- |
 | Acquisition with Progress | the productive class: the page moved to somewhere the Run had not acquired, a first read or Look of a page state, a scroll that brought material into view, a delegation |
-| Acquisition without Progress | a repeat observation of a state already observed, a navigate to a URL this Run already acquired, a scroll that answered End of Page, a search that rewords the one before it, or a re-acquisition of a page the initial already checkpointed (tagged `inherited`, follow-ups only) |
+| Acquisition without Progress | a repeat observation of a state already observed, a navigate to a URL this Run already acquired, a scroll that answered End of Page, a search after a search with nothing opened between them (streak 2 or beyond), or a re-acquisition of a page the initial already checkpointed (tagged `inherited`, follow-ups only) |
 | Collection | reading a finished Subagent Report (`agent_results`) |
 | Bookkeeping | `record_evidence`, `record_candidate`, `report_run_plan`; a rejected Evidence Checkpoint is counted beside the round |
 | Failed round | a timeout, an empty or failed reply, a round cut by the deadline, or a round whose every call was refused (a stale ref, a closed tool) |
@@ -740,12 +740,19 @@ with no tool call under a known Finalization Cause. Progress is read from the
 result texts the app wrote — the navigated line and page header, the page
 signature, `end of page`, the no-progress Notice — and the search streak is the
 Search Loop rail's own rule, imported from `searchLoopRule.ts` rather than
-copied (ADR 0048): searches chain by Search Intent, and a page read, a Look or
-a scroll between them is inspection that never resets the streak. Where the trace
-carries the rail's Search Observations (#243, ADR 0049) the rule is not re-run
-at all: each search round takes the query, signature (`url` or `input`) and
-streak the rail recorded, typed searches and refused ones included, and the
-attempt's `searchSource` reads `rail`. A trace written before observations were
+copied (ADR 0048, ADR 0058): a search after a search with nothing opened
+between them is streak + 1 whatever its terms, an escape resets, and a page
+read, a Look, a scroll or a Not-found Landing between them is inspection that
+never resets the streak. Where the trace carries the rail's Search
+Observations (#243, ADR 0049), which calls were searches — typed and refused
+ones included — and their query and signature (`url` or `input`) are read from
+them, and the attempt's `searchSource` reads `rail`; the streak itself is the
+rule replayed over those calls, never the number the observation recorded, so a
+capture taken under the older same-intent rule (fix-257 and before) is read by
+the current one, and on a trace the current rail wrote the two agree. From
+streak 2 a search line carries `rewords` — whether it shares a Search Intent
+with the one before it — as the reviewer's aid beside the streak, no longer the
+rule. A trace written before observations were
 kept holds no element facts, so a query typed into a page's search box cannot
 be told from other typing; the rule is re-run over its `navigate` searches
 (`searchSource: replay`, or `none` when the replay finds no search) and the
@@ -754,7 +761,13 @@ reviewer judges the rest. The two sources cannot mislabel an attempt: a
 observation-free attempt with one is provably retained. A loop the streak rule catches counts
 its head too — the round whose search started the streak — as
 `searchLoopHeads` beside the digest's rounds, never in them, so counting it
-re-keys no cached judgement. Rounds are numbered by position in the digest,
+re-keys no cached judgement; `mechanicalSearchRounds` is the rounds at streak 2
+or beyond plus those heads, and beside it `searchRoundsAtStreak2` and
+`searchRoundsAtStreak3` (#259) count the rounds at streak 2 or beyond and at 3
+or beyond — 3 is the rail's nudge tier, so the second is the rounds the live
+rail nudged or refused on. `replaySearchStreaks` re-derives the streaks of a
+report already written, which is how the committed fix-257 audits were
+recounted under the new rule without re-judging them (`audit.test.ts`). Rounds are numbered by position in the digest,
 with the trace's round and attempt beside them, because a retried round repeats
 its number. The same trace classifies identically on every run, and every attempt carries a `digestHash` over the
 digest the reviewer was shown; `audit.test.ts` pins the copied budgets, rungs and

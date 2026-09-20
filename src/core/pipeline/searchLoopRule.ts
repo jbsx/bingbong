@@ -10,6 +10,47 @@ import { looksLikeDomain } from '../browser/urlInput.ts'
 // The same tokenizer feeds the query-intent fingerprint the no-progress
 // rails compare (progressFingerprints.ts), so a `site:` swap over the same
 // terms is one navigate to them too.
+//
+// #259 (ADR 0058) moved the streak itself here. A Search Loop is consecutive
+// searches with nothing opened between them: a search after a search
+// continues the streak whatever its terms, an escape ends it, and
+// everything else — inspection, a failed or refused call, a Not-found
+// Landing — holds it. Search Intent no longer decides the streak; it stays
+// as the no-progress fingerprint and the audit's aid beside the streak.
+
+/** Consecutive searches with nothing opened between them before the advisory nudge rides the result (#74). */
+export const SEARCH_LOOP_NUDGE_AFTER = 3
+
+/** Consecutive searches with nothing opened between them before the gate refuses the next (#74). */
+export const SEARCH_LOOP_REFUSE_AFTER = 5
+
+/** What one processed call is to the streak (ADR 0058). */
+export type SearchStreakMove = 'search' | 'escape' | 'hold'
+
+/** The streak after one move — the rail's rule, and the Round Audit's replay of it. */
+export function searchStreakAfter(streak: number, move: SearchStreakMove): number {
+  switch (move) {
+    case 'search':
+      return streak + 1
+    case 'escape':
+      return 0
+    case 'hold':
+      return streak
+  }
+}
+
+/**
+ * The move of a call the rail classified: a search advances the streak
+ * whatever its outcome (a refused search included — that is the number the
+ * live rail nudged and refused on, ADR 0049); inspection looks at what the
+ * search returned without leaving it; any other call escapes only when it
+ * consumed something — it succeeded, and did not land on a Not-found Page.
+ */
+export function searchStreakMoveOf(kind: 'search' | 'inspection' | 'other', consumed: boolean): SearchStreakMove {
+  if (kind === 'search') return 'search'
+  if (kind === 'inspection') return 'hold'
+  return consumed ? 'escape' : 'hold'
+}
 
 /** Token-Jaccard similarity at or above which two Search Intents are one (pinned by the failed-run-47 replay). */
 const SIMILARITY_THRESHOLD = 0.45

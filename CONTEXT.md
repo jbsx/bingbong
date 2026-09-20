@@ -675,9 +675,12 @@ query as the rail read it, the search signature it ran under — a navigate to a
 search URL, or text typed into a search input — and the streak the call left,
 whether the call succeeded, failed or was refused. A call the rail read as
 inspection or as escape leaves none. It is the rail's verdict, not the
-evidence for one: the Round Audit replays what the rail saw where an
-observation exists and re-derives the rule only over a Run Trace written
-before observations were kept. "Surface" is a different thing — the engine or
+evidence for one: the Round Audit takes from it which calls were searches,
+their query and signature, and replays the streak by the rail's own rule
+(ADR 0058) — never the recorded number, so a capture taken under an older
+rule is read by the current one — and re-derives the searches themselves
+only over a Run Trace written before observations were kept. "Surface" is a
+different thing — the engine or
 site a search ran on — and two signatures on one surface are still one Search
 Intent.
 _Avoid_: search event, search record, query log, surface

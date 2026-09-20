@@ -137,15 +137,17 @@ describe('createSearchLoopRail', () => {
     expect(SEARCH_LOOP_REFUSE_AFTER).toBeGreaterThan(SEARCH_LOOP_NUDGE_AFTER)
   })
 
-  it('stays quiet while consecutive searches explore different intents', async () => {
+  it('two searches in a row are free, whatever their terms (ADR 0058)', async () => {
     const rail = createSearchLoopRail(searchBoxAt)
     expect(await rail.gate(search('mechanical keyboards'))).toEqual({ ok: true })
-    expect(await noticeOf(rail, search('mechanical keyboards'), ok)).toBeNull()
+    expect((await rail.observe(search('mechanical keyboards'), ok)).observation?.streak).toBe(1)
     expect(await rail.gate(search('weather london'))).toEqual({ ok: true })
-    expect(await noticeOf(rail, search('weather london'), ok)).toBeNull()
+    const second = await rail.observe(search('weather london'), ok)
+    expect(second.notice).toBeNull()
+    expect(second.observation?.streak).toBe(2)
   })
 
-  it('nudges on the nth consecutive similar search — advisory, never a refusal', async () => {
+  it('nudges on the nth consecutive search — advisory, never a refusal', async () => {
     const rail = createSearchLoopRail(searchBoxAt)
     for (let i = 1; i < SEARCH_LOOP_NUDGE_AFTER; i += 1) {
       expect(await rail.gate(search(`best mechanical keyboards 2026 v${i}`))).toEqual({ ok: true })
@@ -158,26 +160,35 @@ describe('createSearchLoopRail', () => {
     expect(nudge).toMatch(/q= navigate|search box/)
     expect(nudge).not.toMatch(/web_search|read_url/)
     expect(nudge).toMatch(/ask_user/)
-    expect(nudge).toMatch(/navigate|read|open|href/i)
+    // AC2: the nudge names the ref — a click by ref is the move the loop
+    // exists to provoke, and it works when the printed href is cut (#258).
+    expect(nudge).toContain('open a promising result by its ref or its href')
   })
 
-  it('catches slow drift: each query similar to the previous, not to the first', async () => {
+  it('nudges on the third consecutive search when the searches share no words (AC1)', async () => {
     const rail = createSearchLoopRail(searchBoxAt)
-    await noticeOf(rail, search('best mechanical keyboards 2026'), ok)
-    await noticeOf(rail, search('best mechanical keyboards 2027'), ok)
-    // Similar to the previous query, but only 0.5 against the first —
-    // anchor-only comparison would reset here and miss the drift loop.
-    expect(await noticeOf(rail, search('mechanical keyboards 2027'), ok)).toMatch(/ask_user/)
+    expect(await noticeOf(rail, search('mechanical keyboards'), ok)).toBeNull()
+    expect(await noticeOf(rail, search('weather in london'), ok)).toBeNull()
+    expect(await noticeOf(rail, search('train times tokyo osaka'), ok)).toMatch(/ask_user/)
   })
 
-  it('chains a return to the original wording after drifting away from it (#82)', async () => {
+  it('replays Voyager fix-257 pass 2 rounds 16–19 to streak 4 — four queries whose only shared token is Voyager (AC1)', async () => {
+    // The rail under ADR 0048 scored each pair under 0.45 and recorded
+    // streak 1, 1, 2, 1: no nudge in a loop the reviewer placed four rounds in.
     const rail = createSearchLoopRail(searchBoxAt)
-    await noticeOf(rail, search('reddit manhwa tier list horizon'), ok)
-    // Similar to the previous (0.67) — streak 2.
-    await noticeOf(rail, search('reddit manhwa tier list horizon boxer image'), ok)
-    // Only 0.56 against the previous query — below no threshold this rail
-    // has ever used — but 0.67 against the anchor, so the streak continues.
-    expect(await noticeOf(rail, search('reddit manhwa tier list 2023 site'), ok)).toMatch(/ask_user/)
+    const round16 = await rail.observe(nav('https://duckduckgo.com/?q=site%3Ajpl.nasa.gov+Voyager+June+2013+%22has+not+yet%22+OR+%22not+yet+reached%22+status+update'), ok)
+    expect(round16.observation?.streak).toBe(1)
+    // Round 17 opened with a Look at the results — inspection, never escape.
+    expect((await rail.observe(other('look'), ok)).observation).toBeNull()
+    const round17 = await rail.observe(nav('https://duckduckgo.com/?q=%22Voyager%22+%22June+27%2C+2013%22+JPL+OR+NASA+%22not+yet%22+interstellar'), ok)
+    expect(round17.observation?.streak).toBe(2)
+    expect(round17.notice).toBeNull()
+    const round18 = await rail.observe(nav('https://duckduckgo.com/?q=%22Voyager+1%22+NASA+June+27+2013+statement+interstellar+space+McComas'), ok)
+    expect(round18.observation?.streak).toBe(3)
+    expect(round18.notice).toMatch(/ask_user/)
+    const round19 = await rail.observe(nav('https://duckduckgo.com/?q=JPL+%222013-107%22+Voyager+status+update+location+date'), ok)
+    expect(round19.observation).toEqual({ query: 'JPL "2013-107" Voyager status update location date', signature: 'url', streak: 4 })
+    expect(round19.notice).toMatch(/ask_user/)
   })
 
   it('resets the streak when a successful other tool intervenes', async () => {
@@ -198,16 +209,16 @@ describe('createSearchLoopRail', () => {
     expect(await noticeOf(rail, search('mechanical keyboards gaming 2026'), ok)).toMatch(/ask_user/)
   })
 
-  it('resets the streak when the model moves to a new search intent', async () => {
+  it('does not reset the streak when the model moves to a new search intent — only escape does (ADR 0058)', async () => {
     const rail = createSearchLoopRail(searchBoxAt)
     await noticeOf(rail, search('mechanical keyboards'), ok)
     await noticeOf(rail, search('mechanical keyboards gaming'), ok)
     await noticeOf(rail, search('mechanical keyboards 2026'), ok)
-    expect(await noticeOf(rail, search('weather in london'), ok)).toBeNull()
-    expect(await noticeOf(rail, search('weather in tokyo'), ok)).toBeNull()
+    expect(await noticeOf(rail, search('weather in london'), ok)).toMatch(/ask_user/)
+    expect((await rail.observe(search('weather in tokyo'), ok)).observation?.streak).toBe(5)
   })
 
-  it('refuses pre-execution once the consecutive-similar cap is reached, with a reason the model can act on', async () => {
+  it('refuses pre-execution once the consecutive-search cap is reached, with a reason the model can act on', async () => {
     const rail = createSearchLoopRail(searchBoxAt)
     for (let i = 0; i < SEARCH_LOOP_REFUSE_AFTER; i += 1) {
       expect(await rail.gate(search(`mechanical keyboards run ${i}`))).toEqual({ ok: true })
@@ -220,16 +231,18 @@ describe('createSearchLoopRail', () => {
       expect(refusal.reason).not.toMatch(/web_search|read_url/)
       expect(refusal.reason).toMatch(String(SEARCH_LOOP_REFUSE_AFTER))
       expect(refusal.reason).toMatch(/ask_user|change strategy/i)
+      // AC2: unchanged but where it names the move the nudge names.
+      expect(refusal.reason).toContain('open a result by its ref or its href')
     }
   })
 
-  it('lets a genuinely different search through even at the cap — the rail loops on intent, not the tool', async () => {
+  it('refuses a genuinely different search at the cap too — five searches without opening anything is the loop (ADR 0058)', async () => {
     const rail = createSearchLoopRail(searchBoxAt)
     for (let i = 0; i < SEARCH_LOOP_REFUSE_AFTER; i += 1) {
       await rail.gate(search(`mechanical keyboards run ${i}`))
       await noticeOf(rail, search(`mechanical keyboards run ${i}`), ok)
     }
-    expect(await rail.gate(search('train times tokyo osaka'))).toEqual({ ok: true })
+    expect((await rail.gate(search('train times tokyo osaka'))).ok).toBe(false)
   })
 
   it('clears the cap only after escaping — reading between searches is inspection, not escape (run 53)', async () => {
@@ -312,12 +325,12 @@ describe('createSearchLoopRail GUI search signature (#82)', () => {
     if (!refusal.ok) expect(refusal.reason).toMatch(/ask_user/)
   })
 
-  it('lets a genuinely different q= navigate through even at the cap', async () => {
+  it('refuses a genuinely different q= navigate at the cap — the engine and the terms are not the point (ADR 0058)', async () => {
     const rail = createSearchLoopRail(searchBoxAt)
     for (let i = 0; i < SEARCH_LOOP_REFUSE_AFTER; i += 1) {
       await noticeOf(rail, nav(`https://www.google.com/search?q=reddit+manhwa+tier+list+run+${i}`), ok)
     }
-    expect(await rail.gate(nav('https://www.google.com/search?q=train+times+tokyo'))).toEqual({ ok: true })
+    expect((await rail.gate(nav('https://www.bing.com/search?q=train+times+tokyo'))).ok).toBe(false)
   })
 
   it('counts text typed into a search input as a search observation', async () => {
@@ -525,26 +538,20 @@ describe('createSearchLoopRail replay of failed run 47 (#82/#83)', () => {
     for (const entry of run47Sequence) {
       const call = callFrom(entry)
       const gate = await rail.gate(call)
-      if (!gate.ok) {
-        refusals += 1
-        // The pipeline observes refused calls too (failed outcome) — search
-        // observations chain regardless of outcome.
-        await noticeOf(rail, call, fail)
-        continue
-      }
-      const url = call.args.url
-      if (
-        call.name === 'type' ||
-        (call.name === 'navigate' && typeof url === 'string' && searchQueryFromUrl(url) !== null)
-      ) {
-        searchObservations += 1
-      }
-      if ((await noticeOf(rail, call, ok)) !== null) nudges += 1
+      // The pipeline observes refused calls too (failed outcome) — search
+      // observations chain regardless of outcome.
+      const verdict = await rail.observe(call, gate.ok ? ok : fail)
+      if (!gate.ok) refusals += 1
+      if (verdict.observation !== null) searchObservations += 1
+      if (verdict.notice !== null) nudges += 1
     }
     expect(run47Sequence).toHaveLength(80)
     // 21 typed searches plus the 22 navigations the feed shows going to
     // q=-carrying URLs — one merged search stream under the GUI signature.
     expect(searchObservations).toBeGreaterThanOrEqual(34)
+    // The run's searches were similar, so the consecutive rule (ADR 0058)
+    // fires everywhere the same-intent rule did and more: its count is a
+    // superset (AC1). Under ADR 0048 this replay produced 3 refusals.
     expect(nudges).toBeGreaterThanOrEqual(1)
     expect(refusals).toBeGreaterThanOrEqual(3)
   })

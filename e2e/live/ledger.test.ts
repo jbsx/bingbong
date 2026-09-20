@@ -148,6 +148,31 @@ describe('the rewritten Composed Address counters (#255, ADR 0055)', () => {
   })
 })
 
+describe('the streak-rule counters (#259, ADR 0058)', () => {
+  it('reads the rounds at streak 2 and 3 or beyond over the budgeted rounds, and an audit that predates them as not recorded', () => {
+    const older = readAudit('audit-fix-257-1.json')
+    const streakOf = (population: AuditSetOutput['populations']['initial']) =>
+      countersOf(population, older.attempts).filter((counter) => counter.label.startsWith('Search rounds at streak'))
+    const budgeted = older.populations.initial.budgetedRounds
+
+    expect(streakOf(older.populations.initial)).toEqual([
+      { label: 'Search rounds at streak 2 or beyond', judgement: false, value: null, over: budgeted },
+      { label: 'Search rounds at streak 3 or beyond', judgement: false, value: null, over: budgeted },
+    ])
+    expect(streakOf({ ...older.populations.initial, searchRoundsAtStreak2: 12, searchRoundsAtStreak3: 7 })).toEqual([
+      { label: 'Search rounds at streak 2 or beyond', judgement: false, value: 12, over: budgeted },
+      { label: 'Search rounds at streak 3 or beyond', judgement: false, value: 7, over: budgeted },
+    ])
+    // The counter the ledger already compared keeps its name and its reading.
+    expect(countersOf(older.populations.initial, older.attempts).find((counter) => counter.label === 'Search Loop rounds by the streak rule')).toEqual({
+      label: 'Search Loop rounds by the streak rule',
+      judgement: false,
+      value: older.populations.initial.mechanicalSearchRounds,
+      over: budgeted,
+    })
+  })
+})
+
 describe('the committed Round Audits', () => {
   it('lists the families in capture order, Baselines by the id convention, each with its Reference', () => {
     const ids = committed.families.map((listed) => listed.id)

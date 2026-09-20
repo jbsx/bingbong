@@ -65,6 +65,30 @@ over the same terms is one Approach, and the audit still reports the
 similarity beside the streak for the reviewer. The audit's replay imports
 the rail's code, as ADR 0048 required, so its count moves with the rule.
 
+**Note (#259 implementation, 2026-09-20).** For the count to move with the
+rule on a capture already taken, the audit cannot read the streak off the
+Search Observation, where ADR 0049 had it take the number the rail recorded:
+fix-257's observations carry the same-intent streak. So the audit takes
+from the observation what only the rail could know — which calls were
+searches, their query and signature — and replays the streak by the rule
+(`searchStreakAfter`, `searchStreakMoveOf` in `searchLoopRule.ts`, the same
+functions the rail runs). On a trace the current rail wrote the two agree
+(pinned in `audit.test.ts`); on fix-257 the replay is what recounts it. The
+similarity rides beside the streak as `rewords` from streak 2, and the
+Progress reason of a search at streak 2 or beyond names the rule: "a search
+after a search with nothing opened between them", rewording noted when it
+is one. The digest a reviewer is shown changes accordingly, so a cached
+judgement of an old capture re-keys if that capture is ever re-audited; the
+committed fix-257 audits were recounted from their JSON, never re-judged.
+
+The recount on the audit's own population — the orchestrator's rounds,
+which is what the reviewer's 47 loop rounds are over — is 37 rounds at
+streak 2 or beyond and 22 at 3 or beyond, against 11 and 0 as written, and
+52 Search Loop rounds by the rule (heads included) against 22. The 50 and
+26 above counted the Browse Subagents' own rails with the orchestrator's;
+the audit reads the orchestrator's rounds only (ADR 0049), so the gate for
+#259 is read on 37 and 22.
+
 ## Considered options
 
 - **Lower the threshold.** Rejected: the live rewordings score 0.1–0.3;

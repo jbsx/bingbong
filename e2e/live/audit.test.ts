@@ -34,6 +34,8 @@ import {
   keyLeaks,
   sameSourceUnsupportedRoundsOf,
   searchQueryOf,
+  replaySearchStreaks,
+  searchLoopCountsOf,
   similarQueries,
   validateJudgement,
   WITHHELD_KEY_TEXT,
@@ -57,6 +59,8 @@ import { gradingKeyFor } from './keyManifest.ts'
 
 const SCRIPT = fileURLToPath(new URL('../../scripts/live-audit.ts', import.meta.url))
 const REPORTS_DIR = fileURLToPath(new URL('./reports/', import.meta.url))
+/** The fixture attempt's digest hash: a pin on what the reviewer is shown, moved only on purpose. */
+const DIGEST_HASH_PIN = 'sha256:23b447f2e0fc361a1d28d6dee08cb1e7c49f83e925efa68a423ad7058fff0151'
 const [major, minor] = process.versions.node.split('.').map(Number)
 const stripsTypes = major! > 22 || (major === 22 && minor! >= 18)
 
@@ -252,7 +256,7 @@ describe('the mechanical classification', () => {
   it('states the rule each label rests on', () => {
     const { rounds } = classifyAttempt(inputOf())
     const reason = (round: number) => rounds.find((candidate) => candidate.round === round)!.reason
-    expect(reason(3)).toContain('rewords the one before it (streak 2)')
+    expect(reason(3)).toContain('a search after a search with nothing opened between them (streak 2, rewording the one before it)')
     expect(reason(5)).toContain('first read')
     expect(reason(6)).toContain('repeat read')
     expect(reason(7)).toContain('End of Page')
@@ -451,24 +455,29 @@ describe('the mechanical classification', () => {
         { round: 3, at: 3_000, calls: [{ name: 'navigate', args: { url: SEARCH_B }, result: PAGE('search', SEARCH_B, 'cccc3333') }] },
       ]
       const { rounds: classified } = classifyAttempt(inputOf({ traceRecords: traceOf(rounds, EXTRA) }))
-      expect(classified[2]!.calls[0]!.search, inspection.name).toEqual({ query: 'harrison longitude watch catalogue id', streak: 2 })
-      expect(classified[2]!.reason, inspection.name).toContain('rewords the one before it (streak 2)')
+      expect(classified[2]!.calls[0]!.search, inspection.name).toEqual({ query: 'harrison longitude watch catalogue id', streak: 2, rewords: true })
+      expect(classified[2]!.reason, inspection.name).toContain('with nothing opened between them (streak 2, rewording the one before it)')
     }
   })
 
   it('counts a loop’s head by the streak rule without touching its kind, its reason or the digest (Decision 8)', () => {
     const mechanical = classifyAttempt(inputOf())
-    // Counting the head re-keys no cached judgement. The pin moved twice since,
-    // on purpose: #244 renamed `checksUnsatisfied` and hashed the grade status,
-    // and #256 reworded the Finalize Instruction the fixture's round 13 carries
-    // (a captured trace keeps the words it recorded, so no cache re-keys).
-    expect(mechanical.digestHash).toBe('sha256:2ddc370253e372dd92651a92a1b6771f3d655a0372a906e1bd40fb620210d401')
+    // Counting the head re-keys no cached judgement. The pin moved three times
+    // since, on purpose: #244 renamed `checksUnsatisfied` and hashed the grade
+    // status, #256 reworded the Finalize Instruction the fixture's round 13
+    // carries (a captured trace keeps the words it recorded, so no cache
+    // re-keys), and #259 changed what a search line in the digest says — the
+    // streak by the consecutive rule and `rewords` beside it.
+    expect(mechanical.digestHash).toBe(DIGEST_HASH_PIN)
     // Round 2's search starts the streak round 3's continues.
     expect(mechanical.searchLoopHeads).toEqual([2])
     expect(mechanical.mechanicalSearchRounds).toBe(2)
     expect(mechanical.rounds[1]!.kind).toBe('acquisition_with_progress')
-    expect(mechanical.rounds[1]!.reason).not.toContain('rewords')
+    expect(mechanical.rounds[1]!.reason).not.toContain('nothing opened between them')
     expect(formatAuditSet(buildAuditSet(provenanceOf(), [attemptOf('initial', judgement)], []))).toMatch(/\n\| 2 \| [^\n]*loop head by the streak rule[^\n]*\|\n/)
+    // The two counters beside it (#259): round 3 is at streak 2; nothing reached 3.
+    expect(mechanical.searchRoundsAtStreak2).toBe(1)
+    expect(mechanical.searchRoundsAtStreak3).toBe(0)
 
     // A streak that never reaches 2 has no head to count.
     const broken: RoundSpec[] = [
@@ -479,6 +488,26 @@ describe('the mechanical classification', () => {
     const unbroken = classifyAttempt(inputOf({ traceRecords: traceOf(broken, EXTRA) }))
     expect(unbroken.searchLoopHeads).toEqual([])
     expect(unbroken.mechanicalSearchRounds).toBe(0)
+  })
+
+  it('continues the streak across a search that shares no words, and says so beside it (#259, ADR 0058)', () => {
+    const rounds: RoundSpec[] = [
+      { round: 1, at: 1_000, calls: [{ name: 'navigate', args: { url: SEARCH_A }, result: PAGE('search', SEARCH_A, 'bbbb2222') }] },
+      { round: 2, at: 2_000, calls: [{ name: 'navigate', args: { url: 'https://www.bing.com/search?q=voyager+interstellar+crossing' }, result: PAGE('search', 'https://www.bing.com/search?q=voyager+interstellar+crossing', 'cccc3333') }] },
+      { round: 3, at: 3_000, calls: [{ name: 'navigate', args: { url: SEARCH_B }, result: PAGE('search', SEARCH_B, 'dddd4444') }] },
+    ]
+    const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(rounds, EXTRA) }))
+    expect(mechanical.rounds.map((round) => round.calls[0]!.search)).toEqual([
+      { query: 'harrison longitude watch catalogue', streak: 1 },
+      { query: 'voyager interstellar crossing', streak: 2, rewords: false },
+      { query: 'harrison longitude watch catalogue id', streak: 3, rewords: false },
+    ])
+    expect(mechanical.rounds[1]!.reason).toBe('navigate: a search after a search with nothing opened between them (streak 2)')
+    expect(mechanical.searchLoopHeads).toEqual([1])
+    expect(mechanical.mechanicalSearchRounds).toBe(3)
+    expect(mechanical.searchRoundsAtStreak2).toBe(2)
+    expect(mechanical.searchRoundsAtStreak3).toBe(1)
+    expect(similarQueries('voyager interstellar crossing', 'harrison longitude watch catalogue')).toBe(false)
   })
 })
 
@@ -864,30 +893,47 @@ describe('skipped bookkeeping rounds and Finalization rounds cut by the Allowanc
 describe('the rail’s Search Observations (#243, ADR 0049)', () => {
   const searchesOf = (mechanical: ReturnType<typeof classifyAttempt>) => mechanical.rounds.map((round) => round.calls.map((call) => call.search))
 
-  it('takes each search round from its observation — typed and refused searches included — and never consults the replay', () => {
+  it('takes which calls were searches from the observations — typed and refused searches included — and replays the streak by the rule', () => {
     const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(RAIL_ROUNDS, [...EXTRA, SUBAGENT_OBSERVATION]) }))
     expect(mechanical.searchSource).toBe('rail')
     expect(searchesOf(mechanical)).toEqual([
       [{ query: 'harrison longitude watch catalogue', streak: 1, signature: 'url' }],
-      [{ query: 'harrison longitude watch catalogue', streak: 2, signature: 'input' }],
-      [{ query: 'harrison longitude watch catalogue id', streak: 3, signature: 'input' }],
-      // The replay would have reset at round 2's successful type and skipped
-      // round 3's refusal, and read streak 1 here.
-      [{ query: 'harrison longitude watch catalogue id', streak: 4, signature: 'url' }],
+      [{ query: 'harrison longitude watch catalogue', streak: 2, signature: 'input', rewords: true }],
+      [{ query: 'harrison longitude watch catalogue id', streak: 3, signature: 'input', rewords: true }],
+      // The navigate-only replay would have reset at round 2's successful type
+      // and skipped round 3's refusal, and read streak 1 here.
+      [{ query: 'harrison longitude watch catalogue id', streak: 4, signature: 'url', rewords: true }],
       [null],
       [{ query: 'harrison longitude watch catalogue', streak: 1, signature: 'url' }],
     ])
     const reasons = mechanical.rounds.map((round) => `${round.kind}: ${round.reason}`)
-    expect(reasons[1]).toBe('acquisition_without_progress: type: a search that rewords the one before it (streak 2)')
+    expect(reasons[1]).toBe('acquisition_without_progress: type: a search after a search with nothing opened between them (streak 2, rewording the one before it)')
     // The refused search keeps the kind the refusal makes it.
     expect(reasons[2]).toMatch(/^failed_round: every call was refused/)
-    expect(reasons[3]).toBe('acquisition_without_progress: navigate: a search that rewords the one before it (streak 4)')
+    expect(reasons[3]).toBe('acquisition_without_progress: navigate: a search after a search with nothing opened between them (streak 4, rewording the one before it)')
     // A type the rail did not observe is not a search round.
     expect(reasons[4]).toBe('acquisition_with_progress: type: a requested state change (text entered or an option selected)')
     expect(mechanical.rounds[4]!.tags.search).toBe(false)
-    // The head of the rail-sourced streak is counted as ADR 0048 counts it.
+    // The head of the rail-sourced streak is counted as ADR 0048 counts it,
+    // and the refused search at streak 3 is a loop round by the rule (#259):
+    // the rail refused it for the loop, whatever kind the refusal makes its round.
     expect(mechanical.searchLoopHeads).toEqual([1])
-    expect(mechanical.mechanicalSearchRounds).toBe(3)
+    expect(mechanical.mechanicalSearchRounds).toBe(4)
+    expect(mechanical.searchRoundsAtStreak2).toBe(3)
+    expect(mechanical.searchRoundsAtStreak3).toBe(2)
+  })
+
+  it('never reads the streak off the observation: a trace recorded under the same-intent rule counts under the consecutive one (ADR 0058)', () => {
+    // The rail under ADR 0048 recorded streak 1 for a second search that
+    // shared no words; the audit replays its current rule over the same calls.
+    const SEARCH_V = 'https://duckduckgo.com/?q=voyager+interstellar+crossing'
+    const olderRule: RoundSpec[] = [
+      { round: 1, at: 1_000, calls: [{ name: 'navigate', args: { url: SEARCH_A }, result: PAGE('search', SEARCH_A, 'bbbb2222'), observation: { query: 'harrison longitude watch catalogue', signature: 'url', streak: 1 } }] },
+      { round: 2, at: 2_000, calls: [{ name: 'navigate', args: { url: SEARCH_V }, result: PAGE('search', SEARCH_V, 'cccc3333'), observation: { query: 'voyager interstellar crossing', signature: 'url', streak: 1 } }] },
+    ]
+    const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(olderRule, EXTRA) }))
+    expect(searchesOf(mechanical)[1]).toEqual([{ query: 'voyager interstellar crossing', streak: 2, signature: 'url', rewords: false }])
+    expect(mechanical.searchLoopHeads).toEqual([1])
   })
 
   it('replays an observation-free trace as before: a successful type resets, and the source says replay or none', () => {
@@ -935,7 +981,7 @@ describe('the rail’s Search Observations (#243, ADR 0049)', () => {
     const replayed = classifyAttempt(inputOf())
     expect(railed).toHaveProperty('searchSource', 'rail')
     // The source is not the reviewer's business: the replayed digest is the pinned one.
-    expect(replayed.digestHash).toBe('sha256:2ddc370253e372dd92651a92a1b6771f3d655a0372a906e1bd40fb620210d401')
+    expect(replayed.digestHash).toBe(DIGEST_HASH_PIN)
     const set = buildAuditSet(
       provenanceOf(),
       [railed, replayed].map((mechanical) => ({ mechanical, review: null, countsAfterOverrules: countsAfterOverrulesOf(mechanical, null) })),
@@ -943,7 +989,7 @@ describe('the rail’s Search Observations (#243, ADR 0049)', () => {
     )
     expect(set.populations.initial.searchSources).toEqual({ rail: 1, replay: 1, none: 0 })
     const markdown = formatAuditSet(set)
-    expect(markdown).toContain('- search source rail: the rail’s own Search Observations')
+    expect(markdown).toContain('- search source rail: the rail’s own Search Observations, the streak replayed by its rule')
     expect(markdown).toContain('- search source replay: the streak rule re-run over navigate searches')
     expect(markdown).toContain('by search source rail 1, replay 1, none 0')
   })
@@ -1645,5 +1691,49 @@ describe('same-source unsupported rounds (#257, ADR 0054)', () => {
       return audit.attempts.reduce((total, attempt) => total + sameSourceUnsupportedRoundsOf(attempt.mechanical.rounds), 0)
     })
     expect(perPass).toEqual([0, 5, 0])
+  })
+})
+
+describe('the consecutive-search rule recounted on the committed fix-257 audits (#259, AC3)', () => {
+  type Report = { attempts: { mechanical: { huntId: string; stepId: string; rounds: AuditRound[]; mechanicalSearchRounds: number; searchLoopHeads: number[] } }[] }
+  const passes = [1, 2, 3].map((pass) => JSON.parse(readFileSync(join(REPORTS_DIR, `audit-fix-257-${pass}.json`), 'utf8')) as Report)
+
+  it('marks 37 orchestrator rounds at streak 2 or beyond and 22 at 3 or beyond, against 22 Search Loop rounds as written under the same-intent rule', () => {
+    // The issue's 50 and 26 counted the Browse Subagents' own rails with
+    // the orchestrator's (13 calls at streak 2 or beyond and 4 rounds at 3
+    // or beyond in Subagent rounds); the audit reads the orchestrator's
+    // rounds only (ADR 0049), and these are its numbers on that population.
+    const asWritten = { mechanicalSearchRounds: 0, searchRoundsAtStreak2: 0, searchRoundsAtStreak3: 0 }
+    const recounted = { mechanicalSearchRounds: 0, searchRoundsAtStreak2: 0, searchRoundsAtStreak3: 0, heads: 0 }
+    for (const report of passes) {
+      for (const { mechanical } of report.attempts) {
+        const written = searchLoopCountsOf(mechanical.rounds)
+        expect(written.mechanicalSearchRounds).toBe(mechanical.mechanicalSearchRounds)
+        expect(written.searchLoopHeads).toEqual(mechanical.searchLoopHeads)
+        asWritten.mechanicalSearchRounds += written.mechanicalSearchRounds
+        asWritten.searchRoundsAtStreak2 += written.searchRoundsAtStreak2
+        asWritten.searchRoundsAtStreak3 += written.searchRoundsAtStreak3
+        const replayed = searchLoopCountsOf(replaySearchStreaks(mechanical.rounds))
+        recounted.mechanicalSearchRounds += replayed.mechanicalSearchRounds
+        recounted.searchRoundsAtStreak2 += replayed.searchRoundsAtStreak2
+        recounted.searchRoundsAtStreak3 += replayed.searchRoundsAtStreak3
+        recounted.heads += replayed.searchLoopHeads.length
+      }
+    }
+    expect(asWritten).toEqual({ mechanicalSearchRounds: 22, searchRoundsAtStreak2: 11, searchRoundsAtStreak3: 0 })
+    expect(recounted).toEqual({ mechanicalSearchRounds: 52, searchRoundsAtStreak2: 37, searchRoundsAtStreak3: 22, heads: 15 })
+  })
+
+  it('reads Voyager pass 2 rounds 16–19 as one streak to 4 where the same-intent rule recorded 1, 1, 2, 1', () => {
+    const voyager = passes[1]!.attempts.find(({ mechanical }) => mechanical.huntId === 'superseded-voyager-interstellar' && mechanical.stepId === 'initial')!.mechanical
+    const streaksOf = (rounds: readonly AuditRound[]) => rounds.filter((round) => round.round >= 16 && round.round <= 19).map((round) => round.calls.map((call) => call.search?.streak ?? null))
+    expect(streaksOf(voyager.rounds)).toEqual([[null, 1], [null, 1], [2], [1]])
+    const replayed = replaySearchStreaks(voyager.rounds)
+    expect(streaksOf(replayed)).toEqual([[null, 1], [null, 2], [3], [4]])
+    // Only round 18 rewords the one before it — the one pair the same-intent
+    // rule caught; the streak no longer needs it.
+    expect(replayed.filter((round) => round.round >= 17 && round.round <= 19).map((round) => round.calls.at(-1)!.search!.rewords)).toEqual([false, true, false])
+    // What was judged stays as judged: the digest's kinds and reasons are untouched.
+    expect(replayed.map((round) => `${round.kind}: ${round.reason}`)).toEqual(voyager.rounds.map((round) => `${round.kind}: ${round.reason}`))
   })
 })
