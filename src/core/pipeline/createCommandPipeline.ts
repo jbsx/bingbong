@@ -40,7 +40,7 @@ import type { SnapshotRef } from '../browser/snapshot'
 import { createToolRoundExecutor, type ToolRoundExecutor } from './toolRound'
 import {
   createEffortEpoch,
-  escalationDeclineOf,
+  tierEscalationDeclineOf,
   finalizationDetailSentence,
   deterministicFinalAnswer,
   BOOKKEEPING_KEPT_FOR_REPORT_REASON,
@@ -807,9 +807,10 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
       effortEpoch: createEffortEpoch({
         clock,
         activeWorkDeadlineMs: deps.activeWorkDeadlineMs,
-        // The deadline's Progress test (#216, ADR 0042): the no-progress
-        // rail's own answer, read live — the executor that owns the rail
-        // is created further down this Run, so this cannot be a value.
+        // Both arms' Progress test (#216, ADR 0042; #266, ADR 0063): the
+        // no-progress rail's own answer, read live — the executor that owns
+        // the rail is created further down this Run, so this cannot be a
+        // value.
         makingProgress: () => toolRound?.makingProgress() ?? false,
         // What a bookkeeping round would have to record (#256, ADR 0056): a
         // report this entry collected, or the rail's Progress since the last
@@ -1589,7 +1590,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             const { cause } = effortEpoch.phase
             // The refused Tier Escalation a budget or deadline entry carries
             // (#266, ADR 0063), read before the skip moves the phase on.
-            const declined = escalationDeclineOf(effortEpoch.phase)
+            const declined = tierEscalationDeclineOf(effortEpoch.phase)
             const skipped = effortEpoch.skipBookkeepingRound()
             traceRun?.(() => ({
               turnId,
@@ -2215,9 +2216,10 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             if (planReport !== null) {
               // What the review judges against (#116/#216): the fallback
               // Lookup plan is a default and constrains nothing, but a
-              // tier the deadline raised is a decision — a first
-              // declaration back down is the downgrade the review
-              // already refuses, not an opening statement.
+              // tier the epoch raised — at the deadline (#216) or the
+              // round budget (#266) — is a decision: a first declaration
+              // back down is the downgrade the review already refuses,
+              // not an opening statement.
               const review = reviewPlanReport(runPlan, modelDeclaredPlan || tierRaisedByEpoch, planReport)
               if (review.kind === 'rejected') {
                 planResultError = review.reason

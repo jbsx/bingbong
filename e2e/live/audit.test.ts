@@ -3,7 +3,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { FINALIZATION_REASONING_EFFORT as SOURCE_FINALIZATION_EFFORT, TIER_REASONING_EFFORT as SOURCE_TIER_EFFORT, TIER_TOOL_ROUND_BUDGETS as SOURCE_BUDGETS, ESCALATION_DECLINE_REASONS as SOURCE_DECLINE_REASONS, budgetWarningMessage, finalizeInstruction, notExecuted } from '../../src/core/pipeline/effortEpoch'
+import { FINALIZATION_REASONING_EFFORT as SOURCE_FINALIZATION_EFFORT, TIER_REASONING_EFFORT as SOURCE_TIER_EFFORT, TIER_TOOL_ROUND_BUDGETS as SOURCE_BUDGETS, TIER_ESCALATION_DECLINE_REASONS as SOURCE_DECLINE_REASONS, TIER_ESCALATION_ARMS as SOURCE_ARMS, budgetWarningMessage, finalizeInstruction, notExecuted } from '../../src/core/pipeline/effortEpoch'
 import { SCROLL_END_OF_PAGE } from '../../src/core/browser/scrollDelta'
 import { CONSENT_LABEL_RE, consentDismissalLine, consentRetryNote } from '../../src/core/browser/dialogPolicy'
 import { blockedActionHead } from '../../src/core/browser/actionOutcome'
@@ -20,7 +20,8 @@ import {
   CONSENT_LABEL_PATTERN,
   JUDGEMENT_SCHEMA,
   END_OF_PAGE_MARK,
-  ESCALATION_DECLINE_REASONS,
+  TIER_ESCALATION_ARMS,
+  TIER_ESCALATION_DECLINE_REASONS,
   FINALIZATION_REASONING_EFFORT,
   FINALIZE_INSTRUCTION_MARK,
   NO_PROGRESS_NOTICE_MARK,
@@ -2169,7 +2170,7 @@ describe('Tier Escalations by arm and the recorded decline (#266, ADR 0063)', ()
     cause: arm === 'budget' ? 'budget_exhausted' : 'deadline_reached',
     bookkeeping: 'kept',
     reason: 'something new',
-    declined: { arm, declined: reason },
+    declined: { arm, reason },
   })
   /**
    * The fixture in a real trace's order: the model's Lookup plan first, then
@@ -2186,7 +2187,8 @@ describe('Tier Escalations by arm and the recorded decline (#266, ADR 0063)', ()
   const atVersion = (records: readonly TraceRecord[], v: number): TraceRecord[] => records.map((record) => ({ ...record, v })) as unknown as TraceRecord[]
 
   it('pins the decline reasons and the arms to the source', () => {
-    expect(ESCALATION_DECLINE_REASONS).toEqual(SOURCE_DECLINE_REASONS)
+    expect(TIER_ESCALATION_DECLINE_REASONS).toEqual(SOURCE_DECLINE_REASONS)
+    expect(TIER_ESCALATION_ARMS).toEqual(SOURCE_ARMS)
   })
 
   it('reads each escalation with the digest round before it, the replay’s verdict on that round, and the re-armed budget', () => {
@@ -2198,7 +2200,9 @@ describe('Tier Escalations by arm and the recorded decline (#266, ADR 0063)', ()
     expect(mechanical.deadlineEscalations).toBe(0)
     expect(mechanical.tierEscalations).toEqual({
       fired: [{ arm: 'budget', before: 13, progressBefore: true }],
-      declined: { arm: 'budget', reason: 'no_progress' },
+      // The stop's entry is written after the last round, so the replay's
+      // verdict is on the digest's last round — here one with no call to judge.
+      declined: { arm: 'budget', reason: 'no_progress', before: 15, progressBefore: null },
       declineRecorded: true,
     })
     // The round before is the retried round 12's navigate to a fresh page.
@@ -2230,21 +2234,23 @@ describe('Tier Escalations by arm and the recorded decline (#266, ADR 0063)', ()
       progressBefore: 1,
       noProgressBefore: 0,
       declined: { no_rail: 0, no_tier_above: 0, once_spent: 0, hard_ceiling: 0, no_progress: 1, other: 0 },
+      declinedAgainstReplay: 0,
       declinesNotRecorded: 1,
     })
     const markdown = formatAuditSet(set)
-    expect(markdown).toMatch(/tier investigation \(1 Tier Escalation\(s\): 1 at the budget\); \d+ of 19 Tool Rounds used/)
-    expect(markdown).toContain('- Tier Escalations: budget arm after round 13 (replay: Progress); declined at the budget: no_progress')
+    expect(markdown).toMatch(/tier investigation \(1 Tier Escalation\(s\): 1 at the budget\); \d+ Tool Rounds used over 2 tier epochs, the last budgeted 19/)
+    expect(markdown).toMatch(/tier investigation; \d+ of 24 Tool Rounds used/)
+    expect(markdown).toContain('- Tier Escalations: budget arm after round 13, replay: Progress; declined at the budget: no_progress (after round 15, replay: no judged call)')
     expect(markdown).toContain('- Tier Escalations: none fired; decline not recorded (a Run Trace below version 5)')
-    expect(markdown).toContain('1 budget-armed and 0 deadline-armed Tier Escalation(s) (replay found Progress before 1, none before 0), declined no_progress 1 (1 attempt(s) not recorded)')
+    expect(markdown).toContain('1 budget-armed and 0 deadline-armed Tier Escalation(s) (replay found Progress before 1, none before 0), declined no_progress 1, 0 declined no_progress against the replay (1 attempt(s) not recorded)')
     expect(markdown).toContain('## Tier Escalations by hunt')
-    expect(markdown).toContain('| hunt-x | 1 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 1 | 1 |')
+    expect(markdown).toContain('| hunt-x | 1 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 1 |')
 
     const other = buildAuditSet(provenanceOf({ setId: 'set-2', createdAt: '2026-09-12T18:00:00.000Z' }), [attemptOf(fired)], [])
     const aggregate = buildAuditAggregate([set, other], '2026-09-14T11:00:00.000Z')
     if (!aggregate.ok) throw new Error(aggregate.errors.join('; '))
     expect(aggregate.value.tierEscalationsByHunt).toEqual({ 'hunt-x': expect.objectContaining({ budget: 2, declinesNotRecorded: 1 }) })
-    expect(formatAuditAggregate(aggregate.value)).toContain('| hunt-x | 2 | 0 | 2 | 0 | 0 | 0 | 0 | 0 | 2 | 1 |')
+    expect(formatAuditAggregate(aggregate.value)).toContain('| hunt-x | 2 | 0 | 2 | 0 | 0 | 0 | 0 | 0 | 2 | 0 | 1 |')
   })
 
   it('still counts a deadline-armed escalation on a trace that carried no budget', () => {

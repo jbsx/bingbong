@@ -25,15 +25,15 @@ import {
   DEADLINE_TIER_ESCALATION_REASON,
   BUDGET_ARM_WARNING_SENTENCE,
   BUDGET_TIER_ESCALATION_REASON,
-  ESCALATION_DECLINE_REASONS,
-  escalationDeclineOf,
-  escalationDeclineSentence,
+  TIER_ESCALATION_DECLINE_REASONS,
+  tierEscalationDeclineOf,
+  tierEscalationDeclineSentence,
   finalizationDetailSentence,
   TIER_REASONING_EFFORT,
   TIER_TOOL_ROUND_BUDGETS,
   type EffortEpoch,
-  type EscalationDecline,
-  type EscalationDeclineReason,
+  type TierEscalationDecline,
+  type TierEscalationDeclineReason,
   type TierEscalation,
 } from './effortEpoch'
 import { DEFAULT_EFFORT_TIER, type EffortTier } from './runPlan'
@@ -45,9 +45,9 @@ import { SUBAGENT_LIMITS } from '../agent/subagentRails'
  * reached and the first guard that refused to escalate. A lean epoch
  * (no Progress test) and a Subagent's record `no_rail`.
  */
-const declined = (cause: 'budget_exhausted' | 'deadline_reached', reason: EscalationDeclineReason): EscalationDecline => ({
+const declined = (cause: 'budget_exhausted' | 'deadline_reached', reason: TierEscalationDeclineReason): TierEscalationDecline => ({
   arm: cause === 'budget_exhausted' ? 'budget' : 'deadline',
-  declined: reason,
+  reason,
 })
 
 describe('Effort Epoch (#146, ADR 0027)', () => {
@@ -1297,7 +1297,7 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
         expect(notice).toMatch(/If the objective is already met, finish now\.$/)
         expect(notice).not.toContain('deadline passed')
         // The deadline's own Notice is unchanged but for the clause, and does not offer the finish.
-        const deadline = tierEscalationNotice('investigation')
+        const deadline = tierEscalationNotice('investigation', 'deadline')
         expect(deadline).toContain('the active-work deadline passed while this run was still making progress')
         expect(deadline).toContain('This happens once: the next deadline ends the run')
         expect(deadline).not.toContain('finish now')
@@ -1312,14 +1312,14 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
         expect(finalizationDetailSentence(epoch.phase)).toBe(
           'No Tier Escalation followed the tool-round budget: the current Approach was not making Progress',
         )
-        expect(escalationDeclineOf(epoch.phase)).toEqual({ arm: 'budget', declined: 'no_progress' })
-        for (const reason of ESCALATION_DECLINE_REASONS) {
-          expect(escalationDeclineSentence({ arm: 'deadline', declined: reason })).toMatch(/^No Tier Escalation followed the active-work deadline: /)
+        expect(tierEscalationDeclineOf(epoch.phase)).toEqual({ arm: 'budget', reason: 'no_progress' })
+        for (const reason of TIER_ESCALATION_DECLINE_REASONS) {
+          expect(tierEscalationDeclineSentence({ arm: 'deadline', reason })).toMatch(/^No Tier Escalation followed the active-work deadline: /)
         }
         // The model's Finalize Instruction and the deterministic Answer read
         // the cause alone: the decline is the Stop Record's, not theirs.
-        expect(finalizeInstruction('budget_exhausted', escalationDeclineOf(epoch.phase))).toBe(finalizeInstruction('budget_exhausted'))
-        const answer = deterministicFinalAnswer({ command: 'find it', cause: 'budget_exhausted', detail: escalationDeclineOf(epoch.phase), sources: [] })
+        expect(finalizeInstruction('budget_exhausted', tierEscalationDeclineOf(epoch.phase))).toBe(finalizeInstruction('budget_exhausted'))
+        const answer = deterministicFinalAnswer({ command: 'find it', cause: 'budget_exhausted', detail: tierEscalationDeclineOf(epoch.phase), sources: [] })
         expect(answer.display).not.toMatch(/escalat|budget/i)
         expect(answer.speak).not.toMatch(RESOURCE_ACCOUNTING)
       })
@@ -1358,7 +1358,7 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
       epoch.decideLoopTop()
 
       const notice = epoch.takeTierEscalationNotice()
-      expect(notice).toBe(tierEscalationNotice('investigation'))
+      expect(notice).toBe(tierEscalationNotice('investigation', 'deadline'))
       expect(notice).toContain('Investigation')
       expect(notice).toContain('still making progress')
       expect(epoch.takeTierEscalationNotice()).toBeNull()
