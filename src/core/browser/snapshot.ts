@@ -1,3 +1,4 @@
+import type { Cover, CoverProbe } from './actionOutcome'
 import {
   pageReadPartLine,
   partPastTheEnd,
@@ -431,6 +432,27 @@ export function formatRefLine(ref: SnapshotRef): string {
   ]
   const dialogMarker = ref.layer === 'dialog' ? ' (dialog)' : ''
   return `[${ref.ref}] ${ref.kind}${subtype}${label}${src}${href}${state.length > 0 ? ` ${state.join(' ')}` : ''}${dialogMarker}`
+}
+
+/** How many contained refs a labelled or unlabelled Cover names (ADR 0062). */
+const MAX_COVER_REFS = 3
+
+/**
+ * A Cover probe named as a page read names refs (ADR 0062), against the refs
+ * the outcome's numbers belong to: a number they do not list names nothing,
+ * so it is dropped, and a ref cover they do not list falls back to a bare element.
+ */
+export function coverOf(probe: CoverProbe, refs: readonly SnapshotRef[]): Cover {
+  const lineOf = (ref: number): string | null => {
+    const listed = refs.find((candidate) => candidate.ref === ref)
+    return listed === undefined ? null : formatRefLine(listed)
+  }
+  if ('ref' in probe) {
+    const line = lineOf(probe.ref)
+    return line === null ? { kind: 'unlabelled', tag: 'element', contains: [] } : { kind: 'ref', line }
+  }
+  const contains = probe.contains.map(lineOf).filter((line): line is string => line !== null).slice(0, MAX_COVER_REFS)
+  return 'role' in probe ? { kind: 'labelled', role: probe.role, name: probe.name, contains } : { kind: 'unlabelled', tag: probe.tag, contains }
 }
 
 /** Everything a formatted snapshot says above its page text. */

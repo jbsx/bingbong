@@ -184,6 +184,14 @@ async function assessRefAction(browser: BrowserController, call: ToolCall, tool:
 /** A click outcome that says the page left for another URL — the only click that settles on a new landing. */
 const CLICK_LEFT_THE_PAGE_RE = /\burlChanged=true\b/
 
+/**
+ * What a Blocked Action says and what to do next, the same for click and
+ * type (ADR 0062). It names no thing to hunt: a Covered outcome already
+ * names the ref over the target, and a Not Shown one has no cover at all.
+ */
+export const BLOCKED_ACTION_GUIDANCE =
+  'A "covered by" result names what sits over the target: act on the ref it names, or choose another target you were shown. A "not shown" result means the target is inside a hidden or inert container: no dismissal reaches it; choose a target you were shown.'
+
 // Orchestrator-facing browser verbs. click/type are risk-gated: the gate
 // classifies the target's snapshot facts (core/pipeline/riskGate.ts) and the
 // pipeline enforces the verdict — confirm for form submits/downloads, hard
@@ -263,7 +271,7 @@ export function createBrowserTools(browser: BrowserController, vision?: VisionDe
       name: 'click',
       acquisition: true,
       description:
-        'Click a ref, then return the URL-change flag, dialog-open flag, clicked state delta, and any coarse page change. When the click meaningfully changes the page (navigation, dialog, state change), the settled page state with fresh refs follows — continue from those refs; the page text is a preview; read_page returns the whole text. A click that lands on a page that names nothing carries a NOT-FOUND marker, and one the site could not serve right now an UNAVAILABLE marker. An inert click returns only the concise no-change line. A "blocked by overlay" result means something (usually a dialog) covers the target: read the page, handle the dialog, then retry.',
+        'Click a ref, then return the URL-change flag, dialog-open flag, clicked state delta, and any coarse page change. When the click meaningfully changes the page (navigation, dialog, state change), the settled page state with fresh refs follows — continue from those refs; the page text is a preview; read_page returns the whole text. A click that lands on a page that names nothing carries a NOT-FOUND marker, and one the site could not serve right now an UNAVAILABLE marker. An inert click returns only the concise no-change line. ' + BLOCKED_ACTION_GUIDANCE,
       parameters: {
         ref: { type: 'integer', description: 'Element ref number from the snapshot, e.g. 7 for the element shown as [7]' },
       },
@@ -290,7 +298,7 @@ export function createBrowserTools(browser: BrowserController, vision?: VisionDe
       name: 'type',
       acquisition: true,
       description:
-        'Focus the target ref and type text; no separate click is needed. Returns the field actual current value. For a select ref, type the visible label of the option to choose — keyboard selection; newlines are ignored (a select never submits), and the outcome reports the now-selected option, so a pick that did not land is visible. In other fields a trailing newline ("\\n") sends Enter and may navigate — a page change returns the settled page state with fresh refs.',
+        'Focus the target ref and type text; no separate click is needed. Returns the field actual current value. For a select ref, type the visible label of the option to choose — keyboard selection; newlines are ignored (a select never submits), and the outcome reports the now-selected option, so a pick that did not land is visible. In other fields a trailing newline ("\\n") sends Enter and may navigate — a page change returns the settled page state with fresh refs. ' + BLOCKED_ACTION_GUIDANCE,
       parameters: {
         ref: { type: 'integer', description: 'Element ref number to type into' },
         text: { type: 'string', description: 'Text to type' },

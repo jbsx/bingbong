@@ -122,7 +122,7 @@ describe('popup and dialog escalation tiers e2e', () => {
     const targets = await harness.cdp.send<{ targetInfos: { type: string; url: string }[] }>('Target.getTargets')
     expect(targets.targetInfos.some((target) => target.type === 'page' && target.url === fixture.url('/second'))).toBe(false)
 
-    expect(byId['overlay-click']).toBe('clicked [1]: not clicked — blocked by overlay')
+    expect(byId['overlay-click']).toBe('clicked [1]: not clicked — covered by an unlabelled <div>')
 
     expect(byId['before-leave']).toContain('native beforeunload dialog auto-dismissed:')
     expect(await harness.paneUrl()).toBe(fixture.url('/beforeunload'))

@@ -372,6 +372,39 @@ function overlayPage(): string {
 </html>`
 }
 
+// #264 (ADR 0062): a labelled region laid over the collection search box,
+// with a sibling underlay beneath it — the Cover the outcome names, with
+// the three buttons it contains. None of the labels is a consent choice, so
+// no Tier-1 dismissal clears it.
+function coveredTargetPage(): string {
+  return `<!doctype html>
+<html>
+<head><title>covered target fixture</title></head>
+<body style="margin:0">
+  <main><h1>covered target fixture</h1><input aria-label="Search the collection" style="position:absolute;top:120px;left:40px;width:300px;height:36px"></main>
+  <div id="underlay" style="position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:40"></div>
+  <div role="region" aria-label="Newsletter sign-up" style="position:fixed;top:80px;left:0;right:0;height:200px;background:#fff;z-index:50">
+    <p style="margin:0;padding:40px">Get the collection newsletter.</p>
+    <div style="position:absolute;bottom:8px;left:8px"><button>Subscribe</button><button>Not now</button><button>Settings</button></div>
+  </div>
+</body>
+</html>`
+}
+
+// #264 (ADR 0062): a header search input inside a zero-height,
+// overflow-hidden drawer — not inert, so the collector lists it, but its
+// centre is clipped away and the hit test never reaches it: Not Shown.
+function clippedDrawerPage(): string {
+  return `<!doctype html>
+<html>
+<head><title>clipped drawer fixture</title></head>
+<body style="margin:0">
+  <header><div id="drawer" style="overflow:hidden;height:0"><input type="search" aria-label="Search the site"></div></header>
+  <main style="padding-top:60px"><h1>clipped drawer fixture</h1><input aria-label="Search the collection"></main>
+</body>
+</html>`
+}
+
 // Media-verb fixture: a page that records every keydown it receives, so the
 // e2e can assert the exact trusted key events media_control injects (keys,
 // shift state) without depending on a real video provider.
@@ -1335,6 +1368,14 @@ export async function startFixtureServer(): Promise<FixtureServer> {
     }
     if (req.url === '/overlay') {
       res.end(overlayPage())
+      return
+    }
+    if (req.url === '/covered-target') {
+      res.end(coveredTargetPage())
+      return
+    }
+    if (req.url === '/clipped-drawer') {
+      res.end(clippedDrawerPage())
       return
     }
     if (req.url === '/media') {

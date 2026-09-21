@@ -1,5 +1,6 @@
 import { MAX_COLLECTED_PAGE_TEXT } from '../../core/browser/pageText'
 import { CONSENT_LABEL_RE } from '../../core/browser/dialogPolicy'
+import type { CoverProbe } from '../../core/browser/actionOutcome'
 
 // Runs inside the pane's page via Runtime.evaluate. Returns the CollectedPage
 // shape consumed by core/browser/snapshot.ts — DOM-specific work (labeling,
@@ -46,6 +47,11 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
     const rect = el.getBoundingClientRect()
     return rect.bottom > 0 && rect.right > 0 && rect.top < vh && rect.left < vw
   }
+  // ADR 0062: nothing inside an inert subtree is focusable or clickable by
+  // the platform's definition, so it is never a target — a closed drawer
+  // styled open but marked inert lists nothing. That is the one thing the
+  // rect rule learns: opacity and clipping stay act-time facts.
+  const insideInert = (el) => el.closest('[inert]') !== null
   const labelOf = (el) => {
     const parts = []
     const ariaLabel = el.getAttribute('aria-label')
@@ -164,7 +170,7 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
     for (const control of document.querySelectorAll(CONSENT_CONTROL_SELECTOR)) {
       // Cheap text first: innerText lays out, and most controls are not consent choices.
       const text = [control.getAttribute('aria-label'), control.value, control.textContent].filter((part) => typeof part === 'string').join(' ').replace(/\\s+/g, ' ')
-      if (!CONSENT_LABEL_RE.test(text) || !hasSize(control)) continue
+      if (!CONSENT_LABEL_RE.test(text) || !hasSize(control) || insideInert(control)) continue
       const root = pinnedAncestor(control)
       if (root === null || !rectVisible(root)) continue
       if (last === null || (last.compareDocumentPosition(root) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0) last = root
@@ -174,7 +180,7 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
   const currentDialogRoot = () => {
     const dialogs = Array.from(document.querySelectorAll(DIALOG_SELECTOR)).filter((dialog) => {
       const style = window.getComputedStyle(dialog)
-      return dialog.getAttribute('aria-hidden') !== 'true' && style.display !== 'none' && style.visibility !== 'hidden' && hasSize(dialog)
+      return dialog.getAttribute('aria-hidden') !== 'true' && style.display !== 'none' && style.visibility !== 'hidden' && hasSize(dialog) && !insideInert(dialog)
     })
     // A role-bearing root always wins over the rule.
     return dialogs.length > 0 ? dialogs[dialogs.length - 1] : consentWallRoot()
@@ -214,6 +220,7 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
     for (const el of document.querySelectorAll(SELECTOR)) {
       if (el.tagName === 'INPUT' && el.type === 'hidden') continue
       if (el.tagName === 'IFRAME' && crossOriginIframeSrc(el) === null) continue
+      if (insideInert(el)) continue
       if (dialogRoot !== null && dialogRoot.contains(el)) {
         if (!hasSize(el)) continue
         dialogElements.push(el)
@@ -449,4 +456,104 @@ export function overlayShownRefsScript(indices: number[]): string {
  */
 export function refIsShownScript(index: number): string {
   return `(() => typeof window.__bingbongRefShown === 'function' ? window.__bingbongRefShown(${index}) : false)()`
+}
+
+/**
+ * What the click preparation found: fresh click coordinates, whether a
+ * coordinate click lands on the target, and — when it does not — why, as
+ * the page's hit test decided it (ADR 0062). No coordinates means the
+ * target cannot be brought into the viewport at all.
+ */
+export interface ClickPrep {
+  ok: boolean
+  x?: number
+  y?: number
+  clickable?: boolean
+  blocked?: { fact: 'covered'; cover: CoverProbe } | { fact: 'notShown' }
+}
+
+/**
+ * Which registry numbers a Cover may be named by: the first `listed`, and —
+ * when the outcome carries no listing of its own — only those still the
+ * node the model was shown (ADR 0033), so a named ref is one the model holds.
+ */
+export interface CoverNaming {
+  listed: number
+  shownOnly: boolean
+}
+
+/**
+ * Scroll the registry node at this index into view and hit-test its centre
+ * with `elementsFromPoint`, which returns the whole paint-order stack (ADR
+ * 0062). The target on top (or under its own descendant) is clickable; the
+ * target in the stack under something else is Covered, and the entries
+ * above it are the covers; the target absent from the stack is Not Shown —
+ * inert, clipped, hidden or `pointer-events: none`, which no dismissal
+ * reaches. A cover is the first entry above that is a nameable ref or lies
+ * inside one; else the first with an accessible name, by role and name;
+ * else the top entry's tag — the last two with up to three refs inside.
+ */
+export function clickPrepScript(index: number, naming: CoverNaming): string {
+  return `(() => {
+    const el = (window.__bingbongRefs || [])[${index}]
+    if (!el || !el.isConnected) return { ok: false }
+    el.scrollIntoView({ block: 'center', inline: 'nearest' })
+    const vw = window.innerWidth
+    const vh = window.innerHeight
+    const rect = el.getBoundingClientRect()
+    const clamp = (value, low, high) => Math.min(Math.max(value, low), high)
+    const visibleLeft = Math.max(rect.x, 0)
+    const visibleRight = Math.min(rect.x + rect.width, vw)
+    const visibleTop = Math.max(rect.y, 0)
+    const visibleBottom = Math.min(rect.y + rect.height, vh)
+    const x = Math.round(clamp(rect.x + rect.width / 2, visibleLeft, Math.max(visibleLeft, visibleRight - 1)))
+    const y = Math.round(clamp(rect.y + rect.height / 2, visibleTop, Math.max(visibleTop, visibleBottom - 1)))
+    if (x < 0 || y < 0 || x >= vw || y >= vh) return { ok: true, clickable: false }
+    const stack = document.elementsFromPoint(x, y)
+    const top = stack.length > 0 ? stack[0] : null
+    if (top === el || (top !== null && el.contains(top))) return { ok: true, x, y, clickable: true }
+    const at = stack.indexOf(el)
+    if (at < 0) return { ok: true, x, y, clickable: false, blocked: { fact: 'notShown' } }
+    const covered = (cover) => ({ ok: true, x, y, clickable: false, blocked: { fact: 'covered', cover } })
+    const above = stack.slice(0, at).filter((entry) => !el.contains(entry) && !entry.contains(el))
+    const refs = window.__bingbongRefs || []
+    const shown = window.__bingbongShownRefs || []
+    const nameable = (i) => i >= 0 && i < ${naming.listed} && (${!naming.shownOnly} || shown[i] === refs[i]) && !refs[i].contains(el)
+    const refOf = (node) => {
+      for (let n = node; n !== null; n = n.parentElement) {
+        const i = refs.indexOf(n)
+        if (nameable(i)) return i + 1
+      }
+      return 0
+    }
+    for (const entry of above) {
+      const ref = refOf(entry)
+      if (ref > 0) return covered({ ref })
+    }
+    const contained = (cover) => {
+      const found = []
+      for (let i = 0; i < refs.length && found.length < 3; i++) {
+        if (nameable(i) && cover.contains(refs[i])) found.push(i + 1)
+      }
+      return found
+    }
+    const nameOf = (node) => {
+      const parts = [node.getAttribute('aria-label')]
+      const labelledBy = node.getAttribute('aria-labelledby')
+      if (labelledBy) parts.push(labelledBy.split(/\\s+/).map((id) => (document.getElementById(id) || {}).textContent || '').join(' '))
+      parts.push(node.getAttribute('alt'), node.getAttribute('title'))
+      for (const part of parts) {
+        const name = (part || '').replace(/\\s+/g, ' ').trim()
+        if (name) return name.length <= 80 ? name : name.slice(0, 79) + '…'
+      }
+      return ''
+    }
+    const IMPLICIT_ROLES = { DIALOG: 'dialog', NAV: 'navigation', ASIDE: 'complementary', HEADER: 'banner', FOOTER: 'contentinfo', MAIN: 'main', FORM: 'form', SECTION: 'region', IMG: 'img', A: 'link', BUTTON: 'button', UL: 'list', OL: 'list', TABLE: 'table' }
+    for (const entry of above) {
+      const name = nameOf(entry)
+      if (name) return covered({ role: entry.getAttribute('role') || IMPLICIT_ROLES[entry.tagName] || entry.tagName.toLowerCase(), name, contains: contained(entry) })
+    }
+    const first = above.length > 0 ? above[0] : stack[0]
+    return covered({ tag: first.tagName.toLowerCase(), contains: contained(first) })
+  })()`
 }

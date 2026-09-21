@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest'
 import { FINALIZATION_REASONING_EFFORT as SOURCE_FINALIZATION_EFFORT, TIER_REASONING_EFFORT as SOURCE_TIER_EFFORT, TIER_TOOL_ROUND_BUDGETS as SOURCE_BUDGETS, budgetWarningMessage, finalizeInstruction, notExecuted } from '../../src/core/pipeline/effortEpoch'
 import { SCROLL_END_OF_PAGE } from '../../src/core/browser/scrollDelta'
 import { CONSENT_LABEL_RE, consentDismissalLine, consentRetryNote } from '../../src/core/browser/dialogPolicy'
+import { blockedActionHead } from '../../src/core/browser/actionOutcome'
 import { similarQueries as ruleSimilarQueries } from '../../src/core/pipeline/searchLoopRule'
 import { createSearchLoopRail, SEARCH_LOOP_NUDGE, searchQueryFromUrl as railSearchQueryFromUrl, type SearchObservation } from '../../src/core/pipeline/searchLoopRail'
 import type { PerfSpanRecord } from '../../src/core/perf/perfTracer'
@@ -1057,13 +1058,16 @@ describe('the rail’s Search Observations (#243, ADR 0049)', () => {
       ref: 7, kind: 'input', label: 'Search e.g. cutty sark', inputType: 'search', rect: { x: 0, y: 0, width: 200, height: 32 }, src: null, href: null,
       downloadsFile: false, submitsForm: false, credentialField: false, paymentField: false, inForm: false, formHasCredential: false, formHasPayment: false, searchField: true, formHasSearch: true,
     }
-    // fix-258-259 pass 2 rounds 2–6, then an inert click and one more search.
+    // fix-258-259 pass 2 rounds 2–6 as the port reports them since #264 (ADR
+    // 0062) — the consent underlay Covered the search box, the closed drawer's
+    // input and Close button were Not Shown — then an inert click and one more search.
+    const UNDERLAY = blockedActionHead('type', 7, { fact: 'covered', cover: { kind: 'unlabelled', tag: 'div', contains: [] } })
     const PASS_2: RoundSpec[] = [
       { round: 1, at: 1_000, calls: [{ name: 'navigate', args: { url: COLLECTIONS }, result: PAGE('Collections', COLLECTIONS, 'aaaa1111') }] },
-      { round: 2, at: 2_000, calls: [{ name: 'type', args: { ref: 7, text: 'Harrison longitude watch' }, result: 'typed [7]: not typed — blocked by overlay' }] },
+      { round: 2, at: 2_000, calls: [{ name: 'type', args: { ref: 7, text: 'Harrison longitude watch' }, result: UNDERLAY }] },
       { round: 3, at: 3_000, calls: [{ name: 'click', args: { ref: 8 }, result: `clicked [8]: urlChanged=false dialogOpen=false; page signature changed\n${READ(LONG_TITLE, COLLECTIONS, 'bbbb2222')}` }] },
-      { round: 4, at: 4_000, calls: [{ name: 'type', args: { ref: 7, text: 'Harrison longitude watch' }, result: 'typed [7]: not typed — blocked by overlay' }] },
-      { round: 5, at: 5_000, calls: [{ name: 'click', args: { ref: 9 }, result: 'clicked [9]: not clicked — blocked by overlay' }] },
+      { round: 4, at: 4_000, calls: [{ name: 'type', args: { ref: 7, text: 'Harrison longitude watch' }, result: blockedActionHead('type', 7, { fact: 'notShown' }) }] },
+      { round: 5, at: 5_000, calls: [{ name: 'click', args: { ref: 9 }, result: blockedActionHead('click', 9, { fact: 'notShown' }) }] },
       { round: 6, at: 6_000, calls: [{ name: 'type', args: { ref: 7, text: 'Harrison longitude watch\n' }, result: 'typed [7]: value="Harrison longitude watch"' }] },
       { round: 7, at: 7_000, calls: [{ name: 'click', args: { ref: 10 }, result: 'clicked [10]: urlChanged=false dialogOpen=false; no observable change\nAuto-vision (no observable change): The header search drawer is closed.' }] },
       { round: 8, at: 8_000, calls: [{ name: 'type', args: { ref: 7, text: 'Harrison H4\n' }, result: 'typed [7]: value="Harrison H4"' }] },
@@ -1096,9 +1100,22 @@ describe('the rail’s Search Observations (#243, ADR 0049)', () => {
       expect(replaySearchStreaks(mechanical.rounds).map((round) => round.calls[0]!.search?.streak ?? null)).toEqual(railStreaks)
     })
 
-    it('counts Blocked Actions, inert clicks and those met inside a streak, outside the digest (AC4)', async () => {
+    it('counts Blocked Actions by kind, inert clicks and those met inside a streak, outside the digest (#261 AC4, #264 AC8)', async () => {
       const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(await railed(), EXTRA) }))
-      expect(mechanical.blockedOrInert).toEqual({ blocked: [2, 4, 5], inert: [7], inStreak: [5, 7] })
+      expect(mechanical.blockedOrInert).toEqual({
+        covered: [2],
+        notShown: [4, 5],
+        blocked: [],
+        inert: [7],
+        inStreak: [5, 7],
+        postBlockVision: [],
+        // Round 3's click landed; round 5 was a block, round 6's search landed.
+        recoveries: [
+          { at: 2, rounds: 1 },
+          { at: 4, rounds: 2 },
+          { at: 5, rounds: 1 },
+        ],
+      })
       expect(blockedOrInertOf(mechanical.rounds)).toEqual(mechanical.blockedOrInert)
 
       const set = buildAuditSet(
@@ -1106,13 +1123,43 @@ describe('the rail’s Search Observations (#243, ADR 0049)', () => {
         [mechanical, classifyAttempt(inputOf())].map((attempt) => ({ mechanical: attempt, review: null, countsAfterOverrules: countsAfterOverrulesOf(attempt, null) })),
         [],
       )
-      expect(set.populations.initial.blockedOrInert).toEqual({ blocked: 3, inert: 1, inStreak: 2 })
+      expect(set.populations.initial.blockedOrInert).toEqual({
+        covered: 1,
+        notShown: 2,
+        blocked: 0,
+        inert: 1,
+        inStreak: 2,
+        postBlockVision: 0,
+        recoveryRounds: 4,
+        recovered: 3,
+        unrecovered: 0,
+      })
       const markdown = formatAuditSet(set)
-      expect(markdown).toContain('- Blocked Actions 3 (round 2, 4, 5), inert clicks 1 (round 7); inside a Search Loop streak, holding it: 2 (round 5, 7)')
-      expect(markdown).toContain('3 Blocked Action(s) and 1 inert click(s), 2 inside a Search Loop streak')
+      expect(markdown).toContain(
+        '- Blocked Actions covered 1 (round 2), not shown 2 (round 4, 5), inert clicks 1 (round 7); inside a Search Loop streak, holding it: 2 (round 5, 7); post-block vision rounds 0; recovery rounds by block 2 +1, 4 +2, 5 +1',
+      )
+      expect(markdown).toContain(
+        '1 covered, 2 not shown and 0 pre-#264 Blocked Action(s), 1 inert click(s), 2 inside a Search Loop streak, 0 post-block vision round(s), 4 recovery round(s) over 3 recovered block(s) and 0 never recovered',
+      )
+      expect(markdown).toContain('## Blocked Actions by hunt')
+      expect(markdown).toContain(`| ${mechanical.huntId} | 1 | 2 | 0 | 0 | 4 | 3 | 0 |`)
     })
 
-    it('reads fix-258-259 as the grill did: five Blocked Actions, no inert click, one inside a streak — pass 2 round 6 (AC4)', () => {
+    it('tags a Look or visual grounding round within two rounds of a block, by tool name, and a block nothing recovered from (#264 AC8)', () => {
+      const HUNTING: RoundSpec[] = [
+        { round: 1, at: 1_000, calls: [{ name: 'navigate', args: { url: COLLECTIONS }, result: PAGE('Collections', COLLECTIONS, 'aaaa1111') }] },
+        { round: 2, at: 2_000, calls: [{ name: 'click', args: { ref: 9 }, result: blockedActionHead('click', 9, { fact: 'notShown' }) }] },
+        { round: 3, at: 3_000, calls: [{ name: 'ground_visual', args: { description: 'the close button' }, result: 'no match' }] },
+        { round: 4, at: 4_000, calls: [{ name: 'look', args: { question: 'Is a dialog visible?' }, result: 'No.' }] },
+        { round: 5, at: 5_000, calls: [{ name: 'look', args: { question: 'What is on the page?' }, result: 'A collection page.' }] },
+      ]
+      const counted = classifyAttempt(inputOf({ traceRecords: traceOf(HUNTING, EXTRA) })).blockedOrInert!
+      // Round 5's look is three rounds past the block: not a post-block vision round.
+      expect(counted.postBlockVision).toEqual([3, 4])
+      expect(counted.recoveries).toEqual([{ at: 2, rounds: null }])
+    })
+
+    it('reads fix-258-259\'s pre-#264 heads as the grill did: five Blocked Actions, no inert click, one inside a streak — pass 2 round 6 (AC4)', () => {
       type Report = { attempts: { mechanical: { huntId: string; stepId: string; rounds: AuditRound[] } }[] }
       const found: { pass: number; huntId: string; stepId: string; counted: ReturnType<typeof blockedOrInertOf> }[] = []
       for (const pass of [1, 2, 3]) {
@@ -1126,6 +1173,10 @@ describe('the rail’s Search Observations (#243, ADR 0049)', () => {
       expect({ blocked: total('blocked'), inert: total('inert'), inStreak: total('inStreak') }).toEqual({ blocked: 5, inert: 0, inStreak: 1 })
       expect(found.filter((entry) => entry.counted.inStreak.length > 0).map((entry) => ({ pass: entry.pass, stepId: entry.stepId, inStreak: entry.counted.inStreak }))).toEqual([
         { pass: 2, stepId: 'initial', inStreak: [6] },
+      ])
+      // #264: the visual-grounding round and the Look that hunted a dialog after the drawer's blocks.
+      expect(found.filter((entry) => (entry.counted.postBlockVision ?? []).length > 0).map((entry) => ({ pass: entry.pass, stepId: entry.stepId, rounds: entry.counted.postBlockVision }))).toEqual([
+        { pass: 2, stepId: 'initial', rounds: [7, 8] },
       ])
     })
   })
@@ -1293,7 +1344,7 @@ describe('consent walls (#263, ADR 0061)', () => {
   // The same Run after #263: dismissed on navigate, and inside a blocked type.
   const AFTER: RoundSpec[] = [
     { round: 1, at: 1_000, calls: [{ name: 'navigate', args: { url: COLLECTIONS }, result: `navigated: url=${COLLECTIONS} title="Collections"\n${consentDismissalLine(1, 'Reject all cookies')}\n${CLEARED}` }] },
-    { round: 2, at: 2_000, calls: [{ name: 'type', args: { ref: 7, text: 'Harrison' }, result: `typed [7]: value="Harrison"; ${consentDismissalLine(1, 'Reject all cookies')} ${consentRetryNote(7, false)}\n${CLEARED}` }] },
+    { round: 2, at: 2_000, calls: [{ name: 'type', args: { ref: 7, text: 'Harrison' }, result: `typed [7]: value="Harrison"; ${consentDismissalLine(1, 'Reject all cookies')} ${consentRetryNote(7, 'landed')}\n${CLEARED}` }] },
   ]
 
   it('pins its dismissal mark and its consent vocabulary to the source they read (AC5)', () => {

@@ -58,10 +58,12 @@ export function consentDismissalLine(ref: number, label: string): string {
 }
 
 /**
- * What follows the dismissal line when a click or type the wall blocked was
- * retried in the same call (ADR 0061): the ref the model named, and whether
- * the retry still met a cover.
+ * What follows the dismissal line when a click or type met a Blocked Action
+ * under an open consent wall (ADR 0061): the retry landed, or still met a
+ * cover — or was never run, because the target was Not Shown and no
+ * dismissal reaches that (ADR 0062).
  */
-export function consentRetryNote(ref: number, stillBlocked: boolean): string {
-  return stillBlocked ? `(it covered [${ref}]; retried, still blocked)` : `(it covered [${ref}]; retried)`
+export function consentRetryNote(ref: number, retry: 'landed' | 'stillBlocked' | 'notRetried'): string {
+  if (retry === 'notRetried') return '(not retried)'
+  return retry === 'stillBlocked' ? `(it covered [${ref}]; retried, still blocked)` : `(it covered [${ref}]; retried)`
 }

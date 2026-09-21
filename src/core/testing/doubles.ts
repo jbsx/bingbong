@@ -15,7 +15,7 @@ import type {
 import { settledStateFromSnapshot } from '../pipeline/progressFingerprints'
 import { blockerFactsFromSnapshot } from '../browser/blockerNudge'
 import { linkHrefsOf, type PageSnapshot, type SnapshotRef } from '../browser/snapshot'
-import { blockedActionHead, clickFlagsHead, NO_OBSERVABLE_CHANGE } from '../browser/actionOutcome'
+import { blockedActionHead, clickFlagsHead, NO_OBSERVABLE_CHANGE, type BlockedAction } from '../browser/actionOutcome'
 import type {
   VisionDescribeRequest,
   VisionLocateRequest,
@@ -313,18 +313,29 @@ export class FakeBrowser implements BrowserController, VisualGroundingController
     return this.readParts
   }
 
-  /** Refs a cover sits over: a click or a type on one is a Blocked Action (#261). */
+  /** Refs a cover sits over: a click or a type on one is a Covered Blocked Action (#261, #264). */
   readonly coveredRefs = new Set<number>()
+  /** Refs inside a hidden or inert container: a click or a type on one is Not Shown (#264). */
+  readonly notShownRefs = new Set<number>()
+
+  /** The Blocked Action a click or type on this ref meets, or null when it reaches the target. */
+  private blockedAt(ref: number): BlockedAction | null {
+    if (this.notShownRefs.has(ref)) return { fact: 'notShown' }
+    if (this.coveredRefs.has(ref)) return { fact: 'covered', cover: { kind: 'unlabelled', tag: 'div', contains: [] } }
+    return null
+  }
 
   async click(ref: number): Promise<string> {
     this.clicks.push(ref)
-    if (this.coveredRefs.has(ref)) return blockedActionHead('click', ref)
+    const blocked = this.blockedAt(ref)
+    if (blocked !== null) return blockedActionHead('click', ref, blocked)
     return `${clickFlagsHead(ref, false, false)}${NO_OBSERVABLE_CHANGE}`
   }
 
   async type(ref: number, text: string): Promise<string> {
     this.typed.push({ ref, text })
-    if (this.coveredRefs.has(ref)) return blockedActionHead('type', ref)
+    const blocked = this.blockedAt(ref)
+    if (blocked !== null) return blockedActionHead('type', ref, blocked)
     return `typed [${ref}]: value=${JSON.stringify(text)}`
   }
 

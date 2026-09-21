@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import challengeIframe from '../../core/browser/fixtures/challenge-iframe.json'
 import youtubeHome from '../../core/browser/fixtures/youtube-home.json'
 import type { CollectedElement, CollectedPage } from '../../core/browser/snapshot'
-import { buildPageSnapshot, clickPoint, formatPageSnapshot } from '../../core/browser/snapshot'
+import { buildPageSnapshot, clickPoint, formatPageSnapshot, formatRefLine } from '../../core/browser/snapshot'
 import { blockedOrInertAction } from '../../core/browser/actionOutcome'
 import type { BrowserSubspans } from '../../core/perf/browserSubspans'
 import { createBrowserSubspans } from '../../core/perf/browserSubspans'
@@ -10,6 +10,7 @@ import type { PerfSpanRecord } from '../../core/perf/perfTracer'
 import { fakePerfHarness } from '../../core/testing/doubles'
 import type { CdpDebugger, CdpPageDriver } from './createCdpBrowserController'
 import { createCdpBrowserController } from './createCdpBrowserController'
+import type { ClickPrep } from './collectPageScript'
 
 const youtubeFixture = youtubeHome as unknown as CollectedPage
 const challengeFixture = challengeIframe as unknown as CollectedPage
@@ -84,6 +85,8 @@ class FakeCdp implements CdpDebugger {
   prepCovered = false
   /** How many click-preps from here report a cover before the rest land (a wall that goes). */
   prepCoveredTimes = 0
+  /** What a blocked click-prep says blocked it (ADR 0062): a Cover probe, or Not Shown. */
+  prepBlocked: ClickPrep['blocked'] = { fact: 'covered', cover: { tag: 'div', contains: [] } }
   /** Runs on every DOM `.click()` the controller evaluates — a dismissal taking the wall away. */
   onDomClick: (() => void) | null = null
   /** The node the controller kept across a consent dismissal (ADR 0061). */
@@ -262,7 +265,7 @@ class FakeCdp implements CdpDebugger {
         // Mirror the in-page prep math: fresh clickPoint, hit-test result set by the test.
         const covered = this.prepCovered || this.prepCoveredTimes > 0
         if (this.prepCoveredTimes > 0) this.prepCoveredTimes -= 1
-        return { result: { value: { ok: true, clickable: !covered, ...clickPoint(target, snapshot.viewport) } } } as T
+        return { result: { value: { ok: true, clickable: !covered, ...(covered ? { blocked: this.prepBlocked } : {}), ...clickPoint(target, snapshot.viewport) } } } as T
       }
       return { result: { value: this.evaluateValue } } as T
     }
@@ -779,7 +782,7 @@ describe('createCdpBrowserController click', () => {
     expect(cdp.inputCalls()[0]?.params).toMatchObject({ type: 'mouseMoved', x: 60, y: 799 })
   })
 
-  it('reports an overlay-blocked click instead of clicking through', async () => {
+  it('reports a Covered click instead of clicking through', async () => {
     const cdp = new FakeCdp()
     cdp.prepCovered = true
     const { controller } = makeController({ cdp })
@@ -789,7 +792,7 @@ describe('createCdpBrowserController click', () => {
 
     // Nothing reaches the page: no synthetic input, no direct activation —
     // the interception is reported for the model to decide.
-    expect(outcome).toBe('clicked [3]: not clicked — blocked by overlay')
+    expect(outcome).toBe('clicked [3]: not clicked — covered by an unlabelled <div>')
     expect(cdp.inputCalls()).toHaveLength(0)
     expect(
       cdp.calls.some(
@@ -798,7 +801,7 @@ describe('createCdpBrowserController click', () => {
     ).toBe(false)
   })
 
-  it('reports the open dialog alongside an overlay-blocked click', async () => {
+  it('reports the open dialog alongside a Covered click', async () => {
     const wall = { ...signInDialogPage(), elements: [...signInDialogPage().elements, consentWallPage().elements[2]!] }
     const cdp = new FakeCdp(wall)
     cdp.prepCovered = true
@@ -810,7 +813,7 @@ describe('createCdpBrowserController click', () => {
     const outcome = await controller.click(3)
 
     expect(outcome).toBe(
-      'clicked [3]: not clicked — blocked by overlay; dialog open: "Opened dialog"; controls: [1] button "Sign in", [2] button "Not now"',
+      'clicked [3]: not clicked — covered by an unlabelled <div>; dialog open: "Opened dialog"; controls: [1] button "Sign in", [2] button "Not now"',
     )
     expect(outcome).not.toContain('dismissed consent dialog')
   })
@@ -1496,9 +1499,15 @@ describe('createCdpBrowserController a blocked action under a consent wall (#263
     const outcome = await controller.type(3, 'longitude')
 
     expect(outcome.split('\n')[0]).toBe(
-      'typed [3]: not typed — blocked by overlay; dismissed consent dialog: clicked [2] "Reject all" (it covered [3]; retried, still blocked)',
+      'typed [3]: not typed — covered by an unlabelled <div>; dismissed consent dialog: clicked [2] "Reject all" (it covered [3]; retried, still blocked)',
     )
-    expect(blockedOrInertAction(outcome)).toBe('blocked')
+    expect(blockedOrInertAction(outcome)).toBe('covered')
+    // The first prep names covers only by numbers still shown; the retry's,
+    // whose outcome carries the post-dismissal listing, by any it lists.
+    expect(preps(cdp).map((call) => /\(\w+ \|\| shown\[i\] === refs\[i\]\)/.exec(String(call.params?.expression))?.[0])).toEqual([
+      '(false || shown[i] === refs[i])',
+      '(true || shown[i] === refs[i])',
+    ])
     expect(domClicks(cdp)).toHaveLength(1)
     expect(preps(cdp)).toHaveLength(2)
     expect(cdp.inputCalls()).toHaveLength(0)
@@ -1515,7 +1524,7 @@ describe('createCdpBrowserController a blocked action under a consent wall (#263
 
     const outcome = await controller.click(3)
 
-    expect(outcome).toBe('clicked [3]: not clicked — blocked by overlay')
+    expect(outcome).toBe('clicked [3]: not clicked — covered by an unlabelled <div>')
     expect(cdp.collectCalls()).toHaveLength(collects)
     expect(domClicks(cdp)).toHaveLength(0)
   })
@@ -1528,8 +1537,42 @@ describe('createCdpBrowserController a blocked action under a consent wall (#263
 
     const outcome = await controller.type(3, 'longitude')
 
-    expect(outcome).toBe('typed [3]: not typed — blocked by overlay')
+    expect(outcome).toBe('typed [3]: not typed — covered by an unlabelled <div>')
     expect(domClicks(cdp)).toHaveLength(0)
+  })
+
+  it('dismisses for a Not Shown target but never retries it, reporting both in one line (ADR 0062)', async () => {
+    const { cdp, controller, arrive } = wallArrives()
+    await arrive()
+    cdp.prepCovered = true
+    cdp.prepBlocked = { fact: 'notShown' }
+
+    const outcome = await controller.click(3)
+
+    expect(outcome.split('\n')[0]).toBe(
+      'clicked [3]: not clicked — [3] is not shown: inside a hidden or inert container; dismissed consent dialog: clicked [2] "Reject all" (not retried)',
+    )
+    expect(blockedOrInertAction(outcome)).toBe('notShown')
+    expect(domClicks(cdp)).toHaveLength(1)
+    expect(preps(cdp)).toHaveLength(1)
+    expect(cdp.inputCalls()).toHaveLength(0)
+    // The wall left, so the page behind it rides the outcome.
+    expect(outcome).toContain(settledBlock(youtubeFixture))
+  })
+
+  it('types into nothing for a Not Shown target under the wall, and says so the same way', async () => {
+    const { cdp, controller, arrive } = wallArrives()
+    await arrive()
+    cdp.prepCovered = true
+    cdp.prepBlocked = { fact: 'notShown' }
+
+    const outcome = await controller.type(3, 'longitude')
+
+    expect(outcome.split('\n')[0]).toBe(
+      'typed [3]: not typed — [3] is not shown: inside a hidden or inert container; dismissed consent dialog: clicked [2] "Reject all" (not retried)',
+    )
+    expect(domClicks(cdp)).toHaveLength(1)
+    expect(cdp.inputCalls()).toHaveLength(0)
   })
 
   it('leaves a block with no dialog open as it was: no collect, no dismissal', async () => {
@@ -1541,7 +1584,7 @@ describe('createCdpBrowserController a blocked action under a consent wall (#263
 
     const outcome = await controller.click(3)
 
-    expect(outcome).toBe('clicked [3]: not clicked — blocked by overlay')
+    expect(outcome).toBe('clicked [3]: not clicked — covered by an unlabelled <div>')
     expect(cdp.collectCalls()).toHaveLength(collects)
     expect(domClicks(cdp)).toHaveLength(0)
   })
@@ -2055,6 +2098,53 @@ describe('createCdpBrowserController control-state honesty (#133)', () => {
   })
 })
 
+describe('createCdpBrowserController a Blocked Action names its Cover (#264, ADR 0062)', () => {
+  const refs = buildPageSnapshot(youtubeFixture).refs
+
+  async function blockedBy(blocked: ClickPrep['blocked']): Promise<{ click: string; type: string }> {
+    const cdp = new FakeCdp(youtubeFixture)
+    cdp.prepCovered = true
+    cdp.prepBlocked = blocked
+    const { controller } = makeController({ cdp })
+    await showRefs(controller)
+    return { click: await controller.click(3), type: await controller.type(3, 'longitude') }
+  }
+
+  it('names the first ref above the target by its listing line', async () => {
+    const { click, type } = await blockedBy({ fact: 'covered', cover: { ref: 1 } })
+    expect(click).toBe(`clicked [3]: not clicked — covered by ${formatRefLine(refs[0]!)}`)
+    expect(type).toBe(`typed [3]: not typed — covered by ${formatRefLine(refs[0]!)}`)
+  })
+
+  it('names a labelled cover by kind and name with at most three refs it contains', async () => {
+    const { click } = await blockedBy({ fact: 'covered', cover: { role: 'region', name: 'Cookie consent', contains: [1, 2, 4, 5] } })
+    expect(click).toBe(
+      `clicked [3]: not clicked — covered by region "Cookie consent" with ${[refs[0]!, refs[1]!, refs[3]!].map(formatRefLine).join(', ')}`,
+    )
+  })
+
+  it('names an unlabelled cover by its tag', async () => {
+    const { click } = await blockedBy({ fact: 'covered', cover: { tag: 'section', contains: [] } })
+    expect(click).toBe('clicked [3]: not clicked — covered by an unlabelled <section>')
+  })
+
+  it('says a target absent from the hit test is not shown, for a click and a type alike', async () => {
+    const { click, type } = await blockedBy({ fact: 'notShown' })
+    expect(click).toBe('clicked [3]: not clicked — [3] is not shown: inside a hidden or inert container')
+    expect(type).toBe('typed [3]: not typed — [3] is not shown: inside a hidden or inert container')
+  })
+
+  it('carries no listing and never says overlay', async () => {
+    for (const blocked of [{ fact: 'covered', cover: { ref: 1 } }, { fact: 'notShown' }] as const) {
+      const { click, type } = await blockedBy(blocked)
+      for (const outcome of [click, type]) {
+        expect(outcome).not.toContain('\n')
+        expect(outcome).not.toMatch(/overlay/i)
+      }
+    }
+  })
+})
+
 describe('createCdpBrowserController outcome heads the Search Loop rail reads (#261)', () => {
   it('an inert click, a blocked click and a blocked type read as consuming nothing', async () => {
     const inert = makeController()
@@ -2065,9 +2155,13 @@ describe('createCdpBrowserController outcome heads the Search Loop rail reads (#
     cdp.prepCovered = true
     const { controller } = makeController({ cdp })
     await showRefs(controller)
-    expect(blockedOrInertAction(await controller.click(3))).toBe('blocked')
-    expect(blockedOrInertAction(await controller.type(3, 'Harrison longitude watch'))).toBe('blocked')
+    expect(blockedOrInertAction(await controller.click(3))).toBe('covered')
+    expect(blockedOrInertAction(await controller.type(3, 'Harrison longitude watch'))).toBe('covered')
+    cdp.prepBlocked = { fact: 'notShown' }
+    expect(blockedOrInertAction(await controller.click(3))).toBe('notShown')
+    expect(blockedOrInertAction(await controller.type(3, 'Harrison longitude watch'))).toBe('notShown')
   })
+
 
   it('a click that changed only the page signature carries settled state and consumed something (fix-258-259 pass 2 round 3)', async () => {
     const cdp = new FakeCdp()

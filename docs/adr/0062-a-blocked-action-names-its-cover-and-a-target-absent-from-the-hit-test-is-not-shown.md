@@ -143,3 +143,36 @@ the two heads are fixture-tested in core.
   as it is; a Cover line may repeat one of those controls. The
   visual-grounding path's own refusal ("no longer resolves at the visually
   grounded point") is a third string and stays out of scope.
+
+## Notes
+
+- 2026-09-21, implementation (#264). The calls this ADR left open:
+  - **A Cover is named only by a number the model holds.** With no
+    dismissal, a ref names a Cover only while it is still the node the
+    model was shown there (ADR 0033's shown registry) and falls inside the
+    listing's cap; after a consent dismissal the outcome carries the
+    post-dismissal listing, so any number it lists may. A ref that contains
+    the target is never its Cover, and a ref cover the snapshot does not
+    list falls back to `an unlabelled <element>`. The kind of a labelled
+    Cover is its `role`, else a short implicit-role table (`section` is
+    `region`, `nav` is `navigation`, …), else its tag; the tag is printed in
+    angle brackets, `an unlabelled <div>`.
+  - **Inert reaches the dialog root too.** A role-bearing dialog inside an
+    inert subtree is never the snapshot's dialog root, and a consent
+    control inside one never makes a Consent Dialog: a closed drawer would
+    otherwise open the dialog layer with nothing listed on it.
+  - **The retry note follows whether a retry ran, not the fact.** A Not
+    Shown first attempt under a Tier-1 root reads `… (not retried)` after
+    the dismissal line; a Covered first attempt whose retry is then Not
+    Shown was retried, and reads `(it covered [n]; retried, still blocked)`.
+  - **The audit keeps pre-#264 heads.** `blocked by overlay` is no longer a
+    head the port writes, so the rail's helper does not read it; the Round
+    Audit reads it as a Blocked Action of no recorded kind, a fourth column
+    (`pre-#264`) beside covered, not shown and inert, because the `fix-263`
+    Reference was captured under it. An action *landed* when it is a page
+    action (never inspection — `read_page`, `scroll` — and never `look` or
+    `ground_visual`) that consumed something as the rail decides it; the
+    first Finalization round counts as the answer. A post-block vision
+    round is counted once per round, from the round of the block to two
+    rounds after it; recovery is counted per block, and a block nothing
+    followed is `never`.

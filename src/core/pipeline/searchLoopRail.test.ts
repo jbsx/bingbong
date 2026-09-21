@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { SnapshotRef } from '../browser/snapshot'
+import { blockedActionHead } from '../browser/actionOutcome'
 import type { ToolCall, ToolResultOutcome } from '../ports/llm'
 import run47Sequence from './fixtures/run47-tool-sequence.json'
 import {
@@ -559,9 +560,12 @@ describe('createSearchLoopRail — a Not-found Landing is inspection (#239, ADR 
 describe('createSearchLoopRail — a Blocked Action or an inert click holds the streak (#261, ADR 0058)', () => {
   // fix-258-259 pass 2, the longitude watch on rmg.co.uk. Round 3's click
   // dismissed a consent banner and changed the page signature (escape);
-  // rounds 4 and 6 met the header's closed search drawer (Blocked Actions).
-  const blockedType: ToolResultOutcome = { ok: true, result: 'typed [7]: not typed — blocked by overlay' }
-  const blockedClick: ToolResultOutcome = { ok: true, result: 'clicked [9]: not clicked — blocked by overlay' }
+  // rounds 4 and 6 met the header's closed search drawer (Blocked Actions,
+  // Not Shown since #264). A Covered outcome is the same consumed-nothing class.
+  const blockedType: ToolResultOutcome = { ok: true, result: blockedActionHead('type', 7, { fact: 'notShown' }) }
+  const blockedClick: ToolResultOutcome = { ok: true, result: blockedActionHead('click', 9, { fact: 'notShown' }) }
+  const coveredType: ToolResultOutcome = { ok: true, result: blockedActionHead('type', 7, { fact: 'covered', cover: { kind: 'ref', line: '[8] button "Reject all cookies"' } }) }
+  const coveredClick: ToolResultOutcome = { ok: true, result: blockedActionHead('click', 9, { fact: 'covered', cover: { kind: 'unlabelled', tag: 'div', contains: [] } }) }
   const inertClick: ToolResultOutcome = { ok: true, result: 'clicked [9]: urlChanged=false dialogOpen=false; no observable change' }
   const changedClick: ToolResultOutcome = {
     ok: true,
@@ -572,6 +576,13 @@ describe('createSearchLoopRail — a Blocked Action or an inert click holds the 
     const rail = createSearchLoopRail(searchBoxAt)
     expect((await rail.observe(type(7, 'Harrison longitude watch'), blockedType)).observation?.streak).toBe(1)
     expect(await rail.observe({ id: 'c', name: 'click', args: { ref: 9 } }, blockedClick)).toEqual({ notice: null, observation: null })
+    expect((await rail.observe(type(7, 'Harrison longitude watch\n'), ok)).observation?.streak).toBe(2)
+  })
+
+  it('a Covered type stays a search and a Covered click holds the streak, as a Not Shown one does (#264)', async () => {
+    const rail = createSearchLoopRail(searchBoxAt)
+    expect((await rail.observe(type(7, 'Harrison longitude watch'), coveredType)).observation?.streak).toBe(1)
+    expect(await rail.observe({ id: 'c', name: 'click', args: { ref: 9 } }, coveredClick)).toEqual({ notice: null, observation: null })
     expect((await rail.observe(type(7, 'Harrison longitude watch\n'), ok)).observation?.streak).toBe(2)
   })
 

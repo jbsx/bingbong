@@ -11,10 +11,11 @@ import { settledStateFromSnapshot, type SettledPageState } from '../../core/pipe
 import { blockerFactsFromSnapshot } from '../../core/browser/blockerNudge'
 import type { BrowserSubspans } from '../../core/perf/browserSubspans'
 import { normalizeUrlInput } from '../../core/browser/urlInput'
-import { blockedActionHead, clickFlagsHead, NO_OBSERVABLE_CHANGE, PAGE_SIGNATURE_CHANGED, STATE_DELTA } from '../../core/browser/actionOutcome'
+import { blockedActionHead, clickFlagsHead, NO_OBSERVABLE_CHANGE, PAGE_SIGNATURE_CHANGED, STATE_DELTA, type BlockedAction } from '../../core/browser/actionOutcome'
 import { chooseConsentDismissal, consentDismissalLine, consentRetryNote, isConsentDialog } from '../../core/browser/dialogPolicy'
 import {
   buildPageSnapshot,
+  coverOf,
   findSnapshotRef,
   formatPageRead,
   formatPageSnapshot,
@@ -25,7 +26,7 @@ import {
   type SnapshotRef,
 } from '../../core/browser/snapshot'
 import { SCROLL_END_OF_PAGE, formatNewInView } from '../../core/browser/scrollDelta'
-import { markShownRefsScript, overlayShownRefsScript, refIsShownScript } from './collectPageScript'
+import { clickPrepScript, markShownRefsScript, overlayShownRefsScript, refIsShownScript, type ClickPrep, type CoverNaming } from './collectPageScript'
 import { reportFault } from '../../core/trace/fault'
 
 // Minimal CDP surface the controller needs, so tests can drive it with a fake
@@ -121,14 +122,6 @@ interface ScreenshotClip {
   width: number
   height: number
   scale: number
-}
-
-/** Result of the in-page click-preparation probe. */
-interface ClickPrep {
-  ok: boolean
-  x?: number
-  y?: number
-  clickable?: boolean
 }
 
 interface ElementState {
@@ -798,12 +791,13 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
 
   /**
    * What performClick did: a real (or direct) activation, or a blocked
-   * attempt. `dismissal` is the consent wall a blocked first attempt cleared
-   * before the one retry (ADR 0061), null when there was none.
+   * attempt and why (ADR 0062). `dismissal` is the consent wall a blocked
+   * first attempt cleared (ADR 0061), null when there was none; a Covered
+   * target was then retried once, a Not Shown one never.
    */
   type ClickAttempt =
     | { kind: 'acted'; direct: boolean; index: number; label: string; before: ElementState; signature: PageSignature; dismissal: string | null }
-    | { kind: 'blocked'; signature: PageSignature; snapshot: PageSnapshot; dismissal: string | null }
+    | { kind: 'blocked'; blocked: BlockedAction; signature: PageSignature; snapshot: PageSnapshot; dismissal: string | null; retried: boolean }
 
   /** The element a click aims at: the ref the model named, the registry index that holds it now, and what it looked like when shown. */
   interface ClickTarget {
@@ -833,7 +827,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     const aim: ClickTarget = { ref, index: target.ref - 1, label: target.label, before: elementState(target) }
     const attempt = await clickAtIndex(aim, snapshot, null)
     if (attempt.kind === 'acted') return attempt
-    return (await clearConsentAndRetry(aim)) ?? attempt
+    return (await clearConsentAndRetry(aim, attempt.blocked.fact === 'covered')) ?? attempt
   }
 
   /**
@@ -844,7 +838,10 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
    */
   async function clickAtIndex(aim: ClickTarget, snapshot: PageSnapshot, dismissal: string | null): Promise<ClickAttempt> {
     const { ref, index, label, before } = aim
-    const prep = await safety('click-prep', () => prepClick(index))
+    // A Cover is named by a ref the model holds: any number of the listing
+    // this outcome carries after a dismissal, else only a number still shown.
+    const naming = { listed: snapshot.refs.length, shownOnly: dismissal === null }
+    const prep = await safety('click-prep', () => prepClick(index, naming))
     if (!prep.ok) {
       // The node the identity check just matched died between the two
       // probes — the registry went with a navigation. Refuse (ADR 0033):
@@ -856,10 +853,11 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     if (prep.clickable && typeof prep.x === 'number' && typeof prep.y === 'number') {
       await dispatchPointClick({ x: prep.x, y: prep.y })
     } else if (typeof prep.x === 'number' && typeof prep.y === 'number') {
-      // An overlay covers the click point. Interception is reported to the
-      // model (which can dismiss the dialog, wait, or ask the user) instead
-      // of silently clicking through whatever sits on top.
-      return { kind: 'blocked', signature: signatureOf(snapshot), snapshot, dismissal }
+      // The click point does not reach the target: something covers it, or
+      // the target is not shown there at all (ADR 0062). Reported to the
+      // model with what covers it instead of clicking through whatever sits
+      // on top.
+      return { kind: 'blocked', blocked: blockedActionOf(prep, snapshot), signature: signatureOf(snapshot), snapshot, dismissal, retried: dismissal !== null }
     } else {
       // The element cannot be brought into the viewport at all (clipped
       // away inside its own scroller); activate it directly, Vimium-style,
@@ -886,20 +884,34 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
    * labels in place, so a block under no dialog or a Tier-2 one collects
    * nothing and leaves the numbers the model holds as they were — and when
    * the clearing itself fails: the block then stands as it was.
+   *
+   * ADR 0062: only a Covered target earns the retry. A Not Shown one is
+   * still dismissed for — the wall is met where it stands — but its retry's
+   * result is known, so the attempt stays Not Shown behind the cleared page.
    */
-  async function clearConsentAndRetry(aim: ClickTarget): Promise<ClickAttempt | null> {
+  async function clearConsentAndRetry(aim: ClickTarget, retry: boolean): Promise<ClickAttempt | null> {
     try {
       const labels = await evaluateInPage<string[] | null>(`(() => {
         /* DIALOG_LABELS */
         return typeof window.__bingbongDialogLabels === 'function' ? window.__bingbongDialogLabels() : null
       })()`)
       if (!Array.isArray(labels) || !isConsentDialog('', labels) || chooseConsentDismissal(labels) === null) return null
+      if (!retry) return await dismissWithoutRetry()
       return await retryPastConsent(aim)
     } catch (error) {
       if (error instanceof StaleRefError) throw error
       reportFault('browser.createCdpBrowserController.clearConsentAndRetry', error)
       return null
     }
+  }
+
+  /** Collect the walled page, dismiss, and hand back the page behind with the target still Not Shown. */
+  async function dismissWithoutRetry(): Promise<ClickAttempt | null> {
+    const walled = await recollection('blocked-consent', () => collectSnapshot())
+    const dismissal = await dismissConsentIfOpen(walled)
+    if (dismissal === null) return null
+    const cleared = await recollection('post-dismissal', () => collectSnapshot())
+    return { kind: 'blocked', blocked: { fact: 'notShown' }, signature: signatureOf(cleared), snapshot: cleared, dismissal, retried: false }
   }
 
   /** Keep the node, collect the walled page, dismiss, collect the page behind, and click the node wherever it now sits. */
@@ -936,7 +948,9 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
 
   /** The dismissal a blocked first attempt ran and the retry it earned, in the one wording every outcome uses; null when there was none. */
   function consentNote(attempt: ClickAttempt, ref: number): string | null {
-    return attempt.dismissal === null ? null : `${attempt.dismissal} ${consentRetryNote(ref, attempt.kind === 'blocked')}`
+    if (attempt.dismissal === null) return null
+    const retry = attempt.kind === 'acted' ? 'landed' : attempt.retried ? 'stillBlocked' : 'notRetried'
+    return `${attempt.dismissal} ${consentRetryNote(ref, retry)}`
   }
 
   /** The same, as a clause riding an outcome line; empty when there was none. */
@@ -947,7 +961,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
 
   /** A blocked click or type: the cover and any dialog, the dismissal a retry spent, and — when the wall was cleared — the page behind it. */
   async function blockedOutcome(action: 'click' | 'type', ref: number, attempt: Extract<ClickAttempt, { kind: 'blocked' }>): Promise<string> {
-    const line = `${blockedActionHead(action, ref)}${dialogSuffix(attempt.snapshot)}${consentClause(attempt, ref)}${reportsSuffix(drainedReports())}`
+    const line = `${blockedActionHead(action, ref, attempt.blocked)}${dialogSuffix(attempt.snapshot)}${consentClause(attempt, ref)}${reportsSuffix(drainedReports())}`
     return attempt.dismissal === null ? line : withSettledState(line, attempt.snapshot)
   }
 
@@ -1027,27 +1041,17 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     })
   }
 
-  /** Scroll the ref's element into view, then report fresh click coordinates
-   * and whether a coordinate click would actually land on it. */
-  async function prepClick(index: number): Promise<ClickPrep> {
-    return evaluateInPage<ClickPrep>(`(() => {
-      const el = (window.__bingbongRefs || [])[${index}]
-      if (!el || !el.isConnected) return { ok: false }
-      el.scrollIntoView({ block: 'center', inline: 'nearest' })
-      const vw = window.innerWidth
-      const vh = window.innerHeight
-      const rect = el.getBoundingClientRect()
-      const clamp = (value, low, high) => Math.min(Math.max(value, low), high)
-      const visibleLeft = Math.max(rect.x, 0)
-      const visibleRight = Math.min(rect.x + rect.width, vw)
-      const visibleTop = Math.max(rect.y, 0)
-      const visibleBottom = Math.min(rect.y + rect.height, vh)
-      const x = Math.round(clamp(rect.x + rect.width / 2, visibleLeft, Math.max(visibleLeft, visibleRight - 1)))
-      const y = Math.round(clamp(rect.y + rect.height / 2, visibleTop, Math.max(visibleTop, visibleBottom - 1)))
-      if (x < 0 || y < 0 || x >= vw || y >= vh) return { ok: true, clickable: false }
-      const top = document.elementFromPoint(x, y)
-      return { ok: true, x, y, clickable: top === el || (top !== null && el.contains(top)) }
-    })()`)
+  /** Scroll the ref's element into view, then report fresh click coordinates,
+   * whether a coordinate click would land on it, and — when it would not —
+   * whether it is Covered or Not Shown (ADR 0062). */
+  async function prepClick(index: number, naming: CoverNaming): Promise<ClickPrep> {
+    return evaluateInPage<ClickPrep>(clickPrepScript(index, naming))
+  }
+
+  /** The prep's hit-test verdict, its Cover named against the snapshot whose numbers the outcome speaks. */
+  function blockedActionOf(prep: ClickPrep, snapshot: PageSnapshot): BlockedAction {
+    if (prep.blocked?.fact === 'notShown') return { fact: 'notShown' }
+    return { fact: 'covered', cover: coverOf(prep.blocked?.cover ?? { tag: 'element', contains: [] }, snapshot.refs) }
   }
 
   /** Focus the registry element for keyboard selection. #133: a synthetic

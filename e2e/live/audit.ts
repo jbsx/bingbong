@@ -599,8 +599,12 @@ export interface AuditPopulation {
   readonly searchSources: Readonly<Record<AuditSearchSource, number>>
   /** Navigate searches by Search URL form over the attempts that count them (#260); absent when none does. */
   readonly searchForms?: Readonly<Record<SearchUrlForm, number>>
-  /** Blocked Actions, inert clicks, and those met inside a Search Loop streak, over the attempts that count them (#261); absent when none does. */
-  readonly blockedOrInert?: Readonly<Record<keyof BlockedOrInertRounds, number>>
+  /**
+   * Blocked Actions by kind (#264: Covered, Not Shown, and pre-#264 heads),
+   * inert clicks, those met inside a Search Loop streak (#261), post-block
+   * vision rounds and recovery rounds, over the attempts that count them; absent when none does.
+   */
+  readonly blockedOrInert?: Readonly<BlockedOrInertCounts>
   /** Unavailable Landings by basis, and those followed by a search, over the attempts that count them (#262); absent when none does. */
   readonly unavailableLandings?: Readonly<Record<keyof UnavailableLandingRounds, number>>
   /** Consent dismissals, hand consent clicks, and blocks a hand consent click followed, over the attempts that count them (#263); absent when none does. */
@@ -708,6 +712,8 @@ export interface AuditAggregate {
   readonly rankedCauses: readonly { readonly verdict: AuditVerdict; readonly count: number; readonly initial: number; readonly followUp: number }[]
   /** Consent dismissals, hand consent clicks and blocks they followed per hunt, over every set's attempts that count them (#263); absent when none does. */
   readonly consentWallsByHunt?: Readonly<Record<string, Readonly<ConsentWallCounts>>>
+  /** Blocked Actions by kind, post-block vision rounds and recovery rounds per hunt, over every set's attempts that count them (#264); absent when none does. */
+  readonly blockedActionsByHunt?: Readonly<Record<string, Readonly<BlockedOrInertCounts>>>
   readonly caveats: readonly string[]
   readonly note: string
 }
@@ -788,16 +794,61 @@ function roundsText(rounds: readonly number[]): string {
   return `${rounds.length}${rounds.length > 0 ? ` (round ${rounds.join(', ')})` : ''}`
 }
 
+/** Each recovery as `round +N`, or `round never` for a Blocked Action nothing recovered from. */
+function recoveriesText(recoveries: BlockedOrInertRounds['recoveries']): string {
+  if (recoveries === undefined) return 'not counted'
+  if (recoveries.length === 0) return 'none'
+  return recoveries.map((recovery) => `${recovery.at} ${recovery.rounds === null ? 'never' : `+${recovery.rounds}`}`).join(', ')
+}
+
 function blockedOrInertText(counted: BlockedOrInertRounds | undefined): string {
-  return counted === undefined
-    ? 'Blocked Actions and inert clicks not counted'
-    : `Blocked Actions ${roundsText(counted.blocked)}, inert clicks ${roundsText(counted.inert)}; inside a Search Loop streak, holding it: ${roundsText(counted.inStreak)}`
+  if (counted === undefined) return 'Blocked Actions and inert clicks not counted'
+  const kinds =
+    counted.covered === undefined || counted.notShown === undefined
+      ? `Blocked Actions ${roundsText(counted.blocked)}`
+      : `Blocked Actions covered ${roundsText(counted.covered)}, not shown ${roundsText(counted.notShown)}${counted.blocked.length > 0 ? `, pre-#264 ${roundsText(counted.blocked)}` : ''}`
+  const aftermath =
+    counted.postBlockVision === undefined ? '' : `; post-block vision rounds ${roundsText(counted.postBlockVision)}; recovery rounds by block ${recoveriesText(counted.recoveries)}`
+  return `${kinds}, inert clicks ${roundsText(counted.inert)}; inside a Search Loop streak, holding it: ${roundsText(counted.inStreak)}${aftermath}`
 }
 
 function populationBlockedOrInertText(counted: AuditPopulation['blockedOrInert']): string {
   return counted === undefined
     ? 'Blocked Actions and inert clicks not counted'
-    : `${counted.blocked} Blocked Action(s) and ${counted.inert} inert click(s), ${counted.inStreak} inside a Search Loop streak`
+    : `${counted.covered} covered, ${counted.notShown} not shown and ${counted.blocked} pre-#264 Blocked Action(s), ${counted.inert} inert click(s), ${counted.inStreak} inside a Search Loop streak, ${counted.postBlockVision} post-block vision round(s), ${counted.recoveryRounds} recovery round(s) over ${counted.recovered} recovered block(s) and ${counted.unrecovered} never recovered`
+}
+
+/**
+ * The Blocked Actions per hunt (#264, AC9), summed over the attempts that
+ * count them, so a zero not-shown count is visible as a count rather than as
+ * silence; a hunt no attempt counted is left out. Undefined when none does.
+ */
+export function blockedActionsByHuntOf(attempts: readonly AuditAttempt[]): Record<string, BlockedOrInertCounts> | undefined {
+  const byHunt: Record<string, Record<keyof BlockedOrInertCounts, number>> = {}
+  let counted = false
+  for (const { mechanical } of attempts) {
+    if (mechanical.blockedOrInert === undefined) continue
+    counted = true
+    addBlockedOrInert((byHunt[mechanical.huntId] ??= emptyBlockedOrInertCounts()), mechanical.blockedOrInert)
+  }
+  return counted ? byHunt : undefined
+}
+
+/** The per-hunt Blocked Actions as a section — heading, note and table; empty when nothing counted them. */
+function blockedActionsByHuntSection(byHunt: Readonly<Record<string, Readonly<BlockedOrInertCounts>>> | undefined): string[] {
+  if (byHunt === undefined) return []
+  return [
+    '## Blocked Actions by hunt',
+    '',
+    'Covered and Not Shown outcomes (ADR 0062; pre-#264 heads named no kind), Look or visual grounding rounds within two rounds of one, and the rounds from each to the next round whose action landed or that answered.',
+    '',
+    '| hunt | covered | not shown | pre-#264 | post-block vision rounds | recovery rounds | recovered | never recovered |',
+    '| --- | --- | --- | --- | --- | --- | --- | --- |',
+    ...Object.entries(byHunt).map(
+      ([hunt, counted]) =>
+        `| ${hunt} | ${counted.covered} | ${counted.notShown} | ${counted.blocked} | ${counted.postBlockVision} | ${counted.recoveryRounds} | ${counted.recovered} | ${counted.unrecovered} |`,
+    ),
+  ]
 }
 
 function unavailableLandingsText(counted: UnavailableLandingRounds | undefined): string {
@@ -1163,17 +1214,65 @@ function consumedOf(call: AuditCall): boolean {
  * rules an inert click out is the `signature` the audit already read off the
  * whole result, since the head flattens and may cut it.
  */
-function blockedOrInertOfCall(call: AuditCall): ConsumedNothing | null {
+function blockedOrInertOfCall(call: AuditCall): AuditConsumedNothing | null {
   if (call.ok !== true || call.refused || call.resultHead === null) return null
-  const verdict = blockedOrInertAction(call.resultHead)
+  const verdict = consumedNothingOf(call.resultHead)
   return verdict === 'inert' && call.signature !== null ? null : verdict
 }
 
-/** The rounds of an attempt's Blocked Actions and inert clicks, and of those met inside a streak (#261). */
+/**
+ * The Blocked Action head the port wrote before #264 (ADR 0062), which named
+ * no cause: a trace captured before it — the `fix-263` Reference among them —
+ * still reads as a Blocked Action, of a kind the outcome never recorded.
+ */
+const LEGACY_BLOCKED_HEAD_RE = /^(?:clicked|typed) \[\d+\]: not (?:clicked|typed) — blocked by overlay/
+
+/** How a call consumed nothing as the audit reads it: the port's own verdicts, or a pre-#264 Blocked Action. */
+type AuditConsumedNothing = ConsumedNothing | 'blocked'
+
+/** The rail's helper over an outcome text, with the pre-#264 head read as a Blocked Action of no recorded kind. */
+function consumedNothingOf(text: string): AuditConsumedNothing | null {
+  return LEGACY_BLOCKED_HEAD_RE.test(text) ? 'blocked' : blockedOrInertAction(text)
+}
+
+/** Whether a verdict is a Blocked Action — Covered, Not Shown, or pre-#264 — rather than an inert click. */
+function isBlockedAction(verdict: AuditConsumedNothing | null): boolean {
+  return verdict === 'covered' || verdict === 'notShown' || verdict === 'blocked'
+}
+
+/** Visual inspection tools: what a model reached for when an outcome left it hunting for a cover (#264). */
+const VISION_TOOLS: ReadonlySet<string> = new Set(['look', 'ground_visual'])
+
+/** How many rounds after a Blocked Action a Look or visual grounding call is a post-block vision round (ADR 0062). */
+const POST_BLOCK_VISION_WITHIN_ROUNDS = 2
+
+/**
+ * Whether a call's action landed: a page action — never inspection or
+ * vision — that reported success and consumed something, as the rail decides it.
+ */
+function landedOf(call: AuditCall): boolean {
+  return ACQUISITION_TOOLS.has(call.name) && !isSearchInspection(call.name) && !VISION_TOOLS.has(call.name) && consumedOf(call)
+}
+
+/**
+ * The rounds of an attempt's Blocked Actions and inert clicks, of those met
+ * inside a streak (#261), and what followed a Blocked Action (#264).
+ */
 export interface BlockedOrInertRounds {
+  /** Covered and Not Shown Blocked Actions (ADR 0062); absent on an audit written before #264. */
+  readonly covered?: readonly number[]
+  readonly notShown?: readonly number[]
+  /** Blocked Actions under the pre-#264 head, whose kind the outcome never recorded. */
   readonly blocked: readonly number[]
   readonly inert: readonly number[]
   readonly inStreak: readonly number[]
+  /** Rounds with a Look or visual grounding call within two rounds after a Blocked Action, by tool name (#264). */
+  readonly postBlockVision?: readonly number[]
+  /**
+   * Per Blocked Action, in order, the rounds from it to the next round whose
+   * action landed or that answered (Finalization); null when neither followed (#264).
+   */
+  readonly recoveries?: readonly { readonly at: number; readonly rounds: number | null }[]
 }
 
 /**
@@ -1181,18 +1280,38 @@ export interface BlockedOrInertRounds {
  * (#261, AC4): one entry per call, and, of the calls that were neither a
  * search nor inspection, the ones met at streak 1 or beyond — the calls that
  * reset a Search Loop streak before #261 and hold it now. Reads the streaks
- * the rounds carry, as `searchLoopCountsOf` does.
+ * the rounds carry, as `searchLoopCountsOf` does. #264 (ADR 0062) splits the
+ * Blocked Actions into Covered and Not Shown and tags what followed each:
+ * the rounds a Look or visual grounding call came within two rounds of one,
+ * and the rounds until an action landed or the Run answered.
  */
 export function blockedOrInertOf(rounds: readonly AuditRound[]): BlockedOrInertRounds {
+  const covered: number[] = []
+  const notShown: number[] = []
   const blocked: number[] = []
   const inert: number[] = []
   const inStreak: number[] = []
+  const postBlockVision: number[] = []
+  const recoveries: { at: number; rounds: number | null }[] = []
+  let lastBlock: number | null = null
   let streak = 0
   for (const round of rounds) {
+    if (round.kind === 'finalization' || round.calls.some(landedOf)) {
+      for (const recovery of recoveries) if (recovery.rounds === null && recovery.at < round.round) recovery.rounds = round.round - recovery.at
+    }
     for (const call of round.calls) {
+      if (VISION_TOOLS.has(call.name) && lastBlock !== null && round.round - lastBlock <= POST_BLOCK_VISION_WITHIN_ROUNDS && postBlockVision.at(-1) !== round.round) {
+        postBlockVision.push(round.round)
+      }
       const verdict = blockedOrInertOfCall(call)
+      if (verdict === 'covered') covered.push(round.round)
+      if (verdict === 'notShown') notShown.push(round.round)
       if (verdict === 'blocked') blocked.push(round.round)
       if (verdict === 'inert') inert.push(round.round)
+      if (isBlockedAction(verdict)) {
+        lastBlock = round.round
+        recoveries.push({ at: round.round, rounds: null })
+      }
       if (call.search !== null) {
         streak = call.search.streak
         continue
@@ -1202,7 +1321,42 @@ export function blockedOrInertOf(rounds: readonly AuditRound[]): BlockedOrInertR
       streak = searchStreakAfter(streak, searchStreakMoveOf(inspection ? 'inspection' : 'other', consumedOf(call)))
     }
   }
-  return { blocked, inert, inStreak }
+  return { covered, notShown, blocked, inert, inStreak, postBlockVision, recoveries }
+}
+
+/** The Blocked Actions, inert clicks and what followed as counts: over a population, or a hunt. */
+export interface BlockedOrInertCounts {
+  readonly covered: number
+  readonly notShown: number
+  readonly blocked: number
+  readonly inert: number
+  readonly inStreak: number
+  readonly postBlockVision: number
+  /** Rounds from each recovered Blocked Action to its recovery, summed; `recovered` of them recovered, `unrecovered` never did. */
+  readonly recoveryRounds: number
+  readonly recovered: number
+  readonly unrecovered: number
+}
+
+function emptyBlockedOrInertCounts(): Record<keyof BlockedOrInertCounts, number> {
+  return { covered: 0, notShown: 0, blocked: 0, inert: 0, inStreak: 0, postBlockVision: 0, recoveryRounds: 0, recovered: 0, unrecovered: 0 }
+}
+
+/** Add one attempt's rounds to a running count; the #264 fields count zero on an audit written before them. */
+function addBlockedOrInert(into: Record<keyof BlockedOrInertCounts, number>, rounds: BlockedOrInertRounds): void {
+  into.covered += rounds.covered?.length ?? 0
+  into.notShown += rounds.notShown?.length ?? 0
+  into.blocked += rounds.blocked.length
+  into.inert += rounds.inert.length
+  into.inStreak += rounds.inStreak.length
+  into.postBlockVision += rounds.postBlockVision?.length ?? 0
+  for (const recovery of rounds.recoveries ?? []) {
+    if (recovery.rounds === null) into.unrecovered += 1
+    else {
+      into.recovered += 1
+      into.recoveryRounds += recovery.rounds
+    }
+  }
 }
 
 /** The rounds of an attempt's Unavailable Landings by basis, and of those followed by a search (#262). */
@@ -1293,7 +1447,7 @@ function consentWallsOf(raw: readonly RawRound[]): ConsentWallRounds {
       const text = entry.result !== undefined && entry.result.ok ? resultText(entry.result.result) : null
       if (text === null) continue
       if (text.includes(CONSENT_DISMISSAL_MARK)) dismissals.push(round.round)
-      if (blockedOrInertAction(text) === 'blocked') blocked.push(round.round)
+      if (isBlockedAction(consumedNothingOf(text))) blocked.push(round.round)
       // A whole listing renumbers the page, so a number it leaves out names
       // nothing; a scroll's block overlays only the numbers it prints.
       if (LISTING_HEAD_RE.test(text)) labels.clear()
@@ -1476,7 +1630,7 @@ function classifyCall(
   // click (#261), read by the rail's own helper over the whole result text,
   // nor an Unavailable Landing (#262), read from the field, never the head.
   const consumed =
-    result !== undefined && result.ok && !refused && landing === null && unavailable === null && (text === null || blockedOrInertAction(text) === null)
+    result !== undefined && result.ok && !refused && landing === null && unavailable === null && (text === null || consumedNothingOf(text) === null)
   const search = advanceSearchStreak(state.search, { name: call.name, consumed, search: observed })
 
   // Collection and Bookkeeping make no Progress claim; everything else is
@@ -2398,7 +2552,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
   let rewrittenOffKey = 0
   let rewrittenShown = 0
   let searchForms: Record<SearchUrlForm, number> | undefined
-  let blockedOrInert: Record<keyof BlockedOrInertRounds, number> | undefined
+  let blockedOrInert: Record<keyof BlockedOrInertCounts, number> | undefined
   let unavailableLandings: Record<keyof UnavailableLandingRounds, number> | undefined
   let consentWalls: ConsentWallCounts | undefined
   let slipAnswers = 0
@@ -2455,12 +2609,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
       searchForms ??= emptySearchForms()
       for (const form of SEARCH_URL_FORMS) searchForms[form] += mechanical.searchForms[form]
     }
-    if (mechanical.blockedOrInert !== undefined) {
-      blockedOrInert ??= { blocked: 0, inert: 0, inStreak: 0 }
-      blockedOrInert.blocked += mechanical.blockedOrInert.blocked.length
-      blockedOrInert.inert += mechanical.blockedOrInert.inert.length
-      blockedOrInert.inStreak += mechanical.blockedOrInert.inStreak.length
-    }
+    if (mechanical.blockedOrInert !== undefined) addBlockedOrInert((blockedOrInert ??= emptyBlockedOrInertCounts()), mechanical.blockedOrInert)
     if (mechanical.unavailableLandings !== undefined) {
       unavailableLandings ??= { status: 0, title: 0, followedBySearch: 0 }
       unavailableLandings.status += mechanical.unavailableLandings.status.length
@@ -2647,6 +2796,7 @@ export function buildAuditAggregate(sets: readonly AuditSetOutput[], generatedAt
   const initial = aggregatePopulation('initial', 'initial', ordered, (set) => set.populations.initial)
   const followUp = aggregatePopulation('follow_up', 'revised_objective', ordered, (set) => set.populations.followUp)
   const consentWallsByHunt = consentWallsByHuntOf(ordered.flatMap((set) => set.attempts))
+  const blockedActionsByHunt = blockedActionsByHuntOf(ordered.flatMap((set) => set.attempts))
   const rankedCauses = AUDIT_VERDICTS.map((verdict) => ({
     verdict,
     count: initial.verdictsPrimary[verdict] + followUp.verdictsPrimary[verdict],
@@ -2692,6 +2842,7 @@ export function buildAuditAggregate(sets: readonly AuditSetOutput[], generatedAt
       populations: { initial, followUp },
       rankedCauses,
       ...(consentWallsByHunt === undefined ? {} : { consentWallsByHunt }),
+      ...(blockedActionsByHunt === undefined ? {} : { blockedActionsByHunt }),
       caveats: ordered.flatMap((set) => set.caveats.map((caveat) => `${set.provenance.setId}: ${caveat}`)),
       note: AUDIT_COUNTS_NOTE,
     },
@@ -2907,6 +3058,8 @@ export function formatAuditSet(audit: AuditSetOutput): string {
   lines.push(...toolRoundTable([audit.populations.initial, audit.populations.followUp]))
   const consentByHunt = consentWallsByHuntSection(consentWallsByHuntOf(audit.attempts))
   if (consentByHunt.length > 0) lines.push('', ...consentByHunt)
+  const blockedByHunt = blockedActionsByHuntSection(blockedActionsByHuntOf(audit.attempts))
+  if (blockedByHunt.length > 0) lines.push('', ...blockedByHunt)
   if (audit.caveats.length > 0) {
     lines.push('')
     lines.push('## Caveats')
@@ -2966,6 +3119,8 @@ export function formatAuditAggregate(aggregate: AuditAggregate): string {
   lines.push('')
   const consentByHunt = consentWallsByHuntSection(aggregate.consentWallsByHunt)
   if (consentByHunt.length > 0) lines.push(...consentByHunt, '')
+  const blockedByHunt = blockedActionsByHuntSection(aggregate.blockedActionsByHunt)
+  if (blockedByHunt.length > 0) lines.push(...blockedByHunt, '')
   lines.push('## Per set')
   lines.push('')
   for (const population of [aggregate.populations.initial, aggregate.populations.followUp]) {

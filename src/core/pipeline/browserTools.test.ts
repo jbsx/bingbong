@@ -437,10 +437,19 @@ describe('browser tools through the pipeline', () => {
     expect(descriptions.read_page).toContain('page text: part 1 of 3 — read_page part=2 continues')
     expect(descriptions.click).toMatch(/URL-change.*dialog.*state delta/i)
     expect(descriptions.click).toMatch(/settled page state/i)
-    // The overlay retry sequence lives here, not in the shared prompt
+    // What to do after a Blocked Action lives here, not in the shared prompt
     // policy (#127/AC2): mechanical call sequences are tool-description
-    // guidance.
-    expect(descriptions.click).toMatch(/blocked by overlay.*read the page, handle the dialog, then retry/i)
+    // guidance. #264 (ADR 0062): click and type say the same two sentences,
+    // and neither sends the model hunting for a dialog.
+    for (const name of ['click', 'type'] as const) {
+      expect(descriptions[name]).toContain(
+        'A "covered by" result names what sits over the target: act on the ref it names, or choose another target you were shown.',
+      )
+      expect(descriptions[name]).toContain(
+        'A "not shown" result means the target is inside a hidden or inert container: no dismissal reaches it; choose a target you were shown.',
+      )
+      expect(descriptions[name]).not.toMatch(/usually a dialog|blocked by overlay|then retry/i)
+    }
     expect(descriptions.type).toMatch(/actual.*value/i)
     expect(descriptions.type).toMatch(/settled page state/i)
     expect(descriptions.type).toMatch(/focus/i)
