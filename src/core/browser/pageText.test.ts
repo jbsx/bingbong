@@ -85,6 +85,26 @@ describe('renderPageText — tables, pre and definition lists are text (#235/AC3
   })
 })
 
+describe('renderPageText — a prose run is a text block like any other (#265)', () => {
+  it('renders a text block the collector took from a container as a paragraph, repeats dropped, and cuts it into parts', () => {
+    const run = 'Wooden carrying case for both H4 and K1, probably made in 1938 for transporting them both to the Empire Exhibition.'
+    const page = renderPageText([
+      { kind: 'text', text: 'Carrying case', heading: true },
+      { kind: 'row', cells: ['Date made:', 'circa 1962'] },
+      { kind: 'text', text: run, inView: true },
+      { kind: 'text', text: run },
+    ])
+
+    expect(page.blocks).toEqual(['Carrying case', 'Date made: | circa 1962', run])
+    expect(page.viewportText).toEqual([run])
+    expect(splitPageRead(page.blocks, 60)).toEqual([
+      'Carrying case\nDate made: | circa 1962',
+      'Wooden carrying case for both H4 and K1, probably made in',
+      '1938 for transporting them both to the Empire Exhibition.',
+    ])
+  })
+})
+
 describe('splitPageRead — a Page Read in parts (#235/AC1)', () => {
   it('returns one part holding the whole text when it fits', () => {
     expect(splitPageRead(['One.', 'Two.'])).toEqual(['One.\nTwo.'])

@@ -1,16 +1,27 @@
-import type { Server } from 'node:http'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import type { CollectedTextBlock } from '../src/core/browser/pageText.ts'
 import { COLLECT_PAGE_SCRIPT } from '../src/main/browser/collectPageScript.ts'
-import { canDriveChrome, launchHeadlessChrome, listen, until, type HeadlessChrome } from './live/headlessChrome.ts'
+import { canDriveChrome, serveFixtures, type FixtureChrome } from './live/headlessChrome.ts'
 
-// The collector's Consent Dialog rule (#263, ADR 0061) in a real headless
-// Chrome: when no role-bearing dialog root exists, the dialog root is the
-// outermost `fixed` or `sticky` ancestor of a consent-style control that meets
-// the viewport. The rule reads computed style, which only a browser supplies,
-// so this runs the collect script itself over pages shaped like the captures.
+// The collect script itself, run in a real headless Chrome over pages shaped
+// like the captures, for the rules that need what only a browser supplies —
+// computed style, layout, innerText. Each describe below serves its own
+// pages in its own Chrome.
 //
 // It needs a Chrome and a global WebSocket (Node ≥ 22); without either it is
 // skipped, not failed. CHROME_PATH points it at a Chrome elsewhere.
+
+interface Collected {
+  readonly dialogOpen: boolean
+  readonly dialogText: string
+  readonly elements: readonly { readonly label: string; readonly layer: 'dialog' | 'page' }[]
+  readonly textBlocks: readonly CollectedTextBlock[]
+}
+
+// The Consent Dialog rule (#263, ADR 0061): when no role-bearing dialog root
+// exists, the dialog root is the outermost `fixed` or `sticky` ancestor of a
+// consent-style control that meets the viewport. The rule reads computed
+// style.
 
 const SEARCH_BOX = '<header><form role="search"><input type="search" aria-label="Search our collection" name="q"></form></header>'
 const BODY_TEXT = '<main><h1>Collections</h1><p>Objects from the collection.</p></main>'
@@ -43,37 +54,18 @@ const PAGES: Record<string, string> = {
   '/offscreen': `<body>${SEARCH_BOX}${BODY_TEXT}<div style="position:fixed;top:-500px;left:0;right:0;height:100px;background:#fff"><button>Accept all cookies</button></div></body>`,
 }
 
-interface Collected {
-  readonly dialogOpen: boolean
-  readonly dialogText: string
-  readonly elements: readonly { readonly label: string; readonly layer: 'dialog' | 'page' }[]
-}
-
 describe.skipIf(!canDriveChrome)('the collector finds a consent wall by the rule (#263, ADR 0061)', () => {
-  let server: Server
-  let base: string
-  let chrome: HeadlessChrome
+  let fixtures: FixtureChrome
 
   beforeAll(async () => {
-    const listening = await listen((req, res) => {
-      const page = PAGES[req.url ?? '']
-      res.writeHead(page === undefined ? 404 : 200, { 'content-type': 'text/html; charset=utf-8' })
-      res.end(page === undefined ? 'not found' : `<!doctype html><html><head><title>${req.url}</title></head>${page}</html>`)
-    })
-    server = listening.server
-    base = `http://127.0.0.1:${listening.port}`
-    chrome = await launchHeadlessChrome('bingbong-collector-chrome-')
+    fixtures = await serveFixtures(PAGES, 'bingbong-collector-chrome-')
   }, 60_000)
 
-  afterAll(async () => {
-    await chrome?.close()
-    await new Promise<void>((resolve) => (server ? server.close(() => resolve()) : resolve()))
-  })
+  afterAll(() => fixtures?.close())
 
-  async function collect(path: string): Promise<Collected> {
-    await chrome.cdp.send('Page.navigate', { url: `${base}${path}` })
-    await until(() => chrome.evaluate<boolean>(`document.title === ${JSON.stringify(path)} && document.readyState === 'complete'`), `${path} to load`)
-    return chrome.evaluate<Collected>(COLLECT_PAGE_SCRIPT)
+  const collect = async (path: string): Promise<Collected> => {
+    await fixtures.open(path)
+    return fixtures.chrome.evaluate<Collected>(COLLECT_PAGE_SCRIPT)
   }
 
   const dialogLabels = (page: Collected) => page.elements.filter((element) => element.layer === 'dialog').map((element) => element.label)
@@ -124,5 +116,103 @@ describe.skipIf(!canDriveChrome)('the collector finds a consent wall by the rule
   it('leaves out an absolute-only wall and a fixed one outside the viewport', async () => {
     expect((await collect('/absolute')).dialogOpen).toBe(false)
     expect((await collect('/offscreen')).dialogOpen).toBe(false)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// A container's own prose (#265, note on ADR 0047). The walk needs layout —
+// a run's text is what innerText renders, and a run is in view by a Range
+// over its nodes — so it runs in the same headless Chrome over pages shaped
+// like the RMG object record whose description was a bare text node.
+
+const DESCRIPTION =
+  'Wooden carrying case for both H4 and K1, probably made in 1938 for transporting them both to the Empire Exhibition being held in Glasgow that year, but possibly also with adaptations in the 1960s when the two timekeepers travelled again; the case is lined and fitted to hold each instrument in place.'
+const DETAILS = '<table><tr><th>Date made:</th><td>circa 1962</td></tr><tr><th>Object ID:</th><td>ZBA1234</td></tr></table>'
+const RECORD = (description: string) => `<body><main><h1>Carrying case for H4 and K1</h1><div class="details">${DETAILS}</div><div class="description">${description}</div></main></body>`
+
+const PROSE_PAGES: Record<string, string> = {
+  '/record': RECORD(DESCRIPTION),
+  '/record-p': RECORD(`<p>${DESCRIPTION}</p>`),
+  '/label': RECORD('Object description'),
+  '/intro': '<body><main><h1>Intro</h1><section>An introductory sentence that stands on its own before the paragraphs.<p>The first paragraph of the section follows the introduction.</p><p>The second paragraph closes the section after the first.</p></section></main></body>',
+  '/inline': '<body><main><h1>Inline</h1><div>The case for H<sub>4</sub> was <em>probably</em>, not certainly, made in 1938 for the <a href="/glasgow">Empire Exhibition</a><br>in Glasgow.</div></main></body>',
+  '/scripts': '<body><main><h1>Scripts</h1><div><script>window.__bingbongFixture = { loaded: true, note: "not prose at all" }</script><style>.description { margin: 0; padding: 0; color: #333; font-size: 1rem }</style>Only this sentence is prose, and it is long enough to be a run.</div></main></body>',
+  '/tall': '<body><main><h1>Tall</h1><div style="height:3000px"></div><div>A sentence at the foot of the page, well below the first viewport.</div></main></body>',
+  '/card': '<body><main><h1>Cards</h1><a href="/one"><h3>One</h3><p>The first card summary, wrapped in its link with its heading.</p></a><a href="/two">A link whose text is long enough to be a run on its own, with no block inside.</a></main></body>',
+  '/long-heading': '<body><main><h1>A heading long enough that a run of its text would pass the threshold</h1><p>Body.</p></main></body>',
+  '/linked-heading': '<body><a href="/"><h1>A heading long enough that a run of its text would pass the threshold</h1></a><p>Body.</p></body>',
+}
+
+describe.skipIf(!canDriveChrome)("the collector reads a container's own prose as a run (#265)", () => {
+  let fixtures: FixtureChrome
+
+  beforeAll(async () => {
+    fixtures = await serveFixtures(PROSE_PAGES, 'bingbong-collector-prose-')
+  }, 60_000)
+
+  afterAll(() => fixtures?.close())
+
+  const collect = async (path: string): Promise<Collected> => {
+    await fixtures.open(path)
+    return fixtures.chrome.evaluate<Collected>(COLLECT_PAGE_SCRIPT)
+  }
+
+  const texts = (page: Collected) => page.textBlocks.map((block) => (block.kind === 'text' ? block.text : block.kind === 'row' ? block.cells.join(' | ') : block.kind))
+
+  it('reads a bare text node inside a div after the details table, as it would a paragraph', async () => {
+    const bare = await collect('/record')
+    const wrapped = await collect('/record-p')
+
+    expect(texts(bare)).toEqual(['Carrying case for H4 and K1', 'Date made: | circa 1962', 'Object ID: | ZBA1234', DESCRIPTION])
+    expect(bare.textBlocks).toEqual(wrapped.textBlocks)
+  })
+
+  it('leaves a short bare label uncollected', async () => {
+    expect(texts(await collect('/label'))).toEqual(['Carrying case for H4 and K1', 'Date made: | circa 1962', 'Object ID: | ZBA1234'])
+  })
+
+  it('reads an intro sentence and the paragraphs after it, in order', async () => {
+    expect(texts(await collect('/intro'))).toEqual([
+      'Intro',
+      'An introductory sentence that stands on its own before the paragraphs.',
+      'The first paragraph of the section follows the introduction.',
+      'The second paragraph closes the section after the first.',
+    ])
+  })
+
+  it('carries the words of inline children as innerText renders them: no space inside H4, a space at a line break', async () => {
+    expect(texts(await collect('/inline'))).toEqual(['Inline', 'The case for H4 was probably, not certainly, made in 1938 for the Empire Exhibition in Glasgow.'])
+  })
+
+  it('skips script and style, however long', async () => {
+    expect(texts(await collect('/scripts'))).toEqual(['Scripts', 'Only this sentence is prose, and it is long enough to be a run.'])
+  })
+
+  it('descends an inline element that wraps a tag block, so a card link keeps its heading as a block', async () => {
+    expect(texts(await collect('/card'))).toEqual([
+      'Cards',
+      'One',
+      'The first card summary, wrapped in its link with its heading.',
+      'A link whose text is long enough to be a run on its own, with no block inside.',
+    ])
+  })
+
+  it('takes the h1 once, never again as a run, even inside a link', async () => {
+    const heading = 'A heading long enough that a run of its text would pass the threshold'
+    expect(texts(await collect('/long-heading'))).toEqual([heading, 'Body.'])
+    expect(texts(await collect('/linked-heading'))).toEqual([heading, 'Body.'])
+  })
+
+  it('is in view by its own nodes, not its container: at the foot of a tall page only after a scroll', async () => {
+    const top = await collect('/tall')
+    const foot = (page: Collected) => page.textBlocks.find((block) => block.kind === 'text' && block.text.startsWith('A sentence at the foot'))
+
+    expect(foot(top)).toBeDefined()
+    expect(foot(top)?.inView).toBeUndefined()
+
+    await fixtures.chrome.evaluate('window.scrollTo(0, document.body.scrollHeight)')
+    const scrolled = await fixtures.chrome.evaluate<Collected>(COLLECT_PAGE_SCRIPT)
+
+    expect(foot(scrolled)?.inView).toBe(true)
   })
 })

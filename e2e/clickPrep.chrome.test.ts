@@ -1,7 +1,6 @@
-import type { Server } from 'node:http'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { COLLECT_PAGE_SCRIPT, clickPrepScript, markShownRefsScript, type ClickPrep } from '../src/main/browser/collectPageScript.ts'
-import { canDriveChrome, launchHeadlessChrome, listen, until, type HeadlessChrome } from './live/headlessChrome.ts'
+import { canDriveChrome, serveFixtures, type FixtureChrome } from './live/headlessChrome.ts'
 
 // A Blocked Action names its Cover, and a target absent from the hit test is
 // Not Shown (#264, ADR 0062). jsdom has no hit test and no inert, so the
@@ -53,32 +52,19 @@ interface Collected {
 }
 
 describe.skipIf(!canDriveChrome)('the Cover and Not Shown rule in a real Chrome (#264, ADR 0062)', () => {
-  let server: Server
-  let base: string
-  let chrome: HeadlessChrome
+  let fixtures: FixtureChrome
 
   beforeAll(async () => {
-    const listening = await listen((req, res) => {
-      const page = PAGES[req.url ?? '']
-      res.writeHead(page === undefined ? 404 : 200, { 'content-type': 'text/html; charset=utf-8' })
-      res.end(page === undefined ? 'not found' : `<!doctype html><html><head><title>${req.url}</title></head>${page}</html>`)
-    })
-    server = listening.server
-    base = `http://127.0.0.1:${listening.port}`
-    chrome = await launchHeadlessChrome('bingbong-click-prep-chrome-')
+    fixtures = await serveFixtures(PAGES, 'bingbong-click-prep-chrome-')
   }, 60_000)
 
-  afterAll(async () => {
-    await chrome?.close()
-    await new Promise<void>((resolve) => (server ? server.close(() => resolve()) : resolve()))
-  })
+  afterAll(() => fixtures?.close())
 
   /** Load the page, collect it and mark the whole listing shown, as a page read does. */
   async function collect(path: string): Promise<Collected> {
-    await chrome.cdp.send('Page.navigate', { url: `${base}${path}` })
-    await until(() => chrome.evaluate<boolean>(`document.title === ${JSON.stringify(path)} && document.readyState === 'complete'`), `${path} to load`)
-    const page = await chrome.evaluate<Collected>(COLLECT_PAGE_SCRIPT)
-    await chrome.evaluate(markShownRefsScript(page.elements.length))
+    await fixtures.open(path)
+    const page = await fixtures.chrome.evaluate<Collected>(COLLECT_PAGE_SCRIPT)
+    await fixtures.chrome.evaluate(markShownRefsScript(page.elements.length))
     return page
   }
 
@@ -88,7 +74,7 @@ describe.skipIf(!canDriveChrome)('the Cover and Not Shown rule in a real Chrome 
   async function prep(page: Collected, label: string): Promise<ClickPrep> {
     const index = labels(page).indexOf(label)
     expect(index, `${label} is listed`).toBeGreaterThanOrEqual(0)
-    return chrome.evaluate<ClickPrep>(clickPrepScript(index, { listed: page.elements.length, shownOnly: true }))
+    return fixtures.chrome.evaluate<ClickPrep>(clickPrepScript(index, { listed: page.elements.length, shownOnly: true }))
   }
 
   const refOf = (page: Collected, label: string) => labels(page).indexOf(label) + 1
@@ -130,9 +116,9 @@ describe.skipIf(!canDriveChrome)('the Cover and Not Shown rule in a real Chrome 
 
     it('names a cover ref only when it is one the model was shown', async () => {
       const page = await collect('/button-over')
-      await chrome.evaluate(markShownRefsScript(0))
+      await fixtures.chrome.evaluate(markShownRefsScript(0))
       const index = labels(page).indexOf('Name')
-      const prepared = await chrome.evaluate<ClickPrep>(clickPrepScript(index, { listed: page.elements.length, shownOnly: true }))
+      const prepared = await fixtures.chrome.evaluate<ClickPrep>(clickPrepScript(index, { listed: page.elements.length, shownOnly: true }))
       expect(prepared.blocked).toEqual({ fact: 'covered', cover: { tag: 'span', contains: [] } })
     })
 

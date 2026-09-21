@@ -107,3 +107,37 @@ export async function launchHeadlessChrome(profilePrefix: string): Promise<Headl
 
   return { cdp, evaluate, close }
 }
+
+/** Pages served on the loopback and a Chrome to open them in. */
+export interface FixtureChrome {
+  readonly chrome: HeadlessChrome
+  /** Navigates to the page served at `path` and waits for it to load. */
+  readonly open: (path: string) => Promise<void>
+  /** Closes Chrome, then the server. */
+  readonly close: () => Promise<void>
+}
+
+/**
+ * Serves `pages` (path → body markup, titled by path) on a port the OS picks
+ * and launches a Chrome for them, for the collect-script tests that need
+ * layout and computed style.
+ */
+export async function serveFixtures(pages: Record<string, string>, profilePrefix: string): Promise<FixtureChrome> {
+  const { server, port } = await listen((req, res) => {
+    const page = pages[req.url ?? '']
+    res.writeHead(page === undefined ? 404 : 200, { 'content-type': 'text/html; charset=utf-8' })
+    res.end(page === undefined ? 'not found' : `<!doctype html><html><head><title>${req.url}</title></head>${page}</html>`)
+  })
+  const chrome = await launchHeadlessChrome(profilePrefix)
+  return {
+    chrome,
+    open: async (path) => {
+      await chrome.cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}${path}` })
+      await until(() => chrome.evaluate<boolean>(`document.title === ${JSON.stringify(path)} && document.readyState === 'complete'`), `${path} to load`)
+    },
+    close: async () => {
+      await chrome.close()
+      await new Promise<void>((resolve) => server.close(() => resolve()))
+    },
+  }
+}

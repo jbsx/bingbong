@@ -1,8 +1,8 @@
 // ADR 0047: a page's text, as the in-page collector finds it and as the
-// model reads it. The collector does the DOM work — which elements are
-// blocks, in document order, skipping any element inside a block already
-// taken, and which blocks intersect the viewport — and hands back each block
-// raw. Everything that decides what the model reads happens here, where it
+// model reads it. The collector does the DOM work — which elements and
+// which runs of a container's own prose are blocks, in document order, a
+// block taken whole, and which blocks intersect the viewport — and hands
+// back each block raw. Everything that decides what the model reads happens here, where it
 // is unit-tested: how a table row, a pre block and a definition list render,
 // which repeats are dropped, how a Page Read is cut into parts, and the fact
 // lines that say a text was cut.

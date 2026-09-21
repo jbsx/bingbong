@@ -19,7 +19,11 @@ pass over the text root: a tag block (`p`, `li`, `h2`, `h3`, `tr`, `pre`,
 `script`, `style`, `noscript`, `template`, `textarea`, `select`, `option`,
 `svg`, `math`, `iframe` or `object` closes the run and is skipped; any other
 element closes the run and is descended, so a container holding both bare
-text and paragraphs reads all of them. A run is in view by a Range over its
+text and paragraphs reads all of them. An inline element that itself wraps
+the h1 or a tag block — a card's `<a>` around an `<h3>` and a `<p>` — is
+descended rather than joined, so the heading stays a block of its own as it
+was before runs existed; joined as a run it would read once, or below the
+threshold not at all. A run is in view by a Range over its
 nodes, not by its container's rect. Nothing checks visibility, as nothing
 did for a paragraph. The longitude case record on rmg.co.uk keeps its
 description as a bare text node inside a `div`, so no Page Read in
@@ -156,7 +160,8 @@ Recorded when #235 was built, where the decision left a choice open:
   block's rendered text, a definition list's `dt`/`dd` entries, and whether
   it is in view — and `core/browser/pageText.ts` renders, cuts and words
   them, so every rule above is unit-tested. The collector keeps only the DOM
-  walk: document order, skipping any element inside a block already taken.
+  walk: document order, a block taken whole, a container's own prose as runs
+  between its blocks (#265).
 - One collect carries at most twenty parts of text (240,000 characters);
   past that only blocks in view still ride the payload, for the scroll delta.
   Every Action Outcome serializes a collect, so the whole page cannot be

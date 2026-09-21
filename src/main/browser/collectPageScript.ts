@@ -232,16 +232,17 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
     }
     return dialogElements.concat(pageElements).slice(0, 400)
   }
-  const textOf = (el) => (el.innerText || el.textContent || '').replace(/\\s+/g, ' ').trim()
+  const renderedText = (el) => el.innerText || el.textContent || ''
+  const textOf = (el) => renderedText(el).replace(/\\s+/g, ' ').trim()
   const heading = document.querySelector('h1, [role="heading"][aria-level="1"]')
   const textRoot = document.querySelector('main, article') || document.body
   // The page's text (ADR 0047): each block raw, in document order, for core
   // to render and cut (core/browser/pageText.ts). A table row, a pre block
   // and a definition list are blocks beside paragraphs, list items and
-  // headings; an element inside a block already taken is that block's text,
-  // so it is skipped — a paragraph in a table cell, a nested list.
+  // headings, and a container's own prose is a block as a run (#265); a tag
+  // block is taken whole, so an element inside it is that block's text — a
+  // paragraph in a table cell, a nested list.
   const textBlocks = []
-  const taken = new Set()
   let collectedText = 0
   let textCut = false
   // Whether a block is in the viewport right now, so a scroll can report
@@ -249,23 +250,17 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
   // click target, so it does not need the style pass rectVisible does — a
   // hidden block has no rect, and running getComputedStyle over every
   // paragraph would cost every collect, not just a scroll.
-  const inViewport = (el) => {
-    const rect = el.getBoundingClientRect()
+  const rectInView = (rect) => {
     if (rect.width < 1 || rect.height < 1) return false
     return rect.bottom > 0 && rect.right > 0 && rect.top < vh && rect.left < vw
   }
-  const insideTaken = (el) => {
-    for (let node = el.parentElement; node !== null; node = node.parentElement) {
-      if (taken.has(node)) return true
-    }
-    return false
-  }
+  const inViewport = (el) => rectInView(el.getBoundingClientRect())
   const rawBlock = (el) => {
     switch (el.tagName) {
       case 'TR':
         return { kind: 'row', cells: Array.from(el.cells).map(textOf) }
       case 'PRE':
-        return { kind: 'pre', text: el.innerText || el.textContent || '' }
+        return { kind: 'pre', text: renderedText(el) }
       case 'DL':
         return {
           kind: 'definitions',
@@ -284,11 +279,9 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
     if (block.kind === 'definitions') return block.items.reduce((total, item) => total + item.text.length, 0)
     return block.text.trim().length
   }
-  const take = (el, block) => {
-    taken.add(el)
+  const take = (block, inView) => {
     const length = lengthOf(block)
     if (length === 0) return
-    const inView = inViewport(el)
     // Past the collected-text bound only blocks in view still ride the
     // payload — a scroll's New In View needs them; a read ends at the bound.
     if (collectedText > ${MAX_COLLECTED_PAGE_TEXT} && !inView) {
@@ -299,12 +292,69 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
     if (inView) block.inView = true
     textBlocks.push(block)
   }
-  if (heading) take(heading, { kind: 'text', text: textOf(heading), heading: true })
-  if (textRoot) {
-    for (const el of textRoot.querySelectorAll('p, li, h2, h3, tr, pre, dl')) {
-      if (!insideTaken(el)) take(el, rawBlock(el))
-    }
+  if (heading) take({ kind: 'text', text: textOf(heading), heading: true }, inViewport(heading))
+  // One recursive pass over the text root in document order (#265). A tag
+  // block is taken whole at its element and not descended; an element that
+  // never carries prose is skipped; every other element is descended, and
+  // the text nodes and inline elements between its block children form
+  // prose runs. A run is what a paragraph's innerText would render — the
+  // words of an <em> or <a> included, whitespace collapsed — and enters as
+  // a text block when it reaches MIN_PROSE_RUN, where it sits: a container
+  // holding an intro sentence and two paragraphs reads all three in order.
+  // A run is in view by a Range over its own nodes, never by its container.
+  const TAG_BLOCK_SELECTOR = 'p, li, h2, h3, tr, pre, dl'
+  const TAG_BLOCKS = new Set(TAG_BLOCK_SELECTOR.split(', ').map((tag) => tag.toUpperCase()))
+  const NEVER_PROSE = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE', 'TEXTAREA', 'SELECT', 'OPTION', 'SVG', 'MATH', 'IFRAME', 'OBJECT'])
+  const INLINE = new Set(['A', 'ABBR', 'B', 'BDI', 'BDO', 'BR', 'CITE', 'CODE', 'DATA', 'DEL', 'DFN', 'EM', 'I', 'INS', 'KBD', 'MARK', 'Q', 'S', 'SAMP', 'SMALL', 'SPAN', 'STRONG', 'SUB', 'SUP', 'TIME', 'U', 'VAR', 'WBR'])
+  const MIN_PROSE_RUN = 40
+  // An inline element joins the run unless it wraps the heading or a tag
+  // block — a card's <a> around an <h3> and a <p> — in which case it is
+  // descended, so the heading stays a block of its own as it was before
+  // runs existed and the h1 is never read again.
+  const joinsRun = (el) => INLINE.has(el.tagName) && !el.contains(heading) && el.querySelector(TAG_BLOCK_SELECTOR) === null
+  const runInView = (nodes) => {
+    const range = document.createRange()
+    range.setStartBefore(nodes[0])
+    range.setEndAfter(nodes[nodes.length - 1])
+    return rectInView(range.getBoundingClientRect())
   }
+  // A line break renders as a space; any other inline element as its own
+  // rendered text, unpadded, so H<sub>4</sub> reads H4.
+  const runText = (nodes) =>
+    nodes
+      .map((node) => (node.nodeType === Node.TEXT_NODE ? node.data : node.tagName === 'BR' ? ' ' : renderedText(node)))
+      .join('')
+      .replace(/\\s+/g, ' ')
+      .trim()
+  const walk = (parent) => {
+    let run = []
+    const closeRun = () => {
+      if (run.length === 0) return
+      const text = runText(run)
+      if (text.length >= MIN_PROSE_RUN) take({ kind: 'text', text }, runInView(run))
+      run = []
+    }
+    for (const node of parent.childNodes) {
+      if (node.nodeType === Node.TEXT_NODE) {
+        run.push(node)
+        continue
+      }
+      if (node.nodeType !== Node.ELEMENT_NODE) continue
+      if (joinsRun(node)) {
+        run.push(node)
+        continue
+      }
+      closeRun()
+      // tagName is upper-case for HTML elements only; an <svg> or <math>
+      // keeps its case.
+      const tag = node.tagName.toUpperCase()
+      if (node === heading || NEVER_PROSE.has(tag)) continue
+      if (TAG_BLOCKS.has(tag)) take(rawBlock(node), inViewport(node))
+      else walk(node)
+    }
+    closeRun()
+  }
+  if (textRoot) walk(textRoot)
 
   const describeElement = (el, dialogRoot) => {
     const rect = el.getBoundingClientRect()
