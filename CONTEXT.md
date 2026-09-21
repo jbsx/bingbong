@@ -280,7 +280,9 @@ Producer that already observed this state is a no-Progress action. So is a
 rejected Evidence Checkpoint, counted once per Tool Round: the round's sibling
 calls were made before the model could read the first rejection. A Not-found
 Landing is neutral too: the settled page moved, but to a page that carries
-nothing, so it is not Progress and it resets no accounting. For a loop
+nothing, so it is not Progress and it resets no accounting; so is an
+Unavailable Landing, the site's outage rather than the model's move, though
+landing on the same Unavailable Page again is the repeat it always was. For a loop
 whose catalog holds no checkpoint or state-change tool, Progress is therefore
 the page moving and nothing else; the neutral first observation is what lets it
 study one page without an Approach exhausting on the spot.
@@ -645,8 +647,9 @@ whatever their terms. A search after a search continues the loop; the terms
 do not have to resemble each other, because on the live web rewordings of one
 need rarely share words. Inspection between searches does not break it: a
 page read, a Look, or a scroll looks at what the search returned and is not
-escape; neither is a Not-found Landing, a navigate that settled on nothing,
-nor a Blocked Action or an inert click, which reached nothing. Only escape
+escape; neither is a Not-found Landing or an Unavailable Landing, a navigate
+that settled on nothing, nor a Blocked Action or an inert click, which
+reached nothing. Only escape
 breaks it — opening a result, or any other tool call that succeeded and
 changed something.
 That rule is this rail's own and independent of Progress: a first page read
@@ -1027,8 +1030,10 @@ first.
 **Not-found Page**:
 A page whose server or title says the address names nothing — a 404 or 410
 answer, or a title that says the page was not found. It is not a Blocker:
-there is no content behind it to reach, and no Escalation clears it.
-_Avoid_: 404, dead link, broken URL, soft 404, error page
+there is no content behind it to reach, and no Escalation clears it. It is
+not an Unavailable Page either: a not-found answer is about the address, an
+outage is about the site.
+_Avoid_: 404, dead link, broken URL, soft 404
 
 **Not-found Landing**:
 A browser action settling on a Not-found Page. Its Action Outcome says so, as
@@ -1036,6 +1041,23 @@ a fact about the page, on whatever action landed there; it is neutral to
 Progress; and it is not escape from a Search Loop. Only a Composed Address
 landing there spends the site's allowance.
 _Avoid_: 404 hit, failed navigate, bad guess
+
+**Unavailable Page**:
+A page whose server or title says the site could not serve the address right
+now — a 5xx answer, or a title that says the service is offline, unavailable,
+in error or under maintenance. It says nothing about the address: the same
+address may serve later. It is not a Blocker — there is no content behind it
+to reach and no Escalation clears it, the user cannot bring a site back
+online — and not a Not-found Page, which is about the address.
+_Avoid_: outage page, error page, 5xx, down, wall, interstitial
+
+**Unavailable Landing**:
+A browser action settling on an Unavailable Page. Its Action Outcome says so,
+as a fact about the page, on whatever action landed there, with the advice
+to retry once later or use another source; it is neutral to Progress; it is
+not escape from a Search Loop; and it spends no Composed Address allowance,
+because it is not evidence the address was wrong.
+_Avoid_: outage hit, failed navigate, timeout, wall
 
 **Blocked Action**:
 A click or type the browser did not perform because another element sat over
@@ -1055,7 +1077,7 @@ whole: the address the link carries, not the shortened form a snapshot may
 print it in. A site allows one
 Not-found Landing by a Composed Address per Run; after it, a Composed Address
 to that site is rewritten into a search of that site, and searches and
-Offered Addresses stay open. A site
+Offered Addresses stay open. An Unavailable Landing spends nothing. A site
 is a registrable domain, so jpl.nasa.gov and science.nasa.gov are one site.
 _Avoid_: guessed URL, made-up URL, typed URL, direct URL
 

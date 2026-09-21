@@ -14,6 +14,16 @@ the same round instead of refused. The fix-252 capture showed the refusal
 leaving two moves and the model taking a third, 25 rounds of it. The
 recognition, the neutral landing, the allowance and the site notion stand.
 
+**Note (#262 grill, 2026-09-21).** The recognition, marker, neutrality and
+Search Loop treatment decided here now have a sibling in ADR 0060: an
+Unavailable Page, one whose server (5xx) or title says the site could not
+serve the address right now. It follows this ADR in every respect but one:
+an Unavailable Landing spends no Composed Address allowance, because the
+allowance is spent by evidence the model's address knowledge is wrong and an
+outage is not that evidence. The "Make it a Blocker signal" rejection below
+applies to it for the same reasons, with the gate's second-refusal
+Finalization the decisive one for a page that may serve a minute later.
+
 ## Context
 
 Nine navigates in the Baseline landed on a not-found page and were counted as
