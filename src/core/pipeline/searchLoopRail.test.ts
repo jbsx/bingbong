@@ -156,8 +156,10 @@ describe('createSearchLoopRail', () => {
     const last = `best mechanical keyboards 2026 v${SEARCH_LOOP_NUDGE_AFTER}`
     expect(await rail.gate(search(last))).toEqual({ ok: true })
     const nudge = await noticeOf(rail, search(last), ok)
-    expect(nudge).toMatch(/reword|same intent|one intent/i)
-    expect(nudge).toMatch(/q= navigate|search box/)
+    // AC6 (#260, ADR 0059): the notice states the rule the rail runs.
+    expect(nudge).toContain('nothing opened between them')
+    expect(nudge).toContain('a navigate to a search URL or a search box query')
+    expect(nudge).not.toMatch(/reword|one intent|q= navigate/)
     expect(nudge).not.toMatch(/web_search|read_url/)
     expect(nudge).toMatch(/ask_user/)
     // AC2: the nudge names the ref — a click by ref is the move the loop
@@ -227,7 +229,9 @@ describe('createSearchLoopRail', () => {
     const refusal = await rail.gate(search('mechanical keyboards run 99'))
     expect(refusal.ok).toBe(false)
     if (!refusal.ok) {
-      expect(refusal.reason).toMatch(/q= navigate|search box/)
+      expect(refusal.reason).toContain('consecutive searches with nothing opened between them')
+      expect(refusal.reason).toContain('a navigate to a search URL or a search box query')
+      expect(refusal.reason).not.toMatch(/similar|one intent|q= navigate/)
       expect(refusal.reason).not.toMatch(/web_search|read_url/)
       expect(refusal.reason).toMatch(String(SEARCH_LOOP_REFUSE_AFTER))
       expect(refusal.reason).toMatch(/ask_user|change strategy/i)
@@ -460,6 +464,51 @@ describe('createSearchLoopRail — the verdict carries what the rail observed (#
       signature: 'url',
       streak: 1,
     })
+  })
+
+  it('observes a site search submitted as a path segment under the url signature (#260, ADR 0059)', async () => {
+    const rail = createSearchLoopRail(searchBoxAt)
+    expect((await rail.observe(nav('https://www.rmg.co.uk/collections/objects/search/Harrison'), ok)).observation).toEqual({
+      query: 'Harrison',
+      signature: 'url',
+      streak: 1,
+    })
+    expect((await rail.observe(nav('https://www.rmg.co.uk/search?query=harrison%20marine%20timekeeper'), ok)).observation).toEqual({
+      query: 'harrison marine timekeeper',
+      signature: 'url',
+      streak: 2,
+    })
+    // The archive's lookup API is no search: a successful one is an opening.
+    expect(await rail.observe(nav('http://web.archive.org/cdx/search/cdx?url=jpl.nasa.gov&filter=statuscode:200'), ok)).toEqual({ notice: null, observation: null })
+    expect((await rail.observe(nav('https://www.rmg.co.uk/collections/objects/search/Harrison%20timekeeper'), ok)).observation?.streak).toBe(1)
+  })
+
+  it('replays the longitude-watch loop of fix-258-259 pass 1 to the nudge at round 12 (#260, AC3)', async () => {
+    // Round 4 typed into the museum's search box, which settled on the path
+    // form; rounds 5 and 12 composed that form by hand, with a page read and
+    // five scrolls of the listing between. Before ADR 0059 each hand-composed
+    // search was an opening and the streak never left 1.
+    const rail = createSearchLoopRail(searchBoxAt)
+    const rounds: [number, ToolCall][] = [
+      [4, type(7, 'Harrison sea watch\n')],
+      [5, nav('https://www.rmg.co.uk/collections/objects/search/Harrison')],
+      [6, other('read_page')],
+      [7, other('scroll')],
+      [8, other('scroll')],
+      [9, other('scroll')],
+      [10, other('scroll')],
+      [11, other('scroll')],
+      [12, nav('https://www.rmg.co.uk/collections/objects/search/Harrison%20timekeeper')],
+    ]
+    const verdicts = new Map<number, Awaited<ReturnType<SearchLoopRail['observe']>>>()
+    for (const [round, call] of rounds) {
+      expect(await rail.gate(call), `round ${round}`).toEqual({ ok: true })
+      verdicts.set(round, await rail.observe(call, ok))
+    }
+    expect([4, 5, 12].map((round) => verdicts.get(round)?.observation?.streak)).toEqual([1, 2, 3])
+    expect(verdicts.get(12)?.observation).toMatchObject({ query: 'Harrison timekeeper', signature: 'url' })
+    expect(verdicts.get(5)?.notice).toBeNull()
+    expect(verdicts.get(12)?.notice).toContain('nothing opened between them')
   })
 
   it('leaves no observation for a typed non-search, and a successful one still resets', async () => {

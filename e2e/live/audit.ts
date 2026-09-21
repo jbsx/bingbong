@@ -45,7 +45,7 @@ import type { PipelineEvent } from '../../src/core/pipeline/events'
 import type { EffortTier } from '../../src/core/pipeline/runPlan'
 import type { SearchObservation, SearchSignature } from '../../src/core/pipeline/searchLoopRail'
 import { isSearchInspection, SEARCH_LOOP_NUDGE_AFTER, SEARCH_SIGNATURES, searchStreakAfter, searchStreakMoveOf, similarQueries } from '../../src/core/pipeline/searchLoopRule.ts'
-import { normalizeUrlInput } from '../../src/core/browser/urlInput.ts'
+import { normalizeUrlInput, parseSearchUrl, type SearchUrlForm } from '../../src/core/browser/urlInput.ts'
 import type { TraceRecord } from '../../src/core/trace/runTrace'
 import type { Validation } from './artifacts.ts'
 import type { LiveGradeEntry, LiveKeyTask } from './grades.ts'
@@ -99,8 +99,12 @@ export const BUDGET_WARNING_RE = /Work budget: (\d+) of (\d+) tool rounds? remai
 export const TIME_MILESTONE_MARK = 'Time: 60% of this run'
 /** The no-progress rail's advisory and refusal (noProgressRail.ts). */
 export const NO_PROGRESS_NOTICE_MARK = 'repeats an equivalent action against unchanged page state'
-/** The Search Loop rail's advisory (searchLoopRail.ts). */
-export const SEARCH_LOOP_NUDGE_MARK = 'The last searches reword one intent'
+/**
+ * The Search Loop rail's advisory (`SEARCH_LOOP_NUDGE`, searchLoopRail.ts):
+ * its wording since #260 first, then the wording every capture before it
+ * carries, so an older trace still reads its nudges.
+ */
+export const SEARCH_LOOP_NUDGE_MARKS: readonly string[] = ['The last searches ran one after another with nothing opened between them', 'The last searches reword one intent']
 /** The refusal prefix every "the run will not do this" answer carries (`notExecuted`, effortEpoch.ts). */
 export const NOT_EXECUTED_PREFIX = 'Not executed — '
 /** What a scroll that brought nothing into view says (`SCROLL_END_OF_PAGE`, scrollDelta.ts). */
@@ -356,6 +360,14 @@ export interface AuditMechanical {
   readonly searchRoundsAtStreak3: number
   /** Where the search rounds came from (#243) — beside the rounds, never in them, so it re-keys no cached judgement. */
   readonly searchSource: AuditSearchSource
+  /**
+   * The navigate searches by the Search URL form `parseSearchUrl` matched
+   * (#260, ADR 0059): an engine's `q=`, another parameter named for terms,
+   * or the path segment after `search`; a rewritten Composed Address counts
+   * as the `q=` search it ran as. Beside the rounds, never in them. Absent on
+   * an audit written before the counter.
+   */
+  readonly searchForms?: Readonly<Record<SearchUrlForm, number>>
   readonly walledRounds: number
   /**
    * The round of every navigate that landed on a Not-found Page, one entry per
@@ -541,6 +553,8 @@ export interface AuditPopulation {
   readonly searchRoundsAtStreak3: number
   /** Attempts by where their search rounds came from (#243). */
   readonly searchSources: Readonly<Record<AuditSearchSource, number>>
+  /** Navigate searches by Search URL form over the attempts that count them (#260); absent when none does. */
+  readonly searchForms?: Readonly<Record<SearchUrlForm, number>>
   readonly inheritedRounds: number
   /** Merged Evidence Checkpoints over the attempts (#240): a floor. */
   readonly mergedCheckpoints: number
@@ -693,33 +707,39 @@ export function canonicalUrl(raw: string): string | null {
   return url.toString()
 }
 
-const SCHEME_RE = /^([a-z][a-z0-9+.-]*):/i
-/** The schemes the browser opens as URLs (`WEB_SCHEMES`, urlInput.ts); anything else typed with a colon is search terms. */
-const WEB_SCHEMES: ReadonlySet<string> = new Set(['http', 'https', 'file', 'about'])
-const DOMAIN_RE = /^[\w-]+(\.[\w-]+)+(:\d+)?(\/\S*)?$/
-
 /**
- * The search a `navigate` argument is: the `q=` of a search URL, or the
- * plain terms the browser normalizes into one (`normalizeUrlInput`: no
- * scheme and not a domain means a search). Null for a plain page.
+ * The search a `navigate` argument is: the terms of a Search URL, or the
+ * plain terms the browser normalizes into one. Null for a plain page. The
+ * rail's own test (`parseSearchUrl`, ADR 0059), never a copy — the copy this
+ * replaced read `q=` alone and drifted from the rail (#260).
  */
 export function searchQueryOf(raw: string): string | null {
-  const input = raw.trim()
-  if (input === '') return null
-  const scheme = SCHEME_RE.exec(input)
-  if (scheme !== null) {
-    // A web scheme is a URL; any other "scheme" (`site:rmg.co.uk …`) is
-    // search terms, as the browser reads it.
-    if (!WEB_SCHEMES.has(scheme[1]!.toLowerCase())) return input
-    try {
-      const q = new URL(input).searchParams.get('q')
-      return q !== null && q.trim() !== '' ? q.trim() : null
-    } catch {
-      return null
+  return parseSearchUrl(raw)?.query ?? null
+}
+
+/** The Search URL form of a navigate a search observation came from; a rewritten Composed Address ran on the `q=` engine (ADR 0055). */
+function searchFormOf(call: AuditCall): SearchUrlForm | null {
+  if (call.name !== 'navigate' || call.search === null) return null
+  if (call.rewritten !== undefined) return 'q'
+  return isString(call.args.url) ? (parseSearchUrl(call.args.url)?.form ?? null) : null
+}
+
+const SEARCH_URL_FORMS: readonly SearchUrlForm[] = ['q', 'param', 'path']
+
+function searchFormsText(forms: Readonly<Record<SearchUrlForm, number>> | undefined): string {
+  return forms === undefined ? 'not counted' : SEARCH_URL_FORMS.map((form) => `${form} ${forms[form]}`).join(', ')
+}
+
+/** The navigate searches over an attempt's rounds by Search URL form (#260, AC5). */
+export function searchFormsOf(rounds: readonly AuditRound[]): Record<SearchUrlForm, number> {
+  const forms: Record<SearchUrlForm, number> = { q: 0, param: 0, path: 0 }
+  for (const round of rounds) {
+    for (const call of round.calls) {
+      const form = searchFormOf(call)
+      if (form !== null) forms[form] += 1
     }
   }
-  if (/^(localhost|\d+\.\d+\.\d+\.\d+)/.test(input) || DOMAIN_RE.test(input)) return null
-  return input
+  return forms
 }
 
 /** The Search Loop rail's same-intent test, the rail's own code (ADR 0048): a replay of a rule that does not run the rule's code is not a replay. */
@@ -756,7 +776,7 @@ function noticesOf(text: string | null): string[] {
   if (text.includes(TIME_MILESTONE_MARK)) notices.push('time_milestone')
   if (text.includes(FINALIZE_INSTRUCTION_MARK)) notices.push('finalize_instruction')
   if (text.includes(NO_PROGRESS_NOTICE_MARK)) notices.push('no_progress_notice')
-  if (text.includes(SEARCH_LOOP_NUDGE_MARK)) notices.push('search_loop_nudge')
+  if (SEARCH_LOOP_NUDGE_MARKS.some((mark) => text.includes(mark))) notices.push('search_loop_nudge')
   return notices
 }
 
@@ -1558,6 +1578,7 @@ export function classifyAttempt(input: AuditTraceInput): AuditMechanical {
     searchRoundsAtStreak2: searchLoop.searchRoundsAtStreak2,
     searchRoundsAtStreak3: searchLoop.searchRoundsAtStreak3,
     searchSource: railObservations !== null ? 'rail' : rounds.some((round) => round.tags.search) ? 'replay' : 'none',
+    searchForms: searchFormsOf(rounds),
     walledRounds: rounds.filter((round) => round.tags.wall).length,
     notFoundNavigates: rounds.flatMap((round) => round.calls.filter((call) => call.name === 'navigate' && call.notFound !== undefined).map(() => round.round)),
     rewrittenComposedAddresses: rounds.flatMap((round) => round.calls.filter((call) => call.rewritten !== undefined).map(() => round.round)),
@@ -2025,6 +2046,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
   let rewritten = 0
   let rewrittenOffKey = 0
   let rewrittenShown = 0
+  let searchForms: Record<SearchUrlForm, number> | undefined
   let slipAnswers = 0
   let slipIds = 0
   let slipsNotRecorded = 0
@@ -2075,6 +2097,10 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
     notFound += mechanical.notFoundNavigates.length
     rewritten += mechanical.rewrittenComposedAddresses?.length ?? 0
     rewrittenShown += mechanical.rewrittenShownAddresses?.length ?? 0
+    if (mechanical.searchForms !== undefined) {
+      searchForms ??= { q: 0, param: 0, path: 0 }
+      for (const form of SEARCH_URL_FORMS) searchForms[form] += mechanical.searchForms[form]
+    }
     if (mechanical.identitySlips === null) slipsNotRecorded += 1
     else {
       slipAnswers += mechanical.identitySlips.answers
@@ -2134,6 +2160,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
     searchRoundsAtStreak2: atStreak2,
     searchRoundsAtStreak3: atStreak3,
     searchSources: sources,
+    ...(searchForms === undefined ? {} : { searchForms }),
     inheritedRounds: inherited,
     mergedCheckpoints: merged,
     bundledCheckpoints: bundled,
@@ -2389,7 +2416,7 @@ function populationSlipsText(population: AuditPopulation): string {
 function judgementLines(populations: readonly AuditPopulation[]): string[] {
   return populations.map(
     (population) =>
-      `- ${population.label}: ${population.offKeyRounds} Off-key round(s), ${population.searchLoopRounds} Search Loop round(s) by the reviewer (${population.mechanicalSearchRounds} by the streak rule, heads included: ${population.searchRoundsAtStreak2} at streak 2 or beyond, ${population.searchRoundsAtStreak3} at 3 or beyond; attempts by search source ${SEARCH_SOURCES.map((source) => `${source} ${population.searchSources[source]}`).join(', ')}), ` +
+      `- ${population.label}: ${population.offKeyRounds} Off-key round(s), ${population.searchLoopRounds} Search Loop round(s) by the reviewer (${population.mechanicalSearchRounds} by the streak rule, heads included: ${population.searchRoundsAtStreak2} at streak 2 or beyond, ${population.searchRoundsAtStreak3} at 3 or beyond; attempts by search source ${SEARCH_SOURCES.map((source) => `${source} ${population.searchSources[source]}`).join(', ')}; navigate searches by Search URL form ${searchFormsText(population.searchForms)}), ` +
       `${population.inheritedRounds} inherited, ${population.rejectedCheckpoints} rejected Evidence Checkpoint(s), ${population.walledRounds} walled round(s), ${population.notFoundNavigates} navigate(s) landed on a Not-found Page (${population.notFoundOffKey} judged Off-key), ${population.rewrittenComposedAddresses ?? 0} Composed Address(es) rewritten into a site search (${population.rewrittenComposedAddressesOffKey ?? 0} judged Off-key, ${population.rewrittenShownAddresses ?? 'not counted'} to an address the Run was shown), ${population.subagentRounds} Subagent round(s), ` +
       `${population.mergedCheckpoints} merged Evidence Checkpoint(s) (a floor), ${population.heldPageRoundsWithoutProgress} Held Page round(s) without Progress, ${population.bundledCheckpoints} bundled checkpoint round(s), ${population.sameSourceUnsupportedRounds} same-source unsupported round(s), ${populationSlipsText(population)}, ` +
       `${population.malformedAnswers} Malformed Answer(s) (${population.answerRetries} retried), ` +
@@ -2437,6 +2464,7 @@ function attemptSection(attempt: AuditAttempt): string[] {
   lines.push(`- Identity Slips: ${slips === null ? `not recorded (a Run Trace below version ${IDENTITY_SLIP_TRACE_VERSION})` : slipCountsText(slips.answers, slips.ids)}`)
   lines.push(`- kinds: ${ROUND_KINDS.map((kind) => `${KIND_LABELS[kind]} ${mechanical.counts[kind]} (${pct(mechanical.shares[kind])})`).join(' · ')}`)
   lines.push(`- search source ${mechanical.searchSource}: ${SEARCH_SOURCE_NOTES[mechanical.searchSource]}`)
+  lines.push(`- navigate searches by Search URL form: ${searchFormsText(mechanical.searchForms)}`)
   if (review === null) lines.push('- reviewer: not consulted')
   else if (judgement === null) lines.push(`- reviewer: no judgement — ${review.caveats.join('; ')}`)
   else {

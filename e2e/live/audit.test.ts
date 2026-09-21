@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest'
 import { FINALIZATION_REASONING_EFFORT as SOURCE_FINALIZATION_EFFORT, TIER_REASONING_EFFORT as SOURCE_TIER_EFFORT, TIER_TOOL_ROUND_BUDGETS as SOURCE_BUDGETS, budgetWarningMessage, finalizeInstruction, notExecuted } from '../../src/core/pipeline/effortEpoch'
 import { SCROLL_END_OF_PAGE } from '../../src/core/browser/scrollDelta'
 import { similarQueries as ruleSimilarQueries } from '../../src/core/pipeline/searchLoopRule'
-import { createSearchLoopRail, type SearchObservation } from '../../src/core/pipeline/searchLoopRail'
+import { createSearchLoopRail, SEARCH_LOOP_NUDGE, searchQueryFromUrl as railSearchQueryFromUrl, type SearchObservation } from '../../src/core/pipeline/searchLoopRail'
 import type { PerfSpanRecord } from '../../src/core/perf/perfTracer'
 import type { TraceRecord } from '../../src/core/trace/runTrace'
 import {
@@ -18,6 +18,7 @@ import {
   FINALIZATION_REASONING_EFFORT,
   FINALIZE_INSTRUCTION_MARK,
   NO_PROGRESS_NOTICE_MARK,
+  SEARCH_LOOP_NUDGE_MARKS,
   LIVE_AUDIT_AGGREGATE_KIND,
   LIVE_AUDIT_KIND,
   NOT_EXECUTED_PREFIX,
@@ -436,6 +437,34 @@ describe('the mechanical classification', () => {
     expect(searchQueryOf(SPEC_URL)).toBeNull()
     expect(similarQueries('harrison longitude watch catalogue', 'harrison longitude watch catalogue id')).toBe(true)
     expect(similarQueries('harrison longitude watch', 'voyager interstellar crossing')).toBe(false)
+  })
+
+  it('reads a Search URL as the rail reads it: one function, every form (#260, ADR 0059, AC4)', () => {
+    const table = [
+      'https://www.rmg.co.uk/collections/objects/search/Harrison',
+      'https://www.rmg.co.uk/collections/objects/search/Harrison%20timekeeper',
+      'https://www.rmg.co.uk/search?query=harrison%20marine%20timekeeper%20H4',
+      'https://www.rmg.co.uk/search?Query=harrison',
+      'https://duckduckgo.com/?q=x',
+      'http://web.archive.org/cdx/search/cdx?url=jpl.nasa.gov&filter=statuscode:200',
+      'https://www.bing.com/ck/a?!&&p=789a',
+      'https://www.rmg.co.uk/collections/objects/search/Harrison?page=2',
+      'https://example.org/search',
+      'https://example.org/search/',
+      'https://www.raspberrypi.com/news/?s=x',
+      'harrison longitude watch',
+      'site:rmg.co.uk harrison watch',
+      'rmg.co.uk/collections',
+      SEARCH_A,
+      SPEC_URL,
+    ]
+    for (const url of table) expect(searchQueryOf(url), url).toBe(railSearchQueryFromUrl(url))
+    expect(searchQueryOf('https://www.rmg.co.uk/collections/objects/search/Harrison%20timekeeper')).toBe('Harrison timekeeper')
+  })
+
+  it('marks the Search Loop nudge in the rail’s current wording and in the wording captures before #260 carry', () => {
+    expect(SEARCH_LOOP_NUDGE).toContain(SEARCH_LOOP_NUDGE_MARKS[0])
+    expect(SEARCH_LOOP_NUDGE_MARKS).toContain('The last searches reword one intent')
   })
 
   it('replays the Search Loop rail’s own rule, not a copy of it (#238, ADR 0048)', () => {
@@ -974,6 +1003,38 @@ describe('the rail’s Search Observations (#243, ADR 0049)', () => {
     expect(railed.rounds.map((round) => `${round.kind}: ${round.reason}`)).toEqual(replayed.rounds.map((round) => `${round.kind}: ${round.reason}`))
     expect(railed.searchLoopHeads).toEqual(replayed.searchLoopHeads)
     expect(railed.mechanicalSearchRounds).toBe(replayed.mechanicalSearchRounds)
+  })
+
+  it('counts the navigate searches by Search URL form, outside the digest (#260, ADR 0059, AC5)', () => {
+    const PATH_A = 'https://www.rmg.co.uk/collections/objects/search/Harrison'
+    const PATH_B = 'https://www.rmg.co.uk/collections/objects/search/Harrison%20timekeeper'
+    const PARAM = 'https://www.rmg.co.uk/search?query=harrison%20H4'
+    const forms: RoundSpec[] = [
+      { round: 1, at: 1_000, calls: [{ name: 'type', args: { ref: 3, text: 'Harrison sea watch\n' }, result: 'typed [3]: value="Harrison sea watch"', observation: { query: 'Harrison sea watch', signature: 'input', streak: 1 } }] },
+      { round: 2, at: 2_000, calls: [{ name: 'navigate', args: { url: PATH_A }, result: PAGE('search', PATH_A, 'bbbb2222'), observation: { query: 'Harrison', signature: 'url', streak: 2 } }] },
+      { round: 3, at: 3_000, calls: [{ name: 'read_page', args: {}, result: READ('search', PATH_A, 'bbbb2222') }] },
+      { round: 4, at: 4_000, calls: [{ name: 'navigate', args: { url: PATH_B }, result: PAGE('search', PATH_B, 'cccc3333'), observation: { query: 'Harrison timekeeper', signature: 'url', streak: 3 } }] },
+      { round: 5, at: 5_000, calls: [{ name: 'navigate', args: { url: PARAM }, result: PAGE('search', PARAM, 'dddd4444'), observation: { query: 'harrison H4', signature: 'url', streak: 4 } }] },
+      { round: 6, at: 6_000, calls: [{ name: 'navigate', args: { url: SEARCH_A }, result: PAGE('search', SEARCH_A, 'eeee5555'), observation: { query: 'harrison longitude watch catalogue', signature: 'url', streak: 5 } }] },
+    ]
+    const railed = classifyAttempt(inputOf({ traceRecords: traceOf(forms, EXTRA) }))
+    expect(railed.searchForms).toEqual({ q: 1, param: 1, path: 2 })
+    expect(railed.searchRoundsAtStreak3).toBe(3)
+    // An observation-free trace replays the path and parameter forms as searches too.
+    const withoutObservations = forms.map((spec) => ({ ...spec, calls: spec.calls?.map(({ observation: _observation, ...rest }) => rest) }))
+    const replayed = classifyAttempt(inputOf({ traceRecords: traceOf(withoutObservations, EXTRA) }))
+    expect(replayed.searchForms).toEqual({ q: 1, param: 1, path: 2 })
+    expect(replayed.rounds.map((round) => round.calls[0]!.search?.streak ?? null)).toEqual([null, 1, null, 2, 3, 4])
+
+    const set = buildAuditSet(
+      provenanceOf(),
+      [railed, classifyAttempt(inputOf())].map((mechanical) => ({ mechanical, review: null, countsAfterOverrules: countsAfterOverrulesOf(mechanical, null) })),
+      [],
+    )
+    expect(set.populations.initial.searchForms).toEqual({ q: 3, param: 1, path: 2 })
+    const markdown = formatAuditSet(set)
+    expect(markdown).toContain('- navigate searches by Search URL form: q 1, param 1, path 2')
+    expect(markdown).toContain('navigate searches by Search URL form q 3, param 1, path 2')
   })
 
   it('names the source per attempt and counts attempts by source, outside the digest', () => {

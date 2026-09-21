@@ -1,3 +1,5 @@
+import { reportFault } from '../trace/fault.ts'
+
 const WEB_SCHEMES = new Set(['http', 'https', 'file', 'about'])
 const SCHEME_PATTERN = /^([a-zA-Z][a-zA-Z0-9+.-]*):/
 const LOCALHOST_PATTERN = /^localhost(:\d+)?$/i
@@ -34,4 +36,65 @@ export function normalizeUrlInput(raw: string): string | null {
   }
 
   return searchUrl(input)
+}
+
+/** Where a Search URL carried its terms: an engine's `q=`, another parameter named for terms, or the path segment after `search`. */
+export type SearchUrlForm = 'q' | 'param' | 'path'
+
+/** The terms a Search URL carries and the form it carried them in (ADR 0059). */
+export interface SearchUrl {
+  readonly query: string
+  readonly form: SearchUrlForm
+}
+
+// Each a word for terms, as lowercase; `q` is read first as the engine form.
+// `s` is out — a letter is as likely a sort key — and so is Drupal's
+// `search_api_full_text`, never seen where the other names were not.
+const SEARCH_TERM_PARAMS: ReadonlySet<string> = new Set(['query', 'search', 'searchstring', 'keywords', 'kw'])
+
+/**
+ * The search a navigate argument runs, after the same normalization the
+ * browser applies (plain terms normalize to a `q=` search), or null for a
+ * plain page — the one Search URL test the Search Loop rail, the Composed
+ * Address rail, the Not-found detector and the Round Audit share (#260, ADR
+ * 0059). The terms are a parameter named for terms, matched
+ * case-insensitively, or the final path segment after a segment named
+ * `search` when the URL has no query string: an API call carries its request
+ * in parameters (`/cdx/search/cdx?url=…`), a page whose terms are its path
+ * carries none. A paged path search (`/search/x?page=2`) is therefore not
+ * one — a recorded loss.
+ */
+export function parseSearchUrl(raw: string): SearchUrl | null {
+  const normalized = normalizeUrlInput(raw)
+  if (normalized === null) return null
+  let url: URL
+  try {
+    url = new URL(normalized)
+  } catch (error) {
+    reportFault('browser.urlInput.parseSearchUrl', error)
+    return null
+  }
+  let param: string | null = null
+  for (const [name, value] of url.searchParams) {
+    if (value.trim() === '') continue
+    const key = name.toLowerCase()
+    if (key === 'q') return { query: value, form: 'q' }
+    if (param === null && SEARCH_TERM_PARAMS.has(key)) param = value
+  }
+  if (param !== null) return { query: param, form: 'param' }
+  if (url.search !== '') return null
+  const segments = url.pathname.split('/')
+  const terms = segments.at(-1) ?? ''
+  if (segments.length < 3 || segments.at(-2)!.toLowerCase() !== 'search') return null
+  const query = decodedSegment(terms)
+  return query.trim() === '' ? null : { query, form: 'path' }
+}
+
+/**
+ * A path segment percent-decoded the lenient way form values are: a stray
+ * `%` stays itself, as the address bar shows it, where `decodeURIComponent`
+ * would throw. `+` and `&` are escaped first — in a path they are literal.
+ */
+function decodedSegment(segment: string): string {
+  return new URLSearchParams(`t=${segment.replace(/[+&]/g, encodeURIComponent)}`).get('t') ?? segment
 }

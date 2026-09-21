@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { normalizeUrlInput } from './urlInput'
+import { normalizeUrlInput, parseSearchUrl } from './urlInput'
 
 describe('normalizeUrlInput', () => {
   it('keeps http and https URLs as-is', () => {
@@ -57,5 +57,50 @@ describe('normalizeUrlInput', () => {
   it('returns null for empty input', () => {
     expect(normalizeUrlInput('')).toBeNull()
     expect(normalizeUrlInput('   ')).toBeNull()
+  })
+})
+
+// #260, ADR 0059: a Search URL carries its terms as a parameter named for
+// terms, or as the final path segment after `search` with no query string.
+describe('parseSearchUrl', () => {
+  it('reads a site search submitted as a path segment, decoded', () => {
+    expect(parseSearchUrl('https://www.rmg.co.uk/collections/objects/search/Harrison')).toEqual({ query: 'Harrison', form: 'path' })
+    expect(parseSearchUrl('https://www.rmg.co.uk/collections/objects/search/Harrison%20timekeeper')).toEqual({ query: 'Harrison timekeeper', form: 'path' })
+    expect(parseSearchUrl('https://example.org/SEARCH/voyager')).toEqual({ query: 'voyager', form: 'path' })
+    // Literal in a path, and a stray `%` is itself rather than a thrown decode.
+    expect(parseSearchUrl('https://example.org/search/C++%20&%20more')).toEqual({ query: 'C++ & more', form: 'path' })
+    expect(parseSearchUrl('https://example.org/search/100%')).toEqual({ query: '100%', form: 'path' })
+  })
+
+  it('reads a parameter whose name is a word for terms, case-insensitively', () => {
+    expect(parseSearchUrl('https://www.rmg.co.uk/search?query=harrison%20marine%20timekeeper%20H4')).toEqual({ query: 'harrison marine timekeeper H4', form: 'param' })
+    expect(parseSearchUrl('https://www.rmg.co.uk/search?Query=harrison')).toEqual({ query: 'harrison', form: 'param' })
+    for (const name of ['search', 'searchString', 'keywords', 'kw', 'KEYWORDS']) {
+      expect(parseSearchUrl(`https://example.org/results?${name}=pi%20camera`)).toEqual({ query: 'pi camera', form: 'param' })
+    }
+  })
+
+  it('reads q= as the engine form, and plain terms normalize to one', () => {
+    expect(parseSearchUrl('https://duckduckgo.com/?q=x')).toEqual({ query: 'x', form: 'q' })
+    expect(parseSearchUrl('https://www.google.com/search?query=other&q=harrison+watch')).toEqual({ query: 'harrison watch', form: 'q' })
+    expect(parseSearchUrl('harrison longitude watch')).toEqual({ query: 'harrison longitude watch', form: 'q' })
+    expect(parseSearchUrl('site:rmg.co.uk harrison')).toEqual({ query: 'site:rmg.co.uk harrison', form: 'q' })
+  })
+
+  it('refuses the look-alikes: an API lookup, a click redirect, a paged path search, a bare search section, WordPress s=', () => {
+    expect(parseSearchUrl('http://web.archive.org/cdx/search/cdx?url=jpl.nasa.gov&filter=statuscode:200')).toBeNull()
+    expect(parseSearchUrl('https://www.bing.com/ck/a?!&&p=789a')).toBeNull()
+    // A recorded loss (ADR 0059): a path search with parameters beside it is not observed.
+    expect(parseSearchUrl('https://www.rmg.co.uk/collections/objects/search/Harrison?page=2')).toBeNull()
+    expect(parseSearchUrl('https://example.org/search')).toBeNull()
+    expect(parseSearchUrl('https://example.org/search/')).toBeNull()
+    expect(parseSearchUrl('https://www.raspberrypi.com/news/?s=x')).toBeNull()
+  })
+
+  it('refuses a plain page, an empty parameter and empty input', () => {
+    expect(parseSearchUrl('https://www.rmg.co.uk/collections/objects/rmgc-object-79142')).toBeNull()
+    expect(parseSearchUrl('rmg.co.uk/collections')).toBeNull()
+    expect(parseSearchUrl('https://duckduckgo.com/?q=%20')).toBeNull()
+    expect(parseSearchUrl('   ')).toBeNull()
   })
 })

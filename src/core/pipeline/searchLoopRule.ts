@@ -5,7 +5,8 @@ import { looksLikeDomain } from '../browser/urlInput.ts'
 // which calls inspect a search's results rather than escape them. The rail
 // runs it live and the Round Audit replays the same code over a Run Trace, so
 // this module stays loadable under plain Node's type stripping: its one
-// import carries its `.ts` extension and imports nothing further.
+// import carries its `.ts` extension, as does the fault route that one
+// imports in turn.
 //
 // The same tokenizer feeds the query-intent fingerprint the no-progress
 // rails compare (progressFingerprints.ts), so a `site:` swap over the same

@@ -12,6 +12,7 @@
 
 import type { ToolResultOutcome } from '../ports/llm'
 import { reportFault } from '../trace/fault.ts'
+import { parseSearchUrl } from './urlInput.ts'
 
 /** What said the page names nothing: the response status, or the title. */
 export type NotFoundBasis = '404' | '410' | 'title'
@@ -69,13 +70,10 @@ export function classifyNotFoundPage(facts: NotFoundPageFacts): NotFoundClassifi
   const status = facts.status
   let basis: NotFoundBasis | null = null
   if (typeof status === 'number' && NOT_FOUND_STATUSES.has(status)) basis = status === 404 ? '404' : '410'
-  else if (!isSearchResults(parsed) && isNotFoundTitle(facts.title)) basis = 'title'
+  // Any Search URL is a results page (#260, ADR 0059), a site's path or
+  // `query=` form as much as an engine's `q=`.
+  else if (parseSearchUrl(facts.url) === null && isNotFoundTitle(facts.title)) basis = 'title'
   return basis === null ? null : { basis, host, marker: `NOT-FOUND:${basis} ${host}` }
-}
-
-function isSearchResults(url: URL): boolean {
-  const q = url.searchParams.get('q')
-  return q !== null && q.trim() !== ''
 }
 
 /** Every basis a marker names — the one set the app's parser and the Round Audit's reader share. */

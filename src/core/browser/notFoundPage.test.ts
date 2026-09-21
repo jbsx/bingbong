@@ -47,6 +47,13 @@ describe('classifyNotFoundPage (#239, ADR 0050)', () => {
     ).toBeNull()
   })
 
+  it('never judges a site’s own results page by its title, whatever form its Search URL takes (#260, ADR 0059)', () => {
+    expect(classifyNotFoundPage({ url: 'https://www.rmg.co.uk/collections/objects/search/Harrison%20sea%20watch', title: 'No results found | Royal Museums Greenwich', status: 200 })).toBeNull()
+    expect(classifyNotFoundPage({ url: 'https://www.rmg.co.uk/search?query=harrison%20H5', title: 'Page not found', status: 200 })).toBeNull()
+    // The status still speaks: a results page served 404 is a landing.
+    expect(classifyNotFoundPage({ url: 'https://www.rmg.co.uk/collections/objects/search/Harrison', title: 'Search', status: 404 })?.basis).toBe('404')
+  })
+
   it('leaves statuses other than 404 and 410 untouched', () => {
     expect(classifyNotFoundPage({ url: 'https://example.com/', title: 'Example', status: 500 })).toBeNull()
     expect(classifyNotFoundPage({ url: 'https://example.com/', title: 'Example', status: 403 })).toBeNull()

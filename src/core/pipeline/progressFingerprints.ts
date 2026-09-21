@@ -2,7 +2,7 @@ import type { ToolCall } from '../ports/llm'
 import type { MediaState, SettledPageState } from '../ports/browser'
 import type { PageSnapshot, SnapshotRef } from '../browser/snapshot'
 import { fnv1a32 } from '../browser/snapshot'
-import { normalizeUrlInput } from '../browser/urlInput'
+import { normalizeUrlInput, parseSearchUrl } from '../browser/urlInput'
 import { coercedNumber } from './tool'
 import { lookRegionFingerprint } from './lookRegion'
 import { queryTokens } from './searchLoopRule'
@@ -177,21 +177,14 @@ export function urlFingerprint(raw: string): UrlFingerprint {
 }
 
 /**
- * The query a navigate URL carries: its q= search param after the same
- * normalization the browser applies (plain search terms normalize to a
+ * The query a navigate URL carries when it is a Search URL (ADR 0059: a
+ * parameter named for terms, or the path segment after `search`), after the
+ * same normalization the browser applies (plain search terms normalize to a
  * q= search URL), or null for a plain URL. This is the pure half of the
  * GUI search signature (#82).
  */
 export function searchQueryFromUrl(raw: string): string | null {
-  const normalized = normalizeUrlInput(raw)
-  if (normalized === null) return null
-  try {
-    const q = new URL(normalized).searchParams.get('q')
-    return q !== null && q.trim() !== '' ? q : null
-  } catch (error) {
-    reportFault('pipeline.progressFingerprints.searchQueryFromUrl', error)
-    return null
-  }
+  return parseSearchUrl(raw)?.query ?? null
 }
 
 // ---------------------------------------------------------------------------

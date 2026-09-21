@@ -115,6 +115,21 @@ describe('createComposedAddressRail (#239, ADR 0050; #255, ADR 0055)', () => {
     expect(rail.rewrite(call('type', { ref: 2, text: 'voyager\n' }))).toBeNull()
   })
 
+  it('treats a site’s path-form or query= search as a search: never rewritten, and a not-found landing spends nothing (#260, ADR 0059)', () => {
+    const spent = createComposedAddressRail()
+    spent.observe(nav('https://www.rmg.co.uk/collections/objects/rmgc-guess'), notFound('https://www.rmg.co.uk/collections/objects/rmgc-guess', 'www.rmg.co.uk'))
+    expect(spent.rewrite(nav('https://www.rmg.co.uk/collections/objects/search/Harrison'))).toBeNull()
+    expect(spent.rewrite(nav('https://www.rmg.co.uk/search?query=harrison%20H4'))).toBeNull()
+
+    const fresh = createComposedAddressRail()
+    const pathSearch = nav('https://www.rmg.co.uk/collections/objects/search/Harrison%20timekeeper')
+    fresh.observe(pathSearch, notFound('https://www.rmg.co.uk/collections/objects/search/Harrison%20timekeeper', 'www.rmg.co.uk'))
+    const paramSearch = nav('https://www.rmg.co.uk/search?query=harrison%20H4')
+    fresh.observe(paramSearch, notFound('https://www.rmg.co.uk/search?query=harrison%20H4', 'www.rmg.co.uk'))
+    // The site's allowance is unspent: the next composed address executes.
+    expect(fresh.rewrite(nav('https://www.rmg.co.uk/collections/objects/rmgc-guess'))).toBeNull()
+  })
+
   it('spends nothing on a click’s landing or an offered address’s landing', () => {
     const rail = createComposedAddressRail()
     rail.observe(call('click', { ref: 7 }), { ok: true, result: 'clicked [7]: urlChanged=true dialogOpen=false; page signature changed\nNOT-FOUND:404 www.nasa.gov\nadvice' })
@@ -248,6 +263,15 @@ describe('the rewritten search (#255, ADR 0055)', () => {
     rail.observe(nav('https://www.google.com/search?q=voyager'), { ok: false, error: 'net::ERR_TIMED_OUT' })
 
     expect(rail.rewrite(nav('https://www.nasa.gov/voyager'))?.url).toBe('https://search.brave.com/search?q=voyager+site%3Anasa.gov')
+  })
+
+  it('keeps the q= engine across a later site search: a path or query= search is a surface, not an engine (#260, ADR 0059)', () => {
+    const rail = spentOnNasa()
+    rail.observe(nav('https://www.bing.com/search?q=voyager'), found('https://www.bing.com/search?q=voyager'))
+    rail.observe(nav('https://www.nasa.gov/search/voyager'), found('https://www.nasa.gov/search/voyager'))
+    rail.observe(nav('https://www.nasa.gov/search?query=voyager'), found('https://www.nasa.gov/search?query=voyager'))
+
+    expect(rail.rewrite(nav('https://www.nasa.gov/voyager-record'))?.url).toBe('https://www.bing.com/search?q=voyager+record+site%3Anasa.gov')
   })
 
   it('tells the model in one first line', () => {

@@ -337,7 +337,7 @@ describe('the rails observe the raw outcome, ahead of Notices (#157/AC2)', () =>
 
     const { outcome } = await h.round(calls)
 
-    expect(resultOf(outcome.results[2]!.outcome)).toMatch(/reword one intent/)
+    expect(resultOf(outcome.results[2]!.outcome)).toMatch(/nothing opened between them/)
     expect(h.observed[2]).toEqual({ producer: 'action_outcome', ok: true, payload: 'done' })
   })
 })

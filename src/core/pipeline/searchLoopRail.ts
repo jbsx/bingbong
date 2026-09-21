@@ -73,6 +73,14 @@ import { reportFault } from '../trace/fault'
 // the tiers live in searchLoopRule.ts, which the Round Audit replays.
 // Search Intent stays as the no-progress fingerprint; the rail no longer
 // reads it.
+//
+// #260 (ADR 0059) widened the navigate half from `q=` to the Search URL: a
+// parameter named for terms (`query`, `keywords`, …) or the final path
+// segment after `search` with no query string. A museum whose own box
+// settles on `/collections/objects/search/<terms>` was invisible, so each
+// hand-composed search there was an opening and the streak never left 1.
+// The one test is `parseSearchUrl` in urlInput.ts, which the Composed
+// Address rail, the Not-found detector and the Round Audit share.
 
 // The tiers and the signature surface live in searchLoopRule.ts and
 // progressFingerprints.ts; re-exported here so the module's consumers (and
@@ -85,7 +93,7 @@ export type { SearchSignature }
 
 /**
  * What the rail saw in one call it classified as a search (#243, ADR 0049):
- * the query as it read it (the decoded `q=` of a navigate, the typed text of
+ * the query as it read it (a navigate's Search URL terms, decoded; the typed text of
  * a type), the signature, and the streak after the call — whatever the
  * call's outcome, refused searches included.
  */
@@ -112,8 +120,8 @@ export interface SearchLoopRailDeps {
 
 export interface SearchLoopRail {
   /**
-   * Pre-execution gate (vision-budget pattern): refuses a search — q=
-   * navigate or typed search box query — once the streak has reached the
+   * Pre-execution gate (vision-budget pattern): refuses a search — a
+   * navigate to a Search URL or a typed search box query — once the streak has reached the
    * cap. Every other call passes untouched.
    */
   gate(call: ToolCall): Promise<SearchLoopGate>
@@ -130,10 +138,12 @@ export interface SearchLoopRail {
 
 const NO_VERDICT: SearchLoopVerdict = { notice: null, observation: null }
 
-const NUDGE =
-  'The last searches reword one intent (a q= navigate or a search box query) — more searches will not surface new results. Change strategy: open a promising result by its ref or its href, read the page (read_page), or answer from what you already have. If you cannot proceed, say so and ask_user.'
+// Both state the rule the rail runs (#260, ADR 0059): consecutive searches
+// with nothing opened between them, whatever their terms (ADR 0058).
+export const SEARCH_LOOP_NUDGE =
+  'The last searches ran one after another with nothing opened between them (each a navigate to a search URL or a search box query) — more searches will not surface new results. Change strategy: open a promising result by its ref or its href, read the page (read_page), or answer from what you already have. If you cannot proceed, say so and ask_user.'
 
-const REFUSAL = `Search loop limit (${SEARCH_LOOP_REFUSE_AFTER} consecutive similar searches — q= navigate or typed search box query) reached for this run — the queries repeat one intent. Change strategy or ask_user; only escaping clears the limit (open a result by its ref or its href, or any successful tool call other than read_page, look or scroll).`
+const REFUSAL = `Search loop limit (${SEARCH_LOOP_REFUSE_AFTER} consecutive searches with nothing opened between them — each a navigate to a search URL or a search box query) reached for this run. Change strategy or ask_user; only escaping clears the limit (open a result by its ref or its href, or any successful tool call other than read_page, look or scroll).`
 
 /**
  * What a call is to the rail: a search observation with its query,
@@ -202,7 +212,7 @@ export function createSearchLoopRail(deps: SearchLoopRailDeps = {}): SearchLoopR
       streak = searchStreakAfter(streak, searchStreakMoveOf(classified.kind, consumed))
       if (classified.kind !== 'search') return NO_VERDICT
       return {
-        notice: streak >= SEARCH_LOOP_NUDGE_AFTER ? NUDGE : null,
+        notice: streak >= SEARCH_LOOP_NUDGE_AFTER ? SEARCH_LOOP_NUDGE : null,
         observation: { query: classified.query, signature: classified.signature, streak },
       }
     },

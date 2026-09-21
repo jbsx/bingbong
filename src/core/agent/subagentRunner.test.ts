@@ -987,7 +987,7 @@ describe('runSubagent', () => {
     // The advisory nudge rides the result that reached the nudge tier.
     expect(results[SEARCH_LOOP_NUDGE_AFTER - 1]?.outcome).toMatchObject({
       ok: true,
-      result: expect.stringContaining('reword one intent'),
+      result: expect.stringContaining('nothing opened between them'),
     })
   })
 

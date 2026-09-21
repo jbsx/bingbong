@@ -1,6 +1,6 @@
 import type { ToolCall, ToolResultOutcome } from '../ports/llm'
 import { parseNotFoundMarker } from '../browser/notFoundPage'
-import { normalizeUrlInput, searchUrl } from '../browser/urlInput'
+import { normalizeUrlInput, parseSearchUrl, searchUrl } from '../browser/urlInput'
 import { hostFromUrl, siteOfHost } from './blockerGate'
 import { searchQueryFromUrl, urlFingerprint } from './progressFingerprints'
 import { reportFault } from '../trace/fault'
@@ -14,8 +14,9 @@ import { reportFault } from '../trace/fault'
 // A site — a registrable domain, so jpl.nasa.gov and science.nasa.gov are
 // one — allows one Not-found Landing by a Composed Address per Run. After
 // it, every Composed Address to that site is rewritten into a search of the
-// site (#255, ADR 0055); searches (a q= navigate or a typed query), clicks
-// and Offered Addresses pass untouched. The count never clears: a not-found
+// site (#255, ADR 0055); searches (a navigate to a Search URL, ADR 0059, or
+// a typed query), clicks and Offered Addresses pass untouched. Only a `q=`
+// search becomes the rewrite's engine. The count never clears: a not-found
 // answer is evidence the model's address knowledge for the site is wrong,
 // and a later real page does not restore it.
 //
@@ -176,9 +177,14 @@ function fingerprintOf(address: string): string {
   return urlFingerprint(address).url
 }
 
-/** The origin and path a q= navigate searched on, or null when the call is no q= navigate. */
+/**
+ * The origin and path a q= navigate searched on, or null when the call is no
+ * q= navigate. Only the `q` form is an engine (#260, ADR 0059): a site's
+ * `…/search/<terms>` or `…?query=` is a surface, and substituting `q=` onto
+ * it would build `…/search/Harrison?q=…`.
+ */
 function engineOf(call: ToolCall): string | null {
-  if (call.name !== 'navigate' || typeof call.args.url !== 'string' || searchQueryFromUrl(call.args.url) === null) return null
+  if (call.name !== 'navigate' || typeof call.args.url !== 'string' || parseSearchUrl(call.args.url)?.form !== 'q') return null
   const address = normalizeUrlInput(call.args.url)
   if (address === null) return null
   try {
