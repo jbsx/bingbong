@@ -650,11 +650,20 @@ Only escape breaks it — opening a result, or any other successful tool call.
 That rule is this rail's own and independent of Progress: a first page read
 of a search result page is neutral to the Approach accounting, and still no
 escape. One search observation is the visible search signature: a navigate
-to a q=-carrying search URL (plain search terms normalize to exactly that) or
-text typed into a search input, whatever engine or site the search ran on.
+to a Search URL (plain search terms normalize to one) or text typed into a
+search input, whatever engine or site the search ran on.
 Searches with one Search Intent remain one Approach and follow the Run's
 no-progress Notice and refusal policy.
 _Avoid_: search spam, retry storm, similar searches
+
+**Search URL**:
+A URL that carries the terms it searches for, in one of two places: as a
+parameter whose name is a word for terms, or as the final path segment after
+a segment named `search`, with no parameters beside it. An engine's results
+and a site's own results are both Search URLs; a site's search box settling
+on either shape is one. An address whose parameters carry a request rather
+than terms — an archive's lookup API, an engine's click redirect — is not.
+_Avoid_: search link, query URL, results URL
 
 **Search Intent**:
 What a search asks for: its terms, with the scope it was pointed at removed.
