@@ -1532,12 +1532,13 @@ describe('the committed audit outputs', () => {
     }
   })
 
-  it.skipIf(files.length === 0)('say checks unsatisfied wherever the reviewer prompt is audit-p2, and leave earlier outputs as they were (#244)', () => {
+  it.skipIf(files.length === 0)('say checks unsatisfied wherever the reviewer prompt is audit-p2 or later, and leave earlier outputs as they were (#244)', () => {
     const promptVersionOf = (name: string): string | null => {
       const json = JSON.parse(readFileSync(join(REPORTS_DIR, name.replace(/\.md$/, '.json')), 'utf8')) as { provenance: { reviewerPromptVersion?: string; shared?: { reviewerPromptVersion?: string } } }
       return json.provenance.reviewerPromptVersion ?? json.provenance.shared?.reviewerPromptVersion ?? null
     }
-    const current = files.filter((name) => promptVersionOf(name) === 'audit-p2')
+    // audit-p1 predates the split; every prompt since carries it (audit-p3, #259, changed only the Search Loop definition).
+    const current = files.filter((name) => promptVersionOf(name) !== null && promptVersionOf(name) !== 'audit-p1')
     expect(current.length).toBeGreaterThan(0)
     for (const name of current) {
       const text = readFileSync(join(REPORTS_DIR, name), 'utf8')

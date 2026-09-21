@@ -65,9 +65,14 @@ const DEFAULT_AGGREGATE = 'audit-aggregate'
  * Bumped by hand whenever the system prompt or the digest's presentation
  * changes; recorded in every output and in every cache key. `audit-p2` (#244)
  * splits the Answer Omission from the Early Stop; the aggregate refuses to
- * count it with `audit-p1` sets.
+ * count it with `audit-p1` sets. `audit-p3` (#259) defines Search Loop
+ * membership as the rail does (ADR 0058): consecutive searches with nothing
+ * opened between them, whatever their terms — so the reviewer's loops and
+ * the streak rule's count are read over one definition. The aggregate
+ * refuses to count it with `audit-p2` sets; the Fix Ledger marks the
+ * reviewer-prompt axis on a marginal across the two.
  */
-const AUDIT_PROMPT_VERSION = 'audit-p2'
+const AUDIT_PROMPT_VERSION = 'audit-p3'
 const CACHE_DIR = join(LIVE_ARTIFACTS_ROOT, 'audit-cache')
 
 class UsageError extends Error {}
@@ -310,7 +315,7 @@ The taxonomy, one kind per round (glossary terms):
 Off-key is a judgement laid over Acquisition rounds, not a seventh kind: an Acquisition on a page that can carry none of the key's required facts for this task.
 
 What you judge, in this order:
-1. Search Loop membership: rounds whose search rewords one intent, consecutively, with reads between them not breaking the loop. The digest marks a search's query and the streak the app's own rule counted; you may extend a loop to rewordings that share no tokens, and you may say a marked streak is not one loop.
+1. Search Loop membership: consecutive searches with nothing opened between them, whatever their terms, engine or surface — a Run flailing blind. A page read, a Look, a scroll or a Not-found Landing between two searches does not break the loop; opening a result, or any other successful call that is not a search, does. Two searches in a row are a loop. The digest marks each search's query, the streak the app's own rule counted, and whether it rewords the one before it; the rule counts every successful non-search call as an opening, so you may say a marked streak is not one loop where something was in fact opened between its searches, and you may extend a loop across a call the rule took as an opening that put nothing before the assistant — a wall, an interstitial, a page that failed to load. Searches that reword one intent with a result opened between them are not a loop: raise them as a flag where they matter.
 2. Off-key: for each Acquisition round, could the page it landed on carry any required fact of this task? Judge from the URL, title and result head against the key's facts and verified sources. A search results page, a 404, a walled page, a page on the right site but the wrong subject: say which and why.
 3. Overrules: where a mechanical label is wrong on the evidence in the digest, give the round its right kind with a reason. Do not overrule to match a verdict.
 4. Early Stop and Answer Omission: for each check listed as unsatisfied, decide one thing: did it need a page the Run had not read, or does it follow from material on a page the Run had read, whether or not that material was recorded as Evidence?
