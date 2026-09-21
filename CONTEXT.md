@@ -1024,8 +1024,12 @@ page is the same source, not a Mirror.
 _Avoid_: proxy, cache, clone
 
 **Consent Dialog**:
-A cookie/consent wall auto-dismissed on read, privacy-preferring controls
-first.
+A consent wall: an element rendered over page content whose controls offer
+a cookie or consent choice, whether or not it declares a dialog role.
+Auto-dismissed wherever it is met — at navigation, at read, and when it
+blocks an action — privacy-preferring control first. A consent strip that
+covers nothing is not a Consent Dialog and is left to the model.
+_Avoid_: cookie banner, consent banner, GDPR popup, cookie wall
 
 **Not-found Page**:
 A page whose server or title says the address names nothing — a 404 or 410
