@@ -70,3 +70,61 @@ streak, nudge and refusal tiers as they are. Reads terms where
 [ADR 0059](0059-a-search-url-carries-its-terms-as-a-named-parameter-or-as-the-path-segment-after-search.md)
 parses them. Shares [ADR 0033](0033-a-ref-names-the-element-it-was-shown-as.md)'s
 principle that what the Run was shown is the one ground it may act on.
+
+## Notes
+
+- 2026-09-21, grilled before implementation (#267). The calls this ADR
+  left open:
+  - **A Search Echo is not sight.** A results page repeats the Run's own
+    terms in its title and in the search box's value, and the e2e fixture
+    engine in its heading too, so the phrase would count as shown the round
+    after it was first searched and the gate would refuse it exactly once.
+    On a shown text whose source is a Search URL (ADR 0059), a line
+    carrying that URL's query in full, or any quoted span of it, is an
+    echo and is not sight. A result's snippet is not an echo. The one edge
+    accepted: a snippet line that repeats a lone quoted phrase is dropped
+    with the echoes, and the model's way through is to open the result,
+    which is what the outcome asks anyway. The gate's own head never
+    reaches the ledger, because the ledger records the raw outcome before
+    any rewrite line is attached; nothing has to exclude it.
+  - **Sight is the Run's.** The Observation ledger is created per Run and
+    dies with it, and the model's wire messages are built inside the
+    client and never handed back, so there is no Session-wide record of
+    shown text. A phrase the model read one command ago is unquoted once
+    with the outcome saying why. A Session-wide corpus was declined as a
+    new store for one edge.
+  - **Sight is read from the ledger, all records.** The executor gains one
+    read seam in the style of `evidenceSourceUrls`, returning every shown
+    text with its source URL — failed outcomes included, since the model
+    read them — and the gate keeps a normalised copy per record.
+  - **A worker judges against its own sight.** A browse worker runs the
+    same executor with its own ledger and the same rails; its brief is
+    passed ahead of the ledger so it is always seen for the worker as the
+    command is for the orchestrator. The brief is not recorded into the
+    worker ledger, whose frozen snapshot rides its report as provenance.
+  - **Every span is judged, with no minimum length.** A lone quoted name
+    the Run never saw is the same bet as a title. Straight and curly double
+    quotes make a span; single quotes never; an empty or punctuation-only
+    span and an unmatched quote are left alone.
+  - **Matching folds what a page may print differently.** Case, whitespace
+    runs, curly and straight quotes and apostrophes, dash variants, and
+    punctuation at the span's edges. No stemming and no fuzzy match: a
+    phrase one word off from what a page said is Unseen.
+  - **The form the model chose is kept.** A `q` or named-parameter Search
+    URL is rebuilt by setting that same parameter; a path-form URL replaces
+    its last segment; bare terms stay bare; a typed search rewrites the
+    text and keeps its trailing newline. Nothing rebuilt a `param` or
+    `path` form before this.
+  - **Placement.** The gate runs on the executed call after ADR 0055's
+    rewrite, under the same interception and finalization conditions, with
+    its own capability flag on for orchestrator and workers; when both
+    fire, the address line comes first. One head names every unquoted
+    span: `Rewritten — "A" and "B" appear in nothing this run was shown, so
+    they ran unquoted: …`.
+  - **The audit reads a stamp, not the head.** The `tool_result` event
+    carries an `unquoted` stamp beside `rewritten`, mirrored on the trace
+    line; the Round Audit counts the rounds per attempt, crosses them with
+    Off-key, sums them in the population, and adds one by-hunt table that
+    carries both rewrite kinds, since the Composed Address rewrites had
+    none.
+

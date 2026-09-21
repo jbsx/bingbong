@@ -1105,9 +1105,20 @@ _Avoid_: guessed URL, made-up URL, typed URL, direct URL
 **Unseen Phrase**:
 A quoted span in a search's terms that appears in nothing the Run was shown —
 no observation, not the user's command, no Steering directive, no Subagent
-Report. It is searched unquoted, its words kept, and the outcome says so
-(#267, ADR 0064). A phrase quoted from the user's own words is never unseen.
+Report — and a Search Echo is not being shown. It is searched unquoted, its
+words kept, and the outcome says so (#267, ADR 0064). A phrase quoted from
+the user's own words is never unseen; for a Subagent, its brief plays the
+command's part. Sight is the Run's own: what an earlier Run in the Session
+showed is not what this Run was shown.
 _Avoid_: hallucinated title, invented quote, fabricated phrase
+
+**Search Echo**:
+A line of a search results observation that carries the search's own terms
+back — the page title, the search box's value, a "results for" heading. It
+is the engine repeating the Run's words, not a page carrying them, so it is
+not sight for an Unseen Phrase (#267, ADR 0064). A result's snippet that
+carries the phrase is not an echo.
+_Avoid_: query echo, reflected query
 
 **Blocker**:
 Anything between the agent and page content: Consent Dialogs, CAPTCHAs,
