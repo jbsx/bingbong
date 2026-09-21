@@ -193,18 +193,72 @@ export interface SubagentEpochConfig {
 }
 
 /**
- * What a Finalization Cause knows beyond its name (#202, ADR 0037).
- * `blocker` is the only cause with anything to add and the wall is all of
- * it: every sentence about that stop — the model's Finalize Instruction,
- * the worker's report, the user's spoken Answer — names the host and the
- * flavor, because "the run stopped" tells nobody what to do about it.
+ * Which boundary performed an automatic Tier Escalation (#216, #266):
+ * the active-work deadline (ADR 0042) or the tier's Tool Round budget
+ * (ADR 0063). The Run Plan event's `source` is the arm's name.
  */
-export type FinalizationDetail = BlockerWall
+export type TierEscalationArm = 'deadline' | 'budget'
+
+/**
+ * Why a reached budget or deadline was not a Tier Escalation (#266, ADR
+ * 0063), in the order the guards are asked: an epoch with no rail to vouch
+ * for Progress (a Browse Subagent, a lean pipeline); a tier with nothing
+ * above it; the Run's one escalation already spent; no Tool Round left
+ * before the hard ceiling; and the current Approach making no Progress.
+ * The first guard that refuses names the decline, so `no_progress` is
+ * only ever recorded of a Run the arm would otherwise have raised.
+ */
+export const ESCALATION_DECLINE_REASONS = ['no_rail', 'no_tier_above', 'once_spent', 'hard_ceiling', 'no_progress'] as const
+export type EscalationDeclineReason = (typeof ESCALATION_DECLINE_REASONS)[number]
+
+/**
+ * A budget or deadline reached with no Tier Escalation following (#266,
+ * ADR 0063): the arm that was reached and the guard that declined. The
+ * arm's silence is a fact of the Run, so it rides the Finalization as the
+ * cause's specifics — the Stop Record and the trace's Finalization entry
+ * — the way a Blocker stop carries its wall.
+ */
+export interface EscalationDecline {
+  readonly arm: TierEscalationArm
+  readonly declined: EscalationDeclineReason
+}
+
+/**
+ * What a Finalization Cause knows beyond its name (#202, ADR 0037; #266,
+ * ADR 0063). A `blocker` stop's wall is all of it: every sentence about
+ * that stop — the model's Finalize Instruction, the worker's report, the
+ * user's spoken Answer — names the host and the flavor, because "the run
+ * stopped" tells nobody what to do about it. A `budget_exhausted` or
+ * `deadline_reached` stop carries why no Tier Escalation followed, which
+ * only the Stop Record and the Run Trace repeat.
+ */
+export type FinalizationDetail = BlockerWall | EscalationDecline
+
+/** Whether a detail is a Blocker's wall rather than an escalation decline. */
+export function isBlockerWall(detail: FinalizationDetail | undefined): detail is BlockerWall {
+  return detail !== undefined && 'host' in detail
+}
+
+/**
+ * The wall a `blocker` stop kept at, or undefined for any other cause —
+ * and for a `blocker` that somehow arrived without its wall, which has
+ * nothing to name. The one place a caller asks, so a detail of the other
+ * kind can never be read as a wall.
+ */
+export function blockerWallOf(cause: FinalizationCause | null, detail: FinalizationDetail | undefined): BlockerWall | undefined {
+  return cause === 'blocker' && isBlockerWall(detail) ? detail : undefined
+}
+
+/** The escalation decline a Finalization phase carries (#266), or undefined while working or under any other detail. */
+export function escalationDeclineOf(phase: EffortPhase): EscalationDecline | undefined {
+  if (phase.kind === 'working' || phase.detail === undefined || isBlockerWall(phase.detail)) return undefined
+  return phase.detail
+}
 
 /**
  * The tier an automatic Tier Escalation rises to (#216, ADR 0042). One
  * level at a time, and nothing above an Investigation: the escalation is
- * the deadline buying the Run the next tier's budget, not a way out of
+ * a boundary buying the Run the next tier's budget, not a way out of
  * every bound.
  */
 const NEXT_TIER: Readonly<Partial<Record<EffortTier, EffortTier>>> = {
@@ -212,12 +266,19 @@ const NEXT_TIER: Readonly<Partial<Record<EffortTier, EffortTier>>> = {
   lookup: 'investigation',
 }
 
-/** One automatic Tier Escalation, as its consumers report it (#216). */
+/** One automatic Tier Escalation, as its consumers report it (#216, #266). */
 export interface TierEscalation {
   readonly from: EffortTier
   readonly to: EffortTier
-  /** The fixed reason the Run Plan event carries; the deadline speaks for every such escalation. */
+  /** The boundary that performed it. */
+  readonly arm: TierEscalationArm
+  /** The fixed reason the Run Plan event carries; each arm speaks for every escalation it performs. */
   readonly reason: string
+  /**
+   * The Tool Round budget the new tier was re-armed with (#266, ADR 0042
+   * note): the tier's own, or fewer when the hard ceiling leaves fewer.
+   */
+  readonly roundBudget: number
 }
 
 /**
@@ -228,19 +289,33 @@ export interface TierEscalation {
 export const DEADLINE_TIER_ESCALATION_REASON =
   'The active-work deadline passed while the run was still making progress, so the Effort Tier rose one level.'
 
+/** The budget arm's one thing to say (#266, ADR 0063), fixed for the same reason. */
+export const BUDGET_TIER_ESCALATION_REASON =
+  'The tool-round budget was spent while the run was still making progress, so the Effort Tier rose one level.'
+
+const TIER_ESCALATION_REASONS: Readonly<Record<TierEscalationArm, string>> = {
+  deadline: DEADLINE_TIER_ESCALATION_REASON,
+  budget: BUDGET_TIER_ESCALATION_REASON,
+}
+
 /**
- * What the model is told on its next round (#216, ADR 0042): the tier
- * rose, why, and what did not change with it. It names the once — a
- * model that reads "the deadline is not final" and slows down is exactly
- * the failure this escalation must not buy.
+ * What the model is told on its next round (#216, ADR 0042; #266, ADR
+ * 0063): the tier rose, why, and what did not change with it. It names
+ * the once — a model that reads "the deadline is not final" and slows
+ * down is exactly the failure this escalation must not buy. The budget
+ * arm's Notice is the deadline's with the arm swapped in, plus one
+ * sentence: a Run escalated one fact short of done is told it may stop.
+ * Neither promises the tier's *full* round budget any more (ADR 0042
+ * note): the re-arm is clamped to what the hard ceiling leaves.
  */
-export function tierEscalationNotice(to: EffortTier): string {
+export function tierEscalationNotice(to: EffortTier, arm: TierEscalationArm = 'deadline'): string {
+  const crossing = arm === 'budget' ? 'the tool-round budget was spent' : 'the active-work deadline passed'
   return (
-    `Effort Tier raised to ${effortTierLabel(to)}: the active-work deadline passed while this run was still making ` +
-    'progress, so it continues at the larger tier with that tier\u2019s full deadline and round budget from now. You do ' +
+    `Effort Tier raised to ${effortTierLabel(to)}: ${crossing} while this run was still making ` +
+    'progress, so it continues at the larger tier with that tier\u2019s deadline and round budget from now. You do ' +
     'not need to report a new plan for this. Nothing else reopens \u2014 a check that already failed stays closed, and ' +
-    'the run\u2019s hard work limit is unchanged. This happens once: the next deadline ends the run, so spend it only ' +
-    'on what decides the objective.'
+    `the run\u2019s hard work limit is unchanged. This happens once: the next ${arm} ends the run, so spend it only ` +
+    `on what decides the objective.${arm === 'budget' ? ' If the objective is already met, finish now.' : ''}`
   )
 }
 
@@ -320,10 +395,20 @@ export function budgetWarningMessage(milestone: BudgetWarningMilestone, remainin
     )
   }
   if (milestone === 'near') {
-    return `Work budget: ${remaining} of ${budget} tool rounds remain. Prioritize decisive evidence — finalize as soon as the objective is met.`
+    return `Work budget: ${remaining} of ${budget} tool rounds remain. Prioritize decisive evidence — finalize as soon as the objective is met. ${BUDGET_ARM_WARNING_SENTENCE}`
   }
-  return `Work budget: ${remaining} of ${budget} tool round${remaining === 1 ? '' : 's'} remain${remaining === 1 ? 's' : ''}. Complete only decisive work and be ready to finalize with your answer.`
+  return `Work budget: ${remaining} of ${budget} tool round${remaining === 1 ? '' : 's'} remain${remaining === 1 ? 's' : ''}. Complete only decisive work and be ready to finalize with your answer. ${BUDGET_ARM_WARNING_SENTENCE}`
 }
+
+/**
+ * What the two round-based warnings say will happen at the budget (#266,
+ * ADR 0063): the model is told the arm exists and what it reads, so a Run
+ * that is landing findings is not stampeded into finalizing by the count
+ * alone, and one that is not is not told a rescue is coming. The time
+ * warning asks for a decision instead and does not carry it.
+ */
+export const BUDGET_ARM_WARNING_SENTENCE =
+  'A run still making progress when its budget is spent rises one Effort Tier, once; a run that is not is ended.'
 
 /**
  * The reason sentence a no-progress Finalization opens with, in the one
@@ -358,7 +443,7 @@ const RUN_FINALIZATION_REASONS: Partial<Record<FinalizationCause, string>> = {
  * because a stop the model cannot act on is the least useful thing to
  * tell it.
  */
-export function blockerFinalizationReason(wall: FinalizationDetail): string {
+export function blockerFinalizationReason(wall: BlockerWall): string {
   return (
     `The run kept interacting with ${wall.host} after it was walled (Blocker: ${wall.signal}), ` +
     `and what helps is ${BLOCKER_HELP_BY_SIGNAL[wall.signal]}`
@@ -376,7 +461,10 @@ export function blockerFinalizationReason(wall: FinalizationDetail): string {
  */
 function runFinalizationReason(cause: FinalizationCause | null, detail?: FinalizationDetail): string | undefined {
   if (cause === null) return undefined
-  if (cause === 'blocker') return detail === undefined ? undefined : blockerFinalizationReason(detail)
+  if (cause === 'blocker') {
+    const wall = blockerWallOf(cause, detail)
+    return wall === undefined ? undefined : blockerFinalizationReason(wall)
+  }
   return RUN_FINALIZATION_REASONS[cause]
 }
 
@@ -778,9 +866,18 @@ export function createEffortEpoch(deps: {
   // replaces its watcher rather than leaving it on the spent deadline.
   let armedRound: { rewatch(): void } | null = null
 
+  // The budget an automatic Tier Escalation re-armed (#266, ADR 0042
+  // note): the new tier's own, or the rounds left before the hard ceiling
+  // when that is fewer, so the warnings count what is actually left and
+  // the Run ends for its budget rather than `hard_limit`. A declaration or
+  // a Steering replan re-arms the tier's table value again.
+  let escalatedBudget: number | null = null
+
   const deadlineMs = (): number => resolveActiveWorkDeadlineMs(deps.activeWorkDeadlineMs, tier)
-  /** This epoch's Tool Round budget: the Subagent's own, or the tier's. */
-  const roundBudget = (): number => subagent?.toolRoundBudget ?? TIER_TOOL_ROUND_BUDGETS[tier]
+  /** This epoch's Tool Round budget: the Subagent's own, an escalation's clamped one, or the tier's. */
+  const roundBudget = (): number => subagent?.toolRoundBudget ?? escalatedBudget ?? TIER_TOOL_ROUND_BUDGETS[tier]
+  /** The Tool Rounds left before the hard ceiling's reserved bookkeeping round. */
+  const roundsBeforeCeiling = (): number => HARD_TOOL_ROUND_CEILING - CEILING_RESERVED_BOOKKEEPING_ROUNDS - cumulativeRounds
   // A Subagent's deadline is the parent Run's, so it is polled rather than
   // measured: it has no remaining duration of its own to report.
   const remainingActiveWorkMs = (): number =>
@@ -799,6 +896,7 @@ export function createEffortEpoch(deps: {
   const rearm = (nextTier: EffortTier): void => {
     tier = nextTier
     tierRounds = 0
+    escalatedBudget = null
     warned.near = false
     warned.imminent = false
     warned.time = false
@@ -806,16 +904,45 @@ export function createEffortEpoch(deps: {
     workClock.rearm()
     armedRound?.rewatch()
   }
+  /**
+   * Why an automatic Tier Escalation would be refused right now (#266,
+   * ADR 0063), by the first guard that refuses, or null when every guard
+   * passes. One list for both arms and for the decline a Finalization
+   * entry records, so the escalation and its recorded refusal cannot read
+   * the Run differently.
+   */
+  const escalationDecline = (): EscalationDeclineReason | null => {
+    if (subagent !== undefined || deps.makingProgress === undefined) return 'no_rail'
+    if (NEXT_TIER[tier] === undefined) return 'no_tier_above'
+    if (tierEscalationSpent) return 'once_spent'
+    // A Run with no Tool Rounds left cannot spend a larger tier: the hard
+    // ceiling still bounds everything, and announcing a bigger tier in
+    // the same breath as `hard_limit` would promise work that cannot
+    // happen.
+    if (roundsBeforeCeiling() <= 0) return 'hard_ceiling'
+    if (deps.makingProgress() !== true) return 'no_progress'
+    return null
+  }
+  /** The decline a budget or deadline stop carries (#266): the arm reached, and why it did not escalate. */
+  const declineFor = (cause: FinalizationCause): EscalationDecline | undefined => {
+    const arm: TierEscalationArm | undefined = cause === 'budget_exhausted' ? 'budget' : cause === 'deadline_reached' ? 'deadline' : undefined
+    if (arm === undefined) return undefined
+    const declined = escalationDecline()
+    return declined === null ? undefined : { arm, declined }
+  }
   const enterFinalization = (cause: FinalizationCause, detail?: FinalizationDetail): boolean => {
     if (phase.kind !== 'working') return false
-    phase = { kind: 'finalizing', cause, ...(detail !== undefined ? { detail } : {}) }
+    // A budget or deadline stop names why no escalation followed (#266);
+    // read before the phase moves, since the guards read the working Run.
+    const specifics = detail ?? declineFor(cause)
+    phase = { kind: 'finalizing', cause, ...(specifics !== undefined ? { detail: specifics } : {}) }
     bookkeepingSkipped = false
     pendingWarning = null
     // A tier that rose is moot once acquisition is over (#216) — the
     // Finalize Instruction is the only thing this round has to say.
     pendingTierEscalationNotice = null
     try {
-      deps.onFinalizationEntered?.(cause, detail)
+      deps.onFinalizationEntered?.(cause, specifics)
     } catch (err) {
       // The door is a state transition, not the hook's errand: the entry
       // stands whatever the consumer does. It also fires from the
@@ -825,31 +952,29 @@ export function createEffortEpoch(deps: {
     return true
   }
   /**
-   * The deadline crossing that is a Tier Escalation rather than a stop
-   * (#216, ADR 0042). One door for all three places a crossing is seen —
-   * the loop top, the per-call gate, and the in-flight round's timer — so
-   * the once, the Progress test, and the re-arm cannot drift apart. The
+   * The boundary crossing that is a Tier Escalation rather than a stop
+   * (#216, ADR 0042; #266, ADR 0063). One door for every place a crossing
+   * is seen — the loop top for both arms, the per-call gate and the
+   * in-flight round's timer for the deadline — so the once, the Progress
+   * test, the decline it records and the re-arm cannot drift apart. The
    * re-arm's `rewatch()` puts a round already in flight under the new
    * deadline instead of throwing it away: a model round is the scarce
    * thing, which is the cost this decision exists to avoid.
    */
-  const escalateTierAtDeadline = (): boolean => {
-    if (subagent !== undefined || phase.kind !== 'working' || tierEscalationSpent) return false
-    if (!deadlineExpired()) return false
+  const escalateTier = (arm: TierEscalationArm): boolean => {
+    if (phase.kind !== 'working') return false
+    if (arm === 'deadline' ? !deadlineExpired() : tierRounds < roundBudget()) return false
     const next = NEXT_TIER[tier]
-    if (next === undefined) return false
-    // A Run with no Tool Rounds left cannot spend a larger tier: the hard
-    // ceiling still bounds everything, and announcing a bigger tier in
-    // the same breath as `hard_limit` would promise work that cannot
-    // happen.
-    if (cumulativeRounds >= HARD_TOOL_ROUND_CEILING - CEILING_RESERVED_BOOKKEEPING_ROUNDS) return false
-    if (deps.makingProgress?.() !== true) return false
+    if (next === undefined || escalationDecline() !== null) return false
     tierEscalationSpent = true
     const from = tier
     rearm(next)
-    pendingTierEscalationNotice = tierEscalationNotice(next)
+    // Clamped after the re-arm cleared it (#266, ADR 0042 note): the
+    // tier's budget, or the rounds the hard ceiling leaves when fewer.
+    escalatedBudget = Math.min(TIER_TOOL_ROUND_BUDGETS[next], roundsBeforeCeiling())
+    pendingTierEscalationNotice = tierEscalationNotice(next, arm)
     try {
-      deps.onTierEscalated?.({ from, to: next, reason: DEADLINE_TIER_ESCALATION_REASON })
+      deps.onTierEscalated?.({ from, to: next, arm, reason: TIER_ESCALATION_REASONS[arm], roundBudget: escalatedBudget })
     } catch (err) {
       // The escalation is a state transition, not the hook's errand, and
       // it fires from the deadline timer where a throw would escape the
@@ -858,19 +983,28 @@ export function createEffortEpoch(deps: {
     }
     return true
   }
+  /**
+   * The loop-top decision the current phase gives. A mid-round trip's cause
+   * reaches the loop top through the phase, and so must its detail (#202):
+   * a `blocker` stop the caller reads here has to name the same wall the
+   * tripping refusal did — and a budget or deadline stop, the decline the
+   * entry recorded (#266).
+   */
+  const phaseDecision = (): EffortLoopDecision =>
+    phase.kind === 'working'
+      ? { kind: 'work' }
+      : { kind: 'finalize', cause: phase.cause, ...(phase.detail !== undefined ? { detail: phase.detail } : {}) }
   const decideLoopTop = (): EffortLoopDecision => {
-    if (phase.kind !== 'working') {
-      // A mid-round trip's cause reaches the loop top through the phase,
-      // and so must its detail (#202): a `blocker` stop the caller reads
-      // here has to name the same wall the tripping refusal did.
-      return { kind: 'finalize', cause: phase.cause, ...(phase.detail !== undefined ? { detail: phase.detail } : {}) }
-    }
+    if (phase.kind !== 'working') return phaseDecision()
+    // A boundary reached by a Run that is still making Progress raises the
+    // tier instead of stopping it (#216, ADR 0042; #266, ADR 0063). The
+    // budget arm is asked first: at a coincidence — both spent, with
+    // Progress — it is the one that fires, matching the Finalization
+    // precedence below; a Run whose budget is spent without Progress
+    // stops for its budget, and the deadline never speaks.
+    if (tierRounds >= roundBudget()) escalateTier('budget')
+    else escalateTier('deadline')
     const budgetExhausted = tierRounds >= roundBudget()
-    // A crossing on a Run that is still making Progress raises the tier
-    // instead of stopping it (#216, ADR 0042). A spent tier budget is
-    // checked first and is not a crossing the escalation may rescue: the
-    // Run stopped for its budget, and the deadline never spoke.
-    if (!budgetExhausted) escalateTierAtDeadline()
     const deadlinePassed = deadlineExpired()
     // Precedence at a coincidence differs by configuration. A Run answers
     // to its own tier budget first, then its deadline, then the hard
@@ -900,7 +1034,7 @@ export function createEffortEpoch(deps: {
               : null
     if (cause === null) return { kind: 'work' }
     enterFinalization(cause)
-    return { kind: 'finalize', cause }
+    return phaseDecision()
   }
 
   return {
@@ -929,7 +1063,7 @@ export function createEffortEpoch(deps: {
       // is not checked here — the round it belongs to is already running.
       // A crossing the escalation takes leaves the round's remaining
       // siblings open (#216): the tier rose, so nothing is past a boundary.
-      if (deadlineExpired() && !escalateTierAtDeadline()) return enterFinalization('deadline_reached')
+      if (deadlineExpired() && !escalateTier('deadline')) return enterFinalization('deadline_reached')
       if (subagent?.parentFinalizing?.() === true) return enterFinalization('parent_finalized')
       return false
     },
@@ -1016,7 +1150,7 @@ export function createEffortEpoch(deps: {
         // The escalation's re-arm rewatches this very round against the
         // new tier's deadline (#216, ADR 0042), so the round in flight
         // continues rather than being thrown away mid-request.
-        if (escalateTierAtDeadline()) return
+        if (escalateTier('deadline')) return
         deadlineAborted = true
         // The crossing is a Finalization entry like any other rail's
         // (#147/#148): the door opens here, so the aborted round's caller
@@ -1176,13 +1310,13 @@ const BLOCKER_FOR_THE_USER: Readonly<Record<BlockerSignal, { label: string; help
 }
 
 /** The displayed sentence a Blocker stop opens on instead of the task's state (#202). */
-function blockerCauseSentence(wall: FinalizationDetail): string {
+function blockerCauseSentence(wall: BlockerWall): string {
   const flavor = BLOCKER_FOR_THE_USER[wall.signal]
   return `The run kept at a ${flavor.label} it cannot pass. To get past it, ${flavor.help(wall.host)}.`
 }
 
 /** The spoken half of the same stop (#202): the wall, named, in one breath. */
-function blockerSpokenSentence(wall: FinalizationDetail): string {
+function blockerSpokenSentence(wall: BlockerWall): string {
   return `I could not get past the ${BLOCKER_FOR_THE_USER[wall.signal].label} on ${wall.host}.`
 }
 
@@ -1195,8 +1329,31 @@ function blockerSpokenSentence(wall: FinalizationDetail): string {
  * its wall has nothing to say, exactly as its model-facing sibling does.
  */
 export function finalizationDetailSentence(phase: EffortPhase): string | undefined {
-  if (phase.kind === 'working' || phase.cause !== 'blocker' || phase.detail === undefined) return undefined
-  return blockerFinalizationReason(phase.detail)
+  if (phase.kind === 'working') return undefined
+  const wall = blockerWallOf(phase.cause, phase.detail)
+  if (wall !== undefined) return blockerFinalizationReason(wall)
+  const decline = escalationDeclineOf(phase)
+  return decline === undefined ? undefined : escalationDeclineSentence(decline)
+}
+
+/**
+ * How each decline reads in the Stop Record (#266, ADR 0063): what a later
+ * "why did you stop?" learns about the arm that stayed silent. Diagnostic
+ * vocabulary is allowed here — the Stop Record is where ADR 0038 keeps
+ * it — and nowhere it could reach the Answer.
+ */
+const ESCALATION_DECLINE_WORDING: Readonly<Record<EscalationDeclineReason, string>> = {
+  no_rail: 'no rail could vouch for Progress',
+  no_tier_above: 'there is no tier above Investigation',
+  once_spent: 'the run’s one escalation was already spent',
+  hard_ceiling: 'no tool round was left before the hard work limit',
+  no_progress: 'the current Approach was not making Progress',
+}
+
+/** The Stop Record's sentence for a budget or deadline reached with no Tier Escalation (#266). */
+export function escalationDeclineSentence(decline: EscalationDecline): string {
+  const boundary = decline.arm === 'budget' ? 'tool-round budget' : 'active-work deadline'
+  return `No Tier Escalation followed the ${boundary}: ${ESCALATION_DECLINE_WORDING[decline.declined]}`
 }
 
 /**
@@ -1244,7 +1401,7 @@ export function deterministicFinalAnswer(input: {
   // (#202): both name the wall. Without the detail there is no wall to
   // name and the outcome-first wording stands — the same rule the
   // model-facing reason follows.
-  const wall = input.cause === 'blocker' ? input.detail : undefined
+  const wall = blockerWallOf(input.cause, input.detail)
   const sourceLines: string[] = []
   input.sources.forEach((source, index) => {
     sourceLines.push(`- ${source.url}`)

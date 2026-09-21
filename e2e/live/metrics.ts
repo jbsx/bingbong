@@ -248,6 +248,7 @@ export function extractLiveMetrics(input: LiveMetricsInput): LiveMetrics {
     deterministicAnswer: answer.status === 'observed' && answer.value.deterministicAnswer === true,
     effortTier: plans.at(-1)?.effortTier ?? null,
     deadlineTierEscalations: plans.filter((plan) => plan.source === 'deadline').length,
+    budgetTierEscalations: plans.filter((plan) => plan.source === 'budget').length,
     counts: {
       llmSpans: perfRecords.filter((record) => record.stage === 'llm').length,
       llmRetries: ofType(events, 'llm_retry').length,

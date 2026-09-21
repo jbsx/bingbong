@@ -40,6 +40,7 @@ import type { SnapshotRef } from '../browser/snapshot'
 import { createToolRoundExecutor, type ToolRoundExecutor } from './toolRound'
 import {
   createEffortEpoch,
+  escalationDeclineOf,
   finalizationDetailSentence,
   deterministicFinalAnswer,
   BOOKKEEPING_KEPT_FOR_REPORT_REASON,
@@ -738,12 +739,13 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
     let pendingTierEscalation: TierEscalationAnnouncement | null = null
     let tierEscalationSpoken = false
     /**
-     * Whether the deadline has raised this Run's tier (#216). It decides
-     * whether the plan in force constrains the next report: the runtime's
-     * escalation is not the fallback plan's default, so a first
-     * declaration may no longer ignore it and declare the Run back down.
+     * Whether the epoch has raised this Run's tier (#216, #266) — at the
+     * deadline or the round budget. It decides whether the plan in force
+     * constrains the next report: the runtime's escalation is not the
+     * fallback plan's default, so a first declaration may no longer ignore
+     * it and declare the Run back down.
      */
-    let tierRaisedByDeadline = false
+    let tierRaisedByEpoch = false
     /** The pending announcement, once: the loop top makes it and it is gone. */
     const takeTierEscalation = (): TierEscalationAnnouncement | null => {
       const announcement = pendingTierEscalation
@@ -828,7 +830,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             effortTier: escalation.to,
           }
           runPlan = plan
-          tierRaisedByDeadline = true
+          tierRaisedByEpoch = true
           pendingTierEscalation = { escalation, plan, at: clock.now() }
         },
         // What the run owes at every Finalization entry (#120/#148):
@@ -1072,7 +1074,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           modelDeclaredPlan = false
           // The epoch's own once is reset below; so is what it did to the
           // plan (#216) — a corrected objective declares its tier freely.
-          tierRaisedByDeadline = false
+          tierRaisedByEpoch = false
           notices.replan()
           toolRound?.replan()
           // A replan that reopened acquisition drops the allowance with
@@ -1480,8 +1482,10 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
               objective: announced.plan.objective,
               headline: announced.plan.headline,
               effortTier: announced.plan.effortTier,
-              source: 'deadline',
+              // The arm names itself (#266): the deadline's or the budget's.
+              source: announced.escalation.arm,
               escalationReason: announced.escalation.reason,
+              roundBudget: announced.escalation.roundBudget,
               // Stamped when the tier rose, not when the loop got round to
               // saying so: the crossing is the event.
               at: announced.at,
@@ -1583,6 +1587,9 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           // Finalization entry, and recorded on the trace either way.
           if (effortEpoch.phase.kind === 'finalizing') {
             const { cause } = effortEpoch.phase
+            // The refused Tier Escalation a budget or deadline entry carries
+            // (#266, ADR 0063), read before the skip moves the phase on.
+            const declined = escalationDeclineOf(effortEpoch.phase)
             const skipped = effortEpoch.skipBookkeepingRound()
             traceRun?.(() => ({
               turnId,
@@ -1594,6 +1601,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
                 : reportCollectedThisEntry
                   ? BOOKKEEPING_KEPT_FOR_REPORT_REASON
                   : BOOKKEEPING_KEPT_REASON,
+              ...(declined !== undefined ? { declined } : {}),
             }))
           }
           // What this round may spend of the Finalization Allowance
@@ -2210,7 +2218,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
               // tier the deadline raised is a decision — a first
               // declaration back down is the downgrade the review
               // already refuses, not an opening statement.
-              const review = reviewPlanReport(runPlan, modelDeclaredPlan || tierRaisedByDeadline, planReport)
+              const review = reviewPlanReport(runPlan, modelDeclaredPlan || tierRaisedByEpoch, planReport)
               if (review.kind === 'rejected') {
                 planResultError = review.reason
               } else {

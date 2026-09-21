@@ -18,6 +18,7 @@ import type { SearchSignature } from '../pipeline/searchLoopRail'
 import type { NotFoundLanding } from '../browser/notFoundPage'
 import type { UnavailableLanding } from '../browser/unavailablePage'
 import type { ComposedAddressRewriteStamp } from '../pipeline/composedAddressRail'
+import type { EscalationDecline } from '../pipeline/effortEpoch'
 import type { AnswerShape } from '../agent/answerContract'
 import type { AgentRole } from '../agent/modelRouting'
 import type { ReasoningEffort, TokenUsage } from '../ports/llm'
@@ -38,8 +39,11 @@ import type { VisionRunTraceRecord } from './visionTrace'
  * reached its bookkeeping decision, which a version-2 trace cannot say.
  * 4 (#256, ADR 0057): an `llm_round` with no `firstTokenMs` streamed
  * nothing before it ended, which a version-3 trace cannot say.
+ * 5 (#266, ADR 0063): a budget or deadline `finalization_entry` with no
+ * `declined` field was not a refused Tier Escalation, which a version-4
+ * trace cannot say.
  */
-export const RUN_TRACE_VERSION = 4
+export const RUN_TRACE_VERSION = 5
 
 /** How much of a graded observation's retained text a record keeps. */
 export const TRACE_PAYLOAD_HEAD_CHARS = 500
@@ -473,6 +477,13 @@ export interface FinalizationEntryEvent {
   readonly cause: FinalizationCause
   readonly bookkeeping: 'kept' | 'skipped'
   readonly reason: string
+  /**
+   * Why no Tier Escalation followed a `budget_exhausted` or
+   * `deadline_reached` entry (#266, ADR 0063): the arm that was reached
+   * and the first guard that refused it. Absent on every other cause, and
+   * on a trace written before version 5, which could not say.
+   */
+  readonly declined?: EscalationDecline
 }
 
 /** One decision a Run traces, whatever kind it is. */

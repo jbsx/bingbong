@@ -89,6 +89,11 @@ export const TIER_REASONING_EFFORT: Readonly<Record<EffortTier, string>> = { dir
 /** The rung Finalization rounds run at whatever the tier (#215, `FINALIZATION_REASONING_EFFORT`), pinned by the same test. */
 export const FINALIZATION_REASONING_EFFORT = 'low'
 
+/** Why a reached budget or deadline was not a Tier Escalation (#266, `ESCALATION_DECLINE_REASONS`), in guard order, pinned by the same test. */
+export const ESCALATION_DECLINE_REASONS = ['no_rail', 'no_tier_above', 'once_spent', 'hard_ceiling', 'no_progress'] as const
+/** The two arms an automatic Tier Escalation fires from (#216, #266): the Run Plan event's `source`. */
+export const TIER_ESCALATION_ARMS = ['deadline', 'budget'] as const
+
 // The app's own model-facing sentences, matched as markers. Each is a
 // deterministic constant in src/core/pipeline; the test pins the fragments
 // used here to the source so a reworded Notice cannot silently unmark a
@@ -154,6 +159,8 @@ export const IDENTITY_SLIP_TRACE_VERSION = 2
 export const FINALIZATION_ENTRY_TRACE_VERSION = 3
 /** The Run Trace version from which an `llm_round` record carries `firstTokenMs` (#256, ADR 0057): below it, no round says whether it streamed before it ended. */
 export const FIRST_TOKEN_TRACE_VERSION = 4
+/** The Run Trace version from which a budget or deadline `finalization_entry` carries `declined` (#266, ADR 0063): below it, no stop says whether an escalation was refused. */
+export const ESCALATION_DECLINE_TRACE_VERSION = 5
 /** How far apart a perf `llm` span's end and an `llm_round` record may be and still be the same round. */
 const LATENCY_JOIN_TOLERANCE_MS = 2_000
 /** A search at this streak followed a search with nothing opened between them (ADR 0058): no Progress. */
@@ -298,6 +305,40 @@ export interface AuditAskedItems {
 export interface AuditPlan {
   readonly tier: EffortTier
   readonly source: string
+  /** The Tool Round budget an escalation plan re-armed (#266, ADR 0042 note), when the event carried it. */
+  readonly roundBudget?: number
+}
+
+/**
+ * One automatic Tier Escalation as the audit reads it (#266, ADR 0063): the
+ * arm that fired, the digest round before it, and the audit's own replay
+ * verdict on that round — independent of the rail's record the arm read.
+ */
+export interface AuditTierEscalation {
+  readonly arm: string
+  /** The digest round that preceded the escalation; null when none had. */
+  readonly before: number | null
+  /** Whether the replay found Progress in that round; null with no round, or no call the replay judged. */
+  readonly progressBefore: boolean | null
+}
+
+/** The refusal a budget or deadline stop recorded (#266): the arm reached and the guard that declined. */
+export interface AuditEscalationDecline {
+  readonly arm: string
+  readonly reason: string
+}
+
+/**
+ * An attempt's automatic Tier Escalations and its recorded refusal (#266).
+ * Beside the rounds, never in them, so counting them re-keys no cached
+ * judgement.
+ */
+export interface TierEscalationRecord {
+  readonly fired: readonly AuditTierEscalation[]
+  /** The decline the Run's own `finalization_entry` carried; null when it carried none — or could not (see `declineRecorded`). */
+  readonly declined: AuditEscalationDecline | null
+  /** Whether the trace is new enough to have recorded a decline at all ({@link ESCALATION_DECLINE_TRACE_VERSION}). */
+  readonly declineRecorded: boolean
 }
 
 export interface AuditMechanical {
@@ -315,6 +356,9 @@ export interface AuditMechanical {
   readonly plans: readonly AuditPlan[]
   readonly tier: EffortTier | null
   readonly deadlineEscalations: number
+  /** Automatic Tier Escalations by arm, the replay's verdict on the round before each, and the recorded decline (#266); absent on an audit written before the counter. */
+  readonly tierEscalations?: TierEscalationRecord
+  /** The budget the Run's last plan holds: an escalation's re-armed budget when the event carried one (#266), else the tier table's. */
   readonly toolRoundBudget: number | null
   /** Rounds outside Finalization that requested at least one tool — the rounds the budget counts. */
   readonly toolRoundsUsed: number
@@ -609,6 +653,8 @@ export interface AuditPopulation {
   readonly unavailableLandings?: Readonly<Record<keyof UnavailableLandingRounds, number>>
   /** Consent dismissals, hand consent clicks, and blocks a hand consent click followed, over the attempts that count them (#263); absent when none does. */
   readonly consentWalls?: Readonly<ConsentWallCounts>
+  /** Automatic Tier Escalations by arm, replay verdicts on the round before each, and declines by reason, over the attempts that count them (#266); absent when none does. */
+  readonly tierEscalations?: Readonly<TierEscalationCounts>
   readonly inheritedRounds: number
   /** Merged Evidence Checkpoints over the attempts (#240): a floor. */
   readonly mergedCheckpoints: number
@@ -714,6 +760,8 @@ export interface AuditAggregate {
   readonly consentWallsByHunt?: Readonly<Record<string, Readonly<ConsentWallCounts>>>
   /** Blocked Actions by kind, post-block vision rounds and recovery rounds per hunt, over every set's attempts that count them (#264); absent when none does. */
   readonly blockedActionsByHunt?: Readonly<Record<string, Readonly<BlockedOrInertCounts>>>
+  /** Tier Escalations by arm and declines by reason per hunt, over every set's attempts that count them (#266); absent when none does. */
+  readonly tierEscalationsByHunt?: Readonly<Record<string, Readonly<TierEscalationCounts>>>
   readonly caveats: readonly string[]
   readonly note: string
 }
@@ -847,6 +895,117 @@ function blockedActionsByHuntSection(byHunt: Readonly<Record<string, Readonly<Bl
     ...Object.entries(byHunt).map(
       ([hunt, counted]) =>
         `| ${hunt} | ${counted.covered} | ${counted.notShown} | ${counted.blocked} | ${counted.postBlockVision} | ${counted.recoveryRounds} | ${counted.recovered} | ${counted.unrecovered} |`,
+    ),
+  ]
+}
+
+/** The Tier Escalations by arm, the replay's verdict on the round before each, and the declines by reason, as counts: over a population, or a hunt (#266). */
+export interface TierEscalationCounts {
+  readonly budget: number
+  readonly deadline: number
+  /** Escalations whose preceding round the replay found Progress in, and those it did not; the rest had no round or no judged call. */
+  readonly progressBefore: number
+  readonly noProgressBefore: number
+  /** Recorded declines by reason, in guard order; a reason outside the closed set counts under `other`. */
+  readonly declined: Readonly<Record<(typeof ESCALATION_DECLINE_REASONS)[number] | 'other', number>>
+  /** Attempts whose trace predates the decline record: their refusals count nowhere. */
+  readonly declinesNotRecorded: number
+}
+
+function emptyTierEscalationCounts(): TierEscalationCounts {
+  return { budget: 0, deadline: 0, progressBefore: 0, noProgressBefore: 0, declined: { no_rail: 0, no_tier_above: 0, once_spent: 0, hard_ceiling: 0, no_progress: 0, other: 0 }, declinesNotRecorded: 0 }
+}
+
+/** Add one attempt's escalations and decline to a running count. */
+function addTierEscalations(total: TierEscalationCounts, record: TierEscalationRecord): TierEscalationCounts {
+  const declined = { ...total.declined }
+  if (record.declined !== null) {
+    const reason = (ESCALATION_DECLINE_REASONS as readonly string[]).includes(record.declined.reason) ? (record.declined.reason as (typeof ESCALATION_DECLINE_REASONS)[number]) : 'other'
+    declined[reason] += 1
+  }
+  return {
+    budget: total.budget + record.fired.filter((escalation) => escalation.arm === 'budget').length,
+    deadline: total.deadline + record.fired.filter((escalation) => escalation.arm === 'deadline').length,
+    progressBefore: total.progressBefore + record.fired.filter((escalation) => escalation.progressBefore === true).length,
+    noProgressBefore: total.noProgressBefore + record.fired.filter((escalation) => escalation.progressBefore === false).length,
+    declined,
+    declinesNotRecorded: total.declinesNotRecorded + (record.declineRecorded ? 0 : 1),
+  }
+}
+
+/** The replay's Progress verdict on one round: any judged call that made Progress; null when the replay judged none. */
+function progressOfRound(round: AuditRound | undefined): boolean | null {
+  if (round === undefined) return null
+  const judged = round.calls.filter((call) => call.progress !== null)
+  return judged.length === 0 ? null : judged.some((call) => call.progress?.made === true)
+}
+
+/** One escalation as the per-Run block prints it: the arm, the round before, and the replay's word on it. */
+function firedText(escalation: AuditTierEscalation): string {
+  const before = escalation.before === null ? 'before any round' : `after round ${escalation.before}`
+  const replay = escalation.progressBefore === null ? 'replay: no judged call' : escalation.progressBefore ? 'replay: Progress' : 'replay: no Progress'
+  return `${escalation.arm} arm ${before} (${replay})`
+}
+
+function tierEscalationsText(record: TierEscalationRecord | undefined): string {
+  if (record === undefined) return 'Tier Escalations not counted'
+  const fired = record.fired.length === 0 ? 'none fired' : record.fired.map(firedText).join(', ')
+  const declined = !record.declineRecorded
+    ? `decline not recorded (a Run Trace below version ${ESCALATION_DECLINE_TRACE_VERSION})`
+    : record.declined === null
+      ? 'none declined'
+      : `declined at the ${record.declined.arm}: ${record.declined.reason}`
+  return `Tier Escalations: ${fired}; ${declined}`
+}
+
+/** The attempt line's parenthetical: how many fired, by arm; empty when none did. */
+function attemptEscalationsText(mechanical: AuditMechanical): string {
+  const budget = mechanical.tierEscalations?.fired.filter((escalation) => escalation.arm === 'budget').length ?? 0
+  const deadline = mechanical.tierEscalations === undefined ? mechanical.deadlineEscalations : mechanical.tierEscalations.fired.filter((escalation) => escalation.arm === 'deadline').length
+  const parts = [deadline > 0 ? `${deadline} at the deadline` : null, budget > 0 ? `${budget} at the budget` : null].filter((part): part is string => part !== null)
+  return parts.length === 0 ? '' : ` (${deadline + budget} Tier Escalation(s): ${parts.join(', ')})`
+}
+
+function declinedText(declined: TierEscalationCounts['declined']): string {
+  return [...ESCALATION_DECLINE_REASONS, 'other' as const].filter((reason) => declined[reason] > 0).map((reason) => `${reason} ${declined[reason]}`).join(', ') || 'none'
+}
+
+function populationTierEscalationsText(counted: TierEscalationCounts | undefined): string {
+  return counted === undefined
+    ? 'Tier Escalations not counted'
+    : `${counted.budget} budget-armed and ${counted.deadline} deadline-armed Tier Escalation(s) (replay found Progress before ${counted.progressBefore}, none before ${counted.noProgressBefore}), declined ${declinedText(counted.declined)}${counted.declinesNotRecorded > 0 ? ` (${counted.declinesNotRecorded} attempt(s) not recorded)` : ''}`
+}
+
+/**
+ * The Tier Escalations per hunt (#266, AC9), summed over the attempts that
+ * count them, so a zero budget-armed count is visible as a count rather
+ * than as silence; a hunt no attempt counted is left out. Undefined when
+ * none does.
+ */
+export function tierEscalationsByHuntOf(attempts: readonly AuditAttempt[]): Record<string, TierEscalationCounts> | undefined {
+  const byHunt: Record<string, TierEscalationCounts> = {}
+  let counted = false
+  for (const { mechanical } of attempts) {
+    if (mechanical.tierEscalations === undefined) continue
+    counted = true
+    byHunt[mechanical.huntId] = addTierEscalations(byHunt[mechanical.huntId] ?? emptyTierEscalationCounts(), mechanical.tierEscalations)
+  }
+  return counted ? byHunt : undefined
+}
+
+/** The per-hunt Tier Escalations as a section — heading, note and table; empty when nothing counted them. */
+function tierEscalationsByHuntSection(byHunt: Readonly<Record<string, Readonly<TierEscalationCounts>>> | undefined): string[] {
+  if (byHunt === undefined) return []
+  return [
+    '## Tier Escalations by hunt',
+    '',
+    'Automatic Tier Escalations by arm (ADR 0042, ADR 0063), the replay’s own Progress verdict on the round before each, and the declines a budget or deadline stop recorded, by reason in guard order. Reported, never gated.',
+    '',
+    `| hunt | budget arm | deadline arm | Progress before | no Progress before | ${ESCALATION_DECLINE_REASONS.map((reason) => `declined ${reason}`).join(' | ')} | not recorded |`,
+    `| --- | --- | --- | --- | --- | ${ESCALATION_DECLINE_REASONS.map(() => '---').join(' | ')} | --- |`,
+    ...Object.entries(byHunt).map(
+      ([hunt, counted]) =>
+        `| ${hunt} | ${counted.budget} | ${counted.deadline} | ${counted.progressBefore} | ${counted.noProgressBefore} | ${ESCALATION_DECLINE_REASONS.map((reason) => counted.declined[reason]).join(' | ')} | ${counted.declinesNotRecorded} |`,
     ),
   ]
 }
@@ -1006,6 +1165,16 @@ function landingFieldOf(record: TraceLine): NotFoundLanding | null {
 function unavailableFieldOf(record: TraceLine): UnavailableLanding | null {
   const field = record.unavailable
   return isRecord(field) && isString(field.basis) && isUnavailableBasis(field.basis) && isString(field.host) ? { basis: field.basis, host: field.host } : null
+}
+
+/** The decline the Run's own `finalization_entry` record carries (#266), or null; a Subagent's entry is not the Run's. */
+function recordedDeclineOf(records: readonly TraceLine[]): AuditEscalationDecline | null {
+  for (const record of records) {
+    if (record.kind !== 'finalization_entry' || record.agentId !== undefined) continue
+    const declined = record.declined
+    if (isRecord(declined) && isString(declined.arm) && isString(declined.declined)) return { arm: declined.arm, reason: declined.declined }
+  }
+  return null
 }
 
 function eventOf(record: TraceLine): Record<string, unknown> | null {
@@ -1841,15 +2010,25 @@ export function classifyAttempt(input: AuditTraceInput): AuditMechanical {
   const latencies = joinLatencies(raw, input.perfRecords)
 
   const plans: AuditPlan[] = []
+  // The automatic escalations in trace order, each with the orchestrator
+  // round that preceded it (#266): the `llm_round` records seen so far are
+  // the digest's numbering, since the digest numbers rounds by position.
+  const escalations: { arm: string; before: number | null }[] = []
+  let roundsSeen = 0
   let terminal: AuditMechanical['terminal'] = null
   let askedDeclared: number | null = null
   let askedStated: number | null = null
   let askedUnverified: number | null = null
   for (const record of records) {
     if (record.agentId !== undefined) continue
+    if (record.kind === 'llm_round') roundsSeen += 1
     const event = eventOf(record)
     if (event === null) continue
-    if (event.type === 'run_plan' && isString(event.effortTier)) plans.push({ tier: event.effortTier as EffortTier, source: isString(event.source) ? event.source : 'unknown' })
+    if (event.type === 'run_plan' && isString(event.effortTier)) {
+      const source = isString(event.source) ? event.source : 'unknown'
+      plans.push({ tier: event.effortTier as EffortTier, source, ...(isFiniteNumber(event.roundBudget) ? { roundBudget: event.roundBudget } : {}) })
+      if ((TIER_ESCALATION_ARMS as readonly string[]).includes(source)) escalations.push({ arm: source, before: roundsSeen === 0 ? null : roundsSeen })
+    }
     // The Asked Items (#250): the last model plan's declaration, and the
     // standings the final Answer carried — read from the events, never
     // from the Card's text.
@@ -2045,6 +2224,15 @@ export function classifyAttempt(input: AuditTraceInput): AuditMechanical {
   // ADR 0057), so a round that streamed nothing is told from one whose trace
   // could not have said.
   const firstTokenRecorded = traceAtLeast(FIRST_TOKEN_TRACE_VERSION)
+  // Pass seven, beside the rounds (#266, ADR 0063): the Run's automatic
+  // Tier Escalations by arm with the replay's verdict on the round before
+  // each, and the decline its budget or deadline stop recorded — where the
+  // trace is new enough to have recorded one at all.
+  const tierEscalations: TierEscalationRecord = {
+    fired: escalations.map((escalation) => ({ ...escalation, progressBefore: escalation.before === null ? null : progressOfRound(rounds[escalation.before - 1]) })),
+    declined: recordedDeclineOf(records),
+    declineRecorded: traceAtLeast(ESCALATION_DECLINE_TRACE_VERSION),
+  }
   const withoutHash: Omit<AuditMechanical, 'digestHash'> = {
     attemptId: attempt.attemptId,
     huntId: attempt.huntId,
@@ -2060,7 +2248,10 @@ export function classifyAttempt(input: AuditTraceInput): AuditMechanical {
     plans,
     tier,
     deadlineEscalations: plans.filter((plan) => plan.source === 'deadline').length,
-    toolRoundBudget: tier === null ? null : TIER_TOOL_ROUND_BUDGETS[tier],
+    tierEscalations,
+    // An escalation's re-armed budget when the event carried one (#266),
+    // else the table: the warnings and the ending count the same number.
+    toolRoundBudget: plans.at(-1)?.roundBudget ?? (tier === null ? null : TIER_TOOL_ROUND_BUDGETS[tier]),
     toolRoundsUsed,
     lastBudgetNotice,
     rounds,
@@ -2555,6 +2746,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
   let blockedOrInert: Record<keyof BlockedOrInertCounts, number> | undefined
   let unavailableLandings: Record<keyof UnavailableLandingRounds, number> | undefined
   let consentWalls: ConsentWallCounts | undefined
+  let tierEscalations: TierEscalationCounts | undefined
   let slipAnswers = 0
   let slipIds = 0
   let slipsNotRecorded = 0
@@ -2617,6 +2809,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
       unavailableLandings.followedBySearch += mechanical.unavailableLandings.followedBySearch.length
     }
     if (mechanical.consentWalls !== undefined) addConsentWalls((consentWalls ??= emptyConsentWallCounts()), mechanical.consentWalls)
+    if (mechanical.tierEscalations !== undefined) tierEscalations = addTierEscalations(tierEscalations ?? emptyTierEscalationCounts(), mechanical.tierEscalations)
     if (mechanical.identitySlips === null) slipsNotRecorded += 1
     else {
       slipAnswers += mechanical.identitySlips.answers
@@ -2680,6 +2873,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
     ...(blockedOrInert === undefined ? {} : { blockedOrInert }),
     ...(unavailableLandings === undefined ? {} : { unavailableLandings }),
     ...(consentWalls === undefined ? {} : { consentWalls }),
+    ...(tierEscalations === undefined ? {} : { tierEscalations }),
     inheritedRounds: inherited,
     mergedCheckpoints: merged,
     bundledCheckpoints: bundled,
@@ -2797,6 +2991,7 @@ export function buildAuditAggregate(sets: readonly AuditSetOutput[], generatedAt
   const followUp = aggregatePopulation('follow_up', 'revised_objective', ordered, (set) => set.populations.followUp)
   const consentWallsByHunt = consentWallsByHuntOf(ordered.flatMap((set) => set.attempts))
   const blockedActionsByHunt = blockedActionsByHuntOf(ordered.flatMap((set) => set.attempts))
+  const tierEscalationsByHunt = tierEscalationsByHuntOf(ordered.flatMap((set) => set.attempts))
   const rankedCauses = AUDIT_VERDICTS.map((verdict) => ({
     verdict,
     count: initial.verdictsPrimary[verdict] + followUp.verdictsPrimary[verdict],
@@ -2843,6 +3038,7 @@ export function buildAuditAggregate(sets: readonly AuditSetOutput[], generatedAt
       rankedCauses,
       ...(consentWallsByHunt === undefined ? {} : { consentWallsByHunt }),
       ...(blockedActionsByHunt === undefined ? {} : { blockedActionsByHunt }),
+      ...(tierEscalationsByHunt === undefined ? {} : { tierEscalationsByHunt }),
       caveats: ordered.flatMap((set) => set.caveats.map((caveat) => `${set.provenance.setId}: ${caveat}`)),
       note: AUDIT_COUNTS_NOTE,
     },
@@ -2939,7 +3135,7 @@ function populationSlipsText(population: AuditPopulation): string {
 function judgementLines(populations: readonly AuditPopulation[]): string[] {
   return populations.map(
     (population) =>
-      `- ${population.label}: ${population.offKeyRounds} Off-key round(s), ${population.searchLoopRounds} Search Loop round(s) by the reviewer (${population.mechanicalSearchRounds} by the streak rule, heads included: ${population.searchRoundsAtStreak2} at streak 2 or beyond, ${population.searchRoundsAtStreak3} at 3 or beyond; attempts by search source ${SEARCH_SOURCES.map((source) => `${source} ${population.searchSources[source]}`).join(', ')}; navigate searches by Search URL form ${searchFormsText(population.searchForms)}; ${populationBlockedOrInertText(population.blockedOrInert)}; ${populationUnavailableLandingsText(population.unavailableLandings)}; ${populationConsentWallsText(population.consentWalls)}), ` +
+      `- ${population.label}: ${population.offKeyRounds} Off-key round(s), ${population.searchLoopRounds} Search Loop round(s) by the reviewer (${population.mechanicalSearchRounds} by the streak rule, heads included: ${population.searchRoundsAtStreak2} at streak 2 or beyond, ${population.searchRoundsAtStreak3} at 3 or beyond; attempts by search source ${SEARCH_SOURCES.map((source) => `${source} ${population.searchSources[source]}`).join(', ')}; navigate searches by Search URL form ${searchFormsText(population.searchForms)}; ${populationBlockedOrInertText(population.blockedOrInert)}; ${populationUnavailableLandingsText(population.unavailableLandings)}; ${populationConsentWallsText(population.consentWalls)}; ${populationTierEscalationsText(population.tierEscalations)}), ` +
       `${population.inheritedRounds} inherited, ${population.rejectedCheckpoints} rejected Evidence Checkpoint(s), ${population.walledRounds} walled round(s), ${population.notFoundNavigates} navigate(s) landed on a Not-found Page (${population.notFoundOffKey} judged Off-key), ${population.rewrittenComposedAddresses ?? 0} Composed Address(es) rewritten into a site search (${population.rewrittenComposedAddressesOffKey ?? 0} judged Off-key, ${population.rewrittenShownAddresses ?? 'not counted'} to an address the Run was shown), ${population.subagentRounds} Subagent round(s), ` +
       `${population.mergedCheckpoints} merged Evidence Checkpoint(s) (a floor), ${population.heldPageRoundsWithoutProgress} Held Page round(s) without Progress, ${population.bundledCheckpoints} bundled checkpoint round(s), ${population.sameSourceUnsupportedRounds} same-source unsupported round(s), ${populationSlipsText(population)}, ` +
       `${population.malformedAnswers} Malformed Answer(s) (${population.answerRetries} retried), ` +
@@ -2960,7 +3156,7 @@ function attemptSection(attempt: AuditAttempt): string[] {
   const terminal = mechanical.terminal
   lines.push(
     `- ${mechanical.disposition}; ended ${terminal === null ? 'without a terminal' : `${terminal.outcome ?? '?'}${terminal.resolution ? ` / ${terminal.resolution}` : ''}${terminal.finalizationCause ? ` (${terminal.finalizationCause})` : ''}`}; ` +
-      `tier ${mechanical.tier ?? 'none'}${mechanical.deadlineEscalations > 0 ? ` (${mechanical.deadlineEscalations} Tier Escalation(s) at the deadline)` : ''}; ` +
+      `tier ${mechanical.tier ?? 'none'}${attemptEscalationsText(mechanical)}; ` +
       `${mechanical.toolRoundsUsed} of ${mechanical.toolRoundBudget ?? '?'} Tool Rounds used; ${mechanical.orchestratorRounds} orchestrator rounds, ${mechanical.counts.finalization} in Finalization; ` +
       `Run duration ${msOf(mechanical.runDurationMs)}; LLM stage ${mechanical.latency.llmMs === null ? 'unjoined' : `${mechanical.latency.llmMs} ms over ${mechanical.latency.joined} joined round(s)`}${mechanical.latency.unjoined > 0 ? ` (${mechanical.latency.unjoined} unjoined)` : ''}`,
   )
@@ -2991,6 +3187,7 @@ function attemptSection(attempt: AuditAttempt): string[] {
   lines.push(`- ${blockedOrInertText(mechanical.blockedOrInert)}`)
   lines.push(`- ${unavailableLandingsText(mechanical.unavailableLandings)}`)
   lines.push(`- ${consentWallsText(mechanical.consentWalls)}`)
+  lines.push(`- ${tierEscalationsText(mechanical.tierEscalations)}`)
   if (review === null) lines.push('- reviewer: not consulted')
   else if (judgement === null) lines.push(`- reviewer: no judgement — ${review.caveats.join('; ')}`)
   else {
@@ -3060,6 +3257,8 @@ export function formatAuditSet(audit: AuditSetOutput): string {
   if (consentByHunt.length > 0) lines.push('', ...consentByHunt)
   const blockedByHunt = blockedActionsByHuntSection(blockedActionsByHuntOf(audit.attempts))
   if (blockedByHunt.length > 0) lines.push('', ...blockedByHunt)
+  const escalationsByHunt = tierEscalationsByHuntSection(tierEscalationsByHuntOf(audit.attempts))
+  if (escalationsByHunt.length > 0) lines.push('', ...escalationsByHunt)
   if (audit.caveats.length > 0) {
     lines.push('')
     lines.push('## Caveats')
@@ -3121,6 +3320,8 @@ export function formatAuditAggregate(aggregate: AuditAggregate): string {
   if (consentByHunt.length > 0) lines.push(...consentByHunt, '')
   const blockedByHunt = blockedActionsByHuntSection(aggregate.blockedActionsByHunt)
   if (blockedByHunt.length > 0) lines.push(...blockedByHunt, '')
+  const escalationsByHunt = tierEscalationsByHuntSection(aggregate.tierEscalationsByHunt)
+  if (escalationsByHunt.length > 0) lines.push(...escalationsByHunt, '')
   lines.push('## Per set')
   lines.push('')
   for (const population of [aggregate.populations.initial, aggregate.populations.followUp]) {

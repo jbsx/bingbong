@@ -3,7 +3,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { FINALIZATION_REASONING_EFFORT as SOURCE_FINALIZATION_EFFORT, TIER_REASONING_EFFORT as SOURCE_TIER_EFFORT, TIER_TOOL_ROUND_BUDGETS as SOURCE_BUDGETS, budgetWarningMessage, finalizeInstruction, notExecuted } from '../../src/core/pipeline/effortEpoch'
+import { FINALIZATION_REASONING_EFFORT as SOURCE_FINALIZATION_EFFORT, TIER_REASONING_EFFORT as SOURCE_TIER_EFFORT, TIER_TOOL_ROUND_BUDGETS as SOURCE_BUDGETS, ESCALATION_DECLINE_REASONS as SOURCE_DECLINE_REASONS, budgetWarningMessage, finalizeInstruction, notExecuted } from '../../src/core/pipeline/effortEpoch'
 import { SCROLL_END_OF_PAGE } from '../../src/core/browser/scrollDelta'
 import { CONSENT_LABEL_RE, consentDismissalLine, consentRetryNote } from '../../src/core/browser/dialogPolicy'
 import { blockedActionHead } from '../../src/core/browser/actionOutcome'
@@ -20,6 +20,7 @@ import {
   CONSENT_LABEL_PATTERN,
   JUDGEMENT_SCHEMA,
   END_OF_PAGE_MARK,
+  ESCALATION_DECLINE_REASONS,
   FINALIZATION_REASONING_EFFORT,
   FINALIZE_INSTRUCTION_MARK,
   NO_PROGRESS_NOTICE_MARK,
@@ -51,6 +52,7 @@ import {
   withholdKeyText,
   type AuditAttempt,
   type AuditJudgement,
+  type AuditMechanical,
   type AuditProvenance,
   type AuditReview,
   type AuditRound,
@@ -2148,5 +2150,111 @@ describe('the consecutive-search rule recounted on the committed fix-257 audits 
     expect(replayed.filter((round) => round.round >= 17 && round.round <= 19).map((round) => round.calls.at(-1)!.search!.rewords)).toEqual([false, true, false])
     // What was judged stays as judged: the digest's kinds and reasons are untouched.
     expect(replayed.map((round) => `${round.kind}: ${round.reason}`)).toEqual(voyager.rounds.map((round) => `${round.kind}: ${round.reason}`))
+  })
+})
+
+describe('Tier Escalations by arm and the recorded decline (#266, ADR 0063)', () => {
+  const LOOKUP_PLAN = { ...identity, at: T0 + 900, kind: 'pipeline_event', event: { type: 'run_plan', turnId: TURN, objective: 'find it', headline: 'h', effortTier: 'lookup', source: 'model', at: T0 + 900 } }
+  const ESCALATION = {
+    ...identity,
+    at: T0 + 13_400,
+    kind: 'pipeline_event',
+    event: { type: 'run_plan', turnId: TURN, objective: 'find it', headline: 'h', effortTier: 'investigation', source: 'budget', escalationReason: 'fixed', roundBudget: 19, at: T0 + 13_400 },
+  }
+  const declinedEntry = (arm: string, reason: string, v = 5): Record<string, unknown> => ({
+    ...identity,
+    v,
+    at: T0 + 15_500,
+    kind: 'finalization_entry',
+    cause: arm === 'budget' ? 'budget_exhausted' : 'deadline_reached',
+    bookkeeping: 'kept',
+    reason: 'something new',
+    declined: { arm, declined: reason },
+  })
+  /**
+   * The fixture in a real trace's order: the model's Lookup plan first, then
+   * the escalation spliced in after the retried round 12 — the thirteenth
+   * digest round — as the loop top yields it before round 13's request.
+   */
+  const escalated = (escalation: Record<string, unknown>, extra: readonly Record<string, unknown>[] = []): TraceRecord[] => {
+    const records: Record<string, unknown>[] = [LOOKUP_PLAN, ...(traceOf(ROUNDS, [...EXTRA.slice(1), ...extra]) as unknown as Record<string, unknown>[])]
+    const round13 = records.findIndex((record) => record.kind === 'reasoning' && record.round === 13)
+    records.splice(round13, 0, escalation)
+    return records as unknown as TraceRecord[]
+  }
+  const attemptOf = (mechanical: AuditMechanical): AuditAttempt => ({ mechanical, review: null, countsAfterOverrules: mechanical.counts })
+  const atVersion = (records: readonly TraceRecord[], v: number): TraceRecord[] => records.map((record) => ({ ...record, v })) as unknown as TraceRecord[]
+
+  it('pins the decline reasons and the arms to the source', () => {
+    expect(ESCALATION_DECLINE_REASONS).toEqual(SOURCE_DECLINE_REASONS)
+  })
+
+  it('reads each escalation with the digest round before it, the replay’s verdict on that round, and the re-armed budget', () => {
+    const mechanical = classifyAttempt(inputOf({ traceRecords: escalated(ESCALATION, [declinedEntry('budget', 'no_progress')]) }))
+
+    expect(mechanical.plans.at(-1)).toEqual({ tier: 'investigation', source: 'budget', roundBudget: 19 })
+    // The audit reads the re-armed budget, not the Investigation's 24.
+    expect(mechanical.toolRoundBudget).toBe(19)
+    expect(mechanical.deadlineEscalations).toBe(0)
+    expect(mechanical.tierEscalations).toEqual({
+      fired: [{ arm: 'budget', before: 13, progressBefore: true }],
+      declined: { arm: 'budget', reason: 'no_progress' },
+      declineRecorded: true,
+    })
+    // The round before is the retried round 12's navigate to a fresh page.
+    expect(mechanical.rounds[12]!.calls.some((call) => call.progress?.made === true)).toBe(true)
+  })
+
+  it('reads a version-5 trace with no decline as none, and an older trace as not recorded', () => {
+    const none = classifyAttempt(inputOf({ traceRecords: atVersion(traceOf(ROUNDS, EXTRA), 5) }))
+    const old = classifyAttempt(inputOf())
+
+    expect(none.tierEscalations).toEqual({ fired: [], declined: null, declineRecorded: true })
+    expect(old.tierEscalations).toEqual({ fired: [], declined: null, declineRecorded: false })
+    // A Subagent's entry is never the Run's decline.
+    const worker = classifyAttempt(inputOf({ traceRecords: atVersion(traceOf(ROUNDS, [...EXTRA, { ...declinedEntry('budget', 'no_rail'), agentId: 'a-1' }]), 5) }))
+    expect(worker.tierEscalations?.declined).toBeNull()
+    // Beside the rounds: no class, reason or cached judgement moves.
+    expect(none.rounds).toEqual(old.rounds)
+    expect(none.digestHash).toBe(old.digestHash)
+  })
+
+  it('counts both arms per population and per hunt, prints the attempt line, the per-Run block and the table', () => {
+    const fired = classifyAttempt(inputOf({ traceRecords: escalated(ESCALATION, [declinedEntry('budget', 'no_progress')]) }))
+    const old = classifyAttempt(inputOf())
+    const set = buildAuditSet(provenanceOf(), [attemptOf(fired), attemptOf(old)], [])
+
+    expect(set.populations.initial.tierEscalations).toEqual({
+      budget: 1,
+      deadline: 0,
+      progressBefore: 1,
+      noProgressBefore: 0,
+      declined: { no_rail: 0, no_tier_above: 0, once_spent: 0, hard_ceiling: 0, no_progress: 1, other: 0 },
+      declinesNotRecorded: 1,
+    })
+    const markdown = formatAuditSet(set)
+    expect(markdown).toMatch(/tier investigation \(1 Tier Escalation\(s\): 1 at the budget\); \d+ of 19 Tool Rounds used/)
+    expect(markdown).toContain('- Tier Escalations: budget arm after round 13 (replay: Progress); declined at the budget: no_progress')
+    expect(markdown).toContain('- Tier Escalations: none fired; decline not recorded (a Run Trace below version 5)')
+    expect(markdown).toContain('1 budget-armed and 0 deadline-armed Tier Escalation(s) (replay found Progress before 1, none before 0), declined no_progress 1 (1 attempt(s) not recorded)')
+    expect(markdown).toContain('## Tier Escalations by hunt')
+    expect(markdown).toContain('| hunt-x | 1 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 1 | 1 |')
+
+    const other = buildAuditSet(provenanceOf({ setId: 'set-2', createdAt: '2026-09-12T18:00:00.000Z' }), [attemptOf(fired)], [])
+    const aggregate = buildAuditAggregate([set, other], '2026-09-14T11:00:00.000Z')
+    if (!aggregate.ok) throw new Error(aggregate.errors.join('; '))
+    expect(aggregate.value.tierEscalationsByHunt).toEqual({ 'hunt-x': expect.objectContaining({ budget: 2, declinesNotRecorded: 1 }) })
+    expect(formatAuditAggregate(aggregate.value)).toContain('| hunt-x | 2 | 0 | 2 | 0 | 0 | 0 | 0 | 0 | 2 | 1 |')
+  })
+
+  it('still counts a deadline-armed escalation on a trace that carried no budget', () => {
+    const { roundBudget: _unused, ...withoutBudget } = ESCALATION.event
+    const mechanical = classifyAttempt(inputOf({ traceRecords: escalated({ ...ESCALATION, event: { ...withoutBudget, source: 'deadline' } }) }))
+
+    expect(mechanical.deadlineEscalations).toBe(1)
+    expect(mechanical.plans.at(-1)).toEqual({ tier: 'investigation', source: 'deadline' })
+    expect(mechanical.toolRoundBudget).toBe(24)
+    expect(mechanical.tierEscalations?.fired).toEqual([{ arm: 'deadline', before: 13, progressBefore: true }])
+    expect(formatAuditSet(buildAuditSet(provenanceOf(), [attemptOf(mechanical)], []))).toContain('tier investigation (1 Tier Escalation(s): 1 at the deadline)')
   })
 })

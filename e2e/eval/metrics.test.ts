@@ -429,6 +429,7 @@ describe('aggregateScenarios', () => {
     secondsPerLlmRound: null,
     repeatedActions: 0,
     deadlineTierEscalations: 0,
+    budgetTierEscalations: 0,
     outcome: 'done' as const,
     effortTier: 'lookup' as const,
     resolution: null,

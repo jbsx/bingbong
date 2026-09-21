@@ -25,6 +25,7 @@ function metrics(overrides: Partial<ScenarioMetrics> = {}): ScenarioMetrics {
     secondsPerLlmRound: null,
     repeatedActions: 0,
     deadlineTierEscalations: 0,
+    budgetTierEscalations: 0,
     outcome: 'done',
     resolution: null,
     finalizationCause: null,
