@@ -38,6 +38,7 @@ import { emitTurnSummary } from '../perf/turnSummary'
 import type { SettledPageState } from './progressFingerprints'
 import type { SnapshotRef } from '../browser/snapshot'
 import { createToolRoundExecutor, type ToolRoundExecutor } from './toolRound'
+import { shownTextsOf } from './unseenPhraseRail'
 import {
   createEffortEpoch,
   tierEscalationDeclineOf,
@@ -1361,7 +1362,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           toolContext,
           decisions,
           interrupts,
-          capabilities: { searchLoopRail: true, verificationRail: true, noProgressRail: true, composedAddressRail: true, perCallGate: true },
+          capabilities: { searchLoopRail: true, verificationRail: true, noProgressRail: true, composedAddressRail: true, unseenPhraseRail: true, perCallGate: true },
           intercept: (call) => interceptCall(call),
           // A successful Session Reset (#99) discards the rest of the run.
           terminalResult: (call, outcome) => outcome.ok && toolsByName.get(call.name)?.sessionReset === true,
@@ -1376,6 +1377,10 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           // source recorded mid-Run counts. A Session that ended offers none.
           evidenceSourceUrls: () =>
             evidenceSession?.()?.store.snapshot().observations.flatMap((observation) => observation.references.map((reference) => reference.url)) ?? [],
+          // The Unseen Phrase rail's sight (#267, ADR 0064): this Run's own
+          // ledger, every record — the command, every read and outcome
+          // failed or not, Steering and Subagent Reports — read per search.
+          shownTexts: () => shownTextsOf(ledger.snapshot()),
           // The verification rail's Session seams (#212, ADR 0041). All
           // four resolve per call against the live store rather than
           // against admission: a Candidate this Run has only just

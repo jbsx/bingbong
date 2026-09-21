@@ -31,6 +31,7 @@ import { createNotices } from '../pipeline/notices'
 import type { RunDecisions } from '../pipeline/decisions'
 import type { RunInterrupts } from '../pipeline/interrupts'
 import { createToolRoundExecutor, unknownToolError, type FinalizationWording } from '../pipeline/toolRound'
+import { shownTextsOf, type ShownText } from '../pipeline/unseenPhraseRail'
 import type { HeldObservationsLookup } from '../session/sessionEvidence'
 import type { FinalizationCause } from '../session/runJournal'
 import { describeToolAction } from '../pipeline/toolCallDisplay'
@@ -618,6 +619,7 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
     ...(options.memory ?? []).flatMap((entry) => entry.references.map((reference) => reference.url)),
     ...(options.task.match(/https?:\/\/[^\s"'<>)\]]+/g) ?? []),
   ]
+  const shownByParent: readonly ShownText[] = [{ text: options.task }, ...(options.memory ?? []).map((entry) => ({ text: JSON.stringify(entry) }))]
   // The Tool Round executor in Subagent configuration (#158/#159): the
   // gate order, the Blocker gate with the ASK_USER relay escalation, the
   // Subagent vision budget, the Observation ledger sink, and the Notices
@@ -635,7 +637,7 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
     toolContext,
     decisions,
     interrupts,
-    capabilities: { searchLoopRail: true, verificationRail: true, noProgressRail: true, composedAddressRail: true, perCallGate: true },
+    capabilities: { searchLoopRail: true, verificationRail: true, noProgressRail: true, composedAddressRail: true, unseenPhraseRail: true, perCallGate: true },
     terminalResult: (_call, outcome) => askEscalation(outcome) !== null,
     blockerEscalation: subagentBlockerEscalation,
     finalizationWording: workerFinalizationWording,
@@ -647,6 +649,12 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
     ...(deps.linkHrefs ? { linkHrefs: deps.linkHrefs } : {}),
     ...(deps.heldObservations ? { heldObservations: deps.heldObservations } : {}),
     evidenceSourceUrls: () => offeredByParent,
+    // The Unseen Phrase rail's sight (#267, ADR 0064): the worker's brief
+    // ahead of its own ledger — the brief plays the command's part, so a
+    // phrase quoted from it is never unseen — and the Memory Entries it was
+    // handed, since the orchestrator showed it those. The brief is never
+    // recorded into the ledger, whose frozen snapshot rides the report.
+    shownTexts: () => [...shownByParent, ...shownTextsOf(workerLedger.snapshot())],
   })
 
   // The worker's reasoning collector (#183): one per worker, only when the

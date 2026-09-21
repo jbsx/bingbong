@@ -11,6 +11,7 @@ import { traceSearchObservation, traceVisionBudget } from './visionSeam'
 import { createBlockerGate, orchestratorBlockerEscalation, type BlockerEscalation } from './blockerGate'
 import { createSearchLoopRail } from './searchLoopRail'
 import { createComposedAddressRail, withComposedAddressRewrite } from './composedAddressRail'
+import { createUnseenPhraseRail, withUnseenPhraseRewrite, type ShownText } from './unseenPhraseRail'
 import { createVerificationRail, verificationRouteOf, type VerificationGate, type VerificationRailDeps } from './verificationRail'
 import type { VerificationRoute } from '../session/verificationAttempts'
 import { createNoProgressRail } from './noProgressRail'
@@ -31,9 +32,9 @@ import { heldPageNotice, landedOnAnotherPage } from './heldPage'
 //
 // Vocabulary (CONTEXT.md, Tool Round): one model response's tool calls,
 // executed in order. Every round crosses the same seams in a fixed order —
-// the Composed Address rewrite, Blocker gate, no-progress gate, risk
-// assessment and Confirmation, the verification gate, the Vision Budget, the
-// search-loop gate, execution, then classify → Observation ledger → Blocker
+// the Composed Address rewrite, the Unseen Phrase rewrite, Blocker gate,
+// no-progress gate, risk assessment and Confirmation, the verification gate,
+// the Vision Budget, the search-loop gate, execution, then classify → Observation ledger → Blocker
 // observe → the Blocker trip → search-loop observe → Composed Address observe
 // → verification observe → no-progress observe → the no-Progress trip → the
 // Held Page landing → Notices. That
@@ -80,6 +81,13 @@ export interface ToolRoundCapabilities {
    * trips nothing.
    */
   readonly composedAddressRail: boolean
+  /**
+   * The Unseen Phrase rail (#267, ADR 0064): a search quoting a phrase the
+   * Run was never shown runs unquoted. Rewrites the executed call after the
+   * Composed Address rewrite, ahead of every gate, so every gate and rail
+   * sees the search that runs. It observes nothing and trips nothing.
+   */
+  readonly unseenPhraseRail: boolean
   /**
    * The per-call gate (#135/#199): the epoch's boundaries checked before
    * every call in the round begins — its deadline, and for a Subagent its
@@ -244,6 +252,14 @@ export interface ToolRoundConfig {
    * Session — offers only what this Run was shown.
    */
   readonly evidenceSourceUrls?: () => readonly string[]
+  /**
+   * Everything this caller's model has been shown (#267, ADR 0064): the
+   * Unseen Phrase rail's sight, read per search. The Run's Observation
+   * ledger, every record; a worker's brief ahead of its own ledger. Absent
+   * — a caller with no ledger — the rail sees nothing shown and unquotes
+   * every span; a caller that runs the rail hands one in.
+   */
+  readonly shownTexts?: () => readonly ShownText[]
   /** Advisory bookkeeping only — a throwing tracer never fails a round. */
   readonly diagnostics?: {
     readonly tracer?: PerfTracer
@@ -353,6 +369,12 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
   const verificationRail = capabilities.verificationRail ? createVerificationRail(config.verification ?? {}) : null
   const composedAddressRail = capabilities.composedAddressRail
     ? createComposedAddressRail(config.evidenceSourceUrls ? { evidenceSourceUrls: config.evidenceSourceUrls } : {})
+    : null
+  const unseenPhraseRail = capabilities.unseenPhraseRail
+    ? createUnseenPhraseRail({
+        shownTexts: config.shownTexts ?? (() => []),
+        ...(config.describeRef ? { describeRef: config.describeRef } : {}),
+      })
     : null
   /**
    * The tab's whole link hrefs for the Composed Address rail (#258), or
@@ -661,7 +683,12 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
       // search to all of them — while the model's call keeps its place in the
       // round, and the result it reads opens with the line saying what ran.
       const rewrite = intercepted === null && !closed ? (composedAddressRail?.rewrite(call) ?? null) : null
-      const executedCall = rewrite?.call ?? call
+      // The Unseen Phrase rewrite (#267, ADR 0064): a search quoting a phrase
+      // this run was never shown runs unquoted. Judged on the call that runs
+      // — a Composed Address rewritten into a search is judged as that search
+      // — under the same conditions, so the gates below see the terms that run.
+      const unquoted = intercepted === null && !closed && unseenPhraseRail !== null ? await unseenPhraseRail.rewrite(rewrite?.call ?? call) : null
+      const executedCall = unquoted?.call ?? rewrite?.call ?? call
       const outcome: ToolResultOutcome =
         intercepted !== null
           ? intercepted
@@ -762,8 +789,11 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
       // not already over — judged after the no-Progress trip above, so the
       // tripping result never carries a plan nudge or budget warning.
       const usefulWork = outcome.ok && typeof outcome.result === 'string' && intercepted === null && !isInFinalization()
-      // A rewritten call's line opens what the model reads (#255), ahead of every Notice.
-      const readOutcome = rewrite === null ? outcome : withComposedAddressRewrite(outcome, rewrite)
+      // A rewritten call's line opens what the model reads (#255), ahead of
+      // every Notice; when both rewrites fired, the address line comes first
+      // and the Unseen Phrase head follows it (#267).
+      const unquotedOutcome = unquoted === null ? outcome : withUnseenPhraseRewrite(outcome, unquoted)
+      const readOutcome = rewrite === null ? unquotedOutcome : withComposedAddressRewrite(unquotedOutcome, rewrite)
       const modelFacingOutcome = notices.attach(readOutcome, { usefulWork })
       results.push({ call, outcome: modelFacingOutcome, observationId: observedRecord?.id ?? null })
       yield {
@@ -773,6 +803,7 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
         ok: modelFacingOutcome.ok,
         ...(modelFacingOutcome.ok ? { result: modelFacingOutcome.result } : { error: modelFacingOutcome.error }),
         ...(rewrite !== null ? { rewritten: { site: rewrite.site, query: rewrite.query } } : {}),
+        ...(unquoted !== null ? { unquoted: { phrases: unquoted.phrases, query: unquoted.query } } : {}),
         at: clock.now(),
       }
       // The result ended the round: it is the last thing the round emits.

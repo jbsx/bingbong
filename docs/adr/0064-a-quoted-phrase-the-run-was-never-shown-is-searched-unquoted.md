@@ -128,3 +128,28 @@ principle that what the Run was shown is the one ground it may act on.
     carries both rewrite kinds, since the Composed Address rewrites had
     none.
 
+- 2026-09-21, implemented (#267, `unseenPhraseRail.ts`). Three calls the
+  note above left to the code:
+  - **Which lines of a results observation are echoes.** A line carrying
+    the whole query — folded, and with double quotes removed on both
+    sides, since an engine may print the query unquoted — is an echo
+    wherever it stands. A line carrying only a quoted span of the query is
+    an echo only where the engine speaks: the page title (a `title="…"`
+    line or the `# … — url` header) and a ref line carrying `value="…"`.
+    A result's own line — a link ref, a snippet under `page text:` — that
+    carries a span without the whole query is sight, because a result
+    printing the phrase is the strongest evidence the phrase is real; the
+    accepted edge stays exactly as stated (a result line that repeats a
+    lone quoted phrase carries the whole query and is dropped). A `url=`
+    line is also read percent-decoded, so the query's own address never
+    counts as sight for a one-word span.
+  - **A worker's sight ahead of its ledger** is its brief and the Memory
+    Entries it was handed, each as the text the request carried; the
+    Composed Address rail already offers those entries' sources for the
+    same reason.
+  - **The Round Audit keeps a refused unquoted search in the Failed
+    rounds.** ADR 0055's rewrite turns an address into a search, so a
+    refusal of that search is not the model's own call and the round is
+    never Failed; this gate leaves a search a search, so a refusal (the
+    Search Loop cap) is the model's, and the round reads as it always did,
+    with the `unquoted` marker beside it.

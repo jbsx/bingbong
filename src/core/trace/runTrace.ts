@@ -19,6 +19,7 @@ import type { NotFoundLanding } from '../browser/notFoundPage'
 import type { UnavailableLanding } from '../browser/unavailablePage'
 import type { ComposedAddressRewriteStamp } from '../pipeline/composedAddressRail'
 import type { TierEscalationDecline } from '../pipeline/effortEpoch'
+import type { UnseenPhraseRewriteStamp } from '../pipeline/unseenPhraseRail'
 import type { AnswerShape } from '../agent/answerContract'
 import type { AgentRole } from '../agent/modelRouting'
 import type { ReasoningEffort, TokenUsage } from '../ports/llm'
@@ -402,6 +403,13 @@ export interface PipelineEventTraceEvent {
    * address. Absent on every other result and kind.
    */
   readonly rewritten?: ComposedAddressRewriteStamp
+  /**
+   * The Unseen Phrase rewrite a `tool_result` opens with (#267, ADR 0064):
+   * the quoted spans the Run was never shown and the terms that ran unquoted
+   * — the `tool_call` beside it keeps the terms as written. Absent on every
+   * other result and kind.
+   */
+  readonly unquoted?: UnseenPhraseRewriteStamp
   /**
    * The delegated worker whose Tool Round published this (#185); absent on
    * the Run's own stream. A worker's rounds never reach the main stream —

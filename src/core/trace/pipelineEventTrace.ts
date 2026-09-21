@@ -60,8 +60,10 @@ export function pipelineEventTraceBody(event: PipelineEvent, agentId?: string): 
   // The Composed Address rewrite (#255, ADR 0055), from the Tool Round's own
   // stamp on the event — a failed search included — beside the landing.
   const rewritten = event.rewritten !== undefined ? { rewritten: event.rewritten } : {}
+  // Its sibling the Unseen Phrase rewrite (#267, ADR 0064), read the same way.
+  const unquoted = event.unquoted !== undefined ? { unquoted: event.unquoted } : {}
   if (typeof event.result !== 'string') {
-    return { kind: 'pipeline_event', event, ...rewritten, ...stamped }
+    return { kind: 'pipeline_event', event, ...rewritten, ...unquoted, ...stamped }
   }
   const whole = TRACE_WHOLE_RESULT_TOOLS.has(event.name)
   // The landing is read off the whole result (#239, ADR 0050): the marker
@@ -76,6 +78,7 @@ export function pipelineEventTraceBody(event: PipelineEvent, agentId?: string): 
     ...(notFound !== null ? { notFound } : {}),
     ...(unavailable !== null ? { unavailable } : {}),
     ...rewritten,
+    ...unquoted,
     ...stamped,
   }
 }

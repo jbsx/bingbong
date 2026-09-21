@@ -58,6 +58,7 @@ import {
   type AuditReview,
   type AuditRound,
   type AuditTraceInput,
+  rewritesByHuntOf,
 } from './audit.ts'
 import * as auditModule from './audit.ts'
 import type { LiveGradeEntry, LiveKeyTask } from './grades.ts'
@@ -106,6 +107,8 @@ interface RoundSpec {
     unavailable?: { basis: string; host: string }
     /** The Composed Address rewrite the Run Trace records on the result (#255, ADR 0055). */
     rewritten?: { site: string; query: string }
+    /** The Unseen Phrase rewrite the Run Trace records on the result (#267, ADR 0064). */
+    unquoted?: { phrases: string[]; query: string }
   }[]
   readonly reasoning?: string
   /** How long the attempt waited for its first fragment (#256, ADR 0057) — a trace written after the field was kept. */
@@ -158,6 +161,7 @@ function traceOf(rounds: readonly RoundSpec[], extra: readonly Record<string, un
         ...(call.notFound !== undefined ? { notFound: call.notFound } : {}),
         ...(call.unavailable !== undefined ? { unavailable: call.unavailable } : {}),
         ...(call.rewritten !== undefined ? { rewritten: call.rewritten } : {}),
+        ...(call.unquoted !== undefined ? { unquoted: call.unquoted } : {}),
       })
     }
   }
@@ -1535,6 +1539,75 @@ describe('Rewritten navigates to a shown address (#258)', () => {
       return audit.attempts.reduce((total, attempt) => total + (attempt.mechanical.rewrittenShownAddresses?.length ?? 0), 0)
     })
     expect(perPass.reduce((total, count) => total + count, 0)).toBe(4)
+  })
+})
+
+describe('Unseen Phrase rewrites (#267, ADR 0064)', () => {
+  const COMPOSED = 'https://www.nasa.gov/voyager-record'
+  const DEAD = 'https://www.nasa.gov/voyager-2013-09'
+  const SITE_SEARCH = 'https://duckduckgo.com/?q=voyager%20record%20site%3Anasa.gov'
+  const QUOTED = 'https://duckduckgo.com/?q=%22Voyager+1+Has+Not+Yet+Left+the+Solar+System%22+NASA'
+  const UNQUOTED = 'https://duckduckgo.com/?q=Voyager+1+Has+Not+Yet+Left+the+Solar+System+NASA'
+  const HEAD = 'Rewritten — "Voyager 1 Has Not Yet Left the Solar System" appears in nothing this run was shown, so it ran unquoted: Voyager 1 Has Not Yet Left the Solar System NASA. Quote only a phrase you were shown — on a page, in the user’s words or in a report.'
+  const STAMP = { phrases: ['Voyager 1 Has Not Yet Left the Solar System'], query: 'Voyager 1 Has Not Yet Left the Solar System NASA' }
+  const ADDRESS_LINE = `Rewritten — nasa.gov already answered not found for a composed address this run, so ${COMPOSED} was not opened; it ran as a search of the site instead: "voyager record site:nasa.gov". Open a result you were shown rather than composing another address.`
+  const ROUNDS: RoundSpec[] = [
+    { round: 1, at: 1_000, calls: [{ name: 'navigate', args: { url: DEAD }, result: `${PAGE('Page Not Found - NASA', DEAD, 'dead0001')}\nNOT-FOUND:404 www.nasa.gov\nadvice`, notFound: { basis: '404', host: 'www.nasa.gov' } }] },
+    { round: 2, at: 2_000, calls: [{ name: 'navigate', args: { url: QUOTED }, result: `${HEAD}\n${PAGE('DuckDuckGo', UNQUOTED, 'bbbb0001')}`, unquoted: STAMP }] },
+    { round: 3, at: 3_000, calls: [{ name: 'navigate', args: { url: COMPOSED }, result: `${ADDRESS_LINE}\n${PAGE('DuckDuckGo', SITE_SEARCH, 'bbbb0002')}`, rewritten: { site: 'nasa.gov', query: 'voyager record site:nasa.gov' } }] },
+    // The head alone, with no stamp: a trace the counter never reads.
+    { round: 4, at: 4_000, calls: [{ name: 'navigate', args: { url: QUOTED }, result: `${HEAD}\n${PAGE('DuckDuckGo', UNQUOTED, 'bbbb0003')}` }] },
+    { round: 5, at: 5_000, calls: [{ name: 'navigate', args: { url: QUOTED }, ok: false, error: `${HEAD}\nSearch loop limit reached`, unquoted: STAMP }] },
+  ]
+
+  it('reads the stamp into an unquoted call field, never the head, and counts the rounds beside the Composed Address rewrites', () => {
+    const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, EXTRA) }))
+    const [, unquoted, composed, headOnly, failed] = mechanical.rounds
+
+    expect(unquoted!.calls[0]).toMatchObject({ args: { url: QUOTED }, refused: false, unquoted: STAMP.phrases })
+    expect(unquoted!.calls[0]).not.toHaveProperty('rewritten')
+    expect(composed!.calls[0]).toMatchObject({ rewritten: 'voyager record site:nasa.gov' })
+    expect(composed!.calls[0]).not.toHaveProperty('unquoted')
+    expect(headOnly!.calls[0]).not.toHaveProperty('unquoted')
+    expect(failed!.calls[0]).toMatchObject({ unquoted: STAMP.phrases })
+    expect(mechanical.unseenPhraseRewrites).toEqual([2, 5])
+    expect(mechanical.rewrittenComposedAddresses).toEqual([3])
+  })
+
+  it('crosses the rewrites with Off-key, sums them in the population, and reports both kinds by hunt', () => {
+    const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, EXTRA) }))
+    const judged: AuditJudgement = {
+      searchLoops: [],
+      offKey: [{ round: 2, url: UNQUOTED, reason: 'the invented title, unquoted, still found the March update' }],
+      overrules: [],
+      stoppedEarly: { value: false, reason: 'it answered', checks: [] },
+      answerOmitted: { value: false, reason: 'fact-02 was on no page it read', checks: [] },
+      verdict: { primary: 'rounds_wasted', primaryReason: 'a guessed title', secondary: null, secondaryReason: null },
+      flags: [],
+    }
+    expect(validateJudgement(judged, mechanical).ok).toBe(true)
+    const review: AuditReview = { judgement: judged, caveats: [], model: 'reviewer', served: null, effort: 'high', promptVersion: '1', digestHash: mechanical.digestHash, costUsd: null, durationMs: null, judgedAt: null }
+    const set = buildAuditSet(provenanceOf(), [{ mechanical, review, countsAfterOverrules: countsAfterOverrulesOf(mechanical, judged) }], [])
+
+    expect(set.populations.initial).toMatchObject({ unseenPhraseRewrites: 2, unseenPhraseRewritesOffKey: 1, rewrittenComposedAddresses: 1, rewrittenComposedAddressesOffKey: 0 })
+    expect(rewritesByHuntOf(set.attempts)).toEqual({ [mechanical.huntId]: { composedAddresses: 1, unseenPhrases: 2 } })
+    const markdown = formatAuditSet(set)
+    expect(markdown).toContain('- searches that ran with an Unseen Phrase unquoted: 2 (round 2, 5)')
+    expect(markdown).toContain('- of those, judged Off-key by the reviewer: 1')
+    expect(markdown).toContain('2 search(es) ran with an Unseen Phrase unquoted (1 judged Off-key)')
+    expect(markdown).toContain('[unquoted, off-key, loop head by the streak rule]')
+    expect(markdown).toContain('every call was refused (navigate) [unquoted]')
+    expect(markdown).toContain('## Rewrites by hunt')
+    expect(markdown).toContain(`| ${mechanical.huntId} | 1 | 2 |`)
+
+    const unjudged = formatAuditSet(buildAuditSet(provenanceOf(), [{ mechanical, review: null, countsAfterOverrules: mechanical.counts }], []))
+    expect(unjudged).toContain('- of those, judged Off-key by the reviewer: not judged')
+  })
+
+  it('leaves the by-hunt table out for an audit that counted neither kind', () => {
+    const before = { ...classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, EXTRA) })) } as AuditMechanical & { unseenPhraseRewrites?: number[] }
+    delete before.unseenPhraseRewrites
+    expect(rewritesByHuntOf([{ mechanical: before, review: null, countsAfterOverrules: before.counts }])).toBeUndefined()
   })
 })
 

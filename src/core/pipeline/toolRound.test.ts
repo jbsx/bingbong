@@ -11,6 +11,7 @@ import { createNotices } from './notices'
 import { createObservationLedger, type ObservationInput } from '../session/observationLedger'
 import { BOOKKEEPING_ONLY_NOTICE, createToolRoundExecutor, type ToolRoundCapabilities, type ToolRoundConfig, type ToolRoundOutcome } from './toolRound'
 import { composedAddressRewriteLine } from './composedAddressRail'
+import { shownTextsOf, unseenPhraseRewriteLine } from './unseenPhraseRail'
 import { SEARCH_LOOP_REFUSE_AFTER } from './searchLoopRail'
 import type { ToolTraceEvent, VisionTraceIds, VisionTraceReporter } from '../trace/visionTrace'
 import { createSessionEvidence } from '../session/sessionEvidence'
@@ -28,7 +29,7 @@ function call(name: string, args: Record<string, unknown> = {}, id = `${name}-${
   return { id, name, args }
 }
 
-const ALL_RAILS: ToolRoundCapabilities = { searchLoopRail: true, verificationRail: true, noProgressRail: true, composedAddressRail: true, perCallGate: true }
+const ALL_RAILS: ToolRoundCapabilities = { searchLoopRail: true, verificationRail: true, noProgressRail: true, composedAddressRail: true, unseenPhraseRail: true, perCallGate: true }
 
 /** A settled page state that never moves — the no-progress rails' worst case. */
 const STUCK: SettledPageState = {
@@ -42,6 +43,8 @@ const STUCK: SettledPageState = {
 }
 
 interface Harness {
+  /** The harness's own Observation ledger: what the executor's sight seam reads by default. */
+  readonly ledger: ReturnType<typeof createObservationLedger>
   readonly trace: string[]
   readonly observed: ObservationInput[]
   readonly asked: string[]
@@ -90,6 +93,10 @@ function harness(
     currentPageUrl?: () => string | null
     /** The Session Evidence held from one page (#240). */
     heldObservations?: ToolRoundConfig['heldObservations']
+    /** The Unseen Phrase rail's sight (#267): by default the harness ledger's own records, as the Run's is. */
+    shownTexts?: ToolRoundConfig['shownTexts']
+    /** Snapshot ref facts (#82, #267): how a typed search is told from other typing. */
+    describeRef?: ToolRoundConfig['describeRef']
     /** The shared order log — pass the same array the scripted tools write to. */
     trace?: string[]
   } = {},
@@ -163,8 +170,11 @@ function harness(
     ...(options.verification ? { verification: options.verification } : {}),
     ...(options.currentPageUrl ? { currentPageUrl: options.currentPageUrl } : {}),
     ...(options.heldObservations ? { heldObservations: options.heldObservations } : {}),
+    shownTexts: options.shownTexts ?? (() => shownTextsOf(ledger.snapshot())),
+    ...(options.describeRef ? { describeRef: options.describeRef } : {}),
   })
   return {
+    ledger,
     trace,
     observed,
     asked,
@@ -282,7 +292,7 @@ describe('gate order (#157/AC2, ADR 0010 + ADR 0027)', () => {
     // The no-progress rail is off here: this test is about which of the
     // other two gates answers first, and the flags are how that isolation
     // is expressed (#154).
-    const capabilities: ToolRoundCapabilities = { searchLoopRail: true, verificationRail: true, noProgressRail: false, composedAddressRail: true, perCallGate: true }
+    const capabilities: ToolRoundCapabilities = { searchLoopRail: true, verificationRail: true, noProgressRail: false, composedAddressRail: true, unseenPhraseRail: true, perCallGate: true }
 
     // Five similar searches reach the search-loop cap; the sixth is
     // refused by both gates at once. With one vision call left over, the
@@ -332,7 +342,7 @@ describe('the rails observe the raw outcome, ahead of Notices (#157/AC2)', () =>
       call('navigate', { url: `https://s.example/?q=${query.replace(/ /g, '+')}` }),
     )
     const h = harness([scripted('navigate', [])], {
-      capabilities: { searchLoopRail: true, verificationRail: true, noProgressRail: false, composedAddressRail: true, perCallGate: true },
+      capabilities: { searchLoopRail: true, verificationRail: true, noProgressRail: false, composedAddressRail: true, unseenPhraseRail: true, perCallGate: true },
     })
 
     const { outcome } = await h.round(calls)
@@ -394,7 +404,7 @@ describe('mid-round trips close the round’s remaining siblings (#157/AC2)', ()
     ]
     const h = harness(tools, {
       currentHost: () => 'www.reddit.com',
-      capabilities: { searchLoopRail: true, verificationRail: true, noProgressRail: false, composedAddressRail: true, perCallGate: true },
+      capabilities: { searchLoopRail: true, verificationRail: true, noProgressRail: false, composedAddressRail: true, unseenPhraseRail: true, perCallGate: true },
       trace,
     })
 
@@ -926,12 +936,125 @@ describe('search observation records', () => {
   })
 })
 
+describe('the Unseen Phrase rewrite (#267, ADR 0064)', () => {
+  const RESULT_HREF = 'https://science.nasa.gov/mission/voyager/interstellar'
+  /** A navigate whose pages print a phrase, whose q= searches list one result, and whose /timeout/ addresses fail naming another. */
+  function navigateTool(trace: string[]): Tool {
+    return {
+      name: 'navigate',
+      acquisition: true,
+      async execute(callArg: ToolCall): Promise<unknown> {
+        const url = String(callArg.args.url)
+        trace.push(`execute:navigate:${url}`)
+        if (url.includes('/timeout/')) throw new Error('navigate failed: "Voyager 1 Enters Interstellar Space" timed out loading')
+        if (url.includes('?q=')) return `navigated: url=${url} title="Search"\n# Search — ${url}\n[1] link "Interstellar" href=${JSON.stringify(RESULT_HREF)}`
+        if (url.includes('/dead/')) return `navigated: url=${url} title="Page Not Found - NASA"\nNOT-FOUND:404 www.nasa.gov\nThis address names nothing on nasa.gov.`
+        return `navigated: url=${url} title="Voyager"\n# Voyager — ${url}\npage text:\nNASA confirmed on September 12 that Voyager 1 Has Left the Solar System.`
+      },
+    }
+  }
+  const executed = (trace: readonly string[]): string[] => trace.filter((entry) => entry.startsWith('execute:'))
+  const SEEN = 'https://duckduckgo.com/?q=%22Has+Left+the+Solar+System%22+NASA'
+  const UNSEEN = 'https://duckduckgo.com/?q=%22Has+Not+Yet+Left+the+Solar+System%22+NASA+June+2013'
+  const UNQUOTED = 'https://duckduckgo.com/?q=Has+Not+Yet+Left+the+Solar+System+NASA+June+2013'
+
+  it('runs a search quoting a shown phrase unchanged, and one quoting an unseen phrase unquoted: the rewritten call is what executes and the rails observe, told first, stamped on the event', async () => {
+    const trace: string[] = []
+    const observations: ToolTraceEvent[] = []
+    const h = harness([navigateTool(trace)], { trace, turnId: 'turn-1', traceVision: (event) => observations.push(event) })
+    await h.round([call('navigate', { url: 'https://science.nasa.gov/voyager' }, 'open')])
+
+    const round = await h.round([call('navigate', { url: SEEN }, 'seen'), call('navigate', { url: UNSEEN }, 'unseen')])
+
+    expect(executed(trace)).toEqual(['execute:navigate:https://science.nasa.gov/voyager', `execute:navigate:${SEEN}`, `execute:navigate:${UNQUOTED}`])
+    const [seen, unseen] = round.outcome.results
+    expect(seen!.outcome.ok).toBe(true)
+    expect(resultOf(seen!.outcome)).not.toMatch(/^Rewritten/)
+    // The model's call keeps its id and the terms it wrote; what it reads opens with the head, then the search's own outcome.
+    expect(unseen!.call).toEqual(call('navigate', { url: UNSEEN }, 'unseen'))
+    const rewrite = { phrases: ['Has Not Yet Left the Solar System'], query: 'Has Not Yet Left the Solar System NASA June 2013', call: call('navigate', { url: UNQUOTED }, 'unseen') }
+    expect(resultOf(unseen!.outcome).split('\n').slice(0, 2)).toEqual([unseenPhraseRewriteLine(rewrite), `navigated: url=${UNQUOTED} title="Search"`])
+    // The ledger holds the raw outcome: the head never enters it.
+    expect(String(h.observed.at(-1)!.payload)).not.toMatch(/^Rewritten/)
+    // The stamp rides the published result from the round's own field.
+    const published = round.events.filter((event) => event.type === 'tool_result')
+    expect(published[1]).toMatchObject({ callId: 'unseen', unquoted: { phrases: ['Has Not Yet Left the Solar System'], query: 'Has Not Yet Left the Solar System NASA June 2013' } })
+    expect(published[0]).not.toHaveProperty('unquoted')
+    expect(published[1]).not.toHaveProperty('rewritten')
+    // The Search Loop rail observed the search that ran: its query is the unquoted one.
+    const searches = observations.filter((event) => event.kind === 'search_observation') as { callId: string; query: string }[]
+    expect(searches.map((event) => [event.callId, event.query])).toEqual([
+      ['seen', '"Has Left the Solar System" NASA'],
+      ['unseen', 'Has Not Yet Left the Solar System NASA June 2013'],
+    ])
+    expect(h.epoch.phase.kind).toBe('working')
+  })
+
+  it('counts a failed outcome’s text as shown, and a phrase seen after a rewrite keeps its quotes next time', async () => {
+    const trace: string[] = []
+    const h = harness([navigateTool(trace)], { trace })
+    const first = await h.round([call('navigate', { url: 'https://duckduckgo.com/?q=%22Enters+Interstellar+Space%22' }, 's1')])
+    expect(first.events.filter((event) => event.type === 'tool_result')[0]).toMatchObject({ unquoted: { phrases: ['Enters Interstellar Space'] } })
+
+    await h.round([call('navigate', { url: 'https://science.nasa.gov/timeout/voyager' }, 'fail')])
+    const second = await h.round([call('navigate', { url: 'https://duckduckgo.com/?q=%22Enters+Interstellar+Space%22' }, 's2')])
+
+    expect(second.events.filter((event) => event.type === 'tool_result')[0]).not.toHaveProperty('unquoted')
+    expect(executed(trace).at(-1)).toBe('execute:navigate:https://duckduckgo.com/?q=%22Enters+Interstellar+Space%22')
+  })
+
+  it('judges a Composed Address rewritten into a search as that search, and puts the address line ahead of the head when both fire', async () => {
+    const trace: string[] = []
+    const h = harness([navigateTool(trace)], { trace, capabilities: { ...ALL_RAILS, noProgressRail: false } })
+    await h.round([call('navigate', { url: 'https://www.nasa.gov/dead/voyager' }, 'dead')])
+    // The site's allowance is spent: a composed address runs as a site search, whose terms carry no span — so no head.
+    const composed = await h.round([call('navigate', { url: 'https://www.nasa.gov/voyager-record' }, 'r1')])
+    const published = composed.events.filter((event) => event.type === 'tool_result')[0]!
+    expect(published).toMatchObject({ rewritten: { site: 'nasa.gov', query: 'voyager record site:nasa.gov' } })
+    expect(published).not.toHaveProperty('unquoted')
+    expect(executed(trace).at(-1)).toBe('execute:navigate:https://duckduckgo.com/?q=voyager%20record%20site%3Anasa.gov')
+  })
+
+  it('rewrites a typed search into a search box the same way, keeping its submit newline, and never other typing', async () => {
+    const trace: string[] = []
+    const typeTool: Tool = {
+      name: 'type',
+      acquisition: true,
+      async execute(callArg: ToolCall): Promise<unknown> {
+        trace.push(`execute:type:${JSON.stringify(callArg.args.text)}`)
+        return `typed into [${callArg.args.ref}]`
+      },
+    }
+    const h = harness([typeTool], {
+      trace,
+      capabilities: { ...ALL_RAILS, noProgressRail: false },
+      describeRef: async (ref) => (ref === 1 ? { ref: 1, kind: 'input', role: 'searchbox', label: 'Search', inputType: 'search' } : { ref: 2, kind: 'input', role: 'textbox', label: 'Name', inputType: 'text' }) as never,
+    })
+
+    const round = await h.round([call('type', { ref: 1, text: '"Kurth plasma" Voyager\n' }, 't1'), call('type', { ref: 2, text: '"Kurth plasma"\n' }, 't2')])
+
+    expect(executed(trace)).toEqual(['execute:type:"Kurth plasma Voyager\\n"', 'execute:type:"\\"Kurth plasma\\"\\n"'])
+    const published = round.events.filter((event) => event.type === 'tool_result')
+    expect(published[0]).toMatchObject({ unquoted: { phrases: ['Kurth plasma'], query: 'Kurth plasma Voyager' } })
+    expect(published[1]).not.toHaveProperty('unquoted')
+  })
+
+  it('runs nothing of the rail when its flag is off', async () => {
+    const trace: string[] = []
+    const h = harness([navigateTool(trace)], { trace, capabilities: { ...ALL_RAILS, unseenPhraseRail: false } })
+    const round = await h.round([call('navigate', { url: UNSEEN }, 'unseen')])
+    expect(executed(trace)).toEqual([`execute:navigate:${UNSEEN}`])
+    expect(round.events.filter((event) => event.type === 'tool_result')[0]).not.toHaveProperty('unquoted')
+  })
+})
+
 describe('the verification gate sits ahead of the Vision Budget (#212, ADR 0041)', () => {
   const capabilities: ToolRoundCapabilities = {
     searchLoopRail: false,
     verificationRail: true,
     noProgressRail: false,
     composedAddressRail: false,
+    unseenPhraseRail: false,
     perCallGate: true,
   }
 
@@ -989,6 +1112,7 @@ describe('an argument refusal is not a Vision Attempt (#236, ADR 0046)', () => {
     verificationRail: true,
     noProgressRail: false,
     composedAddressRail: false,
+    unseenPhraseRail: false,
     perCallGate: true,
   }
   const MALFORMED = `look: 'region' must be "left,top,width,height"`

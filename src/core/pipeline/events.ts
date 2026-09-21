@@ -8,6 +8,7 @@ import type { FinalizationCause, RunResolution } from '../session/runJournal'
 import type { EffortTier } from './runPlan'
 import type { AskedItemStanding } from '../agent/askedItems'
 import type { ComposedAddressRewriteStamp } from './composedAddressRail'
+import type { UnseenPhraseRewriteStamp } from './unseenPhraseRail'
 
 /**
  * Ownership metadata on Session-scoped events (#86–#100): every published
@@ -82,6 +83,12 @@ export type PipelineEvent = SessionEventIdentity & (
        * Trace reads it from the round rather than from the line's wording.
        */
       rewritten?: ComposedAddressRewriteStamp
+      /**
+       * The Unseen Phrase rewrite this result is for (#267, ADR 0064):
+       * present only when a quoted span the Run was never shown ran
+       * unquoted, read from the round like `rewritten`.
+       */
+      unquoted?: UnseenPhraseRewriteStamp
       at: number
     }
   | {

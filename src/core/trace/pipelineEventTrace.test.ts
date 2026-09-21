@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { composedAddressRewriteLine } from '../pipeline/composedAddressRail'
+import { unseenPhraseRewriteLine } from '../pipeline/unseenPhraseRail'
 import type { PipelineEvent } from '../pipeline/events'
 import { createPipelineEventTraceWriter, tracesPipelineEvent } from './pipelineEventTrace'
 import { RUN_TRACE_VERSION, TRACE_TOOL_RESULT_MAX_CHARS, type TraceRecord } from './runTrace'
@@ -139,6 +140,24 @@ describe('the pipeline_event tap (#185)', () => {
     expect(records[0]).toMatchObject({ rewritten: stamp })
     expect(records[1]).toMatchObject({ rewritten: stamp })
     expect(records[2]).not.toHaveProperty('rewritten')
+  })
+
+  it('stamps an Unseen Phrase rewrite from the event’s own field, a failed search included (#267, ADR 0064)', () => {
+    const { records, sink } = collector()
+    const trace = createPipelineEventTraceWriter({ sink, now: () => 0 })
+    const search = 'https://duckduckgo.com/?q=Kurth+plasma+Voyager'
+    const stamp = { phrases: ['Kurth plasma'], query: 'Kurth plasma Voyager' }
+    const line = unseenPhraseRewriteLine({ ...stamp, call: { id: 'c-1', name: 'navigate', args: { url: search } } })
+
+    trace({ type: 'tool_result', turnId: 't-1', callId: 'c-1', name: 'navigate', ok: true, result: `${line}\nnavigated: url=${search} title="DuckDuckGo"`, unquoted: stamp, at: 1 })
+    trace({ type: 'tool_result', turnId: 't-1', callId: 'c-2', name: 'navigate', ok: false, error: `${line}\nSearch loop limit reached`, unquoted: stamp, at: 2 })
+    trace({ type: 'tool_result', turnId: 't-1', callId: 'c-3', name: 'navigate', ok: true, result: { data: 1 }, unquoted: stamp, at: 3 })
+    trace({ type: 'tool_result', turnId: 't-1', callId: 'c-4', name: 'navigate', ok: true, result: `${line}\nnavigated: url=${search} title="DuckDuckGo"`, at: 4 })
+
+    expect(records[0]).toMatchObject({ unquoted: stamp })
+    expect(records[1]).toMatchObject({ unquoted: stamp })
+    expect(records[2]).toMatchObject({ unquoted: stamp })
+    expect(records[3]).not.toHaveProperty('unquoted')
   })
 
   it('leaves a short result whole and a non-text result untouched', () => {
