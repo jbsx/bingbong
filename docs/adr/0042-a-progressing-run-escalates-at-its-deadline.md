@@ -11,6 +11,16 @@ Note (2026-09-21, #266): ADR 0063 extends this decision to the second
 boundary — the tier's Tool Round budget arms the same escalation, under the
 same Progress test, sharing the once-per-Run bound. Nothing below changes.
 
+Note (2026-09-21, #266 implementation grill): the re-arm below gives the new
+tier "its own round budget", and the hard ceiling of 32 cumulative Tool
+Rounds bounds it from outside — so an escalated Lookup was warned "N of 24
+remain" while fewer remained, and ended `hard_limit` rather than
+`budget_exhausted`. From #266 the re-armed budget is the smaller of the
+tier's budget and the rounds left before the hard limit, for both arms, and
+the escalation's Run Plan event carries it. The warnings then count what is
+actually left, and the Run ends for its budget. The ceiling itself, and the
+refusal to escalate a Run already at it, are unchanged.
+
 One thing the implementation settled that the decision below leaves open: the
 escalation needs someone to vouch for Progress, and the no-progress rail can
 only do that where it observes the page. A rail with no settled state to read

@@ -204,12 +204,16 @@ _Avoid_: tier window, budget window
 
 **Tier Escalation**:
 A Run's Effort Tier rising exactly one level, re-arming the Effort Epoch with
-the new tier's full budget, warnings, and deadline. The model declares one with
+the new tier's budget (never more Tool Rounds than the hard ceiling leaves),
+warnings, and deadline. The model declares one with
 the evidence that makes more effort necessary; the application performs one
 when the active-work deadline crosses (#216, ADR 0042) or the tier's Tool Round
 budget is reached (#266, ADR 0063) while the Run's current Approach is still
-making Progress — once per Run by either arm, reset by a Steering replan,
-never into anything above Investigation, and reopening nothing else. Distinct
+making Progress — once per Run by either arm, reset by a Steering replan, not
+spent by one the model declared, never into anything above Investigation, and
+reopening nothing else. Progress here is the no-progress rail's verdict alone.
+When a budget or deadline is reached and no Tier Escalation follows, the Stop
+Record names why. Distinct
 from Escalation, which hands a Blocker to the user.
 _Avoid_: escalation, upgrade, promotion
 
