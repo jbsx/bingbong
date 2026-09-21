@@ -124,3 +124,12 @@ reads computed style that jsdom cannot supply.
   are the only guards, and the audit's counters are where that would show.
 - `absolute`-positioned walls with no fixed ancestor stay undetected; the
   blocked-then-hand-consent counter is the signal that one exists.
+
+## Notes
+
+- 2026-09-21, ADR 0062 (#264): a blocked action under an open Tier-1
+  consent root whose target is Not Shown — absent from the page's own hit
+  test at its centre — is dismissed for but not retried; the retry's result
+  is known, and the outcome reports the dismissal and the not-shown fact in
+  one line. A Covered target retries as this ADR says. What a non-consent
+  Cover is named by is ADR 0062's.
