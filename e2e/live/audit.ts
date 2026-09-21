@@ -37,7 +37,7 @@
 // type-stripping pattern the scripts run under).
 
 import { createHash } from 'node:crypto'
-import { blockedOrInertAction } from '../../src/core/browser/actionOutcome.ts'
+import { blockedOrInertAction, type ConsumedNothing } from '../../src/core/browser/actionOutcome.ts'
 import { parseBlockerMarker } from '../../src/core/browser/blockerNudge.ts'
 import { classifyNotFoundPage, NOT_FOUND_BASES, type NotFoundBasis, type NotFoundLanding } from '../../src/core/browser/notFoundPage.ts'
 import type { ComposedAddressRewriteStamp } from '../../src/core/pipeline/composedAddressRail.ts'
@@ -1032,7 +1032,7 @@ export function replaySearchStreaks(rounds: readonly AuditRound[]): AuditRound[]
  * Blocked Action nor an inert click.
  */
 function consumedOf(call: AuditCall): boolean {
-  return call.ok === true && !call.refused && call.notFound === undefined && consumedNothingOf(call) === null
+  return call.ok === true && !call.refused && call.notFound === undefined && blockedOrInertOfCall(call) === null
 }
 
 /**
@@ -1041,7 +1041,7 @@ function consumedOf(call: AuditCall): boolean {
  * rules an inert click out is the `signature` the audit already read off the
  * whole result, since the head flattens and may cut it.
  */
-function consumedNothingOf(call: AuditCall): 'blocked' | 'inert' | null {
+function blockedOrInertOfCall(call: AuditCall): ConsumedNothing | null {
   if (call.ok !== true || call.refused || call.resultHead === null) return null
   const verdict = blockedOrInertAction(call.resultHead)
   return verdict === 'inert' && call.signature !== null ? null : verdict
@@ -1068,7 +1068,7 @@ export function blockedOrInertOf(rounds: readonly AuditRound[]): BlockedOrInertR
   let streak = 0
   for (const round of rounds) {
     for (const call of round.calls) {
-      const verdict = consumedNothingOf(call)
+      const verdict = blockedOrInertOfCall(call)
       if (verdict === 'blocked') blocked.push(round.round)
       if (verdict === 'inert') inert.push(round.round)
       if (call.search !== null) {

@@ -11,7 +11,7 @@ import { settledStateFromSnapshot, type SettledPageState } from '../../core/pipe
 import { blockerFactsFromSnapshot } from '../../core/browser/blockerNudge'
 import type { BrowserSubspans } from '../../core/perf/browserSubspans'
 import { normalizeUrlInput } from '../../core/browser/urlInput'
-import { blockedActionHead, clickFlagsHead, NO_OBSERVABLE_CHANGE } from '../../core/browser/actionOutcome'
+import { blockedActionHead, clickFlagsHead, NO_OBSERVABLE_CHANGE, PAGE_SIGNATURE_CHANGED, STATE_DELTA } from '../../core/browser/actionOutcome'
 import { chooseConsentDismissal, isConsentDialog } from '../../core/browser/dialogPolicy'
 import {
   buildPageSnapshot,
@@ -551,7 +551,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     ]
     return fields.flatMap(({ key, label }) => before[key] === after[key]
       ? []
-      : [`${label}=${JSON.stringify(before[key])} -> ${JSON.stringify(after[key])}`])
+      : [`${label}=${JSON.stringify(before[key])}${STATE_DELTA}${JSON.stringify(after[key])}`])
   }
 
   /** #133 honest verification: a click on a state-bearing control (checkbox,
@@ -845,7 +845,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     const pageChanged = !signaturesEqual(attempt.signature, after.signature)
     const rawChanges = deltas.length > 0 || controls.length > 0
       ? [...deltas, ...controls].join(', ')
-      : pageChanged ? 'page signature changed' : NO_OBSERVABLE_CHANGE
+      : pageChanged ? PAGE_SIGNATURE_CHANGED : NO_OBSERVABLE_CHANGE
     const location = urlChanged ? `; ${urlTitleSuffix(after.signature)}` : ''
     const prefix = clickFlagsHead(ref, urlChanged, after.signature.dialogOpen)
     const changes = truncateOutcomeText(rawChanges, Math.min(240, Math.max(30, 300 - prefix.length - location.length)))

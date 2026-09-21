@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import youtubeHome from './fixtures/youtube-home.json'
-import { blockedActionHead, blockedOrInertAction, clickFlagsHead, NO_OBSERVABLE_CHANGE, wasBlockedOrInert } from './actionOutcome'
+import { blockedActionHead, blockedOrInertAction, clickFlagsHead, NO_OBSERVABLE_CHANGE, PAGE_SIGNATURE_CHANGED, wasBlockedOrInert } from './actionOutcome'
 import { buildPageSnapshot, formatPageSnapshot, parseCollectedPage } from './snapshot'
 import { FakeBrowser } from '../testing/doubles'
 
@@ -35,6 +35,12 @@ describe('blockedOrInertAction (#261)', () => {
     expect(blockedOrInertAction('clicked [7]: urlChanged=false dialogOpen=true; no observable change')).toBeNull()
   })
 
+  it('reads the changes clause too, so a meaningful click whose settled state failed to collect is still not inert', () => {
+    expect(blockedOrInertAction('clicked [8]: urlChanged=false dialogOpen=false; page signature changed')).toBeNull()
+    expect(blockedOrInertAction('clicked [5]: urlChanged=false dialogOpen=false; checked=false -> true')).toBeNull()
+    expect(blockedOrInertAction('clicked [5]: urlChanged=false dialogOpen=false; aria-pressed="false" -> "true", checked=true')).toBeNull()
+  })
+
   it('leaves every other outcome alone', () => {
     expect(blockedOrInertAction('typed [5]: value="x"')).toBeNull()
     expect(blockedOrInertAction('navigated: url=https://x.test/ title="X"')).toBeNull()
@@ -58,6 +64,7 @@ describe('the heads the port produces (#261)', () => {
     expect(blockedActionHead('click', 16)).toBe('clicked [16]: not clicked — blocked by overlay')
     expect(blockedActionHead('type', 26)).toBe('typed [26]: not typed — blocked by overlay')
     expect(`${clickFlagsHead(4, false, false)}${NO_OBSERVABLE_CHANGE}`).toBe('clicked [4]: urlChanged=false dialogOpen=false; no observable change')
+    expect(blockedOrInertAction(`${clickFlagsHead(1, false, false)}${PAGE_SIGNATURE_CHANGED}`)).toBeNull()
     expect(blockedOrInertAction(blockedActionHead('click', 1))).toBe('blocked')
     expect(blockedOrInertAction(blockedActionHead('type', 1))).toBe('blocked')
     expect(blockedOrInertAction(`${clickFlagsHead(1, false, false)}${NO_OBSERVABLE_CHANGE}`)).toBe('inert')
