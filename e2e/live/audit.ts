@@ -111,6 +111,15 @@ export const SEARCH_LOOP_NUDGE_MARKS: readonly string[] = ['The last searches ra
 export const NOT_EXECUTED_PREFIX = 'Not executed — '
 /** What a scroll that brought nothing into view says (`SCROLL_END_OF_PAGE`, scrollDelta.ts). */
 export const END_OF_PAGE_MARK = 'end of page'
+/** The head of the line every Tier-1 consent dismissal reports (`consentDismissalLine`, dialogPolicy.ts; #263). */
+export const CONSENT_DISMISSAL_MARK = 'dismissed consent dialog: clicked ['
+/**
+ * A consent-style control label (`CONSENT_LABEL_RE`, dialogPolicy.ts; #263,
+ * ADR 0061), copied rather than imported like every fragment here, and
+ * pinned to the source by the test.
+ */
+export const CONSENT_LABEL_PATTERN =
+  /\b(accept|reject|allow|decline)\s+((optional|necessary|essential)\s+cookies?|all(\s+cookies?)?|cookies?(\s+consent)?|consent)\b|\b(accept|reject)\s+all\b/i
 
 /** Which tools acquire, collect and record — the catalog's own `acquisition` flags and the glossary's Collection and Bookkeeping. */
 export const ACQUISITION_TOOLS: ReadonlySet<string> = new Set([
@@ -394,6 +403,15 @@ export interface AuditMechanical {
    * on an audit written before the counter.
    */
   readonly unavailableLandings?: UnavailableLandingRounds
+  /**
+   * The consent walls (#263, ADR 0061): the round of every call that
+   * reported a Tier-1 dismissal, of every click on a ref last listed with a
+   * consent-style label — a consent wall cleared by hand — and of every
+   * Blocked Action such a click followed within two rounds. Read from the
+   * full result text, beside the rounds, never in them. Absent on an audit
+   * written before the counter.
+   */
+  readonly consentWalls?: ConsentWallRounds
   readonly walledRounds: number
   /**
    * The round of every navigate that landed on a Not-found Page, one entry per
@@ -585,6 +603,8 @@ export interface AuditPopulation {
   readonly blockedOrInert?: Readonly<Record<keyof BlockedOrInertRounds, number>>
   /** Unavailable Landings by basis, and those followed by a search, over the attempts that count them (#262); absent when none does. */
   readonly unavailableLandings?: Readonly<Record<keyof UnavailableLandingRounds, number>>
+  /** Consent dismissals, hand consent clicks, and blocks a hand consent click followed, over the attempts that count them (#263); absent when none does. */
+  readonly consentWalls?: Readonly<Record<keyof ConsentWallRounds, number>>
   readonly inheritedRounds: number
   /** Merged Evidence Checkpoints over the attempts (#240): a floor. */
   readonly mergedCheckpoints: number
@@ -686,6 +706,8 @@ export interface AuditAggregate {
   readonly populations: { readonly initial: AuditAggregatePopulation; readonly followUp: AuditAggregatePopulation }
   /** Primary verdicts over every attempt of both populations, most counted first. Arithmetic, never an opinion. */
   readonly rankedCauses: readonly { readonly verdict: AuditVerdict; readonly count: number; readonly initial: number; readonly followUp: number }[]
+  /** Consent dismissals, hand consent clicks and blocks they followed per hunt, over every set's attempts that count them (#263); absent when none does. */
+  readonly consentWallsByHunt?: Readonly<Record<string, Readonly<Record<keyof ConsentWallRounds, number>>>>
   readonly caveats: readonly string[]
   readonly note: string
 }
@@ -782,6 +804,52 @@ function unavailableLandingsText(counted: UnavailableLandingRounds | undefined):
   return counted === undefined
     ? 'Unavailable Landings not counted'
     : `Unavailable Landings by status ${roundsText(counted.status)}, by title ${roundsText(counted.title)}; followed by a search: ${roundsText(counted.followedBySearch)}`
+}
+
+function consentWallsText(counted: ConsentWallRounds | undefined): string {
+  return counted === undefined
+    ? 'consent walls not counted'
+    : `consent walls: dismissals ${roundsText(counted.dismissals)}, hand consent clicks ${roundsText(counted.handConsentClicks)}, blocked then hand consent ${roundsText(counted.blockedThenHandConsent)}`
+}
+
+function populationConsentWallsText(counted: AuditPopulation['consentWalls']): string {
+  return counted === undefined
+    ? 'consent walls not counted'
+    : `${counted.dismissals} consent dismissal(s), ${counted.handConsentClicks} hand consent click(s), ${counted.blockedThenHandConsent} blocked then hand consent`
+}
+
+/**
+ * The consent walls per hunt (#263, AC6), summed over the attempts that
+ * count them, so a zero stands beside the dismissals that earned it; a hunt
+ * no attempt counted is left out. Undefined when no attempt counts them.
+ */
+export function consentWallsByHuntOf(attempts: readonly AuditAttempt[]): Record<string, Record<keyof ConsentWallRounds, number>> | undefined {
+  const byHunt: Record<string, Record<keyof ConsentWallRounds, number>> = {}
+  let counted = false
+  for (const { mechanical } of attempts) {
+    if (mechanical.consentWalls === undefined) continue
+    counted = true
+    const hunt = (byHunt[mechanical.huntId] ??= { dismissals: 0, handConsentClicks: 0, blockedThenHandConsent: 0 })
+    hunt.dismissals += mechanical.consentWalls.dismissals.length
+    hunt.handConsentClicks += mechanical.consentWalls.handConsentClicks.length
+    hunt.blockedThenHandConsent += mechanical.consentWalls.blockedThenHandConsent.length
+  }
+  return counted ? byHunt : undefined
+}
+
+/** The per-hunt consent walls as a section, ending in a blank line; empty when nothing counted them. */
+function consentWallsByHuntSection(byHunt: Readonly<Record<string, Readonly<Record<keyof ConsentWallRounds, number>>>> | undefined): string[] {
+  if (byHunt === undefined) return []
+  return [
+    '## Consent walls by hunt',
+    '',
+    'Tier-1 dismissals the app reported, clicks on a consent-style control by hand, and Blocked Actions such a click followed within two rounds (ADR 0061).',
+    '',
+    '| hunt | dismissals | hand consent clicks | blocked then hand consent |',
+    '| --- | --- | --- | --- |',
+    ...Object.entries(byHunt).map(([hunt, counted]) => `| ${hunt} | ${counted.dismissals} | ${counted.handConsentClicks} | ${counted.blockedThenHandConsent} |`),
+    '',
+  ]
 }
 
 function populationUnavailableLandingsText(counted: AuditPopulation['unavailableLandings']): string {
@@ -1172,6 +1240,51 @@ export function unavailableLandingsOf(rounds: readonly AuditRound[]): Unavailabl
     }
   }
   return { status, title, followedBySearch }
+}
+
+/** The rounds of an attempt's consent dismissals, hand consent clicks, and blocks a hand consent click followed (#263). */
+export interface ConsentWallRounds {
+  readonly dismissals: readonly number[]
+  readonly handConsentClicks: readonly number[]
+  readonly blockedThenHandConsent: readonly number[]
+}
+
+/** A listed ref and its label, as `formatRefLine` prints it: `[8] button "Reject all cookies"`. */
+const LISTED_REF_RE = /^\[(\d+)\] \S+ "(.*?)"(?= |$)/gm
+
+/** How many rounds after a block a hand consent click still answers it: pass 2 read the page in between (ADR 0061). */
+const HAND_CONSENT_WITHIN_ROUNDS = 2
+
+/**
+ * An attempt's consent walls over its raw rounds (#263, ADR 0061), read from
+ * the full result text because a listing sits past the digest's head: one
+ * entry per call reporting a dismissal; one per click on a ref whose label,
+ * in the last listing that numbered it, is consent-style — a hand consent
+ * click, which no dismissal ever is, since a dismissal is never a call; and
+ * one per Blocked Action a hand consent click followed within two rounds.
+ */
+function consentWallsOf(raw: readonly RawRound[]): ConsentWallRounds {
+  const labels = new Map<number, string>()
+  const dismissals: number[] = []
+  const handConsentClicks: number[] = []
+  const blockedThenHandConsent: number[] = []
+  let blocked: number[] = []
+  for (const round of raw) {
+    for (const entry of round.calls) {
+      const ref = Number(entry.call.args.ref)
+      if (entry.call.name === 'click' && CONSENT_LABEL_PATTERN.test(labels.get(ref) ?? '')) {
+        handConsentClicks.push(round.round)
+        blockedThenHandConsent.push(...blocked.filter((at) => round.round - at <= HAND_CONSENT_WITHIN_ROUNDS))
+        blocked = []
+      }
+      const text = entry.result !== undefined && entry.result.ok ? resultText(entry.result.result) : null
+      if (text === null) continue
+      if (text.includes(CONSENT_DISMISSAL_MARK)) dismissals.push(round.round)
+      if (blockedOrInertAction(text) === 'blocked') blocked.push(round.round)
+      for (const match of text.matchAll(LISTED_REF_RE)) labels.set(Number(match[1]), match[2]!)
+    }
+  }
+  return { dismissals, handConsentClicks, blockedThenHandConsent }
 }
 
 /**
@@ -1800,6 +1913,7 @@ export function classifyAttempt(input: AuditTraceInput): AuditMechanical {
     searchForms: searchFormsOf(rounds),
     blockedOrInert: blockedOrInertOf(rounds),
     unavailableLandings: unavailableLandingsOf(rounds),
+    consentWalls: consentWallsOf(raw),
     walledRounds: rounds.filter((round) => round.tags.wall).length,
     notFoundNavigates: rounds.flatMap((round) => round.calls.filter((call) => call.name === 'navigate' && call.notFound !== undefined).map(() => round.round)),
     rewrittenComposedAddresses: rounds.flatMap((round) => round.calls.filter((call) => call.rewritten !== undefined).map(() => round.round)),
@@ -2270,6 +2384,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
   let searchForms: Record<SearchUrlForm, number> | undefined
   let blockedOrInert: Record<keyof BlockedOrInertRounds, number> | undefined
   let unavailableLandings: Record<keyof UnavailableLandingRounds, number> | undefined
+  let consentWalls: Record<keyof ConsentWallRounds, number> | undefined
   let slipAnswers = 0
   let slipIds = 0
   let slipsNotRecorded = 0
@@ -2336,6 +2451,12 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
       unavailableLandings.title += mechanical.unavailableLandings.title.length
       unavailableLandings.followedBySearch += mechanical.unavailableLandings.followedBySearch.length
     }
+    if (mechanical.consentWalls !== undefined) {
+      consentWalls ??= { dismissals: 0, handConsentClicks: 0, blockedThenHandConsent: 0 }
+      consentWalls.dismissals += mechanical.consentWalls.dismissals.length
+      consentWalls.handConsentClicks += mechanical.consentWalls.handConsentClicks.length
+      consentWalls.blockedThenHandConsent += mechanical.consentWalls.blockedThenHandConsent.length
+    }
     if (mechanical.identitySlips === null) slipsNotRecorded += 1
     else {
       slipAnswers += mechanical.identitySlips.answers
@@ -2398,6 +2519,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
     ...(searchForms === undefined ? {} : { searchForms }),
     ...(blockedOrInert === undefined ? {} : { blockedOrInert }),
     ...(unavailableLandings === undefined ? {} : { unavailableLandings }),
+    ...(consentWalls === undefined ? {} : { consentWalls }),
     inheritedRounds: inherited,
     mergedCheckpoints: merged,
     bundledCheckpoints: bundled,
@@ -2513,6 +2635,7 @@ export function buildAuditAggregate(sets: readonly AuditSetOutput[], generatedAt
   const shared = ordered[0]!.provenance
   const initial = aggregatePopulation('initial', 'initial', ordered, (set) => set.populations.initial)
   const followUp = aggregatePopulation('follow_up', 'revised_objective', ordered, (set) => set.populations.followUp)
+  const consentWallsByHunt = consentWallsByHuntOf(ordered.flatMap((set) => set.attempts))
   const rankedCauses = AUDIT_VERDICTS.map((verdict) => ({
     verdict,
     count: initial.verdictsPrimary[verdict] + followUp.verdictsPrimary[verdict],
@@ -2557,6 +2680,7 @@ export function buildAuditAggregate(sets: readonly AuditSetOutput[], generatedAt
       },
       populations: { initial, followUp },
       rankedCauses,
+      ...(consentWallsByHunt === undefined ? {} : { consentWallsByHunt }),
       caveats: ordered.flatMap((set) => set.caveats.map((caveat) => `${set.provenance.setId}: ${caveat}`)),
       note: AUDIT_COUNTS_NOTE,
     },
@@ -2653,7 +2777,7 @@ function populationSlipsText(population: AuditPopulation): string {
 function judgementLines(populations: readonly AuditPopulation[]): string[] {
   return populations.map(
     (population) =>
-      `- ${population.label}: ${population.offKeyRounds} Off-key round(s), ${population.searchLoopRounds} Search Loop round(s) by the reviewer (${population.mechanicalSearchRounds} by the streak rule, heads included: ${population.searchRoundsAtStreak2} at streak 2 or beyond, ${population.searchRoundsAtStreak3} at 3 or beyond; attempts by search source ${SEARCH_SOURCES.map((source) => `${source} ${population.searchSources[source]}`).join(', ')}; navigate searches by Search URL form ${searchFormsText(population.searchForms)}; ${populationBlockedOrInertText(population.blockedOrInert)}; ${populationUnavailableLandingsText(population.unavailableLandings)}), ` +
+      `- ${population.label}: ${population.offKeyRounds} Off-key round(s), ${population.searchLoopRounds} Search Loop round(s) by the reviewer (${population.mechanicalSearchRounds} by the streak rule, heads included: ${population.searchRoundsAtStreak2} at streak 2 or beyond, ${population.searchRoundsAtStreak3} at 3 or beyond; attempts by search source ${SEARCH_SOURCES.map((source) => `${source} ${population.searchSources[source]}`).join(', ')}; navigate searches by Search URL form ${searchFormsText(population.searchForms)}; ${populationBlockedOrInertText(population.blockedOrInert)}; ${populationUnavailableLandingsText(population.unavailableLandings)}; ${populationConsentWallsText(population.consentWalls)}), ` +
       `${population.inheritedRounds} inherited, ${population.rejectedCheckpoints} rejected Evidence Checkpoint(s), ${population.walledRounds} walled round(s), ${population.notFoundNavigates} navigate(s) landed on a Not-found Page (${population.notFoundOffKey} judged Off-key), ${population.rewrittenComposedAddresses ?? 0} Composed Address(es) rewritten into a site search (${population.rewrittenComposedAddressesOffKey ?? 0} judged Off-key, ${population.rewrittenShownAddresses ?? 'not counted'} to an address the Run was shown), ${population.subagentRounds} Subagent round(s), ` +
       `${population.mergedCheckpoints} merged Evidence Checkpoint(s) (a floor), ${population.heldPageRoundsWithoutProgress} Held Page round(s) without Progress, ${population.bundledCheckpoints} bundled checkpoint round(s), ${population.sameSourceUnsupportedRounds} same-source unsupported round(s), ${populationSlipsText(population)}, ` +
       `${population.malformedAnswers} Malformed Answer(s) (${population.answerRetries} retried), ` +
@@ -2704,6 +2828,7 @@ function attemptSection(attempt: AuditAttempt): string[] {
   lines.push(`- navigate searches by Search URL form: ${searchFormsText(mechanical.searchForms)}`)
   lines.push(`- ${blockedOrInertText(mechanical.blockedOrInert)}`)
   lines.push(`- ${unavailableLandingsText(mechanical.unavailableLandings)}`)
+  lines.push(`- ${consentWallsText(mechanical.consentWalls)}`)
   if (review === null) lines.push('- reviewer: not consulted')
   else if (judgement === null) lines.push(`- reviewer: no judgement — ${review.caveats.join('; ')}`)
   else {
@@ -2769,6 +2894,8 @@ export function formatAuditSet(audit: AuditSetOutput): string {
   lines.push(TOOL_ROUNDS_NOTE)
   lines.push('')
   lines.push(...toolRoundTable([audit.populations.initial, audit.populations.followUp]))
+  const consentByHunt = consentWallsByHuntSection(consentWallsByHuntOf(audit.attempts))
+  if (consentByHunt.length > 0) lines.push('', ...consentByHunt.slice(0, -1))
   if (audit.caveats.length > 0) {
     lines.push('')
     lines.push('## Caveats')
@@ -2826,6 +2953,7 @@ export function formatAuditAggregate(aggregate: AuditAggregate): string {
   lines.push('')
   lines.push(...toolRoundTable([aggregate.populations.initial, aggregate.populations.followUp]))
   lines.push('')
+  lines.push(...consentWallsByHuntSection(aggregate.consentWallsByHunt))
   lines.push('## Per set')
   lines.push('')
   for (const population of [aggregate.populations.initial, aggregate.populations.followUp]) {

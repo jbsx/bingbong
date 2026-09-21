@@ -1,4 +1,5 @@
 import { MAX_COLLECTED_PAGE_TEXT } from '../../core/browser/pageText'
+import { CONSENT_LABEL_RE } from '../../core/browser/dialogPolicy'
 
 // Runs inside the pane's page via Runtime.evaluate. Returns the CollectedPage
 // shape consumed by core/browser/snapshot.ts — DOM-specific work (labeling,
@@ -142,12 +143,41 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
   // fold inside the dialog's own scroller — the click path scrolls them into
   // view — so the model can target them without a scroll dance.
   const DIALOG_SELECTOR = 'dialog[open], tp-yt-paper-dialog, [role="dialog"], [role="alertdialog"], [aria-modal="true"]'
+  // A consent wall that declares no dialog role (ADR 0061) is found by a
+  // rule, never a vendor list: the outermost fixed or sticky ancestor of a
+  // control whose label is a consent choice, meeting the viewport. The
+  // label test is the dialog policy's own pattern; the control needs only
+  // size, like any dialog ref. A static strip has no such ancestor and an
+  // absolute-only wall is left out rather than guessed at by z-index.
+  const CONSENT_LABEL_RE = new RegExp(${JSON.stringify(CONSENT_LABEL_RE.source)}, ${JSON.stringify(CONSENT_LABEL_RE.flags)})
+  const CONSENT_CONTROL_SELECTOR = 'button, a[href], input[type="submit"], input[type="button"], [role="button"], [role="link"]'
+  const pinnedAncestor = (el) => {
+    let outermost = null
+    for (let node = el; node !== null && node !== document.body && node !== document.documentElement; node = node.parentElement) {
+      const position = window.getComputedStyle(node).position
+      if (position === 'fixed' || position === 'sticky') outermost = node
+    }
+    return outermost
+  }
+  const consentWallRoot = () => {
+    let last = null
+    for (const control of document.querySelectorAll(CONSENT_CONTROL_SELECTOR)) {
+      // Cheap text first: innerText lays out, and most controls are not consent choices.
+      const text = [control.getAttribute('aria-label'), control.value, control.textContent].filter((part) => typeof part === 'string').join(' ').replace(/\\s+/g, ' ')
+      if (!CONSENT_LABEL_RE.test(text) || !hasSize(control)) continue
+      const root = pinnedAncestor(control)
+      if (root === null || !rectVisible(root)) continue
+      if (last === null || (last.compareDocumentPosition(root) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0) last = root
+    }
+    return last
+  }
   const currentDialogRoot = () => {
     const dialogs = Array.from(document.querySelectorAll(DIALOG_SELECTOR)).filter((dialog) => {
       const style = window.getComputedStyle(dialog)
       return dialog.getAttribute('aria-hidden') !== 'true' && style.display !== 'none' && style.visibility !== 'hidden' && hasSize(dialog)
     })
-    return dialogs.length > 0 ? dialogs[dialogs.length - 1] : null
+    // A role-bearing root always wins over the rule.
+    return dialogs.length > 0 ? dialogs[dialogs.length - 1] : consentWallRoot()
   }
   // Challenge widgets (Turnstile, reCAPTCHA) live in cross-origin iframes
   // whose content the top frame cannot read. Listing them (ADR 0007) with

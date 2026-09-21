@@ -183,6 +183,82 @@ function consentWallPage(): string {
 </html>`
 }
 
+// The Cookiebot wall as www.rmg.co.uk serves it (#263, ADR 0061): a
+// role="region" root — no dialog role, no aria-modal — with a *sibling*
+// underlay over the whole viewport and the body's scrolling locked. "Reject
+// all cookies" takes both away. Shared by the landing and the late fixture.
+const COOKIEBOT_WALL = `
+  <div id="CybotCookiebotDialogBodyUnderlay" style="position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:100"></div>
+  <div id="CybotCookiebotDialog" role="region" aria-labelledby="CybotCookiebotDialogTitle" data-template="overlay" style="position:fixed;left:10%;right:10%;bottom:10%;background:#333;z-index:101;padding:24px">
+    <h2 id="CybotCookiebotDialogTitle">This website uses cookies</h2>
+    <div><div>
+      <button id="CybotCookiebotDialogBodyButtonDecline" onclick="dismissCookiebot('rejected')" style="font-size:20px">Reject all cookies</button>
+      <button id="CybotCookiebotDialogBodyLevelButtonCustomize" style="font-size:20px">Manage settings</button>
+      <button id="CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll" onclick="dismissCookiebot('allowed')" style="font-size:20px">Allow all cookies</button>
+    </div></div>
+  </div>`
+
+const COOKIEBOT_SCRIPT = `<script>
+  function dismissCookiebot(choice) {
+    document.getElementById('CybotCookiebotDialog').remove()
+    document.getElementById('CybotCookiebotDialogBodyUnderlay').remove()
+    document.body.style.overflow = ''
+    document.body.dataset.consent = choice
+  }
+</script>`
+
+// The museum's collection search, beneath whatever the page puts over it.
+// The only ref on the page once any wall is gone: [1].
+const COLLECTION_SEARCH = `
+  <h1>Collections</h1>
+  <form onsubmit="return false"><input type="search" name="q" aria-label="Search our collection" style="font-size:20px;width:400px"></form>
+  <p>Search the objects in the collection.</p>`
+
+// #263: the Cookiebot wall, served with the page. Dismissed on navigate.
+function consentWallLandingPage(): string {
+  return `<!doctype html>
+<html>
+<head><title>consent landing fixture</title>${COOKIEBOT_SCRIPT}</head>
+<body style="background:#222;color:#fff;margin:0;overflow:hidden">${COLLECTION_SEARCH}${COOKIEBOT_WALL}
+</body>
+</html>`
+}
+
+// #263: the Cookiebot wall, injected about a second after load — after the
+// navigate has read the page, so the first type into the search box meets it.
+function lateConsentWallPage(): string {
+  return `<!doctype html>
+<html>
+<head><title>late consent wall fixture</title>${COOKIEBOT_SCRIPT}</head>
+<body style="background:#222;color:#fff;margin:0">${COLLECTION_SEARCH}
+  <script>
+    setTimeout(() => {
+      document.body.insertAdjacentHTML('beforeend', ${JSON.stringify(COOKIEBOT_WALL)})
+      document.body.style.overflow = 'hidden'
+    }, 1000)
+  </script>
+</body>
+</html>`
+}
+
+// #263: Raspberry Pi's own consent strip — static at the top, covering
+// nothing. Not a Consent Dialog: nothing dismisses it, and a click on either
+// control records into the title. Refs: [1] Accept optional cookies
+// [2] Reject optional cookies [3] Search our collection.
+function consentStripPage(): string {
+  return `<!doctype html>
+<html>
+<head><title>consent strip fixture</title></head>
+<body style="background:#222;color:#fff;margin:0">
+  <div class="cookie-strip" style="background:#444;padding:12px">
+    <p>We use optional cookies to improve the site.</p>
+    <button onclick="document.title='clicked:accept-optional'" style="font-size:20px">Accept optional cookies</button>
+    <button onclick="document.title='clicked:reject-optional'" style="font-size:20px">Reject optional cookies</button>
+  </div>${COLLECTION_SEARCH}
+</body>
+</html>`
+}
+
 // A Tier-2 wall: no consent labels anywhere, so nothing is auto-dismissable.
 // The dialog's text + controls must reach the model, and "Not now" must be
 // clickable through real input.
@@ -1045,6 +1121,18 @@ export async function startFixtureServer(): Promise<FixtureServer> {
     }
     if (req.url === '/consent-wall') {
       res.end(consentWallPage())
+      return
+    }
+    if (req.url === '/consent-banner') {
+      res.end(consentWallLandingPage())
+      return
+    }
+    if (req.url === '/consent-banner-late') {
+      res.end(lateConsentWallPage())
+      return
+    }
+    if (req.url === '/consent-strip') {
+      res.end(consentStripPage())
       return
     }
     if (req.url === '/dialog-wall') {

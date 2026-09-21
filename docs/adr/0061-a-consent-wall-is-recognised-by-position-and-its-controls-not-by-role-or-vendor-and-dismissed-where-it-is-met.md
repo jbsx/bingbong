@@ -7,6 +7,28 @@ Accepted on 2026-09-21 for #263, grilled from the `fix-258-259` capture
 class that is auto-cleared — to walls that declare no dialog role, and
 moves the dismissal to where the wall is met. Amends nothing.
 
+**Note (#263 implementation, 2026-09-21).** The rule lives in the collect
+script (`src/main/browser/collectPageScript.ts`), fed `CONSENT_LABEL_RE`'s
+source; the dismissal and retry live in the controller. The calls this ADR
+left open: the rule tests only button- and link-like controls, by their
+aria-label, value and text content rather than the laid-out label, so it
+costs no layout on the many pages that carry no wall, and never takes the
+body or the root element as a root. "Optional" is reject-style only in a
+label with no accept verb, so "Accept optional cookies" is never chosen
+over "Reject optional cookies" by coming first. The navigate outcome keeps
+its `navigated:` head and carries the dismissal on the second line, above
+the listing. A block first asks the page whether any dialog root is open,
+cheaply, and only then collects: a block under no dialog stands exactly as
+before, with no collect. The retry is measured against the post-dismissal
+page, so its changes clause says what the retried click did rather than
+crediting it with the wall's departure, and the post-dismissal listing
+rides it whatever it did; a dismissal that took the named node with it (a
+reload) refuses the ref with the page as it stands, as any dead ref is.
+Back and forward are not call sites: the read or the blocked action after
+them still clears the wall. The audit's hand consent click reads the label
+from the last listing that numbered the ref, and pairs each Blocked Action
+with at most one such click.
+
 ## Context
 
 The museum collections page every longitude-watch Run opens carries a

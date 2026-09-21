@@ -169,6 +169,23 @@ describe('assessBrowserAction', () => {
       expect(assessBrowserAction(call('click', { ref: 1 }), doubled)).toEqual({ kind: 'allow' })
     })
 
+    it('allows an optional- or necessary-cookies consent submit: the gate widens with the consent vocabulary (#263, ADR 0061)', () => {
+      const rejectOptional = target({ label: 'Reject optional cookies', submitsForm: true, inForm: true })
+      const acceptNecessary = target({ label: 'Accept necessary cookies', submitsForm: true, inForm: true })
+
+      expect(assessBrowserAction(call('click', { ref: 1 }), rejectOptional)).toEqual({ kind: 'allow' })
+      expect(assessBrowserAction(call('click', { ref: 1 }), acceptNecessary)).toEqual({ kind: 'allow' })
+    })
+
+    it('never exempts a submit for the reject-style widening alone: "necessary cookies only" is not a consent label to the gate', () => {
+      const necessaryOnly = target({ label: 'Continue with necessary cookies only', submitsForm: true, inForm: true })
+
+      expect(assessBrowserAction(call('click', { ref: 1 }), necessaryOnly)).toEqual({
+        kind: 'confirm',
+        prompt: 'Submit the form via "Continue with necessary cookies only"?',
+      })
+    })
+
     it('allows clicking the submit control of a search form — the second exempt path (#102, ADR 0015)', () => {
       const googleSearch = target({ label: 'Google Search', submitsForm: true, inForm: true, formHasSearch: true })
 

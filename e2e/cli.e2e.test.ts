@@ -96,12 +96,12 @@ describe('cli browser harness e2e', () => {
 
   it('auto-dismisses consent walls and reports overlay interception', async () => {
     const url = harness.fixture.url('/consent-wall')
+    // The navigate that meets the wall dismisses it (ADR 0061).
     await cli(harness, `navigate ${url}`, /^navigated: /)
     await harness.waitForPaneUrl(url)
     await harness.focusPane()
-
-    await cli(harness, 'read', /^dismissed consent dialog: clicked \[2\] "Reject all(?: Reject all)?"$/)
     await panePoll(harness, 'document.title', (value) => value === 'submitted:consent')
+    await cli(harness, 'read', /^# submitted:consent — /)
 
     const overlayUrl = harness.fixture.url('/overlay')
     await cli(harness, `navigate ${overlayUrl}`, /^navigated: /)

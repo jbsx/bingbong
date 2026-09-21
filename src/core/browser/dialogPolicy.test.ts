@@ -13,8 +13,14 @@ describe('CONSENT_LABEL_RE', () => {
     }
   })
 
+  it('matches the optional, necessary and essential cookie choices (#263, ADR 0061)', () => {
+    for (const label of ['Reject optional cookies', 'Accept optional cookies', 'Accept necessary cookies', 'Allow essential cookies', 'Decline optional cookie']) {
+      expect(CONSENT_LABEL_RE.test(label), label).toBe(true)
+    }
+  })
+
   it('does not match unrelated labels', () => {
-    for (const label of ['Send me cookies news', 'Sign in', 'Not now', 'Submit', 'OK']) {
+    for (const label of ['Send me cookies news', 'Sign in', 'Not now', 'Submit', 'OK', 'Necessary reading', 'Optional extras']) {
       expect(CONSENT_LABEL_RE.test(label)).toBe(false)
     }
   })
@@ -39,6 +45,18 @@ describe('chooseConsentDismissal', () => {
   it('prefers the reject-style control over accept', () => {
     const choice = chooseConsentDismissal(['Accept all', 'Reject all'])
     expect(choice).toBe(1)
+  })
+
+  it('takes a necessary- or essential-only control as reject-style, over accept (#263, ADR 0061)', () => {
+    expect(chooseConsentDismissal(['Accept all cookies', 'Continue with necessary cookies only'])).toBe(1)
+    expect(chooseConsentDismissal(['Accept all cookies', 'Essential cookies only'])).toBe(1)
+    expect(chooseConsentDismissal(['Allow all', 'Only necessary cookies'])).toBe(1)
+  })
+
+  it('takes an optional-cookies refusal as reject-style but never an optional-cookies acceptance', () => {
+    expect(chooseConsentDismissal(['Accept optional cookies', 'Reject optional cookies'])).toBe(1)
+    expect(chooseConsentDismissal(['Accept optional cookies', 'Without optional cookies'])).toBe(1)
+    expect(chooseConsentDismissal(['Accept optional cookies'])).toBe(0)
   })
 
   it('falls back to the accept-style control when reject is absent', () => {

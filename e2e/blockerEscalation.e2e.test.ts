@@ -49,7 +49,8 @@ function blockerScript(fixture: FixtureServer): AssistantTurn[] {
       kind: 'tool_calls',
       calls: [{ id: 'abort-nav', name: 'navigate', args: { url: fixture.url('/mid-load-redirect') } }],
     },
-    // Consent stays the auto-clear class: read_page dismisses it, no ask.
+    // Consent stays the auto-clear class: the navigate that meets it
+    // dismisses it (ADR 0061), no ask.
     // Back to the second site — different host from the primary-site
     // challenge the redirect landed on, so the gate lets it through again.
     {
@@ -162,8 +163,11 @@ describe('blocker detect → escalate e2e', () => {
     expect(byId['abort-nav']).toContain(`navigated: url=${fixture.url('/challenge')}`)
     expect(byId['abort-nav']).toContain('BLOCKER:challenge 127.0.0.1')
 
-    // Consent keeps auto-clearing — dismissed deterministically, not escalated.
-    expect(byId['consent-read']).toMatch(/^dismissed consent dialog: clicked \[2\] "Reject all(?: Reject all)?"/)
+    // Consent keeps auto-clearing — dismissed deterministically where it is
+    // met (ADR 0061), not escalated, so the read finds the page behind it.
+    expect(byId['consent-nav']).toMatch(/\ndismissed consent dialog: clicked \[2\] "Reject all(?: Reject all)?"\n/)
+    expect(byId['consent-nav']).not.toContain('BLOCKER:')
+    expect(byId['consent-read']).not.toContain('dialog open:')
     expect(events.filter((event) => event.type === 'ask_resolved')).toHaveLength(1)
   })
 })

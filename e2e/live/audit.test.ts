@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { FINALIZATION_REASONING_EFFORT as SOURCE_FINALIZATION_EFFORT, TIER_REASONING_EFFORT as SOURCE_TIER_EFFORT, TIER_TOOL_ROUND_BUDGETS as SOURCE_BUDGETS, budgetWarningMessage, finalizeInstruction, notExecuted } from '../../src/core/pipeline/effortEpoch'
 import { SCROLL_END_OF_PAGE } from '../../src/core/browser/scrollDelta'
+import { CONSENT_LABEL_RE, consentDismissalLine, consentRetryNote } from '../../src/core/browser/dialogPolicy'
 import { similarQueries as ruleSimilarQueries } from '../../src/core/pipeline/searchLoopRule'
 import { createSearchLoopRail, SEARCH_LOOP_NUDGE, searchQueryFromUrl as railSearchQueryFromUrl, type SearchObservation } from '../../src/core/pipeline/searchLoopRail'
 import type { PerfSpanRecord } from '../../src/core/perf/perfTracer'
@@ -14,6 +15,8 @@ import {
   AUDIT_COUNTS_NOTE,
   AUDIT_VERDICTS,
   BUDGET_WARNING_RE,
+  CONSENT_DISMISSAL_MARK,
+  CONSENT_LABEL_PATTERN,
   JUDGEMENT_SCHEMA,
   END_OF_PAGE_MARK,
   FINALIZATION_REASONING_EFFORT,
@@ -1267,6 +1270,82 @@ describe('Unavailable Landings (#262, ADR 0060)', () => {
     // The held landing sits at the streak before it: 1, (1), 2, 3.
     expect(streaks).toEqual([[1], [null], [2], [3]])
   })
+})
+
+describe('consent walls (#263, ADR 0061)', () => {
+  const COLLECTIONS = 'https://www.rmg.co.uk/collections/objects'
+  // The page as a navigate lists it: the search box, and the wall's own
+  // controls on the page layer, as the role-less Cookiebot wall was before #263.
+  const WALLED = `navigated: url=${COLLECTIONS} title="Collections"\n# Collections — ${COLLECTIONS}\nviewport 985x575 scroll 0/5007\nsignature wall0001\n[7] input[search] "Search our collection"\n[8] button "Reject all cookies"\n[9] button "Manage settings"\n[10] button "Allow all cookies"\npage text:\nsome text`
+  const CLEARED = `# Collections — ${COLLECTIONS}\nviewport 985x575 scroll 0/4435\nsignature open0002\n[7] input[search] "Search our collection"\n[8] link "Visit"\npage text:\nsome text`
+
+  // fix-258-259 pass 2's shape: blocked, a read between, then the hand click.
+  const BEFORE: RoundSpec[] = [
+    { round: 1, at: 1_000, calls: [{ name: 'navigate', args: { url: COLLECTIONS }, result: WALLED }] },
+    { round: 2, at: 2_000, calls: [{ name: 'type', args: { ref: 7, text: 'Harrison longitude watch' }, result: 'typed [7]: not typed — blocked by overlay' }] },
+    { round: 3, at: 3_000, calls: [{ name: 'read_page', args: {}, result: WALLED.split('\n').slice(1).join('\n') }] },
+    { round: 4, at: 4_000, calls: [{ name: 'click', args: { ref: 8 }, result: `clicked [8]: urlChanged=false dialogOpen=false; page signature changed\n${CLEARED}` }] },
+    // A click on a ref that is no consent control is no hand consent click,
+    // though its number once named one.
+    { round: 5, at: 5_000, calls: [{ name: 'click', args: { ref: 8 }, result: `clicked [8]: urlChanged=true dialogOpen=false; page signature changed\n${CLEARED}` }] },
+  ]
+
+  // The same Run after #263: dismissed on navigate, and inside a blocked type.
+  const AFTER: RoundSpec[] = [
+    { round: 1, at: 1_000, calls: [{ name: 'navigate', args: { url: COLLECTIONS }, result: `navigated: url=${COLLECTIONS} title="Collections"\n${consentDismissalLine(1, 'Reject all cookies')}\n${CLEARED}` }] },
+    { round: 2, at: 2_000, calls: [{ name: 'type', args: { ref: 7, text: 'Harrison' }, result: `typed [7]: value="Harrison"; ${consentDismissalLine(1, 'Reject all cookies')} ${consentRetryNote(7, false)}\n${CLEARED}` }] },
+  ]
+
+  it('pins its dismissal mark and its consent vocabulary to the source they read (AC5)', () => {
+    expect(consentDismissalLine(8, 'Reject all cookies').startsWith(CONSENT_DISMISSAL_MARK)).toBe(true)
+    expect(CONSENT_LABEL_PATTERN.source).toBe(CONSENT_LABEL_RE.source)
+    expect(CONSENT_LABEL_PATTERN.flags).toBe(CONSENT_LABEL_RE.flags)
+  })
+
+  it('counts a hand consent click, and a block it followed within two rounds (AC5)', () => {
+    const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(BEFORE, EXTRA) }))
+    expect(mechanical.consentWalls).toEqual({ dismissals: [], handConsentClicks: [4], blockedThenHandConsent: [2] })
+  })
+
+  it('never pairs a block with a hand consent click three rounds on', () => {
+    const late = [...BEFORE.slice(0, 3), { round: 4, at: 4_000, calls: [{ name: 'read_page', args: {}, result: WALLED.split('\n').slice(1).join('\n') }] }, { ...BEFORE[3]!, round: 5, at: 5_000 }]
+    expect(classifyAttempt(inputOf({ traceRecords: traceOf(late, EXTRA) })).consentWalls).toEqual({ dismissals: [], handConsentClicks: [5], blockedThenHandConsent: [] })
+  })
+
+  it('counts a dismissal on navigate and one inside a blocked type, and no hand click (AC5)', () => {
+    const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(AFTER, EXTRA) }))
+    expect(mechanical.consentWalls).toEqual({ dismissals: [1, 2], handConsentClicks: [], blockedThenHandConsent: [] })
+  })
+
+  it('reports the tags per attempt, per population and per hunt, beside the rounds (AC5)', () => {
+    const before = classifyAttempt(inputOf({ traceRecords: traceOf(BEFORE, EXTRA) }))
+    const after = classifyAttempt(inputOf({ traceRecords: traceOf(AFTER, EXTRA) }))
+    // Beside the rounds: the digest a cached judgement is keyed by is the one it had without them.
+    expect(before.digestHash).toBe(classifyAttempt(inputOf({ traceRecords: traceOf(BEFORE, EXTRA) })).digestHash)
+    const set = buildAuditSet(
+      provenanceOf(),
+      [before, after].map((attempt) => ({ mechanical: attempt, review: null, countsAfterOverrules: countsAfterOverrulesOf(attempt, null) })),
+      [],
+    )
+    expect(set.populations.initial.consentWalls).toEqual({ dismissals: 2, handConsentClicks: 1, blockedThenHandConsent: 1 })
+    const markdown = formatAuditSet(set)
+    expect(markdown).toContain('- consent walls: dismissals 0, hand consent clicks 1 (round 4), blocked then hand consent 1 (round 2)')
+    expect(markdown).toContain('- consent walls: dismissals 2 (round 1, 2), hand consent clicks 0, blocked then hand consent 0')
+    expect(markdown).toContain('2 consent dismissal(s), 1 hand consent click(s), 1 blocked then hand consent')
+    expect(markdown).toContain('| hunt-x | 2 | 1 | 1 |')
+    const other = buildAuditSet(provenanceOf({ setId: 'set-2', createdAt: '2026-09-12T18:00:00.000Z' }), [{ mechanical: before, review: null, countsAfterOverrules: countsAfterOverrulesOf(before, null) }], [])
+    const aggregate = buildAuditAggregate([set, other], '2026-09-14T11:00:00.000Z')
+    if (!aggregate.ok) throw new Error(aggregate.errors.join('; '))
+    expect(formatAuditAggregate(aggregate.value)).toContain('| hunt-x | 2 | 2 | 2 |')
+  })
+
+  it('leaves an audit written before the counter uncounted, never zero', () => {
+    const older = { ...classifyAttempt(inputOf()), consentWalls: undefined }
+    const set = buildAuditSet(provenanceOf(), [{ mechanical: older, review: null, countsAfterOverrules: countsAfterOverrulesOf(older, null) }], [])
+    expect(set.populations.initial.consentWalls).toBeUndefined()
+    expect(formatAuditSet(set)).toContain('- consent walls not counted')
+  })
+
 })
 
 describe('Not-found Landings (#239, ADR 0050)', () => {

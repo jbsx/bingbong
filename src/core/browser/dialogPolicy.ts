@@ -1,12 +1,13 @@
 // Dialog policy (issue #18, Tier 1): which open dialogs are trivial enough
 // to dismiss deterministically in code, and which control to press. The
 // consent-label regex is the same narrow precedent the risk gate applies to
-// consent submits — a verb of consent followed by "all"/"cookies"/"consent"
-// — so the two layers can never drift apart.
+// consent submits — a verb of consent followed by "all"/"cookies"/"consent",
+// or by the optional/necessary/essential cookies a choice names (ADR 0061) —
+// so the two layers can never drift apart.
 
-/** Matches a consent-choice label ("Accept all", "Reject all cookies", …). */
+/** Matches a consent-choice label ("Accept all", "Reject all cookies", "Reject optional cookies", …). */
 export const CONSENT_LABEL_RE =
-  /\b(accept|reject|allow|decline)\s+(all(\s+cookies?)?|cookies?(\s+consent)?|consent)\b|\b(accept|reject)\s+all\b/i
+  /\b(accept|reject|allow|decline)\s+((optional|necessary|essential)\s+cookies?|all(\s+cookies?)?|cookies?(\s+consent)?|consent)\b|\b(accept|reject)\s+all\b/i
 
 /**
  * A dialog is deterministically dismissable (Tier 1) only when one of its
@@ -17,9 +18,21 @@ export function isConsentDialog(_dialogText: string, controlLabels: string[]): b
   return controlLabels.some((label) => CONSENT_LABEL_RE.test(label))
 }
 
-/** Control labels that decline (preferred) or accept — privacy first. */
-const REJECT_STYLE_RE = /\b(reject|decline|deny|refuse|dismiss)\b/i
+/**
+ * Control labels that decline (preferred) or accept — privacy first. Taking
+ * only the necessary or essential cookies declines the rest, and so does a
+ * label about optional cookies that does not accept them (ADR 0061). This
+ * widening is the dismissal's alone: the risk gate reads `CONSENT_LABEL_RE`.
+ */
+const REJECT_VERB_RE = /\b(reject|decline|deny|refuse|dismiss)\b/i
+const NECESSARY_ONLY_RE = /\b(necessary|essential)\b.*\bonly\b|\bonly\b.*\b(necessary|essential)\b/i
+const OPTIONAL_RE = /\boptional\b/i
 const ACCEPT_STYLE_RE = /\b(accept|allow|agree|ok|okay|got it)\b/i
+
+function isRejectStyle(label: string): boolean {
+  if (REJECT_VERB_RE.test(label) || NECESSARY_ONLY_RE.test(label)) return true
+  return OPTIONAL_RE.test(label) && !ACCEPT_STYLE_RE.test(label)
+}
 
 /**
  * Pick the control a Tier-1 dismissal clicks: a reject-style control when one
@@ -27,9 +40,27 @@ const ACCEPT_STYLE_RE = /\b(accept|allow|agree|ok|okay|got it)\b/i
  */
 export function chooseConsentDismissal(controlLabels: string[]): number | null {
   if (controlLabels.length === 0) return null
-  const reject = controlLabels.findIndex((label) => REJECT_STYLE_RE.test(label))
+  const reject = controlLabels.findIndex(isRejectStyle)
   if (reject !== -1) return reject
   const accept = controlLabels.findIndex((label) => ACCEPT_STYLE_RE.test(label))
   if (accept !== -1) return accept
   return null
+}
+
+/**
+ * The one line a Tier-1 dismissal reports, wherever it ran — read, navigate,
+ * a click that opened the wall, or a blocked action (ADR 0061). The Round
+ * Audit counts dismissals by this line's head, pinned by its test.
+ */
+export function consentDismissalLine(ref: number, label: string): string {
+  return `dismissed consent dialog: clicked [${ref}] ${JSON.stringify(label)}`
+}
+
+/**
+ * What follows the dismissal line when a click or type the wall blocked was
+ * retried in the same call (ADR 0061): the ref the model named, and whether
+ * the retry still met a cover.
+ */
+export function consentRetryNote(ref: number, stillBlocked: boolean): string {
+  return stillBlocked ? `(it covered [${ref}]; retried, still blocked)` : `(it covered [${ref}]; retried)`
 }

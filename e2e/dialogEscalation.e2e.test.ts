@@ -103,7 +103,11 @@ describe('popup and dialog escalation tiers e2e', () => {
     )
     const byId = Object.fromEntries(results.map((event) => [event.callId, event.result]))
 
-    expect(byId['consent-read']).toMatch(/^dismissed consent dialog: clicked \[2\] "Reject all(?: Reject all)?"\n/)
+    // The navigate that met the wall dismissed it (ADR 0061); the read after
+    // it finds the page behind, with nothing left to dismiss.
+    expect(byId['consent-nav']).toMatch(/^navigated: [^\n]*\ndismissed consent dialog: clicked \[2\] "Reject all(?: Reject all)?"\n/)
+    expect(byId['consent-nav']).not.toContain('dialog open:')
+    expect(byId['consent-read']).not.toContain('dismissed consent dialog')
     expect(byId['consent-read']).not.toContain('dialog open:')
 
     expect(byId['dialog-read']).toContain('dialog open: "Sign in to continue to this fixture Sign in Not now"')

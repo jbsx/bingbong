@@ -77,6 +77,12 @@ class FakeCdp implements CdpDebugger {
   collectException: string | null = null
   /** When set, click-prep reports the element as covered (blocked path). */
   prepCovered = false
+  /** How many click-preps from here report a cover before the rest land (a wall that goes). */
+  prepCoveredTimes = 0
+  /** Runs on every DOM `.click()` the controller evaluates — a dismissal taking the wall away. */
+  onDomClick: (() => void) | null = null
+  /** The node the controller kept across a consent dismissal (ADR 0061). */
+  private keptNode: unknown = undefined
   /** When set, click-prep reports the element as offscreen (no coordinates). */
   prepOffscreen = false
   /** When set, the next click-prep reports a stale registry once (re-collect path). */
@@ -101,6 +107,11 @@ class FakeCdp implements CdpDebugger {
   private readonly handlers = new Map<string, ((params: unknown) => void)[]>()
 
   constructor(private evaluateValue: unknown = youtubeFixture) {}
+
+  /** Test helper: the page now serves this collect by default — a wall arriving, or going. */
+  serve(page: unknown): void {
+    this.evaluateValue = page
+  }
 
   on(event: string, handler: (params: unknown) => void): void {
     const existing = this.handlers.get(event) ?? []
@@ -207,8 +218,21 @@ class FakeCdp implements CdpDebugger {
         }
         return { result: { value: true } } as T
       }
+      if (expression.includes('/* CONSENT_RETRY_KEEP */')) {
+        const index = Number(/\)\[(\d+)\]/.exec(expression)?.[1] ?? -1)
+        this.keptNode = this.collectedElements[index]
+        return { result: { value: true } } as T
+      }
+      if (expression.includes('/* CONSENT_RETRY_FIND */')) {
+        const index = this.keptNode === undefined ? -1 : this.collectedElements.indexOf(this.keptNode)
+        this.keptNode = undefined
+        return { result: { value: index } } as T
+      }
       if (expression.includes('__bingbongRefs')) {
-        if (expression.includes('.click()')) return { result: { value: { clicked: true } } } as T
+        if (expression.includes('.click()')) {
+          this.onDomClick?.()
+          return { result: { value: { clicked: true } } } as T
+        }
         if (this.prepStaleOnce) {
           this.prepStaleOnce = false
           return { result: { value: { ok: false } } } as T
@@ -224,7 +248,9 @@ class FakeCdp implements CdpDebugger {
         // viewport at all — no coordinates, no hit-test.
         if (this.prepOffscreen) return { result: { value: { ok: true, clickable: false } } } as T
         // Mirror the in-page prep math: fresh clickPoint, hit-test result set by the test.
-        return { result: { value: { ok: true, clickable: !this.prepCovered, ...clickPoint(target, snapshot.viewport) } } } as T
+        const covered = this.prepCovered || this.prepCoveredTimes > 0
+        if (this.prepCoveredTimes > 0) this.prepCoveredTimes -= 1
+        return { result: { value: { ok: true, clickable: !covered, ...clickPoint(target, snapshot.viewport) } } } as T
       }
       return { result: { value: this.evaluateValue } } as T
     }
@@ -761,18 +787,20 @@ describe('createCdpBrowserController click', () => {
   })
 
   it('reports the open dialog alongside an overlay-blocked click', async () => {
-    const wall = consentWallPage()
+    const wall = { ...signInDialogPage(), elements: [...signInDialogPage().elements, consentWallPage().elements[2]!] }
     const cdp = new FakeCdp(wall)
     cdp.prepCovered = true
     const { controller } = makeController({ cdp })
     await showRefs(controller)
 
-    // The covered target is the page-level button behind the wall.
+    // The covered target is the page-level button behind a Tier-2 dialog,
+    // which no dismissal touches.
     const outcome = await controller.click(3)
 
     expect(outcome).toBe(
-      'clicked [3]: not clicked — blocked by overlay; dialog open: "Before you continue to this fixture"; controls: [1] button "Accept all", [2] button "Reject all"',
+      'clicked [3]: not clicked — blocked by overlay; dialog open: "Opened dialog"; controls: [1] button "Sign in", [2] button "Not now"',
     )
+    expect(outcome).not.toContain('dismissed consent dialog')
   })
 
   it('still activates directly when the element sits outside the viewport', async () => {
@@ -1264,6 +1292,35 @@ describe('createCdpBrowserController dialog tiers', () => {
     expect(domClick?.params?.expression).toContain('(window.__bingbongRefs || [])[1]')
   })
 
+  it('dismisses a consent wall met on navigate before the listing, and classifies Blockers behind it (#263, ADR 0061)', async () => {
+    const wall = consentWallPage()
+    const cleared = { ...wall, dialogOpen: false, dialogText: '', elements: wall.elements.slice(2) }
+    const cdp = new FakeCdp(cleared)
+    cdp.collectValues = [wall, cleared]
+    const { controller } = makeController({ cdp })
+
+    const outcome = await controller.navigate('youtube.com')
+
+    expect(outcome).toBe(
+      `navigated: url=https://www.youtube.com/ title="YouTube"\ndismissed consent dialog: clicked [2] "Reject all"\n${settledBlock(cleared)}`,
+    )
+    expect(cdp.collectCalls()).toHaveLength(2)
+    // The Blocker classifier reads the page behind the wall, with no second collect.
+    expect((await controller.pageFacts()).dialogText).toBe('')
+    expect(cdp.collectCalls()).toHaveLength(2)
+  })
+
+  it('leaves a Tier-2 dialog met on navigate open and listed', async () => {
+    const cdp = new FakeCdp(signInDialogPage())
+    const { controller } = makeController({ cdp })
+
+    const outcome = await controller.navigate('youtube.com')
+
+    expect(outcome).not.toContain('dismissed consent dialog')
+    expect(outcome).toContain('dialog open: "Opened dialog"')
+    expect((await controller.pageFacts()).dialogText).toBe('Opened dialog')
+  })
+
   it('leaves a non-consent dialog open and surfaces text + controls for the model', async () => {
     const cdp = new FakeCdp(signInDialogPage())
     const { controller } = makeController({ cdp })
@@ -1338,6 +1395,116 @@ describe('createCdpBrowserController dialog tiers', () => {
 
     expect(cdp.calls.some((call) => call.method === 'Runtime.evaluate' && typeof call.params?.expression === 'string' && call.params.expression.includes('.click()'))).toBe(false)
     expect(text).toContain('dialog open:')
+  })
+})
+
+/**
+ * A consent wall that arrives over a shown page (ADR 0061): its two controls
+ * first, then the very element objects of the page — the same DOM nodes,
+ * renumbered by the wall's controls above them.
+ */
+function walledOver(page: CollectedPage): CollectedPage {
+  const wall = consentWallPage()
+  return { ...page, dialogOpen: true, dialogText: wall.dialogText, elements: [...wall.elements.slice(0, 2), ...page.elements] }
+}
+
+describe('createCdpBrowserController a blocked action under a consent wall (#263, ADR 0061)', () => {
+  /** The shown page, then a wall arriving over it that its dismissal takes away. */
+  function wallArrives() {
+    const cdp = new FakeCdp(youtubeFixture)
+    const { controller } = makeController({ cdp })
+    return {
+      cdp,
+      controller,
+      async arrive() {
+        await showRefs(controller)
+        cdp.serve(walledOver(youtubeFixture))
+        cdp.onDomClick = () => cdp.serve(youtubeFixture)
+      },
+    }
+  }
+
+  const domClicks = (cdp: FakeCdp) =>
+    cdp.calls.filter((call) => call.method === 'Runtime.evaluate' && typeof call.params?.expression === 'string' && call.params.expression.includes('.click()'))
+  const preps = (cdp: FakeCdp) =>
+    cdp.calls.filter((call) => call.method === 'Runtime.evaluate' && typeof call.params?.expression === 'string' && call.params.expression.includes('scrollIntoView'))
+
+  it('dismisses once and retries the click on the same node, under the ref the model named', async () => {
+    const { cdp, controller, arrive } = wallArrives()
+    await arrive()
+    cdp.prepCoveredTimes = 1
+
+    const outcome = await controller.click(3)
+
+    expect(outcome.split('\n')[0]).toBe(
+      'clicked [3]: urlChanged=false dialogOpen=false; no observable change; dismissed consent dialog: clicked [2] "Reject all" (it covered [3]; retried)',
+    )
+    expect(blockedOrInertAction(outcome)).toBeNull()
+    // The dismissal pressed the wall's reject control in the walled collect.
+    expect(domClicks(cdp)).toHaveLength(1)
+    expect(domClicks(cdp)[0]!.params?.expression).toContain('(window.__bingbongRefs || [])[1]')
+    // The first attempt aimed at index 2; the retry aimed at the same node,
+    // wherever the post-dismissal collect put it.
+    expect(preps(cdp).map((call) => /\)\[(\d+)\]/.exec(String(call.params?.expression))?.[1])).toEqual(['2', '2'])
+    expect(cdp.inputCalls().filter((call) => call.params?.type === 'mousePressed')).toHaveLength(1)
+    // The post-dismissal listing rides the outcome.
+    expect(outcome).toContain(settledBlock(youtubeFixture))
+  })
+
+  it('retries the node, not the number, when the page behind the wall renumbered', async () => {
+    const { cdp, controller, arrive } = wallArrives()
+    await arrive()
+    const promo = link('Newly shown promo link')
+    cdp.onDomClick = () => cdp.serve({ ...youtubeFixture, elements: [promo, ...youtubeFixture.elements] })
+    cdp.prepCoveredTimes = 1
+
+    await controller.click(3)
+
+    expect(preps(cdp).map((call) => /\)\[(\d+)\]/.exec(String(call.params?.expression))?.[1])).toEqual(['2', '3'])
+  })
+
+  it('dismisses once and retries the typing, reporting both steps in one line', async () => {
+    const { cdp, controller, arrive } = wallArrives()
+    await arrive()
+    cdp.prepCoveredTimes = 1
+
+    const outcome = await controller.type(3, 'longitude')
+
+    expect(outcome.split('\n')[0]).toMatch(/^typed \[3\]: value=".*"; dismissed consent dialog: clicked \[2\] "Reject all" \(it covered \[3\]; retried\)$/)
+    expect(outcome).toContain(settledBlock(youtubeFixture))
+    expect(cdp.inputCalls().filter((call) => call.params?.type === 'keyDown')).toHaveLength('longitude'.length)
+    expect(domClicks(cdp)).toHaveLength(1)
+  })
+
+  it('reports a second block with the dismissal noted, and never dismisses twice', async () => {
+    const { cdp, controller, arrive } = wallArrives()
+    await arrive()
+    cdp.prepCovered = true
+
+    const outcome = await controller.type(3, 'longitude')
+
+    expect(outcome.split('\n')[0]).toBe(
+      'typed [3]: not typed — blocked by overlay; dismissed consent dialog: clicked [2] "Reject all" (it covered [3]; retried, still blocked)',
+    )
+    expect(blockedOrInertAction(outcome)).toBe('blocked')
+    expect(domClicks(cdp)).toHaveLength(1)
+    expect(preps(cdp)).toHaveLength(2)
+    expect(cdp.inputCalls()).toHaveLength(0)
+    expect(outcome).toContain(settledBlock(youtubeFixture))
+  })
+
+  it('leaves a block with no dialog open as it was: no collect, no dismissal', async () => {
+    const cdp = new FakeCdp(youtubeFixture)
+    const { controller } = makeController({ cdp })
+    await showRefs(controller)
+    cdp.prepCovered = true
+    const collects = cdp.collectCalls().length
+
+    const outcome = await controller.click(3)
+
+    expect(outcome).toBe('clicked [3]: not clicked — blocked by overlay')
+    expect(cdp.collectCalls()).toHaveLength(collects)
+    expect(domClicks(cdp)).toHaveLength(0)
   })
 })
 
