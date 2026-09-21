@@ -39,7 +39,8 @@ export function normalizeUrlInput(raw: string): string | null {
 }
 
 /** Where a Search URL carried its terms: an engine's `q=`, another parameter named for terms, or the path segment after `search`. */
-export type SearchUrlForm = 'q' | 'param' | 'path'
+export const SEARCH_URL_FORMS = ['q', 'param', 'path'] as const
+export type SearchUrlForm = (typeof SEARCH_URL_FORMS)[number]
 
 /** The terms a Search URL carries and the form it carried them in (ADR 0059). */
 export interface SearchUrl {
@@ -86,7 +87,7 @@ export function parseSearchUrl(raw: string): SearchUrl | null {
   const segments = url.pathname.split('/')
   const terms = segments.at(-1) ?? ''
   if (segments.length < 3 || segments.at(-2)!.toLowerCase() !== 'search') return null
-  const query = decodedSegment(terms)
+  const query = lenientlyDecodedSegment(terms)
   return query.trim() === '' ? null : { query, form: 'path' }
 }
 
@@ -95,6 +96,6 @@ export function parseSearchUrl(raw: string): SearchUrl | null {
  * `%` stays itself, as the address bar shows it, where `decodeURIComponent`
  * would throw. `+` and `&` are escaped first — in a path they are literal.
  */
-function decodedSegment(segment: string): string {
+function lenientlyDecodedSegment(segment: string): string {
   return new URLSearchParams(`t=${segment.replace(/[+&]/g, encodeURIComponent)}`).get('t') ?? segment
 }

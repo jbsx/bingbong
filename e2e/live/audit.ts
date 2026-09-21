@@ -45,7 +45,7 @@ import type { PipelineEvent } from '../../src/core/pipeline/events'
 import type { EffortTier } from '../../src/core/pipeline/runPlan'
 import type { SearchObservation, SearchSignature } from '../../src/core/pipeline/searchLoopRail'
 import { isSearchInspection, SEARCH_LOOP_NUDGE_AFTER, SEARCH_SIGNATURES, searchStreakAfter, searchStreakMoveOf, similarQueries } from '../../src/core/pipeline/searchLoopRule.ts'
-import { normalizeUrlInput, parseSearchUrl, type SearchUrlForm } from '../../src/core/browser/urlInput.ts'
+import { normalizeUrlInput, parseSearchUrl, SEARCH_URL_FORMS, type SearchUrlForm } from '../../src/core/browser/urlInput.ts'
 import type { TraceRecord } from '../../src/core/trace/runTrace'
 import type { Validation } from './artifacts.ts'
 import type { LiveGradeEntry, LiveKeyTask } from './grades.ts'
@@ -724,7 +724,9 @@ function searchFormOf(call: AuditCall): SearchUrlForm | null {
   return isString(call.args.url) ? (parseSearchUrl(call.args.url)?.form ?? null) : null
 }
 
-const SEARCH_URL_FORMS: readonly SearchUrlForm[] = ['q', 'param', 'path']
+function emptySearchForms(): Record<SearchUrlForm, number> {
+  return Object.fromEntries(SEARCH_URL_FORMS.map((form) => [form, 0])) as Record<SearchUrlForm, number>
+}
 
 function searchFormsText(forms: Readonly<Record<SearchUrlForm, number>> | undefined): string {
   return forms === undefined ? 'not counted' : SEARCH_URL_FORMS.map((form) => `${form} ${forms[form]}`).join(', ')
@@ -732,7 +734,7 @@ function searchFormsText(forms: Readonly<Record<SearchUrlForm, number>> | undefi
 
 /** The navigate searches over an attempt's rounds by Search URL form (#260, AC5). */
 export function searchFormsOf(rounds: readonly AuditRound[]): Record<SearchUrlForm, number> {
-  const forms: Record<SearchUrlForm, number> = { q: 0, param: 0, path: 0 }
+  const forms = emptySearchForms()
   for (const round of rounds) {
     for (const call of round.calls) {
       const form = searchFormOf(call)
@@ -2098,7 +2100,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
     rewritten += mechanical.rewrittenComposedAddresses?.length ?? 0
     rewrittenShown += mechanical.rewrittenShownAddresses?.length ?? 0
     if (mechanical.searchForms !== undefined) {
-      searchForms ??= { q: 0, param: 0, path: 0 }
+      searchForms ??= emptySearchForms()
       for (const form of SEARCH_URL_FORMS) searchForms[form] += mechanical.searchForms[form]
     }
     if (mechanical.identitySlips === null) slipsNotRecorded += 1
