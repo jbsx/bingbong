@@ -9,14 +9,27 @@ View, End of Page, the repeat rule the note feeds) is unchanged; the stale-ref
 rule (ADR 0033) is unchanged; the Blocker gate's read of the digest (ADR 0010)
 reads the same first stretch it always did.
 
-Note (2026-09-21, #265): the collector's block sources gain one. A
-container's own direct text nodes, joined and trimmed, are a text block when
-they total at least 40 characters and the element is not inside a taken
-block. The longitude case record on rmg.co.uk keeps its description as a
-bare text node inside a `div`, so no Page Read in `fix-263-264` carried it
-and the Run fell back to region Looks that transcribed it differently in
-each pass. The tag list, the part cut, the viewport bound and the repeat rule
-are unchanged; this is a note, not an amendment.
+Note (2026-09-21, #265): the collector's block sources gain one. A prose
+run — a maximal run of text nodes and inline (phrasing) elements between
+block-level children, rendered as a paragraph's innerText would render it,
+whitespace collapsed and trimmed — is a text block when it is 40 characters
+or longer, placed in document order where it sits. The walk is one recursive
+pass over the text root: a tag block (`p`, `li`, `h2`, `h3`, `tr`, `pre`,
+`dl`) closes the open run and is taken whole at the element as before; a
+`script`, `style`, `noscript`, `template`, `textarea`, `select`, `option`,
+`svg`, `math`, `iframe` or `object` closes the run and is skipped; any other
+element closes the run and is descended, so a container holding both bare
+text and paragraphs reads all of them. A run is in view by a Range over its
+nodes, not by its container's rect. Nothing checks visibility, as nothing
+did for a paragraph. The longitude case record on rmg.co.uk keeps its
+description as a bare text node inside a `div`, so no Page Read in
+`fix-263-264` carried it and the Run fell back to region Looks that
+transcribed it differently in each pass. The tag list, the part cut, the
+viewport bound and the repeat rule are unchanged; this is a note, not an
+amendment. Grilled a second time the same day: the first wording took the
+block at the element and read only direct text nodes, which would have
+dropped a paragraph inside such a container and the words of an `<em>` or
+`<a>` inside its prose.
 
 ## Context
 
