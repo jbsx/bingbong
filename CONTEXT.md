@@ -645,8 +645,10 @@ whatever their terms. A search after a search continues the loop; the terms
 do not have to resemble each other, because on the live web rewordings of one
 need rarely share words. Inspection between searches does not break it: a
 page read, a Look, or a scroll looks at what the search returned and is not
-escape; neither is a Not-found Landing, a navigate that settled on nothing.
-Only escape breaks it — opening a result, or any other successful tool call.
+escape; neither is a Not-found Landing, a navigate that settled on nothing,
+nor a Blocked Action or an inert click, which reached nothing. Only escape
+breaks it — opening a result, or any other tool call that succeeded and
+changed something.
 That rule is this rail's own and independent of Progress: a first page read
 of a search result page is neutral to the Approach accounting, and still no
 escape. One search observation is the visible search signature: a navigate
@@ -1034,6 +1036,16 @@ a fact about the page, on whatever action landed there; it is neutral to
 Progress; and it is not escape from a Search Loop. Only a Composed Address
 landing there spends the site's allowance.
 _Avoid_: 404 hit, failed navigate, bad guess
+
+**Blocked Action**:
+A click or type the browser did not perform because another element sat over
+the target's point — a consent banner's underlay, a closed panel's cover. The
+call succeeded in the sense that it ran and reported; it reached nothing, so
+its Action Outcome says so, it is not escape from a Search Loop, and what
+covered the point is a fact about the page the outcome may name. It is
+distinct from a refused call, which a gate stopped before it ran, and from a
+failed call, which ran and errored.
+_Avoid_: overlay error, intercepted click, blocked by overlay (as a category)
 
 **Composed Address**:
 A URL the model navigates to that it was not shown this Run — not an href in a

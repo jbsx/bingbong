@@ -122,6 +122,43 @@ none is a threshold matter. An `audit-p3` audit cannot be aggregated with an
 marginal across the two; the fix-257 audits stay under `audit-p2` and were
 not re-judged.
 
+**Note (#261 grill, 2026-09-21).** The second of the three mechanisms named
+above — a click that changed nothing under an overlay, two rounds in pass 2
+— is not what the trace shows. The museum's collections page carried a
+Cookiebot consent banner the snapshot did not detect as a dialog
+(`dialogOpen=false`), so the Consent Dialog auto-dismiss never ran; the
+first typed search of every longitude Run in the capture was blocked by its
+underlay, and every Run then clicked "Reject all cookies" by hand. Pass 2's
+round 3 is that click: it removed ten refs, shortened the page by 572 px and
+made the collection search box reachable, and its outcome said `page
+signature changed` because the page changed. Round 4's block had another
+cause — ref 26 before the banner and ref 16 after it are one element, the
+site header's "Search e.g. cutty sark" input inside a closed search drawer,
+never reachable — and round 6's click on that drawer's "Close" was blocked
+too. So the reviewer misread round 3, the rule's escape there was right, and
+those two rounds are not the rule's to count: the 17/23 denominator is read
+as-is, and the reviewer prompt is not changed for one misjudgement. What
+survives is smaller and general. A Blocked Action — the port's `not clicked
+— blocked by overlay` and `not typed — blocked by overlay` — and an inert
+click (the concise line the controller returns when a click moved no URL,
+dialog, element state or page signature) are `ok:true`, and the rail took
+each as escape. One such reset exists across every live trace on disk: pass
+2's round 6, streak 1 → 0. #261 is re-scoped to it. A Blocked Action or an
+inert click holds the streak, decided by one helper beside
+`landedOnNotFoundPage` that reads the port's fixed outcome heads (as
+`browserTools.ts` already reads `urlChanged=true`), the heads owned in one
+shared constant so the controller, its double and the helper cannot drift,
+and replayed by the audit over the trace's full result text, which it
+already holds. A blocked type into a search input stays a search: the gate
+classifies before an outcome exists, and ADR 0049 observes a search
+whatever its outcome. The audit counts Blocked Actions and inert clicks that
+reset a streak (1 on fix-258-259), expected 0 on the shared capture with
+#260 and #262, gated on nothing; the "2 → 0" the issue wrote cannot be met
+by any rail rule and is dropped. The round cost in the capture is elsewhere:
+the undetected consent banner, two rounds per longitude Run in all three
+passes (#263), and the blocked outcome that names no cover, which sent pass
+2 hunting for a dialog through rounds 6–8 (#264).
+
 ## Considered options
 
 - **Lower the threshold.** Rejected: the live rewordings score 0.1–0.3;
