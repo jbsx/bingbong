@@ -32,10 +32,10 @@
     "browserSubspans": true,
     "reviewerModel": "claude-opus-5",
     "reviewerEffort": "high",
-    "reviewerPromptVersion": "audit-p2",
-    "auditCommit": "4c050a7a346b92eb55ea2671805e26393a917bf5",
-    "auditDirtyTree": false,
-    "generatedAt": "2026-09-20T16:34:52.567Z"
+    "reviewerPromptVersion": "audit-p3",
+    "auditCommit": "e2b4c5d97422b46b04f5ff1139dbe2fc4b5f07a0",
+    "auditDirtyTree": true,
+    "generatedAt": "2026-09-21T01:51:17.018Z"
   },
   "attempts": [
     {
@@ -1565,91 +1565,111 @@
               "rounds": [
                 2
               ],
-              "reason": "The app marked a streak of 2 inside round 2 (a site search for documentation, then a site search for the product page), but I do not count it as one loop: the two queries were app rewrites of two distinct direct navigations aimed at two different destinations, not one intent reworded, and the second immediately produced the result clicked in round 3. Recorded here only to register that the marked streak was examined and rejected as a loop; no other round issued a search."
+              "reason": "Round 2's two navigate calls were both rewritten by the app into site-scoped searches on duckduckgo.com (\"documentation camera site:raspberrypi.com\" then \"products camera module site:raspberrypi.com\", streak 1 then 2) with nothing opened between them. Two consecutive searches with no opening in between form a loop; it is confined to round 2 because round 3's click opened https://www.raspberrypi.com/products/camera-module-3/ and broke it."
             }
           ],
           "offKey": [
             {
               "round": 1,
               "url": "https://www.raspberrypi.com/documentation/computers/camera.html",
-              "reason": "A not-found page on raspberrypi.com, per the digest's title and the app's own Notice. A 404 renders no documentation body, so it can carry none of this task's required facts; the URL was a guessed composition rather than a link the Run had seen."
+              "reason": "The composed address resolved to \"Page not found – Raspberry Pi\"; a Not-found Page carries no content at all, so it can carry none of the required facts of this task."
             },
             {
               "round": 2,
-              "url": "https://duckduckgo.com/?q=products+camera+module+site%3Araspberrypi.com&ia=web",
-              "reason": "A DuckDuckGo results page (both calls in this round landed on SERPs after the app rewrote the navigations). A list of result titles and snippets on a search engine cannot carry the cable, board-pairing or software-stack facts this task requires; it is only a route to the raspberrypi.com pages that can. Borderline, since it was the pivot that reached the product page in round 3, so it is flagged."
+              "url": "https://duckduckgo.com/?q=documentation+camera+site%3Araspberrypi.com&ia=web",
+              "reason": "The settled state was a DuckDuckGo results listing (and a second such listing for the products query). A search results page holds only links and snippets, not the cable, hardware-pairing or software-stack statements the key's verified sources carry; the material only arrived when round 3 opened the product page."
             }
           ],
           "overrules": [
             {
+              "round": 4,
+              "kind": "acquisition_with_progress",
+              "reason": "The mechanical label rests on the app's no_progress_notice, but the digest shows this round settled on https://www.raspberrypi.com/documentation/computers/camera_software.html, a URL the Run had not acquired before: the round 3 attempt at it was refused (-3, still loading the product page), so nothing had been observed there. This round put a new page in front of the assistant and it became the spine of rounds 5-24."
+            },
+            {
               "round": 19,
               "kind": "acquisition_without_progress",
-              "reason": "Counted as progress on the app's 'new material into view' notice, but the scroll up settled at y=33305 on https://www.raspberrypi.com/documentation/computers/camera_software.html, exactly the offset already reached and observed in round 17. It is a repeat observation of a page state this Run had already seen."
+              "reason": "The scroll up settled at y=33305 on https://www.raspberrypi.com/documentation/computers/camera_software.html, exactly the position already settled at and reported in round 17. Despite the \"new in view\" wording this is a repeat observation of a state the Run had already observed."
             },
             {
               "round": 20,
               "kind": "acquisition_without_progress",
-              "reason": "Same retread: the scroll up settled at y=33028 on https://www.raspberrypi.com/documentation/computers/camera_software.html, the offset already observed in round 16, and the result head repeats the autofocus-window text seen there."
+              "reason": "The scroll up settled at y=33028 on the same page, the position already reached in round 16; the text reported (autofocus-window width/height and the rpicam-hello examples) repeats what round 16 had already surfaced."
             },
             {
               "round": 21,
               "kind": "acquisition_without_progress",
-              "reason": "Same retread: the scroll up settled at y=32751 on https://www.raspberrypi.com/documentation/computers/camera_software.html, the offset already observed in round 15, with the same body text in the result head. Spent under a 3-of-24 budget warning."
+              "reason": "The scroll up settled at y=32751 on the same page, the position already reached in round 15, and the reported text (the autofocus-window parameter description) is the same material; a repeat observation, not new acquisition, and it consumed a round under the 3/24 budget warning."
             }
           ],
           "stoppedEarly": {
             "value": false,
-            "reason": "The attempt consumed all 24 budgeted Tool Rounds and ended budget_exhausted, so it did not end with budget left; the Grade also lists no unsatisfied checks to attribute to a page the Run had not read.",
+            "reason": "The attempt ran its full Tool Round budget (24 of 24 used, ended budget_exhausted), so it did not stop with rounds left; the Grade also lists no unsatisfied checks to attribute to an unread page.",
             "checks": []
           },
           "answerOmitted": {
             "value": false,
-            "reason": "The Grade is a pass with no unsatisfied checks, so there is nothing that follows from a page the Run read and was left unstated in the Answer.",
+            "reason": "The Grade is a pass with no unsatisfied checks, so there is no check to test against the pages the Run had read.",
             "checks": []
           },
           "verdict": {
             "primary": "rounds_wasted",
-            "primaryReason": "Of the 24 budgeted rounds, 8 carried no progress once the overrules stand: round 1 (guessed URL, 404), the second search of round 2 (DuckDuckGo SERP), rounds 8 and 9 (repeat reads of an already-read state of camera_software.html), round 10 (navigate to an already-acquired URL with only an anchor appended), and rounds 19-21 (scrolls back up to offsets y=33305/33028/32751 already observed in rounds 17/16/15) - a third of the budget. On top of that, the stretch from round 12 to round 21 was spent hand-scrolling one option list on the page that subagent a-1 had already been dispatched to extract in round 5, so the Run reached budget_exhausted with both subagent reports only collected and recorded in rounds 22-24. The two off-key landings (rounds 1 and 2) compound the same pattern.",
+            "primaryReason": "Roughly a third of the 24 budgeted rounds produced nothing new. Mechanically 5 were acquisition_without_progress (round 1 on the 404 at https://www.raspberrypi.com/documentation/computers/camera.html, the repeat reads in rounds 8 and 9 at the unchanged signature 2f50eea8, the fragment-only re-navigate in round 10, and the second search of round 2); I add rounds 19, 20 and 21 as repeat observations of scroll positions already settled at in rounds 17, 16 and 15, and subtract round 4 which did reach a new page. That leaves about 8 of 24 rounds without Progress, plus the two off-key landings in rounds 1-2 and the two-search loop inside round 2. The Run reached budget_exhausted with rounds 19-21 spent re-viewing seen text under the 3/24 warning while its bookkeeping was still outstanding in rounds 23-24.",
             "secondary": null,
             "secondaryReason": null
           },
           "flags": [
             {
               "round": 2,
-              "question": "Round 2: the app marked a 2-search streak - should the two rewritten site searches be read as one Search Loop rather than two distinct destination attempts, and should a SERP that directly produced the round-3 click still be called off-key?"
+              "question": "Both searches in round 2 were app rewrites of navigate calls to raspberrypi.com addresses, not searches the assistant chose to issue; should a rewritten navigation count as a member of a Search Loop, and does a loop contained within a single round warrant the call?"
             },
             {
               "round": 1,
-              "question": "Round 1: is a not-found page on the correct documentation host an off-key acquisition, or merely a failed acquisition that should carry no off-key judgement at all?"
+              "question": "Is the 404 at https://www.raspberrypi.com/documentation/computers/camera.html fairly called off-key, given it was a reasonable first guess at the official documentation and the Run recovered within two rounds?"
+            },
+            {
+              "round": 4,
+              "question": "Is the overrule to acquisition_with_progress right, or did the app's no_progress_notice correctly reflect that the settled state was already https://www.raspberrypi.com/documentation/computers/camera_software.html from the refused round 3 navigate?"
+            },
+            {
+              "round": 8,
+              "question": "Rounds 8 and 9 requested read_page parts 3 and 4 but returned the same signature and head as round 7 — should these be read as pagination that genuinely returned nothing new, or as digest truncation hiding new material?"
             },
             {
               "round": 19,
-              "question": "Rounds 19-21: the scroll-ups returned to offsets already visited, yet the app reported new material in view each time - could a reviewer accept the app's notice and leave all three as acquisition with progress?"
+              "question": "Rounds 19-21 are marked by the app as bringing new material into view even though the scroll offsets match rounds 17, 16 and 15 exactly; a careful reader might accept the app's Notice and leave them as Progress."
             },
             {
-              "round": 25,
-              "question": "Verdict on the line: the attempt satisfied every check, so is rounds_wasted the right primary, or should a clean pass that ran out its budget be reported as budget_too_small_for_the_hunt or tier_too_small_or_never_escalated instead?"
+              "round": 22,
+              "question": "Round 22 carried an accepted record_evidence alongside agent_results; is collection the right single kind for it, or should the bookkeeping share be counted instead?"
+            },
+            {
+              "round": null,
+              "question": "The attempt passed every check on a fully spent budget; is rounds_wasted the right primary when the waste did not cost the result, or should the verdict rest on the shares alone?"
             }
           ]
         },
         "caveats": [
-          "flag (round 2): Round 2: the app marked a 2-search streak - should the two rewritten site searches be read as one Search Loop rather than two distinct destination attempts, and should a SERP that directly produced the round-3 click still be called off-key?",
-          "flag (round 1): Round 1: is a not-found page on the correct documentation host an off-key acquisition, or merely a failed acquisition that should carry no off-key judgement at all?",
-          "flag (round 19): Rounds 19-21: the scroll-ups returned to offsets already visited, yet the app reported new material in view each time - could a reviewer accept the app's notice and leave all three as acquisition with progress?",
-          "flag (round 25): Verdict on the line: the attempt satisfied every check, so is rounds_wasted the right primary, or should a clean pass that ran out its budget be reported as budget_too_small_for_the_hunt or tier_too_small_or_never_escalated instead?"
+          "flag (round 2): Both searches in round 2 were app rewrites of navigate calls to raspberrypi.com addresses, not searches the assistant chose to issue; should a rewritten navigation count as a member of a Search Loop, and does a loop contained within a single round warrant the call?",
+          "flag (round 1): Is the 404 at https://www.raspberrypi.com/documentation/computers/camera.html fairly called off-key, given it was a reasonable first guess at the official documentation and the Run recovered within two rounds?",
+          "flag (round 4): Is the overrule to acquisition_with_progress right, or did the app's no_progress_notice correctly reflect that the settled state was already https://www.raspberrypi.com/documentation/computers/camera_software.html from the refused round 3 navigate?",
+          "flag (round 8): Rounds 8 and 9 requested read_page parts 3 and 4 but returned the same signature and head as round 7 — should these be read as pagination that genuinely returned nothing new, or as digest truncation hiding new material?",
+          "flag (round 19): Rounds 19-21 are marked by the app as bringing new material into view even though the scroll offsets match rounds 17, 16 and 15 exactly; a careful reader might accept the app's Notice and leave them as Progress.",
+          "flag (round 22): Round 22 carried an accepted record_evidence alongside agent_results; is collection the right single kind for it, or should the bookkeeping share be counted instead?",
+          "flag: The attempt passed every check on a fully spent budget; is rounds_wasted the right primary when the waste did not cost the result, or should the verdict rest on the shares alone?"
         ],
         "model": "claude-opus-5",
         "served": "claude-opus-5",
         "effort": "high",
-        "promptVersion": "audit-p2",
+        "promptVersion": "audit-p3",
         "digestHash": "sha256:f2f0267b25b7602c073a37ea85681cd3d5c02608c0201987f2342d906ca12846",
-        "costUsd": 0.35,
-        "durationMs": 72750,
-        "judgedAt": "2026-09-20T16:25:15.593Z"
+        "costUsd": 0.34,
+        "durationMs": 71010,
+        "judgedAt": "2026-09-21T01:43:53.887Z"
       },
       "countsAfterOverrules": {
-        "acquisition_with_progress": 12,
-        "acquisition_without_progress": 8,
+        "acquisition_with_progress": 13,
+        "acquisition_without_progress": 7,
         "collection": 1,
         "bookkeeping": 3,
         "failed_round": 0,
@@ -2469,65 +2489,60 @@
             {
               "round": 7,
               "kind": "acquisition_with_progress",
-              "reason": "The mechanical label calls read_page {\"part\":1} a repeat because the page signature b92dddfb at https://www.raspberrypi.com/documentation/accessories/camera.html was unchanged, but round 6 had read part 2 of a 27163-unit document; part 1 is a different slice of text that had not been in front of the assistant before, so this round did bring new material in."
+              "reason": "The mechanical label calls this a repeat read of an already-read page state, but the digest shows the call was read_page {\"part\":1} on https://www.raspberrypi.com/documentation/accessories/camera.html while round 6 had read {\"part\":2} of the same state. The page-state signature is identical only because the parts are segments of one long document (scroll 0/27163); part 1 is a segment of text the Run had not had in front of it, and the evidence recorded in round 8 from this URL draws on that material. On the digest's own evidence the round brought new material in."
             }
           ],
           "stoppedEarly": {
             "value": false,
-            "reason": "The Run did not end with time left: round 11 was cut by the active-work deadline and the stop reason is deadline_reached after 446033 ms, with the tier already raised to Investigation mid-run at round 5. The single unsatisfied check, fact-02, also does not need a page the Run had not read — its verified source https://www.raspberrypi.com/documentation/accessories/camera.html was navigated in round 5 and read in rounds 6 and 7.",
+            "reason": "The attempt ended with stop reason terminal and outcome deadline_reached: round 11 was cut by the active-work deadline and round 12 was the reserved Answer. Tool Rounds remained (9 of 24 used) but time did not, so the Run did not end with budget and time left. The single unsatisfied check, fact-02, is in any case carried by a page the Run had already navigated and read (https://www.raspberrypi.com/documentation/accessories/camera.html, rounds 5-7), not by a page left unread.",
             "checks": []
           },
           "answerOmitted": {
             "value": true,
-            "reason": "fact-02 rests on https://www.raspberrypi.com/documentation/accessories/camera.html, which the Run reached in round 5 and read in rounds 6 and 7 (both parts) and from which it recorded an accepted Evidence Checkpoint in round 8; that page's material was therefore in front of the assistant. The round 12 Answer nonetheless left fact-02 unstated, leaning instead on the product-page statement from https://www.raspberrypi.com/products/raspberry-pi-zero-case/ recorded in round 5.",
+            "reason": "fact-02 is the only unsatisfied check and its verified source is https://www.raspberrypi.com/documentation/accessories/camera.html, which the Run navigated to in round 5 and read in rounds 6 and 7 (parts 2 and 1), recording Evidence from it in round 8 (memory-8). The Run also held https://www.raspberrypi.com/products/raspberry-pi-zero-case/ (round 3, Evidence memory-5) and https://www.raspberrypi.com/products/camera-module-3/ (rounds 1-2, Evidence memory-6), and in round 9 rejected candidate memory-9 on exactly that basis. The material for fact-02 was therefore on pages the Run had read, and the reserved low-effort Answer in round 12 left it unstated.",
             "checks": [
               "fact-02"
             ]
           },
           "verdict": {
             "primary": "answer_omitted",
-            "primaryReason": "The only unsatisfied check, fact-02, sits on a page the Run had read and drawn evidence from: https://www.raspberrypi.com/documentation/accessories/camera.html, acquired in round 5 and read in rounds 6 and 7, with an accepted Evidence Checkpoint from it in round 8. Acquisition was on-key throughout (4 rounds with Progress, 2 without, no searches and so no loops, no off-key pages), and the round 12 Answer still left that check unstated.",
+            "primaryReason": "The one unsatisfied check, fact-02, rests on https://www.raspberrypi.com/documentation/accessories/camera.html, a page the Run acquired in round 5 and read in rounds 6 and 7 and cited in Evidence memory-8 (round 8); the Run's own candidate rejection in round 9 shows it had the material in hand, yet the reserved Answer in round 12 (low effort, 1373 output tokens, no reasoning) left the check unstated. Acquisition was on-key throughout (all three URLs are the task's verified or context sources), there were no searches and so no Search Loops, and 15 of 24 Tool Rounds went unused - so the loss is in the write-up, not the hunting.",
             "secondary": "failed_rounds",
-            "secondaryReason": "2 of the 11 budgeted rounds failed — round 4 ended empty after 5678 chars of reasoning, and round 11 was cut by the active-work deadline with 15 of the 24 Tool Rounds unused. Round 11 was the round that would have closed the analysis before the reserved Answer in round 12, so the clock and the cut round, not the tier budget, ended the attempt with the remaining check unstated."
+            "secondaryReason": "2 of the 11 budgeted rounds failed: round 4 ended empty (its whole 5678-char reasoning discarded) and round 11 was cut by the active-work deadline, which is the round that would have carried the synthesis. The retry, round 5, then consumed 261720 ms of the 446033 ms Run. Those two failures plus that retry are why the Answer fell to the reserved low-effort round 12 with fact-02 unstated; they are contributory rather than decisive, since the material was already acquired by round 8."
           },
           "flags": [
             {
-              "round": 7,
-              "question": "Round 7: is read_page {\"part\":1} after round 6's {\"part\":2} on the same unchanged page state genuinely new material (my overrule to acquisition_with_progress), or is the app's signature-based repeat call the right one?"
-            },
-            {
               "round": 5,
-              "question": "Round 5: the round's substantive output was three accepted Evidence Checkpoints and its navigate merely re-acquired https://www.raspberrypi.com/documentation/accessories/camera.html — should it be re-kinded bookkeeping rather than acquisition_without_progress, given the navigate still positioned rounds 6 and 7?"
+              "question": "Round 5 is labelled a re-acquisition because the initial attempt of this trace round had already checkpointed https://www.raspberrypi.com/documentation/accessories/camera.html, but that attempt (round 4) ended empty and the digest lists no calls for it; a careful reviewer might overrule round 5 to acquisition_with_progress on the ground that the retry is what first put the page in front of the assistant."
             },
             {
-              "round": 1,
-              "question": "Round 1: is https://www.raspberrypi.com/products/camera-module-3/ a commerce page carrying none of this follow-up's required facts (off-key), or on-key because it is the verified source for the material the delta rests back on?"
-            },
-            {
-              "round": 6,
-              "question": "Round 6: do the two part reads of https://www.raspberrypi.com/documentation/accessories/camera.html actually cover the section fact-02 rests on, or did the Run read only slices that could not carry it — which would move fact-02 from answerOmitted toward a stop judgement?"
+              "round": 7,
+              "question": "Is read_page {\"part\":1} after read_page {\"part\":2} on the same page state (rounds 6 and 7 of https://www.raspberrypi.com/documentation/accessories/camera.html) genuinely new material, as this review's overrule holds, or a repeat as the mechanical rule scored it?"
             },
             {
               "round": 12,
-              "question": "Round 12: is answer_omitted decisive over failed_rounds, given that the deadline cut round 11 immediately before the reserved Answer and might itself explain the unstated check?"
+              "question": "answerOmitted for fact-02 assumes the segments of https://www.raspberrypi.com/documentation/accessories/camera.html read in rounds 6 and 7 covered the section the key verifies that page for; a reviewer who read the round 8 Evidence as drawn only from the specification comparison could instead hold that the needed section was never surfaced and score this differently."
+            },
+            {
+              "round": 11,
+              "question": "Verdict on the line: with 2 of 11 budgeted rounds failed (round 4 empty, round 11 deadline-cut) and the Answer reduced to the reserved low-effort round, a reviewer could make failed_rounds the primary and answer_omitted the secondary."
             }
           ]
         },
         "caveats": [
-          "flag (round 7): Round 7: is read_page {\"part\":1} after round 6's {\"part\":2} on the same unchanged page state genuinely new material (my overrule to acquisition_with_progress), or is the app's signature-based repeat call the right one?",
-          "flag (round 5): Round 5: the round's substantive output was three accepted Evidence Checkpoints and its navigate merely re-acquired https://www.raspberrypi.com/documentation/accessories/camera.html — should it be re-kinded bookkeeping rather than acquisition_without_progress, given the navigate still positioned rounds 6 and 7?",
-          "flag (round 1): Round 1: is https://www.raspberrypi.com/products/camera-module-3/ a commerce page carrying none of this follow-up's required facts (off-key), or on-key because it is the verified source for the material the delta rests back on?",
-          "flag (round 6): Round 6: do the two part reads of https://www.raspberrypi.com/documentation/accessories/camera.html actually cover the section fact-02 rests on, or did the Run read only slices that could not carry it — which would move fact-02 from answerOmitted toward a stop judgement?",
-          "flag (round 12): Round 12: is answer_omitted decisive over failed_rounds, given that the deadline cut round 11 immediately before the reserved Answer and might itself explain the unstated check?"
+          "flag (round 5): Round 5 is labelled a re-acquisition because the initial attempt of this trace round had already checkpointed https://www.raspberrypi.com/documentation/accessories/camera.html, but that attempt (round 4) ended empty and the digest lists no calls for it; a careful reviewer might overrule round 5 to acquisition_with_progress on the ground that the retry is what first put the page in front of the assistant.",
+          "flag (round 7): Is read_page {\"part\":1} after read_page {\"part\":2} on the same page state (rounds 6 and 7 of https://www.raspberrypi.com/documentation/accessories/camera.html) genuinely new material, as this review's overrule holds, or a repeat as the mechanical rule scored it?",
+          "flag (round 12): answerOmitted for fact-02 assumes the segments of https://www.raspberrypi.com/documentation/accessories/camera.html read in rounds 6 and 7 covered the section the key verifies that page for; a reviewer who read the round 8 Evidence as drawn only from the specification comparison could instead hold that the needed section was never surfaced and score this differently.",
+          "flag (round 11): Verdict on the line: with 2 of 11 budgeted rounds failed (round 4 empty, round 11 deadline-cut) and the Answer reduced to the reserved low-effort round, a reviewer could make failed_rounds the primary and answer_omitted the secondary."
         ],
         "model": "claude-opus-5",
         "served": "claude-opus-5",
         "effort": "high",
-        "promptVersion": "audit-p2",
+        "promptVersion": "audit-p3",
         "digestHash": "sha256:876b7154d6712ef35385329e428f59293cc100a6ad2f0d196e3522adc1df1b91",
-        "costUsd": 0.27,
-        "durationMs": 58943,
-        "judgedAt": "2026-09-20T16:26:15.855Z"
+        "costUsd": 0.25,
+        "durationMs": 76479,
+        "judgedAt": "2026-09-21T01:45:11.645Z"
       },
       "countsAfterOverrules": {
         "acquisition_with_progress": 5,
@@ -3998,167 +4013,166 @@
             {
               "round": 1,
               "url": "https://collections.rmg.co.uk/search/results/?q=Harrison%20longitude%20watch",
-              "reason": "The navigate landed on a \"401 Authorization Required\" error page on a walled host; an error page carries no catalogue record and so none of this task's required facts."
+              "reason": "Walled page: the settled state is a \"401 Authorization Required\" response, so no object record field of this task could be carried by it."
             },
             {
               "round": 2,
               "url": "https://www.rmg.co.uk/search?query=Harrison%20longitude%20watch",
-              "reason": "Site-wide search results listing on the right site but not an object record; a results page carries no catalogue field for the watch or the case."
+              "reason": "Site-wide search results page; it lists links only and carries no catalogue record field."
             },
             {
               "round": 3,
               "url": "https://www.rmg.co.uk/collections",
-              "reason": "Collection portal landing page — a navigational hub with no object record, so it can carry none of the required facts."
+              "reason": "Collection landing/hub page; navigational only, no object record data."
+            },
+            {
+              "round": 4,
+              "url": "https://www.rmg.co.uk/collections",
+              "reason": "Same hub page, and the type was blocked by an overlay, so nothing of the record was put in front of the assistant."
             },
             {
               "round": 5,
               "url": "https://www.rmg.co.uk/collections",
-              "reason": "Click kept the Run on the same portal landing page (signature change only, no URL change); still no object record and no required fact."
+              "reason": "Still the hub page; the click only opened a search affordance, which carries no record field."
             },
             {
               "round": 6,
               "url": "https://www.rmg.co.uk/collections/search/Harrison%20longitude%20watch",
-              "reason": "Search results page; it lists links only and carries no catalogue ID, creator, measurement or description text."
+              "reason": "Search results page; result links only, no object record field."
             },
             {
               "round": 7,
               "url": "https://www.rmg.co.uk/collections/search/Harrison%20longitude%20watch",
-              "reason": "read_page of the same search results page — a results listing carries none of the key's required facts."
+              "reason": "read_page of the same search results page; a results list cannot carry any of the required record fields."
             },
             {
               "round": 8,
               "url": "https://www.rmg.co.uk/collections/objects/search/Harrison%20longitude%20watch",
-              "reason": "Object search results page; carries link titles only, not the record fields the task requires."
+              "reason": "Object search results page; it carries result titles and links, not the record fields this task requires."
             },
             {
               "round": 9,
               "url": "https://www.rmg.co.uk/collections/objects/search/Harrison%20longitude%20watch",
-              "reason": "read_page of the same object results listing; no required fact can appear on a results page."
+              "reason": "read_page of the same results list; no required field lives on a results page."
             },
             {
               "round": 10,
               "url": "https://www.rmg.co.uk/collections/objects/search/Harrison%20longitude%20watch",
-              "reason": "Scroll within the results listing; new material was further result links, not record content."
+              "reason": "Scroll within the results list; the new material was a further result link, not a record field."
             },
             {
               "round": 11,
               "url": "https://www.rmg.co.uk/collections/objects/search/Harrison%20longitude%20watch",
-              "reason": "Scroll within the results listing; surfaced result links only, no record field."
+              "reason": "Scroll within the results list; surfaced result links only, which the key's facts do not live in."
             },
             {
               "round": 12,
               "url": "https://www.rmg.co.uk/collections/objects/search/Harrison%20longitude%20watch",
-              "reason": "Scroll within the results listing; surfaced further result links only."
+              "reason": "Scroll within the results list; more result links, no record field."
             },
             {
               "round": 20,
               "url": "https://www.rmg.co.uk/collections/objects/search/carrying%20case%20H4%20K1",
-              "reason": "Object search results page for the case; a results listing carries no case record fields or description."
+              "reason": "Object search results page for the case; listing only, no record field of the case."
             },
             {
               "round": 21,
               "url": "https://www.rmg.co.uk/collections/objects/search/carrying%20case%20H4%20K1",
-              "reason": "Scroll within the same results listing; result links only."
+              "reason": "Scroll within the same results list; surfaced result links, not record content."
             },
             {
               "round": 22,
               "url": "https://www.rmg.co.uk/collections/objects/search/carrying%20case%20H4%20K1",
-              "reason": "Scroll within the same results listing; surfaced the case link but no record content."
+              "reason": "Scroll within the same results list; surfaced the case's result link but no field of the record itself."
             }
           ],
           "overrules": [
             {
               "round": 19,
               "kind": "acquisition_without_progress",
-              "reason": "Labelled acquisition_with_progress as a first Look with a new question, but the result was a clamped region notice plus the app's own \"Two consecutive actions made no progress\" notice: nothing new was put in front of the assistant on https://www.rmg.co.uk/collections/objects/rmgc-object-79142."
+              "reason": "The look's own result reports the region clamped and that two consecutive actions made no progress with no new decision-relevant evidence; the description text the question asked for was not returned, so this repeated the state of round 18 rather than adding material."
             },
             {
               "round": 24,
               "kind": "bookkeeping",
-              "reason": "The only call that produced anything was record_evidence (accepted Checkpoint, memory-2); the accompanying look on https://www.rmg.co.uk/collections/objects/rmgc-object-256323 returned \"not legible\", so the round's substance was the Evidence record, not acquisition."
-            },
-            {
-              "round": 14,
-              "kind": "bookkeeping",
-              "reason": "Mechanically acquisition_with_progress, but the scroll on https://www.rmg.co.uk/collections/objects/rmgc-object-79142 brought only a cookie-settings button into view; the round's real work was the accepted Evidence Checkpoint (memory-1)."
+              "reason": "The only successful call in the round was record_evidence (accepted checkpoint); the accompanying look returned \"not legible\", so the round's work was recording, not acquisition."
             }
           ],
           "stoppedEarly": {
             "value": false,
-            "reason": "The attempt consumed all 24 Tool Rounds of the investigation tier and ended on budget_exhausted, so by definition it did not stop early; no unsatisfied check is assigned here.",
+            "reason": "The attempt consumed all 24 Tool Rounds of the investigation tier and ended with stop reason budget_exhausted, so it did not end with rounds left; by rule an attempt that ran to its budget did not stop early.",
             "checks": []
           },
           "answerOmitted": {
             "value": true,
-            "reason": "fact-01, fact-02, fact-03 and fact-05 all rest on the object record at https://www.rmg.co.uk/collections/objects/rmgc-object-79142, which the Run acquired at round 13, read at round 15 and captured verbatim in the accepted Evidence Checkpoint of round 14 (the excerpt names the ID, type, creator, date and the dial measurement); fact-09 follows from the case record at https://www.rmg.co.uk/collections/objects/rmgc-object-256323, read at round 23 and captured in the accepted Checkpoint of round 24, whose own observation draws that conclusion from the date field. The Answer at round 25 left all five unstated. fact-04, fact-06, fact-08 and fact-11 are excluded: they live in the free-text descriptions on those two pages, and every attempt to render that text failed (round 19 clamped and returned nothing decision-relevant, round 24's look returned \"not legible\"), so that material was never in front of the Run.",
+            "reason": "Every unsatisfied check rests on one of the two records the Run actually reached and read: rounds 13-15 and 18 put https://www.rmg.co.uk/collections/objects/rmgc-object-79142 in front of the assistant (and round 14's accepted checkpoint transcribed its details table verbatim), and rounds 23-24 put https://www.rmg.co.uk/collections/objects/rmgc-object-256323 in front of it with a second accepted checkpoint from its details table plus the record title. fact-01, fact-02, fact-03, fact-05 sit in the round 14 excerpt itself; fact-04 and fact-06 sit in the description section of the same record, which round 18's look confirmed was present on the page read at round 15; fact-08 and fact-09 follow from the round 23 record title and the round 24 excerpt; fact-11 sits in the description of that same record, acquired at round 23. The Answer left all of these unstated.",
             "checks": [
               "fact-01",
               "fact-02",
               "fact-03",
+              "fact-04",
               "fact-05",
-              "fact-09"
+              "fact-06",
+              "fact-08",
+              "fact-09",
+              "fact-11"
             ]
           },
           "verdict": {
             "primary": "answer_omitted",
-            "primaryReason": "Five unsatisfied checks (fact-01, fact-02, fact-03, fact-05, fact-09) follow from material the Run had already read and had banked in its own two accepted Evidence Checkpoints at rounds 14 and 24, from https://www.rmg.co.uk/collections/objects/rmgc-object-79142 and https://www.rmg.co.uk/collections/objects/rmgc-object-256323; the Finalization Answer at round 25 left them unstated. This loss was free of the budget: no further round was needed to state them, so it is the decisive failure.",
+            "primaryReason": "Decisive: the Run reached both records it needed — https://www.rmg.co.uk/collections/objects/rmgc-object-79142 at rounds 13-15/18-19 and https://www.rmg.co.uk/collections/objects/rmgc-object-256323 at rounds 23-24 — and both Evidence Checkpoints (rounds 14 and 24) were accepted, yet 9 of 17 checks came back unsatisfied, all of them resting on those two pages. Facts already transcribed into the round 14 excerpt went unstated in the Answer, which is a reporting failure rather than an acquisition failure.",
             "secondary": "rounds_wasted",
-            "secondaryReason": "14 of the 20 mechanically-progressing Acquisition rounds (1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12, 20, 21, 22) landed on a 401 page, a portal landing page or search results listings that can carry no required fact, and a further four rounds produced nothing (round 4 blocked by overlay, round 16 End of Page, round 17 refused, round 19 overruled to no progress). Only rounds 13, 15, 18 and 23 put a source record in front of the Run, which is why the description-borne checks fact-04, fact-06, fact-08 and fact-11 were never reached before the 24-round budget ran out at round 24."
+            "secondaryReason": "15 of 24 budgeted rounds (1-12 and 20-22) were Off-key — a 401 wall at round 1, a hub page and blocked overlay type at rounds 3-5, and ten rounds of search-results reading and scrolling — plus one refused round (17), one End-of-Page scroll (16) and two looks that returned nothing usable (19, 24). That left only rounds 23-24 for the case record, so its description section was never read before the budget ran out."
           },
           "flags": [
             {
-              "round": 6,
-              "question": "Rounds 1, 4 and 6 all issue the identical query \"Harrison longitude watch\" (url, input, input); I did not call them a Search Loop because each retry followed a venue failure (401 at round 1, overlay-blocked type at round 4) rather than rewording one intent in place — should rounds 1/4/6 be counted as one loop?"
+              "round": 19,
+              "question": "Round 19 is overruled to acquisition_without_progress on the strength of the clamped-region notice in its own result — should a first Look with a new question still count as Progress even when it returns nothing the assistant asked for?"
             },
             {
-              "round": 4,
-              "question": "Round 4's type was \"not typed — blocked by overlay\": the call executed but nothing ran. Is acquisition_without_progress right, or should it be a failed round?"
+              "round": 24,
+              "question": "Round 24 is overruled to bookkeeping because its look was illegible and only record_evidence succeeded — a reviewer could keep the mechanical acquisition_without_progress label instead."
             },
             {
-              "round": 14,
-              "question": "Overrule to bookkeeping is on the line: the scroll did report new material, albeit only a cookie-settings button. A reviewer could leave it as acquisition_with_progress."
-            },
-            {
-              "round": 9,
-              "question": "Off-key calls on rounds 7-12 and 20-22 are borderline: these results listings carried no required fact, yet they were the path that surfaced the H4 and carrying-case links actually used at rounds 13 and 23."
+              "round": 11,
+              "question": "Rounds 10-12 and 21-22 are marked Off-key as scrolls inside results lists, yet they surfaced the very links to the H4 and carrying-case records — a reviewer could treat them as instrumental and on-key."
             },
             {
               "round": 23,
-              "question": "fact-08 and fact-11 are placed in neither list: the Run reached https://www.rmg.co.uk/collections/objects/rmgc-object-256323 at round 23 but never rendered its description (round 24's look returned \"not legible\"). A reviewer who treats the navigate snapshot as having read the whole page would move both into answerOmitted."
+              "question": "fact-11 is placed in answerOmitted because round 23 acquired the case record page, but the Run never read its description section (round 24's look returned \"not legible\") — a reviewer could hold that this check needed a page section the Run had not in fact read."
             },
             {
               "round": 15,
-              "question": "Similarly for fact-04 and fact-06: the Run read https://www.rmg.co.uk/collections/objects/rmgc-object-79142 at round 15 and confirmed a description section exists at round 18, but never extracted its text; treating read_page as covering the description would move both into answerOmitted."
+              "question": "fact-04's 1755 element and fact-06 are assigned to answerOmitted on the basis of the round 15 read_page of the watch record — a reviewer could hold that the description text was never legibly delivered to the assistant, given the failures at rounds 18-19."
             },
             {
-              "round": 25,
-              "question": "Primary verdict is on the line between answer_omitted and rounds_wasted: 18 of 24 rounds were off-key or without progress, so a reviewer could make rounds_wasted primary and answer_omitted secondary."
+              "round": 1,
+              "question": "The primary verdict sits on the line between answer_omitted and rounds_wasted, since Off-key rounds starting with the round 1 wall consumed roughly two thirds of the budget; the ordering could be reversed."
             }
           ]
         },
         "caveats": [
-          "flag (round 6): Rounds 1, 4 and 6 all issue the identical query \"Harrison longitude watch\" (url, input, input); I did not call them a Search Loop because each retry followed a venue failure (401 at round 1, overlay-blocked type at round 4) rather than rewording one intent in place — should rounds 1/4/6 be counted as one loop?",
-          "flag (round 4): Round 4's type was \"not typed — blocked by overlay\": the call executed but nothing ran. Is acquisition_without_progress right, or should it be a failed round?",
-          "flag (round 14): Overrule to bookkeeping is on the line: the scroll did report new material, albeit only a cookie-settings button. A reviewer could leave it as acquisition_with_progress.",
-          "flag (round 9): Off-key calls on rounds 7-12 and 20-22 are borderline: these results listings carried no required fact, yet they were the path that surfaced the H4 and carrying-case links actually used at rounds 13 and 23.",
-          "flag (round 23): fact-08 and fact-11 are placed in neither list: the Run reached https://www.rmg.co.uk/collections/objects/rmgc-object-256323 at round 23 but never rendered its description (round 24's look returned \"not legible\"). A reviewer who treats the navigate snapshot as having read the whole page would move both into answerOmitted.",
-          "flag (round 15): Similarly for fact-04 and fact-06: the Run read https://www.rmg.co.uk/collections/objects/rmgc-object-79142 at round 15 and confirmed a description section exists at round 18, but never extracted its text; treating read_page as covering the description would move both into answerOmitted.",
-          "flag (round 25): Primary verdict is on the line between answer_omitted and rounds_wasted: 18 of 24 rounds were off-key or without progress, so a reviewer could make rounds_wasted primary and answer_omitted secondary."
+          "flag (round 19): Round 19 is overruled to acquisition_without_progress on the strength of the clamped-region notice in its own result — should a first Look with a new question still count as Progress even when it returns nothing the assistant asked for?",
+          "flag (round 24): Round 24 is overruled to bookkeeping because its look was illegible and only record_evidence succeeded — a reviewer could keep the mechanical acquisition_without_progress label instead.",
+          "flag (round 11): Rounds 10-12 and 21-22 are marked Off-key as scrolls inside results lists, yet they surfaced the very links to the H4 and carrying-case records — a reviewer could treat them as instrumental and on-key.",
+          "flag (round 23): fact-11 is placed in answerOmitted because round 23 acquired the case record page, but the Run never read its description section (round 24's look returned \"not legible\") — a reviewer could hold that this check needed a page section the Run had not in fact read.",
+          "flag (round 15): fact-04's 1755 element and fact-06 are assigned to answerOmitted on the basis of the round 15 read_page of the watch record — a reviewer could hold that the description text was never legibly delivered to the assistant, given the failures at rounds 18-19.",
+          "flag (round 1): The primary verdict sits on the line between answer_omitted and rounds_wasted, since Off-key rounds starting with the round 1 wall consumed roughly two thirds of the budget; the ordering could be reversed."
         ],
         "model": "claude-opus-5",
         "served": "claude-opus-5",
         "effort": "high",
-        "promptVersion": "audit-p2",
+        "promptVersion": "audit-p3",
         "digestHash": "sha256:bbd1fab8d192b571a7a83b3b9c747d04ed47a7a2994600a67086a9f5d2ec4dcf",
-        "costUsd": 0.37,
-        "durationMs": 119289,
-        "judgedAt": "2026-09-20T16:28:16.504Z"
+        "costUsd": 0.32,
+        "durationMs": 95965,
+        "judgedAt": "2026-09-21T01:46:48.967Z"
       },
       "countsAfterOverrules": {
-        "acquisition_with_progress": 18,
+        "acquisition_with_progress": 19,
         "acquisition_without_progress": 3,
         "collection": 0,
-        "bookkeeping": 2,
+        "bookkeeping": 1,
         "failed_round": 1,
         "finalization": 1
       }
@@ -4906,87 +4920,82 @@
                 2,
                 3
               ],
-              "reason": "Round 2 (google.com/search) and round 3 (duckduckgo.com/?q=) issue the identical query string \"Eurostar luggage allowance musical instruments site:eurostar.com\" back to back with nothing opened between them; the app marked round 3 as streak 2 rewording the one before it, so the loop is the pair 2–3, with round 2 as its first member."
+              "reason": "Round 2 (google.com/search) and round 3 (duckduckgo.com/?q=...) are consecutive searches of the same query string with nothing opened between them. The round 2 call the rule scored as reaching a new page was itself a search, and it settled on a challenge wall that put no content in front of the assistant, so it cannot count as an opening that breaks a streak. Two searches in a row is a loop."
             }
           ],
           "offKey": [
             {
               "round": 1,
               "url": "https://www.eurostar.com/us-en/travel-guides/luggage-and-other-items",
-              "reason": "The navigate settled on a Not-found Page (title \"Sorry, we can't find the page you're looking for. | Eurostar\"). A 404 shell on the right site carries no allowance or instrument text and so can carry none of this task's required facts."
+              "reason": "Not-found Page ('Sorry, we can't find the page you're looking for'). A 404 on the right site carries no allowance, length or instrument rule and can support none of this task's required facts."
             },
             {
               "round": 2,
               "url": "https://www.google.com/search?q=Eurostar+luggage+allowance+musical+instruments+site%3Aeurostar.com",
-              "reason": "A search results page behind a challenge wall (BLOCKER: challenge www.google.com). Neither a SERP nor a CAPTCHA interstitial carries policy text from the verified official sources; it can only point at one."
+              "reason": "Search results URL that resolved to a challenge wall (BLOCKER: challenge www.google.com). Neither a results listing nor a CAPTCHA interstitial can carry a required fact of this task."
             },
             {
               "round": 3,
               "url": "https://duckduckgo.com/?q=Eurostar+luggage+allowance+musical+instruments+site%3Aeurostar.com&ia=web",
-              "reason": "A search engine results page. It lists links only and carries none of the required facts itself; the official pages it points to are what carry them (reached in round 4)."
+              "reason": "A search engine results page. It can surface candidate URLs but states none of the allowance, length-threshold or instrument rules this task requires; those live on the operator's own pages reached in rounds 4-6."
             }
           ],
           "overrules": [
             {
               "round": 2,
               "kind": "acquisition_without_progress",
-              "reason": "Mechanically scored as Progress because the settled page state was new to the Run, but the page was a challenge wall on a search results URL and is the first member of the search loop shared with round 3 (identical query, nothing opened between). A loop member brought in no material and moved the Run nowhere it could read."
+              "reason": "Mechanically scored as reaching a page the Run had not acquired, but the settled state was a challenge wall on google.com/search and the call was itself a search that opens the round 2-3 loop. Nothing new was placed in front of the assistant, so this is a loop member rather than Progress."
             }
           ],
           "stoppedEarly": {
             "value": false,
-            "reason": "The Grade records no unsatisfied checks, so there is no check to attribute to a page the Run had not read. The Run also ended done/objective_met rather than on an unmet need.",
+            "reason": "The Grade records no unsatisfied checks, so no check can be attributed to a page the Run had not read. The Run also ended on its own terminal stop having reached both verified sources (S1 at /travel-planning/luggage in rounds 5-6 and S2 at /travel-planning/luggage/musical-instruments in rounds 4-5).",
             "checks": []
           },
           "answerOmitted": {
             "value": false,
-            "reason": "The Grade records no unsatisfied checks, so nothing was left unstated for a page the Run had read to carry.",
+            "reason": "No check is listed as unsatisfied, so there is nothing the Answer left unstated from a page the Run had read.",
             "checks": []
           },
           "verdict": {
             "primary": "rounds_wasted",
-            "primaryReason": "The Run passed with 10 of 12 Tool Rounds used, but 3 of those 10 (rounds 1, 2, 3) landed on pages that could carry no required fact — a 404 at /us-en/travel-guides/luggage-and-other-items, a walled google.com SERP, and a duckduckgo.com SERP repeating the same query as one loop — and a fourth, round 8, spent a full round on a record_evidence rejected as excerpt_unsupported that round 9 then re-filed against the instruments URL. Only rounds 4–6 touched the two official pages the task needed, and 4 of 10 rounds were bookkeeping. The waste was not decisive here, but it is where the budget went.",
+            "primaryReason": "The task passed, but 3 of the 10 budgeted Tool Rounds (rounds 1, 2, 3 - 30%) landed on pages that could carry no required fact: a 404 at https://www.eurostar.com/us-en/travel-guides/luggage-and-other-items, a challenge wall at google.com/search, and a duckduckgo.com results page, with rounds 2-3 forming a two-search loop. A further 4 of 10 rounds were bookkeeping (7, 8, 9, 10), one of which (round 8) spent the round on a checkpoint rejected as excerpt_unsupported and had to be re-recorded in round 9. All acquisition that produced material was compressed into rounds 4-6 on the two verified sources; the no-progress share is the only chargeable weakness here.",
             "secondary": null,
             "secondaryReason": null
           },
           "flags": [
             {
-              "round": 1,
-              "question": "Round 1 navigated to a plausible official Eurostar path that turned out to be a 404 — is a first-guess canonical URL that fails better read as ordinary cost of acquisition rather than an Off-key landing?"
-            },
-            {
               "round": 2,
-              "question": "Round 2 is overruled to Acquisition without Progress as the first member of the 2–3 search loop; a reviewer could keep the mechanical Progress label since the settled state was genuinely new to the Run, even though it was a CAPTCHA wall."
+              "question": "Round 2's Google call is scored as Progress by the rule because the URL was new, yet it was a search that ended on a challenge wall; should the loop be read as rounds 2-3, or as round 3 alone with round 2 left as acquisition with progress?"
             },
             {
               "round": 3,
-              "question": "Round 3's DuckDuckGo results head is what put the /luggage/musical-instruments path in front of the assistant for round 4 — is calling a productive SERP Off-key the right call, or should a SERP that directly yields the next on-key navigate be exempt?"
+              "question": "Round 3's DuckDuckGo results page is called off-key as a results listing, but its heads led directly to the correct https://www.eurostar.com/uk-en/travel-info/travel-planning/luggage/musical-instruments URL opened in round 4 - a reviewer could count it as productive navigation instead."
             },
             {
               "round": 8,
-              "question": "Round 8 is left as Bookkeeping with a rejected Evidence Checkpoint counted beside it; a reviewer might treat a round whose only call was refused as a Failed round instead."
+              "question": "Round 8 is bookkeeping whose Evidence Checkpoint was rejected (excerpt_unsupported) and re-recorded in round 9; should that round count toward the wasted share or as ordinary bookkeeping cost?"
             },
             {
-              "round": 7,
-              "question": "Rounds 7–10 are four consecutive bookkeeping rounds (40% of the budget used) on a passing run — is rounds_wasted the right primary at all, or is a clean pass inside budget better left without a waste verdict?"
+              "round": 11,
+              "question": "Is rounds_wasted the right primary for an attempt that passed every check inside its tier budget with 2 Tool Rounds unused, or should no chargeable weakness be named?"
             }
           ]
         },
         "caveats": [
-          "flag (round 1): Round 1 navigated to a plausible official Eurostar path that turned out to be a 404 — is a first-guess canonical URL that fails better read as ordinary cost of acquisition rather than an Off-key landing?",
-          "flag (round 2): Round 2 is overruled to Acquisition without Progress as the first member of the 2–3 search loop; a reviewer could keep the mechanical Progress label since the settled state was genuinely new to the Run, even though it was a CAPTCHA wall.",
-          "flag (round 3): Round 3's DuckDuckGo results head is what put the /luggage/musical-instruments path in front of the assistant for round 4 — is calling a productive SERP Off-key the right call, or should a SERP that directly yields the next on-key navigate be exempt?",
-          "flag (round 8): Round 8 is left as Bookkeeping with a rejected Evidence Checkpoint counted beside it; a reviewer might treat a round whose only call was refused as a Failed round instead.",
-          "flag (round 7): Rounds 7–10 are four consecutive bookkeeping rounds (40% of the budget used) on a passing run — is rounds_wasted the right primary at all, or is a clean pass inside budget better left without a waste verdict?"
+          "flag (round 2): Round 2's Google call is scored as Progress by the rule because the URL was new, yet it was a search that ended on a challenge wall; should the loop be read as rounds 2-3, or as round 3 alone with round 2 left as acquisition with progress?",
+          "flag (round 3): Round 3's DuckDuckGo results page is called off-key as a results listing, but its heads led directly to the correct https://www.eurostar.com/uk-en/travel-info/travel-planning/luggage/musical-instruments URL opened in round 4 - a reviewer could count it as productive navigation instead.",
+          "flag (round 8): Round 8 is bookkeeping whose Evidence Checkpoint was rejected (excerpt_unsupported) and re-recorded in round 9; should that round count toward the wasted share or as ordinary bookkeeping cost?",
+          "flag (round 11): Is rounds_wasted the right primary for an attempt that passed every check inside its tier budget with 2 Tool Rounds unused, or should no chargeable weakness be named?"
         ],
         "model": "claude-opus-5",
         "served": "claude-opus-5",
         "effort": "high",
-        "promptVersion": "audit-p2",
+        "promptVersion": "audit-p3",
         "digestHash": "sha256:69348d19be78901b48aa168abbf9e7f5ad4cef80dad0c5eced8d7276c19f6e4c",
-        "costUsd": 0.17,
-        "durationMs": 36703,
-        "judgedAt": "2026-09-20T16:29:00.299Z"
+        "costUsd": 0.24,
+        "durationMs": 48346,
+        "judgedAt": "2026-09-21T01:47:43.615Z"
       },
       "countsAfterOverrules": {
         "acquisition_with_progress": 3,
@@ -5315,48 +5324,48 @@
           "overrules": [],
           "stoppedEarly": {
             "value": false,
-            "reason": "The Grade records a pass with no unsatisfied checks, so no check can be traced to a page the Run had not read; the Run also ended on a terminal completion, not on exhaustion.",
+            "reason": "The Grade records no unsatisfied checks, so there is no check to attribute to a page the Run had not read.",
             "checks": []
           },
           "answerOmitted": {
             "value": false,
-            "reason": "No check is listed as unsatisfied, so there is nothing the Answer left unstated that the Run had read a page for.",
+            "reason": "The Grade records no unsatisfied checks; nothing on https://www.eurostar.com/uk-en/travel-info/travel-planning/luggage was left unstated in a way the Grade counts against the Answer.",
             "checks": []
           },
           "verdict": {
             "primary": "rounds_wasted",
-            "primaryReason": "The attempt passed every check using 3 of a 12-round budget, so no budget or stopping verdict applies; the only inefficiency in the closed set is that 1 of the 3 budgeted rounds — Round 1's navigate to https://www.eurostar.com/uk-en/travel-info/travel-planning/luggage — brought no Progress, being an inherited re-acquisition of a page the initial attempt had already checkpointed. That is a 1-in-3 share of non-progress acquisition, though it was cheap (4729 ms) and carried the run-plan bookkeeping alongside it.",
+            "primaryReason": "Nothing in the closed set describes an efficient pass, so the only defensible label rests on the single non-progress round: of the 3 budgeted rounds, round 1's navigate to https://www.eurostar.com/uk-en/travel-info/travel-planning/luggage was a re-acquisition of a page already checkpointed by the initial attempt (1 of 3, ~33% of budgeted rounds), with round 2's read_page the only Acquisition with Progress and round 3 bookkeeping. This is a nominal call: the Run used 3 of 12 Tool Rounds in 37 s, stayed on the single verified source, with no Off-key pages, no Search Loops and no failed rounds, and the Grade is a pass with no unsatisfied checks.",
             "secondary": null,
             "secondaryReason": null
           },
           "flags": [
             {
               "round": 1,
-              "question": "Round 1 navigates to https://www.eurostar.com/uk-en/travel-info/travel-planning/luggage, a page inherited as already checkpointed but not in front of this Run's assistant; should it count as acquisition without Progress, or as necessary re-establishment of page state (and effectively the bookkeeping round that carried report_run_plan)?"
+              "question": "Round 1's navigate is marked a re-acquisition because the initial attempt checkpointed https://www.eurostar.com/uk-en/travel-info/travel-planning/luggage; a reviewer could call it Acquisition with Progress, since this Run had not itself loaded the page and the revised objective turns on a part of that page the inherited Evidence did not cover."
             },
             {
               "round": 1,
-              "question": "Is rounds_wasted defensible at all on a passing attempt that spent 3 of 12 rounds, where the single non-progress round is Round 1's inherited navigate — or would a careful reviewer report no material inefficiency here?"
+              "question": "Round 1 also carried report_run_plan; a reviewer could label the round Bookkeeping rather than Acquisition without Progress, which would leave the budgeted rounds with no non-progress Acquisition at all."
             },
             {
-              "round": 2,
-              "question": "Round 2's read_page lands on the verified source for this task's allowance fact; is there any reading on which the page could be judged off-key for the Premier-specific arithmetic?"
+              "round": null,
+              "question": "Is rounds_wasted the right primary for a 3-of-12-round pass with a single repeat round, or is the closed set simply silent on an efficient attempt? The verdict is on the line and rests on one round."
             }
           ]
         },
         "caveats": [
-          "flag (round 1): Round 1 navigates to https://www.eurostar.com/uk-en/travel-info/travel-planning/luggage, a page inherited as already checkpointed but not in front of this Run's assistant; should it count as acquisition without Progress, or as necessary re-establishment of page state (and effectively the bookkeeping round that carried report_run_plan)?",
-          "flag (round 1): Is rounds_wasted defensible at all on a passing attempt that spent 3 of 12 rounds, where the single non-progress round is Round 1's inherited navigate — or would a careful reviewer report no material inefficiency here?",
-          "flag (round 2): Round 2's read_page lands on the verified source for this task's allowance fact; is there any reading on which the page could be judged off-key for the Premier-specific arithmetic?"
+          "flag (round 1): Round 1's navigate is marked a re-acquisition because the initial attempt checkpointed https://www.eurostar.com/uk-en/travel-info/travel-planning/luggage; a reviewer could call it Acquisition with Progress, since this Run had not itself loaded the page and the revised objective turns on a part of that page the inherited Evidence did not cover.",
+          "flag (round 1): Round 1 also carried report_run_plan; a reviewer could label the round Bookkeeping rather than Acquisition without Progress, which would leave the budgeted rounds with no non-progress Acquisition at all.",
+          "flag: Is rounds_wasted the right primary for a 3-of-12-round pass with a single repeat round, or is the closed set simply silent on an efficient attempt? The verdict is on the line and rests on one round."
         ],
         "model": "claude-opus-5",
         "served": "claude-opus-5",
         "effort": "high",
-        "promptVersion": "audit-p2",
+        "promptVersion": "audit-p3",
         "digestHash": "sha256:9b6d5f6bc599755fd8cddd876d0130c5c990225e02d2af9048d9560bef3fa617",
-        "costUsd": 0.13,
-        "durationMs": 30823,
-        "judgedAt": "2026-09-20T16:29:32.493Z"
+        "costUsd": 0.14,
+        "durationMs": 28298,
+        "judgedAt": "2026-09-21T01:48:13.357Z"
       },
       "countsAfterOverrules": {
         "acquisition_with_progress": 1,
@@ -6856,12 +6865,17 @@
               "rounds": [
                 2,
                 3,
-                4,
-                6,
-                19,
-                23
+                4
               ],
-              "reason": "One intent throughout: locate the June 2013 JPL account. Round 2 (rewritten site search for the 'has not yet left the solar system, or has it' headline), round 3 (same headline quoted with 'June 2013 NASA'), round 4 (quoted title plus nasa.gov), round 6 ('June 2013 JPL news release' with \"has not yet\"/\"new region\"), round 19 (site:jpl.nasa.gov with \"not yet\"/\"or has it\" June) and round 23 ('or has it?' JPL June 27 2013 magnetic highway) are six rewordings of the same target; the page opens at rounds 5, 9-12, 17-18 and 20-21 sit between them but do not break the loop. The target actually lives at https://www.jpl.nasa.gov/news/nasas-voyager-1-explores-final-frontier-of-our-solar-bubble/, a phrasing none of the six queries approached."
+              "reason": "Rounds 2, 3 and 4 are three consecutive searches with nothing opened between them. Round 2's navigate to a jpl.nasa.gov article address was rewritten into a DuckDuckGo site search, so it is itself a search and the first member of the loop, not an opening; the app's rule credited it as progress only because the SERP URL was new. The loop breaks at round 5, which opened https://science.nasa.gov/missions/voyager-program/nasa-voyager-status-update-on-voyager-1-location/."
+            },
+            {
+              "rounds": [
+                6,
+                7,
+                8
+              ],
+              "reason": "Round 6 (DuckDuckGo query on the June 2013 JPL release), round 7 (navigate to a science.nasa.gov article rewritten into a site search) and round 8 (another site-scoped DuckDuckGo query) are three consecutive searches with nothing opened between them; round 6 is the loop's first member even though the rule scored its new SERP as progress. The loop breaks at round 9, which opened https://science.nasa.gov/science-research/planetary-science/01nov_ismsounds/."
             },
             {
               "rounds": [
@@ -6870,167 +6884,162 @@
                 15,
                 16
               ],
-              "reason": "The app marked this streak 1-4 and it is one loop: every query seeks the September 2013 NASA release page and its dateline — site:science.nasa.gov with the September date string, then nasa.gov with the August 2012 date string, then the quoted release headline, then 'nasa.gov press-release voyager interstellar space 2013'. Different tokens, same single intent; nothing was opened between them."
+              "reason": "Four consecutive DuckDuckGo queries (rounds 13, 14, 15, 16) with nothing opened between them; round 13 is the first member, and rounds 15 and 16 reword the intent of the one before. The app raised search_loop_nudge at rounds 15 and 16 and the Run kept searching. The loop breaks at round 17, which opened https://www.nasa.gov/news-release/nasa-spacecraft-embarks-on-historic-journey-into-interstellar-space/."
             }
           ],
           "offKey": [
             {
               "round": 1,
               "url": "https://www.jpl.nasa.gov/news/nasa-voyager-1-has-not-yet-left-the-solar-system/",
-              "reason": "Not-found Page: the composed jpl.nasa.gov slug returned a 404 shell, which carries no release text of any kind."
+              "reason": "A Not-found Page on the right site: the JPL 404 shell carries no article text, so it can carry none of the task's required facts."
             },
             {
               "round": 2,
               "url": "https://duckduckgo.com/?q=news+nasas+voyager+has+not+yet+left+the+solar+system+or+it+site%3Anasa.gov&ia=web",
-              "reason": "The navigate was rewritten into a DuckDuckGo results listing; a results page holds links and snippets, not the primary-source release text this task's facts must come from."
+              "reason": "The navigate was rewritten into a search, so the page landed on is a DuckDuckGo results listing; a listing holds no official account text and can carry none of the required facts."
             },
             {
               "round": 3,
               "url": "https://duckduckgo.com/?q=Voyager+1+%22Has+Not+Yet+Left+the+Solar+System%2C+Or+Has+It%22+June+2013+NASA&ia=web",
-              "reason": "Search results page, no primary-source release text; also a member of the round 2-4-6-19-23 loop."
+              "reason": "Search results page; no required fact of this task can be carried by the listing itself."
             },
             {
               "round": 4,
               "url": "https://duckduckgo.com/?q=%22Voyager+1+Has+Not+Yet+Left+the+Solar+System%22+nasa.gov&ia=web",
-              "reason": "Search results page, no primary-source release text; loop member, and the app raised search_loop_nudge here."
+              "reason": "Search results page; the listing carries none of the task's required facts."
             },
             {
               "round": 6,
               "url": "https://duckduckgo.com/?q=Voyager+1+June+2013+JPL+news+release+%22interstellar%22+%22has+not+yet%22+OR+%22new+region%22&ia=web",
-              "reason": "Search results page; no official release text is on it, and it is the fourth rewording of the same hunt."
+              "reason": "Search results page; the June 2013 JPL account itself, not the listing, is the only thing that could carry what this query was aimed at."
             },
             {
               "round": 7,
               "url": "https://duckduckgo.com/?q=missions+voyager+program+nasa+enters+interstellar+space+site%3Anasa.gov&ia=web",
-              "reason": "Rewritten navigate that settled on a results listing rather than the NASA release it aimed at; a listing carries none of the task's required source statements."
+              "reason": "The intended article navigate was rewritten into a site search; the resulting DuckDuckGo listing carries none of the required facts."
             },
             {
               "round": 8,
               "url": "https://duckduckgo.com/?q=site%3Ascience.nasa.gov+voyager+interstellar+space+plasma+oscillations+April+2013+Gurnett&ia=web",
-              "reason": "Search results page; snippets only, and search_loop_nudge was raised."
+              "reason": "Search results page; no required fact can be carried by the listing."
             },
             {
               "round": 11,
               "url": "https://duckduckgo.com/?q=%22Voyager+1+Reaches+Interstellar+Space%22+science.nasa.gov&ia=web",
-              "reason": "Search results page: it routes to round 12 but itself carries no source statement of this task."
+              "reason": "Search results page; it carries no required fact, though it did feed the productive opening in round 12."
             },
             {
               "round": 13,
               "url": "https://duckduckgo.com/?q=site%3Ascience.nasa.gov+voyager+%22Sept.+12%2C+2013%22+interstellar&ia=web",
-              "reason": "Search results page and the head of the round 13-16 loop; no primary release text on it."
+              "reason": "Search results page; the listing carries none of the task's required facts."
             },
             {
               "round": 14,
               "url": "https://duckduckgo.com/?q=%22voyager%22+nasa.gov+%22Aug.+25%2C+2012%22+%22interstellar+space%22+announcement+September+2013&ia=web",
-              "reason": "Search results page, loop member; carries no official account."
+              "reason": "Search results page; no required fact can be carried by the listing."
             },
             {
               "round": 15,
               "url": "https://duckduckgo.com/?q=%22NASA+Voyager+1+Enters+Interstellar+Space%22+press+release+September+12+2013&ia=web",
-              "reason": "Search results page, loop member with search_loop_nudge raised; no primary text."
+              "reason": "Search results page; no required fact can be carried by the listing."
             },
             {
               "round": 16,
               "url": "https://duckduckgo.com/?q=nasa.gov+press-release+voyager+interstellar+space+2013&ia=web",
-              "reason": "Search results page, fourth in the loop with search_loop_nudge raised; no primary text."
+              "reason": "Search results page, and the broadest query of the run; it carries none of the task's required facts."
             },
             {
               "round": 19,
               "url": "https://duckduckgo.com/?q=site%3Ajpl.nasa.gov+voyager+%222013%22+%22not+yet%22+OR+%22or+has+it%22+June&ia=web",
-              "reason": "Search results page and a further rewording of the June-account hunt; carries no release text itself."
+              "reason": "Search results page; it carries no required fact, though it did feed the productive opening in round 20."
             },
             {
               "round": 23,
               "url": "https://duckduckgo.com/?q=Voyager+1+%22or+has+it%3F%22+JPL+June+27+2013+magnetic+highway&ia=web",
-              "reason": "The last acquisition round of the budget ended on a results listing rather than any document; nothing on it can carry a required source statement."
+              "reason": "The last tool round landed on a search results listing, which can carry none of the required facts; nothing was opened from it before the Answer."
             }
           ],
           "overrules": [
             {
+              "round": 2,
+              "kind": "acquisition_without_progress",
+              "reason": "The rule credited Progress because the DuckDuckGo URL was new, but the round's navigate was rewritten into a search and it is the first of three consecutive searches (2, 3, 4) with nothing opened between them — a member of a Search Loop, hence no Progress."
+            },
+            {
               "round": 6,
               "kind": "acquisition_without_progress",
-              "reason": "Mechanically counted as Progress because the results URL was new, but the query is the fourth rewording of the same June-account intent already searched at rounds 2, 3 and 4; as a Search Loop member it brought nothing the Run had not already seen in listing form."
+              "reason": "First member of the Search Loop 6–8: a search whose only product was a new SERP URL, with nothing opened before the next two searches."
             },
             {
-              "round": 19,
+              "round": 13,
               "kind": "acquisition_without_progress",
-              "reason": "Another rewording of the same June-account intent (rounds 2, 3, 4, 6); a new results URL is not new material, so this is a loop member rather than Progress."
-            },
-            {
-              "round": 23,
-              "kind": "acquisition_without_progress",
-              "reason": "Sixth rewording of the same June-account intent; the round produced only a fresh DuckDuckGo listing and nothing was opened from it before the budget ended."
+              "reason": "First member of the Search Loop 13–16: a search followed by three more searches with nothing opened between them; the new SERP URL is not Progress."
             },
             {
               "round": 22,
               "kind": "bookkeeping",
-              "reason": "The navigate settled on an 'Internet Archive: Temporarily Offline' interstitial that delivered no document; the substance of the round was three accepted Evidence Checkpoints, all grounded in observations from pages acquired in earlier rounds."
+              "reason": "The navigate to https://web.archive.org/web/20130604012103/http://www.jpl.nasa.gov/news/news.php?release=2013-136 landed on \"Internet Archive: Temporarily Offline\" — a wall that put no material in front of the assistant, so the acquisition brought nothing. The round's actual work was three accepted Evidence Checkpoints (memory-1..3), all grounded in pages read in earlier rounds."
             }
           ],
           "stoppedEarly": {
             "value": false,
-            "reason": "The attempt ran to its tier budget: 23 of 24 Tool Rounds were spent and the 24th orchestrator round was the reserved Answer, with the app's budget warnings fired at 6/24 and 3/24 remaining. An attempt that ran to its budget did not stop early.",
+            "reason": "The attempt ran to its budget: 23 of 24 Tool Rounds were spent and the remaining round was the reserved Answer (budget_warning 3/24 at round 21, then rounds 22 and 23 spent, round 24 the Answer). An attempt that ran to its budget did not stop early.",
             "checks": []
           },
           "answerOmitted": {
             "value": false,
-            "reason": "The single unsatisfied check, fact-01, rests on the June 2013 JPL account at https://www.jpl.nasa.gov/news/nasas-voyager-1-explores-final-frontier-of-our-solar-bubble/, which the Run never opened: round 1 hit a 404 on a guessed slug, rounds 2, 3, 4, 6, 19 and 23 only produced results listings for it, and the JPL page actually read at rounds 20-21 (https://www.jpl.nasa.gov/news/nasa-voyager-status-update-on-voyager-1-location/) is a different, earlier release. No page the Run read carries fact-01, so nothing was left unstated from material already in hand.",
+            "reason": "The one unsatisfied check, fact-01, turns on the June 2013 JPL account page, which the Run never opened: the attempt at that address returned a Not-found Page in round 1 and thereafter only DuckDuckGo listings (rounds 2–4, 6, 19, 23). None of the four pages the Run actually read — https://science.nasa.gov/missions/voyager-program/nasa-voyager-status-update-on-voyager-1-location/, https://science.nasa.gov/science-research/planetary-science/01nov_ismsounds/, https://www.nasa.gov/news-release/nasa-spacecraft-embarks-on-historic-journey-into-interstellar-space/ and https://www.jpl.nasa.gov/news/nasa-voyager-status-update-on-voyager-1-location/ — is that account, so fact-01 did not follow from material already in front of the assistant.",
             "checks": []
           },
           "verdict": {
             "primary": "rounds_wasted",
-            "primaryReason": "Of the 23 budgeted rounds, 14 ended on a page that can carry no required fact — one Not-found Page (round 1) and thirteen DuckDuckGo results listings (rounds 2, 3, 4, 6, 7, 8, 11, 13, 14, 15, 16, 19, 23) — and 8 were already mechanically without Progress before my three loop overrules (6, 19, 23) raised that to 11. Two Search Loops account for most of it: six rewordings of the June-account hunt (2, 3, 4, 6, 19, 23) that never opened a document, and four more at 13-16, with search_loop_nudge raised at rounds 4, 8, 15 and 16 and not acted on. Only four page opens put a substantive document in front of the assistant (9/10, 12, 17/18, 20/21). The one unsatisfied check, fact-01, sits on a page the Run searched for six times and never opened while rounds were being spent on listings.",
-            "secondary": "budget_too_small_for_the_hunt",
-            "secondaryReason": "A weaker reading: the run was at the investigation tier with no escalation shown, it did reach the September account (rounds 17-18) plus two supporting NASA pages, and the June account's slug is not guessable from its headline, so even disciplined searching might have needed rounds beyond 24. I rank this second because the 11 no-Progress and 14 off-key landings, not the ceiling, consumed the room the missing page needed."
+            "primaryReason": "With the overrules applied, 11 of 23 budgeted rounds (1, 2, 3, 4, 6, 7, 8, 13, 14, 15, 16) made no Progress — 48% of the budget — and 14 rounds landed on pages that can carry none of this task's required facts (13 DuckDuckGo listings plus the round 1 JPL 404). Three Search Loops (2–4, 6–8, 13–16) absorbed 10 rounds, and search_loop_nudge fired at rounds 4, 8, 15 and 16 without changing behaviour. Only four rounds put an official account in front of the assistant (opens at 9, 17, 20 with reads at 10, 18, 21, plus round 5), and the single unsatisfied check, fact-01, rests on the one official account page the Run never opened — though round 19's jpl.nasa.gov-scoped listing and round 23's targeted query were aimed straight at it, round 23 was the last tool round and nothing was opened from it.",
+            "secondary": null,
+            "secondaryReason": null
           },
           "flags": [
             {
               "round": 2,
-              "question": "Is it right to call a DuckDuckGo results page Off-key when it is the only route to an unknown URL? Rounds 2, 11 and 16 each led to a productive open (5, 12, 17), so a reviewer might score those three as legitimate navigation rather than off-key landings."
+              "question": "Round 2's navigate was rewritten by the app into a site search: should the rewritten call count as the loop's first member (as judged here) or as an attempted opening the app frustrated, leaving rounds 3–4 as the loop?"
             },
             {
               "round": 6,
-              "question": "Loop boundary: the app counted rounds 6-8 as one streak, but I split them — 6 belongs with the June-account loop while 7 and 8 chase different NASA pages. Was the app's 6-8 streak the better boundary?"
+              "question": "Rounds 6 and 13 were mechanically scored as Progress for reaching new SERP URLs; overruling the first search of a streak to no-Progress is a call a careful reviewer might decline to make."
             },
             {
-              "round": 19,
-              "question": "Extending the June-account loop across rounds 19 and 23, which are separated by page opens at 20-22, goes beyond the app's marked streaks; a reviewer could treat each as a fresh single search instead of a loop member, which would undo two of my overrules."
+              "round": 11,
+              "question": "Rounds 11 and 19 are listed Off-key as search listings, yet each led directly to a productive opening in the next round (12 and 20); is marking a productive navigational SERP Off-key too harsh?"
             },
             {
               "round": 22,
-              "question": "Overruling round 22 from acquisition_with_progress to bookkeeping turns on reading the 'Internet Archive: Temporarily Offline' interstitial as no material at all; a reviewer who counts the archive attempt as an acquisition would instead judge that landing Off-key."
-            },
-            {
-              "round": 12,
-              "question": "https://science.nasa.gov/resource/voyager-reaches-interstellar-space/ is a media resource page on the right site; I left it on-key, but a reviewer might judge that a resource stub can carry none of the required source statements."
-            },
-            {
-              "round": 20,
-              "question": "The JPL status update read at rounds 20-21 is an official JPL Voyager release but not the June account the task names; I left it on-key for context, though a reviewer could call it right site, wrong release."
+              "question": "Round 22 was overruled from acquisition_with_progress to bookkeeping because the Internet Archive page was offline; a reviewer might instead call it acquisition_without_progress with the three accepted Evidence Checkpoints counted beside it."
             },
             {
               "round": 23,
-              "question": "Verdict on the line: with fact-01 the only unsatisfied check and the run having reached one of the two verified sources, is rounds_wasted decisive over budget_too_small_for_the_hunt?"
+              "question": "Is the verdict better read as budget_too_small_for_the_hunt — the June 2013 JPL account resisted site-scoped queries at rounds 19 and 23 and direct URL guesses 404'd — rather than rounds_wasted?"
+            },
+            {
+              "round": 1,
+              "question": "Round 1 bundled report_run_plan with a navigate that 404'd; should it have been kept as bookkeeping rather than treated as an Off-key acquisition?"
             }
           ]
         },
         "caveats": [
-          "flag (round 2): Is it right to call a DuckDuckGo results page Off-key when it is the only route to an unknown URL? Rounds 2, 11 and 16 each led to a productive open (5, 12, 17), so a reviewer might score those three as legitimate navigation rather than off-key landings.",
-          "flag (round 6): Loop boundary: the app counted rounds 6-8 as one streak, but I split them — 6 belongs with the June-account loop while 7 and 8 chase different NASA pages. Was the app's 6-8 streak the better boundary?",
-          "flag (round 19): Extending the June-account loop across rounds 19 and 23, which are separated by page opens at 20-22, goes beyond the app's marked streaks; a reviewer could treat each as a fresh single search instead of a loop member, which would undo two of my overrules.",
-          "flag (round 22): Overruling round 22 from acquisition_with_progress to bookkeeping turns on reading the 'Internet Archive: Temporarily Offline' interstitial as no material at all; a reviewer who counts the archive attempt as an acquisition would instead judge that landing Off-key.",
-          "flag (round 12): https://science.nasa.gov/resource/voyager-reaches-interstellar-space/ is a media resource page on the right site; I left it on-key, but a reviewer might judge that a resource stub can carry none of the required source statements.",
-          "flag (round 20): The JPL status update read at rounds 20-21 is an official JPL Voyager release but not the June account the task names; I left it on-key for context, though a reviewer could call it right site, wrong release.",
-          "flag (round 23): Verdict on the line: with fact-01 the only unsatisfied check and the run having reached one of the two verified sources, is rounds_wasted decisive over budget_too_small_for_the_hunt?"
+          "flag (round 2): Round 2's navigate was rewritten by the app into a site search: should the rewritten call count as the loop's first member (as judged here) or as an attempted opening the app frustrated, leaving rounds 3–4 as the loop?",
+          "flag (round 6): Rounds 6 and 13 were mechanically scored as Progress for reaching new SERP URLs; overruling the first search of a streak to no-Progress is a call a careful reviewer might decline to make.",
+          "flag (round 11): Rounds 11 and 19 are listed Off-key as search listings, yet each led directly to a productive opening in the next round (12 and 20); is marking a productive navigational SERP Off-key too harsh?",
+          "flag (round 22): Round 22 was overruled from acquisition_with_progress to bookkeeping because the Internet Archive page was offline; a reviewer might instead call it acquisition_without_progress with the three accepted Evidence Checkpoints counted beside it.",
+          "flag (round 23): Is the verdict better read as budget_too_small_for_the_hunt — the June 2013 JPL account resisted site-scoped queries at rounds 19 and 23 and direct URL guesses 404'd — rather than rounds_wasted?",
+          "flag (round 1): Round 1 bundled report_run_plan with a navigate that 404'd; should it have been kept as bookkeeping rather than treated as an Off-key acquisition?"
         ],
         "model": "claude-opus-5",
         "served": "claude-opus-5",
         "effort": "high",
-        "promptVersion": "audit-p2",
+        "promptVersion": "audit-p3",
         "digestHash": "sha256:cbf9c2c2b475a074aadb787dcdef3d44d213182670160c1b2227d77a2dfcae36",
-        "costUsd": 1.31,
-        "durationMs": 311291,
-        "judgedAt": "2026-09-20T16:34:46.240Z"
+        "costUsd": 0.58,
+        "durationMs": 147788,
+        "judgedAt": "2026-09-21T01:50:42.404Z"
       },
       "countsAfterOverrules": {
         "acquisition_with_progress": 11,
@@ -7059,10 +7068,10 @@
         "finalization": 4
       },
       "countsAfterOverrules": {
-        "acquisition_with_progress": 44,
-        "acquisition_without_progress": 25,
+        "acquisition_with_progress": 46,
+        "acquisition_without_progress": 24,
         "collection": 1,
-        "bookkeeping": 10,
+        "bookkeeping": 9,
         "failed_round": 1,
         "finalization": 4
       },
@@ -7085,12 +7094,12 @@
       "verdictsSecondary": {
         "rounds_wasted": 1,
         "tier_too_small_or_never_escalated": 0,
-        "budget_too_small_for_the_hunt": 1,
+        "budget_too_small_for_the_hunt": 0,
         "stopped_early": 0,
         "answer_omitted": 0,
         "failed_rounds": 0
       },
-      "offKeyRounds": 33,
+      "offKeyRounds": 34,
       "searchLoopRounds": 13,
       "mechanicalSearchRounds": 13,
       "searchRoundsAtStreak2": 9,
@@ -7289,7 +7298,7 @@
       "stoppedEarly": 0,
       "answerOmitted": 1,
       "overrules": 1,
-      "flags": 8,
+      "flags": 7,
       "finalizationCauses": {
         "deadline_reached": 1,
         "objective_met": 1

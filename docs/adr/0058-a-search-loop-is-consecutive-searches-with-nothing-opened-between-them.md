@@ -93,6 +93,35 @@ streak 2 or beyond and 22 at 3 or beyond, against 11 and 0 as written, and
 the audit reads the orchestrator's rounds only (ADR 0049), so the gate for
 #259 is read on 37 and 22.
 
+**Note (#259 close, 2026-09-21).** The AC5 gate as written — streak-rule
+rounds over the reviewer's loop rounds rising from 22/47 — fell on the
+shared capture (`fix-258-259`, judged under `audit-p2`): 11 at streak 2 or
+beyond and 4 at 3 or beyond over 24. It fell because the reviewer's
+definition of a loop (rewordings of one intent, however far apart) stopped
+matching this ADR's once the rail worked: it nudged four times, all in
+Voyager pass 3, the model opened a result the round after every nudge,
+no refusal fired, and search seconds per Run fell from a median of 28 s to
+5 s. The owner closed on the mechanism and had the gate re-stated over the
+reviewer's *consecutive* loop rounds. The Round Audit's reviewer prompt now
+defines Search Loop membership as this ADR does (`audit-p3` in
+`scripts/live-audit.ts`), and the same eighteen attempts were re-judged
+under it — the digests are unchanged, so only the judgement moved. The
+reading: the reviewer marks 23 loop rounds and the rule 17 (heads
+included), every rule round inside a reviewer loop, 17/23 against the
+issue's 22/47. The six rounds the reviewer counts and the rule does not are
+three mechanisms, none a rewording the rule was built not to count: a site
+search submitted by a path URL with no `q=` (rmg.co.uk
+`/collections/objects/search/<terms>`, three rounds in the longitude watch
+of pass 1), which the rail does not observe as a search; a click that
+changed no URL and left the Held Page overlay in place, taken as an opening
+between two blocked searches (two rounds, pass 2); and a navigate that
+landed on a wall (the Internet Archive's offline page), taken as an opening
+(one round, Voyager pass 2). Each is a candidate for an issue of its own;
+none is a threshold matter. An `audit-p3` audit cannot be aggregated with an
+`audit-p2` one, and the Fix Ledger marks the reviewer-prompt axis on a
+marginal across the two; the fix-257 audits stay under `audit-p2` and were
+not re-judged.
+
 ## Considered options
 
 - **Lower the threshold.** Rejected: the live rewordings score 0.1–0.3;
