@@ -2329,7 +2329,8 @@ describe('Tier Escalations by arm and the recorded decline (#266, ADR 0063)', ()
   })
 
   it('still counts a deadline-armed escalation on a trace that carried no budget', () => {
-    const { roundBudget: _unused, ...withoutBudget } = ESCALATION.event
+    const { roundBudget, ...withoutBudget } = ESCALATION.event
+    expect(roundBudget).toBeDefined()
     const mechanical = classifyAttempt(inputOf({ traceRecords: escalated({ ...ESCALATION, event: { ...withoutBudget, source: 'deadline' } }) }))
 
     expect(mechanical.deadlineEscalations).toBe(1)
