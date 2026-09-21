@@ -2,6 +2,7 @@ import type { ToolCall, ToolResultOutcome } from '../ports/llm'
 import type { ObservationProducer } from '../session/observationLedger'
 import { SCROLL_END_OF_PAGE } from '../browser/scrollDelta'
 import { landedOnNotFoundPage } from '../browser/notFoundPage'
+import { landedOnUnavailablePage } from '../browser/unavailablePage'
 import { actionFingerprint, pageFingerprint, pageReadPartOf, type SettledPageState } from './progressFingerprints'
 import { classifyToolObservation } from './toolObservations'
 import { reportFault } from '../trace/fault'
@@ -222,6 +223,9 @@ export function createNoProgressRail(deps: NoProgressRailDeps = {}): NoProgressR
   // The settled states a Not-found Landing put the tab on (#239): the page
   // is where it is whatever the Run now plans, so a replan keeps them.
   const notFoundStates = new Set<string>()
+  // The settled states an Unavailable Landing put the tab on (#262, ADR
+  // 0060), kept for the same reason.
+  const unavailableStates = new Set<string>()
   // The gate's nudge rides the observed result of the call it nudged —
   // single-slot between one call's gate and observe, like the search-loop
   // rail's type memo.
@@ -409,6 +413,18 @@ export function createNoProgressRail(deps: NoProgressRailDeps = {}): NoProgressR
         if (landedOnNotFoundPage(outcome) || firstByThisProducer) return nudge
         const escalatedOnDeadPage = escalate()
         return escalatedOnDeadPage === null ? nudge : nudge === null ? escalatedOnDeadPage : `${nudge}\n\n${escalatedOnDeadPage}`
+      }
+      if (landedOnUnavailablePage(outcome)) unavailableStates.add(fingerprint)
+      if (unavailableStates.has(fingerprint)) {
+        // An Unavailable Landing (#262, ADR 0060) is neutral like a
+        // Not-found one — the page carries nothing, and the outage is the
+        // site's fault, not the Approach's — and never the baseline. Unlike
+        // it, only each Producer's first observation is neutral, the landing
+        // included: landing on the same outage again is the ordinary repeat,
+        // since one retry is all the advice allows.
+        if (firstByThisProducer) return nudge
+        const escalatedOnOutage = escalate()
+        return escalatedOnOutage === null ? nudge : nudge === null ? escalatedOnOutage : `${nudge}\n\n${escalatedOnOutage}`
       }
       if (lastState === null) {
         // The baseline read: the state Progress is measured from, not

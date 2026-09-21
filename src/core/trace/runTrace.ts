@@ -16,6 +16,7 @@ import type { PipelineEvent } from '../pipeline/events'
 import type { IdentitySlip } from '../pipeline/answerEvidence'
 import type { SearchSignature } from '../pipeline/searchLoopRail'
 import type { NotFoundLanding } from '../browser/notFoundPage'
+import type { UnavailableLanding } from '../browser/unavailablePage'
 import type { ComposedAddressRewriteStamp } from '../pipeline/composedAddressRail'
 import type { AnswerShape } from '../agent/answerContract'
 import type { AgentRole } from '../agent/modelRouting'
@@ -383,6 +384,13 @@ export interface PipelineEventTraceEvent {
    * parsed from truncated text. Absent on every other result and kind.
    */
   readonly notFound?: NotFoundLanding
+  /**
+   * The Unavailable Landing a `tool_result` settled on (#262, ADR 0060): the
+   * 5xx status or the title that said the site could not serve the page, and
+   * its host — read like `notFound`, of which it is the sibling. Absent on
+   * every other result and kind.
+   */
+  readonly unavailable?: UnavailableLanding
   /**
    * The Composed Address rewrite a `tool_result` opens with (#255, ADR 0055):
    * the site whose allowance was spent and the search that ran in place of

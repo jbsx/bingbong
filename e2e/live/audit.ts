@@ -40,6 +40,7 @@ import { createHash } from 'node:crypto'
 import { blockedOrInertAction, type ConsumedNothing } from '../../src/core/browser/actionOutcome.ts'
 import { parseBlockerMarker } from '../../src/core/browser/blockerNudge.ts'
 import { classifyNotFoundPage, NOT_FOUND_BASES, type NotFoundBasis, type NotFoundLanding } from '../../src/core/browser/notFoundPage.ts'
+import { classifyUnavailablePage, isUnavailableBasis, type UnavailableLanding } from '../../src/core/browser/unavailablePage.ts'
 import type { ComposedAddressRewriteStamp } from '../../src/core/pipeline/composedAddressRail.ts'
 import type { PerfSpanRecord } from '../../src/core/perf/perfTracer'
 import type { PipelineEvent } from '../../src/core/pipeline/events'
@@ -176,6 +177,13 @@ export interface AuditCall {
    * keeps the digest it always had.
    */
   readonly notFound?: string
+  /**
+   * The Unavailable Landing the call settled on (#262, ADR 0060): `<status|title>
+   * <host>`, the Not-found Landing's sibling, read the same way — the Run
+   * Trace's field, else the app's title rule on a trace written before it.
+   * Present only on a landing, so an attempt with none keeps its digest.
+   */
+  readonly unavailable?: string
   /**
    * The search a Composed Address was rewritten into (#255, ADR 0055): the
    * query that ran, read from the Run Trace's field on the result, while
@@ -378,6 +386,14 @@ export interface AuditMechanical {
    * written before the counter.
    */
   readonly blockedOrInert?: BlockedOrInertRounds
+  /**
+   * The Unavailable Landings (#262, ADR 0060): the round of every call that
+   * settled on an Unavailable Page, one entry per call, by what said so — a
+   * 5xx status or the title — and of those, the ones whose next call other
+   * than inspection was a search. Beside the rounds, never in them. Absent
+   * on an audit written before the counter.
+   */
+  readonly unavailableLandings?: UnavailableLandingRounds
   readonly walledRounds: number
   /**
    * The round of every navigate that landed on a Not-found Page, one entry per
@@ -567,6 +583,8 @@ export interface AuditPopulation {
   readonly searchForms?: Readonly<Record<SearchUrlForm, number>>
   /** Blocked Actions, inert clicks, and those met inside a Search Loop streak, over the attempts that count them (#261); absent when none does. */
   readonly blockedOrInert?: Readonly<Record<keyof BlockedOrInertRounds, number>>
+  /** Unavailable Landings by basis, and those followed by a search, over the attempts that count them (#262); absent when none does. */
+  readonly unavailableLandings?: Readonly<Record<keyof UnavailableLandingRounds, number>>
   readonly inheritedRounds: number
   /** Merged Evidence Checkpoints over the attempts (#240): a floor. */
   readonly mergedCheckpoints: number
@@ -760,6 +778,18 @@ function populationBlockedOrInertText(counted: AuditPopulation['blockedOrInert']
     : `${counted.blocked} Blocked Action(s) and ${counted.inert} inert click(s), ${counted.inStreak} inside a Search Loop streak`
 }
 
+function unavailableLandingsText(counted: UnavailableLandingRounds | undefined): string {
+  return counted === undefined
+    ? 'Unavailable Landings not counted'
+    : `Unavailable Landings by status ${roundsText(counted.status)}, by title ${roundsText(counted.title)}; followed by a search: ${roundsText(counted.followedBySearch)}`
+}
+
+function populationUnavailableLandingsText(counted: AuditPopulation['unavailableLandings']): string {
+  return counted === undefined
+    ? 'Unavailable Landings not counted'
+    : `${counted.status + counted.title} Unavailable Landing(s) (${counted.status} by status, ${counted.title} by title), ${counted.followedBySearch} followed by a search`
+}
+
 /** The navigate searches over an attempt's rounds by Search URL form (#260, AC5). */
 export function searchFormsOf(rounds: readonly AuditRound[]): Record<SearchUrlForm, number> {
   const forms = emptySearchForms()
@@ -833,7 +863,14 @@ interface RawRound {
   readonly record: TraceLine
   readonly round: number
   readonly attempt: number
-  readonly calls: { call: ToolCallEvent; result: ToolResultEvent | undefined; landing: NotFoundLanding | null; rewritten: ComposedAddressRewriteStamp | null; checkpoint: TraceLine | undefined }[]
+  readonly calls: {
+    call: ToolCallEvent
+    result: ToolResultEvent | undefined
+    landing: NotFoundLanding | null
+    unavailable: UnavailableLanding | null
+    rewritten: ComposedAddressRewriteStamp | null
+    checkpoint: TraceLine | undefined
+  }[]
 }
 
 /** The Composed Address rewrite a `tool_result` record carries as a field (#255), or null. */
@@ -850,6 +887,12 @@ function landingFieldOf(record: TraceLine): NotFoundLanding | null {
     : null
 }
 
+/** The Unavailable Landing a `tool_result` record carries as a field (#262), or null. */
+function unavailableFieldOf(record: TraceLine): UnavailableLanding | null {
+  const field = record.unavailable
+  return isRecord(field) && isString(field.basis) && isUnavailableBasis(field.basis) && isString(field.host) ? { basis: field.basis, host: field.host } : null
+}
+
 function eventOf(record: TraceLine): Record<string, unknown> | null {
   return record.kind === 'pipeline_event' && isRecord(record.event) ? record.event : null
 }
@@ -857,11 +900,16 @@ function eventOf(record: TraceLine): Record<string, unknown> | null {
 /** Group the turn's orchestrator records into rounds: each `llm_round` owns the tool calls that follow it until the next. */
 function rawRounds(records: readonly TraceLine[]): RawRound[] {
   const rounds: RawRound[] = []
-  const results = new Map<string, { event: ToolResultEvent; landing: NotFoundLanding | null; rewritten: ComposedAddressRewriteStamp | null }>()
+  const results = new Map<string, { event: ToolResultEvent; landing: NotFoundLanding | null; unavailable: UnavailableLanding | null; rewritten: ComposedAddressRewriteStamp | null }>()
   for (const record of records) {
     const event = eventOf(record)
     if (event !== null && event.type === 'tool_result' && isString(event.callId) && !results.has(event.callId) && record.agentId === undefined) {
-      results.set(event.callId, { event: event as unknown as ToolResultEvent, landing: landingFieldOf(record), rewritten: rewrittenFieldOf(record) })
+      results.set(event.callId, {
+        event: event as unknown as ToolResultEvent,
+        landing: landingFieldOf(record),
+        unavailable: unavailableFieldOf(record),
+        rewritten: rewrittenFieldOf(record),
+      })
     }
   }
   let current: RawRound | null = null
@@ -885,7 +933,14 @@ function rawRounds(records: readonly TraceLine[]): RawRound[] {
     if (event === null || event.type !== 'tool_call' || current === null) continue
     const call = event as unknown as ToolCallEvent
     const settled = results.get(call.callId)
-    current.calls.push({ call, result: settled?.event, landing: settled?.landing ?? null, rewritten: settled?.rewritten ?? null, checkpoint: undefined })
+    current.calls.push({
+      call,
+      result: settled?.event,
+      landing: settled?.landing ?? null,
+      unavailable: settled?.unavailable ?? null,
+      rewritten: settled?.rewritten ?? null,
+      checkpoint: undefined,
+    })
   }
   return rounds
 }
@@ -966,6 +1021,9 @@ function rewrittenShownAddressesOf(raw: readonly RawRound[]): number[] {
 /** The Progress reason of a call that landed on a Not-found Page (ADR 0050): neutral in the app, without Progress here. */
 export const NOT_FOUND_LANDING_REASON = 'landed on a Not-found Page'
 
+/** The Progress reason of a call that landed on an Unavailable Page (ADR 0060): neutral in the app, without Progress here. */
+export const UNAVAILABLE_LANDING_REASON = 'landed on an Unavailable Page'
+
 /** The Progress reason of a search at streak 2 or beyond (ADR 0058), the similarity beside it for the reviewer. */
 function searchWithoutProgressReason(search: NonNullable<AuditCall['search']>): string {
   return `a search after a search with nothing opened between them (streak ${search.streak}${search.rewords === true ? ', rewording the one before it' : ''})`
@@ -1028,11 +1086,11 @@ export function replaySearchStreaks(rounds: readonly AuditRound[]): AuditRound[]
 
 /**
  * Whether an audited call consumed something, as the rail decides it: it
- * succeeded, was not refused, landed on no Not-found Page, and was neither a
- * Blocked Action nor an inert click.
+ * succeeded, was not refused, landed on no Not-found or Unavailable Page, and
+ * was neither a Blocked Action nor an inert click.
  */
 function consumedOf(call: AuditCall): boolean {
-  return call.ok === true && !call.refused && call.notFound === undefined && blockedOrInertOfCall(call) === null
+  return call.ok === true && !call.refused && call.notFound === undefined && call.unavailable === undefined && blockedOrInertOfCall(call) === null
 }
 
 /**
@@ -1083,6 +1141,58 @@ export function blockedOrInertOf(rounds: readonly AuditRound[]): BlockedOrInertR
   return { blocked, inert, inStreak }
 }
 
+/** The rounds of an attempt's Unavailable Landings by basis, and of those followed by a search (#262). */
+export interface UnavailableLandingRounds {
+  readonly status: readonly number[]
+  readonly title: readonly number[]
+  readonly followedBySearch: readonly number[]
+}
+
+/**
+ * An attempt's Unavailable Landings over its rounds as audited (#262, ADR
+ * 0060): one entry per call, by basis, and of those, the ones whose next call
+ * that was not inspection was a search — the move the landing held the
+ * streak for. A landing with no call after it was followed by nothing.
+ */
+export function unavailableLandingsOf(rounds: readonly AuditRound[]): UnavailableLandingRounds {
+  const status: number[] = []
+  const title: number[] = []
+  const followedBySearch: number[] = []
+  let pending: number | null = null
+  for (const round of rounds) {
+    for (const call of round.calls) {
+      if (pending !== null && !(call.search === null && isSearchInspection(call.name))) {
+        if (call.search !== null) followedBySearch.push(pending)
+        pending = null
+      }
+      if (call.unavailable === undefined) continue
+      if (call.unavailable.startsWith('title ')) title.push(round.round)
+      else status.push(round.round)
+      pending = round.round
+    }
+  }
+  return { status, title, followedBySearch }
+}
+
+/**
+ * An audit's rounds with the Unavailable Landings a report written before
+ * the counter never marked, recounted by the app's title rule over the page
+ * each call names (#262, ADR 0060) — the status was never in a trace, so the
+ * title is all a recount has. A call already marked, walled, or landed on a
+ * Not-found Page keeps what it had. Kinds and reasons stay as judged; the
+ * Fix Ledger replays the streak over the result.
+ */
+export function recountUnavailableByTitle(rounds: readonly AuditRound[]): AuditRound[] {
+  return rounds.map((round) => ({
+    ...round,
+    calls: round.calls.map((call) => {
+      if (call.unavailable !== undefined || call.notFound !== undefined || call.wall !== null || call.ok !== true || call.refused) return call
+      const landing = unavailableByTitle(call.name, call.resultHead, call.title === null || call.url === null ? null : { url: call.url, title: call.title })
+      return landing === null ? call : { ...call, unavailable: `${landing.basis} ${landing.host}` }
+    }),
+  }))
+}
+
 /** The Search Loop rail's streak as the audit replays it, and the streak's last query for `rewords`. */
 interface SearchStreakState {
   streak: number
@@ -1119,11 +1229,21 @@ function advanceSearchStreak(
  * marker live — the navigation verbs, and a click that left the page.
  */
 function landingByTitle(name: string, text: string | null, page: { url: string; title: string | null } | null): NotFoundLanding | null {
-  if (page === null || text === null) return null
-  const carries = name === 'navigate' || name === 'back' || name === 'go_forward' || (name === 'click' && text.includes('urlChanged=true'))
-  if (!carries) return null
+  if (page === null || text === null || !carriesLanding(name, text)) return null
   const verdict = classifyNotFoundPage({ url: page.url, title: page.title ?? '' })
   return verdict === null ? null : { basis: verdict.basis, host: verdict.host }
+}
+
+/** Its sibling for an Unavailable Landing (#262): the app's own title rule, on the same calls. */
+function unavailableByTitle(name: string, text: string | null, page: { url: string; title: string | null } | null): UnavailableLanding | null {
+  if (page === null || text === null || !carriesLanding(name, text)) return null
+  const verdict = classifyUnavailablePage({ url: page.url, title: page.title ?? '' })
+  return verdict === null ? null : { basis: verdict.basis, host: verdict.host }
+}
+
+/** The calls that carry a landing marker live: the navigation verbs, and a click that left the page. */
+function carriesLanding(name: string, text: string): boolean {
+  return name === 'navigate' || name === 'back' || name === 'go_forward' || (name === 'click' && text.includes('urlChanged=true'))
 }
 
 interface ProgressState {
@@ -1173,6 +1293,9 @@ function classifyCall(
   // A wall wins over a landing, as it does live; the recorded field wins over
   // the title rule, which only reads a trace that predates it.
   const landing = result !== undefined && result.ok && wall === null ? (entry.landing ?? landingByTitle(call.name, text, page)) : null
+  // Its sibling (#262, ADR 0060), read the same way; the two never both
+  // answer live, and a Not-found Landing wins here as its status did there.
+  const unavailable = result !== undefined && result.ok && wall === null && landing === null ? (entry.unavailable ?? unavailableByTitle(call.name, text, page)) : null
   const notices = noticesOf(text)
   const checkpointVerdict =
     checkpoint !== undefined && isString(checkpoint.outcome)
@@ -1192,6 +1315,7 @@ function classifyCall(
     signature,
     wall: wall === null ? null : `${wall.signal} ${wall.host}`,
     ...(landing !== null ? { notFound: `${landing.basis} ${landing.host}` } : {}),
+    ...(unavailable !== null ? { unavailable: `${unavailable.basis} ${unavailable.host}` } : {}),
     ...(entry.rewritten !== null ? { rewritten: entry.rewritten.query } : {}),
     checkpoint: checkpointVerdict,
     notices,
@@ -1220,8 +1344,10 @@ function classifyCall(
   // A navigate that landed on a Not-found Page is inspection to the rail
   // (#239, ADR 0050): it never resets the streak; nor does a refused or
   // failed call, which consumed nothing, nor a Blocked Action or an inert
-  // click (#261), read by the rail's own helper over the whole result text.
-  const consumed = result !== undefined && result.ok && !refused && landing === null && (text === null || blockedOrInertAction(text) === null)
+  // click (#261), read by the rail's own helper over the whole result text,
+  // nor an Unavailable Landing (#262), read from the field, never the head.
+  const consumed =
+    result !== undefined && result.ok && !refused && landing === null && unavailable === null && (text === null || blockedOrInertAction(text) === null)
   const search = advanceSearchStreak(state.search, { name: call.name, consumed, search: observed })
 
   // Collection and Bookkeeping make no Progress claim; everything else is
@@ -1240,6 +1366,8 @@ function classifyCall(
     case 'navigate': {
       if (landing !== null) {
         progress = { made: false, reason: NOT_FOUND_LANDING_REASON }
+      } else if (unavailable !== null) {
+        progress = { made: false, reason: UNAVAILABLE_LANDING_REASON }
       } else if (landedCanonical !== null && parentUrls !== null && parentUrls.has(landedCanonical)) {
         inherited = true
         progress = { made: false, reason: 'a re-acquisition of a page the initial attempt already checkpointed (inherited)' }
@@ -1285,6 +1413,8 @@ function classifyCall(
     case 'go_forward': {
       if (landing !== null) {
         progress = { made: false, reason: NOT_FOUND_LANDING_REASON }
+      } else if (unavailable !== null) {
+        progress = { made: false, reason: UNAVAILABLE_LANDING_REASON }
       } else if (landedCanonical !== null && parentUrls !== null && parentUrls.has(landedCanonical) && !state.acquiredUrls.has(landedCanonical)) {
         inherited = true
         progress = { made: false, reason: 'a re-acquisition of a page the initial attempt already checkpointed (inherited)' }
@@ -1669,6 +1799,7 @@ export function classifyAttempt(input: AuditTraceInput): AuditMechanical {
     searchSource: railObservations !== null ? 'rail' : rounds.some((round) => round.tags.search) ? 'replay' : 'none',
     searchForms: searchFormsOf(rounds),
     blockedOrInert: blockedOrInertOf(rounds),
+    unavailableLandings: unavailableLandingsOf(rounds),
     walledRounds: rounds.filter((round) => round.tags.wall).length,
     notFoundNavigates: rounds.flatMap((round) => round.calls.filter((call) => call.name === 'navigate' && call.notFound !== undefined).map(() => round.round)),
     rewrittenComposedAddresses: rounds.flatMap((round) => round.calls.filter((call) => call.rewritten !== undefined).map(() => round.round)),
@@ -2138,6 +2269,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
   let rewrittenShown = 0
   let searchForms: Record<SearchUrlForm, number> | undefined
   let blockedOrInert: Record<keyof BlockedOrInertRounds, number> | undefined
+  let unavailableLandings: Record<keyof UnavailableLandingRounds, number> | undefined
   let slipAnswers = 0
   let slipIds = 0
   let slipsNotRecorded = 0
@@ -2197,6 +2329,12 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
       blockedOrInert.blocked += mechanical.blockedOrInert.blocked.length
       blockedOrInert.inert += mechanical.blockedOrInert.inert.length
       blockedOrInert.inStreak += mechanical.blockedOrInert.inStreak.length
+    }
+    if (mechanical.unavailableLandings !== undefined) {
+      unavailableLandings ??= { status: 0, title: 0, followedBySearch: 0 }
+      unavailableLandings.status += mechanical.unavailableLandings.status.length
+      unavailableLandings.title += mechanical.unavailableLandings.title.length
+      unavailableLandings.followedBySearch += mechanical.unavailableLandings.followedBySearch.length
     }
     if (mechanical.identitySlips === null) slipsNotRecorded += 1
     else {
@@ -2259,6 +2397,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
     searchSources: sources,
     ...(searchForms === undefined ? {} : { searchForms }),
     ...(blockedOrInert === undefined ? {} : { blockedOrInert }),
+    ...(unavailableLandings === undefined ? {} : { unavailableLandings }),
     inheritedRounds: inherited,
     mergedCheckpoints: merged,
     bundledCheckpoints: bundled,
@@ -2514,7 +2653,7 @@ function populationSlipsText(population: AuditPopulation): string {
 function judgementLines(populations: readonly AuditPopulation[]): string[] {
   return populations.map(
     (population) =>
-      `- ${population.label}: ${population.offKeyRounds} Off-key round(s), ${population.searchLoopRounds} Search Loop round(s) by the reviewer (${population.mechanicalSearchRounds} by the streak rule, heads included: ${population.searchRoundsAtStreak2} at streak 2 or beyond, ${population.searchRoundsAtStreak3} at 3 or beyond; attempts by search source ${SEARCH_SOURCES.map((source) => `${source} ${population.searchSources[source]}`).join(', ')}; navigate searches by Search URL form ${searchFormsText(population.searchForms)}; ${populationBlockedOrInertText(population.blockedOrInert)}), ` +
+      `- ${population.label}: ${population.offKeyRounds} Off-key round(s), ${population.searchLoopRounds} Search Loop round(s) by the reviewer (${population.mechanicalSearchRounds} by the streak rule, heads included: ${population.searchRoundsAtStreak2} at streak 2 or beyond, ${population.searchRoundsAtStreak3} at 3 or beyond; attempts by search source ${SEARCH_SOURCES.map((source) => `${source} ${population.searchSources[source]}`).join(', ')}; navigate searches by Search URL form ${searchFormsText(population.searchForms)}; ${populationBlockedOrInertText(population.blockedOrInert)}; ${populationUnavailableLandingsText(population.unavailableLandings)}), ` +
       `${population.inheritedRounds} inherited, ${population.rejectedCheckpoints} rejected Evidence Checkpoint(s), ${population.walledRounds} walled round(s), ${population.notFoundNavigates} navigate(s) landed on a Not-found Page (${population.notFoundOffKey} judged Off-key), ${population.rewrittenComposedAddresses ?? 0} Composed Address(es) rewritten into a site search (${population.rewrittenComposedAddressesOffKey ?? 0} judged Off-key, ${population.rewrittenShownAddresses ?? 'not counted'} to an address the Run was shown), ${population.subagentRounds} Subagent round(s), ` +
       `${population.mergedCheckpoints} merged Evidence Checkpoint(s) (a floor), ${population.heldPageRoundsWithoutProgress} Held Page round(s) without Progress, ${population.bundledCheckpoints} bundled checkpoint round(s), ${population.sameSourceUnsupportedRounds} same-source unsupported round(s), ${populationSlipsText(population)}, ` +
       `${population.malformedAnswers} Malformed Answer(s) (${population.answerRetries} retried), ` +
@@ -2564,6 +2703,7 @@ function attemptSection(attempt: AuditAttempt): string[] {
   lines.push(`- search source ${mechanical.searchSource}: ${SEARCH_SOURCE_NOTES[mechanical.searchSource]}`)
   lines.push(`- navigate searches by Search URL form: ${searchFormsText(mechanical.searchForms)}`)
   lines.push(`- ${blockedOrInertText(mechanical.blockedOrInert)}`)
+  lines.push(`- ${unavailableLandingsText(mechanical.unavailableLandings)}`)
   if (review === null) lines.push('- reviewer: not consulted')
   else if (judgement === null) lines.push(`- reviewer: no judgement — ${review.caveats.join('; ')}`)
   else {
@@ -2590,7 +2730,7 @@ function attemptSection(attempt: AuditAttempt): string[] {
     const inLoop = judgement?.searchLoops.some((loop) => loop.rounds.includes(round.round)) ?? false
     const tools = round.calls.map((call) => `${call.name}${call.refused ? ' ✗' : ''}`).join(', ') || '—'
     const page = round.calls.map((call) => call.url).find((url) => url !== null) ?? '—'
-    const markers = [round.tags.inherited ? 'inherited' : '', round.tags.wall ? 'walled' : '', round.calls.some((call) => call.notFound !== undefined) ? 'not found' : '', round.calls.some((call) => call.rewritten !== undefined) ? 'rewritten' : '', offKey ? 'off-key' : '', inLoop ? 'search loop' : '', mechanical.searchLoopHeads.includes(round.round) ? 'loop head by the streak rule' : '', round.tags.rejectedCheckpoints > 0 ? `${round.tags.rejectedCheckpoints} rejected checkpoint` : ''].filter((marker) => marker !== '')
+    const markers = [round.tags.inherited ? 'inherited' : '', round.tags.wall ? 'walled' : '', round.calls.some((call) => call.notFound !== undefined) ? 'not found' : '', round.calls.some((call) => call.unavailable !== undefined) ? 'unavailable' : '', round.calls.some((call) => call.rewritten !== undefined) ? 'rewritten' : '', offKey ? 'off-key' : '', inLoop ? 'search loop' : '', mechanical.searchLoopHeads.includes(round.round) ? 'loop head by the streak rule' : '', round.tags.rejectedCheckpoints > 0 ? `${round.tags.rejectedCheckpoints} rejected checkpoint` : ''].filter((marker) => marker !== '')
     const trace = round.llmRound !== round.round || round.attempt > 1 ? ` (trace ${round.llmRound}.${round.attempt})` : ''
     lines.push(
       `| ${round.round}${trace} | ${KIND_LABELS[round.kind]}${overrule ? ` → ${KIND_LABELS[overrule.kind]}` : ''} | ${tools} | ${head(page, 80)} | ${round.latencyMs ?? '—'} | ${round.reason}${markers.length > 0 ? ` [${markers.join(', ')}]` : ''} |`,

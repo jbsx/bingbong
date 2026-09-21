@@ -110,6 +110,21 @@ describe('the pipeline_event tap (#185)', () => {
     expect(records[2]).not.toHaveProperty('notFound')
   })
 
+  it('records an Unavailable Landing as a sibling field, read before the cut (#262, ADR 0060)', () => {
+    const { records, sink } = collector()
+    const trace = createPipelineEventTraceWriter({ sink, now: () => 0 })
+    const landing = `navigated: url=https://web.archive.org/web/2013/x title="Internet Archive: Temporarily Offline"\n${'p'.repeat(TRACE_TOOL_RESULT_MAX_CHARS)}\nUNAVAILABLE:title web.archive.org\narchive.org could not serve this page right now.`
+
+    trace({ type: 'tool_result', turnId: 't-1', callId: 'c-1', name: 'navigate', ok: true, result: landing, at: 1 })
+    trace({ type: 'tool_result', turnId: 't-1', callId: 'c-2', name: 'back', ok: true, result: 'went back\nUNAVAILABLE:503 www.jpl.nasa.gov\nadvice', at: 2 })
+    trace({ type: 'tool_result', turnId: 't-1', callId: 'c-3', name: 'navigate', ok: false, error: 'UNAVAILABLE:503 www.nasa.gov', at: 3 })
+
+    expect(records[0]).toMatchObject({ unavailable: { basis: 'title', host: 'web.archive.org' } })
+    expect(records[0]).not.toHaveProperty('notFound')
+    expect(records[1]).toMatchObject({ unavailable: { basis: '503', host: 'www.jpl.nasa.gov' } })
+    expect(records[2]).not.toHaveProperty('unavailable')
+  })
+
   it('stamps a Composed Address rewrite from the event’s own field, a failed search included, never from the wording (#255, ADR 0055)', () => {
     const { records, sink } = collector()
     const trace = createPipelineEventTraceWriter({ sink, now: () => 0 })

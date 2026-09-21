@@ -105,6 +105,31 @@ describe('createComposedAddressRail (#239, ADR 0050; #255, ADR 0055)', () => {
     expect(rail.rewrite(nav('https://www.nasa.gov/voyager-2013'))).not.toBeNull()
   })
 
+  it('spends nothing on a Composed Address that landed Unavailable, and a retry is never rewritten (#262, ADR 0060)', () => {
+    const rail = createComposedAddressRail()
+    const address = 'https://web.archive.org/web/20130801000000/http://www.jpl.nasa.gov/news/news.php?release=2013-107'
+    const guess = nav(address)
+    expect(rail.rewrite(guess)).toBeNull()
+    rail.observe(guess, {
+      ok: true,
+      result: `${page(address, 'Internet Archive: Temporarily Offline')}\nUNAVAILABLE:title web.archive.org\narchive.org could not serve this page right now.`,
+    })
+
+    // An outage is no evidence about the address: the retry, and another composed address to the site, run as composed.
+    expect(rail.rewrite(nav(address))).toBeNull()
+    expect(rail.rewrite(nav('https://web.archive.org/web/2013/https://www.jpl.nasa.gov/news/voyager'))).toBeNull()
+
+    // A site whose allowance a Not-found Landing already spent still never rewrites the retry: the address it landed on is Offered.
+    const spent = spentOnNasa()
+    const outage = 'https://www.jpl.nasa.gov/news/news.php?release=2013-107'
+    const offered = nav('https://duckduckgo.com/?q=voyager+2013')
+    spent.observe(offered, found('https://duckduckgo.com/?q=voyager+2013', [outage]))
+    const opened = nav(outage)
+    expect(spent.rewrite(opened)).toBeNull()
+    spent.observe(opened, { ok: true, result: `${page(outage, 'Service Unavailable')}\nUNAVAILABLE:503 www.jpl.nasa.gov\nadvice` })
+    expect(spent.rewrite(nav(outage))).toBeNull()
+  })
+
   it('never rewrites a search, a click or a typed query', () => {
     const rail = spentOnNasa()
 

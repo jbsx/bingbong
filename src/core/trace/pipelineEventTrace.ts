@@ -13,6 +13,7 @@
 
 import type { PipelineEvent, UnstampedEvent } from '../pipeline/events'
 import { parseNotFoundMarker } from '../browser/notFoundPage'
+import { parseUnavailableMarker } from '../browser/unavailablePage'
 import {
   RUN_TRACE_VERSION,
   TRACE_TOOL_RESULT_MAX_CHARS,
@@ -66,11 +67,14 @@ export function pipelineEventTraceBody(event: PipelineEvent, agentId?: string): 
   // The landing is read off the whole result (#239, ADR 0050): the marker
   // rides the end of an outcome, past the cut on a long page.
   const notFound = event.ok ? parseNotFoundMarker(event.result) : null
+  // Its sibling the Unavailable Landing (#262, ADR 0060), read the same way.
+  const unavailable = event.ok ? parseUnavailableMarker(event.result) : null
   return {
     kind: 'pipeline_event',
     event: whole ? event : { ...event, result: event.result.slice(0, TRACE_TOOL_RESULT_MAX_CHARS) },
     chars: event.result.length,
     ...(notFound !== null ? { notFound } : {}),
+    ...(unavailable !== null ? { unavailable } : {}),
     ...rewritten,
     ...stamped,
   }

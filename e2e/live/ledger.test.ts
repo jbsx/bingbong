@@ -166,7 +166,8 @@ describe('the streak-rule counters (#259, ADR 0058)', () => {
       { label: 'Search rounds at streak 2 or beyond', judgement: false, value: sum('searchRoundsAtStreak2'), over: budgeted },
       { label: 'Search rounds at streak 3 or beyond', judgement: false, value: sum('searchRoundsAtStreak3'), over: budgeted },
     ])
-    expect(streakOf({ ...older.populations.initial, searchRoundsAtStreak2: 12, searchRoundsAtStreak3: 7 })).toEqual([
+    // Read as written once the audit carries every counter the recount stands in for (#262 added the last).
+    expect(streakOf({ ...older.populations.initial, searchRoundsAtStreak2: 12, searchRoundsAtStreak3: 7, unavailableLandings: { status: 0, title: 0, followedBySearch: 0 } })).toEqual([
       { label: 'Search rounds at streak 2 or beyond', judgement: false, value: 12, over: budgeted },
       { label: 'Search rounds at streak 3 or beyond', judgement: false, value: 7, over: budgeted },
     ])
@@ -177,6 +178,34 @@ describe('the streak-rule counters (#259, ADR 0058)', () => {
       value: older.populations.initial.mechanicalSearchRounds,
       over: budgeted,
     })
+  })
+})
+
+describe('the Unavailable Landing recount (#262, ADR 0060)', () => {
+  it('restates fix-258-259 with its Unavailable Landings held: 17/23 becomes 18/23, and the landings are counted by title only', () => {
+    const aggregate = readAudit('audit-aggregate-fix-258-259.json') as unknown as AuditAggregate
+    const initials = [1, 2, 3].flatMap((pass) => readAudit(`audit-fix-258-259-${pass}.json`).attempts.filter((attempt) => attempt.mechanical.relation === 'initial'))
+    const population = aggregate.populations.initial
+    expect(population).toMatchObject({ mechanicalSearchRounds: 17, searchLoopRounds: 23, searchRoundsAtStreak2: 11, searchRoundsAtStreak3: 4 })
+    expect(population.unavailableLandings).toBeUndefined()
+
+    const counters = countersOf(population, initials)
+    const valueOf = (label: string) => counters.find((counter) => counter.label === label)?.value
+    // Pass 2 Voyager round 21 held: round 20 heads the streak, 22 reaches 2 and 23 reaches 3.
+    expect(valueOf('Search Loop rounds by the streak rule')).toBe(18)
+    expect(valueOf('Search Loop rounds')).toBe(23)
+    expect(valueOf('Search rounds at streak 2 or beyond')).toBe(12)
+    expect(valueOf('Search rounds at streak 3 or beyond')).toBe(5)
+    // The status was never in a trace: a recount counts by title and says nothing of status.
+    expect(valueOf('Unavailable landings by status')).toBeNull()
+    expect(valueOf('Unavailable landings by title')).toBe(2)
+    expect(valueOf('Unavailable landings followed by a search')).toBe(1)
+
+    // An audit written with the counter is read as written.
+    const counted = countersOf({ ...population, unavailableLandings: { status: 1, title: 0, followedBySearch: 0 } }, initials)
+    expect(counted.find((counter) => counter.label === 'Search Loop rounds by the streak rule')?.value).toBe(17)
+    expect(counted.find((counter) => counter.label === 'Unavailable landings by status')?.value).toBe(1)
+    expect(counted.find((counter) => counter.label === 'Search rounds at streak 2 or beyond')?.value).toBe(11)
   })
 })
 

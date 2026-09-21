@@ -8,6 +8,22 @@ beside ADR 0050's Not-found Page, with the same shape and one deliberate
 difference: it spends no Composed Address allowance. Amends nothing; ADR 0050
 gains a cross-reference note. The Search Loop tiers (#74) stay at 3 and 5.
 
+**Note (#262 implementation, 2026-09-21).** The classifier, marker parser,
+`landedOnUnavailablePage` and the advice live in
+`src/core/browser/unavailablePage.ts`; `classifyNotFoundPage` now yields to
+any 5xx, so the two classifiers never both answer and the choke point asks
+Not-found first. Three calls this ADR left open: Cloudflare's own pages
+(`*.cloudflare.com`) are not judged by the `| Cloudflare` suffix, whose other
+phrases still apply; in the no-progress rail each Observation Producer's
+first look at an Unavailable Page is neutral, the landing included, so a
+first read of the outage page is neutral and a second navigate onto it is
+the repeat; and the Fix Ledger restates "Search Loop rounds by the streak
+rule" only for an audit written under the consecutive rule and before the
+counter (fix-258-259: 17 → 18 of 23), leaving a same-intent audit's reading
+as written, and reads a recount's by-status count as not recorded. The
+audit's title fallback on a trace written before the field moves the digest
+of the two fix-258-259 Voyager initials if that capture is ever re-audited.
+
 ## Context
 
 The Search Loop rail ends a streak on any successful call that is neither a

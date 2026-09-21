@@ -321,6 +321,62 @@ describe('no-progress rail — a Not-found Landing is neutral (#239, ADR 0050)',
   })
 })
 
+describe('no-progress rail — an Unavailable Landing is neutral once (#262, ADR 0060)', () => {
+  const ADDRESS = 'https://web.archive.org/web/20130801000000/http://www.jpl.nasa.gov/news/news.php?release=2013-107'
+  const OFFLINE = state({
+    url: 'https://web.archive.org/web/20130516021947/http://www.jpl.nasa.gov/news/news.php?release=2013-107',
+    title: 'Internet Archive: Temporarily Offline',
+    textDigest: 'Internet Archive services are temporarily offline.',
+  })
+  const landed = ok(`navigated: url=${OFFLINE.url} title="Internet Archive: Temporarily Offline"\nUNAVAILABLE:title web.archive.org\narchive.org could not serve this page right now.`)
+
+  it('reads the first landing as neutral and a second landing on the same page as the repeat', async () => {
+    let current = BASE
+    const rail = createNoProgressRail({ settledState: () => current })
+    const read = call('read_page')
+    const step = async (action: ToolCall, outcome: ToolResultOutcome = ok()): Promise<string | null> => {
+      expect(await rail.gate(action)).toEqual({ ok: true })
+      return rail.observe(action, outcome)
+    }
+
+    expect(await step(read)).toBeNull() // the baseline
+    expect(await step(read)).toMatch(/repeats an equivalent action/) // one no-progress action, nudged
+
+    // Not Progress, which would have reset the count; not a no-progress action either.
+    current = OFFLINE
+    expect(await step(call('navigate', { url: ADDRESS }), landed)).toBeNull()
+    expect(rail.makingProgress()).toBe(true)
+    // The first read of the outage page is the page reader's first look: neutral too.
+    expect(await step(read)).toBeNull()
+    expect(rail.makingProgress()).toBe(true)
+
+    // The retry the advice allows landed on the same outage again: the ordinary repeat.
+    expect(await step(call('navigate', { url: ADDRESS }), landed)).toMatch(/Change your Approach/)
+  })
+
+  it('never makes the outage page the baseline: a step back costs a no-progress action, and the site serving again is Progress', async () => {
+    let current = BASE
+    const rail = createNoProgressRail({ settledState: () => current })
+    const step = async (action: ToolCall, outcome: ToolResultOutcome = ok()): Promise<string | null> => {
+      expect(await rail.gate(action)).toEqual({ ok: true })
+      return rail.observe(action, outcome)
+    }
+
+    expect(await step(call('navigate', { url: 'https://example.com/article' }))).toBeNull() // the baseline
+    current = OFFLINE
+    expect(await step(call('navigate', { url: ADDRESS }), landed)).toBeNull()
+    current = BASE
+    expect(await step(call('back'), ok('went back: url=https://example.com/article title="The article"'))).toBeNull() // no-progress 1
+    current = state({ url: 'https://web.archive.org/web/20130801000000/http://www.jpl.nasa.gov/news/', title: 'Voyager news', textDigest: 'Voyager 1 left the heliosphere.' })
+    expect(await step(call('navigate', { url: ADDRESS }))).toBeNull()
+    // The count restarted: a repeat read is no-progress 1 again, not the Approach's second.
+    expect(await step(call('read_page'))).toBeNull()
+    const repeat = await step(call('read_page'))
+    expect(repeat).toMatch(/repeats an equivalent action/)
+    expect(repeat).not.toMatch(/Change your Approach/)
+  })
+})
+
 describe('no-progress rail — resets (#126/AC3)', () => {
   it('an accepted Evidence Checkpoint resets the no-progress count and approach exhaustion', async () => {
     const rail = createNoProgressRail({ settledState: () => BASE })

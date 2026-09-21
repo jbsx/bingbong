@@ -39,7 +39,7 @@ export interface NotFoundPageFacts {
   readonly textDigest?: string
 }
 
-const NOT_FOUND_STATUSES: ReadonlySet<number> = new Set([404, 410])
+export const NOT_FOUND_STATUSES: ReadonlySet<number> = new Set([404, 410])
 
 // "page not found", "not found", "can't find", "couldn't find", "doesn't
 // exist", and a bare 404 — curly and straight apostrophes alike.
@@ -70,6 +70,9 @@ export function classifyNotFoundPage(facts: NotFoundPageFacts): NotFoundClassifi
   const status = facts.status
   let basis: NotFoundBasis | null = null
   if (typeof status === 'number' && NOT_FOUND_STATUSES.has(status)) basis = status === 404 ? '404' : '410'
+  // Status decides before any title (#262, ADR 0060): a 5xx is an
+  // Unavailable Page (unavailablePage.ts) whatever its title says.
+  else if (typeof status === 'number' && status >= 500 && status <= 599) basis = null
   // Any Search URL is a results page (#260, ADR 0059), a site's path or
   // `query=` form as much as an engine's `q=`.
   else if (parseSearchUrl(facts.url) === null && isNotFoundTitle(facts.title)) basis = 'title'

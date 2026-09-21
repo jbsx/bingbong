@@ -1,6 +1,7 @@
 import type { ToolCall, ToolResultOutcome } from '../ports/llm'
 import type { SnapshotRef } from '../browser/snapshot'
 import { landedOnNotFoundPage } from '../browser/notFoundPage'
+import { landedOnUnavailablePage } from '../browser/unavailablePage'
 import { wasBlockedOrInert } from '../browser/actionOutcome'
 import { isSearchInputRef, refNumberOf, searchQueryFromUrl, typedQuery } from './progressFingerprints'
 import {
@@ -92,6 +93,11 @@ import { reportFault } from '../trace/fault'
 // classifies it from the ref's facts before any outcome exists. The one
 // reading of the port's heads is `blockedOrInertAction` in actionOutcome.ts,
 // which the Round Audit replays.
+//
+// #262 (ADR 0060) added the Not-found Landing's sibling: a call that settled
+// on an Unavailable Page — the site's outage, not an opening — holds the
+// streak too, read from its `UNAVAILABLE:` marker by
+// `landedOnUnavailablePage` in unavailablePage.ts.
 
 // The tiers and the signature surface live in searchLoopRule.ts and
 // progressFingerprints.ts; re-exported here so the module's consumers (and
@@ -220,8 +226,10 @@ export function createSearchLoopRail(deps: SearchLoopRailDeps = {}): SearchLoopR
       // it has not left the results any more than a scroll has, so it is
       // inspection — observed, never resetting. Nor did a Blocked Action or
       // an inert click (#261): the port reports it as success, but nothing
-      // was clicked or typed, or nothing on the page moved.
-      const consumed = outcome.ok && !landedOnNotFoundPage(outcome) && !wasBlockedOrInert(outcome)
+      // was clicked or typed, or nothing on the page moved. Nor did a call
+      // that landed on an Unavailable Page (#262, ADR 0060): the site put
+      // nothing in front of the Run.
+      const consumed = outcome.ok && !landedOnNotFoundPage(outcome) && !landedOnUnavailablePage(outcome) && !wasBlockedOrInert(outcome)
       streak = searchStreakAfter(streak, searchStreakMoveOf(classified.kind, consumed))
       if (classified.kind !== 'search') return NO_VERDICT
       return {

@@ -38,6 +38,8 @@ import {
   searchQueryOf,
   replaySearchStreaks,
   blockedOrInertOf,
+  recountUnavailableByTitle,
+  unavailableLandingsOf,
   searchLoopCountsOf,
   similarQueries,
   validateJudgement,
@@ -93,6 +95,8 @@ interface RoundSpec {
     observation?: SearchObservation
     /** The Not-found Landing the Run Trace records on the result (#239) — a trace written after the field was kept. */
     notFound?: { basis: string; host: string }
+    /** The Unavailable Landing the Run Trace records on the result (#262) — a trace written after the field was kept. */
+    unavailable?: { basis: string; host: string }
     /** The Composed Address rewrite the Run Trace records on the result (#255, ADR 0055). */
     rewritten?: { site: string; query: string }
   }[]
@@ -145,6 +149,7 @@ function traceOf(rounds: readonly RoundSpec[], extra: readonly Record<string, un
         kind: 'pipeline_event',
         event: { type: 'tool_result', turnId: TURN, callId, name: call.name, ok, ...(ok ? { result: call.result ?? 'ok' } : { error: call.error ?? 'refused' }), at: T0 + spec.at + 3 },
         ...(call.notFound !== undefined ? { notFound: call.notFound } : {}),
+        ...(call.unavailable !== undefined ? { unavailable: call.unavailable } : {}),
         ...(call.rewritten !== undefined ? { rewritten: call.rewritten } : {}),
       })
     }
@@ -1138,6 +1143,129 @@ describe('the rail’s Search Observations (#243, ADR 0049)', () => {
     expect(markdown).toContain('- search source rail: the rail’s own Search Observations, the streak replayed by its rule')
     expect(markdown).toContain('- search source replay: the streak rule re-run over navigate searches')
     expect(markdown).toContain('by search source rail 1, replay 1, none 0')
+  })
+})
+
+describe('Unavailable Landings (#262, ADR 0060)', () => {
+  // fix-258-259 pass 2, the Voyager initial, rounds 20–23.
+  const SEARCH_20 = 'https://duckduckgo.com/?q=%22June+27%2C+2013%22+Voyager+1+site%3Ajpl.nasa.gov'
+  const ARCHIVE = 'https://web.archive.org/web/20130801000000/http://www.jpl.nasa.gov/news/news.php?release=2013-107'
+  const OFFLINE_URL = 'https://web.archive.org/web/20130516021947/http://www.jpl.nasa.gov/news/news.php?release=2013-107'
+  const OFFLINE_TITLE = 'Internet Archive: Temporarily Offline'
+  const SEARCH_22 = 'https://duckduckgo.com/?q=missionpages+voyager+voyager20130627+site%3Anasa.gov'
+  const SEARCH_23 = 'https://duckduckgo.com/?q=Voyager+1+explores+final+frontier+of+our+solar+bubble+jpl+news+2013'
+  const MARKED = `${PAGE(OFFLINE_TITLE, OFFLINE_URL, 'off00021')}\nUNAVAILABLE:title web.archive.org\narchive.org could not serve this page right now.`
+  const VOYAGER: RoundSpec[] = [
+    { round: 1, at: 1_000, calls: [{ name: 'navigate', args: { url: SEARCH_20 }, result: PAGE('June 27, 2013 at DuckDuckGo', SEARCH_20, 'ddg00020') }] },
+    { round: 2, at: 2_000, calls: [{ name: 'navigate', args: { url: ARCHIVE }, result: MARKED, unavailable: { basis: 'title', host: 'web.archive.org' } }] },
+    { round: 3, at: 3_000, calls: [{ name: 'navigate', args: { url: SEARCH_22 }, result: PAGE('missionpages at DuckDuckGo', SEARCH_22, 'ddg00022') }] },
+    { round: 4, at: 4_000, calls: [{ name: 'navigate', args: { url: SEARCH_23 }, result: PAGE('Voyager 1 explores at DuckDuckGo', SEARCH_23, 'ddg00023') }] },
+  ]
+
+  async function railed(rounds: readonly RoundSpec[]): Promise<RoundSpec[]> {
+    const rail = createSearchLoopRail()
+    const observed: RoundSpec[] = []
+    for (const spec of rounds) {
+      const calls = []
+      for (const [index, call] of (spec.calls ?? []).entries()) {
+        const verdict = await rail.observe({ id: `${spec.round}.${index}`, name: call.name, args: call.args }, { ok: true, result: call.result })
+        calls.push(verdict.observation === null ? call : { ...call, observation: verdict.observation })
+      }
+      observed.push({ ...spec, calls })
+    }
+    return observed
+  }
+
+  it('the audit’s consumed and the rail agree on rounds 20–23, and the landing is Acquisition without Progress (AC5)', async () => {
+    const observed = await railed(VOYAGER)
+    const railStreaks = observed.map((spec) => spec.calls?.[0]?.observation?.streak ?? null)
+    expect(railStreaks).toEqual([1, null, 2, 3])
+
+    for (const traced of [observed, VOYAGER]) {
+      const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(traced, EXTRA) }))
+      expect(mechanical.rounds.map((round) => round.calls[0]!.search?.streak ?? null)).toEqual(railStreaks)
+      expect(mechanical.rounds[1]).toMatchObject({ kind: 'acquisition_without_progress', reason: 'navigate: landed on an Unavailable Page' })
+      expect(mechanical.rounds[1]!.calls[0]).toMatchObject({ unavailable: 'title web.archive.org', progress: { made: false, reason: 'landed on an Unavailable Page' } })
+      expect(mechanical.rounds[1]!.calls[0]).not.toHaveProperty('notFound')
+      // A written report recounts to the same streaks.
+      expect(replaySearchStreaks(mechanical.rounds).map((round) => round.calls[0]!.search?.streak ?? null)).toEqual(railStreaks)
+    }
+  })
+
+  it('reads the landing from the trace’s field, never from the result text (AC5)', () => {
+    // The field alone, on a page whose title the rule would not mark: a 503 the trace recorded.
+    const byField: RoundSpec[] = VOYAGER.map((spec) =>
+      spec.round === 2 ? { ...spec, calls: [{ name: 'navigate', args: { url: ARCHIVE }, result: PAGE('Wayback Machine', OFFLINE_URL, 'off00021'), unavailable: { basis: '503', host: 'web.archive.org' } }] } : spec,
+    )
+    expect(classifyAttempt(inputOf({ traceRecords: traceOf(byField, EXTRA) })).rounds[1]!.calls[0]).toHaveProperty('unavailable', '503 web.archive.org')
+    // A marker line in the text with no field and no outage title is nothing.
+    const byText: RoundSpec[] = VOYAGER.map((spec) =>
+      spec.round === 2 ? { ...spec, calls: [{ name: 'navigate', args: { url: ARCHIVE }, result: `${PAGE('Wayback Machine', OFFLINE_URL, 'off00021')}\nUNAVAILABLE:503 web.archive.org` }] } : spec,
+    )
+    const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(byText, EXTRA) }))
+    expect(mechanical.rounds[1]!.calls[0]).not.toHaveProperty('unavailable')
+    expect(mechanical.rounds.map((round) => round.calls[0]!.search?.streak ?? null)).toEqual([1, null, 1, 2])
+  })
+
+  it('reads a trace written before the field by the app’s title rule, and a Not-found Landing wins over it', () => {
+    const unmarked: RoundSpec[] = VOYAGER.map((spec) => (spec.round === 2 ? { ...spec, calls: [{ name: 'navigate', args: { url: ARCHIVE }, result: PAGE(OFFLINE_TITLE, OFFLINE_URL, 'off00021') }] } : spec))
+    expect(classifyAttempt(inputOf({ traceRecords: traceOf(unmarked, EXTRA) })).rounds[1]!.calls[0]).toHaveProperty('unavailable', 'title web.archive.org')
+
+    const notFound: RoundSpec[] = VOYAGER.map((spec) =>
+      spec.round === 2 ? { ...spec, calls: [{ name: 'navigate', args: { url: ARCHIVE }, result: PAGE(OFFLINE_TITLE, OFFLINE_URL, 'off00021'), notFound: { basis: '404', host: 'web.archive.org' } }] } : spec,
+    )
+    const call = classifyAttempt(inputOf({ traceRecords: traceOf(notFound, EXTRA) })).rounds[1]!.calls[0]!
+    expect(call).toHaveProperty('notFound', '404 web.archive.org')
+    expect(call).not.toHaveProperty('unavailable')
+  })
+
+  it('counts the landings by basis and those followed by a search, outside the digest, and prints them (AC6)', () => {
+    const rounds: RoundSpec[] = [
+      ...VOYAGER,
+      { round: 5, at: 5_000, calls: [{ name: 'navigate', args: { url: SPEC_URL }, result: `${PAGE('Service Unavailable', SPEC_URL, 'err00005')}\nUNAVAILABLE:503 spec.invalid\nadvice`, unavailable: { basis: '503', host: 'spec.invalid' } }] },
+      { round: 6, at: 6_000, calls: [{ name: 'read_page', args: {}, result: READ('Service Unavailable', SPEC_URL, 'err00005') }] },
+      { round: 7, at: 7_000, calls: [{ name: 'navigate', args: { url: OTHER_URL }, result: PAGE('Other', OTHER_URL, 'aaaa0007') }] },
+    ]
+    const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(rounds, EXTRA) }))
+    // Round 5's next call after its read is an opening, not a search.
+    expect(mechanical.unavailableLandings).toEqual({ status: [5], title: [2], followedBySearch: [2] })
+    expect(unavailableLandingsOf(mechanical.rounds)).toEqual(mechanical.unavailableLandings)
+    // The digest never held a counter: the rounds with and without it hash alike.
+    expect(classifyAttempt(inputOf({ traceRecords: traceOf(rounds, EXTRA) })).digestHash).toBe(mechanical.digestHash)
+
+    const set = buildAuditSet(
+      provenanceOf(),
+      [mechanical, classifyAttempt(inputOf())].map((attempt) => ({ mechanical: attempt, review: null, countsAfterOverrules: countsAfterOverrulesOf(attempt, null) })),
+      [],
+    )
+    expect(set.populations.initial.unavailableLandings).toEqual({ status: 1, title: 1, followedBySearch: 1 })
+    const markdown = formatAuditSet(set)
+    expect(markdown).toContain('- Unavailable Landings by status 1 (round 5), by title 1 (round 2); followed by a search: 1 (round 2)')
+    expect(markdown).toContain('2 Unavailable Landing(s) (1 by status, 1 by title), 1 followed by a search')
+  })
+
+  it('recounts the committed fix-258-259 audits by the title rule: one landing, pass 2 Voyager round 21, and the streak replays 1, 1, 2, 3 (AC6)', () => {
+    type Report = { attempts: { mechanical: { huntId: string; stepId: string; rounds: AuditRound[]; unavailableLandings?: unknown } }[] }
+    const found: { pass: number; huntId: string; stepId: string; landings: ReturnType<typeof unavailableLandingsOf> }[] = []
+    let voyager: AuditRound[] | null = null
+    for (const pass of [1, 2, 3]) {
+      const report = JSON.parse(readFileSync(join(REPORTS_DIR, `audit-fix-258-259-${pass}.json`), 'utf8')) as Report
+      for (const { mechanical } of report.attempts) {
+        expect(mechanical.unavailableLandings).toBeUndefined()
+        const recounted = replaySearchStreaks(recountUnavailableByTitle(mechanical.rounds))
+        const landings = unavailableLandingsOf(recounted)
+        if (landings.status.length + landings.title.length > 0) found.push({ pass, huntId: mechanical.huntId, stepId: mechanical.stepId, landings })
+        if (pass === 2 && mechanical.huntId === 'superseded-voyager-interstellar' && mechanical.stepId === 'initial') voyager = recounted
+      }
+    }
+    // The grill's sweep: the Internet Archive's offline page twice, and only pass 2's was followed by a search.
+    expect(found).toEqual([
+      { pass: 2, huntId: 'superseded-voyager-interstellar', stepId: 'initial', landings: { status: [], title: [21], followedBySearch: [21] } },
+      { pass: 3, huntId: 'superseded-voyager-interstellar', stepId: 'initial', landings: { status: [], title: [22], followedBySearch: [] } },
+    ])
+    const streaks = voyager!.filter((round) => round.round >= 20 && round.round <= 23).map((round) => round.calls.map((call) => call.search?.streak ?? null))
+    // The held landing sits at the streak before it: 1, (1), 2, 3.
+    expect(streaks).toEqual([[1], [null], [2], [3]])
   })
 })
 

@@ -32,9 +32,11 @@ import {
   LIVE_AUDIT_AGGREGATE_KIND,
   LIVE_AUDIT_KIND,
   populationOf,
+  recountUnavailableByTitle,
   replaySearchStreaks,
   ROUND_KINDS,
   searchLoopCountsOf,
+  unavailableLandingsOf,
   type AuditAggregate,
   type AuditAttempt,
   type AuditPopulation,
@@ -508,17 +510,32 @@ const GRADE_COUNTERS: readonly { readonly label: string; readonly status: string
   { label: 'Pending attempts', status: 'pending' },
 ]
 
+/** What a recount of an older audit's rounds under the rail's current rule gives. */
+interface Recounted {
+  readonly mechanicalSearchRounds: number
+  readonly searchRoundsAtStreak2: number
+  readonly searchRoundsAtStreak3: number
+  readonly unavailableByTitle: number
+  readonly unavailableFollowedBySearch: number
+}
+
 /**
- * The rounds at streak 2 and 3 or beyond of an audit written before #259,
- * recounted from its attempts' rounds under the rail's current rule (ADR
- * 0058) by the audit's own replay — the rounds as judged are untouched.
+ * An older audit's streak counts recounted from its attempts' rounds under
+ * the rail's current rule (ADR 0058) by the audit's own replay, with the
+ * Unavailable Landings an audit written before #262 never marked recounted
+ * by the title rule and held (ADR 0060) — the rounds as judged are untouched.
  */
-function recountedStreakRoundsOf(attempts: readonly AuditAttempt[]): Pick<AuditPopulation, 'searchRoundsAtStreak2' | 'searchRoundsAtStreak3'> {
-  const totals = { searchRoundsAtStreak2: 0, searchRoundsAtStreak3: 0 }
+function recountedOf(attempts: readonly AuditAttempt[]): Recounted {
+  const totals = { mechanicalSearchRounds: 0, searchRoundsAtStreak2: 0, searchRoundsAtStreak3: 0, unavailableByTitle: 0, unavailableFollowedBySearch: 0 }
   for (const attempt of attempts) {
-    const counts = searchLoopCountsOf(replaySearchStreaks(attempt.mechanical.rounds))
+    const rounds = replaySearchStreaks(recountUnavailableByTitle(attempt.mechanical.rounds))
+    const counts = searchLoopCountsOf(rounds)
+    const landings = unavailableLandingsOf(rounds)
+    totals.mechanicalSearchRounds += counts.mechanicalSearchRounds
     totals.searchRoundsAtStreak2 += counts.searchRoundsAtStreak2
     totals.searchRoundsAtStreak3 += counts.searchRoundsAtStreak3
+    totals.unavailableByTitle += landings.title.length
+    totals.unavailableFollowedBySearch += landings.followedBySearch.length
   }
   return totals
 }
@@ -538,7 +555,17 @@ export function countersOf(population: AuditPopulation, attempts: readonly Audit
   // recorded, and "0 after a first token" would be a claim nobody made.
   const cuts = older.allowanceFinalizationRounds ?? 0
   const splitUnrecorded = older.allowanceFinalizationRoundsNotRecorded === undefined || (cuts > 0 && older.allowanceFinalizationRoundsNotRecorded === cuts)
-  const streakRounds = older.searchRoundsAtStreak2 === undefined || older.searchRoundsAtStreak3 === undefined ? recountedStreakRoundsOf(attempts) : older
+  // #262, ADR 0060: an audit written before the Unavailable counter is
+  // recounted too — its landings by the title rule, the only one a trace
+  // can answer, and its streak replayed with them held — so a Subject under
+  // the rule compares with a Reference read by the same rule.
+  const streakRuleWritten = older.searchRoundsAtStreak2 !== undefined && older.searchRoundsAtStreak3 !== undefined
+  const recounted = streakRuleWritten && older.unavailableLandings !== undefined ? null : recountedOf(attempts)
+  const streakRounds = recounted ?? older
+  // The counter the ledger compared first keeps the reading its rule gave:
+  // an audit under the same-intent rule stays as written, one under the
+  // consecutive rule is restated with its Unavailable Landings held.
+  const mechanicalSearchRounds = streakRuleWritten && recounted !== null ? recounted.mechanicalSearchRounds : population.mechanicalSearchRounds
   return [
     mechanical('Attempts', population.attempts),
     judged('Judged attempts', population.judged),
@@ -557,7 +584,7 @@ export function countersOf(population: AuditPopulation, attempts: readonly Audit
     ...AUDIT_VERDICTS.map((verdict) => judged(`Secondary verdict: ${verdict}`, population.verdictsSecondary[verdict])),
     judged('Off-key rounds', population.offKeyRounds, budgeted),
     judged('Search Loop rounds', population.searchLoopRounds, budgeted),
-    mechanical('Search Loop rounds by the streak rule', population.mechanicalSearchRounds, budgeted),
+    mechanical('Search Loop rounds by the streak rule', mechanicalSearchRounds, budgeted),
     // #259, ADR 0058: the streak by the consecutive rule, two counts beside
     // the one above. An audit written before them is recounted from its
     // rounds under the current rule rather than read as nothing, so a
@@ -578,6 +605,10 @@ export function countersOf(population: AuditPopulation, attempts: readonly Audit
     mechanical('Walled rounds', population.walledRounds, budgeted),
     mechanical('Not-found landings', older.notFoundNavigates),
     judged('Not-found landings judged Off-key', older.notFoundOffKey),
+    // #262: the status was never in a trace, so a recount has no status count.
+    mechanical('Unavailable landings by status', older.unavailableLandings?.status),
+    mechanical('Unavailable landings by title', older.unavailableLandings?.title ?? recounted?.unavailableByTitle),
+    mechanical('Unavailable landings followed by a search', older.unavailableLandings?.followedBySearch ?? recounted?.unavailableFollowedBySearch),
     mechanical('Rewritten Composed Addresses', older.rewrittenComposedAddresses),
     judged('Rewritten Composed Addresses judged Off-key', older.rewrittenComposedAddressesOffKey),
     mechanical('Rewritten navigates to a shown address', older.rewrittenShownAddresses),

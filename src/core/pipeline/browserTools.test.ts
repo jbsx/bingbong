@@ -218,6 +218,73 @@ describe('a Not-found Landing rides the Action Outcome (#239, ADR 0050)', () => 
   })
 })
 
+describe('an Unavailable Landing rides the Action Outcome (#262, ADR 0060)', () => {
+  const ADVICE_ARCHIVE =
+    'archive.org could not serve this page right now. Retry it once later, or use a different source or a mirror; this is not evidence the address is wrong.'
+  const OFFLINE = {
+    url: 'https://web.archive.org/web/20130516021947/http://www.jpl.nasa.gov/news/news.php?release=2013-107',
+    title: 'Internet Archive: Temporarily Offline',
+    status: 200,
+  }
+
+  async function resultsOf(browser: FixtureBrowserController, calls: Extract<AssistantTurn, { kind: 'tool_calls' }>['calls']) {
+    const { pipeline } = pipelineWith(browser, [
+      { kind: 'tool_calls', calls },
+      { kind: 'answer', speak: 'Done.', display: 'Detail.' },
+    ])
+    const events = await collect(pipeline, 'go')
+    return events.filter((event) => event.type === 'tool_result').map((event) => event.result)
+  }
+
+  it('marks a navigate settling on a 200 outage title with the basis, the host and the advice', async () => {
+    const browser = new FixtureBrowserController()
+    browser.facts = OFFLINE
+
+    const [result] = await resultsOf(browser, [{ id: 'c1', name: 'navigate', args: { url: OFFLINE.url } }])
+
+    expect(result).toBe(`navigated outcome\nUNAVAILABLE:title web.archive.org\n${ADVICE_ARCHIVE}`)
+  })
+
+  it('marks a 5xx by its status number, whatever its title says', async () => {
+    const browser = new FixtureBrowserController()
+    browser.facts = { url: 'https://www.jpl.nasa.gov/news/voyager', title: 'Page not found', status: 503 }
+
+    const [result] = await resultsOf(browser, [{ id: 'c1', name: 'navigate', args: { url: 'https://www.jpl.nasa.gov/news/voyager' } }])
+
+    expect(result).toContain('\nUNAVAILABLE:503 www.jpl.nasa.gov\nnasa.gov could not serve this page right now.')
+    expect(result).not.toContain('NOT-FOUND:')
+  })
+
+  it('marks back, forward and a click that left the page, and leaves a click that stayed alone', async () => {
+    const browser = new FixtureBrowserController()
+    browser.facts = OFFLINE
+    browser.clickResult = `clicked [7]: urlChanged=true dialogOpen=false; page signature changed; url=${OFFLINE.url}`
+
+    const results = await resultsOf(browser, [
+      { id: 'c1', name: 'back', args: {} },
+      { id: 'c2', name: 'go_forward', args: {} },
+      { id: 'c3', name: 'click', args: { ref: 7 } },
+    ])
+
+    for (const result of results) expect(result).toContain(`\nUNAVAILABLE:title web.archive.org\n${ADVICE_ARCHIVE}`)
+
+    const stayed = new FixtureBrowserController()
+    stayed.facts = OFFLINE
+    stayed.clickResult = 'clicked [7]: urlChanged=false dialogOpen=false; no observable change'
+    expect(await resultsOf(stayed, [{ id: 'c1', name: 'click', args: { ref: 7 } }])).toEqual([stayed.clickResult])
+  })
+
+  it('lets a wall win over a title that also says the site is unavailable', async () => {
+    const browser = new FixtureBrowserController()
+    browser.facts = { url: 'https://accounts.example.com/login', title: 'Something went wrong', status: 200 }
+
+    const [result] = await resultsOf(browser, [{ id: 'c1', name: 'navigate', args: { url: 'https://accounts.example.com/login' } }])
+
+    expect(result).toContain('BLOCKER:login-wall accounts.example.com')
+    expect(result).not.toContain('UNAVAILABLE:')
+  })
+})
+
 describe('browser tools through the pipeline', () => {
   it('read_page surfaces the numbered-ref snapshot as a tool result', async () => {
     const browser = new FixtureBrowserController()

@@ -590,6 +590,29 @@ describe('createSearchLoopRail — a Blocked Action or an inert click holds the 
   })
 })
 
+describe('createSearchLoopRail — an Unavailable Landing holds the streak (#262, ADR 0060)', () => {
+  it('replays fix-258-259 pass 2 Voyager rounds 20–23 to streak 1, hold, 2, 3 and the nudge', async () => {
+    const rail = createSearchLoopRail()
+    expect((await rail.observe(nav('https://duckduckgo.com/?q=%22June+27%2C+2013%22+Voyager+1+site%3Ajpl.nasa.gov'), ok)).observation?.streak).toBe(1)
+    // Round 21: the Wayback Machine answered with its "Temporarily Offline" page.
+    const offline: ToolResultOutcome = {
+      ok: true,
+      result:
+        'navigated: url=https://web.archive.org/web/20130516021947/http://www.jpl.nasa.gov/news/news.php?release=2013-107 title="Internet Archive: Temporarily Offline"\n' +
+        'UNAVAILABLE:title web.archive.org\narchive.org could not serve this page right now.',
+    }
+    expect(await rail.observe(nav('https://web.archive.org/web/20130801000000/http://www.jpl.nasa.gov/news/news.php?release=2013-107'), offline)).toEqual({
+      notice: null,
+      observation: null,
+    })
+    // Round 22: the composed nasa.gov address, rewritten into a site search before it ran.
+    expect((await rail.observe(nav('https://duckduckgo.com/?q=missionpages+voyager+voyager20130627+site%3Anasa.gov'), ok)).observation?.streak).toBe(2)
+    const round23 = await rail.observe(nav('https://duckduckgo.com/?q=Voyager+1+explores+final+frontier+of+our+solar+bubble+jpl+news+2013'), ok)
+    expect(round23.observation?.streak).toBe(SEARCH_LOOP_NUDGE_AFTER)
+    expect(round23.notice).not.toBeNull()
+  })
+})
+
 describe('createSearchLoopRail replay of failed run 47 (#82/#83)', () => {
   // The actual 80-call sequence from history.db run 47 (the run that
   // motived #74 and whose navigates-to-search-URLs defeated the old rail):
