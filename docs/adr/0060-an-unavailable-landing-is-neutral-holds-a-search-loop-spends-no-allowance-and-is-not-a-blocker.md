@@ -12,9 +12,13 @@ gains a cross-reference note. The Search Loop tiers (#74) stay at 3 and 5.
 `landedOnUnavailablePage` and the advice live in
 `src/core/browser/unavailablePage.ts`; `classifyNotFoundPage` now yields to
 any 5xx, so the two classifiers never both answer and the choke point asks
-Not-found first. Three calls this ADR left open: Cloudflare's own pages
-(`*.cloudflare.com`) are not judged by the `| Cloudflare` suffix, whose other
-phrases still apply; in the no-progress rail each Observation Producer's
+Not-found first, and 403 and 429 are decided by status like 404 and 410,
+whatever their title says. Three calls this ADR left open: the
+`| Cloudflare` suffix counts only beside an error (the word, or a numbered
+code such as `520:`), because the same suffix names Cloudflare's challenge
+wall ("Attention Required! | Cloudflare") — which a click that left the
+page, never wall-classified, would otherwise have marked Unavailable — and
+every page of cloudflare.com, whose suffix is never read; in the no-progress rail each Observation Producer's
 first look at an Unavailable Page is neutral, the landing included, so a
 first read of the outage page is neutral and a second navigate onto it is
 the repeat; and the Fix Ledger restates "Search Loop rounds by the streak

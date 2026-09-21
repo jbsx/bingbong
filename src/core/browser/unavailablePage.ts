@@ -5,7 +5,7 @@
 // user cannot bring a site back online.
 //
 // Recognition is a 5xx status first and the title second, which catches an
-// outage page served with 200. Precedence between the two landing kinds is
+// Unavailable Page served with 200. Precedence between the two landing kinds is
 // status first, then the Not-found title, then this one's title: a 404 or
 // 410 is never Unavailable, and a title that says both is Not-found. A
 // detected page yields a marker line (`UNAVAILABLE:<status|title> <host>`)
@@ -38,19 +38,27 @@ export function isUnavailableStatus(status: number | null | undefined): status i
   return typeof status === 'number' && status >= 500 && status <= 599
 }
 
-// The corpus's four outage pages and the standard server-error phrases. A
-// bare "error" is no signal: GitHub's loading widget put "there was an
-// error" into ten content digests. Cloudflare's error pages end their title
-// with `| Cloudflare` (Error 1016: "Origin DNS error | <host> | Cloudflare").
+// The corpus's four Unavailable Pages and the standard server-error
+// phrases. A bare "error" is no signal: GitHub's loading widget put "there
+// was an error" into ten content digests.
 const UNAVAILABLE_TITLE_RE =
-  /\btemporarily (?:offline|unavailable)\b|\bservice unavailable\b|\bsomething went wrong\b|\bbad gateway\b|\bgateway time-?out\b|\binternal server error\b|\borigin dns error\b|\bconnection timed out\b|\bweb server is down\b|\bunder maintenance\b|\|\s*cloudflare\s*$/i
+  /\btemporarily (?:offline|unavailable)\b|\bservice unavailable\b|\bsomething went wrong\b|\bbad gateway\b|\bgateway time-?out\b|\binternal server error\b|\borigin dns error\b|\bconnection timed out\b|\bweb server is down\b|\bunder maintenance\b/i
 
+// Cloudflare's own title suffix (Error 1016: "Origin DNS error | <host> |
+// Cloudflare"). It counts only beside an error — the word or a numbered
+// code — since the same suffix names its challenge wall ("Attention
+// Required! | Cloudflare"), a Blocker, and every page of cloudflare.com.
 const CLOUDFLARE_SUFFIX_RE = /\|\s*cloudflare\s*$/i
+const CLOUDFLARE_ERROR_RE = /\berror\b|\b\d{3,4}:/i
 
 /** Whether a title says the site could not serve the page (ADR 0060's second test). */
 export function isUnavailableTitle(title: string): boolean {
-  return UNAVAILABLE_TITLE_RE.test(title)
+  return UNAVAILABLE_TITLE_RE.test(title) || (CLOUDFLARE_SUFFIX_RE.test(title) && CLOUDFLARE_ERROR_RE.test(title))
 }
+
+// 403 is the Network Block's, 429 nothing the corpus has seen, and 404 and
+// 410 the Not-found Page's: the status decides them before any title.
+const NOT_UNAVAILABLE_STATUSES: ReadonlySet<number> = new Set([403, 429, ...NOT_FOUND_STATUSES])
 
 function isCloudflareSite(host: string): boolean {
   return host === 'cloudflare.com' || host.endsWith('.cloudflare.com')
@@ -73,17 +81,19 @@ export function classifyUnavailablePage(facts: NotFoundPageFacts): UnavailableCl
   const host = parsed.hostname.toLowerCase()
   if (host === '') return null
   const status = facts.status
-  // Cloudflare's own pages carry its name as their title suffix too; only
-  // another site's is its error page.
+  // Cloudflare's own pages carry its name as their title suffix too.
   const title = isCloudflareSite(host) ? facts.title.replace(CLOUDFLARE_SUFFIX_RE, '') : facts.title
   let basis: UnavailableBasis | null = null
   if (isUnavailableStatus(status)) basis = String(status) as UnavailableBasis
-  else if (typeof status === 'number' && NOT_FOUND_STATUSES.has(status)) basis = null
+  else if (typeof status === 'number' && NOT_UNAVAILABLE_STATUSES.has(status)) basis = null
   else if (parseSearchUrl(facts.url) === null && !isNotFoundTitle(title) && isUnavailableTitle(title)) basis = 'title'
   return basis === null ? null : { basis, host, marker: `UNAVAILABLE:${basis} ${host}` }
 }
 
-const MARKER_LINE_RE = /^UNAVAILABLE:(5\d\d|title) (\S+)$/gm
+// The bases a marker can name: the actual status number, or the title.
+const BASIS_PATTERN = '5\\d\\d|title'
+const MARKER_LINE_RE = new RegExp(`^UNAVAILABLE:(${BASIS_PATTERN}) (\\S+)$`, 'gm')
+const BASIS_RE = new RegExp(`^(?:${BASIS_PATTERN})$`)
 
 /** The last `UNAVAILABLE:<basis> <host>` line riding a result text, or null. */
 export function parseUnavailableMarker(text: string): UnavailableLanding | null {
@@ -96,7 +106,7 @@ export function parseUnavailableMarker(text: string): UnavailableLanding | null 
 
 /** Whether a basis is one a marker can name — the one test the app's parser and the Round Audit's reader share. */
 export function isUnavailableBasis(value: string): value is UnavailableBasis {
-  return /^(?:5\d\d|title)$/.test(value)
+  return BASIS_RE.test(value)
 }
 
 /** Whether a successful call settled on an Unavailable Page: its outcome carries the marker. */
@@ -111,7 +121,7 @@ export function landedOnUnavailablePage(outcome: ToolResultOutcome): boolean {
  */
 export function unavailableAdvice(site: string): string {
   return (
-    `${site} could not serve this page right now. Retry it once later, or use a different source or a mirror; ` +
+    `${site} could not serve this page right now. Retry it once later, or use a different source or a Mirror; ` +
     'this is not evidence the address is wrong.'
   )
 }

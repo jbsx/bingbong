@@ -525,7 +525,7 @@ interface Recounted {
  * Unavailable Landings an audit written before #262 never marked recounted
  * by the title rule and held (ADR 0060) — the rounds as judged are untouched.
  */
-function recountedOf(attempts: readonly AuditAttempt[]): Recounted {
+function recountedUnderCurrentRuleOf(attempts: readonly AuditAttempt[]): Recounted {
   const totals = { mechanicalSearchRounds: 0, searchRoundsAtStreak2: 0, searchRoundsAtStreak3: 0, unavailableByTitle: 0, unavailableFollowedBySearch: 0 }
   for (const attempt of attempts) {
     const rounds = replaySearchStreaks(recountUnavailableByTitle(attempt.mechanical.rounds))
@@ -560,7 +560,7 @@ export function countersOf(population: AuditPopulation, attempts: readonly Audit
   // can answer, and its streak replayed with them held — so a Subject under
   // the rule compares with a Reference read by the same rule.
   const streakRuleWritten = older.searchRoundsAtStreak2 !== undefined && older.searchRoundsAtStreak3 !== undefined
-  const recounted = streakRuleWritten && older.unavailableLandings !== undefined ? null : recountedOf(attempts)
+  const recounted = streakRuleWritten && older.unavailableLandings !== undefined ? null : recountedUnderCurrentRuleOf(attempts)
   const streakRounds = recounted ?? older
   // The counter the ledger compared first keeps the reading its rule gave:
   // an audit under the same-intent rule stays as written, one under the

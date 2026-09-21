@@ -859,18 +859,18 @@ type TraceLine = Record<string, unknown> & { kind?: unknown; at?: unknown; agent
 type ToolCallEvent = Extract<PipelineEvent, { type: 'tool_call' }>
 type ToolResultEvent = Extract<PipelineEvent, { type: 'tool_result' }>
 
+/** What the Run Trace recorded beside a call's result as fields (#239, #255, #262), each null when absent. */
+interface ResultFields {
+  landing: NotFoundLanding | null
+  unavailable: UnavailableLanding | null
+  rewritten: ComposedAddressRewriteStamp | null
+}
+
 interface RawRound {
   readonly record: TraceLine
   readonly round: number
   readonly attempt: number
-  readonly calls: {
-    call: ToolCallEvent
-    result: ToolResultEvent | undefined
-    landing: NotFoundLanding | null
-    unavailable: UnavailableLanding | null
-    rewritten: ComposedAddressRewriteStamp | null
-    checkpoint: TraceLine | undefined
-  }[]
+  readonly calls: ({ call: ToolCallEvent; result: ToolResultEvent | undefined; checkpoint: TraceLine | undefined } & ResultFields)[]
 }
 
 /** The Composed Address rewrite a `tool_result` record carries as a field (#255), or null. */
@@ -900,7 +900,7 @@ function eventOf(record: TraceLine): Record<string, unknown> | null {
 /** Group the turn's orchestrator records into rounds: each `llm_round` owns the tool calls that follow it until the next. */
 function rawRounds(records: readonly TraceLine[]): RawRound[] {
   const rounds: RawRound[] = []
-  const results = new Map<string, { event: ToolResultEvent; landing: NotFoundLanding | null; unavailable: UnavailableLanding | null; rewritten: ComposedAddressRewriteStamp | null }>()
+  const results = new Map<string, { event: ToolResultEvent } & ResultFields>()
   for (const record of records) {
     const event = eventOf(record)
     if (event !== null && event.type === 'tool_result' && isString(event.callId) && !results.has(event.callId) && record.agentId === undefined) {

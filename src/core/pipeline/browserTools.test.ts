@@ -220,7 +220,7 @@ describe('a Not-found Landing rides the Action Outcome (#239, ADR 0050)', () => 
 
 describe('an Unavailable Landing rides the Action Outcome (#262, ADR 0060)', () => {
   const ADVICE_ARCHIVE =
-    'archive.org could not serve this page right now. Retry it once later, or use a different source or a mirror; this is not evidence the address is wrong.'
+    'archive.org could not serve this page right now. Retry it once later, or use a different source or a Mirror; this is not evidence the address is wrong.'
   const OFFLINE = {
     url: 'https://web.archive.org/web/20130516021947/http://www.jpl.nasa.gov/news/news.php?release=2013-107',
     title: 'Internet Archive: Temporarily Offline',

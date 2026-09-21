@@ -203,6 +203,11 @@ interface AttemptRecord {
   nudged: boolean
 }
 
+/** The redundancy nudge and an escalation riding one result: either, both in that order, or neither. */
+function joinNudge(nudge: string | null, escalated: string | null): string | null {
+  return escalated === null ? nudge : nudge === null ? escalated : `${nudge}\n\n${escalated}`
+}
+
 export function createNoProgressRail(deps: NoProgressRailDeps = {}): NoProgressRail {
   const settledState = deps.settledState
   const approachExhaustedDirective = deps.approachExhaustedDirective ?? ORCHESTRATOR_APPROACH_EXHAUSTED_DIRECTIVE
@@ -411,8 +416,7 @@ export function createNoProgressRail(deps: NoProgressRailDeps = {}): NoProgressR
         // The first look at the dead page by each Producer is neutral too;
         // inspecting it again is the ordinary repeat.
         if (landedOnNotFoundPage(outcome) || firstByThisProducer) return nudge
-        const escalatedOnDeadPage = escalate()
-        return escalatedOnDeadPage === null ? nudge : nudge === null ? escalatedOnDeadPage : `${nudge}\n\n${escalatedOnDeadPage}`
+        return joinNudge(nudge, escalate())
       }
       if (landedOnUnavailablePage(outcome)) unavailableStates.add(fingerprint)
       if (unavailableStates.has(fingerprint)) {
@@ -423,8 +427,7 @@ export function createNoProgressRail(deps: NoProgressRailDeps = {}): NoProgressR
         // included: landing on the same outage again is the ordinary repeat,
         // since one retry is all the advice allows.
         if (firstByThisProducer) return nudge
-        const escalatedOnOutage = escalate()
-        return escalatedOnOutage === null ? nudge : nudge === null ? escalatedOnOutage : `${nudge}\n\n${escalatedOnOutage}`
+        return joinNudge(nudge, escalate())
       }
       if (lastState === null) {
         // The baseline read: the state Progress is measured from, not
@@ -456,8 +459,7 @@ export function createNoProgressRail(deps: NoProgressRailDeps = {}): NoProgressR
         // as stuck after it. Repetition is caught one Approach later.
         return nudge
       }
-      const escalated = escalate()
-      return escalated === null ? nudge : nudge === null ? escalated : `${nudge}\n\n${escalated}`
+      return joinNudge(nudge, escalate())
     },
 
     beginRound() {

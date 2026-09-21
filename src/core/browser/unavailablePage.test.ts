@@ -3,7 +3,7 @@ import { classifyNotFoundPage } from './notFoundPage'
 import { classifyUnavailablePage, isUnavailableTitle, landedOnUnavailablePage, parseUnavailableMarker } from './unavailablePage'
 
 // ADR 0060: an Unavailable Page is recognised by a 5xx status first and by
-// its title second. The titles below are the corpus's four outage pages and
+// its title second. The titles below are the corpus's four Unavailable Pages and
 // the standard server-error phrases.
 
 describe('classifyUnavailablePage (#262, ADR 0060)', () => {
@@ -17,7 +17,7 @@ describe('classifyUnavailablePage (#262, ADR 0060)', () => {
     expect(classifyUnavailablePage({ url: 'https://example.com/', title: 'Example', status: 599 })?.basis).toBe('599')
   })
 
-  it('catches the corpus’s outage pages served with 200 by their title', () => {
+  it('catches the corpus’s Unavailable Pages served with 200 by their title', () => {
     expect(
       classifyUnavailablePage({
         url: 'https://web.archive.org/web/20130516021947/http://www.jpl.nasa.gov/news/news.php?release=2013-107',
@@ -68,9 +68,11 @@ describe('classifyUnavailablePage (#262, ADR 0060)', () => {
     expect(isUnavailableTitle('Error handling in Rust')).toBe(false)
   })
 
-  it('leaves 403, 429 and every not-found status to the others', () => {
+  it('leaves 403, 429 and every not-found status to the others, whatever the title says', () => {
     expect(classifyUnavailablePage({ url: 'https://example.com/', title: 'Forbidden', status: 403 })).toBeNull()
     expect(classifyUnavailablePage({ url: 'https://example.com/', title: 'Too Many Requests', status: 429 })).toBeNull()
+    expect(classifyUnavailablePage({ url: 'https://example.com/', title: 'Something went wrong', status: 403 })).toBeNull()
+    expect(classifyUnavailablePage({ url: 'https://example.com/', title: 'Service Unavailable', status: 429 })).toBeNull()
     // Not-found wins by status, even over an outage title.
     expect(classifyUnavailablePage({ url: 'https://example.com/x', title: 'Something went wrong', status: 404 })).toBeNull()
     expect(classifyUnavailablePage({ url: 'https://example.com/x', title: 'Service unavailable', status: 410 })).toBeNull()
@@ -87,8 +89,10 @@ describe('classifyUnavailablePage (#262, ADR 0060)', () => {
     expect(classifyUnavailablePage(both)).toBeNull()
   })
 
-  it('does not read Cloudflare’s own pages as its error page', () => {
+  it('reads the Cloudflare suffix only beside an error, so its challenge wall and its own pages are not Unavailable', () => {
     expect(classifyUnavailablePage({ url: 'https://www.cloudflare.com/learning/ddos/what-is-a-ddos-attack/', title: 'What is a DDoS attack? | Cloudflare', status: 200 })).toBeNull()
+    expect(classifyUnavailablePage({ url: 'https://www.example.com/article', title: 'Attention Required! | Cloudflare', status: 200 })).toBeNull()
+    expect(classifyUnavailablePage({ url: 'https://www.example.com/article', title: 'Just a moment... | Cloudflare', status: 200 })).toBeNull()
   })
 
   it('leaves an ordinary page alone, and has no landing on a page with no host', () => {

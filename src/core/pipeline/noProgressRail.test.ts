@@ -346,7 +346,7 @@ describe('no-progress rail — an Unavailable Landing is neutral once (#262, ADR
     current = OFFLINE
     expect(await step(call('navigate', { url: ADDRESS }), landed)).toBeNull()
     expect(rail.makingProgress()).toBe(true)
-    // The first read of the outage page is the page reader's first look: neutral too.
+    // The first read of the Unavailable Page is the page reader's first look: neutral too.
     expect(await step(read)).toBeNull()
     expect(rail.makingProgress()).toBe(true)
 
@@ -354,7 +354,7 @@ describe('no-progress rail — an Unavailable Landing is neutral once (#262, ADR
     expect(await step(call('navigate', { url: ADDRESS }), landed)).toMatch(/Change your Approach/)
   })
 
-  it('never makes the outage page the baseline: a step back costs a no-progress action, and the site serving again is Progress', async () => {
+  it('never makes the Unavailable Page the baseline: a step back costs a no-progress action, and the site serving again is Progress', async () => {
     let current = BASE
     const rail = createNoProgressRail({ settledState: () => current })
     const step = async (action: ToolCall, outcome: ToolResultOutcome = ok()): Promise<string | null> => {
