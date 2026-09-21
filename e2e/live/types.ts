@@ -348,6 +348,8 @@ export interface LiveMetrics {
   readonly deterministicAnswer: boolean
   readonly effortTier: EffortTier | null
   readonly deadlineTierEscalations: number
+  /** Automatic Tier Escalations the round budget performed (#266, ADR 0063): Run Plan events whose source is `budget`. */
+  readonly budgetTierEscalations: number
   readonly counts: {
     /** Perf `llm` spans — orchestrator rounds that finished. */
     readonly llmSpans: number

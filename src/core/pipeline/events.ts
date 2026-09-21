@@ -249,13 +249,21 @@ export type PipelineEvent = SessionEventIdentity & (
       effortTier: EffortTier
       /**
        * Who set this plan: the model's own report, the fallback Lookup
-       * plan a run without one takes, or (#216, ADR 0042) the active-work
-       * deadline raising the tier of a run that was still making
-       * progress. A `deadline` plan changes the tier alone — its
-       * objective and headline are the ones already standing.
+       * plan a run without one takes, or an automatic Tier Escalation —
+       * the active-work deadline (#216, ADR 0042) or the tier's Tool Round
+       * budget (#266, ADR 0063) raising the tier of a run that was still
+       * making progress. A `deadline` or `budget` plan changes the tier
+       * alone — its objective and headline are the ones already standing.
        */
-      source: 'model' | 'fallback' | 'deadline'
+      source: 'model' | 'fallback' | 'deadline' | 'budget'
       escalationReason?: string
+      /**
+       * The Tool Round budget an automatic escalation re-armed (#266, ADR
+       * 0042 note): the new tier's, or the rounds the hard ceiling leaves
+       * when fewer. Only an escalation plan carries it; the Round Audit
+       * reads it instead of the tier table.
+       */
+      roundBudget?: number
       /**
        * The Asked Items the plan carries (#250, ADR 0052): on a model plan
        * the declared list, empty for a Direct Action; absent on the

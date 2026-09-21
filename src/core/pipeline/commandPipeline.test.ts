@@ -39,7 +39,7 @@ import { createPerfTracer, type PerfTracer } from '../perf/perfTracer'
 import { withPerfTracing } from '../perf/perfTracing'
 import { createBrowserSubspans } from '../perf/browserSubspans'
 import { DELTA_FLUSH_MS } from './deltaBatcher'
-import { ANSWER_ONLY_REPORT_DIRECTIVE, DEADLINE_TIER_ESCALATION_REASON, FINALIZATION_REPORT_CHECKPOINT_DIRECTIVE, finalizeInstruction, HARD_TOOL_ROUND_CEILING, TIER_ACTIVE_WORK_DEADLINES_MS, TIER_TOOL_ROUND_BUDGETS } from './effortEpoch'
+import { ANSWER_ONLY_REPORT_DIRECTIVE, BUDGET_TIER_ESCALATION_REASON, DEADLINE_TIER_ESCALATION_REASON, FINALIZATION_REPORT_CHECKPOINT_DIRECTIVE, finalizeInstruction, HARD_TOOL_ROUND_CEILING, TIER_ACTIVE_WORK_DEADLINES_MS, TIER_TOOL_ROUND_BUDGETS } from './effortEpoch'
 import { createSubagentManager, type SubagentTaskHooks } from '../agent/subagentManager'
 import type { SubagentReport } from '../agent/subagentReport'
 
@@ -2780,6 +2780,9 @@ describe('command pipeline', () => {
           effortTier: 'investigation',
           source: 'deadline',
           escalationReason: DEADLINE_TIER_ESCALATION_REASON,
+          // The re-armed budget rides the event (#266): the Investigation's
+          // own, since the hard ceiling leaves more than 24 after two rounds.
+          roundBudget: TIER_TOOL_ROUND_BUDGETS.investigation,
           at: 125_000,
         },
       ])
@@ -2844,6 +2847,50 @@ describe('command pipeline', () => {
         chars: TIER_ESCALATION_SPOKEN.length,
         turnId: 'turn-escalated',
       })
+    })
+
+    // Issue #266 (ADR 0063). The round budget arms the same escalation: a
+    // Lookup that spends its 12 rounds while its page keeps moving rises to
+    // Investigation at the loop top, the Run Plan event names the budget arm
+    // and the re-armed budget, the model's Notice tells it it may finish,
+    // and the user hears the one status line.
+    it('raises the tier at the round budget, names the arm on the event, and tells the model it may finish', async () => {
+      const rounds = TIER_TOOL_ROUND_BUDGETS.lookup
+      const turns: ScriptedTurn[] = [{ kind: 'tool_calls', calls: [lookupPlan, { id: 'w0', name: 'work', args: {} }] }]
+      for (let round = 1; round < rounds; round += 1) turns.push({ kind: 'tool_calls', calls: [{ id: `w${round}`, name: 'work', args: {} }] })
+      turns.push({ kind: 'tool_calls', calls: [{ id: 'after', name: 'work', args: {} }] })
+      turns.push({ kind: 'answer', askedItems: [{ item: 'the answer', standing: 'stated', statement: 'stated' }], speak: 'Here it is.', display: 'The tier list.', resolution: 'completed' })
+      const { tts, requests, events, executed, finalizations } = progressingRun(turns, {})
+
+      const emitted = await events
+
+      // The thirteenth working round ran: the tier rose at the budget.
+      expect(executed).toContain('after')
+      const escalations = emitted.filter((e) => e.type === 'run_plan' && e.source === 'budget')
+      expect(escalations).toEqual([
+        {
+          type: 'run_plan',
+          objective: 'Find the tier list',
+          headline: 'Find the tier list',
+          effortTier: 'investigation',
+          source: 'budget',
+          escalationReason: BUDGET_TIER_ESCALATION_REASON,
+          // 32 minus the reserved bookkeeping round minus the 12 spent.
+          roundBudget: HARD_TOOL_ROUND_CEILING - 1 - rounds,
+          at: 0,
+        },
+      ])
+      expect(emitted.filter((e) => e.type === 'run_plan' && e.source === 'deadline')).toHaveLength(0)
+      // The Notice rides the next round's result and names the budget arm.
+      const escalatedResult = emitted.find((e) => e.type === 'tool_result' && e.callId === 'after')
+      expect(escalatedResult).toMatchObject({ ok: true, result: expect.stringContaining('Effort Tier raised to Investigation: the tool-round budget was spent') })
+      expect(escalatedResult).toMatchObject({ result: expect.stringContaining('If the objective is already met, finish now.') })
+      expect(JSON.stringify(requests[rounds])).toContain('the next budget ends the run')
+      // One spoken status line, and it is not the Answer.
+      expect(tts.spoken.filter((line) => line === TIER_ESCALATION_SPOKEN)).toHaveLength(1)
+      expect(tts.spoken.at(-1)).toBe('Here it is.')
+      expect(finalizations()).toBe(0)
+      expect(emitted.at(-1)).toMatchObject({ type: 'done', finalizationCause: 'model_answered' })
     })
 
     it('finalizes at the second crossing \u2014 the escalation is once per Run', async () => {

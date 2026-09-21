@@ -495,7 +495,7 @@ describe('mid-round trips close the round’s remaining siblings (#157/AC2)', ()
     // Finalizing, not Answer-only: a crossing during tool execution gets
     // the same bookkeeping round a crossing during the model call does
     // (#200, ADR 0036).
-    expect(h.epoch.phase).toEqual({ kind: 'finalizing', cause: 'deadline_reached' })
+    expect(h.epoch.phase).toEqual({ kind: 'finalizing', cause: 'deadline_reached', detail: { arm: 'deadline', declined: 'no_rail' } })
     expect(trace.filter((entry) => entry.startsWith('execute:'))).toEqual(['execute:slow'])
   })
 })
@@ -629,7 +629,7 @@ describe('the epoch’s round protocol (#157/AC2)', () => {
     h.epoch.enterFinalization('budget_exhausted')
     return h
   }
-  const spent = { kind: 'answer_only', cause: 'budget_exhausted' }
+  const spent = { kind: 'answer_only', cause: 'budget_exhausted', detail: { arm: 'budget', declined: 'no_rail' } }
 
   it('completes a Tool Round that ran to the end', async () => {
     const h = finalizing({})

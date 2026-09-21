@@ -78,6 +78,13 @@ export interface ScenarioMetrics {
    * tier, never who chose it.
    */
   deadlineTierEscalations: number
+  /**
+   * Automatic Tier Escalations the round budget performed (#266, ADR
+   * 0063): Run Plan events whose source is `budget`. Counted beside the
+   * deadline's and never folded into it — the scenario gate that says a
+   * run declared its tier reads the deadline count alone.
+   */
+  budgetTierEscalations: number
   rawLimitFailure: string | null
   /** True when the run asked the user and the ask timed out unanswered. */
   askTimedOut: boolean
@@ -221,6 +228,7 @@ export function extractMetrics(events: RunEvents, perfRecords: readonly PerfSpan
     finalizationCause: done?.finalizationCause ?? null,
     effortTier: plans.at(-1)?.effortTier ?? UNDECLARED_PLAN_TIER,
     deadlineTierEscalations: plans.filter((plan) => plan.source === 'deadline').length,
+    budgetTierEscalations: plans.filter((plan) => plan.source === 'budget').length,
     rawLimitFailure: rawLimit?.message ?? null,
     askTimedOut: askTimedOutIn(events),
     deterministicAnswer: answer?.deterministicAnswer === true,
@@ -258,6 +266,7 @@ export function combineRuns(runs: readonly ScenarioMetrics[]): ScenarioMetrics {
     finalizationCause: final.finalizationCause,
     effortTier: final.effortTier,
     deadlineTierEscalations: sum((metrics) => metrics.deadlineTierEscalations),
+    budgetTierEscalations: sum((metrics) => metrics.budgetTierEscalations),
     rawLimitFailure: runs.find((metrics) => metrics.rawLimitFailure !== null)?.rawLimitFailure ?? null,
     askTimedOut: runs.some((metrics) => metrics.askTimedOut),
     // The Answer the user keeps is the final run's, and so is its origin.

@@ -23,14 +23,32 @@ import {
   TIME_MILESTONE_FRACTION,
   tierEscalationNotice,
   DEADLINE_TIER_ESCALATION_REASON,
+  BUDGET_ARM_WARNING_SENTENCE,
+  BUDGET_TIER_ESCALATION_REASON,
+  ESCALATION_DECLINE_REASONS,
+  escalationDeclineOf,
+  escalationDeclineSentence,
+  finalizationDetailSentence,
   TIER_REASONING_EFFORT,
   TIER_TOOL_ROUND_BUDGETS,
   type EffortEpoch,
+  type EscalationDecline,
+  type EscalationDeclineReason,
   type TierEscalation,
 } from './effortEpoch'
 import { DEFAULT_EFFORT_TIER, type EffortTier } from './runPlan'
 import type { FinalizationCause } from '../session/runJournal'
 import { SUBAGENT_LIMITS } from '../agent/subagentRails'
+
+/**
+ * The decline a budget or deadline stop records (#266, ADR 0063): the arm
+ * reached and the first guard that refused to escalate. A lean epoch
+ * (no Progress test) and a Subagent's record `no_rail`.
+ */
+const declined = (cause: 'budget_exhausted' | 'deadline_reached', reason: EscalationDeclineReason): EscalationDecline => ({
+  arm: cause === 'budget_exhausted' ? 'budget' : 'deadline',
+  declined: reason,
+})
 
 describe('Effort Epoch (#146, ADR 0027)', () => {
   it('fixes the initial tier budgets and active-work deadlines', () => {
@@ -238,7 +256,7 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
         const stalledClock = new FakeClock()
         const stalled = createEffortEpoch({ clock: stalledClock, initialTier: 'lookup', makingProgress: () => false })
         stalledClock.advance(TIER_ACTIVE_WORK_DEADLINES_MS.lookup)
-        expect(stalled.decideLoopTop()).toEqual({ kind: 'finalize', cause: 'deadline_reached' })
+        expect(stalled.decideLoopTop()).toEqual({ kind: 'finalize', cause: 'deadline_reached', detail: declined('deadline_reached', 'no_progress') })
         expect(stalled.reasoningEffort).toBe(FINALIZATION_REASONING_EFFORT)
       })
     })
@@ -260,8 +278,8 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
       clock.advance(TIER_ACTIVE_WORK_DEADLINES_MS.investigation)
 
       expect(epoch.cumulativeRounds).toBe(31)
-      expect(epoch.decideLoopTop()).toEqual({ kind: 'finalize', cause: 'budget_exhausted' })
-      expect(epoch.phase).toEqual({ kind: 'finalizing', cause: 'budget_exhausted' })
+      expect(epoch.decideLoopTop()).toEqual({ kind: 'finalize', cause: 'budget_exhausted', detail: declined('budget_exhausted', 'no_rail') })
+      expect(epoch.phase).toEqual({ kind: 'finalizing', cause: 'budget_exhausted', detail: declined('budget_exhausted', 'no_rail') })
     })
 
     it('chooses deadline before the hard ceiling when the tier budget remains', () => {
@@ -272,7 +290,7 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
       for (let round = 0; round < 23; round += 1) epoch.beginToolRound()
       clock.advance(TIER_ACTIVE_WORK_DEADLINES_MS.investigation)
 
-      expect(epoch.decideLoopTop()).toEqual({ kind: 'finalize', cause: 'deadline_reached' })
+      expect(epoch.decideLoopTop()).toEqual({ kind: 'finalize', cause: 'deadline_reached', detail: declined('deadline_reached', 'no_rail') })
     })
 
     it('reserves round 32 for bookkeeping and leaves Answer-only outside the ceiling', () => {
@@ -379,7 +397,7 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
         exits
           ? { kind: 'working' }
           : spent
-            ? { kind: 'answer_only', cause: latch }
+            ? { kind: 'answer_only', cause: latch, detail: declined('budget_exhausted', 'no_rail') }
             : { kind: 'finalizing', cause: latch },
       )
       // An exit clears the stale objective's cause and re-arms the tier;
@@ -404,12 +422,12 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
       const { causes, epoch } = entriesOf()
       for (let round = 0; round < 6; round += 1) epoch.beginToolRound()
 
-      expect(epoch.decideLoopTop()).toEqual({ kind: 'finalize', cause: 'budget_exhausted' })
+      expect(epoch.decideLoopTop()).toEqual({ kind: 'finalize', cause: 'budget_exhausted', detail: declined('budget_exhausted', 'no_rail') })
       // The bookkeeping round and the reserved Answer round re-ask the
       // same question; the door only opened once.
-      expect(epoch.decideLoopTop()).toEqual({ kind: 'finalize', cause: 'budget_exhausted' })
+      expect(epoch.decideLoopTop()).toEqual({ kind: 'finalize', cause: 'budget_exhausted', detail: declined('budget_exhausted', 'no_rail') })
       epoch.beginToolRound()
-      expect(epoch.decideLoopTop()).toEqual({ kind: 'finalize', cause: 'budget_exhausted' })
+      expect(epoch.decideLoopTop()).toEqual({ kind: 'finalize', cause: 'budget_exhausted', detail: declined('budget_exhausted', 'no_rail') })
       expect(causes).toEqual(['budget_exhausted'])
     })
 
@@ -494,7 +512,7 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
       clock.advance(TIER_ACTIVE_WORK_DEADLINES_MS.direct_action)
 
       expect(round.deadlineAborted).toBe(true)
-      expect(epoch.phase).toEqual({ kind: 'finalizing', cause: 'deadline_reached' })
+      expect(epoch.phase).toEqual({ kind: 'finalizing', cause: 'deadline_reached', detail: declined('deadline_reached', 'no_rail') })
       expect(causes).toEqual(['deadline_reached'])
       round.disarm()
     })
@@ -531,10 +549,10 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
       clock.advance(TIER_ACTIVE_WORK_DEADLINES_MS.direct_action)
 
       expect(epoch.tripPerCallGate()).toBe(true)
-      expect(epoch.phase).toEqual({ kind: 'finalizing', cause: 'deadline_reached' })
+      expect(epoch.phase).toEqual({ kind: 'finalizing', cause: 'deadline_reached', detail: declined('deadline_reached', 'no_rail') })
 
       expect(epoch.beginToolRound()).toBe(true)
-      expect(epoch.phase).toEqual({ kind: 'answer_only', cause: 'deadline_reached' })
+      expect(epoch.phase).toEqual({ kind: 'answer_only', cause: 'deadline_reached', detail: declined('deadline_reached', 'no_rail') })
     })
 
     it('gives a trip in cumulative round 31 round 32 as its bookkeeping round', () => {
@@ -618,7 +636,7 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
       const rounds = epoch.cumulativeRounds
 
       expect(epoch.spendBookkeepingOpportunity()).toBe(true)
-      expect(epoch.phase).toEqual({ kind: 'answer_only', cause: 'deadline_reached' })
+      expect(epoch.phase).toEqual({ kind: 'answer_only', cause: 'deadline_reached', detail: declined('deadline_reached', 'no_rail') })
       // The request returned no calls, so no round executed and none is
       // counted — but the opportunity is gone, and no second one opens.
       expect(epoch.cumulativeRounds).toBe(rounds)
@@ -652,7 +670,7 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
       epoch.spendBookkeepingOpportunity()
 
       expect(epoch.replan()).toBe(false)
-      expect(epoch.phase).toEqual({ kind: 'answer_only', cause: 'deadline_reached' })
+      expect(epoch.phase).toEqual({ kind: 'answer_only', cause: 'deadline_reached', detail: declined('deadline_reached', 'no_rail') })
     })
 
     it('owes the reserved Answer round no leftover Finalization notice', () => {
@@ -708,11 +726,25 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
 
     it('tells the model how much work remains without user-facing counters', () => {
       expect(budgetWarningMessage('near', 2, 6)).toBe(
-        'Work budget: 2 of 6 tool rounds remain. Prioritize decisive evidence — finalize as soon as the objective is met.',
+        `Work budget: 2 of 6 tool rounds remain. Prioritize decisive evidence — finalize as soon as the objective is met. ${BUDGET_ARM_WARNING_SENTENCE}`,
       )
       expect(budgetWarningMessage('imminent', 1, 6)).toBe(
-        'Work budget: 1 of 6 tool round remains. Complete only decisive work and be ready to finalize with your answer.',
+        `Work budget: 1 of 6 tool round remains. Complete only decisive work and be ready to finalize with your answer. ${BUDGET_ARM_WARNING_SENTENCE}`,
       )
+    })
+
+    // Issue #266 (ADR 0063). The two round-based warnings say what the
+    // budget will do — rise one tier for a Run still making progress,
+    // once, or end one that is not — and the time warning, which asks for
+    // a decision, does not.
+    it('names the budget arm on the round-based warnings and not on the time warning', () => {
+      expect(BUDGET_ARM_WARNING_SENTENCE).toBe(
+        'A run still making progress when its budget is spent rises one Effort Tier, once; a run that is not is ended.',
+      )
+      expect(budgetWarningMessage('near', 3, 12)).toContain(BUDGET_ARM_WARNING_SENTENCE)
+      expect(budgetWarningMessage('imminent', 1, 12)).toContain(BUDGET_ARM_WARNING_SENTENCE)
+      expect(budgetWarningMessage('time', 8, 12)).not.toContain(BUDGET_ARM_WARNING_SENTENCE)
+      expect(budgetWarningMessage('time', 8, 12)).not.toContain('budget is spent')
     })
   })
 
@@ -875,7 +907,7 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
       bookkeeping.disarm()
 
       epoch.beginToolRound()
-      expect(epoch.phase).toEqual({ kind: 'answer_only', cause: 'deadline_reached' })
+      expect(epoch.phase).toEqual({ kind: 'answer_only', cause: 'deadline_reached', detail: declined('deadline_reached', 'no_rail') })
       const answer = epoch.armRound()
       clock.advance(TIER_ACTIVE_WORK_DEADLINES_MS.direct_action)
       expect(answer.signal.aborted).toBe(false)
@@ -952,7 +984,7 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
       expect(epoch.phase).toEqual({ kind: 'working' })
       expect(epoch.remainingActiveWorkMs()).toBe(TIER_ACTIVE_WORK_DEADLINES_MS.investigation)
       expect(escalations).toEqual([
-        { from: 'lookup', to: 'investigation', reason: DEADLINE_TIER_ESCALATION_REASON },
+        { from: 'lookup', to: 'investigation', arm: 'deadline', reason: DEADLINE_TIER_ESCALATION_REASON, roundBudget: TIER_TOOL_ROUND_BUDGETS.investigation },
       ])
     })
 
@@ -971,7 +1003,7 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
       const { clock, epoch, escalations } = escalatingEpoch({ tier: 'investigation' })
       clock.advance(TIER_ACTIVE_WORK_DEADLINES_MS.investigation)
 
-      expect(epoch.decideLoopTop()).toEqual({ kind: 'finalize', cause: 'deadline_reached' })
+      expect(epoch.decideLoopTop()).toEqual({ kind: 'finalize', cause: 'deadline_reached', detail: declined('deadline_reached', 'no_tier_above') })
       expect(escalations).toEqual([])
     })
 
@@ -979,7 +1011,7 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
       const { clock, epoch, escalations } = escalatingEpoch({ progressing: () => false })
       clock.advance(TIER_ACTIVE_WORK_DEADLINES_MS.lookup)
 
-      expect(epoch.decideLoopTop()).toEqual({ kind: 'finalize', cause: 'deadline_reached' })
+      expect(epoch.decideLoopTop()).toEqual({ kind: 'finalize', cause: 'deadline_reached', detail: declined('deadline_reached', 'no_progress') })
       expect(epoch.tier).toBe('lookup')
       expect(escalations).toEqual([])
     })
@@ -990,7 +1022,7 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
       expect(epoch.decideLoopTop()).toEqual({ kind: 'work' })
 
       clock.advance(TIER_ACTIVE_WORK_DEADLINES_MS.investigation)
-      expect(epoch.decideLoopTop()).toEqual({ kind: 'finalize', cause: 'deadline_reached' })
+      expect(epoch.decideLoopTop()).toEqual({ kind: 'finalize', cause: 'deadline_reached', detail: declined('deadline_reached', 'no_tier_above') })
       expect(epoch.tier).toBe('investigation')
     })
 
@@ -1026,7 +1058,7 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
       const round = epoch.armRound()
       clock.advance(TIER_ACTIVE_WORK_DEADLINES_MS.investigation)
       expect(round.deadlineAborted).toBe(true)
-      expect(epoch.phase).toEqual({ kind: 'finalizing', cause: 'deadline_reached' })
+      expect(epoch.phase).toEqual({ kind: 'finalizing', cause: 'deadline_reached', detail: declined('deadline_reached', 'no_tier_above') })
     })
 
     it('escalates from the per-call gate instead of closing the round\u2019s siblings', () => {
@@ -1038,13 +1070,259 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
       expect(epoch.phase).toEqual({ kind: 'working' })
     })
 
-    it('never rescues a spent tier budget \u2014 budget exhaustion still finalizes', () => {
-      const { clock, epoch } = escalatingEpoch()
-      for (let round = 0; round < TIER_TOOL_ROUND_BUDGETS.lookup; round += 1) epoch.beginToolRound()
-      clock.advance(TIER_ACTIVE_WORK_DEADLINES_MS.lookup)
+    // Issue #266 (ADR 0063). This test used to pin the opposite \u2014 "never
+    // rescues a spent tier budget" \u2014 from before the round budget had an
+    // arm. The longitude Lookup of the fix-263-264 capture read the H4
+    // record, knew of the case record from its Parts field, and stopped
+    // at 12 of 12 with Progress, never escalating; the ADR gives the
+    // budget the same arm the deadline has. Without Progress the budget
+    // still ends the Run, and the stop says why nothing rose.
+    describe('at the round budget (#266, ADR 0063)', () => {
+      /** Spend every round of the epoch's current budget, as a working Run does. */
+      const spendBudget = (epoch: EffortEpoch): void => {
+        for (let round = 0; round < TIER_TOOL_ROUND_BUDGETS[epoch.tier]; round += 1) epoch.beginToolRound()
+      }
+      /** The rounds the hard ceiling leaves an escalation after `used` cumulative rounds. */
+      const leftBeforeCeiling = (used: number): number => HARD_TOOL_ROUND_CEILING - 1 - used
 
-      expect(epoch.decideLoopTop()).toEqual({ kind: 'finalize', cause: 'budget_exhausted' })
-      expect(epoch.tier).toBe('lookup')
+      it('raises a Lookup at 12 of 12 with Progress to Investigation, re-armed with the clamped budget', () => {
+        const { epoch, escalations } = escalatingEpoch()
+        spendBudget(epoch)
+        expect(epoch.tierRounds).toBe(12)
+
+        expect(epoch.decideLoopTop()).toEqual({ kind: 'work' })
+        expect(epoch.tier).toBe('investigation')
+        expect(epoch.phase).toEqual({ kind: 'working' })
+        expect(epoch.tierRounds).toBe(0)
+        expect(epoch.cumulativeRounds).toBe(12)
+        // 32 minus the reserved bookkeeping round minus the 12 spent: 19,
+        // not the Investigation's 24 \u2014 so the Run ends for its budget at
+        // 31, never `hard_limit`.
+        expect(leftBeforeCeiling(12)).toBe(19)
+        expect(escalations).toEqual([
+          { from: 'lookup', to: 'investigation', arm: 'budget', reason: BUDGET_TIER_ESCALATION_REASON, roundBudget: 19 },
+        ])
+        expect(BUDGET_TIER_ESCALATION_REASON).toBe(
+          'The tool-round budget was spent while the run was still making progress, so the Effort Tier rose one level.',
+        )
+        // The new tier's deadline is armed afresh as well.
+        expect(epoch.remainingActiveWorkMs()).toBe(TIER_ACTIVE_WORK_DEADLINES_MS.investigation)
+      })
+
+      it('ends the escalated Run for its budget at the clamp, never for the hard limit', () => {
+        const { epoch } = escalatingEpoch()
+        spendBudget(epoch)
+        epoch.decideLoopTop()
+        for (let round = 0; round < 19; round += 1) {
+          expect(epoch.decideLoopTop()).toEqual({ kind: 'work' })
+          expect(epoch.beginToolRound()).toBe(true)
+        }
+
+        expect(epoch.cumulativeRounds).toBe(31)
+        // The guards are asked in order, and an Investigation has no tier
+        // above it before the once is even consulted.
+        expect(epoch.decideLoopTop()).toEqual({
+          kind: 'finalize',
+          cause: 'budget_exhausted',
+          detail: declined('budget_exhausted', 'no_tier_above'),
+        })
+      })
+
+      it('warns the escalated epoch against the clamped budget, not the tier table', () => {
+        const { epoch } = escalatingEpoch()
+        spendBudget(epoch)
+        epoch.decideLoopTop()
+        expect(epoch.takeBudgetWarning()).toBeNull()
+        // ~75% of 19 is 14 rounds; a table reading would have said 18 of 24.
+        for (let round = 0; round < 14; round += 1) epoch.beginToolRound()
+
+        expect(epoch.takeBudgetWarning()).toContain('5 of 19 tool rounds remain')
+      })
+
+      it('raises a Direct Action at 6 of 6 with Progress to Lookup with its full budget', () => {
+        const { epoch, escalations } = escalatingEpoch({ tier: 'direct_action' })
+        spendBudget(epoch)
+
+        expect(epoch.decideLoopTop()).toEqual({ kind: 'work' })
+        expect(epoch.tier).toBe('lookup')
+        expect(escalations).toEqual([
+          { from: 'direct_action', to: 'lookup', arm: 'budget', reason: BUDGET_TIER_ESCALATION_REASON, roundBudget: TIER_TOOL_ROUND_BUDGETS.lookup },
+        ])
+      })
+
+      it('ends a Run without Progress for its budget, declined for no Progress', () => {
+        for (const tier of ['lookup', 'direct_action'] as const) {
+          const { epoch, escalations } = escalatingEpoch({ tier, progressing: () => false })
+          spendBudget(epoch)
+
+          expect(epoch.decideLoopTop()).toEqual({
+            kind: 'finalize',
+            cause: 'budget_exhausted',
+            detail: declined('budget_exhausted', 'no_progress'),
+          })
+          expect(epoch.tier).toBe(tier)
+          expect(escalations).toEqual([])
+        }
+      })
+
+      it('ends an Investigation at 24 of 24 whatever its Progress \u2014 there is no tier above', () => {
+        for (const progressing of [true, false]) {
+          const { epoch, escalations } = escalatingEpoch({ tier: 'investigation', progressing: () => progressing })
+          spendBudget(epoch)
+
+          expect(epoch.decideLoopTop()).toEqual({
+            kind: 'finalize',
+            cause: 'budget_exhausted',
+            detail: declined('budget_exhausted', 'no_tier_above'),
+          })
+          expect(escalations).toEqual([])
+        }
+      })
+
+      it('shares the once with the deadline arm, in both orders', () => {
+        // A Direct Action, so the Lookup it rises to still has a tier above
+        // it and the once is the guard that refuses (an Investigation would
+        // be refused for having no tier above before the once is asked).
+        // Deadline first: the budget it re-armed then ends the Run.
+        const byDeadline = escalatingEpoch({ tier: 'direct_action' })
+        byDeadline.clock.advance(TIER_ACTIVE_WORK_DEADLINES_MS.direct_action)
+        expect(byDeadline.epoch.decideLoopTop()).toEqual({ kind: 'work' })
+        expect(byDeadline.epoch.tier).toBe('lookup')
+        spendBudget(byDeadline.epoch)
+        expect(byDeadline.epoch.decideLoopTop()).toEqual({
+          kind: 'finalize',
+          cause: 'budget_exhausted',
+          detail: declined('budget_exhausted', 'once_spent'),
+        })
+        expect(byDeadline.escalations.map((escalation) => escalation.arm)).toEqual(['deadline'])
+
+        // Budget first: the deadline it re-armed then ends the Run.
+        const byBudget = escalatingEpoch({ tier: 'direct_action' })
+        spendBudget(byBudget.epoch)
+        expect(byBudget.epoch.decideLoopTop()).toEqual({ kind: 'work' })
+        expect(byBudget.epoch.tier).toBe('lookup')
+        byBudget.clock.advance(TIER_ACTIVE_WORK_DEADLINES_MS.lookup)
+        expect(byBudget.epoch.decideLoopTop()).toEqual({
+          kind: 'finalize',
+          cause: 'deadline_reached',
+          detail: declined('deadline_reached', 'once_spent'),
+        })
+        expect(byBudget.escalations.map((escalation) => escalation.arm)).toEqual(['budget'])
+      })
+
+      it('declines at the hard-ceiling line, and the Run stops for its budget', () => {
+        // 12 as a Lookup, 13 as a declared Investigation, then a Steering
+        // replan to Direct Action whose 6 rounds land exactly on the line:
+        // the budget is spent with the once unspent, and nothing is left.
+        const { epoch, escalations } = escalatingEpoch()
+        spendBudget(epoch)
+        epoch.declareTier('investigation')
+        for (let round = 0; round < 13; round += 1) epoch.beginToolRound()
+        epoch.replan('direct_action')
+        spendBudget(epoch)
+        expect(epoch.cumulativeRounds).toBe(HARD_TOOL_ROUND_CEILING - 1)
+
+        expect(epoch.decideLoopTop()).toEqual({
+          kind: 'finalize',
+          cause: 'budget_exhausted',
+          detail: declined('budget_exhausted', 'hard_ceiling'),
+        })
+        expect(escalations).toEqual([])
+      })
+
+      it('declines for a Browse Subagent \u2014 no rail vouches for its Progress', () => {
+        const escalations: TierEscalation[] = []
+        const epoch = createEffortEpoch({
+          clock: new FakeClock(),
+          subagent: { toolRoundBudget: 2, deadline: { expired: () => false } },
+          makingProgress: () => true,
+          onTierEscalated: (escalation) => escalations.push(escalation),
+        })
+        epoch.beginToolRound()
+        epoch.beginToolRound()
+
+        expect(epoch.decideLoopTop()).toEqual({
+          kind: 'finalize',
+          cause: 'budget_exhausted',
+          detail: declined('budget_exhausted', 'no_rail'),
+        })
+        expect(escalations).toEqual([])
+      })
+
+      it('fires the budget arm at a coincidence \u2014 budget and deadline both spent, with Progress', () => {
+        const { clock, epoch, escalations } = escalatingEpoch()
+        spendBudget(epoch)
+        clock.advance(TIER_ACTIVE_WORK_DEADLINES_MS.lookup)
+
+        expect(epoch.decideLoopTop()).toEqual({ kind: 'work' })
+        expect(escalations.map((escalation) => escalation.arm)).toEqual(['budget'])
+        expect(epoch.tier).toBe('investigation')
+        expect(epoch.remainingActiveWorkMs()).toBe(TIER_ACTIVE_WORK_DEADLINES_MS.investigation)
+      })
+
+      it('lets a Steering replan buy the Run another budget-armed escalation', () => {
+        const { epoch, escalations } = escalatingEpoch()
+        spendBudget(epoch)
+        epoch.decideLoopTop()
+
+        epoch.replan('lookup')
+        spendBudget(epoch)
+        expect(epoch.decideLoopTop()).toEqual({ kind: 'work' })
+        expect(escalations.map((escalation) => escalation.arm)).toEqual(['budget', 'budget'])
+      })
+
+      it('is not spent by a Tier Escalation the model declared', () => {
+        const { epoch, escalations } = escalatingEpoch({ tier: 'direct_action' })
+        epoch.beginToolRound()
+        // The model's own escalation: Direct Action to Lookup, with its evidence.
+        expect(epoch.declareTier('lookup')).toBe(true)
+        spendBudget(epoch)
+
+        expect(epoch.decideLoopTop()).toEqual({ kind: 'work' })
+        expect(epoch.tier).toBe('investigation')
+        expect(escalations).toEqual([
+          { from: 'lookup', to: 'investigation', arm: 'budget', reason: BUDGET_TIER_ESCALATION_REASON, roundBudget: leftBeforeCeiling(13) },
+        ])
+      })
+
+      it('owes the model the budget arm\u2019s Notice, which tells it it may finish', () => {
+        const { epoch } = escalatingEpoch()
+        spendBudget(epoch)
+        epoch.decideLoopTop()
+
+        const notice = epoch.takeTierEscalationNotice()
+        expect(notice).toBe(tierEscalationNotice('investigation', 'budget'))
+        expect(notice).toContain('Effort Tier raised to Investigation: the tool-round budget was spent while this run was still making progress')
+        expect(notice).toContain('This happens once: the next budget ends the run')
+        expect(notice).toMatch(/If the objective is already met, finish now\.$/)
+        expect(notice).not.toContain('deadline passed')
+        // The deadline's own Notice is unchanged but for the clause, and does not offer the finish.
+        const deadline = tierEscalationNotice('investigation')
+        expect(deadline).toContain('the active-work deadline passed while this run was still making progress')
+        expect(deadline).toContain('This happens once: the next deadline ends the run')
+        expect(deadline).not.toContain('finish now')
+        expect(epoch.takeTierEscalationNotice()).toBeNull()
+      })
+
+      it('records the decline on the Stop Record sentence and never on the Answer', () => {
+        const { epoch } = escalatingEpoch({ progressing: () => false })
+        spendBudget(epoch)
+        epoch.decideLoopTop()
+
+        expect(finalizationDetailSentence(epoch.phase)).toBe(
+          'No Tier Escalation followed the tool-round budget: the current Approach was not making Progress',
+        )
+        expect(escalationDeclineOf(epoch.phase)).toEqual({ arm: 'budget', declined: 'no_progress' })
+        for (const reason of ESCALATION_DECLINE_REASONS) {
+          expect(escalationDeclineSentence({ arm: 'deadline', declined: reason })).toMatch(/^No Tier Escalation followed the active-work deadline: /)
+        }
+        // The model's Finalize Instruction and the deterministic Answer read
+        // the cause alone: the decline is the Stop Record's, not theirs.
+        expect(finalizeInstruction('budget_exhausted', escalationDeclineOf(epoch.phase))).toBe(finalizeInstruction('budget_exhausted'))
+        const answer = deterministicFinalAnswer({ command: 'find it', cause: 'budget_exhausted', detail: escalationDeclineOf(epoch.phase), sources: [] })
+        expect(answer.display).not.toMatch(/escalat|budget/i)
+        expect(answer.speak).not.toMatch(RESOURCE_ACCOUNTING)
+      })
     })
 
     it('keeps the deadline terminal for an epoch with no Progress test', () => {
@@ -1054,7 +1332,7 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
       const epoch = createEffortEpoch({ clock, initialTier: 'lookup' })
       clock.advance(TIER_ACTIVE_WORK_DEADLINES_MS.lookup)
 
-      expect(epoch.decideLoopTop()).toEqual({ kind: 'finalize', cause: 'deadline_reached' })
+      expect(epoch.decideLoopTop()).toEqual({ kind: 'finalize', cause: 'deadline_reached', detail: declined('deadline_reached', 'no_rail') })
       expect(epoch.tier).toBe('lookup')
     })
 
@@ -1070,7 +1348,7 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
       })
       expired = true
 
-      expect(epoch.decideLoopTop()).toEqual({ kind: 'finalize', cause: 'deadline_reached' })
+      expect(epoch.decideLoopTop()).toEqual({ kind: 'finalize', cause: 'deadline_reached', detail: declined('deadline_reached', 'no_rail') })
       expect(escalations).toEqual([])
     })
 
@@ -1122,7 +1400,7 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
 
       // The deadline is still the cause it stops for — it simply buys
       // nothing, because there is no round left to spend at a larger tier.
-      expect(epoch.decideLoopTop()).toEqual({ kind: 'finalize', cause: 'deadline_reached' })
+      expect(epoch.decideLoopTop()).toEqual({ kind: 'finalize', cause: 'deadline_reached', detail: declined('deadline_reached', 'hard_ceiling') })
       expect(epoch.tier).toBe(tierAtTheCeiling)
     })
 
@@ -1209,8 +1487,8 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
       }
 
       expect(epoch.tierRounds).toBe(12)
-      expect(epoch.decideLoopTop()).toEqual({ kind: 'finalize', cause: 'budget_exhausted' })
-      expect(epoch.phase).toEqual({ kind: 'finalizing', cause: 'budget_exhausted' })
+      expect(epoch.decideLoopTop()).toEqual({ kind: 'finalize', cause: 'budget_exhausted', detail: declined('budget_exhausted', 'no_rail') })
+      expect(epoch.phase).toEqual({ kind: 'finalizing', cause: 'budget_exhausted', detail: declined('budget_exhausted', 'no_rail') })
     })
 
     it('takes the parent Run’s shared deadline ahead of its own remaining rounds', () => {
@@ -1222,7 +1500,7 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
       expired = true
 
       expect(epoch.deadlineExpired()).toBe(true)
-      expect(epoch.decideLoopTop()).toEqual({ kind: 'finalize', cause: 'deadline_reached' })
+      expect(epoch.decideLoopTop()).toEqual({ kind: 'finalize', cause: 'deadline_reached', detail: declined('deadline_reached', 'no_rail') })
       // Eleven of its twelve rounds were still unspent.
       expect(epoch.tierRounds).toBe(1)
     })
@@ -1235,7 +1513,7 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
       epoch.beginToolRound()
       epoch.beginToolRound()
 
-      expect(epoch.decideLoopTop()).toEqual({ kind: 'finalize', cause: 'deadline_reached' })
+      expect(epoch.decideLoopTop()).toEqual({ kind: 'finalize', cause: 'deadline_reached', detail: declined('deadline_reached', 'no_rail') })
     })
 
     it('never lets its own clock decide the deadline — only the shared predicate does', () => {
@@ -1259,11 +1537,11 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
 
     it('reserves exactly one Answer round after Finalization', () => {
       const epoch = workerEpoch({ expired: () => true })
-      expect(epoch.decideLoopTop()).toEqual({ kind: 'finalize', cause: 'deadline_reached' })
+      expect(epoch.decideLoopTop()).toEqual({ kind: 'finalize', cause: 'deadline_reached', detail: declined('deadline_reached', 'no_rail') })
 
       // The reserved round is spendable once and latches Answer-only.
       expect(epoch.beginToolRound()).toBe(true)
-      expect(epoch.phase).toEqual({ kind: 'answer_only', cause: 'deadline_reached' })
+      expect(epoch.phase).toEqual({ kind: 'answer_only', cause: 'deadline_reached', detail: declined('deadline_reached', 'no_rail') })
       expect(epoch.beginToolRound()).toBe(false)
     })
 
@@ -1292,7 +1570,7 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
         epoch.beginToolRound()
       }
 
-      expect(epoch.decideLoopTop()).toEqual({ kind: 'finalize', cause: 'budget_exhausted' })
+      expect(epoch.decideLoopTop()).toEqual({ kind: 'finalize', cause: 'budget_exhausted', detail: declined('budget_exhausted', 'no_rail') })
       // A Subagent has no tier to declare and no Steering replan to make.
       expect(epoch.declareTier('investigation')).toBe(false)
       expect(epoch.replan()).toBe(false)
@@ -1368,7 +1646,7 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
 
       // ADR 0027's rule stands: the deadline is the harder boundary, and a
       // worker that outlived it says so rather than blaming the parent.
-      expect(epoch.decideLoopTop()).toEqual({ kind: 'finalize', cause: 'deadline_reached' })
+      expect(epoch.decideLoopTop()).toEqual({ kind: 'finalize', cause: 'deadline_reached', detail: declined('deadline_reached', 'no_rail') })
     })
 
     it('reports its own spent budget, not the parent, when both hold (#199)', () => {
@@ -1390,7 +1668,7 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
       // `parent_finalized` belongs to the case the Report Grace exists to
       // rescue — one cut short with capacity still on the clock — so
       // letting it win here would inflate that column in the eval.
-      expect(epoch.decideLoopTop()).toEqual({ kind: 'finalize', cause: 'budget_exhausted' })
+      expect(epoch.decideLoopTop()).toEqual({ kind: 'finalize', cause: 'budget_exhausted', detail: declined('budget_exhausted', 'no_rail') })
     })
 
     it('carries no parent Finalization when the spawn wired none', () => {
@@ -1552,12 +1830,12 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
       epoch.beginToolRound()
       epoch.enterFinalization('deadline_reached')
       expect(epoch.skipBookkeepingRound()).toBe(false)
-      expect(epoch.phase).toEqual({ kind: 'finalizing', cause: 'deadline_reached' })
+      expect(epoch.phase).toEqual({ kind: 'finalizing', cause: 'deadline_reached', detail: declined('deadline_reached', 'no_rail') })
 
       something = false
       const rounds = epoch.cumulativeRounds
       expect(epoch.skipBookkeepingRound()).toBe(true)
-      expect(epoch.phase).toEqual({ kind: 'answer_only', cause: 'deadline_reached' })
+      expect(epoch.phase).toEqual({ kind: 'answer_only', cause: 'deadline_reached', detail: declined('deadline_reached', 'no_rail') })
       expect(epoch.cumulativeRounds).toBe(rounds)
       expect(epoch.beginToolRound()).toBe(false)
       expect(epoch.skipBookkeepingRound()).toBe(false)

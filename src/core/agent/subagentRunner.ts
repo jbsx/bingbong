@@ -19,11 +19,12 @@ import type { ObservationRecord } from '../session/observationLedger'
 import { createObservationLedger } from '../session/observationLedger'
 import { ASK_ESCALATION_PREFIX } from '../pipeline/askUserTools'
 import { subagentBlockerEscalation } from '../pipeline/blockerGate'
-import { BLOCKER_HELP_BY_SIGNAL } from '../browser/blockerNudge'
+import { BLOCKER_HELP_BY_SIGNAL, type BlockerWall } from '../browser/blockerNudge'
 import {
   blockerFinalizationReason,
   createEffortEpoch,
   NO_PROGRESS_FINALIZATION_REASON,
+  blockerWallOf,
   type FinalizationDetail,
 } from '../pipeline/effortEpoch'
 import { createNotices } from '../pipeline/notices'
@@ -330,14 +331,15 @@ const WORKER_PARENT_FINALIZING_INSTRUCTION =
  * the Run's model reads opens the worker's instruction — the wall is the
  * wall whoever is looking at it — and the demand stays the worker's.
  */
-function workerBlockerInstruction(wall: FinalizationDetail): string {
+function workerBlockerInstruction(wall: BlockerWall): string {
   return `${blockerFinalizationReason(wall)}. ${WORKER_FINALIZE_INSTRUCTION}`
 }
 
 /** The instruction this Finalization's refusals and its Notice share. */
 function workerFinalizeInstruction(cause: FinalizationCause | null, detail?: FinalizationDetail): string {
   if (cause === 'parent_finalized') return WORKER_PARENT_FINALIZING_INSTRUCTION
-  if (cause === 'blocker' && detail !== undefined) return workerBlockerInstruction(detail)
+  const wall = blockerWallOf(cause, detail)
+  if (wall !== undefined) return workerBlockerInstruction(wall)
   return WORKER_FINALIZE_INSTRUCTION
 }
 
@@ -372,13 +374,14 @@ function askEscalation(outcome: ToolResultOutcome): string | null {
 // them when keeping at a wall became a stop).
 function workerFinalizationNotice(cause: FinalizationCause, maxToolRounds: number, detail?: FinalizationDetail): string {
   if (cause === 'parent_finalized') return WORKER_PARENT_FINALIZING_INSTRUCTION
+  const wall = blockerWallOf(cause, detail)
   const reason =
     cause === 'deadline_reached'
       ? 'The parent run\u2019s active-work deadline has passed'
       : cause === 'no_progress'
         ? NO_PROGRESS_FINALIZATION_REASON
-        : cause === 'blocker' && detail !== undefined
-          ? blockerFinalizationReason(detail)
+        : wall !== undefined
+          ? blockerFinalizationReason(wall)
           : `Your delegated work budget (${maxToolRounds} tool rounds) is spent`
   return `${reason}. Tool calls are closed. Reply now with ONLY your final report JSON — state honestly what you found and what remains open.`
 }
@@ -406,7 +409,7 @@ function boundedStopWording(input: {
   detail?: FinalizationDetail
   maxToolRounds: number
 }): BoundedStopWording {
-  const wall = input.cause === 'blocker' ? input.detail : undefined
+  const wall = blockerWallOf(input.cause, input.detail)
   if (wall !== undefined) {
     return {
       leadIn: `Stopped at a wall on ${wall.host}`,

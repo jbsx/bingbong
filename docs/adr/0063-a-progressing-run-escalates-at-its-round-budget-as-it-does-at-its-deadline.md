@@ -16,6 +16,19 @@ placement of the warning sentence; the Consequences restate the capture
 gate. The re-armed budget's clamp against the hard ceiling is ADR 0042's
 note, since it corrects both arms.
 
+Implemented on 2026-09-22 in #266. Two things the implementation settled
+that the Decision leaves open. The decline names the *first* guard that
+refuses, in the order the Decision lists them, so a Run that already rose
+to Investigation is declined "no tier above" at its next boundary, never
+"once spent" — the once is only ever the recorded reason for a Direct
+Action that rose to Lookup. And a `budget_exhausted` or `deadline_reached`
+entry made through any door — the loop top, the per-call gate, the round
+timer, the transport's own timeout — carries the decline, because the
+epoch attaches it at entry rather than at the one call site that asked
+the arm; an epoch nobody vouches for (a lean pipeline, a Browse Subagent)
+records "no rail" on every such stop, so a stop with no decline on a
+version-5 trace is one the arm would have taken.
+
 ## Context
 
 ADR 0042 made the active-work deadline a decision point instead of a wall:
