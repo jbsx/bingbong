@@ -154,7 +154,7 @@ describe('the heads the port produces (#261, #264)', () => {
     expect(blockedOrInertAction(`${clickFlagsHead(1, false, false)}${NO_OBSERVABLE_CHANGE}`)).toBe('inert')
   })
 
-  it('the test double speaks them too: its click is inert, a covered ref is Covered and a hidden ref Not Shown for a click and a type', async () => {
+  it('the test double speaks them too: its click is inert, a covered ref is Covered and one inside an inert container Not Shown, for a click and a type', async () => {
     const browser = new FakeBrowser()
     expect(blockedOrInertAction(await browser.click(4))).toBe('inert')
     browser.coveredRefs.add(26)

@@ -435,7 +435,7 @@ export function formatRefLine(ref: SnapshotRef): string {
 }
 
 /** How many contained refs a labelled or unlabelled Cover names (ADR 0062). */
-const MAX_COVER_REFS = 3
+export const MAX_COVER_REFS = 3
 
 /**
  * A Cover probe named as a page read names refs (ADR 0062), against the refs

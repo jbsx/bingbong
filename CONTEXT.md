@@ -1078,11 +1078,12 @@ because it is not evidence the address was wrong.
 _Avoid_: outage hit, failed navigate, timeout, wall
 
 **Blocked Action**:
-A click or type the browser did not perform because another element sat over
-the target's point — a consent banner's underlay, a closed panel's cover. The
+A click or type the browser did not perform because the page's hit test at
+the target's point did not reach the target: the target was Covered — a
+consent banner's underlay sat over it, and the outcome names that Cover — or
+Not Shown, inside a hidden or inert container such as a closed drawer. The
 call succeeded in the sense that it ran and reported; it reached nothing, so
-its Action Outcome says so, it is not escape from a Search Loop, and what
-covered the point is a fact about the page the outcome may name. It is
+its Action Outcome says so and it is not escape from a Search Loop. It is
 distinct from a refused call, which a gate stopped before it ran, and from a
 failed call, which ran and errored.
 _Avoid_: overlay error, intercepted click, blocked by overlay (as a category)

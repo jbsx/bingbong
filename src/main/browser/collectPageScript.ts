@@ -1,6 +1,7 @@
 import { MAX_COLLECTED_PAGE_TEXT } from '../../core/browser/pageText'
 import { CONSENT_LABEL_RE } from '../../core/browser/dialogPolicy'
 import type { CoverProbe } from '../../core/browser/actionOutcome'
+import { MAX_COVER_REFS } from '../../core/browser/snapshot'
 
 // Runs inside the pane's page via Runtime.evaluate. Returns the CollectedPage
 // shape consumed by core/browser/snapshot.ts — DOM-specific work (labeling,
@@ -513,9 +514,14 @@ export function clickPrepScript(index: number, naming: CoverNaming): string {
     const top = stack.length > 0 ? stack[0] : null
     if (top === el || (top !== null && el.contains(top))) return { ok: true, x, y, clickable: true }
     const at = stack.indexOf(el)
-    if (at < 0) return { ok: true, x, y, clickable: false, blocked: { fact: 'notShown' } }
+    // A modal <dialog> makes everything outside it inert without an inert
+    // attribute, so the hit test skips a target it merely covers: that
+    // target is Covered by the modal, and keeps ADR 0061's consent retry.
+    const modal = document.querySelector('dialog:modal')
+    const underModal = at < 0 && modal !== null && !modal.contains(el)
+    if (at < 0 && !underModal) return { ok: true, x, y, clickable: false, blocked: { fact: 'notShown' } }
     const covered = (cover) => ({ ok: true, x, y, clickable: false, blocked: { fact: 'covered', cover } })
-    const above = stack.slice(0, at).filter((entry) => !el.contains(entry) && !entry.contains(el))
+    const above = underModal ? [modal] : stack.slice(0, at).filter((entry) => !el.contains(entry) && !entry.contains(el))
     const refs = window.__bingbongRefs || []
     const shown = window.__bingbongShownRefs || []
     const nameable = (i) => i >= 0 && i < ${naming.listed} && (${!naming.shownOnly} || shown[i] === refs[i]) && !refs[i].contains(el)
@@ -532,7 +538,7 @@ export function clickPrepScript(index: number, naming: CoverNaming): string {
     }
     const contained = (cover) => {
       const found = []
-      for (let i = 0; i < refs.length && found.length < 3; i++) {
+      for (let i = 0; i < refs.length && found.length < ${MAX_COVER_REFS}; i++) {
         if (nameable(i) && cover.contains(refs[i])) found.push(i + 1)
       }
       return found

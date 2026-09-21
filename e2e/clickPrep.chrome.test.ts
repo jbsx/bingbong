@@ -43,6 +43,9 @@ const PAGES: Record<string, string> = {
   '/no-pointer': `<body><input aria-label="Pointerless field" style="pointer-events:none">${COLLECTION_SEARCH}</body>`,
   // The custom-checkbox pattern: the real input at opacity 0 with nothing over it.
   '/transparent': `<body><input type="checkbox" aria-label="Transparent box" style="opacity:0;width:40px;height:40px"></body>`,
+  // A native modal consent wall: showModal() makes the page behind it inert with no attribute.
+  '/modal-wall': `<body>${COLLECTION_SEARCH}<dialog id="wall"><p>We use cookies.</p><button>Reject all cookies</button></dialog>
+    <script>document.getElementById('wall').showModal()</script></body>`,
 }
 
 interface Collected {
@@ -148,6 +151,14 @@ describe.skipIf(!canDriveChrome)('the Cover and Not Shown rule in a real Chrome 
       const prepared = await prep(page, 'Transparent box')
       expect(prepared).toMatchObject({ ok: true, clickable: true })
       expect(prepared.blocked).toBeUndefined()
+    })
+
+    it('reads a target behind a native modal dialog as Covered by it, so the consent retry still runs', async () => {
+      const page = await collect('/modal-wall')
+      expect(await prep(page, 'Search the collection')).toMatchObject({
+        clickable: false,
+        blocked: { fact: 'covered', cover: { tag: 'dialog', contains: [refOf(page, 'Reject all cookies')] } },
+      })
     })
 
     it('reads the live drawer\'s input as Not Shown: clipped to nothing, nothing covers it', async () => {

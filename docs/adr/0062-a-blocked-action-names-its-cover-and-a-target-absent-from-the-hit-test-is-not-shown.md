@@ -157,6 +157,12 @@ the two heads are fixture-tested in core.
     Cover is its `role`, else a short implicit-role table (`section` is
     `region`, `nav` is `navigation`, …), else its tag; the tag is printed in
     angle brackets, `an unlabelled <div>`.
+  - **A native modal dialog covers what it makes inert.** `showModal()`
+    makes everything outside the dialog inert with no attribute, so the hit
+    test skips a target the modal merely covers. A target absent from the
+    stack while a modal `<dialog>` that does not contain it is open is
+    Covered by that dialog, not Not Shown, so a modal consent wall keeps
+    ADR 0061's retry.
   - **Inert reaches the dialog root too.** A role-bearing dialog inside an
     inert subtree is never the snapshot's dialog root, and a consent
     control inside one never makes a Consent Dialog: a closed drawer would

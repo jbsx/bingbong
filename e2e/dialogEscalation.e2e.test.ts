@@ -44,12 +44,12 @@ function dialogScript(fixture: FixtureServer): AssistantTurn[] {
     {
       kind: 'tool_calls',
       calls: [
-        { id: 'overlay-nav', name: 'navigate', args: { url: fixture.url('/overlay') } },
+        { id: 'covered-nav', name: 'navigate', args: { url: fixture.url('/overlay') } },
         // No filler read between: the navigation outcome already returned
         // the settled state (#113), and a no-progress read + the blocked
         // click would be two consecutive no-progress actions — #126's
         // rails instruct an Approach change on the click's result.
-        { id: 'overlay-click', name: 'click', args: { ref: 1 } },
+        { id: 'covered-click', name: 'click', args: { ref: 1 } },
       ],
     },
     {
@@ -122,7 +122,7 @@ describe('popup and dialog escalation tiers e2e', () => {
     const targets = await harness.cdp.send<{ targetInfos: { type: string; url: string }[] }>('Target.getTargets')
     expect(targets.targetInfos.some((target) => target.type === 'page' && target.url === fixture.url('/second'))).toBe(false)
 
-    expect(byId['overlay-click']).toBe('clicked [1]: not clicked — covered by an unlabelled <div>')
+    expect(byId['covered-click']).toBe('clicked [1]: not clicked — covered by an unlabelled <div>')
 
     expect(byId['before-leave']).toContain('native beforeunload dialog auto-dismissed:')
     expect(await harness.paneUrl()).toBe(fixture.url('/beforeunload'))

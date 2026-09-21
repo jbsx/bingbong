@@ -827,7 +827,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     const aim: ClickTarget = { ref, index: target.ref - 1, label: target.label, before: elementState(target) }
     const attempt = await clickAtIndex(aim, snapshot, null)
     if (attempt.kind === 'acted') return attempt
-    return (await clearConsentAndRetry(aim, attempt.blocked.fact === 'covered')) ?? attempt
+    return (await clearConsentWall(aim, attempt.blocked)) ?? attempt
   }
 
   /**
@@ -889,18 +889,18 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
    * still dismissed for — the wall is met where it stands — but its retry's
    * result is known, so the attempt stays Not Shown behind the cleared page.
    */
-  async function clearConsentAndRetry(aim: ClickTarget, retry: boolean): Promise<ClickAttempt | null> {
+  async function clearConsentWall(aim: ClickTarget, blocked: BlockedAction): Promise<ClickAttempt | null> {
     try {
       const labels = await evaluateInPage<string[] | null>(`(() => {
         /* DIALOG_LABELS */
         return typeof window.__bingbongDialogLabels === 'function' ? window.__bingbongDialogLabels() : null
       })()`)
       if (!Array.isArray(labels) || !isConsentDialog('', labels) || chooseConsentDismissal(labels) === null) return null
-      if (!retry) return await dismissWithoutRetry()
+      if (blocked.fact === 'notShown') return await dismissWithoutRetry()
       return await retryPastConsent(aim)
     } catch (error) {
       if (error instanceof StaleRefError) throw error
-      reportFault('browser.createCdpBrowserController.clearConsentAndRetry', error)
+      reportFault('browser.createCdpBrowserController.clearConsentWall', error)
       return null
     }
   }
@@ -959,7 +959,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     return note === null ? '' : `; ${note}`
   }
 
-  /** A blocked click or type: the cover and any dialog, the dismissal a retry spent, and — when the wall was cleared — the page behind it. */
+  /** A blocked click or type: its Cover or that it is Not Shown, any dialog, the dismissal the wall cost, and — when the wall was cleared — the page behind it. */
   async function blockedOutcome(action: 'click' | 'type', ref: number, attempt: Extract<ClickAttempt, { kind: 'blocked' }>): Promise<string> {
     const line = `${blockedActionHead(action, ref, attempt.blocked)}${dialogSuffix(attempt.snapshot)}${consentClause(attempt, ref)}${reportsSuffix(drainedReports())}`
     return attempt.dismissal === null ? line : withSettledState(line, attempt.snapshot)

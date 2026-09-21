@@ -3,9 +3,9 @@ import type { ToolResultOutcome } from '../ports/llm'
 // #261 (note on ADR 0058): the browser port's click and type outcomes open
 // with fixed heads, and some say the call consumed nothing — a Blocked
 // Action (ADR 0062: the target was Covered, or Not Shown, so the click or the
-// typing reached nothing) and an inert click (the controller's own "not meaningful" verdict, ADR 0027: no
-// URL, dialog, element state or page signature moved, so no settled state
-// follows the line). The controller and its test double build the heads from
+// typing reached nothing) and an inert click (the controller's own "not
+// meaningful" verdict, ADR 0027: no URL, dialog, element state or page
+// signature moved, so no settled state follows the line). The controller and its test double build the heads from
 // here, and the Search Loop rail and the Round Audit read them back with
 // `blockedOrInertAction`, whose patterns are made from the same builders, so
 // the three cannot drift.
