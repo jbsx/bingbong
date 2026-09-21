@@ -9,6 +9,10 @@ rewritten into a search of the site instead of refused. The recognition of a
 Not-found Page, its neutrality to Progress, the one-landing allowance and
 the site as a registrable domain all stand.
 
+Note (2026-09-21, #267): ADR 0064 is this rewrite's sibling for a search's
+terms — a quoted phrase the Run was never shown is unquoted before the
+search runs, and the outcome's first line says so in the same form.
+
 ## Context
 
 ADR 0050 refused the second and later Composed Addresses to a site on the

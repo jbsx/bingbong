@@ -206,8 +206,9 @@ _Avoid_: tier window, budget window
 A Run's Effort Tier rising exactly one level, re-arming the Effort Epoch with
 the new tier's full budget, warnings, and deadline. The model declares one with
 the evidence that makes more effort necessary; the application performs one
-when the active-work deadline crosses while the Run's current Approach is still
-making Progress (#216, ADR 0042) — once per Run, reset by a Steering replan,
+when the active-work deadline crosses (#216, ADR 0042) or the tier's Tool Round
+budget is reached (#266, ADR 0063) while the Run's current Approach is still
+making Progress — once per Run by either arm, reset by a Steering replan,
 never into anything above Investigation, and reopening nothing else. Distinct
 from Escalation, which hands a Blocker to the user.
 _Avoid_: escalation, upgrade, promotion
@@ -1000,8 +1001,9 @@ _Avoid_: digest, page text, snippet
 
 **Page Read**:
 The whole text of a page as `read_page` returns it — headings, paragraphs,
-list items, table rows, pre blocks — from the top, in numbered parts when it
-exceeds one result. Reading a page is one Page Read, or one per part, never a
+list items, table rows, pre blocks, and a container's own prose where a page
+wraps a paragraph in no element (#265) — from the top, in numbered parts when
+it exceeds one result. Reading a page is one Page Read, or one per part, never a
 sequence of scrolls; each part of an unchanged page is its own first
 observation.
 _Avoid_: full read, page dump, read the whole page by scrolling
@@ -1099,6 +1101,13 @@ to that site is rewritten into a search of that site, and searches and
 Offered Addresses stay open. An Unavailable Landing spends nothing. A site
 is a registrable domain, so jpl.nasa.gov and science.nasa.gov are one site.
 _Avoid_: guessed URL, made-up URL, typed URL, direct URL
+
+**Unseen Phrase**:
+A quoted span in a search's terms that appears in nothing the Run was shown —
+no observation, not the user's command, no Steering directive, no Subagent
+Report. It is searched unquoted, its words kept, and the outcome says so
+(#267, ADR 0064). A phrase quoted from the user's own words is never unseen.
+_Avoid_: hallucinated title, invented quote, fabricated phrase
 
 **Blocker**:
 Anything between the agent and page content: Consent Dialogs, CAPTCHAs,

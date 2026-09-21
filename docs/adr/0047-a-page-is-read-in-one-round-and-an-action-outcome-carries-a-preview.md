@@ -9,6 +9,15 @@ View, End of Page, the repeat rule the note feeds) is unchanged; the stale-ref
 rule (ADR 0033) is unchanged; the Blocker gate's read of the digest (ADR 0010)
 reads the same first stretch it always did.
 
+Note (2026-09-21, #265): the collector's block sources gain one. A
+container's own direct text nodes, joined and trimmed, are a text block when
+they total at least 40 characters and the element is not inside a taken
+block. The longitude case record on rmg.co.uk keeps its description as a
+bare text node inside a `div`, so no Page Read in `fix-263-264` carried it
+and the Run fell back to region Looks that transcribed it differently in
+each pass. The tag list, the part cut, the viewport bound and the repeat rule
+are unchanged; this is a note, not an amendment.
+
 ## Context
 
 The Round Audit of the Baseline counted 105 scroll rounds against 19

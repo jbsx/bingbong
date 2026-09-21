@@ -7,6 +7,10 @@ Accepted on 2026-09-07, implemented in #216. Supersedes the part of ADR
 definition of Progress, and its Finalization Causes are unchanged. ADR 0038's
 Finalization Allowance and ADR 0041's verification routes are untouched.
 
+Note (2026-09-21, #266): ADR 0063 extends this decision to the second
+boundary — the tier's Tool Round budget arms the same escalation, under the
+same Progress test, sharing the once-per-Run bound. Nothing below changes.
+
 One thing the implementation settled that the decision below leaves open: the
 escalation needs someone to vouch for Progress, and the no-progress rail can
 only do that where it observes the page. A rail with no settled state to read
