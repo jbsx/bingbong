@@ -18,7 +18,7 @@ import type { SearchSignature } from '../pipeline/searchLoopRail'
 import type { NotFoundLanding } from '../browser/notFoundPage'
 import type { UnavailableLanding } from '../browser/unavailablePage'
 import type { ComposedAddressRewriteStamp } from '../pipeline/composedAddressRail'
-import type { EscalationDecline } from '../pipeline/effortEpoch'
+import type { TierEscalationDecline } from '../pipeline/effortEpoch'
 import type { AnswerShape } from '../agent/answerContract'
 import type { AgentRole } from '../agent/modelRouting'
 import type { ReasoningEffort, TokenUsage } from '../ports/llm'
@@ -483,7 +483,7 @@ export interface FinalizationEntryEvent {
    * and the first guard that refused it. Absent on every other cause, and
    * on a trace written before version 5, which could not say.
    */
-  readonly declined?: EscalationDecline
+  readonly declined?: TierEscalationDecline
 }
 
 /** One decision a Run traces, whatever kind it is. */

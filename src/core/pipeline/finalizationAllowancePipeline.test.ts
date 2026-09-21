@@ -838,7 +838,7 @@ describe('the bookkeeping round, skipped when there is nothing new to record (#2
     expect(h.requests).toHaveLength(3)
     expect(events.at(-1)).toMatchObject({ type: 'done', finalizationCause: 'deadline_reached' })
     expect(h.entries()).toEqual([
-      { turnId: 'turn-256', kind: 'finalization_entry', cause: 'deadline_reached', bookkeeping: 'skipped', reason: BOOKKEEPING_SKIPPED_REASON, declined: { arm: 'deadline', declined: 'no_tier_above' } },
+      { turnId: 'turn-256', kind: 'finalization_entry', cause: 'deadline_reached', bookkeeping: 'skipped', reason: BOOKKEEPING_SKIPPED_REASON, declined: { arm: 'deadline', reason: 'no_tier_above' } },
     ])
   })
 
@@ -861,7 +861,7 @@ describe('the bookkeeping round, skipped when there is nothing new to record (#2
     })
     expect(displayText(events)).toBe('Vendor A wins.')
     expect(h.entries()).toEqual([
-      { turnId: 'turn-256', kind: 'finalization_entry', cause: 'deadline_reached', bookkeeping: 'kept', reason: BOOKKEEPING_KEPT_REASON, declined: { arm: 'deadline', declined: 'no_tier_above' } },
+      { turnId: 'turn-256', kind: 'finalization_entry', cause: 'deadline_reached', bookkeeping: 'kept', reason: BOOKKEEPING_KEPT_REASON, declined: { arm: 'deadline', reason: 'no_tier_above' } },
     ])
   })
 
