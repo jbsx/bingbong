@@ -1893,8 +1893,9 @@ function classifyCall(
     const record = railObservations.get(call.callId)
     if (record !== undefined) observed = { query: record.query, signature: record.signature }
   } else if (call.name === 'navigate' && !refused) {
-    // A rewritten call replays as the search that ran, not the address it replaced.
-    const query = entry.rewritten?.query ?? searchQueryOf(isString(call.args.url) ? call.args.url : '')
+    // A rewritten call replays as the search that ran, not the address it
+    // replaced; an unquoted one as the terms that ran, not the ones written (#267).
+    const query = entry.rewritten?.query ?? entry.unquoted?.query ?? searchQueryOf(isString(call.args.url) ? call.args.url : '')
     if (query !== null) observed = { query }
   }
   // A navigate that landed on a Not-found Page is inspection to the rail

@@ -75,20 +75,31 @@ export function parseSearchUrl(raw: string): SearchUrl | null {
     reportFault('browser.urlInput.parseSearchUrl', error)
     return null
   }
-  let param: string | null = null
-  for (const [name, value] of url.searchParams) {
-    if (value.trim() === '') continue
-    const key = name.toLowerCase()
-    if (key === 'q') return { query: value, form: 'q' }
-    if (param === null && SEARCH_TERM_PARAMS.has(key)) param = value
-  }
-  if (param !== null) return { query: param, form: 'param' }
+  const param = searchTermsParam(url)
+  if (param !== null) return { query: param.value, form: param.name.toLowerCase() === 'q' ? 'q' : 'param' }
   if (url.search !== '') return null
   const segments = url.pathname.split('/')
   const terms = segments.at(-1) ?? ''
   if (segments.length < 3 || segments.at(-2)!.toLowerCase() !== 'search') return null
   const query = lenientlyDecodedSegment(terms)
   return query.trim() === '' ? null : { query, form: 'path' }
+}
+
+/**
+ * The parameter a Search URL carries its terms in, as the parser reads it
+ * (#260, ADR 0059; #267): a non-empty `q` first, whatever its case, else the
+ * first non-empty parameter named for terms — by its name as written, so a
+ * rebuild sets the same one. Null when the URL carries its terms in neither.
+ */
+export function searchTermsParam(url: URL): { readonly name: string; readonly value: string } | null {
+  let named: { name: string; value: string } | null = null
+  for (const [name, value] of url.searchParams) {
+    if (value.trim() === '') continue
+    const key = name.toLowerCase()
+    if (key === 'q') return { name, value }
+    if (named === null && SEARCH_TERM_PARAMS.has(key)) named = { name, value }
+  }
+  return named
 }
 
 /**

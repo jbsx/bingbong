@@ -1,14 +1,14 @@
 import type { ToolCall, ToolResultOutcome } from '../ports/llm'
 import type { SnapshotRef } from '../browser/snapshot'
 import type { ObservationRecord } from '../session/observationLedger'
-import { normalizeUrlInput, parseSearchUrl, searchUrl } from '../browser/urlInput'
+import { normalizeUrlInput, parseSearchUrl, searchTermsParam, searchUrl } from '../browser/urlInput'
 import { isSearchInputRef, refNumberOf } from './progressFingerprints'
 import { reportFault } from '../trace/fault'
 
 // #267, ADR 0064: the Unseen Phrase rail. An exact-phrase search is a strong
 // tool when the phrase is real, and the Run has one way to know a phrase is
-// real: it was shown it. Voyager's searches quoted titles the model invented
-// — `"Voyager 1 Has Not Yet Left the Solar System"` — and an exact-phrase
+// real: it was shown it. Voyager's searches quoted titles the Run was never
+// shown — `"Voyager 1 Has Not Yet Left the Solar System"` — and an exact-phrase
 // search for a phrase no page carries returns noise, round after round. The
 // Search Loop rail (ADR 0058) counts those rounds; it never touches the
 // terms, and the terms are the mechanism.
@@ -23,8 +23,8 @@ import { reportFault } from '../trace/fault'
 //
 // Sight is the Run's own, read from its Observation ledger through one seam
 // per call, every record included — failed outcomes too, since the model
-// read them — plus whatever the caller puts ahead of the ledger (a worker's
-// brief). The user's command is in the ledger, so a phrase quoted from the
+// read them — plus whatever the caller puts ahead of the ledger (a
+// Subagent's brief). The user's command is in the ledger, so a phrase quoted from the
 // user's own words is never unseen.
 //
 // A Search Echo is not sight: a results page repeats the Run's own terms in
@@ -32,9 +32,9 @@ import { reportFault } from '../trace/fault'
 // heading too), so without this the phrase would count as shown the round
 // after it was first searched and the gate would refuse it exactly once. On
 // a shown text whose source is a Search URL, a line carrying the query in
-// full is an echo, and so is a title, header or `value=` line carrying any
-// quoted span of it — an engine may print the query cut or without its
-// quotes. A result's own line is never an echo unless it repeats the whole
+// full is an echo, and so is a title, header, `value=` or "results for"
+// line carrying any quoted span of it — an engine may print the query cut
+// or without its quotes. A result's own line is never an echo unless it repeats the whole
 // query, the one edge ADR 0064's note accepts: a lone quoted phrase a
 // snippet repeats is dropped with the echoes, and the way through is to
 // open the result, which the outcome asks for anyway.
@@ -98,7 +98,7 @@ export interface UnseenPhraseRail {
   rewrite(call: ToolCall): Promise<UnseenPhraseRewrite | null>
 }
 
-function listed(phrases: readonly string[]): string {
+function quotedList(phrases: readonly string[]): string {
   const quoted = phrases.map((phrase) => `"${phrase}"`)
   return quoted.length === 1 ? quoted[0]! : `${quoted.slice(0, -1).join(', ')} and ${quoted.at(-1)}`
 }
@@ -110,7 +110,7 @@ function listed(phrases: readonly string[]): string {
 export function unseenPhraseRewriteLine(rewrite: UnseenPhraseRewrite): string {
   const one = rewrite.phrases.length === 1
   return (
-    `Rewritten — ${listed(rewrite.phrases)} ${one ? 'appears' : 'appear'} in nothing this run was shown, so ${one ? 'it' : 'they'} ran unquoted: ${rewrite.query}. ` +
+    `Rewritten — ${quotedList(rewrite.phrases)} ${one ? 'appears' : 'appear'} in nothing this run was shown, so ${one ? 'it' : 'they'} ran unquoted: ${rewrite.query}. ` +
     'Quote only a phrase you were shown — on a page, in the user’s words or in a report.'
   )
 }
@@ -168,17 +168,19 @@ function decodedLoosely(line: string): string {
   }
 }
 
+/** A line where the engine speaks, as snapshot.ts prints a page: the outcome's `title="…"`, the `# title — url` header, a ref line's `value="…"`, or a "results for" heading. */
+const ENGINE_LINE_RE = /( title="|^# |^\[\d+\] .* value="|^(no )?results for\b)/i
+
 /**
  * Whether a line of a results observation is a Search Echo: it carries the
- * search's whole query, or it is the page title, the header or a `value=`
- * line and carries any quoted span of it. A result's own line carries a span
- * without being one.
+ * search's whole query, or it is a line where the engine speaks and carries
+ * any quoted span of it. A result's own line carries a span without being
+ * one.
  */
 function isEcho(line: string, whole: string, spans: readonly string[]): boolean {
   const keys = [lineKey(line), lineKey(decodedLoosely(line))]
   if (keys.some((key) => key.includes(whole))) return true
-  const structural = line.includes(' title="') || line.startsWith('# ') || (line.startsWith('[') && line.includes(' value="'))
-  return structural && spans.some((span) => keys.some((key) => key.includes(span)))
+  return ENGINE_LINE_RE.test(line) && spans.some((span) => keys.some((key) => key.includes(span)))
 }
 
 /** The sight one shown text gives: its folded text, less its Search Echoes when it came from a Search URL. */
@@ -199,17 +201,6 @@ function sightOf(shown: ShownText): string {
 interface Search {
   readonly terms: string
   rebuild(terms: string): ToolCall
-}
-
-/** The parameter a Search URL carries its terms in, as parseSearchUrl reads it: a `q` first, else the first parameter named for terms. */
-function termsParamOf(url: URL): string | null {
-  let named: string | null = null
-  for (const [name, value] of url.searchParams) {
-    if (value.trim() === '') continue
-    if (name.toLowerCase() === 'q') return name
-    named ??= name
-  }
-  return named
 }
 
 function navigateSearchOf(call: ToolCall): Search | null {
@@ -238,13 +229,14 @@ function navigateSearchOf(call: ToolCall): Search | null {
       },
     }
   }
-  const param = termsParamOf(url)
+  // The parameter the parser read the terms from, set by the name it was written under.
+  const param = searchTermsParam(url)
   if (param === null) return null
   return {
     terms: parsed.query,
     rebuild: (terms) => {
       const rebuilt = new URL(url)
-      rebuilt.searchParams.set(param, terms)
+      rebuilt.searchParams.set(param.name, terms)
       return withUrl(rebuilt.toString())
     },
   }
@@ -299,8 +291,7 @@ export function createUnseenPhraseRail(deps: UnseenPhraseRailDeps): UnseenPhrase
   return {
     async rewrite(call) {
       const search = await searchOf(call)
-      if (search === null || !SPAN_RE.test(search.terms)) return null
-      SPAN_RE.lastIndex = 0
+      if (search === null || search.terms.search(SPAN_RE) === -1) return null
       const seen = sightKeys()
       const phrases: string[] = []
       const query = search.terms.replace(SPAN_RE, (quoted: string, inner: string) => {

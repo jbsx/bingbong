@@ -1565,6 +1565,8 @@ describe('Unseen Phrase rewrites (#267, ADR 0064)', () => {
     const [, unquoted, composed, headOnly, failed] = mechanical.rounds
 
     expect(unquoted!.calls[0]).toMatchObject({ args: { url: QUOTED }, refused: false, unquoted: STAMP.phrases })
+    // The streak replay on a trace without Search Observations reads the terms that ran.
+    expect(unquoted!.calls[0]!.search).toMatchObject({ query: STAMP.query })
     expect(unquoted!.calls[0]).not.toHaveProperty('rewritten')
     expect(composed!.calls[0]).toMatchObject({ rewritten: 'voyager record site:nasa.gov' })
     expect(composed!.calls[0]).not.toHaveProperty('unquoted')
@@ -1578,11 +1580,11 @@ describe('Unseen Phrase rewrites (#267, ADR 0064)', () => {
     const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, EXTRA) }))
     const judged: AuditJudgement = {
       searchLoops: [],
-      offKey: [{ round: 2, url: UNQUOTED, reason: 'the invented title, unquoted, still found the March update' }],
+      offKey: [{ round: 2, url: UNQUOTED, reason: 'the unseen title, unquoted, still found the March update' }],
       overrules: [],
       stoppedEarly: { value: false, reason: 'it answered', checks: [] },
       answerOmitted: { value: false, reason: 'fact-02 was on no page it read', checks: [] },
-      verdict: { primary: 'rounds_wasted', primaryReason: 'a guessed title', secondary: null, secondaryReason: null },
+      verdict: { primary: 'rounds_wasted', primaryReason: 'a title the Run was never shown', secondary: null, secondaryReason: null },
       flags: [],
     }
     expect(validateJudgement(judged, mechanical).ok).toBe(true)

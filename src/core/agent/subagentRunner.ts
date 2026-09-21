@@ -649,7 +649,7 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
     ...(deps.linkHrefs ? { linkHrefs: deps.linkHrefs } : {}),
     ...(deps.heldObservations ? { heldObservations: deps.heldObservations } : {}),
     evidenceSourceUrls: () => offeredByParent,
-    // The Unseen Phrase rail's sight (#267, ADR 0064): the worker's brief
+    // The Unseen Phrase rail's sight (#267, ADR 0064): the Subagent's brief
     // ahead of its own ledger — the brief plays the command's part, so a
     // phrase quoted from it is never unseen — and the Memory Entries it was
     // handed, since the orchestrator showed it those. The brief is never

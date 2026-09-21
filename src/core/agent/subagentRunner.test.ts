@@ -163,6 +163,28 @@ describe('runSubagent', () => {
     ])
   })
 
+  it('judges a quoted search phrase against its brief and its own ledger: the brief is sight, a phrase seen nowhere runs unquoted (#267, ADR 0064)', async () => {
+    const urls: string[] = []
+    const navigate: Tool = {
+      name: 'navigate',
+      async execute(call) {
+        urls.push(String(call.args.url))
+        return `navigated: url=${String(call.args.url)} title="Search"`
+      },
+    }
+    const llm = new ScriptedLlm([
+      { kind: 'tool_calls', calls: [{ id: 'n1', name: 'navigate', args: { url: 'https://duckduckgo.com/?q=%22Enters+Interstellar+Space%22+NASA' } }] },
+      { kind: 'tool_calls', calls: [{ id: 'n2', name: 'navigate', args: { url: 'https://duckduckgo.com/?q=%22Has+Not+Yet+Left%22+NASA' } }] },
+      { kind: 'answer', speak: 's', display: 'Report.' },
+    ])
+
+    await runSubagent({ llm, tools: [navigate], clock: new FakeClock() }, { task: 'Find the NASA release titled "Enters Interstellar Space".', isCancelled: () => false })
+
+    // The phrase quoted from the brief keeps its quotes; the one seen nowhere loses them, and the model is told first.
+    expect(urls).toEqual(['https://duckduckgo.com/?q=%22Enters+Interstellar+Space%22+NASA', 'https://duckduckgo.com/?q=Has+Not+Yet+Left+NASA'])
+    expect(llm.requests[2]?.toolResults?.[1]?.outcome).toMatchObject({ ok: true, result: expect.stringMatching(/^Rewritten — "Has Not Yet Left" appears in nothing this run was shown, so it ran unquoted: Has Not Yet Left NASA\./) })
+  })
+
   it('feeds tool errors back to the model instead of failing the run', async () => {
     const boom: Tool = {
       name: 'boom',

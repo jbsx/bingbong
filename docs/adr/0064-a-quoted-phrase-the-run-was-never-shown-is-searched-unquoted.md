@@ -135,7 +135,8 @@ principle that what the Run was shown is the one ground it may act on.
     sides, since an engine may print the query unquoted — is an echo
     wherever it stands. A line carrying only a quoted span of the query is
     an echo only where the engine speaks: the page title (a `title="…"`
-    line or the `# … — url` header) and a ref line carrying `value="…"`.
+    line or the `# … — url` header), a ref line carrying `value="…"` and a
+    "results for" heading.
     A result's own line — a link ref, a snippet under `page text:` — that
     carries a span without the whole query is sight, because a result
     printing the phrase is the strongest evidence the phrase is real; the
@@ -143,7 +144,7 @@ principle that what the Run was shown is the one ground it may act on.
     lone quoted phrase carries the whole query and is dropped). A `url=`
     line is also read percent-decoded, so the query's own address never
     counts as sight for a one-word span.
-  - **A worker's sight ahead of its ledger** is its brief and the Memory
+  - **A Subagent's sight ahead of its ledger** is its brief and the Memory
     Entries it was handed, each as the text the request carried; the
     Composed Address rail already offers those entries' sources for the
     same reason.
@@ -152,4 +153,7 @@ principle that what the Run was shown is the one ground it may act on.
     refusal of that search is not the model's own call and the round is
     never Failed; this gate leaves a search a search, so a refusal (the
     Search Loop cap) is the model's, and the round reads as it always did,
-    with the `unquoted` marker beside it.
+    with the `unquoted` marker beside it. The audit's own streak replay, on
+    a trace with no Search Observations, reads an unquoted call's query
+    from the stamp as it reads a rewritten address's, so the two rules see
+    the terms that ran.

@@ -86,10 +86,16 @@ describe('createUnseenPhraseRail (#267, ADR 0064)', () => {
       expect(rewrite!.call.args.url).toBe('https://www.bing.com/search?q=Kurth+plasma+NASA&form=QBLH')
     })
 
-    it('rebuilds a named-parameter Search URL by setting that parameter', async () => {
+    it('rebuilds a named-parameter Search URL by setting that parameter, wherever it stands', async () => {
       const rewrite = await railOver(SHOWN).rewrite(navigate('https://collections.rmg.co.uk/objects?query=%22H4+sea+watch%22&page=2'))
       expect(rewrite!.phrases).toEqual(['H4 sea watch'])
       expect(rewrite!.call.args.url).toBe('https://collections.rmg.co.uk/objects?query=H4+sea+watch&page=2')
+      // Another parameter ahead of the terms is left as it is.
+      const behind = await railOver(SHOWN).rewrite(navigate('https://collections.rmg.co.uk/objects?page=2&Query=%22H4+sea+watch%22'))
+      expect(behind!.call.args.url).toBe('https://collections.rmg.co.uk/objects?page=2&Query=H4+sea+watch')
+      // As is a q= behind a sort key.
+      const engine = await railOver(SHOWN).rewrite(navigate('https://www.bing.com/search?form=QBLH&q=%22Kurth+plasma%22'))
+      expect(engine!.call.args.url).toBe('https://www.bing.com/search?form=QBLH&q=Kurth+plasma')
     })
 
     it('rebuilds a path-form Search URL by replacing its last segment', async () => {
@@ -154,6 +160,13 @@ describe('createUnseenPhraseRail (#267, ADR 0064)', () => {
       expect((await rail.rewrite(navigate('"Not Yet Left" "June 27"')))?.phrases).toEqual(['Not Yet Left'])
       // A phrase the results carried that was no part of the query is sight.
       expect(await rail.rewrite(navigate('"leaves the heliosphere"'))).toBeNull()
+    })
+
+    it('reads a "results for" heading carrying one span of a two-span query as an echo', async () => {
+      const url = 'http://127.0.0.1:4173/results?q=%22Kurth+plasma%22+%22Voyager+1%22'
+      const text = `navigated: url=${url} title="fixture engine results"\npage text:\nno results for "Kurth plasma"\nThe fixture web has no pages about that.`
+      const rail = railOver([{ text, sourceUrl: url }])
+      expect((await rail.rewrite(navigate('"Kurth plasma"')))?.phrases).toEqual(['Kurth plasma'])
     })
 
     it('drops a result line that repeats a lone quoted phrase, the one edge ADR 0064 accepts', async () => {

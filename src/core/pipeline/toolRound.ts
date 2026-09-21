@@ -255,7 +255,7 @@ export interface ToolRoundConfig {
   /**
    * Everything this caller's model has been shown (#267, ADR 0064): the
    * Unseen Phrase rail's sight, read per search. The Run's Observation
-   * ledger, every record; a worker's brief ahead of its own ledger. Absent
+   * ledger, every record; a Subagent's brief ahead of its own ledger. Absent
    * — a caller with no ledger — the rail sees nothing shown and unquotes
    * every span; a caller that runs the rail hands one in.
    */
