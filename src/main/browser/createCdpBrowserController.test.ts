@@ -3,6 +3,7 @@ import challengeIframe from '../../core/browser/fixtures/challenge-iframe.json'
 import youtubeHome from '../../core/browser/fixtures/youtube-home.json'
 import type { CollectedElement, CollectedPage } from '../../core/browser/snapshot'
 import { buildPageSnapshot, clickPoint, formatPageSnapshot } from '../../core/browser/snapshot'
+import { blockedOrInertAction } from '../../core/browser/actionOutcome'
 import type { BrowserSubspans } from '../../core/perf/browserSubspans'
 import { createBrowserSubspans } from '../../core/perf/browserSubspans'
 import type { PerfSpanRecord } from '../../core/perf/perfTracer'
@@ -1844,5 +1845,41 @@ describe('createCdpBrowserController control-state honesty (#133)', () => {
     const outcome = await controller.click(2)
 
     expect(outcome.split('\n')[0]).toBe('clicked [2]: urlChanged=false dialogOpen=false; checked=false -> true')
+    expect(blockedOrInertAction(outcome)).toBeNull()
+  })
+})
+
+describe('createCdpBrowserController outcome heads the Search Loop rail reads (#261)', () => {
+  it('an inert click, a blocked click and a blocked type read as consuming nothing', async () => {
+    const inert = makeController()
+    await showRefs(inert.controller)
+    expect(blockedOrInertAction(await inert.controller.click(3))).toBe('inert')
+
+    const cdp = new FakeCdp()
+    cdp.prepCovered = true
+    const { controller } = makeController({ cdp })
+    await showRefs(controller)
+    expect(blockedOrInertAction(await controller.click(3))).toBe('blocked')
+    expect(blockedOrInertAction(await controller.type(3, 'Harrison longitude watch'))).toBe('blocked')
+  })
+
+  it('a click that changed only the page signature carries settled state and consumed something (fix-258-259 pass 2 round 3)', async () => {
+    const cdp = new FakeCdp()
+    const target = buildPageSnapshot(youtubeFixture).refs[2]!
+    const probe = probeFor(youtubeFixture, {
+      checked: target.checked ?? null,
+      selectedOption: target.selectedOption ?? null,
+      value: target.value ?? null,
+      ariaPressed: target.ariaPressed ?? null,
+      className: target.className ?? '',
+    }) as { target: unknown; signature: { refCount: number } }
+    cdp.actionProbe = { ...probe, signature: { ...probe.signature, refCount: probe.signature.refCount - 1 } }
+    const { controller } = makeController({ cdp })
+    await showRefs(controller)
+
+    const outcome = await controller.click(3)
+
+    expect(outcome.split('\n')[0]).toBe('clicked [3]: urlChanged=false dialogOpen=false; page signature changed')
+    expect(blockedOrInertAction(outcome)).toBeNull()
   })
 })

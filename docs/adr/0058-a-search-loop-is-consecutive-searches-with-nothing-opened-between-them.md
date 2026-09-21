@@ -158,6 +158,13 @@ by any rail rule and is dropped. The round cost in the capture is elsewhere:
 the undetected consent banner, two rounds per longitude Run in all three
 passes (#263), and the blocked outcome that names no cover, which sent pass
 2 hunting for a dialog through rounds 6–8 (#264).
+As built, the heads and the helper (`blockedOrInertAction`) live in
+`src/core/browser/actionOutcome.ts`, beside `notFoundPage.ts`. The audit's
+`blockedOrInert` counter records every Blocked Action and inert click, and
+those met at streak 1 or beyond: under the current rule none of those
+resets the streak, so on a new capture the counter says how often the hold
+fired, not how often a reset slipped through (fix-258-259 reads 5 Blocked
+Actions, 0 inert clicks, 1 inside a streak).
 
 ## Considered options
 

@@ -556,6 +556,40 @@ describe('createSearchLoopRail — a Not-found Landing is inspection (#239, ADR 
   })
 })
 
+describe('createSearchLoopRail — a Blocked Action or an inert click holds the streak (#261, ADR 0058)', () => {
+  // fix-258-259 pass 2, the longitude watch on rmg.co.uk. Round 3's click
+  // dismissed a consent banner and changed the page signature (escape);
+  // rounds 4 and 6 met the header's closed search drawer (Blocked Actions).
+  const blockedType: ToolResultOutcome = { ok: true, result: 'typed [7]: not typed — blocked by overlay' }
+  const blockedClick: ToolResultOutcome = { ok: true, result: 'clicked [9]: not clicked — blocked by overlay' }
+  const inertClick: ToolResultOutcome = { ok: true, result: 'clicked [9]: urlChanged=false dialogOpen=false; no observable change' }
+  const changedClick: ToolResultOutcome = {
+    ok: true,
+    result: 'clicked [8]: urlChanged=false dialogOpen=false; page signature changed\n# Collections — https://www.rmg.co.uk/collections/objects\nviewport 1280x800 scroll 0/4435\nsignature 3f2a91c0',
+  }
+
+  it('a blocked type into a search input stays a search, and a blocked click between two searches holds the streak (rounds 4–6)', async () => {
+    const rail = createSearchLoopRail(searchBoxAt)
+    expect((await rail.observe(type(7, 'Harrison longitude watch'), blockedType)).observation?.streak).toBe(1)
+    expect(await rail.observe({ id: 'c', name: 'click', args: { ref: 9 } }, blockedClick)).toEqual({ notice: null, observation: null })
+    expect((await rail.observe(type(7, 'Harrison longitude watch\n'), ok)).observation?.streak).toBe(2)
+  })
+
+  it('an inert click between two searches holds the streak too', async () => {
+    const rail = createSearchLoopRail(searchBoxAt)
+    await rail.observe(type(7, 'Harrison longitude watch'), blockedType)
+    await rail.observe({ id: 'c', name: 'click', args: { ref: 9 } }, inertClick)
+    expect((await rail.observe(type(7, 'Harrison longitude watch\n'), ok)).observation?.streak).toBe(2)
+  })
+
+  it('a click that changed the page signature still resets (round 3), so pass 2 reads 1 → 0 → 1 across rounds 2–4', async () => {
+    const rail = createSearchLoopRail(searchBoxAt)
+    expect((await rail.observe(type(7, 'Harrison longitude watch'), blockedType)).observation?.streak).toBe(1)
+    await rail.observe({ id: 'c', name: 'click', args: { ref: 8 } }, changedClick)
+    expect((await rail.observe(type(7, 'Harrison longitude watch'), blockedType)).observation?.streak).toBe(1)
+  })
+})
+
 describe('createSearchLoopRail replay of failed run 47 (#82/#83)', () => {
   // The actual 80-call sequence from history.db run 47 (the run that
   // motived #74 and whose navigates-to-search-URLs defeated the old rail):

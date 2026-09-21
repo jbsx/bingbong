@@ -9,6 +9,7 @@ import { similarQueries as ruleSimilarQueries } from '../../src/core/pipeline/se
 import { createSearchLoopRail, SEARCH_LOOP_NUDGE, searchQueryFromUrl as railSearchQueryFromUrl, type SearchObservation } from '../../src/core/pipeline/searchLoopRail'
 import type { PerfSpanRecord } from '../../src/core/perf/perfTracer'
 import type { TraceRecord } from '../../src/core/trace/runTrace'
+import type { SnapshotRef } from '../../src/core/browser/snapshot'
 import {
   AUDIT_COUNTS_NOTE,
   AUDIT_VERDICTS,
@@ -36,6 +37,7 @@ import {
   sameSourceUnsupportedRoundsOf,
   searchQueryOf,
   replaySearchStreaks,
+  blockedOrInertOf,
   searchLoopCountsOf,
   similarQueries,
   validateJudgement,
@@ -1035,6 +1037,89 @@ describe('the rail’s Search Observations (#243, ADR 0049)', () => {
     const markdown = formatAuditSet(set)
     expect(markdown).toContain('- navigate searches by Search URL form: q 1, param 1, path 2')
     expect(markdown).toContain('navigate searches by Search URL form q 3, param 1, path 2')
+  })
+
+  describe('a Blocked Action or an inert click holds the streak (#261, note on ADR 0058)', () => {
+    const COLLECTIONS = 'https://www.rmg.co.uk/collections/objects'
+    // Round 3's click changed the page signature, and the page title is long
+    // enough that its settled state's `signature` line falls past the digest's
+    // result head: only the full result text says the click consumed something.
+    const LONG_TITLE = `Collections | Royal Museums Greenwich — ${'objects, '.repeat(24)}`
+    const searchBox: SnapshotRef = {
+      ref: 7, kind: 'input', label: 'Search e.g. cutty sark', inputType: 'search', rect: { x: 0, y: 0, width: 200, height: 32 }, src: null, href: null,
+      downloadsFile: false, submitsForm: false, credentialField: false, paymentField: false, inForm: false, formHasCredential: false, formHasPayment: false, searchField: true, formHasSearch: true,
+    }
+    // fix-258-259 pass 2 rounds 2–6, then an inert click and one more search.
+    const PASS_2: RoundSpec[] = [
+      { round: 1, at: 1_000, calls: [{ name: 'navigate', args: { url: COLLECTIONS }, result: PAGE('Collections', COLLECTIONS, 'aaaa1111') }] },
+      { round: 2, at: 2_000, calls: [{ name: 'type', args: { ref: 7, text: 'Harrison longitude watch' }, result: 'typed [7]: not typed — blocked by overlay' }] },
+      { round: 3, at: 3_000, calls: [{ name: 'click', args: { ref: 8 }, result: `clicked [8]: urlChanged=false dialogOpen=false; page signature changed\n${READ(LONG_TITLE, COLLECTIONS, 'bbbb2222')}` }] },
+      { round: 4, at: 4_000, calls: [{ name: 'type', args: { ref: 7, text: 'Harrison longitude watch' }, result: 'typed [7]: not typed — blocked by overlay' }] },
+      { round: 5, at: 5_000, calls: [{ name: 'click', args: { ref: 9 }, result: 'clicked [9]: not clicked — blocked by overlay' }] },
+      { round: 6, at: 6_000, calls: [{ name: 'type', args: { ref: 7, text: 'Harrison longitude watch\n' }, result: 'typed [7]: value="Harrison longitude watch"' }] },
+      { round: 7, at: 7_000, calls: [{ name: 'click', args: { ref: 10 }, result: 'clicked [10]: urlChanged=false dialogOpen=false; no observable change\nAuto-vision (no observable change): The header search drawer is closed.' }] },
+      { round: 8, at: 8_000, calls: [{ name: 'type', args: { ref: 7, text: 'Harrison H4\n' }, result: 'typed [7]: value="Harrison H4"' }] },
+    ]
+
+    async function railed(): Promise<RoundSpec[]> {
+      const rail = createSearchLoopRail({ describeRef: async (ref) => (ref === 7 ? searchBox : undefined) })
+      const observed: RoundSpec[] = []
+      for (const spec of PASS_2) {
+        const calls = []
+        for (const [index, call] of (spec.calls ?? []).entries()) {
+          const verdict = await rail.observe({ id: `${spec.round}.${index}`, name: call.name, args: call.args }, { ok: true, result: call.result })
+          calls.push(verdict.observation === null ? call : { ...call, observation: verdict.observation })
+        }
+        observed.push({ ...spec, calls })
+      }
+      return observed
+    }
+
+    it('the audit’s consumed and the rail agree, read from the full result text (AC3)', async () => {
+      const observed = await railed()
+      const railStreaks = observed.map((spec) => spec.calls?.[0]?.observation?.streak ?? null)
+      expect(railStreaks).toEqual([null, 1, null, 1, null, 2, null, 3])
+      const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(observed, EXTRA) }))
+      expect(mechanical.searchSource).toBe('rail')
+      expect(mechanical.rounds.map((round) => round.calls[0]!.search?.streak ?? null)).toEqual(railStreaks)
+      // Round 3's head cuts before its settled state; the audit read the whole text.
+      expect(mechanical.rounds[2]!.calls[0]!.resultHead).not.toContain('signature bbbb2222')
+      // A written report recounts to the same streaks.
+      expect(replaySearchStreaks(mechanical.rounds).map((round) => round.calls[0]!.search?.streak ?? null)).toEqual(railStreaks)
+    })
+
+    it('counts Blocked Actions, inert clicks and those met inside a streak, outside the digest (AC4)', async () => {
+      const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(await railed(), EXTRA) }))
+      expect(mechanical.blockedOrInert).toEqual({ blocked: [2, 4, 5], inert: [7], inStreak: [5, 7] })
+      expect(blockedOrInertOf(mechanical.rounds)).toEqual(mechanical.blockedOrInert)
+
+      const set = buildAuditSet(
+        provenanceOf(),
+        [mechanical, classifyAttempt(inputOf())].map((attempt) => ({ mechanical: attempt, review: null, countsAfterOverrules: countsAfterOverrulesOf(attempt, null) })),
+        [],
+      )
+      expect(set.populations.initial.blockedOrInert).toEqual({ blocked: 3, inert: 1, inStreak: 2 })
+      const markdown = formatAuditSet(set)
+      expect(markdown).toContain('- Blocked Actions 3 (round 2, 4, 5), inert clicks 1 (round 7); inside a Search Loop streak, holding it: 2 (round 5, 7)')
+      expect(markdown).toContain('3 Blocked Action(s) and 1 inert click(s), 2 inside a Search Loop streak')
+    })
+
+    it('reads fix-258-259 as the grill did: five Blocked Actions, no inert click, one inside a streak — pass 2 round 6 (AC4)', () => {
+      type Report = { attempts: { mechanical: { huntId: string; stepId: string; rounds: AuditRound[] } }[] }
+      const found: { pass: number; huntId: string; stepId: string; counted: ReturnType<typeof blockedOrInertOf> }[] = []
+      for (const pass of [1, 2, 3]) {
+        const report = JSON.parse(readFileSync(join(REPORTS_DIR, `audit-fix-258-259-${pass}.json`), 'utf8')) as Report
+        for (const { mechanical } of report.attempts) {
+          const counted = blockedOrInertOf(replaySearchStreaks(mechanical.rounds))
+          if (counted.blocked.length + counted.inert.length > 0) found.push({ pass, huntId: mechanical.huntId, stepId: mechanical.stepId, counted })
+        }
+      }
+      const total = (key: 'blocked' | 'inert' | 'inStreak') => found.reduce((sum, entry) => sum + entry.counted[key].length, 0)
+      expect({ blocked: total('blocked'), inert: total('inert'), inStreak: total('inStreak') }).toEqual({ blocked: 5, inert: 0, inStreak: 1 })
+      expect(found.filter((entry) => entry.counted.inStreak.length > 0).map((entry) => ({ pass: entry.pass, stepId: entry.stepId, inStreak: entry.counted.inStreak }))).toEqual([
+        { pass: 2, stepId: 'initial', inStreak: [6] },
+      ])
+    })
   })
 
   it('names the source per attempt and counts attempts by source, outside the digest', () => {

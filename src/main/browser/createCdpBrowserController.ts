@@ -11,6 +11,7 @@ import { settledStateFromSnapshot, type SettledPageState } from '../../core/pipe
 import { blockerFactsFromSnapshot } from '../../core/browser/blockerNudge'
 import type { BrowserSubspans } from '../../core/perf/browserSubspans'
 import { normalizeUrlInput } from '../../core/browser/urlInput'
+import { blockedActionHead, clickFlagsHead, NO_OBSERVABLE_CHANGE } from '../../core/browser/actionOutcome'
 import { chooseConsentDismissal, isConsentDialog } from '../../core/browser/dialogPolicy'
 import {
   buildPageSnapshot,
@@ -830,7 +831,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
   async function clickRef(ref: number): Promise<string> {
     const attempt = await performClick(ref)
     if (attempt.kind === 'blocked') {
-      return `clicked [${ref}]: not clicked — blocked by overlay${dialogSuffix(attempt.snapshot)}${reportsSuffix(drainedReports())}`
+      return `${blockedActionHead('click', ref)}${dialogSuffix(attempt.snapshot)}${reportsSuffix(drainedReports())}`
     }
     await settle('click', pacing.settleMs)
     const after = await probeAction(attempt.index, attempt.label)
@@ -844,9 +845,9 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     const pageChanged = !signaturesEqual(attempt.signature, after.signature)
     const rawChanges = deltas.length > 0 || controls.length > 0
       ? [...deltas, ...controls].join(', ')
-      : pageChanged ? 'page signature changed' : 'no observable change'
+      : pageChanged ? 'page signature changed' : NO_OBSERVABLE_CHANGE
     const location = urlChanged ? `; ${urlTitleSuffix(after.signature)}` : ''
-    const prefix = `clicked [${ref}]: urlChanged=${urlChanged} dialogOpen=${after.signature.dialogOpen}; `
+    const prefix = clickFlagsHead(ref, urlChanged, after.signature.dialogOpen)
     const changes = truncateOutcomeText(rawChanges, Math.min(240, Math.max(30, 300 - prefix.length - location.length)))
 
     // Dialog escalation: consent dialogs are dismissed deterministically
@@ -1006,7 +1007,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     }
     const clicked = await performClick(ref)
     if (clicked.kind === 'blocked') {
-      return `typed [${ref}]: not typed — blocked by overlay${dialogSuffix(clicked.snapshot)}${reportsSuffix(drainedReports())}`
+      return `${blockedActionHead('type', ref)}${dialogSuffix(clicked.snapshot)}${reportsSuffix(drainedReports())}`
     }
     await settle('type', pacing.settleMs)
     await dispatchText(text)

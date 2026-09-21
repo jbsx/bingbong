@@ -15,6 +15,7 @@ import type {
 import { settledStateFromSnapshot } from '../pipeline/progressFingerprints'
 import { blockerFactsFromSnapshot } from '../browser/blockerNudge'
 import { linkHrefsOf, type PageSnapshot, type SnapshotRef } from '../browser/snapshot'
+import { blockedActionHead, clickFlagsHead, NO_OBSERVABLE_CHANGE } from '../browser/actionOutcome'
 import type {
   VisionDescribeRequest,
   VisionLocateRequest,
@@ -312,13 +313,18 @@ export class FakeBrowser implements BrowserController, VisualGroundingController
     return this.readParts
   }
 
+  /** Refs a cover sits over: a click or a type on one is a Blocked Action (#261). */
+  readonly coveredRefs = new Set<number>()
+
   async click(ref: number): Promise<string> {
     this.clicks.push(ref)
-    return `clicked [${ref}]: urlChanged=false dialogOpen=false; no observable change`
+    if (this.coveredRefs.has(ref)) return blockedActionHead('click', ref)
+    return `${clickFlagsHead(ref, false, false)}${NO_OBSERVABLE_CHANGE}`
   }
 
   async type(ref: number, text: string): Promise<string> {
     this.typed.push({ ref, text })
+    if (this.coveredRefs.has(ref)) return blockedActionHead('type', ref)
     return `typed [${ref}]: value=${JSON.stringify(text)}`
   }
 

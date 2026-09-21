@@ -37,6 +37,7 @@
 // type-stripping pattern the scripts run under).
 
 import { createHash } from 'node:crypto'
+import { blockedOrInertAction } from '../../src/core/browser/actionOutcome.ts'
 import { parseBlockerMarker } from '../../src/core/browser/blockerNudge.ts'
 import { classifyNotFoundPage, NOT_FOUND_BASES, type NotFoundBasis, type NotFoundLanding } from '../../src/core/browser/notFoundPage.ts'
 import type { ComposedAddressRewriteStamp } from '../../src/core/pipeline/composedAddressRail.ts'
@@ -368,6 +369,15 @@ export interface AuditMechanical {
    * an audit written before the counter.
    */
   readonly searchForms?: Readonly<Record<SearchUrlForm, number>>
+  /**
+   * The calls that reported success and consumed nothing (#261, note on ADR
+   * 0058): the round of every Blocked Action and every inert click, one entry
+   * per call, and of those that were neither a search nor inspection, the ones
+   * met at streak 1 or beyond — each reset the Search Loop streak before #261
+   * and holds it now. Beside the rounds, never in them. Absent on an audit
+   * written before the counter.
+   */
+  readonly blockedOrInert?: BlockedOrInertRounds
   readonly walledRounds: number
   /**
    * The round of every navigate that landed on a Not-found Page, one entry per
@@ -555,6 +565,8 @@ export interface AuditPopulation {
   readonly searchSources: Readonly<Record<AuditSearchSource, number>>
   /** Navigate searches by Search URL form over the attempts that count them (#260); absent when none does. */
   readonly searchForms?: Readonly<Record<SearchUrlForm, number>>
+  /** Blocked Actions, inert clicks, and those met inside a Search Loop streak, over the attempts that count them (#261); absent when none does. */
+  readonly blockedOrInert?: Readonly<Record<keyof BlockedOrInertRounds, number>>
   readonly inheritedRounds: number
   /** Merged Evidence Checkpoints over the attempts (#240): a floor. */
   readonly mergedCheckpoints: number
@@ -730,6 +742,22 @@ function emptySearchForms(): Record<SearchUrlForm, number> {
 
 function searchFormsText(forms: Readonly<Record<SearchUrlForm, number>> | undefined): string {
   return forms === undefined ? 'not counted' : SEARCH_URL_FORMS.map((form) => `${form} ${forms[form]}`).join(', ')
+}
+
+function roundsText(rounds: readonly number[]): string {
+  return `${rounds.length}${rounds.length > 0 ? ` (round ${rounds.join(', ')})` : ''}`
+}
+
+function blockedOrInertText(counted: BlockedOrInertRounds | undefined): string {
+  return counted === undefined
+    ? 'Blocked Actions and inert clicks not counted'
+    : `Blocked Actions ${roundsText(counted.blocked)}, inert clicks ${roundsText(counted.inert)}; inside a Search Loop streak, holding it: ${roundsText(counted.inStreak)}`
+}
+
+function populationBlockedOrInertText(counted: AuditPopulation['blockedOrInert']): string {
+  return counted === undefined
+    ? 'Blocked Actions and inert clicks not counted'
+    : `${counted.blocked} Blocked Action(s) and ${counted.inert} inert click(s), ${counted.inStreak} inside a Search Loop streak`
 }
 
 /** The navigate searches over an attempt's rounds by Search URL form (#260, AC5). */
@@ -990,12 +1018,69 @@ export function replaySearchStreaks(rounds: readonly AuditRound[]): AuditRound[]
     calls: round.calls.map((call) => {
       const search = advanceSearchStreak(state, {
         name: call.name,
-        consumed: call.ok === true && !call.refused && call.notFound === undefined,
+        consumed: consumedOf(call),
         search: call.search === null ? null : { query: call.search.query, ...(call.search.signature === undefined ? {} : { signature: call.search.signature }) },
       })
       return search === null ? call : { ...call, search }
     }),
   }))
+}
+
+/**
+ * Whether an audited call consumed something, as the rail decides it: it
+ * succeeded, was not refused, landed on no Not-found Page, and was neither a
+ * Blocked Action nor an inert click.
+ */
+function consumedOf(call: AuditCall): boolean {
+  return call.ok === true && !call.refused && call.notFound === undefined && consumedNothingOf(call) === null
+}
+
+/**
+ * A written call's Blocked Action or inert click (#261), read by the rail's
+ * own helper. The head keeps the outcome's first line; the settled state that
+ * rules an inert click out is the `signature` the audit already read off the
+ * whole result, since the head flattens and may cut it.
+ */
+function consumedNothingOf(call: AuditCall): 'blocked' | 'inert' | null {
+  if (call.ok !== true || call.refused || call.resultHead === null) return null
+  const verdict = blockedOrInertAction(call.resultHead)
+  return verdict === 'inert' && call.signature !== null ? null : verdict
+}
+
+/** The rounds of an attempt's Blocked Actions and inert clicks, and of those met inside a streak (#261). */
+export interface BlockedOrInertRounds {
+  readonly blocked: readonly number[]
+  readonly inert: readonly number[]
+  readonly inStreak: readonly number[]
+}
+
+/**
+ * An attempt's Blocked Actions and inert clicks over its rounds as audited
+ * (#261, AC4): one entry per call, and, of the calls that were neither a
+ * search nor inspection, the ones met at streak 1 or beyond — the calls that
+ * reset a Search Loop streak before #261 and hold it now. Reads the streaks
+ * the rounds carry, as `searchLoopCountsOf` does.
+ */
+export function blockedOrInertOf(rounds: readonly AuditRound[]): BlockedOrInertRounds {
+  const blocked: number[] = []
+  const inert: number[] = []
+  const inStreak: number[] = []
+  let streak = 0
+  for (const round of rounds) {
+    for (const call of round.calls) {
+      const verdict = consumedNothingOf(call)
+      if (verdict === 'blocked') blocked.push(round.round)
+      if (verdict === 'inert') inert.push(round.round)
+      if (call.search !== null) {
+        streak = call.search.streak
+        continue
+      }
+      const inspection = isSearchInspection(call.name)
+      if (verdict !== null && !inspection && streak >= 1) inStreak.push(round.round)
+      streak = searchStreakAfter(streak, searchStreakMoveOf(inspection ? 'inspection' : 'other', consumedOf(call)))
+    }
+  }
+  return { blocked, inert, inStreak }
 }
 
 /** The Search Loop rail's streak as the audit replays it, and the streak's last query for `rewords`. */
@@ -1134,8 +1219,10 @@ function classifyCall(
   }
   // A navigate that landed on a Not-found Page is inspection to the rail
   // (#239, ADR 0050): it never resets the streak; nor does a refused or
-  // failed call, which consumed nothing.
-  const search = advanceSearchStreak(state.search, { name: call.name, consumed: result !== undefined && result.ok && !refused && landing === null, search: observed })
+  // failed call, which consumed nothing, nor a Blocked Action or an inert
+  // click (#261), read by the rail's own helper over the whole result text.
+  const consumed = result !== undefined && result.ok && !refused && landing === null && (text === null || blockedOrInertAction(text) === null)
+  const search = advanceSearchStreak(state.search, { name: call.name, consumed, search: observed })
 
   // Collection and Bookkeeping make no Progress claim; everything else is
   // Acquisition, the catalog's own tools by flag and any other tool as a
@@ -1581,6 +1668,7 @@ export function classifyAttempt(input: AuditTraceInput): AuditMechanical {
     searchRoundsAtStreak3: searchLoop.searchRoundsAtStreak3,
     searchSource: railObservations !== null ? 'rail' : rounds.some((round) => round.tags.search) ? 'replay' : 'none',
     searchForms: searchFormsOf(rounds),
+    blockedOrInert: blockedOrInertOf(rounds),
     walledRounds: rounds.filter((round) => round.tags.wall).length,
     notFoundNavigates: rounds.flatMap((round) => round.calls.filter((call) => call.name === 'navigate' && call.notFound !== undefined).map(() => round.round)),
     rewrittenComposedAddresses: rounds.flatMap((round) => round.calls.filter((call) => call.rewritten !== undefined).map(() => round.round)),
@@ -2049,6 +2137,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
   let rewrittenOffKey = 0
   let rewrittenShown = 0
   let searchForms: Record<SearchUrlForm, number> | undefined
+  let blockedOrInert: Record<keyof BlockedOrInertRounds, number> | undefined
   let slipAnswers = 0
   let slipIds = 0
   let slipsNotRecorded = 0
@@ -2102,6 +2191,12 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
     if (mechanical.searchForms !== undefined) {
       searchForms ??= emptySearchForms()
       for (const form of SEARCH_URL_FORMS) searchForms[form] += mechanical.searchForms[form]
+    }
+    if (mechanical.blockedOrInert !== undefined) {
+      blockedOrInert ??= { blocked: 0, inert: 0, inStreak: 0 }
+      blockedOrInert.blocked += mechanical.blockedOrInert.blocked.length
+      blockedOrInert.inert += mechanical.blockedOrInert.inert.length
+      blockedOrInert.inStreak += mechanical.blockedOrInert.inStreak.length
     }
     if (mechanical.identitySlips === null) slipsNotRecorded += 1
     else {
@@ -2163,6 +2258,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
     searchRoundsAtStreak3: atStreak3,
     searchSources: sources,
     ...(searchForms === undefined ? {} : { searchForms }),
+    ...(blockedOrInert === undefined ? {} : { blockedOrInert }),
     inheritedRounds: inherited,
     mergedCheckpoints: merged,
     bundledCheckpoints: bundled,
@@ -2418,7 +2514,7 @@ function populationSlipsText(population: AuditPopulation): string {
 function judgementLines(populations: readonly AuditPopulation[]): string[] {
   return populations.map(
     (population) =>
-      `- ${population.label}: ${population.offKeyRounds} Off-key round(s), ${population.searchLoopRounds} Search Loop round(s) by the reviewer (${population.mechanicalSearchRounds} by the streak rule, heads included: ${population.searchRoundsAtStreak2} at streak 2 or beyond, ${population.searchRoundsAtStreak3} at 3 or beyond; attempts by search source ${SEARCH_SOURCES.map((source) => `${source} ${population.searchSources[source]}`).join(', ')}; navigate searches by Search URL form ${searchFormsText(population.searchForms)}), ` +
+      `- ${population.label}: ${population.offKeyRounds} Off-key round(s), ${population.searchLoopRounds} Search Loop round(s) by the reviewer (${population.mechanicalSearchRounds} by the streak rule, heads included: ${population.searchRoundsAtStreak2} at streak 2 or beyond, ${population.searchRoundsAtStreak3} at 3 or beyond; attempts by search source ${SEARCH_SOURCES.map((source) => `${source} ${population.searchSources[source]}`).join(', ')}; navigate searches by Search URL form ${searchFormsText(population.searchForms)}; ${populationBlockedOrInertText(population.blockedOrInert)}), ` +
       `${population.inheritedRounds} inherited, ${population.rejectedCheckpoints} rejected Evidence Checkpoint(s), ${population.walledRounds} walled round(s), ${population.notFoundNavigates} navigate(s) landed on a Not-found Page (${population.notFoundOffKey} judged Off-key), ${population.rewrittenComposedAddresses ?? 0} Composed Address(es) rewritten into a site search (${population.rewrittenComposedAddressesOffKey ?? 0} judged Off-key, ${population.rewrittenShownAddresses ?? 'not counted'} to an address the Run was shown), ${population.subagentRounds} Subagent round(s), ` +
       `${population.mergedCheckpoints} merged Evidence Checkpoint(s) (a floor), ${population.heldPageRoundsWithoutProgress} Held Page round(s) without Progress, ${population.bundledCheckpoints} bundled checkpoint round(s), ${population.sameSourceUnsupportedRounds} same-source unsupported round(s), ${populationSlipsText(population)}, ` +
       `${population.malformedAnswers} Malformed Answer(s) (${population.answerRetries} retried), ` +
@@ -2467,6 +2563,7 @@ function attemptSection(attempt: AuditAttempt): string[] {
   lines.push(`- kinds: ${ROUND_KINDS.map((kind) => `${KIND_LABELS[kind]} ${mechanical.counts[kind]} (${pct(mechanical.shares[kind])})`).join(' · ')}`)
   lines.push(`- search source ${mechanical.searchSource}: ${SEARCH_SOURCE_NOTES[mechanical.searchSource]}`)
   lines.push(`- navigate searches by Search URL form: ${searchFormsText(mechanical.searchForms)}`)
+  lines.push(`- ${blockedOrInertText(mechanical.blockedOrInert)}`)
   if (review === null) lines.push('- reviewer: not consulted')
   else if (judgement === null) lines.push(`- reviewer: no judgement — ${review.caveats.join('; ')}`)
   else {

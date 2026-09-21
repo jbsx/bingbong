@@ -1,6 +1,7 @@
 import type { ToolCall, ToolResultOutcome } from '../ports/llm'
 import type { SnapshotRef } from '../browser/snapshot'
 import { landedOnNotFoundPage } from '../browser/notFoundPage'
+import { wasBlockedOrInert } from '../browser/actionOutcome'
 import { isSearchInputRef, refNumberOf, searchQueryFromUrl, typedQuery } from './progressFingerprints'
 import {
   isSearchInspection,
@@ -81,6 +82,16 @@ import { reportFault } from '../trace/fault'
 // hand-composed search there was an opening and the streak never left 1.
 // The one test is `parseSearchUrl` in urlInput.ts, which the Composed
 // Address rail, the Not-found detector and the Round Audit share.
+//
+// #261 (note on ADR 0058) closed the other side of escape: a Blocked Action
+// (a click or a type a cover refused) and an inert click (no URL, dialog,
+// element state or page signature moved) come back `ok`, yet consumed
+// nothing, so they hold the streak as a Not-found Landing does. A click that
+// changed the page signature — a consent banner dismissed by hand — is still
+// escape. A blocked type into a search input stays a search: the gate
+// classifies it from the ref's facts before any outcome exists. The one
+// reading of the port's heads is `blockedOrInertAction` in actionOutcome.ts,
+// which the Round Audit replays.
 
 // The tiers and the signature surface live in searchLoopRule.ts and
 // progressFingerprints.ts; re-exported here so the module's consumers (and
@@ -207,8 +218,10 @@ export function createSearchLoopRail(deps: SearchLoopRailDeps = {}): SearchLoopR
       // failed one changes nothing, so the streak survives. A call that
       // landed on a Not-found Page (#239, ADR 0050) consumed nothing either:
       // it has not left the results any more than a scroll has, so it is
-      // inspection — observed, never resetting.
-      const consumed = outcome.ok && !landedOnNotFoundPage(outcome)
+      // inspection — observed, never resetting. Nor did a Blocked Action or
+      // an inert click (#261): the port reports it as success, but nothing
+      // was clicked or typed, or nothing on the page moved.
+      const consumed = outcome.ok && !landedOnNotFoundPage(outcome) && !wasBlockedOrInert(outcome)
       streak = searchStreakAfter(streak, searchStreakMoveOf(classified.kind, consumed))
       if (classified.kind !== 'search') return NO_VERDICT
       return {
