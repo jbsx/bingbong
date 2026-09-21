@@ -1276,8 +1276,8 @@ describe('consent walls (#263, ADR 0061)', () => {
   const COLLECTIONS = 'https://www.rmg.co.uk/collections/objects'
   // The page as a navigate lists it: the search box, and the wall's own
   // controls on the page layer, as the role-less Cookiebot wall was before #263.
-  const WALLED = `navigated: url=${COLLECTIONS} title="Collections"\n# Collections — ${COLLECTIONS}\nviewport 985x575 scroll 0/5007\nsignature wall0001\n[7] input[search] "Search our collection"\n[8] button "Reject all cookies"\n[9] button "Manage settings"\n[10] button "Allow all cookies"\npage text:\nsome text`
-  const CLEARED = `# Collections — ${COLLECTIONS}\nviewport 985x575 scroll 0/4435\nsignature open0002\n[7] input[search] "Search our collection"\n[8] link "Visit"\npage text:\nsome text`
+  const WALLED = `navigated: url=${COLLECTIONS} title="Collections"\n# Collections — ${COLLECTIONS}\nviewport 985x575 scroll 0/5007\nsignature a11c0001\n[7] input[search] "Search our collection"\n[8] button "Reject all cookies"\n[9] button "Manage settings"\n[10] button "Allow all cookies"\npage text:\nsome text`
+  const CLEARED = `# Collections — ${COLLECTIONS}\nviewport 985x575 scroll 0/4435\nsignature a11c0002\n[7] input[search] "Search our collection"\n[8] link "Visit"\npage text:\nsome text`
 
   // fix-258-259 pass 2's shape: blocked, a read between, then the hand click.
   const BEFORE: RoundSpec[] = [
@@ -1307,6 +1307,13 @@ describe('consent walls (#263, ADR 0061)', () => {
     expect(mechanical.consentWalls).toEqual({ dismissals: [], handConsentClicks: [4], blockedThenHandConsent: [2] })
   })
 
+  it('reads a label from the last whole listing that numbered the ref, never from one before it', () => {
+    // Round 4's listing numbers nothing 10; the click on 10 is on no consent control it showed.
+    const relisted = [...BEFORE.slice(0, 3), { round: 4, at: 4_000, calls: [{ name: 'click', args: { ref: 10 }, result: `clicked [10]: urlChanged=false dialogOpen=false; page signature changed\n${CLEARED}` }] }]
+    const shorter = [...relisted.slice(0, 3), { round: 4, at: 4_000, calls: [{ name: 'read_page', args: {}, result: CLEARED }] }, { ...relisted[3]!, round: 5, at: 5_000 }]
+    expect(classifyAttempt(inputOf({ traceRecords: traceOf(shorter, EXTRA) })).consentWalls).toEqual({ dismissals: [], handConsentClicks: [], blockedThenHandConsent: [] })
+  })
+
   it('never pairs a block with a hand consent click three rounds on', () => {
     const late = [...BEFORE.slice(0, 3), { round: 4, at: 4_000, calls: [{ name: 'read_page', args: {}, result: WALLED.split('\n').slice(1).join('\n') }] }, { ...BEFORE[3]!, round: 5, at: 5_000 }]
     expect(classifyAttempt(inputOf({ traceRecords: traceOf(late, EXTRA) })).consentWalls).toEqual({ dismissals: [], handConsentClicks: [5], blockedThenHandConsent: [] })
@@ -1320,8 +1327,9 @@ describe('consent walls (#263, ADR 0061)', () => {
   it('reports the tags per attempt, per population and per hunt, beside the rounds (AC5)', () => {
     const before = classifyAttempt(inputOf({ traceRecords: traceOf(BEFORE, EXTRA) }))
     const after = classifyAttempt(inputOf({ traceRecords: traceOf(AFTER, EXTRA) }))
-    // Beside the rounds: the digest a cached judgement is keyed by is the one it had without them.
-    expect(before.digestHash).toBe(classifyAttempt(inputOf({ traceRecords: traceOf(BEFORE, EXTRA) })).digestHash)
+    // Beside the rounds: the payload a cached judgement is keyed by is blind to the counter.
+    expect(auditModule.digestPayloadOf({ ...before, consentWalls: undefined })).toEqual(auditModule.digestPayloadOf(before))
+    expect(auditModule.digestPayloadOf({ ...before, consentWalls: { dismissals: [9], handConsentClicks: [9], blockedThenHandConsent: [9] } })).toEqual(auditModule.digestPayloadOf(before))
     const set = buildAuditSet(
       provenanceOf(),
       [before, after].map((attempt) => ({ mechanical: attempt, review: null, countsAfterOverrules: countsAfterOverrulesOf(attempt, null) })),

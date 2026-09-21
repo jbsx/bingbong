@@ -14,20 +14,24 @@ left open: the rule tests only button- and link-like controls, by their
 aria-label, value and text content rather than the laid-out label, so it
 costs no layout on the many pages that carry no wall, and never takes the
 body or the root element as a root. "Optional" is reject-style only in a
-label with no accept verb, so "Accept optional cookies" is never chosen
-over "Reject optional cookies" by coming first. The navigate outcome keeps
-its `navigated:` head and carries the dismissal on the second line, above
-the listing. A block first asks the page whether any dialog root is open,
-cheaply, and only then collects: a block under no dialog stands exactly as
-before, with no collect. The retry is measured against the post-dismissal
-page, so its changes clause says what the retried click did rather than
-crediting it with the wall's departure, and the post-dismissal listing
-rides it whatever it did; a dismissal that took the named node with it (a
-reload) refuses the ref with the page as it stands, as any dead ref is.
-Back and forward are not call sites: the read or the blocked action after
-them still clears the wall. The audit's hand consent click reads the label
-from the last listing that numbered the ref, and pairs each Blocked Action
-with at most one such click.
+phrase that declines the optional cookies ("without optional cookies"),
+never as the bare word, which "Accept optional cookies", a "Manage
+optional cookies" control and a toggle all carry. The navigate outcome
+keeps its `navigated:` head and carries the dismissal on the second line,
+above the listing. A block first reads the open dialog root's control
+labels in place and collects only when they make it a Tier-1 consent root:
+a block under no dialog or a Tier-2 one stands exactly as before, with no
+collect to renumber the refs the model holds, and a failure while clearing
+the wall leaves the block standing rather than failing the call. The retry
+is measured against the post-dismissal page, so its changes clause says
+what the retried click did rather than crediting it with the wall's
+departure, and the post-dismissal listing rides it whatever it did; a
+dismissal that took the named node with it (a reload) refuses the ref with
+the page as it stands, as any dead ref is. Back and forward are not call
+sites: the read or the blocked action after them still clears the wall.
+The audit's hand consent click reads the label from the last whole listing
+(one with a page signature) that numbered the ref, and pairs each Blocked
+Action with at most one such click.
 
 ## Context
 

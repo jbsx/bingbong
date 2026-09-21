@@ -55,8 +55,13 @@ describe('chooseConsentDismissal', () => {
 
   it('takes an optional-cookies refusal as reject-style but never an optional-cookies acceptance', () => {
     expect(chooseConsentDismissal(['Accept optional cookies', 'Reject optional cookies'])).toBe(1)
-    expect(chooseConsentDismissal(['Accept optional cookies', 'Without optional cookies'])).toBe(1)
+    expect(chooseConsentDismissal(['Accept optional cookies', 'Continue without optional cookies'])).toBe(1)
     expect(chooseConsentDismissal(['Accept optional cookies'])).toBe(0)
+  })
+
+  it('never takes a control that merely names optional cookies — a manage link or a toggle — for a refusal', () => {
+    expect(chooseConsentDismissal(['Manage optional cookies', 'Optional cookies', 'Reject all'])).toBe(2)
+    expect(chooseConsentDismissal(['Learn about optional cookies', 'Accept all'])).toBe(1)
   })
 
   it('falls back to the accept-style control when reject is absent', () => {

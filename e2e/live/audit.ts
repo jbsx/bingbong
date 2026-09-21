@@ -604,7 +604,7 @@ export interface AuditPopulation {
   /** Unavailable Landings by basis, and those followed by a search, over the attempts that count them (#262); absent when none does. */
   readonly unavailableLandings?: Readonly<Record<keyof UnavailableLandingRounds, number>>
   /** Consent dismissals, hand consent clicks, and blocks a hand consent click followed, over the attempts that count them (#263); absent when none does. */
-  readonly consentWalls?: Readonly<Record<keyof ConsentWallRounds, number>>
+  readonly consentWalls?: Readonly<ConsentWallCounts>
   readonly inheritedRounds: number
   /** Merged Evidence Checkpoints over the attempts (#240): a floor. */
   readonly mergedCheckpoints: number
@@ -707,7 +707,7 @@ export interface AuditAggregate {
   /** Primary verdicts over every attempt of both populations, most counted first. Arithmetic, never an opinion. */
   readonly rankedCauses: readonly { readonly verdict: AuditVerdict; readonly count: number; readonly initial: number; readonly followUp: number }[]
   /** Consent dismissals, hand consent clicks and blocks they followed per hunt, over every set's attempts that count them (#263); absent when none does. */
-  readonly consentWallsByHunt?: Readonly<Record<string, Readonly<Record<keyof ConsentWallRounds, number>>>>
+  readonly consentWallsByHunt?: Readonly<Record<string, Readonly<ConsentWallCounts>>>
   readonly caveats: readonly string[]
   readonly note: string
 }
@@ -823,22 +823,19 @@ function populationConsentWallsText(counted: AuditPopulation['consentWalls']): s
  * count them, so a zero stands beside the dismissals that earned it; a hunt
  * no attempt counted is left out. Undefined when no attempt counts them.
  */
-export function consentWallsByHuntOf(attempts: readonly AuditAttempt[]): Record<string, Record<keyof ConsentWallRounds, number>> | undefined {
-  const byHunt: Record<string, Record<keyof ConsentWallRounds, number>> = {}
+export function consentWallsByHuntOf(attempts: readonly AuditAttempt[]): Record<string, ConsentWallCounts> | undefined {
+  const byHunt: Record<string, ConsentWallCounts> = {}
   let counted = false
   for (const { mechanical } of attempts) {
     if (mechanical.consentWalls === undefined) continue
     counted = true
-    const hunt = (byHunt[mechanical.huntId] ??= { dismissals: 0, handConsentClicks: 0, blockedThenHandConsent: 0 })
-    hunt.dismissals += mechanical.consentWalls.dismissals.length
-    hunt.handConsentClicks += mechanical.consentWalls.handConsentClicks.length
-    hunt.blockedThenHandConsent += mechanical.consentWalls.blockedThenHandConsent.length
+    addConsentWalls((byHunt[mechanical.huntId] ??= emptyConsentWallCounts()), mechanical.consentWalls)
   }
   return counted ? byHunt : undefined
 }
 
-/** The per-hunt consent walls as a section, ending in a blank line; empty when nothing counted them. */
-function consentWallsByHuntSection(byHunt: Readonly<Record<string, Readonly<Record<keyof ConsentWallRounds, number>>>> | undefined): string[] {
+/** The per-hunt consent walls as a section — heading, note and table; empty when nothing counted them. */
+function consentWallsByHuntSection(byHunt: Readonly<Record<string, Readonly<ConsentWallCounts>>> | undefined): string[] {
   if (byHunt === undefined) return []
   return [
     '## Consent walls by hunt',
@@ -848,7 +845,6 @@ function consentWallsByHuntSection(byHunt: Readonly<Record<string, Readonly<Reco
     '| hunt | dismissals | hand consent clicks | blocked then hand consent |',
     '| --- | --- | --- | --- |',
     ...Object.entries(byHunt).map(([hunt, counted]) => `| ${hunt} | ${counted.dismissals} | ${counted.handConsentClicks} | ${counted.blockedThenHandConsent} |`),
-    '',
   ]
 }
 
@@ -1249,6 +1245,23 @@ export interface ConsentWallRounds {
   readonly blockedThenHandConsent: readonly number[]
 }
 
+/** The consent walls as counts: over an attempt's rounds, a population, or a hunt. */
+export type ConsentWallCounts = Record<keyof ConsentWallRounds, number>
+
+function emptyConsentWallCounts(): ConsentWallCounts {
+  return { dismissals: 0, handConsentClicks: 0, blockedThenHandConsent: 0 }
+}
+
+/** Add one attempt's consent walls to a running count. */
+function addConsentWalls(into: ConsentWallCounts, rounds: ConsentWallRounds): void {
+  into.dismissals += rounds.dismissals.length
+  into.handConsentClicks += rounds.handConsentClicks.length
+  into.blockedThenHandConsent += rounds.blockedThenHandConsent.length
+}
+
+/** A whole listing's head: the page signature a read or a settled state prints, and a scroll's new-in-view block never does. */
+const LISTING_HEAD_RE = /^signature [0-9a-f]+$/m
+
 /** A listed ref and its label, as `formatRefLine` prints it: `[8] button "Reject all cookies"`. */
 const LISTED_REF_RE = /^\[(\d+)\] \S+ "(.*?)"(?= |$)/gm
 
@@ -1281,6 +1294,9 @@ function consentWallsOf(raw: readonly RawRound[]): ConsentWallRounds {
       if (text === null) continue
       if (text.includes(CONSENT_DISMISSAL_MARK)) dismissals.push(round.round)
       if (blockedOrInertAction(text) === 'blocked') blocked.push(round.round)
+      // A whole listing renumbers the page, so a number it leaves out names
+      // nothing; a scroll's block overlays only the numbers it prints.
+      if (LISTING_HEAD_RE.test(text)) labels.clear()
       for (const match of text.matchAll(LISTED_REF_RE)) labels.set(Number(match[1]), match[2]!)
     }
   }
@@ -1974,7 +1990,7 @@ function isAcquisitionRound(round: AuditRound): boolean {
  * ungraded attempt and one graded with every check unsatisfied hand on the
  * same ids under different labels, so they must not share a cached judgement.
  */
-function digestPayloadOf(mechanical: Omit<AuditMechanical, 'digestHash'>): unknown {
+export function digestPayloadOf(mechanical: Omit<AuditMechanical, 'digestHash'>): unknown {
   return {
     attemptId: mechanical.attemptId,
     tier: mechanical.tier,
@@ -2384,7 +2400,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
   let searchForms: Record<SearchUrlForm, number> | undefined
   let blockedOrInert: Record<keyof BlockedOrInertRounds, number> | undefined
   let unavailableLandings: Record<keyof UnavailableLandingRounds, number> | undefined
-  let consentWalls: Record<keyof ConsentWallRounds, number> | undefined
+  let consentWalls: ConsentWallCounts | undefined
   let slipAnswers = 0
   let slipIds = 0
   let slipsNotRecorded = 0
@@ -2451,12 +2467,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
       unavailableLandings.title += mechanical.unavailableLandings.title.length
       unavailableLandings.followedBySearch += mechanical.unavailableLandings.followedBySearch.length
     }
-    if (mechanical.consentWalls !== undefined) {
-      consentWalls ??= { dismissals: 0, handConsentClicks: 0, blockedThenHandConsent: 0 }
-      consentWalls.dismissals += mechanical.consentWalls.dismissals.length
-      consentWalls.handConsentClicks += mechanical.consentWalls.handConsentClicks.length
-      consentWalls.blockedThenHandConsent += mechanical.consentWalls.blockedThenHandConsent.length
-    }
+    if (mechanical.consentWalls !== undefined) addConsentWalls((consentWalls ??= emptyConsentWallCounts()), mechanical.consentWalls)
     if (mechanical.identitySlips === null) slipsNotRecorded += 1
     else {
       slipAnswers += mechanical.identitySlips.answers
@@ -2895,7 +2906,7 @@ export function formatAuditSet(audit: AuditSetOutput): string {
   lines.push('')
   lines.push(...toolRoundTable([audit.populations.initial, audit.populations.followUp]))
   const consentByHunt = consentWallsByHuntSection(consentWallsByHuntOf(audit.attempts))
-  if (consentByHunt.length > 0) lines.push('', ...consentByHunt.slice(0, -1))
+  if (consentByHunt.length > 0) lines.push('', ...consentByHunt)
   if (audit.caveats.length > 0) {
     lines.push('')
     lines.push('## Caveats')
@@ -2953,7 +2964,8 @@ export function formatAuditAggregate(aggregate: AuditAggregate): string {
   lines.push('')
   lines.push(...toolRoundTable([aggregate.populations.initial, aggregate.populations.followUp]))
   lines.push('')
-  lines.push(...consentWallsByHuntSection(aggregate.consentWallsByHunt))
+  const consentByHunt = consentWallsByHuntSection(aggregate.consentWallsByHunt)
+  if (consentByHunt.length > 0) lines.push(...consentByHunt, '')
   lines.push('## Per set')
   lines.push('')
   for (const population of [aggregate.populations.initial, aggregate.populations.followUp]) {

@@ -20,18 +20,19 @@ export function isConsentDialog(_dialogText: string, controlLabels: string[]): b
 
 /**
  * Control labels that decline (preferred) or accept — privacy first. Taking
- * only the necessary or essential cookies declines the rest, and so does a
- * label about optional cookies that does not accept them (ADR 0061). This
- * widening is the dismissal's alone: the risk gate reads `CONSENT_LABEL_RE`.
+ * only the necessary or essential cookies declines the rest, and so does
+ * going on without the optional ones (ADR 0061) — a phrase that declines
+ * them, never the bare word, which a "Manage optional cookies" control or a
+ * toggle carries too. This widening is the dismissal's alone: the risk gate
+ * reads `CONSENT_LABEL_RE`.
  */
 const REJECT_VERB_RE = /\b(reject|decline|deny|refuse|dismiss)\b/i
 const NECESSARY_ONLY_RE = /\b(necessary|essential)\b.*\bonly\b|\bonly\b.*\b(necessary|essential)\b/i
-const OPTIONAL_RE = /\boptional\b/i
+const WITHOUT_OPTIONAL_RE = /\b(without|no|none of)\s+(the\s+)?optional\b/i
 const ACCEPT_STYLE_RE = /\b(accept|allow|agree|ok|okay|got it)\b/i
 
 function isRejectStyle(label: string): boolean {
-  if (REJECT_VERB_RE.test(label) || NECESSARY_ONLY_RE.test(label)) return true
-  return OPTIONAL_RE.test(label) && !ACCEPT_STYLE_RE.test(label)
+  return REJECT_VERB_RE.test(label) || NECESSARY_ONLY_RE.test(label) || WITHOUT_OPTIONAL_RE.test(label)
 }
 
 /**

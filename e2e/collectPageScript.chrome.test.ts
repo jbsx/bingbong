@@ -91,7 +91,7 @@ describe.skipIf(!canDriveChrome)('the collector finds a consent wall by the rule
     expect(page.elements.find((element) => element.label === 'Search our collection')?.layer).toBe('page')
   })
 
-  it('takes a sticky consent bar as the dialog root', async () => {
+  it('takes a sticky consent wall as the dialog root', async () => {
     const page = await collect('/sticky')
 
     expect(page.dialogOpen).toBe(true)

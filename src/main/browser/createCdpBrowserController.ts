@@ -805,6 +805,14 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     | { kind: 'acted'; direct: boolean; index: number; label: string; before: ElementState; signature: PageSignature; dismissal: string | null }
     | { kind: 'blocked'; signature: PageSignature; snapshot: PageSnapshot; dismissal: string | null }
 
+  /** The element a click aims at: the ref the model named, the registry index that holds it now, and what it looked like when shown. */
+  interface ClickTarget {
+    ref: number
+    index: number
+    label: string
+    before: ElementState
+  }
+
   async function performClick(ref: number): Promise<ClickAttempt> {
     const { snapshot, target } = await resolveRef(ref)
     const visualPoint = visualPoints.get(ref)
@@ -822,11 +830,10 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
       lastSnapshot = undefined
       return { kind: 'acted', direct: false, index, label: target.label, before: elementState(target), signature: signatureOf(snapshot), dismissal: null }
     }
-    const index = target.ref - 1
-    const before = elementState(target)
-    const attempt = await clickAtIndex(ref, index, target.label, before, snapshot, null)
+    const aim: ClickTarget = { ref, index: target.ref - 1, label: target.label, before: elementState(target) }
+    const attempt = await clickAtIndex(aim, snapshot, null)
     if (attempt.kind === 'acted') return attempt
-    return (await clearConsentAndRetry(ref, index, target.label, before)) ?? attempt
+    return (await clearConsentAndRetry(aim)) ?? attempt
   }
 
   /**
@@ -835,14 +842,8 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
    * and nothing where a cover sits over it. `snapshot` is the page the
    * attempt is measured against.
    */
-  async function clickAtIndex(
-    ref: number,
-    index: number,
-    label: string,
-    before: ElementState,
-    snapshot: PageSnapshot,
-    dismissal: string | null,
-  ): Promise<ClickAttempt> {
+  async function clickAtIndex(aim: ClickTarget, snapshot: PageSnapshot, dismissal: string | null): Promise<ClickAttempt> {
+    const { ref, index, label, before } = aim
     const prep = await safety('click-prep', () => prepClick(index))
     if (!prep.ok) {
       // The node the identity check just matched died between the two
@@ -881,11 +882,29 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
    * included — never containment of the cover, since Cookiebot's underlay is
    * the root's sibling. The node is kept by identity across the collects the
    * dismissal needs, because the wall's controls leaving renumbers the page.
-   * Null when no Tier-1 consent root is open: the block stands as it was.
+   * Null when no Tier-1 consent root is open — asked of the page's dialog
+   * labels in place, so a block under no dialog or a Tier-2 one collects
+   * nothing and leaves the numbers the model holds as they were — and when
+   * the clearing itself fails: the block then stands as it was.
    */
-  async function clearConsentAndRetry(ref: number, index: number, label: string, before: ElementState): Promise<ClickAttempt | null> {
-    const { signature } = await probeAction(-1)
-    if (!signature.dialogOpen) return null
+  async function clearConsentAndRetry(aim: ClickTarget): Promise<ClickAttempt | null> {
+    try {
+      const labels = await evaluateInPage<string[] | null>(`(() => {
+        /* DIALOG_LABELS */
+        return typeof window.__bingbongDialogLabels === 'function' ? window.__bingbongDialogLabels() : null
+      })()`)
+      if (!Array.isArray(labels) || !isConsentDialog('', labels) || chooseConsentDismissal(labels) === null) return null
+      return await retryPastConsent(aim)
+    } catch (error) {
+      if (error instanceof StaleRefError) throw error
+      reportFault('browser.createCdpBrowserController.clearConsentAndRetry', error)
+      return null
+    }
+  }
+
+  /** Keep the node, collect the walled page, dismiss, collect the page behind, and click the node wherever it now sits. */
+  async function retryPastConsent(aim: ClickTarget): Promise<ClickAttempt | null> {
+    const { ref, index } = aim
     await evaluateInPage(`(() => {
       /* CONSENT_RETRY_KEEP */
       window.__bingbongConsentRetry = (window.__bingbongRefs || [])[${index}] || null
@@ -912,12 +931,18 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     // The node went with the wall (a dismissal that reloaded the page):
     // refuse with the page as it now stands, as any dead ref is.
     if (!Number.isInteger(retryIndex) || retryIndex < 0) throw await staleRef(ref, true)
-    return clickAtIndex(ref, retryIndex, label, before, cleared, dismissal)
+    return clickAtIndex({ ...aim, index: retryIndex }, cleared, dismissal)
   }
 
-  /** The dismissal a blocked first attempt ran and the retry it earned, as one clause; empty when there was none. */
+  /** The dismissal a blocked first attempt ran and the retry it earned, in the one wording every outcome uses; null when there was none. */
+  function consentNote(attempt: ClickAttempt, ref: number): string | null {
+    return attempt.dismissal === null ? null : `${attempt.dismissal} ${consentRetryNote(ref, attempt.kind === 'blocked')}`
+  }
+
+  /** The same, as a clause riding an outcome line; empty when there was none. */
   function consentClause(attempt: ClickAttempt, ref: number): string {
-    return attempt.dismissal === null ? '' : `; ${attempt.dismissal} ${consentRetryNote(ref, attempt.kind === 'blocked')}`
+    const note = consentNote(attempt, ref)
+    return note === null ? '' : `; ${note}`
   }
 
   /** A blocked click or type: the cover and any dialog, the dismissal a retry spent, and — when the wall was cleared — the page behind it. */
@@ -950,7 +975,8 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     // (Tier 1); anything else has its text surfaced for the model to decide
     // (Tier 2 — dismiss, interact, or ask_user).
     const extras: string[] = []
-    if (attempt.dismissal !== null) extras.push(`${attempt.dismissal} ${consentRetryNote(ref, false)}`)
+    const cleared = consentNote(attempt, ref)
+    if (cleared !== null) extras.push(cleared)
     if (attempt.direct) extras.push('activated directly (outside viewport)')
     /** The snapshot whose state rides the outcome (post-dismissal when a
      * consent wall was cleared, the post-action collect otherwise). */

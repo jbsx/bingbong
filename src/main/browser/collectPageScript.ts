@@ -332,6 +332,15 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
     }
   }
   window.__bingbongDescribeElement = (el) => describeElement(el, currentDialogRoot())
+  // The labels of the open dialog root's controls, read in place — no
+  // collect, so the numbers the model holds stay put — for a blocked action
+  // to ask whether a consent wall is what covers it (ADR 0061). Null when no
+  // dialog root is open.
+  window.__bingbongDialogLabels = () => {
+    const root = currentDialogRoot()
+    if (root === null) return null
+    return Array.from(root.querySelectorAll(SELECTOR)).filter(hasSize).map(labelOf)
+  }
   window.__bingbongPageProbe = (targetIndex, targetLabel) => {
     const dialogRoot = currentDialogRoot()
     const refs = collectElements(dialogRoot).slice(0, 75)

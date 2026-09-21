@@ -18,8 +18,8 @@ import { waitFor } from './waitFor'
 
 type ToolResultEvent = Extract<PipelineEvent, { type: 'tool_result' }>
 
-/** Streamed reasoning paces a round (150 ms a chunk): long enough for the late wall to arrive first. */
-const WAIT_FOR_LATE_WALL: ScriptedTurn['streamChunks'] = Array.from({ length: 12 }, () => ({ kind: 'reasoning' as const, text: '.' }))
+/** Streamed reasoning paces a round (150 ms a chunk): 3 s, three times the late wall's delay, so it arrives first. */
+const WAIT_FOR_LATE_WALL: ScriptedTurn['streamChunks'] = Array.from({ length: 20 }, () => ({ kind: 'reasoning' as const, text: '.' }))
 
 function consentScript(fixture: FixtureServer): AssistantTurn[] {
   return [

@@ -70,6 +70,11 @@ function signInDialogPage(): CollectedPage {
   }
 }
 
+/** The registry index an in-page probe aims at: `(window.__bingbongRefs || [])[2]` → 2; -1 for none. */
+function registryIndexOf(expression: string): number {
+  return Number(/\)\[(\d+)\]/.exec(expression)?.[1] ?? -1)
+}
+
 class FakeCdp implements CdpDebugger {
   readonly calls: { method: string; params?: Record<string, unknown> }[] = []
   evaluateException: string | null = null
@@ -83,6 +88,8 @@ class FakeCdp implements CdpDebugger {
   onDomClick: (() => void) | null = null
   /** The node the controller kept across a consent dismissal (ADR 0061). */
   private keptNode: unknown = undefined
+  /** When set, the in-place dialog-labels probe throws (a page mid-navigation). */
+  dialogLabelsException: string | null = null
   /** When set, click-prep reports the element as offscreen (no coordinates). */
   prepOffscreen = false
   /** When set, the next click-prep reports a stale registry once (re-collect path). */
@@ -183,6 +190,12 @@ class FakeCdp implements CdpDebugger {
         return { result: { value: shown !== undefined && shown === this.collectedElements[index] } } as T
       }
       if (expression.includes('/* MEDIA_STATE */')) return { result: { value: this.mediaProbe } } as T
+      if (expression.includes('/* DIALOG_LABELS */')) {
+        if (this.dialogLabelsException) return { exceptionDetails: { text: this.dialogLabelsException } } as T
+        const page = this.evaluateValue as CollectedPage
+        const labels = page.dialogOpen ? page.elements.filter((element) => element.layer === 'dialog').map((element) => element.label) : null
+        return { result: { value: labels } } as T
+      }
       if (expression.includes('const hit = document.elementFromPoint')) {
         this.collectedElements[20] = this.collectedElements[20] ?? { groundedNode: true }
         return {
@@ -219,8 +232,7 @@ class FakeCdp implements CdpDebugger {
         return { result: { value: true } } as T
       }
       if (expression.includes('/* CONSENT_RETRY_KEEP */')) {
-        const index = Number(/\)\[(\d+)\]/.exec(expression)?.[1] ?? -1)
-        this.keptNode = this.collectedElements[index]
+        this.keptNode = this.collectedElements[registryIndexOf(expression)]
         return { result: { value: true } } as T
       }
       if (expression.includes('/* CONSENT_RETRY_FIND */')) {
@@ -237,7 +249,7 @@ class FakeCdp implements CdpDebugger {
           this.prepStaleOnce = false
           return { result: { value: { ok: false } } } as T
         }
-        const index = Number(/\)\[(\d+)\]/.exec(expression)?.[1] ?? -1)
+        const index = registryIndexOf(expression)
         if (index === 20) {
           return { result: { value: { ok: true, clickable: true, x: 350, y: 230 } } } as T
         }
@@ -1445,7 +1457,7 @@ describe('createCdpBrowserController a blocked action under a consent wall (#263
     expect(domClicks(cdp)[0]!.params?.expression).toContain('(window.__bingbongRefs || [])[1]')
     // The first attempt aimed at index 2; the retry aimed at the same node,
     // wherever the post-dismissal collect put it.
-    expect(preps(cdp).map((call) => /\)\[(\d+)\]/.exec(String(call.params?.expression))?.[1])).toEqual(['2', '2'])
+    expect(preps(cdp).map((call) => registryIndexOf(String(call.params?.expression)))).toEqual([2, 2])
     expect(cdp.inputCalls().filter((call) => call.params?.type === 'mousePressed')).toHaveLength(1)
     // The post-dismissal listing rides the outcome.
     expect(outcome).toContain(settledBlock(youtubeFixture))
@@ -1460,7 +1472,7 @@ describe('createCdpBrowserController a blocked action under a consent wall (#263
 
     await controller.click(3)
 
-    expect(preps(cdp).map((call) => /\)\[(\d+)\]/.exec(String(call.params?.expression))?.[1])).toEqual(['2', '3'])
+    expect(preps(cdp).map((call) => registryIndexOf(String(call.params?.expression)))).toEqual([2, 3])
   })
 
   it('dismisses once and retries the typing, reporting both steps in one line', async () => {
@@ -1491,6 +1503,33 @@ describe('createCdpBrowserController a blocked action under a consent wall (#263
     expect(preps(cdp)).toHaveLength(2)
     expect(cdp.inputCalls()).toHaveLength(0)
     expect(outcome).toContain(settledBlock(youtubeFixture))
+  })
+
+  it('leaves a block under a Tier-2 dialog as it was: no collect renumbers the refs the model holds', async () => {
+    const cdp = new FakeCdp(youtubeFixture)
+    const { controller } = makeController({ cdp })
+    await showRefs(controller)
+    cdp.serve({ ...signInDialogPage(), elements: [...signInDialogPage().elements, ...youtubeFixture.elements] })
+    cdp.prepCovered = true
+    const collects = cdp.collectCalls().length
+
+    const outcome = await controller.click(3)
+
+    expect(outcome).toBe('clicked [3]: not clicked — blocked by overlay')
+    expect(cdp.collectCalls()).toHaveLength(collects)
+    expect(domClicks(cdp)).toHaveLength(0)
+  })
+
+  it('keeps the block when clearing the wall fails, rather than failing the call', async () => {
+    const { cdp, controller, arrive } = wallArrives()
+    await arrive()
+    cdp.prepCovered = true
+    cdp.dialogLabelsException = 'Execution context was destroyed.'
+
+    const outcome = await controller.type(3, 'longitude')
+
+    expect(outcome).toBe('typed [3]: not typed — blocked by overlay')
+    expect(domClicks(cdp)).toHaveLength(0)
   })
 
   it('leaves a block with no dialog open as it was: no collect, no dismissal', async () => {
