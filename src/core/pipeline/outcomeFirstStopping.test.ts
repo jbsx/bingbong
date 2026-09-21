@@ -248,6 +248,9 @@ describe('a later explicit "why did you stop?" is answered from the Run (#203/AC
     // Finalization under, not the failure that followed it (AC6).
     expect(journal[0]!.stop).toEqual({
       cause: 'budget_exhausted',
+      // The cause's own specifics (#266, ADR 0063): why no Tier Escalation
+      // followed the spent budget, worded for a later "why did you stop?".
+      detail: expect.stringMatching(/^No Tier Escalation followed the tool-round budget: /),
       failure: 'the reserved Answer round failed: ScriptedLlm ran out of scripted turns',
     })
     // Bounded Session continuity is the only place it lives: the Run
@@ -343,6 +346,7 @@ describe('a later explicit "why did you stop?" is answered from the Run (#203/AC
     const events = await harness.run('what is on the page?', follow, [browse])
     expect(follow.requests[0]!.journal![0]!.stop).toEqual({
       cause: 'budget_exhausted',
+      detail: expect.stringMatching(/^No Tier Escalation followed the tool-round budget: /),
       failure: 'the reserved Answer round failed: ScriptedLlm ran out of scripted turns',
     })
 
