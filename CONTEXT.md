@@ -971,11 +971,25 @@ _Avoid_: cancel the action, kill the navigation, abort
 
 **Ref**:
 A numbered handle in a page read naming one element in the viewport at the
-moment of that read, for click, type, and Look to act on. A number names the
-same element until the page is collected again; a number used after a collect
-the model did not see in full names an element only if it still is that
-element, otherwise the action is refused.
+moment of that read, never one inside an inert container, for click, type,
+and Look to act on. A number names the same element until the page is
+collected again; a number used after a collect the model did not see in full
+names an element only if it still is that element, otherwise the action is
+refused.
 _Avoid_: selector, element id, index
+
+**Cover**:
+What a click or type finds over its target's centre: the element the page's
+own hit test answers with in the target's place. The Action Outcome names it
+as a page read names refs, and it is what must be acted on before that target
+can be reached.
+_Avoid_: overlay, blocker, obstruction, dialog covering the target
+
+**Not Shown**:
+A listed target the page's own hit test does not find at its centre at all —
+inside an inert, clipped or hidden container. It is not covered: no dismissal
+reaches it, and the next move is a target that was shown.
+_Avoid_: hidden ref, blocked by overlay, unreachable, covered
 
 **Page Preview**:
 The opening stretch of a page's text, capped, that an Action Outcome carries so
