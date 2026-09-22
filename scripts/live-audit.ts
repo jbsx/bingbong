@@ -436,7 +436,39 @@ interface CliRefusal {
   readonly costUsd: number | null
 }
 
+/** A server-side failure the CLI gave up on (a 529 Overloaded, a 5xx): retried after a pause, a bounded number of times, before it counts as a refusal. */
+const SERVER_ERROR_RETRIES = 4
+const SERVER_ERROR_PAUSE_MS = 90_000
+
+function isServerError(record: Record<string, unknown> | null): boolean {
+  if (record === null) return false
+  const status = record.api_error_status
+  return record.terminal_reason === 'api_error' && (typeof status !== 'number' || status >= 500)
+}
+
+function parseReply(reply: string): Record<string, unknown> | null {
+  try {
+    return reply.trim().startsWith('{') ? (JSON.parse(reply) as Record<string, unknown>) : null
+  } catch {
+    return null
+  }
+}
+
+function pause(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
+}
+
 function callReviewer(prompt: string, model: string, effort: string, maxUsd: string): CliResult | CliRefusal {
+  for (let attempt = 1; ; attempt += 1) {
+    const result = callReviewerOnce(prompt, model, effort, maxUsd)
+    if (!('serverError' in result)) return result
+    if (attempt > SERVER_ERROR_RETRIES) return { refused: true, reason: result.said, costUsd: null }
+    note(`  the API failed server-side (${result.said}); retrying in ${SERVER_ERROR_PAUSE_MS / 1000} s (${attempt} of ${SERVER_ERROR_RETRIES})`)
+    pause(SERVER_ERROR_PAUSE_MS)
+  }
+}
+
+function callReviewerOnce(prompt: string, model: string, effort: string, maxUsd: string): CliResult | CliRefusal | { readonly serverError: true; readonly said: string } {
   let stdout: string
   try {
     stdout = execFileSync(
@@ -468,12 +500,8 @@ function callReviewer(prompt: string, model: string, effort: string, maxUsd: str
     // failed call; anything else is the CLI itself failing.
     const failed = error as { status?: number | null; signal?: string | null; stderr?: string; stdout?: string }
     const reply = (failed.stdout ?? '').trim()
-    let record: Record<string, unknown> | null = null
-    try {
-      record = reply.startsWith('{') ? (JSON.parse(reply) as Record<string, unknown>) : null
-    } catch {
-      record = null
-    }
+    const record = parseReply(reply)
+    if (isServerError(record)) return { serverError: true, said: `${String(record?.stop_reason ?? 'api_error')}: ${clip(String(record?.result ?? '').split('\n')[0] ?? '', 200)}` }
     if (record !== null && typeof record.stop_reason === 'string') {
       const cost = typeof record.total_cost_usd === 'number' ? record.total_cost_usd : null
       return { refused: true, reason: `${record.stop_reason}: ${clip(String(record.result ?? '').split('\n')[0] ?? '', 200)}`, costUsd: cost }
@@ -488,6 +516,7 @@ function callReviewer(prompt: string, model: string, effort: string, maxUsd: str
     fail('the claude CLI returned something other than JSON')
   }
   const record = result as Record<string, unknown>
+  if (isServerError(record)) return { serverError: true, said: `${String(record.stop_reason ?? 'api_error')}: ${clip(String(record.result ?? '').split('\n')[0] ?? '', 200)}` }
   if (record.is_error === true || record.subtype !== 'success') {
     return { refused: true, reason: `${String(record.stop_reason ?? record.subtype)}: ${clip(String(record.result ?? '').split('\n')[0] ?? '', 200)}`, costUsd: typeof record.total_cost_usd === 'number' ? record.total_cost_usd : null }
   }

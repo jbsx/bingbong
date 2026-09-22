@@ -308,7 +308,39 @@ interface CliResult {
   readonly durationMs: number | null
 }
 
+/** A server-side failure the CLI gave up on (a 529 Overloaded, a 5xx): retried after a pause, a bounded number of times, before it is anyone's problem. */
+const SERVER_ERROR_RETRIES = 4
+const SERVER_ERROR_PAUSE_MS = 90_000
+
+function isServerError(record: Record<string, unknown> | null): boolean {
+  if (record === null) return false
+  const status = record.api_error_status
+  return record.terminal_reason === 'api_error' && (typeof status !== 'number' || status >= 500)
+}
+
+function parseReply(reply: string): Record<string, unknown> | null {
+  try {
+    return reply.trim().startsWith('{') ? (JSON.parse(reply) as Record<string, unknown>) : null
+  } catch {
+    return null
+  }
+}
+
+function pause(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
+}
+
 function callReviewer(prompt: string, model: string, maxUsd: string): CliResult {
+  for (let attempt = 1; ; attempt += 1) {
+    const result = callReviewerOnce(prompt, model, maxUsd)
+    if (!('serverError' in result)) return result
+    if (attempt > SERVER_ERROR_RETRIES) fail(`the claude CLI exited ${result.exit}: ${result.said}`)
+    note(`  the API failed server-side (${result.said}); retrying in ${SERVER_ERROR_PAUSE_MS / 1000} s (${attempt} of ${SERVER_ERROR_RETRIES})`)
+    pause(SERVER_ERROR_PAUSE_MS)
+  }
+}
+
+function callReviewerOnce(prompt: string, model: string, maxUsd: string): CliResult | { readonly serverError: true; readonly exit: string; readonly said: string } {
   let stdout: string
   try {
     stdout = execFileSync(
@@ -346,8 +378,11 @@ function callReviewer(prompt: string, model: string, maxUsd: string): CliResult 
   } catch (error) {
     // Never echo the command: its arguments carry the whole key.
     const failed = error as { status?: number | null; signal?: string | null; stderr?: string; stdout?: string }
+    const record = parseReply(failed.stdout ?? '')
+    const exit = String(failed.status ?? failed.signal ?? 'abnormally')
+    if (isServerError(record)) return { serverError: true, exit, said: clip(String(record?.result ?? '').split('\n')[0] ?? '', 200) }
     const said = clip((failed.stderr ?? '').trim() || (failed.stdout ?? '').trim(), 600)
-    fail(`the claude CLI exited ${failed.status ?? failed.signal ?? 'abnormally'}${said === '' ? '' : `: ${said}`}`)
+    fail(`the claude CLI exited ${exit}${said === '' ? '' : `: ${said}`}`)
   }
   let result: unknown
   try {
@@ -356,6 +391,7 @@ function callReviewer(prompt: string, model: string, maxUsd: string): CliResult 
     fail('the claude CLI returned something other than JSON')
   }
   const record = result as Record<string, unknown>
+  if (isServerError(record)) return { serverError: true, exit: '0', said: clip(String(record.result ?? '').split('\n')[0] ?? '', 200) }
   if (record.is_error === true || record.subtype !== 'success') fail(`the claude CLI reported ${String(record.subtype)}: ${clip(String(record.result ?? ''), 300)}`)
   const output = record.structured_output
   if (typeof output !== 'object' || output === null) fail('the claude CLI returned no structured output')
