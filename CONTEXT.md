@@ -1169,10 +1169,12 @@ _Avoid_: research agent, worker, task runner
 
 **Subagent Report**:
 A Subagent's structured return to its orchestrator, carrying findings, evidence,
-and unresolved items. A Subagent may read only the Memory Entries selected for
-its task and cannot mutate Session Working Memory directly. Its text is
-model-facing and may name Memory Entries by id; the display boundary that
-repairs an Identity Slip does not reach it.
+and unresolved items. Its findings are cited by source and by Subagent,
+never quoted as page text: the report is the Subagent's words, so a citation
+of one carries no excerpt. A Subagent may read only the Memory Entries
+selected for its task and cannot mutate Session Working Memory directly. Its
+text is model-facing and may name Memory Entries by id; the display boundary
+that repairs an Identity Slip does not reach it.
 
 **Delegation Probe**:
 The separate real-model capture (#163) whose corpus exists to provoke
