@@ -130,6 +130,9 @@ export function createSubagentTools(manager: SubagentManager): Tool[] {
           ...(ctx.turnId !== undefined ? { turnId: ctx.turnId } : {}),
           ...(memory !== undefined ? { memory } : {}),
           ...(ctx.delegationDeadline !== undefined ? { sharedDeadline: ctx.delegationDeadline } : {}),
+          // The Run Engine (#270, ADR 0066) rides the spawn the same way,
+          // live, so the worker's searches compose where the Run's do.
+          ...(ctx.runEngine !== undefined ? { runEngine: ctx.runEngine } : {}),
           ...(ctx.traceSubagentReasoning !== undefined ? { traceReasoning: ctx.traceSubagentReasoning } : {}),
           ...(ctx.traceSubagentLlmRound !== undefined ? { traceLlmRound: ctx.traceSubagentLlmRound } : {}),
           ...(ctx.traceSubagentOffContractReply !== undefined

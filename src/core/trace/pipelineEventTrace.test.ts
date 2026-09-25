@@ -160,6 +160,22 @@ describe('the pipeline_event tap (#185)', () => {
     expect(records[3]).not.toHaveProperty('unquoted')
   })
 
+  it('stamps an Engine Rewrite from the event’s own field, a failed or non-text result included (#270, ADR 0066)', () => {
+    const { records, sink } = collector()
+    const trace = createPipelineEventTraceWriter({ sink, now: () => 0 })
+    const stamp = { from: 'google', to: 'duckduckgo', query: 'voyager heliopause' }
+
+    trace({ type: 'tool_result', turnId: 't-1', callId: 'c-1', name: 'navigate', ok: true, result: 'Rewritten — …\nnavigated: url=x', engineRewrite: stamp, at: 1 })
+    trace({ type: 'tool_result', turnId: 't-1', callId: 'c-2', name: 'navigate', ok: false, error: 'Rewritten — …\nnet::ERR_TIMED_OUT', engineRewrite: stamp, at: 2 })
+    trace({ type: 'tool_result', turnId: 't-1', callId: 'c-3', name: 'navigate', ok: true, result: { data: 1 }, engineRewrite: stamp, at: 3 })
+    trace({ type: 'tool_result', turnId: 't-1', callId: 'c-4', name: 'navigate', ok: true, result: 'Rewritten — …\nnavigated: url=x', at: 4 })
+
+    expect(records[0]).toMatchObject({ engineRewrite: stamp })
+    expect(records[1]).toMatchObject({ engineRewrite: stamp })
+    expect(records[2]).toMatchObject({ engineRewrite: stamp })
+    expect(records[3]).not.toHaveProperty('engineRewrite')
+  })
+
   it('leaves a short result whole and a non-text result untouched', () => {
     const { records, sink } = collector()
     const trace = createPipelineEventTraceWriter({ sink, now: () => 0 })

@@ -59,6 +59,7 @@ import {
   type AuditRound,
   type AuditTraceInput,
   rewritesByHuntOf,
+  engineRewriteOffKeyOf,
 } from './audit.ts'
 import * as auditModule from './audit.ts'
 import type { LiveGradeEntry, LiveKeyTask } from './grades.ts'
@@ -112,6 +113,8 @@ interface RoundSpec {
     rewritten?: { site: string; query: string }
     /** The Unseen Phrase rewrite the Run Trace records on the result (#267, ADR 0064). */
     unquoted?: { phrases: string[]; query: string }
+    /** The Engine Rewrite the Run Trace records on the result (#270, ADR 0066). */
+    engineRewrite?: { from: string; to: string; query: string }
   }[]
   readonly reasoning?: string
   /** How long the attempt waited for its first fragment (#256, ADR 0057) — a trace written after the field was kept. */
@@ -165,6 +168,7 @@ function traceOf(rounds: readonly RoundSpec[], extra: readonly Record<string, un
         ...(call.unavailable !== undefined ? { unavailable: call.unavailable } : {}),
         ...(call.rewritten !== undefined ? { rewritten: call.rewritten } : {}),
         ...(call.unquoted !== undefined ? { unquoted: call.unquoted } : {}),
+        ...(call.engineRewrite !== undefined ? { engineRewrite: call.engineRewrite } : {}),
       })
     }
   }
@@ -1654,7 +1658,7 @@ describe('Unseen Phrase rewrites (#267, ADR 0064)', () => {
     const set = buildAuditSet(provenanceOf(), [{ mechanical, review, countsAfterOverrules: countsAfterOverrulesOf(mechanical, judged) }], [])
 
     expect(set.populations.initial).toMatchObject({ unseenPhraseRewrites: 2, unseenPhraseRewritesOffKey: 1, rewrittenComposedAddresses: 1, rewrittenComposedAddressesOffKey: 0 })
-    expect(rewritesByHuntOf(set.attempts)).toEqual({ [mechanical.huntId]: { composedAddresses: 1, unseenPhrases: 2 } })
+    expect(rewritesByHuntOf(set.attempts)).toEqual({ [mechanical.huntId]: { composedAddresses: 1, unseenPhrases: 2, engines: 0 } })
     const markdown = formatAuditSet(set)
     expect(markdown).toContain('- searches that ran with an Unseen Phrase unquoted: 2 (round 2, 5)')
     expect(markdown).toContain('- of those, judged Off-key by the reviewer: 1')
@@ -1662,7 +1666,7 @@ describe('Unseen Phrase rewrites (#267, ADR 0064)', () => {
     expect(markdown).toContain('[unquoted, off-key, loop head by the streak rule]')
     expect(markdown).toContain('every call was refused (navigate) [unquoted]')
     expect(markdown).toContain('## Rewrites by hunt')
-    expect(markdown).toContain(`| ${mechanical.huntId} | 1 | 2 |`)
+    expect(markdown).toContain(`| ${mechanical.huntId} | 1 | 2 | 0 |`)
 
     const unjudged = formatAuditSet(buildAuditSet(provenanceOf(), [{ mechanical, review: null, countsAfterOverrules: mechanical.counts }], []))
     expect(unjudged).toContain('- of those, judged Off-key by the reviewer: not judged')
@@ -1672,6 +1676,64 @@ describe('Unseen Phrase rewrites (#267, ADR 0064)', () => {
     const before = { ...classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, EXTRA) })) } as AuditMechanical & { unseenPhraseRewrites?: number[] }
     delete before.unseenPhraseRewrites
     expect(rewritesByHuntOf([{ mechanical: before, review: null, countsAfterOverrules: before.counts }])).toBeUndefined()
+  })
+})
+
+describe('Engine Rewrites (#270, ADR 0066)', () => {
+  const GOOGLE = 'https://www.google.com/search?q=longitude+watch+1938'
+  const YAHOO = 'https://search.yahoo.com/search?p=longitude+watch+maker'
+  const ON_DDG = 'https://duckduckgo.com/?q=longitude%20watch%201938'
+  const LINE = 'Rewritten — this run searches on DuckDuckGo, so the Google search ran there with the same terms: "longitude watch 1938". Search with plain terms or a DuckDuckGo address.'
+  const STAMP = { from: 'google', to: 'duckduckgo', query: 'longitude watch 1938' }
+  const ROUNDS: RoundSpec[] = [
+    { round: 1, at: 1_000, calls: [{ name: 'navigate', args: { url: GOOGLE }, result: `${LINE}\n${PAGE('DuckDuckGo', ON_DDG, 'eeee0001')}`, engineRewrite: STAMP }] },
+    // The line alone, with no stamp: a trace the counter never reads.
+    { round: 2, at: 2_000, calls: [{ name: 'navigate', args: { url: GOOGLE }, result: `${LINE}\n${PAGE('DuckDuckGo', ON_DDG, 'eeee0002')}` }] },
+    { round: 3, at: 3_000, calls: [{ name: 'navigate', args: { url: YAHOO }, ok: false, error: 'Rewritten — …\nnet::ERR_TIMED_OUT', engineRewrite: { from: 'yahoo', to: 'duckduckgo', query: 'longitude watch maker' } }] },
+  ]
+
+  it('reads the stamp into a call field, never the line, replays the terms that ran, and counts the rounds', () => {
+    const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, EXTRA) }))
+    const [rewritten, lineOnly, failed] = mechanical.rounds
+
+    expect(rewritten!.calls[0]).toMatchObject({ args: { url: GOOGLE }, engineRewrite: 'google → duckduckgo' })
+    expect(rewritten!.calls[0]!.search).toMatchObject({ query: 'longitude watch 1938' })
+    expect(lineOnly!.calls[0]).not.toHaveProperty('engineRewrite')
+    expect(failed!.calls[0]).toMatchObject({ engineRewrite: 'yahoo → duckduckgo' })
+    expect(mechanical.engineRewrites).toEqual([1, 3])
+  })
+
+  it('crosses the rewrites with Off-key, sums them in the population, and reports them by hunt', () => {
+    const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, EXTRA) }))
+    const judged: AuditJudgement = {
+      searchLoops: [],
+      offKey: [{ round: 1, url: ON_DDG, reason: 'the maker, not the date, was the open fact' }],
+      overrules: [],
+      stoppedEarly: { value: false, reason: 'it answered', checks: [] },
+      answerOmitted: { value: false, reason: 'nothing omitted', checks: [] },
+      verdict: { primary: 'rounds_wasted', primaryReason: 'a search for a settled fact', secondary: null, secondaryReason: null },
+      flags: [],
+    }
+    expect(validateJudgement(judged, mechanical).ok).toBe(true)
+    const review: AuditReview = { judgement: judged, caveats: [], model: 'reviewer', served: null, effort: 'high', promptVersion: '1', digestHash: mechanical.digestHash, costUsd: null, durationMs: null, judgedAt: null }
+    const set = buildAuditSet(provenanceOf(), [{ mechanical, review, countsAfterOverrules: countsAfterOverrulesOf(mechanical, judged) }], [])
+
+    expect(engineRewriteOffKeyOf(mechanical, judged)).toBe(1)
+    expect(set.populations.initial).toMatchObject({ engineRewrites: 2, engineRewritesOffKey: 1 })
+    expect(rewritesByHuntOf(set.attempts)).toEqual({ [mechanical.huntId]: { composedAddresses: 0, unseenPhrases: 0, engines: 2 } })
+    const markdown = formatAuditSet(set)
+    expect(markdown).toContain('- searches that ran on the Run Engine in place of another Web Engine: 2 (round 1, 3)')
+    expect(markdown).toContain('2 search(es) ran on the Run Engine in place of another Web Engine (1 judged Off-key)')
+    expect(markdown).toContain('engine rewritten')
+    expect(markdown).toContain(`| ${mechanical.huntId} | 0 | 0 | 2 |`)
+  })
+
+  it('reads "not counted" for an audit written before the counter', () => {
+    const before = { ...classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, EXTRA) })) } as AuditMechanical & { engineRewrites?: number[] }
+    delete before.engineRewrites
+    const byHunt = rewritesByHuntOf([{ mechanical: before, review: null, countsAfterOverrules: before.counts }])!
+    expect(byHunt[before.huntId]).not.toHaveProperty('engines')
+    expect(formatAuditSet(buildAuditSet(provenanceOf(), [{ mechanical: before, review: null, countsAfterOverrules: before.counts }], []))).toContain('- searches that ran on the Run Engine in place of another Web Engine: not counted')
   })
 })
 

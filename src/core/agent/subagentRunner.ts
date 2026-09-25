@@ -35,6 +35,7 @@ import type { RunDecisions } from '../pipeline/decisions'
 import type { RunInterrupts } from '../pipeline/interrupts'
 import { createToolRoundExecutor, unknownToolError, type FinalizationWording } from '../pipeline/toolRound'
 import { shownTextsOf, type ShownText } from '../pipeline/unseenPhraseRail'
+import type { WebEngine } from '../pipeline/webEngine'
 import type { HeldObservationsLookup } from '../session/sessionEvidence'
 import type { FinalizationCause } from '../session/runJournal'
 import { describeToolAction } from '../pipeline/toolCallDisplay'
@@ -285,6 +286,13 @@ export interface RunSubagentOptions {
    * Absent unless the developer opted in with a family.
    */
   traceVision?: VisionTraceReporter
+  /**
+   * The spawning Run's Run Engine (#270, ADR 0066), read live: what this
+   * worker's Engine Rewrite and Composed Address rewrite compose on. The
+   * brief is the orchestrator's words, so it never names one. Absent —
+   * DuckDuckGo.
+   */
+  runEngine?: () => WebEngine
 }
 
 export class SubagentCancelledError extends Error {
@@ -646,7 +654,7 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
     toolContext,
     decisions,
     interrupts,
-    capabilities: { searchLoopRail: true, verificationRail: true, noProgressRail: true, composedAddressRail: true, unseenPhraseRail: true, perCallGate: true },
+    capabilities: { searchLoopRail: true, verificationRail: true, noProgressRail: true, composedAddressRail: true, unseenPhraseRail: true, engineRewriteRail: true, perCallGate: true },
     terminalResult: (_call, outcome) => askEscalation(outcome) !== null,
     blockerEscalation: subagentBlockerEscalation,
     finalizationWording: workerFinalizationWording,
@@ -664,6 +672,7 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
     // handed, since the orchestrator showed it those. The brief is never
     // recorded into the ledger, whose frozen snapshot rides the report.
     shownTexts: () => [...shownByParent, ...shownTextsOf(workerLedger.snapshot())],
+    ...(options.runEngine ? { runEngine: options.runEngine } : {}),
   })
 
   // The worker's reasoning collector (#183): one per worker, only when the

@@ -11,6 +11,7 @@ import type { SubagentOffContractReplyTrace } from '../trace/offContractReplyTra
 import type { SubagentAnswerRetryTrace } from '../trace/answerRetryTrace'
 import type { SubagentPipelineEventTrace } from '../trace/pipelineEventTrace'
 import type { VisionTraceReporter } from '../trace/visionTrace'
+import type { WebEngine } from '../pipeline/webEngine'
 import type { SubagentReport } from './subagentReport'
 import { SubagentCancelledError } from './subagentRunner'
 
@@ -158,6 +159,12 @@ export interface SubagentTaskHooks {
    * than landing in the Host Trace as something the app did on its own.
    */
   traceVision?: VisionTraceReporter
+  /**
+   * The spawning Run's Run Engine (#270, ADR 0066), read live: what this
+   * worker's searches compose on. Absent — a spawn outside any Run —
+   * DuckDuckGo.
+   */
+  runEngine?: () => WebEngine
 }
 
 /** Port: starts one workhorse loop (runSubagent in production). */
@@ -211,6 +218,7 @@ export interface SpawnContext {
   traceAnswerRetry?: SubagentAnswerRetryTrace
   tracePipelineEvent?: SubagentPipelineEventTrace
   traceVision?: VisionTraceReporter
+  runEngine?: () => WebEngine
 }
 
 export interface SubagentManager {
@@ -359,6 +367,7 @@ export function createSubagentManager(deps: SubagentManagerDeps): SubagentManage
         traceAnswerRetry,
         tracePipelineEvent,
         traceVision,
+        runEngine,
       } = context
       if (liveCount() >= maxConcurrent) {
         return {
@@ -451,6 +460,8 @@ export function createSubagentManager(deps: SubagentManagerDeps): SubagentManage
           // routes on the parent's turn, so a worker's vision spend is
           // countable in the Run Trace beside the Run's own.
           ...(traceVision !== undefined ? { traceVision } : {}),
+          // And the Run Engine (#270): the worker searches where the Run does.
+          ...(runEngine !== undefined ? { runEngine } : {}),
           waitIfPaused: () => waitIfPaused(id),
           onProgress: (step, action) => {
             if (spawnEpoch !== epoch) return

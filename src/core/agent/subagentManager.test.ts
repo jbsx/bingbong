@@ -14,6 +14,7 @@ import {
   type SubagentTaskHooks,
 } from './subagentManager'
 import { SubagentCancelledError } from './subagentRunner'
+import { WEB_ENGINES } from '../pipeline/webEngine'
 
 // The supervisor (issue #13): spawns workhorse loops, tracks them, cancels
 // them, merges their results for the orchestrator — with the rails enforced
@@ -252,6 +253,17 @@ describe('subagent manager', () => {
     expired = true
     expect(api.tasks.get('a-1')!.workExpired?.()).toBe(true)
     expect(api.tasks.get('a-2')!.workExpired).toBeUndefined()
+  })
+
+  it("threads the parent Run's Run Engine into the workhorse, and only when it was handed one (#270)", () => {
+    const { mgr, api } = manager()
+    const google = WEB_ENGINES.find((engine) => engine.name === 'google')!
+
+    expect(mgr.spawn('browse', 'engine work', { runEngine: () => google }).ok).toBe(true)
+    expect(mgr.spawn('background', 'no engine').ok).toBe(true)
+
+    expect(api.hooksSeen.get('a-1')!.runEngine?.()).toBe(google)
+    expect(api.hooksSeen.get('a-2')!.runEngine).toBeUndefined()
   })
 
   it("threads the parent Run's reasoning trace into the workhorse, and only when it was handed one (#183)", () => {

@@ -157,3 +157,10 @@ principle that what the Run was shown is the one ground it may act on.
     a trace with no Search Observations, reads an unquoted call's query
     from the stamp as it reads a rewritten address's, so the two rules see
     the terms that ran.
+- 2026-09-25 (#270): this rewrite composes on the Run Engine. The Engine
+  Rewrite ([ADR 0066](0066-a-search-runs-on-the-run-engine-and-a-search-composed-on-another-web-engine-is-rewritten-to-it.md))
+  runs first in the chain, so a quoted search the model typed on Google is
+  already DuckDuckGo's by the time this gate judges its spans, and its
+  unquoted search runs there — in fix-265-267-3 it re-ran on Google straight
+  into the wall. When both fire, the outcome carries both lines, the
+  engine's first.

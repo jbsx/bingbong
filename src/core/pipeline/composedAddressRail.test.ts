@@ -7,6 +7,7 @@ import {
   createComposedAddressRail,
   type ComposedAddressRewrite,
 } from './composedAddressRail'
+import { WEB_ENGINES } from './webEngine'
 
 // ADR 0050: a site allows one Not-found Landing by a Composed Address per
 // Run. ADR 0055 (#255): after it, a Composed Address to the site is rewritten
@@ -273,29 +274,20 @@ describe('the rewritten search (#255, ADR 0055)', () => {
     expect(composedAddressSearchQuery('https://www.eurostar.com/rw-en/luggage?id=42&lang=en#allowance', 'eurostar.com')).toBe('rw en luggage site:eurostar.com')
   })
 
-  it('runs on the origin and path of the Run’s last q= search, with the query substituted', () => {
+  it('runs on the Run Engine, never on the engine or site the model last searched with (#270, ADR 0066)', () => {
     const rail = spentOnNasa()
-    const search = nav('https://www.google.com/search?q=voyager+record&hl=en')
-    rail.observe(search, found('https://www.google.com/search?q=voyager+record&hl=en'))
+    rail.observe(nav('https://www.bing.com/search?q=voyager'), found('https://www.bing.com/search?q=voyager'))
+    rail.observe(nav('https://www.nasa.gov/search?q=voyager'), found('https://www.nasa.gov/search?q=voyager'))
+
+    expect(rail.rewrite(nav('https://www.nasa.gov/voyager-record'))?.url).toBe('https://duckduckgo.com/?q=voyager%20record%20site%3Anasa.gov')
+  })
+
+  it('runs on the engine the user named, read at every rewrite (#270, ADR 0066)', () => {
+    let runEngine = WEB_ENGINES.find((engine) => engine.name === 'google')!
+    const rail = spentOnNasa({ runEngine: () => runEngine })
 
     expect(rail.rewrite(nav('https://www.nasa.gov/voyager-record'))?.url).toBe('https://www.google.com/search?q=voyager+record+site%3Anasa.gov')
-  })
-
-  it('keeps the last q= search that ran, not a failed one, and takes a later one over an earlier one', () => {
-    const rail = spentOnNasa()
-    rail.observe(nav('https://www.bing.com/search?q=voyager'), found('https://www.bing.com/search?q=voyager'))
-    rail.observe(nav('https://search.brave.com/search?q=voyager'), found('https://search.brave.com/search?q=voyager'))
-    rail.observe(nav('https://www.google.com/search?q=voyager'), { ok: false, error: 'net::ERR_TIMED_OUT' })
-
-    expect(rail.rewrite(nav('https://www.nasa.gov/voyager'))?.url).toBe('https://search.brave.com/search?q=voyager+site%3Anasa.gov')
-  })
-
-  it('keeps the q= engine across a later site search: a path or query= search is a surface, not an engine (#260, ADR 0059)', () => {
-    const rail = spentOnNasa()
-    rail.observe(nav('https://www.bing.com/search?q=voyager'), found('https://www.bing.com/search?q=voyager'))
-    rail.observe(nav('https://www.nasa.gov/search/voyager'), found('https://www.nasa.gov/search/voyager'))
-    rail.observe(nav('https://www.nasa.gov/search?query=voyager'), found('https://www.nasa.gov/search?query=voyager'))
-
+    runEngine = WEB_ENGINES.find((engine) => engine.name === 'bing')!
     expect(rail.rewrite(nav('https://www.nasa.gov/voyager-record'))?.url).toBe('https://www.bing.com/search?q=voyager+record+site%3Anasa.gov')
   })
 

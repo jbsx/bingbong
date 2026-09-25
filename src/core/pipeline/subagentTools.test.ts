@@ -3,6 +3,7 @@ import type { SubagentManager } from '../agent/subagentManager'
 import type { WorkingMemorySnapshot } from '../session/workingMemory'
 import { memoryEntry } from '../testing/doubles'
 import { createSubagentTools } from './subagentTools'
+import { DEFAULT_RUN_ENGINE, WEB_ENGINES, type WebEngine } from './webEngine'
 
 // The delegation surface the orchestrator model sees (issue #13):
 // spawn_agent / cancel_agent / agent_results over the manager. Rail refusals
@@ -236,6 +237,27 @@ describe('subagent tools', () => {
     expect(received!.expired()).toBe(false)
     expired = true
     expect(received!.expired()).toBe(true)
+  })
+
+  it('hands the Run Engine to the manager live, never one read from the brief (#270, ADR 0066)', async () => {
+    let received: (() => WebEngine) | undefined
+    const tools = createSubagentTools(fakeManager({
+      spawn: (_kind, _task, context) => {
+        received = context?.runEngine
+        return { ok: true, agent: { id: 'a-2', kind: 'browse', task: 't', status: 'running', startedAt: 0, finishedAt: null, steps: 0, lastAction: null, result: null, error: null } }
+      },
+    }))
+    const spawn = tools.find((tool) => tool.name === 'spawn_agent')!
+    let runEngine = DEFAULT_RUN_ENGINE
+
+    await spawn.execute(
+      { id: 'c1', name: 'spawn_agent', args: { kind: 'browse', task: 'search google for the Voyager date' } },
+      { clock: { now: () => 0, setTimer: () => () => {} }, effortTier: () => 'investigation', runEngine: () => runEngine },
+    )
+
+    expect(received!().name).toBe('duckduckgo')
+    runEngine = WEB_ENGINES.find((engine) => engine.name === 'bing')!
+    expect(received!().name).toBe('bing')
   })
 
   it('cancel_agent cancels one id or all running agents', async () => {

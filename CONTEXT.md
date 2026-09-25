@@ -1141,6 +1141,33 @@ not sight for an Unseen Phrase (#267, ADR 0064). A result's snippet that
 carries the phrase is not an echo.
 _Avoid_: query echo, reflected query
 
+**Web Engine**:
+A general web search engine from a fixed list, known by its registrable
+domain — Google, Bing, DuckDuckGo, Yahoo, Yandex, Baidu, Brave Search (on
+search.brave.com only), Startpage, Ecosia, Mojeek, Qwant, Kagi — as against a
+site's own search. A Search URL on any other site is a site search, whatever
+parameter it names. An engine missing from the list is a capture finding, not
+a bug (#270, ADR 0066).
+_Avoid_: search engine (when a site search is meant), surface
+
+**Run Engine**:
+The Web Engine every search of a Run composes on: the engine the user named in
+their own words this Run — the command or a Steering directive, the last one
+named — else the app's default, DuckDuckGo. Per Run only; a follow-up starts
+at DuckDuckGo again. A Subagent's is the Run Engine of the Run that spawned
+it, since its brief is not the user's words. A Composed Address rewrite runs
+its site search on it (#270, ADR 0066).
+_Avoid_: default engine, search provider
+
+**Engine Rewrite**:
+A model search on a Web Engine other than the Run Engine, rewritten in the
+same round to the Run Engine's Search URL with its terms kept, the outcome's
+first line saying so. First in the rewrite chain: the Composed Address and
+Unseen Phrase rewrites see the call it produced, and when more than one
+applies each adds its own line, the engine's first. An engine's home page is
+no search, and what is typed into its box is never rewritten (#270, ADR 0066).
+_Avoid_: engine normalisation, redirect
+
 **Blocker**:
 Anything between the agent and page content: Consent Dialogs, CAPTCHAs,
 login walls, paywalls, age gates, file-select dialogs. Detected mechanically

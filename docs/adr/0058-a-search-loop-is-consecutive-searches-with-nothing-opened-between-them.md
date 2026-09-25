@@ -214,3 +214,14 @@ streak is replaced. Keeps [ADR 0050](0050-a-not-found-landing-is-neutral-and-a-c
 landing-as-inspection rule; that ADR gains a note on the truncated-href
 defect found on the same traces. Follows [ADR 0045](0045-a-round-audit-is-counted-by-code-and-judged-by-a-model-that-is-not-measured.md)
 on not tuning to the judged data.
+
+## Notes
+
+- 2026-09-25 (#270): the deferred "rewrite a walled engine's search" is
+  taken by [ADR 0066](0066-a-search-runs-on-the-run-engine-and-a-search-composed-on-another-web-engine-is-rewritten-to-it.md),
+  made general and moved ahead of the wall: every model search on a Web
+  Engine other than the Run Engine is rewritten to the Run Engine before it
+  runs, so the first wall per Run is never paid. Google walled all 4 of its
+  searches across baseline3, fix-263-264 and fix-265-267, each inside a
+  counted Search Loop. The streak rule here is unchanged: an Engine Rewrite
+  is a search, and a walled search navigate is still a search, never escape.

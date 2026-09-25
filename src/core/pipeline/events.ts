@@ -10,6 +10,7 @@ import type { AskedItemStanding } from '../agent/askedItems'
 import type { LlmRetryReason } from '../ports/llm'
 import type { ComposedAddressRewriteStamp } from './composedAddressRail'
 import type { UnseenPhraseRewriteStamp } from './unseenPhraseRail'
+import type { EngineRewriteStamp } from './engineRewriteRail'
 
 /**
  * Ownership metadata on Session-scoped events (#86–#100): every published
@@ -90,6 +91,12 @@ export type PipelineEvent = SessionEventIdentity & (
        * unquoted, read from the round like `rewritten`.
        */
       unquoted?: UnseenPhraseRewriteStamp
+      /**
+       * The Engine Rewrite this result is for (#270, ADR 0066): present
+       * only when a search on another Web Engine ran on the Run Engine,
+       * read from the round like `rewritten`.
+       */
+      engineRewrite?: EngineRewriteStamp
       at: number
     }
   | {

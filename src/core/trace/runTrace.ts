@@ -20,6 +20,7 @@ import type { UnavailableLanding } from '../browser/unavailablePage'
 import type { ComposedAddressRewriteStamp } from '../pipeline/composedAddressRail'
 import type { TierEscalationDecline } from '../pipeline/effortEpoch'
 import type { UnseenPhraseRewriteStamp } from '../pipeline/unseenPhraseRail'
+import type { EngineRewriteStamp } from '../pipeline/engineRewriteRail'
 import type { AnswerShape } from '../agent/answerContract'
 import type { AgentRole } from '../agent/modelRouting'
 import type { ReasoningEffort, TokenUsage } from '../ports/llm'
@@ -430,6 +431,13 @@ export interface PipelineEventTraceEvent {
    * other result and kind.
    */
   readonly unquoted?: UnseenPhraseRewriteStamp
+  /**
+   * The Engine Rewrite a `tool_result` opens with (#270, ADR 0066): the
+   * Web Engine the model searched on, the Run Engine the search ran on, and
+   * the terms — the `tool_call` beside it keeps the address as written.
+   * Absent on every other result and kind.
+   */
+  readonly engineRewrite?: EngineRewriteStamp
   /**
    * The delegated worker whose Tool Round published this (#185); absent on
    * the Run's own stream. A worker's rounds never reach the main stream —

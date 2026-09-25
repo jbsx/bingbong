@@ -9,6 +9,7 @@ import type { SubagentAnswerRetryTrace } from '../trace/answerRetryTrace'
 import type { SubagentPipelineEventTrace } from '../trace/pipelineEventTrace'
 import type { VisionTraceReporter } from '../trace/visionTrace'
 import type { EffortTier } from './runPlan'
+import type { WebEngine } from './webEngine'
 import type { CandidateCheckpointOutcome } from './candidateCheckpoint'
 import type { EvidenceCheckpointOutcome } from './evidenceCheckpoint'
 
@@ -36,6 +37,12 @@ export interface ToolContext {
    * however many of their own rounds remain.
    */
   delegationDeadline?: SubagentSharedDeadline
+  /**
+   * The Run Engine (#270, ADR 0066): what the Run's searches compose on,
+   * read live. Delegation hands it to a spawned worker, whose brief is the
+   * orchestrator's words and so can never name one for the user.
+   */
+  runEngine?(): WebEngine
   /**
    * The reasoning records for delegated workers (#183, ADR 0031): what a
    * spawned worker's rounds write their thinking through, already closed

@@ -40,6 +40,8 @@ import type { SettledPageState } from './progressFingerprints'
 import type { SnapshotRef } from '../browser/snapshot'
 import { createToolRoundExecutor, type ToolRoundExecutor } from './toolRound'
 import { shownTextsOf } from './unseenPhraseRail'
+import { userWordsOf } from './engineRewriteRail'
+import { runEngineOf, type WebEngine } from './webEngine'
 import {
   createEffortEpoch,
   tierEscalationDeclineOf,
@@ -893,6 +895,10 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
       generation: runGeneration,
       isCurrentGeneration: (generation) => generation === latestSessionGeneration,
     })
+    // The Run Engine (#270, ADR 0066), read per search from this Run's own
+    // ledger: the command and every Steering directive are recorded there,
+    // so a follow-up — a new Run, a new ledger — starts at DuckDuckGo again.
+    const runEngine = (): WebEngine => runEngineOf(userWordsOf(ledger.snapshot()))
     const observe = (input: ObservationInput): ObservationRecord | null => {
       const record = ledger.record(input)
       if (record !== null && deps.onObservation) {
@@ -1300,6 +1306,10 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           effortTier: () => effortEpoch.tier,
           finalizing: () => effortEpoch.phase.kind !== 'working',
           delegationDeadline: effortEpoch.delegationDeadline,
+          // The Run Engine (#270, ADR 0066): what this Run's searches
+          // compose on, handed down to a spawned worker live, since a
+          // worker's brief is the orchestrator's words, never the user's.
+          runEngine,
           // A delegated worker's reasoning records (#183): the Run's own
           // writer and turn, closed over here so the worker never sees
           // either — its thinking lands already joined to the Run that
@@ -1364,7 +1374,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           toolContext,
           decisions,
           interrupts,
-          capabilities: { searchLoopRail: true, verificationRail: true, noProgressRail: true, composedAddressRail: true, unseenPhraseRail: true, perCallGate: true },
+          capabilities: { searchLoopRail: true, verificationRail: true, noProgressRail: true, composedAddressRail: true, unseenPhraseRail: true, engineRewriteRail: true, perCallGate: true },
           intercept: (call) => interceptCall(call),
           // A successful Session Reset (#99) discards the rest of the run.
           terminalResult: (call, outcome) => outcome.ok && toolsByName.get(call.name)?.sessionReset === true,
@@ -1383,6 +1393,9 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           // ledger, every record — the command, every read and outcome
           // failed or not, Steering and Subagent Reports — read per search.
           shownTexts: () => shownTextsOf(ledger.snapshot()),
+          // The Run Engine (#270, ADR 0066): the engine the user named in
+          // this Run's command or a Steering directive, else DuckDuckGo.
+          runEngine,
           // The verification rail's Session seams (#212, ADR 0041). All
           // four resolve per call against the live store rather than
           // against admission: a Candidate this Run has only just

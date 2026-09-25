@@ -1805,7 +1805,7 @@ describe('command pipeline', () => {
   })
 
   describe('deterministic fallback Answers (#137, ADR 0027)', () => {
-    const SERP_URL = 'https://www.google.com/search?q=reddit+manhwa+horizon+boxer'
+    const SERP_URL = 'https://duckduckgo.com/?q=reddit+manhwa+horizon+boxer'
     const REDDIT_URL = 'https://www.reddit.com/r/manhwa/comments/z8sfnn'
     const GUIDE_URL = 'https://fan-guide.example/horizon'
     const PAGES: Record<string, { title: string; digest: string }> = {
@@ -6768,6 +6768,35 @@ describe('observation ledger (#111)', () => {
       { id: 'obs-1', at: 0, producer: 'command', ok: true, payload: 'original command' },
       { id: 'obs-2', at: 0, producer: 'steering', ok: true, payload: 'Use Paris instead.' },
     ])
+  })
+
+  it('composes on the engine the command named for that Run only: a follow-up is back on DuckDuckGo (#270, ADR 0066)', async () => {
+    const urls: string[] = []
+    const navigate: Tool = {
+      name: 'navigate',
+      acquisition: true,
+      async execute(call) {
+        urls.push(String(call.args.url))
+        return `navigated: url=${String(call.args.url)} title="Search"`
+      },
+    }
+    const google = 'https://www.google.com/search?q=voyager+heliopause'
+    const pipeline = createCommandPipeline({
+      llm: new ScriptedLlm([
+        { kind: 'tool_calls', calls: [{ id: 'n1', name: 'navigate', args: { url: google } }] },
+        { kind: 'answer', speak: 'Done.', display: 'Done.' },
+        { kind: 'tool_calls', calls: [{ id: 'n2', name: 'navigate', args: { url: google } }] },
+        { kind: 'answer', speak: 'Done.', display: 'Done.' },
+      ]),
+      tts: new RecordingTts(),
+      clock: new FakeClock(),
+      tools: [navigate],
+    })
+
+    await collect(pipeline, 'search google for when Voyager 1 crossed the heliopause')
+    await collect(pipeline, 'and Voyager 2?')
+
+    expect(urls).toEqual([google, 'https://duckduckgo.com/?q=voyager%20heliopause'])
   })
 
   it('disappears when its Run ends: the next Run mints fresh identities', async () => {

@@ -1,8 +1,9 @@
 import type { ToolCall, ToolResultOutcome } from '../ports/llm'
 import { parseNotFoundMarker } from '../browser/notFoundPage'
-import { normalizeUrlInput, parseSearchUrl, searchUrl } from '../browser/urlInput'
+import { normalizeUrlInput } from '../browser/urlInput'
 import { hostFromUrl, siteOfHost } from './blockerGate'
 import { searchQueryFromUrl, urlFingerprint } from './progressFingerprints'
+import { DEFAULT_RUN_ENGINE, type WebEngine } from './webEngine'
 import { reportFault } from '../trace/fault'
 
 // #239, ADR 0050: the Composed Address rail. A rail that acts before a call
@@ -15,16 +16,17 @@ import { reportFault } from '../trace/fault'
 // one — allows one Not-found Landing by a Composed Address per Run. After
 // it, every Composed Address to that site is rewritten into a search of the
 // site (#255, ADR 0055); searches (a navigate to a Search URL, ADR 0059, or
-// a typed query), clicks and Offered Addresses pass untouched. Only a `q=`
-// search becomes the rewrite's engine. The count never clears: a not-found
+// a typed query), clicks and Offered Addresses pass untouched. The count
+// never clears: a not-found
 // answer is evidence the model's address knowledge for the site is wrong,
 // and a later real page does not restore it.
 //
 // ADR 0050 refused those calls, and the model answered a refusal with a
 // third move — another composed address — so each one spent a round doing
 // nothing. The rewrite spends the round on what the refusal asked for: the
-// composed path's words as a search of the site, on the engine the Run last
-// searched with. The rewrite is a search to every rail, this one included,
+// composed path's words as a search of the site, on the Run Engine (#270,
+// ADR 0066: the engine the model last typed was once taken, and Google
+// walled it). The rewrite is a search to every rail, this one included,
 // and nothing here ends a Run, so the rail has no Finalization to trip.
 //
 // Fresh per executor like every rail, so a new Run starts at zero. Rewrites
@@ -39,7 +41,7 @@ export interface ComposedAddressRewrite {
   readonly from: string
   /** The search: the path's words and `site:<site>`. */
   readonly query: string
-  /** The search's URL on the Run's engine. */
+  /** The search's URL on the Run Engine. */
   readonly url: string
   /** The call that executes: the model's own id and name, navigating to {@link url}. */
   readonly call: ToolCall
@@ -53,6 +55,11 @@ export interface ComposedAddressRailDeps {
    * only what this Run was shown.
    */
   evidenceSourceUrls?: () => readonly string[]
+  /**
+   * The Run Engine (#270, ADR 0066), read at every rewrite so a Steering
+   * directive naming an engine counts. Absent, or throwing, DuckDuckGo.
+   */
+  runEngine?: () => WebEngine
 }
 
 export interface ComposedAddressRail {
@@ -61,8 +68,7 @@ export interface ComposedAddressRail {
   /**
    * Post-execution observation of every processed call — the call that
    * executed, so a rewritten one is observed as the search it was: a
-   * successful result offers the addresses it showed, a q= navigate that ran
-   * becomes the Run's engine, and a navigate to a Composed Address that
+   * successful result offers the addresses it showed, and a navigate to a Composed Address that
    * landed on a Not-found Page spends its site's allowance. `landedUrl` is
    * the page the tab settled on after the call, when the caller knows it.
    *
@@ -177,31 +183,10 @@ function fingerprintOf(address: string): string {
   return urlFingerprint(address).url
 }
 
-/**
- * The origin and path a q= navigate searched on, or null when the call is no
- * q= navigate. Only the `q` form is an engine (#260, ADR 0059): a site's
- * `…/search/<terms>` or `…?query=` is a surface, and substituting `q=` onto
- * it would build `…/search/Harrison?q=…`.
- */
-function engineOf(call: ToolCall): string | null {
-  if (call.name !== 'navigate' || typeof call.args.url !== 'string' || parseSearchUrl(call.args.url)?.form !== 'q') return null
-  const address = normalizeUrlInput(call.args.url)
-  if (address === null) return null
-  try {
-    const url = new URL(address)
-    return `${url.origin}${url.pathname}`
-  } catch (error) {
-    reportFault('pipeline.composedAddressRail.engineOf', error)
-    return null
-  }
-}
-
 export function createComposedAddressRail(deps: ComposedAddressRailDeps = {}): ComposedAddressRail {
   const offered = new Set<string>()
   // Sites whose one Not-found Landing by a Composed Address is spent.
   const spent = new Set<string>()
-  // The origin and path of the Run's last q= search that ran (ADR 0055).
-  let engine: string | null = null
 
   function offer(address: string): void {
     if (address.trim() !== '') offered.add(fingerprintOf(address))
@@ -234,18 +219,16 @@ export function createComposedAddressRail(deps: ComposedAddressRailDeps = {}): C
     return { address, site: siteOfHost(host) }
   }
 
-  /** The search's URL: the engine with the query substituted, else the browser's own builder. */
+  /** The search's URL on the Run Engine. */
   function searchUrlOn(query: string): string {
-    if (engine !== null) {
-      try {
-        const url = new URL(engine)
-        url.searchParams.set('q', query)
-        return url.toString()
-      } catch (error) {
-        reportFault('pipeline.composedAddressRail.searchUrlOn', error)
-      }
+    let engine = DEFAULT_RUN_ENGINE
+    try {
+      engine = deps.runEngine?.() ?? DEFAULT_RUN_ENGINE
+    } catch (error) {
+      // A seam that throws leaves the app's default.
+      reportFault('pipeline.composedAddressRail.runEngine', error)
     }
-    return searchUrl(query)
+    return engine.searchUrl(query)
   }
 
   return {
@@ -261,7 +244,6 @@ export function createComposedAddressRail(deps: ComposedAddressRailDeps = {}): C
       // A failed or refused call showed nothing and landed nowhere.
       if (!outcome.ok || typeof outcome.result !== 'string') return
       const text = outcome.result
-      engine = engineOf(call) ?? engine
       const landing = parseNotFoundMarker(text)
       // Judged before this result offers anything: the address the model
       // composed does not become offered by the landing it produced.

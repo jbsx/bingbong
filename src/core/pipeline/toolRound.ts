@@ -12,6 +12,8 @@ import { createBlockerGate, orchestratorBlockerEscalation, type BlockerEscalatio
 import { createSearchLoopRail } from './searchLoopRail'
 import { createComposedAddressRail, withComposedAddressRewrite } from './composedAddressRail'
 import { createUnseenPhraseRail, withUnseenPhraseRewrite, type ShownText } from './unseenPhraseRail'
+import { createEngineRewriteRail, withEngineRewrite } from './engineRewriteRail'
+import { DEFAULT_RUN_ENGINE, type WebEngine } from './webEngine'
 import { createVerificationRail, verificationRouteOf, type VerificationGate, type VerificationRailDeps } from './verificationRail'
 import type { VerificationRoute } from '../session/verificationAttempts'
 import { createNoProgressRail } from './noProgressRail'
@@ -32,7 +34,7 @@ import { heldPageNotice, landedOnAnotherPage } from './heldPage'
 //
 // Vocabulary (CONTEXT.md, Tool Round): one model response's tool calls,
 // executed in order. Every round crosses the same seams in a fixed order —
-// the Composed Address rewrite, the Unseen Phrase rewrite, Blocker gate,
+// the Engine Rewrite, the Composed Address rewrite, the Unseen Phrase rewrite, Blocker gate,
 // no-progress gate, risk assessment and Confirmation, the verification gate,
 // the Vision Budget, the search-loop gate, execution, then classify → Observation ledger → Blocker
 // observe → the Blocker trip → search-loop observe → Composed Address observe
@@ -88,6 +90,14 @@ export interface ToolRoundCapabilities {
    * sees the search that runs. It observes nothing and trips nothing.
    */
   readonly unseenPhraseRail: boolean
+  /**
+   * The Engine Rewrite (#270, ADR 0066): a search on a Web Engine other
+   * than the Run Engine runs as the Run Engine's. First in the rewrite
+   * chain, so the Composed Address and Unseen Phrase rewrites and every
+   * gate and rail see the search that runs. It observes nothing and trips
+   * nothing.
+   */
+  readonly engineRewriteRail: boolean
   /**
    * The per-call gate (#135/#199): the epoch's boundaries checked before
    * every call in the round begins — its deadline, and for a Subagent its
@@ -260,6 +270,13 @@ export interface ToolRoundConfig {
    * every span; a caller that runs the rail hands one in.
    */
   readonly shownTexts?: () => readonly ShownText[]
+  /**
+   * The Run Engine (#270, ADR 0066), read per search: what the Engine
+   * Rewrite and the Composed Address rewrite compose on. The engine the
+   * user named in the Run's command or a Steering directive; a Subagent's,
+   * handed down from the Run that spawned it. Absent — DuckDuckGo.
+   */
+  readonly runEngine?: () => WebEngine
   /** Advisory bookkeeping only — a throwing tracer never fails a round. */
   readonly diagnostics?: {
     readonly tracer?: PerfTracer
@@ -368,8 +385,12 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
     : null
   const verificationRail = capabilities.verificationRail ? createVerificationRail(config.verification ?? {}) : null
   const composedAddressRail = capabilities.composedAddressRail
-    ? createComposedAddressRail(config.evidenceSourceUrls ? { evidenceSourceUrls: config.evidenceSourceUrls } : {})
+    ? createComposedAddressRail({
+        ...(config.evidenceSourceUrls ? { evidenceSourceUrls: config.evidenceSourceUrls } : {}),
+        ...(config.runEngine ? { runEngine: config.runEngine } : {}),
+      })
     : null
+  const engineRewriteRail = capabilities.engineRewriteRail ? createEngineRewriteRail({ runEngine: config.runEngine ?? (() => DEFAULT_RUN_ENGINE) }) : null
   const unseenPhraseRail = capabilities.unseenPhraseRail
     ? createUnseenPhraseRail({
         shownTexts: config.shownTexts ?? (() => []),
@@ -677,18 +698,23 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
       // directive.
       const closedTool = intercepted === null && isInFinalization() ? toolsByName.get(call.name) : undefined
       const closed = closedTool !== undefined && closedInFinalization(closedTool)
+      // The Engine Rewrite (#270, ADR 0066): a search on a Web Engine other
+      // than the Run Engine runs as the Run Engine's search, first in the
+      // chain, so the rewrites after it see the normalised call.
+      const engineRewrite = intercepted === null && !closed ? (engineRewriteRail?.rewrite(call) ?? null) : null
+      const engineCall = engineRewrite?.call ?? call
       // The Composed Address rewrite (#255, ADR 0055): after a site's one
       // Not-found Landing, a composed address to it runs as a search of the
       // site. The search is the call every gate and rail below sees — it is a
       // search to all of them — while the model's call keeps its place in the
       // round, and the result it reads opens with the line saying what ran.
-      const rewrite = intercepted === null && !closed ? (composedAddressRail?.rewrite(call) ?? null) : null
+      const rewrite = intercepted === null && !closed ? (composedAddressRail?.rewrite(engineCall) ?? null) : null
       // The Unseen Phrase rewrite (#267, ADR 0064): a search quoting a phrase
       // this run was never shown runs unquoted. Judged on the call that runs
       // — a Composed Address rewritten into a search is judged as that search
       // — under the same conditions, so the gates below see the terms that run.
-      const unquoted = intercepted === null && !closed && unseenPhraseRail !== null ? await unseenPhraseRail.rewrite(rewrite?.call ?? call) : null
-      const executedCall = unquoted?.call ?? rewrite?.call ?? call
+      const unquoted = intercepted === null && !closed && unseenPhraseRail !== null ? await unseenPhraseRail.rewrite(rewrite?.call ?? engineCall) : null
+      const executedCall = unquoted?.call ?? rewrite?.call ?? engineCall
       const outcome: ToolResultOutcome =
         intercepted !== null
           ? intercepted
@@ -790,10 +816,12 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
       // tripping result never carries a plan nudge or budget warning.
       const usefulWork = outcome.ok && typeof outcome.result === 'string' && intercepted === null && !isInFinalization()
       // A rewritten call's line opens what the model reads (#255), ahead of
-      // every Notice; when both rewrites fired, the address line comes first
-      // and the Unseen Phrase head follows it (#267).
+      // every Notice; when more than one rewrite fired, each adds its own
+      // line in chain order — the engine line (#270), then the address
+      // line, then the Unseen Phrase head (#267).
       const unquotedOutcome = unquoted === null ? outcome : withUnseenPhraseRewrite(outcome, unquoted)
-      const readOutcome = rewrite === null ? unquotedOutcome : withComposedAddressRewrite(unquotedOutcome, rewrite)
+      const addressOutcome = rewrite === null ? unquotedOutcome : withComposedAddressRewrite(unquotedOutcome, rewrite)
+      const readOutcome = engineRewrite === null ? addressOutcome : withEngineRewrite(addressOutcome, engineRewrite)
       const modelFacingOutcome = notices.attach(readOutcome, { usefulWork })
       results.push({ call, outcome: modelFacingOutcome, observationId: observedRecord?.id ?? null })
       yield {
@@ -804,6 +832,7 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
         ...(modelFacingOutcome.ok ? { result: modelFacingOutcome.result } : { error: modelFacingOutcome.error }),
         ...(rewrite !== null ? { rewritten: { site: rewrite.site, query: rewrite.query } } : {}),
         ...(unquoted !== null ? { unquoted: { phrases: unquoted.phrases, query: unquoted.query } } : {}),
+        ...(engineRewrite !== null ? { engineRewrite: { from: engineRewrite.from.name, to: engineRewrite.to.name, query: engineRewrite.query } } : {}),
         at: clock.now(),
       }
       // The result ended the round: it is the last thing the round emits.

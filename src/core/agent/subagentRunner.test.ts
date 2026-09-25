@@ -12,6 +12,7 @@ import { ASK_ESCALATION_PREFIX, createAskUserTool, createSubagentAskTool } from 
 import { SEARCH_LOOP_NUDGE_AFTER, SEARCH_LOOP_REFUSE_AFTER } from '../pipeline/searchLoopRail'
 import type { SettledPageState } from '../pipeline/progressFingerprints'
 import { hostFromUrl } from '../pipeline/blockerGate'
+import { WEB_ENGINES } from '../pipeline/webEngine'
 import type { TracedReasoningRound } from '../trace/reasoningTrace'
 import type { TracedLlmRound } from '../trace/llmRoundTrace'
 import { LlmTransportError, type LlmRequest } from '../ports/llm'
@@ -183,6 +184,31 @@ describe('runSubagent', () => {
     // The phrase quoted from the brief keeps its quotes; the one seen nowhere loses them, and the model is told first.
     expect(urls).toEqual(['https://duckduckgo.com/?q=%22Enters+Interstellar+Space%22+NASA', 'https://duckduckgo.com/?q=Has+Not+Yet+Left+NASA'])
     expect(llm.requests[2]?.toolResults?.[1]?.outcome).toMatchObject({ ok: true, result: expect.stringMatching(/^Rewritten — "Has Not Yet Left" appears in nothing this run was shown, so it ran unquoted: Has Not Yet Left NASA\./) })
+  })
+
+  it('runs a search on another Web Engine on the Run Engine it was handed, and on DuckDuckGo when handed none (#270, ADR 0066)', async () => {
+    const urls: string[] = []
+    const navigate: Tool = {
+      name: 'navigate',
+      async execute(call) {
+        urls.push(String(call.args.url))
+        return `navigated: url=${String(call.args.url)} title="Search"`
+      },
+    }
+    const script = (): ScriptedLlm =>
+      new ScriptedLlm([
+        { kind: 'tool_calls', calls: [{ id: 'n1', name: 'navigate', args: { url: 'https://www.google.com/search?q=voyager+heliopause' } }] },
+        { kind: 'answer', speak: 's', display: 'Report.' },
+      ])
+
+    // The brief names Google, but a brief is the orchestrator's words: the worker's engine is the one handed down.
+    const llm = script()
+    await runSubagent({ llm, tools: [navigate], clock: new FakeClock() }, { task: 'search google for the heliopause date', isCancelled: () => false })
+    const bing = WEB_ENGINES.find((engine) => engine.name === 'bing')!
+    await runSubagent({ llm: script(), tools: [navigate], clock: new FakeClock() }, { task: 't', isCancelled: () => false, runEngine: () => bing })
+
+    expect(urls).toEqual(['https://duckduckgo.com/?q=voyager%20heliopause', 'https://www.bing.com/search?q=voyager+heliopause'])
+    expect(llm.requests[1]?.toolResults?.[0]?.outcome).toMatchObject({ ok: true, result: expect.stringMatching(/^Rewritten — this run searches on DuckDuckGo, so the Google search ran there/) })
   })
 
   it('feeds tool errors back to the model instead of failing the run', async () => {
