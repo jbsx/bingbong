@@ -212,7 +212,7 @@ export function createSubagentTaskApi(deps: SubagentWorkhorseDeps): SubagentTask
           // The worker's Looks (#186): the same hand-down, so a delegated
           // Look joins the Run that delegated it.
           ...(hooks.traceVision !== undefined ? { traceVision: hooks.traceVision } : {}),
-          // The Run Engine (#270): the worker's searches compose where the Run's do.
+          // The Run Engine (#270): the Subagent's searches compose where the Run's do.
           ...(hooks.runEngine !== undefined ? { runEngine: hooks.runEngine } : {}),
           waitIfPaused: hooks.waitIfPaused ?? (() => Promise.resolve()),
           onProgress: (progress) => hooks.onProgress(progress.step, progress.action),

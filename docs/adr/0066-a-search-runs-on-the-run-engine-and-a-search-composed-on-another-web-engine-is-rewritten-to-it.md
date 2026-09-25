@@ -124,15 +124,18 @@ Chromium, and ADR 0009/0010/0037 on a Challenge.
 ## Notes
 
 - 2026-09-25, implementation (#270). The calls the grill left open:
-  - **Naming an engine takes a search cue.** An engine's name counts as the
-    user naming it only after a search verb or a preposition of means
-    (`search google`, `find it on Bing`, `use DuckDuckGo`, `try yahoo`) or
-    before what is searched (`google it`, `bing for`). A bare name is what
-    the command is about — "What did Google announce", "a Google Pixel 9",
-    "Google's antitrust case" — and never an engine; setting the Run Engine
-    to Google on those would walk every search into the wall this ADR
-    removes. Brave counts only in those positions too ("is Brave a good
-    browser" names none).
+  - **Naming an engine takes a search verb.** An engine's name counts as
+    the user naming it only as the object of a search verb (`search google`,
+    `use DuckDuckGo`, `try yahoo`, `switch to Bing`), at the end of a phrase
+    a search verb opens, within four words (`find the price on Bing`, `look
+    it up with DuckDuckGo`), or as the verb itself (`google it`, `a google
+    search`). Any other mention is what the command is about — "What did
+    Google announce", "a Google Pixel 9", "Google's antitrust case",
+    "latest news on Google", "compare Bing with Google" — and never an
+    engine; setting the Run Engine to Google on those would walk every
+    search into the wall this ADR removes. The code review of the first
+    draft found a bare preposition ("on Google") let company mentions
+    through, and the verb is now required.
   - **Plain terms follow a named engine.** The browser composes DuckDuckGo
     for plain terms; when the user named another engine, those terms are a
     DuckDuckGo search on another engine than the Run's and are rewritten
@@ -147,8 +150,15 @@ Chromium, and ADR 0009/0010/0037 on a Challenge.
     Yahoo `p=` search keeps its terms. ADR 0059's Search URL parser is
     unchanged; the audit's streak replay reads a rewritten call's terms
     from the stamp.
-  - **Any path on the engine's domain that carries its terms is a search**,
-    an image or map search included; an engine page with no terms is not.
+  - **Only an engine's web search is a search on it.** Each engine names the
+    subdomains and path its web search answers on — Google, Bing, Ecosia,
+    Mojeek and Kagi `/search` on the bare or `www` host, Yahoo `/search` on
+    `search.` (and a country's `uk.search.`), Baidu `/s`, Startpage
+    `/do/search` and `/sp/search`, Qwant the root, DuckDuckGo every host and
+    path. Its other pages carry a terms parameter too and are left alone:
+    `finance.yahoo.com/quote/AAPL?p=AAPL`, Scholar, Books, Maps. An image
+    search on the web search's own endpoint (`/search?tbm=isch`) is still
+    one. An engine page with no terms is none.
   - **The gates are counted at the capture**, not by the audit: the audit
     cannot load the Web Engine list under plain Node (the rail modules'
     imports need the app's resolver), and a second copy of the list would

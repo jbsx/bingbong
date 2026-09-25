@@ -1145,8 +1145,9 @@ _Avoid_: query echo, reflected query
 A general web search engine from a fixed list, known by its registrable
 domain — Google, Bing, DuckDuckGo, Yahoo, Yandex, Baidu, Brave Search (on
 search.brave.com only), Startpage, Ecosia, Mojeek, Qwant, Kagi — as against a
-site's own search. A Search URL on any other site is a site search, whatever
-parameter it names. An engine missing from the list is a capture finding, not
+site's own search. Only its web search is a search on it — its maps, books or
+finance pages are not. A Search URL on any other site is a site search,
+whatever parameter it names. An engine missing from the list is a capture finding, not
 a bug (#270, ADR 0066).
 _Avoid_: search engine (when a site search is meant), surface
 

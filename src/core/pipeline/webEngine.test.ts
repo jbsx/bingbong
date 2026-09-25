@@ -71,6 +71,17 @@ describe('webEngineSearchOf (#270)', () => {
     expect(webEngineSearchOf('https://science.nasa.gov/voyager')).toBeNull()
   })
 
+  it('is null for an engine’s other pages, even carrying its terms parameter: only its web search is a search', () => {
+    expect(webEngineSearchOf('https://finance.yahoo.com/quote/AAPL?p=AAPL')).toBeNull()
+    expect(webEngineSearchOf('https://scholar.google.com/scholar?q=voyager+heliopause')).toBeNull()
+    expect(webEngineSearchOf('https://books.google.com/books?q=longitude')).toBeNull()
+    expect(webEngineSearchOf('https://www.google.com/maps?q=greenwich')).toBeNull()
+    expect(webEngineSearchOf('https://www.bing.com/maps?q=greenwich')).toBeNull()
+    // Its web search on a country domain, and an image search on the same endpoint, still are.
+    expect(webEngineSearchOf('https://www.google.co.uk/search?q=longitude&tbm=isch')).toMatchObject({ engine: { name: 'google' } })
+    expect(webEngineSearchOf('https://uk.search.yahoo.com/search?p=longitude')).toMatchObject({ engine: { name: 'yahoo' } })
+  })
+
   it('builds each engine’s Search URL, DuckDuckGo’s being the browser’s own', () => {
     expect(DEFAULT_RUN_ENGINE.searchUrl('voyager 1 "heliopause"')).toBe(searchUrl('voyager 1 "heliopause"'))
     for (const engine of WEB_ENGINES) {
@@ -99,6 +110,10 @@ describe('runEngineOf (#270): the engine the user named in their own words, else
     expect(runEngineOf(['how much is a Google Pixel 9']).name).toBe('duckduckgo')
     expect(runEngineOf(['what’s the latest in Google’s antitrust case']).name).toBe('duckduckgo')
     expect(runEngineOf(['is Brave a good browser']).name).toBe('duckduckgo')
+    expect(runEngineOf(['latest news on Google']).name).toBe('duckduckgo')
+    expect(runEngineOf(['compare Bing with Google']).name).toBe('duckduckgo')
+    expect(runEngineOf(['Is Google for real about this?']).name).toBe('duckduckgo')
+    expect(runEngineOf(['what happened with Yahoo this year']).name).toBe('duckduckgo')
   })
 
   it('takes the last engine named: a Steering directive after the command overrides it', () => {

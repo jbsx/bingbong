@@ -1,7 +1,5 @@
 import type { ToolCall, ToolResultOutcome } from '../ports/llm'
-import type { ObservationRecord } from '../session/observationLedger'
-import { DEFAULT_RUN_ENGINE, webEngineSearchOf, type WebEngine } from './webEngine'
-import { reportFault } from '../trace/fault'
+import { readRunEngine, webEngineSearchOf, type WebEngine } from './webEngine'
 
 // #270, ADR 0066: the Engine Rewrite. The model chose its engine per search —
 // DuckDuckGo mostly, Bing now and then, Google four times across three
@@ -22,8 +20,8 @@ import { reportFault } from '../trace/fault'
 // is observed, nothing ends a Run. Fresh per executor like every rail.
 
 export interface EngineRewriteRailDeps {
-  /** The Run Engine, read at every search. A seam that throws is DuckDuckGo. */
-  runEngine: () => WebEngine
+  /** The Run Engine, read at every search. Absent, or throwing, DuckDuckGo. */
+  runEngine?: () => WebEngine
 }
 
 /** A search on another Web Engine, as the Run Engine's search it runs as instead. */
@@ -55,11 +53,6 @@ export interface EngineRewriteRail {
   rewrite(call: ToolCall): EngineRewrite | null
 }
 
-/** The user's own words this Run (#270): the command, then each Steering directive, in the order they were said. */
-export function userWordsOf(records: readonly ObservationRecord[]): string[] {
-  return records.filter((record) => (record.producer === 'command' || record.producer === 'steering') && typeof record.payload === 'string').map((record) => record.payload as string)
-}
-
 /** The line a rewritten call's result opens with, in ADR 0055's form: what ran where, and why. */
 export function engineRewriteLine(rewrite: EngineRewrite): string {
   return (
@@ -75,16 +68,8 @@ export function withEngineRewrite(outcome: ToolResultOutcome, rewrite: EngineRew
   return typeof outcome.result === 'string' ? { ok: true, result: `${line}\n${outcome.result}` } : outcome
 }
 
-export function createEngineRewriteRail(deps: EngineRewriteRailDeps): EngineRewriteRail {
-  function runEngine(): WebEngine {
-    try {
-      return deps.runEngine()
-    } catch (error) {
-      // A seam that throws leaves the app's default, never the model's pick.
-      reportFault('pipeline.engineRewriteRail.runEngine', error)
-      return DEFAULT_RUN_ENGINE
-    }
-  }
+export function createEngineRewriteRail(deps: EngineRewriteRailDeps = {}): EngineRewriteRail {
+  const runEngine = (): WebEngine => readRunEngine(deps.runEngine, 'pipeline.engineRewriteRail.runEngine')
 
   return {
     rewrite(call) {

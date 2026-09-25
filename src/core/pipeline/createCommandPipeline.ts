@@ -40,8 +40,7 @@ import type { SettledPageState } from './progressFingerprints'
 import type { SnapshotRef } from '../browser/snapshot'
 import { createToolRoundExecutor, type ToolRoundExecutor } from './toolRound'
 import { shownTextsOf } from './unseenPhraseRail'
-import { userWordsOf } from './engineRewriteRail'
-import { runEngineOf, type WebEngine } from './webEngine'
+import { runEngineOf, userWordsOf, type WebEngine } from './webEngine'
 import {
   createEffortEpoch,
   tierEscalationDeclineOf,
@@ -1307,8 +1306,8 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           finalizing: () => effortEpoch.phase.kind !== 'working',
           delegationDeadline: effortEpoch.delegationDeadline,
           // The Run Engine (#270, ADR 0066): what this Run's searches
-          // compose on, handed down to a spawned worker live, since a
-          // worker's brief is the orchestrator's words, never the user's.
+          // compose on, handed down live to a spawned Subagent, since a
+          // Subagent's brief is the orchestrator's words, never the user's.
           runEngine,
           // A delegated worker's reasoning records (#183): the Run's own
           // writer and turn, closed over here so the worker never sees

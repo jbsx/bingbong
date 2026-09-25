@@ -201,7 +201,7 @@ describe('runSubagent', () => {
         { kind: 'answer', speak: 's', display: 'Report.' },
       ])
 
-    // The brief names Google, but a brief is the orchestrator's words: the worker's engine is the one handed down.
+    // The brief names Google, but a brief is the orchestrator's words: the Subagent's engine is the one handed down.
     const llm = script()
     await runSubagent({ llm, tools: [navigate], clock: new FakeClock() }, { task: 'search google for the heliopause date', isCancelled: () => false })
     const bing = WEB_ENGINES.find((engine) => engine.name === 'bing')!

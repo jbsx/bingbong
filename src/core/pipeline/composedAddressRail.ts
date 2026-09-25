@@ -3,7 +3,7 @@ import { parseNotFoundMarker } from '../browser/notFoundPage'
 import { normalizeUrlInput } from '../browser/urlInput'
 import { hostFromUrl, siteOfHost } from './blockerGate'
 import { searchQueryFromUrl, urlFingerprint } from './progressFingerprints'
-import { DEFAULT_RUN_ENGINE, type WebEngine } from './webEngine'
+import { readRunEngine, type WebEngine } from './webEngine'
 import { reportFault } from '../trace/fault'
 
 // #239, ADR 0050: the Composed Address rail. A rail that acts before a call
@@ -221,14 +221,7 @@ export function createComposedAddressRail(deps: ComposedAddressRailDeps = {}): C
 
   /** The search's URL on the Run Engine. */
   function searchUrlOn(query: string): string {
-    let engine = DEFAULT_RUN_ENGINE
-    try {
-      engine = deps.runEngine?.() ?? DEFAULT_RUN_ENGINE
-    } catch (error) {
-      // A seam that throws leaves the app's default.
-      reportFault('pipeline.composedAddressRail.runEngine', error)
-    }
-    return engine.searchUrl(query)
+    return readRunEngine(deps.runEngine, 'pipeline.composedAddressRail.runEngine').searchUrl(query)
   }
 
   return {

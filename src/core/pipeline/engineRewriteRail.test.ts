@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import type { ToolCall } from '../ports/llm'
 import type { ObservationRecord } from '../session/observationLedger'
-import { createEngineRewriteRail, engineRewriteLine, userWordsOf, withEngineRewrite } from './engineRewriteRail'
-import { DEFAULT_RUN_ENGINE, WEB_ENGINES, type WebEngine } from './webEngine'
+import { createEngineRewriteRail, engineRewriteLine, withEngineRewrite } from './engineRewriteRail'
+import { DEFAULT_RUN_ENGINE, userWordsOf, WEB_ENGINES, type WebEngine } from './webEngine'
 
 const call = (name: string, args: Record<string, unknown>, id = 'c1'): ToolCall => ({ id, name, args })
 const navigate = (url: string): ToolCall => call('navigate', { url })

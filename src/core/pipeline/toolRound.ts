@@ -13,7 +13,7 @@ import { createSearchLoopRail } from './searchLoopRail'
 import { createComposedAddressRail, withComposedAddressRewrite } from './composedAddressRail'
 import { createUnseenPhraseRail, withUnseenPhraseRewrite, type ShownText } from './unseenPhraseRail'
 import { createEngineRewriteRail, withEngineRewrite } from './engineRewriteRail'
-import { DEFAULT_RUN_ENGINE, type WebEngine } from './webEngine'
+import type { WebEngine } from './webEngine'
 import { createVerificationRail, verificationRouteOf, type VerificationGate, type VerificationRailDeps } from './verificationRail'
 import type { VerificationRoute } from '../session/verificationAttempts'
 import { createNoProgressRail } from './noProgressRail'
@@ -390,7 +390,7 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
         ...(config.runEngine ? { runEngine: config.runEngine } : {}),
       })
     : null
-  const engineRewriteRail = capabilities.engineRewriteRail ? createEngineRewriteRail({ runEngine: config.runEngine ?? (() => DEFAULT_RUN_ENGINE) }) : null
+  const engineRewriteRail = capabilities.engineRewriteRail ? createEngineRewriteRail(config.runEngine ? { runEngine: config.runEngine } : {}) : null
   const unseenPhraseRail = capabilities.unseenPhraseRail
     ? createUnseenPhraseRail({
         shownTexts: config.shownTexts ?? (() => []),
@@ -700,7 +700,7 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
       const closed = closedTool !== undefined && closedInFinalization(closedTool)
       // The Engine Rewrite (#270, ADR 0066): a search on a Web Engine other
       // than the Run Engine runs as the Run Engine's search, first in the
-      // chain, so the rewrites after it see the normalised call.
+      // chain, so the rewrites after it see the rewritten call.
       const engineRewrite = intercepted === null && !closed ? (engineRewriteRail?.rewrite(call) ?? null) : null
       const engineCall = engineRewrite?.call ?? call
       // The Composed Address rewrite (#255, ADR 0055): after a site's one

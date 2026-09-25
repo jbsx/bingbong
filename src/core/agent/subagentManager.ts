@@ -161,7 +161,7 @@ export interface SubagentTaskHooks {
   traceVision?: VisionTraceReporter
   /**
    * The spawning Run's Run Engine (#270, ADR 0066), read live: what this
-   * worker's searches compose on. Absent — a spawn outside any Run —
+   * Subagent's searches compose on. Absent — a spawn outside any Run —
    * DuckDuckGo.
    */
   runEngine?: () => WebEngine
@@ -460,7 +460,7 @@ export function createSubagentManager(deps: SubagentManagerDeps): SubagentManage
           // routes on the parent's turn, so a worker's vision spend is
           // countable in the Run Trace beside the Run's own.
           ...(traceVision !== undefined ? { traceVision } : {}),
-          // And the Run Engine (#270): the worker searches where the Run does.
+          // And the Run Engine (#270): the Subagent searches where the Run does.
           ...(runEngine !== undefined ? { runEngine } : {}),
           waitIfPaused: () => waitIfPaused(id),
           onProgress: (step, action) => {
