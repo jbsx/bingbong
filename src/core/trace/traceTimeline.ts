@@ -357,7 +357,7 @@ function summarizeEvent(event: unknown): string {
     case 'error':
       return str(published.message)
     case 'llm_retry':
-      return `attempt ${str(published.attempt)} of ${str(published.maxAttempts)}`
+      return `attempt ${str(published.attempt)} of ${str(published.maxAttempts)}${published.reason === 'transport' ? ' (transport)' : ''}`
     case 'waiting_on_agents':
       return `${str(published.running)} running`
     case 'run_plan':

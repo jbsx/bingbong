@@ -108,7 +108,7 @@ async function runSession(
       // and the abandoned thinking must not join the attempt that survives.
       if (options.retriesFirstRound && round === 1 && request.onDelta) {
         request.onDelta({ kind: 'reasoning', text: 'the provider hung up' })
-        request.onRetryAttempt?.(2, 3)
+        request.onRetryAttempt?.(2, 3, 'empty')
         request.onAttempt?.(sent)
       }
       if (options.thinks && request.onDelta) {

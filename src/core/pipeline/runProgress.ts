@@ -1,4 +1,5 @@
 import type { PipelineEvent, PipelineStatus } from './events'
+import type { LlmRetryReason } from '../ports/llm'
 
 // Progress projection (#43): the header hint's state, as a pure function
 // over the pipeline event stream. The stage and its start come from status
@@ -12,8 +13,8 @@ export interface RunProgress {
   stage: PipelineStatus
   /** Wall-clock `at` of the stage's status event — the elapsed anchor. */
   startedAt: number
-  /** The latest empty-completion retry in the current stage, if any. */
-  retry: { attempt: number; maxAttempts: number } | null
+  /** The latest retry in the current stage, if any, and why (#271). */
+  retry: { attempt: number; maxAttempts: number; reason?: LlmRetryReason } | null
   /** Set while the run is blocked in agent_results(wait). */
   waitingOnAgents: { running: number } | null
 }
@@ -56,7 +57,12 @@ export function createRunProgressTracker(): {
           return
         case 'llm_retry':
           if (activeTurn === null || event.turnId !== activeTurn) return
-          if (progress) progress = { ...progress, retry: { attempt: event.attempt, maxAttempts: event.maxAttempts } }
+          if (progress) {
+            progress = {
+              ...progress,
+              retry: { attempt: event.attempt, maxAttempts: event.maxAttempts, ...(event.reason !== undefined ? { reason: event.reason } : {}) },
+            }
+          }
           return
         case 'waiting_on_agents':
           if (activeTurn === null || event.turnId !== activeTurn) return
@@ -105,15 +111,17 @@ export function describeRunProgress(progress: RunProgress, now: number): string 
     text += ` · waiting on agents (${progress.waitingOnAgents.running} running)`
   }
   if (progress.retry) {
-    text += ` · ${formatRetryLine(progress.retry.attempt, progress.retry.maxAttempts)}`
+    text += ` · ${formatRetryLine(progress.retry.attempt, progress.retry.maxAttempts, progress.retry.reason)}`
   }
   return text
 }
 
 /**
  * The one retry phrasing (#43/#44): the header hint's suffix and the feed's
- * retry line share it, so the two surfaces can never drift apart.
+ * retry line share it, so the two surfaces can never drift apart. A
+ * Transport Retry (#271) names itself; a retry with no reason is an empty
+ * completion, the only kind there was before.
  */
-export function formatRetryLine(attempt: number, maxAttempts: number): string {
-  return `empty response — retrying ${attempt}/${maxAttempts}`
+export function formatRetryLine(attempt: number, maxAttempts: number, reason: LlmRetryReason = 'empty'): string {
+  return `${reason === 'transport' ? 'no response from the model' : 'empty response'} — retrying ${attempt}/${maxAttempts}`
 }

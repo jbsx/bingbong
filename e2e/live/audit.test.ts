@@ -2402,3 +2402,77 @@ describe('Tier Escalations by arm and the recorded decline (#266, ADR 0063)', ()
     expect(formatAuditSet(buildAuditSet(provenanceOf(), [attemptOf(mechanical)], []))).toContain('tier investigation (1 Tier Escalation(s): 1 at the deadline)')
   })
 })
+
+describe('Transport Failures (#271)', () => {
+  // Round 5 failed at the transport and its Transport Retry completed; the
+  // Subagent's round 2 did the same.
+  const RECOVERED: RoundSpec[] = ROUNDS.flatMap((spec) =>
+    spec.round === 5 && (spec.attempt ?? 1) === 1 ? [{ round: 5, at: 4_900, outcome: 'transport' }, { ...spec, attempt: 2 }] : [spec],
+  )
+  const subagentTransport: Record<string, unknown> = {
+    ...identity,
+    at: T0 + 2_550,
+    kind: 'llm_round',
+    round: 2,
+    attempt: 1,
+    role: 'subagent',
+    outcome: 'transport',
+    reasoningChars: 0,
+    failure: { message: 'fetch failed', code: 'ECONNRESET' },
+    agentId: 'a-1',
+    request: { toolResults: 1, chars: 10 },
+  }
+  const recoveredExtra = [...EXTRA.slice(0, 2), subagentTransport, ...EXTRA.slice(2)]
+  // A Run whose round 3 failed twice and finalized for it.
+  const UNREACHABLE: RoundSpec[] = [
+    ...ROUNDS.slice(0, 2),
+    { round: 3, at: 3_000, outcome: 'transport' },
+    { round: 4, at: 4_000, effort: 'low' },
+  ]
+  const unreachableInput = inputOf({
+    attempt: attemptCapture({ attemptId: ATTEMPT, huntId: 'hunt-x', terminal: { at: 16_000, resolution: 'unsuccessful', finalizationCause: 'model_unreachable' } }),
+    traceRecords: traceOf(UNREACHABLE, [
+      EXTRA[0]!,
+      { ...identity, at: T0 + 16_000, kind: 'pipeline_event', event: { type: 'done', turnId: TURN, outcome: 'done', resolution: 'unsuccessful', finalizationCause: 'model_unreachable', at: T0 + 16_000 } },
+    ]),
+  })
+
+  it('counts attempts, recovered rounds and unreachable Runs from the llm_round records', () => {
+    const recovered = classifyAttempt(inputOf({ traceRecords: traceOf(RECOVERED, recoveredExtra) }))
+    const unreachable = classifyAttempt(unreachableInput)
+    const plain = classifyAttempt(inputOf())
+
+    expect([recovered.transportAttempts, recovered.transportRetriesRecovered, recovered.modelUnreachableRuns]).toEqual([2, 2, 0])
+    expect([unreachable.transportAttempts, unreachable.transportRetriesRecovered, unreachable.modelUnreachableRuns]).toEqual([1, 0, 1])
+    expect([plain.transportAttempts, plain.transportRetriesRecovered, plain.modelUnreachableRuns]).toEqual([0, 0, 0])
+  })
+
+  it('classes a recovered round by its final attempt, never as a failed round', () => {
+    const recovered = classifyAttempt(inputOf({ traceRecords: traceOf(RECOVERED, recoveredExtra) }))
+    const plain = classifyAttempt(inputOf())
+
+    expect(recovered.rounds.map((round) => round.kind)).toEqual(plain.rounds.map((round) => round.kind))
+    expect(recovered.rounds[4]).toMatchObject({ llmRound: 5, attempt: 2, kind: plain.rounds[4]!.kind })
+  })
+
+  it('gives a round that ended transport the reason the model could not be reached', () => {
+    const unreachable = classifyAttempt(unreachableInput)
+
+    expect(unreachable.rounds[2]).toMatchObject({ llmRound: 3, kind: 'failed_round', reason: 'the model could not be reached' })
+  })
+
+  it('sums the counters per population and prints them per attempt and per population', () => {
+    const recovered = classifyAttempt(inputOf({ traceRecords: traceOf(RECOVERED, recoveredExtra) }))
+    const unreachable = { ...classifyAttempt(unreachableInput), attemptId: 'hunt-x--other' }
+    const set = buildAuditSet(
+      provenanceOf(),
+      [recovered, unreachable].map((mechanical) => ({ mechanical, review: null, countsAfterOverrules: mechanical.counts })),
+      [],
+    )
+
+    expect(set.populations.initial).toMatchObject({ transportAttempts: 3, transportRetriesRecovered: 2, modelUnreachableRuns: 1 })
+    const markdown = formatAuditSet(set)
+    expect(markdown).toContain('- Transport Failures: 2 Transport Failure attempt(s) (2 round(s) recovered by a Transport Retry, 0 Run(s) model_unreachable)')
+    expect(markdown).toMatch(/- initial: .*3 Transport Failure attempt\(s\) \(2 round\(s\) recovered by a Transport Retry, 1 Run\(s\) model_unreachable\)/)
+  })
+})

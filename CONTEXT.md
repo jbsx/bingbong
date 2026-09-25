@@ -376,8 +376,8 @@ _Avoid_: cancel, cleanup
 **Finalization Cause**:
 The reason a Run entered Finalization, such as satisfying the objective,
 exhausting its budget, reaching its deadline (or a single round outliving
-it), making no Progress, keeping at a Blocker it was told it cannot pass, or
-reaching a hard safety limit — or,
+it), making no Progress, keeping at a Blocker it was told it cannot pass,
+the model being unreachable, or reaching a hard safety limit — or,
 for a Subagent only, its parent Run entering Finalization or the user being
 unreachable through it. A Run never carries those last two.
 _Avoid_: Run Resolution, outcome
@@ -426,6 +426,23 @@ Subagent. It is not a Tool Round and spends no Tool Round budget, only time.
 Whatever round the Run is in judges the reply by its own rule. The runtime
 never repairs a reply it could not read.
 _Avoid_: repair, fix-up, re-prompt, JSON retry
+
+**Transport Failure**:
+An LLM request that ended with no response from the provider at all: the
+connection was never made or was lost before the first byte. Distinct from
+the provider answering with an error and from a request timeout.
+_Avoid_: network error, fetch failed
+
+**Transport Retry**:
+The one repeat of a Transport-Failed request, identical and after a short
+pause, once per model round. It is not a Tool Round and spends no Tool Round
+budget, only time.
+_Avoid_: reconnect, backoff
+
+**Model Unreachable**:
+A Finalization Cause: both attempts of one model round were Transport
+Failures.
+_Avoid_: network down, provider outage, failed run
 
 **Run Resolution**:
 The semantic result delivered to the user: `completed`, `partial`, `blocked`,

@@ -7,6 +7,7 @@ import type { RunId, SessionGeneration, SessionId, SubmissionId } from '../sessi
 import type { FinalizationCause, RunResolution } from '../session/runJournal'
 import type { EffortTier } from './runPlan'
 import type { AskedItemStanding } from '../agent/askedItems'
+import type { LlmRetryReason } from '../ports/llm'
 import type { ComposedAddressRewriteStamp } from './composedAddressRail'
 import type { UnseenPhraseRewriteStamp } from './unseenPhraseRail'
 
@@ -193,13 +194,14 @@ export type PipelineEvent = SessionEventIdentity & (
     }
   | { type: 'error'; turnId?: string; message: string; at: number }
   /**
-   * An empty-completion retry by the orchestrator client (#43): fired by
-   * the retry hook while the LLM round is still in flight, so a tripled
-   * round-trip reads as activity on the dashboard. Detail event — the
-   * history projection maps it to no entry, so history.db recording is
-   * unchanged.
+   * A retry by the orchestrator client (#43): fired by the retry hook
+   * while the LLM round is still in flight, so a tripled round-trip reads
+   * as activity on the dashboard. `reason` names the loop (#271): an empty
+   * completion, or a Transport Retry; a record written before #271 has
+   * none and was always an empty completion. Detail event — the history
+   * projection maps it to no entry, so history.db recording is unchanged.
    */
-  | { type: 'llm_retry'; turnId: string; attempt: number; maxAttempts: number; at: number }
+  | { type: 'llm_retry'; turnId: string; attempt: number; maxAttempts: number; reason?: LlmRetryReason; at: number }
   /**
    * A batched fragment of streamed orchestrator output (#47): answer text
    * (the visible part of the raw content, answer-contract aware) or a

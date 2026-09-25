@@ -18,13 +18,15 @@
 import {
   LlmEmptyCompletionError,
   LlmRequestTimeoutError,
+  LlmTransportError,
+  transportErrorCode,
   type LlmAttemptSent,
   type LlmRequest,
   type LlmStreamDelta,
   type ReasoningEffort,
   type TokenUsage,
 } from '../ports/llm'
-import type { LlmRequestShape, LlmRoundEvent, LlmRoundOutcome, LlmRoundRole } from './runTrace'
+import type { LlmRequestShape, LlmRoundEvent, LlmRoundFailure, LlmRoundOutcome, LlmRoundRole } from './runTrace'
 
 /** One attempt as the collector closed it: its numbering, how it ended, and what the client reported. */
 export interface LlmRound {
@@ -45,6 +47,8 @@ export interface LlmRound {
   readonly sent?: LlmAttemptSent
   /** The provider's usage; only an attempt that returned a turn has one. */
   readonly usage?: TokenUsage
+  /** What the attempt threw (#271); only a `transport`, `timeout` or `failed` attempt has one. */
+  readonly failure?: LlmRoundFailure
 }
 
 /**
@@ -63,9 +67,22 @@ export interface LlmRound {
 export interface LlmRounds {
   onAttempt(sent: LlmAttemptSent): void
   onDelta(delta: LlmStreamDelta): void
-  /** Closes an attempt the client abandoned — which it does only for an empty completion. */
-  takeAttempt(): LlmRound
-  takeRound(outcome: LlmRoundOutcome, usage?: TokenUsage): LlmRound
+  /**
+   * Closes an attempt the client abandoned and retried (#271): an empty
+   * completion, or a Transport Failure, whose rejection rides as `error`.
+   */
+  takeAttempt(outcome: Extract<LlmRoundOutcome, 'empty' | 'transport'>, error?: unknown): LlmRound
+  /** Closes the round's last attempt; `error` is what it threw, when it threw. */
+  takeRound(outcome: LlmRoundOutcome, usage?: TokenUsage, error?: unknown): LlmRound
+}
+
+/** The outcomes that are a thrown error, and so carry what was thrown (#271). */
+const FAILURE_OUTCOMES: ReadonlySet<LlmRoundOutcome> = new Set(['transport', 'timeout', 'failed'])
+
+/** What a thrown attempt records (#271): the message, and the transport's code when it named one. */
+export function llmAttemptFailure(error: unknown): LlmRoundFailure {
+  const code = transportErrorCode(error)
+  return { message: error instanceof Error ? error.message : String(error), ...(code !== undefined ? { code } : {}) }
 }
 
 export function createLlmRounds(deps: { now?: () => number } = {}): LlmRounds {
@@ -78,7 +95,7 @@ export function createLlmRounds(deps: { now?: () => number } = {}): LlmRounds {
   // dispatched again and waits again.
   let sentAt: number | undefined
   let firstTokenMs: number | undefined
-  const take = (outcome: LlmRoundOutcome, usage?: TokenUsage): LlmRound => {
+  const take = (outcome: LlmRoundOutcome, usage?: TokenUsage, error?: unknown): LlmRound => {
     attempts += 1
     const closed: LlmRound = {
       round: rounds + 1,
@@ -88,6 +105,7 @@ export function createLlmRounds(deps: { now?: () => number } = {}): LlmRounds {
       ...(firstTokenMs !== undefined ? { firstTokenMs } : {}),
       ...(sent !== undefined ? { sent } : {}),
       ...(usage !== undefined ? { usage } : {}),
+      ...(error !== undefined && FAILURE_OUTCOMES.has(outcome) ? { failure: llmAttemptFailure(error) } : {}),
     }
     sent = undefined
     sentAt = undefined
@@ -107,9 +125,9 @@ export function createLlmRounds(deps: { now?: () => number } = {}): LlmRounds {
       if (firstTokenMs === undefined && sentAt !== undefined && deps.now !== undefined) firstTokenMs = Math.max(0, deps.now() - sentAt)
       if (delta.kind === 'reasoning') reasoningChars += delta.text.length
     },
-    takeAttempt: () => take('empty'),
-    takeRound(outcome, usage) {
-      const closed = take(outcome, usage)
+    takeAttempt: (outcome, error) => take(outcome, undefined, error),
+    takeRound(outcome, usage, error) {
+      const closed = take(outcome, usage, error)
       rounds += 1
       attempts = 0
       return closed
@@ -119,13 +137,14 @@ export function createLlmRounds(deps: { now?: () => number } = {}): LlmRounds {
 
 /**
  * What a round that threw is recorded as (#218): the client's own
- * request timeout and the empty completion by their classes, anything
- * else as a plain failure. The caller decides the cuts it made itself —
+ * request timeout, the empty completion and a Transport Failure (#271)
+ * by their classes, anything else as a plain failure. The caller decides the cuts it made itself —
  * the deadline, the allowance, a Stop — before asking this, because
  * those reach the client as one abort and come back looking alike.
  */
-export function llmRoundFailure(error: unknown): Extract<LlmRoundOutcome, 'timeout' | 'empty' | 'failed'> {
+export function llmRoundFailure(error: unknown): Extract<LlmRoundOutcome, 'timeout' | 'empty' | 'transport' | 'failed'> {
   if (error instanceof LlmRequestTimeoutError) return 'timeout'
+  if (error instanceof LlmTransportError) return 'transport'
   if (error instanceof LlmEmptyCompletionError) return 'empty'
   return 'failed'
 }
@@ -195,6 +214,7 @@ export function llmRoundEvent(input: TracedLlmRound): LlmRoundEvent {
     ...(input.sent?.promptHash !== undefined ? { promptHash: input.sent.promptHash } : {}),
     request: input.request,
     ...(input.agentId !== undefined ? { agentId: input.agentId } : {}),
+    ...(input.failure !== undefined ? { failure: input.failure } : {}),
   }
 }
 

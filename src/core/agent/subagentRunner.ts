@@ -6,11 +6,13 @@ import type {
   LlmAttemptSent,
   LlmClient,
   LlmRequest,
+  LlmRetryReason,
   LlmStreamDelta,
   TokenUsage,
   ToolResult,
   ToolResultOutcome,
 } from '../ports/llm'
+import { LlmTransportError } from '../ports/llm'
 import type { Tool, ToolContext } from '../pipeline/tool'
 import type { SettledPageState } from '../pipeline/progressFingerprints'
 import type { SnapshotRef } from '../browser/snapshot'
@@ -25,6 +27,7 @@ import {
   createEffortEpoch,
   NO_PROGRESS_FINALIZATION_REASON,
   blockerWallOf,
+  modelUnreachableOf,
   type FinalizationDetail,
 } from '../pipeline/effortEpoch'
 import { createNotices } from '../pipeline/notices'
@@ -431,6 +434,12 @@ function boundedStopWording(input: {
         causeSentence: 'the parent run finalized before this report was written',
         unresolved: 'Cut short by the parent run\u2019s finalization — the task is incomplete.',
       }
+    case 'model_unreachable':
+      return {
+        leadIn: 'Stopped when the model could not be reached',
+        causeSentence: 'the model could not be reached',
+        unresolved: 'Cut short when the model could not be reached — the task is incomplete.',
+      }
     case 'deadline_reached':
       return {
         leadIn: 'Stopped at the delegated work limit',
@@ -730,9 +739,11 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
       // their own rather than being folded into the attempt that survived.
       ...(reasoningRounds || llmRounds
         ? {
-            onRetryAttempt: (): void => {
+            onRetryAttempt: (_attempt: number, _maxAttempts: number, reason: LlmRetryReason, error?: unknown): void => {
               if (reasoningRounds) traceThinking(reasoningRounds.takeAttempt())
-              if (llmRounds) closeLlmAttempt(llmRounds.takeAttempt(), request)
+              // Named by what was retried (#271): a Transport Retry's
+              // abandoned attempt carries the rejection it repeats.
+              if (llmRounds) closeLlmAttempt(llmRounds.takeAttempt(reason, error), request)
             },
           }
         : {}),
@@ -789,7 +800,7 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
         // here, whatever the round did. Its llm_round record (#191) on the
         // same terms: how it ended (#218), and usage only when it returned.
         traceThinking(reasoningRounds?.takeRound())
-        closeLlmAttempt(llmRounds?.takeRound(roundOutcome(turn, answerError), turn?.usage), answerRequest)
+        closeLlmAttempt(llmRounds?.takeRound(roundOutcome(turn, answerError), turn?.usage, answerError), answerRequest)
         traceAnswerRetryOutcome(answerRetry, turn)
       }
       await checkpoint(options)
@@ -835,16 +846,33 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
       roundError = error
       // The grace ended mid-round (#199): the abort is the parent's, not
       // a fault — the worker returns the bounded report below rather than
-      // failing. Any other error is still the loop's to throw.
-      if (!graceEnded()) throw error
+      // failing. So does a round whose Transport Retry failed too (#271):
+      // the model is unreachable, which is a stop with a cause rather than
+      // a worker that failed with a bare message. Any other error is still
+      // the loop's to throw.
+      if (!graceEnded() && !(error instanceof LlmTransportError)) throw error
     } finally {
       // One record per model round, written in a finally so a round that
       // threw leaves its thinking behind like one that returned (#183) —
       // and its llm_round record (#191) says what it was sent under and
       // how it ended (#218).
       traceThinking(reasoningRounds?.takeRound())
-      closeLlmAttempt(llmRounds?.takeRound(roundOutcome(turn, roundError), usage), request)
+      closeLlmAttempt(llmRounds?.takeRound(roundOutcome(turn, roundError), usage, roundError), request)
       traceAnswerRetryOutcome(answerRetry, turn)
+    }
+    if (turn === null && roundError instanceof LlmTransportError && !graceEnded()) {
+      // Straight to the bounded report, as the grace's end goes: a
+      // reserved report round would be one more request to the model
+      // that just failed twice to answer one.
+      return boundedStopReport({
+        ...(options.agentId !== undefined ? { agentId: options.agentId } : {}),
+        cause: 'model_unreachable',
+        detail: modelUnreachableOf(roundError),
+        maxToolRounds,
+        rounds: epoch.tierRounds,
+        lastAction,
+        observations: workerLedger.snapshot(),
+      })
     }
     if (turn === null) return abandonedReport()
     await checkpoint(options)

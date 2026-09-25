@@ -19,7 +19,7 @@ import { FailingTts, FakeClock, fakePerfHarness, fakeSubagentManager, memoryEntr
 import type { PipelineEvent } from './events'
 import type { SessionId } from '../session/sessionIdentity'
 import type { ObservationRecord } from '../session/observationLedger'
-import { LlmEmptyCompletionError, LlmRequestTimeoutError, type AssistantTurn, type LlmClient, type LlmRequest, type ToolCall } from '../ports/llm'
+import { LlmEmptyCompletionError, LlmRequestTimeoutError, LlmTransportError, type AssistantTurn, type LlmClient, type LlmRequest, type ToolCall } from '../ports/llm'
 import type { Tool } from './tool'
 import type { WorkingMemorySnapshot } from '../session/workingMemory'
 import { createSubagentTools } from './subagentTools'
@@ -2353,6 +2353,191 @@ describe('command pipeline', () => {
       expect(events.find((event) => event.type === 'display')).toMatchObject({ deterministicAnswer: true })
       expect(events.at(-1)).toMatchObject({ type: 'done', finalizationCause: 'deadline_reached' })
       expect(tts.spoken).not.toContain('I could not finish that request.')
+    })
+  })
+
+  // Issue #271. Twice a live-web Run died on the orchestrator's own request
+  // rejecting at the transport — no response at all, under eight seconds
+  // after dispatch — and the user heard "I could not finish that request."
+  // with Observations already on the tape. The client now retries once; a
+  // second rejection reaches the pipeline as LlmTransportError, and an
+  // acquisition round that throws it enters Finalization under its own
+  // cause, `model_unreachable`, beside #219's timeout arm.
+  describe('an unreachable model in an acquisition round is a Finalization Cause (#271)', () => {
+    const work: Tool = { name: 'work', acquisition: true, async execute() { return 'worked' } }
+
+    /** The client's error after its Transport Retry failed too. */
+    const unreachable = (): LlmTransportError =>
+      new LlmTransportError(2, { cause: new TypeError('fetch failed', { cause: Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' }) }) })
+
+    async function runWithRecords(
+      llm: LlmClient,
+      command: string,
+      cut?: (clock: FakeClock) => Promise<void>,
+    ): Promise<{
+      events: PipelineEvent[]
+      stops: (RunStopRecord | null | undefined)[]
+      traced: RunTraceEvent[]
+      tts: RecordingTts
+    }> {
+      const tts = new RecordingTts()
+      const clock = new FakeClock()
+      const traced: RunTraceEvent[] = []
+      const stops: (RunStopRecord | null | undefined)[] = []
+      const events: PipelineEvent[] = []
+      const pipeline = createCommandPipeline({ llm, tts, clock, tools: [createReportRunPlanTool(), work] })
+      const run = (async () => {
+        for await (const event of pipeline.execute(command, 'turn-271', false, {
+          snapshot: [],
+          memory: [],
+          commit: (_outcome, _note, _patch, stop) => {
+            stops.push(stop)
+            return 'committed'
+          },
+          traceRun: (build) => traced.push(build()),
+        })) {
+          events.push(withoutTurnId(event))
+        }
+      })()
+      await cut?.(clock)
+      await run
+      return { events, stops, traced, tts }
+    }
+
+    it('finalizes, runs the reserved Answer round, and ends with the model’s Answer', async () => {
+      const requests: LlmRequest[] = []
+      const llm: LlmClient = {
+        complete(request) {
+          requests.push(request)
+          request.onAttempt?.({ model: 'glm-5.3' })
+          if (requests.length === 1) return Promise.reject(unreachable())
+          // Bookkeeping reaches for an acquisition tool and is refused, so
+          // the Answer comes from the reserved round.
+          if (requests.length === 2) return Promise.resolve({ kind: 'tool_calls' as const, calls: [{ id: 'c1', name: 'work', args: {} }] })
+          return Promise.resolve({
+            kind: 'answer' as const,
+            speak: 'Here is what I have.',
+            display: 'What I had so far.',
+            resolution: 'unsuccessful' as const,
+          })
+        },
+      }
+
+      const { events, stops, traced, tts } = await runWithRecords(llm, 'find the voyager paper')
+
+      expect(tts.spoken).toEqual(['Here is what I have.'])
+      expect(events.some((event) => event.type === 'error')).toBe(false)
+      expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done', finalizationCause: 'model_unreachable' })
+      // Every Finalization round after the failure is told why, and the
+      // Answer comes from the reserved round.
+      expect(requests).toHaveLength(3)
+      expect(requests[1]?.finalizeInstruction).toMatch(/^The model could not be reached — /)
+      expect(requests[2]).toMatchObject({ answerOnly: true })
+      expect(requests[2]?.finalizeInstruction).toMatch(/^The model could not be reached\./)
+      expect(stops).toHaveLength(1)
+      expect(stops[0]).toMatchObject({
+        cause: 'model_unreachable',
+        detail: 'The model could not be reached: all 2 attempts of one round failed at the transport (ECONNRESET)',
+      })
+      expect(stops[0]).not.toHaveProperty('failure')
+      // The round's own record names the transport and what it threw.
+      const rounds = llmRounds(traced)
+      expect(rounds[0]).toMatchObject({ round: 1, attempt: 1, outcome: 'transport', failure: { code: 'ECONNRESET' } })
+      expect(rounds.at(-1)).toMatchObject({ outcome: 'completed' })
+      expect(rounds.at(-1)).not.toHaveProperty('failure')
+    })
+
+    it('ends in the deterministic Answer when the reserved Answer round fails too, and the cause never moves', async () => {
+      const llm: LlmClient = { complete: () => Promise.reject(unreachable()) }
+      const faults: FaultReport[] = []
+      setFaultSink((report) => faults.push(report))
+
+      const { events, stops, tts } = await runWithRecords(llm, 'find the voyager paper')
+
+      expect(events.find((event) => event.type === 'display')).toMatchObject({ deterministicAnswer: true })
+      expect(tts.spoken).not.toContain('I could not finish that request.')
+      // #117's reading of a Run with no model Answer, as #219 recorded.
+      expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'failed', finalizationCause: 'model_unreachable' })
+      expect(stops[0]).toMatchObject({ cause: 'model_unreachable', failure: expect.stringMatching(/^the reserved Answer round failed: /) as string })
+      expect(faults.map((fault) => fault.site)).toContain('pipeline.createCommandPipeline.reservedAnswerRequestFailed')
+      expect(faults.map((fault) => fault.site)).not.toContain('pipeline.createCommandPipeline.runFailedOutsideFinalization')
+    })
+
+    // Inside Finalization the Run already stopped for its own cause, and
+    // #207 and #209 own what happens to each round, exactly as they do for
+    // #219's timeout: a transport failure there changes nothing.
+    it.each([
+      ['bookkeeping', 2, 'pipeline.createCommandPipeline.bookkeepingRequestFailed'],
+      ['reserved Answer', 3, 'pipeline.createCommandPipeline.reservedAnswerRequestFailed'],
+    ] as const)('leaves a transport failure in the %s round to its own handling', async (_phase, failingRound, site) => {
+      const requests: LlmRequest[] = []
+      const llm: LlmClient = {
+        complete(request) {
+          requests.push(request)
+          if (requests.length === 1) return abortableRound(request)
+          if (requests.length === failingRound) return Promise.reject(unreachable())
+          return Promise.resolve({ kind: 'tool_calls' as const, calls: [{ id: 'c1', name: 'work', args: {} }] })
+        },
+      }
+      const faults: FaultReport[] = []
+      setFaultSink((report) => faults.push(report))
+
+      const { events, tts } = await runWithRecords(llm, 'find the tier list', async (clock) => {
+        await waitUntil(() => requests.length === 1)
+        clock.advance(TIER_ACTIVE_WORK_DEADLINES_MS[DEFAULT_EFFORT_TIER])
+      })
+
+      expect(faults.map((fault) => fault.site)).toContain(site)
+      expect(events.find((event) => event.type === 'display')).toMatchObject({ deterministicAnswer: true })
+      expect(events.at(-1)).toMatchObject({ type: 'done', finalizationCause: 'deadline_reached' })
+      expect(tts.spoken).not.toContain('I could not finish that request.')
+    })
+
+    it('reports a fault for any other error that still escapes the Run', async () => {
+      const escaping = new Error('orchestrator request failed (HTTP 502)')
+      const llm: LlmClient = { complete: () => Promise.reject(escaping) }
+      const faults: FaultReport[] = []
+      setFaultSink((report) => faults.push(report))
+
+      const { events, stops, tts } = await runWithRecords(llm, 'find the voyager paper')
+
+      expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'failed' })
+      expect(tts.spoken).toEqual(['I could not finish that request.'])
+      expect(faults).toContainEqual(expect.objectContaining({ site: 'pipeline.createCommandPipeline.runFailedOutsideFinalization', turnId: 'turn-271' }))
+      expect(stops[0]).toMatchObject({ failure: 'the run failed outside Finalization: orchestrator request failed (HTTP 502)' })
+    })
+
+    it('records a recovered Transport Retry as two attempts of one round, and shows the retry with its reason', async () => {
+      const rejection = new TypeError('fetch failed', { cause: Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' }) })
+      const llm: LlmClient = {
+        complete(request) {
+          request.onAttempt?.({ model: 'glm-5.3' })
+          request.onRetryAttempt?.(2, 2, 'transport', rejection)
+          request.onAttempt?.({ model: 'glm-5.3' })
+          return Promise.resolve({ kind: 'answer' as const, speak: 'Done.', display: 'Done.' })
+        },
+      }
+      const detail: PipelineEvent[] = []
+      const traced: RunTraceEvent[] = []
+      const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [], emitDetail: (event) => detail.push(event) })
+      const events: PipelineEvent[] = []
+      for await (const event of pipeline.execute('find it', 'turn-271', false, {
+        snapshot: [],
+        memory: [],
+        commit: () => 'committed',
+        traceRun: (build) => traced.push(build()),
+      })) {
+        events.push(event)
+      }
+      expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done' })
+
+      expect(llmRounds(traced).map(({ round, attempt, outcome, failure }) => ({ round, attempt, outcome, failure }))).toEqual([
+        { round: 1, attempt: 1, outcome: 'transport', failure: { message: 'fetch failed', code: 'ECONNRESET' } },
+        { round: 1, attempt: 2, outcome: 'completed', failure: undefined },
+      ])
+      expect(detail.filter((event) => event.type === 'llm_retry')).toEqual([
+        expect.objectContaining({ attempt: 2, maxAttempts: 2, reason: 'transport' }),
+      ])
     })
   })
 
@@ -5710,7 +5895,7 @@ describe('progress detail (#43)', () => {
     let sinkAtHook: PipelineEvent[] = []
     const llm: LlmClient = {
       async complete(request) {
-        request.onRetryAttempt?.(2, 3)
+        request.onRetryAttempt?.(2, 3, 'empty')
         sinkAtHook = [...sink]
         return { kind: 'answer', speak: 'Done.', display: 'Done.' }
       },
@@ -5725,7 +5910,7 @@ describe('progress detail (#43)', () => {
 
     const events = await collectStamped(pipeline, 'work', 'turn-r')
 
-    expect(sinkAtHook).toEqual([{ type: 'llm_retry', turnId: 'turn-r', attempt: 2, maxAttempts: 3, at: 0 }])
+    expect(sinkAtHook).toEqual([{ type: 'llm_retry', turnId: 'turn-r', attempt: 2, maxAttempts: 3, reason: 'empty', at: 0 }])
     // The side channel is the only transport — never duplicated into the
     // generator's own stream.
     expect(sink).toEqual(sinkAtHook)
@@ -5785,7 +5970,7 @@ describe('progress detail (#43)', () => {
     const merged: PipelineEvent[] = []
     const llm: LlmClient = {
       async complete(request) {
-        request.onRetryAttempt?.(2, 3)
+        request.onRetryAttempt?.(2, 3, 'empty')
         return { kind: 'answer', speak: 'Done.', display: 'Done.' }
       },
     }
@@ -5817,7 +6002,7 @@ describe('progress detail (#43)', () => {
     const sink: PipelineEvent[] = []
     const llm: LlmClient = {
       async complete(request) {
-        request.onRetryAttempt?.(3, 3)
+        request.onRetryAttempt?.(3, 3, 'empty')
         return { kind: 'answer', speak: 'Done.', display: 'Done.' }
       },
     }
@@ -5988,7 +6173,7 @@ describe('orchestrator streaming (#47)', () => {
     const llm: LlmClient = {
       async complete(request) {
         request.onDelta?.({ kind: 'text', text: '{"speak":"Attempt one.' })
-        request.onRetryAttempt?.(2, 3)
+        request.onRetryAttempt?.(2, 3, 'empty')
         request.onDelta?.({ kind: 'text', text: '{"speak":"Attempt two.' })
         return { kind: 'answer', speak: 'Attempt two.', display: 'Attempt two.' }
       },

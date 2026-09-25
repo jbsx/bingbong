@@ -130,8 +130,11 @@ export interface LlmRequest {
    * Retry visibility (#29, #43): a client with an internal retry loop
    * reports each attempt beyond the first — with the loop's ceiling, so
    * the dashboard can render "retrying 2/3" — before the attempt starts.
+   * The reason names which loop retried (#271): an empty completion, or a
+   * Transport Retry, which also hands over the rejection it repeats so the
+   * abandoned attempt's record can say what failed.
    */
-  onRetryAttempt?: (attempt: number, maxAttempts: number) => void
+  onRetryAttempt?: (attempt: number, maxAttempts: number, reason: LlmRetryReason, error?: unknown) => void
   /**
    * Attempt identity (#191): a client reports each attempt it dispatches —
    * the first and every retry — with the model and prompt it is sent
@@ -346,6 +349,52 @@ export class LlmRequestTimeoutError extends Error {
     this.name = 'LlmRequestTimeoutError'
     this.timeoutMs = timeoutMs
   }
+}
+
+/**
+ * Why a client repeated an attempt within one round (#271): the provider
+ * answered empty, or the request was a Transport Failure.
+ */
+export type LlmRetryReason = 'empty' | 'transport'
+
+/**
+ * A Transport Failure (#271, ADR 0066): the request ended with no
+ * response from the provider at all — the fetch call itself rejected, the
+ * connection never made or lost before the first byte — and the Transport
+ * Retry rejected too. Neither the provider answering with an error status
+ * nor a stream breaking after its first token is this, and neither is the
+ * client's own timeout or the caller's abort. `code` is the transport's
+ * own name for what happened (undici's `ECONNRESET`,
+ * `UND_ERR_CONNECT_TIMEOUT`) when the rejection carried one; `cause` is
+ * the last rejection itself.
+ */
+export class LlmTransportError extends Error {
+  readonly code?: string
+  readonly attempts: number
+  constructor(attempts: number, options: { cause: unknown }) {
+    const code = transportErrorCode(options.cause)
+    super(`orchestrator request failed at the transport after ${attempts} attempts: ${transportErrorMessage(options.cause)}${code !== undefined ? ` (${code})` : ''}`, options)
+    this.name = 'LlmTransportError'
+    this.attempts = attempts
+    if (code !== undefined) this.code = code
+  }
+}
+
+/** The transport's own code for a rejection: the error's, else its cause's (undici nests it one deep). */
+export function transportErrorCode(error: unknown): string | undefined {
+  const own = codeOf(error)
+  if (own !== undefined) return own
+  return error instanceof Error ? codeOf(error.cause) : undefined
+}
+
+function codeOf(value: unknown): string | undefined {
+  if (typeof value !== 'object' || value === null || !('code' in value)) return undefined
+  const code = (value as { code: unknown }).code
+  return typeof code === 'string' && code.length > 0 ? code : undefined
+}
+
+function transportErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
 }
 
 /**

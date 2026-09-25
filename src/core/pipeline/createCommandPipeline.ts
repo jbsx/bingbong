@@ -7,6 +7,7 @@ import type {
   LlmAttemptSent,
   LlmClient,
   LlmRequest,
+  LlmRetryReason,
   LlmStreamDelta,
   ReasoningEffort,
   ToolCall,
@@ -14,7 +15,7 @@ import type {
   ToolResultOutcome,
   AnswerRetryRequest,
 } from '../ports/llm'
-import { LlmRequestTimeoutError } from '../ports/llm'
+import { LlmRequestTimeoutError, LlmTransportError } from '../ports/llm'
 import { selectDelegatedMemory } from '../agent/subagentReport'
 import { createLlmDeltaBatcher } from './deltaBatcher'
 import type { TtsSpeaker } from '../ports/tts'
@@ -42,6 +43,7 @@ import { shownTextsOf } from './unseenPhraseRail'
 import {
   createEffortEpoch,
   tierEscalationDeclineOf,
+  modelUnreachableOf,
   finalizationDetailSentence,
   deterministicFinalAnswer,
   BOOKKEEPING_KEPT_FOR_REPORT_REASON,
@@ -1747,6 +1749,9 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           // — the return, or the catch that maps the abort back to what
           // caused it — and read by the record in the finally.
           let roundOutcome: LlmRoundOutcome = 'failed'
+          // What the round threw, when it threw (#271): its record carries
+          // the message and the transport's code on a failed outcome.
+          let roundError: unknown
           const closeLlmAttempt = (closed: LlmRound): void => {
             // The request is built before any attempt can close, so this
             // is the llmRounds gate restated, never a missing shape.
@@ -1843,7 +1848,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
               // splits its attempts even where no detail channel listens.
               ...(emitDetail || reasoningRounds
                 ? {
-                    onRetryAttempt: (attempt: number, maxAttempts: number): void => {
+                    onRetryAttempt: (attempt: number, maxAttempts: number, reason: LlmRetryReason, error?: unknown): void => {
                       // Drain the failed attempt's partial stream first (#47):
                       // its fragments close as their own feed run, so the
                       // next attempt streams fresh instead of concatenating
@@ -1854,9 +1859,11 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
                       // attempt that survives would hide that two happened.
                       if (reasoningRounds) writeReasoning?.(reasoningRounds.takeAttempt())
                       // And its llm_round record (#191), numbered alike:
-                      // an abandoned attempt carries no usage.
-                      if (llmRounds) closeLlmAttempt(llmRounds.takeAttempt())
-                      emitDetail?.({ type: 'llm_retry', attempt, maxAttempts, at: clock.now() })
+                      // an abandoned attempt carries no usage, and is named
+                      // by what was retried (#271) — a Transport Retry's
+                      // with the rejection it repeats.
+                      if (llmRounds) closeLlmAttempt(llmRounds.takeAttempt(reason, error))
+                      emitDetail?.({ type: 'llm_retry', attempt, maxAttempts, reason, at: clock.now() })
                     },
                   }
                 : {}),
@@ -1900,6 +1907,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             roundOutcome = 'completed'
             roundAnswerRetryOutcome = answerRetryOutcome(turn)
           } catch (err) {
+            roundError = err
             // What ended the round, for its record (#218): the cuts this
             // loop made itself first — they all reach the client as one
             // abort — then the client's own word on why it threw.
@@ -2004,6 +2012,22 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
               effortEpoch.enterFinalization('deadline_reached')
               continue
             }
+            // The round and its one Transport Retry both failed at the
+            // transport (#271, ADR 0066): no response at all, twice. Placed
+            // beside the timeout's arm and for the same reason — every arm
+            // above has already had its say, so this is an acquisition
+            // round — and it takes the same road into Finalization: the
+            // loop-top Steering checkpoint, bookkeeping when there is
+            // something new, the reserved Answer round (itself covered by
+            // the client's retry), the deterministic Answer if that fails.
+            // Its own cause, not `deadline_reached`: a request that failed
+            // in under a second crossed no deadline, and naming one is the
+            // substitution ADR 0038 forbids. No Tier Escalation either —
+            // a higher tier reaches the same unreachable model.
+            if (err instanceof LlmTransportError) {
+              effortEpoch.enterFinalization('model_unreachable', modelUnreachableOf(err))
+              continue
+            }
             throw err
           } finally {
             cancelRoundWatch()
@@ -2022,7 +2046,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             // aborted or failed round leaves what it was sent under and
             // how it ended (#218), and only a round that returned carries
             // usage.
-            if (llmRounds) closeLlmAttempt(llmRounds.takeRound(roundOutcome, roundUsage))
+            if (llmRounds) closeLlmAttempt(llmRounds.takeRound(roundOutcome, roundUsage, roundError))
             if (roundAnswerRetry !== undefined) {
               writeAnswerRetry?.({ kind: 'answer_retry', role: 'orchestrator', outcome: roundAnswerRetryOutcome })
             }
@@ -2429,6 +2453,10 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           // they can act on, and it is the same leak the stopping policy
           // closes everywhere else.
           const message = toErrorMessage(err)
+          // Filed with its stack (#271): a Transport Failure no longer
+          // lands here, so whatever still does is unexplained, and the
+          // message alone is all the error event keeps.
+          reportFault('pipeline.createCommandPipeline.runFailedOutsideFinalization', err, { turnId })
           finalizationFailure = `the run failed outside Finalization: ${message}`
           yield { type: 'error', message, at: clock.now() }
           yield* speakLine(RUN_FAILED_SPOKEN, turnId)

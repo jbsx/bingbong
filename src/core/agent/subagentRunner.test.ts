@@ -14,7 +14,7 @@ import type { SettledPageState } from '../pipeline/progressFingerprints'
 import { hostFromUrl } from '../pipeline/blockerGate'
 import type { TracedReasoningRound } from '../trace/reasoningTrace'
 import type { TracedLlmRound } from '../trace/llmRoundTrace'
-import type { LlmRequest } from '../ports/llm'
+import { LlmTransportError, type LlmRequest } from '../ports/llm'
 import { HELD_PAGE_INSTRUCTION } from '../pipeline/heldPage'
 import { createSessionEvidence } from '../session/sessionEvidence'
 
@@ -1591,11 +1591,11 @@ describe("a delegated worker's reasoning records (#183)", () => {
     const traced: TracedReasoningRound[] = []
     let round = 0
     const llm = {
-      complete: (request: { onDelta?: (delta: { kind: 'reasoning'; text: string }) => void; onRetryAttempt?: (attempt: number, max: number) => void }) => {
+      complete: (request: { onDelta?: (delta: { kind: 'reasoning'; text: string }) => void; onRetryAttempt?: (attempt: number, max: number, reason: 'empty' | 'transport') => void }) => {
         round += 1
         if (round === 1) {
           request.onDelta?.({ kind: 'reasoning', text: 'the provider hung up' })
-          request.onRetryAttempt?.(2, 3)
+          request.onRetryAttempt?.(2, 3, 'empty')
         }
         request.onDelta?.({ kind: 'reasoning', text: 'second time lucky' })
         return Promise.resolve({ kind: 'answer' as const, speak: 's', display: 'Done.' })
@@ -1623,7 +1623,7 @@ describe("a delegated worker's reasoning records (#183)", () => {
         request.onAttempt?.({ model: 'deepseek-chat', promptHash: 'abc123', reasoningEffort: 'low' })
         if (round === 1) {
           request.onDelta?.({ kind: 'reasoning', text: 'the provider hung up' })
-          request.onRetryAttempt?.(2, 3)
+          request.onRetryAttempt?.(2, 3, 'empty')
           request.onAttempt?.({ model: 'deepseek-chat', promptHash: 'abc123', reasoningEffort: 'low' })
         }
         request.onDelta?.({ kind: 'reasoning', text: 'second time lucky' })
@@ -1857,5 +1857,64 @@ describe('runSubagent under the parent Run\'s Finalization (#199)', () => {
 
     expect(report.finalizationCause).toBe('budget_exhausted')
     expect(report.bounded).toBe(true)
+  })
+})
+
+// Issue #271: a Subagent's client is the orchestrator's, so its rounds get
+// the one Transport Retry for free; a second failure is a stop with a
+// cause, returned as the bounded report the grace's end already returns,
+// never a worker the manager marks failed with a bare message.
+describe('runSubagent when the model is unreachable (#271)', () => {
+  const unreachable = (): LlmTransportError =>
+    new LlmTransportError(2, { cause: new TypeError('fetch failed', { cause: Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' }) }) })
+
+  it('returns the bounded report under model_unreachable after a second transport failure', async () => {
+    const work: Tool = { name: 'work', acquisition: true, async execute() { return 'worked' } }
+    const rounds: TracedLlmRound[] = []
+    let calls = 0
+    const llm = {
+      complete: (request: LlmRequest) => {
+        calls += 1
+        request.onAttempt?.({ model: 'deepseek-chat' })
+        if (calls === 1) return Promise.resolve({ kind: 'tool_calls' as const, calls: [{ id: 'c1', name: 'work', args: {} }] })
+        return Promise.reject(unreachable())
+      },
+    }
+
+    const report = await runSubagent(
+      { llm, tools: [work], clock: new FakeClock() },
+      { task: 'check the page', agentId: 'a-9', isCancelled: () => false, traceLlmRound: (round) => rounds.push(round) },
+    )
+
+    // No reserved report round: the model just failed twice to answer one.
+    expect(calls).toBe(2)
+    expect(report).toMatchObject({ agentId: 'a-9', finalizationCause: 'model_unreachable', bounded: true })
+    expect(report.text).toMatch(/^Stopped when the model could not be reached after 1 tool round — the model could not be reached/)
+    expect(report.unresolved).toEqual(['Cut short when the model could not be reached — the task is incomplete.'])
+    expect(rounds.at(-1)).toMatchObject({ round: 2, attempt: 1, outcome: 'transport', failure: { code: 'ECONNRESET' }, agentId: 'a-9' })
+  })
+
+  it('records a recovered Transport Retry as two attempts of one round', async () => {
+    const rounds: TracedLlmRound[] = []
+    const rejection = new TypeError('fetch failed', { cause: Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' }) })
+    const llm = {
+      complete: (request: LlmRequest) => {
+        request.onAttempt?.({ model: 'deepseek-chat' })
+        request.onRetryAttempt?.(2, 2, 'transport', rejection)
+        request.onAttempt?.({ model: 'deepseek-chat' })
+        return Promise.resolve({ kind: 'answer' as const, speak: 's', display: 'Done.' })
+      },
+    }
+
+    const report = await runSubagent(
+      { llm, tools: [], clock: new FakeClock() },
+      { task: 'check the page', agentId: 'a-9', isCancelled: () => false, traceLlmRound: (round) => rounds.push(round) },
+    )
+
+    expect(report.text).toBe('Done.')
+    expect(rounds.map(({ round, attempt, outcome, failure }) => ({ round, attempt, outcome, failure }))).toEqual([
+      { round: 1, attempt: 1, outcome: 'transport', failure: { message: 'fetch failed', code: 'ECONNRESET' } },
+      { round: 1, attempt: 2, outcome: 'completed', failure: undefined },
+    ])
   })
 })

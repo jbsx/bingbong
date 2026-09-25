@@ -290,7 +290,7 @@ describe('the Finalization Allowance in a Run (#209, ADR 0038)', () => {
         async (request) => {
           for (let attempt = 1; attempt <= 5; attempt += 1) {
             attempts.push(attempt)
-            request.onRetryAttempt?.(attempt, 5)
+            request.onRetryAttempt?.(attempt, 5, 'empty')
             await new Promise<void>((resolve, reject) => {
               const cancel = h.clock.setTimer(4_000, resolve)
               request.signal?.addEventListener('abort', () => {

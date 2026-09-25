@@ -528,6 +528,16 @@ export interface AuditMechanical {
   /** Answer Retries (#245): the turn's `answer_retry` records, on the same terms. */
   readonly answerRetries: number
   /**
+   * Transport Failures (#271): `llm_round` attempts, the Run's and its
+   * Subagents', that ended `transport`. Absent from an audit written before
+   * the counter; beside the rounds, never in them.
+   */
+  readonly transportAttempts?: number
+  /** Rounds, the Run's and its Subagents', whose Transport Retry completed (#271). */
+  readonly transportRetriesRecovered?: number
+  /** 1 when the Run finalized `model_unreachable` (#271), else 0. */
+  readonly modelUnreachableRuns?: number
+  /**
    * Finalization entries that skipped their bookkeeping round (#256, ADR
    * 0056): the Run's own `finalization_entry` records saying so. Null — not
    * recorded — for a trace below {@link FINALIZATION_ENTRY_TRACE_VERSION}, and
@@ -722,6 +732,12 @@ export interface AuditPopulation {
   readonly malformedAnswers: number
   /** Answer Retries over the attempts (#245). */
   readonly answerRetries: number
+  /** Transport Failure attempts over the attempts (#271); absent on an audit written before the counter. */
+  readonly transportAttempts?: number
+  /** Rounds recovered by a Transport Retry over the attempts (#271). */
+  readonly transportRetriesRecovered?: number
+  /** Runs that finalized `model_unreachable` over the attempts (#271). */
+  readonly modelUnreachableRuns?: number
   /** Skipped bookkeeping rounds over the attempts whose trace recorded them (#256). */
   readonly skippedBookkeepingRounds: number
   /** Attempts whose trace predates the `finalization_entry` record: their skips count nowhere. */
@@ -1292,6 +1308,32 @@ function eventOf(record: TraceLine): Record<string, unknown> | null {
   return record.kind === 'pipeline_event' && isRecord(record.event) ? record.event : null
 }
 
+/**
+ * The three Transport Failure counters (#271) over one attempt's records.
+ * A round is keyed by whose it is and its number, so a Subagent's round 2
+ * is never the Run's; it is recovered when it holds a `transport` attempt
+ * and its last attempt completed.
+ */
+function transportCountsOf(
+  records: readonly TraceLine[],
+  terminal: AuditMechanical['terminal'],
+): Pick<AuditMechanical, 'transportAttempts' | 'transportRetriesRecovered' | 'modelUnreachableRuns'> {
+  let transportAttempts = 0
+  const rounds = new Map<string, { transport: boolean; last: { attempt: number; outcome: unknown } }>()
+  for (const record of records) {
+    if (record.kind !== 'llm_round') continue
+    if (record.outcome === 'transport') transportAttempts += 1
+    const key = `${isString(record.agentId) ? record.agentId : ''}#${isFiniteNumber(record.round) ? record.round : 0}`
+    const attempt = isFiniteNumber(record.attempt) ? record.attempt : 1
+    const seen = rounds.get(key)
+    const transport = (seen?.transport ?? false) || record.outcome === 'transport'
+    const last = seen === undefined || attempt >= seen.last.attempt ? { attempt, outcome: record.outcome } : seen.last
+    rounds.set(key, { transport, last })
+  }
+  const transportRetriesRecovered = [...rounds.values()].filter((round) => round.transport && round.last.outcome === 'completed').length
+  return { transportAttempts, transportRetriesRecovered, modelUnreachableRuns: terminal?.finalizationCause === 'model_unreachable' ? 1 : 0 }
+}
+
 /** Group the turn's orchestrator records into rounds: each `llm_round` owns the tool calls that follow it until the next. */
 function rawRounds(records: readonly TraceLine[]): RawRound[] {
   const rounds: RawRound[] = []
@@ -1312,7 +1354,12 @@ function rawRounds(records: readonly TraceLine[]): RawRound[] {
   for (const record of records) {
     if (record.agentId !== undefined) continue
     if (record.kind === 'llm_round') {
-      current = { record, round: isFiniteNumber(record.round) ? record.round : rounds.length + 1, attempt: isFiniteNumber(record.attempt) ? record.attempt : 1, calls: [] }
+      const round = isFiniteNumber(record.round) ? record.round : rounds.length + 1
+      // An attempt a Transport Retry abandoned (#271) is not a round of its
+      // own: it made no call, and the round is classed by the attempt that
+      // followed it, so a recovered round is never a failed one.
+      if (current !== null && current.round === round && current.record.outcome === 'transport' && current.calls.length === 0) rounds.pop()
+      current = { record, round, attempt: isFiniteNumber(record.attempt) ? record.attempt : 1, calls: [] }
       rounds.push(current)
       continue
     }
@@ -2257,7 +2304,14 @@ export function classifyAttempt(input: AuditTraceInput): AuditMechanical {
                   : 'a Finalization round'
     } else if (outcome !== 'completed') {
       kind = 'failed_round'
-      reason = outcome === 'deadline' ? 'cut by the active-work deadline' : outcome === 'timeout' ? 'the client’s request timeout ended the round' : `the round ended ${outcome}`
+      reason =
+        outcome === 'deadline'
+          ? 'cut by the active-work deadline'
+          : outcome === 'timeout'
+            ? 'the client’s request timeout ended the round'
+            : outcome === 'transport'
+              ? 'the model could not be reached'
+              : `the round ended ${outcome}`
     } else if (calls.length === 0) {
       kind = 'failed_round'
       reason = isLast ? 'the last round replied with no tool call and no Answer reached the tape' : 'the round completed with no tool call and no Answer'
@@ -2443,6 +2497,11 @@ export function classifyAttempt(input: AuditTraceInput): AuditMechanical {
     identitySlips,
     malformedAnswers: records.filter((record) => record.kind === 'malformed_answer').length,
     answerRetries: records.filter((record) => record.kind === 'answer_retry').length,
+    // Transport Failures (#271), the Run's and its Subagents', from the
+    // `llm_round` records alone: every attempt that failed at the transport,
+    // the rounds whose Transport Retry then completed, and whether the Run
+    // stopped because the model could not be reached.
+    ...transportCountsOf(records, terminal),
     // Pass six, beside the rounds (#256, ADR 0056): the Run's own skipped
     // bookkeeping rounds, where its trace is new enough to have recorded them,
     // and the Finalization rounds its Allowance cut.
@@ -2921,6 +2980,9 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
   let slipsNotRecorded = 0
   let malformedAnswers = 0
   let answerRetries = 0
+  let transportAttempts = 0
+  let transportRetriesRecovered = 0
+  let modelUnreachableRuns = 0
   let skippedBookkeeping = 0
   let skippedBookkeepingNotRecorded = 0
   let allowanceFinalization = 0
@@ -2988,6 +3050,9 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
     }
     malformedAnswers += mechanical.malformedAnswers
     answerRetries += mechanical.answerRetries
+    transportAttempts += mechanical.transportAttempts ?? 0
+    transportRetriesRecovered += mechanical.transportRetriesRecovered ?? 0
+    modelUnreachableRuns += mechanical.modelUnreachableRuns ?? 0
     // An attempt read from an audit written before #256 has no field at all: not recorded, like a version-2 trace.
     if ((mechanical.skippedBookkeepingRounds ?? null) === null) skippedBookkeepingNotRecorded += 1
     else skippedBookkeeping += mechanical.skippedBookkeepingRounds!
@@ -3066,6 +3131,9 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
     identitySlipsNotRecorded: slipsNotRecorded,
     malformedAnswers,
     answerRetries,
+    transportAttempts,
+    transportRetriesRecovered,
+    modelUnreachableRuns,
     skippedBookkeepingRounds: skippedBookkeeping,
     skippedBookkeepingNotRecorded,
     allowanceFinalizationRounds: allowanceFinalization,
@@ -3316,6 +3384,12 @@ function subagentCitationsText(counts: Readonly<SubagentCitationCounts> | undefi
     : `subagent citations: ${counts.excerptUnsupported} excerpt_unsupported, ${counts.droppedExcerpts} applied with a dropped excerpt`
 }
 
+/** The Transport Failure counters in one phrase (#271); an audit written before them says so. */
+function transportText(counts: Pick<AuditMechanical, 'transportAttempts' | 'transportRetriesRecovered' | 'modelUnreachableRuns'>): string {
+  if (counts.transportAttempts === undefined) return 'Transport Failures not counted'
+  return `${counts.transportAttempts} Transport Failure attempt(s) (${counts.transportRetriesRecovered ?? 0} round(s) recovered by a Transport Retry, ${counts.modelUnreachableRuns ?? 0} Run(s) model_unreachable)`
+}
+
 function judgementLines(populations: readonly AuditPopulation[]): string[] {
   return populations.map(
     (population) =>
@@ -3323,6 +3397,7 @@ function judgementLines(populations: readonly AuditPopulation[]): string[] {
       `${population.inheritedRounds} inherited, ${population.rejectedCheckpoints} rejected Evidence Checkpoint(s), ${population.walledRounds} walled round(s), ${population.notFoundNavigates} navigate(s) landed on a Not-found Page (${population.notFoundOffKey} judged Off-key), ${population.rewrittenComposedAddresses ?? 0} Composed Address(es) rewritten into a site search (${population.rewrittenComposedAddressesOffKey ?? 0} judged Off-key, ${population.rewrittenShownAddresses ?? 'not counted'} to an address the Run was shown), ${population.unseenPhraseRewrites ?? 'not counted'} search(es) ran with an Unseen Phrase unquoted (${population.unseenPhraseRewritesOffKey ?? 0} judged Off-key), ${population.subagentRounds} Subagent round(s), ` +
       `${population.mergedCheckpoints} merged Evidence Checkpoint(s) (a floor), ${population.heldPageRoundsWithoutProgress} Held Page round(s) without Progress, ${population.bundledCheckpoints} bundled checkpoint round(s), ${population.sameSourceUnsupportedRounds} same-source unsupported round(s), ${subagentCitationsText(population.subagentCitations)}, ${populationSlipsText(population)}, ` +
       `${population.malformedAnswers} Malformed Answer(s) (${population.answerRetries} retried), ` +
+      `${transportText(population)}, ` +
       `${populationSkipsText(population)}, ${populationCutsText(population)}, ` +
       `${population.askedItemsDeclared} declared Asked Items (${population.askedItemsUnverified} with an unverified standing, ${population.askedItemsShapeFailures} shape failure(s), ${population.askedItemsShapeRetried} retried), ` +
       `${population.stoppedEarly} stopped early, ${population.answerOmitted} answer omitted, ${population.overrules} overrule(s), ${population.flags} flag(s); Finalization Causes: ${Object.entries(population.finalizationCauses)
@@ -3353,6 +3428,7 @@ function attemptSection(attempt: AuditAttempt): string[] {
       `${mechanical.heldPageRoundsWithoutProgress} Held Page round(s) without Progress; ${mechanical.bundledCheckpoints} bundled checkpoint round(s); ${mechanical.sameSourceUnsupportedRounds} same-source unsupported round(s); ${subagentCitationsText(mechanical.subagentCitations)}; ${mechanical.walledRounds} walled round(s)`,
   )
   lines.push(`- Malformed Answers: ${mechanical.malformedAnswers} (${mechanical.answerRetries} retried)`)
+  lines.push(`- Transport Failures: ${transportText(mechanical)}`)
   lines.push(`- Finalization: ${finalizationText(mechanical)}`)
   lines.push(`- Asked Items: ${askedItemsText(mechanical.askedItems)}`)
   const landings = mechanical.notFoundNavigates

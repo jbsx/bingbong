@@ -411,6 +411,22 @@ describe('subagent manager', () => {
     expect(mgr.list()[0]).toMatchObject({ status: 'failed', error: 'model routing for subagent is not configured' })
   })
 
+  it('keeps an unreachable model’s bounded report as a Report, never a failed agent (#271)', async () => {
+    const { mgr, api } = manager()
+
+    mgr.spawn('browse', 'check the page')
+    api.tasks.get('a-1')!.resolve({
+      text: 'Stopped when the model could not be reached after 1 tool round — the model could not be reached, and no final report was produced.',
+      findings: [],
+      unresolved: ['Cut short when the model could not be reached — the task is incomplete.'],
+      finalizationCause: 'model_unreachable',
+      bounded: true,
+    })
+    await flush()
+
+    expect(mgr.list()[0]).toMatchObject({ status: 'completed', error: null, report: { finalizationCause: 'model_unreachable' } })
+  })
+
   it('merges results across agents in one report for the orchestrator', async () => {
     const { mgr, api } = manager()
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { LlmEmptyCompletionError, LlmRequestTimeoutError } from '../ports/llm'
+import { LlmEmptyCompletionError, LlmRequestTimeoutError, LlmTransportError } from '../ports/llm'
 import { createLlmRounds, llmRequestShape, llmRoundEvent, llmRoundFailure } from './llmRoundTrace'
 import { createReasoningRounds } from './reasoningTrace'
 
@@ -10,13 +10,13 @@ describe('the llm_round collector (#191)', () => {
     const numbering = (closed: { round: number; attempt: number }) => [closed.round, closed.attempt]
 
     // Round 1: the first attempt is abandoned by a retry, the second returns.
-    expect(numbering(rounds.takeAttempt())).toEqual(numbering(reasoning.takeAttempt()))
+    expect(numbering(rounds.takeAttempt('empty'))).toEqual(numbering(reasoning.takeAttempt()))
     expect(numbering(rounds.takeRound('completed'))).toEqual(numbering(reasoning.takeRound()))
     // Round 2: a single attempt.
     expect(numbering(rounds.takeRound('completed'))).toEqual(numbering(reasoning.takeRound()))
 
-    expect(numbering(rounds.takeAttempt())).toEqual([3, 1])
-    expect(numbering(rounds.takeAttempt())).toEqual([3, 2])
+    expect(numbering(rounds.takeAttempt('empty'))).toEqual([3, 1])
+    expect(numbering(rounds.takeAttempt('empty'))).toEqual([3, 2])
     expect(numbering(rounds.takeRound('completed'))).toEqual([3, 3])
     expect(numbering(rounds.takeRound('completed'))).toEqual([4, 1])
   })
@@ -27,7 +27,7 @@ describe('the llm_round collector (#191)', () => {
 
     // An abandoned attempt is one the client retried, which it does only
     // for an empty completion.
-    const first = rounds.takeAttempt()
+    const first = rounds.takeAttempt('empty')
     expect(first).toEqual({
       round: 1,
       attempt: 1,
@@ -53,7 +53,7 @@ describe('the llm_round collector (#191)', () => {
     expect(rounds.takeRound('deadline')).toEqual({ round: 1, attempt: 1, outcome: 'deadline', reasoningChars: 21 })
     // The count starts over with the next attempt.
     rounds.onDelta({ kind: 'reasoning', text: 'again' })
-    expect(rounds.takeAttempt()).toMatchObject({ round: 2, attempt: 1, outcome: 'empty', reasoningChars: 5 })
+    expect(rounds.takeAttempt('empty')).toMatchObject({ round: 2, attempt: 1, outcome: 'empty', reasoningChars: 5 })
     expect(rounds.takeRound('timeout')).toMatchObject({ round: 2, attempt: 2, outcome: 'timeout', reasoningChars: 0 })
   })
 })
@@ -73,7 +73,7 @@ describe('the first token (#256, ADR 0057)', () => {
     // An attempt that ended before anything streamed carries none, and the
     // retry waits again from its own dispatch.
     rounds.onAttempt({ model: 'glm-5.3' })
-    expect(rounds.takeAttempt()).not.toHaveProperty('firstTokenMs')
+    expect(rounds.takeAttempt('empty')).not.toHaveProperty('firstTokenMs')
     now = 10_000
     rounds.onAttempt({ model: 'glm-5.3' })
     now = 10_500
@@ -105,6 +105,58 @@ describe('what a thrown round is recorded as (#218)', () => {
     expect(llmRoundFailure(new LlmEmptyCompletionError('orchestrator returned an empty completion'))).toBe('empty')
     expect(llmRoundFailure(new Error('orchestrator request failed (HTTP 502)'))).toBe('failed')
     expect(llmRoundFailure('not even an error')).toBe('failed')
+  })
+
+  it('names a Transport Failure by its class (#271)', () => {
+    expect(llmRoundFailure(new LlmTransportError(2, { cause: transportRejection('ECONNRESET') }))).toBe('transport')
+  })
+})
+
+/** A fetch rejection the way undici raises one: the code rides the cause. */
+function transportRejection(code: string): Error {
+  return new TypeError('fetch failed', { cause: Object.assign(new Error(`read ${code}`), { code }) })
+}
+
+describe('a Transport Retry on the record (#271)', () => {
+  it('closes the abandoned attempt as transport with its failure, and numbers the surviving attempt next', () => {
+    const rounds = createLlmRounds()
+    rounds.onAttempt({ model: 'glm-5.3' })
+    const abandoned = rounds.takeAttempt('transport', transportRejection('ECONNRESET'))
+    rounds.onAttempt({ model: 'glm-5.3' })
+    const survivor = rounds.takeRound('completed', { promptTokens: 10, completionTokens: 2 })
+
+    expect(abandoned).toMatchObject({ round: 1, attempt: 1, outcome: 'transport', failure: { message: 'fetch failed', code: 'ECONNRESET' } })
+    expect(survivor).toMatchObject({ round: 1, attempt: 2, outcome: 'completed' })
+    expect(survivor).not.toHaveProperty('failure')
+  })
+
+  it('carries failure on transport, timeout and failed outcomes, and never on completed', () => {
+    const rounds = createLlmRounds()
+    expect(rounds.takeRound('transport', undefined, new LlmTransportError(2, { cause: transportRejection('UND_ERR_CONNECT_TIMEOUT') })).failure).toEqual({
+      message: expect.stringContaining('fetch failed') as string,
+      code: 'UND_ERR_CONNECT_TIMEOUT',
+    })
+    expect(rounds.takeRound('timeout', undefined, new LlmRequestTimeoutError(120_000)).failure).toEqual({
+      message: 'orchestrator request timed out after 120000 ms',
+    })
+    expect(rounds.takeRound('failed', undefined, new Error('orchestrator request failed (HTTP 502)')).failure).toEqual({
+      message: 'orchestrator request failed (HTTP 502)',
+    })
+    expect(rounds.takeRound('completed', undefined, new Error('ignored'))).not.toHaveProperty('failure')
+    expect(rounds.takeRound('deadline', undefined, new Error('aborted'))).not.toHaveProperty('failure')
+  })
+
+  it('writes the failure onto the llm_round record', () => {
+    const event = llmRoundEvent({
+      round: 1,
+      attempt: 1,
+      role: 'orchestrator',
+      outcome: 'transport',
+      reasoningChars: 0,
+      failure: { message: 'fetch failed', code: 'ECONNRESET' },
+      request: { toolResults: 0, chars: 10 },
+    })
+    expect(event).toMatchObject({ outcome: 'transport', failure: { message: 'fetch failed', code: 'ECONNRESET' } })
   })
 })
 

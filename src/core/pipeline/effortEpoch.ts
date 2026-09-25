@@ -233,7 +233,23 @@ export interface TierEscalationDecline {
  * `deadline_reached` stop carries why no Tier Escalation followed, which
  * only the Stop Record and the Run Trace repeat.
  */
-export type FinalizationDetail = BlockerWall | TierEscalationDecline
+export type FinalizationDetail = BlockerWall | TierEscalationDecline | ModelUnreachable
+
+/**
+ * What a `model_unreachable` stop knows (#271, ADR 0066): how many attempts
+ * of the round failed at the transport, and the transport's own code for
+ * the last one when it named one. Only the Stop Record says it; the model
+ * and the user hear only that the model could not be reached.
+ */
+export interface ModelUnreachable {
+  readonly attempts: number
+  readonly code?: string
+}
+
+/** The detail a `model_unreachable` entry carries, read off the client's error. */
+export function modelUnreachableOf(error: { readonly attempts: number; readonly code?: string }): ModelUnreachable {
+  return { attempts: error.attempts, ...(error.code !== undefined ? { code: error.code } : {}) }
+}
 
 /** Whether a detail is a Blocker's wall rather than an escalation decline. */
 export function isBlockerWall(detail: FinalizationDetail | undefined): detail is BlockerWall {
@@ -252,7 +268,13 @@ export function blockerWallOf(cause: FinalizationCause | null, detail: Finalizat
 
 /** The escalation decline a Finalization phase carries (#266), or undefined while working or under any other detail. */
 export function tierEscalationDeclineOf(phase: EffortPhase): TierEscalationDecline | undefined {
-  if (phase.kind === 'working' || phase.detail === undefined || isBlockerWall(phase.detail)) return undefined
+  if (phase.kind === 'working' || phase.detail === undefined || !('arm' in phase.detail)) return undefined
+  return phase.detail
+}
+
+/** The unreachable model a Finalization phase carries (#271), or undefined while working or under any other cause. */
+function modelUnreachableDetailOf(phase: EffortPhase): ModelUnreachable | undefined {
+  if (phase.kind === 'working' || phase.cause !== 'model_unreachable' || phase.detail === undefined || !('attempts' in phase.detail)) return undefined
   return phase.detail
 }
 
@@ -449,7 +471,7 @@ export const NO_PROGRESS_FINALIZATION_REASON =
 
 /**
  * Why the Run is finalizing, as its own model reads it (#201). Only these
- * five mechanical stops reach a Run's model: `objective_met` is the
+ * mechanical stops reach a Run's model: `objective_met` is the
  * model's own attestation, and `user_unavailable` and `parent_finalized`
  * are reached by nothing a Run does. `blocker` is not in the table
  * because its sentence is not a constant — it names the wall the run kept
@@ -460,6 +482,10 @@ const RUN_FINALIZATION_REASONS: Partial<Record<FinalizationCause, string>> = {
   deadline_reached: 'The run\u2019s active-work deadline has passed',
   no_progress: NO_PROGRESS_FINALIZATION_REASON,
   hard_limit: 'The run has reached its hard work limit',
+  // No round, deadline or budget is named (#271, ADR 0066): two requests
+  // failed at the transport, and the model reading this is the one that
+  // could not be reached a round ago.
+  model_unreachable: 'The model could not be reached',
 }
 
 /**
@@ -1359,8 +1385,15 @@ export function finalizationDetailSentence(phase: EffortPhase): string | undefin
   if (phase.kind === 'working') return undefined
   const wall = blockerWallOf(phase.cause, phase.detail)
   if (wall !== undefined) return blockerFinalizationReason(wall)
+  const unreachable = modelUnreachableDetailOf(phase)
+  if (unreachable !== undefined) return modelUnreachableSentence(unreachable)
   const decline = tierEscalationDeclineOf(phase)
   return decline === undefined ? undefined : tierEscalationDeclineSentence(decline)
+}
+
+/** The Stop Record's sentence for an unreachable model (#271): the attempts, and the transport's code when it named one. */
+export function modelUnreachableSentence(detail: ModelUnreachable): string {
+  return `The model could not be reached: all ${detail.attempts} attempts of one round failed at the transport${detail.code !== undefined ? ` (${detail.code})` : ''}`
 }
 
 /**

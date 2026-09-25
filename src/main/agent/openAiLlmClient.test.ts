@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { createOpenAiLlmClient, inspectionSubjectMessage, promptHashOf, retainedCorrectionsMessage, retainedObjectiveMessage, retainedVerificationMessage, standingDirectiveMessage, TRUNCATION_NOTE } from './openAiLlmClient'
-import { LlmEmptyCompletionError, LlmRequestTimeoutError } from '../../core/ports/llm'
+import { createOpenAiLlmClient, TRANSPORT_RETRY_PAUSE_MS, inspectionSubjectMessage, promptHashOf, retainedCorrectionsMessage, retainedObjectiveMessage, retainedVerificationMessage, standingDirectiveMessage, TRUNCATION_NOTE } from './openAiLlmClient'
+import { LlmEmptyCompletionError, LlmRequestTimeoutError, LlmTransportError } from '../../core/ports/llm'
 import { ORCHESTRATOR_SYSTEM_PROMPT } from './orchestratorPrompt'
 import { createBrowserTools } from '../../core/pipeline/browserTools'
 import { createMediaTools } from '../../core/pipeline/mediaTools'
@@ -1732,5 +1732,161 @@ describe('the routes this objective already spent, on the wire (#212, ADR 0041)'
 
     const messages = fetch.calls[0].body.messages
     expect(messages.slice(1).map((message) => message.content)).toEqual(['keep looking'])
+  })
+})
+
+describe('Transport Retry (#271)', () => {
+  const OK = '{"speak":"hi","display":"hi"}'
+
+  /** A fetch that rejects the way undici does: a TypeError whose cause carries a code. */
+  function transportRejection(code = 'ECONNRESET'): Error {
+    return new TypeError('fetch failed', { cause: Object.assign(new Error(`read ${code}`), { code }) })
+  }
+
+  /** Scripted steps: a Response to resolve with, or an Error the fetch call itself rejects with. */
+  function scripted(steps: (Response | Error)[]) {
+    const bodies: string[] = []
+    const fetchFn = (_url: string | URL | Request, init?: RequestInit): Promise<Response> => {
+      bodies.push(String(init?.body ?? ''))
+      const next = steps.shift()
+      if (next === undefined) throw new Error('scripted fetch ran out of steps')
+      return next instanceof Error ? Promise.reject(next) : Promise.resolve(next)
+    }
+    return { fetchFn, bodies }
+  }
+
+  function clientWith(fetchFn: typeof fetch, sleep: (ms: number, signal?: AbortSignal) => Promise<void>, requestTimeoutMs = TEST_REQUEST_TIMEOUT_MS) {
+    return createOpenAiLlmClient({
+      endpoint: ENDPOINT,
+      systemPrompt: ORCHESTRATOR_SYSTEM_PROMPT,
+      tools: createBrowserTools(new FakeBrowser()),
+      fetchFn,
+      requestTimeoutMs,
+      sleep,
+    })
+  }
+
+  /** A sleep that records each pause and returns at once. */
+  function recordingSleep() {
+    const pauses: number[] = []
+    const sleep = (ms: number): Promise<void> => {
+      pauses.push(ms)
+      return Promise.resolve()
+    }
+    return { sleep, pauses }
+  }
+
+  it('retries a first fetch rejection once, after the pause, with a byte-identical body', async () => {
+    const fetch = scripted([transportRejection(), completionResponse({ content: OK })])
+    const { sleep, pauses } = recordingSleep()
+    const retries: unknown[][] = []
+    const sent: unknown[] = []
+
+    const turn = await clientWith(fetch.fetchFn, sleep).complete({
+      command: 'x',
+      toolResults: [],
+      reasoningEffort: 'high',
+      onRetryAttempt: (...args) => retries.push(args),
+      onAttempt: (attempt) => sent.push(attempt),
+    })
+
+    expect(turn).toMatchObject({ kind: 'answer', speak: 'hi' })
+    expect(pauses).toEqual([TRANSPORT_RETRY_PAUSE_MS])
+    expect(TRANSPORT_RETRY_PAUSE_MS).toBe(1_000)
+    expect(fetch.bodies).toHaveLength(2)
+    expect(fetch.bodies[1]).toBe(fetch.bodies[0])
+    expect(sent).toHaveLength(2)
+    expect(retries).toHaveLength(1)
+    expect(retries[0]?.slice(0, 3)).toEqual([2, 2, 'transport'])
+    // The rejection it repeats rides along, so the abandoned attempt's record can name it.
+    expect(retries[0]?.[3]).toMatchObject({ message: 'fetch failed', cause: { code: 'ECONNRESET' } })
+  })
+
+  it('throws LlmTransportError carrying the cause and its code when the retry rejects too', async () => {
+    const first = transportRejection('ECONNRESET')
+    const second = transportRejection('UND_ERR_CONNECT_TIMEOUT')
+    const fetch = scripted([first, second])
+
+    const rejection = clientWith(fetch.fetchFn, recordingSleep().sleep).complete({ command: 'x', toolResults: [] })
+
+    await expect(rejection).rejects.toBeInstanceOf(LlmTransportError)
+    await expect(rejection).rejects.toMatchObject({ cause: second, code: 'UND_ERR_CONNECT_TIMEOUT', attempts: 2 })
+    expect(fetch.bodies).toHaveLength(2)
+  })
+
+  it('does not retry an HTTP error status, a stream that breaks after its first token, or a body that fails to parse', async () => {
+    const httpError = scripted([new Response('overloaded', { status: 503 })])
+    await expect(clientWith(httpError.fetchFn, recordingSleep().sleep).complete({ command: 'x', toolResults: [] })).rejects.toThrow(/HTTP 503/)
+    expect(httpError.bodies).toHaveLength(1)
+
+    const broken = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(textDelta('{"speak"')))
+        controller.error(new TypeError('terminated'))
+      },
+    })
+    const midStream = scripted([new Response(broken, { status: 200, headers: { 'content-type': 'text/event-stream' } })])
+    const streamed = clientWith(midStream.fetchFn, recordingSleep().sleep).complete({ command: 'x', toolResults: [], onDelta: () => {} })
+    await expect(streamed).rejects.toThrow()
+    await expect(streamed).rejects.not.toBeInstanceOf(LlmTransportError)
+    expect(midStream.bodies).toHaveLength(1)
+
+    const unparsable = scripted([new Response('not json', { status: 200 })])
+    const parsed = clientWith(unparsable.fetchFn, recordingSleep().sleep).complete({ command: 'x', toolResults: [] })
+    await expect(parsed).rejects.toBeInstanceOf(SyntaxError)
+    expect(unparsable.bodies).toHaveLength(1)
+  })
+
+  it('cancels the retry when the caller aborts during the pause, rejecting as the abort rather than a transport error', async () => {
+    const fetch = scripted([transportRejection(), completionResponse({ content: OK })])
+    const controller = new AbortController()
+    const sleep = (_ms: number, signal?: AbortSignal): Promise<void> =>
+      new Promise((_resolve, reject) => {
+        signal?.addEventListener('abort', () => reject(signal.reason))
+        controller.abort(new Error('stopped by the user'))
+      })
+
+    const stopped = clientWith(fetch.fetchFn, sleep).complete({ command: 'x', toolResults: [], signal: controller.signal })
+
+    await expect(stopped).rejects.toThrow('stopped by the user')
+    await expect(stopped).rejects.not.toBeInstanceOf(LlmTransportError)
+    expect(fetch.bodies).toHaveLength(1)
+  })
+
+  it('still names the timeout signal LlmRequestTimeoutError, never a transport failure', async () => {
+    const hanging = (_url: string | URL | Request, init?: RequestInit): Promise<Response> =>
+      new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(new TypeError('fetch failed', { cause: init.signal?.reason })))
+      })
+    const timedOut = clientWith(hanging, recordingSleep().sleep, 5).complete({ command: 'x', toolResults: [] })
+    await expect(timedOut).rejects.toBeInstanceOf(LlmRequestTimeoutError)
+  })
+
+  it('spends no empty-completion attempt: transport, then three empties, still reaches the nudge on the third', async () => {
+    const fetch = scripted([
+      transportRejection(),
+      completionResponse({ content: null }),
+      completionResponse({ content: null }),
+      completionResponse({ content: null }),
+    ])
+    const retries: unknown[][] = []
+
+    const rejection = clientWith(fetch.fetchFn, recordingSleep().sleep).complete({
+      command: 'x',
+      toolResults: [],
+      onRetryAttempt: (...args) => retries.push(args.slice(0, 3)),
+    })
+
+    await expect(rejection).rejects.toBeInstanceOf(LlmEmptyCompletionError)
+    expect(fetch.bodies).toHaveLength(4)
+    const last = JSON.parse(fetch.bodies[3] ?? '{}') as CompletionBody
+    expect(last.messages.at(-1)?.content).toMatch(/previous reply was empty/)
+    const penultimate = JSON.parse(fetch.bodies[2] ?? '{}') as CompletionBody
+    expect(penultimate.messages.at(-1)?.content).not.toMatch(/previous reply was empty/)
+    expect(retries).toEqual([
+      [2, 2, 'transport'],
+      [2, 3, 'empty'],
+      [3, 3, 'empty'],
+    ])
   })
 })

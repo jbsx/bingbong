@@ -252,6 +252,10 @@ export function extractLiveMetrics(input: LiveMetricsInput): LiveMetrics {
     counts: {
       llmSpans: perfRecords.filter((record) => record.stage === 'llm').length,
       llmRetries: ofType(events, 'llm_retry').length,
+      llmRetriesByReason: {
+        empty: ofType(events, 'llm_retry').filter((event) => event.reason !== 'transport').length,
+        transport: ofType(events, 'llm_retry').filter((event) => event.reason === 'transport').length,
+      },
       toolCalls: ofType(events, 'tool_call').length,
       toolSpans: perfRecords.filter((record) => record.stage === 'tool').length,
       visionRequests,

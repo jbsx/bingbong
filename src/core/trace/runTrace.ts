@@ -208,7 +208,18 @@ export interface LlmRequestShape {
  * them alike is how a Session's decay was first misdiagnosed — and a
  * per-round latency reads only `completed` rounds.
  */
-export type LlmRoundOutcome = 'completed' | 'deadline' | 'allowance' | 'timeout' | 'empty' | 'cancelled' | 'failed'
+export type LlmRoundOutcome = 'completed' | 'deadline' | 'allowance' | 'timeout' | 'empty' | 'transport' | 'cancelled' | 'failed'
+
+/**
+ * What a thrown attempt threw (#271): the error's message and, when the
+ * transport named it, its code (`ECONNRESET`). Only the outcomes that are
+ * a thrown error carry one — `transport`, `timeout`, `failed` — because
+ * the others are cuts the loop made itself or an answer that was empty.
+ */
+export interface LlmRoundFailure {
+  readonly message: string
+  readonly code?: string
+}
 
 /**
  * One LLM attempt as it was sent (#191): the record that answers "why did
@@ -256,6 +267,13 @@ export interface LlmRoundEvent {
   readonly request: LlmRequestShape
   /** The delegated worker whose round this was (#183); absent on the Run's own rounds. */
   readonly agentId?: string
+  /**
+   * What the attempt threw (#271), on a `transport`, `timeout` or `failed`
+   * outcome only: until then a fetch that never connected and a gateway's
+   * 502 both read `failed` and nothing more, and the transport's own code
+   * was dropped at every layer.
+   */
+  readonly failure?: LlmRoundFailure
 }
 
 /**
@@ -346,8 +364,10 @@ export interface FailureScreenshotEvent {
  * The Finalization Causes that earn a screenshot (#191): the rails a post
  * mortem reads. `blocker` is the case the screenshot answers outright
  * (#202) — what the wall actually looked like when the run kept at it.
+ * `model_unreachable` (#271) keeps the screenshot the same Run took when
+ * a Transport Failure still ended it `failed`.
  */
-export const FAILURE_SCREENSHOT_RAIL_CAUSES = ['no_progress', 'deadline_reached', 'budget_exhausted', 'blocker'] as const
+export const FAILURE_SCREENSHOT_RAIL_CAUSES = ['no_progress', 'deadline_reached', 'budget_exhausted', 'blocker', 'model_unreachable'] as const
 
 /** What earns a failure screenshot: a failed outcome, or a finalization on one of those rails. */
 export type FailureScreenshotCause = 'failed' | (typeof FAILURE_SCREENSHOT_RAIL_CAUSES)[number]

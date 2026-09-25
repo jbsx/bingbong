@@ -605,6 +605,25 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
       )
     })
 
+    it('opens an unreachable model’s instruction on that reason, and names no deadline (#271)', () => {
+      expect(finalizeInstruction('model_unreachable')).toMatch(/^The model could not be reached — /)
+      expect(requestFinalizeInstruction({ kind: 'answer_only', cause: 'model_unreachable', detail: { attempts: 2, code: 'ECONNRESET' } })).toBe(
+        `The model could not be reached. ${ANSWER_ONLY_REPORT_DIRECTIVE}`,
+      )
+      expect(finalizeInstruction('model_unreachable')).not.toMatch(/deadline/)
+    })
+
+    it('words the Stop Record detail of an unreachable model with its attempts and the transport code (#271)', () => {
+      expect(finalizationDetailSentence({ kind: 'finalizing', cause: 'model_unreachable', detail: { attempts: 2, code: 'ECONNRESET' } })).toBe(
+        'The model could not be reached: all 2 attempts of one round failed at the transport (ECONNRESET)',
+      )
+      expect(finalizationDetailSentence({ kind: 'answer_only', cause: 'model_unreachable', detail: { attempts: 2 } })).toBe(
+        'The model could not be reached: all 2 attempts of one round failed at the transport',
+      )
+      // Never read as an escalation decline.
+      expect(tierEscalationDeclineOf({ kind: 'finalizing', cause: 'model_unreachable', detail: { attempts: 2 } })).toBeUndefined()
+    })
+
     it('tells the reserved Answer round that no tool round remains', () => {
       expect(requestFinalizeInstruction({ kind: 'answer_only', cause: 'deadline_reached' })).toBe(
         `The run\u2019s active-work deadline has passed. ${ANSWER_ONLY_REPORT_DIRECTIVE}`,

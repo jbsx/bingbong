@@ -61,6 +61,7 @@ describe('parseFinalizationCause', () => {
       'blocker',
       'user_unavailable',
       'hard_limit',
+      'model_unreachable',
       'model_answered',
     ] as const,
   )('accepts the %s Finalization Cause', (cause: FinalizationCause) => {
@@ -112,6 +113,8 @@ describe('finalizeRun', () => {
       'blocker',
       'user_unavailable',
       'hard_limit',
+      // Only the runtime saw both attempts fail at the transport (#271).
+      'model_unreachable',
     ] as const) {
       expect(
         finalizeRun({ mechanicalCause: null, answered: true, proposedResolution: 'blocked', proposedCause: proposed }),

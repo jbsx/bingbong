@@ -91,6 +91,11 @@ describe('feed projection', () => {
       { kind: 'retry', role: SYSTEM, text: 'empty response — retrying 2/3', detail: true },
     ],
     [
+      'Transport Retry line (#271)',
+      { type: 'llm_retry', turnId: T, attempt: 2, maxAttempts: 2, reason: 'transport', at: 7_500 } as PipelineEvent,
+      { kind: 'retry', role: SYSTEM, text: 'no response from the model — retrying 2/2', detail: true },
+    ],
+    [
       'steer echo',
       { type: 'steer', turnId: T, text: 'use Paris instead', at: 8_000 } as PipelineEvent,
       { kind: 'steer', role: SYSTEM, text: 'steer: use Paris instead', detail: true },

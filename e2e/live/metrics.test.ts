@@ -66,6 +66,19 @@ describe('extractLiveMetrics', () => {
     expect('taskSuccess' in metrics).toBe(false)
   })
 
+  it('counts retries by reason, reading a reasonless retry as an empty completion (#271)', () => {
+    const retried: PipelineEvent[] = [
+      ...events.slice(0, 2),
+      { type: 'llm_retry', turnId: 't1', attempt: 2, maxAttempts: 3, at: 1100, ...identity },
+      { type: 'llm_retry', turnId: 't1', attempt: 2, maxAttempts: 3, reason: 'empty', at: 1150, ...identity },
+      { type: 'llm_retry', turnId: 't1', attempt: 2, maxAttempts: 2, reason: 'transport', at: 1160, ...identity },
+      ...events.slice(2),
+    ]
+    const metrics = extractLiveMetrics({ events: retried, perfRecords: perf, traceRecords: [], input: 'typed', clockOrigin: 'cap-1' })
+    expect(metrics.counts.llmRetries).toBe(3)
+    expect(metrics.counts.llmRetriesByReason).toEqual({ empty: 2, transport: 1 })
+  })
+
   it('leaves a missing Answer and a missing terminal unavailable rather than zero', () => {
     const aborted = events.filter((event) => event.type !== 'done' && !(event.type === 'display' && event.finalAnswer))
     const metrics = extractLiveMetrics({ events: aborted, perfRecords: [], traceRecords: [], input: 'typed', clockOrigin: 'cap-1' })

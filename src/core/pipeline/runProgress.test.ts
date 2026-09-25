@@ -185,6 +185,12 @@ describe('describeRunProgress', () => {
       'thinking — 75s · empty response — retrying 2/3',
     ],
     [
+      'a Transport Retry names itself (#271)',
+      { stage: 'thinking' as const, startedAt: 1_000, retry: { attempt: 2, maxAttempts: 2, reason: 'transport' as const }, waitingOnAgents: null },
+      9_000,
+      'thinking — 8s · no response from the model — retrying 2/2',
+    ],
+    [
       'a hang is an honestly climbing counter',
       { stage: 'thinking' as const, startedAt: 0, retry: null, waitingOnAgents: null },
       119_000,

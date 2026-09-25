@@ -79,7 +79,7 @@ const metrics: LiveMetrics = {
   effortTier: 'lookup',
   deadlineTierEscalations: 0,
   budgetTierEscalations: 0,
-  counts: { llmSpans: 1, llmRetries: 0, toolCalls: 0, toolSpans: 0, visionRequests: 0, subagentsFinalized: 0, errors: 0 },
+  counts: { llmSpans: 1, llmRetries: 0, llmRetriesByReason: { empty: 0, transport: 0 }, toolCalls: 0, toolSpans: 0, visionRequests: 0, subagentsFinalized: 0, errors: 0 },
   subagents: { status: 'not_applicable', reason: 'none' },
   usage: {
     orchestrator: { status: 'unavailable', reason: 'none' },

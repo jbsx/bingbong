@@ -1,5 +1,6 @@
 import type {
   AssistantTurn,
+  LlmAttemptSent,
   LlmClient,
   LlmRequest,
   LlmStreamDelta,
@@ -8,7 +9,7 @@ import type {
   ToolCall,
   ToolResult,
 } from '../../core/ports/llm'
-import { LlmEmptyCompletionError, LlmRequestTimeoutError } from '../../core/ports/llm'
+import { LlmEmptyCompletionError, LlmRequestTimeoutError, LlmTransportError } from '../../core/ports/llm'
 import { createHash } from 'node:crypto'
 import type { Tool, ToolParameterSpec } from '../../core/pipeline/tool'
 import type { ModelEndpointConfig } from '../../core/agent/modelRouting'
@@ -68,6 +69,51 @@ export interface OpenAiLlmClientDeps {
    * Tier's, or Finalization's — is sent.
    */
   reasoningEffort?: ReasoningEffort
+  /**
+   * The Transport Retry's pause (#271): resolves after `ms`, or rejects
+   * with the signal's reason when it aborts first. Injected so a test
+   * never waits; absent, a real timer.
+   */
+  sleep?: (ms: number, signal?: AbortSignal) => Promise<void>
+}
+
+/**
+ * How long the client waits before its one Transport Retry (#271, ADR
+ * 0066): fixed, not a backoff — there is only one retry, and both observed
+ * failures rejected within seconds of dispatch.
+ */
+export const TRANSPORT_RETRY_PAUSE_MS = 1_000
+
+/** A real, abortable pause: the default `sleep`. */
+function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted === true) {
+      reject(signal.reason)
+      return
+    }
+    const onAbort = (): void => {
+      clearTimeout(timer)
+      reject(signal?.reason)
+    }
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort)
+      resolve()
+    }, ms)
+    signal?.addEventListener('abort', onAbort, { once: true })
+  })
+}
+
+/**
+ * A rejection of the fetch call itself (#271): the one thing a Transport
+ * Retry repeats. Raised only by `requestOnce`, only around `fetchFn`, and
+ * only when neither the timeout nor the caller aborted — so an HTTP error,
+ * a broken stream and an unparsable body never reach the retry.
+ */
+class TransportRejection extends Error {
+  constructor(cause: unknown) {
+    super('fetch rejected', { cause })
+    this.name = 'TransportRejection'
+  }
 }
 
 /**
@@ -483,6 +529,7 @@ export function createOpenAiLlmClient(deps: OpenAiLlmClientDeps): LlmClient {
   const { endpoint, systemPrompt, tools, fetchFn } = deps
   const timeoutMs = deps.requestTimeoutMs
   const effortOverride = deps.reasoningEffort
+  const sleep = deps.sleep ?? abortableSleep
 
   function buildMessages(request: LlmRequest): WireMessage[] {
     const messages: WireMessage[] = [
@@ -590,11 +637,7 @@ export function createOpenAiLlmClient(deps: OpenAiLlmClientDeps): LlmClient {
       // with the loop's ceiling — so the dashboard can show "retrying 2/3"
       // before the attempt starts, and the perf log shows a tripled
       // round-trip as separate events.
-      if (attempt > 1) request.onRetryAttempt?.(attempt, MAX_ATTEMPTS)
-      // Attempt identity (#191): reported before the attempt starts, the
-      // retry hook's own rhythm, so the record for an abandoned attempt
-      // still says what it was sent under.
-      request.onAttempt?.(sent)
+      if (attempt > 1) request.onRetryAttempt?.(attempt, MAX_ATTEMPTS, 'empty')
       const outgoing =
         attempt === MAX_ATTEMPTS
           ? [
@@ -609,12 +652,14 @@ export function createOpenAiLlmClient(deps: OpenAiLlmClientDeps): LlmClient {
               },
             ]
           : messages
-      const { payload, requestId, raw } = await requestOnce(outgoing, catalog, {
-        streaming,
-        onDelta: request.onDelta,
-        signal: request.signal,
-        effort,
-      })
+      const { payload, requestId, raw } = await requestWithTransportRetry(request, sent, () =>
+        requestOnce(outgoing, catalog, {
+          streaming,
+          onDelta: request.onDelta,
+          signal: request.signal,
+          effort,
+        }),
+      )
       const turn = toTurn(payload)
       if (turn) return turn
       lastRequestId = requestId
@@ -626,6 +671,43 @@ export function createOpenAiLlmClient(deps: OpenAiLlmClientDeps): LlmClient {
     console.warn(`[llm] ${emptyCompletion}`)
     reportFault('llm.openAiLlmClient.emptyCompletion', emptyCompletion)
     throw new LlmEmptyCompletionError(`orchestrator returned an empty completion (request_id: ${lastRequestId ?? 'unknown'})`)
+  }
+
+  /**
+   * One request, with its one Transport Retry (#271, ADR 0066). It wraps
+   * the single request rather than living in the empty-completion loop, so
+   * a retry here never spends one of that loop's attempts or brings its
+   * nudge forward, and has its own ceiling of two. The repeat is the same
+   * closure — the same body, byte for byte — after a fixed pause the
+   * caller's signal can cut short; each attempt runs under its own request
+   * timeout, and the caller's abort bounds the whole. Attempt identity is
+   * reported for every dispatch here, the retry's included, so the round's
+   * records number a transport attempt like any other.
+   */
+  async function requestWithTransportRetry(
+    request: LlmRequest,
+    sent: LlmAttemptSent,
+    attempt: () => Promise<AttemptResult>,
+  ): Promise<AttemptResult> {
+    const MAX_TRANSPORT_ATTEMPTS = 2
+    for (let transportAttempt = 1; ; transportAttempt++) {
+      // Attempt identity (#191): reported before the attempt starts, the
+      // retry hook's own rhythm, so the record for an abandoned attempt
+      // still says what it was sent under.
+      request.onAttempt?.(sent)
+      try {
+        return await attempt()
+      } catch (error) {
+        if (!(error instanceof TransportRejection)) throw error
+        if (transportAttempt >= MAX_TRANSPORT_ATTEMPTS) {
+          throw new LlmTransportError(transportAttempt, { cause: error.cause })
+        }
+        // The pause is the caller's to cut (a Stop, the deadline): its
+        // abort rejects here as it came, and nothing is sent again.
+        await sleep(TRANSPORT_RETRY_PAUSE_MS, request.signal)
+        request.onRetryAttempt?.(transportAttempt + 1, MAX_TRANSPORT_ATTEMPTS, 'transport', error.cause)
+      }
+    }
   }
 
   interface CompletionPayload {
@@ -699,15 +781,24 @@ export function createOpenAiLlmClient(deps: OpenAiLlmClientDeps): LlmClient {
     const signal = options.signal ? AbortSignal.any([timeoutSignal, options.signal]) : timeoutSignal
 
     try {
-      const response = await fetchFn(completionsUrl(endpoint.baseUrl), {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          authorization: `Bearer ${endpoint.apiKey}`,
-        },
-        body: JSON.stringify(body),
-        signal,
-      })
+      let response: Response
+      try {
+        response = await fetchFn(completionsUrl(endpoint.baseUrl), {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            authorization: `Bearer ${endpoint.apiKey}`,
+          },
+          body: JSON.stringify(body),
+          signal,
+        })
+      } catch (error) {
+        // A Transport Failure (#271): the fetch call itself rejected and
+        // nobody aborted it, so no response exists at all. Marked here, the
+        // one place that can tell it from a response that went wrong later.
+        if (!signal.aborted) throw new TransportRejection(error)
+        throw error
+      }
 
       if (!response.ok) {
         const detail = (await response.text()).slice(0, 500)

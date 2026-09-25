@@ -359,7 +359,7 @@ export function createFeedProjection(deps?: {
           return
         }
         case 'llm_retry':
-          appendDetail(event.at, formatRetryLine(event.attempt, event.maxAttempts), 'retry', event.turnId)
+          appendDetail(event.at, formatRetryLine(event.attempt, event.maxAttempts, event.reason), 'retry', event.turnId)
           return
         case 'status':
           // Stage entries (#42 story 17): every stage transition lands as a

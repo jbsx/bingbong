@@ -76,9 +76,9 @@ describe('withPerfTracing', () => {
   it('records one llm-retry event per reported retry attempt, attempt number in detail', async () => {
     const { records, state, tracer } = fakePerfHarness()
     const client = new FakeLlm(state, (request) => {
-      request.onRetryAttempt?.(2, 3)
+      request.onRetryAttempt?.(2, 3, 'empty')
       state.monotonicMs += 100
-      request.onRetryAttempt?.(3, 3)
+      request.onRetryAttempt?.(3, 3, 'empty')
       state.monotonicMs += 100
       return ANSWER
     })
@@ -97,7 +97,7 @@ describe('withPerfTracing', () => {
     const { records, state, tracer } = fakePerfHarness()
     const seenAttempts: [number, number][] = []
     const client = new FakeLlm(state, (request) => {
-      request.onRetryAttempt?.(2, 3)
+      request.onRetryAttempt?.(2, 3, 'empty')
       return ANSWER
     })
     const traced = withPerfTracing(client, tracer)
@@ -123,7 +123,7 @@ describe('withPerfTracing', () => {
     const { records, state, tracer } = fakePerfHarness()
     const client = new FakeLlm(state, (request) => {
       state.monotonicMs += 250
-      request.onRetryAttempt?.(2, 3)
+      request.onRetryAttempt?.(2, 3, 'empty')
       return ANSWER
     })
     const traced = withPerfTracing(client, tracer, 'subagent-llm')
@@ -154,7 +154,7 @@ describe('withPerfTracing', () => {
   it('passes the request through untouched when it carries no turn id', async () => {
     const { records, state, tracer } = fakePerfHarness()
     const client = new FakeLlm(state, (request) => {
-      request.onRetryAttempt?.(2, 3) // a hook the wrapper never installed stays silent
+      request.onRetryAttempt?.(2, 3, 'empty') // a hook the wrapper never installed stays silent
       return ANSWER
     })
     const traced = withPerfTracing(client, tracer)

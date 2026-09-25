@@ -354,6 +354,12 @@ export interface LiveMetrics {
     /** Perf `llm` spans — orchestrator rounds that finished. */
     readonly llmSpans: number
     readonly llmRetries: number
+    /**
+     * The same retries by reason (#271): an empty completion, or a Transport
+     * Retry. A retry event written before #271 carries none and is empty.
+     * Absent from a metrics file written before the split.
+     */
+    readonly llmRetriesByReason?: { readonly empty: number; readonly transport: number }
     readonly toolCalls: number
     /** Perf `tool` spans — calls that reached execute. */
     readonly toolSpans: number

@@ -137,6 +137,13 @@ export type RunResolution = (typeof RUN_RESOLUTIONS)[number]
  * the gate — not the model — attests it. It is a runtime cause like any
  * other, so a model that proposes it is still dropped below; what
  * changed is that the runtime now reaches it.
+ *
+ * `model_unreachable` is a model round whose request and its one
+ * Transport Retry both failed at the transport (#271, ADR 0066): no
+ * response at all, twice. The runtime alone knows it — a model that
+ * proposes it is dropped like any other runtime cause — and it is its own
+ * cause rather than `deadline_reached`, because a request that failed in
+ * under a second crossed no deadline (ADR 0038).
  */
 export const FINALIZATION_CAUSES = [
   'objective_met',
@@ -146,6 +153,7 @@ export const FINALIZATION_CAUSES = [
   'blocker',
   'user_unavailable',
   'hard_limit',
+  'model_unreachable',
   'model_answered',
   'parent_finalized',
 ] as const

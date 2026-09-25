@@ -11,6 +11,9 @@ describe('what earns a failure screenshot (#191)', () => {
     // A wall stop is the case the screenshot answers outright (#202): the
     // picture is what the run kept trying to get past.
     expect(failureScreenshotCause({ type: 'done', turnId: 't', outcome: 'done', finalizationCause: 'blocker', at })).toBe('blocker')
+    // An unreachable model (#271) keeps the capture the same Run took when
+    // a Transport Failure still ended it `failed`.
+    expect(failureScreenshotCause({ type: 'done', turnId: 't', outcome: 'done', finalizationCause: 'model_unreachable', at })).toBe('model_unreachable')
 
     // A Run that met its objective, was cancelled, or reset leaves no
     // capture: the file is about failures, and a Kiosk's happy path must

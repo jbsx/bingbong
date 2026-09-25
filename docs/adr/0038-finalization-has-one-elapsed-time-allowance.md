@@ -85,3 +85,18 @@ tests can prove these guarantees without a paid live-model run.
 
 The confirmed scope and verification boundary are in
 [Reliable Search Continuation](../search-continuation-design.md).
+
+## Notes
+
+- 2026-09-25 (#271, [ADR 0066](0066-a-transport-failure-is-retried-once-and-a-second-is-a-finalization-cause.md)).
+  A model round whose request and its one Transport Retry both failed at
+  the transport enters Finalization under a new cause, `model_unreachable`,
+  rather than `deadline_reached`. The #219 client timeout reused the
+  deadline's cause because a cut is a cut whichever timer fired; a request
+  that rejected in under a second crossed no deadline, and recording one
+  would be the substitution this ADR forbids: the Stop Record would answer
+  a later "why did you stop?" with a limit that was never reached. The new
+  cause changes nothing else here — the allowance, its shares, the
+  reserved Answer and the deterministic fallback run as for any cause, and
+  a transport failure inside Finalization keeps the handling its round
+  already had.
