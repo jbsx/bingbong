@@ -238,15 +238,15 @@ export interface RunSubagentOptions {
   waitIfPaused?(): Promise<void>
   onProgress?(progress: SubagentProgress): void
   /**
-   * Where each of this worker's successful page-facing calls settled (#273,
+   * Where each of this Subagent's successful page-facing calls settled (#273,
    * ADR 0065): the page joins its Delegated Pages, so the orchestrator is
-   * told it is this worker's branch. Absent, nothing is reported.
+   * told it is this Subagent's branch. Absent, nothing is reported.
    */
   onPageLanded?(url: string): void
   /**
-   * The pages this worker's running siblings hold (#273, ADR 0065), its own
+   * The pages this Subagent's running siblings hold (#273, ADR 0065), its own
    * excluded: a call on one carries the Delegated Page Notice. Absent — a
-   * worker with no siblings to hear of — nothing is attached.
+   * Subagent with no siblings to hear of — nothing is attached.
    */
   delegatedPages?: DelegatedPagesLookup
   /**
@@ -664,7 +664,7 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
     effortEpoch: epoch,
     notices,
     // Only a page-facing call's observation carries a source URL, so a
-    // successful one is exactly a page this worker settled on (#273).
+    // successful one is exactly a page this Subagent settled on (#273).
     observe: (input) => {
       if (input.ok && input.sourceUrl !== undefined) options.onPageLanded?.(input.sourceUrl)
       return workerLedger.record(input)

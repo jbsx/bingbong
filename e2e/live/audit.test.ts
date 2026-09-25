@@ -638,7 +638,8 @@ describe('subagent citations: excerpt_unsupported and dropped excerpts (#272)', 
     expect(markdown).toContain('; subagent citations: 1 excerpt_unsupported, 1 applied with a dropped excerpt;')
 
     // An audit written before the counter says so, never zero.
-    const { subagentCitations: _dropped, ...before } = initial
+    const { subagentCitations: dropped, ...before } = initial
+    expect(dropped).toEqual({ excerptUnsupported: 1, droppedExcerpts: 1 })
     const legacy = buildAuditSet(provenanceOf(), [{ mechanical: before, review: null, countsAfterOverrules: initial.counts }], [])
     expect(legacy.populations.initial.subagentCitations).toBeUndefined()
     expect(formatAuditSet(legacy)).toMatch(/- initial: .*subagent citations not counted/)
@@ -2613,6 +2614,38 @@ describe('Delegated Page rounds (#273)', () => {
 
   it('files each orchestrator navigate or read_page round by the holder’s state', () => {
     expect(delegatedPageRoundsOf(records as never)).toEqual({ running: [3, 4], finished: [6], collected: [8] })
+  })
+
+  it('releases a Subagent the moment a cancel names it, as the app does, before its finish is written', () => {
+    const cancelled = [
+      round(1),
+      ...orchestratorCall('spawn_agent', { kind: 'browse', task: `Read ${DOCS}` }, 'spawned a-1 [browse] — poll'),
+      ...orchestratorCall('spawn_agent', { kind: 'browse', task: `Read ${PRODUCT}` }, 'spawned a-2 [browse] — poll'),
+      ...orchestratorCall('cancel_agent', { agent_id: 'a-1' }, 'cancelled a-1'),
+      round(2),
+      ...orchestratorCall('navigate', { url: DOCS }, PAGE('Camera software', DOCS, 'aaaa0001')),
+      ...orchestratorCall('navigate', { url: PRODUCT }, PAGE('Camera Module 3', PRODUCT, 'bbbb0002')),
+      ...orchestratorCall('cancel_agent', { agent_id: 'all' }, 'cancelled 1 running subagent(s)'),
+      round(3),
+      ...orchestratorCall('navigate', { url: PRODUCT }, PAGE('Camera Module 3', PRODUCT, 'bbbb0002')),
+      finalized('a-1', 'cancelled'),
+      finalized('a-2', 'cancelled'),
+    ]
+    expect(delegatedPageRoundsOf(cancelled as never)).toEqual({ running: [2], finished: [], collected: [] })
+  })
+
+  it('counts a report collected before its finish reached the trace as collected, and never steps it back', () => {
+    const waited = [
+      round(1),
+      ...orchestratorCall('spawn_agent', { kind: 'browse', task: `Read ${DOCS}` }, 'spawned a-1 [browse] — poll'),
+      round(2),
+      // agent_results(wait) settled and was written ahead of subagent_finalized.
+      ...orchestratorCall('agent_results', { wait: true }, `a-1 [browsing] completed — Read ${DOCS}\nreport:\ndone`),
+      finalized('a-1', 'completed'),
+      round(3),
+      ...orchestratorCall('navigate', { url: DOCS }, PAGE('Camera software', DOCS, 'aaaa0001')),
+    ]
+    expect(delegatedPageRoundsOf(waited as never)).toEqual({ running: [], finished: [], collected: [3] })
   })
 
   it('is empty on a Run that spawned nothing', () => {

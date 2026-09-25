@@ -15,7 +15,7 @@ import type { WebEngine } from '../pipeline/webEngine'
 import type { SubagentReport } from './subagentReport'
 import { SubagentCancelledError } from './subagentRunner'
 import { canonicalizeMemoryUrl } from '../session/workingMemory'
-import { urlsInTask, type DelegatedHolder, type DelegatedPagesLookup } from '../pipeline/delegatedPage'
+import { urlsInTask, type DelegatedHolder, type DelegatedPageState, type DelegatedPagesLookup } from '../pipeline/delegatedPage'
 
 // The subagent supervisor (issue #13). Owns the agent rail (≤4 concurrent,
 // of which at most 3 may be browsing agents on independent Investigation
@@ -174,14 +174,14 @@ export interface SubagentTaskHooks {
    */
   runEngine?: () => WebEngine
   /**
-   * Where one of this worker's own page-facing calls settled (#273): the
+   * Where one of this Subagent's own page-facing calls settled (#273): the
    * page joins its Delegated Pages. Absent — a caller outside a manager —
    * nothing is registered.
    */
   onLanded?(url: string): void
   /**
-   * The pages this worker's running siblings hold (#273, ADR 0065): its
-   * own pages excluded, siblings in the running state only, since a worker
+   * The pages this Subagent's running siblings hold (#273, ADR 0065): its
+   * own pages excluded, siblings in the running state only, since a Subagent
    * collects nothing. What its Tool Round's Delegated Page Notice reads.
    */
   delegatedPages?: DelegatedPagesLookup
@@ -390,6 +390,17 @@ export function createSubagentManager(deps: SubagentManagerDeps): SubagentManage
     return completed
   }
 
+  /**
+   * Where a Subagent's Delegated Pages stand (#273), or null once released.
+   * A cancelled agent is released the moment the decision is taken, not when
+   * its loop notices: no report is coming either way.
+   */
+  function delegatedStateOf(record: SubagentRecord): DelegatedPageState | null {
+    if (record.status === 'running') return cancelled.has(record.id) ? null : 'running'
+    if (record.status === 'completed') return record.collected === true ? 'collected' : 'finished'
+    return null
+  }
+
   /** The Delegated Page holders of one page (#273, ADR 0065), in spawn order. */
   function holdersOf(url: string, scope: DelegatedScope): DelegatedHolder[] {
     const [page] = canonicalPages([url])
@@ -399,16 +410,7 @@ export function createSubagentManager(deps: SubagentManagerDeps): SubagentManage
       if (record.pages?.includes(page) !== true) continue
       if (scope.viewer !== undefined && record.id === scope.viewer) continue
       if (scope.turnId !== undefined && record.turnId !== scope.turnId) continue
-      // A cancelled agent is released the moment the decision is taken, not
-      // when its loop notices: no report is coming either way.
-      const state =
-        record.status === 'running' && !cancelled.has(record.id)
-          ? 'running'
-          : record.status === 'completed'
-            ? record.collected === true
-              ? 'collected'
-              : 'finished'
-            : null
+      const state = delegatedStateOf(record)
       if (state === null || (scope.viewer !== undefined && state !== 'running')) continue
       const findings =
         state === 'collected'

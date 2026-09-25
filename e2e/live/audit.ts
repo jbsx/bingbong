@@ -187,9 +187,9 @@ export interface DelegatedPageRounds {
 
 /** Delegated Page rounds summed over a population's attempts (#273). */
 export interface DelegatedPageCounts {
-  readonly running: number
-  readonly finished: number
-  readonly collected: number
+  running: number
+  finished: number
+  collected: number
 }
 
 export interface AuditCall {
@@ -2183,6 +2183,7 @@ function withoutProgressOnHeldPage(call: AuditCall, held: ReadonlySet<string>): 
 // delegatedPage.ts), kept apart for the same reason PRINTED_HREF_RE is — that
 // module cannot load under plain Node, which `scripts/live-audit.ts` must.
 const TASK_URL_RE = /https?:\/\/[^\s"'<>)\]]+/g
+const CLOSING_PUNCTUATION_RE = /[.,;:!?]+$/
 const SPAWNED_BROWSE_RE = /^spawned (\S+) \[browse\]/
 
 /**
@@ -2192,18 +2193,22 @@ const SPAWNED_BROWSE_RE = /^spawned (\S+) \[browse\]/
  * uncollected, collected. Read in one pass over the interleaved Run Trace —
  * no field of its own: a Delegated Page is a URL a browse spawn's task names
  * or one of that Subagent's own results settled on, canonical under the
- * audit's rule; it finishes at its `subagent_finalized` (a cancelled or
- * failed one is released), and is collected when an `agent_results` result
- * carries its completed header. A round on pages of two states counts in
- * both; a round counts once per state.
+ * audit's rule. It is released at once by a successful `cancel_agent` naming
+ * it (or "all" while it runs), as the app releases it when the cancel is
+ * decided; it finishes at its `subagent_finalized` (a cancelled or failed one
+ * is released there too), and is collected when an `agent_results` result
+ * carries its completed header — whatever order those two reached the trace
+ * in, since a waiting collection can settle before the finish is written. A
+ * round on pages of two states counts in both; a round counts once per state.
  */
 export function delegatedPageRoundsOf(records: readonly TraceLine[]): DelegatedPageRounds {
   interface Holder {
     readonly pages: Set<string>
-    state: 'running' | 'finished' | 'collected'
+    state: keyof DelegatedPageRounds
   }
   const holders = new Map<string, Holder>()
   const spawnTasks = new Map<string, string>()
+  const cancelTargets = new Map<string, string>()
   const orchestratorCalls = new Map<string, string>()
   const phases = { running: new Set<number>(), finished: new Set<number>(), collected: new Set<number>() }
   let roundsSeen = 0
@@ -2224,13 +2229,14 @@ export function delegatedPageRoundsOf(records: readonly TraceLine[]): DelegatedP
     if (event.type === 'subagent_finalized' && isString(event.agentId)) {
       const holder = holders.get(event.agentId)
       if (holder === undefined) continue
-      if (event.status === 'completed') holder.state = 'finished'
-      else holders.delete(event.agentId)
+      if (event.status !== 'completed') holders.delete(event.agentId)
+      else if (holder.state === 'running') holder.state = 'finished'
       continue
     }
     if (event.type === 'tool_call' && isString(event.callId) && isString(event.name) && record.agentId === undefined) {
       orchestratorCalls.set(event.callId, event.name)
       if (event.name === 'spawn_agent' && isRecord(event.args) && isString(event.args.task)) spawnTasks.set(event.callId, event.args.task)
+      if (event.name === 'cancel_agent' && isRecord(event.args) && isString(event.args.agent_id)) cancelTargets.set(event.callId, event.args.agent_id)
       continue
     }
     if (event.type !== 'tool_result' || event.ok !== true) continue
@@ -2248,13 +2254,21 @@ export function delegatedPageRoundsOf(records: readonly TraceLine[]): DelegatedP
       const spawned = text === null ? null : SPAWNED_BROWSE_RE.exec(text)
       if (spawned === null) continue
       const holder: Holder = { pages: new Set(), state: 'running' }
-      for (const url of (spawnTasks.get(String(event.callId)) ?? '').match(TASK_URL_RE) ?? []) addPage(holder, url.replace(/[.,;:!?]+$/, ''))
+      for (const url of (spawnTasks.get(String(event.callId)) ?? '').match(TASK_URL_RE) ?? []) addPage(holder, url.replace(CLOSING_PUNCTUATION_RE, ''))
       holders.set(spawned[1]!, holder)
       continue
     }
-    if (name === 'agent_results') {
+    if (name === 'cancel_agent') {
+      const target = cancelTargets.get(String(event.callId))
       for (const [id, holder] of holders) {
-        if (holder.state === 'finished' && text !== null && text.split('\n').some((line) => line.startsWith(`${id} [`) && line.includes('] completed — '))) holder.state = 'collected'
+        if (target === id || (target === 'all' && holder.state === 'running')) holders.delete(id)
+      }
+      continue
+    }
+    if (name === 'agent_results') {
+      const lines = text?.split('\n') ?? []
+      for (const [id, holder] of holders) {
+        if (lines.some((line) => line.startsWith(`${id} [`) && line.includes('] completed — '))) holder.state = 'collected'
       }
       continue
     }
@@ -2341,6 +2355,16 @@ const DROPPED_EXCERPT_NOTICE_HEAD = 'Notice: record_evidence stored the finding 
 
 function emptySubagentCitationCounts(): SubagentCitationCounts {
   return { excerptUnsupported: 0, droppedExcerpts: 0 }
+}
+
+function emptyDelegatedPageCounts(): DelegatedPageCounts {
+  return { running: 0, finished: 0, collected: 0 }
+}
+
+function addDelegatedPageRounds(into: DelegatedPageCounts, from: Readonly<DelegatedPageRounds>): void {
+  into.running += from.running.length
+  into.finished += from.finished.length
+  into.collected += from.collected.length
 }
 
 function addSubagentCitations(into: SubagentCitationCounts, from: Readonly<SubagentCitationCounts>): void {
@@ -3124,7 +3148,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
   let bundled = 0
   let sameSourceUnsupported = 0
   let heldPageRounds = 0
-  let delegatedPageRounds: { running: number; finished: number; collected: number } | undefined
+  let delegatedPageRounds: DelegatedPageCounts | undefined
   let rejected = 0
   let walled = 0
   let notFound = 0
@@ -3190,12 +3214,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
     bundled += mechanical.bundledCheckpoints
     sameSourceUnsupported += mechanical.sameSourceUnsupportedRounds
     heldPageRounds += mechanical.heldPageRoundsWithoutProgress
-    if (mechanical.delegatedPageRounds !== undefined) {
-      delegatedPageRounds ??= { running: 0, finished: 0, collected: 0 }
-      delegatedPageRounds.running += mechanical.delegatedPageRounds.running.length
-      delegatedPageRounds.finished += mechanical.delegatedPageRounds.finished.length
-      delegatedPageRounds.collected += mechanical.delegatedPageRounds.collected.length
-    }
+    if (mechanical.delegatedPageRounds !== undefined) addDelegatedPageRounds((delegatedPageRounds ??= emptyDelegatedPageCounts()), mechanical.delegatedPageRounds)
     rejected += mechanical.rejectedCheckpoints
     walled += mechanical.walledRounds
     notFound += mechanical.notFoundNavigates.length

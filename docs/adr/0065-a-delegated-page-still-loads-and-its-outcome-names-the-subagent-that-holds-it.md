@@ -187,7 +187,7 @@ landed URLs. The collected-state Notice's success rides on #272's fix to
 - 2026-09-25, implemented (#273). The Notice's words and its firing record
   live in `src/core/pipeline/delegatedPage.ts` (`createDelegatedPageNotices`,
   keyed page + holder + state); the registry is
-  `SubagentManager.delegatedHolders`, and a worker's landings reach it
+  `SubagentManager.delegatedHolders`, and a Subagent's landings reach it
   through the runner's `observe` sink — only a page-facing call's
   observation carries a source URL, so the executor needed no second hook.
   Three calls the Decision left open: the orchestrator's lookup is scoped to
@@ -203,4 +203,11 @@ landed URLs. The collected-state Notice's success rides on #272's fix to
   under plain Node. The audit field is `delegatedPageRounds` (round numbers
   per state per attempt, summed per population), optional so audits written
   before it still load, and outside the digest, so no cached judgement is
-  re-keyed.
+  re-keyed. The audit releases a holder at a successful `cancel_agent`
+  naming it, as the app does, not at its later `subagent_finalized`, and
+  takes a completed header in `agent_results` as collection whatever order
+  that result and the finish reached the trace in — either slip would have
+  put rounds under a gated count that no Notice could have prevented. The
+  collected count keeps every re-read after collection, including the pages
+  whose report cites nothing and so carried no Notice: it measures the
+  re-reads, not the Notice.

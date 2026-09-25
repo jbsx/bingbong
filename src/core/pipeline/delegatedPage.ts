@@ -122,8 +122,9 @@ export function createDelegatedPageNotices(lookup: DelegatedPagesLookup): Delega
         reportFault('pipeline.delegatedPage.lookup', error)
         return null
       }
-      const fresh = holders.filter((holder) => !announced.has(`${page}|${holder.agentId}|${holder.state}`))
-      for (const holder of fresh) announced.add(`${page}|${holder.agentId}|${holder.state}`)
+      const keyOf = (holder: DelegatedHolder): string => `${page}|${holder.agentId}|${holder.state}`
+      const fresh = holders.filter((holder) => !announced.has(keyOf(holder)))
+      for (const holder of fresh) announced.add(keyOf(holder))
       return delegatedPageNotice(fresh)
     },
   }
