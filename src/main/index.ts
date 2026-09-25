@@ -527,6 +527,9 @@ async function createWindow(): Promise<BrowserWindow> {
     // Worker observations (#123): completed reports' hidden provenance —
     // what kind "subagent" Evidence Checkpoints ground against.
     subagentObservations: (agentId) => subagentRuntime.observationsFor(agentId),
+    // Delegated Pages (#273, ADR 0065): the pages a Run's Browse Subagents
+    // were sent to or landed on, for the Notice on a call there.
+    delegatedPages: (url, turnId) => subagentRuntime.delegatedPages(url, turnId),
     // Panel voice tools (#64): the same overlay seam the dashboard buttons
     // and the shortcut drive.
     panel: feedPanel,

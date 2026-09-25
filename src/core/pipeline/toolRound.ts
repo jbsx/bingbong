@@ -29,6 +29,7 @@ import { reportFault } from '../trace/fault'
 import type { FinalizationCause } from '../session/runJournal'
 import type { HeldObservationsLookup } from '../session/sessionEvidence'
 import { heldPageNotice, landedOnAnotherPage } from './heldPage'
+import { createDelegatedPageNotices, type DelegatedPagesLookup } from './delegatedPage'
 
 // Issue #154, step 2 (#157): the Tool Round executor.
 //
@@ -236,6 +237,14 @@ export interface ToolRoundConfig {
    * a caller with no Session — no landing carries one.
    */
   readonly heldObservations?: HeldObservationsLookup
+  /**
+   * The Browse Subagents holding one page (#273, ADR 0065): a successful
+   * page-facing call on a Delegated Page carries a Notice naming each
+   * holder by its state, once per page, holder and state. A Subagent's
+   * lookup excludes its own pages. Absent — a caller that delegates
+   * nothing — no call carries one.
+   */
+  readonly delegatedPages?: DelegatedPagesLookup
   /** Snapshot ref facts: how the search-loop rail recognizes a typed GUI search (#82). */
   describeRef?(ref: number): Promise<SnapshotRef | undefined>
   /**
@@ -432,6 +441,8 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
    * sits on a Held Page is told on its first result there.
    */
   let lastLandedUrl: string | null = null
+  /** Which Delegated Page holders this executor has announced, by page and state (#273, ADR 0065). */
+  const delegatedPageNotices = config.delegatedPages !== undefined ? createDelegatedPageNotices(config.delegatedPages) : null
   const noProgressRail = capabilities.noProgressRail
     ? createNoProgressRail({
         ...(config.settledPageState ? { settledState: config.settledPageState } : {}),
@@ -801,6 +812,14 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
       // instead. Precedence puts it after the no-progress verdict above.
       if (config.heldObservations !== undefined && classification.pageFacing && outcome.ok) {
         notices.owe('held_page', heldPageLanding(config.heldObservations, sourceUrl ?? null, turnId))
+      }
+      // The Delegated Page Notice (#273, ADR 0065): any successful
+      // page-facing call on a page a Subagent holds — not only a landing, so
+      // a Run already on the page when a Subagent is sent there is told, and
+      // a holder's state change on a page the Run stays on is told too —
+      // once per page, holder and state. The page still loaded.
+      if (delegatedPageNotices !== null && classification.pageFacing && outcome.ok) {
+        notices.owe('delegated_page', delegatedPageNotices.onPage(sourceUrl ?? null))
       }
       if (intercepted === null) {
         if (toolsByName.get(call.name)?.checkpoint === true) acceptedCheckpoint ||= outcome.ok

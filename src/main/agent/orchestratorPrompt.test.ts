@@ -241,6 +241,16 @@ describe('orchestrator prompt bounded delegation (#120)', () => {
     expect(ORCHESTRATOR_SYSTEM_PROMPT).toMatch(/share of your run's active-work deadline/)
     expect(ORCHESTRATOR_SYSTEM_PROMPT).toMatch(/terminates with a bounded report/)
   })
+
+  // #273, ADR 0065: said once, in the delegation block — the Delegated Page
+  // Notice on the page itself carries the rest.
+  it('tells the orchestrator a running subagent’s page is its branch, once', () => {
+    const sentence =
+      'A page a running subagent was sent to or is reading is its branch: its report will carry what it finds there, so keep to what you did not delegate or wait with agent_results.'
+    expect(ORCHESTRATOR_SYSTEM_PROMPT.split(sentence)).toHaveLength(2)
+    expect(ORCHESTRATOR_SYSTEM_PROMPT.indexOf(sentence)).toBeGreaterThan(ORCHESTRATOR_SYSTEM_PROMPT.indexOf('Delegation:'))
+    expect(ORCHESTRATOR_SYSTEM_PROMPT.indexOf(sentence)).toBeLessThan(ORCHESTRATOR_SYSTEM_PROMPT.indexOf('How to answer:'))
+  })
 })
 
 // #123 / ADR 0028: Subagent evidence checkpoints and freshness. The

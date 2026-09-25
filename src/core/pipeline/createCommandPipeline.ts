@@ -115,6 +115,7 @@ import { deriveFallbackSources, hasUnresolvedImageCheck } from './fallbackAnswer
 import { compactRunContext, type RunEvidenceCheckpoint } from './runContextCompaction'
 import { reportFault } from '../trace/fault'
 import type { CollectedSubagentReport } from '../agent/subagentManager'
+import type { DelegatedHolder } from './delegatedPage'
 
 export interface CommandPipelineDeps {
   llm: LlmClient
@@ -172,6 +173,12 @@ export interface CommandPipelineDeps {
    * Absent, subagent citations fail recoverably (unknown agent).
    */
   subagentObservations?: (agentId: string) => readonly ObservationRecord[] | null
+  /**
+   * The Browse Subagents holding one page (#273, ADR 0065), narrowed to the
+   * ones this Run spawned: what the Delegated Page Notice on a call's
+   * result names. Absent — no delegation wired — no call carries one.
+   */
+  delegatedPages?: (url: string, turnId: string) => readonly DelegatedHolder[]
   /**
    * Observation ledger sink (#111): every record the run's ledger accepts
    * — diagnostic only, the ledger itself is private Run Working State and
@@ -1444,6 +1451,9 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           ...(evidenceSession
             ? { heldObservations: (url: string) => evidenceSession()?.store.heldObservations(url) ?? [] }
             : {}),
+          // The Delegated Page Notice (#273, ADR 0065): the Subagents this
+          // Run sent to, or found on, the page a call is on.
+          ...(deps.delegatedPages ? { delegatedPages: (url: string) => deps.delegatedPages!(url, turnId) } : {}),
           ...(deps.describeRef ? { describeRef: deps.describeRef } : {}),
           ...(deps.linkHrefs ? { linkHrefs: deps.linkHrefs } : {}),
           ...(deps.settledPageState ? { settledPageState: deps.settledPageState } : {}),

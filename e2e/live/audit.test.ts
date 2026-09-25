@@ -41,6 +41,7 @@ import {
   formatAuditSet,
   keyLeaks,
   sameSourceUnsupportedRoundsOf,
+  delegatedPageRoundsOf,
   searchQueryOf,
   replaySearchStreaks,
   blockedOrInertOf,
@@ -2539,5 +2540,93 @@ describe('Transport Failures (#271)', () => {
     const markdown = formatAuditSet(set)
     expect(markdown).toContain('- Transport Failures: 2 Transport Failure attempt(s) (2 round(s) recovered by a Transport Retry, 0 Run(s) model_unreachable)')
     expect(markdown).toMatch(/- initial: .*4 Transport Failure attempt\(s\) \(2 round\(s\) recovered by a Transport Retry, 1 Run\(s\) model_unreachable\)/)
+  })
+})
+
+// #273, ADR 0065: the orchestrator's navigate or read_page rounds on a page a
+// Browse Subagent was sent to or landed on, filed by the holder's state when
+// the call settled, code-counted from the interleaved Run Trace — no field of
+// its own. A synthetic trace in record order: the walk is order-driven.
+describe('Delegated Page rounds (#273)', () => {
+  const DOCS = 'https://www.raspberrypi.com/documentation/computers/camera_software.html'
+  const PRODUCT = 'https://www.raspberrypi.com/products/camera-module-3/'
+  const DROPPED = 'https://shop.invalid/dropped'
+  const SEARCH = 'https://duckduckgo.com/?q=pi+camera+autofocus'
+  let at = 0
+  let calls = 0
+  const round = (n: number): Record<string, unknown> => ({ ...identity, at: T0 + (at += 10), kind: 'llm_round', round: n, attempt: 1, role: 'orchestrator', outcome: 'completed', reasoningChars: 0 })
+  const orchestratorCall = (name: string, args: Record<string, unknown>, result: string): Record<string, unknown>[] => {
+    const callId = `o-${(calls += 1)}`
+    return [
+      { ...identity, at: T0 + (at += 1), kind: 'pipeline_event', event: { type: 'tool_call', turnId: TURN, callId, name, args, at: T0 + at } },
+      { ...identity, at: T0 + (at += 1), kind: 'pipeline_event', event: { type: 'tool_result', turnId: TURN, callId, name, ok: true, result, at: T0 + at } },
+    ]
+  }
+  const subagentResult = (agentId: string, name: string, result: string): Record<string, unknown> => ({
+    ...identity,
+    at: T0 + (at += 1),
+    agentId,
+    kind: 'pipeline_event',
+    event: { type: 'tool_result', turnId: TURN, callId: `${agentId}-${(calls += 1)}`, name, ok: true, result, at: T0 + at },
+  })
+  const finalized = (agentId: string, status: string): Record<string, unknown> => ({
+    ...identity,
+    at: T0 + (at += 1),
+    kind: 'pipeline_event',
+    event: { type: 'subagent_finalized', turnId: TURN, agentId, kind: 'browse', status, at: T0 + at },
+  })
+
+  const records: Record<string, unknown>[] = [
+    // The orchestrator on the docs page before any spawn: in neither phase.
+    round(1),
+    ...orchestratorCall('navigate', { url: DOCS }, PAGE('Camera software', DOCS, 'aaaa0001')),
+    round(2),
+    ...orchestratorCall('spawn_agent', { kind: 'browse', task: `Read ${DOCS} parts 1-7 for the autofocus modes.` }, 'spawned a-1 [browse] — poll with agent_results (wait: true) or keep working on what you did not delegate'),
+    ...orchestratorCall('spawn_agent', { kind: 'browse', task: `Check ${DROPPED}` }, 'spawned a-2 [browse] — poll with agent_results (wait: true) or keep working on what you did not delegate'),
+    subagentResult('a-1', 'navigate', PAGE('Camera software', DOCS, 'aaaa0001')),
+    subagentResult('a-1', 'navigate', PAGE('Camera Module 3', PRODUCT, 'bbbb0002')),
+    finalized('a-2', 'cancelled'),
+    // Running: the task's page, read twice in one round (one round), and a page a-1 landed on.
+    round(3),
+    ...orchestratorCall('navigate', { url: `${DOCS}#part-5` }, PAGE('Camera software', DOCS, 'aaaa0001')),
+    ...orchestratorCall('read_page', {}, READ('Camera software', DOCS, 'aaaa0001')),
+    round(4),
+    ...orchestratorCall('navigate', { url: PRODUCT }, PAGE('Camera Module 3', PRODUCT, 'bbbb0002')),
+    // A released holder's page counts in no phase; a search page no one delegated neither.
+    round(5),
+    ...orchestratorCall('navigate', { url: DROPPED }, PAGE('Dropped', DROPPED, 'cccc0003')),
+    ...orchestratorCall('navigate', { url: SEARCH }, PAGE('search', SEARCH, 'dddd0004')),
+    finalized('a-1', 'completed'),
+    // Finished, uncollected: a read_page whose result names no page reads the current one.
+    round(6),
+    ...orchestratorCall('navigate', { url: PRODUCT }, PAGE('Camera Module 3', PRODUCT, 'bbbb0002')),
+    ...orchestratorCall('read_page', {}, 'some text with no header'),
+    round(7),
+    ...orchestratorCall('agent_results', { wait: true }, `a-1 [browsing] completed — Read ${DOCS} parts 1-7\nfindings:\n- Autofocus: continuous (evidence: ${DOCS})`),
+    // Collected.
+    round(8),
+    ...orchestratorCall('navigate', { url: DOCS }, PAGE('Camera software', DOCS, 'aaaa0001')),
+    // A click or scroll on the page is neither a navigate nor a read.
+    round(9),
+    ...orchestratorCall('scroll', { direction: 'down' }, READ('Camera software', DOCS, 'aaaa0001')),
+  ]
+
+  it('files each orchestrator navigate or read_page round by the holder’s state', () => {
+    expect(delegatedPageRoundsOf(records as never)).toEqual({ running: [3, 4], finished: [6], collected: [8] })
+  })
+
+  it('is empty on a Run that spawned nothing', () => {
+    expect(delegatedPageRoundsOf(traceOf(ROUNDS, EXTRA) as never)).toEqual({ running: [], finished: [], collected: [] })
+  })
+
+  it('rides the attempt’s mechanical record and the population, beside the rounds', () => {
+    const mechanical = classifyAttempt(inputOf({ traceRecords: records as unknown as TraceRecord[] }))
+    expect(mechanical.delegatedPageRounds).toEqual({ running: [3, 4], finished: [6], collected: [8] })
+
+    const set = buildAuditSet(provenanceOf(), [{ mechanical, review: null, countsAfterOverrules: countsAfterOverrulesOf(mechanical, null) }], [])
+    expect(set.populations.initial.delegatedPageRounds).toEqual({ running: 2, finished: 1, collected: 1 })
+    const text = formatAuditSet(set)
+    expect(text).toContain('Delegated Page rounds: 2 while running (round 3, 4), 1 while finished and uncollected (round 6), 1 after collection (round 8)')
+    expect(text).toContain('Delegated Page rounds 2 while running, 1 while finished and uncollected, 1 after collection')
   })
 })

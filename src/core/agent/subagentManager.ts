@@ -14,6 +14,8 @@ import type { VisionTraceReporter } from '../trace/visionTrace'
 import type { WebEngine } from '../pipeline/webEngine'
 import type { SubagentReport } from './subagentReport'
 import { SubagentCancelledError } from './subagentRunner'
+import { canonicalizeMemoryUrl } from '../session/workingMemory'
+import { urlsInTask, type DelegatedHolder, type DelegatedPagesLookup } from '../pipeline/delegatedPage'
 
 // The subagent supervisor (issue #13). Owns the agent rail (≤4 concurrent,
 // of which at most 3 may be browsing agents on independent Investigation
@@ -75,6 +77,12 @@ export interface SubagentRecord {
   error: string | null
   /** The Session that spawned this agent — late events stay attributable after the Session ends (#97). */
   owner?: SubagentOwner
+  /**
+   * A browsing agent's Delegated Pages (#273, ADR 0065): the URLs its task
+   * names, read at spawn, then every page its own calls settled on, in
+   * order, canonical by the store's rule. Absent until it holds one.
+   */
+  pages?: readonly string[]
 }
 
 export type SubagentEvent =
@@ -165,6 +173,18 @@ export interface SubagentTaskHooks {
    * DuckDuckGo.
    */
   runEngine?: () => WebEngine
+  /**
+   * Where one of this worker's own page-facing calls settled (#273): the
+   * page joins its Delegated Pages. Absent — a caller outside a manager —
+   * nothing is registered.
+   */
+  onLanded?(url: string): void
+  /**
+   * The pages this worker's running siblings hold (#273, ADR 0065): its
+   * own pages excluded, siblings in the running state only, since a worker
+   * collects nothing. What its Tool Round's Delegated Page Notice reads.
+   */
+  delegatedPages?: DelegatedPagesLookup
 }
 
 /** Port: starts one workhorse loop (runSubagent in production). */
@@ -260,6 +280,21 @@ export interface SubagentManager {
   list(): SubagentRecord[]
   /** Whether the agent is still working — the capture loop's gate (#57). */
   isRunning(agentId: string): boolean
+  /**
+   * The Browse Subagents holding one page, by any URL of it (#273, ADR
+   * 0065), each in its state — running; finished with its report
+   * uncollected; collected, with the report's findings citing the page.
+   * A cancelled or failed agent holds nothing. `turnId` narrows to the
+   * holders one Run spawned; `viewer` is a Subagent asking after its
+   * siblings — its own pages excluded, running siblings only.
+   */
+  delegatedHolders(url: string, scope?: DelegatedScope): DelegatedHolder[]
+}
+
+/** Whose view of the Delegated Pages a lookup is (#273). */
+export interface DelegatedScope {
+  turnId?: string
+  viewer?: string
 }
 
 const DEFAULT_WAIT_TIMEOUT_MS = 120_000
@@ -355,6 +390,37 @@ export function createSubagentManager(deps: SubagentManagerDeps): SubagentManage
     return completed
   }
 
+  /** The Delegated Page holders of one page (#273, ADR 0065), in spawn order. */
+  function holdersOf(url: string, scope: DelegatedScope): DelegatedHolder[] {
+    const [page] = canonicalPages([url])
+    if (page === undefined) return []
+    const holders: DelegatedHolder[] = []
+    for (const record of records.values()) {
+      if (record.pages?.includes(page) !== true) continue
+      if (scope.viewer !== undefined && record.id === scope.viewer) continue
+      if (scope.turnId !== undefined && record.turnId !== scope.turnId) continue
+      // A cancelled agent is released the moment the decision is taken, not
+      // when its loop notices: no report is coming either way.
+      const state =
+        record.status === 'running' && !cancelled.has(record.id)
+          ? 'running'
+          : record.status === 'completed'
+            ? record.collected === true
+              ? 'collected'
+              : 'finished'
+            : null
+      if (state === null || (scope.viewer !== undefined && state !== 'running')) continue
+      const findings =
+        state === 'collected'
+          ? (record.report?.findings ?? [])
+              .filter((finding) => canonicalPages(finding.references.map((reference) => reference.url)).includes(page))
+              .map((finding) => ({ subject: finding.subject, detail: finding.detail }))
+          : []
+      holders.push({ agentId: record.id, kindLabel: KIND_LABEL[record.kind], task: record.task, state, findings })
+    }
+    return holders
+  }
+
   return {
     spawn(kind, task, context = {}) {
       const {
@@ -400,6 +466,9 @@ export function createSubagentManager(deps: SubagentManagerDeps): SubagentManage
       const stopThisBrowsing = new AbortController()
       stopBrowsing.set(id, stopThisBrowsing)
       const owner = deps.owner?.() ?? undefined
+      // The pages it was sent to (#273): only a browsing agent reads pages,
+      // so only its task's URLs are delegated.
+      const sentTo = kind === 'browse' ? canonicalPages(urlsInTask(task)) : []
       const record: SubagentRecord = {
         id,
         kind,
@@ -414,6 +483,7 @@ export function createSubagentManager(deps: SubagentManagerDeps): SubagentManage
         collected: false,
         error: null,
         ...(owner ? { owner } : {}),
+        ...(sentTo.length > 0 ? { pages: sentTo } : {}),
       }
       records.set(id, record)
 
@@ -462,6 +532,19 @@ export function createSubagentManager(deps: SubagentManagerDeps): SubagentManage
           ...(traceVision !== undefined ? { traceVision } : {}),
           // And the Run Engine (#270): the Subagent searches where the Run does.
           ...(runEngine !== undefined ? { runEngine } : {}),
+          // Its Delegated Pages (#273): the pages it lands on join the ones
+          // it was sent to, and it hears of its running siblings' pages.
+          ...(kind === 'browse'
+            ? {
+                onLanded: (url: string) => {
+                  if (spawnEpoch !== epoch || record.status !== 'running') return
+                  const [page] = canonicalPages([url])
+                  if (page === undefined || record.pages?.includes(page) === true) return
+                  record.pages = [...(record.pages ?? []), page]
+                },
+                delegatedPages: (url: string) => holdersOf(url, { viewer: id, ...(turnId !== undefined ? { turnId } : {}) }),
+              }
+            : {}),
           waitIfPaused: () => waitIfPaused(id),
           onProgress: (step, action) => {
             if (spawnEpoch !== epoch) return
@@ -595,7 +678,19 @@ export function createSubagentManager(deps: SubagentManagerDeps): SubagentManage
     list: () => [...records.values()].map((record) => ({ ...record })),
 
     isRunning: (agentId) => records.get(agentId)?.status === 'running',
+
+    delegatedHolders: (url, scope) => holdersOf(url, scope ?? {}),
   }
+}
+
+/** Web addresses by the store's canonical rule (ADR 0065: no fifth URL rule), each once, anything else dropped. */
+function canonicalPages(urls: readonly string[]): string[] {
+  const pages: string[] = []
+  for (const url of urls) {
+    const page = canonicalizeMemoryUrl(url)
+    if (page !== null && !pages.includes(page)) pages.push(page)
+  }
+  return pages
 }
 
 const KIND_LABEL: Record<SubagentKind, string> = {

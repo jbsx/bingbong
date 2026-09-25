@@ -66,6 +66,7 @@ function delegationToolCatalog(): Tool[] {
     collectCompleted: () => [],
     list: () => [],
     isRunning: () => false,
+    delegatedHolders: () => [],
   }
   return createSubagentTools(manager)
 }

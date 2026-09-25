@@ -36,6 +36,7 @@ import type { RunInterrupts } from '../pipeline/interrupts'
 import { createToolRoundExecutor, unknownToolError, type FinalizationWording } from '../pipeline/toolRound'
 import { shownTextsOf, type ShownText } from '../pipeline/unseenPhraseRail'
 import type { WebEngine } from '../pipeline/webEngine'
+import { urlsInTask, type DelegatedPagesLookup } from '../pipeline/delegatedPage'
 import type { HeldObservationsLookup } from '../session/sessionEvidence'
 import type { FinalizationCause } from '../session/runJournal'
 import { describeToolAction } from '../pipeline/toolCallDisplay'
@@ -236,6 +237,18 @@ export interface RunSubagentOptions {
   /** Resolves immediately while running, or after the shared pause gate opens. */
   waitIfPaused?(): Promise<void>
   onProgress?(progress: SubagentProgress): void
+  /**
+   * Where each of this worker's successful page-facing calls settled (#273,
+   * ADR 0065): the page joins its Delegated Pages, so the orchestrator is
+   * told it is this worker's branch. Absent, nothing is reported.
+   */
+  onPageLanded?(url: string): void
+  /**
+   * The pages this worker's running siblings hold (#273, ADR 0065), its own
+   * excluded: a call on one carries the Delegated Page Notice. Absent — a
+   * worker with no siblings to hear of — nothing is attached.
+   */
+  delegatedPages?: DelegatedPagesLookup
   /**
    * The reasoning records for this worker's rounds (#183, ADR 0031):
    * built by the spawning Run over its own Run Trace writer, so each
@@ -634,7 +647,7 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
   // orchestrator showed it those, so opening one is not a guess.
   const offeredByParent: readonly string[] = [
     ...(options.memory ?? []).flatMap((entry) => entry.references.map((reference) => reference.url)),
-    ...(options.task.match(/https?:\/\/[^\s"'<>)\]]+/g) ?? []),
+    ...urlsInTask(options.task),
   ]
   const shownByParent: readonly ShownText[] = [{ text: options.task }, ...(options.memory ?? []).map((entry) => ({ text: JSON.stringify(entry) }))]
   // The Tool Round executor in Subagent configuration (#158/#159): the
@@ -650,7 +663,12 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
     tools,
     effortEpoch: epoch,
     notices,
-    observe: (input) => workerLedger.record(input),
+    // Only a page-facing call's observation carries a source URL, so a
+    // successful one is exactly a page this worker settled on (#273).
+    observe: (input) => {
+      if (input.ok && input.sourceUrl !== undefined) options.onPageLanded?.(input.sourceUrl)
+      return workerLedger.record(input)
+    },
     toolContext,
     decisions,
     interrupts,
@@ -665,6 +683,7 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
     ...(deps.describeRef ? { describeRef: deps.describeRef } : {}),
     ...(deps.linkHrefs ? { linkHrefs: deps.linkHrefs } : {}),
     ...(deps.heldObservations ? { heldObservations: deps.heldObservations } : {}),
+    ...(options.delegatedPages ? { delegatedPages: options.delegatedPages } : {}),
     evidenceSourceUrls: () => offeredByParent,
     // The Unseen Phrase rail's sight (#267, ADR 0064): the Subagent's brief
     // ahead of its own ledger — the brief plays the command's part, so a

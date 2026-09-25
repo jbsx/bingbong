@@ -1185,6 +1185,49 @@ describe('runSubagent', () => {
     })
   })
 
+  it('reports every page its own successful page-facing calls settle on, and hears of a running sibling’s page (#273)', async () => {
+    let url = 'about:blank'
+    const navigate: Tool = {
+      name: 'navigate',
+      async execute(call) {
+        url = String(call.args.url)
+        if (url.endsWith('/broken')) throw new Error('net::ERR_FAILED')
+        return 'navigated'
+      },
+    }
+    const docs = 'https://www.raspberrypi.com/documentation/computers/camera_software.html'
+    const landed: string[] = []
+    const llm = new ScriptedLlm([
+      {
+        kind: 'tool_calls',
+        calls: [
+          { id: 'n1', name: 'navigate', args: { url: 'https://shop.example/broken' } },
+          { id: 'n2', name: 'navigate', args: { url: docs } },
+        ],
+      },
+      { kind: 'answer', speak: 's', display: 'Done.' },
+    ])
+
+    await runSubagent(
+      { llm, tools: [navigate], clock: new FakeClock(), currentPageUrl: () => url },
+      {
+        task: 't',
+        isCancelled: () => false,
+        onPageLanded: (page) => landed.push(page),
+        delegatedPages: (page) =>
+          page === docs ? [{ agentId: 'a-2', kindLabel: 'browsing', task: 'Read the camera page', state: 'running', findings: [] }] : [],
+      },
+    )
+
+    // A failed call settled nowhere; the success did.
+    expect(landed).toEqual([docs])
+    expect(llm.requests[1]?.toolResults?.[1]?.outcome).toEqual({
+      ok: true,
+      result:
+        'navigated\n\na-2 [browsing] was sent to this page for: Read the camera page. Its report will carry what it reads here; keep to what you did not delegate, or wait with agent_results.',
+    })
+  })
+
   it('finalizes for no_progress after two exhausted Approaches, with a bounded report (#159)', async () => {
     let executions = 0
     const click: Tool = {

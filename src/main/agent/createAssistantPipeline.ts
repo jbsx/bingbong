@@ -33,6 +33,7 @@ import type { PerfTracer } from '../../core/perf/perfTracer'
 import { withPerfTracing } from '../../core/perf/perfTracing'
 import type { BrowserSubspans } from '../../core/perf/browserSubspans'
 import type { ObservationRecord } from '../../core/session/observationLedger'
+import type { DelegatedHolder } from '../../core/pipeline/delegatedPage'
 import type { CollectedSubagentReport } from '../../core/agent/subagentManager'
 import { ScriptedLlm, silentTts, UnavailableLlm } from '../../core/testing/doubles'
 import { createOpenAiLlmClient } from './openAiLlmClient'
@@ -68,6 +69,12 @@ export interface AssistantPipelineDeps {
    * asserted.
    */
   subagentObservations?: (agentId: string) => readonly ObservationRecord[] | null
+  /**
+   * The Browse Subagents a Run spawned that hold one page (#273, ADR 0065):
+   * what its Delegated Page Notice names. Wired by main to the subagent
+   * runtime's registry.
+   */
+  delegatedPages?: (url: string, turnId: string) => readonly DelegatedHolder[]
   /** Fan-out controls shared with every running subagent. */
   subagentControl?: {
     cancelAll(): number
@@ -382,6 +389,8 @@ export function createAssistantPipeline(deps: AssistantPipelineDeps): CommandPip
     // Worker observations (#123): completed reports' hidden provenance,
     // for kind "subagent" Evidence Checkpoint grounding.
     ...(deps.subagentObservations ? { subagentObservations: deps.subagentObservations } : {}),
+    // Delegated Pages (#273): the pages this Run's Subagents hold.
+    ...(deps.delegatedPages ? { delegatedPages: deps.delegatedPages } : {}),
     ...(deps.tracer ? { tracer: deps.tracer } : {}),
     ...(deps.traceVision ? { traceVision: deps.traceVision } : {}),
     ...(deps.browserSubspans ? { browserSubspans: deps.browserSubspans } : {}),

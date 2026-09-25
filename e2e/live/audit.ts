@@ -173,6 +173,25 @@ const SEARCH_STREAK_NUDGED = SEARCH_LOOP_NUDGE_AFTER
 // ---------------------------------------------------------------------------
 // Shapes
 
+/**
+ * One attempt's orchestrator navigate or read_page rounds on a Delegated
+ * Page (#273, ADR 0065), by the digest's round numbers, filed by the
+ * holder's state when the call settled. The first two are the gate's
+ * absolute zero; the third is reported until #272 lands.
+ */
+export interface DelegatedPageRounds {
+  readonly running: readonly number[]
+  readonly finished: readonly number[]
+  readonly collected: readonly number[]
+}
+
+/** Delegated Page rounds summed over a population's attempts (#273). */
+export interface DelegatedPageCounts {
+  readonly running: number
+  readonly finished: number
+  readonly collected: number
+}
+
 export interface AuditCall {
   readonly name: string
   readonly args: Readonly<Record<string, unknown>>
@@ -427,6 +446,12 @@ export interface AuditMechanical {
    * never in them, so it re-keys no cached judgement.
    */
   readonly heldPageRoundsWithoutProgress: number
+  /**
+   * The orchestrator's navigate or read_page rounds on a Delegated Page
+   * (#273, ADR 0065), by its holder's state. Beside the rounds, never in
+   * them; absent on an audit written before the counter.
+   */
+  readonly delegatedPageRounds?: DelegatedPageRounds
   /** Search Loop rounds by the streak rule: the rounds at streak 2 or beyond, and the heads of those loops. */
   readonly mechanicalSearchRounds: number
   /**
@@ -720,6 +745,8 @@ export interface AuditPopulation {
   readonly sameSourceUnsupportedRounds: number
   /** Held Page rounds without Progress over the attempts (#240). */
   readonly heldPageRoundsWithoutProgress: number
+  /** Delegated Page rounds over the attempts, by the holder's state (#273); absent when no attempt's audit carries the counter. */
+  readonly delegatedPageRounds?: DelegatedPageCounts
   readonly rejectedCheckpoints: number
   readonly walledRounds: number
   /** Navigates that landed on a Not-found Page (#239). */
@@ -2152,6 +2179,98 @@ function withoutProgressOnHeldPage(call: AuditCall, held: ReadonlySet<string>): 
   return canonical !== null && held.has(canonical)
 }
 
+// The addresses a spawn's task names: the app's reader (`urlsInTask` in
+// delegatedPage.ts), kept apart for the same reason PRINTED_HREF_RE is — that
+// module cannot load under plain Node, which `scripts/live-audit.ts` must.
+const TASK_URL_RE = /https?:\/\/[^\s"'<>)\]]+/g
+const SPAWNED_BROWSE_RE = /^spawned (\S+) \[browse\]/
+
+/**
+ * The orchestrator's navigate or read_page rounds on a Delegated Page (#273,
+ * ADR 0065), by the digest's round numbers, filed under the state its holder
+ * was in when the call settled: running, finished with the report
+ * uncollected, collected. Read in one pass over the interleaved Run Trace —
+ * no field of its own: a Delegated Page is a URL a browse spawn's task names
+ * or one of that Subagent's own results settled on, canonical under the
+ * audit's rule; it finishes at its `subagent_finalized` (a cancelled or
+ * failed one is released), and is collected when an `agent_results` result
+ * carries its completed header. A round on pages of two states counts in
+ * both; a round counts once per state.
+ */
+export function delegatedPageRoundsOf(records: readonly TraceLine[]): DelegatedPageRounds {
+  interface Holder {
+    readonly pages: Set<string>
+    state: 'running' | 'finished' | 'collected'
+  }
+  const holders = new Map<string, Holder>()
+  const spawnTasks = new Map<string, string>()
+  const orchestratorCalls = new Map<string, string>()
+  const phases = { running: new Set<number>(), finished: new Set<number>(), collected: new Set<number>() }
+  let roundsSeen = 0
+  let round: number | null = null
+  let currentUrl: string | null = null
+  const addPage = (holder: Holder, url: string): void => {
+    const canonical = canonicalUrl(url)
+    if (canonical !== null) holder.pages.add(canonical)
+  }
+  for (const record of records) {
+    if (record.agentId === undefined && record.kind === 'llm_round') {
+      roundsSeen += 1
+      round = isFiniteNumber(record.round) ? record.round : roundsSeen
+      continue
+    }
+    const event = eventOf(record)
+    if (event === null) continue
+    if (event.type === 'subagent_finalized' && isString(event.agentId)) {
+      const holder = holders.get(event.agentId)
+      if (holder === undefined) continue
+      if (event.status === 'completed') holder.state = 'finished'
+      else holders.delete(event.agentId)
+      continue
+    }
+    if (event.type === 'tool_call' && isString(event.callId) && isString(event.name) && record.agentId === undefined) {
+      orchestratorCalls.set(event.callId, event.name)
+      if (event.name === 'spawn_agent' && isRecord(event.args) && isString(event.args.task)) spawnTasks.set(event.callId, event.args.task)
+      continue
+    }
+    if (event.type !== 'tool_result' || event.ok !== true) continue
+    const text = resultText(event.result)
+    if (isString(record.agentId)) {
+      // A Subagent's own result: where its tab settled joins its pages.
+      const holder = holders.get(record.agentId)
+      const page = pageOf(text)
+      if (holder !== undefined && page !== null) addPage(holder, page.url)
+      continue
+    }
+    const name = isString(event.callId) ? orchestratorCalls.get(event.callId) : undefined
+    const page = pageOf(text)
+    if (name === 'spawn_agent') {
+      const spawned = text === null ? null : SPAWNED_BROWSE_RE.exec(text)
+      if (spawned === null) continue
+      const holder: Holder = { pages: new Set(), state: 'running' }
+      for (const url of (spawnTasks.get(String(event.callId)) ?? '').match(TASK_URL_RE) ?? []) addPage(holder, url.replace(/[.,;:!?]+$/, ''))
+      holders.set(spawned[1]!, holder)
+      continue
+    }
+    if (name === 'agent_results') {
+      for (const [id, holder] of holders) {
+        if (holder.state === 'finished' && text !== null && text.split('\n').some((line) => line.startsWith(`${id} [`) && line.includes('] completed — '))) holder.state = 'collected'
+      }
+      continue
+    }
+    const onPage = page?.url ?? (name === 'navigate' ? null : currentUrl)
+    if (page !== null) currentUrl = page.url
+    if ((name !== 'navigate' && name !== 'read_page') || onPage === null || round === null) continue
+    const canonical = canonicalUrl(onPage)
+    if (canonical === null) continue
+    for (const holder of holders.values()) {
+      if (holder.pages.has(canonical)) phases[holder.state].add(round)
+    }
+  }
+  const sorted = (rounds: Set<number>): number[] => [...rounds].sort((left, right) => left - right)
+  return { running: sorted(phases.running), finished: sorted(phases.finished), collected: sorted(phases.collected) }
+}
+
 /** The canonical source a checkpoint call's arguments cite, or null when they cite none the audit can canonicalize. */
 function canonicalSourceOf(args: Readonly<Record<string, unknown>>): string | null {
   const source = args.source_url
@@ -2515,6 +2634,9 @@ export function classifyAttempt(input: AuditTraceInput): AuditMechanical {
     bundledCheckpoints: rounds.filter((round) => isAcquisitionRound(round) && round.tags.acceptedCheckpoints > 0).length,
     sameSourceUnsupportedRounds: sameSourceUnsupportedRoundsOf(rounds),
     heldPageRoundsWithoutProgress,
+    // Pass eight, beside the rounds (#273, ADR 0065): the orchestrator's reads
+    // of a page a Browse Subagent held, from the interleaved trace.
+    delegatedPageRounds: delegatedPageRoundsOf(records),
     mechanicalSearchRounds: searchLoop.mechanicalSearchRounds,
     searchLoopHeads: searchLoop.searchLoopHeads,
     searchRoundsAtStreak2: searchLoop.searchRoundsAtStreak2,
@@ -3002,6 +3124,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
   let bundled = 0
   let sameSourceUnsupported = 0
   let heldPageRounds = 0
+  let delegatedPageRounds: { running: number; finished: number; collected: number } | undefined
   let rejected = 0
   let walled = 0
   let notFound = 0
@@ -3067,6 +3190,12 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
     bundled += mechanical.bundledCheckpoints
     sameSourceUnsupported += mechanical.sameSourceUnsupportedRounds
     heldPageRounds += mechanical.heldPageRoundsWithoutProgress
+    if (mechanical.delegatedPageRounds !== undefined) {
+      delegatedPageRounds ??= { running: 0, finished: 0, collected: 0 }
+      delegatedPageRounds.running += mechanical.delegatedPageRounds.running.length
+      delegatedPageRounds.finished += mechanical.delegatedPageRounds.finished.length
+      delegatedPageRounds.collected += mechanical.delegatedPageRounds.collected.length
+    }
     rejected += mechanical.rejectedCheckpoints
     walled += mechanical.walledRounds
     notFound += mechanical.notFoundNavigates.length
@@ -3163,6 +3292,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
     bundledCheckpoints: bundled,
     sameSourceUnsupportedRounds: sameSourceUnsupported,
     heldPageRoundsWithoutProgress: heldPageRounds,
+    ...(delegatedPageRounds !== undefined ? { delegatedPageRounds } : {}),
     rejectedCheckpoints: rejected,
     walledRounds: walled,
     notFoundNavigates: notFound,
@@ -3438,12 +3568,26 @@ function transportText(counts: Pick<AuditMechanical, 'transportAttempts' | 'tran
   return `${counts.transportAttempts} Transport Failure attempt(s) (${counts.transportRetriesRecovered ?? 0} round(s) recovered by a Transport Retry, ${counts.modelUnreachableRuns ?? 0} Run(s) model_unreachable)`
 }
 
+/** A population's Delegated Page rounds by the holder's state (#273), or that no audit counted them. */
+function delegatedPageCountsText(counts: DelegatedPageCounts | undefined): string {
+  return counts === undefined
+    ? 'Delegated Page rounds not counted'
+    : `Delegated Page rounds ${counts.running} while running, ${counts.finished} while finished and uncollected, ${counts.collected} after collection`
+}
+
+/** One attempt's Delegated Page rounds by the holder's state, with their round numbers (#273). */
+function delegatedPageRoundsText(rounds: DelegatedPageRounds | undefined): string {
+  if (rounds === undefined) return 'not counted'
+  const phase = (label: string, numbers: readonly number[]): string => `${numbers.length} ${label}${numbers.length > 0 ? ` (round ${numbers.join(', ')})` : ''}`
+  return [phase('while running', rounds.running), phase('while finished and uncollected', rounds.finished), phase('after collection', rounds.collected)].join(', ')
+}
+
 function judgementLines(populations: readonly AuditPopulation[]): string[] {
   return populations.map(
     (population) =>
       `- ${population.label}: ${population.offKeyRounds} Off-key round(s), ${population.searchLoopRounds} Search Loop round(s) by the reviewer (${population.mechanicalSearchRounds} by the streak rule, heads included: ${population.searchRoundsAtStreak2} at streak 2 or beyond, ${population.searchRoundsAtStreak3} at 3 or beyond; attempts by search source ${SEARCH_SOURCES.map((source) => `${source} ${population.searchSources[source]}`).join(', ')}; navigate searches by Search URL form ${searchFormsText(population.searchForms)}; ${populationBlockedOrInertText(population.blockedOrInert)}; ${populationUnavailableLandingsText(population.unavailableLandings)}; ${populationConsentWallsText(population.consentWalls)}; ${populationTierEscalationsText(population.tierEscalations)}), ` +
       `${population.inheritedRounds} inherited, ${population.rejectedCheckpoints} rejected Evidence Checkpoint(s), ${population.walledRounds} walled round(s), ${population.notFoundNavigates} navigate(s) landed on a Not-found Page (${population.notFoundOffKey} judged Off-key), ${population.rewrittenComposedAddresses ?? 0} Composed Address(es) rewritten into a site search (${population.rewrittenComposedAddressesOffKey ?? 0} judged Off-key, ${population.rewrittenShownAddresses ?? 'not counted'} to an address the Run was shown), ${population.unseenPhraseRewrites ?? 'not counted'} search(es) ran with an Unseen Phrase unquoted (${population.unseenPhraseRewritesOffKey ?? 0} judged Off-key), ${population.engineRewrites ?? 'not counted'} search(es) ran on the Run Engine in place of another Web Engine (${population.engineRewritesOffKey ?? 0} judged Off-key), ${population.subagentRounds} Subagent round(s), ` +
-      `${population.mergedCheckpoints} merged Evidence Checkpoint(s) (a floor), ${population.heldPageRoundsWithoutProgress} Held Page round(s) without Progress, ${population.bundledCheckpoints} bundled checkpoint round(s), ${population.sameSourceUnsupportedRounds} same-source unsupported round(s), ${subagentCitationsText(population.subagentCitations)}, ${populationSlipsText(population)}, ` +
+      `${population.mergedCheckpoints} merged Evidence Checkpoint(s) (a floor), ${population.heldPageRoundsWithoutProgress} Held Page round(s) without Progress, ${population.bundledCheckpoints} bundled checkpoint round(s), ${population.sameSourceUnsupportedRounds} same-source unsupported round(s), ${subagentCitationsText(population.subagentCitations)}, ${populationSlipsText(population)}, ${delegatedPageCountsText(population.delegatedPageRounds)}, ` +
       `${population.malformedAnswers} Malformed Answer(s) (${population.answerRetries} retried), ` +
       `${transportText(population)}, ` +
       `${populationSkipsText(population)}, ${populationCutsText(population)}, ` +
@@ -3475,6 +3619,7 @@ function attemptSection(attempt: AuditAttempt): string[] {
       `${mechanical.acceptedCheckpoints} accepted (${mechanical.mergedCheckpoints} merged, a floor) and ${mechanical.rejectedCheckpoints} rejected Evidence Checkpoint(s); ${mechanical.inheritedRounds} inherited round(s); ` +
       `${mechanical.heldPageRoundsWithoutProgress} Held Page round(s) without Progress; ${mechanical.bundledCheckpoints} bundled checkpoint round(s); ${mechanical.sameSourceUnsupportedRounds} same-source unsupported round(s); ${subagentCitationsText(mechanical.subagentCitations)}; ${mechanical.walledRounds} walled round(s)`,
   )
+  lines.push(`- Delegated Page rounds: ${delegatedPageRoundsText(mechanical.delegatedPageRounds)}`)
   lines.push(`- Malformed Answers: ${mechanical.malformedAnswers} (${mechanical.answerRetries} retried)`)
   lines.push(`- Transport Failures: ${transportText(mechanical)}`)
   lines.push(`- Finalization: ${finalizationText(mechanical)}`)

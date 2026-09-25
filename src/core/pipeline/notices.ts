@@ -1,9 +1,10 @@
 import type { ToolResultOutcome } from '../ports/llm'
 import { reportFault } from '../trace/fault'
 
-// Issue #154, step 1: the Notices module. Nine model-facing advisory
+// Issue #154, step 1: the Notices module. Eleven model-facing advisory
 // lines ride tool results — the Search Loop rail's Notice, the no-progress
-// Notice, (#240) the Held Page Notice, (#253) the Checkpoint Shape Notice on
+// Notice, (#240) the Held Page Notice, (#273) the Delegated Page Notice,
+// (#253) the Checkpoint Shape Notice on
 // a checkpoint call applied despite its shape, the Run Plan's corrective Notice,
 // (#254) the bookkeeping-only Notice, the Effort
 // Epoch's budget warning, (#216) its automatic Tier Escalation, its
@@ -33,11 +34,12 @@ import { reportFault } from '../trace/fault'
 // clock, no tool names — "useful work" is the caller's judgement, passed
 // in per result.
 
-/** The nine Notice kinds, named by their source. */
+/** The eleven Notice kinds, named by their source. */
 export type NoticeKind =
   | 'search_loop'
   | 'no_progress'
   | 'held_page'
+  | 'delegated_page'
   | 'checkpoint_shape'
   | 'run_plan'
   | 'bookkeeping_only'
@@ -52,7 +54,8 @@ export type NoticeKind =
  * Finalize Instruction last — the model reads what this call did before what the
  * run as a whole owes it. The Held Page Notice (#240, ADR 0051) is about
  * what this call did — the page it landed on — so it sits with the rail
- * verdicts, right after them, and so does the Checkpoint Shape Notice
+ * verdicts, right after them; the Delegated Page Notice (#273, ADR 0065)
+ * is its sibling on the same page and follows it, and so does the Checkpoint Shape Notice
  * (#253, ADR 0054): how this very checkpoint call was read. An automatic Tier Escalation (#216) sits
  * between the warning and the Finalize Instruction: it answers the
  * warning's question — the deadline decided — and a round can carry both
@@ -65,6 +68,7 @@ export const NOTICE_PRECEDENCE: readonly NoticeKind[] = [
   'search_loop',
   'no_progress',
   'held_page',
+  'delegated_page',
   'checkpoint_shape',
   'run_plan',
   'bookkeeping_only',
@@ -92,6 +96,7 @@ const RULES: Readonly<Record<NoticeKind, NoticeRule>> = {
   search_loop: { persistence: 'immediate', rides: 'success' },
   no_progress: { persistence: 'immediate', rides: 'success' },
   held_page: { persistence: 'immediate', rides: 'success' },
+  delegated_page: { persistence: 'immediate', rides: 'success' },
   checkpoint_shape: { persistence: 'immediate', rides: 'success' },
   run_plan: { persistence: 'owed', rides: 'useful_work' },
   // Owed for one round only: the executor withdraws it at the end of the

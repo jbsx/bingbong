@@ -214,6 +214,11 @@ export function createSubagentTaskApi(deps: SubagentWorkhorseDeps): SubagentTask
           ...(hooks.traceVision !== undefined ? { traceVision: hooks.traceVision } : {}),
           // The Run Engine (#270): the Subagent's searches compose where the Run's do.
           ...(hooks.runEngine !== undefined ? { runEngine: hooks.runEngine } : {}),
+          // Its Delegated Pages (#273, ADR 0065): where its own tab settled
+          // goes back to the manager, and it hears of its running siblings'
+          // pages. A tab-less Subagent lands nowhere, so it gets neither.
+          ...(controller && hooks.onLanded !== undefined ? { onPageLanded: hooks.onLanded } : {}),
+          ...(controller && hooks.delegatedPages !== undefined ? { delegatedPages: hooks.delegatedPages } : {}),
           waitIfPaused: hooks.waitIfPaused ?? (() => Promise.resolve()),
           onProgress: (progress) => hooks.onProgress(progress.step, progress.action),
         },

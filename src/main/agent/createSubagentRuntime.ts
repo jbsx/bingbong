@@ -8,6 +8,7 @@ import type { UsageRecord } from '../../core/agent/usageTracking'
 import type { PerfTracer } from '../../core/perf/perfTracer'
 import type { ObservationRecord } from '../../core/session/observationLedger'
 import type { HeldObservationsLookup } from '../../core/session/sessionEvidence'
+import type { DelegatedHolder } from '../../core/pipeline/delegatedPage'
 import type { CollectedSubagentReport, SubagentOwner } from '../../core/agent/subagentManager'
 import { SUBAGENT_LIMITS } from '../../core/agent/subagentRails'
 import { createSubagentManager } from '../../core/agent/subagentManager'
@@ -94,6 +95,11 @@ export interface SubagentRuntime {
    * agent is unknown or retained nothing.
    */
   observationsFor(agentId: string): readonly ObservationRecord[] | null
+  /**
+   * The Browse Subagents one Run spawned that hold a page (#273, ADR 0065),
+   * each in its state: what the Run's Delegated Page Notice names.
+   */
+  delegatedPages(url: string, turnId: string): DelegatedHolder[]
   collectCompleted(turnId: string): CollectedSubagentReport[]
   /**
    * Session end (#97): cancel every running agent, discard its pending
@@ -193,6 +199,7 @@ export function createSubagentRuntime(deps: SubagentRuntimeDeps): SubagentRuntim
     settledAll: () => manager.settledAll(),
     endReportGrace: () => manager.endReportGrace(),
     observationsFor: (agentId) => manager.list().find((record) => record.id === agentId)?.report?.observations ?? null,
+    delegatedPages: (url, turnId) => manager.delegatedHolders(url, { turnId }),
     collectCompleted: (turnId) => manager.collectCompleted(turnId),
     retire: () => {
       // Agents stop initiating work first; their transient tabs close and

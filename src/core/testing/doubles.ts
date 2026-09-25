@@ -796,6 +796,7 @@ export function fakeSubagentManager(
     isRunning: (agentId) => records.some((record) => record.id === agentId && record.status === 'running'),
     results: async () => 'merged results',
     collectCompleted: () => [],
+    delegatedHolders: () => [],
     ...overrides,
   }
 }

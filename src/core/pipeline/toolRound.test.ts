@@ -20,6 +20,8 @@ import { createSessionEvidence } from '../session/sessionEvidence'
 import type { RunId, SessionId } from '../session/sessionIdentity'
 import type { MemoryEntryId } from '../session/workingMemory'
 import { HELD_PAGE_INSTRUCTION } from './heldPage'
+import { DELEGATED_PAGE_COLLECTED_INSTRUCTION, type DelegatedHolder } from './delegatedPage'
+import { canonicalizeMemoryUrl } from '../session/workingMemory'
 
 // Issue #157: the Tool Round executor's own invariants — the order its
 // gated seams run in, and the four ways a round can end. Everything here is
@@ -95,6 +97,8 @@ function harness(
     currentPageUrl?: () => string | null
     /** The Session Evidence held from one page (#240). */
     heldObservations?: ToolRoundConfig['heldObservations']
+    /** The Delegated Pages this Run's Subagents hold (#273). */
+    delegatedPages?: ToolRoundConfig['delegatedPages']
     /** The Unseen Phrase rail's sight (#267): by default the harness ledger's own records, as the Run's is. */
     shownTexts?: ToolRoundConfig['shownTexts']
     /** Snapshot ref facts (#82, #267): how a typed search is told from other typing. */
@@ -172,6 +176,7 @@ function harness(
     ...(options.verification ? { verification: options.verification } : {}),
     ...(options.currentPageUrl ? { currentPageUrl: options.currentPageUrl } : {}),
     ...(options.heldObservations ? { heldObservations: options.heldObservations } : {}),
+    ...(options.delegatedPages ? { delegatedPages: options.delegatedPages } : {}),
     shownTexts: options.shownTexts ?? (() => shownTextsOf(ledger.snapshot())),
     runEngine: () => runEngineOf(userWordsOf(ledger.snapshot())),
     ...(options.describeRef ? { describeRef: options.describeRef } : {}),
@@ -1484,6 +1489,125 @@ describe('the Held Page Notice rides the landing on a page the Session holds, an
     }
     const h = harness([navigate], { currentPageUrl: () => tab.url })
     const { outcome } = await h.round([call('navigate', { url: HELD })])
+    expect(resultOf(outcome.results[0]!.outcome)).toBe('navigate done')
+  })
+})
+
+describe('the Delegated Page Notice rides a call on a page a Subagent holds, once per page, holder and state (#273, ADR 0065)', () => {
+  const DOCS = 'https://www.raspberrypi.com/documentation/computers/camera_software.html'
+  const SHOP = 'https://shop.example/camera'
+
+  /** A tab the scripted browser moves, and one registry the test moves a holder through. */
+  function delegating(options: { failing?: string; held?: boolean } = {}) {
+    const tab = { url: 'https://search.example/?q=camera' }
+    const registry: { holders: DelegatedHolder[] } = {
+      holders: [{ agentId: 'a-1', kindLabel: 'browsing', task: `Read ${DOCS} for the autofocus modes`, state: 'running', findings: [] }],
+    }
+    const store = createSessionEvidence({ sessionId: 'session-1' as SessionId, now: () => 0, mintId: () => 'memory-1' as MemoryEntryId })
+    if (options.held === true) store.checkpointObservation({ sourceKind: 'web', text: 'Autofocus: continuous.', references: [{ url: DOCS }], runId: 'run-0' as RunId })
+    const tools = ['navigate', 'click', 'read_page', 'scroll', 'look'].map(
+      (name): Tool => ({
+        name,
+        async execute(callArg) {
+          if (typeof callArg.args.url === 'string') tab.url = callArg.args.url
+          if (options.failing === name) throw new Error(`${name} failed`)
+          return `${name} done`
+        },
+      }),
+    )
+    const h = harness(tools, {
+      capabilities: { ...ALL_RAILS, noProgressRail: false },
+      currentPageUrl: () => tab.url,
+      delegatedPages: (url) => (canonicalizeMemoryUrl(url) === DOCS ? registry.holders : []),
+      ...(options.held === true ? { heldObservations: (url: string) => store.heldObservations(url) } : {}),
+    })
+    return { h, tab, registry }
+  }
+
+  const running = (outcome: ToolResultOutcome): boolean => outcome.ok && String(outcome.result).includes('a-1 [browsing] was sent to this page')
+
+  it('rides the first successful page-facing call on the page and none after it in the same state', async () => {
+    const { h } = delegating()
+
+    const { outcome } = await h.round([
+      call('navigate', { url: SHOP }),
+      call('navigate', { url: DOCS }),
+      call('read_page'),
+      call('scroll', { direction: 'down' }),
+      call('navigate', { url: `${DOCS}#part-5` }),
+    ])
+
+    expect(outcome.results.map((result) => running(result.outcome))).toEqual([false, true, false, false, false])
+    expect(resultOf(outcome.results[1]!.outcome)).toBe(
+      `navigate done\n\na-1 [browsing] was sent to this page for: Read ${DOCS} for the autofocus modes. Its report will carry what it reads here; keep to what you did not delegate, or wait with agent_results.`,
+    )
+    // The ledger keeps the raw outcome, ahead of any Notice.
+    expect(h.observed[1]).toEqual({ producer: 'action_outcome', ok: true, payload: 'navigate done', sourceUrl: DOCS })
+  })
+
+  it('tells a Run already on the page when a Subagent is sent there — a read is enough, no landing needed', async () => {
+    const { h, tab, registry } = delegating()
+    tab.url = DOCS
+    const holder = registry.holders[0]!
+    registry.holders = []
+
+    const before = await h.round([call('read_page')])
+    expect(running(before.outcome.results[0]!.outcome)).toBe(false)
+
+    registry.holders = [holder]
+    const after = await h.round([call('read_page'), call('look', { question: 'which mode?' })])
+    expect(after.outcome.results.map((result) => running(result.outcome))).toEqual([true, false])
+  })
+
+  it('rides again when the holder’s state changes on a page the Run stays on', async () => {
+    const { h, tab, registry } = delegating()
+    tab.url = DOCS
+
+    await h.round([call('read_page')])
+    registry.holders = [{ ...registry.holders[0]!, state: 'finished' }]
+    const finished = await h.round([call('read_page'), call('read_page')])
+    expect(resultOf(finished.outcome.results[0]!.outcome)).toBe(
+      'read_page done\n\na-1 has finished with this page; collect its report with agent_results before reading it.',
+    )
+    expect(resultOf(finished.outcome.results[1]!.outcome)).toBe('read_page done')
+
+    registry.holders = [{ ...registry.holders[0]!, state: 'collected', findings: [{ subject: 'Autofocus', detail: 'Continuous on Module 3.' }] }]
+    const collected = await h.round([call('read_page')])
+    expect(resultOf(collected.outcome.results[0]!.outcome)).toBe(
+      ['read_page done', '', "a-1's report already covers this page:", '- Autofocus: Continuous on Module 3.', DELEGATED_PAGE_COLLECTED_INSTRUCTION].join('\n'),
+    )
+  })
+
+  it('never rides a failed result — the next success on the page carries it', async () => {
+    const { h } = delegating({ failing: 'navigate' })
+
+    const { outcome } = await h.round([call('navigate', { url: DOCS }), call('read_page'), call('read_page')])
+
+    expect(outcome.results[0]!.outcome).toEqual({ ok: false, error: 'navigate failed' })
+    expect(outcome.results.slice(1).map((result) => running(result.outcome))).toEqual([true, false])
+  })
+
+  it('rides right after a Held Page Notice when the page is both held and delegated', async () => {
+    const { h } = delegating({ held: true })
+
+    const { outcome } = await h.round([call('navigate', { url: DOCS })])
+
+    const text = resultOf(outcome.results[0]!.outcome)
+    expect(text.indexOf(HELD_PAGE_INSTRUCTION)).toBeGreaterThan(0)
+    expect(text.indexOf(HELD_PAGE_INSTRUCTION)).toBeLessThan(text.indexOf('a-1 [browsing] was sent to this page'))
+  })
+
+  it('attaches nothing without the lookup', async () => {
+    const tab = { url: 'https://search.example/' }
+    const navigate: Tool = {
+      name: 'navigate',
+      async execute(callArg) {
+        tab.url = String(callArg.args.url)
+        return 'navigate done'
+      },
+    }
+    const h = harness([navigate], { currentPageUrl: () => tab.url })
+    const { outcome } = await h.round([call('navigate', { url: DOCS })])
     expect(resultOf(outcome.results[0]!.outcome)).toBe('navigate done')
   })
 })

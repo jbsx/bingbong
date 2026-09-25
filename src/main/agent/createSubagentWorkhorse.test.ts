@@ -44,6 +44,36 @@ describe('createSubagentTaskApi', () => {
     expect(report.text).toBe('Keyboards compared on screen.')
   })
 
+  it('hands the manager every page its own tab settled on, and its siblings’ pages to its round (#273)', async () => {
+    const browser = new FakeBrowser()
+    const landed: string[] = []
+    const asked: string[] = []
+    const api = createSubagentTaskApi({
+      getEnv: () => envWith(BROWSE_SCRIPT),
+      fetchFn: (async () => new Response('<p>x</p>', { status: 200 })) as typeof fetch,
+      browserFor: () => holdBrowserCustody(browser),
+      clock: new FakeClock(),
+    })
+
+    const { done } = api.start(
+      { id: 'a-1', kind: 'browse', task: 'search keyboards' },
+      {
+        isCancelled: () => false,
+        onProgress: () => undefined,
+        onLanded: (url) => landed.push(url),
+        delegatedPages: (url) => {
+          asked.push(url)
+          return []
+        },
+      },
+    )
+    await done
+
+    expect(landed).toEqual(['https://engine.test'])
+    // The lookup is asked by the store's canonical form of the page.
+    expect(asked).toEqual(['https://engine.test/'])
+  })
+
   // #205 / ADR 0038: a worker-owned tab gets the same two boundaries the
   // shared pane gets. The double does not cooperate — nothing outside can
   // make its `navigate` settle — so what is proved is the worker ending,

@@ -27,6 +27,7 @@ function fakeManager(overrides: Partial<SubagentManager> = {}): SubagentManager 
     collectCompleted: () => [],
     list: () => [],
     isRunning: () => false,
+    delegatedHolders: () => [],
     ...overrides,
   }
 }
@@ -52,6 +53,8 @@ describe('subagent tools', () => {
     expect(seen).toEqual([{ kind: 'browse', task: 'compare prices' }])
     expect(result).toContain('a-7')
     expect(result).toContain('browse')
+    // #273: the branch is the Subagent's now — the Run keeps to the rest.
+    expect(result).toMatch(/or keep working on what you did not delegate$/)
   })
 
   it('spawn_agent hands the orchestrator turn id to the manager', async () => {

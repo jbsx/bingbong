@@ -148,7 +148,7 @@ export function createSubagentTools(manager: SubagentManager): Tool[] {
           ...(ctx.traceVision !== undefined ? { traceVision: ctx.traceVision } : {}),
         })
         if (!spawned.ok) throw new Error(spawned.reason)
-        return `spawned ${spawned.agent.id} [${kind}]${memory !== undefined ? ` with ${memory.length} shared memory entr${memory.length === 1 ? 'y' : 'ies'}` : ''} — poll with agent_results (wait: true) or keep working`
+        return `spawned ${spawned.agent.id} [${kind}]${memory !== undefined ? ` with ${memory.length} shared memory entr${memory.length === 1 ? 'y' : 'ies'}` : ''} — poll with agent_results (wait: true) or keep working on what you did not delegate`
       },
     },
     {

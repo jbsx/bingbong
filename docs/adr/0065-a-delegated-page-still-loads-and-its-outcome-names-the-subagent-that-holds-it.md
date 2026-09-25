@@ -184,3 +184,23 @@ landed URLs. The collected-state Notice's success rides on #272's fix to
   releases on cancel or failure, and exposes findings by URL once
   collected; the prompt sentence in `orchestratorPrompt.test.ts`; the
   three counts on a synthetic interleaved trace.
+- 2026-09-25, implemented (#273). The Notice's words and its firing record
+  live in `src/core/pipeline/delegatedPage.ts` (`createDelegatedPageNotices`,
+  keyed page + holder + state); the registry is
+  `SubagentManager.delegatedHolders`, and a worker's landings reach it
+  through the runner's `observe` sink — only a page-facing call's
+  observation carries a source URL, so the executor needed no second hook.
+  Three calls the Decision left open: the orchestrator's lookup is scoped to
+  the Subagents its own turn spawned, so a page a Subagent held in an earlier
+  Run of the Session is no longer delegated ("until the Run ends"); a
+  collected report whose findings cite nothing from the page adds no Notice,
+  since the Run then has nothing to record from it and the page is its own to
+  read; and a cancelled Subagent is released the moment the cancel is
+  decided, not when its loop notices. `urlsInTask` is now the one reader of
+  a task's addresses (the Composed Address rail's offered addresses read
+  through it too) and leaves a sentence's closing punctuation off; the audit
+  keeps its own copy of the regex because `delegatedPage.ts` cannot load
+  under plain Node. The audit field is `delegatedPageRounds` (round numbers
+  per state per attempt, summed per population), optional so audits written
+  before it still load, and outside the digest, so no cached judgement is
+  re-keyed.

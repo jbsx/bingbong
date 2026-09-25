@@ -949,3 +949,122 @@ describe('the parent Run’s Finalization (#199)', () => {
     expect(api.hooksSeen.get('a-2')!.abandonReport?.aborted).toBe(false)
   })
 })
+
+// #273, ADR 0065: the Delegated Page registry. A page a Browse Subagent was
+// sent to (its task's URLs, at spawn) or has landed on (its own page-facing
+// calls, as they happen) is delegated, canonical by the store's rule, in one
+// of three states until the Run ends — and released at once when no report
+// is coming.
+describe('the Delegated Page registry (#273)', () => {
+  const docs = 'https://www.raspberrypi.com/documentation/computers/camera_software.html'
+
+  it('reads and canonicalises the task’s URLs at spawn', () => {
+    const { mgr } = manager()
+    mgr.spawn('browse', `Read ${docs}#libcamera and https://Shop.Example/pi/?b=2&a=1 for the camera settings.`)
+
+    expect(mgr.list()[0]!.pages).toEqual([docs, 'https://shop.example/pi?a=1&b=2'])
+    expect(mgr.delegatedHolders(`${docs}#rpicam-still`)).toEqual([
+      { agentId: 'a-1', kindLabel: 'browsing', task: expect.stringContaining('Read '), state: 'running', findings: [] },
+    ])
+    expect(mgr.delegatedHolders('https://shop.example/pi?b=2&a=1')).toHaveLength(1)
+  })
+
+  it('appends the pages the Subagent lands on, once each', () => {
+    const { mgr, api } = manager()
+    mgr.spawn('browse', 'Find the camera settings')
+    expect(mgr.delegatedHolders(docs)).toEqual([])
+
+    const hooks = api.hooksSeen.get('a-1')!
+    hooks.onLanded?.(docs)
+    hooks.onLanded?.(`${docs}#part-2`)
+    hooks.onLanded?.('about:blank')
+
+    expect(mgr.list()[0]!.pages).toEqual([docs])
+    expect(mgr.delegatedHolders(docs).map((holder) => holder.agentId)).toEqual(['a-1'])
+  })
+
+  it('never registers a background Subagent’s pages — it has no tab to read them in', () => {
+    const { mgr } = manager()
+    mgr.spawn('background', `Download ${docs}`)
+    expect(mgr.delegatedHolders(docs)).toEqual([])
+  })
+
+  it('moves a page through running, finished and collected, with the findings that cite it', async () => {
+    const { mgr, api } = manager()
+    mgr.spawn('browse', `Read ${docs}`)
+    api.tasks.get('a-1')!.resolve({
+      text: 'Camera settings found.',
+      findings: [
+        { subject: 'Autofocus', detail: 'Camera Module 3 only.', references: [{ url: `${docs}#autofocus` }] },
+        { subject: 'Price', detail: '$25.', references: [{ url: 'https://shop.example/cam' }] },
+      ],
+      unresolved: [],
+    })
+    await flush()
+    expect(mgr.delegatedHolders(docs)).toMatchObject([{ state: 'finished', findings: [] }])
+
+    await mgr.results({ ids: ['a-1'] })
+    expect(mgr.delegatedHolders(docs)).toMatchObject([{ state: 'collected', findings: [{ subject: 'Autofocus', detail: 'Camera Module 3 only.' }] }])
+    expect(mgr.delegatedHolders(docs)[0]!.findings).toHaveLength(1)
+  })
+
+  it('counts a report collected at Finalization entry as collected', async () => {
+    const { mgr, api } = manager()
+    mgr.spawn('browse', `Read ${docs}`, { turnId: 'turn-1' })
+    api.tasks.get('a-1')!.resolve('done')
+    await flush()
+    mgr.collectCompleted('turn-1')
+    expect(mgr.delegatedHolders(docs)).toMatchObject([{ state: 'collected' }])
+  })
+
+  it('releases a cancelled or failed Subagent’s pages at once', async () => {
+    const { mgr, api } = manager()
+    mgr.spawn('browse', `Read ${docs}`)
+    mgr.spawn('browse', `Also read ${docs}`)
+    mgr.cancel('a-1')
+    api.tasks.get('a-1')!.reject(new SubagentCancelledError())
+    api.tasks.get('a-2')!.reject(new Error('model unavailable'))
+    await flush()
+    expect(mgr.delegatedHolders(docs)).toEqual([])
+  })
+
+  it('stops counting a cancelled Subagent’s pages before its loop notices', () => {
+    const { mgr } = manager()
+    mgr.spawn('browse', `Read ${docs}`)
+    mgr.cancel('a-1')
+    expect(mgr.delegatedHolders(docs)).toEqual([])
+  })
+
+  it('names every holder of a page delegated twice', () => {
+    const { mgr } = manager()
+    mgr.spawn('browse', `Read ${docs}`)
+    mgr.spawn('browse', `Check ${docs}`)
+    expect(mgr.delegatedHolders(docs).map((holder) => holder.agentId)).toEqual(['a-1', 'a-2'])
+  })
+
+  it('scopes the orchestrator’s lookup to the Run that spawned the holder', () => {
+    const { mgr } = manager()
+    mgr.spawn('browse', `Read ${docs}`, { turnId: 'turn-1' })
+    expect(mgr.delegatedHolders(docs, { turnId: 'turn-1' })).toHaveLength(1)
+    expect(mgr.delegatedHolders(docs, { turnId: 'turn-2' })).toEqual([])
+  })
+
+  it('hands each Subagent a lookup that excludes its own pages and sees running siblings only', async () => {
+    const { mgr, api } = manager()
+    mgr.spawn('browse', `Read ${docs}`, { turnId: 'turn-1' })
+    mgr.spawn('browse', `Read ${docs} too`, { turnId: 'turn-1' })
+    const ownView = api.hooksSeen.get('a-1')!.delegatedPages!
+
+    expect(ownView(docs).map((holder) => holder.agentId)).toEqual(['a-2'])
+    api.tasks.get('a-2')!.resolve('done')
+    await flush()
+    expect(ownView(docs)).toEqual([])
+  })
+
+  it('forgets every page with the Session', () => {
+    const { mgr } = manager()
+    mgr.spawn('browse', `Read ${docs}`)
+    mgr.retire()
+    expect(mgr.delegatedHolders(docs)).toEqual([])
+  })
+})
