@@ -702,10 +702,12 @@ export function createOpenAiLlmClient(deps: OpenAiLlmClientDeps): LlmClient {
         if (transportAttempt >= MAX_TRANSPORT_ATTEMPTS) {
           throw new LlmTransportError(transportAttempt, { cause: error.cause })
         }
+        // Reported before the pause, so the feed shows the retry while it
+        // waits and the abandoned attempt's record closes with its failure.
+        request.onRetryAttempt?.(transportAttempt + 1, MAX_TRANSPORT_ATTEMPTS, 'transport', error.cause)
         // The pause is the caller's to cut (a Stop, the deadline): its
         // abort rejects here as it came, and nothing is sent again.
         await sleep(TRANSPORT_RETRY_PAUSE_MS, request.signal)
-        request.onRetryAttempt?.(transportAttempt + 1, MAX_TRANSPORT_ATTEMPTS, 'transport', error.cause)
       }
     }
   }

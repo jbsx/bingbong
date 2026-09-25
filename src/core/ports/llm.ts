@@ -10,6 +10,7 @@ import type { AnswerShape } from '../agent/answerContract'
 import type { AskedItemStanding } from '../agent/askedItems'
 import type { SubagentReportFinding } from '../agent/subagentReport'
 import type { MishearProposal } from '../voice/learnedTerms'
+import { toErrorMessage } from '../errors'
 
 export interface ToolCall {
   id: string
@@ -373,7 +374,7 @@ export class LlmTransportError extends Error {
   readonly attempts: number
   constructor(attempts: number, options: { cause: unknown }) {
     const code = transportErrorCode(options.cause)
-    super(`orchestrator request failed at the transport after ${attempts} attempts: ${transportErrorMessage(options.cause)}${code !== undefined ? ` (${code})` : ''}`, options)
+    super(`orchestrator request failed at the transport after ${attempts} attempts: ${toErrorMessage(options.cause)}${code !== undefined ? ` (${code})` : ''}`, options)
     this.name = 'LlmTransportError'
     this.attempts = attempts
     if (code !== undefined) this.code = code
@@ -393,9 +394,6 @@ function codeOf(value: unknown): string | undefined {
   return typeof code === 'string' && code.length > 0 ? code : undefined
 }
 
-function transportErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
-}
 
 /**
  * Every attempt of the round came back with neither content nor a tool

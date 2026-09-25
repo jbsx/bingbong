@@ -6,6 +6,8 @@ import { createBrowserTools } from '../../core/pipeline/browserTools'
 import { createMediaTools } from '../../core/pipeline/mediaTools'
 import { createNewSessionTool } from '../../core/pipeline/sessionTools'
 import { FakeBrowser, FakeClock } from '../../core/testing/doubles'
+import { runSubagent } from '../../core/agent/subagentRunner'
+import type { TracedLlmRound } from '../../core/trace/llmRoundTrace'
 
 // ---- OpenAI wire types (subset we consume) ----
 
@@ -1887,6 +1889,41 @@ describe('Transport Retry (#271)', () => {
       [2, 2, 'transport'],
       [2, 3, 'empty'],
       [3, 3, 'empty'],
+    ])
+  })
+})
+
+describe('a Subagent gets the Transport Retry through the shared client (#271)', () => {
+  it('records a recovered round as transport then completed, driven by the real client', async () => {
+    const steps: (Response | Error)[] = [
+      new TypeError('fetch failed', { cause: Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' }) }),
+      // A traced Subagent round streams, so the reply is SSE.
+      sseResponse([textDelta('{"speak":"s","display":"Found it."}')]),
+    ]
+    const fetchFn = (): Promise<Response> => {
+      const next = steps.shift()
+      if (next === undefined) throw new Error('scripted fetch ran out of steps')
+      return next instanceof Error ? Promise.reject(next) : Promise.resolve(next)
+    }
+    const client = createOpenAiLlmClient({
+      endpoint: ENDPOINT,
+      systemPrompt: 'subagent',
+      tools: [],
+      fetchFn,
+      requestTimeoutMs: TEST_REQUEST_TIMEOUT_MS,
+      sleep: () => Promise.resolve(),
+    })
+    const rounds: TracedLlmRound[] = []
+
+    const report = await runSubagent(
+      { llm: client, tools: [], clock: new FakeClock() },
+      { task: 'check the page', agentId: 'a-1', isCancelled: () => false, traceLlmRound: (round) => rounds.push(round) },
+    )
+
+    expect(report.text).toBe('Found it.')
+    expect(rounds.map(({ round, attempt, outcome, failure }) => ({ round, attempt, outcome, failure }))).toEqual([
+      { round: 1, attempt: 1, outcome: 'transport', failure: { message: 'fetch failed', code: 'ECONNRESET' } },
+      { round: 1, attempt: 2, outcome: 'completed', failure: undefined },
     ])
   })
 })

@@ -138,7 +138,7 @@ export type RunResolution = (typeof RUN_RESOLUTIONS)[number]
  * other, so a model that proposes it is still dropped below; what
  * changed is that the runtime now reaches it.
  *
- * `model_unreachable` is a model round whose request and its one
+ * `model_unreachable` is an LLM round whose request and its one
  * Transport Retry both failed at the transport (#271, ADR 0066): no
  * response at all, twice. The runtime alone knows it — a model that
  * proposes it is dropped like any other runtime cause — and it is its own

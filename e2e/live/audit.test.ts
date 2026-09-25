@@ -2423,10 +2423,12 @@ describe('Transport Failures (#271)', () => {
     request: { toolResults: 1, chars: 10 },
   }
   const recoveredExtra = [...EXTRA.slice(0, 2), subagentTransport, ...EXTRA.slice(2)]
-  // A Run whose round 3 failed twice and finalized for it.
+  // A Run whose round 3 failed twice and finalized for it: the retry hook
+  // closes attempt 1, the round's end closes attempt 2, both `transport`.
   const UNREACHABLE: RoundSpec[] = [
     ...ROUNDS.slice(0, 2),
     { round: 3, at: 3_000, outcome: 'transport' },
+    { round: 3, attempt: 2, at: 3_001, outcome: 'transport' },
     { round: 4, at: 4_000, effort: 'low' },
   ]
   const unreachableInput = inputOf({
@@ -2443,7 +2445,7 @@ describe('Transport Failures (#271)', () => {
     const plain = classifyAttempt(inputOf())
 
     expect([recovered.transportAttempts, recovered.transportRetriesRecovered, recovered.modelUnreachableRuns]).toEqual([2, 2, 0])
-    expect([unreachable.transportAttempts, unreachable.transportRetriesRecovered, unreachable.modelUnreachableRuns]).toEqual([1, 0, 1])
+    expect([unreachable.transportAttempts, unreachable.transportRetriesRecovered, unreachable.modelUnreachableRuns]).toEqual([2, 0, 1])
     expect([plain.transportAttempts, plain.transportRetriesRecovered, plain.modelUnreachableRuns]).toEqual([0, 0, 0])
   })
 
@@ -2458,7 +2460,8 @@ describe('Transport Failures (#271)', () => {
   it('gives a round that ended transport the reason the model could not be reached', () => {
     const unreachable = classifyAttempt(unreachableInput)
 
-    expect(unreachable.rounds[2]).toMatchObject({ llmRound: 3, kind: 'failed_round', reason: 'the model could not be reached' })
+    expect(unreachable.rounds[2]).toMatchObject({ llmRound: 3, attempt: 2, kind: 'failed_round', reason: 'the model could not be reached' })
+    expect(unreachable.rounds).toHaveLength(4)
   })
 
   it('sums the counters per population and prints them per attempt and per population', () => {
@@ -2470,9 +2473,9 @@ describe('Transport Failures (#271)', () => {
       [],
     )
 
-    expect(set.populations.initial).toMatchObject({ transportAttempts: 3, transportRetriesRecovered: 2, modelUnreachableRuns: 1 })
+    expect(set.populations.initial).toMatchObject({ transportAttempts: 4, transportRetriesRecovered: 2, modelUnreachableRuns: 1 })
     const markdown = formatAuditSet(set)
     expect(markdown).toContain('- Transport Failures: 2 Transport Failure attempt(s) (2 round(s) recovered by a Transport Retry, 0 Run(s) model_unreachable)')
-    expect(markdown).toMatch(/- initial: .*3 Transport Failure attempt\(s\) \(2 round\(s\) recovered by a Transport Retry, 1 Run\(s\) model_unreachable\)/)
+    expect(markdown).toMatch(/- initial: .*4 Transport Failure attempt\(s\) \(2 round\(s\) recovered by a Transport Retry, 1 Run\(s\) model_unreachable\)/)
   })
 })

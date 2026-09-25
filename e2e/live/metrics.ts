@@ -213,6 +213,7 @@ export function extractLiveMetrics(input: LiveMetricsInput): LiveMetrics {
   const { events, perfRecords, traceRecords } = input
   const command = ofType(events, 'command')[0]
   const done = ofType(events, 'done')[0]
+  const retries = ofType(events, 'llm_retry')
   const answer = finalAnswerDisplay(events)
   const plans = ofType(events, 'run_plan')
 
@@ -251,10 +252,10 @@ export function extractLiveMetrics(input: LiveMetricsInput): LiveMetrics {
     budgetTierEscalations: plans.filter((plan) => plan.source === 'budget').length,
     counts: {
       llmSpans: perfRecords.filter((record) => record.stage === 'llm').length,
-      llmRetries: ofType(events, 'llm_retry').length,
+      llmRetries: retries.length,
       llmRetriesByReason: {
-        empty: ofType(events, 'llm_retry').filter((event) => event.reason !== 'transport').length,
-        transport: ofType(events, 'llm_retry').filter((event) => event.reason === 'transport').length,
+        empty: retries.filter((event) => event.reason !== 'transport').length,
+        transport: retries.filter((event) => event.reason === 'transport').length,
       },
       toolCalls: ofType(events, 'tool_call').length,
       toolSpans: perfRecords.filter((record) => record.stage === 'tool').length,

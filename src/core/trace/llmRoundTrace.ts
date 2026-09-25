@@ -27,6 +27,7 @@ import {
   type TokenUsage,
 } from '../ports/llm'
 import type { LlmRequestShape, LlmRoundEvent, LlmRoundFailure, LlmRoundOutcome, LlmRoundRole } from './runTrace'
+import { toErrorMessage } from '../errors'
 
 /** One attempt as the collector closed it: its numbering, how it ended, and what the client reported. */
 export interface LlmRound {
@@ -82,7 +83,7 @@ const FAILURE_OUTCOMES: ReadonlySet<LlmRoundOutcome> = new Set(['transport', 'ti
 /** What a thrown attempt records (#271): the message, and the transport's code when it named one. */
 export function llmAttemptFailure(error: unknown): LlmRoundFailure {
   const code = transportErrorCode(error)
-  return { message: error instanceof Error ? error.message : String(error), ...(code !== undefined ? { code } : {}) }
+  return { message: toErrorMessage(error), ...(code !== undefined ? { code } : {}) }
 }
 
 export function createLlmRounds(deps: { now?: () => number } = {}): LlmRounds {
@@ -138,7 +139,8 @@ export function createLlmRounds(deps: { now?: () => number } = {}): LlmRounds {
 /**
  * What a round that threw is recorded as (#218): the client's own
  * request timeout, the empty completion and a Transport Failure (#271)
- * by their classes, anything else as a plain failure. The caller decides the cuts it made itself —
+ * by their classes, anything else as a plain failure. The caller decides
+ * the cuts it made itself —
  * the deadline, the allowance, a Stop — before asking this, because
  * those reach the client as one abort and come back looking alike.
  */

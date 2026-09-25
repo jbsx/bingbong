@@ -848,7 +848,7 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
       // a fault — the worker returns the bounded report below rather than
       // failing. So does a round whose Transport Retry failed too (#271):
       // the model is unreachable, which is a stop with a cause rather than
-      // a worker that failed with a bare message. Any other error is still
+      // a Subagent that failed with a bare message. Any other error is still
       // the loop's to throw.
       if (!graceEnded() && !(error instanceof LlmTransportError)) throw error
     } finally {

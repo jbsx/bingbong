@@ -435,12 +435,12 @@ _Avoid_: network error, fetch failed
 
 **Transport Retry**:
 The one repeat of a Transport-Failed request, identical and after a short
-pause, once per model round. It is not a Tool Round and spends no Tool Round
+pause, once per LLM round. It is not a Tool Round and spends no Tool Round
 budget, only time.
 _Avoid_: reconnect, backoff
 
 **Model Unreachable**:
-A Finalization Cause: both attempts of one model round were Transport
+A Finalization Cause: both attempts of one LLM round were Transport
 Failures.
 _Avoid_: network down, provider outage, failed run
 
