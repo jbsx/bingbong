@@ -57,7 +57,9 @@ export function evidenceCheckpointEvent(input: {
             citation.kind === 'subagent' ? (input.workerObservations?.(citation.agentId) ?? []) : input.records,
             citation.sourceUrl,
           )
-  const excerpt = citation !== null && citation.kind !== 'user' ? citation.excerpt : undefined
+  // A subagent citation's excerpt is dropped, never compared (#272): the
+  // call's args still show it, and its acceptance carries the Notice.
+  const excerpt = citation !== null && citation.kind === 'web' ? citation.excerpt : undefined
   const agentId = outcome.ok ? outcome.agentId : citation?.kind === 'subagent' ? citation.agentId : undefined
   return {
     kind: 'evidence_checkpoint',

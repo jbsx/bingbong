@@ -502,6 +502,14 @@ export interface AuditMechanical {
    */
   readonly unseenPhraseRewrites?: readonly number[]
   /**
+   * The orchestrator's kind "subagent" citations (#272, ADR 0054): those
+   * refused `excerpt_unsupported`, and those applied with an offered excerpt
+   * dropped, read from the trace's checkpoint records by their `agentId` and
+   * `correction`. Beside the rounds, never in them. Absent on an audit
+   * written before the counter.
+   */
+  readonly subagentCitations?: Readonly<SubagentCitationCounts>
+  /**
    * The Answers that carried an Identity Slip and the ids slipped in them
    * (#246, ADR 0028), counted from the Run's own `identity_slip` records.
    * Null — not recorded — for a trace written below
@@ -700,6 +708,8 @@ export interface AuditPopulation {
   readonly rewrittenShownAddresses?: number
   /** Searches that ran with an Unseen Phrase unquoted (#267); absent on an audit written before the counter. */
   readonly unseenPhraseRewrites?: number
+  /** Kind "subagent" citations refused `excerpt_unsupported` and applied with a dropped excerpt, over the attempts that count them (#272); absent when none does. */
+  readonly subagentCitations?: Readonly<SubagentCitationCounts>
   /** Of those, the ones in a round the reviewer judged Off-key; judged attempts only. */
   readonly unseenPhraseRewritesOffKey?: number
   /** Answers with an Identity Slip over the attempts whose trace recorded them (#246). */
@@ -2093,6 +2103,31 @@ export function sameSourceUnsupportedRoundsOf(rounds: readonly AuditRound[]): nu
   return count
 }
 
+/** The two numbers the #272 gate reads over kind "subagent" citations. */
+export interface SubagentCitationCounts {
+  /** Refused `excerpt_unsupported`: none should remain once the excerpt is dropped. */
+  excerptUnsupported: number
+  /** Applied with an offered excerpt dropped, the acceptance carrying its Notice. */
+  droppedExcerpts: number
+}
+
+/**
+ * An attempt's kind "subagent" citations (#272, ADR 0054), read straight
+ * from the trace's checkpoint records rather than the rounds: such a record
+ * carries the cited Subagent's `agentId`, which the round join reads as a
+ * Subagent's own record and skips, so the digest never holds its verdict.
+ * No Subagent checkpoints for itself, so every one is the orchestrator's.
+ */
+export function subagentCitationsOf(traceRecords: readonly object[]): SubagentCitationCounts {
+  const counts: SubagentCitationCounts = { excerptUnsupported: 0, droppedExcerpts: 0 }
+  for (const raw of traceRecords as unknown as readonly TraceLine[]) {
+    if (raw.kind !== 'evidence_checkpoint' || raw.tool !== 'record_evidence' || !isString(raw.agentId)) continue
+    if (raw.outcome === 'excerpt_unsupported') counts.excerptUnsupported += 1
+    else if (raw.outcome === 'accepted' && isString(raw.correction)) counts.droppedExcerpts += 1
+  }
+  return counts
+}
+
 /** The canonical URLs an attempt's accepted Evidence Checkpoints cite — what a follow-up would inherit. */
 export function checkpointedUrlsOf(traceRecords: readonly object[]): Set<string> {
   const urls = new Set<string>()
@@ -2386,6 +2421,7 @@ export function classifyAttempt(input: AuditTraceInput): AuditMechanical {
     rewrittenComposedAddresses: rounds.flatMap((round) => round.calls.filter((call) => call.rewritten !== undefined).map(() => round.round)),
     rewrittenShownAddresses: rewrittenShownAddressesOf(raw),
     unseenPhraseRewrites: rounds.flatMap((round) => round.calls.filter((call) => call.unquoted !== undefined).map(() => round.round)),
+    subagentCitations: subagentCitationsOf(records),
     identitySlips,
     malformedAnswers: records.filter((record) => record.kind === 'malformed_answer').length,
     answerRetries: records.filter((record) => record.kind === 'answer_retry').length,
@@ -2861,6 +2897,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
   let unavailableLandings: Record<keyof UnavailableLandingRounds, number> | undefined
   let consentWalls: ConsentWallCounts | undefined
   let tierEscalations: TierEscalationCounts | undefined
+  let subagentCitations: SubagentCitationCounts | undefined
   let slipAnswers = 0
   let slipIds = 0
   let slipsNotRecorded = 0
@@ -2925,6 +2962,11 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
     }
     if (mechanical.consentWalls !== undefined) addConsentWalls((consentWalls ??= emptyConsentWallCounts()), mechanical.consentWalls)
     if (mechanical.tierEscalations !== undefined) tierEscalations = addTierEscalations(tierEscalations ?? emptyTierEscalationCounts(), mechanical.tierEscalations)
+    if (mechanical.subagentCitations !== undefined) {
+      subagentCitations ??= { excerptUnsupported: 0, droppedExcerpts: 0 }
+      subagentCitations.excerptUnsupported += mechanical.subagentCitations.excerptUnsupported
+      subagentCitations.droppedExcerpts += mechanical.subagentCitations.droppedExcerpts
+    }
     if (mechanical.identitySlips === null) slipsNotRecorded += 1
     else {
       slipAnswers += mechanical.identitySlips.answers
@@ -2990,6 +3032,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
     ...(unavailableLandings === undefined ? {} : { unavailableLandings }),
     ...(consentWalls === undefined ? {} : { consentWalls }),
     ...(tierEscalations === undefined ? {} : { tierEscalations }),
+    ...(subagentCitations === undefined ? {} : { subagentCitations }),
     inheritedRounds: inherited,
     mergedCheckpoints: merged,
     bundledCheckpoints: bundled,
@@ -3252,12 +3295,19 @@ function populationSlipsText(population: AuditPopulation): string {
   return `${slipCountsText(population.identitySlipAnswers, population.identitySlipIds)}${notRecorded}`
 }
 
+/** The #272 gate's two numbers, or that the audit predates them — never a zero it did not count. */
+function subagentCitationsText(counts: Readonly<SubagentCitationCounts> | undefined): string {
+  return counts === undefined
+    ? 'subagent citations not counted'
+    : `subagent citations: ${counts.excerptUnsupported} excerpt_unsupported, ${counts.droppedExcerpts} applied with a dropped excerpt`
+}
+
 function judgementLines(populations: readonly AuditPopulation[]): string[] {
   return populations.map(
     (population) =>
       `- ${population.label}: ${population.offKeyRounds} Off-key round(s), ${population.searchLoopRounds} Search Loop round(s) by the reviewer (${population.mechanicalSearchRounds} by the streak rule, heads included: ${population.searchRoundsAtStreak2} at streak 2 or beyond, ${population.searchRoundsAtStreak3} at 3 or beyond; attempts by search source ${SEARCH_SOURCES.map((source) => `${source} ${population.searchSources[source]}`).join(', ')}; navigate searches by Search URL form ${searchFormsText(population.searchForms)}; ${populationBlockedOrInertText(population.blockedOrInert)}; ${populationUnavailableLandingsText(population.unavailableLandings)}; ${populationConsentWallsText(population.consentWalls)}; ${populationTierEscalationsText(population.tierEscalations)}), ` +
       `${population.inheritedRounds} inherited, ${population.rejectedCheckpoints} rejected Evidence Checkpoint(s), ${population.walledRounds} walled round(s), ${population.notFoundNavigates} navigate(s) landed on a Not-found Page (${population.notFoundOffKey} judged Off-key), ${population.rewrittenComposedAddresses ?? 0} Composed Address(es) rewritten into a site search (${population.rewrittenComposedAddressesOffKey ?? 0} judged Off-key, ${population.rewrittenShownAddresses ?? 'not counted'} to an address the Run was shown), ${population.unseenPhraseRewrites ?? 'not counted'} search(es) ran with an Unseen Phrase unquoted (${population.unseenPhraseRewritesOffKey ?? 0} judged Off-key), ${population.subagentRounds} Subagent round(s), ` +
-      `${population.mergedCheckpoints} merged Evidence Checkpoint(s) (a floor), ${population.heldPageRoundsWithoutProgress} Held Page round(s) without Progress, ${population.bundledCheckpoints} bundled checkpoint round(s), ${population.sameSourceUnsupportedRounds} same-source unsupported round(s), ${populationSlipsText(population)}, ` +
+      `${population.mergedCheckpoints} merged Evidence Checkpoint(s) (a floor), ${population.heldPageRoundsWithoutProgress} Held Page round(s) without Progress, ${population.bundledCheckpoints} bundled checkpoint round(s), ${population.sameSourceUnsupportedRounds} same-source unsupported round(s), ${subagentCitationsText(population.subagentCitations)}, ${populationSlipsText(population)}, ` +
       `${population.malformedAnswers} Malformed Answer(s) (${population.answerRetries} retried), ` +
       `${populationSkipsText(population)}, ${populationCutsText(population)}, ` +
       `${population.askedItemsDeclared} declared Asked Items (${population.askedItemsUnverified} with an unverified standing, ${population.askedItemsShapeFailures} shape failure(s), ${population.askedItemsShapeRetried} retried), ` +
@@ -3286,7 +3336,7 @@ function attemptSection(attempt: AuditAttempt): string[] {
   lines.push(
     `- ${mechanical.subagent.rounds} Subagent round(s) over ${mechanical.subagent.agents} Subagent(s)${Object.keys(mechanical.subagent.byStop).length > 0 ? `, stopped by ${Object.entries(mechanical.subagent.byStop).map(([stop, count]) => `${stop} ${count}`).join(', ')}` : ''}; ` +
       `${mechanical.acceptedCheckpoints} accepted (${mechanical.mergedCheckpoints} merged, a floor) and ${mechanical.rejectedCheckpoints} rejected Evidence Checkpoint(s); ${mechanical.inheritedRounds} inherited round(s); ` +
-      `${mechanical.heldPageRoundsWithoutProgress} Held Page round(s) without Progress; ${mechanical.bundledCheckpoints} bundled checkpoint round(s); ${mechanical.sameSourceUnsupportedRounds} same-source unsupported round(s); ${mechanical.walledRounds} walled round(s)`,
+      `${mechanical.heldPageRoundsWithoutProgress} Held Page round(s) without Progress; ${mechanical.bundledCheckpoints} bundled checkpoint round(s); ${mechanical.sameSourceUnsupportedRounds} same-source unsupported round(s); ${subagentCitationsText(mechanical.subagentCitations)}; ${mechanical.walledRounds} walled round(s)`,
   )
   lines.push(`- Malformed Answers: ${mechanical.malformedAnswers} (${mechanical.answerRetries} retried)`)
   lines.push(`- Finalization: ${finalizationText(mechanical)}`)

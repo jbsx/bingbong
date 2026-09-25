@@ -52,6 +52,11 @@ function contextWith(store: SessionEvidenceStore | null) {
 describe('record_evidence tool', () => {
   const tool = createRecordEvidenceTool()
 
+  it('says one thing about a subagent citation\'s excerpt: it takes none (#272)', () => {
+    expect(tool.description).toContain('and a subagent citation takes none.')
+    expect(tool.description).not.toMatch(/excerpt is optional/)
+  })
+
   it('is bookkeeping: never acquisition, never history- or risk-gated', () => {
     expect(tool.acquisition).not.toBe(true)
     expect(tool.requiresHistory).not.toBe(true)

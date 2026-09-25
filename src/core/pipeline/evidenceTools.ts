@@ -26,7 +26,7 @@ export function createRecordEvidenceTool(): Tool {
       'the whole Session. Subagent (kind "subagent"): checkpoint a finding from a collected report — cite the ' +
       'agent_id and one of the evidence URLs its findings carry; workers cannot checkpoint for themselves. ' +
       'The excerpt rule: a source retained as text requires the excerpt, a structured action outcome grounds ' +
-      'itself without one, and a subagent citation\'s excerpt is optional. ' +
+      'itself without one, and a subagent citation takes none. ' +
       'Checkpoint only decision-relevant facts: new findings, candidate eliminations, user corrections, or work ' +
       'later runs must not repeat. Set volatile true for time-sensitive or action-critical observations — later ' +
       'runs must revalidate those (or any uncertain one) before completing on them; stable facts are reused ' +

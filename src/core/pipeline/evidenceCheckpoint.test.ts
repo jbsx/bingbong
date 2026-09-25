@@ -3,6 +3,7 @@ import type { ToolCall } from '../ports/llm'
 import type { RunId, SessionId } from '../session/sessionIdentity'
 import type { MemoryEntryId } from '../session/workingMemory'
 import { createSessionEvidence, type SessionEvidenceStore } from '../session/sessionEvidence'
+import { evidenceCheckpointEvent } from '../trace/evidenceCheckpointTrace'
 import type { ObservationRecord } from '../session/observationLedger'
 import {
   evaluateEvidenceCheckpoint,
@@ -21,6 +22,12 @@ import {
   webEvidenceCommit,
   type EvidenceCommit,
 } from './evidenceCheckpoint'
+
+/** The Notice a kind "subagent" citation's acceptance carries when it offered an excerpt (#272), as the spec words it. */
+const SUBAGENT_EXCERPT_NOTICE =
+  'Notice: record_evidence stored the finding without its excerpt. A kind "subagent" citation is grounded by the ' +
+  "Subagent's own observation of source_url; its report is the Subagent's words, never page text, so no excerpt is " +
+  'checked or kept on this kind. Cite agent_id and one of the evidence URLs its findings carry, with no excerpt.'
 
 function callOf(args: Record<string, unknown>): ToolCall {
   return { id: 'c1', name: 'record_evidence', args }
@@ -471,7 +478,7 @@ describe('subagent citations (#123)', () => {
     expect(store.snapshot().observations).toEqual([])
   })
 
-  it('validates an offered excerpt against what the worker retained; omission is allowed', () => {
+  it('drops an offered excerpt, whatever it holds, and grounds on the Subagent\'s freshest retention (#272)', () => {
     const store = evidenceHarness()
     const deps = {
       records: [],
@@ -479,11 +486,10 @@ describe('subagent citations (#123)', () => {
       workerObservations: () => [workerRecord()],
     }
 
-    // The citing model saw the report, not the tool results: no excerpt
-    // demanded, but a wrong one never grounds.
+    // No excerpt is ever checked on this kind: a wrong one is dropped like a right one.
     expect(evaluateEvidenceCheckpoint(callOf(SUBAGENT_ARGS), deps)).toMatchObject({ ok: true, entryId: 'memory-1' })
-    expect(evaluateEvidenceCheckpoint(callOf({ ...SUBAGENT_ARGS, excerpt: 'costs $59' }), deps)).toMatchObject({ ok: false, reason: 'excerpt_unsupported' })
-    expect(evaluateEvidenceCheckpoint(callOf({ ...SUBAGENT_ARGS, excerpt: 'costs $29' }), deps)).toMatchObject({ ok: true, merged: true })
+    expect(evaluateEvidenceCheckpoint(callOf({ ...SUBAGENT_ARGS, excerpt: 'costs $59' }), deps)).toMatchObject({ ok: true, merged: true, correction: SUBAGENT_EXCERPT_NOTICE })
+    expect(evaluateEvidenceCheckpoint(callOf({ ...SUBAGENT_ARGS, excerpt: 'costs $29' }), deps)).toMatchObject({ ok: true, merged: true, correction: SUBAGENT_EXCERPT_NOTICE })
     expect(store.snapshot().observations).toHaveLength(1)
   })
 
@@ -731,7 +737,7 @@ describe('evidence grading faults (#179)', () => {
     expect(store.snapshot().observations).toEqual([])
   })
 
-  it('lets a subagent citation with no excerpt ground, and un-shadows one that has an excerpt', () => {
+  it('grounds a subagent citation on the freshest retention, excerpt or none (#272)', () => {
     const store = evidenceHarness()
     const workerRead: ObservationRecord = {
       id: 'wobs-3' as ObservationRecord['id'],
@@ -755,11 +761,99 @@ describe('evidence grading faults (#179)', () => {
     }
     const args = { kind: 'subagent', agent_id: 'a-2', observation: 'The rival router costs $29.', source_url: 'https://rival.example/router' }
 
+    // (b) An excerpt verbatim in the page read no longer picks the read
+    // over the later Look: it is dropped, never checked.
     expect(evaluateEvidenceCheckpoint(callOf(args), deps)).toMatchObject({ ok: true, sourceObservationId: 'wobs-8' })
-    expect(evaluateEvidenceCheckpoint(callOf({ ...args, excerpt: 'costs $29' }), deps)).toMatchObject({ ok: true, sourceObservationId: 'wobs-3' })
-    const wrong = evaluateEvidenceCheckpoint(callOf({ ...args, excerpt: 'costs $59' }), deps)
-    expect(wrong).toMatchObject({ ok: false, reason: 'excerpt_unsupported' })
-    expect(wrong.ok ? '' : wrong.error).toContain('page read, look')
+    expect(evaluateEvidenceCheckpoint(callOf({ ...args, excerpt: 'costs $29' }), deps)).toMatchObject({
+      ok: true,
+      sourceObservationId: 'wobs-8',
+      correction: SUBAGENT_EXCERPT_NOTICE,
+    })
+  })
+})
+
+describe('a kind "subagent" citation takes no excerpt (#272)', () => {
+  const SOURCE = 'https://www.raspberrypi.com/documentation/accessories/camera.html'
+  /** The Subagent's retained read of the page it cites: its words, never the report's. */
+  const WORKER_READ: ObservationRecord = {
+    id: 'wobs-5' as ObservationRecord['id'],
+    at: 100,
+    producer: 'page_read',
+    ok: true,
+    payload: 'Camera Module 3 ships with a 150 mm ribbon cable for the standard 15-pin connector.',
+    sourceUrl: SOURCE,
+  }
+  const ARGS = {
+    kind: 'subagent',
+    agent_id: 'a-1',
+    observation: 'Camera Module 3 needs the 22-pin adapter cable on a Pi Zero.',
+    source_url: SOURCE,
+  }
+  /** A passage verbatim from the Subagent's report: its paraphrase, which the page never held. */
+  const REPORT_PASSAGE = 'Pi Zero boards need the 22-pin to 15-pin adapter cable for Camera Module 3'
+
+  function cite(args: Record<string, unknown>) {
+    const store = evidenceHarness()
+    const call = callOf(args)
+    const workerObservations = (agentId: string) => (agentId === 'a-1' ? [WORKER_READ] : null)
+    const outcome = evaluateEvidenceCheckpoint(call, {
+      records: [],
+      commitSubagent: (agentId) => subagentEvidenceCommit(() => store, 'run-1' as RunId, agentId),
+      workerObservations,
+    })
+    return { outcome, store, event: evidenceCheckpointEvent({ call, outcome, records: [], workerObservations }) }
+  }
+
+  it('(a) applies a passage copied from the report, grounded on the Subagent\'s retention, with the Notice and no stored excerpt', () => {
+    const { outcome, store } = cite({ ...ARGS, excerpt: REPORT_PASSAGE })
+
+    expect(outcome).toEqual({
+      ok: true,
+      entryId: 'memory-1',
+      merged: false,
+      sourceObservationId: 'wobs-5',
+      sourceUrl: SOURCE,
+      agentId: 'a-1',
+      contradicts: [],
+      correction: SUBAGENT_EXCERPT_NOTICE,
+    })
+    const stored = store.snapshot().observations
+    expect(stored).toEqual([expect.objectContaining({ text: ARGS.observation, references: [{ url: SOURCE }] })])
+    expect(JSON.stringify(stored)).not.toContain(REPORT_PASSAGE)
+  })
+
+  it('(b) applies an excerpt verbatim in the Subagent\'s page read the same way', () => {
+    const { outcome, store } = cite({ ...ARGS, excerpt: 'ships with a 150 mm ribbon cable' })
+
+    expect(outcome).toMatchObject({ ok: true, sourceObservationId: 'wobs-5', agentId: 'a-1', correction: SUBAGENT_EXCERPT_NOTICE })
+    expect(JSON.stringify(store.snapshot().observations)).not.toContain('150 mm ribbon')
+  })
+
+  it('(c) applies a citation with no excerpt and no Notice', () => {
+    const { outcome } = cite(ARGS)
+
+    expect(outcome).toMatchObject({ ok: true, sourceObservationId: 'wobs-5', agentId: 'a-1' })
+    expect(outcome).not.toHaveProperty('correction')
+  })
+
+  it('(d) refuses a source the Subagent never observed, excerpt or none, without quoting its page text', () => {
+    const elsewhere = { ...ARGS, source_url: 'https://www.bing.com/search?q=pi+zero+camera' }
+    for (const args of [elsewhere, { ...elsewhere, excerpt: REPORT_PASSAGE }]) {
+      const { outcome, store } = cite(args)
+      expect(outcome).toMatchObject({ ok: false, reason: 'unknown_source' })
+      expect(evidenceCheckpointMessage(outcome)).not.toContain('ribbon cable')
+      expect(store.snapshot().observations).toEqual([])
+    }
+    expect(cite({ ...ARGS, agent_id: 'a-9', excerpt: REPORT_PASSAGE }).outcome).toMatchObject({ ok: false, reason: 'unknown_agent' })
+  })
+
+  it('(e) the trace event carries the Notice and the agent id', () => {
+    const { event } = cite({ ...ARGS, excerpt: REPORT_PASSAGE })
+
+    expect(event).toMatchObject({ outcome: 'accepted', matched: true, agentId: 'a-1', correction: SUBAGENT_EXCERPT_NOTICE })
+    // Grading never compared the excerpt, so the event records none as compared.
+    expect(event).not.toHaveProperty('excerpt')
+    expect(cite(ARGS).event).not.toHaveProperty('correction')
   })
 })
 
@@ -1127,6 +1221,24 @@ describe('a malformed citation is told every defect and shown the call to send (
         agent_id: 'a-1',
         observation:
           'Official Raspberry Pi camera docs: all Pi cameras use the standard 15-pin connector at the camera end; Pi 5, all Pi Zero models (incl. v1.3), and CM IO boards use the mini 22-pin connector, requiring …',
+        source_url: CAMERA_ACCESSORIES,
+      },
+    },
+    {
+      where: 'a subagent citation without its kind, carrying an excerpt (#272)',
+      args: {
+        agent_id: 'a-1',
+        observation: 'All Pi Zero models use the mini 22-pin camera connector.',
+        source_url: CAMERA_ACCESSORIES,
+        excerpt: 'Pi Zero boards need the 22-pin adapter cable',
+      },
+      records: [],
+      workers: { 'a-1': [webRecord({ id: 'wobs-2' as ObservationRecord['id'], sourceUrl: CAMERA_ACCESSORIES })] },
+      fields: ['kind', 'excerpt'],
+      corrected: {
+        kind: 'subagent',
+        agent_id: 'a-1',
+        observation: 'All Pi Zero models use the mini 22-pin camera connector.',
         source_url: CAMERA_ACCESSORIES,
       },
     },

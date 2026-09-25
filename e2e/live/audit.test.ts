@@ -99,6 +99,9 @@ interface RoundSpec {
     checkpoint?: string
     /** The store's merge verdict on an accepted checkpoint (#240) — absent, as a trace written before the field existed. */
     merged?: boolean
+    /** The Subagent a kind "subagent" checkpoint cited, and the Notice its acceptance carried (#272). */
+    checkpointAgentId?: string
+    correction?: string
     /** The Search Observation the rail recorded for this call (#243) — a trace written after observations were kept. */
     observation?: SearchObservation
     /** The Not-found Landing the Run Trace records on the result (#239) — a trace written after the field was kept. */
@@ -145,7 +148,7 @@ function traceOf(rounds: readonly RoundSpec[], extra: readonly Record<string, un
       const callId = `call-${calls}`
       records.push({ ...identity, at: T0 + spec.at + 1, kind: 'pipeline_event', event: { type: 'tool_call', turnId: TURN, callId, name: call.name, args: call.args, at: T0 + spec.at + 1 } })
       if (call.checkpoint !== undefined) {
-        records.push({ ...identity, at: T0 + spec.at + 2, kind: 'evidence_checkpoint', tool: call.name, args: call.args, outcome: call.checkpoint, matched: call.checkpoint === 'accepted', graded: [], ...(call.merged !== undefined ? { merged: call.merged } : {}) })
+        records.push({ ...identity, at: T0 + spec.at + 2, kind: 'evidence_checkpoint', tool: call.name, args: call.args, outcome: call.checkpoint, matched: call.checkpoint === 'accepted', graded: [], ...(call.merged !== undefined ? { merged: call.merged } : {}), ...(call.checkpointAgentId !== undefined ? { agentId: call.checkpointAgentId } : {}), ...(call.correction !== undefined ? { correction: call.correction } : {}) })
       }
       if (call.observation !== undefined) {
         // The round records the rail's observation after the call settles and
@@ -578,6 +581,61 @@ const RAIL_ROUNDS: RoundSpec[] = [
 /** A Browse Subagent's observation on a call id the orchestrator also used: the audit reads the orchestrator's only. */
 const SUBAGENT_OBSERVATION: Record<string, unknown> = { v: 1, at: T0 + 2_550, turnId: TURN, kind: 'search_observation', agentId: 'a-1', callId: 'call-2', name: 'type', query: 'something else', signature: 'input', streak: 9 }
 
+describe('subagent citations: excerpt_unsupported and dropped excerpts (#272)', () => {
+  const DOCS = 'https://www.raspberrypi.com/documentation/accessories/camera.html'
+  const NOTICE = 'Notice: record_evidence stored the finding without its excerpt.'
+  const cited = (id: string): string => `Session Evidence recorded: ${id}, grounded in what subagent a-1 observed at ${DOCS} (wobs-2). It survives this run's outcome.`
+  const subagentArgs = (excerpt?: string): Record<string, unknown> => ({ kind: 'subagent', agent_id: 'a-1', observation: 'a finding', source_url: DOCS, ...(excerpt !== undefined ? { excerpt } : {}) })
+
+  const ROUNDS: RoundSpec[] = [
+    // 1: a pre-#272 refusal of a report passage, beside a web citation's refusal that is no worker's.
+    {
+      round: 1,
+      at: 1_000,
+      calls: [
+        { name: 'record_evidence', args: subagentArgs('from the report'), ok: false, error: 'record_evidence rejected (excerpt_unsupported): not in what subagent a-1 retained', checkpoint: 'excerpt_unsupported', checkpointAgentId: 'a-1' },
+        { name: 'record_evidence', args: { kind: 'web', observation: 'x', source_url: OTHER_URL, excerpt: 'y' }, ok: false, error: 'record_evidence rejected (excerpt_unsupported): no', checkpoint: 'excerpt_unsupported' },
+      ],
+    },
+    // 2: applied with its excerpt dropped, and one that offered none.
+    {
+      round: 2,
+      at: 2_000,
+      calls: [
+        { name: 'record_evidence', args: subagentArgs('from the report'), result: cited('memory-3'), checkpoint: 'accepted', checkpointAgentId: 'a-1', correction: NOTICE },
+        { name: 'record_evidence', args: subagentArgs(), result: cited('memory-4'), checkpoint: 'accepted', checkpointAgentId: 'a-1' },
+      ],
+    },
+  ]
+
+  it('counts both from the trace\'s checkpoint records, beside the digest', () => {
+    const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, [EXTRA[0]!]) }))
+    expect(mechanical.subagentCitations).toEqual({ excerptUnsupported: 1, droppedExcerpts: 1 })
+
+    // Counted beside the digest: the hash a cached judgement is keyed on does not move.
+    const without = ROUNDS.map((spec) => ({ ...spec, calls: spec.calls?.map(({ correction: _correction, ...rest }) => rest) }))
+    const old = classifyAttempt(inputOf({ traceRecords: traceOf(without, [EXTRA[0]!]) }))
+    expect(old.subagentCitations).toEqual({ excerptUnsupported: 1, droppedExcerpts: 0 })
+    expect(old.digestHash).toBe(mechanical.digestHash)
+  })
+
+  it('sums them per population and prints both numbers per attempt and per population', () => {
+    const initial = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, [EXTRA[0]!]) }))
+    const set = buildAuditSet(provenanceOf(), [{ mechanical: initial, review: null, countsAfterOverrules: initial.counts }], [])
+
+    expect(set.populations.initial.subagentCitations).toEqual({ excerptUnsupported: 1, droppedExcerpts: 1 })
+    const markdown = formatAuditSet(set)
+    expect(markdown).toMatch(/- initial: .*subagent citations: 1 excerpt_unsupported, 1 applied with a dropped excerpt/)
+    expect(markdown).toContain('; subagent citations: 1 excerpt_unsupported, 1 applied with a dropped excerpt;')
+
+    // An audit written before the counter says so, never zero.
+    const { subagentCitations: _dropped, ...before } = initial
+    const legacy = buildAuditSet(provenanceOf(), [{ mechanical: before, review: null, countsAfterOverrules: initial.counts }], [])
+    expect(legacy.populations.initial.subagentCitations).toBeUndefined()
+    expect(formatAuditSet(legacy)).toMatch(/- initial: .*subagent citations not counted/)
+  })
+})
+
 describe('merged checkpoints and Held Page rounds without Progress (#240, ADR 0051)', () => {
   const THIRD = 'https://spec.invalid/third'
   const recorded = (id: string, url: string): string => `Session Evidence recorded: ${id}, grounded in obs-1 at ${url}. It survives this run's outcome.`
@@ -724,7 +782,7 @@ describe('merged checkpoints and Held Page rounds without Progress (#240, ADR 00
     expect([set.populations.initial.bundledCheckpoints, set.populations.followUp.bundledCheckpoints]).toEqual([2, followUp.bundledCheckpoints])
     const markdown = formatAuditSet(set)
     expect(markdown).toMatch(/- initial: .*Held Page round\(s\) without Progress, 2 bundled checkpoint round\(s\), /)
-    expect(markdown).toContain('Held Page round(s) without Progress; 2 bundled checkpoint round(s); 0 same-source unsupported round(s); 0 walled round(s)')
+    expect(markdown).toContain('Held Page round(s) without Progress; 2 bundled checkpoint round(s); 0 same-source unsupported round(s); subagent citations: 0 excerpt_unsupported, 0 applied with a dropped excerpt; 0 walled round(s)')
   })
 })
 
@@ -770,8 +828,8 @@ describe('Identity Slips (#246, ADR 0028)', () => {
     expect(markdown).toContain('- Identity Slips: 1 Answer(s) with an Identity Slip, 3 id(s) slipped')
     expect(markdown).toContain('- Identity Slips: 0 Answer(s) with an Identity Slip, 0 id(s) slipped')
     expect(markdown).toContain('- Identity Slips: not recorded (a Run Trace below version 2)')
-    expect(markdown).toMatch(/- initial: .*Held Page round\(s\) without Progress, \d+ bundled checkpoint round\(s\), \d+ same-source unsupported round\(s\), 1 Answer\(s\) with an Identity Slip, 3 id\(s\) slipped, /)
-    expect(markdown).toMatch(/- follow_up: .*Held Page round\(s\) without Progress, \d+ bundled checkpoint round\(s\), \d+ same-source unsupported round\(s\), Identity Slips not recorded, /)
+    expect(markdown).toMatch(/- initial: .*Held Page round\(s\) without Progress, \d+ bundled checkpoint round\(s\), \d+ same-source unsupported round\(s\), subagent citations: 0 excerpt_unsupported, 0 applied with a dropped excerpt, 1 Answer\(s\) with an Identity Slip, 3 id\(s\) slipped, /)
+    expect(markdown).toMatch(/- follow_up: .*Held Page round\(s\) without Progress, \d+ bundled checkpoint round\(s\), \d+ same-source unsupported round\(s\), subagent citations: 0 excerpt_unsupported, 0 applied with a dropped excerpt, Identity Slips not recorded, /)
 
     const other = buildAuditSet(provenanceOf({ setId: 'set-2', createdAt: '2026-09-12T18:00:00.000Z' }), [initialOf(old)], [])
     const aggregate = buildAuditAggregate([set, other], '2026-09-14T11:00:00.000Z')
@@ -2163,7 +2221,7 @@ describe('same-source unsupported rounds (#257, ADR 0054)', () => {
     expect([set.populations.initial.sameSourceUnsupportedRounds, set.populations.followUp.sameSourceUnsupportedRounds]).toEqual([4, 2])
     const markdown = formatAuditSet(set)
     expect(markdown).toMatch(/- initial: .*bundled checkpoint round\(s\), 4 same-source unsupported round\(s\), /)
-    expect(markdown).toContain('bundled checkpoint round(s); 4 same-source unsupported round(s); 0 walled round(s)')
+    expect(markdown).toContain('bundled checkpoint round(s); 4 same-source unsupported round(s); subagent citations: 0 excerpt_unsupported, 0 applied with a dropped excerpt; 0 walled round(s)')
   })
 
   it('reads a trace whose verdict was the error head, not the reason word, as nothing', () => {

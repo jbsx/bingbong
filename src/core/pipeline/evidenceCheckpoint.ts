@@ -87,6 +87,15 @@ export interface EvidenceCommitInput {
 /** The shared Session-refusal correction: one message, three commit kinds. */
 const EVIDENCE_REFUSED: string = 'the Session refused the checkpoint — it ended (reset or lapse), or a field exceeded its bound'
 
+/**
+ * The Notice a kind "subagent" citation's acceptance carries when it offered
+ * an excerpt (#272, ADR 0054): the excerpt was dropped, and why none is kept.
+ */
+const SUBAGENT_EXCERPT_DROPPED: string =
+  'Notice: record_evidence stored the finding without its excerpt. A kind "subagent" citation is grounded by the ' +
+  "Subagent's own observation of source_url; its report is the Subagent's words, never page text, so no excerpt is " +
+  'checked or kept on this kind. Cite agent_id and one of the evidence URLs its findings carry, with no excerpt.'
+
 /** The Session-side commit seam: stores the Observation, or refuses. */
 export type EvidenceCommit = (input: EvidenceCommitInput) => ObservationCheckpointResult | null
 
@@ -156,8 +165,9 @@ export function parseEvidenceCitation(args: Record<string, unknown>): EvidenceCi
   if (canonicalizeMemoryUrl(sourceUrl) === null) return null
   if (kind === 'subagent') {
     // A subagent citation (#123) grounds in a delegated worker's
-    // observations: the agent id names whose, and no excerpt is demanded
-    // — the citing model saw the worker's report, not its tool results.
+    // observations: the agent id names whose. It takes no excerpt (#272)
+    // — the citing model saw the worker's report, not its tool results —
+    // but one offered is parsed so the acceptance can say it was dropped.
     const agentId = boundedString(args.agent_id, MAX_PROVENANCE_CHARS)
     if (!agentId) return null
     return {
@@ -832,9 +842,7 @@ export function evaluateEvidenceCheckpoint(
       references: [{ url: canonical, ...(title !== undefined ? { title } : {}) }],
       // Freshness judges when the evidence was truly seen (#123): the
       // worker's own observation time, not the orchestrator's commit —
-      // a report collected by a later Run stays as old as its worker. An
-      // excerpt that matches an older read behind a newer Look stamps that
-      // read: the cited fact was seen when its text was.
+      // a report collected by a later Run stays as old as its worker.
       observedAt: source.at,
     })
     if (committed === null) {
@@ -852,6 +860,8 @@ export function evaluateEvidenceCheckpoint(
       sourceUrl: canonical,
       agentId: citation.agentId,
       contradicts: committed.contradicts,
+      // An offered excerpt was dropped, never stored (#272): the Notice says so.
+      ...(citation.excerpt !== undefined ? { correction: SUBAGENT_EXCERPT_DROPPED } : {}),
     }
   }
   if (deps.commit === undefined) return EVIDENCE_NO_SESSION
@@ -975,28 +985,11 @@ function groundSubagentCitation(
       error: `no completed subagent '${citation.agentId}' with retained observations — collect its report with agent_results first, and cite a source it actually observed`,
     }
   }
-  // The citing model saw the worker's report, not its tool results, so
-  // an excerpt is optional here; one offered must still appear in what
-  // the worker retained — a wrong quote never grounds.
-  const grounding = findGroundingObservation(workerRecords, citation.sourceUrl, citation.excerpt)
-  if (!grounding.ok && grounding.reason === 'excerpt_unsupported') {
-    return {
-      ok: false,
-      reason: 'excerpt_unsupported',
-      error: excerptTooShort(citation.excerpt ?? '')
-        ? `${tooShortError(citation.sourceUrl)}, or omit it`
-        : unsupportedError(
-            `subagent '${citation.agentId}'`,
-            citation.sourceUrl,
-            producerList(grounding.producers),
-            grounding.unsupported,
-            'omit the excerpt, or copy every passage verbatim from the report you are citing',
-          ),
-    }
-  }
-  // No excerpt offered: the worker's freshest retention of the source
-  // grounds the citation, text or structured alike.
-  const source = grounding.ok ? grounding.record : findSourceObservation(workerRecords, citation.sourceUrl)
+  // The citing model saw the Subagent's report, never its tool results,
+  // so no excerpt is checked on this kind (#272, ADR 0054): one offered is
+  // the report's words, not the page's. The Subagent's freshest retention
+  // of the source grounds the citation, text or structured alike.
+  const source = findSourceObservation(workerRecords, citation.sourceUrl)
   if (source === null) {
     return {
       ok: false,
@@ -1154,17 +1147,15 @@ export function diagnoseEvidenceCall(
       corrected = withField(corrected, 'source_url', placeholder(wanted))
       groundable = false
     }
-    if (boundedString(args.excerpt, MAX_MEMORY_DETAIL_CHARS, true) === null) {
-      const problem = stringProblem(args.excerpt, MAX_MEMORY_DETAIL_CHARS)
-      if (kind === 'subagent') {
-        flag('excerpt', `${problem} — optional on a subagent citation, so dropped`)
-        corrected = withoutField(corrected, 'excerpt')
-      } else {
-        const wanted = 'a span copied verbatim from the tool result that observed the source'
-        flag('excerpt', `${problem} — ${wanted}`)
-        corrected = withField(corrected, 'excerpt', placeholder(wanted))
-        groundable = false
-      }
+    if (kind === 'subagent' && args.excerpt !== undefined) {
+      // The corrected call is the canonical one, and this kind takes no excerpt (#272).
+      flag('excerpt', 'a kind "subagent" citation takes no excerpt — its report is the Subagent\'s words, never page text; dropped')
+      corrected = withoutField(corrected, 'excerpt')
+    } else if (boundedString(args.excerpt, MAX_MEMORY_DETAIL_CHARS, true) === null) {
+      const wanted = 'a span copied verbatim from the tool result that observed the source'
+      flag('excerpt', `${stringProblem(args.excerpt, MAX_MEMORY_DETAIL_CHARS)} — ${wanted}`)
+      corrected = withField(corrected, 'excerpt', placeholder(wanted))
+      groundable = false
     }
     if (kind === 'web' && args.agent_id !== undefined) {
       flag('agent_id', 'a kind "web" citation carries no agent_id — only a subagent citation names one')

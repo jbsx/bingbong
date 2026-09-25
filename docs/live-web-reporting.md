@@ -929,6 +929,19 @@ refusal of every genuine paraphrase. Code-counted from the trace's verdict
 word and outside the digest like the others; an audit written before it has
 no such field, and the Fix Ledger reads that as nothing.
 
+A fifth pair sits beside it (#272, ADR 0054): **subagent citations** refused
+`excerpt_unsupported`, and those **applied with a dropped excerpt** — a kind
+"subagent" citation that offered an excerpt, which is dropped and never
+checked, so its acceptance carries a Notice. The #272 gate reads both: the
+first should stay at zero now that no excerpt is checked on this kind, and the
+second shows how often the orchestrator still offers one. They are counted
+straight from the trace's `evidence_checkpoint` records by their `agentId`
+(the cited Subagent) and `correction`, not from the rounds: the round join
+skips every record carrying an `agentId` as a Subagent's own, so such a
+checkpoint's verdict never reached the digest, and the rounds read it from the
+result's error head instead. Outside the digest like the others; an audit
+written before the pair reads "subagent citations not counted".
+
 Two more sit beside them for the Answer (#246, ADR 0028): the **Answers with an
 Identity Slip** and the **ids slipped** in them, counted from the Run's own
 `identity_slip` Run Trace records — one per Answer whose Card or Spoken
