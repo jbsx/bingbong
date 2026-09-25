@@ -1174,6 +1174,19 @@ its task and cannot mutate Session Working Memory directly. Its text is
 model-facing and may name Memory Entries by id; the display boundary that
 repairs an Identity Slip does not reach it.
 
+**Delegated Page**:
+A page a Browse Subagent of the current Run was sent to or has landed on, by
+canonical URL, from the spawn until the Run ends. It passes through three
+states — the Subagent is running, it has finished and its report is
+uncollected, its report is collected — and the Action Outcome of a call on
+one names the holder and the state: what its report will carry, that its
+report is waiting, or the findings the report already states from it. It is
+not a Held Page: the Session holds nothing from it until the report's
+findings are checkpointed. It still loads; it is read only for what the
+report will not, or does not, state. A Subagent sees its siblings' pages,
+never its own.
+_Avoid_: worker page, branch page, held by a subagent, reserved page
+
 **Delegation Probe**:
 The separate real-model capture (#163) whose corpus exists to provoke
 delegation — three genuinely independent branches per objective, each
