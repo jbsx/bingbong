@@ -19,6 +19,27 @@ suggested while the real defect — an interpolated phrase, a sentence deleted
 without a seam — stayed untouched, and both Runs ended `budget_exhausted`.
 What an excerpt is, and that a paraphrase stays refused, are unchanged.
 
+Amended on 2026-09-25 for #272, grilled from the run-traces of the four
+Browse Subagents the live-web study has spawned: a kind "subagent" citation
+takes no excerpt. One offered is dropped, never checked against the page or
+the report and never stored; the call is applied on the no-excerpt path, the
+Subagent's freshest retention of the cited source grounds it, and the result
+carries a Notice saying so. Before this the check grounded an offered excerpt
+against the Subagent's own page observations while its refusal told the
+orchestrator to "copy every passage verbatim from the report you are
+citing": all four refused excerpts in the traces were verbatim from the
+report and none was in the retained page, so the orchestrator did what it
+was told and was refused again, one Tool Round each in Investigations that
+ended at their own budget. Grounding against the report instead was rejected
+because the report is the Subagent's words, and an excerpt stored under the
+page's URL would tell a later Run the page holds words it never did. The
+refusal was also the one place this ADR's "nothing new enters the Run" was
+false: it quoted the Subagent's retained page text to an orchestrator that
+never read it, which is why a better message alone could not repair it.
+The Round Audit counts subagent citations applied with a dropped excerpt
+beside its rejection counts, so the gate reads as two numbers, never as
+silence.
+
 ## Context
 
 After #252 a Run's time is its round count times a provider floor of about
