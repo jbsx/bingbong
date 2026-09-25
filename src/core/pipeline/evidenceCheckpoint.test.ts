@@ -400,10 +400,13 @@ describe('subagent citations (#123)', () => {
       observation: 'The rival router costs $29.',
       agentId: 'a-2',
       sourceUrl: 'https://rival.example/router',
-      excerpt: 'costs $29',
+      excerptOffered: true,
       uncertainty: 'promo may vary',
       volatile: true,
     })
+    // Only the offer is kept (#272): an excerpt of any value never makes the call malformed.
+    expect(parseEvidenceCitation({ ...SUBAGENT_ARGS, excerpt: 7 })).toMatchObject({ kind: 'subagent', excerptOffered: true })
+    expect(parseEvidenceCitation({ ...SUBAGENT_ARGS, excerpt: 'x'.repeat(100_000) })).toMatchObject({ kind: 'subagent', excerptOffered: true })
   })
 
   it('rejects subagent citations without an agent id, and web/user citations carrying one', () => {
@@ -827,6 +830,12 @@ describe('a kind "subagent" citation takes no excerpt (#272)', () => {
 
     expect(outcome).toMatchObject({ ok: true, sourceObservationId: 'wobs-5', agentId: 'a-1', correction: SUBAGENT_EXCERPT_NOTICE })
     expect(JSON.stringify(store.snapshot().observations)).not.toContain('150 mm ribbon')
+  })
+
+  it('drops an excerpt that is no string, or past its bound, the same way', () => {
+    for (const excerpt of [7, 'x'.repeat(100_000)]) {
+      expect(cite({ ...ARGS, excerpt }).outcome).toMatchObject({ ok: true, sourceObservationId: 'wobs-5', correction: SUBAGENT_EXCERPT_NOTICE })
+    }
   })
 
   it('(c) applies a citation with no excerpt and no Notice', () => {

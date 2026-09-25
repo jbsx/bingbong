@@ -708,10 +708,10 @@ export interface AuditPopulation {
   readonly rewrittenShownAddresses?: number
   /** Searches that ran with an Unseen Phrase unquoted (#267); absent on an audit written before the counter. */
   readonly unseenPhraseRewrites?: number
-  /** Kind "subagent" citations refused `excerpt_unsupported` and applied with a dropped excerpt, over the attempts that count them (#272); absent when none does. */
-  readonly subagentCitations?: Readonly<SubagentCitationCounts>
   /** Of those, the ones in a round the reviewer judged Off-key; judged attempts only. */
   readonly unseenPhraseRewritesOffKey?: number
+  /** Kind "subagent" citations refused `excerpt_unsupported` and applied with a dropped excerpt, over the attempts that count them (#272); absent when none does. */
+  readonly subagentCitations?: Readonly<SubagentCitationCounts>
   /** Answers with an Identity Slip over the attempts whose trace recorded them (#246). */
   readonly identitySlipAnswers: number
   /** Ids slipped in those Answers (#246). */
@@ -2119,13 +2119,31 @@ export interface SubagentCitationCounts {
  * No Subagent checkpoints for itself, so every one is the orchestrator's.
  */
 export function subagentCitationsOf(traceRecords: readonly object[]): SubagentCitationCounts {
-  const counts: SubagentCitationCounts = { excerptUnsupported: 0, droppedExcerpts: 0 }
+  const counts = emptySubagentCitationCounts()
   for (const raw of traceRecords as unknown as readonly TraceLine[]) {
     if (raw.kind !== 'evidence_checkpoint' || raw.tool !== 'record_evidence' || !isString(raw.agentId)) continue
     if (raw.outcome === 'excerpt_unsupported') counts.excerptUnsupported += 1
-    else if (raw.outcome === 'accepted' && isString(raw.correction)) counts.droppedExcerpts += 1
+    else if (raw.outcome === 'accepted' && isString(raw.correction) && raw.correction.startsWith(DROPPED_EXCERPT_NOTICE_HEAD)) counts.droppedExcerpts += 1
   }
   return counts
+}
+
+/**
+ * The head of the Notice a dropped subagent excerpt carries
+ * (`SUBAGENT_EXCERPT_DROPPED_NOTICE` in evidenceCheckpoint.ts), kept apart
+ * because that module cannot load under plain Node, which the audit's CLI
+ * must: matched by head, so another Notice on the same acceptance never
+ * counts as a dropped excerpt.
+ */
+const DROPPED_EXCERPT_NOTICE_HEAD = 'Notice: record_evidence stored the finding without its excerpt.'
+
+function emptySubagentCitationCounts(): SubagentCitationCounts {
+  return { excerptUnsupported: 0, droppedExcerpts: 0 }
+}
+
+function addSubagentCitations(into: SubagentCitationCounts, from: Readonly<SubagentCitationCounts>): void {
+  into.excerptUnsupported += from.excerptUnsupported
+  into.droppedExcerpts += from.droppedExcerpts
 }
 
 /** The canonical URLs an attempt's accepted Evidence Checkpoints cite — what a follow-up would inherit. */
@@ -2962,11 +2980,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
     }
     if (mechanical.consentWalls !== undefined) addConsentWalls((consentWalls ??= emptyConsentWallCounts()), mechanical.consentWalls)
     if (mechanical.tierEscalations !== undefined) tierEscalations = addTierEscalations(tierEscalations ?? emptyTierEscalationCounts(), mechanical.tierEscalations)
-    if (mechanical.subagentCitations !== undefined) {
-      subagentCitations ??= { excerptUnsupported: 0, droppedExcerpts: 0 }
-      subagentCitations.excerptUnsupported += mechanical.subagentCitations.excerptUnsupported
-      subagentCitations.droppedExcerpts += mechanical.subagentCitations.droppedExcerpts
-    }
+    if (mechanical.subagentCitations !== undefined) addSubagentCitations((subagentCitations ??= emptySubagentCitationCounts()), mechanical.subagentCitations)
     if (mechanical.identitySlips === null) slipsNotRecorded += 1
     else {
       slipAnswers += mechanical.identitySlips.answers

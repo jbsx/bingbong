@@ -617,6 +617,10 @@ describe('subagent citations: excerpt_unsupported and dropped excerpts (#272)', 
     const old = classifyAttempt(inputOf({ traceRecords: traceOf(without, [EXTRA[0]!]) }))
     expect(old.subagentCitations).toEqual({ excerptUnsupported: 1, droppedExcerpts: 0 })
     expect(old.digestHash).toBe(mechanical.digestHash)
+
+    // Another Notice on a subagent acceptance is not a dropped excerpt.
+    const other = ROUNDS.map((spec) => ({ ...spec, calls: spec.calls?.map((call) => (call.correction === undefined ? call : { ...call, correction: 'Notice: something else.' })) }))
+    expect(classifyAttempt(inputOf({ traceRecords: traceOf(other, [EXTRA[0]!]) })).subagentCitations).toEqual({ excerptUnsupported: 1, droppedExcerpts: 0 })
   })
 
   it('sums them per population and prints both numbers per attempt and per population', () => {

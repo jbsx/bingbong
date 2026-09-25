@@ -56,7 +56,8 @@ export type EvidenceCitation =
       readonly observation: string
       readonly agentId: string
       readonly sourceUrl: string
-      readonly excerpt?: string
+      /** An excerpt was offered (#272): this kind takes none, so only that fact is kept, for the Notice. */
+      readonly excerptOffered?: true
       readonly uncertainty?: string
       readonly volatile?: boolean
     }
@@ -91,7 +92,7 @@ const EVIDENCE_REFUSED: string = 'the Session refused the checkpoint — it ende
  * The Notice a kind "subagent" citation's acceptance carries when it offered
  * an excerpt (#272, ADR 0054): the excerpt was dropped, and why none is kept.
  */
-const SUBAGENT_EXCERPT_DROPPED: string =
+const SUBAGENT_EXCERPT_DROPPED_NOTICE: string =
   'Notice: record_evidence stored the finding without its excerpt. A kind "subagent" citation is grounded by the ' +
   "Subagent's own observation of source_url; its report is the Subagent's words, never page text, so no excerpt is " +
   'checked or kept on this kind. Cite agent_id and one of the evidence URLs its findings carry, with no excerpt.'
@@ -160,14 +161,13 @@ export function parseEvidenceCitation(args: Record<string, unknown>): EvidenceCi
     }
   }
   const sourceUrl = boundedString(args.source_url, MAX_SOURCE_URL_CHARS)
-  const excerpt = boundedString(args.excerpt, MAX_MEMORY_DETAIL_CHARS, true)
-  if (!sourceUrl || excerpt === null) return null
-  if (canonicalizeMemoryUrl(sourceUrl) === null) return null
+  if (!sourceUrl || canonicalizeMemoryUrl(sourceUrl) === null) return null
   if (kind === 'subagent') {
-    // A subagent citation (#123) grounds in a delegated worker's
+    // A subagent citation (#123) grounds in a delegated Subagent's
     // observations: the agent id names whose. It takes no excerpt (#272)
-    // — the citing model saw the worker's report, not its tool results —
-    // but one offered is parsed so the acceptance can say it was dropped.
+    // — the citing model saw the Subagent's report, not its tool results —
+    // so one offered, whatever its value, is only noted as offered: the
+    // acceptance says it was dropped, and the value is never read.
     const agentId = boundedString(args.agent_id, MAX_PROVENANCE_CHARS)
     if (!agentId) return null
     return {
@@ -175,13 +175,15 @@ export function parseEvidenceCitation(args: Record<string, unknown>): EvidenceCi
       observation,
       agentId,
       sourceUrl,
-      ...(excerpt !== undefined ? { excerpt } : {}),
+      ...(args.excerpt !== undefined ? { excerptOffered: true as const } : {}),
       ...(uncertainty !== undefined ? { uncertainty } : {}),
       ...(volatile !== undefined ? { volatile } : {}),
     }
   }
   if (kind !== 'web') return null
   if (args.agent_id !== undefined) return null
+  const excerpt = boundedString(args.excerpt, MAX_MEMORY_DETAIL_CHARS, true)
+  if (excerpt === null) return null
   return {
     kind,
     observation,
@@ -842,7 +844,7 @@ export function evaluateEvidenceCheckpoint(
       references: [{ url: canonical, ...(title !== undefined ? { title } : {}) }],
       // Freshness judges when the evidence was truly seen (#123): the
       // worker's own observation time, not the orchestrator's commit —
-      // a report collected by a later Run stays as old as its worker.
+      // a report collected by a later Run stays as old as its Subagent's read.
       observedAt: source.at,
     })
     if (committed === null) {
@@ -861,7 +863,7 @@ export function evaluateEvidenceCheckpoint(
       agentId: citation.agentId,
       contradicts: committed.contradicts,
       // An offered excerpt was dropped, never stored (#272): the Notice says so.
-      ...(citation.excerpt !== undefined ? { correction: SUBAGENT_EXCERPT_DROPPED } : {}),
+      ...(citation.excerptOffered ? { correction: SUBAGENT_EXCERPT_DROPPED_NOTICE } : {}),
     }
   }
   if (deps.commit === undefined) return EVIDENCE_NO_SESSION
