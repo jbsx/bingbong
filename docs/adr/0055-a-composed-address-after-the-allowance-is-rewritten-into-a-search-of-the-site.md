@@ -13,7 +13,7 @@ Note (2026-09-21, #267): ADR 0064 is this rewrite's sibling for a search's
 terms — a quoted phrase the Run was never shown is unquoted before the
 search runs, and the outcome's first line says so in the same form.
 
-Note (2026-09-25, #270): the engine clause below is amended by [ADR 0066](0066-a-search-runs-on-the-run-engine-and-a-search-composed-on-another-web-engine-is-rewritten-to-it.md).
+Note (2026-09-25, #270): the engine clause below is amended by [ADR 0067](0067-a-search-runs-on-the-run-engine-and-a-search-composed-on-another-web-engine-is-rewritten-to-it.md).
 The rewrite's search runs on the Run Engine — the engine the user named this
 Run, else DuckDuckGo — never on the Run's last `q=` search, which landed it
 on Bing twice and mistook a site's own `q=` search for an engine.

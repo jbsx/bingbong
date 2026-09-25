@@ -113,7 +113,7 @@ interface RoundSpec {
     rewritten?: { site: string; query: string }
     /** The Unseen Phrase rewrite the Run Trace records on the result (#267, ADR 0064). */
     unquoted?: { phrases: string[]; query: string }
-    /** The Engine Rewrite the Run Trace records on the result (#270, ADR 0066). */
+    /** The Engine Rewrite the Run Trace records on the result (#270, ADR 0067). */
     engineRewrite?: { from: string; to: string; query: string }
   }[]
   readonly reasoning?: string
@@ -1679,7 +1679,7 @@ describe('Unseen Phrase rewrites (#267, ADR 0064)', () => {
   })
 })
 
-describe('Engine Rewrites (#270, ADR 0066)', () => {
+describe('Engine Rewrites (#270, ADR 0067)', () => {
   const GOOGLE = 'https://www.google.com/search?q=longitude+watch+1938'
   const YAHOO = 'https://search.yahoo.com/search?p=longitude+watch+maker'
   const ON_DDG = 'https://duckduckgo.com/?q=longitude%20watch%201938'

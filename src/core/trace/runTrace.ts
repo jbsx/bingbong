@@ -432,7 +432,7 @@ export interface PipelineEventTraceEvent {
    */
   readonly unquoted?: UnseenPhraseRewriteStamp
   /**
-   * The Engine Rewrite a `tool_result` opens with (#270, ADR 0066): the
+   * The Engine Rewrite a `tool_result` opens with (#270, ADR 0067): the
    * Web Engine the model searched on, the Run Engine the search ran on, and
    * the terms — the `tool_call` beside it keeps the address as written.
    * Absent on every other result and kind.

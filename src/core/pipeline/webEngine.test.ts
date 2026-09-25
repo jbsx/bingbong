@@ -4,7 +4,7 @@ import { DEFAULT_RUN_ENGINE, WEB_ENGINES, runEngineOf, webEngineOfHost, webEngin
 
 const nameOf = (host: string): string | null => webEngineOfHost(host)?.name ?? null
 
-describe('the Web Engine list (#270, ADR 0066)', () => {
+describe('the Web Engine list (#270, ADR 0067)', () => {
   it('is one fixed list, DuckDuckGo the Run Engine by default', () => {
     expect(WEB_ENGINES.map((engine) => engine.name)).toEqual([
       'google',

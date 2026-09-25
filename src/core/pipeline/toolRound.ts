@@ -91,7 +91,7 @@ export interface ToolRoundCapabilities {
    */
   readonly unseenPhraseRail: boolean
   /**
-   * The Engine Rewrite (#270, ADR 0066): a search on a Web Engine other
+   * The Engine Rewrite (#270, ADR 0067): a search on a Web Engine other
    * than the Run Engine runs as the Run Engine's. First in the rewrite
    * chain, so the Composed Address and Unseen Phrase rewrites and every
    * gate and rail see the search that runs. It observes nothing and trips
@@ -271,7 +271,7 @@ export interface ToolRoundConfig {
    */
   readonly shownTexts?: () => readonly ShownText[]
   /**
-   * The Run Engine (#270, ADR 0066), read per search: what the Engine
+   * The Run Engine (#270, ADR 0067), read per search: what the Engine
    * Rewrite and the Composed Address rewrite compose on. The engine the
    * user named in the Run's command or a Steering directive; a Subagent's,
    * handed down from the Run that spawned it. Absent — DuckDuckGo.
@@ -698,7 +698,7 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
       // directive.
       const closedTool = intercepted === null && isInFinalization() ? toolsByName.get(call.name) : undefined
       const closed = closedTool !== undefined && closedInFinalization(closedTool)
-      // The Engine Rewrite (#270, ADR 0066): a search on a Web Engine other
+      // The Engine Rewrite (#270, ADR 0067): a search on a Web Engine other
       // than the Run Engine runs as the Run Engine's search, first in the
       // chain, so the rewrites after it see the rewritten call.
       const engineRewrite = intercepted === null && !closed ? (engineRewriteRail?.rewrite(call) ?? null) : null

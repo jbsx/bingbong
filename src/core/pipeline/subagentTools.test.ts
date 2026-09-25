@@ -239,7 +239,7 @@ describe('subagent tools', () => {
     expect(received!.expired()).toBe(true)
   })
 
-  it('hands the Run Engine to the manager live, never one read from the brief (#270, ADR 0066)', async () => {
+  it('hands the Run Engine to the manager live, never one read from the brief (#270, ADR 0067)', async () => {
     let received: (() => WebEngine) | undefined
     const tools = createSubagentTools(fakeManager({
       spawn: (_kind, _task, context) => {

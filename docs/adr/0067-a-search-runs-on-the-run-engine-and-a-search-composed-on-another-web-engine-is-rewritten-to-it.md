@@ -1,4 +1,4 @@
-# ADR 0066: A search runs on the Run Engine, and a search composed on another Web Engine is rewritten to it
+# ADR 0067: A search runs on the Run Engine, and a search composed on another Web Engine is rewritten to it
 
 ## Status
 

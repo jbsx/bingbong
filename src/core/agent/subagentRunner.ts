@@ -287,7 +287,7 @@ export interface RunSubagentOptions {
    */
   traceVision?: VisionTraceReporter
   /**
-   * The spawning Run's Run Engine (#270, ADR 0066), read live: what this
+   * The spawning Run's Run Engine (#270, ADR 0067), read live: what this
    * Subagent's Engine Rewrite and Composed Address rewrite compose on. The
    * brief is the orchestrator's words, so it never names one. Absent —
    * DuckDuckGo.

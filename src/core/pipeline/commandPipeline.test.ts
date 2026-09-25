@@ -6770,7 +6770,7 @@ describe('observation ledger (#111)', () => {
     ])
   })
 
-  it('composes on the engine the command named for that Run only: a follow-up is back on DuckDuckGo (#270, ADR 0066)', async () => {
+  it('composes on the engine the command named for that Run only: a follow-up is back on DuckDuckGo (#270, ADR 0067)', async () => {
     const urls: string[] = []
     const navigate: Tool = {
       name: 'navigate',

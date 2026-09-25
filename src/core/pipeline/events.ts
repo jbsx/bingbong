@@ -92,7 +92,7 @@ export type PipelineEvent = SessionEventIdentity & (
        */
       unquoted?: UnseenPhraseRewriteStamp
       /**
-       * The Engine Rewrite this result is for (#270, ADR 0066): present
+       * The Engine Rewrite this result is for (#270, ADR 0067): present
        * only when a search on another Web Engine ran on the Run Engine,
        * read from the round like `rewritten`.
        */

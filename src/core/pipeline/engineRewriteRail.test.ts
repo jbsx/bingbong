@@ -10,7 +10,7 @@ const engineNamed = (name: string): WebEngine => WEB_ENGINES.find((candidate) =>
 
 const railOn = (runEngine: WebEngine = DEFAULT_RUN_ENGINE) => createEngineRewriteRail({ runEngine: () => runEngine })
 
-describe('createEngineRewriteRail (#270, ADR 0066)', () => {
+describe('createEngineRewriteRail (#270, ADR 0067)', () => {
   it('rewrites a Google, Bing or Yahoo search to the Run Engine with its terms kept, the call keeping its id and name', () => {
     const rail = railOn()
     const google = rail.rewrite(navigate('https://www.google.com/search?q=longitude+watch+1938&hl=en'))

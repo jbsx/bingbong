@@ -894,7 +894,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
       generation: runGeneration,
       isCurrentGeneration: (generation) => generation === latestSessionGeneration,
     })
-    // The Run Engine (#270, ADR 0066), read per search from this Run's own
+    // The Run Engine (#270, ADR 0067), read per search from this Run's own
     // ledger: the command and every Steering directive are recorded there,
     // so a follow-up — a new Run, a new ledger — starts at DuckDuckGo again.
     const runEngine = (): WebEngine => runEngineOf(userWordsOf(ledger.snapshot()))
@@ -1305,7 +1305,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           effortTier: () => effortEpoch.tier,
           finalizing: () => effortEpoch.phase.kind !== 'working',
           delegationDeadline: effortEpoch.delegationDeadline,
-          // The Run Engine (#270, ADR 0066): what this Run's searches
+          // The Run Engine (#270, ADR 0067): what this Run's searches
           // compose on, handed down live to a spawned Subagent, since a
           // Subagent's brief is the orchestrator's words, never the user's.
           runEngine,
@@ -1392,7 +1392,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           // ledger, every record — the command, every read and outcome
           // failed or not, Steering and Subagent Reports — read per search.
           shownTexts: () => shownTextsOf(ledger.snapshot()),
-          // The Run Engine (#270, ADR 0066): the engine the user named in
+          // The Run Engine (#270, ADR 0067): the engine the user named in
           // this Run's command or a Steering directive, else DuckDuckGo.
           runEngine,
           // The verification rail's Session seams (#212, ADR 0041). All

@@ -38,7 +38,7 @@ export interface ToolContext {
    */
   delegationDeadline?: SubagentSharedDeadline
   /**
-   * The Run Engine (#270, ADR 0066): what the Run's searches compose on,
+   * The Run Engine (#270, ADR 0067): what the Run's searches compose on,
    * read live. Delegation hands it to a spawned Subagent, whose brief is the
    * orchestrator's words and so can never name one for the user.
    */

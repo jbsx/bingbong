@@ -1,7 +1,7 @@
 import type { ToolCall, ToolResultOutcome } from '../ports/llm'
 import { readRunEngine, webEngineSearchOf, type WebEngine } from './webEngine'
 
-// #270, ADR 0066: the Engine Rewrite. The model chose its engine per search —
+// #270, ADR 0067: the Engine Rewrite. The model chose its engine per search —
 // DuckDuckGo mostly, Bing now and then, Google four times across three
 // captures, and Google walled all four (a Challenge on every `/search`). The
 // engine was a variable no capture held fixed, and the Composed Address and

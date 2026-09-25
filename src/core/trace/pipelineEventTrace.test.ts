@@ -160,7 +160,7 @@ describe('the pipeline_event tap (#185)', () => {
     expect(records[3]).not.toHaveProperty('unquoted')
   })
 
-  it('stamps an Engine Rewrite from the event’s own field, a failed or non-text result included (#270, ADR 0066)', () => {
+  it('stamps an Engine Rewrite from the event’s own field, a failed or non-text result included (#270, ADR 0067)', () => {
     const { records, sink } = collector()
     const trace = createPipelineEventTraceWriter({ sink, now: () => 0 })
     const stamp = { from: 'google', to: 'duckduckgo', query: 'voyager heliopause' }

@@ -62,7 +62,7 @@ export function pipelineEventTraceBody(event: PipelineEvent, agentId?: string): 
   const rewritten = event.rewritten !== undefined ? { rewritten: event.rewritten } : {}
   // Its sibling the Unseen Phrase rewrite (#267, ADR 0064), read the same way.
   const unquoted = event.unquoted !== undefined ? { unquoted: event.unquoted } : {}
-  // And the Engine Rewrite (#270, ADR 0066), read the same way.
+  // And the Engine Rewrite (#270, ADR 0067), read the same way.
   const engineRewrite = event.engineRewrite !== undefined ? { engineRewrite: event.engineRewrite } : {}
   if (typeof event.result !== 'string') {
     return { kind: 'pipeline_event', event, ...rewritten, ...unquoted, ...engineRewrite, ...stamped }

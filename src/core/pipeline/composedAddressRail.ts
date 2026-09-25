@@ -25,7 +25,7 @@ import { reportFault } from '../trace/fault'
 // third move — another composed address — so each one spent a round doing
 // nothing. The rewrite spends the round on what the refusal asked for: the
 // composed path's words as a search of the site, on the Run Engine (#270,
-// ADR 0066: the engine the model last typed was once taken, and Google
+// ADR 0067: the engine the model last typed was once taken, and Google
 // walled it). The rewrite is a search to every rail, this one included,
 // and nothing here ends a Run, so the rail has no Finalization to trip.
 //
@@ -56,7 +56,7 @@ export interface ComposedAddressRailDeps {
    */
   evidenceSourceUrls?: () => readonly string[]
   /**
-   * The Run Engine (#270, ADR 0066), read at every rewrite so a Steering
+   * The Run Engine (#270, ADR 0067), read at every rewrite so a Steering
    * directive naming an engine counts. Absent, or throwing, DuckDuckGo.
    */
   runEngine?: () => WebEngine

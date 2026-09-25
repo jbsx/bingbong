@@ -3,7 +3,7 @@ import { normalizeUrlInput, searchUrl } from '../browser/urlInput'
 import { hostFromUrl, siteOfHost } from './blockerGate'
 import { reportFault } from '../trace/fault'
 
-// #270, ADR 0066: the Web Engines. A general web search engine, as against a
+// #270, ADR 0067: the Web Engines. A general web search engine, as against a
 // site's own search: the set of vendors is the concept, so it is a fixed
 // list by registrable domain rather than a shape — no shape separates an
 // engine's `/search?q=` from a museum's. An engine missing from the list is
@@ -74,7 +74,7 @@ const DUCKDUCKGO: WebEngine = {
   searchUrl,
 }
 
-/** Every Web Engine (#270, ADR 0066): the one list. */
+/** Every Web Engine (#270, ADR 0067): the one list. */
 export const WEB_ENGINES: readonly WebEngine[] = [
   engine('google', 'Google', 'https://www.google.com/search', ['q']),
   engine('bing', 'Bing', 'https://www.bing.com/search', ['q']),
@@ -172,7 +172,7 @@ function namings(text: string): { engine: WebEngine; at: number }[] {
 }
 
 /**
- * The Run Engine (#270, ADR 0066): the engine the user last named in their
+ * The Run Engine (#270, ADR 0067): the engine the user last named in their
  * own words this Run, read in the order they were said — the command, then
  * each Steering directive — else DuckDuckGo.
  */

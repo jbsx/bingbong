@@ -1051,7 +1051,7 @@ describe('the Unseen Phrase rewrite (#267, ADR 0064)', () => {
   })
 })
 
-describe('the Engine Rewrite (#270, ADR 0066)', () => {
+describe('the Engine Rewrite (#270, ADR 0067)', () => {
   function navigateTool(trace: string[]): Tool {
     return {
       name: 'navigate',

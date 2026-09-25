@@ -218,7 +218,7 @@ on not tuning to the judged data.
 ## Notes
 
 - 2026-09-25 (#270): the deferred "rewrite a walled engine's search" is
-  taken by [ADR 0066](0066-a-search-runs-on-the-run-engine-and-a-search-composed-on-another-web-engine-is-rewritten-to-it.md),
+  taken by [ADR 0067](0067-a-search-runs-on-the-run-engine-and-a-search-composed-on-another-web-engine-is-rewritten-to-it.md),
   made general and moved ahead of the wall: every model search on a Web
   Engine other than the Run Engine is rewritten to the Run Engine before it
   runs, so the first wall per Run is never paid. Google walled all 4 of its

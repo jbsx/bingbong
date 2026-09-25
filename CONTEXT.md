@@ -1148,7 +1148,7 @@ search.brave.com only), Startpage, Ecosia, Mojeek, Qwant, Kagi — as against a
 site's own search. Only its web search is a search on it — its maps, books or
 finance pages are not. A Search URL on any other site is a site search,
 whatever parameter it names. An engine missing from the list is a capture finding, not
-a bug (#270, ADR 0066).
+a bug (#270, ADR 0067).
 _Avoid_: search engine (when a site search is meant), surface
 
 **Run Engine**:
@@ -1157,7 +1157,7 @@ their own words this Run — the command or a Steering directive, the last one
 named — else the app's default, DuckDuckGo. Per Run only; a follow-up starts
 at DuckDuckGo again. A Subagent's is the Run Engine of the Run that spawned
 it, since its brief is not the user's words. A Composed Address rewrite runs
-its site search on it (#270, ADR 0066).
+its site search on it (#270, ADR 0067).
 _Avoid_: default engine, search provider
 
 **Engine Rewrite**:
@@ -1166,7 +1166,7 @@ same round to the Run Engine's Search URL with its terms kept, the outcome's
 first line saying so. First in the rewrite chain: the Composed Address and
 Unseen Phrase rewrites see the call it produced, and when more than one
 applies each adds its own line, the engine's first. An engine's home page is
-no search, and what is typed into its box is never rewritten (#270, ADR 0066).
+no search, and what is typed into its box is never rewritten (#270, ADR 0067).
 _Avoid_: engine normalisation, redirect
 
 **Blocker**:

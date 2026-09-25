@@ -274,7 +274,7 @@ describe('the rewritten search (#255, ADR 0055)', () => {
     expect(composedAddressSearchQuery('https://www.eurostar.com/rw-en/luggage?id=42&lang=en#allowance', 'eurostar.com')).toBe('rw en luggage site:eurostar.com')
   })
 
-  it('runs on the Run Engine, never on the engine or site the model last searched with (#270, ADR 0066)', () => {
+  it('runs on the Run Engine, never on the engine or site the model last searched with (#270, ADR 0067)', () => {
     const rail = spentOnNasa()
     rail.observe(nav('https://www.bing.com/search?q=voyager'), found('https://www.bing.com/search?q=voyager'))
     rail.observe(nav('https://www.nasa.gov/search?q=voyager'), found('https://www.nasa.gov/search?q=voyager'))
@@ -282,7 +282,7 @@ describe('the rewritten search (#255, ADR 0055)', () => {
     expect(rail.rewrite(nav('https://www.nasa.gov/voyager-record'))?.url).toBe('https://duckduckgo.com/?q=voyager%20record%20site%3Anasa.gov')
   })
 
-  it('runs on the engine the user named, read at every rewrite (#270, ADR 0066)', () => {
+  it('runs on the engine the user named, read at every rewrite (#270, ADR 0067)', () => {
     let runEngine = WEB_ENGINES.find((engine) => engine.name === 'google')!
     const rail = spentOnNasa({ runEngine: () => runEngine })
 

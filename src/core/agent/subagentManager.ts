@@ -160,7 +160,7 @@ export interface SubagentTaskHooks {
    */
   traceVision?: VisionTraceReporter
   /**
-   * The spawning Run's Run Engine (#270, ADR 0066), read live: what this
+   * The spawning Run's Run Engine (#270, ADR 0067), read live: what this
    * Subagent's searches compose on. Absent — a spawn outside any Run —
    * DuckDuckGo.
    */

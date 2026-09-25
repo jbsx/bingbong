@@ -217,7 +217,7 @@ export interface AuditCall {
    */
   readonly unquoted?: readonly string[]
   /**
-   * The Engine Rewrite a search ran under (#270, ADR 0066): the Web Engine
+   * The Engine Rewrite a search ran under (#270, ADR 0067): the Web Engine
    * the model searched on and the Run Engine it ran on, `google → duckduckgo`,
    * read from the Run Trace's field on the result, while `args` keep the
    * address as the model wrote it. Present only on a rewrite, so an attempt
@@ -520,7 +520,7 @@ export interface AuditMechanical {
   readonly subagentCitations?: Readonly<SubagentCitationCounts>
   /**
    * The round of every search that ran on the Run Engine in place of the
-   * Web Engine the model named, one entry per call (#270, ADR 0066), read
+   * Web Engine the model named, one entry per call (#270, ADR 0067), read
    * from the stamp and never from the line. Beside the rounds, never in
    * them. Absent on an audit written before the counter.
    */
@@ -1189,7 +1189,7 @@ function rewritesByHuntSection(byHunt: Readonly<Record<string, Readonly<RewriteC
   return [
     '## Rewrites by hunt',
     '',
-    'Composed Addresses rewritten into a search of the site (ADR 0055), searches that ran with an Unseen Phrase unquoted (ADR 0064) and searches that ran on the Run Engine in place of another Web Engine (ADR 0066), one per call, from the Tool Round’s own stamps.',
+    'Composed Addresses rewritten into a search of the site (ADR 0055), searches that ran with an Unseen Phrase unquoted (ADR 0064) and searches that ran on the Run Engine in place of another Web Engine (ADR 0067), one per call, from the Tool Round’s own stamps.',
     '',
     '| hunt | composed addresses | unseen phrases | engine rewrites |',
     '| --- | --- | --- | --- |',

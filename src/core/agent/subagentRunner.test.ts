@@ -186,7 +186,7 @@ describe('runSubagent', () => {
     expect(llm.requests[2]?.toolResults?.[1]?.outcome).toMatchObject({ ok: true, result: expect.stringMatching(/^Rewritten — "Has Not Yet Left" appears in nothing this run was shown, so it ran unquoted: Has Not Yet Left NASA\./) })
   })
 
-  it('runs a search on another Web Engine on the Run Engine it was handed, and on DuckDuckGo when handed none (#270, ADR 0066)', async () => {
+  it('runs a search on another Web Engine on the Run Engine it was handed, and on DuckDuckGo when handed none (#270, ADR 0067)', async () => {
     const urls: string[] = []
     const navigate: Tool = {
       name: 'navigate',
