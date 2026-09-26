@@ -4,12 +4,14 @@
 // without spend), else Jev when the decision role resolves, else none —
 // and none means every seam is off and the Run behaves as it always has.
 
+import { createHash } from 'node:crypto'
 import {
   DECISION_SCRIPT_ENV_KEY,
   resolveDecisionRouting,
   resolveDecisionSeams,
 } from '../../core/agent/modelRouting.ts'
 import {
+  DECISION_UNAVAILABLE_REASONS,
   readDecisionAnswers,
   type ConfiguredDecisionModel,
   type DecisionModel,
@@ -19,7 +21,7 @@ import {
 } from '../../core/ports/decisionModel.ts'
 import { createJevDecisionModel } from './createJevDecisionModel.ts'
 
-const SCRIPTED_REASONS: readonly DecisionUnavailableReason[] = ['timeout', 'transport', 'http', 'malformed', 'cancelled', 'failed']
+
 
 /** One scripted ask: the raw answers (read against the questions like a vendor's), or an unavailable reason. */
 type ScriptEntry = { readonly answers: unknown } | { readonly unavailable: DecisionUnavailableReason }
@@ -28,7 +30,7 @@ function isScriptEntry(value: unknown): value is ScriptEntry {
   if (typeof value !== 'object' || value === null) return false
   if ('answers' in value) return true
   const reason = (value as { unavailable?: unknown }).unavailable
-  return SCRIPTED_REASONS.some((known) => known === reason)
+  return DECISION_UNAVAILABLE_REASONS.some((known) => known === reason)
 }
 
 /** Parse the script once; a broken one leaves an error every ask reports. */
@@ -88,7 +90,10 @@ export function createDecisionModelSource(getEnv: () => Record<string, string | 
   let current: ConfiguredDecisionModel | null = null
   return () => {
     const env = getEnv()
-    const next = JSON.stringify([env[DECISION_SCRIPT_ENV_KEY]?.trim() ?? null, resolveDecisionRouting(env), [...resolveDecisionSeams(env)]])
+    // Hashed, so the key is not kept in a plain string beside the client that holds it.
+    const next = createHash('sha256')
+      .update(JSON.stringify([env[DECISION_SCRIPT_ENV_KEY]?.trim() ?? null, resolveDecisionRouting(env), [...resolveDecisionSeams(env)]]))
+      .digest('hex')
     if (next !== signature) {
       signature = next
       current = createDecisionModel(env)

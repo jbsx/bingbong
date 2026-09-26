@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { DECISION_THRESHOLDS, type DecisionModel } from '../../../src/core/ports/decisionModel.ts'
+import type { DecisionModel } from '../../../src/core/ports/decisionModel.ts'
 import { EFFORT_TIERS } from '../../../src/core/pipeline/runPlan.ts'
 import {
   askSamples,
+  chooseThreshold,
   landingUrl,
   listingResults,
   MAX_OPTIONS,
@@ -38,12 +39,21 @@ const PAGE_READ = [
   'Measurements: | Dial diameter: 102 mm',
 ].join('\n')
 
-function readCall(callId: string): ShadowTraceLine[] {
-  return [event('tool_call', { name: 'read_page', callId, args: {} }), event('tool_result', { name: 'read_page', callId, ok: true, result: PAGE_READ })]
+/** A Page Read published at `at`, its observation stamped a millisecond before, as the ledger does. */
+function readCall(callId: string, at: number): ShadowTraceLine[] {
+  return [
+    event('tool_call', { name: 'read_page', callId, args: {} }),
+    event('tool_result', { name: 'read_page', callId, ok: true, result: PAGE_READ, at }),
+  ]
 }
 
-function checkpoint(excerpt: string, extra: Partial<ShadowTraceLine> = {}): ShadowTraceLine {
-  return { kind: 'evidence_checkpoint', turnId: TURN, tool: 'record_evidence', outcome: 'accepted', excerpt, ...extra }
+/** An accepted checkpoint the grader grounded on the Page Read observed at `readObservedAt`, or on a landing when absent. */
+function checkpoint(excerpt: string, readObservedAt?: number, extra: Partial<ShadowTraceLine> = {}): ShadowTraceLine {
+  const graded =
+    readObservedAt === undefined
+      ? [{ matched: true, producer: 'action_outcome', observedAt: 1 }]
+      : [{ matched: false, producer: 'action_outcome', observedAt: 1 }, { matched: true, producer: 'page_read', observedAt: readObservedAt }]
+  return { kind: 'evidence_checkpoint', turnId: TURN, tool: 'record_evidence', outcome: 'accepted', excerpt, graded, ...extra }
 }
 
 const LISTING = [
@@ -72,10 +82,10 @@ describe('reading Runs from a trace (#275)', () => {
     const [run] = readShadowRuns('cap', [
       COMMAND,
       PLAN,
-      ...readCall('c1'),
+      ...readCall('c1', 5_000),
       event('tool_call', { name: 'read_page', callId: 's1', args: {} }, { agentId: 'agent-1' }),
-      checkpoint('ignored', { agentId: 'agent-1' }),
-      checkpoint('Dial diameter: 102 mm'),
+      checkpoint('ignored', 4_999, { agentId: 'agent-1' }),
+      checkpoint('Dial diameter: 102 mm', 4_999),
       { kind: 'evidence_checkpoint', turnId: TURN, tool: 'record_evidence', outcome: 'excerpt_unsupported', excerpt: 'rejected' },
     ])
     expect(run).toMatchObject({ capture: 'cap', turnId: TURN, command: 'what is the dial diameter of H4?', tier: 'lookup', askedItems: ['H4 dial diameter'] })
@@ -100,8 +110,8 @@ describe('passage samples (#275)', () => {
     ])
   })
 
-  it('takes the model\'s pick from the passage holding its next accepted excerpt, whitespace and case aside', () => {
-    const [run] = readShadowRuns('cap', [COMMAND, PLAN, ...readCall('c1'), checkpoint('ID: | zaa0037 | measurements: | DIAL   diameter: 102 mm')])
+  it('takes the model\'s pick from the passage holding the excerpt grounded on that read, whitespace and case aside', () => {
+    const [run] = readShadowRuns('cap', [COMMAND, PLAN, ...readCall('c1', 5_000), checkpoint('ID: | zaa0037 | measurements: | DIAL   diameter: 102 mm', 4_999)])
     const [sample] = passageSamples(run)
     // "ID:" and "zaa0037" are too short to pin a passage; the diameter pins p4.
     expect(sample.truth.picks).toEqual(['p4'])
@@ -112,8 +122,21 @@ describe('passage samples (#275)', () => {
   })
 
   it('records "picked none" for a read the model recorded nothing from', () => {
-    const [run] = readShadowRuns('cap', [COMMAND, PLAN, ...readCall('c1'), checkpoint('a passage from some other page entirely')])
+    const [run] = readShadowRuns('cap', [COMMAND, PLAN, ...readCall('c1', 5_000), checkpoint('a passage from some other page entirely', 4_999)])
     expect(passageSamples(run)[0].truth.picks).toEqual([])
+  })
+
+  it('never credits a read with a checkpoint grounded elsewhere, even one quoting its words', () => {
+    // Grounded on a navigate landing of the same page: the read showed it too, but the model recorded it from the landing.
+    const [landed] = readShadowRuns('cap', [COMMAND, PLAN, ...readCall('c1', 5_000), checkpoint('Dial diameter: 102 mm')])
+    expect(passageSamples(landed)[0].truth.picks).toEqual([])
+
+    // Two reads of one page: the checkpoint grounded on the second credits only the second.
+    const [twice] = readShadowRuns('cap', [COMMAND, PLAN, ...readCall('c1', 5_000), ...readCall('c2', 9_000), checkpoint('Dial diameter: 102 mm', 8_999)])
+    expect(passageSamples(twice).map((sample) => [sample.callId, sample.truth.picks])).toEqual([
+      ['c1', []],
+      ['c2', ['p4']],
+    ])
   })
 
   it(`cuts a page at ${MAX_OPTIONS} passages and says so`, () => {
@@ -146,10 +169,30 @@ describe('result samples (#275)', () => {
       COMMAND,
       PLAN,
       ...landing('n1'),
-      ...readCall('c1'),
+      ...readCall('c1', 5_000),
       event('tool_call', { name: 'navigate', callId: 'n2', args: { url: 'https://en.wikipedia.org/wiki/H4_(watch)/' } }),
     ])
     expect(resultSamples(navigate[0])[0].truth.picks).toEqual(['r22'])
+  })
+
+  it('leaves out a click made after a scroll or Page Read, whose ref names a newer snapshot', () => {
+    const scrolled = readShadowRuns('cap', [
+      COMMAND,
+      PLAN,
+      ...landing('n1'),
+      event('tool_call', { name: 'scroll', callId: 's1', args: {} }),
+      event('tool_call', { name: 'click', callId: 'k1', args: { ref: 21 } }),
+    ])
+    expect(resultSamples(scrolled[0])).toEqual([])
+    // A checkpoint between them shows no page, so the click still reads against the listing.
+    const recorded = readShadowRuns('cap', [
+      COMMAND,
+      PLAN,
+      ...landing('n1'),
+      event('tool_call', { name: 'record_candidate', callId: 'rc', args: {} }),
+      event('tool_call', { name: 'click', callId: 'k1', args: { ref: 22 } }),
+    ])
+    expect(resultSamples(recorded[0])[0].truth.picks).toEqual(['r22'])
   })
 
   it('records "picked none" when the model searched again instead', () => {
@@ -216,16 +259,38 @@ describe('asking and summarizing (#275)', () => {
         row({ modelPicks: [], choice: 'p3', confidence: 0.9, noul: 0.95, latencyMs: 110 }),
         row({ modelPicks: ['p1'], unavailable: 'timeout', latencyMs: 800 }),
       ],
-      DECISION_THRESHOLDS,
+      { choice: 0.7, noul: 0.7 },
     )
     expect(summary.samples).toBe(5)
     expect(summary.unavailable).toEqual({ timeout: 1 })
-    expect(summary.latencyMs).toEqual({ median: 100, p95: 120 })
+    // The timeout is the seam's worst cost, so latency counts it.
+    expect(summary.latencyMs).toEqual({ median: 110, p95: 800 })
     expect(summary.choice.scored).toBe(2)
     expect(summary.choice.agreement).toBe(0.5)
     expect(summary.choice.byConfidence[9]).toEqual({ from: 0.9, to: 1, n: 1, rate: 1 })
     expect(summary.choice.byConfidence[7]).toEqual({ from: 0.7, to: 0.8, n: 1, rate: 0 })
     expect(summary.noul?.agreementAtHalf).toBe(0.75)
-    expect(summary.atThreshold).toEqual({ acted: 3, agreed: 1, modelPickedNothing: 1 })
+    // "Recorded nothing" is its own column, never a disagreement.
+    expect(summary.atThreshold).toEqual({ thresholds: { choice: 0.7, noul: 0.7 }, acted: 3, agreed: 1, disagreed: 1, recordedNothing: 1 })
+    expect(summary.choice.thresholds[9]).toEqual({ at: 0.9, acted: 3, agreed: 1, disagreed: 0, recordedNothing: 2, agreement: 1 })
+    expect(summary.multiPick).toBe(0)
+  })
+})
+
+describe('choosing a bar from the table (#275, the owner\'s rule)', () => {
+  const bar = (at: number, agreed: number, disagreed: number) => ({ at, acted: agreed + disagreed + 3, agreed, disagreed, recordedNothing: 3, agreement: agreed + disagreed === 0 ? null : agreed / (agreed + disagreed) })
+
+  it('takes the lowest bar agreeing at least 0.8 over at least ten scored acts', () => {
+    expect(chooseThreshold([bar(0.5, 14, 6), bar(0.6, 13, 3), bar(0.7, 10, 2), bar(0.8, 8, 1)])).toBe(0.6)
+  })
+
+  it('never counts the acts where the model recorded nothing', () => {
+    // 8 agreed of 10 scored reaches the bar however many recorded-nothing acts ride along.
+    expect(chooseThreshold([{ at: 0.7, acted: 40, agreed: 8, disagreed: 2, recordedNothing: 30, agreement: 0.8 }])).toBe(0.7)
+  })
+
+  it('falls back to the highest bar still resting on ten scored acts, and to none without one', () => {
+    expect(chooseThreshold([bar(0.6, 10, 5), bar(0.7, 8, 3), bar(0.8, 6, 2), bar(0.9, 3, 1)])).toBe(0.7)
+    expect(chooseThreshold([bar(0.9, 3, 1)])).toBeNull()
   })
 })

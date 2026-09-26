@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { parseDotEnv } from '../settings/dotEnv'
 import {
   DECISION_SCRIPT_ENV_KEY,
   DECISION_SEAMS,
@@ -180,6 +181,16 @@ describe('the decision role (#275, ADR 0068)', () => {
     expect(resolveDecisionSeams({ ...key, BINGBONG_DECISION_SEAMS: ' Passage, tier ' })).toEqual(new Set(['passage', 'tier']))
     // An unknown name is dropped rather than failing a Run over a typo in an experiment variable.
     expect(resolveDecisionSeams({ ...key, BINGBONG_DECISION_SEAMS: 'result,rsult' })).toEqual(new Set(['result']))
+  })
+
+  it('acts on no seam when BINGBONG_DECISION_SEAMS is set but empty — the off switch that keeps the key', () => {
+    const key = { TYPESAFE_API_KEY: 'ts-secret' }
+    expect(resolveDecisionSeams({ ...key, BINGBONG_DECISION_SEAMS: '' })).toEqual(new Set())
+    expect(resolveDecisionSeams({ ...key, BINGBONG_DECISION_SEAMS: '  ' })).toEqual(new Set())
+    // Read from an env file the way the app reads one, `KEY=` is set and empty.
+    expect(resolveDecisionSeams({ ...key, ...parseDotEnv('BINGBONG_DECISION_SEAMS=\n') })).toEqual(new Set())
+    // Unset still means every seam.
+    expect(resolveDecisionSeams({ ...key, BINGBONG_DECISION_SEAMS: undefined })).toEqual(new Set(DECISION_SEAMS))
   })
 
   it('counts the scripted stand-in as a configured role', () => {

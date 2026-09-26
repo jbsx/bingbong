@@ -1,12 +1,22 @@
 {
   "kind": "decision_shadow",
   "issue": 275,
-  "generatedAt": "2026-09-26T18:10:19.844Z",
+  "generatedAt": "2026-09-26T18:23:11.044Z",
   "model": "jev-1.13.0",
   "timeoutMs": 800,
   "thresholds": {
-    "choice": 0.7,
-    "noul": 0.7
+    "passage": {
+      "choice": 0.7,
+      "noul": 0.9
+    },
+    "result": {
+      "choice": 0.7,
+      "noul": 0.7
+    },
+    "tier": {
+      "choice": 0.7,
+      "noul": 0.7
+    }
   },
   "sets": {
     "fix-265-267": 20,
@@ -15,9 +25,10 @@
   "runs": 48,
   "limits": [
     "passage: measured on Page Reads only; a navigate landing holds a Page Preview in the trace, never the landing text, so landing agreement comes from #274's first capture",
-    "passage: the model's pick is the passage holding its next accepted record_evidence excerpt from that read; a read it recorded nothing from is \"picked none\"",
+    "passage: the model's pick is the passage holding the excerpt of the first accepted record_evidence the grader grounded on that very read (its page_read observation); a read no checkpoint was grounded on is \"picked none\", and an excerpt spanning several passages makes each a pick (multiPick)",
     "passage and result: every declared Asked Item is offered as open; which were still open at a given step is not recorded",
-    "result: the model's pick is the result its next navigate or click opened; a new search, a type or anything else is \"picked none\"; navigate results are cut at 8,000 characters in the trace",
+    "result: the model's pick is the result its next navigate or click opened; a new search, a type or anything else is \"picked none\"; a click after a scroll, Page Read or Look names a newer snapshot's ref and is left out; navigate results are cut at 8,000 characters in the trace",
+    "\"recorded nothing\" (the model picked nothing where the seam would act) is its own column, never a disagreement: it is unmeasured from traces",
     "tier: follow-up commands are asked without the Run they follow"
   ],
   "seams": {
@@ -25,13 +36,14 @@
       "samples": 148,
       "unavailable": {},
       "latencyMs": {
-        "median": 233,
-        "p95": 278
+        "median": 252,
+        "p95": 297
       },
       "optionsCut": 17,
+      "multiPick": 39,
       "choice": {
-        "scored": 73,
-        "agreement": 0.699,
+        "scored": 66,
+        "agreement": 0.712,
         "byConfidence": [
           {
             "from": 0,
@@ -42,49 +54,49 @@
           {
             "from": 0.1,
             "to": 0.2,
-            "n": 2,
-            "rate": 0.5
+            "n": 0,
+            "rate": null
           },
           {
             "from": 0.2,
             "to": 0.3,
-            "n": 2,
-            "rate": 0
+            "n": 1,
+            "rate": 1
           },
           {
             "from": 0.3,
             "to": 0.4,
             "n": 7,
-            "rate": 0.571
+            "rate": 0.714
           },
           {
             "from": 0.4,
             "to": 0.5,
             "n": 6,
-            "rate": 0.833
+            "rate": 0.5
           },
           {
             "from": 0.5,
             "to": 0.6,
-            "n": 15,
+            "n": 10,
             "rate": 0.8
           },
           {
             "from": 0.6,
             "to": 0.7,
-            "n": 22,
-            "rate": 0.682
+            "n": 20,
+            "rate": 0.55
           },
           {
             "from": 0.7,
             "to": 0.8,
-            "n": 9,
-            "rate": 0.778
+            "n": 13,
+            "rate": 1
           },
           {
             "from": 0.8,
             "to": 0.9,
-            "n": 3,
+            "n": 2,
             "rate": 1
           },
           {
@@ -93,88 +105,260 @@
             "n": 7,
             "rate": 0.571
           }
-        ]
+        ],
+        "thresholds": [
+          {
+            "at": 0,
+            "acted": 148,
+            "agreed": 47,
+            "disagreed": 19,
+            "recordedNothing": 82,
+            "agreement": 0.712
+          },
+          {
+            "at": 0.1,
+            "acted": 148,
+            "agreed": 47,
+            "disagreed": 19,
+            "recordedNothing": 82,
+            "agreement": 0.712
+          },
+          {
+            "at": 0.2,
+            "acted": 140,
+            "agreed": 47,
+            "disagreed": 19,
+            "recordedNothing": 74,
+            "agreement": 0.712
+          },
+          {
+            "at": 0.3,
+            "acted": 132,
+            "agreed": 46,
+            "disagreed": 19,
+            "recordedNothing": 67,
+            "agreement": 0.708
+          },
+          {
+            "at": 0.4,
+            "acted": 107,
+            "agreed": 41,
+            "disagreed": 17,
+            "recordedNothing": 49,
+            "agreement": 0.707
+          },
+          {
+            "at": 0.5,
+            "acted": 95,
+            "agreed": 38,
+            "disagreed": 14,
+            "recordedNothing": 43,
+            "agreement": 0.731
+          },
+          {
+            "at": 0.6,
+            "acted": 74,
+            "agreed": 30,
+            "disagreed": 12,
+            "recordedNothing": 32,
+            "agreement": 0.714
+          },
+          {
+            "at": 0.7,
+            "acted": 43,
+            "agreed": 19,
+            "disagreed": 3,
+            "recordedNothing": 21,
+            "agreement": 0.864
+          },
+          {
+            "at": 0.8,
+            "acted": 17,
+            "agreed": 6,
+            "disagreed": 3,
+            "recordedNothing": 8,
+            "agreement": 0.667
+          },
+          {
+            "at": 0.9,
+            "acted": 12,
+            "agreed": 4,
+            "disagreed": 3,
+            "recordedNothing": 5,
+            "agreement": 0.571
+          }
+        ],
+        "chosen": 0.7
       },
       "noul": {
         "scored": 148,
-        "agreementAtHalf": 0.804,
+        "agreementAtHalf": 0.777,
         "byProbability": [
           {
             "from": 0,
             "to": 0.1,
-            "n": 5,
+            "n": 6,
             "rate": 0
           },
           {
             "from": 0.1,
             "to": 0.2,
-            "n": 12,
-            "rate": 0.167
+            "n": 10,
+            "rate": 0
           },
           {
             "from": 0.2,
             "to": 0.3,
-            "n": 9,
-            "rate": 0.111
+            "n": 10,
+            "rate": 0.1
           },
           {
             "from": 0.3,
             "to": 0.4,
-            "n": 13,
+            "n": 8,
             "rate": 0
           },
           {
             "from": 0.4,
             "to": 0.5,
-            "n": 15,
-            "rate": 0.067
+            "n": 19,
+            "rate": 0.053
           },
           {
             "from": 0.5,
             "to": 0.6,
-            "n": 5,
-            "rate": 0.6
+            "n": 6,
+            "rate": 0.5
           },
           {
             "from": 0.6,
             "to": 0.7,
-            "n": 7,
-            "rate": 0.571
+            "n": 8,
+            "rate": 0.5
           },
           {
             "from": 0.7,
             "to": 0.8,
-            "n": 16,
-            "rate": 0.688
+            "n": 17,
+            "rate": 0.529
           },
           {
             "from": 0.8,
             "to": 0.9,
-            "n": 18,
+            "n": 16,
             "rate": 0.5
           },
           {
             "from": 0.9,
             "to": 1,
             "n": 48,
-            "rate": 0.875
+            "rate": 0.833
           }
-        ]
+        ],
+        "thresholds": [
+          {
+            "at": 0,
+            "acted": 148,
+            "agreed": 47,
+            "disagreed": 19,
+            "recordedNothing": 82,
+            "agreement": 0.712
+          },
+          {
+            "at": 0.1,
+            "acted": 142,
+            "agreed": 47,
+            "disagreed": 19,
+            "recordedNothing": 76,
+            "agreement": 0.712
+          },
+          {
+            "at": 0.2,
+            "acted": 132,
+            "agreed": 47,
+            "disagreed": 19,
+            "recordedNothing": 66,
+            "agreement": 0.712
+          },
+          {
+            "at": 0.3,
+            "acted": 122,
+            "agreed": 47,
+            "disagreed": 18,
+            "recordedNothing": 57,
+            "agreement": 0.723
+          },
+          {
+            "at": 0.4,
+            "acted": 114,
+            "agreed": 47,
+            "disagreed": 18,
+            "recordedNothing": 49,
+            "agreement": 0.723
+          },
+          {
+            "at": 0.5,
+            "acted": 95,
+            "agreed": 46,
+            "disagreed": 18,
+            "recordedNothing": 31,
+            "agreement": 0.719
+          },
+          {
+            "at": 0.6,
+            "acted": 89,
+            "agreed": 44,
+            "disagreed": 17,
+            "recordedNothing": 28,
+            "agreement": 0.721
+          },
+          {
+            "at": 0.7,
+            "acted": 81,
+            "agreed": 41,
+            "disagreed": 16,
+            "recordedNothing": 24,
+            "agreement": 0.719
+          },
+          {
+            "at": 0.8,
+            "acted": 64,
+            "agreed": 33,
+            "disagreed": 15,
+            "recordedNothing": 16,
+            "agreement": 0.688
+          },
+          {
+            "at": 0.9,
+            "acted": 48,
+            "agreed": 28,
+            "disagreed": 12,
+            "recordedNothing": 8,
+            "agreement": 0.7
+          }
+        ],
+        "chosen": 0.9
       },
       "atThreshold": {
-        "acted": 30,
-        "agreed": 13,
-        "modelPickedNothing": 12
+        "thresholds": {
+          "choice": 0.7,
+          "noul": 0.9
+        },
+        "acted": 22,
+        "agreed": 14,
+        "disagreed": 3,
+        "recordedNothing": 5
       }
     },
     "result": {
       "samples": 116,
       "unavailable": {},
       "latencyMs": {
-        "median": 219,
-        "p95": 252
+        "median": 235,
+        "p95": 281
       },
       "optionsCut": 0,
+      "multiPick": 0,
       "choice": {
         "scored": 69,
         "agreement": 0.783,
@@ -194,32 +378,32 @@
           {
             "from": 0.2,
             "to": 0.3,
-            "n": 2,
+            "n": 1,
             "rate": 1
           },
           {
             "from": 0.3,
             "to": 0.4,
             "n": 5,
-            "rate": 0
+            "rate": 0.4
           },
           {
             "from": 0.4,
             "to": 0.5,
-            "n": 3,
-            "rate": 0.333
+            "n": 5,
+            "rate": 0
           },
           {
             "from": 0.5,
             "to": 0.6,
-            "n": 7,
-            "rate": 0.571
+            "n": 4,
+            "rate": 0.5
           },
           {
             "from": 0.6,
             "to": 0.7,
-            "n": 2,
-            "rate": 0.5
+            "n": 4,
+            "rate": 0.75
           },
           {
             "from": 0.7,
@@ -239,11 +423,94 @@
             "n": 35,
             "rate": 0.943
           }
-        ]
+        ],
+        "thresholds": [
+          {
+            "at": 0,
+            "acted": 116,
+            "agreed": 54,
+            "disagreed": 15,
+            "recordedNothing": 47,
+            "agreement": 0.783
+          },
+          {
+            "at": 0.1,
+            "acted": 115,
+            "agreed": 54,
+            "disagreed": 14,
+            "recordedNothing": 47,
+            "agreement": 0.794
+          },
+          {
+            "at": 0.2,
+            "acted": 114,
+            "agreed": 54,
+            "disagreed": 14,
+            "recordedNothing": 46,
+            "agreement": 0.794
+          },
+          {
+            "at": 0.3,
+            "acted": 112,
+            "agreed": 53,
+            "disagreed": 14,
+            "recordedNothing": 45,
+            "agreement": 0.791
+          },
+          {
+            "at": 0.4,
+            "acted": 104,
+            "agreed": 51,
+            "disagreed": 11,
+            "recordedNothing": 42,
+            "agreement": 0.823
+          },
+          {
+            "at": 0.5,
+            "acted": 96,
+            "agreed": 51,
+            "disagreed": 6,
+            "recordedNothing": 39,
+            "agreement": 0.895
+          },
+          {
+            "at": 0.6,
+            "acted": 88,
+            "agreed": 49,
+            "disagreed": 4,
+            "recordedNothing": 35,
+            "agreement": 0.925
+          },
+          {
+            "at": 0.7,
+            "acted": 82,
+            "agreed": 46,
+            "disagreed": 3,
+            "recordedNothing": 33,
+            "agreement": 0.939
+          },
+          {
+            "at": 0.8,
+            "acted": 72,
+            "agreed": 41,
+            "disagreed": 3,
+            "recordedNothing": 28,
+            "agreement": 0.932
+          },
+          {
+            "at": 0.9,
+            "acted": 58,
+            "agreed": 33,
+            "disagreed": 2,
+            "recordedNothing": 23,
+            "agreement": 0.943
+          }
+        ],
+        "chosen": 0.4
       },
       "noul": {
         "scored": 116,
-        "agreementAtHalf": 0.698,
+        "agreementAtHalf": 0.69,
         "byProbability": [
           {
             "from": 0,
@@ -272,55 +539,144 @@
           {
             "from": 0.4,
             "to": 0.5,
-            "n": 4,
-            "rate": 0.25
+            "n": 3,
+            "rate": 0.333
           },
           {
             "from": 0.5,
             "to": 0.6,
-            "n": 8,
-            "rate": 0.125
+            "n": 10,
+            "rate": 0.1
           },
           {
             "from": 0.6,
             "to": 0.7,
             "n": 15,
-            "rate": 0.2
+            "rate": 0.133
           },
           {
             "from": 0.7,
             "to": 0.8,
             "n": 17,
-            "rate": 0.588
+            "rate": 0.706
           },
           {
             "from": 0.8,
             "to": 0.9,
-            "n": 50,
-            "rate": 0.86
+            "n": 51,
+            "rate": 0.863
           },
           {
             "from": 0.9,
             "to": 1,
-            "n": 10,
+            "n": 8,
             "rate": 1
           }
-        ]
+        ],
+        "thresholds": [
+          {
+            "at": 0,
+            "acted": 116,
+            "agreed": 54,
+            "disagreed": 15,
+            "recordedNothing": 47,
+            "agreement": 0.783
+          },
+          {
+            "at": 0.1,
+            "acted": 116,
+            "agreed": 54,
+            "disagreed": 15,
+            "recordedNothing": 47,
+            "agreement": 0.783
+          },
+          {
+            "at": 0.2,
+            "acted": 109,
+            "agreed": 54,
+            "disagreed": 15,
+            "recordedNothing": 40,
+            "agreement": 0.783
+          },
+          {
+            "at": 0.3,
+            "acted": 108,
+            "agreed": 54,
+            "disagreed": 15,
+            "recordedNothing": 39,
+            "agreement": 0.783
+          },
+          {
+            "at": 0.4,
+            "acted": 104,
+            "agreed": 53,
+            "disagreed": 15,
+            "recordedNothing": 36,
+            "agreement": 0.779
+          },
+          {
+            "at": 0.5,
+            "acted": 101,
+            "agreed": 52,
+            "disagreed": 15,
+            "recordedNothing": 34,
+            "agreement": 0.776
+          },
+          {
+            "at": 0.6,
+            "acted": 91,
+            "agreed": 52,
+            "disagreed": 14,
+            "recordedNothing": 25,
+            "agreement": 0.788
+          },
+          {
+            "at": 0.7,
+            "acted": 76,
+            "agreed": 50,
+            "disagreed": 14,
+            "recordedNothing": 12,
+            "agreement": 0.781
+          },
+          {
+            "at": 0.8,
+            "acted": 59,
+            "agreed": 42,
+            "disagreed": 10,
+            "recordedNothing": 7,
+            "agreement": 0.808
+          },
+          {
+            "at": 0.9,
+            "acted": 8,
+            "agreed": 8,
+            "disagreed": 0,
+            "recordedNothing": 0,
+            "agreement": 1
+          }
+        ],
+        "chosen": 0.8
       },
       "atThreshold": {
-        "acted": 54,
+        "thresholds": {
+          "choice": 0.7,
+          "noul": 0.7
+        },
+        "acted": 53,
         "agreed": 43,
-        "modelPickedNothing": 8
+        "disagreed": 3,
+        "recordedNothing": 7
       }
     },
     "tier": {
       "samples": 48,
       "unavailable": {},
       "latencyMs": {
-        "median": 217,
-        "p95": 292
+        "median": 232,
+        "p95": 333
       },
       "optionsCut": 0,
+      "multiPick": 0,
       "choice": {
         "scored": 48,
         "agreement": 0.75,
@@ -364,20 +720,20 @@
           {
             "from": 0.6,
             "to": 0.7,
-            "n": 8,
-            "rate": 0.5
+            "n": 6,
+            "rate": 0.667
           },
           {
             "from": 0.7,
             "to": 0.8,
-            "n": 15,
-            "rate": 0.667
+            "n": 18,
+            "rate": 0.611
           },
           {
             "from": 0.8,
             "to": 0.9,
-            "n": 9,
-            "rate": 0.889
+            "n": 8,
+            "rate": 0.875
           },
           {
             "from": 0.9,
@@ -385,15 +741,104 @@
             "n": 16,
             "rate": 0.875
           }
-        ]
+        ],
+        "thresholds": [
+          {
+            "at": 0,
+            "acted": 48,
+            "agreed": 36,
+            "disagreed": 12,
+            "recordedNothing": 0,
+            "agreement": 0.75
+          },
+          {
+            "at": 0.1,
+            "acted": 48,
+            "agreed": 36,
+            "disagreed": 12,
+            "recordedNothing": 0,
+            "agreement": 0.75
+          },
+          {
+            "at": 0.2,
+            "acted": 48,
+            "agreed": 36,
+            "disagreed": 12,
+            "recordedNothing": 0,
+            "agreement": 0.75
+          },
+          {
+            "at": 0.3,
+            "acted": 48,
+            "agreed": 36,
+            "disagreed": 12,
+            "recordedNothing": 0,
+            "agreement": 0.75
+          },
+          {
+            "at": 0.4,
+            "acted": 48,
+            "agreed": 36,
+            "disagreed": 12,
+            "recordedNothing": 0,
+            "agreement": 0.75
+          },
+          {
+            "at": 0.5,
+            "acted": 48,
+            "agreed": 36,
+            "disagreed": 12,
+            "recordedNothing": 0,
+            "agreement": 0.75
+          },
+          {
+            "at": 0.6,
+            "acted": 48,
+            "agreed": 36,
+            "disagreed": 12,
+            "recordedNothing": 0,
+            "agreement": 0.75
+          },
+          {
+            "at": 0.7,
+            "acted": 42,
+            "agreed": 32,
+            "disagreed": 10,
+            "recordedNothing": 0,
+            "agreement": 0.762
+          },
+          {
+            "at": 0.8,
+            "acted": 24,
+            "agreed": 21,
+            "disagreed": 3,
+            "recordedNothing": 0,
+            "agreement": 0.875
+          },
+          {
+            "at": 0.9,
+            "acted": 16,
+            "agreed": 14,
+            "disagreed": 2,
+            "recordedNothing": 0,
+            "agreement": 0.875
+          }
+        ],
+        "chosen": 0.8
       },
       "atThreshold": {
-        "acted": 40,
+        "thresholds": {
+          "choice": 0.7,
+          "noul": 0.7
+        },
+        "acted": 42,
         "agreed": 32,
-        "modelPickedNothing": 0
+        "disagreed": 10,
+        "recordedNothing": 0
       }
     }
   },
+  "resummarizedAt": "2026-09-26T18:23:55.683Z",
   "rows": [
     {
       "seam": "tier",
@@ -405,9 +850,9 @@
       "modelPicks": [
         "investigation"
       ],
-      "latencyMs": 292,
+      "latencyMs": 349,
       "choice": "investigation",
-      "confidence": 0.85
+      "confidence": 0.84
     },
     {
       "seam": "passage",
@@ -417,13 +862,11 @@
       "options": 138,
       "optionsBeforeCut": 138,
       "stateChars": 14121,
-      "modelPicks": [
-        "p30"
-      ],
-      "latencyMs": 226,
+      "modelPicks": [],
+      "latencyMs": 263,
       "choice": "p5",
-      "confidence": 0.71,
-      "noul": 0.81
+      "confidence": 0.68,
+      "noul": 0.83
     },
     {
       "seam": "passage",
@@ -436,10 +879,10 @@
       "modelPicks": [
         "p20"
       ],
-      "latencyMs": 221,
+      "latencyMs": 243,
       "choice": "p18",
       "confidence": 0.61,
-      "noul": 0.28
+      "noul": 0.26
     },
     {
       "seam": "passage",
@@ -455,10 +898,10 @@
         "p107",
         "p112"
       ],
-      "latencyMs": 251,
+      "latencyMs": 255,
       "choice": "p112",
-      "confidence": 0.57,
-      "noul": 0.81
+      "confidence": 0.6,
+      "noul": 0.79
     },
     {
       "seam": "passage",
@@ -469,10 +912,10 @@
       "optionsBeforeCut": 464,
       "stateChars": 8044,
       "modelPicks": [],
-      "latencyMs": 220,
-      "choice": "p79",
+      "latencyMs": 258,
+      "choice": "p197",
       "confidence": 0.34,
-      "noul": 0.43
+      "noul": 0.42
     },
     {
       "seam": "passage",
@@ -486,10 +929,10 @@
         "p42",
         "p44"
       ],
-      "latencyMs": 228,
+      "latencyMs": 226,
       "choice": "p44",
-      "confidence": 0.8,
-      "noul": 0.54
+      "confidence": 0.81,
+      "noul": 0.56
     },
     {
       "seam": "result",
@@ -502,10 +945,10 @@
       "modelPicks": [
         "r20"
       ],
-      "latencyMs": 197,
+      "latencyMs": 214,
       "choice": "r20",
-      "confidence": 0.26,
-      "noul": 0.85
+      "confidence": 0.35,
+      "noul": 0.84
     },
     {
       "seam": "tier",
@@ -517,9 +960,9 @@
       "modelPicks": [
         "lookup"
       ],
-      "latencyMs": 210,
+      "latencyMs": 228,
       "choice": "investigation",
-      "confidence": 0.74
+      "confidence": 0.71
     },
     {
       "seam": "passage",
@@ -529,13 +972,11 @@
       "options": 79,
       "optionsBeforeCut": 79,
       "stateChars": 12818,
-      "modelPicks": [
-        "p18"
-      ],
-      "latencyMs": 233,
+      "modelPicks": [],
+      "latencyMs": 241,
       "choice": "p23",
-      "confidence": 0.14,
-      "noul": 0.18
+      "confidence": 0.16,
+      "noul": 0.17
     },
     {
       "seam": "passage",
@@ -549,7 +990,7 @@
         "p86",
         "p109"
       ],
-      "latencyMs": 216,
+      "latencyMs": 239,
       "choice": "p109",
       "confidence": 1,
       "noul": 0.97
@@ -564,7 +1005,7 @@
       "modelPicks": [
         "investigation"
       ],
-      "latencyMs": 200,
+      "latencyMs": 218,
       "choice": "investigation",
       "confidence": 1
     },
@@ -577,10 +1018,10 @@
       "optionsBeforeCut": 17,
       "stateChars": 3601,
       "modelPicks": [],
-      "latencyMs": 199,
+      "latencyMs": 260,
       "choice": "p5",
-      "confidence": 0.69,
-      "noul": 0.79
+      "confidence": 0.72,
+      "noul": 0.77
     },
     {
       "seam": "passage",
@@ -591,7 +1032,7 @@
       "optionsBeforeCut": 8,
       "stateChars": 1854,
       "modelPicks": [],
-      "latencyMs": 256,
+      "latencyMs": 229,
       "choice": "p7",
       "confidence": 0.57,
       "noul": 0.24
@@ -605,10 +1046,10 @@
       "optionsBeforeCut": 4,
       "stateChars": 1705,
       "modelPicks": [],
-      "latencyMs": 197,
+      "latencyMs": 228,
       "choice": "r5",
       "confidence": 0.99,
-      "noul": 0.51
+      "noul": 0.55
     },
     {
       "seam": "result",
@@ -619,10 +1060,10 @@
       "optionsBeforeCut": 4,
       "stateChars": 1704,
       "modelPicks": [],
-      "latencyMs": 196,
+      "latencyMs": 278,
       "choice": "r5",
-      "confidence": 1,
-      "noul": 0.62
+      "confidence": 0.99,
+      "noul": 0.63
     },
     {
       "seam": "result",
@@ -633,7 +1074,7 @@
       "optionsBeforeCut": 4,
       "stateChars": 1697,
       "modelPicks": [],
-      "latencyMs": 251,
+      "latencyMs": 257,
       "choice": "r5",
       "confidence": 1,
       "noul": 0.58
@@ -648,9 +1089,9 @@
       "modelPicks": [
         "investigation"
       ],
-      "latencyMs": 221,
+      "latencyMs": 211,
       "choice": "investigation",
-      "confidence": 0.7
+      "confidence": 0.67
     },
     {
       "seam": "passage",
@@ -665,9 +1106,9 @@
         "p45",
         "p72"
       ],
-      "latencyMs": 233,
+      "latencyMs": 230,
       "choice": "p45",
-      "confidence": 0.55,
+      "confidence": 0.65,
       "noul": 0.97
     },
     {
@@ -678,14 +1119,10 @@
       "options": 30,
       "optionsBeforeCut": 30,
       "stateChars": 3983,
-      "modelPicks": [
-        "p1",
-        "p5",
-        "p10"
-      ],
-      "latencyMs": 193,
+      "modelPicks": [],
+      "latencyMs": 251,
       "choice": "p10",
-      "confidence": 0.64,
+      "confidence": 0.68,
       "noul": 0.97
     },
     {
@@ -699,10 +1136,10 @@
       "modelPicks": [
         "r29"
       ],
-      "latencyMs": 243,
+      "latencyMs": 242,
       "choice": "r29",
       "confidence": 0.96,
-      "noul": 0.89
+      "noul": 0.88
     },
     {
       "seam": "result",
@@ -715,10 +1152,10 @@
       "modelPicks": [
         "r20"
       ],
-      "latencyMs": 230,
+      "latencyMs": 257,
       "choice": "r20",
       "confidence": 0.98,
-      "noul": 0.9
+      "noul": 0.89
     },
     {
       "seam": "result",
@@ -731,7 +1168,7 @@
       "modelPicks": [
         "r24"
       ],
-      "latencyMs": 228,
+      "latencyMs": 216,
       "choice": "r24",
       "confidence": 0.94,
       "noul": 0.9
@@ -746,9 +1183,9 @@
       "modelPicks": [
         "lookup"
       ],
-      "latencyMs": 209,
+      "latencyMs": 245,
       "choice": "lookup",
-      "confidence": 0.77
+      "confidence": 0.76
     },
     {
       "seam": "passage",
@@ -763,9 +1200,9 @@
         "p21",
         "p57"
       ],
-      "latencyMs": 219,
+      "latencyMs": 231,
       "choice": "p21",
-      "confidence": 0.65,
+      "confidence": 0.62,
       "noul": 0.96
     },
     {
@@ -778,7 +1215,7 @@
       "modelPicks": [
         "investigation"
       ],
-      "latencyMs": 226,
+      "latencyMs": 210,
       "choice": "investigation",
       "confidence": 1
     },
@@ -795,10 +1232,10 @@
         "p9",
         "p10"
       ],
-      "latencyMs": 260,
+      "latencyMs": 212,
       "choice": "p10",
-      "confidence": 0.62,
-      "noul": 0.85
+      "confidence": 0.65,
+      "noul": 0.83
     },
     {
       "seam": "passage",
@@ -812,10 +1249,10 @@
         "p9",
         "p10"
       ],
-      "latencyMs": 209,
+      "latencyMs": 230,
       "choice": "p9",
-      "confidence": 0.44,
-      "noul": 0.73
+      "confidence": 0.5,
+      "noul": 0.76
     },
     {
       "seam": "result",
@@ -826,10 +1263,10 @@
       "optionsBeforeCut": 2,
       "stateChars": 1863,
       "modelPicks": [],
-      "latencyMs": 227,
+      "latencyMs": 237,
       "choice": "r20",
-      "confidence": 0.76,
-      "noul": 0.65
+      "confidence": 0.65,
+      "noul": 0.63
     },
     {
       "seam": "result",
@@ -840,10 +1277,10 @@
       "optionsBeforeCut": 3,
       "stateChars": 1780,
       "modelPicks": [],
-      "latencyMs": 216,
+      "latencyMs": 220,
       "choice": "r24",
-      "confidence": 0.81,
-      "noul": 0.34
+      "confidence": 0.78,
+      "noul": 0.31
     },
     {
       "seam": "result",
@@ -856,9 +1293,9 @@
       "modelPicks": [
         "r27"
       ],
-      "latencyMs": 230,
+      "latencyMs": 243,
       "choice": "r27",
-      "confidence": 0.83,
+      "confidence": 0.86,
       "noul": 0.82
     },
     {
@@ -872,9 +1309,9 @@
       "modelPicks": [
         "r24"
       ],
-      "latencyMs": 225,
+      "latencyMs": 226,
       "choice": "r24",
-      "confidence": 0.52,
+      "confidence": 0.53,
       "noul": 0.8
     },
     {
@@ -888,10 +1325,10 @@
       "modelPicks": [
         "r24"
       ],
-      "latencyMs": 219,
+      "latencyMs": 253,
       "choice": "r24",
-      "confidence": 0.83,
-      "noul": 0.75
+      "confidence": 0.82,
+      "noul": 0.76
     },
     {
       "seam": "result",
@@ -904,7 +1341,7 @@
       "modelPicks": [
         "r24"
       ],
-      "latencyMs": 206,
+      "latencyMs": 246,
       "choice": "r20",
       "confidence": 0.98,
       "noul": 0.84
@@ -920,9 +1357,9 @@
       "modelPicks": [
         "r20"
       ],
-      "latencyMs": 218,
+      "latencyMs": 264,
       "choice": "r24",
-      "confidence": 0.36,
+      "confidence": 0.41,
       "noul": 0.85
     },
     {
@@ -935,7 +1372,7 @@
       "modelPicks": [
         "investigation"
       ],
-      "latencyMs": 214,
+      "latencyMs": 219,
       "choice": "investigation",
       "confidence": 0.85
     },
@@ -948,10 +1385,10 @@
       "optionsBeforeCut": 457,
       "stateChars": 8064,
       "modelPicks": [],
-      "latencyMs": 241,
+      "latencyMs": 413,
       "choice": "p80",
-      "confidence": 0.33,
-      "noul": 0.48
+      "confidence": 0.35,
+      "noul": 0.45
     },
     {
       "seam": "passage",
@@ -962,9 +1399,9 @@
       "optionsBeforeCut": 79,
       "stateChars": 13221,
       "modelPicks": [],
-      "latencyMs": 218,
+      "latencyMs": 284,
       "choice": "p16",
-      "confidence": 0.34,
+      "confidence": 0.36,
       "noul": 0.64
     },
     {
@@ -976,9 +1413,9 @@
       "optionsBeforeCut": 138,
       "stateChars": 14157,
       "modelPicks": [],
-      "latencyMs": 244,
+      "latencyMs": 338,
       "choice": "p5",
-      "confidence": 0.62,
+      "confidence": 0.6,
       "noul": 0.81
     },
     {
@@ -990,10 +1427,10 @@
       "optionsBeforeCut": 463,
       "stateChars": 8080,
       "modelPicks": [],
-      "latencyMs": 232,
+      "latencyMs": 260,
       "choice": "p79",
-      "confidence": 0.44,
-      "noul": 0.37
+      "confidence": 0.39,
+      "noul": 0.4
     },
     {
       "seam": "passage",
@@ -1004,10 +1441,10 @@
       "optionsBeforeCut": 91,
       "stateChars": 13728,
       "modelPicks": [],
-      "latencyMs": 300,
+      "latencyMs": 239,
       "choice": "p18",
-      "confidence": 0.54,
-      "noul": 0.33
+      "confidence": 0.52,
+      "noul": 0.26
     },
     {
       "seam": "passage",
@@ -1021,10 +1458,10 @@
         "p24",
         "p112"
       ],
-      "latencyMs": 232,
+      "latencyMs": 296,
       "choice": "p112",
-      "confidence": 0.63,
-      "noul": 0.7
+      "confidence": 0.68,
+      "noul": 0.74
     },
     {
       "seam": "passage",
@@ -1035,10 +1472,10 @@
       "optionsBeforeCut": 461,
       "stateChars": 8076,
       "modelPicks": [],
-      "latencyMs": 232,
+      "latencyMs": 288,
       "choice": "p79",
-      "confidence": 0.55,
-      "noul": 0.33
+      "confidence": 0.5,
+      "noul": 0.36
     },
     {
       "seam": "passage",
@@ -1049,9 +1486,9 @@
       "optionsBeforeCut": 135,
       "stateChars": 14193,
       "modelPicks": [],
-      "latencyMs": 265,
+      "latencyMs": 277,
       "choice": "p101",
-      "confidence": 0.16,
+      "confidence": 0.19,
       "noul": 0.21
     },
     {
@@ -1063,10 +1500,10 @@
       "optionsBeforeCut": 57,
       "stateChars": 4631,
       "modelPicks": [],
-      "latencyMs": 229,
+      "latencyMs": 280,
       "choice": "p1",
-      "confidence": 0.49,
-      "noul": 0.1
+      "confidence": 0.53,
+      "noul": 0.09
     },
     {
       "seam": "passage",
@@ -1077,9 +1514,9 @@
       "optionsBeforeCut": 76,
       "stateChars": 13691,
       "modelPicks": [],
-      "latencyMs": 211,
+      "latencyMs": 271,
       "choice": "p52",
-      "confidence": 0.47,
+      "confidence": 0.52,
       "noul": 0.07
     },
     {
@@ -1091,10 +1528,10 @@
       "optionsBeforeCut": 115,
       "stateChars": 13895,
       "modelPicks": [],
-      "latencyMs": 240,
+      "latencyMs": 232,
       "choice": "p36",
-      "confidence": 0.57,
-      "noul": 0.29
+      "confidence": 0.51,
+      "noul": 0.26
     },
     {
       "seam": "result",
@@ -1107,10 +1544,10 @@
       "modelPicks": [
         "r20"
       ],
-      "latencyMs": 204,
+      "latencyMs": 213,
       "choice": "r20",
       "confidence": 1,
-      "noul": 0.82
+      "noul": 0.84
     },
     {
       "seam": "result",
@@ -1123,10 +1560,10 @@
       "modelPicks": [
         "r20"
       ],
-      "latencyMs": 201,
+      "latencyMs": 212,
       "choice": "r20",
-      "confidence": 0.76,
-      "noul": 0.83
+      "confidence": 0.77,
+      "noul": 0.82
     },
     {
       "seam": "result",
@@ -1139,10 +1576,10 @@
       "modelPicks": [
         "r24"
       ],
-      "latencyMs": 206,
+      "latencyMs": 246,
       "choice": "r28",
-      "confidence": 0.35,
-      "noul": 0.7
+      "confidence": 0.45,
+      "noul": 0.73
     },
     {
       "seam": "result",
@@ -1155,10 +1592,10 @@
       "modelPicks": [
         "r20"
       ],
-      "latencyMs": 229,
+      "latencyMs": 255,
       "choice": "r24",
-      "confidence": 0.89,
-      "noul": 0.82
+      "confidence": 0.88,
+      "noul": 0.83
     },
     {
       "seam": "tier",
@@ -1170,9 +1607,9 @@
       "modelPicks": [
         "investigation"
       ],
-      "latencyMs": 214,
+      "latencyMs": 240,
       "choice": "investigation",
-      "confidence": 0.68
+      "confidence": 0.73
     },
     {
       "seam": "passage",
@@ -1183,10 +1620,10 @@
       "optionsBeforeCut": 79,
       "stateChars": 12839,
       "modelPicks": [],
-      "latencyMs": 274,
+      "latencyMs": 260,
       "choice": "p23",
-      "confidence": 0.27,
-      "noul": 0.18
+      "confidence": 0.33,
+      "noul": 0.16
     },
     {
       "seam": "passage",
@@ -1199,7 +1636,7 @@
       "modelPicks": [
         "p109"
       ],
-      "latencyMs": 236,
+      "latencyMs": 251,
       "choice": "p109",
       "confidence": 1,
       "noul": 0.98
@@ -1213,10 +1650,10 @@
       "optionsBeforeCut": 107,
       "stateChars": 7311,
       "modelPicks": [],
-      "latencyMs": 305,
+      "latencyMs": 229,
       "choice": "p28",
-      "confidence": 0.8,
-      "noul": 0.25
+      "confidence": 0.77,
+      "noul": 0.28
     },
     {
       "seam": "tier",
@@ -1228,7 +1665,7 @@
       "modelPicks": [
         "investigation"
       ],
-      "latencyMs": 220,
+      "latencyMs": 223,
       "choice": "investigation",
       "confidence": 1
     },
@@ -1241,10 +1678,10 @@
       "optionsBeforeCut": 6,
       "stateChars": 1731,
       "modelPicks": [],
-      "latencyMs": 233,
+      "latencyMs": 257,
       "choice": "p6",
-      "confidence": 0.77,
-      "noul": 0.32
+      "confidence": 0.75,
+      "noul": 0.33
     },
     {
       "seam": "passage",
@@ -1258,10 +1695,10 @@
         "p2",
         "p10"
       ],
-      "latencyMs": 210,
+      "latencyMs": 220,
       "choice": "p5",
       "confidence": 0.61,
-      "noul": 0.82
+      "noul": 0.84
     },
     {
       "seam": "result",
@@ -1272,10 +1709,10 @@
       "optionsBeforeCut": 4,
       "stateChars": 1714,
       "modelPicks": [],
-      "latencyMs": 235,
+      "latencyMs": 246,
       "choice": "r5",
       "confidence": 0.98,
-      "noul": 0.56
+      "noul": 0.58
     },
     {
       "seam": "result",
@@ -1286,10 +1723,10 @@
       "optionsBeforeCut": 4,
       "stateChars": 1732,
       "modelPicks": [],
-      "latencyMs": 267,
+      "latencyMs": 260,
       "choice": "r5",
       "confidence": 0.98,
-      "noul": 0.6
+      "noul": 0.61
     },
     {
       "seam": "tier",
@@ -1301,9 +1738,9 @@
       "modelPicks": [
         "lookup"
       ],
-      "latencyMs": 214,
+      "latencyMs": 226,
       "choice": "investigation",
-      "confidence": 0.65
+      "confidence": 0.73
     },
     {
       "seam": "passage",
@@ -1316,10 +1753,10 @@
       "modelPicks": [
         "p15"
       ],
-      "latencyMs": 247,
+      "latencyMs": 256,
       "choice": "p45",
       "confidence": 0.63,
-      "noul": 0.97
+      "noul": 0.96
     },
     {
       "seam": "passage",
@@ -1332,9 +1769,9 @@
       "modelPicks": [
         "p10"
       ],
-      "latencyMs": 212,
+      "latencyMs": 210,
       "choice": "p10",
-      "confidence": 0.73,
+      "confidence": 0.79,
       "noul": 0.97
     },
     {
@@ -1348,10 +1785,10 @@
       "modelPicks": [
         "r20"
       ],
-      "latencyMs": 226,
+      "latencyMs": 235,
       "choice": "r20",
       "confidence": 1,
-      "noul": 0.85
+      "noul": 0.84
     },
     {
       "seam": "result",
@@ -1364,10 +1801,10 @@
       "modelPicks": [
         "r20"
       ],
-      "latencyMs": 219,
+      "latencyMs": 235,
       "choice": "r20",
-      "confidence": 0.99,
-      "noul": 0.9
+      "confidence": 0.98,
+      "noul": 0.89
     },
     {
       "seam": "result",
@@ -1380,9 +1817,9 @@
       "modelPicks": [
         "r28"
       ],
-      "latencyMs": 207,
+      "latencyMs": 232,
       "choice": "r28",
-      "confidence": 0.95,
+      "confidence": 0.93,
       "noul": 0.92
     },
     {
@@ -1395,9 +1832,9 @@
       "modelPicks": [
         "lookup"
       ],
-      "latencyMs": 260,
+      "latencyMs": 218,
       "choice": "lookup",
-      "confidence": 0.78
+      "confidence": 0.79
     },
     {
       "seam": "passage",
@@ -1410,7 +1847,7 @@
       "modelPicks": [
         "p21"
       ],
-      "latencyMs": 218,
+      "latencyMs": 263,
       "choice": "p57",
       "confidence": 0.48,
       "noul": 0.94
@@ -1425,7 +1862,7 @@
       "modelPicks": [
         "investigation"
       ],
-      "latencyMs": 237,
+      "latencyMs": 213,
       "choice": "investigation",
       "confidence": 1
     },
@@ -1442,10 +1879,10 @@
         "p9",
         "p10"
       ],
-      "latencyMs": 249,
+      "latencyMs": 216,
       "choice": "p9",
-      "confidence": 0.39,
-      "noul": 0.9
+      "confidence": 0.37,
+      "noul": 0.91
     },
     {
       "seam": "passage",
@@ -1462,9 +1899,9 @@
         "p9",
         "p11"
       ],
-      "latencyMs": 196,
+      "latencyMs": 245,
       "choice": "p11",
-      "confidence": 0.65,
+      "confidence": 0.76,
       "noul": 0.96
     },
     {
@@ -1476,10 +1913,10 @@
       "optionsBeforeCut": 2,
       "stateChars": 1697,
       "modelPicks": [],
-      "latencyMs": 203,
+      "latencyMs": 212,
       "choice": "r5",
-      "confidence": 0.88,
-      "noul": 0.16
+      "confidence": 0.91,
+      "noul": 0.18
     },
     {
       "seam": "result",
@@ -1490,10 +1927,10 @@
       "optionsBeforeCut": 4,
       "stateChars": 2439,
       "modelPicks": [],
-      "latencyMs": 207,
+      "latencyMs": 247,
       "choice": "r6",
-      "confidence": 0.72,
-      "noul": 0.82
+      "confidence": 0.76,
+      "noul": 0.81
     },
     {
       "seam": "result",
@@ -1504,10 +1941,10 @@
       "optionsBeforeCut": 4,
       "stateChars": 2478,
       "modelPicks": [],
-      "latencyMs": 217,
+      "latencyMs": 199,
       "choice": "r10",
-      "confidence": 0.56,
-      "noul": 0.81
+      "confidence": 0.53,
+      "noul": 0.8
     },
     {
       "seam": "result",
@@ -1520,10 +1957,10 @@
       "modelPicks": [
         "r6"
       ],
-      "latencyMs": 228,
+      "latencyMs": 237,
       "choice": "r10",
-      "confidence": 0.41,
-      "noul": 0.82
+      "confidence": 0.38,
+      "noul": 0.8
     },
     {
       "seam": "result",
@@ -1536,10 +1973,10 @@
       "modelPicks": [
         "r10"
       ],
-      "latencyMs": 228,
+      "latencyMs": 205,
       "choice": "r10",
-      "confidence": 0.87,
-      "noul": 0.81
+      "confidence": 0.86,
+      "noul": 0.8
     },
     {
       "seam": "result",
@@ -1552,10 +1989,10 @@
       "modelPicks": [
         "r6"
       ],
-      "latencyMs": 189,
+      "latencyMs": 269,
       "choice": "r6",
-      "confidence": 0.65,
-      "noul": 0.8
+      "confidence": 0.63,
+      "noul": 0.78
     },
     {
       "seam": "result",
@@ -1568,9 +2005,9 @@
       "modelPicks": [
         "r6"
       ],
-      "latencyMs": 212,
+      "latencyMs": 244,
       "choice": "r10",
-      "confidence": 0.59,
+      "confidence": 0.57,
       "noul": 0.75
     },
     {
@@ -1584,10 +2021,10 @@
       "modelPicks": [
         "r6"
       ],
-      "latencyMs": 233,
+      "latencyMs": 226,
       "choice": "r6",
-      "confidence": 0.59,
-      "noul": 0.43
+      "confidence": 0.6,
+      "noul": 0.44
     },
     {
       "seam": "tier",
@@ -1599,9 +2036,9 @@
       "modelPicks": [
         "lookup"
       ],
-      "latencyMs": 200,
+      "latencyMs": 227,
       "choice": "investigation",
-      "confidence": 0.89
+      "confidence": 0.87
     },
     {
       "seam": "passage",
@@ -1612,10 +2049,10 @@
       "optionsBeforeCut": 457,
       "stateChars": 8048,
       "modelPicks": [],
-      "latencyMs": 228,
+      "latencyMs": 253,
       "choice": "p80",
-      "confidence": 0.3,
-      "noul": 0.45
+      "confidence": 0.28,
+      "noul": 0.43
     },
     {
       "seam": "passage",
@@ -1625,13 +2062,11 @@
       "options": 111,
       "optionsBeforeCut": 111,
       "stateChars": 13962,
-      "modelPicks": [
-        "p96"
-      ],
-      "latencyMs": 240,
+      "modelPicks": [],
+      "latencyMs": 226,
       "choice": "p95",
       "confidence": 0.38,
-      "noul": 0.76
+      "noul": 0.77
     },
     {
       "seam": "passage",
@@ -1644,10 +2079,10 @@
       "modelPicks": [
         "p23"
       ],
-      "latencyMs": 242,
+      "latencyMs": 230,
       "choice": "p23",
-      "confidence": 0.45,
-      "noul": 0.72
+      "confidence": 0.35,
+      "noul": 0.77
     },
     {
       "seam": "passage",
@@ -1658,9 +2093,9 @@
       "optionsBeforeCut": 138,
       "stateChars": 14141,
       "modelPicks": [],
-      "latencyMs": 277,
+      "latencyMs": 280,
       "choice": "p5",
-      "confidence": 0.66,
+      "confidence": 0.68,
       "noul": 0.85
     },
     {
@@ -1672,10 +2107,10 @@
       "optionsBeforeCut": 463,
       "stateChars": 8064,
       "modelPicks": [],
-      "latencyMs": 253,
+      "latencyMs": 277,
       "choice": "p79",
-      "confidence": 0.41,
-      "noul": 0.42
+      "confidence": 0.33,
+      "noul": 0.45
     },
     {
       "seam": "passage",
@@ -1686,10 +2121,10 @@
       "optionsBeforeCut": 198,
       "stateChars": 14236,
       "modelPicks": [],
-      "latencyMs": 271,
+      "latencyMs": 238,
       "choice": "p37",
-      "confidence": 0.32,
-      "noul": 0.28
+      "confidence": 0.36,
+      "noul": 0.25
     },
     {
       "seam": "passage",
@@ -1702,9 +2137,9 @@
       "modelPicks": [
         "p47"
       ],
-      "latencyMs": 228,
+      "latencyMs": 265,
       "choice": "p47",
-      "confidence": 0.67,
+      "confidence": 0.69,
       "noul": 0.79
     },
     {
@@ -1716,10 +2151,10 @@
       "optionsBeforeCut": 92,
       "stateChars": 13893,
       "modelPicks": [],
-      "latencyMs": 228,
+      "latencyMs": 278,
       "choice": "p18",
-      "confidence": 0.43,
-      "noul": 0.29
+      "confidence": 0.45,
+      "noul": 0.31
     },
     {
       "seam": "passage",
@@ -1730,10 +2165,10 @@
       "optionsBeforeCut": 116,
       "stateChars": 13769,
       "modelPicks": [],
-      "latencyMs": 289,
+      "latencyMs": 228,
       "choice": "p16",
-      "confidence": 0.13,
-      "noul": 0.36
+      "confidence": 0.22,
+      "noul": 0.39
     },
     {
       "seam": "passage",
@@ -1744,10 +2179,10 @@
       "optionsBeforeCut": 149,
       "stateChars": 14116,
       "modelPicks": [],
-      "latencyMs": 271,
+      "latencyMs": 354,
       "choice": "p112",
-      "confidence": 0.76,
-      "noul": 0.81
+      "confidence": 0.78,
+      "noul": 0.83
     },
     {
       "seam": "tier",
@@ -1759,9 +2194,9 @@
       "modelPicks": [
         "investigation"
       ],
-      "latencyMs": 193,
+      "latencyMs": 215,
       "choice": "investigation",
-      "confidence": 0.69
+      "confidence": 0.68
     },
     {
       "seam": "passage",
@@ -1772,9 +2207,9 @@
       "optionsBeforeCut": 79,
       "stateChars": 12919,
       "modelPicks": [],
-      "latencyMs": 209,
-      "choice": "p23",
-      "confidence": 0.2,
+      "latencyMs": 257,
+      "choice": "p31",
+      "confidence": 0.19,
       "noul": 0.15
     },
     {
@@ -1788,7 +2223,7 @@
       "modelPicks": [
         "p86"
       ],
-      "latencyMs": 227,
+      "latencyMs": 281,
       "choice": "p109",
       "confidence": 1,
       "noul": 0.98
@@ -1803,7 +2238,7 @@
       "modelPicks": [
         "investigation"
       ],
-      "latencyMs": 209,
+      "latencyMs": 251,
       "choice": "investigation",
       "confidence": 1
     },
@@ -1816,9 +2251,9 @@
       "optionsBeforeCut": 11,
       "stateChars": 2126,
       "modelPicks": [],
-      "latencyMs": 212,
+      "latencyMs": 231,
       "choice": "p8",
-      "confidence": 0.38,
+      "confidence": 0.47,
       "noul": 0.09
     },
     {
@@ -1830,7 +2265,7 @@
       "optionsBeforeCut": 17,
       "stateChars": 3187,
       "modelPicks": [],
-      "latencyMs": 213,
+      "latencyMs": 245,
       "choice": "p5",
       "confidence": 0.46,
       "noul": 0.98
@@ -1844,10 +2279,10 @@
       "optionsBeforeCut": 4,
       "stateChars": 1770,
       "modelPicks": [],
-      "latencyMs": 225,
+      "latencyMs": 229,
       "choice": "r5",
       "confidence": 0.99,
-      "noul": 0.66
+      "noul": 0.67
     },
     {
       "seam": "result",
@@ -1858,10 +2293,10 @@
       "optionsBeforeCut": 4,
       "stateChars": 1778,
       "modelPicks": [],
-      "latencyMs": 198,
+      "latencyMs": 228,
       "choice": "r5",
       "confidence": 0.99,
-      "noul": 0.55
+      "noul": 0.56
     },
     {
       "seam": "tier",
@@ -1873,9 +2308,9 @@
       "modelPicks": [
         "lookup"
       ],
-      "latencyMs": 220,
+      "latencyMs": 242,
       "choice": "investigation",
-      "confidence": 0.71
+      "confidence": 0.74
     },
     {
       "seam": "passage",
@@ -1892,9 +2327,9 @@
         "p45",
         "p72"
       ],
-      "latencyMs": 231,
+      "latencyMs": 270,
       "choice": "p45",
-      "confidence": 0.71,
+      "confidence": 0.72,
       "noul": 0.97
     },
     {
@@ -1906,13 +2341,12 @@
       "optionsBeforeCut": 30,
       "stateChars": 3923,
       "modelPicks": [
-        "p1",
-        "p5",
-        "p10"
+        "p10",
+        "p17"
       ],
-      "latencyMs": 211,
+      "latencyMs": 210,
       "choice": "p10",
-      "confidence": 0.59,
+      "confidence": 0.57,
       "noul": 0.97
     },
     {
@@ -1926,10 +2360,10 @@
       "modelPicks": [
         "r20"
       ],
-      "latencyMs": 221,
+      "latencyMs": 229,
       "choice": "r20",
       "confidence": 0.99,
-      "noul": 0.86
+      "noul": 0.87
     },
     {
       "seam": "result",
@@ -1942,7 +2376,7 @@
       "modelPicks": [
         "r20"
       ],
-      "latencyMs": 204,
+      "latencyMs": 244,
       "choice": "r20",
       "confidence": 0.98,
       "noul": 0.9
@@ -1958,10 +2392,10 @@
       "modelPicks": [
         "r24"
       ],
-      "latencyMs": 205,
+      "latencyMs": 193,
       "choice": "r24",
-      "confidence": 0.76,
-      "noul": 0.88
+      "confidence": 0.75,
+      "noul": 0.87
     },
     {
       "seam": "tier",
@@ -1973,9 +2407,9 @@
       "modelPicks": [
         "lookup"
       ],
-      "latencyMs": 196,
+      "latencyMs": 205,
       "choice": "lookup",
-      "confidence": 0.74
+      "confidence": 0.76
     },
     {
       "seam": "passage",
@@ -1988,9 +2422,9 @@
       "modelPicks": [
         "p21"
       ],
-      "latencyMs": 253,
+      "latencyMs": 213,
       "choice": "p21",
-      "confidence": 0.79,
+      "confidence": 0.76,
       "noul": 0.98
     },
     {
@@ -2003,7 +2437,7 @@
       "modelPicks": [
         "investigation"
       ],
-      "latencyMs": 209,
+      "latencyMs": 196,
       "choice": "investigation",
       "confidence": 1
     },
@@ -2016,10 +2450,10 @@
       "optionsBeforeCut": 60,
       "stateChars": 8398,
       "modelPicks": [],
-      "latencyMs": 425,
+      "latencyMs": 267,
       "choice": "p8",
-      "confidence": 0.79,
-      "noul": 0.89
+      "confidence": 0.78,
+      "noul": 0.9
     },
     {
       "seam": "passage",
@@ -2035,10 +2469,10 @@
         "p9",
         "p10"
       ],
-      "latencyMs": 197,
+      "latencyMs": 228,
       "choice": "p10",
-      "confidence": 0.54,
-      "noul": 0.91
+      "confidence": 0.64,
+      "noul": 0.9
     },
     {
       "seam": "passage",
@@ -2051,9 +2485,9 @@
       "modelPicks": [
         "p10"
       ],
-      "latencyMs": 199,
+      "latencyMs": 263,
       "choice": "p10",
-      "confidence": 0.53,
+      "confidence": 0.56,
       "noul": 0.94
     },
     {
@@ -2068,7 +2502,7 @@
       "latencyMs": 237,
       "choice": "r9",
       "confidence": 1,
-      "noul": 0.14
+      "noul": 0.13
     },
     {
       "seam": "result",
@@ -2081,10 +2515,10 @@
       "modelPicks": [
         "r6"
       ],
-      "latencyMs": 212,
+      "latencyMs": 219,
       "choice": "r14",
-      "confidence": 0.08,
-      "noul": 0.53
+      "confidence": 0.09,
+      "noul": 0.54
     },
     {
       "seam": "result",
@@ -2095,10 +2529,10 @@
       "optionsBeforeCut": 4,
       "stateChars": 2278,
       "modelPicks": [],
-      "latencyMs": 210,
+      "latencyMs": 243,
       "choice": "r6",
       "confidence": 0.87,
-      "noul": 0.77
+      "noul": 0.75
     },
     {
       "seam": "result",
@@ -2111,9 +2545,9 @@
       "modelPicks": [
         "r6"
       ],
-      "latencyMs": 214,
+      "latencyMs": 240,
       "choice": "r10",
-      "confidence": 0.39,
+      "confidence": 0.44,
       "noul": 0.82
     },
     {
@@ -2127,9 +2561,9 @@
       "modelPicks": [
         "r14"
       ],
-      "latencyMs": 221,
+      "latencyMs": 210,
       "choice": "r6",
-      "confidence": 0.3,
+      "confidence": 0.36,
       "noul": 0.84
     },
     {
@@ -2142,9 +2576,9 @@
       "modelPicks": [
         "investigation"
       ],
-      "latencyMs": 299,
+      "latencyMs": 238,
       "choice": "investigation",
-      "confidence": 0.86
+      "confidence": 0.85
     },
     {
       "seam": "passage",
@@ -2155,10 +2589,10 @@
       "optionsBeforeCut": 457,
       "stateChars": 8166,
       "modelPicks": [],
-      "latencyMs": 228,
+      "latencyMs": 292,
       "choice": "p197",
-      "confidence": 0.27,
-      "noul": 0.47
+      "confidence": 0.35,
+      "noul": 0.45
     },
     {
       "seam": "passage",
@@ -2169,10 +2603,10 @@
       "optionsBeforeCut": 111,
       "stateChars": 14080,
       "modelPicks": [],
-      "latencyMs": 247,
+      "latencyMs": 255,
       "choice": "p95",
-      "confidence": 0.33,
-      "noul": 0.63
+      "confidence": 0.3,
+      "noul": 0.67
     },
     {
       "seam": "passage",
@@ -2185,9 +2619,9 @@
       "modelPicks": [
         "p23"
       ],
-      "latencyMs": 243,
+      "latencyMs": 273,
       "choice": "p23",
-      "confidence": 0.3,
+      "confidence": 0.35,
       "noul": 0.6
     },
     {
@@ -2199,9 +2633,9 @@
       "optionsBeforeCut": 463,
       "stateChars": 8182,
       "modelPicks": [],
-      "latencyMs": 241,
-      "choice": "p79",
-      "confidence": 0.34,
+      "latencyMs": 277,
+      "choice": "p197",
+      "confidence": 0.35,
       "noul": 0.42
     },
     {
@@ -2213,10 +2647,10 @@
       "optionsBeforeCut": 138,
       "stateChars": 14259,
       "modelPicks": [],
-      "latencyMs": 237,
+      "latencyMs": 289,
       "choice": "p5",
       "confidence": 0.69,
-      "noul": 0.8
+      "noul": 0.79
     },
     {
       "seam": "passage",
@@ -2227,9 +2661,9 @@
       "optionsBeforeCut": 116,
       "stateChars": 13862,
       "modelPicks": [],
-      "latencyMs": 224,
-      "choice": "p16",
-      "confidence": 0.15,
+      "latencyMs": 265,
+      "choice": "p8",
+      "confidence": 0.12,
       "noul": 0.37
     },
     {
@@ -2241,10 +2675,10 @@
       "optionsBeforeCut": 133,
       "stateChars": 14225,
       "modelPicks": [],
-      "latencyMs": 225,
+      "latencyMs": 229,
       "choice": "p19",
-      "confidence": 0.62,
-      "noul": 0.42
+      "confidence": 0.63,
+      "noul": 0.43
     },
     {
       "seam": "passage",
@@ -2257,10 +2691,10 @@
       "modelPicks": [
         "p112"
       ],
-      "latencyMs": 217,
+      "latencyMs": 272,
       "choice": "p112",
-      "confidence": 0.74,
-      "noul": 0.79
+      "confidence": 0.71,
+      "noul": 0.77
     },
     {
       "seam": "passage",
@@ -2271,10 +2705,10 @@
       "optionsBeforeCut": 75,
       "stateChars": 13947,
       "modelPicks": [],
-      "latencyMs": 251,
+      "latencyMs": 232,
       "choice": "p47",
-      "confidence": 0.78,
-      "noul": 0.72
+      "confidence": 0.81,
+      "noul": 0.73
     },
     {
       "seam": "passage",
@@ -2285,7 +2719,7 @@
       "optionsBeforeCut": 55,
       "stateChars": 7200,
       "modelPicks": [],
-      "latencyMs": 213,
+      "latencyMs": 228,
       "choice": "p47",
       "confidence": 0.99,
       "noul": 0.98
@@ -2301,10 +2735,10 @@
       "modelPicks": [
         "r20"
       ],
-      "latencyMs": 246,
+      "latencyMs": 200,
       "choice": "r20",
       "confidence": 1,
-      "noul": 0.83
+      "noul": 0.84
     },
     {
       "seam": "result",
@@ -2317,9 +2751,9 @@
       "modelPicks": [
         "r20"
       ],
-      "latencyMs": 201,
+      "latencyMs": 235,
       "choice": "r20",
-      "confidence": 0.59,
+      "confidence": 0.62,
       "noul": 0.87
     },
     {
@@ -2333,10 +2767,10 @@
       "modelPicks": [
         "r20"
       ],
-      "latencyMs": 199,
+      "latencyMs": 249,
       "choice": "r20",
       "confidence": 1,
-      "noul": 0.83
+      "noul": 0.86
     },
     {
       "seam": "tier",
@@ -2348,9 +2782,9 @@
       "modelPicks": [
         "investigation"
       ],
-      "latencyMs": 318,
+      "latencyMs": 214,
       "choice": "investigation",
-      "confidence": 0.78
+      "confidence": 0.68
     },
     {
       "seam": "passage",
@@ -2364,10 +2798,10 @@
         "p39",
         "p47"
       ],
-      "latencyMs": 209,
+      "latencyMs": 258,
       "choice": "p39",
-      "confidence": 0.53,
-      "noul": 0.48
+      "confidence": 0.54,
+      "noul": 0.45
     },
     {
       "seam": "passage",
@@ -2381,7 +2815,7 @@
         "p86",
         "p109"
       ],
-      "latencyMs": 217,
+      "latencyMs": 253,
       "choice": "p109",
       "confidence": 1,
       "noul": 0.98
@@ -2396,7 +2830,7 @@
       "modelPicks": [
         "investigation"
       ],
-      "latencyMs": 200,
+      "latencyMs": 247,
       "choice": "investigation",
       "confidence": 1
     },
@@ -2409,9 +2843,9 @@
       "optionsBeforeCut": 3,
       "stateChars": 1831,
       "modelPicks": [],
-      "latencyMs": 240,
+      "latencyMs": 209,
       "choice": "r11",
-      "confidence": 0.94,
+      "confidence": 0.96,
       "noul": 0.34
     },
     {
@@ -2423,10 +2857,10 @@
       "optionsBeforeCut": 5,
       "stateChars": 1909,
       "modelPicks": [],
-      "latencyMs": 212,
+      "latencyMs": 246,
       "choice": "r5",
-      "confidence": 0.91,
-      "noul": 0.44
+      "confidence": 0.88,
+      "noul": 0.43
     },
     {
       "seam": "result",
@@ -2437,10 +2871,10 @@
       "optionsBeforeCut": 4,
       "stateChars": 1838,
       "modelPicks": [],
-      "latencyMs": 195,
+      "latencyMs": 213,
       "choice": "r5",
       "confidence": 0.99,
-      "noul": 0.49
+      "noul": 0.55
     },
     {
       "seam": "tier",
@@ -2452,9 +2886,9 @@
       "modelPicks": [
         "lookup"
       ],
-      "latencyMs": 256,
+      "latencyMs": 223,
       "choice": "investigation",
-      "confidence": 0.71
+      "confidence": 0.73
     },
     {
       "seam": "passage",
@@ -2467,9 +2901,9 @@
       "modelPicks": [
         "p45"
       ],
-      "latencyMs": 227,
+      "latencyMs": 271,
       "choice": "p45",
-      "confidence": 0.58,
+      "confidence": 0.53,
       "noul": 0.97
     },
     {
@@ -2483,9 +2917,9 @@
       "modelPicks": [
         "p14"
       ],
-      "latencyMs": 192,
+      "latencyMs": 219,
       "choice": "p10",
-      "confidence": 0.62,
+      "confidence": 0.58,
       "noul": 0.97
     },
     {
@@ -2499,10 +2933,10 @@
       "modelPicks": [
         "r19"
       ],
-      "latencyMs": 211,
+      "latencyMs": 265,
       "choice": "r19",
       "confidence": 1,
-      "noul": 0.87
+      "noul": 0.86
     },
     {
       "seam": "result",
@@ -2515,7 +2949,7 @@
       "modelPicks": [
         "r20"
       ],
-      "latencyMs": 223,
+      "latencyMs": 214,
       "choice": "r20",
       "confidence": 0.95,
       "noul": 0.91
@@ -2531,7 +2965,7 @@
       "modelPicks": [
         "r28"
       ],
-      "latencyMs": 237,
+      "latencyMs": 225,
       "choice": "r28",
       "confidence": 0.87,
       "noul": 0.92
@@ -2546,9 +2980,9 @@
       "modelPicks": [
         "lookup"
       ],
-      "latencyMs": 202,
+      "latencyMs": 333,
       "choice": "lookup",
-      "confidence": 0.81
+      "confidence": 0.71
     },
     {
       "seam": "passage",
@@ -2565,8 +2999,8 @@
       ],
       "latencyMs": 234,
       "choice": "p21",
-      "confidence": 0.53,
-      "noul": 0.95
+      "confidence": 0.46,
+      "noul": 0.96
     },
     {
       "seam": "tier",
@@ -2578,7 +3012,7 @@
       "modelPicks": [
         "investigation"
       ],
-      "latencyMs": 193,
+      "latencyMs": 269,
       "choice": "investigation",
       "confidence": 1
     },
@@ -2593,10 +3027,10 @@
       "modelPicks": [
         "p9"
       ],
-      "latencyMs": 247,
+      "latencyMs": 215,
       "choice": "p17",
-      "confidence": 0.26,
-      "noul": 0.54
+      "confidence": 0.4,
+      "noul": 0.53
     },
     {
       "seam": "passage",
@@ -2609,10 +3043,10 @@
       "modelPicks": [
         "p10"
       ],
-      "latencyMs": 222,
+      "latencyMs": 256,
       "choice": "p10",
-      "confidence": 0.67,
-      "noul": 0.83
+      "confidence": 0.76,
+      "noul": 0.85
     },
     {
       "seam": "result",
@@ -2623,10 +3057,10 @@
       "optionsBeforeCut": 18,
       "stateChars": 5685,
       "modelPicks": [],
-      "latencyMs": 234,
+      "latencyMs": 225,
       "choice": "r22",
       "confidence": 0.32,
-      "noul": 0.53
+      "noul": 0.54
     },
     {
       "seam": "result",
@@ -2637,10 +3071,10 @@
       "optionsBeforeCut": 11,
       "stateChars": 4046,
       "modelPicks": [],
-      "latencyMs": 200,
+      "latencyMs": 256,
       "choice": "r24",
-      "confidence": 0.55,
-      "noul": 0.54
+      "confidence": 0.57,
+      "noul": 0.56
     },
     {
       "seam": "result",
@@ -2651,10 +3085,10 @@
       "optionsBeforeCut": 7,
       "stateChars": 3125,
       "modelPicks": [],
-      "latencyMs": 220,
+      "latencyMs": 251,
       "choice": "r8",
-      "confidence": 0.79,
-      "noul": 0.48
+      "confidence": 0.81,
+      "noul": 0.49
     },
     {
       "seam": "result",
@@ -2667,10 +3101,10 @@
       "modelPicks": [
         "r21"
       ],
-      "latencyMs": 230,
+      "latencyMs": 246,
       "choice": "r26",
-      "confidence": 0.65,
-      "noul": 0.68
+      "confidence": 0.67,
+      "noul": 0.71
     },
     {
       "seam": "result",
@@ -2681,9 +3115,9 @@
       "optionsBeforeCut": 4,
       "stateChars": 2416,
       "modelPicks": [],
-      "latencyMs": 206,
+      "latencyMs": 254,
       "choice": "r9",
-      "confidence": 0.41,
+      "confidence": 0.33,
       "noul": 0.65
     },
     {
@@ -2697,10 +3131,10 @@
       "modelPicks": [
         "r6"
       ],
-      "latencyMs": 215,
+      "latencyMs": 268,
       "choice": "r6",
-      "confidence": 0.94,
-      "noul": 0.78
+      "confidence": 0.95,
+      "noul": 0.79
     },
     {
       "seam": "result",
@@ -2713,10 +3147,10 @@
       "modelPicks": [
         "r6"
       ],
-      "latencyMs": 210,
+      "latencyMs": 216,
       "choice": "r6",
-      "confidence": 0.79,
-      "noul": 0.85
+      "confidence": 0.75,
+      "noul": 0.84
     },
     {
       "seam": "result",
@@ -2729,10 +3163,10 @@
       "modelPicks": [
         "r6"
       ],
-      "latencyMs": 214,
+      "latencyMs": 263,
       "choice": "r7",
-      "confidence": 0.35,
-      "noul": 0.86
+      "confidence": 0.39,
+      "noul": 0.85
     },
     {
       "seam": "tier",
@@ -2744,9 +3178,9 @@
       "modelPicks": [
         "investigation"
       ],
-      "latencyMs": 237,
+      "latencyMs": 209,
       "choice": "investigation",
-      "confidence": 0.84
+      "confidence": 0.87
     },
     {
       "seam": "passage",
@@ -2757,10 +3191,10 @@
       "optionsBeforeCut": 457,
       "stateChars": 8144,
       "modelPicks": [],
-      "latencyMs": 251,
+      "latencyMs": 285,
       "choice": "p197",
-      "confidence": 0.35,
-      "noul": 0.4
+      "confidence": 0.37,
+      "noul": 0.41
     },
     {
       "seam": "passage",
@@ -2773,9 +3207,9 @@
       "modelPicks": [
         "p23"
       ],
-      "latencyMs": 249,
+      "latencyMs": 258,
       "choice": "p23",
-      "confidence": 0.36,
+      "confidence": 0.35,
       "noul": 0.59
     },
     {
@@ -2787,10 +3221,10 @@
       "optionsBeforeCut": 463,
       "stateChars": 8160,
       "modelPicks": [],
-      "latencyMs": 217,
+      "latencyMs": 242,
       "choice": "p197",
-      "confidence": 0.38,
-      "noul": 0.37
+      "confidence": 0.36,
+      "noul": 0.41
     },
     {
       "seam": "passage",
@@ -2801,10 +3235,10 @@
       "optionsBeforeCut": 74,
       "stateChars": 13769,
       "modelPicks": [],
-      "latencyMs": 235,
+      "latencyMs": 271,
       "choice": "p47",
-      "confidence": 0.75,
-      "noul": 0.67
+      "confidence": 0.76,
+      "noul": 0.69
     },
     {
       "seam": "passage",
@@ -2814,14 +3248,11 @@
       "options": 138,
       "optionsBeforeCut": 138,
       "stateChars": 14237,
-      "modelPicks": [
-        "p31",
-        "p90"
-      ],
-      "latencyMs": 251,
+      "modelPicks": [],
+      "latencyMs": 265,
       "choice": "p5",
-      "confidence": 0.68,
-      "noul": 0.72
+      "confidence": 0.69,
+      "noul": 0.76
     },
     {
       "seam": "passage",
@@ -2832,10 +3263,10 @@
       "optionsBeforeCut": 116,
       "stateChars": 13840,
       "modelPicks": [],
-      "latencyMs": 247,
-      "choice": "p68",
-      "confidence": 0.14,
-      "noul": 0.3
+      "latencyMs": 297,
+      "choice": "p16",
+      "confidence": 0.18,
+      "noul": 0.4
     },
     {
       "seam": "passage",
@@ -2846,10 +3277,10 @@
       "optionsBeforeCut": 6,
       "stateChars": 1990,
       "modelPicks": [],
-      "latencyMs": 191,
+      "latencyMs": 251,
       "choice": "p6",
-      "confidence": 0.92,
-      "noul": 0.16
+      "confidence": 0.93,
+      "noul": 0.17
     },
     {
       "seam": "passage",
@@ -2860,10 +3291,10 @@
       "optionsBeforeCut": 133,
       "stateChars": 14203,
       "modelPicks": [],
-      "latencyMs": 262,
+      "latencyMs": 267,
       "choice": "p19",
-      "confidence": 0.51,
-      "noul": 0.35
+      "confidence": 0.52,
+      "noul": 0.34
     },
     {
       "seam": "passage",
@@ -2880,10 +3311,10 @@
         "p107",
         "p112"
       ],
-      "latencyMs": 246,
+      "latencyMs": 265,
       "choice": "p112",
       "confidence": 0.63,
-      "noul": 0.7
+      "noul": 0.69
     },
     {
       "seam": "result",
@@ -2896,10 +3327,10 @@
       "modelPicks": [
         "r20"
       ],
-      "latencyMs": 237,
+      "latencyMs": 273,
       "choice": "r20",
       "confidence": 1,
-      "noul": 0.83
+      "noul": 0.82
     },
     {
       "seam": "result",
@@ -2912,10 +3343,10 @@
       "modelPicks": [
         "r20"
       ],
-      "latencyMs": 199,
+      "latencyMs": 238,
       "choice": "r20",
-      "confidence": 0.83,
-      "noul": 0.85
+      "confidence": 0.86,
+      "noul": 0.86
     },
     {
       "seam": "result",
@@ -2928,9 +3359,9 @@
       "modelPicks": [
         "r20"
       ],
-      "latencyMs": 232,
+      "latencyMs": 246,
       "choice": "r20",
-      "confidence": 0.55,
+      "confidence": 0.54,
       "noul": 0.83
     },
     {
@@ -2944,10 +3375,10 @@
       "modelPicks": [
         "r20"
       ],
-      "latencyMs": 236,
+      "latencyMs": 210,
       "choice": "r20",
       "confidence": 0.98,
-      "noul": 0.6
+      "noul": 0.62
     },
     {
       "seam": "tier",
@@ -2959,9 +3390,9 @@
       "modelPicks": [
         "investigation"
       ],
-      "latencyMs": 202,
+      "latencyMs": 232,
       "choice": "investigation",
-      "confidence": 0.68
+      "confidence": 0.73
     },
     {
       "seam": "passage",
@@ -2972,10 +3403,10 @@
       "optionsBeforeCut": 54,
       "stateChars": 6578,
       "modelPicks": [],
-      "latencyMs": 223,
+      "latencyMs": 255,
       "choice": "p39",
-      "confidence": 0.77,
-      "noul": 0.47
+      "confidence": 0.75,
+      "noul": 0.51
     },
     {
       "seam": "passage",
@@ -2986,9 +3417,9 @@
       "optionsBeforeCut": 79,
       "stateChars": 12947,
       "modelPicks": [],
-      "latencyMs": 241,
-      "choice": "p31",
-      "confidence": 0.19,
+      "latencyMs": 229,
+      "choice": "p23",
+      "confidence": 0.22,
       "noul": 0.17
     },
     {
@@ -3002,7 +3433,7 @@
       "modelPicks": [
         "p86"
       ],
-      "latencyMs": 280,
+      "latencyMs": 243,
       "choice": "p109",
       "confidence": 0.99,
       "noul": 0.98
@@ -3017,7 +3448,7 @@
       "modelPicks": [
         "lookup"
       ],
-      "latencyMs": 200,
+      "latencyMs": 215,
       "choice": "investigation",
       "confidence": 1
     },
@@ -3030,10 +3461,10 @@
       "optionsBeforeCut": 236,
       "stateChars": 15076,
       "modelPicks": [],
-      "latencyMs": 258,
+      "latencyMs": 242,
       "choice": "p236",
-      "confidence": 0.39,
-      "noul": 0.11
+      "confidence": 0.34,
+      "noul": 0.1
     },
     {
       "seam": "passage",
@@ -3046,10 +3477,10 @@
       "modelPicks": [
         "p17"
       ],
-      "latencyMs": 233,
+      "latencyMs": 231,
       "choice": "p5",
-      "confidence": 0.68,
-      "noul": 0.98
+      "confidence": 0.67,
+      "noul": 0.99
     },
     {
       "seam": "result",
@@ -3060,10 +3491,10 @@
       "optionsBeforeCut": 4,
       "stateChars": 1705,
       "modelPicks": [],
-      "latencyMs": 207,
+      "latencyMs": 260,
       "choice": "r5",
       "confidence": 0.99,
-      "noul": 0.6
+      "noul": 0.58
     },
     {
       "seam": "tier",
@@ -3075,9 +3506,9 @@
       "modelPicks": [
         "investigation"
       ],
-      "latencyMs": 199,
+      "latencyMs": 285,
       "choice": "investigation",
-      "confidence": 0.7
+      "confidence": 0.73
     },
     {
       "seam": "passage",
@@ -3088,9 +3519,9 @@
       "optionsBeforeCut": 79,
       "stateChars": 11508,
       "modelPicks": [],
-      "latencyMs": 255,
+      "latencyMs": 269,
       "choice": "p45",
-      "confidence": 0.66,
+      "confidence": 0.63,
       "noul": 0.97
     },
     {
@@ -3104,9 +3535,9 @@
       "modelPicks": [
         "p10"
       ],
-      "latencyMs": 235,
+      "latencyMs": 297,
       "choice": "p10",
-      "confidence": 0.63,
+      "confidence": 0.72,
       "noul": 0.97
     },
     {
@@ -3120,10 +3551,10 @@
       "modelPicks": [
         "r19"
       ],
-      "latencyMs": 232,
+      "latencyMs": 252,
       "choice": "r19",
       "confidence": 1,
-      "noul": 0.86
+      "noul": 0.87
     },
     {
       "seam": "result",
@@ -3136,7 +3567,7 @@
       "modelPicks": [
         "r20"
       ],
-      "latencyMs": 199,
+      "latencyMs": 219,
       "choice": "r20",
       "confidence": 0.98,
       "noul": 0.89
@@ -3150,10 +3581,10 @@
       "optionsBeforeCut": 2,
       "stateChars": 1475,
       "modelPicks": [],
-      "latencyMs": 204,
+      "latencyMs": 211,
       "choice": "r20",
-      "confidence": 0.97,
-      "noul": 0.62
+      "confidence": 0.98,
+      "noul": 0.61
     },
     {
       "seam": "result",
@@ -3166,9 +3597,9 @@
       "modelPicks": [
         "r20"
       ],
-      "latencyMs": 216,
+      "latencyMs": 208,
       "choice": "r20",
-      "confidence": 0.87,
+      "confidence": 0.83,
       "noul": 0.89
     },
     {
@@ -3181,7 +3612,7 @@
       "modelPicks": [
         "lookup"
       ],
-      "latencyMs": 192,
+      "latencyMs": 229,
       "choice": "lookup",
       "confidence": 0.78
     },
@@ -3198,9 +3629,9 @@
         "p21",
         "p57"
       ],
-      "latencyMs": 211,
+      "latencyMs": 263,
       "choice": "p21",
-      "confidence": 0.56,
+      "confidence": 0.51,
       "noul": 0.96
     },
     {
@@ -3213,7 +3644,7 @@
       "modelPicks": [
         "investigation"
       ],
-      "latencyMs": 267,
+      "latencyMs": 277,
       "choice": "investigation",
       "confidence": 1
     },
@@ -3226,7 +3657,7 @@
       "optionsBeforeCut": 3,
       "stateChars": 1976,
       "modelPicks": [],
-      "latencyMs": 217,
+      "latencyMs": 214,
       "choice": "r24",
       "confidence": 0.72,
       "noul": 0.68
@@ -3241,9 +3672,9 @@
       "modelPicks": [
         "investigation"
       ],
-      "latencyMs": 235,
+      "latencyMs": 265,
       "choice": "investigation",
-      "confidence": 0.82
+      "confidence": 0.84
     },
     {
       "seam": "passage",
@@ -3254,12 +3685,13 @@
       "optionsBeforeCut": 79,
       "stateChars": 13343,
       "modelPicks": [
-        "p9"
+        "p23",
+        "p29"
       ],
-      "latencyMs": 257,
+      "latencyMs": 271,
       "choice": "p23",
-      "confidence": 0.35,
-      "noul": 0.64
+      "confidence": 0.39,
+      "noul": 0.65
     },
     {
       "seam": "passage",
@@ -3270,9 +3702,9 @@
       "optionsBeforeCut": 458,
       "stateChars": 8222,
       "modelPicks": [],
-      "latencyMs": 232,
+      "latencyMs": 216,
       "choice": "p197",
-      "confidence": 0.29,
+      "confidence": 0.27,
       "noul": 0.44
     },
     {
@@ -3284,10 +3716,10 @@
       "optionsBeforeCut": 74,
       "stateChars": 13811,
       "modelPicks": [],
-      "latencyMs": 228,
+      "latencyMs": 276,
       "choice": "p47",
-      "confidence": 0.79,
-      "noul": 0.79
+      "confidence": 0.81,
+      "noul": 0.82
     },
     {
       "seam": "passage",
@@ -3298,10 +3730,10 @@
       "optionsBeforeCut": 138,
       "stateChars": 14279,
       "modelPicks": [],
-      "latencyMs": 258,
+      "latencyMs": 252,
       "choice": "p5",
-      "confidence": 0.72,
-      "noul": 0.83
+      "confidence": 0.74,
+      "noul": 0.84
     },
     {
       "seam": "passage",
@@ -3312,10 +3744,10 @@
       "optionsBeforeCut": 464,
       "stateChars": 8238,
       "modelPicks": [],
-      "latencyMs": 227,
+      "latencyMs": 248,
       "choice": "p197",
-      "confidence": 0.33,
-      "noul": 0.38
+      "confidence": 0.32,
+      "noul": 0.41
     },
     {
       "seam": "passage",
@@ -3329,10 +3761,10 @@
         "p96",
         "p109"
       ],
-      "latencyMs": 233,
+      "latencyMs": 282,
       "choice": "p95",
-      "confidence": 0.29,
-      "noul": 0.71
+      "confidence": 0.31,
+      "noul": 0.68
     },
     {
       "seam": "passage",
@@ -3343,10 +3775,10 @@
       "optionsBeforeCut": 92,
       "stateChars": 14189,
       "modelPicks": [],
-      "latencyMs": 230,
+      "latencyMs": 253,
       "choice": "p92",
-      "confidence": 0.2,
-      "noul": 0.08
+      "confidence": 0.19,
+      "noul": 0.07
     },
     {
       "seam": "passage",
@@ -3357,10 +3789,10 @@
       "optionsBeforeCut": 457,
       "stateChars": 8225,
       "modelPicks": [],
-      "latencyMs": 219,
+      "latencyMs": 282,
       "choice": "p79",
-      "confidence": 0.51,
-      "noul": 0.42
+      "confidence": 0.49,
+      "noul": 0.43
     },
     {
       "seam": "tier",
@@ -3372,9 +3804,9 @@
       "modelPicks": [
         "lookup"
       ],
-      "latencyMs": 231,
+      "latencyMs": 342,
       "choice": "investigation",
-      "confidence": 0.68
+      "confidence": 0.74
     },
     {
       "seam": "passage",
@@ -3384,14 +3816,11 @@
       "options": 79,
       "optionsBeforeCut": 79,
       "stateChars": 12821,
-      "modelPicks": [
-        "p18",
-        "p23"
-      ],
-      "latencyMs": 217,
+      "modelPicks": [],
+      "latencyMs": 338,
       "choice": "p23",
-      "confidence": 0.17,
-      "noul": 0.18
+      "confidence": 0.16,
+      "noul": 0.2
     },
     {
       "seam": "passage",
@@ -3406,7 +3835,7 @@
         "p91",
         "p96"
       ],
-      "latencyMs": 240,
+      "latencyMs": 271,
       "choice": "p109",
       "confidence": 1,
       "noul": 0.98
@@ -3421,7 +3850,7 @@
       "modelPicks": [
         "investigation"
       ],
-      "latencyMs": 239,
+      "latencyMs": 238,
       "choice": "investigation",
       "confidence": 1
     },
@@ -3438,10 +3867,10 @@
         "p7",
         "p10"
       ],
-      "latencyMs": 217,
+      "latencyMs": 285,
       "choice": "p5",
-      "confidence": 0.74,
-      "noul": 0.87
+      "confidence": 0.69,
+      "noul": 0.86
     },
     {
       "seam": "result",
@@ -3454,10 +3883,10 @@
       "modelPicks": [
         "r20"
       ],
-      "latencyMs": 250,
+      "latencyMs": 238,
       "choice": "r20",
       "confidence": 0.96,
-      "noul": 0.77
+      "noul": 0.76
     },
     {
       "seam": "result",
@@ -3470,9 +3899,9 @@
       "modelPicks": [
         "r24"
       ],
-      "latencyMs": 209,
+      "latencyMs": 200,
       "choice": "r20",
-      "confidence": 0.4,
+      "confidence": 0.43,
       "noul": 0.75
     },
     {
@@ -3486,9 +3915,9 @@
       "modelPicks": [
         "r20"
       ],
-      "latencyMs": 251,
+      "latencyMs": 232,
       "choice": "r20",
-      "confidence": 0.8,
+      "confidence": 0.71,
       "noul": 0.8
     },
     {
@@ -3501,9 +3930,9 @@
       "modelPicks": [
         "lookup"
       ],
-      "latencyMs": 214,
+      "latencyMs": 251,
       "choice": "investigation",
-      "confidence": 0.7
+      "confidence": 0.64
     },
     {
       "seam": "passage",
@@ -3517,10 +3946,10 @@
         "p15",
         "p17"
       ],
-      "latencyMs": 213,
+      "latencyMs": 240,
       "choice": "p45",
-      "confidence": 0.52,
-      "noul": 0.97
+      "confidence": 0.56,
+      "noul": 0.96
     },
     {
       "seam": "passage",
@@ -3534,9 +3963,9 @@
         "p10",
         "p17"
       ],
-      "latencyMs": 247,
+      "latencyMs": 286,
       "choice": "p10",
-      "confidence": 0.53,
+      "confidence": 0.6,
       "noul": 0.97
     },
     {
@@ -3550,10 +3979,10 @@
       "modelPicks": [
         "r20"
       ],
-      "latencyMs": 218,
+      "latencyMs": 223,
       "choice": "r20",
       "confidence": 1,
-      "noul": 0.86
+      "noul": 0.88
     },
     {
       "seam": "result",
@@ -3566,7 +3995,7 @@
       "modelPicks": [
         "r20"
       ],
-      "latencyMs": 203,
+      "latencyMs": 215,
       "choice": "r20",
       "confidence": 0.98,
       "noul": 0.9
@@ -3581,9 +4010,9 @@
       "modelPicks": [
         "lookup"
       ],
-      "latencyMs": 234,
+      "latencyMs": 264,
       "choice": "lookup",
-      "confidence": 0.73
+      "confidence": 0.76
     },
     {
       "seam": "passage",
@@ -3599,9 +4028,9 @@
         "p21",
         "p57"
       ],
-      "latencyMs": 248,
+      "latencyMs": 244,
       "choice": "p21",
-      "confidence": 0.81,
+      "confidence": 0.76,
       "noul": 0.98
     },
     {
@@ -3614,7 +4043,7 @@
       "modelPicks": [
         "investigation"
       ],
-      "latencyMs": 220,
+      "latencyMs": 225,
       "choice": "investigation",
       "confidence": 1
     },
@@ -3627,10 +4056,10 @@
       "optionsBeforeCut": 28,
       "stateChars": 4352,
       "modelPicks": [],
-      "latencyMs": 216,
+      "latencyMs": 225,
       "choice": "p6",
       "confidence": 0.52,
-      "noul": 0.46
+      "noul": 0.43
     },
     {
       "seam": "passage",
@@ -3644,9 +4073,9 @@
         "p20",
         "p21"
       ],
-      "latencyMs": 218,
+      "latencyMs": 245,
       "choice": "p21",
-      "confidence": 0.63,
+      "confidence": 0.68,
       "noul": 0.96
     },
     {
@@ -3662,10 +4091,10 @@
         "p36",
         "p38"
       ],
-      "latencyMs": 222,
+      "latencyMs": 247,
       "choice": "p38",
-      "confidence": 0.54,
-      "noul": 0.96
+      "confidence": 0.56,
+      "noul": 0.97
     },
     {
       "seam": "result",
@@ -3676,10 +4105,10 @@
       "optionsBeforeCut": 1,
       "stateChars": 1667,
       "modelPicks": [],
-      "latencyMs": 236,
+      "latencyMs": 261,
       "choice": "r9",
       "confidence": 1,
-      "noul": 0.13
+      "noul": 0.14
     },
     {
       "seam": "result",
@@ -3690,10 +4119,10 @@
       "optionsBeforeCut": 2,
       "stateChars": 1952,
       "modelPicks": [],
-      "latencyMs": 218,
+      "latencyMs": 236,
       "choice": "r23",
-      "confidence": 0.18,
-      "noul": 0.63
+      "confidence": 0.21,
+      "noul": 0.66
     },
     {
       "seam": "result",
@@ -3704,7 +4133,7 @@
       "optionsBeforeCut": 3,
       "stateChars": 1993,
       "modelPicks": [],
-      "latencyMs": 226,
+      "latencyMs": 253,
       "choice": "r20",
       "confidence": 0.97,
       "noul": 0.81
@@ -3718,10 +4147,10 @@
       "optionsBeforeCut": 3,
       "stateChars": 2013,
       "modelPicks": [],
-      "latencyMs": 232,
+      "latencyMs": 248,
       "choice": "r20",
-      "confidence": 0.69,
-      "noul": 0.85
+      "confidence": 0.78,
+      "noul": 0.84
     },
     {
       "seam": "result",
@@ -3734,7 +4163,7 @@
       "modelPicks": [
         "r20"
       ],
-      "latencyMs": 237,
+      "latencyMs": 243,
       "choice": "r20",
       "confidence": 0.95,
       "noul": 0.81
@@ -3748,10 +4177,10 @@
       "optionsBeforeCut": 2,
       "stateChars": 1771,
       "modelPicks": [],
-      "latencyMs": 206,
+      "latencyMs": 218,
       "choice": "r30",
-      "confidence": 0.77,
-      "noul": 0.7
+      "confidence": 0.79,
+      "noul": 0.71
     },
     {
       "seam": "result",
@@ -3762,9 +4191,9 @@
       "optionsBeforeCut": 3,
       "stateChars": 1845,
       "modelPicks": [],
-      "latencyMs": 218,
+      "latencyMs": 203,
       "choice": "r28",
-      "confidence": 0.42,
+      "confidence": 0.47,
       "noul": 0.19
     },
     {
@@ -3776,9 +4205,9 @@
       "optionsBeforeCut": 3,
       "stateChars": 1898,
       "modelPicks": [],
-      "latencyMs": 199,
+      "latencyMs": 242,
       "choice": "r24",
-      "confidence": 0.43,
+      "confidence": 0.41,
       "noul": 0.76
     },
     {
@@ -3790,10 +4219,10 @@
       "optionsBeforeCut": 3,
       "stateChars": 2073,
       "modelPicks": [],
-      "latencyMs": 193,
+      "latencyMs": 215,
       "choice": "r20",
-      "confidence": 0.48,
-      "noul": 0.31
+      "confidence": 0.45,
+      "noul": 0.33
     },
     {
       "seam": "result",
@@ -3804,9 +4233,9 @@
       "optionsBeforeCut": 4,
       "stateChars": 1877,
       "modelPicks": [],
-      "latencyMs": 217,
+      "latencyMs": 230,
       "choice": "r20",
-      "confidence": 0.59,
+      "confidence": 0.54,
       "noul": 0.8
     },
     {
@@ -3819,9 +4248,9 @@
       "modelPicks": [
         "investigation"
       ],
-      "latencyMs": 259,
+      "latencyMs": 265,
       "choice": "investigation",
-      "confidence": 0.83
+      "confidence": 0.84
     },
     {
       "seam": "passage",
@@ -3831,13 +4260,11 @@
       "options": 79,
       "optionsBeforeCut": 79,
       "stateChars": 13230,
-      "modelPicks": [
-        "p23"
-      ],
-      "latencyMs": 228,
+      "modelPicks": [],
+      "latencyMs": 246,
       "choice": "p23",
-      "confidence": 0.64,
-      "noul": 0.66
+      "confidence": 0.69,
+      "noul": 0.69
     },
     {
       "seam": "passage",
@@ -3848,10 +4275,10 @@
       "optionsBeforeCut": 111,
       "stateChars": 13987,
       "modelPicks": [],
-      "latencyMs": 255,
+      "latencyMs": 229,
       "choice": "p95",
-      "confidence": 0.7,
-      "noul": 0.81
+      "confidence": 0.76,
+      "noul": 0.79
     },
     {
       "seam": "passage",
@@ -3862,10 +4289,10 @@
       "optionsBeforeCut": 107,
       "stateChars": 7702,
       "modelPicks": [],
-      "latencyMs": 245,
+      "latencyMs": 260,
       "choice": "p28",
-      "confidence": 0.92,
-      "noul": 0.76
+      "confidence": 0.91,
+      "noul": 0.75
     },
     {
       "seam": "passage",
@@ -3876,9 +4303,9 @@
       "optionsBeforeCut": 458,
       "stateChars": 8109,
       "modelPicks": [],
-      "latencyMs": 263,
+      "latencyMs": 242,
       "choice": "p80",
-      "confidence": 0.24,
+      "confidence": 0.27,
       "noul": 0.46
     },
     {
@@ -3893,10 +4320,10 @@
         "p30",
         "p31"
       ],
-      "latencyMs": 243,
+      "latencyMs": 272,
       "choice": "p5",
-      "confidence": 0.67,
-      "noul": 0.81
+      "confidence": 0.63,
+      "noul": 0.82
     },
     {
       "seam": "passage",
@@ -3907,10 +4334,10 @@
       "optionsBeforeCut": 66,
       "stateChars": 4563,
       "modelPicks": [],
-      "latencyMs": 258,
+      "latencyMs": 214,
       "choice": "p44",
-      "confidence": 0.83,
-      "noul": 0.53
+      "confidence": 0.84,
+      "noul": 0.57
     },
     {
       "seam": "passage",
@@ -3921,10 +4348,10 @@
       "optionsBeforeCut": 116,
       "stateChars": 13784,
       "modelPicks": [],
-      "latencyMs": 237,
+      "latencyMs": 275,
       "choice": "p8",
-      "confidence": 0.11,
-      "noul": 0.34
+      "confidence": 0.1,
+      "noul": 0.31
     },
     {
       "seam": "passage",
@@ -3935,10 +4362,10 @@
       "optionsBeforeCut": 134,
       "stateChars": 14376,
       "modelPicks": [],
-      "latencyMs": 247,
+      "latencyMs": 233,
       "choice": "p19",
-      "confidence": 0.66,
-      "noul": 0.56
+      "confidence": 0.65,
+      "noul": 0.53
     },
     {
       "seam": "passage",
@@ -3949,10 +4376,10 @@
       "optionsBeforeCut": 149,
       "stateChars": 14131,
       "modelPicks": [],
-      "latencyMs": 228,
+      "latencyMs": 312,
       "choice": "p112",
-      "confidence": 0.69,
-      "noul": 0.87
+      "confidence": 0.68,
+      "noul": 0.86
     },
     {
       "seam": "result",
@@ -3965,10 +4392,10 @@
       "modelPicks": [
         "r21"
       ],
-      "latencyMs": 239,
+      "latencyMs": 272,
       "choice": "r21",
       "confidence": 1,
-      "noul": 0.75
+      "noul": 0.76
     },
     {
       "seam": "tier",
@@ -3980,9 +4407,9 @@
       "modelPicks": [
         "investigation"
       ],
-      "latencyMs": 223,
+      "latencyMs": 204,
       "choice": "investigation",
-      "confidence": 0.68
+      "confidence": 0.67
     },
     {
       "seam": "passage",
@@ -3993,10 +4420,10 @@
       "optionsBeforeCut": 458,
       "stateChars": 7748,
       "modelPicks": [],
-      "latencyMs": 230,
+      "latencyMs": 266,
       "choice": "p197",
-      "confidence": 0.37,
-      "noul": 0.19
+      "confidence": 0.36,
+      "noul": 0.2
     },
     {
       "seam": "passage",
@@ -4007,7 +4434,7 @@
       "optionsBeforeCut": 79,
       "stateChars": 12869,
       "modelPicks": [],
-      "latencyMs": 242,
+      "latencyMs": 232,
       "choice": "p23",
       "confidence": 0.22,
       "noul": 0.14
@@ -4021,7 +4448,7 @@
       "optionsBeforeCut": 111,
       "stateChars": 13626,
       "modelPicks": [],
-      "latencyMs": 237,
+      "latencyMs": 266,
       "choice": "p109",
       "confidence": 1,
       "noul": 0.98
@@ -4035,9 +4462,9 @@
       "optionsBeforeCut": 54,
       "stateChars": 6516,
       "modelPicks": [],
-      "latencyMs": 228,
+      "latencyMs": 254,
       "choice": "p47",
-      "confidence": 0.45,
+      "confidence": 0.42,
       "noul": 0.31
     },
     {
@@ -4049,10 +4476,10 @@
       "optionsBeforeCut": 139,
       "stateChars": 14001,
       "modelPicks": [],
-      "latencyMs": 258,
+      "latencyMs": 268,
       "choice": "p5",
-      "confidence": 0.59,
-      "noul": 0.07
+      "confidence": 0.56,
+      "noul": 0.08
     },
     {
       "seam": "result",
@@ -4065,10 +4492,10 @@
       "modelPicks": [
         "r20"
       ],
-      "latencyMs": 242,
+      "latencyMs": 218,
       "choice": "r20",
       "confidence": 1,
-      "noul": 0.64
+      "noul": 0.65
     },
     {
       "seam": "result",
@@ -4081,10 +4508,10 @@
       "modelPicks": [
         "r20"
       ],
-      "latencyMs": 250,
+      "latencyMs": 222,
       "choice": "r20",
       "confidence": 1,
-      "noul": 0.73
+      "noul": 0.72
     },
     {
       "seam": "result",
@@ -4097,10 +4524,10 @@
       "modelPicks": [
         "r20"
       ],
-      "latencyMs": 222,
+      "latencyMs": 261,
       "choice": "r20",
       "confidence": 1,
-      "noul": 0.33
+      "noul": 0.36
     },
     {
       "seam": "tier",
@@ -4112,7 +4539,7 @@
       "modelPicks": [
         "lookup"
       ],
-      "latencyMs": 235,
+      "latencyMs": 242,
       "choice": "investigation",
       "confidence": 1
     },
@@ -4125,9 +4552,9 @@
       "optionsBeforeCut": 9,
       "stateChars": 2167,
       "modelPicks": [],
-      "latencyMs": 225,
-      "choice": "p9",
-      "confidence": 0.26,
+      "latencyMs": 218,
+      "choice": "p6",
+      "confidence": 0.3,
       "noul": 0.11
     },
     {
@@ -4139,10 +4566,10 @@
       "optionsBeforeCut": 4,
       "stateChars": 1694,
       "modelPicks": [],
-      "latencyMs": 258,
+      "latencyMs": 331,
       "choice": "r5",
       "confidence": 1,
-      "noul": 0.7
+      "noul": 0.67
     },
     {
       "seam": "result",
@@ -4153,10 +4580,10 @@
       "optionsBeforeCut": 4,
       "stateChars": 1695,
       "modelPicks": [],
-      "latencyMs": 247,
+      "latencyMs": 199,
       "choice": "r5",
       "confidence": 1,
-      "noul": 0.61
+      "noul": 0.63
     },
     {
       "seam": "result",
@@ -4167,10 +4594,10 @@
       "optionsBeforeCut": 4,
       "stateChars": 1688,
       "modelPicks": [],
-      "latencyMs": 233,
+      "latencyMs": 229,
       "choice": "r5",
       "confidence": 1,
-      "noul": 0.63
+      "noul": 0.65
     },
     {
       "seam": "result",
@@ -4181,10 +4608,10 @@
       "optionsBeforeCut": 4,
       "stateChars": 1709,
       "modelPicks": [],
-      "latencyMs": 252,
+      "latencyMs": 257,
       "choice": "r5",
       "confidence": 1,
-      "noul": 0.7
+      "noul": 0.67
     },
     {
       "seam": "tier",
@@ -4196,7 +4623,7 @@
       "modelPicks": [
         "lookup"
       ],
-      "latencyMs": 274,
+      "latencyMs": 235,
       "choice": "investigation",
       "confidence": 0.67
     },
@@ -4212,9 +4639,9 @@
         "p7",
         "p39"
       ],
-      "latencyMs": 244,
-      "choice": "p7",
-      "confidence": 0.4,
+      "latencyMs": 216,
+      "choice": "p33",
+      "confidence": 0.38,
       "noul": 0.97
     },
     {
@@ -4229,9 +4656,9 @@
         "p10",
         "p17"
       ],
-      "latencyMs": 234,
+      "latencyMs": 219,
       "choice": "p10",
-      "confidence": 0.48,
+      "confidence": 0.42,
       "noul": 0.97
     },
     {
@@ -4245,7 +4672,7 @@
       "modelPicks": [
         "r20"
       ],
-      "latencyMs": 242,
+      "latencyMs": 235,
       "choice": "r20",
       "confidence": 1,
       "noul": 0.89
@@ -4261,7 +4688,7 @@
       "modelPicks": [
         "r20"
       ],
-      "latencyMs": 218,
+      "latencyMs": 193,
       "choice": "r20",
       "confidence": 0.99,
       "noul": 0.9
@@ -4276,9 +4703,9 @@
       "modelPicks": [
         "lookup"
       ],
-      "latencyMs": 214,
+      "latencyMs": 223,
       "choice": "lookup",
-      "confidence": 0.77
+      "confidence": 0.76
     },
     {
       "seam": "passage",
@@ -4289,7 +4716,7 @@
       "optionsBeforeCut": 68,
       "stateChars": 7352,
       "modelPicks": [],
-      "latencyMs": 238,
+      "latencyMs": 233,
       "choice": "p15",
       "confidence": 0.93,
       "noul": 0.97
@@ -4304,7 +4731,7 @@
       "modelPicks": [
         "investigation"
       ],
-      "latencyMs": 230,
+      "latencyMs": 278,
       "choice": "investigation",
       "confidence": 1
     },
@@ -4320,9 +4747,9 @@
         "p4",
         "p5"
       ],
-      "latencyMs": 258,
+      "latencyMs": 215,
       "choice": "p5",
-      "confidence": 0.66,
+      "confidence": 0.72,
       "noul": 0.93
     },
     {
@@ -4334,12 +4761,11 @@
       "optionsBeforeCut": 24,
       "stateChars": 8645,
       "modelPicks": [
-        "p9",
-        "p11"
+        "p5"
       ],
-      "latencyMs": 234,
+      "latencyMs": 307,
       "choice": "p11",
-      "confidence": 0.66,
+      "confidence": 0.6,
       "noul": 0.97
     },
     {
@@ -4353,9 +4779,9 @@
       "modelPicks": [
         "p10"
       ],
-      "latencyMs": 292,
+      "latencyMs": 219,
       "choice": "p10",
-      "confidence": 0.74,
+      "confidence": 0.7,
       "noul": 0.94
     },
     {
@@ -4367,9 +4793,9 @@
       "optionsBeforeCut": 17,
       "stateChars": 4999,
       "modelPicks": [],
-      "latencyMs": 226,
+      "latencyMs": 268,
       "choice": "p17",
-      "confidence": 0.56,
+      "confidence": 0.5,
       "noul": 0.04
     },
     {
@@ -4385,10 +4811,10 @@
         "p9",
         "p10"
       ],
-      "latencyMs": 205,
+      "latencyMs": 276,
       "choice": "p10",
-      "confidence": 0.49,
-      "noul": 0.9
+      "confidence": 0.53,
+      "noul": 0.88
     },
     {
       "seam": "result",
@@ -4401,10 +4827,10 @@
       "modelPicks": [
         "r23"
       ],
-      "latencyMs": 220,
+      "latencyMs": 233,
       "choice": "r23",
-      "confidence": 0.84,
-      "noul": 0.82
+      "confidence": 0.82,
+      "noul": 0.81
     },
     {
       "seam": "result",
@@ -4419,8 +4845,8 @@
       ],
       "latencyMs": 222,
       "choice": "r24",
-      "confidence": 0.41,
-      "noul": 0.87
+      "confidence": 0.39,
+      "noul": 0.86
     },
     {
       "seam": "result",
@@ -4433,10 +4859,10 @@
       "modelPicks": [
         "r27"
       ],
-      "latencyMs": 207,
+      "latencyMs": 201,
       "choice": "r23",
-      "confidence": 0.92,
-      "noul": 0.86
+      "confidence": 0.94,
+      "noul": 0.87
     },
     {
       "seam": "result",
@@ -4447,10 +4873,10 @@
       "optionsBeforeCut": 1,
       "stateChars": 1648,
       "modelPicks": [],
-      "latencyMs": 240,
+      "latencyMs": 250,
       "choice": "r20",
       "confidence": 1,
-      "noul": 0.78
+      "noul": 0.77
     },
     {
       "seam": "result",
@@ -4461,10 +4887,10 @@
       "optionsBeforeCut": 1,
       "stateChars": 1642,
       "modelPicks": [],
-      "latencyMs": 225,
+      "latencyMs": 226,
       "choice": "r20",
       "confidence": 1,
-      "noul": 0.56
+      "noul": 0.58
     },
     {
       "seam": "result",
@@ -4475,10 +4901,10 @@
       "optionsBeforeCut": 3,
       "stateChars": 1795,
       "modelPicks": [],
-      "latencyMs": 204,
+      "latencyMs": 233,
       "choice": "r24",
-      "confidence": 0.23,
-      "noul": 0.75
+      "confidence": 0.19,
+      "noul": 0.74
     },
     {
       "seam": "result",
@@ -4489,10 +4915,10 @@
       "optionsBeforeCut": 1,
       "stateChars": 1593,
       "modelPicks": [],
-      "latencyMs": 252,
+      "latencyMs": 234,
       "choice": "r5",
       "confidence": 1,
-      "noul": 0.12
+      "noul": 0.13
     },
     {
       "seam": "result",
@@ -4505,10 +4931,10 @@
       "modelPicks": [
         "r20"
       ],
-      "latencyMs": 216,
+      "latencyMs": 253,
       "choice": "r24",
-      "confidence": 0.56,
-      "noul": 0.85
+      "confidence": 0.44,
+      "noul": 0.84
     },
     {
       "seam": "tier",
@@ -4520,9 +4946,9 @@
       "modelPicks": [
         "investigation"
       ],
-      "latencyMs": 204,
+      "latencyMs": 258,
       "choice": "investigation",
-      "confidence": 0.85
+      "confidence": 0.86
     },
     {
       "seam": "passage",
@@ -4533,10 +4959,10 @@
       "optionsBeforeCut": 458,
       "stateChars": 8090,
       "modelPicks": [],
-      "latencyMs": 244,
+      "latencyMs": 246,
       "choice": "p197",
-      "confidence": 0.36,
-      "noul": 0.4
+      "confidence": 0.32,
+      "noul": 0.41
     },
     {
       "seam": "passage",
@@ -4549,9 +4975,9 @@
       "modelPicks": [
         "p109"
       ],
-      "latencyMs": 254,
+      "latencyMs": 279,
       "choice": "p95",
-      "confidence": 0.39,
+      "confidence": 0.42,
       "noul": 0.71
     },
     {
@@ -4566,10 +4992,10 @@
         "p9",
         "p23"
       ],
-      "latencyMs": 222,
+      "latencyMs": 246,
       "choice": "p23",
-      "confidence": 0.53,
-      "noul": 0.63
+      "confidence": 0.45,
+      "noul": 0.7
     },
     {
       "seam": "passage",
@@ -4580,10 +5006,10 @@
       "optionsBeforeCut": 464,
       "stateChars": 8106,
       "modelPicks": [],
-      "latencyMs": 334,
+      "latencyMs": 245,
       "choice": "p197",
-      "confidence": 0.4,
-      "noul": 0.35
+      "confidence": 0.44,
+      "noul": 0.42
     },
     {
       "seam": "passage",
@@ -4594,10 +5020,10 @@
       "optionsBeforeCut": 75,
       "stateChars": 13835,
       "modelPicks": [],
-      "latencyMs": 229,
+      "latencyMs": 238,
       "choice": "p47",
-      "confidence": 0.76,
-      "noul": 0.78
+      "confidence": 0.78,
+      "noul": 0.79
     },
     {
       "seam": "passage",
@@ -4608,10 +5034,10 @@
       "optionsBeforeCut": 138,
       "stateChars": 14147,
       "modelPicks": [],
-      "latencyMs": 231,
+      "latencyMs": 262,
       "choice": "p5",
-      "confidence": 0.78,
-      "noul": 0.84
+      "confidence": 0.76,
+      "noul": 0.82
     },
     {
       "seam": "passage",
@@ -4622,7 +5048,7 @@
       "optionsBeforeCut": 91,
       "stateChars": 13718,
       "modelPicks": [],
-      "latencyMs": 278,
+      "latencyMs": 251,
       "choice": "p18",
       "confidence": 0.51,
       "noul": 0.22
@@ -4642,10 +5068,10 @@
         "p107",
         "p112"
       ],
-      "latencyMs": 227,
+      "latencyMs": 251,
       "choice": "p112",
-      "confidence": 0.69,
-      "noul": 0.77
+      "confidence": 0.73,
+      "noul": 0.78
     },
     {
       "seam": "passage",
@@ -4659,10 +5085,10 @@
         "p6",
         "p8"
       ],
-      "latencyMs": 245,
+      "latencyMs": 272,
       "choice": "p8",
-      "confidence": 0.77,
-      "noul": 0.89
+      "confidence": 0.8,
+      "noul": 0.88
     },
     {
       "seam": "result",
@@ -4675,10 +5101,10 @@
       "modelPicks": [
         "r20"
       ],
-      "latencyMs": 213,
+      "latencyMs": 295,
       "choice": "r20",
       "confidence": 1,
-      "noul": 0.85
+      "noul": 0.84
     },
     {
       "seam": "result",
@@ -4691,9 +5117,9 @@
       "modelPicks": [
         "r20"
       ],
-      "latencyMs": 219,
+      "latencyMs": 294,
       "choice": "r20",
-      "confidence": 0.79,
+      "confidence": 0.83,
       "noul": 0.85
     },
     {
@@ -4707,9 +5133,9 @@
       "modelPicks": [
         "r27"
       ],
-      "latencyMs": 239,
+      "latencyMs": 224,
       "choice": "r19",
-      "confidence": 0.56,
+      "confidence": 0.55,
       "noul": 0.88
     },
     {
@@ -4722,9 +5148,9 @@
       "modelPicks": [
         "lookup"
       ],
-      "latencyMs": 227,
+      "latencyMs": 247,
       "choice": "investigation",
-      "confidence": 0.68
+      "confidence": 0.7
     },
     {
       "seam": "passage",
@@ -4735,10 +5161,10 @@
       "optionsBeforeCut": 107,
       "stateChars": 7456,
       "modelPicks": [],
-      "latencyMs": 236,
+      "latencyMs": 243,
       "choice": "p28",
-      "confidence": 0.77,
-      "noul": 0.22
+      "confidence": 0.74,
+      "noul": 0.19
     },
     {
       "seam": "passage",
@@ -4749,9 +5175,9 @@
       "optionsBeforeCut": 79,
       "stateChars": 12984,
       "modelPicks": [],
-      "latencyMs": 234,
-      "choice": "p23",
-      "confidence": 0.12,
+      "latencyMs": 238,
+      "choice": "p9",
+      "confidence": 0.2,
       "noul": 0.16
     },
     {
@@ -4765,7 +5191,7 @@
       "modelPicks": [
         "p109"
       ],
-      "latencyMs": 248,
+      "latencyMs": 252,
       "choice": "p109",
       "confidence": 1,
       "noul": 0.98
@@ -4780,7 +5206,7 @@
       "modelPicks": [
         "investigation"
       ],
-      "latencyMs": 207,
+      "latencyMs": 232,
       "choice": "investigation",
       "confidence": 1
     },
@@ -4795,9 +5221,9 @@
       "modelPicks": [
         "p2"
       ],
-      "latencyMs": 228,
+      "latencyMs": 288,
       "choice": "p5",
-      "confidence": 0.55,
+      "confidence": 0.61,
       "noul": 0.98
     },
     {
@@ -4811,10 +5237,10 @@
       "modelPicks": [
         "p2"
       ],
-      "latencyMs": 209,
+      "latencyMs": 249,
       "choice": "p2",
-      "confidence": 0.35,
-      "noul": 0.97
+      "confidence": 0.28,
+      "noul": 0.96
     },
     {
       "seam": "result",
@@ -4825,10 +5251,10 @@
       "optionsBeforeCut": 1,
       "stateChars": 1583,
       "modelPicks": [],
-      "latencyMs": 203,
+      "latencyMs": 286,
       "choice": "r24",
       "confidence": 1,
-      "noul": 0.21
+      "noul": 0.2
     },
     {
       "seam": "result",
@@ -4841,10 +5267,10 @@
       "modelPicks": [
         "r20"
       ],
-      "latencyMs": 230,
+      "latencyMs": 278,
       "choice": "r20",
       "confidence": 0.95,
-      "noul": 0.76
+      "noul": 0.78
     },
     {
       "seam": "result",
@@ -4857,9 +5283,9 @@
       "modelPicks": [
         "r20"
       ],
-      "latencyMs": 243,
+      "latencyMs": 247,
       "choice": "r20",
-      "confidence": 0.24,
+      "confidence": 0.26,
       "noul": 0.79
     },
     {
@@ -4872,9 +5298,9 @@
       "modelPicks": [
         "lookup"
       ],
-      "latencyMs": 215,
+      "latencyMs": 211,
       "choice": "investigation",
-      "confidence": 0.7
+      "confidence": 0.71
     },
     {
       "seam": "passage",
@@ -4887,9 +5313,9 @@
       "modelPicks": [
         "p15"
       ],
-      "latencyMs": 242,
+      "latencyMs": 227,
       "choice": "p45",
-      "confidence": 0.57,
+      "confidence": 0.6,
       "noul": 0.97
     },
     {
@@ -4901,9 +5327,9 @@
       "optionsBeforeCut": 30,
       "stateChars": 3912,
       "modelPicks": [],
-      "latencyMs": 216,
+      "latencyMs": 205,
       "choice": "p10",
-      "confidence": 0.66,
+      "confidence": 0.71,
       "noul": 0.97
     },
     {
@@ -4917,10 +5343,10 @@
       "modelPicks": [
         "r30"
       ],
-      "latencyMs": 214,
+      "latencyMs": 281,
       "choice": "r30",
-      "confidence": 0.95,
-      "noul": 0.88
+      "confidence": 0.94,
+      "noul": 0.89
     },
     {
       "seam": "result",
@@ -4933,9 +5359,9 @@
       "modelPicks": [
         "r20"
       ],
-      "latencyMs": 206,
+      "latencyMs": 334,
       "choice": "r20",
-      "confidence": 0.99,
+      "confidence": 0.98,
       "noul": 0.9
     },
     {
@@ -4948,9 +5374,9 @@
       "modelPicks": [
         "lookup"
       ],
-      "latencyMs": 228,
+      "latencyMs": 248,
       "choice": "lookup",
-      "confidence": 0.74
+      "confidence": 0.78
     },
     {
       "seam": "passage",
@@ -4965,9 +5391,9 @@
         "p56",
         "p57"
       ],
-      "latencyMs": 217,
+      "latencyMs": 249,
       "choice": "p21",
-      "confidence": 0.8,
+      "confidence": 0.74,
       "noul": 0.98
     },
     {
@@ -4980,7 +5406,7 @@
       "modelPicks": [
         "investigation"
       ],
-      "latencyMs": 217,
+      "latencyMs": 205,
       "choice": "investigation",
       "confidence": 1
     },
@@ -4996,10 +5422,10 @@
         "p4",
         "p5"
       ],
-      "latencyMs": 221,
+      "latencyMs": 236,
       "choice": "p5",
-      "confidence": 0.7,
-      "noul": 0.82
+      "confidence": 0.63,
+      "noul": 0.85
     },
     {
       "seam": "passage",
@@ -5014,9 +5440,9 @@
         "p9",
         "p11"
       ],
-      "latencyMs": 234,
+      "latencyMs": 220,
       "choice": "p11",
-      "confidence": 0.69,
+      "confidence": 0.72,
       "noul": 0.96
     },
     {
@@ -5028,9 +5454,9 @@
       "optionsBeforeCut": 4,
       "stateChars": 1717,
       "modelPicks": [],
-      "latencyMs": 212,
+      "latencyMs": 233,
       "choice": "r7",
-      "confidence": 0.27,
+      "confidence": 0.3,
       "noul": 0.1
     },
     {
@@ -5042,10 +5468,10 @@
       "optionsBeforeCut": 4,
       "stateChars": 2315,
       "modelPicks": [],
-      "latencyMs": 235,
+      "latencyMs": 228,
       "choice": "r6",
-      "confidence": 0.77,
-      "noul": 0.83
+      "confidence": 0.82,
+      "noul": 0.82
     },
     {
       "seam": "result",
@@ -5056,9 +5482,9 @@
       "optionsBeforeCut": 2,
       "stateChars": 1743,
       "modelPicks": [],
-      "latencyMs": 255,
+      "latencyMs": 241,
       "choice": "r20",
-      "confidence": 0.65,
+      "confidence": 0.61,
       "noul": 0.65
     },
     {
@@ -5072,9 +5498,9 @@
       "modelPicks": [
         "r10"
       ],
-      "latencyMs": 221,
+      "latencyMs": 208,
       "choice": "r10",
-      "confidence": 0.9,
+      "confidence": 0.91,
       "noul": 0.85
     },
     {
@@ -5086,9 +5512,9 @@
       "optionsBeforeCut": 4,
       "stateChars": 2369,
       "modelPicks": [],
-      "latencyMs": 254,
+      "latencyMs": 240,
       "choice": "r6",
-      "confidence": 0.36,
+      "confidence": 0.55,
       "noul": 0.85
     },
     {
@@ -5102,9 +5528,9 @@
       "modelPicks": [
         "r20"
       ],
-      "latencyMs": 219,
+      "latencyMs": 246,
       "choice": "r20",
-      "confidence": 0.79,
+      "confidence": 0.78,
       "noul": 0.87
     },
     {
@@ -5116,10 +5542,10 @@
       "optionsBeforeCut": 4,
       "stateChars": 2060,
       "modelPicks": [],
-      "latencyMs": 229,
+      "latencyMs": 216,
       "choice": "r1",
-      "confidence": 0.82,
-      "noul": 0.11
+      "confidence": 0.83,
+      "noul": 0.12
     }
   ]
 }

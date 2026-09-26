@@ -55,8 +55,11 @@ export interface ShadowTraceLine {
   readonly tool?: string
   readonly outcome?: string
   readonly excerpt?: string
+  /** A checkpoint's graded observations: which one grounded it, made by what, when. */
+  readonly graded?: ReadonlyArray<{ readonly matched?: boolean; readonly producer?: string; readonly observedAt?: number }>
   readonly event?: {
     readonly type?: string
+    readonly at?: number
     readonly name?: string
     readonly callId?: string
     readonly text?: string
@@ -72,8 +75,9 @@ export interface ShadowTraceLine {
 
 type RunStep =
   | { readonly kind: 'call'; readonly name: string; readonly callId: string; readonly args: Record<string, unknown> }
-  | { readonly kind: 'result'; readonly name: string; readonly callId: string; readonly ok: boolean; readonly text: string }
-  | { readonly kind: 'checkpoint'; readonly excerpt: string }
+  | { readonly kind: 'result'; readonly name: string; readonly callId: string; readonly ok: boolean; readonly text: string; readonly at?: number }
+  /** An accepted record_evidence; `pageReadsAt` is when each Page Read that grounded it was observed. */
+  | { readonly kind: 'checkpoint'; readonly excerpt: string; readonly pageReadsAt: readonly number[] }
 
 /** One orchestrator Run as its trace recorded it. */
 export interface ShadowRun {
@@ -107,7 +111,10 @@ export function readShadowRuns(capture: string, lines: readonly ShadowTraceLine[
     const event = line.event
     if (line.kind === 'evidence_checkpoint') {
       if (line.tool === 'record_evidence' && line.outcome === 'accepted' && typeof line.excerpt === 'string') {
-        runOf(line.turnId).steps.push({ kind: 'checkpoint', excerpt: line.excerpt })
+        const pageReadsAt = (line.graded ?? []).flatMap((observation) =>
+          observation.matched === true && observation.producer === 'page_read' && typeof observation.observedAt === 'number' ? [observation.observedAt] : [],
+        )
+        runOf(line.turnId).steps.push({ kind: 'checkpoint', excerpt: line.excerpt, pageReadsAt })
       }
       continue
     }
@@ -128,6 +135,7 @@ export function readShadowRuns(capture: string, lines: readonly ShadowTraceLine[
         callId: event.callId,
         ok: event.ok !== false,
         text: typeof event.result === 'string' ? event.result : '',
+        ...(typeof event.at === 'number' ? { at: event.at } : {}),
       })
     }
   }
@@ -212,16 +220,34 @@ export const PASSAGE_QUESTIONS = (options: Record<string, string | null>): Decis
 })
 
 /** One passage sample per Page Read the Run was shown. */
+/** How long after its observation a Page Read's result is published; the ledger stamps it first. */
+const GROUNDING_SLACK_MS = 1_000
+
+/**
+ * The read a Page Read observation was made by: the first read_page result
+ * published at or after the observation, within the slack.
+ */
+function readAt(reads: ReadonlyArray<{ at?: number; callId: string }>, observedAt: number): string | undefined {
+  return reads.find((read) => read.at !== undefined && read.at >= observedAt && read.at - observedAt <= GROUNDING_SLACK_MS)?.callId
+}
+
+/**
+ * One passage sample per Page Read the Run was shown. The model's pick is
+ * read off the first accepted checkpoint the grader grounded on that very
+ * read — never on a landing, another page, or another read of the same one
+ * — as the passages holding its excerpt. A read no checkpoint was grounded
+ * on is "picked none".
+ */
 export function passageSamples(run: ShadowRun): ShadowSample[] {
-  return run.steps.flatMap((step, index) => {
-    if (step.kind !== 'result' || step.name !== 'read_page' || !step.ok) return []
+  const reads = run.steps.flatMap((step) => (step.kind === 'result' && step.name === 'read_page' && step.ok ? [step] : []))
+  const checkpoints = run.steps.filter((step): step is Extract<RunStep, { kind: 'checkpoint' }> => step.kind === 'checkpoint')
+  return reads.flatMap((step) => {
     const all = pagePassages(step.text)
     if (all.length === 0) return []
     const passages = all.slice(0, MAX_OPTIONS)
-    const later = run.steps.slice(index + 1)
     const picks =
-      later
-        .filter((next): next is Extract<RunStep, { kind: 'checkpoint' }> => next.kind === 'checkpoint')
+      checkpoints
+        .filter((checkpoint) => checkpoint.pageReadsAt.some((observedAt) => readAt(reads, observedAt) === step.callId))
         .map((checkpoint) => passagesHolding(passages, checkpoint.excerpt))
         .find((held) => held.length > 0) ?? []
     const title = step.text.split('\n', 1)[0]
@@ -314,6 +340,9 @@ export function listingResults(result: string, landing: string): Array<{ label: 
 /** The steps that only look or record: the model's next move is the first step that is none of these. */
 const PASSIVE_TOOLS: ReadonlySet<string> = new Set(['read_page', 'scroll', 'record_evidence', 'record_candidate', 'look'])
 
+/** The passive steps that show a new snapshot, renumbering refs. */
+const SNAPSHOT_TOOLS: ReadonlySet<string> = new Set(['read_page', 'scroll', 'look'])
+
 export const RESULT_QUESTIONS = (options: Record<string, string | null>): DecisionQuestions => ({
   pick: {
     type: 'choice',
@@ -335,9 +364,13 @@ export function resultSamples(run: ShadowRun): ShadowSample[] {
     const all = listingResults(step.text, landing)
     if (all.length === 0) return []
     const options = all.slice(0, MAX_OPTIONS)
-    const next = run.steps
-      .slice(index + 1)
-      .find((later): later is Extract<RunStep, { kind: 'call' }> => later.kind === 'call' && !PASSIVE_TOOLS.has(later.name))
+    const after = run.steps.slice(index + 1)
+    const nextAt = after.findIndex((later) => later.kind === 'call' && !PASSIVE_TOOLS.has(later.name))
+    const next = nextAt === -1 ? undefined : (after[nextAt] as Extract<RunStep, { kind: 'call' }>)
+    // A click after a scroll, a Page Read or a Look names a ref from a newer
+    // snapshot than the listing's: which result it opened is unmeasured.
+    const reshown = after.slice(0, nextAt === -1 ? 0 : nextAt).some((between) => between.kind === 'call' && SNAPSHOT_TOOLS.has(between.name))
+    if (next?.name === 'click' && reshown) return []
     let picks: string[] = []
     if (next?.name === 'click' && typeof next.args.ref === 'number') {
       picks = options.filter((option) => option.refs.includes(next.args.ref as number)).map((option) => option.label)
@@ -444,7 +477,7 @@ export async function askSamples(
   const rows: ShadowRow[] = new Array(samples.length)
   let next = 0
   let done = 0
-  const worker = async () => {
+  const lane = async () => {
     while (next < samples.length) {
       const at = next++
       const sample = samples[at]
@@ -454,7 +487,7 @@ export async function askSamples(
       onRow?.(rows[at], done)
     }
   }
-  await Promise.all(Array.from({ length: Math.max(1, Math.min(concurrency, samples.length)) }, worker))
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(concurrency, samples.length)) }, lane))
   return rows
 }
 
@@ -485,22 +518,98 @@ function percentile(values: readonly number[], p: number): number | null {
   return sorted[Math.min(sorted.length - 1, Math.ceil((p / 100) * sorted.length) - 1)]
 }
 
+/**
+ * What a seam would do if it acted at one bar on one primitive: every answer
+ * at or above it acts, and each act either agrees with the model's pick,
+ * disagrees with it, or falls on a step the model picked nothing at. The
+ * last is its own column, never a disagreement: from a trace it is
+ * unmeasured — the model may have missed what was there or judged it
+ * useless — and #274's correctness veto is what settles it.
+ */
+export interface ThresholdRow {
+  readonly at: number
+  readonly acted: number
+  readonly agreed: number
+  readonly disagreed: number
+  readonly recordedNothing: number
+  /** agreed ÷ (agreed + disagreed); null when no act fell on a model pick. */
+  readonly agreement: number | null
+}
+
+/** The bars a threshold table is read at: every decile's lower edge. */
+const DECILE_BARS = Array.from({ length: 10 }, (_, decile) => decile / 10)
+
+/** The least agreement a bar must reach, and the fewest scored acts it must rest on (#275, the owner's rule). */
+export const THRESHOLD_AGREEMENT = 0.8
+export const THRESHOLD_MIN_SCORED = 10
+
+function agrees(row: ShadowRow): boolean {
+  return row.choice !== undefined && row.modelPicks.includes(row.choice)
+}
+
+function thresholdTable(rows: readonly ShadowRow[], value: (row: ShadowRow) => number | undefined): ThresholdRow[] {
+  return DECILE_BARS.map((at) => {
+    const acted = rows.filter((row) => (value(row) ?? -1) >= at)
+    const scored = acted.filter((row) => row.modelPicks.length > 0)
+    const agreed = scored.filter(agrees).length
+    return {
+      at,
+      acted: acted.length,
+      agreed,
+      disagreed: scored.length - agreed,
+      recordedNothing: acted.length - scored.length,
+      agreement: scored.length === 0 ? null : round(agreed / scored.length),
+    }
+  })
+}
+
+/**
+ * The bar a table supports (#275, the owner's rule on the decile table): the
+ * lowest bar whose acts agree at least {@link THRESHOLD_AGREEMENT} over at
+ * least {@link THRESHOLD_MIN_SCORED} scored acts; failing that, the highest
+ * bar that still rests on that many. Null when no bar does.
+ */
+export function chooseThreshold(table: readonly ThresholdRow[]): number | null {
+  const supported = table.filter((row) => row.agreed + row.disagreed >= THRESHOLD_MIN_SCORED)
+  const reaching = supported.find((row) => row.agreement !== null && row.agreement >= THRESHOLD_AGREEMENT)
+  return reaching?.at ?? supported.at(-1)?.at ?? null
+}
+
 export interface SeamSummary {
   readonly samples: number
   readonly unavailable: Readonly<Record<string, number>>
+  /** Over every ask, unavailable ones included: a timeout is the seam's worst cost, not a gap in it. */
   readonly latencyMs: { readonly median: number | null; readonly p95: number | null }
   /** Samples whose options were cut at {@link MAX_OPTIONS}. */
   readonly optionsCut: number
+  /** Scored samples where more than one option counts as the model's pick (an excerpt spanning passages, a result linked twice). */
+  readonly multiPick: number
   /** Choice against what the model picked, over the samples where it picked something. */
-  readonly choice: { readonly scored: number; readonly agreement: number | null; readonly byConfidence: readonly DecileRow[] }
+  readonly choice: {
+    readonly scored: number
+    readonly agreement: number | null
+    readonly byConfidence: readonly DecileRow[]
+    /** Acting on Choice confidence alone, at each decile's bar. */
+    readonly thresholds: readonly ThresholdRow[]
+    readonly chosen: number | null
+  }
   /** Noul against whether the model picked anything; absent for a seam that asks no Noul. */
-  readonly noul?: { readonly scored: number; readonly agreementAtHalf: number | null; readonly byProbability: readonly DecileRow[] }
-  /**
-   * What the seam would have done at the thresholds: how often it would have
-   * acted, how often its pick then matched the model's, and how often the
-   * model had picked nothing at all.
-   */
-  readonly atThreshold: { readonly acted: number; readonly agreed: number; readonly modelPickedNothing: number }
+  readonly noul?: {
+    readonly scored: number
+    readonly agreementAtHalf: number | null
+    readonly byProbability: readonly DecileRow[]
+    /** Acting on the Noul alone, at each decile's bar; agreement is the Choice's, over the acts. */
+    readonly thresholds: readonly ThresholdRow[]
+    readonly chosen: number | null
+  }
+  /** What the seam would have done at the thresholds in force, both primitives clearing. */
+  readonly atThreshold: {
+    readonly thresholds: DecisionThresholds
+    readonly acted: number
+    readonly agreed: number
+    readonly disagreed: number
+    readonly recordedNothing: number
+  }
 }
 
 export function summarizeSeam(rows: readonly ShadowRow[], thresholds: DecisionThresholds): SeamSummary {
@@ -508,21 +617,26 @@ export function summarizeSeam(rows: readonly ShadowRow[], thresholds: DecisionTh
   const unavailable: Record<string, number> = {}
   for (const row of rows) if (row.unavailable !== undefined) unavailable[row.unavailable] = (unavailable[row.unavailable] ?? 0) + 1
   const picked = answered.filter((row) => row.modelPicks.length > 0 && row.choice !== undefined)
-  const agrees = (row: ShadowRow) => row.choice !== undefined && row.modelPicks.includes(row.choice)
   const withNoul = answered.filter((row) => row.noul !== undefined)
-  const clears = (row: ShadowRow) =>
-    row.confidence !== undefined && row.confidence >= thresholds.choice && (row.noul === undefined || row.noul >= thresholds.noul)
-  const acted = answered.filter(clears)
-  const latencies = answered.map((row) => row.latencyMs)
+  const acted = answered.filter(
+    (row) => row.confidence !== undefined && row.confidence >= thresholds.choice && (row.noul === undefined || row.noul >= thresholds.noul),
+  )
+  const actedScored = acted.filter((row) => row.modelPicks.length > 0)
+  const choiceTable = thresholdTable(answered, (row) => row.confidence)
+  const noulTable = thresholdTable(withNoul, (row) => row.noul)
+  const latencies = rows.map((row) => row.latencyMs)
   return {
     samples: rows.length,
     unavailable,
     latencyMs: { median: percentile(latencies, 50), p95: percentile(latencies, 95) },
     optionsCut: rows.filter((row) => row.optionsBeforeCut > row.options).length,
+    multiPick: picked.filter((row) => row.modelPicks.length > 1).length,
     choice: {
       scored: picked.length,
       agreement: picked.length === 0 ? null : round(picked.filter(agrees).length / picked.length),
       byConfidence: deciles(picked.map((row) => ({ x: row.confidence ?? 0, hit: agrees(row) }))),
+      thresholds: choiceTable,
+      chosen: chooseThreshold(choiceTable),
     },
     ...(withNoul.length > 0
       ? {
@@ -530,13 +644,17 @@ export function summarizeSeam(rows: readonly ShadowRow[], thresholds: DecisionTh
             scored: withNoul.length,
             agreementAtHalf: round(withNoul.filter((row) => (row.noul ?? 0) >= 0.5 === row.modelPicks.length > 0).length / withNoul.length),
             byProbability: deciles(withNoul.map((row) => ({ x: row.noul ?? 0, hit: row.modelPicks.length > 0 }))),
+            thresholds: noulTable,
+            chosen: chooseThreshold(noulTable),
           },
         }
       : {}),
     atThreshold: {
+      thresholds,
       acted: acted.length,
-      agreed: acted.filter(agrees).length,
-      modelPickedNothing: acted.filter((row) => row.modelPicks.length === 0).length,
+      agreed: actedScored.filter(agrees).length,
+      disagreed: actedScored.length - actedScored.filter(agrees).length,
+      recordedNothing: acted.length - actedScored.length,
     },
   }
 }
@@ -544,8 +662,9 @@ export function summarizeSeam(rows: readonly ShadowRow[], thresholds: DecisionTh
 /** What the replay cannot see, stated in every report so no reader mistakes a limit for a finding. */
 export const SHADOW_LIMITS: readonly string[] = [
   'passage: measured on Page Reads only; a navigate landing holds a Page Preview in the trace, never the landing text, so landing agreement comes from #274\'s first capture',
-  'passage: the model\'s pick is the passage holding its next accepted record_evidence excerpt from that read; a read it recorded nothing from is "picked none"',
+  'passage: the model\'s pick is the passage holding the excerpt of the first accepted record_evidence the grader grounded on that very read (its page_read observation); a read no checkpoint was grounded on is "picked none", and an excerpt spanning several passages makes each a pick (multiPick)',
   'passage and result: every declared Asked Item is offered as open; which were still open at a given step is not recorded',
-  'result: the model\'s pick is the result its next navigate or click opened; a new search, a type or anything else is "picked none"; navigate results are cut at 8,000 characters in the trace',
+  'result: the model\'s pick is the result its next navigate or click opened; a new search, a type or anything else is "picked none"; a click after a scroll, Page Read or Look names a newer snapshot\'s ref and is left out; navigate results are cut at 8,000 characters in the trace',
+  '"recorded nothing" (the model picked nothing where the seam would act) is its own column, never a disagreement: it is unmeasured from traces',
   'tier: follow-up commands are asked without the Run they follow',
 ]

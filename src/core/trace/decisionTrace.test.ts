@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { DECISION_THRESHOLDS, type DecisionQuestions, type DecisionResult } from '../ports/decisionModel'
+import type { DecisionQuestions, DecisionResult } from '../ports/decisionModel'
 import { decisionEvent } from './decisionTrace'
 
 const QUESTIONS = {
@@ -19,7 +19,7 @@ function answered(confidence: number, noul: number): DecisionResult<typeof QUEST
   }
 }
 
-const BASE = { seam: 'passage', round: 3, questions: QUESTIONS, stateChars: 4_210, threshold: DECISION_THRESHOLDS } as const
+const BASE = { seam: 'passage', round: 3, questions: QUESTIONS, stateChars: 4_210, threshold: { choice: 0.7, noul: 0.7 } } as const
 
 describe('the decision record (#275, ADR 0068)', () => {
   it('pins every field of an answer that clears both thresholds', () => {

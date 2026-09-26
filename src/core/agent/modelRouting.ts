@@ -1,6 +1,9 @@
 // Model router: which OpenAI-compatible endpoint + model id serves each agent
 // role. Everything is config (environment); no model id or provider is baked
-// into code, so swapping providers is a config change.
+// into code, so swapping providers is a config change. The one exception
+// is the decision role below (#275, ADR 0068): its issue pins a default
+// base URL and model id, because its thresholds are tuned per model version
+// and a key alone is meant to arm it; both are still overridable by env.
 
 import { REASONING_EFFORTS, type ReasoningEffort } from '../ports/llm.ts'
 import { reportFault } from '../trace/fault.ts'
@@ -178,15 +181,17 @@ export function resolveDecisionRouting(env: Record<string, string | undefined>):
 
 /**
  * The seams that act: none when the role is neither configured nor
- * scripted, otherwise every seam unless `BINGBONG_DECISION_SEAMS` lists
- * some. An unknown name is dropped rather than failing a Run over a typo
- * in an experiment variable.
+ * scripted, otherwise every seam unless `BINGBONG_DECISION_SEAMS` is set —
+ * then the ones it lists, and none when it is set empty. An unknown name
+ * is dropped rather than failing a Run over a typo in an experiment variable.
  */
 export function resolveDecisionSeams(env: Record<string, string | undefined>): ReadonlySet<DecisionSeam> {
   const served = readEnv(env, DECISION_SCRIPT_ENV_KEY) !== undefined || resolveDecisionRouting(env).configured
   if (!served) return new Set()
-  const listed = readEnv(env, DECISION_SEAMS_ENV_KEY)
-  if (listed === undefined) return new Set(DECISION_SEAMS)
+  // Unset means every seam; set but empty means none — the off switch that
+  // keeps the key in place.
+  const listed = env[DECISION_SEAMS_ENV_KEY]
+  if (typeof listed !== 'string') return new Set(DECISION_SEAMS)
   const names = listed.split(',').map((name) => name.trim().toLowerCase())
   return new Set(DECISION_SEAMS.filter((seam) => names.includes(seam)))
 }

@@ -59,7 +59,8 @@ export interface DecisionRequest<Q extends DecisionQuestions> {
  * caller aborted. `failed`: anything else, a stand-in's exhausted script
  * included.
  */
-export type DecisionUnavailableReason = 'timeout' | 'transport' | 'http' | 'malformed' | 'cancelled' | 'failed'
+export const DECISION_UNAVAILABLE_REASONS = ['timeout', 'transport', 'http', 'malformed', 'cancelled', 'failed'] as const
+export type DecisionUnavailableReason = (typeof DECISION_UNAVAILABLE_REASONS)[number]
 
 export type DecisionResult<Q extends DecisionQuestions> =
   | {
@@ -108,8 +109,23 @@ export interface DecisionThresholds {
   readonly noul: number
 }
 
-/** The starting thresholds; the shadow replay's decile table is what moves them (#275). */
-export const DECISION_THRESHOLDS: DecisionThresholds = { choice: 0.7, noul: 0.7 }
+/**
+ * The bars each seam acts at, per `jev-1.13.0`. They started at 0.7/0.7 and
+ * the shadow replay's decile table moves them (#275,
+ * e2e/eval/jev/shadow-2026-09-26.json): a bar is the lowest decile whose
+ * acts agree with the model's pick at least 0.8 over at least ten scored
+ * acts, or failing that the highest decile that still has ten. For the
+ * passage seam that is Choice 0.7 (0.86 over 22) and, no Noul bar reaching
+ * 0.8, Noul 0.9 (0.70 over 40); together they act 22 times in 148 reads,
+ * 14 agreeing, 3 not, 5 on reads the model recorded nothing from. Result
+ * and tier stay at the starting bars by the owner's call — result met it,
+ * and tier only ever records in shadow.
+ */
+export const DECISION_THRESHOLDS: Readonly<Record<DecisionSeam, DecisionThresholds>> = {
+  passage: { choice: 0.7, noul: 0.9 },
+  result: { choice: 0.7, noul: 0.7 },
+  tier: { choice: 0.7, noul: 0.7 },
+}
 
 /** Whether every answer clears its own primitive's threshold — the one condition under which a seam acts. */
 export function clearsDecisionThresholds(answers: Readonly<Record<string, DecisionAnswer>>, thresholds: DecisionThresholds): boolean {

@@ -85,3 +85,20 @@ Shares [ADR 0033](0033-a-ref-names-the-element-it-was-shown-as.md)'s
 principle that what the Run was shown is the one ground it may act on.
 Leaves the Effort Tier rungs (#166, #215, #252) and the Risk Gate untouched.
 #268 compares orchestrators on the same clock and is unaffected.
+
+## Implementation note (#275, 2026-09-26)
+
+The fourth role resolves beside the three, not among them:
+`resolveDecisionRouting` and `resolveDecisionSeams` in
+`src/core/agent/modelRouting.ts`, never `AgentRole`. It serves no loop, holds
+no settings row and must not reach `set_setting`. Unlike the three it has
+defaults for everything but its key (`https://api.typesafe.ai`,
+`jev-1.13.0`, `TYPESAFE_API_KEY`), so a key alone arms it.
+`BINGBONG_DECISION_SEAMS` set but empty keeps the key and acts on no seam.
+Thresholds are per seam (`DECISION_THRESHOLDS`) and were moved by the
+shadow replay's decile table, `e2e/eval/jev/shadow-2026-09-26.json`. The
+rule is the lowest decile whose acts agree with the model's pick at least
+0.8 over at least ten scored acts, else the highest decile with ten. A step
+where the model recorded nothing is its own column, never a disagreement.
+The replay measured Jev at a median of about 220 ms, not the 100 ms this
+ADR's context assumed.
