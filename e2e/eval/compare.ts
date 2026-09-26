@@ -137,8 +137,7 @@ function declaredRunTiers(scenario: EvalScenario): EffortTier[] {
 
 /** The routing a side holds fixed against the other: every role but the decision role. */
 function agentRouting(routing: EvalReport['routing']): string {
-  const { decision: _decision, ...agents } = routing
-  return canonicalJson(agents)
+  return canonicalJson({ orchestrator: routing.orchestrator, subagent: routing.subagent, vision: routing.vision })
 }
 
 function sharedCorpusOf(a: CapturePool, b: CapturePool): Comparison['sharedCorpus'] {
