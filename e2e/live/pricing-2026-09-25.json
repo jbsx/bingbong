@@ -1,0 +1,9 @@
+{
+  "source": "List prices in USD per million tokens, uncached: GLM-5.3 and GLM-5.3-flash from https://docs.z.ai/guides/overview/pricing (the live captures bill GLM on the coding plan's flat credits, so these are list-price equivalents); claude-sonnet-5 from https://platform.claude.com/docs/en/about-claude/pricing (base input and output; the OpenAI-compatible route caches nothing). Checked against both pages on 2026-09-26. No cached-token count is recorded in any trace, so every estimate priced here is an uncached upper bound (#268).",
+  "dated": "2026-09-25",
+  "models": {
+    "GLM-5.3": { "inputPerMTok": 1.4, "outputPerMTok": 4.4 },
+    "GLM-5.3-flash": { "inputPerMTok": 0.15, "outputPerMTok": 0.5 },
+    "claude-sonnet-5": { "inputPerMTok": 2, "outputPerMTok": 10 }
+  }
+}
