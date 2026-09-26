@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { launchDecisionSeamsOf, launchRoutingOf } from './launchRouting.ts'
+import { decisionSeamsLabel, launchDecisionSeamsOf, launchRoutingOf } from './launchRouting.ts'
 import type { LiveLaunchProvenance } from './types.ts'
 
 // The routing a set's launches read as (#279): the Decision Model's role is
@@ -39,5 +39,14 @@ describe('launchDecisionSeamsOf', () => {
     expect(launchDecisionSeamsOf([{}, { decisionSeams: null }])).toBeNull()
     expect(launchDecisionSeamsOf([{ decisionSeams: 'tier' }, { decisionSeams: 'tier' }])).toBe('tier')
     expect(launchDecisionSeamsOf([{ decisionSeams: 'tier' }, { decisionSeams: 'passage' }])).toBe('passage | tier')
+    // Set empty is #275's off switch, a value of its own and never unset.
+    expect(launchDecisionSeamsOf([{ decisionSeams: '' }])).toBe('')
+  })
+
+  it('reads unset, the list set empty and a list apart', () => {
+    expect(decisionSeamsLabel(undefined)).toBe('none')
+    expect(decisionSeamsLabel(null)).toBe('none')
+    expect(decisionSeamsLabel('')).toBe('empty (no seam acts)')
+    expect(decisionSeamsLabel('passage,result')).toBe('passage,result')
   })
 })

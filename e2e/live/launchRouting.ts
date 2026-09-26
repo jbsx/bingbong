@@ -27,6 +27,16 @@ export function launchRoutingOf(launches: readonly Pick<LiveLaunchProvenance, 'r
   ].sort()
 }
 
+/**
+ * How a recorded seam list reads (#279): `none` when unset (every seam acts
+ * when the role serves), `empty (no seam acts)` for the list set empty —
+ * #275's off switch — and the list itself otherwise.
+ */
+export function decisionSeamsLabel(value: string | null | undefined): string {
+  if (value === null || value === undefined) return 'none'
+  return value === '' ? 'empty (no seam acts)' : value
+}
+
 /** The seam list the launches forwarded (#279): distinct values joined, or null when none forwarded one. */
 export function launchDecisionSeamsOf(launches: readonly Pick<LiveLaunchProvenance, 'decisionSeams'>[]): string | null {
   const values = [...new Set(launches.map((launch) => launch.decisionSeams ?? null).filter((value): value is string => value !== null))].sort()

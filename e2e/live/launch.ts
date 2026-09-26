@@ -295,7 +295,7 @@ export function composeVerificationLaunch(input: VerificationLaunchInput): Compo
       platform: { node: process.version, os: `${process.platform} ${process.arch}`, electron: electronVersion() },
       roles,
       reasoningEffortOverride: effective[REASONING_EFFORT_ENV_KEY] ?? null,
-      decisionSeams: effective[DECISION_SEAMS_ENV_KEY]?.trim() || null,
+      decisionSeams: typeof effective[DECISION_SEAMS_ENV_KEY] === 'string' ? effective[DECISION_SEAMS_ENV_KEY]!.trim() : null,
       effortOverrides,
       envFile: { path: effective.BINGBONG_ENV_FILE ?? '', present: false, digest: null },
       settings: profile.settings,

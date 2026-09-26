@@ -52,6 +52,7 @@ import type { SearchObservation, SearchSignature } from '../../src/core/pipeline
 import { isSearchInspection, SEARCH_LOOP_NUDGE_AFTER, SEARCH_SIGNATURES, searchStreakAfter, searchStreakMoveOf, similarQueries } from '../../src/core/pipeline/searchLoopRule.ts'
 import { normalizeUrlInput, parseSearchUrl, SEARCH_URL_FORMS, type SearchUrlForm } from '../../src/core/browser/urlInput.ts'
 import type { TraceRecord } from '../../src/core/trace/runTrace'
+import { decisionSeamsLabel } from './launchRouting.ts'
 import { allowedDifferenceLine, type AllowedDifference, type AllowedDifferenceRecord } from './allowedDifference.ts'
 import type { Validation } from './artifacts.ts'
 import type { LiveGradeEntry, LiveKeyTask } from './grades.ts'
@@ -3541,7 +3542,7 @@ const SHARED_FIELDS: readonly { readonly name: string; readonly allowable?: Allo
   { name: 'mode', of: (provenance) => provenance.mode },
   { name: 'adblock', of: (provenance) => provenance.adblock },
   { name: 'reasoning-effort override', of: (provenance) => provenance.reasoningEffortOverride ?? 'none' },
-  { name: 'decision seams', of: (provenance) => provenance.decisionSeams ?? 'none' },
+  { name: 'decision seams', of: (provenance) => decisionSeamsLabel(provenance.decisionSeams) },
   { name: 'effort overrides', of: (provenance) => provenance.effortOverrides.join(', ') || 'none' },
   { name: 'browser sub-spans', of: (provenance) => (provenance.browserSubspans ? 'on' : 'off') },
   { name: 'prompt versions', of: (provenance) => provenance.promptVersions.join(', ') },
@@ -3894,7 +3895,7 @@ export function formatAuditSet(audit: AuditSetOutput): string {
   lines.push('## Provenance')
   lines.push('')
   lines.push(`- capture: commit(s) ${provenance.commits.map((commit) => commit.slice(0, 8)).join(', ')}${provenance.dirtyTree ? ' (dirty tree)' : ''}; mode ${provenance.mode}; protocol ${provenance.protocolVersion}; prompt version(s) ${provenance.promptVersions.join(', ')}`)
-  lines.push(`- routing: ${provenance.roles.join('; ')} | reasoning override: ${provenance.reasoningEffortOverride ?? 'none'} | decision seams: ${provenance.decisionSeams ?? 'none'} | effort overrides: ${provenance.effortOverrides.length === 0 ? 'none' : provenance.effortOverrides.join(', ')} | adblock: ${provenance.adblock} | browser sub-spans: ${provenance.browserSubspans ? 'on' : 'off'}`)
+  lines.push(`- routing: ${provenance.roles.join('; ')} | reasoning override: ${provenance.reasoningEffortOverride ?? 'none'} | decision seams: ${decisionSeamsLabel(provenance.decisionSeams)} | effort overrides: ${provenance.effortOverrides.length === 0 ? 'none' : provenance.effortOverrides.join(', ')} | adblock: ${provenance.adblock} | browser sub-spans: ${provenance.browserSubspans ? 'on' : 'off'}`)
   lines.push(`- key ${provenance.keyVersion}, manifest ${provenance.keyManifestDigest.slice(0, 15)}…; grades by ${provenance.gradesReviewers.length === 0 ? 'nobody yet' : provenance.gradesReviewers.join('; ')}${provenance.gradesRevision === null ? '' : ` (revision ${provenance.gradesRevision})`}`)
   lines.push(`- reviewer: ${provenance.reviewerModel} at ${provenance.reviewerEffort}, prompt ${provenance.reviewerPromptVersion}; audit run at commit ${provenance.auditCommit.slice(0, 8)}${provenance.auditDirtyTree ? ' (dirty tree)' : ''}`)
   lines.push('')
@@ -3960,7 +3961,7 @@ export function formatAuditAggregate(aggregate: AuditAggregate): string {
   } else {
     lines.push(`- routing: ${provenance.shared.roles.join('; ')} | mode ${provenance.shared.mode} | protocol ${provenance.shared.protocolVersion} | prompt version(s) ${provenance.shared.promptVersions.join(', ')}`)
   }
-  lines.push(`- reasoning override: ${provenance.shared.reasoningEffortOverride ?? 'none'} | decision seams: ${provenance.shared.decisionSeams ?? 'none'} | effort overrides: ${provenance.shared.effortOverrides.length === 0 ? 'none' : provenance.shared.effortOverrides.join(', ')} | adblock: ${provenance.shared.adblock} | browser sub-spans: ${provenance.shared.browserSubspans ? 'on' : 'off'}`)
+  lines.push(`- reasoning override: ${provenance.shared.reasoningEffortOverride ?? 'none'} | decision seams: ${decisionSeamsLabel(provenance.shared.decisionSeams)} | effort overrides: ${provenance.shared.effortOverrides.length === 0 ? 'none' : provenance.shared.effortOverrides.join(', ')} | adblock: ${provenance.shared.adblock} | browser sub-spans: ${provenance.shared.browserSubspans ? 'on' : 'off'}`)
   lines.push(`- reviewer: ${provenance.shared.reviewerModel} at ${provenance.shared.reviewerEffort}, prompt ${provenance.shared.reviewerPromptVersion}`)
   lines.push('')
   lines.push('| set | created | state | commit(s) | dirty tree | grades revision | audited at |')

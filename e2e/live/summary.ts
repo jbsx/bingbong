@@ -23,6 +23,7 @@
 // stripping — and no key module is on its graph.
 
 import type { AgentRole } from '../../src/core/agent/modelRouting'
+import { decisionSeamsLabel } from './launchRouting.ts'
 import { allowedDifferenceLine, type AllowedDifference, type AllowedDifferenceRecord } from './allowedDifference.ts'
 import type { Validation } from './artifacts.ts'
 import type { LiveGradeStatus } from './grades.ts'
@@ -436,7 +437,7 @@ const FIXED_FIELDS: readonly { readonly name: string; readonly allowable?: Allow
   { name: 'mode', of: (report) => report.provenance.mode },
   { name: 'adblock', of: (report) => report.provenance.adblock },
   { name: 'reasoning-effort override', of: (report) => report.provenance.reasoningEffortOverride ?? 'none' },
-  { name: 'decision seams', of: (report) => report.provenance.decisionSeams ?? 'none' },
+  { name: 'decision seams', of: (report) => decisionSeamsLabel(report.provenance.decisionSeams) },
   { name: 'effort overrides', of: (report) => report.provenance.effortOverrides.join(', ') || 'none' },
   { name: 'browser sub-spans', of: (report) => (report.provenance.browserSubspans ? 'on' : 'off') },
 ]
@@ -805,7 +806,7 @@ export function formatLiveSummary(summary: LiveSummary): string {
   lines.push(`- reviewer(s): ${provenance.reviewers.join('; ')}`)
   lines.push(`- study ${provenance.study}, protocol ${provenance.protocolVersion}, mode ${provenance.mode}, prompt version(s) ${provenance.promptVersions.join(', ')}`)
   lines.push(
-    `- reasoning override: ${provenance.reasoningEffortOverride ?? 'none'} | decision seams: ${provenance.decisionSeams ?? 'none'} | effort overrides: ${provenance.effortOverrides.length === 0 ? 'none' : provenance.effortOverrides.join(', ')} | adblock: ${provenance.adblock} | browser sub-spans: ${provenance.browserSubspans ? 'on' : 'off'}`,
+    `- reasoning override: ${provenance.reasoningEffortOverride ?? 'none'} | decision seams: ${decisionSeamsLabel(provenance.decisionSeams)} | effort overrides: ${provenance.effortOverrides.length === 0 ? 'none' : provenance.effortOverrides.join(', ')} | adblock: ${provenance.adblock} | browser sub-spans: ${provenance.browserSubspans ? 'on' : 'off'}`,
   )
   lines.push('')
   lines.push('Per input, listed and never compared:')

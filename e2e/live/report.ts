@@ -28,7 +28,7 @@ import type { AgentRole } from '../../src/core/agent/modelRouting'
 import type { FinalizationCause, RunResolution } from '../../src/core/session/runJournal'
 import { nearestRankPercentile } from '../../src/core/report/stats.ts'
 import type { Validation } from './artifacts.ts'
-import { launchDecisionSeamsOf, launchRoutingOf } from './launchRouting.ts'
+import { decisionSeamsLabel, launchDecisionSeamsOf, launchRoutingOf } from './launchRouting.ts'
 import { isVerifiedSuccess, type LiveGradeStatus, type LiveGradeEntry, type LiveGrades, type LiveKeyManifest } from './grades.ts'
 import { duplicateIds, indexAttempts } from './grades.ts'
 import type {
@@ -1099,7 +1099,7 @@ export function formatLiveReport(report: LiveReport): string {
   lines.push(`- reviewer(s): ${provenance.reviewers.length === 0 ? 'none yet — every entry is pending' : provenance.reviewers.join('; ')}`)
   lines.push(`- routing: ${provenance.roles.join('; ')}`)
   lines.push(
-    `- reasoning override: ${provenance.reasoningEffortOverride ?? 'none'} | decision seams: ${provenance.decisionSeams ?? 'none'} | effort overrides: ${provenance.effortOverrides.length === 0 ? 'none' : provenance.effortOverrides.join(', ')} | adblock: ${provenance.adblock} | browser sub-spans: ${provenance.browserSubspans ? 'on' : 'off'}`,
+    `- reasoning override: ${provenance.reasoningEffortOverride ?? 'none'} | decision seams: ${decisionSeamsLabel(provenance.decisionSeams)} | effort overrides: ${provenance.effortOverrides.length === 0 ? 'none' : provenance.effortOverrides.join(', ')} | adblock: ${provenance.adblock} | browser sub-spans: ${provenance.browserSubspans ? 'on' : 'off'}`,
   )
   lines.push('')
   lines.push('## Populations')

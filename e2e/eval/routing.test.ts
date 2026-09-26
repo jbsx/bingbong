@@ -129,6 +129,14 @@ describe('the decision role and seam list (#279)', () => {
     expect(routing.env.BINGBONG_DECISION_SEAMS).toBe('passage,result')
   })
 
+  it('keeps a seam list set empty apart from an unset one: empty is the off switch that keeps the key (#275)', () => {
+    const routing = resolveProductionRouting({ ...ORCHESTRATOR_ENV, TYPESAFE_API_KEY: 'ts-decision-key', BINGBONG_DECISION_SEAMS: '' })
+
+    expect(routing.decisionSeams).toBe('')
+    expect(routing.env.BINGBONG_DECISION_SEAMS).toBe('')
+    expect([...resolveDecisionSeams({ ...routing.env })]).toEqual([])
+  })
+
   it('reaches the launched app through the hermetic template, which unsets the role for every other suite', () => {
     // startHarness launches the evaluator's app with the template under the
     // composed env; the template unsets decisionEnvKeys(), so the evaluator's
