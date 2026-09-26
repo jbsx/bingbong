@@ -520,8 +520,10 @@ The narrow exception to terminal Memory Commit: validated Session Evidence may
 enter Session Working Memory as soon as it is grounded. It preserves verified
 work across later Run failure or cancellation without committing speculative
 Assessments. Its excerpt is one or more verbatim passages of what the Run
-retained from the source, never a paraphrase.
-_Avoid_: partial Memory Commit, autosave
+retained from the source, never a paraphrase. The model makes one by calling
+for it; a Run makes one itself from a Selected Passage (ADR 0069). Both are
+one kind, with the origin kept, and every rail reads them alike.
+_Avoid_: partial Memory Commit, autosave, auto-checkpoint
 
 **Memory Entry**:
 One item in Session Working Memory. The application owns its stable envelope and
@@ -720,6 +722,14 @@ different thing — the engine or
 site a search ran on — and two signatures on one surface are still one Search
 Intent.
 _Avoid_: search event, search record, query log, surface
+
+**Result Pick**:
+The result of a search landing that the Decision Model chose as fitting the
+objective, opened by the Run in the same round as the model would open it —
+a navigate to its whole href through every gate and rail — for a Lookup or
+Investigation with an open Asked Item, never for a Direct Action (ADR 0070).
+It is a result opened, and so escape from a Search Loop.
+_Avoid_: auto-click, auto-open, first result, I'm-feeling-lucky
 
 **Boot State**:
 Bing Bong starts with no Session and renders no entries from any earlier launch.
@@ -1029,6 +1039,14 @@ sequence of scrolls; each part of an unchanged page is its own first
 observation.
 _Avoid_: full read, page dump, read the whole page by scrolling
 
+**Selected Passage**:
+One text block of a landed page or a Page Read that the Decision Model chose
+as stating an open Asked Item, carried verbatim in the Action Outcome the
+model reads and recorded by the Run as an Evidence Checkpoint in the same
+round (ADR 0069). It is asked for on a landing or a Page Read once the Run
+Plan is declared, never on a scroll or a Look, and never for a Direct Action.
+_Avoid_: highlight, snippet, auto-excerpt, extracted quote
+
 **New In View**:
 What a scroll's Action Outcome reports: the refs and page text that entered the
 viewport, formatted and capped as a Page Preview is. A scroll
@@ -1272,6 +1290,25 @@ result and is never a question to the user. The verdict is read from the
 element and its form as they are, so a misread element is a wrong verdict for
 every action on that form.
 _Avoid_: safety check, action filter, permission gate
+
+**Decision Model**:
+A model that answers a Run's typed questions — pick one of these, does this
+statement hold — over text the Run already holds, with a probability per
+answer and no generated text, inside a round rather than costing one (ADR
+0068). It acts only above a threshold and only where the model's next move is
+already implied by what the Run was shown and asked; under threshold or
+unavailable, the round proceeds as it would have. A seam in shadow asks and
+records and never acts. Every question it is asked is a Decision Record in
+the Run Trace.
+_Avoid_: classifier, router, oracle, judge, the vendor's name
+
+**Decision Record**:
+One question put to the Decision Model, as the Run Trace keeps it: which seam
+asked, in which round, the answers with their probabilities, the latency, the
+threshold, and whether it acted, fell under threshold, was unavailable or ran
+in shadow. Agreement between a shadow seam's records and what the model then
+did is how a seam earns the right to act.
+_Avoid_: decision log, inference record
 
 **Payment Field**:
 A control that takes a card detail — number, security code, expiry — and so
