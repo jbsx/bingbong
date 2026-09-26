@@ -52,6 +52,7 @@ import type { SearchObservation, SearchSignature } from '../../src/core/pipeline
 import { isSearchInspection, SEARCH_LOOP_NUDGE_AFTER, SEARCH_SIGNATURES, searchStreakAfter, searchStreakMoveOf, similarQueries } from '../../src/core/pipeline/searchLoopRule.ts'
 import { normalizeUrlInput, parseSearchUrl, SEARCH_URL_FORMS, type SearchUrlForm } from '../../src/core/browser/urlInput.ts'
 import type { TraceRecord } from '../../src/core/trace/runTrace'
+import { allowedDifferenceLine, type AllowedDifference, type AllowedDifferenceRecord } from './allowedDifference.ts'
 import type { Validation } from './artifacts.ts'
 import type { LiveGradeEntry, LiveKeyTask } from './grades.ts'
 import type { AttemptRelation, LiveAttemptCapture, Observed } from './types.ts'
@@ -885,6 +886,8 @@ export interface AuditAggregate {
     readonly shared: Omit<AuditProvenance, 'setId' | 'state' | 'createdAt' | 'commits' | 'dirtyTree' | 'gradesRevision' | 'auditCommit' | 'auditDirtyTree' | 'generatedAt'>
     readonly sets: readonly Pick<AuditProvenance, 'setId' | 'state' | 'createdAt' | 'commits' | 'dirtyTree' | 'gradesRevision' | 'auditCommit' | 'auditDirtyTree' | 'generatedAt'>[]
     readonly generatedAt: string
+    /** The one shared field the caller let differ (#279, `--allow-differs`), with each set's value, or null when all were held fixed. */
+    readonly allowedDifference: AllowedDifferenceRecord | null
   }
   readonly populations: { readonly initial: AuditAggregatePopulation; readonly followUp: AuditAggregatePopulation }
   /** Primary verdicts over every attempt of both populations, most counted first. Arithmetic, never an opinion. */
@@ -3526,10 +3529,10 @@ export function buildAuditSet(provenance: AuditProvenance, attempts: readonly Au
 }
 
 /** Which provenance fields every set of one audit must share, and how each reads. */
-const SHARED_FIELDS: readonly { readonly name: string; readonly of: (provenance: AuditProvenance) => string }[] = [
+const SHARED_FIELDS: readonly { readonly name: string; readonly allowable?: AllowedDifference; readonly of: (provenance: AuditProvenance) => string }[] = [
   { name: 'key version', of: (provenance) => provenance.keyVersion },
   { name: 'key manifest digest', of: (provenance) => provenance.keyManifestDigest },
-  { name: 'routing', of: (provenance) => provenance.roles.join('; ') },
+  { name: 'routing', allowable: 'routing', of: (provenance) => provenance.roles.join('; ') },
   { name: 'grades reviewer', of: (provenance) => provenance.gradesReviewers.join('; ') },
   { name: 'study', of: (provenance) => provenance.study },
   { name: 'protocol version', of: (provenance) => provenance.protocolVersion },
@@ -3549,8 +3552,14 @@ function aggregatePopulation(label: string, relation: AttemptRelation, sets: rea
   return { ...populationOf(label, attempts), perSet: sets.map((set) => ({ setId: set.provenance.setId, population: pick(set) })) }
 }
 
-/** Read N per-set audits together. Refuses sets whose shared provenance differs; counts the rest. */
-export function buildAuditAggregate(sets: readonly AuditSetOutput[], generatedAt: string): Validation<AuditAggregate> {
+/** How an aggregate may be told to pool across one shared field (#279). */
+export interface AuditAggregateOptions {
+  /** The one field allowed to differ between sets; every other stays refused. */
+  readonly allowDiffers?: AllowedDifference
+}
+
+/** Read N per-set audits together. Refuses sets whose shared provenance differs, save one field the caller allows; counts the rest. */
+export function buildAuditAggregate(sets: readonly AuditSetOutput[], generatedAt: string, options: AuditAggregateOptions = {}): Validation<AuditAggregate> {
   if (sets.length < 2) return { ok: false, errors: [`${sets.length} set(s) named; an aggregate needs at least two — for one set, read its audit`] }
   const errors: string[] = []
   const ids = new Map<string, number>()
@@ -3559,6 +3568,7 @@ export function buildAuditAggregate(sets: readonly AuditSetOutput[], generatedAt
   if (errors.length > 0) return { ok: false, errors }
   const ordered = [...sets].sort((left, right) => Date.parse(left.provenance.createdAt) - Date.parse(right.provenance.createdAt))
   for (const field of SHARED_FIELDS) {
+    if (field.allowable !== undefined && field.allowable === options.allowDiffers) continue
     const values = ordered.map((set) => field.of(set.provenance))
     if (new Set(values).size > 1) errors.push(`${field.name} differs: ${ordered.map((set, index) => `${set.provenance.setId}=${values[index]}`).join(', ')}`)
   }
@@ -3612,6 +3622,16 @@ export function buildAuditAggregate(sets: readonly AuditSetOutput[], generatedAt
           generatedAt: set.provenance.generatedAt,
         })),
         generatedAt,
+        allowedDifference:
+          options.allowDiffers === undefined
+            ? null
+            : {
+                field: options.allowDiffers,
+                values: ordered.map((set) => ({
+                  setId: set.provenance.setId,
+                  value: SHARED_FIELDS.find((field) => field.allowable === options.allowDiffers)!.of(set.provenance),
+                })),
+              },
       },
       populations: { initial, followUp },
       rankedCauses,
@@ -3930,7 +3950,12 @@ export function formatAuditAggregate(aggregate: AuditAggregate): string {
   lines.push('Shared by every set, and checked before anything was counted:')
   lines.push('')
   lines.push(`- key ${provenance.shared.keyVersion}, manifest ${provenance.shared.keyManifestDigest.slice(0, 15)}…; grades by ${provenance.shared.gradesReviewers.join('; ')}`)
-  lines.push(`- routing: ${provenance.shared.roles.join('; ')} | mode ${provenance.shared.mode} | protocol ${provenance.shared.protocolVersion} | prompt version(s) ${provenance.shared.promptVersions.join(', ')}`)
+  if (provenance.allowedDifference?.field === 'routing') {
+    lines.push(allowedDifferenceLine(provenance.allowedDifference))
+    lines.push(`- mode ${provenance.shared.mode} | protocol ${provenance.shared.protocolVersion} | prompt version(s) ${provenance.shared.promptVersions.join(', ')}`)
+  } else {
+    lines.push(`- routing: ${provenance.shared.roles.join('; ')} | mode ${provenance.shared.mode} | protocol ${provenance.shared.protocolVersion} | prompt version(s) ${provenance.shared.promptVersions.join(', ')}`)
+  }
   lines.push(`- reasoning override: ${provenance.shared.reasoningEffortOverride ?? 'none'} | effort overrides: ${provenance.shared.effortOverrides.length === 0 ? 'none' : provenance.shared.effortOverrides.join(', ')} | adblock: ${provenance.shared.adblock} | browser sub-spans: ${provenance.shared.browserSubspans ? 'on' : 'off'}`)
   lines.push(`- reviewer: ${provenance.shared.reviewerModel} at ${provenance.shared.reviewerEffort}, prompt ${provenance.shared.reviewerPromptVersion}`)
   lines.push('')

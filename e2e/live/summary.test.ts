@@ -512,6 +512,39 @@ describe('refusals', () => {
     expect(refused(withThird(spec))).toContain(message)
   })
 
+  describe('pooling by arm (#279)', () => {
+    const offArm = { roles: ['orchestrator=GLM-5.3', 'subagent=GLM-5.3-flash', 'vision=GLM-4.6V', 'decision=unconfigured'] }
+
+    it('refuses a routing difference by default, and pools it when --allow-differs names routing', () => {
+      expect(refused(withThird(offArm)).join('\n')).toContain('routing differs')
+      const result = buildLiveSummary(withThird(offArm), GENERATED_AT, { allowDiffers: 'routing' })
+      if (!result.ok) throw new Error(result.errors.join('; '))
+      expect(result.value.passes).toBe(3)
+      expect(result.value.provenance.allowedDifference).toEqual({
+        field: 'routing',
+        values: [
+          { setId: 'pass-1', value: 'orchestrator=GLM-5.3; subagent=GLM-5.3-flash; vision=GLM-4.6V' },
+          { setId: 'pass-2', value: 'orchestrator=GLM-5.3; subagent=GLM-5.3-flash; vision=GLM-4.6V' },
+          { setId: 'pass-3', value: 'orchestrator=GLM-5.3; subagent=GLM-5.3-flash; vision=GLM-4.6V; decision=unconfigured' },
+        ],
+      })
+      const markdown = formatLiveSummary(result.value)
+      expect(markdown).toContain('- routing differs, pooled by --allow-differs=routing: pass-1=orchestrator=GLM-5.3')
+      expect(markdown).not.toContain('- routing: orchestrator')
+    })
+
+    it('keeps refusing every other field when routing is allowed', () => {
+      const result = buildLiveSummary(withThird({ ...offArm, keyVersion: '3.0.0.0' }), GENERATED_AT, { allowDiffers: 'routing' })
+      expect(result.ok).toBe(false)
+      if (result.ok) return
+      expect(result.errors).toEqual(['key version differs: pass-1=2.2.2.2, pass-2=2.2.2.2, pass-3=3.0.0.0'])
+    })
+
+    it('records no allowed difference when none was asked for', () => {
+      expect(built(threePasses()).provenance.allowedDifference).toBeNull()
+    })
+  })
+
   it('refuses a mixed prompt version on one task', () => {
     const [one, two] = threePasses()
     const moved = input(reportOf({ setId: 'pass-3', createdAt: '2026-02-01T12:00:00.000Z', rows: passRows({ b1: { promptVersion: '2' } }) }))
@@ -749,6 +782,24 @@ describe('the live:summary CLI', () => {
     const noOut = run([`--reports=${reports.join(',')}`])
     expect(noOut.status).toBe(1)
     expect(noOut.stderr).toContain('--out is required')
+  })
+
+  it.skipIf(!stripsTypes)('pools a routing difference only under --allow-differs=routing, and refuses any other field name (#279)', () => {
+    const reports = writeReports()
+    const offArm = join(dir, 'off.json')
+    writeFileSync(offArm, `${JSON.stringify(reportOf({ setId: 'pass-4', createdAt: '2026-02-01T13:00:00.000Z', rows: passRows(), roles: ['orchestrator=GLM-5.3', 'decision=unconfigured'] }), null, 2)}\n`)
+    const all = `--reports=${reports.join(',')},${offArm}`
+    const refusedArm = run([all, `--out=${join(dir, 'out.md')}`])
+    expect(refusedArm.status).toBe(1)
+    expect(refusedArm.stderr).toContain('routing differs')
+
+    const pooled = run([all, `--out=${join(dir, 'out.md')}`, '--allow-differs=routing'])
+    expect(pooled.status, pooled.stderr).toBe(0)
+    expect(readFileSync(join(dir, 'out.md'), 'utf8')).toContain('routing differs, pooled by --allow-differs=routing')
+
+    const other = run([all, `--out=${join(dir, 'other.md')}`, '--allow-differs=adblock'])
+    expect(other.status).toBe(1)
+    expect(other.stderr).toContain('only routing may')
   })
 
   it.skipIf(!stripsTypes)('refuses mixed inputs with the differing values named, and a report of another version', () => {

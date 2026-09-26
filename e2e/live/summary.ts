@@ -23,6 +23,7 @@
 // stripping — and no key module is on its graph.
 
 import type { AgentRole } from '../../src/core/agent/modelRouting'
+import { allowedDifferenceLine, type AllowedDifference, type AllowedDifferenceRecord } from './allowedDifference.ts'
 import type { Validation } from './artifacts.ts'
 import type { LiveGradeStatus } from './grades.ts'
 import {
@@ -187,6 +188,13 @@ export interface LiveSummaryProvenance {
   readonly promptVersions: readonly string[]
   readonly passes: readonly LiveSummaryPass[]
   readonly generatedAt: string
+  /**
+   * The one fixed field the caller let differ (#279, `--allow-differs`),
+   * with what each Pass held, or null when every field was held fixed. The
+   * Decision Model experiment pools its arms this way: a configured versus
+   * unconfigured `decision` role is a routing difference.
+   */
+  readonly allowedDifference: AllowedDifferenceRecord | null
 }
 
 /** A statement carried forward from one input's report, with the Pass it belongs to. */
@@ -412,10 +420,10 @@ function counted(values: readonly string[]): Record<string, number> {
 const taskKey = (row: { huntId: string; stepId: string; relation: AttemptRelation }): string => `${row.huntId}/${row.stepId} (${row.relation})`
 
 /** Which fields a Baseline holds fixed, and how each reads from a report. */
-const FIXED_FIELDS: readonly { readonly name: string; readonly of: (report: LiveReport) => string }[] = [
+const FIXED_FIELDS: readonly { readonly name: string; readonly allowable?: AllowedDifference; readonly of: (report: LiveReport) => string }[] = [
   { name: 'key version', of: (report) => report.provenance.keyVersion },
   { name: 'key manifest digest', of: (report) => report.provenance.keyManifestDigest },
-  { name: 'routing', of: (report) => report.provenance.roles.join('; ') },
+  { name: 'routing', allowable: 'routing', of: (report) => report.provenance.roles.join('; ') },
   { name: 'reviewer', of: (report) => report.provenance.reviewers.join('; ') },
   { name: 'study', of: (report) => report.provenance.study },
   { name: 'protocol version', of: (report) => report.provenance.protocolVersion },
@@ -426,7 +434,7 @@ const FIXED_FIELDS: readonly { readonly name: string; readonly of: (report: Live
   { name: 'browser sub-spans', of: (report) => (report.provenance.browserSubspans ? 'on' : 'off') },
 ]
 
-function refusals(ordered: readonly LiveSummaryInput[]): string[] {
+function refusals(ordered: readonly LiveSummaryInput[], allowDiffers: AllowedDifference | undefined): string[] {
   const errors: string[] = []
   const label = (input: LiveSummaryInput): string => input.report.provenance.setId
 
@@ -441,6 +449,7 @@ function refusals(ordered: readonly LiveSummaryInput[]): string[] {
   if (errors.length > 0) return errors
 
   for (const field of FIXED_FIELDS) {
+    if (field.allowable !== undefined && field.allowable === allowDiffers) continue
     const values = ordered.map((input) => field.of(input.report))
     if (new Set(values).size > 1) {
       errors.push(`${field.name} differs: ${ordered.map((input, index) => `${label(input)}=${values[index]}`).join(', ')}`)
@@ -631,7 +640,13 @@ function statisticsNote(passes: number): string {
 const ATTRIBUTION_NOTE = 'No attribution here: the per-set reports keep the stage tables, and nothing about where the time went is derived across Passes.'
 
 /** Read N reports together. Pure: the caller stamps `generatedAt`. */
-export function buildLiveSummary(inputs: readonly LiveSummaryInput[], generatedAt: string): Validation<LiveSummary> {
+/** How a summary may be told to pool across one fixed field (#279). */
+export interface LiveSummaryOptions {
+  /** The one field allowed to differ between Passes; every other stays refused. */
+  readonly allowDiffers?: AllowedDifference
+}
+
+export function buildLiveSummary(inputs: readonly LiveSummaryInput[], generatedAt: string, options: LiveSummaryOptions = {}): Validation<LiveSummary> {
   if (inputs.length < 2) {
     return { ok: false, errors: [`${inputs.length} report(s) named; a summary needs at least two Passes — for one Pass, read its report`] }
   }
@@ -661,7 +676,7 @@ export function buildLiveSummary(inputs: readonly LiveSummaryInput[], generatedA
   const ordered = [...inputs].sort(
     (left, right) => Date.parse(left.report.provenance.createdAt) - Date.parse(right.report.provenance.createdAt),
   )
-  const refused = refusals(ordered)
+  const refused = refusals(ordered, options.allowDiffers)
   if (refused.length > 0) return { ok: false, errors: refused }
 
   const shared = ordered[0]!.report.provenance
@@ -705,6 +720,16 @@ export function buildLiveSummary(inputs: readonly LiveSummaryInput[], generatedA
           reportGeneratedAt: input.report.provenance.generatedAt,
         })),
         generatedAt,
+        allowedDifference:
+          options.allowDiffers === undefined
+            ? null
+            : {
+                field: options.allowDiffers,
+                values: ordered.map((input) => ({
+                  setId: input.report.provenance.setId,
+                  value: FIXED_FIELDS.find((field) => field.allowable === options.allowDiffers)!.of(input.report),
+                })),
+              },
       },
       passes: ordered.length,
       tasks: tasksOf(ordered),
@@ -768,7 +793,7 @@ export function formatLiveSummary(summary: LiveSummary): string {
   lines.push('Shared by every input, and checked before anything was counted:')
   lines.push('')
   lines.push(`- key ${provenance.keyVersion}, manifest ${provenance.keyManifestDigest.slice(0, 15)}…`)
-  lines.push(`- routing: ${provenance.roles.join('; ')}`)
+  lines.push(provenance.allowedDifference?.field === 'routing' ? allowedDifferenceLine(provenance.allowedDifference) : `- routing: ${provenance.roles.join('; ')}`)
   lines.push(`- reviewer(s): ${provenance.reviewers.join('; ')}`)
   lines.push(`- study ${provenance.study}, protocol ${provenance.protocolVersion}, mode ${provenance.mode}, prompt version(s) ${provenance.promptVersions.join(', ')}`)
   lines.push(

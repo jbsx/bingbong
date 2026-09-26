@@ -2175,6 +2175,26 @@ describe('a set and the aggregate', () => {
     expect(buildAuditAggregate([setOne, setOne], 'x')).toEqual({ ok: false, errors: ['capture set set-1 is named 2 times: one set counts once'] })
   })
 
+  it('pools sets whose routing differs only when --allow-differs names routing, and says so in the header (#279)', () => {
+    const offArm = buildAuditSet(provenanceOf({ setId: 'set-3', roles: ['orchestrator=GLM-5.3', 'decision=unconfigured'], createdAt: '2026-09-12T19:00:00.000Z' }), [], [])
+    const refusedArm = buildAuditAggregate([setOne, offArm], 'x')
+    expect(refusedArm.ok).toBe(false)
+    if (!refusedArm.ok) expect(refusedArm.errors.join('\n')).toContain('routing differs')
+    const pooled = buildAuditAggregate([setOne, offArm], '2026-09-13T11:00:00.000Z', { allowDiffers: 'routing' })
+    if (!pooled.ok) throw new Error(pooled.errors.join('; '))
+    expect(pooled.value.provenance.allowedDifference).toEqual({
+      field: 'routing',
+      values: [
+        { setId: 'set-1', value: setOne.provenance.roles.join('; ') },
+        { setId: 'set-3', value: 'orchestrator=GLM-5.3; decision=unconfigured' },
+      ],
+    })
+    expect(formatAuditAggregate(pooled.value)).toContain('- routing differs, pooled by --allow-differs=routing: set-1=')
+    expect(buildAuditAggregate([setOne, setTwo], 'x')).toMatchObject({ ok: true, value: { provenance: { allowedDifference: null } } })
+    const alsoKey = buildAuditSet(provenanceOf({ setId: 'set-4', roles: ['decision=unconfigured'], keyVersion: 'k2', createdAt: '2026-09-12T20:00:00.000Z' }), [], [])
+    expect(buildAuditAggregate([setOne, alsoKey], 'x', { allowDiffers: 'routing' })).toEqual({ ok: false, errors: ['key version differs: set-1=k1, set-4=k2'] })
+  })
+
   it('formats every attempt with its kinds, verdict, checks unsatisfied, Subagent rounds, overrules and flags', () => {
     const markdown = formatAuditSet(setOne)
     expect(markdown).toContain('# Round Audit — fixture-study (set-1)')

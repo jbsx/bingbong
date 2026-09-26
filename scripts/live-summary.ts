@@ -12,17 +12,22 @@
 // protocol fixes stop here with the differing values named.
 //
 // Usage:
-//   pnpm live:summary --reports=<a.json>,<b.json>[,…] --out=<summary.md|json> [--format=markdown|json]
+//   pnpm live:summary --reports=<a.json>,<b.json>[,…] --out=<summary.md|json> [--format=markdown|json] [--allow-differs=routing]
+//
+// `--allow-differs=routing` pools Passes whose routing differs — the
+// Decision Model experiment's arms (#279) — and says so in the summary's
+// provenance; every other fixed field is still refused.
 //
 // A summary over failed hunts is a finding, not a tool error. Only
 // unreadable, mismatched or too few inputs fail.
 
 import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
+import { parseAllowDiffers } from '../e2e/live/allowedDifference.ts'
 import { redactedMessage, type Validation } from '../e2e/live/artifacts.ts'
 import { buildLiveSummary, formatLiveSummary, parseLiveReportForSummary, type LiveSummaryInput } from '../e2e/live/summary.ts'
 
-const FLAGS = ['reports', 'out', 'format'] as const
+const FLAGS = ['reports', 'out', 'format', 'allow-differs'] as const
 
 class UsageError extends Error {}
 
@@ -149,13 +154,15 @@ const reportPaths = required(flags, 'reports')
 const outPath = required(flags, 'out')
 const format = flags.get('format') ?? 'markdown'
 if (format !== 'markdown' && format !== 'json') fail(`--format must be markdown or json (got "${format}")`)
+const allowDiffersFlag = flags.get('allow-differs')
+const allowDiffers = allowDiffersFlag === undefined ? undefined : unwrap(parseAllowDiffers(allowDiffersFlag), '--allow-differs value')
 
 const inputs: LiveSummaryInput[] = reportPaths.map((path) => ({
   path: named(path),
   report: unwrap(parseLiveReportForSummary(readJson(path, 'report'), display(path)), `report at ${display(path)}`),
 }))
 
-const summary = unwrap(buildLiveSummary(inputs, new Date().toISOString()), 'set of reports')
+const summary = unwrap(buildLiveSummary(inputs, new Date().toISOString(), { allowDiffers }), 'set of reports')
 const body = format === 'json' ? `${JSON.stringify(summary, null, 2)}\n` : formatLiveSummary(summary)
 writeOut(outPath, body, reportPaths)
 

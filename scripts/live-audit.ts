@@ -2,7 +2,11 @@
 //
 //   pnpm live:audit --capture=<set.json> [--capture=…] [--model=<id>] [--effort=<level>] [--max-usd=<n>]
 //                   [--out-dir=<dir>] [--aggregate=<name>] [--grades=<grades.json>]… [--only=<attemptId>]
-//                   [--prompts-dir=<dir>] [--dry-run] [--fresh]
+//                   [--prompts-dir=<dir>] [--dry-run] [--fresh] [--allow-differs=routing]
+//
+// `--allow-differs=routing` lets the aggregate pool sets whose routing
+// differs — the Decision Model experiment's arms (#279) — and says so in its
+// provenance; every other shared field is still refused.
 //
 // For every attempt of every named capture set: the mechanical half
 // classifies the orchestrator rounds from the Run Trace and the perf log
@@ -24,6 +28,7 @@ import { tmpdir } from 'node:os'
 import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path'
 import type { PerfSpanRecord } from '../src/core/perf/perfTracer'
 import type { TraceRecord } from '../src/core/trace/runTrace'
+import { parseAllowDiffers } from '../e2e/live/allowedDifference.ts'
 import { LIVE_ARTIFACTS_ROOT, LIVE_PRIVATE_ROOT, parseJsonl, readCaptureSet, writeFileAtomic } from '../e2e/live/artifacts.ts'
 import {
   AUDIT_VERDICTS,
@@ -52,7 +57,7 @@ import { dispatchedAttemptOf } from '../e2e/live/gradingBench.ts'
 import { buildLiveKeyManifest, gradingKeyFor, type GradingKey } from '../e2e/live/keyManifest.ts'
 import type { LiveAttemptCapture, LiveSessionCapture } from '../e2e/live/types.ts'
 
-const FLAGS = ['capture', 'model', 'effort', 'max-usd', 'out-dir', 'aggregate', 'grades', 'only', 'prompts-dir', 'dry-run', 'fresh'] as const
+const FLAGS = ['capture', 'model', 'effort', 'max-usd', 'out-dir', 'aggregate', 'grades', 'only', 'prompts-dir', 'dry-run', 'fresh', 'allow-differs'] as const
 const REPEATABLE: readonly string[] = ['capture', 'grades']
 
 const DEFAULT_MODEL = 'claude-opus-5'
@@ -633,6 +638,11 @@ function main(): void {
   const only = flags.get('only')?.[0] ?? null
   const promptsDir = flags.get('prompts-dir')?.[0] ?? null
   const dryRun = flags.get('dry-run') !== undefined
+  // Checked before any reviewer call: a mistyped field must not cost a run.
+  const allowDiffersFlag = flags.get('allow-differs')?.[0]
+  const allowDiffersParsed = allowDiffersFlag === undefined ? undefined : parseAllowDiffers(allowDiffersFlag)
+  if (allowDiffersParsed !== undefined && !allowDiffersParsed.ok) failWith('the --allow-differs value is not usable:', allowDiffersParsed.errors)
+  const allowDiffers = allowDiffersParsed?.value
   const fresh = flags.get('fresh') !== undefined
   const git = gitProvenance()
   const generatedAt = new Date().toISOString()
@@ -804,6 +814,7 @@ function main(): void {
     const aggregate = buildAuditAggregate(
       outputs.map((output) => output.audit),
       generatedAt,
+      { allowDiffers },
     )
     if (!aggregate.ok) failWith('the sets cannot be aggregated — nothing was written', aggregate.errors)
     aggregatePaths = { json: join(outDir, `${aggregateName}.json`), md: join(outDir, `${aggregateName}.md`) }
