@@ -42,6 +42,7 @@ import {
   keyLeaks,
   sameSourceUnsupportedRoundsOf,
   delegatedPageRoundsOf,
+  tierShadowOf,
   searchQueryOf,
   replaySearchStreaks,
   RESULT_OPENED_PREFIX,
@@ -2764,5 +2765,116 @@ describe('Delegated Page rounds (#273)', () => {
     const text = formatAuditSet(set)
     expect(text).toContain('Delegated Page rounds: 2 while running (round 3, 4), 1 while finished and uncollected (round 6), 1 after collection (round 8)')
     expect(text).toContain('Delegated Page rounds 2 while running, 1 while finished and uncollected, 1 after collection')
+  })
+})
+
+describe('the tier shadow (#278, ADR 0068)', () => {
+  const tierRecord = (fields: Record<string, unknown>): Record<string, unknown> => ({
+    ...identity,
+    at: T0 + 800,
+    kind: 'decision',
+    seam: 'tier',
+    round: 1,
+    questions: ['pick', 'garbled'],
+    latencyMs: 90,
+    threshold: { choice: 0.7, noul: 0.7 },
+    model: 'jev-1.13.0',
+    stateChars: 30,
+    ...fields,
+  })
+  const answered = (choice: string, confidence: number, noul: number): Record<string, unknown> =>
+    tierRecord({
+      acted: 'shadow',
+      answers: {
+        pick: { type: 'choice', choice, confidence, probabilities: { direct_action: 0, lookup: 0, investigation: 0, [choice]: confidence } },
+        garbled: { type: 'noul', noul },
+      },
+    })
+  const runPlan = (effortTier: string, source: string, at: number): Record<string, unknown> => ({
+    ...identity,
+    at: T0 + at,
+    kind: 'pipeline_event',
+    event: { type: 'run_plan', turnId: TURN, objective: 'o', headline: 'h', effortTier, source, at: T0 + at },
+  })
+  const auditedOf = (mechanical: AuditMechanical) => ({ mechanical, review: null, countsAfterOverrules: countsAfterOverrulesOf(mechanical, null) })
+
+  it('joins the Run’s tier record with the tier the model first declared', () => {
+    expect(tierShadowOf(traceOf(ROUNDS, [answered('lookup', 0.9, 0.1), ...EXTRA]) as never)).toEqual({
+      pick: 'lookup',
+      confidence: 0.9,
+      garbled: 0.1,
+      unavailable: null,
+      declared: 'investigation',
+    })
+  })
+
+  it('reads the declaration round 1 made, never an escalation or a later re-declared Run Plan', () => {
+    const records = [answered('lookup', 0.8, 0.2), runPlan('lookup', 'model', 900), runPlan('investigation', 'deadline', 5_000), runPlan('direct_action', 'model', 6_000)]
+    expect(tierShadowOf(records as never)).toMatchObject({ pick: 'lookup', declared: 'lookup' })
+  })
+
+  it('carries an unavailable answer as its reason, with no pick', () => {
+    const records = [tierRecord({ acted: 'unavailable', unavailable: { reason: 'timeout', message: 'slow' } }), ...EXTRA]
+    expect(tierShadowOf(records as never)).toEqual({ pick: null, confidence: null, garbled: null, unavailable: 'timeout', declared: 'investigation' })
+  })
+
+  it('is undefined on a Run that asked no tier question, and ignores other seams and Subagents', () => {
+    expect(tierShadowOf(traceOf(ROUNDS, EXTRA) as never)).toBeUndefined()
+    const others = [{ ...answered('lookup', 0.9, 0.1), seam: 'passage' }, { ...answered('lookup', 0.9, 0.1), agentId: 'a-1' }, ...EXTRA]
+    expect(tierShadowOf(others as never)).toBeUndefined()
+  })
+
+  it('rides the attempt, the population and both reports: agreement per hunt, garble by Finalization Cause', () => {
+    const agrees = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, [answered('investigation', 0.9, 0.8), ...EXTRA]) }))
+    const disagrees = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, [answered('lookup', 0.6, 0.1), ...EXTRA]) }))
+    const unavailable = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, [tierRecord({ acted: 'unavailable', unavailable: { reason: 'http', message: '503' } }), ...EXTRA]) }))
+    const unasked = classifyAttempt(inputOf())
+    expect(agrees.tierShadow).toMatchObject({ pick: 'investigation', declared: 'investigation' })
+    expect(unasked.tierShadow).toBeUndefined()
+    // Beside the rounds: the payload a cached judgement is keyed by is blind to it.
+    expect(auditModule.digestPayloadOf({ ...agrees, tierShadow: undefined })).toEqual(auditModule.digestPayloadOf(agrees))
+
+    const attempts = [agrees, disagrees, unavailable, unasked].map(auditedOf)
+    const set = buildAuditSet(provenanceOf(), attempts, [])
+    expect(set.populations.initial.tierShadow).toEqual({
+      asked: 3,
+      unavailable: 1,
+      compared: 2,
+      agreed: 1,
+      confident: 1,
+      confidentAgreed: 1,
+      garbledByCause: { budget_exhausted: { answered: 2, garbled: 1 } },
+    })
+    const markdown = formatAuditSet(set)
+    expect(markdown).toContain('- Tier shadow: investigation at 0.90 against the declared investigation (agrees); garbled 0.80')
+    expect(markdown).toContain('- Tier shadow: lookup at 0.60 against the declared investigation (disagrees); garbled 0.10')
+    expect(markdown).toContain('- Tier shadow: unavailable (http)')
+    expect(markdown).toContain('- Tier shadow: not asked')
+    expect(markdown).toContain('## Tier shadow')
+    expect(markdown).toContain('| hunt-x (initial) | 3 | 1 | 2 | 1 (50%) | 1 | 1 (100%) |')
+    expect(markdown).toContain('| hunt-x (initial) | budget_exhausted | 2 | 1 (50%) |')
+
+    const other = buildAuditSet(provenanceOf({ setId: 'set-2', createdAt: '2026-09-12T18:00:00.000Z' }), attempts.slice(0, 1), [])
+    const aggregate = buildAuditAggregate([set, other], '2026-09-14T11:00:00.000Z')
+    if (!aggregate.ok) throw new Error(aggregate.errors.join('; '))
+    const text = formatAuditAggregate(aggregate.value)
+    expect(text).toContain('| hunt-x (initial) | 4 | 1 | 3 | 2 (67%) | 2 | 2 (100%) |')
+    expect(text).toContain('| hunt-x (initial) | budget_exhausted | 3 | 2 (67%) |')
+  })
+
+  it('keeps a follow-up’s row apart from its hunt’s initial, since it is asked with its own command alone', () => {
+    const initial = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, [answered('investigation', 0.9, 0.1), ...EXTRA]) }))
+    const followUp: AuditMechanical = { ...classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, [answered('lookup', 0.8, 0.9), ...EXTRA]) })), relation: 'revised_objective' }
+    const markdown = formatAuditSet(buildAuditSet(provenanceOf(), [initial, followUp].map(auditedOf), []))
+    expect(markdown).toContain('| hunt-x (initial) | 1 | 0 | 1 | 1 (100%) | 1 | 1 (100%) |')
+    expect(markdown).toContain('| hunt-x (follow-up) | 1 | 0 | 1 | 0 (0%) | 1 | 0 (0%) |')
+    expect(markdown).toContain('| hunt-x (initial) | budget_exhausted | 1 | 0 (0%) |')
+    expect(markdown).toContain('| hunt-x (follow-up) | budget_exhausted | 1 | 1 (100%) |')
+  })
+
+  it('leaves the section out of a set no attempt was asked in', () => {
+    const set = buildAuditSet(provenanceOf(), [auditedOf(classifyAttempt(inputOf()))], [])
+    expect(set.populations.initial.tierShadow).toBeUndefined()
+    expect(formatAuditSet(set)).not.toContain('## Tier shadow')
   })
 })

@@ -15,6 +15,7 @@ import { steerPipeline } from './steering'
 import { createSpeechCoordinator } from '../tts/speechCoordinator'
 import { createAskUserTool } from './askUserTools'
 import { createReportRunPlanTool } from './runPlanTools'
+import { tierShadowState } from './tierShadow'
 import { askedItemsAcknowledgement, RUN_PLAN_NO_ASKED_ITEMS, RUN_PLAN_NUDGE, RUN_PLAN_STANDALONE_ROUND, RUN_PLAN_TIER_BELOW_LOOKUP } from './runPlan'
 import { DEFAULT_EFFORT_TIER, type EffortTier } from './runPlan'
 import { FailingTts, FakeClock, fakePerfHarness, fakeSubagentManager, memoryEntry, RecordingTts, ScriptedLlm, subagentRecord, withoutTurnId, type ScriptedTurn } from '../testing/doubles'
@@ -6879,8 +6880,9 @@ describe('observation ledger (#111)', () => {
       for (const [tier, seams] of [['direct_action', ['result']], ['lookup', ['passage', 'tier']]] as const) {
         const { urls, traced } = await run(tier, seams)
         expect(urls).toEqual([SEARCH])
-        expect(asked).toEqual([])
-        expect(traced.filter((event) => event.kind === 'decision')).toEqual([])
+        // The tier seam's shadow (#278) asks over the command alone before round 1; the result seam asks nothing.
+        expect(asked.filter((state) => state !== tierShadowState('what is on the Voyager Golden Record'))).toEqual([])
+        expect(traced.filter((event) => event.kind === 'decision' && event.seam !== 'tier')).toEqual([])
       }
     })
   })

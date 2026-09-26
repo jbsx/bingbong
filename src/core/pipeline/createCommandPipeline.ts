@@ -118,6 +118,7 @@ import { compactRunContext, type RunEvidenceCheckpoint } from './runContextCompa
 import { reportFault } from '../trace/fault'
 import type { CollectedSubagentReport } from '../agent/subagentManager'
 import type { DelegatedHolder } from './delegatedPage'
+import { askTierShadow } from './tierShadow'
 
 export interface CommandPipelineDeps {
   llm: LlmClient
@@ -1528,6 +1529,11 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
         // spoken Answer but not the displayed one would be two stories.
         const fallbackDetail = (): FinalizationDetail | undefined =>
           effortEpoch.phase.kind === 'working' ? undefined : effortEpoch.phase.detail
+
+        // The tier shadow (#278, ADR 0068): asked once, before the first
+        // orchestrator call, and never awaited — the round is sent as it
+        // always was, and the answer is only recorded.
+        askTierShadow({ decision: deps.decision?.(), command, turnId, traceRun })
 
         for (;;) {
           // The loop top asks the epoch's rails (#146–#148): a tripped rail

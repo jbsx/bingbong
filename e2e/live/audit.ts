@@ -48,6 +48,7 @@ import type { ResultPickStamp } from '../../src/core/pipeline/resultPick.ts'
 import type { PerfSpanRecord } from '../../src/core/perf/perfTracer'
 import type { PipelineEvent } from '../../src/core/pipeline/events'
 import type { EffortTier } from '../../src/core/pipeline/runPlan'
+import { DECISION_THRESHOLDS } from '../../src/core/ports/decisionModel.ts'
 import type { SearchObservation, SearchSignature } from '../../src/core/pipeline/searchLoopRail'
 import { isSearchInspection, SEARCH_LOOP_NUDGE_AFTER, SEARCH_SIGNATURES, searchStreakAfter, searchStreakMoveOf, similarQueries } from '../../src/core/pipeline/searchLoopRule.ts'
 import { normalizeUrlInput, parseSearchUrl, SEARCH_URL_FORMS, type SearchUrlForm } from '../../src/core/browser/urlInput.ts'
@@ -193,6 +194,43 @@ export interface DelegatedPageCounts {
   running: number
   finished: number
   collected: number
+}
+
+/**
+ * One attempt's tier shadow (#278, ADR 0068): the Decision Model's round-1
+ * answers, asked before the first orchestrator call and never acted on,
+ * beside the tier the model's own first Run Plan declared.
+ */
+export interface TierShadow {
+  /** The tier it picked; null when it was unavailable. */
+  readonly pick: EffortTier | null
+  readonly confidence: number | null
+  /** The garble Noul: that the command is garbled, cut off or nonsensical. */
+  readonly garbled: number | null
+  /** Why no answer came back; null when one did. */
+  readonly unavailable: string | null
+  /** The tier the first model Run Plan declared — what a tier picked before round 1 would stand in for; null when none was. */
+  readonly declared: EffortTier | null
+}
+
+/** Answered tier shadows under one Finalization Cause (#278), and those whose garble Noul clears the tier seam's threshold. */
+export interface GarbleCounts {
+  answered: number
+  garbled: number
+}
+
+/** Tier shadows summed over attempts (#278): agreement against the model's declaration, and the garble Noul by Finalization Cause. */
+export interface TierShadowCounts {
+  asked: number
+  unavailable: number
+  /** Answered, and the model declared a tier to compare with. */
+  compared: number
+  agreed: number
+  /** Of the compared, the picks whose confidence clears the tier seam's Choice threshold. */
+  confident: number
+  confidentAgreed: number
+  /** Answered attempts by the Run's Finalization Cause (`none` without one). */
+  garbledByCause: Record<string, GarbleCounts>
 }
 
 export interface AuditCall {
@@ -463,6 +501,8 @@ export interface AuditMechanical {
    * them; absent on an audit written before the counter.
    */
   readonly delegatedPageRounds?: DelegatedPageRounds
+  /** The tier shadow (#278), beside the rounds; absent when the Run asked no tier question. */
+  readonly tierShadow?: TierShadow
   /** Search Loop rounds by the streak rule: the rounds at streak 2 or beyond, and the heads of those loops. */
   readonly mechanicalSearchRounds: number
   /**
@@ -775,6 +815,8 @@ export interface AuditPopulation {
   readonly heldPageRoundsWithoutProgress: number
   /** Delegated Page rounds over the attempts, by the holder's state (#273); absent when no attempt's audit carries the counter. */
   readonly delegatedPageRounds?: DelegatedPageCounts
+  /** Tier shadows over the attempts (#278); absent when no attempt asked one. */
+  readonly tierShadow?: TierShadowCounts
   readonly rejectedCheckpoints: number
   readonly walledRounds: number
   /** Navigates that landed on a Not-found Page (#239). */
@@ -903,6 +945,8 @@ export interface AuditAggregate {
   readonly tierEscalationsByHunt?: Readonly<Record<string, Readonly<TierEscalationCounts>>>
   /** Composed Address and Unseen Phrase rewrites per hunt, over every set's attempts that count both (#267); absent when none does. */
   readonly rewritesByHunt?: Readonly<Record<string, Readonly<RewriteCounts>>>
+  /** Tier shadow agreement and garble by cause per hunt, over every set's attempts that asked one (#278); absent when none did. */
+  readonly tierShadowByHunt?: Readonly<Record<string, Readonly<TierShadowCounts>>>
   readonly caveats: readonly string[]
   readonly note: string
 }
@@ -2487,6 +2531,122 @@ function addDelegatedPageRounds(into: DelegatedPageCounts, from: Readonly<Delega
   into.collected += from.collected.length
 }
 
+function tierOf(value: unknown): EffortTier | null {
+  return value === 'direct_action' || value === 'lookup' || value === 'investigation' ? value : null
+}
+
+/**
+ * The Run's tier shadow (#278, ADR 0068): its own `decision` record for the
+ * tier seam, joined with the tier its first model Run Plan declared. The
+ * first, not the last: the shadow is asked before round 1 and stands in for
+ * round 1's declaration, so an escalation or a Steering correction that later
+ * re-declared is not what it would have replaced. (The #275 replay reads the
+ * last model Run Plan; the two differ only where Steering re-declared.) Undefined when
+ * the Run asked no tier question.
+ */
+export function tierShadowOf(records: readonly TraceLine[]): TierShadow | undefined {
+  const record = records.find((line) => line.kind === 'decision' && line.seam === 'tier' && line.agentId === undefined)
+  if (record === undefined) return undefined
+  let declared: EffortTier | null = null
+  for (const line of records) {
+    if (line.agentId !== undefined) continue
+    const event = eventOf(line)
+    if (event?.type === 'run_plan' && event.source === 'model') {
+      declared = tierOf(event.effortTier)
+      if (declared !== null) break
+    }
+  }
+  const answers = (record.answers ?? null) as { pick?: { choice?: unknown; confidence?: unknown }; garbled?: { noul?: unknown } } | null
+  const unavailable = (record.unavailable ?? null) as { reason?: unknown } | null
+  return {
+    pick: tierOf(answers?.pick?.choice),
+    confidence: isFiniteNumber(answers?.pick?.confidence) ? answers.pick.confidence : null,
+    garbled: isFiniteNumber(answers?.garbled?.noul) ? answers.garbled.noul : null,
+    unavailable: isString(unavailable?.reason) ? unavailable.reason : null,
+    declared,
+  }
+}
+
+function emptyTierShadowCounts(): TierShadowCounts {
+  return { asked: 0, unavailable: 0, compared: 0, agreed: 0, confident: 0, confidentAgreed: 0, garbledByCause: {} }
+}
+
+/** Adds one attempt's tier shadow, judged against the tier seam's own thresholds. */
+function addTierShadow(into: TierShadowCounts, shadow: Readonly<TierShadow>, finalizationCause: string | null): void {
+  const { choice, noul } = DECISION_THRESHOLDS.tier
+  into.asked += 1
+  if (shadow.pick === null) {
+    into.unavailable += 1
+    return
+  }
+  if (shadow.declared !== null) {
+    const agrees = shadow.pick === shadow.declared
+    into.compared += 1
+    if (agrees) into.agreed += 1
+    if (shadow.confidence !== null && shadow.confidence >= choice) {
+      into.confident += 1
+      if (agrees) into.confidentAgreed += 1
+    }
+  }
+  const cause = finalizationCause ?? 'none'
+  const byCause = (into.garbledByCause[cause] ??= { answered: 0, garbled: 0 })
+  byCause.answered += 1
+  if (shadow.garbled !== null && shadow.garbled >= noul) byCause.garbled += 1
+}
+
+/**
+ * The tier shadow counts per hunt and relation (#278), keyed `hunt (initial)`
+ * or `hunt (follow-up)`: a follow-up is asked with its own command alone, so
+ * "and the second one?" can read as cut off where an initial never would, and
+ * pooling the two would blur both tables. Undefined when no attempt asked one.
+ */
+export function tierShadowByHuntOf(attempts: readonly AuditAttempt[]): Record<string, TierShadowCounts> | undefined {
+  const byHunt: Record<string, TierShadowCounts> = {}
+  let counted = false
+  for (const { mechanical } of attempts) {
+    if (mechanical.tierShadow === undefined) continue
+    counted = true
+    const key = `${mechanical.huntId} (${mechanical.relation === 'initial' ? 'initial' : 'follow-up'})`
+    addTierShadow((byHunt[key] ??= emptyTierShadowCounts()), mechanical.tierShadow, mechanical.terminal?.finalizationCause ?? null)
+  }
+  return counted ? byHunt : undefined
+}
+
+function shareText(count: number, of: number): string {
+  return `${count} (${pct(of === 0 ? null : count / of)})`
+}
+
+/** The tier shadow as a section — agreement per hunt, then the garble Noul by Finalization Cause; empty when nothing asked one. */
+function tierShadowByHuntSection(byHunt: Readonly<Record<string, Readonly<TierShadowCounts>>> | undefined): string[] {
+  if (byHunt === undefined) return []
+  const { choice, noul } = DECISION_THRESHOLDS.tier
+  return [
+    '## Tier shadow',
+    '',
+    `The Decision Model’s tier pick, asked before the first orchestrator call and never acted on (#278, ADR 0068), against the tier the model’s first Run Plan declared; then its garble Noul against the Run’s Finalization Cause. Initials and follow-ups are kept apart, since a follow-up is asked with its own command alone. Agreement is over the compared attempts; the confident ones cleared the tier seam’s Choice threshold of ${choice}. Reported, never gated.`,
+    '',
+    `| hunt | asked | unavailable | compared | agreed | confident (≥ ${choice}) | confident agreed |`,
+    '| --- | --- | --- | --- | --- | --- | --- |',
+    ...Object.entries(byHunt).map(
+      ([hunt, counted]) =>
+        `| ${hunt} | ${counted.asked} | ${counted.unavailable} | ${counted.compared} | ${shareText(counted.agreed, counted.compared)} | ${counted.confident} | ${shareText(counted.confidentAgreed, counted.confident)} |`,
+    ),
+    '',
+    `| hunt | Finalization Cause | answered | garbled (≥ ${noul}) |`,
+    '| --- | --- | --- | --- |',
+    ...Object.entries(byHunt).flatMap(([hunt, counted]) =>
+      Object.entries(counted.garbledByCause).map(([cause, entry]) => `| ${hunt} | ${cause} | ${entry.answered} | ${shareText(entry.garbled, entry.answered)} |`),
+    ),
+  ]
+}
+
+function tierShadowText(shadow: TierShadow | undefined): string {
+  if (shadow === undefined) return 'not asked'
+  if (shadow.pick === null) return `unavailable (${shadow.unavailable ?? 'unknown'})`
+  const against = shadow.declared === null ? 'with no declared tier' : `against the declared ${shadow.declared} (${shadow.pick === shadow.declared ? 'agrees' : 'disagrees'})`
+  return `${shadow.pick} at ${shadow.confidence?.toFixed(2) ?? '?'} ${against}; garbled ${shadow.garbled?.toFixed(2) ?? '?'}`
+}
+
 function addSubagentCitations(into: SubagentCitationCounts, from: Readonly<SubagentCitationCounts>): void {
   into.excerptUnsupported += from.excerptUnsupported
   into.droppedExcerpts += from.droppedExcerpts
@@ -2745,6 +2905,7 @@ export function classifyAttempt(input: AuditTraceInput): AuditMechanical {
     declined: declined === null ? null : { ...declined, progressBefore: progressBeforeOf(rounds, declined.before) },
     declineRecorded: traceAtLeast(TIER_ESCALATION_DECLINE_TRACE_VERSION),
   }
+  const tierShadow = tierShadowOf(records)
   const withoutHash: Omit<AuditMechanical, 'digestHash'> = {
     attemptId: attempt.attemptId,
     huntId: attempt.huntId,
@@ -2781,6 +2942,9 @@ export function classifyAttempt(input: AuditTraceInput): AuditMechanical {
     // Pass eight, beside the rounds (#273, ADR 0065): the orchestrator's reads
     // of a page a Browse Subagent held, from the interleaved trace.
     delegatedPageRounds: delegatedPageRoundsOf(records),
+    // Pass nine, beside the rounds (#278, ADR 0068): the tier shadow's answer
+    // beside the tier the model declared.
+    ...(tierShadow !== undefined ? { tierShadow } : {}),
     mechanicalSearchRounds: searchLoop.mechanicalSearchRounds,
     searchLoopHeads: searchLoop.searchLoopHeads,
     searchRoundsAtStreak2: searchLoop.searchRoundsAtStreak2,
@@ -3272,6 +3436,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
   let sameSourceUnsupported = 0
   let heldPageRounds = 0
   let delegatedPageRounds: DelegatedPageCounts | undefined
+  let tierShadow: TierShadowCounts | undefined
   let rejected = 0
   let walled = 0
   let notFound = 0
@@ -3339,6 +3504,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
     sameSourceUnsupported += mechanical.sameSourceUnsupportedRounds
     heldPageRounds += mechanical.heldPageRoundsWithoutProgress
     if (mechanical.delegatedPageRounds !== undefined) addDelegatedPageRounds((delegatedPageRounds ??= emptyDelegatedPageCounts()), mechanical.delegatedPageRounds)
+    if (mechanical.tierShadow !== undefined) addTierShadow((tierShadow ??= emptyTierShadowCounts()), mechanical.tierShadow, mechanical.terminal?.finalizationCause ?? null)
     rejected += mechanical.rejectedCheckpoints
     walled += mechanical.walledRounds
     notFound += mechanical.notFoundNavigates.length
@@ -3447,6 +3613,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
     sameSourceUnsupportedRounds: sameSourceUnsupported,
     heldPageRoundsWithoutProgress: heldPageRounds,
     ...(delegatedPageRounds !== undefined ? { delegatedPageRounds } : {}),
+    ...(tierShadow !== undefined ? { tierShadow } : {}),
     rejectedCheckpoints: rejected,
     walledRounds: walled,
     notFoundNavigates: notFound,
@@ -3585,6 +3752,7 @@ export function buildAuditAggregate(sets: readonly AuditSetOutput[], generatedAt
   const blockedActionsByHunt = blockedActionsByHuntOf(ordered.flatMap((set) => set.attempts))
   const tierEscalationsByHunt = tierEscalationsByHuntOf(ordered.flatMap((set) => set.attempts))
   const rewritesByHunt = rewritesByHuntOf(ordered.flatMap((set) => set.attempts))
+  const tierShadowByHunt = tierShadowByHuntOf(ordered.flatMap((set) => set.attempts))
   const rankedCauses = AUDIT_VERDICTS.map((verdict) => ({
     verdict,
     count: initial.verdictsPrimary[verdict] + followUp.verdictsPrimary[verdict],
@@ -3644,6 +3812,7 @@ export function buildAuditAggregate(sets: readonly AuditSetOutput[], generatedAt
       ...(blockedActionsByHunt === undefined ? {} : { blockedActionsByHunt }),
       ...(tierEscalationsByHunt === undefined ? {} : { tierEscalationsByHunt }),
       ...(rewritesByHunt === undefined ? {} : { rewritesByHunt }),
+      ...(tierShadowByHunt === undefined ? {} : { tierShadowByHunt }),
       caveats: ordered.flatMap((set) => set.caveats.map((caveat) => `${set.provenance.setId}: ${caveat}`)),
       note: AUDIT_COUNTS_NOTE,
     },
@@ -3810,6 +3979,7 @@ function attemptSection(attempt: AuditAttempt): string[] {
       `${mechanical.heldPageRoundsWithoutProgress} Held Page round(s) without Progress; ${mechanical.bundledCheckpoints} bundled checkpoint round(s); ${mechanical.sameSourceUnsupportedRounds} same-source unsupported round(s); ${subagentCitationsText(mechanical.subagentCitations)}; ${mechanical.walledRounds} walled round(s)`,
   )
   lines.push(`- Delegated Page rounds: ${delegatedPageRoundsText(mechanical.delegatedPageRounds)}`)
+  lines.push(`- Tier shadow: ${tierShadowText(mechanical.tierShadow)}`)
   lines.push(`- Malformed Answers: ${mechanical.malformedAnswers} (${mechanical.answerRetries} retried)`)
   lines.push(`- Transport Failures: ${transportText(mechanical)}`)
   lines.push(`- Finalization: ${finalizationText(mechanical)}`)
@@ -3922,6 +4092,8 @@ export function formatAuditSet(audit: AuditSetOutput): string {
   if (escalationsByHunt.length > 0) lines.push('', ...escalationsByHunt)
   const rewritesByHunt = rewritesByHuntSection(rewritesByHuntOf(audit.attempts))
   if (rewritesByHunt.length > 0) lines.push('', ...rewritesByHunt)
+  const tierShadowByHunt = tierShadowByHuntSection(tierShadowByHuntOf(audit.attempts))
+  if (tierShadowByHunt.length > 0) lines.push('', ...tierShadowByHunt)
   if (audit.caveats.length > 0) {
     lines.push('')
     lines.push('## Caveats')
@@ -3992,6 +4164,8 @@ export function formatAuditAggregate(aggregate: AuditAggregate): string {
   if (escalationsByHunt.length > 0) lines.push(...escalationsByHunt, '')
   const rewritesByHunt = rewritesByHuntSection(aggregate.rewritesByHunt)
   if (rewritesByHunt.length > 0) lines.push(...rewritesByHunt, '')
+  const tierShadowByHunt = tierShadowByHuntSection(aggregate.tierShadowByHunt)
+  if (tierShadowByHunt.length > 0) lines.push(...tierShadowByHunt, '')
   lines.push('## Per set')
   lines.push('')
   for (const population of [aggregate.populations.initial, aggregate.populations.followUp]) {

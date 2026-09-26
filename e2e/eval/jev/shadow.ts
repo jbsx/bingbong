@@ -22,6 +22,7 @@
 
 import { parseSearchUrl } from '../../../src/core/browser/urlInput.ts'
 import type { EffortTier } from '../../../src/core/pipeline/runPlan.ts'
+import { TIER_PICK_QUESTION } from '../../../src/core/pipeline/tierShadow.ts'
 import { normalizeMemoryText } from '../../../src/core/session/workingMemory.ts'
 import type { DecisionSeam } from '../../../src/core/agent/modelRouting.ts'
 import type {
@@ -394,17 +395,8 @@ export function resultSamples(run: ShadowRun): ShadowSample[] {
   })
 }
 
-export const TIER_QUESTIONS: DecisionQuestions = {
-  pick: {
-    type: 'choice',
-    instructions: 'How much work does this voice command need from a web-browsing assistant?',
-    options: {
-      direct_action: 'One action on a page or the app; nothing needs to be found out.',
-      lookup: 'One fact to find, on one or two pages.',
-      investigation: 'Several facts, sources or steps to find and compare.',
-    },
-  },
-}
+/** The tier Choice the live shadow asks (#278), so the replay's agreement reads against the Run's. */
+export const TIER_QUESTIONS: DecisionQuestions = { pick: TIER_PICK_QUESTION }
 
 /** One tier sample per Run whose model declared a tier. */
 export function tierSamples(run: ShadowRun): ShadowSample[] {
