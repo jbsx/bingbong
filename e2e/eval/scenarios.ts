@@ -70,6 +70,8 @@ export interface ScenarioObservation {
   timedOut: boolean
   /** Every executed command of the scenario, in order — the last is the follow-up when one exists. */
   runs: readonly RunObservation[]
+  /** The scenario's Decision Records summed over its Runs (#279); a predicate could read them, though none does. */
+  decisions?: ScenarioMetrics['decisions']
 }
 
 export interface EvalScenario {

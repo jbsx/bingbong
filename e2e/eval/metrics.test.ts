@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { PipelineEvent } from '../../src/core/pipeline/events'
 import type { PerfSpanRecord } from '../../src/core/perf/perfTracer'
-import { aggregateScenarios, combineRuns, extractMetrics, type ScenarioMetrics } from './metrics'
+import { aggregateScenarios, combineRuns, decisionRecordsOf, extractMetrics, type ScenarioMetrics } from './metrics'
 
 const T = 'turn-test'
 
@@ -489,5 +489,72 @@ describe('aggregateScenarios', () => {
     ])
     expect(aggregate.deterministicAnswers).toBe(1)
     expect(aggregate.measuredRuns).toBe(3)
+  })
+
+  it('pools Decision Records over every Run: counts by acted state, nearest-rank latency, and per seam (#279)', () => {
+    const run = (records: Parameters<typeof decisionRecordsOf>[0]): ScenarioMetrics => metricsOf({ decisions: decisionRecordsOf(records) })
+    const aggregate = aggregateScenarios([
+      {
+        success: true,
+        metrics: metricsOf({}),
+        runs: [
+          run([
+            { kind: 'decision', seam: 'passage', acted: 'acted', latencyMs: 100 },
+            { kind: 'decision', seam: 'passage', acted: 'under_threshold', latencyMs: 300 },
+          ]),
+          run([{ kind: 'decision', seam: 'tier', acted: 'shadow', latencyMs: 200 }]),
+        ],
+      },
+      // A Run with no records, and one captured before #279, add nothing.
+      { success: true, metrics: metricsOf({}), runs: [run([]), metricsOf({})] },
+      { success: false, metrics: metricsOf({}), runs: [run([{ kind: 'decision', seam: 'result', acted: 'unavailable', latencyMs: 900 }])] },
+    ])
+    expect(aggregate.decisions).toEqual({
+      records: 4,
+      runsWithRecords: 3,
+      byActed: { acted: 1, under_threshold: 1, unavailable: 1, shadow: 1 },
+      latencyMs: { median: 200, p95: 900 },
+      bySeam: {
+        passage: { records: 2, byActed: { acted: 1, under_threshold: 1, unavailable: 0, shadow: 0 }, latencyMs: { median: 100, p95: 300 } },
+        result: { records: 1, byActed: { acted: 0, under_threshold: 0, unavailable: 1, shadow: 0 }, latencyMs: { median: 900, p95: 900 } },
+        tier: { records: 1, byActed: { acted: 0, under_threshold: 0, unavailable: 0, shadow: 1 }, latencyMs: { median: 200, p95: 200 } },
+      },
+    })
+  })
+
+  it('reports no latency when no Run recorded a decision', () => {
+    const aggregate = aggregateScenarios([{ success: true, metrics: metricsOf({}), runs: [metricsOf({})] }])
+    expect(aggregate.decisions).toEqual({ records: 0, runsWithRecords: 0, byActed: { acted: 0, under_threshold: 0, unavailable: 0, shadow: 0 }, latencyMs: null, bySeam: {} })
+  })
+})
+
+describe('decisionRecordsOf (#279)', () => {
+  it('counts one Run’s records by acted state and seam, keeps each latency, and ignores every other trace kind', () => {
+    const counts = decisionRecordsOf([
+      { kind: 'decision', seam: 'result', acted: 'acted', latencyMs: 120 },
+      { kind: 'llm_round' },
+      { kind: 'decision', seam: 'result', acted: 'under_threshold', latencyMs: 80 },
+    ] as Parameters<typeof decisionRecordsOf>[0])
+    expect(counts).toEqual({
+      records: 2,
+      byActed: { acted: 1, under_threshold: 1, unavailable: 0, shadow: 0 },
+      bySeam: { result: { byActed: { acted: 1, under_threshold: 1, unavailable: 0, shadow: 0 }, latenciesMs: [120, 80] } },
+      latenciesMs: [120, 80],
+    })
+  })
+
+  it('sums a scenario’s Runs in its combined view', () => {
+    const base = extractMetrics([command(0), done(10)], [], false, [{ kind: 'decision', seam: 'passage', acted: 'acted', latencyMs: 5 }])
+    const second = extractMetrics([command(0), done(10)], [], false, [{ kind: 'decision', seam: 'tier', acted: 'shadow', latencyMs: 7 }])
+    expect(base.decisions?.records).toBe(1)
+    expect(combineRuns([base, second]).decisions).toEqual({
+      records: 2,
+      byActed: { acted: 1, under_threshold: 0, unavailable: 0, shadow: 1 },
+      bySeam: {
+        passage: { byActed: { acted: 1, under_threshold: 0, unavailable: 0, shadow: 0 }, latenciesMs: [5] },
+        tier: { byActed: { acted: 0, under_threshold: 0, unavailable: 0, shadow: 1 }, latenciesMs: [7] },
+      },
+      latenciesMs: [5, 7],
+    })
   })
 })

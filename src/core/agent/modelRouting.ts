@@ -125,7 +125,8 @@ const DECISION_DEFAULT_BASE_URL = 'https://api.typesafe.ai'
 /** Pinned, never `jev-latest`: thresholds are tuned per model version. */
 const DECISION_DEFAULT_MODEL = 'jev-1.13.0'
 const DECISION_DEFAULT_KEY_ENV = 'TYPESAFE_API_KEY'
-const DECISION_SEAMS_ENV_KEY = `${DECISION_ENV_PREFIX}_SEAMS`
+/** The comma list of seams that act (#279 threads it through the harnesses). */
+export const DECISION_SEAMS_ENV_KEY = `${DECISION_ENV_PREFIX}_SEAMS`
 
 /** The scripted stand-in's hook: set, it serves the role and no request leaves the machine. */
 export const DECISION_SCRIPT_ENV_KEY = `${DECISION_ENV_PREFIX}_SCRIPT`

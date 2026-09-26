@@ -16,6 +16,13 @@ export interface ModelWitness {
    * which ran every round at the provider's default.
    */
   reasoningEffort?: ReasoningEffort | null
+  /**
+   * The `BINGBONG_DECISION_SEAMS` list this capture forwarded (#279), or
+   * null when unset; recorded beside the rung because it is the other
+   * experiment variable the Decision Model arms are read by. Absent on
+   * captures taken before #279.
+   */
+  decisionSeams?: string | null
   /** Non-empty means a scripted model served something — fails the suite. */
   scriptedEntries: { role: string; model: string }[]
 }

@@ -2,6 +2,8 @@ import type { PipelineEvent } from '../../src/core/pipeline/events'
 import type { PerfSpanRecord } from '../../src/core/perf/perfTracer'
 import type { FinalizationCause, RunResolution } from '../../src/core/session/runJournal'
 import type { EffortTier } from '../../src/core/pipeline/runPlan'
+import type { DecisionActed, DecisionEvent } from '../../src/core/trace/runTrace'
+import type { DecisionSeam } from '../../src/core/agent/modelRouting'
 import { nearestRankPercentile } from '../../src/core/report/stats'
 
 // Per-scenario measurement (#109) over the two machine-readable surfaces
@@ -115,9 +117,86 @@ export interface ScenarioMetrics {
    * none were, and the Report Grace exists to move that number down.
    */
   subagentBoundedReports: number
+  /**
+   * The Run's Decision Records (#279, ADR 0068), from its Run Trace; the
+   * scenario's combined view sums its Runs'. Absent on captures taken
+   * before #279. Reported, never gated — and no corpus predicate reads it,
+   * though any could through the observation's runs.
+   */
+  decisions?: RunDecisionRecords
   actions: RecordedAction[]
   answerText: string | null
   timedOut: boolean
+}
+
+/** Counts by the four states a Decision Record can end in (ADR 0068). */
+export type DecisionActedCounts = Record<DecisionActed, number>
+
+/**
+ * One Run's Decision Records (#279), read from its Run Trace: how many, by
+ * acted state, by seam, and every record's latency — kept raw so a pooled
+ * reading takes nearest-rank over records, never an average of Runs'.
+ */
+export interface RunDecisionRecords {
+  records: number
+  byActed: DecisionActedCounts
+  bySeam: Partial<Record<DecisionSeam, SeamDecisionRecords>>
+  latenciesMs: number[]
+}
+
+/** One seam's share of a Run's Decision Records. */
+export interface SeamDecisionRecords {
+  byActed: DecisionActedCounts
+  latenciesMs: number[]
+}
+
+/** The trace-record fields the counts read; every other kind is skipped. */
+export type DecisionRecordInput = { kind: string } & Partial<Pick<DecisionEvent, 'seam' | 'acted' | 'latencyMs'>>
+
+/** Mirrors runTrace's DecisionActed — inlined because src imports here stay type-only (see the header). */
+const DECISION_ACTED_STATES: readonly DecisionActed[] = ['acted', 'under_threshold', 'unavailable', 'shadow']
+
+function zeroActed(): DecisionActedCounts {
+  return Object.fromEntries(DECISION_ACTED_STATES.map((state) => [state, 0])) as DecisionActedCounts
+}
+
+function addActed(into: DecisionActedCounts, from: DecisionActedCounts): void {
+  for (const state of DECISION_ACTED_STATES) into[state] += from[state] ?? 0
+}
+
+/** Count one Run's Decision Records out of its trace records (#279). */
+export function decisionRecordsOf(records: readonly DecisionRecordInput[]): RunDecisionRecords {
+  const counts: RunDecisionRecords = { records: 0, byActed: zeroActed(), bySeam: {}, latenciesMs: [] }
+  for (const record of records) {
+    if (record.kind !== 'decision' || record.seam === undefined || record.acted === undefined) continue
+    counts.records += 1
+    counts.byActed[record.acted] += 1
+    const seam = (counts.bySeam[record.seam] ??= { byActed: zeroActed(), latenciesMs: [] })
+    seam.byActed[record.acted] += 1
+    if (typeof record.latencyMs === 'number') {
+      counts.latenciesMs.push(record.latencyMs)
+      seam.latenciesMs.push(record.latencyMs)
+    }
+  }
+  return counts
+}
+
+/** Sum Runs' Decision Records; undefined when no Run carries them (a capture before #279). */
+function mergeDecisionRecords(runs: readonly (RunDecisionRecords | undefined)[]): RunDecisionRecords | undefined {
+  const present = runs.filter((run): run is RunDecisionRecords => run !== undefined)
+  if (present.length === 0) return undefined
+  const merged: RunDecisionRecords = { records: 0, byActed: zeroActed(), bySeam: {}, latenciesMs: [] }
+  for (const run of present) {
+    merged.records += run.records
+    addActed(merged.byActed, run.byActed)
+    for (const [seam, counts] of Object.entries(run.bySeam) as [DecisionSeam, SeamDecisionRecords][]) {
+      const into = (merged.bySeam[seam] ??= { byActed: zeroActed(), latenciesMs: [] })
+      addActed(into.byActed, counts.byActed)
+      into.latenciesMs.push(...counts.latenciesMs)
+    }
+    merged.latenciesMs.push(...run.latenciesMs)
+  }
+  return merged
 }
 
 /** The error message shape the pipeline's round ceiling throws (#108's "raw round-limit error"). */
@@ -168,7 +247,12 @@ function actionKey(name: string, args: Record<string, unknown>): string {
  * the same turn. Timing comes from the run's own `command` → `done` wall
  * stamps; a run without both (an aborted capture) records null elapsed.
  */
-export function extractMetrics(events: RunEvents, perfRecords: readonly PerfSpanRecord[], timedOut: boolean): ScenarioMetrics {
+export function extractMetrics(
+  events: RunEvents,
+  perfRecords: readonly PerfSpanRecord[],
+  timedOut: boolean,
+  traceRecords: readonly DecisionRecordInput[] = [],
+): ScenarioMetrics {
   const toolCalls = events.filter((event): event is Extract<PipelineEvent, { type: 'tool_call' }> => event.type === 'tool_call')
   const toolResults = events.filter(
     (event): event is Extract<PipelineEvent, { type: 'tool_result' }> => event.type === 'tool_result',
@@ -234,6 +318,7 @@ export function extractMetrics(events: RunEvents, perfRecords: readonly PerfSpan
     deterministicAnswer: answer?.deterministicAnswer === true,
     subagentFinalizations,
     subagentBoundedReports: subagentFinalizedEvents.filter((event) => event.bounded === true).length,
+    decisions: decisionRecordsOf(traceRecords),
     actions,
     answerText: answer?.text ?? null,
     timedOut,
@@ -275,6 +360,7 @@ export function combineRuns(runs: readonly ScenarioMetrics[]): ScenarioMetrics {
     // work (#162): every run's breakdown adds into the scenario's.
     subagentFinalizations: mergeStopCounts(runs.map((metrics) => metrics.subagentFinalizations)),
     subagentBoundedReports: runs.reduce((total, metrics) => total + (metrics.subagentBoundedReports ?? 0), 0),
+    ...(mergeDecisionRecords(runs.map((metrics) => metrics.decisions)) === undefined ? {} : { decisions: mergeDecisionRecords(runs.map((metrics) => metrics.decisions))! }),
     actions: runs.flatMap((metrics) => metrics.actions),
     answerText: final.answerText,
     timedOut: runs.some((metrics) => metrics.timedOut),
@@ -317,6 +403,21 @@ export interface EvalAggregate {
   deterministicAnswers: number
   /** The Run population the two measurements above were taken over (#214). */
   measuredRuns: number
+  /** Decision Records pooled over every Run (#279); absent on captures taken before #279. */
+  decisions?: DecisionAggregate
+}
+
+/** One population of Decision Records: counts by acted state and nearest-rank latency, null when none was recorded. */
+export interface DecisionPopulation {
+  records: number
+  byActed: DecisionActedCounts
+  latencyMs: AggregateStats | null
+}
+
+/** A capture's Decision Records (#279): the whole population, per seam, and how many Runs recorded any. */
+export interface DecisionAggregate extends DecisionPopulation {
+  runsWithRecords: number
+  bySeam: Partial<Record<DecisionSeam, DecisionPopulation>>
 }
 
 /** One scenario's record as the aggregate reads it — its combined view and every Run behind it. */
@@ -362,5 +463,30 @@ export function aggregateScenarios(scenarios: readonly AggregatedScenario[]): Ev
     secondsPerLlmRound: perTier,
     deterministicAnswers: runs.filter((run) => run.deterministicAnswer).length,
     measuredRuns: runs.length,
+    decisions: aggregateDecisions(runs),
+  }
+}
+
+/** Pool Decision Records over Runs (#279): latency is nearest-rank over the records themselves, overall and per seam. */
+export function aggregateDecisions(runs: readonly ScenarioMetrics[]): DecisionAggregate {
+  const recorded = runs.map((run) => run.decisions).filter((decisions): decisions is RunDecisionRecords => decisions !== undefined)
+  const population = (records: number, byActed: DecisionActedCounts, latencies: readonly number[]): DecisionPopulation => ({
+    records,
+    byActed,
+    latencyMs: latencies.length === 0 ? null : statsOf(latencies),
+  })
+  const merged = mergeDecisionRecords(recorded) ?? { records: 0, byActed: zeroActed(), bySeam: {}, latenciesMs: [] }
+  const bySeam: Partial<Record<DecisionSeam, DecisionPopulation>> = {}
+  for (const [seam, counts] of Object.entries(merged.bySeam) as [DecisionSeam, SeamDecisionRecords][]) {
+    bySeam[seam] = population(
+      DECISION_ACTED_STATES.reduce((sum, state) => sum + counts.byActed[state], 0),
+      counts.byActed,
+      counts.latenciesMs,
+    )
+  }
+  return {
+    ...population(merged.records, merged.byActed, merged.latenciesMs),
+    runsWithRecords: recorded.filter((run) => run.records > 0).length,
+    bySeam,
   }
 }

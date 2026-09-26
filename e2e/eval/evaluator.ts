@@ -221,6 +221,7 @@ export async function startEvaluator(options?: {
       orchestratorModel: null,
       orchestratorRequests: 0,
       reasoningEffort: routing.reasoningEffort,
+      decisionSeams: routing.decisionSeams,
       scriptedEntries: [],
     },
     scenarios: results,
@@ -340,7 +341,11 @@ export async function startEvaluator(options?: {
 
     // Turn-bearing events only (session lifecycle and agent cards carry none).
     const events = (await readTape()).filter((event): event is PipelineEvent & { turnId: string } => 'turnId' in event && event.turnId === turnId)
-    return { turnId, metrics: extractMetrics(events, perfRecordsFor(turnId), timedOut) }
+    // Decision Records (#279) reach only the Run Trace, never the tape; a
+    // Browse Subagent's are stamped with the spawning turn, so they count
+    // as the Run's.
+    const traceRecords = harness.readRunTrace().filter((record) => 'turnId' in record && record.turnId === turnId)
+    return { turnId, metrics: extractMetrics(events, perfRecordsFor(turnId), timedOut, traceRecords) }
   }
 
   /** True once the run's tape shows a successful call with these args-text and result-ok pairings. */
@@ -443,6 +448,7 @@ export async function startEvaluator(options?: {
       rawLimitFailure: combined.rawLimitFailure,
       timedOut: combined.timedOut,
       runs: runs.map((metrics) => ({ metrics })),
+      decisions: combined.decisions,
     }
     const success = scenario.success(observation, fixture)
     const result: ScenarioResult = {
@@ -469,6 +475,7 @@ export async function startEvaluator(options?: {
     const distinctModels = [...new Set(orchestratorEntries.map((entry) => entry.model))]
     const witness: ModelWitness = {
       reasoningEffort: routing.reasoningEffort,
+      decisionSeams: routing.decisionSeams,
       // A single orchestrator model must have served; a ledger that ever
       // disagrees with itself is surfaced instead of silently pinning one.
       orchestratorModel:
