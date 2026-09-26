@@ -26,13 +26,14 @@ const repoRoot = fileURLToPath(new URL('../..', import.meta.url))
 /**
  * Env hooks that would put a scripted model in any serving position —
  * the orchestrator's, the delegated worker's (#224: the one the guard
- * used to omit), and both vision hooks.
+ * used to omit), both vision hooks, and the Decision Model's stand-in (#275).
  */
 export const SCRIPTED_MODEL_HOOKS = [
   'BINGBONG_LLM_SCRIPT',
   'BINGBONG_SUBAGENT_LLM_SCRIPT',
   'BINGBONG_VISION_SCRIPT',
   'BINGBONG_VISION_DESCRIPTION_SCRIPT',
+  'BINGBONG_DECISION_SCRIPT',
 ] as const
 
 /** A resolved role, or why it isn't serving. `unconfigured` never fails the suite. */

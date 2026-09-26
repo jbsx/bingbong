@@ -102,6 +102,7 @@ import {
 } from './evidenceCheckpoint'
 import { candidateCheckpointEvent, evidenceCheckpointEvent } from '../trace/evidenceCheckpointTrace'
 import type { AnswerRetryOutcome, LlmRequestShape, LlmRoundOutcome, RunTraceWriter } from '../trace/runTrace'
+import type { ConfiguredDecisionModel } from '../ports/decisionModel'
 import type { VisionTraceReporter } from '../trace/visionTrace'
 import { createReasoningRounds, reasoningEvent, type TracedReasoningRound } from '../trace/reasoningTrace'
 import { createLlmRounds, llmRequestShape, llmRoundEvent, llmRoundFailure, type LlmRound, type TracedLlmRound } from '../trace/llmRoundTrace'
@@ -122,6 +123,14 @@ export interface CommandPipelineDeps {
   tts: TtsSpeaker
   clock: Clock
   tools: Tool[]
+  /**
+   * The Decision Model a Run may ask, and the seams that act (#275, ADR
+   * 0068), to be read once per Run. Absent, or null, when the decision
+   * role is neither configured nor scripted: every seam is then off and
+   * the Run behaves exactly as before. Each question a seam asks is a
+   * `decision` record (`decisionEvent`, core/trace/decisionTrace.ts).
+   */
+  decision?(): ConfiguredDecisionModel | null
   confirmTimeoutMs?: number
   /** How long an ask_user window stays open (voice + typed answers). */
   askTimeoutMs?: number

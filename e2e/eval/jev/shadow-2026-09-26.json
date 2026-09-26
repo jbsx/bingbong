@@ -1,0 +1,5125 @@
+{
+  "kind": "decision_shadow",
+  "issue": 275,
+  "generatedAt": "2026-09-26T18:10:19.844Z",
+  "model": "jev-1.13.0",
+  "timeoutMs": 800,
+  "thresholds": {
+    "choice": 0.7,
+    "noul": 0.7
+  },
+  "sets": {
+    "fix-265-267": 20,
+    "fix-270": 12
+  },
+  "runs": 48,
+  "limits": [
+    "passage: measured on Page Reads only; a navigate landing holds a Page Preview in the trace, never the landing text, so landing agreement comes from #274's first capture",
+    "passage: the model's pick is the passage holding its next accepted record_evidence excerpt from that read; a read it recorded nothing from is \"picked none\"",
+    "passage and result: every declared Asked Item is offered as open; which were still open at a given step is not recorded",
+    "result: the model's pick is the result its next navigate or click opened; a new search, a type or anything else is \"picked none\"; navigate results are cut at 8,000 characters in the trace",
+    "tier: follow-up commands are asked without the Run they follow"
+  ],
+  "seams": {
+    "passage": {
+      "samples": 148,
+      "unavailable": {},
+      "latencyMs": {
+        "median": 233,
+        "p95": 278
+      },
+      "optionsCut": 17,
+      "choice": {
+        "scored": 73,
+        "agreement": 0.699,
+        "byConfidence": [
+          {
+            "from": 0,
+            "to": 0.1,
+            "n": 0,
+            "rate": null
+          },
+          {
+            "from": 0.1,
+            "to": 0.2,
+            "n": 2,
+            "rate": 0.5
+          },
+          {
+            "from": 0.2,
+            "to": 0.3,
+            "n": 2,
+            "rate": 0
+          },
+          {
+            "from": 0.3,
+            "to": 0.4,
+            "n": 7,
+            "rate": 0.571
+          },
+          {
+            "from": 0.4,
+            "to": 0.5,
+            "n": 6,
+            "rate": 0.833
+          },
+          {
+            "from": 0.5,
+            "to": 0.6,
+            "n": 15,
+            "rate": 0.8
+          },
+          {
+            "from": 0.6,
+            "to": 0.7,
+            "n": 22,
+            "rate": 0.682
+          },
+          {
+            "from": 0.7,
+            "to": 0.8,
+            "n": 9,
+            "rate": 0.778
+          },
+          {
+            "from": 0.8,
+            "to": 0.9,
+            "n": 3,
+            "rate": 1
+          },
+          {
+            "from": 0.9,
+            "to": 1,
+            "n": 7,
+            "rate": 0.571
+          }
+        ]
+      },
+      "noul": {
+        "scored": 148,
+        "agreementAtHalf": 0.804,
+        "byProbability": [
+          {
+            "from": 0,
+            "to": 0.1,
+            "n": 5,
+            "rate": 0
+          },
+          {
+            "from": 0.1,
+            "to": 0.2,
+            "n": 12,
+            "rate": 0.167
+          },
+          {
+            "from": 0.2,
+            "to": 0.3,
+            "n": 9,
+            "rate": 0.111
+          },
+          {
+            "from": 0.3,
+            "to": 0.4,
+            "n": 13,
+            "rate": 0
+          },
+          {
+            "from": 0.4,
+            "to": 0.5,
+            "n": 15,
+            "rate": 0.067
+          },
+          {
+            "from": 0.5,
+            "to": 0.6,
+            "n": 5,
+            "rate": 0.6
+          },
+          {
+            "from": 0.6,
+            "to": 0.7,
+            "n": 7,
+            "rate": 0.571
+          },
+          {
+            "from": 0.7,
+            "to": 0.8,
+            "n": 16,
+            "rate": 0.688
+          },
+          {
+            "from": 0.8,
+            "to": 0.9,
+            "n": 18,
+            "rate": 0.5
+          },
+          {
+            "from": 0.9,
+            "to": 1,
+            "n": 48,
+            "rate": 0.875
+          }
+        ]
+      },
+      "atThreshold": {
+        "acted": 30,
+        "agreed": 13,
+        "modelPickedNothing": 12
+      }
+    },
+    "result": {
+      "samples": 116,
+      "unavailable": {},
+      "latencyMs": {
+        "median": 219,
+        "p95": 252
+      },
+      "optionsCut": 0,
+      "choice": {
+        "scored": 69,
+        "agreement": 0.783,
+        "byConfidence": [
+          {
+            "from": 0,
+            "to": 0.1,
+            "n": 1,
+            "rate": 0
+          },
+          {
+            "from": 0.1,
+            "to": 0.2,
+            "n": 0,
+            "rate": null
+          },
+          {
+            "from": 0.2,
+            "to": 0.3,
+            "n": 2,
+            "rate": 1
+          },
+          {
+            "from": 0.3,
+            "to": 0.4,
+            "n": 5,
+            "rate": 0
+          },
+          {
+            "from": 0.4,
+            "to": 0.5,
+            "n": 3,
+            "rate": 0.333
+          },
+          {
+            "from": 0.5,
+            "to": 0.6,
+            "n": 7,
+            "rate": 0.571
+          },
+          {
+            "from": 0.6,
+            "to": 0.7,
+            "n": 2,
+            "rate": 0.5
+          },
+          {
+            "from": 0.7,
+            "to": 0.8,
+            "n": 5,
+            "rate": 1
+          },
+          {
+            "from": 0.8,
+            "to": 0.9,
+            "n": 9,
+            "rate": 0.889
+          },
+          {
+            "from": 0.9,
+            "to": 1,
+            "n": 35,
+            "rate": 0.943
+          }
+        ]
+      },
+      "noul": {
+        "scored": 116,
+        "agreementAtHalf": 0.698,
+        "byProbability": [
+          {
+            "from": 0,
+            "to": 0.1,
+            "n": 0,
+            "rate": null
+          },
+          {
+            "from": 0.1,
+            "to": 0.2,
+            "n": 7,
+            "rate": 0
+          },
+          {
+            "from": 0.2,
+            "to": 0.3,
+            "n": 1,
+            "rate": 0
+          },
+          {
+            "from": 0.3,
+            "to": 0.4,
+            "n": 4,
+            "rate": 0.25
+          },
+          {
+            "from": 0.4,
+            "to": 0.5,
+            "n": 4,
+            "rate": 0.25
+          },
+          {
+            "from": 0.5,
+            "to": 0.6,
+            "n": 8,
+            "rate": 0.125
+          },
+          {
+            "from": 0.6,
+            "to": 0.7,
+            "n": 15,
+            "rate": 0.2
+          },
+          {
+            "from": 0.7,
+            "to": 0.8,
+            "n": 17,
+            "rate": 0.588
+          },
+          {
+            "from": 0.8,
+            "to": 0.9,
+            "n": 50,
+            "rate": 0.86
+          },
+          {
+            "from": 0.9,
+            "to": 1,
+            "n": 10,
+            "rate": 1
+          }
+        ]
+      },
+      "atThreshold": {
+        "acted": 54,
+        "agreed": 43,
+        "modelPickedNothing": 8
+      }
+    },
+    "tier": {
+      "samples": 48,
+      "unavailable": {},
+      "latencyMs": {
+        "median": 217,
+        "p95": 292
+      },
+      "optionsCut": 0,
+      "choice": {
+        "scored": 48,
+        "agreement": 0.75,
+        "byConfidence": [
+          {
+            "from": 0,
+            "to": 0.1,
+            "n": 0,
+            "rate": null
+          },
+          {
+            "from": 0.1,
+            "to": 0.2,
+            "n": 0,
+            "rate": null
+          },
+          {
+            "from": 0.2,
+            "to": 0.3,
+            "n": 0,
+            "rate": null
+          },
+          {
+            "from": 0.3,
+            "to": 0.4,
+            "n": 0,
+            "rate": null
+          },
+          {
+            "from": 0.4,
+            "to": 0.5,
+            "n": 0,
+            "rate": null
+          },
+          {
+            "from": 0.5,
+            "to": 0.6,
+            "n": 0,
+            "rate": null
+          },
+          {
+            "from": 0.6,
+            "to": 0.7,
+            "n": 8,
+            "rate": 0.5
+          },
+          {
+            "from": 0.7,
+            "to": 0.8,
+            "n": 15,
+            "rate": 0.667
+          },
+          {
+            "from": 0.8,
+            "to": 0.9,
+            "n": 9,
+            "rate": 0.889
+          },
+          {
+            "from": 0.9,
+            "to": 1,
+            "n": 16,
+            "rate": 0.875
+          }
+        ]
+      },
+      "atThreshold": {
+        "acted": 40,
+        "agreed": 32,
+        "modelPickedNothing": 0
+      }
+    }
+  },
+  "rows": [
+    {
+      "seam": "tier",
+      "capture": "fix-265-267-1--compatibility-pi-camera",
+      "turnId": "turn-mubw5pzi-1",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 587,
+      "modelPicks": [
+        "investigation"
+      ],
+      "latencyMs": 292,
+      "choice": "investigation",
+      "confidence": 0.85
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-1--compatibility-pi-camera",
+      "turnId": "turn-mubw5pzi-1",
+      "callId": "call_148049a0ea0044b4ac30fd3c",
+      "options": 138,
+      "optionsBeforeCut": 138,
+      "stateChars": 14121,
+      "modelPicks": [
+        "p30"
+      ],
+      "latencyMs": 226,
+      "choice": "p5",
+      "confidence": 0.71,
+      "noul": 0.81
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-1--compatibility-pi-camera",
+      "turnId": "turn-mubw5pzi-1",
+      "callId": "call_fe763f85de10485a87c199b3",
+      "options": 91,
+      "optionsBeforeCut": 91,
+      "stateChars": 13692,
+      "modelPicks": [
+        "p20"
+      ],
+      "latencyMs": 221,
+      "choice": "p18",
+      "confidence": 0.61,
+      "noul": 0.28
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-1--compatibility-pi-camera",
+      "turnId": "turn-mubw5pzi-1",
+      "callId": "call_a48286ae948a4bce91e6c05e",
+      "options": 149,
+      "optionsBeforeCut": 149,
+      "stateChars": 14071,
+      "modelPicks": [
+        "p5",
+        "p7",
+        "p107",
+        "p112"
+      ],
+      "latencyMs": 251,
+      "choice": "p112",
+      "confidence": 0.57,
+      "noul": 0.81
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-1--compatibility-pi-camera",
+      "turnId": "turn-mubw5pzi-1",
+      "callId": "call_e658af427fdf46859b265209",
+      "options": 250,
+      "optionsBeforeCut": 464,
+      "stateChars": 8044,
+      "modelPicks": [],
+      "latencyMs": 220,
+      "choice": "p79",
+      "confidence": 0.34,
+      "noul": 0.43
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-1--compatibility-pi-camera",
+      "turnId": "turn-mubw5pzi-1",
+      "callId": "call_846847de1edf480d8de52481",
+      "options": 67,
+      "optionsBeforeCut": 67,
+      "stateChars": 4748,
+      "modelPicks": [
+        "p42",
+        "p44"
+      ],
+      "latencyMs": 228,
+      "choice": "p44",
+      "confidence": 0.8,
+      "noul": 0.54
+    },
+    {
+      "seam": "result",
+      "capture": "fix-265-267-1--compatibility-pi-camera",
+      "turnId": "turn-mubw5pzi-1",
+      "callId": "call_4cc9e762f1a84f2ea26d3779",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 1751,
+      "modelPicks": [
+        "r20"
+      ],
+      "latencyMs": 197,
+      "choice": "r20",
+      "confidence": 0.26,
+      "noul": 0.85
+    },
+    {
+      "seam": "tier",
+      "capture": "fix-265-267-1--compatibility-pi-camera",
+      "turnId": "turn-mubwc7pf-2",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 315,
+      "modelPicks": [
+        "lookup"
+      ],
+      "latencyMs": 210,
+      "choice": "investigation",
+      "confidence": 0.74
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-1--compatibility-pi-camera",
+      "turnId": "turn-mubwc7pf-2",
+      "callId": "call_4ee3b4a8d1204a64a65a14ce",
+      "options": 79,
+      "optionsBeforeCut": 79,
+      "stateChars": 12818,
+      "modelPicks": [
+        "p18"
+      ],
+      "latencyMs": 233,
+      "choice": "p23",
+      "confidence": 0.14,
+      "noul": 0.18
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-1--compatibility-pi-camera",
+      "turnId": "turn-mubwc7pf-2",
+      "callId": "call_6ac20801745e405a9d4367b9",
+      "options": 111,
+      "optionsBeforeCut": 111,
+      "stateChars": 13575,
+      "modelPicks": [
+        "p86",
+        "p109"
+      ],
+      "latencyMs": 216,
+      "choice": "p109",
+      "confidence": 1,
+      "noul": 0.97
+    },
+    {
+      "seam": "tier",
+      "capture": "fix-265-267-1--historical-longitude-watch",
+      "turnId": "turn-mubwg1nf-1",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 798,
+      "modelPicks": [
+        "investigation"
+      ],
+      "latencyMs": 200,
+      "choice": "investigation",
+      "confidence": 1
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-1--historical-longitude-watch",
+      "turnId": "turn-mubwg1nf-1",
+      "callId": "call_77015658dc954dd69032b9b9",
+      "options": 17,
+      "optionsBeforeCut": 17,
+      "stateChars": 3601,
+      "modelPicks": [],
+      "latencyMs": 199,
+      "choice": "p5",
+      "confidence": 0.69,
+      "noul": 0.79
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-1--historical-longitude-watch",
+      "turnId": "turn-mubwg1nf-1",
+      "callId": "call_690c6cec092b43839fd6d9bb",
+      "options": 8,
+      "optionsBeforeCut": 8,
+      "stateChars": 1854,
+      "modelPicks": [],
+      "latencyMs": 256,
+      "choice": "p7",
+      "confidence": 0.57,
+      "noul": 0.24
+    },
+    {
+      "seam": "result",
+      "capture": "fix-265-267-1--historical-longitude-watch",
+      "turnId": "turn-mubwg1nf-1",
+      "callId": "call_fb33bafcbb09423c8dbff40d",
+      "options": 4,
+      "optionsBeforeCut": 4,
+      "stateChars": 1705,
+      "modelPicks": [],
+      "latencyMs": 197,
+      "choice": "r5",
+      "confidence": 0.99,
+      "noul": 0.51
+    },
+    {
+      "seam": "result",
+      "capture": "fix-265-267-1--historical-longitude-watch",
+      "turnId": "turn-mubwg1nf-1",
+      "callId": "call_7961bd3fed35471ab90d3e9a",
+      "options": 4,
+      "optionsBeforeCut": 4,
+      "stateChars": 1704,
+      "modelPicks": [],
+      "latencyMs": 196,
+      "choice": "r5",
+      "confidence": 1,
+      "noul": 0.62
+    },
+    {
+      "seam": "result",
+      "capture": "fix-265-267-1--historical-longitude-watch",
+      "turnId": "turn-mubwg1nf-1",
+      "callId": "call_3c85badd1aaa444b863e0e2b",
+      "options": 4,
+      "optionsBeforeCut": 4,
+      "stateChars": 1697,
+      "modelPicks": [],
+      "latencyMs": 251,
+      "choice": "r5",
+      "confidence": 1,
+      "noul": 0.58
+    },
+    {
+      "seam": "tier",
+      "capture": "fix-265-267-1--rule-eurostar-luggage",
+      "turnId": "turn-mubwiy2z-1",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 649,
+      "modelPicks": [
+        "investigation"
+      ],
+      "latencyMs": 221,
+      "choice": "investigation",
+      "confidence": 0.7
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-1--rule-eurostar-luggage",
+      "turnId": "turn-mubwiy2z-1",
+      "callId": "call_27c590e40a144373ba6e0c2a",
+      "options": 79,
+      "optionsBeforeCut": 79,
+      "stateChars": 11631,
+      "modelPicks": [
+        "p32",
+        "p45",
+        "p72"
+      ],
+      "latencyMs": 233,
+      "choice": "p45",
+      "confidence": 0.55,
+      "noul": 0.97
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-1--rule-eurostar-luggage",
+      "turnId": "turn-mubwiy2z-1",
+      "callId": "call_2cad813f3ec14bc49552ca7e",
+      "options": 30,
+      "optionsBeforeCut": 30,
+      "stateChars": 3983,
+      "modelPicks": [
+        "p1",
+        "p5",
+        "p10"
+      ],
+      "latencyMs": 193,
+      "choice": "p10",
+      "confidence": 0.64,
+      "noul": 0.97
+    },
+    {
+      "seam": "result",
+      "capture": "fix-265-267-1--rule-eurostar-luggage",
+      "turnId": "turn-mubwiy2z-1",
+      "callId": "call_c30fd4c778a44f749ad453cb",
+      "options": 4,
+      "optionsBeforeCut": 4,
+      "stateChars": 2059,
+      "modelPicks": [
+        "r29"
+      ],
+      "latencyMs": 243,
+      "choice": "r29",
+      "confidence": 0.96,
+      "noul": 0.89
+    },
+    {
+      "seam": "result",
+      "capture": "fix-265-267-1--rule-eurostar-luggage",
+      "turnId": "turn-mubwiy2z-1",
+      "callId": "call_17fd9083fbd0464b9d05ee96",
+      "options": 2,
+      "optionsBeforeCut": 2,
+      "stateChars": 1827,
+      "modelPicks": [
+        "r20"
+      ],
+      "latencyMs": 230,
+      "choice": "r20",
+      "confidence": 0.98,
+      "noul": 0.9
+    },
+    {
+      "seam": "result",
+      "capture": "fix-265-267-1--rule-eurostar-luggage",
+      "turnId": "turn-mubwiy2z-1",
+      "callId": "call_bf70bb1050ee4ce0ae0881f4",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 1951,
+      "modelPicks": [
+        "r24"
+      ],
+      "latencyMs": 228,
+      "choice": "r24",
+      "confidence": 0.94,
+      "noul": 0.9
+    },
+    {
+      "seam": "tier",
+      "capture": "fix-265-267-1--rule-eurostar-luggage",
+      "turnId": "turn-mubwo259-2",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 261,
+      "modelPicks": [
+        "lookup"
+      ],
+      "latencyMs": 209,
+      "choice": "lookup",
+      "confidence": 0.77
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-1--rule-eurostar-luggage",
+      "turnId": "turn-mubwo259-2",
+      "callId": "call_d1a7da6c54ed465a92288392",
+      "options": 79,
+      "optionsBeforeCut": 79,
+      "stateChars": 10875,
+      "modelPicks": [
+        "p20",
+        "p21",
+        "p57"
+      ],
+      "latencyMs": 219,
+      "choice": "p21",
+      "confidence": 0.65,
+      "noul": 0.96
+    },
+    {
+      "seam": "tier",
+      "capture": "fix-265-267-1--superseded-voyager-interstellar",
+      "turnId": "turn-mubwqb6s-1",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 605,
+      "modelPicks": [
+        "investigation"
+      ],
+      "latencyMs": 226,
+      "choice": "investigation",
+      "confidence": 1
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-1--superseded-voyager-interstellar",
+      "turnId": "turn-mubwqb6s-1",
+      "callId": "call_fe13afcf144e4e22a465c3e5",
+      "options": 34,
+      "optionsBeforeCut": 34,
+      "stateChars": 6096,
+      "modelPicks": [
+        "p8",
+        "p9",
+        "p10"
+      ],
+      "latencyMs": 260,
+      "choice": "p10",
+      "confidence": 0.62,
+      "noul": 0.85
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-1--superseded-voyager-interstellar",
+      "turnId": "turn-mubwqb6s-1",
+      "callId": "call_e478b78f00df4d69a369bcb1",
+      "options": 33,
+      "optionsBeforeCut": 33,
+      "stateChars": 5982,
+      "modelPicks": [
+        "p9",
+        "p10"
+      ],
+      "latencyMs": 209,
+      "choice": "p9",
+      "confidence": 0.44,
+      "noul": 0.73
+    },
+    {
+      "seam": "result",
+      "capture": "fix-265-267-1--superseded-voyager-interstellar",
+      "turnId": "turn-mubwqb6s-1",
+      "callId": "call_f7922aaefa5b4eb4a7b15cd6",
+      "options": 2,
+      "optionsBeforeCut": 2,
+      "stateChars": 1863,
+      "modelPicks": [],
+      "latencyMs": 227,
+      "choice": "r20",
+      "confidence": 0.76,
+      "noul": 0.65
+    },
+    {
+      "seam": "result",
+      "capture": "fix-265-267-1--superseded-voyager-interstellar",
+      "turnId": "turn-mubwqb6s-1",
+      "callId": "call_5630dd464ade469d925e8695",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 1780,
+      "modelPicks": [],
+      "latencyMs": 216,
+      "choice": "r24",
+      "confidence": 0.81,
+      "noul": 0.34
+    },
+    {
+      "seam": "result",
+      "capture": "fix-265-267-1--superseded-voyager-interstellar",
+      "turnId": "turn-mubwqb6s-1",
+      "callId": "call_258f9e2ff85c4f94aa18d353",
+      "options": 2,
+      "optionsBeforeCut": 2,
+      "stateChars": 1892,
+      "modelPicks": [
+        "r27"
+      ],
+      "latencyMs": 230,
+      "choice": "r27",
+      "confidence": 0.83,
+      "noul": 0.82
+    },
+    {
+      "seam": "result",
+      "capture": "fix-265-267-1--superseded-voyager-interstellar",
+      "turnId": "turn-mubwqb6s-1",
+      "callId": "call_891c6c7d28e14ae492350312",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 2040,
+      "modelPicks": [
+        "r24"
+      ],
+      "latencyMs": 225,
+      "choice": "r24",
+      "confidence": 0.52,
+      "noul": 0.8
+    },
+    {
+      "seam": "result",
+      "capture": "fix-265-267-1--superseded-voyager-interstellar",
+      "turnId": "turn-mubwqb6s-1",
+      "callId": "call_eebe34d5eea041daa95048b2",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 2032,
+      "modelPicks": [
+        "r24"
+      ],
+      "latencyMs": 219,
+      "choice": "r24",
+      "confidence": 0.83,
+      "noul": 0.75
+    },
+    {
+      "seam": "result",
+      "capture": "fix-265-267-1--superseded-voyager-interstellar",
+      "turnId": "turn-mubwqb6s-1",
+      "callId": "call_ff6d6b163a8246019eccfb0b",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 2079,
+      "modelPicks": [
+        "r24"
+      ],
+      "latencyMs": 206,
+      "choice": "r20",
+      "confidence": 0.98,
+      "noul": 0.84
+    },
+    {
+      "seam": "result",
+      "capture": "fix-265-267-1--superseded-voyager-interstellar",
+      "turnId": "turn-mubwqb6s-1",
+      "callId": "call_9f43b023668b48bebb32048b",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 2148,
+      "modelPicks": [
+        "r20"
+      ],
+      "latencyMs": 218,
+      "choice": "r24",
+      "confidence": 0.36,
+      "noul": 0.85
+    },
+    {
+      "seam": "tier",
+      "capture": "fix-265-267-2--compatibility-pi-camera",
+      "turnId": "turn-mubwx1ai-1",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 587,
+      "modelPicks": [
+        "investigation"
+      ],
+      "latencyMs": 214,
+      "choice": "investigation",
+      "confidence": 0.85
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-2--compatibility-pi-camera",
+      "turnId": "turn-mubwx1ai-1",
+      "callId": "call_51c2a8f7e4844d97981da8cc",
+      "options": 250,
+      "optionsBeforeCut": 457,
+      "stateChars": 8064,
+      "modelPicks": [],
+      "latencyMs": 241,
+      "choice": "p80",
+      "confidence": 0.33,
+      "noul": 0.48
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-2--compatibility-pi-camera",
+      "turnId": "turn-mubwx1ai-1",
+      "callId": "call_6050db5258c54d568c320615",
+      "options": 79,
+      "optionsBeforeCut": 79,
+      "stateChars": 13221,
+      "modelPicks": [],
+      "latencyMs": 218,
+      "choice": "p16",
+      "confidence": 0.34,
+      "noul": 0.64
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-2--compatibility-pi-camera",
+      "turnId": "turn-mubwx1ai-1",
+      "callId": "call_cb743ba6c6cc4ccfb61a5784",
+      "options": 138,
+      "optionsBeforeCut": 138,
+      "stateChars": 14157,
+      "modelPicks": [],
+      "latencyMs": 244,
+      "choice": "p5",
+      "confidence": 0.62,
+      "noul": 0.81
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-2--compatibility-pi-camera",
+      "turnId": "turn-mubwx1ai-1",
+      "callId": "call_0c97fdd1a5c242c09aff702d",
+      "options": 250,
+      "optionsBeforeCut": 463,
+      "stateChars": 8080,
+      "modelPicks": [],
+      "latencyMs": 232,
+      "choice": "p79",
+      "confidence": 0.44,
+      "noul": 0.37
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-2--compatibility-pi-camera",
+      "turnId": "turn-mubwx1ai-1",
+      "callId": "call_47aadc01b9254e549c0a8d4d",
+      "options": 91,
+      "optionsBeforeCut": 91,
+      "stateChars": 13728,
+      "modelPicks": [],
+      "latencyMs": 300,
+      "choice": "p18",
+      "confidence": 0.54,
+      "noul": 0.33
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-2--compatibility-pi-camera",
+      "turnId": "turn-mubwx1ai-1",
+      "callId": "call_e0392bae33ff4ddf8429adf2",
+      "options": 149,
+      "optionsBeforeCut": 149,
+      "stateChars": 14107,
+      "modelPicks": [
+        "p24",
+        "p112"
+      ],
+      "latencyMs": 232,
+      "choice": "p112",
+      "confidence": 0.63,
+      "noul": 0.7
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-2--compatibility-pi-camera",
+      "turnId": "turn-mubwx1ai-1",
+      "callId": "call_5700b8e8ab404220a5db81d1",
+      "options": 250,
+      "optionsBeforeCut": 461,
+      "stateChars": 8076,
+      "modelPicks": [],
+      "latencyMs": 232,
+      "choice": "p79",
+      "confidence": 0.55,
+      "noul": 0.33
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-2--compatibility-pi-camera",
+      "turnId": "turn-mubwx1ai-1",
+      "callId": "call_d3fdfd5a8a8e496880c5ae0e",
+      "options": 135,
+      "optionsBeforeCut": 135,
+      "stateChars": 14193,
+      "modelPicks": [],
+      "latencyMs": 265,
+      "choice": "p101",
+      "confidence": 0.16,
+      "noul": 0.21
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-2--compatibility-pi-camera",
+      "turnId": "turn-mubwx1ai-1",
+      "callId": "call_785b1d5231494671a668a98e",
+      "options": 57,
+      "optionsBeforeCut": 57,
+      "stateChars": 4631,
+      "modelPicks": [],
+      "latencyMs": 229,
+      "choice": "p1",
+      "confidence": 0.49,
+      "noul": 0.1
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-2--compatibility-pi-camera",
+      "turnId": "turn-mubwx1ai-1",
+      "callId": "call_005fd0738e064ea9b6baac79",
+      "options": 76,
+      "optionsBeforeCut": 76,
+      "stateChars": 13691,
+      "modelPicks": [],
+      "latencyMs": 211,
+      "choice": "p52",
+      "confidence": 0.47,
+      "noul": 0.07
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-2--compatibility-pi-camera",
+      "turnId": "turn-mubwx1ai-1",
+      "callId": "call_28300ff7dbea436f966ca3ad",
+      "options": 115,
+      "optionsBeforeCut": 115,
+      "stateChars": 13895,
+      "modelPicks": [],
+      "latencyMs": 240,
+      "choice": "p36",
+      "confidence": 0.57,
+      "noul": 0.29
+    },
+    {
+      "seam": "result",
+      "capture": "fix-265-267-2--compatibility-pi-camera",
+      "turnId": "turn-mubwx1ai-1",
+      "callId": "call_64cace121c7f490f9c6253f5",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 1665,
+      "modelPicks": [
+        "r20"
+      ],
+      "latencyMs": 204,
+      "choice": "r20",
+      "confidence": 1,
+      "noul": 0.82
+    },
+    {
+      "seam": "result",
+      "capture": "fix-265-267-2--compatibility-pi-camera",
+      "turnId": "turn-mubwx1ai-1",
+      "callId": "call_a558a1af3a224a358dc51c24",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 1707,
+      "modelPicks": [
+        "r20"
+      ],
+      "latencyMs": 201,
+      "choice": "r20",
+      "confidence": 0.76,
+      "noul": 0.83
+    },
+    {
+      "seam": "result",
+      "capture": "fix-265-267-2--compatibility-pi-camera",
+      "turnId": "turn-mubwx1ai-1",
+      "callId": "call_63920f2ad288482b883fc04f",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 1613,
+      "modelPicks": [
+        "r24"
+      ],
+      "latencyMs": 206,
+      "choice": "r28",
+      "confidence": 0.35,
+      "noul": 0.7
+    },
+    {
+      "seam": "result",
+      "capture": "fix-265-267-2--compatibility-pi-camera",
+      "turnId": "turn-mubwx1ai-1",
+      "callId": "call_1755b5ab9a9f4a9faa0cacb5",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 1670,
+      "modelPicks": [
+        "r20"
+      ],
+      "latencyMs": 229,
+      "choice": "r24",
+      "confidence": 0.89,
+      "noul": 0.82
+    },
+    {
+      "seam": "tier",
+      "capture": "fix-265-267-2--compatibility-pi-camera",
+      "turnId": "turn-mubx0843-2",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 315,
+      "modelPicks": [
+        "investigation"
+      ],
+      "latencyMs": 214,
+      "choice": "investigation",
+      "confidence": 0.68
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-2--compatibility-pi-camera",
+      "turnId": "turn-mubx0843-2",
+      "callId": "call_bbe7ddf99e47487ba8a9a29d",
+      "options": 79,
+      "optionsBeforeCut": 79,
+      "stateChars": 12839,
+      "modelPicks": [],
+      "latencyMs": 274,
+      "choice": "p23",
+      "confidence": 0.27,
+      "noul": 0.18
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-2--compatibility-pi-camera",
+      "turnId": "turn-mubx0843-2",
+      "callId": "call_b2427d17171d414b9ac7f72d",
+      "options": 111,
+      "optionsBeforeCut": 111,
+      "stateChars": 13596,
+      "modelPicks": [
+        "p109"
+      ],
+      "latencyMs": 236,
+      "choice": "p109",
+      "confidence": 1,
+      "noul": 0.98
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-2--compatibility-pi-camera",
+      "turnId": "turn-mubx0843-2",
+      "callId": "call_b7cc3f04f7c44b07b62c48d0",
+      "options": 107,
+      "optionsBeforeCut": 107,
+      "stateChars": 7311,
+      "modelPicks": [],
+      "latencyMs": 305,
+      "choice": "p28",
+      "confidence": 0.8,
+      "noul": 0.25
+    },
+    {
+      "seam": "tier",
+      "capture": "fix-265-267-2--historical-longitude-watch",
+      "turnId": "turn-mubx3x48-1",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 798,
+      "modelPicks": [
+        "investigation"
+      ],
+      "latencyMs": 220,
+      "choice": "investigation",
+      "confidence": 1
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-2--historical-longitude-watch",
+      "turnId": "turn-mubx3x48-1",
+      "callId": "call_7d4090300a2f44b9a520dcd5",
+      "options": 6,
+      "optionsBeforeCut": 6,
+      "stateChars": 1731,
+      "modelPicks": [],
+      "latencyMs": 233,
+      "choice": "p6",
+      "confidence": 0.77,
+      "noul": 0.32
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-2--historical-longitude-watch",
+      "turnId": "turn-mubx3x48-1",
+      "callId": "call_192f4b56e4824b52872e4f63",
+      "options": 17,
+      "optionsBeforeCut": 17,
+      "stateChars": 3620,
+      "modelPicks": [
+        "p2",
+        "p10"
+      ],
+      "latencyMs": 210,
+      "choice": "p5",
+      "confidence": 0.61,
+      "noul": 0.82
+    },
+    {
+      "seam": "result",
+      "capture": "fix-265-267-2--historical-longitude-watch",
+      "turnId": "turn-mubx3x48-1",
+      "callId": "call_0bce84f1f8b04dfc992f35cc",
+      "options": 4,
+      "optionsBeforeCut": 4,
+      "stateChars": 1714,
+      "modelPicks": [],
+      "latencyMs": 235,
+      "choice": "r5",
+      "confidence": 0.98,
+      "noul": 0.56
+    },
+    {
+      "seam": "result",
+      "capture": "fix-265-267-2--historical-longitude-watch",
+      "turnId": "turn-mubx3x48-1",
+      "callId": "call_5b431027eda042808b1633dc",
+      "options": 4,
+      "optionsBeforeCut": 4,
+      "stateChars": 1732,
+      "modelPicks": [],
+      "latencyMs": 267,
+      "choice": "r5",
+      "confidence": 0.98,
+      "noul": 0.6
+    },
+    {
+      "seam": "tier",
+      "capture": "fix-265-267-2--rule-eurostar-luggage",
+      "turnId": "turn-mubx68td-1",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 649,
+      "modelPicks": [
+        "lookup"
+      ],
+      "latencyMs": 214,
+      "choice": "investigation",
+      "confidence": 0.65
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-2--rule-eurostar-luggage",
+      "turnId": "turn-mubx68td-1",
+      "callId": "call_4e0664a6d8c04a5fb8eeeccb",
+      "options": 79,
+      "optionsBeforeCut": 79,
+      "stateChars": 11580,
+      "modelPicks": [
+        "p15"
+      ],
+      "latencyMs": 247,
+      "choice": "p45",
+      "confidence": 0.63,
+      "noul": 0.97
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-2--rule-eurostar-luggage",
+      "turnId": "turn-mubx68td-1",
+      "callId": "call_bc2489ee29cb47a7bb7c5b0f",
+      "options": 31,
+      "optionsBeforeCut": 31,
+      "stateChars": 4162,
+      "modelPicks": [
+        "p10"
+      ],
+      "latencyMs": 212,
+      "choice": "p10",
+      "confidence": 0.73,
+      "noul": 0.97
+    },
+    {
+      "seam": "result",
+      "capture": "fix-265-267-2--rule-eurostar-luggage",
+      "turnId": "turn-mubx68td-1",
+      "callId": "call_780ef87ced0c46bfbc47be80",
+      "options": 2,
+      "optionsBeforeCut": 2,
+      "stateChars": 1732,
+      "modelPicks": [
+        "r20"
+      ],
+      "latencyMs": 226,
+      "choice": "r20",
+      "confidence": 1,
+      "noul": 0.85
+    },
+    {
+      "seam": "result",
+      "capture": "fix-265-267-2--rule-eurostar-luggage",
+      "turnId": "turn-mubx68td-1",
+      "callId": "call_cc7108e127314153b0e08cae",
+      "options": 2,
+      "optionsBeforeCut": 2,
+      "stateChars": 1776,
+      "modelPicks": [
+        "r20"
+      ],
+      "latencyMs": 219,
+      "choice": "r20",
+      "confidence": 0.99,
+      "noul": 0.9
+    },
+    {
+      "seam": "result",
+      "capture": "fix-265-267-2--rule-eurostar-luggage",
+      "turnId": "turn-mubx68td-1",
+      "callId": "call_d9f96b680bea47e3b10d84bc",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 1896,
+      "modelPicks": [
+        "r28"
+      ],
+      "latencyMs": 207,
+      "choice": "r28",
+      "confidence": 0.95,
+      "noul": 0.92
+    },
+    {
+      "seam": "tier",
+      "capture": "fix-265-267-2--rule-eurostar-luggage",
+      "turnId": "turn-mubx96m0-2",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 261,
+      "modelPicks": [
+        "lookup"
+      ],
+      "latencyMs": 260,
+      "choice": "lookup",
+      "confidence": 0.78
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-2--rule-eurostar-luggage",
+      "turnId": "turn-mubx96m0-2",
+      "callId": "call_65f2de8097fe4699b05005c5",
+      "options": 79,
+      "optionsBeforeCut": 79,
+      "stateChars": 10816,
+      "modelPicks": [
+        "p21"
+      ],
+      "latencyMs": 218,
+      "choice": "p57",
+      "confidence": 0.48,
+      "noul": 0.94
+    },
+    {
+      "seam": "tier",
+      "capture": "fix-265-267-2--superseded-voyager-interstellar",
+      "turnId": "turn-mubxai6k-1",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 605,
+      "modelPicks": [
+        "investigation"
+      ],
+      "latencyMs": 237,
+      "choice": "investigation",
+      "confidence": 1
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-2--superseded-voyager-interstellar",
+      "turnId": "turn-mubxai6k-1",
+      "callId": "call_aad3624fbf024835b1559614",
+      "options": 33,
+      "optionsBeforeCut": 33,
+      "stateChars": 6012,
+      "modelPicks": [
+        "p7",
+        "p9",
+        "p10"
+      ],
+      "latencyMs": 249,
+      "choice": "p9",
+      "confidence": 0.39,
+      "noul": 0.9
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-2--superseded-voyager-interstellar",
+      "turnId": "turn-mubxai6k-1",
+      "callId": "call_ca607e8964d74bfe86617d6d",
+      "options": 24,
+      "optionsBeforeCut": 24,
+      "stateChars": 8807,
+      "modelPicks": [
+        "p5",
+        "p6",
+        "p8",
+        "p9",
+        "p11"
+      ],
+      "latencyMs": 196,
+      "choice": "p11",
+      "confidence": 0.65,
+      "noul": 0.96
+    },
+    {
+      "seam": "result",
+      "capture": "fix-265-267-2--superseded-voyager-interstellar",
+      "turnId": "turn-mubxai6k-1",
+      "callId": "call_feae53238f1e480997c30ee2",
+      "options": 2,
+      "optionsBeforeCut": 2,
+      "stateChars": 1697,
+      "modelPicks": [],
+      "latencyMs": 203,
+      "choice": "r5",
+      "confidence": 0.88,
+      "noul": 0.16
+    },
+    {
+      "seam": "result",
+      "capture": "fix-265-267-2--superseded-voyager-interstellar",
+      "turnId": "turn-mubxai6k-1",
+      "callId": "call_4444a30a9bce45fda828baa5",
+      "options": 4,
+      "optionsBeforeCut": 4,
+      "stateChars": 2439,
+      "modelPicks": [],
+      "latencyMs": 207,
+      "choice": "r6",
+      "confidence": 0.72,
+      "noul": 0.82
+    },
+    {
+      "seam": "result",
+      "capture": "fix-265-267-2--superseded-voyager-interstellar",
+      "turnId": "turn-mubxai6k-1",
+      "callId": "call_8564b60ce2ee4dc1a0eaa94b",
+      "options": 4,
+      "optionsBeforeCut": 4,
+      "stateChars": 2478,
+      "modelPicks": [],
+      "latencyMs": 217,
+      "choice": "r10",
+      "confidence": 0.56,
+      "noul": 0.81
+    },
+    {
+      "seam": "result",
+      "capture": "fix-265-267-2--superseded-voyager-interstellar",
+      "turnId": "turn-mubxai6k-1",
+      "callId": "call_fc360bcaf6b449ba9a3a2f2b",
+      "options": 5,
+      "optionsBeforeCut": 5,
+      "stateChars": 2673,
+      "modelPicks": [
+        "r6"
+      ],
+      "latencyMs": 228,
+      "choice": "r10",
+      "confidence": 0.41,
+      "noul": 0.82
+    },
+    {
+      "seam": "result",
+      "capture": "fix-265-267-2--superseded-voyager-interstellar",
+      "turnId": "turn-mubxai6k-1",
+      "callId": "call_016306a79b03444fac9cd0b5",
+      "options": 4,
+      "optionsBeforeCut": 4,
+      "stateChars": 2466,
+      "modelPicks": [
+        "r10"
+      ],
+      "latencyMs": 228,
+      "choice": "r10",
+      "confidence": 0.87,
+      "noul": 0.81
+    },
+    {
+      "seam": "result",
+      "capture": "fix-265-267-2--superseded-voyager-interstellar",
+      "turnId": "turn-mubxai6k-1",
+      "callId": "call_33c28d873ca54f87b4319679",
+      "options": 4,
+      "optionsBeforeCut": 4,
+      "stateChars": 2324,
+      "modelPicks": [
+        "r6"
+      ],
+      "latencyMs": 189,
+      "choice": "r6",
+      "confidence": 0.65,
+      "noul": 0.8
+    },
+    {
+      "seam": "result",
+      "capture": "fix-265-267-2--superseded-voyager-interstellar",
+      "turnId": "turn-mubxai6k-1",
+      "callId": "call_579d4b4307654b2494bd7113",
+      "options": 4,
+      "optionsBeforeCut": 4,
+      "stateChars": 2416,
+      "modelPicks": [
+        "r6"
+      ],
+      "latencyMs": 212,
+      "choice": "r10",
+      "confidence": 0.59,
+      "noul": 0.75
+    },
+    {
+      "seam": "result",
+      "capture": "fix-265-267-2--superseded-voyager-interstellar",
+      "turnId": "turn-mubxai6k-1",
+      "callId": "call_13fba39363394892af237b16",
+      "options": 4,
+      "optionsBeforeCut": 4,
+      "stateChars": 2445,
+      "modelPicks": [
+        "r6"
+      ],
+      "latencyMs": 233,
+      "choice": "r6",
+      "confidence": 0.59,
+      "noul": 0.43
+    },
+    {
+      "seam": "tier",
+      "capture": "fix-265-267-3--compatibility-pi-camera",
+      "turnId": "turn-mubxfii3-1",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 587,
+      "modelPicks": [
+        "lookup"
+      ],
+      "latencyMs": 200,
+      "choice": "investigation",
+      "confidence": 0.89
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-3--compatibility-pi-camera",
+      "turnId": "turn-mubxfii3-1",
+      "callId": "call_6782361958704fababf436f3",
+      "options": 250,
+      "optionsBeforeCut": 457,
+      "stateChars": 8048,
+      "modelPicks": [],
+      "latencyMs": 228,
+      "choice": "p80",
+      "confidence": 0.3,
+      "noul": 0.45
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-3--compatibility-pi-camera",
+      "turnId": "turn-mubxfii3-1",
+      "callId": "call_51277665e0184556bdd46ad4",
+      "options": 111,
+      "optionsBeforeCut": 111,
+      "stateChars": 13962,
+      "modelPicks": [
+        "p96"
+      ],
+      "latencyMs": 240,
+      "choice": "p95",
+      "confidence": 0.38,
+      "noul": 0.76
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-3--compatibility-pi-camera",
+      "turnId": "turn-mubxfii3-1",
+      "callId": "call_a9ebebedd87f4af6875cd3c1",
+      "options": 79,
+      "optionsBeforeCut": 79,
+      "stateChars": 13205,
+      "modelPicks": [
+        "p23"
+      ],
+      "latencyMs": 242,
+      "choice": "p23",
+      "confidence": 0.45,
+      "noul": 0.72
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-3--compatibility-pi-camera",
+      "turnId": "turn-mubxfii3-1",
+      "callId": "call_a5895930fbdf4a1fa4dc6dc1",
+      "options": 138,
+      "optionsBeforeCut": 138,
+      "stateChars": 14141,
+      "modelPicks": [],
+      "latencyMs": 277,
+      "choice": "p5",
+      "confidence": 0.66,
+      "noul": 0.85
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-3--compatibility-pi-camera",
+      "turnId": "turn-mubxfii3-1",
+      "callId": "call_8c3c2fe5776145dbbca403ee",
+      "options": 250,
+      "optionsBeforeCut": 463,
+      "stateChars": 8064,
+      "modelPicks": [],
+      "latencyMs": 253,
+      "choice": "p79",
+      "confidence": 0.41,
+      "noul": 0.42
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-3--compatibility-pi-camera",
+      "turnId": "turn-mubxfii3-1",
+      "callId": "call_57c449a248c1404a95a5550a",
+      "options": 198,
+      "optionsBeforeCut": 198,
+      "stateChars": 14236,
+      "modelPicks": [],
+      "latencyMs": 271,
+      "choice": "p37",
+      "confidence": 0.32,
+      "noul": 0.28
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-3--compatibility-pi-camera",
+      "turnId": "turn-mubxfii3-1",
+      "callId": "call_e688944fdc064d6cb8473a14",
+      "options": 75,
+      "optionsBeforeCut": 75,
+      "stateChars": 13893,
+      "modelPicks": [
+        "p47"
+      ],
+      "latencyMs": 228,
+      "choice": "p47",
+      "confidence": 0.67,
+      "noul": 0.79
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-3--compatibility-pi-camera",
+      "turnId": "turn-mubxfii3-1",
+      "callId": "call_6200f781cd544e11b0a59e99",
+      "options": 92,
+      "optionsBeforeCut": 92,
+      "stateChars": 13893,
+      "modelPicks": [],
+      "latencyMs": 228,
+      "choice": "p18",
+      "confidence": 0.43,
+      "noul": 0.29
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-3--compatibility-pi-camera",
+      "turnId": "turn-mubxfii3-1",
+      "callId": "call_cd11d16d489c4effb6fd59d6",
+      "options": 116,
+      "optionsBeforeCut": 116,
+      "stateChars": 13769,
+      "modelPicks": [],
+      "latencyMs": 289,
+      "choice": "p16",
+      "confidence": 0.13,
+      "noul": 0.36
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-3--compatibility-pi-camera",
+      "turnId": "turn-mubxfii3-1",
+      "callId": "call_711a7fed3f1242c6bcf7f682",
+      "options": 149,
+      "optionsBeforeCut": 149,
+      "stateChars": 14116,
+      "modelPicks": [],
+      "latencyMs": 271,
+      "choice": "p112",
+      "confidence": 0.76,
+      "noul": 0.81
+    },
+    {
+      "seam": "tier",
+      "capture": "fix-265-267-3--compatibility-pi-camera",
+      "turnId": "turn-mubxk48a-2",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 315,
+      "modelPicks": [
+        "investigation"
+      ],
+      "latencyMs": 193,
+      "choice": "investigation",
+      "confidence": 0.69
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-3--compatibility-pi-camera",
+      "turnId": "turn-mubxk48a-2",
+      "callId": "call_f483bb0ccb9f47c99baf898e",
+      "options": 79,
+      "optionsBeforeCut": 79,
+      "stateChars": 12919,
+      "modelPicks": [],
+      "latencyMs": 209,
+      "choice": "p23",
+      "confidence": 0.2,
+      "noul": 0.15
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-3--compatibility-pi-camera",
+      "turnId": "turn-mubxk48a-2",
+      "callId": "call_5836556715394fd5b967d24b",
+      "options": 111,
+      "optionsBeforeCut": 111,
+      "stateChars": 13676,
+      "modelPicks": [
+        "p86"
+      ],
+      "latencyMs": 227,
+      "choice": "p109",
+      "confidence": 1,
+      "noul": 0.98
+    },
+    {
+      "seam": "tier",
+      "capture": "fix-265-267-3--historical-longitude-watch",
+      "turnId": "turn-mubxnwuy-1",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 798,
+      "modelPicks": [
+        "investigation"
+      ],
+      "latencyMs": 209,
+      "choice": "investigation",
+      "confidence": 1
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-3--historical-longitude-watch",
+      "turnId": "turn-mubxnwuy-1",
+      "callId": "call_46bfa6de44614d89a7460b12",
+      "options": 11,
+      "optionsBeforeCut": 11,
+      "stateChars": 2126,
+      "modelPicks": [],
+      "latencyMs": 212,
+      "choice": "p8",
+      "confidence": 0.38,
+      "noul": 0.09
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-3--historical-longitude-watch",
+      "turnId": "turn-mubxnwuy-1",
+      "callId": "call_1ac7261650c4492ba1f93f44",
+      "options": 17,
+      "optionsBeforeCut": 17,
+      "stateChars": 3187,
+      "modelPicks": [],
+      "latencyMs": 213,
+      "choice": "p5",
+      "confidence": 0.46,
+      "noul": 0.98
+    },
+    {
+      "seam": "result",
+      "capture": "fix-265-267-3--historical-longitude-watch",
+      "turnId": "turn-mubxnwuy-1",
+      "callId": "call_af1f4e0b3bc6465ebc9f4ae2",
+      "options": 4,
+      "optionsBeforeCut": 4,
+      "stateChars": 1770,
+      "modelPicks": [],
+      "latencyMs": 225,
+      "choice": "r5",
+      "confidence": 0.99,
+      "noul": 0.66
+    },
+    {
+      "seam": "result",
+      "capture": "fix-265-267-3--historical-longitude-watch",
+      "turnId": "turn-mubxnwuy-1",
+      "callId": "call_72a2cb7167244605a49fbba6",
+      "options": 4,
+      "optionsBeforeCut": 4,
+      "stateChars": 1778,
+      "modelPicks": [],
+      "latencyMs": 198,
+      "choice": "r5",
+      "confidence": 0.99,
+      "noul": 0.55
+    },
+    {
+      "seam": "tier",
+      "capture": "fix-265-267-3--rule-eurostar-luggage",
+      "turnId": "turn-mubxqlxv-1",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 649,
+      "modelPicks": [
+        "lookup"
+      ],
+      "latencyMs": 220,
+      "choice": "investigation",
+      "confidence": 0.71
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-3--rule-eurostar-luggage",
+      "turnId": "turn-mubxqlxv-1",
+      "callId": "call_1bd73bcbffd34301b6e4e3c3",
+      "options": 79,
+      "optionsBeforeCut": 79,
+      "stateChars": 11571,
+      "modelPicks": [
+        "p15",
+        "p21",
+        "p32",
+        "p45",
+        "p72"
+      ],
+      "latencyMs": 231,
+      "choice": "p45",
+      "confidence": 0.71,
+      "noul": 0.97
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-3--rule-eurostar-luggage",
+      "turnId": "turn-mubxqlxv-1",
+      "callId": "call_830b31b7e10545d2be94ae2c",
+      "options": 30,
+      "optionsBeforeCut": 30,
+      "stateChars": 3923,
+      "modelPicks": [
+        "p1",
+        "p5",
+        "p10"
+      ],
+      "latencyMs": 211,
+      "choice": "p10",
+      "confidence": 0.59,
+      "noul": 0.97
+    },
+    {
+      "seam": "result",
+      "capture": "fix-265-267-3--rule-eurostar-luggage",
+      "turnId": "turn-mubxqlxv-1",
+      "callId": "call_f07dfdecfc484caa901ce935",
+      "options": 2,
+      "optionsBeforeCut": 2,
+      "stateChars": 1721,
+      "modelPicks": [
+        "r20"
+      ],
+      "latencyMs": 221,
+      "choice": "r20",
+      "confidence": 0.99,
+      "noul": 0.86
+    },
+    {
+      "seam": "result",
+      "capture": "fix-265-267-3--rule-eurostar-luggage",
+      "turnId": "turn-mubxqlxv-1",
+      "callId": "call_8e3cd5c8f4924095b2df7288",
+      "options": 2,
+      "optionsBeforeCut": 2,
+      "stateChars": 1767,
+      "modelPicks": [
+        "r20"
+      ],
+      "latencyMs": 204,
+      "choice": "r20",
+      "confidence": 0.98,
+      "noul": 0.9
+    },
+    {
+      "seam": "result",
+      "capture": "fix-265-267-3--rule-eurostar-luggage",
+      "turnId": "turn-mubxqlxv-1",
+      "callId": "call_ed465dd747fd4b349b575c03",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 1895,
+      "modelPicks": [
+        "r24"
+      ],
+      "latencyMs": 205,
+      "choice": "r24",
+      "confidence": 0.76,
+      "noul": 0.88
+    },
+    {
+      "seam": "tier",
+      "capture": "fix-265-267-3--rule-eurostar-luggage",
+      "turnId": "turn-mubxtlht-2",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 261,
+      "modelPicks": [
+        "lookup"
+      ],
+      "latencyMs": 196,
+      "choice": "lookup",
+      "confidence": 0.74
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-3--rule-eurostar-luggage",
+      "turnId": "turn-mubxtlht-2",
+      "callId": "call_6ae15a2adbd145118c5583c1",
+      "options": 79,
+      "optionsBeforeCut": 79,
+      "stateChars": 10825,
+      "modelPicks": [
+        "p21"
+      ],
+      "latencyMs": 253,
+      "choice": "p21",
+      "confidence": 0.79,
+      "noul": 0.98
+    },
+    {
+      "seam": "tier",
+      "capture": "fix-265-267-3--superseded-voyager-interstellar",
+      "turnId": "turn-mubxv2n4-1",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 605,
+      "modelPicks": [
+        "investigation"
+      ],
+      "latencyMs": 209,
+      "choice": "investigation",
+      "confidence": 1
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-3--superseded-voyager-interstellar",
+      "turnId": "turn-mubxv2n4-1",
+      "callId": "call_53604aabfcdb43faa281ea4e",
+      "options": 60,
+      "optionsBeforeCut": 60,
+      "stateChars": 8398,
+      "modelPicks": [],
+      "latencyMs": 425,
+      "choice": "p8",
+      "confidence": 0.79,
+      "noul": 0.89
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-3--superseded-voyager-interstellar",
+      "turnId": "turn-mubxv2n4-1",
+      "callId": "call_21ef43a1705042a7964cb34b",
+      "options": 33,
+      "optionsBeforeCut": 33,
+      "stateChars": 5835,
+      "modelPicks": [
+        "p6",
+        "p7",
+        "p9",
+        "p10"
+      ],
+      "latencyMs": 197,
+      "choice": "p10",
+      "confidence": 0.54,
+      "noul": 0.91
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-3--superseded-voyager-interstellar",
+      "turnId": "turn-mubxv2n4-1",
+      "callId": "call_63ef39b0c0e441c89d8a4859",
+      "options": 34,
+      "optionsBeforeCut": 34,
+      "stateChars": 5949,
+      "modelPicks": [
+        "p10"
+      ],
+      "latencyMs": 199,
+      "choice": "p10",
+      "confidence": 0.53,
+      "noul": 0.94
+    },
+    {
+      "seam": "result",
+      "capture": "fix-265-267-3--superseded-voyager-interstellar",
+      "turnId": "turn-mubxv2n4-1",
+      "callId": "call_77951beea78e4555965d078e",
+      "options": 1,
+      "optionsBeforeCut": 1,
+      "stateChars": 1568,
+      "modelPicks": [],
+      "latencyMs": 237,
+      "choice": "r9",
+      "confidence": 1,
+      "noul": 0.14
+    },
+    {
+      "seam": "result",
+      "capture": "fix-265-267-3--superseded-voyager-interstellar",
+      "turnId": "turn-mubxv2n4-1",
+      "callId": "call_09b25dd2ea754ae6aa80c15a",
+      "options": 4,
+      "optionsBeforeCut": 4,
+      "stateChars": 2260,
+      "modelPicks": [
+        "r6"
+      ],
+      "latencyMs": 212,
+      "choice": "r14",
+      "confidence": 0.08,
+      "noul": 0.53
+    },
+    {
+      "seam": "result",
+      "capture": "fix-265-267-3--superseded-voyager-interstellar",
+      "turnId": "turn-mubxv2n4-1",
+      "callId": "call_84914510a5b948f986ea709d",
+      "options": 4,
+      "optionsBeforeCut": 4,
+      "stateChars": 2278,
+      "modelPicks": [],
+      "latencyMs": 210,
+      "choice": "r6",
+      "confidence": 0.87,
+      "noul": 0.77
+    },
+    {
+      "seam": "result",
+      "capture": "fix-265-267-3--superseded-voyager-interstellar",
+      "turnId": "turn-mubxv2n4-1",
+      "callId": "call_9a2387e653ff4d4eb3d2d289",
+      "options": 5,
+      "optionsBeforeCut": 5,
+      "stateChars": 2496,
+      "modelPicks": [
+        "r6"
+      ],
+      "latencyMs": 214,
+      "choice": "r10",
+      "confidence": 0.39,
+      "noul": 0.82
+    },
+    {
+      "seam": "result",
+      "capture": "fix-265-267-3--superseded-voyager-interstellar",
+      "turnId": "turn-mubxv2n4-1",
+      "callId": "call_a79514d30a124f8982cf2ed4",
+      "options": 4,
+      "optionsBeforeCut": 4,
+      "stateChars": 2341,
+      "modelPicks": [
+        "r14"
+      ],
+      "latencyMs": 221,
+      "choice": "r6",
+      "confidence": 0.3,
+      "noul": 0.84
+    },
+    {
+      "seam": "tier",
+      "capture": "fix-265-267-4--compatibility-pi-camera",
+      "turnId": "turn-muby0uwx-1",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 587,
+      "modelPicks": [
+        "investigation"
+      ],
+      "latencyMs": 299,
+      "choice": "investigation",
+      "confidence": 0.86
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-4--compatibility-pi-camera",
+      "turnId": "turn-muby0uwx-1",
+      "callId": "call_747c78958f8e46fea74ee6c2",
+      "options": 250,
+      "optionsBeforeCut": 457,
+      "stateChars": 8166,
+      "modelPicks": [],
+      "latencyMs": 228,
+      "choice": "p197",
+      "confidence": 0.27,
+      "noul": 0.47
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-4--compatibility-pi-camera",
+      "turnId": "turn-muby0uwx-1",
+      "callId": "call_a96e0c8ff3d84f67926be477",
+      "options": 111,
+      "optionsBeforeCut": 111,
+      "stateChars": 14080,
+      "modelPicks": [],
+      "latencyMs": 247,
+      "choice": "p95",
+      "confidence": 0.33,
+      "noul": 0.63
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-4--compatibility-pi-camera",
+      "turnId": "turn-muby0uwx-1",
+      "callId": "call_e9485e6125e24eeb82786574",
+      "options": 79,
+      "optionsBeforeCut": 79,
+      "stateChars": 13323,
+      "modelPicks": [
+        "p23"
+      ],
+      "latencyMs": 243,
+      "choice": "p23",
+      "confidence": 0.3,
+      "noul": 0.6
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-4--compatibility-pi-camera",
+      "turnId": "turn-muby0uwx-1",
+      "callId": "call_d85dce64515d47c497221785",
+      "options": 250,
+      "optionsBeforeCut": 463,
+      "stateChars": 8182,
+      "modelPicks": [],
+      "latencyMs": 241,
+      "choice": "p79",
+      "confidence": 0.34,
+      "noul": 0.42
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-4--compatibility-pi-camera",
+      "turnId": "turn-muby0uwx-1",
+      "callId": "call_070c2cab6c1149638b08352c",
+      "options": 138,
+      "optionsBeforeCut": 138,
+      "stateChars": 14259,
+      "modelPicks": [],
+      "latencyMs": 237,
+      "choice": "p5",
+      "confidence": 0.69,
+      "noul": 0.8
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-4--compatibility-pi-camera",
+      "turnId": "turn-muby0uwx-1",
+      "callId": "call_7e42b8cc4f0e4de19f0b7079",
+      "options": 116,
+      "optionsBeforeCut": 116,
+      "stateChars": 13862,
+      "modelPicks": [],
+      "latencyMs": 224,
+      "choice": "p16",
+      "confidence": 0.15,
+      "noul": 0.37
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-4--compatibility-pi-camera",
+      "turnId": "turn-muby0uwx-1",
+      "callId": "call_d6cd0ad394b94855af2311b6",
+      "options": 133,
+      "optionsBeforeCut": 133,
+      "stateChars": 14225,
+      "modelPicks": [],
+      "latencyMs": 225,
+      "choice": "p19",
+      "confidence": 0.62,
+      "noul": 0.42
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-4--compatibility-pi-camera",
+      "turnId": "turn-muby0uwx-1",
+      "callId": "call_76961ab7827e4796b4e7a574",
+      "options": 149,
+      "optionsBeforeCut": 149,
+      "stateChars": 14209,
+      "modelPicks": [
+        "p112"
+      ],
+      "latencyMs": 217,
+      "choice": "p112",
+      "confidence": 0.74,
+      "noul": 0.79
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-4--compatibility-pi-camera",
+      "turnId": "turn-muby0uwx-1",
+      "callId": "call_96526a1333c3446dbec97345",
+      "options": 75,
+      "optionsBeforeCut": 75,
+      "stateChars": 13947,
+      "modelPicks": [],
+      "latencyMs": 251,
+      "choice": "p47",
+      "confidence": 0.78,
+      "noul": 0.72
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-4--compatibility-pi-camera",
+      "turnId": "turn-muby0uwx-1",
+      "callId": "call_046d8644ff93463cb93e5317",
+      "options": 55,
+      "optionsBeforeCut": 55,
+      "stateChars": 7200,
+      "modelPicks": [],
+      "latencyMs": 213,
+      "choice": "p47",
+      "confidence": 0.99,
+      "noul": 0.98
+    },
+    {
+      "seam": "result",
+      "capture": "fix-265-267-4--compatibility-pi-camera",
+      "turnId": "turn-muby0uwx-1",
+      "callId": "call_2cb6b8b1bd2e4d5c954a6515",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 1767,
+      "modelPicks": [
+        "r20"
+      ],
+      "latencyMs": 246,
+      "choice": "r20",
+      "confidence": 1,
+      "noul": 0.83
+    },
+    {
+      "seam": "result",
+      "capture": "fix-265-267-4--compatibility-pi-camera",
+      "turnId": "turn-muby0uwx-1",
+      "callId": "call_e7263538fe00408188c62db8",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 1743,
+      "modelPicks": [
+        "r20"
+      ],
+      "latencyMs": 201,
+      "choice": "r20",
+      "confidence": 0.59,
+      "noul": 0.87
+    },
+    {
+      "seam": "result",
+      "capture": "fix-265-267-4--compatibility-pi-camera",
+      "turnId": "turn-muby0uwx-1",
+      "callId": "call_ce5e141cd2544b50899fe4da",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 1679,
+      "modelPicks": [
+        "r20"
+      ],
+      "latencyMs": 199,
+      "choice": "r20",
+      "confidence": 1,
+      "noul": 0.83
+    },
+    {
+      "seam": "tier",
+      "capture": "fix-265-267-4--compatibility-pi-camera",
+      "turnId": "turn-muby4i3e-2",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 315,
+      "modelPicks": [
+        "investigation"
+      ],
+      "latencyMs": 318,
+      "choice": "investigation",
+      "confidence": 0.78
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-4--compatibility-pi-camera",
+      "turnId": "turn-muby4i3e-2",
+      "callId": "call_5548c29b623e4c4c84f30fdb",
+      "options": 54,
+      "optionsBeforeCut": 54,
+      "stateChars": 6531,
+      "modelPicks": [
+        "p39",
+        "p47"
+      ],
+      "latencyMs": 209,
+      "choice": "p39",
+      "confidence": 0.53,
+      "noul": 0.48
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-4--compatibility-pi-camera",
+      "turnId": "turn-muby4i3e-2",
+      "callId": "call_00e16be8dc074a9fb4c06f16",
+      "options": 111,
+      "optionsBeforeCut": 111,
+      "stateChars": 13641,
+      "modelPicks": [
+        "p86",
+        "p109"
+      ],
+      "latencyMs": 217,
+      "choice": "p109",
+      "confidence": 1,
+      "noul": 0.98
+    },
+    {
+      "seam": "tier",
+      "capture": "fix-265-267-4--historical-longitude-watch",
+      "turnId": "turn-muby9o9p-1",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 798,
+      "modelPicks": [
+        "investigation"
+      ],
+      "latencyMs": 200,
+      "choice": "investigation",
+      "confidence": 1
+    },
+    {
+      "seam": "result",
+      "capture": "fix-265-267-4--historical-longitude-watch",
+      "turnId": "turn-muby9o9p-1",
+      "callId": "call_04233d92bf8b496ab4338e89",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 1831,
+      "modelPicks": [],
+      "latencyMs": 240,
+      "choice": "r11",
+      "confidence": 0.94,
+      "noul": 0.34
+    },
+    {
+      "seam": "result",
+      "capture": "fix-265-267-4--historical-longitude-watch",
+      "turnId": "turn-muby9o9p-1",
+      "callId": "call_07ca94bc85694c258c21aee6",
+      "options": 5,
+      "optionsBeforeCut": 5,
+      "stateChars": 1909,
+      "modelPicks": [],
+      "latencyMs": 212,
+      "choice": "r5",
+      "confidence": 0.91,
+      "noul": 0.44
+    },
+    {
+      "seam": "result",
+      "capture": "fix-265-267-4--historical-longitude-watch",
+      "turnId": "turn-muby9o9p-1",
+      "callId": "call_fe05b587173c420f9788c0e9",
+      "options": 4,
+      "optionsBeforeCut": 4,
+      "stateChars": 1838,
+      "modelPicks": [],
+      "latencyMs": 195,
+      "choice": "r5",
+      "confidence": 0.99,
+      "noul": 0.49
+    },
+    {
+      "seam": "tier",
+      "capture": "fix-265-267-4--rule-eurostar-luggage",
+      "turnId": "turn-mubyd826-1",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 649,
+      "modelPicks": [
+        "lookup"
+      ],
+      "latencyMs": 256,
+      "choice": "investigation",
+      "confidence": 0.71
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-4--rule-eurostar-luggage",
+      "turnId": "turn-mubyd826-1",
+      "callId": "call_22e22eefe29f4b4cb73935e5",
+      "options": 79,
+      "optionsBeforeCut": 79,
+      "stateChars": 11524,
+      "modelPicks": [
+        "p45"
+      ],
+      "latencyMs": 227,
+      "choice": "p45",
+      "confidence": 0.58,
+      "noul": 0.97
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-4--rule-eurostar-luggage",
+      "turnId": "turn-mubyd826-1",
+      "callId": "call_4067011a3edc4bd2a755bcc3",
+      "options": 30,
+      "optionsBeforeCut": 30,
+      "stateChars": 3876,
+      "modelPicks": [
+        "p14"
+      ],
+      "latencyMs": 192,
+      "choice": "p10",
+      "confidence": 0.62,
+      "noul": 0.97
+    },
+    {
+      "seam": "result",
+      "capture": "fix-265-267-4--rule-eurostar-luggage",
+      "turnId": "turn-mubyd826-1",
+      "callId": "call_72a53cb5ad194896b6d582cf",
+      "options": 2,
+      "optionsBeforeCut": 2,
+      "stateChars": 1683,
+      "modelPicks": [
+        "r19"
+      ],
+      "latencyMs": 211,
+      "choice": "r19",
+      "confidence": 1,
+      "noul": 0.87
+    },
+    {
+      "seam": "result",
+      "capture": "fix-265-267-4--rule-eurostar-luggage",
+      "turnId": "turn-mubyd826-1",
+      "callId": "call_9247784e36d741f1bc825f01",
+      "options": 2,
+      "optionsBeforeCut": 2,
+      "stateChars": 1712,
+      "modelPicks": [
+        "r20"
+      ],
+      "latencyMs": 223,
+      "choice": "r20",
+      "confidence": 0.95,
+      "noul": 0.91
+    },
+    {
+      "seam": "result",
+      "capture": "fix-265-267-4--rule-eurostar-luggage",
+      "turnId": "turn-mubyd826-1",
+      "callId": "call_c642a30828b44821adbdfbd5",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 1840,
+      "modelPicks": [
+        "r28"
+      ],
+      "latencyMs": 237,
+      "choice": "r28",
+      "confidence": 0.87,
+      "noul": 0.92
+    },
+    {
+      "seam": "tier",
+      "capture": "fix-265-267-4--rule-eurostar-luggage",
+      "turnId": "turn-mubygfdo-2",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 261,
+      "modelPicks": [
+        "lookup"
+      ],
+      "latencyMs": 202,
+      "choice": "lookup",
+      "confidence": 0.81
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-4--rule-eurostar-luggage",
+      "turnId": "turn-mubygfdo-2",
+      "callId": "call_17854afe602c4c43a914723a",
+      "options": 79,
+      "optionsBeforeCut": 79,
+      "stateChars": 10841,
+      "modelPicks": [
+        "p20",
+        "p21",
+        "p57"
+      ],
+      "latencyMs": 234,
+      "choice": "p21",
+      "confidence": 0.53,
+      "noul": 0.95
+    },
+    {
+      "seam": "tier",
+      "capture": "fix-265-267-4--superseded-voyager-interstellar",
+      "turnId": "turn-mubyi1cs-1",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 605,
+      "modelPicks": [
+        "investigation"
+      ],
+      "latencyMs": 193,
+      "choice": "investigation",
+      "confidence": 1
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-4--superseded-voyager-interstellar",
+      "turnId": "turn-mubyi1cs-1",
+      "callId": "call_8e0800c5517c4d67b79b8bb0",
+      "options": 20,
+      "optionsBeforeCut": 20,
+      "stateChars": 5162,
+      "modelPicks": [
+        "p9"
+      ],
+      "latencyMs": 247,
+      "choice": "p17",
+      "confidence": 0.26,
+      "noul": 0.54
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-4--superseded-voyager-interstellar",
+      "turnId": "turn-mubyi1cs-1",
+      "callId": "call_82b5065ce6fd49028142f708",
+      "options": 34,
+      "optionsBeforeCut": 34,
+      "stateChars": 6017,
+      "modelPicks": [
+        "p10"
+      ],
+      "latencyMs": 222,
+      "choice": "p10",
+      "confidence": 0.67,
+      "noul": 0.83
+    },
+    {
+      "seam": "result",
+      "capture": "fix-265-267-4--superseded-voyager-interstellar",
+      "turnId": "turn-mubyi1cs-1",
+      "callId": "call_00b355bd7910405d9c4475c1",
+      "options": 18,
+      "optionsBeforeCut": 18,
+      "stateChars": 5685,
+      "modelPicks": [],
+      "latencyMs": 234,
+      "choice": "r22",
+      "confidence": 0.32,
+      "noul": 0.53
+    },
+    {
+      "seam": "result",
+      "capture": "fix-265-267-4--superseded-voyager-interstellar",
+      "turnId": "turn-mubyi1cs-1",
+      "callId": "call_d4208129be3a40c5a13f806f",
+      "options": 11,
+      "optionsBeforeCut": 11,
+      "stateChars": 4046,
+      "modelPicks": [],
+      "latencyMs": 200,
+      "choice": "r24",
+      "confidence": 0.55,
+      "noul": 0.54
+    },
+    {
+      "seam": "result",
+      "capture": "fix-265-267-4--superseded-voyager-interstellar",
+      "turnId": "turn-mubyi1cs-1",
+      "callId": "call_d30b30b905f14245ad14be8f",
+      "options": 7,
+      "optionsBeforeCut": 7,
+      "stateChars": 3125,
+      "modelPicks": [],
+      "latencyMs": 220,
+      "choice": "r8",
+      "confidence": 0.79,
+      "noul": 0.48
+    },
+    {
+      "seam": "result",
+      "capture": "fix-265-267-4--superseded-voyager-interstellar",
+      "turnId": "turn-mubyi1cs-1",
+      "callId": "call_a9d4649196bf4036a4f325e0",
+      "options": 10,
+      "optionsBeforeCut": 10,
+      "stateChars": 3731,
+      "modelPicks": [
+        "r21"
+      ],
+      "latencyMs": 230,
+      "choice": "r26",
+      "confidence": 0.65,
+      "noul": 0.68
+    },
+    {
+      "seam": "result",
+      "capture": "fix-265-267-4--superseded-voyager-interstellar",
+      "turnId": "turn-mubyi1cs-1",
+      "callId": "call_c5964d7684364ba2b1efc104",
+      "options": 4,
+      "optionsBeforeCut": 4,
+      "stateChars": 2416,
+      "modelPicks": [],
+      "latencyMs": 206,
+      "choice": "r9",
+      "confidence": 0.41,
+      "noul": 0.65
+    },
+    {
+      "seam": "result",
+      "capture": "fix-265-267-4--superseded-voyager-interstellar",
+      "turnId": "turn-mubyi1cs-1",
+      "callId": "call_03ccb9d6f7d34ef687cb1a53",
+      "options": 2,
+      "optionsBeforeCut": 2,
+      "stateChars": 2018,
+      "modelPicks": [
+        "r6"
+      ],
+      "latencyMs": 215,
+      "choice": "r6",
+      "confidence": 0.94,
+      "noul": 0.78
+    },
+    {
+      "seam": "result",
+      "capture": "fix-265-267-4--superseded-voyager-interstellar",
+      "turnId": "turn-mubyi1cs-1",
+      "callId": "call_b2597a254b5a4bcab9b4b809",
+      "options": 4,
+      "optionsBeforeCut": 4,
+      "stateChars": 2448,
+      "modelPicks": [
+        "r6"
+      ],
+      "latencyMs": 210,
+      "choice": "r6",
+      "confidence": 0.79,
+      "noul": 0.85
+    },
+    {
+      "seam": "result",
+      "capture": "fix-265-267-4--superseded-voyager-interstellar",
+      "turnId": "turn-mubyi1cs-1",
+      "callId": "call_eb006180d9b84cc1b94699bc",
+      "options": 4,
+      "optionsBeforeCut": 4,
+      "stateChars": 2584,
+      "modelPicks": [
+        "r6"
+      ],
+      "latencyMs": 214,
+      "choice": "r7",
+      "confidence": 0.35,
+      "noul": 0.86
+    },
+    {
+      "seam": "tier",
+      "capture": "fix-265-267-5--compatibility-pi-camera",
+      "turnId": "turn-mubypn3t-1",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 587,
+      "modelPicks": [
+        "investigation"
+      ],
+      "latencyMs": 237,
+      "choice": "investigation",
+      "confidence": 0.84
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-5--compatibility-pi-camera",
+      "turnId": "turn-mubypn3t-1",
+      "callId": "call_28b992c470af4504a5eaa127",
+      "options": 250,
+      "optionsBeforeCut": 457,
+      "stateChars": 8144,
+      "modelPicks": [],
+      "latencyMs": 251,
+      "choice": "p197",
+      "confidence": 0.35,
+      "noul": 0.4
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-5--compatibility-pi-camera",
+      "turnId": "turn-mubypn3t-1",
+      "callId": "call_71ab5336d41448f6a9a0c660",
+      "options": 79,
+      "optionsBeforeCut": 79,
+      "stateChars": 13301,
+      "modelPicks": [
+        "p23"
+      ],
+      "latencyMs": 249,
+      "choice": "p23",
+      "confidence": 0.36,
+      "noul": 0.59
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-5--compatibility-pi-camera",
+      "turnId": "turn-mubypn3t-1",
+      "callId": "call_6a3809bf4bf94bd0ba91f639",
+      "options": 250,
+      "optionsBeforeCut": 463,
+      "stateChars": 8160,
+      "modelPicks": [],
+      "latencyMs": 217,
+      "choice": "p197",
+      "confidence": 0.38,
+      "noul": 0.37
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-5--compatibility-pi-camera",
+      "turnId": "turn-mubypn3t-1",
+      "callId": "call_3d4e49fa1fcb4b978630b460",
+      "options": 74,
+      "optionsBeforeCut": 74,
+      "stateChars": 13769,
+      "modelPicks": [],
+      "latencyMs": 235,
+      "choice": "p47",
+      "confidence": 0.75,
+      "noul": 0.67
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-5--compatibility-pi-camera",
+      "turnId": "turn-mubypn3t-1",
+      "callId": "call_e502dba283704858b265e41b",
+      "options": 138,
+      "optionsBeforeCut": 138,
+      "stateChars": 14237,
+      "modelPicks": [
+        "p31",
+        "p90"
+      ],
+      "latencyMs": 251,
+      "choice": "p5",
+      "confidence": 0.68,
+      "noul": 0.72
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-5--compatibility-pi-camera",
+      "turnId": "turn-mubypn3t-1",
+      "callId": "call_0030e633b46640eaa0fc8372",
+      "options": 116,
+      "optionsBeforeCut": 116,
+      "stateChars": 13840,
+      "modelPicks": [],
+      "latencyMs": 247,
+      "choice": "p68",
+      "confidence": 0.14,
+      "noul": 0.3
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-5--compatibility-pi-camera",
+      "turnId": "turn-mubypn3t-1",
+      "callId": "call_f2b3ef423dcf42e4ab467635",
+      "options": 6,
+      "optionsBeforeCut": 6,
+      "stateChars": 1990,
+      "modelPicks": [],
+      "latencyMs": 191,
+      "choice": "p6",
+      "confidence": 0.92,
+      "noul": 0.16
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-5--compatibility-pi-camera",
+      "turnId": "turn-mubypn3t-1",
+      "callId": "call_18f372ea64404c509d1a5716",
+      "options": 133,
+      "optionsBeforeCut": 133,
+      "stateChars": 14203,
+      "modelPicks": [],
+      "latencyMs": 262,
+      "choice": "p19",
+      "confidence": 0.51,
+      "noul": 0.35
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-5--compatibility-pi-camera",
+      "turnId": "turn-mubypn3t-1",
+      "callId": "call_09c20a041d7145b689b041b4",
+      "options": 149,
+      "optionsBeforeCut": 149,
+      "stateChars": 14187,
+      "modelPicks": [
+        "p6",
+        "p7",
+        "p8",
+        "p107",
+        "p112"
+      ],
+      "latencyMs": 246,
+      "choice": "p112",
+      "confidence": 0.63,
+      "noul": 0.7
+    },
+    {
+      "seam": "result",
+      "capture": "fix-265-267-5--compatibility-pi-camera",
+      "turnId": "turn-mubypn3t-1",
+      "callId": "call_c94ee48b7ab84e249c7769ef",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 1745,
+      "modelPicks": [
+        "r20"
+      ],
+      "latencyMs": 237,
+      "choice": "r20",
+      "confidence": 1,
+      "noul": 0.83
+    },
+    {
+      "seam": "result",
+      "capture": "fix-265-267-5--compatibility-pi-camera",
+      "turnId": "turn-mubypn3t-1",
+      "callId": "call_df0837e03315478ca9116984",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 1755,
+      "modelPicks": [
+        "r20"
+      ],
+      "latencyMs": 199,
+      "choice": "r20",
+      "confidence": 0.83,
+      "noul": 0.85
+    },
+    {
+      "seam": "result",
+      "capture": "fix-265-267-5--compatibility-pi-camera",
+      "turnId": "turn-mubypn3t-1",
+      "callId": "call_1aaa553221d846a3aa373277",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 1918,
+      "modelPicks": [
+        "r20"
+      ],
+      "latencyMs": 232,
+      "choice": "r20",
+      "confidence": 0.55,
+      "noul": 0.83
+    },
+    {
+      "seam": "result",
+      "capture": "fix-265-267-5--compatibility-pi-camera",
+      "turnId": "turn-mubypn3t-1",
+      "callId": "call_54969d8dfe03496994bce961",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 1786,
+      "modelPicks": [
+        "r20"
+      ],
+      "latencyMs": 236,
+      "choice": "r20",
+      "confidence": 0.98,
+      "noul": 0.6
+    },
+    {
+      "seam": "tier",
+      "capture": "fix-265-267-5--compatibility-pi-camera",
+      "turnId": "turn-mubywxdh-2",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 315,
+      "modelPicks": [
+        "investigation"
+      ],
+      "latencyMs": 202,
+      "choice": "investigation",
+      "confidence": 0.68
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-5--compatibility-pi-camera",
+      "turnId": "turn-mubywxdh-2",
+      "callId": "call_b10b232663c44e258de9f94a",
+      "options": 54,
+      "optionsBeforeCut": 54,
+      "stateChars": 6578,
+      "modelPicks": [],
+      "latencyMs": 223,
+      "choice": "p39",
+      "confidence": 0.77,
+      "noul": 0.47
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-5--compatibility-pi-camera",
+      "turnId": "turn-mubywxdh-2",
+      "callId": "call_89b056e2efcf408690a7ff6d",
+      "options": 79,
+      "optionsBeforeCut": 79,
+      "stateChars": 12947,
+      "modelPicks": [],
+      "latencyMs": 241,
+      "choice": "p31",
+      "confidence": 0.19,
+      "noul": 0.17
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-5--compatibility-pi-camera",
+      "turnId": "turn-mubywxdh-2",
+      "callId": "call_5bf3195300b6483c922e20ee",
+      "options": 111,
+      "optionsBeforeCut": 111,
+      "stateChars": 13704,
+      "modelPicks": [
+        "p86"
+      ],
+      "latencyMs": 280,
+      "choice": "p109",
+      "confidence": 0.99,
+      "noul": 0.98
+    },
+    {
+      "seam": "tier",
+      "capture": "fix-265-267-5--historical-longitude-watch",
+      "turnId": "turn-mubz3b79-1",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 798,
+      "modelPicks": [
+        "lookup"
+      ],
+      "latencyMs": 200,
+      "choice": "investigation",
+      "confidence": 1
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-5--historical-longitude-watch",
+      "turnId": "turn-mubz3b79-1",
+      "callId": "call_25d67c5de9b74874a7e42693",
+      "options": 236,
+      "optionsBeforeCut": 236,
+      "stateChars": 15076,
+      "modelPicks": [],
+      "latencyMs": 258,
+      "choice": "p236",
+      "confidence": 0.39,
+      "noul": 0.11
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-5--historical-longitude-watch",
+      "turnId": "turn-mubz3b79-1",
+      "callId": "call_2c0de975c2c14ea2aca947d7",
+      "options": 18,
+      "optionsBeforeCut": 18,
+      "stateChars": 3327,
+      "modelPicks": [
+        "p17"
+      ],
+      "latencyMs": 233,
+      "choice": "p5",
+      "confidence": 0.68,
+      "noul": 0.98
+    },
+    {
+      "seam": "result",
+      "capture": "fix-265-267-5--historical-longitude-watch",
+      "turnId": "turn-mubz3b79-1",
+      "callId": "call_287f9519c65345bbb0ee9567",
+      "options": 4,
+      "optionsBeforeCut": 4,
+      "stateChars": 1705,
+      "modelPicks": [],
+      "latencyMs": 207,
+      "choice": "r5",
+      "confidence": 0.99,
+      "noul": 0.6
+    },
+    {
+      "seam": "tier",
+      "capture": "fix-265-267-5--rule-eurostar-luggage",
+      "turnId": "turn-mubz8qq3-1",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 649,
+      "modelPicks": [
+        "investigation"
+      ],
+      "latencyMs": 199,
+      "choice": "investigation",
+      "confidence": 0.7
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-5--rule-eurostar-luggage",
+      "turnId": "turn-mubz8qq3-1",
+      "callId": "call_13a161ee790b4278957ff09d",
+      "options": 79,
+      "optionsBeforeCut": 79,
+      "stateChars": 11508,
+      "modelPicks": [],
+      "latencyMs": 255,
+      "choice": "p45",
+      "confidence": 0.66,
+      "noul": 0.97
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-5--rule-eurostar-luggage",
+      "turnId": "turn-mubz8qq3-1",
+      "callId": "call_53e93d8fbc4542ed8f9bff07",
+      "options": 30,
+      "optionsBeforeCut": 30,
+      "stateChars": 3860,
+      "modelPicks": [
+        "p10"
+      ],
+      "latencyMs": 235,
+      "choice": "p10",
+      "confidence": 0.63,
+      "noul": 0.97
+    },
+    {
+      "seam": "result",
+      "capture": "fix-265-267-5--rule-eurostar-luggage",
+      "turnId": "turn-mubz8qq3-1",
+      "callId": "call_92e8e62e97af4db799d9633e",
+      "options": 2,
+      "optionsBeforeCut": 2,
+      "stateChars": 1657,
+      "modelPicks": [
+        "r19"
+      ],
+      "latencyMs": 232,
+      "choice": "r19",
+      "confidence": 1,
+      "noul": 0.86
+    },
+    {
+      "seam": "result",
+      "capture": "fix-265-267-5--rule-eurostar-luggage",
+      "turnId": "turn-mubz8qq3-1",
+      "callId": "call_ba969ec461414033aacd57c9",
+      "options": 2,
+      "optionsBeforeCut": 2,
+      "stateChars": 1704,
+      "modelPicks": [
+        "r20"
+      ],
+      "latencyMs": 199,
+      "choice": "r20",
+      "confidence": 0.98,
+      "noul": 0.89
+    },
+    {
+      "seam": "result",
+      "capture": "fix-265-267-5--rule-eurostar-luggage",
+      "turnId": "turn-mubz8qq3-1",
+      "callId": "call_4cf0b8010f3e4600b1666cab",
+      "options": 2,
+      "optionsBeforeCut": 2,
+      "stateChars": 1475,
+      "modelPicks": [],
+      "latencyMs": 204,
+      "choice": "r20",
+      "confidence": 0.97,
+      "noul": 0.62
+    },
+    {
+      "seam": "result",
+      "capture": "fix-265-267-5--rule-eurostar-luggage",
+      "turnId": "turn-mubz8qq3-1",
+      "callId": "call_6d43ae58ca884da5ba1a3deb",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 1856,
+      "modelPicks": [
+        "r20"
+      ],
+      "latencyMs": 216,
+      "choice": "r20",
+      "confidence": 0.87,
+      "noul": 0.89
+    },
+    {
+      "seam": "tier",
+      "capture": "fix-265-267-5--rule-eurostar-luggage",
+      "turnId": "turn-mubzg6wo-2",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 261,
+      "modelPicks": [
+        "lookup"
+      ],
+      "latencyMs": 192,
+      "choice": "lookup",
+      "confidence": 0.78
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-265-267-5--rule-eurostar-luggage",
+      "turnId": "turn-mubzg6wo-2",
+      "callId": "call_481d85abfb0340708765c03a",
+      "options": 79,
+      "optionsBeforeCut": 79,
+      "stateChars": 10883,
+      "modelPicks": [
+        "p20",
+        "p21",
+        "p57"
+      ],
+      "latencyMs": 211,
+      "choice": "p21",
+      "confidence": 0.56,
+      "noul": 0.96
+    },
+    {
+      "seam": "tier",
+      "capture": "fix-265-267-5--superseded-voyager-interstellar",
+      "turnId": "turn-mubzhl4i-1",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 605,
+      "modelPicks": [
+        "investigation"
+      ],
+      "latencyMs": 267,
+      "choice": "investigation",
+      "confidence": 1
+    },
+    {
+      "seam": "result",
+      "capture": "fix-265-267-5--superseded-voyager-interstellar",
+      "turnId": "turn-mubzhl4i-1",
+      "callId": "call_704178f3b1f44f5ab582aea2",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 1976,
+      "modelPicks": [],
+      "latencyMs": 217,
+      "choice": "r24",
+      "confidence": 0.72,
+      "noul": 0.68
+    },
+    {
+      "seam": "tier",
+      "capture": "fix-270-1--compatibility-pi-camera",
+      "turnId": "turn-muhi4vq2-1",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 587,
+      "modelPicks": [
+        "investigation"
+      ],
+      "latencyMs": 235,
+      "choice": "investigation",
+      "confidence": 0.82
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-270-1--compatibility-pi-camera",
+      "turnId": "turn-muhi4vq2-1",
+      "callId": "call_d710f979a8604537a7b1f3e7",
+      "options": 79,
+      "optionsBeforeCut": 79,
+      "stateChars": 13343,
+      "modelPicks": [
+        "p9"
+      ],
+      "latencyMs": 257,
+      "choice": "p23",
+      "confidence": 0.35,
+      "noul": 0.64
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-270-1--compatibility-pi-camera",
+      "turnId": "turn-muhi4vq2-1",
+      "callId": "call_5161115068b3426e96e53af5",
+      "options": 250,
+      "optionsBeforeCut": 458,
+      "stateChars": 8222,
+      "modelPicks": [],
+      "latencyMs": 232,
+      "choice": "p197",
+      "confidence": 0.29,
+      "noul": 0.44
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-270-1--compatibility-pi-camera",
+      "turnId": "turn-muhi4vq2-1",
+      "callId": "call_10b4f83767664a77949e7a52",
+      "options": 74,
+      "optionsBeforeCut": 74,
+      "stateChars": 13811,
+      "modelPicks": [],
+      "latencyMs": 228,
+      "choice": "p47",
+      "confidence": 0.79,
+      "noul": 0.79
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-270-1--compatibility-pi-camera",
+      "turnId": "turn-muhi4vq2-1",
+      "callId": "call_51c0398362cc461fbdd74031",
+      "options": 138,
+      "optionsBeforeCut": 138,
+      "stateChars": 14279,
+      "modelPicks": [],
+      "latencyMs": 258,
+      "choice": "p5",
+      "confidence": 0.72,
+      "noul": 0.83
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-270-1--compatibility-pi-camera",
+      "turnId": "turn-muhi4vq2-1",
+      "callId": "call_3a22fae09bcf4edfb6ad7394",
+      "options": 250,
+      "optionsBeforeCut": 464,
+      "stateChars": 8238,
+      "modelPicks": [],
+      "latencyMs": 227,
+      "choice": "p197",
+      "confidence": 0.33,
+      "noul": 0.38
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-270-1--compatibility-pi-camera",
+      "turnId": "turn-muhi4vq2-1",
+      "callId": "call_3120dd2dea0f445fb7d97dcb",
+      "options": 111,
+      "optionsBeforeCut": 111,
+      "stateChars": 14116,
+      "modelPicks": [
+        "p96",
+        "p109"
+      ],
+      "latencyMs": 233,
+      "choice": "p95",
+      "confidence": 0.29,
+      "noul": 0.71
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-270-1--compatibility-pi-camera",
+      "turnId": "turn-muhi4vq2-1",
+      "callId": "call_e89989b7e3a946ac817d9638",
+      "options": 92,
+      "optionsBeforeCut": 92,
+      "stateChars": 14189,
+      "modelPicks": [],
+      "latencyMs": 230,
+      "choice": "p92",
+      "confidence": 0.2,
+      "noul": 0.08
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-270-1--compatibility-pi-camera",
+      "turnId": "turn-muhi4vq2-1",
+      "callId": "call_12f0fd475be34c5f8b7c230c",
+      "options": 250,
+      "optionsBeforeCut": 457,
+      "stateChars": 8225,
+      "modelPicks": [],
+      "latencyMs": 219,
+      "choice": "p79",
+      "confidence": 0.51,
+      "noul": 0.42
+    },
+    {
+      "seam": "tier",
+      "capture": "fix-270-1--compatibility-pi-camera",
+      "turnId": "turn-muhi9l4n-2",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 315,
+      "modelPicks": [
+        "lookup"
+      ],
+      "latencyMs": 231,
+      "choice": "investigation",
+      "confidence": 0.68
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-270-1--compatibility-pi-camera",
+      "turnId": "turn-muhi9l4n-2",
+      "callId": "call_4aded8abd3d74a2c9559de28",
+      "options": 79,
+      "optionsBeforeCut": 79,
+      "stateChars": 12821,
+      "modelPicks": [
+        "p18",
+        "p23"
+      ],
+      "latencyMs": 217,
+      "choice": "p23",
+      "confidence": 0.17,
+      "noul": 0.18
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-270-1--compatibility-pi-camera",
+      "turnId": "turn-muhi9l4n-2",
+      "callId": "call_7252bf5a6b5648d58d42143a",
+      "options": 111,
+      "optionsBeforeCut": 111,
+      "stateChars": 13578,
+      "modelPicks": [
+        "p86",
+        "p91",
+        "p96"
+      ],
+      "latencyMs": 240,
+      "choice": "p109",
+      "confidence": 1,
+      "noul": 0.98
+    },
+    {
+      "seam": "tier",
+      "capture": "fix-270-1--historical-longitude-watch",
+      "turnId": "turn-muhicizo-1",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 798,
+      "modelPicks": [
+        "investigation"
+      ],
+      "latencyMs": 239,
+      "choice": "investigation",
+      "confidence": 1
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-270-1--historical-longitude-watch",
+      "turnId": "turn-muhicizo-1",
+      "callId": "call_6929663a4e8540a0961cfc7b",
+      "options": 17,
+      "optionsBeforeCut": 17,
+      "stateChars": 3663,
+      "modelPicks": [
+        "p2",
+        "p7",
+        "p10"
+      ],
+      "latencyMs": 217,
+      "choice": "p5",
+      "confidence": 0.74,
+      "noul": 0.87
+    },
+    {
+      "seam": "result",
+      "capture": "fix-270-1--historical-longitude-watch",
+      "turnId": "turn-muhicizo-1",
+      "callId": "call_75ad844ba7ff43eeac54d8c5",
+      "options": 2,
+      "optionsBeforeCut": 2,
+      "stateChars": 1897,
+      "modelPicks": [
+        "r20"
+      ],
+      "latencyMs": 250,
+      "choice": "r20",
+      "confidence": 0.96,
+      "noul": 0.77
+    },
+    {
+      "seam": "result",
+      "capture": "fix-270-1--historical-longitude-watch",
+      "turnId": "turn-muhicizo-1",
+      "callId": "call_bbf9d669392c491a9dd59684",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 2033,
+      "modelPicks": [
+        "r24"
+      ],
+      "latencyMs": 209,
+      "choice": "r20",
+      "confidence": 0.4,
+      "noul": 0.75
+    },
+    {
+      "seam": "result",
+      "capture": "fix-270-1--historical-longitude-watch",
+      "turnId": "turn-muhicizo-1",
+      "callId": "call_8af090cf79d2444291b0235b",
+      "options": 2,
+      "optionsBeforeCut": 2,
+      "stateChars": 1878,
+      "modelPicks": [
+        "r20"
+      ],
+      "latencyMs": 251,
+      "choice": "r20",
+      "confidence": 0.8,
+      "noul": 0.8
+    },
+    {
+      "seam": "tier",
+      "capture": "fix-270-1--rule-eurostar-luggage",
+      "turnId": "turn-muhifaex-1",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 649,
+      "modelPicks": [
+        "lookup"
+      ],
+      "latencyMs": 214,
+      "choice": "investigation",
+      "confidence": 0.7
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-270-1--rule-eurostar-luggage",
+      "turnId": "turn-muhifaex-1",
+      "callId": "call_27aa4ea21a2a424fa3940adb",
+      "options": 80,
+      "optionsBeforeCut": 80,
+      "stateChars": 11719,
+      "modelPicks": [
+        "p15",
+        "p17"
+      ],
+      "latencyMs": 213,
+      "choice": "p45",
+      "confidence": 0.52,
+      "noul": 0.97
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-270-1--rule-eurostar-luggage",
+      "turnId": "turn-muhifaex-1",
+      "callId": "call_5f0cf4d0a1da40b2b9c2d8b1",
+      "options": 30,
+      "optionsBeforeCut": 30,
+      "stateChars": 3876,
+      "modelPicks": [
+        "p10",
+        "p17"
+      ],
+      "latencyMs": 247,
+      "choice": "p10",
+      "confidence": 0.53,
+      "noul": 0.97
+    },
+    {
+      "seam": "result",
+      "capture": "fix-270-1--rule-eurostar-luggage",
+      "turnId": "turn-muhifaex-1",
+      "callId": "call_83e3081c947d46faa21bcdcb",
+      "options": 2,
+      "optionsBeforeCut": 2,
+      "stateChars": 1691,
+      "modelPicks": [
+        "r20"
+      ],
+      "latencyMs": 218,
+      "choice": "r20",
+      "confidence": 1,
+      "noul": 0.86
+    },
+    {
+      "seam": "result",
+      "capture": "fix-270-1--rule-eurostar-luggage",
+      "turnId": "turn-muhifaex-1",
+      "callId": "call_978b010ca54746bfb40cfd17",
+      "options": 2,
+      "optionsBeforeCut": 2,
+      "stateChars": 1720,
+      "modelPicks": [
+        "r20"
+      ],
+      "latencyMs": 203,
+      "choice": "r20",
+      "confidence": 0.98,
+      "noul": 0.9
+    },
+    {
+      "seam": "tier",
+      "capture": "fix-270-1--rule-eurostar-luggage",
+      "turnId": "turn-muhiixgl-2",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 261,
+      "modelPicks": [
+        "lookup"
+      ],
+      "latencyMs": 234,
+      "choice": "lookup",
+      "confidence": 0.73
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-270-1--rule-eurostar-luggage",
+      "turnId": "turn-muhiixgl-2",
+      "callId": "call_efe9c6b053364560a3831abd",
+      "options": 79,
+      "optionsBeforeCut": 79,
+      "stateChars": 10847,
+      "modelPicks": [
+        "p18",
+        "p20",
+        "p21",
+        "p57"
+      ],
+      "latencyMs": 248,
+      "choice": "p21",
+      "confidence": 0.81,
+      "noul": 0.98
+    },
+    {
+      "seam": "tier",
+      "capture": "fix-270-1--superseded-voyager-interstellar",
+      "turnId": "turn-muhijy32-1",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 605,
+      "modelPicks": [
+        "investigation"
+      ],
+      "latencyMs": 220,
+      "choice": "investigation",
+      "confidence": 1
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-270-1--superseded-voyager-interstellar",
+      "turnId": "turn-muhijy32-1",
+      "callId": "call_4561e92d0be640dfaff94aa0",
+      "options": 28,
+      "optionsBeforeCut": 28,
+      "stateChars": 4352,
+      "modelPicks": [],
+      "latencyMs": 216,
+      "choice": "p6",
+      "confidence": 0.52,
+      "noul": 0.46
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-270-1--superseded-voyager-interstellar",
+      "turnId": "turn-muhijy32-1",
+      "callId": "call_f9b18555c6bd42f29b5653c6",
+      "options": 40,
+      "optionsBeforeCut": 40,
+      "stateChars": 6186,
+      "modelPicks": [
+        "p20",
+        "p21"
+      ],
+      "latencyMs": 218,
+      "choice": "p21",
+      "confidence": 0.63,
+      "noul": 0.96
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-270-1--superseded-voyager-interstellar",
+      "turnId": "turn-muhijy32-1",
+      "callId": "call_e620d68976604d5ca8fb5711",
+      "options": 64,
+      "optionsBeforeCut": 64,
+      "stateChars": 11476,
+      "modelPicks": [
+        "p30",
+        "p36",
+        "p38"
+      ],
+      "latencyMs": 222,
+      "choice": "p38",
+      "confidence": 0.54,
+      "noul": 0.96
+    },
+    {
+      "seam": "result",
+      "capture": "fix-270-1--superseded-voyager-interstellar",
+      "turnId": "turn-muhijy32-1",
+      "callId": "call_3445012695fd4bca9ea1d7a8",
+      "options": 1,
+      "optionsBeforeCut": 1,
+      "stateChars": 1667,
+      "modelPicks": [],
+      "latencyMs": 236,
+      "choice": "r9",
+      "confidence": 1,
+      "noul": 0.13
+    },
+    {
+      "seam": "result",
+      "capture": "fix-270-1--superseded-voyager-interstellar",
+      "turnId": "turn-muhijy32-1",
+      "callId": "call_f00b4cd0cc6149248686cb2e",
+      "options": 2,
+      "optionsBeforeCut": 2,
+      "stateChars": 1952,
+      "modelPicks": [],
+      "latencyMs": 218,
+      "choice": "r23",
+      "confidence": 0.18,
+      "noul": 0.63
+    },
+    {
+      "seam": "result",
+      "capture": "fix-270-1--superseded-voyager-interstellar",
+      "turnId": "turn-muhijy32-1",
+      "callId": "call_ec4c561eaa604ae0a153f248",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 1993,
+      "modelPicks": [],
+      "latencyMs": 226,
+      "choice": "r20",
+      "confidence": 0.97,
+      "noul": 0.81
+    },
+    {
+      "seam": "result",
+      "capture": "fix-270-1--superseded-voyager-interstellar",
+      "turnId": "turn-muhijy32-1",
+      "callId": "call_2b2d7b1ce2874a8bb19d05cb",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 2013,
+      "modelPicks": [],
+      "latencyMs": 232,
+      "choice": "r20",
+      "confidence": 0.69,
+      "noul": 0.85
+    },
+    {
+      "seam": "result",
+      "capture": "fix-270-1--superseded-voyager-interstellar",
+      "turnId": "turn-muhijy32-1",
+      "callId": "call_27bc9e8e342b474092dde48a",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 2009,
+      "modelPicks": [
+        "r20"
+      ],
+      "latencyMs": 237,
+      "choice": "r20",
+      "confidence": 0.95,
+      "noul": 0.81
+    },
+    {
+      "seam": "result",
+      "capture": "fix-270-1--superseded-voyager-interstellar",
+      "turnId": "turn-muhijy32-1",
+      "callId": "call_429d32746a9a4731a3c2da5e",
+      "options": 2,
+      "optionsBeforeCut": 2,
+      "stateChars": 1771,
+      "modelPicks": [],
+      "latencyMs": 206,
+      "choice": "r30",
+      "confidence": 0.77,
+      "noul": 0.7
+    },
+    {
+      "seam": "result",
+      "capture": "fix-270-1--superseded-voyager-interstellar",
+      "turnId": "turn-muhijy32-1",
+      "callId": "call_f8b486d6d00f476db57ab2cb",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 1845,
+      "modelPicks": [],
+      "latencyMs": 218,
+      "choice": "r28",
+      "confidence": 0.42,
+      "noul": 0.19
+    },
+    {
+      "seam": "result",
+      "capture": "fix-270-1--superseded-voyager-interstellar",
+      "turnId": "turn-muhijy32-1",
+      "callId": "call_62b8901cbf764193ab68f25e",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 1898,
+      "modelPicks": [],
+      "latencyMs": 199,
+      "choice": "r24",
+      "confidence": 0.43,
+      "noul": 0.76
+    },
+    {
+      "seam": "result",
+      "capture": "fix-270-1--superseded-voyager-interstellar",
+      "turnId": "turn-muhijy32-1",
+      "callId": "call_0866f246c72049cda56f2100",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 2073,
+      "modelPicks": [],
+      "latencyMs": 193,
+      "choice": "r20",
+      "confidence": 0.48,
+      "noul": 0.31
+    },
+    {
+      "seam": "result",
+      "capture": "fix-270-1--superseded-voyager-interstellar",
+      "turnId": "turn-muhijy32-1",
+      "callId": "call_be8587c77d5a4751982c083a",
+      "options": 4,
+      "optionsBeforeCut": 4,
+      "stateChars": 1877,
+      "modelPicks": [],
+      "latencyMs": 217,
+      "choice": "r20",
+      "confidence": 0.59,
+      "noul": 0.8
+    },
+    {
+      "seam": "tier",
+      "capture": "fix-270-2--compatibility-pi-camera",
+      "turnId": "turn-muhirhf1-1",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 587,
+      "modelPicks": [
+        "investigation"
+      ],
+      "latencyMs": 259,
+      "choice": "investigation",
+      "confidence": 0.83
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-270-2--compatibility-pi-camera",
+      "turnId": "turn-muhirhf1-1",
+      "callId": "call_d8657523c6674657842dfd13",
+      "options": 79,
+      "optionsBeforeCut": 79,
+      "stateChars": 13230,
+      "modelPicks": [
+        "p23"
+      ],
+      "latencyMs": 228,
+      "choice": "p23",
+      "confidence": 0.64,
+      "noul": 0.66
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-270-2--compatibility-pi-camera",
+      "turnId": "turn-muhirhf1-1",
+      "callId": "call_7c26eb58c5554760a1612c24",
+      "options": 111,
+      "optionsBeforeCut": 111,
+      "stateChars": 13987,
+      "modelPicks": [],
+      "latencyMs": 255,
+      "choice": "p95",
+      "confidence": 0.7,
+      "noul": 0.81
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-270-2--compatibility-pi-camera",
+      "turnId": "turn-muhirhf1-1",
+      "callId": "call_594d7b270cf243269dfef3be",
+      "options": 107,
+      "optionsBeforeCut": 107,
+      "stateChars": 7702,
+      "modelPicks": [],
+      "latencyMs": 245,
+      "choice": "p28",
+      "confidence": 0.92,
+      "noul": 0.76
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-270-2--compatibility-pi-camera",
+      "turnId": "turn-muhirhf1-1",
+      "callId": "call_52dc98621abd416593b4ab9f",
+      "options": 250,
+      "optionsBeforeCut": 458,
+      "stateChars": 8109,
+      "modelPicks": [],
+      "latencyMs": 263,
+      "choice": "p80",
+      "confidence": 0.24,
+      "noul": 0.46
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-270-2--compatibility-pi-camera",
+      "turnId": "turn-muhirhf1-1",
+      "callId": "call_08ad91196aeb4cfd827d7f67",
+      "options": 138,
+      "optionsBeforeCut": 138,
+      "stateChars": 14179,
+      "modelPicks": [
+        "p30",
+        "p31"
+      ],
+      "latencyMs": 243,
+      "choice": "p5",
+      "confidence": 0.67,
+      "noul": 0.81
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-270-2--compatibility-pi-camera",
+      "turnId": "turn-muhirhf1-1",
+      "callId": "call_1036fa15bd3a4f748b770b5c",
+      "options": 66,
+      "optionsBeforeCut": 66,
+      "stateChars": 4563,
+      "modelPicks": [],
+      "latencyMs": 258,
+      "choice": "p44",
+      "confidence": 0.83,
+      "noul": 0.53
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-270-2--compatibility-pi-camera",
+      "turnId": "turn-muhirhf1-1",
+      "callId": "call_9b8fa4a1c1bf4ee9bc7602ce",
+      "options": 116,
+      "optionsBeforeCut": 116,
+      "stateChars": 13784,
+      "modelPicks": [],
+      "latencyMs": 237,
+      "choice": "p8",
+      "confidence": 0.11,
+      "noul": 0.34
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-270-2--compatibility-pi-camera",
+      "turnId": "turn-muhirhf1-1",
+      "callId": "call_2b10a1e4e21e44429e5a36f3",
+      "options": 134,
+      "optionsBeforeCut": 134,
+      "stateChars": 14376,
+      "modelPicks": [],
+      "latencyMs": 247,
+      "choice": "p19",
+      "confidence": 0.66,
+      "noul": 0.56
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-270-2--compatibility-pi-camera",
+      "turnId": "turn-muhirhf1-1",
+      "callId": "call_239b7cdf2f824ee582263246",
+      "options": 149,
+      "optionsBeforeCut": 149,
+      "stateChars": 14131,
+      "modelPicks": [],
+      "latencyMs": 228,
+      "choice": "p112",
+      "confidence": 0.69,
+      "noul": 0.87
+    },
+    {
+      "seam": "result",
+      "capture": "fix-270-2--compatibility-pi-camera",
+      "turnId": "turn-muhirhf1-1",
+      "callId": "call_a0489d530b974403b3337c8b",
+      "options": 1,
+      "optionsBeforeCut": 1,
+      "stateChars": 1371,
+      "modelPicks": [
+        "r21"
+      ],
+      "latencyMs": 239,
+      "choice": "r21",
+      "confidence": 1,
+      "noul": 0.75
+    },
+    {
+      "seam": "tier",
+      "capture": "fix-270-2--compatibility-pi-camera",
+      "turnId": "turn-muhivkxq-2",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 315,
+      "modelPicks": [
+        "investigation"
+      ],
+      "latencyMs": 223,
+      "choice": "investigation",
+      "confidence": 0.68
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-270-2--compatibility-pi-camera",
+      "turnId": "turn-muhivkxq-2",
+      "callId": "call_dae943bab5c9447f8ed5a9c3",
+      "options": 250,
+      "optionsBeforeCut": 458,
+      "stateChars": 7748,
+      "modelPicks": [],
+      "latencyMs": 230,
+      "choice": "p197",
+      "confidence": 0.37,
+      "noul": 0.19
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-270-2--compatibility-pi-camera",
+      "turnId": "turn-muhivkxq-2",
+      "callId": "call_26d56de707d140b49dead700",
+      "options": 79,
+      "optionsBeforeCut": 79,
+      "stateChars": 12869,
+      "modelPicks": [],
+      "latencyMs": 242,
+      "choice": "p23",
+      "confidence": 0.22,
+      "noul": 0.14
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-270-2--compatibility-pi-camera",
+      "turnId": "turn-muhivkxq-2",
+      "callId": "call_89dd259bf84c48309d36b667",
+      "options": 111,
+      "optionsBeforeCut": 111,
+      "stateChars": 13626,
+      "modelPicks": [],
+      "latencyMs": 237,
+      "choice": "p109",
+      "confidence": 1,
+      "noul": 0.98
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-270-2--compatibility-pi-camera",
+      "turnId": "turn-muhivkxq-2",
+      "callId": "call_7240e38bcd8944458af908b2",
+      "options": 54,
+      "optionsBeforeCut": 54,
+      "stateChars": 6516,
+      "modelPicks": [],
+      "latencyMs": 228,
+      "choice": "p47",
+      "confidence": 0.45,
+      "noul": 0.31
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-270-2--compatibility-pi-camera",
+      "turnId": "turn-muhivkxq-2",
+      "callId": "call_528f428186944acf95e8e071",
+      "options": 139,
+      "optionsBeforeCut": 139,
+      "stateChars": 14001,
+      "modelPicks": [],
+      "latencyMs": 258,
+      "choice": "p5",
+      "confidence": 0.59,
+      "noul": 0.07
+    },
+    {
+      "seam": "result",
+      "capture": "fix-270-2--compatibility-pi-camera",
+      "turnId": "turn-muhivkxq-2",
+      "callId": "call_ebac097aa64b4fc3b951e9fd",
+      "options": 1,
+      "optionsBeforeCut": 1,
+      "stateChars": 1033,
+      "modelPicks": [
+        "r20"
+      ],
+      "latencyMs": 242,
+      "choice": "r20",
+      "confidence": 1,
+      "noul": 0.64
+    },
+    {
+      "seam": "result",
+      "capture": "fix-270-2--compatibility-pi-camera",
+      "turnId": "turn-muhivkxq-2",
+      "callId": "call_1d1f491174ac439abfa23877",
+      "options": 1,
+      "optionsBeforeCut": 1,
+      "stateChars": 1092,
+      "modelPicks": [
+        "r20"
+      ],
+      "latencyMs": 250,
+      "choice": "r20",
+      "confidence": 1,
+      "noul": 0.73
+    },
+    {
+      "seam": "result",
+      "capture": "fix-270-2--compatibility-pi-camera",
+      "turnId": "turn-muhivkxq-2",
+      "callId": "call_234da45aec4e472297d55835",
+      "options": 1,
+      "optionsBeforeCut": 1,
+      "stateChars": 1054,
+      "modelPicks": [
+        "r20"
+      ],
+      "latencyMs": 222,
+      "choice": "r20",
+      "confidence": 1,
+      "noul": 0.33
+    },
+    {
+      "seam": "tier",
+      "capture": "fix-270-2--historical-longitude-watch",
+      "turnId": "turn-muhj25qr-1",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 798,
+      "modelPicks": [
+        "lookup"
+      ],
+      "latencyMs": 235,
+      "choice": "investigation",
+      "confidence": 1
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-270-2--historical-longitude-watch",
+      "turnId": "turn-muhj25qr-1",
+      "callId": "call_685fb686173e43b881586f99",
+      "options": 9,
+      "optionsBeforeCut": 9,
+      "stateChars": 2167,
+      "modelPicks": [],
+      "latencyMs": 225,
+      "choice": "p9",
+      "confidence": 0.26,
+      "noul": 0.11
+    },
+    {
+      "seam": "result",
+      "capture": "fix-270-2--historical-longitude-watch",
+      "turnId": "turn-muhj25qr-1",
+      "callId": "call_17e7c2957c60471c92c19a2a",
+      "options": 4,
+      "optionsBeforeCut": 4,
+      "stateChars": 1694,
+      "modelPicks": [],
+      "latencyMs": 258,
+      "choice": "r5",
+      "confidence": 1,
+      "noul": 0.7
+    },
+    {
+      "seam": "result",
+      "capture": "fix-270-2--historical-longitude-watch",
+      "turnId": "turn-muhj25qr-1",
+      "callId": "call_4e0beae37a2541d99129435b",
+      "options": 4,
+      "optionsBeforeCut": 4,
+      "stateChars": 1695,
+      "modelPicks": [],
+      "latencyMs": 247,
+      "choice": "r5",
+      "confidence": 1,
+      "noul": 0.61
+    },
+    {
+      "seam": "result",
+      "capture": "fix-270-2--historical-longitude-watch",
+      "turnId": "turn-muhj25qr-1",
+      "callId": "call_530ed376101b45cc836b3f22",
+      "options": 4,
+      "optionsBeforeCut": 4,
+      "stateChars": 1688,
+      "modelPicks": [],
+      "latencyMs": 233,
+      "choice": "r5",
+      "confidence": 1,
+      "noul": 0.63
+    },
+    {
+      "seam": "result",
+      "capture": "fix-270-2--historical-longitude-watch",
+      "turnId": "turn-muhj25qr-1",
+      "callId": "call_939d90d78e924dcc8e03d71d",
+      "options": 4,
+      "optionsBeforeCut": 4,
+      "stateChars": 1709,
+      "modelPicks": [],
+      "latencyMs": 252,
+      "choice": "r5",
+      "confidence": 1,
+      "noul": 0.7
+    },
+    {
+      "seam": "tier",
+      "capture": "fix-270-2--rule-eurostar-luggage",
+      "turnId": "turn-muhj4b00-1",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 649,
+      "modelPicks": [
+        "lookup"
+      ],
+      "latencyMs": 274,
+      "choice": "investigation",
+      "confidence": 0.67
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-270-2--rule-eurostar-luggage",
+      "turnId": "turn-muhj4b00-1",
+      "callId": "call_4d052648be7042aa8f3e8ed7",
+      "options": 68,
+      "optionsBeforeCut": 68,
+      "stateChars": 8053,
+      "modelPicks": [
+        "p7",
+        "p39"
+      ],
+      "latencyMs": 244,
+      "choice": "p7",
+      "confidence": 0.4,
+      "noul": 0.97
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-270-2--rule-eurostar-luggage",
+      "turnId": "turn-muhj4b00-1",
+      "callId": "call_fa80747f5e24464091d6ef5f",
+      "options": 31,
+      "optionsBeforeCut": 31,
+      "stateChars": 4142,
+      "modelPicks": [
+        "p10",
+        "p17"
+      ],
+      "latencyMs": 234,
+      "choice": "p10",
+      "confidence": 0.48,
+      "noul": 0.97
+    },
+    {
+      "seam": "result",
+      "capture": "fix-270-2--rule-eurostar-luggage",
+      "turnId": "turn-muhj4b00-1",
+      "callId": "call_ea2c5aa504c241ac8933d51b",
+      "options": 2,
+      "optionsBeforeCut": 2,
+      "stateChars": 1657,
+      "modelPicks": [
+        "r20"
+      ],
+      "latencyMs": 242,
+      "choice": "r20",
+      "confidence": 1,
+      "noul": 0.89
+    },
+    {
+      "seam": "result",
+      "capture": "fix-270-2--rule-eurostar-luggage",
+      "turnId": "turn-muhj4b00-1",
+      "callId": "call_452067abe1854475bf8165b6",
+      "options": 2,
+      "optionsBeforeCut": 2,
+      "stateChars": 1729,
+      "modelPicks": [
+        "r20"
+      ],
+      "latencyMs": 218,
+      "choice": "r20",
+      "confidence": 0.99,
+      "noul": 0.9
+    },
+    {
+      "seam": "tier",
+      "capture": "fix-270-2--rule-eurostar-luggage",
+      "turnId": "turn-muhj7kqb-2",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 261,
+      "modelPicks": [
+        "lookup"
+      ],
+      "latencyMs": 214,
+      "choice": "lookup",
+      "confidence": 0.77
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-270-2--rule-eurostar-luggage",
+      "turnId": "turn-muhj7kqb-2",
+      "callId": "call_9cef2e072e2f40ffacc06b13",
+      "options": 68,
+      "optionsBeforeCut": 68,
+      "stateChars": 7352,
+      "modelPicks": [],
+      "latencyMs": 238,
+      "choice": "p15",
+      "confidence": 0.93,
+      "noul": 0.97
+    },
+    {
+      "seam": "tier",
+      "capture": "fix-270-2--superseded-voyager-interstellar",
+      "turnId": "turn-muhj8lxo-1",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 605,
+      "modelPicks": [
+        "investigation"
+      ],
+      "latencyMs": 230,
+      "choice": "investigation",
+      "confidence": 1
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-270-2--superseded-voyager-interstellar",
+      "turnId": "turn-muhj8lxo-1",
+      "callId": "call_97635700520548de85e55eed",
+      "options": 24,
+      "optionsBeforeCut": 24,
+      "stateChars": 3841,
+      "modelPicks": [
+        "p4",
+        "p5"
+      ],
+      "latencyMs": 258,
+      "choice": "p5",
+      "confidence": 0.66,
+      "noul": 0.93
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-270-2--superseded-voyager-interstellar",
+      "turnId": "turn-muhj8lxo-1",
+      "callId": "call_c8f6d4ab0ec6425886fc71f7",
+      "options": 24,
+      "optionsBeforeCut": 24,
+      "stateChars": 8645,
+      "modelPicks": [
+        "p9",
+        "p11"
+      ],
+      "latencyMs": 234,
+      "choice": "p11",
+      "confidence": 0.66,
+      "noul": 0.97
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-270-2--superseded-voyager-interstellar",
+      "turnId": "turn-muhj8lxo-1",
+      "callId": "call_a6fe8428881e46f58712e192",
+      "options": 34,
+      "optionsBeforeCut": 34,
+      "stateChars": 5964,
+      "modelPicks": [
+        "p10"
+      ],
+      "latencyMs": 292,
+      "choice": "p10",
+      "confidence": 0.74,
+      "noul": 0.94
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-270-2--superseded-voyager-interstellar",
+      "turnId": "turn-muhj8lxo-1",
+      "callId": "call_62ae022cf205404fbb2e4af9",
+      "options": 17,
+      "optionsBeforeCut": 17,
+      "stateChars": 4999,
+      "modelPicks": [],
+      "latencyMs": 226,
+      "choice": "p17",
+      "confidence": 0.56,
+      "noul": 0.04
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-270-2--superseded-voyager-interstellar",
+      "turnId": "turn-muhj8lxo-1",
+      "callId": "call_97c56ca6db6e4b6aa392b7ae",
+      "options": 33,
+      "optionsBeforeCut": 33,
+      "stateChars": 5850,
+      "modelPicks": [
+        "p8",
+        "p9",
+        "p10"
+      ],
+      "latencyMs": 205,
+      "choice": "p10",
+      "confidence": 0.49,
+      "noul": 0.9
+    },
+    {
+      "seam": "result",
+      "capture": "fix-270-2--superseded-voyager-interstellar",
+      "turnId": "turn-muhj8lxo-1",
+      "callId": "call_bf6626b69caa4e48979aac21",
+      "options": 2,
+      "optionsBeforeCut": 2,
+      "stateChars": 1767,
+      "modelPicks": [
+        "r23"
+      ],
+      "latencyMs": 220,
+      "choice": "r23",
+      "confidence": 0.84,
+      "noul": 0.82
+    },
+    {
+      "seam": "result",
+      "capture": "fix-270-2--superseded-voyager-interstellar",
+      "turnId": "turn-muhj8lxo-1",
+      "callId": "call_7d674d2bd3f24bcc8264e76d",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 2002,
+      "modelPicks": [
+        "r24"
+      ],
+      "latencyMs": 222,
+      "choice": "r24",
+      "confidence": 0.41,
+      "noul": 0.87
+    },
+    {
+      "seam": "result",
+      "capture": "fix-270-2--superseded-voyager-interstellar",
+      "turnId": "turn-muhj8lxo-1",
+      "callId": "call_4e69b2b1c47849208611105e",
+      "options": 2,
+      "optionsBeforeCut": 2,
+      "stateChars": 1806,
+      "modelPicks": [
+        "r27"
+      ],
+      "latencyMs": 207,
+      "choice": "r23",
+      "confidence": 0.92,
+      "noul": 0.86
+    },
+    {
+      "seam": "result",
+      "capture": "fix-270-2--superseded-voyager-interstellar",
+      "turnId": "turn-muhj8lxo-1",
+      "callId": "call_8aeb36bf8c1e4230a66bdc93",
+      "options": 1,
+      "optionsBeforeCut": 1,
+      "stateChars": 1648,
+      "modelPicks": [],
+      "latencyMs": 240,
+      "choice": "r20",
+      "confidence": 1,
+      "noul": 0.78
+    },
+    {
+      "seam": "result",
+      "capture": "fix-270-2--superseded-voyager-interstellar",
+      "turnId": "turn-muhj8lxo-1",
+      "callId": "call_a88ab6f931604d60bc5db44a",
+      "options": 1,
+      "optionsBeforeCut": 1,
+      "stateChars": 1642,
+      "modelPicks": [],
+      "latencyMs": 225,
+      "choice": "r20",
+      "confidence": 1,
+      "noul": 0.56
+    },
+    {
+      "seam": "result",
+      "capture": "fix-270-2--superseded-voyager-interstellar",
+      "turnId": "turn-muhj8lxo-1",
+      "callId": "call_ad6d06e566b940cba22da5fb",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 1795,
+      "modelPicks": [],
+      "latencyMs": 204,
+      "choice": "r24",
+      "confidence": 0.23,
+      "noul": 0.75
+    },
+    {
+      "seam": "result",
+      "capture": "fix-270-2--superseded-voyager-interstellar",
+      "turnId": "turn-muhj8lxo-1",
+      "callId": "call_97e580076b5f4e92b0baa6cc",
+      "options": 1,
+      "optionsBeforeCut": 1,
+      "stateChars": 1593,
+      "modelPicks": [],
+      "latencyMs": 252,
+      "choice": "r5",
+      "confidence": 1,
+      "noul": 0.12
+    },
+    {
+      "seam": "result",
+      "capture": "fix-270-2--superseded-voyager-interstellar",
+      "turnId": "turn-muhj8lxo-1",
+      "callId": "call_616fcbc911184fa5b7516c29",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 1994,
+      "modelPicks": [
+        "r20"
+      ],
+      "latencyMs": 216,
+      "choice": "r24",
+      "confidence": 0.56,
+      "noul": 0.85
+    },
+    {
+      "seam": "tier",
+      "capture": "fix-270-3--compatibility-pi-camera",
+      "turnId": "turn-muhjev7f-1",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 587,
+      "modelPicks": [
+        "investigation"
+      ],
+      "latencyMs": 204,
+      "choice": "investigation",
+      "confidence": 0.85
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-270-3--compatibility-pi-camera",
+      "turnId": "turn-muhjev7f-1",
+      "callId": "call_db838bef6fc4429ea6a8afb3",
+      "options": 250,
+      "optionsBeforeCut": 458,
+      "stateChars": 8090,
+      "modelPicks": [],
+      "latencyMs": 244,
+      "choice": "p197",
+      "confidence": 0.36,
+      "noul": 0.4
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-270-3--compatibility-pi-camera",
+      "turnId": "turn-muhjev7f-1",
+      "callId": "call_8e0ed8e598ae4a6e89586fa7",
+      "options": 111,
+      "optionsBeforeCut": 111,
+      "stateChars": 13968,
+      "modelPicks": [
+        "p109"
+      ],
+      "latencyMs": 254,
+      "choice": "p95",
+      "confidence": 0.39,
+      "noul": 0.71
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-270-3--compatibility-pi-camera",
+      "turnId": "turn-muhjev7f-1",
+      "callId": "call_723d7af0e5a9445884317fc5",
+      "options": 79,
+      "optionsBeforeCut": 79,
+      "stateChars": 13211,
+      "modelPicks": [
+        "p9",
+        "p23"
+      ],
+      "latencyMs": 222,
+      "choice": "p23",
+      "confidence": 0.53,
+      "noul": 0.63
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-270-3--compatibility-pi-camera",
+      "turnId": "turn-muhjev7f-1",
+      "callId": "call_8344d7c6f9a343ac8591d07a",
+      "options": 250,
+      "optionsBeforeCut": 464,
+      "stateChars": 8106,
+      "modelPicks": [],
+      "latencyMs": 334,
+      "choice": "p197",
+      "confidence": 0.4,
+      "noul": 0.35
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-270-3--compatibility-pi-camera",
+      "turnId": "turn-muhjev7f-1",
+      "callId": "call_98a59ddc5e8a487788e015c5",
+      "options": 75,
+      "optionsBeforeCut": 75,
+      "stateChars": 13835,
+      "modelPicks": [],
+      "latencyMs": 229,
+      "choice": "p47",
+      "confidence": 0.76,
+      "noul": 0.78
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-270-3--compatibility-pi-camera",
+      "turnId": "turn-muhjev7f-1",
+      "callId": "call_cbceebc7d85a4ae986eace44",
+      "options": 138,
+      "optionsBeforeCut": 138,
+      "stateChars": 14147,
+      "modelPicks": [],
+      "latencyMs": 231,
+      "choice": "p5",
+      "confidence": 0.78,
+      "noul": 0.84
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-270-3--compatibility-pi-camera",
+      "turnId": "turn-muhjev7f-1",
+      "callId": "call_388dd10266e745a9ab73214a",
+      "options": 91,
+      "optionsBeforeCut": 91,
+      "stateChars": 13718,
+      "modelPicks": [],
+      "latencyMs": 278,
+      "choice": "p18",
+      "confidence": 0.51,
+      "noul": 0.22
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-270-3--compatibility-pi-camera",
+      "turnId": "turn-muhjev7f-1",
+      "callId": "call_3e18755cb2e94c54842f8b0e",
+      "options": 149,
+      "optionsBeforeCut": 149,
+      "stateChars": 14097,
+      "modelPicks": [
+        "p5",
+        "p8",
+        "p27",
+        "p107",
+        "p112"
+      ],
+      "latencyMs": 227,
+      "choice": "p112",
+      "confidence": 0.69,
+      "noul": 0.77
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-270-3--compatibility-pi-camera",
+      "turnId": "turn-muhjev7f-1",
+      "callId": "call_f478df39189140368bf1baf9",
+      "options": 151,
+      "optionsBeforeCut": 151,
+      "stateChars": 14431,
+      "modelPicks": [
+        "p6",
+        "p8"
+      ],
+      "latencyMs": 245,
+      "choice": "p8",
+      "confidence": 0.77,
+      "noul": 0.89
+    },
+    {
+      "seam": "result",
+      "capture": "fix-270-3--compatibility-pi-camera",
+      "turnId": "turn-muhjev7f-1",
+      "callId": "call_d2e5aaa1b86e484d94f8dadc",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 1655,
+      "modelPicks": [
+        "r20"
+      ],
+      "latencyMs": 213,
+      "choice": "r20",
+      "confidence": 1,
+      "noul": 0.85
+    },
+    {
+      "seam": "result",
+      "capture": "fix-270-3--compatibility-pi-camera",
+      "turnId": "turn-muhjev7f-1",
+      "callId": "call_1a6fdf27dcdd474294167b56",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 1694,
+      "modelPicks": [
+        "r20"
+      ],
+      "latencyMs": 219,
+      "choice": "r20",
+      "confidence": 0.79,
+      "noul": 0.85
+    },
+    {
+      "seam": "result",
+      "capture": "fix-270-3--compatibility-pi-camera",
+      "turnId": "turn-muhjev7f-1",
+      "callId": "call_6de4991494e940e2b8e76fb3",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 1617,
+      "modelPicks": [
+        "r27"
+      ],
+      "latencyMs": 239,
+      "choice": "r19",
+      "confidence": 0.56,
+      "noul": 0.88
+    },
+    {
+      "seam": "tier",
+      "capture": "fix-270-3--compatibility-pi-camera",
+      "turnId": "turn-muhjj498-2",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 315,
+      "modelPicks": [
+        "lookup"
+      ],
+      "latencyMs": 227,
+      "choice": "investigation",
+      "confidence": 0.68
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-270-3--compatibility-pi-camera",
+      "turnId": "turn-muhjj498-2",
+      "callId": "call_b97fad5f2d0d4e1baf1de070",
+      "options": 107,
+      "optionsBeforeCut": 107,
+      "stateChars": 7456,
+      "modelPicks": [],
+      "latencyMs": 236,
+      "choice": "p28",
+      "confidence": 0.77,
+      "noul": 0.22
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-270-3--compatibility-pi-camera",
+      "turnId": "turn-muhjj498-2",
+      "callId": "call_26e1b4febc7942d38efae764",
+      "options": 79,
+      "optionsBeforeCut": 79,
+      "stateChars": 12984,
+      "modelPicks": [],
+      "latencyMs": 234,
+      "choice": "p23",
+      "confidence": 0.12,
+      "noul": 0.16
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-270-3--compatibility-pi-camera",
+      "turnId": "turn-muhjj498-2",
+      "callId": "call_587e846390f14680853f616f",
+      "options": 112,
+      "optionsBeforeCut": 112,
+      "stateChars": 13972,
+      "modelPicks": [
+        "p109"
+      ],
+      "latencyMs": 248,
+      "choice": "p109",
+      "confidence": 1,
+      "noul": 0.98
+    },
+    {
+      "seam": "tier",
+      "capture": "fix-270-3--historical-longitude-watch",
+      "turnId": "turn-muhjmjeq-1",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 798,
+      "modelPicks": [
+        "investigation"
+      ],
+      "latencyMs": 207,
+      "choice": "investigation",
+      "confidence": 1
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-270-3--historical-longitude-watch",
+      "turnId": "turn-muhjmjeq-1",
+      "callId": "call_3c11a3f955cf4985a64a95cb",
+      "options": 17,
+      "optionsBeforeCut": 17,
+      "stateChars": 3163,
+      "modelPicks": [
+        "p2"
+      ],
+      "latencyMs": 228,
+      "choice": "p5",
+      "confidence": 0.55,
+      "noul": 0.98
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-270-3--historical-longitude-watch",
+      "turnId": "turn-muhjmjeq-1",
+      "callId": "call_17550c7458bb4b4686d716da",
+      "options": 13,
+      "optionsBeforeCut": 13,
+      "stateChars": 2832,
+      "modelPicks": [
+        "p2"
+      ],
+      "latencyMs": 209,
+      "choice": "p2",
+      "confidence": 0.35,
+      "noul": 0.97
+    },
+    {
+      "seam": "result",
+      "capture": "fix-270-3--historical-longitude-watch",
+      "turnId": "turn-muhjmjeq-1",
+      "callId": "call_1738a3cf1842436483cf5b52",
+      "options": 1,
+      "optionsBeforeCut": 1,
+      "stateChars": 1583,
+      "modelPicks": [],
+      "latencyMs": 203,
+      "choice": "r24",
+      "confidence": 1,
+      "noul": 0.21
+    },
+    {
+      "seam": "result",
+      "capture": "fix-270-3--historical-longitude-watch",
+      "turnId": "turn-muhjmjeq-1",
+      "callId": "call_e0203d285c54476b8aa2115f",
+      "options": 2,
+      "optionsBeforeCut": 2,
+      "stateChars": 1855,
+      "modelPicks": [
+        "r20"
+      ],
+      "latencyMs": 230,
+      "choice": "r20",
+      "confidence": 0.95,
+      "noul": 0.76
+    },
+    {
+      "seam": "result",
+      "capture": "fix-270-3--historical-longitude-watch",
+      "turnId": "turn-muhjmjeq-1",
+      "callId": "call_4c1954c5975946e5ba4dd648",
+      "options": 2,
+      "optionsBeforeCut": 2,
+      "stateChars": 1808,
+      "modelPicks": [
+        "r20"
+      ],
+      "latencyMs": 243,
+      "choice": "r20",
+      "confidence": 0.24,
+      "noul": 0.79
+    },
+    {
+      "seam": "tier",
+      "capture": "fix-270-3--rule-eurostar-luggage",
+      "turnId": "turn-muhjqap7-1",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 649,
+      "modelPicks": [
+        "lookup"
+      ],
+      "latencyMs": 215,
+      "choice": "investigation",
+      "confidence": 0.7
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-270-3--rule-eurostar-luggage",
+      "turnId": "turn-muhjqap7-1",
+      "callId": "call_cbbbc40c08314cab84cb525c",
+      "options": 79,
+      "optionsBeforeCut": 79,
+      "stateChars": 11560,
+      "modelPicks": [
+        "p15"
+      ],
+      "latencyMs": 242,
+      "choice": "p45",
+      "confidence": 0.57,
+      "noul": 0.97
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-270-3--rule-eurostar-luggage",
+      "turnId": "turn-muhjqap7-1",
+      "callId": "call_84259d38d09345aebe2c78e2",
+      "options": 30,
+      "optionsBeforeCut": 30,
+      "stateChars": 3912,
+      "modelPicks": [],
+      "latencyMs": 216,
+      "choice": "p10",
+      "confidence": 0.66,
+      "noul": 0.97
+    },
+    {
+      "seam": "result",
+      "capture": "fix-270-3--rule-eurostar-luggage",
+      "turnId": "turn-muhjqap7-1",
+      "callId": "call_f4ade2e3c1744b289de5f25d",
+      "options": 2,
+      "optionsBeforeCut": 2,
+      "stateChars": 1711,
+      "modelPicks": [
+        "r30"
+      ],
+      "latencyMs": 214,
+      "choice": "r30",
+      "confidence": 0.95,
+      "noul": 0.88
+    },
+    {
+      "seam": "result",
+      "capture": "fix-270-3--rule-eurostar-luggage",
+      "turnId": "turn-muhjqap7-1",
+      "callId": "call_4fb1c0de227b46e980d98959",
+      "options": 2,
+      "optionsBeforeCut": 2,
+      "stateChars": 1756,
+      "modelPicks": [
+        "r20"
+      ],
+      "latencyMs": 206,
+      "choice": "r20",
+      "confidence": 0.99,
+      "noul": 0.9
+    },
+    {
+      "seam": "tier",
+      "capture": "fix-270-3--rule-eurostar-luggage",
+      "turnId": "turn-muhjswfe-2",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 261,
+      "modelPicks": [
+        "lookup"
+      ],
+      "latencyMs": 228,
+      "choice": "lookup",
+      "confidence": 0.74
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-270-3--rule-eurostar-luggage",
+      "turnId": "turn-muhjswfe-2",
+      "callId": "call_10b529b543824b1a9b1aaeb6",
+      "options": 79,
+      "optionsBeforeCut": 79,
+      "stateChars": 10968,
+      "modelPicks": [
+        "p21",
+        "p56",
+        "p57"
+      ],
+      "latencyMs": 217,
+      "choice": "p21",
+      "confidence": 0.8,
+      "noul": 0.98
+    },
+    {
+      "seam": "tier",
+      "capture": "fix-270-3--superseded-voyager-interstellar",
+      "turnId": "turn-muhju35w-1",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 605,
+      "modelPicks": [
+        "investigation"
+      ],
+      "latencyMs": 217,
+      "choice": "investigation",
+      "confidence": 1
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-270-3--superseded-voyager-interstellar",
+      "turnId": "turn-muhju35w-1",
+      "callId": "call_2c0a83d7b43847618a986d0b",
+      "options": 24,
+      "optionsBeforeCut": 24,
+      "stateChars": 3878,
+      "modelPicks": [
+        "p4",
+        "p5"
+      ],
+      "latencyMs": 221,
+      "choice": "p5",
+      "confidence": 0.7,
+      "noul": 0.82
+    },
+    {
+      "seam": "passage",
+      "capture": "fix-270-3--superseded-voyager-interstellar",
+      "turnId": "turn-muhju35w-1",
+      "callId": "call_3d1fce42b1f246449e351683",
+      "options": 24,
+      "optionsBeforeCut": 24,
+      "stateChars": 8682,
+      "modelPicks": [
+        "p5",
+        "p9",
+        "p11"
+      ],
+      "latencyMs": 234,
+      "choice": "p11",
+      "confidence": 0.69,
+      "noul": 0.96
+    },
+    {
+      "seam": "result",
+      "capture": "fix-270-3--superseded-voyager-interstellar",
+      "turnId": "turn-muhju35w-1",
+      "callId": "call_bb14bc9566394784869b3a48",
+      "options": 4,
+      "optionsBeforeCut": 4,
+      "stateChars": 1717,
+      "modelPicks": [],
+      "latencyMs": 212,
+      "choice": "r7",
+      "confidence": 0.27,
+      "noul": 0.1
+    },
+    {
+      "seam": "result",
+      "capture": "fix-270-3--superseded-voyager-interstellar",
+      "turnId": "turn-muhju35w-1",
+      "callId": "call_74ecd59754434294b739ffdd",
+      "options": 4,
+      "optionsBeforeCut": 4,
+      "stateChars": 2315,
+      "modelPicks": [],
+      "latencyMs": 235,
+      "choice": "r6",
+      "confidence": 0.77,
+      "noul": 0.83
+    },
+    {
+      "seam": "result",
+      "capture": "fix-270-3--superseded-voyager-interstellar",
+      "turnId": "turn-muhju35w-1",
+      "callId": "call_39348d864fa3458e9a532b65",
+      "options": 2,
+      "optionsBeforeCut": 2,
+      "stateChars": 1743,
+      "modelPicks": [],
+      "latencyMs": 255,
+      "choice": "r20",
+      "confidence": 0.65,
+      "noul": 0.65
+    },
+    {
+      "seam": "result",
+      "capture": "fix-270-3--superseded-voyager-interstellar",
+      "turnId": "turn-muhju35w-1",
+      "callId": "call_bac53efeec6749d881d9c44a",
+      "options": 4,
+      "optionsBeforeCut": 4,
+      "stateChars": 2324,
+      "modelPicks": [
+        "r10"
+      ],
+      "latencyMs": 221,
+      "choice": "r10",
+      "confidence": 0.9,
+      "noul": 0.85
+    },
+    {
+      "seam": "result",
+      "capture": "fix-270-3--superseded-voyager-interstellar",
+      "turnId": "turn-muhju35w-1",
+      "callId": "call_5781075ed93b4744985087d4",
+      "options": 4,
+      "optionsBeforeCut": 4,
+      "stateChars": 2369,
+      "modelPicks": [],
+      "latencyMs": 254,
+      "choice": "r6",
+      "confidence": 0.36,
+      "noul": 0.85
+    },
+    {
+      "seam": "result",
+      "capture": "fix-270-3--superseded-voyager-interstellar",
+      "turnId": "turn-muhju35w-1",
+      "callId": "call_99dce6034c7f444fbe737f60",
+      "options": 3,
+      "optionsBeforeCut": 3,
+      "stateChars": 2043,
+      "modelPicks": [
+        "r20"
+      ],
+      "latencyMs": 219,
+      "choice": "r20",
+      "confidence": 0.79,
+      "noul": 0.87
+    },
+    {
+      "seam": "result",
+      "capture": "fix-270-3--superseded-voyager-interstellar",
+      "turnId": "turn-muhju35w-1",
+      "callId": "call_144dce3edd904b7bb077e997",
+      "options": 4,
+      "optionsBeforeCut": 4,
+      "stateChars": 2060,
+      "modelPicks": [],
+      "latencyMs": 229,
+      "choice": "r1",
+      "confidence": 0.82,
+      "noul": 0.11
+    }
+  ]
+}

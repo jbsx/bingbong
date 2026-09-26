@@ -2,8 +2,8 @@
 // role. Everything is config (environment); no model id or provider is baked
 // into code, so swapping providers is a config change.
 
-import { REASONING_EFFORTS, type ReasoningEffort } from '../ports/llm'
-import { reportFault } from '../trace/fault'
+import { REASONING_EFFORTS, type ReasoningEffort } from '../ports/llm.ts'
+import { reportFault } from '../trace/fault.ts'
 
 export type AgentRole = 'orchestrator' | 'subagent' | 'vision'
 
@@ -108,6 +108,87 @@ export function resolveRoutingStatus(env: Record<string, string | undefined>): R
     subagent: roleConfigured(env, 'subagent'),
     vision: roleConfigured(env, 'vision'),
   }
+}
+
+// The decision role (#275, ADR 0068): a Decision Model answering a Run's
+// typed questions inside a round. It is not an AgentRole — it serves no
+// loop, holds no settings row and never reaches `set_setting` — so it
+// resolves beside the three rather than among them. Unlike them it has
+// defaults for everything but its key: the key alone is the arm marker,
+// and a missing one is not a fault but today's behaviour.
+
+const DECISION_ENV_PREFIX = 'BINGBONG_DECISION'
+const DECISION_DEFAULT_BASE_URL = 'https://api.typesafe.ai'
+/** Pinned, never `jev-latest`: thresholds are tuned per model version. */
+const DECISION_DEFAULT_MODEL = 'jev-1.13.0'
+const DECISION_DEFAULT_KEY_ENV = 'TYPESAFE_API_KEY'
+const DECISION_SEAMS_ENV_KEY = `${DECISION_ENV_PREFIX}_SEAMS`
+
+/** The scripted stand-in's hook: set, it serves the role and no request leaves the machine. */
+export const DECISION_SCRIPT_ENV_KEY = `${DECISION_ENV_PREFIX}_SCRIPT`
+
+/** The seams a Decision Model can serve: a Selected Passage (#276), a Result Pick (#277), the Effort Tier (#278). */
+export type DecisionSeam = 'passage' | 'result' | 'tier'
+export const DECISION_SEAMS = ['passage', 'result', 'tier'] as const satisfies readonly DecisionSeam[]
+
+/** Whether the decision role resolved, and to what; never thrown, since unconfigured is a valid arm. */
+export type DecisionRouting =
+  | { readonly configured: true; readonly endpoint: ModelEndpointConfig }
+  | { readonly configured: false; readonly reason: string }
+
+/** Every env var that configures the decision role — what a hermetic harness unsets. */
+export function decisionEnvKeys(): string[] {
+  return [
+    `${DECISION_ENV_PREFIX}_BASE_URL`,
+    `${DECISION_ENV_PREFIX}_MODEL`,
+    `${DECISION_ENV_PREFIX}_API_KEY`,
+    `${DECISION_ENV_PREFIX}_API_KEY_ENV`,
+    DECISION_DEFAULT_KEY_ENV,
+    DECISION_SEAMS_ENV_KEY,
+  ]
+}
+
+/**
+ * Resolve the decision role: the key by the other roles' precedence
+ * (explicit, then the named key env, then `TYPESAFE_API_KEY`), the base URL
+ * and model by override or default.
+ */
+export function resolveDecisionRouting(env: Record<string, string | undefined>): DecisionRouting {
+  const explicitKey = readEnv(env, `${DECISION_ENV_PREFIX}_API_KEY`)
+  const keyEnvName = readEnv(env, `${DECISION_ENV_PREFIX}_API_KEY_ENV`)
+  const namedKey = keyEnvName ? readEnv(env, keyEnvName) : undefined
+  // A named key env that is unset never falls back to the default key.
+  const apiKey = explicitKey ?? namedKey ?? (keyEnvName ? undefined : readEnv(env, DECISION_DEFAULT_KEY_ENV))
+  if (!apiKey) {
+    const hint =
+      keyEnvName && !namedKey
+        ? `${keyEnvName} is not set`
+        : `set ${DECISION_ENV_PREFIX}_API_KEY, ${DECISION_ENV_PREFIX}_API_KEY_ENV or ${DECISION_DEFAULT_KEY_ENV}`
+    return { configured: false, reason: `no key: ${hint}` }
+  }
+  return {
+    configured: true,
+    endpoint: {
+      baseUrl: readEnv(env, `${DECISION_ENV_PREFIX}_BASE_URL`) ?? DECISION_DEFAULT_BASE_URL,
+      model: readEnv(env, `${DECISION_ENV_PREFIX}_MODEL`) ?? DECISION_DEFAULT_MODEL,
+      apiKey,
+    },
+  }
+}
+
+/**
+ * The seams that act: none when the role is neither configured nor
+ * scripted, otherwise every seam unless `BINGBONG_DECISION_SEAMS` lists
+ * some. An unknown name is dropped rather than failing a Run over a typo
+ * in an experiment variable.
+ */
+export function resolveDecisionSeams(env: Record<string, string | undefined>): ReadonlySet<DecisionSeam> {
+  const served = readEnv(env, DECISION_SCRIPT_ENV_KEY) !== undefined || resolveDecisionRouting(env).configured
+  if (!served) return new Set()
+  const listed = readEnv(env, DECISION_SEAMS_ENV_KEY)
+  if (listed === undefined) return new Set(DECISION_SEAMS)
+  const names = listed.split(',').map((name) => name.trim().toLowerCase())
+  return new Set(DECISION_SEAMS.filter((seam) => names.includes(seam)))
 }
 
 /**

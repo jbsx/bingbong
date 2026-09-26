@@ -22,7 +22,8 @@ import type { TierEscalationDecline } from '../pipeline/effortEpoch'
 import type { UnseenPhraseRewriteStamp } from '../pipeline/unseenPhraseRail'
 import type { EngineRewriteStamp } from '../pipeline/engineRewriteRail'
 import type { AnswerShape } from '../agent/answerContract'
-import type { AgentRole } from '../agent/modelRouting'
+import type { AgentRole, DecisionSeam } from '../agent/modelRouting'
+import type { DecisionAnswer, DecisionThresholds, DecisionUnavailableReason } from '../ports/decisionModel'
 import type { ReasoningEffort, TokenUsage } from '../ports/llm'
 import type { ObservationProducer } from '../session/observationLedger'
 import type { FinalizationCause } from '../session/runJournal'
@@ -522,8 +523,47 @@ export interface FinalizationEntryEvent {
   readonly declined?: TierEscalationDecline
 }
 
+/**
+ * What a seam did with its Decision Model's answer (#275, ADR 0068):
+ * `acted` — every answer cleared its threshold and the seam acted;
+ * `under_threshold` — answered, but not clearly enough, so the round
+ * proceeded as before; `unavailable` — no answer came back; `shadow` — the
+ * seam asks and records but never acts, however clear the answer.
+ */
+export type DecisionActed = 'acted' | 'under_threshold' | 'unavailable' | 'shadow'
+
+/**
+ * One question put to the Decision Model (#275, ADR 0068), written beside
+ * the `llm_round` records of the round it was asked in. The state itself
+ * is never here — it is the observation the ledger already holds, and a
+ * Page Read's text rides the `tool_result` record — only its size.
+ */
+export interface DecisionEvent {
+  readonly kind: 'decision'
+  readonly seam: DecisionSeam
+  /** The LLM round the question was asked in, numbered as `llm_round` numbers it. */
+  readonly round: number
+  /** The question keys asked, in the order they were asked. */
+  readonly questions: readonly string[]
+  /** The answers by question key; absent when none came back. */
+  readonly answers?: Readonly<Record<string, DecisionAnswer>>
+  readonly latencyMs: number
+  /** The thresholds the answers were judged against. */
+  readonly threshold: DecisionThresholds
+  readonly acted: DecisionActed
+  /** The versioned model id that answered, or the one asked when none did. */
+  readonly model: string
+  /** The state's size in characters. */
+  readonly stateChars: number
+  /** Why no answer came back, on an `unavailable` record only. */
+  readonly unavailable?: { readonly reason: DecisionUnavailableReason; readonly message: string; readonly httpStatus?: number }
+  /** The Browse Subagent whose round asked; absent on the Run's own. */
+  readonly agentId?: string
+}
+
 /** One decision a Run traces, whatever kind it is. */
 export type RunTraceEventBody =
+  | DecisionEvent
   | FinalizationEntryEvent
   | EvidenceCheckpointEvent
   | ReasoningEvent

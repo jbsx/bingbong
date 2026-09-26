@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { CdpClient } from './cdpClient'
-import { AGENT_ROLES, REASONING_EFFORT_ENV_KEY, routingEnvKeys } from '../src/core/agent/modelRouting'
+import { AGENT_ROLES, decisionEnvKeys, REASONING_EFFORT_ENV_KEY, routingEnvKeys } from '../src/core/agent/modelRouting'
 import { launchApp, pickFreeDebugPort, type LaunchedApp } from './electronApp'
 import { startFixtureServer, type FixtureServer } from './fixtureServer'
 import { promptBarScript, urlBarNavigationScript } from './scripts'
@@ -106,9 +106,11 @@ const repoRoot = fileURLToPath(new URL('..', import.meta.url))
 
 // E2e must never inherit the developer's real model routing (a sourced
 // shell, an exported key): every routing env var is unset by default, so
-// tests that need routing declare it — hermetic and credential-free.
+// tests that need routing declare it — hermetic and credential-free. The
+// decision role (#275) is unset with them: its only required piece is a
+// key, so an exported TYPESAFE_API_KEY alone would otherwise switch it on.
 const ROUTING_ENV_UNSET: Record<string, undefined> = Object.fromEntries(
-  AGENT_ROLES.flatMap((role) => routingEnvKeys(role).map((key) => [key, undefined])),
+  [...AGENT_ROLES.flatMap((role) => routingEnvKeys(role)), ...decisionEnvKeys()].map((key) => [key, undefined]),
 )
 
 // targetInfo.url goes stale after navigations; the predicates only rely on

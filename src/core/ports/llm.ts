@@ -10,7 +10,7 @@ import type { AnswerShape } from '../agent/answerContract'
 import type { AskedItemStanding } from '../agent/askedItems'
 import type { SubagentReportFinding } from '../agent/subagentReport'
 import type { MishearProposal } from '../voice/learnedTerms'
-import { toErrorMessage } from '../errors'
+import { toErrorMessage } from '../errors.ts'
 
 export interface ToolCall {
   id: string

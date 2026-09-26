@@ -1,5 +1,5 @@
 import type { RunId, SessionId } from './sessionIdentity'
-import { reportFault } from '../trace/fault'
+import { reportFault } from '../trace/fault.ts'
 
 declare const memoryEntryIdBrand: unique symbol
 

@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
+  DECISION_SCRIPT_ENV_KEY,
+  DECISION_SEAMS,
+  decisionEnvKeys,
   REASONING_EFFORT_ENV_KEY,
+  resolveDecisionRouting,
+  resolveDecisionSeams,
   resolveModelEndpoint,
   resolveReasoningEffortOverride,
   resolveRoutingStatus,
@@ -129,5 +134,66 @@ describe('reasoning effort override (#166)', () => {
     expect(resolveReasoningEffortOverride({})).toBeUndefined()
     expect(resolveReasoningEffortOverride({ [REASONING_EFFORT_ENV_KEY]: '   ' })).toBeUndefined()
     expect(resolveReasoningEffortOverride({ [REASONING_EFFORT_ENV_KEY]: 'ultra' })).toBeUndefined()
+  })
+})
+
+describe('the decision role (#275, ADR 0068)', () => {
+  it('resolves Jev from its key alone: base URL, pinned model and key env all default', () => {
+    expect(resolveDecisionRouting({ TYPESAFE_API_KEY: 'ts-secret' })).toEqual({
+      configured: true,
+      endpoint: { baseUrl: 'https://api.typesafe.ai', model: 'jev-1.13.0', apiKey: 'ts-secret' },
+    })
+  })
+
+  it('takes every BINGBONG_DECISION_* override the other roles take', () => {
+    expect(
+      resolveDecisionRouting({
+        BINGBONG_DECISION_BASE_URL: 'https://jev.example',
+        BINGBONG_DECISION_MODEL: 'jev-1.14.0',
+        BINGBONG_DECISION_API_KEY_ENV: 'OTHER_KEY',
+        OTHER_KEY: 'other-secret',
+        TYPESAFE_API_KEY: 'ts-secret',
+      }),
+    ).toEqual({ configured: true, endpoint: { baseUrl: 'https://jev.example', model: 'jev-1.14.0', apiKey: 'other-secret' } })
+    expect(resolveDecisionRouting({ BINGBONG_DECISION_API_KEY: 'explicit', TYPESAFE_API_KEY: 'ts-secret' })).toMatchObject({
+      endpoint: { apiKey: 'explicit' },
+    })
+  })
+
+  it('is unconfigured, never throwing, when no key resolves — every seam is then off', () => {
+    expect(resolveDecisionRouting({})).toEqual({
+      configured: false,
+      reason: 'no key: set BINGBONG_DECISION_API_KEY, BINGBONG_DECISION_API_KEY_ENV or TYPESAFE_API_KEY',
+    })
+    // A named key env that is unset does not fall back to the default key.
+    expect(resolveDecisionRouting({ BINGBONG_DECISION_API_KEY_ENV: 'MISSING', TYPESAFE_API_KEY: 'ts-secret' })).toEqual({
+      configured: false,
+      reason: 'no key: MISSING is not set',
+    })
+    expect(resolveDecisionSeams({})).toEqual(new Set())
+    expect(resolveDecisionSeams({ BINGBONG_DECISION_SEAMS: 'passage' })).toEqual(new Set())
+  })
+
+  it('acts on every seam by default, and on the listed ones when BINGBONG_DECISION_SEAMS names them', () => {
+    const key = { TYPESAFE_API_KEY: 'ts-secret' }
+    expect(resolveDecisionSeams(key)).toEqual(new Set(DECISION_SEAMS))
+    expect(resolveDecisionSeams({ ...key, BINGBONG_DECISION_SEAMS: ' Passage, tier ' })).toEqual(new Set(['passage', 'tier']))
+    // An unknown name is dropped rather than failing a Run over a typo in an experiment variable.
+    expect(resolveDecisionSeams({ ...key, BINGBONG_DECISION_SEAMS: 'result,rsult' })).toEqual(new Set(['result']))
+  })
+
+  it('counts the scripted stand-in as a configured role', () => {
+    expect(resolveDecisionSeams({ [DECISION_SCRIPT_ENV_KEY]: '[]' })).toEqual(new Set(DECISION_SEAMS))
+  })
+
+  it('lists every env var that configures it, so a hermetic harness can unset them', () => {
+    expect(decisionEnvKeys()).toEqual([
+      'BINGBONG_DECISION_BASE_URL',
+      'BINGBONG_DECISION_MODEL',
+      'BINGBONG_DECISION_API_KEY',
+      'BINGBONG_DECISION_API_KEY_ENV',
+      'TYPESAFE_API_KEY',
+      'BINGBONG_DECISION_SEAMS',
+    ])
   })
 })

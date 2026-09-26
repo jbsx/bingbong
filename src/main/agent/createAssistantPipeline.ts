@@ -39,6 +39,7 @@ import { ScriptedLlm, silentTts, UnavailableLlm } from '../../core/testing/doubl
 import { createOpenAiLlmClient } from './openAiLlmClient'
 import { orchestratorSystemPrompt } from './orchestratorPrompt'
 import { createZaiVisionApi } from '../vision/createZaiVisionApi'
+import { createDecisionModelSource } from '../decision/createDecisionModel'
 
 export interface AssistantPipelineDeps {
   /**
@@ -368,6 +369,9 @@ export function createAssistantPipeline(deps: AssistantPipelineDeps): CommandPip
   }
   const pipeline = createCommandPipeline({
     llm: createDynamicLlm(getEnv, fetchFn, tools, clock, deps.onLlmUsage, deps.tracer, deps.getLearnedTerms),
+    // The Decision Model (#275, ADR 0068): read per Run from the same env the
+    // LLM routes from; null — every seam off — until the role is configured.
+    decision: createDecisionModelSource(getEnv),
     tts: deps.tts ?? silentTts,
     clock,
     tools,
