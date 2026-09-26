@@ -97,6 +97,24 @@ drifted far enough below `corpusOfRecordSize` that the comparison no
 longer says much. A decision is refused outright only when the two sides
 share no scenario, or when their shared ids run in a different order.
 
+### The Decision Model arms are compared by `eval:compare`, not `eval:accept`
+
+The #274 experiment's arms are two candidates of one commit that differ only
+in whether the `decision` role is configured, and `eval:accept` only ever
+compares a candidate with the pinned baseline. Capture three passes per arm
+into their own directories — the on arm with the repo `.env`'s
+`TYPESAFE_API_KEY`, the off arm with `TYPESAFE_API_KEY=
+BINGBONG_DECISION_API_KEY=` exported empty (an exported empty value wins over
+the file) — then `pnpm eval:compare --a=<off dir> --b=<on dir>`. It refuses
+unequal pools, two commits, and arms that differ in anything but the
+decision role and `BINGBONG_DECISION_SEAMS` (set empty means no seam acts;
+unset means all). A Run's tier there is the corpus's declaration, never the
+model's, because the tier seam is under test. Agreement is not derivable
+from an eval capture — a Decision Record carries no model pick — so it comes
+from `pnpm decision:shadow` over retained traces. The live arms pool with
+`pnpm live:summary`/`live:audit --allow-differs=routing`; every other fixed
+field is still refused.
+
 ### Delegation is measured by its own probe, not by the release corpus
 
 `pnpm test:delegation` (Xvfb-wrapped, real model budget, opt-in) runs the
