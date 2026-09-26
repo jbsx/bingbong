@@ -4,7 +4,7 @@ import type { FinalizationCause, RunResolution } from '../../src/core/session/ru
 import type { EffortTier } from '../../src/core/pipeline/runPlan'
 import type { DecisionActed, DecisionEvent } from '../../src/core/trace/runTrace'
 import type { DecisionSeam } from '../../src/core/agent/modelRouting'
-import { nearestRankPercentile } from '../../src/core/report/stats'
+import { nearestRankPercentile } from '../../src/core/report/stats.ts'
 
 // Per-scenario measurement (#109) over the two machine-readable surfaces
 // the app already produces: the pipeline event stream (taped in the

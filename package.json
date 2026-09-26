@@ -18,6 +18,7 @@
     "test:live": "pnpm build && xvfb-run -a -s '-screen 0 1280x800x24' vitest run --config vitest.live.config.ts",
     "live:preflight": "pnpm build && xvfb-run -a -s '-screen 0 1280x800x24' vitest run --config vitest.preflight.config.ts",
     "eval:accept": "node scripts/eval-acceptance.ts",
+    "eval:compare": "node scripts/eval-compare.ts",
     "decision:shadow": "node scripts/decision-shadow.ts",
     "delegation:summary": "node scripts/delegation-summary.ts",
     "test:watch": "vitest",

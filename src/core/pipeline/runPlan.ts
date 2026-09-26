@@ -7,7 +7,7 @@
 // keeps the Command Echo as the Peek Card's title.
 
 import type { ToolCall } from '../ports/llm'
-import { MAX_ASKED_ITEM_CHARS, MAX_ASKED_ITEMS, quoteAskedItems, sameAskedItems } from '../agent/askedItems'
+import { MAX_ASKED_ITEM_CHARS, MAX_ASKED_ITEMS, quoteAskedItems, sameAskedItems } from '../agent/askedItems.ts'
 
 /** The bounded classes of autonomous work a Run may spend (glossary). */
 export type EffortTier = 'direct_action' | 'lookup' | 'investigation'
