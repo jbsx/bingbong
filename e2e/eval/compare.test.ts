@@ -173,6 +173,24 @@ describe('comparePools', () => {
     expect(vetoed.gate[1]!.passed).toBe(false)
   })
 
+  it('vetoes on deterministic Answers of Direct Action and Lookup Runs only; Investigation is reported', () => {
+    const investigationFallback = onArm()
+    const report = investigationFallback.reports[0]!
+    const investigation = report.scenarios[2]!
+    const fallback = { ...investigation.metrics, deterministicAnswer: true }
+    report.scenarios[2] = { ...investigation, metrics: fallback, runs: [fallback] }
+    const reported = comparePools(offArm(), investigationFallback, AT)
+    expect(reported.deterministicAnswers.gated.b).toEqual({ count: 0, runs: 6 })
+    expect(reported.deterministicAnswers.all.b).toEqual({ count: 1, runs: 9 })
+    expect(reported.gate[2]!.passed).toBe(true)
+
+    const lookupFallback = onArm()
+    const lookup = lookupFallback.reports[0]!.scenarios[1]!
+    const lookupRun = { ...lookup.metrics, deterministicAnswer: true }
+    lookupFallback.reports[0]!.scenarios[1] = { ...lookup, metrics: lookupRun, runs: [lookupRun] }
+    expect(comparePools(offArm(), lookupFallback, AT).gate[2]!.passed).toBe(false)
+  })
+
   it('pools the Decision Records per seam and says agreement is not derivable here', () => {
     expect(comparison.decisions.b).toMatchObject({
       runs: 9,

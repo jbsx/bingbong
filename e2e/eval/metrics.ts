@@ -337,6 +337,7 @@ export function combineRuns(runs: readonly ScenarioMetrics[]): ScenarioMetrics {
   const elapsed = runs.map((run) => run.elapsedMs)
   const llmRounds = sum((metrics) => metrics.llmRounds)
   const elapsedMs = elapsed.every((value) => value !== null) ? sum((metrics) => metrics.elapsedMs ?? 0) : null
+  const decisions = mergeDecisionRecords(runs.map((metrics) => metrics.decisions))
   return {
     llmRounds,
     attemptedTools: sum((metrics) => metrics.attemptedTools),
@@ -360,7 +361,7 @@ export function combineRuns(runs: readonly ScenarioMetrics[]): ScenarioMetrics {
     // work (#162): every run's breakdown adds into the scenario's.
     subagentFinalizations: mergeStopCounts(runs.map((metrics) => metrics.subagentFinalizations)),
     subagentBoundedReports: runs.reduce((total, metrics) => total + (metrics.subagentBoundedReports ?? 0), 0),
-    ...(mergeDecisionRecords(runs.map((metrics) => metrics.decisions)) === undefined ? {} : { decisions: mergeDecisionRecords(runs.map((metrics) => metrics.decisions))! }),
+    ...(decisions === undefined ? {} : { decisions }),
     actions: runs.flatMap((metrics) => metrics.actions),
     answerText: final.answerText,
     timedOut: runs.some((metrics) => metrics.timedOut),

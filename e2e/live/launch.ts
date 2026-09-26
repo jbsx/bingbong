@@ -32,7 +32,7 @@ import { resolveEnvFilePath } from '../../src/main/envFile'
 import { HOST_TRACE_ENV, RUN_TRACE_ENV } from '../../src/core/trace/traceFlags'
 import { MEASUREMENT_ACCESS_GUARD_ENV } from '../../src/core/browser/measurementAccessGuard'
 import { browserSubspansEnabled } from '../../src/core/perf/browserSubspans'
-import { resolveProductionRouting, type ProductionRouting } from '../eval/routing'
+import { resolveProductionRouting, type ProductionRouting, type RoutedRole } from '../eval/routing'
 import type { FixtureServer } from '../fixtureServer'
 import { hermeticEnvTemplate } from '../harness'
 import { digestOf } from './artifacts.ts'
@@ -309,8 +309,8 @@ export function composeVerificationLaunch(input: VerificationLaunchInput): Compo
   }
 }
 
-function scriptedFor(role: AgentRole | 'decision', hooks: readonly string[]): string {
-  const own: Record<AgentRole | 'decision', readonly string[]> = {
+function scriptedFor(role: RoutedRole, hooks: readonly string[]): string {
+  const own: Record<RoutedRole, readonly string[]> = {
     orchestrator: ['BINGBONG_LLM_SCRIPT'],
     subagent: ['BINGBONG_SUBAGENT_LLM_SCRIPT'],
     vision: ['BINGBONG_VISION_SCRIPT', 'BINGBONG_VISION_DESCRIPTION_SCRIPT'],

@@ -1,6 +1,7 @@
 import { nearestRankPercentile } from '../../src/core/report/stats.ts'
 import type { EffortTier } from '../../src/core/pipeline/runPlan.ts'
-import { buildPool, POOL_SIZE, type CaptureProvenance, type CapturePool } from './acceptance.ts'
+import { decisionSeamsLabel } from '../live/launchRouting.ts'
+import { buildPool, canonicalJson, POOL_SIZE, type CaptureProvenance, type CapturePool } from './acceptance.ts'
 import type { EvalReport, ScenarioResult } from './evaluator'
 import { aggregateDecisions, type DecisionAggregate, type ScenarioMetrics } from './metrics.ts'
 import type { RoleRouting } from './routing'
@@ -84,10 +85,20 @@ export interface Comparison {
   onArm: Arm | null
   /** Command-to-Answer milliseconds per Run, per corpus-declared tier and over the gated tiers together. */
   commandToAnswerMs: { perTier: Record<EffortTier, Record<Arm, PooledStat>>; gated: Record<Arm, PooledStat> }
-  /** Scenario successes per corpus-declared tier and over the gated tiers together. */
+  /**
+   * Scenario successes per corpus-declared tier and over the gated tiers
+   * together. A scenario counts under its initial tier while each of its
+   * Runs is timed under its own; every follow-up in the corpus declares its
+   * initial tier today, so the two populations coincide.
+   */
   successes: { perTier: Record<EffortTier, Record<Arm, { succeeded: number; scenarios: number }>>; gated: Record<Arm, { succeeded: number; scenarios: number }> }
-  /** Runs whose Answer was the deterministic fallback, over every compared Run. */
-  deterministicAnswers: Record<Arm, { count: number; runs: number }>
+  /**
+   * Runs whose Answer was the deterministic fallback: over the gated tiers'
+   * Runs, which the veto judges ("on Direct Action and Lookup" scopes both of
+   * gate 2's clauses, as Investigation is never gated), and over every
+   * compared Run, reported.
+   */
+  deterministicAnswers: { gated: Record<Arm, { count: number; runs: number }>; all: Record<Arm, { count: number; runs: number }> }
   /** LLM rounds per Run, per corpus-declared tier. */
   roundsPerRun: Record<EffortTier, Record<Arm, PooledStat>>
   /** Decision Records pooled over each side's compared Runs; null when its captures predate #279. */
@@ -122,15 +133,6 @@ function statOf(values: readonly (number | null)[]): PooledStat {
 function declaredRunTiers(scenario: EvalScenario): EffortTier[] {
   const effort = scenario.expectedEffort
   return scenario.followUp === undefined ? [effort.tier] : [effort.tier, effort.followUpTier ?? effort.tier]
-}
-
-function canonicalJson(value: unknown): string {
-  if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'null'
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`
-  const entries = Object.entries(value as Record<string, unknown>)
-    .filter(([, entry]) => entry !== undefined)
-    .sort(([left], [right]) => (left < right ? -1 : 1))
-  return `{${entries.map(([key, entry]) => `${JSON.stringify(key)}:${canonicalJson(entry)}`).join(',')}}`
 }
 
 /** The routing a side holds fixed against the other: every role but the decision role. */
@@ -219,7 +221,11 @@ export function comparePools(
     perTier: perTier((tier) => perArm((arm) => successCount(scenarios[arm].filter((scenario) => scenarioTier(scenario) === tier)))),
     gated: perArm((arm) => successCount(scenarios[arm].filter((scenario) => GATED_TIERS.has(scenarioTier(scenario))))),
   }
-  const deterministicAnswers = perArm((arm) => ({ count: runs[arm].filter((run) => run.metrics.deterministicAnswer).length, runs: runs[arm].length }))
+  const fallbackCount = (list: readonly TieredRun[]) => ({ count: list.filter((run) => run.metrics.deterministicAnswer).length, runs: list.length })
+  const deterministicAnswers: Comparison['deterministicAnswers'] = {
+    gated: perArm((arm) => fallbackCount(runs[arm].filter((run) => GATED_TIERS.has(run.tier)))),
+    all: perArm((arm) => fallbackCount(runs[arm])),
+  }
   const roundsPerRun = perTier((tier) => perArm((arm) => statOf(runs[arm].filter((run) => run.tier === tier).map((run) => run.metrics.llmRounds))))
   const decisions = perArm((arm) => {
     const measured = runs[arm].map((run) => run.metrics)
@@ -269,7 +275,8 @@ function gateLines(input: Pick<Comparison, 'onArm' | 'commandToAnswerMs' | 'succ
   const sides = (describe: (arm: Arm) => string): string => (onArm === null ? `a ${describe('a')}, b ${describe('b')}` : `on (${onArm}) ${describe(onArm)}, off (${off}) ${describe(off!)}`)
   const time = input.commandToAnswerMs.gated
   const wins = input.successes.gated
-  const fallbacks = input.deterministicAnswers
+  const fallbacks = input.deterministicAnswers.gated
+  const allFallbacks = input.deterministicAnswers.all
   const ms = (stat: PooledStat): string => (stat.median === null ? 'none' : `${stat.median} ms`)
   return [
     {
@@ -285,10 +292,10 @@ function gateLines(input: Pick<Comparison, 'onArm' | 'commandToAnswerMs' | 'succ
       detail: sides((arm) => `${wins[arm].succeeded}/${wins[arm].scenarios}`),
     },
     {
-      name: 'correctness veto: deterministicAnswer count not higher on than off',
+      name: 'correctness veto: deterministicAnswer count on DA+Lookup Runs not higher on than off',
       gated: true,
       passed: judged((on, offArm) => fallbacks[on].count <= fallbacks[offArm].count),
-      detail: sides((arm) => `${fallbacks[arm].count} of ${fallbacks[arm].runs} Run(s)`),
+      detail: `${sides((arm) => `${fallbacks[arm].count} of ${fallbacks[arm].runs} Run(s)`)}; over every Run (reported) ${sides((arm) => `${allFallbacks[arm].count} of ${allFallbacks[arm].runs}`)}`,
     },
     { name: 'reported: rounds per Run per tier', gated: false, passed: null, detail: 'see the rounds table' },
     { name: 'reported: Decision Records per Run', gated: false, passed: null, detail: 'see the Decision Records table' },
@@ -318,7 +325,7 @@ export function formatComparison(comparison: Comparison): string {
   lines.push('')
   for (const arm of ['a', 'b'] as const) {
     const witness = comparison.arms[arm]
-    const seams = witness.decisionSeams === 'not recorded' ? 'not recorded' : witness.decisionSeams === null ? 'unset (every seam)' : witness.decisionSeams === '' ? 'empty (no seam acts)' : witness.decisionSeams
+    const seams = witness.decisionSeams === 'not recorded' ? 'not recorded' : decisionSeamsLabel(witness.decisionSeams)
     lines.push(`- ${armLabel(comparison, arm)}; seams ${seams}; ${witness.comparedObservations} of ${witness.scenarioObservations} scenario observations compared; from ${witness.source}`)
   }
   if (comparison.onArm === null) lines.push('- no gate verdict: both or neither side configure the decision role, so on and off cannot be told apart')
@@ -344,7 +351,9 @@ export function formatComparison(comparison: Comparison): string {
   lines.push('| tier | a | b |')
   lines.push('| --- | --- | --- |')
   for (const tier of TIERS) lines.push(`| ${TIER_LABELS[tier]} | ${comparison.successes.perTier[tier].a.succeeded}/${comparison.successes.perTier[tier].a.scenarios} | ${comparison.successes.perTier[tier].b.succeeded}/${comparison.successes.perTier[tier].b.scenarios} |`)
-  lines.push(`| deterministicAnswer Runs | ${comparison.deterministicAnswers.a.count}/${comparison.deterministicAnswers.a.runs} | ${comparison.deterministicAnswers.b.count}/${comparison.deterministicAnswers.b.runs} |`)
+  const fallbacks = comparison.deterministicAnswers
+  lines.push(`| deterministicAnswer Runs, DA+Lookup (gated) | ${fallbacks.gated.a.count}/${fallbacks.gated.a.runs} | ${fallbacks.gated.b.count}/${fallbacks.gated.b.runs} |`)
+  lines.push(`| deterministicAnswer Runs, every tier (reported) | ${fallbacks.all.a.count}/${fallbacks.all.a.runs} | ${fallbacks.all.b.count}/${fallbacks.all.b.runs} |`)
   lines.push('')
   lines.push('## Rounds per Run per tier (median / p95)')
   lines.push('')

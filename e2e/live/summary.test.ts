@@ -508,7 +508,7 @@ describe('refusals', () => {
     ['mode', { mode: 'smoke' }, 'mode differs: pass-1=measured, pass-2=measured, pass-3=smoke'],
     ['adblock', { adblock: 'none' }, 'adblock differs: pass-1=production_default, pass-2=production_default, pass-3=none'],
     ['reasoning-effort override', { reasoningEffortOverride: 'low' }, 'reasoning-effort override differs: pass-1=none, pass-2=none, pass-3=low'],
-    ['decision seams', { decisionSeams: 'tier' }, 'decision seams differs: pass-1=none, pass-2=none, pass-3=tier'],
+    ['decision seams', { decisionSeams: 'tier' }, 'decision seams differs: pass-1=unset (every seam), pass-2=unset (every seam), pass-3=tier'],
     ['effort overrides', { effortOverrides: ['subagent=high'] }, 'effort overrides differs: pass-1=none, pass-2=none, pass-3=subagent=high'],
     ['browser sub-spans', { browserSubspans: true }, 'browser sub-spans differs: pass-1=off, pass-2=off, pass-3=on'],
   ] as const)('refuses a mixed %s and names the differing values', (_name, spec, message) => {

@@ -28,17 +28,22 @@ export function launchRoutingOf(launches: readonly Pick<LiveLaunchProvenance, 'r
 }
 
 /**
- * How a recorded seam list reads (#279): `none` when unset (every seam acts
- * when the role serves), `empty (no seam acts)` for the list set empty —
+ * How a recorded seam list reads (#279): `unset (every seam)` when unset
+ * (every seam acts when the role serves), `empty (no seam acts)` for the list set empty —
  * #275's off switch — and the list itself otherwise.
  */
 export function decisionSeamsLabel(value: string | null | undefined): string {
-  if (value === null || value === undefined) return 'none'
+  if (value === null || value === undefined) return 'unset (every seam)'
   return value === '' ? 'empty (no seam acts)' : value
 }
 
-/** The seam list the launches forwarded (#279): distinct values joined, or null when none forwarded one. */
+/**
+ * The seam list the launches forwarded (#279): null when none forwarded
+ * one, else the distinct values joined — an unset launch among set ones
+ * reads as `unset`, so a mixed set never passes for a uniform one.
+ */
 export function launchDecisionSeamsOf(launches: readonly Pick<LiveLaunchProvenance, 'decisionSeams'>[]): string | null {
-  const values = [...new Set(launches.map((launch) => launch.decisionSeams ?? null).filter((value): value is string => value !== null))].sort()
-  return values.length === 0 ? null : values.join(' | ')
+  const values = [...new Set(launches.map((launch) => launch.decisionSeams ?? null))]
+  if (values.every((value) => value === null)) return null
+  return values.map((value) => value ?? 'unset').sort().join(' | ')
 }

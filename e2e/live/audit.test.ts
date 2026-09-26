@@ -2197,7 +2197,7 @@ describe('a set and the aggregate', () => {
 
   it('refuses sets whose decision seam lists differ, reading an audit written before #279 as none (#279)', () => {
     const seams = buildAuditSet(provenanceOf({ setId: 'set-5', decisionSeams: 'passage,result', createdAt: '2026-09-12T21:00:00.000Z' }), [], [])
-    expect(buildAuditAggregate([setOne, seams], 'x')).toEqual({ ok: false, errors: ['decision seams differs: set-1=none, set-5=passage,result'] })
+    expect(buildAuditAggregate([setOne, seams], 'x')).toEqual({ ok: false, errors: ['decision seams differs: set-1=unset (every seam), set-5=passage,result'] })
     const pooled = buildAuditAggregate([seams, buildAuditSet(provenanceOf({ setId: 'set-6', decisionSeams: 'passage,result', createdAt: '2026-09-12T22:00:00.000Z' }), [], [])], 'x')
     if (!pooled.ok) throw new Error(pooled.errors.join('; '))
     expect(pooled.value.provenance.shared.decisionSeams).toBe('passage,result')
