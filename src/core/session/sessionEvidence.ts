@@ -275,6 +275,8 @@ export interface ObservationCheckpointInput {
   readonly subagentId?: string
   /** Event provenance for User Observations (#122); ignored for other kinds. */
   readonly originEvent?: UserObservationOrigin
+  /** A checkpoint the Run made itself from a Selected Passage (#276): kept on the provenance it adds. */
+  readonly origin?: 'run'
 }
 
 export interface CandidateInput {
@@ -573,7 +575,7 @@ function parseProvenance(runId: RunId, subagentId: string | undefined): MemoryPr
   return { runId, ...(agent ? { subagentId: agent } : {}) }
 }
 
-const provenanceKey = (source: MemoryProvenance): string => `${source.runId}:${source.subagentId ?? ''}`
+const provenanceKey = (source: MemoryProvenance): string => `${source.runId}:${source.subagentId ?? ''}:${source.origin ?? ''}`
 
 function appendProvenance(current: MemoryProvenance[], added: MemoryProvenance): MemoryProvenance[] {
   const merged = new Set(current.map(provenanceKey))
@@ -861,7 +863,8 @@ export function createSessionEvidence(deps: {
       const text = boundedString(input.text, MAX_MEMORY_DETAIL_CHARS)
       const uncertainty = boundedString(input.uncertainty, MAX_UNCERTAINTY_CHARS, true)
       const references = parseMemoryReferences(input.references)
-      const source = parseProvenance(input.runId, input.subagentId)
+      const parsed = parseProvenance(input.runId, input.subagentId)
+      const source = parsed !== null && input.origin === 'run' ? { ...parsed, origin: 'run' as const } : parsed
       const originEvent = validOriginEvent(input)
       if (!text || uncertainty === null || !references || !source || originEvent === 'invalid') return null
       const observedAt = input.observedAt ?? deps.now()

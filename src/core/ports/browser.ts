@@ -132,6 +132,13 @@ export interface BrowserController {
    * cap. Read after page-facing actions; null when the page cannot be read.
    */
   linkHrefs(): Promise<readonly string[] | null>
+  /**
+   * The page's text blocks off the freshest collected snapshot, in document
+   * order, as a Page Read renders them (#276, ADR 0069): what the Selected
+   * Passage seam chooses among. Read right after a landing or a Page Read;
+   * null when the page cannot be read.
+   */
+  pageTextBlocks(): Promise<readonly string[] | null>
 }
 
 /** Extra browser capability required only by visual grounding. */

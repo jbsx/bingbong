@@ -49,6 +49,8 @@ export interface MemoryReference {
 export interface MemoryProvenance {
   readonly runId: RunId
   readonly subagentId?: string
+  /** The Run made this checkpoint itself from a Selected Passage (#276, ADR 0069); absent when the model called for it. */
+  readonly origin?: 'run'
 }
 
 export interface MemoryEntry {

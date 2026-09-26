@@ -607,6 +607,16 @@ export interface AuditMechanical {
    * an audit written before the counter.
    */
   readonly resultPicks?: readonly number[]
+  /**
+   * The round of every Evidence Checkpoint the Run made itself from a
+   * Selected Passage and the store accepted (#276, ADR 0069), read from the
+   * trace's `origin`. Beside the rounds, never in them: the checkpoint rode
+   * a landing or a Page Read, so it made no round a bookkeeping one. Absent
+   * on an audit written before the counter.
+   */
+  readonly runMadeCheckpoints?: readonly number[]
+  /** The model's own record_evidence calls, accepted or refused (#276): what a Selected Passage spares it. */
+  readonly modelRecordEvidenceCalls?: number
   /** The round of every successful search whose listing reached the model with no result opened for it (#277). */
   readonly listingsReturned?: readonly number[]
   /**
@@ -849,6 +859,12 @@ export interface AuditPopulation {
   readonly searchesOpened?: number
   /** Rounds from a search to its opened result, summed over the opened ones, the search's own round counted (#277). */
   readonly roundsToOpened?: number
+  /** Run-made Evidence Checkpoints from a Selected Passage, over the attempts that count them (#276); absent when none does. */
+  readonly runMadeCheckpoints?: number
+  /** The model's own record_evidence calls over the same attempts (#276). */
+  readonly modelRecordEvidenceCalls?: number
+  /** Bookkeeping-only rounds over the same attempts (#276): the rounds a Selected Passage is meant to remove. */
+  readonly bookkeepingRoundsWherePassagesCounted?: number
   /** Answers with an Identity Slip over the attempts whose trace recorded them (#246). */
   readonly identitySlipAnswers: number
   /** Ids slipped in those Answers (#246). */
@@ -1520,7 +1536,8 @@ function rawRounds(records: readonly TraceLine[]): RawRound[] {
       // The trace writes tool_call, then evidence_checkpoint, then
       // tool_result: the checkpoint belongs to the latest call of its tool
       // in this round that has none yet.
-      if (current === null) continue
+      // A Run-made one (#276) belongs to no call: `selectedPassageCountsOf` counts it.
+      if (current === null || record.origin === 'run') continue
       const owner = [...current.calls].reverse().find((entry) => entry.call.name === record.tool && entry.checkpoint === undefined)
       if (owner !== undefined) owner.checkpoint = record
       continue
@@ -1744,6 +1761,28 @@ export function resultPickCountsOf(rounds: readonly AuditRound[]): Required<Pick
     }
   }
   return { resultPicks, listingsReturned, searchesToOpened: searches }
+}
+
+/**
+ * The Selected Passage counts over an attempt (#276, ADR 0069): the round of
+ * each Evidence Checkpoint the Run made and the store accepted — its trace
+ * record says `origin: run` and has no record_evidence call of its own to
+ * join, so it is read from the trace, numbered by the llm_round before it —
+ * and the model's own record_evidence calls, from the rounds.
+ */
+export function selectedPassageCountsOf(
+  traceRecords: readonly object[],
+  rounds: readonly AuditRound[],
+): Required<Pick<AuditMechanical, 'runMadeCheckpoints' | 'modelRecordEvidenceCalls'>> {
+  const runMadeCheckpoints: number[] = []
+  let round = 0
+  for (const raw of traceRecords as readonly Record<string, unknown>[]) {
+    if (raw.agentId !== undefined) continue
+    if (raw.kind === 'llm_round' && isFiniteNumber(raw.round)) round = raw.round
+    if (raw.kind === 'evidence_checkpoint' && raw.origin === 'run' && raw.outcome === 'accepted') runMadeCheckpoints.push(round)
+  }
+  const modelRecordEvidenceCalls = rounds.reduce((total, audited) => total + audited.calls.filter((call) => call.name === 'record_evidence').length, 0)
+  return { runMadeCheckpoints, modelRecordEvidenceCalls }
 }
 
 /**
@@ -2964,6 +3003,9 @@ export function classifyAttempt(input: AuditTraceInput): AuditMechanical {
     // Result Picks (#277, ADR 0070), beside the rounds: the picks, the
     // listings returned, and the round a result of each search opened in.
     ...resultPickCountsOf(rounds),
+    // Selected Passages (#276, ADR 0069), beside the rounds: the checkpoints
+    // the Run made, and the model's own record_evidence calls.
+    ...selectedPassageCountsOf(records, rounds),
     identitySlips,
     malformedAnswers: records.filter((record) => record.kind === 'malformed_answer').length,
     answerRetries: records.filter((record) => record.kind === 'answer_retry').length,
@@ -3449,6 +3491,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
   let engineRewrites = 0
   let engineRewritesOffKey = 0
   let resultPicks: { picks: number; listings: number; searches: number; opened: number; rounds: number } | undefined
+  let passages: { runMade: number; modelCalls: number; bookkeeping: number } | undefined
   let searchForms: Record<SearchUrlForm, number> | undefined
   let blockedOrInert: Record<keyof BlockedOrInertCounts, number> | undefined
   let unavailableLandings: Record<keyof UnavailableLandingRounds, number> | undefined
@@ -3522,6 +3565,12 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
         resultPicks.opened += 1
         resultPicks.rounds += search.openedRound - search.round + 1
       }
+    }
+    if (mechanical.runMadeCheckpoints !== undefined && mechanical.modelRecordEvidenceCalls !== undefined) {
+      passages ??= { runMade: 0, modelCalls: 0, bookkeeping: 0 }
+      passages.runMade += mechanical.runMadeCheckpoints.length
+      passages.modelCalls += mechanical.modelRecordEvidenceCalls
+      passages.bookkeeping += mechanical.counts.bookkeeping
     }
     if (mechanical.searchForms !== undefined) {
       searchForms ??= emptySearchForms()
@@ -3633,6 +3682,9 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
           searchesOpened: resultPicks.opened,
           roundsToOpened: resultPicks.rounds,
         }
+      : {}),
+    ...(passages !== undefined
+      ? { runMadeCheckpoints: passages.runMade, modelRecordEvidenceCalls: passages.modelCalls, bookkeepingRoundsWherePassagesCounted: passages.bookkeeping }
       : {}),
     identitySlipAnswers: slipAnswers,
     identitySlipIds: slipIds,
@@ -3941,11 +3993,17 @@ function populationResultPicksText(population: AuditPopulation): string {
   return `${population.resultPicks} Result Pick(s) against ${population.listingsReturned ?? 0} listing(s) returned to the model, ${mean} (${opened} of ${population.searchesCounted ?? 0} searches)`
 }
 
+/** A population's Selected Passages (#276): the Run's checkpoints against the model's own calls and the bookkeeping-only rounds. */
+function populationSelectedPassagesText(population: AuditPopulation): string {
+  if (population.runMadeCheckpoints === undefined) return 'Selected Passages not counted'
+  return `${population.runMadeCheckpoints} Run-made Evidence Checkpoint(s) from a Selected Passage against ${population.modelRecordEvidenceCalls ?? 0} record_evidence call(s) by the model and ${population.bookkeepingRoundsWherePassagesCounted ?? 0} bookkeeping-only round(s)`
+}
+
 function judgementLines(populations: readonly AuditPopulation[]): string[] {
   return populations.map(
     (population) =>
       `- ${population.label}: ${population.offKeyRounds} Off-key round(s), ${population.searchLoopRounds} Search Loop round(s) by the reviewer (${population.mechanicalSearchRounds} by the streak rule, heads included: ${population.searchRoundsAtStreak2} at streak 2 or beyond, ${population.searchRoundsAtStreak3} at 3 or beyond; attempts by search source ${SEARCH_SOURCES.map((source) => `${source} ${population.searchSources[source]}`).join(', ')}; navigate searches by Search URL form ${searchFormsText(population.searchForms)}; ${populationBlockedOrInertText(population.blockedOrInert)}; ${populationUnavailableLandingsText(population.unavailableLandings)}; ${populationConsentWallsText(population.consentWalls)}; ${populationTierEscalationsText(population.tierEscalations)}), ` +
-      `${population.inheritedRounds} inherited, ${population.rejectedCheckpoints} rejected Evidence Checkpoint(s), ${population.walledRounds} walled round(s), ${population.notFoundNavigates} navigate(s) landed on a Not-found Page (${population.notFoundOffKey} judged Off-key), ${population.rewrittenComposedAddresses ?? 0} Composed Address(es) rewritten into a site search (${population.rewrittenComposedAddressesOffKey ?? 0} judged Off-key, ${population.rewrittenShownAddresses ?? 'not counted'} to an address the Run was shown), ${population.unseenPhraseRewrites ?? 'not counted'} search(es) ran with an Unseen Phrase unquoted (${population.unseenPhraseRewritesOffKey ?? 0} judged Off-key), ${population.engineRewrites ?? 'not counted'} search(es) ran on the Run Engine in place of another Web Engine (${population.engineRewritesOffKey ?? 0} judged Off-key), ${populationResultPicksText(population)}, ${population.subagentRounds} Subagent round(s), ` +
+      `${population.inheritedRounds} inherited, ${population.rejectedCheckpoints} rejected Evidence Checkpoint(s), ${population.walledRounds} walled round(s), ${population.notFoundNavigates} navigate(s) landed on a Not-found Page (${population.notFoundOffKey} judged Off-key), ${population.rewrittenComposedAddresses ?? 0} Composed Address(es) rewritten into a site search (${population.rewrittenComposedAddressesOffKey ?? 0} judged Off-key, ${population.rewrittenShownAddresses ?? 'not counted'} to an address the Run was shown), ${population.unseenPhraseRewrites ?? 'not counted'} search(es) ran with an Unseen Phrase unquoted (${population.unseenPhraseRewritesOffKey ?? 0} judged Off-key), ${population.engineRewrites ?? 'not counted'} search(es) ran on the Run Engine in place of another Web Engine (${population.engineRewritesOffKey ?? 0} judged Off-key), ${populationResultPicksText(population)}, ${populationSelectedPassagesText(population)}, ${population.subagentRounds} Subagent round(s), ` +
       `${population.mergedCheckpoints} merged Evidence Checkpoint(s) (a floor), ${population.heldPageRoundsWithoutProgress} Held Page round(s) without Progress, ${population.bundledCheckpoints} bundled checkpoint round(s), ${population.sameSourceUnsupportedRounds} same-source unsupported round(s), ${subagentCitationsText(population.subagentCitations)}, ${populationSlipsText(population)}, ${delegatedPageCountsText(population.delegatedPageRounds)}, ` +
       `${population.malformedAnswers} Malformed Answer(s) (${population.answerRetries} retried), ` +
       `${transportText(population)}, ` +
@@ -4003,6 +4061,11 @@ function attemptSection(attempt: AuditAttempt): string[] {
     mechanical.resultPicks === undefined || mechanical.listingsReturned === undefined
       ? '- Result Picks: not counted'
       : `- Result Picks: ${rounds(mechanical.resultPicks)}; listings returned to the model: ${rounds(mechanical.listingsReturned)}`,
+  )
+  lines.push(
+    mechanical.runMadeCheckpoints === undefined || mechanical.modelRecordEvidenceCalls === undefined
+      ? '- Selected Passages: not counted'
+      : `- Evidence Checkpoints the Run made from a Selected Passage: ${rounds(mechanical.runMadeCheckpoints)}; record_evidence calls by the model: ${mechanical.modelRecordEvidenceCalls}; bookkeeping-only rounds: ${mechanical.counts.bookkeeping}`,
   )
   const toOpen = mechanical.searchesToOpened
   lines.push(

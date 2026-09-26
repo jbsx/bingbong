@@ -397,6 +397,11 @@ export class FakeBrowser implements BrowserController, VisualGroundingController
     return linkHrefsOf(this.snapshot)
   }
 
+  // The Selected Passage's blocks (#276), off the overridable snapshot.
+  async pageTextBlocks(): Promise<readonly string[] | null> {
+    return this.snapshot.textBlocks
+  }
+
   async groundingSnapshot(): Promise<PageSnapshot> {
     return this.snapshot
   }

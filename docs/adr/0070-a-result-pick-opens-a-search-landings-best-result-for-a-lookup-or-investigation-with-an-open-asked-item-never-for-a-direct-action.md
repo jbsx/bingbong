@@ -106,3 +106,9 @@ lets the model do.
   `listingsReturned` and `searchesToOpened` (optional and outside the
   digest, so older audits read "not counted"; the call field is present
   only on a pick, so an attempt with none keeps its digest).
+- 2026-09-26, "open" is #276's set. Once a Selected Passage can close an
+  Asked Item (ADR 0069), "an open Asked Item" is the declared items less
+  those a Run-made checkpoint closed (`openAskedItems`); the Result Pick
+  reads the same set through `openItems`, so a search landing whose every
+  item was already recorded asks nothing, and its state lists only the
+  items still open.

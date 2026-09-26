@@ -31,6 +31,7 @@ import type { HeldObservationsLookup } from '../session/sessionEvidence'
 import { heldPageNotice, landedOnAnotherPage } from './heldPage'
 import { createDelegatedPageNotices, type DelegatedPagesLookup } from './delegatedPage'
 import { resultPickCall, withResultPick, type PickedResult, type ResultPick } from './resultPick'
+import { carrySelectedPassages, withRecordedPassages, type SelectedPassageSeam } from './selectedPassage'
 
 // Issue #154, step 2 (#157): the Tool Round executor.
 //
@@ -295,6 +296,14 @@ export interface ToolRoundConfig {
    * the `result` seam off, or a Subagent — every listing reaches the model.
    */
   readonly resultPick?: ResultPick
+  /**
+   * The Selected Passage seam (#276, ADR 0069): on a landing or a Page Read,
+   * the passage the Decision Model picked for an open Asked Item is carried
+   * in the result ahead of the ledger, then recorded as a Run-made Evidence
+   * Checkpoint. Absent — no Decision Model, the `passage` seam off, or a
+   * Subagent — every result is what the tool produced.
+   */
+  readonly selectedPassage?: SelectedPassageSeam
   /** Advisory bookkeeping only — a throwing tracer never fails a round. */
   readonly diagnostics?: {
     readonly tracer?: PerfTracer
@@ -727,9 +736,25 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
         : closed
           ? { ok: false, error: closedToolRefusal() }
           : yield* runGatedTool(executedCall, turnId)
+    // The Selected Passage (#276, ADR 0069): carried in what the ledger
+    // records and the model reads, so the Run-made checkpoint below is
+    // grounded by the same verbatim rule as the model's own. The rails read
+    // the outcome the tool produced: a carried passage widens nothing they
+    // judge. Nothing picked, nothing carried: the result stays
+    // byte-identical. A Result Pick's landing is a step of its own, so the
+    // page it opened is asked about too.
+    const picked =
+      config.selectedPassage !== undefined && intercepted === null && outcome.ok
+        ? await config.selectedPassage.select(executedCall, config.currentPageUrl?.() ?? null)
+        : []
+    let carried = carrySelectedPassages(outcome, picked)
+    // Only a pick the ledger holds can be recorded: a result that is no
+    // string carries nothing, and its picks are dropped.
+    const passages = carried === outcome ? [] : picked
 
     // Observation ledger (#111): the raw outcome as the tool produced
-    // it, ahead of the Notices attached below — later checkpoint
+    // it — with a Selected Passage carried (#276) — ahead of the Notices
+    // attached below; later checkpoint
     // validation checks excerpts against what the source actually said,
     // not against round-added guidance. The minted identity rides beside
     // the result (#124): Run Context Compaction grounds eligibility on it.
@@ -737,8 +762,8 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
     const sourceUrl = classification.pageFacing ? config.currentPageUrl?.() : undefined
     const observedRecord = config.observe({
       producer: classification.producer,
-      ok: outcome.ok,
-      payload: outcome.ok ? outcome.result : outcome.error,
+      ok: carried.ok,
+      payload: carried.ok ? carried.result : carried.error,
       ...(sourceUrl ? { sourceUrl } : {}),
     })
     // Same-wall Blocker gate (#80): marker lines riding successful
@@ -816,11 +841,22 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
     if (delegatedPageNotices !== null && classification.pageFacing && outcome.ok) {
       notices.owe('delegated_page', delegatedPageNotices.onPage(sourceUrl ?? null))
     }
+    // The Run records what it carried (#276, ADR 0069), after the Notices
+    // above read the page as the landing found it, and the no-Progress rail
+    // hears it as the checkpoint call it is — so nothing is new since it,
+    // exactly as after the model's own record_evidence.
+    if (passages.length > 0 && sourceUrl) {
+      const recorded = config.selectedPassage!.record(passages, sourceUrl)
+      carried = withRecordedPassages(carried, recorded)
+      if (recorded.length > 0 && noProgressRail !== null) {
+        await noProgressRail.observe({ id: `${call.id}:passage`, name: 'record_evidence', args: {} }, { ok: true, result: 'recorded' })
+      }
+    }
     // A rewritten call's line opens what the model reads (#255), ahead of
     // every Notice; when more than one rewrite fired, each adds its own
     // line in chain order — the engine line (#270), then the address
     // line, then the Unseen Phrase head (#267).
-    const unquotedOutcome = unquoted === null ? outcome : withUnseenPhraseRewrite(outcome, unquoted)
+    const unquotedOutcome = unquoted === null ? carried : withUnseenPhraseRewrite(carried, unquoted)
     const addressOutcome = rewrite === null ? unquotedOutcome : withComposedAddressRewrite(unquotedOutcome, rewrite)
     const read = engineRewrite === null ? addressOutcome : withEngineRewrite(addressOutcome, engineRewrite)
     return { intercepted, closed, engineRewrite, rewrite, unquoted, executedCall, outcome, read, observedRecord }

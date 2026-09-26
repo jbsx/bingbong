@@ -10,6 +10,7 @@ import {
   sourceObservations,
   userCitationBesideExcerpt,
   userEventObservations,
+  type CheckpointOrigin,
   type EvidenceCheckpointOutcome,
 } from '../pipeline/evidenceCheckpoint'
 import type { CandidateCheckpointOutcome } from '../pipeline/candidateCheckpoint'
@@ -42,6 +43,8 @@ export function evidenceCheckpointEvent(input: {
   records: readonly ObservationRecord[]
   /** The delegated workers' retained observations (#123), by agent id. */
   workerObservations?: (agentId: string) => readonly ObservationRecord[] | null
+  /** Who made it (#276): `run` for a Selected Passage, recorded; the model's own is the default and left unsaid. */
+  origin?: CheckpointOrigin
 }): EvidenceCheckpointEvent {
   const { call, outcome } = input
   // A user citation beside a stray excerpt may be accepted (#253), and
@@ -75,6 +78,7 @@ export function evidenceCheckpointEvent(input: {
     // (#240, ADR 0051): what the Round Audit counts re-recordings by.
     ...(outcome.ok ? { entryId: outcome.entryId, merged: outcome.merged } : {}),
     ...(agentId !== undefined ? { agentId } : {}),
+    ...(input.origin === 'run' ? { origin: 'run' as const } : {}),
     ...(outcome.ok && outcome.correction !== undefined ? { correction: outcome.correction } : {}),
   }
 }

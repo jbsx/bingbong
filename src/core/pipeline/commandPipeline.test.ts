@@ -6887,6 +6887,105 @@ describe('observation ledger (#111)', () => {
     })
   })
 
+  describe('the Selected Passage through the Run (#276, ADR 0069)', () => {
+    const PAGE = 'https://science.nasa.gov/mission/voyager/voyager-1/'
+    const LAUNCH = 'Voyager 1 was launched on 5 September 1977 from Cape Canaveral.'
+    const BLOCKS = ['Voyager 1', LAUNCH, 'It left the heliosphere in 2012.']
+    const ITEM = 'the launch date'
+    const asked: string[] = []
+    const picking: DecisionModel = {
+      model: 'jev-1.13.0',
+      async ask(request) {
+        // The passage seam's asks only: the tier shadow (#278) asks too
+        // wherever its seam is on.
+        if (!('pick_1' in request.questions)) return { status: 'unavailable', reason: 'failed', message: 'not a passage ask', latencyMs: 0, model: 'jev-1.13.0' }
+        asked.push(request.state)
+        return {
+          status: 'answered',
+          model: 'jev-1.13.0',
+          latencyMs: 60,
+          answers: {
+            pick_1: { type: 'choice', choice: 'P002', confidence: 0.95, probabilities: { P001: 0.02, P002: 0.95, P003: 0.03 } },
+            any_1: { type: 'noul', noul: 0.97 },
+          },
+        } as never
+      },
+    }
+    const plan = (effortTier: 'direct_action' | 'lookup'): ToolCall => ({
+      id: 'plan',
+      name: 'report_run_plan',
+      args: { objective: 'Find when Voyager 1 launched', headline: 'Voyager 1 launch', effort_tier: effortTier, ...(effortTier === 'lookup' ? { asked_items: [ITEM] } : {}) },
+    })
+    const navigate: Tool = { name: 'navigate', acquisition: true, async execute(call) { return `navigated: url=${String(call.args.url)} title="Voyager 1"` } }
+    const go = (id: string): ToolCall => ({ id, name: 'navigate', args: { url: PAGE } })
+
+    async function run(rounds: readonly (readonly ToolCall[])[], seams: readonly DecisionSeam[] = ['passage']) {
+      asked.length = 0
+      const traced: RunTraceEvent[] = []
+      const events: PipelineEvent[] = []
+      let minted = 0
+      const store = createSessionEvidence({ sessionId: 'session-1' as SessionId, now: () => 0, mintId: () => `memory-${++minted}` as MemoryEntryId })
+      const pipeline = createCommandPipeline({
+        llm: new ScriptedLlm([...rounds.map((calls): ScriptedTurn => ({ kind: 'tool_calls', calls: [...calls] })), { kind: 'answer', speak: 'Done.', display: 'Done.' }]),
+        tts: new RecordingTts(),
+        clock: new FakeClock(),
+        tools: [createReportRunPlanTool(), navigate, createRecordEvidenceTool()],
+        decision: () => ({ model: picking, seams: new Set(seams) }),
+        currentPageUrl: () => PAGE,
+        pageTextBlocks: async () => BLOCKS,
+      })
+      for await (const event of pipeline.execute('when did Voyager 1 launch', 'turn-276', false, {
+        snapshot: [],
+        memory: [],
+        commit: () => 'committed',
+        checkpointEvidence: webEvidenceCommit(() => store, 'run-1' as RunId),
+        traceRun: (build) => traced.push(build()),
+      })) {
+        events.push(event)
+      }
+      return { traced, events, store }
+    }
+    const resultOf = (events: readonly PipelineEvent[], callId: string): string => {
+      const event = events.find((candidate) => candidate.type === 'tool_result' && candidate.callId === callId)
+      return event?.type === 'tool_result' && event.ok ? String(event.result) : ''
+    }
+
+    it('records the landing’s passage as a Run-made Evidence Checkpoint, origin kept on the trace and the Memory Entry', async () => {
+      const { traced, events, store } = await run([[plan('lookup'), go('n1')]])
+
+      expect(resultOf(events, 'n1')).toBe(
+        `navigated: url=${PAGE} title="Voyager 1"\nSelected passage for "${ITEM}": ${LAUNCH}\nRecorded as evidence for "${ITEM}".`,
+      )
+      expect(asked[0]).toBe(`P001| Voyager 1\nP002| ${LAUNCH}\nP003| It left the heliosphere in 2012.`)
+      expect(traced.filter((event) => event.kind === 'decision')).toEqual([expect.objectContaining({ turnId: 'turn-276', seam: 'passage', round: 1, acted: 'acted' })])
+      expect(traced.filter((event) => event.kind === 'evidence_checkpoint')).toEqual([
+        expect.objectContaining({ outcome: 'accepted', origin: 'run', args: { kind: 'web', source_url: PAGE, excerpt: LAUNCH, observation: ITEM } }),
+      ])
+      const [observation] = store.snapshot().observations
+      expect(observation!.text).toBe(ITEM)
+      expect(observation!.provenance).toEqual([{ runId: 'run-1', origin: 'run' }])
+    })
+
+    it('asks once per item: a later landing with the item recorded asks nothing', async () => {
+      await run([[plan('lookup'), go('n1')], [go('n2')]])
+      expect(asked).toHaveLength(1)
+    })
+
+    it('asks nothing before the Run Plan is declared, for a Direct Action, or with the passage seam off', async () => {
+      for (const [rounds, seams] of [
+        [[[go('n1')]], ['passage']],
+        [[[plan('direct_action'), go('n1')]], ['passage']],
+        [[[plan('lookup'), go('n1')]], ['result', 'tier']],
+      ] as const) {
+        const { traced, events, store } = await run(rounds, seams)
+        expect(asked).toEqual([])
+        expect(traced.filter((event) => event.kind === 'decision' && event.seam === 'passage')).toEqual([])
+        expect(resultOf(events, 'n1')).not.toContain('Selected passage')
+        expect(store.snapshot().observations).toEqual([])
+      }
+    })
+  })
+
   it('disappears when its Run ends: the next Run mints fresh identities', async () => {
     const seen: string[][] = []
     const build = (): CommandPipeline => createCommandPipeline({

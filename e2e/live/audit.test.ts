@@ -121,6 +121,8 @@ interface RoundSpec {
     engineRewrite?: { from: string; to: string; query: string }
     /** The Result Pick the Run Trace records on the result (#277, ADR 0070). */
     resultPick?: { ref: number; label: string; href: string; opened: boolean }
+    /** The verdict on an Evidence Checkpoint the Run made from a Selected Passage on this call's landing (#276, ADR 0069). */
+    runCheckpoint?: string
   }[]
   readonly reasoning?: string
   /** How long the attempt waited for its first fragment (#256, ADR 0057) — a trace written after the field was kept. */
@@ -158,6 +160,11 @@ function traceOf(rounds: readonly RoundSpec[], extra: readonly Record<string, un
       records.push({ ...identity, at: T0 + spec.at + 1, kind: 'pipeline_event', event: { type: 'tool_call', turnId: TURN, callId, name: call.name, args: call.args, at: T0 + spec.at + 1 } })
       if (call.checkpoint !== undefined) {
         records.push({ ...identity, at: T0 + spec.at + 2, kind: 'evidence_checkpoint', tool: call.name, args: call.args, outcome: call.checkpoint, matched: call.checkpoint === 'accepted', graded: [], ...(call.merged !== undefined ? { merged: call.merged } : {}), ...(call.checkpointAgentId !== undefined ? { agentId: call.checkpointAgentId } : {}), ...(call.correction !== undefined ? { correction: call.correction } : {}) })
+      }
+      if (call.runCheckpoint !== undefined) {
+        // A Run-made checkpoint (#276) is traced inside the landing's step,
+        // between its call and its result, with no record_evidence call.
+        records.push({ ...identity, at: T0 + spec.at + 2, kind: 'evidence_checkpoint', tool: 'record_evidence', args: { kind: 'web', source_url: 'https://spec.invalid/', excerpt: 'x', observation: 'y' }, outcome: call.runCheckpoint, matched: call.runCheckpoint === 'accepted', graded: [], origin: 'run' })
       }
       if (call.observation !== undefined) {
         // The round records the rail's observation after the call settles and
@@ -2876,5 +2883,42 @@ describe('the tier shadow (#278, ADR 0068)', () => {
     const set = buildAuditSet(provenanceOf(), [auditedOf(classifyAttempt(inputOf()))], [])
     expect(set.populations.initial.tierShadow).toBeUndefined()
     expect(formatAuditSet(set)).not.toContain('## Tier shadow')
+  })
+})
+
+describe('Selected Passages (#276, ADR 0069)', () => {
+  const PAGE_URL = 'https://spec.invalid/watch/'
+  const ROUNDS: RoundSpec[] = [
+    { round: 1, at: 1_000, calls: [{ name: 'navigate', args: { url: PAGE_URL }, result: PAGE('Watch', PAGE_URL, 'aaaa0001'), runCheckpoint: 'accepted' }] },
+    { round: 2, at: 2_000, calls: [{ name: 'record_evidence', args: { source_url: PAGE_URL, excerpt: 'x', observation: 'y' }, checkpoint: 'accepted' }] },
+    { round: 3, at: 3_000, calls: [{ name: 'read_page', args: {}, result: READ('Watch', PAGE_URL, 'aaaa0001'), runCheckpoint: 'excerpt_unsupported' }, { name: 'record_evidence', args: { source_url: PAGE_URL, excerpt: 'z', observation: 'w' }, checkpoint: 'excerpt_unsupported' }] },
+  ]
+
+  it('counts the Run-made checkpoints the store accepted by round, and the model’s own record_evidence calls, never joining one to the other', () => {
+    const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, EXTRA) }))
+
+    expect(mechanical.runMadeCheckpoints).toEqual([1])
+    expect(mechanical.modelRecordEvidenceCalls).toBe(2)
+    // The Run's checkpoint rode the landing: round 1 is no bookkeeping round,
+    // and its verdict never lands on the model's call in round 3.
+    expect(mechanical.counts.bookkeeping).toBe(1)
+    expect(mechanical.acceptedCheckpoints).toBe(1)
+    expect(mechanical.rejectedCheckpoints).toBe(1)
+  })
+
+  it('sums them in the population with the bookkeeping-only rounds, reports them, and reads "not counted" for an older audit', () => {
+    const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, EXTRA) }))
+    const set = buildAuditSet(provenanceOf(), [{ mechanical, review: null, countsAfterOverrules: mechanical.counts }], [])
+    expect(set.populations.initial).toMatchObject({ runMadeCheckpoints: 1, modelRecordEvidenceCalls: 2, bookkeepingRoundsWherePassagesCounted: 1 })
+    const markdown = formatAuditSet(set)
+    expect(markdown).toContain('- Evidence Checkpoints the Run made from a Selected Passage: 1 (round 1); record_evidence calls by the model: 2; bookkeeping-only rounds: 1')
+    expect(markdown).toContain('1 Run-made Evidence Checkpoint(s) from a Selected Passage against 2 record_evidence call(s) by the model and 1 bookkeeping-only round(s)')
+
+    const before = { ...mechanical } as AuditMechanical & { runMadeCheckpoints?: number[]; modelRecordEvidenceCalls?: number }
+    delete before.runMadeCheckpoints
+    delete before.modelRecordEvidenceCalls
+    const older = formatAuditSet(buildAuditSet(provenanceOf(), [{ mechanical: before, review: null, countsAfterOverrules: before.counts }], []))
+    expect(older).toContain('- Selected Passages: not counted')
+    expect(older).toContain('Selected Passages not counted')
   })
 })

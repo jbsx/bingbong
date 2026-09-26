@@ -89,6 +89,10 @@ class FakeController implements BrowserController {
     return linkHrefsOf(buildPageSnapshot(youtubeFixture))
   }
 
+  async pageTextBlocks(): Promise<readonly string[] | null> {
+    return buildPageSnapshot(youtubeFixture).textBlocks
+  }
+
 }
 
 function harnessWith(overrides?: Partial<CliHarnessDeps>) {

@@ -31,6 +31,12 @@ export interface ResultPickDeps {
   readonly threshold: DecisionThresholds
   /** The Run's plan as it stands when the landing is judged: the Run Plan intercept has already run this round. */
   runPlan(): RunPlan | null
+  /**
+   * The Run's open Asked Items (`openAskedItems`, #276): the plan's declared
+   * items less those a Selected Passage already recorded. Absent — no
+   * Selected Passage seam, so nothing closes one — every declared item.
+   */
+  openItems?(): readonly string[]
   /** The LLM round whose Tool Round this is: the Decision Record's `round`. */
   round(): number
   /** Where every question's Decision Record goes. */
@@ -127,17 +133,17 @@ function searchLandingOf(call: ToolCall, outcome: ToolResultOutcome): { readonly
   return { query: search.query, listing: outcome.result }
 }
 
-/** Whether the plan is one a result is opened for: a Lookup or Investigation with an Asked Item open. */
+/** Whether the plan is one a result is opened for: a Lookup or Investigation. */
 function isPickablePlan(plan: RunPlan | null): plan is RunPlan {
-  return plan !== null && plan.effortTier !== 'direct_action' && plan.askedItems.length > 0
+  return plan !== null && plan.effortTier !== 'direct_action'
 }
 
 /** The text the questions are about: id-prefixed results, so the Choice is over ids. */
-function stateOf(plan: RunPlan, query: string, results: readonly ListedResult[], preview: string): string {
+function stateOf(plan: RunPlan, openItems: readonly string[], query: string, results: readonly ListedResult[], preview: string): string {
   return [
     `Objective: ${plan.objective}`,
     'Asked items:',
-    ...plan.askedItems.map((item) => `- ${item}`),
+    ...openItems.map((item) => `- ${item}`),
     `Search: ${query}`,
     'Results:',
     ...results.map((result) => `[${result.ref}] "${result.label}" ${result.href}`),
@@ -166,10 +172,14 @@ export function createResultPick(deps: ResultPickDeps): ResultPick {
       if (landing === null) return null
       const plan = deps.runPlan()
       if (!isPickablePlan(plan)) return null
+      // "Open" is the Selected Passage's set (#276): a landing whose every
+      // Asked Item a Run-made checkpoint already closed asks nothing.
+      const openItems = deps.openItems?.() ?? plan.askedItems
+      if (openItems.length === 0) return null
       const { head, preview } = splitListing(landing.listing)
       const results = listedResults(head)
       if (results.length === 0) return null
-      const state = stateOf(plan, landing.query, results, preview.slice(0, MAX_PREVIEW_CHARS))
+      const state = stateOf(plan, openItems, landing.query, results, preview.slice(0, MAX_PREVIEW_CHARS))
       const questions = questionsOf(results)
       const result = await deps.model.ask({ state, questions })
       deps.record(

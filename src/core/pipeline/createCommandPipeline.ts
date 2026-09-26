@@ -96,11 +96,13 @@ import {
   evaluateEvidenceCheckpoint,
   subagentEvidenceCommit,
   userEvidenceCommit,
+  type CheckpointOrigin,
   type EvidenceCheckpointOutcome,
   type EvidenceCommit,
   type EvidenceCommitInput,
 } from './evidenceCheckpoint'
 import { candidateCheckpointEvent, evidenceCheckpointEvent } from '../trace/evidenceCheckpointTrace'
+import { createSelectedPassageSeam, openAskedItems, selectedPassageCall, type SelectedPassageSeam } from './selectedPassage'
 import type { AnswerRetryOutcome, DecisionEvent, LlmRequestShape, LlmRoundOutcome, RunTraceWriter } from '../trace/runTrace'
 import { DECISION_THRESHOLDS, type ConfiguredDecisionModel } from '../ports/decisionModel'
 import { createResultPick } from './resultPick'
@@ -163,6 +165,13 @@ export interface CommandPipelineDeps {
    * long href. Absent, the rail reads the printed text.
    */
   linkHrefs?: () => Promise<readonly string[] | null>
+  /**
+   * The text blocks of the page the visible tab settled on, in document
+   * order, off the freshest collected snapshot (#276, ADR 0069): what the
+   * Selected Passage seam asks the Decision Model to choose among. Absent,
+   * or null when the page cannot be read, the seam asks nothing.
+   */
+  pageTextBlocks?: () => Promise<readonly string[] | null>
   /**
    * Live source for the URL of the page the visible browser tab is on
    * (#111): the source URL recorded on page-facing observations in the
@@ -1176,6 +1185,11 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
     const decision = deps.decision?.() ?? null
     let llmRound = 0
     const writeDecision = (event: DecisionEvent): void => traceRun?.(() => ({ turnId, ...event }))
+    // The Asked Items a Run-made checkpoint has closed (#276, ADR 0069), for
+    // the whole Run — a Steering replan keeps them. What is left of the Run
+    // Plan's items is the one open set both Decision Model seams read.
+    const passageClosedItems = new Set<string>()
+    const openItems = (): readonly string[] => openAskedItems(runPlan, passageClosedItems)
     // The off_contract_reply records (#198): one per reserved Answer round
     // whose reply was not the contract's shape — the Run's own round and a
     // delegated worker's (handed down as `traceSubagentOffContractReply`).
@@ -1266,11 +1280,14 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
         // Subagent citations ground worker-ledger identities, never this
         // list — they map to no orchestrator tool result.
         const acceptedCheckpoints: RunEvidenceCheckpoint[] = []
-        const checkpointEvidenceHandler: ((call: ToolCall) => EvidenceCheckpointOutcome) | undefined =
+        // `origin` is the Run's own for a Selected Passage (#276, ADR 0069):
+        // the same grading, kept on the trace record and the Memory Entry.
+        const checkpointEvidenceHandler: ((call: ToolCall, origin?: CheckpointOrigin) => EvidenceCheckpointOutcome) | undefined =
           continuity?.checkpointEvidence || commitUser
-            ? (call) => {
+            ? (call, origin = 'model') => {
                 const outcome = evaluateEvidenceCheckpoint(call, {
                   records: ledger.snapshot(),
+                  origin,
                   ...(continuity?.checkpointEvidence ? { commit: continuity.checkpointEvidence } : {}),
                   ...(commitUser ? { commitUser } : {}),
                   ...(commitSubagent ? { commitSubagent } : {}),
@@ -1288,6 +1305,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
                   ...evidenceCheckpointEvent({
                     call,
                     outcome,
+                    origin,
                     records: ledger.snapshot(),
                     ...(deps.subagentObservations ? { workerObservations: deps.subagentObservations } : {}),
                   }),
@@ -1381,6 +1399,29 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
               }
             : {}),
         }
+        // The Selected Passage (#276, ADR 0069): on only with the Decision
+        // Model's `passage` seam, a Session to checkpoint into, and a tab to
+        // read. It asks for the Run's open Asked Items, read per call — none
+        // before the plan is declared, none for a Direct Action — and an
+        // accepted Run-made checkpoint closes its item.
+        let passageCheckpoints = 0
+        const selectedPassage: SelectedPassageSeam | null =
+          decision !== null && decision.seams.has('passage') && checkpointEvidenceHandler && deps.pageTextBlocks
+            ? createSelectedPassageSeam({
+                model: decision.model,
+                thresholds: DECISION_THRESHOLDS.passage,
+                openItems,
+                pageTextBlocks: deps.pageTextBlocks,
+                round: () => llmRound,
+                writeDecision,
+                checkpoint: (item, passage, sourceUrl) => {
+                  const call = selectedPassageCall(item, passage, sourceUrl, `${turnId}:passage-${++passageCheckpoints}`)
+                  const accepted = checkpointEvidenceHandler(call, 'run').ok
+                  if (accepted) passageClosedItems.add(item)
+                  return accepted
+                },
+              })
+            : null
         // What the round hands back to the pipeline (#116/#157): the Run
         // Plan's own report call, answered here rather than executed.
         // Rewritten once per round, just before the round runs.
@@ -1431,6 +1472,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
                   model: decision.model,
                   threshold: DECISION_THRESHOLDS.result,
                   runPlan: () => runPlan,
+                  openItems,
                   round: () => llmRound,
                   record: writeDecision,
                   ...(deps.describeRef ? { describeRef: deps.describeRef } : {}),
@@ -1491,6 +1533,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           ...(deps.delegatedPages ? { delegatedPages: (url: string) => deps.delegatedPages!(url, turnId) } : {}),
           ...(deps.describeRef ? { describeRef: deps.describeRef } : {}),
           ...(deps.linkHrefs ? { linkHrefs: deps.linkHrefs } : {}),
+          ...(selectedPassage !== null ? { selectedPassage } : {}),
           ...(deps.settledPageState ? { settledPageState: deps.settledPageState } : {}),
           ...(deps.tracer !== undefined || deps.browserSubspans !== undefined
             ? {

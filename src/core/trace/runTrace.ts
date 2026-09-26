@@ -146,6 +146,12 @@ export interface EvidenceCheckpointEvent {
   /** The delegated worker whose observations graded a subagent citation (#123). */
   readonly agentId?: string
   /**
+   * `run` when the Run made the checkpoint itself from a Selected Passage
+   * (#276, ADR 0069); absent when the model called record_evidence, and in
+   * traces written before the field existed.
+   */
+  readonly origin?: 'run'
+  /**
    * On an acceptance of a mis-shaped call (#253, ADR 0054), the Notice that
    * told the model the canonical shape. The outcome still reads 'accepted'.
    */
@@ -562,6 +568,8 @@ export interface DecisionEvent {
   readonly model: string
   /** The state's size in characters. */
   readonly stateChars: number
+  /** A Selected Passage asked in two passes, a window then a block, for a page past 255 blocks (#276). */
+  readonly windowed?: true
   /** Why no answer came back, on an `unavailable` record only. */
   readonly unavailable?: { readonly reason: DecisionUnavailableReason; readonly message: string; readonly httpStatus?: number }
   /** The Browse Subagent whose round asked; absent on the Run's own. */

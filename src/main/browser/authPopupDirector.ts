@@ -92,6 +92,7 @@ export function createAuthPopupDirector(
         settledState: () => target(base).settledState(),
         describeRef: (ref) => target(base).describeRef(ref),
         linkHrefs: () => target(base).linkHrefs(),
+        pageTextBlocks: () => target(base).pageTextBlocks(),
         groundingSnapshot: () => target(base).groundingSnapshot(),
         refAtPoint: (point) => target(base).refAtPoint(point),
         showRef: (ref) => target(base).showRef(ref),

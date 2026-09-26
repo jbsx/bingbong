@@ -32,6 +32,13 @@ import {
 /** The model-writable citation fields, snake_case like the Memory Patch. */
 export const EVIDENCE_CITATION_KEYS = ['kind', 'observation', 'source_url', 'excerpt', 'uncertainty', 'agent_id', 'volatile'] as const
 
+/**
+ * Who made an Evidence Checkpoint (#276, ADR 0069): the model by calling
+ * record_evidence, or the Run from a Selected Passage. One kind, graded by
+ * one rule; the origin is only kept.
+ */
+export type CheckpointOrigin = 'model' | 'run'
+
 /** What a citation grounds against (#122/#123): an observed web source, the user's own words, or a delegated worker's observations. */
 export type EvidenceCitationKind = 'web' | 'user' | 'subagent'
 
@@ -83,6 +90,8 @@ export interface EvidenceCommitInput {
    * time, so freshness judges when the evidence was truly seen.
    */
   readonly observedAt?: number
+  /** A checkpoint the Run made itself (#276); absent for the model's own. */
+  readonly origin?: 'run'
 }
 
 /** The shared Session-refusal correction: one message, three commit kinds. */
@@ -709,6 +718,7 @@ export function webEvidenceCommit(
       references: [...input.references],
       ...(input.volatile !== undefined ? { volatile: input.volatile } : {}),
       ...(input.observedAt !== undefined ? { observedAt: input.observedAt } : {}),
+      ...(input.origin !== undefined ? { origin: input.origin } : {}),
       runId,
     })
   }
@@ -794,6 +804,8 @@ export function evaluateEvidenceCheckpoint(
     commitSubagent?: (agentId: string) => EvidenceCommit
     /** The delegated workers' retained observations (#123), by agent id. */
     workerObservations?: (agentId: string) => readonly ObservationRecord[] | null
+    /** Who made the checkpoint (#276): kept on a web commit, never graded. Default `model`. */
+    origin?: CheckpointOrigin
   },
 ): EvidenceCheckpointOutcome {
   const citation = parseEvidenceCitation(call.args)
@@ -881,6 +893,7 @@ export function evaluateEvidenceCheckpoint(
     ...(citation.uncertainty !== undefined ? { uncertainty: citation.uncertainty } : {}),
     ...(citation.volatile !== undefined ? { volatile: citation.volatile } : {}),
     references: [{ url: canonical, ...(title !== undefined ? { title } : {}) }],
+    ...(deps.origin === 'run' ? { origin: 'run' as const } : {}),
   })
   if (committed === null) {
     return {

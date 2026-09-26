@@ -23,7 +23,9 @@ import { HELD_PAGE_INSTRUCTION } from './heldPage'
 import { DELEGATED_PAGE_COLLECTED_INSTRUCTION, type DelegatedHolder } from './delegatedPage'
 import { canonicalizeMemoryUrl } from '../session/workingMemory'
 import { createResultPick, listingHead, resultOpenedLine } from './resultPick'
-import type { DecisionModel, DecisionResult, DecisionQuestions } from '../ports/decisionModel'
+import { readDecisionAnswers, type DecisionModel, type DecisionResult, type DecisionQuestions } from '../ports/decisionModel'
+import { createSelectedPassageSeam, openAskedItems, selectedPassageCall } from './selectedPassage'
+import { evaluateEvidenceCheckpoint, webEvidenceCommit } from './evidenceCheckpoint'
 import type { DecisionEvent } from '../trace/runTrace'
 import type { RunPlan } from './runPlan'
 
@@ -60,6 +62,7 @@ interface Harness {
   readonly notices: ReturnType<typeof createNotices>
   readonly epoch: ReturnType<typeof createEffortEpoch>
   readonly clock: FakeClock
+  newSinceCheckpoint(): boolean
   round(calls: readonly ToolCall[]): Promise<{ events: UnstampedEvent[]; outcome: ToolRoundOutcome }>
 }
 
@@ -109,6 +112,8 @@ function harness(
     describeRef?: ToolRoundConfig['describeRef']
     /** The Result Pick (#277, ADR 0070): the search landing's best result, opened in the same round. */
     resultPick?: ToolRoundConfig['resultPick']
+    /** The Selected Passage seam (#276). */
+    selectedPassage?: ToolRoundConfig['selectedPassage']
     /** The shared order log — pass the same array the scripted tools write to. */
     trace?: string[]
   } = {},
@@ -187,8 +192,10 @@ function harness(
     runEngine: () => runEngineOf(userWordsOf(ledger.snapshot())),
     ...(options.describeRef ? { describeRef: options.describeRef } : {}),
     ...(options.resultPick ? { resultPick: options.resultPick } : {}),
+    ...(options.selectedPassage ? { selectedPassage: options.selectedPassage } : {}),
   })
   return {
+    newSinceCheckpoint: () => executor.newSinceCheckpoint(),
     ledger,
     trace,
     observed,
@@ -1867,5 +1874,210 @@ describe('the Result Pick opens a search landing’s best result in the same rou
     expect(executed(trace)).toEqual([`execute:navigate:${SEARCH}`])
     expect(resultOf(round.outcome.results[0]!.outcome)).toBe(`${LISTING}\nTried to open [3] "${pick.label}" — ${RESULT}: denied: that site is off limits`)
     expect(round.events.find((event) => event.type === 'tool_result')).toMatchObject({ resultPick: { ref: 3, opened: false } })
+  })
+})
+
+describe('the Selected Passage on a landing (#276, ADR 0069)', () => {
+  const PAGE = 'https://example.org/voyager'
+  const BLOCKS = ['Voyager 1 — Wikipedia', 'Voyager 1 was launched on 5 September 1977.', 'It is the most distant human-made object.']
+  const ITEM = 'launch date'
+  const SELECTED = `Selected passage for "${ITEM}": Voyager 1 was launched on 5 September 1977.`
+  const RECORDED = `Recorded as evidence for "${ITEM}".`
+  const PLAN: RunPlan = { objective: 'When did Voyager 1 launch?', headline: null, effortTier: 'lookup', askedItems: [ITEM] }
+
+  type Answer = 'picks' | 'under' | 'unavailable' | ((questions: DecisionQuestions) => unknown)
+
+  /** Answers every Choice with `label` at 0.9 and every Noul at `noul`. */
+  const choosing = (label: (labels: readonly string[]) => string, noul = 0.9) => (questions: DecisionQuestions) =>
+    Object.fromEntries(
+      Object.entries(questions).map(([key, question]) => {
+        if (question.type === 'noul') return [key, { type: 'noul', noul }]
+        const labels = Object.keys(question.options)
+        const choice = label(labels)
+        return [key, { type: 'choice', choice, confidence: 0.9, probabilities: Object.fromEntries(labels.map((l) => [l, l === choice ? 0.9 : 0])) }]
+      }),
+    )
+
+  /**
+   * A tab that lands where a call's `url` says, a Decision Model answering
+   * from `answers` in order, and a Session whose checkpoints the real
+   * evaluator grades against the round's own ledger — so a carried passage
+   * is proved grounded exactly as a model's excerpt would be.
+   */
+  function landing(options: { answers?: Answer[]; blocks?: readonly string[]; resultPick?: DecisionModel; plan?: RunPlan | null; refuse?: boolean } = {}) {
+    const tab = { url: PAGE }
+    const answers = [...(options.answers ?? ['picks'])]
+    const asks: DecisionQuestions[] = []
+    const decisions: DecisionEvent[] = []
+    const model: DecisionModel = {
+      model: 'scripted',
+      async ask(request) {
+        asks.push(request.questions)
+        const answer = answers.shift() ?? 'unavailable'
+        if (answer === 'unavailable') return { status: 'unavailable', reason: 'timeout', message: 'no answer', latencyMs: 800, model: 'scripted' }
+        const script = typeof answer === 'function' ? answer : choosing((labels) => (labels.includes('P002') ? 'P002' : labels[0]!), answer === 'picks' ? 0.9 : 0.2)
+        const read = readDecisionAnswers(request.questions, script(request.questions))
+        return read === null
+          ? { status: 'unavailable', reason: 'malformed', message: 'bad script', latencyMs: 0, model: 'scripted' }
+          : ({ status: 'answered', answers: read, latencyMs: 90, model: 'scripted' } as never)
+      },
+    }
+    let minted = 0
+    const store = createSessionEvidence({ sessionId: 'session-1' as SessionId, now: () => 0, mintId: () => `memory-${++minted}` as MemoryEntryId })
+    const tools = ['navigate', 'click', 'read_page', 'scroll', 'look'].map(
+      (name): Tool => ({
+        name,
+        async execute(callArg) {
+          if (typeof callArg.args.url === 'string') tab.url = callArg.args.url
+          if (tab.url.includes('?q=')) return `navigated: url=${tab.url}\n[3] link "Voyager 1" href="${PAGE}"`
+          return `${name} done: url=${tab.url}`
+        },
+      }),
+    )
+    // The Run's open set, as the pipeline keeps it: an accepted Run-made
+    // checkpoint closes its item for both seams.
+    const closed = new Set<string>()
+    const plan = options.plan === undefined ? PLAN : options.plan
+    const openItems = (): readonly string[] => openAskedItems(plan, closed)
+    let ledger: Harness['ledger'] | null = null
+    const seam = createSelectedPassageSeam({
+      model,
+      thresholds: { choice: 0.7, noul: 0.7 },
+      openItems,
+      pageTextBlocks: async () => options.blocks ?? BLOCKS,
+      round: () => 2,
+      writeDecision: (event) => decisions.push(event),
+      checkpoint: (item, passage, url) => {
+        const accepted = evaluateEvidenceCheckpoint(selectedPassageCall(item, passage, url, `run-passage-${item}`), {
+          records: ledger!.snapshot(),
+          commit: webEvidenceCommit(() => (options.refuse === true ? null : store), 'run-1' as RunId),
+        }).ok
+        if (accepted) closed.add(item)
+        return accepted
+      },
+    })
+    const h = harness(tools, {
+      currentPageUrl: () => tab.url,
+      settledPageState: () => STUCK,
+      selectedPassage: seam,
+      ...(options.resultPick
+        ? { resultPick: createResultPick({ model: options.resultPick, threshold: { choice: 0.7, noul: 0.7 }, runPlan: () => PLAN, openItems, round: () => 2, record: () => {} }) }
+        : {}),
+    })
+    ledger = h.ledger
+    return { h, asks, decisions, store, tab }
+  }
+
+  const resultOfOne = (events: UnstampedEvent[]): string => {
+    const result = events.find((event) => event.type === 'tool_result')
+    return result?.type === 'tool_result' && result.ok ? String(result.result) : ''
+  }
+
+  it('carries the pick in the result the ledger records and records it as an Evidence Checkpoint', async () => {
+    const { h, store } = landing()
+
+    const { events } = await h.round([call('navigate', { url: PAGE })])
+
+    expect(h.observed[0]!.payload).toBe(`navigate done: url=${PAGE}\n${SELECTED}`)
+    expect(resultOfOne(events)).toBe(`navigate done: url=${PAGE}\n${SELECTED}\n${RECORDED}`)
+    const [observation] = store.snapshot().observations
+    expect(observation).toEqual(expect.objectContaining({ text: ITEM, references: [expect.objectContaining({ url: canonicalizeMemoryUrl(PAGE) })] }))
+  })
+
+  it('fires on a read_page and a click, never on a scroll or a Look', async () => {
+    for (const name of ['read_page', 'click']) {
+      const { h, asks } = landing()
+      const { events } = await h.round([call(name)])
+      expect(asks).toHaveLength(1)
+      expect(resultOfOne(events)).toContain(RECORDED)
+    }
+    for (const name of ['scroll', 'look']) {
+      const { h, asks, store } = landing()
+      const { events } = await h.round([call(name)])
+      expect(asks).toHaveLength(0)
+      expect(resultOfOne(events)).toBe(`${name} done: url=${PAGE}`)
+      expect(store.snapshot().observations).toHaveLength(0)
+    }
+  })
+
+  it('leaves the result byte-identical under threshold or unavailable, and records nothing', async () => {
+    for (const answer of ['under', 'unavailable'] as const) {
+      const { h, decisions, store } = landing({ answers: [answer] })
+      const { events } = await h.round([call('navigate', { url: PAGE })])
+      expect(h.observed[0]!.payload).toBe(`navigate done: url=${PAGE}`)
+      expect(resultOfOne(events)).toBe(`navigate done: url=${PAGE}`)
+      expect(store.snapshot().observations).toHaveLength(0)
+      expect(decisions[0]!.acted).toBe(answer === 'under' ? 'under_threshold' : 'unavailable')
+    }
+  })
+
+  it('picks a 300-block page in two passes and the Decision Records say windowed', async () => {
+    const blocks = Array.from({ length: 300 }, (_, index) => `Paragraph ${index + 1} of the mission history.`)
+    const { h, decisions } = landing({ blocks, answers: [choosing(() => 'W2'), choosing(() => 'P290')] })
+
+    const { events } = await h.round([call('read_page')])
+
+    expect(resultOfOne(events)).toContain(`Selected passage for "${ITEM}": Paragraph 290 of the mission history.`)
+    expect(resultOfOne(events)).toContain(RECORDED)
+    expect(decisions.map((decision) => decision.windowed)).toEqual([true, true])
+  })
+
+  it('asks nothing for a Direct Action or before the Run Plan is declared', async () => {
+    for (const plan of [{ ...PLAN, effortTier: 'direct_action' as const, askedItems: [] }, null]) {
+      const { h, asks } = landing({ plan })
+      const { events } = await h.round([call('navigate', { url: PAGE })])
+      expect(asks).toHaveLength(0)
+      expect(resultOfOne(events)).toBe(`navigate done: url=${PAGE}`)
+    }
+  })
+
+  it('keeps the carried passage and says nothing recorded when the Session refuses the checkpoint', async () => {
+    const { h, store } = landing({ refuse: true })
+
+    const { events } = await h.round([call('navigate', { url: PAGE })])
+
+    expect(resultOfOne(events)).toBe(`navigate done: url=${PAGE}\n${SELECTED}`)
+    expect(store.snapshot().observations).toHaveLength(0)
+    expect(h.newSinceCheckpoint()).toBe(true)
+  })
+
+  it('asks nothing on a second landing once the item is recorded', async () => {
+    const { h, asks } = landing()
+
+    await h.round([call('navigate', { url: PAGE })])
+    const { events } = await h.round([call('navigate', { url: `${PAGE}#history` })])
+
+    expect(asks).toHaveLength(1)
+    expect(resultOfOne(events)).not.toContain('Selected passage')
+  })
+
+  it("counts the Run-made checkpoint as the model's own: nothing new since it", async () => {
+    const recorded = landing()
+    await recorded.h.round([call('navigate', { url: PAGE })])
+    expect(recorded.h.newSinceCheckpoint()).toBe(false)
+
+    const unrecorded = landing({ answers: ['under'] })
+    await unrecorded.h.round([call('navigate', { url: PAGE })])
+    expect(unrecorded.h.newSinceCheckpoint()).toBe(true)
+  })
+
+  it('asks no Result Pick on a search landing once every Asked Item is closed by a Selected Passage', async () => {
+    const SEARCH = 'https://duckduckgo.com/?q=voyager+1+launch'
+    const picksAsked = (): { model: DecisionModel; asks: number[] } => {
+      const asks: number[] = []
+      return { asks, model: { model: 'scripted', ask: async () => (asks.push(1), { status: 'unavailable', reason: 'timeout', message: 'none', latencyMs: 0, model: 'scripted' }) } }
+    }
+
+    // Open: the search landing is asked about.
+    const open = picksAsked()
+    await landing({ answers: ['under'], resultPick: open.model }).h.round([call('navigate', { url: SEARCH })])
+    expect(open.asks).toHaveLength(1)
+
+    // Closed by the passage recorded on the first landing: nothing is asked.
+    const closedOff = picksAsked()
+    const { h } = landing({ resultPick: closedOff.model })
+    await h.round([call('navigate', { url: PAGE })])
+    await h.round([call('navigate', { url: SEARCH })])
+    expect(closedOff.asks).toHaveLength(0)
   })
 })

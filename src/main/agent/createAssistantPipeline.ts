@@ -384,6 +384,9 @@ export function createAssistantPipeline(deps: AssistantPipelineDeps): CommandPip
     // The Composed Address rail's Offered Addresses (#258): the tab's link
     // hrefs whole, where the printed line cuts them.
     linkHrefs: () => controller.linkHrefs(),
+    // The Selected Passage's blocks (#276, ADR 0069): the settled page's
+    // whole text, block by block, where the Page Preview shows its head.
+    pageTextBlocks: () => controller.pageTextBlocks(),
     // Observation ledger source URLs (#111): the visible tab's current page.
     currentPageUrl: () => controller.state().url ?? null,
     // No-progress rails (#126, ADR 0027): the visible tab's settled page

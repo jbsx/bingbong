@@ -82,3 +82,40 @@ ledger-payload test, which is why the passage is carried. Reads the blocks
 collects. Feeds [ADR 0056](0056-the-finalization-bookkeeping-round-is-skipped-when-there-is-nothing-new-to-record.md)'s
 predicate. Chains after [ADR 0070](0070-a-result-pick-opens-a-search-landings-best-result-for-a-lookup-or-investigation-with-an-open-asked-item-never-for-a-direct-action.md)'s
 opened page in the same Tool Round.
+
+## Notes
+
+- 2026-09-26, implemented (#276). The seam lives in
+  `src/core/pipeline/selectedPassage.ts` (`createSelectedPassageSeam`),
+  created by the pipeline only when `decision()?.seams.has('passage')`, a
+  Session can take the checkpoint and the tab can be read
+  (`BrowserController.pageTextBlocks`, the freshest snapshot's rendered
+  blocks), at `DECISION_THRESHOLDS.passage`; with the seam off nothing is
+  asked, not even in shadow. It runs inside the executor's per-call `step`,
+  after the call and before the ledger records it, so a Result Pick's
+  opened page is asked about as its own navigate; the passage is carried in
+  what the ledger records and the model reads, while every rail reads the
+  outcome the tool produced, so a carried passage offers no address and
+  arms no wall. **A search results page
+  is never asked about** (a landing `parseSearchUrl` recognises): its
+  snippets are the engine's excerpts of other pages, and one recorded as
+  evidence sourced to the search URL would let the engine's words stand as
+  the source. Calls the Decision left open: all open items go in one ask,
+  as `pick_<n>` and `any_<n>`, each item judged on its own pair, so the
+  Decision Record reads `acted` when any item's pair cleared; a page past
+  255 blocks asks the Noul with the window Choice, then one Choice per
+  item over its window's blocks, and both records carry `windowed: true`; a
+  block past a Memory Entry's 2,000 characters is carried and recorded as
+  its head, cut at a word, still verbatim; asking again over identical
+  text, URL and items is skipped (a read_page after a landing that scored
+  nothing). "Open" is declared less the items a Run-made checkpoint closed
+  in this Run (`openAskedItems`); the model's own record_evidence names no
+  Asked Item, so it closes none, and a Steering replan keeps what closed.
+  The origin is `origin: 'run'` on the `evidence_checkpoint` record, the
+  commit input and the Memory Entry's provenance, absent for the model's
+  own — the only change to `evidenceCheckpoint.ts`, whose grading is
+  untouched; the no-Progress rail hears the checkpoint as a successful
+  record_evidence. The Round Audit counts per attempt `runMadeCheckpoints`
+  (read from the trace's origin, never joined to a call) and
+  `modelRecordEvidenceCalls` beside the bookkeeping rounds, outside the
+  digest.

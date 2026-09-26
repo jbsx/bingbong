@@ -134,6 +134,10 @@ class FixtureBrowserController implements BrowserController {
     return linkHrefsOf(this.snapshot)
   }
 
+  async pageTextBlocks(): Promise<readonly string[] | null> {
+    return this.snapshot.textBlocks
+  }
+
 }
 
 async function collect(pipeline: CommandPipeline, command: string): Promise<PipelineEvent[]> {

@@ -615,6 +615,21 @@ function widgetsArticlePage(): string {
 </html>`
 }
 
+/** Three text blocks and nothing else (#276): a Selected Passage script can name every label. */
+function passagePage(): string {
+  return `<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>passage fixture</title></head>
+<body style="background:#222;color:#fff;margin:0">
+<main>
+  <h1>Voyager 1</h1>
+  <p>Voyager 1 was launched on 5 September 1977 from Cape Canaveral.</p>
+  <p>It left the heliosphere in August 2012.</p>
+</main>
+</body>
+</html>`
+}
+
 // Page Read (#235, ADR 0047): a page whose text a preview cuts and a read
 // returns in two parts, holding each block kind a read renders — a table
 // whose header row is th cells and one of whose cells wraps a paragraph, a
@@ -1206,6 +1221,10 @@ export async function startFixtureServer(): Promise<FixtureServer> {
     }
     if (req.url === '/reading') {
       res.end(readingPage())
+      return
+    }
+    if (req.url === '/passage') {
+      res.end(passagePage())
       return
     }
     if (req.url === '/catalog') {

@@ -1220,6 +1220,17 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     }
   }
 
+  // The Selected Passage's blocks (#276, ADR 0069): the freshest snapshot's
+  // rendered text, the one the landing or Page Read just printed from.
+  async function pageTextBlocks(): Promise<readonly string[] | null> {
+    try {
+      return (await currentSnapshot()).textBlocks
+    } catch (error) {
+      reportFault('browser.createCdpBrowserController.pageTextBlocks', error)
+      return null
+    }
+  }
+
   async function groundingSnapshot(): Promise<PageSnapshot> {
     return collectSnapshot()
   }
@@ -1334,6 +1345,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     settledState,
     describeRef,
     linkHrefs,
+    pageTextBlocks,
     groundingSnapshot,
     refAtPoint,
     showRef,
