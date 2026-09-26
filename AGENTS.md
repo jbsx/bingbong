@@ -119,7 +119,11 @@ from `pnpm decision:shadow` over retained traces. The veto's
 the every-tier count is reported beside it. The live arms are the set
 families `jev-on-<n>` and `jev-off-<n>`, captured the same two ways, and
 pool with `pnpm live:summary`/`live:audit --allow-differs=routing`; every
-other fixed field, the seam list included, is still refused.
+other fixed field, the seam list included, is still refused. A test that
+scripts `BINGBONG_DECISION_SCRIPT` for one seam must set
+`BINGBONG_DECISION_SEAMS` to that seam alone: the tier shadow (#278) asks
+before round 1 whenever `tier` is among the seams, and would consume the
+script's first answer.
 
 ### Delegation is measured by its own probe, not by the release corpus
 
