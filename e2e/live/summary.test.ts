@@ -68,6 +68,7 @@ interface ReportSpec {
   readonly mode?: string
   readonly adblock?: string
   readonly reasoningEffortOverride?: string | null
+  readonly decisionSeams?: string | null
   readonly effortOverrides?: readonly string[]
   readonly browserSubspans?: boolean
   readonly gradesRevision?: number
@@ -194,6 +195,7 @@ function reportOf(spec: ReportSpec): LiveReport {
       reviewers: spec.reviewers ?? ['claude-opus-5 via live:grade'],
       roles: spec.roles ?? ['orchestrator=GLM-5.3', 'subagent=GLM-5.3-flash', 'vision=GLM-4.6V'],
       reasoningEffortOverride: spec.reasoningEffortOverride === undefined ? null : spec.reasoningEffortOverride,
+      ...(spec.decisionSeams === undefined ? {} : { decisionSeams: spec.decisionSeams }),
       effortOverrides: spec.effortOverrides ?? [],
       adblock: spec.adblock ?? 'production_default',
       browserSubspans: spec.browserSubspans ?? false,
@@ -506,6 +508,7 @@ describe('refusals', () => {
     ['mode', { mode: 'smoke' }, 'mode differs: pass-1=measured, pass-2=measured, pass-3=smoke'],
     ['adblock', { adblock: 'none' }, 'adblock differs: pass-1=production_default, pass-2=production_default, pass-3=none'],
     ['reasoning-effort override', { reasoningEffortOverride: 'low' }, 'reasoning-effort override differs: pass-1=none, pass-2=none, pass-3=low'],
+    ['decision seams', { decisionSeams: 'tier' }, 'decision seams differs: pass-1=none, pass-2=none, pass-3=tier'],
     ['effort overrides', { effortOverrides: ['subagent=high'] }, 'effort overrides differs: pass-1=none, pass-2=none, pass-3=subagent=high'],
     ['browser sub-spans', { browserSubspans: true }, 'browser sub-spans differs: pass-1=off, pass-2=off, pass-3=on'],
   ] as const)('refuses a mixed %s and names the differing values', (_name, spec, message) => {

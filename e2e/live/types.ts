@@ -197,7 +197,13 @@ export interface LiveLaunchProvenance {
   /** Paths `git status --porcelain` listed; capped, so a capture never carries a whole working tree. */
   readonly dirtyPaths: readonly string[]
   readonly platform: { readonly node: string; readonly os: string; readonly electron: string | null }
-  readonly roles: Readonly<Record<AgentRole, LiveRoleProvenance>>
+  /**
+   * One entry per agent role, and the Decision Model's (#279) — always
+   * written from #279 on, optional because older captures lack it.
+   */
+  readonly roles: Readonly<Record<AgentRole, LiveRoleProvenance>> & { readonly decision?: LiveRoleProvenance }
+  /** The `BINGBONG_DECISION_SEAMS` list forwarded (#279), or null when unset; absent on captures before #279. */
+  readonly decisionSeams?: string | null
   /** The `BINGBONG_REASONING_EFFORT` override forwarded, or null when the Effort Tier map decides. */
   readonly reasoningEffortOverride: string | null
   /**

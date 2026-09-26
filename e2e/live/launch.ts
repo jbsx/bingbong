@@ -18,7 +18,15 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { AGENT_ROLES, REASONING_EFFORT_ENV_KEY, routingEnvKeys, type AgentRole } from '../../src/core/agent/modelRouting'
+import {
+  AGENT_ROLES,
+  DECISION_SCRIPT_ENV_KEY,
+  DECISION_SEAMS_ENV_KEY,
+  decisionEnvKeys,
+  REASONING_EFFORT_ENV_KEY,
+  routingEnvKeys,
+  type AgentRole,
+} from '../../src/core/agent/modelRouting'
 import { layerEnv, parseDotEnv } from '../../src/core/settings/dotEnv'
 import { resolveEnvFilePath } from '../../src/main/envFile'
 import { HOST_TRACE_ENV, RUN_TRACE_ENV } from '../../src/core/trace/traceFlags'
@@ -120,18 +128,17 @@ function secretsOf(env: Record<string, string | undefined>): string[] {
     .map(([, value]) => value as string)
 }
 
-function rolesOf(routing: ProductionRouting): Record<AgentRole, LiveRoleProvenance> {
-  return Object.fromEntries(
-    AGENT_ROLES.map((role) => {
-      const identity = routing.identity[role]
-      return [
-        role,
-        identity.configured
-          ? { configured: true, baseUrl: identity.baseUrl, model: identity.model, keyFingerprint: identity.keyFingerprint }
-          : { configured: false, reason: 'not configured in the production env' },
-      ]
-    }),
-  ) as Record<AgentRole, LiveRoleProvenance>
+function rolesOf(routing: ProductionRouting): LiveLaunchProvenance['roles'] {
+  const provenanceOf = (identity: ProductionRouting['identity'][AgentRole]): LiveRoleProvenance =>
+    identity.configured
+      ? { configured: true, baseUrl: identity.baseUrl, model: identity.model, keyFingerprint: identity.keyFingerprint }
+      : { configured: false, reason: 'not configured in the production env' }
+  // The decision role (#279) is recorded like the three: configured or not
+  // is the Decision Model experiment's arm marker.
+  return {
+    ...(Object.fromEntries(AGENT_ROLES.map((role) => [role, provenanceOf(routing.identity[role])])) as Record<AgentRole, LiveRoleProvenance>),
+    decision: provenanceOf(routing.identity.decision ?? { configured: false }),
+  }
 }
 
 function adblockProvenance(env: Record<string, string | undefined>): LiveLaunchProvenance['adblock'] {
@@ -203,6 +210,7 @@ export function composeMeasuredLaunch(input: MeasuredLaunchInput): ComposedLaunc
     platform: { node: process.version, os: `${process.platform} ${process.arch}`, electron: electronVersion() },
     roles: rolesOf(routing),
     reasoningEffortOverride: routing.reasoningEffort,
+    decisionSeams: routing.decisionSeams,
     effortOverrides: {},
     envFile: {
       path: envFile.path,
@@ -248,7 +256,8 @@ export interface VerificationLaunchInput {
 export function composeVerificationLaunch(input: VerificationLaunchInput): ComposedLaunch {
   const { profile, fixture, git } = input
   const accessGuard = input.accessGuard ?? true
-  const routingKeys = AGENT_ROLES.flatMap((role) => routingEnvKeys(role))
+  // The decision role's keys are real routing too (#279); its seam list is not a credential.
+  const routingKeys = [...AGENT_ROLES.flatMap((role) => routingEnvKeys(role)), ...decisionEnvKeys().filter((key) => key !== DECISION_SEAMS_ENV_KEY)]
   const credentials = present(input.env, routingKeys)
   if (credentials.length > 0) throw new Error(`verification mode refuses real routing: ${credentials.join(', ')}`)
   const env: Record<string, string | undefined> = {
@@ -264,9 +273,12 @@ export function composeVerificationLaunch(input: VerificationLaunchInput): Compo
   if (!scriptedHooks.includes('BINGBONG_LLM_SCRIPT')) {
     throw new Error('verification mode needs a scripted orchestrator (BINGBONG_LLM_SCRIPT) — it never reaches a real model')
   }
-  const roles = Object.fromEntries(
-    AGENT_ROLES.map((role) => [role, { configured: false, reason: `verification mode: ${scriptedFor(role, scriptedHooks)}` }]),
-  ) as Record<AgentRole, LiveRoleProvenance>
+  const roles: LiveLaunchProvenance['roles'] = {
+    ...(Object.fromEntries(
+      AGENT_ROLES.map((role) => [role, { configured: false, reason: `verification mode: ${scriptedFor(role, scriptedHooks)}` }]),
+    ) as Record<AgentRole, LiveRoleProvenance>),
+    decision: { configured: false, reason: `verification mode: ${scriptedFor('decision', scriptedHooks)}` },
+  }
   const effortOverrides = Object.fromEntries(present(effective, TEST_ONLY_OVERRIDES).map((key) => [key, effective[key] as string]))
   return {
     mode: 'verification',
@@ -283,6 +295,7 @@ export function composeVerificationLaunch(input: VerificationLaunchInput): Compo
       platform: { node: process.version, os: `${process.platform} ${process.arch}`, electron: electronVersion() },
       roles,
       reasoningEffortOverride: effective[REASONING_EFFORT_ENV_KEY] ?? null,
+      decisionSeams: effective[DECISION_SEAMS_ENV_KEY]?.trim() || null,
       effortOverrides,
       envFile: { path: effective.BINGBONG_ENV_FILE ?? '', present: false, digest: null },
       settings: profile.settings,
@@ -296,11 +309,12 @@ export function composeVerificationLaunch(input: VerificationLaunchInput): Compo
   }
 }
 
-function scriptedFor(role: AgentRole, hooks: readonly string[]): string {
-  const own: Record<AgentRole, readonly string[]> = {
+function scriptedFor(role: AgentRole | 'decision', hooks: readonly string[]): string {
+  const own: Record<AgentRole | 'decision', readonly string[]> = {
     orchestrator: ['BINGBONG_LLM_SCRIPT'],
     subagent: ['BINGBONG_SUBAGENT_LLM_SCRIPT'],
     vision: ['BINGBONG_VISION_SCRIPT', 'BINGBONG_VISION_DESCRIPTION_SCRIPT'],
+    decision: [DECISION_SCRIPT_ENV_KEY],
   }
   const set = own[role].filter((hook) => hooks.includes(hook))
   return set.length > 0 ? `scripted (${set.join(', ')})` : 'unconfigured'

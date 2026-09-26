@@ -2195,6 +2195,15 @@ describe('a set and the aggregate', () => {
     expect(buildAuditAggregate([setOne, alsoKey], 'x', { allowDiffers: 'routing' })).toEqual({ ok: false, errors: ['key version differs: set-1=k1, set-4=k2'] })
   })
 
+  it('refuses sets whose decision seam lists differ, reading an audit written before #279 as none (#279)', () => {
+    const seams = buildAuditSet(provenanceOf({ setId: 'set-5', decisionSeams: 'passage,result', createdAt: '2026-09-12T21:00:00.000Z' }), [], [])
+    expect(buildAuditAggregate([setOne, seams], 'x')).toEqual({ ok: false, errors: ['decision seams differs: set-1=none, set-5=passage,result'] })
+    const pooled = buildAuditAggregate([seams, buildAuditSet(provenanceOf({ setId: 'set-6', decisionSeams: 'passage,result', createdAt: '2026-09-12T22:00:00.000Z' }), [], [])], 'x')
+    if (!pooled.ok) throw new Error(pooled.errors.join('; '))
+    expect(pooled.value.provenance.shared.decisionSeams).toBe('passage,result')
+    expect(formatAuditAggregate(pooled.value)).toContain('decision seams: passage,result')
+  })
+
   it('formats every attempt with its kinds, verdict, checks unsatisfied, Subagent rounds, overrules and flags', () => {
     const markdown = formatAuditSet(setOne)
     expect(markdown).toContain('# Round Audit — fixture-study (set-1)')

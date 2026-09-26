@@ -29,6 +29,7 @@ import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path'
 import type { PerfSpanRecord } from '../src/core/perf/perfTracer'
 import type { TraceRecord } from '../src/core/trace/runTrace'
 import { parseAllowDiffers } from '../e2e/live/allowedDifference.ts'
+import { launchDecisionSeamsOf, launchRoutingOf } from '../e2e/live/launchRouting.ts'
 import { LIVE_ARTIFACTS_ROOT, LIVE_PRIVATE_ROOT, parseJsonl, readCaptureSet, writeFileAtomic } from '../e2e/live/artifacts.ts'
 import {
   AUDIT_VERDICTS,
@@ -743,17 +744,9 @@ function main(): void {
       keyManifestDigest: context.grades?.keyManifestDigest ?? keyManifestDigest(manifest),
       gradesReviewers: context.grades === null ? [] : [...new Set(context.grades.entries.filter((entry) => entry.status !== 'pending').map((entry) => entry.reviewer))].sort(),
       gradesRevision: context.grades?.revision ?? null,
-      roles: [
-        ...new Set(
-          launches.flatMap((launch) =>
-            (['orchestrator', 'subagent', 'vision'] as const).map((role) => {
-              const provenanceOfRole = launch.roles[role]
-              return `${role}=${provenanceOfRole.configured ? provenanceOfRole.model : `unconfigured (${provenanceOfRole.reason})`}`
-            }),
-          ),
-        ),
-      ].sort(),
+      roles: launchRoutingOf(launches),
       reasoningEffortOverride: launches.find((launch) => launch.reasoningEffortOverride !== null)?.reasoningEffortOverride ?? null,
+      decisionSeams: launchDecisionSeamsOf(launches),
       effortOverrides: [...new Set(launches.flatMap((launch) => Object.keys(launch.effortOverrides)))].sort(),
       adblock: [...new Set(launches.map((launch) => launch.adblock.lists))].sort().join(', '),
       browserSubspans: launches.some((launch) => launch.traceFlags.browserSubspans === true),

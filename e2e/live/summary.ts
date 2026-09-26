@@ -178,6 +178,8 @@ export interface LiveSummaryProvenance {
   readonly mode: string
   readonly adblock: string
   readonly reasoningEffortOverride: string | null
+  /** The `BINGBONG_DECISION_SEAMS` list the Passes forwarded (#279): shared, compared; null when none did. */
+  readonly decisionSeams: string | null
   readonly effortOverrides: readonly string[]
   /** Whether the Passes retained the verbose browser sub-spans (#247): shared, compared, timing records only. */
   readonly browserSubspans: boolean
@@ -294,6 +296,10 @@ export function parseLiveReportForSummary(raw: unknown, label: string): Validati
     if (typeof provenance.gradesRevision !== 'number') errors.push(`${label}: provenance.gradesRevision is not a number`)
     if (provenance.reasoningEffortOverride !== null && !isString(provenance.reasoningEffortOverride)) {
       errors.push(`${label}: provenance.reasoningEffortOverride is neither a string nor null`)
+    }
+    // Absent on reports written before #279, which read as no seam list.
+    if (provenance.decisionSeams !== undefined && provenance.decisionSeams !== null && !isString(provenance.decisionSeams)) {
+      errors.push(`${label}: provenance.decisionSeams is neither a string nor null`)
     }
     // Recorded since #247; a report written before then was captured with the flag off.
     if (provenance.browserSubspans !== undefined && !isBoolean(provenance.browserSubspans)) {
@@ -430,6 +436,7 @@ const FIXED_FIELDS: readonly { readonly name: string; readonly allowable?: Allow
   { name: 'mode', of: (report) => report.provenance.mode },
   { name: 'adblock', of: (report) => report.provenance.adblock },
   { name: 'reasoning-effort override', of: (report) => report.provenance.reasoningEffortOverride ?? 'none' },
+  { name: 'decision seams', of: (report) => report.provenance.decisionSeams ?? 'none' },
   { name: 'effort overrides', of: (report) => report.provenance.effortOverrides.join(', ') || 'none' },
   { name: 'browser sub-spans', of: (report) => (report.provenance.browserSubspans ? 'on' : 'off') },
 ]
@@ -702,6 +709,7 @@ export function buildLiveSummary(inputs: readonly LiveSummaryInput[], generatedA
         mode: shared.mode,
         adblock: shared.adblock,
         reasoningEffortOverride: shared.reasoningEffortOverride,
+        decisionSeams: shared.decisionSeams ?? null,
         effortOverrides: shared.effortOverrides,
         browserSubspans: shared.browserSubspans,
         keyVersion: shared.keyVersion,
@@ -797,7 +805,7 @@ export function formatLiveSummary(summary: LiveSummary): string {
   lines.push(`- reviewer(s): ${provenance.reviewers.join('; ')}`)
   lines.push(`- study ${provenance.study}, protocol ${provenance.protocolVersion}, mode ${provenance.mode}, prompt version(s) ${provenance.promptVersions.join(', ')}`)
   lines.push(
-    `- reasoning override: ${provenance.reasoningEffortOverride ?? 'none'} | effort overrides: ${provenance.effortOverrides.length === 0 ? 'none' : provenance.effortOverrides.join(', ')} | adblock: ${provenance.adblock} | browser sub-spans: ${provenance.browserSubspans ? 'on' : 'off'}`,
+    `- reasoning override: ${provenance.reasoningEffortOverride ?? 'none'} | decision seams: ${provenance.decisionSeams ?? 'none'} | effort overrides: ${provenance.effortOverrides.length === 0 ? 'none' : provenance.effortOverrides.join(', ')} | adblock: ${provenance.adblock} | browser sub-spans: ${provenance.browserSubspans ? 'on' : 'off'}`,
   )
   lines.push('')
   lines.push('Per input, listed and never compared:')

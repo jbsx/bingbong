@@ -82,6 +82,34 @@ describe('composeMeasuredLaunch', () => {
     expect(composed.secrets).toEqual(expect.arrayContaining(['sk-orchestrator-key-123', 'sk-worker-key-456']))
   })
 
+  it('records the decision role and the seam list, and pins an unconfigured role empty past the env file (#279)', () => {
+    const on = composeMeasuredLaunch({
+      profile,
+      git,
+      envFile: { path: '/repo/.env', present: true, values: { TYPESAFE_API_KEY: 'ts-decision-key-789' } },
+      processEnv: { ...PRODUCTION, BINGBONG_DECISION_SEAMS: 'passage,result' },
+    })
+    expect(on.provenance.roles.decision).toMatchObject({ configured: true, model: 'jev-1.13.0', baseUrl: 'https://api.typesafe.ai' })
+    expect(on.provenance.decisionSeams).toBe('passage,result')
+    expect(on.env).toMatchObject({ BINGBONG_DECISION_API_KEY: 'ts-decision-key-789', BINGBONG_DECISION_SEAMS: 'passage,result' })
+    expect(JSON.stringify(on.provenance)).not.toContain('ts-decision-key-789')
+    expect(on.secrets).toContain('ts-decision-key-789')
+
+    // The unconfigured arm: the key exported empty wins over the file, and the
+    // composed env pins every decision key empty so the app — which reads the
+    // same file — cannot find one there either.
+    const off = composeMeasuredLaunch({
+      profile,
+      git,
+      envFile: { path: '/repo/.env', present: true, values: { TYPESAFE_API_KEY: 'ts-decision-key-789' } },
+      processEnv: { ...PRODUCTION, TYPESAFE_API_KEY: '' },
+    })
+    expect(off.provenance.roles.decision).toEqual({ configured: false, reason: 'not configured in the production env' })
+    expect(off.provenance.decisionSeams).toBeNull()
+    expect(off.env.TYPESAFE_API_KEY).toBe('')
+    expect(off.env.BINGBONG_DECISION_API_KEY).toBe('')
+  })
+
   it('refuses an env file that carries a hook or an override — the app would read it past any unset', () => {
     expect(() =>
       composeMeasuredLaunch({
@@ -155,6 +183,22 @@ describe('composeVerificationLaunch', () => {
     })
     expect(composed.provenance.roles.orchestrator).toEqual({ configured: false, reason: 'verification mode: scripted (BINGBONG_LLM_SCRIPT)' })
     expect(composed.provenance.roles.subagent).toEqual({ configured: false, reason: 'verification mode: unconfigured' })
+    expect(composed.provenance.roles.decision).toEqual({ configured: false, reason: 'verification mode: unconfigured' })
+    expect(composed.provenance.decisionSeams).toBeNull()
+  })
+
+  it('records a scripted decision role and its seam list, and refuses a real decision key (#279)', () => {
+    const composed = composeVerificationLaunch({
+      profile,
+      fixture,
+      git,
+      env: { BINGBONG_LLM_SCRIPT: '[]', BINGBONG_DECISION_SCRIPT: '[]', BINGBONG_DECISION_SEAMS: 'tier' },
+    })
+    expect(composed.provenance.roles.decision).toEqual({ configured: false, reason: 'verification mode: scripted (BINGBONG_DECISION_SCRIPT)' })
+    expect(composed.provenance.decisionSeams).toBe('tier')
+    expect(() => composeVerificationLaunch({ profile, fixture, git, env: { BINGBONG_LLM_SCRIPT: '[]', TYPESAFE_API_KEY: 'ts-real' } })).toThrow(
+      /refuses real routing: TYPESAFE_API_KEY/,
+    )
   })
 
   it('refuses a real routing credential and a launch without a scripted orchestrator', () => {

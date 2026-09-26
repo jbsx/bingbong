@@ -28,6 +28,7 @@ import type { AgentRole } from '../../src/core/agent/modelRouting'
 import type { FinalizationCause, RunResolution } from '../../src/core/session/runJournal'
 import { nearestRankPercentile } from '../../src/core/report/stats.ts'
 import type { Validation } from './artifacts.ts'
+import { launchDecisionSeamsOf, launchRoutingOf } from './launchRouting.ts'
 import { isVerifiedSuccess, type LiveGradeStatus, type LiveGradeEntry, type LiveGrades, type LiveKeyManifest } from './grades.ts'
 import { duplicateIds, indexAttempts } from './grades.ts'
 import type {
@@ -324,6 +325,8 @@ export interface LiveReportProvenance {
   readonly reviewers: readonly string[]
   readonly roles: readonly string[]
   readonly reasoningEffortOverride: string | null
+  /** The `BINGBONG_DECISION_SEAMS` list the launches forwarded (#279), or null; absent on reports written before it. */
+  readonly decisionSeams?: string | null
   readonly effortOverrides: readonly string[]
   readonly adblock: string
   /** Whether any launch retained the verbose browser sub-spans (#247): timing records only. */
@@ -1006,17 +1009,9 @@ export function buildLiveReport(input: LiveReportInput): Validation<LiveReport> 
     keyManifestDigest: input.grades.keyManifestDigest,
     gradesRevision: input.grades.revision,
     reviewers: [...new Set(input.grades.entries.filter((entry) => entry.status !== 'pending').map((entry) => entry.reviewer))].sort(),
-    roles: [
-      ...new Set(
-        launches.flatMap((launch) =>
-          AGENT_ROLE_ORDER.map((role) => {
-            const provenanceOfRole = launch.roles[role]
-            return `${role}=${provenanceOfRole.configured ? provenanceOfRole.model : `unconfigured (${provenanceOfRole.reason})`}`
-          }),
-        ),
-      ),
-    ].sort(),
+    roles: launchRoutingOf(launches),
     reasoningEffortOverride: launches.find((launch) => launch.reasoningEffortOverride !== null)?.reasoningEffortOverride ?? null,
+    decisionSeams: launchDecisionSeamsOf(launches),
     effortOverrides: [...new Set(launches.flatMap((launch) => Object.keys(launch.effortOverrides)))].sort(),
     adblock: [...new Set(launches.map((launch) => launch.adblock.lists))].sort().join(', '),
     browserSubspans: launches.some((launch) => launch.traceFlags.browserSubspans === true),
@@ -1104,7 +1099,7 @@ export function formatLiveReport(report: LiveReport): string {
   lines.push(`- reviewer(s): ${provenance.reviewers.length === 0 ? 'none yet — every entry is pending' : provenance.reviewers.join('; ')}`)
   lines.push(`- routing: ${provenance.roles.join('; ')}`)
   lines.push(
-    `- reasoning override: ${provenance.reasoningEffortOverride ?? 'none'} | effort overrides: ${provenance.effortOverrides.length === 0 ? 'none' : provenance.effortOverrides.join(', ')} | adblock: ${provenance.adblock} | browser sub-spans: ${provenance.browserSubspans ? 'on' : 'off'}`,
+    `- reasoning override: ${provenance.reasoningEffortOverride ?? 'none'} | decision seams: ${provenance.decisionSeams ?? 'none'} | effort overrides: ${provenance.effortOverrides.length === 0 ? 'none' : provenance.effortOverrides.join(', ')} | adblock: ${provenance.adblock} | browser sub-spans: ${provenance.browserSubspans ? 'on' : 'off'}`,
   )
   lines.push('')
   lines.push('## Populations')
