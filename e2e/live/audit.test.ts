@@ -44,6 +44,7 @@ import {
   delegatedPageRoundsOf,
   searchQueryOf,
   replaySearchStreaks,
+  RESULT_OPENED_PREFIX,
   blockedOrInertOf,
   recountUnavailableByTitle,
   unavailableLandingsOf,
@@ -62,6 +63,7 @@ import {
   rewritesByHuntOf,
   engineRewriteOffKeyOf,
 } from './audit.ts'
+import { resultOpenedLine } from '../../src/core/pipeline/resultPick'
 import * as auditModule from './audit.ts'
 import type { LiveGradeEntry, LiveKeyTask } from './grades.ts'
 import { attemptCapture, T0, turnIdOf } from './gradingFixtures.ts'
@@ -116,6 +118,8 @@ interface RoundSpec {
     unquoted?: { phrases: string[]; query: string }
     /** The Engine Rewrite the Run Trace records on the result (#270, ADR 0067). */
     engineRewrite?: { from: string; to: string; query: string }
+    /** The Result Pick the Run Trace records on the result (#277, ADR 0070). */
+    resultPick?: { ref: number; label: string; href: string; opened: boolean }
   }[]
   readonly reasoning?: string
   /** How long the attempt waited for its first fragment (#256, ADR 0057) — a trace written after the field was kept. */
@@ -170,6 +174,7 @@ function traceOf(rounds: readonly RoundSpec[], extra: readonly Record<string, un
         ...(call.rewritten !== undefined ? { rewritten: call.rewritten } : {}),
         ...(call.unquoted !== undefined ? { unquoted: call.unquoted } : {}),
         ...(call.engineRewrite !== undefined ? { engineRewrite: call.engineRewrite } : {}),
+        ...(call.resultPick !== undefined ? { resultPick: call.resultPick } : {}),
       })
     }
   }
@@ -1736,6 +1741,75 @@ describe('Engine Rewrites (#270, ADR 0067)', () => {
     const byHunt = rewritesByHuntOf([{ mechanical: before, review: null, countsAfterOverrules: before.counts }])!
     expect(byHunt[before.huntId]).not.toHaveProperty('engines')
     expect(formatAuditSet(buildAuditSet(provenanceOf(), [{ mechanical: before, review: null, countsAfterOverrules: before.counts }], []))).toContain('- searches that ran on the Run Engine in place of another Web Engine: not counted')
+  })
+})
+
+describe('Result Picks (#277, ADR 0070)', () => {
+  const SEARCH = (terms: string): string => `https://duckduckgo.com/?q=${terms}`
+  const RESULT = 'https://spec.invalid/watch/'
+  const PICK = { ref: 1, label: 'Home', href: RESULT, opened: true }
+  const picked = `${PAGE('search', SEARCH('longitude+watch'), 'aaaa0001').split('\npage text:')[0]}\nOpened [1] "Home" — ${RESULT}\n${PAGE('Watch spec', RESULT, 'aaaa0002')}`
+  const ROUNDS: RoundSpec[] = [
+    { round: 1, at: 1_000, calls: [{ name: 'navigate', args: { url: SEARCH('longitude+watch') }, result: picked, resultPick: PICK }] },
+    { round: 2, at: 2_000, calls: [{ name: 'navigate', args: { url: SEARCH('harrison+h4') }, result: PAGE('search', SEARCH('harrison+h4'), 'bbbb0001') }] },
+    { round: 3, at: 3_000, calls: [{ name: 'read_page', args: {}, result: READ('search', SEARCH('harrison+h4'), 'bbbb0001') }] },
+    { round: 4, at: 4_000, calls: [{ name: 'navigate', args: { url: OTHER_URL }, result: PAGE('Other', OTHER_URL, 'cccc0001') }] },
+    { round: 5, at: 5_000, calls: [{ name: 'navigate', args: { url: SEARCH('h4+maker') }, result: PAGE('search', SEARCH('h4+maker'), 'dddd0001') }] },
+    { round: 6, at: 6_000, calls: [{ name: 'navigate', args: { url: SEARCH('h4+maker+1759') }, result: PAGE('search', SEARCH('h4+maker+1759'), 'dddd0002') }] },
+  ]
+
+  it('reads the stamp into a call field, reads the opened page as where the Run settled, and replays the open as escape', () => {
+    const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, EXTRA) }))
+    const [first, second, , , fifth, sixth] = mechanical.rounds
+
+    expect(first!.calls[0]).toMatchObject({ resultPick: { ref: 1, href: RESULT, opened: true }, url: RESULT, signature: 'aaaa0002' })
+    expect(second!.calls[0]).not.toHaveProperty('resultPick')
+    // The picked search was a search; the open after it was escape, so the
+    // next search starts a streak of its own.
+    expect([first, second, fifth, sixth].map((round) => round!.calls[0]!.search?.streak)).toEqual([1, 1, 1, 2])
+    expect(replaySearchStreaks(mechanical.rounds).map((round) => round.calls[0]!.search?.streak ?? null)).toEqual([1, 1, null, null, 1, 2])
+  })
+
+  it('counts the picks, the listings returned to the model, and the round a result of each search was opened', () => {
+    const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, EXTRA) }))
+    expect(mechanical.resultPicks).toEqual([1])
+    expect(mechanical.listingsReturned).toEqual([2, 5, 6])
+    expect(mechanical.searchesToOpened).toEqual([
+      { round: 1, openedRound: 1 },
+      { round: 2, openedRound: 4 },
+      { round: 5, openedRound: null },
+      { round: 6, openedRound: null },
+    ])
+  })
+
+  it('sums them in the population and reports them, and reads "not counted" for an audit written before the counter', () => {
+    const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, EXTRA) }))
+    const set = buildAuditSet(provenanceOf(), [{ mechanical, review: null, countsAfterOverrules: mechanical.counts }], [])
+    expect(set.populations.initial).toMatchObject({ resultPicks: 1, listingsReturned: 3, searchesOpened: 2, roundsToOpened: 4 })
+    const markdown = formatAuditSet(set)
+    expect(markdown).toContain('- Result Picks: 1 (round 1); listings returned to the model: 3 (round 2, 5, 6)')
+    expect(markdown).toContain('- rounds from a search to an opened result: 1, 3, none, none')
+    expect(markdown).toContain('1 Result Pick(s) against 3 listing(s) returned to the model, a search’s result opened in 2.0 round(s) on average (2 of 4 searches)')
+    expect(markdown).toContain('result pick')
+
+    const before = { ...mechanical } as AuditMechanical & { resultPicks?: number[]; listingsReturned?: number[]; searchesToOpened?: unknown }
+    delete before.resultPicks
+    delete before.listingsReturned
+    delete before.searchesToOpened
+    const older = formatAuditSet(buildAuditSet(provenanceOf(), [{ mechanical: before, review: null, countsAfterOverrules: before.counts }], []))
+    expect(older).toContain('- Result Picks: not counted')
+    expect(older).toContain('- rounds from a search to an opened result: not counted')
+  })
+
+  it('counts no listing for a search that landed on a wall: nothing was put in front of the model', () => {
+    const walled: RoundSpec[] = [{ round: 1, at: 1_000, calls: [{ name: 'navigate', args: { url: SEARCH('h4') }, result: `${PAGE('search', SEARCH('h4'), 'eeee0001')}\nBLOCKER:challenge duckduckgo.com` }] }]
+    const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(walled, EXTRA) }))
+    expect(mechanical.listingsReturned).toEqual([])
+    expect(mechanical.searchesToOpened).toEqual([])
+  })
+
+  it('finds the opened page by the prefix the app writes the Opened line with', () => {
+    expect(resultOpenedLine({ ref: 1, label: 'Home', href: RESULT }).startsWith(RESULT_OPENED_PREFIX)).toBe(true)
   })
 })
 

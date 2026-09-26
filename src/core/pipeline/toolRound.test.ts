@@ -22,6 +22,10 @@ import type { MemoryEntryId } from '../session/workingMemory'
 import { HELD_PAGE_INSTRUCTION } from './heldPage'
 import { DELEGATED_PAGE_COLLECTED_INSTRUCTION, type DelegatedHolder } from './delegatedPage'
 import { canonicalizeMemoryUrl } from '../session/workingMemory'
+import { createResultPick, listingHead, resultOpenedLine } from './resultPick'
+import type { DecisionModel, DecisionResult, DecisionQuestions } from '../ports/decisionModel'
+import type { DecisionEvent } from '../trace/runTrace'
+import type { RunPlan } from './runPlan'
 
 // Issue #157: the Tool Round executor's own invariants — the order its
 // gated seams run in, and the four ways a round can end. Everything here is
@@ -103,6 +107,8 @@ function harness(
     shownTexts?: ToolRoundConfig['shownTexts']
     /** Snapshot ref facts (#82, #267): how a typed search is told from other typing. */
     describeRef?: ToolRoundConfig['describeRef']
+    /** The Result Pick (#277, ADR 0070): the search landing's best result, opened in the same round. */
+    resultPick?: ToolRoundConfig['resultPick']
     /** The shared order log — pass the same array the scripted tools write to. */
     trace?: string[]
   } = {},
@@ -180,6 +186,7 @@ function harness(
     shownTexts: options.shownTexts ?? (() => shownTextsOf(ledger.snapshot())),
     runEngine: () => runEngineOf(userWordsOf(ledger.snapshot())),
     ...(options.describeRef ? { describeRef: options.describeRef } : {}),
+    ...(options.resultPick ? { resultPick: options.resultPick } : {}),
   })
   return {
     ledger,
@@ -1694,5 +1701,171 @@ describe('the bookkeeping-only Notice rides the round after a round of checkpoin
 
     const bookkeeping = await h.round([call('record_evidence', {}, 'c2')])
     expect(carries(bookkeeping.outcome.results[0]!.outcome)).toBe(false)
+  })
+})
+
+describe('the Result Pick opens a search landing’s best result in the same round (#277, ADR 0070)', () => {
+  const SEARCH = 'https://duckduckgo.com/?q=voyager+golden+record+contents'
+  const RESULT = 'https://science.nasa.gov/mission/voyager/golden-record-contents/'
+  const LISTING = [
+    `navigated: url=${SEARCH} title="voyager golden record contents at DuckDuckGo"`,
+    `# voyager golden record contents at DuckDuckGo — ${SEARCH}`,
+    `[3] link "Golden Record Contents - NASA Science" href=${JSON.stringify(RESULT)}`,
+    '[4] link "Voyager Golden Record - Wikipedia" href="https://en.wikipedia.org/wiki/Voyager_Golden_Record"',
+    'page text:',
+    'The contents of the record were selected for NASA by a committee chaired by Carl Sagan.',
+  ].join('\n')
+  const LANDED = `navigated: url=${RESULT} title="Golden Record Contents"\n# Golden Record Contents — ${RESULT}\npage text:\nThe record carries 115 images and greetings in 55 languages.`
+  const LOOKUP: RunPlan = { objective: 'Find what is on the Voyager Golden Record', headline: null, effortTier: 'lookup', askedItems: ['the contents of the Golden Record'] }
+  const pick = { ref: 3, label: 'Golden Record Contents - NASA Science', href: RESULT }
+
+  function navigateTool(trace: string[], options: { deny?: string } = {}): Tool {
+    return {
+      name: 'navigate',
+      acquisition: true,
+      ...(options.deny !== undefined
+        ? { assessRisk: (callArg: ToolCall): RiskVerdict => (callArg.args.url === options.deny ? { kind: 'deny', reason: 'denied: that site is off limits' } : { kind: 'allow' }) }
+        : {}),
+      async execute(callArg: ToolCall): Promise<unknown> {
+        const url = String(callArg.args.url)
+        trace.push(`execute:navigate:${url}`)
+        if (url.includes('?q=')) return LISTING.replaceAll(SEARCH, url)
+        return url === RESULT ? LANDED : `navigated: url=${url} title="Page"\n# Page — ${url}`
+      },
+    }
+  }
+  const executed = (trace: readonly string[]): string[] => trace.filter((entry) => entry.startsWith('execute:'))
+
+  function decisionModel(result: (questions: DecisionQuestions) => DecisionResult<DecisionQuestions>): DecisionModel {
+    return { model: 'jev-1.13.0', ask: async (request) => result(request.questions) as never }
+  }
+  const choosing = (choice: string, confidence = 0.9, noul = 0.9): DecisionModel =>
+    decisionModel(
+      (questions) =>
+        ({
+          status: 'answered',
+          model: 'jev-1.13.0',
+          latencyMs: 80,
+          answers: {
+            result: {
+              type: 'choice',
+              choice,
+              confidence,
+              probabilities: Object.fromEntries(Object.keys((questions.result as { options: object }).options).map((label) => [label, label === choice ? confidence : 0])),
+            },
+            answers: { type: 'noul', noul },
+          },
+        }) as DecisionResult<DecisionQuestions>,
+    )
+  const unavailable = decisionModel(() => ({ status: 'unavailable', reason: 'timeout', message: 'no answer in 800 ms', latencyMs: 800, model: 'jev-1.13.0' }))
+
+  function withPick(model: DecisionModel, options: { plan?: RunPlan; deny?: string; traceVision?: VisionTraceReporter } = {}) {
+    const trace: string[] = []
+    const records: DecisionEvent[] = []
+    let url: string | null = null
+    const tool = navigateTool(trace, options.deny !== undefined ? { deny: options.deny } : {})
+    const wrapped: Tool = {
+      ...tool,
+      async execute(callArg, context) {
+        const result = await tool.execute(callArg, context)
+        url = String(callArg.args.url)
+        return result
+      },
+    }
+    const h = harness([wrapped], {
+      trace,
+      turnId: 'turn-1',
+      currentPageUrl: () => url,
+      ...(options.traceVision ? { traceVision: options.traceVision } : {}),
+      resultPick: createResultPick({ model, threshold: { choice: 0.7, noul: 0.7 }, runPlan: () => options.plan ?? LOOKUP, round: () => 2, record: (event) => records.push(event) }),
+    })
+    return { h, trace, records }
+  }
+
+  it('fires on a Search URL landing for a Lookup with an open Asked Item: the chosen href is opened, and the result is the listing’s head, the Opened line, then the landed page’s Action Outcome', async () => {
+    const { h, trace, records } = withPick(choosing('3'))
+    const round = await h.round([call('navigate', { url: SEARCH }, 'search')])
+
+    expect(executed(trace)).toEqual([`execute:navigate:${SEARCH}`, `execute:navigate:${RESULT}`])
+    expect(round.outcome.results).toHaveLength(1)
+    expect(resultOf(round.outcome.results[0]!.outcome)).toBe(`${listingHead(LISTING)}\n${resultOpenedLine(pick)}\n${LANDED}`)
+    // Both landings are Observations of their own, and the result is
+    // grounded on the page the Run is now on.
+    expect(h.observed.map((input) => input.payload)).toEqual([LISTING, LANDED])
+    expect(round.outcome.results[0]!.observationId).toBe(h.ledger.snapshot().at(-1)!.id)
+    expect(records.map((record) => [record.seam, record.round, record.acted])).toEqual([['result', 2, 'acted']])
+    const results = round.events.filter((event) => event.type === 'tool_result')
+    expect(results).toHaveLength(1)
+    expect(results[0]).toMatchObject({ callId: 'search', resultPick: { ref: 3, label: pick.label, href: RESULT, opened: true } })
+  })
+
+  it('never fires for a Direct Action', async () => {
+    const { h, trace, records } = withPick(choosing('3'), { plan: { ...LOOKUP, effortTier: 'direct_action', askedItems: [] } })
+    const round = await h.round([call('navigate', { url: SEARCH }, 'search')])
+    expect(executed(trace)).toEqual([`execute:navigate:${SEARCH}`])
+    expect(resultOf(round.outcome.results[0]!.outcome)).toBe(LISTING)
+    expect(records).toEqual([])
+  })
+
+  it('never fires on a landing that is not a search', async () => {
+    const { h, trace, records } = withPick(choosing('3'))
+    await h.round([call('navigate', { url: 'https://science.nasa.gov/voyager' }, 'open')])
+    expect(executed(trace)).toEqual(['execute:navigate:https://science.nasa.gov/voyager'])
+    expect(records).toEqual([])
+  })
+
+  it('returns the listing byte-identical under threshold and when the Decision Model is unavailable, and records which', async () => {
+    const plain = harness([navigateTool([])])
+    const expected = (await plain.round([call('navigate', { url: SEARCH }, 'search')])).outcome.results[0]!.outcome
+
+    for (const [model, acted] of [
+      [choosing('3', 0.4), 'under_threshold'],
+      [choosing('3', 0.9, 0.2), 'under_threshold'],
+      [unavailable, 'unavailable'],
+    ] as const) {
+      const { h, trace, records } = withPick(model)
+      const round = await h.round([call('navigate', { url: SEARCH }, 'search')])
+      expect(executed(trace)).toEqual([`execute:navigate:${SEARCH}`])
+      expect(round.outcome.results[0]!.outcome).toEqual(expected)
+      expect(round.events.find((event) => event.type === 'tool_result')).not.toHaveProperty('resultPick')
+      expect(records.map((record) => record.acted)).toEqual([acted])
+    }
+  })
+
+  it('is a result opened for the Search Loop rail: the streak resets on the pick, and a nudge the search owed is not delivered', async () => {
+    const observations: ToolTraceEvent[] = []
+    let model: DecisionModel = unavailable
+    const trace: string[] = []
+    const h = harness([navigateTool(trace)], {
+      trace,
+      turnId: 'turn-1',
+      traceVision: (event) => observations.push(event),
+      resultPick: createResultPick({
+        model: { model: 'jev-1.13.0', ask: (request) => model.ask(request) },
+        threshold: { choice: 0.7, noul: 0.7 },
+        runPlan: () => LOOKUP,
+        round: () => 1,
+        record: () => {},
+      }),
+    })
+    const search = (n: number): ToolCall => call('navigate', { url: `https://duckduckgo.com/?q=golden+record+${n}` }, `s${n}`)
+    await h.round([search(1), search(2)])
+    model = choosing('3')
+    const picked = await h.round([search(3)])
+    model = unavailable
+    await h.round([search(4)])
+
+    const streaks = observations.filter((event) => event.kind === 'search_observation').map((event) => (event as { streak: number }).streak)
+    // The picked search is still a search (3); the open after it is escape, so the next search starts over.
+    expect(streaks).toEqual([1, 2, 3, 1])
+    expect(resultOf(picked.outcome.results[0]!.outcome)).not.toContain('The last searches ran one after another')
+  })
+
+  it('passes the pick’s navigate through the Risk Gate like any other: a denied open leaves the whole listing and says what failed', async () => {
+    const { h, trace } = withPick(choosing('3'), { deny: RESULT })
+    const round = await h.round([call('navigate', { url: SEARCH }, 'search')])
+    expect(executed(trace)).toEqual([`execute:navigate:${SEARCH}`])
+    expect(resultOf(round.outcome.results[0]!.outcome)).toBe(`${LISTING}\nTried to open [3] "${pick.label}" — ${RESULT}: denied: that site is off limits`)
+    expect(round.events.find((event) => event.type === 'tool_result')).toMatchObject({ resultPick: { ref: 3, opened: false } })
   })
 })

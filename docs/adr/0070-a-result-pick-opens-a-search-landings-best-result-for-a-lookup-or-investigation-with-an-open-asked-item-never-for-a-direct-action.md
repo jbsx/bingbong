@@ -78,3 +78,31 @@ Is escape under [ADR 0058](0058-a-search-loop-is-consecutive-searches-with-nothi
 Chains into [ADR 0069](0069-a-run-makes-an-evidence-checkpoint-from-a-selected-passage-grounded-by-carrying-the-passage-in-the-result-the-model-reads.md).
 Opens results by href as [ADR 0033](0033-a-ref-names-the-element-it-was-shown-as.md)
 lets the model do.
+
+## Notes
+
+- 2026-09-26, implemented (#277). The judgement lives in
+  `src/core/pipeline/resultPick.ts` (`createResultPick`), created by the
+  pipeline only when `decision()?.seams.has('result')`, at
+  `DECISION_THRESHOLDS.result` (0.7 / 0.7); a Subagent's executor is handed
+  none. The executor's per-call body became one `step`, and the pick's
+  navigate is a second `step` under its own call id (`<id>:result-pick`), so
+  it crosses every gate and rail as its own call and leaves its own
+  Observation; the model still sees one `tool_result`, stamped `resultPick`
+  with the ref, label, whole href and whether the open landed, and grounded
+  on the opened page's Observation. Calls the Decision left open: "an open
+  Asked Item" is a declared one, since a Lookup or Investigation plan is
+  refused without one and no Asked Item closes before the Answer; the
+  Choice's options are the listing's link refs less a link to another
+  Search URL (only another listing) and a link inside a dialog, with the
+  whole href read from the tab because the printed line cuts a long one; the
+  listing's head is everything above its `page text:` line, so every ref
+  stays in front of the model and only the preview gives way to the opened
+  page; an open refused or failed leaves the whole listing, followed by a
+  `Tried to open` line; and a Search Loop nudge the search owed is dropped
+  once the open lands. The Round Audit reads the stamp as the call's
+  `resultPick`, takes the opened page as where the Run settled, replays the
+  open as escape, and counts per attempt `resultPicks`,
+  `listingsReturned` and `searchesToOpened` (optional and outside the
+  digest, so older audits read "not counted"; the call field is present
+  only on a pick, so an attempt with none keeps its digest).

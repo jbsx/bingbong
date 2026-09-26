@@ -10,9 +10,9 @@ import { createVisionBudget, MAX_ORCHESTRATOR_VISION_CALLS } from '../agent/suba
 import { traceSearchObservation, traceVisionBudget } from './visionSeam'
 import { createBlockerGate, orchestratorBlockerEscalation, type BlockerEscalation } from './blockerGate'
 import { createSearchLoopRail } from './searchLoopRail'
-import { createComposedAddressRail, withComposedAddressRewrite } from './composedAddressRail'
-import { createUnseenPhraseRail, withUnseenPhraseRewrite, type ShownText } from './unseenPhraseRail'
-import { createEngineRewriteRail, withEngineRewrite } from './engineRewriteRail'
+import { createComposedAddressRail, withComposedAddressRewrite, type ComposedAddressRewrite } from './composedAddressRail'
+import { createUnseenPhraseRail, withUnseenPhraseRewrite, type ShownText, type UnseenPhraseRewrite } from './unseenPhraseRail'
+import { createEngineRewriteRail, withEngineRewrite, type EngineRewrite } from './engineRewriteRail'
 import type { WebEngine } from './webEngine'
 import { createVerificationRail, verificationRouteOf, type VerificationGate, type VerificationRailDeps } from './verificationRail'
 import type { VerificationRoute } from '../session/verificationAttempts'
@@ -30,6 +30,7 @@ import type { FinalizationCause } from '../session/runJournal'
 import type { HeldObservationsLookup } from '../session/sessionEvidence'
 import { heldPageNotice, landedOnAnotherPage } from './heldPage'
 import { createDelegatedPageNotices, type DelegatedPagesLookup } from './delegatedPage'
+import { resultPickCall, withResultPick, type PickedResult, type ResultPick } from './resultPick'
 
 // Issue #154, step 2 (#157): the Tool Round executor.
 //
@@ -40,7 +41,8 @@ import { createDelegatedPageNotices, type DelegatedPagesLookup } from './delegat
 // the Vision Budget, the search-loop gate, execution, then classify → Observation ledger → Blocker
 // observe → the Blocker trip → search-loop observe → Composed Address observe
 // → verification observe → no-progress observe → the no-Progress trip → the
-// Held Page landing → Notices. That
+// Held Page landing → the Result Pick (#277: a picked result's navigate
+// crosses the whole order again as its own call) → Notices. That
 // order is an ADR 0010 / ADR 0027 / ADR 0037 / ADR 0041 requirement, and it used to
 // live as comments in a nine-parameter generator plus a loop body in the
 // Run pipeline, with the steering variable threaded through six exits.
@@ -286,6 +288,13 @@ export interface ToolRoundConfig {
    * handed down from the Run that spawned it. Absent — DuckDuckGo.
    */
   readonly runEngine?: () => WebEngine
+  /**
+   * The Result Pick (#277, ADR 0070): a search landing's best result, chosen
+   * by the Decision Model, opened in the same round by a navigate that
+   * crosses every seam below as its own call. Absent — no Decision Model,
+   * the `result` seam off, or a Subagent — every listing reaches the model.
+   */
+  readonly resultPick?: ResultPick
   /** Advisory bookkeeping only — a throwing tracer never fails a round. */
   readonly diagnostics?: {
     readonly tracer?: PerfTracer
@@ -371,6 +380,23 @@ function recordSpan(tracer: PerfTracer | undefined, turnId: string | undefined, 
     reportFault('pipeline.toolRound.recordSpan', error, { turnId })
     // swallowed — see above
   }
+}
+
+/**
+ * One call as the round's seams left it (#157, #277): what answered it, the
+ * rewrites it ran under, the call that ran, its raw outcome, the outcome as
+ * the model reads it before any Notice, and the Observation it minted.
+ */
+interface CallStep {
+  readonly intercepted: ToolResultOutcome | null
+  readonly closed: boolean
+  readonly engineRewrite: EngineRewrite | null
+  readonly rewrite: ComposedAddressRewrite | null
+  readonly unquoted: UnseenPhraseRewrite | null
+  readonly executedCall: ToolCall
+  readonly outcome: ToolResultOutcome
+  readonly read: ToolResultOutcome
+  readonly observedRecord: ObservationRecord | null
 }
 
 export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecutor {
@@ -651,6 +677,183 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
     }
   }
 
+  /**
+   * One call through the round's seams (#157), from the per-call gate to the
+   * last Notice it owes: the rewrites, the gated execution, the Observation
+   * ledger and every rail's observe. The model's call takes one step; a
+   * Result Pick's navigate (#277, ADR 0070) takes another of its own, so it
+   * crosses every gate and rail any navigate does. What the model reads is
+   * assembled by the caller, where the Notices attach.
+   */
+  async function* step(call: ToolCall, turnId: string | undefined): AsyncGenerator<UnstampedEvent, CallStep> {
+    // The per-call gate (#135/#199): the epoch's boundaries are checked
+    // before every call begins, so no browser, vision, media,
+    // delegation, or user-question action starts past one — the
+    // deadline for any epoch, and for a Subagent its parent Run's
+    // Finalization too. An already-executing non-interruptible action
+    // settles once — this check runs between calls — but every later
+    // acquisition sibling in the response is refused by the closed-tool
+    // check below.
+    if (capabilities.perCallGate) effortEpoch.tripPerCallGate()
+    // The caller's own answer (#116): a Run Plan report never reaches a
+    // gate or an execution once the pipeline handled it.
+    const intercepted = config.intercept?.(call) ?? null
+    // Finalization (#117/AC3): acquisition and ask_user calls are refused
+    // before any gate or execution — the run's work is over; only
+    // bookkeeping remains, and the refusal itself carries the finalize
+    // directive.
+    const closedTool = intercepted === null && isInFinalization() ? toolsByName.get(call.name) : undefined
+    const closed = closedTool !== undefined && closedInFinalization(closedTool)
+    // The Engine Rewrite (#270, ADR 0067): a search on a Web Engine other
+    // than the Run Engine runs as the Run Engine's search, first in the
+    // chain, so the rewrites after it see the rewritten call.
+    const engineRewrite = intercepted === null && !closed ? (engineRewriteRail?.rewrite(call) ?? null) : null
+    const engineCall = engineRewrite?.call ?? call
+    // The Composed Address rewrite (#255, ADR 0055): after a site's one
+    // Not-found Landing, a composed address to it runs as a search of the
+    // site. The search is the call every gate and rail below sees — it is a
+    // search to all of them — while the model's call keeps its place in the
+    // round, and the result it reads opens with the line saying what ran.
+    const rewrite = intercepted === null && !closed ? (composedAddressRail?.rewrite(engineCall) ?? null) : null
+    // The Unseen Phrase rewrite (#267, ADR 0064): a search quoting a phrase
+    // this run was never shown runs unquoted. Judged on the call that runs
+    // — a Composed Address rewritten into a search is judged as that search
+    // — under the same conditions, so the gates below see the terms that run.
+    const unquoted = intercepted === null && !closed && unseenPhraseRail !== null ? await unseenPhraseRail.rewrite(rewrite?.call ?? engineCall) : null
+    const executedCall = unquoted?.call ?? rewrite?.call ?? engineCall
+    const outcome: ToolResultOutcome =
+      intercepted !== null
+        ? intercepted
+        : closed
+          ? { ok: false, error: closedToolRefusal() }
+          : yield* runGatedTool(executedCall, turnId)
+
+    // Observation ledger (#111): the raw outcome as the tool produced
+    // it, ahead of the Notices attached below — later checkpoint
+    // validation checks excerpts against what the source actually said,
+    // not against round-added guidance. The minted identity rides beside
+    // the result (#124): Run Context Compaction grounds eligibility on it.
+    const classification = classifyToolObservation(call.name)
+    const sourceUrl = classification.pageFacing ? config.currentPageUrl?.() : undefined
+    const observedRecord = config.observe({
+      producer: classification.producer,
+      ok: outcome.ok,
+      payload: outcome.ok ? outcome.result : outcome.error,
+      ...(sourceUrl ? { sourceUrl } : {}),
+    })
+    // Same-wall Blocker gate (#80): marker lines riding successful
+    // results arm it; a successful different-host browser interaction
+    // disarms it. Sees the raw outcome — the Notices attached below
+    // change nothing it consumes.
+    blockerGate.observe(executedCall, outcome)
+    // The Blocker trip (#202, ADR 0037): a second Tool Round in which
+    // this run kept at the same wall ends it. The refusal that tripped
+    // already carries the Finalize Instruction; entering here — before
+    // this round's next call is gated — is what closes the remaining
+    // acquisition siblings, exactly as the no-Progress trip below does.
+    const wall = blockerGate.finalizationDue()
+    if (wall !== null) effortEpoch.enterFinalization('blocker', wall)
+    // Search-loop rail (#74/#82): observe every processed call (this is
+    // what tracks and resets the streak — a failed intervening tool
+    // leaves it alone); its advisory verdict is an immediate Notice. What
+    // it observed in a search is the round's to record (#243, ADR 0049),
+    // refused searches included — the rail advanced its streak on them.
+    if (searchLoopRail !== null) {
+      const verdict = await searchLoopRail.observe(executedCall, outcome)
+      notices.owe('search_loop', verdict.notice)
+      traceSearchObservation(toolContext, executedCall, verdict.observation)
+    }
+    // The Composed Address rail (#239, ADR 0050): a result offers the
+    // addresses it showed and the page the tab settled on, and a composed
+    // navigate that landed on a Not-found Page spends its site's
+    // allowance — before the round's next call is rewritten or gated. It
+    // observes the call that ran, so a rewritten one is the search it was.
+    // The links a page-facing call showed are offered whole from the
+    // tab's refs (#258): the printed line cuts a long href.
+    if (composedAddressRail !== null) {
+      const linkHrefs = classification.pageFacing && outcome.ok ? await readLinkHrefs(turnId) : undefined
+      composedAddressRail.observe(executedCall, outcome, sourceUrl ?? null, linkHrefs)
+    }
+    // The verification rail (#212, ADR 0041): a failed check spends its
+    // route for the rest of this run, and the words the route reported
+    // are handed to the Session verbatim — the rail derives no cause
+    // from them, and the Session retains none.
+    if (verificationRail !== null) {
+      try {
+        const spent = verificationRail.observe(routeOf(executedCall), outcome, attempted.has(executedCall))
+        if (spent !== null) {
+          config.verification?.retainFailure?.({ ...spent, failure: routeWords(spent.failure) })
+        }
+      } catch (error) {
+        // Retention is bookkeeping over the Session store; a store that
+        // throws loses the record, never the Run.
+        reportFault('pipeline.toolRound.verificationObserve', error, { turnId })
+      }
+    }
+    // No-progress rails (#126, ADR 0027): the redundancy nudge and the
+    // Approach instructions are immediate Notices too; two exhausted
+    // Approaches trip the run into Finalization mid-round — remaining
+    // acquisition siblings of this round are then refused by the
+    // closed-tool check above, each carrying the Finalize Instruction.
+    if (noProgressRail !== null) {
+      notices.owe('no_progress', await noProgressRail.observe(executedCall, outcome))
+      if (noProgressRail.finalizationDue()) effortEpoch.tripNoProgress()
+    }
+    // The Held Page landing (#240, ADR 0051): a successful page-facing call
+    // that settled on a different page from the last successful one — or
+    // is this Run's first — names what the Session holds from it, once.
+    // The reads that follow stay on that page, so they land nowhere; a
+    // failed call is no landing, so the next success there carries it
+    // instead. Precedence puts it after the no-progress verdict above.
+    if (config.heldObservations !== undefined && classification.pageFacing && outcome.ok) {
+      notices.owe('held_page', heldPageLanding(config.heldObservations, sourceUrl ?? null, turnId))
+    }
+    // The Delegated Page Notice (#273, ADR 0065): any successful
+    // page-facing call on a page a Subagent holds — not only a landing, so
+    // a Run already on the page when a Subagent is sent there is told, and
+    // a holder's state change on a page the Run stays on is told too —
+    // once per page, holder and state. The page still loaded.
+    if (delegatedPageNotices !== null && classification.pageFacing && outcome.ok) {
+      notices.owe('delegated_page', delegatedPageNotices.onPage(sourceUrl ?? null))
+    }
+    // A rewritten call's line opens what the model reads (#255), ahead of
+    // every Notice; when more than one rewrite fired, each adds its own
+    // line in chain order — the engine line (#270), then the address
+    // line, then the Unseen Phrase head (#267).
+    const unquotedOutcome = unquoted === null ? outcome : withUnseenPhraseRewrite(outcome, unquoted)
+    const addressOutcome = rewrite === null ? unquotedOutcome : withComposedAddressRewrite(unquotedOutcome, rewrite)
+    const read = engineRewrite === null ? addressOutcome : withEngineRewrite(addressOutcome, engineRewrite)
+    return { intercepted, closed, engineRewrite, rewrite, unquoted, executedCall, outcome, read, observedRecord }
+  }
+
+  /**
+   * The Result Pick (#277, ADR 0070): after a search the model ran, the
+   * listing's best result — when the Decision Model's answers clear — opened
+   * by a step of its own. Null when nothing was opened: no seam, a call the
+   * round answered or refused itself, a round already finalizing, a landing
+   * not asked about, or an answer that did not clear. A seam that throws
+   * loses the pick, never the round.
+   */
+  async function* pickResult(
+    call: ToolCall,
+    taken: CallStep,
+    turnId: string | undefined,
+  ): AsyncGenerator<UnstampedEvent, { readonly pick: PickedResult; readonly landed: CallStep } | null> {
+    if (config.resultPick === undefined || taken.intercepted !== null || taken.closed || isInFinalization()) return null
+    let pick: PickedResult | null = null
+    try {
+      pick = await config.resultPick.choose(taken.executedCall, taken.outcome)
+    } catch (error) {
+      reportFault('pipeline.toolRound.resultPick', error, { turnId })
+    }
+    if (pick === null) return null
+    const landed = yield* step(resultPickCall(call, pick), turnId)
+    // A result opened is escape (ADR 0058): a Search Loop nudge the search
+    // owed speaks of searches with nothing opened between them.
+    if (landed.outcome.ok) notices.clear('search_loop')
+    return { pick, landed }
+  }
+
   async function* run(
     turn: { readonly calls: readonly ToolCall[] },
     turnId?: string,
@@ -691,136 +894,9 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
         break
       }
       yield { type: 'tool_call', callId: call.id, name: call.name, args: call.args, at: clock.now() }
-      // The per-call gate (#135/#199): the epoch's boundaries are checked
-      // before every call begins, so no browser, vision, media,
-      // delegation, or user-question action starts past one — the
-      // deadline for any epoch, and for a Subagent its parent Run's
-      // Finalization too. An already-executing non-interruptible action
-      // settles once — this check runs between calls — but every later
-      // acquisition sibling in the response is refused by the closed-tool
-      // check below.
-      if (capabilities.perCallGate) effortEpoch.tripPerCallGate()
-      // The caller's own answer (#116): a Run Plan report never reaches a
-      // gate or an execution once the pipeline handled it.
-      const intercepted = config.intercept?.(call) ?? null
-      // Finalization (#117/AC3): acquisition and ask_user calls are refused
-      // before any gate or execution — the run's work is over; only
-      // bookkeeping remains, and the refusal itself carries the finalize
-      // directive.
-      const closedTool = intercepted === null && isInFinalization() ? toolsByName.get(call.name) : undefined
-      const closed = closedTool !== undefined && closedInFinalization(closedTool)
-      // The Engine Rewrite (#270, ADR 0067): a search on a Web Engine other
-      // than the Run Engine runs as the Run Engine's search, first in the
-      // chain, so the rewrites after it see the rewritten call.
-      const engineRewrite = intercepted === null && !closed ? (engineRewriteRail?.rewrite(call) ?? null) : null
-      const engineCall = engineRewrite?.call ?? call
-      // The Composed Address rewrite (#255, ADR 0055): after a site's one
-      // Not-found Landing, a composed address to it runs as a search of the
-      // site. The search is the call every gate and rail below sees — it is a
-      // search to all of them — while the model's call keeps its place in the
-      // round, and the result it reads opens with the line saying what ran.
-      const rewrite = intercepted === null && !closed ? (composedAddressRail?.rewrite(engineCall) ?? null) : null
-      // The Unseen Phrase rewrite (#267, ADR 0064): a search quoting a phrase
-      // this run was never shown runs unquoted. Judged on the call that runs
-      // — a Composed Address rewritten into a search is judged as that search
-      // — under the same conditions, so the gates below see the terms that run.
-      const unquoted = intercepted === null && !closed && unseenPhraseRail !== null ? await unseenPhraseRail.rewrite(rewrite?.call ?? engineCall) : null
-      const executedCall = unquoted?.call ?? rewrite?.call ?? engineCall
-      const outcome: ToolResultOutcome =
-        intercepted !== null
-          ? intercepted
-          : closed
-            ? { ok: false, error: closedToolRefusal() }
-            : yield* runGatedTool(executedCall, turnId)
-
-      // Observation ledger (#111): the raw outcome as the tool produced
-      // it, ahead of the Notices attached below — later checkpoint
-      // validation checks excerpts against what the source actually said,
-      // not against round-added guidance. The minted identity rides beside
-      // the result (#124): Run Context Compaction grounds eligibility on it.
-      const classification = classifyToolObservation(call.name)
-      const sourceUrl = classification.pageFacing ? config.currentPageUrl?.() : undefined
-      const observedRecord = config.observe({
-        producer: classification.producer,
-        ok: outcome.ok,
-        payload: outcome.ok ? outcome.result : outcome.error,
-        ...(sourceUrl ? { sourceUrl } : {}),
-      })
-      // Same-wall Blocker gate (#80): marker lines riding successful
-      // results arm it; a successful different-host browser interaction
-      // disarms it. Sees the raw outcome — the Notices attached below
-      // change nothing it consumes.
-      blockerGate.observe(executedCall, outcome)
-      // The Blocker trip (#202, ADR 0037): a second Tool Round in which
-      // this run kept at the same wall ends it. The refusal that tripped
-      // already carries the Finalize Instruction; entering here — before
-      // this round's next call is gated — is what closes the remaining
-      // acquisition siblings, exactly as the no-Progress trip below does.
-      const wall = blockerGate.finalizationDue()
-      if (wall !== null) effortEpoch.enterFinalization('blocker', wall)
-      // Search-loop rail (#74/#82): observe every processed call (this is
-      // what tracks and resets the streak — a failed intervening tool
-      // leaves it alone); its advisory verdict is an immediate Notice. What
-      // it observed in a search is the round's to record (#243, ADR 0049),
-      // refused searches included — the rail advanced its streak on them.
-      if (searchLoopRail !== null) {
-        const verdict = await searchLoopRail.observe(executedCall, outcome)
-        notices.owe('search_loop', verdict.notice)
-        traceSearchObservation(toolContext, executedCall, verdict.observation)
-      }
-      // The Composed Address rail (#239, ADR 0050): a result offers the
-      // addresses it showed and the page the tab settled on, and a composed
-      // navigate that landed on a Not-found Page spends its site's
-      // allowance — before the round's next call is rewritten or gated. It
-      // observes the call that ran, so a rewritten one is the search it was.
-      // The links a page-facing call showed are offered whole from the
-      // tab's refs (#258): the printed line cuts a long href.
-      if (composedAddressRail !== null) {
-        const linkHrefs = classification.pageFacing && outcome.ok ? await readLinkHrefs(turnId) : undefined
-        composedAddressRail.observe(executedCall, outcome, sourceUrl ?? null, linkHrefs)
-      }
-      // The verification rail (#212, ADR 0041): a failed check spends its
-      // route for the rest of this run, and the words the route reported
-      // are handed to the Session verbatim — the rail derives no cause
-      // from them, and the Session retains none.
-      if (verificationRail !== null) {
-        try {
-          const spent = verificationRail.observe(routeOf(executedCall), outcome, attempted.has(executedCall))
-          if (spent !== null) {
-            config.verification?.retainFailure?.({ ...spent, failure: routeWords(spent.failure) })
-          }
-        } catch (error) {
-          // Retention is bookkeeping over the Session store; a store that
-          // throws loses the record, never the Run.
-          reportFault('pipeline.toolRound.verificationObserve', error, { turnId })
-        }
-      }
-      // No-progress rails (#126, ADR 0027): the redundancy nudge and the
-      // Approach instructions are immediate Notices too; two exhausted
-      // Approaches trip the run into Finalization mid-round — remaining
-      // acquisition siblings of this round are then refused by the
-      // closed-tool check above, each carrying the Finalize Instruction.
-      if (noProgressRail !== null) {
-        notices.owe('no_progress', await noProgressRail.observe(executedCall, outcome))
-        if (noProgressRail.finalizationDue()) effortEpoch.tripNoProgress()
-      }
-      // The Held Page landing (#240, ADR 0051): a successful page-facing call
-      // that settled on a different page from the last successful one — or
-      // is this Run's first — names what the Session holds from it, once.
-      // The reads that follow stay on that page, so they land nowhere; a
-      // failed call is no landing, so the next success there carries it
-      // instead. Precedence puts it after the no-progress verdict above.
-      if (config.heldObservations !== undefined && classification.pageFacing && outcome.ok) {
-        notices.owe('held_page', heldPageLanding(config.heldObservations, sourceUrl ?? null, turnId))
-      }
-      // The Delegated Page Notice (#273, ADR 0065): any successful
-      // page-facing call on a page a Subagent holds — not only a landing, so
-      // a Run already on the page when a Subagent is sent there is told, and
-      // a holder's state change on a page the Run stays on is told too —
-      // once per page, holder and state. The page still loaded.
-      if (delegatedPageNotices !== null && classification.pageFacing && outcome.ok) {
-        notices.owe('delegated_page', delegatedPageNotices.onPage(sourceUrl ?? null))
-      }
+      const taken = yield* step(call, turnId)
+      const { intercepted, engineRewrite, rewrite, unquoted, outcome, read, observedRecord } = taken
+      const picked = yield* pickResult(call, taken, turnId)
       if (intercepted === null) {
         if (toolsByName.get(call.name)?.checkpoint === true) acceptedCheckpoint ||= outcome.ok
         else onlyCheckpoints = false
@@ -834,15 +910,13 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
       // not already over — judged after the no-Progress trip above, so the
       // tripping result never carries a plan nudge or budget warning.
       const usefulWork = outcome.ok && typeof outcome.result === 'string' && intercepted === null && !isInFinalization()
-      // A rewritten call's line opens what the model reads (#255), ahead of
-      // every Notice; when more than one rewrite fired, each adds its own
-      // line in chain order — the engine line (#270), then the address
-      // line, then the Unseen Phrase head (#267).
-      const unquotedOutcome = unquoted === null ? outcome : withUnseenPhraseRewrite(outcome, unquoted)
-      const addressOutcome = rewrite === null ? unquotedOutcome : withComposedAddressRewrite(unquotedOutcome, rewrite)
-      const readOutcome = engineRewrite === null ? addressOutcome : withEngineRewrite(addressOutcome, engineRewrite)
+      // A search whose result was opened (#277, ADR 0070) reads as the
+      // listing's head, the Opened line and the landed page, and is grounded
+      // on the page the Run is now on; an open that failed leaves the listing.
+      const readOutcome = picked === null ? read : withResultPick(read, picked.pick, picked.landed.read)
+      const groundedOn = picked !== null && picked.landed.outcome.ok ? picked.landed.observedRecord : observedRecord
       const modelFacingOutcome = notices.attach(readOutcome, { usefulWork })
-      results.push({ call, outcome: modelFacingOutcome, observationId: observedRecord?.id ?? null })
+      results.push({ call, outcome: modelFacingOutcome, observationId: groundedOn?.id ?? null })
       yield {
         type: 'tool_result',
         callId: call.id,
@@ -852,6 +926,7 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
         ...(rewrite !== null ? { rewritten: { site: rewrite.site, query: rewrite.query } } : {}),
         ...(unquoted !== null ? { unquoted: { phrases: unquoted.phrases, query: unquoted.query } } : {}),
         ...(engineRewrite !== null ? { engineRewrite: { from: engineRewrite.from.name, to: engineRewrite.to.name, query: engineRewrite.query } } : {}),
+        ...(picked !== null ? { resultPick: { ...picked.pick, opened: picked.landed.outcome.ok } } : {}),
         at: clock.now(),
       }
       // The result ended the round: it is the last thing the round emits.

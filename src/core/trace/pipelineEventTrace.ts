@@ -64,8 +64,10 @@ export function pipelineEventTraceBody(event: PipelineEvent, agentId?: string): 
   const unquoted = event.unquoted !== undefined ? { unquoted: event.unquoted } : {}
   // And the Engine Rewrite (#270, ADR 0067), read the same way.
   const engineRewrite = event.engineRewrite !== undefined ? { engineRewrite: event.engineRewrite } : {}
+  // And the Result Pick (#277, ADR 0070), read the same way.
+  const resultPick = event.resultPick !== undefined ? { resultPick: event.resultPick } : {}
   if (typeof event.result !== 'string') {
-    return { kind: 'pipeline_event', event, ...rewritten, ...unquoted, ...engineRewrite, ...stamped }
+    return { kind: 'pipeline_event', event, ...rewritten, ...unquoted, ...engineRewrite, ...resultPick, ...stamped }
   }
   const whole = TRACE_WHOLE_RESULT_TOOLS.has(event.name)
   // The landing is read off the whole result (#239, ADR 0050): the marker
@@ -82,6 +84,7 @@ export function pipelineEventTraceBody(event: PipelineEvent, agentId?: string): 
     ...rewritten,
     ...unquoted,
     ...engineRewrite,
+    ...resultPick,
     ...stamped,
   }
 }

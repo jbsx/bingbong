@@ -21,6 +21,7 @@ import type { ComposedAddressRewriteStamp } from '../pipeline/composedAddressRai
 import type { TierEscalationDecline } from '../pipeline/effortEpoch'
 import type { UnseenPhraseRewriteStamp } from '../pipeline/unseenPhraseRail'
 import type { EngineRewriteStamp } from '../pipeline/engineRewriteRail'
+import type { ResultPickStamp } from '../pipeline/resultPick'
 import type { AnswerShape } from '../agent/answerContract'
 import type { AgentRole, DecisionSeam } from '../agent/modelRouting'
 import type { DecisionAnswer, DecisionThresholds, DecisionUnavailableReason } from '../ports/decisionModel'
@@ -439,6 +440,12 @@ export interface PipelineEventTraceEvent {
    * Absent on every other result and kind.
    */
   readonly engineRewrite?: EngineRewriteStamp
+  /**
+   * The Result Pick a `tool_result` carries (#277, ADR 0070): the ref, label
+   * and whole href the Run opened from this search's listing, and whether the
+   * open landed. Absent on every other result and kind.
+   */
+  readonly resultPick?: ResultPickStamp
   /**
    * The delegated worker whose Tool Round published this (#185); absent on
    * the Run's own stream. A worker's rounds never reach the main stream —

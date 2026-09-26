@@ -44,6 +44,7 @@ import { classifyUnavailablePage, isUnavailableBasis, type UnavailableLanding } 
 import type { ComposedAddressRewriteStamp } from '../../src/core/pipeline/composedAddressRail.ts'
 import type { UnseenPhraseRewriteStamp } from '../../src/core/pipeline/unseenPhraseRail.ts'
 import type { EngineRewriteStamp } from '../../src/core/pipeline/engineRewriteRail.ts'
+import type { ResultPickStamp } from '../../src/core/pipeline/resultPick.ts'
 import type { PerfSpanRecord } from '../../src/core/perf/perfTracer'
 import type { PipelineEvent } from '../../src/core/pipeline/events'
 import type { EffortTier } from '../../src/core/pipeline/runPlan'
@@ -243,6 +244,14 @@ export interface AuditCall {
    * with none keeps the digest it always had.
    */
   readonly engineRewrite?: string
+  /**
+   * The Result Pick this search's result was opened by (#277, ADR 0070): the
+   * ref and whole href the Run opened from the listing and whether the open
+   * landed, read from the Run Trace's field on the result. Where it landed,
+   * `url`, `title` and `signature` are the opened page's — the Run settled
+   * there. Present only on a pick, so an attempt with none keeps its digest.
+   */
+  readonly resultPick?: Omit<ResultPickStamp, 'label'>
   /** An Evidence Checkpoint's verdict: accepted, or the rejection's head. */
   readonly checkpoint: { readonly accepted: boolean; readonly outcome: string } | null
   /** The app's own Notices riding the result, as marker names. */
@@ -551,6 +560,21 @@ export interface AuditMechanical {
    */
   readonly engineRewrites?: readonly number[]
   /**
+   * The round of every search whose result a Result Pick opened (#277, ADR
+   * 0070), read from the stamp. Beside the rounds, never in them. Absent on
+   * an audit written before the counter.
+   */
+  readonly resultPicks?: readonly number[]
+  /** The round of every successful search whose listing reached the model with no result opened for it (#277). */
+  readonly listingsReturned?: readonly number[]
+  /**
+   * Every search that landed on a listing and the round a result of it was
+   * opened in (#277): by its Result Pick, in its own round, or by the next
+   * navigate or click that consumed something before another search; null
+   * when another search, or the end of the attempt, came first.
+   */
+  readonly searchesToOpened?: readonly { readonly round: number; readonly openedRound: number | null }[]
+  /**
    * The Answers that carried an Identity Slip and the ids slipped in them
    * (#246, ADR 0028), counted from the Run's own `identity_slip` records.
    * Null — not recorded — for a trace written below
@@ -769,6 +793,16 @@ export interface AuditPopulation {
   readonly engineRewrites?: number
   /** Of those, the ones in a round the reviewer judged Off-key; judged attempts only. */
   readonly engineRewritesOffKey?: number
+  /** Searches whose result a Result Pick opened (#277); absent when no attempt counts them. */
+  readonly resultPicks?: number
+  /** Searches whose listing reached the model with no result opened (#277). */
+  readonly listingsReturned?: number
+  /** Successful searches over the attempts that count them (#277). */
+  readonly searchesCounted?: number
+  /** Of those, the searches a result of which was opened (#277). */
+  readonly searchesOpened?: number
+  /** Rounds from a search to its opened result, summed over the opened ones, the search's own round counted (#277). */
+  readonly roundsToOpened?: number
   /** Answers with an Identity Slip over the attempts whose trace recorded them (#246). */
   readonly identitySlipAnswers: number
   /** Ids slipped in those Answers (#246). */
@@ -1306,6 +1340,7 @@ interface ResultFields {
   rewritten: ComposedAddressRewriteStamp | null
   unquoted: UnseenPhraseRewriteStamp | null
   engineRewrite: EngineRewriteStamp | null
+  resultPick: ResultPickStamp | null
 }
 
 interface RawRound {
@@ -1333,6 +1368,14 @@ function unquotedFieldOf(record: TraceLine): UnseenPhraseRewriteStamp | null {
 function engineRewriteFieldOf(record: TraceLine): EngineRewriteStamp | null {
   const field = record.engineRewrite
   return isRecord(field) && isString(field.from) && isString(field.to) && isString(field.query) ? { from: field.from, to: field.to, query: field.query } : null
+}
+
+/** The Result Pick a `tool_result` record carries as a field (#277), or null. */
+function resultPickFieldOf(record: TraceLine): ResultPickStamp | null {
+  const field = record.resultPick
+  return isRecord(field) && isFiniteNumber(field.ref) && isString(field.label) && isString(field.href) && typeof field.opened === 'boolean'
+    ? { ref: field.ref, label: field.label, href: field.href, opened: field.opened }
+    : null
 }
 
 /** The Not-found Landing a `tool_result` record carries as a field (#239), or null. */
@@ -1406,6 +1449,7 @@ function rawRounds(records: readonly TraceLine[]): RawRound[] {
         rewritten: rewrittenFieldOf(record),
         unquoted: unquotedFieldOf(record),
         engineRewrite: engineRewriteFieldOf(record),
+        resultPick: resultPickFieldOf(record),
       })
     }
   }
@@ -1443,6 +1487,7 @@ function rawRounds(records: readonly TraceLine[]): RawRound[] {
       rewritten: settled?.rewritten ?? null,
       unquoted: settled?.unquoted ?? null,
       engineRewrite: settled?.engineRewrite ?? null,
+      resultPick: settled?.resultPick ?? null,
       checkpoint: undefined,
     })
   }
@@ -1583,9 +1628,72 @@ export function replaySearchStreaks(rounds: readonly AuditRound[]): AuditRound[]
         consumed: consumedOf(call),
         search: call.search === null ? null : { query: call.search.query, ...(call.search.signature === undefined ? {} : { signature: call.search.signature }) },
       })
+      if (call.resultPick?.opened === true) replayResultPick(state, consumedOf(call))
       return search === null ? call : { ...call, search }
     }),
   }))
+}
+
+/**
+ * How the Opened line begins (#277): `resultOpenedLine` in
+ * src/core/pipeline/resultPick.ts writes it, which plain Node cannot load, so
+ * the audit holds the prefix and a test pins the two together.
+ */
+export const RESULT_OPENED_PREFIX = 'Opened ['
+
+/** What a Result Pick's opened page said (#277): the result after the Opened line, or the whole text where there is none. */
+function openedPageText(text: string | null): string | null {
+  if (text === null) return null
+  const at = text.indexOf(`\n${RESULT_OPENED_PREFIX}`)
+  if (at === -1) return text
+  const next = text.indexOf('\n', at + 1)
+  return next === -1 ? '' : text.slice(next + 1)
+}
+
+/** The open a Result Pick made (#277, ADR 0070): escape, as the rail observed it, right after the search it came from. */
+function replayResultPick(state: SearchStreakState, consumed: boolean): void {
+  advanceSearchStreak(state, { name: 'navigate', consumed, search: null })
+}
+
+/** The calls that open a result: a navigate or a click that consumed something (#277). */
+const OPENING_TOOLS: ReadonlySet<string> = new Set(['navigate', 'click'])
+
+/**
+ * The Result Pick counts over an attempt's rounds (#277, ADR 0070): the
+ * searches a pick opened a result of, the ones whose listing reached the
+ * model with nothing opened, and for every search that landed on a listing
+ * the round a result of it was opened in — the pick's own round, or the next
+ * navigate or click that consumed something before another search came. A
+ * search that landed on a wall or a missing page put no listing in front of
+ * the model, as it put none in front of the Decision Model.
+ */
+export function resultPickCountsOf(rounds: readonly AuditRound[]): Required<Pick<AuditMechanical, 'resultPicks' | 'listingsReturned' | 'searchesToOpened'>> {
+  const resultPicks: number[] = []
+  const listingsReturned: number[] = []
+  const searches: { round: number; openedRound: number | null }[] = []
+  let waiting: { round: number; openedRound: number | null } | null = null
+  for (const round of rounds) {
+    for (const call of round.calls) {
+      if (call.search !== null) {
+        waiting = null
+        if (!consumedOf(call) || call.wall !== null) continue
+        const opened = call.resultPick?.opened === true
+        const search = { round: round.round, openedRound: opened ? round.round : null }
+        searches.push(search)
+        if (opened) resultPicks.push(round.round)
+        else {
+          listingsReturned.push(round.round)
+          waiting = search
+        }
+        continue
+      }
+      if (waiting !== null && OPENING_TOOLS.has(call.name) && consumedOf(call)) {
+        waiting.openedRound = round.round
+        waiting = null
+      }
+    }
+  }
+  return { resultPicks, listingsReturned, searchesToOpened: searches }
 }
 
 /**
@@ -1959,15 +2067,19 @@ function classifyCall(
   // became of the search, so it is never a refusal: its round is never Failed.
   const refused =
     entry.rewritten === null && result !== undefined && ((!result.ok && !BOOKKEEPING_TOOLS.has(call.name)) || (text !== null && text.startsWith(NOT_EXECUTED_PREFIX)))
-  const page = result !== undefined && result.ok ? pageOf(text) : null
-  const signature = result !== undefined && result.ok ? signatureOf(text) : null
+  // A search whose result a Result Pick opened (#277, ADR 0070) settled on
+  // the opened page: its outcome follows the Opened line, the listing's
+  // head above it.
+  const settled = entry.resultPick?.opened === true ? openedPageText(text) : text
+  const page = result !== undefined && result.ok ? pageOf(settled) : null
+  const signature = result !== undefined && result.ok ? signatureOf(settled) : null
   const wall = text === null ? null : parseBlockerMarker(text)
   // A wall wins over a landing, as it does live; the recorded field wins over
   // the title rule, which only reads a trace that predates it.
-  const landing = result !== undefined && result.ok && wall === null ? (entry.landing ?? landingByTitle(call.name, text, page)) : null
+  const landing = result !== undefined && result.ok && wall === null ? (entry.landing ?? landingByTitle(call.name, settled, page)) : null
   // Its sibling (#262, ADR 0060), read the same way; the two never both
   // answer live, and a Not-found Landing wins here as its status did there.
-  const unavailable = result !== undefined && result.ok && wall === null && landing === null ? (entry.unavailable ?? unavailableByTitle(call.name, text, page)) : null
+  const unavailable = result !== undefined && result.ok && wall === null && landing === null ? (entry.unavailable ?? unavailableByTitle(call.name, settled, page)) : null
   const notices = noticesOf(text)
   const checkpointVerdict =
     checkpoint !== undefined && isString(checkpoint.outcome)
@@ -1991,6 +2103,7 @@ function classifyCall(
     ...(entry.rewritten !== null ? { rewritten: entry.rewritten.query } : {}),
     ...(entry.unquoted !== null ? { unquoted: entry.unquoted.phrases } : {}),
     ...(entry.engineRewrite !== null ? { engineRewrite: `${entry.engineRewrite.from} → ${entry.engineRewrite.to}` } : {}),
+    ...(entry.resultPick !== null ? { resultPick: { ref: entry.resultPick.ref, href: entry.resultPick.href, opened: entry.resultPick.opened } } : {}),
     checkpoint: checkpointVerdict,
     notices,
   }
@@ -2024,8 +2137,9 @@ function classifyCall(
   // click (#261), read by the rail's own helper over the whole result text,
   // nor an Unavailable Landing (#262), read from the field, never the head.
   const consumed =
-    result !== undefined && result.ok && !refused && landing === null && unavailable === null && (text === null || consumedNothingOf(text) === null)
+    result !== undefined && result.ok && !refused && landing === null && unavailable === null && (settled === null || consumedNothingOf(settled) === null)
   const search = advanceSearchStreak(state.search, { name: call.name, consumed, search: observed })
+  if (entry.resultPick?.opened === true) replayResultPick(state.search, consumed)
 
   // Collection and Bookkeeping make no Progress claim; everything else is
   // Acquisition, the catalog's own tools by flag and any other tool as a
@@ -2677,6 +2791,9 @@ export function classifyAttempt(input: AuditTraceInput): AuditMechanical {
     unseenPhraseRewrites: rounds.flatMap((round) => round.calls.filter((call) => call.unquoted !== undefined).map(() => round.round)),
     subagentCitations: subagentCitationsOf(records),
     engineRewrites: rounds.flatMap((round) => round.calls.filter((call) => call.engineRewrite !== undefined).map(() => round.round)),
+    // Result Picks (#277, ADR 0070), beside the rounds: the picks, the
+    // listings returned, and the round a result of each search opened in.
+    ...resultPickCountsOf(rounds),
     identitySlips,
     malformedAnswers: records.filter((record) => record.kind === 'malformed_answer').length,
     answerRetries: records.filter((record) => record.kind === 'answer_retry').length,
@@ -3160,6 +3277,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
   let unseenPhrasesOffKey = 0
   let engineRewrites = 0
   let engineRewritesOffKey = 0
+  let resultPicks: { picks: number; listings: number; searches: number; opened: number; rounds: number } | undefined
   let searchForms: Record<SearchUrlForm, number> | undefined
   let blockedOrInert: Record<keyof BlockedOrInertCounts, number> | undefined
   let unavailableLandings: Record<keyof UnavailableLandingRounds, number> | undefined
@@ -3222,6 +3340,17 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
     rewrittenShown += mechanical.rewrittenShownAddresses?.length ?? 0
     unseenPhrases += mechanical.unseenPhraseRewrites?.length ?? 0
     engineRewrites += mechanical.engineRewrites?.length ?? 0
+    if (mechanical.resultPicks !== undefined && mechanical.listingsReturned !== undefined && mechanical.searchesToOpened !== undefined) {
+      resultPicks ??= { picks: 0, listings: 0, searches: 0, opened: 0, rounds: 0 }
+      resultPicks.picks += mechanical.resultPicks.length
+      resultPicks.listings += mechanical.listingsReturned.length
+      resultPicks.searches += mechanical.searchesToOpened.length
+      for (const search of mechanical.searchesToOpened) {
+        if (search.openedRound === null) continue
+        resultPicks.opened += 1
+        resultPicks.rounds += search.openedRound - search.round + 1
+      }
+    }
     if (mechanical.searchForms !== undefined) {
       searchForms ??= emptySearchForms()
       for (const form of SEARCH_URL_FORMS) searchForms[form] += mechanical.searchForms[form]
@@ -3323,6 +3452,15 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
     unseenPhraseRewritesOffKey: unseenPhrasesOffKey,
     engineRewrites,
     engineRewritesOffKey,
+    ...(resultPicks !== undefined
+      ? {
+          resultPicks: resultPicks.picks,
+          listingsReturned: resultPicks.listings,
+          searchesCounted: resultPicks.searches,
+          searchesOpened: resultPicks.opened,
+          roundsToOpened: resultPicks.rounds,
+        }
+      : {}),
     identitySlipAnswers: slipAnswers,
     identitySlipIds: slipIds,
     identitySlipsNotRecorded: slipsNotRecorded,
@@ -3601,11 +3739,19 @@ function delegatedPageRoundsText(rounds: DelegatedPageRounds | undefined): strin
   return [phase('while running', rounds.running), phase('while finished and uncollected', rounds.finished), phase('after collection', rounds.collected)].join(', ')
 }
 
+/** A population's Result Picks (#277): the picks against the listings returned, and how soon a result of a search was opened. */
+function populationResultPicksText(population: AuditPopulation): string {
+  if (population.resultPicks === undefined) return 'Result Picks not counted'
+  const opened = population.searchesOpened ?? 0
+  const mean = opened === 0 ? 'no search had a result opened' : `a search’s result opened in ${((population.roundsToOpened ?? 0) / opened).toFixed(1)} round(s) on average`
+  return `${population.resultPicks} Result Pick(s) against ${population.listingsReturned ?? 0} listing(s) returned to the model, ${mean} (${opened} of ${population.searchesCounted ?? 0} searches)`
+}
+
 function judgementLines(populations: readonly AuditPopulation[]): string[] {
   return populations.map(
     (population) =>
       `- ${population.label}: ${population.offKeyRounds} Off-key round(s), ${population.searchLoopRounds} Search Loop round(s) by the reviewer (${population.mechanicalSearchRounds} by the streak rule, heads included: ${population.searchRoundsAtStreak2} at streak 2 or beyond, ${population.searchRoundsAtStreak3} at 3 or beyond; attempts by search source ${SEARCH_SOURCES.map((source) => `${source} ${population.searchSources[source]}`).join(', ')}; navigate searches by Search URL form ${searchFormsText(population.searchForms)}; ${populationBlockedOrInertText(population.blockedOrInert)}; ${populationUnavailableLandingsText(population.unavailableLandings)}; ${populationConsentWallsText(population.consentWalls)}; ${populationTierEscalationsText(population.tierEscalations)}), ` +
-      `${population.inheritedRounds} inherited, ${population.rejectedCheckpoints} rejected Evidence Checkpoint(s), ${population.walledRounds} walled round(s), ${population.notFoundNavigates} navigate(s) landed on a Not-found Page (${population.notFoundOffKey} judged Off-key), ${population.rewrittenComposedAddresses ?? 0} Composed Address(es) rewritten into a site search (${population.rewrittenComposedAddressesOffKey ?? 0} judged Off-key, ${population.rewrittenShownAddresses ?? 'not counted'} to an address the Run was shown), ${population.unseenPhraseRewrites ?? 'not counted'} search(es) ran with an Unseen Phrase unquoted (${population.unseenPhraseRewritesOffKey ?? 0} judged Off-key), ${population.engineRewrites ?? 'not counted'} search(es) ran on the Run Engine in place of another Web Engine (${population.engineRewritesOffKey ?? 0} judged Off-key), ${population.subagentRounds} Subagent round(s), ` +
+      `${population.inheritedRounds} inherited, ${population.rejectedCheckpoints} rejected Evidence Checkpoint(s), ${population.walledRounds} walled round(s), ${population.notFoundNavigates} navigate(s) landed on a Not-found Page (${population.notFoundOffKey} judged Off-key), ${population.rewrittenComposedAddresses ?? 0} Composed Address(es) rewritten into a site search (${population.rewrittenComposedAddressesOffKey ?? 0} judged Off-key, ${population.rewrittenShownAddresses ?? 'not counted'} to an address the Run was shown), ${population.unseenPhraseRewrites ?? 'not counted'} search(es) ran with an Unseen Phrase unquoted (${population.unseenPhraseRewritesOffKey ?? 0} judged Off-key), ${population.engineRewrites ?? 'not counted'} search(es) ran on the Run Engine in place of another Web Engine (${population.engineRewritesOffKey ?? 0} judged Off-key), ${populationResultPicksText(population)}, ${population.subagentRounds} Subagent round(s), ` +
       `${population.mergedCheckpoints} merged Evidence Checkpoint(s) (a floor), ${population.heldPageRoundsWithoutProgress} Held Page round(s) without Progress, ${population.bundledCheckpoints} bundled checkpoint round(s), ${population.sameSourceUnsupportedRounds} same-source unsupported round(s), ${subagentCitationsText(population.subagentCitations)}, ${populationSlipsText(population)}, ${delegatedPageCountsText(population.delegatedPageRounds)}, ` +
       `${population.malformedAnswers} Malformed Answer(s) (${population.answerRetries} retried), ` +
       `${transportText(population)}, ` +
@@ -3657,6 +3803,18 @@ function attemptSection(attempt: AuditAttempt): string[] {
   const engines = mechanical.engineRewrites
   lines.push(`- searches that ran on the Run Engine in place of another Web Engine: ${engines === undefined ? 'not counted' : `${engines.length}${engines.length > 0 ? ` (round ${engines.join(', ')})` : ''}`}`)
   lines.push(`- of those, judged Off-key by the reviewer: ${judgement === null ? 'not judged' : engineRewriteOffKeyOf(mechanical, judgement)}`)
+  const rounds = (numbers: readonly number[]): string => `${numbers.length}${numbers.length > 0 ? ` (round ${numbers.join(', ')})` : ''}`
+  lines.push(
+    mechanical.resultPicks === undefined || mechanical.listingsReturned === undefined
+      ? '- Result Picks: not counted'
+      : `- Result Picks: ${rounds(mechanical.resultPicks)}; listings returned to the model: ${rounds(mechanical.listingsReturned)}`,
+  )
+  const toOpen = mechanical.searchesToOpened
+  lines.push(
+    `- rounds from a search to an opened result: ${
+      toOpen === undefined ? 'not counted' : toOpen.length === 0 ? 'no search' : toOpen.map((search) => (search.openedRound === null ? 'none' : String(search.openedRound - search.round + 1))).join(', ')
+    }`,
+  )
   const slips = mechanical.identitySlips
   lines.push(`- Identity Slips: ${slips === null ? `not recorded (a Run Trace below version ${IDENTITY_SLIP_TRACE_VERSION})` : slipCountsText(slips.answers, slips.ids)}`)
   lines.push(`- kinds: ${ROUND_KINDS.map((kind) => `${KIND_LABELS[kind]} ${mechanical.counts[kind]} (${pct(mechanical.shares[kind])})`).join(' · ')}`)
@@ -3692,7 +3850,7 @@ function attemptSection(attempt: AuditAttempt): string[] {
     const inLoop = judgement?.searchLoops.some((loop) => loop.rounds.includes(round.round)) ?? false
     const tools = round.calls.map((call) => `${call.name}${call.refused ? ' ✗' : ''}`).join(', ') || '—'
     const page = round.calls.map((call) => call.url).find((url) => url !== null) ?? '—'
-    const markers = [round.tags.inherited ? 'inherited' : '', round.tags.wall ? 'walled' : '', round.calls.some((call) => call.notFound !== undefined) ? 'not found' : '', round.calls.some((call) => call.unavailable !== undefined) ? 'unavailable' : '', round.calls.some((call) => call.rewritten !== undefined) ? 'rewritten' : '', round.calls.some((call) => call.unquoted !== undefined) ? 'unquoted' : '', round.calls.some((call) => call.engineRewrite !== undefined) ? 'engine rewritten' : '', offKey ? 'off-key' : '', inLoop ? 'search loop' : '', mechanical.searchLoopHeads.includes(round.round) ? 'loop head by the streak rule' : '', round.tags.rejectedCheckpoints > 0 ? `${round.tags.rejectedCheckpoints} rejected checkpoint` : ''].filter((marker) => marker !== '')
+    const markers = [round.tags.inherited ? 'inherited' : '', round.tags.wall ? 'walled' : '', round.calls.some((call) => call.notFound !== undefined) ? 'not found' : '', round.calls.some((call) => call.unavailable !== undefined) ? 'unavailable' : '', round.calls.some((call) => call.rewritten !== undefined) ? 'rewritten' : '', round.calls.some((call) => call.unquoted !== undefined) ? 'unquoted' : '', round.calls.some((call) => call.engineRewrite !== undefined) ? 'engine rewritten' : '', round.calls.some((call) => call.resultPick?.opened === true) ? 'result pick' : '', offKey ? 'off-key' : '', inLoop ? 'search loop' : '', mechanical.searchLoopHeads.includes(round.round) ? 'loop head by the streak rule' : '', round.tags.rejectedCheckpoints > 0 ? `${round.tags.rejectedCheckpoints} rejected checkpoint` : ''].filter((marker) => marker !== '')
     const trace = round.llmRound !== round.round || round.attempt > 1 ? ` (trace ${round.llmRound}.${round.attempt})` : ''
     lines.push(
       `| ${round.round}${trace} | ${KIND_LABELS[round.kind]}${overrule ? ` → ${KIND_LABELS[overrule.kind]}` : ''} | ${tools} | ${head(page, 80)} | ${round.latencyMs ?? '—'} | ${round.reason}${markers.length > 0 ? ` [${markers.join(', ')}]` : ''} |`,

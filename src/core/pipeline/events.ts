@@ -11,6 +11,7 @@ import type { LlmRetryReason } from '../ports/llm'
 import type { ComposedAddressRewriteStamp } from './composedAddressRail'
 import type { UnseenPhraseRewriteStamp } from './unseenPhraseRail'
 import type { EngineRewriteStamp } from './engineRewriteRail'
+import type { ResultPickStamp } from './resultPick'
 
 /**
  * Ownership metadata on Session-scoped events (#86–#100): every published
@@ -97,6 +98,12 @@ export type PipelineEvent = SessionEventIdentity & (
        * read from the round like `rewritten`.
        */
       engineRewrite?: EngineRewriteStamp
+      /**
+       * The Result Pick this result is for (#277, ADR 0070): present only
+       * when the Decision Model chose a result of this search and the Run
+       * opened it, read from the round like `rewritten`.
+       */
+      resultPick?: ResultPickStamp
       at: number
     }
   | {

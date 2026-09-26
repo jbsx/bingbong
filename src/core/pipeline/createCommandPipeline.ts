@@ -101,8 +101,9 @@ import {
   type EvidenceCommitInput,
 } from './evidenceCheckpoint'
 import { candidateCheckpointEvent, evidenceCheckpointEvent } from '../trace/evidenceCheckpointTrace'
-import type { AnswerRetryOutcome, LlmRequestShape, LlmRoundOutcome, RunTraceWriter } from '../trace/runTrace'
-import type { ConfiguredDecisionModel } from '../ports/decisionModel'
+import type { AnswerRetryOutcome, DecisionEvent, LlmRequestShape, LlmRoundOutcome, RunTraceWriter } from '../trace/runTrace'
+import { DECISION_THRESHOLDS, type ConfiguredDecisionModel } from '../ports/decisionModel'
+import { createResultPick } from './resultPick'
 import type { VisionTraceReporter } from '../trace/visionTrace'
 import { createReasoningRounds, reasoningEvent, type TracedReasoningRound } from '../trace/reasoningTrace'
 import { createLlmRounds, llmRequestShape, llmRoundEvent, llmRoundFailure, type LlmRound, type TracedLlmRound } from '../trace/llmRoundTrace'
@@ -1167,6 +1168,13 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
       traceRun && llmRounds
         ? (round: TracedLlmRound): void => traceRun(() => ({ turnId, ...llmRoundEvent(round) }))
         : undefined
+    // The Decision Model this Run may ask (#275, ADR 0068), read once: null
+    // leaves every seam off and the Run exactly as before. Each question a
+    // seam asks is one `decision` record, numbered by the LLM round whose
+    // Tool Round asked it.
+    const decision = deps.decision?.() ?? null
+    let llmRound = 0
+    const writeDecision = (event: DecisionEvent): void => traceRun?.(() => ({ turnId, ...event }))
     // The off_contract_reply records (#198): one per reserved Answer round
     // whose reply was not the contract's shape — the Run's own round and a
     // delegated worker's (handed down as `traceSubagentOffContractReply`).
@@ -1411,6 +1419,23 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           // The Run Engine (#270, ADR 0067): the engine the user named in
           // this Run's command or a Steering directive, else DuckDuckGo.
           runEngine,
+          // The Result Pick (#277, ADR 0070): with the `result` seam on, a
+          // search landing's best result is opened in the same round for a
+          // Lookup or Investigation with an open Asked Item. The plan is
+          // read as the landing is judged, so a round-1 search travelling
+          // with its plan is judged under the declared tier.
+          ...(decision?.seams.has('result')
+            ? {
+                resultPick: createResultPick({
+                  model: decision.model,
+                  threshold: DECISION_THRESHOLDS.result,
+                  runPlan: () => runPlan,
+                  round: () => llmRound,
+                  record: writeDecision,
+                  ...(deps.describeRef ? { describeRef: deps.describeRef } : {}),
+                }),
+              }
+            : {}),
           // The verification rail's Session seams (#212, ADR 0041). All
           // four resolve per call against the live store rather than
           // against admission: a Candidate this Run has only just
@@ -1787,6 +1812,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             // The request is built before any attempt can close, so this
             // is the llmRounds gate restated, never a missing shape.
             if (sentRound === undefined) return
+            llmRound = closed.round
             writeLlmRound?.({ ...closed, role: 'orchestrator', ...sentRound })
           }
           // Whether this round is the reserved Answer round, read once as

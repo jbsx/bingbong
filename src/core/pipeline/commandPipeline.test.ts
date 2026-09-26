@@ -6,6 +6,8 @@ import { ASKED_ITEM_UNESTABLISHED, ASKED_ITEM_UNSTATED, askedItemsRetryMessage, 
 import { askedItemsOverride } from '../session/runJournal'
 import { setFaultSink, type FaultReport } from '../trace/fault'
 import type { RunTraceEvent } from '../trace/runTrace'
+import type { DecisionModel } from '../ports/decisionModel'
+import type { DecisionSeam } from '../agent/modelRouting'
 import { VisionDeadlineError } from '../ports/vision'
 import { createCommandPipeline, TIER_ESCALATION_SPOKEN, type CommandPipeline } from './createCommandPipeline'
 import { hostFromUrl } from './blockerGate'
@@ -6797,6 +6799,90 @@ describe('observation ledger (#111)', () => {
     await collect(pipeline, 'and Voyager 2?')
 
     expect(urls).toEqual([google, 'https://duckduckgo.com/?q=voyager%20heliopause'])
+  })
+
+  describe('the Result Pick through the Run (#277, ADR 0070)', () => {
+    const SEARCH = 'https://duckduckgo.com/?q=voyager+golden+record'
+    const RESULT = 'https://science.nasa.gov/mission/voyager/golden-record/'
+    const navigateTo = (urls: string[]): Tool => ({
+      name: 'navigate',
+      acquisition: true,
+      async execute(call) {
+        const url = String(call.args.url)
+        urls.push(url)
+        return url === SEARCH
+          ? `navigated: url=${url} title="Search"\n# Search — ${url}\n[1] link "The Golden Record - NASA Science" href=${JSON.stringify(RESULT)}`
+          : `navigated: url=${url} title="The Golden Record"\n# The Golden Record — ${url}`
+      },
+    })
+    const asked: string[] = []
+    const choosing: DecisionModel = {
+      model: 'jev-1.13.0',
+      async ask(request) {
+        asked.push(request.state)
+        return {
+          status: 'answered',
+          model: 'jev-1.13.0',
+          latencyMs: 60,
+          answers: { result: { type: 'choice', choice: '1', confidence: 0.95, probabilities: { '1': 0.95 } }, answers: { type: 'noul', noul: 0.9 } },
+        } as never
+      },
+    }
+    const plan = (effortTier: 'direct_action' | 'lookup'): ToolCall => ({
+      id: 'plan',
+      name: 'report_run_plan',
+      args: { objective: 'Find what is on the Golden Record', headline: 'Golden Record', effort_tier: effortTier, ...(effortTier === 'lookup' ? { asked_items: ['the record’s contents'] } : {}) },
+    })
+    async function run(effortTier: 'direct_action' | 'lookup', seams: readonly DecisionSeam[], planLast = false) {
+      asked.length = 0
+      const urls: string[] = []
+      const traced: RunTraceEvent[] = []
+      const events: PipelineEvent[] = []
+      const pipeline = createCommandPipeline({
+        llm: new ScriptedLlm([
+          {
+            kind: 'tool_calls',
+            calls: planLast ? [{ id: 's1', name: 'navigate', args: { url: SEARCH } }, plan(effortTier)] : [plan(effortTier), { id: 's1', name: 'navigate', args: { url: SEARCH } }],
+          },
+          { kind: 'answer', speak: 'Done.', display: 'Done.' },
+        ]),
+        tts: new RecordingTts(),
+        clock: new FakeClock(),
+        tools: [createReportRunPlanTool(), navigateTo(urls)],
+        decision: () => ({ model: choosing, seams: new Set(seams) }),
+      })
+      for await (const event of pipeline.execute('what is on the Voyager Golden Record', 'turn-277', false, {
+        snapshot: [],
+        memory: [],
+        commit: () => 'committed',
+        traceRun: (build) => traced.push(build()),
+      })) {
+        events.push(event)
+      }
+      return { urls, traced, events }
+    }
+
+    it('opens the result for a round-1 search travelling with its Lookup plan — judged under the declared tier — and records the round that asked', async () => {
+      const { urls, traced, events } = await run('lookup', ['result'])
+      expect(urls).toEqual([SEARCH, RESULT])
+      expect(asked[0]).toContain('the record’s contents')
+      expect(traced.filter((event) => event.kind === 'decision')).toEqual([expect.objectContaining({ turnId: 'turn-277', seam: 'result', round: 1, acted: 'acted' })])
+      expect(events.find((event) => event.type === 'tool_result' && event.callId === 's1')).toMatchObject({ resultPick: { ref: 1, href: RESULT, opened: true } })
+    })
+
+    it('judges a search under the plan its round declares even when the plan is written after it: the intercept runs first', async () => {
+      const { urls } = await run('lookup', ['result'], true)
+      expect(urls).toEqual([SEARCH, RESULT])
+    })
+
+    it('asks nothing for a Direct Action, and nothing while the result seam is off', async () => {
+      for (const [tier, seams] of [['direct_action', ['result']], ['lookup', ['passage', 'tier']]] as const) {
+        const { urls, traced } = await run(tier, seams)
+        expect(urls).toEqual([SEARCH])
+        expect(asked).toEqual([])
+        expect(traced.filter((event) => event.kind === 'decision')).toEqual([])
+      }
+    })
   })
 
   it('disappears when its Run ends: the next Run mints fresh identities', async () => {
