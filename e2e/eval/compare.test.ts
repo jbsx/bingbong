@@ -324,6 +324,14 @@ describe('agreement from a shadow report (#280)', () => {
     expect(older.shadowAgreement!.runsWithoutTurnId).toBe(9)
   })
 
+  it('names the pools\' trace directories a partial replay did not read', () => {
+    expect(agreement.capturesNotRead).toEqual([])
+    const offOnly = { ...input, report: { ...shadow, captures: captures.filter((capture) => capture.dir.includes('/off/')) } }
+    const partial = comparePools(retained(offArm(), 'off'), retained(onArm(), 'on'), AT, offOnly)
+    expect(partial.shadowAgreement!.capturesNotRead).toEqual([1, 2, 3].map((pass) => traceDir('on', pass)))
+    expect(formatComparison(partial)).toContain('The replay did not read 3 of the pools\' trace directories')
+  })
+
   it('reports agreement as a row, never a gate, and says passage agreement is on Page Reads only', () => {
     expect(comparison.gate.map((line) => [line.gated, line.passed])).toEqual(comparePools(offArm(), onArm(), AT).gate.map((line) => [line.gated, line.passed]))
     expect(comparison.agreement).toContain('reported, never gated')

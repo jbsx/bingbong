@@ -159,6 +159,12 @@ export interface ShadowAgreement {
   runsWithoutTurnId: number
   /** Tier rows the replay asked; tier agreement is the recorded tier shadow's. */
   askedTierRowsIgnored: number
+  /**
+   * Trace directories the pools record that the replay did not read. A
+   * replay may cover part of the pools (the off arm alone, for passage and
+   * result); the agreement then speaks for those passes only, and says so.
+   */
+  capturesNotRead: string[]
 }
 
 /** One Run as a comparison reads it: its metrics and the tier the corpus declares for it. */
@@ -345,7 +351,9 @@ function shadowAgreementOf(
     throw new Error(`${source} names no capture directories — it predates #280; replay the pools' retained traces again with pnpm decision:shadow`)
   }
   const recorded = new Set([...reports.a, ...reports.b].flatMap((pass) => (pass.traces === undefined ? [] : [pass.traces.directory])))
-  const strangers = report.captures.map((capture) => capture.dir).filter((dir) => !recorded.has(dir))
+  const read = new Set(report.captures.map((capture) => capture.dir))
+  const strangers = [...read].filter((dir) => !recorded.has(dir))
+  const capturesNotRead = [...recorded].filter((dir) => !read.has(dir))
   if (strangers.length > 0) {
     throw new Error(`${source} reads captures the pools do not record: ${strangers.join(', ')} — --shadow takes a replay over these pools' retained traces`)
   }
@@ -406,7 +414,7 @@ function shadowAgreementOf(
   for (const seam of AGREEMENT_SEAMS) {
     for (const cell of Object.values(bySeam[seam])) cell.agreement = cell.scored === 0 ? null : Math.round((cell.agreed / cell.scored) * 1000) / 1000
   }
-  return { source, bySeam, unjoinedRows, runsWithoutTurnId, askedTierRowsIgnored }
+  return { source, bySeam, unjoinedRows, runsWithoutTurnId, askedTierRowsIgnored, capturesNotRead }
 }
 
 /** The #274 gate in its order: time, the correctness veto, then what is reported. */
@@ -536,6 +544,7 @@ export function formatComparison(comparison: Comparison): string {
     }
     lines.push('')
     lines.push(`Rows joining no compared Run: ${shadow.unjoinedRows}; compared Runs without a turn id: ${shadow.runsWithoutTurnId}; tier rows the replay asked, left out: ${shadow.askedTierRowsIgnored}.`)
+    if (shadow.capturesNotRead.length > 0) lines.push('', `The replay did not read ${shadow.capturesNotRead.length} of the pools' trace directories: ${shadow.capturesNotRead.join(', ')}.`)
     lines.push('')
   }
   lines.push(`Agreement: ${comparison.agreement}`)

@@ -186,7 +186,7 @@ export async function startEvaluator(options?: {
   })
   if (existsSync(traceDir)) {
     throw new Error(
-      `refusing to reuse the trace directory ${traceDir} — it holds another pass's traces; remove it together with that pass's partial report, or ${freshArtifactHint}`,
+      `refusing to reuse the trace directory ${traceDir} — it holds another pass's traces; remove it (and that pass's partial report, if one was written), or ${freshArtifactHint}`,
     )
   }
 
@@ -197,7 +197,8 @@ export async function startEvaluator(options?: {
 
   const fixture = await startFixtureServer()
   const routing = production ?? options!.routing!(fixture)
-  const secrets = secretsOf(routing.env)
+  // As the live archiver does: a key exported in the shell is stripped too.
+  const secrets = [...new Set([...secretsOf(routing.env), ...secretsOf(process.env)])]
   const userDataDir = await mkdtemp(join(tmpdir(), 'bingbong-eval-profile-'))
   const harness = await startHarness({
     fixture,

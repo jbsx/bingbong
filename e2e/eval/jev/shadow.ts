@@ -701,14 +701,15 @@ export interface RecordedTierSummary {
 }
 
 export function summarizeRecordedTier(rows: readonly RecordedTierRow[]): RecordedTierSummary {
-  const answered = rows.filter((row) => row.pick !== null)
-  const comparable = answered.filter((row) => row.acted !== 'acted')
-  const compared = comparable.filter((row) => row.declared !== null)
+  // Acted first, as eval:compare classifies a record: a seam that acted leaves no pick of the model's to agree with.
+  const comparable = rows.filter((row) => row.acted !== 'acted')
+  const answered = comparable.filter((row) => row.pick !== null)
+  const compared = answered.filter((row) => row.declared !== null)
   const agreed = compared.filter((row) => row.pick === row.declared).length
   return {
     records: rows.length,
-    unavailable: rows.length - answered.length,
-    notComparable: answered.length - comparable.length,
+    unavailable: comparable.length - answered.length,
+    notComparable: rows.length - comparable.length,
     compared: compared.length,
     agreed,
     agreement: compared.length === 0 ? null : round(agreed / compared.length),
