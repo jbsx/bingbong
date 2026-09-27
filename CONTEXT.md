@@ -1047,6 +1047,14 @@ round (ADR 0069). It is asked for on a landing or a Page Read once the Run
 Plan is declared, never on a scroll or a Look, and never for a Direct Action.
 _Avoid_: highlight, snippet, auto-excerpt, extracted quote
 
+**Passage Span**:
+A consecutive run of a long page's text blocks, in document order, asked
+about as a page would be. A page with more blocks than one question can
+offer is asked about span by span, and the Selected Passage for an Asked
+Item is the best answer any of its spans gave (ADR 0069). A span never cuts
+a block.
+_Avoid_: window, chunk, page part
+
 **New In View**:
 What a scroll's Action Outcome reports: the refs and page text that entered the
 viewport, formatted and capped as a Page Preview is. A scroll

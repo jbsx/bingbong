@@ -32,7 +32,8 @@ result the model reads.
   Choice over the page's id-prefixed blocks and a Noul that any block does,
   both above threshold. Blocks are the collector's own — a paragraph, a list
   item, a table row, a container's prose run (ADR 0047) — in document order;
-  a page past 255 blocks is picked in two passes, a window then a block.
+  a page past 255 blocks is asked about in Passage Spans, each as a page
+  would be.
 - **It is asked on a navigate or click landing and on a read_page result**,
   once the Run Plan is declared with an Asked Item not yet checkpointed in
   this Run. Never on a scroll or a Look; never for a Direct Action, which
@@ -173,3 +174,39 @@ opened page in the same Tool Round.
   Run-made checkpoint recorded again at two strengths, since the model's
   call names no Asked Item: from the same page (an upper bound, the reading
   of the #274 act) and with the same passage (a lower bound).
+- 2026-09-27, grilled from the `jev-on` and `fix-281` traces (#282), every
+  recommendation taken; the Decision's sentence on a page past 255 blocks
+  is reworded in place. The two passes never reached the second: 19
+  windowed asks in `jev-on` and 11 in `fix-281`'s first two passes, all
+  under threshold, the window Noul never past 0.64. The window pass was
+  asked to find a passage in fragments — the whole page in one state, so
+  each block cut to 80 characters at 743 blocks and 36 at 1,639, a window
+  described by its id range alone — and the block pass it guarded carried
+  no Noul, so a checkpoint would have been made on a Choice whose
+  confidence #281 found does not predict agreement. **A page past 255
+  blocks is asked about in Passage Spans**: consecutive runs of at most
+  255 blocks in document order, each asked the seam's ordinary `pick_<n>`
+  and `any_<n>` over its own blocks, in parallel; per Asked Item the
+  clearing pair with the highest Noul is the Selected Passage. A window
+  described by its headings was not taken: it keeps a routing question no
+  bar was ever read for. **No Evidence Checkpoint is made without a Noul
+  over the text its Choice read.** A page past 8 spans (2,040 blocks) is
+  not asked about and its Decision Record says so; a span whose ask is
+  unavailable is recorded as such and the spans that answered are used.
+  The bars start at the one-pass bars, Choice 0.7 and Noul 0.7, and one
+  Shadow Replay may raise them under #281's floor (0.8 agreement over at
+  least ten scored acts), never lower them: a page has as many chances of
+  a false clear as it has spans. That replay scores a page, not a span —
+  the winning pair against the model's checkpoint on the visit — over the
+  six `jev-on` pages re-collected with the seam's own collector, a page
+  counting only when its rebuilt state is as long as the record's
+  `stateChars`, since a Page Read's parts do not give back the seam's
+  blocks (685 lines against 743 on the camera documentation). A Decision
+  Record on such a page keeps the whole block list when the Run traces.
+  **If the replay scores fewer than ten acts at the floor, a page past 255
+  blocks is not asked about at all**, which returns the 300 to 390 ms each
+  such landing spends today; where it falls short for lack of pages that
+  re-collect rather than lack of clears, that gate waits for the first
+  capture that keeps block lists. None of this is built while Decision
+  16's outcome on `fix-281` is unrecorded: with `passage` off the default
+  seam list, #282 closes with it.
