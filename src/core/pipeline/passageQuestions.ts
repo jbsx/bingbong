@@ -1,10 +1,26 @@
-// The Selected Passage's questions and state (#276, ADR 0069), apart from
-// the seam so the Shadow Replay asks exactly what the seam asks, over
-// exactly the state it asks it over (#281: a bar holds for the question it
-// was read from). No runtime import: the replay loads this under Node's
-// type stripping.
+// The Selected Passage's questions, state and landings (#276, ADR 0069),
+// apart from the seam so the Shadow Replay asks exactly what the seam asks,
+// over exactly the state it asks it over, on exactly the pages it asks about
+// (#281: a bar holds for the question it was read from). The replay loads
+// this under Node's type stripping: every runtime import carries `.ts`.
 
+import { parseBlockerMarker } from '../browser/blockerNudge.ts'
+import { landedOnNotFoundPage } from '../browser/notFoundPage.ts'
+import { landedOnUnavailablePage } from '../browser/unavailablePage.ts'
+import type { ToolResultOutcome } from '../ports/llm'
 import type { DecisionQuestion, DecisionQuestions } from '../ports/decisionModel.ts'
+
+/** The calls whose result is a landing or a Page Read: never a scroll, a Look or a typed field. */
+export const PASSAGE_TOOLS: ReadonlySet<string> = new Set(['navigate', 'click', 'read_page'])
+
+/**
+ * A landing that states nothing about the Objective (#281): a Not-found Page,
+ * a wall, or an Unavailable Page — what the Result Pick opens nothing from.
+ */
+export function landedOnNothing(outcome: ToolResultOutcome): boolean {
+  if (!outcome.ok || typeof outcome.result !== 'string') return false
+  return parseBlockerMarker(outcome.result) !== null || landedOnNotFoundPage(outcome) || landedOnUnavailablePage(outcome)
+}
 
 /** A Choice takes at most 255 options; a longer page is picked in two passes. */
 export const MAX_PASSAGE_OPTIONS = 255

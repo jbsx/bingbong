@@ -7,9 +7,6 @@
 // ADR 0054's excerpt test grounds it unchanged — and the Run records it as an
 // Evidence Checkpoint itself. Anything else leaves the result untouched.
 
-import { parseBlockerMarker } from '../browser/blockerNudge'
-import { landedOnNotFoundPage } from '../browser/notFoundPage'
-import { landedOnUnavailablePage } from '../browser/unavailablePage'
 import { parseSearchUrl } from '../browser/urlInput'
 import type { ToolCall, ToolResultOutcome } from '../ports/llm'
 import {
@@ -23,12 +20,8 @@ import { MAX_MEMORY_DETAIL_CHARS } from '../session/workingMemory'
 import { decisionEvent } from '../trace/decisionTrace'
 import type { DecisionEvent } from '../trace/runTrace'
 import { reportFault } from '../trace/fault'
-import { MAX_PASSAGE_OPTIONS, passageBlockIds, passageQuestions, passageState } from './passageQuestions'
+import { landedOnNothing, MAX_PASSAGE_OPTIONS, PASSAGE_TOOLS, passageBlockIds, passageQuestions, passageState } from './passageQuestions'
 import type { RunPlan } from './runPlan'
-
-/** The calls whose result is a landing or a Page Read: never a scroll, a Look or a typed field. */
-const PASSAGE_TOOLS: ReadonlySet<string> = new Set(['navigate', 'click', 'read_page'])
-
 
 export interface SelectedPassage {
   readonly item: string
@@ -79,15 +72,6 @@ function excerptOf(block: string): string {
   const head = block.slice(0, MAX_MEMORY_DETAIL_CHARS)
   const space = head.lastIndexOf(' ')
   return space > MAX_MEMORY_DETAIL_CHARS / 2 ? head.slice(0, space) : head
-}
-
-/**
- * A landing that states nothing about the Objective (#281): a Not-found Page,
- * a wall, or an Unavailable Page — what the Result Pick opens nothing from.
- */
-function landedOnNothing(outcome: ToolResultOutcome): boolean {
-  if (!outcome.ok || typeof outcome.result !== 'string') return false
-  return parseBlockerMarker(outcome.result) !== null || landedOnNotFoundPage(outcome) || landedOnUnavailablePage(outcome)
 }
 
 export function createSelectedPassageSeam(deps: SelectedPassageDeps): SelectedPassageSeam {

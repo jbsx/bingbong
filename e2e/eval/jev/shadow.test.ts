@@ -495,6 +495,8 @@ describe('choosing a bar from the table (#275, the owner\'s rule)', () => {
     // The floor is the repaired table's: 0.9 under the unrepaired truth alone does not raise it.
     expect(choosePassageBar(repaired, [bar(0.7, 15, 1)])).toEqual({ at: 0.7, floor: 0.8 })
     expect(choosePassageBar(repaired, [bar(0.5, 1, 9)])).toBeNull()
+    // 0.9 met only under the repair is unreachable, so the 0.8 floor is tried.
+    expect(choosePassageBar([bar(0.6, 14, 2), bar(0.7, 12, 1)], [bar(0.6, 9, 2), bar(0.7, 9, 2)])).toEqual({ at: 0.6, floor: 0.8 })
   })
 })
 

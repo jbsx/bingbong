@@ -11,9 +11,10 @@
 //   - passage (#281) — the seam's own questions, one Choice and one Noul per
 //     open Asked Item naming the Objective, over the seam's own state. A
 //     landing the seam asked about is sampled when its text can be rebuilt —
-//     from the record's asked text, or from a later whole Page Read of the
-//     same page whose state is exactly as long as the one the seam asked
-//     over; a whole Page Read the seam would ask about is sampled as itself.
+//     from the record's asked text, its own uncut Page Preview, or a later
+//     whole Page Read (or every part of one) of the same page — and the
+//     rebuild's state is exactly as long as the one the seam asked over; a
+//     whole Page Read the seam would ask about is sampled as itself.
 //     The model's pick is every passage holding an excerpt the model itself
 //     recorded from that page; none means it recorded nothing there.
 //   - result — a navigate whose landing is a Search URL: the options are the
@@ -31,7 +32,14 @@ import { tierShadowOf } from '../../live/audit.ts'
 import type { EffortTier } from '../../../src/core/pipeline/runPlan.ts'
 import { TIER_PICK_QUESTION } from '../../../src/core/pipeline/tierShadow.ts'
 import { normalizeMemoryText } from '../../../src/core/session/workingMemory.ts'
-import { MAX_PASSAGE_OPTIONS, passageBlockIds, passageQuestions, passageState } from '../../../src/core/pipeline/passageQuestions.ts'
+import {
+  landedOnNothing,
+  MAX_PASSAGE_OPTIONS,
+  PASSAGE_TOOLS,
+  passageBlockIds,
+  passageQuestions,
+  passageState,
+} from '../../../src/core/pipeline/passageQuestions.ts'
 import type { DecisionSeam } from '../../../src/core/agent/modelRouting.ts'
 import type {
   DecisionModel,
@@ -265,14 +273,12 @@ export function pageReadPart(pageRead: string): { readonly part: number; readonl
   return null
 }
 
-/** The page a result's last snapshot shows: its `# <title> — <url>` head. */
+/** The page a result's last snapshot shows, from its `# <title> — <url>` head, as an address ({@link sameAddress}). */
 export function pageUrlOf(result: string): string | null {
   const heads = [...result.matchAll(/^# .* — (\S+)$/gm)]
-  return heads.at(-1)?.[1] ?? null
+  const url = heads.at(-1)?.[1]
+  return url === undefined ? null : sameAddress(url)
 }
-
-/** A result that settled on a wall, a Not-found Page or an Unavailable Page: the seam asks nothing there (#281). */
-const NOTHING_LANDED = /^(?:BLOCKER:(?:challenge|network-block|login-wall)|NOT-FOUND:(?:404|410|title)|UNAVAILABLE:\S+) \S+$/m
 
 /** The blocks of a state the seam asked over, as its record kept it (#281): each `P001| ` line, cut as the state cut it. */
 export function stateBlocks(state: string): string[] {
@@ -324,9 +330,10 @@ function readAt(reads: ReadonlyArray<{ at?: number; callId: string }>, observedA
 }
 
 type CheckpointStep = Extract<RunStep, { kind: 'checkpoint' }>
+/** A Run's passage ask, and the items open when it was asked. */
+type PendingAsk = { readonly ask: Extract<RunStep, { kind: 'passage_ask' }>; readonly open: readonly string[] }
 
-/** The page tools the seam asks on (ADR 0069): a landing or a Page Read. */
-const PASSAGE_TOOLS: ReadonlySet<string> = new Set(['navigate', 'click', 'read_page'])
+/** The page tools a landing comes from (ADR 0069). */
 const LANDING_TOOLS: ReadonlySet<string> = new Set(['navigate', 'click'])
 
 /**
@@ -384,7 +391,7 @@ export function passageSamples(run: ShadowRun, skips: PassageSkips = { unrebuilt
   const reads = run.steps.flatMap((step) => (step.kind === 'result' && step.name === 'read_page' && step.ok ? [step] : []))
   const checkpoints = run.steps.filter((step): step is CheckpointStep => step.kind === 'checkpoint' && step.origin === 'model')
   const closed = new Set<string>()
-  let pending: { readonly ask: Extract<RunStep, { kind: 'passage_ask' }>; readonly open: readonly string[] } | null = null
+  let pending: PendingAsk | null = null
   let lastAsked: string | null = null
   const samples: ShadowSample[] = []
   run.steps.forEach((step, index) => {
@@ -394,11 +401,11 @@ export function passageSamples(run: ShadowRun, skips: PassageSkips = { unrebuilt
       return
     }
     if (step.kind !== 'result') return
-    const asked: { readonly ask: Extract<RunStep, { kind: 'passage_ask' }>; readonly open: readonly string[] } | null = pending
+    const asked: PendingAsk | null = pending
     pending = null
     if (!PASSAGE_TOOLS.has(step.name) || !step.ok) return
     const url = pageUrlOf(step.text)
-    if (url === null || parseSearchUrl(url) !== null || NOTHING_LANDED.test(step.text)) return
+    if (url === null || parseSearchUrl(url) !== null || landedOnNothing({ ok: true, result: step.text })) return
     const items = asked?.open ?? run.askedItems.filter((item) => !closed.has(item))
     if (items.length === 0) return
     let blocks: string[]
@@ -864,10 +871,10 @@ export function choosePassageBar(
 ): { readonly at: number; readonly floor: number } | null {
   const meets = (row: ThresholdRow | undefined, floor: number): boolean =>
     row !== undefined && row.agreed + row.disagreed >= THRESHOLD_MIN_SCORED && row.agreement !== null && row.agreement >= floor
+  // A floor no bar meets under both truths is unreachable, and the next is tried.
   for (const floor of PASSAGE_AGREEMENT_FLOORS) {
-    if (!table.some((row) => meets(row, floor))) continue
     const reaching = table.find((row) => meets(row, floor) && (unrepaired === undefined || meets(unrepaired.find((other) => other.at === row.at), floor)))
-    return reaching === undefined ? null : { at: reaching.at, floor }
+    if (reaching !== undefined) return { at: reaching.at, floor }
   }
   return null
 }
@@ -897,7 +904,7 @@ export interface RecordedNothingAct {
 }
 
 export interface SeamSummary {
-  /** Rows: one per sample, or one per Asked Item's pair for passage (#281). */
+  /** Rows, despite the name kept for older reports: one per sample, or one per Asked Item's pair for passage (#281). */
   readonly samples: number
   readonly unavailable: Readonly<Record<string, number>>
   /** Over every ask, unavailable ones included: a timeout is the seam's worst cost, not a gap in it. */

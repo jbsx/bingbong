@@ -39,6 +39,7 @@ import {
   countsAfterOverrulesOf,
   formatAuditAggregate,
   formatAuditSet,
+  selectedPassageCountsOf,
   keyLeaks,
   sameSourceUnsupportedRoundsOf,
   delegatedPageRoundsOf,
@@ -407,7 +408,8 @@ describe('the mechanical classification', () => {
     expect(JSON.stringify(mechanical)).not.toContain('secret thought')
     expect((round.calls[0]!.args.note as string).length).toBeLessThanOrEqual(201)
     expect(round.calls[0]!.resultHead!.length).toBeLessThanOrEqual(241)
-    expect(JSON.stringify(mechanical).length).toBeLessThan(4_000)
+    // Well under the 5,000-character inputs above; the headroom is the per-attempt counters added since (#276, #281).
+    expect(JSON.stringify(mechanical).length).toBeLessThan(4_500)
   })
 
   it('tags a follow-up’s re-acquisition of a page the initial checkpointed as inherited and without Progress', () => {
@@ -2913,8 +2915,8 @@ describe('Selected Passages (#276, ADR 0069)', () => {
     const set = buildAuditSet(provenanceOf(), [{ mechanical, review: null, countsAfterOverrules: mechanical.counts }], [])
     expect(set.populations.initial).toMatchObject({ runMadeCheckpoints: 1, modelRecordEvidenceCalls: 2, bookkeepingRoundsWherePassagesCounted: 1 })
     const markdown = formatAuditSet(set)
-    expect(markdown).toContain('- Evidence Checkpoints the Run made from a Selected Passage: 1 (round 1); recorded again by the model: 0; record_evidence calls by the model: 2; bookkeeping-only rounds: 1')
-    expect(markdown).toContain('1 Run-made Evidence Checkpoint(s) from a Selected Passage (0 recorded again by the model) against 2 record_evidence call(s) by the model and 1 bookkeeping-only round(s)')
+    expect(markdown).toContain('- Evidence Checkpoints the Run made from a Selected Passage: 1 (round 1); recorded again by the model from the same page: 0; with the same passage: 0; record_evidence calls by the model: 2; bookkeeping-only rounds: 1')
+    expect(markdown).toContain('1 Run-made Evidence Checkpoint(s) from a Selected Passage (0 recorded again by the model from the same page, 0 with the same passage) against 2 record_evidence call(s) by the model and 1 bookkeeping-only round(s)')
 
     const before = { ...mechanical } as AuditMechanical & { runMadeCheckpoints?: number[]; modelRecordEvidenceCalls?: number }
     delete before.runMadeCheckpoints
@@ -2937,12 +2939,29 @@ describe('Selected Passages (#276, ADR 0069)', () => {
     const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(rounds, EXTRA) }))
     expect(mechanical.runMadeCheckpoints).toEqual([1, 2])
     expect(mechanical.runMadeRecordedAgain).toEqual([1])
+    // Both excerpts are the fixture's 'x': too short to pin a passage, so neither was quoted again.
+    expect(mechanical.runMadeQuotedAgain).toEqual([])
 
     const set = buildAuditSet(provenanceOf(), [{ mechanical, review: null, countsAfterOverrules: mechanical.counts }], [])
-    expect(set.populations.initial).toMatchObject({ runMadeCheckpoints: 2, runMadeRecordedAgain: 1 })
+    expect(set.populations.initial).toMatchObject({ runMadeCheckpoints: 2, runMadeRecordedAgain: 1, runMadeQuotedAgain: 0 })
     const markdown = formatAuditSet(set)
-    expect(markdown).toContain('- Evidence Checkpoints the Run made from a Selected Passage: 2 (round 1, 2); recorded again by the model: 1 (round 1);')
-    expect(markdown).toContain('2 Run-made Evidence Checkpoint(s) from a Selected Passage (1 recorded again by the model)')
+    expect(markdown).toContain('- Evidence Checkpoints the Run made from a Selected Passage: 2 (round 1, 2); recorded again by the model from the same page: 1 (round 1); with the same passage: 0;')
+    expect(markdown).toContain('2 Run-made Evidence Checkpoint(s) from a Selected Passage (1 recorded again by the model from the same page, 0 with the same passage)')
+  })
+
+  it('tells a checkpoint that quotes the Run\'s passage again from one that quotes another passage of the page', () => {
+    const passage = 'measurements: | dial diameter: 102 mm'
+    const lines = (modelExcerpt: string) => [
+      { kind: 'llm_round', round: 1 },
+      { kind: 'evidence_checkpoint', origin: 'run', outcome: 'accepted', args: { source_url: PAGE_URL }, excerpt: passage, graded: [] },
+      { kind: 'llm_round', round: 2 },
+      { kind: 'evidence_checkpoint', outcome: 'accepted', args: { source_url: PAGE_URL }, excerpt: modelExcerpt, graded: [] },
+    ]
+    expect(selectedPassageCountsOf(lines('h4 | dial diameter: 102 mm'), [])).toMatchObject({ runMadeRecordedAgain: [1], runMadeQuotedAgain: [1] })
+    expect(selectedPassageCountsOf(lines("marine timekeeper, h4. this is harrison's prize-winning longitude watch"), [])).toMatchObject({
+      runMadeRecordedAgain: [1],
+      runMadeQuotedAgain: [],
+    })
   })
 
   it('never reads a Run-made checkpoint as recorded again by a model record made before it', () => {

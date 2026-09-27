@@ -144,3 +144,32 @@ opened page in the same Tool Round.
   Run-made checkpoints the model did not record again are under 15% of its
   accepted checkpoints on the capture's initials, `passage` leaves the
   default seam list and this ADR says so; the code stays behind the list.
+- 2026-09-27, implemented (#281), the bars before the capture. The seam's
+  questions, state and landing test live in
+  `src/core/pipeline/passageQuestions.ts`, which the Shadow Replay imports,
+  so the replay asks exactly the seam's `pick_<n>` and `any_<n>`, each
+  naming the Run Plan's Objective, over exactly its state. Beside a
+  Not-found Page and a wall, an Unavailable Page is not asked about either:
+  it is the Result Pick's own test, and no 5xx page states an item. A
+  passage Decision Record keeps `passages` (the block each Choice chose, by
+  question key, acted or not) and `askedText` (the state) when the Run
+  traces. **The replay** (`e2e/eval/jev/shadow-2026-09-27.json`) sampled
+  the 33 `jev-on` landings whose text rebuilds exactly — from an uncut Page
+  Preview, which is the whole text, or from a later whole or every-part
+  Page Read of the page, a rebuild counting only when its state is as long
+  as the record's `stateChars`; 18 could not be — and 28 whole Page Reads,
+  26 of them `jev-off`'s and 2 on-arm reads the seam would ask; 188 asks,
+  365 item pairs, 8 not comparable, Jev median 252 ms. It carries the
+  unrepaired truth beside the repaired one so Decision 3 is applied by the
+  report, not by hand. With the Choice at 0.7, no Noul bar agrees 0.9 over
+  ten scored pairs; Noul 0.5 and 0.6 meet 0.8 only under the repaired truth
+  (0.81 and 0.82 against 0.64 and 0.71); **Noul 0.7 meets it under both**
+  (21 of 24, 15 of 16), and 0.8 rests on six. So Decision 7's fallback does
+  not apply and **the bars are Choice 0.7 and Noul 0.7**, not the 0.8 this
+  note's grill read before the Objective entered the question. At them the
+  seam acts on 8.7% of pairs: 21 agree, 3 do not, 7 fall where the model
+  recorded nothing, judged 5 right and 2 weak (a part number for the case's
+  own ID; K1 named without its name), none wrong. The Round Audit counts a
+  Run-made checkpoint recorded again at two strengths, since the model's
+  call names no Asked Item: from the same page (an upper bound, the reading
+  of the #274 act) and with the same passage (a lower bound).

@@ -623,6 +623,14 @@ export interface AuditMechanical {
    * the counter.
    */
   readonly runMadeRecordedAgain?: readonly number[]
+  /**
+   * Of those, the round of every one whose passage the model's checkpoint
+   * quoted again (#281): an excerpt sharing a piece of twelve characters or
+   * more with the Run's. The model's call names no Asked Item, so the page
+   * count above is the upper bound and this the lower. Absent on an audit
+   * written before the counter.
+   */
+  readonly runMadeQuotedAgain?: readonly number[]
   /** The model's own record_evidence calls, accepted or refused (#276): what a Selected Passage spares it. */
   readonly modelRecordEvidenceCalls?: number
   /** The round of every successful search whose listing reached the model with no result opened for it (#277). */
@@ -869,8 +877,10 @@ export interface AuditPopulation {
   readonly roundsToOpened?: number
   /** Run-made Evidence Checkpoints from a Selected Passage, over the attempts that count them (#276); absent when none does. */
   readonly runMadeCheckpoints?: number
-  /** Of those, the ones the model recorded again (#281); absent where no attempt counted them. */
+  /** Of those, the ones the model recorded again from the same page (#281, an upper bound); absent where no attempt counted them. */
   readonly runMadeRecordedAgain?: number
+  /** Of those, the ones whose passage the model quoted again (#281, a lower bound). */
+  readonly runMadeQuotedAgain?: number
   /** The model's own record_evidence calls over the same attempts (#276). */
   readonly modelRecordEvidenceCalls?: number
   /** Bookkeeping-only rounds over the same attempts (#276): the rounds a Selected Passage is meant to remove. */
@@ -1783,8 +1793,8 @@ export function resultPickCountsOf(rounds: readonly AuditRound[]): Required<Pick
 export function selectedPassageCountsOf(
   traceRecords: readonly object[],
   rounds: readonly AuditRound[],
-): Required<Pick<AuditMechanical, 'runMadeCheckpoints' | 'runMadeRecordedAgain' | 'modelRecordEvidenceCalls'>> {
-  const runMade: { round: number; page: string | null; observations: Set<string>; again: boolean }[] = []
+): Required<Pick<AuditMechanical, 'runMadeCheckpoints' | 'runMadeRecordedAgain' | 'runMadeQuotedAgain' | 'modelRecordEvidenceCalls'>> {
+  const runMade: { round: number; page: string | null; observations: Set<string>; pieces: readonly string[]; again: boolean; quoted: boolean }[] = []
   let round = 0
   for (const raw of traceRecords as readonly Record<string, unknown>[]) {
     if (raw.agentId !== undefined) continue
@@ -1792,30 +1802,42 @@ export function selectedPassageCountsOf(
     if (raw.kind !== 'evidence_checkpoint' || raw.outcome !== 'accepted') continue
     const page = checkpointPage(raw)
     const observations = matchedObservations(raw)
+    const excerpt = typeof raw.excerpt === 'string' ? raw.excerpt : ''
     if (raw.origin === 'run') {
-      runMade.push({ round, page, observations, again: false })
+      runMade.push({ round, page, observations, pieces: excerptPieces(excerpt), again: false, quoted: false })
       continue
     }
     // The model's own accepted checkpoint: it records again every Run-made
-    // one before it on the same page, whichever passage it quoted.
+    // one before it on the same page, and quotes again those whose passage
+    // its excerpt repeats.
     for (const made of runMade) {
-      if ((page !== null && page === made.page) || [...observations].some((id) => made.observations.has(id))) made.again = true
+      if ((page === null || page !== made.page) && ![...observations].some((id) => made.observations.has(id))) continue
+      made.again = true
+      const pieces = excerptPieces(excerpt)
+      if (made.pieces.some((piece) => excerpt.includes(piece)) || pieces.some((piece) => made.pieces.join('\n').includes(piece))) made.quoted = true
     }
   }
   const modelRecordEvidenceCalls = rounds.reduce((total, audited) => total + audited.calls.filter((call) => call.name === 'record_evidence').length, 0)
   return {
     runMadeCheckpoints: runMade.map((made) => made.round),
     runMadeRecordedAgain: runMade.filter((made) => made.again).map((made) => made.round),
+    runMadeQuotedAgain: runMade.filter((made) => made.quoted).map((made) => made.round),
     modelRecordEvidenceCalls,
   }
 }
 
-/** A checkpoint's source page as an address: no fragment, no trailing slash. */
+/** A checkpoint's source page as an address. */
 function checkpointPage(raw: Record<string, unknown>): string | null {
-  const args = raw.args as Record<string, unknown> | undefined
-  const source = args?.source_url
-  if (typeof source !== 'string' || source === '') return null
-  return source.replace(/#.*$/, '').replace(/\/$/, '')
+  const source = (raw.args as Record<string, unknown> | undefined)?.source_url
+  return typeof source === 'string' ? comparableAddress(source) : null
+}
+
+/** A normalized excerpt's verbatim pieces long enough to pin a passage: split where the grader joins them (ADR 0054). */
+function excerptPieces(excerpt: string): string[] {
+  return excerpt
+    .split(/\r?\n|\||\.\.\.|…/)
+    .map((piece) => piece.trim())
+    .filter((piece) => piece.length >= 12)
 }
 
 /** The observations a checkpoint's grader matched it on. */
@@ -3530,7 +3552,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
   let engineRewrites = 0
   let engineRewritesOffKey = 0
   let resultPicks: { picks: number; listings: number; searches: number; opened: number; rounds: number } | undefined
-  let passages: { runMade: number; modelCalls: number; bookkeeping: number; recordedAgain?: number } | undefined
+  let passages: { runMade: number; modelCalls: number; bookkeeping: number; recordedAgain?: number; quotedAgain?: number } | undefined
   let searchForms: Record<SearchUrlForm, number> | undefined
   let blockedOrInert: Record<keyof BlockedOrInertCounts, number> | undefined
   let unavailableLandings: Record<keyof UnavailableLandingRounds, number> | undefined
@@ -3609,6 +3631,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
       passages ??= { runMade: 0, modelCalls: 0, bookkeeping: 0 }
       passages.runMade += mechanical.runMadeCheckpoints.length
       if (mechanical.runMadeRecordedAgain !== undefined) passages.recordedAgain = (passages.recordedAgain ?? 0) + mechanical.runMadeRecordedAgain.length
+      if (mechanical.runMadeQuotedAgain !== undefined) passages.quotedAgain = (passages.quotedAgain ?? 0) + mechanical.runMadeQuotedAgain.length
       passages.modelCalls += mechanical.modelRecordEvidenceCalls
       passages.bookkeeping += mechanical.counts.bookkeeping
     }
@@ -3727,6 +3750,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
       ? {
           runMadeCheckpoints: passages.runMade,
           ...(passages.recordedAgain !== undefined ? { runMadeRecordedAgain: passages.recordedAgain } : {}),
+          ...(passages.quotedAgain !== undefined ? { runMadeQuotedAgain: passages.quotedAgain } : {}),
           modelRecordEvidenceCalls: passages.modelCalls,
           bookkeepingRoundsWherePassagesCounted: passages.bookkeeping,
         }
@@ -4041,7 +4065,10 @@ function populationResultPicksText(population: AuditPopulation): string {
 /** A population's Selected Passages (#276): the Run's checkpoints against the model's own calls and the bookkeeping-only rounds. */
 function populationSelectedPassagesText(population: AuditPopulation): string {
   if (population.runMadeCheckpoints === undefined) return 'Selected Passages not counted'
-  const again = population.runMadeRecordedAgain === undefined ? '' : ` (${population.runMadeRecordedAgain} recorded again by the model)`
+  const again =
+    population.runMadeRecordedAgain === undefined
+      ? ''
+      : ` (${population.runMadeRecordedAgain} recorded again by the model from the same page, ${population.runMadeQuotedAgain ?? 0} with the same passage)`
   return `${population.runMadeCheckpoints} Run-made Evidence Checkpoint(s) from a Selected Passage${again} against ${population.modelRecordEvidenceCalls ?? 0} record_evidence call(s) by the model and ${population.bookkeepingRoundsWherePassagesCounted ?? 0} bookkeeping-only round(s)`
 }
 
@@ -4112,7 +4139,9 @@ function attemptSection(attempt: AuditAttempt): string[] {
     mechanical.runMadeCheckpoints === undefined || mechanical.modelRecordEvidenceCalls === undefined
       ? '- Selected Passages: not counted'
       : `- Evidence Checkpoints the Run made from a Selected Passage: ${rounds(mechanical.runMadeCheckpoints)}; ${
-          mechanical.runMadeRecordedAgain === undefined ? '' : `recorded again by the model: ${rounds(mechanical.runMadeRecordedAgain)}; `
+          mechanical.runMadeRecordedAgain === undefined
+            ? ''
+            : `recorded again by the model from the same page: ${rounds(mechanical.runMadeRecordedAgain)}; with the same passage: ${rounds(mechanical.runMadeQuotedAgain ?? [])}; `
         }record_evidence calls by the model: ${mechanical.modelRecordEvidenceCalls}; bookkeeping-only rounds: ${mechanical.counts.bookkeeping}`,
   )
   const toOpen = mechanical.searchesToOpened
