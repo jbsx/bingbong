@@ -1,0 +1,30 @@
+{
+  "jev-off-1--historical-longitude-watch/turn-muj9rk5c-1/call_c49762a032a8413ca698f892/1": {
+    "verdict": "right",
+    "note": "ZAA0037 is H4's catalogue ID, and the page is H4's record"
+  },
+  "jev-off-1--historical-longitude-watch/turn-muj9rk5c-1/call_c49762a032a8413ca698f892/2": {
+    "verdict": "right",
+    "note": "the record's Creator row names Harrison, John"
+  },
+  "jev-off-1--historical-longitude-watch/turn-muj9rk5c-1/call_c49762a032a8413ca698f892/3": {
+    "verdict": "right",
+    "note": "the Measurements row states the 102 mm dial diameter"
+  },
+  "jev-off-1--historical-longitude-watch/turn-muj9rk5c-1/call_c49762a032a8413ca698f892/4": {
+    "verdict": "right",
+    "note": "the description names the much larger H3 as the machine the watch design displaced"
+  },
+  "jev-off-1--historical-longitude-watch/turn-muj9rk5c-1/call_c49762a032a8413ca698f892/5": {
+    "verdict": "weak",
+    "note": "the Parts row gives ZAA0037.1 as the case's part number on H4's record, not the case's own catalogue entry"
+  },
+  "jev-off-1--historical-longitude-watch/turn-muj9rk5c-1/call_c49762a032a8413ca698f892/6": {
+    "verdict": "weak",
+    "note": "names K1 as the other watch in the case, but not its name beyond the designation"
+  },
+  "jev-off-3--rule-eurostar-luggage/turn-mujcj7tx-1/call_037b5b3a014c438389fb4c61/3": {
+    "verdict": "right",
+    "note": "states guitars travel as part of the luggage allowance"
+  }
+}

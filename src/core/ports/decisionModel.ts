@@ -120,9 +120,17 @@ export interface DecisionThresholds {
  * 14 agreeing, 3 not, 5 on reads the model recorded nothing from. Result
  * and tier stay at the starting bars by the owner's call — result met it,
  * and tier only ever records in shadow.
+ *
+ * The passage bars were then re-read (#281,
+ * e2e/eval/jev/shadow-2026-09-27.json): that 0.9 was read from one Noul over
+ * every item while the seam asks one per item, and the seam acted once live.
+ * Asked the seam's own questions, the Objective named, Choice 0.7 with Noul
+ * 0.7 is the lowest bar agreeing at least 0.8 over ten scored pairs under both
+ * the repaired truth (21 of 24) and the unrepaired (15 of 16); no bar reaches
+ * 0.9 over ten, and Noul 0.5 and 0.6 pass only under the repaired truth.
  */
 export const DECISION_THRESHOLDS: Readonly<Record<DecisionSeam, DecisionThresholds>> = {
-  passage: { choice: 0.7, noul: 0.9 },
+  passage: { choice: 0.7, noul: 0.7 },
   result: { choice: 0.7, noul: 0.7 },
   tier: { choice: 0.7, noul: 0.7 },
 }

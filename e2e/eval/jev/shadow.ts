@@ -194,6 +194,13 @@ export function readShadowRuns(capture: string, lines: readonly ShadowTraceLine[
 /** What the model did, as the sample's option labels: an empty list is "picked none". */
 export interface ShadowTruth {
   readonly picks: readonly string[]
+  /**
+   * A passage sample's picks under the truth before #281's repair — no table
+   * row credited below twelve characters, no Page Read credited to its
+   * landing — so a bar that passes only under the repair can be refused
+   * (Decision 3).
+   */
+  readonly unrepairedPicks?: readonly string[]
 }
 
 export interface ShadowSample {
@@ -295,12 +302,12 @@ const TABLE_ROW = / \| /
  * quotes whole however short (#281) — `ID: | ZAA0037` splits into pieces too
  * short to pin anything, yet the model quoted exactly that row.
  */
-function passagesHolding(passages: readonly string[], labels: readonly string[], excerpt: string): string[] {
+function passagesHolding(passages: readonly string[], labels: readonly string[], excerpt: string, rows = true): string[] {
   const wanted = excerptPassages(excerpt)
   const quoted = normalizeMemoryText(excerpt)
   return passages.flatMap((passage, index) => {
     const text = normalizeMemoryText(passage)
-    const held = wanted.some((part) => text.includes(part)) || (TABLE_ROW.test(passage) && text.trim() !== '' && quoted.includes(text.trim()))
+    const held = wanted.some((part) => text.includes(part)) || (rows && TABLE_ROW.test(passage) && text.trim() !== '' && quoted.includes(text.trim()))
     return held ? [labels[index]!] : []
   })
 }
@@ -440,13 +447,18 @@ export function passageSamples(run: ShadowRun, skips: PassageSkips = { unrebuilt
         ? run.steps.slice(index + 1, until).flatMap((later) => (later.kind === 'result' && later.name === 'read_page' && pageUrlOf(later.text) === url ? [later.callId] : []))
         : [step.callId],
     )
-    const grounds = (checkpoint: CheckpointStep): boolean =>
-      checkpoint.grounded.some(({ producer, observedAt }) =>
-        producer === 'page_read'
-          ? creditedReads.has(readAt(reads, observedAt) ?? '')
-          : kind === 'landing' && producer === 'action_outcome' && step.at !== undefined && step.at >= observedAt && step.at - observedAt <= GROUNDING_SLACK_MS,
-      )
-    const picks = [...new Set(checkpoints.filter(grounds).flatMap((checkpoint) => passagesHolding(blocks, labels, checkpoint.excerpt)))]
+    const grounds =
+      (credited: ReadonlySet<string>) =>
+      (checkpoint: CheckpointStep): boolean =>
+        checkpoint.grounded.some(({ producer, observedAt }) =>
+          producer === 'page_read'
+            ? credited.has(readAt(reads, observedAt) ?? '')
+            : kind === 'landing' && producer === 'action_outcome' && step.at !== undefined && step.at >= observedAt && step.at - observedAt <= GROUNDING_SLACK_MS,
+        )
+    const picks = [...new Set(checkpoints.filter(grounds(creditedReads)).flatMap((checkpoint) => passagesHolding(blocks, labels, checkpoint.excerpt)))]
+    // Before the repair: a landing held only what was recorded off the landing itself.
+    const ownRead = new Set(kind === 'landing' ? [] : [step.callId])
+    const unrepairedPicks = [...new Set(checkpoints.filter(grounds(ownRead)).flatMap((checkpoint) => passagesHolding(blocks, labels, checkpoint.excerpt, false)))]
     samples.push({
       seam: 'passage',
       capture: run.capture,
@@ -454,7 +466,7 @@ export function passageSamples(run: ShadowRun, skips: PassageSkips = { unrebuilt
       callId: step.callId,
       state: passageState(labels, blocks),
       questions: passageQuestions(objective, items, Object.fromEntries(labels.map((label) => [label, null])), 'passage', true),
-      truth: { picks },
+      truth: { picks, unrepairedPicks },
       optionsBeforeCut: blocks.length,
       passage: { kind, url, objective, items, blocks, recordedActed: asked?.ask.acted === 'acted' },
     })
@@ -612,6 +624,23 @@ export function shadowSamples(runs: readonly ShadowRun[], skips?: PassageSkips):
   return runs.flatMap((run) => [...tierSamples(run), ...passageSamples(run, skips), ...resultSamples(run)])
 }
 
+/**
+ * Rows brought up to the truth the traces give now (#281), asking nothing:
+ * each passage row takes its sample's picks, both truths, by capture, turn
+ * and call. A row whose sample the traces no longer give is kept as it was.
+ */
+export function retruthRows(rows: readonly ShadowRow[], samples: readonly ShadowSample[]): { rows: ShadowRow[]; refreshed: number } {
+  const bySample = new Map(samples.filter((sample) => sample.seam === 'passage').map((sample) => [`${sample.capture}/${sample.turnId}/${sample.callId}`, sample.truth]))
+  let refreshed = 0
+  const next = rows.map((row) => {
+    const truth = row.seam === 'passage' ? bySample.get(`${row.capture}/${row.turnId}/${row.callId}`) : undefined
+    if (truth === undefined) return row
+    refreshed += 1
+    return { ...row, modelPicks: truth.picks, ...(truth.unrepairedPicks !== undefined ? { modelPicksUnrepaired: truth.unrepairedPicks } : {}) }
+  })
+  return { rows: next, refreshed }
+}
+
 /** One sample's answer, kept without its state. */
 export interface ShadowRow {
   readonly seam: DecisionSeam
@@ -637,6 +666,8 @@ export interface ShadowRow {
   readonly passage?: string
   /** The Run's own ask acted on this page, so the model's next move was not its own (#281). */
   readonly notComparable?: true
+  /** A passage row's model picks under the unrepaired truth (#281, Decision 3). */
+  readonly modelPicksUnrepaired?: readonly string[]
 }
 
 /** How much of a chosen block a row keeps for judging. */
@@ -655,6 +686,7 @@ export function shadowRows(sample: ShadowSample, result: DecisionResult<Decision
       pair: index + 1,
       sampleKind: facts.kind,
       objective: facts.objective,
+      ...(sample.truth.unrepairedPicks !== undefined ? { modelPicksUnrepaired: sample.truth.unrepairedPicks } : {}),
       ...(facts.recordedActed ? { notComparable: true as const } : {}),
     }
     if (result.status === 'unavailable') return { ...row, unavailable: result.reason }
@@ -821,14 +853,21 @@ export const PASSAGE_AGREEMENT_FLOORS: readonly number[] = [0.9, 0.8]
 /**
  * The Noul bar a paired table supports (#281, Decision 2): the lowest bar
  * whose acts agree at least 0.9 over at least ten scored acts, and 0.8 where
- * 0.9 is unreachable; the floor it met rides with it. Null when neither is
- * met — Decision 7 then keeps the bars in force.
+ * 0.9 is unreachable; the floor it met rides with it. Given the table under
+ * the unrepaired truth, a bar must meet the same floor there too — a bar
+ * that passes only under the repaired truth is not taken (Decision 3). Null
+ * when none does: Decision 7 then keeps the bars in force.
  */
-export function choosePassageBar(table: readonly ThresholdRow[]): { readonly at: number; readonly floor: number } | null {
-  const supported = table.filter((row) => row.agreed + row.disagreed >= THRESHOLD_MIN_SCORED)
+export function choosePassageBar(
+  table: readonly ThresholdRow[],
+  unrepaired?: readonly ThresholdRow[],
+): { readonly at: number; readonly floor: number } | null {
+  const meets = (row: ThresholdRow | undefined, floor: number): boolean =>
+    row !== undefined && row.agreed + row.disagreed >= THRESHOLD_MIN_SCORED && row.agreement !== null && row.agreement >= floor
   for (const floor of PASSAGE_AGREEMENT_FLOORS) {
-    const reaching = supported.find((row) => row.agreement !== null && row.agreement >= floor)
-    if (reaching !== undefined) return { at: reaching.at, floor }
+    if (!table.some((row) => meets(row, floor))) continue
+    const reaching = table.find((row) => meets(row, floor) && (unrepaired === undefined || meets(unrepaired.find((other) => other.at === row.at), floor)))
+    return reaching === undefined ? null : { at: reaching.at, floor }
   }
   return null
 }
@@ -891,7 +930,13 @@ export interface SeamSummary {
      * Noul at each decile's bar, both clearing — the table the passage bar is
      * read from, and the Noul bar it supports under Decision 2.
      */
-    readonly paired: { readonly choiceAt: number; readonly thresholds: readonly ThresholdRow[]; readonly chosen: { readonly at: number; readonly floor: number } | null }
+    readonly paired: {
+      readonly choiceAt: number
+      readonly thresholds: readonly ThresholdRow[]
+      /** The same acts scored under the unrepaired truth; absent when no row carries it. */
+      readonly unrepaired?: readonly ThresholdRow[]
+      readonly chosen: { readonly at: number; readonly floor: number } | null
+    }
   }
   /** What the seam would have done at the thresholds in force, both primitives clearing. */
   readonly atThreshold: {
@@ -923,7 +968,14 @@ export function summarizeSeam(
   const actedScored = acted.filter((row) => row.modelPicks.length > 0)
   const choiceTable = thresholdTable(answered, atLeast((row) => row.confidence))
   const noulTable = thresholdTable(withNoul, atLeast((row) => row.noul))
-  const pairedTable = thresholdTable(withNoul, (row, at) => (row.confidence ?? -1) >= thresholds.choice && (row.noul ?? -1) >= at)
+  const pairedActs = (row: ShadowRow, at: number): boolean => (row.confidence ?? -1) >= thresholds.choice && (row.noul ?? -1) >= at
+  const pairedTable = thresholdTable(withNoul, pairedActs)
+  const unrepairedTable = withNoul.some((row) => row.modelPicksUnrepaired !== undefined)
+    ? thresholdTable(
+        withNoul.map((row) => ({ ...row, modelPicks: row.modelPicksUnrepaired ?? [] })),
+        pairedActs,
+      )
+    : undefined
   // One ask per sample: a passage sample's pairs share its latency, so only its first pair counts it.
   const latencies = rows.filter((row) => (row.pair ?? 1) === 1).map((row) => row.latencyMs)
   const recordedNothingActs = acted
@@ -965,7 +1017,12 @@ export function summarizeSeam(
             byProbability: deciles(withNoul.map((row) => ({ x: row.noul ?? 0, hit: row.modelPicks.length > 0 }))),
             thresholds: noulTable,
             chosen: chooseThreshold(noulTable),
-            paired: { choiceAt: thresholds.choice, thresholds: pairedTable, chosen: choosePassageBar(pairedTable) },
+            paired: {
+              choiceAt: thresholds.choice,
+              thresholds: pairedTable,
+              ...(unrepairedTable !== undefined ? { unrepaired: unrepairedTable } : {}),
+              chosen: choosePassageBar(pairedTable, unrepairedTable),
+            },
           },
         }
       : {}),

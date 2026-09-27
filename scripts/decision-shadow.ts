@@ -12,7 +12,7 @@
 //
 // Usage:
 //   pnpm decision:shadow --sets=fix-265-267,fix-270 --roots=<artifacts dir>[,<dir>…] --out=<report.json> [--env-file=<.env>] [--concurrency=4] [--dry-run] [--judged=<judgements.json>]
-//   pnpm decision:shadow --resummarize=<report.json> --out=<report.json> [--judged=<judgements.json>]
+//   pnpm decision:shadow --resummarize=<report.json> --out=<report.json> [--judged=<judgements.json>] [--sets=… --roots=…]
 //
 // A capture directory is `<root>/<set>-<pass>--<hunt>`; its `logs/run-trace-*.jsonl`
 // files are read in name order. --dry-run counts samples and asks nothing.
@@ -23,6 +23,9 @@
 // nothing from — `{ "<capture>/<turn>/<call>/<pair>": { "verdict":
 // "right"|"weak"|"wrong", "note": "…" } }`, keys as the report lists them —
 // and reports them beside agreement; a verdict never moves a bar.
+// --resummarize with --sets and --roots also reads the traces again and brings
+// every passage row's truth up to the rule in force (#281) — still asking
+// nothing, so the answers stay the ones the report was asked for.
 //
 // Every report also names the capture directories it read, relative to the
 // repository (`captures`) — how eval:compare --shadow checks that a report
@@ -41,6 +44,7 @@ import {
   askSamples,
   readShadowRuns,
   recordedTierRows,
+  retruthRows,
   shadowSamples,
   SHADOW_LIMITS,
   summarizeRecordedTier,
@@ -112,6 +116,13 @@ function traceLines(dir: string): ShadowTraceLine[] {
     .flatMap((name) => parseJsonl(readFileSync(join(logs, name), 'utf8')))
 }
 
+/** The named sets' capture directories under the roots, their trace lines, and the Runs in them. */
+function readCaptures(roots: readonly string[], sets: readonly string[]) {
+  const dirsBySet = captureDirs(roots, sets)
+  const read = [...dirsBySet.values()].flat().map((dir) => ({ name: basename(dir), dir: relative(repoRoot, dir), lines: traceLines(dir) }))
+  return { dirsBySet, read, runs: read.flatMap((capture) => readShadowRuns(capture.name, capture.lines)) }
+}
+
 /** The per-seam summaries under the thresholds in force; passage verdicts ride the passage seam. */
 function summaries(rows: readonly ShadowRow[], judgements: Readonly<Record<string, PassageJudgement>>) {
   return {
@@ -151,7 +162,14 @@ async function main(): Promise<void> {
     const out = flags.get('out') ?? fail('--out is required')
     const report = JSON.parse(readFileSync(resolve(resummarize), 'utf8')) as { kind?: string; rows?: ShadowRow[] } & Record<string, unknown>
     if (report.kind !== 'decision_shadow' || !Array.isArray(report.rows)) fail(`${resummarize} is not a decision:shadow report`)
-    const { rows, ...rest } = report
+    const { rows: asked, ...rest } = report
+    let rows: ShadowRow[] = asked
+    if (flags.has('sets') || flags.has('roots')) {
+      const runs = readCaptures(list(flags.get('roots'), 'roots').map((root) => resolve(root)), list(flags.get('sets'), 'sets')).runs
+      const retruthed = retruthRows(asked, shadowSamples(runs))
+      rows = retruthed.rows
+      process.stderr.write(`decision:shadow: truth refreshed on ${retruthed.refreshed} of ${asked.filter((row) => row.seam === 'passage').length} passage rows\n`)
+    }
     write(out, { ...rest, resummarizedAt: new Date().toISOString(), ...summaries(rows, judgements), rows })
     return
   }
@@ -162,10 +180,8 @@ async function main(): Promise<void> {
   const concurrency = Number(flags.get('concurrency') ?? '4')
   if (!Number.isInteger(concurrency) || concurrency < 1) fail('--concurrency must be a positive integer')
 
-  const dirsBySet = captureDirs(roots, sets)
-  const read = [...dirsBySet.values()].flat().map((dir) => ({ name: basename(dir), dir: relative(repoRoot, dir), lines: traceLines(dir) }))
+  const { dirsBySet, read, runs } = readCaptures(roots, sets)
   const captures = read.map(({ name, dir }) => ({ name, dir }))
-  const runs = read.flatMap((capture) => readShadowRuns(capture.name, capture.lines))
   const tierRows = read.flatMap((capture) => recordedTierRows(capture.name, capture.lines))
   const recordedTier = { summary: summarizeRecordedTier(tierRows), rows: tierRows }
   const passageSkips: PassageSkips = { unrebuilt: 0, windowed: 0 }

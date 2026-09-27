@@ -18,6 +18,7 @@ import {
   readShadowRuns,
   recordedTierRows,
   resultSamples,
+  retruthRows,
   SHADOW_TIERS,
   shadowRows,
   summarizeRecordedTier,
@@ -240,6 +241,8 @@ describe('passage samples (#281)', () => {
   it('credits a quoted table row however short, whitespace and case aside', () => {
     const [sample] = sampled([...pageRead('r1', 6_000), grounded('id: | ZAA0037', 'page_read', 6_000)])
     expect(sample!.truth.picks).toEqual(['P003'])
+    // Before the repair the row's pieces were too short to pin it.
+    expect(sample!.truth.unrepairedPicks).toEqual([])
     // A long piece still pins its passage; a short piece that is no row pins nothing.
     const [other] = sampled([...pageRead('r1', 6_000), grounded('H4 | measurements: | DIAL   diameter: 102 mm', 'page_read', 6_000)])
     expect(other!.truth.picks).toEqual(['P004'])
@@ -248,8 +251,8 @@ describe('passage samples (#281)', () => {
   it('credits a landing with what the model recorded from it, and from a Page Read of the same page', () => {
     expect(sampled([ask(), ...navigateTo('n1', 5_000), grounded('Dial diameter: 102 mm', 'action_outcome', 5_000)])[0]!.truth.picks).toEqual(['P004'])
     // The read repeats the landing's text, so it is not asked; its checkpoint is the landing's.
-    const [landing] = sampled([ask(), ...navigateTo('n1', 5_000), ...pageRead('r1', 6_000), grounded('ID: | ZAA0037', 'page_read', 6_000)])
-    expect(landing!.truth.picks).toEqual(['P003'])
+    const [landing] = sampled([ask(), ...navigateTo('n1', 5_000), ...pageRead('r1', 6_000), grounded('Dial diameter: 102 mm', 'page_read', 6_000)])
+    expect(landing!.truth).toEqual({ picks: ['P004'], unrepairedPicks: [] })
     // A read of another page after it is not.
     const [left] = sampled([ask(), ...navigateTo('n1', 5_000), ...navigateTo('n2', 7_000, { url: `${H4}/k1`, blocks: ['K1'] }), ...pageRead('r1', 8_000, { url: `${H4}/k1`, blocks: ['K1', 'ID: | ZAA0037'] }), grounded('ID: | ZAA0037', 'page_read', 8_000)])
     expect(left!.truth.picks).toEqual([])
@@ -261,6 +264,27 @@ describe('passage samples (#281)', () => {
     expect(samples.map((sample) => [sample.callId, sample.truth.picks])).toEqual([
       ['r1', []],
       ['r2', ['P004']],
+    ])
+  })
+})
+
+describe('bringing rows up to the truth in force (#281)', () => {
+  it('replaces each passage row\'s picks with its sample\'s, both truths, and leaves the rest alone', () => {
+    const base = { capture: 'cap', turnId: TURN, options: 2, optionsBeforeCut: 2, stateChars: 10, latencyMs: 1 }
+    const rows: ShadowRow[] = [
+      { ...base, seam: 'passage', callId: 'n1', pair: 1, modelPicks: [] },
+      { ...base, seam: 'passage', callId: 'n1', pair: 2, modelPicks: [] },
+      { ...base, seam: 'passage', callId: 'gone', pair: 1, modelPicks: ['P001'] },
+      { ...base, seam: 'result', callId: 'n1', modelPicks: ['r3'] },
+    ]
+    const sample = { seam: 'passage', capture: 'cap', turnId: TURN, callId: 'n1', state: '', questions: {}, truth: { picks: ['P002'], unrepairedPicks: [] }, optionsBeforeCut: 2 } as ShadowSample
+    const { rows: next, refreshed } = retruthRows(rows, [sample])
+    expect(refreshed).toBe(2)
+    expect(next.map((row) => [row.seam, row.callId, row.modelPicks, row.modelPicksUnrepaired])).toEqual([
+      ['passage', 'n1', ['P002'], []],
+      ['passage', 'n1', ['P002'], []],
+      ['passage', 'gone', ['P001'], undefined],
+      ['result', 'n1', ['r3'], undefined],
     ])
   })
 })
@@ -461,6 +485,16 @@ describe('choosing a bar from the table (#275, the owner\'s rule)', () => {
     expect(choosePassageBar([bar(0.6, 16, 6), bar(0.7, 14, 2), bar(0.8, 8, 0)])).toEqual({ at: 0.7, floor: 0.8 })
     // Under ten scored acts at every bar that agrees, the bars in force stand (Decision 7).
     expect(choosePassageBar([bar(0.6, 10, 5), bar(0.8, 8, 0)])).toBeNull()
+  })
+
+  it('refuses a lower bar that meets the floor only under the repaired truth (Decision 3)', () => {
+    const repaired = [bar(0.5, 59, 14), bar(0.6, 41, 9), bar(0.7, 21, 3), bar(0.8, 5, 1)]
+    const unrepaired = [bar(0.5, 27, 15), bar(0.6, 22, 9), bar(0.7, 15, 1), bar(0.8, 4, 1)]
+    expect(choosePassageBar(repaired)).toEqual({ at: 0.5, floor: 0.8 })
+    expect(choosePassageBar(repaired, unrepaired)).toEqual({ at: 0.7, floor: 0.8 })
+    // The floor is the repaired table's: 0.9 under the unrepaired truth alone does not raise it.
+    expect(choosePassageBar(repaired, [bar(0.7, 15, 1)])).toEqual({ at: 0.7, floor: 0.8 })
+    expect(choosePassageBar(repaired, [bar(0.5, 1, 9)])).toBeNull()
   })
 })
 
