@@ -77,7 +77,7 @@ export interface ProductionRouting {
   reasoningEffort: ReasoningEffort | null
   /**
    * The `BINGBONG_DECISION_SEAMS` list forwarded (#279), trimmed, or null
-   * when unset (every seam acts when the role serves); an empty string is
+   * when unset (the default seams act when the role serves); an empty string is
    * the list set empty, under which no seam acts (#275). Recorded as written,
    * not resolved: which seams act also depends on the role, which the
    * identity above already records.
@@ -143,7 +143,7 @@ export function resolveProductionRouting(env: Record<string, string | undefined>
   // forwarded explicitly or not at all (#166).
   const reasoningEffort = resolveReasoningEffortOverride(env) ?? null
   // Set but empty is the off switch that keeps the key (#275), so it is kept
-  // apart from unset (every seam acts) rather than trimmed away.
+  // apart from unset (the default seams act) rather than trimmed away.
   const decisionSeams = typeof env[DECISION_SEAMS_ENV_KEY] === 'string' ? env[DECISION_SEAMS_ENV_KEY]!.trim() : null
   const harnessEnv: Record<string, string | undefined> = {
     // Kill every scripted hook the ordinary harness template sets; the

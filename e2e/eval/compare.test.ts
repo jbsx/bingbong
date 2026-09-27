@@ -219,7 +219,7 @@ describe('comparePools', () => {
     for (const text of order) expect(at(text), text).toBeGreaterThan(-1)
     expect(order.map(at)).toEqual([...order.map(at)].sort((left, right) => left - right))
     expect(markdown).toContain('| b | result | 9 | 1.00 | 9 | 0 | 0 | 0 | 100 / 100 ms |')
-    expect(markdown).toContain('- b (on): decision=jev-1.13.0; seams unset (every seam)')
+    expect(markdown).toContain('- b (on): decision=jev-1.13.0; seams unset (the default seams)')
   })
 
   it('gives no verdict when both sides leave the role unconfigured, and reads captures before #279 as not recorded', () => {

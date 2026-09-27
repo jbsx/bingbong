@@ -3,6 +3,7 @@ import { parseDotEnv } from '../settings/dotEnv'
 import {
   DECISION_SCRIPT_ENV_KEY,
   DECISION_SEAMS,
+  DEFAULT_DECISION_SEAMS,
   decisionEnvKeys,
   REASONING_EFFORT_ENV_KEY,
   resolveDecisionRouting,
@@ -175,10 +176,13 @@ describe('the decision role (#275, ADR 0068)', () => {
     expect(resolveDecisionSeams({ BINGBONG_DECISION_SEAMS: 'passage' })).toEqual(new Set())
   })
 
-  it('acts on every seam by default, and on the listed ones when BINGBONG_DECISION_SEAMS names them', () => {
+  it('acts on the default seams when unset — never passage, retired by #281 — and on the listed ones when BINGBONG_DECISION_SEAMS names them', () => {
     const key = { TYPESAFE_API_KEY: 'ts-secret' }
-    expect(resolveDecisionSeams(key)).toEqual(new Set(DECISION_SEAMS))
+    expect(DEFAULT_DECISION_SEAMS).toEqual(['result', 'tier'])
+    expect(resolveDecisionSeams(key)).toEqual(new Set(['result', 'tier']))
+    // The code stays behind the list: naming passage turns it on.
     expect(resolveDecisionSeams({ ...key, BINGBONG_DECISION_SEAMS: ' Passage, tier ' })).toEqual(new Set(['passage', 'tier']))
+    expect(DECISION_SEAMS).toContain('passage')
     // An unknown name is dropped rather than failing a Run over a typo in an experiment variable.
     expect(resolveDecisionSeams({ ...key, BINGBONG_DECISION_SEAMS: 'result,rsult' })).toEqual(new Set(['result']))
   })
@@ -189,12 +193,12 @@ describe('the decision role (#275, ADR 0068)', () => {
     expect(resolveDecisionSeams({ ...key, BINGBONG_DECISION_SEAMS: '  ' })).toEqual(new Set())
     // Read from an env file the way the app reads one, `KEY=` is set and empty.
     expect(resolveDecisionSeams({ ...key, ...parseDotEnv('BINGBONG_DECISION_SEAMS=\n') })).toEqual(new Set())
-    // Unset still means every seam.
-    expect(resolveDecisionSeams({ ...key, BINGBONG_DECISION_SEAMS: undefined })).toEqual(new Set(DECISION_SEAMS))
+    // Unset still means the default seams.
+    expect(resolveDecisionSeams({ ...key, BINGBONG_DECISION_SEAMS: undefined })).toEqual(new Set(DEFAULT_DECISION_SEAMS))
   })
 
   it('counts the scripted stand-in as a configured role', () => {
-    expect(resolveDecisionSeams({ [DECISION_SCRIPT_ENV_KEY]: '[]' })).toEqual(new Set(DECISION_SEAMS))
+    expect(resolveDecisionSeams({ [DECISION_SCRIPT_ENV_KEY]: '[]' })).toEqual(new Set(DEFAULT_DECISION_SEAMS))
   })
 
   it('lists every env var that configures it, so a hermetic harness can unset them', () => {

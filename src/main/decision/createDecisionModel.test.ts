@@ -30,7 +30,7 @@ describe('createDecisionModel (#275)', () => {
       BINGBONG_DECISION_SCRIPT: JSON.stringify([{ answers: ANSWERS }, { unavailable: 'timeout' }]),
     })
     expect(decision?.model.model).toBe('scripted')
-    expect(decision?.seams).toEqual(new Set(['passage', 'result', 'tier']))
+    expect(decision?.seams).toEqual(new Set(['result', 'tier']))
 
     expect(await decision?.model.ask({ state: 's', questions: QUESTIONS })).toEqual({
       status: 'answered',

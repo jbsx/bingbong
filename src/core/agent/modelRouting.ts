@@ -135,6 +135,14 @@ export const DECISION_SCRIPT_ENV_KEY = `${DECISION_ENV_PREFIX}_SCRIPT`
 export type DecisionSeam = 'passage' | 'result' | 'tier'
 export const DECISION_SEAMS = ['passage', 'result', 'tier'] as const satisfies readonly DecisionSeam[]
 
+/**
+ * The seams that act when `BINGBONG_DECISION_SEAMS` is unset. `passage` left
+ * the list on 2026-09-27 (#281, ADR 0069): in the fix-281 capture the model
+ * recorded again from the same page after every Run-made checkpoint, so the
+ * seam spared it nothing. Its code stays behind the list: naming it acts.
+ */
+export const DEFAULT_DECISION_SEAMS: readonly DecisionSeam[] = ['result', 'tier']
+
 /** Whether the decision role resolved, and to what; never thrown, since unconfigured is a valid arm. */
 export type DecisionRouting =
   | { readonly configured: true; readonly endpoint: ModelEndpointConfig }
@@ -182,17 +190,17 @@ export function resolveDecisionRouting(env: Record<string, string | undefined>):
 
 /**
  * The seams that act: none when the role is neither configured nor
- * scripted, otherwise every seam unless `BINGBONG_DECISION_SEAMS` is set —
- * then the ones it lists, and none when it is set empty. An unknown name
+ * scripted, otherwise the default seams unless `BINGBONG_DECISION_SEAMS` is
+ * set — then the ones it lists, and none when it is set empty. An unknown name
  * is dropped rather than failing a Run over a typo in an experiment variable.
  */
 export function resolveDecisionSeams(env: Record<string, string | undefined>): ReadonlySet<DecisionSeam> {
   const served = readEnv(env, DECISION_SCRIPT_ENV_KEY) !== undefined || resolveDecisionRouting(env).configured
   if (!served) return new Set()
-  // Unset means every seam; set but empty means none — the off switch that
-  // keeps the key in place.
+  // Unset means the default seams; set but empty means none — the off switch
+  // that keeps the key in place.
   const listed = env[DECISION_SEAMS_ENV_KEY]
-  if (typeof listed !== 'string') return new Set(DECISION_SEAMS)
+  if (typeof listed !== 'string') return new Set(DEFAULT_DECISION_SEAMS)
   const names = listed.split(',').map((name) => name.trim().toLowerCase())
   return new Set(DECISION_SEAMS.filter((seam) => names.includes(seam)))
 }

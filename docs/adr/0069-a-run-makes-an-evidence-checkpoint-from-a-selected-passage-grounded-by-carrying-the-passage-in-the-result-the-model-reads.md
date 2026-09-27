@@ -210,3 +210,30 @@ opened page in the same Tool Round.
   capture that keeps block lists. None of this is built while Decision
   16's outcome on `fix-281` is unrecorded: with `passage` off the default
   seam list, #282 closes with it.
+- 2026-09-27, Decision 16 applied to the `fix-281` capture (#281):
+  **`passage` has left the default seam list**
+  (`DEFAULT_DECISION_SEAMS` is `result` and `tier`); the code stays behind
+  the list and `BINGBONG_DECISION_SEAMS=passage,…` turns it on. Three
+  passes on 77a7431 at Choice 0.7 and Noul 0.7, against `jev-on-1..3`, on
+  initials: the bars did what they were re-read to do — Run-made
+  checkpoints 1 → 21, from 10 of 56 asks that acted, none recording a wrong passage (judged
+  16 right, 5 weak: a part number for the case's own ID, K1 for the other
+  watch's name twice, two Eurostar items quoted from the Musicians' Union
+  page) — and the seam spared the model nothing. After every one of the 21
+  the model recorded again from the same page, and after 14 it quoted the
+  same passage, so the Run-made checkpoints not recorded again are 0 by
+  the page rule and 7 by the passage rule: 0% to 12.7% of the model's 55
+  accepted checkpoints, under 15% by either. The model's own accepted
+  checkpoints rose (49 → 55) and the bookkeeping-only rounds with them
+  (3.00 → 3.25 per Run); the wording `Recorded as evidence for "<item>"`
+  did not stop a second record, which the issue left unmeasured until
+  now. Of the capture's four gates one was met (Run-made checkpoints at
+  least 10) and three were not: bookkeeping-only rounds below the
+  Reference's, judged precision at least 0.8 (0.76 counting a weak pick as
+  a miss), initials verified not below 9 of 12 (8 of 12; the pooled Run
+  median 178.6 → 210.1 s). Three passes cannot tell 8 from 9, so the
+  capture does not show the seam costing correctness; it shows it buying
+  nothing. An unset seam list in a report written before this note meant
+  every seam, passage included, and reads `unset (every seam)`; after it,
+  `unset (the default seams)`. Result Pick is unaffected. #282's Passage
+  Spans close with this, by their own note above.

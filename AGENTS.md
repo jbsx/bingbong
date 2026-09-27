@@ -128,7 +128,8 @@ BINGBONG_DECISION_API_KEY=` exported empty (an exported empty value wins over
 the file) — then `pnpm eval:compare --a=<off dir> --b=<on dir>`. It refuses
 unequal pools, two commits, and arms that differ in anything but the
 decision role and `BINGBONG_DECISION_SEAMS` (set empty means no seam acts;
-unset means all). A Run's tier there is the corpus's declaration, never the
+unset means the default seams, `result` and `tier` — `passage` left the
+default on 2026-09-27 under #281 and acts only when the list names it). A Run's tier there is the corpus's declaration, never the
 model's, because the tier seam is under test. Agreement is not derivable
 from an eval capture — a Decision Record carries no model pick — so it comes
 from `pnpm decision:shadow` over retained traces. The veto's

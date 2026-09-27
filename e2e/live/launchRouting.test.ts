@@ -46,8 +46,8 @@ describe('launchDecisionSeamsOf', () => {
   })
 
   it('reads unset, the list set empty and a list apart', () => {
-    expect(decisionSeamsLabel(undefined)).toBe('unset (every seam)')
-    expect(decisionSeamsLabel(null)).toBe('unset (every seam)')
+    expect(decisionSeamsLabel(undefined)).toBe('unset (the default seams)')
+    expect(decisionSeamsLabel(null)).toBe('unset (the default seams)')
     expect(decisionSeamsLabel('')).toBe('empty (no seam acts)')
     expect(decisionSeamsLabel('passage,result')).toBe('passage,result')
   })

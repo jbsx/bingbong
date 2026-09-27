@@ -28,12 +28,14 @@ export function launchRoutingOf(launches: readonly Pick<LiveLaunchProvenance, 'r
 }
 
 /**
- * How a recorded seam list reads (#279): `unset (every seam)` when unset
- * (every seam acts when the role serves), `empty (no seam acts)` for the list set empty —
+ * How a recorded seam list reads (#279): `unset (the default seams)` when
+ * unset — every seam before #281 retired `passage` from the default, so a
+ * report written before it reads `unset (every seam)` and was right to —
+ * `empty (no seam acts)` for the list set empty —
  * #275's off switch — and the list itself otherwise.
  */
 export function decisionSeamsLabel(value: string | null | undefined): string {
-  if (value === null || value === undefined) return 'unset (every seam)'
+  if (value === null || value === undefined) return 'unset (the default seams)'
   return value === '' ? 'empty (no seam acts)' : value
 }
 
