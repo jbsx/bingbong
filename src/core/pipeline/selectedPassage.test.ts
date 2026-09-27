@@ -13,6 +13,9 @@ import {
 
 const THRESHOLDS = { choice: 0.7, noul: 0.7 }
 const PAGE = 'https://example.org/voyager'
+const OBJECTIVE = 'Find when Voyager 1 was launched'
+/** A landing as the tool reported it: no wall, no missing page. */
+const LANDED = { ok: true as const, result: `navigated: url=${PAGE} title="Voyager 1"` }
 const call = (name: string): ToolCall => ({ id: `c-${name}`, name, args: {} })
 
 type Asked = { state: string; questions: DecisionQuestions }
@@ -55,6 +58,7 @@ function seamOver(opts: {
   items: readonly string[]
   model: DecisionModel
   checkpoint?: (item: string, passage: string, url: string) => boolean
+  tracing?: boolean
 }) {
   const decisions: DecisionEvent[] = []
   const checkpoints: { item: string; passage: string; url: string }[] = []
@@ -63,6 +67,8 @@ function seamOver(opts: {
     model: opts.model,
     thresholds: THRESHOLDS,
     openItems: () => items,
+    objective: () => OBJECTIVE,
+    tracing: opts.tracing ?? true,
     pageTextBlocks: async () => opts.blocks,
     round: () => 3,
     writeDecision: (event) => decisions.push(event),
@@ -100,7 +106,7 @@ describe('the Selected Passage seam (#276, ADR 0069)', () => {
     const { model, asked } = modelOf(answering(() => 'P002'))
     const { seam, decisions } = seamOver({ blocks: BLOCKS, items: ['launch date'], model })
 
-    const picks = await seam.select(call('navigate'), PAGE)
+    const picks = await seam.select(call('navigate'), LANDED, PAGE)
 
     expect(picks).toEqual([{ item: 'launch date', passage: 'Voyager 1 was launched on 5 September 1977.' }])
     expect(asked).toHaveLength(1)
@@ -123,7 +129,7 @@ describe('the Selected Passage seam (#276, ADR 0069)', () => {
     const { model, asked } = modelOf(answering((key) => (key === 'pick_1' ? 'P002' : 'P003')))
     const { seam } = seamOver({ blocks: BLOCKS, items: ['launch date', 'distance'], model })
 
-    const picks = await seam.select(call('read_page'), PAGE)
+    const picks = await seam.select(call('read_page'), LANDED, PAGE)
 
     expect(Object.keys(asked[0]!.questions)).toEqual(['pick_1', 'any_1', 'pick_2', 'any_2'])
     expect(picks.map((pick) => pick.item)).toEqual(['launch date', 'distance'])
@@ -133,11 +139,11 @@ describe('the Selected Passage seam (#276, ADR 0069)', () => {
   it('fires on a navigate, a click and a read_page, never on a scroll or a Look', async () => {
     for (const name of ['navigate', 'click', 'read_page']) {
       const { model } = modelOf(answering(() => 'P002'))
-      expect(await seamOver({ blocks: BLOCKS, items: ['launch date'], model }).seam.select(call(name), PAGE)).toHaveLength(1)
+      expect(await seamOver({ blocks: BLOCKS, items: ['launch date'], model }).seam.select(call(name), LANDED, PAGE)).toHaveLength(1)
     }
     for (const name of ['scroll', 'look', 'type', 'record_evidence']) {
       const { model, asked } = modelOf(answering(() => 'P002'))
-      expect(await seamOver({ blocks: BLOCKS, items: ['launch date'], model }).seam.select(call(name), PAGE)).toEqual([])
+      expect(await seamOver({ blocks: BLOCKS, items: ['launch date'], model }).seam.select(call(name), LANDED, PAGE)).toEqual([])
       expect(asked).toHaveLength(0)
     }
   })
@@ -146,15 +152,74 @@ describe('the Selected Passage seam (#276, ADR 0069)', () => {
     const { model, asked } = modelOf(answering(() => 'P002'))
     const { seam } = seamOver({ blocks: BLOCKS, items: ['launch date'], model })
 
-    expect(await seam.select(call('navigate'), 'https://duckduckgo.com/?q=voyager+1+launch')).toEqual([])
+    expect(await seam.select(call('navigate'), LANDED, 'https://duckduckgo.com/?q=voyager+1+launch')).toEqual([])
     expect(asked).toHaveLength(0)
+  })
+
+  it('names the Objective in every question, so a pick is the item of this object (#281)', async () => {
+    const { model, asked } = modelOf(answering(() => 'P002'))
+    const { seam } = seamOver({ blocks: BLOCKS, items: ['launch date'], model })
+
+    await seam.select(call('navigate'), LANDED, PAGE)
+
+    for (const question of Object.values(asked[0]!.questions)) expect(question.instructions).toContain(OBJECTIVE)
+  })
+
+  it('never asks on a Not-found Page or a walled landing (#281)', async () => {
+    const landings = [
+      `navigated: url=${PAGE}/missing title="Page not found"\nNOT-FOUND:404 example.org`,
+      `navigated: url=${PAGE} title="Just a moment..."\nBLOCKER:challenge example.org`,
+      `navigated: url=${PAGE} title="Sign in"\nBLOCKER:login-wall example.org`,
+    ]
+    for (const result of landings) {
+      const { model, asked } = modelOf(answering(() => 'P002'))
+      const { seam, decisions } = seamOver({ blocks: BLOCKS, items: ['launch date'], model })
+      expect(await seam.select(call('navigate'), { ok: true, result }, PAGE)).toEqual([])
+      expect(asked).toHaveLength(0)
+      expect(decisions).toHaveLength(0)
+    }
+  })
+
+  it('keeps the passage each Choice chose on the record, whether it acted or not (#281)', async () => {
+    const { model } = modelOf(answering((key) => (key === 'pick_1' ? 'P002' : 'P003'), 0.4))
+    const { seam, decisions } = seamOver({ blocks: BLOCKS, items: ['launch date', 'distance'], model, tracing: false })
+
+    await seam.select(call('navigate'), LANDED, PAGE)
+
+    expect(decisions[0]!.acted).toBe('under_threshold')
+    expect(decisions[0]!.passages).toEqual({
+      pick_1: 'Voyager 1 was launched on 5 September 1977.',
+      pick_2: 'It is the most distant human-made object.',
+    })
+    expect(decisions[0]!.askedText).toBeUndefined()
+  })
+
+  it('keeps the text it was asked over on the record when the Run is tracing (#281)', async () => {
+    const { model, asked } = modelOf(answering(() => 'P002'))
+    const { seam, decisions } = seamOver({ blocks: BLOCKS, items: ['launch date'], model, tracing: true })
+
+    await seam.select(call('navigate'), LANDED, PAGE)
+
+    expect(decisions[0]!.askedText).toBe(asked[0]!.state)
+    expect(decisions[0]!.passages).toEqual({ pick_1: 'Voyager 1 was launched on 5 September 1977.' })
+  })
+
+  it('keeps no passage on a window pass: a window is not a passage (#281)', async () => {
+    const blocks = Array.from({ length: 300 }, (_, index) => `Paragraph ${index + 1} of the mission history.`)
+    const { model } = modelOf(answering((_, labels) => (labels[0] === 'W1' ? 'W2' : 'P280')))
+    const { seam, decisions } = seamOver({ blocks, items: ['launch date'], model })
+
+    await seam.select(call('read_page'), LANDED, PAGE)
+
+    expect(decisions[0]!.passages).toBeUndefined()
+    expect(decisions[1]!.passages).toEqual({ pick_1: 'Paragraph 280 of the mission history.' })
   })
 
   it('asks nothing with no open item', async () => {
     const { model, asked } = modelOf(answering(() => 'P002'))
     const { seam, decisions } = seamOver({ blocks: BLOCKS, items: [], model })
 
-    expect(await seam.select(call('navigate'), PAGE)).toEqual([])
+    expect(await seam.select(call('navigate'), LANDED, PAGE)).toEqual([])
     expect(asked).toHaveLength(0)
     expect(decisions).toHaveLength(0)
   })
@@ -163,7 +228,7 @@ describe('the Selected Passage seam (#276, ADR 0069)', () => {
     const { model } = modelOf(answering(() => 'P002', 0.4))
     const { seam, decisions } = seamOver({ blocks: BLOCKS, items: ['launch date'], model })
 
-    expect(await seam.select(call('navigate'), PAGE)).toEqual([])
+    expect(await seam.select(call('navigate'), LANDED, PAGE)).toEqual([])
     expect(decisions[0]!.acted).toBe('under_threshold')
   })
 
@@ -171,7 +236,7 @@ describe('the Selected Passage seam (#276, ADR 0069)', () => {
     const { model } = modelOf(answering(() => 'P002', 0.95, 0.2))
     const { seam, decisions } = seamOver({ blocks: BLOCKS, items: ['launch date'], model })
 
-    expect(await seam.select(call('navigate'), PAGE)).toEqual([])
+    expect(await seam.select(call('navigate'), LANDED, PAGE)).toEqual([])
     expect(decisions[0]!.acted).toBe('under_threshold')
   })
 
@@ -183,7 +248,7 @@ describe('the Selected Passage seam (#276, ADR 0069)', () => {
     })
     const { seam, decisions } = seamOver({ blocks: BLOCKS, items: ['launch date', 'distance'], model })
 
-    expect((await seam.select(call('navigate'), PAGE)).map((pick) => pick.item)).toEqual(['launch date'])
+    expect((await seam.select(call('navigate'), LANDED, PAGE)).map((pick) => pick.item)).toEqual(['launch date'])
     expect(decisions[0]!.acted).toBe('acted')
   })
 
@@ -191,7 +256,7 @@ describe('the Selected Passage seam (#276, ADR 0069)', () => {
     const { model } = modelOf(() => ({ status: 'unavailable', reason: 'timeout', message: 'no answer in 800 ms', latencyMs: 800, model: 'jev-1.13.0' }))
     const { seam, decisions } = seamOver({ blocks: BLOCKS, items: ['launch date'], model })
 
-    expect(await seam.select(call('navigate'), PAGE)).toEqual([])
+    expect(await seam.select(call('navigate'), LANDED, PAGE)).toEqual([])
     expect(decisions[0]).toEqual(expect.objectContaining({ acted: 'unavailable', unavailable: expect.objectContaining({ reason: 'timeout' }) }))
   })
 
@@ -201,6 +266,8 @@ describe('the Selected Passage seam (#276, ADR 0069)', () => {
       model,
       thresholds: THRESHOLDS,
       openItems: () => ['launch date'],
+      objective: () => OBJECTIVE,
+      tracing: true,
       pageTextBlocks: async () => {
         throw new Error('target closed')
       },
@@ -209,7 +276,7 @@ describe('the Selected Passage seam (#276, ADR 0069)', () => {
       checkpoint: () => true,
     })
 
-    expect(await seam.select(call('navigate'), PAGE)).toEqual([])
+    expect(await seam.select(call('navigate'), LANDED, PAGE)).toEqual([])
     expect(asked).toHaveLength(0)
   })
 
@@ -217,8 +284,8 @@ describe('the Selected Passage seam (#276, ADR 0069)', () => {
     const { model, asked } = modelOf(answering(() => 'P002', 0.3))
     const { seam } = seamOver({ blocks: BLOCKS, items: ['launch date'], model })
 
-    await seam.select(call('navigate'), PAGE)
-    await seam.select(call('read_page'), PAGE)
+    await seam.select(call('navigate'), LANDED, PAGE)
+    await seam.select(call('read_page'), LANDED, PAGE)
 
     expect(asked).toHaveLength(1)
   })
@@ -228,7 +295,7 @@ describe('the Selected Passage seam (#276, ADR 0069)', () => {
     const { model, asked } = modelOf(answering((_, labels) => (labels[0] === 'W1' ? 'W2' : 'P280')))
     const { seam, decisions } = seamOver({ blocks, items: ['launch date'], model })
 
-    const picks = await seam.select(call('read_page'), PAGE)
+    const picks = await seam.select(call('read_page'), LANDED, PAGE)
 
     expect(asked).toHaveLength(2)
     const windows = asked[0]!.questions.pick_1!
@@ -248,7 +315,7 @@ describe('the Selected Passage seam (#276, ADR 0069)', () => {
     const { model, asked } = modelOf(answering(() => 'W1', 0.5))
     const { seam } = seamOver({ blocks, items: ['launch date'], model })
 
-    expect(await seam.select(call('read_page'), PAGE)).toEqual([])
+    expect(await seam.select(call('read_page'), LANDED, PAGE)).toEqual([])
     expect(asked).toHaveLength(1)
   })
 
@@ -256,12 +323,12 @@ describe('the Selected Passage seam (#276, ADR 0069)', () => {
     const { model, asked } = modelOf(answering(() => 'P002'))
     const { seam, checkpoints } = seamOver({ blocks: BLOCKS, items: ['launch date'], model })
 
-    const picks = await seam.select(call('navigate'), PAGE)
+    const picks = await seam.select(call('navigate'), LANDED, PAGE)
     expect(seam.record(picks, PAGE)).toEqual(['launch date'])
     expect(checkpoints).toEqual([{ item: 'launch date', passage: 'Voyager 1 was launched on 5 September 1977.', url: PAGE }])
 
     // A second landing on the same page with the item recorded asks nothing.
-    expect(await seam.select(call('navigate'), PAGE)).toEqual([])
+    expect(await seam.select(call('navigate'), LANDED, PAGE)).toEqual([])
     expect(asked).toHaveLength(1)
   })
 
@@ -269,9 +336,9 @@ describe('the Selected Passage seam (#276, ADR 0069)', () => {
     const { model } = modelOf(answering(() => 'P002'))
     const { seam } = seamOver({ blocks: BLOCKS, items: ['launch date'], model, checkpoint: () => false })
 
-    const picks = await seam.select(call('navigate'), PAGE)
+    const picks = await seam.select(call('navigate'), LANDED, PAGE)
     expect(seam.record(picks, PAGE)).toEqual([])
-    expect(await seam.select(call('navigate'), 'https://example.org/other')).toHaveLength(1)
+    expect(await seam.select(call('navigate'), LANDED, 'https://example.org/other')).toHaveLength(1)
   })
 })
 

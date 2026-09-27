@@ -570,6 +570,13 @@ export interface DecisionEvent {
   readonly stateChars: number
   /** A Selected Passage asked in two passes, a window then a block, for a page past 255 blocks (#276). */
   readonly windowed?: true
+  /**
+   * A Selected Passage's chosen block per Choice key, whether the pair
+   * cleared or not (#281); absent on a window pass and on other seams.
+   */
+  readonly passages?: Readonly<Record<string, string>>
+  /** The state a Selected Passage was asked over, when the Run traces (#281): what a Shadow Replay asks again. */
+  readonly askedText?: string
   /** Why no answer came back, on an `unavailable` record only. */
   readonly unavailable?: { readonly reason: DecisionUnavailableReason; readonly message: string; readonly httpStatus?: number }
   /** The Browse Subagent whose round asked; absent on the Run's own. */

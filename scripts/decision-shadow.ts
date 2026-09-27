@@ -11,14 +11,18 @@
 // from --env-file (default ./.env) under the process env, as the app reads it.
 //
 // Usage:
-//   pnpm decision:shadow --sets=fix-265-267,fix-270 --roots=<artifacts dir>[,<dir>…] --out=<report.json> [--env-file=<.env>] [--concurrency=4] [--dry-run]
-//   pnpm decision:shadow --resummarize=<report.json> --out=<report.json>
+//   pnpm decision:shadow --sets=fix-265-267,fix-270 --roots=<artifacts dir>[,<dir>…] --out=<report.json> [--env-file=<.env>] [--concurrency=4] [--dry-run] [--judged=<judgements.json>]
+//   pnpm decision:shadow --resummarize=<report.json> --out=<report.json> [--judged=<judgements.json>]
 //
 // A capture directory is `<root>/<set>-<pass>--<hunt>`; its `logs/run-trace-*.jsonl`
 // files are read in name order. --dry-run counts samples and asks nothing.
 // --resummarize re-reads a report's rows under the thresholds in force now —
 // how a report is brought up to a bar its own decile table moved — and asks
 // nothing, since asking again would move the answers the bar was read from.
+// --judged (#281) reads verdicts on the passage acts the model recorded
+// nothing from — `{ "<capture>/<turn>/<call>/<pair>": { "verdict":
+// "right"|"weak"|"wrong", "note": "…" } }`, keys as the report lists them —
+// and reports them beside agreement; a verdict never moves a bar.
 //
 // Every report also names the capture directories it read, relative to the
 // repository (`captures`) — how eval:compare --shadow checks that a report
@@ -41,12 +45,14 @@ import {
   SHADOW_LIMITS,
   summarizeRecordedTier,
   summarizeSeam,
+  type PassageJudgement,
+  type PassageSkips,
   type ShadowRow,
   type ShadowTraceLine,
 } from '../e2e/eval/jev/shadow.ts'
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url))
-const FLAGS = ['sets', 'roots', 'out', 'env-file', 'concurrency', 'dry-run', 'resummarize'] as const
+const FLAGS = ['sets', 'roots', 'out', 'env-file', 'concurrency', 'dry-run', 'resummarize', 'judged'] as const
 
 function fail(message: string): never {
   process.stderr.write(`decision:shadow: ${message}\n`)
@@ -106,12 +112,28 @@ function traceLines(dir: string): ShadowTraceLine[] {
     .flatMap((name) => parseJsonl(readFileSync(join(logs, name), 'utf8')))
 }
 
-/** The per-seam summaries under the thresholds in force. */
-function summaries(rows: readonly ShadowRow[]) {
+/** The per-seam summaries under the thresholds in force; passage verdicts ride the passage seam. */
+function summaries(rows: readonly ShadowRow[], judgements: Readonly<Record<string, PassageJudgement>>) {
   return {
     thresholds: DECISION_THRESHOLDS,
-    seams: Object.fromEntries(DECISION_SEAMS.map((seam) => [seam, summarizeSeam(rows.filter((row) => row.seam === seam), DECISION_THRESHOLDS[seam])])),
+    seams: Object.fromEntries(
+      DECISION_SEAMS.map((seam) => [seam, summarizeSeam(rows.filter((row) => row.seam === seam), DECISION_THRESHOLDS[seam], seam === 'passage' ? judgements : {})]),
+    ),
   }
+}
+
+const VERDICTS = new Set(['right', 'weak', 'wrong'])
+
+/** A judgements file, every entry a verdict: one that is not would be silently uncounted. */
+function readJudgements(path: string | undefined): Record<string, PassageJudgement> {
+  if (path === undefined) return {}
+  const raw = JSON.parse(readFileSync(resolve(path), 'utf8')) as unknown
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) fail(`${path} is not a judgements object`)
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    const verdict = (value as { verdict?: unknown } | null)?.verdict
+    if (typeof verdict !== 'string' || !VERDICTS.has(verdict)) fail(`${path}: ${key} has no verdict of right, weak or wrong`)
+  }
+  return raw as Record<string, PassageJudgement>
 }
 
 function write(out: string, report: unknown): void {
@@ -124,12 +146,13 @@ function write(out: string, report: unknown): void {
 async function main(): Promise<void> {
   const flags = parseArgv(process.argv.slice(2))
   const resummarize = flags.get('resummarize')
+  const judgements = readJudgements(flags.get('judged'))
   if (resummarize !== undefined) {
     const out = flags.get('out') ?? fail('--out is required')
     const report = JSON.parse(readFileSync(resolve(resummarize), 'utf8')) as { kind?: string; rows?: ShadowRow[] } & Record<string, unknown>
     if (report.kind !== 'decision_shadow' || !Array.isArray(report.rows)) fail(`${resummarize} is not a decision:shadow report`)
     const { rows, ...rest } = report
-    write(out, { ...rest, resummarizedAt: new Date().toISOString(), ...summaries(rows), rows })
+    write(out, { ...rest, resummarizedAt: new Date().toISOString(), ...summaries(rows, judgements), rows })
     return
   }
   const sets = list(flags.get('sets'), 'sets')
@@ -145,10 +168,13 @@ async function main(): Promise<void> {
   const runs = read.flatMap((capture) => readShadowRuns(capture.name, capture.lines))
   const tierRows = read.flatMap((capture) => recordedTierRows(capture.name, capture.lines))
   const recordedTier = { summary: summarizeRecordedTier(tierRows), rows: tierRows }
-  const samples = shadowSamples(runs)
+  const passageSkips: PassageSkips = { unrebuilt: 0, windowed: 0 }
+  const samples = shadowSamples(runs, passageSkips)
   const counts = Object.fromEntries(DECISION_SEAMS.map((seam) => [seam, samples.filter((sample) => sample.seam === seam).length]))
+  const landings = samples.filter((sample) => sample.passage?.kind === 'landing').length
   process.stderr.write(
-    `decision:shadow: ${read.length} captures, ${runs.length} runs, samples ${JSON.stringify(counts)}, recorded tier shadows ${tierRows.length}\n`,
+    `decision:shadow: ${read.length} captures, ${runs.length} runs, samples ${JSON.stringify(counts)}, recorded tier shadows ${tierRows.length}\n` +
+      `decision:shadow: passage landings ${landings}, landings not rebuilt ${passageSkips.unrebuilt}, pages past 255 blocks ${passageSkips.windowed}\n`,
   )
   if (dryRun) return
 
@@ -158,12 +184,12 @@ async function main(): Promise<void> {
   if (!routing.configured) fail(`the decision role is not configured (${routing.reason}); looked in ${envFile} and the process env`)
   const model = createJevDecisionModel(routing.endpoint)
 
-  const rows = await askSamples(model, samples, concurrency, (_row, done) => {
+  const rows = await askSamples(model, samples, concurrency, (_rows, done) => {
     if (done % 25 === 0 || done === samples.length) process.stderr.write(`decision:shadow: ${done}/${samples.length}\n`)
   })
   const report = {
     kind: 'decision_shadow',
-    issue: 275,
+    issue: 281,
     generatedAt: new Date().toISOString(),
     model: routing.endpoint.model,
     timeoutMs: DECISION_TIMEOUT_MS,
@@ -171,7 +197,8 @@ async function main(): Promise<void> {
     captures,
     runs: runs.length,
     limits: SHADOW_LIMITS,
-    ...summaries(rows),
+    passageSamples: { landings, pageReads: counts.passage - landings, ...passageSkips },
+    ...summaries(rows, judgements),
     recordedTier,
     rows,
   }

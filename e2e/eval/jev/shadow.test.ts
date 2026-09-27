@@ -6,23 +6,27 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import type { DecisionModel } from '../../../src/core/ports/decisionModel.ts'
 import { EFFORT_TIERS } from '../../../src/core/pipeline/runPlan.ts'
+import { passageBlockIds, passageQuestions, passageState } from '../../../src/core/pipeline/passageQuestions.ts'
 import {
   askSamples,
+  choosePassageBar,
   chooseThreshold,
   landingUrl,
   listingResults,
-  MAX_OPTIONS,
   pagePassages,
   passageSamples,
   readShadowRuns,
   recordedTierRows,
   resultSamples,
   SHADOW_TIERS,
+  shadowRows,
   summarizeRecordedTier,
   summarizeSeam,
   TIER_QUESTIONS,
   tierSamples,
+  type PassageSkips,
   type ShadowRow,
+  type ShadowSample,
   type ShadowTraceLine,
 } from './shadow.ts'
 
@@ -107,51 +111,193 @@ describe('reading Runs from a trace (#275)', () => {
   })
 })
 
-describe('passage samples (#275)', () => {
-  it('reads a Page Read\'s passages from its page text, one per line', () => {
-    expect(pagePassages(PAGE_READ)).toEqual([
+describe('passage samples (#281)', () => {
+  const H4 = 'https://www.rmg.co.uk/collections/objects/rmgc-object-79142'
+  const BLOCKS = ['H4', "Marine timekeeper, H4. This is Harrison's prize-winning longitude watch.", 'ID: | ZAA0037', 'Measurements: | Dial diameter: 102 mm']
+  const ITEMS = ['H4 dial diameter', 'H4 object ID']
+  const PLAN2 = event('run_plan', { source: 'model', effortTier: 'lookup', objective: 'Find H4 dial diameter', askedItems: ITEMS })
+  const snapshot = (url: string, blocks: readonly string[]) => [`# H4 | Royal Museums Greenwich — ${url}`, 'viewport 985x575 scroll 0/6033', 'page text:', ...blocks].join('\n')
+  /** A navigate that landed on `url`, its result published at `at`; a cut preview ends with the cut line. */
+  function navigateTo(callId: string, at: number, opts: { url?: string; blocks?: readonly string[]; cut?: boolean; notice?: string } = {}): ShadowTraceLine[] {
+    const url = opts.url ?? H4
+    const text = [`navigated: url=${url} title="H4"`, snapshot(url, opts.blocks ?? BLOCKS), ...(opts.cut ? ['page text: first 1,800 of 9,000 characters — read_page returns the whole text'] : [])].join('\n')
+    return [
+      event('tool_call', { name: 'navigate', callId, args: { url } }),
+      event('tool_result', { name: 'navigate', callId, ok: true, result: opts.notice ? `${text}\n\n${opts.notice}` : text, at }),
+    ]
+  }
+  function pageRead(callId: string, at: number, opts: { url?: string; blocks?: readonly string[]; part?: string } = {}): ShadowTraceLine[] {
+    const text = [snapshot(opts.url ?? H4, opts.blocks ?? BLOCKS), ...(opts.part ? [opts.part] : [])].join('\n')
+    return [event('tool_call', { name: 'read_page', callId, args: {} }), event('tool_result', { name: 'read_page', callId, ok: true, result: text, at })]
+  }
+  /** The Run's own passage record, as the seam writes it before the call's result. */
+  function ask(blocks: readonly string[] = BLOCKS, acted = 'under_threshold', extra: Partial<ShadowTraceLine> = {}): ShadowTraceLine {
+    return { kind: 'decision', turnId: TURN, seam: 'passage', acted, stateChars: passageState(passageBlockIds(blocks.length), blocks).length, ...extra }
+  }
+  /** A model checkpoint grounded on the observation of whatever was published at `at`. */
+  function grounded(excerpt: string, producer: 'action_outcome' | 'page_read', at: number): ShadowTraceLine {
+    return { kind: 'evidence_checkpoint', turnId: TURN, tool: 'record_evidence', outcome: 'accepted', excerpt, graded: [{ matched: true, producer, observedAt: at - 1 }] }
+  }
+  const sampled = (lines: ShadowTraceLine[], skips?: PassageSkips) => passageSamples(readShadowRuns('cap', [COMMAND, PLAN2, ...lines])[0]!, skips)
+
+  it('reads a Page Read\'s passages from its page text, one per line, untrimmed, up to the Notices', () => {
+    expect(pagePassages(`${PAGE_READ}\n    indented code\n\nWork budget: 2 of 12 tool rounds remain.`)).toEqual([
       'H4',
       "Marine timekeeper, H4. This is Harrison's prize-winning longitude watch.",
       'ID: | ZAA0037',
       'Measurements: | Dial diameter: 102 mm',
+      '    indented code',
     ])
   })
 
-  it('takes the model\'s pick from the passage holding the excerpt grounded on that read, whitespace and case aside', () => {
-    const [run] = readShadowRuns('cap', [COMMAND, PLAN, ...readCall('c1', 5_000), checkpoint('ID: | zaa0037 | measurements: | DIAL   diameter: 102 mm', 4_999)])
-    const [sample] = passageSamples(run)
-    // "ID:" and "zaa0037" are too short to pin a passage; the diameter pins p4.
-    expect(sample.truth.picks).toEqual(['p4'])
-    expect(sample.callId).toBe('c1')
-    expect(Object.keys((sample.questions.pick as { options: object }).options)).toEqual(['p1', 'p2', 'p3', 'p4'])
-    expect(sample.state).toContain('[p4] Measurements: | Dial diameter: 102 mm')
-    expect(sample.state).toContain('- H4 dial diameter')
+  it('asks the seam\'s own questions — a Choice and a Noul per open item, naming the Objective — over the seam\'s own state', () => {
+    const [sample] = sampled([ask(), ...navigateTo('n1', 5_000)])
+    expect(sample!.passage).toMatchObject({ kind: 'landing', url: H4, items: ITEMS, objective: 'Find H4 dial diameter', recordedActed: false })
+    expect(sample!.state).toBe(passageState(passageBlockIds(4), BLOCKS))
+    expect(sample!.questions).toEqual(passageQuestions('Find H4 dial diameter', ITEMS, { P001: null, P002: null, P003: null, P004: null }, 'passage', true))
   })
 
-  it('records "picked none" for a read the model recorded nothing from', () => {
-    const [run] = readShadowRuns('cap', [COMMAND, PLAN, ...readCall('c1', 5_000), checkpoint('a passage from some other page entirely', 4_999)])
-    expect(passageSamples(run)[0].truth.picks).toEqual([])
+  it('samples a click landing too, and a landing whose uncut preview carried Notices', () => {
+    const click = [
+      event('tool_call', { name: 'click', callId: 'k1', args: { ref: 3 } }),
+      event('tool_result', { name: 'click', callId: 'k1', ok: true, result: `clicked [3]: urlChanged=true\n${snapshot(H4, BLOCKS)}`, at: 5_000 }),
+    ]
+    expect(sampled([ask(), ...click]).map((sample) => sample.passage?.kind)).toEqual(['landing'])
+    expect(sampled([ask(), ...navigateTo('n1', 5_000, { notice: 'Work budget: 2 of 12 tool rounds remain.' })])).toHaveLength(1)
   })
 
-  it('never credits a read with a checkpoint grounded elsewhere, even one quoting its words', () => {
-    // Grounded on a navigate landing of the same page: the read showed it too, but the model recorded it from the landing.
-    const [landed] = readShadowRuns('cap', [COMMAND, PLAN, ...readCall('c1', 5_000), checkpoint('Dial diameter: 102 mm')])
-    expect(passageSamples(landed)[0].truth.picks).toEqual([])
+  it('rebuilds a cut landing from a later whole Page Read of the page, and from every part of one', () => {
+    expect(sampled([ask(), ...navigateTo('n1', 5_000, { blocks: BLOCKS.slice(0, 2), cut: true }), ...pageRead('r1', 6_000)])[0]!.state).toBe(
+      passageState(passageBlockIds(4), BLOCKS),
+    )
+    const parts = [
+      ...pageRead('r1', 6_000, { blocks: BLOCKS.slice(0, 2), part: 'page text: part 1 of 2 — read_page part=2 continues' }),
+      ...pageRead('r2', 7_000, { blocks: BLOCKS.slice(2), part: 'page text: part 2 of 2 — the last part' }),
+    ]
+    expect(sampled([ask(), ...navigateTo('n1', 5_000, { blocks: BLOCKS.slice(0, 2), cut: true }), ...parts])).toHaveLength(1)
+  })
 
-    // Two reads of one page: the checkpoint grounded on the second credits only the second.
-    const [twice] = readShadowRuns('cap', [COMMAND, PLAN, ...readCall('c1', 5_000), ...readCall('c2', 9_000), checkpoint('Dial diameter: 102 mm', 8_999)])
-    expect(passageSamples(twice).map((sample) => [sample.callId, sample.truth.picks])).toEqual([
-      ['c1', []],
-      ['c2', ['p4']],
+  it('rebuilds a landing from the text its record kept, when it kept one', () => {
+    const askedText = passageState(passageBlockIds(4), BLOCKS)
+    const [sample] = sampled([ask(BLOCKS, 'under_threshold', { askedText }), ...navigateTo('n1', 5_000, { blocks: BLOCKS.slice(0, 1), cut: true })])
+    expect(sample!.state).toBe(askedText)
+  })
+
+  it('never replays a landing it cannot rebuild exactly, and counts it', () => {
+    const skips: PassageSkips = { unrebuilt: 0, windowed: 0 }
+    // Cut, and never read again.
+    expect(sampled([ask(), ...navigateTo('n1', 5_000, { cut: true })], skips)).toEqual([])
+    // Read again, but the page changed: the rebuild is not what the seam asked over.
+    expect(sampled([ask(), ...navigateTo('n1', 5_000, { cut: true }), ...pageRead('r1', 6_000, { blocks: [...BLOCKS, 'A late-loading footer line.'] })], skips)).toHaveLength(1)
+    expect(skips.unrebuilt).toBe(2)
+  })
+
+  it('never samples a landing the Run did not ask about: its trace holds only the Page Preview', () => {
+    expect(sampled(navigateTo('n1', 5_000))).toEqual([])
+  })
+
+  it('samples a whole Page Read, never a part of one', () => {
+    expect(sampled(pageRead('r1', 6_000)).map((sample) => sample.passage?.kind)).toEqual(['page_read'])
+    expect(sampled(pageRead('r1', 6_000, { part: 'page text: part 1 of 2 — read_page part=2 continues' }))).toEqual([])
+  })
+
+  it('skips a search results page, a Not-found Page and a walled landing', () => {
+    const search = 'https://duckduckgo.com/?q=h4+dial'
+    expect(sampled([ask(), ...navigateTo('n1', 5_000, { url: search })])).toEqual([])
+    for (const marker of ['NOT-FOUND:404 www.rmg.co.uk', 'BLOCKER:challenge www.rmg.co.uk', 'UNAVAILABLE:503 www.rmg.co.uk']) {
+      const lines = navigateTo('n1', 5_000)
+      const result = lines[1]!.event!
+      expect(sampled([ask(), lines[0]!, { ...lines[1]!, event: { ...result, result: `${result.result}\n${marker}` } }])).toEqual([])
+    }
+  })
+
+  it('does not ask a Page Read that holds the text its landing was asked over, as the seam does not', () => {
+    expect(sampled([ask(), ...navigateTo('n1', 5_000), ...pageRead('r1', 6_000)]).map((sample) => sample.callId)).toEqual(['n1'])
+  })
+
+  it('asks only the items no Run-made checkpoint has closed, and none for a Direct Action', () => {
+    const runMade: ShadowTraceLine = {
+      kind: 'evidence_checkpoint',
+      turnId: TURN,
+      tool: 'record_evidence',
+      outcome: 'accepted',
+      origin: 'run',
+      args: { observation: 'H4 dial diameter' },
+      excerpt: 'measurements: | dial diameter: 102 mm',
+      graded: [{ matched: true, producer: 'action_outcome', observedAt: 4_999 }],
+    }
+    const samples = sampled([ask(BLOCKS, 'acted'), runMade, ...navigateTo('n1', 5_000), ...pageRead('r1', 9_000, { url: `${H4}/other` })])
+    expect(samples.map((sample) => [sample.callId, sample.passage?.items, sample.passage?.recordedActed])).toEqual([
+      ['n1', ITEMS, true],
+      ['r1', ['H4 object ID'], false],
+    ])
+    // The Run's own checkpoint is no pick of the model's.
+    expect(samples[0]!.truth.picks).toEqual([])
+    const direct = event('run_plan', { source: 'model', effortTier: 'direct_action', objective: 'o', askedItems: ITEMS })
+    expect(passageSamples(readShadowRuns('cap', [COMMAND, direct, ...pageRead('r1', 6_000)])[0]!)).toEqual([])
+  })
+
+  it('credits a quoted table row however short, whitespace and case aside', () => {
+    const [sample] = sampled([...pageRead('r1', 6_000), grounded('id: | ZAA0037', 'page_read', 6_000)])
+    expect(sample!.truth.picks).toEqual(['P003'])
+    // A long piece still pins its passage; a short piece that is no row pins nothing.
+    const [other] = sampled([...pageRead('r1', 6_000), grounded('H4 | measurements: | DIAL   diameter: 102 mm', 'page_read', 6_000)])
+    expect(other!.truth.picks).toEqual(['P004'])
+  })
+
+  it('credits a landing with what the model recorded from it, and from a Page Read of the same page', () => {
+    expect(sampled([ask(), ...navigateTo('n1', 5_000), grounded('Dial diameter: 102 mm', 'action_outcome', 5_000)])[0]!.truth.picks).toEqual(['P004'])
+    // The read repeats the landing's text, so it is not asked; its checkpoint is the landing's.
+    const [landing] = sampled([ask(), ...navigateTo('n1', 5_000), ...pageRead('r1', 6_000), grounded('ID: | ZAA0037', 'page_read', 6_000)])
+    expect(landing!.truth.picks).toEqual(['P003'])
+    // A read of another page after it is not.
+    const [left] = sampled([ask(), ...navigateTo('n1', 5_000), ...navigateTo('n2', 7_000, { url: `${H4}/k1`, blocks: ['K1'] }), ...pageRead('r1', 8_000, { url: `${H4}/k1`, blocks: ['K1', 'ID: | ZAA0037'] }), grounded('ID: | ZAA0037', 'page_read', 8_000)])
+    expect(left!.truth.picks).toEqual([])
+  })
+
+  it('never credits a read with a checkpoint grounded on another read of the same page', () => {
+    const blocks2 = [...BLOCKS, 'Credit: | National Maritime Museum']
+    const samples = sampled([...pageRead('r1', 5_000), ...pageRead('r2', 9_000, { blocks: blocks2 }), grounded('Dial diameter: 102 mm', 'page_read', 9_000)])
+    expect(samples.map((sample) => [sample.callId, sample.truth.picks])).toEqual([
+      ['r1', []],
+      ['r2', ['P004']],
+    ])
+  })
+})
+
+describe('passage rows (#281)', () => {
+  const sample: ShadowSample = {
+    seam: 'passage',
+    capture: 'cap',
+    turnId: TURN,
+    callId: 'n1',
+    state: 'P001| H4\nP002| Dial diameter: 102 mm',
+    questions: passageQuestions('Find H4', ['dial', 'id'], { P001: null, P002: null }, 'passage', true),
+    truth: { picks: ['P002'] },
+    optionsBeforeCut: 2,
+    passage: { kind: 'landing', url: 'u', objective: 'Find H4', items: ['dial', 'id'], blocks: ['H4', 'Dial diameter: 102 mm'], recordedActed: true },
+  }
+
+  it('makes one row per Asked Item\'s pair, with the passage its Choice chose, not comparable when the Run acted', () => {
+    const choice = (label: string, confidence: number) => ({ type: 'choice', choice: label, confidence, probabilities: { P001: 1 - confidence, P002: confidence } })
+    const rows = shadowRows(sample, {
+      status: 'answered',
+      latencyMs: 200,
+      model: 'jev-1.13.0',
+      answers: { pick_1: choice('P002', 0.9), any_1: { type: 'noul', noul: 0.85 }, pick_2: choice('P001', 0.6), any_2: { type: 'noul', noul: 0.1 } } as never,
+    })
+    expect(rows).toEqual([
+      expect.objectContaining({ item: 'dial', pair: 1, choice: 'P002', confidence: 0.9, noul: 0.85, passage: 'Dial diameter: 102 mm', notComparable: true, sampleKind: 'landing', modelPicks: ['P002'], options: 2 }),
+      expect.objectContaining({ item: 'id', pair: 2, choice: 'P001', confidence: 0.6, noul: 0.1, passage: 'H4', notComparable: true }),
     ])
   })
 
-  it(`cuts a page at ${MAX_OPTIONS} passages and says so`, () => {
-    const long = `page text:\n${Array.from({ length: MAX_OPTIONS + 5 }, (_, at) => `passage number ${at}`).join('\n')}`
-    const [run] = readShadowRuns('cap', [COMMAND, event('tool_result', { name: 'read_page', callId: 'c1', ok: true, result: long })])
-    const [sample] = passageSamples(run)
-    expect(sample.optionsBeforeCut).toBe(MAX_OPTIONS + 5)
-    expect(Object.keys((sample.questions.pick as { options: object }).options)).toHaveLength(MAX_OPTIONS)
+  it('keeps an unavailable ask as one unavailable row per pair', () => {
+    const rows = shadowRows({ ...sample, passage: { ...sample.passage!, recordedActed: false } }, { status: 'unavailable', reason: 'timeout', message: 'slow', latencyMs: 800, model: 'jev-1.13.0' })
+    expect(rows.map((row) => [row.item, row.unavailable, row.notComparable])).toEqual([
+      ['dial', 'timeout', undefined],
+      ['id', 'timeout', undefined],
+    ])
   })
 })
 
@@ -278,14 +424,23 @@ describe('asking and summarizing (#275)', () => {
     expect(summary.choice.byConfidence[7]).toEqual({ from: 0.7, to: 0.8, n: 1, rate: 0 })
     expect(summary.noul?.agreementAtHalf).toBe(0.75)
     // "Recorded nothing" is its own column, never a disagreement.
-    expect(summary.atThreshold).toEqual({ thresholds: { choice: 0.7, noul: 0.7 }, acted: 3, agreed: 1, disagreed: 1, recordedNothing: 1 })
-    expect(summary.choice.thresholds[9]).toEqual({ at: 0.9, acted: 3, agreed: 1, disagreed: 0, recordedNothing: 2, agreement: 1 })
+    expect(summary.atThreshold).toMatchObject({ thresholds: { choice: 0.7, noul: 0.7 }, acted: 3, agreed: 1, disagreed: 1, recordedNothing: 1 })
+    // Acted share is over the answered rows: 3 of the 4.
+    expect(summary.choice.thresholds[9]).toEqual({ at: 0.9, acted: 3, agreed: 1, disagreed: 0, recordedNothing: 2, agreement: 1, actedShare: 0.75 })
     expect(summary.multiPick).toBe(0)
   })
 })
 
 describe('choosing a bar from the table (#275, the owner\'s rule)', () => {
-  const bar = (at: number, agreed: number, disagreed: number) => ({ at, acted: agreed + disagreed + 3, agreed, disagreed, recordedNothing: 3, agreement: agreed + disagreed === 0 ? null : agreed / (agreed + disagreed) })
+  const bar = (at: number, agreed: number, disagreed: number) => ({
+    at,
+    acted: agreed + disagreed + 3,
+    agreed,
+    disagreed,
+    recordedNothing: 3,
+    agreement: agreed + disagreed === 0 ? null : agreed / (agreed + disagreed),
+    actedShare: null,
+  })
 
   it('takes the lowest bar agreeing at least 0.8 over at least ten scored acts', () => {
     expect(chooseThreshold([bar(0.5, 14, 6), bar(0.6, 13, 3), bar(0.7, 10, 2), bar(0.8, 8, 1)])).toBe(0.6)
@@ -293,12 +448,65 @@ describe('choosing a bar from the table (#275, the owner\'s rule)', () => {
 
   it('never counts the acts where the model recorded nothing', () => {
     // 8 agreed of 10 scored reaches the bar however many recorded-nothing acts ride along.
-    expect(chooseThreshold([{ at: 0.7, acted: 40, agreed: 8, disagreed: 2, recordedNothing: 30, agreement: 0.8 }])).toBe(0.7)
+    expect(chooseThreshold([{ at: 0.7, acted: 40, agreed: 8, disagreed: 2, recordedNothing: 30, agreement: 0.8, actedShare: null }])).toBe(0.7)
   })
 
   it('falls back to the highest bar still resting on ten scored acts, and to none without one', () => {
     expect(chooseThreshold([bar(0.6, 10, 5), bar(0.7, 8, 3), bar(0.8, 6, 2), bar(0.9, 3, 1)])).toBe(0.7)
     expect(chooseThreshold([bar(0.9, 3, 1)])).toBeNull()
+  })
+
+  it('reads a passage bar at 0.9 agreement over ten scored acts, and at 0.8 where 0.9 is unreachable (#281, Decision 2)', () => {
+    expect(choosePassageBar([bar(0.6, 16, 3), bar(0.7, 12, 1), bar(0.8, 10, 0)])).toEqual({ at: 0.7, floor: 0.9 })
+    expect(choosePassageBar([bar(0.6, 16, 6), bar(0.7, 14, 2), bar(0.8, 8, 0)])).toEqual({ at: 0.7, floor: 0.8 })
+    // Under ten scored acts at every bar that agrees, the bars in force stand (Decision 7).
+    expect(choosePassageBar([bar(0.6, 10, 5), bar(0.8, 8, 0)])).toBeNull()
+  })
+})
+
+describe('summarizing passage rows (#281)', () => {
+  const row = (fields: Partial<ShadowRow>): ShadowRow => ({
+    seam: 'passage',
+    capture: 'cap',
+    turnId: TURN,
+    callId: 'n1',
+    options: 4,
+    optionsBeforeCut: 4,
+    stateChars: 100,
+    modelPicks: [],
+    latencyMs: 100,
+    pair: 1,
+    ...fields,
+  })
+
+  it('leaves a row whose Run acted out of every table, and reads the paired table at the Choice bar in force', () => {
+    const summary = summarizeSeam(
+      [
+        row({ modelPicks: ['P1'], choice: 'P1', confidence: 0.9, noul: 0.85 }),
+        row({ pair: 2, modelPicks: ['P1'], choice: 'P2', confidence: 0.6, noul: 0.95 }),
+        row({ callId: 'n2', modelPicks: ['P1'], choice: 'P1', confidence: 0.95, noul: 0.95, notComparable: true }),
+      ],
+      { choice: 0.7, noul: 0.8 },
+    )
+    expect(summary.notComparable).toBe(1)
+    expect(summary.choice.scored).toBe(2)
+    // The second pair's Noul clears 0.8 but its Choice does not clear 0.7: it never acts.
+    expect(summary.noul?.paired.thresholds[8]).toMatchObject({ at: 0.8, acted: 1, agreed: 1, actedShare: 0.5 })
+    // Two asks, not three pairs, carry latency.
+    expect(summary.latencyMs.median).toBe(100)
+  })
+
+  it('lists every act on a page the model recorded nothing from, with the verdict it was judged', () => {
+    const acts = [
+      row({ choice: 'P3', confidence: 0.9, noul: 0.9, item: 'object ID', objective: 'Find H4', passage: 'ID: | ZAA0037' }),
+      row({ pair: 2, choice: 'P1', confidence: 0.9, noul: 0.9, item: 'maker', objective: 'Find H4', passage: 'K1' }),
+    ]
+    const summary = summarizeSeam(acts, { choice: 0.7, noul: 0.8 }, { 'cap/turn-1/n1/2': { verdict: 'wrong', note: 'K1 is another watch' } })
+    expect(summary.atThreshold.recordedNothingActs).toEqual([
+      { key: 'cap/turn-1/n1/1', objective: 'Find H4', item: 'object ID', passage: 'ID: | ZAA0037', confidence: 0.9, noul: 0.9 },
+      { key: 'cap/turn-1/n1/2', objective: 'Find H4', item: 'maker', passage: 'K1', confidence: 0.9, noul: 0.9, judged: { verdict: 'wrong', note: 'K1 is another watch' } },
+    ])
+    expect(summary.atThreshold.judged).toEqual({ right: 0, weak: 0, wrong: 1 })
   })
 })
 

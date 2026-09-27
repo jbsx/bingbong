@@ -1944,6 +1944,8 @@ describe('the Selected Passage on a landing (#276, ADR 0069)', () => {
       model,
       thresholds: { choice: 0.7, noul: 0.7 },
       openItems,
+      objective: () => plan?.objective ?? '',
+      tracing: true,
       pageTextBlocks: async () => options.blocks ?? BLOCKS,
       round: () => 2,
       writeDecision: (event) => decisions.push(event),

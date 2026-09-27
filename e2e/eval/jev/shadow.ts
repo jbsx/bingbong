@@ -6,16 +6,22 @@
 //
 // What the traces can and cannot rebuild (the owner's 2026-09-26 note on
 // #275): a navigate's result holds a Page Preview and a Page Read holds the
-// page text, but no record holds a landing's whole text. So:
-//   - passage — measured on Page Reads only. The model's pick is the passage
-//     holding its next accepted excerpt from that read; no such excerpt
-//     means it recorded nothing from the read.
+// page text, but a landing's whole text is only in a Decision Record that
+// kept it (#281). So:
+//   - passage (#281) — the seam's own questions, one Choice and one Noul per
+//     open Asked Item naming the Objective, over the seam's own state. A
+//     landing the seam asked about is sampled when its text can be rebuilt —
+//     from the record's asked text, or from a later whole Page Read of the
+//     same page whose state is exactly as long as the one the seam asked
+//     over; a whole Page Read the seam would ask about is sampled as itself.
+//     The model's pick is every passage holding an excerpt the model itself
+//     recorded from that page; none means it recorded nothing there.
 //   - result — a navigate whose landing is a Search URL: the options are the
 //     listing's result links, the model's pick is the one its next
 //     navigate or click opened; a new search or anything else is no pick.
 //   - tier — the command against the Effort Tier the model declared.
-// Asked Items are the Run Plan's declared list; which were still open at a
-// given read is not recorded, so every declared item is offered.
+// For result, every declared Asked Item is offered; for passage, the items
+// no Run-made checkpoint had closed yet.
 //
 // Everything here is pure; the CLI (`scripts/decision-shadow.ts`) reads the
 // files and owns the network.
@@ -25,6 +31,7 @@ import { tierShadowOf } from '../../live/audit.ts'
 import type { EffortTier } from '../../../src/core/pipeline/runPlan.ts'
 import { TIER_PICK_QUESTION } from '../../../src/core/pipeline/tierShadow.ts'
 import { normalizeMemoryText } from '../../../src/core/session/workingMemory.ts'
+import { MAX_PASSAGE_OPTIONS, passageBlockIds, passageQuestions, passageState } from '../../../src/core/pipeline/passageQuestions.ts'
 import type { DecisionSeam } from '../../../src/core/agent/modelRouting.ts'
 import type {
   DecisionModel,
@@ -46,7 +53,7 @@ export const MAX_OPTIONS = 250
 export const PASSAGE_TEXT_MAX_CHARS = 1_200
 /** The state as a whole, well inside Jev's 32k-token window. */
 export const STATE_MAX_CHARS = 60_000
-/** An excerpt passage shorter than this pins no passage: "ID:" is on every catalogue page. */
+/** An excerpt passage shorter than this pins no passage: "ID:" is on every catalogue page. A table row quoted whole pins its row however short (#281). */
 const MIN_PICK_PASSAGE_CHARS = 12
 
 /** One trace line, as much of it as the replay reads. */
@@ -57,6 +64,13 @@ export interface ShadowTraceLine {
   /** A `decision` record's seam and what it did with the answer (#280 reads the tier seam's). */
   readonly seam?: string
   readonly acted?: string
+  /** A `decision` record's state size, and — a passage record written since #281 — the state itself. */
+  readonly stateChars?: number
+  readonly askedText?: string
+  /** A checkpoint made by the Run (`run`, #276); absent on the model's own. */
+  readonly origin?: string
+  /** A checkpoint's call arguments: a Run-made one names its Asked Item as the observation. */
+  readonly args?: { readonly observation?: unknown }
   readonly tool?: string
   readonly outcome?: string
   readonly excerpt?: string
@@ -81,8 +95,20 @@ export interface ShadowTraceLine {
 type RunStep =
   | { readonly kind: 'call'; readonly name: string; readonly callId: string; readonly args: Record<string, unknown> }
   | { readonly kind: 'result'; readonly name: string; readonly callId: string; readonly ok: boolean; readonly text: string; readonly at?: number }
-  /** An accepted record_evidence; `pageReadsAt` is when each Page Read that grounded it was observed. */
-  | { readonly kind: 'checkpoint'; readonly excerpt: string; readonly pageReadsAt: readonly number[] }
+  /**
+   * An accepted record_evidence, the model's or the Run's (`item` names the
+   * Asked Item a Run-made one closed); `grounded` is each observation the
+   * grader matched it on, by producer and when it was observed.
+   */
+  | {
+      readonly kind: 'checkpoint'
+      readonly excerpt: string
+      readonly origin: 'model' | 'run'
+      readonly item?: string
+      readonly grounded: ReadonlyArray<{ readonly producer: string; readonly observedAt: number }>
+    }
+  /** A Selected Passage ask the Run recorded, before the result of the call it was asked on (#281). */
+  | { readonly kind: 'passage_ask'; readonly acted: string; readonly stateChars: number; readonly askedText?: string }
 
 /** One orchestrator Run as its trace recorded it. */
 export interface ShadowRun {
@@ -116,10 +142,26 @@ export function readShadowRuns(capture: string, lines: readonly ShadowTraceLine[
     const event = line.event
     if (line.kind === 'evidence_checkpoint') {
       if (line.tool === 'record_evidence' && line.outcome === 'accepted' && typeof line.excerpt === 'string') {
-        const pageReadsAt = (line.graded ?? []).flatMap((observation) =>
-          observation.matched === true && observation.producer === 'page_read' && typeof observation.observedAt === 'number' ? [observation.observedAt] : [],
+        const grounded = (line.graded ?? []).flatMap((observation) =>
+          observation.matched === true && typeof observation.producer === 'string' && typeof observation.observedAt === 'number'
+            ? [{ producer: observation.producer, observedAt: observation.observedAt }]
+            : [],
         )
-        runOf(line.turnId).steps.push({ kind: 'checkpoint', excerpt: line.excerpt, pageReadsAt })
+        const origin = line.origin === 'run' ? 'run' : 'model'
+        const item = origin === 'run' && typeof line.args?.observation === 'string' ? line.args.observation : undefined
+        runOf(line.turnId).steps.push({ kind: 'checkpoint', excerpt: line.excerpt, origin, ...(item !== undefined ? { item } : {}), grounded })
+      }
+      continue
+    }
+    if (line.kind === 'decision') {
+      // A window pass's records ride a page past 255 blocks, which is not replayed (#282).
+      if (line.seam === 'passage' && typeof line.acted === 'string' && typeof line.stateChars === 'number' && (line as { windowed?: unknown }).windowed !== true) {
+        runOf(line.turnId).steps.push({
+          kind: 'passage_ask',
+          acted: line.acted,
+          stateChars: line.stateChars,
+          ...(typeof line.askedText === 'string' ? { askedText: line.askedText } : {}),
+        })
       }
       continue
     }
@@ -165,6 +207,8 @@ export interface ShadowSample {
   readonly truth: ShadowTruth
   /** How many options the listing or page had before the {@link MAX_OPTIONS} cut. */
   readonly optionsBeforeCut: number
+  /** A passage sample's page and items (#281): its answers become one row per item. */
+  readonly passage?: PassageSampleFacts
 }
 
 function cut(text: string, max: number): string {
@@ -180,15 +224,55 @@ function capState(state: string): string {
   return cut(state, STATE_MAX_CHARS)
 }
 
-/** A Page Read's passages: the page text's lines, one block each, as the collector wrote them. */
+/**
+ * A Page Read's passages: the page text's lines, one block each, as the
+ * collector wrote them — untrimmed, since a pre block keeps its indent and
+ * the state the seam asked over kept it too. The fact lines a read or a
+ * preview ends with, and the lines a Selected Passage carried after a
+ * landing (#276), are no passage.
+ */
 export function pagePassages(pageRead: string): string[] {
   const lines = pageRead.split('\n')
   const start = lines.findIndex((line) => line.trim() === 'page text:')
   if (start === -1) return []
-  return lines
-    .slice(start + 1)
-    .map((line) => line.trim())
-    .filter((line) => line !== '')
+  // The page's text holds no blank line; the Notices a round attached start after one.
+  const end = lines.findIndex((line, at) => at > start && line.trim() === '')
+  return lines.slice(start + 1, end === -1 ? undefined : end).filter((line) => !FACT_LINE.test(line) && !CARRIED_LINE.test(line))
+}
+
+/** The fact line a Page Preview cut short ends with (ADR 0047): the landing does not hold its page's whole text. */
+const PREVIEW_CUT_LINE = /^page text: first [\d,]+ of [\d,]+ characters/m
+const FACT_LINE = /^page text: (?:part \d+ of \d+|first [\d,]+ of [\d,]+ characters)\b/
+/** What the Run carried after a landing's result (#276): the seam's lines, not the page's. */
+const CARRIED_LINE = /^(?:Selected passage for "|Recorded as evidence for ")/
+
+/** The fact line of a Page Read cut into parts: `page text: part 2 of 4 — …` (ADR 0047). */
+const PART_LINE = /^page text: part (\d+) of (\d+)\b/
+
+/** Which part of how many a Page Read is; null for a whole page. */
+export function pageReadPart(pageRead: string): { readonly part: number; readonly of: number } | null {
+  for (const line of pageRead.split('\n')) {
+    const match = PART_LINE.exec(line.trim())
+    if (match) return { part: Number(match[1]), of: Number(match[2]) }
+  }
+  return null
+}
+
+/** The page a result's last snapshot shows: its `# <title> — <url>` head. */
+export function pageUrlOf(result: string): string | null {
+  const heads = [...result.matchAll(/^# .* — (\S+)$/gm)]
+  return heads.at(-1)?.[1] ?? null
+}
+
+/** A result that settled on a wall, a Not-found Page or an Unavailable Page: the seam asks nothing there (#281). */
+const NOTHING_LANDED = /^(?:BLOCKER:(?:challenge|network-block|login-wall)|NOT-FOUND:(?:404|410|title)|UNAVAILABLE:\S+) \S+$/m
+
+/** The blocks of a state the seam asked over, as its record kept it (#281): each `P001| ` line, cut as the state cut it. */
+export function stateBlocks(state: string): string[] {
+  return state
+    .split(/\n(?=P\d{3,}\| )/)
+    .map((line) => line.replace(/^P\d{3,}\| /, ''))
+    .filter((block) => block !== '')
 }
 
 /** Where a model joins verbatim passages in an excerpt: the grader's seams (ADR 0054). */
@@ -202,30 +286,26 @@ function excerptPassages(excerpt: string): string[] {
     .filter((passage) => passage.length >= MIN_PICK_PASSAGE_CHARS)
 }
 
-/** Which of a read's passages hold any of an excerpt's passages, as option labels. */
-function passagesHolding(passages: readonly string[], excerpt: string): string[] {
+/** A block the collector rendered from a table row: its cells joined by ` | ` (ADR 0047). */
+const TABLE_ROW = / \| /
+
+/**
+ * Which of a page's passages an excerpt holds, as option labels: a passage
+ * holding one of the excerpt's long pieces, or a table row the excerpt
+ * quotes whole however short (#281) — `ID: | ZAA0037` splits into pieces too
+ * short to pin anything, yet the model quoted exactly that row.
+ */
+function passagesHolding(passages: readonly string[], labels: readonly string[], excerpt: string): string[] {
   const wanted = excerptPassages(excerpt)
-  if (wanted.length === 0) return []
+  const quoted = normalizeMemoryText(excerpt)
   return passages.flatMap((passage, index) => {
     const text = normalizeMemoryText(passage)
-    return wanted.some((part) => text.includes(part)) ? [`p${index + 1}`] : []
+    const held = wanted.some((part) => text.includes(part)) || (TABLE_ROW.test(passage) && text.trim() !== '' && quoted.includes(text.trim()))
+    return held ? [labels[index]!] : []
   })
 }
 
-export const PASSAGE_QUESTIONS = (options: Record<string, string | null>): DecisionQuestions => ({
-  pick: {
-    type: 'choice',
-    instructions: 'Which passage of the page states an answer to one of the asked items?',
-    options,
-  },
-  any: {
-    type: 'noul',
-    instructions: 'At least one passage of the page states an answer to one of the asked items.',
-  },
-})
-
-/** One passage sample per Page Read the Run was shown. */
-/** How long after its observation a Page Read's result is published; the ledger stamps it first. */
+/** How long after its observation a result is published; the ledger stamps it first. */
 const GROUNDING_SLACK_MS = 1_000
 
 /**
@@ -236,40 +316,150 @@ function readAt(reads: ReadonlyArray<{ at?: number; callId: string }>, observedA
   return reads.find((read) => read.at !== undefined && read.at >= observedAt && read.at - observedAt <= GROUNDING_SLACK_MS)?.callId
 }
 
+type CheckpointStep = Extract<RunStep, { kind: 'checkpoint' }>
+
+/** The page tools the seam asks on (ADR 0069): a landing or a Page Read. */
+const PASSAGE_TOOLS: ReadonlySet<string> = new Set(['navigate', 'click', 'read_page'])
+const LANDING_TOOLS: ReadonlySet<string> = new Set(['navigate', 'click'])
+
 /**
- * One passage sample per Page Read the Run was shown. The model's pick is
- * read off the first accepted checkpoint the grader grounded on that very
- * read — never on a landing, another page, or another read of the same one
- * — as the passages holding its excerpt. A read no checkpoint was grounded
- * on is "picked none".
+ * A landing's text from the Page Reads of the same page after it: the first
+ * whole read, or every part of a page read in parts. Null when neither was
+ * read; the caller checks the rebuild against what the seam asked over.
  */
-export function passageSamples(run: ShadowRun): ShadowSample[] {
+function rebuiltFromReads(later: readonly RunStep[], url: string): string[] | null {
+  const parts = new Map<number, string[]>()
+  let of: number | null = null
+  for (const step of later) {
+    if (step.kind !== 'result' || step.name !== 'read_page' || !step.ok || pageUrlOf(step.text) !== url) continue
+    const part = pageReadPart(step.text)
+    if (part === null) return pagePassages(step.text)
+    if (of !== null && part.of !== of) continue
+    of = part.of
+    if (!parts.has(part.part)) parts.set(part.part, pagePassages(step.text))
+    if (parts.size === of) return Array.from({ length: of }, (_, index) => parts.get(index + 1) ?? []).flat()
+  }
+  return null
+}
+
+/** One passage sample: the seam's question over one page, per open Asked Item. */
+export interface PassageSampleFacts {
+  /** A landing the seam asked about, or a whole Page Read. */
+  readonly kind: 'landing' | 'page_read'
+  readonly url: string
+  readonly objective: string
+  /** The open Asked Items, in `pick_<n>` order. */
+  readonly items: readonly string[]
+  /** The page's blocks, as the state holds them: what a chosen label reads as. */
+  readonly blocks: readonly string[]
+  /** The Run's own ask acted on this page: the model's next move was the seam's, and no pick of its own is comparable. */
+  readonly recordedActed: boolean
+}
+
+/** What a Run's passage walk could not replay, counted so no reader mistakes a gap for a finding. */
+export interface PassageSkips {
+  /** A landing the seam asked about whose text no record kept and no later Page Read rebuilt exactly. */
+  unrebuilt: number
+  /** A page past the one-pass Choice's 255 blocks (#282). */
+  windowed: number
+}
+
+/**
+ * The passage samples of one Run (#281), walked as the seam walks it: only
+ * once the Run Plan declared items, never for a Direct Action; never on a
+ * search results page, a wall, a Not-found or an Unavailable Page; asking the
+ * items no Run-made checkpoint had closed; never asking twice over one page,
+ * one set of items and one text.
+ */
+export function passageSamples(run: ShadowRun, skips: PassageSkips = { unrebuilt: 0, windowed: 0 }): ShadowSample[] {
+  if (run.tier === 'direct_action' || run.askedItems.length === 0) return []
+  const objective = run.objective || run.command
   const reads = run.steps.flatMap((step) => (step.kind === 'result' && step.name === 'read_page' && step.ok ? [step] : []))
-  const checkpoints = run.steps.filter((step): step is Extract<RunStep, { kind: 'checkpoint' }> => step.kind === 'checkpoint')
-  return reads.flatMap((step) => {
-    const all = pagePassages(step.text)
-    if (all.length === 0) return []
-    const passages = all.slice(0, MAX_OPTIONS)
-    const picks =
-      checkpoints
-        .filter((checkpoint) => checkpoint.pageReadsAt.some((observedAt) => readAt(reads, observedAt) === step.callId))
-        .map((checkpoint) => passagesHolding(passages, checkpoint.excerpt))
-        .find((held) => held.length > 0) ?? []
-    const title = step.text.split('\n', 1)[0]
-    const body = passages.map((passage, at) => `[p${at + 1}] ${cut(passage, PASSAGE_TEXT_MAX_CHARS)}`).join('\n')
-    return [
-      {
-        seam: 'passage' as const,
-        capture: run.capture,
-        turnId: run.turnId,
-        callId: step.callId,
-        state: capState(`${runHeader(run)}\n\nPage: ${title}\n${body}`),
-        questions: PASSAGE_QUESTIONS(Object.fromEntries(passages.map((_, at) => [`p${at + 1}`, null]))),
-        truth: { picks },
-        optionsBeforeCut: all.length,
-      },
-    ]
+  const checkpoints = run.steps.filter((step): step is CheckpointStep => step.kind === 'checkpoint' && step.origin === 'model')
+  const closed = new Set<string>()
+  let pending: { readonly ask: Extract<RunStep, { kind: 'passage_ask' }>; readonly open: readonly string[] } | null = null
+  let lastAsked: string | null = null
+  const samples: ShadowSample[] = []
+  run.steps.forEach((step, index) => {
+    if (step.kind === 'checkpoint' && step.origin === 'run' && step.item !== undefined) closed.add(step.item)
+    if (step.kind === 'passage_ask') {
+      pending = { ask: step, open: run.askedItems.filter((item) => !closed.has(item)) }
+      return
+    }
+    if (step.kind !== 'result') return
+    const asked: { readonly ask: Extract<RunStep, { kind: 'passage_ask' }>; readonly open: readonly string[] } | null = pending
+    pending = null
+    if (!PASSAGE_TOOLS.has(step.name) || !step.ok) return
+    const url = pageUrlOf(step.text)
+    if (url === null || parseSearchUrl(url) !== null || NOTHING_LANDED.test(step.text)) return
+    const items = asked?.open ?? run.askedItems.filter((item) => !closed.has(item))
+    if (items.length === 0) return
+    let blocks: string[]
+    let kind: PassageSampleFacts['kind']
+    if (LANDING_TOOLS.has(step.name)) {
+      // A landing's text is in no result: only one the seam asked about can
+      // be replayed, and only when its rebuild is the state it asked over.
+      if (asked === null) return
+      // A preview that fits is the whole text (ADR 0047): it carries no cut line.
+      const rebuilt =
+        asked.ask.askedText !== undefined
+          ? stateBlocks(asked.ask.askedText)
+          : PREVIEW_CUT_LINE.test(step.text)
+            ? rebuiltFromReads(run.steps.slice(index + 1), url)
+            : pagePassages(step.text)
+      const exact =
+        rebuilt !== null &&
+        (asked.ask.askedText !== undefined || passageState(passageBlockIds(rebuilt.length), rebuilt).length === asked.ask.stateChars)
+      if (!exact) {
+        skips.unrebuilt += 1
+        return
+      }
+      blocks = rebuilt
+      kind = 'landing'
+    } else {
+      if (pageReadPart(step.text) !== null) return
+      blocks = pagePassages(step.text)
+      kind = 'page_read'
+    }
+    if (blocks.length === 0) return
+    if (blocks.length > MAX_PASSAGE_OPTIONS) {
+      skips.windowed += 1
+      return
+    }
+    const key = JSON.stringify([url, items, blocks])
+    if (key === lastAsked) return
+    lastAsked = key
+    const labels = passageBlockIds(blocks.length)
+    // The model's own checkpoints grounded on this page: on this landing's
+    // or read's observation, and for a landing on any read of the same page
+    // before the Run left it (#281) — the read showed the landing's text.
+    const nextLanding = run.steps.findIndex((later, at) => at > index && later.kind === 'result' && LANDING_TOOLS.has(later.name) && later.ok && pageUrlOf(later.text) !== url)
+    const until = nextLanding === -1 ? run.steps.length : nextLanding
+    const creditedReads = new Set(
+      kind === 'landing'
+        ? run.steps.slice(index + 1, until).flatMap((later) => (later.kind === 'result' && later.name === 'read_page' && pageUrlOf(later.text) === url ? [later.callId] : []))
+        : [step.callId],
+    )
+    const grounds = (checkpoint: CheckpointStep): boolean =>
+      checkpoint.grounded.some(({ producer, observedAt }) =>
+        producer === 'page_read'
+          ? creditedReads.has(readAt(reads, observedAt) ?? '')
+          : kind === 'landing' && producer === 'action_outcome' && step.at !== undefined && step.at >= observedAt && step.at - observedAt <= GROUNDING_SLACK_MS,
+      )
+    const picks = [...new Set(checkpoints.filter(grounds).flatMap((checkpoint) => passagesHolding(blocks, labels, checkpoint.excerpt)))]
+    samples.push({
+      seam: 'passage',
+      capture: run.capture,
+      turnId: run.turnId,
+      callId: step.callId,
+      state: passageState(labels, blocks),
+      questions: passageQuestions(objective, items, Object.fromEntries(labels.map((label) => [label, null])), 'passage', true),
+      truth: { picks },
+      optionsBeforeCut: blocks.length,
+      passage: { kind, url, objective, items, blocks, recordedActed: asked?.ask.acted === 'acted' },
+    })
   })
+  return samples
 }
 
 /** The last page a navigate result says it landed on; a rewritten navigate lands somewhere else than it asked. */
@@ -418,8 +608,8 @@ export function tierSamples(run: ShadowRun): ShadowSample[] {
   ]
 }
 
-export function shadowSamples(runs: readonly ShadowRun[]): ShadowSample[] {
-  return runs.flatMap((run) => [...tierSamples(run), ...passageSamples(run), ...resultSamples(run)])
+export function shadowSamples(runs: readonly ShadowRun[], skips?: PassageSkips): ShadowSample[] {
+  return runs.flatMap((run) => [...tierSamples(run), ...passageSamples(run, skips), ...resultSamples(run)])
 }
 
 /** One sample's answer, kept without its state. */
@@ -438,11 +628,52 @@ export interface ShadowRow {
   readonly confidence?: number
   readonly noul?: number
   readonly unavailable?: string
+  /** A passage row is one Asked Item's pair (#281): the item, its 1-based index, where it was asked and over what. */
+  readonly item?: string
+  readonly pair?: number
+  readonly sampleKind?: PassageSampleFacts['kind']
+  readonly objective?: string
+  /** The block the Choice chose, cut for reading: what a judge weighs a recorded-nothing act on. */
+  readonly passage?: string
+  /** The Run's own ask acted on this page, so the model's next move was not its own (#281). */
+  readonly notComparable?: true
 }
 
-export function shadowRow(sample: ShadowSample, result: DecisionResult<DecisionQuestions>): ShadowRow {
-  const pick = sample.questions.pick
-  const base = {
+/** How much of a chosen block a row keeps for judging. */
+const ROW_PASSAGE_MAX_CHARS = 600
+
+/** A sample's rows: one per Asked Item for a passage sample (#281), else the one. */
+export function shadowRows(sample: ShadowSample, result: DecisionResult<DecisionQuestions>): ShadowRow[] {
+  const facts = sample.passage
+  if (facts === undefined) return [shadowRow(sample, result)]
+  const base = rowBase(sample, result, 'pick_1')
+  const labels = passageBlockIds(facts.blocks.length)
+  return facts.items.map((item, index) => {
+    const row: ShadowRow = {
+      ...base,
+      item,
+      pair: index + 1,
+      sampleKind: facts.kind,
+      objective: facts.objective,
+      ...(facts.recordedActed ? { notComparable: true as const } : {}),
+    }
+    if (result.status === 'unavailable') return { ...row, unavailable: result.reason }
+    const pick = result.answers[`pick_${index + 1}`]
+    const any = result.answers[`any_${index + 1}`]
+    const block = pick?.type === 'choice' ? facts.blocks[labels.indexOf(pick.choice)] : undefined
+    return {
+      ...row,
+      ...(pick?.type === 'choice' ? { choice: pick.choice, confidence: pick.confidence } : {}),
+      ...(any?.type === 'noul' ? { noul: any.noul } : {}),
+      ...(block !== undefined ? { passage: cut(block, ROW_PASSAGE_MAX_CHARS) } : {}),
+    }
+  })
+}
+
+/** What every row of a sample shares; `pickKey` is the Choice whose options it counts. */
+function rowBase(sample: ShadowSample, result: DecisionResult<DecisionQuestions>, pickKey: string): ShadowRow {
+  const pick = sample.questions[pickKey]
+  return {
     seam: sample.seam,
     capture: sample.capture,
     turnId: sample.turnId,
@@ -453,6 +684,10 @@ export function shadowRow(sample: ShadowSample, result: DecisionResult<DecisionQ
     modelPicks: sample.truth.picks,
     latencyMs: result.latencyMs,
   }
+}
+
+export function shadowRow(sample: ShadowSample, result: DecisionResult<DecisionQuestions>): ShadowRow {
+  const base = rowBase(sample, result, 'pick')
   if (result.status === 'unavailable') return { ...base, unavailable: result.reason }
   const choice = result.answers.pick
   const any = result.answers.any
@@ -468,9 +703,9 @@ export async function askSamples(
   model: DecisionModel,
   samples: readonly ShadowSample[],
   concurrency: number,
-  onRow?: (row: ShadowRow, done: number) => void,
+  onRow?: (rows: readonly ShadowRow[], done: number) => void,
 ): Promise<ShadowRow[]> {
-  const rows: ShadowRow[] = new Array(samples.length)
+  const rows: ShadowRow[][] = new Array(samples.length)
   let next = 0
   let done = 0
   const lane = async () => {
@@ -478,13 +713,13 @@ export async function askSamples(
       const at = next++
       const sample = samples[at]
       const result = await model.ask({ state: sample.state, questions: sample.questions })
-      rows[at] = shadowRow(sample, result)
+      rows[at] = shadowRows(sample, result)
       done += 1
-      onRow?.(rows[at], done)
+      onRow?.(rows[at]!, done)
     }
   }
   await Promise.all(Array.from({ length: Math.max(1, Math.min(concurrency, samples.length)) }, lane))
-  return rows
+  return rows.flat()
 }
 
 export interface DecileRow {
@@ -530,6 +765,8 @@ export interface ThresholdRow {
   readonly recordedNothing: number
   /** agreed ÷ (agreed + disagreed); null when no act fell on a model pick. */
   readonly agreement: number | null
+  /** acted ÷ the rows the table was read over (#281): how often the seam would act at this bar. */
+  readonly actedShare: number | null
 }
 
 /** The bars a threshold table is read at: every decile's lower edge. */
@@ -543,9 +780,9 @@ function agrees(row: ShadowRow): boolean {
   return row.choice !== undefined && row.modelPicks.includes(row.choice)
 }
 
-function thresholdTable(rows: readonly ShadowRow[], value: (row: ShadowRow) => number | undefined): ThresholdRow[] {
+function thresholdTable(rows: readonly ShadowRow[], actsAt: (row: ShadowRow, at: number) => boolean): ThresholdRow[] {
   return DECILE_BARS.map((at) => {
-    const acted = rows.filter((row) => (value(row) ?? -1) >= at)
+    const acted = rows.filter((row) => actsAt(row, at))
     const scored = acted.filter((row) => row.modelPicks.length > 0)
     const agreed = scored.filter(agrees).length
     return {
@@ -555,9 +792,16 @@ function thresholdTable(rows: readonly ShadowRow[], value: (row: ShadowRow) => n
       disagreed: scored.length - agreed,
       recordedNothing: acted.length - scored.length,
       agreement: scored.length === 0 ? null : round(agreed / scored.length),
+      actedShare: rows.length === 0 ? null : round(acted.length / rows.length),
     }
   })
 }
+
+/** Acting on one primitive's answer alone at a bar. */
+const atLeast =
+  (value: (row: ShadowRow) => number | undefined) =>
+  (row: ShadowRow, at: number): boolean =>
+    (value(row) ?? -1) >= at
 
 /**
  * The bar a table supports (#275, the owner's rule on the decile table): the
@@ -571,13 +815,58 @@ export function chooseThreshold(table: readonly ThresholdRow[]): number | null {
   return reaching?.at ?? supported.at(-1)?.at ?? null
 }
 
+/** The agreement floors of a passage bar, in the order they are tried (#281, Decision 2). */
+export const PASSAGE_AGREEMENT_FLOORS: readonly number[] = [0.9, 0.8]
+
+/**
+ * The Noul bar a paired table supports (#281, Decision 2): the lowest bar
+ * whose acts agree at least 0.9 over at least ten scored acts, and 0.8 where
+ * 0.9 is unreachable; the floor it met rides with it. Null when neither is
+ * met — Decision 7 then keeps the bars in force.
+ */
+export function choosePassageBar(table: readonly ThresholdRow[]): { readonly at: number; readonly floor: number } | null {
+  const supported = table.filter((row) => row.agreed + row.disagreed >= THRESHOLD_MIN_SCORED)
+  for (const floor of PASSAGE_AGREEMENT_FLOORS) {
+    const reaching = supported.find((row) => row.agreement !== null && row.agreement >= floor)
+    if (reaching !== undefined) return { at: reaching.at, floor }
+  }
+  return null
+}
+
+/** A judge's verdict on a confident pick the model recorded nothing from (#281, Decision 13). */
+export type PassageVerdict = 'right' | 'weak' | 'wrong'
+
+export interface PassageJudgement {
+  readonly verdict: PassageVerdict
+  readonly note?: string
+}
+
+/** A passage row's key in a judgements file: capture, turn, call and pair. */
+export function passageRowKey(row: Pick<ShadowRow, 'capture' | 'turnId' | 'callId' | 'pair'>): string {
+  return `${row.capture}/${row.turnId}/${row.callId ?? ''}/${row.pair ?? 1}`
+}
+
+/** One act at the bars in force on a page the model recorded nothing from, with its verdict when judged. */
+export interface RecordedNothingAct {
+  readonly key: string
+  readonly objective?: string
+  readonly item?: string
+  readonly passage?: string
+  readonly confidence?: number
+  readonly noul?: number
+  readonly judged?: PassageJudgement
+}
+
 export interface SeamSummary {
+  /** Rows: one per sample, or one per Asked Item's pair for passage (#281). */
   readonly samples: number
   readonly unavailable: Readonly<Record<string, number>>
   /** Over every ask, unavailable ones included: a timeout is the seam's worst cost, not a gap in it. */
   readonly latencyMs: { readonly median: number | null; readonly p95: number | null }
   /** Samples whose options were cut at {@link MAX_OPTIONS}. */
   readonly optionsCut: number
+  /** Rows whose Run's own ask acted (#281): the model's next move was the seam's, so they are left out of every table below. */
+  readonly notComparable: number
   /** Scored samples where more than one option counts as the model's pick (an excerpt spanning passages, a result linked twice). */
   readonly multiPick: number
   /** Choice against what the model picked, over the samples where it picked something. */
@@ -597,6 +886,12 @@ export interface SeamSummary {
     /** Acting on the Noul alone, at each decile's bar; agreement is the Choice's, over the acts. */
     readonly thresholds: readonly ThresholdRow[]
     readonly chosen: number | null
+    /**
+     * Acting as the seam acts (#281): the Choice at the bar in force and the
+     * Noul at each decile's bar, both clearing — the table the passage bar is
+     * read from, and the Noul bar it supports under Decision 2.
+     */
+    readonly paired: { readonly choiceAt: number; readonly thresholds: readonly ThresholdRow[]; readonly chosen: { readonly at: number; readonly floor: number } | null }
   }
   /** What the seam would have done at the thresholds in force, both primitives clearing. */
   readonly atThreshold: {
@@ -605,27 +900,55 @@ export interface SeamSummary {
     readonly agreed: number
     readonly disagreed: number
     readonly recordedNothing: number
+    /** Every recorded-nothing act, judged where a judgement was given (#281, Decision 13): reported, never gating. */
+    readonly recordedNothingActs: readonly RecordedNothingAct[]
+    readonly judged: Readonly<Record<PassageVerdict, number>>
   }
 }
 
-export function summarizeSeam(rows: readonly ShadowRow[], thresholds: DecisionThresholds): SeamSummary {
-  const answered = rows.filter((row) => row.unavailable === undefined)
+export function summarizeSeam(
+  rows: readonly ShadowRow[],
+  thresholds: DecisionThresholds,
+  judgements: Readonly<Record<string, PassageJudgement>> = {},
+): SeamSummary {
   const unavailable: Record<string, number> = {}
   for (const row of rows) if (row.unavailable !== undefined) unavailable[row.unavailable] = (unavailable[row.unavailable] ?? 0) + 1
+  const comparable = rows.filter((row) => row.notComparable !== true)
+  const answered = comparable.filter((row) => row.unavailable === undefined)
   const picked = answered.filter((row) => row.modelPicks.length > 0 && row.choice !== undefined)
   const withNoul = answered.filter((row) => row.noul !== undefined)
   const acted = answered.filter(
     (row) => row.confidence !== undefined && row.confidence >= thresholds.choice && (row.noul === undefined || row.noul >= thresholds.noul),
   )
   const actedScored = acted.filter((row) => row.modelPicks.length > 0)
-  const choiceTable = thresholdTable(answered, (row) => row.confidence)
-  const noulTable = thresholdTable(withNoul, (row) => row.noul)
-  const latencies = rows.map((row) => row.latencyMs)
+  const choiceTable = thresholdTable(answered, atLeast((row) => row.confidence))
+  const noulTable = thresholdTable(withNoul, atLeast((row) => row.noul))
+  const pairedTable = thresholdTable(withNoul, (row, at) => (row.confidence ?? -1) >= thresholds.choice && (row.noul ?? -1) >= at)
+  // One ask per sample: a passage sample's pairs share its latency, so only its first pair counts it.
+  const latencies = rows.filter((row) => (row.pair ?? 1) === 1).map((row) => row.latencyMs)
+  const recordedNothingActs = acted
+    .filter((row) => row.modelPicks.length === 0)
+    .map((row): RecordedNothingAct => {
+      const key = passageRowKey(row)
+      const judged = judgements[key]
+      return {
+        key,
+        ...(row.objective !== undefined ? { objective: row.objective } : {}),
+        ...(row.item !== undefined ? { item: row.item } : {}),
+        ...(row.passage !== undefined ? { passage: row.passage } : {}),
+        ...(row.confidence !== undefined ? { confidence: row.confidence } : {}),
+        ...(row.noul !== undefined ? { noul: row.noul } : {}),
+        ...(judged !== undefined ? { judged } : {}),
+      }
+    })
+  const judged: Record<PassageVerdict, number> = { right: 0, weak: 0, wrong: 0 }
+  for (const act of recordedNothingActs) if (act.judged !== undefined) judged[act.judged.verdict] += 1
   return {
     samples: rows.length,
     unavailable,
     latencyMs: { median: percentile(latencies, 50), p95: percentile(latencies, 95) },
     optionsCut: rows.filter((row) => row.optionsBeforeCut > row.options).length,
+    notComparable: rows.length - comparable.length,
     multiPick: picked.filter((row) => row.modelPicks.length > 1).length,
     choice: {
       scored: picked.length,
@@ -642,6 +965,7 @@ export function summarizeSeam(rows: readonly ShadowRow[], thresholds: DecisionTh
             byProbability: deciles(withNoul.map((row) => ({ x: row.noul ?? 0, hit: row.modelPicks.length > 0 }))),
             thresholds: noulTable,
             chosen: chooseThreshold(noulTable),
+            paired: { choiceAt: thresholds.choice, thresholds: pairedTable, chosen: choosePassageBar(pairedTable) },
           },
         }
       : {}),
@@ -651,6 +975,8 @@ export function summarizeSeam(rows: readonly ShadowRow[], thresholds: DecisionTh
       agreed: actedScored.filter(agrees).length,
       disagreed: actedScored.length - actedScored.filter(agrees).length,
       recordedNothing: acted.length - actedScored.length,
+      recordedNothingActs,
+      judged,
     },
   }
 }
@@ -718,9 +1044,11 @@ export function summarizeRecordedTier(rows: readonly RecordedTierRow[]): Recorde
 
 /** What the replay cannot see, stated in every report so no reader mistakes a limit for a finding. */
 export const SHADOW_LIMITS: readonly string[] = [
-  'passage: measured on Page Reads only; a navigate landing holds a Page Preview in the trace, never the landing text, so landing agreement comes from #274\'s first capture',
-  'passage: the model\'s pick is the passage holding the excerpt of the first accepted record_evidence the grader grounded on that very read (its page_read observation); a read no checkpoint was grounded on is "picked none", and an excerpt spanning several passages makes each a pick (multiPick)',
-  'passage and result: every declared Asked Item is offered as open; which were still open at a given step is not recorded',
+  'passage (#281): the seam\'s own questions over its own state, one row per open Asked Item; a landing is replayed only where the Run asked about it and its text is rebuilt exactly — from the record\'s asked text, from its own Page Preview when the preview was not cut, or from a later whole Page Read (or every part of one) of the same page — and a rebuild counts only when its state is as long as the one asked over; a landing no Run asked about has only its Page Preview in the trace and is never sampled; a Page Read in parts is never sampled; a page past 255 blocks is left to #282',
+  'passage: the model\'s pick is every passage holding an excerpt of the model\'s own accepted record_evidence grounded on that page — its landing observation, that read, or for a landing any read of the same page before the Run left it; a quoted table row counts however short; the model\'s call names no Asked Item, so a pair agrees when its block holds any excerpt the model recorded there; a page none was grounded on is "picked none"',
+  'passage: a row whose Run\'s own ask acted is not comparable and is left out of every table (#281): the model\'s next move was the seam\'s',
+  'passage: the Objective asked is the Run Plan\'s last; a Steering replan mid-Run is read as the Run\'s final Objective',
+  'result: every declared Asked Item is offered as open',
   'result: the model\'s pick is the result its next navigate or click opened; a new search, a type or anything else is "picked none"; a click after a scroll, Page Read or Look names a newer snapshot\'s ref and is left out; navigate results are cut at 8,000 characters in the trace',
   '"recorded nothing" (the model picked nothing where the seam would act) is its own column, never a disagreement: it is unmeasured from traces',
   'tier: follow-up commands are asked without the Run they follow',

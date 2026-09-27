@@ -745,7 +745,7 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
     // page it opened is asked about too.
     const picked =
       config.selectedPassage !== undefined && intercepted === null && outcome.ok
-        ? await config.selectedPassage.select(executedCall, config.currentPageUrl?.() ?? null)
+        ? await config.selectedPassage.select(executedCall, outcome, config.currentPageUrl?.() ?? null)
         : []
     let carried = carrySelectedPassages(outcome, picked)
     // Only a pick the ledger holds can be recorded: a result that is no

@@ -1411,6 +1411,10 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
                 model: decision.model,
                 thresholds: DECISION_THRESHOLDS.passage,
                 openItems,
+                // Asked only once the plan declared items, so it is the plan's
+                // Objective, a Steering replan's included (#281).
+                objective: () => runPlan?.objective ?? command,
+                tracing: traceRun !== undefined,
                 pageTextBlocks: deps.pageTextBlocks,
                 round: () => llmRound,
                 writeDecision,
