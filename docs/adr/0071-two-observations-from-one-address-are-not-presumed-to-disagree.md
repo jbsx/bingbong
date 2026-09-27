@@ -115,6 +115,43 @@ Bookkeeping-only rounds per Run (3.00), the pooled Run median (178.6 s) and
 accepted records per Run are reported and never gated. The time the Notes
 cost is about 4 s a Session, inside a Run median's noise.
 
+### Outcome
+
+2026-09-27, Decision 11 applied to the `fix-284` capture (#284): **every
+gate was met, so nothing is settled by the owner and nothing is filed.**
+Three passes on db7c00a on the default seams, against `jev-on-1..3`, graded
+by the model reviewer and audited under audit-p3.
+
+| Gate | `jev-on` | Bar | `fix-284` |
+|---|---|---|---|
+| Accepted records answered with the Note | 19 | 0 | 0 |
+| Final Answers disclaiming a contradiction no source holds, Voyager excluded | 1, and 1 refused attempt | 0 | 0, and no refused attempt |
+| Initials verified | 9 of 12 | at least 8 | 8 of 12 (2, 3 and 3 of 4) |
+| Follow-ups verified | 5 of 6 | at least 4 | 5 of 6 |
+
+- **The Note is gone from the traces.** The Round Audit's counter reads 0
+  over 75 accepted records, where it read 19 over 76 in `jev-on` by the
+  same count. The gate as set says 19 of 59 because the grill counted the
+  orchestrator's records alone.
+- **No Answer disclaims a contradiction.** All 18 final Answers were read,
+  as displayed and as spoken, with the one reply refused off contract and
+  both Answer Retries. The one sentence saying there is no contradiction is
+  the spoken Answer of `fix-284-1` Voyager, the hunt whose prompt asks for a
+  reconciliation. The model still reasons that it has "no disagreement to
+  disclose", from the Investigation completion standard, and that reaches
+  no Answer.
+- **No correctness gate was missed**, so the seam difference is not called
+  on. Initials sit on the bar, one under the Reference, and three passes
+  cannot tell 8 from 9. The Eurostar initial verified in none of the three
+  passes; longitude and Voyager verified in all.
+- **Reported, never gated:** bookkeeping-only rounds 2.89 → 2.94 per Run
+  over all Runs and 3.00 → 3.00 on initials; accepted records 4.22 → 4.17
+  per Run; orchestrator rounds 286 → 282; the pooled Run median 178.6 →
+  223.5 s. Removing the Note did not move the bookkeeping-only rounds. The
+  median is not read as the Note's doing: it cost about 4 s a Session.
+
+#283 is measured against this capture.
+
 ## Relationships
 
 Reverses the contradiction handling of [ADR 0028](0028-checkpointed-session-evidence.md).
