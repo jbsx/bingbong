@@ -11,7 +11,7 @@ import {
   type DecisionQuestions,
   type DecisionResult,
   type DecisionThresholds,
-} from '../ports/decisionModel'
+} from '../ports/decisionModel.ts'
 import type { DecisionActed, DecisionEvent } from './runTrace'
 
 /** `act`: the seam acts on an answer that clears its bars; `shadow`: it only asks and records. */

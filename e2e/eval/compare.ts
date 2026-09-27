@@ -30,6 +30,9 @@ import { evalScenarios, type EvalScenario } from './scenarios.ts'
 // both or neither configured the numbers are printed and no gate verdict is.
 // Agreement is printed as a row saying where it comes from, because a
 // Decision Record carries no model pick (the coordinator's #279 decision).
+// Given a Shadow Replay report over the pools' retained traces (#280), the
+// row is filled from it — joined to the Runs on turn id, per seam and
+// initial tier — and stays reported, never gated.
 //
 // Runtime imports carry `.ts`: the script runs this under Node's type
 // stripping, like eval:accept.
@@ -103,8 +106,10 @@ export interface Comparison {
   roundsPerRun: Record<EffortTier, Record<Arm, PooledStat>>
   /** Decision Records pooled over each side's compared Runs; null when its captures predate #279. */
   decisions: Record<Arm, (DecisionAggregate & { runs: number }) | null>
-  /** Where agreement comes from — it is not derivable from an eval capture. */
+  /** Where agreement comes from: the #279 note without --shadow, what the shadow report's numbers are with it. */
   agreement: string
+  /** Agreement from a decision:shadow report over the pools' retained traces (#280); absent without --shadow. */
+  shadowAgreement?: ShadowAgreement
   /** The #274 gate, in its order. */
   gate: GateLine[]
 }
@@ -112,6 +117,49 @@ export interface Comparison {
 /** The agreement row, worded as the #279 decision set it. */
 export const AGREEMENT_NOTE =
   'not derivable from an eval capture (a Decision Record carries no model pick); passage and result agreement come from pnpm decision:shadow over retained traces, tier agreement from the Round Audit join (#278). The live 3+3 capture retains Run Traces, so the replay over its jev-off arm gives agreement on the live corpus; the eval arm gives none.'
+
+/** The agreement row with a shadow report (#280). */
+export const SHADOW_AGREEMENT_NOTE =
+  'reported, never gated, and never an input to a seam\'s bars — the eval corpus is fixture pages, and bars are set from live traces (#281). Passage and result agreement come from the Shadow Replay over the arms without the decision role (a replay row over an arm with it is not comparable: its seams could move the Run); passage agreement is measured on Page Reads only, since a landing\'s text is never in the trace. Tier agreement comes from the recorded tier shadow against the first tier the model declared, and a record whose seam acted is not comparable. Each Run counts under its scenario\'s initial tier, joined on turn id.'
+
+/**
+ * What eval:compare reads of a `pnpm decision:shadow` report (#280). Declared
+ * here rather than imported: the comparison never spends and imports
+ * nothing from the replay.
+ */
+export interface ShadowReportInput {
+  kind?: unknown
+  /** The capture directories the replay read, relative to the repository. */
+  captures?: ReadonlyArray<{ name: string; dir: string }>
+  rows?: ReadonlyArray<{ seam: string; turnId: string; modelPicks: readonly string[]; choice?: string; unavailable?: string }>
+  recordedTier?: { rows: ReadonlyArray<{ turnId: string; acted: string; pick: string | null; declared: string | null }> }
+}
+
+/** One seam's agreement over Runs of one initial tier. */
+export interface AgreementCell {
+  rows: number
+  unavailable: number
+  /** The seam could have moved the Run (an on-arm replay row, or a record that acted): no independent pick. */
+  notComparable: number
+  /** The model picked nothing (passage, result), or declared no tier. */
+  pickedNothing: number
+  scored: number
+  agreed: number
+  agreement: number | null
+}
+
+export type AgreementSeam = 'passage' | 'result' | 'tier'
+
+export interface ShadowAgreement {
+  source: string
+  bySeam: Record<AgreementSeam, Record<EffortTier, AgreementCell>>
+  /** Rows whose turn id no compared Run carries. */
+  unjoinedRows: number
+  /** Compared Runs with no turn id (captures before #280), which no row can join. */
+  runsWithoutTurnId: number
+  /** Tier rows the replay asked; tier agreement is the recorded tier shadow's. */
+  askedTierRowsIgnored: number
+}
 
 /** One Run as a comparison reads it: its metrics and the tier the corpus declares for it. */
 interface TieredRun {
@@ -170,6 +218,7 @@ export function comparePools(
   a: { source: string; reports: readonly EvalReport[] },
   b: { source: string; reports: readonly EvalReport[] },
   comparedAt: Date = new Date(),
+  shadow?: { source: string; report: ShadowReportInput },
 ): Comparison {
   if (a.reports.length !== b.reports.length || a.reports.length !== POOL_SIZE) {
     throw new Error(
@@ -236,6 +285,9 @@ export function comparePools(
     return decision !== 'not recorded' && decision.configured
   })
   const onArm: Arm | null = configured.a === configured.b ? null : configured.a ? 'a' : 'b'
+  const shadowAgreement =
+    shadow === undefined ? undefined : shadowAgreementOf(shadow, { a: a.reports, b: b.reports }, scenarios, configured, scenarioTier)
+  const agreement = shadowAgreement === undefined ? AGREEMENT_NOTE : `from ${shadowAgreement.source}: ${SHADOW_AGREEMENT_NOTE}`
 
   return {
     kind: COMPARE_KIND,
@@ -261,13 +313,106 @@ export function comparePools(
     deterministicAnswers,
     roundsPerRun,
     decisions,
-    agreement: AGREEMENT_NOTE,
-    gate: gateLines({ onArm, commandToAnswerMs, successes, deterministicAnswers }),
+    agreement,
+    ...(shadowAgreement === undefined ? {} : { shadowAgreement }),
+    gate: gateLines({ onArm, commandToAnswerMs, successes, deterministicAnswers, agreement: shadowAgreement === undefined ? AGREEMENT_NOTE : 'see the agreement table' }),
   }
 }
 
+const AGREEMENT_SEAMS: readonly AgreementSeam[] = ['passage', 'result', 'tier']
+
+function emptyCell(): AgreementCell {
+  return { rows: 0, unavailable: 0, notComparable: 0, pickedNothing: 0, scored: 0, agreed: 0, agreement: null }
+}
+
+/**
+ * Agreement per seam and initial tier from a decision:shadow report (#280),
+ * joined to the compared Runs on turn id. Refuses a report that is not a
+ * replay, predates the capture directories it read, or read a capture no
+ * pool report records as its trace directory — agreement over some other
+ * pass would sit beside numbers it has nothing to do with.
+ */
+function shadowAgreementOf(
+  shadow: { source: string; report: ShadowReportInput },
+  reports: Record<Arm, readonly EvalReport[]>,
+  scenarios: Record<Arm, readonly ScenarioResult[]>,
+  configured: Record<Arm, boolean>,
+  initialTier: (scenario: ScenarioResult) => EffortTier,
+): ShadowAgreement {
+  const { report, source } = shadow
+  if (report.kind !== 'decision_shadow' || !Array.isArray(report.rows)) throw new Error(`${source} is not a decision:shadow report`)
+  if (!Array.isArray(report.captures) || report.captures.length === 0) {
+    throw new Error(`${source} names no capture directories — it predates #280; replay the pools' retained traces again with pnpm decision:shadow`)
+  }
+  const recorded = new Set([...reports.a, ...reports.b].flatMap((pass) => (pass.traces === undefined ? [] : [pass.traces.directory])))
+  const strangers = report.captures.map((capture) => capture.dir).filter((dir) => !recorded.has(dir))
+  if (strangers.length > 0) {
+    throw new Error(`${source} reads captures the pools do not record: ${strangers.join(', ')} — --shadow takes a replay over these pools' retained traces`)
+  }
+
+  const runs = new Map<string, { arm: Arm; tier: EffortTier }>()
+  let runsWithoutTurnId = 0
+  for (const arm of ['a', 'b'] as const) {
+    for (const scenario of scenarios[arm]) {
+      for (const run of scenario.runs) {
+        if (run.turnId === undefined) runsWithoutTurnId += 1
+        else runs.set(run.turnId, { arm, tier: initialTier(scenario) })
+      }
+    }
+  }
+
+  const bySeam = Object.fromEntries(AGREEMENT_SEAMS.map((seam) => [seam, Object.fromEntries(TIERS.map((tier) => [tier, emptyCell()]))])) as ShadowAgreement['bySeam']
+  let unjoinedRows = 0
+  let askedTierRowsIgnored = 0
+  const rows: NonNullable<ShadowReportInput['rows']> = report.rows
+  for (const row of rows) {
+    if (row.seam === 'tier') {
+      askedTierRowsIgnored += 1
+      continue
+    }
+    const seam = row.seam === 'passage' || row.seam === 'result' ? row.seam : null
+    if (seam === null) continue
+    const run = runs.get(row.turnId)
+    if (run === undefined) {
+      unjoinedRows += 1
+      continue
+    }
+    const cell = bySeam[seam][run.tier]
+    cell.rows += 1
+    if (configured[run.arm]) cell.notComparable += 1
+    else if (row.unavailable !== undefined || row.choice === undefined) cell.unavailable += 1
+    else if (row.modelPicks.length === 0) cell.pickedNothing += 1
+    else {
+      cell.scored += 1
+      if (row.modelPicks.includes(row.choice)) cell.agreed += 1
+    }
+  }
+  for (const record of report.recordedTier?.rows ?? []) {
+    const run = runs.get(record.turnId)
+    if (run === undefined) {
+      unjoinedRows += 1
+      continue
+    }
+    const cell = bySeam.tier[run.tier]
+    cell.rows += 1
+    if (record.acted === 'acted') cell.notComparable += 1
+    else if (record.pick === null) cell.unavailable += 1
+    else if (record.declared === null) cell.pickedNothing += 1
+    else {
+      cell.scored += 1
+      if (record.pick === record.declared) cell.agreed += 1
+    }
+  }
+  for (const seam of AGREEMENT_SEAMS) {
+    for (const cell of Object.values(bySeam[seam])) cell.agreement = cell.scored === 0 ? null : Math.round((cell.agreed / cell.scored) * 1000) / 1000
+  }
+  return { source, bySeam, unjoinedRows, runsWithoutTurnId, askedTierRowsIgnored }
+}
+
 /** The #274 gate in its order: time, the correctness veto, then what is reported. */
-function gateLines(input: Pick<Comparison, 'onArm' | 'commandToAnswerMs' | 'successes' | 'deterministicAnswers'>): GateLine[] {
+function gateLines(
+  input: Pick<Comparison, 'onArm' | 'commandToAnswerMs' | 'successes' | 'deterministicAnswers' | 'agreement'>,
+): GateLine[] {
   const { onArm } = input
   const off: Arm | null = onArm === null ? null : onArm === 'a' ? 'b' : 'a'
   const judged = (test: (on: Arm, off: Arm) => boolean): boolean | null => (onArm === null || off === null ? null : test(onArm, off))
@@ -298,7 +443,7 @@ function gateLines(input: Pick<Comparison, 'onArm' | 'commandToAnswerMs' | 'succ
     },
     { name: 'reported: rounds per Run per tier', gated: false, passed: null, detail: 'see the rounds table' },
     { name: 'reported: Decision Records per Run', gated: false, passed: null, detail: 'see the Decision Records table' },
-    { name: 'reported: agreement', gated: false, passed: null, detail: AGREEMENT_NOTE },
+    { name: 'reported: agreement', gated: false, passed: null, detail: input.agreement },
   ]
 }
 
@@ -376,6 +521,23 @@ export function formatComparison(comparison: Comparison): string {
     for (const [seam, population] of Object.entries(decisions.bySeam)) lines.push(row(seam, population))
   }
   lines.push('')
+  const shadow = comparison.shadowAgreement
+  if (shadow !== undefined) {
+    lines.push('## Agreement (reported, never gated)')
+    lines.push('')
+    lines.push('| seam | initial tier | scored | agreed | agreement | picked nothing | unavailable | not comparable |')
+    lines.push('| --- | --- | --- | --- | --- | --- | --- | --- |')
+    for (const seam of AGREEMENT_SEAMS) {
+      for (const tier of TIERS) {
+        const cell = shadow.bySeam[seam][tier]
+        if (cell.rows === 0) continue
+        lines.push(`| ${seam === 'tier' ? 'tier (recorded)' : seam} | ${TIER_LABELS[tier]} | ${cell.scored} | ${cell.agreed} | ${cell.agreement ?? '—'} | ${cell.pickedNothing} | ${cell.unavailable} | ${cell.notComparable} |`)
+      }
+    }
+    lines.push('')
+    lines.push(`Rows joining no compared Run: ${shadow.unjoinedRows}; compared Runs without a turn id: ${shadow.runsWithoutTurnId}; tier rows the replay asked, left out: ${shadow.askedTierRowsIgnored}.`)
+    lines.push('')
+  }
   lines.push(`Agreement: ${comparison.agreement}`)
   return `${lines.join('\n')}\n`
 }

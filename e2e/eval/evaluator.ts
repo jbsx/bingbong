@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
@@ -6,7 +7,7 @@ import { fileURLToPath } from 'node:url'
 import type { PipelineEvent } from '../../src/core/pipeline/events'
 import type { PerfSpanRecord } from '../../src/core/perf/perfTracer'
 import { collectPerfRecords } from '../../src/main/perf/collectPerfRecords'
-import { startFixtureServer } from '../fixtureServer'
+import { startFixtureServer, type FixtureServer } from '../fixtureServer'
 import { startHarness, type Harness } from '../harness'
 import { sleep, waitFor } from '../waitFor'
 import { aggregateScenarios, combineRuns, extractMetrics, type EvalAggregate, type ScenarioMetrics } from './metrics'
@@ -16,6 +17,7 @@ import { type ModelWitness } from './modelWitness'
 export { reasoningEffortLabel, type ModelWitness } from './modelWitness'
 import type { EvalScenario, PaneState, ScenarioObservation } from './scenarios'
 import { runningAgentsSinceSource } from './tape'
+import { EVAL_REPORTS_ROOT, EVAL_TRACES_ROOT, retainTraces, secretsOf, traceDirFor, type RetainedTraces } from './traceRetention'
 
 // The opt-in real-model evaluator (#109): one Electron app, one live
 // Session, the corpus submitted through the Prompt Bar like a user's
@@ -86,6 +88,11 @@ export interface EvalReport {
   scenarios: ScenarioResult[]
   /** Present on the finalized report; partial (per-scenario) writes omit it. */
   aggregate?: EvalAggregate
+  /**
+   * Where this pass's Run Trace was kept and what was kept (#280). Written
+   * at finish() and brought up to date at quit(); captures before #280 lack it.
+   */
+  traces?: RetainedTraces
 }
 
 export interface Evaluator {
@@ -133,6 +140,16 @@ export async function startEvaluator(options?: {
    * own directory (#163) is not told to write into the release pools.
    */
   freshArtifactHint?: string
+  /**
+   * Test seams (#280): a routing composed against the evaluator's own
+   * fixture in place of the production one (a script can then name fixture
+   * pages), and the roots a report's traces mirror between. Only the
+   * evaluator's own tests pass them; a scripted routing still records a
+   * scripted witness, which eval:accept refuses.
+   */
+  routing?: (fixture: FixtureServer) => ProductionRouting
+  reportsRoot?: string
+  tracesRoot?: string
 }): Promise<Evaluator> {
   const scenarioTimeoutMs = options?.scenarioTimeoutMs ?? DEFAULT_SCENARIO_TIMEOUT_MS
   const reportPath = options?.reportPath ?? join(repoRoot, 'e2e', 'eval', 'report.json')
@@ -158,12 +175,29 @@ export async function startEvaluator(options?: {
     )
   }
 
+  // #280: the pass's Run Trace is kept beside nothing the pool readers see,
+  // in a directory mirroring the report's path; one that already exists is
+  // refused before launch, as a finalized report is — traces are evidence
+  // of the pass that wrote them and are never mixed with another's.
+  const commit = gitCommit()
+  const traceDir = traceDirFor(reportPath, commit, {
+    reportsRoot: options?.reportsRoot ?? EVAL_REPORTS_ROOT,
+    tracesRoot: options?.tracesRoot ?? EVAL_TRACES_ROOT,
+  })
+  if (existsSync(traceDir)) {
+    throw new Error(
+      `refusing to reuse the trace directory ${traceDir} — it holds another pass's traces; remove it together with that pass's partial report, or ${freshArtifactHint}`,
+    )
+  }
+
   // Fail fast — before any Electron launch or model spend — when production
   // routing is absent (resolveProductionRouting throws) or a scripted hook
   // would survive into the composed env.
-  const routing = resolveProductionRouting(await loadProductionEnv())
+  const production = options?.routing === undefined ? resolveProductionRouting(await loadProductionEnv()) : null
 
   const fixture = await startFixtureServer()
+  const routing = production ?? options!.routing!(fixture)
+  const secrets = secretsOf(routing.env)
   const userDataDir = await mkdtemp(join(tmpdir(), 'bingbong-eval-profile-'))
   const harness = await startHarness({
     fixture,
@@ -214,7 +248,7 @@ export async function startEvaluator(options?: {
 
   const report = (): EvalReport => ({
     capturedAt: new Date().toISOString(),
-    gitCommit: gitCommit(),
+    gitCommit: commit,
     scenarioTimeoutMs,
     routing: routing.identity,
     modelWitness: {
@@ -345,7 +379,9 @@ export async function startEvaluator(options?: {
     // Browse Subagent's are stamped with the spawning turn, so they count
     // as the Run's.
     const traceRecords = harness.readRunTrace().filter((record) => 'turnId' in record && record.turnId === turnId)
-    return { turnId, metrics: extractMetrics(events, perfRecordsFor(turnId), timedOut, traceRecords) }
+    // The turn id rides the Run's report entry (#280): it is what joins the
+    // entry to its lines in the retained trace.
+    return { turnId, metrics: { ...extractMetrics(events, perfRecordsFor(turnId), timedOut, traceRecords), turnId } }
   }
 
   /** True once the run's tape shows a successful call with these args-text and result-ok pairings. */
@@ -490,13 +526,27 @@ export async function startEvaluator(options?: {
     final.scriptedModelProvenAbsent =
       witness.scriptedEntries.length === 0 && witness.orchestratorModel !== null && witness.orchestratorRequests > 0
     final.aggregate = aggregateScenarios(results)
+    final.traces = retain(true)
     await persist(final)
+    finalized = final
     return final
   }
+
+  /** The profile's logs family copied to the pass's trace directory (#280); never throws. */
+  const retain = (finished: boolean): RetainedTraces => retainTraces(join(userDataDir, 'logs'), traceDir, { secrets, finished })
+  let finalized: EvalReport | null = null
 
   async function quit(): Promise<void> {
     await harness.quit().catch(() => {})
     await fixture.close().catch(() => {})
+    // Archived again before the profile goes (#280): the app has flushed
+    // now, so a line that landed after finish() is kept — a tier shadow
+    // record is not awaited and can land after `done` — and a pass that
+    // died before finish() keeps what it wrote, flagged incomplete. The
+    // report is rewritten so the digests it names are the files on disk.
+    const current = finalized ?? (results.length > 0 ? report() : null)
+    const traces = retain(finalized !== null)
+    if (current !== null) await persist({ ...current, traces }).catch(() => {})
     await rm(userDataDir, { recursive: true, force: true }).catch(() => {})
   }
 

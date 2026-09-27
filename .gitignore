@@ -14,6 +14,10 @@ e2e/eval/report.json
 # e2e/eval/delegation/pass-*.json are the committed evidence, never this file.
 e2e/eval/delegation/probe.json
 
+# Run Traces kept by every eval capture (#280), mirroring the report's path:
+# raw diagnostics, never committed. The Shadow Replay's report over them is.
+e2e/eval/traces/
+
 # Kiosk deployment runtime state + secrets (ADR 0023).
 config/
 data/

@@ -19,9 +19,16 @@
 // --resummarize re-reads a report's rows under the thresholds in force now —
 // how a report is brought up to a bar its own decile table moved — and asks
 // nothing, since asking again would move the answers the bar was read from.
+//
+// Every report also names the capture directories it read, relative to the
+// repository (`captures`) — how eval:compare --shadow checks that a report
+// is about its pools (#280) — and carries the recorded tier shadow
+// (`recordedTier`): the tier seam's own records joined with the tier the
+// model first declared, read without asking anything.
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { basename, dirname, join, relative, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { layerEnv, parseDotEnv } from '../src/core/settings/dotEnv.ts'
 import { DECISION_SEAMS, resolveDecisionRouting } from '../src/core/agent/modelRouting.ts'
 import { DECISION_THRESHOLDS } from '../src/core/ports/decisionModel.ts'
@@ -29,13 +36,16 @@ import { createJevDecisionModel, DECISION_TIMEOUT_MS } from '../src/main/decisio
 import {
   askSamples,
   readShadowRuns,
+  recordedTierRows,
   shadowSamples,
   SHADOW_LIMITS,
+  summarizeRecordedTier,
   summarizeSeam,
   type ShadowRow,
   type ShadowTraceLine,
 } from '../e2e/eval/jev/shadow.ts'
 
+const repoRoot = fileURLToPath(new URL('..', import.meta.url))
 const FLAGS = ['sets', 'roots', 'out', 'env-file', 'concurrency', 'dry-run', 'resummarize'] as const
 
 function fail(message: string): never {
@@ -130,10 +140,16 @@ async function main(): Promise<void> {
   if (!Number.isInteger(concurrency) || concurrency < 1) fail('--concurrency must be a positive integer')
 
   const dirsBySet = captureDirs(roots, sets)
-  const runs = [...dirsBySet.values()].flat().flatMap((dir) => readShadowRuns(dir.split('/').at(-1) ?? dir, traceLines(dir)))
+  const read = [...dirsBySet.values()].flat().map((dir) => ({ name: basename(dir), dir: relative(repoRoot, dir), lines: traceLines(dir) }))
+  const captures = read.map(({ name, dir }) => ({ name, dir }))
+  const runs = read.flatMap((capture) => readShadowRuns(capture.name, capture.lines))
+  const tierRows = read.flatMap((capture) => recordedTierRows(capture.name, capture.lines))
+  const recordedTier = { summary: summarizeRecordedTier(tierRows), rows: tierRows }
   const samples = shadowSamples(runs)
   const counts = Object.fromEntries(DECISION_SEAMS.map((seam) => [seam, samples.filter((sample) => sample.seam === seam).length]))
-  process.stderr.write(`decision:shadow: ${[...dirsBySet.values()].flat().length} captures, ${runs.length} runs, samples ${JSON.stringify(counts)}\n`)
+  process.stderr.write(
+    `decision:shadow: ${read.length} captures, ${runs.length} runs, samples ${JSON.stringify(counts)}, recorded tier shadows ${tierRows.length}\n`,
+  )
   if (dryRun) return
 
   const envFile = resolve(flags.get('env-file') ?? '.env')
@@ -152,9 +168,11 @@ async function main(): Promise<void> {
     model: routing.endpoint.model,
     timeoutMs: DECISION_TIMEOUT_MS,
     sets: Object.fromEntries([...dirsBySet].map(([set, dirs]) => [set, dirs.length])),
+    captures,
     runs: runs.length,
     limits: SHADOW_LIMITS,
     ...summaries(rows),
+    recordedTier,
     rows,
   }
   write(out as string, report)

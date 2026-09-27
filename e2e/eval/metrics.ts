@@ -127,6 +127,12 @@ export interface ScenarioMetrics {
   actions: RecordedAction[]
   answerText: string | null
   timedOut: boolean
+  /**
+   * The Run's turn id (#280): what joins a per-Run report entry to its lines
+   * in the retained Run Trace. Only a Run carries one — a scenario's combined
+   * view never does — and captures before #280 lack it.
+   */
+  turnId?: string
 }
 
 /** Counts by the four states a Decision Record can end in (ADR 0068). */

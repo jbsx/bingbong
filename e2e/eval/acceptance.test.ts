@@ -235,6 +235,27 @@ function gateOf(decision: ReturnType<typeof decide>, name: string): GateResult {
   return gate
 }
 
+describe('pools whose passes retained their traces (#280)', () => {
+  // A capture since #280 names its trace directory at the report's top level
+  // (never inside `routing`, which a pool compares canonically) and a turn id
+  // on each Run; the traces themselves sit under e2e/eval/traces/, beside no
+  // pool. Neither may move a decision.
+  function retained(pool: EvalReport[], side: string): EvalReport[] {
+    return pool.map((report, index) => ({
+      ...report,
+      traces: { directory: `e2e/eval/traces/pools/${side}/pass-${index + 1}--${report.gitCommit.slice(0, 8)}`, complete: true, files: [], failures: [] },
+      scenarios: report.scenarios.map((entry) => ({ ...entry, runs: entry.runs.map((run, at) => ({ ...run, turnId: `${side}-${index}-${entry.id}-${at}` })) })),
+    }))
+  }
+
+  it('decides exactly as it does without them', () => {
+    const at = new Date('2026-09-27T12:00:00.000Z')
+    const plain = decideRelease(candidatePool(), baselinePool(), { regressions: 'passed', decidedAt: at })
+    const withTraces = decideRelease(retained(candidatePool(), 'candidate'), retained(baselinePool(), 'baseline'), { regressions: 'passed', decidedAt: at })
+    expect(withTraces).toEqual(plain)
+  })
+})
+
 describe('decideRelease over pooled captures', () => {
   it('accepts a candidate that meets every gate, reporting all three judged medians', () => {
     const decision = decide(candidatePool())

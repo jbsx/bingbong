@@ -1,3 +1,8 @@
+import { spawnSync } from 'node:child_process'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import type { DecisionModel } from '../../../src/core/ports/decisionModel.ts'
 import { EFFORT_TIERS } from '../../../src/core/pipeline/runPlan.ts'
@@ -10,8 +15,10 @@ import {
   pagePassages,
   passageSamples,
   readShadowRuns,
+  recordedTierRows,
   resultSamples,
   SHADOW_TIERS,
+  summarizeRecordedTier,
   summarizeSeam,
   TIER_QUESTIONS,
   tierSamples,
@@ -292,5 +299,63 @@ describe('choosing a bar from the table (#275, the owner\'s rule)', () => {
   it('falls back to the highest bar still resting on ten scored acts, and to none without one', () => {
     expect(chooseThreshold([bar(0.6, 10, 5), bar(0.7, 8, 3), bar(0.8, 6, 2), bar(0.9, 3, 1)])).toBe(0.7)
     expect(chooseThreshold([bar(0.9, 3, 1)])).toBeNull()
+  })
+})
+
+describe('recorded tier agreement (#280)', () => {
+  function tierRecord(turnId: string, fields: Record<string, unknown>): ShadowTraceLine {
+    return { kind: 'decision', turnId, seam: 'tier', acted: 'shadow', ...fields } as ShadowTraceLine
+  }
+  function plan(turnId: string, effortTier: string): ShadowTraceLine {
+    return { kind: 'pipeline_event', turnId, event: { type: 'run_plan', source: 'model', effortTier } }
+  }
+  const pick = (choice: string, confidence: number) => ({ answers: { pick: { type: 'choice', choice, confidence } } })
+
+  it('joins each Run\'s own tier shadow record with the first tier its model declared, and asks nothing', () => {
+    const lines: ShadowTraceLine[] = [
+      tierRecord('t1', pick('lookup', 0.9)),
+      plan('t1', 'lookup'),
+      // A re-declaration after Steering is not what a pre-round-1 pick stands in for.
+      plan('t1', 'investigation'),
+      tierRecord('t2', pick('investigation', 0.4)),
+      plan('t2', 'lookup'),
+      tierRecord('t3', { acted: 'unavailable', unavailable: { reason: 'timeout', message: 'slow' } }),
+      plan('t3', 'lookup'),
+      // A Browse Subagent's record is not the Run's.
+      { ...tierRecord('t4', pick('lookup', 0.9)), agentId: 'a1' },
+      plan('t4', 'lookup'),
+    ]
+    const rows = recordedTierRows('pass-1--afbd1fe3', lines)
+    expect(rows).toEqual([
+      { capture: 'pass-1--afbd1fe3', turnId: 't1', acted: 'shadow', pick: 'lookup', confidence: 0.9, declared: 'lookup', unavailable: null },
+      { capture: 'pass-1--afbd1fe3', turnId: 't2', acted: 'shadow', pick: 'investigation', confidence: 0.4, declared: 'lookup', unavailable: null },
+      { capture: 'pass-1--afbd1fe3', turnId: 't3', acted: 'unavailable', pick: null, confidence: null, declared: 'lookup', unavailable: 'timeout' },
+    ])
+    expect(summarizeRecordedTier(rows)).toEqual({ records: 3, unavailable: 1, notComparable: 0, compared: 2, agreed: 1, agreement: 0.5 })
+  })
+
+  const [major, minor] = process.versions.node.split('.').map(Number)
+  const stripsTypes = major! > 22 || (major === 22 && minor! >= 18)
+
+  // The CLI runs under Node's type stripping; #278 left its graph importing
+  // extensionless modules, which broke it until #280. This loads the graph.
+  it.skipIf(!stripsTypes)('counts a retained capture\'s Runs, samples and recorded tier shadows on --dry-run, asking nothing', () => {
+    const root = mkdtempSync(join(tmpdir(), 'bingbong-shadow-cli-'))
+    try {
+      mkdirSync(join(root, 'pass-1--afbd1fe3', 'logs'), { recursive: true })
+      const lines = [COMMAND, PLAN, tierRecord(TURN, pick('lookup', 0.9)), ...readCall('read-1', 1_000)]
+      writeFileSync(join(root, 'pass-1--afbd1fe3', 'logs', 'run-trace-2026-09-27.jsonl'), lines.map((line) => JSON.stringify(line)).join('\n') + '\n')
+      const script = fileURLToPath(new URL('../../../scripts/decision-shadow.ts', import.meta.url))
+      const result = spawnSync(process.execPath, [script, '--dry-run', `--roots=${root}`, '--sets=pass'], { encoding: 'utf8' })
+      expect(result.status, result.stderr).toBe(0)
+      expect(result.stderr).toContain('1 captures, 1 runs, samples {"passage":1,"result":0,"tier":1}, recorded tier shadows 1')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('reports a record that acted as not comparable, never as agreement', () => {
+    const rows = recordedTierRows('c', [tierRecord('t1', { ...pick('lookup', 0.95), acted: 'acted' }), plan('t1', 'lookup')])
+    expect(summarizeRecordedTier(rows)).toEqual({ records: 1, unavailable: 0, notComparable: 1, compared: 0, agreed: 0, agreement: null })
   })
 })

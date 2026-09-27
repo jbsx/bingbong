@@ -13,9 +13,9 @@ import {
   type ConfiguredDecisionModel,
   type DecisionChoiceQuestion,
   type DecisionNoulQuestion,
-} from '../ports/decisionModel'
-import { decisionEvent } from '../trace/decisionTrace'
-import { reportFault } from '../trace/fault'
+} from '../ports/decisionModel.ts'
+import { decisionEvent } from '../trace/decisionTrace.ts'
+import { reportFault } from '../trace/fault.ts'
 import type { RunTraceWriter } from '../trace/runTrace'
 
 /** The tier Choice, worded as the #275 replay asked it so live agreement reads against the replay's. */

@@ -233,6 +233,118 @@ describe('comparePools', () => {
   })
 })
 
+/**
+ * A side's passes as #280 captures them: each Run carries its turn id and
+ * each report names the directory its traces were kept in.
+ */
+function retained(arm: { source: string; reports: EvalReport[] }, side: 'on' | 'off'): { source: string; reports: EvalReport[] } {
+  return {
+    source: arm.source,
+    reports: arm.reports.map((report, index) => ({
+      ...report,
+      traces: { directory: traceDir(side, index + 1), complete: true, files: [{ name: 'run-trace-2026-09-27.jsonl', family: 'run_trace' as const, bytes: 10, digest: 'sha256:x', complete: true }], failures: [] },
+      scenarios: report.scenarios.map((scenario) => ({ ...scenario, runs: scenario.runs.map((run) => ({ ...run, turnId: turnOf(side, index + 1, scenario.id) })) })),
+    })),
+  }
+}
+const traceDir = (side: string, pass: number) => `e2e/eval/traces/jev/${side}/pass-${pass}--dddddddd`
+const turnOf = (side: string, pass: number, id: string) => `${side}-${pass}-${id}`
+
+describe('comparePools over captures that retained their traces (#280)', () => {
+  it('reads them without change to its results', () => {
+    const plain = comparePools(offArm(), onArm(), AT)
+    const withTraces = comparePools(retained(offArm(), 'off'), retained(onArm(), 'on'), AT)
+    expect(withTraces).toEqual(plain)
+    expect(withTraces.shadowAgreement).toBeUndefined()
+    expect(withTraces.agreement).toBe(AGREEMENT_NOTE)
+  })
+})
+
+describe('agreement from a shadow report (#280)', () => {
+  const DA = 'direct-action-open-page'
+  const LOOKUP = 'lookup-widgets-guide'
+  const captures = [1, 2, 3].flatMap((pass) => [
+    { name: `pass-${pass}--dddddddd`, dir: traceDir('off', pass) },
+    { name: `pass-${pass}--dddddddd`, dir: traceDir('on', pass) },
+  ])
+  const row = (turnId: string, seam: string, modelPicks: string[], answer: { choice?: string; unavailable?: string }) => ({
+    seam,
+    capture: 'pass-1--dddddddd',
+    turnId,
+    modelPicks,
+    ...answer,
+  })
+  const shadow = {
+    kind: 'decision_shadow',
+    captures,
+    rows: [
+      // Off arm, a Lookup Run: agreed, disagreed, picked nothing, unavailable.
+      row(turnOf('off', 1, LOOKUP), 'passage', ['p2'], { choice: 'p2' }),
+      row(turnOf('off', 2, LOOKUP), 'passage', ['p2'], { choice: 'p5' }),
+      row(turnOf('off', 3, LOOKUP), 'passage', [], { choice: 'p1' }),
+      row(turnOf('off', 1, LOOKUP), 'passage', ['p1'], { unavailable: 'timeout' }),
+      // Off arm, a Direct Action Run's result pick.
+      row(turnOf('off', 1, DA), 'result', ['r4'], { choice: 'r4' }),
+      // On arm: its seams could move the Run, so no independent pick.
+      row(turnOf('on', 1, LOOKUP), 'passage', ['p2'], { choice: 'p2' }),
+      // A tier row the replay asked: tier agreement is the recorded one's.
+      row(turnOf('off', 1, LOOKUP), 'tier', ['lookup'], { choice: 'lookup' }),
+      // A turn no compared Run carries.
+      row('turn-elsewhere', 'passage', ['p1'], { choice: 'p1' }),
+    ],
+    recordedTier: {
+      rows: [
+        { turnId: turnOf('on', 1, LOOKUP), acted: 'shadow', pick: 'lookup', declared: 'lookup' },
+        { turnId: turnOf('on', 2, LOOKUP), acted: 'shadow', pick: 'investigation', declared: 'lookup' },
+        { turnId: turnOf('on', 3, LOOKUP), acted: 'acted', pick: 'lookup', declared: 'lookup' },
+        { turnId: turnOf('on', 1, DA), acted: 'unavailable', pick: null, declared: 'direct_action' },
+      ],
+    },
+  }
+  const input = { source: 'e2e/eval/jev/shadow-2026-09-28.json', report: shadow }
+  const comparison = comparePools(retained(offArm(), 'off'), retained(onArm(), 'on'), AT, input)
+  const agreement = comparison.shadowAgreement!
+
+  it('scores passage and result on the off arm, by the scenario\'s initial tier, joined on turn id', () => {
+    expect(agreement.bySeam.passage.lookup).toEqual({ rows: 5, unavailable: 1, notComparable: 1, pickedNothing: 1, scored: 2, agreed: 1, agreement: 0.5 })
+    expect(agreement.bySeam.passage.direct_action).toMatchObject({ rows: 0, agreement: null })
+    expect(agreement.bySeam.result.direct_action).toEqual({ rows: 1, unavailable: 0, notComparable: 0, pickedNothing: 0, scored: 1, agreed: 1, agreement: 1 })
+  })
+
+  it('reads tier agreement from the recorded tier shadow, never the asked rows, and marks an acted record not comparable', () => {
+    expect(agreement.bySeam.tier.lookup).toEqual({ rows: 3, unavailable: 0, notComparable: 1, pickedNothing: 0, scored: 2, agreed: 1, agreement: 0.5 })
+    expect(agreement.bySeam.tier.direct_action).toMatchObject({ rows: 1, unavailable: 1, scored: 0 })
+    expect(agreement.askedTierRowsIgnored).toBe(1)
+  })
+
+  it('counts rows that join no compared Run, and Runs that carry no turn id', () => {
+    expect(agreement.unjoinedRows).toBe(1)
+    expect(agreement.runsWithoutTurnId).toBe(0)
+    const older = comparePools(offArm(), retained(onArm(), 'on'), AT, { ...input, report: { ...shadow, captures: captures.filter((capture) => capture.dir.includes('/on/')) } })
+    expect(older.shadowAgreement!.runsWithoutTurnId).toBe(9)
+  })
+
+  it('reports agreement as a row, never a gate, and says passage agreement is on Page Reads only', () => {
+    expect(comparison.gate.map((line) => [line.gated, line.passed])).toEqual(comparePools(offArm(), onArm(), AT).gate.map((line) => [line.gated, line.passed]))
+    expect(comparison.agreement).toContain('reported, never gated')
+    expect(comparison.agreement).toContain('Page Reads only')
+    const markdown = formatComparison(comparison)
+    expect(markdown).toContain('## Agreement (reported, never gated)')
+    expect(markdown).toContain('| passage | Lookup | 2 | 1 | 0.5 | 1 | 1 | 1 |')
+    expect(markdown).toContain('| tier (recorded) | Lookup | 2 | 1 | 0.5 | 0 | 0 | 1 |')
+  })
+
+  it('refuses a shadow report whose captures are not the pools\' trace directories', () => {
+    const stranger = { ...input, report: { ...shadow, captures: [...captures, { name: 'pass-1--dddddddd', dir: 'e2e/eval/traces/jev/other/pass-1--dddddddd' }] } }
+    expect(() => comparePools(retained(offArm(), 'off'), retained(onArm(), 'on'), AT, stranger)).toThrow(
+      /reads captures the pools do not record: e2e\/eval\/traces\/jev\/other\/pass-1--dddddddd/,
+    )
+    const unnamed = { ...input, report: { kind: 'decision_shadow', rows: [] } }
+    expect(() => comparePools(retained(offArm(), 'off'), retained(onArm(), 'on'), AT, unnamed)).toThrow(/names no capture directories/)
+    expect(() => comparePools(retained(offArm(), 'off'), retained(onArm(), 'on'), AT, { ...input, report: { kind: 'other' } })).toThrow(/not a decision:shadow report/)
+  })
+})
+
 const [major, minor] = process.versions.node.split('.').map(Number)
 const stripsTypes = major! > 22 || (major === 22 && minor! >= 18)
 
@@ -280,5 +392,21 @@ describe('the eval:compare CLI', () => {
     expect(unequal.status).toBe(1)
     expect(unequal.stderr).toContain('the pools hold 3 and 2 capture(s)')
     expect(run([`--a=${off}`, `--out=${join(dir, 'y')}`]).stderr).toContain('--b=<dir> is required')
+  })
+
+  it.skipIf(!stripsTypes)('fills the agreement row from --shadow, and refuses a replay over captures the pools do not record', () => {
+    const off = writePool('off', retained(offArm(), 'off').reports)
+    const on = writePool('on', retained(onArm(), 'on').reports)
+    const captures = [1, 2, 3].map((pass) => ({ name: `pass-${pass}--dddddddd`, dir: traceDir('off', pass) }))
+    const rows = [{ seam: 'passage', capture: 'pass-1--dddddddd', turnId: turnOf('off', 1, 'lookup-widgets-guide'), modelPicks: ['p1'], choice: 'p1' }]
+    writeFileSync(join(dir, 'shadow.json'), JSON.stringify({ kind: 'decision_shadow', captures, rows }))
+    const filled = run([`--a=${off}`, `--b=${on}`, `--out=${join(dir, 'out', 'compare')}`, `--shadow=${join(dir, 'shadow.json')}`])
+    expect(filled.status, filled.stderr).toBe(0)
+    expect(filled.stdout).toContain('| passage | Lookup | 1 | 1 | 1 | 0 | 0 | 0 |')
+
+    writeFileSync(join(dir, 'stranger.json'), JSON.stringify({ kind: 'decision_shadow', captures: [{ name: 'pass-9--dddddddd', dir: 'e2e/eval/traces/x/pass-9--dddddddd' }], rows }))
+    const refused = run([`--a=${off}`, `--b=${on}`, `--out=${join(dir, 'z')}`, `--shadow=${join(dir, 'stranger.json')}`])
+    expect(refused.status).toBe(1)
+    expect(refused.stderr).toContain('reads captures the pools do not record')
   })
 })

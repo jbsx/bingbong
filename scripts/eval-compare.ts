@@ -15,19 +15,25 @@
 //   BINGBONG_EVAL_REPORT=e2e/eval/jev/on/pass-<n>-<commit8>.json pnpm test:eval    # ×3, role configured
 //   TYPESAFE_API_KEY= BINGBONG_DECISION_API_KEY= \
 //   BINGBONG_EVAL_REPORT=e2e/eval/jev/off/pass-<n>-<commit8>.json pnpm test:eval   # ×3, role unconfigured
-//   pnpm eval:compare --a=e2e/eval/jev/off --b=e2e/eval/jev/on [--out=<path prefix>]
+//   pnpm eval:compare --a=e2e/eval/jev/off --b=e2e/eval/jev/on [--out=<path prefix>] [--shadow=<decision:shadow report>]
 //
 // Writes <prefix>.json and <prefix>.md; the prefix defaults to
 // e2e/eval/jev/compare-<YYYY-MM-DD>. Neither is ever written over.
+//
+// --shadow (#280) fills the agreement row from a `pnpm decision:shadow`
+// report over these pools' retained traces (e2e/eval/traces/…), per seam and
+// initial tier; it is refused when the report read captures the pools do
+// not record. Agreement is reported, never gated. eval:compare never asks
+// the Decision Model: the replay is the only command that spends.
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { comparePools, formatComparison } from '../e2e/eval/compare.ts'
+import { comparePools, formatComparison, type ShadowReportInput } from '../e2e/eval/compare.ts'
 import type { EvalReport } from '../e2e/eval/evaluator.ts'
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url))
-const FLAGS = ['a', 'b', 'out'] as const
+const FLAGS = ['a', 'b', 'out', 'shadow'] as const
 
 function fail(message: string): never {
   process.stderr.write(`eval:compare: ${message}\n`)
@@ -75,12 +81,22 @@ for (const path of Object.values(outputs)) {
   if (existsSync(path)) fail(`refusing to overwrite ${relative(process.cwd(), path)} — a comparison is written once; pass --out for another`)
 }
 
+function readShadow(path: string): { source: string; report: ShadowReportInput } {
+  try {
+    return { source: relative(process.cwd(), resolve(path)), report: JSON.parse(readFileSync(path, 'utf8')) as ShadowReportInput }
+  } catch {
+    fail(`the shadow report at ${path} is missing or not JSON`)
+  }
+}
+
+const shadowPath = flags.get('shadow')
 let comparison: ReturnType<typeof comparePools>
 try {
   comparison = comparePools(
     { source: relative(process.cwd(), resolve(aDir)) || '.', reports: readPoolDir(aDir, 'a') },
     { source: relative(process.cwd(), resolve(bDir)) || '.', reports: readPoolDir(bDir, 'b') },
     comparedAt,
+    shadowPath === undefined ? undefined : readShadow(shadowPath),
   )
 } catch (error) {
   fail(error instanceof Error ? error.message : String(error))

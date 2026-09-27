@@ -21,6 +21,7 @@
 // files and owns the network.
 
 import { parseSearchUrl } from '../../../src/core/browser/urlInput.ts'
+import { tierShadowOf } from '../../live/audit.ts'
 import type { EffortTier } from '../../../src/core/pipeline/runPlan.ts'
 import { TIER_PICK_QUESTION } from '../../../src/core/pipeline/tierShadow.ts'
 import { normalizeMemoryText } from '../../../src/core/session/workingMemory.ts'
@@ -53,6 +54,9 @@ export interface ShadowTraceLine {
   readonly kind: string
   readonly turnId?: string
   readonly agentId?: string
+  /** A `decision` record's seam and what it did with the answer (#280 reads the tier seam's). */
+  readonly seam?: string
+  readonly acted?: string
   readonly tool?: string
   readonly outcome?: string
   readonly excerpt?: string
@@ -651,6 +655,66 @@ export function summarizeSeam(rows: readonly ShadowRow[], thresholds: DecisionTh
   }
 }
 
+/**
+ * One Run's recorded tier shadow (#280): the `decision` record the tier seam
+ * wrote before round 1 of a Run with the decision role configured, beside the
+ * first tier the Run's model declared — read through the Round Audit's own
+ * join (#278), so the replay and the audit cannot disagree about what a
+ * pick stands in for. Nothing is asked: the answer is the one the Run got.
+ */
+export interface RecordedTierRow {
+  readonly capture: string
+  readonly turnId: string
+  /** What the seam did with the answer; the tier seam only ever shadows today. */
+  readonly acted: string
+  readonly pick: EffortTier | null
+  readonly confidence: number | null
+  readonly declared: EffortTier | null
+  readonly unavailable: string | null
+}
+
+/** Every Run's own recorded tier shadow in a capture's trace lines, in the order they were recorded. */
+export function recordedTierRows(capture: string, lines: readonly ShadowTraceLine[]): RecordedTierRow[] {
+  const byTurn = new Map<string, ShadowTraceLine[]>()
+  for (const line of lines) {
+    if (line.turnId === undefined) continue
+    byTurn.set(line.turnId, [...(byTurn.get(line.turnId) ?? []), line])
+  }
+  return [...byTurn].flatMap(([turnId, runLines]) => {
+    const shadow = tierShadowOf(runLines as unknown as Parameters<typeof tierShadowOf>[0])
+    if (shadow === undefined) return []
+    const record = runLines.find((line) => line.kind === 'decision' && line.seam === 'tier' && line.agentId === undefined)
+    const { pick, confidence, declared, unavailable } = shadow
+    return [{ capture, turnId, acted: typeof record?.acted === 'string' ? record.acted : 'shadow', pick, confidence, declared, unavailable }]
+  })
+}
+
+export interface RecordedTierSummary {
+  readonly records: number
+  readonly unavailable: number
+  /** Records whose seam acted: the declaration that followed was the seam's, so there is no independent pick to agree with. */
+  readonly notComparable: number
+  /** Answered, not acted, and the model declared a tier. */
+  readonly compared: number
+  readonly agreed: number
+  readonly agreement: number | null
+}
+
+export function summarizeRecordedTier(rows: readonly RecordedTierRow[]): RecordedTierSummary {
+  const answered = rows.filter((row) => row.pick !== null)
+  const comparable = answered.filter((row) => row.acted !== 'acted')
+  const compared = comparable.filter((row) => row.declared !== null)
+  const agreed = compared.filter((row) => row.pick === row.declared).length
+  return {
+    records: rows.length,
+    unavailable: rows.length - answered.length,
+    notComparable: answered.length - comparable.length,
+    compared: compared.length,
+    agreed,
+    agreement: compared.length === 0 ? null : round(agreed / compared.length),
+  }
+}
+
 /** What the replay cannot see, stated in every report so no reader mistakes a limit for a finding. */
 export const SHADOW_LIMITS: readonly string[] = [
   'passage: measured on Page Reads only; a navigate landing holds a Page Preview in the trace, never the landing text, so landing agreement comes from #274\'s first capture',
@@ -659,4 +723,5 @@ export const SHADOW_LIMITS: readonly string[] = [
   'result: the model\'s pick is the result its next navigate or click opened; a new search, a type or anything else is "picked none"; a click after a scroll, Page Read or Look names a newer snapshot\'s ref and is left out; navigate results are cut at 8,000 characters in the trace',
   '"recorded nothing" (the model picked nothing where the seam would act) is its own column, never a disagreement: it is unmeasured from traces',
   'tier: follow-up commands are asked without the Run they follow',
+  'recordedTier (#280): asks nothing — the tier seam\'s own records, from Runs with the decision role configured, against the FIRST tier the model declared (as the Round Audit reads it); the asked tier rows read the last; a record whose seam acted is not comparable',
 ]

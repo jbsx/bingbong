@@ -79,6 +79,23 @@ Expect that one scenario to cost about six minutes of every pass. Its
 success is the Finalization Cause plus an Answer of either kind — which
 kind is data the fixes are judged on, never a corpus gate.
 
+Every capture through the evaluator keeps its Run Trace (#280) — the release
+pools, the Decision Model arms and the delegation probe alike, with no flag.
+It lands under the git-ignored `e2e/eval/traces/`, mirroring the report's
+path: `e2e/eval/jev/on/pass-1-afbd1fe3.json` keeps
+`e2e/eval/traces/jev/on/pass-1--afbd1fe3/logs/`, which
+`pnpm decision:shadow --roots=e2e/eval/traces/jev/on --sets=pass` reads as
+it reads a live capture. Never put anything else beside the pass reports: the
+pool readers take every top-level `*.json` there. The report names its
+traces in a top-level `traces` field (never inside `routing`) and each Run
+carries its `turnId`. A capture whose trace directory already exists is
+refused before launch; a failed archive is recorded in `traces` and never
+fails the pass. Agreement on the eval corpus comes from
+`pnpm eval:compare --shadow=<decision:shadow report>` and is **reported,
+never gated**, and never an input to a seam's bars — the corpus is fixture
+pages; bars are set from live traces. `decision:shadow` is the only command
+that asks the Decision Model.
+
 When the corpus gains a scenario, the pinned baseline cannot grow with it —
 it is a frozen capture of an old tree. Nothing needs re-pinning: the
 comparison runs on the corpus both pools cover (#168), and
