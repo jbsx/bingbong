@@ -1310,6 +1310,15 @@ in shadow. Agreement between a shadow seam's records and what the model then
 did is how a seam earns the right to act.
 _Avoid_: decision log, inference record
 
+**Shadow Replay**:
+The questions a seam would have asked, put to the Decision Model after the
+fact over retained Run Traces, each answer scored against what the model then
+did in that Run. It is a Run the model moved through unaided that gives
+agreement; where a seam acted, the move was the Run's own and nothing is
+compared. Asking again moves the answers, so a bar is read from one replay's
+rows.
+_Avoid_: backtest, offline eval, re-run
+
 **Payment Field**:
 A control that takes a card detail — number, security code, expiry — and so
 marks its whole form as one that takes a payment. Only a control a person
