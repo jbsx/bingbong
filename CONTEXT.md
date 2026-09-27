@@ -564,8 +564,7 @@ It is backed by no durable store and disappears at the Session boundary.
 _Avoid_: evidence manager, evidence history
 
 **Answer Evidence Summary**:
-The read-only view of the Observations an Answer declares as its support. It may
-reflect later contradictions without rewriting the original Answer.
+The read-only view of the Observations an Answer declares as its support.
 _Avoid_: sources list, answer history
 
 **Observation**:

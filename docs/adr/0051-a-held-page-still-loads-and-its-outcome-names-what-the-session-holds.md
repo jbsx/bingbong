@@ -81,7 +81,8 @@ Read from the code and the captures, that is not what was lost:
   rounds ago, so a within-Run return also carries the Notice. Volatile
   Observations count and are marked, since the page being open is exactly
   what makes them citable as revalidated. Contradicted pairs are both listed,
-  as the store retains both. User Observations name no page and never qualify.
+  as the store retains both (since [ADR 0071](0071-two-observations-from-one-address-are-not-presumed-to-disagree.md)
+  no pair exists; every held Observation is still listed). User Observations name no page and never qualify.
 - **Both loops.** The Run loop and the Browse Subagent loop share the Tool
   Round implementation and feed one Session Evidence store; both attach the
   Notice from that store.

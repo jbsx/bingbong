@@ -25,6 +25,12 @@ loss, and the count now says whether the model slips often enough to pay it.
 The Subagent Report is model-facing and outside the boundary. The prompt,
 which already forbids the id twice, is untouched.
 
+Note of 2026-09-27 (#284): [ADR 0071](0071-two-observations-from-one-address-are-not-presumed-to-disagree.md)
+reverses the contradiction handling below. Two Observations from one address
+are not presumed to disagree, no pair is retained, and the Memory Compaction
+sentence's unresolved contradictions no longer exist. Exact duplicates still
+merge.
+
 ## Context
 
 Run Working State currently discards every tool observation when a Run fails or
