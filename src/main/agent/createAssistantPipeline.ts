@@ -39,7 +39,7 @@ import { ScriptedLlm, silentTts, UnavailableLlm } from '../../core/testing/doubl
 import { createOpenAiLlmClient } from './openAiLlmClient'
 import { orchestratorSystemPrompt } from './orchestratorPrompt'
 import { createZaiVisionApi } from '../vision/createZaiVisionApi'
-import { createDecisionModelSource } from '../decision/createDecisionModel'
+import { createDecisionModelSource, selectedPassageConfigured } from '../decision/createDecisionModel'
 
 export interface AssistantPipelineDeps {
   /**
@@ -159,6 +159,7 @@ function resolveLlm(
   onUsage?: UsageSink,
   tracer?: PerfTracer,
   getLearnedTerms?: () => readonly string[],
+  selectedPassage?: () => boolean,
 ): LlmClient {
   let client: LlmClient
   let model: string
@@ -182,8 +183,10 @@ function resolveLlm(
         // The runtime context getter (#103): the client below is cached
         // across Runs, so the date is re-derived when each round's messages
         // are built — a Run started after midnight sees the new date. The
-        // learned-terms getter (ADR 0022) rides the same closure.
-        systemPrompt: () => orchestratorSystemPrompt(clock, getLearnedTerms?.()),
+        // learned-terms getter (ADR 0022) rides the same closure, and so
+        // does whether the Selected Passage is on (#283): the decision
+        // config is no part of this client's signature.
+        systemPrompt: () => orchestratorSystemPrompt(clock, getLearnedTerms?.(), selectedPassage?.() ?? false),
         tools,
         fetchFn,
         // The transport backstop, above every active-work deadline
@@ -275,7 +278,7 @@ function createDynamicLlm(
       const env = getEnv()
       const nextSignature = llmSignature(env)
       if (client === null || nextSignature !== signature) {
-        client = resolveLlm(env, fetchFn, tools, clock, onUsage, tracer, getLearnedTerms)
+        client = resolveLlm(env, fetchFn, tools, clock, onUsage, tracer, getLearnedTerms, () => selectedPassageConfigured(getEnv()))
         signature = nextSignature
       }
       return client.complete(request)

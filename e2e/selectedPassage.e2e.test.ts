@@ -83,6 +83,9 @@ describe('Selected Passage e2e (#276)', () => {
     )
     const landing = events.find((event): event is ToolResultEvent => event.type === 'tool_result' && event.callId === 'open')
     expect(landing?.ok).toBe(true)
-    expect(String(landing?.result)).toContain(`\nSelected passage for "${ITEM}": ${LAUNCH}\nRecorded as evidence for "${ITEM}".`)
+    // One line, naming the checkpoint an Answer can cite (#283).
+    expect(String(landing?.result)).toMatch(/\nSession Evidence recorded: memory-\d+, for "/)
+    expect(String(landing?.result)).toContain(`, for "${ITEM}": ${LAUNCH}`)
+    expect(String(landing?.result)).not.toMatch(/Selected passage for|Recorded as evidence for/)
   })
 })

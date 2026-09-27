@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { DecisionQuestions } from '../../core/ports/decisionModel'
-import { createDecisionModel, createDecisionModelSource } from './createDecisionModel'
+import { createDecisionModel, createDecisionModelSource, selectedPassageConfigured } from './createDecisionModel'
 
 const QUESTIONS = {
   pick: { type: 'choice', instructions: 'Which?', options: { p1: null, p2: null } },
@@ -71,5 +71,23 @@ describe('createDecisionModel (#275)', () => {
       const decision = createDecisionModel({ BINGBONG_DECISION_SCRIPT: script })
       expect(await decision?.model.ask({ state: 's', questions: QUESTIONS })).toMatchObject({ status: 'unavailable', reason: 'failed' })
     }
+  })
+})
+
+describe('selectedPassageConfigured (#283)', () => {
+  const SCRIPT = JSON.stringify([{ unavailable: 'timeout' }])
+
+  it('is off on the default seams, which leave passage out', () => {
+    expect(selectedPassageConfigured({ BINGBONG_DECISION_SCRIPT: SCRIPT })).toBe(false)
+  })
+
+  it('is on when passage is among the seams and a Decision Model is there', () => {
+    expect(selectedPassageConfigured({ BINGBONG_DECISION_SCRIPT: SCRIPT, BINGBONG_DECISION_SEAMS: 'passage,result,tier' })).toBe(true)
+    expect(selectedPassageConfigured({ TYPESAFE_API_KEY: 'ts-secret', BINGBONG_DECISION_SEAMS: 'passage' })).toBe(true)
+  })
+
+  it('is off when the seam is named and no Decision Model is configured, or no seam acts', () => {
+    expect(selectedPassageConfigured({ BINGBONG_DECISION_SEAMS: 'passage' })).toBe(false)
+    expect(selectedPassageConfigured({ BINGBONG_DECISION_SCRIPT: SCRIPT, BINGBONG_DECISION_SEAMS: '' })).toBe(false)
   })
 })

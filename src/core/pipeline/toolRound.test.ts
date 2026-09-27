@@ -1881,8 +1881,12 @@ describe('the Selected Passage on a landing (#276, ADR 0069)', () => {
   const PAGE = 'https://example.org/voyager'
   const BLOCKS = ['Voyager 1 — Wikipedia', 'Voyager 1 was launched on 5 September 1977.', 'It is the most distant human-made object.']
   const ITEM = 'launch date'
-  const SELECTED = `Selected passage for "${ITEM}": Voyager 1 was launched on 5 September 1977.`
-  const RECORDED = `Recorded as evidence for "${ITEM}".`
+  const PASSAGE = 'Voyager 1 was launched on 5 September 1977.'
+  /** What the ledger holds, before the checkpoint has an id (#283). */
+  const SELECTED = `Session Evidence recorded: for "${ITEM}": ${PASSAGE}`
+  /** What the model reads, naming the checkpoint. */
+  const RECORDED = `Session Evidence recorded: memory-1, for "${ITEM}": ${PASSAGE}`
+  const REFUSED = `Session Evidence not recorded, for "${ITEM}": ${PASSAGE}`
   const PLAN: RunPlan = { objective: 'When did Voyager 1 launch?', headline: null, effortTier: 'lookup', askedItems: [ITEM] }
 
   type Answer = 'picks' | 'under' | 'unavailable' | ((questions: DecisionQuestions) => unknown)
@@ -1950,12 +1954,13 @@ describe('the Selected Passage on a landing (#276, ADR 0069)', () => {
       round: () => 2,
       writeDecision: (event) => decisions.push(event),
       checkpoint: (item, passage, url) => {
-        const accepted = evaluateEvidenceCheckpoint(selectedPassageCall(item, passage, url, `run-passage-${item}`), {
+        const outcome = evaluateEvidenceCheckpoint(selectedPassageCall(item, passage, url, `run-passage-${item}`), {
           records: ledger!.snapshot(),
           commit: webEvidenceCommit(() => (options.refuse === true ? null : store), 'run-1' as RunId),
-        }).ok
-        if (accepted) closed.add(item)
-        return accepted
+        })
+        if (!outcome.ok) return null
+        closed.add(item)
+        return outcome.entryId
       },
     })
     const h = harness(tools, {
@@ -1981,9 +1986,11 @@ describe('the Selected Passage on a landing (#276, ADR 0069)', () => {
     const { events } = await h.round([call('navigate', { url: PAGE })])
 
     expect(h.observed[0]!.payload).toBe(`navigate done: url=${PAGE}\n${SELECTED}`)
-    expect(resultOfOne(events)).toBe(`navigate done: url=${PAGE}\n${SELECTED}\n${RECORDED}`)
+    // One line per Asked Item, naming the checkpoint — and neither old line (#283).
+    expect(resultOfOne(events)).toBe(`navigate done: url=${PAGE}\n${RECORDED}`)
+    expect(resultOfOne(events)).not.toMatch(/Selected passage for|Recorded as evidence for/)
     const [observation] = store.snapshot().observations
-    expect(observation).toEqual(expect.objectContaining({ text: ITEM, references: [expect.objectContaining({ url: canonicalizeMemoryUrl(PAGE) })] }))
+    expect(observation).toEqual(expect.objectContaining({ id: 'memory-1', text: `${ITEM}: ${PASSAGE}`, references: [expect.objectContaining({ url: canonicalizeMemoryUrl(PAGE) })] }))
   })
 
   it('fires on a read_page and a click, never on a scroll or a Look', async () => {
@@ -2019,8 +2026,7 @@ describe('the Selected Passage on a landing (#276, ADR 0069)', () => {
 
     const { events } = await h.round([call('read_page')])
 
-    expect(resultOfOne(events)).toContain(`Selected passage for "${ITEM}": Paragraph 290 of the mission history.`)
-    expect(resultOfOne(events)).toContain(RECORDED)
+    expect(resultOfOne(events)).toContain(`Session Evidence recorded: memory-1, for "${ITEM}": Paragraph 290 of the mission history.`)
     expect(decisions.map((decision) => decision.windowed)).toEqual([true, true])
   })
 
@@ -2038,7 +2044,8 @@ describe('the Selected Passage on a landing (#276, ADR 0069)', () => {
 
     const { events } = await h.round([call('navigate', { url: PAGE })])
 
-    expect(resultOfOne(events)).toBe(`navigate done: url=${PAGE}\n${SELECTED}`)
+    expect(h.observed[0]!.payload).toBe(`navigate done: url=${PAGE}\n${SELECTED}`)
+    expect(resultOfOne(events)).toBe(`navigate done: url=${PAGE}\n${REFUSED}`)
     expect(store.snapshot().observations).toHaveLength(0)
     expect(h.newSinceCheckpoint()).toBe(true)
   })
@@ -2050,7 +2057,20 @@ describe('the Selected Passage on a landing (#276, ADR 0069)', () => {
     const { events } = await h.round([call('navigate', { url: `${PAGE}#history` })])
 
     expect(asks).toHaveLength(1)
-    expect(resultOfOne(events)).not.toContain('Selected passage')
+    expect(resultOfOne(events)).not.toContain('Session Evidence')
+  })
+
+  it('grades the Run-made excerpt against the ledger’s payload: a passage the ledger does not hold is refused', async () => {
+    const { h, store } = landing()
+    await h.round([call('navigate', { url: PAGE })])
+    const graded = (excerpt: string) =>
+      evaluateEvidenceCheckpoint(selectedPassageCall('launch site', excerpt, PAGE, 'run-passage-again'), {
+        records: h.ledger.snapshot(),
+        commit: webEvidenceCommit(() => store, 'run-1' as RunId),
+      })
+
+    expect(graded(PASSAGE)).toEqual(expect.objectContaining({ ok: true, sourceObservationId: h.ledger.snapshot()[0]!.id }))
+    expect(graded('Voyager 1 was launched on 20 August 1977.')).toEqual(expect.objectContaining({ ok: false, reason: 'excerpt_unsupported' }))
   })
 
   it("counts the Run-made checkpoint as the model's own: nothing new since it", async () => {

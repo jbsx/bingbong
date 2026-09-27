@@ -2,11 +2,13 @@ import { describe, expect, it } from 'vitest'
 import type { DecisionModel, DecisionQuestions, DecisionResult } from '../ports/decisionModel'
 import type { ToolCall } from '../ports/llm'
 import type { DecisionEvent } from '../trace/runTrace'
+import { MAX_MEMORY_DETAIL_CHARS } from '../session/workingMemory'
 import type { RunPlan } from './runPlan'
 import {
   carrySelectedPassages,
   createSelectedPassageSeam,
   openAskedItems,
+  selectedPassageCall,
   withRecordedPassages,
   type SelectedPassage,
 } from './selectedPassage'
@@ -57,7 +59,7 @@ function seamOver(opts: {
   blocks: readonly string[]
   items: readonly string[]
   model: DecisionModel
-  checkpoint?: (item: string, passage: string, url: string) => boolean
+  checkpoint?: (item: string, passage: string, url: string) => string | null
   tracing?: boolean
 }) {
   const decisions: DecisionEvent[] = []
@@ -74,10 +76,10 @@ function seamOver(opts: {
     writeDecision: (event) => decisions.push(event),
     checkpoint: (item, passage, url) => {
       checkpoints.push({ item, passage, url })
-      const accepted = opts.checkpoint?.(item, passage, url) ?? true
+      const entryId = opts.checkpoint === undefined ? `memory-${checkpoints.length}` : opts.checkpoint(item, passage, url)
       // The Run closes an item its checkpoint was accepted for.
-      if (accepted) items = items.filter((open) => open !== item)
-      return accepted
+      if (entryId !== null) items = items.filter((open) => open !== item)
+      return entryId
     },
   })
   return { seam, decisions, checkpoints }
@@ -273,7 +275,7 @@ describe('the Selected Passage seam (#276, ADR 0069)', () => {
       },
       round: () => 1,
       writeDecision: () => {},
-      checkpoint: () => true,
+      checkpoint: () => 'memory-1',
     })
 
     expect(await seam.select(call('navigate'), LANDED, PAGE)).toEqual([])
@@ -324,7 +326,7 @@ describe('the Selected Passage seam (#276, ADR 0069)', () => {
     const { seam, checkpoints } = seamOver({ blocks: BLOCKS, items: ['launch date'], model })
 
     const picks = await seam.select(call('navigate'), LANDED, PAGE)
-    expect(seam.record(picks, PAGE)).toEqual(['launch date'])
+    expect(seam.record(picks, PAGE)).toEqual([{ item: 'launch date', passage: 'Voyager 1 was launched on 5 September 1977.', entryId: 'memory-1' }])
     expect(checkpoints).toEqual([{ item: 'launch date', passage: 'Voyager 1 was launched on 5 September 1977.', url: PAGE }])
 
     // A second landing on the same page with the item recorded asks nothing.
@@ -334,26 +336,79 @@ describe('the Selected Passage seam (#276, ADR 0069)', () => {
 
   it('keeps an item open when its checkpoint was refused', async () => {
     const { model } = modelOf(answering(() => 'P002'))
-    const { seam } = seamOver({ blocks: BLOCKS, items: ['launch date'], model, checkpoint: () => false })
+    const { seam } = seamOver({ blocks: BLOCKS, items: ['launch date'], model, checkpoint: () => null })
 
     const picks = await seam.select(call('navigate'), LANDED, PAGE)
-    expect(seam.record(picks, PAGE)).toEqual([])
+    expect(seam.record(picks, PAGE)).toEqual([{ ...picks[0], entryId: null }])
     expect(await seam.select(call('navigate'), LANDED, 'https://example.org/other')).toHaveLength(1)
   })
 })
 
-describe('the Selected Passage lines (#276)', () => {
-  const picks: SelectedPassage[] = [{ item: 'launch date', passage: 'Voyager 1 was launched on 5 September 1977.' }]
-
-  it('carries each pick verbatim after the result', () => {
-    expect(carrySelectedPassages({ ok: true, result: 'navigated: url=x' }, picks)).toEqual({
-      ok: true,
-      result: 'navigated: url=x\nSelected passage for "launch date": Voyager 1 was launched on 5 September 1977.',
+describe('the Run-made Observation (#283)', () => {
+  it('states the Asked Item followed by the passage verbatim, with the passage as the excerpt', () => {
+    const made = selectedPassageCall('launch date', 'Voyager 1 was launched on 5 September 1977.', PAGE, 'run-passage-1')
+    expect(made).toEqual({
+      id: 'run-passage-1',
+      name: 'record_evidence',
+      args: {
+        kind: 'web',
+        source_url: PAGE,
+        excerpt: 'Voyager 1 was launched on 5 September 1977.',
+        observation: 'launch date: Voyager 1 was launched on 5 September 1977.',
+      },
     })
   })
 
-  it('says which items were recorded', () => {
-    expect(withRecordedPassages({ ok: true, result: 'r' }, ['launch date'])).toEqual({ ok: true, result: 'r\nRecorded as evidence for "launch date".' })
+  it('cuts a long block so the item and the passage fit one Observation', async () => {
+    const item = 'the full text of the mission history'
+    const block = Array.from({ length: 600 }, (_, index) => `word${index}`).join(' ')
+    const { model } = modelOf(answering(() => 'P001'))
+    const { seam } = seamOver({ blocks: [block], items: [item], model })
+
+    const [pick] = await seam.select(call('navigate'), LANDED, PAGE)
+
+    expect(block.startsWith(pick!.passage)).toBe(true)
+    expect(pick!.passage.length).toBeLessThan(block.length)
+    const observation = String(selectedPassageCall(item, pick!.passage, PAGE, 'id').args.observation)
+    expect(observation.length).toBeLessThanOrEqual(MAX_MEMORY_DETAIL_CHARS)
+    expect(observation.length).toBeGreaterThan(MAX_MEMORY_DETAIL_CHARS - 'word599 '.length)
+  })
+})
+
+describe('the Selected Passage lines (#276, #283)', () => {
+  const picks: SelectedPassage[] = [{ item: 'launch date', passage: 'Voyager 1 was launched on 5 September 1977.' }]
+
+  it('carries each pick verbatim after the result, before it has an id', () => {
+    expect(carrySelectedPassages({ ok: true, result: 'navigated: url=x' }, picks)).toEqual({
+      ok: true,
+      result: 'navigated: url=x\nSession Evidence recorded: for "launch date": Voyager 1 was launched on 5 September 1977.',
+    })
+  })
+
+  it('names the checkpoint each pick became, one line per Asked Item', () => {
+    const recorded = [
+      { ...picks[0]!, entryId: 'memory-3' },
+      { item: 'launch site', passage: 'It lifted off from Cape Canaveral.', entryId: 'memory-4' },
+    ]
+    expect(withRecordedPassages({ ok: true, result: 'r' }, recorded)).toEqual({
+      ok: true,
+      result:
+        'r\nSession Evidence recorded: memory-3, for "launch date": Voyager 1 was launched on 5 September 1977.' +
+        '\nSession Evidence recorded: memory-4, for "launch site": It lifted off from Cape Canaveral.',
+    })
+  })
+
+  it('carries a refused checkpoint’s passage without an id, and says it was not recorded', () => {
+    expect(withRecordedPassages({ ok: true, result: 'r' }, [{ ...picks[0]!, entryId: null }])).toEqual({
+      ok: true,
+      result: 'r\nSession Evidence not recorded, for "launch date": Voyager 1 was launched on 5 September 1977.',
+    })
+  })
+
+  it('carries neither of the lines it replaced', () => {
+    const read = String((withRecordedPassages({ ok: true, result: 'r' }, [{ ...picks[0]!, entryId: 'memory-3' }]) as { result: string }).result)
+    expect(read).not.toContain('Selected passage for')
+    expect(read).not.toContain('Recorded as evidence for')
   })
 
   it('leaves the result byte-identical with nothing to carry', () => {

@@ -5,7 +5,9 @@
 // states it. A pick that clears both its Choice and its Noul is carried
 // verbatim in the tool result the model reads — so the ledger holds it and
 // ADR 0054's excerpt test grounds it unchanged — and the Run records it as an
-// Evidence Checkpoint itself. Anything else leaves the result untouched.
+// Evidence Checkpoint itself, stating the item and the passage, and names it
+// to the model by its id so an Answer can cite it (#283). Anything else leaves
+// the result untouched.
 
 import { parseSearchUrl } from '../browser/urlInput'
 import type { ToolCall, ToolResultOutcome } from '../ports/llm'
@@ -43,15 +45,20 @@ export interface SelectedPassageDeps {
   /** The LLM round the call came from, as `llm_round` numbers it. */
   round(): number
   writeDecision(event: DecisionEvent): void
-  /** Records one pick as an Evidence Checkpoint made by the Run, closing its item when accepted; whether it was. */
-  checkpoint(item: string, passage: string, sourceUrl: string): boolean
+  /** Records one pick as an Evidence Checkpoint made by the Run, closing its item when accepted; the entry it became, null when refused. */
+  checkpoint(item: string, passage: string, sourceUrl: string): string | null
+}
+
+/** A pick as the Run recorded it (#283): the Memory Entry it became, null when the checkpoint was refused. */
+export interface RecordedPassage extends SelectedPassage {
+  readonly entryId: string | null
 }
 
 export interface SelectedPassageSeam {
   /** The picks for the page `call` settled on at `sourceUrl`, as `outcome` reported it; empty when nothing was asked or nothing cleared. Never throws. */
   select(call: ToolCall, outcome: ToolResultOutcome, sourceUrl: string | null): Promise<readonly SelectedPassage[]>
-  /** Records each pick as a Run-made checkpoint; the items that were accepted. */
-  record(picks: readonly SelectedPassage[], sourceUrl: string): readonly string[]
+  /** Records each pick as a Run-made checkpoint; every pick, with the entry it became. */
+  record(picks: readonly SelectedPassage[], sourceUrl: string): readonly RecordedPassage[]
 }
 
 /**
@@ -66,12 +73,20 @@ export function openAskedItems(plan: RunPlan | null, closed: ReadonlySet<string>
   return plan.askedItems.filter((item) => !closed.has(item))
 }
 
-/** The excerpt a pick carries: the block, or its head at a word boundary when it passes a Memory Entry's bound. */
-function excerptOf(block: string): string {
-  if (block.length <= MAX_MEMORY_DETAIL_CHARS) return block
-  const head = block.slice(0, MAX_MEMORY_DETAIL_CHARS)
+/** What parts the Asked Item from the passage in a Run-made Observation (#283). */
+const OBSERVATION_JOIN = ': '
+
+/**
+ * The excerpt a pick carries: the block, or its head at a word boundary when
+ * the Observation it is stated in — the item, then the passage (#283) — would
+ * pass a Memory Entry's bound.
+ */
+function excerptOf(item: string, block: string): string {
+  const bound = Math.max(1, MAX_MEMORY_DETAIL_CHARS - item.length - OBSERVATION_JOIN.length)
+  if (block.length <= bound) return block
+  const head = block.slice(0, bound)
   const space = head.lastIndexOf(' ')
-  return space > MAX_MEMORY_DETAIL_CHARS / 2 ? head.slice(0, space) : head
+  return space > bound / 2 ? head.slice(0, space) : head
 }
 
 export function createSelectedPassageSeam(deps: SelectedPassageDeps): SelectedPassageSeam {
@@ -105,7 +120,7 @@ export function createSelectedPassageSeam(deps: SelectedPassageDeps): SelectedPa
         const any = answers[`any_${index + 1}`]
         if (pick?.type !== 'choice') return
         const block = blockOf?.(pick.choice)
-        if (block !== undefined) passages[key] = excerptOf(block)
+        if (block !== undefined) passages[key] = excerptOf(item, block)
         if (clearsDecisionThresholds(any === undefined ? { pick } : { pick, any }, deps.thresholds)) cleared.set(item, pick.choice)
       })
     }
@@ -132,7 +147,7 @@ export function createSelectedPassageSeam(deps: SelectedPassageDeps): SelectedPa
     const pickOf = (item: string, cleared: ReadonlyMap<string, string>): SelectedPassage[] => {
       const label = cleared.get(item)
       const block = label === undefined ? undefined : blockOf(label)
-      return block === undefined ? [] : [{ item, passage: excerptOf(block) }]
+      return block === undefined ? [] : [{ item, passage: excerptOf(item, block) }]
     }
     if (blocks.length <= MAX_PASSAGE_OPTIONS) {
       const options = Object.fromEntries(ids.map((id) => [id, null]))
@@ -186,22 +201,23 @@ export function createSelectedPassageSeam(deps: SelectedPassageDeps): SelectedPa
     },
 
     record(picks, sourceUrl) {
-      const accepted: string[] = []
-      for (const { item, passage } of picks) {
-        if (deps.checkpoint(item, passage, sourceUrl)) accepted.push(item)
-      }
-      return accepted
+      return picks.map((pick) => ({ ...pick, entryId: deps.checkpoint(pick.item, pick.passage, sourceUrl) }))
     },
   }
 }
 
 /**
  * The `record_evidence` call a Run-made checkpoint goes through: the landed
- * page as source, the block as excerpt, the Asked Item's wording as the
- * observation — graded by the same rule as the model's own call.
+ * page as source, the block as excerpt and, as the observation, the Asked
+ * Item's wording followed by the passage verbatim (#283) — an Observation
+ * that states the value, graded by the same rule as the model's own call.
  */
 export function selectedPassageCall(item: string, passage: string, sourceUrl: string, id: string): ToolCall {
-  return { id, name: 'record_evidence', args: { kind: 'web', source_url: sourceUrl, excerpt: passage, observation: item } }
+  return {
+    id,
+    name: 'record_evidence',
+    args: { kind: 'web', source_url: sourceUrl, excerpt: passage, observation: `${item}${OBSERVATION_JOIN}${passage}` },
+  }
 }
 
 /** Lines after a successful string result; with none, the outcome itself, byte for byte. */
@@ -210,12 +226,23 @@ function withLines(outcome: ToolResultOutcome, lines: readonly string[]): ToolRe
   return { ...outcome, result: [outcome.result, ...lines].join('\n') }
 }
 
-/** The picks carried after the result, one line per Asked Item — before the ledger records it. */
-export function carrySelectedPassages(outcome: ToolResultOutcome, picks: readonly SelectedPassage[]): ToolResultOutcome {
-  return withLines(outcome, picks.map(({ item, passage }) => `Selected passage for "${item}": ${passage}`))
+/**
+ * The line one pick is carried as (#283), in the wording a `record_evidence`
+ * result opens with. The ledger holds it before the checkpoint is graded, so
+ * without an id; the model reads it naming the entry the checkpoint became. A
+ * refused checkpoint has no entry to name, and its line says so.
+ */
+export function selectedPassageLine(pick: SelectedPassage, entryId?: string | null): string {
+  const head = entryId === undefined ? 'Session Evidence recorded:' : entryId === null ? 'Session Evidence not recorded,' : `Session Evidence recorded: ${entryId},`
+  return `${head} for "${pick.item}": ${pick.passage}`
 }
 
-/** What the Run recorded, so the model does not record it again. */
-export function withRecordedPassages(outcome: ToolResultOutcome, items: readonly string[]): ToolResultOutcome {
-  return withLines(outcome, items.map((item) => `Recorded as evidence for "${item}".`))
+/** The picks carried after the result, one line per Asked Item — before the ledger records it. */
+export function carrySelectedPassages(outcome: ToolResultOutcome, picks: readonly SelectedPassage[]): ToolResultOutcome {
+  return withLines(outcome, picks.map((pick) => selectedPassageLine(pick)))
+}
+
+/** What the model reads once the Run recorded: the same lines, each naming its checkpoint's id so an Answer can cite it. */
+export function withRecordedPassages(outcome: ToolResultOutcome, recorded: readonly RecordedPassage[]): ToolResultOutcome {
+  return withLines(outcome, recorded.map((pick) => selectedPassageLine(pick, pick.entryId)))
 }

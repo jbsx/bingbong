@@ -633,6 +633,22 @@ export interface AuditMechanical {
    * written before the counter.
    */
   readonly runMadeQuotedAgain?: readonly number[]
+  /**
+   * The round of every Run-made checkpoint whose passage a later record of
+   * the model's contains (#283): an accepted checkpoint from the same page
+   * whose excerpt shares a piece with the Run's, either holding the other,
+   * with no length floor — so a passage of under twelve characters, which
+   * the count above cannot see, is counted. The whole passage and a part of
+   * it count alike. Absent on an audit written before the counter.
+   */
+  readonly runMadeContained?: readonly number[]
+  /**
+   * The round of every Run-made checkpoint the final Answer cited (#283):
+   * its Memory Entry is among the Answer's `evidence_ids`, as the trace's
+   * final display event carries them. Absent on an audit written before the
+   * counter.
+   */
+  readonly runMadeCited?: readonly number[]
   /** The model's own record_evidence calls, accepted or refused (#276): what a Selected Passage spares it. */
   readonly modelRecordEvidenceCalls?: number
   /**
@@ -891,6 +907,10 @@ export interface AuditPopulation {
   readonly runMadeRecordedAgain?: number
   /** Of those, the ones whose passage the model quoted again (#281, a lower bound). */
   readonly runMadeQuotedAgain?: number
+  /** Of those, the ones whose passage a later record of the model's contains, whole or in part (#283); absent where no attempt counted them. */
+  readonly runMadeContained?: number
+  /** Of those, the ones the final Answer cited in its `evidence_ids` (#283); absent where no attempt counted them. */
+  readonly runMadeCited?: number
   /** The model's own record_evidence calls over the same attempts (#276). */
   readonly modelRecordEvidenceCalls?: number
   /** Bookkeeping-only rounds over the same attempts (#276): the rounds a Selected Passage is meant to remove. */
@@ -1800,23 +1820,45 @@ export function resultPickCountsOf(rounds: readonly AuditRound[]): Required<Pick
  * each Evidence Checkpoint the Run made and the store accepted — its trace
  * record says `origin: run` and has no record_evidence call of its own to
  * join, so it is read from the trace, numbered by the llm_round before it —
- * and the model's own record_evidence calls, from the rounds.
+ * and the model's own record_evidence calls, from the rounds. What became
+ * of each (#283): whether a later record of the model's contains its
+ * passage, and whether the final Answer cited it.
  */
 export function selectedPassageCountsOf(
   traceRecords: readonly object[],
   rounds: readonly AuditRound[],
-): Required<Pick<AuditMechanical, 'runMadeCheckpoints' | 'runMadeRecordedAgain' | 'runMadeQuotedAgain' | 'modelRecordEvidenceCalls'>> {
-  const runMade: { round: number; page: string | null; observations: Set<string>; pieces: readonly string[]; again: boolean; quoted: boolean }[] = []
+): Required<
+  Pick<AuditMechanical, 'runMadeCheckpoints' | 'runMadeRecordedAgain' | 'runMadeQuotedAgain' | 'runMadeContained' | 'runMadeCited' | 'modelRecordEvidenceCalls'>
+> {
+  const runMade: {
+    round: number
+    page: string | null
+    observations: Set<string>
+    pieces: readonly string[]
+    excerpt: string
+    entryId: string | null
+    again: boolean
+    quoted: boolean
+    contained: boolean
+  }[] = []
   let round = 0
+  // The ids the final Answer cited: the last final display's, an Answer Retry's included.
+  let cited: readonly unknown[] = []
   for (const raw of traceRecords as readonly Record<string, unknown>[]) {
     if (raw.agentId !== undefined) continue
     if (raw.kind === 'llm_round' && isFiniteNumber(raw.round)) round = raw.round
+    if (raw.kind === 'pipeline_event') {
+      const event = raw.event as Record<string, unknown> | undefined
+      if (event?.type === 'display' && event.finalAnswer === true) cited = Array.isArray(event.evidenceIds) ? event.evidenceIds : []
+      continue
+    }
     if (raw.kind !== 'evidence_checkpoint' || raw.outcome !== 'accepted') continue
     const page = checkpointPage(raw)
     const observations = matchedObservations(raw)
     const excerpt = typeof raw.excerpt === 'string' ? raw.excerpt : ''
     if (raw.origin === 'run') {
-      runMade.push({ round, page, observations, pieces: excerptPieces(excerpt), again: false, quoted: false })
+      const entryId = typeof raw.entryId === 'string' ? raw.entryId : null
+      runMade.push({ round, page, observations, pieces: excerptPieces(excerpt), excerpt, entryId, again: false, quoted: false, contained: false })
       continue
     }
     // The model's own accepted checkpoint: it records again every Run-made
@@ -1827,6 +1869,10 @@ export function selectedPassageCountsOf(
       made.again = true
       const pieces = excerptPieces(excerpt)
       if (made.pieces.some((piece) => excerpt.includes(piece)) || pieces.some((piece) => made.pieces.join('\n').includes(piece))) made.quoted = true
+      // Containment (#283) is the same question with no floor on a piece's length.
+      if (excerptPieces(made.excerpt, 1).some((piece) => excerpt.includes(piece)) || excerptPieces(excerpt, 1).some((piece) => made.excerpt.includes(piece))) {
+        made.contained = true
+      }
     }
   }
   const modelRecordEvidenceCalls = rounds.reduce((total, audited) => total + audited.calls.filter((call) => call.name === 'record_evidence').length, 0)
@@ -1834,6 +1880,8 @@ export function selectedPassageCountsOf(
     runMadeCheckpoints: runMade.map((made) => made.round),
     runMadeRecordedAgain: runMade.filter((made) => made.again).map((made) => made.round),
     runMadeQuotedAgain: runMade.filter((made) => made.quoted).map((made) => made.round),
+    runMadeContained: runMade.filter((made) => made.contained).map((made) => made.round),
+    runMadeCited: runMade.filter((made) => made.entryId !== null && cited.includes(made.entryId)).map((made) => made.round),
     modelRecordEvidenceCalls,
   }
 }
@@ -1844,12 +1892,12 @@ function checkpointPage(raw: Record<string, unknown>): string | null {
   return typeof source === 'string' ? comparableAddress(source) : null
 }
 
-/** A normalized excerpt's verbatim pieces long enough to pin a passage: split where the grader joins them (ADR 0054). */
-function excerptPieces(excerpt: string): string[] {
+/** A normalized excerpt's verbatim pieces long enough to pin a passage — twelve characters, unless the count sets no floor (#283): split where the grader joins them (ADR 0054). */
+function excerptPieces(excerpt: string, floor = 12): string[] {
   return excerpt
     .split(/\r?\n|\||\.\.\.|…/)
     .map((piece) => piece.trim())
-    .filter((piece) => piece.length >= 12)
+    .filter((piece) => piece.length >= floor)
 }
 
 /** The observations a checkpoint's grader matched it on. */
@@ -3570,7 +3618,9 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
   let engineRewrites = 0
   let engineRewritesOffKey = 0
   let resultPicks: { picks: number; listings: number; searches: number; opened: number; rounds: number } | undefined
-  let passages: { runMade: number; modelCalls: number; bookkeeping: number; recordedAgain?: number; quotedAgain?: number } | undefined
+  let passages:
+    | { runMade: number; modelCalls: number; bookkeeping: number; recordedAgain?: number; quotedAgain?: number; contained?: number; cited?: number }
+    | undefined
   let contradictionNotes: number | undefined
   let searchForms: Record<SearchUrlForm, number> | undefined
   let blockedOrInert: Record<keyof BlockedOrInertCounts, number> | undefined
@@ -3651,6 +3701,8 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
       passages.runMade += mechanical.runMadeCheckpoints.length
       if (mechanical.runMadeRecordedAgain !== undefined) passages.recordedAgain = (passages.recordedAgain ?? 0) + mechanical.runMadeRecordedAgain.length
       if (mechanical.runMadeQuotedAgain !== undefined) passages.quotedAgain = (passages.quotedAgain ?? 0) + mechanical.runMadeQuotedAgain.length
+      if (mechanical.runMadeContained !== undefined) passages.contained = (passages.contained ?? 0) + mechanical.runMadeContained.length
+      if (mechanical.runMadeCited !== undefined) passages.cited = (passages.cited ?? 0) + mechanical.runMadeCited.length
       passages.modelCalls += mechanical.modelRecordEvidenceCalls
       passages.bookkeeping += mechanical.counts.bookkeeping
     }
@@ -3771,6 +3823,8 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
           runMadeCheckpoints: passages.runMade,
           ...(passages.recordedAgain !== undefined ? { runMadeRecordedAgain: passages.recordedAgain } : {}),
           ...(passages.quotedAgain !== undefined ? { runMadeQuotedAgain: passages.quotedAgain } : {}),
+          ...(passages.contained !== undefined ? { runMadeContained: passages.contained } : {}),
+          ...(passages.cited !== undefined ? { runMadeCited: passages.cited } : {}),
           modelRecordEvidenceCalls: passages.modelCalls,
           bookkeepingRoundsWherePassagesCounted: passages.bookkeeping,
         }
@@ -4093,6 +4147,12 @@ function populationSelectedPassagesText(population: AuditPopulation): string {
   return `${population.runMadeCheckpoints} Run-made Evidence Checkpoint(s) from a Selected Passage${again} against ${population.modelRecordEvidenceCalls ?? 0} record_evidence call(s) by the model and ${population.bookkeepingRoundsWherePassagesCounted ?? 0} bookkeeping-only round(s)`
 }
 
+/** What became of a population's Run-made checkpoints (#283): contained in a later record of the model's, and cited by the Answer. */
+function populationRunMadeUseText(population: AuditPopulation): string {
+  if (population.runMadeContained === undefined || population.runMadeCited === undefined) return 'Run-made checkpoints contained or cited not counted'
+  return `of ${population.runMadeCheckpoints ?? 0} Run-made Evidence Checkpoint(s), ${population.runMadeContained} whose passage a later record of the model's contains and ${population.runMadeCited} cited in the Answer's evidence_ids`
+}
+
 /** A population's records answered with the contradiction Note (#284), or "not counted". */
 function populationContradictionNotesText(population: AuditPopulation): string {
   if (population.contradictionNotes === undefined) return 'contradiction Notes not counted'
@@ -4103,7 +4163,7 @@ function judgementLines(populations: readonly AuditPopulation[]): string[] {
   return populations.map(
     (population) =>
       `- ${population.label}: ${population.offKeyRounds} Off-key round(s), ${population.searchLoopRounds} Search Loop round(s) by the reviewer (${population.mechanicalSearchRounds} by the streak rule, heads included: ${population.searchRoundsAtStreak2} at streak 2 or beyond, ${population.searchRoundsAtStreak3} at 3 or beyond; attempts by search source ${SEARCH_SOURCES.map((source) => `${source} ${population.searchSources[source]}`).join(', ')}; navigate searches by Search URL form ${searchFormsText(population.searchForms)}; ${populationBlockedOrInertText(population.blockedOrInert)}; ${populationUnavailableLandingsText(population.unavailableLandings)}; ${populationConsentWallsText(population.consentWalls)}; ${populationTierEscalationsText(population.tierEscalations)}), ` +
-      `${population.inheritedRounds} inherited, ${population.rejectedCheckpoints} rejected Evidence Checkpoint(s), ${population.walledRounds} walled round(s), ${population.notFoundNavigates} navigate(s) landed on a Not-found Page (${population.notFoundOffKey} judged Off-key), ${population.rewrittenComposedAddresses ?? 0} Composed Address(es) rewritten into a site search (${population.rewrittenComposedAddressesOffKey ?? 0} judged Off-key, ${population.rewrittenShownAddresses ?? 'not counted'} to an address the Run was shown), ${population.unseenPhraseRewrites ?? 'not counted'} search(es) ran with an Unseen Phrase unquoted (${population.unseenPhraseRewritesOffKey ?? 0} judged Off-key), ${population.engineRewrites ?? 'not counted'} search(es) ran on the Run Engine in place of another Web Engine (${population.engineRewritesOffKey ?? 0} judged Off-key), ${populationResultPicksText(population)}, ${populationSelectedPassagesText(population)}, ${populationContradictionNotesText(population)}, ${population.subagentRounds} Subagent round(s), ` +
+      `${population.inheritedRounds} inherited, ${population.rejectedCheckpoints} rejected Evidence Checkpoint(s), ${population.walledRounds} walled round(s), ${population.notFoundNavigates} navigate(s) landed on a Not-found Page (${population.notFoundOffKey} judged Off-key), ${population.rewrittenComposedAddresses ?? 0} Composed Address(es) rewritten into a site search (${population.rewrittenComposedAddressesOffKey ?? 0} judged Off-key, ${population.rewrittenShownAddresses ?? 'not counted'} to an address the Run was shown), ${population.unseenPhraseRewrites ?? 'not counted'} search(es) ran with an Unseen Phrase unquoted (${population.unseenPhraseRewritesOffKey ?? 0} judged Off-key), ${population.engineRewrites ?? 'not counted'} search(es) ran on the Run Engine in place of another Web Engine (${population.engineRewritesOffKey ?? 0} judged Off-key), ${populationResultPicksText(population)}, ${populationSelectedPassagesText(population)}, ${populationRunMadeUseText(population)}, ${populationContradictionNotesText(population)}, ${population.subagentRounds} Subagent round(s), ` +
       `${population.mergedCheckpoints} merged Evidence Checkpoint(s) (a floor), ${population.heldPageRoundsWithoutProgress} Held Page round(s) without Progress, ${population.bundledCheckpoints} bundled checkpoint round(s), ${population.sameSourceUnsupportedRounds} same-source unsupported round(s), ${subagentCitationsText(population.subagentCitations)}, ${populationSlipsText(population)}, ${delegatedPageCountsText(population.delegatedPageRounds)}, ` +
       `${population.malformedAnswers} Malformed Answer(s) (${population.answerRetries} retried), ` +
       `${transportText(population)}, ` +
@@ -4170,6 +4230,11 @@ function attemptSection(attempt: AuditAttempt): string[] {
             ? ''
             : `recorded again by the model from the same page: ${rounds(mechanical.runMadeRecordedAgain)}; with the same passage: ${rounds(mechanical.runMadeQuotedAgain ?? [])}; `
         }record_evidence calls by the model: ${mechanical.modelRecordEvidenceCalls}; bookkeeping-only rounds: ${mechanical.counts.bookkeeping}`,
+  )
+  lines.push(
+    mechanical.runMadeContained === undefined || mechanical.runMadeCited === undefined
+      ? '- Run-made checkpoints contained or cited: not counted'
+      : `- Run-made checkpoints whose passage a later record of the model's contains: ${rounds(mechanical.runMadeContained)}; cited in the Answer's evidence_ids: ${rounds(mechanical.runMadeCited)}`,
   )
   lines.push(`- accepted records answered with the contradiction Note: ${mechanical.contradictionNotes === undefined ? 'not counted' : rounds(mechanical.contradictionNotes)}`)
   const toOpen = mechanical.searchesToOpened

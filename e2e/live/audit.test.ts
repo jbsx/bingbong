@@ -2964,6 +2964,62 @@ describe('Selected Passages (#276, ADR 0069)', () => {
     })
   })
 
+  it('counts a Run-made passage a later model record contains with no floor on its length, whole or in part (#283)', () => {
+    const lines = (passage: string, modelExcerpt: string, modelPage = PAGE_URL) => [
+      { kind: 'llm_round', round: 1 },
+      { kind: 'evidence_checkpoint', origin: 'run', outcome: 'accepted', entryId: 'memory-1', args: { source_url: PAGE_URL }, excerpt: passage, graded: [] },
+      { kind: 'llm_round', round: 2 },
+      { kind: 'evidence_checkpoint', outcome: 'accepted', entryId: 'memory-2', args: { source_url: modelPage }, excerpt: modelExcerpt, graded: [] },
+    ]
+    // Under twelve characters: the older count cannot see it, this one does.
+    expect(selectedPassageCountsOf(lines('id: | zaa0037', 'h4 | id: | zaa0037 | creator: | harrison, john'), [])).toMatchObject({
+      runMadeQuotedAgain: [],
+      runMadeContained: [1],
+    })
+    // A part of the passage, and a record the passage holds whole.
+    expect(selectedPassageCountsOf(lines('measurements: | dial diameter: 102 mm', 'dial diameter: 102 mm'), []).runMadeContained).toEqual([1])
+    expect(selectedPassageCountsOf(lines('completed in 1759. harrison had been working on watches', 'completed in 1759'), []).runMadeContained).toEqual([1])
+    // Another passage of the page, and the same passage from another page.
+    expect(selectedPassageCountsOf(lines('id: | zaa0037', 'the plate is engraved larcum kendall london 1769'), []).runMadeContained).toEqual([])
+    expect(selectedPassageCountsOf(lines('id: | zaa0037', 'id: | zaa0037', 'https://spec.invalid/other/'), []).runMadeContained).toEqual([])
+  })
+
+  it('counts the Run-made checkpoints the final Answer cited, from the last final display (#283)', () => {
+    const display = (evidenceIds: readonly string[], finalAnswer = true) => ({ kind: 'pipeline_event', event: { type: 'display', text: 'a', evidenceIds, finalAnswer } })
+    const made = (round: number, entryId: string) => [
+      { kind: 'llm_round', round },
+      { kind: 'evidence_checkpoint', origin: 'run', outcome: 'accepted', entryId, args: { source_url: PAGE_URL }, excerpt: 'dial diameter: 102 mm', graded: [] },
+    ]
+    const own = { kind: 'evidence_checkpoint', outcome: 'accepted', entryId: 'memory-3', args: { source_url: PAGE_URL }, excerpt: 'creator: | harrison, john', graded: [] }
+
+    expect(selectedPassageCountsOf([...made(1, 'memory-1'), ...made(2, 'memory-2'), own, display(['memory-2', 'memory-3'])], []).runMadeCited).toEqual([2])
+    // An Answer Retry's display replaces the one before it; a display that is no final Answer cites nothing.
+    expect(selectedPassageCountsOf([...made(1, 'memory-1'), display(['memory-1']), display([])], []).runMadeCited).toEqual([])
+    expect(selectedPassageCountsOf([...made(1, 'memory-1'), display(['memory-1'], false)], []).runMadeCited).toEqual([])
+    // A Subagent's display is not the Run's Answer.
+    expect(selectedPassageCountsOf([...made(1, 'memory-1'), { ...display(['memory-1']), agentId: 'a-1' }], []).runMadeCited).toEqual([])
+  })
+
+  it('sums the two in the population and reports them, and reads "not counted" for an audit written before them (#283)', () => {
+    const mechanical = {
+      ...classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, EXTRA) })),
+      runMadeContained: [1],
+      runMadeCited: [1],
+    }
+    const set = buildAuditSet(provenanceOf(), [{ mechanical, review: null, countsAfterOverrules: mechanical.counts }], [])
+    expect(set.populations.initial).toMatchObject({ runMadeCheckpoints: 1, runMadeContained: 1, runMadeCited: 1 })
+    const markdown = formatAuditSet(set)
+    expect(markdown).toContain("- Run-made checkpoints whose passage a later record of the model's contains: 1 (round 1); cited in the Answer's evidence_ids: 1 (round 1)")
+    expect(markdown).toContain("of 1 Run-made Evidence Checkpoint(s), 1 whose passage a later record of the model's contains and 1 cited in the Answer's evidence_ids")
+
+    const before = { ...mechanical } as AuditMechanical & { runMadeContained?: number[]; runMadeCited?: number[] }
+    delete before.runMadeContained
+    delete before.runMadeCited
+    const older = formatAuditSet(buildAuditSet(provenanceOf(), [{ mechanical: before, review: null, countsAfterOverrules: before.counts }], []))
+    expect(older).toContain('- Run-made checkpoints contained or cited: not counted')
+    expect(older).toContain('Run-made checkpoints contained or cited not counted')
+  })
+
   it('never reads a Run-made checkpoint as recorded again by a model record made before it', () => {
     const rounds: RoundSpec[] = [
       { round: 1, at: 1_000, calls: [{ name: 'record_evidence', args: { source_url: PAGE_URL, excerpt: 'x', observation: 'y' }, checkpoint: 'accepted' }] },

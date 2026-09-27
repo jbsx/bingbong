@@ -36,7 +36,7 @@ import type { RunStopRecord } from '../session/runJournal'
 import type { HostTraceEvent } from '../trace/hostTrace'
 import type { VerificationSubject } from '../session/verificationAttempts'
 import { createSessionEvidence, type SessionEvidenceSnapshot, type SessionEvidenceStore } from '../session/sessionEvidence'
-import type { MemoryEntryId, MemoryPatch } from '../session/workingMemory'
+import { canonicalizeMemoryUrl, type MemoryEntryId, type MemoryPatch } from '../session/workingMemory'
 import type { RunId } from '../session/sessionIdentity'
 import { createPerfTracer, type PerfTracer } from '../perf/perfTracer'
 import { withPerfTracing } from '../perf/perfTracing'
@@ -6954,16 +6954,68 @@ describe('observation ledger (#111)', () => {
       const { traced, events, store } = await run([[plan('lookup'), go('n1')]])
 
       expect(resultOf(events, 'n1')).toBe(
-        `navigated: url=${PAGE} title="Voyager 1"\nSelected passage for "${ITEM}": ${LAUNCH}\nRecorded as evidence for "${ITEM}".`,
+        `navigated: url=${PAGE} title="Voyager 1"\nSession Evidence recorded: memory-1, for "${ITEM}": ${LAUNCH}`,
       )
       expect(asked[0]).toBe(`P001| Voyager 1\nP002| ${LAUNCH}\nP003| It left the heliosphere in 2012.`)
       expect(traced.filter((event) => event.kind === 'decision')).toEqual([expect.objectContaining({ turnId: 'turn-276', seam: 'passage', round: 1, acted: 'acted' })])
       expect(traced.filter((event) => event.kind === 'evidence_checkpoint')).toEqual([
-        expect.objectContaining({ outcome: 'accepted', origin: 'run', args: { kind: 'web', source_url: PAGE, excerpt: LAUNCH, observation: ITEM } }),
+        expect.objectContaining({ outcome: 'accepted', origin: 'run', args: { kind: 'web', source_url: PAGE, excerpt: LAUNCH, observation: `${ITEM}: ${LAUNCH}` } }),
       ])
       const [observation] = store.snapshot().observations
-      expect(observation!.text).toBe(ITEM)
+      expect(observation!.text).toBe(`${ITEM}: ${LAUNCH}`)
       expect(observation!.provenance).toEqual([{ runId: 'run-1', origin: 'run' }])
+    })
+
+    it('lets an Answer cite the Run-made checkpoint by the id its line named: the evidence checks pass (#283)', async () => {
+      let minted = 0
+      const store = createSessionEvidence({ sessionId: 'session-1' as SessionId, now: () => 0, mintId: () => `memory-${++minted}` as MemoryEntryId })
+      const committed: MemoryPatch[] = []
+      const degradations: string[] = []
+      const assessment: MemoryPatch[number] = { op: 'add', entry: { kind: 'assessment', subject: 'Voyager 1 launched in 1977', detail: 'Verified.', references: [{ url: PAGE }] } }
+      const pipeline = createCommandPipeline({
+        llm: new ScriptedLlm([
+          { kind: 'tool_calls', calls: [plan('lookup'), go('n1')] },
+          {
+            kind: 'answer',
+            askedItems: [{ item: ITEM, standing: 'stated', statement: '5 September 1977' }],
+            speak: 'It launched on 5 September 1977.',
+            display: 'Voyager 1 launched on 5 September 1977.',
+            resolution: 'completed',
+            evidenceIds: ['memory-1' as MemoryEntryId],
+            memoryPatch: [assessment],
+            runNote: 'Voyager 1 launched on 5 September 1977.',
+          },
+        ]),
+        tts: new RecordingTts(),
+        clock: new FakeClock(),
+        tools: [createReportRunPlanTool(), navigate, createRecordEvidenceTool()],
+        decision: () => ({ model: picking, seams: new Set<DecisionSeam>(['passage']) }),
+        currentPageUrl: () => PAGE,
+        pageTextBlocks: async () => BLOCKS,
+        onContinuityDegraded: (reason) => degradations.push(reason),
+      })
+      const events: PipelineEvent[] = []
+      for await (const event of pipeline.execute('when did Voyager 1 launch', 'turn-283', false, {
+        snapshot: [],
+        memory: [],
+        evidence: store.snapshot(),
+        generation: 0,
+        commit: (_outcome, _note, patch) => (committed.push(patch), 'committed'),
+        checkpointEvidence: webEvidenceCommit(() => store, 'run-1' as RunId),
+        evidenceSession: () => ({ store, runId: 'run-1' as RunId }),
+      })) {
+        events.push(event)
+      }
+
+      // The model made no record of its own: the only Observation is the Run's.
+      expect(store.snapshot().observations.map((observation) => observation.id)).toEqual(['memory-1'])
+      expect(resultOf(events, 'n1')).toContain('Session Evidence recorded: memory-1,')
+      // Live support: the Assessment commits, the source link derives, and
+      // an Observation made during this Run completes as proposed.
+      expect(degradations).toEqual([])
+      expect(committed).toEqual([[assessment]])
+      expect(events.find((event) => event.type === 'display')).toMatchObject({ evidenceIds: ['memory-1'], sources: [{ url: canonicalizeMemoryUrl(PAGE) }] })
+      expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done', resolution: 'completed' })
     })
 
     it('asks once per item: a later landing with the item recorded asks nothing', async () => {
@@ -6980,7 +7032,7 @@ describe('observation ledger (#111)', () => {
         const { traced, events, store } = await run(rounds, seams)
         expect(asked).toEqual([])
         expect(traced.filter((event) => event.kind === 'decision' && event.seam === 'passage')).toEqual([])
-        expect(resultOf(events, 'n1')).not.toContain('Selected passage')
+        expect(resultOf(events, 'n1')).not.toContain('Session Evidence')
         expect(store.snapshot().observations).toEqual([])
       }
     })

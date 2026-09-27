@@ -1420,9 +1420,10 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
                 writeDecision,
                 checkpoint: (item, passage, sourceUrl) => {
                   const call = selectedPassageCall(item, passage, sourceUrl, `${turnId}:passage-${++passageCheckpoints}`)
-                  const accepted = checkpointEvidenceHandler(call, 'run').ok
-                  if (accepted) passageClosedItems.add(item)
-                  return accepted
+                  const outcome = checkpointEvidenceHandler(call, 'run')
+                  if (!outcome.ok) return null
+                  passageClosedItems.add(item)
+                  return outcome.entryId
                 },
               })
             : null

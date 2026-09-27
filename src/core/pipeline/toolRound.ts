@@ -846,9 +846,12 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
     // hears it as the checkpoint call it is — so nothing is new since it,
     // exactly as after the model's own record_evidence.
     if (passages.length > 0 && sourceUrl) {
+      // The model reads the lines the ledger holds, each now naming the
+      // entry its checkpoint became (#283) — so it is built from the outcome
+      // again, never onto the carried one.
       const recorded = config.selectedPassage!.record(passages, sourceUrl)
-      carried = withRecordedPassages(carried, recorded)
-      if (recorded.length > 0 && noProgressRail !== null) {
+      carried = withRecordedPassages(outcome, recorded)
+      if (recorded.some((pick) => pick.entryId !== null) && noProgressRail !== null) {
         await noProgressRail.observe({ id: `${call.id}:passage`, name: 'record_evidence', args: {} }, { ok: true, result: 'recorded' })
       }
     }

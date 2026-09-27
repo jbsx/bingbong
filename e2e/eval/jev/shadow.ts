@@ -259,7 +259,7 @@ export function pagePassages(pageRead: string): string[] {
 const PREVIEW_CUT_LINE = /^page text: first [\d,]+ of [\d,]+ characters/m
 const FACT_LINE = /^page text: (?:part \d+ of \d+|first [\d,]+ of [\d,]+ characters)\b/
 /** What the Run carried after a landing's result (#276): the seam's lines, not the page's. */
-const CARRIED_LINE = /^(?:Selected passage for "|Recorded as evidence for ")/
+const CARRIED_LINE = /^(?:Selected passage for "|Recorded as evidence for "|Session Evidence (?:recorded:|not recorded,) (?:memory-\d+, )?for ")/
 
 /** The fact line of a Page Read cut into parts: `page text: part 2 of 4 — …` (ADR 0047). */
 const PART_LINE = /^page text: part (\d+) of (\d+)\b/
