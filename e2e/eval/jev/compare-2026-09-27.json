@@ -1,0 +1,396 @@
+{
+  "kind": "bingbong.eval.compare",
+  "compareVersion": 1,
+  "comparedAt": "2026-09-27T03:13:43.526Z",
+  "commit": "afbd1fe31c5b604089392961673a16ddf85a0796",
+  "sharedCorpus": {
+    "size": 33,
+    "scenarioIds": [
+      "direct-action-open-page",
+      "direct-action-open-article",
+      "direct-action-open-alt-host",
+      "direct-action-open-results",
+      "direct-action-click-button",
+      "direct-action-check-checkbox",
+      "direct-action-select-option",
+      "direct-action-click-link",
+      "direct-action-type-submit",
+      "direct-action-dismiss-dialog",
+      "direct-action-scroll-down",
+      "direct-action-media-pause",
+      "unanswered-earlier-bulletin",
+      "lookup-widgets-guide",
+      "lookup-open-web-answer",
+      "lookup-open-web-review",
+      "lookup-known-page-weight",
+      "lookup-known-page-care",
+      "lookup-depot-bulletin",
+      "candidate-polished-widgets",
+      "candidate-vintage-synonym",
+      "candidate-anodized-synonym",
+      "candidate-search-polished",
+      "investigation-material-finish",
+      "contradiction-widget-weight",
+      "subagent-widget-facts",
+      "steering-correct-objective",
+      "cancelled-warranty-reuse",
+      "stale-status-board",
+      "near-identical-depot-bulletins",
+      "blocker-challenge-page",
+      "unresolvable-mercury-dampeners",
+      "deadline-ledger-revisions"
+    ],
+    "aOnly": [],
+    "bOnly": []
+  },
+  "arms": {
+    "a": {
+      "source": "../../../../../.claude/jobs/3440e91b/tmp/jev/off",
+      "captures": [
+        {
+          "commit": "afbd1fe31c5b604089392961673a16ddf85a0796",
+          "capturedAt": "2026-09-26T19:32:43.526Z",
+          "orchestratorModel": "GLM-5.3",
+          "orchestratorRequests": 143,
+          "reasoningEffort": "per-tier"
+        },
+        {
+          "commit": "afbd1fe31c5b604089392961673a16ddf85a0796",
+          "capturedAt": "2026-09-26T20:03:39.626Z",
+          "orchestratorModel": "GLM-5.3",
+          "orchestratorRequests": 129,
+          "reasoningEffort": "per-tier"
+        },
+        {
+          "commit": "afbd1fe31c5b604089392961673a16ddf85a0796",
+          "capturedAt": "2026-09-26T20:40:14.678Z",
+          "orchestratorModel": "GLM-5.3",
+          "orchestratorRequests": 175,
+          "reasoningEffort": "per-tier"
+        }
+      ],
+      "decision": {
+        "configured": false
+      },
+      "decisionSeams": null,
+      "scenarioObservations": 99,
+      "comparedObservations": 99
+    },
+    "b": {
+      "source": "../../../../../.claude/jobs/3440e91b/tmp/jev/on",
+      "captures": [
+        {
+          "commit": "afbd1fe31c5b604089392961673a16ddf85a0796",
+          "capturedAt": "2026-09-26T19:14:24.932Z",
+          "orchestratorModel": "GLM-5.3",
+          "orchestratorRequests": 136,
+          "reasoningEffort": "per-tier"
+        },
+        {
+          "commit": "afbd1fe31c5b604089392961673a16ddf85a0796",
+          "capturedAt": "2026-09-26T19:48:29.617Z",
+          "orchestratorModel": "GLM-5.3",
+          "orchestratorRequests": 126,
+          "reasoningEffort": "per-tier"
+        },
+        {
+          "commit": "afbd1fe31c5b604089392961673a16ddf85a0796",
+          "capturedAt": "2026-09-26T20:18:31.363Z",
+          "orchestratorModel": "GLM-5.3",
+          "orchestratorRequests": 129,
+          "reasoningEffort": "per-tier"
+        }
+      ],
+      "decision": {
+        "configured": true,
+        "baseUrl": "https://api.typesafe.ai",
+        "model": "jev-1.13.0",
+        "keyFingerprint": "sha256:fb1de032914e"
+      },
+      "decisionSeams": null,
+      "scenarioObservations": 99,
+      "comparedObservations": 99
+    }
+  },
+  "onArm": "b",
+  "commandToAnswerMs": {
+    "perTier": {
+      "direct_action": {
+        "a": {
+          "n": 39,
+          "missing": 0,
+          "median": 9479,
+          "p95": 40804
+        },
+        "b": {
+          "n": 39,
+          "missing": 0,
+          "median": 11011,
+          "p95": 27687
+        }
+      },
+      "lookup": {
+        "a": {
+          "n": 54,
+          "missing": 0,
+          "median": 17893,
+          "p95": 90071
+        },
+        "b": {
+          "n": 54,
+          "missing": 0,
+          "median": 14303,
+          "p95": 67919
+        }
+      },
+      "investigation": {
+        "a": {
+          "n": 12,
+          "missing": 0,
+          "median": 16100,
+          "p95": 341983
+        },
+        "b": {
+          "n": 12,
+          "missing": 0,
+          "median": 17646,
+          "p95": 330180
+        }
+      }
+    },
+    "gated": {
+      "a": {
+        "n": 93,
+        "missing": 0,
+        "median": 13426,
+        "p95": 75647
+      },
+      "b": {
+        "n": 93,
+        "missing": 0,
+        "median": 11943,
+        "p95": 56313
+      }
+    }
+  },
+  "successes": {
+    "perTier": {
+      "direct_action": {
+        "a": {
+          "succeeded": 39,
+          "scenarios": 39
+        },
+        "b": {
+          "succeeded": 39,
+          "scenarios": 39
+        }
+      },
+      "lookup": {
+        "a": {
+          "succeeded": 47,
+          "scenarios": 48
+        },
+        "b": {
+          "succeeded": 48,
+          "scenarios": 48
+        }
+      },
+      "investigation": {
+        "a": {
+          "succeeded": 12,
+          "scenarios": 12
+        },
+        "b": {
+          "succeeded": 12,
+          "scenarios": 12
+        }
+      }
+    },
+    "gated": {
+      "a": {
+        "succeeded": 86,
+        "scenarios": 87
+      },
+      "b": {
+        "succeeded": 87,
+        "scenarios": 87
+      }
+    }
+  },
+  "deterministicAnswers": {
+    "gated": {
+      "a": {
+        "count": 0,
+        "runs": 93
+      },
+      "b": {
+        "count": 0,
+        "runs": 93
+      }
+    },
+    "all": {
+      "a": {
+        "count": 0,
+        "runs": 105
+      },
+      "b": {
+        "count": 0,
+        "runs": 105
+      }
+    }
+  },
+  "roundsPerRun": {
+    "direct_action": {
+      "a": {
+        "n": 39,
+        "missing": 0,
+        "median": 3,
+        "p95": 5
+      },
+      "b": {
+        "n": 39,
+        "missing": 0,
+        "median": 3,
+        "p95": 5
+      }
+    },
+    "lookup": {
+      "a": {
+        "n": 54,
+        "missing": 0,
+        "median": 4,
+        "p95": 13
+      },
+      "b": {
+        "n": 54,
+        "missing": 0,
+        "median": 3,
+        "p95": 6
+      }
+    },
+    "investigation": {
+      "a": {
+        "n": 12,
+        "missing": 0,
+        "median": 3,
+        "p95": 17
+      },
+      "b": {
+        "n": 12,
+        "missing": 0,
+        "median": 4,
+        "p95": 17
+      }
+    }
+  },
+  "decisions": {
+    "a": {
+      "records": 0,
+      "byActed": {
+        "acted": 0,
+        "under_threshold": 0,
+        "unavailable": 0,
+        "shadow": 0
+      },
+      "latencyMs": null,
+      "runsWithRecords": 0,
+      "bySeam": {},
+      "runs": 105
+    },
+    "b": {
+      "records": 228,
+      "byActed": {
+        "acted": 24,
+        "under_threshold": 99,
+        "unavailable": 0,
+        "shadow": 105
+      },
+      "latencyMs": {
+        "median": 246,
+        "p95": 308
+      },
+      "runsWithRecords": 105,
+      "bySeam": {
+        "tier": {
+          "records": 105,
+          "byActed": {
+            "acted": 0,
+            "under_threshold": 0,
+            "unavailable": 0,
+            "shadow": 105
+          },
+          "latencyMs": {
+            "median": 256,
+            "p95": 381
+          }
+        },
+        "result": {
+          "records": 16,
+          "byActed": {
+            "acted": 15,
+            "under_threshold": 1,
+            "unavailable": 0,
+            "shadow": 0
+          },
+          "latencyMs": {
+            "median": 239,
+            "p95": 400
+          }
+        },
+        "passage": {
+          "records": 107,
+          "byActed": {
+            "acted": 9,
+            "under_threshold": 98,
+            "unavailable": 0,
+            "shadow": 0
+          },
+          "latencyMs": {
+            "median": 239,
+            "p95": 288
+          }
+        }
+      },
+      "runs": 105
+    }
+  },
+  "agreement": "not derivable from an eval capture (a Decision Record carries no model pick); passage and result agreement come from pnpm decision:shadow over retained traces, tier agreement from the Round Audit join (#278). The live 3+3 capture retains Run Traces, so the replay over its jev-off arm gives agreement on the live corpus; the eval arm gives none.",
+  "gate": [
+    {
+      "name": "time: pooled median command-to-Answer, Direct Action and Lookup Runs, strictly lower on than off",
+      "gated": true,
+      "passed": true,
+      "detail": "on (b) 11943 ms over 93 timed Run(s), off (a) 13426 ms over 93 timed Run(s)"
+    },
+    {
+      "name": "correctness veto: Direct Action and Lookup scenario successes not fewer on than off",
+      "gated": true,
+      "passed": true,
+      "detail": "on (b) 87/87, off (a) 86/87"
+    },
+    {
+      "name": "correctness veto: deterministicAnswer count on DA+Lookup Runs not higher on than off",
+      "gated": true,
+      "passed": true,
+      "detail": "on (b) 0 of 93 Run(s), off (a) 0 of 93 Run(s); over every Run (reported) on (b) 0 of 105, off (a) 0 of 105"
+    },
+    {
+      "name": "reported: rounds per Run per tier",
+      "gated": false,
+      "passed": null,
+      "detail": "see the rounds table"
+    },
+    {
+      "name": "reported: Decision Records per Run",
+      "gated": false,
+      "passed": null,
+      "detail": "see the Decision Records table"
+    },
+    {
+      "name": "reported: agreement",
+      "gated": false,
+      "passed": null,
+      "detail": "not derivable from an eval capture (a Decision Record carries no model pick); passage and result agreement come from pnpm decision:shadow over retained traces, tier agreement from the Round Audit join (#278). The live 3+3 capture retains Run Traces, so the replay over its jev-off arm gives agreement on the live corpus; the eval arm gives none."
+    }
+  ]
+}
