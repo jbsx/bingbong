@@ -1,0 +1,1158 @@
+{
+  "kind": "bingbong.live.report",
+  "reportVersion": 2,
+  "provenance": {
+    "setId": "jev-off-2",
+    "study": "bingbong.live-web.information-hunts",
+    "protocolVersion": "1",
+    "mode": "measured",
+    "state": "complete",
+    "createdAt": "2026-09-27T04:30:12.583Z",
+    "commits": [
+      "fda11fe4ce292e422daacf0b5ef9b7ca992ec336"
+    ],
+    "dirtyTree": false,
+    "promptVersions": [
+      "1"
+    ],
+    "keyVersion": "2.2.2.2",
+    "keyManifestDigest": "sha256:faa25d04e419d6a6f02e51676e8058db5b6d52e3910ec552e275eb142f91b8ed",
+    "gradesRevision": 1,
+    "reviewers": [
+      "claude-opus-5 via live:grade"
+    ],
+    "roles": [
+      "decision=unconfigured (not configured in the production env)",
+      "orchestrator=GLM-5.3",
+      "subagent=GLM-5.3-flash",
+      "vision=GLM-4.6V"
+    ],
+    "reasoningEffortOverride": null,
+    "decisionSeams": null,
+    "effortOverrides": [],
+    "adblock": "production_default",
+    "browserSubspans": true,
+    "generatedAt": "2026-09-27T05:22:42.751Z"
+  },
+  "rows": [
+    {
+      "attemptId": "compatibility-pi-camera--initial",
+      "huntId": "compatibility-pi-camera",
+      "stepId": "initial",
+      "order": 0,
+      "relation": "initial",
+      "parentAttemptId": null,
+      "promptVersion": "1",
+      "captureId": "jev-off-2--compatibility-pi-camera",
+      "disposition": "answered",
+      "dispositionReason": null,
+      "grade": "useful_partial",
+      "reviewed": true,
+      "verifiedSuccess": false,
+      "mechanical": {
+        "outcome": "done",
+        "resolution": "completed",
+        "finalizationCause": "objective_met",
+        "deterministicAnswer": false,
+        "stopReason": "terminal"
+      },
+      "timing": {
+        "boundary": "event_publication",
+        "observedAnswerLatencyMs": {
+          "status": "observed",
+          "value": 289515
+        },
+        "successfulTaskCompletionTimeMs": {
+          "status": "not_applicable",
+          "reason": "the Answer is not independently verified — a Task Completion Time is earned, not observed"
+        },
+        "runDurationMs": {
+          "status": "observed",
+          "value": 289517
+        },
+        "userWaitMs": {
+          "status": "observed",
+          "value": 0
+        },
+        "censoredElapsedMs": {
+          "status": "not_applicable",
+          "reason": "the Run reached its terminal"
+        }
+      },
+      "work": {
+        "llmSpans": 21,
+        "llmRetries": 0,
+        "toolCalls": 27,
+        "toolSpans": 25,
+        "visionRequests": 0,
+        "subagentsFinalized": 2,
+        "errors": 1
+      },
+      "flags": [
+        "truncated_tool_results",
+        "self_declared_completed_but_unverified"
+      ],
+      "artifacts": [
+        {
+          "path": "events/compatibility-pi-camera--initial.json",
+          "family": "events",
+          "digest": "sha256:d519316a9512d04d2f611246ee43870893d40b0a9e45a8e89340b745dfa9e262",
+          "bytes": 258734,
+          "complete": true,
+          "truncated": false
+        },
+        {
+          "path": "logs/host-trace-1790482153597-1.jsonl",
+          "family": "host_trace",
+          "digest": "sha256:ad9ff1d650d81a144d89ec939301a4e10fd6cbf55fc761a6dc7043e3248940a7",
+          "bytes": 17156,
+          "complete": true,
+          "truncated": false
+        },
+        {
+          "path": "logs/perf-1790482167303-1.jsonl",
+          "family": "perf",
+          "digest": "sha256:1cafc11806a6175767d8e4aeb2cd01933927de999ea501c03afecf8ec513a73b",
+          "bytes": 22690,
+          "complete": true,
+          "truncated": false
+        },
+        {
+          "path": "logs/run-trace-1790482155127-1.jsonl",
+          "family": "run_trace",
+          "digest": "sha256:29802c16226fa535f6bbdf6cfc984af1f90320a7a6b29a9becc8623980e418ee",
+          "bytes": 5309544,
+          "complete": true,
+          "truncated": false
+        },
+        {
+          "path": "usage.json",
+          "family": "usage_ledger",
+          "digest": "sha256:bf8a410944dce2aea2e06fc0df7995b2b675b9e0a8ffae76fe46ef6002f2f02a",
+          "bytes": 353,
+          "complete": true,
+          "truncated": false
+        },
+        {
+          "path": "events/compatibility-pi-camera--follow_up.json",
+          "family": "events",
+          "digest": "sha256:e644c87ed60c286968c62fc1072819baed67f800c019bb3fec7d4b74a4cbdc79",
+          "bytes": 231985,
+          "complete": true,
+          "truncated": false
+        },
+        {
+          "path": "logs/run-trace-1790482516724-1.jsonl",
+          "family": "run_trace",
+          "digest": "sha256:28071eb404b320321542faeaab262bdd09c92caaf0029608e4a863e0551bbe7f",
+          "bytes": 1542289,
+          "complete": true,
+          "truncated": false
+        },
+        {
+          "path": "stderr.txt",
+          "family": "stderr",
+          "digest": "sha256:f5788711ad8b68a3d67fdc2ebe586f4206a96e1c94700e2057730cbe0b59b566",
+          "bytes": 8560,
+          "complete": true,
+          "truncated": false
+        },
+        {
+          "path": "events/compatibility-pi-camera--initial.json",
+          "family": "events",
+          "digest": "sha256:d519316a9512d04d2f611246ee43870893d40b0a9e45a8e89340b745dfa9e262",
+          "bytes": 258734,
+          "complete": true,
+          "truncated": false
+        }
+      ]
+    },
+    {
+      "attemptId": "compatibility-pi-camera--follow_up",
+      "huntId": "compatibility-pi-camera",
+      "stepId": "follow_up",
+      "order": 1,
+      "relation": "revised_objective",
+      "parentAttemptId": "compatibility-pi-camera--initial",
+      "promptVersion": "1",
+      "captureId": "jev-off-2--compatibility-pi-camera",
+      "disposition": "answered",
+      "dispositionReason": null,
+      "grade": "pass",
+      "reviewed": true,
+      "verifiedSuccess": true,
+      "mechanical": {
+        "outcome": "done",
+        "resolution": "completed",
+        "finalizationCause": "objective_met",
+        "deterministicAnswer": false,
+        "stopReason": "terminal"
+      },
+      "timing": {
+        "boundary": "event_publication",
+        "observedAnswerLatencyMs": {
+          "status": "observed",
+          "value": 256582
+        },
+        "successfulTaskCompletionTimeMs": {
+          "status": "observed",
+          "value": 256582
+        },
+        "runDurationMs": {
+          "status": "observed",
+          "value": 256584
+        },
+        "userWaitMs": {
+          "status": "observed",
+          "value": 0
+        },
+        "censoredElapsedMs": {
+          "status": "not_applicable",
+          "reason": "the Run reached its terminal"
+        }
+      },
+      "work": {
+        "llmSpans": 13,
+        "llmRetries": 0,
+        "toolCalls": 20,
+        "toolSpans": 19,
+        "visionRequests": 0,
+        "subagentsFinalized": 1,
+        "errors": 1
+      },
+      "flags": [],
+      "artifacts": [
+        {
+          "path": "events/compatibility-pi-camera--initial.json",
+          "family": "events",
+          "digest": "sha256:d519316a9512d04d2f611246ee43870893d40b0a9e45a8e89340b745dfa9e262",
+          "bytes": 258734,
+          "complete": true,
+          "truncated": false
+        },
+        {
+          "path": "logs/host-trace-1790482153597-1.jsonl",
+          "family": "host_trace",
+          "digest": "sha256:ad9ff1d650d81a144d89ec939301a4e10fd6cbf55fc761a6dc7043e3248940a7",
+          "bytes": 17156,
+          "complete": true,
+          "truncated": false
+        },
+        {
+          "path": "logs/perf-1790482167303-1.jsonl",
+          "family": "perf",
+          "digest": "sha256:1cafc11806a6175767d8e4aeb2cd01933927de999ea501c03afecf8ec513a73b",
+          "bytes": 22690,
+          "complete": true,
+          "truncated": false
+        },
+        {
+          "path": "logs/run-trace-1790482155127-1.jsonl",
+          "family": "run_trace",
+          "digest": "sha256:29802c16226fa535f6bbdf6cfc984af1f90320a7a6b29a9becc8623980e418ee",
+          "bytes": 5309544,
+          "complete": true,
+          "truncated": false
+        },
+        {
+          "path": "usage.json",
+          "family": "usage_ledger",
+          "digest": "sha256:bf8a410944dce2aea2e06fc0df7995b2b675b9e0a8ffae76fe46ef6002f2f02a",
+          "bytes": 353,
+          "complete": true,
+          "truncated": false
+        },
+        {
+          "path": "events/compatibility-pi-camera--follow_up.json",
+          "family": "events",
+          "digest": "sha256:e644c87ed60c286968c62fc1072819baed67f800c019bb3fec7d4b74a4cbdc79",
+          "bytes": 231985,
+          "complete": true,
+          "truncated": false
+        },
+        {
+          "path": "logs/run-trace-1790482516724-1.jsonl",
+          "family": "run_trace",
+          "digest": "sha256:28071eb404b320321542faeaab262bdd09c92caaf0029608e4a863e0551bbe7f",
+          "bytes": 1542289,
+          "complete": true,
+          "truncated": false
+        },
+        {
+          "path": "stderr.txt",
+          "family": "stderr",
+          "digest": "sha256:f5788711ad8b68a3d67fdc2ebe586f4206a96e1c94700e2057730cbe0b59b566",
+          "bytes": 8560,
+          "complete": true,
+          "truncated": false
+        },
+        {
+          "path": "events/compatibility-pi-camera--follow_up.json",
+          "family": "events",
+          "digest": "sha256:e644c87ed60c286968c62fc1072819baed67f800c019bb3fec7d4b74a4cbdc79",
+          "bytes": 231985,
+          "complete": true,
+          "truncated": false
+        }
+      ]
+    },
+    {
+      "attemptId": "historical-longitude-watch--initial",
+      "huntId": "historical-longitude-watch",
+      "stepId": "initial",
+      "order": 2,
+      "relation": "initial",
+      "parentAttemptId": null,
+      "promptVersion": "1",
+      "captureId": "jev-off-2--historical-longitude-watch",
+      "disposition": "answered",
+      "dispositionReason": null,
+      "grade": "pass",
+      "reviewed": true,
+      "verifiedSuccess": true,
+      "mechanical": {
+        "outcome": "done",
+        "resolution": "completed",
+        "finalizationCause": "objective_met",
+        "deterministicAnswer": false,
+        "stopReason": "terminal"
+      },
+      "timing": {
+        "boundary": "event_publication",
+        "observedAnswerLatencyMs": {
+          "status": "observed",
+          "value": 136178
+        },
+        "successfulTaskCompletionTimeMs": {
+          "status": "observed",
+          "value": 136178
+        },
+        "runDurationMs": {
+          "status": "observed",
+          "value": 136181
+        },
+        "userWaitMs": {
+          "status": "observed",
+          "value": 0
+        },
+        "censoredElapsedMs": {
+          "status": "not_applicable",
+          "reason": "the Run reached its terminal"
+        }
+      },
+      "work": {
+        "llmSpans": 14,
+        "llmRetries": 0,
+        "toolCalls": 16,
+        "toolSpans": 15,
+        "visionRequests": 0,
+        "subagentsFinalized": 0,
+        "errors": 1
+      },
+      "flags": [],
+      "artifacts": [
+        {
+          "path": "events/historical-longitude-watch--initial.json",
+          "family": "events",
+          "digest": "sha256:adb20ecdfcb2084a977c26539b9dcc994423aec46731b0f87866ab8db0efb54d",
+          "bytes": 97028,
+          "complete": true,
+          "truncated": false
+        },
+        {
+          "path": "logs/host-trace-1790482705692-1.jsonl",
+          "family": "host_trace",
+          "digest": "sha256:b60cabf8eb8a1a44459329bd3cf19bcc8dfc752492d9e0eb6d378a56bb95fccb",
+          "bytes": 8738,
+          "complete": true,
+          "truncated": false
+        },
+        {
+          "path": "logs/perf-1790482719705-1.jsonl",
+          "family": "perf",
+          "digest": "sha256:3e095e2c1ef53b011dc47ce5c780e617a73f9caaf86e412a6bd41d73f172f564",
+          "bytes": 12448,
+          "complete": true,
+          "truncated": false
+        },
+        {
+          "path": "logs/run-trace-1790482707256-1.jsonl",
+          "family": "run_trace",
+          "digest": "sha256:c06e27b88ae50f4c18ff6fd3f8fc8899682d92d97c61803e67ea564962e15d38",
+          "bytes": 97803,
+          "complete": true,
+          "truncated": false
+        },
+        {
+          "path": "usage.json",
+          "family": "usage_ledger",
+          "digest": "sha256:065a085efb23611f72fc64303839fd6a6d88d48c270871ba2a3004f8ec24d187",
+          "bytes": 198,
+          "complete": true,
+          "truncated": false
+        },
+        {
+          "path": "stderr.txt",
+          "family": "stderr",
+          "digest": "sha256:c90902f4f6d1cc64139740fbe86c8d91698ae5e6f68a8fad6deebff7ca3bf59c",
+          "bytes": 1158,
+          "complete": true,
+          "truncated": false
+        },
+        {
+          "path": "events/historical-longitude-watch--initial.json",
+          "family": "events",
+          "digest": "sha256:adb20ecdfcb2084a977c26539b9dcc994423aec46731b0f87866ab8db0efb54d",
+          "bytes": 97028,
+          "complete": true,
+          "truncated": false
+        }
+      ]
+    },
+    {
+      "attemptId": "rule-eurostar-luggage--initial",
+      "huntId": "rule-eurostar-luggage",
+      "stepId": "initial",
+      "order": 3,
+      "relation": "initial",
+      "parentAttemptId": null,
+      "promptVersion": "1",
+      "captureId": "jev-off-2--rule-eurostar-luggage",
+      "disposition": "answered",
+      "dispositionReason": null,
+      "grade": "pass",
+      "reviewed": true,
+      "verifiedSuccess": true,
+      "mechanical": {
+        "outcome": "done",
+        "resolution": "completed",
+        "finalizationCause": "objective_met",
+        "deterministicAnswer": false,
+        "stopReason": "terminal"
+      },
+      "timing": {
+        "boundary": "event_publication",
+        "observedAnswerLatencyMs": {
+          "status": "observed",
+          "value": 128475
+        },
+        "successfulTaskCompletionTimeMs": {
+          "status": "observed",
+          "value": 128475
+        },
+        "runDurationMs": {
+          "status": "observed",
+          "value": 128477
+        },
+        "userWaitMs": {
+          "status": "observed",
+          "value": 0
+        },
+        "censoredElapsedMs": {
+          "status": "not_applicable",
+          "reason": "the Run reached its terminal"
+        }
+      },
+      "work": {
+        "llmSpans": 12,
+        "llmRetries": 0,
+        "toolCalls": 13,
+        "toolSpans": 12,
+        "visionRequests": 0,
+        "subagentsFinalized": 0,
+        "errors": 1
+      },
+      "flags": [],
+      "artifacts": [
+        {
+          "path": "events/rule-eurostar-luggage--initial.json",
+          "family": "events",
+          "digest": "sha256:9dccf8a3f3f00d0f000ad29b43399c5c24519053474b2d8c7cfbcdd25d621cb9",
+          "bytes": 128460,
+          "complete": true,
+          "truncated": false
+        },
+        {
+          "path": "logs/host-trace-1790482845522-1.jsonl",
+          "family": "host_trace",
+          "digest": "sha256:0a7049ea7207afb4a8294bdefef375c1eb9e82381860fc3a43d39553fda15a8f",
+          "bytes": 9540,
+          "complete": true,
+          "truncated": false
+        },
+        {
+          "path": "logs/perf-1790482857955-1.jsonl",
+          "family": "perf",
+          "digest": "sha256:c32c5e0db97b9f20d75b94e7499734279e90d4d92d1771604b4c76d9e163e587",
+          "bytes": 9288,
+          "complete": true,
+          "truncated": false
+        },
+        {
+          "path": "logs/run-trace-1790482847112-1.jsonl",
+          "family": "run_trace",
+          "digest": "sha256:e066986dedb1cb58f41fa03b45284764e46d8773f9f1545930d17d91c32623ac",
+          "bytes": 178118,
+          "complete": true,
+          "truncated": false
+        },
+        {
+          "path": "usage.json",
+          "family": "usage_ledger",
+          "digest": "sha256:961f9a7564d1795200d027068eb6fcd8d16a35f519f87338548e7bf9d5386721",
+          "bytes": 199,
+          "complete": true,
+          "truncated": false
+        },
+        {
+          "path": "events/rule-eurostar-luggage--follow_up.json",
+          "family": "events",
+          "digest": "sha256:61daa9e23868634f13889eaef3a1fea0118370a9bb18466f27401d70b0fd6c17",
+          "bytes": 75532,
+          "complete": true,
+          "truncated": false
+        },
+        {
+          "path": "stderr.txt",
+          "family": "stderr",
+          "digest": "sha256:f266f2071a8cd9fcf5c0b64dfaf7322aa9074b3fc723a79ad836cf07a6348091",
+          "bytes": 1422,
+          "complete": true,
+          "truncated": false
+        },
+        {
+          "path": "events/rule-eurostar-luggage--initial.json",
+          "family": "events",
+          "digest": "sha256:9dccf8a3f3f00d0f000ad29b43399c5c24519053474b2d8c7cfbcdd25d621cb9",
+          "bytes": 128460,
+          "complete": true,
+          "truncated": false
+        }
+      ]
+    },
+    {
+      "attemptId": "rule-eurostar-luggage--follow_up",
+      "huntId": "rule-eurostar-luggage",
+      "stepId": "follow_up",
+      "order": 4,
+      "relation": "revised_objective",
+      "parentAttemptId": "rule-eurostar-luggage--initial",
+      "promptVersion": "1",
+      "captureId": "jev-off-2--rule-eurostar-luggage",
+      "disposition": "answered",
+      "dispositionReason": null,
+      "grade": "pass",
+      "reviewed": true,
+      "verifiedSuccess": true,
+      "mechanical": {
+        "outcome": "done",
+        "resolution": "completed",
+        "finalizationCause": "objective_met",
+        "deterministicAnswer": false,
+        "stopReason": "terminal"
+      },
+      "timing": {
+        "boundary": "event_publication",
+        "observedAnswerLatencyMs": {
+          "status": "observed",
+          "value": 89169
+        },
+        "successfulTaskCompletionTimeMs": {
+          "status": "observed",
+          "value": 89169
+        },
+        "runDurationMs": {
+          "status": "observed",
+          "value": 89170
+        },
+        "userWaitMs": {
+          "status": "observed",
+          "value": 0
+        },
+        "censoredElapsedMs": {
+          "status": "not_applicable",
+          "reason": "the Run reached its terminal"
+        }
+      },
+      "work": {
+        "llmSpans": 6,
+        "llmRetries": 0,
+        "toolCalls": 6,
+        "toolSpans": 5,
+        "visionRequests": 0,
+        "subagentsFinalized": 0,
+        "errors": 1
+      },
+      "flags": [],
+      "artifacts": [
+        {
+          "path": "events/rule-eurostar-luggage--initial.json",
+          "family": "events",
+          "digest": "sha256:9dccf8a3f3f00d0f000ad29b43399c5c24519053474b2d8c7cfbcdd25d621cb9",
+          "bytes": 128460,
+          "complete": true,
+          "truncated": false
+        },
+        {
+          "path": "logs/host-trace-1790482845522-1.jsonl",
+          "family": "host_trace",
+          "digest": "sha256:0a7049ea7207afb4a8294bdefef375c1eb9e82381860fc3a43d39553fda15a8f",
+          "bytes": 9540,
+          "complete": true,
+          "truncated": false
+        },
+        {
+          "path": "logs/perf-1790482857955-1.jsonl",
+          "family": "perf",
+          "digest": "sha256:c32c5e0db97b9f20d75b94e7499734279e90d4d92d1771604b4c76d9e163e587",
+          "bytes": 9288,
+          "complete": true,
+          "truncated": false
+        },
+        {
+          "path": "logs/run-trace-1790482847112-1.jsonl",
+          "family": "run_trace",
+          "digest": "sha256:e066986dedb1cb58f41fa03b45284764e46d8773f9f1545930d17d91c32623ac",
+          "bytes": 178118,
+          "complete": true,
+          "truncated": false
+        },
+        {
+          "path": "usage.json",
+          "family": "usage_ledger",
+          "digest": "sha256:961f9a7564d1795200d027068eb6fcd8d16a35f519f87338548e7bf9d5386721",
+          "bytes": 199,
+          "complete": true,
+          "truncated": false
+        },
+        {
+          "path": "events/rule-eurostar-luggage--follow_up.json",
+          "family": "events",
+          "digest": "sha256:61daa9e23868634f13889eaef3a1fea0118370a9bb18466f27401d70b0fd6c17",
+          "bytes": 75532,
+          "complete": true,
+          "truncated": false
+        },
+        {
+          "path": "stderr.txt",
+          "family": "stderr",
+          "digest": "sha256:f266f2071a8cd9fcf5c0b64dfaf7322aa9074b3fc723a79ad836cf07a6348091",
+          "bytes": 1422,
+          "complete": true,
+          "truncated": false
+        },
+        {
+          "path": "events/rule-eurostar-luggage--follow_up.json",
+          "family": "events",
+          "digest": "sha256:61daa9e23868634f13889eaef3a1fea0118370a9bb18466f27401d70b0fd6c17",
+          "bytes": 75532,
+          "complete": true,
+          "truncated": false
+        }
+      ]
+    },
+    {
+      "attemptId": "superseded-voyager-interstellar--initial",
+      "huntId": "superseded-voyager-interstellar",
+      "stepId": "initial",
+      "order": 5,
+      "relation": "initial",
+      "parentAttemptId": null,
+      "promptVersion": "1",
+      "captureId": "jev-off-2--superseded-voyager-interstellar",
+      "disposition": "answered",
+      "dispositionReason": null,
+      "grade": "pass",
+      "reviewed": true,
+      "verifiedSuccess": true,
+      "mechanical": {
+        "outcome": "done",
+        "resolution": "partial",
+        "finalizationCause": "deadline_reached",
+        "deterministicAnswer": false,
+        "stopReason": "terminal"
+      },
+      "timing": {
+        "boundary": "event_publication",
+        "observedAnswerLatencyMs": {
+          "status": "observed",
+          "value": 341833
+        },
+        "successfulTaskCompletionTimeMs": {
+          "status": "observed",
+          "value": 341833
+        },
+        "runDurationMs": {
+          "status": "observed",
+          "value": 341836
+        },
+        "userWaitMs": {
+          "status": "observed",
+          "value": 0
+        },
+        "censoredElapsedMs": {
+          "status": "not_applicable",
+          "reason": "the Run reached its terminal"
+        }
+      },
+      "work": {
+        "llmSpans": 24,
+        "llmRetries": 0,
+        "toolCalls": 26,
+        "toolSpans": 25,
+        "visionRequests": 0,
+        "subagentsFinalized": 0,
+        "errors": 1
+      },
+      "flags": [
+        "usage_incomplete"
+      ],
+      "artifacts": [
+        {
+          "path": "events/superseded-voyager-interstellar--initial.json",
+          "family": "events",
+          "digest": "sha256:02398ac034d23680894d876198279e4efb674e3badec6e8e1d293685e8ffc2f7",
+          "bytes": 298780,
+          "complete": true,
+          "truncated": false
+        },
+        {
+          "path": "logs/host-trace-1790483067235-1.jsonl",
+          "family": "host_trace",
+          "digest": "sha256:44e1d2f9dca2e6667a558c2e4ebfa4377df1a5434c45bf89383bf40bbdedec71",
+          "bytes": 5662,
+          "complete": true,
+          "truncated": false
+        },
+        {
+          "path": "logs/perf-1790483087769-1.jsonl",
+          "family": "perf",
+          "digest": "sha256:f95930a53501b3242457aee56a5892c5bec270f4423275c016570ed0aa3dbaa2",
+          "bytes": 25888,
+          "complete": true,
+          "truncated": false
+        },
+        {
+          "path": "logs/run-trace-1790483068730-1.jsonl",
+          "family": "run_trace",
+          "digest": "sha256:8639a13f199d3aa501b089b416281cd3b7ecfcc3a266b2c360968b0be18801de",
+          "bytes": 241217,
+          "complete": true,
+          "truncated": false
+        },
+        {
+          "path": "logs/run-trace-run-0e7e6ad3-fc08-4469-8545-8260cf8e14bf-turn-mujbe33d-1.png",
+          "family": "screenshot",
+          "digest": "sha256:8c5997dba9e07af559bfa6752a9d46e579ab3ea19253de547123e8b0ccb5f8d5",
+          "bytes": 81551,
+          "complete": true,
+          "truncated": false
+        },
+        {
+          "path": "usage.json",
+          "family": "usage_ledger",
+          "digest": "sha256:e6d19057b56f86e83a5985b9a1b17b41c16309a0142e41362905f521652b8254",
+          "bytes": 199,
+          "complete": true,
+          "truncated": false
+        },
+        {
+          "path": "stderr.txt",
+          "family": "stderr",
+          "digest": "sha256:5bdb2ef4f8a0eef1ca5348f0bab7ea57928935e1da4aa94776d6b6905272788f",
+          "bytes": 1422,
+          "complete": true,
+          "truncated": false
+        },
+        {
+          "path": "events/superseded-voyager-interstellar--initial.json",
+          "family": "events",
+          "digest": "sha256:02398ac034d23680894d876198279e4efb674e3badec6e8e1d293685e8ffc2f7",
+          "bytes": 298780,
+          "complete": true,
+          "truncated": false
+        }
+      ]
+    }
+  ],
+  "populations": {
+    "initial": {
+      "label": "initial",
+      "scheduled": 4,
+      "attempted": 4,
+      "answered": 4,
+      "notReached": 0,
+      "unaccounted": 0,
+      "acceptanceUnconfirmed": 0,
+      "reviewed": 4,
+      "pending": 0,
+      "verifiedSuccess": 3,
+      "timedSuccess": 3,
+      "verifiedOverReviewed": 0.75,
+      "byGrade": {
+        "pending": 0,
+        "pass": 3,
+        "useful_partial": 1,
+        "help_access_blocked": 0,
+        "unsuccessful": 0
+      }
+    },
+    "revisedObjective": {
+      "label": "revised_objective",
+      "scheduled": 2,
+      "attempted": 2,
+      "answered": 2,
+      "notReached": 0,
+      "unaccounted": 0,
+      "acceptanceUnconfirmed": 0,
+      "reviewed": 2,
+      "pending": 0,
+      "verifiedSuccess": 2,
+      "timedSuccess": 2,
+      "verifiedOverReviewed": 1,
+      "byGrade": {
+        "pending": 0,
+        "pass": 2,
+        "useful_partial": 0,
+        "help_access_blocked": 0,
+        "unsuccessful": 0
+      }
+    },
+    "corrective": {
+      "label": "corrective",
+      "scheduled": 0,
+      "attempted": 0,
+      "answered": 0,
+      "notReached": 0,
+      "unaccounted": 0,
+      "acceptanceUnconfirmed": 0,
+      "reviewed": 0,
+      "pending": 0,
+      "verifiedSuccess": 0,
+      "timedSuccess": 0,
+      "verifiedOverReviewed": null,
+      "byGrade": {
+        "pending": 0,
+        "pass": 0,
+        "useful_partial": 0,
+        "help_access_blocked": 0,
+        "unsuccessful": 0
+      }
+    },
+    "bothStep": {
+      "label": "both_step",
+      "scheduled": 2,
+      "attempted": 2,
+      "answered": 2,
+      "notReached": 0,
+      "unaccounted": 0,
+      "acceptanceUnconfirmed": 0,
+      "reviewed": 2,
+      "pending": 0,
+      "verifiedSuccess": 1,
+      "timedSuccess": 1,
+      "verifiedOverReviewed": 0.5,
+      "byGrade": {
+        "pending": 0,
+        "pass": 1,
+        "useful_partial": 1,
+        "help_access_blocked": 0,
+        "unsuccessful": 0
+      }
+    }
+  },
+  "pairs": [
+    {
+      "huntId": "compatibility-pi-camera",
+      "initialAttemptId": "compatibility-pi-camera--initial",
+      "followUpAttemptId": "compatibility-pi-camera--follow_up",
+      "initialVerified": false,
+      "followUpVerified": true,
+      "bothVerified": false,
+      "sequenceElapsedMs": {
+        "status": "not_applicable",
+        "reason": "a sequence elapsed time belongs to a pair that both steps passed"
+      },
+      "interCommandGapMs": {
+        "status": "observed",
+        "value": 604
+      }
+    },
+    {
+      "huntId": "rule-eurostar-luggage",
+      "initialAttemptId": "rule-eurostar-luggage--initial",
+      "followUpAttemptId": "rule-eurostar-luggage--follow_up",
+      "initialVerified": true,
+      "followUpVerified": true,
+      "bothVerified": true,
+      "sequenceElapsedMs": {
+        "status": "observed",
+        "value": 218002
+      },
+      "interCommandGapMs": {
+        "status": "observed",
+        "value": 356
+      }
+    }
+  ],
+  "latency": {
+    "successMs": {
+      "observations": [
+        89169,
+        128475,
+        136178,
+        256582,
+        341833
+      ],
+      "observed": 5,
+      "missing": 0,
+      "stats": {
+        "minMs": 89169,
+        "medianMs": 136178,
+        "maxMs": 341833
+      }
+    },
+    "failureMs": {
+      "observations": [
+        289515
+      ],
+      "observed": 1,
+      "missing": 0,
+      "stats": {
+        "minMs": 289515,
+        "medianMs": 289515,
+        "maxMs": 289515
+      }
+    },
+    "runDurationMs": {
+      "observations": [
+        89170,
+        128477,
+        136181,
+        256584,
+        289517,
+        341836
+      ],
+      "observed": 6,
+      "missing": 0,
+      "stats": {
+        "minMs": 89170,
+        "medianMs": 136181,
+        "maxMs": 341836
+      }
+    },
+    "percentilesReported": [
+      "min",
+      "median",
+      "max"
+    ]
+  },
+  "cohorts": [
+    {
+      "key": "measured|fda11fe4|1",
+      "mode": "measured",
+      "commit": "fda11fe4",
+      "promptVersions": [
+        "1"
+      ],
+      "rows": 6,
+      "successLatencyMs": {
+        "observations": [
+          89169,
+          128475,
+          136178,
+          256582,
+          341833
+        ],
+        "observed": 5,
+        "missing": 0,
+        "stats": {
+          "minMs": 89169,
+          "medianMs": 136178,
+          "maxMs": 341833
+        }
+      },
+      "failureLatencyMs": {
+        "observations": [
+          289515
+        ],
+        "observed": 1,
+        "missing": 0,
+        "stats": {
+          "minMs": 289515,
+          "medianMs": 289515,
+          "maxMs": 289515
+        }
+      },
+      "runDurationMs": {
+        "observations": [
+          89170,
+          128477,
+          136181,
+          256584,
+          289517,
+          341836
+        ],
+        "observed": 6,
+        "missing": 0,
+        "stats": {
+          "minMs": 89170,
+          "medianMs": 136181,
+          "maxMs": 341836
+        }
+      }
+    }
+  ],
+  "attribution": {
+    "clockOrigins": [
+      "jev-off-2--compatibility-pi-camera",
+      "jev-off-2--historical-longitude-watch",
+      "jev-off-2--rule-eurostar-luggage",
+      "jev-off-2--superseded-voyager-interstellar"
+    ],
+    "stages": [
+      {
+        "stage": "browser-recollection",
+        "count": 56,
+        "totalMs": 793.7033070000416,
+        "unionMs": 793.7033070000416,
+        "attemptsCovered": 6
+      },
+      {
+        "stage": "browser-safety",
+        "count": 2,
+        "totalMs": 2.1216940000012983,
+        "unionMs": 2.1216940000012983,
+        "attemptsCovered": 2
+      },
+      {
+        "stage": "browser-settle",
+        "count": 170,
+        "totalMs": 22226.079431999926,
+        "unionMs": 22226.079431999926,
+        "attemptsCovered": 6
+      },
+      {
+        "stage": "llm",
+        "count": 90,
+        "totalMs": 1005167.6995949999,
+        "unionMs": 1005167.6995949999,
+        "attemptsCovered": 6
+      },
+      {
+        "stage": "subagent-llm",
+        "count": 37,
+        "totalMs": 321814.66399399994,
+        "unionMs": 204459.91831999997,
+        "attemptsCovered": 2
+      },
+      {
+        "stage": "tool",
+        "count": 101,
+        "totalMs": 236080.11955799983,
+        "unionMs": 236080.11955799983,
+        "attemptsCovered": 6
+      },
+      {
+        "stage": "tts-synthesis",
+        "count": 6,
+        "totalMs": 1.8124160000588745,
+        "unionMs": 1.8124160000588745,
+        "attemptsCovered": 6
+      }
+    ],
+    "attemptsWithSpans": 6,
+    "attemptsWithoutSpans": 0,
+    "retries": 0,
+    "toolCalls": 108,
+    "subagentsFinalized": 3,
+    "subagentStops": {
+      "model_answered": 1,
+      "budget_exhausted": 2
+    },
+    "subagentBoundedReports": 1,
+    "subagentsUnobserved": 0,
+    "vision": {
+      "requests": 0,
+      "totalMs": null,
+      "attemptsCovered": 0
+    },
+    "userWaitMs": {
+      "observations": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "observed": 6,
+      "missing": 0,
+      "stats": {
+        "minMs": 0,
+        "medianMs": 0,
+        "maxMs": 0
+      }
+    },
+    "speech": {
+      "synthesisMs": 1.8124160000588745,
+      "playbackMs": null,
+      "inputLatency": "not_applicable"
+    },
+    "stagesAreAdditive": false,
+    "note": "Stage totals are not additive: tool spans contain browser sub-spans and Subagent rounds overlap the tools they drive. No exclusive wall-time split or unexplained remainder is derived from them."
+  },
+  "usage": {
+    "byRole": [
+      {
+        "role": "orchestrator",
+        "attemptsObserved": 6,
+        "attemptsUnavailable": 0,
+        "attemptsNotApplicable": 0,
+        "promptTokens": 1725991,
+        "completionTokens": 53686,
+        "rounds": 90,
+        "roundsWithUsage": 89,
+        "complete": false,
+        "models": [
+          "GLM-5.3"
+        ]
+      },
+      {
+        "role": "subagent",
+        "attemptsObserved": 2,
+        "attemptsUnavailable": 0,
+        "attemptsNotApplicable": 4,
+        "promptTokens": 564661,
+        "completionTokens": 5334,
+        "rounds": 37,
+        "roundsWithUsage": 37,
+        "complete": true,
+        "models": [
+          "GLM-5.3-flash"
+        ]
+      },
+      {
+        "role": "vision",
+        "attemptsObserved": 0,
+        "attemptsUnavailable": 6,
+        "attemptsNotApplicable": 0,
+        "promptTokens": 0,
+        "completionTokens": 0,
+        "rounds": 0,
+        "roundsWithUsage": 0,
+        "complete": false,
+        "models": []
+      }
+    ],
+    "estimate": null,
+    "limits": [
+      "Tokens are summed per role, not per model: a role that used several models has no per-model split, and none is inferred.",
+      "Vision usage is unavailable by construction — vision records carry request duration and never tokens.",
+      "The daily spend ledger is never read: it turns missing usage into zero and binds nothing to an attempt.",
+      "orchestrator: 1 of 90 round(s) reported no usage, so its tokens are a floor."
+    ]
+  },
+  "anomalies": [],
+  "warnings": []
+}
