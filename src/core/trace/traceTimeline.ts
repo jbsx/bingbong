@@ -250,7 +250,9 @@ function attemptOf(value: unknown): string {
 function countsOf(value: unknown): string {
   if (typeof value !== 'object' || value === null) return ''
   const counts = value as Record<string, unknown>
-  return `${str(counts.observations)} obs / ${str(counts.candidates)} cand / ${str(counts.contradictions)} contra`
+  // A trace written before #284 also counts contradictions (ADR 0071).
+  const contradictions = counts.contradictions !== undefined ? ` / ${str(counts.contradictions)} contra` : ''
+  return `${str(counts.observations)} obs / ${str(counts.candidates)} cand${contradictions}`
 }
 
 /** The one line per kind, in the words its ADR uses for the record. */

@@ -2972,3 +2972,54 @@ describe('Selected Passages (#276, ADR 0069)', () => {
     expect(classifyAttempt(inputOf({ traceRecords: traceOf(rounds, EXTRA) })).runMadeRecordedAgain).toEqual([])
   })
 })
+
+describe('the contradiction Note (#284, ADR 0071)', () => {
+  // A long address puts the Note past the result's 240-character head: the count reads the whole result.
+  const LONG = `https://spec.invalid/${'deep/'.repeat(30)}page`
+  const noted = (id: string, earlier: string): string =>
+    `Session Evidence recorded: ${id}, grounded in obs-1 at ${LONG}. It survives this run's outcome. Note: this contradicts earlier Observation ${earlier} from the same source — both are retained; disclose the disagreement in your answer or reconcile it.`
+  const ROUNDS: RoundSpec[] = [
+    { round: 1, at: 1_000, calls: [{ name: 'record_evidence', args: { kind: 'web', observation: 'one', source_url: LONG }, result: noted('memory-2', 'memory-1'), checkpoint: 'accepted' }] },
+    { round: 2, at: 2_000, calls: [{ name: 'record_evidence', args: { kind: 'web', observation: 'two', source_url: LONG }, result: `Session Evidence recorded: memory-3, grounded in obs-1 at ${LONG}. It survives this run's outcome.`, checkpoint: 'accepted' }] },
+    {
+      round: 3,
+      at: 3_000,
+      calls: [
+        { name: 'record_evidence', args: { kind: 'web', observation: 'three', source_url: LONG }, result: noted('memory-4', 'memory-1, memory-2'), checkpoint: 'accepted' },
+        { name: 'record_evidence', args: { kind: 'web', observation: 'four', source_url: LONG }, result: noted('memory-5', 'memory-1'), checkpoint: 'accepted' },
+      ],
+    },
+    // A refused record is never answered with the Note, whatever its text.
+    { round: 4, at: 4_000, calls: [{ name: 'record_evidence', args: { kind: 'web', observation: 'five', source_url: LONG }, ok: false, error: 'record_evidence rejected (excerpt_unsupported): Note: this contradicts earlier Observation', checkpoint: 'excerpt_unsupported' }] },
+  ]
+
+  it('counts, per attempt, the accepted records answered with the Note, by round, from the whole result text', () => {
+    const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, EXTRA) }))
+    expect(mechanical.rounds[0]!.calls[0]!.resultHead).not.toContain('Note:')
+    expect(mechanical.contradictionNotes).toEqual([1, 3, 3])
+    // Beside the digest: the hash a cached judgement is keyed on never covers it.
+    expect(JSON.stringify(auditModule.digestPayloadOf(mechanical))).not.toContain('contradictionNotes')
+  })
+
+  it('counts none in a trace written after the Note was removed', () => {
+    const quiet = ROUNDS.map((spec) => ({ ...spec, calls: spec.calls?.map((call) => (call.result !== undefined ? { ...call, result: call.result.replace(/ Note: .*$/, '') } : call)) }))
+    expect(classifyAttempt(inputOf({ traceRecords: traceOf(quiet, EXTRA) })).contradictionNotes).toEqual([])
+  })
+
+  it('sums them per population, prints them per attempt and per population, and reads "not counted" for an older audit', () => {
+    const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, EXTRA) }))
+    const set = buildAuditSet(provenanceOf(), [{ mechanical, review: null, countsAfterOverrules: mechanical.counts }], [])
+    expect(set.populations.initial.contradictionNotes).toBe(3)
+    const markdown = formatAuditSet(set)
+    expect(markdown).toContain('- accepted records answered with the contradiction Note: 3 (round 1, 3, 3)')
+    expect(markdown).toMatch(/- initial: .*3 accepted record\(s\) answered with the contradiction Note/)
+
+    const before = { ...mechanical } as AuditMechanical & { contradictionNotes?: number[] }
+    delete before.contradictionNotes
+    const older = buildAuditSet(provenanceOf(), [{ mechanical: before, review: null, countsAfterOverrules: before.counts }], [])
+    expect(older.populations.initial.contradictionNotes).toBeUndefined()
+    const olderText = formatAuditSet(older)
+    expect(olderText).toContain('- accepted records answered with the contradiction Note: not counted')
+    expect(olderText).toMatch(/- initial: .*contradiction Notes not counted/)
+  })
+})

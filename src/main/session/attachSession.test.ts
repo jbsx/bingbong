@@ -48,7 +48,6 @@ function fakeRuntime(evidence: { observations: number } | null) {
           snapshot: () => ({
             observations: Array.from({ length: evidence.observations }, (_, i) => ({ id: `memory-${i + 1}` })),
             candidates: [],
-            contradictions: [],
           }),
         },
     on: () => undefined,
@@ -89,7 +88,7 @@ describe('the evidence pull record', () => {
         generation: 2,
         requester: 'dashboard',
         answered: 'session',
-        counts: { observations: 2, candidates: 0, contradictions: 0 },
+        counts: { observations: 2, candidates: 0 },
       },
       {
         kind: 'evidence_answered',
@@ -97,7 +96,7 @@ describe('the evidence pull record', () => {
         generation: 2,
         requester: 'feed_panel',
         answered: 'session',
-        counts: { observations: 2, candidates: 0, contradictions: 0 },
+        counts: { observations: 2, candidates: 0 },
       },
     ])
   })

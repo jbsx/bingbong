@@ -134,8 +134,6 @@ export type EvidenceCheckpointOutcome =
       readonly originProducer?: UserObservationOrigin['producer']
       /** Which delegated worker's observations grounded a subagent citation (#123). */
       readonly agentId?: string
-      /** Prior Observations this one contradicts — retained, disclosed, never overwritten (#122). */
-      readonly contradicts: readonly MemoryEntryId[]
       /**
        * The Notice an acceptance of a mis-shaped call carries (#253, ADR
        * 0054): how the call was read, naming the canonical shape. Absent
@@ -754,7 +752,7 @@ export function userEvidenceCommit(
  * orchestrator checkpoints from a delegated worker's validated report.
  * The stored provenance carries both identities — the originating
  * (orchestrator) Run and the worker — and nothing else differs from a
- * direct web checkpoint: the same merging, contradiction, and trust
+ * direct web checkpoint: the same merging and trust
  * rules apply, whatever agent happened to observe the source.
  */
 export function subagentEvidenceCommit(
@@ -873,7 +871,6 @@ export function evaluateEvidenceCheckpoint(
       sourceObservationId: source.id,
       sourceUrl: canonical,
       agentId: citation.agentId,
-      contradicts: committed.contradicts,
       // An offered excerpt was dropped, never stored (#272): the Notice says so.
       ...(citation.excerptOffered ? { correction: SUBAGENT_EXCERPT_DROPPED_NOTICE } : {}),
     }
@@ -908,7 +905,6 @@ export function evaluateEvidenceCheckpoint(
     merged: committed.merged,
     sourceObservationId: source.id,
     sourceUrl: canonical,
-    contradicts: committed.contradicts,
   }
 }
 
@@ -958,7 +954,6 @@ function commitUserCitation(
     merged: committed.merged,
     sourceObservationId: event.id,
     originProducer: producer,
-    contradicts: committed.contradicts,
     ...(reshaped
       ? {
           correction:
@@ -1213,23 +1208,20 @@ const USER_EVENT_LABELS: Record<UserObservationOrigin['producer'], string> = {
 /** The tool-result text for one outcome: identity on success, correction otherwise. */
 export function evidenceCheckpointMessage(outcome: EvidenceCheckpointOutcome): string {
   if (outcome.ok) {
-    const contradiction = outcome.contradicts.length > 0
-      ? ` Note: this contradicts earlier Observation ${[...outcome.contradicts].join(', ')} from the same source — both are retained; disclose the disagreement in your answer or reconcile it.`
-      : ''
     if (outcome.originProducer !== undefined) {
       const event = USER_EVENT_LABELS[outcome.originProducer]
       return outcome.merged
-        ? `Session Evidence already held this user Observation: ${outcome.entryId} (provenance recorded).${contradiction}`
-        : `Session Evidence recorded the user's words: ${outcome.entryId}, the exact ${event} retained in ${outcome.sourceObservationId}. It survives this run's outcome.${contradiction}`
+        ? `Session Evidence already held this user Observation: ${outcome.entryId} (provenance recorded).`
+        : `Session Evidence recorded the user's words: ${outcome.entryId}, the exact ${event} retained in ${outcome.sourceObservationId}. It survives this run's outcome.`
     }
     if (outcome.agentId !== undefined) {
       return outcome.merged
-        ? `Session Evidence already held this Observation: ${outcome.entryId} (provenance recorded, subagent ${outcome.agentId}).${contradiction}`
-        : `Session Evidence recorded: ${outcome.entryId}, grounded in what subagent ${outcome.agentId} observed at ${outcome.sourceUrl} (${outcome.sourceObservationId}). It survives this run's outcome.${contradiction}`
+        ? `Session Evidence already held this Observation: ${outcome.entryId} (provenance recorded, subagent ${outcome.agentId}).`
+        : `Session Evidence recorded: ${outcome.entryId}, grounded in what subagent ${outcome.agentId} observed at ${outcome.sourceUrl} (${outcome.sourceObservationId}). It survives this run's outcome.`
     }
     return outcome.merged
-      ? `Session Evidence already held this Observation: ${outcome.entryId} (provenance recorded).${contradiction}`
-      : `Session Evidence recorded: ${outcome.entryId}, grounded in ${outcome.sourceObservationId} at ${outcome.sourceUrl}. It survives this run's outcome.${contradiction}`
+      ? `Session Evidence already held this Observation: ${outcome.entryId} (provenance recorded).`
+      : `Session Evidence recorded: ${outcome.entryId}, grounded in ${outcome.sourceObservationId} at ${outcome.sourceUrl}. It survives this run's outcome.`
   }
   // A malformed rejection ends on the call to send, or on a grading line
   // that carries its own full stop (#241).

@@ -64,7 +64,6 @@ function correction(over: Partial<RetainedUserCorrection> = {}): RetainedUserCor
 const snapshot = (candidates: readonly SessionCandidate[]): SessionEvidenceSnapshot => ({
   observations: [],
   candidates,
-  contradictions: [],
 })
 
 describe('retaining what a verification attempt mechanically observed (#212)', () => {

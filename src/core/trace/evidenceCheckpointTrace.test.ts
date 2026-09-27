@@ -35,7 +35,6 @@ describe('evidenceCheckpointEvent', () => {
         merged: false,
         sourceObservationId: PAGE_READ.id,
         sourceUrl: SOURCE,
-        contradicts: [],
       },
       records: [PAGE_READ, LATER_LOOK],
     })
@@ -57,7 +56,7 @@ describe('evidenceCheckpointEvent', () => {
     const args = { observation: 'the router costs $39', source_url: SOURCE, excerpt: 'costs $39' }
     const merged = evidenceCheckpointEvent({
       call: call(args),
-      outcome: { ok: true, entryId: 'memory-4' as MemoryEntryId, merged: true, sourceObservationId: PAGE_READ.id, sourceUrl: SOURCE, contradicts: [] },
+      outcome: { ok: true, entryId: 'memory-4' as MemoryEntryId, merged: true, sourceObservationId: PAGE_READ.id, sourceUrl: SOURCE },
       records: [PAGE_READ],
     })
     expect(merged).toMatchObject({ outcome: 'accepted', entryId: 'memory-4', merged: true })
@@ -137,7 +136,6 @@ describe('evidenceCheckpointEvent', () => {
         merged: false,
         sourceObservationId: outcomeRecord.id,
         sourceUrl: SOURCE,
-        contradicts: [],
       },
       records: [outcomeRecord],
     })
@@ -157,7 +155,6 @@ describe('evidenceCheckpointEvent', () => {
         sourceObservationId: workerRead.id,
         sourceUrl: SOURCE,
         agentId: 'a-1',
-        contradicts: [],
       },
       records: [LATER_LOOK],
       workerObservations: (agentId) => (agentId === 'a-1' ? [workerRead] : null),
@@ -204,7 +201,6 @@ describe('evidenceCheckpointEvent', () => {
         merged: false,
         sourceObservationId: command.id,
         originProducer: 'command',
-        contradicts: [],
         correction: 'Notice: stored the words',
       },
       records: [command, PAGE_READ],

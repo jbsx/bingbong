@@ -622,9 +622,10 @@ export type EvidenceRequester = (typeof EVIDENCE_REQUESTERS)[number]
 
 /**
  * What the store held after one retained change (#181): the counts an
- * empty panel is diagnosed against, plus the two facts a count alone
- * hides — whether the checkpoint merged into an existing Observation
- * rather than adding one, and which earlier Observations it contradicts.
+ * empty panel is diagnosed against, plus the fact a count alone hides —
+ * whether the checkpoint merged into an existing Observation rather than
+ * adding one. A trace written before #284 also carries `contradicted` here
+ * and `contradictions` in its counts; readers ignore both (ADR 0071).
  */
 export interface EvidenceAcceptedEvent {
   readonly kind: 'evidence_accepted'
@@ -635,8 +636,6 @@ export interface EvidenceAcceptedEvent {
   readonly counts: SessionEvidenceCounts
   /** True when the checkpoint merged into an exact duplicate; never true for a Candidate. */
   readonly merged: boolean
-  /** Prior Observations the accepted one mechanically contradicts (#143). */
-  readonly contradicted: readonly string[]
 }
 
 /**

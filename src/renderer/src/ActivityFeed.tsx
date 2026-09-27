@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { FeedEntry } from '../../core/feed/feedProjection'
-import type { ObservationContradiction, SessionObservation } from '../../core/session/sessionEvidence'
+import type { SessionObservation } from '../../core/session/sessionEvidence'
 import { AnswerEvidenceSummary } from './AnswerEvidenceSummary'
 import { FeedMarkdown } from './FeedMarkdown'
 
@@ -28,18 +28,15 @@ export function formatFeedTime(at: number): string {
   return new Date(at).toLocaleTimeString([], { hour: '2-digit', hour12: false, minute: '2-digit', second: '2-digit' })
 }
 
-/** One shared empty default each — props stay optional without allocating per render. */
+/** One shared empty default — props stay optional without allocating per render. */
 const NO_OBSERVATIONS: readonly SessionObservation[] = []
-const NO_CONTRADICTIONS: readonly ObservationContradiction[] = []
 
 export function FeedLine({
   entry,
   observations = NO_OBSERVATIONS,
-  contradictions = NO_CONTRADICTIONS,
 }: {
   entry: FeedEntry
   observations?: readonly SessionObservation[]
-  contradictions?: readonly ObservationContradiction[]
 }) {
   const time = <time className="feed-time">{formatFeedTime(entry.at)}</time>
   if (entry.role === 'user') {
@@ -97,9 +94,7 @@ export function FeedLine({
               {/* The Answer Evidence Summary (#141): the collapsed view
                   of exactly the Observations this Answer declared —
                   resolved live from the authoritative Session snapshot,
-                  never recorded. Its contradiction warnings (#143) also
-                  derive from that snapshot: a later Run's contradictory
-                  evidence warns this Answer without rewriting it. */}
+                  never recorded. */}
               {/* The Asked Items (#250, ADR 0052): rendered from the
                   structured field, never parsed out of the text — one
                   line per item the Run Plan declared, with the standing
@@ -122,11 +117,7 @@ export function FeedLine({
                 </ul>
               ) : null}
               {entry.evidenceIds !== undefined && entry.evidenceIds.length > 0 ? (
-                <AnswerEvidenceSummary
-                  evidenceIds={entry.evidenceIds}
-                  observations={observations}
-                  contradictions={contradictions}
-                />
+                <AnswerEvidenceSummary evidenceIds={entry.evidenceIds} observations={observations} />
               ) : null}
             </>
           ) : (
@@ -256,13 +247,11 @@ function RunDetails({
   entries,
   live,
   observations,
-  contradictions,
 }: {
   runId: string
   entries: FeedEntry[]
   live: boolean
   observations?: readonly SessionObservation[]
-  contradictions?: readonly ObservationContradiction[]
 }) {
   const [userOpen, setUserOpen] = useState<boolean | null>(null)
   const open = userOpen ?? live
@@ -298,7 +287,7 @@ function RunDetails({
           entry.kind === 'reasoning' ? (
             <ReasoningBlock key={entry.id} entry={entry} live={live} trailing={entry.id === lastId} />
           ) : (
-            <FeedLine key={entry.id} entry={entry} observations={observations} contradictions={contradictions} />
+            <FeedLine key={entry.id} entry={entry} observations={observations} />
           ),
         )}
       </div>
@@ -310,7 +299,6 @@ export function ActivityFeed({
   entries,
   liveRunId,
   observations = NO_OBSERVATIONS,
-  contradictions = NO_CONTRADICTIONS,
   headerActions,
   footer,
 }: {
@@ -323,8 +311,6 @@ export function ActivityFeed({
    * resolves against for their Evidence Summaries.
    */
   observations?: readonly SessionObservation[]
-  /** The snapshot's retained contradictions (#143) — Answer warnings derive from them. */
-  contradictions?: readonly ObservationContradiction[]
   headerActions?: React.ReactNode
   /** Below the list — the panel's steer box (#46). */
   footer?: React.ReactNode
@@ -352,10 +338,9 @@ export function ActivityFeed({
               entries={item.entries}
               live={item.runId === liveRunId}
               observations={observations}
-              contradictions={contradictions}
             />
           ) : (
-            <FeedLine key={item.entry.id} entry={item.entry} observations={observations} contradictions={contradictions} />
+            <FeedLine key={item.entry.id} entry={item.entry} observations={observations} />
           ),
         )}
       </div>

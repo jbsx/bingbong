@@ -224,4 +224,76 @@ describe('answer evidence summary e2e', () => {
       await app.quit()
     }
   })
+
+  it('leaves an earlier Answer unwarned when a later Run records different text from the same page (#284)', async () => {
+    const page = fixture.url('/second')
+    const recordRun = (observation: string): AssistantTurn => ({
+      kind: 'tool_calls',
+      calls: [
+        { id: 'n1', name: 'navigate', args: { url: page } },
+        { id: 'e1', name: 'record_evidence', args: { observation, source_url: page, excerpt: 'second fixture page' } },
+      ],
+    })
+    // memory-1 and memory-2 come from one address with different text: once
+    // told they contradicted, now two Observations and nothing more (ADR 0071).
+    const script: AssistantTurn[] = [
+      recordRun('Web fact: the second page says the widget costs $39.'),
+      { kind: 'answer', speak: 'Thirty-nine.', display: 'The widget costs $39.', evidenceIds: ['memory-1' as MemoryEntryId] },
+      recordRun('Web fact: the second page says the widget costs $59.'),
+      { kind: 'answer', speak: 'Fifty-nine.', display: 'The widget now costs $59.', evidenceIds: ['memory-2' as MemoryEntryId] },
+    ]
+    const app = await startHarness({ fixture, env: { BINGBONG_LLM_SCRIPT: JSON.stringify(script) } })
+    try {
+      expect(await app.submitCommand('what does the second page say the widget costs')).toBe('submitted')
+      await waitFor(
+        async () => ((app.runTraceTranscript().includes('The widget costs $39.')) ? true : undefined),
+        { timeoutMs: 20_000, intervalMs: 250 },
+      )
+      expect(await app.submitCommand('check the price again')).toBe('submitted')
+      await waitFor(
+        async () => ((app.runTraceTranscript().includes('The widget now costs $59.')) ? true : undefined),
+        { timeoutMs: 20_000, intervalMs: 250 },
+      )
+
+      // Both Answers carry a summary, and neither carries a warning.
+      await app.ensurePanelOpen()
+      await waitFor(
+        async () => {
+          const count = await app.overlayEval<number>(`document.querySelectorAll('.feed-entry--display details.answer-evidence').length`)
+          return count === 2 ? count : undefined
+        },
+        { timeoutMs: 10_000, intervalMs: 100 },
+      )
+      await app.overlayEval(`document.querySelectorAll('.feed-entry--display details.answer-evidence').forEach((el) => { el.open = true })`)
+      expect(
+        await app.overlayEval<number>(
+          `document.querySelectorAll('.answer-evidence-warning-chip, .answer-evidence-warning, .evidence-chip--contradicted').length`,
+        ),
+      ).toBe(0)
+
+      // The Evidence Browser holds both, as two cards and no group.
+      await app.clickOverlayElement('.feed-tab--evidence')
+      const texts = await waitFor(
+        async () => {
+          const texts = await app.overlayEval<string[]>(
+            `[...document.querySelectorAll('.evidence-section[aria-label="observations"] .evidence-text')].map((el) => el.textContent)`,
+          )
+          return texts.length === 2 ? texts : undefined
+        },
+        { timeoutMs: 10_000, intervalMs: 100 },
+      )
+      expect(texts).toEqual(['Web fact: the second page says the widget costs $59.', 'Web fact: the second page says the widget costs $39.'])
+      expect(await app.overlayEval<string>(`document.querySelector('.feed')?.textContent ?? ''`)).not.toMatch(/contradict/i)
+      expect(
+        await app.overlayEval<number>(`document.querySelectorAll('[data-contradicted], [data-contradiction-group]').length`),
+      ).toBe(0)
+
+      // And the second record's result, as the Run Trace kept it, carried no Note.
+      const trace = JSON.stringify(app.readRunTrace())
+      expect(trace).toContain('Session Evidence recorded: memory-2')
+      expect(trace).not.toContain('contradicts earlier Observation')
+    } finally {
+      await app.quit()
+    }
+  })
 })

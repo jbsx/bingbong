@@ -100,22 +100,22 @@ describe('the store and view records on disk', () => {
       change: 'observation',
       entryId: 'memory-1',
       merged: false,
-      contradicted: [],
-      counts: { observations: 1, candidates: 0, contradictions: 0 },
+      counts: { observations: 1, candidates: 0 },
     })
+    expect(records[0]).not.toHaveProperty('contradicted')
     expect(records[2]).toMatchObject({
       change: 'candidate',
       entryId: 'memory-2',
-      counts: { observations: 1, candidates: 1, contradictions: 0 },
+      counts: { observations: 1, candidates: 1 },
     })
     expect(records[1]).toMatchObject({ renderers: ['dashboard', 'feed_panel'] })
     expect(records[4]).toMatchObject({
       reason: 'reset',
-      counts: { observations: 1, candidates: 1, contradictions: 0 },
+      counts: { observations: 1, candidates: 1 },
     })
   })
 
-  it('records a merge and a contradiction as what they were, not as a lost Observation', () => {
+  it('records a merge as what it was, not as a lost Observation, and a second statement from one page as a plain addition (#284)', () => {
     const clock = new FakeClock(1_000)
     const traceSession = createSessionTraceWriter({ sink: createJsonlRunTraceSink(dir), now: () => clock.now() })
     const runtime = createSessionRuntime({
@@ -142,15 +142,9 @@ describe('the store and view records on disk', () => {
       ['evidence_accepted', true],
       ['evidence_accepted', false],
     ])
-    // The merge left the count where it was; the disagreement was retained.
-    expect(records[1]).toMatchObject({
-      entryId: 'memory-1',
-      counts: { observations: 1, candidates: 0, contradictions: 0 },
-    })
-    expect(records[2]).toMatchObject({
-      entryId: 'memory-2',
-      contradicted: ['memory-1'],
-      counts: { observations: 2, candidates: 0, contradictions: 1 },
-    })
+    // The merge left the count where it was; the second statement is added, and nothing is paired.
+    expect(records[1]).toEqual(expect.objectContaining({ entryId: 'memory-1', counts: { observations: 1, candidates: 0 } }))
+    expect(records[2]).toEqual(expect.objectContaining({ entryId: 'memory-2', counts: { observations: 2, candidates: 0 } }))
+    expect(records[2]).not.toHaveProperty('contradicted')
   })
 })

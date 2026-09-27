@@ -23,7 +23,7 @@ function correction(over: Partial<RetainedUserCorrection> = {}): RetainedUserCor
 }
 
 function evidence(candidates: SessionEvidenceSnapshot['candidates']): SessionEvidenceSnapshot {
-  return { observations: [], candidates, contradictions: [] }
+  return { observations: [], candidates }
 }
 
 function candidate(over: Partial<SessionEvidenceSnapshot['candidates'][number]> = {}) {

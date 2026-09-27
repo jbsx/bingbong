@@ -153,7 +153,7 @@ export function sameFeedPanelView(before: FeedPanelView | null, after: FeedPanel
  * Builds the record for one authoritative read, from the answer main gave
  * and the view state the fold left behind. A builder rather than a
  * literal at the call site because this is where the no-text rule is
- * kept: both sides arrive as arrays of Observations and leave as three
+ * kept: both sides arrive as arrays of Observations and leave as two
  * numbers, so there is no shape of this record that can carry evidence
  * text.
  */
@@ -187,16 +187,16 @@ function isCount(value: unknown): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value >= 0
 }
 
-/** The three counts, rebuilt field by field; null when any is not a count. */
+/**
+ * The two counts, rebuilt field by field; null when either is not a count.
+ * A page built before #284 also sends a contradiction count, which is not
+ * read (ADR 0071).
+ */
 function readCounts(value: unknown): SessionEvidenceCounts | null {
   if (typeof value !== 'object' || value === null) return null
   const counts = value as Record<string, unknown>
-  if (!isCount(counts.observations) || !isCount(counts.candidates) || !isCount(counts.contradictions)) return null
-  return {
-    observations: counts.observations,
-    candidates: counts.candidates,
-    contradictions: counts.contradictions,
-  }
+  if (!isCount(counts.observations) || !isCount(counts.candidates)) return null
+  return { observations: counts.observations, candidates: counts.candidates }
 }
 
 /** A non-empty string, cut to its cap; null when it is not one. */

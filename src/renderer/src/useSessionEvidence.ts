@@ -19,7 +19,6 @@ export function useSessionEvidence(): EvidenceViewState {
     identity: null,
     observations: [],
     candidates: [],
-    contradictions: [],
   }))
   const view = useRef(createEvidenceView())
   // One sync point, like the feed projection: mutators close over stable

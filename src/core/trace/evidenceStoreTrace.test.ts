@@ -18,36 +18,34 @@ const ACCEPTANCE: SessionEvidenceAcceptance = {
   generation: 2,
   change: 'observation',
   entryId: 'memory-3' as MemoryEntryId,
-  counts: { observations: 2, candidates: 1, contradictions: 1 },
+  counts: { observations: 2, candidates: 1 },
   merged: false,
-  contradicted: ['memory-1' as MemoryEntryId],
 }
 
 function payload(overrides: Partial<SessionEvidencePayload['snapshot']> = {}): SessionEvidencePayload {
   return {
     sessionId: SESSION,
     generation: 2,
-    snapshot: { observations: [], candidates: [], contradictions: [], ...overrides },
+    snapshot: { observations: [], candidates: [], ...overrides },
   } as SessionEvidencePayload
 }
 
 describe('evidenceAcceptedEntry', () => {
-  it('records the counts the store held, the merge, and what the change contradicts', () => {
+  it('records the counts the store held and the merge, and no contradiction (#284)', () => {
     expect(evidenceAcceptedEntry(ACCEPTANCE)).toEqual({
       kind: 'evidence_accepted',
       sessionId: SESSION,
       generation: 2,
       change: 'observation',
       entryId: 'memory-3',
-      counts: { observations: 2, candidates: 1, contradictions: 1 },
+      counts: { observations: 2, candidates: 1 },
       merged: false,
-      contradicted: ['memory-1'],
     })
   })
 
   it('keeps the merged flag, so a duplicate that added no Observation is not read as a lost one', () => {
-    const entry = evidenceAcceptedEntry({ ...ACCEPTANCE, merged: true, contradicted: [] })
-    expect(entry).toMatchObject({ merged: true, contradicted: [] })
+    const entry = evidenceAcceptedEntry({ ...ACCEPTANCE, merged: true })
+    expect(entry).toMatchObject({ merged: true })
   })
 
   it('names a Candidate change by its own entry', () => {
@@ -56,7 +54,6 @@ describe('evidenceAcceptedEntry', () => {
       change: 'candidate',
       entryId: 'memory-9' as MemoryEntryId,
       merged: false,
-      contradicted: [],
     })
     expect(entry).toMatchObject({ change: 'candidate', entryId: 'memory-9' })
   })
@@ -66,7 +63,7 @@ describe('evidenceAnsweredEntry', () => {
   it('names the requester, the Session answered, and the counts it was given', () => {
     const answered = evidenceAnsweredEntry({
       requester: 'feed_panel',
-      payload: payload({ observations: [{ id: 'memory-1' }] as never, contradictions: [{}] as never }),
+      payload: payload({ observations: [{ id: 'memory-1' }] as never }),
     })
 
     expect(answered).toEqual({
@@ -75,7 +72,7 @@ describe('evidenceAnsweredEntry', () => {
       generation: 2,
       requester: 'feed_panel',
       answered: 'session',
-      counts: { observations: 1, candidates: 0, contradictions: 1 },
+      counts: { observations: 1, candidates: 0 },
     })
   })
 
@@ -86,7 +83,7 @@ describe('evidenceAnsweredEntry', () => {
     expect(none).toEqual({ kind: 'evidence_answered', requester: 'dashboard', answered: 'no_session' })
     expect(none).not.toHaveProperty('counts')
     expect(none).not.toHaveProperty('sessionId')
-    expect(empty).toMatchObject({ answered: 'session', counts: { observations: 0, candidates: 0, contradictions: 0 } })
+    expect(empty).toMatchObject({ answered: 'session', counts: { observations: 0, candidates: 0 } })
   })
 })
 
@@ -121,14 +118,14 @@ describe('sessionEvidenceEndEntry', () => {
       endedAt: 2_000,
       acceptedRunIds: ['run-1' as RunId],
       liveRunIds: [],
-      evidence: { observations: 4, candidates: 2, contradictions: 0 },
+      evidence: { observations: 4, candidates: 2 },
     }
 
     expect(sessionEvidenceEndEntry(ended)).toEqual({
       kind: 'session_evidence_end',
       sessionId: SESSION,
       generation: 2,
-      counts: { observations: 4, candidates: 2, contradictions: 0 },
+      counts: { observations: 4, candidates: 2 },
       reason: 'lapsed',
     })
   })

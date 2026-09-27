@@ -397,11 +397,10 @@ describe('evidence browser e2e', () => {
       ).toBe('6')
 
       // The complete browser: Observation cards newest first — delegated
-      // (the worker saw the page after this run's own reads), web, user.
-      // The worker's statement and this run's own differ mechanically —
-      // same web source, different statements — so #143 groups them as
-      // one visible disagreement: both cards flagged, neither preferred,
-      // the cluster at the newest member's position.
+      // (the worker saw the page after this run's own reads), user, web.
+      // The worker's statement and this run's own come from one web
+      // source with different text, and nothing marks them as disagreeing
+      // (ADR 0071): no group, no chip — each card stands alone.
       await app.ensurePanelOpen()
       await app.clickOverlayElement('.feed-tab--evidence')
       const observationCards = await waitFor(
@@ -412,29 +411,22 @@ describe('evidence browser e2e', () => {
         { timeoutMs: 10_000, intervalMs: 100 },
       )
       expect(observationCards[0]).toContain('Delegated fact: the worker also saw the heading.')
-      expect(observationCards[1]).toContain('Web fact: the second page carries the heading.')
-      expect(observationCards[2]).toContain(COMMAND)
+      expect(observationCards[2]).toContain('Web fact: the second page carries the heading.')
+      expect(observationCards[1]).toContain(COMMAND)
+      expect(await app.overlayEval<string>(`document.querySelector('.feed')?.textContent ?? ''`)).not.toMatch(/contradict/i)
       expect(
-        await app.overlayEval<number>(`document.querySelectorAll('.evidence-contradiction').length`),
-      ).toBe(1)
-      expect(
-        await app.overlayEval<number>(`document.querySelectorAll('.evidence-contradiction .evidence-card').length`),
-      ).toBe(2)
-      expect(
-        await app.overlayEval<number>(
-          `document.querySelectorAll('.evidence-contradiction .evidence-card[data-contradicted="true"]').length`,
-        ),
-      ).toBe(2)
+        await app.overlayEval<number>(`document.querySelectorAll('[data-contradicted], [data-contradiction-group]').length`),
+      ).toBe(0)
       // Full Observation cards (#142): uncertainty, revalidation need, the
       // source label — the title the checkpoint retained from the page
       // state it observed (#144; the title-less fixture carries the
       // browser's URL-shaped display title, which names the host) — and
       // human-readable provenance.
-      expect(observationCards[1]).toContain('uncertainty: layout may change')
-      expect(observationCards[1]).toContain('needs revalidation')
-      expect(observationCards[1]).toContain('127.0.0.1')
+      expect(observationCards[2]).toContain('uncertainty: layout may change')
+      expect(observationCards[2]).toContain('needs revalidation')
+      expect(observationCards[2]).toContain('127.0.0.1')
       expect(observationCards[0]).toContain('via a delegated subagent')
-      expect(observationCards[2]).toContain("the user's command")
+      expect(observationCards[1]).toContain("the user's command")
 
       // The delegated card presents delegation without changing its
       // grounding source kind: kind chip stays web, plus the delegated chip.

@@ -43,16 +43,34 @@ describe('the report main is willing to write', () => {
       kind: 'evidence_rendered',
       surface: 'feed_panel',
       answered: 'session',
-      received: { observations: 3, candidates: 1, contradictions: 0 },
-      rendered: { observations: 0, candidates: 0, contradictions: 0 },
+      received: { observations: 3, candidates: 1 },
+      rendered: { observations: 0, candidates: 0 },
       snapshot: { observations: [observation('the fare was 412 dollars')] },
     })
     expect(report).toEqual({
       kind: 'evidence_rendered',
       surface: 'feed_panel',
       answered: 'session',
-      received: { observations: 3, candidates: 1, contradictions: 0 },
-      rendered: { observations: 0, candidates: 0, contradictions: 0 },
+      received: { observations: 3, candidates: 1 },
+      rendered: { observations: 0, candidates: 0 },
+    })
+  })
+
+  it('reads counts from a page built before #284 and drops the contradiction count it carried', () => {
+    expect(
+      rendererReportOf({
+        kind: 'evidence_rendered',
+        surface: 'feed_panel',
+        answered: 'session',
+        received: { observations: 3, candidates: 1, contradictions: 2 },
+        rendered: { observations: 3, candidates: 1, contradictions: 'not a count' },
+      }),
+    ).toEqual({
+      kind: 'evidence_rendered',
+      surface: 'feed_panel',
+      answered: 'session',
+      received: { observations: 3, candidates: 1 },
+      rendered: { observations: 3, candidates: 1 },
     })
   })
 
@@ -62,13 +80,13 @@ describe('the report main is willing to write', () => {
         kind: 'evidence_rendered',
         surface: 'dashboard',
         answered: 'no_session',
-        rendered: { observations: 0, candidates: 0, contradictions: 0 },
+        rendered: { observations: 0, candidates: 0 },
       }),
     ).toEqual({
       kind: 'evidence_rendered',
       surface: 'dashboard',
       answered: 'no_session',
-      rendered: { observations: 0, candidates: 0, contradictions: 0 },
+      rendered: { observations: 0, candidates: 0 },
     })
   })
 
@@ -78,7 +96,7 @@ describe('the report main is willing to write', () => {
         kind: 'evidence_rendered',
         surface: 'dashboard',
         answered: 'session',
-        rendered: { observations: 0, candidates: 0, contradictions: 0 },
+        rendered: { observations: 0, candidates: 0 },
       }),
     ).toBeNull()
   })
@@ -161,7 +179,6 @@ describe('the evidence render record', () => {
     identity: { sessionId: SESSION, generation: 1 },
     observations: Array.from({ length: observations }, (_, i) => observation(`observation ${i}`)) as never,
     candidates: [],
-    contradictions: [],
   })
 
   const answered = (observations: number): SessionEvidencePayload =>
@@ -171,7 +188,6 @@ describe('the evidence render record', () => {
       snapshot: {
         observations: Array.from({ length: observations }, (_, i) => observation(`observation ${i}`)),
         candidates: [],
-        contradictions: [],
       },
     }) as never
 
@@ -180,8 +196,8 @@ describe('the evidence render record', () => {
       kind: 'evidence_rendered',
       surface: 'feed_panel',
       answered: 'session',
-      received: { observations: 3, candidates: 0, contradictions: 0 },
-      rendered: { observations: 3, candidates: 0, contradictions: 0 },
+      received: { observations: 3, candidates: 0 },
+      rendered: { observations: 3, candidates: 0 },
     })
   })
 
@@ -199,7 +215,7 @@ describe('the evidence render record', () => {
       kind: 'evidence_rendered',
       surface: 'dashboard',
       answered: 'no_session',
-      rendered: { observations: 0, candidates: 0, contradictions: 0 },
+      rendered: { observations: 0, candidates: 0 },
     })
   })
 })

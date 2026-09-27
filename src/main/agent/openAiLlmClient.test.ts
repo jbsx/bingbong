@@ -528,7 +528,6 @@ describe('openAiLlmClient', () => {
           provenance: Object.freeze([{ runId: 'run-1' as never }]),
         })],
         candidates: [],
-        contradictions: [],
       },
       journal: [{ runId: 'run-1' as never, outcome: 'done', text: 'Checked the price.' }],
     })
@@ -580,11 +579,10 @@ describe('openAiLlmClient', () => {
         user,
       ],
       candidates: [],
-      contradictions: [],
     }
 
     await client.complete({ command: 'premier luggage', toolResults: [], evidence })
-    await client.complete({ command: 'premier luggage', toolResults: [], evidence: { observations: [user], candidates: [], contradictions: [] } })
+    await client.complete({ command: 'premier luggage', toolResults: [], evidence: { observations: [user], candidates: [] } })
 
     const [withPages, userOnly] = fetch.calls.map((call) => call.body.messages.find((message: { content?: string | null }) => message.content?.includes('<session_evidence>'))?.content ?? '')
     const [, block] = withPages.split('<session_evidence>\n')
@@ -605,7 +603,7 @@ describe('openAiLlmClient', () => {
     const client = makeClient(fetch)
 
     await client.complete({ command: 'open youtube', toolResults: [] })
-    await client.complete({ command: 'open youtube', toolResults: [], evidence: { observations: [], candidates: [], contradictions: [] } })
+    await client.complete({ command: 'open youtube', toolResults: [], evidence: { observations: [], candidates: [] } })
 
     const [withoutEvidence, withEmptyEvidence] = fetch.calls.map((call) => call.body.messages)
     expect(withEmptyEvidence).toEqual(withoutEvidence)

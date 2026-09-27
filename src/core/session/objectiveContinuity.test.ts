@@ -21,7 +21,7 @@ function observation(id: string, text: string, sourceKind: SessionObservation['s
 }
 
 function evidence(...observations: SessionObservation[]): SessionEvidenceSnapshot {
-  return { observations, candidates: [], contradictions: [] }
+  return { observations, candidates: [] }
 }
 
 function entry(fields: Partial<MemoryEntry> & Pick<MemoryEntry, 'id' | 'kind' | 'subject' | 'detail'>): MemoryEntry {

@@ -158,8 +158,8 @@ export interface SessionEvidenceChange {
 
 /**
  * A retained evidence change with the detail the renderers are
- * deliberately not told (#181): what the store held afterwards, whether
- * the checkpoint merged rather than added, and what it contradicts. The
+ * deliberately not told (#181): what the store held afterwards, and whether
+ * the checkpoint merged rather than added. The
  * change signal stays identity-only — this rides beside it, for the Run
  * Trace alone, and is never sent to a view.
  */
@@ -169,7 +169,6 @@ export interface SessionEvidenceAcceptance extends SessionEvidenceChange {
   entryId: MemoryEntryId
   counts: SessionEvidenceCounts
   merged: boolean
-  contradicted: readonly MemoryEntryId[]
 }
 
 export interface ContinuityTokenThresholds {
@@ -824,7 +823,6 @@ export function createSessionRuntime(deps: {
                   entryId: result.observation.id,
                   counts: evidenceCounts(),
                   merged: result.merged,
-                  contradicted: result.contradicts,
                 })
                 reportEvidence?.({ sessionId: acceptedSessionId, generation })
               },
@@ -835,10 +833,9 @@ export function createSessionRuntime(deps: {
                   change: 'candidate',
                   entryId: candidate.id,
                   counts: evidenceCounts(),
-                  // A Candidate never merges and never contradicts: both
-                  // are Observation-checkpoint facts (#139, #143).
+                  // A Candidate never merges: that is an
+                  // Observation-checkpoint fact (#139).
                   merged: false,
-                  contradicted: [],
                 })
                 reportEvidence?.({ sessionId: acceptedSessionId, generation })
               },

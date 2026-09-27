@@ -152,25 +152,9 @@ export interface SessionCandidate {
   readonly decisions: readonly CandidateDecision[]
 }
 
-/**
- * One retained mechanical contradiction (#143, ADR 0028): the later
- * Observation's grounded disagreement with an earlier one — same source
- * kind, a shared canonical source URL, a different statement. Retained in
- * the authoritative snapshot as an unordered relationship: either member
- * resolves it, so an earlier cited Observation is recognized as
- * contradicted by a later one however it is looked up. Both Observations
- * stay stored — disclosed, never overwritten, neither preferred.
- */
-export interface ObservationContradiction {
-  readonly earlierObservationId: MemoryEntryId
-  readonly laterObservationId: MemoryEntryId
-}
-
 export interface SessionEvidenceSnapshot {
   readonly observations: readonly SessionObservation[]
   readonly candidates: readonly SessionCandidate[]
-  /** Every mechanical contradiction the Session's Observations carry (#143). */
-  readonly contradictions: readonly ObservationContradiction[]
   /**
    * The user objective in force when the snapshot was taken (#208, ADR
    * 0039), absent when the Session holds none. Every reader of a Candidate
@@ -189,7 +173,6 @@ export interface SessionEvidenceSnapshot {
 export interface SessionEvidenceCounts {
   readonly observations: number
   readonly candidates: number
-  readonly contradictions: number
 }
 
 /**
@@ -203,12 +186,10 @@ export interface SessionEvidenceCounts {
 export function evidenceCountsOf(held: {
   observations: readonly unknown[]
   candidates: readonly unknown[]
-  contradictions: readonly unknown[]
 }): SessionEvidenceCounts {
   return {
     observations: held.observations.length,
     candidates: held.candidates.length,
-    contradictions: held.contradictions.length,
   }
 }
 
@@ -260,7 +241,6 @@ export type HeldObservationsLookup = (url: string) => readonly SessionObservatio
 export const EMPTY_EVIDENCE_COUNTS: SessionEvidenceCounts = Object.freeze({
   observations: 0,
   candidates: 0,
-  contradictions: 0,
 })
 
 export interface ObservationCheckpointInput {
@@ -361,19 +341,14 @@ export interface ObservationCheckpointResult {
   readonly observation: SessionObservation
   /** True when an exact duplicate already existed and the checkpoint merged into it. */
   readonly merged: boolean
-  /**
-   * Prior Observations this one mechanically contradicts (#122): the
-   * same source kind citing the same source URL with a different
-   * statement. Both remain stored — disclosed, never overwritten.
-   */
-  readonly contradicts: readonly MemoryEntryId[]
 }
 
 /**
  * The Session-side evidence forms of Session Working Memory (#112, ADR 0028):
  * grounded Observations and Candidates living beside Memory Entries under
  * Memory Entry identity, with one Session's lifetime. Observations merge only
- * on exact duplicates and retain contradictions; Assessments must cite valid
+ * on exact duplicates and are otherwise presumed not to disagree (ADR 0071):
+ * two statements from one page are both kept, neither marked; Assessments must cite valid
  * Observation support; `clear` is the Session Reset / Lapse boundary.
  */
 export interface SessionEvidenceStore {
@@ -654,7 +629,6 @@ export function createSessionEvidence(deps: {
 }): SessionEvidenceStore {
   const observations: MutableObservation[] = []
   const candidates: MutableCandidate[] = []
-  const contradictions: ObservationContradiction[] = []
   // The Session's current inspection subject (#210): one relationship,
   // replaced by the next presentation and dropped with the Session.
   let inspection: RetainedInspectionReference | null = null
@@ -726,29 +700,6 @@ export function createSessionEvidence(deps: {
     if (!USER_EVENT_PRODUCERS.includes(producer)) return 'invalid'
     if (typeof observationId !== 'string' || observationId.trim() === '') return 'invalid'
     return { producer, observationId }
-  }
-
-  /**
-   * Prior Observations a new one mechanically contradicts (#122): same
-   * source kind, a shared canonical source URL, and a different
-   * statement. Contradictions are disclosed on the checkpoint result and
-   * retained — never merged, never overwritten. Deliberately narrow:
-   * cross-source disagreement and user corrections contradicting web
-   * findings are semantic, the model's to disclose — only what the
-   * application can see mechanically is named here.
-   */
-  const contradictingObservations = (candidate: MutableObservation): MemoryEntryId[] => {
-    if (candidate.references.length === 0) return []
-    const urls = new Set(candidate.references.map((reference) => canonicalizeMemoryUrl(reference.url) ?? reference.url))
-    return observations
-      .filter((prior) =>
-        prior.id !== candidate.id &&
-        prior.sourceKind === candidate.sourceKind &&
-        prior.references.length > 0 &&
-        normalizeMemoryText(prior.text) !== normalizeMemoryText(candidate.text) &&
-        prior.references.some((reference) => urls.has(canonicalizeMemoryUrl(reference.url) ?? reference.url)),
-      )
-      .map((prior) => prior.id)
   }
 
   /**
@@ -884,7 +835,7 @@ export function createSessionEvidence(deps: {
         // cannot strip a title the source already earned.
         const titled = references.filter((reference) => reference.title !== undefined)
         if (titled.length > 0) duplicate.references = mergeMemoryReferences(duplicate.references, titled)
-        const merged: ObservationCheckpointResult = { observation: freezeObservation(duplicate), merged: true, contradicts: [] }
+        const merged: ObservationCheckpointResult = { observation: freezeObservation(duplicate), merged: true }
         notifyAccepted(merged)
         return merged
       }
@@ -902,19 +853,10 @@ export function createSessionEvidence(deps: {
         ...(volatile ? { volatile: true } : {}),
       }
       observations.push(observation)
-      // Retained, not just disclosed (#143): every mechanical
-      // contradiction the checkpoint found becomes durable Session
-      // state — the snapshot, not the checkpoint result, is what the
-      // Evidence Browser groups on and Answer warnings derive from.
-      const contradicts = contradictingObservations(observation)
-      for (const priorId of contradicts) {
-        contradictions.push({ earlierObservationId: priorId, laterObservationId: observation.id })
-      }
-      const accepted: ObservationCheckpointResult = {
-        observation: freezeObservation(observation),
-        merged: false,
-        contradicts: Object.freeze([...contradicts]),
-      }
+      // Nothing held is presumed to disagree with it (#284, ADR 0071):
+      // the model discloses a disagreement it reads, as it always did
+      // across sources.
+      const accepted: ObservationCheckpointResult = { observation: freezeObservation(observation), merged: false }
       notifyAccepted(accepted)
       return accepted
     },
@@ -1167,7 +1109,6 @@ export function createSessionEvidence(deps: {
       return Object.freeze({
         observations: Object.freeze(observations.map(freezeObservation)),
         candidates: Object.freeze(candidates.map(freezeCandidate)),
-        contradictions: Object.freeze(contradictions.map((pair) => Object.freeze({ ...pair }))),
         ...(objectiveId !== undefined ? { objectiveId } : {}),
       })
     },
@@ -1175,14 +1116,12 @@ export function createSessionEvidence(deps: {
       return {
         observations: observations.length,
         candidates: candidates.length,
-        contradictions: contradictions.length,
       }
     },
     clear() {
       cleared = true
       observations.length = 0
       candidates.length = 0
-      contradictions.length = 0
       // The Session boundary clears the inspection subject too (#210):
       // "that one" means nothing across a Reset or a Lapse.
       inspection = null

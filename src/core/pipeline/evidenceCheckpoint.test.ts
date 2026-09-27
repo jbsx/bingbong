@@ -196,7 +196,6 @@ describe('evaluateEvidenceCheckpoint', () => {
       merged: false,
       sourceObservationId: 'obs-4',
       sourceUrl: 'https://shop.example/acme-router',
-      contradicts: [],
     })
     expect(store.snapshot().observations).toEqual([expect.objectContaining({
       id: 'memory-1',
@@ -220,7 +219,6 @@ describe('evaluateEvidenceCheckpoint', () => {
       merged: false,
       sourceObservationId: 'obs-2',
       originProducer: 'ask_user',
-      contradicts: [],
     })
     expect(store.snapshot().observations).toEqual([expect.objectContaining({
       id: 'memory-1',
@@ -248,22 +246,29 @@ describe('evaluateEvidenceCheckpoint', () => {
     expect(outcome).toMatchObject({ ok: false, reason: 'no_session' })
   })
 
-  it('discloses a contradiction the commit retained instead of overwriting (#122)', () => {
+  it('accepts a second record from one address with different text and answers it with no Note (#284)', () => {
     const store = evidenceHarness()
     const deps = { records: [webRecord()], commit: commitOver(store) }
-    expect(evaluateEvidenceCheckpoint(callOf(GROUNDED_ARGS), deps)).toMatchObject({ ok: true, contradicts: [] })
+    evaluateEvidenceCheckpoint(callOf(GROUNDED_ARGS), deps)
 
-    // Same source, a different price: retained, and the outcome names
-    // the earlier Observation it contradicts.
-    const contradicted = evaluateEvidenceCheckpoint(callOf({
+    // Same source, different text: its own Observation, and the result
+    // names nothing it is presumed to disagree with (ADR 0071).
+    const second = evaluateEvidenceCheckpoint(callOf({
       observation: 'The Acme router costs $59.',
       source_url: 'https://shop.example/acme-router',
       excerpt: 'costs',
     }), deps)
-    expect(contradicted).toMatchObject({ ok: true, entryId: 'memory-2', contradicts: ['memory-1'] })
+    expect(second).toEqual({
+      ok: true,
+      entryId: 'memory-2',
+      merged: false,
+      sourceObservationId: expect.any(String),
+      sourceUrl: 'https://shop.example/acme-router',
+    })
     expect(store.snapshot().observations).toHaveLength(2)
-    expect(evidenceCheckpointMessage(contradicted)).toMatch(/contradict/i)
-    expect(evidenceCheckpointMessage(contradicted)).toContain('memory-1')
+    const message = evidenceCheckpointMessage(second)
+    expect(message).not.toMatch(/contradict|Note:/i)
+    expect(message).not.toContain('memory-1')
   })
 
   it('merges an exact duplicate citation into the existing identity', () => {
@@ -433,7 +438,6 @@ describe('subagent citations (#123)', () => {
       sourceObservationId: 'wobs-3',
       sourceUrl: 'https://rival.example/router',
       agentId: 'a-2',
-      contradicts: [],
     })
     // Stored exactly like a direct web checkpoint — one Observation, web
     // source kind — except the provenance carries the worker too.
@@ -817,7 +821,6 @@ describe('a kind "subagent" citation takes no excerpt (#272)', () => {
       sourceObservationId: 'wobs-5',
       sourceUrl: SOURCE,
       agentId: 'a-1',
-      contradicts: [],
       correction: SUBAGENT_EXCERPT_NOTICE,
     })
     const stored = store.snapshot().observations

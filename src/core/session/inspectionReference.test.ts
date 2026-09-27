@@ -33,7 +33,7 @@ function observation(id: string, text: string): SessionObservation {
 }
 
 function evidence(fields: Partial<SessionEvidenceSnapshot> = {}): SessionEvidenceSnapshot {
-  return { observations: [], candidates: [], contradictions: [], ...fields }
+  return { observations: [], candidates: [], ...fields }
 }
 
 function entry(fields: Partial<MemoryEntry> & Pick<MemoryEntry, 'id' | 'kind' | 'subject' | 'detail'>): MemoryEntry {

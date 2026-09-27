@@ -942,6 +942,16 @@ checkpoint's verdict never reached the digest, and the rounds read it from the
 result's error head instead. Outside the digest like the others; an audit
 written before the pair reads "subagent citations not counted".
 
+One more sits beside them (#284, ADR 0071): the **accepted records answered
+with the contradiction Note**, by round — the Note the checkpoint tool
+appended until #284 whenever an earlier Observation shared the record's
+address and differed in text. It is read from the whole result text, since
+the Note sat past the digest's result head, and only on the Run's own
+accepted records. It gives the captures before #284 their number (15, 19 and
+30 over `jev-off`, `jev-on` and `fix-281`) and shows every later one's is
+zero. Outside the digest like the others; an audit written before it reads
+"contradiction Notes not counted".
+
 Two more sit beside them for the Answer (#246, ADR 0028): the **Answers with an
 Identity Slip** and the **ids slipped** in them, counted from the Run's own
 `identity_slip` Run Trace records — one per Answer whose Card or Spoken

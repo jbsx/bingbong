@@ -650,9 +650,9 @@ async function createWindow(): Promise<BrowserWindow> {
       }
       traceSession(() => evidenceBroadcastEntry({ change, renderers: reached }))
     },
-    // What actually reached the store (#181): counts, the merge, and the
-    // contradictions — the detail the change signal deliberately withholds
-    // from the views, kept for diagnosis only.
+    // What actually reached the store (#181): counts and the merge — the
+    // detail the change signal deliberately withholds from the views, kept
+    // for diagnosis only.
     onEvidenceAccepted: (acceptance) => traceSession(() => evidenceAcceptedEntry(acceptance)),
   })
   // Renderer session re-adoption (ADR 0017): both session-bearing pages —

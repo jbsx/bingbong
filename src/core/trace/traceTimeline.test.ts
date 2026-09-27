@@ -63,9 +63,8 @@ describe('buildTraceTimeline', () => {
         kind: 'evidence_accepted',
         change: 'observation',
         entryId: 'e1',
-        counts: { observations: 1, candidates: 0, contradictions: 0 },
+        counts: { observations: 1, candidates: 0 },
         merged: false,
-        contradicted: [],
       }),
       run({ at: T0 + 40, kind: 'evidence_answered', requester: 'dashboard', answered: 'no_session' }),
       run({
@@ -82,6 +81,20 @@ describe('buildTraceTimeline', () => {
     ])
     expect(timeline.lanes[0].entries.map((entry) => entry.label)).toEqual(['fault', 'evidence_answered'])
     expect(timeline.lanes[1].entries[2]).toMatchObject({ label: 'session_ended', summary: 'sess-1 lapsed' })
+  })
+
+  it('summarizes evidence counts with or without the contradiction count a pre-#284 trace carries', () => {
+    const accepted = (counts: Record<string, number>, extra: Record<string, unknown> = {}) =>
+      run({ at: T0 + 30, sessionId: 'sess-1', generation: 1, kind: 'evidence_accepted', change: 'observation', entryId: 'e1', counts, merged: false, ...extra })
+    const timeline = buildTraceTimeline([
+      accepted({ observations: 1, candidates: 0 }),
+      accepted({ observations: 2, candidates: 0, contradictions: 1 }, { contradicted: ['e0'] }),
+    ])
+
+    expect(timeline.lanes[0].entries.map((entry) => entry.summary)).toEqual([
+      'observation e1: 1 obs / 0 cand',
+      'observation e1: 2 obs / 0 cand / 1 contra',
+    ])
   })
 
   it('orders lanes by their first record and counts every family it was handed', () => {

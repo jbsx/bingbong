@@ -35,7 +35,7 @@ function webObservation(text = 'The Acme router costs $39.', runId = 'run-1' as 
 describe('session evidence counts', () => {
   it('counts what the store holds, without freezing a snapshot to do it (#181)', () => {
     const { evidence } = evidenceHarness()
-    expect(evidence.counts()).toEqual({ observations: 0, candidates: 0, contradictions: 0 })
+    expect(evidence.counts()).toEqual({ observations: 0, candidates: 0 })
 
     const observation = evidence.checkpointObservation(webObservation())!.observation
     evidence.addCandidate({
@@ -43,14 +43,12 @@ describe('session evidence counts', () => {
       supportingObservationIds: [observation.id],
       runId: 'run-1' as RunId,
     })
-    // A grounded disagreement on the same source: retained, not overwritten.
     evidence.checkpointObservation(webObservation('The Acme router costs $49.'))
 
-    expect(evidence.counts()).toEqual({ observations: 2, candidates: 1, contradictions: 1 })
+    expect(evidence.counts()).toEqual({ observations: 2, candidates: 1 })
     expect(evidence.counts()).toEqual({
       observations: evidence.snapshot().observations.length,
       candidates: evidence.snapshot().candidates.length,
-      contradictions: evidence.snapshot().contradictions.length,
     })
   })
 
@@ -60,7 +58,7 @@ describe('session evidence counts', () => {
 
     evidence.clear()
 
-    expect(evidence.counts()).toEqual({ observations: 0, candidates: 0, contradictions: 0 })
+    expect(evidence.counts()).toEqual({ observations: 0, candidates: 0 })
   })
 })
 
@@ -91,7 +89,6 @@ describe('session evidence', () => {
         provenance: [{ runId: 'run-1', subagentId: 'a-2' }],
       },
       merged: false,
-      contradicts: [],
     })
     expect(Object.isFrozen(result!.observation)).toBe(true)
 
@@ -154,7 +151,7 @@ describe('session evidence', () => {
     expect(plain.observation.references).toEqual([{ url: 'https://shop.example/acme-router', title: 'Acme Router Store' }])
   })
 
-  it('keeps contradictory Observations distinct instead of overwriting them', () => {
+  it('keeps two statements from one source distinct instead of overwriting either', () => {
     const { evidence } = evidenceHarness()
     const cheaper = evidence.checkpointObservation(webObservation('The Acme router costs $39.'))!
     const pricier = evidence.checkpointObservation(webObservation('The Acme router costs $59.'))!
@@ -168,56 +165,28 @@ describe('session evidence', () => {
     expect(evidence.observation(cheaper.observation.id)?.text).toBe('The Acme router costs $39.')
   })
 
-  it('discloses contradictions at commit: same source, different statement (#122)', () => {
+  it('presumes no disagreement: a second record from one address with different text is its own Observation and makes no pair (#284)', () => {
     const { evidence } = evidenceHarness()
-    const cheaper = evidence.checkpointObservation(webObservation('The Acme router costs $39.'))!
-    expect(cheaper.contradicts).toEqual([])
+    const first = evidence.checkpointObservation(webObservation('The Acme router costs $39.'))!
+    // Two facts from one page, or one fact restated — the traces held no
+    // disagreement among 64 such pairs (ADR 0071), so none is presumed.
+    const second = evidence.checkpointObservation(webObservation('The Acme router ships with two antennas.'))!
 
-    // Same canonical source, a different statement: the second commit
-    // names the first — both remain stored, neither overwrites.
-    const pricier = evidence.checkpointObservation(webObservation('The Acme router costs $59.'))!
-    expect(pricier.contradicts).toEqual([cheaper.observation.id])
-
-    // An unrelated source never contradicts; an exact duplicate merges
-    // rather than contradicting.
-    const elsewhere = evidence.checkpointObservation({
-      sourceKind: 'web',
-      text: 'The Acme router costs $59.',
-      references: [{ url: 'https://mirror.example/acme' }],
-      runId: 'run-1' as RunId,
-    })!
-    expect(elsewhere.contradicts).toEqual([])
-    const duplicate = evidence.checkpointObservation(webObservation('The Acme router costs $59.', 'run-2' as RunId))!
-    expect(duplicate.merged).toBe(true)
-    expect(duplicate.contradicts).toEqual([])
-    expect(evidence.snapshot().observations).toHaveLength(3)
+    expect(second).toEqual({ observation: expect.objectContaining({ id: 'memory-2' }), merged: false })
+    expect(first.observation.id).not.toBe(second.observation.id)
+    expect(evidence.snapshot()).toEqual({
+      observations: [first.observation, second.observation],
+      candidates: [],
+    })
   })
 
-  it('retains contradiction relationships in the snapshot, resolvable from either Observation (#143)', () => {
+  it('still merges an exact duplicate from one address, and only that (#284)', () => {
     const { evidence } = evidenceHarness()
-    const cheaper = evidence.checkpointObservation(webObservation('The Acme router costs $39.'))!
-    const pricier = evidence.checkpointObservation(webObservation('The Acme router costs $59.'))!
+    const first = evidence.checkpointObservation(webObservation('The Acme router costs $59.'))!
+    const duplicate = evidence.checkpointObservation(webObservation('The Acme router costs $59.', 'run-2' as RunId))!
 
-    // Durable Session state, not just a checkpoint disclosure: the pair
-    // names both members, so the relationship resolves from whichever
-    // side a reader holds — an earlier cited Observation is recognized
-    // as contradicted by a later one.
-    expect(evidence.snapshot().contradictions).toEqual([
-      { earlierObservationId: cheaper.observation.id, laterObservationId: pricier.observation.id },
-    ])
-
-    // A third statement from the same source contradicts every retained
-    // version before it — one pair per grounded disagreement.
-    const costliest = evidence.checkpointObservation(webObservation('The Acme router costs $79.'))!
-    expect(evidence.snapshot().contradictions).toEqual([
-      { earlierObservationId: cheaper.observation.id, laterObservationId: pricier.observation.id },
-      { earlierObservationId: cheaper.observation.id, laterObservationId: costliest.observation.id },
-      { earlierObservationId: pricier.observation.id, laterObservationId: costliest.observation.id },
-    ])
-
-    // Contradictions are Session Evidence: they vanish with the Session.
-    evidence.clear()
-    expect(evidence.snapshot().contradictions).toEqual([])
+    expect(duplicate).toEqual({ observation: expect.objectContaining({ id: first.observation.id }), merged: true })
+    expect(evidence.snapshot().observations).toHaveLength(1)
   })
 
   it('retains User Observations with exact text and event provenance (#122)', () => {
@@ -239,7 +208,6 @@ describe('session evidence', () => {
         provenance: [{ runId: 'run-1' }],
       },
       merged: false,
-      contradicts: [],
     })
     // Exact text survives verbatim: user words are never paraphrased.
     expect(evidence.observation(result!.observation.id)?.text).toBe('No, the blue one.')
@@ -380,7 +348,7 @@ describe('session evidence', () => {
     evidence.clear()
 
     expect(evidence.cleared).toBe(true)
-    expect(evidence.snapshot()).toEqual({ observations: [], candidates: [], contradictions: [] })
+    expect(evidence.snapshot()).toEqual({ observations: [], candidates: [] })
     expect(evidence.checkpointObservation(webObservation(undefined, 'run-2' as RunId))).toBeNull()
     expect(evidence.observation(observation.id)).toBeNull()
   })
@@ -393,8 +361,7 @@ describe('session evidence', () => {
     expect(Object.isFrozen(snapshot)).toBe(true)
     expect(Object.isFrozen(snapshot.observations)).toBe(true)
     expect(Object.isFrozen(snapshot.observations[0]!.references)).toBe(true)
-    expect(Object.isFrozen(snapshot.contradictions)).toBe(true)
-    expect(Object.isFrozen(snapshot.contradictions[0])).toBe(true)
+    expect(Object.isFrozen(snapshot.candidates)).toBe(true)
   })
 
   it('marks declared-volatile and uncertain Observations volatile; durable ones carry no flag (#123)', () => {
@@ -1222,7 +1189,7 @@ describe('held pages', () => {
     }
   })
 
-  it('holds every web Observation from the page, whoever recorded it — volatile ones and both sides of a contradiction included (Decision 3)', () => {
+  it('holds every web Observation from the page, whoever recorded it — volatile ones and a later value included (Decision 3)', () => {
     const { evidence } = evidenceHarness()
     const initial = evidence.checkpointObservation(heldAt(page, 'Standard fare: two cases.'))!.observation
     const worker = evidence.checkpointObservation(heldAt(page, 'Bikes need a reservation.', { subagentId: 'a-1', volatile: true }))!.observation
@@ -1230,7 +1197,6 @@ describe('held pages', () => {
     // An exact duplicate merges, and lists once.
     evidence.checkpointObservation(heldAt(page, 'Standard fare: two cases.', { runId: 'run-2' }))
 
-    expect(later.contradicts).toContain(initial.id)
     expect(evidence.heldObservations(page).map((entry) => [entry.id, entry.volatile === true])).toEqual([
       [initial.id, false],
       [worker.id, true],

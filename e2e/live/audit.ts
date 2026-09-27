@@ -153,6 +153,8 @@ export const BOOKKEEPING_TOOLS: ReadonlySet<string> = new Set(['record_evidence'
 
 /** How much of a tool result the digest keeps. */
 export const DIGEST_RESULT_HEAD_CHARS = 240
+/** How the checkpoint tool's contradiction Note began, until #284 removed it (ADR 0071). */
+const CONTRADICTION_NOTE = 'Note: this contradicts earlier Observation'
 /** How much of one string argument the digest keeps. */
 export const DIGEST_ARG_CHARS = 200
 /**
@@ -633,6 +635,14 @@ export interface AuditMechanical {
   readonly runMadeQuotedAgain?: readonly number[]
   /** The model's own record_evidence calls, accepted or refused (#276): what a Selected Passage spares it. */
   readonly modelRecordEvidenceCalls?: number
+  /**
+   * The round of every accepted record the Run answered with the
+   * contradiction Note (#284, ADR 0071), read from the whole result text —
+   * the Note sat past the digest's result head. Beside the rounds, never in
+   * them. A trace written after the Note was removed counts none; absent on
+   * an audit written before the counter.
+   */
+  readonly contradictionNotes?: readonly number[]
   /** The round of every successful search whose listing reached the model with no result opened for it (#277). */
   readonly listingsReturned?: readonly number[]
   /**
@@ -885,6 +895,8 @@ export interface AuditPopulation {
   readonly modelRecordEvidenceCalls?: number
   /** Bookkeeping-only rounds over the same attempts (#276): the rounds a Selected Passage is meant to remove. */
   readonly bookkeepingRoundsWherePassagesCounted?: number
+  /** Accepted records answered with the contradiction Note, over the attempts that count them (#284); absent when none does. */
+  readonly contradictionNotes?: number
   /** Answers with an Identity Slip over the attempts whose trace recorded them (#246). */
   readonly identitySlipAnswers: number
   /** Ids slipped in those Answers (#246). */
@@ -2970,6 +2982,11 @@ export function classifyAttempt(input: AuditTraceInput): AuditMechanical {
   // accepted checkpoints before it, under the same rule `checkpointedUrlsOf`
   // gives the initial's.
   const mergedCheckpoints = raw.reduce((total, round) => total + round.calls.filter((entry) => entry.checkpoint?.outcome === 'accepted' && entry.checkpoint.merged === true).length, 0)
+  // And the accepted records the Run answered with the contradiction Note
+  // (#284, ADR 0071), from the whole result: its head cuts the Note off.
+  const contradictionNotes = raw.flatMap((round, index) =>
+    round.calls.filter((entry) => entry.result?.ok === true && resultText(entry.result.result)?.includes(CONTRADICTION_NOTE) === true).map(() => rounds[index]!.round),
+  )
   const held = new Set(input.parentCheckpointedUrls ?? [])
   let heldPageRoundsWithoutProgress = 0
   rounds.forEach((round, index) => {
@@ -3036,6 +3053,7 @@ export function classifyAttempt(input: AuditTraceInput): AuditMechanical {
     rejectedCheckpoints: rounds.reduce((total, round) => total + round.tags.rejectedCheckpoints, 0),
     inheritedRounds: rounds.filter((round) => round.tags.inherited).length,
     mergedCheckpoints,
+    contradictionNotes,
     bundledCheckpoints: rounds.filter((round) => isAcquisitionRound(round) && round.tags.acceptedCheckpoints > 0).length,
     sameSourceUnsupportedRounds: sameSourceUnsupportedRoundsOf(rounds),
     heldPageRoundsWithoutProgress,
@@ -3553,6 +3571,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
   let engineRewritesOffKey = 0
   let resultPicks: { picks: number; listings: number; searches: number; opened: number; rounds: number } | undefined
   let passages: { runMade: number; modelCalls: number; bookkeeping: number; recordedAgain?: number; quotedAgain?: number } | undefined
+  let contradictionNotes: number | undefined
   let searchForms: Record<SearchUrlForm, number> | undefined
   let blockedOrInert: Record<keyof BlockedOrInertCounts, number> | undefined
   let unavailableLandings: Record<keyof UnavailableLandingRounds, number> | undefined
@@ -3635,6 +3654,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
       passages.modelCalls += mechanical.modelRecordEvidenceCalls
       passages.bookkeeping += mechanical.counts.bookkeeping
     }
+    if (mechanical.contradictionNotes !== undefined) contradictionNotes = (contradictionNotes ?? 0) + mechanical.contradictionNotes.length
     if (mechanical.searchForms !== undefined) {
       searchForms ??= emptySearchForms()
       for (const form of SEARCH_URL_FORMS) searchForms[form] += mechanical.searchForms[form]
@@ -3755,6 +3775,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
           bookkeepingRoundsWherePassagesCounted: passages.bookkeeping,
         }
       : {}),
+    ...(contradictionNotes !== undefined ? { contradictionNotes } : {}),
     identitySlipAnswers: slipAnswers,
     identitySlipIds: slipIds,
     identitySlipsNotRecorded: slipsNotRecorded,
@@ -4076,7 +4097,7 @@ function judgementLines(populations: readonly AuditPopulation[]): string[] {
   return populations.map(
     (population) =>
       `- ${population.label}: ${population.offKeyRounds} Off-key round(s), ${population.searchLoopRounds} Search Loop round(s) by the reviewer (${population.mechanicalSearchRounds} by the streak rule, heads included: ${population.searchRoundsAtStreak2} at streak 2 or beyond, ${population.searchRoundsAtStreak3} at 3 or beyond; attempts by search source ${SEARCH_SOURCES.map((source) => `${source} ${population.searchSources[source]}`).join(', ')}; navigate searches by Search URL form ${searchFormsText(population.searchForms)}; ${populationBlockedOrInertText(population.blockedOrInert)}; ${populationUnavailableLandingsText(population.unavailableLandings)}; ${populationConsentWallsText(population.consentWalls)}; ${populationTierEscalationsText(population.tierEscalations)}), ` +
-      `${population.inheritedRounds} inherited, ${population.rejectedCheckpoints} rejected Evidence Checkpoint(s), ${population.walledRounds} walled round(s), ${population.notFoundNavigates} navigate(s) landed on a Not-found Page (${population.notFoundOffKey} judged Off-key), ${population.rewrittenComposedAddresses ?? 0} Composed Address(es) rewritten into a site search (${population.rewrittenComposedAddressesOffKey ?? 0} judged Off-key, ${population.rewrittenShownAddresses ?? 'not counted'} to an address the Run was shown), ${population.unseenPhraseRewrites ?? 'not counted'} search(es) ran with an Unseen Phrase unquoted (${population.unseenPhraseRewritesOffKey ?? 0} judged Off-key), ${population.engineRewrites ?? 'not counted'} search(es) ran on the Run Engine in place of another Web Engine (${population.engineRewritesOffKey ?? 0} judged Off-key), ${populationResultPicksText(population)}, ${populationSelectedPassagesText(population)}, ${population.subagentRounds} Subagent round(s), ` +
+      `${population.inheritedRounds} inherited, ${population.rejectedCheckpoints} rejected Evidence Checkpoint(s), ${population.walledRounds} walled round(s), ${population.notFoundNavigates} navigate(s) landed on a Not-found Page (${population.notFoundOffKey} judged Off-key), ${population.rewrittenComposedAddresses ?? 0} Composed Address(es) rewritten into a site search (${population.rewrittenComposedAddressesOffKey ?? 0} judged Off-key, ${population.rewrittenShownAddresses ?? 'not counted'} to an address the Run was shown), ${population.unseenPhraseRewrites ?? 'not counted'} search(es) ran with an Unseen Phrase unquoted (${population.unseenPhraseRewritesOffKey ?? 0} judged Off-key), ${population.engineRewrites ?? 'not counted'} search(es) ran on the Run Engine in place of another Web Engine (${population.engineRewritesOffKey ?? 0} judged Off-key), ${populationResultPicksText(population)}, ${populationSelectedPassagesText(population)}, ${population.contradictionNotes === undefined ? 'contradiction Notes not counted' : `${population.contradictionNotes} accepted record(s) answered with the contradiction Note`}, ${population.subagentRounds} Subagent round(s), ` +
       `${population.mergedCheckpoints} merged Evidence Checkpoint(s) (a floor), ${population.heldPageRoundsWithoutProgress} Held Page round(s) without Progress, ${population.bundledCheckpoints} bundled checkpoint round(s), ${population.sameSourceUnsupportedRounds} same-source unsupported round(s), ${subagentCitationsText(population.subagentCitations)}, ${populationSlipsText(population)}, ${delegatedPageCountsText(population.delegatedPageRounds)}, ` +
       `${population.malformedAnswers} Malformed Answer(s) (${population.answerRetries} retried), ` +
       `${transportText(population)}, ` +
@@ -4144,6 +4165,7 @@ function attemptSection(attempt: AuditAttempt): string[] {
             : `recorded again by the model from the same page: ${rounds(mechanical.runMadeRecordedAgain)}; with the same passage: ${rounds(mechanical.runMadeQuotedAgain ?? [])}; `
         }record_evidence calls by the model: ${mechanical.modelRecordEvidenceCalls}; bookkeeping-only rounds: ${mechanical.counts.bookkeeping}`,
   )
+  lines.push(`- accepted records answered with the contradiction Note: ${mechanical.contradictionNotes === undefined ? 'not counted' : rounds(mechanical.contradictionNotes)}`)
   const toOpen = mechanical.searchesToOpened
   lines.push(
     `- rounds from a search to an opened result: ${

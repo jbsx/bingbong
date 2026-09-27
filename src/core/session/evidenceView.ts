@@ -1,9 +1,5 @@
 import type { SessionGeneration, SessionId } from './sessionIdentity'
-import type {
-  ObservationContradiction,
-  SessionCandidate,
-  SessionObservation,
-} from './sessionEvidence'
+import type { SessionCandidate, SessionObservation } from './sessionEvidence'
 import type { SessionEvidenceChangePayload, SessionEvidencePayload } from './evidenceIpcChannels'
 import type { MemoryEntryId } from './workingMemory'
 
@@ -25,8 +21,6 @@ export interface EvidenceViewState {
   readonly identity: EvidenceViewIdentity | null
   readonly observations: readonly SessionObservation[]
   readonly candidates: readonly SessionCandidate[]
-  /** The snapshot's retained contradictions (#143) — grouping and Answer warnings derive from them. */
-  readonly contradictions: readonly ObservationContradiction[]
   /**
    * The user objective in force when the snapshot was read (#208, ADR
    * 0039): what tells a Candidate decided for the task in hand from one
@@ -41,7 +35,6 @@ const EMPTY_STATE: EvidenceViewState = Object.freeze({
   identity: null,
   observations: Object.freeze([]),
   candidates: Object.freeze([]),
-  contradictions: Object.freeze([]),
 })
 
 export function createEvidenceView(): {
@@ -125,7 +118,6 @@ export function createEvidenceView(): {
         identity: { sessionId: payload.sessionId, generation: payload.generation },
         observations: payload.snapshot.observations,
         candidates: payload.snapshot.candidates,
-        contradictions: payload.snapshot.contradictions,
         ...(payload.snapshot.objectiveId !== undefined ? { objectiveId: payload.snapshot.objectiveId } : {}),
       }
     },

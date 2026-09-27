@@ -115,7 +115,7 @@ describe('session runtime', () => {
       createsSession: true,
       journal: [],
       memory: [],
-      evidence: { observations: [], candidates: [], contradictions: [] },
+      evidence: { observations: [], candidates: [] },
     })
     expect(identities.minted).toEqual(['submission-1', 'session-1', 'run-1'])
     expect(runtime.state()).toEqual({
@@ -212,7 +212,7 @@ describe('session runtime', () => {
       endedAt: 1_050,
       acceptedRunIds: [admission.runId],
       liveRunIds: [],
-      evidence: { observations: 0, candidates: 0, contradictions: 0 },
+      evidence: { observations: 0, candidates: 0 },
     })
     expect(runtime.end('lapsed')).toBeNull()
     expect(runtime.state()).toEqual({
@@ -306,7 +306,7 @@ describe('session runtime', () => {
 
     const replacement = runtime.accept(runtime.submit().submissionId)
     expect(replacement.createsSession).toBe(true)
-    expect(replacement.evidence).toEqual({ observations: [], candidates: [], contradictions: [] })
+    expect(replacement.evidence).toEqual({ observations: [], candidates: [] })
     expect(replacement.memory).toEqual([])
   })
 
@@ -357,7 +357,7 @@ describe('session runtime', () => {
     expect(runtime.state().phase).toBe('absent')
     expect(runtime.evidenceStore()).toBeNull()
     expect(evidence.cleared).toBe(true)
-    expect(evidence.snapshot()).toEqual({ observations: [], candidates: [], contradictions: [] })
+    expect(evidence.snapshot()).toEqual({ observations: [], candidates: [] })
   })
 
   it('returns snapshots that cannot mutate runtime state', () => {
@@ -1185,8 +1185,8 @@ describe('session runtime', () => {
 
 // The Run Trace's store records (#181): the same retained changes the
 // Evidence Browser is signalled about, carrying the detail no view is
-// given — what the store held, whether the checkpoint merged, and what it
-// contradicts — plus the final counts, read before the end clears them.
+// given — what the store held and whether the checkpoint merged — plus
+// the final counts, read before the end clears them.
 
 describe('session evidence acceptance reporting', () => {
   const webObservation = (text: string) => ({
@@ -1202,12 +1202,12 @@ describe('session evidence acceptance reporting', () => {
       clock: new FakeClock(1_000),
       identities: new DeterministicIdentities(),
       onEvidenceChanged: (change) => changes.push({ ...change }),
-      onEvidenceAccepted: (acceptance) => accepted.push({ ...acceptance, contradicted: [...acceptance.contradicted] }),
+      onEvidenceAccepted: (acceptance) => accepted.push({ ...acceptance }),
     })
     return { runtime, accepted, changes }
   }
 
-  it('reports the store counts, the merge, and the contradictions of every retained change', () => {
+  it('reports the store counts and the merge of every retained change', () => {
     const { runtime, accepted, changes } = acceptingRuntime()
     const admission = runtime.accept(runtime.submit().submissionId)
     const store = runtime.evidenceStore()!
@@ -1215,7 +1215,7 @@ describe('session evidence acceptance reporting', () => {
     const first = store.checkpointObservation({ ...webObservation('The Acme router costs $39.'), runId: admission.runId })!
     // An exact duplicate merges rather than adding a second Observation.
     store.checkpointObservation({ ...webObservation('The Acme router costs $39.'), runId: admission.runId })
-    // A grounded disagreement on the same source is retained as a contradiction.
+    // A second statement from the same source is its own Observation (#284).
     store.checkpointObservation({ ...webObservation('The Acme router costs $49.'), runId: admission.runId })
     store.addCandidate({
       subject: 'Acme wifi router',
@@ -1225,12 +1225,13 @@ describe('session evidence acceptance reporting', () => {
     // Refused: neither the trace nor the signal ever hears about it.
     store.checkpointObservation({ sourceKind: 'web', text: '', references: [], runId: admission.runId })
 
-    expect(accepted.map((a) => [a.change, a.entryId, a.merged, a.contradicted, a.counts])).toEqual([
-      ['observation', 'memory-1', false, [], { observations: 1, candidates: 0, contradictions: 0 }],
-      ['observation', 'memory-1', true, [], { observations: 1, candidates: 0, contradictions: 0 }],
-      ['observation', 'memory-2', false, ['memory-1'], { observations: 2, candidates: 0, contradictions: 1 }],
-      ['candidate', 'memory-3', false, [], { observations: 2, candidates: 1, contradictions: 1 }],
+    expect(accepted.map((a) => [a.change, a.entryId, a.merged, a.counts])).toEqual([
+      ['observation', 'memory-1', false, { observations: 1, candidates: 0 }],
+      ['observation', 'memory-1', true, { observations: 1, candidates: 0 }],
+      ['observation', 'memory-2', false, { observations: 2, candidates: 0 }],
+      ['candidate', 'memory-3', false, { observations: 2, candidates: 1 }],
     ])
+    for (const acceptance of accepted) expect(acceptance).not.toHaveProperty('contradicted')
     // The trace and the broadcast see exactly the same retained changes.
     expect(changes).toHaveLength(accepted.length)
     for (const acceptance of accepted) {
@@ -1256,7 +1257,7 @@ describe('session evidence acceptance reporting', () => {
     const ended = runtime.end('reset')!
 
     expect(ended.reason).toBe('reset')
-    expect(ended.evidence).toEqual({ observations: 1, candidates: 1, contradictions: 0 })
+    expect(ended.evidence).toEqual({ observations: 1, candidates: 1 })
     expect(store.cleared).toBe(true)
   })
 
@@ -1264,7 +1265,7 @@ describe('session evidence acceptance reporting', () => {
     const { runtime } = acceptingRuntime()
     runtime.accept(runtime.submit().submissionId)
 
-    expect(runtime.end('app_closed')!.evidence).toEqual({ observations: 0, candidates: 0, contradictions: 0 })
+    expect(runtime.end('app_closed')!.evidence).toEqual({ observations: 0, candidates: 0 })
   })
 })
 

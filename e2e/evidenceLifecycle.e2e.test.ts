@@ -219,7 +219,7 @@ describe('evidence browser lifecycle e2e', () => {
       expect(await app.overlayEval<string | null>(EVIDENCE_BADGE)).toBeNull()
       expect(await app.dashboardEval<string>(VIEW_PULL)).toBe('activity')
       expect(await app.dashboardEval<unknown>(EVIDENCE_PULL)).toMatchObject({
-        snapshot: { observations: [], candidates: [], contradictions: [] },
+        snapshot: { observations: [], candidates: [] },
       })
       await app.clickOverlayElement('.feed-tab--evidence')
       expect(await app.overlayEval<string>(`document.querySelector('.feed-empty')?.textContent ?? ''`)).toContain(
@@ -371,7 +371,7 @@ describe('evidence browser lifecycle e2e', () => {
       await submitAndRecord(app, 'forget all that — different question', 'SESSION B STARTED.')
       await waitForEvidenceBadge(app, null)
       expect(await app.dashboardEval<unknown>(EVIDENCE_PULL)).toMatchObject({
-        snapshot: { observations: [], candidates: [], contradictions: [] },
+        snapshot: { observations: [], candidates: [] },
       })
       expect(await app.overlayEval<string>(PANEL_VIEW)).toBe('activity feed')
     } finally {
