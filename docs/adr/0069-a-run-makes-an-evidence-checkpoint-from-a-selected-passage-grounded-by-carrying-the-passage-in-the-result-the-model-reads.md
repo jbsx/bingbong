@@ -119,3 +119,28 @@ opened page in the same Tool Round.
   (read from the trace's origin, never joined to a call) and
   `modelRecordEvidenceCalls` beside the bookkeeping rounds, outside the
   digest.
+- 2026-09-27, grilled from the #274 live traces (#281), every
+  recommendation taken. The seam acted on 1 of 83 asks because its Noul bar
+  was read from a different question (the note on ADR 0068); the Noul is
+  the bar that decides — of 477 item pairs under threshold none failed on
+  the Choice alone, and Choice confidence does not predict agreement (0.60
+  to 0.65 at every bar). **The bars are Choice 0.7 and Noul 0.8**, agreeing
+  with the model on 14 of 16 scored acts; no setting reaches 0.9 over ten,
+  and the lower Noul bars that pass only under the repaired truth are not
+  taken. It is one bar for landings and Page Reads: 82 of the 83 asks were
+  landings, since a Page Read after a landing holds the same text and is
+  not asked again, which stays. **The question carries the Objective**,
+  because the wrong picks were the right field of the wrong object — an ID
+  row of an unrelated catalogue entry — and the bar is re-read from one
+  Shadow Replay after that change, 0.7 and 0.8 standing if it scores fewer
+  than ten acts. That replay runs over the on arm's landings whose text can
+  be rebuilt and the off arm's whole Page Reads; an off-arm landing cannot
+  be replayed, the trace holding its Page Preview and not its text, so **a
+  passage Decision Record keeps the passage chosen and, when tracing, the
+  text asked over**. The replay's truth credits a quoted table row however
+  short, and credits a Page Read of the same page to its landing. **A
+  Not-found Page and a walled landing are not asked about.** Windowed
+  pages are left to their own issue: no block pass has ever run. If the
+  Run-made checkpoints the model did not record again are under 15% of its
+  accepted checkpoints on the capture's initials, `passage` leaves the
+  default seam list and this ADR says so; the code stays behind the list.

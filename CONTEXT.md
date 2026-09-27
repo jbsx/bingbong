@@ -1306,7 +1306,9 @@ _Avoid_: classifier, router, oracle, judge, the vendor's name
 One question put to the Decision Model, as the Run Trace keeps it: which seam
 asked, in which round, the answers with their probabilities, the latency, the
 threshold, and whether it acted, fell under threshold, was unavailable or ran
-in shadow. Agreement between a shadow seam's records and what the model then
+in shadow. Where the answer points at a passage, the record keeps the passage
+it chose and the text it was asked over, so the question can be put again.
+Agreement between a shadow seam's records and what the model then
 did is how a seam earns the right to act.
 _Avoid_: decision log, inference record
 

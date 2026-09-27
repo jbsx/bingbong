@@ -102,3 +102,17 @@ rule is the lowest decile whose acts agree with the model's pick at least
 where the model recorded nothing is its own column, never a disagreement.
 The replay measured Jev at a median of about 220 ms, not the 100 ms this
 ADR's context assumed.
+
+## Note (#281, 2026-09-27)
+
+A bar holds for the question it was read from, and for no other. The
+passage bars of #275 (Choice 0.7, Noul 0.9) were read from a Shadow Replay
+that asked one Noul over every Asked Item — "at least one passage states an
+answer to one of the asked items" — while the seam asks one Noul per item.
+The replay's Noul cleared 0.9 on 48 of 148 reads; the seam's cleared it on 1
+of 478 item pairs in the `jev-on` live traces, and the seam acted once. A
+Shadow Replay therefore asks a seam's own questions over the seam's own
+state, and a change to either re-reads the bar. A record that acted is not
+comparable and is left out of agreement, as #280 decided for the evaluator.
+The agreement floor is per seam: 0.9 over ten scored acts for a seam whose
+act closes something, 0.8 where that is unreachable at a useful volume.
