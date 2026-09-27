@@ -1,13 +1,13 @@
 # Round Audit — bingbong.live-web.information-hunts (jev-on-1)
 
-Generated 2026-09-27T06:19:25.988Z from a capture set created 2026-09-27T03:32:26.417Z (state complete). This audit counts and does not judge: every verdict is the reviewer’s for one attempt, and the ranking is arithmetic over those verdicts.
+Generated 2026-09-27T17:59:28.951Z from a capture set created 2026-09-27T03:32:26.417Z (state complete). This audit counts and does not judge: every verdict is the reviewer’s for one attempt, and the ranking is arithmetic over those verdicts.
 
 ## Provenance
 
 - capture: commit(s) fda11fe4; mode measured; protocol 1; prompt version(s) 1
-- routing: decision=jev-1.13.0; orchestrator=GLM-5.3; subagent=GLM-5.3-flash; vision=GLM-4.6V | reasoning override: none | decision seams: unset (every seam) | effort overrides: none | adblock: production_default | browser sub-spans: on
+- routing: decision=jev-1.13.0; orchestrator=GLM-5.3; subagent=GLM-5.3-flash; vision=GLM-4.6V | reasoning override: none | decision seams: unset (the default seams) | effort overrides: none | adblock: production_default | browser sub-spans: on
 - key 2.2.2.2, manifest sha256:faa25d04…; grades by claude-opus-5 via live:grade (revision 1)
-- reviewer: claude-opus-5 at high, prompt audit-p3; audit run at commit 3dd2cd19
+- reviewer: claude-opus-5 at high, prompt audit-p3; audit run at commit 03c966ef
 
 ## Populations
 
@@ -27,8 +27,8 @@ Kinds are mechanical counts; a share is over the budgeted rounds (Finalization o
 | answer omitted | 1 | 0 | 0 | 0 |
 | failed rounds | 0 | 0 | 0 | 0 |
 
-- initial: 22 Off-key round(s), 7 Search Loop round(s) by the reviewer (5 by the streak rule, heads included: 3 at streak 2 or beyond, 1 at 3 or beyond; attempts by search source rail 4, replay 0, none 0; navigate searches by Search URL form q 12, param 0, path 1; 0 covered, 0 not shown and 0 pre-#264 Blocked Action(s), 0 inert click(s), 0 inside a Search Loop streak, 0 post-block vision round(s), 0 recovery round(s) over 0 recovered block(s) and 0 never recovered; 0 Unavailable Landing(s) (0 by status, 0 by title), 0 followed by a search; 2 consent dismissal(s), 0 hand consent click(s), 0 blocked then hand consent; 1 budget-armed and 0 deadline-armed Tier Escalation(s) (replay found Progress before 1, none before 0), declined none, 0 declined no_progress against the replay), 0 inherited, 2 rejected Evidence Checkpoint(s), 0 walled round(s), 3 navigate(s) landed on a Not-found Page (3 judged Off-key), 5 Composed Address(es) rewritten into a site search (4 judged Off-key, 0 to an address the Run was shown), 2 search(es) ran with an Unseen Phrase unquoted (2 judged Off-key), 0 search(es) ran on the Run Engine in place of another Web Engine (0 judged Off-key), 2 Result Pick(s) against 13 listing(s) returned to the model, a search’s result opened in 2.3 round(s) on average (12 of 15 searches), 1 Run-made Evidence Checkpoint(s) from a Selected Passage against 15 record_evidence call(s) by the model and 10 bookkeeping-only round(s), 0 Subagent round(s), 0 merged Evidence Checkpoint(s) (a floor), 1 Held Page round(s) without Progress, 2 bundled checkpoint round(s), 0 same-source unsupported round(s), subagent citations: 0 excerpt_unsupported, 0 applied with a dropped excerpt, 0 Answer(s) with an Identity Slip, 0 id(s) slipped, Delegated Page rounds 0 while running, 0 while finished and uncollected, 0 after collection, 0 Malformed Answer(s) (0 retried), 0 Transport Failure attempt(s) (0 round(s) recovered by a Transport Retry, 0 Run(s) model_unreachable), 0 skipped bookkeeping round(s), 0 Finalization round(s) cut by the Allowance; first-token latency p50 3935 ms, p90 5368 ms over 74 round(s), 4 declared Asked Items (0 with an unverified standing, 0 shape failure(s), 0 retried), 0 stopped early, 1 answer omitted, 4 overrule(s), 24 flag(s); Finalization Causes: objective_met 4
-- follow_up: 0 Off-key round(s), 0 Search Loop round(s) by the reviewer (0 by the streak rule, heads included: 0 at streak 2 or beyond, 0 at 3 or beyond; attempts by search source rail 0, replay 0, none 2; navigate searches by Search URL form q 0, param 0, path 0; 0 covered, 0 not shown and 0 pre-#264 Blocked Action(s), 0 inert click(s), 0 inside a Search Loop streak, 0 post-block vision round(s), 0 recovery round(s) over 0 recovered block(s) and 0 never recovered; 0 Unavailable Landing(s) (0 by status, 0 by title), 0 followed by a search; 0 consent dismissal(s), 0 hand consent click(s), 0 blocked then hand consent; 0 budget-armed and 1 deadline-armed Tier Escalation(s) (replay found Progress before 0, none before 0), declined none, 0 declined no_progress against the replay), 3 inherited, 1 rejected Evidence Checkpoint(s), 0 walled round(s), 0 navigate(s) landed on a Not-found Page (0 judged Off-key), 0 Composed Address(es) rewritten into a site search (0 judged Off-key, 0 to an address the Run was shown), 0 search(es) ran with an Unseen Phrase unquoted (0 judged Off-key), 0 search(es) ran on the Run Engine in place of another Web Engine (0 judged Off-key), 0 Result Pick(s) against 0 listing(s) returned to the model, no search had a result opened (0 of 0 searches), 0 Run-made Evidence Checkpoint(s) from a Selected Passage against 8 record_evidence call(s) by the model and 6 bookkeeping-only round(s), 0 Subagent round(s), 0 merged Evidence Checkpoint(s) (a floor), 2 Held Page round(s) without Progress, 1 bundled checkpoint round(s), 0 same-source unsupported round(s), subagent citations: 0 excerpt_unsupported, 0 applied with a dropped excerpt, 0 Answer(s) with an Identity Slip, 0 id(s) slipped, Delegated Page rounds 0 while running, 0 while finished and uncollected, 0 after collection, 1 Malformed Answer(s) (1 retried), 0 Transport Failure attempt(s) (0 round(s) recovered by a Transport Retry, 0 Run(s) model_unreachable), 0 skipped bookkeeping round(s), 0 Finalization round(s) cut by the Allowance; first-token latency p50 4362 ms, p90 5367 ms over 17 round(s), 2 declared Asked Items (0 with an unverified standing, 0 shape failure(s), 0 retried), 0 stopped early, 0 answer omitted, 2 overrule(s), 8 flag(s); Finalization Causes: objective_met 2
+- initial: 22 Off-key round(s), 7 Search Loop round(s) by the reviewer (5 by the streak rule, heads included: 3 at streak 2 or beyond, 1 at 3 or beyond; attempts by search source rail 4, replay 0, none 0; navigate searches by Search URL form q 12, param 0, path 1; 0 covered, 0 not shown and 0 pre-#264 Blocked Action(s), 0 inert click(s), 0 inside a Search Loop streak, 0 post-block vision round(s), 0 recovery round(s) over 0 recovered block(s) and 0 never recovered; 0 Unavailable Landing(s) (0 by status, 0 by title), 0 followed by a search; 2 consent dismissal(s), 0 hand consent click(s), 0 blocked then hand consent; 1 budget-armed and 0 deadline-armed Tier Escalation(s) (replay found Progress before 1, none before 0), declined none, 0 declined no_progress against the replay), 0 inherited, 2 rejected Evidence Checkpoint(s), 0 walled round(s), 3 navigate(s) landed on a Not-found Page (3 judged Off-key), 5 Composed Address(es) rewritten into a site search (4 judged Off-key, 0 to an address the Run was shown), 2 search(es) ran with an Unseen Phrase unquoted (2 judged Off-key), 0 search(es) ran on the Run Engine in place of another Web Engine (0 judged Off-key), 2 Result Pick(s) against 13 listing(s) returned to the model, a search’s result opened in 2.3 round(s) on average (12 of 15 searches), 1 Run-made Evidence Checkpoint(s) from a Selected Passage (1 recorded again by the model from the same page, 1 with the same passage) against 15 record_evidence call(s) by the model and 10 bookkeeping-only round(s), 4 accepted record(s) answered with the contradiction Note, 0 Subagent round(s), 0 merged Evidence Checkpoint(s) (a floor), 1 Held Page round(s) without Progress, 2 bundled checkpoint round(s), 0 same-source unsupported round(s), subagent citations: 0 excerpt_unsupported, 0 applied with a dropped excerpt, 0 Answer(s) with an Identity Slip, 0 id(s) slipped, Delegated Page rounds 0 while running, 0 while finished and uncollected, 0 after collection, 0 Malformed Answer(s) (0 retried), 0 Transport Failure attempt(s) (0 round(s) recovered by a Transport Retry, 0 Run(s) model_unreachable), 0 skipped bookkeeping round(s), 0 Finalization round(s) cut by the Allowance; first-token latency p50 3935 ms, p90 5368 ms over 74 round(s), 4 declared Asked Items (0 with an unverified standing, 0 shape failure(s), 0 retried), 0 stopped early, 1 answer omitted, 4 overrule(s), 24 flag(s); Finalization Causes: objective_met 4
+- follow_up: 0 Off-key round(s), 0 Search Loop round(s) by the reviewer (0 by the streak rule, heads included: 0 at streak 2 or beyond, 0 at 3 or beyond; attempts by search source rail 0, replay 0, none 2; navigate searches by Search URL form q 0, param 0, path 0; 0 covered, 0 not shown and 0 pre-#264 Blocked Action(s), 0 inert click(s), 0 inside a Search Loop streak, 0 post-block vision round(s), 0 recovery round(s) over 0 recovered block(s) and 0 never recovered; 0 Unavailable Landing(s) (0 by status, 0 by title), 0 followed by a search; 0 consent dismissal(s), 0 hand consent click(s), 0 blocked then hand consent; 0 budget-armed and 1 deadline-armed Tier Escalation(s) (replay found Progress before 0, none before 0), declined none, 0 declined no_progress against the replay), 3 inherited, 1 rejected Evidence Checkpoint(s), 0 walled round(s), 0 navigate(s) landed on a Not-found Page (0 judged Off-key), 0 Composed Address(es) rewritten into a site search (0 judged Off-key, 0 to an address the Run was shown), 0 search(es) ran with an Unseen Phrase unquoted (0 judged Off-key), 0 search(es) ran on the Run Engine in place of another Web Engine (0 judged Off-key), 0 Result Pick(s) against 0 listing(s) returned to the model, no search had a result opened (0 of 0 searches), 0 Run-made Evidence Checkpoint(s) from a Selected Passage (0 recorded again by the model from the same page, 0 with the same passage) against 8 record_evidence call(s) by the model and 6 bookkeeping-only round(s), 5 accepted record(s) answered with the contradiction Note, 0 Subagent round(s), 0 merged Evidence Checkpoint(s) (a floor), 2 Held Page round(s) without Progress, 1 bundled checkpoint round(s), 0 same-source unsupported round(s), subagent citations: 0 excerpt_unsupported, 0 applied with a dropped excerpt, 0 Answer(s) with an Identity Slip, 0 id(s) slipped, Delegated Page rounds 0 while running, 0 while finished and uncollected, 0 after collection, 1 Malformed Answer(s) (1 retried), 0 Transport Failure attempt(s) (0 round(s) recovered by a Transport Retry, 0 Run(s) model_unreachable), 0 skipped bookkeeping round(s), 0 Finalization round(s) cut by the Allowance; first-token latency p50 4362 ms, p90 5367 ms over 17 round(s), 2 declared Asked Items (0 with an unverified standing, 0 shape failure(s), 0 retried), 0 stopped early, 0 answer omitted, 2 overrule(s), 8 flag(s); Finalization Causes: objective_met 2
 
 ## Tool rounds
 
@@ -135,7 +135,8 @@ The Decision Model’s tier pick, asked before the first orchestrator call and n
 - searches that ran on the Run Engine in place of another Web Engine: 0
 - of those, judged Off-key by the reviewer: 0
 - Result Picks: 1 (round 2); listings returned to the model: 2 (round 5, 11)
-- Evidence Checkpoints the Run made from a Selected Passage: 0; record_evidence calls by the model: 5; bookkeeping-only rounds: 3
+- Evidence Checkpoints the Run made from a Selected Passage: 0; recorded again by the model from the same page: 0; with the same passage: 0; record_evidence calls by the model: 5; bookkeeping-only rounds: 3
+- accepted records answered with the contradiction Note: 2 (round 5, 10)
 - rounds from a search to an opened result: 1, 2, 3
 - Identity Slips: 0 Answer(s) with an Identity Slip, 0 id(s) slipped
 - kinds: Acquisition with Progress 15 (65%) · Acquisition without Progress 4 (17%) · Collection 0 (0%) · Bookkeeping 3 (13%) · Failed round 1 (4%) · Finalization 1 (4%)
@@ -208,7 +209,8 @@ The Decision Model’s tier pick, asked before the first orchestrator call and n
 - searches that ran on the Run Engine in place of another Web Engine: 0
 - of those, judged Off-key by the reviewer: 0
 - Result Picks: 0; listings returned to the model: 0
-- Evidence Checkpoints the Run made from a Selected Passage: 0; record_evidence calls by the model: 5; bookkeeping-only rounds: 4
+- Evidence Checkpoints the Run made from a Selected Passage: 0; recorded again by the model from the same page: 0; with the same passage: 0; record_evidence calls by the model: 5; bookkeeping-only rounds: 4
+- accepted records answered with the contradiction Note: 4 (round 5, 7, 9, 10)
 - rounds from a search to an opened result: no search
 - Identity Slips: 0 Answer(s) with an Identity Slip, 0 id(s) slipped
 - kinds: Acquisition with Progress 2 (20%) · Acquisition without Progress 4 (40%) · Collection 0 (0%) · Bookkeeping 4 (40%) · Failed round 0 (0%) · Finalization 1 (9%)
@@ -264,7 +266,8 @@ The Decision Model’s tier pick, asked before the first orchestrator call and n
 - searches that ran on the Run Engine in place of another Web Engine: 0
 - of those, judged Off-key by the reviewer: 0
 - Result Picks: 1 (round 11); listings returned to the model: 2 (round 7, 12)
-- Evidence Checkpoints the Run made from a Selected Passage: 1 (round 10); record_evidence calls by the model: 2; bookkeeping-only rounds: 1
+- Evidence Checkpoints the Run made from a Selected Passage: 1 (round 10); recorded again by the model from the same page: 1 (round 10); with the same passage: 1 (round 10); record_evidence calls by the model: 2; bookkeeping-only rounds: 1
+- accepted records answered with the contradiction Note: 1 (round 11)
 - rounds from a search to an opened result: 4, 1, 2
 - Identity Slips: 0 Answer(s) with an Identity Slip, 0 id(s) slipped
 - kinds: Acquisition with Progress 13 (93%) · Acquisition without Progress 0 (0%) · Collection 0 (0%) · Bookkeeping 1 (7%) · Failed round 0 (0%) · Finalization 1 (7%)
@@ -332,7 +335,8 @@ The Decision Model’s tier pick, asked before the first orchestrator call and n
 - searches that ran on the Run Engine in place of another Web Engine: 0
 - of those, judged Off-key by the reviewer: 0
 - Result Picks: 0; listings returned to the model: 2 (round 2, 6)
-- Evidence Checkpoints the Run made from a Selected Passage: 0; record_evidence calls by the model: 2; bookkeeping-only rounds: 1
+- Evidence Checkpoints the Run made from a Selected Passage: 0; recorded again by the model from the same page: 0; with the same passage: 0; record_evidence calls by the model: 2; bookkeeping-only rounds: 1
+- accepted records answered with the contradiction Note: 0
 - rounds from a search to an opened result: 2, 2
 - Identity Slips: 0 Answer(s) with an Identity Slip, 0 id(s) slipped
 - kinds: Acquisition with Progress 8 (80%) · Acquisition without Progress 1 (10%) · Collection 0 (0%) · Bookkeeping 1 (10%) · Failed round 0 (0%) · Finalization 1 (9%)
@@ -389,7 +393,8 @@ The Decision Model’s tier pick, asked before the first orchestrator call and n
 - searches that ran on the Run Engine in place of another Web Engine: 0
 - of those, judged Off-key by the reviewer: 0
 - Result Picks: 0; listings returned to the model: 0
-- Evidence Checkpoints the Run made from a Selected Passage: 0; record_evidence calls by the model: 3; bookkeeping-only rounds: 2
+- Evidence Checkpoints the Run made from a Selected Passage: 0; recorded again by the model from the same page: 0; with the same passage: 0; record_evidence calls by the model: 3; bookkeeping-only rounds: 2
+- accepted records answered with the contradiction Note: 1 (round 3)
 - rounds from a search to an opened result: no search
 - Identity Slips: 0 Answer(s) with an Identity Slip, 0 id(s) slipped
 - kinds: Acquisition with Progress 1 (20%) · Acquisition without Progress 1 (20%) · Collection 0 (0%) · Bookkeeping 2 (40%) · Failed round 1 (20%) · Finalization 1 (17%)
@@ -438,7 +443,8 @@ The Decision Model’s tier pick, asked before the first orchestrator call and n
 - searches that ran on the Run Engine in place of another Web Engine: 0
 - of those, judged Off-key by the reviewer: 0
 - Result Picks: 0; listings returned to the model: 7 (round 2, 3, 6, 7, 8, 14, 19)
-- Evidence Checkpoints the Run made from a Selected Passage: 0; record_evidence calls by the model: 6; bookkeeping-only rounds: 5
+- Evidence Checkpoints the Run made from a Selected Passage: 0; recorded again by the model from the same page: 0; with the same passage: 0; record_evidence calls by the model: 6; bookkeeping-only rounds: 5
+- accepted records answered with the contradiction Note: 1 (round 20)
 - rounds from a search to an opened result: none, 2, none, none, 2, 2, 4
 - Identity Slips: 0 Answer(s) with an Identity Slip, 0 id(s) slipped
 - kinds: Acquisition with Progress 14 (61%) · Acquisition without Progress 4 (17%) · Collection 0 (0%) · Bookkeeping 5 (22%) · Failed round 0 (0%) · Finalization 1 (4%)

@@ -35,9 +35,9 @@
     "reviewerModel": "claude-opus-5",
     "reviewerEffort": "high",
     "reviewerPromptVersion": "audit-p3",
-    "auditCommit": "3dd2cd193cdaad3ae7756e99efdcf91025f41947",
+    "auditCommit": "03c966ef05b2772b434ac937298ee1cc4247e881",
     "auditDirtyTree": false,
-    "generatedAt": "2026-09-27T06:19:25.988Z"
+    "generatedAt": "2026-09-27T17:59:28.951Z"
   },
   "attempts": [
     {
@@ -1377,6 +1377,11 @@
         "rejectedCheckpoints": 1,
         "inheritedRounds": 0,
         "mergedCheckpoints": 0,
+        "contradictionNotes": [
+          6,
+          23,
+          23
+        ],
         "bundledCheckpoints": 1,
         "sameSourceUnsupportedRounds": 0,
         "heldPageRoundsWithoutProgress": 1,
@@ -1450,6 +1455,8 @@
           }
         ],
         "runMadeCheckpoints": [],
+        "runMadeRecordedAgain": [],
+        "runMadeQuotedAgain": [],
         "modelRecordEvidenceCalls": 5,
         "identitySlips": {
           "answers": 0,
@@ -2199,6 +2206,9 @@
         "rejectedCheckpoints": 1,
         "inheritedRounds": 2,
         "mergedCheckpoints": 0,
+        "contradictionNotes": [
+          4
+        ],
         "bundledCheckpoints": 1,
         "sameSourceUnsupportedRounds": 0,
         "heldPageRoundsWithoutProgress": 1,
@@ -2250,6 +2260,8 @@
         "listingsReturned": [],
         "searchesToOpened": [],
         "runMadeCheckpoints": [],
+        "runMadeRecordedAgain": [],
+        "runMadeQuotedAgain": [],
         "modelRecordEvidenceCalls": 3,
         "identitySlips": {
           "answers": 0,
@@ -3697,6 +3709,7 @@
         "rejectedCheckpoints": 1,
         "inheritedRounds": 0,
         "mergedCheckpoints": 0,
+        "contradictionNotes": [],
         "bundledCheckpoints": 1,
         "sameSourceUnsupportedRounds": 0,
         "heldPageRoundsWithoutProgress": 0,
@@ -3786,6 +3799,8 @@
           }
         ],
         "runMadeCheckpoints": [],
+        "runMadeRecordedAgain": [],
+        "runMadeQuotedAgain": [],
         "modelRecordEvidenceCalls": 2,
         "identitySlips": {
           "answers": 0,
@@ -4730,6 +4745,9 @@
         "rejectedCheckpoints": 1,
         "inheritedRounds": 0,
         "mergedCheckpoints": 0,
+        "contradictionNotes": [
+          8
+        ],
         "bundledCheckpoints": 1,
         "sameSourceUnsupportedRounds": 0,
         "heldPageRoundsWithoutProgress": 0,
@@ -4794,6 +4812,8 @@
           }
         ],
         "runMadeCheckpoints": [],
+        "runMadeRecordedAgain": [],
+        "runMadeQuotedAgain": [],
         "modelRecordEvidenceCalls": 3,
         "identitySlips": {
           "answers": 0,
@@ -5288,6 +5308,9 @@
         "rejectedCheckpoints": 0,
         "inheritedRounds": 1,
         "mergedCheckpoints": 0,
+        "contradictionNotes": [
+          3
+        ],
         "bundledCheckpoints": 0,
         "sameSourceUnsupportedRounds": 0,
         "heldPageRoundsWithoutProgress": 0,
@@ -5339,6 +5362,8 @@
         "listingsReturned": [],
         "searchesToOpened": [],
         "runMadeCheckpoints": [],
+        "runMadeRecordedAgain": [],
+        "runMadeQuotedAgain": [],
         "modelRecordEvidenceCalls": 1,
         "identitySlips": {
           "answers": 0,
@@ -6717,6 +6742,7 @@
         "rejectedCheckpoints": 1,
         "inheritedRounds": 0,
         "mergedCheckpoints": 0,
+        "contradictionNotes": [],
         "bundledCheckpoints": 2,
         "sameSourceUnsupportedRounds": 0,
         "heldPageRoundsWithoutProgress": 0,
@@ -6805,6 +6831,8 @@
           }
         ],
         "runMadeCheckpoints": [],
+        "runMadeRecordedAgain": [],
+        "runMadeQuotedAgain": [],
         "modelRecordEvidenceCalls": 6,
         "identitySlips": {
           "answers": 0,
@@ -7186,8 +7214,11 @@
       "searchesOpened": 10,
       "roundsToOpened": 32,
       "runMadeCheckpoints": 0,
+      "runMadeRecordedAgain": 0,
+      "runMadeQuotedAgain": 0,
       "modelRecordEvidenceCalls": 16,
       "bookkeepingRoundsWherePassagesCounted": 12,
+      "contradictionNotes": 4,
       "identitySlipAnswers": 0,
       "identitySlipIds": 0,
       "identitySlipsNotRecorded": 0,
@@ -7400,8 +7431,11 @@
       "searchesOpened": 0,
       "roundsToOpened": 0,
       "runMadeCheckpoints": 0,
+      "runMadeRecordedAgain": 0,
+      "runMadeQuotedAgain": 0,
       "modelRecordEvidenceCalls": 4,
       "bookkeepingRoundsWherePassagesCounted": 5,
+      "contradictionNotes": 2,
       "identitySlipAnswers": 0,
       "identitySlipIds": 0,
       "identitySlipsNotRecorded": 0,

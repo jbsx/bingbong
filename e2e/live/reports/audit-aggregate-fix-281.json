@@ -39,9 +39,9 @@
         ],
         "dirtyTree": false,
         "gradesRevision": 1,
-        "auditCommit": "976059cf1c0683272a6eca81f7e852ae6e726937",
+        "auditCommit": "03c966ef05b2772b434ac937298ee1cc4247e881",
         "auditDirtyTree": false,
-        "generatedAt": "2026-09-27T16:33:27.701Z"
+        "generatedAt": "2026-09-27T17:59:30.353Z"
       },
       {
         "setId": "fix-281-2",
@@ -52,9 +52,9 @@
         ],
         "dirtyTree": false,
         "gradesRevision": 1,
-        "auditCommit": "976059cf1c0683272a6eca81f7e852ae6e726937",
+        "auditCommit": "03c966ef05b2772b434ac937298ee1cc4247e881",
         "auditDirtyTree": false,
-        "generatedAt": "2026-09-27T16:33:27.701Z"
+        "generatedAt": "2026-09-27T17:59:30.353Z"
       },
       {
         "setId": "fix-281-3",
@@ -65,12 +65,12 @@
         ],
         "dirtyTree": false,
         "gradesRevision": 1,
-        "auditCommit": "976059cf1c0683272a6eca81f7e852ae6e726937",
+        "auditCommit": "03c966ef05b2772b434ac937298ee1cc4247e881",
         "auditDirtyTree": false,
-        "generatedAt": "2026-09-27T16:33:27.701Z"
+        "generatedAt": "2026-09-27T17:59:30.353Z"
       }
     ],
-    "generatedAt": "2026-09-27T16:33:27.701Z",
+    "generatedAt": "2026-09-27T17:59:30.353Z",
     "allowedDifference": null
   },
   "populations": {
@@ -234,6 +234,7 @@
       "runMadeQuotedAgain": 14,
       "modelRecordEvidenceCalls": 53,
       "bookkeepingRoundsWherePassagesCounted": 39,
+      "contradictionNotes": 20,
       "identitySlipAnswers": 1,
       "identitySlipIds": 4,
       "identitySlipsNotRecorded": 0,
@@ -485,6 +486,7 @@
             "runMadeQuotedAgain": 5,
             "modelRecordEvidenceCalls": 13,
             "bookkeepingRoundsWherePassagesCounted": 10,
+            "contradictionNotes": 4,
             "identitySlipAnswers": 1,
             "identitySlipIds": 4,
             "identitySlipsNotRecorded": 0,
@@ -718,6 +720,7 @@
             "runMadeQuotedAgain": 5,
             "modelRecordEvidenceCalls": 24,
             "bookkeepingRoundsWherePassagesCounted": 17,
+            "contradictionNotes": 9,
             "identitySlipAnswers": 0,
             "identitySlipIds": 0,
             "identitySlipsNotRecorded": 0,
@@ -951,6 +954,7 @@
             "runMadeQuotedAgain": 4,
             "modelRecordEvidenceCalls": 16,
             "bookkeepingRoundsWherePassagesCounted": 12,
+            "contradictionNotes": 7,
             "identitySlipAnswers": 0,
             "identitySlipIds": 0,
             "identitySlipsNotRecorded": 0,
@@ -1186,6 +1190,7 @@
       "runMadeQuotedAgain": 1,
       "modelRecordEvidenceCalls": 20,
       "bookkeepingRoundsWherePassagesCounted": 19,
+      "contradictionNotes": 10,
       "identitySlipAnswers": 1,
       "identitySlipIds": 1,
       "identitySlipsNotRecorded": 0,
@@ -1412,6 +1417,7 @@
             "runMadeQuotedAgain": 1,
             "modelRecordEvidenceCalls": 5,
             "bookkeepingRoundsWherePassagesCounted": 3,
+            "contradictionNotes": 3,
             "identitySlipAnswers": 0,
             "identitySlipIds": 0,
             "identitySlipsNotRecorded": 0,
@@ -1632,6 +1638,7 @@
             "runMadeQuotedAgain": 0,
             "modelRecordEvidenceCalls": 8,
             "bookkeepingRoundsWherePassagesCounted": 8,
+            "contradictionNotes": 4,
             "identitySlipAnswers": 0,
             "identitySlipIds": 0,
             "identitySlipsNotRecorded": 0,
@@ -1849,6 +1856,7 @@
             "runMadeQuotedAgain": 0,
             "modelRecordEvidenceCalls": 7,
             "bookkeepingRoundsWherePassagesCounted": 8,
+            "contradictionNotes": 3,
             "identitySlipAnswers": 1,
             "identitySlipIds": 1,
             "identitySlipsNotRecorded": 0,

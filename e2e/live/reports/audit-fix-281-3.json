@@ -35,9 +35,9 @@
     "reviewerModel": "claude-opus-5",
     "reviewerEffort": "high",
     "reviewerPromptVersion": "audit-p3",
-    "auditCommit": "976059cf1c0683272a6eca81f7e852ae6e726937",
+    "auditCommit": "03c966ef05b2772b434ac937298ee1cc4247e881",
     "auditDirtyTree": false,
-    "generatedAt": "2026-09-27T16:33:27.701Z"
+    "generatedAt": "2026-09-27T17:59:30.353Z"
   },
   "attempts": [
     {
@@ -1249,6 +1249,11 @@
         "rejectedCheckpoints": 1,
         "inheritedRounds": 0,
         "mergedCheckpoints": 0,
+        "contradictionNotes": [
+          6,
+          9,
+          21
+        ],
         "bundledCheckpoints": 1,
         "sameSourceUnsupportedRounds": 0,
         "heldPageRoundsWithoutProgress": 5,
@@ -2369,6 +2374,10 @@
         "rejectedCheckpoints": 0,
         "inheritedRounds": 1,
         "mergedCheckpoints": 0,
+        "contradictionNotes": [
+          8,
+          8
+        ],
         "bundledCheckpoints": 1,
         "sameSourceUnsupportedRounds": 0,
         "heldPageRoundsWithoutProgress": 0,
@@ -3756,6 +3765,9 @@
         "rejectedCheckpoints": 0,
         "inheritedRounds": 0,
         "mergedCheckpoints": 0,
+        "contradictionNotes": [
+          16
+        ],
         "bundledCheckpoints": 1,
         "sameSourceUnsupportedRounds": 0,
         "heldPageRoundsWithoutProgress": 0,
@@ -5022,6 +5034,9 @@
         "rejectedCheckpoints": 0,
         "inheritedRounds": 0,
         "mergedCheckpoints": 0,
+        "contradictionNotes": [
+          9
+        ],
         "bundledCheckpoints": 1,
         "sameSourceUnsupportedRounds": 0,
         "heldPageRoundsWithoutProgress": 0,
@@ -5854,6 +5869,9 @@
         "rejectedCheckpoints": 1,
         "inheritedRounds": 1,
         "mergedCheckpoints": 0,
+        "contradictionNotes": [
+          3
+        ],
         "bundledCheckpoints": 0,
         "sameSourceUnsupportedRounds": 0,
         "heldPageRoundsWithoutProgress": 0,
@@ -7031,6 +7049,10 @@
         "rejectedCheckpoints": 0,
         "inheritedRounds": 0,
         "mergedCheckpoints": 0,
+        "contradictionNotes": [
+          12,
+          17
+        ],
         "bundledCheckpoints": 1,
         "sameSourceUnsupportedRounds": 0,
         "heldPageRoundsWithoutProgress": 1,
@@ -7482,6 +7504,7 @@
       "runMadeQuotedAgain": 4,
       "modelRecordEvidenceCalls": 16,
       "bookkeepingRoundsWherePassagesCounted": 12,
+      "contradictionNotes": 7,
       "identitySlipAnswers": 0,
       "identitySlipIds": 0,
       "identitySlipsNotRecorded": 0,
@@ -7710,6 +7733,7 @@
       "runMadeQuotedAgain": 0,
       "modelRecordEvidenceCalls": 7,
       "bookkeepingRoundsWherePassagesCounted": 8,
+      "contradictionNotes": 3,
       "identitySlipAnswers": 1,
       "identitySlipIds": 1,
       "identitySlipsNotRecorded": 0,
