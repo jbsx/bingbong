@@ -2985,7 +2985,7 @@ export function classifyAttempt(input: AuditTraceInput): AuditMechanical {
   // And the accepted records the Run answered with the contradiction Note
   // (#284, ADR 0071), from the whole result: its head cuts the Note off.
   const contradictionNotes = raw.flatMap((round, index) =>
-    round.calls.filter((entry) => entry.result?.ok === true && resultText(entry.result.result)?.includes(CONTRADICTION_NOTE) === true).map(() => rounds[index]!.round),
+    round.calls.filter((entry) => entry.call.name === 'record_evidence' && entry.result?.ok === true && resultText(entry.result.result)?.includes(CONTRADICTION_NOTE) === true).map(() => rounds[index]!.round),
   )
   const held = new Set(input.parentCheckpointedUrls ?? [])
   let heldPageRoundsWithoutProgress = 0
@@ -4093,11 +4093,17 @@ function populationSelectedPassagesText(population: AuditPopulation): string {
   return `${population.runMadeCheckpoints} Run-made Evidence Checkpoint(s) from a Selected Passage${again} against ${population.modelRecordEvidenceCalls ?? 0} record_evidence call(s) by the model and ${population.bookkeepingRoundsWherePassagesCounted ?? 0} bookkeeping-only round(s)`
 }
 
+/** A population's records answered with the contradiction Note (#284), or "not counted". */
+function populationContradictionNotesText(population: AuditPopulation): string {
+  if (population.contradictionNotes === undefined) return 'contradiction Notes not counted'
+  return `${population.contradictionNotes} accepted record(s) answered with the contradiction Note`
+}
+
 function judgementLines(populations: readonly AuditPopulation[]): string[] {
   return populations.map(
     (population) =>
       `- ${population.label}: ${population.offKeyRounds} Off-key round(s), ${population.searchLoopRounds} Search Loop round(s) by the reviewer (${population.mechanicalSearchRounds} by the streak rule, heads included: ${population.searchRoundsAtStreak2} at streak 2 or beyond, ${population.searchRoundsAtStreak3} at 3 or beyond; attempts by search source ${SEARCH_SOURCES.map((source) => `${source} ${population.searchSources[source]}`).join(', ')}; navigate searches by Search URL form ${searchFormsText(population.searchForms)}; ${populationBlockedOrInertText(population.blockedOrInert)}; ${populationUnavailableLandingsText(population.unavailableLandings)}; ${populationConsentWallsText(population.consentWalls)}; ${populationTierEscalationsText(population.tierEscalations)}), ` +
-      `${population.inheritedRounds} inherited, ${population.rejectedCheckpoints} rejected Evidence Checkpoint(s), ${population.walledRounds} walled round(s), ${population.notFoundNavigates} navigate(s) landed on a Not-found Page (${population.notFoundOffKey} judged Off-key), ${population.rewrittenComposedAddresses ?? 0} Composed Address(es) rewritten into a site search (${population.rewrittenComposedAddressesOffKey ?? 0} judged Off-key, ${population.rewrittenShownAddresses ?? 'not counted'} to an address the Run was shown), ${population.unseenPhraseRewrites ?? 'not counted'} search(es) ran with an Unseen Phrase unquoted (${population.unseenPhraseRewritesOffKey ?? 0} judged Off-key), ${population.engineRewrites ?? 'not counted'} search(es) ran on the Run Engine in place of another Web Engine (${population.engineRewritesOffKey ?? 0} judged Off-key), ${populationResultPicksText(population)}, ${populationSelectedPassagesText(population)}, ${population.contradictionNotes === undefined ? 'contradiction Notes not counted' : `${population.contradictionNotes} accepted record(s) answered with the contradiction Note`}, ${population.subagentRounds} Subagent round(s), ` +
+      `${population.inheritedRounds} inherited, ${population.rejectedCheckpoints} rejected Evidence Checkpoint(s), ${population.walledRounds} walled round(s), ${population.notFoundNavigates} navigate(s) landed on a Not-found Page (${population.notFoundOffKey} judged Off-key), ${population.rewrittenComposedAddresses ?? 0} Composed Address(es) rewritten into a site search (${population.rewrittenComposedAddressesOffKey ?? 0} judged Off-key, ${population.rewrittenShownAddresses ?? 'not counted'} to an address the Run was shown), ${population.unseenPhraseRewrites ?? 'not counted'} search(es) ran with an Unseen Phrase unquoted (${population.unseenPhraseRewritesOffKey ?? 0} judged Off-key), ${population.engineRewrites ?? 'not counted'} search(es) ran on the Run Engine in place of another Web Engine (${population.engineRewritesOffKey ?? 0} judged Off-key), ${populationResultPicksText(population)}, ${populationSelectedPassagesText(population)}, ${populationContradictionNotesText(population)}, ${population.subagentRounds} Subagent round(s), ` +
       `${population.mergedCheckpoints} merged Evidence Checkpoint(s) (a floor), ${population.heldPageRoundsWithoutProgress} Held Page round(s) without Progress, ${population.bundledCheckpoints} bundled checkpoint round(s), ${population.sameSourceUnsupportedRounds} same-source unsupported round(s), ${subagentCitationsText(population.subagentCitations)}, ${populationSlipsText(population)}, ${delegatedPageCountsText(population.delegatedPageRounds)}, ` +
       `${population.malformedAnswers} Malformed Answer(s) (${population.answerRetries} retried), ` +
       `${transportText(population)}, ` +

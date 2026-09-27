@@ -158,7 +158,7 @@ describe('the objective a Candidate decision is read against (#208, ADR 0039)', 
       snapshot: {
         observations: [],
         candidates: [candidate('memory-2')],
-          objectiveId: 'memory-1' as MemoryEntryId,
+        objectiveId: 'memory-1' as MemoryEntryId,
       },
     })
     expect(view.state().objectiveId).toBe('memory-1')

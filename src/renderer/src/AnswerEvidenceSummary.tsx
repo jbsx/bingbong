@@ -13,7 +13,8 @@ import { formatFeedTime } from './ActivityFeed'
  * immutable. Replaces the generated Markdown Sources list in the live
  * Feed, so the cited evidence reads as one structured record instead of
  * a duplicate link dump. It carries no contradiction warning (ADR 0071):
- * the Session presumes no two Observations disagree.
+ * two Observations from one address are not presumed to disagree, and a
+ * disagreement across sources is the Answer's own to disclose.
  */
 
 export function AnswerEvidenceSummary({

@@ -159,8 +159,7 @@ export interface SessionEvidenceChange {
 /**
  * A retained evidence change with the detail the renderers are
  * deliberately not told (#181): what the store held afterwards, and whether
- * the checkpoint merged rather than added. The
- * change signal stays identity-only — this rides beside it, for the Run
+ * the checkpoint merged rather than added. The change signal stays identity-only — this rides beside it, for the Run
  * Trace alone, and is never sent to a view.
  */
 export interface SessionEvidenceAcceptance extends SessionEvidenceChange {

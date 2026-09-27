@@ -15,8 +15,7 @@ import type { EvidenceRequester, SessionTraceEntry } from './runTrace'
 /**
  * One retained evidence change as the store saw it: the counts it left
  * behind, and whether the checkpoint merged into an existing Observation.
- * An accepted checkpoint that never appears here
- * never reached the store.
+ * An accepted checkpoint that never appears here never reached the store.
  */
 export function evidenceAcceptedEntry(acceptance: SessionEvidenceAcceptance): SessionTraceEntry {
   return {

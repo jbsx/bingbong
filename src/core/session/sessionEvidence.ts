@@ -348,8 +348,8 @@ export interface ObservationCheckpointResult {
  * grounded Observations and Candidates living beside Memory Entries under
  * Memory Entry identity, with one Session's lifetime. Observations merge only
  * on exact duplicates and are otherwise presumed not to disagree (ADR 0071):
- * two statements from one page are both kept, neither marked; Assessments must cite valid
- * Observation support; `clear` is the Session Reset / Lapse boundary.
+ * two statements from one page are both kept, neither marked. Assessments
+ * must cite valid Observation support; `clear` is the Session Reset / Lapse boundary.
  */
 export interface SessionEvidenceStore {
   checkpointObservation(input: ObservationCheckpointInput): ObservationCheckpointResult | null
