@@ -38,22 +38,27 @@ result the model reads.
   once the Run Plan is declared with an Asked Item not yet checkpointed in
   this Run. Never on a scroll or a Look; never for a Direct Action, which
   declares none. An item already recorded is not asked again.
-- **The passage is carried in the tool result**, one line per Asked Item —
-  `Selected passage for "<item>": <block verbatim>` — after the Action
-  Outcome's own text. The ledger records the whole result, so the excerpt is
+- **The passage is carried in the tool result**, one line per Asked Item,
+  after the Action Outcome's own text, in the wording a `record_evidence`
+  result opens with and naming the checkpoint it became —
+  `Session Evidence recorded: memory-<n>, for "<item>": <block verbatim>`.
+  The ledger records the whole result, so the excerpt is
   supported by the same rule as any other: nothing in the checkpoint
   evaluator changes, and nothing is stored that the model did not see.
 - **The Run records the checkpoint itself**, through the same
   `checkpointEvidence` seam the tool calls, with the landed URL as source,
-  the block as excerpt and the Asked Item's wording as observation. It
+  the block as excerpt and, as observation, the Asked Item's wording
+  followed by the passage verbatim. It
   enters the Run's accepted checkpoints and the Session commit as one the
   model called would, with its origin — `run` rather than `model` — kept
-  on the trace event and the Memory Entry. The result then says
-  `Recorded as evidence for "<item>".` so the model does not record it
-  twice.
+  on the trace event and the Memory Entry. While the seam is on, the
+  orchestrator's prompt says what the line is: evidence the model cites by
+  its id as it would its own, recording from that page only what the lines
+  do not state.
 - **The rails treat it as the model's own move.** It counts for
   `newSinceCheckpoint`, the bookkeeping-only Notice and the Finalization
-  skip; it is a Held Page's observation; it is one Evidence Checkpoint, not
+  skip; it is a Held Page's observation on every later landing on that
+  page; it is one Evidence Checkpoint, not
   a second kind through every rail.
 - **Under threshold or unavailable, the result is untouched** and the model
   reads and records as today; the Decision Record says which.
@@ -66,8 +71,8 @@ result the model reads.
 - The excerpt is verbatim by construction, so ADR 0054's `excerpt_unsupported`
   rejections cannot come from this path; a wrong pick is a wrong passage
   recorded against the item, visible to the model in the same result, and
-  the model may record a better one — two checkpoints on one item merge as
-  they do today.
+  the model may record a better one. The two never merge — a merge needs
+  the same statement, and the model writes its own — so both are held.
 - read_page keeps its part argument and its Page Read; it becomes the
   fallback when a landing scored nothing, not the habit. Picking which part
   to read is not done: the landing's whole text is scored instead.
@@ -237,3 +242,50 @@ opened page in the same Tool Round.
   every seam, passage included, and reads `unset (every seam)`; after it,
   `unset (the default seams)`. Result Pick is unaffected. #282's Passage
   Spans close with this, by their own note above.
+- 2026-09-27, grilled from the `fix-281` traces (#283), every
+  recommendation taken; three of the Decision's sentences are reworded in
+  place (the carried line, the observation, the merge) and the Held Page
+  sentence is narrowed to later landings, the Notice on the landing itself
+  being computed before the Run records. **The model saw the line and
+  recorded anyway**: its reasoning quotes the lines in 7 of the 8 initial
+  Runs that had one ("it seems there was an automatic recording. But to be
+  safe, I should still checkpoint"), and no call was issued before it
+  could read them (0 of 22 in the carrying round). What it was given could
+  not be cited. The Observation held the Asked Item's wording and no value;
+  the line named no id, and the prompt says an Answer's `evidence_ids` come
+  from `record_evidence` results or the Session Evidence block, where a
+  mid-Run checkpoint of the Run's is in neither; nothing model-facing said
+  what the lines were. The Answer cited the model's own record for 20 of
+  the 21 and a Run-made one for 5. One Answer stated a dial of 130 mm that
+  no tool result holds, where the Run-made checkpoint for that item had
+  been made from the page's 102 mm and stored only the item's wording.
+  **So the fault is the checkpoint, not the model's second record**, and
+  #283 is that. Most second records were not duplicates: by containment, 14
+  held the passage and more, 2 part of it, and 5 none of it (another part
+  of the page); the audit's 7 "different passage" are those 5 and two
+  passages under 12 characters that `runMadeQuotedAgain` cannot count. A
+  record wider than the passage is the model's to make and no gate counts
+  it. **No rail answers a duplicate**: a call already emitted has spent its
+  round, 13 of the 21 rode a round with an acquisition call, and the 8
+  others sit in 6 bookkeeping-only rounds, 79.7 s over 12 initials. A model
+  record that quotes only what is held is accepted as a new entry, as
+  today, and measured. Every accepted record beside a Run-made checkpoint
+  was answered with the contradiction Note (16 of 16), which fires on any
+  two statements from one address and without the seam too (15 of 56
+  accepted records in `jev-off`); that rule is #284, and #283 is blocked by
+  it. **The capture** is three passes with `passage,result,tier` against
+  #284's own capture as the Reference, on initials: Run-made checkpoints
+  whose passage a later model record contains at most a third (16 of 21
+  in `fix-281`); Run-made checkpoints cited in the Answer's `evidence_ids`
+  at least half (5 of 21); bookkeeping-only rounds per Run below the
+  Reference's; initials verified not below the Reference's less one. Page
+  Reads straight after a Run-made landing are reported, never gated.
+  `runMadeRecordedAgain` and `runMadeQuotedAgain` stay as they are so the
+  committed audits reproduce; two counters are added for the gates,
+  containment with no length floor and citation. **Met, `passage` returns
+  to the default seam list; missed, the Selected Passage's code is removed
+  and this ADR is superseded.** Calls left to the implementation: the
+  passage must reach the ledger before the checkpoint is graded and the id
+  exists only after, so the line the ledger holds and the line the model
+  reads may differ by the id; a passage whose checkpoint is refused (none
+  in 22) is carried without an id.

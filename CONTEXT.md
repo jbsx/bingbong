@@ -521,8 +521,10 @@ enter Session Working Memory as soon as it is grounded. It preserves verified
 work across later Run failure or cancellation without committing speculative
 Assessments. Its excerpt is one or more verbatim passages of what the Run
 retained from the source, never a paraphrase. The model makes one by calling
-for it; a Run makes one itself from a Selected Passage (ADR 0069). Both are
-one kind, with the origin kept, and every rail reads them alike.
+for it; a Run makes one itself from a Selected Passage (ADR 0069), stating
+the Asked Item and the passage verbatim, and names it to the model where the
+passage is carried so an Answer can cite it. Both are one kind, with the
+origin kept, and every rail reads them alike.
 _Avoid_: partial Memory Commit, autosave, auto-checkpoint
 
 **Memory Entry**:
