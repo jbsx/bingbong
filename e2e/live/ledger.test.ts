@@ -215,7 +215,12 @@ describe('the committed Round Audits', () => {
     // The nine AC1 names, in capture order; a later set may follow them.
     const named = ['baseline', 'fix-236', 'fix-235', 'fix-237', 'fix-239', 'fix-240', 'fix-242', 'fix-242r', 'baseline2']
     expect(ids.filter((id) => named.includes(id))).toEqual(named)
-    expect(committed.ignored).toEqual([])
+    // The Decision Model's arms pooled by --allow-differs=routing (#274) are the one
+    // committed file the ledger sets aside; any other ignored file fails here (#285).
+    expect(committed.ignored).toEqual([{ name: 'audit-aggregate-jev.json', reason: 'an aggregate over more than one family (jev-on, jev-off)' }])
+    // Each arm reads its whole-set values from its own aggregate, as every other family does.
+    expect(family(committed, 'jev-on').aggregate?.fileName).toBe('audit-aggregate-jev-on.json')
+    expect(family(committed, 'jev-off').aggregate?.fileName).toBe('audit-aggregate-jev-off.json')
 
     const references = Object.fromEntries(committed.families.map((listed) => [listed.id, defaultReferenceOf(listed, committed)?.id ?? null]))
     expect(references.baseline).toBeNull()
