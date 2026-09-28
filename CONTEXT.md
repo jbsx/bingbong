@@ -419,12 +419,22 @@ reserved round. It is met with one Answer Retry, and the reply to that stands
 whatever its shape.
 _Avoid_: broken answer, invalid answer, off-contract answer, narration
 
+**Off-language Answer**:
+An Answer whose Card or Spoken Rendering is mostly not written in Latin
+script, each rendering judged on its own. It is never rendered and never
+spoken, whatever its content. Outside a reserved round it is met with the
+Run's one Answer Retry; in a reserved round, or once that retry is spent or
+its reply is off-language too, the Run's deterministic Answer stands in. An
+Answer in English that quotes a few words of another script is not one.
+_Avoid_: foreign answer, Chinese answer, translated answer, wrong-language answer
+
 **Answer Retry**:
-The one model round spent after a Malformed Answer: the next request carries
-what could not be read and asks for the Answer alone, once per Run or
-Subagent. It is not a Tool Round and spends no Tool Round budget, only time.
-Whatever round the Run is in judges the reply by its own rule. The runtime
-never repairs a reply it could not read.
+The one model round spent after a Malformed Answer or an Off-language
+Answer: the next request carries what could not be taken and asks for the
+Answer alone, once per Run or Subagent. It is not a Tool Round and spends no
+Tool Round budget, only time. Whatever round the Run is in judges the reply
+by its own rule: it stands whatever its shape, but never whatever its
+language. The runtime never repairs a reply it could not read.
 _Avoid_: repair, fix-up, re-prompt, JSON retry
 
 **Transport Failure**:
@@ -822,7 +832,9 @@ _Avoid_: message
 **Answer**:
 One assistant turn's single output, carrying two renderings: a Spoken one
 for the ear and a Card one for the view. An Answer renders as at most one
-Feed Entry — the Card when it exists, otherwise the Spoken rendering.
+Feed Entry — the Card when it exists, otherwise the Spoken rendering. Both
+renderings are written in English, the product's one language, whatever
+language the command or the pages read were in.
 _Avoid_: message, reply, response
 
 **Spoken Rendering**:

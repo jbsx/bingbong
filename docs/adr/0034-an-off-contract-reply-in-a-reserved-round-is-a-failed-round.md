@@ -22,6 +22,46 @@ guessed repair changes what the user is told, and this reply also carried
 have rendered as literal text. The retry is not a Tool Round and spends none
 of that budget.
 
+Note of 2026-09-28 (#286): a reply can be in the contract's shape and still
+be unusable. In fix-283-3 the Voyager initial reached `budget_exhausted` and
+its reserved round answered an English command in Chinese: the Card (725 Han
+characters, 64% of its letters) and the Spoken Rendering (100), with the
+Asked Items, the source titles and the round's own reasoning in English, and
+no Chinese in anything the Run had read. It is 1 of 362 final Answers on
+disk, 1 of 132 written by the model in a Finalization round against 0 of 217
+in an ordinary one, which one event cannot tell apart from chance. No prompt
+named a language. Decided:
+
+- **An Answer is written in English**, the product's one language, not the
+  command's: a typed command has no language the speech recogniser heard,
+  every product-owned sentence is English and so is the voice.
+- **An Off-language Answer** is one whose Card or Spoken Rendering has more
+  than half of its letters outside Latin script, each judged alone. Script,
+  not language detection: over 727 renderings the one bad Card reads 64% and
+  every other 0%, none is non-English in Latin script, and a detector is
+  least reliable on a two-sentence Spoken Rendering. Asked Items and Subagent
+  Reports are not judged.
+- **In a reserved round it is a failed round**, as an Off-contract Reply is:
+  never rendered, the deterministic Answer under the cause the phase holds.
+  That throws away an Answer the reviewer found right on 14 of 15 checks. A
+  second reserved request in English was the alternative, and was declined
+  as a permanent allowance bought for one Answer in 132.
+- **In an ordinary round it spends the one Answer Retry**, shared with the
+  Malformed Answer and the Asked Items check. With the retry spent, or its
+  reply off-language too, the deterministic Answer stands in, where a
+  Malformed Answer would stand as written: that one is still prose the user
+  can read. The Run then completes `failed` with no Finalization Cause, since
+  it entered no Finalization, and the Stop Record's failure says why; no
+  cause is added to the set, and the record never says `hard_limit`.
+- **The prompt says it once**, in the Answer contract. It is prevention and
+  is never gated.
+- **Reported, never gated, and closed on tests.** Zero events in an 18-Run
+  capture bound the rate below about 1 in 6, which says nothing about 1 in
+  362, so no capture can show the rule working; the fix-283-3 Answer as a
+  fixture can.
+- **Text streamed in an ordinary round may show before it is replaced.** A
+  reserved round streams nothing, so #286's own case would have shown none.
+
 ## Context
 
 The Answer contract is JSON with `speak` and `display`. The parser tries the
