@@ -1,3 +1,6 @@
+import type { ToolResultOutcome } from '../ports/llm'
+import { parseBlockerMarker } from '../browser/blockerNudge.ts'
+import { isPageArrival, pageReadReturnedText, parseEmptyMarker } from '../browser/emptyLanding.ts'
 import { looksLikeDomain } from '../browser/urlInput.ts'
 import { CHECKPOINT_TOOL_NAMES } from './checkpointTools.ts'
 import { classifyToolObservation } from './toolObservations.ts'
@@ -33,6 +36,13 @@ import { classifyToolObservation } from './toolObservations.ts'
 // acts on no page holds, as does a landing on a Blocker and a Composed
 // Address rewrite (note on ADR 0055), which the model never wrote as a
 // search.
+//
+// #304 (note on ADR 0058) made an Empty Landing hold: a navigation or a step
+// through history that settled on a page the Run was shown no text from
+// opened nothing. One inspection became escape with it — the Page Read that
+// returns text from the page the landing settled on, which opens what the
+// landing did not — until the next page arrival. A Look never is: code
+// cannot tell content from a site's chrome.
 
 /** Consecutive searches with nothing opened between them before the advisory nudge rides the result (#74; 2 since #289). */
 export const SEARCH_LOOP_NUDGE_AFTER = 2
@@ -45,12 +55,14 @@ export const SEARCH_LOOP_REFUSE_AFTER = 5
  * rule as #259 to #262 left it, where an accepted checkpoint was an opening;
  * 2 holds the streak across a checkpoint tool; 3 holds it across a call that
  * acts on no page, a landing on a Blocker and a Composed Address rewrite
- * (#293). The Round Audit writes it on
+ * (#293); 4 holds it across an Empty Landing, and ends it on the Page Read
+ * that returns text from the page one settled on (#304). The Round Audit
+ * writes it on
  * every attempt it counts, and the Fix Ledger recounts an attempt written
  * under any other. Raise it whenever what holds or ends a streak changes —
  * the test beside this module pins it to the table of moves.
  */
-export const SEARCH_STREAK_RULE = 3
+export const SEARCH_STREAK_RULE = 4
 
 /**
  * What the rail read a call as: a search, inspection of a search's results,
@@ -82,13 +94,65 @@ export function searchStreakAfter(streak: number, move: SearchStreakMove): numbe
  * Run already had (#289); a Composed Address rewrite ran a search the model
  * did not write, and a call that acts on no page opened nothing (#293); any
  * other call escapes only when it consumed something — it succeeded, landed
- * on no Not-found or Unavailable Page, and put something new in front of the
- * Run (`putSomethingNew`).
+ * on no Not-found or Unavailable Page and on no Empty Landing (#304), and put
+ * something new in front of the Run (`putSomethingNew`).
  */
 export function searchStreakMoveOf(kind: SearchCallKind, consumed: boolean): SearchStreakMove {
   if (kind === 'search') return 'search'
   if (kind !== 'other') return 'hold'
   return consumed ? 'escape' : 'hold'
+}
+
+/** What a call was to the page in front of the Run (#304), beside its kind. */
+export interface SearchCallPage {
+  /** The call settled on an Empty Landing: its outcome carries the marker. */
+  readonly emptyLanding: boolean
+  /** The call was a page arrival: a navigation, a step through history, or a click or a type the page left for another URL under. */
+  readonly arrival: boolean
+  /** The call was a Page Read that returned text from the page, and no wall. */
+  readonly readText: boolean
+}
+
+const NO_PAGE: SearchCallPage = { emptyLanding: false, arrival: false, readText: false }
+
+/**
+ * What a call was to the page, read off its name and its outcome — the
+ * rail's reading. The Round Audit builds the same facts from a Run Trace,
+ * whose older results carry no marker.
+ */
+export function searchCallPageOf(toolName: string, outcome: ToolResultOutcome): SearchCallPage {
+  if (!outcome.ok || typeof outcome.result !== 'string') return NO_PAGE
+  const text = outcome.result
+  return {
+    emptyLanding: parseEmptyMarker(text) !== null,
+    arrival: isPageArrival(toolName, text),
+    readText: toolName === 'read_page' && pageReadReturnedText(text) && parseBlockerMarker(text) === null,
+  }
+}
+
+/**
+ * Whether the Run holds an Empty Landing it has not read, after one call
+ * (#304). A landing that was no search leaves one; the Page Read that
+ * returns text from it spends it, and so does the next arrival. A search or
+ * a Composed Address rewrite that showed no text leaves none: what it
+ * settled on is a listing, and reading a listing is inspection.
+ */
+export function unreadEmptyLandingAfter(unread: boolean, kind: SearchCallKind, page: SearchCallPage): boolean {
+  if (page.emptyLanding) return kind !== 'search' && kind !== 'rewrite'
+  if (page.arrival) return false
+  if (kind === 'inspection' && page.readText) return false
+  return unread
+}
+
+/**
+ * The move of a call given the page in front of the Run (#304): the Page
+ * Read that returns text from an unread Empty Landing escapes, and every
+ * other call moves as `searchStreakMoveOf` says. The caller's `consumed`
+ * already holds that an Empty Landing consumed nothing.
+ */
+export function searchStreakMoveOnPage(kind: SearchCallKind, consumed: boolean, unreadEmptyLanding: boolean, page: SearchCallPage): SearchStreakMove {
+  if (unreadEmptyLanding && kind === 'inspection' && page.readText) return 'escape'
+  return searchStreakMoveOf(kind, consumed)
 }
 
 /** Token-Jaccard similarity at or above which two Search Intents are one (pinned by the failed-run-47 replay). */

@@ -126,6 +126,58 @@ describe('the pipeline_event tap (#185)', () => {
     expect(records[2]).not.toHaveProperty('unavailable')
   })
 
+  it('records an Empty Landing on the tool result, read off the whole text (#304)', () => {
+    const { records, sink } = collector()
+    const trace = createPipelineEventTraceWriter({ sink, now: () => 0 })
+    const marked = 'signature 162b2d4d\nEMPTY:no-text www.rmg.co.uk\nThis page showed no text.'
+    const refs = Array.from({ length: 400 }, (_, index) => `[${index + 1}] link "Object ${index + 1}" href="https://www.rmg.co.uk/o/${index + 1}"`).join('\n')
+
+    trace({ type: 'tool_result', turnId: 't-1', callId: 'c-1', name: 'navigate', ok: true, result: `navigated: url=https://www.rmg.co.uk/x title="| Royal Museums Greenwich"\n${marked}`, at: 1 })
+    // Past the cut on a page of many refs: the field still says it.
+    trace({ type: 'tool_result', turnId: 't-1', callId: 'c-2', name: 'back', ok: true, result: `went back\n${refs}\n${marked}`, at: 2 })
+    trace({ type: 'tool_result', turnId: 't-1', callId: 'c-3', name: 'navigate', ok: false, error: marked, at: 3 })
+    trace({ type: 'tool_result', turnId: 't-1', callId: 'c-4', name: 'navigate', ok: true, result: 'navigated\nsignature 162b2d4d\npage text:\nH4', at: 4 })
+
+    expect(records[0]).toMatchObject({ emptyLanding: { host: 'www.rmg.co.uk' } })
+    expect(records[0]).not.toHaveProperty('notFound')
+    expect(records[0]).not.toHaveProperty('unavailable')
+    expect(records[1]).toMatchObject({ emptyLanding: { host: 'www.rmg.co.uk' } })
+    expect(String((records[1] as { event: { result: string } }).event.result)).not.toContain('EMPTY:')
+    expect(records[2]).not.toHaveProperty('emptyLanding')
+    expect(records[3]).not.toHaveProperty('emptyLanding')
+  })
+
+  it('records the landing a Result Pick settled on, never the listing’s above it (#304)', () => {
+    const { records, sink } = collector()
+    const trace = createPipelineEventTraceWriter({ sink, now: () => 0 })
+    const listing = 'navigated: url=https://www.rmg.co.uk/search?keywords=h4 title="| Royal Museums Greenwich"\nsignature 162b2d4d\n[1] link "H4" href="https://www.rmg.co.uk/o/1"\nEMPTY:no-text www.rmg.co.uk\nThis page showed no text.'
+    const pick = { ref: 1, label: 'H4', href: 'https://www.rmg.co.uk/o/1', opened: true }
+
+    trace({
+      type: 'tool_result',
+      turnId: 't-1',
+      callId: 'c-1',
+      name: 'navigate',
+      ok: true,
+      result: `${listing}\nOpened [1] "H4" — https://www.rmg.co.uk/o/1\nnavigated: url=https://www.rmg.co.uk/o/1 title="H4"\nsignature 99999999\npage text:\nH4, completed in 1759.`,
+      resultPick: pick,
+      at: 1,
+    })
+    trace({
+      type: 'tool_result',
+      turnId: 't-1',
+      callId: 'c-2',
+      name: 'navigate',
+      ok: true,
+      result: `navigated: url=https://duckduckgo.com/?q=h4 title="h4"\nsignature 162b2d4d\n[1] link "H4" href="https://www.rmg.co.uk/o/1"\nOpened [1] "H4" — https://www.rmg.co.uk/o/1\nnavigated: url=https://www.rmg.co.uk/o/1 title="| Royal Museums Greenwich"\nsignature 99999999\nEMPTY:no-text www.rmg.co.uk\nThis page showed no text.`,
+      resultPick: pick,
+      at: 2,
+    })
+
+    expect(records[0]).not.toHaveProperty('emptyLanding')
+    expect(records[1]).toMatchObject({ emptyLanding: { host: 'www.rmg.co.uk' } })
+  })
+
   it('stamps a Composed Address rewrite from the event’s own field, a failed search included, never from the wording (#255, ADR 0055)', () => {
     const { records, sink } = collector()
     const trace = createPipelineEventTraceWriter({ sink, now: () => 0 })

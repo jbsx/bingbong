@@ -7,6 +7,7 @@ import { assessBrowserAction } from './riskGate'
 import { classifyBlockerPage, type BlockerClassification, type BlockerPageFacts } from '../browser/blockerNudge'
 import { classifyNotFoundPage, notFoundAdvice } from '../browser/notFoundPage'
 import { classifyUnavailablePage, unavailableAdvice } from '../browser/unavailablePage'
+import { EMPTY_LANDING_ADVICE, classifyEmptyLanding } from '../browser/emptyLanding'
 import { siteOfHost } from './blockerGate'
 import { tracedVisionRequest } from '../trace/visionTrace'
 import { traceVisionBudget, visionSeam } from './visionSeam'
@@ -67,14 +68,19 @@ function landingSuffix(facts: BlockerPageFacts): string | null {
 // digest, dialog, and refs, like read_page — not just URL and title. A page
 // that is not walled but names nothing (#239), or that the site could not
 // serve (#262), gets the Not-found or Unavailable marker instead: a wall is
-// the fact that decides what to do next, so it wins.
+// the fact that decides what to do next, so it wins. A page with none of
+// the three that showed the Run no text is an Empty Landing (#304), read
+// off the outcome itself: the marker says what the Run was shown. A click
+// never carries it — its snapshot is taken before the page renders (#309).
 async function withLandingClassification(browser: BrowserController, action: () => Promise<string>): Promise<string> {
   const outcome = await action()
   const facts = await landingFacts(browser)
   const wall = classifyBlockerPage(facts)
   if (wall !== null) return `${outcome}\n${blockerSuffix(wall)}`
   const landing = landingSuffix(facts)
-  return landing === null ? outcome : `${outcome}\n${landing}`
+  if (landing !== null) return `${outcome}\n${landing}`
+  const empty = classifyEmptyLanding({ url: facts.url, outcome })
+  return empty === null ? outcome : `${outcome}\n${empty.marker}\n${EMPTY_LANDING_ADVICE}`
 }
 
 /** The refs each part's last read listed (ADR 0047): near-identical reads are compared part by part. */
@@ -217,7 +223,7 @@ export function createBrowserTools(browser: BrowserController, vision?: VisionDe
       name: 'navigate',
       acquisition: true,
       description:
-        'Navigate the visible browser to a URL. Accepts full URLs (https://…) or search terms. Returns the settled page state — URL, title, page signature, numbered interactive refs (link refs carry their hrefs), and the page text — plus a BLOCKER marker when the landing is walled, a NOT-FOUND marker when the address names nothing, or an UNAVAILABLE marker when the site could not serve it right now. Continue directly from the returned refs; ' + PAGE_PREVIEW_GUIDANCE,
+        'Navigate the visible browser to a URL. Accepts full URLs (https://…) or search terms. Returns the settled page state — URL, title, page signature, numbered interactive refs (link refs carry their hrefs), and the page text — plus a BLOCKER marker when the landing is walled, a NOT-FOUND marker when the address names nothing, an UNAVAILABLE marker when the site could not serve it right now, or an EMPTY marker when the page showed no text. Continue directly from the returned refs; ' + PAGE_PREVIEW_GUIDANCE,
       parameters: {
         url: { type: 'string', description: 'URL or search terms to open, e.g. "https://youtube.com" or "best mechanical keyboards"' },
       },
@@ -334,7 +340,7 @@ export function createBrowserTools(browser: BrowserController, vision?: VisionDe
     {
       name: 'back',
       acquisition: true,
-      description: 'Go back one step in browser history, then return the settled page state — new URL, title, page signature, refs, and digest — plus a BLOCKER marker when the landing is walled, a NOT-FOUND marker when it names nothing, or an UNAVAILABLE marker when the site could not serve it right now.',
+      description: 'Go back one step in browser history, then return the settled page state — new URL, title, page signature, refs, and digest — plus a BLOCKER marker when the landing is walled, a NOT-FOUND marker when it names nothing, an UNAVAILABLE marker when the site could not serve it right now, or an EMPTY marker when the page showed no text.',
       execute: (_call, context) => {
         resetReads(context)
         return withLandingClassification(browser, () => browser.back())
@@ -343,7 +349,7 @@ export function createBrowserTools(browser: BrowserController, vision?: VisionDe
     {
       name: 'go_forward',
       acquisition: true,
-      description: 'Go forward one step in browser history, then return the settled page state — new URL, title, page signature, refs, and digest — plus a BLOCKER marker when the landing is walled, a NOT-FOUND marker when it names nothing, or an UNAVAILABLE marker when the site could not serve it right now.',
+      description: 'Go forward one step in browser history, then return the settled page state — new URL, title, page signature, refs, and digest — plus a BLOCKER marker when the landing is walled, a NOT-FOUND marker when it names nothing, an UNAVAILABLE marker when the site could not serve it right now, or an EMPTY marker when the page showed no text.',
       execute: (_call, context) => {
         resetReads(context)
         return withLandingClassification(browser, () => browser.forward())

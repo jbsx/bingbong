@@ -24,6 +24,7 @@
     "test:watch": "vitest",
     "cli": "pnpm build && electron . --browser-cli",
     "live:audit": "node scripts/live-audit.ts",
+    "live:empty-landings": "node scripts/live-empty-landings.ts",
     "live:grade": "node scripts/live-grade.ts",
     "live:keys": "node scripts/live-keys.ts",
     "live:ledger": "node scripts/live-ledger.ts",

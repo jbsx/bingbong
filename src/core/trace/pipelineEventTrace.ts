@@ -14,6 +14,8 @@
 import type { PipelineEvent, UnstampedEvent } from '../pipeline/events'
 import { parseNotFoundMarker } from '../browser/notFoundPage'
 import { parseUnavailableMarker } from '../browser/unavailablePage'
+import { parseEmptyMarker } from '../browser/emptyLanding'
+import { resultOpenedLine } from '../pipeline/resultPick'
 import {
   RUN_TRACE_VERSION,
   TRACE_TOOL_RESULT_MAX_CHARS,
@@ -54,6 +56,14 @@ export function tracesPipelineEvent(event: { readonly type: PipelineEvent['type'
  * ones, and rewriting a shape the file is meant to record faithfully
  * would cost more than it saves.
  */
+/** The part of a result that says where the call settled: the page a Result Pick opened (#277), else the whole text. */
+function settledText(result: string, pick: Extract<PipelineEvent, { type: 'tool_result' }>['resultPick']): string {
+  if (pick === undefined || !pick.opened) return result
+  const opened = `\n${resultOpenedLine(pick)}\n`
+  const at = result.indexOf(opened)
+  return at === -1 ? result : result.slice(at + opened.length)
+}
+
 export function pipelineEventTraceBody(event: PipelineEvent, agentId?: string): PipelineEventTraceEvent {
   const stamped = agentId !== undefined ? { agentId } : {}
   if (event.type !== 'tool_result') return { kind: 'pipeline_event', event, ...stamped }
@@ -75,12 +85,17 @@ export function pipelineEventTraceBody(event: PipelineEvent, agentId?: string): 
   const notFound = event.ok ? parseNotFoundMarker(event.result) : null
   // Its sibling the Unavailable Landing (#262, ADR 0060), read the same way.
   const unavailable = event.ok ? parseUnavailableMarker(event.result) : null
+  // And the Empty Landing (#304, note on ADR 0058). A listing that showed no
+  // text carries the marker above the page a Result Pick opened from it, so
+  // the landing the call settled on is read below the Opened line.
+  const emptyLanding = event.ok ? parseEmptyMarker(settledText(event.result, event.resultPick)) : null
   return {
     kind: 'pipeline_event',
     event: whole ? event : { ...event, result: event.result.slice(0, TRACE_TOOL_RESULT_MAX_CHARS) },
     chars: event.result.length,
     ...(notFound !== null ? { notFound } : {}),
     ...(unavailable !== null ? { unavailable } : {}),
+    ...(emptyLanding !== null ? { emptyLanding } : {}),
     ...rewritten,
     ...unquoted,
     ...engineRewrite,

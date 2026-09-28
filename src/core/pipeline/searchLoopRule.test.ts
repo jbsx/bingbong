@@ -8,9 +8,13 @@ import {
   SEARCH_LOOP_REFUSE_AFTER,
   SEARCH_STREAK_RULE,
   searchCallKindOf,
+  searchCallPageOf,
   searchStreakAfter,
   searchStreakMoveOf,
+  searchStreakMoveOnPage,
   similarQueries,
+  unreadEmptyLandingAfter,
+  type SearchCallPage,
 } from './searchLoopRule'
 
 // Issue #238, ADR 0048: the Search Loop rail's pure rule — what one Search
@@ -22,7 +26,8 @@ import {
 // streak: recording is not opening. #293 made escape something new put in
 // front of the Run: only a page-facing call can escape, with an answered
 // `ask_user` and an `agent_results` that collected a Subagent Report, and a
-// Composed Address rewrite holds.
+// Composed Address rewrite holds. #304 made an Empty Landing hold, and the
+// Page Read that returns text from the page it settled on escape.
 
 describe('queryTokens folds scope out of a Search Intent', () => {
   it('drops a search operator together with its argument', () => {
@@ -174,12 +179,29 @@ describe('the streak (#259, ADR 0058): a search after a search, with nothing ope
     expect(searchStreakMoveOf('offPage', true)).toBe('hold')
   })
 
-  it('is reading 3 of the rule: the whole table of moves, which a change to must raise SEARCH_STREAK_RULE with (#289, #293)', () => {
+  it('is reading 4 of the rule: the whole table of moves, which a change to must raise SEARCH_STREAK_RULE with (#289, #293, #304)', () => {
     const kinds = ['search', 'inspection', 'checkpoint', 'rewrite', 'offPage', 'other'] as const
     const table = kinds.flatMap((kind) => [true, false].map((consumed) => `${kind} ${consumed ? 'consumed' : 'nothing'}: ${searchStreakMoveOf(kind, consumed)}`))
     const names = ['read_page', 'look', 'scroll', 'ground_visual', 'record_evidence', 'record_candidate', 'report_run_plan', 'spawn_agent', 'cancel_agent', 'set_setting', 'navigate', 'click', 'type', 'back', 'go_forward', 'media_control', 'ask_user', 'agent_results']
+    // #304: what a call was to the page in front of the Run, beside its kind.
+    const pages: Readonly<Record<string, SearchCallPage>> = {
+      'no page': { emptyLanding: false, arrival: false, readText: false },
+      'read text': { emptyLanding: false, arrival: false, readText: true },
+    }
+    const onPage = [true, false].flatMap((unread) =>
+      Object.entries(pages).flatMap(([label, page]) =>
+        kinds.map((kind) => `${unread ? 'unread Empty Landing' : 'no Empty Landing'}, ${kind} ${label}: ${searchStreakMoveOnPage(kind, true, unread, page)}`),
+      ),
+    )
+    expect(onPage.filter((line) => line.endsWith('escape'))).toEqual([
+      'unread Empty Landing, other no page: escape',
+      'unread Empty Landing, inspection read text: escape',
+      'unread Empty Landing, other read text: escape',
+      'no Empty Landing, other no page: escape',
+      'no Empty Landing, other read text: escape',
+    ])
     expect({ rule: SEARCH_STREAK_RULE, table, names: names.map((name) => `${name}: ${searchCallKindOf(name)}`) }).toEqual({
-      rule: 3,
+      rule: 4,
       table: [
         'search consumed: search',
         'search nothing: search',
@@ -231,6 +253,57 @@ describe('the streak (#259, ADR 0058): a search after a search, with nothing ope
     // Each reads its own fact alone: an answer is no report, and a wall is no bar to either.
     expect(putSomethingNew('agent_results', { ...page, userAnswered: true })).toBe(false)
     expect(putSomethingNew('ask_user', { blocker: true, userAnswered: true, collectedReport: false })).toBe(true)
+  })
+
+  describe('an Empty Landing and the Page Read after it (#304)', () => {
+    const none: SearchCallPage = { emptyLanding: false, arrival: false, readText: false }
+    const landing: SearchCallPage = { emptyLanding: true, arrival: true, readText: false }
+    const arrival: SearchCallPage = { ...none, arrival: true }
+    const read: SearchCallPage = { ...none, readText: true }
+
+    it('leaves an Empty Landing unread until a Page Read returns text or the next arrival', () => {
+      expect(unreadEmptyLandingAfter(false, 'other', landing)).toBe(true)
+      // A Look, a scroll, a read that says the page has no text, a checkpoint: the landing is still unread.
+      expect(unreadEmptyLandingAfter(true, 'inspection', none)).toBe(true)
+      expect(unreadEmptyLandingAfter(true, 'checkpoint', none)).toBe(true)
+      // The read that returned text spent it: a second read is inspection again.
+      expect(unreadEmptyLandingAfter(true, 'inspection', read)).toBe(false)
+      // The next arrival is another page.
+      expect(unreadEmptyLandingAfter(true, 'other', arrival)).toBe(false)
+      expect(unreadEmptyLandingAfter(true, 'search', arrival)).toBe(false)
+      // Another Empty Landing is an arrival, and unread in its turn.
+      expect(unreadEmptyLandingAfter(true, 'other', landing)).toBe(true)
+    })
+
+    it('leaves no read to escape by after a search or a rewrite that showed no text: reading a listing is inspection', () => {
+      expect(unreadEmptyLandingAfter(false, 'search', landing)).toBe(false)
+      expect(unreadEmptyLandingAfter(false, 'rewrite', landing)).toBe(false)
+      expect(unreadEmptyLandingAfter(true, 'search', landing)).toBe(false)
+    })
+
+    it('escapes on the Page Read that returns text from an unread Empty Landing, and on no other inspection', () => {
+      expect(searchStreakMoveOnPage('inspection', true, true, read)).toBe('escape')
+      expect(searchStreakMoveOnPage('inspection', true, true, none)).toBe('hold')
+      expect(searchStreakMoveOnPage('inspection', true, false, read)).toBe('hold')
+      // Every other call moves as the table says, whatever is unread.
+      expect(searchStreakMoveOnPage('other', false, true, landing)).toBe('hold')
+      expect(searchStreakMoveOnPage('search', false, true, landing)).toBe('search')
+      expect(searchStreakMoveOnPage('checkpoint', true, true, read)).toBe('hold')
+    })
+
+    it('reads the page facts off a call and its outcome', () => {
+      const marked = 'navigated: url=https://www.rmg.co.uk/x title="| Royal Museums Greenwich"\nsignature 162b2d4d\nEMPTY:no-text www.rmg.co.uk\nThis page showed no text.'
+      expect(searchCallPageOf('navigate', { ok: true, result: marked })).toEqual(landing)
+      expect(searchCallPageOf('navigate', { ok: true, result: 'navigated: url=https://www.rmg.co.uk/ title="Home"' })).toEqual(arrival)
+      expect(searchCallPageOf('click', { ok: true, result: 'clicked [7]: urlChanged=true dialogOpen=false; page signature changed' })).toEqual(arrival)
+      expect(searchCallPageOf('click', { ok: true, result: 'clicked [7]: urlChanged=false dialogOpen=false; no observable change' })).toEqual(none)
+      expect(searchCallPageOf('read_page', { ok: true, result: 'signature 162b2d4d\npage text:\nH4\npage text: part 1 of 1 — the text is complete; there is no part 2' })).toEqual(read)
+      expect(searchCallPageOf('read_page', { ok: true, result: 'signature 162b2d4d\npage text: part 1 of 1 — this page has no text; there is no part 2' })).toEqual(none)
+      // A wall read is no text from the page; a Look is never a Page Read; a failed call was nothing to the page.
+      expect(searchCallPageOf('read_page', { ok: true, result: 'signature 162b2d4d\npage text:\nSign in\nBLOCKER:login-wall www.rmg.co.uk\nnudge' })).toEqual(none)
+      expect(searchCallPageOf('look', { ok: true, result: 'page text:\nH4' })).toEqual(none)
+      expect(searchCallPageOf('navigate', { ok: false, error: marked })).toEqual(none)
+    })
   })
 
   it('nudges at the second search and refuses after the fifth (#289): the refusal is where #74 set it', () => {

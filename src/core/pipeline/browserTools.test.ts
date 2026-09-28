@@ -49,9 +49,12 @@ class FixtureBrowserController implements BrowserController {
     this.overrides.set(ref.ref, ref)
   }
 
+  /** What the navigation verbs answer when set: the settled page an Action Outcome carries (#304). */
+  settledOutcome: string | null = null
+
   async navigate(url: string): Promise<string> {
     this.navigations.push(url)
-    return 'navigated outcome'
+    return this.settledOutcome ?? 'navigated outcome'
   }
 
   /** The part of every read, as the tool passed it (ADR 0047). */
@@ -102,7 +105,7 @@ class FixtureBrowserController implements BrowserController {
 
   async back(): Promise<string> {
     this.wentBack += 1
-    return 'back outcome'
+    return this.settledOutcome ?? 'back outcome'
   }
 
   wentForward = 0
@@ -111,7 +114,7 @@ class FixtureBrowserController implements BrowserController {
   async forward(): Promise<string> {
     this.wentForward += 1
     if (this.forwardError) throw this.forwardError
-    return 'forward outcome'
+    return this.settledOutcome ?? 'forward outcome'
   }
 
   state(): BrowserState {
@@ -283,6 +286,84 @@ describe('an Unavailable Landing rides the Action Outcome (#262, ADR 0060)', () 
 
     expect(result).toContain('BLOCKER:login-wall accounts.example.com')
     expect(result).not.toContain('UNAVAILABLE:')
+  })
+})
+
+describe('an Empty Landing rides the Action Outcome (#304, note on ADR 0058)', () => {
+  const RMG_URL = 'https://www.rmg.co.uk/collections/collections-online/object/rmgc-object-79142'
+  // rmg.co.uk's template around an empty <main>, as fix-288-290 pass 1 round 13 showed it.
+  const TEMPLATE = [
+    `navigated: url=${RMG_URL} title="| Royal Museums Greenwich"`,
+    `# | Royal Museums Greenwich — ${RMG_URL}`,
+    'viewport 985x575 scroll 0/962',
+    'signature 162b2d4d',
+    '[1] link "Royal Museums Greenwich" href="https://www.rmg.co.uk/"',
+  ].join('\n')
+  const MARKED = `${TEMPLATE}\nEMPTY:no-text www.rmg.co.uk\nThis page showed no text. If it should hold content, read it or Look at it once; otherwise use another source.`
+
+  async function resultsOf(browser: FixtureBrowserController, calls: Extract<AssistantTurn, { kind: 'tool_calls' }>['calls']) {
+    const { pipeline } = pipelineWith(browser, [
+      { kind: 'tool_calls', calls },
+      { kind: 'answer', speak: 'Done.', display: 'Detail.' },
+    ])
+    const events = await collect(pipeline, 'go')
+    return events.filter((event) => event.type === 'tool_result').map((event) => event.result)
+  }
+
+  function emptyPage(title = '| Royal Museums Greenwich', status = 200): FixtureBrowserController {
+    const browser = new FixtureBrowserController()
+    browser.facts = { url: RMG_URL, title, status, textDigest: '' }
+    browser.settledOutcome = TEMPLATE
+    return browser
+  }
+
+  it('marks a navigate, a back and a go_forward that settled on a page with no collected text', async () => {
+    const results = await resultsOf(emptyPage(), [
+      { id: 'c1', name: 'navigate', args: { url: RMG_URL } },
+      { id: 'c2', name: 'back', args: {} },
+      { id: 'c3', name: 'go_forward', args: {} },
+    ])
+
+    expect(results).toEqual([MARKED, MARKED, MARKED])
+  })
+
+  it('leaves a page that showed text alone, however little', async () => {
+    const browser = emptyPage()
+    browser.settledOutcome = `${TEMPLATE}\npage text:\nH4`
+
+    expect(await resultsOf(browser, [{ id: 'c1', name: 'navigate', args: { url: RMG_URL } }])).toEqual([browser.settledOutcome])
+  })
+
+  it('carries the marker of a Blocker, a Not-found or an Unavailable Page alone', async () => {
+    const notFound = await resultsOf(emptyPage('Page not found'), [{ id: 'c1', name: 'navigate', args: { url: RMG_URL } }])
+    expect(notFound[0]).toContain('NOT-FOUND:title www.rmg.co.uk')
+    expect(notFound[0]).not.toContain('EMPTY:')
+
+    const unavailable = await resultsOf(emptyPage('| Royal Museums Greenwich', 503), [{ id: 'c1', name: 'navigate', args: { url: RMG_URL } }])
+    expect(unavailable[0]).toContain('UNAVAILABLE:503 www.rmg.co.uk')
+    expect(unavailable[0]).not.toContain('EMPTY:')
+
+    const walled = new FixtureBrowserController()
+    walled.facts = { url: 'https://accounts.example.com/login', title: 'Sign in', status: 200, textDigest: '' }
+    walled.settledOutcome = TEMPLATE
+    const wall = await resultsOf(walled, [{ id: 'c1', name: 'navigate', args: { url: 'https://accounts.example.com/login' } }])
+    expect(wall[0]).toContain('BLOCKER:login-wall accounts.example.com')
+    expect(wall[0]).not.toContain('EMPTY:')
+  })
+
+  it('marks nothing on about:blank', async () => {
+    const browser = new FixtureBrowserController()
+    browser.facts = { url: 'about:blank', title: '', textDigest: '' }
+    browser.settledOutcome = 'navigated: url=about:blank title=""\n#  — about:blank\nviewport 985x575 scroll 0/575\nsignature 00000000'
+
+    expect(await resultsOf(browser, [{ id: 'c1', name: 'back', args: {} }])).toEqual([browser.settledOutcome])
+  })
+
+  it('marks no click that changed the URL and showed no text: its snapshot is taken before the page renders (#309)', async () => {
+    const browser = emptyPage()
+    browser.clickResult = `clicked [7]: urlChanged=true dialogOpen=false; page signature changed\n${TEMPLATE}`
+
+    expect(await resultsOf(browser, [{ id: 'c1', name: 'click', args: { ref: 7 } }])).toEqual([browser.clickResult])
   })
 })
 

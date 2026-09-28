@@ -2,6 +2,7 @@ import type { ToolCall, ToolResultOutcome } from '../ports/llm'
 import type { SnapshotRef } from '../browser/snapshot'
 import { landedOnNotFoundPage } from '../browser/notFoundPage'
 import { landedOnUnavailablePage } from '../browser/unavailablePage'
+import { landedOnEmptyPage } from '../browser/emptyLanding'
 import { wasBlockedOrInert } from '../browser/actionOutcome'
 import { landedOnBlocker } from '../browser/blockerNudge'
 import { collectedReportIn } from '../agent/agentResultsHeader'
@@ -11,9 +12,11 @@ import {
   SEARCH_LOOP_REFUSE_AFTER,
   putSomethingNew,
   searchCallKindOf,
+  searchCallPageOf,
   searchStreakAfter,
-  searchStreakMoveOf,
+  searchStreakMoveOnPage,
   similarQueries,
+  unreadEmptyLandingAfter,
   type SearchCallKind,
   type SearchSignature,
 } from './searchLoopRule'
@@ -117,6 +120,13 @@ import { reportFault } from '../trace/fault'
 // Observation and earns no Notice, and the gate never refuses it. What the
 // rail cannot read off a call and its outcome — that the call is a rewrite,
 // that the user answered — the Tool Round says beside them.
+//
+// #304 (note on ADR 0058) added a fourth landing that holds: an Empty
+// Landing, a navigate, a back or a go_forward that settled on a page the
+// Run was shown no text from, read from its `EMPTY:` marker by
+// `landedOnEmptyPage` in emptyLanding.ts. The Page Read that returns text
+// from that page is the escape the landing was not, until the next page
+// arrival; the rail holds whether one is unread beside the streak.
 
 // The tiers and the signature surface live in searchLoopRule.ts and
 // progressFingerprints.ts; re-exported here so the module's consumers (and
@@ -179,7 +189,8 @@ export interface SearchLoopRail {
    * Inspection, a checkpoint, a Composed Address rewrite and a call that
    * acts on no page never reset, and failed calls leave it alone. The verdict
    * carries the advisory nudge once the streak reaches the nudge tier, and
-   * a Search Observation for every search (#243).
+   * a Search Observation for every search (#243). An Empty Landing never
+   * resets, and the Page Read that returns text from it does (#304).
    */
   observe(call: ToolCall, outcome: ToolResultOutcome, facts?: SearchLoopCallFacts): Promise<SearchLoopVerdict>
   /** The consecutive searches with nothing opened between them, as the last observed call left them. */
@@ -207,6 +218,8 @@ type Classification = { kind: 'search'; query: string; signature: SearchSignatur
 
 export function createSearchLoopRail(deps: SearchLoopRailDeps = {}): SearchLoopRail {
   let streak = 0
+  // Whether the Run holds an Empty Landing it has not read (#304).
+  let unreadEmptyLanding = false
   // describeRef memo between one call's gate and observe: the pipeline
   // classifies every call twice, and the ref's facts cannot change between
   // the pre-execution gate and the post-execution observation.
@@ -273,14 +286,18 @@ export function createSearchLoopRail(deps: SearchLoopRailDeps = {}): SearchLoopR
       // that landed on an Unavailable Page (#262, ADR 0060): the site put
       // nothing in front of the Run. Nor did a landing on a Blocker, a
       // question the user did not answer, or a wait that collected no
-      // Subagent Report (#293).
+      // Subagent Report (#293). Nor did an Empty Landing (#304): the Run was
+      // shown no text from the page.
       const consumed =
         outcome.ok &&
         !landedOnNotFoundPage(outcome) &&
         !landedOnUnavailablePage(outcome) &&
+        !landedOnEmptyPage(outcome) &&
         !wasBlockedOrInert(outcome) &&
         putSomethingNew(call.name, { blocker: landedOnBlocker(outcome), userAnswered: facts.userAnswered === true, collectedReport: collectedReportIn(outcome.result) })
-      streak = searchStreakAfter(streak, searchStreakMoveOf(classified.kind, consumed))
+      const page = searchCallPageOf(call.name, outcome)
+      streak = searchStreakAfter(streak, searchStreakMoveOnPage(classified.kind, consumed, unreadEmptyLanding, page))
+      unreadEmptyLanding = unreadEmptyLandingAfter(unreadEmptyLanding, classified.kind, page)
       if (classified.kind !== 'search') return NO_VERDICT
       return {
         notice: streak >= SEARCH_LOOP_NUDGE_AFTER ? SEARCH_LOOP_NUDGE : null,

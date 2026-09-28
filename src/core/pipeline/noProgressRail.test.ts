@@ -377,6 +377,59 @@ describe('no-progress rail — an Unavailable Landing is neutral once (#262, ADR
   })
 })
 
+describe('no-progress rail — an Empty Landing is neutral once (#304, note on ADR 0058)', () => {
+  const ADDRESS = 'https://www.rmg.co.uk/collections/collections-online/object/rmgc-object-79142'
+  const TEMPLATE = state({ url: ADDRESS, title: '| Royal Museums Greenwich', textDigest: '' })
+  const landed = ok(
+    `navigated: url=${ADDRESS} title="| Royal Museums Greenwich"\n# | Royal Museums Greenwich — ${ADDRESS}\nviewport 985x575 scroll 0/962\nsignature 162b2d4d\nEMPTY:no-text www.rmg.co.uk\nThis page showed no text.`,
+  )
+
+  it('reads the landing and each Producer’s first look at it as neutral, and a second landing as the repeat', async () => {
+    let current = BASE
+    const rail = createNoProgressRail({ settledState: () => current })
+    const read = call('read_page')
+    const step = async (action: ToolCall, outcome: ToolResultOutcome = ok()): Promise<string | null> => {
+      expect(await rail.gate(action)).toEqual({ ok: true })
+      return rail.observe(action, outcome)
+    }
+
+    expect(await step(read)).toBeNull() // the baseline
+    expect(await step(read)).toMatch(/repeats an equivalent action/) // one no-progress action, nudged
+
+    // Not Progress, which would have reset the count; not a no-progress action either.
+    current = TEMPLATE
+    expect(await step(call('navigate', { url: ADDRESS }), landed)).toBeNull()
+    expect(rail.makingProgress()).toBe(true)
+    // The read the advice asks for is the page reader's first look: neutral too.
+    expect(await step(read)).toBeNull()
+    expect(rail.makingProgress()).toBe(true)
+
+    // Landing on the same page again is the ordinary repeat.
+    expect(await step(call('navigate', { url: ADDRESS }), landed)).toMatch(/Change your Approach/)
+  })
+
+  it('never makes the landing the baseline, and reads the page once it shows text as Progress', async () => {
+    let current = BASE
+    const rail = createNoProgressRail({ settledState: () => current })
+    const step = async (action: ToolCall, outcome: ToolResultOutcome = ok()): Promise<string | null> => {
+      expect(await rail.gate(action)).toEqual({ ok: true })
+      return rail.observe(action, outcome)
+    }
+
+    expect(await step(call('navigate', { url: 'https://example.com/article' }))).toBeNull() // the baseline
+    current = TEMPLATE
+    expect(await step(call('navigate', { url: ADDRESS }), landed)).toBeNull()
+    // The page rendered: the read returns its text, a state the Run had not held.
+    current = state({ url: ADDRESS, title: 'Marine timekeeper H4 | Royal Museums Greenwich', textDigest: 'H4, completed in 1759.' })
+    expect(await step(call('read_page'))).toBeNull()
+    expect(rail.makingProgress()).toBe(true)
+    // The count restarted: reading that state again is no-progress 1, not the Approach's second.
+    const repeat = await step(call('read_page'))
+    expect(repeat).toMatch(/repeats an equivalent action/)
+    expect(repeat).not.toMatch(/Change your Approach/)
+  })
+})
+
 describe('no-progress rail — resets (#126/AC3)', () => {
   it('an accepted Evidence Checkpoint resets the no-progress count and approach exhaustion', async () => {
     const rail = createNoProgressRail({ settledState: () => BASE })

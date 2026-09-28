@@ -640,6 +640,92 @@ describe('createSearchLoopRail — a Blocked Action or an inert click holds the 
   })
 })
 
+describe('createSearchLoopRail — an Empty Landing holds the streak (#304, note on ADR 0058)', () => {
+  const RMG = 'https://www.rmg.co.uk/collections/collections-online/object/rmgc-object-79142'
+  const settled = `navigated: url=${RMG} title="| Royal Museums Greenwich"\n# | Royal Museums Greenwich — ${RMG}\nviewport 985x575 scroll 0/962\nsignature 162b2d4d\n[1] link "Royal Museums Greenwich" href="https://www.rmg.co.uk/"`
+  const empty: ToolResultOutcome = {
+    ok: true,
+    result: `${settled}\nEMPTY:no-text www.rmg.co.uk\nThis page showed no text. If it should hold content, read it or Look at it once; otherwise use another source.`,
+  }
+  const readWithText: ToolResultOutcome = {
+    ok: true,
+    result: `# | Royal Museums Greenwich — ${RMG}\nviewport 985x575 scroll 0/962\nsignature 162b2d4d\npage text:\nH4, completed in 1759.\npage text: part 1 of 1 — the text is complete; there is no part 2`,
+  }
+  const readWithNone: ToolResultOutcome = {
+    ok: true,
+    result: `# | Royal Museums Greenwich — ${RMG}\nviewport 985x575 scroll 0/962\nsignature 162b2d4d\npage text: part 1 of 1 — this page has no text; there is no part 2`,
+  }
+  const read: ToolCall = { id: 'r', name: 'read_page', args: {} }
+  const look: ToolCall = { id: 'l', name: 'look', args: { question: 'what does the page show?' } }
+  const first = nav('https://duckduckgo.com/?q=Harrison+H4+rmg+object')
+  const second = nav('https://duckduckgo.com/?q=Harrison+longitude+watch+1759')
+
+  async function railAfterLanding(): Promise<SearchLoopRail> {
+    const rail = createSearchLoopRail()
+    expect((await rail.observe(first, ok)).observation?.streak).toBe(1)
+    expect(await rail.observe(nav(RMG), empty)).toEqual({ notice: null, observation: null })
+    expect(rail.streak()).toBe(1)
+    return rail
+  }
+
+  it('replays fix-288-290 pass 1 longitude rounds 12–14: the search after the landing reads streak 2 and carries the Notice', async () => {
+    const rail = await railAfterLanding()
+    const round14 = await rail.observe(second, ok)
+    expect(round14.observation?.streak).toBe(2)
+    expect(round14.notice).toBe(SEARCH_LOOP_NUDGE)
+  })
+
+  it('holds on a back and a go_forward that settled on one', async () => {
+    const rail = createSearchLoopRail()
+    await rail.observe(first, ok)
+    await rail.observe({ id: 'b', name: 'back', args: {} }, empty)
+    await rail.observe({ id: 'f', name: 'go_forward', args: {} }, empty)
+    expect(rail.streak()).toBe(1)
+  })
+
+  it('escapes on a read_page that returns text from the page the landing settled on', async () => {
+    const rail = await railAfterLanding()
+    await rail.observe(read, readWithText)
+    expect(rail.streak()).toBe(0)
+    const next = await rail.observe(second, ok)
+    expect(next.observation?.streak).toBe(1)
+    expect(next.notice).toBeNull()
+  })
+
+  it('holds on a read_page that says the page has no text, and on a Look', async () => {
+    const rail = await railAfterLanding()
+    await rail.observe(read, readWithNone)
+    await rail.observe(look, { ok: true, result: 'The page shows a marine timekeeper, H4, dated 1759.' })
+    expect(rail.streak()).toBe(1)
+    expect((await rail.observe(second, ok)).observation?.streak).toBe(2)
+  })
+
+  it('holds on a read after the next arrival: the page read is no longer the one the landing settled on', async () => {
+    const rail = await railAfterLanding()
+    // The next arrival is a search, whose listing the read then inspects.
+    expect((await rail.observe(second, ok)).observation?.streak).toBe(2)
+    await rail.observe(read, readWithText)
+    expect(rail.streak()).toBe(2)
+  })
+
+  it('escapes once: a second read of the page is inspection', async () => {
+    const rail = await railAfterLanding()
+    await rail.observe(read, readWithText)
+    await rail.observe(first, ok)
+    await rail.observe(read, readWithText)
+    expect(rail.streak()).toBe(1)
+  })
+
+  it('counts a results page that showed no text as the search it is, and reading it as inspection', async () => {
+    const rail = createSearchLoopRail()
+    const listing = nav('https://www.rmg.co.uk/collections/objects-and-stories/search?keywords=Harrison+watch+longitude')
+    expect((await rail.observe(first, ok)).observation?.streak).toBe(1)
+    expect((await rail.observe(listing, empty)).observation?.streak).toBe(2)
+    await rail.observe(read, readWithText)
+    expect(rail.streak()).toBe(2)
+  })
+})
+
 describe('createSearchLoopRail — an Unavailable Landing holds the streak (#262, ADR 0060)', () => {
   it('replays fix-258-259 pass 2 Voyager rounds 20–23 to streak 1, hold, 2, 3 and the nudge', async () => {
     const rail = createSearchLoopRail()

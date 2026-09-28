@@ -18,6 +18,7 @@ import type { IdentitySlip } from '../pipeline/answerEvidence'
 import type { SearchSignature } from '../pipeline/searchLoopRail'
 import type { NotFoundLanding } from '../browser/notFoundPage'
 import type { UnavailableLanding } from '../browser/unavailablePage'
+import type { EmptyLanding } from '../browser/emptyLanding'
 import type { ComposedAddressRewriteStamp } from '../pipeline/composedAddressRail'
 import type { TierEscalationDecline } from '../pipeline/effortEpoch'
 import type { UnseenPhraseRewriteStamp } from '../pipeline/unseenPhraseRail'
@@ -55,8 +56,11 @@ import type { VisionRunTraceRecord } from './visionTrace'
  * 8 (#300, ADR 0028): an Answer whose `identity_slip` record names no
  * `asked_item` surface, or that wrote no record, listed no id in an Asked
  * Item, which a version-7 trace cannot say.
+ * 9 (#304, note on ADR 0058): a navigate, a `back` or a `go_forward` result
+ * with no `emptyLanding` field showed the Run text or carried another
+ * landing's marker, which a version-8 trace can say only by its result text.
  */
-export const RUN_TRACE_VERSION = 8
+export const RUN_TRACE_VERSION = 9
 
 /** How much of a graded observation's retained text a record keeps. */
 export const TRACE_PAYLOAD_HEAD_CHARS = 500
@@ -478,6 +482,14 @@ export interface PipelineEventTraceEvent {
    * every other result and kind.
    */
   readonly unavailable?: UnavailableLanding
+  /**
+   * The Empty Landing a `tool_result` settled on (#304, note on ADR 0058):
+   * the host of a page the Run was shown no text from, read like `notFound`
+   * and never beside it or `unavailable`, whose markers win. On a search a
+   * Result Pick opened a result of, the landing is the opened page's. Absent
+   * on every other result and kind.
+   */
+  readonly emptyLanding?: EmptyLanding
   /**
    * The Composed Address rewrite a `tool_result` opens with (#255, ADR 0055):
    * the site whose allowance was spent and the search that ran in place of

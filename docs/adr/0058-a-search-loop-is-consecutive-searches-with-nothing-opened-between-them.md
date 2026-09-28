@@ -374,3 +374,29 @@ on not tuning to the judged data.
   counts and are named as not recounted. Reported, never gated. Closes on
   tests, one e2e fixture with an empty `<main>`, and the recount showing the
   six landings hold; no capture.
+  - **Implementation note (2026-09-28).** The landing is read off the
+    Action Outcome the Run is shown — a settled page, by its `signature`
+    line, with no `page text:` section — and never off the page facts, so
+    the marker cannot say other than what the Run read; an outcome that
+    degraded to its concise line holds no page and carries no marker.
+    Three calls the decisions left open:
+    - A landing that was itself a search, or a Composed Address rewrite,
+      leaves no read to escape by. Its page is a listing, and a Page Read
+      of a listing has been inspection since run 53 (ADR 0048); making it
+      escape where the listing rendered late would end a streak on the
+      same read that holds it where the listing rendered in time.
+    - The escape is spent by the read that takes it: a second read of the
+      page is inspection again.
+    - The recount reads the traces once, by `pnpm live:empty-landings`,
+      and commits what it found (`e2e/live/emptyLandingMarks.ts`), so the
+      Fix Ledger still reads no capture and a test pins the six landings.
+    The sweep read 372 attempts of 62 capture sets and found 38 Empty
+    Landings in the orchestrator's rounds, the six above among them; the
+    eight families named had no trace on disk. No Page Read returned text
+    from one: the three that returned text after a text-less navigate
+    (`fix-281-3`, `fix-283-2`, `fix-291-4`) each read an rmg.co.uk results
+    page, a search. The count is below the 50 measured because it leaves
+    out a Subagent's navigates, which no audit's rounds hold, and three
+    results the trace cut. Recounted, the initials at streak 2 or beyond
+    read 19 on `fix-288-290` where they read 17, 15 on `fix-284` where
+    they read 14, and 27 on `fix-257` where they read 26.

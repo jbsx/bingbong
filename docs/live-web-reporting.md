@@ -759,7 +759,18 @@ it was. The count of Unavailable Landings followed by a search reads the
 same move (#294): the wait after a landing holds on whatever holds the
 streak, ends uncounted on escape, and counts when the next move is a search,
 so a Composed Address rewrite after a landing holds it and the function
-keeps no list of its own. Where the trace carries the rail's Search
+keeps no list of its own. Since #304 an Empty Landing holds the streak too:
+a navigate, a `back` or a `go_forward` that settled on a page the Run was
+shown no text from, with no wall and no other landing on it, never a click.
+It is the call's `emptyLanding`, the host, read from the Run Trace's field
+from version 9 and, on a trace below it, from the result's own shape — a
+settled page with no `page text:` section — where the trace kept the result
+whole (`chars` no greater than the text it holds). The Page Read that returns
+text from the page a landing settled on, before the next page arrival, ends
+the streak and is the call's `readEmptyLanding`; a landing that was itself a
+search leaves no such read, its page being a listing. `emptyLandings` counts
+the landings, those followed by a search and those read with text, beside the
+rounds; reported, never gated. Where the trace carries the rail's Search
 Observations (#243, ADR 0049), which calls were searches — typed and refused
 ones included — and their query and signature (`url` or `input`) are read from
 them, and the attempt's `searchSource` reads `rail`; the streak itself is the
@@ -784,16 +795,26 @@ or beyond. The rail nudged from streak 3 until #289 and nudges from 2 since,
 so the rounds the live rail nudged or refused on are the second count on a
 capture before it and the first on one after; the counters keep their
 streaks. An attempt says which reading of the rule counted it in
-`searchStreakRule` (`SEARCH_STREAK_RULE`, 2 since #289 and 3 since #293;
-absent on an audit written before it, which counted an accepted checkpoint
-as an opening).
+`searchStreakRule` (`SEARCH_STREAK_RULE`, 2 since #289, 3 since #293 and 4
+since #304; absent on an audit written before it, which counted an accepted
+checkpoint as an opening).
 `replaySearchStreaks` re-derives the streaks of a
 report already written: the Fix Ledger uses it to recount an audit that
 predates the two counters, or whose attempts were counted by an older reading
 of the rule, when it reads one, so a Subject under the rule
 compares like for like with a Reference audited under an older one,
 and `audit.test.ts` pins the recount of the committed fix-257 audits and of
-the two captures audited under rule 2. Rounds are numbered by position in the digest,
+the two captures audited under rule 2. One recount is of what no audit kept
+(#304): an audit keeps 240 characters of a result, which cannot say an Empty
+Landing, so `pnpm live:empty-landings` reads the Run Traces of every attempt
+the committed audits name and writes `e2e/live/emptyLandingMarks.ts` — the
+round and the call of each landing — and the Fix Ledger puts those marks
+back on the rounds before it replays them. Run it where the captures are; a
+worktree holds none. A capture set with no trace on disk (`fix-235`,
+`fix-236`, `fix-237`, `fix-239`, `fix-240`, `fix-242`, `fix-242r`,
+`fix-256r2`) is left out of the marks, keeps the counts its replay gives
+without them, reads its three Empty Landing counters as nothing, and is
+named in its family's notes. Rounds are numbered by position in the digest,
 with the trace's round and attempt beside them, because a retried round repeats
 its number. The same trace classifies identically on every run, and every attempt carries a `digestHash` over the
 digest the reviewer was shown; `audit.test.ts` pins the copied budgets, rungs and

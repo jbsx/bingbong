@@ -157,6 +157,21 @@ describe('createComposedAddressRail (#239, ADR 0050; #255, ADR 0055)', () => {
     expect(spent.rewrite(nav(outage))).toBeNull()
   })
 
+  it('spends nothing on a Composed Address that was an Empty Landing (#304): a composed raw-file address lands the same and is right', () => {
+    const rail = createComposedAddressRail()
+    const address = 'https://raw.githubusercontent.com/raspberrypi/documentation/master/camera/README.md'
+    const guess = nav(address)
+    expect(rail.rewrite(guess)).toBeNull()
+    rail.observe(guess, {
+      ok: true,
+      result: `${page(address, '')}\nEMPTY:no-text raw.githubusercontent.com\nThis page showed no text. If it should hold content, read it or Look at it once; otherwise use another source.`,
+    })
+
+    // No evidence about the address: the same one, and another composed to the site, run as composed.
+    expect(rail.rewrite(nav(address))).toBeNull()
+    expect(rail.rewrite(nav('https://raw.githubusercontent.com/raspberrypi/documentation/master/camera/camera3.md'))).toBeNull()
+  })
+
   it('never rewrites a search, a click or a typed query', () => {
     const rail = spentOnNasa()
 

@@ -60,6 +60,7 @@ import {
   blockedOrInertOf,
   recountUnavailableByTitle,
   unavailableLandingsOf,
+  emptyLandingsOf,
   searchLoopCountsOf,
   similarQueries,
   validateJudgement,
@@ -133,6 +134,12 @@ interface RoundSpec {
     notFound?: { basis: string; host: string }
     /** The Unavailable Landing the Run Trace records on the result (#262) — a trace written after the field was kept. */
     unavailable?: { basis: string; host: string }
+    /** The Empty Landing the Run Trace records on the result (#304) — a trace written at version 9 or later. */
+    emptyLanding?: { host: string }
+    /** The Run Trace version of the result's record, where the fixture's own does not say it (#304). */
+    v?: number
+    /** The result's whole length, where the trace cut it (#304): absent, the text is whole. */
+    chars?: number
     /** The Composed Address rewrite the Run Trace records on the result (#255, ADR 0055). */
     rewritten?: { site: string; query: string }
     /** The Unseen Phrase rewrite the Run Trace records on the result (#267, ADR 0064). */
@@ -209,6 +216,9 @@ function traceOf(rounds: readonly RoundSpec[], extra: readonly Record<string, un
         event: { type: 'tool_result', turnId: TURN, callId, name: call.name, ok, ...(ok ? { result: call.result ?? 'ok' } : { error: call.error ?? 'refused' }), at: T0 + spec.at + 3 },
         ...(call.notFound !== undefined ? { notFound: call.notFound } : {}),
         ...(call.unavailable !== undefined ? { unavailable: call.unavailable } : {}),
+        ...(call.emptyLanding !== undefined ? { emptyLanding: call.emptyLanding } : {}),
+        ...(call.v !== undefined ? { v: call.v } : {}),
+        ...(call.chars !== undefined ? { chars: call.chars } : {}),
         ...(call.rewritten !== undefined ? { rewritten: call.rewritten } : {}),
         ...(call.unquoted !== undefined ? { unquoted: call.unquoted } : {}),
         ...(call.engineRewrite !== undefined ? { engineRewrite: call.engineRewrite } : {}),
@@ -1508,6 +1518,132 @@ describe('the rail’s Search Observations (#243, ADR 0049)', () => {
     expect(markdown).toContain('- search source rail: the rail’s own Search Observations, the streak replayed by its rule')
     expect(markdown).toContain('- search source replay: the streak rule re-run over navigate searches')
     expect(markdown).toContain('by search source rail 1, replay 1, none 0')
+  })
+})
+
+describe('Empty Landings (#304, note on ADR 0058)', () => {
+  const FIRST = 'https://duckduckgo.com/?q=harrison+h4+rmg+object'
+  const SECOND = 'https://duckduckgo.com/?q=harrison+longitude+watch+1759'
+  const RMG = 'https://www.rmg.co.uk/collections/collections-online/object/rmgc-object-79142'
+  const ADVICE = 'This page showed no text. If it should hold content, read it or Look at it once; otherwise use another source.'
+  // rmg.co.uk's template around an empty <main>: a settled page with refs and no page text.
+  const TEMPLATE = (url: string, signature: string, line = `navigated: url=${url} title="| Royal Museums Greenwich"`): string =>
+    `${line}\n# | Royal Museums Greenwich — ${url}\nviewport 985x575 scroll 0/962\nsignature ${signature}\n[1] link "Royal Museums Greenwich" href="https://www.rmg.co.uk/"`
+  const MARKED = `${TEMPLATE(RMG, 'a0c00002')}\nEMPTY:no-text www.rmg.co.uk\n${ADVICE}`
+  const READ_TEXT = `# H4 | Royal Museums Greenwich — ${RMG}\nviewport 985x575 scroll 0/962\nsignature a0c00003\npage text:\nH4, completed in 1759.\npage text: part 1 of 1 — the text is complete; there is no part 2`
+  const READ_NONE = `# | Royal Museums Greenwich — ${RMG}\nviewport 985x575 scroll 0/962\nsignature a0c00002\npage text: part 1 of 1 — this page has no text; there is no part 2`
+  const search = (round: number, url: string): RoundSpec => ({ round, at: round * 1_000, calls: [{ name: 'navigate', args: { url }, result: PAGE('search', url, `ddg0000${round}`, 'results') }] })
+  const landing = (round: number, call: NonNullable<RoundSpec['calls']>[number]): RoundSpec => ({ round, at: round * 1_000, calls: [call] })
+  const streaksOf = (rounds: readonly AuditRound[]) => rounds.map((round) => round.calls[0]!.search?.streak ?? null)
+
+  const BY_FIELD: RoundSpec[] = [
+    search(1, FIRST),
+    landing(2, { name: 'navigate', args: { url: RMG }, result: MARKED, emptyLanding: { host: 'www.rmg.co.uk' }, v: 9 }),
+    search(3, SECOND),
+  ]
+  // A trace written before the field: the same landing as the Run was shown it, with no marker.
+  const BY_SHAPE: RoundSpec[] = [search(1, FIRST), landing(2, { name: 'navigate', args: { url: RMG }, result: TEMPLATE(RMG, 'a0c00002') }), search(3, SECOND)]
+
+  it('reads the landing from the Run Trace’s field, and from the result’s shape on a trace written before it: the search after it reads streak 2', () => {
+    for (const traced of [BY_FIELD, BY_SHAPE]) {
+      const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(traced, EXTRA) }))
+      expect(mechanical.rounds[1]!.calls[0]).toMatchObject({ emptyLanding: 'www.rmg.co.uk', progress: { made: false, reason: 'landed on an Empty Landing' } })
+      expect(mechanical.rounds[1]).toMatchObject({ kind: 'acquisition_without_progress', reason: 'navigate: landed on an Empty Landing' })
+      expect(streaksOf(mechanical.rounds)).toEqual([1, null, 2])
+      expect(mechanical.searchStreakRule).toBe(4)
+      expect(mechanical.emptyLandings).toEqual({ landings: [2], followedBySearch: [2], readWithText: [] })
+      expect(emptyLandingsOf(mechanical.rounds)).toEqual(mechanical.emptyLandings)
+      expect(streaksOf(replaySearchStreaks(mechanical.rounds))).toEqual([1, null, 2])
+    }
+  })
+
+  it('reads a back and a go_forward by the shape too, and never a click: its snapshot is taken before the page renders (#309)', () => {
+    const rounds: RoundSpec[] = [
+      search(1, FIRST),
+      landing(2, { name: 'back', args: {}, result: TEMPLATE(RMG, 'a0c00002', `went back: url=${RMG} title="| Royal Museums Greenwich"`) }),
+      landing(3, { name: 'go_forward', args: {}, result: TEMPLATE(RMG, 'a0c00002', `went forward: url=${RMG} title="| Royal Museums Greenwich"`) }),
+      landing(4, { name: 'click', args: { ref: 1 }, result: TEMPLATE(`${RMG}?tab=objects`, 'a0c00004', 'clicked [1]: urlChanged=true dialogOpen=false; page signature changed') }),
+      search(5, SECOND),
+    ]
+    const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(rounds, EXTRA) }))
+    expect(mechanical.rounds.map((round) => round.calls[0]!.emptyLanding ?? null)).toEqual([null, 'www.rmg.co.uk', 'www.rmg.co.uk', null, null])
+    // The click opened a page: the streak ended there.
+    expect(streaksOf(mechanical.rounds)).toEqual([1, null, null, null, 1])
+  })
+
+  it('reads no shape where the app could have said it and did not, where the trace cut the result, or where another landing’s marker rides it', () => {
+    const shapeOf = (call: Partial<NonNullable<RoundSpec['calls']>[number]>): RoundSpec[] => [search(1, FIRST), landing(2, { name: 'navigate', args: { url: RMG }, result: TEMPLATE(RMG, 'a0c00002'), ...call }), search(3, SECOND)]
+    const marked = (rounds: RoundSpec[]) => classifyAttempt(inputOf({ traceRecords: traceOf(rounds, EXTRA) })).rounds[1]!.calls[0]!
+    expect(marked(shapeOf({ v: 9 }))).not.toHaveProperty('emptyLanding')
+    expect(marked(shapeOf({ chars: 9_000 }))).not.toHaveProperty('emptyLanding')
+    expect(marked(shapeOf({ result: `${TEMPLATE(RMG, 'a0c00002')}\nBLOCKER:challenge www.rmg.co.uk\nA challenge is in the way.` }))).not.toHaveProperty('emptyLanding')
+    const notFound = marked(shapeOf({ result: TEMPLATE(RMG, 'a0c00002').replaceAll('| Royal Museums Greenwich', 'Page not found') }))
+    expect(notFound).toHaveProperty('notFound', 'title www.rmg.co.uk')
+    expect(notFound).not.toHaveProperty('emptyLanding')
+    // about:blank names no host.
+    expect(marked(shapeOf({ args: { url: 'about:blank' }, result: 'navigated: url=about:blank title=""\n#  — about:blank\nviewport 985x575 scroll 0/575\nsignature b1a00001' }))).not.toHaveProperty('emptyLanding')
+  })
+
+  it('ends the streak on the Page Read that returns text from the page the landing settled on, and on no other read or Look', () => {
+    const read = (round: number, result: string): RoundSpec => landing(round, { name: 'read_page', args: {}, result })
+    const escaped = classifyAttempt(inputOf({ traceRecords: traceOf([...BY_SHAPE.slice(0, 2), read(3, READ_TEXT), search(4, SECOND)], EXTRA) }))
+    expect(escaped.rounds[2]!.calls[0]).toHaveProperty('readEmptyLanding', true)
+    expect(streaksOf(escaped.rounds)).toEqual([1, null, null, 1])
+    expect(escaped.emptyLandings).toEqual({ landings: [2], followedBySearch: [], readWithText: [3] })
+    expect(streaksOf(replaySearchStreaks(escaped.rounds))).toEqual([1, null, null, 1])
+    expect(emptyLandingsOf(replaySearchStreaks(escaped.rounds))).toEqual(escaped.emptyLandings)
+
+    const held = classifyAttempt(
+      inputOf({
+        traceRecords: traceOf([...BY_SHAPE.slice(0, 2), read(3, READ_NONE), landing(4, { name: 'look', args: { question: 'what is shown?' }, result: 'A marine timekeeper, H4.' }), search(5, SECOND)], EXTRA),
+      }),
+    )
+    expect(held.rounds.flatMap((round) => round.calls.filter((call) => call.readEmptyLanding !== undefined))).toEqual([])
+    expect(streaksOf(held.rounds)).toEqual([1, null, null, null, 2])
+
+    // After the next arrival the page read is another: a listing, and reading it is inspection.
+    const after = classifyAttempt(inputOf({ traceRecords: traceOf([...BY_SHAPE, read(4, READ_TEXT), search(5, FIRST)], EXTRA) }))
+    expect(after.rounds[3]!.calls[0]).not.toHaveProperty('readEmptyLanding')
+    expect(streaksOf(after.rounds)).toEqual([1, null, 2, null, 3])
+  })
+
+  it('counts a results page that showed no text as the search it is, its marker beside it', () => {
+    const listing = 'https://www.rmg.co.uk/collections/objects-and-stories/search?keywords=Harrison+watch+longitude'
+    const rounds: RoundSpec[] = [search(1, FIRST), landing(2, { name: 'navigate', args: { url: listing }, result: TEMPLATE(listing, 'a0c00002') }), landing(3, { name: 'read_page', args: {}, result: READ_TEXT }), search(4, SECOND)]
+    const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(rounds, EXTRA) }))
+    expect(mechanical.rounds[1]!.calls[0]).toMatchObject({ emptyLanding: 'www.rmg.co.uk', search: { streak: 2 } })
+    expect(mechanical.rounds[2]!.calls[0]).not.toHaveProperty('readEmptyLanding')
+    expect(streaksOf(mechanical.rounds)).toEqual([1, 2, null, 3])
+  })
+
+  it('agrees with the rail on the streaks of a trace the rule wrote', async () => {
+    const rounds: RoundSpec[] = [search(1, FIRST), BY_FIELD[1]!, landing(3, { name: 'read_page', args: {}, result: READ_NONE }), search(4, SECOND), landing(5, { name: 'navigate', args: { url: RMG }, result: MARKED, emptyLanding: { host: 'www.rmg.co.uk' }, v: 9 }), landing(6, { name: 'read_page', args: {}, result: READ_TEXT }), search(7, FIRST)]
+    const rail = createSearchLoopRail()
+    const observed: (number | null)[] = []
+    for (const spec of rounds) {
+      const call = spec.calls![0]!
+      observed.push((await rail.observe({ id: String(spec.round), name: call.name, args: call.args }, { ok: true, result: call.result })).observation?.streak ?? null)
+    }
+    expect(observed).toEqual([1, null, null, 2, null, null, 1])
+    expect(streaksOf(classifyAttempt(inputOf({ traceRecords: traceOf(rounds, EXTRA) })).rounds)).toEqual(observed)
+  })
+
+  it('shows the reviewer the landing, and counts it in the set and its Markdown', () => {
+    const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(BY_FIELD, EXTRA) }))
+    expect(digestCallLines(mechanical.rounds[1]!.calls[0]!)).toContain('  landing: Empty Landing (www.rmg.co.uk)')
+    const set = buildAuditSet(provenanceOf(), [{ mechanical, review: null, countsAfterOverrules: mechanical.counts }], [])
+    expect(set.populations.initial.emptyLandings).toEqual({ landings: 1, followedBySearch: 1, readWithText: 0 })
+    const markdown = formatAuditSet(set)
+    expect(markdown).toContain('- Empty Landings 1 (round 2); followed by a search: 1 (round 2); read with text: 0')
+    expect(markdown).toContain('1 Empty Landing(s), 1 followed by a search, 0 read with text')
+  })
+
+  it('reads an audit written before the counter as not counted, never as zero', () => {
+    const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(BY_FIELD, EXTRA) }))
+    const older = Object.fromEntries(Object.entries(mechanical).filter(([field]) => field !== 'emptyLandings')) as typeof mechanical
+    const set = buildAuditSet(provenanceOf(), [{ mechanical: older, review: null, countsAfterOverrules: mechanical.counts }], [])
+    expect(set.populations.initial.emptyLandings).toBeUndefined()
+    expect(formatAuditSet(set)).toContain('Empty Landings not counted')
   })
 })
 
@@ -3283,7 +3419,7 @@ describe('escape is something new put in front of the Run (#293)', () => {
     for (const traced of [observed, ROUNDS]) {
       const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(traced, EXTRA) }))
       expect(mechanical.rounds.map((round) => round.calls[0]!.search?.streak ?? null)).toEqual(STREAKS)
-      expect(mechanical.searchStreakRule).toBe(3)
+      expect(mechanical.searchStreakRule).toBe(4)
       expect(replaySearchStreaks(mechanical.rounds).map((round) => round.calls[0]!.search?.streak ?? null)).toEqual(STREAKS)
       expect(searchLoopCountsOf(replaySearchStreaks(mechanical.rounds))).toEqual(searchLoopCountsOf(mechanical.rounds))
     }

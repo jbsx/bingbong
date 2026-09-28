@@ -83,6 +83,22 @@ function page(body: string): string {
   return `<html><body style="background:#222">${body}</body></html>`
 }
 
+// #304: a site's template around nothing, as rmg.co.uk answers an object id
+// it cannot resolve — a 200, a title that names only the site, an empty
+// <main>, and its one sentence outside it, where the collector does not read.
+function emptyMainPage(): string {
+  return `<!doctype html>
+<html>
+<head><title>| Fixture Museums</title></head>
+<body style="background:#222;color:#fff">
+  <header><a href="/second">Fixture Museums</a> <a href="/catalog">Collections</a></header>
+  <main></main>
+  <div class="notice">The search service is currently unavailable. Please try again later.</div>
+  <footer><a href="/reading">Contact us</a></footer>
+</body>
+</html>`
+}
+
 // Interactive elements the CDP controller e2e drives: buttons that record
 // clicks via the title, an input/textarea/select/checkbox/video mix for
 // snapshot coverage, and a below-the-fold button that only appears in the
@@ -1363,6 +1379,10 @@ export async function startFixtureServer(): Promise<FixtureServer> {
     if (req.url !== undefined && req.url.startsWith('/results?')) {
       const query = new URL(req.url, 'http://fixture.invalid').searchParams.get('q') ?? ''
       res.end(searchResultsPage(query, altUrlOf('/widget-review')))
+      return
+    }
+    if (req.url === '/empty-main') {
+      res.end(emptyMainPage())
       return
     }
     if (req.url === '/native-dialog') {

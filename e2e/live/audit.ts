@@ -45,6 +45,7 @@ import { classifyNotFoundPage, NOT_FOUND_BASES, type NotFoundBasis, type NotFoun
 import { offLanguageRenderings } from '../../src/core/agent/answerLanguage.ts'
 import { isPartPastTheEnd } from '../../src/core/browser/pageText.ts'
 import { classifyUnavailablePage, isUnavailableBasis, type UnavailableLanding } from '../../src/core/browser/unavailablePage.ts'
+import { classifyEmptyLanding, isPageArrival, pageReadReturnedText, type EmptyLanding } from '../../src/core/browser/emptyLanding.ts'
 import type { ComposedAddressRewriteStamp } from '../../src/core/pipeline/composedAddressRail.ts'
 import type { UnseenPhraseRewriteStamp } from '../../src/core/pipeline/unseenPhraseRail.ts'
 import type { EngineRewriteStamp } from '../../src/core/pipeline/engineRewriteRail.ts'
@@ -63,9 +64,11 @@ import {
   SEARCH_STREAK_RULE,
   searchCallKindOf,
   searchStreakAfter,
-  searchStreakMoveOf,
+  searchStreakMoveOnPage,
   similarQueries,
+  unreadEmptyLandingAfter,
   type SearchCallKind,
+  type SearchCallPage,
   type SearchStreakMove,
 } from '../../src/core/pipeline/searchLoopRule.ts'
 import { normalizeUrlInput, parseSearchUrl, SEARCH_URL_FORMS, type SearchUrlForm } from '../../src/core/browser/urlInput.ts'
@@ -201,6 +204,8 @@ export const FIRST_TOKEN_TRACE_VERSION = 4
 export const TIER_ESCALATION_DECLINE_TRACE_VERSION = 5
 /** The Run Trace version from which an Answer records what became of its Answer Checkpoints (#288, ADR 0072): below it, no Answer says whether it carried any. */
 export const ANSWER_CHECKPOINT_TRACE_VERSION = 6
+/** The Run Trace version from which a result's record says an Empty Landing as a field (#304); a record below it is read by the result's shape. */
+export const EMPTY_LANDING_TRACE_VERSION = 9
 /** How far apart a perf `llm` span's end and an `llm_round` record may be and still be the same round. */
 const LATENCY_JOIN_TOLERANCE_MS = 2_000
 /** A search at this streak followed a search with nothing opened between them (ADR 0058): no Progress. */
@@ -304,6 +309,23 @@ export interface AuditCall {
    * Present only on a landing, so an attempt with none keeps its digest.
    */
   readonly unavailable?: string
+  /**
+   * The Empty Landing the call settled on (#304, note on ADR 0058): the host
+   * of a page the Run was shown no text from. Read from the Run Trace's field
+   * on the result; a trace written before the field was kept is read by the
+   * result's own shape — a settled page with no page text, on a navigate, a
+   * `back` or a `go_forward` — where the trace kept the result whole. Never
+   * beside a wall or another landing, whose markers win. Present only on a
+   * landing, so an attempt with none keeps its digest.
+   */
+  readonly emptyLanding?: string
+  /**
+   * A Page Read that returned text from the page an Empty Landing settled
+   * on, before the next page arrival (#304): the escape the landing was not.
+   * Read off the whole result, which the head cannot say. Present only on
+   * that read, so an attempt with none keeps its digest.
+   */
+  readonly readEmptyLanding?: true
   /**
    * The search a Composed Address was rewritten into (#255, ADR 0055): the
    * query that ran, read from the Run Trace's field on the result, while
@@ -606,6 +628,15 @@ export interface AuditMechanical {
    * on an audit written before the counter.
    */
   readonly unavailableLandings?: UnavailableLandingRounds
+  /**
+   * The Empty Landings (#304, note on ADR 0058): the round of every call
+   * that settled on one, one entry per call; of those, the ones followed by
+   * a search, the move the landing held the streak for; and the rounds of
+   * the Page Reads that returned text from one. Beside the rounds, never in
+   * them. Absent on an audit written before the counter. Reported, never
+   * gated.
+   */
+  readonly emptyLandings?: EmptyLandingRounds
   /**
    * The reads refused as past the end (#290): the round of every `read_page`
    * call the app answered with its refusal for a part the page does not
@@ -970,6 +1001,8 @@ export interface AuditPopulation {
   readonly blockedOrInert?: Readonly<BlockedOrInertCounts>
   /** Unavailable Landings by basis, and those followed by a search, over the attempts that count them (#262); absent when none does. */
   readonly unavailableLandings?: Readonly<Record<keyof UnavailableLandingRounds, number>>
+  /** Empty Landings, those followed by a search and those read with text, over the attempts that count them (#304); absent when none does. */
+  readonly emptyLandings?: Readonly<Record<keyof EmptyLandingRounds, number>>
   /** Consent dismissals, hand consent clicks, and blocks a hand consent click followed, over the attempts that count them (#263); absent when none does. */
   readonly consentWalls?: Readonly<ConsentWallCounts>
   /** Window opens followed into the pane and denied, over the attempts that count them (#299); absent when none does. */
@@ -1482,6 +1515,12 @@ function unavailableLandingsText(counted: UnavailableLandingRounds | undefined):
     : `Unavailable Landings by status ${roundsText(counted.status)}, by title ${roundsText(counted.title)}; followed by a search: ${roundsText(counted.followedBySearch)}`
 }
 
+function emptyLandingsText(counted: EmptyLandingRounds | undefined): string {
+  return counted === undefined
+    ? 'Empty Landings not counted'
+    : `Empty Landings ${roundsText(counted.landings)}; followed by a search: ${roundsText(counted.followedBySearch)}; read with text: ${roundsText(counted.readWithText)}`
+}
+
 function consentWallsText(counted: ConsentWallRounds | undefined): string {
   return counted === undefined
     ? 'consent walls not counted'
@@ -1573,6 +1612,12 @@ function populationUnavailableLandingsText(counted: AuditPopulation['unavailable
     : `${counted.status + counted.title} Unavailable Landing(s) (${counted.status} by status, ${counted.title} by title), ${counted.followedBySearch} followed by a search`
 }
 
+function populationEmptyLandingsText(counted: AuditPopulation['emptyLandings']): string {
+  return counted === undefined
+    ? 'Empty Landings not counted'
+    : `${counted.landings} Empty Landing(s), ${counted.followedBySearch} followed by a search, ${counted.readWithText} read with text`
+}
+
 /** The navigate searches over an attempt's rounds by Search URL form (#260, AC5). */
 export function searchFormsOf(rounds: readonly AuditRound[]): Record<SearchUrlForm, number> {
   const forms = emptySearchForms()
@@ -1646,6 +1691,14 @@ type ToolResultEvent = Extract<PipelineEvent, { type: 'tool_result' }>
 interface ResultFields {
   landing: NotFoundLanding | null
   unavailable: UnavailableLanding | null
+  /** The Empty Landing the record carries as a field (#304), or null. */
+  emptyLanding: EmptyLanding | null
+  /**
+   * Whether the result's own shape may say an Empty Landing (#304): the
+   * record was written before the field was, and the trace kept its text
+   * whole — a page of many refs cut before its page text shows none.
+   */
+  shapeSays: boolean
   rewritten: ComposedAddressRewriteStamp | null
   unquoted: UnseenPhraseRewriteStamp | null
   engineRewrite: EngineRewriteStamp | null
@@ -1701,6 +1754,18 @@ function landingFieldOf(record: TraceLine): NotFoundLanding | null {
 function unavailableFieldOf(record: TraceLine): UnavailableLanding | null {
   const field = record.unavailable
   return isRecord(field) && isString(field.basis) && isUnavailableBasis(field.basis) && isString(field.host) ? { basis: field.basis, host: field.host } : null
+}
+
+/** The Empty Landing a `tool_result` record carries as a field (#304), or null. */
+function emptyLandingFieldOf(record: TraceLine): EmptyLanding | null {
+  const field = record.emptyLanding
+  return isRecord(field) && isString(field.host) ? { host: field.host } : null
+}
+
+/** Whether a `tool_result` record predates the Empty Landing field and holds its text whole (#304). */
+function shapeSaysOf(record: TraceLine, event: Record<string, unknown>): boolean {
+  if (isFiniteNumber(record.v) && record.v >= EMPTY_LANDING_TRACE_VERSION) return false
+  return !isString(event.result) || !isFiniteNumber(record.chars) || record.chars <= event.result.length
 }
 
 /** The decline the Run's own `finalization_entry` record carries (#266), with the orchestrator round before it, or null; a Subagent's entry is not the Run's. */
@@ -1778,6 +1843,8 @@ function rawRounds(records: readonly TraceLine[]): RawRound[] {
         event: event as unknown as ToolResultEvent,
         landing: landingFieldOf(record),
         unavailable: unavailableFieldOf(record),
+        emptyLanding: emptyLandingFieldOf(record),
+        shapeSays: shapeSaysOf(record, event),
         rewritten: rewrittenFieldOf(record),
         unquoted: unquotedFieldOf(record),
         engineRewrite: engineRewriteFieldOf(record),
@@ -1822,6 +1889,8 @@ function rawRounds(records: readonly TraceLine[]): RawRound[] {
       result: settled?.event,
       landing: settled?.landing ?? null,
       unavailable: settled?.unavailable ?? null,
+      emptyLanding: settled?.emptyLanding ?? null,
+      shapeSays: settled?.shapeSays ?? false,
       rewritten: settled?.rewritten ?? null,
       unquoted: settled?.unquoted ?? null,
       engineRewrite: settled?.engineRewrite ?? null,
@@ -1912,6 +1981,9 @@ export const NOT_FOUND_LANDING_REASON = 'landed on a Not-found Page'
 /** The Progress reason of a call that landed on an Unavailable Page (ADR 0060): neutral in the app, without Progress here. */
 export const UNAVAILABLE_LANDING_REASON = 'landed on an Unavailable Page'
 
+/** The Progress reason of a call that settled on an Empty Landing (#304): neutral in the app, without Progress here. */
+export const EMPTY_LANDING_REASON = 'landed on an Empty Landing'
+
 /** The Progress reason of a search at streak 2 or beyond (ADR 0058), the similarity beside it for the reviewer. */
 function searchWithoutProgressReason(search: NonNullable<AuditCall['search']>): string {
   return `a search after a search with nothing opened between them (streak ${search.streak}${search.rewords === true ? ', rewording the one before it' : ''})`
@@ -1957,23 +2029,39 @@ export function searchLoopCountsOf(rounds: readonly AuditRound[]): Pick<AuditMec
  * under the consecutive one. Kinds and reasons are left as judged — they are
  * the digest the reviewer saw — and `rewords` is recomputed beside the streak.
  * A Composed Address rewrite an older audit counted as a search holds the
- * streak and loses its search line (#293).
+ * streak and loses its search line (#293). An Empty Landing holds it, and
+ * the Page Read marked as having returned text from one ends it (#304),
+ * each read from the call's own field: a report keeps the head of a result,
+ * which cannot say either.
  */
 export function replaySearchStreaks(rounds: readonly AuditRound[]): AuditRound[] {
-  const state: SearchStreakState = { streak: 0, lastSearchQuery: null }
+  const state: SearchStreakState = newSearchStreakState()
   return rounds.map((round) => ({
     ...round,
     calls: round.calls.map((call) => {
       const kind = streakKindOf(call)
-      const search = advanceSearchStreak(state, {
+      const picked = call.resultPick?.opened === true
+      const { search } = advanceSearchStreak(state, {
         kind,
         consumed: escapedOf(call),
         search: call.search === null || kind === 'rewrite' ? null : { query: call.search.query, ...(call.search.signature === undefined ? {} : { signature: call.search.signature }) },
+        // A search whose result was opened settled on the listing first: the landing the call carries is the opened page's.
+        page: picked ? { ...writtenPageOf(call), emptyLanding: false } : writtenPageOf(call),
       })
-      if (call.resultPick?.opened === true) replayResultPick(state, escapedOf(call))
+      if (picked) replayResultPick(state, escapedOf(call), writtenPageOf(call).emptyLanding)
       return search === null && call.search === null ? call : { ...call, search }
     }),
   }))
+}
+
+/** What a written call was to the page (#304), from the fields the audit kept and the head of its result. */
+function writtenPageOf(call: AuditCall): SearchCallPage {
+  const settled = call.ok === true && !call.refused
+  return {
+    emptyLanding: call.emptyLanding !== undefined,
+    arrival: settled && isPageArrival(call.name, call.resultHead ?? ''),
+    readText: call.readEmptyLanding === true,
+  }
 }
 
 /**
@@ -1992,9 +2080,9 @@ function openedPageText(text: string | null): string | null {
   return next === -1 ? '' : text.slice(next + 1)
 }
 
-/** The open a Result Pick made (#277, ADR 0070): escape, as the rail observed it, right after the search it came from. */
-function replayResultPick(state: SearchStreakState, consumed: boolean): void {
-  advanceSearchStreak(state, { kind: searchCallKindOf('navigate'), consumed, search: null })
+/** The open a Result Pick made (#277, ADR 0070): escape, as the rail observed it, right after the search it came from — unless the page it opened showed no text (#304). */
+function replayResultPick(state: SearchStreakState, consumed: boolean, emptyLanding: boolean): void {
+  advanceSearchStreak(state, { kind: searchCallKindOf('navigate'), consumed, search: null, page: { emptyLanding, arrival: true, readText: false } })
 }
 
 /** The calls that open a result: a navigate or a click that consumed something (#277). */
@@ -2133,11 +2221,19 @@ function matchedObservations(raw: Record<string, unknown>): Set<string> {
 
 /**
  * Whether an audited call consumed something, as the rail decides it: it
- * succeeded, was not refused, landed on no Not-found or Unavailable Page, and
- * was neither a Blocked Action nor an inert click.
+ * succeeded, was not refused, landed on no Not-found or Unavailable Page and
+ * on no Empty Landing (#304), and was neither a Blocked Action nor an inert
+ * click.
  */
 function consumedOf(call: AuditCall): boolean {
-  return call.ok === true && !call.refused && call.notFound === undefined && call.unavailable === undefined && blockedOrInertOfCall(call) === null
+  return (
+    call.ok === true &&
+    !call.refused &&
+    call.notFound === undefined &&
+    call.unavailable === undefined &&
+    call.emptyLanding === undefined &&
+    blockedOrInertOfCall(call) === null
+  )
 }
 
 /** What a written call that is not a search is to the streak (#293): a Composed Address rewrite by its stamp, any other by its name. */
@@ -2275,7 +2371,7 @@ export function blockedOrInertOf(rounds: readonly AuditRound[]): BlockedOrInertR
       }
       const kind = streakKindOf(call)
       if (verdict !== null && kind !== 'inspection' && streak >= 1) inStreak.push(round.round)
-      streak = searchStreakAfter(streak, searchStreakMoveOf(kind, escapedOf(call)))
+      streak = searchStreakAfter(streak, streakMoveOf(call))
     }
   }
   return { covered, notShown, blocked, inert, inStreak, postBlockVision, recoveries }
@@ -2331,7 +2427,8 @@ export interface UnavailableLandingRounds {
 function streakMoveOf(call: AuditCall): SearchStreakMove {
   const kind = streakKindOf(call)
   if (kind !== 'rewrite' && call.search !== null) return 'search'
-  return searchStreakMoveOf(kind, escapedOf(call))
+  // The read the audit marked found an Empty Landing unread (#304): the mark is the state.
+  return searchStreakMoveOnPage(kind, escapedOf(call), call.readEmptyLanding === true, writtenPageOf(call))
 }
 
 /**
@@ -2364,6 +2461,41 @@ export function unavailableLandingsOf(rounds: readonly AuditRound[]): Unavailabl
     }
   }
   return { status, title, followedBySearch }
+}
+
+/** The rounds of an attempt's Empty Landings, of those followed by a search, and of the Page Reads that returned text from one (#304). */
+export interface EmptyLandingRounds {
+  readonly landings: readonly number[]
+  readonly followedBySearch: readonly number[]
+  readonly readWithText: readonly number[]
+}
+
+/**
+ * An attempt's Empty Landings over its rounds as audited (#304, note on ADR
+ * 0058): one entry per call; of those, the ones followed by a search, the
+ * wait read by the rule's own move as an Unavailable Landing's is (#294);
+ * and the Page Reads that returned text from one, each the escape that ends
+ * the wait uncounted. Reported, never gated.
+ */
+export function emptyLandingsOf(rounds: readonly AuditRound[]): EmptyLandingRounds {
+  const landings: number[] = []
+  const followedBySearch: number[] = []
+  const readWithText: number[] = []
+  let pending: number[] = []
+  for (const round of rounds) {
+    for (const call of round.calls) {
+      if (call.readEmptyLanding === true) readWithText.push(round.round)
+      if (pending.length > 0) {
+        const move = streakMoveOf(call)
+        if (move === 'search') followedBySearch.push(...pending)
+        if (move !== 'hold') pending = []
+      }
+      if (call.emptyLanding === undefined) continue
+      landings.push(round.round)
+      pending.push(round.round)
+    }
+  }
+  return { landings, followedBySearch, readWithText }
 }
 
 /**
@@ -2698,6 +2830,12 @@ export function recountUnavailableByTitle(rounds: readonly AuditRound[]): AuditR
 interface SearchStreakState {
   streak: number
   lastSearchQuery: string | null
+  /** Whether the Run holds an Empty Landing it has not read (#304), as the rail holds it. */
+  unreadEmptyLanding: boolean
+}
+
+function newSearchStreakState(): SearchStreakState {
+  return { streak: 0, lastSearchQuery: null, unreadEmptyLanding: false }
 }
 
 /**
@@ -2707,22 +2845,35 @@ interface SearchStreakState {
  * streak's previous search); any other call holds or, when it is of the
  * kind that can escape and put something new in front of the Run (#293),
  * escapes. The caller says what the call was — which only it can read off
- * its source — and whether it consumed.
+ * its source — whether it consumed, and what it was to the page (#304): a
+ * Page Read that returned text from an Empty Landing the Run had not read
+ * escapes, and the step says so, the caller marking the call with it.
  */
 function advanceSearchStreak(
   state: SearchStreakState,
-  call: { readonly kind: Exclude<SearchCallKind, 'search'>; readonly consumed: boolean; readonly search: { readonly query: string; readonly signature?: SearchSignature } | null },
-): NonNullable<AuditCall['search']> | null {
+  call: {
+    readonly kind: Exclude<SearchCallKind, 'search'>
+    readonly consumed: boolean
+    readonly search: { readonly query: string; readonly signature?: SearchSignature } | null
+    readonly page: SearchCallPage
+  },
+): { readonly search: NonNullable<AuditCall['search']> | null; readonly readEmptyLanding: boolean } {
+  const kind: SearchCallKind = call.search !== null ? 'search' : call.kind
+  const unread = state.unreadEmptyLanding
+  state.unreadEmptyLanding = unreadEmptyLandingAfter(unread, kind, call.page)
   if (call.search !== null) {
     state.streak = searchStreakAfter(state.streak, 'search')
     const rewords = state.streak >= SEARCH_STREAK_WITHOUT_PROGRESS ? { rewords: state.lastSearchQuery !== null && similarQueries(call.search.query, state.lastSearchQuery) } : {}
     state.lastSearchQuery = call.search.query
-    return { query: head(call.search.query, 120)!, streak: state.streak, ...(call.search.signature === undefined ? {} : { signature: call.search.signature }), ...rewords }
+    return {
+      search: { query: head(call.search.query, 120)!, streak: state.streak, ...(call.search.signature === undefined ? {} : { signature: call.search.signature }), ...rewords },
+      readEmptyLanding: false,
+    }
   }
-  const move = searchStreakMoveOf(call.kind, call.consumed)
+  const move = searchStreakMoveOnPage(kind, call.consumed, unread, call.page)
   state.streak = searchStreakAfter(state.streak, move)
   if (move === 'escape') state.lastSearchQuery = null
-  return null
+  return { search: null, readEmptyLanding: unread && kind === 'inspection' && call.page.readText }
 }
 
 /**
@@ -2741,6 +2892,17 @@ function unavailableByTitle(name: string, text: string | null, page: { url: stri
   if (page === null || text === null || !carriesLanding(name, text)) return null
   const verdict = classifyUnavailablePage({ url: page.url, title: page.title ?? '' })
   return verdict === null ? null : { basis: verdict.basis, host: verdict.host }
+}
+
+/**
+ * An Empty Landing on a trace written before the Run Trace kept the field
+ * (#304): the app's own reading of the result the Run was shown, on the
+ * calls that carry the marker live — the navigation verbs, never a click.
+ */
+function emptyLandingByShape(name: string, text: string | null, page: { url: string; title: string | null } | null): EmptyLanding | null {
+  if (page === null || text === null || (name !== 'navigate' && name !== 'back' && name !== 'go_forward')) return null
+  const verdict = classifyEmptyLanding({ url: page.url, outcome: text })
+  return verdict === null ? null : { host: verdict.host }
 }
 
 /** The calls that carry a landing marker live: the navigation verbs, and a click that left the page. */
@@ -2808,6 +2970,13 @@ function classifyCall(
   // Its sibling (#262, ADR 0060), read the same way; the two never both
   // answer live, and a Not-found Landing wins here as its status did there.
   const unavailable = result !== undefined && result.ok && wall === null && landing === null ? (entry.unavailable ?? unavailableByTitle(call.name, settled, page)) : null
+  // And the Empty Landing (#304, note on ADR 0058), which a marker of the
+  // other three wins over: the field, else the shape of the result on a
+  // trace written before it that kept the text whole.
+  const emptyLanding =
+    result !== undefined && result.ok && !refused && wall === null && landing === null && unavailable === null
+      ? (entry.emptyLanding ?? (entry.shapeSays ? emptyLandingByShape(call.name, settled, page) : null))
+      : null
   const notices = noticesOf(text)
   // What a call that acts on no page delivered that the head kept below
   // cannot say (#293): the user's answer by the trace's own resolution, and
@@ -2827,7 +2996,17 @@ function classifyCall(
         ? { accepted: result.ok, outcome: result.ok ? 'accepted' : (head(result.error ?? 'rejected', 160) ?? 'rejected') }
         : null
 
-  const base = {
+  // What the call was to the page (#304): a search whose result a Result Pick
+  // opened settled on its listing first, and the open is replayed after it.
+  const settledOk = result !== undefined && result.ok && !refused
+  const picked = entry.resultPick?.opened === true
+  const callPage: SearchCallPage = {
+    emptyLanding: emptyLanding !== null && !picked,
+    arrival: settledOk && isPageArrival(call.name, text ?? ''),
+    readText: settledOk && call.name === 'read_page' && wall === null && text !== null && pageReadReturnedText(text),
+  }
+
+  const settledFields = {
     name: call.name,
     args: boundedArgs(call.args),
     ok: result === undefined ? null : result.ok,
@@ -2839,13 +3018,12 @@ function classifyCall(
     wall: wall === null ? null : `${wall.signal} ${wall.host}`,
     ...(landing !== null ? { notFound: `${landing.basis} ${landing.host}` } : {}),
     ...(unavailable !== null ? { unavailable: `${unavailable.basis} ${unavailable.host}` } : {}),
+    ...(emptyLanding !== null ? { emptyLanding: emptyLanding.host } : {}),
     ...(entry.rewritten !== null ? { rewritten: entry.rewritten.query } : {}),
     ...(entry.unquoted !== null ? { unquoted: entry.unquoted.phrases } : {}),
     ...(entry.engineRewrite !== null ? { engineRewrite: `${entry.engineRewrite.from} → ${entry.engineRewrite.to}` } : {}),
     ...(entry.resultPick !== null ? { resultPick: { ref: entry.resultPick.ref, ...pickLabelOf(entry.resultPick.label), href: entry.resultPick.href, opened: entry.resultPick.opened } } : {}),
     ...(delivered !== null ? { delivered } : {}),
-    checkpoint: checkpointVerdict,
-    notices,
   }
 
   // The search streak: the rail's own rule (ADR 0058), replayed over the
@@ -2883,17 +3061,21 @@ function classifyCall(
   // click (#261), read by the rail's own helper over the whole result text,
   // nor an Unavailable Landing (#262), read from the field, never the head.
   // Nor did a landing on a Blocker, a question the user did not answer, or a
-  // wait that collected no Subagent Report (#293).
+  // wait that collected no Subagent Report (#293). Nor did an Empty Landing
+  // (#304): the Run was shown no text from the page.
   const consumed =
     result !== undefined &&
     result.ok &&
     !refused &&
     landing === null &&
     unavailable === null &&
+    emptyLanding === null &&
     (settled === null || consumedNothingOf(settled) === null) &&
     putSomethingNew(call.name, { blocker: wall !== null, userAnswered: entry.answered, collectedReport: collectedReportIn(result.result) })
-  const search = advanceSearchStreak(state.search, { kind: streakKind, consumed, search: observed })
-  if (entry.resultPick?.opened === true) replayResultPick(state.search, consumed)
+  const step = advanceSearchStreak(state.search, { kind: streakKind, consumed, search: observed, page: callPage })
+  if (picked) replayResultPick(state.search, consumed, emptyLanding !== null)
+  const search = step.search
+  const base = { ...settledFields, ...(step.readEmptyLanding ? { readEmptyLanding: true as const } : {}), checkpoint: checkpointVerdict, notices }
 
   // Collection and Bookkeeping make no Progress claim; everything else is
   // Acquisition, the catalog's own tools by flag and any other tool as a
@@ -2913,6 +3095,8 @@ function classifyCall(
         progress = { made: false, reason: NOT_FOUND_LANDING_REASON }
       } else if (unavailable !== null) {
         progress = { made: false, reason: UNAVAILABLE_LANDING_REASON }
+      } else if (emptyLanding !== null && !picked) {
+        progress = { made: false, reason: EMPTY_LANDING_REASON }
       } else if (landedCanonical !== null && parentUrls !== null && parentUrls.has(landedCanonical)) {
         inherited = true
         progress = { made: false, reason: 'a re-acquisition of a page the initial attempt already checkpointed (inherited)' }
@@ -2960,6 +3144,8 @@ function classifyCall(
         progress = { made: false, reason: NOT_FOUND_LANDING_REASON }
       } else if (unavailable !== null) {
         progress = { made: false, reason: UNAVAILABLE_LANDING_REASON }
+      } else if (emptyLanding !== null) {
+        progress = { made: false, reason: EMPTY_LANDING_REASON }
       } else if (landedCanonical !== null && parentUrls !== null && parentUrls.has(landedCanonical) && !state.acquiredUrls.has(landedCanonical)) {
         inherited = true
         progress = { made: false, reason: 'a re-acquisition of a page the initial attempt already checkpointed (inherited)' }
@@ -2996,6 +3182,41 @@ function classifyCall(
   }
   if (signature !== null) state.observed.add(`action_outcome|${landedCanonical ?? state.currentUrl ?? ''}|${signature}`)
   return { call: { ...base, search, progress }, inherited }
+}
+
+/** One Empty Landing, or one Page Read that returned text from one, by where an attempt's rounds hold it (#304). */
+export interface EmptyLandingMark {
+  /** The digest's round number, and the call's position in that round from 0. */
+  readonly round: number
+  readonly call: number
+  /** The tool, so a recount can tell it found the call the mark was read from. */
+  readonly name: string
+  /** The host of the page the landing settled on; absent on a read. */
+  readonly host?: string
+  /** The call is the Page Read that returned text from the landing before it. */
+  readonly read?: true
+}
+
+/**
+ * The Empty Landings of one attempt's Run Trace and the Page Reads that
+ * returned text from one (#304), as `classifyAttempt` marks them and by the
+ * same reading. What the Fix Ledger recounts an audit written before the
+ * rule from: a committed audit keeps 240 characters of a result, which
+ * cannot say either.
+ */
+export function emptyLandingMarksOf(traceRecords: readonly object[]): EmptyLandingMark[] {
+  const records = traceRecords as unknown as readonly TraceLine[]
+  const observations = railObservationsOf(records)
+  const state: ProgressState = { acquiredUrls: new Set(), observed: new Set(), currentUrl: null, search: newSearchStreakState() }
+  const marks: EmptyLandingMark[] = []
+  rawRounds(records).forEach((round, index) => {
+    round.calls.forEach((entry, position) => {
+      const { call } = classifyCall(entry, state, null, observations.size > 0 ? observations : null)
+      if (call.emptyLanding !== undefined) marks.push({ round: index + 1, call: position, name: call.name, host: call.emptyLanding })
+      if (call.readEmptyLanding === true) marks.push({ round: index + 1, call: position, name: call.name, read: true })
+    })
+  })
+  return marks
 }
 
 /** The perf `llm` span nearest each round's stamp, each span used once. */
@@ -3478,7 +3699,7 @@ export function classifyAttempt(input: AuditTraceInput): AuditMechanical {
   // from the rail's observations when the attempt carries any (#243).
   const observations = railObservationsOf(records)
   const railObservations = observations.size > 0 ? observations : null
-  const state: ProgressState = { acquiredUrls: new Set(), observed: new Set(), currentUrl: null, search: { streak: 0, lastSearchQuery: null } }
+  const state: ProgressState = { acquiredUrls: new Set(), observed: new Set(), currentUrl: null, search: newSearchStreakState() }
   const classified = raw.map((round) => {
     const calls = round.calls.map((entry) => classifyCall(entry, state, input.parentCheckpointedUrls, railObservations))
     return { round, calls: calls.map((item) => item.call), inherited: calls.some((item) => item.inherited) }
@@ -3720,6 +3941,7 @@ export function classifyAttempt(input: AuditTraceInput): AuditMechanical {
     searchForms: searchFormsOf(rounds),
     blockedOrInert: blockedOrInertOf(rounds),
     unavailableLandings: unavailableLandingsOf(rounds),
+    emptyLandings: emptyLandingsOf(rounds),
     pastTheEndReads: pastTheEndReadsOf(rounds),
     // Beside the rounds (#288, ADR 0072): what the Run's Answers carried to
     // be recorded, where its trace is new enough to have said.
@@ -3827,6 +4049,8 @@ export function digestCallLines(call: AuditCall): string[] {
     // The reviewer is told a landing holds a loop (#294), so it is shown one.
     call.notFound !== undefined ? `  landing: Not-found page (${call.notFound})` : '',
     call.unavailable !== undefined ? `  landing: Unavailable Page (${call.unavailable})` : '',
+    call.emptyLanding !== undefined ? `  landing: Empty Landing (${call.emptyLanding})` : '',
+    call.readEmptyLanding === true ? '  read: returned text from the page the Empty Landing settled on' : '',
     digestSearchLine(call),
     digestResultPickLine(call),
     call.wall ? `  wall: ${call.wall}` : '',
@@ -4323,6 +4547,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
   let searchForms: Record<SearchUrlForm, number> | undefined
   let blockedOrInert: Record<keyof BlockedOrInertCounts, number> | undefined
   let unavailableLandings: Record<keyof UnavailableLandingRounds, number> | undefined
+  let emptyLandings: Record<keyof EmptyLandingRounds, number> | undefined
   let consentWalls: ConsentWallCounts | undefined
   let windowOpens: WindowOpenCounts | undefined
   let tierEscalations: TierEscalationCounts | undefined
@@ -4434,6 +4659,12 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
       unavailableLandings.title += mechanical.unavailableLandings.title.length
       unavailableLandings.followedBySearch += mechanical.unavailableLandings.followedBySearch.length
     }
+    if (mechanical.emptyLandings !== undefined) {
+      emptyLandings ??= { landings: 0, followedBySearch: 0, readWithText: 0 }
+      emptyLandings.landings += mechanical.emptyLandings.landings.length
+      emptyLandings.followedBySearch += mechanical.emptyLandings.followedBySearch.length
+      emptyLandings.readWithText += mechanical.emptyLandings.readWithText.length
+    }
     if (mechanical.consentWalls !== undefined) addConsentWalls((consentWalls ??= emptyConsentWallCounts()), mechanical.consentWalls)
     if (mechanical.windowOpens !== undefined) {
       windowOpens ??= { followed: 0, denied: 0 }
@@ -4510,6 +4741,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
     ...(searchForms === undefined ? {} : { searchForms }),
     ...(blockedOrInert === undefined ? {} : { blockedOrInert }),
     ...(unavailableLandings === undefined ? {} : { unavailableLandings }),
+    ...(emptyLandings === undefined ? {} : { emptyLandings }),
     ...(consentWalls === undefined ? {} : { consentWalls }),
     ...(windowOpens === undefined ? {} : { windowOpens }),
     ...(tierEscalations === undefined ? {} : { tierEscalations }),
@@ -5041,7 +5273,7 @@ export function restateVerifiedOrUnaskedMarkdown(markdown: string, aggregate: Au
 function judgementLines(populations: readonly AuditPopulation[]): string[] {
   return populations.map(
     (population) =>
-      `- ${population.label}: ${population.offKeyRounds} Off-key round(s), ${population.searchLoopRounds} Search Loop round(s) by the reviewer (${population.mechanicalSearchRounds} by the streak rule, heads included: ${population.searchRoundsAtStreak2} at streak 2 or beyond, ${population.searchRoundsAtStreak3} at 3 or beyond; attempts by search source ${SEARCH_SOURCES.map((source) => `${source} ${population.searchSources[source]}`).join(', ')}; navigate searches by Search URL form ${searchFormsText(population.searchForms)}; ${populationBlockedOrInertText(population.blockedOrInert)}; ${populationUnavailableLandingsText(population.unavailableLandings)}; ${populationConsentWallsText(population.consentWalls)}; ${populationWindowOpensText(population.windowOpens)}; ${populationTierEscalationsText(population.tierEscalations)}), ` +
+      `- ${population.label}: ${population.offKeyRounds} Off-key round(s), ${population.searchLoopRounds} Search Loop round(s) by the reviewer (${population.mechanicalSearchRounds} by the streak rule, heads included: ${population.searchRoundsAtStreak2} at streak 2 or beyond, ${population.searchRoundsAtStreak3} at 3 or beyond; attempts by search source ${SEARCH_SOURCES.map((source) => `${source} ${population.searchSources[source]}`).join(', ')}; navigate searches by Search URL form ${searchFormsText(population.searchForms)}; ${populationBlockedOrInertText(population.blockedOrInert)}; ${populationUnavailableLandingsText(population.unavailableLandings)}; ${populationEmptyLandingsText(population.emptyLandings)}; ${populationConsentWallsText(population.consentWalls)}; ${populationWindowOpensText(population.windowOpens)}; ${populationTierEscalationsText(population.tierEscalations)}), ` +
       `${population.inheritedRounds} inherited, ${population.rejectedCheckpoints} rejected Evidence Checkpoint(s), ${population.walledRounds} walled round(s), ${population.notFoundNavigates} navigate(s) landed on a Not-found Page (${population.notFoundOffKey} judged Off-key), ${population.rewrittenComposedAddresses ?? 0} Composed Address(es) rewritten into a site search (${population.rewrittenComposedAddressesOffKey ?? 0} judged Off-key, ${population.rewrittenShownAddresses ?? 'not counted'} to an address the Run was shown), ${population.unseenPhraseRewrites ?? 'not counted'} search(es) ran with an Unseen Phrase unquoted (${population.unseenPhraseRewritesOffKey ?? 0} judged Off-key), ${population.engineRewrites ?? 'not counted'} search(es) ran on the Run Engine in place of another Web Engine (${population.engineRewritesOffKey ?? 0} judged Off-key), ${populationResultPicksText(population)}, ${populationSelectedPassagesText(population)}, ${populationRunMadeUseText(population)}, ${populationContradictionNotesText(population)}, ${population.subagentRounds} Subagent round(s), ` +
       `${population.mergedCheckpoints} merged Evidence Checkpoint(s) (a floor), ${population.heldPageRoundsWithoutProgress} Held Page round(s) without Progress, ${population.bundledCheckpoints} bundled checkpoint round(s), ${population.sameSourceUnsupportedRounds} same-source unsupported round(s), ${subagentCitationsText(population.subagentCitations)}, ${populationSlipsText(population)}, ${delegatedPageCountsText(population.delegatedPageRounds)}, ${populationPastTheEndReadsText(population)}, ${populationBookkeepingBeforeAnswerText(population)}, ${populationBookkeepingBeforeCutText(population)}, ${populationAnswerCheckpointsText(population)}, ` +
       `${population.malformedAnswers} Malformed Answer(s) (${population.answerRetries} retried), ${populationOffLanguageAnswersText(population)}, ` +
@@ -5131,6 +5363,7 @@ function attemptSection(attempt: AuditAttempt): string[] {
   lines.push(`- navigate searches by Search URL form: ${searchFormsText(mechanical.searchForms)}`)
   lines.push(`- ${blockedOrInertText(mechanical.blockedOrInert)}`)
   lines.push(`- ${unavailableLandingsText(mechanical.unavailableLandings)}`)
+  lines.push(`- ${emptyLandingsText(mechanical.emptyLandings)}`)
   lines.push(`- ${consentWallsText(mechanical.consentWalls)}`)
   lines.push(`- ${windowOpensText(mechanical.windowOpens)}`)
   lines.push(`- ${tierEscalationsText(mechanical.tierEscalations)}`)
@@ -5172,7 +5405,7 @@ function attemptSection(attempt: AuditAttempt): string[] {
     const inLoop = judgement?.searchLoops.some((loop) => loop.rounds.includes(round.round)) ?? false
     const tools = round.calls.map((call) => `${call.name}${call.refused ? ' ✗' : ''}`).join(', ') || '—'
     const page = round.calls.map((call) => call.url).find((url) => url !== null) ?? '—'
-    const markers = [round.tags.inherited ? 'inherited' : '', round.tags.wall ? 'walled' : '', round.calls.some((call) => call.notFound !== undefined) ? 'not found' : '', round.calls.some((call) => call.unavailable !== undefined) ? 'unavailable' : '', round.calls.some((call) => call.rewritten !== undefined) ? 'rewritten' : '', round.calls.some((call) => call.unquoted !== undefined) ? 'unquoted' : '', round.calls.some((call) => call.engineRewrite !== undefined) ? 'engine rewritten' : '', round.calls.some((call) => call.resultPick?.opened === true) ? 'result pick' : '', offKey ? 'off-key' : '', inLoop ? 'search loop' : '', mechanical.searchLoopHeads.includes(round.round) ? 'loop head by the streak rule' : '', round.tags.rejectedCheckpoints > 0 ? `${round.tags.rejectedCheckpoints} rejected checkpoint` : ''].filter((marker) => marker !== '')
+    const markers = [round.tags.inherited ? 'inherited' : '', round.tags.wall ? 'walled' : '', round.calls.some((call) => call.notFound !== undefined) ? 'not found' : '', round.calls.some((call) => call.unavailable !== undefined) ? 'unavailable' : '', round.calls.some((call) => call.emptyLanding !== undefined) ? 'empty landing' : '', round.calls.some((call) => call.rewritten !== undefined) ? 'rewritten' : '', round.calls.some((call) => call.unquoted !== undefined) ? 'unquoted' : '', round.calls.some((call) => call.engineRewrite !== undefined) ? 'engine rewritten' : '', round.calls.some((call) => call.resultPick?.opened === true) ? 'result pick' : '', offKey ? 'off-key' : '', inLoop ? 'search loop' : '', mechanical.searchLoopHeads.includes(round.round) ? 'loop head by the streak rule' : '', round.tags.rejectedCheckpoints > 0 ? `${round.tags.rejectedCheckpoints} rejected checkpoint` : ''].filter((marker) => marker !== '')
     const trace = round.llmRound !== round.round || round.attempt > 1 ? ` (trace ${round.llmRound}.${round.attempt})` : ''
     lines.push(
       `| ${round.round}${trace} | ${KIND_LABELS[round.kind]}${overrule ? ` → ${KIND_LABELS[overrule.kind]}` : ''} | ${tools} | ${head(page, 80)} | ${round.latencyMs ?? '—'} | ${round.reason}${markers.length > 0 ? ` [${markers.join(', ')}]` : ''} |`,

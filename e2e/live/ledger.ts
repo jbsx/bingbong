@@ -26,6 +26,13 @@
 // exactly as the audit would), and the summary's median (so a duration here
 // is the one the summary would print). `scripts/live-ledger.ts` serves it on
 // loopback; nothing under `src/` reaches it.
+//
+// One recount is of what no audit kept (#304): an Empty Landing is what the
+// rest of a result did not say, and an audit keeps 240 characters of one. It
+// is read from the marks `pnpm live:empty-landings` took from the Run Traces
+// and committed (emptyLandingRecount.ts), so the ledger still reads no
+// capture; a capture set the sweep found no trace of is named as not
+// recounted and keeps its counts.
 
 import {
   AUDIT_VERDICTS,
@@ -39,6 +46,7 @@ import {
   recountUnavailableByTitle,
   sameSourceUnsupportedRoundsMissedOver,
   replaySearchStreaks,
+  emptyLandingsOf,
   SEARCH_STREAK_RULE,
   ROUND_KINDS,
   searchLoopCountsOf,
@@ -52,6 +60,7 @@ import {
   type AuditSetOutput,
   type RoundKind,
 } from './audit.ts'
+import { emptyLandingsKnown, recountEmptyLandings, saysEmptyLandings } from './emptyLandingRecount.ts'
 import { medianOf } from './summary.ts'
 import type { AttemptRelation } from './types.ts'
 
@@ -401,6 +410,12 @@ export function buildLedger(files: readonly LedgerFile[]): Ledger {
       if (pass.audit === null) notes.push(`${pass.setId} has no per-Pass audit: verified attempts, checks and run durations are read from the Passes that have one`)
     }
     const audited = passes.filter((pass): pass is LedgerPass & { audit: AuditSetOutput } => pass.audit !== null)
+    // #304: an Empty Landing is recounted from the Run Traces, and a Pass
+    // whose traces were not on disk has none to recount from.
+    const unknown = audited.filter((pass) => pass.audit.attempts.some((attempt) => !emptyLandingsKnown(attempt.mechanical)))
+    if (unknown.length > 0) {
+      notes.push(`${unknown.map((pass) => pass.setId).join(', ')}: no Run Trace on disk, so Empty Landings are not recounted and the streak counts stand without them`)
+    }
     for (const axis of CONDITION_AXES) {
       const values = audited.map((pass) => axis.of(conditionsOf(pass.audit.provenance)))
       if (new Set(values).size > 1) notes.push(`the Passes differ on ${axis.axis}: ${audited.map((pass, index) => `${pass.setId}=${values[index]}`).join(', ')}`)
@@ -544,6 +559,8 @@ interface Recounted {
   readonly searchRoundsAtStreak3: number
   readonly unavailableByTitle: number
   readonly unavailableFollowedBySearch: number
+  /** The Empty Landings (#304) over the attempts whose landings are known; null where none is. */
+  readonly emptyLandings: { readonly landings: number; readonly followedBySearch: number; readonly readWithText: number } | null
 }
 
 /**
@@ -555,25 +572,37 @@ interface Recounted {
  * on a Blocker and a Composed Address rewrite (#293), each read from the
  * call's name, wall and rewrite stamp — the rounds as judged are untouched.
  * The landings followed by a search are recounted with them (#294): their
- * wait holds and ends where the streak does.
+ * wait holds and ends where the streak does. An Empty Landing holds too
+ * (#304), put back on its call from the marks the sweep took from the Run
+ * Traces; an attempt of a capture set with no trace on disk is replayed
+ * without them.
  */
 function recountedUnderCurrentRuleOf(attempts: readonly AuditAttempt[]): Recounted {
   const totals = { mechanicalSearchRounds: 0, searchRoundsAtStreak2: 0, searchRoundsAtStreak3: 0, unavailableByTitle: 0, unavailableFollowedBySearch: 0 }
+  const empty = { landings: 0, followedBySearch: 0, readWithText: 0 }
+  let known = 0
   for (const attempt of attempts) {
-    const rounds = replaySearchStreaks(recountUnavailableByTitle(attempt.mechanical.rounds))
+    const marked = recountEmptyLandings(attempt.mechanical)
+    const rounds = replaySearchStreaks(recountUnavailableByTitle(marked))
     const counts = searchLoopCountsOf(rounds)
     // An audit that wrote the counter marked its own landings (#294): the
     // ones followed by a search are counted over those, the set its counts
     // by status and by title are of, and the title rule reads only an audit
     // from before the counter.
-    const landings = unavailableLandingsOf(attempt.mechanical.unavailableLandings === undefined ? rounds : replaySearchStreaks(attempt.mechanical.rounds))
+    const landings = unavailableLandingsOf(attempt.mechanical.unavailableLandings === undefined ? rounds : replaySearchStreaks(marked))
     totals.mechanicalSearchRounds += counts.mechanicalSearchRounds
     totals.searchRoundsAtStreak2 += counts.searchRoundsAtStreak2
     totals.searchRoundsAtStreak3 += counts.searchRoundsAtStreak3
     totals.unavailableByTitle += landings.title.length
     totals.unavailableFollowedBySearch += landings.followedBySearch.length
+    if (!emptyLandingsKnown(attempt.mechanical)) continue
+    known += 1
+    const met = emptyLandingsOf(rounds)
+    empty.landings += met.landings.length
+    empty.followedBySearch += met.followedBySearch.length
+    empty.readWithText += met.readWithText.length
   }
-  return totals
+  return { ...totals, emptyLandings: known === 0 ? null : empty }
 }
 
 /** The Answer Checkpoint counters (#288): offered, accepted and dropped, then the dropped by reason. */
@@ -640,6 +669,10 @@ export function countersOf(population: AuditPopulation, attempts: readonly Audit
   const underCurrentRule = attempts.every((attempt) => attempt.mechanical.searchStreakRule === SEARCH_STREAK_RULE)
   const recounted = streakRuleWritten && older.unavailableLandings !== undefined && underCurrentRule ? null : recountedUnderCurrentRuleOf(attempts)
   const streakRounds = recounted ?? older
+  // #304: an audit under the rule wrote its Empty Landings; one from before
+  // it is recounted from the marks the sweep took from the Run Traces, and
+  // reads as nothing where no attempt's traces were on disk.
+  const emptyLandings = attempts.length > 0 && attempts.every((attempt) => saysEmptyLandings(attempt.mechanical)) ? older.emptyLandings : (recounted?.emptyLandings ?? undefined)
   // The counter the ledger compared first keeps the reading its rule gave:
   // an audit under the same-intent rule stays as written, one under the
   // consecutive rule is restated with its Unavailable Landings and its
@@ -704,6 +737,10 @@ export function countersOf(population: AuditPopulation, attempts: readonly Audit
     ...answerCheckpointCounters(older.answerCheckpoints, population.attempts).map(([label, value]) => mechanical(label, value)),
     mechanical('Rejected Evidence Checkpoints', population.rejectedCheckpoints),
     mechanical('Walled rounds', population.walledRounds, budgeted),
+    // #304: reported, never gated.
+    mechanical('Empty Landings', emptyLandings?.landings),
+    mechanical('Empty Landings followed by a search', emptyLandings?.followedBySearch),
+    mechanical('Empty Landings read with text', emptyLandings?.readWithText),
     mechanical('Not-found landings', older.notFoundNavigates),
     judged('Not-found landings judged Off-key', older.notFoundOffKey),
     // #262: the status was never in a trace, so a recount has no status count.

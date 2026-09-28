@@ -15,6 +15,8 @@ import {
   type LedgerFamily,
   type LedgerFile,
 } from './ledger.ts'
+import { EMPTY_LANDING_MARKS, EMPTY_LANDING_SETS_RECOUNTED } from './emptyLandingMarks.ts'
+import { emptyLandingsKnown, recountEmptyLandings, setIdOfCapture } from './emptyLandingRecount.ts'
 
 // The Fix Ledger's pure half (#251), read two ways: against the committed
 // Round Audits — the acceptance criteria name their families and numbers —
@@ -222,25 +224,35 @@ describe('the streak-rule counters (#259, ADR 0058)', () => {
 describe('the checkpoint hold recount (#289)', () => {
   const valueOf = (counters: ReturnType<typeof countersOf>, label: string) => counters.find((counter) => counter.label === label)?.value
 
-  it('restates the fix-284 Reference’s initials by the rail’s current rule: 15 at streak 2 or beyond becomes 14, 16 with its checkpoints held less its rewrites (#293), and the reviewer’s 18 stay', () => {
+  it('restates the fix-284 Reference’s initials by the rail’s current rule: 15 at streak 2 or beyond reads 16 with its checkpoints held, 14 less its rewrites (#293) and 15 with its Empty Landing held (#304), and the reviewer’s 18 stay', () => {
     const aggregate = readAudit('audit-aggregate-fix-284.json') as unknown as AuditAggregate
     const initials = [1, 2, 3].flatMap((pass) => readAudit(`audit-fix-284-${pass}.json`).attempts.filter((attempt) => attempt.mechanical.relation === 'initial'))
     const population = aggregate.populations.initial
     expect(population).toMatchObject({ mechanicalSearchRounds: 24, searchLoopRounds: 18, searchRoundsAtStreak2: 15, searchRoundsAtStreak3: 5 })
 
     const counters = countersOf(population, initials)
-    expect(valueOf(counters, 'Search rounds at streak 2 or beyond')).toBe(14)
+    expect(valueOf(counters, 'Search rounds at streak 2 or beyond')).toBe(15)
     expect(valueOf(counters, 'Search rounds at streak 3 or beyond')).toBe(5)
     // Pass 2, the longitude watch: round 7 heads a loop the older rule ended
-    // at a checkpoint. It read 26 before #293 took the rewrites out.
-    expect(valueOf(counters, 'Search Loop rounds by the streak rule')).toBe(23)
+    // at a checkpoint. It read 26 before #293 took the rewrites out, and 23
+    // before #304 held round 4's Empty Landing, whose search heads a loop too.
+    expect(valueOf(counters, 'Search Loop rounds by the streak rule')).toBe(25)
     // A judgement is never recounted.
     expect(valueOf(counters, 'Search Loop rounds')).toBe(18)
   })
 
   it('moves nothing but the streak-rule counters on any committed family', () => {
     // #294: and the landings followed by a search, whose wait reads the same rule.
-    const STREAK_RULE_LABELS = ['Search Loop rounds by the streak rule', 'Search rounds at streak 2 or beyond', 'Search rounds at streak 3 or beyond', 'Unavailable landings followed by a search']
+    // #304: and the Empty Landings, which an audit from before the rule could not say.
+    const STREAK_RULE_LABELS = [
+      'Search Loop rounds by the streak rule',
+      'Search rounds at streak 2 or beyond',
+      'Search rounds at streak 3 or beyond',
+      'Unavailable landings followed by a search',
+      'Empty Landings',
+      'Empty Landings followed by a search',
+      'Empty Landings read with text',
+    ]
     for (const listed of committed.families) {
       const attempts = listed.passes.flatMap((pass) => pass.audit?.attempts ?? []).filter((attempt) => attempt.mechanical.relation === 'initial')
       const population = listed.aggregate?.audit.populations.initial ?? populationOf('initial', attempts)
@@ -259,19 +271,20 @@ describe('the escape recount (#293)', () => {
   const STREAK_2 = 'Search rounds at streak 2 or beyond'
   const STREAK_3 = 'Search rounds at streak 3 or beyond'
 
-  it('recounts an audit written under rule 2: fix-288-290 reads 22 and 8 on disk and 17 and 7 by the rule as it is, the reviewer’s rounds as judged', () => {
+  it('recounts an audit written under rule 2: fix-288-290 reads 22 and 8 on disk and 19 and 7 by the rule as it is, the reviewer’s rounds as judged', () => {
     const aggregate = readAudit('audit-aggregate-fix-288-290.json') as unknown as AuditAggregate
     const initials = [1, 2, 3].flatMap((pass) => readAudit(`audit-fix-288-290-${pass}.json`).attempts.filter((attempt) => attempt.mechanical.relation === 'initial'))
     const population = aggregate.populations.initial
     // On disk as the audit wrote it, saying which rule counted it.
     expect(initials.map((attempt) => attempt.mechanical.searchStreakRule)).toEqual(initials.map(() => 2))
-    expect(SEARCH_STREAK_RULE).toBe(3)
+    expect(SEARCH_STREAK_RULE).toBe(4)
     expect(population).toMatchObject({ searchRoundsAtStreak2: 22, searchRoundsAtStreak3: 8 })
 
     const counters = countersOf(population, initials)
-    expect(valueOf(counters, STREAK_2)).toBe(17)
+    // 17 with the rewrites out (#293), and 19 with the Empty Landings held (#304).
+    expect(valueOf(counters, STREAK_2)).toBe(19)
     expect(valueOf(counters, STREAK_3)).toBe(7)
-    expect(valueOf(counters, 'Search Loop rounds by the streak rule')).toBe(26)
+    expect(valueOf(counters, 'Search Loop rounds by the streak rule')).toBe(30)
     // A judgement is never recounted.
     expect(valueOf(counters, 'Search Loop rounds')).toBe(population.searchLoopRounds)
 
@@ -279,6 +292,91 @@ describe('the escape recount (#293)', () => {
     const underCurrentRule = initials.map((attempt) => ({ ...attempt, mechanical: { ...attempt.mechanical, searchStreakRule: SEARCH_STREAK_RULE } }))
     expect(valueOf(countersOf(population, underCurrentRule), STREAK_2)).toBe(22)
     expect(valueOf(countersOf(population, underCurrentRule), STREAK_3)).toBe(8)
+  })
+})
+
+describe('the Empty Landing recount (#304, note on ADR 0058)', () => {
+  const valueOf = (counters: ReturnType<typeof countersOf>, label: string) => counters.find((counter) => counter.label === label)?.value
+  const LONGITUDE = 'historical-longitude-watch'
+  // The six landings the issue measured between two searches, the search after each recorded at streak 1.
+  const SIX: readonly { readonly set: string; readonly round: number }[] = [
+    { set: 'baseline3-1', round: 11 },
+    { set: 'fix-257-2', round: 7 },
+    { set: 'fix-260-262-3', round: 8 },
+    { set: 'fix-284-2', round: 4 },
+    { set: 'fix-288-290-1', round: 13 },
+    { set: 'jev-on-2', round: 22 },
+  ]
+
+  function recountedRounds(set: string) {
+    const attempt = readAudit(`audit-${set}.json`).attempts.find(({ mechanical }) => mechanical.huntId === LONGITUDE && mechanical.relation === 'initial')!
+    return { attempt, rounds: replaySearchStreaks(recountEmptyLandings(attempt.mechanical)) }
+  }
+
+  it('holds the six landings the issue measured: the search after each reads streak 2 or more, where the audit on disk wrote 1', () => {
+    const read = SIX.map(({ set, round }) => {
+      const { attempt, rounds } = recountedRounds(set)
+      const at = rounds.findIndex((candidate) => candidate.round === round)
+      const landing = rounds[at]!.calls.find((call) => call.emptyLanding !== undefined)
+      const after = (from: readonly (typeof rounds)[number][]) => from.slice(at + 1).flatMap((candidate) => candidate.calls).find((call) => call.search !== null)?.search?.streak
+      return { set, round, host: landing?.emptyLanding, written: after(attempt.mechanical.rounds), recounted: after(rounds) }
+    })
+    expect(read.map(({ host }) => host)).toEqual(SIX.map(() => 'www.rmg.co.uk'))
+    expect(read.map(({ written }) => written)).toEqual(SIX.map(() => 1))
+    for (const landing of read) expect(landing.recounted, `${landing.set} round ${landing.round}`).toBeGreaterThanOrEqual(2)
+  })
+
+  it('puts every mark on the call the committed audit holds at that round', () => {
+    expect(EMPTY_LANDING_MARKS.length).toBeGreaterThan(0)
+    for (const { captureId, attemptId, marks } of EMPTY_LANDING_MARKS) {
+      const attempt = readAudit(`audit-${setIdOfCapture(captureId)}.json`).attempts.find(({ mechanical }) => mechanical.captureId === captureId && mechanical.attemptId === attemptId)
+      expect(attempt, `${captureId} ${attemptId}`).toBeDefined()
+      const rounds = recountEmptyLandings(attempt!.mechanical)
+      for (const mark of marks) {
+        const call = rounds.find((round) => round.round === mark.round)?.calls[mark.call]
+        expect(call, `${captureId} round ${mark.round}`).toMatchObject(mark.read === true ? { name: mark.name, readEmptyLanding: true } : { name: mark.name, emptyLanding: mark.host })
+        // Nothing the audit judged is touched: the call was `ok`, and no wall or other landing rode it.
+        expect(call).toMatchObject({ ok: true, refused: false, wall: null })
+        expect(call?.notFound ?? call?.unavailable).toBeUndefined()
+      }
+    }
+  })
+
+  it('restates fix-288-290 with its Empty Landings held, and counts them', () => {
+    const aggregate = readAudit('audit-aggregate-fix-288-290.json') as unknown as AuditAggregate
+    const initials = [1, 2, 3].flatMap((pass) => readAudit(`audit-fix-288-290-${pass}.json`).attempts.filter((attempt) => attempt.mechanical.relation === 'initial'))
+    const counters = countersOf(aggregate.populations.initial, initials)
+    expect(aggregate.populations.initial.emptyLandings).toBeUndefined()
+    expect(valueOf(counters, 'Empty Landings')).toBe(8)
+    expect(valueOf(counters, 'Empty Landings followed by a search')).toBe(7)
+    // Seven searches that the audit on disk read as opening a streak continue one.
+    expect(valueOf(counters, 'Search rounds at streak 2 or beyond')).toBe(19)
+    expect(valueOf(counters, 'Search rounds at streak 3 or beyond')).toBe(7)
+    expect(valueOf(counters, 'Empty Landings read with text')).toBe(0)
+
+    // An audit the rule wrote says its own, and is read as written.
+    const underCurrentRule = initials.map((attempt) => ({ ...attempt, mechanical: { ...attempt.mechanical, searchStreakRule: SEARCH_STREAK_RULE } }))
+    const written = { ...aggregate.populations.initial, unavailableLandings: { status: 0, title: 0, followedBySearch: 0 }, emptyLandings: { landings: 3, followedBySearch: 2, readWithText: 1 } }
+    const asWritten = countersOf(written, underCurrentRule)
+    expect(valueOf(asWritten, 'Empty Landings')).toBe(3)
+    expect(valueOf(asWritten, 'Empty Landings followed by a search')).toBe(2)
+    expect(valueOf(asWritten, 'Empty Landings read with text')).toBe(1)
+  })
+
+  it('names the capture sets it could not recount, and reads their Empty Landings as nothing, never as zero', () => {
+    const unknown = committed.families.filter((listed) => listed.notes.some((note) => note.includes('Empty Landings are not recounted'))).map((listed) => listed.id)
+    expect(unknown).toEqual(['fix-235', 'fix-236', 'fix-237', 'fix-239', 'fix-240', 'fix-242', 'fix-242r', 'fix-256r2'].sort((left, right) => unknown.indexOf(left) - unknown.indexOf(right)))
+    expect([...unknown].sort()).toEqual(['fix-235', 'fix-236', 'fix-237', 'fix-239', 'fix-240', 'fix-242', 'fix-242r', 'fix-256r2'])
+    expect(family(committed, 'fix-242r').notes).toContain('fix-242r-1, fix-242r-2, fix-242r-3: no Run Trace on disk, so Empty Landings are not recounted and the streak counts stand without them')
+    expect(family(committed, 'fix-288-290').notes.filter((note) => note.includes('Empty Landings'))).toEqual([])
+
+    const passes = family(committed, 'fix-242r').passes
+    const attempts = passes.flatMap((pass) => pass.audit?.attempts ?? []).filter((attempt) => attempt.mechanical.relation === 'initial')
+    expect(attempts.some((attempt) => emptyLandingsKnown(attempt.mechanical))).toBe(false)
+    expect(EMPTY_LANDING_SETS_RECOUNTED).not.toContain('fix-242r-1')
+    const counters = countersOf(populationOf('initial', attempts), attempts)
+    expect(valueOf(counters, 'Empty Landings')).toBeNull()
+    expect(valueOf(counters, 'Empty Landings followed by a search')).toBeNull()
   })
 })
 
