@@ -1253,6 +1253,12 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
       // The Observations the final Answer's own checkpoints became (#288,
       // ADR 0072): that Answer's evidence beside what it named by identity.
       let answerCheckpointEvidence: readonly MemoryEntryId[] = []
+      // Run Context Compaction (#124, ADR 0028): accepted Evidence
+      // Checkpoints grounded in this Run's ledger, in acceptance order.
+      // Subagent citations ground worker-ledger identities, never this
+      // list — they map to no orchestrator tool result. Held out here
+      // because the Resolution reads the Run's sources by them too (#298).
+      const acceptedCheckpoints: RunEvidenceCheckpoint[] = []
       yield { type: 'command', text: command, at: clock.now() }
       observe({ producer: 'command', ok: true, payload: command })
       yield { type: 'status', status: 'thinking', at: clock.now() }
@@ -1292,11 +1298,6 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
               return session === null ? null : subagentEvidenceCommit(() => session.store, session.runId, agentId)(input)
             }
           : undefined
-        // Run Context Compaction (#124, ADR 0028): accepted Evidence
-        // Checkpoints grounded in this Run's ledger, in acceptance order.
-        // Subagent citations ground worker-ledger identities, never this
-        // list — they map to no orchestrator tool result.
-        const acceptedCheckpoints: RunEvidenceCheckpoint[] = []
         // One grading for a call and for an Answer Checkpoint (#288, ADR
         // 0072): the entry an Answer carries meets the rule the tool's
         // call meets because it is graded here, by the same function. What
@@ -2836,7 +2837,14 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
       // asked. What it never does is promote — a Run reporting
       // `unsuccessful` or `blocked` keeps its own honest reading.
       if (runOutcome === 'done' && proposedResolution === 'needs_user' && verificationSpent) {
-        proposedResolution = deriveFallbackSources({ records: ledger.snapshot() }).length > 0 ? 'partial' : 'blocked'
+        // Read as the deterministic Answer reads them (#298): a page that
+        // answers nothing is held only where accepted evidence rests on it.
+        const held = deriveFallbackSources({
+          records: ledger.snapshot(),
+          checkpoints: acceptedCheckpoints,
+          resolveObservation: resolveSessionObservation,
+        })
+        proposedResolution = held.length > 0 ? 'partial' : 'blocked'
       }
       const finalization: RunFinalization | null = resetConsumed
         ? null

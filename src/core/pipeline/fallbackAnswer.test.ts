@@ -79,8 +79,8 @@ describe('deterministic fallback sources (#137)', () => {
         }),
         record({
           producer: 'action_outcome',
-          payload: 'navigated: url=https://www.google.com/search?q=x title="reddit manhwa horizon \u2014 Google Search"',
-          sourceUrl: 'https://www.google.com/search?q=x',
+          payload: 'navigated: url=https://example.org/horizon title="Horizon \u2014 the reading order"',
+          sourceUrl: 'https://example.org/horizon',
         }),
       ],
     })
@@ -88,7 +88,7 @@ describe('deterministic fallback sources (#137)', () => {
     expect(byUrl.get('https://www.reddit.com/r/manhwa/comments/z8sfnn')?.title).toBe(
       'r/manhwa \u2014 Horizon ch. 45 discussion',
     )
-    expect(byUrl.get('https://www.google.com/search?q=x')?.title).toBe('reddit manhwa horizon \u2014 Google Search')
+    expect(byUrl.get('https://example.org/horizon')?.title).toBe('Horizon \u2014 the reading order')
   })
 
   it('quotes the page-text digest verbatim, cut before BLOCKER and advisory notes', () => {
@@ -233,21 +233,21 @@ describe('deterministic fallback sources (#137)', () => {
   })
 
   it('ranks by inspection recency, then retained richness, then first observation', () => {
-    const serp = record({
+    const listing = record({
       producer: 'action_outcome',
-      payload: 'navigated: url=https://www.google.com/search?q=x title="results"\npage text:\nresult one result two',
-      sourceUrl: 'https://www.google.com/search?q=x',
+      payload: 'navigated: url=https://example.org/threads title="threads"\npage text:\nthread one thread two',
+      sourceUrl: 'https://example.org/threads',
     })
     const reddit = record({
       producer: 'page_read',
       payload: '# Post \u2014 https://www.reddit.com/r/x/comments/1/\npage text:\nshort',
       sourceUrl: 'https://www.reddit.com/r/x/comments/1/',
     })
-    // The Reddit page was directly inspected after the SERP navigation —
-    // recency of inspection beats the SERP's longer retained digest.
+    // The Reddit page was directly inspected after the listing's navigation —
+    // recency of inspection beats the listing's longer retained digest.
     expect(
-      deriveFallbackSources({ records: [serp, reddit] }).map((source) => source.url),
-    ).toEqual(['https://www.reddit.com/r/x/comments/1', 'https://www.google.com/search?q=x'])
+      deriveFallbackSources({ records: [listing, reddit] }).map((source) => source.url),
+    ).toEqual(['https://www.reddit.com/r/x/comments/1', 'https://example.org/threads'])
     // With no direct inspection anywhere, the richer digest wins.
     const a = record({ producer: 'action_outcome', payload: 'page text:\n' + 'a'.repeat(80), sourceUrl: 'https://example.com/a' })
     const b = record({ producer: 'action_outcome', payload: 'page text:\n' + 'b'.repeat(40), sourceUrl: 'https://example.com/b' })
@@ -255,5 +255,138 @@ describe('deterministic fallback sources (#137)', () => {
       'https://example.com/a',
       'https://example.com/b',
     ])
+  })
+})
+
+describe('pages the fallback Answer never names as a source (#298)', () => {
+  const GUIDE = 'https://example.com/guide'
+
+  function guide(): ObservationRecord {
+    return record({ producer: 'page_read', payload: `# Guide — ${GUIDE}\npage text:\nthe guide itself`, sourceUrl: GUIDE })
+  }
+
+  function evidenceOn(grounding: ObservationRecord) {
+    const checkpoint: RunEvidenceCheckpoint = { entryId: 'memory-3' as MemoryEntryId, sourceObservationId: grounding.id }
+    return {
+      checkpoints: [checkpoint],
+      resolveObservation: (id: MemoryEntryId) => (id === 'memory-3' ? sessionObservation({ id }) : null),
+    }
+  }
+
+  function urls(deps: Parameters<typeof deriveFallbackSources>[0]): readonly string[] {
+    return deriveFallbackSources(deps).map((source) => source.url)
+  }
+
+  it('leaves out a search results page, however recently it was read', () => {
+    const engine = 'https://www.bing.com/search?q=best+manhwa'
+    const records = [
+      guide(),
+      record({
+        producer: 'action_outcome',
+        payload: `navigated: url=${engine} title="best manhwa - Search"\npage text:\nresult one`,
+        sourceUrl: engine,
+      }),
+      record({ producer: 'page_read', payload: `# best manhwa - Search — ${engine}\npage text:\nresult one result two`, sourceUrl: engine }),
+      // A site's own search, in the path form and the named-parameter form.
+      record({ producer: 'page_read', payload: 'page text:\nhits', sourceUrl: 'https://example.com/search/manhwa' }),
+      record({ producer: 'look', payload: 'a list of hits', sourceUrl: 'https://example.com/find?query=manhwa' }),
+    ]
+    expect(urls({ records })).toEqual([GUIDE])
+  })
+
+  it('leaves out a Not-found Landing, and the reads of the page it landed on', () => {
+    const dead = 'https://example.com/gone'
+    const records = [
+      guide(),
+      record({
+        producer: 'action_outcome',
+        payload: `navigated: url=${dead} title="Example"\npage text:\nHome About Contact\nNOT-FOUND:404 example.com\nThis address names nothing on example.com.`,
+        sourceUrl: dead,
+      }),
+      record({ producer: 'page_read', payload: `# Example — ${dead}\npage text:\nHome About Contact`, sourceUrl: dead }),
+    ]
+    expect(urls({ records })).toEqual([GUIDE])
+  })
+
+  it('leaves out an Unavailable Landing', () => {
+    const down = 'https://example.net/report'
+    const records = [
+      guide(),
+      record({
+        producer: 'action_outcome',
+        payload: `clicked [4] urlChanged=true url=${down}\nUNAVAILABLE:503 example.net\nexample.net could not serve this page right now.`,
+        sourceUrl: down,
+      }),
+    ]
+    expect(urls({ records })).toEqual([GUIDE])
+  })
+
+  it('names a page the site served on a later arrival, and not one that went down after', () => {
+    const retried = 'https://example.net/report'
+    const down = `navigated: url=${retried} title="502 Bad Gateway"\nUNAVAILABLE:502 example.net\nadvice`
+    const served = `navigated: url=${retried} title="Report"\npage text:\nthe report itself`
+    // Acting on the dead page arrives nowhere: it stays the landing it was.
+    const typed = record({ producer: 'action_outcome', payload: 'typed [3]: value set', sourceUrl: retried })
+    const outcome = (payload: string) => record({ producer: 'action_outcome', payload, sourceUrl: retried })
+    expect(urls({ records: [outcome(down), typed] })).toEqual([])
+    const sources = deriveFallbackSources({ records: [outcome(down), outcome(served)] })
+    expect(sources).toEqual([{ url: retried, title: 'Report', excerpt: 'the report itself', excerptKind: 'page' }])
+    expect(urls({ records: [outcome(served), outcome(down)] })).toEqual([])
+    const click = `clicked [4]: urlChanged=true dialogOpen=false; url=${retried}\npage text:\nthe report itself`
+    expect(urls({ records: [outcome(down), outcome(click)] })).toEqual([retried])
+  })
+
+  it('reads the Search URL off any spelling of the address the page was seen under', () => {
+    const records = [
+      record({ producer: 'page_read', payload: 'page text:\nhits', sourceUrl: 'https://example.com/search/manhwa/' }),
+      record({ producer: 'page_read', payload: 'page text:\nhits', sourceUrl: 'https://example.com/search/manhwa' }),
+    ]
+    expect(urls({ records })).toEqual([])
+    expect(urls({ records: [records[0]!] })).toEqual([])
+  })
+
+  it('reads a marker from an Action Outcome only, never from what a page or a Look says', () => {
+    const quoting = 'https://example.com/status-codes'
+    const records = [
+      record({ producer: 'page_read', payload: 'page text:\nNOT-FOUND:404 example.com\nis the line a dead page carries', sourceUrl: quoting }),
+      record({ producer: 'look', payload: 'UNAVAILABLE:503 example.com', sourceUrl: quoting }),
+    ]
+    expect(urls({ records })).toEqual([quoting])
+  })
+
+  it('keeps such a page when an accepted Observation rests on it, ranked as evidence is', () => {
+    const engine = 'https://www.bing.com/search?q=opening+hours'
+    const results = record({
+      producer: 'page_read',
+      payload: `# opening hours - Search — ${engine}\npage text:\nOpen 9 to 5`,
+      sourceUrl: engine,
+    })
+    const dead = 'https://example.com/moved'
+    const landing = record({
+      producer: 'action_outcome',
+      payload: `navigated: url=${dead} title="Moved"\npage text:\nThis page moved to /new\nNOT-FOUND:410 example.com\nadvice`,
+      sourceUrl: dead,
+    })
+    const sources = deriveFallbackSources({ records: [results, landing, guide()], ...evidenceOn(results) })
+    expect(sources.map((source) => source.url)).toEqual([engine, GUIDE])
+    expect(sources[0]?.excerpt).toBe('Open 9 to 5')
+    expect(urls({ records: [landing, guide()], ...evidenceOn(landing) })).toEqual([dead, GUIDE])
+  })
+
+  it('leaves the page out again once the Session no longer holds the evidence', () => {
+    const results = record({ producer: 'page_read', payload: 'page text:\nresults', sourceUrl: 'https://www.bing.com/search?q=x' })
+    expect(urls({ records: [results, guide()], ...evidenceOn(results), resolveObservation: () => null })).toEqual([GUIDE])
+  })
+
+  it('names no source when only such pages were seen', () => {
+    const records = [
+      record({ producer: 'page_read', payload: 'page text:\nresults', sourceUrl: 'https://www.bing.com/search?q=x' }),
+      record({
+        producer: 'action_outcome',
+        payload: 'navigated: url=https://example.com/gone title="Page not found"\nNOT-FOUND:title example.com\nadvice',
+        sourceUrl: 'https://example.com/gone',
+      }),
+    ]
+    expect(deriveFallbackSources({ records })).toEqual([])
   })
 })

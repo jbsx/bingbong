@@ -1915,8 +1915,8 @@ describe('command pipeline', () => {
       expect(events.find((e) => e.type === 'tool_result' && e.callId === 'e2')).toMatchObject({ ok: false })
       expect(store.snapshot().observations).toEqual([])
       // The deterministic fallback names the inspected page — title,
-      // canonical URL, and verbatim quoted page content — then the SERP,
-      // and states the unfinished objective.
+      // canonical URL, and verbatim quoted page content — never the SERP
+      // that led there (#298), and states the unfinished objective.
       const display = events.find((e) => e.type === 'display')
       expect(display).toMatchObject({
         type: 'display',
@@ -1926,10 +1926,10 @@ describe('command pipeline', () => {
           `- ${REDDIT_URL}\n` +
           `  \u201C${PAGES[REDDIT_URL]!.title}\u201D\n` +
           '  Quoted from the page as observed:\n' +
-          `  > ${PAGES[REDDIT_URL]!.digest}\n` +
-          `- ${SERP_URL}\n\n` +
+          `  > ${PAGES[REDDIT_URL]!.digest}\n\n` +
           'I have not verified that any of these answers the request.',
       })
+      expect((display as { text: string }).text).not.toContain(SERP_URL)
       // The rejected checkpoints' model-authored claims never appear.
       expect((display as { text: string }).text).not.toContain('chapter 44')
       expect((display as { text: string }).text).not.toContain('for sure')

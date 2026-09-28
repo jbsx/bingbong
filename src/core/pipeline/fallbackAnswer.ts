@@ -6,7 +6,9 @@
 // successful Run Observations contribute. Failed tool results, rejected
 // checkpoint arguments, and unverified model claims never enter: the
 // excerpt is always the verbatim retained payload, and page content stays
-// quoted source data, never instructions.
+// quoted source data, never instructions. A page that answers nothing — a
+// search results page, a Not-found Landing, an Unavailable Landing — is no
+// source either, unless accepted Session Evidence rests on it (#298).
 
 import type { ObservationId, ObservationProducer, ObservationRecord } from '../session/observationLedger'
 import type { MemoryEntryId } from '../session/workingMemory'
@@ -15,6 +17,9 @@ import type { SessionObservation } from '../session/sessionEvidence'
 import type { RunEvidenceCheckpoint } from './runContextCompaction'
 import { reportFault } from '../trace/fault'
 import { isPageTextFactLine } from '../browser/pageText'
+import { landedOnNotFoundPage } from '../browser/notFoundPage'
+import { landedOnUnavailablePage } from '../browser/unavailablePage'
+import { parseSearchUrl } from '../browser/urlInput'
 
 /** How many sources the fallback Answer may list, strongest first (#137). */
 export const MAX_FALLBACK_SOURCES = 8
@@ -161,9 +166,43 @@ export function hasUnresolvedImageCheck(records: readonly ObservationRecord[]): 
 /** The producers that directly inspect a page (#137): an explicit re-read or a Look. */
 const INSPECTION_PRODUCERS: readonly ObservationProducer[] = ['page_read', 'look']
 
+/**
+ * Whether a record shows its page settled on a Not-found or an Unavailable
+ * Landing (#298). The marker rides the Action Outcome that landed there and
+ * nothing else: a page read's text or a Look's report quoting one is page
+ * content, never the landing's own fact.
+ */
+function landedOnNothing(record: ObservationRecord): boolean {
+  if (record.producer !== 'action_outcome') return false
+  const outcome = { ok: true as const, result: record.payload }
+  return landedOnNotFoundPage(outcome) || landedOnUnavailablePage(outcome)
+}
+
+// The heads of the Action Outcomes that settle on a page: a navigation, a
+// step through history, and a click that left for another URL.
+const ARRIVAL_HEAD_RE = /^(?:(?:navigated|went back|went forward): |clicked \[\d+\]: urlChanged=true\b)/
+
+/**
+ * Whether a record is an arrival at its page (#298): the one Action Outcome
+ * that would carry a landing's marker, so one without it says the page was
+ * served. Typing into a page, or scrolling it, arrives nowhere.
+ */
+function arrivedAtPage(record: ObservationRecord): boolean {
+  return record.producer === 'action_outcome' && typeof record.payload === 'string' && ARRIVAL_HEAD_RE.test(record.payload)
+}
+
 interface SourceAccumulator {
   readonly url: string
   readonly firstSeen: number
+  /** Whether an address the page was seen under is a Search URL (#298). */
+  searchPage: boolean
+  /**
+   * Whether the Run's latest arrival at the page was a Not-found or an
+   * Unavailable Landing (#298). Every record of the page is the landing's
+   * until an arrival the site served — a read of it carries no marker of
+   * its own.
+   */
+  landing: boolean
   /** Ledger index of the latest direct inspection (page_read or look); -1 when never inspected. */
   lastInspection: number
   /** Length of the retained excerpt — the richness tiebreak. */
@@ -184,6 +223,12 @@ interface SourceAccumulator {
  * wins, then the richest retained excerpt, then first-seen order. Failed
  * observations, rejected citations, and unverified model claims never
  * contribute; the output is bounded however long the Run ran.
+ *
+ * A search results page, a Not-found Landing and an Unavailable Landing
+ * are left out (#298), so a Run that stopped right after a search or a
+ * dead link never names that page as what it found. Evidence outranks the
+ * exclusion: a page an accepted, still-live Evidence Checkpoint rests on
+ * stays. When that leaves nothing, no source is named.
  */
 export function deriveFallbackSources(deps: {
   readonly records: readonly ObservationRecord[]
@@ -201,9 +246,21 @@ export function deriveFallbackSources(deps: {
     if (url === null) continue
     let source = byUrl.get(url)
     if (source === undefined) {
-      source = { url, firstSeen: index, lastInspection: -1, excerptChars: 0, evidenceBacked: false }
+      source = {
+        url,
+        firstSeen: index,
+        // Sources merge by canonical URL, so that spelling is read too.
+        searchPage: parseSearchUrl(url) !== null,
+        landing: false,
+        lastInspection: -1,
+        excerptChars: 0,
+        evidenceBacked: false,
+      }
       byUrl.set(url, source)
     }
+    if (parseSearchUrl(record.sourceUrl) !== null) source.searchPage = true
+    if (landedOnNothing(record)) source.landing = true
+    else if (arrivedAtPage(record)) source.landing = false
     if (INSPECTION_PRODUCERS.includes(record.producer)) source.lastInspection = index
     const detail = retainedDetail(record)
     // The latest observation names the settled title; the richest excerpt
@@ -232,7 +289,8 @@ export function deriveFallbackSources(deps: {
     source.evidenceBacked = true
     if (observation.uncertainty !== undefined) source.uncertainty = observation.uncertainty
   }
-  const ranked = [...byUrl.values()].sort((a, b) => {
+  const named = [...byUrl.values()].filter((source) => source.evidenceBacked || !(source.searchPage || source.landing))
+  const ranked = [...named].sort((a, b) => {
     if (a.evidenceBacked !== b.evidenceBacked) return a.evidenceBacked ? -1 : 1
     if (a.lastInspection !== b.lastInspection) return b.lastInspection - a.lastInspection
     if (a.excerptChars !== b.excerptChars) return b.excerptChars - a.excerptChars
