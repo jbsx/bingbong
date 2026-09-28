@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { parseDotEnv } from '../settings/dotEnv'
 import {
   DECISION_SCRIPT_ENV_KEY,
+  ACTING_DECISION_SEAMS,
   DECISION_SEAMS,
   DEFAULT_DECISION_SEAMS,
   decisionEnvKeys,
@@ -176,12 +177,14 @@ describe('the decision role (#275, ADR 0068)', () => {
     expect(resolveDecisionSeams({ BINGBONG_DECISION_SEAMS: 'passage' })).toEqual(new Set())
   })
 
-  it('acts on the default seams when unset — never passage, retired by #281 — and on the listed ones when BINGBONG_DECISION_SEAMS names them', () => {
+  it('acts on the default seams when unset and on the listed ones when BINGBONG_DECISION_SEAMS names them — never passage, removed by #283', () => {
     const key = { TYPESAFE_API_KEY: 'ts-secret' }
     expect(DEFAULT_DECISION_SEAMS).toEqual(['result', 'tier'])
     expect(resolveDecisionSeams(key)).toEqual(new Set(['result', 'tier']))
-    // The code stays behind the list: naming passage turns it on.
-    expect(resolveDecisionSeams({ ...key, BINGBONG_DECISION_SEAMS: ' Passage, tier ' })).toEqual(new Set(['passage', 'tier']))
+    expect(resolveDecisionSeams({ ...key, BINGBONG_DECISION_SEAMS: ' Result, tier ' })).toEqual(new Set(['result', 'tier']))
+    // The seam is gone: naming passage turns nothing on, and a trace's record may still name it.
+    expect(resolveDecisionSeams({ ...key, BINGBONG_DECISION_SEAMS: ' Passage, tier ' })).toEqual(new Set(['tier']))
+    expect(ACTING_DECISION_SEAMS).toEqual(['result', 'tier'])
     expect(DECISION_SEAMS).toContain('passage')
     // An unknown name is dropped rather than failing a Run over a typo in an experiment variable.
     expect(resolveDecisionSeams({ ...key, BINGBONG_DECISION_SEAMS: 'result,rsult' })).toEqual(new Set(['result']))

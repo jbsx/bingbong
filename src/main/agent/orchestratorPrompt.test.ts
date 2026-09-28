@@ -412,25 +412,3 @@ describe('orchestrator prompt Candidate bookkeeping (#221)', () => {
     expect(admitted).toMatch(/a rejection of what you presented/)
   })
 })
-
-describe('the Selected Passage line (#283, ADR 0069)', () => {
-  const clock = new FakeClock()
-  const SENTENCE =
-    "A page's result may end with Session Evidence the Run recorded itself, one line per Asked Item the page states. Cite it by its memory-N id as you would your own, and record from that page only what those lines do not state."
-
-  it('is byte-identical to the prompt as it was with the passage seam off', () => {
-    expect(orchestratorSystemPrompt(clock, undefined, false)).toBe(orchestratorSystemPrompt(clock))
-    expect(orchestratorSystemPrompt(clock).startsWith(`${ORCHESTRATOR_SYSTEM_PROMPT}\n\n`)).toBe(true)
-    expect(ORCHESTRATOR_SYSTEM_PROMPT).not.toContain('the Run recorded itself')
-  })
-
-  it('carries the sentence with the passage seam on, after the evidence checkpoint rights, and changes nothing else', () => {
-    const on = orchestratorSystemPrompt(clock, ['Bing Bong'], true)
-    const lines = on.split('\n')
-    const at = lines.indexOf(`- ${SENTENCE}`)
-    expect(at).toBeGreaterThan(0)
-    expect(lines[at - 1]).toMatch(/^- record_evidence checkpoints grounded Observations/)
-    expect(lines.slice(at + 1, at + 3)).toEqual(['', 'Delegation:'])
-    expect(on.replace(`\n- ${SENTENCE}`, '')).toBe(orchestratorSystemPrompt(clock, ['Bing Bong']))
-  })
-})

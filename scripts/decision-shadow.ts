@@ -123,7 +123,7 @@ function readCaptures(roots: readonly string[], sets: readonly string[]) {
   return { dirsBySet, read, runs: read.flatMap((capture) => readShadowRuns(capture.name, capture.lines)) }
 }
 
-/** The per-seam summaries under the thresholds in force; passage verdicts ride the passage seam. */
+/** The per-seam summaries under the thresholds in force; passage verdicts ride the passage seam's records, which only traces written before #283 hold. */
 function summaries(rows: readonly ShadowRow[], judgements: Readonly<Record<string, PassageJudgement>>) {
   return {
     thresholds: DECISION_THRESHOLDS,

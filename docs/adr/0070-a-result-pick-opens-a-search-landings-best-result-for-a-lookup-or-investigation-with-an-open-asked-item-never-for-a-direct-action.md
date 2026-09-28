@@ -112,3 +112,7 @@ lets the model do.
   reads the same set through `openItems`, so a search landing whose every
   item was already recorded asks nothing, and its state lists only the
   items still open.
+- 2026-09-28, the Selected Passage is removed (#283, ADR 0069 superseded).
+  Nothing closes an Asked Item during a Run any more, so "an open Asked
+  Item" is every item the Run Plan declares, and a landing opened by a
+  Result Pick is read and recorded by the model as any other.

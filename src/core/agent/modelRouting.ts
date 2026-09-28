@@ -131,17 +131,20 @@ export const DECISION_SEAMS_ENV_KEY = `${DECISION_ENV_PREFIX}_SEAMS`
 /** The scripted stand-in's hook: set, it serves the role and no request leaves the machine. */
 export const DECISION_SCRIPT_ENV_KEY = `${DECISION_ENV_PREFIX}_SCRIPT`
 
-/** The seams a Decision Model can serve: a Selected Passage (#276), a Result Pick (#277), the Effort Tier (#278). */
+/**
+ * The seams a Decision Record names: a Selected Passage (#276), a Result Pick
+ * (#277), the Effort Tier (#278). `passage` is a name only traces carry: the
+ * Selected Passage was removed on 2026-09-28 (#283, ADR 0069), and what reads
+ * its records — the Round Audit, the Shadow Replay — still reads them.
+ */
 export type DecisionSeam = 'passage' | 'result' | 'tier'
 export const DECISION_SEAMS = ['passage', 'result', 'tier'] as const satisfies readonly DecisionSeam[]
 
-/**
- * The seams that act when `BINGBONG_DECISION_SEAMS` is unset. `passage` left
- * the list on 2026-09-27 (#281, ADR 0069): in the fix-281 capture the model
- * recorded again from the same page after every Run-made checkpoint, so the
- * seam spared it nothing. Its code stays behind the list: naming it acts.
- */
-export const DEFAULT_DECISION_SEAMS: readonly DecisionSeam[] = ['result', 'tier']
+/** The seams a Run can act on: the ones `BINGBONG_DECISION_SEAMS` may name. */
+export const ACTING_DECISION_SEAMS = ['result', 'tier'] as const satisfies readonly DecisionSeam[]
+
+/** The seams that act when `BINGBONG_DECISION_SEAMS` is unset: every one a Run can act on. */
+export const DEFAULT_DECISION_SEAMS: readonly DecisionSeam[] = ACTING_DECISION_SEAMS
 
 /** Whether the decision role resolved, and to what; never thrown, since unconfigured is a valid arm. */
 export type DecisionRouting =
@@ -192,7 +195,8 @@ export function resolveDecisionRouting(env: Record<string, string | undefined>):
  * The seams that act: none when the role is neither configured nor
  * scripted, otherwise the default seams unless `BINGBONG_DECISION_SEAMS` is
  * set — then the ones it lists, and none when it is set empty. An unknown name
- * is dropped rather than failing a Run over a typo in an experiment variable.
+ * is dropped rather than failing a Run over a typo in an experiment variable,
+ * and so is `passage`, whose seam is gone (#283).
  */
 export function resolveDecisionSeams(env: Record<string, string | undefined>): ReadonlySet<DecisionSeam> {
   const served = readEnv(env, DECISION_SCRIPT_ENV_KEY) !== undefined || resolveDecisionRouting(env).configured
@@ -202,7 +206,7 @@ export function resolveDecisionSeams(env: Record<string, string | undefined>): R
   const listed = env[DECISION_SEAMS_ENV_KEY]
   if (typeof listed !== 'string') return new Set(DEFAULT_DECISION_SEAMS)
   const names = listed.split(',').map((name) => name.trim().toLowerCase())
-  return new Set(DECISION_SEAMS.filter((seam) => names.includes(seam)))
+  return new Set(ACTING_DECISION_SEAMS.filter((seam) => names.includes(seam)))
 }
 
 /**

@@ -1,14 +1,15 @@
-// The Selected Passage's questions, state and landings (#276, ADR 0069),
-// apart from the seam so the Shadow Replay asks exactly what the seam asks,
-// over exactly the state it asks it over, on exactly the pages it asks about
-// (#281: a bar holds for the question it was read from). The replay loads
-// this under Node's type stripping: every runtime import carries `.ts`.
+// The Selected Passage's questions, state and landings (#276, ADR 0069), as
+// the seam asked them until it was removed (#283): what the Shadow Replay
+// asks again over the traces the seam left, over exactly the state it asked
+// over, on exactly the pages it asked about (#281: a bar holds for the
+// question it was read from). The replay loads this under Node's type
+// stripping: every runtime import carries `.ts`.
 
-import { parseBlockerMarker } from '../browser/blockerNudge.ts'
-import { landedOnNotFoundPage } from '../browser/notFoundPage.ts'
-import { landedOnUnavailablePage } from '../browser/unavailablePage.ts'
-import type { ToolResultOutcome } from '../ports/llm'
-import type { DecisionQuestion, DecisionQuestions } from '../ports/decisionModel.ts'
+import { parseBlockerMarker } from '../../../src/core/browser/blockerNudge.ts'
+import { landedOnNotFoundPage } from '../../../src/core/browser/notFoundPage.ts'
+import { landedOnUnavailablePage } from '../../../src/core/browser/unavailablePage.ts'
+import type { ToolResultOutcome } from '../../../src/core/ports/llm.ts'
+import type { DecisionQuestion, DecisionQuestions } from '../../../src/core/ports/decisionModel.ts'
 
 /** The calls whose result is a landing or a Page Read: never a scroll, a Look or a typed field. */
 export const PASSAGE_TOOLS: ReadonlySet<string> = new Set(['navigate', 'click', 'read_page'])

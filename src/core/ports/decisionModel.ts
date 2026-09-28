@@ -110,7 +110,9 @@ export interface DecisionThresholds {
 }
 
 /**
- * The bars each seam acts at, per `jev-1.13.0`. They started at 0.7/0.7 and
+ * The bars each seam acts at, per `jev-1.13.0`. The passage seam was removed
+ * (#283, ADR 0069); its bars stay as the ones its traces were written under,
+ * which is what the Shadow Replay reads them against. They started at 0.7/0.7 and
  * the shadow replay's decile table moves them (#275,
  * e2e/eval/jev/shadow-2026-09-26.json): a bar is the lowest decile whose
  * acts agree with the model's pick at least 0.8 over at least ten scored

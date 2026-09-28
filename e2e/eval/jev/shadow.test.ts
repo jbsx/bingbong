@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import type { DecisionModel } from '../../../src/core/ports/decisionModel.ts'
 import { EFFORT_TIERS } from '../../../src/core/pipeline/runPlan.ts'
-import { passageBlockIds, passageQuestions, passageState } from '../../../src/core/pipeline/passageQuestions.ts'
+import { passageBlockIds, passageQuestions, passageState } from './passageQuestions.ts'
 import {
   askSamples,
   choosePassageBar,
@@ -19,6 +19,7 @@ import {
   recordedTierRows,
   resultSamples,
   retruthRows,
+  runMadeItem,
   SHADOW_TIERS,
   shadowRows,
   summarizeRecordedTier,
@@ -236,6 +237,22 @@ describe('passage samples (#281)', () => {
     expect(samples[0]!.truth.picks).toEqual([])
     const direct = event('run_plan', { source: 'model', effortTier: 'direct_action', objective: 'o', askedItems: ITEMS })
     expect(passageSamples(readShadowRuns('cap', [COMMAND, direct, ...pageRead('r1', 6_000)])[0]!)).toEqual([])
+
+    // A fix-283 trace states the item followed by the passage (#283): the item is still read.
+    const stated: ShadowTraceLine = { ...runMade, args: { observation: 'H4 dial diameter: Measurements: | Dial diameter: 102 mm', excerpt: 'Measurements: | Dial diameter: 102 mm' } }
+    const after = sampled([ask(BLOCKS, 'acted'), stated, ...navigateTo('n1', 5_000), ...pageRead('r1', 9_000, { url: `${H4}/other` })])
+    expect(after.map((sample) => [sample.callId, sample.passage?.items])).toEqual([
+      ['n1', ITEMS],
+      ['r1', ['H4 object ID']],
+    ])
+  })
+
+  it('reads a Run-made checkpoint\'s item with or without the passage after it', () => {
+    expect(runMadeItem('dial diameter', 'Dial diameter: 102 mm')).toBe('dial diameter')
+    expect(runMadeItem('dial diameter: Dial diameter: 102 mm', 'Dial diameter: 102 mm')).toBe('dial diameter')
+    expect(runMadeItem('dial diameter', undefined)).toBe('dial diameter')
+    // An observation that is only the passage's tail names no shorter item.
+    expect(runMadeItem(': 102 mm', '102 mm')).toBe(': 102 mm')
   })
 
   it('credits a quoted table row however short, whitespace and case aside', () => {

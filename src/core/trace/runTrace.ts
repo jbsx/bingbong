@@ -147,8 +147,8 @@ export interface EvidenceCheckpointEvent {
   readonly agentId?: string
   /**
    * `run` when the Run made the checkpoint itself from a Selected Passage
-   * (#276, ADR 0069); absent when the model called record_evidence, and in
-   * traces written before the field existed.
+   * (#276, ADR 0069), in the traces written while that seam existed; it was
+   * removed (#283), so no Run writes it now and a reader still meets it.
    */
   readonly origin?: 'run'
   /**
@@ -568,6 +568,7 @@ export interface DecisionEvent {
   readonly model: string
   /** The state's size in characters. */
   readonly stateChars: number
+  // The three fields below were written by the Selected Passage seam, removed by #283: no Run writes them now, and a reader of its traces still meets them.
   /** A Selected Passage asked in two passes, a window then a block, for a page past 255 blocks (#276). */
   readonly windowed?: true
   /**

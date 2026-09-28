@@ -116,3 +116,10 @@ state, and a change to either re-reads the bar. A record that acted is not
 comparable and is left out of agreement, as #280 decided for the evaluator.
 The agreement floor is per seam: 0.9 over ten scored acts for a seam whose
 act closes something, 0.8 where that is unreachable at a useful volume.
+
+## Note (#283, 2026-09-28)
+
+The first acting seam is removed: ADR 0069 is superseded by its own capture
+rule, and the seams a Run can act on are the Result Pick and the Effort
+Tier. A Decision Record in a trace taken before then may still name
+`passage`.

@@ -39,7 +39,7 @@ import {
   passageBlockIds,
   passageQuestions,
   passageState,
-} from '../../../src/core/pipeline/passageQuestions.ts'
+} from './passageQuestions.ts'
 import type { DecisionSeam } from '../../../src/core/agent/modelRouting.ts'
 import type {
   DecisionModel,
@@ -77,8 +77,8 @@ export interface ShadowTraceLine {
   readonly askedText?: string
   /** A checkpoint made by the Run (`run`, #276); absent on the model's own. */
   readonly origin?: string
-  /** A checkpoint's call arguments: a Run-made one names its Asked Item as the observation. */
-  readonly args?: { readonly observation?: unknown }
+  /** A checkpoint's call arguments: a Run-made one names its Asked Item in the observation. */
+  readonly args?: { readonly observation?: unknown; readonly excerpt?: unknown }
   readonly tool?: string
   readonly outcome?: string
   readonly excerpt?: string
@@ -131,6 +131,16 @@ export interface ShadowRun {
 }
 
 /**
+ * The Asked Item a Run-made checkpoint closed, from its observation: the
+ * item's wording alone in traces up to `fix-281`, and the item followed by
+ * the passage — `<item>: <passage>` — in `fix-283`'s (#283).
+ */
+export function runMadeItem(observation: string, excerpt: unknown): string {
+  const stated = typeof excerpt === 'string' ? `: ${excerpt}` : null
+  return stated !== null && observation.length > stated.length && observation.endsWith(stated) ? observation.slice(0, -stated.length) : observation
+}
+
+/**
  * Group a capture's trace lines into Runs by turn. Only the Run's own steps
  * are kept: a Browse Subagent's rounds carry an `agentId` and answer to its
  * own objective, not the Run's.
@@ -156,7 +166,7 @@ export function readShadowRuns(capture: string, lines: readonly ShadowTraceLine[
             : [],
         )
         const origin = line.origin === 'run' ? 'run' : 'model'
-        const item = origin === 'run' && typeof line.args?.observation === 'string' ? line.args.observation : undefined
+        const item = origin === 'run' && typeof line.args?.observation === 'string' ? runMadeItem(line.args.observation, line.args.excerpt) : undefined
         runOf(line.turnId).steps.push({ kind: 'checkpoint', excerpt: line.excerpt, origin, ...(item !== undefined ? { item } : {}), grounded })
       }
       continue

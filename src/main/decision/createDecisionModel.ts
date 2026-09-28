@@ -80,17 +80,6 @@ export function createDecisionModel(env: Record<string, string | undefined>): Co
 }
 
 /**
- * Whether a Run under this env asks for Selected Passages (#283): a Decision
- * Model is there and `passage` is among its seams. What the orchestrator's
- * prompt reads, so it says what the carried lines are only while they can
- * be carried.
- */
-export function selectedPassageConfigured(env: Record<string, string | undefined>): boolean {
-  if (!resolveDecisionSeams(env).has('passage')) return false
-  return Boolean(env[DECISION_SCRIPT_ENV_KEY]?.trim()) || resolveDecisionRouting(env).configured
-}
-
-/**
  * The per-Run lookup the pipeline takes: the env is read on every call, as
  * the LLM's routing is, but one model is kept while the decision config is
  * unchanged — a scripted stand-in is consumed in order across Runs, and a

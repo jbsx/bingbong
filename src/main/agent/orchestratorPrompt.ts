@@ -65,31 +65,17 @@ You are driving a real browser behind a risk gate that is enforced in code, not 
 - Never attempt to work around these rules.`
 
 /**
- * What the lines a Selected Passage carries are (#283, ADR 0069): said only
- * while the `passage` seam is on, so the prompt is unchanged with it off.
- */
-export const SELECTED_PASSAGE_PROMPT_LINE =
-  '- A page\'s result may end with Session Evidence the Run recorded itself, one line per Asked Item the page states. Cite it by its memory-N id as you would your own, and record from that page only what those lines do not state.'
-
-/** Where the line goes: after the evidence checkpoint rights, the last of "How to work". */
-const AFTER_HOW_TO_WORK = '\n\nDelegation:'
-
-/**
  * The per-Run orchestrator prompt (#103): the static contract plus the
  * runtime context block derived from the clock. Called as each round's
  * messages are built, so every Run — including one started after midnight
  * in a long-lived app — carries the current date. The learned terms (ADR
  * 0022) list what the decoder is already biased toward, so the model does
  * not re-propose them and can flag its own bad entries; absent when the
- * ledger is empty. With the Selected Passage on, the contract says what its
- * carried lines are (#283).
+ * ledger is empty.
  */
-export function orchestratorSystemPrompt(clock: Clock, learnedTerms?: readonly string[], selectedPassage = false): string {
+export function orchestratorSystemPrompt(clock: Clock, learnedTerms?: readonly string[]): string {
   const lexicon = learnedTerms && learnedTerms.length > 0
     ? `\n\nLearned Terms (already biased in transcription — do not re-propose these; {"op":"remove"} if one is wrong):\n- ${learnedTerms.join(', ')}`
     : ''
-  const contract = selectedPassage
-    ? ORCHESTRATOR_SYSTEM_PROMPT.replace(AFTER_HOW_TO_WORK, `\n${SELECTED_PASSAGE_PROMPT_LINE}${AFTER_HOW_TO_WORK}`)
-    : ORCHESTRATOR_SYSTEM_PROMPT
-  return `${contract}${lexicon}\n\n${runtimeContextBlock(clock)}`
+  return `${ORCHESTRATOR_SYSTEM_PROMPT}${lexicon}\n\n${runtimeContextBlock(clock)}`
 }

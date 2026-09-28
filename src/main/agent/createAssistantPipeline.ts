@@ -39,7 +39,7 @@ import { ScriptedLlm, silentTts, UnavailableLlm } from '../../core/testing/doubl
 import { createOpenAiLlmClient } from './openAiLlmClient'
 import { orchestratorSystemPrompt } from './orchestratorPrompt'
 import { createZaiVisionApi } from '../vision/createZaiVisionApi'
-import { createDecisionModelSource, selectedPassageConfigured } from '../decision/createDecisionModel'
+import { createDecisionModelSource } from '../decision/createDecisionModel'
 
 export interface AssistantPipelineDeps {
   /**
@@ -159,7 +159,6 @@ function resolveLlm(
   onUsage?: UsageSink,
   tracer?: PerfTracer,
   getLearnedTerms?: () => readonly string[],
-  selectedPassage?: () => boolean,
 ): LlmClient {
   let client: LlmClient
   let model: string
@@ -183,10 +182,8 @@ function resolveLlm(
         // The runtime context getter (#103): the client below is cached
         // across Runs, so the date is re-derived when each round's messages
         // are built — a Run started after midnight sees the new date. The
-        // learned-terms getter (ADR 0022) rides the same closure, and so
-        // does whether the Selected Passage is on (#283): the decision
-        // config is no part of this client's signature.
-        systemPrompt: () => orchestratorSystemPrompt(clock, getLearnedTerms?.(), selectedPassage?.() ?? false),
+        // learned-terms getter (ADR 0022) rides the same closure.
+        systemPrompt: () => orchestratorSystemPrompt(clock, getLearnedTerms?.()),
         tools,
         fetchFn,
         // The transport backstop, above every active-work deadline
@@ -278,7 +275,7 @@ function createDynamicLlm(
       const env = getEnv()
       const nextSignature = llmSignature(env)
       if (client === null || nextSignature !== signature) {
-        client = resolveLlm(env, fetchFn, tools, clock, onUsage, tracer, getLearnedTerms, () => selectedPassageConfigured(getEnv()))
+        client = resolveLlm(env, fetchFn, tools, clock, onUsage, tracer, getLearnedTerms)
         signature = nextSignature
       }
       return client.complete(request)
@@ -387,9 +384,6 @@ export function createAssistantPipeline(deps: AssistantPipelineDeps): CommandPip
     // The Composed Address rail's Offered Addresses (#258): the tab's link
     // hrefs whole, where the printed line cuts them.
     linkHrefs: () => controller.linkHrefs(),
-    // The Selected Passage's blocks (#276, ADR 0069): the settled page's
-    // whole text, block by block, where the Page Preview shows its head.
-    pageTextBlocks: () => controller.pageTextBlocks(),
     // Observation ledger source URLs (#111): the visible tab's current page.
     currentPageUrl: () => controller.state().url ?? null,
     // No-progress rails (#126, ADR 0027): the visible tab's settled page

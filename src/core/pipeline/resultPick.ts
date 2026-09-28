@@ -31,12 +31,6 @@ export interface ResultPickDeps {
   readonly threshold: DecisionThresholds
   /** The Run's plan as it stands when the landing is judged: the Run Plan intercept has already run this round. */
   runPlan(): RunPlan | null
-  /**
-   * The Run's open Asked Items (`openAskedItems`, #276): the plan's declared
-   * items less those a Selected Passage already recorded. Absent — no
-   * Selected Passage seam, so nothing closes one — every declared item.
-   */
-  openItems?(): readonly string[]
   /** The LLM round whose Tool Round this is: the Decision Record's `round`. */
   round(): number
   /** Where every question's Decision Record goes. */
@@ -172,9 +166,7 @@ export function createResultPick(deps: ResultPickDeps): ResultPick {
       if (landing === null) return null
       const plan = deps.runPlan()
       if (!isPickablePlan(plan)) return null
-      // "Open" is the Selected Passage's set (#276): a landing whose every
-      // Asked Item a Run-made checkpoint already closed asks nothing.
-      const openItems = deps.openItems?.() ?? plan.askedItems
+      const openItems = plan.askedItems
       if (openItems.length === 0) return null
       const { head, preview } = splitListing(landing.listing)
       const results = listedResults(head)

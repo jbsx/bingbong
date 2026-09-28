@@ -2,6 +2,11 @@
 
 ## Status
 
+Superseded on 2026-09-28 by its own rule (#283, the last note below): the
+second capture missed one of its four gates, so the Selected Passage's code
+is removed and no Run makes an Evidence Checkpoint itself. Nothing replaces
+it. What follows is kept as the record of what was built and measured.
+
 Accepted on 2026-09-26 for #276, grilled the same day with every
 recommendation taken. The first acting seam of [ADR 0068](0068-a-decision-model-answers-a-runs-typed-questions-inside-a-round-and-acts-only-above-a-threshold-where-the-models-move-is-already-implied.md)'s
 Decision Model. Amends the Evidence Checkpoint's origin, not its rule:
@@ -289,3 +294,40 @@ opened page in the same Tool Round.
   exists only after, so the line the ledger holds and the line the model
   reads may differ by the id; a passage whose checkpoint is refused (none
   in 22) is carried without an id.
+- 2026-09-28, implemented and measured (#283), and Decision 11 applied:
+  **missed, so the Selected Passage is removed and this ADR superseded.**
+  The checkpoint was built as the note above set it (3a172fe): the
+  Observation stated the Asked Item followed by the passage, the passage
+  cut so both fit one Memory Entry; the result carried one line per item,
+  `Session Evidence recorded: memory-<n>, for "<item>": <passage>`; the
+  prompt gained its sentence only while a Decision Model was configured
+  with `passage` among its seams. Of the two calls left to the
+  implementation, the ledger held the line without its id, and a refused
+  checkpoint's line read `Session Evidence not recorded, for …` rather than
+  the recorded wording without an id, so the model was never told something
+  was recorded that was not; none was refused in 25. The capture is
+  `fix-283-1..3` on 3a172fe with `passage,result,tier`, every round's prompt
+  hash the one that carries the sentence, against `fix-284-1..3` as the
+  Reference, on initials. **Met:** Run-made checkpoints cited in the
+  Answer's `evidence_ids` 13 of 25 against at least half (5 of 21 in
+  `fix-281`); bookkeeping-only rounds 2.75 per Run against below the
+  Reference's 3.00 (33 over 12 Runs against 36); initials verified 9 of 12
+  against at least 7 (the Reference's 8 less one). **Missed:** Run-made
+  checkpoints whose passage a later record of the model's contains 13 of 25
+  against at most a third (16 of 21 in `fix-281`) — 6 held the whole passage
+  and 7 a part of it. Reported, never gated: the model recorded again from
+  the same page after 20 of the 25 and quoted again by the older rule after
+  10; 5 of the 12 landings a Run-made checkpoint rode were followed by a
+  Page Read in the next round; follow-ups verified 5 of 6 against 5 of 6;
+  pooled Run median 223.5 → 190.6 s; the model's own accepted checkpoints
+  51 → 61. So the checkpoint became citable and was cited, and the model
+  still recorded what it held about half the time. The rule was set before
+  the capture and is applied as written: one gate missed is missed. Removed
+  with the seam: its questions' place in the pipeline, the page text blocks
+  port, the prompt sentence, `passage` as a seam a Run can act on (the list
+  drops the name as it drops a typo), and the origin an Evidence Checkpoint
+  kept. Kept, because they read what captures already recorded: the trace
+  fields, the Round Audit's counters — the two #283 added among them — and
+  the Shadow Replay with the questions it asks again. #282's Passage Spans
+  were never built. A Result Pick's "open Asked Item" is every item the Run
+  Plan declares again ([ADR 0070](0070-a-result-pick-opens-a-search-landings-best-result-for-a-lookup-or-investigation-with-an-open-asked-item-never-for-a-direct-action.md)).

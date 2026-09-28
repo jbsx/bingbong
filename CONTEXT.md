@@ -521,10 +521,8 @@ enter Session Working Memory as soon as it is grounded. It preserves verified
 work across later Run failure or cancellation without committing speculative
 Assessments. Its excerpt is one or more verbatim passages of what the Run
 retained from the source, never a paraphrase. The model makes one by calling
-for it; a Run makes one itself from a Selected Passage (ADR 0069), stating
-the Asked Item and the passage verbatim, and names it to the model where the
-passage is carried so an Answer can cite it. Both are one kind, with the
-origin kept, and every rail reads them alike.
+for it. A Run made one itself from a Selected Passage until that was removed
+(ADR 0069, #283); a trace from then marks such a checkpoint's origin.
 _Avoid_: partial Memory Commit, autosave, auto-checkpoint
 
 **Memory Entry**:
@@ -1042,19 +1040,11 @@ _Avoid_: full read, page dump, read the whole page by scrolling
 
 **Selected Passage**:
 One text block of a landed page or a Page Read that the Decision Model chose
-as stating an open Asked Item, carried verbatim in the Action Outcome the
-model reads and recorded by the Run as an Evidence Checkpoint in the same
-round (ADR 0069). It is asked for on a landing or a Page Read once the Run
-Plan is declared, never on a scroll or a Look, and never for a Direct Action.
+as stating an Asked Item, which the Run carried verbatim in the Action
+Outcome and recorded as an Evidence Checkpoint in the same round. Removed on
+2026-09-28 (ADR 0069, superseded; #283): no Run makes one. The term names
+what the captures, Round Audits and Shadow Replays taken before then record.
 _Avoid_: highlight, snippet, auto-excerpt, extracted quote
-
-**Passage Span**:
-A consecutive run of a long page's text blocks, in document order, asked
-about as a page would be. A page with more blocks than one question can
-offer is asked about span by span, and the Selected Passage for an Asked
-Item is the best answer any of its spans gave (ADR 0069). A span never cuts
-a block.
-_Avoid_: window, chunk, page part
 
 **New In View**:
 What a scroll's Action Outcome reports: the refs and page text that entered the
