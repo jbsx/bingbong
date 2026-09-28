@@ -225,3 +225,18 @@ on not tuning to the judged data.
   searches across baseline3, fix-263-264 and fix-265-267, each inside a
   counted Search Loop. The streak rule here is unchanged: an Engine Rewrite
   is a search, and a walled search navigate is still a search, never escape.
+- 2026-09-28 (#289): the nudge moves from a streak of 3 to a streak of 2,
+  and a checkpoint tool leaves the streak unchanged, as inspection does.
+  The refusal stays at 5. Over `fix-270`, `jev-off`, `jev-on`, `fix-281`,
+  `fix-284` and `fix-283` the reviewer judged 158 initial rounds to be
+  inside a Search Loop, 2.2 a Run and 17 s of model time, 79 of them
+  followed by another. The Notice was delivered 34 times and no search was
+  refused; in the #259 capture a result was opened after every nudge. So
+  the tier that is obeyed arrives one search after the loop the reviewer
+  counts has begun, and the tier that refuses never fires. Ten loop rounds
+  paired an accepted checkpoint with a search, and the streak restarted
+  though nothing had been opened: recording is not opening. This reverses
+  the Decision's choice to keep the nudge at 3. The two streak counters are
+  recounted for every committed audit under the new reset rule. Gate, on
+  the `fix-288-290` capture against `fix-284`: search rounds in a loop on
+  initials at most 17, from 18 to 32 over the six captures.

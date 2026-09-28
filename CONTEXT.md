@@ -525,6 +525,14 @@ for it. A Run made one itself from a Selected Passage until that was removed
 (ADR 0069, #283); a trace from then marks such a checkpoint's origin.
 _Avoid_: partial Memory Commit, autosave, auto-checkpoint
 
+**Answer Checkpoint**:
+An Evidence Checkpoint or a Candidate record that an Answer carries instead of
+a Tool Round making it (ADR 0072). It meets the rule its tool meets and is
+recorded once the Answer's Card is available. One that fails is dropped and
+logged, never retried, and never fails the Answer. An Answer carries at most
+six.
+_Avoid_: final checkpoint, answer evidence, deferred record
+
 **Memory Entry**:
 One item in Session Working Memory. The application owns its stable envelope and
 semantic kind; the model supplies its subject, detail, status, rationale,
