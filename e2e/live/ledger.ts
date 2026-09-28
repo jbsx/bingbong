@@ -31,6 +31,7 @@ import {
   AUDIT_VERDICTS,
   LIVE_AUDIT_AGGREGATE_KIND,
   LIVE_AUDIT_KIND,
+  pastTheEndReadsOver,
   populationOf,
   recountUnavailableByTitle,
   replaySearchStreaks,
@@ -601,6 +602,10 @@ export function countersOf(population: AuditPopulation, attempts: readonly Audit
     mechanical('Bundled checkpoint rounds', older.bundledCheckpoints, budgeted),
     mechanical('Same-source unsupported rounds', older.sameSourceUnsupportedRounds, budgeted),
     mechanical('Held Page rounds without Progress', older.heldPageRoundsWithoutProgress, budgeted),
+    // #290: the refusal's text is in every audit's rounds, so an audit
+    // written before the counter is recounted from them rather than read as
+    // nothing — the Reference the gate compares with predates it.
+    mechanical('Reads refused as past the end', older.pastTheEndReads ?? pastTheEndReadsOver(attempts), budgeted),
     mechanical('Rejected Evidence Checkpoints', population.rejectedCheckpoints),
     mechanical('Walled rounds', population.walledRounds, budgeted),
     mechanical('Not-found landings', older.notFoundNavigates),

@@ -3,6 +3,7 @@ import type { ObservationId, ObservationProducer, ObservationRecord } from '../s
 import type { MemoryEntryId } from '../session/workingMemory'
 import type { SessionObservation } from '../session/sessionEvidence'
 import type { RunEvidenceCheckpoint } from './runContextCompaction'
+import { emptyPageReadLine, pageReadPartLine, previewFactLine } from '../browser/pageText'
 import {
   deriveFallbackSources,
   MAX_FALLBACK_EXCERPT_CHARS,
@@ -103,6 +104,20 @@ describe('deterministic fallback sources (#137)', () => {
     })
     expect(sources[0]?.excerpt).toBe(digest)
     expect(sources[0]?.excerptKind).toBe('page')
+  })
+
+  it('never quotes a fact line as the page\u2019s own text (#290)', () => {
+    // Every Page Read ends by naming its part, and a cut preview by naming
+    // how much it showed: both are the product's words about the text.
+    const excerptOf = (payload: string): string | undefined =>
+      deriveFallbackSources({ records: [record({ producer: 'page_read', payload, sourceUrl: 'https://example.com/a' })] })[0]?.excerpt
+    const head = '# T \u2014 https://example.com/a\n[1] link "next"'
+
+    expect(excerptOf(`${head}\npage text:\nA short page.\n${pageReadPartLine(1, 1)}`)).toBe('A short page.')
+    expect(excerptOf(`${head}\npage text:\nThe closing lines.\n${pageReadPartLine(3, 3)}`)).toBe('The closing lines.')
+    expect(excerptOf(`${head}\npage text:\nThe opening lines.\n${previewFactLine(18, 7412, 1)}`)).toBe('The opening lines.')
+    // A page with no text has no heading, only the line: nothing to quote.
+    expect(excerptOf(`${head}\n${emptyPageReadLine()}`)).toBeUndefined()
   })
 
   it('keeps a look\u2019s text but labels it as the run\u2019s look, not page text', () => {

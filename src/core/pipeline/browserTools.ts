@@ -189,6 +189,13 @@ const CLICK_LEFT_THE_PAGE_RE = /\burlChanged=true\b/
  * type (ADR 0062). It names no thing to hunt: a Covered outcome already
  * names the ref over the target, and a Not Shown one has no cover at all.
  */
+/**
+ * What the page text on a settled page state is, the same for navigate and
+ * click (ADR 0047): a preview, whose cut names the parts a read comes in (#290).
+ */
+export const PAGE_PREVIEW_GUIDANCE =
+  'the page text is a preview; read_page returns the whole text, and a preview that was cut ends by naming how many parts that text comes in.'
+
 export const BLOCKED_ACTION_GUIDANCE =
   'A "covered by" result names what sits over the target: act on the ref it names, or choose another target you were shown. A "not shown" result means the target is inside a hidden or inert container: no dismissal reaches it; choose a target you were shown.'
 
@@ -210,7 +217,7 @@ export function createBrowserTools(browser: BrowserController, vision?: VisionDe
       name: 'navigate',
       acquisition: true,
       description:
-        'Navigate the visible browser to a URL. Accepts full URLs (https://…) or search terms. Returns the settled page state — URL, title, page signature, numbered interactive refs (link refs carry their hrefs), and the page text — plus a BLOCKER marker when the landing is walled, a NOT-FOUND marker when the address names nothing, or an UNAVAILABLE marker when the site could not serve it right now. Continue directly from the returned refs; the page text is a preview; read_page returns the whole text.',
+        'Navigate the visible browser to a URL. Accepts full URLs (https://…) or search terms. Returns the settled page state — URL, title, page signature, numbered interactive refs (link refs carry their hrefs), and the page text — plus a BLOCKER marker when the landing is walled, a NOT-FOUND marker when the address names nothing, or an UNAVAILABLE marker when the site could not serve it right now. Continue directly from the returned refs; ' + PAGE_PREVIEW_GUIDANCE,
       parameters: {
         url: { type: 'string', description: 'URL or search terms to open, e.g. "https://youtube.com" or "best mechanical keyboards"' },
       },
@@ -223,12 +230,12 @@ export function createBrowserTools(browser: BrowserController, vision?: VisionDe
       name: 'read_page',
       acquisition: true,
       description:
-        'Read the page: its URL, title, page signature, scroll state, numbered interactive refs (link refs carry their hrefs — open them with navigate), and the page\'s whole text from the top, tables, preformatted text and definition lists included. Up to 12,000 characters of text per result: a longer page comes in numbered parts, and a result with more ends with "page text: part 1 of 3 — read_page part=2 continues". Use refs like [7] with click/type. Walls are reported as a BLOCKER: marker line with what to do. Navigation and page-changing actions return the page text as a preview — read the page when its preview is cut or you need a fresh look.',
+        'Read the page: its URL, title, page signature, scroll state, numbered interactive refs (link refs carry their hrefs — open them with navigate), and the page\'s whole text from the top, tables, preformatted text and definition lists included. Up to 12,000 characters of text per result: a longer page comes in numbered parts, and every result ends by naming its part — "page text: part 1 of 3 — read_page part=2 continues" when there is more, "page text: part 1 of 1 — the text is complete; there is no part 2" when the result holds all of it. A part past the last is refused and the round is spent. Use refs like [7] with click/type. Walls are reported as a BLOCKER: marker line with what to do. Navigation and page-changing actions return the page text as a preview — read the page when its preview is cut or you need a fresh look.',
       parameters: {
         part: {
           type: 'integer',
           required: false,
-          description: 'Which part of a long page\'s text to read, from 1 — omit for part 1, the top of the page.',
+          description: 'Which part of a long page\'s text to read, from 1 up to the count the last result named — omit for part 1, the top of the page.',
         },
       },
       // A part the page does not have is refused before the read runs
@@ -271,7 +278,9 @@ export function createBrowserTools(browser: BrowserController, vision?: VisionDe
       name: 'click',
       acquisition: true,
       description:
-        'Click a ref, then return the URL-change flag, dialog-open flag, clicked state delta, and any coarse page change. When the click meaningfully changes the page (navigation, dialog, state change), the settled page state with fresh refs follows — continue from those refs; the page text is a preview; read_page returns the whole text. A click that lands on a page that names nothing carries a NOT-FOUND marker, and one the site could not serve right now an UNAVAILABLE marker. An inert click returns only the concise no-change line. ' + BLOCKED_ACTION_GUIDANCE,
+        'Click a ref, then return the URL-change flag, dialog-open flag, clicked state delta, and any coarse page change. When the click meaningfully changes the page (navigation, dialog, state change), the settled page state with fresh refs follows — continue from those refs; ' +
+        PAGE_PREVIEW_GUIDANCE +
+        ' A click that lands on a page that names nothing carries a NOT-FOUND marker, and one the site could not serve right now an UNAVAILABLE marker. An inert click returns only the concise no-change line. ' + BLOCKED_ACTION_GUIDANCE,
       parameters: {
         ref: { type: 'integer', description: 'Element ref number from the snapshot, e.g. 7 for the element shown as [7]' },
       },

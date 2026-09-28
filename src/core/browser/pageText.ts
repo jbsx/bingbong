@@ -5,7 +5,7 @@
 // back each block raw. Everything that decides what the model reads happens here, where it
 // is unit-tested: how a table row, a pre block and a definition list render,
 // which repeats are dropped, how a Page Read is cut into parts, and the fact
-// lines that say a text was cut.
+// lines that say a text was cut and how many parts it has.
 
 /** One text block as the page collector reports it (#235). */
 export type CollectedTextBlock = (
@@ -176,24 +176,55 @@ export function splitPageRead(blocks: readonly string[], cap: number = MAX_PAGE_
 
 const count = (value: number): string => value.toLocaleString('en-US')
 
-/** The line a cut Page Preview ends with (ADR 0047). */
-export function previewFactLine(shown: number, total: number): string {
-  return `page text: first ${count(shown)} of ${count(total)} characters — read_page returns the whole text`
+/**
+ * The line a cut Page Preview ends with (ADR 0047): how much of the text it
+ * showed, and how many parts a Page Read of the page comes in (#290) — a
+ * preview that named no count left the model to ask for a part 2 the page
+ * never had. The characters are the preview's own — a scroll's are of the
+ * text that entered view — so the parts are named as the page's.
+ */
+export function previewFactLine(shown: number, total: number, parts: number): string {
+  return `page text: first ${count(shown)} of ${count(total)} characters — read_page returns the page's whole text in ${parts} ${parts === 1 ? 'part' : 'parts'}`
 }
 
 /**
- * The line a Page Read of a multi-part page ends with; null when the page is
- * one part. `cut` says the collector stopped at MAX_COLLECTED_PAGE_TEXT, so
- * the last part collected is not the end of the page's text.
+ * The line every Page Read ends with (#290): which part it is of how many.
+ * A one-part page says its text is complete, since a read that said nothing
+ * was asked for part 2. `cut` says the collector stopped at
+ * MAX_COLLECTED_PAGE_TEXT, so the last part collected is not the end of the
+ * page's text.
  */
-export function pageReadPartLine(part: number, of: number, cut = false): string | null {
+export function pageReadPartLine(part: number, of: number, cut = false): string {
   if (part < of) return `page text: part ${part} of ${of} — read_page part=${part + 1} continues`
   if (cut) return `page text: part ${part} of ${of} — the most one page read collects; the page's text continues past it`
-  return of <= 1 ? null : `page text: part ${part} of ${of} — the last part`
+  if (of <= 1) return `page text: part ${part} of ${of} — the text is complete; there is no part 2`
+  return `page text: part ${part} of ${of} — the last part`
+}
+
+/** The line a Page Read of a page with no text ends with (#290): one part, and nothing in it. */
+export function emptyPageReadLine(): string {
+  return 'page text: part 1 of 1 — this page has no text; there is no part 2'
 }
 
 /** The refusal for a part the page does not have, naming the range. */
 export function partPastTheEnd(part: number, of: number): string {
   const range = of === 1 ? '1 part, part=1' : `${of} parts, part=1 to part=${of}`
   return `read_page: part ${part} is past the end — this page's text has ${range}`
+}
+
+const FACT_LINE = /^page text: (?:part \d+ of \d+|first [\d,]+ of [\d,]+ characters) — /
+
+/**
+ * Whether a line of a result is one of the fact lines above: the product's
+ * words about a page's text, never the text. What quotes a page reads past it.
+ */
+export function isPageTextFactLine(line: string): boolean {
+  return FACT_LINE.test(line)
+}
+
+const PART_PAST_THE_END = /\bread_page: part \d+ is past the end\b/
+
+/** Whether a result is that refusal, wherever in the text it sits: what the Round Audit counts (#290). */
+export function isPartPastTheEnd(text: string): boolean {
+  return PART_PAST_THE_END.test(text)
 }

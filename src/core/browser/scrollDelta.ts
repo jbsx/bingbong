@@ -3,6 +3,7 @@ import {
   MAX_SNAPSHOT_TEXT,
   formatRefLine,
   truncateText,
+  pageReadPartCount,
   type PageSnapshot,
   type SnapshotRef,
 } from './snapshot'
@@ -60,7 +61,7 @@ export function formatNewInView(before: PageSnapshot, after: PageSnapshot): NewI
     // Capped as a Page Preview is, and a cut says so the same way (ADR 0047).
     const joined = text.join('\n')
     lines.push('page text:', truncateText(joined, MAX_SNAPSHOT_TEXT))
-    if (joined.length > MAX_SNAPSHOT_TEXT) lines.push(previewFactLine(MAX_SNAPSHOT_TEXT, joined.length))
+    if (joined.length > MAX_SNAPSHOT_TEXT) lines.push(previewFactLine(MAX_SNAPSHOT_TEXT, joined.length, pageReadPartCount(after)))
   }
   return { block: lines.join('\n'), shownRefs: refs.map((ref) => ref.ref) }
 }

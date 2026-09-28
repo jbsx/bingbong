@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { replaySearchStreaks, searchLoopCountsOf, type AuditAggregate, type AuditPopulation, type AuditSetOutput } from './audit.ts'
+import { pastTheEndReadsOf, pastTheEndReadsOver, populationOf, replaySearchStreaks, searchLoopCountsOf, type AuditAggregate, type AuditPopulation, type AuditSetOutput } from './audit.ts'
 import {
   HEADLINE_METRICS,
   buildLedger,
@@ -448,5 +448,54 @@ describe('fixtures cut from the committed audits', () => {
     const odd = cut('audit-baseline-2.json', { reviewerPromptVersion: 'audit-p1' })
     const ledger = buildLedger([baselineFiles[0]!, file('audit-baseline-2.json', odd), baselineFiles[2]!, baselineFiles[3]!])
     expect(family(ledger, 'baseline').notes).toContain('the Passes differ on reviewer prompt: baseline-1=audit-p2, baseline-2=audit-p1, baseline-3=audit-p2')
+  })
+})
+
+describe('reads refused as past the end (#290)', () => {
+  const LABEL = 'Reads refused as past the end'
+  const SIX_CAPTURES = ['fix-270', 'jev-off', 'jev-on', 'fix-281', 'fix-284', 'fix-283']
+  const passesOf = (family: string): AuditSetOutput[] => [1, 2, 3].map((pass) => readAudit(`audit-${family}-${pass}.json`))
+  const attemptsOf = (audits: readonly AuditSetOutput[], relation: string) =>
+    audits.flatMap((audit) => audit.attempts).filter((attempt) => attempt.mechanical.relation === relation)
+  const countOf = (audits: readonly AuditSetOutput[], relation: string): number => pastTheEndReadsOver(attemptsOf(audits, relation))
+  const committedAggregate = (): AuditAggregate => JSON.parse(readFileSync(join(REPORTS_DIR, 'audit-aggregate-fix-284.json'), 'utf8')) as AuditAggregate
+
+  it('recounts the six captures from the result text their rounds keep: 22 on initials, 5 on follow-ups', () => {
+    const audits = SIX_CAPTURES.flatMap(passesOf)
+
+    expect(countOf(audits, 'initial')).toBe(22)
+    expect(countOf(audits, 'revised_objective')).toBe(5)
+    // The gate's own column: two to five per capture's twelve initials.
+    expect(SIX_CAPTURES.map((family) => countOf(passesOf(family), 'initial'))).toEqual([2, 5, 5, 4, 3, 3])
+  })
+
+  it('counts a call, not a round, and only a read_page the refusal answered', () => {
+    const [round] = readAudit('audit-fix-284-3.json')
+      .attempts.flatMap((attempt) => attempt.mechanical.rounds)
+      .filter((candidate) => pastTheEndReadsOf([candidate]).length > 0)
+    const refused = round!.calls.find((call) => call.name === 'read_page')!
+
+    expect(pastTheEndReadsOf([{ ...round!, round: 7, calls: [refused, refused] }])).toEqual([7, 7])
+    expect(pastTheEndReadsOf([{ ...round!, calls: [{ ...refused, name: 'scroll' }] }])).toEqual([])
+    expect(pastTheEndReadsOf([{ ...round!, calls: [{ ...refused, resultHead: 'read_page: part must be a whole number from 1' }] }])).toEqual([])
+    expect(pastTheEndReadsOf([{ ...round!, calls: [{ ...refused, resultHead: null }] }])).toEqual([])
+  })
+
+  it('recounts the Reference, written before the counter, and reads an audit that carries it as written', () => {
+    const initials = attemptsOf(passesOf('fix-284'), 'initial')
+    const written = committedAggregate().populations.initial
+    const counterOf = (population: AuditPopulation) => countersOf(population, initials).find((counter) => counter.label === LABEL)
+
+    expect(written.pastTheEndReads).toBeUndefined()
+    expect(counterOf(written)).toEqual({ label: LABEL, judgement: false, value: 3, over: written.budgetedRounds })
+    expect(counterOf({ ...written, pastTheEndReads: 1 })).toEqual({ label: LABEL, judgement: false, value: 1, over: written.budgetedRounds })
+  })
+
+  it('leaves a population rebuilt from audits written before the counter as it was committed (#285)', () => {
+    const committed = committedAggregate().populations.initial
+    const rebuilt = populationOf('initial', attemptsOf(passesOf('fix-284'), 'initial'))
+
+    expect('pastTheEndReads' in rebuilt).toBe(false)
+    expect(JSON.stringify({ ...rebuilt, perSet: committed.perSet })).toBe(JSON.stringify(committed))
   })
 })

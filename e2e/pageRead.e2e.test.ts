@@ -73,7 +73,8 @@ describe('page read e2e (#235)', () => {
     const landing = textOf('open')
     expect(byId.open?.ok).toBe(true)
     expect(landing).toContain('page text:\nLuggage allowances\nWhat each ticket carries.\nTicket | Luggage | Hand luggage')
-    expect(landing).toMatch(/^page text: first 1,800 of \d{2},\d{3} characters — read_page returns the whole text$/m)
+    // #290: the cut names the parts the whole text comes in.
+    expect(landing).toMatch(/^page text: first 1,800 of \d{2},\d{3} characters — read_page returns the page's whole text in 2 parts$/m)
 
     // Part 1: from the top, every block kind rendered, each block once.
     const first = textOf('part-1')

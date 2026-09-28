@@ -14,6 +14,7 @@ import { canonicalizeMemoryUrl } from '../session/workingMemory'
 import type { SessionObservation } from '../session/sessionEvidence'
 import type { RunEvidenceCheckpoint } from './runContextCompaction'
 import { reportFault } from '../trace/fault'
+import { isPageTextFactLine } from '../browser/pageText'
 
 /** How many sources the fallback Answer may list, strongest first (#137). */
 export const MAX_FALLBACK_SOURCES = 8
@@ -59,9 +60,14 @@ const PAGE_TEXT_HEADING = 'page text:'
  * The page's own text a retained outcome carries (#137): the digest after
  * the `page text:` heading, cut before any BLOCKER marker or advisory
  * auto-vision note the tool result appended — those are pipeline guidance,
- * not page content.
+ * not page content. Nor is a fact line (ADR 0047): every Page Read ends
+ * with one (#290), so it is dropped before the heading is looked for.
  */
-function pageTextExcerpt(payload: string): string | undefined {
+function pageTextExcerpt(retained: string): string | undefined {
+  const payload = retained
+    .split('\n')
+    .filter((line) => !isPageTextFactLine(line))
+    .join('\n')
   const at = payload.indexOf(PAGE_TEXT_HEADING)
   if (at === -1) return undefined
   let text = payload.slice(at + PAGE_TEXT_HEADING.length).replace(/^\r?\n/, '')

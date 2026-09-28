@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
   MAX_PAGE_READ_TEXT,
+  emptyPageReadLine,
+  isPageTextFactLine,
+  isPartPastTheEnd,
   pageReadPartLine,
   partPastTheEnd,
   previewFactLine,
@@ -148,14 +151,31 @@ describe('splitPageRead — a Page Read in parts (#235/AC1)', () => {
 })
 
 describe('fact lines (#235/AC1, AC2)', () => {
-  it('names shown and total characters on a cut preview', () => {
-    expect(previewFactLine(1800, 7412)).toBe('page text: first 1,800 of 7,412 characters — read_page returns the whole text')
+  it('names shown and total characters on a cut preview, and the parts the whole text comes in (#290)', () => {
+    expect(previewFactLine(1800, 7412, 1)).toBe("page text: first 1,800 of 7,412 characters — read_page returns the page's whole text in 1 part")
+    expect(previewFactLine(1800, 30_029, 3)).toBe("page text: first 1,800 of 30,029 characters — read_page returns the page's whole text in 3 parts")
   })
 
   it('points a multi-part read at its next part, and says which part is the last', () => {
     expect(pageReadPartLine(1, 3)).toBe('page text: part 1 of 3 — read_page part=2 continues')
     expect(pageReadPartLine(3, 3)).toBe('page text: part 3 of 3 — the last part')
-    expect(pageReadPartLine(1, 1)).toBeNull()
+  })
+
+  it('says a one-part read is complete and has no part 2 (#290)', () => {
+    expect(pageReadPartLine(1, 1)).toBe('page text: part 1 of 1 — the text is complete; there is no part 2')
+  })
+
+  it('says a page with no text has none, and still no part 2 (#290)', () => {
+    expect(emptyPageReadLine()).toBe('page text: part 1 of 1 — this page has no text; there is no part 2')
+    expect(isPageTextFactLine(emptyPageReadLine())).toBe(true)
+  })
+
+  it('recognises every fact line, and no line of a page (#290)', () => {
+    for (const line of [pageReadPartLine(1, 3), pageReadPartLine(3, 3), pageReadPartLine(1, 1), pageReadPartLine(20, 20, true), previewFactLine(1800, 7412, 1)]) {
+      expect(isPageTextFactLine(line)).toBe(true)
+    }
+    expect(isPageTextFactLine('page text:')).toBe(false)
+    expect(isPageTextFactLine('The page text: part 1 of 3 of the manual')).toBe(false)
   })
 
   it('does not call the last part collected the last when the collector stopped at its bound', () => {
@@ -168,5 +188,12 @@ describe('fact lines (#235/AC1, AC2)', () => {
   it('names the range when a part is past the end', () => {
     expect(partPastTheEnd(4, 3)).toBe("read_page: part 4 is past the end — this page's text has 3 parts, part=1 to part=3")
     expect(partPastTheEnd(2, 1)).toBe("read_page: part 2 is past the end — this page's text has 1 part, part=1")
+  })
+
+  it('recognises its own refusal, bare or behind a prefix, and nothing else (#290)', () => {
+    expect(isPartPastTheEnd(partPastTheEnd(4, 3))).toBe(true)
+    expect(isPartPastTheEnd(`Not executed — ${partPastTheEnd(2, 1)}`)).toBe(true)
+    expect(isPartPastTheEnd('page text: part 3 of 3 — the last part')).toBe(false)
+    expect(isPartPastTheEnd('read_page: part must be a whole number from 1')).toBe(false)
   })
 })

@@ -101,14 +101,21 @@ describe('formatNewInView', () => {
     expect(delta?.block).toContain('(+15 more not listed)')
   })
 
-  it('caps the text it lists as a Page Preview is, and a cut says so with the preview fact line (#235)', () => {
+  it('caps the text it lists as a Page Preview is, and a cut says so with the preview fact line (#235, #290)', () => {
     const text = 'word '.repeat(500)
     const after = snapshot({ viewportText: [text] })
     const delta = formatNewInView(snapshot(), after)
 
     expect(delta?.block).toBe(
-      `new in view:\npage text:\n${text.slice(0, 1799)}…\npage text: first 1,800 of 2,500 characters — read_page returns the whole text`,
+      `new in view:\npage text:\n${text.slice(0, 1799)}…\npage text: first 1,800 of 2,500 characters — read_page returns the page's whole text in 1 part`,
     )
+  })
+
+  it('names the parts the page reads in, not the text that entered view (#290)', () => {
+    // The cut counts the text that came into view, ten blocks held to 300 characters each; the parts are the page's.
+    const blocks = Array.from({ length: 30 }, (_, index) => ({ kind: 'text' as const, text: `${String(index).padStart(3, '0')} ${'w'.repeat(996)}` }))
+    const after = snapshot({ textBlocks: blocks.map((block, index) => ({ ...block, inView: index < 10 })) })
+    expect(formatNewInView(snapshot(), after)?.block.split('\n').at(-1)).toBe("page text: first 1,800 of 3,009 characters — read_page returns the page's whole text in 3 parts")
   })
 
   it('text that fits the cap carries no fact line (#235)', () => {

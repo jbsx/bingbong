@@ -3,6 +3,7 @@ import youtubeHome from '../browser/fixtures/youtube-home.json'
 import redditHumanity from '../browser/fixtures/reddit-humanity.json'
 import redditNetworkBlock from '../browser/fixtures/reddit-network-block.json'
 import { blockerFactsFromSnapshot, type BlockerPageFacts } from '../browser/blockerNudge'
+import { pageReadPartLine } from '../browser/pageText'
 import {
   buildPageSnapshot,
   findSnapshotRef,
@@ -432,9 +433,13 @@ describe('browser tools through the pipeline', () => {
 
     expect(descriptions.navigate).toMatch(/settled page state/i)
     expect(descriptions.navigate).toMatch(/refs/i)
-    expect(descriptions.navigate).toContain('the page text is a preview; read_page returns the whole text')
+    // #290: the preview's cut line names a part count, and the description says so.
+    expect(descriptions.navigate).toContain('a preview that was cut ends by naming how many parts that text comes in')
     expect(descriptions.read_page).toMatch(/whole text/i)
     expect(descriptions.read_page).toContain('page text: part 1 of 3 — read_page part=2 continues')
+    // The lines the description quotes are the ones a read prints (#290).
+    expect(descriptions.read_page).toContain(pageReadPartLine(1, 3))
+    expect(descriptions.read_page).toContain(pageReadPartLine(1, 1))
     expect(descriptions.click).toMatch(/URL-change.*dialog.*state delta/i)
     expect(descriptions.click).toMatch(/settled page state/i)
     // What to do after a Blocked Action lives here, not in the shared prompt

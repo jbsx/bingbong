@@ -463,7 +463,7 @@ describe('createCdpBrowserController readPage', () => {
 
     // The navigate outcome carries the preview, and says it was cut.
     const landing = await controller.navigate('https://www.youtube.com/')
-    expect(landing.endsWith('page text: first 1,800 of 30,029 characters — read_page returns the whole text')).toBe(true)
+    expect(landing.endsWith("page text: first 1,800 of 30,029 characters — read_page returns the page's whole text in 3 parts")).toBe(true)
 
     expect(await controller.pageReadParts()).toBe(3)
     const first = await controller.readPage()

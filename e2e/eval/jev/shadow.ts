@@ -27,6 +27,7 @@
 // Everything here is pure; the CLI (`scripts/decision-shadow.ts`) reads the
 // files and owns the network.
 
+import { isPageTextFactLine } from '../../../src/core/browser/pageText.ts'
 import { parseSearchUrl } from '../../../src/core/browser/urlInput.ts'
 import { tierShadowOf } from '../../live/audit.ts'
 import type { EffortTier } from '../../../src/core/pipeline/runPlan.ts'
@@ -262,23 +263,26 @@ export function pagePassages(pageRead: string): string[] {
   if (start === -1) return []
   // The page's text holds no blank line; the Notices a round attached start after one.
   const end = lines.findIndex((line, at) => at > start && line.trim() === '')
-  return lines.slice(start + 1, end === -1 ? undefined : end).filter((line) => !FACT_LINE.test(line) && !CARRIED_LINE.test(line))
+  return lines.slice(start + 1, end === -1 ? undefined : end).filter((line) => !isPageTextFactLine(line) && !CARRIED_LINE.test(line))
 }
 
 /** The fact line a Page Preview cut short ends with (ADR 0047): the landing does not hold its page's whole text. */
 const PREVIEW_CUT_LINE = /^page text: first [\d,]+ of [\d,]+ characters/m
-const FACT_LINE = /^page text: (?:part \d+ of \d+|first [\d,]+ of [\d,]+ characters)\b/
 /** What the Run carried after a landing's result (#276): the seam's lines, not the page's. */
 const CARRIED_LINE = /^(?:Selected passage for "|Recorded as evidence for "|Session Evidence (?:recorded:|not recorded,) (?:memory-\d+, )?for ")/
 
 /** The fact line of a Page Read cut into parts: `page text: part 2 of 4 — …` (ADR 0047). */
 const PART_LINE = /^page text: part (\d+) of (\d+)\b/
 
-/** Which part of how many a Page Read is; null for a whole page. */
+/**
+ * Which part of how many a Page Read is; null for a whole page — one that
+ * carries no part line, as every one-part read did before #290, or one whose
+ * line names a single part.
+ */
 export function pageReadPart(pageRead: string): { readonly part: number; readonly of: number } | null {
   for (const line of pageRead.split('\n')) {
     const match = PART_LINE.exec(line.trim())
-    if (match) return { part: Number(match[1]), of: Number(match[2]) }
+    if (match) return Number(match[2]) <= 1 ? null : { part: Number(match[1]), of: Number(match[2]) }
   }
   return null
 }

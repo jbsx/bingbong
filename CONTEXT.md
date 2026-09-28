@@ -1033,17 +1033,19 @@ _Avoid_: hidden ref, blocked by overlay, unreachable, covered
 **Page Preview**:
 The opening stretch of a page's text, capped, that an Action Outcome carries so
 the model can orient and choose without reading. It is not the page: a preview
-that was cut says how much of the page it shows, and the rest is reached by a
-Page Read, never by scrolling it into view.
+that was cut says how much of the page it shows and how many parts a Page Read
+of it comes in (#290), and the rest is reached by a Page Read, never by
+scrolling it into view.
 _Avoid_: digest, page text, snippet
 
 **Page Read**:
 The whole text of a page as `read_page` returns it — headings, paragraphs,
 list items, table rows, pre blocks, and a container's own prose where a page
 wraps a paragraph in no element (#265) — from the top, in numbered parts when
-it exceeds one result. Reading a page is one Page Read, or one per part, never a
-sequence of scrolls; each part of an unchanged page is its own first
-observation.
+it exceeds one result. Every Page Read says which part it is of how many, a
+page of one part included (#290). Reading a page is one Page Read, or one per
+part, never a sequence of scrolls; each part of an unchanged page is its own
+first observation.
 _Avoid_: full read, page dump, read the whole page by scrolling
 
 **Selected Passage**:

@@ -35,6 +35,28 @@ block at the element and read only direct text nodes, which would have
 dropped a paragraph inside such a container and the words of an `<em>` or
 `<a>` inside its prose.
 
+Note (2026-09-28, #290): every Page Read states its part count, and a cut
+preview names it. The Decision's "a page that fits carries no line" held for
+the preview and still does; for a read it left a one-part page saying
+nothing, and the model asked for a part the page never had. Across the Round
+Audits of `fix-270`, `jev-off`, `jev-on`, `fix-281`, `fix-284` and `fix-283`,
+27 `read_page` calls were refused as past the end — 22 on initials, 5 on
+follow-ups — and 23 of them asked for part 2 of a page with one part. A
+one-part read now ends with `page text: part 1 of 1 — the text is complete;
+there is no part 2`, a page with no text with `… this page has no text;
+there is no part 2`, and a cut preview with `page text: first 1,800 of 7,412
+characters — read_page returns the page's whole text in 1 part`. The parts
+are named as the page's because a scroll's cut counts only the text that
+entered view. The refusal is
+unchanged: a read past the end is still refused with the range and the round
+is still charged, never answered with the last part, which would hide the
+mistake from the no-Progress rail. Two readers of a result's text follow the
+lines: the deterministic fallback Answer drops a fact line before it quotes a
+page, and a Shadow Replay reads `part 1 of 1` as a whole Page Read. The Round Audit counts the refusals from the result text its rounds
+keep, so an audit written before the counter is recounted without its traces.
+The cap, the cut and the parts are unchanged; this is a note, not an
+amendment.
+
 ## Context
 
 The Round Audit of the Baseline counted 105 scroll rounds against 19

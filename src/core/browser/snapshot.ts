@@ -1,5 +1,6 @@
 import type { Cover, CoverProbe } from './actionOutcome'
 import {
+  emptyPageReadLine,
   pageReadPartLine,
   partPastTheEnd,
   previewFactLine,
@@ -478,14 +479,15 @@ function snapshotHead(snapshot: PageSnapshot): string[] {
 /**
  * The settled page as an Action Outcome carries it: refs and the Page
  * Preview. A preview that was cut ends with the fact line naming how much
- * of the text it showed (ADR 0047); one that fits carries none.
+ * of the text it showed (ADR 0047) and how many parts a read of it comes in
+ * (#290); one that fits carries none.
  */
 export function formatPageSnapshot(snapshot: PageSnapshot): string {
   const lines = snapshotHead(snapshot)
   if (snapshot.textDigest) {
     lines.push('page text:', snapshot.textDigest)
     if (snapshot.textLength > snapshot.textDigest.length) {
-      lines.push(previewFactLine(snapshot.textDigest.length, snapshot.textLength))
+      lines.push(previewFactLine(snapshot.textDigest.length, snapshot.textLength, pageReadPartCount(snapshot)))
     }
   }
   return lines.join('\n')
@@ -498,8 +500,9 @@ export function pageReadPartCount(snapshot: PageSnapshot): number {
 
 /**
  * A Page Read (ADR 0047): the snapshot with one part of the page's whole
- * text in place of the preview. Part 1 starts at the top; a page of several
- * parts ends with the line naming this part and the next. A part the page
+ * text in place of the preview. Part 1 starts at the top; every read ends
+ * with the line naming this part and how many there are (#290), a one-part
+ * page included, and a page with no text says it has none. A part the page
  * does not have throws the refusal read_page's admission step gives.
  */
 export function formatPageRead(snapshot: PageSnapshot, part: number): string {
@@ -508,8 +511,7 @@ export function formatPageRead(snapshot: PageSnapshot, part: number): string {
   const lines = snapshotHead(snapshot)
   const text = parts[part - 1]!
   if (text !== '') lines.push('page text:', text)
-  const partLine = pageReadPartLine(part, parts.length, snapshot.textCut)
-  if (partLine !== null) lines.push(partLine)
+  lines.push(text === '' && parts.length === 1 ? emptyPageReadLine() : pageReadPartLine(part, parts.length, snapshot.textCut))
   return lines.join('\n')
 }
 

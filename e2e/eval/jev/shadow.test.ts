@@ -203,6 +203,17 @@ describe('passage samples (#281)', () => {
     expect(sampled(pageRead('r1', 6_000, { part: 'page text: part 1 of 2 — read_page part=2 continues' }))).toEqual([])
   })
 
+  it('reads a one-part read that states its part count as a whole Page Read, its line no passage (#290)', () => {
+    const whole = sampled(pageRead('r1', 6_000))
+    const stated = sampled(pageRead('r1', 6_000, { part: 'page text: part 1 of 1 — the text is complete; there is no part 2' }))
+    expect(stated.map((sample) => sample.passage?.kind)).toEqual(['page_read'])
+    expect(stated[0]!.state).toBe(whole[0]!.state)
+    const landing = [ask(), ...navigateTo('n1', 5_000, { blocks: BLOCKS.slice(0, 2), cut: true })]
+    expect(sampled([...landing, ...pageRead('r1', 6_000, { part: 'page text: part 1 of 1 — the text is complete; there is no part 2' })])[0]!.state).toBe(
+      passageState(passageBlockIds(4), BLOCKS),
+    )
+  })
+
   it('skips a search results page, a Not-found Page and a walled landing', () => {
     const search = 'https://duckduckgo.com/?q=h4+dial'
     expect(sampled([ask(), ...navigateTo('n1', 5_000, { url: search })])).toEqual([])

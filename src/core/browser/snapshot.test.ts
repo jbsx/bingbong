@@ -79,13 +79,16 @@ describe('page text: Page Preview and Page Read (#235, ADR 0047)', () => {
     expect(snapshot.viewportText).toEqual(['Paragraph'])
   })
 
-  it('a navigate-shaped snapshot whose text was cut ends with the preview fact line (AC2)', () => {
+  it('a navigate-shaped snapshot whose text was cut ends with the preview fact line, naming the parts a read comes in (AC2, #290)', () => {
     const snapshot = buildPageSnapshot(textPage(10, 740))
     const text = formatPageSnapshot(snapshot)
 
     expect(snapshot.textDigest).toHaveLength(1800)
     expect(snapshot.textLength).toBe(7409)
-    expect(text.endsWith(`page text:\n${snapshot.textDigest}\npage text: first 1,800 of 7,409 characters — read_page returns the whole text`)).toBe(true)
+    expect(text.endsWith(`page text:\n${snapshot.textDigest}\npage text: first 1,800 of 7,409 characters — read_page returns the page's whole text in 1 part`)).toBe(true)
+    expect(formatPageSnapshot(buildPageSnapshot(textPage(30, 1000))).split('\n').at(-1)).toBe(
+      "page text: first 1,800 of 30,029 characters — read_page returns the page's whole text in 3 parts",
+    )
   })
 
   it('a snapshot whose text fits carries no fact line (AC2)', () => {
@@ -95,13 +98,19 @@ describe('page text: Page Preview and Page Read (#235, ADR 0047)', () => {
     expect(text.split('\n').at(-1)).toMatch(/^001 w+$/)
   })
 
-  it('a read of a page under the part cap returns all its text with no fact line (AC1)', () => {
+  it('a read of a page under the part cap returns all its text and says it is complete (AC1, #290)', () => {
     const snapshot = buildPageSnapshot(textPage(10, 740))
     const text = formatPageRead(snapshot, 1)
 
     expect(pageReadPartCount(snapshot)).toBe(1)
-    expect(text.endsWith(`page text:\n${snapshot.textBlocks.join('\n')}`)).toBe(true)
-    expect(text).not.toMatch(/page text: (first|part)/)
+    expect(text.endsWith(`page text:\n${snapshot.textBlocks.join('\n')}\npage text: part 1 of 1 — the text is complete; there is no part 2`)).toBe(true)
+  })
+
+  it('a read of a page with no text says so, and still states its part count (#290)', () => {
+    const text = formatPageRead(buildPageSnapshot(page({ textBlocks: [] })), 1)
+
+    expect(text).not.toContain('page text:\n')
+    expect(text.split('\n').at(-1)).toBe('page text: part 1 of 1 — this page has no text; there is no part 2')
   })
 
   it('a read of a longer page returns numbered parts cut at block boundaries (AC1)', () => {

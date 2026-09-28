@@ -40,6 +40,7 @@ import { createHash } from 'node:crypto'
 import { blockedOrInertAction, type ConsumedNothing } from '../../src/core/browser/actionOutcome.ts'
 import { parseBlockerMarker } from '../../src/core/browser/blockerNudge.ts'
 import { classifyNotFoundPage, NOT_FOUND_BASES, type NotFoundBasis, type NotFoundLanding } from '../../src/core/browser/notFoundPage.ts'
+import { isPartPastTheEnd } from '../../src/core/browser/pageText.ts'
 import { classifyUnavailablePage, isUnavailableBasis, type UnavailableLanding } from '../../src/core/browser/unavailablePage.ts'
 import type { ComposedAddressRewriteStamp } from '../../src/core/pipeline/composedAddressRail.ts'
 import type { UnseenPhraseRewriteStamp } from '../../src/core/pipeline/unseenPhraseRail.ts'
@@ -550,6 +551,13 @@ export interface AuditMechanical {
    */
   readonly unavailableLandings?: UnavailableLandingRounds
   /**
+   * The reads refused as past the end (#290): the round of every `read_page`
+   * call the app answered with its refusal for a part the page does not
+   * have, one entry per call. Beside the rounds, never in them. Absent on an
+   * audit written before the counter, whose rounds still hold the text.
+   */
+  readonly pastTheEndReads?: readonly number[]
+  /**
    * The consent walls (#263, ADR 0061): the round of every call that
    * reported a Tier-1 dismissal, of every click on a ref last listed with a
    * consent-style label — a consent wall cleared by hand — and of every
@@ -865,6 +873,12 @@ export interface AuditPopulation {
   readonly sameSourceUnsupportedRounds: number
   /** Held Page rounds without Progress over the attempts (#240). */
   readonly heldPageRoundsWithoutProgress: number
+  /**
+   * `read_page` calls refused as past the end over the attempts that count
+   * them (#290); absent when none does, as on an audit written before the
+   * counter, which the Fix Ledger recounts from the rounds.
+   */
+  readonly pastTheEndReads?: number
   /** Delegated Page rounds over the attempts, by the holder's state (#273); absent when no attempt's audit carries the counter. */
   readonly delegatedPageRounds?: DelegatedPageCounts
   /** Tier shadows over the attempts (#278); absent when no attempt asked one. */
@@ -2099,6 +2113,24 @@ export function unavailableLandingsOf(rounds: readonly AuditRound[]): Unavailabl
   return { status, title, followedBySearch }
 }
 
+/**
+ * The rounds of an attempt's reads refused as past the end (#290): one entry
+ * per `read_page` call the app answered with its refusal for a part the page
+ * does not have. Read off the result text the rounds keep, by the app's own
+ * recogniser, so an audit written before the counter is recounted from its
+ * rounds with no trace and no reviewer.
+ */
+export function pastTheEndReadsOf(rounds: readonly AuditRound[]): number[] {
+  return rounds.flatMap((round) =>
+    round.calls.filter((call) => call.name === 'read_page' && call.resultHead !== null && isPartPastTheEnd(call.resultHead)).map(() => round.round),
+  )
+}
+
+/** How many of them some attempts hold, recounted from their rounds whether or not their audit counted (#290). */
+export function pastTheEndReadsOver(attempts: readonly AuditAttempt[]): number {
+  return attempts.reduce((total, attempt) => total + pastTheEndReadsOf(attempt.mechanical.rounds).length, 0)
+}
+
 /** The rounds of an attempt's consent dismissals, hand consent clicks, and blocks a hand consent click followed (#263). */
 export interface ConsentWallRounds {
   readonly dismissals: readonly number[]
@@ -3119,6 +3151,7 @@ export function classifyAttempt(input: AuditTraceInput): AuditMechanical {
     searchForms: searchFormsOf(rounds),
     blockedOrInert: blockedOrInertOf(rounds),
     unavailableLandings: unavailableLandingsOf(rounds),
+    pastTheEndReads: pastTheEndReadsOf(rounds),
     consentWalls: consentWallsOf(raw),
     walledRounds: rounds.filter((round) => round.tags.wall).length,
     notFoundNavigates: rounds.flatMap((round) => round.calls.filter((call) => call.name === 'navigate' && call.notFound !== undefined).map(() => round.round)),
@@ -3604,6 +3637,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
   let bundled = 0
   let sameSourceUnsupported = 0
   let heldPageRounds = 0
+  let pastTheEndReads: number | undefined
   let delegatedPageRounds: DelegatedPageCounts | undefined
   let tierShadow: TierShadowCounts | undefined
   let rejected = 0
@@ -3676,6 +3710,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
     bundled += mechanical.bundledCheckpoints
     sameSourceUnsupported += mechanical.sameSourceUnsupportedRounds
     heldPageRounds += mechanical.heldPageRoundsWithoutProgress
+    if (mechanical.pastTheEndReads !== undefined) pastTheEndReads = (pastTheEndReads ?? 0) + mechanical.pastTheEndReads.length
     if (mechanical.delegatedPageRounds !== undefined) addDelegatedPageRounds((delegatedPageRounds ??= emptyDelegatedPageCounts()), mechanical.delegatedPageRounds)
     if (mechanical.tierShadow !== undefined) addTierShadow((tierShadow ??= emptyTierShadowCounts()), mechanical.tierShadow, mechanical.terminal?.finalizationCause ?? null)
     rejected += mechanical.rejectedCheckpoints
@@ -3796,6 +3831,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
     bundledCheckpoints: bundled,
     sameSourceUnsupportedRounds: sameSourceUnsupported,
     heldPageRoundsWithoutProgress: heldPageRounds,
+    ...(pastTheEndReads !== undefined ? { pastTheEndReads } : {}),
     ...(delegatedPageRounds !== undefined ? { delegatedPageRounds } : {}),
     ...(tierShadow !== undefined ? { tierShadow } : {}),
     rejectedCheckpoints: rejected,
@@ -4159,12 +4195,18 @@ function populationContradictionNotesText(population: AuditPopulation): string {
   return `${population.contradictionNotes} accepted record(s) answered with the contradiction Note`
 }
 
+/** A population's reads refused as past the end (#290), or "not counted" on an audit written before the counter. */
+function populationPastTheEndReadsText(population: AuditPopulation): string {
+  if (population.pastTheEndReads === undefined) return 'reads refused as past the end not counted'
+  return `${population.pastTheEndReads} read(s) refused as past the end`
+}
+
 function judgementLines(populations: readonly AuditPopulation[]): string[] {
   return populations.map(
     (population) =>
       `- ${population.label}: ${population.offKeyRounds} Off-key round(s), ${population.searchLoopRounds} Search Loop round(s) by the reviewer (${population.mechanicalSearchRounds} by the streak rule, heads included: ${population.searchRoundsAtStreak2} at streak 2 or beyond, ${population.searchRoundsAtStreak3} at 3 or beyond; attempts by search source ${SEARCH_SOURCES.map((source) => `${source} ${population.searchSources[source]}`).join(', ')}; navigate searches by Search URL form ${searchFormsText(population.searchForms)}; ${populationBlockedOrInertText(population.blockedOrInert)}; ${populationUnavailableLandingsText(population.unavailableLandings)}; ${populationConsentWallsText(population.consentWalls)}; ${populationTierEscalationsText(population.tierEscalations)}), ` +
       `${population.inheritedRounds} inherited, ${population.rejectedCheckpoints} rejected Evidence Checkpoint(s), ${population.walledRounds} walled round(s), ${population.notFoundNavigates} navigate(s) landed on a Not-found Page (${population.notFoundOffKey} judged Off-key), ${population.rewrittenComposedAddresses ?? 0} Composed Address(es) rewritten into a site search (${population.rewrittenComposedAddressesOffKey ?? 0} judged Off-key, ${population.rewrittenShownAddresses ?? 'not counted'} to an address the Run was shown), ${population.unseenPhraseRewrites ?? 'not counted'} search(es) ran with an Unseen Phrase unquoted (${population.unseenPhraseRewritesOffKey ?? 0} judged Off-key), ${population.engineRewrites ?? 'not counted'} search(es) ran on the Run Engine in place of another Web Engine (${population.engineRewritesOffKey ?? 0} judged Off-key), ${populationResultPicksText(population)}, ${populationSelectedPassagesText(population)}, ${populationRunMadeUseText(population)}, ${populationContradictionNotesText(population)}, ${population.subagentRounds} Subagent round(s), ` +
-      `${population.mergedCheckpoints} merged Evidence Checkpoint(s) (a floor), ${population.heldPageRoundsWithoutProgress} Held Page round(s) without Progress, ${population.bundledCheckpoints} bundled checkpoint round(s), ${population.sameSourceUnsupportedRounds} same-source unsupported round(s), ${subagentCitationsText(population.subagentCitations)}, ${populationSlipsText(population)}, ${delegatedPageCountsText(population.delegatedPageRounds)}, ` +
+      `${population.mergedCheckpoints} merged Evidence Checkpoint(s) (a floor), ${population.heldPageRoundsWithoutProgress} Held Page round(s) without Progress, ${population.bundledCheckpoints} bundled checkpoint round(s), ${population.sameSourceUnsupportedRounds} same-source unsupported round(s), ${subagentCitationsText(population.subagentCitations)}, ${populationSlipsText(population)}, ${delegatedPageCountsText(population.delegatedPageRounds)}, ${populationPastTheEndReadsText(population)}, ` +
       `${population.malformedAnswers} Malformed Answer(s) (${population.answerRetries} retried), ` +
       `${transportText(population)}, ` +
       `${populationSkipsText(population)}, ${populationCutsText(population)}, ` +
@@ -4252,6 +4294,7 @@ function attemptSection(attempt: AuditAttempt): string[] {
   lines.push(`- ${unavailableLandingsText(mechanical.unavailableLandings)}`)
   lines.push(`- ${consentWallsText(mechanical.consentWalls)}`)
   lines.push(`- ${tierEscalationsText(mechanical.tierEscalations)}`)
+  lines.push(`- reads refused as past the end: ${mechanical.pastTheEndReads === undefined ? 'not counted' : rounds(mechanical.pastTheEndReads)}`)
   if (review === null) lines.push('- reviewer: not consulted')
   else if (judgement === null) lines.push(`- reviewer: no judgement — ${review.caveats.join('; ')}`)
   else {

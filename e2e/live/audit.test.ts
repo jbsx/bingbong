@@ -3079,3 +3079,48 @@ describe('the contradiction Note (#284, ADR 0071)', () => {
     expect(olderText).toMatch(/- initial: .*contradiction Notes not counted/)
   })
 })
+
+describe('reads refused as past the end (#290)', () => {
+  const PAST = "read_page: part 2 is past the end — this page's text has 1 part, part=1"
+  const ROUNDS: RoundSpec[] = [
+    { round: 1, at: 1_000, calls: [{ name: 'navigate', args: { url: SPEC_URL }, result: PAGE('Watch spec', SPEC_URL, 'aaaa1111') }] },
+    { round: 2, at: 2_000, calls: [{ name: 'read_page', args: {}, result: READ('Watch spec', SPEC_URL, 'aaaa1111') }] },
+    { round: 3, at: 3_000, calls: [{ name: 'read_page', args: { part: 2 }, ok: false, error: PAST }] },
+    {
+      round: 4,
+      at: 4_000,
+      calls: [
+        { name: 'read_page', args: { part: 3 }, ok: false, error: PAST.replace('part 2', 'part 3') },
+        { name: 'read_page', args: { part: 4 }, ok: false, error: PAST.replace('part 2', 'part 4') },
+      ],
+    },
+    // Refused, and a read, but for a part that names nothing: another mistake.
+    { round: 5, at: 5_000, calls: [{ name: 'read_page', args: { part: 0 }, ok: false, error: 'read_page: part must be a whole number from 1' }] },
+  ]
+
+  it('counts, per attempt, the read_page calls the refusal answered, by round, beside the digest', () => {
+    const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, EXTRA) }))
+    expect(mechanical.pastTheEndReads).toEqual([3, 4, 4])
+    expect(auditModule.pastTheEndReadsOf(mechanical.rounds)).toEqual([3, 4, 4])
+    expect(JSON.stringify(auditModule.digestPayloadOf(mechanical))).not.toContain('pastTheEndReads')
+  })
+
+  it('sums them per population, prints them per attempt and per population, and reads "not counted" for an older audit', () => {
+    const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, EXTRA) }))
+    const set = buildAuditSet(provenanceOf(), [{ mechanical, review: null, countsAfterOverrules: mechanical.counts }], [])
+    expect(set.populations.initial.pastTheEndReads).toBe(3)
+    const markdown = formatAuditSet(set)
+    expect(markdown).toContain('- reads refused as past the end: 3 (round 3, 4, 4)')
+    expect(markdown).toMatch(/- initial: .*3 read\(s\) refused as past the end/)
+
+    // Absent, never zero: an aggregate rebuilt from audits written before the counter stays the one committed.
+    const before = { ...mechanical } as AuditMechanical & { pastTheEndReads?: number[] }
+    delete before.pastTheEndReads
+    const older = buildAuditSet(provenanceOf(), [{ mechanical: before, review: null, countsAfterOverrules: before.counts }], [])
+    expect(older.populations.initial.pastTheEndReads).toBeUndefined()
+    expect('pastTheEndReads' in older.populations.initial).toBe(false)
+    const olderText = formatAuditSet(older)
+    expect(olderText).toContain('- reads refused as past the end: not counted')
+    expect(olderText).toMatch(/- initial: .*reads refused as past the end not counted/)
+  })
+})
