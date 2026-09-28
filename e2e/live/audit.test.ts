@@ -962,6 +962,32 @@ describe('Identity Slips (#246, ADR 0028)', () => {
     expect(validateJudgement(judgement, slipped)).toEqual(validateJudgement(judgement, old))
   })
 
+  it('counts an Asked Item slip in the same two counters, and reads a trace below version 8 as it did (#300)', () => {
+    const ASKED: Record<string, unknown>[] = [
+      {
+        ...identity,
+        at: T0 + 15_500,
+        kind: 'identity_slip',
+        slips: [
+          { surface: 'display', id: 'obs-2', repair: 'deleted' },
+          { surface: 'asked_item', id: 'memory-3', repair: 'deleted' },
+          { surface: 'asked_item', id: 'memory-1..6', repair: 'deleted' },
+        ],
+      },
+    ]
+    const asked = classifyAttempt(inputOf({ traceRecords: atVersion(traceOf(ROUNDS, [...EXTRA, ...ASKED]), 8) }))
+    expect(asked.identitySlips).toEqual({ answers: 1, ids: 3 })
+    const set = buildAuditSet(provenanceOf(), [{ mechanical: asked, review: null, countsAfterOverrules: asked.counts }], [])
+    expect(set.populations.initial).toMatchObject({ identitySlipAnswers: 1, identitySlipIds: 3, identitySlipsNotRecorded: 0 })
+    expect(asked.digestHash).toBe(old.digestHash)
+
+    // No recount: a version-7 trace wrote no Asked Item slip, and its
+    // counts stand as written — recorded, never "not recorded".
+    const before = classifyAttempt(inputOf({ traceRecords: atVersion(traceOf(ROUNDS, [...EXTRA, ...SLIPPED]), 7) }))
+    expect(before.identitySlips).toEqual(slipped.identitySlips)
+    expect(classifyAttempt(inputOf({ traceRecords: atVersion(traceOf(ROUNDS, EXTRA), 7) })).identitySlips).toEqual({ answers: 0, ids: 0 })
+  })
+
   it('sums per population and in the aggregate, and prints both counts per attempt and per population', () => {
     const followUpOf = (mechanical: ReturnType<typeof classifyAttempt>): AuditAttempt => ({ mechanical: { ...mechanical, relation: 'revised_objective' }, review: null, countsAfterOverrules: mechanical.counts })
     const initialOf = (mechanical: ReturnType<typeof classifyAttempt>): AuditAttempt => ({ mechanical, review: null, countsAfterOverrules: mechanical.counts })

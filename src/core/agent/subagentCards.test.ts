@@ -123,6 +123,20 @@ describe('subagent card bridge', () => {
     expect(spoken.some((text) => /failed/.test(text))).toBe(true)
   })
 
+  it('speaks the announcement without the report’s internal ids, and shows the card’s result as written (#300)', async () => {
+    const w = wiring()
+    const report = 'The K2 is cheapest at $79 (memory-4). The K3 follows (memory-5).'
+    w.manager.spawn('background', 'compare keyboards')
+    w.settle('a-1', 'resolve', report)
+    await flush()
+
+    const spoken = w.events.filter((e): e is Extract<PipelineEvent, { type: 'speak' }> => e.type === 'speak').map((e) => e.text)
+    expect(spoken).toEqual(['The background agent finished: The K2 is cheapest at $79.'])
+    expect(agentUpdates(w.events).at(-1)!.agent).toMatchObject({ status: 'completed', result: report })
+    // The report the orchestrator collects is model-facing and keeps its ids.
+    expect(w.manager.list()[0]?.result).toBe(report)
+  })
+
   it('stays silent for cancelled agents', async () => {
     const w = wiring()
     const spawned = w.manager.spawn('background', 'one')

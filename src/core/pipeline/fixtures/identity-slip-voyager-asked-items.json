@@ -1,0 +1,99 @@
+{
+  "source": "e2e/live/artifacts/fix-263-264-2--superseded-voyager-interstellar/logs/run-trace-1790010909013-1.jsonl (main checkout), turn turn-mubia2by-1, the final Answer display",
+  "rawAskedItems": [
+    {
+      "item": "Publication date of the June 2013 NASA/JPL account",
+      "standing": "stated",
+      "statement": "June 27, 2013 — displayed on the JPL page \"NASA's Voyager 1 Explores Final Frontier of Our 'Solar Bubble'\" (memory-5)."
+    },
+    {
+      "item": "Publication date of the September 2013 NASA account",
+      "standing": "stated",
+      "statement": "Sept. 12, 2013 — displayed on the JPL/NASA page \"NASA Spacecraft Embarks on Historic Journey Into Interstellar Space\" (memory-4)."
+    },
+    {
+      "item": "Crossing date eventually accepted by the Voyager team",
+      "standing": "stated",
+      "statement": "August 25, 2012: \"The Voyager team generally accepts this date as the date of interstellar arrival\" (memory-3)."
+    },
+    {
+      "item": "The missing sign behind the June 2013 'not yet' conclusion and why the team wanted it",
+      "standing": "stated",
+      "statement": "The third of three expected signs — an abrupt change in magnetic field direction indicating the interstellar magnetic field — had not been seen; field direction changed no more than 2 degrees, so the team held Voyager was still in the sun's magnetic domain (memory-1)."
+    },
+    {
+      "item": "The later measurement that changed the conclusion, including what it measured",
+      "standing": "stated",
+      "statement": "Plasma density from plasma-wave oscillations excited by a March 2012 coronal mass ejection: the pitch showed plasma 40+ times denser than in the heliosphere — interstellar plasma; Voyager's plasma sensor was not working, so this was the substitute measurement (memory-3)."
+    },
+    {
+      "item": "When the decisive observation occurred",
+      "standing": "stated",
+      "statement": "The CME reached Voyager 1 in April 2013, 13 months after erupting; the plasma wave instrument detected the oscillations on April 9, 2013 (memory-3, memory-2)."
+    },
+    {
+      "item": "Which earlier observations were re-examined",
+      "standing": "stated",
+      "statement": "The plasma wave team's own archive, revealing fainter oscillations in October and November 2012; extrapolated densities from both events gave August 2012, consistent with abrupt durable energetic-particle changes first detected Aug. 25, 2012 (memory-3)."
+    },
+    {
+      "item": "Why this was not simply a crossing between the two announcements",
+      "standing": "stated",
+      "statement": "Voyager had already crossed on Aug. 25, 2012 — before the June 27, 2013 release. The June 'not yet' conclusion rested on a missing expected sign (field direction) and pre-April-9 data; what changed by Sept. 12 was the evidence (new density measurement plus reinterpretation of 2012 data), not the spacecraft's location (memory-1, memory-3)."
+    }
+  ],
+  "repairedAskedItems": [
+    {
+      "item": "Publication date of the June 2013 NASA/JPL account",
+      "standing": "stated",
+      "statement": "June 27, 2013 — displayed on the JPL page \"NASA's Voyager 1 Explores Final Frontier of Our 'Solar Bubble'\"."
+    },
+    {
+      "item": "Publication date of the September 2013 NASA account",
+      "standing": "stated",
+      "statement": "Sept. 12, 2013 — displayed on the JPL/NASA page \"NASA Spacecraft Embarks on Historic Journey Into Interstellar Space\"."
+    },
+    {
+      "item": "Crossing date eventually accepted by the Voyager team",
+      "standing": "stated",
+      "statement": "August 25, 2012: \"The Voyager team generally accepts this date as the date of interstellar arrival\"."
+    },
+    {
+      "item": "The missing sign behind the June 2013 'not yet' conclusion and why the team wanted it",
+      "standing": "stated",
+      "statement": "The third of three expected signs — an abrupt change in magnetic field direction indicating the interstellar magnetic field — had not been seen; field direction changed no more than 2 degrees, so the team held Voyager was still in the sun's magnetic domain."
+    },
+    {
+      "item": "The later measurement that changed the conclusion, including what it measured",
+      "standing": "stated",
+      "statement": "Plasma density from plasma-wave oscillations excited by a March 2012 coronal mass ejection: the pitch showed plasma 40+ times denser than in the heliosphere — interstellar plasma; Voyager's plasma sensor was not working, so this was the substitute measurement."
+    },
+    {
+      "item": "When the decisive observation occurred",
+      "standing": "stated",
+      "statement": "The CME reached Voyager 1 in April 2013, 13 months after erupting; the plasma wave instrument detected the oscillations on April 9, 2013."
+    },
+    {
+      "item": "Which earlier observations were re-examined",
+      "standing": "stated",
+      "statement": "The plasma wave team's own archive, revealing fainter oscillations in October and November 2012; extrapolated densities from both events gave August 2012, consistent with abrupt durable energetic-particle changes first detected Aug. 25, 2012."
+    },
+    {
+      "item": "Why this was not simply a crossing between the two announcements",
+      "standing": "stated",
+      "statement": "Voyager had already crossed on Aug. 25, 2012 — before the June 27, 2013 release. The June 'not yet' conclusion rested on a missing expected sign (field direction) and pre-April-9 data; what changed by Sept. 12 was the evidence (new density measurement plus reinterpretation of 2012 data), not the spacecraft's location."
+    }
+  ],
+  "ids": [
+    "memory-5",
+    "memory-4",
+    "memory-3",
+    "memory-1",
+    "memory-3",
+    "memory-3",
+    "memory-2",
+    "memory-3",
+    "memory-1",
+    "memory-3"
+  ]
+}

@@ -115,7 +115,7 @@ import { OFF_LANGUAGE_RETRY_MESSAGE, offLanguageRenderings, type OffLanguageFind
 import { completedEvidenceIsFresh } from './evidenceFreshness'
 import { evaluateCandidateCheckpoint, type CandidateCheckpointOutcome, type EvidenceSessionSource } from './candidateCheckpoint'
 import { recordAnswerCheckpoints } from './answerCheckpoints'
-import { deriveAnswerSources, repairCard, repairSpokenRendering } from './answerEvidence'
+import { deriveAnswerSources, repairAskedItems, repairCard, repairSpokenRendering } from './answerEvidence'
 import { deriveFallbackSources, hasUnresolvedImageCheck } from './fallbackAnswer'
 import { compactRunContext, type RunEvidenceCheckpoint } from './runContextCompaction'
 import { reportFault } from '../trace/fault'
@@ -2356,10 +2356,14 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             // Card substitutes a source link where the id resolves; the
             // spoken line only deletes. The declared evidence identities
             // are the model's and stay as written, and the repair is
-            // recorded, since the raw Answer is kept nowhere else.
+            // recorded, since the raw Answer is kept nowhere else. The
+            // Asked Items the Card lists are renderings of the Answer too
+            // (#300): an id in a name or a statement is removed, and the
+            // list the Run's own resolution reads stays as settled.
             const card = repairCard(turn.display, resolveSessionObservation)
             const spoken = repairSpokenRendering(turn.speak)
-            const slips = [...card.slips, ...spoken.slips]
+            const listed = finalAskedItems !== undefined ? repairAskedItems(finalAskedItems) : undefined
+            const slips = [...card.slips, ...spoken.slips, ...(listed?.slips ?? [])]
             if (slips.length > 0) traceRun?.(() => ({ turnId, kind: 'identity_slip', slips }))
             // The Run's final Answer, marked as such (#224): this display
             // and the deterministic fallback's are the two the mark rides,
@@ -2371,7 +2375,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
               at: clock.now(),
               ...(turn.evidenceIds !== undefined ? { evidenceIds: turn.evidenceIds } : {}),
               ...(answerSources.length > 0 ? { sources: answerSources } : {}),
-              ...(finalAskedItems !== undefined ? { askedItems: finalAskedItems } : {}),
+              ...(listed !== undefined ? { askedItems: listed.items } : {}),
               finalAnswer: true,
             }
             // The Answer Checkpoints (#288, ADR 0072), recorded here and
@@ -2647,14 +2651,19 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           // be inferred from the wording of the sentences above.
           // Every declared Asked Item is unverified on a deterministic
           // Answer (#250): the Run stopped before it could state any.
+          // Their names are the model's wording all the same, so they
+          // pass the display boundary like any Answer's (#300).
+          const listed =
+            runPlan !== null && runPlan.askedItems.length > 0
+              ? repairAskedItems(unverifiedAskedItems(runPlan.askedItems, ASKED_ITEM_UNESTABLISHED))
+              : undefined
+          if (listed !== undefined && listed.slips.length > 0) traceRun?.(() => ({ turnId, kind: 'identity_slip', slips: listed.slips }))
           yield {
             type: 'display',
             text: fallback.display,
             deterministicAnswer: true,
             finalAnswer: true,
-            ...(runPlan !== null && runPlan.askedItems.length > 0
-              ? { askedItems: unverifiedAskedItems(runPlan.askedItems, ASKED_ITEM_UNESTABLISHED) }
-              : {}),
+            ...(listed !== undefined ? { askedItems: listed.items } : {}),
             at: clock.now(),
           }
           yield* speakLine(fallback.speak, turnId)

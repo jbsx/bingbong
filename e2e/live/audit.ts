@@ -750,7 +750,9 @@ export interface AuditMechanical {
   readonly searchesToOpened?: readonly { readonly round: number; readonly openedRound: number | null }[]
   /**
    * The Answers that carried an Identity Slip and the ids slipped in them
-   * (#246, ADR 0028), counted from the Run's own `identity_slip` records.
+   * (#246, ADR 0028), counted from the Run's own `identity_slip` records,
+   * every surface alike: a slip in an Asked Item counts here from the
+   * version that records one (#300), and no older trace is recounted.
    * Null — not recorded — for a trace written below
    * {@link IDENTITY_SLIP_TRACE_VERSION}. Beside the rounds, never in them, so
    * it re-keys no cached judgement and bears on no verdict.

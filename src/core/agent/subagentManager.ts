@@ -12,6 +12,7 @@ import type { SubagentAnswerRetryTrace } from '../trace/answerRetryTrace'
 import type { SubagentPipelineEventTrace } from '../trace/pipelineEventTrace'
 import type { VisionTraceReporter } from '../trace/visionTrace'
 import type { WebEngine } from '../pipeline/webEngine'
+import { removeIdentities } from '../pipeline/answerEvidence'
 import type { SubagentReport } from './subagentReport'
 import { SubagentCancelledError } from './subagentRunner'
 import { canonicalizeMemoryUrl } from '../session/workingMemory'
@@ -701,20 +702,40 @@ const KIND_LABEL: Record<SubagentKind, string> = {
 }
 
 /**
- * The spoken one-liner for a finished agent (issue #13: completion announced
- * via TTS). Completed speaks the report's first sentence; failed speaks the
- * error; cancelled stays silent — the user asked for it.
+ * The Subagent Announcement (issue #13: completion announced via TTS), the
+ * one-liner spoken and shown for a finished agent. Completed speaks the
+ * report's first sentence; failed speaks the error; cancelled stays silent
+ * — the user asked for it. The report is model-facing and may cite
+ * internal ids; the announcement is a rendering, so they are removed from
+ * it and no Identity Slip is recorded (#300). The record's own result and
+ * error stay as written.
  */
 export function subagentAnnouncement(record: SubagentRecord): string | null {
   if (record.status === 'completed') {
-    const first = capSentences(record.result ?? '', 1)
+    const first = announcedSentence(record.result ?? '')
     return first === '' ? `The ${KIND_LABEL[record.kind]} agent finished.` : `The ${KIND_LABEL[record.kind]} agent finished: ${first}`
   }
   if (record.status === 'failed') {
-    const first = capSentences(record.error ?? 'unknown error', 1)
-    return `The ${KIND_LABEL[record.kind]} agent failed: ${first}`
+    const error = record.error ?? 'unknown error'
+    const first = announcedSentence(error)
+    // Only a sentence the removal emptied takes the plain line: an error
+    // that said nothing announces as it always did.
+    const emptied = first === '' && capSentences(error, 1) !== ''
+    return emptied ? `The ${KIND_LABEL[record.kind]} agent failed.` : `The ${KIND_LABEL[record.kind]} agent failed: ${first}`
   }
   return null
+}
+
+/**
+ * The first sentence of a text as the announcement says it (#300). A
+ * sentence that carries no id is the one the text opens with, byte for
+ * byte, whatever a later sentence cites. One that does is cut from the
+ * text after the removal, never before: a range's dots (`memory-1..6`)
+ * would end the sentence inside the id.
+ */
+function announcedSentence(text: string): string {
+  const first = capSentences(text, 1)
+  return removeIdentities(first) === first ? first : capSentences(removeIdentities(text), 1).trim()
 }
 
 export function formatAgentResults(records: SubagentRecord[]): string {

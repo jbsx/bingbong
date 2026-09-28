@@ -7791,9 +7791,10 @@ describe('grounded Candidates, user corrections, and Answers (#122)', () => {
       // flatten back into the recorded text.
       sources: [{ url: PAGE_URL }],
     })
-    // The Spoken Rendering only ever deletes, and what is voiced is the repair.
-    expect(events.filter((e) => e.type === 'speak').map((e) => e.text)).toEqual(['It costs $39 ().'])
-    expect(tts.spoken).toEqual(['It costs $39 ().'])
+    // The Spoken Rendering only ever deletes, the brackets a removal emptied
+    // with the id (#300), and what is voiced is the repair.
+    expect(events.filter((e) => e.type === 'speak').map((e) => e.text)).toEqual(['It costs $39.'])
+    expect(tts.spoken).toEqual(['It costs $39.'])
     // One record for the slipped Answer, one entry per id; no fault, and no
     // off-contract reply — the reply's shape was fine.
     expect(traced.filter((record) => record.kind === 'identity_slip')).toEqual([
@@ -7821,6 +7822,77 @@ describe('grounded Candidates, user corrections, and Answers (#122)', () => {
 
     expect(events.find((e) => e.type === 'display')).toMatchObject({ text: 'Cheapest option found.' })
     expect(traced.filter((record) => record.kind === 'identity_slip')).toEqual([])
+  })
+
+  const declare = (askedItems: string[]): ToolCall => ({
+    id: 'p1',
+    name: 'report_run_plan',
+    args: { objective: 'Find the price', headline: 'Finding the price', effort_tier: 'lookup', asked_items: askedItems },
+  })
+
+  it('carries the Asked Items repaired on the display event and records each slip on its own surface (#300)', async () => {
+    const store = storeHarness()
+    const llm = new ScriptedLlm([
+      { kind: 'tool_calls', calls: [declare(['the price', 'the shipping']), { id: 'c1', name: 'read_page', args: {} }] },
+      {
+        kind: 'answer',
+        speak: 'It costs $39.',
+        display: 'Cheapest option found (obs-2).',
+        askedItems: [
+          { item: 'the price', standing: 'stated', statement: '$39 on the product page (memory-1, memory-3).' },
+          { item: 'the shipping', standing: 'unverified', statement: 'The page names no rate; see https://shop.example/memory-2/rates.' },
+        ],
+      },
+    ])
+    const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [createReportRunPlanTool(), readPage] })
+    const traced: RunTraceEvent[] = []
+
+    const events = await collectWithContinuity(pipeline, 'find the price', { ...continuityFor(store), traceRun: (build) => traced.push(build()) })
+
+    expect(events.find((e) => e.type === 'display')).toMatchObject({
+      text: 'Cheapest option found.',
+      askedItems: [
+        { item: 'the price', standing: 'stated', statement: '$39 on the product page.' },
+        { item: 'the shipping', standing: 'unverified', statement: 'The page names no rate; see https://shop.example/memory-2/rates.' },
+      ],
+    })
+    expect(traced.filter((record) => record.kind === 'identity_slip')).toEqual([
+      {
+        kind: 'identity_slip',
+        turnId: expect.any(String),
+        slips: [
+          { surface: 'display', id: 'obs-2', repair: 'deleted' },
+          { surface: 'asked_item', id: 'memory-1', repair: 'deleted' },
+          { surface: 'asked_item', id: 'memory-3', repair: 'deleted' },
+        ],
+      },
+    ])
+    // The standing is read from the Answer's own list, never the repaired one.
+    expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done' })
+  })
+
+  it("repairs the deterministic Answer's Asked Items and records the slip (#300)", async () => {
+    const store = storeHarness()
+    // The Lookup budget is spent, the bookkeeping round asks for more work
+    // and the reserved Answer round asks again: the Answer is deterministic,
+    // and the declaration is what the Card lists.
+    const work = (i: number): ScriptedTurn => ({ kind: 'tool_calls', calls: [{ id: `w${i}`, name: 'read_page', args: {} }] })
+    const llm = new ScriptedLlm([
+      { kind: 'tool_calls', calls: [declare(['the price (memory-2)']), { id: 'c1', name: 'read_page', args: {} }] },
+      ...Array.from({ length: TIER_TOOL_ROUND_BUDGETS.lookup + 1 }, (_, i) => work(i)),
+    ])
+    const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [createReportRunPlanTool(), readPage] })
+    const traced: RunTraceEvent[] = []
+
+    const events = await collectWithContinuity(pipeline, 'find the price', { ...continuityFor(store), traceRun: (build) => traced.push(build()) })
+
+    expect(events.find((e) => e.type === 'display' && e.finalAnswer === true)).toMatchObject({
+      deterministicAnswer: true,
+      askedItems: [{ item: 'the price', standing: 'unverified', statement: ASKED_ITEM_UNESTABLISHED }],
+    })
+    expect(traced.filter((record) => record.kind === 'identity_slip')).toEqual([
+      { kind: 'identity_slip', turnId: expect.any(String), slips: [{ surface: 'asked_item', id: 'memory-2', repair: 'deleted' }] },
+    ])
   })
 })
 

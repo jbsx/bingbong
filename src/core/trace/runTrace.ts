@@ -52,8 +52,11 @@ import type { VisionRunTraceRecord } from './visionTrace'
  * carried no Answer Checkpoints, which a version-5 trace cannot say.
  * 7 (#286, ADR 0034): a Run with no `off_language_answer` record met no
  * Off-language Answer, which a version-6 trace cannot say.
+ * 8 (#300, ADR 0028): an Answer whose `identity_slip` record names no
+ * `asked_item` surface, or that wrote no record, listed no id in an Asked
+ * Item, which a version-7 trace cannot say.
  */
-export const RUN_TRACE_VERSION = 7
+export const RUN_TRACE_VERSION = 8
 
 /** How much of a graded observation's retained text a record keeps. */
 export const TRACE_PAYLOAD_HEAD_CHARS = 500
@@ -523,9 +526,10 @@ export interface SearchObservationEvent {
 }
 
 /**
- * One Answer whose Card or Spoken Rendering carried an Identity Slip
- * (#246, ADR 0028): the internal ids the model wrote where the user reads
- * or hears, and what the display boundary did with each. The published
+ * One Answer whose Card, Spoken Rendering or listed Asked Items carried
+ * an Identity Slip (#246, #300, ADR 0028): the internal ids the model
+ * wrote where the user reads or hears, and what the display boundary did
+ * with each. The published
  * `display` and `speak` events carry the repaired text and the raw Answer
  * is kept nowhere, so this is the only record that a repair happened. Not
  * a fault — no code failed — and not an `off_contract_reply` — the reply's
@@ -534,7 +538,7 @@ export interface SearchObservationEvent {
  */
 export interface IdentitySlipEvent {
   readonly kind: 'identity_slip'
-  /** One entry per slipped id, the Card's first, each in the order written. */
+  /** One entry per slipped id — the Card's first, then the spoken line's, then the Asked Items' — each in the order written. */
   readonly slips: readonly IdentitySlip[]
 }
 

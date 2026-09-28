@@ -780,6 +780,34 @@ describe('subagentAnnouncement', () => {
   it('stays silent for cancelled agents', () => {
     expect(subagentAnnouncement({ ...base, status: 'cancelled' })).toBeNull()
   })
+
+  it('removes an internal id from the sentence it speaks, on both branches (#300)', () => {
+    expect(subagentAnnouncement({ ...base, result: 'The K2 is cheapest at $79 (memory-4, obs-2). Full table on screen.' })).toBe(
+      'The background agent finished: The K2 is cheapest at $79.',
+    )
+    // A range is read whole before the sentence is cut, so its dots end nothing.
+    expect(subagentAnnouncement({ ...base, result: 'Per memory-1..6 the K2 is cheapest. Full table on screen.' })).toBe(
+      'The background agent finished: Per the K2 is cheapest.',
+    )
+    expect(subagentAnnouncement({ ...base, status: 'failed', error: 'the page held as memory-3 never loaded. Retry later.' })).toBe(
+      'The background agent failed: the page held as never loaded.',
+    )
+  })
+
+  it('speaks the plain line when removal leaves the sentence empty (#300)', () => {
+    expect(subagentAnnouncement({ ...base, result: '(memory-4)' })).toBe('The background agent finished.')
+    expect(subagentAnnouncement({ ...base, status: 'failed', error: 'memory-4' })).toBe('The background agent failed.')
+  })
+
+  it('leaves a sentence with no id byte for byte, and an id inside a URL where it is (#300)', () => {
+    const result = 'Keyboards  compared , see https://shop.example/memory-2/specs () now. Bye.'
+    const announced = 'The background agent finished: Keyboards  compared , see https://shop.example/memory-2/specs () now.'
+    expect(subagentAnnouncement({ ...base, result })).toBe(announced)
+    // An id a later sentence cites tidies nothing in the sentence spoken.
+    expect(subagentAnnouncement({ ...base, result: `${result} Sources held (memory-4).` })).toBe(announced)
+    // An error that said nothing announces as it always did.
+    expect(subagentAnnouncement({ ...base, status: 'failed', error: '' })).toBe('The background agent failed: ')
+  })
 })
 
 describe('formatAgentResults', () => {

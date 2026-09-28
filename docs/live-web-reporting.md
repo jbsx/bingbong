@@ -1016,10 +1016,16 @@ zero. Outside the digest like the others; an audit written before it reads
 
 Two more sit beside them for the Answer (#246, ADR 0028): the **Answers with an
 Identity Slip** and the **ids slipped** in them, counted from the Run's own
-`identity_slip` Run Trace records — one per Answer whose Card or Spoken
-Rendering carried an internal id, one entry per id; a Subagent Report never
-passes the display boundary, so it writes none. Neither number enters the
-digest or bears on a verdict. A trace
+`identity_slip` Run Trace records — one per Answer whose Card, Spoken
+Rendering or listed Asked Items carried an internal id, one entry per id, a
+range of ids (`memory-1..6`) one entry as written; a Subagent Report never
+passes the display boundary, so it writes none, and the Subagent Announcement
+made from one is repaired without a record. An id in an Asked Item's name or
+statement is recorded under the surface `asked_item` from Run Trace version 8
+(#300) and counts in the same two numbers; a trace below version 8 wrote none,
+so the seven Answers the retained captures hold with an id in a statement are
+not in their audits' counts, and no audit is recounted. Neither number enters
+the digest or bears on a verdict. A trace
 written below Run Trace version 2 predates the record, so its attempt reads
 "not recorded" rather than zero (`identitySlips: null`); a population says how
 many of its attempts were not recorded and counts only the rest, and reads
