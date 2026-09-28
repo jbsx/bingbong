@@ -1103,6 +1103,36 @@ per attempt where the metric is one. The Tool Round timeline stays where it
 is, in the Markdown audit, which each row links by name. No hand-maintained
 set → issue → metric file exists: what a set was captured for is on its issue.
 
+### Facts the command did not ask
+
+Decided on #287, grilled 2026-09-28 from the `fix-283` and `fix-284` traces;
+not yet built. A key may require a fact its command never asks for. The
+Eurostar command asks for "the smallest reduction", and its key also requires
+that removing the guitar would work (`fact-07`) and that the suitcases are
+within the length limit (`fact-03`). Of the 32 Eurostar initials with any
+missed fact across the graded sets on disk, 19 failed on those two alone, and
+every such Run had stated every Asked Item it declared.
+
+Neither the key nor the product changes for it. A key is not revised after its
+Answers have been read, and an assistant that lists alternatives nobody asked
+for is tuned to the corpus. What changes is that the audit aggregate and the
+ledger's headline report a second reading beside verified attempts:
+**verified, or failing only on unasked facts** — the attempts verified, plus
+those not verified whose unsatisfied checks are all on a list of unasked
+checks. It is reported, never gated, and never replaces the verified count.
+
+The list lives in its own module under `e2e/live/`, outside `keys.ts`: the
+key's digest is over its content, so a mark inside the key would make every
+existing grade stale. It holds check ids and a reason each, no check wording,
+and starts with `fact-03` and `fact-07` of the Eurostar initial. A check joins
+it only when the command's text does not ask for it.
+
+The reading comes from the per-attempt `checksUnsatisfied` the committed
+audits already hold, so past families gain it when their aggregates are
+rebuilt, with no capture and no reviewer spend. An audit that predates the
+field reads as not recorded, not as zero. The pass reports carry no per-check
+results, which is why `live:summary` does not print it.
+
 ## Safety of the exported report
 
 Both output formats carry the same facts, and neither carries raw prompts,
