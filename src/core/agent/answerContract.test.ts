@@ -503,6 +503,13 @@ describe('partialAnswerText', () => {
     }
     expect(previous).toBe('Opening YouTube.\nDone.')
   })
+
+  it('shows nothing of a buffer that is whitespace so far — it may yet open as JSON or as prose (#305)', () => {
+    expect(partialAnswerText('\n')).toBe('')
+    expect(partialAnswerText(' \n\t')).toBe('')
+    expect(partialAnswerText('\n{"display":"Hello')).toBe('Hello')
+    expect(partialAnswerText('\nHello')).toBe('\nHello')
+  })
 })
 
 describe('spokenErrorLine', () => {

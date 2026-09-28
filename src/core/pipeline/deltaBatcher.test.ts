@@ -54,6 +54,79 @@ describe('llm delta batcher', () => {
     expect(texts(flushed)).toEqual(['Opening You', 'Tube.'])
   })
 
+  it('streams only the display value of a JSON Answer delivered across three windows (#305)', () => {
+    const { clock, flushed, batcher } = makeBatcher()
+
+    batcher.onDelta({ kind: 'text', text: '{"run_note":"memory-1 settled it","evidence_ids":["memory-1","memory-2"],"display":"# Voy' })
+    clock.advance(DELTA_FLUSH_MS)
+    batcher.onDelta({ kind: 'text', text: 'ager 1\\nLaunched ' })
+    clock.advance(DELTA_FLUSH_MS)
+    batcher.onDelta({ kind: 'text', text: 'in 1977.","speak":"Voyager 1 launched in 1977.","sources":["memory-3"]}' })
+    clock.advance(DELTA_FLUSH_MS)
+    batcher.flush()
+
+    expect(texts(flushed)).toEqual(['# Voy', 'ager 1\nLaunched ', 'in 1977.'])
+  })
+
+  it('streams a JSON Answer whose first window held only whitespace (#305)', () => {
+    const { clock, flushed, batcher } = makeBatcher()
+
+    batcher.onDelta({ kind: 'text', text: '\n' })
+    clock.advance(DELTA_FLUSH_MS)
+    batcher.onDelta({ kind: 'text', text: '{"run_note":"hidden","display":"Hel' })
+    clock.advance(DELTA_FLUSH_MS)
+    batcher.onDelta({ kind: 'text', text: 'lo."}' })
+    clock.advance(DELTA_FLUSH_MS)
+
+    expect(texts(flushed)).toEqual(['Hel', 'lo.'])
+  })
+
+  it('holds an escape split across two windows until it completes (#305)', () => {
+    const { clock, flushed, batcher } = makeBatcher()
+
+    batcher.onDelta({ kind: 'text', text: '{"display":"one\\' })
+    clock.advance(DELTA_FLUSH_MS)
+    batcher.onDelta({ kind: 'text', text: 'ntwo"}' })
+    clock.advance(DELTA_FLUSH_MS)
+
+    expect(texts(flushed)).toEqual(['one', '\ntwo'])
+  })
+
+  it('keeps reasoning and intents per window while the answer buffer carries over (#305)', () => {
+    const { clock, flushed, batcher } = makeBatcher()
+
+    batcher.onDelta({ kind: 'reasoning', text: 'first' })
+    batcher.onDelta({ kind: 'tool_intent', index: 0, name: 'click', args: '{"ref":1}' })
+    batcher.onDelta({ kind: 'text', text: '{"display":"A' })
+    clock.advance(DELTA_FLUSH_MS)
+    batcher.onDelta({ kind: 'reasoning', text: ' second' })
+    batcher.onDelta({ kind: 'text', text: 'B"}' })
+    clock.advance(DELTA_FLUSH_MS)
+
+    expect(flushed).toEqual([
+      { kind: 'reasoning', text: 'first', at: DELTA_FLUSH_MS },
+      { kind: 'tool_intent', index: 0, name: 'click', args: '{"ref":1}', at: DELTA_FLUSH_MS },
+      { kind: 'text', text: 'A', at: DELTA_FLUSH_MS },
+      { kind: 'reasoning', text: ' second', at: DELTA_FLUSH_MS * 2 },
+      { kind: 'text', text: 'B', at: DELTA_FLUSH_MS * 2 },
+    ])
+  })
+
+  it('starts a new round from an empty buffer after a JSON Answer spanned windows (#305)', () => {
+    const { clock, flushed, batcher } = makeBatcher()
+
+    batcher.onDelta({ kind: 'text', text: '{"run_note":"hidden","display":"First' })
+    clock.advance(DELTA_FLUSH_MS)
+    batcher.onDelta({ kind: 'text', text: ' round."}' })
+    batcher.flush()
+    batcher.onDelta({ kind: 'text', text: '{"display":"Second' })
+    clock.advance(DELTA_FLUSH_MS)
+    batcher.onDelta({ kind: 'text', text: ' round."}' })
+    batcher.flush()
+
+    expect(texts(flushed)).toEqual(['First', ' round.', 'Second', ' round.'])
+  })
+
   it('flushes reasoning fragments raw, after the answer fragment of the same window', () => {
     const { clock, flushed, batcher } = makeBatcher()
 

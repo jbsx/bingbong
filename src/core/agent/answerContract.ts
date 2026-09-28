@@ -133,10 +133,14 @@ export function scanPartialJsonString(content: string, openQuote: number): { val
  * visible text only grows as the buffer grows, so successive calls diff
  * cleanly into flush fragments. The first key to open owns the stream; a
  * later key never shrinks it (the final display entry replaces the
- * partial at round end).
+ * partial at round end). A buffer that is whitespace so far shows nothing
+ * (#305): it may yet open as JSON, and whitespace sent as prose would be
+ * text the JSON's value never starts with.
  */
 export function partialAnswerText(content: string): string {
-  if (!content.trimStart().startsWith('{')) return content
+  const opening = content.trimStart()
+  if (opening === '') return ''
+  if (!opening.startsWith('{')) return content
   const key = /"(?:display|speak)"\s*:\s*"/.exec(content)
   if (!key) return ''
   return scanPartialJsonString(content, key.index + key[0].length - 1).value

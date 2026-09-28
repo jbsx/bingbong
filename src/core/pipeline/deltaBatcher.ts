@@ -11,7 +11,9 @@ import { partialAnswerText } from '../agent/answerContract'
 // snapshots (#48) ride the same window — one flush per call index with
 // the latest accumulated arguments. State lives here per round: the
 // pipeline creates one batcher per run and flush()es (which also resets)
-// at each round's end, so fragments never leak across rounds.
+// at each round's end, so fragments never leak across rounds. A window
+// sends reasoning and intents and forgets them; the answer buffer it keeps
+// until the round ends.
 
 /** The flush window (spec #42/#47: ~100–150ms, not per-token IPC). */
 export const DELTA_FLUSH_MS = 120
@@ -39,11 +41,11 @@ export function createLlmDeltaBatcher(deps: {
   const intents = new Map<number, { name: string; args: string }>()
   let cancelTimer: (() => void) | null = null
 
-  function flush(): void {
-    if (cancelTimer) {
-      cancelTimer()
-      cancelTimer = null
-    }
+  // One window's flush. The raw answer buffer and the visible text already
+  // sent outlive it (#305): the visible part is read off the whole JSON in
+  // flight, and a buffer cut at a window no longer opens with `{`, so it
+  // would read as prose and stream the envelope raw.
+  function flushWindow(): void {
     const at = deps.clock.now()
     if (reasoning !== '') deps.emit({ kind: 'reasoning', text: reasoning, at })
     for (const [index, snapshot] of [...intents.entries()].sort(([a], [b]) => a - b)) {
@@ -52,12 +54,21 @@ export function createLlmDeltaBatcher(deps: {
     const visible = partialAnswerText(rawText)
     if (visible.startsWith(lastVisible) && visible.length > lastVisible.length) {
       deps.emit({ kind: 'text', text: visible.slice(lastVisible.length), at })
+      lastVisible = visible
     }
+    reasoning = ''
+    intents.clear()
+  }
+
+  function flush(): void {
+    if (cancelTimer) {
+      cancelTimer()
+      cancelTimer = null
+    }
+    flushWindow()
     // Round end: nothing carries into the next round's buffer.
     rawText = ''
-    reasoning = ''
     lastVisible = ''
-    intents.clear()
   }
 
   return {
@@ -72,7 +83,7 @@ export function createLlmDeltaBatcher(deps: {
       if (!cancelTimer) {
         cancelTimer = deps.clock.setTimer(flushMs, () => {
           cancelTimer = null
-          flush()
+          flushWindow()
         })
       }
     },
