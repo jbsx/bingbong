@@ -320,3 +320,57 @@ on not tuning to the judged data.
   `fix-284` where it wrote 15 and 5; nearly all of it is the rewrites, 7 to
   27 a capture on initials, each of which the older rule counted as a
   search.
+- 2026-09-28 (#304, grilled from every retained capture): **an Empty
+  Landing holds the streak.** A navigate, a `back` or a `go_forward` that
+  settles on a page the Run was shown no text from, with no Blocker,
+  Not-found or Unavailable marker, is no escape. Its Action Outcome carries
+  the marker `EMPTY:no-text <host>` and one line of advice, in the main pane
+  and a Subagent's alike: `This page showed no text. If it should hold
+  content, read it or Look at it once; otherwise use another source.` The
+  issue as filed misread two things. The landing on `fix-288-290` pass 1 is
+  round 13, between the searches of rounds 12 and 14, and round 14 was
+  recorded at streak 1. And the page was not read early: rmg.co.uk answers
+  an object id it cannot resolve with a 200, the title `| Royal Museums
+  Greenwich` and an empty `<main>`, its one sentence (`The search service is
+  currently unavailable`) outside it, where the collector does not read.
+  - **Measured** over 397 Runs in 21 capture sets, 2,478 `ok` navigates
+    judged: 50 showed no page text. 22 are that template, all on
+    www.rmg.co.uk and all in the longitude initial, 6 of them between two
+    searches with the next search recorded at streak 1; 15 are documents
+    with no refs (PDFs, raw text files, an archive's listing); 10 are
+    results pages, searches already; 3 are other pages.
+  - **The criterion is that no page text was collected**, whatever the refs
+    or the title. A blank title and a ref count select the 22 and fit one
+    site. Text length separates nothing: 75 navigates that were no search
+    showed under 200 characters, most of them ordinary listings. The marker
+    states what the Run was shown, never that the page is empty or the
+    address wrong, so a Not-found Landing is not widened to it.
+  - **A Page Read that returns text from that page is escape**, until the
+    next arrival. After the 50, a read returned text 5 times (12,022
+    characters of a PDF manual among them), and holding through it would
+    put the Notice, false, on the search that followed. A Look is not: about
+    6 returned content and about 8 the site's chrome or `not legible`, and
+    code cannot tell them apart.
+  - **A click is left as it is.** 49 clicks that changed the URL came back
+    with no refs and no text, and a read returned text after 40: the
+    snapshot was taken before the page rendered. The marker would say a
+    falsehood of those and hold the streak on an opening; the fault is the
+    settle, and an issue of its own.
+  - **The collector is unchanged.** Falling back to the whole body when
+    `<main>` is empty would show rmg's sentence with the header and the
+    footer, and change what every such page shows.
+  - It is neutral to Progress and spends no Composed Address allowance, as
+    an Unavailable Landing: a composed raw-file address lands the same and
+    is right. No page leaves a Run's sources for it (#298, #301), and Result
+    Pick and the Held Page rule do not read it.
+  - A marker of the other three wins, a results page with no text carries
+    the marker and is still a search, and `about:blank` carries none.
+  The Run Trace records it on the tool result as it does the other landings
+  and becomes version 9; the Round Audit reads that, and on an older trace
+  reads it from the result, which the trace keeps whole at this length.
+  `SEARCH_STREAK_RULE` becomes 4 and the Fix Ledger recounts from the
+  traces, a committed audit keeping 240 characters of a result; the sets
+  with no trace on disk (`fix-235` to `fix-242r`, `fix-256r2`) keep their
+  counts and are named as not recounted. Reported, never gated. Closes on
+  tests, one e2e fixture with an empty `<main>`, and the recount showing the
+  six landings hold; no capture.

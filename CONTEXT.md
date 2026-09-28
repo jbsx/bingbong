@@ -690,8 +690,9 @@ whatever their terms. A search after a search continues the loop; the terms
 do not have to resemble each other, because on the live web rewordings of one
 need rarely share words. Inspection between searches does not break it: a
 page read, a Look, or a scroll looks at what the search returned and is not
-escape; neither is a Not-found Landing or an Unavailable Landing, a navigate
-that settled on nothing, nor a Blocked Action or an inert click, which
+escape; neither is a Not-found Landing, an Unavailable Landing or an Empty
+Landing, which settled on nothing the Run was shown, nor a Blocked Action or
+an inert click, which
 reached nothing, nor an Evidence or a Candidate Checkpoint, which records
 what the Run already had, nor a landing on a Blocker, which put a wall in
 front of the Run and no page, nor a call that acts on no page at all — a
@@ -700,7 +701,9 @@ not answer, a wait that returned no Subagent Report. A Composed Address
 rewrite is neither a search of the loop nor escape from it: the model wrote
 an address, so the search that ran in its place leaves the loop as it was.
 Only escape breaks it — a page opened, the user's answer to a question, or a
-Subagent Report: something new put in front of the Run.
+Subagent Report: something new put in front of the Run. One inspection is
+escape: the Page Read that returns text from the page an Empty Landing
+settled on, which opens what the landing did not.
 The second search of a loop carries a Notice to change strategy, and so does
 every search after it; the sixth is refused.
 That rule is this rail's own and independent of Progress: a first page read
@@ -1168,6 +1171,20 @@ to retry once later or use another source; it is neutral to Progress; it is
 not escape from a Search Loop; and it spends no Composed Address allowance,
 because it is not evidence the address was wrong.
 _Avoid_: outage hit, failed navigate, timeout, wall
+
+**Empty Landing**:
+A navigation or a step through history settling on a page the Run was shown
+no text from, and that is no Blocker, Not-found Page or Unavailable Page. It
+is a fact about what the Run was shown, never about the page or its address:
+a site's template around nothing, a document whose text was not collected
+and a page not yet rendered all land the same. Its Action Outcome says so,
+with the advice to read it or Look at it once or use another source; it is
+neutral to Progress; it is not escape from a Search Loop, though a Page Read
+that returns text from that page is; it spends no Composed Address
+allowance, because it is not evidence the address was wrong; and it takes
+no page out of a Run's sources. A click that left for another page is not
+one.
+_Avoid_: blank page, empty page, soft 404, failed render, rendered empty
 
 **Blocked Action**:
 A click or type the browser did not perform because the page's hit test at
