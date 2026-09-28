@@ -577,6 +577,30 @@ function answerCheckpointCounters(counts: AuditPopulation['answerCheckpoints'], 
   ]
 }
 
+/** A population's Blocked Action counts as its audit wrote them: one from before #264 has no field for what that issue added. */
+type BlockedOrInertAsWritten = Partial<NonNullable<AuditPopulation['blockedOrInert']>>
+
+/**
+ * The Blocked Actions of every kind as one count (#297): Covered, Not Shown,
+ * and the ones under the pre-#264 head, whose kind the outcome never
+ * recorded. An audit written before #264 has the last alone.
+ */
+function blockedActionsOf(counts: BlockedOrInertAsWritten | undefined): number | undefined {
+  return counts === undefined ? undefined : (counts.covered ?? 0) + (counts.notShown ?? 0) + (counts.blocked ?? 0)
+}
+
+/**
+ * The vision rounds after a Blocked Action (#297). A population summed from
+ * attempts audited before #264 holds a zero for them that nobody counted, and
+ * one summed from both kinds holds a part of the count, so it is read only
+ * where every attempt that counts Blocked Actions carries the rounds; a
+ * population with no such attempt behind it is read as written.
+ */
+function postBlockVisionOf(counts: BlockedOrInertAsWritten | undefined, attempts: readonly AuditAttempt[]): number | undefined {
+  const everyAttemptSaid = attempts.every((attempt) => attempt.mechanical.blockedOrInert === undefined || attempt.mechanical.blockedOrInert.postBlockVision !== undefined)
+  return everyAttemptSaid ? counts?.postBlockVision : undefined
+}
+
 /** Every counter of a population, in a fixed order, for the all-counters expander (#251, Decision 4). */
 export function countersOf(population: AuditPopulation, attempts: readonly AuditAttempt[]): readonly Counter[] {
   const mechanical = (label: string, value: number | undefined, over: number | null = null): Counter => ({ label, judgement: false, value: recorded(value), over })
@@ -666,6 +690,12 @@ export function countersOf(population: AuditPopulation, attempts: readonly Audit
     mechanical('Unavailable landings by status', older.unavailableLandings?.status),
     mechanical('Unavailable landings by title', older.unavailableLandings?.title ?? recounted?.unavailableByTitle),
     mechanical('Unavailable landings followed by a search', older.unavailableLandings?.followedBySearch ?? recounted?.unavailableFollowedBySearch),
+    // #297: what #263 and #264 were gated on, read as the audit wrote them.
+    // Lower is better for each; none is a headline metric and none is gated.
+    mechanical('Consent dismissals', older.consentWalls?.dismissals),
+    mechanical('Hand consent clicks', older.consentWalls?.handConsentClicks),
+    mechanical('Blocked Actions', blockedActionsOf(older.blockedOrInert)),
+    mechanical('Vision rounds after a Blocked Action', postBlockVisionOf(older.blockedOrInert, attempts)),
     mechanical('Rewritten Composed Addresses', older.rewrittenComposedAddresses),
     judged('Rewritten Composed Addresses judged Off-key', older.rewrittenComposedAddressesOffKey),
     mechanical('Rewritten navigates to a shown address', older.rewrittenShownAddresses),

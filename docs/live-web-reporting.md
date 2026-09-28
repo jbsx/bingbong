@@ -1151,6 +1151,20 @@ judgement counter, since an overrule moves it. The Answer Checkpoint
 counters are not recounted: no trace before version 6 says what an Answer
 carried, so they read as nothing there.
 
+The counters #263 and #264 were gated on sit in the expander beside the
+Unavailable Landing rows (#297): `Consent dismissals`, `Hand consent clicks`,
+`Blocked Actions` and `Vision rounds after a Blocked Action`, read from the
+population's `consentWalls` and `blockedOrInert` as the audit wrote them.
+`Blocked Actions` is one count of every kind: Covered, Not Shown, and those
+under the pre-#264 head. Lower is better for each; none is a headline metric
+and none is gated. None is recounted, so an audit written before them reads
+as nothing: every set before `fix-260-262` on all four, and `fix-260-262`,
+audited before #264, on the vision rounds. A family summed from such Passes
+holds a zero there that nobody counted, and one summed from both kinds a
+part of the count; the ledger takes neither.
+On initials `fix-263-264` against `fix-260-262` reads hand consent clicks 3
+to 0 and Blocked Actions 4 to 1.
+
 **The markers**, per metric, never a refusal. Judgement metrics (the verdicts,
 Off-key, and in the expander Search Loop, Early Stop, Answer Omission,
 overrules, flags) are marked when `reviewerPromptVersion` differs between

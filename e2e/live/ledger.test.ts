@@ -252,6 +252,81 @@ describe('the Unavailable Landing recount (#262, ADR 0060)', () => {
   })
 })
 
+describe('the consent wall and Blocked Action counters (#297)', () => {
+  const CONSENT_DISMISSALS = 'Consent dismissals'
+  const HAND_CONSENT_CLICKS = 'Hand consent clicks'
+  const BLOCKED_ACTIONS = 'Blocked Actions'
+  const POST_BLOCK_VISION = 'Vision rounds after a Blocked Action'
+  const LABELS = [CONSENT_DISMISSALS, HAND_CONSENT_CLICKS, BLOCKED_ACTIONS, POST_BLOCK_VISION]
+
+  function initialsOf(id: string): { population: AuditPopulation; attempts: AuditAttempt[] } {
+    const listed = family(committed, id)
+    return {
+      population: listed.aggregate!.audit.populations.initial,
+      attempts: listed.passes.flatMap((pass) => pass.audit?.attempts ?? []).filter((attempt) => attempt.mechanical.relation === 'initial'),
+    }
+  }
+
+  function valuesOf(population: AuditPopulation, attempts: readonly AuditAttempt[]): Record<string, number | null | undefined> {
+    const counters = countersOf(population, attempts)
+    return Object.fromEntries(LABELS.map((label) => [label, counters.find((counter) => counter.label === label)?.value]))
+  }
+
+  it('reads the four from the aggregate, the Blocked Actions of every kind as one count', () => {
+    const { population, attempts } = initialsOf('fix-284')
+    expect(population.blockedOrInert).toMatchObject({ covered: 3, notShown: 0, blocked: 0, postBlockVision: 1 })
+    expect(valuesOf(population, attempts)).toEqual({ [CONSENT_DISMISSALS]: 6, [HAND_CONSENT_CLICKS]: 0, [BLOCKED_ACTIONS]: 3, [POST_BLOCK_VISION]: 1 })
+  })
+
+  it('sits beside the Unavailable Landing rows, mechanical and with no denominator', () => {
+    const { population, attempts } = initialsOf('fix-284')
+    const counters = countersOf(population, attempts)
+    const labels = counters.map((counter) => counter.label)
+    const after = labels.indexOf('Unavailable landings followed by a search')
+    expect(labels.slice(after + 1, after + 5)).toEqual(LABELS)
+    for (const label of LABELS) expect(counters.find((counter) => counter.label === label)).toMatchObject({ judgement: false, over: null })
+  })
+
+  it('reads an audit written before the counters as not recorded, never as zero', () => {
+    const { population, attempts } = initialsOf('fix-258-259')
+    expect(population.consentWalls).toBeUndefined()
+    expect(population.blockedOrInert).toBeUndefined()
+    expect(valuesOf(population, attempts)).toEqual({ [CONSENT_DISMISSALS]: null, [HAND_CONSENT_CLICKS]: null, [BLOCKED_ACTIONS]: null, [POST_BLOCK_VISION]: null })
+  })
+
+  it('reads fix-260-262, audited before #264, with its Blocked Actions counted and its post-block vision not recorded', () => {
+    const { population, attempts } = initialsOf('fix-260-262')
+    expect(valuesOf(population, attempts)).toEqual({ [CONSENT_DISMISSALS]: 1, [HAND_CONSENT_CLICKS]: 3, [BLOCKED_ACTIONS]: 4, [POST_BLOCK_VISION]: null })
+  })
+
+  it('never takes the zero a sum over pre-#264 attempts writes for a count of vision rounds', () => {
+    // A family with no aggregate is summed from its Passes, and the sum fills every #264 field with a zero.
+    const { attempts } = initialsOf('fix-260-262')
+    const summed = populationOf('initial', attempts)
+    expect(summed.blockedOrInert).toMatchObject({ blocked: 4, postBlockVision: 0 })
+    expect(valuesOf(summed, attempts)).toMatchObject({ [BLOCKED_ACTIONS]: 4, [POST_BLOCK_VISION]: null })
+  })
+
+  it('reads a sum over attempts of both kinds as not recorded, and a population with no attempts behind it as written', () => {
+    const before = initialsOf('fix-260-262').attempts
+    const { population, attempts } = initialsOf('fix-284')
+    const mixed = [...before, ...attempts]
+    expect(valuesOf(populationOf('initial', mixed), mixed)).toMatchObject({ [BLOCKED_ACTIONS]: 7, [POST_BLOCK_VISION]: null })
+    // An aggregate none of whose Passes has an audit of its own.
+    expect(valuesOf(population, [])).toMatchObject({ [BLOCKED_ACTIONS]: 3, [POST_BLOCK_VISION]: 1 })
+  })
+
+  it('shows the #263 and #264 gates on the fix-263-264 row against fix-260-262', () => {
+    const row = compareFamilies(family(committed, 'fix-263-264'), family(committed, 'fix-260-262'))
+    const initial = (label: string) => row.counters.find((counter) => counter.label === label)!.populations.initial
+    expect(initial(HAND_CONSENT_CLICKS)).toMatchObject({ reference: { value: 3 }, subject: { value: 0 }, delta: -3 })
+    expect(initial(CONSENT_DISMISSALS)).toMatchObject({ reference: { value: 1 }, subject: { value: 6 }, delta: 5 })
+    expect(initial(BLOCKED_ACTIONS)).toMatchObject({ reference: { value: 4 }, subject: { value: 1 }, delta: -3 })
+    // No delta against a side that never counted.
+    expect(initial(POST_BLOCK_VISION)).toMatchObject({ reference: { value: null }, subject: { value: 0 }, delta: null })
+  })
+})
+
 describe('the committed Round Audits', () => {
   it('lists the families in capture order, Baselines by the id convention, each with its Reference', () => {
     const ids = committed.families.map((listed) => listed.id)
