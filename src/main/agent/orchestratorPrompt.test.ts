@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { parseAssistantAnswer } from '../../core/agent/answerContract'
+import { ANSWER_LANGUAGE_INSTRUCTION } from '../../core/agent/answerLanguage'
 import { ANSWER_CHECKPOINT_GUIDANCE, ANSWER_CHECKPOINT_INSTRUCTION } from '../../core/pipeline/answerCheckpointGuidance'
 import { recordAnswerCheckpoints } from '../../core/pipeline/answerCheckpoints'
 import type { CandidateCheckpointOutcome } from '../../core/pipeline/candidateCheckpoint'
@@ -9,6 +10,7 @@ import type { MemoryEntryId } from '../../core/session/workingMemory'
 import { FakeClock } from '../../core/testing/doubles'
 import { ORCHESTRATOR_SYSTEM_PROMPT, orchestratorSystemPrompt } from './orchestratorPrompt'
 import { SHARED_BROWSING_POLICY } from './sharedBrowsingPolicy'
+import { SUBAGENT_SYSTEM_PROMPT } from './subagentPrompt'
 
 // #127: the orchestrator prompt is the shared bounded-browsing policy (its
 // strategic invariants are pinned in sharedBrowsingPolicy.test.ts) plus the
@@ -320,6 +322,19 @@ describe('orchestrator prompt round-efficiency teachings (#131)', () => {
     expect(field).toMatch(/dropped, never sent back/)
     // An entry has no identity while the Answer is being written.
     expect(field).toMatch(/never name a carried entry in "evidence_ids", "supporting_evidence", or "inspection_candidate_id"/)
+  })
+
+  it('says once, in the Answer contract beside the renderings’ own lines, that an Answer is written in English (#286)', () => {
+    expect(ANSWER_LANGUAGE_INSTRUCTION).toBe('Write "speak" and "display" in English, whatever language the pages you read are in.')
+    expect(line('Write "speak" and "display" in English')).toBe(`- ${ANSWER_LANGUAGE_INSTRUCTION}`)
+
+    const lines = ORCHESTRATOR_SYSTEM_PROMPT.split('\n')
+    const at = lines.indexOf(`- ${ANSWER_LANGUAGE_INSTRUCTION}`)
+    expect(lines[at - 2]?.startsWith('- "speak" is heard, not read')).toBe(true)
+    expect(lines[at - 1]?.startsWith('- "display" is shown')).toBe(true)
+    expect(ORCHESTRATOR_SYSTEM_PROMPT.split(ANSWER_LANGUAGE_INSTRUCTION)).toHaveLength(2)
+    // The Subagent prompt does not carry it: a Subagent Report is not judged.
+    expect(SUBAGENT_SYSTEM_PROMPT).not.toContain('in English')
   })
 
   it('shows an Answer carrying one entry of each kind, which the Answer Checkpoints read as the two tools (#291)', () => {

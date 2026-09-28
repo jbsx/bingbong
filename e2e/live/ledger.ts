@@ -32,6 +32,7 @@ import {
   LIVE_AUDIT_AGGREGATE_KIND,
   LIVE_AUDIT_KIND,
   bookkeepingBeforeAnswerOver,
+  preRuleOffLanguageAnswersOver,
   pastTheEndReadsOver,
   populationOf,
   recountUnavailableByTitle,
@@ -652,6 +653,12 @@ export function countersOf(population: AuditPopulation, attempts: readonly Audit
     mechanical('Attempts with Identity Slips not recorded', older.identitySlipsNotRecorded),
     mechanical('Malformed Answers', older.malformedAnswers),
     mechanical('Answer Retries', older.answerRetries),
+    // #286: an audit keeps no Answer text, so one written before the counter
+    // is recounted from the Answers the reading of the captures named rather
+    // than read as nothing. The population's count is of the attempts that
+    // carry one, so the named Answers are added for the attempts that do
+    // not, and a population holding both kinds loses neither.
+    mechanical('Off-language Answers', (older.offLanguageAnswers ?? 0) + preRuleOffLanguageAnswersOver(attempts)),
     // #256: a population none of whose traces could record a skip reads as nothing, never as zero.
     mechanical(
       'Skipped bookkeeping rounds',

@@ -286,6 +286,30 @@ describe('buildTraceTimeline', () => {
     expect(entries[2].agentId).toBe('agent-7')
   })
 
+  it('summarizes an Off-language Answer as its round, the shares that failed and what followed (#286)', () => {
+    const timeline = buildTraceTimeline([
+      run({ at: T0 + 1, turnId: 'turn-1', kind: 'off_language_answer', round: 4, renderings: [{ rendering: 'spoken', share: 1 }], retried: true, text: '这是答案。', chars: 5 }),
+      run({
+        at: T0 + 2,
+        turnId: 'turn-1',
+        kind: 'off_language_answer',
+        round: 25,
+        renderings: [{ rendering: 'card', share: 0.64 }, { rendering: 'spoken', share: 1 }],
+        retried: false,
+        cause: 'budget_exhausted',
+        text: '这是答案。',
+        chars: 5,
+      }),
+      run({ at: T0 + 3, turnId: 'turn-1', kind: 'off_language_answer', round: 5, renderings: [{ rendering: 'card', share: 0.9 }], retried: false, text: '这是答案。', chars: 5 }),
+    ])
+
+    expect(timeline.lanes[0].entries.map((entry) => entry.summary)).toEqual([
+      'round 4 spoken 100% (retried): 这是答案。',
+      'round 25 card 64%, spoken 100% (budget_exhausted): 这是答案。',
+      'round 5 card 90% (no retry left): 这是答案。',
+    ])
+  })
+
   it('summarizes a Search Observation as the call, its signature, the streak and the query (#243)', () => {
     const timeline = buildTraceTimeline([
       run({ at: T0 + 1, turnId: 'turn-1', kind: 'search_observation', callId: 'c1', name: 'type', query: 'harrison longitude watch', signature: 'input', streak: 2 }),

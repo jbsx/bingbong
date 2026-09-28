@@ -3358,3 +3358,108 @@ describe('Answer Checkpoints (#288, ADR 0072)', () => {
     expect(formatAuditSet(older)).toMatch(/- initial: .*Answer Checkpoints not counted/)
   })
 })
+
+describe('Off-language Answers (#286, ADR 0034)', () => {
+  const VOYAGER = JSON.parse(readFileSync(fileURLToPath(new URL('../../src/core/agent/fixtures/off-language-voyager.json', import.meta.url)), 'utf8')) as {
+    display: string
+    speak: string
+  }
+  const ENGLISH = { display: 'Voyager 1 crossed the heliopause on 25 August 2012.', speak: 'It crossed in August 2012.' }
+  const published = (at: number, event: Record<string, unknown>): Record<string, unknown> => ({
+    ...identity,
+    at: T0 + at,
+    kind: 'pipeline_event',
+    event: { turnId: TURN, at: T0 + at, ...event },
+  })
+  /** The Answer a Run rendered, as its two events: the Card, then the spoken line. */
+  const answered = (answer: { display: string; speak: string }, card: Record<string, unknown> = {}): Record<string, unknown>[] => [
+    published(15_500, { type: 'display', text: answer.display, finalAnswer: true, ...card }),
+    published(15_600, { type: 'speak', text: answer.speak }),
+  ]
+  const refused = (at: number, retried: boolean, cause?: string): Record<string, unknown> => ({
+    ...identity,
+    v: 7,
+    at: T0 + at,
+    kind: 'off_language_answer',
+    round: 14,
+    renderings: [{ rendering: 'card', share: 0.64 }],
+    retried,
+    ...(cause === undefined ? {} : { cause }),
+    text: VOYAGER.display,
+    chars: VOYAGER.display.length,
+  })
+  const countOf = (extra: readonly Record<string, unknown>[]): number | undefined =>
+    classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, [...EXTRA, ...extra]) })).offLanguageAnswers
+
+  it('counts the Answers the app refused from the Run’s own records, beside the digest', () => {
+    const plain = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, [...EXTRA, ...answered(ENGLISH)]) }))
+    const counted = classifyAttempt(
+      inputOf({ traceRecords: traceOf(ROUNDS, [...EXTRA, refused(14_500, true), refused(15_400, false, 'budget_exhausted'), ...answered(ENGLISH, { deterministicAnswer: true })]) }),
+    )
+
+    expect(plain.offLanguageAnswers).toBe(0)
+    expect(counted.offLanguageAnswers).toBe(2)
+    expect(counted.rounds).toEqual(plain.rounds)
+    expect(counted.digestHash).toBe(plain.digestHash)
+    expect(JSON.stringify(auditModule.digestPayloadOf(counted))).not.toContain('offLanguageAnswers')
+  })
+
+  it('counts an Answer a Run rendered before the rule, by the app’s own function over the text its trace kept', () => {
+    // fix-283-3's Voyager initial: no record, and the Chinese Answer displayed and spoken.
+    expect(countOf(answered(VOYAGER))).toBe(1)
+    expect(auditModule.offLanguageAnswersOf(traceOf(ROUNDS, [...EXTRA, ...answered(VOYAGER)]))).toBe(1)
+  })
+
+  it('judges each rendering on its own, and counts the Answer once', () => {
+    expect(countOf(answered({ display: ENGLISH.display, speak: VOYAGER.speak }))).toBe(1)
+    expect(countOf(answered({ display: VOYAGER.display, speak: ENGLISH.speak }))).toBe(1)
+    expect(countOf(answered(VOYAGER))).toBe(1)
+  })
+
+  it('does not judge the deterministic Answer, which quotes pages as they are', () => {
+    expect(countOf(answered(VOYAGER, { deterministicAnswer: true }))).toBe(0)
+  })
+
+  it('reads only the spoken line that followed the Card, never a status line before it', () => {
+    expect(countOf([published(9_500, { type: 'speak', text: VOYAGER.speak }), ...answered(ENGLISH)])).toBe(0)
+  })
+
+  it('counts nothing a Subagent wrote: a Subagent Report is not judged', () => {
+    expect(countOf([{ ...refused(14_500, true), agentId: 'a-1' }, ...answered(ENGLISH)])).toBe(0)
+  })
+
+  it('sums them per population, prints them, and reads "not counted" for an audit written before the counter', () => {
+    const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, [...EXTRA, refused(14_500, true), ...answered(ENGLISH)]) }))
+    const set = buildAuditSet(provenanceOf(), [{ mechanical, review: null, countsAfterOverrules: mechanical.counts }], [])
+    expect(set.populations.initial.offLanguageAnswers).toBe(1)
+    const markdown = formatAuditSet(set)
+    expect(markdown).toContain('- Off-language Answers: 1')
+    expect(markdown).toMatch(/- initial: .*1 Off-language Answer\(s\)/)
+
+    // Absent, never zero: an aggregate rebuilt from audits written before the counter stays the one committed.
+    const before = { ...mechanical } as AuditMechanical & { offLanguageAnswers?: number }
+    delete before.offLanguageAnswers
+    const older = buildAuditSet(provenanceOf(), [{ mechanical: before, review: null, countsAfterOverrules: before.counts }], [])
+    expect('offLanguageAnswers' in older.populations.initial).toBe(false)
+    const olderText = formatAuditSet(older)
+    expect(olderText).toContain('- Off-language Answers: not counted')
+    expect(olderText).toMatch(/- initial: .*Off-language Answers not counted/)
+  })
+
+  it('names the one Answer rendered before the rule, and recounts an audit written before the counter from it', () => {
+    expect(auditModule.PRE_RULE_OFF_LANGUAGE_ANSWERS).toEqual([
+      { captureId: 'fix-283-3--superseded-voyager-interstellar', attemptId: 'superseded-voyager-interstellar--initial', round: 25 },
+    ])
+    const plain = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, EXTRA) }))
+    const before = { ...plain, captureId: 'fix-283-3--superseded-voyager-interstellar', attemptId: 'superseded-voyager-interstellar--initial' } as AuditMechanical & {
+      offLanguageAnswers?: number
+    }
+    delete before.offLanguageAnswers
+    const attemptOf = (mechanical: AuditMechanical): AuditAttempt => ({ mechanical, review: null, countsAfterOverrules: mechanical.counts })
+
+    // Recounted for an audit written before the counter, and read as written from one that carries it.
+    expect(auditModule.offLanguageAnswersOver([attemptOf(before), attemptOf(plain)])).toBe(1)
+    expect(auditModule.offLanguageAnswersOver([attemptOf({ ...before, offLanguageAnswers: 0 })])).toBe(0)
+    expect(auditModule.offLanguageAnswersOver([attemptOf({ ...plain, offLanguageAnswers: 3 })])).toBe(3)
+  })
+})

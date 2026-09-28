@@ -110,6 +110,8 @@ import { createLlmRounds, llmRequestShape, llmRoundEvent, llmRoundFailure, type 
 import { pipelineEventTraceBody, tracesPipelineEvent } from '../trace/pipelineEventTrace'
 import { offContractReplyEvent, recordOffContractReply, type TracedOffContractReply } from '../trace/offContractReplyTrace'
 import { answerRetryOutcome, answerRetryTraceEvent, recordMalformedAnswer, type TracedAnswerRetryRecord } from '../trace/answerRetryTrace'
+import { offLanguageAnswerEvent, recordOffLanguageAnswer, type TracedOffLanguageAnswer } from '../trace/offLanguageAnswerTrace'
+import { OFF_LANGUAGE_RETRY_MESSAGE, offLanguageRenderings, type OffLanguageFinding } from '../agent/answerLanguage'
 import { completedEvidenceIsFresh } from './evidenceFreshness'
 import { evaluateCandidateCheckpoint, type CandidateCheckpointOutcome, type EvidenceSessionSource } from './candidateCheckpoint'
 import { recordAnswerCheckpoints } from './answerCheckpoints'
@@ -1206,6 +1208,11 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
     const writeAnswerRetry = traceRun
       ? (record: TracedAnswerRetryRecord): void => traceRun(() => ({ turnId, ...answerRetryTraceEvent(record) }))
       : undefined
+    // The off_language_answer records (#286): the Run's own only, since a
+    // Subagent Report is not judged.
+    const writeOffLanguageAnswer = traceRun
+      ? (record: TracedOffLanguageAnswer): void => traceRun(() => ({ turnId, ...offLanguageAnswerEvent(record) }))
+      : undefined
     // A delegated worker's Tool Rounds (#185): the same one write, for the
     // events a worker's rounds publish to nobody. Its events arrive
     // unstamped — a worker knows no turn — so the Run stamps its own,
@@ -1553,10 +1560,16 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
         // reserved Answer round fails, requests tools, or replies off
         // contract (#198).
         let deterministicFallback = false
+        // Set when that fallback stands in for an Off-language Answer
+        // outside a reserved round (#286, ADR 0034): it answers under the
+        // cause the phase holds, and under none while the phase is still
+        // working, where every other fallback reads the hard round ceiling.
+        let offLanguageFallback = false
         // The Answer Retry (#245): once per Run, so a Steering replan does
-        // not reset it. Owed after a Malformed Answer outside a reserved
-        // round, and taken by the very next request, whichever round the
-        // loop makes it.
+        // not reset it. Owed after a Malformed Answer, an Off-language
+        // Answer (#286) or a short Asked Items list (#250) outside a
+        // reserved round, and taken by the very next request, whichever
+        // round the loop makes it.
         let answerRetrySpent = false
         let owedAnswerRetry: AnswerRetryRequest | undefined
         // The cause that fallback answers under, asked in one place so the
@@ -1568,6 +1581,12 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
         // The cause's own detail, asked from the same place (#202): a
         // `blocker` stop's Answer names the wall, and a wall named in the
         // spoken Answer but not the displayed one would be two stories.
+        // The cause a deterministic Answer standing in for an Off-language
+        // Answer uses (#286, ADR 0034): the phase's own, and none while
+        // the phase is working — that Run entered no Finalization, and the
+        // hard round ceiling is not what stopped it.
+        const offLanguageCause = (): FinalizationCause | undefined =>
+          effortEpoch.phase.kind === 'working' ? undefined : effortEpoch.phase.cause
         const fallbackDetail = (): FinalizationDetail | undefined =>
           effortEpoch.phase.kind === 'working' ? undefined : effortEpoch.phase.detail
 
@@ -1882,6 +1901,8 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           const roundAnswerRetry = owedAnswerRetry
           owedAnswerRetry = undefined
           let roundAnswerRetryOutcome: AnswerRetryOutcome = 'round_failed'
+          // The renderings of this round's Answer that are off-language (#286).
+          let roundOffLanguage: readonly OffLanguageFinding[] = []
           try {
             const request: LlmRequest = {
               command,
@@ -2009,7 +2030,10 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             turn = await llm.complete(request)
             roundUsage = turn.usage
             roundOutcome = 'completed'
-            roundAnswerRetryOutcome = answerRetryOutcome(turn)
+            // An Off-language Answer is that whatever its shape (#286),
+            // judged once here for the record and the check below.
+            if (turn.kind === 'answer') roundOffLanguage = offLanguageRenderings(turn)
+            roundAnswerRetryOutcome = roundOffLanguage.length > 0 ? 'off_language' : answerRetryOutcome(turn)
           } catch (err) {
             roundError = err
             // What ended the round, for its record (#218): the cuts this
@@ -2220,6 +2244,49 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
               answerRetrySpent = true
               owedAnswerRetry = { reply: answerText(turn), message: answerRetryMessage(malformedErrorOf(turn)) }
               continue
+            }
+          }
+
+          // An Off-language Answer (#286, ADR 0034): an Answer whose Card
+          // or Spoken Rendering is mostly not in Latin script, each judged
+          // on its own, whatever the reply's shape. It is never rendered
+          // and never spoken, however right its content. A reserved round
+          // has no round to spend, so it is a failed round beside the
+          // Off-contract Reply and takes the deterministic Answer under the
+          // cause the phase holds. Any other round spends the Run's one
+          // Answer Retry; with that spent, or the reply to it off-language
+          // too, the deterministic Answer stands in, where a Malformed
+          // Answer would stand as written: that one is still prose the user
+          // can read. Judged before the Asked Items, so an Answer failing
+          // both is asked for English, and the list settles on the reply.
+          if (turn.kind === 'answer') {
+            const renderings = roundOffLanguage
+            if (renderings.length > 0) {
+              const retried = !reservedRound && !answerRetrySpent
+              // The cause the deterministic Answer will use, asked where
+              // the Answer asks it; a retry has no fallback and so none.
+              const cause = retried ? undefined : offLanguageCause()
+              recordOffLanguageAnswer({
+                site: 'pipeline.createCommandPipeline.offLanguageAnswer',
+                round: llmRound,
+                renderings,
+                retried,
+                ...(cause !== undefined ? { cause } : {}),
+                text: answerText(turn),
+                ...(writeOffLanguageAnswer ? { trace: writeOffLanguageAnswer } : {}),
+                turnId,
+              })
+              if (retried) {
+                answerRetrySpent = true
+                owedAnswerRetry = { reply: answerText(turn), message: OFF_LANGUAGE_RETRY_MESSAGE }
+                continue
+              }
+              finalizationFailure = reservedRound
+                ? 'the reserved Answer round answered in a language other than English'
+                : 'the Answer was not written in English and no Answer Retry was left'
+              offLanguageFallback = !reservedRound
+              deterministicFallback = true
+              break
             }
           }
 
@@ -2556,7 +2623,9 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             // the directive's own words otherwise — and their command on
             // a never-steered run.
             command: correctedObjective ?? command,
-            cause: fallbackCause(),
+            // An Off-language Answer's stand-in asks its own cause (#286),
+            // which is none while the phase was working.
+            cause: offLanguageFallback ? offLanguageCause() : fallbackCause(),
             ...(fallbackWall !== undefined ? { detail: fallbackWall } : {}),
             sources: deriveFallbackSources({
               records: fallbackRecords,

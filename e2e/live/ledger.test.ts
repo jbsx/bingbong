@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { bookkeepingBeforeAnswerOver, pastTheEndReadsOf, pastTheEndReadsOver, populationOf, replaySearchStreaks, SEARCH_STREAK_RULE, searchLoopCountsOf, type AuditAggregate, type AuditAttempt, type AuditPopulation, type AuditSetOutput } from './audit.ts'
+import { bookkeepingBeforeAnswerOver, offLanguageAnswersOver, PRE_RULE_OFF_LANGUAGE_ANSWERS, pastTheEndReadsOf, pastTheEndReadsOver, populationOf, replaySearchStreaks, SEARCH_STREAK_RULE, searchLoopCountsOf, type AuditAggregate, type AuditAttempt, type AuditPopulation, type AuditSetOutput } from './audit.ts'
 import {
   HEADLINE_METRICS,
   buildLedger,
@@ -619,6 +619,75 @@ describe('the bookkeeping rounds right before the Answer (#288, ADR 0072)', () =
 
     expect('bookkeepingBeforeAnswer' in rebuilt).toBe(false)
     expect('answerCheckpoints' in rebuilt).toBe(false)
+    expect(JSON.stringify({ ...rebuilt, perSet: committed.perSet })).toBe(JSON.stringify(committed))
+  })
+})
+
+describe('Off-language Answers (#286, ADR 0034)', () => {
+  const LABEL = 'Off-language Answers'
+  const perPassAudits = (): AuditSetOutput[] =>
+    readdirSync(REPORTS_DIR)
+      .filter((name) => name.startsWith('audit-') && name.endsWith('.json'))
+      .sort()
+      .map((name) => readAudit(name))
+      // A per-Pass audit holds its attempts; an aggregate holds none.
+      .filter((audit) => Array.isArray(audit.attempts))
+  const attemptsOf = (audits: readonly AuditSetOutput[], relation: string) =>
+    audits.flatMap((audit) => audit.attempts).filter((attempt) => attempt.mechanical.relation === relation)
+  const committedAggregate = (): AuditAggregate => JSON.parse(readFileSync(join(REPORTS_DIR, 'audit-aggregate-fix-283.json'), 'utf8')) as AuditAggregate
+
+  it('recounts every committed audit, all written before the counter: one, in the initials of fix-283', () => {
+    const audits = perPassAudits()
+
+    expect(audits.every((audit) => audit.attempts.every((attempt) => attempt.mechanical.offLanguageAnswers === undefined))).toBe(true)
+    expect(offLanguageAnswersOver(audits.flatMap((audit) => audit.attempts))).toBe(1)
+    expect(offLanguageAnswersOver(attemptsOf(audits, 'revised_objective'))).toBe(0)
+    expect(audits.filter((audit) => offLanguageAnswersOver(audit.attempts) > 0).map((audit) => audit.provenance.setId)).toEqual(['fix-283-3'])
+  })
+
+  it('names an attempt the committed audits hold, in the round its Answer was written', () => {
+    for (const known of PRE_RULE_OFF_LANGUAGE_ANSWERS) {
+      const held = perPassAudits()
+        .flatMap((audit) => audit.attempts)
+        .filter(({ mechanical }) => mechanical.captureId === known.captureId && mechanical.attemptId === known.attemptId)
+      expect(held).toHaveLength(1)
+      expect(held[0]!.mechanical.rounds.at(-1)).toMatchObject({ round: known.round, kind: 'finalization', calls: [] })
+    }
+  })
+
+  it('recounts the Reference, written before the counter, and reads an audit that carries it as written', () => {
+    const initials = attemptsOf([1, 2, 3].map((pass) => readAudit(`audit-fix-283-${pass}.json`)), 'initial')
+    const written = committedAggregate().populations.initial
+    const counterOf = (population: AuditPopulation) => countersOf(population, initials).find((counter) => counter.label === LABEL)
+
+    expect(written.offLanguageAnswers).toBeUndefined()
+    expect(counterOf(written)).toEqual({ label: LABEL, judgement: false, value: 1, over: null })
+
+    // Audited again, every attempt carries its own count and the list adds nothing.
+    const counting = initials.map((attempt) => ({ ...attempt, mechanical: { ...attempt.mechanical, offLanguageAnswers: 0 } }))
+    const valueOf = (population: AuditPopulation, attempts: readonly AuditAttempt[]) =>
+      countersOf(population, attempts).find((counter) => counter.label === LABEL)?.value
+    expect(valueOf({ ...written, offLanguageAnswers: 2 }, counting)).toBe(2)
+  })
+
+  it('loses neither kind in a population holding audits from before the counter and after it', () => {
+    const initials = attemptsOf([1, 2, 3].map((pass) => readAudit(`audit-fix-283-${pass}.json`)), 'initial')
+    const named = (attempt: AuditAttempt): boolean => PRE_RULE_OFF_LANGUAGE_ANSWERS.some((known) => known.captureId === attempt.mechanical.captureId)
+    // Every attempt but the named one audited again, one of them holding a refused Answer.
+    const mixed = initials.map((attempt, index) => (named(attempt) ? attempt : { ...attempt, mechanical: { ...attempt.mechanical, offLanguageAnswers: index === 0 ? 1 : 0 } }))
+    const population = populationOf('initial', mixed)
+
+    expect(named(initials[0]!)).toBe(false)
+    expect(population.offLanguageAnswers).toBe(1)
+    expect(countersOf(population, mixed).find((counter) => counter.label === LABEL)?.value).toBe(2)
+    expect(offLanguageAnswersOver(mixed)).toBe(2)
+  })
+
+  it('leaves a population rebuilt from audits written before the counter as it was committed (#285)', () => {
+    const rebuilt = populationOf('initial', attemptsOf([1, 2, 3].map((pass) => readAudit(`audit-fix-284-${pass}.json`)), 'initial'))
+    const committed = (JSON.parse(readFileSync(join(REPORTS_DIR, 'audit-aggregate-fix-284.json'), 'utf8')) as AuditAggregate).populations.initial
+
+    expect('offLanguageAnswers' in rebuilt).toBe(false)
     expect(JSON.stringify({ ...rebuilt, perSet: committed.perSet })).toBe(JSON.stringify(committed))
   })
 })

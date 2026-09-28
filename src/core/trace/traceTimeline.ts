@@ -288,6 +288,12 @@ function summarizeTrace(kind: string, record: Record<string, unknown>): string {
       return `${str(record.role)}${record.agentId !== undefined ? ` ${str(record.agentId)}` : ''} (${str(record.error)}): ${str(record.text)}`
     case 'answer_retry':
       return `${str(record.role)}${record.agentId !== undefined ? ` ${str(record.agentId)}` : ''} ${str(record.outcome)}`
+    case 'off_language_answer': {
+      const failed = Array.isArray(record.renderings) ? (record.renderings as Record<string, unknown>[]) : []
+      const shares = failed.map((entry) => `${str(entry.rendering)} ${typeof entry.share === 'number' ? Math.round(entry.share * 100) : '?'}%`)
+      const followed = record.retried === true ? 'retried' : record.cause !== undefined ? str(record.cause) : 'no retry left'
+      return `round ${str(record.round)} ${shares.join(', ')} (${followed}): ${str(record.text)}`
+    }
     case 'failure_screenshot':
       return `${str(record.cause)}: ${str(fileNameOf(record.path))} (${str(record.bytes)} bytes)`
     case 'evidence_checkpoint':

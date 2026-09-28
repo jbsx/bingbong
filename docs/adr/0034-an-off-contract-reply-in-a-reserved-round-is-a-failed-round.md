@@ -62,6 +62,42 @@ named a language. Decided:
 - **Text streamed in an ordinary round may show before it is replaced.** A
   reserved round streams nothing, so #286's own case would have shown none.
 
+Note of 2026-09-28 (#286, built): what building it settled.
+
+- **A round that is not reserved can still be inside Finalization**: the
+  bookkeeping round, when the model answers in it. An Off-language Answer
+  there spends the retry like any ordinary round, and a deterministic Answer
+  that follows uses the cause the phase holds. Only a Run whose phase is
+  still working ends with no Finalization Cause.
+- **An Off-language Answer is judged before the Asked Items.** An Answer
+  failing both is asked for English, and its list settles on the reply.
+- **A reply the runtime could not take is left to its own rule.** An
+  Off-contract Reply, and a Malformed Answer with the retry unspent, are
+  handled as before whatever script they are in, and leave no
+  `off_language_answer` record: there is no Card to judge. Neither is
+  rendered. A Malformed Answer that would stand as prose, the retry spent,
+  is judged, and if that prose is off-language the deterministic Answer
+  stands in.
+- **A population holding audits from before the counter and after it** adds
+  the listed Answers for the attempts that carry no count, so neither kind
+  is lost.
+- **The fault names round 0 when nothing is tracing**, since the loop
+  numbers its rounds only for the trace. The record is always numbered.
+- **The `answer_retry` record gained the outcome `off_language`**, in the
+  orchestrator loop only, and the Run Trace is version 7.
+- **The Fix Ledger cannot recount from text.** A committed Round Audit keeps
+  an Answer round's lengths and none of its words, and the ledger reads
+  audits alone. An audit written before the counter is recounted from a list
+  of the Answers known to have been rendered off-language
+  (`PRE_RULE_OFF_LANGUAGE_ANSWERS`). A Malformed Answer before its record is
+  named in a list too, but only as a caveat, its count left at zero (ADR
+  0049); this one is counted, because the rule is a function of the
+  rendering alone and judging old text replays nothing the Run decided. The
+  list was checked against the captures with the audit's own function: one
+  in 371 attempts on disk.
+- **The record keeps the Answer's text**, cut as an Off-contract Reply's is,
+  since nothing else does.
+
 ## Context
 
 The Answer contract is JSON with `speak` and `display`. The parser tries the

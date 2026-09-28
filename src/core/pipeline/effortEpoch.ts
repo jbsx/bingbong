@@ -1447,7 +1447,12 @@ function fallbackDetailLines(source: FallbackSource): string[] {
  */
 export function deterministicFinalAnswer(input: {
   command: string
-  cause: FinalizationCause
+  /**
+   * The Finalization Cause the Run stopped under. Absent when it entered no
+   * Finalization (#286): an Off-language Answer met while still working,
+   * with no Answer Retry left.
+   */
+  cause?: FinalizationCause
   /** The cause's own detail (#202): the wall a `blocker` stop kept at, which both halves name. */
   detail?: FinalizationDetail
   /** The run's retained sources (#137), strongest first — bounded, merged by canonical URL. */
@@ -1460,7 +1465,7 @@ export function deterministicFinalAnswer(input: {
   // (#202): both name the wall. Without the detail there is no wall to
   // name and the outcome-first wording stands — the same rule the
   // model-facing reason follows.
-  const wall = blockerWallOf(input.cause, input.detail)
+  const wall = input.cause === undefined ? undefined : blockerWallOf(input.cause, input.detail)
   const sourceLines: string[] = []
   input.sources.forEach((source, index) => {
     sourceLines.push(`- ${source.url}`)

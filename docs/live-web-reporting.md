@@ -1014,6 +1014,26 @@ round 7, before the record, and re-parsing old Answer text to count it would be
 the audit replaying a decision the Run never recorded (ADR 0049). The set's
 caveats name that occurrence instead, from `PRE_RECORD_MALFORMED_ANSWERS`.
 
+**Off-language Answers** (#286, ADR 0034) count the Answers whose Card or
+Spoken Rendering had more than half of its letters outside Latin script, by
+the app's own function (`offLanguageRenderings`). The Answers the app refused
+are the Run's own `off_language_answer` records, each with its round, the
+renderings that failed and their shares, whether the Answer Retry was spent,
+and the cause the deterministic Answer used. An Answer a Run rendered is
+judged from the Card and the Spoken Rendering that followed it, which only a
+Run older than the rule can fail, so one count reads both and asks no trace
+version. That is unlike the Malformed Answer above, which is never re-parsed
+from text: this rule is a function of the rendering alone, so judging old
+text replays nothing the Run decided. The deterministic Answer and a Subagent's replies are not judged. An
+`answer_retry` record whose reply was an Off-language Answer has the outcome
+`off_language`. The count sits beside the rounds and does not move the digest.
+An audit written before the counter has no field for it and prints "not
+counted". A committed audit keeps no Answer text, so the Fix Ledger recounts
+such an audit from `PRE_RULE_OFF_LANGUAGE_ANSWERS`, the Answers the same
+function finds over the captures themselves: one, the Voyager initial of
+`fix-283-3`, in 371 attempts on disk on 2026-09-28. It is reported, never
+gated.
+
 Two more count the Finalization bookkeeping round (#256, ADR 0056).
 **Skipped bookkeeping rounds** are the Run's own `finalization_entry` records
 whose `bookkeeping` is `skipped`: Finalization entries that went straight to

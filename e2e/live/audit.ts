@@ -40,6 +40,7 @@ import { createHash } from 'node:crypto'
 import { blockedOrInertAction, type ConsumedNothing } from '../../src/core/browser/actionOutcome.ts'
 import { parseBlockerMarker } from '../../src/core/browser/blockerNudge.ts'
 import { classifyNotFoundPage, NOT_FOUND_BASES, type NotFoundBasis, type NotFoundLanding } from '../../src/core/browser/notFoundPage.ts'
+import { offLanguageRenderings } from '../../src/core/agent/answerLanguage.ts'
 import { isPartPastTheEnd } from '../../src/core/browser/pageText.ts'
 import { classifyUnavailablePage, isUnavailableBasis, type UnavailableLanding } from '../../src/core/browser/unavailablePage.ts'
 import type { ComposedAddressRewriteStamp } from '../../src/core/pipeline/composedAddressRail.ts'
@@ -715,6 +716,13 @@ export interface AuditMechanical {
   /** Answer Retries (#245): the turn's `answer_retry` records, on the same terms. */
   readonly answerRetries: number
   /**
+   * Off-language Answers (#286, ADR 0034): the Answers the app refused, from
+   * the Run's `off_language_answer` records, and any it rendered that fails
+   * the app's own rule. Beside the rounds, never in them. Absent on an audit
+   * written before the counter.
+   */
+  readonly offLanguageAnswers?: number
+  /**
    * Transport Failures (#271): `llm_round` attempts, the Run's and its
    * Subagents', that ended `transport`. Absent from an audit written before
    * the counter; beside the rounds, never in them.
@@ -993,6 +1001,12 @@ export interface AuditPopulation {
   readonly malformedAnswers: number
   /** Answer Retries over the attempts (#245). */
   readonly answerRetries: number
+  /**
+   * Off-language Answers over the attempts that count them (#286); absent
+   * when none does, as on an audit written before the counter, which the Fix
+   * Ledger recounts.
+   */
+  readonly offLanguageAnswers?: number
   /** Transport Failure attempts over the attempts (#271); absent on an audit written before the counter. */
   readonly transportAttempts?: number
   /** Rounds recovered by a Transport Retry over the attempts (#271). */
@@ -2189,6 +2203,66 @@ export function pastTheEndReadsOver(attempts: readonly AuditAttempt[]): number {
 }
 
 /**
+ * An attempt's Off-language Answers (#286, ADR 0034), judged by the app's
+ * own function. The Run's `off_language_answer` records hold every Answer
+ * the app refused; an Answer it rendered is judged here from the Card and
+ * the Spoken Rendering that followed it, which only a Run older than the
+ * rule can fail. So one count reads both, with no trace version to ask. The
+ * deterministic Answer quotes pages as they are and is not judged, and
+ * neither is anything a Subagent wrote. Where a Malformed Answer before its
+ * record is left uncounted (ADR 0049), this one is judged from text: the
+ * rule is a function of the rendering alone, so nothing the Run decided is
+ * replayed.
+ */
+export function offLanguageAnswersOf(traceRecords: readonly object[]): number {
+  const records = (traceRecords as unknown as readonly TraceLine[]).filter((record) => record.agentId === undefined)
+  let count = records.filter((record) => record.kind === 'off_language_answer').length
+  const events = records.flatMap((record): Record<string, unknown>[] => {
+    const event = eventOf(record)
+    return event === null ? [] : [event]
+  })
+  const textOf = (event: Record<string, unknown> | undefined): string => (event !== undefined && isString(event.text) ? event.text : '')
+  events.forEach((event, index) => {
+    if (event.type !== 'display' || event.finalAnswer !== true || event.deterministicAnswer === true) return
+    const spoken = events.slice(index + 1).find((later) => later.type === 'speak')
+    if (offLanguageRenderings({ display: textOf(event), speak: textOf(spoken) }).length > 0) count += 1
+  })
+  return count
+}
+
+/**
+ * The Answers rendered off-language before the rule existed (#286), named
+ * from the reading of every capture on disk on 2026-09-28: one in 371
+ * attempts. A committed audit keeps no Answer text, so one written before
+ * the counter cannot be recounted from its rounds as a refused read is
+ * (#290); the Fix Ledger recounts it from this list, and the list is what
+ * the app's function finds over the captures themselves.
+ */
+export const PRE_RULE_OFF_LANGUAGE_ANSWERS: readonly { readonly captureId: string; readonly attemptId: string; readonly round: number }[] = [
+  { captureId: 'fix-283-3--superseded-voyager-interstellar', attemptId: 'superseded-voyager-interstellar--initial', round: 25 },
+]
+
+/**
+ * How many of the listed Answers fall among the attempts whose audit was
+ * written before the counter (#286): what a population's own count, summed
+ * from the attempts that carry one, is missing.
+ */
+export function preRuleOffLanguageAnswersOver(attempts: readonly AuditAttempt[]): number {
+  return attempts
+    .filter(({ mechanical }) => mechanical.offLanguageAnswers === undefined)
+    .reduce(
+      (total, { mechanical }) =>
+        total + PRE_RULE_OFF_LANGUAGE_ANSWERS.filter((known) => known.captureId === mechanical.captureId && known.attemptId === mechanical.attemptId).length,
+      0,
+    )
+}
+
+/** How many Off-language Answers some attempts hold: as their audit counted, and from the list above where it was written before the counter (#286). */
+export function offLanguageAnswersOver(attempts: readonly AuditAttempt[]): number {
+  return attempts.reduce((total, { mechanical }) => total + (mechanical.offLanguageAnswers ?? 0), 0) + preRuleOffLanguageAnswersOver(attempts)
+}
+
+/**
  * The bookkeeping rounds right before an attempt's Answer (#288, ADR 0072):
  * the unbroken run of rounds that ends at the Answer and whose kind, after
  * the reviewer's overrules, is Bookkeeping — the rounds an Answer carrying
@@ -3295,6 +3369,7 @@ export function classifyAttempt(input: AuditTraceInput): AuditMechanical {
     identitySlips,
     malformedAnswers: records.filter((record) => record.kind === 'malformed_answer').length,
     answerRetries: records.filter((record) => record.kind === 'answer_retry').length,
+    offLanguageAnswers: offLanguageAnswersOf(records),
     // Transport Failures (#271), the Run's and its Subagents', from the
     // `llm_round` records alone: every attempt that failed at the transport,
     // the rounds whose Transport Retry then completed, and whether the Run
@@ -3795,6 +3870,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
   let slipsNotRecorded = 0
   let malformedAnswers = 0
   let answerRetries = 0
+  let offLanguageAnswers: number | undefined
   let transportAttempts = 0
   let transportRetriesRecovered = 0
   let modelUnreachableRuns = 0
@@ -3905,6 +3981,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
     }
     malformedAnswers += mechanical.malformedAnswers
     answerRetries += mechanical.answerRetries
+    if (mechanical.offLanguageAnswers !== undefined) offLanguageAnswers = (offLanguageAnswers ?? 0) + mechanical.offLanguageAnswers
     transportAttempts += mechanical.transportAttempts ?? 0
     transportRetriesRecovered += mechanical.transportRetriesRecovered ?? 0
     modelUnreachableRuns += mechanical.modelUnreachableRuns ?? 0
@@ -4015,6 +4092,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
     identitySlipsNotRecorded: slipsNotRecorded,
     malformedAnswers,
     answerRetries,
+    ...(offLanguageAnswers !== undefined ? { offLanguageAnswers } : {}),
     transportAttempts,
     transportRetriesRecovered,
     modelUnreachableRuns,
@@ -4345,6 +4423,12 @@ function populationPastTheEndReadsText(population: AuditPopulation): string {
   return `${population.pastTheEndReads} read(s) refused as past the end`
 }
 
+/** A population's Off-language Answers (#286), or "not counted" on an audit written before the counter. */
+function populationOffLanguageAnswersText(population: AuditPopulation): string {
+  if (population.offLanguageAnswers === undefined) return 'Off-language Answers not counted'
+  return `${population.offLanguageAnswers} Off-language Answer(s)`
+}
+
 /** A population's bookkeeping rounds right before the Answer (#288), or "not counted" on an audit written before the counter. */
 function populationBookkeepingBeforeAnswerText(population: AuditPopulation): string {
   if (population.bookkeepingBeforeAnswer === undefined) return 'bookkeeping rounds right before the Answer not counted'
@@ -4372,7 +4456,7 @@ function judgementLines(populations: readonly AuditPopulation[]): string[] {
       `- ${population.label}: ${population.offKeyRounds} Off-key round(s), ${population.searchLoopRounds} Search Loop round(s) by the reviewer (${population.mechanicalSearchRounds} by the streak rule, heads included: ${population.searchRoundsAtStreak2} at streak 2 or beyond, ${population.searchRoundsAtStreak3} at 3 or beyond; attempts by search source ${SEARCH_SOURCES.map((source) => `${source} ${population.searchSources[source]}`).join(', ')}; navigate searches by Search URL form ${searchFormsText(population.searchForms)}; ${populationBlockedOrInertText(population.blockedOrInert)}; ${populationUnavailableLandingsText(population.unavailableLandings)}; ${populationConsentWallsText(population.consentWalls)}; ${populationTierEscalationsText(population.tierEscalations)}), ` +
       `${population.inheritedRounds} inherited, ${population.rejectedCheckpoints} rejected Evidence Checkpoint(s), ${population.walledRounds} walled round(s), ${population.notFoundNavigates} navigate(s) landed on a Not-found Page (${population.notFoundOffKey} judged Off-key), ${population.rewrittenComposedAddresses ?? 0} Composed Address(es) rewritten into a site search (${population.rewrittenComposedAddressesOffKey ?? 0} judged Off-key, ${population.rewrittenShownAddresses ?? 'not counted'} to an address the Run was shown), ${population.unseenPhraseRewrites ?? 'not counted'} search(es) ran with an Unseen Phrase unquoted (${population.unseenPhraseRewritesOffKey ?? 0} judged Off-key), ${population.engineRewrites ?? 'not counted'} search(es) ran on the Run Engine in place of another Web Engine (${population.engineRewritesOffKey ?? 0} judged Off-key), ${populationResultPicksText(population)}, ${populationSelectedPassagesText(population)}, ${populationRunMadeUseText(population)}, ${populationContradictionNotesText(population)}, ${population.subagentRounds} Subagent round(s), ` +
       `${population.mergedCheckpoints} merged Evidence Checkpoint(s) (a floor), ${population.heldPageRoundsWithoutProgress} Held Page round(s) without Progress, ${population.bundledCheckpoints} bundled checkpoint round(s), ${population.sameSourceUnsupportedRounds} same-source unsupported round(s), ${subagentCitationsText(population.subagentCitations)}, ${populationSlipsText(population)}, ${delegatedPageCountsText(population.delegatedPageRounds)}, ${populationPastTheEndReadsText(population)}, ${populationBookkeepingBeforeAnswerText(population)}, ${populationAnswerCheckpointsText(population)}, ` +
-      `${population.malformedAnswers} Malformed Answer(s) (${population.answerRetries} retried), ` +
+      `${population.malformedAnswers} Malformed Answer(s) (${population.answerRetries} retried), ${populationOffLanguageAnswersText(population)}, ` +
       `${transportText(population)}, ` +
       `${populationSkipsText(population)}, ${populationCutsText(population)}, ` +
       `${population.askedItemsDeclared} declared Asked Items (${population.askedItemsUnverified} with an unverified standing, ${population.askedItemsShapeFailures} shape failure(s), ${population.askedItemsShapeRetried} retried), ` +
@@ -4406,6 +4490,7 @@ function attemptSection(attempt: AuditAttempt): string[] {
   lines.push(`- Delegated Page rounds: ${delegatedPageRoundsText(mechanical.delegatedPageRounds)}`)
   lines.push(`- Tier shadow: ${tierShadowText(mechanical.tierShadow)}`)
   lines.push(`- Malformed Answers: ${mechanical.malformedAnswers} (${mechanical.answerRetries} retried)`)
+  lines.push(`- Off-language Answers: ${mechanical.offLanguageAnswers ?? 'not counted'}`)
   lines.push(`- Transport Failures: ${transportText(mechanical)}`)
   lines.push(`- Finalization: ${finalizationText(mechanical)}`)
   lines.push(`- Asked Items: ${askedItemsText(mechanical.askedItems)}`)

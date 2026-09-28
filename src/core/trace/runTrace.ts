@@ -28,6 +28,7 @@ import type { DecisionAnswer, DecisionThresholds, DecisionUnavailableReason } fr
 import type { ReasoningEffort, TokenUsage } from '../ports/llm'
 import type { ObservationProducer } from '../session/observationLedger'
 import type { FinalizationCause } from '../session/runJournal'
+import type { OffLanguageFinding } from '../agent/answerLanguage'
 import type { SessionEvidenceCounts } from '../session/sessionEvidence'
 import type { SessionEndReason } from '../session/sessionRuntime'
 import type { RunId, SessionGeneration, SessionId } from '../session/sessionIdentity'
@@ -48,8 +49,10 @@ import type { VisionRunTraceRecord } from './visionTrace'
  * trace cannot say.
  * 6 (#288, ADR 0072): an Answer with no `answer_checkpoints` record
  * carried no Answer Checkpoints, which a version-5 trace cannot say.
+ * 7 (#286, ADR 0034): a Run with no `off_language_answer` record met no
+ * Off-language Answer, which a version-6 trace cannot say.
  */
-export const RUN_TRACE_VERSION = 6
+export const RUN_TRACE_VERSION = 7
 
 /** How much of a graded observation's retained text a record keeps. */
 export const TRACE_PAYLOAD_HEAD_CHARS = 500
@@ -341,9 +344,11 @@ export interface MalformedAnswerEvent {
 /**
  * How the round that carried an Answer Retry resolved (#245): an Answer on
  * contract, another Malformed Answer, a prose Answer, a Tool Round, or a
- * round that returned no turn.
+ * round that returned no turn. An Answer of any shape that was an
+ * Off-language Answer is `off_language` (#286), in the orchestrator loop
+ * only: a Subagent Report is not judged.
  */
-export type AnswerRetryOutcome = 'on_contract' | 'malformed' | 'prose' | 'tool_calls' | 'round_failed'
+export type AnswerRetryOutcome = 'on_contract' | 'malformed' | 'prose' | 'tool_calls' | 'round_failed' | 'off_language'
 
 /** One Answer Retry, written when the round that carried it resolves (#245). */
 export interface AnswerRetryEvent {
@@ -352,6 +357,33 @@ export interface AnswerRetryEvent {
   readonly outcome: AnswerRetryOutcome
   /** The delegated Subagent that retried; absent on the Run's own. */
   readonly agentId?: string
+}
+
+/**
+ * One Off-language Answer (#286, ADR 0034): an Answer whose Card or Spoken
+ * Rendering had more than half of its letters outside Latin script. It was
+ * never rendered — an Answer Retry or the Run's deterministic Answer
+ * followed — so this record is the only place its words are kept. Written
+ * at detection, beside a fault, in the orchestrator loop only.
+ */
+export interface OffLanguageAnswerEvent {
+  readonly kind: 'off_language_answer'
+  /** The LLM round that replied, numbered as `llm_round` numbers it. */
+  readonly round: number
+  /** The renderings that failed the rule, the Card first, each with the share it failed at. */
+  readonly renderings: readonly OffLanguageFinding[]
+  /** Whether the Run's one Answer Retry was spent on it; the deterministic Answer stood in when not. */
+  readonly retried: boolean
+  /**
+   * The Finalization Cause the deterministic Answer was built with. Absent
+   * when a retry was spent, and when the phase was still working: that Run
+   * entered no Finalization, so it has no cause.
+   */
+  readonly cause?: FinalizationCause
+  /** The Answer's text as the model wrote it, cut at {@link TRACE_OFF_CONTRACT_TEXT_MAX_CHARS}. */
+  readonly text: string
+  /** Full length in characters before the cut. */
+  readonly chars: number
 }
 
 /** Which model each role was routed to when the Run declared its plan (#191). */
@@ -626,6 +658,7 @@ export type RunTraceEventBody =
   | OffContractReplyEvent
   | MalformedAnswerEvent
   | AnswerRetryEvent
+  | OffLanguageAnswerEvent
   | FailureScreenshotEvent
   | SearchObservationEvent
   | IdentitySlipEvent
