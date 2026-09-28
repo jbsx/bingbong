@@ -1688,7 +1688,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
                 // there fails the round.
                 // A report ahead of the bookkeeping round keeps that round (#256).
                 if (effortEpoch.phase.kind === 'finalizing') reportCollectedThisEntry = true
-                const result = `${completed.formattedReport}\n\n${injectedReportDirective(effortEpoch.phase, effortEpoch.bookkeepingRound)}`
+                const result = `${completed.formattedReport}\n\n${injectedReportDirective(effortEpoch.phase)}`
                 const outcome: ToolResultOutcome = { ok: true, result }
                 yield { type: 'tool_call', callId: call.id, name: call.name, args: call.args, at: clock.now() }
                 const observed = observe({ producer: 'subagent_report', ok: true, payload: completed.formattedReport })

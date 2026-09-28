@@ -821,12 +821,13 @@ describe('the bookkeeping round, skipped when there is nothing new to record (#2
     await h.enterFinalization()
     await settle(() => h.requests.length >= 3)
 
-    // No bookkeeping request: the next one is the reserved Answer, told that
-    // no round came and where an unrecorded finding goes.
+    // No bookkeeping request: the next one is the reserved Answer, told
+    // where an unrecorded finding goes.
     expect(h.requests[2]).toMatchObject({
       answerOnly: true,
-      finalizeInstruction: requestFinalizeInstruction({ kind: 'answer_only', cause: 'deadline_reached' }, 'skipped'),
+      finalizeInstruction: requestFinalizeInstruction({ kind: 'answer_only', cause: 'deadline_reached' }),
     })
+    expect(h.requests[2]!.finalizeInstruction).toMatch(/goes in its "checkpoints"/)
     // Bookkeeping's share flows to the Answer: the whole allowance, not the
     // twenty seconds it is protected, and not what a spent round would leave.
     h.clock.advance(FINALIZATION_ALLOWANCE_MS - 1)
@@ -853,8 +854,8 @@ describe('the bookkeeping round, skipped when there is nothing new to record (#2
     expect(h.requests).toHaveLength(4)
     expect(h.requests[2]).not.toHaveProperty('answerOnly')
     expect(h.requests[2]!.finalizeInstruction).toBe(finalizeInstruction('deadline_reached'))
-    expect(h.requests[2]!.finalizeInstruction).toMatch(/at most two Evidence Checkpoints/)
-    // The round ran, so the Answer after it is worded as it always was.
+    expect(h.requests[2]!.finalizeInstruction).toMatch(/at most two Evidence Checkpoints in this round/)
+    // The round ran, and the Answer after it reads as one after a skipped round does (#292).
     expect(h.requests[3]).toMatchObject({
       answerOnly: true,
       finalizeInstruction: requestFinalizeInstruction({ kind: 'answer_only', cause: 'deadline_reached' }),

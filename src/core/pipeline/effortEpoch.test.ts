@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { FakeClock } from '../testing/doubles'
 import { FORBIDDEN_ENDINGS, RESOURCE_ACCOUNTING } from '../testing/stoppingPolicy'
 import {
+  ANSWER_CHECKPOINTS_SENTENCE,
   ANSWER_ONLY_REPORT_DIRECTIVE,
   budgetWarningCrossed,
   budgetWarningMessage,
@@ -15,7 +16,6 @@ import {
   HARD_TOOL_ROUND_CEILING,
   injectedReportDirective,
   RUN_PLAN_REASONING_EFFORT,
-  SKIPPED_BOOKKEEPING_ANSWER_DIRECTIVE,
   SUBAGENT_REASONING_EFFORT,
   TIER_ACTIVE_WORK_DEADLINES_MS,
   LLM_REQUEST_TIMEOUT_MS,
@@ -1897,8 +1897,9 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
       expect(kept).toBe(finalizeInstruction('no_progress', undefined, 'kept'))
       expect(kept).toContain(`${NO_PROGRESS} — ${MARK}`)
       expect(kept).toMatch(/Collection and Bookkeeping remain open for one tool round/)
-      expect(kept).toMatch(/at most two Evidence Checkpoints/)
-      expect(injectedReportDirective({ kind: 'finalizing', cause: 'no_progress' })).toMatch(/at most two/)
+      // The limit is the round's, never the Session's (#292).
+      expect(kept).toMatch(/at most two Evidence Checkpoints in this round/)
+      expect(injectedReportDirective({ kind: 'finalizing', cause: 'no_progress' })).toMatch(/at most two checkpoints in this round/)
     })
 
     it('words every carrier of a skipped round for the Answer that comes next, and where the unrecorded findings go', () => {
@@ -1907,17 +1908,72 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
       expect(skipped.startsWith(`${NO_PROGRESS} — ${MARK}`)).toBe(true)
       expect(skipped).toMatch(/no bookkeeping round follows/)
       expect(skipped).not.toMatch(/Bookkeeping remain open/)
-      expect(skipped).toMatch(/memory_patch and evidence_ids/)
+      expect(skipped.endsWith(ANSWER_CHECKPOINTS_SENTENCE)).toBe(true)
 
       // The closed tool's refusal, the request, and an injected report.
       expect(finalizationToolRefusal('no_progress', undefined, 'skipped')).toBe(`Not executed — ${skipped}`)
       expect(requestFinalizeInstruction({ kind: 'finalizing', cause: 'no_progress' }, 'skipped')).toBe(skipped)
+      // The Answer-only text is one text, whether the round was kept or skipped (#292).
       const answerOnly = requestFinalizeInstruction({ kind: 'answer_only', cause: 'no_progress' }, 'skipped')
-      expect(answerOnly).toBe(`${NO_PROGRESS}. ${SKIPPED_BOOKKEEPING_ANSWER_DIRECTIVE}`)
-      expect(answerOnly).toMatch(/memory_patch and evidence_ids/)
-      expect(injectedReportDirective({ kind: 'answer_only', cause: 'no_progress' }, 'skipped')).toBe(answerOnly)
-      // A round that ran leaves the Answer-only wording as it was.
-      expect(requestFinalizeInstruction({ kind: 'answer_only', cause: 'no_progress' })).toBe(`${NO_PROGRESS}. ${ANSWER_ONLY_REPORT_DIRECTIVE}`)
+      expect(answerOnly).toBe(`${NO_PROGRESS}. ${ANSWER_ONLY_REPORT_DIRECTIVE}`)
+      expect(requestFinalizeInstruction({ kind: 'answer_only', cause: 'no_progress' })).toBe(answerOnly)
+      expect(injectedReportDirective({ kind: 'answer_only', cause: 'no_progress' })).toBe(answerOnly)
+    })
+  })
+
+  // Issue #292, dated notes on ADR 0056 and ADR 0072: a finding that never
+  // became a checkpoint goes in the Answer's "checkpoints", the field #288
+  // built for it. Each text is pinned whole — the model reads the words.
+  describe('the Finalization texts name the Answer’s checkpoints (#292)', () => {
+    const SENTENCE = 'What you found and have not recorded goes in its "checkpoints": [] when everything is already recorded.'
+    const KEPT =
+      'Acquisition tools (browser, vision, media, and delegation) and ask_user are closed; Collection and Bookkeeping ' +
+      'remain open for one tool round. Record at most two Evidence Checkpoints in this round, for the findings that ' +
+      'matter most. Finalize now: reply with your final answer JSON and state honestly what was and was not completed.'
+    const SKIPPED =
+      'Acquisition tools (browser, vision, media, and delegation) and ask_user are closed, and no bookkeeping round ' +
+      'follows: nothing new has been acquired to record. Finalize now: reply with your final answer JSON and state ' +
+      'honestly what was and was not completed. What you found and have not recorded goes in its "checkpoints": [] ' +
+      'when everything is already recorded.'
+    const ANSWER_ONLY =
+      'No tool round remains — every tool is closed. Reply with your final answer JSON and state honestly what was ' +
+      'and was not completed. What you found and have not recorded goes in its "checkpoints": [] when everything is ' +
+      'already recorded.'
+    const REPORT =
+      'Acquisition tools (browser, vision, media, and delegation) and ask_user are closed; Collection and Bookkeeping ' +
+      'are open for one more tool round. Record an Evidence Checkpoint for what in this report matters most, at most ' +
+      'two checkpoints in this round, then reply with your final answer JSON and state honestly what was and was not ' +
+      'completed.'
+
+    it('reads each of the four texts word for word', () => {
+      expect(finalizeInstruction(null)).toBe(KEPT)
+      expect(finalizeInstruction(null, undefined, 'skipped')).toBe(SKIPPED)
+      expect(ANSWER_ONLY_REPORT_DIRECTIVE).toBe(ANSWER_ONLY)
+      expect(FINALIZATION_REPORT_CHECKPOINT_DIRECTIVE).toBe(REPORT)
+    })
+
+    it('says where an unrecorded finding goes in one sentence, last in the texts that carry it', () => {
+      expect(ANSWER_CHECKPOINTS_SENTENCE).toBe(SENTENCE)
+      expect(finalizeInstruction(null, undefined, 'skipped').endsWith(` ${ANSWER_CHECKPOINTS_SENTENCE}`)).toBe(true)
+      expect(ANSWER_ONLY_REPORT_DIRECTIVE.endsWith(` ${ANSWER_CHECKPOINTS_SENTENCE}`)).toBe(true)
+      // A round that is still to come records with its own tools.
+      expect(finalizeInstruction(null)).not.toContain('checkpoints"')
+      expect(FINALIZATION_REPORT_CHECKPOINT_DIRECTIVE).not.toContain('checkpoints"')
+    })
+
+    it('names neither the memory patch nor the evidence ids, in any phase and for either round', () => {
+      const phases = [
+        { kind: 'finalizing', cause: 'no_progress' },
+        { kind: 'answer_only', cause: 'no_progress' },
+      ] as const
+      const texts = phases.flatMap((phase) => [
+        requestFinalizeInstruction(phase, 'kept'),
+        requestFinalizeInstruction(phase, 'skipped'),
+        injectedReportDirective(phase),
+        finalizationToolRefusal(phase.cause, undefined, 'kept'),
+        finalizationToolRefusal(phase.cause, undefined, 'skipped'),
+      ])
+      for (const text of texts) expect(text).not.toMatch(/memory_patch|evidence_ids/)
     })
   })
 
@@ -1948,8 +2004,9 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
     }
     const CLOSING =
       'Acquisition tools (browser, vision, media, and delegation) and ask_user are closed; Collection and ' +
-      'Bookkeeping remain open for one tool round. Record at most two Evidence Checkpoints, for the findings that ' +
-      'matter most. Finalize now: reply with your final answer JSON and state honestly what was and was not completed.'
+      'Bookkeeping remain open for one tool round. Record at most two Evidence Checkpoints in this round, for the ' +
+      'findings that matter most. Finalize now: reply with your final answer JSON and state honestly what was and ' +
+      'was not completed.'
 
     it('opens on the true reason and closes on the unchanged demand', () => {
       for (const cause of RUN_CAUSES) {
@@ -1990,7 +2047,8 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
       }
       expect(injectedReportDirective({ kind: 'answer_only', cause: 'hard_limit' })).toBe(
         'The run has reached its hard work limit. No tool round remains — every tool is closed. Reply with your ' +
-          'final answer JSON and state honestly what was and was not completed.',
+          'final answer JSON and state honestly what was and was not completed. What you found and have not ' +
+          'recorded goes in its "checkpoints": [] when everything is already recorded.',
       )
     })
 

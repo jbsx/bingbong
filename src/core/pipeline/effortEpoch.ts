@@ -532,25 +532,37 @@ function runFinalizationReason(cause: FinalizationCause | null, detail?: Finaliz
 export type BookkeepingRound = 'kept' | 'skipped'
 
 /**
+ * Where a finding that never became a checkpoint goes once no tool round
+ * is to come (#292, ADR 0056, ADR 0072): the Answer's own `checkpoints`,
+ * the field #288 built for it. One sentence, the same wherever it appears,
+ * and last in its text. It lives with the Finalization texts rather than
+ * in `answerCheckpointGuidance.ts`, so it stands whatever becomes of #291.
+ */
+export const ANSWER_CHECKPOINTS_SENTENCE =
+  'What you found and have not recorded goes in its "checkpoints": [] when everything is already recorded.'
+
+/**
  * What every Finalize Instruction demands while a bookkeeping round is to
  * come, whatever stopped the run. At most two checkpoints (#256, ADR 0056):
  * the round has a ten-second share, and a model that starts a long excerpt
- * bundle inside it returns nothing at all.
+ * bundle inside it returns nothing at all. The limit is said to be the
+ * round's (#292): read as the Session's, it stops a Run that already holds
+ * two checkpoints from recording anything.
  */
 const FINALIZE_INSTRUCTION_DEMAND =
   'Acquisition tools (browser, vision, media, and delegation) and ask_user are closed; Collection and Bookkeeping ' +
-  'remain open for one tool round. Record at most two Evidence Checkpoints, for the findings that matter most. ' +
-  'Finalize now: reply with your final answer JSON and state honestly what was and was not completed.'
+  'remain open for one tool round. Record at most two Evidence Checkpoints in this round, for the findings that ' +
+  'matter most. Finalize now: reply with your final answer JSON and state honestly what was and was not completed.'
 
 /**
  * What it demands when the bookkeeping round is skipped (#256, ADR 0056):
  * the Answer is next, and a finding that never became a checkpoint still has
- * somewhere to go — the Answer's own memory patch and evidence ids.
+ * somewhere to go — the Answer's own checkpoints (#292).
  */
 const SKIPPED_BOOKKEEPING_DEMAND =
   'Acquisition tools (browser, vision, media, and delegation) and ask_user are closed, and no bookkeeping round ' +
-  'follows: nothing new has been acquired to record. Finalize now: reply with your final answer JSON, put any ' +
-  'finding you did not record in its memory_patch and evidence_ids, and state honestly what was and was not completed.'
+  'follows: nothing new has been acquired to record. Finalize now: reply with your final answer JSON and state ' +
+  `honestly what was and was not completed. ${ANSWER_CHECKPOINTS_SENTENCE}`
 
 /**
  * The Finalize Instruction (#117/#201, ADR 0027): rides every tool result
@@ -604,25 +616,20 @@ export function finalizationToolRefusal(
 export const FINALIZATION_REPORT_CHECKPOINT_DIRECTIVE =
   'Acquisition tools (browser, vision, media, and delegation) and ask_user are closed; Collection and Bookkeeping ' +
   'are open for one more tool round. Record an Evidence Checkpoint for what in this report matters most, at most ' +
-  'two checkpoints in all, then reply with your final answer JSON and state honestly what was and was not completed.'
+  'two checkpoints in this round, then reply with your final answer JSON and state honestly what was and was not ' +
+  'completed.'
 
 /**
  * What the same report says once the run is Answer-only (#200, ADR 0036):
- * the bookkeeping round is behind it, so it claims nothing about
- * Bookkeeping — a tool call from here is a failed round, not a checkpoint.
+ * no tool round is to come, so it claims nothing about Bookkeeping — a tool
+ * call from here is a failed round, not a checkpoint. One text, whether the
+ * bookkeeping round was kept or skipped (#292): a round the allowance cut
+ * leaves findings unrecorded as surely as one that never came, and either
+ * way they go into the Answer's checkpoints or nowhere.
  */
 export const ANSWER_ONLY_REPORT_DIRECTIVE =
   'No tool round remains — every tool is closed. Reply with your final answer JSON and state honestly what was and ' +
-  'was not completed.'
-
-/**
- * The Answer-only wording when the bookkeeping round was skipped (#256, ADR
- * 0056): no tool round came, so a finding the run never checkpointed goes
- * into the Answer's memory patch and evidence ids or nowhere.
- */
-export const SKIPPED_BOOKKEEPING_ANSWER_DIRECTIVE =
-  'No tool round remains — every tool is closed. Reply with your final answer JSON, put any finding you did not ' +
-  'record in its memory_patch and evidence_ids, and state honestly what was and was not completed.'
+  `was not completed. ${ANSWER_CHECKPOINTS_SENTENCE}`
 
 /** Why a Finalization entry skipped its bookkeeping round, as the Run Trace records it (#256, ADR 0056). */
 export const BOOKKEEPING_SKIPPED_REASON =
@@ -635,11 +642,6 @@ export const BOOKKEEPING_KEPT_REASON =
 /** Why one kept it for a report (#256, ADR 0035): what the Report Grace rescued is what the round is for. */
 export const BOOKKEEPING_KEPT_FOR_REPORT_REASON = 'a Subagent Report was collected ahead of the bookkeeping round'
 
-/** The Answer-only directive for how the bookkeeping round went (#256). */
-function answerOnlyDirective(bookkeeping: BookkeepingRound): string {
-  return bookkeeping === 'skipped' ? SKIPPED_BOOKKEEPING_ANSWER_DIRECTIVE : ANSWER_ONLY_REPORT_DIRECTIVE
-}
-
 /**
  * The directive an injected worker report ends with, chosen by the phase
  * the next model round will run under (#200, ADR 0036): a report must
@@ -648,11 +650,12 @@ function answerOnlyDirective(bookkeeping: BookkeepingRound): string {
  * positive case; every other phase a report can reach is Answer-only.
  * It opens on the phase's cause (#201), so a report injected mid-round
  * gives the same reason the round's refusals already gave. A report that
- * reaches a `finalizing` phase keeps its round (#256), so only the
- * Answer-only wording depends on whether the round was skipped.
+ * reaches a `finalizing` phase keeps its round (#256), and the Answer-only
+ * wording is one text (#292), so nothing here depends on whether the round
+ * was skipped.
  */
-export function injectedReportDirective(phase: EffortPhase, bookkeeping: BookkeepingRound = 'kept'): string {
-  return openedOnReason(phase, phase.kind === 'finalizing' ? FINALIZATION_REPORT_CHECKPOINT_DIRECTIVE : answerOnlyDirective(bookkeeping))
+export function injectedReportDirective(phase: EffortPhase): string {
+  return openedOnReason(phase, phase.kind === 'finalizing' ? FINALIZATION_REPORT_CHECKPOINT_DIRECTIVE : ANSWER_ONLY_REPORT_DIRECTIVE)
 }
 
 /**
@@ -679,14 +682,15 @@ function openedOnReason(phase: EffortPhase, demand: string): string {
  * that never happened, so the request states it directly instead.
  *
  * The bookkeeping round is told Bookkeeping is still open; the reserved
- * Answer round, that no tool round remains — and, when the bookkeeping
- * round was skipped (#256), where its unrecorded findings go. Null while
- * the run is working: only a Finalization round has this to say.
+ * Answer round, that no tool round remains and where its unrecorded
+ * findings go — the same text whether the bookkeeping round was kept or
+ * skipped (#292), so `bookkeeping` words the `finalizing` phase alone.
+ * Null while the run is working: only a Finalization round has this to say.
  */
 export function requestFinalizeInstruction(phase: EffortPhase, bookkeeping: BookkeepingRound = 'kept'): string | null {
   if (phase.kind === 'working') return null
   if (phase.kind === 'finalizing') return finalizeInstruction(phase.cause, phase.detail, bookkeeping)
-  return openedOnReason(phase, answerOnlyDirective(bookkeeping))
+  return openedOnReason(phase, ANSWER_ONLY_REPORT_DIRECTIVE)
 }
 
 /**

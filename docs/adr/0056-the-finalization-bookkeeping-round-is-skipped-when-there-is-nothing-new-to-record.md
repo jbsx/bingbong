@@ -17,7 +17,10 @@ premise above that most stopped Runs have checkpointed everything did not
 hold: 8 of 11 entries kept the round.
 
 Note (2026-09-28, #292): the round stays and the texts change. Grilled the
-same day with every recommendation taken. Not yet built.
+same day with every recommendation taken, and built the same day as
+decided: the sentence is `ANSWER_CHECKPOINTS_SENTENCE` in `effortEpoch.ts`,
+and an injected Subagent Report's directive no longer takes whether the
+round was skipped, since neither of its texts depends on it.
 
 - **The round stays.** Over every trace on disk that records the entry, 104
   Finalization entries in 16 families, 57 kept the round and 47 skipped it.
