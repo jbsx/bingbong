@@ -856,15 +856,20 @@ _Avoid_: display text, answer card
 
 **Identity Slip**:
 An internal identity — a Memory Entry id or a Run Observation id — that the
-model wrote into a user-facing rendering of an Answer, the Card or the Spoken
-Rendering, against the contract that the user never sees one. The rendering
-is repaired at the display boundary and the slip is recorded. In the Card an
-id that names a Session Evidence Observation becomes a link to that
-Observation's source, or a fixed phrase when the Observation is the user's
-own words; in the Spoken Rendering, and for an id the boundary cannot
-resolve, the token is removed. A slip never changes the Answer's declared
-support. A Subagent Report is model-facing, not a rendering, so it carries no
-slip and is not repaired.
+model wrote into a user-facing rendering of an Answer, against the contract
+that the user never sees one. The renderings are the Card, the Spoken
+Rendering, and the Asked Items the Card lists, each item's name and its
+statement. The rendering is repaired at the display boundary and the slip is
+recorded. In the Card an id that names a Session Evidence Observation becomes
+a link to that Observation's source, or a fixed phrase when the Observation
+is the user's own words; in the Spoken Rendering, in an Asked Item, and for
+an id the boundary cannot resolve, the token is removed, a range of ids and
+the brackets a removal leaves empty with it. A slip never changes the
+Answer's declared support. A Subagent Report is model-facing, not a
+rendering, so it carries no slip and is not repaired; the Subagent
+Announcement made from one is repaired by removal and records no slip. The
+account of a Run's work, its reasoning and its tool calls, is no rendering of
+an Answer: an id there is how the work is read, and is left as written.
 _Avoid_: id leak, hole, scrub, hollowed answer, scrubbed id
 
 **Exhibit**:
@@ -1283,7 +1288,15 @@ never quoted as page text: the report is the Subagent's words, so a citation
 of one carries no excerpt. A Subagent may read only the Memory Entries
 selected for its task and cannot mutate Session Working Memory directly. Its
 text is model-facing and may name Memory Entries by id; the display boundary
-that repairs an Identity Slip does not reach it.
+that repairs an Identity Slip does not reach it, wherever the report is shown
+whole.
+
+**Subagent Announcement**:
+The one line the user hears and reads when a Subagent finishes or fails: the
+product's own opening, then the first sentence of the Subagent Report or of
+the failure. It is a rendering for the user, not the report, so an internal
+identity in it is removed. A cancelled Subagent is not announced.
+_Avoid_: completion message, agent notification
 
 **Delegated Page**:
 A page a Browse Subagent of the current Run was sent to or has landed on, by

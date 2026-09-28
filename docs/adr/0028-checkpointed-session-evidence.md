@@ -25,6 +25,27 @@ loss, and the count now says whether the model slips often enough to pay it.
 The Subagent Report is model-facing and outside the boundary. The prompt,
 which already forbids the id twice, is untouched.
 
+Note of 2026-09-28 (#300): the boundary of #246 reached the Card's text and
+the Spoken Rendering and nothing else the Answer renders. The Asked Items
+ride the same display and were printed as written: in 7 of the 339 retained
+Cards that list them a statement carried an id, 31 ids in all, none recorded
+(`fix-263-264-2`'s Voyager initial ends three statements on `(memory-5)`,
+`(memory-4)` and `(memory-3, memory-2)` under a Card text with none). An
+Asked Item's name and statement are now renderings of the Answer. The id is
+removed, never substituted: a statement is plain text, and the Answer
+Evidence Summary beside it already shows the sources. Removal takes a range
+(`memory-1..6`) whole and the brackets it leaves empty with it. Each is
+recorded as a slip on a surface of its own and counted with the others,
+forward from the Run Trace version that adds it; the seven are not
+recounted. The Subagent Announcement is a rendering too, made from a
+model-facing report, and is repaired by removal: none of the 54 retained
+carried an id, but a Subagent is shown Memory Entry ids and told to cite
+them. It records no slip, since it is spoken outside any Run's trace. Three
+things stay outside on purpose. The report shown whole on the Subagent's
+card is the model-facing text. The account of a Run's work, its reasoning
+and tool calls, is read by its ids. And the streamed Answer is never drawn:
+the Feed shows that an Answer is being written, not its text.
+
 Note of 2026-09-27 (#284): [ADR 0071](0071-two-observations-from-one-address-are-not-presumed-to-disagree.md)
 reverses the contradiction handling below. Two Observations from one address
 are not presumed to disagree, no pair is retained, and the Memory Compaction
