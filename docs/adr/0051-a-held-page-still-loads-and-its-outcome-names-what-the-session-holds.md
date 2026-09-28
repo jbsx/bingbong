@@ -172,6 +172,16 @@ Read from the code and the captures, that is not what was lost:
   store's rule is unchanged and keeps the query whole; the list is the
   lookup's own and differs from the fingerprint's, which has `msclkid` and
   neither `ref` nor `ref_src`.
+- 2026-09-28 (#307, grilled): the Round Audit reads an accepted
+  checkpoint's address from the Observation that grounded it, and from the
+  call's arguments where the record names none. It holds what the Session
+  holds, so a page stored under a referral parameter is a Held Page at that
+  address and not at the cited one. The audit's own fold is not widened to
+  `ref` and `ref_src`: it keys landings too, and the rules stay four. A
+  rejection has no grounding Observation and keeps the cited address.
+  Nothing new is counted. Measured before the change: of 1,255 accepted
+  checkpoints in 421 retained Run Traces, 1,176 name an observed address
+  and none differs from the cited one, so no retained audit moves.
 
 ## Implementation notes
 
