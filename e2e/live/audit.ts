@@ -55,6 +55,7 @@ import type { EffortTier } from '../../src/core/pipeline/runPlan'
 import { DECISION_THRESHOLDS } from '../../src/core/ports/decisionModel.ts'
 import type { SearchObservation, SearchSignature } from '../../src/core/pipeline/searchLoopRail'
 import { collectedReportIn } from '../../src/core/agent/agentResultsHeader.ts'
+import { CHECKPOINT_TOOL_NAMES } from '../../src/core/pipeline/checkpointTools.ts'
 import {
   isSearchInspection,
   putSomethingNew,
@@ -65,6 +66,7 @@ import {
   searchStreakMoveOf,
   similarQueries,
   type SearchCallKind,
+  type SearchStreakMove,
 } from '../../src/core/pipeline/searchLoopRule.ts'
 import { normalizeUrlInput, parseSearchUrl, SEARCH_URL_FORMS, type SearchUrlForm } from '../../src/core/browser/urlInput.ts'
 import type { TraceRecord } from '../../src/core/trace/runTrace'
@@ -165,7 +167,7 @@ export const ACQUISITION_TOOLS: ReadonlySet<string> = new Set([
   'download_url',
 ])
 export const COLLECTION_TOOLS: ReadonlySet<string> = new Set(['agent_results'])
-export const BOOKKEEPING_TOOLS: ReadonlySet<string> = new Set(['record_evidence', 'record_candidate', 'report_run_plan'])
+export const BOOKKEEPING_TOOLS: ReadonlySet<string> = new Set([...CHECKPOINT_TOOL_NAMES, 'report_run_plan'])
 
 /** How much of a tool result the digest keeps. */
 export const DIGEST_RESULT_HEAD_CHARS = 240
@@ -173,6 +175,10 @@ export const DIGEST_RESULT_HEAD_CHARS = 240
 const CONTRADICTION_NOTE = 'Note: this contradicts earlier Observation'
 /** How much of one string argument the digest keeps. */
 export const DIGEST_ARG_CHARS = 200
+/** How much of a Result Pick's label the digest keeps (#294). */
+export const DIGEST_PICK_LABEL_CHARS = 120
+/** How much of a page's title a call's line in the digest keeps. */
+const DIGEST_TITLE_CHARS = 80
 /**
  * The Run Trace version from which a Run records its Identity Slips (#246):
  * a trace below it cannot say whether an Answer slipped, so it reads "not
@@ -318,8 +324,10 @@ export interface AuditCall {
    * landed, read from the Run Trace's field on the result. Where it landed,
    * `url`, `title` and `signature` are the opened page's — the Run settled
    * there. Present only on a pick, so an attempt with none keeps its digest.
+   * The label is the picked link's, as the listing printed it, kept to its
+   * head (#294); absent on an audit written before the digest showed it.
    */
-  readonly resultPick?: Omit<ResultPickStamp, 'label'>
+  readonly resultPick?: Omit<ResultPickStamp, 'label'> & { readonly label?: string }
   /**
    * What a call that acts on no page put in front of the Run, where the
    * result's head cannot say it (#293, note on ADR 0058): the user's `answer`
@@ -2269,35 +2277,44 @@ export interface UnavailableLandingRounds {
   readonly followedBySearch: readonly number[]
 }
 
-/** The calls the wait after an Unavailable Landing looks past: inspection as the rail read it when the counter was written (#262). */
-const LANDING_WAIT_SKIPS: ReadonlySet<string> = new Set(['read_page', 'look', 'scroll'])
+/**
+ * What a written call is to the streak, by the rail's own rule: a search of
+ * the loop, escape, or a hold. A Composed Address rewrite holds whatever
+ * search line an audit written before #293 kept for it.
+ */
+function streakMoveOf(call: AuditCall): SearchStreakMove {
+  const kind = streakKindOf(call)
+  if (kind !== 'rewrite' && call.search !== null) return 'search'
+  return searchStreakMoveOf(kind, escapedOf(call))
+}
 
 /**
  * An attempt's Unavailable Landings over its rounds as audited (#262, ADR
- * 0060): one entry per call, by basis, and of those, the ones whose next call
- * that was not inspection was a search — the move the landing held the
- * streak for. A landing with no call after it was followed by nothing. A
- * checkpoint tool after a landing still ends the wait, as it did before it
- * held the streak (#289): that change was to move the streak counters alone.
- * So was #293: the wait still skips the three inspection tools it always
- * did, ends at a call that acts on no page, and takes a Composed Address
- * rewrite as the search it ran.
+ * 0060): one entry per call, by basis, and of those, the ones followed by a
+ * search — the move the landing held the streak for. The wait after a
+ * landing is read by the rule's own move (#294): it holds on whatever holds
+ * the streak, ends uncounted on escape, and counts when the next move is a
+ * search, so a Composed Address rewrite after a landing holds it, being no
+ * search the model wrote. A landing holds too, so a search counts every
+ * landing it followed. A landing with no search or escape after it was
+ * followed by nothing.
  */
 export function unavailableLandingsOf(rounds: readonly AuditRound[]): UnavailableLandingRounds {
   const status: number[] = []
   const title: number[] = []
   const followedBySearch: number[] = []
-  let pending: number | null = null
+  let pending: number[] = []
   for (const round of rounds) {
     for (const call of round.calls) {
-      if (pending !== null && !(!ranSearch(call) && LANDING_WAIT_SKIPS.has(call.name))) {
-        if (ranSearch(call)) followedBySearch.push(pending)
-        pending = null
+      if (pending.length > 0) {
+        const move = streakMoveOf(call)
+        if (move === 'search') followedBySearch.push(...pending)
+        if (move !== 'hold') pending = []
       }
       if (call.unavailable === undefined) continue
       if (call.unavailable.startsWith('title ')) title.push(round.round)
       else status.push(round.round)
-      pending = round.round
+      pending.push(round.round)
     }
   }
   return { status, title, followedBySearch }
@@ -2609,6 +2626,12 @@ function railObservationsOf(records: readonly TraceLine[]): Map<string, SearchOb
   return observations
 }
 
+/** A Result Pick's label as the digest keeps it (#294): its head, and nothing for a link that has none. */
+function pickLabelOf(label: string): { label?: string } {
+  const kept = head(label, DIGEST_PICK_LABEL_CHARS)
+  return kept === null || kept === '' ? {} : { label: kept }
+}
+
 function classifyCall(
   entry: RawRound['calls'][number],
   state: ProgressState,
@@ -2671,7 +2694,7 @@ function classifyCall(
     ...(entry.rewritten !== null ? { rewritten: entry.rewritten.query } : {}),
     ...(entry.unquoted !== null ? { unquoted: entry.unquoted.phrases } : {}),
     ...(entry.engineRewrite !== null ? { engineRewrite: `${entry.engineRewrite.from} → ${entry.engineRewrite.to}` } : {}),
-    ...(entry.resultPick !== null ? { resultPick: { ref: entry.resultPick.ref, href: entry.resultPick.href, opened: entry.resultPick.opened } } : {}),
+    ...(entry.resultPick !== null ? { resultPick: { ref: entry.resultPick.ref, ...pickLabelOf(entry.resultPick.label), href: entry.resultPick.href, opened: entry.resultPick.opened } } : {}),
     ...(delivered !== null ? { delivered } : {}),
     checkpoint: checkpointVerdict,
     notices,
@@ -3567,6 +3590,48 @@ function isAcquisitionRound(round: AuditRound): boolean {
   return round.kind === 'acquisition_with_progress' || round.kind === 'acquisition_without_progress'
 }
 
+/** A search's line in the digest: a rail-sourced search names its signature (#243), a replayed one prints as it always did. */
+function digestSearchLine(call: AuditCall): string {
+  // A Composed Address rewrite (#294): the search that ran, which the model
+  // never wrote. It is no search of the loop (#293), so it carries no streak,
+  // whatever an audit written before that kept for it.
+  if (call.rewritten !== undefined) return `  search: "${call.rewritten}" (rewritten by the app from the address above)`
+  if (call.search === null) return ''
+  const { query, signature, streak, rewords } = call.search
+  return `  search: "${query}" (${signature === undefined ? '' : `${signature}, `}streak ${streak}${rewords === undefined ? '' : rewords ? ', rewords the one before it' : ', new terms'})`
+}
+
+/** A Result Pick's line in the digest (#294): what the app opened of the search's results on the assistant's behalf, or tried to. */
+function digestResultPickLine(call: AuditCall): string {
+  const pick = call.resultPick
+  if (pick === undefined) return ''
+  const link = `[${pick.ref}]${pick.label === undefined ? '' : ` "${pick.label}"`} — ${pick.href}`
+  return pick.opened ? `  result pick: opened ${link}` : `  result pick: tried ${link}, and the open failed`
+}
+
+/**
+ * One call as the digest the reviewer reads prints it: the call, the page it
+ * put in front of the assistant, and the marks the app's own rules left on
+ * it. Here rather than in the script that sends it, so a test reads the
+ * lines the reviewer is shown.
+ */
+export function digestCallLines(call: AuditCall): string[] {
+  return [
+    `- ${call.name}${call.refused ? ' (refused)' : call.ok === null ? ' (no result)' : ''} ${JSON.stringify(call.args)}`,
+    call.url ? `  page: ${call.url}${call.title ? ` — "${head(call.title, DIGEST_TITLE_CHARS)}"` : ''}` : '',
+    // The reviewer is told a landing holds a loop (#294), so it is shown one.
+    call.notFound !== undefined ? `  landing: Not-found page (${call.notFound})` : '',
+    call.unavailable !== undefined ? `  landing: Unavailable Page (${call.unavailable})` : '',
+    digestSearchLine(call),
+    digestResultPickLine(call),
+    call.wall ? `  wall: ${call.wall}` : '',
+    call.checkpoint ? `  checkpoint: ${call.checkpoint.accepted ? 'accepted' : `REJECTED — ${call.checkpoint.outcome}`}` : '',
+    call.progress ? `  progress: ${call.progress.made ? 'yes' : 'no'} — ${call.progress.reason}` : '',
+    call.notices.length > 0 ? `  notices: ${call.notices.join(', ')}` : '',
+    call.resultHead ? `  result: ${call.resultHead}` : '',
+  ].filter((part) => part !== '')
+}
+
 /**
  * What the hash covers: the digest the reviewer is shown, and nothing about
  * who reviewed it. The grade's status is the reviewer's to read too (#244): an
@@ -3924,9 +3989,10 @@ export const WITHHELD_KEY_TEXT = '[withheld: restates Grading Key text]'
 
 /**
  * The attempts as an output may carry them (#235): any call argument, result
- * head or search query that restates Grading Key text is replaced by
- * WITHHELD_KEY_TEXT. A Run that finds a required fact checkpoints it in words
- * the key uses, and those words are the model's, copied into the digest — the
+ * head, search query or Result Pick label or address (#294) that restates Grading Key
+ * text is replaced by WITHHELD_KEY_TEXT. A Run that finds a required fact
+ * checkpoints it in words the key uses, and those words are the model's,
+ * copied into the digest — the
  * write guard would otherwise refuse the whole set for a hunt that succeeded.
  * Only what is written changes: the digest the reviewer judged, and its hash,
  * stay as they were, so no cached judgement re-keys. A withheld head that
@@ -3958,6 +4024,9 @@ export function withholdKeyText(
           resultHead,
           ...(report ? { delivered: 'report' as const } : {}),
           search: call.search === null ? null : { ...call.search, query: guard(call.search.query, texts) },
+          ...(call.resultPick === undefined
+            ? {}
+            : { resultPick: { ...call.resultPick, ...(call.resultPick.label === undefined ? {} : { label: guard(call.resultPick.label, texts) }), href: guard(call.resultPick.href, texts) } }),
         }
       }),
     }))

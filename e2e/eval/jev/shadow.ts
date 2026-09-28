@@ -30,6 +30,7 @@
 import { isPageTextFactLine } from '../../../src/core/browser/pageText.ts'
 import { parseSearchUrl } from '../../../src/core/browser/urlInput.ts'
 import { tierShadowOf } from '../../live/audit.ts'
+import { CHECKPOINT_TOOL_NAMES } from '../../../src/core/pipeline/checkpointTools.ts'
 import type { EffortTier } from '../../../src/core/pipeline/runPlan.ts'
 import { TIER_PICK_QUESTION } from '../../../src/core/pipeline/tierShadow.ts'
 import { normalizeMemoryText } from '../../../src/core/session/workingMemory.ts'
@@ -566,7 +567,7 @@ export function listingResults(result: string, landing: string): Array<{ label: 
 }
 
 /** The steps that only look or record: the model's next move is the first step that is none of these. */
-const PASSIVE_TOOLS: ReadonlySet<string> = new Set(['read_page', 'scroll', 'record_evidence', 'record_candidate', 'look'])
+const PASSIVE_TOOLS: ReadonlySet<string> = new Set(['read_page', 'scroll', 'look', ...CHECKPOINT_TOOL_NAMES])
 
 /** The passive steps that show a new snapshot, renumbering refs. */
 const SNAPSHOT_TOOLS: ReadonlySet<string> = new Set(['read_page', 'scroll', 'look'])

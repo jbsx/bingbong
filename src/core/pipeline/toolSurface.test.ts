@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Tool } from './tool'
 import { ANSWER_CHECKPOINT_GUIDANCE } from './answerCheckpointGuidance'
+import { CHECKPOINT_TOOL_NAMES } from './checkpointTools'
 import { createAskUserTool } from './askUserTools'
 import { createBrowserTools } from './browserTools'
 import { BROWSER_TOOLS } from './blockerGate'
@@ -162,6 +163,12 @@ describe('orchestrator tool surface', () => {
     // Who decided is declared, never inferred from the prose (#208).
     expect(byName.record_candidate!.parameters?.['authority']?.enum).toEqual(['user', 'model'])
     expect(byName.record_candidate!.parameters?.['reason']).toBeDefined()
+  })
+
+  it('holds the checkpoint tool names once, as the tools flagged checkpoint say them (#294)', () => {
+    const flagged = allCatalogs().filter((tool) => tool.checkpoint === true).map((tool) => tool.name)
+    expect(flagged.sort()).toEqual([...CHECKPOINT_TOOL_NAMES].sort())
+    expect(flagged).toHaveLength(2)
   })
 
   it('record_evidence carries the three citation kinds and the volatility declaration (#123)', () => {

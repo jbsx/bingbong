@@ -12,6 +12,7 @@
 // rides that one flag — the grading records here, the reasoning records
 // (#182), and a fault reported with a turn id in hand (#184).
 
+import type { CheckpointToolName } from '../pipeline/checkpointTools'
 import type { PipelineEvent } from '../pipeline/events'
 import type { IdentitySlip } from '../pipeline/answerEvidence'
 import type { SearchSignature } from '../pipeline/searchLoopRail'
@@ -125,7 +126,7 @@ export interface TracedObservation {
  */
 export interface EvidenceCheckpointEvent {
   readonly kind: 'evidence_checkpoint'
-  readonly tool: 'record_evidence' | 'record_candidate'
+  readonly tool: CheckpointToolName
   /** The model's arguments verbatim — never normalized, never trimmed. */
   readonly args: Record<string, unknown>
   /** 'accepted', or the outcome's rejection reason. */
@@ -636,7 +637,7 @@ export interface AnswerCheckpointsEvent {
     /** The entry's position in the Answer's list, from 0. */
     readonly index: number
     /** Absent on an entry that is neither kind. */
-    readonly tool?: 'record_evidence' | 'record_candidate'
+    readonly tool?: CheckpointToolName
     /** The tool's refusal reason, `over_cap`, or `malformed` for an entry of neither kind. */
     readonly reason: string
     /** The Candidate a creation entry made before its decision was refused. */

@@ -8,6 +8,7 @@
 
 import type { ToolCall } from '../ports/llm'
 import type { MemoryEntryId } from '../session/workingMemory'
+import type { CheckpointToolName } from './checkpointTools'
 import { CANDIDATE_NO_SESSION, type CandidateCheckpointOutcome } from './candidateCheckpoint'
 import { EVIDENCE_NO_SESSION, type EvidenceCheckpointOutcome } from './evidenceCheckpoint'
 
@@ -17,7 +18,7 @@ import { EVIDENCE_NO_SESSION, type EvidenceCheckpointOutcome } from './evidenceC
  */
 export const MAX_ANSWER_CHECKPOINTS = 6
 
-export type AnswerCheckpointTool = 'record_evidence' | 'record_candidate'
+export type AnswerCheckpointTool = CheckpointToolName
 
 /** The two tools' graders, as the Run wires them. Absent where the Run has no Session to record into. */
 export interface AnswerCheckpointGraders {

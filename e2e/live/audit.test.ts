@@ -48,6 +48,8 @@ import {
   replaySearchStreaks,
   SEARCH_STREAK_RULE,
   RESULT_OPENED_PREFIX,
+  DIGEST_PICK_LABEL_CHARS,
+  digestCallLines,
   blockedOrInertOf,
   recountUnavailableByTitle,
   unavailableLandingsOf,
@@ -1429,7 +1431,61 @@ describe('Unavailable Landings (#262, ADR 0060)', () => {
     expect(markdown).toContain('2 Unavailable Landing(s) (1 by status, 1 by title), 1 followed by a search')
   })
 
-  it('recounts the committed fix-258-259 audits by the title rule: one landing, pass 2 Voyager round 21, and the streak replays 1, 1, 1, 2 (AC6; #293)', () => {
+  describe('the wait after a landing reads the rule’s own move (#294)', () => {
+    const LANDING = VOYAGER[1]!
+    const SEARCH = VOYAGER[3]!
+    const WALLED_URL = 'https://www.rmg.co.uk/collections'
+    const COMPOSED = 'https://www.nasa.gov/voyager-golden-record'
+    const HELD: Record<string, NonNullable<RoundSpec['calls']>[number]> = {
+      'a checkpoint tool': { name: 'record_evidence', args: { kind: 'web', observation: 'a claim', source_url: SEARCH_20 }, result: 'Session Evidence recorded: memory-1', checkpoint: 'accepted' },
+      'a call that acts on no page': { name: 'spawn_agent', args: { kind: 'browse', task: 'find the release' }, result: 'spawned a-1 [browse]' },
+      'a landing on a Blocker': { name: 'navigate', args: { url: WALLED_URL }, result: `${PAGE('Just a moment...', WALLED_URL, 'wall0003')}\nBLOCKER:challenge www.rmg.co.uk\nA challenge is in the way.` },
+      'a Composed Address rewrite': { name: 'navigate', args: { url: COMPOSED }, result: `Rewritten\n${PAGE('DuckDuckGo', SEARCH_22, 'ddg00003')}`, rewritten: { site: 'nasa.gov', query: 'voyager golden record site:nasa.gov' } },
+      inspection: { name: 'read_page', args: {}, result: READ(OFFLINE_TITLE, OFFLINE_URL, 'off00021') },
+    }
+    const landingsOf = (between: NonNullable<RoundSpec['calls']>, last: RoundSpec) => {
+      const rounds: RoundSpec[] = [VOYAGER[0]!, LANDING, ...between.map((call, index) => ({ round: 3 + index, at: 3_000 + index * 1_000, calls: [call] })), { ...last, round: 3 + between.length, at: 9_000 }]
+      const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(rounds, EXTRA) }))
+      // The written report recounts to what the fresh classification counted.
+      expect(unavailableLandingsOf(mechanical.rounds)).toEqual(mechanical.unavailableLandings)
+      return mechanical.unavailableLandings
+    }
+
+    it.each(Object.keys(HELD))('%s holds the wait, and the search after it counts', (name) => {
+      expect(landingsOf([HELD[name]!], SEARCH)).toEqual({ status: [], title: [2], followedBySearch: [2] })
+    })
+
+    it('holds across every one of them in a row', () => {
+      expect(landingsOf(Object.values(HELD), SEARCH)).toEqual({ status: [], title: [2], followedBySearch: [2] })
+    })
+
+    it('ends uncounted on escape, whatever held before it and whatever search comes after', () => {
+      const opened = { name: 'navigate', args: { url: OTHER_URL }, result: PAGE('Other', OTHER_URL, 'aaaa0007') }
+      expect(landingsOf([], { round: 0, at: 0, calls: [opened] })).toEqual({ status: [], title: [2], followedBySearch: [] })
+      expect(landingsOf([HELD['a checkpoint tool']!, opened], SEARCH)).toEqual({ status: [], title: [2], followedBySearch: [] })
+    })
+
+    it('counts every landing the search followed: a second landing holds the wait of the first', () => {
+      const second = { name: 'navigate', args: { url: SPEC_URL }, result: `${PAGE('Service Unavailable', SPEC_URL, 'err00003')}\nUNAVAILABLE:503 spec.invalid\nadvice`, unavailable: { basis: '503', host: 'spec.invalid' } }
+      expect(landingsOf([second], SEARCH)).toEqual({ status: [3], title: [2], followedBySearch: [2, 3] })
+      const opened = { name: 'navigate', args: { url: OTHER_URL }, result: PAGE('Other', OTHER_URL, 'aaaa0007') }
+      expect(landingsOf([second, opened], SEARCH)).toEqual({ status: [3], title: [2], followedBySearch: [] })
+    })
+
+    it('prints the landing in the digest, since the reviewer is told it holds a loop', () => {
+      const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(VOYAGER, EXTRA) }))
+      expect(digestCallLines(mechanical.rounds[1]!.calls[0]!)).toContain('  landing: Unavailable Page (title web.archive.org)')
+      const notFound = { ...mechanical.rounds[1]!.calls[0]!, unavailable: undefined, notFound: '404 web.archive.org' }
+      expect(digestCallLines(notFound)).toContain('  landing: Not-found page (404 web.archive.org)')
+      expect(digestCallLines(mechanical.rounds[0]!.calls[0]!).filter((line) => line.startsWith('  landing:'))).toEqual([])
+    })
+
+    it('takes a rewrite as no search: a landing followed by a rewrite alone was followed by nothing the model wrote', () => {
+      expect(landingsOf([], { round: 0, at: 0, calls: [HELD['a Composed Address rewrite']!] })).toEqual({ status: [], title: [2], followedBySearch: [] })
+    })
+  })
+
+  it('recounts the committed fix-258-259 audits by the title rule: two landings, both followed by a search, and pass 2 Voyager replays 1, 1, 1, 2 (AC6; #293, #294)', () => {
     type Report = { attempts: { mechanical: { huntId: string; stepId: string; rounds: AuditRound[]; unavailableLandings?: unknown } }[] }
     const found: { pass: number; huntId: string; stepId: string; landings: ReturnType<typeof unavailableLandingsOf> }[] = []
     let voyager: AuditRound[] | null = null
@@ -1443,10 +1499,13 @@ describe('Unavailable Landings (#262, ADR 0060)', () => {
         if (pass === 2 && mechanical.huntId === 'superseded-voyager-interstellar' && mechanical.stepId === 'initial') voyager = recounted
       }
     }
-    // The grill's sweep: the Internet Archive's offline page twice, and only pass 2's was followed by a search.
+    // The grill's sweep: the Internet Archive's offline page twice. Pass 3's
+    // landing shares round 22 with three accepted checkpoints and round 23 is
+    // a search: the wait ended at the first checkpoint before #294 and the
+    // landing read as followed by nothing.
     expect(found).toEqual([
       { pass: 2, huntId: 'superseded-voyager-interstellar', stepId: 'initial', landings: { status: [], title: [21], followedBySearch: [21] } },
-      { pass: 3, huntId: 'superseded-voyager-interstellar', stepId: 'initial', landings: { status: [], title: [22], followedBySearch: [] } },
+      { pass: 3, huntId: 'superseded-voyager-interstellar', stepId: 'initial', landings: { status: [], title: [22], followedBySearch: [22] } },
     ])
     const streaks = voyager!.filter((round) => round.round >= 20 && round.round <= 23).map((round) => round.calls.map((call) => call.search?.streak ?? null))
     // The held landing sits at the streak before it, and so does round 22
@@ -1454,7 +1513,8 @@ describe('Unavailable Landings (#262, ADR 0060)', () => {
     // the model never wrote. 1, (1), (1), 2, where it read 1, (1), 2, 3.
     expect(voyager!.find((round) => round.round === 22)!.calls.map((call) => call.rewritten !== undefined)).toEqual([true])
     expect(streaks).toEqual([[1], [null], [null], [2]])
-    // The landing is still followed by a search: the rewrite ran one.
+    // The landing is still followed by a search: the rewrite in round 22
+    // holds the wait (#294) and round 23 is one the model wrote.
   })
 })
 
@@ -1865,6 +1925,78 @@ describe('Result Picks (#277, ADR 0070)', () => {
 
   it('finds the opened page by the prefix the app writes the Opened line with', () => {
     expect(resultOpenedLine({ ref: 1, label: 'Home', href: RESULT }).startsWith(RESULT_OPENED_PREFIX)).toBe(true)
+  })
+
+  describe('in the digest the reviewer reads (#294)', () => {
+    it('prints the pick on the search’s call, with the label and address of what was opened', () => {
+      const call = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, EXTRA) })).rounds[0]!.calls[0]!
+      expect(call.resultPick).toEqual({ ref: 1, label: 'Home', href: RESULT, opened: true })
+      const lines = digestCallLines(call)
+      expect(lines).toContain('  search: "longitude watch" (streak 1)')
+      expect(lines).toContain(`  result pick: opened [1] "Home" — ${RESULT}`)
+      // The pick follows the search it came from.
+      expect(lines.findIndex((line) => line.startsWith('  result pick:'))).toBe(lines.findIndex((line) => line.startsWith('  search:')) + 1)
+    })
+
+    it('says an open that failed, and prints no pick for a search that has none', () => {
+      const failed: RoundSpec[] = [
+        { round: 1, at: 1_000, calls: [{ name: 'navigate', args: { url: SEARCH('longitude+watch') }, result: `${PAGE('search', SEARCH('longitude+watch'), 'aaaa0001')}\nTried to open [1] "Home" — ${RESULT}: timed out`, resultPick: { ...PICK, opened: false } }] },
+        ROUNDS[1]!,
+      ]
+      const [first, second] = classifyAttempt(inputOf({ traceRecords: traceOf(failed, EXTRA) })).rounds
+      expect(digestCallLines(first!.calls[0]!)).toContain(`  result pick: tried [1] "Home" — ${RESULT}, and the open failed`)
+      expect(digestCallLines(second!.calls[0]!).filter((line) => line.startsWith('  result pick:'))).toEqual([])
+    })
+
+    it('keeps a long label to its head, and prints an audit written before the label by its address', () => {
+      const long: RoundSpec[] = [{ round: 1, at: 1_000, calls: [{ ...ROUNDS[0]!.calls![0]!, resultPick: { ...PICK, label: 'x'.repeat(300) } }] }]
+      const call = classifyAttempt(inputOf({ traceRecords: traceOf(long, EXTRA) })).rounds[0]!.calls[0]!
+      expect(call.resultPick!.label).toBe(`${'x'.repeat(DIGEST_PICK_LABEL_CHARS)}…`)
+      const before = { ...call, resultPick: { ref: 1, href: RESULT, opened: true } }
+      expect(digestCallLines(before)).toContain(`  result pick: opened [1] — ${RESULT}`)
+      // A link with no label, an icon, is printed the same way.
+      const bare: RoundSpec[] = [{ round: 1, at: 1_000, calls: [{ ...ROUNDS[0]!.calls![0]!, resultPick: { ...PICK, label: '' } }] }]
+      expect(classifyAttempt(inputOf({ traceRecords: traceOf(bare, EXTRA) })).rounds[0]!.calls[0]!.resultPick).toEqual({ ref: 1, href: RESULT, opened: true })
+    })
+
+    it('withholds a label that restates Grading Key text from what is written', () => {
+      const keyed: RoundSpec[] = [{ round: 1, at: 1_000, calls: [{ ...ROUNDS[0]!.calls![0]!, resultPick: { ...PICK, label: 'the invented catalogue identifier of the longitude watch is ZAA0037' } }] }]
+      const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(keyed, EXTRA) }))
+      const texts = [{ label: 'required fact', text: 'the invented catalogue identifier of the longitude watch is ZAA0037' }]
+      const guarded = withholdKeyText([{ mechanical, review: null, countsAfterOverrules: mechanical.counts }], () => texts)
+      expect(guarded.attempts[0]!.mechanical.rounds[0]!.calls[0]!.resultPick).toEqual({ ref: 1, label: WITHHELD_KEY_TEXT, href: RESULT, opened: true })
+      expect(guarded.withheld).toBeGreaterThan(0)
+      // And an address that does.
+      const slug = { ...mechanical, rounds: mechanical.rounds.map((round) => ({ ...round, calls: round.calls.map((call) => ({ ...call, resultPick: { ...call.resultPick!, label: 'Home', href: 'https://spec.invalid/the-invented-catalogue-identifier-of-the-longitude-watch-is-ZAA0037' } })) })) }
+      const bySlug = withholdKeyText([{ mechanical: slug, review: null, countsAfterOverrules: mechanical.counts }], () => texts)
+      expect(bySlug.attempts[0]!.mechanical.rounds[0]!.calls[0]!.resultPick).toEqual({ ref: 1, label: 'Home', href: WITHHELD_KEY_TEXT, opened: true })
+    })
+  })
+})
+
+describe('a rewritten search in the digest the reviewer reads (#294)', () => {
+  const COMPOSED = 'https://www.nasa.gov/voyager-golden-record'
+  const SITE_SEARCH = 'https://duckduckgo.com/?q=voyager+record+site%3Anasa.gov'
+  const REWRITE: RoundSpec[] = [
+    { round: 1, at: 1_000, calls: [{ name: 'navigate', args: { url: COMPOSED }, result: `Rewritten\n${PAGE('DuckDuckGo', SITE_SEARCH, 'bbbb0001')}`, rewritten: { site: 'nasa.gov', query: 'voyager record site:nasa.gov' } }] },
+  ]
+
+  it('marks the rewrite on the search’s line: the search that ran, and that the app wrote it', () => {
+    const call = classifyAttempt(inputOf({ traceRecords: traceOf(REWRITE, EXTRA) })).rounds[0]!.calls[0]!
+    expect(call.search).toBeNull()
+    expect(digestCallLines(call).filter((line) => line.startsWith('  search:'))).toEqual(['  search: "voyager record site:nasa.gov" (rewritten by the app from the address above)'])
+  })
+
+  it('marks it once on an audit written while a rewrite was a search of the loop', () => {
+    const call = classifyAttempt(inputOf({ traceRecords: traceOf(REWRITE, EXTRA) })).rounds[0]!.calls[0]!
+    const older = { ...call, search: { query: 'voyager record site:nasa.gov', streak: 2, rewords: false } }
+    expect(digestCallLines(older).filter((line) => line.startsWith('  search:'))).toEqual(['  search: "voyager record site:nasa.gov" (rewritten by the app from the address above)'])
+  })
+
+  it('is the digest the script sends: the reviewer is shown the lines the test reads', () => {
+    const script = readFileSync(SCRIPT, 'utf8')
+    expect(script).toContain('lines.push(...digestCallLines(call))')
+    expect(script).not.toMatch(/`\s+search: /)
   })
 })
 
@@ -2373,6 +2505,14 @@ describe('a set and the aggregate', () => {
     expect(buildAuditAggregate([setOne, setOne], 'x')).toEqual({ ok: false, errors: ['capture set set-1 is named 2 times: one set counts once'] })
   })
 
+  it('refuses a set judged under audit-p4 with one judged under audit-p3: the two define a Search Loop differently (#294)', () => {
+    const p3 = buildAuditSet(provenanceOf({ setId: 'set-p3', reviewerPromptVersion: 'audit-p3' }), [], [])
+    const p4 = buildAuditSet(provenanceOf({ setId: 'set-p4', reviewerPromptVersion: 'audit-p4', createdAt: '2026-09-12T19:00:00.000Z' }), [], [])
+    expect(buildAuditAggregate([p3, p4], 'x')).toEqual({ ok: false, errors: ['audit prompt version differs: set-p3=audit-p3, set-p4=audit-p4'] })
+    // No allowance pools across reviewer prompts.
+    expect(buildAuditAggregate([p3, p4], 'x', { allowDiffers: 'routing' }).ok).toBe(false)
+  })
+
   it('pools sets whose routing differs only when --allow-differs names routing, and says so in the header (#279)', () => {
     const offArm = buildAuditSet(provenanceOf({ setId: 'set-3', roles: ['orchestrator=GLM-5.3', 'decision=unconfigured'], createdAt: '2026-09-12T19:00:00.000Z' }), [], [])
     const refusedArm = buildAuditAggregate([setOne, offArm], 'x')
@@ -2454,7 +2594,7 @@ describe('the committed audit outputs', () => {
       const json = JSON.parse(readFileSync(join(REPORTS_DIR, name.replace(/\.md$/, '.json')), 'utf8')) as { provenance: { reviewerPromptVersion?: string; shared?: { reviewerPromptVersion?: string } } }
       return json.provenance.reviewerPromptVersion ?? json.provenance.shared?.reviewerPromptVersion ?? null
     }
-    // audit-p1 predates the split; every prompt since carries it (audit-p3, #259, changed only the Search Loop definition).
+    // audit-p1 predates the split; every prompt since carries it (audit-p3, #259, and audit-p4, #294, changed only the Search Loop definition).
     const current = files.filter((name) => promptVersionOf(name) !== null && promptVersionOf(name) !== 'audit-p1')
     expect(current.length).toBeGreaterThan(0)
     for (const name of current) {
@@ -2485,6 +2625,56 @@ describe('the CLI', () => {
 
   it('never tells the reviewer a check was not reached (#244)', () => {
     expect(readFileSync(SCRIPT, 'utf8')).not.toMatch(/not reached/)
+  })
+
+  describe('the reviewer prompt, audit-p4 (#294)', () => {
+    const script = readFileSync(SCRIPT, 'utf8')
+    const item1 = script.split('\n').find((line) => line.startsWith('1. Search Loop membership:')) ?? ''
+
+    it('is versioned audit-p4, and says why beside the version', () => {
+      expect(script).toContain("const AUDIT_PROMPT_VERSION = 'audit-p4'")
+      const comment = script.slice(script.indexOf('Bumped by hand'), script.indexOf('const AUDIT_PROMPT_VERSION'))
+      expect(comment).toMatch(/`audit-p4` \(#294\)/)
+      expect(comment).toMatch(/something new/)
+    })
+
+    it('defines a loop as the rule does: it ends only when something new is put in front of the assistant', () => {
+      expect(item1).toContain('consecutive searches with nothing new put in front of the assistant between them')
+      expect(item1).toContain('A loop ends only when something new is put in front of the assistant: a page opened, the user\'s answer to a question, or a Subagent Report.')
+      expect(item1).toContain('Two searches in a row are a loop.')
+    })
+
+    it('names what holds: inspection, a checkpoint, a call that acts on no page, the three landings, and a rewrite', () => {
+      for (const held of [
+        'a page read, a Look or a scroll',
+        'a checkpoint or a Run Plan report',
+        'a call that acts on no page, such as spawning a Subagent, a wait that returned no report, or a question the user did not answer',
+        'a landing on a Not-found page, an Unavailable Page or a wall, each marked on its call',
+        'an address the app rewrote into a search, marked rewritten, which is neither a search of the loop nor an end to it',
+      ]) {
+        expect(item1, held).toContain(held)
+      }
+    })
+
+    it('no longer says the rule counts every successful non-search call as an opening', () => {
+      expect(script).not.toContain('the rule counts every successful non-search call as an opening')
+      expect(script).not.toMatch(/any other successful call that is not a search/)
+    })
+
+    it('says in one sentence what a Result Pick is, and keeps the reviewer both freedoms', () => {
+      expect(item1).toContain('its Result Pick where it has one: a result of that search the app opened on the assistant\'s behalf, with the link\'s label and address')
+      expect(item1).toContain('you may say a marked streak is not one loop where something was in fact opened between its searches')
+      expect(item1).toContain('you may extend a loop across a call the rule took as an opening that put nothing before the assistant')
+      expect(item1).toContain('a Result Pick that opened a link of the site\'s navigation')
+    })
+
+    it('names the marks as the digest prints them', () => {
+      const REWRITE = { name: 'navigate', args: {}, ok: true, refused: false, resultHead: null, url: null, title: null, signature: null, wall: null, rewritten: 'q', checkpoint: null, notices: [], search: null, progress: null }
+      expect(digestCallLines(REWRITE).join('\n')).toContain('rewritten')
+      expect(digestCallLines({ ...REWRITE, rewritten: undefined, resultPick: { ref: 1, label: 'l', href: 'https://spec.invalid/', opened: true } }).join('\n')).toContain('result pick')
+      expect(item1).toContain('marked rewritten')
+      expect(item1).toContain('Result Pick')
+    })
   })
 })
 

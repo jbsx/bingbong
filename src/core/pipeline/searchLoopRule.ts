@@ -1,4 +1,5 @@
 import { looksLikeDomain } from '../browser/urlInput.ts'
+import { CHECKPOINT_TOOL_NAMES } from './checkpointTools.ts'
 import { classifyToolObservation } from './toolObservations.ts'
 
 // Issue #238, ADR 0048: the Search Loop rail's pure rule, apart from the
@@ -108,9 +109,6 @@ const ASK_TOOL = 'ask_user'
 /** The collection of Subagent Reports: it acts on no page, and escapes when it collected one (#293). */
 const COLLECTION_TOOL = 'agent_results'
 
-/** Calls that record an Evidence or a Candidate Checkpoint: accepted, they opened nothing (#289). */
-const SEARCH_CHECKPOINT_TOOLS: ReadonlySet<string> = new Set(['record_evidence', 'record_candidate'])
-
 /**
  * The two halves of the search signature (CONTEXT.md): a navigate to a
  * search URL, or text typed into a search input. Not the surface — the
@@ -206,9 +204,9 @@ export function isSearchInspection(toolName: string): boolean {
   return SEARCH_INSPECTION_TOOLS.has(toolName)
 }
 
-/** A call to a checkpoint tool — observed by the rail, never escape (#289). */
+/** A call to a checkpoint tool — accepted, it opened nothing: observed by the rail, never escape (#289). */
 export function isSearchCheckpoint(toolName: string): boolean {
-  return SEARCH_CHECKPOINT_TOOLS.has(toolName)
+  return CHECKPOINT_TOOL_NAMES.has(toolName)
 }
 
 /**

@@ -6,6 +6,7 @@
 // Evidence Checkpoint, and the correction only teaches the shape.
 
 import { ANSWER_CHECKPOINT_REFUSAL_HINT } from './answerCheckpointGuidance'
+import type { CheckpointToolName } from './checkpointTools'
 
 /** A refused checkpoint, as either tool's outcome carries it. */
 export interface CheckpointRefusal {
@@ -17,7 +18,7 @@ export interface CheckpointRefusal {
  * A refusal in the sentence its class produces. A malformed rejection ends
  * on the call to send, or on a grading line that carries its own full stop.
  */
-export function refusalLine(tool: 'record_evidence' | 'record_candidate', refusal: CheckpointRefusal): string {
+export function refusalLine(tool: CheckpointToolName, refusal: CheckpointRefusal): string {
   return `${tool} rejected (${refusal.reason}): ${refusal.error}${refusal.reason === 'malformed' ? '' : '.'}`
 }
 
@@ -29,7 +30,7 @@ const SESSION_REFUSALS: readonly string[] = ['no_session', 'refused']
  * Answer as the other place the corrected entry may go, which costs no
  * round. Said once, at the end, and not where the Session itself refused.
  */
-export function refusalResult(tool: 'record_evidence' | 'record_candidate', refusal: CheckpointRefusal): string {
+export function refusalResult(tool: CheckpointToolName, refusal: CheckpointRefusal): string {
   const line = refusalLine(tool, refusal)
   return SESSION_REFUSALS.includes(refusal.reason) ? line : `${line}\n${ANSWER_CHECKPOINT_REFUSAL_HINT}`
 }
