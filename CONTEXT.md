@@ -1285,8 +1285,10 @@ _Avoid_: research agent, worker, task runner
 A Subagent's structured return to its orchestrator, carrying findings, evidence,
 and unresolved items. Its findings are cited by source and by Subagent,
 never quoted as page text: the report is the Subagent's words, so a citation
-of one carries no excerpt. A Subagent may read only the Memory Entries
-selected for its task and cannot mutate Session Working Memory directly. Its
+of one carries no excerpt. A finding's source is a page the Subagent held
+content from: a landing on a Blocker, a Not-found Page or an Unavailable
+Page is not one, and a search results page the text was read on is. A
+Subagent may read only the Memory Entries selected for its task and cannot mutate Session Working Memory directly. Its
 text is model-facing and may name Memory Entries by id; the display boundary
 that repairs an Identity Slip does not reach it, wherever the report is shown
 whole.

@@ -46,6 +46,35 @@ card is the model-facing text. The account of a Run's work, its reasoning
 and tool calls, is read by its ids. And the streamed Answer is never drawn:
 the Feed shows that an Answer is being written, not its text.
 
+Note of 2026-09-28 (#301): a Subagent's finding, and the orchestrator's
+citation of it, were grounded on the Subagent having observed the address
+at all. A landing on a challenge wall is an observation that succeeded, so
+the wall counted as the source. Every retained capture that spawned was
+read: 30 attempts, 54 Subagents, 111 findings, 54 citations of which 39 were
+accepted. Of the accepted, 5 state a claim that is not in what the Subagent
+kept from the cited address and 9 more state one in part. Of the findings, 7
+do, and 6 of those name a walled or unread page where the sentence was read
+in a search snippet about it (`baseline-3`'s second Subagent cited
+`forums.raspberrypi.com/viewtopic.php?t=342599`, a "Just a moment..." page,
+for a sentence Bing showed). A finding's source is now a page the Subagent
+held content from. An arrival at a Blocker, a Not-found Page or an
+Unavailable Page does not make the address one, read by the marker the
+Action Outcome already carries and by the latest arrival, as #298 reads it.
+A reference to such an address is taken out of the finding, which is
+dropped only when none is left; a citation of one is refused as a source
+the Subagent did not observe. A search results page is a source like any
+other: the true address of a snippet is the page that showed it. Three
+alternatives were refused. Holding the citation to the addresses the
+findings carry would have refused one citation in 39, and that one was
+true. Matching the Observation's words against the kept text refuses an
+honest paraphrase, which is what #272 removed. An excerpt on this kind was
+removed by #272 on the data. What stays unchecked, and is said rather than
+fixed: a claim is never compared with the page, so a Subagent that names a
+real page it kept only the head of still passes (`fix-250-1`, The Pi Hut),
+and an orchestrator that records two findings under one address still
+passes. The tool's description asks for one finding per citation; nothing
+refuses the other.
+
 Note of 2026-09-27 (#284): [ADR 0071](0071-two-observations-from-one-address-are-not-presumed-to-disagree.md)
 reverses the contradiction handling below. Two Observations from one address
 are not presumed to disagree, no pair is retained, and the Memory Compaction
