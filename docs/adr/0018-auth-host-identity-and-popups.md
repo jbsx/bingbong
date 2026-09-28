@@ -4,6 +4,14 @@
 
 Accepted
 
+Note of 2026-09-28 (#299): the third consequence below no longer holds as
+written. A link that asks for a new window now opens in the pane, in the
+main pane and a Subagent's alike, and only a window a script opens stays
+denied and reported
+([ADR 0073](0073-a-link-that-asks-for-a-new-window-opens-in-the-pane-and-a-window-a-script-opens-stays-denied.md)).
+The Auth Popup is unchanged and stays the main pane's alone, and the wedge
+recorded here is why the follow is a denial and a navigation, never a window.
+
 ## Context
 
 Google (and some other providers) block account sign-in from embedded browser frameworks — since January 2021 by explicit anti-phishing policy, with the "This browser or app may not be secure" wall. Measurements on our Electron 43 pane (diagnostics under Xvfb, Octoverse 2026) showed the UA string was already clean (`Electron/x` stripped), client hints carried no Electron brand, and `navigator.userAgentData` was honest Chromium — yet two tells remained: the UA carried the **unreduced full build number** (`Chrome/150.0.7871.224`; real desktop Chromium freezes to `150.0.0.0`) while the brand set said Chromium-not-Chrome. No real browser produces that combination. A second independent blocker: sign-in flows often require their `window.open` popup to exist (postMessage back to the opener), and our popup policy denied everything.

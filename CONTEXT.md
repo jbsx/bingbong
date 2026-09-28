@@ -984,8 +984,17 @@ _Avoid_: trusted site, Google host
 **Auth Popup**:
 A sign-in flow's child window, opened by Bing Bong itself on the browse
 profile. While one is open, page actions act on it; closing it returns them
-to the pane. Popups to non-Auth-Host targets stay denied and reported.
+to the pane. It is the only window a page is ever given.
 _Avoid_: login window, OAuth popup
+
+**New-window Link**:
+A link whose click asks the browser for a new window. It opens in the pane
+it was clicked in, replacing the page that held it, and its Action Outcome
+says the link asked for a new window. The rule is the same for the model's
+click, a Subagent's and the user's own. A window a script opens that is not
+the clicked link's address is a popup: denied, and its address reported
+whole.
+_Avoid_: popup (for the link), new tab, blank link
 
 **Browser State**:
 The visible page, navigation state, media state, and transient tabs used during
@@ -1165,7 +1174,8 @@ _Avoid_: overlay error, intercepted click, blocked by overlay (as a category)
 **Composed Address**:
 A URL the model navigates to that it was not shown this Run — not an href in a
 result it read, not a page the Run landed on, not a source in Session
-Evidence. An Offered Address is any of those three, and an href is offered
+Evidence, not the address of a popup the Run was told was denied. An Offered
+Address is any of those four, and an href is offered
 whole: the address the link carries, not the shortened form a snapshot may
 print it in. A site allows one
 Not-found Landing by a Composed Address per Run; after it, a Composed Address
