@@ -1193,6 +1193,10 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
     // seam asks is one `decision` record, numbered by the LLM round whose
     // Tool Round asked it.
     const decision = deps.decision?.() ?? null
+    // The LLM round in flight or last closed, numbered as `llm_round`
+    // numbers it. Counted by the loop itself (#302), not read off the
+    // round's record: a Run that writes no Run Trace has rounds too, and
+    // the fault that names one must not say round 0.
     let llmRound = 0
     const writeDecision = (event: DecisionEvent): void => traceRun?.(() => ({ turnId, ...event }))
     // The off_contract_reply records (#198): one per reserved Answer round
@@ -1878,7 +1882,6 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             // The request is built before any attempt can close, so this
             // is the llmRounds gate restated, never a missing shape.
             if (sentRound === undefined) return
-            llmRound = closed.round
             writeLlmRound?.({ ...closed, role: 'orchestrator', ...sentRound })
           }
           // Whether this round is the reserved Answer round, read once as
@@ -1903,6 +1906,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           let roundAnswerRetryOutcome: AnswerRetryOutcome = 'round_failed'
           // The renderings of this round's Answer that are off-language (#286).
           let roundOffLanguage: readonly OffLanguageFinding[] = []
+          llmRound += 1
           try {
             const request: LlmRequest = {
               command,

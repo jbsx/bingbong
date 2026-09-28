@@ -98,6 +98,12 @@ Note of 2026-09-28 (#286, built): what building it settled.
 - **The record keeps the Answer's text**, cut as an Off-contract Reply's is,
   since nothing else does.
 
+Note of 2026-09-28 (#302): the fault names the real round. The note above
+says it names round 0 when nothing is tracing; that was a defect, not a
+decision. The loop now counts its own LLM rounds, whether or not a Run Trace
+is written, and the count is the one the `llm_round` record carries. The
+fault and the record name the same round, and neither says 0.
+
 ## Context
 
 The Answer contract is JSON with `speak` and `display`. The parser tries the

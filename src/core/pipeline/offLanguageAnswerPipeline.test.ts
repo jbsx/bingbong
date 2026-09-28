@@ -56,7 +56,7 @@ const plan = (effortTier: 'direct_action' | 'lookup', askedItems?: readonly stri
 
 const HAN = /\p{Script=Han}/u
 
-async function runScript(script: ScriptedTurn[]) {
+async function runScript(script: ScriptedTurn[], options: { trace?: boolean } = {}) {
   const llm = new ScriptedLlm(script)
   const traced: RunTraceEvent[] = []
   const faults: FaultReport[] = []
@@ -78,7 +78,7 @@ async function runScript(script: ScriptedTurn[]) {
       committed.push({ outcome, note, stop })
       return 'committed'
     },
-    traceRun: (build) => traced.push(build()),
+    ...(options.trace === false ? {} : { traceRun: (build: () => RunTraceEvent) => traced.push(build()) }),
   })) {
     events.push(withoutTurnId(raw))
   }
@@ -147,6 +147,16 @@ describe('an Off-language Answer in the reserved Answer round (#286)', () => {
     ])
     expect(run.faults).toMatchObject([{ turnId: 'turn-lang', message: expect.stringContaining('Off-language Answer') }])
     expect(run.faults[0]?.message).toContain('budget_exhausted')
+  })
+
+  it('names the round in the fault as the record does, whether or not a Run Trace is written (#302)', async () => {
+    const traced = await runScript(reserved(CHINESE))
+    const untraced = await runScript(reserved(CHINESE), { trace: false })
+
+    expect(untraced.records).toEqual([])
+    expect(untraced.faults).toHaveLength(1)
+    expect(untraced.faults[0]?.message).toMatch(new RegExp(`^round ${untraced.llm.requests.length} replied`))
+    expect(untraced.faults[0]?.message).toBe(traced.faults[0]?.message)
   })
 
   it('commits the failed Run with its cause and the failure, and nothing of the Answer', async () => {
@@ -227,6 +237,12 @@ describe('an Off-language Answer in an ordinary round (#286)', () => {
     expect(JSON.stringify([run.events, run.records, run.committed, run.faults])).not.toContain('hard_limit')
     expect(run.faults).toHaveLength(2)
     expect(run.faults[1]?.message).toContain('no Answer Retry left')
+  })
+
+  it('numbers the Answer and its retried reply by their own rounds with no Run Trace written (#302)', async () => {
+    const run = await runScript([plan('lookup'), CHINESE, CHINESE], { trace: false })
+
+    expect(run.faults.map((fault) => /^round \d+/.exec(fault.message)?.[0])).toEqual(['round 2', 'round 3'])
   })
 
   it('lets the deterministic Answer stand in when a Malformed Answer already spent the retry', async () => {
