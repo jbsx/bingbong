@@ -5,6 +5,35 @@
 // checkpoint's evaluate step, so a malformed call remains a rejected
 // Evidence Checkpoint, and the correction only teaches the shape.
 
+import { ANSWER_CHECKPOINT_REFUSAL_HINT } from './answerCheckpointGuidance'
+
+/** A refused checkpoint, as either tool's outcome carries it. */
+export interface CheckpointRefusal {
+  readonly reason: string
+  readonly error: string
+}
+
+/**
+ * A refusal in the sentence its class produces. A malformed rejection ends
+ * on the call to send, or on a grading line that carries its own full stop.
+ */
+export function refusalLine(tool: 'record_evidence' | 'record_candidate', refusal: CheckpointRefusal): string {
+  return `${tool} rejected (${refusal.reason}): ${refusal.error}${refusal.reason === 'malformed' ? '' : '.'}`
+}
+
+/** The refusals no corrected entry answers: the Answer's entry would meet the same one. */
+const SESSION_REFUSALS: readonly string[] = ['no_session', 'refused']
+
+/**
+ * The tool result of a refused checkpoint (#291): its refusal, then the
+ * Answer as the other place the corrected entry may go, which costs no
+ * round. Said once, at the end, and not where the Session itself refused.
+ */
+export function refusalResult(tool: 'record_evidence' | 'record_candidate', refusal: CheckpointRefusal): string {
+  const line = refusalLine(tool, refusal)
+  return SESSION_REFUSALS.includes(refusal.reason) ? line : `${line}\n${ANSWER_CHECKPOINT_REFUSAL_HINT}`
+}
+
 /** One shape defect: the field, and what is wrong with it. */
 export interface ShapeDefect {
   readonly field: string

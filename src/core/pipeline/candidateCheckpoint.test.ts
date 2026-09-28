@@ -3,7 +3,8 @@ import type { ToolCall } from '../ports/llm'
 import type { RunId, SessionId } from '../session/sessionIdentity'
 import type { MemoryEntryId } from '../session/workingMemory'
 import { createSessionEvidence, type SessionEvidenceStore } from '../session/sessionEvidence'
-import { candidateCheckpointMessage, evaluateCandidateCheckpoint, type EvidenceSessionSource } from './candidateCheckpoint'
+import { ANSWER_CHECKPOINT_REFUSAL_HINT, CANDIDATE_DECISION_PLACES } from './answerCheckpointGuidance'
+import { CANDIDATE_NO_SESSION, candidateCheckpointMessage, evaluateCandidateCheckpoint, type EvidenceSessionSource } from './candidateCheckpoint'
 import { userEvidenceCommit, webEvidenceCommit } from './evidenceCheckpoint'
 
 /** The objective the harness store scopes decisions to; tests move it. */
@@ -391,6 +392,53 @@ describe('candidateCheckpointMessage', () => {
       supporting_evidence: ['memory-999'],
     }), { session })
     expect(candidateCheckpointMessage(bad)).toMatch(/record_candidate/i)
+  })
+
+  it('names the Answer as a place to decide a Candidate just created (#291)', () => {
+    const { store, observationId } = seededStore()
+    const session = sessionOver(store)
+    const created = candidateCheckpointMessage(
+      evaluateCandidateCheckpoint(callOf({ subject: 'Acme wifi router', supporting_evidence: [observationId] }), { session }),
+    )
+    expect(created).toBe(
+      'Candidate memory-4 active: Acme wifi router. Cite its identity to decide it, alongside your next action or in the Answer\'s "checkpoints".',
+    )
+
+    // One sent with a status offers the decision it prints for either place.
+    const withStatus = candidateCheckpointMessage(
+      evaluateCandidateCheckpoint(
+        callOf({ subject: 'Beta wifi router', status: 'accepted', reason: 'fits', supporting_evidence: [observationId] }),
+        { session },
+      ),
+    )
+    expect(withStatus).toContain(
+      'To decide it, send this alongside your next action or in the Answer\'s "checkpoints":\n```json',
+    )
+    expect(CANDIDATE_DECISION_PLACES).toBe('alongside your next action or in the Answer\'s "checkpoints"')
+  })
+
+  it('ends a refusal on the Answer as the other place the corrected entry may go, said once (#291)', () => {
+    const session = sessionOver(seededStore().store)
+    const refused = candidateCheckpointMessage(
+      evaluateCandidateCheckpoint(callOf({ subject: 'Ghost router', supporting_evidence: ['memory-999'] }), { session }),
+    )
+    expect(refused.startsWith('record_candidate rejected (invalid_support): ')).toBe(true)
+    expect(refused.endsWith(`.\n${ANSWER_CHECKPOINT_REFUSAL_HINT}`)).toBe(true)
+    expect(ANSWER_CHECKPOINT_REFUSAL_HINT).toBe(
+      'If you are ready to answer, carry the corrected entry in the Answer\'s "checkpoints" instead of sending it again.',
+    )
+
+    // A malformed call graded as corrected quotes the refusal it would meet, without a hint of its own.
+    const malformed = candidateCheckpointMessage(
+      evaluateCandidateCheckpoint(callOf({ subject: 'Ghost router', supporting_evidence: JSON.stringify(['memory-999']) }), { session }),
+    )
+    expect(malformed.startsWith('record_candidate rejected (malformed): ')).toBe(true)
+    expect(malformed.split(ANSWER_CHECKPOINT_REFUSAL_HINT)).toHaveLength(2)
+    expect(malformed).toContain('Graded as corrected, it would still be refused: record_candidate rejected (invalid_support)')
+    expect(malformed.endsWith(`\n${ANSWER_CHECKPOINT_REFUSAL_HINT}`)).toBe(true)
+
+    // Where the Session itself refused, the Answer's entry would meet the same refusal.
+    expect(candidateCheckpointMessage(CANDIDATE_NO_SESSION)).not.toContain(ANSWER_CHECKPOINT_REFUSAL_HINT)
   })
 })
 

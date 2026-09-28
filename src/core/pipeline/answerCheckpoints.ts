@@ -17,15 +17,6 @@ import { EVIDENCE_NO_SESSION, type EvidenceCheckpointOutcome } from './evidenceC
  */
 export const MAX_ANSWER_CHECKPOINTS = 6
 
-/**
- * What the prompt and both tools' descriptions say of it, from one
- * sentence: the round the model spends recording before its Answer is the
- * round this exists to remove.
- */
-export const ANSWER_CHECKPOINT_GUIDANCE =
-  'When you are ready to answer, put what is still unrecorded in the Answer\'s "checkpoints" instead: never spend a ' +
-  'round recording before the Answer.'
-
 export type AnswerCheckpointTool = 'record_evidence' | 'record_candidate'
 
 /** The two tools' graders, as the Run wires them. Absent where the Run has no Session to record into. */

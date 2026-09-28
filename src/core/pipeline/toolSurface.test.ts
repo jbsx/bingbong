@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Tool } from './tool'
-import { ANSWER_CHECKPOINT_GUIDANCE } from './answerCheckpoints'
+import { ANSWER_CHECKPOINT_GUIDANCE } from './answerCheckpointGuidance'
 import { createAskUserTool } from './askUserTools'
 import { createBrowserTools } from './browserTools'
 import { BROWSER_TOOLS } from './blockerGate'
@@ -151,8 +151,9 @@ describe('orchestrator tool surface', () => {
       )
       // And what is unrecorded at the Answer rides the Answer (#288, ADR 0072).
       expect(tool.description).toContain(ANSWER_CHECKPOINT_GUIDANCE)
+      // The shorter line: the instruction itself opens the Answer contract's bullet (#291).
       expect(ANSWER_CHECKPOINT_GUIDANCE).toBe(
-        'When you are ready to answer, put what is still unrecorded in the Answer\'s "checkpoints" instead: never spend a round recording before the Answer.',
+        'Not for a Run that is ready to answer: what is unrecorded then goes in the Answer\'s "checkpoints".',
       )
     }
     // The Candidate decision vocabulary: three verdicts, plus the explicit

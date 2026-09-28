@@ -21,6 +21,8 @@ import { observedPageTitle } from './fallbackAnswer'
 import {
   inFieldOrder,
   malformedError,
+  refusalLine,
+  refusalResult,
   placeholder,
   stringProblem,
   withField,
@@ -814,7 +816,7 @@ export function evaluateEvidenceCheckpoint(
     return {
       ok: false,
       reason: 'malformed',
-      error: malformedError('citation', diagnosis, refusal === null ? undefined : evidenceCheckpointMessage(refusal)),
+      error: malformedError('citation', diagnosis, refusal === null ? undefined : refusalLine('record_evidence', refusal)),
     }
   }
   if (citation.kind === 'user') {
@@ -1210,7 +1212,6 @@ export function evidenceCheckpointMessage(outcome: EvidenceCheckpointOutcome): s
       ? `Session Evidence already held this Observation: ${outcome.entryId} (provenance recorded).`
       : `Session Evidence recorded: ${outcome.entryId}, grounded in ${outcome.sourceObservationId} at ${outcome.sourceUrl}. It survives this run's outcome.`
   }
-  // A malformed rejection ends on the call to send, or on a grading line
-  // that carries its own full stop (#241).
-  return `record_evidence rejected (${outcome.reason}): ${outcome.error}${outcome.reason === 'malformed' ? '' : '.'}`
+  // The corrected citation has a second place to go, which costs no round (#291).
+  return refusalResult('record_evidence', outcome)
 }

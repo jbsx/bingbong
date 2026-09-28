@@ -1638,6 +1638,13 @@ describe('the bookkeeping-only Notice rides the round after a round of checkpoin
   const carries = (outcome: ToolResultOutcome): boolean =>
     (outcome.ok ? String(outcome.result) : outcome.error).includes(BOOKKEEPING_ONLY_NOTICE)
 
+  it('names the Answer for a Run whose next action is the Answer (#291)', () => {
+    expect(BOOKKEEPING_ONLY_NOTICE).toBe(
+      'Your previous Tool Round recorded only checkpoints — a round spent on bookkeeping alone. Checkpoint alongside your next action, in the same response. ' +
+        'If you are ready to answer, answer now: what is still unrecorded goes in the Answer\'s "checkpoints", and what is recorded is not recorded again.',
+    )
+  })
+
   it('is owed after a round of accepted checkpoints and rides the next action’s result, once', async () => {
     const h = harness(catalog(), { capabilities: { ...ALL_RAILS, noProgressRail: false } })
 

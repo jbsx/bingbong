@@ -6,7 +6,7 @@
 // The grounding decision lives in candidateCheckpoint.ts; the tool is
 // the thin model-facing surface.
 
-import { ANSWER_CHECKPOINT_GUIDANCE } from './answerCheckpoints'
+import { ANSWER_CHECKPOINT_GUIDANCE } from './answerCheckpointGuidance'
 import type { Tool } from './tool'
 import {
   CANDIDATE_NO_SESSION,

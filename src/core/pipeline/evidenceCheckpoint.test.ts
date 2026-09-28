@@ -5,6 +5,7 @@ import type { MemoryEntryId } from '../session/workingMemory'
 import { createSessionEvidence, type SessionEvidenceStore } from '../session/sessionEvidence'
 import { evidenceCheckpointEvent } from '../trace/evidenceCheckpointTrace'
 import type { ObservationRecord } from '../session/observationLedger'
+import { ANSWER_CHECKPOINT_REFUSAL_HINT } from './answerCheckpointGuidance'
 import {
   evaluateEvidenceCheckpoint,
   evidenceCheckpointMessage,
@@ -357,6 +358,24 @@ describe('evidenceCheckpointMessage', () => {
     })
     expect(evidenceCheckpointMessage(unknown)).toMatch(/record_evidence/i)
     expect(evidenceCheckpointMessage(unknown)).toMatch(/observed/i)
+  })
+
+  it('ends a refusal on the Answer as the other place the corrected entry may go (#291)', () => {
+    const store = evidenceHarness()
+    const refused = evidenceCheckpointMessage(
+      evaluateEvidenceCheckpoint(callOf({ ...GROUNDED_ARGS, source_url: 'https://nope.example' }), {
+        records: [webRecord()],
+        commit: commitOver(store),
+      }),
+    )
+    expect(refused.startsWith('record_evidence rejected (')).toBe(true)
+    expect(refused.endsWith(`.\n${ANSWER_CHECKPOINT_REFUSAL_HINT}`)).toBe(true)
+    expect(refused.split(ANSWER_CHECKPOINT_REFUSAL_HINT)).toHaveLength(2)
+    // An accepted checkpoint has nothing to correct.
+    const accepted = evidenceCheckpointMessage(
+      evaluateEvidenceCheckpoint(callOf(GROUNDED_ARGS), { records: [webRecord()], commit: commitOver(store) }),
+    )
+    expect(accepted).not.toContain(ANSWER_CHECKPOINT_REFUSAL_HINT)
   })
 
   it('names the user event a User Observation is grounded in (#122)', () => {

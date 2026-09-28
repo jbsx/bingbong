@@ -1,4 +1,11 @@
 import { describe, expect, it } from 'vitest'
+import { parseAssistantAnswer } from '../../core/agent/answerContract'
+import { ANSWER_CHECKPOINT_GUIDANCE, ANSWER_CHECKPOINT_INSTRUCTION } from '../../core/pipeline/answerCheckpointGuidance'
+import { recordAnswerCheckpoints } from '../../core/pipeline/answerCheckpoints'
+import type { CandidateCheckpointOutcome } from '../../core/pipeline/candidateCheckpoint'
+import type { EvidenceCheckpointOutcome } from '../../core/pipeline/evidenceCheckpoint'
+import type { ToolCall } from '../../core/ports/llm'
+import type { MemoryEntryId } from '../../core/session/workingMemory'
 import { FakeClock } from '../../core/testing/doubles'
 import { ORCHESTRATOR_SYSTEM_PROMPT, orchestratorSystemPrompt } from './orchestratorPrompt'
 import { SHARED_BROWSING_POLICY } from './sharedBrowsingPolicy'
@@ -294,12 +301,18 @@ describe('orchestrator prompt round-efficiency teachings (#131)', () => {
 
   it('teaches that what is unrecorded at the Answer rides the Answer, and costs no round (#288)', () => {
     const checkpoint = line('record_evidence checkpoints')
-    expect(checkpoint).toMatch(/When you are ready to answer, put what is still unrecorded in the Answer's "checkpoints" instead: never spend a round recording before the Answer/)
+    // The tools' paragraph keeps the shorter line; the instruction itself is the Answer contract's (#291).
+    expect(checkpoint).toContain(ANSWER_CHECKPOINT_GUIDANCE)
+    expect(checkpoint).not.toContain(ANSWER_CHECKPOINT_INSTRUCTION)
     // The Notice's rule for every other round is the rule it was (#254).
     expect(checkpoint).toMatch(/never in a round spent on checkpoints alone, which wastes the round, unless acquisition tools are closed/)
 
-    expect(line('{"speak":')).toContain('"checkpoints": []')
     const field = line('"checkpoints" is hidden')
+    expect(field.startsWith(`- "checkpoints" is hidden and optional. ${ANSWER_CHECKPOINT_INSTRUCTION}`)).toBe(true)
+    expect(ANSWER_CHECKPOINT_INSTRUCTION).toBe(
+      'When you are ready to answer, answer: what you found and have not recorded goes in "checkpoints", never in a record_evidence or record_candidate call first.',
+    )
+    expect(field.endsWith('[] when everything is already recorded.')).toBe(true)
     expect(field).toMatch(/at most 6/)
     expect(field).toMatch(/the fields a record_evidence call takes/)
     expect(field).toMatch(/the fields a record_candidate call takes/)
@@ -307,6 +320,33 @@ describe('orchestrator prompt round-efficiency teachings (#131)', () => {
     expect(field).toMatch(/dropped, never sent back/)
     // An entry has no identity while the Answer is being written.
     expect(field).toMatch(/never name a carried entry in "evidence_ids", "supporting_evidence", or "inspection_candidate_id"/)
+  })
+
+  it('shows an Answer carrying one entry of each kind, which the Answer Checkpoints read as the two tools (#291)', () => {
+    const example = line('{"speak":')
+    expect(example).not.toContain('"checkpoints": []')
+    const entries = parseAssistantAnswer(example.trim()).answerCheckpoints ?? []
+    expect(entries).toHaveLength(2)
+
+    const calls: ToolCall[] = []
+    const result = recordAnswerCheckpoints(entries, {
+      evidence: (call) => {
+        calls.push(call)
+        return { ok: true, entryId: 'memory-7' as MemoryEntryId, merged: false, sourceObservationId: 'obs-1', sourceUrl: 'https://example.com' } as EvidenceCheckpointOutcome
+      },
+      candidate: (call) => {
+        calls.push(call)
+        return { ok: true, created: !('candidate_id' in call.args), candidate: { id: 'memory-8' as MemoryEntryId, status: 'active', subject: 'x' } } as CandidateCheckpointOutcome
+      },
+    })
+    expect(result.dropped).toEqual([])
+    expect(result.accepted.map((entry) => entry.tool)).toEqual(['record_evidence', 'record_candidate'])
+    // An Observation, then a Candidate created and decided: the tool's own two calls.
+    expect(calls.map((call) => [call.name, Object.keys(call.args).sort()])).toEqual([
+      ['record_evidence', ['excerpt', 'observation', 'source_url']],
+      ['record_candidate', ['subject', 'supporting_evidence']],
+      ['record_candidate', ['candidate_id', 'reason', 'status', 'supporting_evidence']],
+    ])
   })
 
   it('teaches the two record_candidate shapes as exclusive', () => {

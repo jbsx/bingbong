@@ -19,9 +19,12 @@ import { CANDIDATE_STATUSES, DECISION_AUTHORITIES, MAX_DECISION_REASON_CHARS } f
 import { describeCandidateDecision, type CandidateChangeRefusal, type CandidateDecision } from '../session/candidateDecisions'
 import { MAX_MEMORY_REFERENCES, type MemoryEntryId } from '../session/workingMemory'
 import type { RunId } from '../session/sessionIdentity'
+import { CANDIDATE_DECISION_PLACES } from './answerCheckpointGuidance'
 import {
   inFieldOrder,
   malformedError,
+  refusalLine,
+  refusalResult,
   placeholder,
   stringProblem,
   withField,
@@ -386,7 +389,7 @@ export function evaluateCandidateCheckpoint(
     return {
       ok: false,
       reason: 'malformed',
-      error: malformedError('call', diagnosis, refusal === null ? undefined : candidateCheckpointMessage(refusal)),
+      error: malformedError('call', diagnosis, refusal === null || refusal.ok ? undefined : refusalLine('record_candidate', refusal)),
     }
   }
   const session = deps.session?.() ?? null
@@ -528,10 +531,11 @@ const pick = (candidate: SessionCandidate): Pick<SessionCandidate, 'id' | 'statu
 /** The tool-result text for one outcome: identity on success, correction otherwise. */
 export function candidateCheckpointMessage(outcome: CandidateCheckpointOutcome): string {
   if (outcome.ok) {
-    const created = `Candidate ${outcome.candidate.id} active: ${outcome.candidate.subject}. Cite its identity to decide it later.`
+    // Deciding it need not be a call of its own, nor wait for one (#291).
+    const created = `Candidate ${outcome.candidate.id} active: ${outcome.candidate.subject}. Cite its identity to decide it, ${CANDIDATE_DECISION_PLACES}.`
     if (outcome.created && outcome.unappliedDecision !== undefined) {
       return [
-        `${created} This call's status "${String(outcome.unappliedDecision.status)}" was not applied — a creation cannot decide. To decide it, send:`,
+        `${created} This call's status "${String(outcome.unappliedDecision.status)}" was not applied — a creation cannot decide. To decide it, send this ${CANDIDATE_DECISION_PLACES}:`,
         '```json',
         JSON.stringify(outcome.unappliedDecision, null, 2),
         '```',
@@ -543,7 +547,6 @@ export function candidateCheckpointMessage(outcome: CandidateCheckpointOutcome):
         'Supporting Observations and every earlier decision on it are kept. A decision the user made stands until they reopen it; ' +
         'your own stands for this objective until new evidence overturns it.'
   }
-  // A malformed rejection ends on the call to send, or on a grading line
-  // that carries its own full stop (#241).
-  return `record_candidate rejected (${outcome.reason}): ${outcome.error}${outcome.reason === 'malformed' ? '' : '.'}`
+  // The corrected call has a second place to go, which costs no round (#291).
+  return refusalResult('record_candidate', outcome)
 }

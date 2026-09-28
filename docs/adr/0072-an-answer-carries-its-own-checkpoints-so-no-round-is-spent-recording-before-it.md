@@ -44,8 +44,8 @@ Note (2026-09-28, #288): what building it settled.
   Decision says 3, and none longer than six.
 
 Note (2026-09-28, #291): what the `fix-288-290` capture showed, and what is
-decided from it. Grilled the same day with every recommendation taken; not
-yet built.
+decided from it. Grilled the same day with every recommendation taken.
+Built the same day; the `fix-291` capture is not yet run.
 
 - The capture met the follow-ups' bar, 4 against at most 7, and missed the
   initials', 16 against at most 8. All 10 entries offered were accepted. The
@@ -83,6 +83,12 @@ yet built.
   are reported beside it. A miss reverts #291's commit, leaves #288's, and
   files the mechanism as its own issue: a Run that has met its objective
   and sends only records could be answered without a further round.
+- Building it settled two things. A malformed call graded as corrected
+  quotes the refusal the corrected call would meet, and that quoted refusal
+  does not name the Answer: the result names it once, at its end. And a
+  refusal for want of a live Session, `no_session` or `refused`, does not
+  name it at all: no corrected entry answers it, and the Answer's entry
+  would meet the same refusal.
 
 ## Context
 

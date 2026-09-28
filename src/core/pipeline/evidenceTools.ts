@@ -8,7 +8,7 @@
 // this Run observed, the user's exact words, or a collected Subagent
 // finding — workers never checkpoint for themselves.
 
-import { ANSWER_CHECKPOINT_GUIDANCE } from './answerCheckpoints'
+import { ANSWER_CHECKPOINT_GUIDANCE } from './answerCheckpointGuidance'
 import type { Tool } from './tool'
 import { EVIDENCE_NO_SESSION, evidenceCheckpointMessage, type EvidenceCheckpointOutcome } from './evidenceCheckpoint'
 

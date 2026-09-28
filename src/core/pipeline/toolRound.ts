@@ -341,9 +341,13 @@ export interface ToolRoundExecutor {
  * only checkpoints outside Finalization, carried by the next round's first
  * successful text result. A round costs one unit whatever its sibling count
  * (ADR 0027), so a checkpoint folded into the action after it saves a round.
+ * A Run whose next action is the Answer has none to fold it into (#291), so
+ * the Notice names the Answer, and says what is recorded needs no second
+ * record: one Run recorded a page again on reading it.
  */
 export const BOOKKEEPING_ONLY_NOTICE =
-  'Your previous Tool Round recorded only checkpoints — a round spent on bookkeeping alone. Checkpoint alongside your next action, in the same response.'
+  'Your previous Tool Round recorded only checkpoints — a round spent on bookkeeping alone. Checkpoint alongside your next action, in the same response. ' +
+  'If you are ready to answer, answer now: what is still unrecorded goes in the Answer\'s "checkpoints", and what is recorded is not recorded again.'
 
 /**
  * What a call names no tool in the catalog answers with. Exported because
