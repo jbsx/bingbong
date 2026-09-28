@@ -6839,7 +6839,13 @@ describe('observation ledger (#111)', () => {
       name: 'report_run_plan',
       args: { objective: 'Find what is on the Golden Record', headline: 'Golden Record', effort_tier: effortTier, ...(effortTier === 'lookup' ? { asked_items: ['the record’s contents'] } : {}) },
     })
-    async function run(effortTier: 'direct_action' | 'lookup', seams: readonly DecisionSeam[], planLast = false) {
+    const BELOW_THE_FOLD = 'https://www.loc.gov/collections/voyager-golden-record/'
+    // The links of the listing's whole page (#303): the one it showed as a ref, and one below the fold.
+    const LINKS = [
+      { label: 'The Golden Record - NASA Science', href: RESULT },
+      { label: 'The Golden Record - Library of Congress', href: BELOW_THE_FOLD },
+    ]
+    async function run(effortTier: 'direct_action' | 'lookup', seams: readonly DecisionSeam[], planLast = false, pageLinks: (() => Promise<typeof LINKS | null>) | null = async () => LINKS) {
       asked.length = 0
       const urls: string[] = []
       const traced: RunTraceEvent[] = []
@@ -6856,6 +6862,7 @@ describe('observation ledger (#111)', () => {
         clock: new FakeClock(),
         tools: [createReportRunPlanTool(), navigateTo(urls)],
         decision: () => ({ model: choosing, seams: new Set(seams) }),
+        ...(pageLinks !== null ? { pageLinks } : {}),
       })
       for await (const event of pipeline.execute('what is on the Voyager Golden Record', 'turn-277', false, {
         snapshot: [],
@@ -6874,6 +6881,26 @@ describe('observation ledger (#111)', () => {
       expect(asked[0]).toContain('the record’s contents')
       expect(traced.filter((event) => event.kind === 'decision')).toEqual([expect.objectContaining({ turnId: 'turn-277', seam: 'result', round: 1, acted: 'acted' })])
       expect(events.find((event) => event.type === 'tool_result' && event.callId === 's1')).toMatchObject({ resultPick: { ref: 1, href: RESULT, opened: true } })
+    })
+
+    it('keeps the candidates it asked over on the traced Decision Record (#303)', async () => {
+      const { traced } = await run('lookup', ['result'])
+      expect(traced.find((event) => event.kind === 'decision')).toMatchObject({
+        candidates: [
+          { label: 'The Golden Record - NASA Science', href: RESULT, ref: 1 },
+          { label: 'The Golden Record - Library of Congress', href: BELOW_THE_FOLD },
+        ],
+      })
+    })
+
+    it('asks nothing where the page’s links cannot be read — no seam to read them, or a page that answers none — and returns the listing (#303)', async () => {
+      for (const pageLinks of [null, async () => null]) {
+        const { urls, traced, events } = await run('lookup', ['result'], false, pageLinks)
+        expect(urls).toEqual([SEARCH])
+        expect(asked).toEqual([])
+        expect(traced.filter((event) => event.kind === 'decision')).toEqual([])
+        expect(events.find((event) => event.type === 'tool_result' && event.callId === 's1')).not.toHaveProperty('resultPick')
+      }
     })
 
     it('judges a search under the plan its round declares even when the plan is written after it: the intercept runs first', async () => {

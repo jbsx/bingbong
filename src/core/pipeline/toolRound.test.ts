@@ -1780,6 +1780,15 @@ describe('the Result Pick opens a search landing’s best result in the same rou
   const LANDED = `navigated: url=${RESULT} title="Golden Record Contents"\n# Golden Record Contents — ${RESULT}\npage text:\nThe record carries 115 images and greetings in 55 languages.`
   const LOOKUP: RunPlan = { objective: 'Find what is on the Voyager Golden Record', headline: null, effortTier: 'lookup', askedItems: ['the contents of the Golden Record'] }
   const pick = { ref: 3, label: 'Golden Record Contents - NASA Science', href: RESULT }
+  // The links of the listing's whole page (#303): the two it showed as refs,
+  // and one below the fold, which it showed as none.
+  const BELOW_THE_FOLD = 'https://www.nasa.gov/history/voyager-golden-record/'
+  const LINKS = [
+    { label: 'Golden Record Contents - NASA Science', href: RESULT },
+    { label: 'Voyager Golden Record - Wikipedia', href: 'https://en.wikipedia.org/wiki/Voyager_Golden_Record' },
+    { label: 'The Golden Record - NASA History', href: BELOW_THE_FOLD },
+  ]
+  const pageLinks = async () => LINKS
 
   function navigateTool(trace: string[], options: { deny?: string } = {}): Tool {
     return {
@@ -1791,6 +1800,7 @@ describe('the Result Pick opens a search landing’s best result in the same rou
       async execute(callArg: ToolCall): Promise<unknown> {
         const url = String(callArg.args.url)
         trace.push(`execute:navigate:${url}`)
+        if (url.includes('/dead/')) return `navigated: url=${url} title="Page Not Found - NASA"\nNOT-FOUND:404 www.nasa.gov\nThis address names nothing on nasa.gov.`
         if (url.includes('?q=')) return LISTING.replaceAll(SEARCH, url)
         return url === RESULT ? LANDED : `navigated: url=${url} title="Page"\n# Page — ${url}`
       },
@@ -1821,7 +1831,7 @@ describe('the Result Pick opens a search landing’s best result in the same rou
     )
   const unavailable = decisionModel(() => ({ status: 'unavailable', reason: 'timeout', message: 'no answer in 800 ms', latencyMs: 800, model: 'jev-1.13.0' }))
 
-  function withPick(model: DecisionModel, options: { plan?: RunPlan; deny?: string; traceVision?: VisionTraceReporter } = {}) {
+  function withPick(model: DecisionModel, options: { plan?: RunPlan; deny?: string; traceVision?: VisionTraceReporter; linkHrefs?: ToolRoundConfig['linkHrefs'] } = {}) {
     const trace: string[] = []
     const records: DecisionEvent[] = []
     let url: string | null = null
@@ -1839,13 +1849,14 @@ describe('the Result Pick opens a search landing’s best result in the same rou
       turnId: 'turn-1',
       currentPageUrl: () => url,
       ...(options.traceVision ? { traceVision: options.traceVision } : {}),
-      resultPick: createResultPick({ model, threshold: { choice: 0.7, noul: 0.7 }, runPlan: () => options.plan ?? LOOKUP, round: () => 2, record: (event) => records.push(event) }),
+      ...(options.linkHrefs ? { linkHrefs: options.linkHrefs } : {}),
+      resultPick: createResultPick({ model, threshold: { choice: 0.7, noul: 0.7 }, runPlan: () => options.plan ?? LOOKUP, round: () => 2, record: (event) => records.push(event), pageLinks }),
     })
     return { h, trace, records }
   }
 
   it('fires on a Search URL landing for a Lookup with an open Asked Item: the chosen href is opened, and the result is the listing’s head, the Opened line, then the landed page’s Action Outcome', async () => {
-    const { h, trace, records } = withPick(choosing('3'))
+    const { h, trace, records } = withPick(choosing('1'))
     const round = await h.round([call('navigate', { url: SEARCH }, 'search')])
 
     expect(executed(trace)).toEqual([`execute:navigate:${SEARCH}`, `execute:navigate:${RESULT}`])
@@ -1861,8 +1872,36 @@ describe('the Result Pick opens a search landing’s best result in the same rou
     expect(results[0]).toMatchObject({ callId: 'search', resultPick: { ref: 3, label: pick.label, href: RESULT, opened: true } })
   })
 
+  it('opens a picked result below the fold, stamped without a ref (#303)', async () => {
+    const { h, trace } = withPick(choosing('3'))
+    const round = await h.round([call('navigate', { url: SEARCH }, 'search')])
+
+    expect(executed(trace)).toEqual([`execute:navigate:${SEARCH}`, `execute:navigate:${BELOW_THE_FOLD}`])
+    expect(resultOf(round.outcome.results[0]!.outcome)).toContain(`\nOpened "The Golden Record - NASA History" — ${BELOW_THE_FOLD}\nnavigated: url=${BELOW_THE_FOLD}`)
+    const stamp = (round.events.find((event) => event.type === 'tool_result') as { resultPick?: object }).resultPick
+    expect(stamp).toEqual({ label: 'The Golden Record - NASA History', href: BELOW_THE_FOLD, opened: true })
+  })
+
+  it('opens a picked result below the fold on a site whose Composed Address allowance is spent: the picked address is offered, the rest of the list is not (#303, note on ADR 0055)', async () => {
+    // The refs in view are all the rail reads from a page, and no text
+    // carries an href: the link below the fold was offered by nothing.
+    const { h, trace } = withPick(choosing('3'), { linkHrefs: async () => [RESULT] })
+    await h.round([call('navigate', { url: 'https://www.nasa.gov/dead/voyager' }, 'dead')])
+    const round = await h.round([call('navigate', { url: SEARCH }, 'search')])
+
+    expect(executed(trace).slice(1)).toEqual([`execute:navigate:${SEARCH}`, `execute:navigate:${BELOW_THE_FOLD}`])
+    expect(round.events.find((event) => event.type === 'tool_result')).not.toHaveProperty('rewritten')
+
+    // Another link of the list, never picked, is a Composed Address still.
+    const { h: unpicked, trace: unpickedTrace } = withPick(unavailable, { linkHrefs: async () => [RESULT] })
+    await unpicked.round([call('navigate', { url: 'https://www.nasa.gov/dead/voyager' }, 'dead')])
+    await unpicked.round([call('navigate', { url: SEARCH }, 'search')])
+    await unpicked.round([call('navigate', { url: BELOW_THE_FOLD }, 'composed')])
+    expect(executed(unpickedTrace).at(-1)).toBe('execute:navigate:https://duckduckgo.com/?q=history%20voyager%20golden%20record%20site%3Anasa.gov')
+  })
+
   it('never fires for a Direct Action', async () => {
-    const { h, trace, records } = withPick(choosing('3'), { plan: { ...LOOKUP, effortTier: 'direct_action', askedItems: [] } })
+    const { h, trace, records } = withPick(choosing('1'), { plan: { ...LOOKUP, effortTier: 'direct_action', askedItems: [] } })
     const round = await h.round([call('navigate', { url: SEARCH }, 'search')])
     expect(executed(trace)).toEqual([`execute:navigate:${SEARCH}`])
     expect(resultOf(round.outcome.results[0]!.outcome)).toBe(LISTING)
@@ -1870,7 +1909,7 @@ describe('the Result Pick opens a search landing’s best result in the same rou
   })
 
   it('never fires on a landing that is not a search', async () => {
-    const { h, trace, records } = withPick(choosing('3'))
+    const { h, trace, records } = withPick(choosing('1'))
     await h.round([call('navigate', { url: 'https://science.nasa.gov/voyager' }, 'open')])
     expect(executed(trace)).toEqual(['execute:navigate:https://science.nasa.gov/voyager'])
     expect(records).toEqual([])
@@ -1881,8 +1920,8 @@ describe('the Result Pick opens a search landing’s best result in the same rou
     const expected = (await plain.round([call('navigate', { url: SEARCH }, 'search')])).outcome.results[0]!.outcome
 
     for (const [model, acted] of [
-      [choosing('3', 0.4), 'under_threshold'],
-      [choosing('3', 0.9, 0.2), 'under_threshold'],
+      [choosing('1', 0.4), 'under_threshold'],
+      [choosing('1', 0.9, 0.2), 'under_threshold'],
       [unavailable, 'unavailable'],
     ] as const) {
       const { h, trace, records } = withPick(model)
@@ -1908,11 +1947,12 @@ describe('the Result Pick opens a search landing’s best result in the same rou
         runPlan: () => LOOKUP,
         round: () => 1,
         record: () => {},
+        pageLinks,
       }),
     })
     const search = (n: number): ToolCall => call('navigate', { url: `https://duckduckgo.com/?q=golden+record+${n}` }, `s${n}`)
     await h.round([search(1), search(2)])
-    model = choosing('3')
+    model = choosing('1')
     const picked = await h.round([search(3)])
     model = unavailable
     await h.round([search(4)])
@@ -1948,11 +1988,12 @@ describe('the Result Pick opens a search landing’s best result in the same rou
         runPlan: () => LOOKUP,
         round: () => 1,
         record: () => {},
+        pageLinks,
       }),
     })
     const search = (n: number): ToolCall => call('navigate', { url: `https://duckduckgo.com/?q=golden+record+${n}` }, `s${n}`)
     await h.round([search(1)])
-    model = choosing('3')
+    model = choosing('1')
     const picked = await h.round([search(2)])
     model = unavailable
     await h.round([search(3)])
@@ -1964,7 +2005,7 @@ describe('the Result Pick opens a search landing’s best result in the same rou
   })
 
   it('passes the pick’s navigate through the Risk Gate like any other: a denied open leaves the whole listing and says what failed', async () => {
-    const { h, trace } = withPick(choosing('3'), { deny: RESULT })
+    const { h, trace } = withPick(choosing('1'), { deny: RESULT })
     const round = await h.round([call('navigate', { url: SEARCH }, 'search')])
     expect(executed(trace)).toEqual([`execute:navigate:${SEARCH}`])
     expect(resultOf(round.outcome.results[0]!.outcome)).toBe(`${LISTING}\nTried to open [3] "${pick.label}" — ${RESULT}: denied: that site is off limits`)

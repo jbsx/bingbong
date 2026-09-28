@@ -216,3 +216,80 @@ describe.skipIf(!canDriveChrome)("the collector reads a container's own prose as
     expect(foot(scrolled)?.inView).toBe(true)
   })
 })
+
+// The links of the whole page (#303, note on ADR 0070): a Result Pick's
+// candidates. The refs are the links in view, and a listing's results often
+// begin below the fold — rmg.co.uk's start a viewport down, under tabs that
+// sit inside `main`. What has size and what is hidden are layout and
+// computed style, so the helper runs in the same headless Chrome.
+
+const LISTING_TABS = '<main><ul class="tabs"><li><a href="/collections/object">Objects</a></li><li><a href="/collections/library">Library</a></li></ul>'
+const LISTING_RESULTS = [1, 2, 3].map((n) => `<li><a href="/collections/objects/rmgc-object-${n}"><img alt="" width="40" height="40"> Marine timekeeper H${n}</a></li>`).join('')
+
+const LINK_PAGES: Record<string, string> = {
+  '/listing': `<body><header><a href="/">Home</a></header>${LISTING_TABS}<div style="height:2400px"></div><ul class="results">${LISTING_RESULTS}</ul></main>
+    <footer><a href="mailto:hello@example.org">Write to us</a></footer></body>`,
+  '/unseen': `<body><main><a href="/shown">Shown</a>
+    <a href="/display-none" style="display:none">Display none</a>
+    <div style="visibility:hidden"><a href="/visibility-hidden">Visibility hidden</a></div>
+    <div inert><a href="/inert">Inert</a></div>
+    <a href="/no-size"></a>
+    <span role="link">No address</span>
+    <div style="height:2400px"></div>
+    <div role="dialog" style="position:fixed;top:10%;left:10%;background:#fff"><p>Choose a region</p><a href="/region">Change region</a></div>
+    <div role="dialog" style="position:fixed;top:30%;left:30%;background:#fff"><p>Sign in to continue</p><a href="/sign-in">Sign in</a></div></main></body>`,
+  '/bare': '<body><main><h1>Nothing to open</h1><p>No link on this page.</p></main></body>',
+}
+
+describe.skipIf(!canDriveChrome)('the collector lists the links of the whole page (#303)', () => {
+  let fixtures: FixtureChrome
+
+  beforeAll(async () => {
+    fixtures = await serveFixtures(LINK_PAGES, 'bingbong-collector-links-')
+  }, 60_000)
+
+  afterAll(() => fixtures?.close())
+
+  interface Link {
+    readonly label: string
+    readonly href: string
+  }
+
+  const open = async (path: string): Promise<{ page: Collected & { elements: readonly { label: string; href?: string | null }[] }; links: Link[] | null }> => {
+    await fixtures.open(path)
+    const page = await fixtures.chrome.evaluate<Collected & { elements: readonly { label: string; href?: string | null }[] }>(COLLECT_PAGE_SCRIPT)
+    const read = await fixtures.chrome.evaluate<{ url: string; links: Link[] } | null>("typeof window.__bingbongPageLinks === 'function' ? window.__bingbongPageLinks() : null")
+    expect(read?.url).toBe(await fixtures.chrome.evaluate<string>('location.href'))
+    return { page, links: read?.links ?? null }
+  }
+  const paths = (links: readonly Link[] | null) => (links ?? []).map((link) => new URL(link.href).pathname)
+
+  it('holds the results below the fold the collect left out, in document order, beside the links in view', async () => {
+    const { page, links } = await open('/listing')
+
+    // The collect is the viewport's: the site's own links, and no result.
+    expect(page.elements.map((element) => element.label)).toEqual(['Home', 'Objects', 'Library'])
+    expect(links?.map((link) => link.label)).toEqual(['Home', 'Objects', 'Library', 'Marine timekeeper H1', 'Marine timekeeper H2', 'Marine timekeeper H3', 'Write to us'])
+    expect(paths(links).slice(3, 6)).toEqual(['/collections/objects/rmgc-object-1', '/collections/objects/rmgc-object-2', '/collections/objects/rmgc-object-3'])
+    // Absolute, as a ref's href is; what is no http(s) address is core's to leave out.
+    expect(links?.[1]?.href).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/collections\/object$/)
+    expect(links?.at(-1)?.href).toBe('mailto:hello@example.org')
+  })
+
+  it('reads in place: the scroll position and the collect’s registry stay as they were', async () => {
+    await open('/listing')
+    const before = await fixtures.chrome.evaluate<{ scrollY: number; refs: number }>('({ scrollY: window.scrollY, refs: window.__bingbongRefs.length })')
+    await fixtures.chrome.evaluate('window.__bingbongPageLinks()')
+    expect(await fixtures.chrome.evaluate('({ scrollY: window.scrollY, refs: window.__bingbongRefs.length })')).toEqual(before)
+  })
+
+  it('leaves out a link that has no size, is hidden, inert, inside a dialog — the open dialog root or another — or carries no address', async () => {
+    const { page, links } = await open('/unseen')
+    expect(page.dialogOpen).toBe(true)
+    expect(paths(links)).toEqual(['/shown'])
+  })
+
+  it('is an empty list on a page that holds no link', async () => {
+    expect((await open('/bare')).links).toEqual([])
+  })
+})

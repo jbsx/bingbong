@@ -8,6 +8,7 @@ import {
   buildPageSnapshot,
   findSnapshotRef,
   linkHrefsOf,
+  type PageLink,
   formatPageSnapshot,
   parseCollectedPage,
   type CollectedPage,
@@ -17,7 +18,7 @@ import type { BrowserController, BrowserState, KeyPress, MediaState } from '../p
 import { settledStateFromSnapshot } from './progressFingerprints'
 import { createCommandPipeline, type CommandPipeline } from './createCommandPipeline'
 import { createBrowserTools } from './browserTools'
-import { FakeClock, RecordingTts, ScriptedLlm, withoutTurnId } from '../testing/doubles'
+import { FakeClock, pageLinksOf, RecordingTts, ScriptedLlm, withoutTurnId } from '../testing/doubles'
 import type { PipelineEvent } from './events'
 import type { AssistantTurn } from '../ports/llm'
 
@@ -138,6 +139,10 @@ class FixtureBrowserController implements BrowserController {
 
   async linkHrefs(): Promise<readonly string[] | null> {
     return linkHrefsOf(this.snapshot)
+  }
+
+  async pageLinks(): Promise<readonly PageLink[] | null> {
+    return pageLinksOf(this.snapshot)
   }
 
 }

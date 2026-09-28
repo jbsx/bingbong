@@ -1,5 +1,5 @@
 import type { BlockerPageFacts } from '../browser/blockerNudge'
-import type { PageSnapshot, SnapshotRef } from '../browser/snapshot'
+import type { PageLink, PageSnapshot, SnapshotRef } from '../browser/snapshot'
 
 export interface BrowserState {
   url: string | null
@@ -132,6 +132,15 @@ export interface BrowserController {
    * cap. Read after page-facing actions; null when the page cannot be read.
    */
   linkHrefs(): Promise<readonly string[] | null>
+  /**
+   * Every link of the whole page, in document order (#303, note on ADR
+   * 0070): what a Result Pick's candidates are made from, because the refs
+   * are the links in view and a listing's results often begin below the
+   * fold. A link that has no size, is hidden, inert or inside a dialog is
+   * left out. Read in place, so no ref is renumbered; null when the page
+   * cannot be read, or is no longer the page the last result printed.
+   */
+  pageLinks(): Promise<readonly PageLink[] | null>
 }
 
 /** Extra browser capability required only by visual grounding. */

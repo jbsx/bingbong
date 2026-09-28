@@ -24,6 +24,7 @@ import type { TierEscalationDecline } from '../pipeline/effortEpoch'
 import type { UnseenPhraseRewriteStamp } from '../pipeline/unseenPhraseRail'
 import type { EngineRewriteStamp } from '../pipeline/engineRewriteRail'
 import type { ResultPickStamp } from '../pipeline/resultPick'
+import type { PageLink } from '../browser/snapshot'
 import type { AnswerShape } from '../agent/answerContract'
 import type { AgentRole, DecisionSeam } from '../agent/modelRouting'
 import type { DecisionAnswer, DecisionThresholds, DecisionUnavailableReason } from '../ports/decisionModel'
@@ -59,15 +60,19 @@ import type { VisionRunTraceRecord } from './visionTrace'
  * 9 (#304, note on ADR 0058): a navigate, a `back` or a `go_forward` result
  * with no `emptyLanding` field showed the Run text or carried another
  * landing's marker, which a version-8 trace can say only by its result text.
- * 10 is #303's (ADR 0070: a result-seam `decision` record's `candidates`),
- * taken on its branch.
+ * 10 was #303's on its branch, where it was written as 9; no trace of main
+ * carries either number for it, since it landed after 11, as 12.
  * 11 (#309, note on ADR 0027): a click, a type, a `back` or a `go_forward`
  * result with no `unfinishedLoad` field was no Unfinished Load, and a click
  * or a type carries an Empty Landing when it arrived at another document,
  * which a version-9 trace cannot say: its click and type never waited for
  * the load they started.
+ * 12 (#303, ADR 0070): a `decision` record of the result seam carries its
+ * `candidates`, and its Choice is a position in that list — in a trace
+ * below version 12 the Choice is a snapshot ref of the listing, and the
+ * list is not recorded.
  */
-export const RUN_TRACE_VERSION = 11
+export const RUN_TRACE_VERSION = 12
 
 /** How much of a graded observation's retained text a record keeps. */
 export const TRACE_PAYLOAD_HEAD_CHARS = 500
@@ -626,6 +631,15 @@ export interface FinalizationEntryEvent {
 export type DecisionActed = 'acted' | 'under_threshold' | 'unavailable' | 'shadow'
 
 /**
+ * One candidate of a Result Pick (#303, note on ADR 0070): a link of the
+ * listing's whole page as the Decision Model was offered it. `ref` is the
+ * number the listing showed the address under, absent where it showed none.
+ */
+export interface DecisionCandidate extends PageLink {
+  readonly ref?: number
+}
+
+/**
  * One question put to the Decision Model (#275, ADR 0068), written beside
  * the `llm_round` records of the round it was asked in. The state itself
  * is never here — it is the observation the ledger already holds, and a
@@ -648,6 +662,12 @@ export interface DecisionEvent {
   readonly model: string
   /** The state's size in characters. */
   readonly stateChars: number
+  /**
+   * The result seam's candidates, in the order its Choice numbered them from
+   * 1 (#303): what a Shadow Replay asks again. Absent on other seams and on
+   * a trace written before version 12.
+   */
+  readonly candidates?: readonly DecisionCandidate[]
   // The three fields below were written by the Selected Passage seam, removed by #283: no Run writes them now, and a reader of its traces still meets them.
   /** A Selected Passage asked in two passes, a window then a block, for a page past 255 blocks (#276). */
   readonly windowed?: true

@@ -872,6 +872,11 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
       reportFault('pipeline.toolRound.resultPick', error, { turnId })
     }
     if (pick === null) return null
+    // The picked address is an Offered Address from the moment it is picked
+    // (#303, note on ADR 0055): a result below the fold was shown as no ref,
+    // and on a site whose allowance is spent its navigate would be rewritten
+    // into a search of the site.
+    composedAddressRail?.offerResultPick(pick.href)
     const landed = yield* step(resultPickCall(call, pick), turnId)
     // A result opened is escape (ADR 0058): a Search Loop nudge the search
     // owed speaks of searches with nothing opened between them. An open that

@@ -370,12 +370,14 @@ export interface AuditCall {
   readonly engineRewrite?: string
   /**
    * The Result Pick this search's result was opened by (#277, ADR 0070): the
-   * ref and whole href the Run opened from the listing and whether the open
-   * landed, read from the Run Trace's field on the result. Where it landed,
-   * `url`, `title` and `signature` are the opened page's — the Run settled
-   * there. Present only on a pick, so an attempt with none keeps its digest.
-   * The label is the picked link's, as the listing printed it, kept to its
-   * head (#294); absent on an audit written before the digest showed it.
+   * whole href the Run opened from the listing and whether the open landed,
+   * read from the Run Trace's field on the result. Where it landed, `url`,
+   * `title` and `signature` are the opened page's — the Run settled there.
+   * Present only on a pick, so an attempt with none keeps its digest. The
+   * label is the picked link's, kept to its head (#294); absent on an audit
+   * written before the digest showed it. The ref is the number the listing
+   * showed the link under, absent for a link it showed as no ref — one
+   * below the fold (#303).
    */
   readonly resultPick?: Omit<ResultPickStamp, 'label'> & { readonly label?: string }
   /**
@@ -1795,11 +1797,11 @@ function engineRewriteFieldOf(record: TraceLine): EngineRewriteStamp | null {
   return isRecord(field) && isString(field.from) && isString(field.to) && isString(field.query) ? { from: field.from, to: field.to, query: field.query } : null
 }
 
-/** The Result Pick a `tool_result` record carries as a field (#277), or null. */
+/** The Result Pick a `tool_result` record carries as a field (#277), or null; its ref is there only for a link the listing showed as one (#303). */
 function resultPickFieldOf(record: TraceLine): ResultPickStamp | null {
   const field = record.resultPick
-  return isRecord(field) && isFiniteNumber(field.ref) && isString(field.label) && isString(field.href) && typeof field.opened === 'boolean'
-    ? { ref: field.ref, label: field.label, href: field.href, opened: field.opened }
+  return isRecord(field) && (field.ref === undefined || isFiniteNumber(field.ref)) && isString(field.label) && isString(field.href) && typeof field.opened === 'boolean'
+    ? { ...(field.ref !== undefined ? { ref: field.ref } : {}), label: field.label, href: field.href, opened: field.opened }
     : null
 }
 
@@ -2144,10 +2146,17 @@ function writtenPageOf(call: AuditCall): SearchCallPage {
  */
 export const RESULT_OPENED_PREFIX = 'Opened ['
 
-/** What a Result Pick's opened page said (#277): the result after the Opened line, or the whole text where there is none. */
-function openedPageText(text: string | null): string | null {
+/** How it begins for a link the listing showed as no ref (#303): the label follows at once. Pinned by the same test. */
+export const RESULT_OPENED_UNSHOWN_PREFIX = 'Opened "'
+
+/**
+ * What a Result Pick's opened page said (#277): the result after the Opened
+ * line, or the whole text where there is none. The stamp says which form
+ * the line was written in (#303): under a ref, or without one.
+ */
+function openedPageText(text: string | null, pick: Pick<ResultPickStamp, 'ref'>): string | null {
   if (text === null) return null
-  const at = text.indexOf(`\n${RESULT_OPENED_PREFIX}`)
+  const at = text.indexOf(`\n${pick.ref === undefined ? RESULT_OPENED_UNSHOWN_PREFIX : RESULT_OPENED_PREFIX}`)
   if (at === -1) return text
   const next = text.indexOf('\n', at + 1)
   return next === -1 ? '' : text.slice(next + 1)
@@ -2654,7 +2663,7 @@ function pagelessLandingsOf(raw: readonly RawRound[]): number[] {
       .filter((entry) => {
         if (!NAVIGATION_VERBS.has(entry.call.name) || entry.result === undefined || !entry.result.ok) return false
         const text = resultText(entry.result.result)
-        const settled = entry.resultPick?.opened === true ? openedPageText(text) : text
+        const settled = entry.resultPick?.opened === true ? openedPageText(text, entry.resultPick) : text
         return settled !== null && !settled.startsWith(NOT_EXECUTED_PREFIX) && carriedNoPage(settled)
       })
       .map(() => round.round),
@@ -3129,7 +3138,7 @@ function classifyCall(
   // A search whose result a Result Pick opened (#277, ADR 0070) settled on
   // the opened page: its outcome follows the Opened line, the listing's
   // head above it.
-  const settled = entry.resultPick?.opened === true ? openedPageText(text) : text
+  const settled = entry.resultPick?.opened === true ? openedPageText(text, entry.resultPick) : text
   const page = result !== undefined && result.ok ? pageOf(settled) : null
   const signature = result !== undefined && result.ok ? signatureOf(settled) : null
   const wall = text === null ? null : parseBlockerMarker(text)
@@ -3194,7 +3203,9 @@ function classifyCall(
     ...(entry.rewritten !== null ? { rewritten: entry.rewritten.query } : {}),
     ...(entry.unquoted !== null ? { unquoted: entry.unquoted.phrases } : {}),
     ...(entry.engineRewrite !== null ? { engineRewrite: `${entry.engineRewrite.from} → ${entry.engineRewrite.to}` } : {}),
-    ...(entry.resultPick !== null ? { resultPick: { ref: entry.resultPick.ref, ...pickLabelOf(entry.resultPick.label), href: entry.resultPick.href, opened: entry.resultPick.opened } } : {}),
+    ...(entry.resultPick !== null
+      ? { resultPick: { ...(entry.resultPick.ref !== undefined ? { ref: entry.resultPick.ref } : {}), ...pickLabelOf(entry.resultPick.label), href: entry.resultPick.href, opened: entry.resultPick.opened } }
+      : {}),
     ...(delivered !== null ? { delivered } : {}),
   }
 
@@ -4236,7 +4247,8 @@ function digestSearchLine(call: AuditCall): string {
 function digestResultPickLine(call: AuditCall): string {
   const pick = call.resultPick
   if (pick === undefined) return ''
-  const link = `[${pick.ref}]${pick.label === undefined ? '' : ` "${pick.label}"`} — ${pick.href}`
+  // A link the listing showed as no ref (#303) is named by its label and address alone.
+  const link = [...(pick.ref === undefined ? [] : [`[${pick.ref}]`]), ...(pick.label === undefined ? [] : [`"${pick.label}"`]), `— ${pick.href}`].join(' ')
   return pick.opened ? `  result pick: opened ${link}` : `  result pick: tried ${link}, and the open failed`
 }
 

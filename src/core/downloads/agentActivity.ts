@@ -64,6 +64,7 @@ export function withAgentActivity(
     settledState: () => controller.settledState(),
     describeRef: (ref) => controller.describeRef(ref),
     linkHrefs: () => controller.linkHrefs(),
+    pageLinks: () => controller.pageLinks(),
     groundingSnapshot: () => controller.groundingSnapshot(),
     refAtPoint: (point) => controller.refAtPoint(point),
     showRef: (ref) => controller.showRef(ref),

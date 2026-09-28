@@ -18,7 +18,8 @@
 //     The model's pick is every passage holding an excerpt the model itself
 //     recorded from that page; none means it recorded nothing there.
 //   - result — a navigate whose landing is a Search URL: the options are the
-//     listing's result links, the model's pick is the one its next
+//     candidates the seam's own record kept (#303, a version 12 trace), else
+//     the listing's result links, the model's pick is the one its next
 //     navigate or click opened; a new search or anything else is no pick.
 //   - tier — the command against the Effort Tier the model declared.
 // For result, every declared Asked Item is offered; for passage, the items
@@ -77,6 +78,8 @@ export interface ShadowTraceLine {
   /** A `decision` record's state size, and — a passage record written since #281 — the state itself. */
   readonly stateChars?: number
   readonly askedText?: string
+  /** A result record's candidates, written since Run Trace version 12 (#303): the links of the whole page the seam asked over. */
+  readonly candidates?: unknown
   /** A checkpoint made by the Run (`run`, #276); absent on the model's own. */
   readonly origin?: string
   /** A checkpoint's call arguments: a Run-made one names its Asked Item in the observation. */
@@ -119,6 +122,28 @@ type RunStep =
     }
   /** A Selected Passage ask the Run recorded, before the result of the call it was asked on (#281). */
   | { readonly kind: 'passage_ask'; readonly acted: string; readonly stateChars: number; readonly askedText?: string }
+  /**
+   * A Result Pick ask the Run recorded, before the result of the search it
+   * was asked on (#303): what came of it, and the candidates it was asked
+   * over where the record kept them.
+   */
+  | { readonly kind: 'result_ask'; readonly acted: string; readonly candidates: readonly RecordedCandidate[] }
+
+/** One candidate a result record kept (#303): a link of the listing's whole page. */
+interface RecordedCandidate {
+  readonly label: string
+  readonly href: string
+}
+
+/** A result record's candidates as far as they can be read: an entry of no known shape is dropped. */
+function recordedCandidates(raw: unknown): RecordedCandidate[] {
+  if (!Array.isArray(raw)) return []
+  return raw.flatMap((entry: unknown) => {
+    if (typeof entry !== 'object' || entry === null) return []
+    const { label, href } = entry as Record<string, unknown>
+    return typeof href === 'string' && href !== '' ? [{ label: typeof label === 'string' ? label : '', href }] : []
+  })
+}
 
 /** One orchestrator Run as its trace recorded it. */
 export interface ShadowRun {
@@ -182,6 +207,9 @@ export function readShadowRuns(capture: string, lines: readonly ShadowTraceLine[
           stateChars: line.stateChars,
           ...(typeof line.askedText === 'string' ? { askedText: line.askedText } : {}),
         })
+      }
+      if (line.seam === 'result' && typeof line.acted === 'string') {
+        runOf(line.turnId).steps.push({ kind: 'result_ask', acted: line.acted, candidates: recordedCandidates(line.candidates) })
       }
       continue
     }
@@ -584,13 +612,42 @@ export const RESULT_QUESTIONS = (options: Record<string, string | null>): Decisi
   },
 })
 
-/** One result sample per navigate that landed on a Search URL with results in its listing. */
+/**
+ * The options a recorded list offers (#303): each candidate under its
+ * position, `c1` to `cn`, as the seam numbered it — never a ref, which a
+ * link below the fold has none of. `refs` are the listing's refs to the
+ * candidate's address, so a click reads against it.
+ */
+function recordedResults(candidates: readonly RecordedCandidate[], result: string): ReturnType<typeof listingResults> {
+  const shown = snapshotLinks(result)
+  return candidates.map((candidate, position) => {
+    const address = sameAddress(candidate.href)
+    return {
+      label: `c${position + 1}`,
+      description: candidate.label !== '' ? `${candidate.label} — ${candidate.href}` : candidate.href,
+      address,
+      refs: shown.filter((link) => sameAddress(link.href) === address).map((link) => link.ref),
+    }
+  })
+}
+
+/**
+ * One result sample per navigate that landed on a Search URL with results
+ * in its listing. Where the Run asked about the landing and its record
+ * kept the candidates (#303, a version 12 trace), they are the options; on
+ * an older trace, and on a landing the Run never asked about, the options
+ * are rebuilt from the listing's head. A search whose result the Run opened
+ * is no sample: the model's next move was the seam's.
+ */
 export function resultSamples(run: ShadowRun): ShadowSample[] {
   return run.steps.flatMap((step, index) => {
     if (step.kind !== 'result' || step.name !== 'navigate' || !step.ok) return []
     const landing = landingUrl(step.text)
     if (landing === null || parseSearchUrl(landing) === null) return []
-    const all = listingResults(step.text, landing)
+    const before = run.steps[index - 1]
+    const ask = before?.kind === 'result_ask' ? before : undefined
+    if (ask?.acted === 'acted') return []
+    const all = ask !== undefined && ask.candidates.length > 0 ? recordedResults(ask.candidates, step.text) : listingResults(step.text, landing)
     if (all.length === 0) return []
     const options = all.slice(0, MAX_OPTIONS)
     const after = run.steps.slice(index + 1)

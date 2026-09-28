@@ -414,6 +414,76 @@ describe('result samples (#275)', () => {
   })
 })
 
+describe('result samples from the recorded candidates (#303)', () => {
+  const H4 = 'https://www.rmg.co.uk/collections/objects/rmgc-object-79142'
+  const WIKIPEDIA = 'https://en.wikipedia.org/wiki/H4_(watch)'
+  const BELOW_THE_FOLD = 'https://collections.rmg.co.uk/collections/objects/79142.html'
+  // What the result seam asked over, as a version 12 trace keeps it: the links
+  // of the whole page, numbered by position, a ref where the listing showed one.
+  const CANDIDATES = [
+    { label: 'DuckDuckGo home', href: 'https://duckduckgo.com/', ref: 1 },
+    { label: 'Marine timekeeper, H4 - RMG', href: H4, ref: 20 },
+    { label: 'H4 (watch) - Wikipedia', href: WIKIPEDIA, ref: 22 },
+    { label: 'H4 | Collections', href: BELOW_THE_FOLD },
+  ]
+  const asked = (acted: string, candidates: unknown = CANDIDATES): ShadowTraceLine => ({ kind: 'decision', turnId: TURN, seam: 'result', acted, stateChars: 900, candidates }) as ShadowTraceLine
+  /** A search whose landing the Run asked about: the record is written before the call's result. */
+  const askedLanding = (callId: string, acted: string, candidates?: unknown): ShadowTraceLine[] => {
+    const [call, result] = landing(callId)
+    return [call!, asked(acted, candidates), result!]
+  }
+  const optionsOf = (sample: ShadowSample): string[] => Object.keys((sample.questions.pick as { options: object }).options)
+
+  it('offers the recorded list, by position, where the record holds one: a result below the fold is an option', () => {
+    const [run] = readShadowRuns('cap', [COMMAND, PLAN, ...askedLanding('n1', 'under_threshold')])
+    const [sample] = resultSamples(run!)
+    expect(optionsOf(sample!)).toEqual(['c1', 'c2', 'c3', 'c4'])
+    expect(sample!.optionsBeforeCut).toBe(4)
+    expect(sample!.state).toContain(`[c2] Marine timekeeper, H4 - RMG — ${H4}`)
+    expect(sample!.state).toContain(`[c4] H4 | Collections — ${BELOW_THE_FOLD}`)
+    // The site's own links stay in the recorded list; the head's rebuild drops them.
+    expect(sample!.state).toContain('[c1] DuckDuckGo home — https://duckduckgo.com/')
+    expect(sample!.state).not.toContain('[r20]')
+  })
+
+  it('takes the model’s pick from its next click by the address the listing showed the ref under, or its next navigate by address', () => {
+    // Ref 21 is a second link to the address candidate 2 stands for.
+    const click = readShadowRuns('cap', [COMMAND, PLAN, ...askedLanding('n1', 'unavailable'), event('tool_call', { name: 'click', callId: 'k1', args: { ref: 21 } })])
+    expect(resultSamples(click[0]!)[0]!.truth.picks).toEqual(['c2'])
+
+    const below = readShadowRuns('cap', [COMMAND, PLAN, ...askedLanding('n1', 'under_threshold'), event('tool_call', { name: 'navigate', callId: 'n2', args: { url: `${BELOW_THE_FOLD}#details` } })])
+    expect(resultSamples(below[0]!)[0]!.truth.picks).toEqual(['c4'])
+
+    const again = readShadowRuns('cap', [COMMAND, PLAN, ...askedLanding('n1', 'under_threshold'), ...landing('n2', 'harrison h4 dial mm')])
+    expect(resultSamples(again[0]!)[0]!.truth.picks).toEqual([])
+  })
+
+  it('rebuilds the options from the listing’s head on a landing no record holds a list for: an older trace, or a search the Run never asked about', () => {
+    const older = readShadowRuns('cap', [COMMAND, PLAN, ...askedLanding('n1', 'under_threshold', null)])
+    expect(optionsOf(resultSamples(older[0]!)[0]!)).toEqual(['r20', 'r22'])
+
+    // The record of one search says nothing of the next.
+    const [run] = readShadowRuns('cap', [COMMAND, PLAN, ...askedLanding('n1', 'under_threshold'), ...landing('n2', 'harrison h4 dial mm')])
+    expect(resultSamples(run!).map(optionsOf)).toEqual([['c1', 'c2', 'c3', 'c4'], ['r20', 'r22']])
+  })
+
+  it('drops an entry of no known shape from a recorded list, and reads a list with none left as no list', () => {
+    const [mixed] = readShadowRuns('cap', [COMMAND, PLAN, ...askedLanding('n1', 'under_threshold', [CANDIDATES[1], { label: 'no address' }, 'nothing', { label: 7, href: WIKIPEDIA }])])
+    expect(optionsOf(resultSamples(mixed!)[0]!)).toEqual(['c1', 'c2'])
+    expect(resultSamples(mixed!)[0]!.state).toContain(`[c2] ${WIKIPEDIA}`)
+
+    const [none] = readShadowRuns('cap', [COMMAND, PLAN, ...askedLanding('n1', 'under_threshold', [])])
+    expect(optionsOf(resultSamples(none!)[0]!)).toEqual(['r20', 'r22'])
+  })
+
+  it('takes no sample from a search whose result the Run opened: the model’s next move was the seam’s', () => {
+    const [call] = landing('n1')
+    const opened = `${LISTING}\nOpened "H4 | Collections" — ${BELOW_THE_FOLD}\nnavigated: url=https://duckduckgo.com/?q=h4+dial title="h4 dial at DuckDuckGo"\n# H4 | Collections — ${BELOW_THE_FOLD}`
+    const [run] = readShadowRuns('cap', [COMMAND, PLAN, call!, asked('acted'), event('tool_result', { name: 'navigate', callId: 'n1', ok: true, result: opened })])
+    expect(resultSamples(run!)).toEqual([])
+  })
+})
+
 describe('asking and summarizing (#275)', () => {
   it('asks every sample and keeps its answer without its state', async () => {
     const [run] = readShadowRuns('cap', [COMMAND, PLAN])

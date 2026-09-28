@@ -55,6 +55,7 @@ import {
   replaySearchStreaks,
   SEARCH_STREAK_RULE,
   RESULT_OPENED_PREFIX,
+  RESULT_OPENED_UNSHOWN_PREFIX,
   DIGEST_PICK_LABEL_CHARS,
   digestCallLines,
   blockedOrInertOf,
@@ -156,7 +157,7 @@ interface RoundSpec {
     /** The Engine Rewrite the Run Trace records on the result (#270, ADR 0067). */
     engineRewrite?: { from: string; to: string; query: string }
     /** The Result Pick the Run Trace records on the result (#277, ADR 0070). */
-    resultPick?: { ref: number; label: string; href: string; opened: boolean }
+    resultPick?: { ref?: number; label: string; href: string; opened: boolean }
     /** Whether the user answered this `ask_user` (#293): the window's resolution the Run Trace records, `user` or `timeout`. */
     answered?: boolean
     /** The verdict on an Evidence Checkpoint the Run made from a Selected Passage on this call's landing (#276, ADR 0069). */
@@ -2463,6 +2464,54 @@ describe('Result Picks (#277, ADR 0070)', () => {
 
   it('finds the opened page by the prefix the app writes the Opened line with', () => {
     expect(resultOpenedLine({ ref: 1, label: 'Home', href: RESULT }).startsWith(RESULT_OPENED_PREFIX)).toBe(true)
+    expect(resultOpenedLine({ label: 'Home', href: RESULT }).startsWith(RESULT_OPENED_UNSHOWN_PREFIX)).toBe(true)
+  })
+
+  describe('a pick of a link the listing showed as no ref (#303)', () => {
+    const UNSHOWN = { label: 'Watch spec', href: RESULT, opened: true }
+    // The opened page's own text holds a line that begins as the other form
+    // of the Opened line does: the stamp says which form the app wrote.
+    const listing = `${PAGE('search', SEARCH('longitude+watch'), 'aaaa0001').split('\npage text:')[0]}`
+    const unshown = `${listing}\nOpened "Watch spec" — ${RESULT}\n${PAGE('Watch spec', RESULT, 'aaaa0002')}\nOpened [1] in 1759`
+    const UNSHOWN_ROUNDS: RoundSpec[] = [{ round: 1, at: 1_000, calls: [{ name: 'navigate', args: { url: SEARCH('longitude+watch') }, result: unshown, resultPick: UNSHOWN }] }, ...ROUNDS.slice(1)]
+
+    it('is read as a pick: counted, replayed as an opening, and its opened page taken as where the Run settled', () => {
+      const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(UNSHOWN_ROUNDS, EXTRA) }))
+      const [first, second, , , fifth, sixth] = mechanical.rounds
+
+      expect(first!.calls[0]!.resultPick).toEqual({ label: 'Watch spec', href: RESULT, opened: true })
+      expect(first!.calls[0]).toMatchObject({ url: RESULT, title: 'Watch spec', signature: 'aaaa0002' })
+      expect(mechanical.resultPicks).toEqual([1])
+      expect(mechanical.listingsReturned).toEqual([2, 5, 6])
+      expect(mechanical.searchesToOpened?.[0]).toEqual({ round: 1, openedRound: 1 })
+      expect([first, second, fifth, sixth].map((round) => round!.calls[0]!.search?.streak)).toEqual([1, 1, 1, 2])
+      expect(replaySearchStreaks(mechanical.rounds).map((round) => round.calls[0]!.search?.streak ?? null)).toEqual([1, 1, null, null, 1, 2])
+    })
+
+    it('reads the same counts as the pick of a ref does', () => {
+      const shown = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, EXTRA) }))
+      const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(UNSHOWN_ROUNDS, EXTRA) }))
+      expect(mechanical.counts).toEqual(shown.counts)
+      expect(mechanical.searchesToOpened).toEqual(shown.searchesToOpened)
+    })
+
+    it('is printed in the digest and the report without a ref, opened or not', () => {
+      const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(UNSHOWN_ROUNDS, EXTRA) }))
+      expect(digestCallLines(mechanical.rounds[0]!.calls[0]!)).toContain(`  result pick: opened "Watch spec" — ${RESULT}`)
+      expect(formatAuditSet(buildAuditSet(provenanceOf(), [{ mechanical, review: null, countsAfterOverrules: mechanical.counts }], []))).toContain('- Result Picks: 1 (round 1)')
+
+      const failed: RoundSpec[] = [
+        { round: 1, at: 1_000, calls: [{ name: 'navigate', args: { url: SEARCH('longitude+watch') }, result: `${PAGE('search', SEARCH('longitude+watch'), 'aaaa0001')}\nTried to open "Watch spec" — ${RESULT}: timed out`, resultPick: { ...UNSHOWN, opened: false } }] },
+      ]
+      const call = classifyAttempt(inputOf({ traceRecords: traceOf(failed, EXTRA) })).rounds[0]!.calls[0]!
+      expect(digestCallLines(call)).toContain(`  result pick: tried "Watch spec" — ${RESULT}, and the open failed`)
+      expect(call.url).toBe(SEARCH('longitude+watch'))
+    })
+
+    it('reads a stamp whose ref is no number as no pick, as before', () => {
+      const broken: RoundSpec[] = [{ round: 1, at: 1_000, calls: [{ ...UNSHOWN_ROUNDS[0]!.calls![0]!, resultPick: { ...UNSHOWN, ref: 'five' as unknown as number } }] }]
+      expect(classifyAttempt(inputOf({ traceRecords: traceOf(broken, EXTRA) })).rounds[0]!.calls[0]).not.toHaveProperty('resultPick')
+    })
   })
 
   describe('in the digest the reviewer reads (#294)', () => {

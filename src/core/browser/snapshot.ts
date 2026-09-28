@@ -157,6 +157,19 @@ export interface PageSnapshot {
   truncated: boolean
 }
 
+/**
+ * One link of the whole page (#303, note on ADR 0070): its label, cut as a
+ * ref's is, and its absolute href, whole. What a Result Pick's candidates
+ * are made from, since the refs are the links in view.
+ */
+export interface PageLink {
+  readonly label: string
+  readonly href: string
+}
+
+/** How many links the in-page collector reports at most (#303): a bound on the payload, well past the candidates' own cut. */
+export const MAX_COLLECTED_PAGE_LINKS = 1000
+
 export const MAX_SNAPSHOT_REFS = 75
 
 /** The Page Preview's cap (ADR 0047) — the size any page text an Action
@@ -343,6 +356,20 @@ function truncateHref(href: string): string {
  */
 export function linkHrefsOf(snapshot: PageSnapshot): string[] {
   return snapshot.refs.flatMap((ref) => (ref.href === null ? [] : [ref.href]))
+}
+
+/**
+ * The page's links as the in-page collector reported them (#303), in
+ * document order: labels cut as a ref's are, hrefs whole. An entry of no
+ * known shape is dropped, not fatal; a payload that is no list is malformed.
+ */
+export function parsePageLinks(raw: unknown): PageLink[] {
+  if (!Array.isArray(raw)) throw new Error('page links payload malformed')
+  return raw.flatMap((entry: unknown) => {
+    if (typeof entry !== 'object' || entry === null) return []
+    const { label, href } = entry as Record<string, unknown>
+    return typeof href === 'string' && href !== '' ? [{ label: truncateLabel(typeof label === 'string' ? label : ''), href }] : []
+  })
 }
 
 /** A collected page's text: its blocks, the preview, the whole length, and what is in view. */

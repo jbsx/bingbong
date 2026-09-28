@@ -180,3 +180,25 @@ lets the model do.
     opened a link of the listing's own chrome, Result Pick timeouts, and
     the option count. The landed line that named the listing's address in
     three of the rounds is #308.
+- 2026-09-28 (#303, implemented): the calls the decisions left open.
+  - A candidate's ref is the first ref the listing showed its address
+    under, matched by URL fingerprint. The listing prints an href over 200
+    characters cut, so a cut one is matched by the part it printed, and
+    only where one candidate alone begins with it.
+  - The links are read from the page the last result printed. A tab that
+    has since moved to another address, by a redirect or a route change,
+    is a page whose links cannot be read, and nothing is asked.
+  - A link inside any dialog is left out, not only one inside the open
+    dialog root.
+  - The Run Trace version the decision names as 9 is 12 on main: #304 took
+    9 and #309 took 11 before this landed, and no trace of main was
+    written at 10.
+  - The page reports at most 1,000 links, a bound on what crosses from the
+    page; the cut at 100 is made after addresses are merged.
+  - The Shadow Replay reads the recorded list wherever a result record
+    holds one, and takes no sample from a search whose result the Run
+    opened. A landing no record holds a list for — a trace below version
+    12, and on a version 12 trace a search the Run never asked about, as with the
+    seam off — is rebuilt from the listing's head. An option from a
+    recorded list is named by its position, `c1` to `cn`, where a rebuilt
+    one is named by its ref, `r20`.

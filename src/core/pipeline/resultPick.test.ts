@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest'
 import type { ToolCall } from '../ports/llm'
 import type { DecisionModel, DecisionQuestions, DecisionRequest, DecisionResult } from '../ports/decisionModel'
 import type { DecisionEvent } from '../trace/runTrace'
-import type { SnapshotRef } from '../browser/snapshot'
+import type { PageLink } from '../browser/snapshot'
 import type { RunPlan } from './runPlan'
-import { createResultPick, listingHead, resultOpenedLine, resultPickCall, withResultPick, type ResultPickDeps } from './resultPick'
+import { createResultPick, listingHead, MAX_RESULT_CANDIDATES, resultCandidates, resultOpenedLine, resultPickCall, withResultPick, type ResultPickDeps } from './resultPick'
 
 // Issue #277, ADR 0070: the Result Pick's own judgement — when a search
 // landing is asked about, what the Decision Model is asked, and what an
@@ -29,6 +29,20 @@ const LISTING = [
   'Golden Record Contents - NASA Science. The contents of the record were selected for NASA by a committee chaired by Carl Sagan.',
 ].join('\n')
 
+const NASA = 'https://science.nasa.gov/mission/voyager/golden-record-contents/'
+const WIKIPEDIA = 'https://en.wikipedia.org/wiki/Voyager_Golden_Record'
+const BELOW_THE_FOLD = 'https://www.loc.gov/collections/voyager-golden-record/'
+
+// The links of the whole page (#303): the listing's own, in document order,
+// and one result the viewport never reached.
+const LINKS: PageLink[] = [
+  { label: 'DuckDuckGo', href: 'https://duckduckgo.com/' },
+  { label: 'Golden Record Contents - NASA Science', href: NASA },
+  { label: 'Voyager Golden Record - Wikipedia', href: WIKIPEDIA },
+  { label: 'More results', href: 'https://duckduckgo.com/?q=voyager+golden+record+contents&s=10' },
+  { label: 'The Golden Record - Library of Congress', href: BELOW_THE_FOLD },
+]
+
 const LOOKUP: RunPlan = {
   objective: 'Find what is on the Voyager Golden Record',
   headline: null,
@@ -42,7 +56,7 @@ function navigate(url: string, id = 'n1'): ToolCall {
 
 type Answer = (request: DecisionRequest<DecisionQuestions>) => DecisionResult<DecisionQuestions>
 
-function answered(choice: string, confidence: number, noul: number): Answer {
+function answered(choice: string, confidence = 0.9, noul = 0.9): Answer {
   return (request) => {
     const options = Object.keys((request.questions.result as { options: Record<string, unknown> }).options)
     return {
@@ -57,14 +71,14 @@ function answered(choice: string, confidence: number, noul: number): Answer {
   }
 }
 
-function fixture(options: { answer?: Answer; plan?: RunPlan | null; describeRef?: ResultPickDeps['describeRef'] } = {}) {
+function fixture(options: { answer?: Answer; plan?: RunPlan | null; pageLinks?: ResultPickDeps['pageLinks'] } = {}) {
   const asked: DecisionRequest<DecisionQuestions>[] = []
   const records: DecisionEvent[] = []
   const model: DecisionModel = {
     model: 'jev-1.13.0',
     async ask(request) {
       asked.push(request as DecisionRequest<DecisionQuestions>)
-      return (options.answer ?? answered('3', 0.9, 0.9))(request as DecisionRequest<DecisionQuestions>) as never
+      return (options.answer ?? answered('2'))(request as DecisionRequest<DecisionQuestions>) as never
     },
   }
   const pick = createResultPick({
@@ -73,16 +87,16 @@ function fixture(options: { answer?: Answer; plan?: RunPlan | null; describeRef?
     runPlan: () => (options.plan === undefined ? LOOKUP : options.plan),
     round: () => 4,
     record: (event) => records.push(event),
-    ...(options.describeRef ? { describeRef: options.describeRef } : {}),
+    pageLinks: options.pageLinks ?? (async () => LINKS),
   })
   return { pick, asked, records }
 }
 
 describe('when a search landing is asked about (#277, ADR 0070)', () => {
-  it('asks on a Search URL landing for a Lookup with an open Asked Item, and opens the chosen ref', async () => {
+  it('asks on a Search URL landing for a Lookup with an open Asked Item, and opens the chosen link', async () => {
     const f = fixture()
     const picked = await f.pick.choose(navigate(SEARCH), { ok: true, result: LISTING })
-    expect(picked).toEqual({ ref: 3, label: 'Golden Record Contents - NASA Science', href: 'https://science.nasa.gov/mission/voyager/golden-record-contents/' })
+    expect(picked).toEqual({ ref: 3, label: 'Golden Record Contents - NASA Science', href: NASA })
     expect(f.asked).toHaveLength(1)
   })
 
@@ -122,29 +136,123 @@ describe('when a search landing is asked about (#277, ADR 0070)', () => {
     }
   })
 
-  it('never asks on a listing with no result to open', async () => {
-    const f = fixture()
-    const bare = LISTING.split('\n').filter((line) => !/^\[[134]\]/.test(line)).join('\n')
-    expect(await f.pick.choose(navigate(SEARCH), { ok: true, result: bare })).toBeNull()
-    expect(f.asked).toHaveLength(0)
+  it('never asks when the page’s links cannot be read or hold no candidate, and never falls back on the refs in view (#303)', async () => {
+    const unread: ResultPickDeps['pageLinks'][] = [
+      async () => null,
+      async () => [],
+      async () => [
+        { label: 'More results', href: 'https://duckduckgo.com/?q=voyager&s=10' },
+        { label: 'Mail us', href: 'mailto:hello@duckduckgo.com' },
+      ],
+      async () => {
+        throw new Error('page evaluation failed')
+      },
+    ]
+    for (const pageLinks of unread) {
+      const f = fixture({ pageLinks })
+      // The listing prints result refs all the same: they are not asked about.
+      expect(await f.pick.choose(navigate(SEARCH), { ok: true, result: LISTING })).toBeNull()
+      expect(f.asked).toHaveLength(0)
+      expect(f.records).toHaveLength(0)
+    }
+  })
+
+  it('reads the page’s links only for a landing it asks about', async () => {
+    let reads = 0
+    const f = fixture({
+      plan: { ...LOOKUP, effortTier: 'direct_action', askedItems: [] },
+      pageLinks: async () => {
+        reads += 1
+        return LINKS
+      },
+    })
+    await f.pick.choose(navigate(SEARCH), { ok: true, result: LISTING })
+    expect(reads).toBe(0)
+  })
+})
+
+describe('the candidates of a Result Pick (#303, note on ADR 0070)', () => {
+  const head = listingHead(LISTING)
+
+  it('are the links of the whole page in document order, less a link that is not http(s) and a link to another Search URL', () => {
+    const candidates = resultCandidates([...LINKS, { label: 'Mail us', href: 'mailto:hello@duckduckgo.com' }, { label: 'Run', href: 'javascript:void(0)' }], head)
+    expect(candidates.map((candidate) => candidate.href)).toEqual(['https://duckduckgo.com/', NASA, WIKIPEDIA, BELOW_THE_FOLD])
+  })
+
+  it('carry a ref only where the listing showed the address as one, and never a dialog’s', () => {
+    const candidates = resultCandidates([...LINKS, { label: 'Cookie settings', href: 'https://duckduckgo.com/settings' }], head)
+    expect(candidates.map((candidate) => candidate.ref)).toEqual([1, 3, 4, undefined, undefined])
+    expect(candidates[3]).toEqual({ label: 'The Golden Record - Library of Congress', href: BELOW_THE_FOLD })
+  })
+
+  it('are one per address by URL fingerprint, under the longest label, where the first link stood', () => {
+    const candidates = resultCandidates(
+      [
+        { label: '', href: NASA },
+        { label: 'DuckDuckGo', href: 'https://duckduckgo.com/' },
+        { label: 'Golden Record Contents - NASA Science', href: `${NASA}?utm_source=duckduckgo#contents` },
+        { label: 'NASA', href: NASA.slice(0, -1) },
+      ],
+      head,
+    )
+    expect(candidates).toEqual([
+      { label: 'Golden Record Contents - NASA Science', href: NASA, ref: 3 },
+      { label: 'DuckDuckGo', href: 'https://duckduckgo.com/', ref: 1 },
+    ])
+  })
+
+  it('are cut at 100, after addresses are merged', () => {
+    // 130 links to 110 addresses: the first forty are twenty addresses linked twice.
+    const many = Array.from({ length: 130 }, (_, index) => ({ label: `Result ${index}`, href: `https://example.org/result/${index < 40 ? Math.floor(index / 2) : index}` }))
+    const candidates = resultCandidates(many, head)
+    expect(MAX_RESULT_CANDIDATES).toBe(100)
+    expect(candidates).toHaveLength(100)
+    expect(new Set(candidates.map((candidate) => candidate.href)).size).toBe(100)
+    expect(candidates.at(-1)!.href).toBe('https://example.org/result/119')
+  })
+
+  it('find the ref of an address the listing printed cut, by the part it printed', () => {
+    const printed = LISTING.replace(NASA, `${LONG_HREF.slice(0, 199)}…`)
+    const candidates = resultCandidates([{ label: 'Golden Record Contents - NASA Science', href: LONG_HREF }], listingHead(printed))
+    expect(candidates).toEqual([{ label: 'Golden Record Contents - NASA Science', href: LONG_HREF, ref: 3 }])
+  })
+
+  it('give a cut address’s ref to no candidate where two begin with the part it printed', () => {
+    const printed = LISTING.replace(NASA, `${LONG_HREF.slice(0, 199)}…`)
+    const candidates = resultCandidates(
+      [
+        { label: 'Golden Record Contents - NASA Science', href: LONG_HREF },
+        { label: 'Golden Record Images - NASA Science', href: `${LONG_HREF}/images` },
+      ],
+      listingHead(printed),
+    )
+    expect(candidates.map((candidate) => candidate.ref)).toEqual([undefined, undefined])
   })
 })
 
 describe('what the Decision Model is asked (#277, ADR 0070)', () => {
-  it('a Choice over the result refs and a Noul that any answers, over the objective, the open Asked Items, the refs and the preview', async () => {
+  it('a Choice over the candidates by position and a Noul that any answers, over the objective, the open Asked Items, the candidates and the preview', async () => {
     const f = fixture()
     await f.pick.choose(navigate(SEARCH), { ok: true, result: LISTING })
     const [request] = f.asked
     expect(Object.keys(request!.questions)).toEqual(['result', 'answers'])
     expect(request!.questions.result).toMatchObject({ type: 'choice' })
     expect(request!.questions.answers).toMatchObject({ type: 'noul' })
-    // The listing's link refs, less another search (only another listing)
-    // and a dialog's links: neither is a result the objective is answered by.
-    expect(Object.keys((request!.questions.result as { options: object }).options)).toEqual(['1', '3', '4'])
+    // Numbered 1 to n by position in the list, never by snapshot ref (#303):
+    // the fourth link is another search, and the list closes over it.
+    expect(Object.keys((request!.questions.result as { options: object }).options)).toEqual(['1', '2', '3', '4'])
     expect(request!.state).toContain(LOOKUP.objective)
     expect(request!.state).toContain('the contents of the Golden Record')
-    expect(request!.state).toContain('[3] "Golden Record Contents - NASA Science" https://science.nasa.gov/mission/voyager/golden-record-contents/')
+    expect(request!.state).toContain(`[2] "Golden Record Contents - NASA Science" ${NASA}`)
+    expect(request!.state).toContain(`[4] "The Golden Record - Library of Congress" ${BELOW_THE_FOLD}`)
     expect(request!.state).toContain('committee chaired by Carl Sagan')
+  })
+
+  it('is offered a result below the fold, and a pick of it opens it without a ref (#303)', async () => {
+    const f = fixture({ answer: answered('4') })
+    const picked = await f.pick.choose(navigate(SEARCH), { ok: true, result: LISTING })
+    expect(picked).toEqual({ label: 'The Golden Record - Library of Congress', href: BELOW_THE_FOLD })
+    expect(picked).not.toHaveProperty('ref')
   })
 })
 
@@ -158,8 +266,22 @@ describe('what an answer does (#277, ADR 0070)', () => {
     expect(f.records[0]!.stateChars).toBe(f.asked[0]!.state.length)
   })
 
+  it('keeps its candidates on the Decision Record — label, href, and ref where there is one — whatever came of the answer (#303)', async () => {
+    const unavailable: Answer = () => ({ status: 'unavailable', reason: 'timeout', message: 'no answer in 800 ms', latencyMs: 800, model: 'jev-1.13.0' })
+    for (const answer of [answered('2'), answered('2', 0.5), unavailable]) {
+      const f = fixture({ answer })
+      await f.pick.choose(navigate(SEARCH), { ok: true, result: LISTING })
+      expect(f.records[0]!.candidates).toEqual([
+        { label: 'DuckDuckGo', href: 'https://duckduckgo.com/', ref: 1 },
+        { label: 'Golden Record Contents - NASA Science', href: NASA, ref: 3 },
+        { label: 'Voyager Golden Record - Wikipedia', href: WIKIPEDIA, ref: 4 },
+        { label: 'The Golden Record - Library of Congress', href: BELOW_THE_FOLD },
+      ])
+    }
+  })
+
   it('opens nothing under threshold — either answer — and says so in the record', async () => {
-    for (const answer of [answered('3', 0.5, 0.9), answered('3', 0.9, 0.4)]) {
+    for (const answer of [answered('2', 0.5, 0.9), answered('2', 0.9, 0.4)]) {
       const f = fixture({ answer })
       expect(await f.pick.choose(navigate(SEARCH), { ok: true, result: LISTING })).toBeNull()
       expect(f.records.map((record) => record.acted)).toEqual(['under_threshold'])
@@ -172,12 +294,11 @@ describe('what an answer does (#277, ADR 0070)', () => {
     expect(f.records.map((record) => record.acted)).toEqual(['unavailable'])
   })
 
-  it('opens the whole href the tab holds for the ref, not the printed cut', async () => {
-    const printed = LISTING.replace('https://science.nasa.gov/mission/voyager/golden-record-contents/', `${LONG_HREF.slice(0, 199)}…`)
-    const described: SnapshotRef = { ref: 3, kind: 'link', label: 'Golden Record Contents - NASA Science', href: LONG_HREF } as SnapshotRef
-    const f = fixture({ describeRef: async (ref) => (ref === 3 ? described : undefined) })
+  it('opens the whole href the page holds for the link, not the printed cut', async () => {
+    const printed = LISTING.replace(NASA, `${LONG_HREF.slice(0, 199)}…`)
+    const f = fixture({ answer: answered('1'), pageLinks: async () => [{ label: 'Golden Record Contents - NASA Science', href: LONG_HREF }] })
     const picked = await f.pick.choose(navigate(SEARCH), { ok: true, result: printed })
-    expect(picked?.href).toBe(LONG_HREF)
+    expect(picked).toEqual({ ref: 3, label: 'Golden Record Contents - NASA Science', href: LONG_HREF })
   })
 })
 
@@ -198,6 +319,19 @@ describe('the result the model reads (#277, ADR 0070)', () => {
   it('keeps the whole listing when the open failed, and says what failed', () => {
     const combined = withResultPick({ ok: true, result: LISTING }, pick, { ok: false, error: 'navigate failed: timed out' })
     expect(combined).toEqual({ ok: true, result: `${LISTING}\nTried to open [3] "Golden Record Contents - NASA Science" — ${pick.href}: navigate failed: timed out` })
+  })
+
+  it('names a link the listing showed as no ref by its label and address alone (#303)', () => {
+    const below = { label: 'The Golden Record - Library of Congress', href: BELOW_THE_FOLD }
+    expect(resultOpenedLine(below)).toBe(`Opened "The Golden Record - Library of Congress" — ${BELOW_THE_FOLD}`)
+    expect(withResultPick({ ok: true, result: LISTING }, below, { ok: true, result: LANDED })).toEqual({
+      ok: true,
+      result: `${listingHead(LISTING)}\nOpened "The Golden Record - Library of Congress" — ${BELOW_THE_FOLD}\n${LANDED}`,
+    })
+    expect(withResultPick({ ok: true, result: LISTING }, below, { ok: false, error: 'navigate failed: timed out' })).toEqual({
+      ok: true,
+      result: `${LISTING}\nTried to open "The Golden Record - Library of Congress" — ${BELOW_THE_FOLD}: navigate failed: timed out`,
+    })
   })
 
   it('is opened by a navigate to the whole href, under its own call id', () => {

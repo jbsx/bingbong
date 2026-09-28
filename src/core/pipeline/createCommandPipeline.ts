@@ -37,7 +37,7 @@ import { createTurnIdSource } from '../perf/perfTracer'
 import type { BrowserSubspans } from '../perf/browserSubspans'
 import { emitTurnSummary } from '../perf/turnSummary'
 import type { SettledPageState } from './progressFingerprints'
-import type { SnapshotRef } from '../browser/snapshot'
+import type { PageLink, SnapshotRef } from '../browser/snapshot'
 import { createToolRoundExecutor, type ToolRoundExecutor } from './toolRound'
 import { shownTextsOf } from './unseenPhraseRail'
 import { runEngineOf, userWordsOf, type WebEngine } from './webEngine'
@@ -166,6 +166,12 @@ export interface CommandPipelineDeps {
    * long href. Absent, the rail reads the printed text.
    */
   linkHrefs?: () => Promise<readonly string[] | null>
+  /**
+   * The links of the visible tab's whole page (#303, note on ADR 0070): what
+   * a Result Pick's candidates are made from. Absent, no page's links can be
+   * read, and no Result Pick is asked.
+   */
+  pageLinks?: () => Promise<readonly PageLink[] | null>
   /**
    * Live source for the URL of the page the visible browser tab is on
    * (#111): the source URL recorded on page-facing observations in the
@@ -1493,7 +1499,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
                   runPlan: () => runPlan,
                   round: () => llmRound,
                   record: writeDecision,
-                  ...(deps.describeRef ? { describeRef: deps.describeRef } : {}),
+                  pageLinks: deps.pageLinks ?? (async () => null),
                 }),
               }
             : {}),

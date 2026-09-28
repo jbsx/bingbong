@@ -12,7 +12,7 @@ import {
   type DecisionResult,
   type DecisionThresholds,
 } from '../ports/decisionModel.ts'
-import type { DecisionActed, DecisionEvent } from './runTrace'
+import type { DecisionActed, DecisionCandidate, DecisionEvent } from './runTrace'
 
 /** `act`: the seam acts on an answer that clears its bars; `shadow`: it only asks and records. */
 export type DecisionMode = 'act' | 'shadow'
@@ -25,6 +25,8 @@ export interface DecisionEventInput<Q extends DecisionQuestions> {
   readonly threshold: DecisionThresholds
   readonly result: DecisionResult<Q>
   readonly mode: DecisionMode
+  /** The result seam's candidates, in the order its Choice numbered them (#303). */
+  readonly candidates?: readonly DecisionCandidate[]
   readonly agentId?: string
 }
 
@@ -48,6 +50,7 @@ export function decisionEvent<Q extends DecisionQuestions>(input: DecisionEventI
     acted: decisionActed(result, input.mode, input.threshold),
     model: result.model,
     stateChars: input.stateChars,
+    ...(input.candidates !== undefined ? { candidates: input.candidates } : {}),
     ...(result.status === 'unavailable'
       ? {
           unavailable: {

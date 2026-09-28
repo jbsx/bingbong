@@ -1,7 +1,7 @@
 import { MAX_COLLECTED_PAGE_TEXT } from '../../core/browser/pageText'
 import { CONSENT_LABEL_RE } from '../../core/browser/dialogPolicy'
 import type { CoverProbe } from '../../core/browser/actionOutcome'
-import { MAX_COVER_REFS } from '../../core/browser/snapshot'
+import { MAX_COLLECTED_PAGE_LINKS, MAX_COVER_REFS } from '../../core/browser/snapshot'
 
 // Runs inside the pane's page via Runtime.evaluate. Returns the CollectedPage
 // shape consumed by core/browser/snapshot.ts — DOM-specific work (labeling,
@@ -398,6 +398,28 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
     const root = currentDialogRoot()
     if (root === null) return null
     return Array.from(root.querySelectorAll(SELECTOR)).filter(hasSize).map(labelOf)
+  }
+  // The links of the whole page (#303, note on ADR 0070), read in place — no
+  // collect, so the numbers the model holds stay put. Every link that has
+  // size and is not hidden, inert or inside a dialog — the open dialog root
+  // or any other — in document order, wherever the viewport is: a listing's
+  // results often begin below the fold, and the refs are the links in view.
+  // The style pass is rectVisible's, without its viewport bound. The
+  // address rides beside the links, so the caller can tell the page they
+  // were read from is the page it printed.
+  window.__bingbongPageLinks = () => {
+    const root = currentDialogRoot()
+    const links = []
+    for (const el of document.querySelectorAll('a[href], area[href], [role="link"]')) {
+      if (links.length >= ${MAX_COLLECTED_PAGE_LINKS}) break
+      if (insideInert(el) || (root !== null && root.contains(el)) || el.closest(DIALOG_SELECTOR) !== null || !hasSize(el)) continue
+      const style = window.getComputedStyle(el)
+      if (style.display === 'none' || style.visibility === 'hidden') continue
+      const href = absoluteHref(el)
+      if (href === null) continue
+      links.push({ label: labelOf(el), href })
+    }
+    return { url: location.href, links }
   }
   window.__bingbongPageProbe = (targetIndex, targetLabel) => {
     const dialogRoot = currentDialogRoot()

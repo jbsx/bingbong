@@ -111,6 +111,19 @@ describe('createComposedAddressRail (#239, ADR 0050; #255, ADR 0055)', () => {
     expect(rail.rewrite(nav('https://science.nasa.gov/mission/voyager/composed'))).not.toBeNull()
   })
 
+  it('passes a navigate to the address of a Result Pick, offered as it is picked, and to no other link of the list (#303)', () => {
+    const rail = spentOnNasa()
+    const picked = 'https://science.nasa.gov/mission/voyager/golden-record-contents/'
+    expect(rail.rewrite(nav(picked))).not.toBeNull()
+
+    rail.offerResultPick(picked)
+
+    expect(rail.rewrite(nav(picked))).toBeNull()
+    // By URL fingerprint, as every Offered Address is.
+    expect(rail.rewrite(nav(`${picked.slice(0, -1)}#images`))).toBeNull()
+    expect(rail.rewrite(nav('https://science.nasa.gov/mission/voyager/golden-record-images/'))).not.toBeNull()
+  })
+
   it('offers nothing for a denied address that was cut: the cut is not the address (#299)', () => {
     const rail = spentOnNasa()
     const over = `https://science.nasa.gov/${'p'.repeat(MAX_OPEN_ADDRESS_LENGTH)}`

@@ -14,7 +14,7 @@ import type {
 } from '../ports/browser'
 import { settledStateFromSnapshot } from '../pipeline/progressFingerprints'
 import { blockerFactsFromSnapshot } from '../browser/blockerNudge'
-import { linkHrefsOf, type PageSnapshot, type SnapshotRef } from '../browser/snapshot'
+import { linkHrefsOf, type PageLink, type PageSnapshot, type SnapshotRef } from '../browser/snapshot'
 import { blockedActionHead, clickFlagsHead, NO_OBSERVABLE_CHANGE, type BlockedAction } from '../browser/actionOutcome'
 import type {
   VisionDescribeRequest,
@@ -38,6 +38,15 @@ import { createPerfTracer, type PerfSpanRecord, type PerfTracer } from '../perf/
  * correlation keep asserting the exact pre-#28 event shape; stamping itself
  * is covered by the turn-correlation tests.
  */
+/**
+ * A snapshot's link refs as the links of its page (#303): a double's page,
+ * whose every link is in view. The live tab's refs are the links in view
+ * only, which is why a Result Pick reads the page instead.
+ */
+export function pageLinksOf(snapshot: PageSnapshot): PageLink[] {
+  return snapshot.refs.flatMap((ref) => (ref.kind === 'link' && ref.href !== null && ref.layer !== 'dialog' ? [{ label: ref.label, href: ref.href }] : []))
+}
+
 export function withoutTurnId(event: PipelineEvent): PipelineEvent {
   const rest = { ...event } as { turnId?: string }
   delete rest.turnId
@@ -395,6 +404,11 @@ export class FakeBrowser implements BrowserController, VisualGroundingController
   // The Composed Address rail's Offered Addresses (#258), off the overridable snapshot.
   async linkHrefs(): Promise<readonly string[] | null> {
     return linkHrefsOf(this.snapshot)
+  }
+
+  // A Result Pick's candidates (#303): a page whose every link is in view.
+  async pageLinks(): Promise<readonly PageLink[] | null> {
+    return pageLinksOf(this.snapshot)
   }
 
   async groundingSnapshot(): Promise<PageSnapshot> {

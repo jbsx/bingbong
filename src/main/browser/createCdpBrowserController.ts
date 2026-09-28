@@ -32,6 +32,8 @@ import {
   linkHrefsOf,
   pageReadPartCount,
   parseCollectedPage,
+  parsePageLinks,
+  type PageLink,
   type PageSnapshot,
   type SnapshotRef,
 } from '../../core/browser/snapshot'
@@ -1413,6 +1415,27 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     }
   }
 
+  // A Result Pick's candidates (#303): the links of the whole page, read in
+  // place by the helper the last collect left there. A page that holds no
+  // helper was never collected, and is a page that cannot be read; so is a
+  // page at another address than the snapshot the last result printed — a
+  // redirect or a route change since — whose links are not that listing's.
+  async function pageLinks(): Promise<readonly PageLink[] | null> {
+    try {
+      const read = await evaluateInPage<unknown>(`(() => {
+        /* PAGE_LINKS */
+        return typeof window.__bingbongPageLinks === 'function' ? window.__bingbongPageLinks() : null
+      })()`)
+      if (typeof read !== 'object' || read === null) return null
+      const { url, links } = read as Record<string, unknown>
+      if (lastSnapshot === undefined || url !== lastSnapshot.url) return null
+      return parsePageLinks(links)
+    } catch (error) {
+      reportFault('browser.createCdpBrowserController.pageLinks', error)
+      return null
+    }
+  }
+
   async function groundingSnapshot(): Promise<PageSnapshot> {
     return collectSnapshot()
   }
@@ -1527,6 +1550,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     settledState,
     describeRef,
     linkHrefs,
+    pageLinks,
     groundingSnapshot,
     refAtPoint,
     showRef,

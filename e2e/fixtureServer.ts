@@ -392,6 +392,59 @@ function newWindowPage(): string {
 </html>`
 }
 
+// A collection's search listing (#303, note on ADR 0070), shaped after
+// rmg.co.uk's: taller than the viewport, the site's own links in view — a
+// home link and two tabs that sit inside \`main\` — and the results a
+// viewport and more below the fold. Its address carries its terms in the
+// path, so it is a Search URL. Refs in DOM order: [1] Home [2] Objects
+// [3] Library, and no result; the links of the whole page go on to the
+// three results, the first of them linked twice.
+export const COLLECTION_RESULTS = [
+  { slug: 'h4', title: 'Marine timekeeper H4', text: 'H4 is the longitude watch John Harrison completed in 1759. Its dial is 102 mm across.' },
+  { slug: 'h5', title: 'Marine timekeeper H5', text: 'H5 is the watch John Harrison completed in 1770.' },
+  { slug: 'k1', title: 'Marine timekeeper K1', text: 'K1 is the copy of H4 Larcum Kendall completed in 1769.' },
+] as const
+
+function collectionChrome(): string {
+  return `<header><a href="/">Home</a></header>
+  <main>
+  <ul class="tabs" style="font-size:20px"><li><a href="/collections/object">Objects</a></li><li><a href="/collections/library">Library</a></li></ul>`
+}
+
+function collectionListingPage(terms: string): string {
+  const results = COLLECTION_RESULTS.map(
+    (result, index) =>
+      `<li>${index === 0 ? `<a href="/collections/objects/${result.slug}"><img alt="" width="80" height="80"></a> ` : ''}<a href="/collections/objects/${result.slug}">${result.title}</a></li>`,
+  ).join('\n    ')
+  return `<!doctype html>
+<html>
+<head><title>Search results for ${terms} | Collections</title></head>
+<body style="background:#222;color:#fff;margin:0">
+  ${collectionChrome()}
+  <h1>Search results</h1>
+  <p>3 objects match ${terms}.</p>
+  <div style="height:2400px"></div>
+  <ul class="results" style="font-size:20px">
+    ${results}
+  </ul>
+  </main>
+</body>
+</html>`
+}
+
+function collectionPage(title: string, text: string): string {
+  return `<!doctype html>
+<html>
+<head><title>${title} | Collections</title></head>
+<body style="background:#222;color:#fff;margin:0">
+  ${collectionChrome()}
+  <h1>${title}</h1>
+  <p>${text}</p>
+  </main>
+</body>
+</html>`
+}
+
 // Auth-identity echo (ADR 0018): renders the User-Agent the pane actually
 // sent, so the auth-host rewrite is assertable through read_page. Its two
 // openers exercise the popup allowlist: [1] opens a page on the same host
@@ -1454,6 +1507,20 @@ export async function startFixtureServer(): Promise<FixtureServer> {
     }
     if (req.url === '/popup') {
       res.end(popupPage())
+      return
+    }
+    if (req.url !== undefined && req.url.startsWith('/collections/search/')) {
+      res.end(collectionListingPage(decodeURIComponent(req.url.slice('/collections/search/'.length)).replace(/[<>&"]/g, ' ')))
+      return
+    }
+    if (req.url === '/collections/object' || req.url === '/collections/library') {
+      res.end(collectionPage('Browse the collection', 'Every object in the collection, with no terms to search it by.'))
+      return
+    }
+    if (req.url !== undefined && req.url.startsWith('/collections/objects/')) {
+      const object = COLLECTION_RESULTS.find((result) => req.url === `/collections/objects/${result.slug}`)
+      // An object the collection does not hold is a Not-found Page by its title, served with 200.
+      res.end(object !== undefined ? collectionPage(object.title, object.text) : collectionPage('Page not found', 'This address names nothing in the collection.'))
       return
     }
     if (req.url === '/new-window') {

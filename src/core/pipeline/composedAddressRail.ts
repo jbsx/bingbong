@@ -12,7 +12,8 @@ import { reportFault } from '../trace/fault'
 // navigate: the Composed Address, a URL the model was not shown this Run.
 // Offered is any href in a successful result it read, any URL the Run
 // landed on, the address of any popup a result reported as denied (#299,
-// ADR 0073), and any source in Session Evidence, matched by URL fingerprint.
+// ADR 0073), the address of a Result Pick (#303), and any source in Session
+// Evidence, matched by URL fingerprint.
 //
 // A site — a registrable domain, so jpl.nasa.gov and science.nasa.gov are
 // one — allows one Not-found Landing by a Composed Address per Run. After
@@ -84,6 +85,14 @@ export interface ComposedAddressRail {
    * either way.
    */
   observe(call: ToolCall, outcome: ToolResultOutcome, landedUrl?: string | null, linkHrefs?: readonly string[] | null): void
+  /**
+   * Offers the address of a Result Pick, from the moment it is picked (#303,
+   * note on ADR 0055): the pick is chosen among the links of the whole page,
+   * and a link below the fold was offered by nothing — the refs are the
+   * links in view, and a page's text carries no href. Only the picked address:
+   * the rest of the list was never in front of the model.
+   */
+  offerResultPick(address: string): void
 }
 
 /**
@@ -264,6 +273,9 @@ export function createComposedAddressRail(deps: ComposedAddressRailDeps = {}): C
           if (address !== null) offer(address)
         }
       }
+    },
+    offerResultPick(address) {
+      offer(address)
     },
   }
 }

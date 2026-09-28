@@ -104,6 +104,8 @@ class FakeCdp implements CdpDebugger {
   /** The address the clicked link carries right after the click (#299); undefined answers the element's own href. */
   linkAddress: string | null | undefined = undefined
   mediaProbe: unknown = { paused: true, currentTime: 12.5, volume: 0.4 }
+  /** What the in-place links helper answers (#303); null is a page that holds no helper. */
+  pageLinks: unknown = null
   collectValues: unknown[] = []
   /**
    * The page's two registries (ADR 0033), modelled by object identity over
@@ -207,6 +209,7 @@ class FakeCdp implements CdpDebugger {
         return { result: { value: shown !== undefined && shown === this.collectedElements[index] } } as T
       }
       if (expression.includes('/* MEDIA_STATE */')) return { result: { value: this.mediaProbe } } as T
+      if (expression.includes('/* PAGE_LINKS */')) return { result: { value: this.pageLinks } } as T
       if (expression.includes('/* DIALOG_LABELS */')) {
         if (this.dialogLabelsException) return { exceptionDetails: { text: this.dialogLabelsException } } as T
         const page = this.evaluateValue as CollectedPage
@@ -615,6 +618,58 @@ describe('createCdpBrowserController linkHrefs (#258)', () => {
 
     expect(cdp.collectCalls()).toHaveLength(collectsBefore + 1)
     expect(hrefs).not.toBeNull()
+  })
+})
+
+describe('createCdpBrowserController pageLinks (#303)', () => {
+  const LONG = `https://example.com/${'long-result-address-'.repeat(15)}`
+
+  it('lists the links of the whole page in place: hrefs whole, labels cut as a ref’s are, and no collect', async () => {
+    const { cdp, controller } = makeController()
+    await controller.readPage()
+    const collectsBefore = cdp.collectCalls().length
+    cdp.pageLinks = {
+      url: youtubeFixture.url,
+      links: [{ label: 'Objects', href: 'https://example.com/collections/object' }, { label: 'x'.repeat(120), href: LONG }, { label: 'no address', href: '' }, 'not a link'],
+    }
+
+    const links = await controller.pageLinks()
+
+    expect(links).toEqual([
+      { label: 'Objects', href: 'https://example.com/collections/object' },
+      { label: `${'x'.repeat(79)}…`, href: LONG },
+    ])
+    expect(cdp.collectCalls()).toHaveLength(collectsBefore)
+  })
+
+  it('answers null for a page that cannot be read: no helper, links that are no list, an evaluation that throws', async () => {
+    const { cdp, controller } = makeController()
+    await controller.readPage()
+    expect(await controller.pageLinks()).toBeNull()
+    cdp.pageLinks = { url: youtubeFixture.url, links: 'none' }
+    expect(await controller.pageLinks()).toBeNull()
+    cdp.evaluateException = 'Execution context was destroyed'
+    expect(await controller.pageLinks()).toBeNull()
+  })
+
+  it('answers null for a page that is not the one the last result printed: its links are another page’s', async () => {
+    const { cdp, controller } = makeController()
+    const links = [{ label: 'Objects', href: 'https://example.com/collections/object' }]
+    // No page was printed yet.
+    cdp.pageLinks = { url: youtubeFixture.url, links }
+    expect(await controller.pageLinks()).toBeNull()
+    await controller.readPage()
+    expect(await controller.pageLinks()).toEqual(links)
+    // The tab moved on since, by a redirect or a route change.
+    cdp.pageLinks = { url: 'https://example.com/elsewhere', links }
+    expect(await controller.pageLinks()).toBeNull()
+  })
+
+  it('answers an empty list for a page that holds no link', async () => {
+    const { cdp, controller } = makeController()
+    await controller.readPage()
+    cdp.pageLinks = { url: youtubeFixture.url, links: [] }
+    expect(await controller.pageLinks()).toEqual([])
   })
 })
 
