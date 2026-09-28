@@ -281,3 +281,28 @@ on not tuning to the judged data.
   Blocker landing, two navigates to a page that rendered empty, and one
   Result Pick the reviewer did not read as an opening. The last two are
   issues of their own.
+- 2026-09-28 (#294, grilled): the Round Audit's two readers of this rule
+  follow it again, and the change lands directly after #293 so the reviewer
+  prompt is bumped once. The reviewer prompt becomes `audit-p4`. It defines
+  Search Loop membership as the note above does — a loop ends only when
+  something new is put in front of the Run: a page opened, the user's
+  answer, or a Subagent Report — and names what holds: inspection, a
+  checkpoint, a call that acts on no page, a landing on a Not-found page,
+  an Unavailable Page or a Blocker, and a Composed Address rewrite. The
+  sentence saying the rule counts every successful non-search call as an
+  opening, false since #289, goes. The reviewer keeps both of its
+  freedoms: to say a marked streak is not one loop, and to extend a loop
+  across a call the rule took as an opening that put nothing before the
+  assistant. The digest gains two marks on a search's call, both already
+  in the audit's rounds: that the app rewrote it from a Composed Address,
+  without which the reviewer cannot tell it from a search the model wrote,
+  and its Result Pick (note on ADR 0070). Nothing is re-judged for this
+  change. The Reference is re-judged under `audit-p4` when the next
+  capture is taken, as `fix-258-259` was for `audit-p3`; until then an
+  `audit-p4` audit cannot be aggregated with an `audit-p3` one and the Fix
+  Ledger marks the reviewer-prompt axis. The names of the checkpoint tools
+  are held once, pinned by a test to the tools that declare themselves
+  checkpoints, and every reader by name — the no-Progress rail, this rule,
+  the audit's Bookkeeping kind, the decision shadow — derives from that.
+  Closes on tests and the recount in the note on ADR 0060; no capture and
+  no gate.

@@ -116,3 +116,18 @@ lets the model do.
   Nothing closes an Asked Item during a Run any more, so "an open Asked
   Item" is every item the Run Plan declares, and a landing opened by a
   Result Pick is read and recorded by the model as any other.
+- 2026-09-28 (#294, grilled; findings on #303): the reviewer's digest shows
+  a Result Pick from `audit-p4` on — the label and address of what was
+  opened, on the search's call — and the prompt says what one is. Until
+  then the reviewer could not see one: the digest printed no pick, and the
+  `Opened` line lies past the head it keeps of a result. Thirteen rounds
+  holding a pick sat inside a reviewer loop across `jev-on`, `fix-281`,
+  `fix-283` and `fix-288-290`. Two opened a real page the model read in
+  the next round. Eleven opened one link, the "Objects" tab of rmg.co.uk's
+  navigation, on a listing that showed no results, and put nothing new in
+  front of the Run; the reviewer was right to keep those in the loop. One
+  of the thirteen was read from its trace (`fix-288-290` pass 1, longitude,
+  round 16: picked at confidence 0.91, a search again in round 17) and the
+  rest from their audits. Whether the pick should refuse a link that is no
+  result, or the rule should hold on an open that lands back on the
+  listing, is #303's to decide and is not changed here.

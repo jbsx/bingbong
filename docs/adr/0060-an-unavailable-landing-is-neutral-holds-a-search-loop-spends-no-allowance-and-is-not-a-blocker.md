@@ -207,3 +207,20 @@ Blocker signals as they are, and [ADR 0037](0037-keeping-at-a-blocker-ends-the-r
 ending for a wall only. Follows [ADR 0045](0045-a-round-audit-is-counted-by-code-and-judged-by-a-model-that-is-not-measured.md):
 the recognition is shaped by observed pages, the tiers do not move, and the
 recount, not a re-judgement, makes the marginal comparable.
+
+## Notes
+
+- 2026-09-28 (#294, grilled): "followed by a search" is read by the Search
+  Loop rule's own move, where it kept a list of its own. The wait after an
+  Unavailable Landing holds across whatever the rule holds, ends on escape,
+  and counts when the next move is a search. So a checkpoint tool holds it
+  (#289), and so do a call that acts on no page and a landing on a Blocker
+  (#293). A Composed Address rewrite holds it too: the landing was not
+  followed by a search the model wrote, and the next search or escape
+  decides. The count had ended its wait at a checkpoint tool on purpose at
+  #289, whose acceptance moved the streak counters alone. Committed audits
+  are unchanged on disk; the Fix Ledger recounts an audit written under a
+  streak rule below 3 from its rounds. The #289 session expected
+  `fix-258-259` to move from 1 to 2 under the checkpoint hold alone; that
+  figure was not re-derived, and the recount's own number is the one
+  pinned.
