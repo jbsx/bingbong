@@ -7,6 +7,7 @@
 
 import type { ToolCall } from '../ports/llm'
 import type { ObservationId, ObservationProducer, ObservationRecord } from '../session/observationLedger'
+import { canonicalUnheldUrls } from '../session/observationLedger'
 import type { ObservationCheckpointResult, SessionEvidenceStore, UserObservationOrigin } from '../session/sessionEvidence'
 import { MAX_PROVENANCE_CHARS, MAX_UNCERTAINTY_CHARS, USER_EVENT_PRODUCERS } from '../session/sessionEvidence'
 import type { MemoryEntryId, MemoryReference } from '../session/workingMemory'
@@ -971,6 +972,16 @@ function groundUserCitation(
   return { ok: true, event, producer: userProducer(event)! }
 }
 
+/**
+ * Whether a Subagent observed an address and held nothing from it (#301):
+ * its latest arrival there was a Blocker, a Not-found Page or an
+ * Unavailable Page. The one test the grading and the Run Trace share.
+ */
+export function subagentSourceUnheld(workerRecords: readonly ObservationRecord[], sourceUrl: string): boolean {
+  const canonical = canonicalizeMemoryUrl(sourceUrl)
+  return canonical !== null && canonicalUnheldUrls(workerRecords).has(canonical)
+}
+
 /** A subagent citation's grounding (#123): the named Subagent's own retained observation of the source. */
 function groundSubagentCitation(
   citation: SubagentCitation,
@@ -989,6 +1000,16 @@ function groundSubagentCitation(
   // the report's words, not the page's. The Subagent's freshest retention
   // of the source grounds the citation, text or structured alike.
   const source = findSourceObservation(workerRecords, citation.sourceUrl)
+  // A source is a page the Subagent held content from (#301): an address
+  // whose latest arrival was a wall or an error page is none, however many
+  // `ok` records name it.
+  if (source !== null && subagentSourceUnheld(workerRecords, citation.sourceUrl)) {
+    return {
+      ok: false,
+      reason: 'unknown_source',
+      error: `subagent '${citation.agentId}' reached '${citation.sourceUrl}' only as a wall or an error page and held nothing from it — cite one of the evidence URLs its report's findings carry`,
+    }
+  }
   if (source === null) {
     return {
       ok: false,

@@ -8,6 +8,7 @@ import {
   parseEvidenceCitation,
   retainedText,
   sourceObservations,
+  subagentSourceUnheld,
   userCitationBesideExcerpt,
   userEventObservations,
   type EvidenceCheckpointOutcome,
@@ -15,7 +16,7 @@ import {
 import type { CandidateCheckpointOutcome } from '../pipeline/candidateCheckpoint'
 import type { ToolCall } from '../ports/llm'
 import type { ObservationRecord } from '../session/observationLedger'
-import { normalizeMemoryText } from '../session/workingMemory'
+import { canonicalizeMemoryUrl, normalizeMemoryText } from '../session/workingMemory'
 import { TRACE_PAYLOAD_HEAD_CHARS, type EvidenceCheckpointEvent, type TracedObservation } from './runTrace'
 
 /** The verdict word a record carries: acceptance is one outcome among the reasons. */
@@ -42,6 +43,8 @@ export function evidenceCheckpointEvent(input: {
   records: readonly ObservationRecord[]
   /** The delegated workers' retained observations (#123), by agent id. */
   workerObservations?: (agentId: string) => readonly ObservationRecord[] | null
+  /** The addresses a Subagent's kept findings reference (#301), by agent id. */
+  workerFindingUrls?: (agentId: string) => readonly string[] | null
   /** `answer` when an Answer carried the entry (#288); absent for a call. */
   origin?: 'answer'
 }): EvidenceCheckpointEvent {
@@ -63,6 +66,16 @@ export function evidenceCheckpointEvent(input: {
   // call's args still show it, and its acceptance carries the Notice.
   const excerpt = citation !== null && citation.kind === 'web' ? citation.excerpt : undefined
   const agentId = outcome.ok ? outcome.agentId : citation?.kind === 'subagent' ? citation.agentId : undefined
+  // The two facts the Round Audit counts on this kind (#301), said by the
+  // test the grading used and by the findings the report kept.
+  const subagent = citation !== null && citation.kind === 'subagent' ? citation : null
+  const sourceUnheld =
+    subagent !== null &&
+    !outcome.ok &&
+    outcome.reason === 'unknown_source' &&
+    subagentSourceUnheld(input.workerObservations?.(subagent.agentId) ?? [], subagent.sourceUrl)
+  const findingUrls = subagent !== null && outcome.ok ? (input.workerFindingUrls?.(subagent.agentId) ?? null) : null
+  const citedUrl = subagent === null ? null : canonicalizeMemoryUrl(subagent.sourceUrl)
   return {
     kind: 'evidence_checkpoint',
     tool: 'record_evidence',
@@ -79,6 +92,8 @@ export function evidenceCheckpointEvent(input: {
     ...(agentId !== undefined ? { agentId } : {}),
     ...(input.origin !== undefined ? { origin: input.origin } : {}),
     ...(outcome.ok && outcome.correction !== undefined ? { correction: outcome.correction } : {}),
+    ...(sourceUnheld ? { sourceUnheld: true as const } : {}),
+    ...(findingUrls !== null ? { citesFinding: findingUrls.some((url) => canonicalizeMemoryUrl(url) === citedUrl) } : {}),
   }
 }
 

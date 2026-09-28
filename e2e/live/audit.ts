@@ -3223,6 +3223,18 @@ export interface SubagentCitationCounts {
   excerptUnsupported: number
   /** Applied with an offered excerpt dropped, the acceptance carrying its Notice. */
   droppedExcerpts: number
+  /**
+   * Refused because the Subagent reached the address only as a Blocker, a
+   * Not-found Page or an Unavailable Page (#301). Absent on an audit written
+   * before the count, never zero.
+   */
+  wallSourceRefusals?: number
+  /**
+   * Applied where `source_url` is a reference of none of that Subagent's
+   * findings (#301). Absent on an audit written before the count, and where
+   * an accepted citation's record does not say, never zero.
+   */
+  offFindingCitations?: number
 }
 
 /**
@@ -3236,12 +3248,21 @@ export interface SubagentCitationCounts {
  */
 export function subagentCitationsOf(traceRecords: readonly object[]): SubagentCitationCounts {
   const counts = emptySubagentCitationCounts()
+  // A true zero on a trace written before the rule: nothing was refused for such a source then.
+  let wallSourceRefusals = 0
+  // Null once an accepted citation's record does not say (#301): a trace
+  // written before the field, or findings that were not at hand.
+  let offFindingCitations: number | null = 0
   for (const raw of traceRecords as unknown as readonly TraceLine[]) {
     if (raw.kind !== 'evidence_checkpoint' || raw.tool !== 'record_evidence' || !isString(raw.agentId)) continue
     if (raw.outcome === 'excerpt_unsupported') counts.excerptUnsupported += 1
-    else if (raw.outcome === 'accepted' && isString(raw.correction) && raw.correction.startsWith(DROPPED_EXCERPT_NOTICE_HEAD)) counts.droppedExcerpts += 1
+    else if (raw.outcome === 'unknown_source' && raw.sourceUnheld === true) wallSourceRefusals += 1
+    if (raw.outcome !== 'accepted') continue
+    if (isString(raw.correction) && raw.correction.startsWith(DROPPED_EXCERPT_NOTICE_HEAD)) counts.droppedExcerpts += 1
+    if (typeof raw.citesFinding !== 'boolean') offFindingCitations = null
+    else if (offFindingCitations !== null && !raw.citesFinding) offFindingCitations += 1
   }
-  return counts
+  return { ...counts, wallSourceRefusals, ...(offFindingCitations !== null ? { offFindingCitations } : {}) }
 }
 
 /**
@@ -3386,6 +3407,9 @@ function tierShadowText(shadow: TierShadow | undefined): string {
 function addSubagentCitations(into: SubagentCitationCounts, from: Readonly<SubagentCitationCounts>): void {
   into.excerptUnsupported += from.excerptUnsupported
   into.droppedExcerpts += from.droppedExcerpts
+  // Summed over the attempts that counted them (#301): an older audit adds no zero.
+  if (from.wallSourceRefusals !== undefined) into.wallSourceRefusals = (into.wallSourceRefusals ?? 0) + from.wallSourceRefusals
+  if (from.offFindingCitations !== undefined) into.offFindingCitations = (into.offFindingCitations ?? 0) + from.offFindingCitations
 }
 
 /** The canonical URLs an attempt's accepted Evidence Checkpoints cite — what a follow-up would inherit. */
@@ -4842,11 +4866,15 @@ function populationSlipsText(population: AuditPopulation): string {
   return `${slipCountsText(population.identitySlipAnswers, population.identitySlipIds)}${notRecorded}`
 }
 
-/** The #272 gate's two numbers, or that the audit predates them — never a zero it did not count. */
+/**
+ * The #272 gate's two numbers beside #301's two, or that the audit predates
+ * them — never a zero it did not count.
+ */
 function subagentCitationsText(counts: Readonly<SubagentCitationCounts> | undefined): string {
-  return counts === undefined
-    ? 'subagent citations not counted'
-    : `subagent citations: ${counts.excerptUnsupported} excerpt_unsupported, ${counts.droppedExcerpts} applied with a dropped excerpt`
+  if (counts === undefined) return 'subagent citations not counted'
+  const wall = counts.wallSourceRefusals === undefined ? '' : `, ${counts.wallSourceRefusals} refused for a wall or error source`
+  const offFinding = counts.offFindingCitations === undefined ? '' : `, ${counts.offFindingCitations} applied under no finding's address`
+  return `subagent citations: ${counts.excerptUnsupported} excerpt_unsupported, ${counts.droppedExcerpts} applied with a dropped excerpt${wall}${offFinding}`
 }
 
 /** The Transport Failure counters in one phrase (#271); an audit written before them says so. */

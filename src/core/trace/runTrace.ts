@@ -167,6 +167,19 @@ export interface EvidenceCheckpointEvent {
    * told the model the canonical shape. The outcome still reads 'accepted'.
    */
   readonly correction?: string
+  /**
+   * On a kind "subagent" citation refused `unknown_source` (#301): the
+   * Subagent reached the address only as a Blocker, a Not-found Page or an
+   * Unavailable Page. Absent on every other record, a refusal of an address
+   * the Subagent never observed included.
+   */
+  readonly sourceUnheld?: true
+  /**
+   * On an accepted kind "subagent" citation (#301): whether `source_url` is
+   * a reference of one of that Subagent's kept findings. Absent where the
+   * findings were not at hand, and in traces written before the field.
+   */
+  readonly citesFinding?: boolean
 }
 
 /**

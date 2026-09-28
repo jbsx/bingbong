@@ -8,7 +8,7 @@ import {
   type WorkingMemorySnapshot,
 } from '../session/workingMemory'
 import type { ObservationRecord } from '../session/observationLedger'
-import { canonicalObservedUrls } from '../session/observationLedger'
+import { canonicalObservedUrls, canonicalUnheldUrls } from '../session/observationLedger'
 import type { FinalizationCause } from '../session/runJournal'
 import { SUBAGENT_LIMITS } from './subagentRails'
 
@@ -187,19 +187,27 @@ export function selectDelegatedMemory(
  * apply, enforced before the report completes. Dropped findings survive
  * only in the prose report; the count comes back so the report can say
  * honestly what was unverified.
+ *
+ * A source is a page the Subagent held content from (#301): a reference to
+ * an address whose latest arrival was a Blocker, a Not-found Page or an
+ * Unavailable Page is taken out of its finding, and the finding is dropped
+ * only when no reference is left. A search results page is a source like
+ * any other.
  */
 export function validateReportFindings(
   findings: readonly SubagentReportFinding[],
   records: readonly ObservationRecord[],
 ): { findings: readonly SubagentReportFinding[]; dropped: number } {
   const observed = canonicalObservedUrls(records)
-  const kept = findings.filter((finding) => {
-    if (finding.references.length === 0) return false
-    return finding.references.every((reference) => {
-      const canonical = canonicalizeMemoryUrl(reference.url)
-      return canonical !== null && observed.has(canonical)
-    })
-  })
+  const unheld = canonicalUnheldUrls(records)
+  const kept: SubagentReportFinding[] = []
+  for (const finding of findings) {
+    const canonicals = finding.references.map((reference) => canonicalizeMemoryUrl(reference.url))
+    if (canonicals.some((canonical) => canonical === null || !observed.has(canonical))) continue
+    const references = finding.references.filter((_, index) => !unheld.has(canonicals[index]!))
+    if (references.length === 0) continue
+    kept.push(references.length === finding.references.length ? finding : { ...finding, references })
+  }
   return { findings: kept, dropped: findings.length - kept.length }
 }
 

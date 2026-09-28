@@ -188,6 +188,12 @@ export interface CommandPipelineDeps {
    */
   subagentObservations?: (agentId: string) => readonly ObservationRecord[] | null
   /**
+   * The addresses a Subagent's kept findings reference (#301), by
+   * agent id. Read by the Run Trace alone, which says whether an accepted
+   * subagent citation names one; grading never consults it.
+   */
+  subagentFindingUrls?: (agentId: string) => readonly string[] | null
+  /**
    * The Browse Subagents holding one page (#273, ADR 0065), narrowed to the
    * ones this Run spawned: what the Delegated Page Notice on a call's
    * result names. Absent — no delegation wired — no call carries one.
@@ -1324,6 +1330,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
                     outcome,
                     records: ledger.snapshot(),
                     ...(deps.subagentObservations ? { workerObservations: deps.subagentObservations } : {}),
+                    ...(deps.subagentFindingUrls ? { workerFindingUrls: deps.subagentFindingUrls } : {}),
                     ...(origin !== undefined ? { origin } : {}),
                   }),
                 }))

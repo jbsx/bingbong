@@ -71,6 +71,12 @@ export interface AssistantPipelineDeps {
    */
   subagentObservations?: (agentId: string) => readonly ObservationRecord[] | null
   /**
+   * The addresses a Subagent's kept findings reference (#301), by
+   * agent id: what the Run Trace reads an accepted subagent citation
+   * against. Wired by main to the subagent runtime's report lookup.
+   */
+  subagentFindingUrls?: (agentId: string) => readonly string[] | null
+  /**
    * The Browse Subagents a Run spawned that hold one page (#273, ADR 0065):
    * what its Delegated Page Notice names. Wired by main to the subagent
    * runtime's registry.
@@ -393,6 +399,7 @@ export function createAssistantPipeline(deps: AssistantPipelineDeps): CommandPip
     // Worker observations (#123): completed reports' hidden provenance,
     // for kind "subagent" Evidence Checkpoint grounding.
     ...(deps.subagentObservations ? { subagentObservations: deps.subagentObservations } : {}),
+    ...(deps.subagentFindingUrls ? { subagentFindingUrls: deps.subagentFindingUrls } : {}),
     // Delegated Pages (#273): the pages this Run's Subagents hold.
     ...(deps.delegatedPages ? { delegatedPages: deps.delegatedPages } : {}),
     ...(deps.tracer ? { tracer: deps.tracer } : {}),

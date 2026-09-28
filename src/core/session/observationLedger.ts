@@ -1,5 +1,8 @@
 import type { SessionGeneration } from './sessionIdentity'
 import { canonicalizeMemoryUrl } from './workingMemory'
+import { landedOnBlocker } from '../browser/blockerNudge'
+import { landedOnNotFoundPage } from '../browser/notFoundPage'
+import { landedOnUnavailablePage } from '../browser/unavailablePage'
 
 declare const observationIdBrand: unique symbol
 
@@ -127,4 +130,37 @@ export function canonicalObservedUrls(records: readonly ObservationRecord[]): Se
     if (canonical !== null) urls.add(canonical)
   }
   return urls
+}
+
+/** Whether an Action Outcome settled on a Blocker, a Not-found Page or an Unavailable Page: it carries the marker. */
+function landedUnheld(record: ObservationRecord): boolean {
+  const outcome = { ok: true as const, result: record.payload }
+  return landedOnBlocker(outcome) || landedOnNotFoundPage(outcome) || landedOnUnavailablePage(outcome)
+}
+
+// The heads of the Action Outcomes that settle on a page: a navigation, a
+// step through history, a click that left for another URL, and typing the
+// page changed under, as a submitted search does.
+const ARRIVAL_HEAD_RE =
+  /^(?:(?:navigated|went back|went forward): |clicked \[\d+\]: urlChanged=true\b|typed \[\d+\]: (?:field unavailable after page change; |(?:value|selected)="(?:[^"\\\n]|\\.)*"; page changed))/
+
+/**
+ * The canonical URLs a set of records observed and held nothing from
+ * (#301): those whose latest arrival settled on a Blocker, a Not-found Page
+ * or an Unavailable Page. The marker rides the Action Outcome that landed
+ * there and is read from nothing else — a page read or a Look quoting one
+ * is page content. An arrival without it says the page was served, so the
+ * address is a source again; a read of the page arrives nowhere and leaves
+ * the landing as it was.
+ */
+export function canonicalUnheldUrls(records: readonly ObservationRecord[]): Set<string> {
+  const unheld = new Set<string>()
+  for (const record of records) {
+    if (!record.ok || record.producer !== 'action_outcome' || record.sourceUrl === undefined) continue
+    const canonical = canonicalizeMemoryUrl(record.sourceUrl)
+    if (canonical === null) continue
+    if (landedUnheld(record)) unheld.add(canonical)
+    else if (typeof record.payload === 'string' && ARRIVAL_HEAD_RE.test(record.payload)) unheld.delete(canonical)
+  }
+  return unheld
 }

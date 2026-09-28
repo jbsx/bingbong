@@ -96,6 +96,11 @@ export interface SubagentRuntime {
    */
   observationsFor(agentId: string): readonly ObservationRecord[] | null
   /**
+   * The addresses a Subagent's kept findings reference (#301), for the Run
+   * Trace. Null when the agent is unknown or has no report.
+   */
+  findingUrlsFor(agentId: string): readonly string[] | null
+  /**
    * The Browse Subagents one Run spawned that hold a page (#273, ADR 0065),
    * each in its state: what the Run's Delegated Page Notice names.
    */
@@ -190,6 +195,8 @@ export function createSubagentRuntime(deps: SubagentRuntimeDeps): SubagentRuntim
   // Tab phase changes (lingering → closed, reopen) refresh the cards too.
   tabs.subscribe((tab) => bridgeRef.bridge?.onTabChange(tab))
 
+  const reportOf = (agentId: string) => manager.list().find((record) => record.id === agentId)?.report
+
   return {
     tools: createSubagentTools(manager),
     pool,
@@ -198,7 +205,9 @@ export function createSubagentRuntime(deps: SubagentRuntimeDeps): SubagentRuntim
     tellParentFinalizing: () => manager.tellParentFinalizing(),
     settledAll: () => manager.settledAll(),
     endReportGrace: () => manager.endReportGrace(),
-    observationsFor: (agentId) => manager.list().find((record) => record.id === agentId)?.report?.observations ?? null,
+    observationsFor: (agentId) => reportOf(agentId)?.observations ?? null,
+    findingUrlsFor: (agentId) =>
+      reportOf(agentId)?.findings.flatMap((finding) => finding.references.map((reference) => reference.url)) ?? null,
     delegatedPages: (url, turnId) => manager.delegatedHolders(url, { turnId }),
     collectCompleted: (turnId) => manager.collectCompleted(turnId),
     retire: () => {

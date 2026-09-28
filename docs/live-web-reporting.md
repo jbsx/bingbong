@@ -1004,6 +1004,24 @@ as written. Auditing one of them again gives a digest with the verdict word in
 it, which no cached judgement is keyed on, so the reviewer is asked again for
 that attempt; no other attempt's digest moves.
 
+Two more counts ride the same field (#301): subagent citations **refused for
+a wall or error source** (`wallSourceRefusals`) — `unknown_source` because
+the Subagent reached the address only as a Blocker, a Not-found Page or an
+Unavailable Page, which the record says in `sourceUnheld` — and those
+**applied under no finding's address** (`offFindingCitations`), an accepted
+citation whose `source_url` is a reference of none of that Subagent's kept
+findings, which the record says in `citesFinding`. The Run Trace writes both
+facts when it writes the record, from the test the grading used and from the
+findings the report kept: the trace holds a report only as the text
+`agent_results` rendered, cut at 8,000 characters, so nothing read back from
+it could say either. A refusal of an address the Subagent never observed is
+not the first count. The second is left out where any accepted citation's
+record does not say, as in a trace written before the field. Both are absent
+on an audit written before them, never zero, and a population sums them over
+the attempts that counted them. Reported, never gated: the #301 gate rides
+the next capture that spawns, where findings kept with a walled reference
+should be 0.
+
 One more sits beside them (#284, ADR 0071): the **accepted records answered
 with the contradiction Note**, by round — the Note the checkpoint tool
 appended until #284 whenever an earlier Observation shared the record's

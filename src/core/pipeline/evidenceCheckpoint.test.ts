@@ -888,6 +888,99 @@ describe('a kind "subagent" citation takes no excerpt (#272)', () => {
   })
 })
 
+describe('a kind "subagent" citation names a page the Subagent held content from (#301)', () => {
+  const WALLED = 'https://thepihut.com/products/raspberry-pi-camera-module-3'
+  const SEARCH = 'https://www.bing.com/search?q=camera+module+3+price'
+  const ARGS = { kind: 'subagent', agent_id: 'a-1', observation: 'Camera Module 3 costs £24.', source_url: WALLED }
+  const WALL_REFUSAL =
+    `subagent 'a-1' reached '${WALLED}' only as a wall or an error page and held nothing from it — ` +
+    "cite one of the evidence URLs its report's findings carry"
+
+  function arrival(id: string, at: number, url: string, tail: string): ObservationRecord {
+    return { id: id as ObservationRecord['id'], at, producer: 'action_outcome', ok: true, payload: `navigated: url=${url} title="a title"\n${tail}`, sourceUrl: url }
+  }
+  const wall = (id: string, at: number) => arrival(id, at, WALLED, 'BLOCKER:challenge thepihut.com\nthe user can complete it on screen')
+  const served = (id: string, at: number) => arrival(id, at, WALLED, 'page text:\nCamera Module 3 £24')
+  const SEARCH_READ: ObservationRecord = {
+    id: 'wobs-2' as ObservationRecord['id'],
+    at: 50,
+    producer: 'page_read',
+    ok: true,
+    payload: 'page text:\nThe Pi Hut — Camera Module 3 — £24',
+    sourceUrl: SEARCH,
+  }
+
+  function cite(args: Record<string, unknown>, workerRecords: readonly ObservationRecord[], findingUrls?: readonly string[]) {
+    const store = evidenceHarness()
+    const call = callOf(args)
+    const workerObservations = (agentId: string) => (agentId === 'a-1' ? workerRecords : null)
+    const outcome = evaluateEvidenceCheckpoint(call, {
+      records: [],
+      commitSubagent: (agentId) => subagentEvidenceCommit(() => store, 'run-1' as RunId, agentId),
+      workerObservations,
+    })
+    const event = evidenceCheckpointEvent({
+      call,
+      outcome,
+      records: [],
+      workerObservations,
+      ...(findingUrls !== undefined ? { workerFindingUrls: (agentId: string) => (agentId === 'a-1' ? findingUrls : null) } : {}),
+    })
+    return { outcome, store, event }
+  }
+
+  it('refuses a walled address unknown_source, with its own sentence', () => {
+    const { outcome, store } = cite(ARGS, [wall('wobs-1', 10), SEARCH_READ])
+
+    expect(outcome).toEqual({ ok: false, reason: 'unknown_source', error: WALL_REFUSAL })
+    expect(store.snapshot().observations).toEqual([])
+  })
+
+  it('refuses a not-found and an unavailable landing the same way', () => {
+    for (const tail of ['NOT-FOUND:404 thepihut.com\nadvice', 'UNAVAILABLE:503 thepihut.com\nadvice']) {
+      expect(cite(ARGS, [arrival('wobs-1', 10, WALLED, tail)]).outcome).toEqual({ ok: false, reason: 'unknown_source', error: WALL_REFUSAL })
+    }
+  })
+
+  it('applies a citation of a search results page a finding references', () => {
+    const { outcome } = cite({ ...ARGS, source_url: SEARCH }, [wall('wobs-1', 10), SEARCH_READ], [WALLED, SEARCH])
+
+    expect(outcome).toMatchObject({ ok: true, sourceObservationId: 'wobs-2', sourceUrl: SEARCH, agentId: 'a-1' })
+  })
+
+  it('the latest arrival decides: walled then served is a source, served then walled is not', () => {
+    expect(cite(ARGS, [wall('wobs-1', 10), served('wobs-3', 60)]).outcome).toMatchObject({ ok: true, sourceObservationId: 'wobs-3' })
+    expect(cite(ARGS, [served('wobs-1', 10), wall('wobs-3', 60)]).outcome).toMatchObject({ ok: false, reason: 'unknown_source', error: WALL_REFUSAL })
+  })
+
+  it('keeps the sentence of a source the Subagent never observed', () => {
+    const { outcome } = cite({ ...ARGS, source_url: 'https://never-opened.test/a' }, [SEARCH_READ])
+
+    expect(outcome).toMatchObject({ ok: false, reason: 'unknown_source', error: expect.stringContaining("did not observe 'https://never-opened.test/a'") })
+  })
+
+  it('the trace event says a refusal was for such a source, and only then', () => {
+    const refused = cite(ARGS, [wall('wobs-1', 10), SEARCH_READ]).event
+    expect(refused).toMatchObject({ outcome: 'unknown_source', agentId: 'a-1', sourceUnheld: true })
+    // The arrivals the refusal read are what was graded.
+    expect(refused.graded.map((record) => record.observationId)).toEqual(['wobs-1'])
+
+    expect(cite({ ...ARGS, source_url: 'https://never-opened.test/a' }, [SEARCH_READ]).event).not.toHaveProperty('sourceUnheld')
+    expect(cite({ ...ARGS, source_url: SEARCH }, [SEARCH_READ]).event).not.toHaveProperty('sourceUnheld')
+  })
+
+  it("the trace event says whether an accepted citation names a reference of the Subagent's findings", () => {
+    const records = [SEARCH_READ, served('wobs-3', 60)]
+
+    expect(cite({ ...ARGS, source_url: `${SEARCH}#top` }, records, [SEARCH]).event).toMatchObject({ outcome: 'accepted', citesFinding: true })
+    expect(cite(ARGS, records, [SEARCH]).event).toMatchObject({ outcome: 'accepted', citesFinding: false })
+    expect(cite(ARGS, records, []).event).toMatchObject({ citesFinding: false })
+    // Unknown where the findings are not at hand, and nothing to say of a refusal.
+    expect(cite(ARGS, records).event).not.toHaveProperty('citesFinding')
+    expect(cite(ARGS, [wall('wobs-1', 10)], [WALLED]).event).not.toHaveProperty('citesFinding')
+  })
+})
+
 describe("the user's words match by containment (#253, ADR 0054)", () => {
   // The Pi follow-up command, and the four fix-252 citations of it that
   // were refused though the words the Run heard were inside every one.

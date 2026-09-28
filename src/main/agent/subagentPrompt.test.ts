@@ -55,6 +55,13 @@ describe('subagent role contracts', () => {
     expect(findings).toMatch(/source URLs you actually opened/)
     expect(findings).toMatch(/finding citing a source you never opened is dropped/)
   })
+
+  it('says once that a wall or an error page is no source, and a search results page is (#301)', () => {
+    const sentence =
+      'A page that showed only a wall, a not-found or an unavailable page is not a source: reference the page you read the text on, a search results page included.'
+    expect(line('"findings" holds')).toContain(sentence)
+    expect(SUBAGENT_SYSTEM_PROMPT.split(sentence)).toHaveLength(2)
+  })
 })
 
 // #103: the per-Run runtime context. The subagent prompt is built per spawn

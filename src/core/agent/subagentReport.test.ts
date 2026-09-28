@@ -186,6 +186,81 @@ describe('validateReportFindings (#123)', () => {
     expect(validated.dropped).toBe(4)
   })
 
+  describe('a page the Subagent held nothing from is no source (#301)', () => {
+    const WALLED = 'https://shop.test/camera'
+    const SEARCH = 'https://www.bing.com/search?q=camera+module+3+price'
+    const arrival = (id: string, url: string, tail = 'page text:\nthe page itself'): ObservationRecord => ({
+      id: id as ObservationRecord['id'],
+      at: 0,
+      producer: 'action_outcome',
+      ok: true,
+      payload: `navigated: url=${url} title="a title"\n${tail}`,
+      sourceUrl: url,
+    })
+    const wall = (id: string, url = WALLED) => arrival(id, url, 'BLOCKER:challenge shop.test\nthe user can complete it on screen')
+    const notFound = (id: string, url: string) => arrival(id, url, 'NOT-FOUND:404 shop.test\nThis address names nothing on shop.test.')
+    const unavailable = (id: string, url: string) => arrival(id, url, 'UNAVAILABLE:503 shop.test\nshop.test could not serve this page right now.')
+
+    it('takes a walled reference out of a finding and keeps the search page it was read on', () => {
+      const validated = validateReportFindings([finding('Price', WALLED, SEARCH)], [wall('w1'), observed('w2', SEARCH)])
+
+      expect(validated).toEqual({ findings: [finding('Price', SEARCH)], dropped: 0 })
+    })
+
+    it('drops and counts a finding whose only reference is a wall, a not-found or an unavailable page', () => {
+      const gone = 'https://shop.test/gone'
+      const down = 'https://shop.test/down'
+
+      const validated = validateReportFindings(
+        [finding('Walled', WALLED), finding('Gone', gone), finding('Down', down), finding('AllThree', WALLED, gone, down)],
+        [wall('w1'), notFound('w2', gone), unavailable('w3', down)],
+      )
+
+      expect(validated).toEqual({ findings: [], dropped: 4 })
+    })
+
+    it('still drops whole a finding with an address the Subagent never observed', () => {
+      const validated = validateReportFindings(
+        [finding('Mixed', SEARCH, 'https://never-opened.test/a'), finding('WalledAndGuessed', WALLED, 'https://never-opened.test/a')],
+        [wall('w1'), observed('w2', SEARCH)],
+      )
+
+      expect(validated).toEqual({ findings: [], dropped: 2 })
+    })
+
+    it('an address walled first and read on a later arrival is a source', () => {
+      const validated = validateReportFindings([finding('Price', WALLED)], [wall('w1'), arrival('w2', `${WALLED}/`)])
+
+      expect(validated).toEqual({ findings: [finding('Price', WALLED)], dropped: 0 })
+    })
+
+    it('an address read first and walled at its latest arrival is not', () => {
+      // A read of the page the wall stands on arrives nowhere: the wall stays the latest arrival.
+      const validated = validateReportFindings([finding('Price', WALLED)], [arrival('w1', WALLED), wall('w2'), observed('w3', WALLED)])
+
+      expect(validated).toEqual({ findings: [], dropped: 1 })
+    })
+
+    it('typing the page changed under is an arrival, and typing into the wall is not', () => {
+      const typed = (id: string, payload: string): ObservationRecord => ({ ...arrival(id, WALLED), payload })
+      const submitted = typed('w2', 'typed [3]: field unavailable after page change; url=https://shop.test/camera title="Camera"')
+      const changed = typed('w2', 'typed [3]: value="camera"; page changed')
+      const intoTheWall = typed('w2', 'typed [3]: value="; page changed"')
+
+      expect(validateReportFindings([finding('Price', WALLED)], [wall('w1'), submitted]).dropped).toBe(0)
+      expect(validateReportFindings([finding('Price', WALLED)], [wall('w1'), changed]).dropped).toBe(0)
+      expect(validateReportFindings([finding('Price', WALLED)], [wall('w1'), intoTheWall]).dropped).toBe(1)
+    })
+
+    it('reads the marker from an Action Outcome only, never from what a page says', () => {
+      const quoting: ObservationRecord = { ...observed('w1', 'https://docs.test/markers'), payload: 'page text:\nBLOCKER:challenge shop.test\nis the line a wall carries' }
+
+      const validated = validateReportFindings([finding('Marker', 'https://docs.test/markers')], [quoting])
+
+      expect(validated.dropped).toBe(0)
+    })
+  })
+
   it('the drop note states the count honestly', () => {
     expect(droppedFindingsNote(1)).toMatch(/^1 finding dropped — the cited source was not observed/)
     expect(droppedFindingsNote(2)).toMatch(/^2 findings dropped — the cited sources were not observed/)

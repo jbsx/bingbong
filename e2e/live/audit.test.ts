@@ -125,6 +125,8 @@ interface RoundSpec {
     /** The Subagent a kind "subagent" checkpoint cited, and the Notice its acceptance carried (#272). */
     checkpointAgentId?: string
     correction?: string
+    sourceUnheld?: true
+    citesFinding?: boolean
     /** The Search Observation the rail recorded for this call (#243) — a trace written after observations were kept. */
     observation?: SearchObservation
     /** The Not-found Landing the Run Trace records on the result (#239) — a trace written after the field was kept. */
@@ -181,7 +183,7 @@ function traceOf(rounds: readonly RoundSpec[], extra: readonly Record<string, un
       const callId = `call-${calls}`
       records.push({ ...identity, at: T0 + spec.at + 1, kind: 'pipeline_event', event: { type: 'tool_call', turnId: TURN, callId, name: call.name, args: call.args, at: T0 + spec.at + 1 } })
       if (call.checkpoint !== undefined) {
-        records.push({ ...identity, at: T0 + spec.at + 2, kind: 'evidence_checkpoint', tool: call.name, args: call.args, outcome: call.checkpoint, matched: call.checkpoint === 'accepted', graded: [], ...(call.merged !== undefined ? { merged: call.merged } : {}), ...(call.checkpointAgentId !== undefined ? { agentId: call.checkpointAgentId } : {}), ...(call.correction !== undefined ? { correction: call.correction } : {}) })
+        records.push({ ...identity, at: T0 + spec.at + 2, kind: 'evidence_checkpoint', tool: call.name, args: call.args, outcome: call.checkpoint, matched: call.checkpoint === 'accepted', graded: [], ...(call.merged !== undefined ? { merged: call.merged } : {}), ...(call.checkpointAgentId !== undefined ? { agentId: call.checkpointAgentId } : {}), ...(call.correction !== undefined ? { correction: call.correction } : {}), ...(call.sourceUnheld !== undefined ? { sourceUnheld: call.sourceUnheld } : {}), ...(call.citesFinding !== undefined ? { citesFinding: call.citesFinding } : {}) })
       }
       if (call.runCheckpoint !== undefined) {
         // A Run-made checkpoint (#276) is traced inside the landing's step,
@@ -681,31 +683,31 @@ describe('subagent citations: excerpt_unsupported and dropped excerpts (#272)', 
 
   it('counts both from the trace\'s checkpoint records, beside the digest', () => {
     const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, [EXTRA[0]!]) }))
-    expect(mechanical.subagentCitations).toEqual({ excerptUnsupported: 1, droppedExcerpts: 1 })
+    expect(mechanical.subagentCitations).toEqual({ excerptUnsupported: 1, droppedExcerpts: 1, wallSourceRefusals: 0 })
 
     // Counted beside the digest: the hash a cached judgement is keyed on does not move.
     const without = ROUNDS.map((spec) => ({ ...spec, calls: spec.calls?.map(({ correction: _correction, ...rest }) => rest) }))
     const old = classifyAttempt(inputOf({ traceRecords: traceOf(without, [EXTRA[0]!]) }))
-    expect(old.subagentCitations).toEqual({ excerptUnsupported: 1, droppedExcerpts: 0 })
+    expect(old.subagentCitations).toEqual({ excerptUnsupported: 1, droppedExcerpts: 0, wallSourceRefusals: 0 })
     expect(old.digestHash).toBe(mechanical.digestHash)
 
     // Another Notice on a subagent acceptance is not a dropped excerpt.
     const other = ROUNDS.map((spec) => ({ ...spec, calls: spec.calls?.map((call) => (call.correction === undefined ? call : { ...call, correction: 'Notice: something else.' })) }))
-    expect(classifyAttempt(inputOf({ traceRecords: traceOf(other, [EXTRA[0]!]) })).subagentCitations).toEqual({ excerptUnsupported: 1, droppedExcerpts: 0 })
+    expect(classifyAttempt(inputOf({ traceRecords: traceOf(other, [EXTRA[0]!]) })).subagentCitations).toEqual({ excerptUnsupported: 1, droppedExcerpts: 0, wallSourceRefusals: 0 })
   })
 
   it('sums them per population and prints both numbers per attempt and per population', () => {
     const initial = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, [EXTRA[0]!]) }))
     const set = buildAuditSet(provenanceOf(), [{ mechanical: initial, review: null, countsAfterOverrules: initial.counts }], [])
 
-    expect(set.populations.initial.subagentCitations).toEqual({ excerptUnsupported: 1, droppedExcerpts: 1 })
+    expect(set.populations.initial.subagentCitations).toEqual({ excerptUnsupported: 1, droppedExcerpts: 1, wallSourceRefusals: 0 })
     const markdown = formatAuditSet(set)
     expect(markdown).toMatch(/- initial: .*subagent citations: 1 excerpt_unsupported, 1 applied with a dropped excerpt/)
-    expect(markdown).toContain('; subagent citations: 1 excerpt_unsupported, 1 applied with a dropped excerpt;')
+    expect(markdown).toContain('; subagent citations: 1 excerpt_unsupported, 1 applied with a dropped excerpt, 0 refused for a wall or error source;')
 
     // An audit written before the counter says so, never zero.
     const { subagentCitations: dropped, ...before } = initial
-    expect(dropped).toEqual({ excerptUnsupported: 1, droppedExcerpts: 1 })
+    expect(dropped).toEqual({ excerptUnsupported: 1, droppedExcerpts: 1, wallSourceRefusals: 0 })
     const legacy = buildAuditSet(provenanceOf(), [{ mechanical: before, review: null, countsAfterOverrules: initial.counts }], [])
     expect(legacy.populations.initial.subagentCitations).toBeUndefined()
     expect(formatAuditSet(legacy)).toMatch(/- initial: .*subagent citations not counted/)
@@ -778,6 +780,79 @@ describe('subagent citations: excerpt_unsupported and dropped excerpts (#272)', 
       expect(mechanical.rounds).toEqual(classifyAttempt(inputOf({ traceRecords: records })).rounds)
       expect(mechanical.subagent.rounds).toBe(1)
     })
+  })
+})
+
+describe("subagent citations: a wall or error source, and no finding's address (#301)", () => {
+  const WALLED = 'https://thepihut.com/products/raspberry-pi-camera-module-3'
+  const SEARCH = 'https://www.bing.com/search?q=camera+module+3+price'
+  type Call = NonNullable<RoundSpec['calls']>[number]
+  const args = (source: string): Record<string, unknown> => ({ kind: 'subagent', agent_id: 'a-1', observation: 'a finding', source_url: source })
+  const cited = (id: string, source: string): string => `Session Evidence recorded: ${id}, grounded in what subagent a-1 observed at ${source} (wobs-2). It survives this run's outcome.`
+  const refused = (source: string, sourceUnheld?: true): Call => ({
+    name: 'record_evidence',
+    args: args(source),
+    ok: false,
+    error: 'record_evidence rejected (unknown_source): no',
+    checkpoint: 'unknown_source',
+    checkpointAgentId: 'a-1',
+    ...(sourceUnheld ? { sourceUnheld } : {}),
+  })
+  const applied = (id: string, source: string, citesFinding?: boolean): Call => ({
+    name: 'record_evidence',
+    args: args(source),
+    result: cited(id, source),
+    checkpoint: 'accepted',
+    checkpointAgentId: 'a-1',
+    ...(citesFinding !== undefined ? { citesFinding } : {}),
+  })
+
+  const ROUNDS: RoundSpec[] = [
+    // 1: a wall refused, beside a refusal of an address the Subagent never observed.
+    { round: 1, at: 1_000, calls: [refused(WALLED, true), refused('https://never-opened.test/a')] },
+    // 2: applied under a finding's address, a search page, and under no finding's.
+    { round: 2, at: 2_000, calls: [applied('memory-3', SEARCH, true), applied('memory-4', OTHER_URL, false)] },
+  ]
+
+  it("counts both from the trace's checkpoint records, beside the digest", () => {
+    const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, [EXTRA[0]!]) }))
+    expect(mechanical.subagentCitations).toEqual({ excerptUnsupported: 0, droppedExcerpts: 0, wallSourceRefusals: 1, offFindingCitations: 1 })
+
+    const bare = ROUNDS.map((spec) => ({ ...spec, calls: spec.calls?.map(({ sourceUnheld: _unheld, citesFinding: _cites, ...rest }) => rest) }))
+    expect(classifyAttempt(inputOf({ traceRecords: traceOf(bare, [EXTRA[0]!]) })).digestHash).toBe(mechanical.digestHash)
+  })
+
+  it('says nothing of the second where an accepted citation does not say, never zero', () => {
+    // A trace written before the field, or a Run whose findings were not at hand.
+    const partial: RoundSpec[] = [ROUNDS[0]!, { round: 2, at: 2_000, calls: [applied('memory-3', SEARCH, true), applied('memory-4', OTHER_URL)] }]
+    const counts = classifyAttempt(inputOf({ traceRecords: traceOf(partial, [EXTRA[0]!]) })).subagentCitations
+    expect(counts).toEqual({ excerptUnsupported: 0, droppedExcerpts: 0, wallSourceRefusals: 1 })
+
+    // No accepted subagent citation at all: none is under no finding's address.
+    const none = classifyAttempt(inputOf({ traceRecords: traceOf([ROUNDS[0]!], [EXTRA[0]!]) })).subagentCitations
+    expect(none).toEqual({ excerptUnsupported: 0, droppedExcerpts: 0, wallSourceRefusals: 1, offFindingCitations: 0 })
+  })
+
+  it('sums them per population over the attempts that counted them, and prints them', () => {
+    const counted = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, [EXTRA[0]!]) }))
+    const attempt = (mechanical: typeof counted) => ({ mechanical, review: null, countsAfterOverrules: mechanical.counts })
+    const set = buildAuditSet(provenanceOf(), [attempt(counted), attempt(counted)], [])
+
+    expect(set.populations.initial.subagentCitations).toEqual({ excerptUnsupported: 0, droppedExcerpts: 0, wallSourceRefusals: 2, offFindingCitations: 2 })
+    expect(formatAuditSet(set)).toMatch(
+      /- initial: .*subagent citations: 0 excerpt_unsupported, 0 applied with a dropped excerpt, 2 refused for a wall or error source, 2 applied under no finding's address/,
+    )
+
+    // An audit written before the two counts keeps the pair it wrote and gains no zero.
+    const older = { ...counted, subagentCitations: { excerptUnsupported: 0, droppedExcerpts: 0 } }
+    const legacy = buildAuditSet(provenanceOf(), [attempt(older)], [])
+    expect(legacy.populations.initial.subagentCitations).toEqual({ excerptUnsupported: 0, droppedExcerpts: 0 })
+    const legacyText = formatAuditSet(legacy)
+    expect(legacyText).toMatch(/- initial: .*subagent citations: 0 excerpt_unsupported, 0 applied with a dropped excerpt/)
+    expect(legacyText).not.toMatch(/refused for a wall or error source|applied under no finding's address/)
+    // Beside one that counted them, the sum is over the attempts that did.
+    const mixed = buildAuditSet(provenanceOf(), [attempt(older), attempt(counted)], [])
+    expect(mixed.populations.initial.subagentCitations).toEqual({ excerptUnsupported: 0, droppedExcerpts: 0, wallSourceRefusals: 1, offFindingCitations: 1 })
   })
 })
 
@@ -927,7 +1002,7 @@ describe('merged checkpoints and Held Page rounds without Progress (#240, ADR 00
     expect([set.populations.initial.bundledCheckpoints, set.populations.followUp.bundledCheckpoints]).toEqual([2, followUp.bundledCheckpoints])
     const markdown = formatAuditSet(set)
     expect(markdown).toMatch(/- initial: .*Held Page round\(s\) without Progress, 2 bundled checkpoint round\(s\), /)
-    expect(markdown).toContain('Held Page round(s) without Progress; 2 bundled checkpoint round(s); 0 same-source unsupported round(s); subagent citations: 0 excerpt_unsupported, 0 applied with a dropped excerpt; 0 walled round(s)')
+    expect(markdown).toContain('Held Page round(s) without Progress; 2 bundled checkpoint round(s); 0 same-source unsupported round(s); subagent citations: 0 excerpt_unsupported, 0 applied with a dropped excerpt, 0 refused for a wall or error source, 0 applied under no finding\'s address; 0 walled round(s)')
   })
 })
 
@@ -999,8 +1074,8 @@ describe('Identity Slips (#246, ADR 0028)', () => {
     expect(markdown).toContain('- Identity Slips: 1 Answer(s) with an Identity Slip, 3 id(s) slipped')
     expect(markdown).toContain('- Identity Slips: 0 Answer(s) with an Identity Slip, 0 id(s) slipped')
     expect(markdown).toContain('- Identity Slips: not recorded (a Run Trace below version 2)')
-    expect(markdown).toMatch(/- initial: .*Held Page round\(s\) without Progress, \d+ bundled checkpoint round\(s\), \d+ same-source unsupported round\(s\), subagent citations: 0 excerpt_unsupported, 0 applied with a dropped excerpt, 1 Answer\(s\) with an Identity Slip, 3 id\(s\) slipped, /)
-    expect(markdown).toMatch(/- follow_up: .*Held Page round\(s\) without Progress, \d+ bundled checkpoint round\(s\), \d+ same-source unsupported round\(s\), subagent citations: 0 excerpt_unsupported, 0 applied with a dropped excerpt, Identity Slips not recorded, /)
+    expect(markdown).toMatch(/- initial: .*Held Page round\(s\) without Progress, \d+ bundled checkpoint round\(s\), \d+ same-source unsupported round\(s\), subagent citations: 0 excerpt_unsupported, 0 applied with a dropped excerpt, 0 refused for a wall or error source, 0 applied under no finding's address, 1 Answer\(s\) with an Identity Slip, 3 id\(s\) slipped, /)
+    expect(markdown).toMatch(/- follow_up: .*Held Page round\(s\) without Progress, \d+ bundled checkpoint round\(s\), \d+ same-source unsupported round\(s\), subagent citations: 0 excerpt_unsupported, 0 applied with a dropped excerpt, 0 refused for a wall or error source, 0 applied under no finding's address, Identity Slips not recorded, /)
 
     const other = buildAuditSet(provenanceOf({ setId: 'set-2', createdAt: '2026-09-12T18:00:00.000Z' }), [initialOf(old)], [])
     const aggregate = buildAuditAggregate([set, other], '2026-09-14T11:00:00.000Z')
@@ -2954,7 +3029,7 @@ describe('same-source unsupported rounds (#257, ADR 0054)', () => {
     expect([set.populations.initial.sameSourceUnsupportedRounds, set.populations.followUp.sameSourceUnsupportedRounds]).toEqual([4, 2])
     const markdown = formatAuditSet(set)
     expect(markdown).toMatch(/- initial: .*bundled checkpoint round\(s\), 4 same-source unsupported round\(s\), /)
-    expect(markdown).toContain('bundled checkpoint round(s); 4 same-source unsupported round(s); subagent citations: 0 excerpt_unsupported, 0 applied with a dropped excerpt; 0 walled round(s)')
+    expect(markdown).toContain('bundled checkpoint round(s); 4 same-source unsupported round(s); subagent citations: 0 excerpt_unsupported, 0 applied with a dropped excerpt, 0 refused for a wall or error source, 0 applied under no finding\'s address; 0 walled round(s)')
   })
 
   it('reads a trace whose verdict was the error head, not the reason word, as nothing', () => {

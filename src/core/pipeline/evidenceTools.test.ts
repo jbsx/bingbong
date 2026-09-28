@@ -52,6 +52,10 @@ function contextWith(store: SessionEvidenceStore | null) {
 describe('record_evidence tool', () => {
   const tool = createRecordEvidenceTool()
 
+  it('asks for one finding per subagent citation, under that finding\'s own URL (#301)', () => {
+    expect(tool.description).toContain('A subagent citation records one finding, under that finding\'s own URL.')
+  })
+
   it('says one thing about a subagent citation\'s excerpt: it takes none (#272)', () => {
     expect(tool.description).toContain('and a subagent citation takes none.')
     expect(tool.description).not.toMatch(/excerpt is optional/)
