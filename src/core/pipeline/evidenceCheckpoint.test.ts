@@ -981,6 +981,144 @@ describe('a kind "subagent" citation names a page the Subagent held content from
   })
 })
 
+describe('a citation is grounded across a referral parameter (#306)', () => {
+  // fix-250-3's Pi camera initial: the Subagent read the post through a
+  // link carrying `?ref=refind`, and the orchestrator cited it bare.
+  const BARE = 'https://www.raspberrypi.com/news/new-autofocus-camera-modules'
+  const REFERRED = 'https://www.raspberrypi.com/news/new-autofocus-camera-modules/?ref=refind'
+  const REFERRED_STORED = 'https://www.raspberrypi.com/news/new-autofocus-camera-modules?ref=refind'
+  const TEXT = 'Board dimensions and mounting-hole positions are identical to Camera Module 2.'
+
+  function read(id: string, at: number, url: string): ObservationRecord {
+    return { id: id as ObservationRecord['id'], at, producer: 'page_read', ok: true, payload: `page text:\n${TEXT}`, sourceUrl: url }
+  }
+
+  function citeWeb(sourceUrl: string, records: readonly ObservationRecord[]) {
+    const store = evidenceHarness()
+    const call = callOf({ observation: 'The board dimensions are unchanged.', source_url: sourceUrl, excerpt: TEXT })
+    const outcome = evaluateEvidenceCheckpoint(call, { records, commit: commitOver(store) })
+    return { outcome, store, event: evidenceCheckpointEvent({ call, outcome, records }) }
+  }
+
+  function citeSubagent(sourceUrl: string, workerRecords: readonly ObservationRecord[], findingUrls?: readonly string[]) {
+    const store = evidenceHarness()
+    const call = callOf({ kind: 'subagent', agent_id: 'a-3', observation: 'The board dimensions are unchanged.', source_url: sourceUrl })
+    const workerObservations = (agentId: string) => (agentId === 'a-3' ? workerRecords : null)
+    const outcome = evaluateEvidenceCheckpoint(call, {
+      records: [],
+      commitSubagent: (agentId) => subagentEvidenceCommit(() => store, 'run-1' as RunId, agentId),
+      workerObservations,
+    })
+    const event = evidenceCheckpointEvent({
+      call,
+      outcome,
+      records: [],
+      workerObservations,
+      ...(findingUrls !== undefined ? { workerFindingUrls: (agentId: string) => (agentId === 'a-3' ? findingUrls : null) } : {}),
+    })
+    return { outcome, store, event }
+  }
+
+  const storedUrls = (store: SessionEvidenceStore) => store.snapshot().observations.flatMap((entry) => entry.references.map((reference) => reference.url))
+
+  it('grounds a web citation without the parameter on the Observation made with it, and stores the observed address', () => {
+    const { outcome, store, event } = citeWeb(BARE, [read('obs-1', 10, REFERRED)])
+
+    expect(outcome).toMatchObject({ ok: true, sourceObservationId: 'obs-1', sourceUrl: REFERRED_STORED })
+    expect(storedUrls(store)).toEqual([REFERRED_STORED])
+    expect(event.graded.map((record) => [record.observationId, record.matched])).toEqual([['obs-1', true]])
+  })
+
+  it('grounds a web citation with the parameter on the Observation made without it', () => {
+    const { outcome, store } = citeWeb(REFERRED, [read('obs-1', 10, BARE)])
+
+    expect(outcome).toMatchObject({ ok: true, sourceObservationId: 'obs-1', sourceUrl: BARE })
+    expect(storedUrls(store)).toEqual([BARE])
+  })
+
+  it('grounds a subagent citation both ways, on the address the Subagent observed', () => {
+    const bare = citeSubagent(BARE, [read('wobs-1', 10, REFERRED)])
+    expect(bare.outcome).toMatchObject({ ok: true, sourceObservationId: 'wobs-1', sourceUrl: REFERRED_STORED, agentId: 'a-3' })
+    expect(storedUrls(bare.store)).toEqual([REFERRED_STORED])
+
+    const referred = citeSubagent(REFERRED, [read('wobs-1', 10, BARE)])
+    expect(referred.outcome).toMatchObject({ ok: true, sourceObservationId: 'wobs-1', sourceUrl: BARE })
+    expect(storedUrls(referred.store)).toEqual([BARE])
+  })
+
+  it('takes every parameter on the list from both addresses', () => {
+    for (const parameter of ['ref=refind', 'ref_src=twsrc%5Etfw', 'utm_source=newsletter&utm_medium=email', 'fbclid=abc', 'gclid=abc']) {
+      expect(findSourceObservation([read('obs-1', 10, `${BARE}?${parameter}`)], BARE)?.id).toBe('obs-1')
+    }
+    expect(findSourceObservation([read('obs-1', 10, `${BARE}?utm_source=a&id=7`)], `${BARE}?id=7&ref=b`)?.id).toBe('obs-1')
+  })
+
+  it('keeps two addresses that differ in a parameter not on the list two sources', () => {
+    expect(citeWeb(BARE, [read('obs-1', 10, `${BARE}?page=2`)]).outcome).toMatchObject({ ok: false, reason: 'unknown_source' })
+    expect(citeWeb(`${BARE}?id=1`, [read('obs-1', 10, `${BARE}?id=2&ref=refind`)]).outcome).toMatchObject({ ok: false, reason: 'unknown_source' })
+    expect(citeWeb(BARE, [read('obs-1', 10, `${BARE}?referrer=refind`)]).outcome).toMatchObject({ ok: false, reason: 'unknown_source' })
+    expect(citeSubagent(BARE, [read('wobs-1', 10, `${BARE}?page=2`)]).outcome).toMatchObject({
+      ok: false,
+      reason: 'unknown_source',
+      error: expect.stringContaining(`did not observe '${BARE}'`),
+    })
+  })
+
+  it('an Observation of the cited address itself grounds it, whatever was read under a referral since', () => {
+    const { outcome, store, event } = citeWeb(BARE, [read('obs-1', 10, BARE), read('obs-2', 60, REFERRED)])
+
+    expect(outcome).toMatchObject({ ok: true, sourceObservationId: 'obs-1', sourceUrl: BARE })
+    expect(storedUrls(store)).toEqual([BARE])
+    expect(event.graded.map((record) => record.observationId)).toEqual(['obs-1'])
+  })
+
+  it('refuses an address the Subagent reached only as a wall under a referral (#301)', () => {
+    const wall: ObservationRecord = {
+      id: 'wobs-1' as ObservationRecord['id'],
+      at: 10,
+      producer: 'action_outcome',
+      ok: true,
+      payload: `navigated: url=${REFERRED} title="a title"\nBLOCKER:challenge raspberrypi.com\nthe user can complete it on screen`,
+      sourceUrl: REFERRED,
+    }
+    const { outcome, store, event } = citeSubagent(BARE, [wall])
+
+    expect(outcome).toMatchObject({ ok: false, reason: 'unknown_source', error: expect.stringContaining('only as a wall or an error page') })
+    expect(store.snapshot().observations).toEqual([])
+    expect(event).toMatchObject({ outcome: 'unknown_source', sourceUnheld: true })
+  })
+
+  it('grounds on the page the Subagent held under one referral when another referral met a wall', () => {
+    const OTHER = `${BARE}?utm_source=b`
+    const wall = (id: string, at: number): ObservationRecord => ({
+      id: id as ObservationRecord['id'],
+      at,
+      producer: 'action_outcome',
+      ok: true,
+      payload: `navigated: url=${OTHER} title="a title"\nBLOCKER:challenge raspberrypi.com\nthe user can complete it on screen`,
+      sourceUrl: OTHER,
+    })
+
+    const walledLater = citeSubagent(BARE, [read('wobs-1', 10, REFERRED), wall('wobs-2', 20)])
+    expect(walledLater.outcome).toMatchObject({ ok: true, sourceObservationId: 'wobs-1', sourceUrl: REFERRED_STORED })
+    expect(walledLater.event).not.toHaveProperty('sourceUnheld')
+
+    const walledFirst = citeSubagent(BARE, [wall('wobs-1', 10), read('wobs-2', 20, REFERRED)])
+    expect(walledFirst.outcome).toMatchObject({ ok: true, sourceObservationId: 'wobs-2', sourceUrl: REFERRED_STORED })
+  })
+
+  it("the trace event reads a finding's reference as the page stored, whatever referral either carries", () => {
+    const records = [read('wobs-1', 10, REFERRED)]
+
+    expect(citeSubagent(BARE, records, [REFERRED]).event).toMatchObject({ outcome: 'accepted', citesFinding: true })
+    expect(citeSubagent(BARE, records, ['https://other.example/a']).event).toMatchObject({ outcome: 'accepted', citesFinding: false })
+    expect(citeSubagent(BARE, records, [`${BARE}?page=2`]).event).toMatchObject({ outcome: 'accepted', citesFinding: false })
+    // Read under two referrals: the later one is stored, the finding names the earlier.
+    const twice = [read('wobs-1', 10, REFERRED), read('wobs-2', 20, `${BARE}?utm_source=b`)]
+    expect(citeSubagent(BARE, twice, [REFERRED]).event).toMatchObject({ outcome: 'accepted', citesFinding: true })
+  })
+})
+
 describe("the user's words match by containment (#253, ADR 0054)", () => {
   // The Pi follow-up command, and the four fix-252 citations of it that
   // were refused though the words the Run heard were inside every one.

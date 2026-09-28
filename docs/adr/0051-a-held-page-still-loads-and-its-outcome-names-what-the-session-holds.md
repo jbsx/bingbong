@@ -166,6 +166,12 @@ Read from the code and the captures, that is not what was lost:
   were, not zero by omission.
 - The four URL rules stay four. This ADR names the drift between the store
   and the audit on tracker parameters; no rule is unified here.
+- 2026-09-28 (#306): the lookup that grounds a citation folds referral
+  parameters (`ref`, `ref_src`, `utm_*`, `fbclid`, `gclid`) when no
+  Observation has the cited address, and stores the observed address. The
+  store's rule is unchanged and keeps the query whole; the list is the
+  lookup's own and differs from the fingerprint's, which has `msclkid` and
+  neither `ref` nor `ref_src`.
 
 ## Implementation notes
 

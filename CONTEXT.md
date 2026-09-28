@@ -530,7 +530,10 @@ The narrow exception to terminal Memory Commit: validated Session Evidence may
 enter Session Working Memory as soon as it is grounded. It preserves verified
 work across later Run failure or cancellation without committing speculative
 Assessments. Its excerpt is one or more verbatim passages of what the Run
-retained from the source, never a paraphrase. The model makes one by calling
+retained from the source, never a paraphrase. A cited address no Observation
+has is grounded on one that differs from it only by a referral parameter
+(`ref`, `ref_src`, `utm_*`, `fbclid`, `gclid`), and the observed address is
+the one stored (#306). The model makes one by calling
 for it. A Run made one itself from a Selected Passage until that was removed
 (ADR 0069, #283); a trace from then marks such a checkpoint's origin.
 _Avoid_: partial Memory Commit, autosave, auto-checkpoint

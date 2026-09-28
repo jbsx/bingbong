@@ -209,11 +209,27 @@ export function findSourceObservation(
   return latest(sourceObservations(records, sourceUrl))
 }
 
+/** The query parameters that say where a visit came from (#306); any other is part of the address. */
+const REFERRAL_PARAMS: readonly string[] = ['ref', 'ref_src', 'fbclid', 'gclid']
+
+/** A canonical address with its referral parameters taken out. */
+function withoutReferralParams(canonical: string): string {
+  const url = new URL(canonical)
+  for (const name of [...url.searchParams.keys()]) {
+    if (name.startsWith('utm_') || REFERRAL_PARAMS.includes(name)) url.searchParams.delete(name)
+  }
+  return url.toString()
+}
+
 /**
  * Every successful Run Observation that retained one canonical source, in
  * ledger order (#180). The one candidate set grading, title recovery, and
  * the Run Trace all judge, so what the file says was checked is what was
- * checked.
+ * checked. When none has the cited address, those whose address is equal
+ * once referral parameters are taken from both are the set (#306): a page
+ * reached through a link that carries one is the same page. The fold is
+ * here and never in `canonicalizeMemoryUrl`, which keys what a Session
+ * already holds.
  */
 export function sourceObservations(
   records: readonly ObservationRecord[],
@@ -221,9 +237,29 @@ export function sourceObservations(
 ): readonly ObservationRecord[] {
   const canonical = canonicalizeMemoryUrl(sourceUrl)
   if (canonical === null) return []
-  return records.filter(
-    (record) => record.ok && record.sourceUrl !== undefined && canonicalizeMemoryUrl(record.sourceUrl) === canonical,
-  )
+  const observed = records.flatMap((record) => {
+    const address = record.ok && record.sourceUrl !== undefined ? canonicalizeMemoryUrl(record.sourceUrl) : null
+    return address === null ? [] : [{ record, address }]
+  })
+  const exact = observed.filter(({ address }) => address === canonical)
+  if (exact.length > 0) return exact.map(({ record }) => record)
+  const folded = withoutReferralParams(canonical)
+  return observed.filter(({ address }) => withoutReferralParams(address) === folded).map(({ record }) => record)
+}
+
+/**
+ * The address a grounded citation is stored under (#306): the grounding
+ * Observation's own, which is the cited one unless they differ by a
+ * referral parameter.
+ */
+function observedAddress(source: ObservationRecord, citedUrl: string): string {
+  return canonicalizeMemoryUrl(source.sourceUrl ?? citedUrl)!
+}
+
+/** Whether two addresses are one page once referral parameters are taken from both (#306). */
+export function sameSourcePage(left: string, right: string): boolean {
+  const [first, second] = [canonicalizeMemoryUrl(left), canonicalizeMemoryUrl(right)]
+  return first !== null && second !== null && withoutReferralParams(first) === withoutReferralParams(second)
 }
 
 /** The last-observed record of a candidate set; ties go to the later entry. */
@@ -832,7 +868,7 @@ export function evaluateEvidenceCheckpoint(
     const grounding = groundSubagentCitation(citation, deps.workerObservations)
     if (!grounding.ok) return grounding
     const { source, workerRecords } = grounding
-    const canonical = canonicalizeMemoryUrl(citation.sourceUrl)!
+    const canonical = observedAddress(source, citation.sourceUrl)
     // The retained page title (#144): already named by the worker's own
     // observations of the source — never a second browser read or model
     // round. Absent titles stay absent; the label falls back to the
@@ -870,7 +906,7 @@ export function evaluateEvidenceCheckpoint(
   const grounding = groundWebCitation(citation, deps.records)
   if (!grounding.ok) return grounding
   const { source } = grounding
-  const canonical = canonicalizeMemoryUrl(citation.sourceUrl)!
+  const canonical = observedAddress(source, citation.sourceUrl)
   // The retained page title (#144): already named by this Run's own
   // observations of the source — never a second browser read or model
   // round. Absent titles stay absent; the label falls back to the
@@ -975,11 +1011,24 @@ function groundUserCitation(
 /**
  * Whether a Subagent observed an address and held nothing from it (#301):
  * its latest arrival there was a Blocker, a Not-found Page or an
- * Unavailable Page. The one test the grading and the Run Trace share.
+ * Unavailable Page. The one test the grading and the Run Trace share. The
+ * addresses judged are the ones the Subagent observed (#306), so a wall
+ * reached under a referral parameter is no source cited without it, and a
+ * page held under one referral stays a source when another met a wall.
  */
 export function subagentSourceUnheld(workerRecords: readonly ObservationRecord[], sourceUrl: string): boolean {
-  const canonical = canonicalizeMemoryUrl(sourceUrl)
-  return canonical !== null && canonicalUnheldUrls(workerRecords).has(canonical)
+  const observed = sourceObservations(workerRecords, sourceUrl)
+  return observed.length > 0 && heldObservations(workerRecords, observed, sourceUrl).length === 0
+}
+
+/** The observations of a source made at an address the Subagent held content from (#301). */
+function heldObservations(
+  workerRecords: readonly ObservationRecord[],
+  observed: readonly ObservationRecord[],
+  sourceUrl: string,
+): readonly ObservationRecord[] {
+  const unheld = canonicalUnheldUrls(workerRecords)
+  return observed.filter((record) => !unheld.has(observedAddress(record, sourceUrl)))
 }
 
 /** A subagent citation's grounding (#123): the named Subagent's own retained observation of the source. */
@@ -999,11 +1048,12 @@ function groundSubagentCitation(
   // so no excerpt is checked on this kind (#272, ADR 0054): one offered is
   // the report's words, not the page's. The Subagent's freshest retention
   // of the source grounds the citation, text or structured alike.
-  const source = findSourceObservation(workerRecords, citation.sourceUrl)
+  const observed = sourceObservations(workerRecords, citation.sourceUrl)
   // A source is a page the Subagent held content from (#301): an address
   // whose latest arrival was a wall or an error page is none, however many
   // `ok` records name it.
-  if (source !== null && subagentSourceUnheld(workerRecords, citation.sourceUrl)) {
+  const source = latest(heldObservations(workerRecords, observed, citation.sourceUrl))
+  if (source === null && observed.length > 0) {
     return {
       ok: false,
       reason: 'unknown_source',

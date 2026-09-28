@@ -7,6 +7,7 @@
 import {
   parseEvidenceCitation,
   retainedText,
+  sameSourcePage,
   sourceObservations,
   subagentSourceUnheld,
   userCitationBesideExcerpt,
@@ -16,7 +17,7 @@ import {
 import type { CandidateCheckpointOutcome } from '../pipeline/candidateCheckpoint'
 import type { ToolCall } from '../ports/llm'
 import type { ObservationRecord } from '../session/observationLedger'
-import { canonicalizeMemoryUrl, normalizeMemoryText } from '../session/workingMemory'
+import { normalizeMemoryText } from '../session/workingMemory'
 import { TRACE_PAYLOAD_HEAD_CHARS, type EvidenceCheckpointEvent, type TracedObservation } from './runTrace'
 
 /** The verdict word a record carries: acceptance is one outcome among the reasons. */
@@ -75,7 +76,9 @@ export function evidenceCheckpointEvent(input: {
     outcome.reason === 'unknown_source' &&
     subagentSourceUnheld(input.workerObservations?.(subagent.agentId) ?? [], subagent.sourceUrl)
   const findingUrls = subagent !== null && outcome.ok ? (input.workerFindingUrls?.(subagent.agentId) ?? null) : null
-  const citedUrl = subagent === null ? null : canonicalizeMemoryUrl(subagent.sourceUrl)
+  // The address stored, which is the observed one (#306): a finding
+  // references what the Subagent observed, under whatever referral.
+  const storedUrl = outcome.ok && outcome.sourceUrl !== undefined ? outcome.sourceUrl : null
   return {
     kind: 'evidence_checkpoint',
     tool: 'record_evidence',
@@ -93,7 +96,7 @@ export function evidenceCheckpointEvent(input: {
     ...(input.origin !== undefined ? { origin: input.origin } : {}),
     ...(outcome.ok && outcome.correction !== undefined ? { correction: outcome.correction } : {}),
     ...(sourceUnheld ? { sourceUnheld: true as const } : {}),
-    ...(findingUrls !== null ? { citesFinding: findingUrls.some((url) => canonicalizeMemoryUrl(url) === citedUrl) } : {}),
+    ...(findingUrls !== null ? { citesFinding: storedUrl !== null && findingUrls.some((url) => sameSourcePage(url, storedUrl)) } : {}),
   }
 }
 
