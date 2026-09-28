@@ -50,8 +50,11 @@ export interface SearchUrl {
 
 // Each a word for terms, as lowercase; `q` is read first as the engine form.
 // `s` is out — a letter is as likely a sort key — and so is Drupal's
-// `search_api_full_text`, never seen where the other names were not.
-const SEARCH_TERM_PARAMS: ReadonlySet<string> = new Set(['query', 'search', 'searchstring', 'keywords', 'kw'])
+// `search_api_full_text`, never seen where the other names were not. #293
+// (note on ADR 0059) added `searchapi`, `searchterm` and `keyword`, each seen
+// carrying terms; a name is matched whole, never by what it contains, or
+// `searchType=` would be terms, and `t` stays out as `s` does.
+const SEARCH_TERM_PARAMS: ReadonlySet<string> = new Set(['query', 'search', 'searchstring', 'keywords', 'kw', 'searchapi', 'searchterm', 'keyword'])
 
 /**
  * The search a navigate argument runs, after the same normalization the

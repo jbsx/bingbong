@@ -619,7 +619,7 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
   // can close.
   const decisions: RunDecisions = {
     async *ask(_question, call) {
-      return unknownToolError(call.name)
+      return { outcome: unknownToolError(call.name), answered: false }
     },
     async *confirm() {
       return { approved: false, outcome: { ok: false, error: CONFIRMATION_REFUSAL } }

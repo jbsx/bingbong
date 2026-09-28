@@ -80,6 +80,16 @@ describe('parseSearchUrl', () => {
     }
   })
 
+  it('reads searchApi=, searchTerm= and keyword= as words for terms, and no name that merely contains one (#293)', () => {
+    for (const name of ['searchApi', 'searchTerm', 'keyword', 'SEARCHAPI', 'searchterm']) {
+      expect(parseSearchUrl(`https://www.rmg.co.uk/collections/search?${name}=harrison%20h4`), name).toEqual({ query: 'harrison h4', form: 'param' })
+    }
+    // No rule of containment, and a letter is not a word.
+    for (const name of ['searchType', 'search_id', 's', 't', 'search_api_full_text']) {
+      expect(parseSearchUrl(`https://www.rmg.co.uk/collections/results?${name}=harrison`), name).toBeNull()
+    }
+  })
+
   it('reads q= as the engine form, and plain terms normalize to one', () => {
     expect(parseSearchUrl('https://duckduckgo.com/?q=x')).toEqual({ query: 'x', form: 'q' })
     expect(parseSearchUrl('https://www.google.com/search?query=other&q=harrison+watch')).toEqual({ query: 'harrison watch', form: 'q' })

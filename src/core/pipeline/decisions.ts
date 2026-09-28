@@ -29,18 +29,31 @@ import type { UnstampedEvent } from './events'
  */
 export type ConfirmDecision = { approved: true } | { approved: false; outcome: ToolResultOutcome }
 
+/**
+ * A question's resolution as the gate consumes it (#293): the tool result
+ * the model reads, and whether the user answered — the window's own
+ * resolution, which the wording of the result never says. An answer is
+ * something new put in front of the Run; a window that closed unanswered, a
+ * steered cancellation and a refusal are not.
+ */
+export interface AskOutcome {
+  readonly outcome: ToolResultOutcome
+  readonly answered: boolean
+}
+
 /** The one adapter through which gated execution reaches the user. */
 export interface RunDecisions {
   /**
    * Puts one question to the user and returns the tool result the model
-   * sees: their answer, the "user didn't answer" line when the window
+   * sees — their answer, the "user didn't answer" line when the window
    * closed unanswered, or the steered cancellation when a directive
-   * landed instead. Speaks the question before the window opens, and
+   * landed instead — beside whether they answered (#293). Speaks the
+   * question before the window opens, and
    * yields the run's `ask_requested` / `ask_deadline` / `ask_resolved`
    * events on the way. Throws the run's abort error when the run is
    * stopped.
    */
-  ask(question: string, call: ToolCall): AsyncGenerator<UnstampedEvent, ToolResultOutcome>
+  ask(question: string, call: ToolCall): AsyncGenerator<UnstampedEvent, AskOutcome>
   /**
    * Puts one Confirmation prompt to the user and returns approval or the
    * denial outcome. Yields the `confirmation_requested` /

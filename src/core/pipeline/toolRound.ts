@@ -466,6 +466,13 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
    */
   const attempted = new WeakSet<ToolCall>()
   /**
+   * The `ask_user` calls the user answered (#293): the decisions seam's own
+   * resolution, kept for the Search Loop rail, to which an answer is escape
+   * and a window that closed unanswered is not. The result's wording says
+   * neither.
+   */
+  const answered = new WeakSet<ToolCall>()
+  /**
    * The page the last successful page-facing call settled on (#240, ADR
    * 0051): null until this executor has seen one, so a Run whose tab already
    * sits on a Held Page is told on its first result there.
@@ -529,7 +536,11 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
     }
   }
 
-  async function* runGatedTool(call: ToolCall, turnId: string | undefined): AsyncGenerator<UnstampedEvent, ToolResultOutcome> {
+  async function* runGatedTool(
+    call: ToolCall,
+    turnId: string | undefined,
+    composedAddressRewrite: boolean,
+  ): AsyncGenerator<UnstampedEvent, ToolResultOutcome> {
     const tool = toolsByName.get(call.name)
     if (!tool) return unknownToolError(call.name)
 
@@ -543,7 +554,9 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
       } catch (err) {
         return { ok: false, error: toErrorMessage(err) }
       }
-      return yield* decisions.ask(question, call)
+      const asked = yield* decisions.ask(question, call)
+      if (asked.answered) answered.add(call)
+      return asked.outcome
     }
 
     // Same-wall Blocker gate (#80, ADR 0010): while armed, browser calls
@@ -628,11 +641,12 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
     // Run rails (#74/#82/#83, ADR 0058): a Search Loop — consecutive GUI
     // searches (q= navigations, typed search box queries) with nothing
     // opened between them, whatever their terms — is refused before it
-    // executes, like the vision budget. Only escape clears the cap: a
-    // successful call that is not inspection and did not land on a
-    // Not-found Page.
+    // executes, like the vision budget. Only escape clears the cap:
+    // something new put in front of the Run (#293). A Composed Address
+    // rewrite is never refused here — the model wrote an address, not a
+    // search (note on ADR 0055).
     if (searchLoopRail !== null) {
-      const searchLoopGate = await searchLoopRail.gate(call)
+      const searchLoopGate = await searchLoopRail.gate(call, { composedAddressRewrite })
       if (!searchLoopGate.ok) return { ok: false, error: searchLoopGate.reason }
     }
 
@@ -716,8 +730,10 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
     // The Composed Address rewrite (#255, ADR 0055): after a site's one
     // Not-found Landing, a composed address to it runs as a search of the
     // site. The search is the call every gate and rail below sees — it is a
-    // search to all of them — while the model's call keeps its place in the
-    // round, and the result it reads opens with the line saying what ran.
+    // search to all of them but the Search Loop rail, which it neither
+    // continues nor escapes (#293) — while the model's call keeps its place
+    // in the round, and the result it reads opens with the line saying what
+    // ran.
     const rewrite = intercepted === null && !closed ? (composedAddressRail?.rewrite(engineCall) ?? null) : null
     // The Unseen Phrase rewrite (#267, ADR 0064): a search quoting a phrase
     // this run was never shown runs unquoted. Judged on the call that runs
@@ -730,7 +746,7 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
         ? intercepted
         : closed
           ? { ok: false, error: closedToolRefusal() }
-          : yield* runGatedTool(executedCall, turnId)
+          : yield* runGatedTool(executedCall, turnId, rewrite !== null)
 
     // Observation ledger (#111): the raw outcome as the tool produced
     // it, ahead of the Notices attached below; later checkpoint
@@ -762,8 +778,13 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
     // leaves it alone); its advisory verdict is an immediate Notice. What
     // it observed in a search is the round's to record (#243, ADR 0049),
     // refused searches included — the rail advanced its streak on them.
+    // A Composed Address rewrite leaves no observation: the `rewritten`
+    // stamp on the result is its record (#293).
     if (searchLoopRail !== null) {
-      const verdict = await searchLoopRail.observe(executedCall, outcome)
+      const verdict = await searchLoopRail.observe(executedCall, outcome, {
+        composedAddressRewrite: rewrite !== null,
+        userAnswered: answered.has(executedCall),
+      })
       notices.owe('search_loop', verdict.notice)
       traceSearchObservation(toolContext, executedCall, verdict.observation)
     }

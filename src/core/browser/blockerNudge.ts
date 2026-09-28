@@ -13,6 +13,7 @@
 // Consent dialogs are deliberately absent: they are the auto-clear class
 // (dialogPolicy.ts), never Blockers.
 
+import type { ToolResultOutcome } from '../ports/llm'
 import type { PageSnapshot, RefKind } from './snapshot'
 import { reportFault } from '../trace/fault.ts'
 
@@ -179,6 +180,16 @@ export function parseBlockerMarker(text: string): BlockerWall | null {
     last = { signal: match[1] as BlockerSignal, host: match[2] }
   }
   return last
+}
+
+/**
+ * Whether a successful call settled on a Blocker: its outcome carries the
+ * marker (#293). The wall is in front of the Run and the content behind it,
+ * so the landing is not escape from a Search Loop — the sibling of
+ * `landedOnNotFoundPage` and `landedOnUnavailablePage`.
+ */
+export function landedOnBlocker(outcome: ToolResultOutcome): boolean {
+  return outcome.ok && typeof outcome.result === 'string' && parseBlockerMarker(outcome.result) !== null
 }
 
 /**

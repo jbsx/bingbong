@@ -3,10 +3,12 @@ import type { SnapshotRef } from '../browser/snapshot'
 import { landedOnNotFoundPage } from '../browser/notFoundPage'
 import { landedOnUnavailablePage } from '../browser/unavailablePage'
 import { wasBlockedOrInert } from '../browser/actionOutcome'
+import { landedOnBlocker } from '../browser/blockerNudge'
 import { isSearchInputRef, refNumberOf, searchQueryFromUrl, typedQuery } from './progressFingerprints'
 import {
   SEARCH_LOOP_NUDGE_AFTER,
   SEARCH_LOOP_REFUSE_AFTER,
+  putSomethingNew,
   searchCallKindOf,
   searchStreakAfter,
   searchStreakMoveOf,
@@ -105,6 +107,15 @@ import { reportFault } from '../trace/fault'
 // the Notice was delivered 34 times and obeyed, and no search was refused.
 // And a checkpoint tool holds the streak: `record_evidence` beside a search
 // came back `ok` and restarted a streak in which nothing had been opened.
+//
+// #293 (notes on ADR 0058 and ADR 0055) made escape something new put in
+// front of the Run: a page opened, the user's answer to a question, or a
+// Subagent Report. A call that acts on no page holds the streak, as does a
+// landing on a Blocker, read from its marker. A Composed Address rewrite is
+// a search the model never wrote: it holds the streak, leaves no Search
+// Observation and earns no Notice, and the gate never refuses it. What the
+// rail cannot read off a call and its outcome — that the call is a rewrite,
+// that the user answered — the Tool Round says beside them.
 
 // The tiers and the signature surface live in searchLoopRule.ts and
 // progressFingerprints.ts; re-exported here so the module's consumers (and
@@ -142,22 +153,34 @@ export interface SearchLoopRailDeps {
   describeRef?: (ref: number) => Promise<SnapshotRef | undefined>
 }
 
+/** What the Tool Round knows of a call that neither the call nor its outcome says (#293). */
+export interface SearchLoopCallFacts {
+  /** The call is the search a Composed Address was rewritten into (ADR 0055): the model wrote an address. */
+  readonly composedAddressRewrite?: boolean
+  /** The user answered this `ask_user`, by the pipeline's own resolution. */
+  readonly userAnswered?: boolean
+}
+
 export interface SearchLoopRail {
   /**
    * Pre-execution gate (vision-budget pattern): refuses a search — a
    * navigate to a Search URL or a typed search box query — once the streak has reached the
-   * cap. Every other call passes untouched.
+   * cap. Every other call passes untouched, a Composed Address rewrite
+   * among them (#293): the refusal would accuse the model of a search it
+   * did not write.
    */
-  gate(call: ToolCall): Promise<SearchLoopGate>
+  gate(call: ToolCall, facts?: SearchLoopCallFacts): Promise<SearchLoopGate>
   /**
    * Post-execution observation of every processed tool call — this is what
-   * tracks (and resets) the streak. A successful escaping call (anything
-   * but a search, inspection or a checkpoint tool) resets it; inspection
-   * and a checkpoint never reset, failed calls leave it alone. The verdict
+   * tracks (and resets) the streak. A call that put something new in front
+   * of the Run resets it (#293): a page-facing call that is not inspection,
+   * an answered `ask_user`, an `agent_results` that collected a report.
+   * Inspection, a checkpoint, a Composed Address rewrite and a call that
+   * acts on no page never reset, and failed calls leave it alone. The verdict
    * carries the advisory nudge once the streak reaches the nudge tier, and
    * a Search Observation for every search (#243).
    */
-  observe(call: ToolCall, outcome: ToolResultOutcome): Promise<SearchLoopVerdict>
+  observe(call: ToolCall, outcome: ToolResultOutcome, facts?: SearchLoopCallFacts): Promise<SearchLoopVerdict>
 }
 
 const NO_VERDICT: SearchLoopVerdict = { notice: null, observation: null }
@@ -167,12 +190,15 @@ const NO_VERDICT: SearchLoopVerdict = { notice: null, observation: null }
 export const SEARCH_LOOP_NUDGE =
   'The last searches ran one after another with nothing opened between them (each a navigate to a search URL or a search box query) — more searches will not surface new results. Change strategy: open a promising result by its ref or its href, read the page (read_page), or answer from what you already have. If you cannot proceed, say so and ask_user.'
 
-const REFUSAL = `Search loop limit (${SEARCH_LOOP_REFUSE_AFTER} consecutive searches with nothing opened between them — each a navigate to a search URL or a search box query) reached for this run. Change strategy or ask_user; only escaping clears the limit (open a result by its ref or its href, or any successful tool call other than read_page, look, scroll, record_evidence or record_candidate).`
+// #293: the last clause named "any successful tool call", false once a call
+// that acts on no page held the streak.
+const REFUSAL = `Search loop limit (${SEARCH_LOOP_REFUSE_AFTER} consecutive searches with nothing opened between them — each a navigate to a search URL or a search box query) reached for this run. Change strategy or ask_user; only opening something clears the limit (open a result by its ref or its href, or navigate to a page you were shown); an answer from ask_user clears it too.`
 
 /**
  * What a call is to the rail: a search observation with its query,
- * inspection or a checkpoint tool (observed, never resets), or an escaping
- * call (resets on success only).
+ * inspection, a checkpoint tool, a Composed Address rewrite or a call that
+ * acts on no page (observed, never resets), or a call that can escape
+ * (resets when it put something new in front of the Run).
  */
 type Classification = { kind: 'search'; query: string; signature: SearchSignature } | { kind: Exclude<SearchCallKind, 'search'> }
 
@@ -202,10 +228,14 @@ export function createSearchLoopRail(deps: SearchLoopRailDeps = {}): SearchLoopR
     return query
   }
 
-  async function classify(call: ToolCall): Promise<Classification> {
+  async function classify(call: ToolCall, facts: SearchLoopCallFacts): Promise<Classification> {
+    // A Composed Address rewrite is a search to every rail but this one
+    // (#293, note on ADR 0055): the model wrote an address.
+    if (facts.composedAddressRewrite === true) return { kind: 'rewrite' }
     // Inspection never resets the streak (run 53, ADR 0048): reading,
     // looking at or scrolling a page between reworded searches is not escape.
-    // Nor does a checkpoint tool (#289): it records, and opens nothing.
+    // Nor does a checkpoint tool (#289): it records, and opens nothing. Nor
+    // does a call that acts on no page (#293).
     const kind = searchCallKindOf(call.name)
     if (kind !== 'other') return { kind }
     if (call.name === 'navigate') {
@@ -222,13 +252,13 @@ export function createSearchLoopRail(deps: SearchLoopRailDeps = {}): SearchLoopR
   }
 
   return {
-    async gate(call) {
-      const classified = await classify(call)
+    async gate(call, facts = {}) {
+      const classified = await classify(call, facts)
       if (classified.kind !== 'search') return { ok: true }
       return streak >= SEARCH_LOOP_REFUSE_AFTER ? { ok: false, reason: REFUSAL } : { ok: true }
     },
-    async observe(call, outcome) {
-      const classified = await classify(call)
+    async observe(call, outcome, facts = {}) {
+      const classified = await classify(call, facts)
       // A successful escape consumed something, breaking the blind loop; a
       // failed one changes nothing, so the streak survives. A call that
       // landed on a Not-found Page (#239, ADR 0050) consumed nothing either:
@@ -237,8 +267,15 @@ export function createSearchLoopRail(deps: SearchLoopRailDeps = {}): SearchLoopR
       // an inert click (#261): the port reports it as success, but nothing
       // was clicked or typed, or nothing on the page moved. Nor did a call
       // that landed on an Unavailable Page (#262, ADR 0060): the site put
-      // nothing in front of the Run.
-      const consumed = outcome.ok && !landedOnNotFoundPage(outcome) && !landedOnUnavailablePage(outcome) && !wasBlockedOrInert(outcome)
+      // nothing in front of the Run. Nor did a landing on a Blocker, a
+      // question the user did not answer, or a wait that collected no
+      // Subagent Report (#293).
+      const consumed =
+        outcome.ok &&
+        !landedOnNotFoundPage(outcome) &&
+        !landedOnUnavailablePage(outcome) &&
+        !wasBlockedOrInert(outcome) &&
+        putSomethingNew(call.name, { blocker: landedOnBlocker(outcome), userAnswered: facts.userAnswered === true, result: outcome.result })
       streak = searchStreakAfter(streak, searchStreakMoveOf(classified.kind, consumed))
       if (classified.kind !== 'search') return NO_VERDICT
       return {

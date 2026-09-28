@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   isSearchCheckpoint,
   isSearchInspection,
+  putSomethingNew,
   queryTokens,
   SEARCH_LOOP_NUDGE_AFTER,
   SEARCH_LOOP_REFUSE_AFTER,
@@ -18,7 +19,10 @@ import {
 // same functions over the Run Trace. #259 (ADR 0058) added the streak
 // itself: a search after a search continues it, whatever the terms. #289
 // moved the nudge to the second search and made a checkpoint tool hold the
-// streak: recording is not opening.
+// streak: recording is not opening. #293 made escape something new put in
+// front of the Run: only a page-facing call can escape, with an answered
+// `ask_user` and an `agent_results` that collected a Subagent Report, and a
+// Composed Address rewrite holds.
 
 describe('queryTokens folds scope out of a Search Intent', () => {
   it('drops a search operator together with its argument', () => {
@@ -99,6 +103,10 @@ describe('isSearchInspection (Decision 5)', () => {
     expect(isSearchInspection('scroll')).toBe(true)
   })
 
+  it('names visual grounding as inspection too (#293, Decision 3)', () => {
+    expect(isSearchInspection('ground_visual')).toBe(true)
+  })
+
   it('leaves every call that leaves the results as escape', () => {
     for (const name of ['click', 'navigate', 'type', 'back', 'go_forward', 'download_url', 'record_evidence']) {
       expect(isSearchInspection(name)).toBe(false)
@@ -113,6 +121,22 @@ describe('isSearchCheckpoint (#289)', () => {
     for (const name of ['read_page', 'look', 'scroll', 'click', 'navigate', 'type', 'report_run_plan', 'ask_user']) {
       expect(isSearchCheckpoint(name)).toBe(false)
     }
+  })
+
+  it('reads a call that acts on no page as off the page, whatever it returned (#293, Decision 1)', () => {
+    for (const name of ['report_run_plan', 'spawn_agent', 'cancel_agent', 'toggle_panel', 'set_panel_mode', 'set_setting', 'app_control', 'new_session']) {
+      expect(searchCallKindOf(name), name).toBe('offPage')
+      expect(searchStreakMoveOf(searchCallKindOf(name), true), name).toBe('hold')
+    }
+  })
+
+  it('leaves the two calls that put content in front of the Run able to escape: an answer and a Subagent Report (#293, Decision 1)', () => {
+    expect(searchCallKindOf('ask_user')).toBe('other')
+    expect(searchCallKindOf('agent_results')).toBe('other')
+  })
+
+  it('leaves back, go_forward and media_control able to escape (#293, Decision 3)', () => {
+    for (const name of ['back', 'go_forward', 'media_control', 'click', 'type']) expect(searchCallKindOf(name), name).toBe('other')
   })
 
   it('reads a call that is not a search by its name: inspection, a checkpoint, or any other call', () => {
@@ -143,13 +167,19 @@ describe('the streak (#259, ADR 0058): a search after a search, with nothing ope
     expect(searchStreakMoveOf('other', true)).toBe('escape')
     // A failed or refused call, or one that landed on a Not-found Page, consumed nothing.
     expect(searchStreakMoveOf('other', false)).toBe('hold')
+    // #293: a Composed Address rewrite is neither a search of the loop nor escape from it.
+    expect(searchStreakMoveOf('rewrite', true)).toBe('hold')
+    expect(searchStreakMoveOf('rewrite', false)).toBe('hold')
+    // #293: a call that acts on no page put nothing new in front of the Run.
+    expect(searchStreakMoveOf('offPage', true)).toBe('hold')
   })
 
-  it('is reading 2 of the rule: the whole table of moves, which a change to must raise SEARCH_STREAK_RULE with (#289)', () => {
-    const kinds = ['search', 'inspection', 'checkpoint', 'other'] as const
+  it('is reading 3 of the rule: the whole table of moves, which a change to must raise SEARCH_STREAK_RULE with (#289, #293)', () => {
+    const kinds = ['search', 'inspection', 'checkpoint', 'rewrite', 'offPage', 'other'] as const
     const table = kinds.flatMap((kind) => [true, false].map((consumed) => `${kind} ${consumed ? 'consumed' : 'nothing'}: ${searchStreakMoveOf(kind, consumed)}`))
-    expect({ rule: SEARCH_STREAK_RULE, table, held: ['read_page', 'look', 'scroll', 'record_evidence', 'record_candidate'].map(searchCallKindOf) }).toEqual({
-      rule: 2,
+    const names = ['read_page', 'look', 'scroll', 'ground_visual', 'record_evidence', 'record_candidate', 'report_run_plan', 'spawn_agent', 'cancel_agent', 'set_setting', 'navigate', 'click', 'type', 'back', 'go_forward', 'media_control', 'ask_user', 'agent_results']
+    expect({ rule: SEARCH_STREAK_RULE, table, names: names.map((name) => `${name}: ${searchCallKindOf(name)}`) }).toEqual({
+      rule: 3,
       table: [
         'search consumed: search',
         'search nothing: search',
@@ -157,11 +187,48 @@ describe('the streak (#259, ADR 0058): a search after a search, with nothing ope
         'inspection nothing: hold',
         'checkpoint consumed: hold',
         'checkpoint nothing: hold',
+        'rewrite consumed: hold',
+        'rewrite nothing: hold',
+        'offPage consumed: hold',
+        'offPage nothing: hold',
         'other consumed: escape',
         'other nothing: hold',
       ],
-      held: ['inspection', 'inspection', 'inspection', 'checkpoint', 'checkpoint'],
+      names: [
+        'read_page: inspection',
+        'look: inspection',
+        'scroll: inspection',
+        'ground_visual: inspection',
+        'record_evidence: checkpoint',
+        'record_candidate: checkpoint',
+        'report_run_plan: offPage',
+        'spawn_agent: offPage',
+        'cancel_agent: offPage',
+        'set_setting: offPage',
+        'navigate: other',
+        'click: other',
+        'type: other',
+        'back: other',
+        'go_forward: other',
+        'media_control: other',
+        'ask_user: other',
+        'agent_results: other',
+      ],
     })
+  })
+
+  it('reads what a call that can escape put in front of the Run: a page, the user’s answer, or a Subagent Report (#293)', () => {
+    const page = { blocker: false, userAnswered: false, result: 'navigated' }
+    expect(putSomethingNew('navigate', page)).toBe(true)
+    // A landing on a Blocker put a wall in front of the Run and no page.
+    expect(putSomethingNew('navigate', { ...page, blocker: true })).toBe(false)
+    expect(putSomethingNew('click', { ...page, blocker: true })).toBe(false)
+    // The pipeline's own resolution, never the wording of the result.
+    expect(putSomethingNew('ask_user', { blocker: false, userAnswered: true, result: "user didn't answer" })).toBe(true)
+    expect(putSomethingNew('ask_user', { blocker: false, userAnswered: false, result: 'the blue one' })).toBe(false)
+    expect(putSomethingNew('agent_results', { blocker: false, userAnswered: false, result: 'a-1 [browsing] completed — find the fact\nIt is 42.' })).toBe(true)
+    expect(putSomethingNew('agent_results', { blocker: false, userAnswered: false, result: 'a-1 [browsing] running — find the fact' })).toBe(false)
+    expect(putSomethingNew('agent_results', { blocker: false, userAnswered: false, result: 'no uncollected subagent reports' })).toBe(false)
   })
 
   it('nudges at the second search and refuses after the fifth (#289): the refusal is where #74 set it', () => {

@@ -548,8 +548,10 @@ interface Recounted {
  * An older audit's streak counts recounted from its attempts' rounds under
  * the rail's current rule (ADR 0058) by the audit's own replay, with the
  * Unavailable Landings an audit written before #262 never marked recounted
- * by the title rule and held (ADR 0060), and the streak held across a
- * checkpoint tool (#289) — the rounds as judged are untouched.
+ * by the title rule and held (ADR 0060), the streak held across a
+ * checkpoint tool (#289), and across a call that acts on no page, a landing
+ * on a Blocker and a Composed Address rewrite (#293), each read from the
+ * call's name, wall and rewrite stamp — the rounds as judged are untouched.
  */
 function recountedUnderCurrentRuleOf(attempts: readonly AuditAttempt[]): Recounted {
   const totals = { mechanicalSearchRounds: 0, searchRoundsAtStreak2: 0, searchRoundsAtStreak3: 0, unavailableByTitle: 0, unavailableFollowedBySearch: 0 }
@@ -625,7 +627,8 @@ export function countersOf(population: AuditPopulation, attempts: readonly Audit
   // while an accepted checkpoint still ended a streak. Every audit before
   // the rule is one, the Reference a Subject under it is compared with
   // among them; an attempt says which rule counted it, and one that does not
-  // say was counted by the older.
+  // say was counted by the older. #293 raised the rule again, so an audit
+  // that says 2 is recounted as one that says nothing is.
   const underCurrentRule = attempts.every((attempt) => attempt.mechanical.searchStreakRule === SEARCH_STREAK_RULE)
   const recounted = streakRuleWritten && older.unavailableLandings !== undefined && underCurrentRule ? null : recountedUnderCurrentRuleOf(attempts)
   const streakRounds = recounted ?? older

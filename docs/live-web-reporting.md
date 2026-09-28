@@ -744,7 +744,18 @@ copied (ADR 0048, ADR 0058): a search after a search with nothing opened
 between them is streak + 1 whatever its terms, an escape resets, and a page
 read, a Look, a scroll or a Not-found Landing between them is inspection that
 never resets the streak; nor does a checkpoint tool (`record_evidence`,
-`record_candidate`), accepted or not (#289). Where the trace carries the rail's Search
+`record_candidate`), accepted or not (#289). Since #293 escape is something
+new put in front of the Run: only a page-facing call can escape, with an
+`ask_user` the user answered and an `agent_results` that collected a Subagent
+Report, so a Run Plan report, a spawn, a cancel, a question left unanswered
+and a wait that collected nothing hold the streak, as do visual grounding, a
+landing on a Blocker (the call's `wall`) and a Composed Address rewrite (its
+`rewritten` stamp), which is no search of the loop and carries no search
+line, whatever Search Observation an older trace holds for it. Whether the
+user answered is the trace's own `ask_resolved` record, never the wording of
+the result; a call says what it delivered in `delivered` only where its
+result's head cannot, so a report that opens the result leaves the digest as
+it was. Where the trace carries the rail's Search
 Observations (#243, ADR 0049), which calls were searches — typed and refused
 ones included — and their query and signature (`url` or `input`) are read from
 them, and the attempt's `searchSource` reads `rail`; the streak itself is the
@@ -769,15 +780,16 @@ or beyond. The rail nudged from streak 3 until #289 and nudges from 2 since,
 so the rounds the live rail nudged or refused on are the second count on a
 capture before it and the first on one after; the counters keep their
 streaks. An attempt says which reading of the rule counted it in
-`searchStreakRule` (`SEARCH_STREAK_RULE`, 2 since #289; absent on an audit
-written before it, which counted an accepted checkpoint as an opening).
+`searchStreakRule` (`SEARCH_STREAK_RULE`, 2 since #289 and 3 since #293;
+absent on an audit written before it, which counted an accepted checkpoint
+as an opening).
 `replaySearchStreaks` re-derives the streaks of a
 report already written: the Fix Ledger uses it to recount an audit that
 predates the two counters, or whose attempts were counted by an older reading
 of the rule, when it reads one, so a Subject under the rule
 compares like for like with a Reference audited under an older one,
 and `audit.test.ts` pins the recount of the committed fix-257 audits and of
-the four attempts the checkpoint hold moves. Rounds are numbered by position in the digest,
+the two captures audited under rule 2. Rounds are numbered by position in the digest,
 with the trace's round and attempt beside them, because a retried round repeats
 its number. The same trace classifies identically on every run, and every attempt carries a `digestHash` over the
 digest the reviewer was shown; `audit.test.ts` pins the copied budgets, rungs and
@@ -1139,9 +1151,15 @@ for an audit whose attempts do not say they were counted by the rail's
 current rule, which is every audit committed before it: the two counters,
 and `Search Loop rounds by the streak rule` with them, are recounted with
 the streak held across a checkpoint tool, and the files stay as written.
-Over the audits from `fix-258-259` on, four attempts move, each by one round
-at streak 2 or beyond; the `fix-284` Reference's initials read 16 and 5
-where its aggregate wrote 15 and 5. And since #288 for `Bookkeeping rounds
+Over the audits from `fix-258-259` on, four attempts moved, each by one round
+at streak 2 or beyond. Since #293 the recount is by rule 3, which takes the
+Composed Address rewrites out of the streak and holds it across a Blocker
+landing and a call that acts on no page: from each call's name, `wall` and
+`rewritten` stamp, never its arguments, which an audit keeps cut, so the
+Search URL names #293 added are not recounted. On initials the `fix-284`
+Reference reads 14 and 5 where its aggregate wrote 15 and 5, `fix-288-290`
+17 and 7 where it wrote 22 and 8, and `fix-291` 11 and 6 where it wrote 14
+and 7. And since #288 for `Bookkeeping rounds
 right before the Answer`: an audit written before the counter is recounted
 from its rounds and its reviews' overrules, with no trace and no reviewer.
 Over `fix-270`, `jev-off`, `jev-on`, `fix-281`, `fix-284` and `fix-283` that

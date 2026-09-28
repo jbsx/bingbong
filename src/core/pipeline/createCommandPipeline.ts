@@ -73,7 +73,7 @@ import {
   type RunPlan,
 } from './runPlan'
 import { createNotices } from './notices'
-import type { ConfirmDecision, RunDecisions } from './decisions'
+import type { AskOutcome, ConfirmDecision, RunDecisions } from './decisions'
 import { CommandAbortedError, STEERED_CANCELLED, type RunInterrupts } from './interrupts'
 import {
   createObservationLedger,
@@ -2888,7 +2888,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
     observe: (input: ObservationInput) => ObservationRecord | null,
   ): RunDecisions {
     return {
-      async *ask(question: string, call: ToolCall): AsyncGenerator<UnstampedEvent, ToolResultOutcome> {
+      async *ask(question: string, call: ToolCall): AsyncGenerator<UnstampedEvent, AskOutcome> {
         // Finish the spoken question before the answer window begins. This
         // prevents the mic from transcribing the assistant and gives the user
         // the full timeout after they can first respond.
@@ -2896,7 +2896,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
         throwIfAborted(run)
         yield* checkpoint(run, 'acting', false)
         if (run.steering) {
-          return { ok: true, result: STEERED_CANCELLED }
+          return { outcome: { ok: true, result: STEERED_CANCELLED }, answered: false }
         }
         const askId = `ask-${++askCounter}`
         const decision = waitForAsk(askId)
@@ -2930,11 +2930,16 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
         })
         throwIfAborted(run)
         return {
-          ok: true,
-          result:
-            resolved.reason === 'steered'
-              ? STEERED_CANCELLED
-              : resolved.answer ?? "user didn't answer",
+          outcome: {
+            ok: true,
+            result:
+              resolved.reason === 'steered'
+                ? STEERED_CANCELLED
+                : resolved.answer ?? "user didn't answer",
+          },
+          // The window's own resolution (#293), as the Observation above
+          // reads it — never the wording the model is handed.
+          answered: resolved.reason === 'user',
         }
       },
       async *confirm(prompt: string, call: ToolCall): AsyncGenerator<UnstampedEvent, ConfirmDecision> {

@@ -193,17 +193,18 @@ describe('the streak-rule counters (#259, ADR 0058)', () => {
 describe('the checkpoint hold recount (#289)', () => {
   const valueOf = (counters: ReturnType<typeof countersOf>, label: string) => counters.find((counter) => counter.label === label)?.value
 
-  it('restates the fix-284 Reference’s initials with its checkpoints held: 15 at streak 2 or beyond becomes 16, the reviewer’s 18 stay', () => {
+  it('restates the fix-284 Reference’s initials by the rail’s current rule: 15 at streak 2 or beyond becomes 14, 16 with its checkpoints held less its rewrites (#293), and the reviewer’s 18 stay', () => {
     const aggregate = readAudit('audit-aggregate-fix-284.json') as unknown as AuditAggregate
     const initials = [1, 2, 3].flatMap((pass) => readAudit(`audit-fix-284-${pass}.json`).attempts.filter((attempt) => attempt.mechanical.relation === 'initial'))
     const population = aggregate.populations.initial
     expect(population).toMatchObject({ mechanicalSearchRounds: 24, searchLoopRounds: 18, searchRoundsAtStreak2: 15, searchRoundsAtStreak3: 5 })
 
     const counters = countersOf(population, initials)
-    expect(valueOf(counters, 'Search rounds at streak 2 or beyond')).toBe(16)
+    expect(valueOf(counters, 'Search rounds at streak 2 or beyond')).toBe(14)
     expect(valueOf(counters, 'Search rounds at streak 3 or beyond')).toBe(5)
-    // Pass 2, the longitude watch: round 7 heads a loop the older rule ended at a checkpoint.
-    expect(valueOf(counters, 'Search Loop rounds by the streak rule')).toBe(26)
+    // Pass 2, the longitude watch: round 7 heads a loop the older rule ended
+    // at a checkpoint. It read 26 before #293 took the rewrites out.
+    expect(valueOf(counters, 'Search Loop rounds by the streak rule')).toBe(23)
     // A judgement is never recounted.
     expect(valueOf(counters, 'Search Loop rounds')).toBe(18)
   })
@@ -223,8 +224,36 @@ describe('the checkpoint hold recount (#289)', () => {
   })
 })
 
+describe('the escape recount (#293)', () => {
+  const valueOf = (counters: ReturnType<typeof countersOf>, label: string) => counters.find((counter) => counter.label === label)?.value
+  const STREAK_2 = 'Search rounds at streak 2 or beyond'
+  const STREAK_3 = 'Search rounds at streak 3 or beyond'
+
+  it('recounts an audit written under rule 2: fix-288-290 reads 22 and 8 on disk and 17 and 7 by the rule as it is, the reviewer’s rounds as judged', () => {
+    const aggregate = readAudit('audit-aggregate-fix-288-290.json') as unknown as AuditAggregate
+    const initials = [1, 2, 3].flatMap((pass) => readAudit(`audit-fix-288-290-${pass}.json`).attempts.filter((attempt) => attempt.mechanical.relation === 'initial'))
+    const population = aggregate.populations.initial
+    // On disk as the audit wrote it, saying which rule counted it.
+    expect(initials.map((attempt) => attempt.mechanical.searchStreakRule)).toEqual(initials.map(() => 2))
+    expect(SEARCH_STREAK_RULE).toBe(3)
+    expect(population).toMatchObject({ searchRoundsAtStreak2: 22, searchRoundsAtStreak3: 8 })
+
+    const counters = countersOf(population, initials)
+    expect(valueOf(counters, STREAK_2)).toBe(17)
+    expect(valueOf(counters, STREAK_3)).toBe(7)
+    expect(valueOf(counters, 'Search Loop rounds by the streak rule')).toBe(26)
+    // A judgement is never recounted.
+    expect(valueOf(counters, 'Search Loop rounds')).toBe(population.searchLoopRounds)
+
+    // The same audit, had the rule as it is counted it, is read as written.
+    const underCurrentRule = initials.map((attempt) => ({ ...attempt, mechanical: { ...attempt.mechanical, searchStreakRule: SEARCH_STREAK_RULE } }))
+    expect(valueOf(countersOf(population, underCurrentRule), STREAK_2)).toBe(22)
+    expect(valueOf(countersOf(population, underCurrentRule), STREAK_3)).toBe(8)
+  })
+})
+
 describe('the Unavailable Landing recount (#262, ADR 0060)', () => {
-  it('restates fix-258-259 with its Unavailable Landings held: 17/23 becomes 18/23, and the landings are counted by title only', () => {
+  it('restates fix-258-259 with its Unavailable Landings held and its rewrites no search of the loop (#293): 17/23 becomes 12/23, and the landings are counted by title only', () => {
     const aggregate = readAudit('audit-aggregate-fix-258-259.json') as unknown as AuditAggregate
     const initials = [1, 2, 3].flatMap((pass) => readAudit(`audit-fix-258-259-${pass}.json`).attempts.filter((attempt) => attempt.mechanical.relation === 'initial'))
     const population = aggregate.populations.initial
@@ -233,11 +262,12 @@ describe('the Unavailable Landing recount (#262, ADR 0060)', () => {
 
     const counters = countersOf(population, initials)
     const valueOf = (label: string) => counters.find((counter) => counter.label === label)?.value
-    // Pass 2 Voyager round 21 held: round 20 heads the streak, 22 reaches 2 and 23 reaches 3.
-    expect(valueOf('Search Loop rounds by the streak rule')).toBe(18)
+    // Pass 2 Voyager round 21 held: round 20 heads the streak and 23 reaches
+    // 2, round 22 between them being a rewrite. Before #293 it read 18, 12 and 5.
+    expect(valueOf('Search Loop rounds by the streak rule')).toBe(12)
     expect(valueOf('Search Loop rounds')).toBe(23)
-    expect(valueOf('Search rounds at streak 2 or beyond')).toBe(12)
-    expect(valueOf('Search rounds at streak 3 or beyond')).toBe(5)
+    expect(valueOf('Search rounds at streak 2 or beyond')).toBe(7)
+    expect(valueOf('Search rounds at streak 3 or beyond')).toBe(2)
     // The status was never in a trace: a recount counts by title and says nothing of status.
     expect(valueOf('Unavailable landings by status')).toBeNull()
     expect(valueOf('Unavailable landings by title')).toBe(2)

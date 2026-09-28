@@ -110,6 +110,8 @@ function harness(
     describeRef?: ToolRoundConfig['describeRef']
     /** The Result Pick (#277, ADR 0070): the search landing's best result, opened in the same round. */
     resultPick?: ToolRoundConfig['resultPick']
+    /** Whether the user answers a question put to them (#293); they do unless told otherwise. */
+    userAnswers?: boolean
     /** The shared order log — pass the same array the scripted tools write to. */
     trace?: string[]
   } = {},
@@ -130,7 +132,9 @@ function harness(
     async *ask(question) {
       trace.push(`ask:${question}`)
       asked.push(question)
-      return { ok: true, result: 'the user said so' }
+      return options.userAnswers === false
+        ? { outcome: { ok: true, result: "user didn't answer" }, answered: false }
+        : { outcome: { ok: true, result: 'the user said so' }, answered: true }
     },
     async *confirm(prompt) {
       trace.push(`confirm:${prompt}`)
@@ -766,29 +770,48 @@ describe('the Composed Address rail runs per call (#239, ADR 0050; #255, ADR 005
     expect(h.epoch.phase.kind).toBe('working')
   })
 
-  it('is a search to the Search Loop rail: it continues a streak, is refused at the cap, and opening a shown result escapes', async () => {
+  it('is neither a search of the Search Loop nor escape from it (#293): at streak 1 it leaves streak 1, earns no Notice and writes no Search Observation', async () => {
+    const trace: string[] = []
+    const observations: ToolTraceEvent[] = []
+    const h = harness([navigateTool(trace)], { trace, turnId: 'turn-1', traceVision: (event) => observations.push(event), capabilities: { ...ALL_RAILS, noProgressRail: false } })
+    await h.round([call('navigate', { url: 'https://www.nasa.gov/dead/voyager' }, 'dead')])
+    await h.round([call('navigate', { url: 'https://duckduckgo.com/?q=voyager+record' }, 's1')])
+
+    const rewritten = await h.round([call('navigate', { url: 'https://www.nasa.gov/voyager-record' }, 'r1')])
+    await h.round([call('navigate', { url: 'https://duckduckgo.com/?q=voyager+golden+record' }, 's2')])
+
+    expect(executed(trace).at(-2)).toBe('execute:navigate:https://duckduckgo.com/?q=voyager%20record%20site%3Anasa.gov')
+    expect(resultOf(rewritten.outcome.results[0]!.outcome)).not.toContain('The last searches ran one after another')
+    const searches = observations.filter((event) => event.kind === 'search_observation') as unknown as { callId: string; streak: number }[]
+    expect(searches.map(({ callId, streak }) => ({ callId, streak }))).toEqual([
+      { callId: 's1', streak: 1 },
+      { callId: 's2', streak: 2 },
+    ])
+    // The stamp is the rewrite's record.
+    expect(rewritten.events.filter((event) => event.type === 'tool_result')[0]).toMatchObject({ callId: 'r1', rewritten: { site: 'nasa.gov' } })
+  })
+
+  it('is never refused by the Search Loop gate (#293): it runs with the streak at the cap, where a search the model wrote is refused', async () => {
     const trace: string[] = []
     const h = harness([navigateTool(trace)], { trace, capabilities: { ...ALL_RAILS, noProgressRail: false } })
     await h.round([call('navigate', { url: 'https://www.nasa.gov/dead/voyager' }, 'dead')])
-    for (let index = 1; index < SEARCH_LOOP_REFUSE_AFTER; index += 1) {
-      await h.round([call('navigate', { url: 'https://duckduckgo.com/?q=voyager+record' }, `s${index}`)])
+    for (let index = 1; index <= SEARCH_LOOP_REFUSE_AFTER; index += 1) {
+      await h.round([call('navigate', { url: `https://duckduckgo.com/?q=voyager+record+${index}` }, `s${index}`)])
     }
 
-    const atCap = await h.round([call('navigate', { url: 'https://www.nasa.gov/voyager-record' }, 'r1')])
-    const past = await h.round([call('navigate', { url: 'https://www.nasa.gov/voyager/record' }, 'r2')])
+    const rewritten = await h.round([call('navigate', { url: 'https://www.nasa.gov/voyager-record' }, 'r1')])
+    const search = await h.round([call('navigate', { url: 'https://duckduckgo.com/?q=voyager+record+again' }, 'again')])
     await h.round([call('navigate', { url: RESULT_HREF }, 'open')])
-    const escaped = await h.round([call('navigate', { url: 'https://www.nasa.gov/voyager/records' }, 'r3')])
+    const escaped = await h.round([call('navigate', { url: 'https://duckduckgo.com/?q=voyager+record+once+more' }, 'more')])
 
-    expect(atCap.outcome.results[0]!.outcome.ok).toBe(true)
-    const refused = errorOf(past.outcome.results[0]!.outcome)
-    expect(refused.split('\n')[0]).toMatch(/^Rewritten — nasa\.gov already answered not found/)
-    expect(refused).toContain('Search loop limit')
+    expect(rewritten.outcome.results[0]!.outcome.ok).toBe(true)
+    expect(resultOf(rewritten.outcome.results[0]!.outcome).split('\n')[0]).toMatch(/^Rewritten — nasa\.gov already answered not found/)
+    expect(errorOf(search.outcome.results[0]!.outcome)).toContain('Search loop limit')
     expect(escaped.outcome.results[0]!.outcome.ok).toBe(true)
-    // On the Run Engine (#270), and the shown result is no composed address.
     expect(executed(trace).slice(-3)).toEqual([
       'execute:navigate:https://duckduckgo.com/?q=voyager%20record%20site%3Anasa.gov',
       `execute:navigate:${RESULT_HREF}`,
-      'execute:navigate:https://duckduckgo.com/?q=voyager%20records%20site%3Anasa.gov',
+      'execute:navigate:https://duckduckgo.com/?q=voyager+record+once+more',
     ])
   })
 
@@ -950,6 +973,36 @@ describe('search observation records', () => {
     const h = harness([scripted('navigate', [])], { traceVision, turnId: 'turn-1', capabilities: { ...ALL_RAILS, searchLoopRail: false } })
     await h.round([call('navigate', { url: SEARCH }, 'c1')])
     expect(reported).toEqual([])
+  })
+})
+
+// #293 (note on ADR 0058): whether the user answered is the decisions seam's
+// own resolution, which the round hands the rail beside the call.
+describe('a question and the Search Loop (#293)', () => {
+  const askTool: Tool = {
+    name: 'ask_user',
+    askUser: () => 'Which watch do you mean?',
+    async execute(): Promise<unknown> {
+      throw new Error('ask_user must run through the ask flow')
+    },
+  }
+  const search = (n: number): ToolCall => call('navigate', { url: `https://duckduckgo.com/?q=harrison+watch+${n}` }, `s${n}`)
+
+  async function streaksAround(userAnswers: boolean): Promise<number[]> {
+    const observations: ToolTraceEvent[] = []
+    const h = harness([scripted('navigate', []), askTool], { turnId: 'turn-1', traceVision: (event) => observations.push(event), userAnswers })
+    await h.round([search(1), search(2)])
+    await h.round([call('ask_user', { question: 'Which watch do you mean?' }, 'ask')])
+    await h.round([search(3)])
+    return observations.filter((event) => event.kind === 'search_observation').map((event) => (event as unknown as { streak: number }).streak)
+  }
+
+  it('ends the streak on a question the user answered', async () => {
+    expect(await streaksAround(true)).toEqual([1, 2, 1])
+  })
+
+  it('holds the streak across a question the user did not answer', async () => {
+    expect(await streaksAround(false)).toEqual([1, 2, 3])
   })
 })
 

@@ -22,7 +22,7 @@ function refusingDecisions(): RunDecisions {
   const refusal: ToolResultOutcome = { ok: false, error: 'no user to ask: delegated work cannot reach the user' }
   return {
     async *ask() {
-      return refusal
+      return { outcome: refusal, answered: false }
     },
     async *confirm() {
       return { approved: false, outcome: refusal } as const
@@ -63,7 +63,7 @@ describe('the decisions seam', () => {
     const asked = await drain(decisions.ask('Which one?', call))
 
     expect(asked.events).toEqual([])
-    expect(asked.value).toEqual({ ok: false, error: 'no user to ask: delegated work cannot reach the user' })
+    expect(asked.value).toEqual({ outcome: { ok: false, error: 'no user to ask: delegated work cannot reach the user' }, answered: false })
   })
 
   it('is satisfied by an adapter that denies every Confirmation with its own wording', async () => {

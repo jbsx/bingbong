@@ -54,7 +54,18 @@ import type { PipelineEvent } from '../../src/core/pipeline/events'
 import type { EffortTier } from '../../src/core/pipeline/runPlan'
 import { DECISION_THRESHOLDS } from '../../src/core/ports/decisionModel.ts'
 import type { SearchObservation, SearchSignature } from '../../src/core/pipeline/searchLoopRail'
-import { isSearchInspection, SEARCH_SIGNATURES, SEARCH_STREAK_RULE, searchCallKindOf, searchStreakAfter, searchStreakMoveOf, similarQueries } from '../../src/core/pipeline/searchLoopRule.ts'
+import { agentResultsHeader, collectedReportIn } from '../../src/core/agent/agentResultsHeader.ts'
+import {
+  isSearchInspection,
+  putSomethingNew,
+  SEARCH_SIGNATURES,
+  SEARCH_STREAK_RULE,
+  searchCallKindOf,
+  searchStreakAfter,
+  searchStreakMoveOf,
+  similarQueries,
+  type SearchCallKind,
+} from '../../src/core/pipeline/searchLoopRule.ts'
 import { normalizeUrlInput, parseSearchUrl, SEARCH_URL_FORMS, type SearchUrlForm } from '../../src/core/browser/urlInput.ts'
 import type { TraceRecord } from '../../src/core/trace/runTrace'
 import { decisionSeamsLabel } from './launchRouting.ts'
@@ -309,6 +320,17 @@ export interface AuditCall {
    * there. Present only on a pick, so an attempt with none keeps its digest.
    */
   readonly resultPick?: Omit<ResultPickStamp, 'label'>
+  /**
+   * What a call that acts on no page put in front of the Run, where the
+   * result's head cannot say it (#293, note on ADR 0058): the user's `answer`
+   * to an `ask_user`, read from the Run Trace's own `ask_resolved` record and
+   * never from the result's wording, or a Subagent `report` an
+   * `agent_results` collected below a first entry that was not one, read
+   * from the whole result. Either is escape from a Search Loop. A report the
+   * head opens with is read from the head, so an attempt that collected one
+   * keeps the digest it always had, as does one that delivered neither.
+   */
+  readonly delivered?: 'answer' | 'report'
   /** An Evidence Checkpoint's verdict: accepted, or the rejection's head. */
   readonly checkpoint: { readonly accepted: boolean; readonly outcome: string } | null
   /** The app's own Notices riding the result, as marker names. */
@@ -318,6 +340,8 @@ export interface AuditCall {
    * searches, and their queries, come from the rail's Search Observations
    * where the attempt carries them, with the signature the search ran under
    * (#243, ADR 0049); otherwise from a `navigate`'s query with no signature.
+   * A Composed Address rewrite is not one (#293): null, its `rewritten` stamp
+   * being its record.
    * The streak is the rail's rule replayed over those calls (ADR 0058: a
    * search after a search with nothing opened between them), so a trace
    * recorded under the older same-intent rule is read by the current one.
@@ -1190,9 +1214,19 @@ export function searchQueryOf(raw: string): string | null {
   return parseSearchUrl(raw)?.query ?? null
 }
 
+/**
+ * Whether a call ran a search: one the rail observed, or the search a
+ * Composed Address was rewritten into (ADR 0055). The rewrite is a search to
+ * every reader but the Search Loop's streak (#293), where it holds and so
+ * carries no search line.
+ */
+function ranSearch(call: AuditCall): boolean {
+  return call.search !== null || call.rewritten !== undefined
+}
+
 /** The Search URL form of a navigate a search observation came from; a rewritten Composed Address ran on the `q=` engine (ADR 0055). */
 function searchFormOf(call: AuditCall): SearchUrlForm | null {
-  if (call.name !== 'navigate' || call.search === null) return null
+  if (call.name !== 'navigate' || !ranSearch(call)) return null
   if (call.rewritten !== undefined) return 'q'
   return isString(call.args.url) ? (parseSearchUrl(call.args.url)?.form ?? null) : null
 }
@@ -1565,6 +1599,8 @@ interface ResultFields {
   unquoted: UnseenPhraseRewriteStamp | null
   engineRewrite: EngineRewriteStamp | null
   resultPick: ResultPickStamp | null
+  /** Whether the user answered this call's question (#293): its `ask_resolved` record says `user`. */
+  answered: boolean
 }
 
 interface RawRound {
@@ -1634,6 +1670,26 @@ function eventOf(record: TraceLine): Record<string, unknown> | null {
 }
 
 /**
+ * The orchestrator's `ask_user` calls the user answered, by call id (#293):
+ * the pipeline's own resolution of each question's window, joined to its
+ * call through the request. A window that timed out, was cancelled or was
+ * steered away answered nothing.
+ */
+function answeredAsksOf(records: readonly TraceLine[]): Set<string> {
+  const callOf = new Map<string, string>()
+  const answered = new Set<string>()
+  for (const record of records) {
+    if (record.agentId !== undefined) continue
+    const event = eventOf(record)
+    if (event === null || !isString(event.askId)) continue
+    if (event.type === 'ask_requested' && isString(event.callId)) callOf.set(event.askId, event.callId)
+    const callId = callOf.get(event.askId)
+    if (event.type === 'ask_resolved' && event.reason === 'user' && callId !== undefined) answered.add(callId)
+  }
+  return answered
+}
+
+/**
  * The three Transport Failure counters (#271) over one attempt's records.
  * A round is keyed by whose it is and its number, so a Subagent's round 2
  * is never the Run's; it is recovered when it holds a `transport` attempt
@@ -1662,6 +1718,7 @@ function transportCountsOf(
 /** Group the turn's orchestrator records into rounds: each `llm_round` owns the tool calls that follow it until the next. */
 function rawRounds(records: readonly TraceLine[]): RawRound[] {
   const rounds: RawRound[] = []
+  const answered = answeredAsksOf(records)
   const results = new Map<string, { event: ToolResultEvent } & ResultFields>()
   for (const record of records) {
     const event = eventOf(record)
@@ -1674,6 +1731,7 @@ function rawRounds(records: readonly TraceLine[]): RawRound[] {
         unquoted: unquotedFieldOf(record),
         engineRewrite: engineRewriteFieldOf(record),
         resultPick: resultPickFieldOf(record),
+        answered: answered.has(event.callId),
       })
     }
   }
@@ -1714,6 +1772,7 @@ function rawRounds(records: readonly TraceLine[]): RawRound[] {
       unquoted: settled?.unquoted ?? null,
       engineRewrite: settled?.engineRewrite ?? null,
       resultPick: settled?.resultPick ?? null,
+      answered: settled?.answered ?? false,
       checkpoint: undefined,
     })
   }
@@ -1843,19 +1902,22 @@ export function searchLoopCountsOf(rounds: readonly AuditRound[]): Pick<AuditMec
  * already written, so a capture audited under the same-intent rule counts
  * under the consecutive one. Kinds and reasons are left as judged — they are
  * the digest the reviewer saw — and `rewords` is recomputed beside the streak.
+ * A Composed Address rewrite an older audit counted as a search holds the
+ * streak and loses its search line (#293).
  */
 export function replaySearchStreaks(rounds: readonly AuditRound[]): AuditRound[] {
   const state: SearchStreakState = { streak: 0, lastSearchQuery: null }
   return rounds.map((round) => ({
     ...round,
     calls: round.calls.map((call) => {
+      const kind = streakKindOf(call)
       const search = advanceSearchStreak(state, {
-        name: call.name,
-        consumed: consumedOf(call),
-        search: call.search === null ? null : { query: call.search.query, ...(call.search.signature === undefined ? {} : { signature: call.search.signature }) },
+        kind,
+        consumed: escapedOf(call),
+        search: call.search === null || kind === 'rewrite' ? null : { query: call.search.query, ...(call.search.signature === undefined ? {} : { signature: call.search.signature }) },
       })
-      if (call.resultPick?.opened === true) replayResultPick(state, consumedOf(call))
-      return search === null ? call : { ...call, search }
+      if (call.resultPick?.opened === true) replayResultPick(state, escapedOf(call))
+      return search === null && call.search === null ? call : { ...call, search }
     }),
   }))
 }
@@ -1878,7 +1940,7 @@ function openedPageText(text: string | null): string | null {
 
 /** The open a Result Pick made (#277, ADR 0070): escape, as the rail observed it, right after the search it came from. */
 function replayResultPick(state: SearchStreakState, consumed: boolean): void {
-  advanceSearchStreak(state, { name: 'navigate', consumed, search: null })
+  advanceSearchStreak(state, { kind: searchCallKindOf('navigate'), consumed, search: null })
 }
 
 /** The calls that open a result: a navigate or a click that consumed something (#277). */
@@ -1900,7 +1962,7 @@ export function resultPickCountsOf(rounds: readonly AuditRound[]): Required<Pick
   let waiting: { round: number; openedRound: number | null } | null = null
   for (const round of rounds) {
     for (const call of round.calls) {
-      if (call.search !== null) {
+      if (ranSearch(call)) {
         waiting = null
         if (!consumedOf(call) || call.wall !== null) continue
         const opened = call.resultPick?.opened === true
@@ -2024,6 +2086,34 @@ function consumedOf(call: AuditCall): boolean {
   return call.ok === true && !call.refused && call.notFound === undefined && call.unavailable === undefined && blockedOrInertOfCall(call) === null
 }
 
+/** What a written call that is not a search is to the streak (#293): a Composed Address rewrite by its stamp, any other by its name. */
+function streakKindOf(call: AuditCall): Exclude<SearchCallKind, 'search'> {
+  return call.rewritten !== undefined ? 'rewrite' : searchCallKindOf(call.name)
+}
+
+/**
+ * Whether a written call put something new in front of the Run (#293, note
+ * on ADR 0058), by the rail's own rule: it consumed something, landed on no
+ * Blocker, and where it acts on no page delivered an answer or a Subagent
+ * Report. A report is read from the result's head, which opens with the
+ * first Subagent's header, or from `delivered` where the head cannot say
+ * it; an audit written before the field says no answer, the captures being
+ * unattended, and a report only by its head.
+ */
+function escapedOf(call: AuditCall): boolean {
+  return (
+    consumedOf(call) &&
+    putSomethingNew(call.name, {
+      blocker: call.wall !== null,
+      userAnswered: call.delivered === 'answer',
+      result: call.delivered === 'report' ? REPORT_DELIVERED : call.resultHead,
+    })
+  )
+}
+
+/** A result that reads as a collected Subagent Report to the rail's own test, standing in for the whole result a written call no longer holds. */
+const REPORT_DELIVERED = agentResultsHeader('a', 'browsing', 'completed', '')
+
 /**
  * A written call's Blocked Action or inert click (#261), read by the rail's
  * own helper. The head keeps the outcome's first line; the settled state that
@@ -2132,9 +2222,9 @@ export function blockedOrInertOf(rounds: readonly AuditRound[]): BlockedOrInertR
         streak = call.search.streak
         continue
       }
-      const kind = searchCallKindOf(call.name)
+      const kind = streakKindOf(call)
       if (verdict !== null && kind !== 'inspection' && streak >= 1) inStreak.push(round.round)
-      streak = searchStreakAfter(streak, searchStreakMoveOf(kind, consumedOf(call)))
+      streak = searchStreakAfter(streak, searchStreakMoveOf(kind, escapedOf(call)))
     }
   }
   return { covered, notShown, blocked, inert, inStreak, postBlockVision, recoveries }
@@ -2189,7 +2279,13 @@ export interface UnavailableLandingRounds {
  * streak for. A landing with no call after it was followed by nothing. A
  * checkpoint tool after a landing still ends the wait, as it did before it
  * held the streak (#289): that change was to move the streak counters alone.
+ * So was #293: the wait still skips the three inspection tools it always
+ * did, ends at a call that acts on no page, and takes a Composed Address
+ * rewrite as the search it ran.
  */
+/** The calls the wait after an Unavailable Landing looks past: inspection as the rail read it when the counter was written (#262). */
+const LANDING_WAIT_SKIPS: ReadonlySet<string> = new Set(['read_page', 'look', 'scroll'])
+
 export function unavailableLandingsOf(rounds: readonly AuditRound[]): UnavailableLandingRounds {
   const status: number[] = []
   const title: number[] = []
@@ -2197,8 +2293,8 @@ export function unavailableLandingsOf(rounds: readonly AuditRound[]): Unavailabl
   let pending: number | null = null
   for (const round of rounds) {
     for (const call of round.calls) {
-      if (pending !== null && !(call.search === null && isSearchInspection(call.name))) {
-        if (call.search !== null) followedBySearch.push(pending)
+      if (pending !== null && !(!ranSearch(call) && LANDING_WAIT_SKIPS.has(call.name))) {
+        if (ranSearch(call)) followedBySearch.push(pending)
         pending = null
       }
       if (call.unavailable === undefined) continue
@@ -2446,14 +2542,14 @@ interface SearchStreakState {
  * One call's step of the streak, shared by the fresh classification and the
  * recount of a written report so the two cannot drift: a search advances the
  * streak and yields its search line (`rewords` from streak 2, against the
- * streak's previous search); any other call holds or, when it consumed
- * something and is neither inspection nor a checkpoint tool (#289), escapes.
- * The caller says what the call
- * was — which only it can read off its source — and whether it consumed.
+ * streak's previous search); any other call holds or, when it is of the
+ * kind that can escape and put something new in front of the Run (#293),
+ * escapes. The caller says what the call was — which only it can read off
+ * its source — and whether it consumed.
  */
 function advanceSearchStreak(
   state: SearchStreakState,
-  call: { readonly name: string; readonly consumed: boolean; readonly search: { readonly query: string; readonly signature?: SearchSignature } | null },
+  call: { readonly kind: Exclude<SearchCallKind, 'search'>; readonly consumed: boolean; readonly search: { readonly query: string; readonly signature?: SearchSignature } | null },
 ): NonNullable<AuditCall['search']> | null {
   if (call.search !== null) {
     state.streak = searchStreakAfter(state.streak, 'search')
@@ -2461,7 +2557,7 @@ function advanceSearchStreak(
     state.lastSearchQuery = call.search.query
     return { query: head(call.search.query, 120)!, streak: state.streak, ...(call.search.signature === undefined ? {} : { signature: call.search.signature }), ...rewords }
   }
-  const move = searchStreakMoveOf(searchCallKindOf(call.name), call.consumed)
+  const move = searchStreakMoveOf(call.kind, call.consumed)
   state.streak = searchStreakAfter(state.streak, move)
   if (move === 'escape') state.lastSearchQuery = null
   return null
@@ -2545,6 +2641,17 @@ function classifyCall(
   // answer live, and a Not-found Landing wins here as its status did there.
   const unavailable = result !== undefined && result.ok && wall === null && landing === null ? (entry.unavailable ?? unavailableByTitle(call.name, settled, page)) : null
   const notices = noticesOf(text)
+  // What a call that acts on no page delivered that the head kept below
+  // cannot say (#293): the user's answer by the trace's own resolution, and
+  // a Subagent Report the whole result holds past its first entry.
+  const delivered: AuditCall['delivered'] | null =
+    result === undefined || !result.ok
+      ? null
+      : entry.answered
+        ? 'answer'
+        : COLLECTION_TOOLS.has(call.name) && collectedReportIn(result.result) && !collectedReportIn(head(text, DIGEST_RESULT_HEAD_CHARS))
+          ? 'report'
+          : null
   const checkpointVerdict =
     checkpoint !== undefined && isString(checkpoint.outcome)
       ? { accepted: checkpoint.outcome === 'accepted', outcome: head(checkpoint.outcome, 160)! }
@@ -2568,6 +2675,7 @@ function classifyCall(
     ...(entry.unquoted !== null ? { unquoted: entry.unquoted.phrases } : {}),
     ...(entry.engineRewrite !== null ? { engineRewrite: `${entry.engineRewrite.from} → ${entry.engineRewrite.to}` } : {}),
     ...(entry.resultPick !== null ? { resultPick: { ref: entry.resultPick.ref, href: entry.resultPick.href, opened: entry.resultPick.opened } } : {}),
+    ...(delivered !== null ? { delivered } : {}),
     checkpoint: checkpointVerdict,
     notices,
   }
@@ -2583,8 +2691,14 @@ function classifyCall(
   // rule is a count of what happened between searches, and replaying it is
   // what lets a capture taken under the older same-intent rule be read by
   // the current one. On a trace the current rail wrote the two agree.
+  // A Composed Address rewrite is no search of the loop (#293, note on ADR
+  // 0055): it holds the streak, and a Search Observation a trace written
+  // before that carries for it is read as the hold it now is.
+  const streakKind: Exclude<SearchCallKind, 'search'> = entry.rewritten !== null ? 'rewrite' : searchCallKindOf(call.name)
   let observed: { readonly query: string; readonly signature?: SearchSignature } | null = null
-  if (railObservations !== null) {
+  if (streakKind === 'rewrite') {
+    observed = null
+  } else if (railObservations !== null) {
     const record = railObservations.get(call.callId)
     if (record !== undefined) observed = { query: record.query, signature: record.signature }
   } else if (call.name === 'navigate' && !refused) {
@@ -2592,7 +2706,7 @@ function classifyCall(
     // replaced; an unquoted one as the terms that ran, not the ones written
     // (#267); one moved to the Run Engine by the terms the stamp read (#270),
     // which an engine's own parameter (Yahoo's `p=`) may hold.
-    const query = entry.rewritten?.query ?? entry.unquoted?.query ?? entry.engineRewrite?.query ?? searchQueryOf(isString(call.args.url) ? call.args.url : '')
+    const query = entry.unquoted?.query ?? entry.engineRewrite?.query ?? searchQueryOf(isString(call.args.url) ? call.args.url : '')
     if (query !== null) observed = { query }
   }
   // A navigate that landed on a Not-found Page is inspection to the rail
@@ -2600,9 +2714,17 @@ function classifyCall(
   // failed call, which consumed nothing, nor a Blocked Action or an inert
   // click (#261), read by the rail's own helper over the whole result text,
   // nor an Unavailable Landing (#262), read from the field, never the head.
+  // Nor did a landing on a Blocker, a question the user did not answer, or a
+  // wait that collected no Subagent Report (#293).
   const consumed =
-    result !== undefined && result.ok && !refused && landing === null && unavailable === null && (settled === null || consumedNothingOf(settled) === null)
-  const search = advanceSearchStreak(state.search, { name: call.name, consumed, search: observed })
+    result !== undefined &&
+    result.ok &&
+    !refused &&
+    landing === null &&
+    unavailable === null &&
+    (settled === null || consumedNothingOf(settled) === null) &&
+    putSomethingNew(call.name, { blocker: wall !== null, userAnswered: entry.answered, result: result.result })
+  const search = advanceSearchStreak(state.search, { kind: streakKind, consumed, search: observed })
   if (entry.resultPick?.opened === true) replayResultPick(state.search, consumed)
 
   // Collection and Bookkeeping make no Progress claim; everything else is
@@ -3234,7 +3356,7 @@ export function classifyAttempt(input: AuditTraceInput): AuditMechanical {
         acceptedCheckpoints: accepted,
         refusedCalls: calls.filter((call) => call.refused).length,
         wall: calls.some((call) => call.wall !== null),
-        search: calls.some((call) => call.search !== null),
+        search: calls.some(ranSearch),
       },
     }
   })

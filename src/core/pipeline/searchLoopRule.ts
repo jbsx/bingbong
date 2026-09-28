@@ -1,12 +1,14 @@
+import { collectedReportIn } from '../agent/agentResultsHeader.ts'
 import { looksLikeDomain } from '../browser/urlInput.ts'
+import { classifyToolObservation } from './toolObservations.ts'
 
 // Issue #238, ADR 0048: the Search Loop rail's pure rule, apart from the
 // rail's state — what one Search Intent is, when two searches reword one, and
 // which calls inspect a search's results rather than escape them. The rail
 // runs it live and the Round Audit replays the same code over a Run Trace, so
-// this module stays loadable under plain Node's type stripping: its one
-// import carries its `.ts` extension, as does the fault route that one
-// imports in turn.
+// this module stays loadable under plain Node's type stripping: its
+// imports carry their `.ts` extension, as does the fault route the URL
+// normalizer imports in turn.
 //
 // The same tokenizer feeds the query-intent fingerprint the no-progress
 // rails compare (progressFingerprints.ts), so a `site:` swap over the same
@@ -23,6 +25,14 @@ import { looksLikeDomain } from '../browser/urlInput.ts'
 // second — the loop the reviewer counts has begun by then, and the nudge is
 // the tier that is obeyed — and made a checkpoint tool hold the streak as
 // inspection does: recording is not opening.
+//
+// #293 (note on ADR 0058) made escape something new put in front of the Run:
+// a page opened, the user's answer to a question, or a Subagent Report. Only
+// a page-facing call can escape, by the Tool Round's own table of tools, and
+// the two calls that bring content from off the page; every other call that
+// acts on no page holds, as does a landing on a Blocker and a Composed
+// Address rewrite (note on ADR 0055), which the model never wrote as a
+// search.
 
 /** Consecutive searches with nothing opened between them before the advisory nudge rides the result (#74; 2 since #289). */
 export const SEARCH_LOOP_NUDGE_AFTER = 2
@@ -33,15 +43,21 @@ export const SEARCH_LOOP_REFUSE_AFTER = 5
 /**
  * Which reading of the rule this module holds (#289). 1 is the consecutive
  * rule as #259 to #262 left it, where an accepted checkpoint was an opening;
- * 2 holds the streak across a checkpoint tool. The Round Audit writes it on
+ * 2 holds the streak across a checkpoint tool; 3 holds it across a call that
+ * acts on no page, a landing on a Blocker and a Composed Address rewrite
+ * (#293). The Round Audit writes it on
  * every attempt it counts, and the Fix Ledger recounts an attempt written
  * under any other. Raise it whenever what holds or ends a streak changes —
  * the test beside this module pins it to the table of moves.
  */
-export const SEARCH_STREAK_RULE = 2
+export const SEARCH_STREAK_RULE = 3
 
-/** What the rail read a call as: a search, inspection of a search's results, a checkpoint tool, or any other call. */
-export type SearchCallKind = 'search' | 'inspection' | 'checkpoint' | 'other'
+/**
+ * What the rail read a call as: a search, inspection of a search's results,
+ * a checkpoint tool, a Composed Address rewrite, a call that acts on no page,
+ * or any other call — the only kind that can escape.
+ */
+export type SearchCallKind = 'search' | 'inspection' | 'checkpoint' | 'rewrite' | 'offPage' | 'other'
 
 /** What one processed call is to the streak (ADR 0058). */
 export type SearchStreakMove = 'search' | 'escape' | 'hold'
@@ -63,13 +79,15 @@ export function searchStreakAfter(streak: number, move: SearchStreakMove): numbe
  * whatever its outcome (a refused search included — that is the number the
  * live rail nudged and refused on, ADR 0049); inspection looks at what the
  * search returned without leaving it, and a checkpoint tool records what the
- * Run already had (#289); any other call escapes only when it consumed
- * something — it succeeded, and did not land on a Not-found or an
- * Unavailable Page.
+ * Run already had (#289); a Composed Address rewrite ran a search the model
+ * did not write, and a call that acts on no page opened nothing (#293); any
+ * other call escapes only when it consumed something — it succeeded, landed
+ * on no Not-found or Unavailable Page, and put something new in front of the
+ * Run (`putSomethingNew`).
  */
 export function searchStreakMoveOf(kind: SearchCallKind, consumed: boolean): SearchStreakMove {
   if (kind === 'search') return 'search'
-  if (kind === 'inspection' || kind === 'checkpoint') return 'hold'
+  if (kind !== 'other') return 'hold'
   return consumed ? 'escape' : 'hold'
 }
 
@@ -82,8 +100,14 @@ const SCOPE_OPERATORS = ['site:', 'intitle:', 'inurl:', 'filetype:']
 /** An engine's connectives, written the way engines read them: uppercase. */
 const CONNECTIVES: ReadonlySet<string> = new Set(['OR', 'AND'])
 
-/** Calls that look at what a search returned without leaving it (run 53 for read_page; ADR 0048 for look and scroll). */
-const SEARCH_INSPECTION_TOOLS: ReadonlySet<string> = new Set(['read_page', 'look', 'scroll'])
+/** Calls that look at what a search returned without leaving it (run 53 for read_page; ADR 0048 for look and scroll; #293 for visual grounding). */
+const SEARCH_INSPECTION_TOOLS: ReadonlySet<string> = new Set(['read_page', 'look', 'scroll', 'ground_visual'])
+
+/** The user's question: it acts on no page, and escapes when the user answered (#293). */
+const ASK_TOOL = 'ask_user'
+
+/** The collection of Subagent Reports: it acts on no page, and escapes when it collected one (#293). */
+const COLLECTION_TOOL = 'agent_results'
 
 /** Calls that record an Evidence or a Candidate Checkpoint: accepted, they opened nothing (#289). */
 const SEARCH_CHECKPOINT_TOOLS: ReadonlySet<string> = new Set(['record_evidence', 'record_candidate'])
@@ -193,8 +217,33 @@ export function isSearchCheckpoint(toolName: string): boolean {
  * navigate or a type is a search is in its arguments, which only the caller
  * can read; the rail and the Round Audit both come here for the rest.
  */
-export function searchCallKindOf(toolName: string): Exclude<SearchCallKind, 'search'> {
+export function searchCallKindOf(toolName: string): Exclude<SearchCallKind, 'search' | 'rewrite'> {
   if (isSearchInspection(toolName)) return 'inspection'
   if (isSearchCheckpoint(toolName)) return 'checkpoint'
-  return 'other'
+  // Only a page-facing call can escape (#293), with the two that bring
+  // content from off the page: an answer, and a Subagent Report.
+  if (classifyToolObservation(toolName).pageFacing || toolName === ASK_TOOL || toolName === COLLECTION_TOOL) return 'other'
+  return 'offPage'
+}
+
+/** What a call that came back `ok` was, beyond its name, as the caller read it off its own source (#293). */
+export interface SearchCallFacts {
+  /** A Blocker's marker rode the result: a wall is in front of the Run, and no page. */
+  readonly blocker: boolean
+  /** The user answered the question, by the pipeline's own resolution — never the wording of the result. */
+  readonly userAnswered: boolean
+  /** The result, which an `agent_results` reply says its collected reports in. */
+  readonly result: unknown
+}
+
+/**
+ * Whether a call that can escape put something new in front of the Run
+ * (#293): the user's answer for `ask_user`, at least one Subagent Report for
+ * `agent_results`, and for a page-facing call a landing that is not a
+ * Blocker. One part of `consumed`; the caller holds the rest.
+ */
+export function putSomethingNew(toolName: string, facts: SearchCallFacts): boolean {
+  if (toolName === ASK_TOOL) return facts.userAnswered
+  if (toolName === COLLECTION_TOOL) return collectedReportIn(facts.result)
+  return !facts.blocker
 }

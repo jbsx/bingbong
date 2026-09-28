@@ -129,6 +129,8 @@ interface RoundSpec {
     engineRewrite?: { from: string; to: string; query: string }
     /** The Result Pick the Run Trace records on the result (#277, ADR 0070). */
     resultPick?: { ref: number; label: string; href: string; opened: boolean }
+    /** Whether the user answered this `ask_user` (#293): the window's resolution the Run Trace records, `user` or `timeout`. */
+    answered?: boolean
     /** The verdict on an Evidence Checkpoint the Run made from a Selected Passage on this call's landing (#276, ADR 0069). */
     runCheckpoint?: string
     /** The page that Run-made checkpoint names as its source (#281); `https://spec.invalid/` when unset. */
@@ -180,6 +182,12 @@ function traceOf(rounds: readonly RoundSpec[], extra: readonly Record<string, un
         // The round records the rail's observation after the call settles and
         // before it publishes the result; the seam stamps the turn only.
         records.push({ v: 1, at: T0 + spec.at + 2, turnId: TURN, kind: 'search_observation', callId, name: call.name, ...call.observation })
+      }
+      if (call.answered !== undefined) {
+        // The ask window (#293): requested under the call, resolved before its result.
+        const askId = `ask-${calls}`
+        records.push({ ...identity, at: T0 + spec.at + 1, kind: 'pipeline_event', event: { type: 'ask_requested', turnId: TURN, askId, callId, question: 'which one?', expiresAt: T0 + spec.at + 45_000, at: T0 + spec.at + 1 } })
+        records.push({ ...identity, at: T0 + spec.at + 2, kind: 'pipeline_event', event: { type: 'ask_resolved', turnId: TURN, askId, answer: call.answered ? 'the H4' : null, reason: call.answered ? 'user' : 'timeout', at: T0 + spec.at + 2 } })
       }
       const ok = call.ok ?? true
       records.push({
@@ -1421,7 +1429,7 @@ describe('Unavailable Landings (#262, ADR 0060)', () => {
     expect(markdown).toContain('2 Unavailable Landing(s) (1 by status, 1 by title), 1 followed by a search')
   })
 
-  it('recounts the committed fix-258-259 audits by the title rule: one landing, pass 2 Voyager round 21, and the streak replays 1, 1, 2, 3 (AC6)', () => {
+  it('recounts the committed fix-258-259 audits by the title rule: one landing, pass 2 Voyager round 21, and the streak replays 1, 1, 1, 2 (AC6; #293)', () => {
     type Report = { attempts: { mechanical: { huntId: string; stepId: string; rounds: AuditRound[]; unavailableLandings?: unknown } }[] }
     const found: { pass: number; huntId: string; stepId: string; landings: ReturnType<typeof unavailableLandingsOf> }[] = []
     let voyager: AuditRound[] | null = null
@@ -1441,8 +1449,12 @@ describe('Unavailable Landings (#262, ADR 0060)', () => {
       { pass: 3, huntId: 'superseded-voyager-interstellar', stepId: 'initial', landings: { status: [], title: [22], followedBySearch: [] } },
     ])
     const streaks = voyager!.filter((round) => round.round >= 20 && round.round <= 23).map((round) => round.calls.map((call) => call.search?.streak ?? null))
-    // The held landing sits at the streak before it: 1, (1), 2, 3.
-    expect(streaks).toEqual([[1], [null], [2], [3]])
+    // The held landing sits at the streak before it, and so does round 22
+    // since #293: the search there was a Composed Address rewritten, which
+    // the model never wrote. 1, (1), (1), 2, where it read 1, (1), 2, 3.
+    expect(voyager!.find((round) => round.round === 22)!.calls.map((call) => call.rewritten !== undefined)).toEqual([true])
+    expect(streaks).toEqual([[1], [null], [null], [2]])
+    // The landing is still followed by a search: the rewrite ran one.
   })
 })
 
@@ -1867,12 +1879,15 @@ describe('Rewritten Composed Addresses (#255, ADR 0055)', () => {
     { round: 3, at: 3_000, calls: [{ name: 'navigate', args: { url: SPEC_URL }, result: PAGE('Watch spec', SPEC_URL, 'aaaa1111') }] },
   ]
 
-  it('reads a rewrite into a rewritten call field, replayed as the search that ran, and the rewritten round is an acquisition round, never a Failed one', () => {
+  it('reads a rewrite into a rewritten call field, no search of the loop (#293), and the rewritten round is an acquisition round, never a Failed one', () => {
     const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, EXTRA) }))
     const [first, rewritten, third] = mechanical.rounds
 
     expect(rewritten!.kind).toMatch(/^acquisition_/)
-    expect(rewritten!.calls[0]).toMatchObject({ args: { url: COMPOSED }, refused: false, url: SEARCH, rewritten: 'voyager record site:nasa.gov', search: { query: 'voyager record site:nasa.gov', streak: 1 } })
+    expect(rewritten!.calls[0]).toMatchObject({ args: { url: COMPOSED }, refused: false, url: SEARCH, rewritten: 'voyager record site:nasa.gov', search: null })
+    // Every other reader takes it as the search that ran.
+    expect(rewritten!.tags.search).toBe(true)
+    expect(mechanical.searchForms).toMatchObject({ q: 1 })
     expect(first!.calls[0]).not.toHaveProperty('rewritten')
     expect(third!.calls[0]).not.toHaveProperty('rewritten')
     expect(mechanical.rewrittenComposedAddresses).toEqual([2])
@@ -2601,11 +2616,13 @@ describe('the consecutive-search rule recounted on the committed fix-257 audits 
   type Report = { attempts: { mechanical: { huntId: string; stepId: string; rounds: AuditRound[]; mechanicalSearchRounds: number; searchLoopHeads: number[] } }[] }
   const passes = [1, 2, 3].map((pass) => JSON.parse(readFileSync(join(REPORTS_DIR, `audit-fix-257-${pass}.json`), 'utf8')) as Report)
 
-  it('marks 37 orchestrator rounds at streak 2 or beyond and 22 at 3 or beyond, against 22 Search Loop rounds as written under the same-intent rule', () => {
+  it('marks 26 orchestrator rounds at streak 2 or beyond and 13 at 3 or beyond, against 22 Search Loop rounds as written under the same-intent rule', () => {
     // The issue's 50 and 26 counted the Browse Subagents' own rails with
     // the orchestrator's (13 calls at streak 2 or beyond and 4 rounds at 3
     // or beyond in Subagent rounds); the audit reads the orchestrator's
     // rounds only (ADR 0049), and these are its numbers on that population.
+    // #293 moved them from 52, 37, 22 and 15 heads: a Composed Address
+    // rewrite, 18 on the initials alone, is no longer a search of the loop.
     const asWritten = { mechanicalSearchRounds: 0, searchRoundsAtStreak2: 0, searchRoundsAtStreak3: 0 }
     const recounted = { mechanicalSearchRounds: 0, searchRoundsAtStreak2: 0, searchRoundsAtStreak3: 0, heads: 0 }
     for (const report of passes) {
@@ -2624,7 +2641,7 @@ describe('the consecutive-search rule recounted on the committed fix-257 audits 
       }
     }
     expect(asWritten).toEqual({ mechanicalSearchRounds: 22, searchRoundsAtStreak2: 11, searchRoundsAtStreak3: 0 })
-    expect(recounted).toEqual({ mechanicalSearchRounds: 52, searchRoundsAtStreak2: 37, searchRoundsAtStreak3: 22, heads: 15 })
+    expect(recounted).toEqual({ mechanicalSearchRounds: 39, searchRoundsAtStreak2: 26, searchRoundsAtStreak3: 13, heads: 13 })
   })
 
   it('reads Voyager pass 2 rounds 16–19 as one streak to 4 where the same-intent rule recorded 1, 1, 2, 1', () => {
@@ -2647,35 +2664,28 @@ describe('the checkpoint hold recounted on the committed audits (#289)', () => {
   const FAMILIES = ['fix-258-259', 'fix-260-262', 'fix-263-264', 'fix-265-267', 'fix-270', 'jev-off', 'jev-on', 'fix-281', 'fix-283', 'fix-284']
   const passesOf = (family: string) => (family === 'fix-265-267' ? [1, 2, 3, 4, 5] : [1, 2, 3]).map((pass) => `${family}-${pass}`)
 
-  it('moves four attempts among the audits written under the consecutive rule, each by the rounds a checkpoint had restarted', () => {
-    const moved: string[] = []
+  it('reads every audit written under the consecutive rule as written by its own counters, and none says which rule counted it', () => {
+    // Which attempts a checkpoint alone moved (#289) can no longer be read
+    // off the replay: it runs the rule as #293 left it, and the recount
+    // below is that rule's.
     for (const setId of FAMILIES.flatMap(passesOf)) {
       for (const { mechanical } of readSet(setId).attempts) {
         // Written before the rule: no audit on main says it counted this way.
         expect(mechanical.searchStreakRule, setId).toBeUndefined()
         const written = searchLoopCountsOf(mechanical.rounds)
         expect([written.searchRoundsAtStreak2, written.searchRoundsAtStreak3], setId).toEqual([mechanical.searchRoundsAtStreak2, mechanical.searchRoundsAtStreak3])
-        const recounted = searchLoopCountsOf(replaySearchStreaks(mechanical.rounds))
-        if (recounted.searchRoundsAtStreak2 === written.searchRoundsAtStreak2 && recounted.searchRoundsAtStreak3 === written.searchRoundsAtStreak3) continue
-        moved.push(`${setId} ${mechanical.huntId} ${mechanical.stepId}: ${written.searchRoundsAtStreak2}/${written.searchRoundsAtStreak3} -> ${recounted.searchRoundsAtStreak2}/${recounted.searchRoundsAtStreak3}`)
       }
     }
-    expect(moved).toEqual([
-      'fix-263-264-1 superseded-voyager-interstellar initial: 5/3 -> 6/3',
-      'fix-265-267-5 historical-longitude-watch initial: 1/0 -> 2/1',
-      'fix-281-3 rule-eurostar-luggage initial: 1/0 -> 2/0',
-      'fix-284-2 historical-longitude-watch initial: 1/0 -> 2/0',
-    ])
   })
 
-  it('reads the fix-284 Reference’s initials as 16 rounds at streak 2 or beyond and 5 at 3 or beyond, from 15 and 5 as written', () => {
+  it('reads the fix-284 Reference’s initials as 14 rounds at streak 2 or beyond and 5 at 3 or beyond, from 15 and 5 as written: 16 with its checkpoints held, less the rewrites (#293)', () => {
     const initials = passesOf('fix-284').flatMap((setId) => readSet(setId).attempts.filter(({ mechanical }) => mechanical.relation === 'initial'))
     const sum = (counts: { searchRoundsAtStreak2?: number; searchRoundsAtStreak3?: number }[]) => [
       counts.reduce((total, entry) => total + (entry.searchRoundsAtStreak2 ?? 0), 0),
       counts.reduce((total, entry) => total + (entry.searchRoundsAtStreak3 ?? 0), 0),
     ]
     expect(sum(initials.map(({ mechanical }) => mechanical))).toEqual([15, 5])
-    expect(sum(initials.map(({ mechanical }) => searchLoopCountsOf(replaySearchStreaks(mechanical.rounds))))).toEqual([16, 5])
+    expect(sum(initials.map(({ mechanical }) => searchLoopCountsOf(replaySearchStreaks(mechanical.rounds))))).toEqual([14, 5])
   })
 
   it('holds the streak in fix-284 pass 2 where record_evidence ran between the longitude watch’s searches', () => {
@@ -2692,6 +2702,137 @@ describe('the checkpoint hold recounted on the committed audits (#289)', () => {
     expect(before.slice(lastSearch + 1, -1).some((call) => call.name === 'record_evidence' || call.name === 'record_candidate')).toBe(true)
     // What was judged stays as judged.
     expect(replaySearchStreaks(watch.rounds).map((round) => `${round.kind}: ${round.reason}`)).toEqual(watch.rounds.map((round) => `${round.kind}: ${round.reason}`))
+  })
+})
+
+// #293 (notes on ADR 0058 and ADR 0055): escape is something new put in front
+// of the Run. The rail runs the rule live and the audit replays it, over a
+// fresh trace and over a report already written.
+describe('escape is something new put in front of the Run (#293)', () => {
+  const SEARCH = (terms: string): string => `https://duckduckgo.com/?q=${terms}`
+  const LISTING = (terms: string, signature: string): string => PAGE(`${terms} at DuckDuckGo`, SEARCH(terms), signature)
+  const WALLED_URL = 'https://www.rmg.co.uk/collections'
+  const COMPOSED = 'https://www.rmg.co.uk/collections/harrison-h4'
+  const REPORT = 'a-1 [browsing] completed — find the H4 catalogue entry\nThe entry is ZAA0037.'
+  const REPORT_BELOW = `a-1 [browsing] running — ${'read every page of the catalogue '.repeat(10)}\na-2 [browsing] completed — find the H4 catalogue entry\nThe entry is ZAA0037.`
+  const ROUNDS: RoundSpec[] = [
+    { round: 1, at: 1_000, calls: [{ name: 'navigate', args: { url: SEARCH('harrison+h4') }, result: LISTING('harrison+h4', 'ddg00001') }] },
+    { round: 2, at: 2_000, calls: [{ name: 'navigate', args: { url: SEARCH('harrison+h4+catalogue') }, result: LISTING('harrison+h4+catalogue', 'ddg00002') }] },
+    { round: 3, at: 3_000, calls: [{ name: 'report_run_plan', args: { effort_tier: 'investigation', objective: 'find it' }, result: 'plan recorded' }] },
+    { round: 4, at: 4_000, calls: [{ name: 'spawn_agent', args: { kind: 'browse', task: 'find the H4 catalogue entry' }, result: 'spawned a-1 [browse]' }] },
+    { round: 5, at: 5_000, calls: [{ name: 'navigate', args: { url: SEARCH('harrison+h4+rmg') }, result: LISTING('harrison+h4+rmg', 'ddg00005') }] },
+    { round: 6, at: 6_000, calls: [{ name: 'navigate', args: { url: WALLED_URL }, result: `${PAGE('Just a moment...', WALLED_URL, 'wall0006')}\nBLOCKER:challenge www.rmg.co.uk\nA challenge is in the way.` }] },
+    { round: 7, at: 7_000, calls: [{ name: 'navigate', args: { url: COMPOSED }, result: `Rewritten — rmg.co.uk already answered not found\n${LISTING('harrison+h4+site%3Armg.co.uk', 'ddg00007')}`, rewritten: { site: 'rmg.co.uk', query: 'harrison h4 site:rmg.co.uk' } }] },
+    { round: 8, at: 8_000, calls: [{ name: 'ask_user', args: { question: 'which one?' }, result: "user didn't answer", answered: false }] },
+    { round: 9, at: 9_000, calls: [{ name: 'agent_results', args: { wait: true }, result: 'a-1 [browsing] running — find the H4 catalogue entry' }] },
+    { round: 10, at: 10_000, calls: [{ name: 'ground_visual', args: { question: 'where is the search box?' }, result: 'at the top' }] },
+    { round: 11, at: 11_000, calls: [{ name: 'navigate', args: { url: SEARCH('harrison+timekeeper') }, result: LISTING('harrison+timekeeper', 'ddg00011') }] },
+    { round: 12, at: 12_000, calls: [{ name: 'agent_results', args: { wait: true }, result: REPORT }] },
+    { round: 13, at: 13_000, calls: [{ name: 'navigate', args: { url: SEARCH('zaa0037') }, result: LISTING('zaa0037', 'ddg00013') }] },
+    { round: 14, at: 14_000, calls: [{ name: 'ask_user', args: { question: 'which one?' }, result: 'the H4', answered: true }] },
+    { round: 15, at: 15_000, calls: [{ name: 'navigate', args: { url: SEARCH('zaa0037+h4') }, result: LISTING('zaa0037+h4', 'ddg00015') }] },
+    { round: 16, at: 16_000, calls: [{ name: 'navigate', args: { url: SEARCH('zaa0037+h4+rmg') }, result: LISTING('zaa0037+h4+rmg', 'ddg00016') }] },
+    { round: 17, at: 17_000, calls: [{ name: 'agent_results', args: {}, result: REPORT_BELOW }] },
+    { round: 18, at: 18_000, calls: [{ name: 'navigate', args: { url: SEARCH('zaa0037+h4+greenwich') }, result: LISTING('zaa0037+h4+greenwich', 'ddg00018') }] },
+  ]
+  const STREAKS = [1, 2, null, null, 3, null, null, null, null, null, 4, null, 1, null, 1, 2, null, 1]
+
+  /** The rounds as the rail observed them, told what the Tool Round tells it; a rewrite is observed as the search that ran. */
+  async function railed(rounds: readonly RoundSpec[]): Promise<RoundSpec[]> {
+    const rail = createSearchLoopRail()
+    const observed: RoundSpec[] = []
+    for (const spec of rounds) {
+      const calls = []
+      for (const [index, call] of (spec.calls ?? []).entries()) {
+        const args = call.rewritten === undefined ? call.args : { url: SEARCH(encodeURIComponent(call.rewritten.query)) }
+        const verdict = await rail.observe(
+          { id: `${spec.round}.${index}`, name: call.name, args },
+          { ok: true, result: call.result },
+          { composedAddressRewrite: call.rewritten !== undefined, userAnswered: call.answered === true },
+        )
+        calls.push(verdict.observation === null ? call : { ...call, observation: verdict.observation })
+      }
+      observed.push({ ...spec, calls })
+    }
+    return observed
+  }
+
+  it('the rail and the audit’s replay agree on a trace the rule wrote, with its observations and without, and a written report recounts to the same streaks', async () => {
+    const observed = await railed(ROUNDS)
+    expect(observed.map((spec) => spec.calls?.[0]?.observation?.streak ?? null)).toEqual(STREAKS)
+
+    for (const traced of [observed, ROUNDS]) {
+      const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(traced, EXTRA) }))
+      expect(mechanical.rounds.map((round) => round.calls[0]!.search?.streak ?? null)).toEqual(STREAKS)
+      expect(mechanical.searchStreakRule).toBe(3)
+      expect(replaySearchStreaks(mechanical.rounds).map((round) => round.calls[0]!.search?.streak ?? null)).toEqual(STREAKS)
+      expect(searchLoopCountsOf(replaySearchStreaks(mechanical.rounds))).toEqual(searchLoopCountsOf(mechanical.rounds))
+    }
+  })
+
+  it('says what a call that acts on no page delivered only where the result’s head cannot: an answer, and a report below the first entry', () => {
+    const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, EXTRA) }))
+    const delivered = mechanical.rounds.flatMap((round) => round.calls.filter((call) => call.delivered !== undefined).map((call) => `${round.round} ${call.name}: ${call.delivered}`))
+    // Round 12's report opens its result, so its head says it and the digest is as it was.
+    expect(delivered).toEqual(['14 ask_user: answer', '17 agent_results: report'])
+    expect(mechanical.rounds[11]!.calls[0]).not.toHaveProperty('delivered')
+  })
+
+  it('reads the answer from the trace’s own resolution, never from the wording of the result', () => {
+    const worded: RoundSpec[] = [
+      ROUNDS[0]!,
+      ROUNDS[1]!,
+      { round: 3, at: 3_000, calls: [{ name: 'ask_user', args: { question: 'which one?' }, result: 'the H4', answered: false }] },
+      { round: 4, at: 4_000, calls: [{ name: 'navigate', args: { url: SEARCH('harrison+h4+rmg') }, result: LISTING('harrison+h4+rmg', 'ddg00005') }] },
+      { round: 5, at: 5_000, calls: [{ name: 'ask_user', args: { question: 'which one?' }, result: "user didn't answer", answered: true }] },
+      { round: 6, at: 6_000, calls: [{ name: 'navigate', args: { url: SEARCH('harrison+timekeeper') }, result: LISTING('harrison+timekeeper', 'ddg00011') }] },
+    ]
+    const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(worded, EXTRA) }))
+    expect(mechanical.rounds.map((round) => round.calls[0]!.search?.streak ?? null)).toEqual([1, 2, null, 3, null, 1])
+  })
+
+  it('reads a Search Observation an older trace carries for a rewrite as a hold', () => {
+    const older: RoundSpec[] = [
+      { ...ROUNDS[0]!, calls: [{ ...ROUNDS[0]!.calls![0]!, observation: { query: 'harrison h4', signature: 'url', streak: 1 } }] },
+      { round: 2, at: 2_000, calls: [{ ...ROUNDS[6]!.calls![0]!, observation: { query: 'harrison h4 site:rmg.co.uk', signature: 'url', streak: 2 } }] },
+      { round: 3, at: 3_000, calls: [{ ...ROUNDS[1]!.calls![0]!, observation: { query: 'harrison h4 catalogue', signature: 'url', streak: 3 } }] },
+    ]
+    const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(older, EXTRA) }))
+    expect(mechanical.rounds.map((round) => round.calls[0]!.search)).toEqual([
+      { query: 'harrison h4', signature: 'url', streak: 1 },
+      null,
+      { query: 'harrison h4 catalogue', signature: 'url', streak: 2, rewords: true },
+    ])
+    expect(mechanical.rewrittenComposedAddresses).toEqual([2])
+  })
+
+  it('recounts a report written under rule 2, where a rewrite carried a search line, and leaves what was judged as judged', () => {
+    const written = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, EXTRA) }))
+    // As rule 2 wrote it: the rewrite a search at streak 4, and everything after it one higher until the report.
+    const underRuleTwo: AuditRound[] = written.rounds.map((round) =>
+      round.round === 7 ? { ...round, calls: round.calls.map((call) => ({ ...call, search: { query: call.rewritten!, streak: 4 } })) } : round.round === 11 ? { ...round, calls: round.calls.map((call) => ({ ...call, search: { ...call.search!, streak: 5 } })) } : round,
+    )
+    const recounted = replaySearchStreaks(underRuleTwo)
+    expect(recounted.map((round) => round.calls[0]!.search?.streak ?? null)).toEqual(STREAKS)
+    expect(recounted.map((round) => `${round.kind}: ${round.reason}`)).toEqual(underRuleTwo.map((round) => `${round.kind}: ${round.reason}`))
+  })
+
+  it('recounts the committed audits of the two captures under rule 2 (#289): fewer rounds in a streak, by the rewrites, the walls and the calls off the page', () => {
+    type Report = { attempts: { mechanical: { relation: string; rounds: AuditRound[]; searchRoundsAtStreak2?: number; searchRoundsAtStreak3?: number; searchStreakRule?: number } }[] }
+    const initialsOf = (family: string, passes: readonly number[]) =>
+      passes.flatMap((pass) => (JSON.parse(readFileSync(join(REPORTS_DIR, `audit-${family}-${pass}.json`), 'utf8')) as Report).attempts).filter(({ mechanical }) => mechanical.relation === 'initial')
+    const read = (family: string, passes: readonly number[]) => {
+      const initials = initialsOf(family, passes)
+      const recounted = initials.map(({ mechanical }) => searchLoopCountsOf(replaySearchStreaks(mechanical.rounds)))
+      return {
+        rule: [...new Set(initials.map(({ mechanical }) => mechanical.searchStreakRule))],
+        written: [initials.reduce((total, { mechanical }) => total + (mechanical.searchRoundsAtStreak2 ?? 0), 0), initials.reduce((total, { mechanical }) => total + (mechanical.searchRoundsAtStreak3 ?? 0), 0)],
+        recounted: [recounted.reduce((total, counts) => total + counts.searchRoundsAtStreak2, 0), recounted.reduce((total, counts) => total + counts.searchRoundsAtStreak3, 0)],
+      }
+    }
+    expect(read('fix-288-290', [1, 2, 3])).toEqual({ rule: [2], written: [22, 8], recounted: [17, 7] })
+    // The third pass of fix-291 hung and was replaced by the fourth.
+    expect(read('fix-291', [1, 2, 4])).toEqual({ rule: [2], written: [14, 7], recounted: [11, 6] })
   })
 })
 

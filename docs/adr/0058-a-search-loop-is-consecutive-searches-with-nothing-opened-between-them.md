@@ -306,3 +306,17 @@ on not tuning to the judged data.
   the audit's Bookkeeping kind, the decision shadow — derives from that.
   Closes on tests and the recount in the note on ADR 0060; no capture and
   no gate.
+- 2026-09-28 (#293, built): as grilled. Two facts reach the rail beside the
+  call and its outcome, since neither says them: that the call is a
+  Composed Address rewrite, and that the user answered, which the decisions
+  seam now hands back with the result it words. An audited call says what
+  it delivered (`delivered`: an answer, or a Subagent Report) only where
+  its result's head cannot, so an attempt that collected a report whose
+  header opens the result keeps the digest it had and re-keys no cached
+  judgement. The wait after an Unavailable Landing is left as it counted
+  (#294). Recounted by rule 3 on initials, rounds at streak 2 or beyond and
+  at 3 or beyond read 17 and 7 on `fix-288-290` where the audit wrote 22
+  and 8, 11 and 6 on `fix-291` where it wrote 14 and 7, and 14 and 5 on
+  `fix-284` where it wrote 15 and 5; nearly all of it is the rewrites, 7 to
+  27 a capture on initials, each of which the older rule counted as a
+  search.

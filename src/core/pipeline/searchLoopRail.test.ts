@@ -271,8 +271,11 @@ describe('createSearchLoopRail', () => {
       expect(refusal.reason).toMatch(/ask_user|change strategy/i)
       // AC2: unchanged but where it names the move the nudge names.
       expect(refusal.reason).toContain('open a result by its ref or its href')
-      // #289: the calls that hold the streak, the checkpoint tools among them.
-      expect(refusal.reason).toContain('other than read_page, look, scroll, record_evidence or record_candidate')
+      // #293: "any successful tool call" was false once a call that acts on no page held the streak.
+      expect(refusal.reason).not.toContain('any successful tool call')
+      expect(refusal.reason).toBe(
+        `Search loop limit (${SEARCH_LOOP_REFUSE_AFTER} consecutive searches with nothing opened between them — each a navigate to a search URL or a search box query) reached for this run. Change strategy or ask_user; only opening something clears the limit (open a result by its ref or its href, or navigate to a page you were shown); an answer from ask_user clears it too.`,
+      )
     }
   })
 
@@ -660,6 +663,98 @@ describe('createSearchLoopRail — an Unavailable Landing holds the streak (#262
     const round23 = await rail.observe(nav('https://duckduckgo.com/?q=Voyager+1+explores+final+frontier+of+our+solar+bubble+jpl+news+2013'), ok)
     expect(round23.observation?.streak).toBe(3)
     expect(round23.notice).not.toBeNull()
+  })
+})
+
+describe('createSearchLoopRail — escape is something new put in front of the Run (#293, ADR 0058)', () => {
+  const blocked: ToolResultOutcome = { ok: true, result: 'navigated: https://www.rmg.co.uk/collections\nBLOCKER:challenge www.rmg.co.uk\nA challenge wall is in the way.' }
+  const report: ToolResultOutcome = { ok: true, result: 'a-1 [browsing] completed — find the H4 catalogue entry\nThe entry is ZAA0037.' }
+
+  /** A rail two searches into a streak. */
+  async function atStreakTwo(): Promise<SearchLoopRail> {
+    const rail = createSearchLoopRail(searchBoxAt)
+    await rail.observe(search('harrison h4'), ok)
+    await rail.observe(search('harrison timekeeper h4'), ok)
+    return rail
+  }
+
+  async function nextStreak(rail: SearchLoopRail): Promise<number | undefined> {
+    return (await rail.observe(search('harrison h4 catalogue'), ok)).observation?.streak
+  }
+
+  it('holds across a call that acts on no page, whatever it returned', async () => {
+    for (const name of ['report_run_plan', 'spawn_agent', 'cancel_agent', 'toggle_panel', 'set_setting', 'app_control']) {
+      const rail = await atStreakTwo()
+      expect(await rail.observe(other(name), ok), name).toEqual({ notice: null, observation: null })
+      expect(await nextStreak(rail), name).toBe(3)
+    }
+  })
+
+  it('holds across visual grounding as inspection, and ends on back, go_forward and media_control (Decision 3)', async () => {
+    const grounded = await atStreakTwo()
+    await grounded.observe(other('ground_visual'), ok)
+    expect(await nextStreak(grounded)).toBe(3)
+    for (const name of ['back', 'go_forward', 'media_control']) {
+      const rail = await atStreakTwo()
+      await rail.observe(other(name), ok)
+      expect(await nextStreak(rail), name).toBe(1)
+    }
+  })
+
+  it('ends on an ask_user the user answered and holds across one that timed out, by the pipeline’s resolution and never the wording', async () => {
+    const answered = await atStreakTwo()
+    await answered.observe(other('ask_user'), { ok: true, result: "user didn't answer" }, { userAnswered: true })
+    expect(await nextStreak(answered)).toBe(1)
+
+    const timedOut = await atStreakTwo()
+    await timedOut.observe(other('ask_user'), { ok: true, result: 'the H4, not the H1' }, { userAnswered: false })
+    expect(await nextStreak(timedOut)).toBe(3)
+
+    const unsaid = await atStreakTwo()
+    await unsaid.observe(other('ask_user'), { ok: true, result: 'the H4, not the H1' })
+    expect(await nextStreak(unsaid)).toBe(3)
+  })
+
+  it('ends on an agent_results that returned a Subagent Report and holds across one that returned none', async () => {
+    const collected = await atStreakTwo()
+    await collected.observe(other('agent_results'), report)
+    expect(await nextStreak(collected)).toBe(1)
+
+    for (const result of ['no uncollected subagent reports', 'no subagents have been spawned yet', 'a-1 [browsing] running — find the H4 catalogue entry']) {
+      const waited = await atStreakTwo()
+      await waited.observe(other('agent_results'), { ok: true, result })
+      expect(await nextStreak(waited), result).toBe(3)
+    }
+  })
+
+  it('leaves the streak as it was across a navigate that landed on a Blocker, and a search that landed on one is still a search', async () => {
+    const rail = await atStreakTwo()
+    expect(await rail.observe(nav('https://www.rmg.co.uk/collections'), blocked)).toEqual({ notice: null, observation: null })
+    expect(await rail.observe(other('click'), blocked)).toEqual({ notice: null, observation: null })
+    const walled = await rail.observe(nav('https://duckduckgo.com/?q=harrison+h4+catalogue'), blocked)
+    expect(walled.observation?.streak).toBe(3)
+    expect(walled.notice).toBe(SEARCH_LOOP_NUDGE)
+  })
+
+  it('leaves streak 1 across a Composed Address rewrite, which earns no Notice and leaves no Search Observation (Decision 6)', async () => {
+    const rail = createSearchLoopRail(searchBoxAt)
+    await rail.observe(search('harrison h4'), ok)
+    const rewritten = nav('https://duckduckgo.com/?q=site%3Armg.co.uk+harrison+h4')
+    expect(await rail.observe(rewritten, ok, { composedAddressRewrite: true })).toEqual({ notice: null, observation: null })
+    // Neither a search of the loop nor escape from it: the next search is the second.
+    const next = await rail.observe(search('harrison timekeeper h4'), ok)
+    expect(next.observation?.streak).toBe(2)
+  })
+
+  it('never refuses a Composed Address rewrite, and runs it with the streak at 5', async () => {
+    const rail = createSearchLoopRail(searchBoxAt)
+    for (let i = 0; i < SEARCH_LOOP_REFUSE_AFTER; i += 1) await rail.observe(search(`harrison h4 ${i}`), ok)
+    const rewritten = nav('https://duckduckgo.com/?q=site%3Armg.co.uk+harrison+h4')
+    expect((await rail.gate(rewritten)).ok).toBe(false)
+    expect(await rail.gate(rewritten, { composedAddressRewrite: true })).toEqual({ ok: true })
+    expect(await rail.observe(rewritten, ok, { composedAddressRewrite: true })).toEqual({ notice: null, observation: null })
+    // The streak is where it was: a search the model writes is still refused.
+    expect((await rail.gate(search('harrison h4 again'))).ok).toBe(false)
   })
 })
 
