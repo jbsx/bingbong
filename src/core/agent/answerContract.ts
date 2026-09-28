@@ -222,6 +222,8 @@ export function parseAssistantAnswer(content: string): {
   inspectionIssue?: 'malformed'
   askedItems?: AskedItemStanding[]
   askedItemsIssue?: 'malformed'
+  answerCheckpoints?: unknown[]
+  answerCheckpointsIssue?: 'malformed'
 } {
   const trimmed = content.trim()
   const candidates = [trimmed, extractFenced(trimmed), extractJsonSlice(trimmed)]
@@ -247,6 +249,7 @@ export function parseAssistantAnswer(content: string): {
           evidence_ids: rawEvidenceIds,
           inspection_candidate_id: rawInspectionCandidateId,
           asked_items: rawAskedItems,
+          checkpoints: rawCheckpoints,
         } = parsed as {
           speak: string
           display: string
@@ -258,6 +261,7 @@ export function parseAssistantAnswer(content: string): {
           evidence_ids?: unknown
           inspection_candidate_id?: unknown
           asked_items?: unknown
+          checkpoints?: unknown
         }
         let answer: {
           speak: string
@@ -279,6 +283,8 @@ export function parseAssistantAnswer(content: string): {
           inspectionIssue?: 'malformed'
           askedItems?: AskedItemStanding[]
           askedItemsIssue?: 'malformed'
+          answerCheckpoints?: unknown[]
+          answerCheckpointsIssue?: 'malformed'
         } = { speak: capSentences(speak, SPEAK_SENTENCE_LIMIT), display, shape: 'on_contract' }
         // The Asked Item standings (#250, ADR 0052): validated like the
         // other hidden metadata — malformed drops the list, the Answer
@@ -335,6 +341,16 @@ export function parseAssistantAnswer(content: string): {
           answer = inspectionCandidateId
             ? { ...answer, inspectionCandidateId }
             : { ...answer, inspectionIssue: 'malformed' }
+        }
+        // The Answer Checkpoints (#288, ADR 0072): kept as written, every
+        // entry. Neither the cap nor an entry's shape is decided here — a
+        // dropped entry is logged with the reason its tool would have
+        // refused it for, and only the pipeline holds what grades it.
+        // Anything but a list drops the field, and the Answer stands.
+        if (rawCheckpoints !== undefined) {
+          answer = Array.isArray(rawCheckpoints)
+            ? { ...answer, answerCheckpoints: rawCheckpoints as unknown[] }
+            : { ...answer, answerCheckpointsIssue: 'malformed' }
         }
         if (rawRunNote === undefined) return answer
         if (typeof rawRunNote !== 'string') return { ...answer, runNoteIssue: 'malformed' }

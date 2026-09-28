@@ -882,6 +882,21 @@ describe('openAiLlmClient', () => {
     expect(fetch.calls[1].body.tool_choice).toBeUndefined()
   })
 
+  it('reads the Answer Checkpoints a reserved Answer carries, from a request that still sends no tool catalog (#288)', async () => {
+    const entry = { observation: 'The fare is 39 euros.', source_url: 'https://example.com/fares', excerpt: 'Fare: 39 euros' }
+    const fetch = new ScriptedFetch([
+      completionResponse({ content: JSON.stringify({ speak: 'Partial.', display: 'Partial.', checkpoints: [entry] }) }),
+    ])
+    const client = makeClient(fetch)
+
+    const turn = await client.complete({ command: 'find the fare', toolResults: [], answerOnly: true })
+
+    expect(turn).toMatchObject({ kind: 'answer', shape: 'on_contract', answerCheckpoints: [entry] })
+    // The entries ride the Answer's text: carrying them needs no tool.
+    expect(fetch.calls[0].body.tools).toBeUndefined()
+    expect(fetch.calls[0].body.tool_choice).toBeUndefined()
+  })
+
   it('nudges an empty reserved Answer round toward the final JSON answer only (#136)', async () => {
     const fetch = new ScriptedFetch([
       completionResponse({ content: null }),

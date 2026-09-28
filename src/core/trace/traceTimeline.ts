@@ -291,7 +291,12 @@ function summarizeTrace(kind: string, record: Record<string, unknown>): string {
     case 'failure_screenshot':
       return `${str(record.cause)}: ${str(fileNameOf(record.path))} (${str(record.bytes)} bytes)`
     case 'evidence_checkpoint':
-      return `${str(record.tool)} ${str(record.outcome)}`
+      return `${str(record.tool)} ${str(record.outcome)}${record.origin === 'answer' ? ' (in the Answer)' : ''}`
+    case 'answer_checkpoints': {
+      const dropped = Array.isArray(record.dropped) ? (record.dropped as Record<string, unknown>[]) : []
+      const reasons = dropped.map((entry) => `entry ${typeof entry.index === 'number' ? entry.index + 1 : '?'} ${str(entry.reason)}`)
+      return `offered ${str(record.offered)}, accepted ${str(record.accepted)}, dropped ${dropped.length}${reasons.length > 0 ? `: ${reasons.join(', ')}` : ''}${record.malformed === true ? ' (not a list)' : ''}`
+    }
     case 'evidence_accepted':
       return `${str(record.change)} ${str(record.entryId)}${record.merged === true ? ' (merged)' : ''}: ${countsOf(record.counts)}`
     case 'evidence_answered':
@@ -352,6 +357,8 @@ function summarizeEvent(event: unknown): string {
       return str(published.text)
     case 'status':
       return str(published.status)
+    case 'answer_evidence':
+      return list(published.evidenceIds)
     case 'tool_call':
       return `${str(published.name)} ${str(published.args)}`
     case 'tool_result':

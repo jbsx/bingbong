@@ -971,6 +971,27 @@ written below Run Trace version 2 predates the record, so its attempt reads
 many of its attempts were not recorded and counts only the rest, and reads
 "Identity Slips not recorded" when none was.
 
+The **Answer Checkpoints** (#288, ADR 0072) sit beside them too, and two
+counters read them. **Bookkeeping rounds right before the Answer** is, per
+attempt, the unbroken run of rounds that ends at the Answer and whose kind is
+Bookkeeping after the reviewer's overrules: the rounds an Answer carrying its
+own checkpoints has no reason to spend. The Answer is the attempt's last
+round when that round is a Finalization round that made no call; the
+bookkeeping round Finalization grants is a Finalization round and is never
+counted. It rides the attempt beside `countsAfterOverrules`
+(`bookkeepingBeforeAnswer`, the rounds by number), because it reads the same
+overrules. **Answer Checkpoints** counts, from the `answer_checkpoints`
+record each Answer that carried the field leaves, the Answers that carried
+any, the entries offered, accepted and dropped, and the dropped by reason —
+the reason the entry's tool refuses a call for, `over_cap` for an entry past
+the sixth, `malformed` for one of neither kind, and `not_a_list` for a field
+that was not a list, counted as one entry offered and dropped. An entry belongs to no call:
+its `evidence_checkpoint` record says `origin: answer` and joins no round, so
+no round's kind or checkpoint count moves and the digest does not move. A
+trace written below Run Trace version 6 predates the record and reads "not
+recorded" (`answerCheckpoints: null`); an audit written before either counter
+reads "not counted".
+
 The **Asked Items** (#250, ADR 0052) sit beside the rounds on the same terms:
 `declared` is what the attempt's last model Run Plan carried in `asked_items`,
 `stated` and `unverified` count the standings the final Answer's display event
@@ -1098,7 +1119,15 @@ and `Search Loop rounds by the streak rule` with them, are recounted with
 the streak held across a checkpoint tool, and the files stay as written.
 Over the audits from `fix-258-259` on, four attempts move, each by one round
 at streak 2 or beyond; the `fix-284` Reference's initials read 16 and 5
-where its aggregate wrote 15 and 5.
+where its aggregate wrote 15 and 5. And since #288 for `Bookkeeping rounds
+right before the Answer`: an audit written before the counter is recounted
+from its rounds and its reviews' overrules, with no trace and no reviewer.
+Over `fix-270`, `jev-off`, `jev-on`, `fix-281`, `fix-284` and `fix-283` that
+reads 103 on initials (13, 16, 18, 19, 20 and 17) and 91 on follow-ups (13,
+18, 15, 15, 16 and 14), the table the gate of ADR 0072 was set from. It is a
+judgement counter, since an overrule moves it. The Answer Checkpoint
+counters are not recounted: no trace before version 6 says what an Answer
+carried, so they read as nothing there.
 
 **The markers**, per metric, never a refusal. Judgement metrics (the verdicts,
 Off-key, and in the expander Search Loop, Early Stop, Answer Omission,

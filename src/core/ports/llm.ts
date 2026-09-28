@@ -313,6 +313,15 @@ export type AssistantTurn =
       askedItems?: readonly AskedItemStanding[]
       askedItemsIssue?: 'malformed'
       /**
+       * The Answer Checkpoints (#288, ADR 0072): the Observations and
+       * Candidate records this Answer carries instead of spending a round
+       * on them, each entry as the model wrote it. The pipeline grades
+       * them by the rule their tool meets once the Card is available; an
+       * entry that fails is dropped and never fails the Answer.
+       */
+      answerCheckpoints?: readonly unknown[]
+      answerCheckpointsIssue?: 'malformed'
+      /**
        * Which contract the reply matched (#198, ADR 0034): the parser's
        * own marker, so neither loop judges prose itself. Optional here,
        * required on `parseAssistantAnswer`'s result — which is where the

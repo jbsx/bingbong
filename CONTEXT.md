@@ -572,7 +572,9 @@ It is backed by no durable store and disappears at the Session boundary.
 _Avoid_: evidence manager, evidence history
 
 **Answer Evidence Summary**:
-The read-only view of the Observations an Answer declares as its support.
+The read-only view of the Observations an Answer declares as its support, and
+of the ones its Answer Checkpoints became (#288), which join it once they are
+recorded.
 _Avoid_: sources list, answer history
 
 **Observation**:

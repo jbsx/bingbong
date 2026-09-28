@@ -39,6 +39,7 @@ import {
   buildAuditSet,
   checkpointedUrlsOf,
   classifyAttempt,
+  bookkeepingBeforeAnswerOf,
   countsAfterOverrulesOf,
   formatAuditAggregate,
   checksUnsatisfiedText,
@@ -725,7 +726,12 @@ function main(): void {
         if (review.costUsd === null) costKnown = false
         else totalCost += review.costUsd
       }
-      attempts.push({ mechanical: view.mechanical, review, countsAfterOverrules: countsAfterOverrulesOf(view.mechanical, review?.judgement ?? null) })
+      attempts.push({
+        mechanical: view.mechanical,
+        review,
+        countsAfterOverrules: countsAfterOverrulesOf(view.mechanical, review?.judgement ?? null),
+        bookkeepingBeforeAnswer: bookkeepingBeforeAnswerOf(view.mechanical.rounds, review?.judgement ?? null),
+      })
     }
 
     const launches = sessions.map((session) => session.launch)

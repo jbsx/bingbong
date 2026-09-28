@@ -294,6 +294,29 @@ describe('buildTraceTimeline', () => {
     expect(timeline.lanes[0].entries.map((entry) => entry.summary)).toEqual(['type input streak 2: harrison longitude watch'])
   })
 
+  it('summarizes an Answer’s checkpoints as offered, accepted and each drop’s reason, and marks the entries an Answer carried (#288)', () => {
+    const timeline = buildTraceTimeline([
+      run({ at: T0 + 1, turnId: 'turn-1', kind: 'evidence_checkpoint', tool: 'record_evidence', args: {}, outcome: 'excerpt_unsupported', matched: false, graded: [], origin: 'answer' }),
+      run({
+        at: T0 + 2,
+        turnId: 'turn-1',
+        kind: 'answer_checkpoints',
+        offered: 3,
+        accepted: 1,
+        dropped: [{ index: 0, tool: 'record_evidence', reason: 'excerpt_unsupported' }, { index: 2, reason: 'malformed' }],
+      }),
+      run({ at: T0 + 3, turnId: 'turn-1', kind: 'answer_checkpoints', offered: 2, accepted: 2, dropped: [] }),
+      run({ at: T0 + 4, turnId: 'turn-1', kind: 'pipeline_event', event: { type: 'answer_evidence', turnId: 'turn-1', evidenceIds: ['memory-4', 'memory-5'], at: T0 + 4 } }),
+    ])
+
+    expect(timeline.lanes[0].entries.map((entry) => entry.summary)).toEqual([
+      'record_evidence excerpt_unsupported (in the Answer)',
+      'offered 3, accepted 1, dropped 2: entry 1 excerpt_unsupported, entry 3 malformed',
+      'offered 2, accepted 2, dropped 0',
+      'memory-4, memory-5',
+    ])
+  })
+
   it('reads a vision attempt as milestones beside the outcome, omitting the ones that never happened (#204)', () => {
     const timeline = buildTraceTimeline([
       run({

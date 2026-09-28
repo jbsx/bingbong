@@ -253,6 +253,30 @@ describe('parseAssistantAnswer', () => {
     },
   )
 
+  it('keeps the Answer Checkpoints as written, every entry, for the pipeline to grade (#288)', () => {
+    const checkpoints = [
+      { observation: 'The fare is 39 euros.', source_url: 'https://example.test/fares', excerpt: 'Fare: 39 euros' },
+      { subject: 'The 09:10 departure', supporting_evidence: ['memory-1'], status: 'accepted', reason: 'It is the cheapest.' },
+      { candidate_id: 'memory-3', status: 'rejected', reason: 'Sold out.', supporting_evidence: ['memory-2'] },
+      'not an entry',
+      ...Array.from({ length: 5 }, (_, i) => ({ observation: `Fact ${i}`, source_url: 'https://example.test/fares', excerpt: 'x' })),
+    ]
+    const answer = parseAssistantAnswer(JSON.stringify({ speak: 'Done.', display: 'Useful detail.', checkpoints }))
+
+    // Neither the cap nor an entry's shape is the parser's: a dropped entry
+    // is logged with its reason, and only the pipeline can log.
+    expect(answer).toEqual({ speak: 'Done.', display: 'Useful detail.', answerCheckpoints: checkpoints, shape: 'on_contract' })
+  })
+
+  it.each([null, 42, 'memory-1', { observation: 'The fare is 39 euros.' }])(
+    'drops checkpoints %j that are not a list while keeping the Answer (#288)',
+    (checkpoints) => {
+      const answer = parseAssistantAnswer(JSON.stringify({ speak: 'Done.', display: 'Useful detail.', checkpoints }))
+
+      expect(answer).toEqual({ speak: 'Done.', display: 'Useful detail.', answerCheckpointsIssue: 'malformed', shape: 'on_contract' })
+    },
+  )
+
   it('reads the Asked Item standings, trimmed, in the Answer’s order (#250)', () => {
     const answer = parseAssistantAnswer(JSON.stringify({
       speak: 'Yes.',

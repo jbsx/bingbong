@@ -292,6 +292,23 @@ describe('orchestrator prompt round-efficiency teachings (#131)', () => {
     expect(checkpoint).toMatch(/never in a round spent on checkpoints alone, which wastes the round, unless acquisition tools are closed/)
   })
 
+  it('teaches that what is unrecorded at the Answer rides the Answer, and costs no round (#288)', () => {
+    const checkpoint = line('record_evidence checkpoints')
+    expect(checkpoint).toMatch(/When you are ready to answer, put what is still unrecorded in the Answer's "checkpoints" instead: never spend a round recording before the Answer/)
+    // The Notice's rule for every other round is the rule it was (#254).
+    expect(checkpoint).toMatch(/never in a round spent on checkpoints alone, which wastes the round, unless acquisition tools are closed/)
+
+    expect(line('{"speak":')).toContain('"checkpoints": []')
+    const field = line('"checkpoints" is hidden')
+    expect(field).toMatch(/at most 6/)
+    expect(field).toMatch(/the fields a record_evidence call takes/)
+    expect(field).toMatch(/the fields a record_candidate call takes/)
+    expect(field).toMatch(/\{"subject", "detail", "supporting_evidence", "status", "reason"\}/)
+    expect(field).toMatch(/dropped, never sent back/)
+    // An entry has no identity while the Answer is being written.
+    expect(field).toMatch(/never name a carried entry in "evidence_ids", "supporting_evidence", or "inspection_candidate_id"/)
+  })
+
   it('teaches the two record_candidate shapes as exclusive', () => {
     const checkpoint = line('record_evidence checkpoints')
     expect(checkpoint).toMatch(/two call shapes never mix/)

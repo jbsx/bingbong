@@ -112,6 +112,7 @@ import { offContractReplyEvent, recordOffContractReply, type TracedOffContractRe
 import { answerRetryOutcome, answerRetryTraceEvent, recordMalformedAnswer, type TracedAnswerRetryRecord } from '../trace/answerRetryTrace'
 import { completedEvidenceIsFresh } from './evidenceFreshness'
 import { evaluateCandidateCheckpoint, type CandidateCheckpointOutcome, type EvidenceSessionSource } from './candidateCheckpoint'
+import { recordAnswerCheckpoints } from './answerCheckpoints'
 import { deriveAnswerSources, repairCard, repairSpokenRendering } from './answerEvidence'
 import { deriveFallbackSources, hasUnresolvedImageCheck } from './fallbackAnswer'
 import { compactRunContext, type RunEvidenceCheckpoint } from './runContextCompaction'
@@ -281,10 +282,7 @@ export interface CommandPipelineDeps {
    */
   emitDetail?: (event: PipelineEvent) => void
   /** Diagnostic-only sink; continuity degradation never becomes a user-visible pipeline error. */
-  onContinuityDegraded?: (
-    reason: 'missing' | 'malformed' | 'invalid_memory' | 'commit_rejected' | 'unsupported_assessment',
-    turnId: string,
-  ) => void
+  onContinuityDegraded?: (reason: ContinuityDegradationReason, turnId: string) => void
   /**
    * Run Context Compaction threshold (#124, ADR 0028): compaction
    * engages once the Run's serialized tool-result context crosses this
@@ -397,13 +395,32 @@ function isAssessmentAdd(operation: MemoryPatch[number]): boolean {
   return operation.op === 'add' && operation.entry.kind === 'assessment'
 }
 
+/**
+ * What a Run could not keep of its own continuity. The last is an Answer
+ * Checkpoint that was dropped (#288, ADR 0072): what the Answer carried to
+ * be recorded, and the Session does not hold.
+ */
+export type ContinuityDegradationReason =
+  | 'missing'
+  | 'malformed'
+  | 'invalid_memory'
+  | 'commit_rejected'
+  | 'unsupported_assessment'
+  | 'answer_checkpoint_dropped'
+
 function logContinuityDegradation(
   sink: CommandPipelineDeps['onContinuityDegraded'],
-  reason: 'missing' | 'malformed' | 'invalid_memory' | 'commit_rejected' | 'unsupported_assessment',
+  reason: ContinuityDegradationReason,
   turnId: string,
+  /** What the default log line says beyond the reason; the sink takes the reason alone. */
+  detail?: string,
 ): void {
   try {
-    ;(sink ?? ((why, id) => console.warn(`[run-journal] ${why} Run Note for ${id}`)))(reason, turnId)
+    ;(
+      sink ??
+      ((why, id) =>
+        console.warn(detail === undefined ? `[run-journal] ${why} Run Note for ${id}` : `[run-journal] ${why} for ${id}: ${detail}`))
+    )(reason, turnId)
   } catch (error) {
     reportFault('pipeline.createCommandPipeline.continuityDegraded', error, { turnId })
     // Diagnostics cannot suppress a valid Answer or its done boundary.
@@ -1222,6 +1239,9 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
       // The settled Asked Item standings of the final Answer (#250): set
       // only when the Run declared any, beside the Answer they belong to.
       let finalAskedItems: readonly AskedItemStanding[] | undefined
+      // The Observations the final Answer's own checkpoints became (#288,
+      // ADR 0072): that Answer's evidence beside what it named by identity.
+      let answerCheckpointEvidence: readonly MemoryEntryId[] = []
       yield { type: 'command', text: command, at: clock.now() }
       observe({ producer: 'command', ok: true, payload: command })
       yield { type: 'status', status: 'thinking', at: clock.now() }
@@ -1266,9 +1286,14 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
         // Subagent citations ground worker-ledger identities, never this
         // list — they map to no orchestrator tool result.
         const acceptedCheckpoints: RunEvidenceCheckpoint[] = []
-        const checkpointEvidenceHandler: ((call: ToolCall) => EvidenceCheckpointOutcome) | undefined =
+        // One grading for a call and for an Answer Checkpoint (#288, ADR
+        // 0072): the entry an Answer carries meets the rule the tool's
+        // call meets because it is graded here, by the same function. What
+        // differs is only what follows a call and cannot follow an Answer:
+        // the Notice on the next result.
+        const gradeEvidence: ((call: ToolCall, origin?: 'answer') => EvidenceCheckpointOutcome) | undefined =
           continuity?.checkpointEvidence || commitUser
-            ? (call) => {
+            ? (call, origin) => {
                 const outcome = evaluateEvidenceCheckpoint(call, {
                   records: ledger.snapshot(),
                   ...(continuity?.checkpointEvidence ? { commit: continuity.checkpointEvidence } : {}),
@@ -1276,9 +1301,6 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
                   ...(commitSubagent ? { commitSubagent } : {}),
                   ...(deps.subagentObservations ? { workerObservations: deps.subagentObservations } : {}),
                 })
-                // A call applied despite its shape tells the model the
-                // canonical one on this very result (#253, ADR 0054).
-                notices.owe('checkpoint_shape', outcome.ok ? (outcome.correction ?? null) : null)
                 // The Run Trace (#180): what was cited, what it was graded
                 // against, and the verdict — accepted or rejected alike.
                 // The Feed shows only the display line, so a rejected
@@ -1290,6 +1312,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
                     outcome,
                     records: ledger.snapshot(),
                     ...(deps.subagentObservations ? { workerObservations: deps.subagentObservations } : {}),
+                    ...(origin !== undefined ? { origin } : {}),
                   }),
                 }))
                 // Only checkpoints whose grounding record is this Run's
@@ -1306,11 +1329,29 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
                 return outcome
               }
             : undefined
-        const checkpointCandidateHandler: ((call: ToolCall) => CandidateCheckpointOutcome) | undefined = evidenceSession
-          ? (call) => {
+        const gradeCandidate: ((call: ToolCall, origin?: 'answer') => CandidateCheckpointOutcome) | undefined = evidenceSession
+          ? (call, origin) => {
               const outcome = evaluateCandidateCheckpoint(call, { session: evidenceSession })
+              continuity?.traceRun?.(() => ({
+                turnId,
+                ...candidateCheckpointEvent({ call, outcome, ...(origin !== undefined ? { origin } : {}) }),
+              }))
+              return outcome
+            }
+          : undefined
+        // A call applied despite its shape tells the model the canonical
+        // one on this very result (#253, ADR 0054).
+        const checkpointEvidenceHandler: ((call: ToolCall) => EvidenceCheckpointOutcome) | undefined = gradeEvidence
+          ? (call) => {
+              const outcome = gradeEvidence(call)
               notices.owe('checkpoint_shape', outcome.ok ? (outcome.correction ?? null) : null)
-              continuity?.traceRun?.(() => ({ turnId, ...candidateCheckpointEvent({ call, outcome }) }))
+              return outcome
+            }
+          : undefined
+        const checkpointCandidateHandler: ((call: ToolCall) => CandidateCheckpointOutcome) | undefined = gradeCandidate
+          ? (call) => {
+              const outcome = gradeCandidate(call)
+              notices.owe('checkpoint_shape', outcome.ok ? (outcome.correction ?? null) : null)
               return outcome
             }
           : undefined
@@ -2261,6 +2302,52 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
               ...(finalAskedItems !== undefined ? { askedItems: finalAskedItems } : {}),
               finalAnswer: true,
             }
+            // The Answer Checkpoints (#288, ADR 0072), recorded here and
+            // no earlier: the Card is published, so the user never waits
+            // on them, and nothing below can change what was displayed. A
+            // dropped entry is logged and never retried — the Run's one
+            // Answer Retry is for an Answer that could not be read, and
+            // this one was. They are recorded before the spoken line so a
+            // Stop during it cannot lose what the Answer carried.
+            if (turn.answerCheckpoints !== undefined || turn.answerCheckpointsIssue !== undefined) {
+              const recorded = recordAnswerCheckpoints(turn.answerCheckpoints ?? [], {
+                ...(gradeEvidence ? { evidence: (call) => gradeEvidence(call, 'answer') } : {}),
+                ...(gradeCandidate ? { candidate: (call) => gradeCandidate(call, 'answer') } : {}),
+              })
+              traceRun?.(() => ({
+                turnId,
+                kind: 'answer_checkpoints',
+                offered: recorded.offered,
+                accepted: recorded.accepted.length,
+                dropped: recorded.dropped.map(({ index, tool, reason, candidateId }) => ({
+                  index,
+                  ...(tool !== undefined ? { tool } : {}),
+                  reason,
+                  ...(candidateId !== undefined ? { candidateId } : {}),
+                })),
+                ...(turn.answerCheckpointsIssue !== undefined ? { malformed: true as const } : {}),
+              }))
+              if (recorded.dropped.length > 0 || turn.answerCheckpointsIssue !== undefined) {
+                logContinuityDegradation(
+                  deps.onContinuityDegraded,
+                  'answer_checkpoint_dropped',
+                  turnId,
+                  turn.answerCheckpointsIssue !== undefined
+                    ? 'checkpoints was not a list'
+                    : recorded.dropped.map((entry) => `entry ${entry.index + 1} ${entry.reason}`).join(', '),
+                )
+              }
+              answerCheckpointEvidence = recorded.evidenceIds
+              if (recorded.evidenceIds.length > 0) {
+                const carriedSources = deriveAnswerSources(recorded.evidenceIds, resolveSessionObservation)
+                yield {
+                  type: 'answer_evidence',
+                  evidenceIds: recorded.evidenceIds,
+                  ...(carriedSources.length > 0 ? { sources: carriedSources } : {}),
+                  at: clock.now(),
+                }
+              }
+            }
             yield* speakLine(spoken.text, turnId)
             yield* checkpoint(run, 'thinking')
             break
@@ -2554,6 +2641,13 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
         ...(finalizationFailure !== null ? { failure: finalizationFailure } : {}),
         ...(resolutionOverride !== undefined ? { override: resolutionOverride } : {}),
       })
+      // The Answer's evidence (#288, ADR 0072): what it named by identity
+      // and what its Answer Checkpoints became, which had no identity to
+      // be named by. Undefined when it offered neither, as before.
+      const answerEvidenceIds: readonly MemoryEntryId[] | undefined =
+        finalAnswer?.evidenceIds === undefined && answerCheckpointEvidence.length === 0
+          ? undefined
+          : [...new Set([...(finalAnswer?.evidenceIds ?? []), ...answerCheckpointEvidence])]
       // A reset-consumed run commits nothing (#99): its observations and
       // Subagent Reports belong to the Session that just ended.
       if (continuity && !resetConsumed) {
@@ -2581,7 +2675,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             // terminal Memory Commit; the rest of the patch survives.
             if (patch.some(isAssessmentAdd)) {
               const session = evidenceSession?.() ?? null
-              const cited = finalAnswer?.evidenceIds
+              const cited = answerEvidenceIds
               const supported =
                 session !== null && cited !== undefined && session.store.hasObservationSupport(cited)
               if (!supported) {
@@ -2632,14 +2726,14 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
       if (
         runOutcome === 'done' &&
         proposedResolution === 'completed' &&
-        finalAnswer?.evidenceIds !== undefined &&
+        answerEvidenceIds !== undefined &&
         evidenceSession !== undefined
       ) {
         const session = evidenceSession()
         const fresh =
           session !== null &&
           completedEvidenceIsFresh({
-            cited: finalAnswer.evidenceIds,
+            cited: answerEvidenceIds,
             resolve: (id) => session.store.observation(id),
             admissionIds: admissionEvidenceIds,
             runRecords: ledger.snapshot(),

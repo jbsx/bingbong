@@ -31,6 +31,7 @@ import {
   AUDIT_VERDICTS,
   LIVE_AUDIT_AGGREGATE_KIND,
   LIVE_AUDIT_KIND,
+  bookkeepingBeforeAnswerOver,
   pastTheEndReadsOver,
   populationOf,
   recountUnavailableByTitle,
@@ -543,6 +544,17 @@ function recountedUnderCurrentRuleOf(attempts: readonly AuditAttempt[]): Recount
   return totals
 }
 
+/** The Answer Checkpoint counters (#288): offered, accepted and dropped, then the dropped by reason. */
+function answerCheckpointCounters(counts: AuditPopulation['answerCheckpoints'], attempts: number): [string, number | undefined][] {
+  const said = counts !== undefined && counts.notRecorded < attempts ? counts : undefined
+  return [
+    ['Answer Checkpoints offered', said?.offered],
+    ['Answer Checkpoints accepted', said?.accepted],
+    ['Answer Checkpoints dropped', said?.dropped],
+    ...Object.entries(said?.dropReasons ?? {}).map(([reason, count]): [string, number] => [`Answer Checkpoints dropped: ${reason}`, count]),
+  ]
+}
+
 /** Every counter of a population, in a fixed order, for the all-counters expander (#251, Decision 4). */
 export function countersOf(population: AuditPopulation, attempts: readonly AuditAttempt[]): readonly Counter[] {
   const mechanical = (label: string, value: number | undefined, over: number | null = null): Counter => ({ label, judgement: false, value: recorded(value), over })
@@ -615,6 +627,15 @@ export function countersOf(population: AuditPopulation, attempts: readonly Audit
     // written before the counter is recounted from them rather than read as
     // nothing — the Reference the gate compares with predates it.
     mechanical('Reads refused as past the end', older.pastTheEndReads ?? pastTheEndReadsOver(attempts), budgeted),
+    // #288, ADR 0072: the run is in every audit's rounds and its review's
+    // overrules, so an audit written before the counter is recounted from
+    // them — the six captures the gate was set from all predate it. A
+    // judgement, since an overrule moves it.
+    judged('Bookkeeping rounds right before the Answer', older.bookkeepingBeforeAnswer ?? bookkeepingBeforeAnswerOver(attempts), budgeted),
+    // And what the Answers carried instead: nothing on an audit written
+    // before the counter or on a population none of whose traces could say,
+    // never zero.
+    ...answerCheckpointCounters(older.answerCheckpoints, population.attempts).map(([label, value]) => mechanical(label, value)),
     mechanical('Rejected Evidence Checkpoints', population.rejectedCheckpoints),
     mechanical('Walled rounds', population.walledRounds, budgeted),
     mechanical('Not-found landings', older.notFoundNavigates),

@@ -142,6 +142,9 @@ export function createFeedProjection(deps?: {
   // turn-scoped and never suppress.
   const displayedTurns = new Set<string>()
   const renderedSpeakIds = new Map<string, number>()
+  // The entry of each turn's final Answer (#288, ADR 0072): what the
+  // evidence an Answer gains after its Card is added to.
+  const answerEntryIds = new Map<string, number>()
   // The live run (#55): opened by its command, closed by its done or a
   // session boundary — the run whose expander auto-opens while it runs.
   let liveRunId: string | null = null
@@ -267,6 +270,7 @@ export function createFeedProjection(deps?: {
     liveRunId = null
     displayedTurns.clear()
     renderedSpeakIds.clear()
+    answerEntryIds.clear()
     closeStreaming()
   }
 
@@ -339,7 +343,8 @@ export function createFeedProjection(deps?: {
           // Summary against the authoritative snapshot; nothing here is
           // ever recorded.
           dropOpenText()
-          appendOutcome(projectPipelineEvent(event)!, undefined, event.evidenceIds, event.askedItems)
+          const id = appendOutcome(projectPipelineEvent(event)!, undefined, event.evidenceIds, event.askedItems)
+          if (event.turnId !== undefined && event.finalAnswer === true) answerEntryIds.set(event.turnId, id)
           if (event.turnId !== undefined) {
             // And its Spoken Rendering (#54): the Card renders, so the
             // turn's speak entry stays out of the view — the pipeline
@@ -347,6 +352,19 @@ export function createFeedProjection(deps?: {
             displayedTurns.add(event.turnId)
             dropRenderedSpeak(event.turnId)
           }
+          return
+        }
+        case 'answer_evidence': {
+          // The evidence an Answer gained after its Card (#288, ADR
+          // 0072): its Answer Checkpoints, recorded once the Card was
+          // published and so absent from the display event. Added to that
+          // Answer's entry, each identity once; no entry of its own, and
+          // no stream is disturbed.
+          const id = event.turnId === undefined ? undefined : answerEntryIds.get(event.turnId)
+          if (id === undefined) return
+          feed = feed.map((entry) =>
+            entry.id === id ? { ...entry, evidenceIds: [...new Set([...(entry.evidenceIds ?? []), ...event.evidenceIds])] } : entry,
+          )
           return
         }
         case 'speak': {

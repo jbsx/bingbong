@@ -206,6 +206,20 @@ export type PipelineEvent = SessionEventIdentity & (
        */
       askedItems?: readonly AskedItemStanding[]
     }
+  /**
+   * The evidence an Answer gained after its Card was published (#288, ADR
+   * 0072): the Observations its Answer Checkpoints became, under the
+   * identities they were given. They had none when the Answer was written,
+   * so they could not ride the `display` event; this adds them to that
+   * turn's Answer. Published only when at least one entry was accepted.
+   */
+  | {
+      type: 'answer_evidence'
+      turnId?: string
+      evidenceIds: readonly MemoryEntryId[]
+      sources?: readonly MemoryReference[]
+      at: number
+    }
   | { type: 'error'; turnId?: string; message: string; at: number }
   /**
    * A retry by the orchestrator client (#43): fired by the retry hook

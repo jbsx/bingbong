@@ -153,6 +153,76 @@ describe('answer evidence summary e2e', () => {
     }
   })
 
+  it('records the checkpoints an Answer carries once its Card is out, and shows them as that Answer’s evidence (#288)', async () => {
+    const page = fixture.url('/second')
+    const script: AssistantTurn[] = [
+      { kind: 'tool_calls', calls: [{ id: 'n1', name: 'navigate', args: { url: page } }] },
+      // No round records anything: the Answer is the second and last turn,
+      // and a round spent on a checkpoint would exhaust the script.
+      {
+        kind: 'answer',
+        speak: 'The heading is noted.',
+        display: 'The second page carries the heading.',
+        answerCheckpoints: [
+          { observation: 'The second fixture page carries the heading.', source_url: page, excerpt: 'second fixture page' },
+          // Never on the page: dropped, and the Answer stands.
+          { observation: 'The page names a price.', source_url: page, excerpt: 'a price of forty dollars' },
+        ],
+      },
+    ]
+    const app = await startHarness({ fixture, env: { BINGBONG_LLM_SCRIPT: JSON.stringify(script) } })
+    try {
+      await app.ensurePanelOpen()
+      expect(await app.submitCommand('note what the second page says')).toBe('submitted')
+
+      await waitFor(
+        async () => ((app.runTraceTranscript().includes('The second page carries the heading.')) ? true : undefined),
+        { timeoutMs: 20_000, intervalMs: 250 },
+      )
+
+      // The Card is the Answer as written, and its summary counts the one
+      // entry that was recorded — an identity the Answer never named.
+      await app.ensurePanelOpen()
+      await waitFor(
+        async () =>
+          (await app.overlayEval<string>(`document.querySelector('.feed-entry--display .answer-evidence-count')?.textContent ?? ''`)) === '1'
+            ? true
+            : undefined,
+        { timeoutMs: 10_000, intervalMs: 100 },
+      )
+      expect(
+        await app.overlayEval<string>(`document.querySelector('.feed-entry--display .feed-text--markdown')?.textContent ?? ''`),
+      ).toBe('The second page carries the heading.')
+      await app.clickOverlayElement('.feed-entry--display .answer-evidence-summary')
+      const cited = await waitFor(
+        async () => {
+          const cards = await app.overlayEval<string[]>(
+            `[...document.querySelectorAll('.feed-entry--display details.answer-evidence[open] .evidence-card')].map((el) => el.textContent)`,
+          )
+          return cards.length === 1 ? cards : undefined
+        },
+        { timeoutMs: 10_000, intervalMs: 100 },
+      )
+      expect(cited[0]).toContain('The second fixture page carries the heading.')
+      expect(cited[0]).toContain(page)
+
+      // The Run Trace: the Card first with no evidence of its own, then the
+      // evidence it gained, and what became of both entries.
+      const records = app.readRunTrace()
+      const card = tracedEvents(records, 'display').find((event) => event.finalAnswer === true)!
+      const gained = tracedEvents(records, 'answer_evidence')
+      expect(card.evidenceIds).toBeUndefined()
+      expect(gained.map((event) => event.evidenceIds)).toEqual([['memory-1']])
+      expect(gained[0]!.sources?.map((source) => source.url)).toEqual([page])
+      expect(gained[0]!.at).toBeGreaterThanOrEqual(card.at)
+      expect(records.filter((record) => (record as { kind?: string }).kind === 'answer_checkpoints')).toEqual([
+        expect.objectContaining({ offered: 2, accepted: 1, dropped: [{ index: 1, tool: 'record_evidence', reason: 'excerpt_unsupported' }] }),
+      ])
+    } finally {
+      await app.quit()
+    }
+  })
+
   it('leaves a later Answer unknown declared identities absent — the summary shows exactly what resolves', async () => {
     const page = fixture.url('/second')
     const script: AssistantTurn[] = [

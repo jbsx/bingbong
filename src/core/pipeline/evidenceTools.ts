@@ -8,6 +8,7 @@
 // this Run observed, the user's exact words, or a collected Subagent
 // finding — workers never checkpoint for themselves.
 
+import { ANSWER_CHECKPOINT_GUIDANCE } from './answerCheckpoints'
 import type { Tool } from './tool'
 import { EVIDENCE_NO_SESSION, evidenceCheckpointMessage, type EvidenceCheckpointOutcome } from './evidenceCheckpoint'
 
@@ -17,7 +18,9 @@ export function createRecordEvidenceTool(): Tool {
     checkpoint: true,
     description:
       'Checkpoint one grounded Observation into Session Evidence. Call it alongside your next action in the same ' +
-      'response, never in a round spent on checkpoints alone unless acquisition tools are closed. Web (default): cite the source_url of a page this ' +
+      'response, never in a round spent on checkpoints alone unless acquisition tools are closed. ' +
+      `${ANSWER_CHECKPOINT_GUIDANCE} ` +
+      'Web (default): cite the source_url of a page this ' +
       'run opened or read, and copy every passage of the excerpt verbatim from what the tool result showed there — ' +
       'several verbatim passages may be joined with a line break, |, ... or …; a paraphrase from memory is rejected (a ' +
       'structured action outcome grounds itself — ' +

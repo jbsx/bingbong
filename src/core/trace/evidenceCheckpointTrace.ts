@@ -42,6 +42,8 @@ export function evidenceCheckpointEvent(input: {
   records: readonly ObservationRecord[]
   /** The delegated workers' retained observations (#123), by agent id. */
   workerObservations?: (agentId: string) => readonly ObservationRecord[] | null
+  /** `answer` when an Answer carried the entry (#288); absent for a call. */
+  origin?: 'answer'
 }): EvidenceCheckpointEvent {
   const { call, outcome } = input
   // A user citation beside a stray excerpt may be accepted (#253), and
@@ -75,6 +77,7 @@ export function evidenceCheckpointEvent(input: {
     // (#240, ADR 0051): what the Round Audit counts re-recordings by.
     ...(outcome.ok ? { entryId: outcome.entryId, merged: outcome.merged } : {}),
     ...(agentId !== undefined ? { agentId } : {}),
+    ...(input.origin !== undefined ? { origin: input.origin } : {}),
     ...(outcome.ok && outcome.correction !== undefined ? { correction: outcome.correction } : {}),
   }
 }
@@ -90,6 +93,8 @@ export function evidenceCheckpointEvent(input: {
 export function candidateCheckpointEvent(input: {
   call: ToolCall
   outcome: CandidateCheckpointOutcome
+  /** `answer` when an Answer carried the entry (#288); absent for a call. */
+  origin?: 'answer'
 }): EvidenceCheckpointEvent {
   const { call, outcome } = input
   return {
@@ -100,6 +105,7 @@ export function candidateCheckpointEvent(input: {
     matched: false,
     graded: [],
     ...(outcome.ok ? { entryId: outcome.candidate.id } : {}),
+    ...(input.origin !== undefined ? { origin: input.origin } : {}),
     ...(outcome.ok && outcome.correction !== undefined ? { correction: outcome.correction } : {}),
   }
 }

@@ -904,6 +904,41 @@ describe('feed projection', () => {
       expect('askedItems' in plain!).toBe(false)
     })
 
+    it('adds the evidence an Answer gained after its Card to that turn’s Answer, each identity once (#288)', () => {
+      const feed = openFeed()
+      feed.onEvent({ type: 'display', turnId: T, text: 'It costs $39.', at: 1_000, evidenceIds: ['memory-1' as MemoryEntryId], finalAnswer: true })
+      feed.onEvent({ type: 'display', turnId: 'turn-other', text: 'Another Answer.', at: 1_500, finalAnswer: true })
+      const before = feed.entries()
+
+      feed.onEvent({ type: 'answer_evidence', turnId: T, evidenceIds: ['memory-2' as MemoryEntryId, 'memory-1' as MemoryEntryId], at: 2_000 })
+
+      const [answer, other] = feed.entries()
+      expect(feed.entries()).toHaveLength(2)
+      expect(answer).toEqual({ ...before[0]!, evidenceIds: ['memory-1', 'memory-2'] })
+      // Nothing else moved: the other turn's Answer is the entry it was.
+      expect(other).toBe(before[1])
+    })
+
+    it('gives an Answer that named no evidence the evidence it carried (#288)', () => {
+      const feed = openFeed()
+      feed.onEvent({ type: 'display', turnId: T, text: 'It costs $39.', at: 1_000, finalAnswer: true })
+
+      feed.onEvent({ type: 'answer_evidence', turnId: T, evidenceIds: ['memory-1' as MemoryEntryId], at: 2_000 })
+
+      expect(feed.entries().map((entry) => entry.evidenceIds)).toEqual([['memory-1']])
+    })
+
+    it('renders nothing for evidence whose Answer the feed does not hold, and leaves an open stream open (#288)', () => {
+      const feed = openFeed()
+      feed.onEvent({ type: 'llm_delta', turnId: T, kind: 'reasoning', text: 'Thinking', at: 1_000 })
+      const before = feed.entries()
+
+      feed.onEvent({ type: 'answer_evidence', turnId: 'turn-gone', evidenceIds: ['memory-1' as MemoryEntryId], at: 2_000 })
+      feed.onEvent({ type: 'llm_delta', turnId: T, kind: 'reasoning', text: ' more', at: 2_500 })
+
+      expect(feed.entries()).toHaveLength(before.length)
+    })
+
     it('wipes the identities with the feed at the Session boundary', () => {
       const feed = createFeedProjection()
       const owned = { sessionId: 'session-1' as SessionId, sessionGeneration: 0 }

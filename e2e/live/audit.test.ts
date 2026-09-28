@@ -3203,3 +3203,158 @@ describe('reads refused as past the end (#290)', () => {
     expect(olderText).toMatch(/- initial: .*reads refused as past the end not counted/)
   })
 })
+
+describe('the bookkeeping rounds right before the Answer (#288, ADR 0072)', () => {
+  const MET: Record<string, unknown>[] = [
+    { ...identity, at: T0 + 900, kind: 'pipeline_event', event: { type: 'run_plan', turnId: TURN, objective: 'find it', headline: 'h', effortTier: 'investigation', source: 'model', at: T0 + 900 } },
+    { ...identity, at: T0 + 16_000, kind: 'pipeline_event', event: { type: 'done', turnId: TURN, outcome: 'done', resolution: 'completed', finalizationCause: 'objective_met', at: T0 + 16_000 } },
+  ]
+  const EVIDENCE = { name: 'record_evidence', args: { kind: 'web', observation: 'a claim', source_url: SPEC_URL }, result: 'Session Evidence recorded: memory-1', checkpoint: 'accepted' }
+  const CANDIDATE = { name: 'record_candidate', args: { subject: 'the watch', supporting_evidence: ['memory-1'] }, result: 'Candidate memory-2 active', checkpoint: 'accepted' }
+  const RUN: RoundSpec[] = [
+    { round: 1, at: 1_000, calls: [{ name: 'navigate', args: { url: SPEC_URL }, result: PAGE('Watch spec', SPEC_URL, 'aaaa1111') }] },
+    // In the middle of the Run: left alone, and never counted here.
+    { round: 2, at: 2_000, calls: [EVIDENCE] },
+    { round: 3, at: 3_000, calls: [{ name: 'navigate', args: { url: OTHER_URL }, result: PAGE('Other', OTHER_URL, 'dddd4444') }] },
+    { round: 4, at: 4_000, calls: [CANDIDATE] },
+    { round: 5, at: 5_000, calls: [EVIDENCE, CANDIDATE] },
+    { round: 6, at: 6_000 },
+  ]
+  const judgementWith = (overrules: AuditJudgement['overrules']): AuditJudgement => ({
+    searchLoops: [],
+    offKey: [],
+    overrules,
+    stoppedEarly: { value: false, reason: 'it answered', checks: [] },
+    answerOmitted: { value: false, reason: 'nothing omitted', checks: [] },
+    verdict: { primary: 'rounds_wasted', primaryReason: 'two rounds recording before the Answer', secondary: null, secondaryReason: null },
+    flags: [],
+  })
+  const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(RUN, MET) }))
+
+  it('counts the unbroken run of bookkeeping rounds that ends at the Answer, by round', () => {
+    expect(mechanical.rounds.map((round) => round.kind)).toEqual(['acquisition_with_progress', 'bookkeeping', 'acquisition_with_progress', 'bookkeeping', 'bookkeeping', 'finalization'])
+    expect(auditModule.bookkeepingBeforeAnswerOf(mechanical.rounds, null)).toEqual([4, 5])
+  })
+
+  it('reads a round by the kind the reviewer left it with', () => {
+    const overruled = judgementWith([{ round: 4, kind: 'acquisition_without_progress', reason: 'it recorded nothing new' }])
+    const joined = judgementWith([{ round: 3, kind: 'bookkeeping', reason: 'the page was already held' }])
+
+    expect(auditModule.bookkeepingBeforeAnswerOf(mechanical.rounds, overruled)).toEqual([5])
+    expect(auditModule.bookkeepingBeforeAnswerOf(mechanical.rounds, joined)).toEqual([2, 3, 4, 5])
+  })
+
+  it('counts nothing where no Answer ended the rounds, and nothing of the Finalization bookkeeping round', () => {
+    const unanswered = classifyAttempt(inputOf({ traceRecords: traceOf(RUN.slice(0, 5), MET.slice(0, 1)) }))
+    expect(auditModule.bookkeepingBeforeAnswerOf(unanswered.rounds, null)).toEqual([])
+
+    // The fixture Run stops at its budget: a bookkeeping round Finalization grants, then the reserved Answer.
+    const finalized = classifyAttempt(inputOf())
+    expect(finalized.rounds.slice(-2).map((round) => `${round.kind}:${round.calls.length}`)).toEqual(['finalization:1', 'finalization:0'])
+    expect(auditModule.bookkeepingBeforeAnswerOf(finalized.rounds, null)).toEqual([])
+  })
+
+  it('sums them per population, prints them per attempt and per population, and reads "not counted" for an older audit', () => {
+    const attempt: AuditAttempt = {
+      mechanical,
+      review: null,
+      countsAfterOverrules: mechanical.counts,
+      bookkeepingBeforeAnswer: auditModule.bookkeepingBeforeAnswerOf(mechanical.rounds, null),
+    }
+    const set = buildAuditSet(provenanceOf(), [attempt], [])
+    expect(set.populations.initial.bookkeepingBeforeAnswer).toBe(2)
+    const markdown = formatAuditSet(set)
+    expect(markdown).toContain('- bookkeeping rounds right before the Answer: 2 (round 4, 5)')
+    expect(markdown).toMatch(/- initial: .*2 bookkeeping round\(s\) right before the Answer/)
+
+    // Absent, never zero: an aggregate rebuilt from audits written before the counter stays the one committed.
+    const older = buildAuditSet(provenanceOf(), [{ mechanical, review: null, countsAfterOverrules: mechanical.counts }], [])
+    expect('bookkeepingBeforeAnswer' in older.populations.initial).toBe(false)
+    const olderText = formatAuditSet(older)
+    expect(olderText).toContain('- bookkeeping rounds right before the Answer: not counted')
+    expect(olderText).toMatch(/- initial: .*bookkeeping rounds right before the Answer not counted/)
+  })
+})
+
+describe('Answer Checkpoints (#288, ADR 0072)', () => {
+  const atVersion = (records: readonly TraceRecord[], v: number): TraceRecord[] => records.map((record) => ({ ...record, v })) as unknown as TraceRecord[]
+  const ENTRY = { kind: 'evidence_checkpoint', tool: 'record_evidence', args: { observation: 'a claim', source_url: 'https://spec.invalid/third', excerpt: 'x' }, matched: false, graded: [], origin: 'answer' }
+  const CARRIED: Record<string, unknown>[] = [
+    { ...identity, at: T0 + 15_100, ...ENTRY, outcome: 'accepted', matched: true, entryId: 'memory-2', merged: false },
+    { ...identity, at: T0 + 15_101, ...ENTRY, outcome: 'excerpt_unsupported' },
+    { ...identity, at: T0 + 15_102, ...ENTRY, tool: 'record_candidate', outcome: 'invalid_support' },
+    {
+      ...identity,
+      at: T0 + 15_103,
+      kind: 'answer_checkpoints',
+      offered: 5,
+      accepted: 1,
+      dropped: [
+        { index: 1, tool: 'record_evidence', reason: 'excerpt_unsupported' },
+        { index: 2, tool: 'record_candidate', reason: 'invalid_support' },
+        { index: 3, reason: 'malformed' },
+        { index: 4, tool: 'record_evidence', reason: 'excerpt_unsupported' },
+      ],
+    },
+  ]
+  const carried = classifyAttempt(inputOf({ traceRecords: atVersion(traceOf(ROUNDS, [...EXTRA, ...CARRIED]), 6) }))
+  const none = classifyAttempt(inputOf({ traceRecords: atVersion(traceOf(ROUNDS, EXTRA), 6) }))
+  const old = classifyAttempt(inputOf({ traceRecords: atVersion(traceOf(ROUNDS, EXTRA), 5) }))
+
+  it('counts the entries an Answer offered, the ones recorded and the ones dropped, by reason', () => {
+    expect(carried.answerCheckpoints).toEqual({
+      answers: 1,
+      offered: 5,
+      accepted: 1,
+      dropped: 4,
+      dropReasons: { excerpt_unsupported: 2, invalid_support: 1, malformed: 1 },
+    })
+    expect(none.answerCheckpoints).toEqual({ answers: 0, offered: 0, accepted: 0, dropped: 0, dropReasons: {} })
+  })
+
+  it('counts a field that was not a list as one entry offered and dropped', () => {
+    const unread = [{ ...identity, at: T0 + 15_100, kind: 'answer_checkpoints', offered: 0, accepted: 0, dropped: [], malformed: true }]
+    const mechanical = classifyAttempt(inputOf({ traceRecords: atVersion(traceOf(ROUNDS, [...EXTRA, ...unread]), 6) }))
+
+    expect(mechanical.answerCheckpoints).toEqual({ answers: 1, offered: 1, accepted: 0, dropped: 1, dropReasons: { not_a_list: 1 } })
+  })
+
+  it('reads a trace below version 6 as not recorded', () => {
+    expect(old.answerCheckpoints).toBeNull()
+  })
+
+  it('joins an entry to no call, and moves no digest, kind or checkpoint count', () => {
+    expect(carried.digestHash).toBe(none.digestHash)
+    expect(carried.rounds).toEqual(none.rounds)
+    expect(carried.counts).toEqual(none.counts)
+    expect(carried.acceptedCheckpoints).toBe(none.acceptedCheckpoints)
+    expect(carried.rejectedCheckpoints).toBe(none.rejectedCheckpoints)
+    expect(JSON.stringify(auditModule.digestPayloadOf(carried))).not.toContain('answerCheckpoints')
+  })
+
+  it('sums them per population, prints them, and reads "not recorded" where no trace could say', () => {
+    const attemptOf = (mechanical: AuditMechanical): AuditAttempt => ({ mechanical, review: null, countsAfterOverrules: mechanical.counts })
+    const set = buildAuditSet(provenanceOf(), [attemptOf(carried), attemptOf(none), attemptOf(old)], [])
+    expect(set.populations.initial.answerCheckpoints).toEqual({
+      answers: 1,
+      offered: 5,
+      accepted: 1,
+      dropped: 4,
+      dropReasons: { excerpt_unsupported: 2, invalid_support: 1, malformed: 1 },
+      notRecorded: 1,
+    })
+    const markdown = formatAuditSet(set)
+    expect(markdown).toContain('- Answer Checkpoints: 5 offered in 1 Answer(s), 1 accepted, 4 dropped (excerpt_unsupported 2, invalid_support 1, malformed 1)')
+    expect(markdown).toContain('- Answer Checkpoints: 0 offered in 0 Answer(s), 0 accepted, 0 dropped')
+    expect(markdown).toContain('- Answer Checkpoints: not recorded (a Run Trace below version 6)')
+    expect(markdown).toMatch(/- initial: .*Answer Checkpoints: 5 offered in 1 Answer\(s\), 1 accepted, 4 dropped \(excerpt_unsupported 2, invalid_support 1, malformed 1\), 1 attempt\(s\) not recorded/)
+
+    // Absent, never zero: an audit written before the counter has no field for it.
+    const before = { ...carried } as AuditMechanical & { answerCheckpoints?: unknown }
+    delete before.answerCheckpoints
+    const older = buildAuditSet(provenanceOf(), [attemptOf(before)], [])
+    expect('answerCheckpoints' in older.populations.initial).toBe(false)
+    expect(formatAuditSet(older)).toContain('- Answer Checkpoints: not counted')
+    expect(formatAuditSet(older)).toMatch(/- initial: .*Answer Checkpoints not counted/)
+  })
+})

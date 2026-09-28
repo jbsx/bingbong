@@ -46,8 +46,10 @@ import type { VisionRunTraceRecord } from './visionTrace'
  * 5 (#266, ADR 0063): a budget or deadline `finalization_entry` with no
  * `declined` field was not a refused Tier Escalation, which a version-4
  * trace cannot say.
+ * 6 (#288, ADR 0072): an Answer with no `answer_checkpoints` record
+ * carried no Answer Checkpoints, which a version-5 trace cannot say.
  */
-export const RUN_TRACE_VERSION = 5
+export const RUN_TRACE_VERSION = 6
 
 /** How much of a graded observation's retained text a record keeps. */
 export const TRACE_PAYLOAD_HEAD_CHARS = 500
@@ -149,8 +151,10 @@ export interface EvidenceCheckpointEvent {
    * `run` when the Run made the checkpoint itself from a Selected Passage
    * (#276, ADR 0069), in the traces written while that seam existed; it was
    * removed (#283), so no Run writes it now and a reader still meets it.
+   * `answer` when the entry was an Answer Checkpoint (#288, ADR 0072): the
+   * Answer carried it, so it belongs to no call of any round.
    */
-  readonly origin?: 'run'
+  readonly origin?: 'run' | 'answer'
   /**
    * On an acceptance of a mis-shaped call (#253, ADR 0054), the Notice that
    * told the model the canonical shape. The outcome still reads 'accepted'.
@@ -584,8 +588,35 @@ export interface DecisionEvent {
   readonly agentId?: string
 }
 
+/**
+ * What became of the Answer Checkpoints one Answer carried (#288, ADR
+ * 0072): how many it offered, how many were recorded, and each one dropped
+ * with the reason its tool refuses a call for. Written once per Answer that
+ * carried the field, after its Card was published. Each graded entry also
+ * leaves its own `evidence_checkpoint` record, marked `origin: 'answer'`.
+ */
+export interface AnswerCheckpointsEvent {
+  readonly kind: 'answer_checkpoints'
+  /** Every entry the Answer carried, the ones past the cap included. */
+  readonly offered: number
+  readonly accepted: number
+  readonly dropped: readonly {
+    /** The entry's position in the Answer's list, from 0. */
+    readonly index: number
+    /** Absent on an entry that is neither kind. */
+    readonly tool?: 'record_evidence' | 'record_candidate'
+    /** The tool's refusal reason, `over_cap`, or `malformed` for an entry of neither kind. */
+    readonly reason: string
+    /** The Candidate a creation entry made before its decision was refused. */
+    readonly candidateId?: string
+  }[]
+  /** True when the field was not a list at all: nothing was offered, and nothing could be read. */
+  readonly malformed?: true
+}
+
 /** One decision a Run traces, whatever kind it is. */
 export type RunTraceEventBody =
+  | AnswerCheckpointsEvent
   | DecisionEvent
   | FinalizationEntryEvent
   | EvidenceCheckpointEvent

@@ -170,6 +170,8 @@ export const FINALIZATION_ENTRY_TRACE_VERSION = 3
 export const FIRST_TOKEN_TRACE_VERSION = 4
 /** The Run Trace version from which a budget or deadline `finalization_entry` carries `declined` (#266, ADR 0063): below it, no stop says whether an escalation was refused. */
 export const TIER_ESCALATION_DECLINE_TRACE_VERSION = 5
+/** The Run Trace version from which an Answer records what became of its Answer Checkpoints (#288, ADR 0072): below it, no Answer says whether it carried any. */
+export const ANSWER_CHECKPOINT_TRACE_VERSION = 6
 /** How far apart a perf `llm` span's end and an `llm_round` record may be and still be the same round. */
 const LATENCY_JOIN_TOLERANCE_MS = 2_000
 /** A search at this streak followed a search with nothing opened between them (ADR 0058): no Progress. */
@@ -568,6 +570,14 @@ export interface AuditMechanical {
    */
   readonly pastTheEndReads?: readonly number[]
   /**
+   * The Answer Checkpoints (#288, ADR 0072): the entries the Run's Answers
+   * offered, the ones recorded and the ones dropped, by the reason each was
+   * dropped for. Beside the rounds, never in them: an entry belongs to no
+   * call. Null where the trace is too old to have recorded them; absent on
+   * an audit written before the counter.
+   */
+  readonly answerCheckpoints?: AnswerCheckpointCounts | null
+  /**
    * The consent walls (#263, ADR 0061): the round of every call that
    * reported a Tier-1 dismissal, of every click on a ref last listed with a
    * consent-style label — a consent wall cleared by hand — and of every
@@ -808,6 +818,26 @@ export interface AuditAttempt {
   readonly review: AuditReview | null
   /** Kind counts after the reviewer's overrules; equal to the mechanical counts when there are none. */
   readonly countsAfterOverrules: Readonly<Record<RoundKind, number>>
+  /**
+   * The bookkeeping rounds right before the Answer (#288, ADR 0072): the
+   * unbroken run of rounds that ends at the Answer and whose kind, after the
+   * reviewer's overrules, is Bookkeeping. Beside the counts above because it
+   * reads the same overrules. Absent on an audit written before the counter,
+   * whose rounds and review still say it.
+   */
+  readonly bookkeepingBeforeAnswer?: readonly number[]
+}
+
+/** What became of the Answer Checkpoints some Answers carried (#288, ADR 0072). */
+export interface AnswerCheckpointCounts {
+  /** The Answers that carried the field. */
+  readonly answers: number
+  /** Every entry they carried, the ones past the cap included. */
+  readonly offered: number
+  readonly accepted: number
+  readonly dropped: number
+  /** The dropped entries by reason: the tool's refusal, `over_cap`, or `malformed`. */
+  readonly dropReasons: Readonly<Record<string, number>>
 }
 
 export interface AuditProvenance {
@@ -889,6 +919,18 @@ export interface AuditPopulation {
    * counter, which the Fix Ledger recounts from the rounds.
    */
   readonly pastTheEndReads?: number
+  /**
+   * Bookkeeping rounds right before the Answer over the attempts that count
+   * them (#288); absent when none does, as on an audit written before the
+   * counter, which the Fix Ledger recounts from the rounds and the reviews.
+   */
+  readonly bookkeepingBeforeAnswer?: number
+  /**
+   * Answer Checkpoints over the attempts that count them (#288), and how
+   * many of those attempts' traces were too old to say; absent when no
+   * attempt's audit carries the counter.
+   */
+  readonly answerCheckpoints?: AnswerCheckpointCounts & { readonly notRecorded: number }
   /** Delegated Page rounds over the attempts, by the holder's state (#273); absent when no attempt's audit carries the counter. */
   readonly delegatedPageRounds?: DelegatedPageCounts
   /** Tier shadows over the attempts (#278); absent when no attempt asked one. */
@@ -1613,7 +1655,8 @@ function rawRounds(records: readonly TraceLine[]): RawRound[] {
       // tool_result: the checkpoint belongs to the latest call of its tool
       // in this round that has none yet.
       // A Run-made one (#276) belongs to no call: `selectedPassageCountsOf` counts it.
-      if (current === null || record.origin === 'run') continue
+      // Nor does one an Answer carried (#288): `answerCheckpointsOf` counts those.
+      if (current === null || record.origin === 'run' || record.origin === 'answer') continue
       const owner = [...current.calls].reverse().find((entry) => entry.call.name === record.tool && entry.checkpoint === undefined)
       if (owner !== undefined) owner.checkpoint = record
       continue
@@ -1874,6 +1917,8 @@ export function selectedPassageCountsOf(
     if (raw.kind === 'pipeline_event') {
       const event = raw.event as Record<string, unknown> | undefined
       if (event?.type === 'display' && event.finalAnswer === true) cited = Array.isArray(event.evidenceIds) ? event.evidenceIds : []
+      // And the evidence that Answer gained from its own checkpoints (#288).
+      if (event?.type === 'answer_evidence' && Array.isArray(event.evidenceIds)) cited = [...cited, ...(event.evidenceIds as readonly unknown[])]
       continue
     }
     if (raw.kind !== 'evidence_checkpoint' || raw.outcome !== 'accepted') continue
@@ -2141,6 +2186,70 @@ export function pastTheEndReadsOf(rounds: readonly AuditRound[]): number[] {
 /** How many of them some attempts hold, recounted from their rounds whether or not their audit counted (#290). */
 export function pastTheEndReadsOver(attempts: readonly AuditAttempt[]): number {
   return attempts.reduce((total, attempt) => total + pastTheEndReadsOf(attempt.mechanical.rounds).length, 0)
+}
+
+/**
+ * The bookkeeping rounds right before an attempt's Answer (#288, ADR 0072):
+ * the unbroken run of rounds that ends at the Answer and whose kind, after
+ * the reviewer's overrules, is Bookkeeping — the rounds an Answer carrying
+ * its own checkpoints has no reason to spend. The Answer is the last round
+ * when that round is a Finalization round that made no call; an attempt
+ * whose rounds end any other way has no Answer to count back from. The
+ * bookkeeping round Finalization grants is a Finalization round and ends
+ * the run like any other kind. Read off the rounds and the review, so an
+ * audit written before the counter is recounted with no trace and no
+ * reviewer.
+ */
+export function bookkeepingBeforeAnswerOf(rounds: readonly AuditRound[], judgement: AuditJudgement | null): number[] {
+  const answer = rounds.at(-1)
+  if (answer === undefined || answer.kind !== 'finalization' || answer.calls.length > 0) return []
+  const run: number[] = []
+  for (const round of rounds.slice(0, -1).reverse()) {
+    const kind = judgement?.overrules.find((item) => item.round === round.round)?.kind ?? round.kind
+    if (kind !== 'bookkeeping') break
+    run.unshift(round.round)
+  }
+  return run
+}
+
+/** How many of them some attempts hold, recounted from their rounds and reviews whether or not their audit counted (#288). */
+export function bookkeepingBeforeAnswerOver(attempts: readonly AuditAttempt[]): number {
+  return attempts.reduce((total, attempt) => total + bookkeepingBeforeAnswerOf(attempt.mechanical.rounds, attempt.review?.judgement ?? null).length, 0)
+}
+
+/** The reason an Answer's `checkpoints` is counted dropped for when it was not a list at all (#288). */
+const NOT_A_LIST = 'not_a_list'
+
+/** An attempt's Answer Checkpoints (#288, ADR 0072), from the record each Answer that carried the field left. */
+export function answerCheckpointsOf(traceRecords: readonly object[]): AnswerCheckpointCounts {
+  const dropReasons: Record<string, number> = {}
+  let answers = 0
+  let offered = 0
+  let accepted = 0
+  let dropped = 0
+  for (const raw of traceRecords as readonly Record<string, unknown>[]) {
+    if (raw.kind !== 'answer_checkpoints' || raw.agentId !== undefined) continue
+    answers += 1
+    // A field that was not a list offered one thing nobody could read.
+    if (raw.malformed === true) {
+      offered += 1
+      dropped += 1
+      dropReasons[NOT_A_LIST] = (dropReasons[NOT_A_LIST] ?? 0) + 1
+    }
+    if (isFiniteNumber(raw.offered)) offered += raw.offered
+    if (isFiniteNumber(raw.accepted)) accepted += raw.accepted
+    for (const entry of Array.isArray(raw.dropped) ? (raw.dropped as readonly unknown[]) : []) {
+      dropped += 1
+      const reason = isRecord(entry) && isString(entry.reason) ? entry.reason : 'unknown'
+      dropReasons[reason] = (dropReasons[reason] ?? 0) + 1
+    }
+  }
+  return { answers, offered, accepted, dropped, dropReasons: byReason(dropReasons) }
+}
+
+/** Drop reasons in one order, by name, so every output lists them the same way. */
+function byReason(reasons: Readonly<Record<string, number>>): Record<string, number> {
+  return Object.fromEntries(Object.entries(reasons).sort(([left], [right]) => left.localeCompare(right)))
 }
 
 /** The rounds of an attempt's consent dismissals, hand consent clicks, and blocks a hand consent click followed (#263). */
@@ -3166,6 +3275,9 @@ export function classifyAttempt(input: AuditTraceInput): AuditMechanical {
     blockedOrInert: blockedOrInertOf(rounds),
     unavailableLandings: unavailableLandingsOf(rounds),
     pastTheEndReads: pastTheEndReadsOf(rounds),
+    // Beside the rounds (#288, ADR 0072): what the Run's Answers carried to
+    // be recorded, where its trace is new enough to have said.
+    answerCheckpoints: traceAtLeast(ANSWER_CHECKPOINT_TRACE_VERSION) ? answerCheckpointsOf(records) : null,
     consentWalls: consentWallsOf(raw),
     walledRounds: rounds.filter((round) => round.tags.wall).length,
     notFoundNavigates: rounds.flatMap((round) => round.calls.filter((call) => call.name === 'navigate' && call.notFound !== undefined).map(() => round.round)),
@@ -3652,6 +3764,8 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
   let sameSourceUnsupported = 0
   let heldPageRounds = 0
   let pastTheEndReads: number | undefined
+  let bookkeepingBeforeAnswer: number | undefined
+  let answerCheckpoints: { answers: number; offered: number; accepted: number; dropped: number; dropReasons: Record<string, number>; notRecorded: number } | undefined
   let delegatedPageRounds: DelegatedPageCounts | undefined
   let tierShadow: TierShadowCounts | undefined
   let rejected = 0
@@ -3725,6 +3839,20 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
     sameSourceUnsupported += mechanical.sameSourceUnsupportedRounds
     heldPageRounds += mechanical.heldPageRoundsWithoutProgress
     if (mechanical.pastTheEndReads !== undefined) pastTheEndReads = (pastTheEndReads ?? 0) + mechanical.pastTheEndReads.length
+    if (attempt.bookkeepingBeforeAnswer !== undefined) bookkeepingBeforeAnswer = (bookkeepingBeforeAnswer ?? 0) + attempt.bookkeepingBeforeAnswer.length
+    if (mechanical.answerCheckpoints !== undefined) {
+      answerCheckpoints ??= { answers: 0, offered: 0, accepted: 0, dropped: 0, dropReasons: {}, notRecorded: 0 }
+      if (mechanical.answerCheckpoints === null) answerCheckpoints.notRecorded += 1
+      else {
+        answerCheckpoints.answers += mechanical.answerCheckpoints.answers
+        answerCheckpoints.offered += mechanical.answerCheckpoints.offered
+        answerCheckpoints.accepted += mechanical.answerCheckpoints.accepted
+        answerCheckpoints.dropped += mechanical.answerCheckpoints.dropped
+        for (const [reason, count] of Object.entries(mechanical.answerCheckpoints.dropReasons)) {
+          answerCheckpoints.dropReasons[reason] = (answerCheckpoints.dropReasons[reason] ?? 0) + count
+        }
+      }
+    }
     if (mechanical.delegatedPageRounds !== undefined) addDelegatedPageRounds((delegatedPageRounds ??= emptyDelegatedPageCounts()), mechanical.delegatedPageRounds)
     if (mechanical.tierShadow !== undefined) addTierShadow((tierShadow ??= emptyTierShadowCounts()), mechanical.tierShadow, mechanical.terminal?.finalizationCause ?? null)
     rejected += mechanical.rejectedCheckpoints
@@ -3846,6 +3974,8 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
     sameSourceUnsupportedRounds: sameSourceUnsupported,
     heldPageRoundsWithoutProgress: heldPageRounds,
     ...(pastTheEndReads !== undefined ? { pastTheEndReads } : {}),
+    ...(bookkeepingBeforeAnswer !== undefined ? { bookkeepingBeforeAnswer } : {}),
+    ...(answerCheckpoints !== undefined ? { answerCheckpoints: { ...answerCheckpoints, dropReasons: byReason(answerCheckpoints.dropReasons) } } : {}),
     ...(delegatedPageRounds !== undefined ? { delegatedPageRounds } : {}),
     ...(tierShadow !== undefined ? { tierShadow } : {}),
     rejectedCheckpoints: rejected,
@@ -4215,12 +4345,33 @@ function populationPastTheEndReadsText(population: AuditPopulation): string {
   return `${population.pastTheEndReads} read(s) refused as past the end`
 }
 
+/** A population's bookkeeping rounds right before the Answer (#288), or "not counted" on an audit written before the counter. */
+function populationBookkeepingBeforeAnswerText(population: AuditPopulation): string {
+  if (population.bookkeepingBeforeAnswer === undefined) return 'bookkeeping rounds right before the Answer not counted'
+  return `${population.bookkeepingBeforeAnswer} bookkeeping round(s) right before the Answer`
+}
+
+/** Some Answer Checkpoints as offered, accepted and dropped, with the reasons they were dropped for (#288). */
+function answerCheckpointCountsText(counts: AnswerCheckpointCounts): string {
+  const reasons = Object.entries(counts.dropReasons)
+  return `${counts.offered} offered in ${counts.answers} Answer(s), ${counts.accepted} accepted, ${counts.dropped} dropped${
+    reasons.length > 0 ? ` (${reasons.map(([reason, count]) => `${reason} ${count}`).join(', ')})` : ''
+  }`
+}
+
+/** A population's Answer Checkpoints (#288), or "not counted" on an audit written before the counter. */
+function populationAnswerCheckpointsText(population: AuditPopulation): string {
+  const counts = population.answerCheckpoints
+  if (counts === undefined) return 'Answer Checkpoints not counted'
+  return `Answer Checkpoints: ${answerCheckpointCountsText(counts)}${counts.notRecorded > 0 ? `, ${counts.notRecorded} attempt(s) not recorded` : ''}`
+}
+
 function judgementLines(populations: readonly AuditPopulation[]): string[] {
   return populations.map(
     (population) =>
       `- ${population.label}: ${population.offKeyRounds} Off-key round(s), ${population.searchLoopRounds} Search Loop round(s) by the reviewer (${population.mechanicalSearchRounds} by the streak rule, heads included: ${population.searchRoundsAtStreak2} at streak 2 or beyond, ${population.searchRoundsAtStreak3} at 3 or beyond; attempts by search source ${SEARCH_SOURCES.map((source) => `${source} ${population.searchSources[source]}`).join(', ')}; navigate searches by Search URL form ${searchFormsText(population.searchForms)}; ${populationBlockedOrInertText(population.blockedOrInert)}; ${populationUnavailableLandingsText(population.unavailableLandings)}; ${populationConsentWallsText(population.consentWalls)}; ${populationTierEscalationsText(population.tierEscalations)}), ` +
       `${population.inheritedRounds} inherited, ${population.rejectedCheckpoints} rejected Evidence Checkpoint(s), ${population.walledRounds} walled round(s), ${population.notFoundNavigates} navigate(s) landed on a Not-found Page (${population.notFoundOffKey} judged Off-key), ${population.rewrittenComposedAddresses ?? 0} Composed Address(es) rewritten into a site search (${population.rewrittenComposedAddressesOffKey ?? 0} judged Off-key, ${population.rewrittenShownAddresses ?? 'not counted'} to an address the Run was shown), ${population.unseenPhraseRewrites ?? 'not counted'} search(es) ran with an Unseen Phrase unquoted (${population.unseenPhraseRewritesOffKey ?? 0} judged Off-key), ${population.engineRewrites ?? 'not counted'} search(es) ran on the Run Engine in place of another Web Engine (${population.engineRewritesOffKey ?? 0} judged Off-key), ${populationResultPicksText(population)}, ${populationSelectedPassagesText(population)}, ${populationRunMadeUseText(population)}, ${populationContradictionNotesText(population)}, ${population.subagentRounds} Subagent round(s), ` +
-      `${population.mergedCheckpoints} merged Evidence Checkpoint(s) (a floor), ${population.heldPageRoundsWithoutProgress} Held Page round(s) without Progress, ${population.bundledCheckpoints} bundled checkpoint round(s), ${population.sameSourceUnsupportedRounds} same-source unsupported round(s), ${subagentCitationsText(population.subagentCitations)}, ${populationSlipsText(population)}, ${delegatedPageCountsText(population.delegatedPageRounds)}, ${populationPastTheEndReadsText(population)}, ` +
+      `${population.mergedCheckpoints} merged Evidence Checkpoint(s) (a floor), ${population.heldPageRoundsWithoutProgress} Held Page round(s) without Progress, ${population.bundledCheckpoints} bundled checkpoint round(s), ${population.sameSourceUnsupportedRounds} same-source unsupported round(s), ${subagentCitationsText(population.subagentCitations)}, ${populationSlipsText(population)}, ${delegatedPageCountsText(population.delegatedPageRounds)}, ${populationPastTheEndReadsText(population)}, ${populationBookkeepingBeforeAnswerText(population)}, ${populationAnswerCheckpointsText(population)}, ` +
       `${population.malformedAnswers} Malformed Answer(s) (${population.answerRetries} retried), ` +
       `${transportText(population)}, ` +
       `${populationSkipsText(population)}, ${populationCutsText(population)}, ` +
@@ -4309,6 +4460,16 @@ function attemptSection(attempt: AuditAttempt): string[] {
   lines.push(`- ${consentWallsText(mechanical.consentWalls)}`)
   lines.push(`- ${tierEscalationsText(mechanical.tierEscalations)}`)
   lines.push(`- reads refused as past the end: ${mechanical.pastTheEndReads === undefined ? 'not counted' : rounds(mechanical.pastTheEndReads)}`)
+  lines.push(`- bookkeeping rounds right before the Answer: ${attempt.bookkeepingBeforeAnswer === undefined ? 'not counted' : rounds(attempt.bookkeepingBeforeAnswer)}`)
+  lines.push(
+    `- Answer Checkpoints: ${
+      mechanical.answerCheckpoints === undefined
+        ? 'not counted'
+        : mechanical.answerCheckpoints === null
+          ? `not recorded (a Run Trace below version ${ANSWER_CHECKPOINT_TRACE_VERSION})`
+          : answerCheckpointCountsText(mechanical.answerCheckpoints)
+    }`,
+  )
   if (review === null) lines.push('- reviewer: not consulted')
   else if (judgement === null) lines.push(`- reviewer: no judgement — ${review.caveats.join('; ')}`)
   else {

@@ -7,7 +7,41 @@ of `fix-270`, `jev-off`, `jev-on`, `fix-281`, `fix-284` and `fix-283` with
 every recommendation taken. Amends the Answer contract. Leaves the
 Finalization bookkeeping round of [ADR 0036](0036-the-round-finalization-is-entered-during-is-never-the-bookkeeping-round.md)
 and [ADR 0056](0056-the-finalization-bookkeeping-round-is-skipped-when-there-is-nothing-new-to-record.md)
-as it is. Nothing is built yet.
+as it is. Built on 2026-09-28; the `fix-288-290` capture is not yet run.
+
+Note (2026-09-28, #288): what building it settled.
+
+- The field is `checkpoints`. An entry's kind is read from the one field
+  only its tool takes: `observation` makes an Observation, `subject` or
+  `candidate_id` a Candidate record. An entry with none of them is dropped
+  as `malformed`, and one past the sixth as `over_cap`; both count against
+  the cap, so a list cannot be padded past it.
+- A creation entry carrying a `status` other than `active` is sent as the
+  tool's own two calls, the creation and then the decision on the identity
+  the creation returned. A decision that is refused leaves the Candidate
+  created and active and the entry dropped with the decision's reason. The
+  runtime never writes a reason: a decision with none is `malformed`.
+- `supporting_evidence` cites identities that already exist, as a call's
+  does. An Observation carried in the same Answer has none while the Answer
+  is written, so a Candidate entry cannot rest on it. The prompt says so.
+  Whether that leaves rounds the gate needs is read from the capture.
+- Entries are recorded after the Card's `display` event and before the
+  spoken line, so a Stop while it is spoken does not lose them. The
+  Observations accepted are published in an `answer_evidence` event, which
+  the Feed adds to that Answer's entry. They count as the Answer's evidence
+  for an Assessment's support and for the freshness of `completed`.
+- A dropped entry is logged as the continuity degradation
+  `answer_checkpoint_dropped`, and the Run Trace, version 6, keeps one
+  `answer_checkpoints` record per Answer that carried the field and one
+  `evidence_checkpoint` record per graded entry, marked `origin: answer`.
+- The Finalize Instruction's wording is unchanged with its bookkeeping
+  round. A reserved Answer learns the field from the prompt.
+- The recount from the committed audits gives the table below exactly: 103
+  on initials, 13 to 20 a capture, and 91 on follow-ups, 13 to 18. It reads
+  a round by the kind the reviewer's overrules left it with, which is what
+  the grill counted; by the mechanical kind alone the follow-ups read 89. It
+  finds 4 of the 72 initial Runs with a run longer than four where the
+  Decision says 3, and none longer than six.
 
 ## Context
 
