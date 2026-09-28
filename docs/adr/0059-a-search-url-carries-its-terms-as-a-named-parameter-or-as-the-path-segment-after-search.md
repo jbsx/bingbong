@@ -150,3 +150,17 @@ the boundary of [ADR 0055](0055-a-composed-address-after-the-allowance-is-rewrit
 engine. Follows [ADR 0045](0045-a-round-audit-is-counted-by-code-and-judged-by-a-model-that-is-not-measured.md):
 the recognition rule is shaped by an observed trap, not tuned to judged data,
 and the tiers do not move.
+
+## Notes
+
+- 2026-09-28 (#293): the list gains `searchApi`, `searchTerm` and
+  `keyword`, matched case-insensitively as the rest are. Over every
+  retained capture rmg.co.uk carried terms in `searchApi` 3 times,
+  `searchTerm` 3 times and `keyword` once, one of them inside a streak
+  (`fix-260-262`) and none on `fix-291`. A rule of containment — any
+  name that contains `search`, `query` or `keyword` — was rejected: it
+  reads `searchType=` and `search_id=` as terms. `s` stays out, and so
+  does `t` (seen once): a letter is not a word. `search_api_full_text`
+  stays out, seen once in the pilot. The committed audits are not
+  recounted for these names, since an audit keeps its calls' arguments
+  cut.

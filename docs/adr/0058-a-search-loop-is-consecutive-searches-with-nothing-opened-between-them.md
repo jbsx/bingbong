@@ -240,3 +240,44 @@ on not tuning to the judged data.
   recounted for every committed audit under the new reset rule. Gate, on
   the `fix-288-290` capture against `fix-284`: search rounds in a loop on
   initials at most 17, from 18 to 32 over the six captures.
+- 2026-09-28 (#293, grilled from every retained capture): escape is
+  something new put in front of the Run, and four things that were escape
+  or a search are no longer. Replayed over the traces by the rail's own
+  functions (the replay matches the recorded streaks 68 of 68 on
+  `fix-288-290` and 70 of 70 on `fix-291`):
+  - **A call that acts on no page holds the streak.** Only a page-facing
+    call can escape, by the Tool Round's own classification of tools, with
+    two exceptions that put content in front of the Run: an `ask_user` the
+    user answered, and an `agent_results` that returned at least one
+    Subagent Report. A timeout, a wait that returned none, a Run Plan
+    report, a spawn, a cancel, and the panel, settings and app tools hold.
+    `ground_visual` holds as inspection; `back`, `go_forward` and
+    `media_control` stay escape. Whether the user answered is the
+    pipeline's own resolution, never the wording of the result. Six such
+    calls ended a streak with a search resuming across all captures
+    (`agent_results` 3, `ask_user` 1, `spawn_agent` 1), and
+    `report_run_plan` none in 469 trace files. The Notice and the refusal
+    both advise `ask_user`, which is why an answer escapes.
+  - **A landing on a Blocker holds the streak**, as a Not-found and an
+    Unavailable Landing do, read from its marker: the call comes back `ok`
+    with the wall in front of the Run. It ended a streak 0 to 4 times a
+    capture (3 on `fix-288-290`). A search that lands on a wall is still a
+    search, as the 2026-09-25 note says.
+  - **A 4xx answer other than 404 and 410 is left as it is**: a recorded
+    loss. It was seen once (a 400, `fix-260-262`), the Run Trace keeps no
+    status so it cannot be recounted, and it has no term.
+  - **A Composed Address rewrite holds the streak** and the gate never
+    refuses it; see the note on ADR 0055.
+  The refusal's last clause, false under this rule, becomes `only opening
+  something clears the limit (open a result by its ref or its href, or
+  navigate to a page you were shown); an answer from ask_user clears it
+  too.` The Notice is unchanged. `SEARCH_STREAK_RULE` becomes 3 and the Fix
+  Ledger recounts the committed audits, which keep each call's name, wall
+  and rewrite stamp; the Search URL names (note on ADR 0059) are not
+  recounted, an audit's arguments being cut. No gate and no capture: #293
+  closes on tests and the recount. The #289 gate was missed on loops that
+  happened, not on loops the rule failed to see: on `fix-288-290` initials
+  the reviewer placed 38 rounds in a loop and the rule 35, missing 4 — one
+  Blocker landing, two navigates to a page that rendered empty, and one
+  Result Pick the reviewer did not read as an opening. The last two are
+  issues of their own.

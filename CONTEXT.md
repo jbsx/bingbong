@@ -693,9 +693,14 @@ page read, a Look, or a scroll looks at what the search returned and is not
 escape; neither is a Not-found Landing or an Unavailable Landing, a navigate
 that settled on nothing, nor a Blocked Action or an inert click, which
 reached nothing, nor an Evidence or a Candidate Checkpoint, which records
-what the Run already had. Only escape
-breaks it — opening a result, or any other tool call that succeeded and
-changed something.
+what the Run already had, nor a landing on a Blocker, which put a wall in
+front of the Run and no page, nor a call that acts on no page at all — a
+Run Plan report, a Subagent spawned or cancelled, a question the user did
+not answer, a wait that returned no Subagent Report. A Composed Address
+rewrite is neither a search of the loop nor escape from it: the model wrote
+an address, so the search that ran in its place leaves the loop as it was.
+Only escape breaks it — a page opened, the user's answer to a question, or a
+Subagent Report: something new put in front of the Run.
 The second search of a loop carries a Notice to change strategy, and so does
 every search after it; the sixth is refused.
 That rule is this rail's own and independent of Progress: a first page read
@@ -714,6 +719,8 @@ a segment named `search`, with no parameters beside it. An engine's results
 and a site's own results are both Search URLs; a site's search box settling
 on either shape is one. An address whose parameters carry a request rather
 than terms — an archive's lookup API, an engine's click redirect — is not.
+A word for terms is a name from a fixed list, never a name that merely
+contains one, and never a single letter.
 _Avoid_: search link, query URL, results URL
 
 **Search Intent**:
@@ -1163,7 +1170,9 @@ whole: the address the link carries, not the shortened form a snapshot may
 print it in. A site allows one
 Not-found Landing by a Composed Address per Run; after it, a Composed Address
 to that site is rewritten into a search of that site, and searches and
-Offered Addresses stay open. An Unavailable Landing spends nothing. A site
+Offered Addresses stay open. The search it is rewritten into is a search to
+everything but a Search Loop, which it neither continues nor escapes and
+which never refuses it. An Unavailable Landing spends nothing. A site
 is a registrable domain, so jpl.nasa.gov and science.nasa.gov are one site.
 _Avoid_: guessed URL, made-up URL, typed URL, direct URL
 
@@ -1217,7 +1226,8 @@ _Avoid_: engine normalisation, redirect
 Anything between the agent and page content: Consent Dialogs, CAPTCHAs,
 login walls, paywalls, age gates, file-select dialogs. Detected mechanically
 — in code, at navigation and at read — then escalated; never auto-cleared
-(the Consent Dialog is the one exception).
+(the Consent Dialog is the one exception). A landing on one is not escape
+from a Search Loop: the content is behind it.
 _Avoid_: obstacle
 
 **Challenge**:

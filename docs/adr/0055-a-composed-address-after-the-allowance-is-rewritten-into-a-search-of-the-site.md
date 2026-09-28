@@ -78,3 +78,22 @@ spends the allowance.
 - The measurement (#255) gates on rounds of refused Composed Addresses (25
   in fix-252) at zero and reports the rewritten rounds with their Off-key
   share, so a rewrite that lands the model on useless results is visible.
+
+## Notes
+
+- 2026-09-28 (#293): "It is a search to every rail" is narrowed to every
+  rail but the Search Loop's streak. A rewrite holds the streak — neither
+  a search of the loop nor escape from it — leaves no Search Observation,
+  its trace stamp being its record, and is never refused by the Search
+  Loop gate, whose refusal would accuse the model of a search it did not
+  write; a Run that keeps composing addresses is left to the no-Progress
+  rails. The Composed Address rail's own accounting, the no-Progress
+  fingerprint, the Unseen Phrase rewrite and the Not-found detector's
+  results-page exemption read it as a search as before, and an Engine
+  Rewrite and an Unseen Phrase rewrite of a search the model wrote stay
+  searches. The reason is the nudge at 2 (#289): one search by the model
+  and one rewrite earned the Notice. Notices whose streak held fewer than
+  two searches the model wrote were 0 to 2 a capture before #289, 4 of 19
+  on `fix-288-290` and 6 of 17 on `fix-291`, where three rewrites in a row
+  earned two Notices with no search by the model at all. The audit reads
+  an older Search Observation that carries the stamp as a hold.
