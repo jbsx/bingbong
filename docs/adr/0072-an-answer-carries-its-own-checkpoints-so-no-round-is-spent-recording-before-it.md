@@ -43,6 +43,47 @@ Note (2026-09-28, #288): what building it settled.
   finds 4 of the 72 initial Runs with a run longer than four where the
   Decision says 3, and none longer than six.
 
+Note (2026-09-28, #291): what the `fix-288-290` capture showed, and what is
+decided from it. Grilled the same day with every recommendation taken; not
+yet built.
+
+- The capture met the follow-ups' bar, 4 against at most 7, and missed the
+  initials', 16 against at most 8. All 10 entries offered were accepted. The
+  16 sit in 6 of the 9 initial Runs that offered none; the 3 that offered
+  had none.
+- The Runs were read from their traces. The model knows the field: in 5 of
+  the 16 rounds its reasoning decides to answer and carry the records, 4
+  naming the field, and the response is a call to a record tool. Those 5
+  led to 6 more, 3 sending a refused checkpoint again and 3 creating or
+  deciding a Candidate in a call of its own. 4 emitted no reasoning. None
+  was a Finalization bookkeeping round.
+- Seven Answers sent the field empty, as the prompt's example Answer showed
+  it.
+- **The instruction moves to the Answer contract.** The Decision's last
+  point put one sentence in the prompt's `record_evidence` paragraph and
+  both tool descriptions, where the model met it while reading about the
+  tools. The `checkpoints` bullet of the contract now opens with it, and
+  the three earlier places say only that the tools are not for a Run ready
+  to answer.
+- **The example Answer carries entries**: one Observation and one Candidate
+  created and decided, as placeholders.
+- **The `bookkeeping_only` Notice names the Answer**, where the Decision
+  left it unchanged. "Alongside your next action" says nothing to a Run
+  whose next action is the Answer, and one Run recorded a page a second
+  time on reading it.
+- **A refused checkpoint's result and a Candidate creation's result name
+  the Answer** as the other place the corrected entry or the decision may
+  go. A refused entry carried by the Answer is dropped and not sent back;
+  the count of dropped entries shows what that costs.
+- The mechanism, the cap and the grading are unchanged. An Answer that
+  names an inspection Candidate still needs it recorded by a call first,
+  which no wording removes.
+- The capture is `fix-291`, its own, against `fix-288-290`. The initials'
+  bar stays at most 8, and the initial Runs with any such round, 6 of 12,
+  are reported beside it. A miss reverts #291's commit, leaves #288's, and
+  files the mechanism as its own issue: a Run that has met its objective
+  and sends only records could be answered without a further round.
+
 ## Context
 
 A round whose only calls are `record_evidence` or `record_candidate` costs
