@@ -1018,7 +1018,23 @@ round when that round is a Finalization round that made no call; the
 bookkeeping round Finalization grants is a Finalization round and is never
 counted. It rides the attempt beside `countsAfterOverrules`
 (`bookkeepingBeforeAnswer`, the rounds by number), because it reads the same
-overrules. **Answer Checkpoints** counts, from the `answer_checkpoints`
+overrules. **Bookkeeping rounds right before the cut** (#295) is the run that
+counter cannot see, because another round stands between it and the Answer:
+the unbroken run of Bookkeeping rounds, by the same overrules, that ends at
+the round the active-work deadline cut, when every round after that one is a
+Finalization round; or, where the deadline cut none, at the end of rounds
+that never entered Finalization. Rounds the deadline cut one after another
+are one cut. A Run that recorded, began its next round and lost that round
+to the deadline has its recording counted here, with the reserved Answer
+after it or without. A deadline-cut round the Run worked on after is no cut,
+and a round ended any other way is retried and is none either; rounds that
+end on a Finalization round and hold no deadline-cut round count nothing.
+The trace does not say what the cut round would have been, so the counter
+says what was spent recording as the deadline arrived and never that an
+Answer was next. It is a counter of its own (`bookkeepingBeforeCut`): the
+first stays as written, with the table #288's gate was set from, and a round
+the first counts is left out of this one, so none is counted by both.
+Reported, never gated. **Answer Checkpoints** counts, from the `answer_checkpoints`
 record each Answer that carried the field leaves, the Answers that carried
 any, the entries offered, accepted and dropped, and the dropped by reason —
 the reason the entry's tool refuses a call for, `over_cap` for an entry past
@@ -1027,8 +1043,9 @@ that was not a list, counted as one entry offered and dropped. An entry belongs 
 its `evidence_checkpoint` record says `origin: answer` and joins no round, so
 no round's kind or checkpoint count moves and the digest does not move. A
 trace written below Run Trace version 6 predates the record and reads "not
-recorded" (`answerCheckpoints: null`); an audit written before either counter
-reads "not counted".
+recorded" (`answerCheckpoints: null`); an audit written before a counter
+reads "not counted" for it, and the Fix Ledger recounts both bookkeeping
+counters for such an audit from its rounds and its review.
 
 The **Asked Items** (#250, ADR 0052) sit beside the rounds on the same terms:
 `declared` is what the attempt's last model Run Plan carried in `asked_items`,

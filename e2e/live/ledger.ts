@@ -32,6 +32,7 @@ import {
   LIVE_AUDIT_AGGREGATE_KIND,
   LIVE_AUDIT_KIND,
   bookkeepingBeforeAnswerOver,
+  bookkeepingBeforeCutOver,
   preRuleOffLanguageAnswersOver,
   pastTheEndReadsOver,
   populationOf,
@@ -687,6 +688,11 @@ export function countersOf(population: AuditPopulation, attempts: readonly Audit
     // them — the six captures the gate was set from all predate it. A
     // judgement, since an overrule moves it.
     judged('Bookkeeping rounds right before the Answer', older.bookkeepingBeforeAnswer ?? bookkeepingBeforeAnswerOver(attempts), budgeted),
+    // #295: the run the counter above cannot see, the one that ends at the
+    // round the deadline cut. A counter of its own, so the one above stays
+    // the table #288's gate was set from, and recounted the same way: every
+    // audit on main predates it. Reported, never gated.
+    judged('Bookkeeping rounds right before the cut', older.bookkeepingBeforeCut ?? bookkeepingBeforeCutOver(attempts), budgeted),
     // And what the Answers carried instead: nothing on an audit written
     // before the counter or on a population none of whose traces could say,
     // never zero.

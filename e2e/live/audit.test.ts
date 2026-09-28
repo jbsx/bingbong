@@ -3774,6 +3774,177 @@ describe('the bookkeeping rounds right before the Answer (#288, ADR 0072)', () =
   })
 })
 
+describe('the bookkeeping rounds right before the cut (#295)', () => {
+  const planned = (cause: string | null): Record<string, unknown>[] => [
+    { ...identity, at: T0 + 900, kind: 'pipeline_event', event: { type: 'run_plan', turnId: TURN, objective: 'find it', headline: 'h', effortTier: 'investigation', source: 'model', at: T0 + 900 } },
+    ...(cause === null
+      ? []
+      : [{ ...identity, at: T0 + 16_000, kind: 'pipeline_event', event: { type: 'done', turnId: TURN, outcome: 'done', resolution: 'partial', finalizationCause: cause, at: T0 + 16_000 } }]),
+  ]
+  const EVIDENCE = { name: 'record_evidence', args: { kind: 'web', observation: 'a claim', source_url: SPEC_URL }, result: 'Session Evidence recorded: memory-1', checkpoint: 'accepted' }
+  const CANDIDATE = { name: 'record_candidate', args: { subject: 'the watch', supporting_evidence: ['memory-1'] }, result: 'Candidate memory-2 active', checkpoint: 'accepted' }
+  const WORK: RoundSpec[] = [
+    { round: 1, at: 1_000, calls: [{ name: 'navigate', args: { url: SPEC_URL }, result: PAGE('Watch spec', SPEC_URL, 'aaaa1111') }] },
+    // In the middle of the Run: never counted here.
+    { round: 2, at: 2_000, calls: [EVIDENCE] },
+    { round: 3, at: 3_000, calls: [{ name: 'navigate', args: { url: OTHER_URL }, result: PAGE('Other', OTHER_URL, 'dddd4444') }] },
+    { round: 4, at: 4_000, calls: [CANDIDATE] },
+    { round: 5, at: 5_000, calls: [EVIDENCE, CANDIDATE] },
+  ]
+  // The shape of the Pi camera initial of fix-288-290 pass 2: the deadline cuts the round after the recording, and the reserved Answer follows.
+  const CUT: RoundSpec[] = [...WORK, { round: 6, at: 6_000, outcome: 'deadline' }, { round: 7, at: 7_000, effort: 'low' }]
+  const judgementWith = (overrules: AuditJudgement['overrules']): AuditJudgement => ({
+    searchLoops: [],
+    offKey: [],
+    overrules,
+    stoppedEarly: { value: false, reason: 'the deadline cut it', checks: [] },
+    answerOmitted: { value: false, reason: 'nothing omitted', checks: [] },
+    verdict: { primary: 'rounds_wasted', primaryReason: 'two rounds recording before the cut', secondary: null, secondaryReason: null },
+    flags: [],
+  })
+  const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(CUT, planned('deadline_reached')) }))
+
+  it('counts the unbroken run of bookkeeping rounds that ends at the round the deadline cut, where the first counter reads nothing', () => {
+    expect(mechanical.rounds.map((round) => `${round.kind}:${round.outcome}`)).toEqual([
+      'acquisition_with_progress:completed',
+      'bookkeeping:completed',
+      'acquisition_with_progress:completed',
+      'bookkeeping:completed',
+      'bookkeeping:completed',
+      'failed_round:deadline',
+      'finalization:completed',
+    ])
+    expect(auditModule.bookkeepingBeforeAnswerOf(mechanical.rounds, null)).toEqual([])
+    expect(auditModule.bookkeepingBeforeCutOf(mechanical.rounds, null)).toEqual([4, 5])
+  })
+
+  it('reads a round by the kind the reviewer left it with', () => {
+    const overruled = judgementWith([{ round: 4, kind: 'acquisition_without_progress', reason: 'it recorded nothing new' }])
+    const joined = judgementWith([{ round: 3, kind: 'bookkeeping', reason: 'the page was already held' }])
+
+    expect(auditModule.bookkeepingBeforeCutOf(mechanical.rounds, overruled)).toEqual([5])
+    expect(auditModule.bookkeepingBeforeCutOf(mechanical.rounds, joined)).toEqual([2, 3, 4, 5])
+  })
+
+  it('counts the run the Finalization bookkeeping round follows the cut of, and the run the rounds end on with no Answer round', () => {
+    const granted = classifyAttempt(
+      inputOf({
+        traceRecords: traceOf(
+          [
+            ...WORK,
+            { round: 6, at: 6_000, outcome: 'deadline' },
+            { round: 7, at: 7_000, effort: 'low', calls: [{ ...EVIDENCE, result: `Session Evidence recorded: memory-3\n\n${finalizeInstruction('deadline_reached')}` }] },
+            { round: 8, at: 8_000, effort: 'low' },
+          ],
+          planned('deadline_reached'),
+        ),
+      }),
+    )
+    expect(granted.rounds.slice(-3).map((round) => `${round.kind}:${round.calls.length}`)).toEqual(['failed_round:0', 'finalization:1', 'finalization:0'])
+    expect(auditModule.bookkeepingBeforeCutOf(granted.rounds, null)).toEqual([4, 5])
+
+    const unanswered = classifyAttempt(inputOf({ traceRecords: traceOf(WORK, planned(null)) }))
+    expect(unanswered.rounds.at(-1)?.kind).toBe('bookkeeping')
+    expect(auditModule.bookkeepingBeforeAnswerOf(unanswered.rounds, null)).toEqual([])
+    expect(auditModule.bookkeepingBeforeCutOf(unanswered.rounds, null)).toEqual([4, 5])
+  })
+
+  it('counts nothing the first counter counts, nothing where the Run worked on after the cut, and nothing before a round cut any other way', () => {
+    // An Answer ended the rounds: the run before it is the first counter's.
+    const answered = classifyAttempt(inputOf({ traceRecords: traceOf([...WORK, { round: 6, at: 6_000 }], planned('objective_met')) }))
+    expect(auditModule.bookkeepingBeforeAnswerOf(answered.rounds, null)).toEqual([4, 5])
+    expect(auditModule.bookkeepingBeforeCutOf(answered.rounds, null)).toEqual([])
+
+    // The deadline cut a round and the Run, its deadline moved, worked on.
+    const resumed = classifyAttempt(
+      inputOf({
+        traceRecords: traceOf(
+          [
+            ...WORK,
+            { round: 6, at: 6_000, outcome: 'deadline' },
+            { round: 7, at: 7_000, calls: [{ name: 'navigate', args: { url: 'https://spec.invalid/third' }, result: PAGE('Third', 'https://spec.invalid/third', 'eeee5555') }] },
+            { round: 8, at: 8_000 },
+          ],
+          planned('objective_met'),
+        ),
+      }),
+    )
+    expect(resumed.rounds.slice(-3).map((round) => round.kind)).toEqual(['failed_round', 'acquisition_with_progress', 'finalization'])
+    expect(auditModule.bookkeepingBeforeCutOf(resumed.rounds, null)).toEqual([])
+
+    // The client's timeout is no deadline, and the round after it was retried.
+    const timedOut = classifyAttempt(
+      inputOf({ traceRecords: traceOf([...WORK, { round: 6, at: 6_000, outcome: 'timeout' }, { round: 7, at: 7_000, effort: 'low' }], planned('deadline_reached')) }),
+    )
+    expect(auditModule.bookkeepingBeforeCutOf(timedOut.rounds, null)).toEqual([])
+
+    // The deadline cut a round no bookkeeping round came right before.
+    const working = classifyAttempt(
+      inputOf({ traceRecords: traceOf([...WORK.slice(0, 3), { round: 4, at: 4_000, outcome: 'deadline' }, { round: 5, at: 5_000, effort: 'low' }], planned('deadline_reached')) }),
+    )
+    expect(auditModule.bookkeepingBeforeCutOf(working.rounds, null)).toEqual([])
+    expect(auditModule.bookkeepingBeforeCutOf([], null)).toEqual([])
+  })
+
+  it('reads rounds the deadline cut one after another as one cut', () => {
+    const twice = classifyAttempt(
+      inputOf({
+        traceRecords: traceOf([...WORK, { round: 6, at: 6_000, outcome: 'deadline' }, { round: 6, attempt: 2, at: 6_500, outcome: 'deadline' }, { round: 7, at: 7_000, effort: 'low' }], planned('deadline_reached')),
+      }),
+    )
+    expect(twice.rounds.slice(-3).map((round) => `${round.kind}:${round.outcome}`)).toEqual(['failed_round:deadline', 'failed_round:deadline', 'finalization:completed'])
+    expect(auditModule.bookkeepingBeforeCutOf(twice.rounds, null)).toEqual([4, 5])
+  })
+
+  it('counts no round twice where an overrule makes the cut round Bookkeeping and the first counter reads through it', () => {
+    const through = judgementWith([{ round: 6, kind: 'bookkeeping', reason: 'it was recording when it was cut' }])
+
+    expect(auditModule.bookkeepingBeforeAnswerOf(mechanical.rounds, through)).toEqual([4, 5, 6])
+    expect(auditModule.bookkeepingBeforeCutOf(mechanical.rounds, through)).toEqual([])
+  })
+
+  it('counts nothing where the rounds end on a Finalization round that is no Answer and the deadline cut none', () => {
+    const granted = classifyAttempt(
+      inputOf({
+        traceRecords: traceOf(
+          [...WORK, { round: 6, at: 6_000, effort: 'low', calls: [{ ...EVIDENCE, result: `Session Evidence recorded: memory-3\n\n${finalizeInstruction('deadline_reached')}` }] }],
+          planned('deadline_reached'),
+        ),
+      }),
+    )
+    expect(granted.rounds.at(-1)?.kind).toBe('finalization')
+    expect(granted.rounds.at(-1)?.calls).toHaveLength(1)
+    expect(auditModule.bookkeepingBeforeAnswerOf(granted.rounds, null)).toEqual([])
+    expect(auditModule.bookkeepingBeforeCutOf(granted.rounds, null)).toEqual([])
+  })
+
+  it('sums them per population, prints them per attempt and per population, and reads "not counted" for an older audit', () => {
+    const attempt: AuditAttempt = {
+      mechanical,
+      review: null,
+      countsAfterOverrules: mechanical.counts,
+      bookkeepingBeforeAnswer: auditModule.bookkeepingBeforeAnswerOf(mechanical.rounds, null),
+      bookkeepingBeforeCut: auditModule.bookkeepingBeforeCutOf(mechanical.rounds, null),
+    }
+    const set = buildAuditSet(provenanceOf(), [attempt], [])
+    expect(set.populations.initial.bookkeepingBeforeAnswer).toBe(0)
+    expect(set.populations.initial.bookkeepingBeforeCut).toBe(2)
+    const markdown = formatAuditSet(set)
+    expect(markdown).toContain('- bookkeeping rounds right before the Answer: 0')
+    expect(markdown).toContain('- bookkeeping rounds right before the cut: 2 (round 4, 5)')
+    expect(markdown).toMatch(/- initial: .*0 bookkeeping round\(s\) right before the Answer, 2 bookkeeping round\(s\) right before the cut/)
+
+    // Absent, never zero: an aggregate rebuilt from audits written before the counter stays the one committed.
+    const before: AuditAttempt = { mechanical, review: null, countsAfterOverrules: mechanical.counts, bookkeepingBeforeAnswer: attempt.bookkeepingBeforeAnswer }
+    const older = buildAuditSet(provenanceOf(), [before], [])
+    expect(older.populations.initial.bookkeepingBeforeAnswer).toBe(0)
+    expect('bookkeepingBeforeCut' in older.populations.initial).toBe(false)
+    const olderText = formatAuditSet(older)
+    expect(olderText).toContain('- bookkeeping rounds right before the cut: not counted')
+    expect(olderText).toMatch(/- initial: .*bookkeeping rounds right before the cut not counted/)
+  })
+})
+
 describe('Answer Checkpoints (#288, ADR 0072)', () => {
   const atVersion = (records: readonly TraceRecord[], v: number): TraceRecord[] => records.map((record) => ({ ...record, v })) as unknown as TraceRecord[]
   const ENTRY = { kind: 'evidence_checkpoint', tool: 'record_evidence', args: { observation: 'a claim', source_url: 'https://spec.invalid/third', excerpt: 'x' }, matched: false, graded: [], origin: 'answer' }

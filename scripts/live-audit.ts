@@ -40,6 +40,7 @@ import {
   checkpointedUrlsOf,
   classifyAttempt,
   bookkeepingBeforeAnswerOf,
+  bookkeepingBeforeCutOf,
   countsAfterOverrulesOf,
   digestCallLines,
   formatAuditAggregate,
@@ -725,6 +726,7 @@ function main(): void {
         review,
         countsAfterOverrules: countsAfterOverrulesOf(view.mechanical, review?.judgement ?? null),
         bookkeepingBeforeAnswer: bookkeepingBeforeAnswerOf(view.mechanical.rounds, review?.judgement ?? null),
+        bookkeepingBeforeCut: bookkeepingBeforeCutOf(view.mechanical.rounds, review?.judgement ?? null),
       })
     }
 

@@ -103,6 +103,40 @@ Why 6 of the 7 entries one reserved Answer offered in `fix-291` were
 malformed cannot be read, since the Run Trace keeps no Answer JSON for an
 Answer that was accepted; it is left to the reading of that capture.
 
+Note (2026-09-28, #295): a second counter beside the gate's, for the rounds
+it cannot see. No gate is restated and no capture was run.
+
+- The gate's counter counts back from the Answer round and stops at the
+  first round that is not Bookkeeping. Where the deadline cut the round
+  after the recording, that cut round stands between, and the recording is
+  counted as nothing. The Pi camera initial of `fix-288-290` pass 2 is one:
+  rounds 20 and 21 recorded, the deadline cut round 22, and round 23 was
+  the reserved Answer.
+- **Bookkeeping rounds right before the cut** counts that run: the unbroken
+  run of Bookkeeping rounds, by the kind the reviewer's overrules left,
+  that ends at the round the active-work deadline cut, when only
+  Finalization rounds follow it, or at the end of rounds that never entered
+  Finalization. Rounds the deadline cut one after another are one cut.
+- The issue described an attempt that ended with no Answer round. The
+  attempts it meant do end with one, the reserved Answer, so the counter is
+  anchored on the cut round. Of the 497 attempts in the committed audits 4
+  end with no Answer round, and none of those ends on a Bookkeeping round.
+- The trace does not say what the cut round would have been. The counter
+  says what was spent recording as the deadline arrived.
+- The gate's counter and its table are as written: 103 on initials and 91
+  on follow-ups over the six captures. A round the gate's counter counts is
+  left out of this one, so none is counted by both; that matters only where
+  an overrule makes the cut round itself Bookkeeping, which no committed
+  audit does.
+- Recounted from the committed audits, none of which carries it: 10 on the
+  six captures' initials, 8 of them in `fix-281` and 2 in `fix-284`, and 0
+  on their follow-ups; 2 on the initials of `fix-288-290`. Over every
+  audit committed on this date, 41 rounds in 15 of 331 initial Runs and 43
+  in 10 of 166 follow-ups.
+- It is absent on an audit written before it, so an aggregate rebuilt from
+  such audits is the one committed, and the Fix Ledger recounts it from the
+  rounds and the review. Reported, never gated.
+
 ## Context
 
 A round whose only calls are `record_evidence` or `record_candidate` costs

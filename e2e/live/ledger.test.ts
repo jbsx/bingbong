@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { bookkeepingBeforeAnswerOver, offLanguageAnswersOver, pastTheEndReadsOf, pastTheEndReadsOver, populationOf, PRE_RULE_OFF_LANGUAGE_ANSWERS, replaySearchStreaks, restateVerifiedOrUnasked, restateVerifiedOrUnaskedMarkdown, SEARCH_STREAK_RULE, searchLoopCountsOf, unavailableLandingsOf, type AuditAggregate, type AuditAttempt, type AuditPopulation, type AuditSetOutput } from './audit.ts'
+import { bookkeepingBeforeAnswerOf, bookkeepingBeforeAnswerOver, bookkeepingBeforeCutOf, bookkeepingBeforeCutOver, offLanguageAnswersOver, pastTheEndReadsOf, pastTheEndReadsOver, populationOf, PRE_RULE_OFF_LANGUAGE_ANSWERS, replaySearchStreaks, restateVerifiedOrUnasked, restateVerifiedOrUnaskedMarkdown, SEARCH_STREAK_RULE, searchLoopCountsOf, unavailableLandingsOf, type AuditAggregate, type AuditAttempt, type AuditPopulation, type AuditSetOutput } from './audit.ts'
 import {
   HEADLINE_METRICS,
   buildLedger,
@@ -776,6 +776,93 @@ describe('the bookkeeping rounds right before the Answer (#288, ADR 0072)', () =
     expect('bookkeepingBeforeAnswer' in rebuilt).toBe(false)
     expect('answerCheckpoints' in rebuilt).toBe(false)
     expect(JSON.stringify({ ...rebuilt, perSet: committed.perSet })).toBe(JSON.stringify(committed))
+  })
+})
+
+describe('the bookkeeping rounds right before the cut (#295)', () => {
+  const LABEL = 'Bookkeeping rounds right before the cut'
+  const FIRST = 'Bookkeeping rounds right before the Answer'
+  const SIX_CAPTURES = ['fix-270', 'jev-off', 'jev-on', 'fix-281', 'fix-284', 'fix-283']
+  const passesOf = (family: string): AuditSetOutput[] => [1, 2, 3].map((pass) => readAudit(`audit-${family}-${pass}.json`))
+  const attemptsOf = (audits: readonly AuditSetOutput[], relation: string) =>
+    audits.flatMap((audit) => audit.attempts).filter((attempt) => attempt.mechanical.relation === relation)
+  const countOf = (audits: readonly AuditSetOutput[], relation: string): number => bookkeepingBeforeCutOver(attemptsOf(audits, relation))
+  const aggregateOf = (family: string): AuditAggregate => JSON.parse(readFileSync(join(REPORTS_DIR, `audit-aggregate-${family}.json`), 'utf8')) as AuditAggregate
+  const everyAudit = (): AuditSetOutput[] =>
+    readdirSync(REPORTS_DIR)
+      .filter((name) => /^audit-(?!aggregate).*\.json$/.test(name))
+      .sort()
+      .map((name) => readAudit(name))
+
+  it('recounts the case the issue names: the Pi camera initial of fix-288-290 pass 2, which the first counter reads as nothing', () => {
+    const attempt = readAudit('audit-fix-288-290-2.json').attempts.find((candidate) => candidate.mechanical.attemptId === 'compatibility-pi-camera--initial')!
+    const judgement = attempt.review?.judgement ?? null
+
+    expect(attempt.mechanical.terminal?.finalizationCause).toBe('deadline_reached')
+    expect(attempt.mechanical.rounds.slice(-4).map((round) => `${round.round}:${round.kind}:${round.outcome}`)).toEqual([
+      '20:bookkeeping:completed',
+      '21:bookkeeping:completed',
+      '22:failed_round:deadline',
+      '23:finalization:completed',
+    ])
+    expect(attempt.bookkeepingBeforeAnswer).toEqual([])
+    expect(bookkeepingBeforeAnswerOf(attempt.mechanical.rounds, judgement)).toEqual([])
+    expect(bookkeepingBeforeCutOf(attempt.mechanical.rounds, judgement)).toEqual([20, 21])
+  })
+
+  it('recounts the six captures the gate was set from, beside a table it leaves as written', () => {
+    const audits = SIX_CAPTURES.flatMap(passesOf)
+
+    expect(SIX_CAPTURES.map((family) => countOf(passesOf(family), 'initial'))).toEqual([0, 0, 0, 8, 2, 0])
+    expect(SIX_CAPTURES.map((family) => countOf(passesOf(family), 'revised_objective'))).toEqual([0, 0, 0, 0, 0, 0])
+    expect(countOf(passesOf('fix-288-290'), 'initial')).toBe(2)
+    expect(countOf(passesOf('fix-288-290'), 'revised_objective')).toBe(0)
+    // The first counter's table: 103 over initials and 91 over follow-ups, as #288 set its gate from.
+    expect(bookkeepingBeforeAnswerOver(attemptsOf(audits, 'initial'))).toBe(103)
+    expect(bookkeepingBeforeAnswerOver(attemptsOf(audits, 'revised_objective'))).toBe(91)
+  })
+
+  it('counts over every committed audit no round the first counter counts', () => {
+    const attempts = everyAudit().flatMap((audit) => audit.attempts)
+    const both = attempts.filter((attempt) => {
+      const judgement = attempt.review?.judgement ?? null
+      const first = new Set(bookkeepingBeforeAnswerOf(attempt.mechanical.rounds, judgement))
+      return bookkeepingBeforeCutOf(attempt.mechanical.rounds, judgement).some((round) => first.has(round))
+    })
+
+    // Whatever the directory holds: no count is pinned here, so the next capture's audits leave this as it is.
+    expect(attempts.length).toBeGreaterThan(0)
+    expect(both).toEqual([])
+  })
+
+  it('recounts an audit written before the counter, reads one that carries it as written, and leaves the first counter where it was', () => {
+    const initials = attemptsOf(passesOf('fix-288-290'), 'initial')
+    const written = aggregateOf('fix-288-290').populations.initial
+    const counterOf = (population: AuditPopulation, label: string) => countersOf(population, initials).find((counter) => counter.label === label)
+
+    expect(written.bookkeepingBeforeAnswer).toBe(16)
+    expect(written.bookkeepingBeforeCut).toBeUndefined()
+    expect(counterOf(written, FIRST)).toEqual({ label: FIRST, judgement: true, value: 16, over: written.budgetedRounds })
+    expect(counterOf(written, LABEL)).toEqual({ label: LABEL, judgement: true, value: 2, over: written.budgetedRounds })
+    expect(counterOf({ ...written, bookkeepingBeforeCut: 5 }, LABEL)).toEqual({ label: LABEL, judgement: true, value: 5, over: written.budgetedRounds })
+    expect(counterOf({ ...written, bookkeepingBeforeCut: 5 }, FIRST)).toEqual({ label: FIRST, judgement: true, value: 16, over: written.budgetedRounds })
+    // Right after the first in the expander's fixed order.
+    const labels = countersOf(written, initials).map((counter) => counter.label)
+    expect(labels[labels.indexOf(FIRST) + 1]).toBe(LABEL)
+  })
+
+  it('is no headline metric, so nothing is gated on it', () => {
+    expect(HEADLINE_METRICS.map((metric) => JSON.stringify(metric)).filter((metric) => /before the cut|bookkeepingBeforeCut/i.test(metric))).toEqual([])
+  })
+
+  it('leaves a population rebuilt from audits written before the counter as it was committed (#285)', () => {
+    for (const family of ['fix-284', 'fix-288-290']) {
+      const committed = aggregateOf(family).populations.initial
+      const rebuilt = populationOf('initial', attemptsOf(passesOf(family), 'initial'))
+
+      expect('bookkeepingBeforeCut' in rebuilt).toBe(false)
+      expect(JSON.stringify({ ...rebuilt, perSet: committed.perSet })).toBe(JSON.stringify(committed))
+    }
   })
 })
 

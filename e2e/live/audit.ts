@@ -869,6 +869,15 @@ export interface AuditAttempt {
    * whose rounds and review still say it.
    */
   readonly bookkeepingBeforeAnswer?: readonly number[]
+  /**
+   * The bookkeeping rounds right before the cut (#295): the unbroken run the
+   * counter above cannot see, because it ends at the round the active-work
+   * deadline cut, or at the end of rounds that never entered Finalization. A
+   * counter of its own, so the one above and the table #288's gate was set
+   * from stay as written. Absent on an audit written before it, whose rounds
+   * and review still say it.
+   */
+  readonly bookkeepingBeforeCut?: readonly number[]
 }
 
 /** What became of the Answer Checkpoints some Answers carried (#288, ADR 0072). */
@@ -968,6 +977,12 @@ export interface AuditPopulation {
    * counter, which the Fix Ledger recounts from the rounds and the reviews.
    */
   readonly bookkeepingBeforeAnswer?: number
+  /**
+   * Bookkeeping rounds right before the cut over the attempts that count
+   * them (#295); absent when none does, as on an audit written before the
+   * counter, which the Fix Ledger recounts from the rounds and the reviews.
+   */
+  readonly bookkeepingBeforeCut?: number
   /**
    * Answer Checkpoints over the attempts that count them (#288), and how
    * many of those attempts' traces were too old to say; absent when no
@@ -2425,6 +2440,53 @@ export function bookkeepingBeforeAnswerOf(rounds: readonly AuditRound[], judgeme
 /** How many of them some attempts hold, recounted from their rounds and reviews whether or not their audit counted (#288). */
 export function bookkeepingBeforeAnswerOver(attempts: readonly AuditAttempt[]): number {
   return attempts.reduce((total, attempt) => total + bookkeepingBeforeAnswerOf(attempt.mechanical.rounds, attempt.review?.judgement ?? null).length, 0)
+}
+
+/**
+ * The bookkeeping rounds right before the cut (#295): the unbroken run of
+ * rounds whose kind, after the reviewer's overrules, is Bookkeeping, and
+ * that ends where the Run's work was cut short of an Answer — the rounds
+ * `bookkeepingBeforeAnswerOf` cannot see, since it counts back from an
+ * Answer round and another round stands between. The cut is the round the
+ * active-work deadline ended outside Finalization, or the unbroken rounds
+ * it ended one after another, when every round after is a Finalization
+ * round: the Run recorded, began the next round, and the deadline took
+ * that round. With no such round the run is the one the rounds end on,
+ * and only where the Run never entered Finalization: rounds that end on a
+ * Finalization round of any sort count nothing here. A deadline-cut round
+ * the Run worked on after, its deadline moved, is no cut, and neither is a
+ * round ended any other way, which is retried. What the cut round would
+ * have been is not in the trace, so this says what was spent recording as
+ * the deadline arrived and not that an Answer was next. Where the cut is
+ * read off the rounds as the classifier left them; the run is read by the
+ * overrules. A round the first counter counts is never counted here, as
+ * where an overrule makes the cut round itself Bookkeeping and the first
+ * counter's run passes through it. Read off the rounds and the review, as
+ * the first is.
+ */
+export function bookkeepingBeforeCutOf(rounds: readonly AuditRound[], judgement: AuditJudgement | null): number[] {
+  const last = rounds.at(-1)
+  if (last === undefined) return []
+  const cutByDeadline = (index: number): boolean => index >= 0 && rounds[index]!.kind !== 'finalization' && rounds[index]!.outcome === 'deadline'
+  let workEnd = rounds.length
+  while (workEnd > 0 && rounds[workEnd - 1]!.kind === 'finalization') workEnd -= 1
+  let runEnd = workEnd
+  while (cutByDeadline(runEnd - 1)) runEnd -= 1
+  // No round the deadline cut: the run is the one the rounds end on, and rounds that entered Finalization end on no such run.
+  if (runEnd === workEnd && last.kind === 'finalization') return []
+  const counted = new Set(bookkeepingBeforeAnswerOf(rounds, judgement))
+  const run: number[] = []
+  for (const round of rounds.slice(0, runEnd).reverse()) {
+    const kind = judgement?.overrules.find((item) => item.round === round.round)?.kind ?? round.kind
+    if (kind !== 'bookkeeping') break
+    run.unshift(round.round)
+  }
+  return run.filter((round) => !counted.has(round))
+}
+
+/** How many of them some attempts hold, recounted from their rounds and reviews whether or not their audit counted (#295). */
+export function bookkeepingBeforeCutOver(attempts: readonly AuditAttempt[]): number {
+  return attempts.reduce((total, attempt) => total + bookkeepingBeforeCutOf(attempt.mechanical.rounds, attempt.review?.judgement ?? null).length, 0)
 }
 
 /** The reason an Answer's `checkpoints` is counted dropped for when it was not a list at all (#288). */
@@ -4095,6 +4157,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
   let heldPageRounds = 0
   let pastTheEndReads: number | undefined
   let bookkeepingBeforeAnswer: number | undefined
+  let bookkeepingBeforeCut: number | undefined
   let answerCheckpoints: { answers: number; offered: number; accepted: number; dropped: number; dropReasons: Record<string, number>; notRecorded: number } | undefined
   let delegatedPageRounds: DelegatedPageCounts | undefined
   let tierShadow: TierShadowCounts | undefined
@@ -4171,6 +4234,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
     heldPageRounds += mechanical.heldPageRoundsWithoutProgress
     if (mechanical.pastTheEndReads !== undefined) pastTheEndReads = (pastTheEndReads ?? 0) + mechanical.pastTheEndReads.length
     if (attempt.bookkeepingBeforeAnswer !== undefined) bookkeepingBeforeAnswer = (bookkeepingBeforeAnswer ?? 0) + attempt.bookkeepingBeforeAnswer.length
+    if (attempt.bookkeepingBeforeCut !== undefined) bookkeepingBeforeCut = (bookkeepingBeforeCut ?? 0) + attempt.bookkeepingBeforeCut.length
     if (mechanical.answerCheckpoints !== undefined) {
       answerCheckpoints ??= { answers: 0, offered: 0, accepted: 0, dropped: 0, dropReasons: {}, notRecorded: 0 }
       if (mechanical.answerCheckpoints === null) answerCheckpoints.notRecorded += 1
@@ -4307,6 +4371,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
     heldPageRoundsWithoutProgress: heldPageRounds,
     ...(pastTheEndReads !== undefined ? { pastTheEndReads } : {}),
     ...(bookkeepingBeforeAnswer !== undefined ? { bookkeepingBeforeAnswer } : {}),
+    ...(bookkeepingBeforeCut !== undefined ? { bookkeepingBeforeCut } : {}),
     ...(answerCheckpoints !== undefined ? { answerCheckpoints: { ...answerCheckpoints, dropReasons: byReason(answerCheckpoints.dropReasons) } } : {}),
     ...(delegatedPageRounds !== undefined ? { delegatedPageRounds } : {}),
     ...(tierShadow !== undefined ? { tierShadow } : {}),
@@ -4726,6 +4791,12 @@ function populationBookkeepingBeforeAnswerText(population: AuditPopulation): str
   return `${population.bookkeepingBeforeAnswer} bookkeeping round(s) right before the Answer`
 }
 
+/** A population's bookkeeping rounds right before the cut (#295), or "not counted" on an audit written before the counter. */
+function populationBookkeepingBeforeCutText(population: AuditPopulation): string {
+  if (population.bookkeepingBeforeCut === undefined) return 'bookkeeping rounds right before the cut not counted'
+  return `${population.bookkeepingBeforeCut} bookkeeping round(s) right before the cut`
+}
+
 /** Some Answer Checkpoints as offered, accepted and dropped, with the reasons they were dropped for (#288). */
 function answerCheckpointCountsText(counts: AnswerCheckpointCounts): string {
   const reasons = Object.entries(counts.dropReasons)
@@ -4818,7 +4889,7 @@ function judgementLines(populations: readonly AuditPopulation[]): string[] {
     (population) =>
       `- ${population.label}: ${population.offKeyRounds} Off-key round(s), ${population.searchLoopRounds} Search Loop round(s) by the reviewer (${population.mechanicalSearchRounds} by the streak rule, heads included: ${population.searchRoundsAtStreak2} at streak 2 or beyond, ${population.searchRoundsAtStreak3} at 3 or beyond; attempts by search source ${SEARCH_SOURCES.map((source) => `${source} ${population.searchSources[source]}`).join(', ')}; navigate searches by Search URL form ${searchFormsText(population.searchForms)}; ${populationBlockedOrInertText(population.blockedOrInert)}; ${populationUnavailableLandingsText(population.unavailableLandings)}; ${populationConsentWallsText(population.consentWalls)}; ${populationTierEscalationsText(population.tierEscalations)}), ` +
       `${population.inheritedRounds} inherited, ${population.rejectedCheckpoints} rejected Evidence Checkpoint(s), ${population.walledRounds} walled round(s), ${population.notFoundNavigates} navigate(s) landed on a Not-found Page (${population.notFoundOffKey} judged Off-key), ${population.rewrittenComposedAddresses ?? 0} Composed Address(es) rewritten into a site search (${population.rewrittenComposedAddressesOffKey ?? 0} judged Off-key, ${population.rewrittenShownAddresses ?? 'not counted'} to an address the Run was shown), ${population.unseenPhraseRewrites ?? 'not counted'} search(es) ran with an Unseen Phrase unquoted (${population.unseenPhraseRewritesOffKey ?? 0} judged Off-key), ${population.engineRewrites ?? 'not counted'} search(es) ran on the Run Engine in place of another Web Engine (${population.engineRewritesOffKey ?? 0} judged Off-key), ${populationResultPicksText(population)}, ${populationSelectedPassagesText(population)}, ${populationRunMadeUseText(population)}, ${populationContradictionNotesText(population)}, ${population.subagentRounds} Subagent round(s), ` +
-      `${population.mergedCheckpoints} merged Evidence Checkpoint(s) (a floor), ${population.heldPageRoundsWithoutProgress} Held Page round(s) without Progress, ${population.bundledCheckpoints} bundled checkpoint round(s), ${population.sameSourceUnsupportedRounds} same-source unsupported round(s), ${subagentCitationsText(population.subagentCitations)}, ${populationSlipsText(population)}, ${delegatedPageCountsText(population.delegatedPageRounds)}, ${populationPastTheEndReadsText(population)}, ${populationBookkeepingBeforeAnswerText(population)}, ${populationAnswerCheckpointsText(population)}, ` +
+      `${population.mergedCheckpoints} merged Evidence Checkpoint(s) (a floor), ${population.heldPageRoundsWithoutProgress} Held Page round(s) without Progress, ${population.bundledCheckpoints} bundled checkpoint round(s), ${population.sameSourceUnsupportedRounds} same-source unsupported round(s), ${subagentCitationsText(population.subagentCitations)}, ${populationSlipsText(population)}, ${delegatedPageCountsText(population.delegatedPageRounds)}, ${populationPastTheEndReadsText(population)}, ${populationBookkeepingBeforeAnswerText(population)}, ${populationBookkeepingBeforeCutText(population)}, ${populationAnswerCheckpointsText(population)}, ` +
       `${population.malformedAnswers} Malformed Answer(s) (${population.answerRetries} retried), ${populationOffLanguageAnswersText(population)}, ` +
       `${transportText(population)}, ` +
       `${populationSkipsText(population)}, ${populationCutsText(population)}, ` +
@@ -4910,6 +4981,7 @@ function attemptSection(attempt: AuditAttempt): string[] {
   lines.push(`- ${tierEscalationsText(mechanical.tierEscalations)}`)
   lines.push(`- reads refused as past the end: ${mechanical.pastTheEndReads === undefined ? 'not counted' : rounds(mechanical.pastTheEndReads)}`)
   lines.push(`- bookkeeping rounds right before the Answer: ${attempt.bookkeepingBeforeAnswer === undefined ? 'not counted' : rounds(attempt.bookkeepingBeforeAnswer)}`)
+  lines.push(`- bookkeeping rounds right before the cut: ${attempt.bookkeepingBeforeCut === undefined ? 'not counted' : rounds(attempt.bookkeepingBeforeCut)}`)
   lines.push(
     `- Answer Checkpoints: ${
       mechanical.answerCheckpoints === undefined
