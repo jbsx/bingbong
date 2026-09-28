@@ -1108,7 +1108,9 @@ across one and says so with a marker.
 
 **The headline**, per population with initial first and follow-up beside it,
 each metric with the direction that is better so its delta knows its colour:
-verified attempts (Grade status `pass`; higher), checks satisfied as
+verified attempts (Grade status `pass`; higher), under them the second
+reading of #287 (verified, or failing only on unasked facts; no direction and
+no colour, see below), checks satisfied as
 `n / total` (higher), `rounds_wasted` primary verdicts (lower),
 `answer_omitted` primary verdicts (lower), Off-key rounds (lower), failed
 rounds (lower), attempts at budget (lower), median run duration in seconds
@@ -1169,11 +1171,11 @@ set → issue → metric file exists: what a set was captured for is on its issu
 
 ### Facts the command did not ask
 
-Decided on #287, grilled 2026-09-28 from the `fix-283` and `fix-284` traces;
-not yet built. A key may require a fact its command never asks for. The
-Eurostar command asks for "the smallest reduction", and its key also requires
-that removing the guitar would work (`fact-07`) and that the suitcases are
-within the length limit (`fact-03`). Of the 32 Eurostar initials with any
+Decided on #287, grilled 2026-09-28 from the `fix-283` and `fix-284` traces.
+A key may require a fact its command never asks for (glossary: Unasked
+Fact). The Eurostar command asks for "the smallest reduction", and its key
+also requires that removing the guitar would work (`fact-07`) and that the
+suitcases are within the length limit (`fact-03`). Of the 32 Eurostar initials with any
 missed fact across the graded sets on disk, 19 failed on those two alone, and
 every such Run had stated every Asked Item it declared.
 
@@ -1185,17 +1187,90 @@ ledger's headline report a second reading beside verified attempts:
 those not verified whose unsatisfied checks are all on a list of unasked
 checks. It is reported, never gated, and never replaces the verified count.
 
-The list lives in its own module under `e2e/live/`, outside `keys.ts`: the
-key's digest is over its content, so a mark inside the key would make every
-existing grade stale. It holds check ids and a reason each, no check wording,
-and starts with `fact-03` and `fact-07` of the Eurostar initial. A check joins
-it only when the command's text does not ask for it.
+The list lives in its own module, `e2e/live/unaskedFacts.ts`, outside
+`keys.ts`: the key's digest is over its content, so a mark inside the key
+would make every existing grade stale. It holds check ids and a reason each,
+no check wording, and starts with `fact-03` and `fact-07` of the Eurostar
+initial. A check joins it only when the command's text does not ask for it.
+It imports nothing and nothing on the capture path loads it; `corpus.test.ts`
+pins both, and that every id on it is a check the key manifest declares for
+that Hunt and step.
 
-The reading comes from the per-attempt `checksUnsatisfied` the committed
-audits already hold, so past families gain it when their aggregates are
-rebuilt, with no capture and no reviewer spend. An audit that predates the
-field reads as not recorded, not as zero. The pass reports carry no per-check
-results, which is why `live:summary` does not print it.
+**The rule**, per attempt, from its Grade status and its `checksUnsatisfied`:
+verified when the status is `pass`; failing only on unasked facts when it is
+not, the unsatisfied checks are not empty, and every one of them is on the
+list for that attempt's Hunt and step. An attempt with no Grade or a pending
+one, and an attempt of an audit written before `checksUnsatisfied`, is **not
+recorded**: it counts on neither side and leaves the denominator, so a
+reading is `n of the attempts recorded` with the not recorded said beside it,
+never a zero; so is a graded attempt in a slot the key has no task for.
+`fix-235`, `fix-236`, `fix-237` and `fix-239` were judged under
+`audit-p1`, which kept the list under the name `checksNotReached`; they read
+as not recorded, their verified attempts included, so a family reads whole or
+not at all. The `Checks satisfied` metric still reads both names.
+
+**Where it shows.** The Round Audit writes it per population as
+`verifiedOrUnasked { verified, failingOnlyOnUnasked, notRecorded }`, in the
+pooled populations of an aggregate and in each set's under `perSet`, and
+prints a section of its own before the tool rounds: a row per population and,
+in an aggregate, a row per set under it, with the Unasked Facts named by
+check id.
+An attempt's own section says which of the four it is. The Fix Ledger shows
+it in the headline right under verified attempts, with the per-Pass values
+and the Hunt × step drill-down the other headline metrics have. It is the one
+headline metric with no direction: its delta is printed and never coloured,
+and no gate may be set on it. `n/r` on the page is an attempt or a Pass not
+recorded. The ledger reads it from the per-Pass attempts, as it reads the
+verified count, so it needs no aggregate to have been restated.
+
+**Past captures** gained it with no capture and no reviewer spend:
+
+```sh
+pnpm live:unasked [--reports=<dir>] [--dry-run]
+```
+
+restates every aggregate audit in the directory from the per-Pass audits
+beside it. It restates rather than rebuilds: a whole rebuild of an aggregate
+written by an older audit adds every counter introduced since as a zero
+nobody counted and re-words its Markdown, so the command adds the one field
+to each population and the one section to the Markdown and leaves every other
+byte as written — taking the reading out of a restated file gives back the
+file as it was, for all 28 committed aggregates. It refuses, writing nothing,
+when an aggregate names a Pass with no audit beside it. Run it again when the
+list changes; an aggregate `pnpm live:audit` writes carries the reading
+already. The per-Pass audit files are read and never rewritten. The pass
+reports carry no per-check results, which is why `live:summary` does not
+print it.
+
+On initials, from the committed audits:
+
+| Capture | Verified | Failing only on unasked facts | Second reading |
+| --- | --- | --- | --- |
+| baseline | 0/12 | 1 | 1/12 |
+| fix-240 | 2/12 | 0 | 2/12 |
+| fix-242 | 2/12 | 1 | 3/12 |
+| fix-242r | 5/12 | 1 | 6/12 |
+| baseline2 | 4/12 | 2 | 6/12 |
+| fix-250 | 4/12 | 0 | 4/12 |
+| fix-252 | 4/12 | 0 | 4/12 |
+| fix-253-256 | 7/12 | 0 | 7/12 |
+| fix-256r | 4/12 | 2 | 6/12 |
+| fix-256r2 | 2/12 | 2 | 4/12 |
+| fix-257 | 4/12 | 1 | 5/12 |
+| fix-258-259 | 6/12 | 0 | 6/12 |
+| fix-260-262 | 1/12 | 2 | 3/12 |
+| fix-263-264 | 6/12 | 1 | 7/12 |
+| baseline3 | 3/12 | 2 | 5/12 |
+| fix-265-267 | 14/20 | 1 | 15/20 |
+| fix-270 | 9/12 | 1 | 10/12 |
+| jev-off | 9/12 | 0 | 9/12 |
+| jev-on | 9/12 | 1 | 10/12 |
+| fix-281 | 8/12 | 1 | 9/12 |
+| fix-284 | 8/12 | 3 | 11/12 |
+| fix-283 | 9/12 | 1 | 10/12 |
+| fix-288-290 | 8/12 | 0 | 8/12 |
+
+No follow-up fails only on unasked facts: the list names no follow-up check.
 
 ## Safety of the exported report
 
@@ -1227,7 +1302,7 @@ Sessions.
 ## Verifying a change here
 
 ```sh
-pnpm exec vitest run e2e/live/grades.test.ts e2e/live/report.test.ts e2e/live/summary.test.ts e2e/live/audit.test.ts e2e/live/gradingBench.test.ts e2e/live/gradingSetup.test.ts e2e/live/gradingBenchServer.test.ts e2e/live/gradingBenchPage.test.ts e2e/live/ledger.test.ts e2e/live/ledgerServer.test.ts e2e/live/ledgerPage.test.ts
+pnpm exec vitest run e2e/live/grades.test.ts e2e/live/report.test.ts e2e/live/summary.test.ts e2e/live/audit.test.ts e2e/live/gradingBench.test.ts e2e/live/gradingSetup.test.ts e2e/live/gradingBenchServer.test.ts e2e/live/gradingBenchPage.test.ts e2e/live/ledger.test.ts e2e/live/ledgerServer.test.ts e2e/live/ledgerPage.test.ts e2e/live/corpus.test.ts e2e/live/unasked.test.ts
 pnpm typecheck
 pnpm lint
 pnpm test

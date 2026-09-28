@@ -54,11 +54,17 @@ import {
   searchLoopCountsOf,
   similarQueries,
   validateJudgement,
+  restateVerifiedOrUnasked,
+  restateVerifiedOrUnaskedMarkdown,
+  unaskedStandingOf,
+  TOOL_ROUNDS_HEADING,
+  VERIFIED_OR_UNASKED_HEADING,
   WITHHELD_KEY_TEXT,
   withholdKeyText,
   type AuditAttempt,
   type AuditJudgement,
   type AuditMechanical,
+  type AuditPopulation,
   type AuditProvenance,
   type AuditReview,
   type AuditRound,
@@ -2199,6 +2205,146 @@ describe('a set and the aggregate', () => {
     expect(aggregate.value.caveats).toEqual(['set-1: a caveat'])
     expect(aggregate.value.note).toBe(AUDIT_COUNTS_NOTE)
     expect(formatAuditAggregate(aggregate.value)).toContain('counts and does not judge')
+  })
+
+  describe('verified, or failing only on unasked facts (#287)', () => {
+    /** A record as a file written before one of its fields would hold it. */
+    function without<T extends object, K extends keyof T>(value: T, key: K): Omit<T, K> {
+      const copy = { ...value }
+      delete copy[key]
+      return copy
+    }
+
+    const graded = (relation: 'initial' | 'revised_objective', status: string | null, checksUnsatisfied: readonly string[] | null | undefined, huntId = 'rule-eurostar-luggage'): AuditAttempt => {
+      const base = attemptOf(relation, null)
+      const mechanical = without(base.mechanical, 'checksUnsatisfied')
+      return {
+        ...base,
+        mechanical: {
+          ...mechanical,
+          huntId,
+          grade: status === null ? null : { status, reviewer: 'reviewer-x' },
+          ...(checksUnsatisfied === undefined ? {} : { checksUnsatisfied }),
+        } as AuditMechanical,
+      }
+    }
+
+    it('reads an attempt by its Grade and its checks unsatisfied, against the list of its own Hunt and step', () => {
+      const standing = (attempt: AuditAttempt) => unaskedStandingOf(attempt.mechanical)
+      expect(standing(graded('initial', 'pass', []))).toBe('verified')
+      expect(standing(graded('initial', 'useful_partial', ['fact-03']))).toBe('failing_only_on_unasked')
+      expect(standing(graded('initial', 'unsuccessful', ['fact-07', 'fact-03']))).toBe('failing_only_on_unasked')
+      // One check off the list is enough, and so is a list with nothing on it.
+      expect(standing(graded('initial', 'useful_partial', ['fact-03', 'fact-04']))).toBe('failing')
+      expect(standing(graded('initial', 'useful_partial', []))).toBe('failing')
+      // The list is per Hunt and step: the same ids elsewhere were asked.
+      expect(standing(graded('revised_objective', 'useful_partial', ['fact-03']))).toBe('failing')
+      expect(standing(graded('initial', 'useful_partial', ['fact-03'], 'compatibility-pi-camera'))).toBe('failing')
+    })
+
+    it('reads an attempt with no Grade, a pending one, or one whose audit predates the field as not recorded', () => {
+      const standing = (attempt: AuditAttempt) => unaskedStandingOf(attempt.mechanical)
+      expect(standing(graded('initial', null, ['fact-03', 'fact-07']))).toBe('not_recorded')
+      expect(standing(graded('initial', 'pending', ['fact-03']))).toBe('not_recorded')
+      expect(standing(graded('initial', 'useful_partial', undefined))).toBe('not_recorded')
+      // A verified attempt of such an audit too: a family reads whole or not at all.
+      expect(standing(graded('initial', 'pass', undefined))).toBe('not_recorded')
+      // A slot the key has no task for carries null, and a Grade there says nothing of checks.
+      expect(standing(graded('initial', 'useful_partial', null))).toBe('not_recorded')
+      // The audit-p1 name is not the field.
+      const p1 = graded('initial', 'useful_partial', undefined)
+      expect(standing({ ...p1, mechanical: { ...p1.mechanical, checksNotReached: ['fact-03'] } as AuditMechanical })).toBe('not_recorded')
+    })
+
+    const attempts = [
+      graded('initial', 'pass', []),
+      graded('initial', 'useful_partial', ['fact-07']),
+      graded('initial', 'useful_partial', ['fact-01']),
+      graded('initial', null, ['fact-01']),
+      graded('revised_objective', 'pass', []),
+    ]
+    const first = buildAuditSet(provenanceOf(), attempts, [])
+    const second = buildAuditSet(provenanceOf({ setId: 'set-2', createdAt: '2026-09-12T18:00:00.000Z' }), [graded('initial', 'useful_partial', ['fact-03', 'fact-07'])], [])
+
+    it('counts the population, the not recorded on neither side', () => {
+      expect(first.populations.initial.verifiedOrUnasked).toEqual({ verified: 1, failingOnlyOnUnasked: 1, notRecorded: 1 })
+      expect(first.populations.followUp.verifiedOrUnasked).toEqual({ verified: 1, failingOnlyOnUnasked: 0, notRecorded: 0 })
+      expect(second.populations.followUp.verifiedOrUnasked).toEqual({ verified: 0, failingOnlyOnUnasked: 0, notRecorded: 0 })
+    })
+
+    it('pools the aggregate and gives each set its own, from the attempts of a set written before the reading', () => {
+      const older = without(second.populations.initial, 'verifiedOrUnasked')
+      const aggregate = buildAuditAggregate([first, { ...second, populations: { ...second.populations, initial: older } }], '2026-09-13T11:00:00.000Z')
+      if (!aggregate.ok) throw new Error(aggregate.errors.join('; '))
+      const { initial } = aggregate.value.populations
+      expect(initial.verifiedOrUnasked).toEqual({ verified: 1, failingOnlyOnUnasked: 2, notRecorded: 1 })
+      expect(initial.perSet.map((entry) => entry.population.verifiedOrUnasked)).toEqual([
+        { verified: 1, failingOnlyOnUnasked: 1, notRecorded: 1 },
+        { verified: 0, failingOnlyOnUnasked: 1, notRecorded: 0 },
+      ])
+    })
+
+    it('prints the reading in its own section, the sum over the attempts recorded, and names check ids only', () => {
+      const aggregate = buildAuditAggregate([first, second], '2026-09-13T11:00:00.000Z')
+      if (!aggregate.ok) throw new Error(aggregate.errors.join('; '))
+      const markdown = formatAuditAggregate(aggregate.value)
+      expect(markdown).toContain(VERIFIED_OR_UNASKED_HEADING)
+      expect(markdown).toContain('Reported, never gated')
+      expect(markdown).toContain('Unasked facts, by check id: rule-eurostar-luggage initial fact-03, fact-07.')
+      expect(markdown).toContain('| initial | 5 | 1 | 2 | 3 of 4 | 1 |')
+      expect(markdown).toContain('| initial: set-1 | 4 | 1 | 1 | 2 of 3 | 1 |')
+      expect(markdown).toContain('| initial: set-2 | 1 | 0 | 1 | 1 of 1 | 0 |')
+      expect(markdown).toContain('| follow_up | 1 | 1 | 0 | 1 of 1 | 0 |')
+      expect(markdown.indexOf(VERIFIED_OR_UNASKED_HEADING)).toBeLessThan(markdown.indexOf(TOOL_ROUNDS_HEADING))
+
+      const set = formatAuditSet(first)
+      expect(set).toContain('| initial | 4 | 1 | 1 | 2 of 3 | 1 |')
+      expect(set).toContain('- verified, or failing only on unasked facts: failing only on unasked facts')
+      expect(set).toContain('- verified, or failing only on unasked facts: not recorded')
+    })
+
+    it('says not recorded, never zero, where no attempt could say', () => {
+      expect(auditModule.populationOf('initial', [graded('initial', 'useful_partial', undefined), graded('initial', 'pass', undefined)]).verifiedOrUnasked).toEqual({ verified: 0, failingOnlyOnUnasked: 0, notRecorded: 2 })
+      const unrecorded = buildAuditSet(provenanceOf(), [graded('initial', null, ['fact-03']), graded('initial', 'pending', ['fact-03'])], [])
+      expect(unrecorded.populations.initial.verifiedOrUnasked).toEqual({ verified: 0, failingOnlyOnUnasked: 0, notRecorded: 2 })
+      expect(formatAuditSet(unrecorded)).toContain('| initial | 2 | not recorded | not recorded | not recorded | 2 |')
+      // And a population read from a file written before the reading.
+      const older = without(unrecorded.populations.initial, 'verifiedOrUnasked')
+      expect(formatAuditSet({ ...unrecorded, populations: { ...unrecorded.populations, initial: older } })).toContain('| initial | 2 | not recorded | not recorded | not recorded | 2 |')
+    })
+
+    it('restates a committed aggregate with the reading and nothing else, twice over the same', () => {
+      const built = buildAuditAggregate([first, second], '2026-09-13T11:00:00.000Z')
+      if (!built.ok) throw new Error(built.errors.join('; '))
+      const strip = (population: AuditPopulation): AuditPopulation => without(population, 'verifiedOrUnasked')
+      const stripped = (key: 'initial' | 'followUp') => {
+        const { perSet, ...pooled } = built.value.populations[key]
+        return { ...strip(pooled), perSet: perSet.map((entry) => ({ setId: entry.setId, population: strip(entry.population) })) }
+      }
+      const written = { ...built.value, populations: { initial: stripped('initial'), followUp: stripped('followUp') } }
+      const writtenMarkdown = formatAuditAggregate(built.value)
+        .split(VERIFIED_OR_UNASKED_HEADING)
+        .map((part, index) => (index === 0 ? part : part.slice(part.indexOf(TOOL_ROUNDS_HEADING))))
+        .join('')
+      expect(writtenMarkdown).not.toContain('unasked')
+
+      const restated = restateVerifiedOrUnasked(written, [second, first])
+      if (!restated.ok) throw new Error(restated.errors.join('; '))
+      expect(JSON.stringify(restated.value)).toBe(JSON.stringify(built.value))
+      const markdown = restateVerifiedOrUnaskedMarkdown(writtenMarkdown, restated.value)
+      expect(markdown).toEqual({ ok: true, value: formatAuditAggregate(built.value) })
+
+      const again = restateVerifiedOrUnasked(restated.value, [first, second])
+      expect(again.ok && JSON.stringify(again.value)).toBe(JSON.stringify(built.value))
+      expect(restateVerifiedOrUnaskedMarkdown(formatAuditAggregate(built.value), built.value)).toEqual({ ok: true, value: formatAuditAggregate(built.value) })
+    })
+
+    it('refuses to restate an aggregate naming a set it was not given, or a Markdown with nowhere to write', () => {
+      const built = buildAuditAggregate([first, second], '2026-09-13T11:00:00.000Z')
+      if (!built.ok) throw new Error(built.errors.join('; '))
+      expect(restateVerifiedOrUnasked(built.value, [first])).toEqual({ ok: false, errors: ['capture set set-2 has no per-Pass audit to read its attempts from'] })
+      expect(restateVerifiedOrUnaskedMarkdown('# no sections', built.value).ok).toBe(false)
+    })
   })
 
   it('refuses sets whose shared provenance differs, one set, or one set named twice', () => {

@@ -14,7 +14,10 @@
   its Reference (the most recent Baseline before it, or the one chosen in
   the row's select) on the headline metrics, each population — initial,
   then follow-up — with the whole-set value, the per-Pass values small
-  beside it, and the delta coloured by the metric's own direction. A metric
+  beside it, and the delta coloured by the metric's own direction — a
+  metric with none (the second reading beside verified attempts, #287) is
+  reported and never gated, so its delta has no colour; "n/r" is an attempt
+  or a Pass it could not read, not recorded rather than zero. A metric
   whose two sides were judged under different conditions carries a marker
   naming the axis. Under the headline: every counter with its raw delta,
   and the Hunt × step drill-down across the Passes of both sets. The Tool
@@ -95,7 +98,7 @@
 <script>
 'use strict'
 
-const METRIC_ORDER = ['verified', 'checks', 'rounds_wasted_primary', 'answer_omitted_primary', 'off_key', 'failed_rounds', 'attempts_at_budget', 'median_run_duration']
+const METRIC_ORDER = ['verified', 'verified_or_unasked', 'checks', 'rounds_wasted_primary', 'answer_omitted_primary', 'off_key', 'failed_rounds', 'attempts_at_budget', 'median_run_duration']
 const POPULATIONS = [{ key: 'initial', label: 'initial' }, { key: 'followUp', label: 'follow-up' }]
 
 function el(tag, attrs, children) {
@@ -123,7 +126,8 @@ function percent(reading) {
 
 /** The whole-set value: a count with its denominator and share, a count of its attempts, or seconds. */
 function formatAggregate(metric, reading) {
-  if (reading.value === null) return '—'
+  if (reading.value === null) return reading.notRecorded ? 'not recorded' : '—'
+  if (reading.notRecorded) return `${formatAggregate(metric, { value: reading.value, over: reading.over })} · ${reading.notRecorded} not recorded`
   if (metric.unit === 'seconds') return `${Math.round(reading.value)} s`
   if (reading.over === null) return String(reading.value)
   if (metric.compare === 'share') {
@@ -137,7 +141,7 @@ function formatAggregate(metric, reading) {
 function formatPassCell(metric, cell) {
   if (cell.state === 'missing') return '—'
   if (cell.state === 'measurement_failed') return 'failed'
-  if (cell.reading.value === null) return '—'
+  if (cell.reading.value === null) return cell.reading.notRecorded ? 'n/r' : '—'
   return metric.unit === 'seconds' ? `${Math.round(cell.reading.value)} s` : String(cell.reading.value)
 }
 
@@ -146,7 +150,7 @@ function formatAttemptCell(metric, cell) {
   if (cell.state === 'missing') return '—'
   if (cell.state === 'measurement_failed') return 'failed'
   const reading = cell.reading
-  if (reading.value === null) return '—'
+  if (reading.value === null) return reading.notRecorded ? 'n/r' : '—'
   if (metric.unit === 'seconds') return `${Math.round(reading.value)} s`
   if (metric.unit === 'attempts') return reading.value === 1 ? 'yes' : 'no'
   return `${reading.value}/${reading.over}`
@@ -154,6 +158,7 @@ function formatAttemptCell(metric, cell) {
 
 function formatDelta(metric, delta) {
   if (delta === null) return { text: '—', className: 'none', title: 'no Reference' }
+  // A metric with no direction is reported and never gated: its delta has no colour.
   const className = delta.better === null ? 'same' : delta.better ? 'ok' : 'bad'
   if (delta.value === null && delta.share === null) return { text: '—', className: 'none', title: 'one side has no value' }
   if (metric.unit === 'seconds') return { text: `${signed(delta.value, 1)} s`, className, title: 'Subject minus Reference, median seconds' }
@@ -180,7 +185,7 @@ function headlineTable(row, passLabels) {
   ])
   const body = row.headline.map((entry) => {
     const metric = entry.metric
-    const cells = [el('td', { class: 'metric' }, [metric.label, el('span', { class: 'direction', text: metric.direction === 'higher' ? '↑ better' : '↓ better' }), markerSpan(entry.markers)])]
+    const cells = [el('td', { class: 'metric' }, [metric.label, el('span', { class: 'direction', text: metric.direction === null ? 'reported, never gated' : metric.direction === 'higher' ? '↑ better' : '↓ better' }), markerSpan(entry.markers)])]
     for (const population of POPULATIONS) {
       const side = entry.populations[population.key]
       const sideCell = (name, value) =>

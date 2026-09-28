@@ -49,6 +49,23 @@ Shared by every set, and checked before anything was counted:
 - initial: 66 Off-key round(s), 20 Search Loop round(s) by the reviewer (9 by the streak rule; attempts by search source rail 12, replay 0, none 0), 0 inherited, 5 rejected Evidence Checkpoint(s), 1 walled round(s), 7 navigate(s) landed on a Not-found Page (7 judged Off-key), 53 Subagent round(s), 0 merged Evidence Checkpoint(s) (a floor), 0 Held Page round(s) without Progress, 0 Answer(s) with an Identity Slip, 0 id(s) slipped, 0 Malformed Answer(s) (0 retried), 0 stopped early, 4 answer omitted, 17 overrule(s), 57 flag(s); Finalization Causes: budget_exhausted 5, deadline_reached 1, model_answered 1, objective_met 5
 - follow_up: 12 Off-key round(s), 0 Search Loop round(s) by the reviewer (0 by the streak rule; attempts by search source rail 1, replay 0, none 5), 8 inherited, 14 rejected Evidence Checkpoint(s), 1 walled round(s), 2 navigate(s) landed on a Not-found Page (2 judged Off-key), 26 Subagent round(s), 0 merged Evidence Checkpoint(s) (a floor), 2 Held Page round(s) without Progress, 0 Answer(s) with an Identity Slip, 0 id(s) slipped, 0 Malformed Answer(s) (0 retried), 1 stopped early, 1 answer omitted, 3 overrule(s), 22 flag(s); Finalization Causes: budget_exhausted 1, deadline_reached 1, objective_met 4
 
+## Verified, or failing only on unasked facts
+
+A second reading beside the verified count (#287): the attempts verified, plus those not verified whose unsatisfied checks are all checks the command did not ask for. Reported, never gated, and never in place of the verified count. An attempt with no Grade, or from an audit written before the checks unsatisfied were kept under that name, is not recorded and counts on neither side.
+
+Unasked facts, by check id: rule-eurostar-luggage initial fact-03, fact-07.
+
+| population | attempts | verified | failing only on unasked facts | verified, or failing only on unasked facts | not recorded |
+| --- | --- | --- | --- | --- | --- |
+| initial | 12 | 5 | 1 | 6 of 12 | 0 |
+| initial: fix-242r-1 | 4 | 2 | 0 | 2 of 4 | 0 |
+| initial: fix-242r-2 | 4 | 1 | 1 | 2 of 4 | 0 |
+| initial: fix-242r-3 | 4 | 2 | 0 | 2 of 4 | 0 |
+| follow_up | 6 | 3 | 0 | 3 of 6 | 0 |
+| follow_up: fix-242r-1 | 2 | 0 | 0 | 0 of 2 | 0 |
+| follow_up: fix-242r-2 | 2 | 2 | 0 | 2 of 2 | 0 |
+| follow_up: fix-242r-3 | 2 | 1 | 0 | 1 of 2 | 0 |
+
 ## Tool rounds
 
 The rounds outside Finalization that called each tool — a round counts once per tool, refused calls included — and their share of the tool rounds used. Counted from the Run Trace; the reviewer never sees it.

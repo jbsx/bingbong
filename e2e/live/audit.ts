@@ -33,8 +33,10 @@
 //
 // NOTHING HERE LOADS A KEY. The CLI hands the reviewer the key bundle the way
 // `live:grade` does; this module sees the key only as a list of strings to
-// check an output against. Relative imports carry `.ts` (the Node
-// type-stripping pattern the scripts run under).
+// check an output against. The list of unasked checks it does load
+// (`unaskedFacts.ts`, #287) holds check ids and no check wording. Relative
+// imports carry `.ts` (the Node type-stripping pattern the scripts run
+// under).
 
 import { createHash } from 'node:crypto'
 import { blockedOrInertAction, type ConsumedNothing } from '../../src/core/browser/actionOutcome.ts'
@@ -60,6 +62,7 @@ import { allowedDifferenceLine, type AllowedDifference, type AllowedDifferenceRe
 import type { Validation } from './artifacts.ts'
 import type { LiveGradeEntry, LiveKeyTask } from './grades.ts'
 import type { AttemptRelation, LiveAttemptCapture, Observed } from './types.ts'
+import { UNASKED_FACTS, unaskedFactsOf } from './unaskedFacts.ts'
 
 export const LIVE_AUDIT_KIND = 'bingbong.live.round-audit'
 export const LIVE_AUDIT_AGGREGATE_KIND = 'bingbong.live.round-audit-aggregate'
@@ -1049,6 +1052,29 @@ export interface AuditPopulation {
    * used. Counted from the Run Trace, never shown to the reviewer.
    */
   readonly toolRounds: readonly AuditToolRounds[]
+  /**
+   * The second reading beside the verified count (#287): verified, or failing
+   * only on unasked facts. Reported, never gated. Absent on an audit written
+   * before it, whose attempts still say it.
+   */
+  readonly verifiedOrUnasked?: VerifiedOrUnasked
+}
+
+/**
+ * Where one attempt stands in the second reading (#287). `not_recorded` is an
+ * attempt with no Grade, or one from an audit written before the checks
+ * unsatisfied were kept under that name: nothing says which checks it missed.
+ */
+export type UnaskedStanding = 'verified' | 'failing_only_on_unasked' | 'failing' | 'not_recorded'
+
+/** Attempts by their standing in the second reading (#287); the not recorded count in neither of the other two. */
+export interface VerifiedOrUnasked {
+  /** Attempts the Grade verified. */
+  readonly verified: number
+  /** Attempts not verified whose unsatisfied checks are all checks the command did not ask for. */
+  readonly failingOnlyOnUnasked: number
+  /** Attempts nothing can be said of: never read as zero. */
+  readonly notRecorded: number
 }
 
 export interface AuditToolRounds {
@@ -3508,6 +3534,39 @@ export function checksUnsatisfiedText(mechanical: Pick<AuditMechanical, 'grade' 
   return unsatisfied.length === 0 ? 'none' : `${unsatisfied.join(', ')} (${unsatisfied.length} of ${mechanical.checksTotal})`
 }
 
+/**
+ * One attempt's standing in the second reading (#287), from its Grade and
+ * its `checksUnsatisfied` alone. An audit judged under `audit-p1` kept the
+ * list under another name and reads as not recorded, verified attempts
+ * included, so a family is read whole or not at all.
+ */
+export function unaskedStandingOf(mechanical: Pick<AuditMechanical, 'huntId' | 'stepId' | 'grade'> & { readonly checksUnsatisfied?: readonly string[] | null }): UnaskedStanding {
+  if (mechanical.checksUnsatisfied === undefined || isUngraded(mechanical)) return 'not_recorded'
+  if (mechanical.grade?.status === 'pass') return 'verified'
+  // Null is a slot the key has no task for: a Grade with no checks to have missed says nothing either.
+  if (mechanical.checksUnsatisfied === null) return 'not_recorded'
+  const unsatisfied = mechanical.checksUnsatisfied
+  const unasked = unaskedFactsOf(mechanical.huntId, mechanical.stepId)
+  return unsatisfied.length > 0 && unsatisfied.every((checkId) => unasked.has(checkId)) ? 'failing_only_on_unasked' : 'failing'
+}
+
+/** The second reading over some attempts (#287). */
+export function verifiedOrUnaskedOf(attempts: readonly AuditAttempt[]): VerifiedOrUnasked {
+  const standings = attempts.map((attempt) => unaskedStandingOf(attempt.mechanical))
+  const count = (standing: UnaskedStanding): number => standings.filter((listed) => listed === standing).length
+  return { verified: count('verified'), failingOnlyOnUnasked: count('failing_only_on_unasked'), notRecorded: count('not_recorded') }
+}
+
+/**
+ * The second reading as it is printed (#287): the sum of its two counts over
+ * the attempts recorded, or null where no attempt could say — which every
+ * surface prints as "not recorded", never as zero.
+ */
+export function recordedReadingOf(attempts: number, reading: VerifiedOrUnasked | undefined): { readonly sum: number; readonly recorded: number } | null {
+  if (reading === undefined || reading.notRecorded >= attempts) return null
+  return { sum: reading.verified + reading.failingOnlyOnUnasked, recorded: attempts - reading.notRecorded }
+}
+
 // ---------------------------------------------------------------------------
 // The reviewer's output
 
@@ -4115,6 +4174,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
     finalizationCauses: Object.fromEntries(Object.entries(causes).sort(([left], [right]) => left.localeCompare(right))),
     attemptsAtBudget: atBudget,
     toolRounds: mostCalledFirst(byTool).map(([tool, rounds]) => ({ tool, rounds, share: toolRoundsUsed === 0 ? null : rounds / toolRoundsUsed })),
+    verifiedOrUnasked: verifiedOrUnaskedOf(attempts),
   }
 }
 
@@ -4174,7 +4234,42 @@ const SHARED_FIELDS: readonly { readonly name: string; readonly allowable?: Allo
 
 function aggregatePopulation(label: string, relation: AttemptRelation, sets: readonly AuditSetOutput[], pick: (set: AuditSetOutput) => AuditPopulation): AuditAggregatePopulation {
   const attempts = sets.flatMap((set) => set.attempts.filter((attempt) => attempt.mechanical.relation === relation))
-  return { ...populationOf(label, attempts), perSet: sets.map((set) => ({ setId: set.provenance.setId, population: pick(set) })) }
+  return { ...populationOf(label, attempts), perSet: sets.map((set) => ({ setId: set.provenance.setId, population: withVerifiedOrUnasked(pick(set), set, relation) })) }
+}
+
+/** A set's population with the second reading of its own attempts (#287): an audit written before the reading has them and not the count. */
+function withVerifiedOrUnasked(population: AuditPopulation, set: AuditSetOutput, relation: AttemptRelation): AuditPopulation {
+  return { ...population, verifiedOrUnasked: verifiedOrUnaskedOf(set.attempts.filter((attempt) => attempt.mechanical.relation === relation)) }
+}
+
+const AGGREGATE_RELATIONS: Readonly<Record<'initial' | 'followUp', AttemptRelation>> = { initial: 'initial', followUp: 'revised_objective' }
+
+/**
+ * A committed aggregate with the second reading added and nothing else
+ * touched (#287). An aggregate is rebuilt whole by `buildAuditAggregate`, but
+ * one written by an older audit would gain every counter added since, as a
+ * zero nobody counted; this restates the one reading from the per-Pass
+ * audits the aggregate names and leaves each other field as written.
+ */
+export function restateVerifiedOrUnasked(aggregate: AuditAggregate, sets: readonly AuditSetOutput[]): Validation<AuditAggregate> {
+  const named: AuditSetOutput[] = []
+  const errors: string[] = []
+  for (const { setId } of aggregate.provenance.sets) {
+    const set = sets.find((candidate) => candidate.provenance.setId === setId)
+    if (set === undefined) errors.push(`capture set ${setId} has no per-Pass audit to read its attempts from`)
+    else named.push(set)
+  }
+  if (errors.length > 0) return { ok: false, errors }
+  const restated = (key: 'initial' | 'followUp'): AuditAggregatePopulation => {
+    const relation = AGGREGATE_RELATIONS[key]
+    const { perSet, ...pooled } = aggregate.populations[key]
+    return {
+      ...pooled,
+      verifiedOrUnasked: verifiedOrUnaskedOf(named.flatMap((set) => set.attempts.filter((attempt) => attempt.mechanical.relation === relation))),
+      perSet: perSet.map((entry) => ({ setId: entry.setId, population: withVerifiedOrUnasked(entry.population, named.find((set) => set.provenance.setId === entry.setId)!, relation) })),
+    }
+  }
+  return { ok: true, value: { ...aggregate, populations: { initial: restated('initial'), followUp: restated('followUp') } } }
 }
 
 /** How an aggregate may be told to pool across one shared field (#279). */
@@ -4450,6 +4545,78 @@ function populationAnswerCheckpointsText(population: AuditPopulation): string {
   return `Answer Checkpoints: ${answerCheckpointCountsText(counts)}${counts.notRecorded > 0 ? `, ${counts.notRecorded} attempt(s) not recorded` : ''}`
 }
 
+const UNASKED_STANDING_LABELS: Readonly<Record<UnaskedStanding, string>> = {
+  verified: 'verified',
+  failing_only_on_unasked: 'failing only on unasked facts',
+  failing: 'neither',
+  not_recorded: 'not recorded',
+}
+
+/** The section the second reading is written before, by the formatters and by a restatement alike. */
+export const TOOL_ROUNDS_HEADING = '## Tool rounds'
+
+export const VERIFIED_OR_UNASKED_HEADING = '## Verified, or failing only on unasked facts'
+
+const VERIFIED_OR_UNASKED_NOTE =
+  'A second reading beside the verified count (#287): the attempts verified, plus those not verified whose unsatisfied checks are all checks the command did not ask for. ' +
+  'Reported, never gated, and never in place of the verified count. An attempt with no Grade, or from an audit written before the checks unsatisfied were kept under that name, is not recorded and counts on neither side.'
+
+/** The Unasked Facts by Hunt and step, check ids only: `rule-eurostar-luggage initial fact-03, fact-07`. */
+function unaskedFactsText(): string {
+  const steps = new Map<string, string[]>()
+  for (const entry of UNASKED_FACTS) {
+    const step = `${entry.huntId} ${entry.stepId}`
+    steps.set(step, [...(steps.get(step) ?? []), entry.checkId])
+  }
+  return [...steps.entries()].map(([step, checks]) => `${step} ${checks.join(', ')}`).join('; ')
+}
+
+/** One row of the second reading: the two counts, their sum over the attempts recorded, and the attempts that were not. */
+function verifiedOrUnaskedRow(label: string, attempts: number, reading: VerifiedOrUnasked | undefined): string {
+  const read = recordedReadingOf(attempts, reading)
+  if (read === null || reading === undefined) return `| ${label} | ${attempts} | not recorded | not recorded | not recorded | ${reading?.notRecorded ?? attempts} |`
+  return `| ${label} | ${attempts} | ${reading.verified} | ${reading.failingOnlyOnUnasked} | ${read.sum} of ${read.recorded} | ${reading.notRecorded} |`
+}
+
+/** The second reading as a section (#287): one row per population, and under each the sets it pools. */
+function verifiedOrUnaskedSection(populations: readonly (AuditPopulation & { readonly perSet?: AuditAggregatePopulation['perSet'] })[]): string[] {
+  const lines = [
+    VERIFIED_OR_UNASKED_HEADING,
+    '',
+    VERIFIED_OR_UNASKED_NOTE,
+    '',
+    `Unasked facts, by check id: ${unaskedFactsText()}.`,
+    '',
+    '| population | attempts | verified | failing only on unasked facts | verified, or failing only on unasked facts | not recorded |',
+    '| --- | --- | --- | --- | --- | --- |',
+  ]
+  for (const population of populations) {
+    lines.push(verifiedOrUnaskedRow(population.label, population.attempts, population.verifiedOrUnasked))
+    for (const entry of population.perSet ?? []) lines.push(verifiedOrUnaskedRow(`${population.label}: ${entry.setId}`, entry.population.attempts, entry.population.verifiedOrUnasked))
+  }
+  return lines
+}
+
+/**
+ * A committed aggregate's Markdown with the section of the second reading
+ * written in, in the place `formatAuditAggregate` gives it, and no other line
+ * touched (#287): a whole re-format would restate every line the formatter
+ * has reworded since the file was written.
+ */
+export function restateVerifiedOrUnaskedMarkdown(markdown: string, aggregate: AuditAggregate): Validation<string> {
+  const lines = markdown.split('\n')
+  const section = verifiedOrUnaskedSection([aggregate.populations.initial, aggregate.populations.followUp])
+  const written = lines.indexOf(VERIFIED_OR_UNASKED_HEADING)
+  if (written !== -1) {
+    const next = lines.findIndex((line, index) => index > written && line.startsWith('## '))
+    if (next === -1) return { ok: false, errors: ['the section of the second reading is the last one: nothing says where it ends'] }
+    return { ok: true, value: [...lines.slice(0, written), ...section, '', ...lines.slice(next)].join('\n') }
+  }
+  const before = lines.indexOf(TOOL_ROUNDS_HEADING)
+  if (before === -1) return { ok: false, errors: [`no "${TOOL_ROUNDS_HEADING}" section to write the second reading before`] }
+  return { ok: true, value: [...lines.slice(0, before), ...section, '', ...lines.slice(before)].join('\n') }
+}
+
 function judgementLines(populations: readonly AuditPopulation[]): string[] {
   return populations.map(
     (population) =>
@@ -4482,6 +4649,7 @@ function attemptSection(attempt: AuditAttempt): string[] {
   lines.push(
     `- grade ${mechanical.grade?.status ?? 'none'}; checks unsatisfied: ${checksUnsatisfiedText(mechanical)}`,
   )
+  lines.push(`- verified, or failing only on unasked facts: ${UNASKED_STANDING_LABELS[unaskedStandingOf(mechanical)]}`)
   lines.push(
     `- ${mechanical.subagent.rounds} Subagent round(s) over ${mechanical.subagent.agents} Subagent(s)${Object.keys(mechanical.subagent.byStop).length > 0 ? `, stopped by ${Object.entries(mechanical.subagent.byStop).map(([stop, count]) => `${stop} ${count}`).join(', ')}` : ''}; ` +
       `${mechanical.acceptedCheckpoints} accepted (${mechanical.mergedCheckpoints} merged, a floor) and ${mechanical.rejectedCheckpoints} rejected Evidence Checkpoint(s); ${mechanical.inheritedRounds} inherited round(s); ` +
@@ -4615,7 +4783,9 @@ export function formatAuditSet(audit: AuditSetOutput): string {
   lines.push('')
   lines.push(...judgementLines([audit.populations.initial, audit.populations.followUp]))
   lines.push('')
-  lines.push('## Tool rounds')
+  lines.push(...verifiedOrUnaskedSection([audit.populations.initial, audit.populations.followUp]))
+  lines.push('')
+  lines.push(TOOL_ROUNDS_HEADING)
   lines.push('')
   lines.push(TOOL_ROUNDS_NOTE)
   lines.push('')
@@ -4686,7 +4856,9 @@ export function formatAuditAggregate(aggregate: AuditAggregate): string {
   lines.push('')
   lines.push(...judgementLines([aggregate.populations.initial, aggregate.populations.followUp]))
   lines.push('')
-  lines.push('## Tool rounds')
+  lines.push(...verifiedOrUnaskedSection([aggregate.populations.initial, aggregate.populations.followUp]))
+  lines.push('')
+  lines.push(TOOL_ROUNDS_HEADING)
   lines.push('')
   lines.push(TOOL_ROUNDS_NOTE)
   lines.push('')

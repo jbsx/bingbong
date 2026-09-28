@@ -1519,6 +1519,15 @@ The capture set a Fix Ledger row measures, read as its Round Audit across its
 Passes. Never the app, the Run, or the model under measurement.
 _Avoid_: candidate, treatment, after, target
 
+**Unasked Fact**:
+A check a Grading Key requires that the command's text never asks for. Named
+by check id on a list outside the key, with the reason, and joined only on
+that evidence — never because Answers often miss it. It changes neither the
+key nor the product: it feeds a second reading beside the verified count,
+"verified, or failing only on unasked facts", which is reported and never
+gated.
+_Avoid_: optional check, bonus fact, unfair check, waived check
+
 ### Hardware
 
 **Kiosk**:

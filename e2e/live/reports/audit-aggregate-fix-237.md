@@ -47,6 +47,23 @@ Shared by every set, and checked before anything was counted:
 - initial: 72 Off-key round(s), 20 Search Loop round(s) by the reviewer (1 by the streak rule), 0 inherited, 4 rejected Evidence Checkpoint(s), 0 walled round(s), 39 Subagent round(s), 0 stopped early, 20 overrule(s), 54 flag(s); Finalization Causes: budget_exhausted 6, objective_met 5
 - follow_up: 0 Off-key round(s), 0 Search Loop round(s) by the reviewer (0 by the streak rule), 6 inherited, 10 rejected Evidence Checkpoint(s), 0 walled round(s), 13 Subagent round(s), 1 stopped early, 6 overrule(s), 23 flag(s); Finalization Causes: model_answered 1, objective_met 5
 
+## Verified, or failing only on unasked facts
+
+A second reading beside the verified count (#287): the attempts verified, plus those not verified whose unsatisfied checks are all checks the command did not ask for. Reported, never gated, and never in place of the verified count. An attempt with no Grade, or from an audit written before the checks unsatisfied were kept under that name, is not recorded and counts on neither side.
+
+Unasked facts, by check id: rule-eurostar-luggage initial fact-03, fact-07.
+
+| population | attempts | verified | failing only on unasked facts | verified, or failing only on unasked facts | not recorded |
+| --- | --- | --- | --- | --- | --- |
+| initial | 11 | not recorded | not recorded | not recorded | 11 |
+| initial: fix-237-1 | 3 | not recorded | not recorded | not recorded | 3 |
+| initial: fix-237-2 | 4 | not recorded | not recorded | not recorded | 4 |
+| initial: fix-237-3 | 4 | not recorded | not recorded | not recorded | 4 |
+| follow_up | 6 | not recorded | not recorded | not recorded | 6 |
+| follow_up: fix-237-1 | 2 | not recorded | not recorded | not recorded | 2 |
+| follow_up: fix-237-2 | 2 | not recorded | not recorded | not recorded | 2 |
+| follow_up: fix-237-3 | 2 | not recorded | not recorded | not recorded | 2 |
+
 ## Tool rounds
 
 The rounds outside Finalization that called each tool — a round counts once per tool, refused calls included — and their share of the tool rounds used. Counted from the Run Trace; the reviewer never sees it.

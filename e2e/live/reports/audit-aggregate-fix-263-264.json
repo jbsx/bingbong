@@ -254,6 +254,11 @@
           "share": 0.008547008547008548
         }
       ],
+      "verifiedOrUnasked": {
+        "verified": 6,
+        "failingOnlyOnUnasked": 1,
+        "notRecorded": 0
+      },
       "perSet": [
         {
           "setId": "fix-263-264-1",
@@ -438,7 +443,12 @@
                 "rounds": 1,
                 "share": 0.011235955056179775
               }
-            ]
+            ],
+            "verifiedOrUnasked": {
+              "verified": 2,
+              "failingOnlyOnUnasked": 0,
+              "notRecorded": 0
+            }
           }
         },
         {
@@ -613,7 +623,12 @@
                 "rounds": 1,
                 "share": 0.013888888888888888
               }
-            ]
+            ],
+            "verifiedOrUnasked": {
+              "verified": 2,
+              "failingOnlyOnUnasked": 1,
+              "notRecorded": 0
+            }
           }
         },
         {
@@ -780,7 +795,12 @@
                 "rounds": 3,
                 "share": 0.0410958904109589
               }
-            ]
+            ],
+            "verifiedOrUnasked": {
+              "verified": 2,
+              "failingOnlyOnUnasked": 0,
+              "notRecorded": 0
+            }
           }
         }
       ]
@@ -972,6 +992,11 @@
           "share": 0.014285714285714285
         }
       ],
+      "verifiedOrUnasked": {
+        "verified": 4,
+        "failingOnlyOnUnasked": 0,
+        "notRecorded": 0
+      },
       "perSet": [
         {
           "setId": "fix-263-264-1",
@@ -1145,7 +1170,12 @@
                 "rounds": 1,
                 "share": 0.038461538461538464
               }
-            ]
+            ],
+            "verifiedOrUnasked": {
+              "verified": 2,
+              "failingOnlyOnUnasked": 0,
+              "notRecorded": 0
+            }
           }
         },
         {
@@ -1326,7 +1356,12 @@
                 "rounds": 1,
                 "share": 0.03225806451612903
               }
-            ]
+            ],
+            "verifiedOrUnasked": {
+              "verified": 1,
+              "failingOnlyOnUnasked": 0,
+              "notRecorded": 0
+            }
           }
         },
         {
@@ -1481,7 +1516,12 @@
                 "rounds": 2,
                 "share": 0.15384615384615385
               }
-            ]
+            ],
+            "verifiedOrUnasked": {
+              "verified": 1,
+              "failingOnlyOnUnasked": 0,
+              "notRecorded": 0
+            }
           }
         }
       ]

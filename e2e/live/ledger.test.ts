@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { bookkeepingBeforeAnswerOver, offLanguageAnswersOver, PRE_RULE_OFF_LANGUAGE_ANSWERS, pastTheEndReadsOf, pastTheEndReadsOver, populationOf, replaySearchStreaks, SEARCH_STREAK_RULE, searchLoopCountsOf, type AuditAggregate, type AuditAttempt, type AuditPopulation, type AuditSetOutput } from './audit.ts'
+import { bookkeepingBeforeAnswerOver, offLanguageAnswersOver, pastTheEndReadsOf, pastTheEndReadsOver, populationOf, PRE_RULE_OFF_LANGUAGE_ANSWERS, replaySearchStreaks, restateVerifiedOrUnasked, restateVerifiedOrUnaskedMarkdown, SEARCH_STREAK_RULE, searchLoopCountsOf, type AuditAggregate, type AuditAttempt, type AuditPopulation, type AuditSetOutput } from './audit.ts'
 import {
   HEADLINE_METRICS,
   buildLedger,
@@ -689,5 +689,115 @@ describe('Off-language Answers (#286, ADR 0034)', () => {
 
     expect('offLanguageAnswers' in rebuilt).toBe(false)
     expect(JSON.stringify({ ...rebuilt, perSet: committed.perSet })).toBe(JSON.stringify(committed))
+  })
+})
+
+describe('verified, or failing only on unasked facts (#287)', () => {
+  const ID = 'verified_or_unasked'
+  const metric = HEADLINE_METRICS.find((listed) => listed.id === ID)!
+  const initialOf = (id: string, reference: string | null = null) =>
+    compareFamilies(family(committed, id), reference === null ? null : family(committed, reference)).headline.find((entry) => entry.metric.id === ID)!.populations.initial
+
+  it('sits beside verified attempts in the headline, with no direction to colour a delta by', () => {
+    expect(HEADLINE_METRICS.map((listed) => listed.id).slice(0, 2)).toEqual(['verified', ID])
+    expect(metric).toEqual({ id: ID, label: 'Verified, or failing only on unasked facts', direction: null, judgement: false, compare: 'share', unit: 'attempts' })
+    // Every other headline metric knows which way is better.
+    expect(HEADLINE_METRICS.filter((listed) => listed.direction === null).map((listed) => listed.id)).toEqual([ID])
+  })
+
+  it('reads the table #287 was decided on from the committed audits, the verified count unmoved beside it', () => {
+    const table = ['baseline3', 'fix-265-267', 'fix-270', 'jev-off', 'jev-on', 'fix-281', 'fix-284', 'fix-283'].map((id) => {
+      const headline = compareFamilies(family(committed, id), null).headline
+      const reading = (metricId: string) => headline.find((entry) => entry.metric.id === metricId)!.populations.initial.subject.aggregate
+      return [id, reading('verified'), reading(ID)]
+    })
+    expect(table).toEqual([
+      ['baseline3', { value: 3, over: 12 }, { value: 5, over: 12 }],
+      ['fix-265-267', { value: 14, over: 20 }, { value: 15, over: 20 }],
+      ['fix-270', { value: 9, over: 12 }, { value: 10, over: 12 }],
+      ['jev-off', { value: 9, over: 12 }, { value: 9, over: 12 }],
+      ['jev-on', { value: 9, over: 12 }, { value: 10, over: 12 }],
+      ['fix-281', { value: 8, over: 12 }, { value: 9, over: 12 }],
+      ['fix-284', { value: 8, over: 12 }, { value: 11, over: 12 }],
+      ['fix-283', { value: 9, over: 12 }, { value: 10, over: 12 }],
+    ])
+  })
+
+  it('gives the per-Pass values and a delta with no colour, whichever way it moved', () => {
+    const up = initialOf('fix-284', 'baseline3')
+    expect(up.subject.passes.map((pass) => pass.reading)).toEqual([{ value: 3, over: 4 }, { value: 4, over: 4 }, { value: 4, over: 4 }])
+    expect(up.reference?.aggregate).toEqual({ value: 5, over: 12 })
+    expect(up.delta).toEqual({ value: 6, share: 50, better: null })
+    expect(initialOf('baseline3', 'fix-284').delta).toEqual({ value: -6, share: -50, better: null })
+    // The verified count beside it keeps its colour.
+    const verified = compareFamilies(family(committed, 'fix-284'), family(committed, 'baseline3')).headline.find((entry) => entry.metric.id === 'verified')!
+    expect(verified.populations.initial.delta?.better).toBe(true)
+  })
+
+  it('reads a family audited before the field as not recorded, never as zero', () => {
+    for (const id of ['fix-235', 'fix-236', 'fix-237', 'fix-239']) {
+      const side = initialOf(id, 'baseline')
+      const initials = family(committed, id)
+        .passes.flatMap((pass) => pass.audit?.attempts ?? [])
+        .filter((attempt) => attempt.mechanical.relation === 'initial').length
+      expect(side.subject.aggregate, id).toEqual({ value: null, over: null, notRecorded: initials })
+      const read = side.subject.passes.filter((pass) => pass.state === 'value')
+      expect(read.length, id).toBeGreaterThan(0)
+      expect(read.every((pass) => pass.reading?.value === null && (pass.reading.notRecorded ?? 0) > 0), id).toBe(true)
+      expect(side.delta, id).toEqual({ value: null, share: null, better: null })
+    }
+  })
+
+  it('leaves an ungraded attempt out of both sides and says how many', () => {
+    const audit = readAudit('audit-fix-284-1.json')
+    const ungraded: AuditSetOutput = {
+      ...audit,
+      attempts: audit.attempts.map((attempt, index) => (index === 0 ? { ...attempt, mechanical: { ...attempt.mechanical, grade: null } } : attempt)),
+    }
+    const key = ungraded.attempts[0]!.mechanical.relation === 'initial' ? 'initial' : 'followUp'
+    const readingOf = (json: AuditSetOutput) =>
+      compareFamilies(family(buildLedger([file('audit-fix-284-1.json', json)]), 'fix-284'), null).headline.find((entry) => entry.metric.id === ID)!.populations[key].subject.aggregate
+    const written = readingOf(audit)
+    const read = readingOf(ungraded)
+    expect(written.notRecorded).toBeUndefined()
+    expect(read.over).toBe(written.over! - 1)
+    expect(read.notRecorded).toBe(1)
+  })
+
+  it('reads one attempt in the drill-down as yes or no, and an attempt not recorded as nothing', () => {
+    const eurostar = (id: string) =>
+      compareFamilies(family(committed, id), null).drillDown.find((entry) => entry.huntId === 'rule-eurostar-luggage' && entry.stepId === 'initial')!.metrics
+    // fix-284: no Eurostar initial was verified, and all three failed only on unasked facts.
+    const yes = { value: 1, over: 1 }
+    const no = { value: 0, over: 1 }
+    const notRecorded = { value: null, over: null, notRecorded: 1 }
+    expect(eurostar('fix-284').verified!.subject.map((cell) => cell.reading)).toEqual([no, no, no])
+    expect(eurostar('fix-284')[ID]!.subject.map((cell) => cell.reading)).toEqual([yes, yes, yes])
+    expect(eurostar('fix-239')[ID]!.subject.map((cell) => cell.reading)).toEqual([notRecorded, notRecorded, notRecorded])
+  })
+})
+
+describe('the committed aggregates and the second reading (#287)', () => {
+  const sets = committedFiles()
+    .map((listed) => listed.json as AuditSetOutput)
+    .filter((json) => json.kind === 'bingbong.live.round-audit')
+  const aggregates = readdirSync(REPORTS_DIR).filter((name) => /^audit-aggregate.*\.json$/.test(name))
+
+  it('carry the reading the per-Pass audits give, in the JSON and in the Markdown: restating one writes what is there', () => {
+    expect(aggregates.length).toBeGreaterThan(20)
+    for (const name of aggregates) {
+      const text = readFileSync(join(REPORTS_DIR, name), 'utf8')
+      const restated = restateVerifiedOrUnasked(JSON.parse(text) as AuditAggregate, sets)
+      if (!restated.ok) throw new Error(`${name}: ${restated.errors.join('; ')}`)
+      expect(`${JSON.stringify(restated.value, null, 2)}\n`, name).toBe(text)
+      const markdown = readFileSync(join(REPORTS_DIR, name.replace(/\.json$/, '.md')), 'utf8')
+      expect(restateVerifiedOrUnaskedMarkdown(markdown, restated.value), name).toEqual({ ok: true, value: markdown })
+    }
+  })
+
+  it('print it beside the populations: fix-284 at 11 of 12, a family audited before the field as not recorded', () => {
+    const markdownOf = (name: string) => readFileSync(join(REPORTS_DIR, name), 'utf8')
+    expect(markdownOf('audit-aggregate-fix-284.md')).toContain('| initial | 12 | 8 | 3 | 11 of 12 | 0 |')
+    expect(markdownOf('audit-aggregate-fix-239.md')).toContain('| initial | 12 | not recorded | not recorded | not recorded | 12 |')
   })
 })

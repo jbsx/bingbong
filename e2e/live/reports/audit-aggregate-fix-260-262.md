@@ -49,6 +49,23 @@ Shared by every set, and checked before anything was counted:
 - initial: 89 Off-key round(s), 32 Search Loop round(s) by the reviewer (25 by the streak rule, heads included: 17 at streak 2 or beyond, 9 at 3 or beyond; attempts by search source rail 12, replay 0, none 0; navigate searches by Search URL form q 50, param 0, path 1; 4 Blocked Action(s) and 1 inert click(s), 0 inside a Search Loop streak; 1 Unavailable Landing(s) (1 by status, 0 by title), 1 followed by a search; 1 consent dismissal(s), 3 hand consent click(s), 2 blocked then hand consent), 0 inherited, 6 rejected Evidence Checkpoint(s), 6 walled round(s), 10 navigate(s) landed on a Not-found Page (9 judged Off-key), 14 Composed Address(es) rewritten into a site search (9 judged Off-key, 0 to an address the Run was shown), 26 Subagent round(s), 0 merged Evidence Checkpoint(s) (a floor), 3 Held Page round(s) without Progress, 9 bundled checkpoint round(s), 0 same-source unsupported round(s), 0 Answer(s) with an Identity Slip, 0 id(s) slipped, 1 Malformed Answer(s) (1 retried), 3 skipped bookkeeping round(s), 2 Finalization round(s) cut by the Allowance (1 after a first token, 1 silent); first-token latency p50 3176 ms, p90 5888 ms over 253 round(s), 12 declared Asked Items (5 with an unverified standing, 2 shape failure(s), 0 retried), 1 stopped early, 7 answer omitted, 23 overrule(s), 48 flag(s); Finalization Causes: budget_exhausted 7, none 1, objective_met 4
 - follow_up: 5 Off-key round(s), 3 Search Loop round(s) by the reviewer (3 by the streak rule, heads included: 2 at streak 2 or beyond, 1 at 3 or beyond; attempts by search source rail 2, replay 0, none 4; navigate searches by Search URL form q 7, param 0, path 0; 0 Blocked Action(s) and 0 inert click(s), 0 inside a Search Loop streak; 0 Unavailable Landing(s) (0 by status, 0 by title), 0 followed by a search; 0 consent dismissal(s), 0 hand consent click(s), 0 blocked then hand consent), 7 inherited, 7 rejected Evidence Checkpoint(s), 2 walled round(s), 2 navigate(s) landed on a Not-found Page (0 judged Off-key), 1 Composed Address(es) rewritten into a site search (1 judged Off-key, 0 to an address the Run was shown), 26 Subagent round(s), 0 merged Evidence Checkpoint(s) (a floor), 3 Held Page round(s) without Progress, 3 bundled checkpoint round(s), 0 same-source unsupported round(s), 0 Answer(s) with an Identity Slip, 0 id(s) slipped, 0 Malformed Answer(s) (0 retried), 2 skipped bookkeeping round(s), 0 Finalization round(s) cut by the Allowance; first-token latency p50 5052 ms, p90 6399 ms over 66 round(s), 6 declared Asked Items (1 with an unverified standing, 1 shape failure(s), 0 retried), 0 stopped early, 1 answer omitted, 3 overrule(s), 19 flag(s); Finalization Causes: deadline_reached 2, objective_met 4
 
+## Verified, or failing only on unasked facts
+
+A second reading beside the verified count (#287): the attempts verified, plus those not verified whose unsatisfied checks are all checks the command did not ask for. Reported, never gated, and never in place of the verified count. An attempt with no Grade, or from an audit written before the checks unsatisfied were kept under that name, is not recorded and counts on neither side.
+
+Unasked facts, by check id: rule-eurostar-luggage initial fact-03, fact-07.
+
+| population | attempts | verified | failing only on unasked facts | verified, or failing only on unasked facts | not recorded |
+| --- | --- | --- | --- | --- | --- |
+| initial | 12 | 1 | 2 | 3 of 12 | 0 |
+| initial: fix-260-262-1 | 4 | 0 | 1 | 1 of 4 | 0 |
+| initial: fix-260-262-2 | 4 | 1 | 0 | 1 of 4 | 0 |
+| initial: fix-260-262-3 | 4 | 0 | 1 | 1 of 4 | 0 |
+| follow_up | 6 | 5 | 0 | 5 of 6 | 0 |
+| follow_up: fix-260-262-1 | 2 | 2 | 0 | 2 of 2 | 0 |
+| follow_up: fix-260-262-2 | 2 | 1 | 0 | 1 of 2 | 0 |
+| follow_up: fix-260-262-3 | 2 | 2 | 0 | 2 of 2 | 0 |
+
 ## Tool rounds
 
 The rounds outside Finalization that called each tool — a round counts once per tool, refused calls included — and their share of the tool rounds used. Counted from the Run Trace; the reviewer never sees it.

@@ -47,6 +47,23 @@ Shared by every set, and checked before anything was counted:
 - initial: 91 Off-key round(s), 33 Search Loop round(s) by the reviewer (17 by the streak rule; attempts by search source rail 12, replay 0, none 0), 0 inherited, 8 rejected Evidence Checkpoint(s), 1 walled round(s), 6 navigate(s) landed on a Not-found Page (4 judged Off-key), 52 Subagent round(s), 0 merged Evidence Checkpoint(s) (a floor), 9 Held Page round(s) without Progress, 1 stopped early, 30 overrule(s), 61 flag(s); Finalization Causes: budget_exhausted 8, deadline_reached 2, objective_met 2
 - follow_up: 20 Off-key round(s), 8 Search Loop round(s) by the reviewer (4 by the streak rule; attempts by search source rail 2, replay 0, none 4), 11 inherited, 14 rejected Evidence Checkpoint(s), 2 walled round(s), 5 navigate(s) landed on a Not-found Page (3 judged Off-key), 13 Subagent round(s), 0 merged Evidence Checkpoint(s) (a floor), 3 Held Page round(s) without Progress, 1 stopped early, 2 overrule(s), 28 flag(s); Finalization Causes: budget_exhausted 1, model_answered 1, no_progress 1, objective_met 3
 
+## Verified, or failing only on unasked facts
+
+A second reading beside the verified count (#287): the attempts verified, plus those not verified whose unsatisfied checks are all checks the command did not ask for. Reported, never gated, and never in place of the verified count. An attempt with no Grade, or from an audit written before the checks unsatisfied were kept under that name, is not recorded and counts on neither side.
+
+Unasked facts, by check id: rule-eurostar-luggage initial fact-03, fact-07.
+
+| population | attempts | verified | failing only on unasked facts | verified, or failing only on unasked facts | not recorded |
+| --- | --- | --- | --- | --- | --- |
+| initial | 12 | not recorded | not recorded | not recorded | 12 |
+| initial: fix-239-1 | 4 | not recorded | not recorded | not recorded | 4 |
+| initial: fix-239-2 | 4 | not recorded | not recorded | not recorded | 4 |
+| initial: fix-239-3 | 4 | not recorded | not recorded | not recorded | 4 |
+| follow_up | 6 | not recorded | not recorded | not recorded | 6 |
+| follow_up: fix-239-1 | 2 | not recorded | not recorded | not recorded | 2 |
+| follow_up: fix-239-2 | 2 | not recorded | not recorded | not recorded | 2 |
+| follow_up: fix-239-3 | 2 | not recorded | not recorded | not recorded | 2 |
+
 ## Tool rounds
 
 The rounds outside Finalization that called each tool — a round counts once per tool, refused calls included — and their share of the tool rounds used. Counted from the Run Trace; the reviewer never sees it.

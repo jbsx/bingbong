@@ -106,7 +106,7 @@ describe.skipIf(!canDriveChrome)('the Fix Ledger page in a browser', () => {
   it('marks baseline2 on every metric for the sub-spans flag, and fix-239 on the judgement metrics only', async () => {
     expect(await text('[data-family="baseline2"] .markers-line')).toBe('△ Judged under different conditions: browser sub-spans off → on (every metric).')
     const subspans = await evaluate<Array<{ metric: string; marker: string | null }>>(`[...document.querySelectorAll('[data-family="baseline2"] table.headline tr[data-metric]')].map((row) => ({ metric: row.dataset.metric, marker: row.querySelector('.marker')?.textContent ?? null }))`)
-    expect(subspans).toHaveLength(8)
+    expect(subspans).toHaveLength(9)
     expect(subspans.every((entry) => entry.marker === '△ browser sub-spans')).toBe(true)
     expect(await evaluate(`document.querySelector('[data-family="baseline2"] tr[data-metric="verified"] .marker').title`)).toBe('judged under different conditions — browser sub-spans: off → on')
 
@@ -134,6 +134,41 @@ describe.skipIf(!canDriveChrome)('the Fix Ledger page in a browser', () => {
       return { cells: cells.map((cell) => cell.textContent), classes: cells.map((cell) => cell.className) }
     })()`)
     expect(loops).toEqual({ cells: ['11 · 5%', '25 · 10%', '+14'], classes: ['num', 'num', 'num'] })
+  }, STEP_TIMEOUT_MS)
+
+  it('shows the second reading under verified attempts with no colour on its delta, and a family it cannot read as not recorded (#287)', async () => {
+    const rowOf = (familyId: string) =>
+      evaluate<{ previous: string; direction: string; reference: string; subject: string; passes: string; delta: string; deltaClass: string }>(`(() => {
+        const row = document.querySelector('[data-family="${familyId}"] table.headline tr[data-metric="verified_or_unasked"]')
+        const cell = (side) => row.querySelector('td[data-population=initial][data-side=' + side + ']')
+        return {
+          previous: row.previousElementSibling.dataset.metric,
+          direction: row.querySelector('.direction').textContent,
+          reference: cell('reference').querySelector('.agg').textContent,
+          subject: cell('subject').querySelector('.agg').textContent,
+          passes: cell('subject').querySelector('.passes').textContent,
+          delta: cell('delta').textContent,
+          deltaClass: cell('delta').className,
+        }
+      })()`)
+    // fix-284 against baseline3: 11 of 12 against 5 of 12, a rise of fifty points, and no green.
+    expect(await rowOf('fix-284')).toEqual({
+      previous: 'verified',
+      direction: 'reported, never gated',
+      reference: '5 / 12 · 42%',
+      subject: '11 / 12 · 92%',
+      passes: '3 · 4 · 4',
+      delta: '+50 pts',
+      deltaClass: 'num delta same',
+    })
+    expect(await evaluate(`document.querySelector('[data-family="fix-284"] tr[data-metric="verified"] td[data-population=initial][data-side=delta]').className`)).toBe('num delta ok')
+    // fix-239 was audited before the field: not recorded, never 0.
+    const p1 = await rowOf('fix-239')
+    expect(p1.subject).toBe('not recorded')
+    expect(p1.passes).toBe('n/r · n/r · n/r')
+    expect(p1.delta).toBe('—')
+    await evaluate(`document.querySelector('[data-family="fix-284"] details.drill').open = true`)
+    expect(await text('[data-family="fix-284"] table.drill tr[data-hunt="rule-eurostar-luggage"][data-step="initial"] td[data-metric=verified_or_unasked] .subj')).toBe('yes · yes · yes')
   }, STEP_TIMEOUT_MS)
 
   it('re-reads a row against the Reference chosen on the page', async () => {

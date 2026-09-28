@@ -47,6 +47,23 @@ Shared by every set, and checked before anything was counted:
 - initial: 101 Off-key round(s), 26 Search Loop round(s) by the reviewer (5 by the streak rule), 0 inherited, 12 rejected Evidence Checkpoint(s), 3 walled round(s), 0 Subagent round(s), 1 stopped early, 27 overrule(s), 65 flag(s); Finalization Causes: budget_exhausted 4, deadline_reached 2, objective_met 6
 - follow_up: 13 Off-key round(s), 9 Search Loop round(s) by the reviewer (0 by the streak rule), 9 inherited, 10 rejected Evidence Checkpoint(s), 0 walled round(s), 44 Subagent round(s), 0 stopped early, 5 overrule(s), 25 flag(s); Finalization Causes: deadline_reached 1, objective_met 5
 
+## Verified, or failing only on unasked facts
+
+A second reading beside the verified count (#287): the attempts verified, plus those not verified whose unsatisfied checks are all checks the command did not ask for. Reported, never gated, and never in place of the verified count. An attempt with no Grade, or from an audit written before the checks unsatisfied were kept under that name, is not recorded and counts on neither side.
+
+Unasked facts, by check id: rule-eurostar-luggage initial fact-03, fact-07.
+
+| population | attempts | verified | failing only on unasked facts | verified, or failing only on unasked facts | not recorded |
+| --- | --- | --- | --- | --- | --- |
+| initial | 12 | not recorded | not recorded | not recorded | 12 |
+| initial: fix-235-1 | 4 | not recorded | not recorded | not recorded | 4 |
+| initial: fix-235-2 | 4 | not recorded | not recorded | not recorded | 4 |
+| initial: fix-235-3 | 4 | not recorded | not recorded | not recorded | 4 |
+| follow_up | 6 | not recorded | not recorded | not recorded | 6 |
+| follow_up: fix-235-1 | 2 | not recorded | not recorded | not recorded | 2 |
+| follow_up: fix-235-2 | 2 | not recorded | not recorded | not recorded | 2 |
+| follow_up: fix-235-3 | 2 | not recorded | not recorded | not recorded | 2 |
+
 ## Tool rounds
 
 The rounds outside Finalization that called each tool — a round counts once per tool, refused calls included — and their share of the tool rounds used. Counted from the Run Trace; the reviewer never sees it.

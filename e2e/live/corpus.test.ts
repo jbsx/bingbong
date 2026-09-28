@@ -7,6 +7,7 @@ import { liveWebHunts, scheduledCommandCount, type MeasuredPrompt } from './hunt
 import { keyManifestDigest, parseLiveKeyManifest } from './grades.ts'
 import { gradingKeyFor, gradingKeys, keyManifestOf, type GradingKey } from './keys.ts'
 import { PILOT_COMMAND_CEILING } from './schedule.ts'
+import { UNASKED_FACTS, unaskedFactsOf } from './unaskedFacts.ts'
 
 // The corpus's own guard rails (#225 acceptance criteria 1–3). Three things
 // are pinned here, and each of them is a rule that would otherwise survive
@@ -281,6 +282,15 @@ describe('nothing on the capture path can load a key', () => {
     expect(importers.filter((name) => reachable.has(name))).toEqual([])
   })
 
+  it('never reaches the list of unasked checks either — it names checks, as a key does (#287)', () => {
+    const reachable = capturePathModules()
+    expect(reachable.has('capture.ts')).toBe(true)
+    expect([...reachable].sort()).not.toContain('unaskedFacts.ts')
+    // And the list loads nothing itself: a key reached through it would make
+    // every reader of the list a reader of the key.
+    expect(localImportsOf('unaskedFacts.ts')).toEqual([])
+  })
+
   it('is loaded from scripts/ only by the evaluator entry points that must read a key', () => {
     // The list above only ever looked inside e2e/live/, while scripts/ holds
     // the commands a person actually runs (#228). `keyManifest.ts` counts as a
@@ -417,6 +427,40 @@ describe('the manifest a key shows the grader', () => {
 
     const total = load.reduce((sum, [, checks]) => sum + checks, 0)
     expect(total).toBe(68)
+  })
+})
+
+describe('the checks a command did not ask (#287)', () => {
+  it('starts with the two Eurostar initial checks, each with its reason', () => {
+    expect(UNASKED_FACTS.map(({ huntId, stepId, checkId }) => ({ huntId, stepId, checkId }))).toEqual([
+      { huntId: 'rule-eurostar-luggage', stepId: 'initial', checkId: 'fact-03' },
+      { huntId: 'rule-eurostar-luggage', stepId: 'initial', checkId: 'fact-07' },
+    ])
+    for (const entry of UNASKED_FACTS) expect(entry.reason.trim(), entry.checkId).not.toBe('')
+  })
+
+  it('names only checks the key manifest declares for that Hunt and step, each once', () => {
+    const named = UNASKED_FACTS.map((entry) => `${entry.huntId}/${entry.stepId}/${entry.checkId}`)
+    expect(new Set(named).size).toBe(named.length)
+    for (const entry of UNASKED_FACTS) {
+      const task = keyManifestOf(entry.huntId).tasks.find((candidate) => candidate.stepId === entry.stepId)
+      expect(task, `${entry.huntId}/${entry.stepId} is not a step of the key`).toBeDefined()
+      expect(task!.checks.map((check) => check.checkId), `${entry.huntId}/${entry.stepId}`).toContain(entry.checkId)
+    }
+  })
+
+  it('holds no check wording: a reason never restates the key', () => {
+    for (const key of gradingKeys()) {
+      for (const value of keyStrings(key)) {
+        for (const entry of UNASKED_FACTS) expect(entry.reason.includes(value), `${entry.checkId} restates key text of ${key.huntId}`).toBe(false)
+      }
+    }
+  })
+
+  it('reads the checks of one Hunt and step, and none for a step the list does not name', () => {
+    expect([...unaskedFactsOf('rule-eurostar-luggage', 'initial')].sort()).toEqual(['fact-03', 'fact-07'])
+    expect(unaskedFactsOf('rule-eurostar-luggage', 'follow_up').size).toBe(0)
+    expect(unaskedFactsOf('compatibility-pi-camera', 'initial').size).toBe(0)
   })
 })
 

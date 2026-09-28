@@ -49,6 +49,23 @@ Shared by every set, and checked before anything was counted:
 - initial: 55 Off-key round(s), 18 Search Loop round(s) by the reviewer (11 by the streak rule; attempts by search source rail 12, replay 0, none 0), 0 inherited, 19 rejected Evidence Checkpoint(s), 2 walled round(s), 7 navigate(s) landed on a Not-found Page (6 judged Off-key), 96 Subagent round(s), 0 merged Evidence Checkpoint(s) (a floor), 5 Held Page round(s) without Progress, 0 Answer(s) with an Identity Slip, 0 id(s) slipped, 1 Malformed Answer(s) (1 retried), 1 stopped early, 5 answer omitted, 23 overrule(s), 54 flag(s); Finalization Causes: budget_exhausted 4, objective_met 8
 - follow_up: 8 Off-key round(s), 5 Search Loop round(s) by the reviewer (2 by the streak rule; attempts by search source rail 1, replay 0, none 5), 8 inherited, 11 rejected Evidence Checkpoint(s), 1 walled round(s), 0 navigate(s) landed on a Not-found Page (0 judged Off-key), 13 Subagent round(s), 0 merged Evidence Checkpoint(s) (a floor), 4 Held Page round(s) without Progress, 0 Answer(s) with an Identity Slip, 0 id(s) slipped, 0 Malformed Answer(s) (0 retried), 0 stopped early, 1 answer omitted, 6 overrule(s), 21 flag(s); Finalization Causes: budget_exhausted 2, objective_met 4
 
+## Verified, or failing only on unasked facts
+
+A second reading beside the verified count (#287): the attempts verified, plus those not verified whose unsatisfied checks are all checks the command did not ask for. Reported, never gated, and never in place of the verified count. An attempt with no Grade, or from an audit written before the checks unsatisfied were kept under that name, is not recorded and counts on neither side.
+
+Unasked facts, by check id: rule-eurostar-luggage initial fact-03, fact-07.
+
+| population | attempts | verified | failing only on unasked facts | verified, or failing only on unasked facts | not recorded |
+| --- | --- | --- | --- | --- | --- |
+| initial | 12 | 4 | 2 | 6 of 12 | 0 |
+| initial: baseline2-1 | 4 | 0 | 1 | 1 of 4 | 0 |
+| initial: baseline2-2 | 4 | 1 | 1 | 2 of 4 | 0 |
+| initial: baseline2-3 | 4 | 3 | 0 | 3 of 4 | 0 |
+| follow_up | 6 | 5 | 0 | 5 of 6 | 0 |
+| follow_up: baseline2-1 | 2 | 2 | 0 | 2 of 2 | 0 |
+| follow_up: baseline2-2 | 2 | 2 | 0 | 2 of 2 | 0 |
+| follow_up: baseline2-3 | 2 | 1 | 0 | 1 of 2 | 0 |
+
 ## Tool rounds
 
 The rounds outside Finalization that called each tool — a round counts once per tool, refused calls included — and their share of the tool rounds used. Counted from the Run Trace; the reviewer never sees it.

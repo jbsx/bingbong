@@ -51,6 +51,27 @@ Shared by every set, and checked before anything was counted:
 - initial: 85 Off-key round(s), 35 Search Loop round(s) by the reviewer (33 by the streak rule, heads included: 22 at streak 2 or beyond, 11 at 3 or beyond; attempts by search source rail 19, replay 0, none 1; navigate searches by Search URL form q 61, param 3, path 9; 1 covered, 0 not shown and 0 pre-#264 Blocked Action(s), 1 inert click(s), 1 inside a Search Loop streak, 0 post-block vision round(s), 1 recovery round(s) over 1 recovered block(s) and 0 never recovered; 0 Unavailable Landing(s) (0 by status, 0 by title), 0 followed by a search; 11 consent dismissal(s), 0 hand consent click(s), 0 blocked then hand consent; 1 budget-armed and 1 deadline-armed Tier Escalation(s) (replay found Progress before 1, none before 0), declined no_tier_above 6, 0 declined no_progress against the replay), 0 inherited, 21 rejected Evidence Checkpoint(s), 1 walled round(s), 15 navigate(s) landed on a Not-found Page (10 judged Off-key), 27 Composed Address(es) rewritten into a site search (22 judged Off-key, 0 to an address the Run was shown), 11 search(es) ran with an Unseen Phrase unquoted (7 judged Off-key), 13 Subagent round(s), 0 merged Evidence Checkpoint(s) (a floor), 8 Held Page round(s) without Progress, 22 bundled checkpoint round(s), 0 same-source unsupported round(s), 0 Answer(s) with an Identity Slip, 0 id(s) slipped, 0 Malformed Answer(s) (1 retried), 4 skipped bookkeeping round(s), 0 Finalization round(s) cut by the Allowance; first-token latency p50 2871 ms, p90 7420 ms over 377 round(s), 20 declared Asked Items (3 with an unverified standing, 2 shape failure(s), 1 retried), 1 stopped early, 4 answer omitted, 35 overrule(s), 78 flag(s); Finalization Causes: budget_exhausted 4, deadline_reached 3, none 1, objective_met 12
 - follow_up: 3 Off-key round(s), 0 Search Loop round(s) by the reviewer (0 by the streak rule, heads included: 0 at streak 2 or beyond, 0 at 3 or beyond; attempts by search source rail 0, replay 0, none 10; navigate searches by Search URL form q 0, param 0, path 0; 0 covered, 0 not shown and 0 pre-#264 Blocked Action(s), 0 inert click(s), 0 inside a Search Loop streak, 0 post-block vision round(s), 0 recovery round(s) over 0 recovered block(s) and 0 never recovered; 0 Unavailable Landing(s) (0 by status, 0 by title), 0 followed by a search; 0 consent dismissal(s), 0 hand consent click(s), 0 blocked then hand consent; 0 budget-armed and 0 deadline-armed Tier Escalation(s) (replay found Progress before 0, none before 0), declined none, 0 declined no_progress against the replay), 13 inherited, 5 rejected Evidence Checkpoint(s), 0 walled round(s), 0 navigate(s) landed on a Not-found Page (0 judged Off-key), 0 Composed Address(es) rewritten into a site search (0 judged Off-key, 0 to an address the Run was shown), 0 search(es) ran with an Unseen Phrase unquoted (0 judged Off-key), 0 Subagent round(s), 0 merged Evidence Checkpoint(s) (a floor), 5 Held Page round(s) without Progress, 6 bundled checkpoint round(s), 0 same-source unsupported round(s), 0 Answer(s) with an Identity Slip, 0 id(s) slipped, 1 Malformed Answer(s) (1 retried), 0 skipped bookkeeping round(s), 0 Finalization round(s) cut by the Allowance; first-token latency p50 4640 ms, p90 8246 ms over 84 round(s), 10 declared Asked Items (0 with an unverified standing, 0 shape failure(s), 0 retried), 0 stopped early, 0 answer omitted, 4 overrule(s), 28 flag(s); Finalization Causes: objective_met 10
 
+## Verified, or failing only on unasked facts
+
+A second reading beside the verified count (#287): the attempts verified, plus those not verified whose unsatisfied checks are all checks the command did not ask for. Reported, never gated, and never in place of the verified count. An attempt with no Grade, or from an audit written before the checks unsatisfied were kept under that name, is not recorded and counts on neither side.
+
+Unasked facts, by check id: rule-eurostar-luggage initial fact-03, fact-07.
+
+| population | attempts | verified | failing only on unasked facts | verified, or failing only on unasked facts | not recorded |
+| --- | --- | --- | --- | --- | --- |
+| initial | 20 | 14 | 1 | 15 of 20 | 0 |
+| initial: fix-265-267-1 | 4 | 4 | 0 | 4 of 4 | 0 |
+| initial: fix-265-267-2 | 4 | 3 | 0 | 3 of 4 | 0 |
+| initial: fix-265-267-3 | 4 | 3 | 1 | 4 of 4 | 0 |
+| initial: fix-265-267-4 | 4 | 2 | 0 | 2 of 4 | 0 |
+| initial: fix-265-267-5 | 4 | 2 | 0 | 2 of 4 | 0 |
+| follow_up | 10 | 10 | 0 | 10 of 10 | 0 |
+| follow_up: fix-265-267-1 | 2 | 2 | 0 | 2 of 2 | 0 |
+| follow_up: fix-265-267-2 | 2 | 2 | 0 | 2 of 2 | 0 |
+| follow_up: fix-265-267-3 | 2 | 2 | 0 | 2 of 2 | 0 |
+| follow_up: fix-265-267-4 | 2 | 2 | 0 | 2 of 2 | 0 |
+| follow_up: fix-265-267-5 | 2 | 2 | 0 | 2 of 2 | 0 |
+
 ## Tool rounds
 
 The rounds outside Finalization that called each tool — a round counts once per tool, refused calls included — and their share of the tool rounds used. Counted from the Run Trace; the reviewer never sees it.

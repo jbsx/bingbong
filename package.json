@@ -30,6 +30,7 @@
     "live:report": "node scripts/live-report.ts",
     "live:review": "node scripts/live-review.ts",
     "live:summary": "node scripts/live-summary.ts",
+    "live:unasked": "node scripts/live-unasked.ts",
     "perf:report": "node scripts/perf-report.ts",
     "trace:ui": "node scripts/trace-ui.ts",
     "stt:replay": "node scripts/replay-stt.ts",

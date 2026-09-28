@@ -11,11 +11,11 @@
 // delta knows its colour. The whole-set value is the aggregate audit's when
 // one exists (the number the Markdown prints) and summed from the Passes
 // when none does; the per-attempt metrics the aggregate does not carry
-// (verified attempts, checks, run durations) are always read from the
-// Passes. A metric whose two sides were judged under different conditions
-// carries a marker naming the axis — never a refusal (the cross-pass summary
-// and the aggregate audit refuse mixed sets; a ledger row reads across them
-// and says so).
+// (verified attempts and the second reading beside them, checks, run
+// durations) are always read from the Passes. A metric whose two sides were
+// judged under different conditions carries a marker naming the axis — never
+// a refusal (the cross-pass summary and the aggregate audit refuse mixed
+// sets; a ledger row reads across them and says so).
 //
 // A family is a Baseline when its id begins with `baseline`: provenance
 // carries nothing that says so, and this convention is the one assumption
@@ -40,7 +40,9 @@ import {
   SEARCH_STREAK_RULE,
   ROUND_KINDS,
   searchLoopCountsOf,
+  recordedReadingOf,
   unavailableLandingsOf,
+  verifiedOrUnaskedOf,
   type AuditAggregate,
   type AuditAttempt,
   type AuditPopulation,
@@ -102,7 +104,8 @@ export type MetricDirection = 'higher' | 'lower'
 export interface LedgerMetric {
   readonly id: string
   readonly label: string
-  readonly direction: MetricDirection
+  /** The direction that is better; null for a metric reported and never gated (#287), whose delta has no colour. */
+  readonly direction: MetricDirection | null
   /** Read from the reviewer's judgement: marked when the reviewer prompt differs. */
   readonly judgement: boolean
   /** What the delta and its colour follow: the share of the denominator, or the count itself. */
@@ -114,6 +117,8 @@ export interface LedgerMetric {
 export interface Reading {
   readonly value: number | null
   readonly over: number | null
+  /** Attempts the metric could not read, left out of both numbers (#287); absent when there is none. */
+  readonly notRecorded?: number
 }
 
 export interface Delta {
@@ -121,7 +126,7 @@ export interface Delta {
   readonly value: number | null
   /** Subject minus Reference, in points of the share; null where either side has no denominator. */
   readonly share: number | null
-  /** By the metric's direction; null when unchanged or unreadable. */
+  /** By the metric's direction; null when unchanged or unreadable, and always for a metric with no direction. */
   readonly better: boolean | null
 }
 
@@ -189,6 +194,8 @@ export interface LedgerRow {
 
 export const HEADLINE_METRICS: readonly LedgerMetric[] = [
   { id: 'verified', label: 'Verified attempts', direction: 'higher', judgement: false, compare: 'share', unit: 'attempts' },
+  // #287: a second reading beside the verified count, never in its place. It has no direction because nothing may be gated on it.
+  { id: 'verified_or_unasked', label: 'Verified, or failing only on unasked facts', direction: null, judgement: false, compare: 'share', unit: 'attempts' },
   { id: 'checks', label: 'Checks satisfied', direction: 'higher', judgement: false, compare: 'share', unit: 'checks' },
   { id: 'rounds_wasted_primary', label: 'rounds_wasted primary verdicts', direction: 'lower', judgement: true, compare: 'value', unit: 'attempts' },
   { id: 'answer_omitted_primary', label: 'answer_omitted primary verdicts', direction: 'lower', judgement: true, compare: 'value', unit: 'attempts' },
@@ -463,11 +470,24 @@ function observedSeconds(mechanical: AuditAttempt['mechanical']): number | null 
   return mechanical.runDurationMs.status === 'observed' ? mechanical.runDurationMs.value / 1000 : null
 }
 
+/**
+ * The second reading (#287): verified, or failing only on unasked facts, over
+ * the attempts recorded. An attempt with no Grade, or from an audit written
+ * before `checksUnsatisfied`, is in neither number and is counted as not
+ * recorded; where no attempt could say, the reading is nothing, never zero.
+ */
+function verifiedOrUnaskedReading(attempts: readonly AuditAttempt[]): Reading {
+  const reading = verifiedOrUnaskedOf(attempts)
+  const read = recordedReadingOf(attempts.length, reading)
+  return { value: read?.sum ?? null, over: read?.recorded ?? null, ...(reading.notRecorded > 0 ? { notRecorded: reading.notRecorded } : {}) }
+}
+
 /** The headline readings of one population: the audit's population for the counters, its attempts for the rest. */
 export function populationReadings(population: AuditPopulation, attempts: readonly AuditAttempt[]): Record<string, Reading> {
   const seconds = attempts.map((attempt) => observedSeconds(attempt.mechanical)).filter((value): value is number => value !== null)
   return {
     verified: { value: attempts.filter((attempt) => attempt.mechanical.grade?.status === 'pass').length, over: attempts.length },
+    verified_or_unasked: verifiedOrUnaskedReading(attempts),
     checks: checksSummed(attempts),
     rounds_wasted_primary: { value: recorded(population.verdictsPrimary.rounds_wasted), over: population.judged },
     answer_omitted_primary: { value: recorded(population.verdictsPrimary.answer_omitted), over: population.judged },
@@ -487,6 +507,7 @@ export function attemptReadings(attempt: AuditAttempt): Record<string, Reading> 
   const seconds = observedSeconds(mechanical)
   return {
     verified: flag(mechanical.grade?.status === 'pass'),
+    verified_or_unasked: verifiedOrUnaskedReading([attempt]),
     checks: checksSatisfiedOf(mechanical),
     rounds_wasted_primary: judgement === null ? none : flag(judgement.verdict.primary === 'rounds_wasted'),
     answer_omitted_primary: judgement === null ? none : flag(judgement.verdict.primary === 'answer_omitted'),
@@ -735,7 +756,7 @@ export function deltaOf(metric: LedgerMetric, reference: Reading, subject: Readi
   const subjectShare = shareOf(subject)
   const share = referenceShare === null || subjectShare === null ? null : round(subjectShare - referenceShare, 1)
   const comparable = metric.compare === 'share' ? share : value
-  const better = comparable === null || comparable === 0 ? null : comparable > 0 === (metric.direction === 'higher')
+  const better = metric.direction === null || comparable === null || comparable === 0 ? null : comparable > 0 === (metric.direction === 'higher')
   return { value, share, better }
 }
 
