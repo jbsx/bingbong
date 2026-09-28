@@ -708,6 +708,15 @@ describe('createSearchLoopRail — an Empty Landing holds the streak (#304, note
     expect(rail.streak()).toBe(2)
   })
 
+  it('holds on a read after a click that left for another URL: that arrival was the opening, and the read inspects it', async () => {
+    const rail = await railAfterLanding()
+    await rail.observe({ id: 'c', name: 'click', args: { ref: 1 } }, { ok: true, result: 'clicked [1]: urlChanged=true dialogOpen=false; page signature changed' })
+    expect(rail.streak()).toBe(0)
+    await rail.observe(first, ok)
+    await rail.observe(read, readWithText)
+    expect(rail.streak()).toBe(1)
+  })
+
   it('escapes once: a second read of the page is inspection', async () => {
     const rail = await railAfterLanding()
     await rail.observe(read, readWithText)

@@ -3,7 +3,7 @@ import type { ObservationProducer } from '../session/observationLedger'
 import { SCROLL_END_OF_PAGE } from '../browser/scrollDelta'
 import { landedOnNotFoundPage } from '../browser/notFoundPage'
 import { landedOnUnavailablePage } from '../browser/unavailablePage'
-import { landedOnEmptyPage } from '../browser/emptyLanding'
+import { settledOnEmptyLanding } from '../browser/emptyLanding'
 import { actionFingerprint, pageFingerprint, pageReadPartOf, type SettledPageState } from './progressFingerprints'
 import { classifyToolObservation } from './toolObservations'
 import { CHECKPOINT_TOOL_NAMES } from './checkpointTools'
@@ -232,7 +232,7 @@ export function createNoProgressRail(deps: NoProgressRailDeps = {}): NoProgressR
   const unavailableStates = new Set<string>()
   // The settled states an Empty Landing put the tab on (#304), kept for the
   // same reason.
-  const emptyStates = new Set<string>()
+  const emptyLandingStates = new Set<string>()
   // The gate's nudge rides the observed result of the call it nudged —
   // single-slot between one call's gate and observe, like the search-loop
   // rail's type memo.
@@ -431,8 +431,8 @@ export function createNoProgressRail(deps: NoProgressRailDeps = {}): NoProgressR
         if (firstByThisProducer) return nudge
         return joinNudge(nudge, escalate())
       }
-      if (landedOnEmptyPage(outcome)) emptyStates.add(fingerprint)
-      if (emptyStates.has(fingerprint)) {
+      if (settledOnEmptyLanding(call.name, outcome)) emptyLandingStates.add(fingerprint)
+      if (emptyLandingStates.has(fingerprint)) {
         // An Empty Landing (#304, note on ADR 0058) is neutral as an
         // Unavailable one is — the Run was shown no text, and that is no
         // fault of the Approach — and never the baseline. Each Producer's

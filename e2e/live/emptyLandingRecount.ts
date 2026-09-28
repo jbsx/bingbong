@@ -53,7 +53,7 @@ export function emptyLandingsKnown(mechanical: AuditAttempt['mechanical'], marks
   return saysEmptyLandings(mechanical) || marks.setsRecounted.includes(setIdOfCapture(mechanical.captureId))
 }
 
-function marked(call: AuditCall, mark: EmptyLandingMark): AuditCall {
+function withMark(call: AuditCall, mark: EmptyLandingMark): AuditCall {
   if (call.name !== mark.name) return call
   return mark.read === true ? { ...call, readEmptyLanding: true } : mark.host === undefined ? call : { ...call, emptyLanding: mark.host }
 }
@@ -72,6 +72,6 @@ export function recountEmptyLandings(mechanical: AuditAttempt['mechanical'], mar
   return mechanical.rounds.map((round) => {
     const here = own.marks.filter((mark) => mark.round === round.round)
     if (here.length === 0) return round
-    return { ...round, calls: round.calls.map((call, position) => here.filter((mark) => mark.call === position).reduce(marked, call)) }
+    return { ...round, calls: round.calls.map((call, position) => here.filter((mark) => mark.call === position).reduce(withMark, call)) }
   })
 }

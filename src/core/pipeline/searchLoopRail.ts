@@ -2,7 +2,7 @@ import type { ToolCall, ToolResultOutcome } from '../ports/llm'
 import type { SnapshotRef } from '../browser/snapshot'
 import { landedOnNotFoundPage } from '../browser/notFoundPage'
 import { landedOnUnavailablePage } from '../browser/unavailablePage'
-import { landedOnEmptyPage } from '../browser/emptyLanding'
+import { settledOnEmptyLanding } from '../browser/emptyLanding'
 import { wasBlockedOrInert } from '../browser/actionOutcome'
 import { landedOnBlocker } from '../browser/blockerNudge'
 import { collectedReportIn } from '../agent/agentResultsHeader'
@@ -124,7 +124,7 @@ import { reportFault } from '../trace/fault'
 // #304 (note on ADR 0058) added a fourth landing that holds: an Empty
 // Landing, a navigate, a back or a go_forward that settled on a page the
 // Run was shown no text from, read from its `EMPTY:` marker by
-// `landedOnEmptyPage` in emptyLanding.ts. The Page Read that returns text
+// `settledOnEmptyLanding` in emptyLanding.ts. The Page Read that returns text
 // from that page is the escape the landing was not, until the next page
 // arrival; the rail holds whether one is unread beside the streak.
 
@@ -292,7 +292,7 @@ export function createSearchLoopRail(deps: SearchLoopRailDeps = {}): SearchLoopR
         outcome.ok &&
         !landedOnNotFoundPage(outcome) &&
         !landedOnUnavailablePage(outcome) &&
-        !landedOnEmptyPage(outcome) &&
+        !settledOnEmptyLanding(call.name, outcome) &&
         !wasBlockedOrInert(outcome) &&
         putSomethingNew(call.name, { blocker: landedOnBlocker(outcome), userAnswered: facts.userAnswered === true, collectedReport: collectedReportIn(outcome.result) })
       const page = searchCallPageOf(call.name, outcome)

@@ -302,6 +302,8 @@ describe('the streak (#259, ADR 0058): a search after a search, with nothing ope
       // A wall read is no text from the page; a Look is never a Page Read; a failed call was nothing to the page.
       expect(searchCallPageOf('read_page', { ok: true, result: 'signature 162b2d4d\npage text:\nSign in\nBLOCKER:login-wall www.rmg.co.uk\nnudge' })).toEqual(none)
       expect(searchCallPageOf('look', { ok: true, result: 'page text:\nH4' })).toEqual(none)
+      // A read of a page whose own text holds the marker's line settled nowhere.
+      expect(searchCallPageOf('read_page', { ok: true, result: `signature 162b2d4d\npage text:\nEMPTY:no-text www.rmg.co.uk\npage text: part 1 of 1 — the text is complete; there is no part 2` })).toEqual(read)
       expect(searchCallPageOf('navigate', { ok: false, error: marked })).toEqual(none)
     })
   })

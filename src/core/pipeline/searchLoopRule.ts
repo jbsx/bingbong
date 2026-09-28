@@ -1,6 +1,6 @@
 import type { ToolResultOutcome } from '../ports/llm'
 import { parseBlockerMarker } from '../browser/blockerNudge.ts'
-import { isPageArrival, pageReadReturnedText, parseEmptyMarker } from '../browser/emptyLanding.ts'
+import { isPageArrival, pageReadReturnedText, settledOnEmptyLanding } from '../browser/emptyLanding.ts'
 import { looksLikeDomain } from '../browser/urlInput.ts'
 import { CHECKPOINT_TOOL_NAMES } from './checkpointTools.ts'
 import { classifyToolObservation } from './toolObservations.ts'
@@ -124,7 +124,7 @@ export function searchCallPageOf(toolName: string, outcome: ToolResultOutcome): 
   if (!outcome.ok || typeof outcome.result !== 'string') return NO_PAGE
   const text = outcome.result
   return {
-    emptyLanding: parseEmptyMarker(text) !== null,
+    emptyLanding: settledOnEmptyLanding(toolName, outcome),
     arrival: isPageArrival(toolName, text),
     readText: toolName === 'read_page' && pageReadReturnedText(text) && parseBlockerMarker(text) === null,
   }
@@ -140,8 +140,12 @@ export function searchCallPageOf(toolName: string, outcome: ToolResultOutcome): 
 export function unreadEmptyLandingAfter(unread: boolean, kind: SearchCallKind, page: SearchCallPage): boolean {
   if (page.emptyLanding) return kind !== 'search' && kind !== 'rewrite'
   if (page.arrival) return false
-  if (kind === 'inspection' && page.readText) return false
-  return unread
+  return unread && !readsEmptyLanding(unread, kind, page)
+}
+
+/** Whether a call is the Page Read that returns text from an Empty Landing the Run had not read (#304): the one inspection that is escape. */
+export function readsEmptyLanding(unread: boolean, kind: SearchCallKind, page: SearchCallPage): boolean {
+  return unread && kind === 'inspection' && page.readText
 }
 
 /**
@@ -151,7 +155,7 @@ export function unreadEmptyLandingAfter(unread: boolean, kind: SearchCallKind, p
  * already holds that an Empty Landing consumed nothing.
  */
 export function searchStreakMoveOnPage(kind: SearchCallKind, consumed: boolean, unreadEmptyLanding: boolean, page: SearchCallPage): SearchStreakMove {
-  if (unreadEmptyLanding && kind === 'inspection' && page.readText) return 'escape'
+  if (readsEmptyLanding(unreadEmptyLanding, kind, page)) return 'escape'
   return searchStreakMoveOf(kind, consumed)
 }
 

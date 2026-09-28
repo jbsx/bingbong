@@ -45,7 +45,7 @@ import { classifyNotFoundPage, NOT_FOUND_BASES, type NotFoundBasis, type NotFoun
 import { offLanguageRenderings } from '../../src/core/agent/answerLanguage.ts'
 import { isPartPastTheEnd } from '../../src/core/browser/pageText.ts'
 import { classifyUnavailablePage, isUnavailableBasis, type UnavailableLanding } from '../../src/core/browser/unavailablePage.ts'
-import { classifyEmptyLanding, isPageArrival, pageReadReturnedText, type EmptyLanding } from '../../src/core/browser/emptyLanding.ts'
+import { classifyEmptyLanding, isPageArrival, NAVIGATION_VERBS, pageReadReturnedText, type EmptyLanding } from '../../src/core/browser/emptyLanding.ts'
 import type { ComposedAddressRewriteStamp } from '../../src/core/pipeline/composedAddressRail.ts'
 import type { UnseenPhraseRewriteStamp } from '../../src/core/pipeline/unseenPhraseRail.ts'
 import type { EngineRewriteStamp } from '../../src/core/pipeline/engineRewriteRail.ts'
@@ -60,6 +60,7 @@ import { CHECKPOINT_TOOL_NAMES } from '../../src/core/pipeline/checkpointTools.t
 import {
   isSearchInspection,
   putSomethingNew,
+  readsEmptyLanding,
   SEARCH_SIGNATURES,
   SEARCH_STREAK_RULE,
   searchCallKindOf,
@@ -1002,7 +1003,7 @@ export interface AuditPopulation {
   /** Unavailable Landings by basis, and those followed by a search, over the attempts that count them (#262); absent when none does. */
   readonly unavailableLandings?: Readonly<Record<keyof UnavailableLandingRounds, number>>
   /** Empty Landings, those followed by a search and those read with text, over the attempts that count them (#304); absent when none does. */
-  readonly emptyLandings?: Readonly<Record<keyof EmptyLandingRounds, number>>
+  readonly emptyLandings?: Readonly<EmptyLandingCounts>
   /** Consent dismissals, hand consent clicks, and blocks a hand consent click followed, over the attempts that count them (#263); absent when none does. */
   readonly consentWalls?: Readonly<ConsentWallCounts>
   /** Window opens followed into the pane and denied, over the attempts that count them (#299); absent when none does. */
@@ -1694,11 +1695,11 @@ interface ResultFields {
   /** The Empty Landing the record carries as a field (#304), or null. */
   emptyLanding: EmptyLanding | null
   /**
-   * Whether the result's own shape may say an Empty Landing (#304): the
-   * record was written before the field was, and the trace kept its text
-   * whole — a page of many refs cut before its page text shows none.
+   * Whether an Empty Landing may be read off the result's own shape (#304):
+   * the record was written before the field was, and the trace kept its
+   * text whole — a page of many refs cut before its page text shows none.
    */
-  shapeSays: boolean
+  readableByShape: boolean
   rewritten: ComposedAddressRewriteStamp | null
   unquoted: UnseenPhraseRewriteStamp | null
   engineRewrite: EngineRewriteStamp | null
@@ -1763,9 +1764,10 @@ function emptyLandingFieldOf(record: TraceLine): EmptyLanding | null {
 }
 
 /** Whether a `tool_result` record predates the Empty Landing field and holds its text whole (#304). */
-function shapeSaysOf(record: TraceLine, event: Record<string, unknown>): boolean {
+function readableByShapeOf(record: TraceLine, event: Record<string, unknown>): boolean {
   if (isFiniteNumber(record.v) && record.v >= EMPTY_LANDING_TRACE_VERSION) return false
-  return !isString(event.result) || !isFiniteNumber(record.chars) || record.chars <= event.result.length
+  if (!isString(event.result)) return false
+  return !isFiniteNumber(record.chars) || record.chars <= event.result.length
 }
 
 /** The decline the Run's own `finalization_entry` record carries (#266), with the orchestrator round before it, or null; a Subagent's entry is not the Run's. */
@@ -1844,7 +1846,7 @@ function rawRounds(records: readonly TraceLine[]): RawRound[] {
         landing: landingFieldOf(record),
         unavailable: unavailableFieldOf(record),
         emptyLanding: emptyLandingFieldOf(record),
-        shapeSays: shapeSaysOf(record, event),
+        readableByShape: readableByShapeOf(record, event),
         rewritten: rewrittenFieldOf(record),
         unquoted: unquotedFieldOf(record),
         engineRewrite: engineRewriteFieldOf(record),
@@ -1890,7 +1892,7 @@ function rawRounds(records: readonly TraceLine[]): RawRound[] {
       landing: settled?.landing ?? null,
       unavailable: settled?.unavailable ?? null,
       emptyLanding: settled?.emptyLanding ?? null,
-      shapeSays: settled?.shapeSays ?? false,
+      readableByShape: settled?.readableByShape ?? false,
       rewritten: settled?.rewritten ?? null,
       unquoted: settled?.unquoted ?? null,
       engineRewrite: settled?.engineRewrite ?? null,
@@ -2470,6 +2472,9 @@ export interface EmptyLandingRounds {
   readonly readWithText: readonly number[]
 }
 
+/** The same three as counts: over a population, or a recount. */
+export type EmptyLandingCounts = Record<keyof EmptyLandingRounds, number>
+
 /**
  * An attempt's Empty Landings over its rounds as audited (#304, note on ADR
  * 0058): one entry per call; of those, the ones followed by a search, the
@@ -2873,7 +2878,7 @@ function advanceSearchStreak(
   const move = searchStreakMoveOnPage(kind, call.consumed, unread, call.page)
   state.streak = searchStreakAfter(state.streak, move)
   if (move === 'escape') state.lastSearchQuery = null
-  return { search: null, readEmptyLanding: unread && kind === 'inspection' && call.page.readText }
+  return { search: null, readEmptyLanding: readsEmptyLanding(unread, kind, call.page) }
 }
 
 /**
@@ -2900,7 +2905,7 @@ function unavailableByTitle(name: string, text: string | null, page: { url: stri
  * calls that carry the marker live — the navigation verbs, never a click.
  */
 function emptyLandingByShape(name: string, text: string | null, page: { url: string; title: string | null } | null): EmptyLanding | null {
-  if (page === null || text === null || (name !== 'navigate' && name !== 'back' && name !== 'go_forward')) return null
+  if (page === null || text === null || !NAVIGATION_VERBS.has(name)) return null
   const verdict = classifyEmptyLanding({ url: page.url, outcome: text })
   return verdict === null ? null : { host: verdict.host }
 }
@@ -2975,7 +2980,7 @@ function classifyCall(
   // trace written before it that kept the text whole.
   const emptyLanding =
     result !== undefined && result.ok && !refused && wall === null && landing === null && unavailable === null
-      ? (entry.emptyLanding ?? (entry.shapeSays ? emptyLandingByShape(call.name, settled, page) : null))
+      ? (entry.emptyLanding ?? (entry.readableByShape ? emptyLandingByShape(call.name, settled, page) : null))
       : null
   const notices = noticesOf(text)
   // What a call that acts on no page delivered that the head kept below
@@ -4547,7 +4552,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
   let searchForms: Record<SearchUrlForm, number> | undefined
   let blockedOrInert: Record<keyof BlockedOrInertCounts, number> | undefined
   let unavailableLandings: Record<keyof UnavailableLandingRounds, number> | undefined
-  let emptyLandings: Record<keyof EmptyLandingRounds, number> | undefined
+  let emptyLandings: EmptyLandingCounts | undefined
   let consentWalls: ConsentWallCounts | undefined
   let windowOpens: WindowOpenCounts | undefined
   let tierEscalations: TierEscalationCounts | undefined

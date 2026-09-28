@@ -11,7 +11,8 @@ import { waitFor } from './waitFor'
 // and whose one sentence sits outside it — rmg.co.uk's answer to an object
 // id it cannot resolve — lands as an Empty Landing. The collector reads
 // `main, article` only, so the Run is shown no text; the navigate says so,
-// and the search after it carries the Notice the landing did not clear.
+// and the search after it carries the Notice the landing did not clear. A
+// Subagent's pane takes the same rule.
 
 type ToolResultEvent = Extract<PipelineEvent, { type: 'tool_result' }>
 
@@ -34,6 +35,27 @@ function modelScript(fixture: FixtureServer): AssistantTurn[] {
     { kind: 'tool_calls', calls: [{ id: 'read', name: 'read_page', args: {} }] },
     { kind: 'tool_calls', calls: [{ id: 'second-search', name: 'navigate', args: { url: fixture.url('/results?q=fixture+widget+catalogue') } }] },
     { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'unverified', statement: 'not found' }], speak: 'Not found.', display: 'The page showed no text.' },
+    // Command two: a Subagent lands on the same page in its own pane.
+    {
+      kind: 'tool_calls',
+      calls: [
+        {
+          id: 'plan-two',
+          name: 'report_run_plan',
+          args: { objective: 'Find the fixture widget in a tab', headline: 'Finding the widget', effort_tier: 'investigation', asked_items: ['the answer'] },
+        },
+        { id: 'spawn', name: 'spawn_agent', args: { kind: 'browse', task: 'open the fixture museum page' } },
+      ],
+    },
+    { kind: 'tool_calls', calls: [{ id: 'collect', name: 'agent_results', args: { wait: true } }] },
+    { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'unverified', statement: 'not found' }], speak: 'Not found.', display: 'The Subagent was shown no text.' },
+  ]
+}
+
+function subagentScript(fixture: FixtureServer): AssistantTurn[] {
+  return [
+    { kind: 'tool_calls', calls: [{ id: 'sub-landing', name: 'navigate', args: { url: fixture.url(PAGE) } }] },
+    { kind: 'answer', askedItems: [{ item: 'the answer', standing: 'unverified', statement: 'not found' }], speak: 'done', display: 'The page showed no text.' },
   ]
 }
 
@@ -43,7 +65,10 @@ describe('Empty Landing e2e (#304)', () => {
 
   beforeAll(async () => {
     fixture = await startFixtureServer()
-    harness = await startHarness({ fixture, env: { BINGBONG_LLM_SCRIPT: JSON.stringify(modelScript(fixture)) } })
+    harness = await startHarness({
+      fixture,
+      env: { BINGBONG_LLM_SCRIPT: JSON.stringify(modelScript(fixture)), BINGBONG_SUBAGENT_LLM_SCRIPT: JSON.stringify(subagentScript(fixture)) },
+    })
     await harness.dashboardEval(`
       window.__emptyLandingEvents = []
       window.bingbong.assistant.onEvent((event) => window.__emptyLandingEvents.push(event))
@@ -85,5 +110,23 @@ describe('Empty Landing e2e (#304)', () => {
     expect(record).toMatchObject({ v: 9, emptyLanding: { host } })
     const others = traced.filter((entry) => entry.kind === 'pipeline_event' && entry.event?.type === 'tool_result' && entry.event.callId !== 'landing')
     expect(others.filter((entry) => entry.emptyLanding !== undefined)).toEqual([])
+  })
+
+  it('takes the same rule in a Subagent pane', async () => {
+    expect(await harness.submitCommand('find the fixture widget in a tab')).toBe('submitted')
+    await waitFor(
+      async () => {
+        const captured = await harness.dashboardEval<PipelineEvent[]>('window.__emptyLandingEvents || []')
+        return captured.filter((event) => event.type === 'done').length >= 2 ? captured : undefined
+      },
+      { timeoutMs: 60_000, intervalMs: 250 },
+    )
+
+    const host = new URL(fixture.url(PAGE)).hostname
+    const traced = harness.readRunTrace() as { kind?: string; agentId?: string; event?: { type?: string; callId?: string; result?: unknown }; emptyLanding?: { host: string } }[]
+    const record = traced.find((entry) => entry.kind === 'pipeline_event' && entry.event?.type === 'tool_result' && entry.event.callId === 'sub-landing')
+    expect(record?.agentId).toBeDefined()
+    expect(record).toMatchObject({ emptyLanding: { host } })
+    expect(String(record?.event?.result).endsWith(`\nEMPTY:no-text ${host}\n${EMPTY_LANDING_ADVICE}`)).toBe(true)
   })
 })

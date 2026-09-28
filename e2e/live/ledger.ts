@@ -58,6 +58,7 @@ import {
   type AuditPopulation,
   type AuditProvenance,
   type AuditSetOutput,
+  type EmptyLandingCounts,
   type RoundKind,
 } from './audit.ts'
 import { emptyLandingsKnown, recountEmptyLandings, saysEmptyLandings } from './emptyLandingRecount.ts'
@@ -560,7 +561,7 @@ interface Recounted {
   readonly unavailableByTitle: number
   readonly unavailableFollowedBySearch: number
   /** The Empty Landings (#304) over the attempts whose landings are known; null where none is. */
-  readonly emptyLandings: { readonly landings: number; readonly followedBySearch: number; readonly readWithText: number } | null
+  readonly emptyLandings: Readonly<EmptyLandingCounts> | null
 }
 
 /**
@@ -579,17 +580,17 @@ interface Recounted {
  */
 function recountedUnderCurrentRuleOf(attempts: readonly AuditAttempt[]): Recounted {
   const totals = { mechanicalSearchRounds: 0, searchRoundsAtStreak2: 0, searchRoundsAtStreak3: 0, unavailableByTitle: 0, unavailableFollowedBySearch: 0 }
-  const empty = { landings: 0, followedBySearch: 0, readWithText: 0 }
+  const empty: EmptyLandingCounts = { landings: 0, followedBySearch: 0, readWithText: 0 }
   let known = 0
   for (const attempt of attempts) {
-    const marked = recountEmptyLandings(attempt.mechanical)
-    const rounds = replaySearchStreaks(recountUnavailableByTitle(marked))
+    const withLandings = recountEmptyLandings(attempt.mechanical)
+    const rounds = replaySearchStreaks(recountUnavailableByTitle(withLandings))
     const counts = searchLoopCountsOf(rounds)
     // An audit that wrote the counter marked its own landings (#294): the
     // ones followed by a search are counted over those, the set its counts
     // by status and by title are of, and the title rule reads only an audit
     // from before the counter.
-    const landings = unavailableLandingsOf(attempt.mechanical.unavailableLandings === undefined ? rounds : replaySearchStreaks(marked))
+    const landings = unavailableLandingsOf(attempt.mechanical.unavailableLandings === undefined ? rounds : replaySearchStreaks(withLandings))
     totals.mechanicalSearchRounds += counts.mechanicalSearchRounds
     totals.searchRoundsAtStreak2 += counts.searchRoundsAtStreak2
     totals.searchRoundsAtStreak3 += counts.searchRoundsAtStreak3

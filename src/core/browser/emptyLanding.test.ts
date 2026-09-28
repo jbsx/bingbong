@@ -3,9 +3,9 @@ import {
   EMPTY_LANDING_ADVICE,
   classifyEmptyLanding,
   isPageArrival,
-  landedOnEmptyPage,
   pageReadReturnedText,
   parseEmptyMarker,
+  settledOnEmptyLanding,
   showedNoPageText,
 } from './emptyLanding'
 import { emptyPageReadLine, pageReadPartLine } from './pageText'
@@ -74,11 +74,14 @@ describe('the marker and the advice (#304)', () => {
     expect(parseEmptyMarker(RMG_TEMPLATE)).toBeNull()
   })
 
-  it('reads a landing off a successful outcome only', () => {
+  it('reads a landing off a successful outcome of a navigation verb only', () => {
     const result = `${RMG_TEMPLATE}\nEMPTY:no-text www.rmg.co.uk\n${EMPTY_LANDING_ADVICE}`
-    expect(landedOnEmptyPage({ ok: true, result })).toBe(true)
-    expect(landedOnEmptyPage({ ok: true, result: WITH_TEXT })).toBe(false)
-    expect(landedOnEmptyPage({ ok: false, error: result })).toBe(false)
+    for (const name of ['navigate', 'back', 'go_forward']) expect(settledOnEmptyLanding(name, { ok: true, result })).toBe(true)
+    expect(settledOnEmptyLanding('navigate', { ok: true, result: WITH_TEXT })).toBe(false)
+    expect(settledOnEmptyLanding('navigate', { ok: false, error: result })).toBe(false)
+    // A page whose own text holds the line was read, and settled nowhere.
+    expect(settledOnEmptyLanding('read_page', { ok: true, result: `${WITH_TEXT}\nEMPTY:no-text www.rmg.co.uk` })).toBe(false)
+    expect(settledOnEmptyLanding('click', { ok: true, result })).toBe(false)
   })
 })
 
@@ -98,11 +101,18 @@ describe('isPageArrival (#304)', () => {
     for (const name of ['navigate', 'back', 'go_forward']) expect(isPageArrival(name, 'navigated outcome')).toBe(true)
   })
 
-  it('is a click or a type the page left for another URL under, and no other', () => {
+  it('is a click that left for another URL and typing the page changed under, and no other', () => {
     expect(isPageArrival('click', 'clicked [7]: urlChanged=true dialogOpen=false; page signature changed')).toBe(true)
     expect(isPageArrival('click', 'clicked [7]: urlChanged=false dialogOpen=false; page signature changed')).toBe(false)
     expect(isPageArrival('type', 'typed [4]: field unavailable after page change; url=https://duckduckgo.com/?q=h4')).toBe(true)
+    expect(isPageArrival('type', 'typed [4]: value="h4"; page changed')).toBe(true)
     expect(isPageArrival('type', 'typed [4]: value="h4"')).toBe(false)
+  })
+
+  it('reads the first line alone: the page’s own text follows it', () => {
+    const stayed = 'clicked [7]: urlChanged=false dialogOpen=false; page signature changed\nsignature 162b2d4d\npage text:\nthe log says urlChanged=true after page change; page changed'
+    expect(isPageArrival('click', stayed)).toBe(false)
+    expect(isPageArrival('type', `typed [4]: value="h4"\n${stayed}`)).toBe(false)
   })
 
   it('is never a read, a Look or a scroll', () => {

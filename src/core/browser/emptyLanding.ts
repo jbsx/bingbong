@@ -71,9 +71,16 @@ export function parseEmptyMarker(text: string): EmptyLanding | null {
   return last
 }
 
-/** Whether a successful call settled on an Empty Landing: its outcome carries the marker. */
-export function landedOnEmptyPage(outcome: ToolResultOutcome): boolean {
-  return outcome.ok && typeof outcome.result === 'string' && parseEmptyMarker(outcome.result) !== null
+/** The navigation verbs: each settles on a page, whatever it was before, and only they carry the marker. */
+export const NAVIGATION_VERBS: ReadonlySet<string> = new Set(['navigate', 'back', 'go_forward'])
+
+/**
+ * Whether a successful call settled on an Empty Landing: a navigation verb
+ * whose outcome carries the marker. A Page Read of a page whose own text
+ * holds such a line settled nowhere.
+ */
+export function settledOnEmptyLanding(toolName: string, outcome: ToolResultOutcome): boolean {
+  return NAVIGATION_VERBS.has(toolName) && outcome.ok && typeof outcome.result === 'string' && parseEmptyMarker(outcome.result) !== null
 }
 
 /**
@@ -90,18 +97,21 @@ export function pageReadReturnedText(result: string): boolean {
   return PAGE_TEXT_HEADING_RE.test(result)
 }
 
-/** The navigation verbs: each settles on a page, whatever it was before. */
-const NAVIGATION_VERBS: ReadonlySet<string> = new Set(['navigate', 'back', 'go_forward'])
+/** The head of a click that left for another URL. */
+const CLICK_ARRIVED_RE = /^clicked \[\d+\]: urlChanged=true\b/
 
-/** What a click or a type says when the page left for another URL under it. */
-const LEFT_THE_PAGE_RE = /\burlChanged=true\b|\bafter page change\b/
+/** The heads of a type the page changed under: the field gone with the page, or still there on another. */
+const TYPE_ARRIVED_RE = /^typed \[\d+\]: (?:field unavailable after page change\b|.*; page changed\b)/
 
 /**
  * Whether a successful call was a page arrival (#304): a navigation, a step
- * through history, or a click or a type the page left for another URL
- * under. A read, a Look and a scroll arrive nowhere.
+ * through history, a click that left for another URL, or typing the page
+ * changed under. Read off the outcome's first line alone, since the page's
+ * own text follows it. A read, a Look and a scroll arrive nowhere.
  */
 export function isPageArrival(toolName: string, result: string): boolean {
   if (NAVIGATION_VERBS.has(toolName)) return true
-  return (toolName === 'click' || toolName === 'type') && LEFT_THE_PAGE_RE.test(result)
+  const head = result.split('\n', 1)[0] ?? ''
+  if (toolName === 'click') return CLICK_ARRIVED_RE.test(head)
+  return toolName === 'type' && TYPE_ARRIVED_RE.test(head)
 }

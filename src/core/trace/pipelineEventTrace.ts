@@ -44,6 +44,14 @@ export function tracesPipelineEvent(event: { readonly type: PipelineEvent['type'
   return !(UNTRACED_PIPELINE_EVENT_TYPES as readonly string[]).includes(event.type)
 }
 
+/** The part of a result that says where the call settled: the page a Result Pick opened (#277), else the whole text. */
+function settledText(result: string, pick: Extract<PipelineEvent, { type: 'tool_result' }>['resultPick']): string {
+  if (pick === undefined || !pick.opened) return result
+  const opened = `\n${resultOpenedLine(pick)}\n`
+  const at = result.indexOf(opened)
+  return at === -1 ? result : result.slice(at + opened.length)
+}
+
 /**
  * One event as its record body keeps it: verbatim, but for a
  * `tool_result` whose text is cut at {@link TRACE_TOOL_RESULT_MAX_CHARS}
@@ -56,14 +64,6 @@ export function tracesPipelineEvent(event: { readonly type: PipelineEvent['type'
  * ones, and rewriting a shape the file is meant to record faithfully
  * would cost more than it saves.
  */
-/** The part of a result that says where the call settled: the page a Result Pick opened (#277), else the whole text. */
-function settledText(result: string, pick: Extract<PipelineEvent, { type: 'tool_result' }>['resultPick']): string {
-  if (pick === undefined || !pick.opened) return result
-  const opened = `\n${resultOpenedLine(pick)}\n`
-  const at = result.indexOf(opened)
-  return at === -1 ? result : result.slice(at + opened.length)
-}
-
 export function pipelineEventTraceBody(event: PipelineEvent, agentId?: string): PipelineEventTraceEvent {
   const stamped = agentId !== undefined ? { agentId } : {}
   if (event.type !== 'tool_result') return { kind: 'pipeline_event', event, ...stamped }

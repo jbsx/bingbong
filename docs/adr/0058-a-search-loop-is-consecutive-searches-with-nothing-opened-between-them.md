@@ -387,6 +387,12 @@ on not tuning to the judged data.
       same read that holds it where the listing rendered in time.
     - The escape is spent by the read that takes it: a second read of the
       page is inspection again.
+    - A page arrival is a navigation, a step through history, a click that
+      left for another URL, or typing the page changed under, read off
+      the first line of the outcome alone, since the page's own text
+      follows it. A call that failed is none, whatever the tab did: a
+      navigate that failed after the tab moved leaves the landing unread.
+      Left as it is; no capture holds one.
     - The recount reads the traces once, by `pnpm live:empty-landings`,
       and commits what it found (`e2e/live/emptyLandingMarks.ts`), so the
       Fix Ledger still reads no capture and a test pins the six landings.
