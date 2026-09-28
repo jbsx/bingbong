@@ -1,4 +1,5 @@
 import type { ToolCall, ToolResultOutcome } from '../ports/llm'
+import { deniedAddressesIn } from '../browser/newWindowLink'
 import { parseNotFoundMarker } from '../browser/notFoundPage'
 import { normalizeUrlInput } from '../browser/urlInput'
 import { hostFromUrl, siteOfHost } from './blockerGate'
@@ -10,7 +11,8 @@ import { reportFault } from '../trace/fault'
 // executes cannot know what an address will find, so it acts on a kind of
 // navigate: the Composed Address, a URL the model was not shown this Run.
 // Offered is any href in a successful result it read, any URL the Run
-// landed on, and any source in Session Evidence, matched by URL fingerprint.
+// landed on, the address of any popup a result reported as denied (#299,
+// ADR 0073), and any source in Session Evidence, matched by URL fingerprint.
 //
 // A site — a registrable domain, so jpl.nasa.gov and science.nasa.gov are
 // one — allows one Not-found Landing by a Composed Address per Run. After
@@ -247,6 +249,10 @@ export function createComposedAddressRail(deps: ComposedAddressRailDeps = {}): C
       // The links a page shows are offered, a not-found page's included —
       // whole, from the refs, where the caller could read them (#258).
       for (const href of linkHrefs ?? hrefsIn(text)) offer(href)
+      // A denied popup's address is offered too (#299, ADR 0073): the app
+      // printed it as where the page meant to go. It rides the outcome
+      // line and never the refs, so it is read from the text either way.
+      for (const address of deniedAddressesIn(text)) offer(address)
       // The page itself is offered only when it names something: an address
       // that answered not found is no address the model was shown, and
       // returning to it is the guess again.

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ToolCall, ToolResultOutcome } from '../ports/llm'
+import { MAX_OPEN_ADDRESS_LENGTH, popupBlockedLine } from '../browser/newWindowLink'
 import { MAX_HREF_LENGTH, truncateText } from '../browser/snapshot'
 import {
   composedAddressRewriteLine,
@@ -92,6 +93,31 @@ describe('createComposedAddressRail (#239, ADR 0050; #255, ADR 0055)', () => {
     expect(rail.rewrite(nav('https://science.nasa.gov/mission/voyager#top'))).toBeNull()
     expect(rail.rewrite(nav('https://www.nasa.gov/news-release/voyager-evidence'))).toBeNull()
     expect(rail.rewrite(nav('https://www.nasa.gov/news-release/voyager-guess'))).not.toBeNull()
+  })
+
+  it('passes a navigate to a denied popup’s address: the app printed it as where the page meant to go (#299, ADR 0073)', () => {
+    const rail = spentOnNasa()
+    const denied = 'https://science.nasa.gov/mission/voyager/golden-record-contents'
+    rail.observe(call('click', { ref: 3 }), {
+      ok: true,
+      result: `clicked [3]: urlChanged=false dialogOpen=false; no observable change; ${popupBlockedLine(denied)}; ${popupBlockedLine('https://www.nasa.gov/other')}`,
+    })
+    // Handed the page's hrefs, the rail still reads the report from the text.
+    rail.observe(call('read_page'), { ok: true, result: `# A page — https://example.com/\n${popupBlockedLine('https://www.jpl.nasa.gov/read')}` }, null, [])
+
+    expect(rail.rewrite(nav(denied))).toBeNull()
+    expect(rail.rewrite(nav('https://www.nasa.gov/other'))).toBeNull()
+    expect(rail.rewrite(nav('https://www.jpl.nasa.gov/read'))).toBeNull()
+    expect(rail.rewrite(nav('https://science.nasa.gov/mission/voyager/composed'))).not.toBeNull()
+  })
+
+  it('offers nothing for a denied address that was cut: the cut is not the address (#299)', () => {
+    const rail = spentOnNasa()
+    const over = `https://science.nasa.gov/${'p'.repeat(MAX_OPEN_ADDRESS_LENGTH)}`
+    const printed = popupBlockedLine(over)
+    rail.observe(call('click', { ref: 3 }), { ok: true, result: `clicked [3]: urlChanged=false dialogOpen=false; no observable change; ${printed}` })
+
+    expect(rail.rewrite(nav(printed.slice(popupBlockedLine('').length)))).not.toBeNull()
   })
 
   it('offers the landing tab’s own URL and the links on a not-found page, but never the dead address itself', () => {

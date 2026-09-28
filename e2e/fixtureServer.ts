@@ -324,6 +324,25 @@ function popupPage(): string {
 </html>`
 }
 
+// New-window Links (#299, ADR 0073): a link that asks for a new window
+// opens in the pane; a window a script opens stays denied and reported.
+// Refs in DOM order: [1] a New-window Link, [2] a link whose address is
+// rewritten as it is pressed, [3] a button whose script opens a window,
+// [4] a link whose own script opens some other address besides.
+function newWindowPage(): string {
+  return `<!doctype html>
+<html>
+<head><title>new window fixture</title></head>
+<body style="background:#222;color:#fff;margin:0">
+  <h1>new window fixture page</h1>
+  <p><a id="link-new" href="/second" target="_blank" style="font-size:20px">Opens a new window</a></p>
+  <p><a id="link-rewritten" href="/new-window-shown" target="_blank" style="font-size:20px" onmousedown="this.href='/new-window-rewritten?via=press'">Rewritten as it is pressed</a></p>
+  <p><button id="btn-script" style="font-size:20px" onclick="window.open('/new-window-script')">Script opens a window</button></p>
+  <p><a id="link-both" href="/second" target="_blank" style="font-size:20px" onclick="window.open('/new-window-script')">Opens a window and a script's</a></p>
+</body>
+</html>`
+}
+
 // Auth-identity echo (ADR 0018): renders the User-Agent the pane actually
 // sent, so the auth-host rewrite is assertable through read_page. Its two
 // openers exercise the popup allowlist: [1] opens a page on the same host
@@ -1356,6 +1375,14 @@ export async function startFixtureServer(): Promise<FixtureServer> {
     }
     if (req.url === '/popup') {
       res.end(popupPage())
+      return
+    }
+    if (req.url === '/new-window') {
+      res.end(newWindowPage())
+      return
+    }
+    if (req.url !== undefined && req.url.startsWith('/new-window-')) {
+      res.end(page(`<h1 style="color:#fff">landed on ${req.url.slice(1).split('?')[0]}</h1>`))
       return
     }
     if (req.url === '/header-echo') {

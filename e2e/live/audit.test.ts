@@ -7,6 +7,7 @@ import { FINALIZATION_REASONING_EFFORT as SOURCE_FINALIZATION_EFFORT, TIER_REASO
 import { SCROLL_END_OF_PAGE } from '../../src/core/browser/scrollDelta'
 import { CONSENT_LABEL_RE, consentDismissalLine, consentRetryNote } from '../../src/core/browser/dialogPolicy'
 import { blockedActionHead } from '../../src/core/browser/actionOutcome'
+import { authPopupOpenedLine, NEW_WINDOW_FOLLOWED_CLAUSE, popupBlockedLine } from '../../src/core/browser/newWindowLink'
 import { similarQueries as ruleSimilarQueries } from '../../src/core/pipeline/searchLoopRule'
 import { createSearchLoopRail, SEARCH_LOOP_NUDGE, searchQueryFromUrl as railSearchQueryFromUrl, type SearchObservation } from '../../src/core/pipeline/searchLoopRail'
 import type { PerfSpanRecord } from '../../src/core/perf/perfTracer'
@@ -18,6 +19,10 @@ import {
   BUDGET_WARNING_RE,
   CONSENT_DISMISSAL_MARK,
   CONSENT_LABEL_PATTERN,
+  NEW_WINDOW_FOLLOWED_MARK,
+  POPUP_BLOCKED_MARK,
+  AUTH_POPUP_OPENED_MARK,
+  NATIVE_DIALOG_MARK,
   JUDGEMENT_SCHEMA,
   END_OF_PAGE_MARK,
   TIER_ESCALATION_ARMS,
@@ -1672,6 +1677,77 @@ describe('consent walls (#263, ADR 0061)', () => {
     expect(formatAuditSet(set)).toContain('- consent walls not counted')
   })
 
+})
+
+describe('window opens (#299, ADR 0073)', () => {
+  const RESULTS = 'https://www.bing.com/search?q=harrison'
+  const LANDED = `# Harrison — https://www.rmg.co.uk/harrison\nviewport 985x575 scroll 0/4435\nsignature a11c0003\n[1] link "Visit"\npage text:\npopup blocked: a line of the page's own text\nand the line the page ends on`
+  const DENIED = 'https://ads.test/window'
+
+  const ROUNDS_WITH_OPENS: RoundSpec[] = [
+    { round: 1, at: 1_000, calls: [{ name: 'navigate', args: { url: RESULTS }, result: PAGE('Results', RESULTS, 'a11c0001', 'some text') }] },
+    // A followed open, and a second the same click made and was denied.
+    { round: 2, at: 2_000, calls: [{ name: 'click', args: { ref: 1 }, result: `clicked [1]: urlChanged=true dialogOpen=false; page signature changed; url=https://www.rmg.co.uk/harrison title="Harrison"; ${NEW_WINDOW_FOLLOWED_CLAUSE}; ${popupBlockedLine(DENIED)}\n${LANDED}` }] },
+    // Two denied on one click, one of them a target that is no address.
+    { round: 3, at: 3_000, calls: [{ name: 'click', args: { ref: 1 }, result: `clicked [1]: urlChanged=false dialogOpen=false; no observable change; ${popupBlockedLine(DENIED)}; ${popupBlockedLine('data:text/html,<b>x</b>')}` }] },
+    // One a page read found waiting, reported under the page.
+    { round: 4, at: 4_000, calls: [{ name: 'read_page', args: {}, result: `${LANDED}\n${authPopupOpenedLine('https://accounts.test/signin')}\n${popupBlockedLine(DENIED)}` }] },
+  ]
+
+  it('pins its marks to the source they read', () => {
+    expect(NEW_WINDOW_FOLLOWED_MARK).toBe(NEW_WINDOW_FOLLOWED_CLAUSE)
+    expect(popupBlockedLine(DENIED)).toBe(`${POPUP_BLOCKED_MARK}${DENIED}`)
+    expect(authPopupOpenedLine(DENIED)).toBe(`${AUTH_POPUP_OPENED_MARK}${DENIED}`)
+    // The native dialog's line is built where the dialog is met; its head is read from the source.
+    const controller = readFileSync(fileURLToPath(new URL('../../src/main/browser/createCdpBrowserController.ts', import.meta.url)), 'utf8')
+    expect(controller).toContain(`\`${NATIVE_DIALOG_MARK}\${kind} dialog auto-dismissed: `)
+  })
+
+  it('counts a report under a Page Read that follows a native dialog’s', () => {
+    const rounds: RoundSpec[] = [
+      { round: 1, at: 1_000, calls: [{ name: 'read_page', args: {}, result: `${LANDED}\n${popupBlockedLine(DENIED)}\nnative alert dialog auto-dismissed: "hello"` }] },
+    ]
+    expect(classifyAttempt(inputOf({ traceRecords: traceOf(rounds, EXTRA) })).windowOpens).toEqual({ followed: [], denied: [1] })
+  })
+
+  it('counts followed and denied opens by round, one entry an open, from the reports alone', () => {
+    const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS_WITH_OPENS, EXTRA) }))
+    // The landed page's own text opens a line with the mark, and is no report.
+    expect(mechanical.windowOpens).toEqual({ followed: [2], denied: [2, 3, 3, 4] })
+  })
+
+  it('counts none in an attempt that opened nothing', () => {
+    expect(classifyAttempt(inputOf()).windowOpens).toEqual({ followed: [], denied: [] })
+  })
+
+  it('reports them per attempt and pooled, beside the rounds', () => {
+    const opened = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS_WITH_OPENS, EXTRA) }))
+    const quiet = classifyAttempt(inputOf())
+    expect(auditModule.digestPayloadOf({ ...opened, windowOpens: undefined })).toEqual(auditModule.digestPayloadOf(opened))
+    const set = buildAuditSet(
+      provenanceOf(),
+      [opened, quiet].map((attempt) => ({ mechanical: attempt, review: null, countsAfterOverrules: countsAfterOverrulesOf(attempt, null) })),
+      [],
+    )
+    expect(set.populations.initial.windowOpens).toEqual({ followed: 1, denied: 4 })
+    const markdown = formatAuditSet(set)
+    expect(markdown).toContain('- window opens: followed 1 (round 2), denied 4 (round 2, 3, 3, 4)')
+    expect(markdown).toContain('- window opens: followed 0, denied 0')
+    expect(markdown).toMatch(/- initial: .*1 window open\(s\) followed, 4 denied/)
+    const other = buildAuditSet(provenanceOf({ setId: 'set-2', createdAt: '2026-09-12T18:00:00.000Z' }), [{ mechanical: opened, review: null, countsAfterOverrules: countsAfterOverrulesOf(opened, null) }], [])
+    const aggregate = buildAuditAggregate([set, other], '2026-09-14T11:00:00.000Z')
+    if (!aggregate.ok) throw new Error(aggregate.errors.join('; '))
+    expect(aggregate.value.populations.initial.windowOpens).toEqual({ followed: 2, denied: 8 })
+    expect(formatAuditAggregate(aggregate.value)).toMatch(/- initial: .*2 window open\(s\) followed, 8 denied/)
+  })
+
+  it('leaves an audit written before the counter uncounted, never zero', () => {
+    const older = { ...classifyAttempt(inputOf()), windowOpens: undefined }
+    const set = buildAuditSet(provenanceOf(), [{ mechanical: older, review: null, countsAfterOverrules: countsAfterOverrulesOf(older, null) }], [])
+    expect('windowOpens' in set.populations.initial).toBe(false)
+    expect(formatAuditSet(set)).toContain('- window opens not counted')
+    expect(formatAuditSet(set)).toMatch(/- initial: .*window opens not counted/)
+  })
 })
 
 describe('Not-found Landings (#239, ADR 0050)', () => {

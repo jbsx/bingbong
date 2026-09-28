@@ -12,6 +12,7 @@ import { createPaneBrowserController } from './createPaneBrowserController'
 import { attachPageContextMenu } from './attachPageContextMenu'
 import { trackPaneBackground } from './paneBackgrounds'
 import { applyPaneZoom } from './paneZoom'
+import { attachWindowOpenLedger } from './windowOpenLedger'
 import { reportFault } from '../../core/trace/fault'
 
 // Electron glue for subagent tabs (issue #13): one WebContentsView per
@@ -176,17 +177,25 @@ export function createSubagentPanePool(
     })
     wc.on('did-navigate-in-page', (_event, url) => tabs.update(tab.agentId, { url }))
     wc.on('page-title-updated', (_event, title) => tabs.update(tab.agentId, { title }))
-    // Subagent tabs auto-close window.open popups too; the URLs surface in
-    // the subagent's own click/read outcomes.
-    const popupBlocks: string[] = []
+    // Subagent tabs deny window.open popups too; the URLs surface in the
+    // subagent's own click/read outcomes. A link that asks for a new
+    // window opens in the tab, by the main pane's rule (ADR 0073); the
+    // Auth Popup stays the main pane's alone.
+    const windowOpens = attachWindowOpenLedger(wc)
     wc.setWindowOpenHandler((details) => {
-      popupBlocks.push(details.url)
+      windowOpens.recordDenied(details.url)
       return { action: 'deny' }
     })
 
     const pooled: PooledView = {
       view,
-      custody: holdBrowserCustody(createPaneBrowserController({ view, consumePopupBlocks: () => popupBlocks.splice(0) })),
+      custody: holdBrowserCustody(
+        createPaneBrowserController({
+          view,
+          consumePopupBlocks: () => windowOpens.consume(),
+          holdWindowOpens: () => windowOpens.hold(),
+        }),
+      ),
       cardRect: null,
       inMainArea: false,
     }

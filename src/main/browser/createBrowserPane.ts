@@ -8,6 +8,7 @@ import { isAuthUrl, resolveAuthIdentity } from '../../core/browser/authIdentity'
 import { attachPageContextMenu } from './attachPageContextMenu'
 import { trackPaneBackground, trackWindowBackground } from './paneBackgrounds'
 import { applyPaneZoom } from './paneZoom'
+import { attachWindowOpenLedger } from './windowOpenLedger'
 
 export const BROWSER_PARTITION = 'persist:browse'
 
@@ -40,6 +41,8 @@ export interface BrowserPane {
   onState(listener: (state: BrowserPaneState) => void): () => void
   /** Drains URLs of window.open popups blocked since the last call. */
   consumePopupBlocks(): string[]
+  /** Holds denied opens while the model acts on the page, until the returned release (ADR 0073). */
+  holdWindowOpens(): () => void
   /**
    * Opens the auth popups requested since the last call and returns their
    * URLs (ADR 0018) — called by the controller at outcome time, when no
@@ -109,8 +112,13 @@ export function createBrowserPane(deps?: {
   // pending command: drained at outcome time by the controller, or by a
   // short fallback timer when no tool call is in flight (a manual click).
   // Non-http(s) targets (data:, about:) never qualify.
+  //
+  // A link that asks for a new window is a second exception (ADR 0073):
+  // its open is denied like any other and the pane navigates to it — by
+  // the controller when a model's click made it, by the ledger when the
+  // user's did.
   const authIdentity = resolveAuthIdentity(process.env)
-  const popupBlocks: string[] = []
+  const windowOpens = attachWindowOpenLedger(wc)
   const authPopupOpens: string[] = []
   const authPopupListeners = new Set<(win: Electron.BrowserWindow) => void>()
   let authPopupFallback: NodeJS.Timeout | null = null
@@ -172,7 +180,7 @@ export function createBrowserPane(deps?: {
     if (details.disposition === 'background-tab' && navigatePane(details.url)) {
       return { action: 'deny' }
     }
-    popupBlocks.push(details.url)
+    windowOpens.recordDenied(details.url)
     return { action: 'deny' }
   })
 
@@ -235,7 +243,7 @@ export function createBrowserPane(deps?: {
         // transient work (#96): an ended Session's denied popups never
         // reach a later Session's outcome lines, and its queued sign-in
         // windows never open.
-        popupBlocks.length = 0
+        windowOpens.clear()
         authPopupOpens.length = 0
         if (authPopupFallback !== null) {
           clearTimeout(authPopupFallback)
@@ -261,7 +269,8 @@ export function createBrowserPane(deps?: {
       listeners.add(listener)
       return () => listeners.delete(listener)
     },
-    consumePopupBlocks: () => popupBlocks.splice(0),
+    consumePopupBlocks: () => windowOpens.consume(),
+    holdWindowOpens: () => windowOpens.hold(),
     consumeAuthPopupOpens: () => {
       const urls = drainAuthPopupUrls()
       for (const url of urls) openAuthPopup(url)

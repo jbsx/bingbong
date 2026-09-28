@@ -26,6 +26,7 @@ import {
   type SnapshotRef,
 } from '../../core/browser/snapshot'
 import { SCROLL_END_OF_PAGE, formatNewInView } from '../../core/browser/scrollDelta'
+import { authPopupOpenedLine, formatOpenAddress, judgeWindowOpens, LINK_SELECTOR, NEW_WINDOW_FOLLOWED_CLAUSE, popupBlockedLine } from '../../core/browser/newWindowLink'
 import { clickPrepScript, markShownRefsScript, overlayShownRefsScript, refIsShownScript, type ClickPrep, type CoverNaming } from './collectPageScript'
 import { reportFault } from '../../core/trace/fault'
 
@@ -84,6 +85,14 @@ export interface CdpBrowserControllerDeps {
    * ride the outcome line so the model knows where the sign-in went.
    */
   consumeAuthPopupOpens?: () => string[]
+  /**
+   * Holds the pane's denied opens for this controller until the returned
+   * release is called (#299, ADR 0073): a click, a type or a key press is
+   * in flight, and an open it causes is the model's. A click judges
+   * whether the open is the clicked link's, against the ref. Outside a
+   * hold the pane judges an open as the user's own press.
+   */
+  holdWindowOpens?: () => () => void
   /**
    * Verbose sub-span channel (#32): when provided (and the env flag enabled
    * it), the deliberate delays and extra round-trips inside browser actions
@@ -317,12 +326,16 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     void cdp.send('Page.handleJavaScriptDialog', { accept: false }).catch(() => {})
   })
 
+  // The opens a click judged and denied (#299), waiting for the outcome
+  // line that reports them.
+  const judgedDenied: string[] = []
+
   /** Popup blocks, auth-popup opens, and native dialog reports since the last outcome line. */
   function drainedReports(): string[] {
     const authPopupOpens = deps.consumeAuthPopupOpens?.() ?? []
     const reports = [
-      ...authPopupOpens.map((url) => `auth popup opened: ${truncateOutcomeText(url, 160)}`),
-      ...(deps.consumePopupBlocks?.() ?? []).map((url) => `popup blocked: ${truncateOutcomeText(url, 160)}`),
+      ...authPopupOpens.map(authPopupOpenedLine),
+      ...[...judgedDenied.splice(0), ...(deps.consumePopupBlocks?.() ?? [])].map(popupBlockedLine),
       ...nativeDialogReports.splice(0),
     ]
     return reports
@@ -660,9 +673,8 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     }
   }
 
-  async function navigate(input: string): Promise<string> {
-    const url = normalizeUrlInput(input)
-    if (!url) throw new Error(`cannot navigate to: "${input}"`)
+  /** Send the tab to this address and wait for the landing to settle. */
+  async function loadAndSettle(url: string): Promise<void> {
     try {
       await page.loadUrl(url)
     } catch (error) {
@@ -675,10 +687,16 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
       if (!isAbortedLoad(error)) throw error
       lastSnapshot = undefined
       await settleAfterAbort()
-      return navigationOutcome()
+      return
     }
     lastSnapshot = undefined
     await settle('navigate', pacing.settleMs)
+  }
+
+  async function navigate(input: string): Promise<string> {
+    const url = normalizeUrlInput(input)
+    if (!url) throw new Error(`cannot navigate to: "${input}"`)
+    await loadAndSettle(url)
     return navigationOutcome()
   }
 
@@ -796,7 +814,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
    * target was then retried once, a Not Shown one never.
    */
   type ClickAttempt =
-    | { kind: 'acted'; direct: boolean; index: number; label: string; before: ElementState; signature: PageSignature; dismissal: string | null }
+    | { kind: 'acted'; direct: boolean; index: number; label: string; href: string | null; before: ElementState; signature: PageSignature; dismissal: string | null }
     | { kind: 'blocked'; blocked: BlockedAction; signature: PageSignature; snapshot: PageSnapshot; dismissal: string | null; retried: boolean }
 
   /** The element a click aims at: the ref the model named, the registry index that holds it now, and what it looked like when shown. */
@@ -804,6 +822,8 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     ref: number
     index: number
     label: string
+    /** The address the snapshot showed for it; null when it is no link. */
+    href: string | null
     before: ElementState
   }
 
@@ -822,9 +842,9 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
       await dispatchPointClick(visualPoint)
       visualPoints.delete(ref)
       lastSnapshot = undefined
-      return { kind: 'acted', direct: false, index, label: target.label, before: elementState(target), signature: signatureOf(snapshot), dismissal: null }
+      return { kind: 'acted', direct: false, index, label: target.label, href: target.href, before: elementState(target), signature: signatureOf(snapshot), dismissal: null }
     }
-    const aim: ClickTarget = { ref, index: target.ref - 1, label: target.label, before: elementState(target) }
+    const aim: ClickTarget = { ref, index: target.ref - 1, label: target.label, href: target.href, before: elementState(target) }
     const attempt = await clickAtIndex(aim, snapshot, null)
     if (attempt.kind === 'acted') return attempt
     return (await clearConsentWall(aim, attempt.blocked)) ?? attempt
@@ -837,7 +857,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
    * attempt is measured against.
    */
   async function clickAtIndex(aim: ClickTarget, snapshot: PageSnapshot, dismissal: string | null): Promise<ClickAttempt> {
-    const { ref, index, label, before } = aim
+    const { ref, index, label, href, before } = aim
     // A Cover is named by a ref the model holds: any number of the listing
     // this outcome carries after a dismissal, else only a number still shown.
     const naming = { listed: snapshot.refs.length, shownOnly: dismissal === null }
@@ -870,7 +890,47 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     }
     // A click can navigate (link) or mutate the page; never trust old refs.
     lastSnapshot = undefined
-    return { kind: 'acted', direct: !(prep.clickable), index, label, before, signature: signatureOf(snapshot), dismissal }
+    return { kind: 'acted', direct: !(prep.clickable), index, label, href, before, signature: signatureOf(snapshot), dismissal }
+  }
+
+  /** The address the link at this index carries now — the node itself or
+   * the link it sits in; null when it is no link, or went with the page. */
+  async function linkAddressAt(index: number): Promise<string | null> {
+    try {
+      const address = await evaluateInPage<unknown>(`(() => {
+        /* LINK_ADDRESS */
+        const el = (window.__bingbongRefs || [])[${index}]
+        if (!el || !el.isConnected || typeof el.closest !== 'function') return null
+        const link = el.closest(${JSON.stringify(LINK_SELECTOR)})
+        return link && typeof link.href === 'string' ? link.href : null
+      })()`)
+      return typeof address === 'string' ? address : null
+    } catch (error) {
+      reportFault('browser.createCdpBrowserController.linkAddressAt', error)
+      return null
+    }
+  }
+
+  /**
+   * ADR 0073: the opens this click caused, judged against the link it
+   * landed on. The one that is the link's own address is followed — the
+   * pane navigates there, since the window itself can never be allowed
+   * (ADR 0018) — and the rest wait for the outcome line as denied popups.
+   * True when an open was followed.
+   */
+  async function followNewWindowLink(attempt: Extract<ClickAttempt, { kind: 'acted' }>): Promise<boolean> {
+    const opens = deps.consumePopupBlocks?.() ?? []
+    if (opens.length === 0) return false
+    const { followed, denied } = judgeWindowOpens(opens, [attempt.href, await linkAddressAt(attempt.index)])
+    judgedDenied.push(...denied)
+    if (followed === null) return false
+    try {
+      await loadAndSettle(followed)
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error)
+      throw new Error(`the link asked for a new window; opening ${formatOpenAddress(followed)} here failed: ${reason}`)
+    }
+    return true
   }
 
   /**
@@ -965,10 +1025,25 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     return attempt.dismissal === null ? line : withSettledState(line, attempt.snapshot)
   }
 
+  /**
+   * An action that sends input to the page, with the pane's denied opens
+   * held for the length of it (ADR 0073): an open it causes is the model's,
+   * judged by a click against its ref and reported by everything else.
+   */
+  async function holdingWindowOpens<T>(act: () => Promise<T>): Promise<T> {
+    const release = deps.holdWindowOpens?.()
+    try {
+      return await act()
+    } finally {
+      release?.()
+    }
+  }
+
   async function clickRef(ref: number): Promise<string> {
     const attempt = await performClick(ref)
     if (attempt.kind === 'blocked') return blockedOutcome('click', ref, attempt)
     await settle('click', pacing.settleMs)
+    const openedHere = await followNewWindowLink(attempt)
     const after = await probeAction(attempt.index, attempt.label)
     const urlChanged = attempt.signature.url !== after.signature.url
     const dialogNowOpen = after.signature.dialogOpen
@@ -992,6 +1067,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     const cleared = consentNote(attempt, ref)
     if (cleared !== null) extras.push(cleared)
     if (attempt.direct) extras.push('activated directly (outside viewport)')
+    if (openedHere) extras.push(NEW_WINDOW_FOLLOWED_CLAUSE)
     /** The snapshot whose state rides the outcome (post-dismissal when a
      * consent wall was cleared, the post-action collect otherwise). */
     let settled: PageSnapshot | undefined = fresh
@@ -1314,8 +1390,8 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     }
   }
 
-  const click = (ref: number) => withRefusedStaleRef(() => clickRef(ref))
-  const type = (ref: number, text: string) => withRefusedStaleRef(() => typeIntoRef(ref, text))
+  const click = (ref: number) => holdingWindowOpens(() => withRefusedStaleRef(() => clickRef(ref)))
+  const type = (ref: number, text: string) => holdingWindowOpens(() => withRefusedStaleRef(() => typeIntoRef(ref, text)))
 
   return {
     navigate,
@@ -1327,7 +1403,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     screenshot,
     back,
     forward,
-    pressKey,
+    pressKey: (press, times) => holdingWindowOpens(() => pressKey(press, times)),
     mediaState,
     state,
     pageFacts,

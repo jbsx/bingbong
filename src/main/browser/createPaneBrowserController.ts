@@ -18,6 +18,8 @@ export function createPaneBrowserController(
     view: { webContents: Electron.WebContents }
     /** Popup-block reports recorded by the pane (main pane only). */
     consumePopupBlocks?: () => string[]
+    /** Holds the pane's denied opens while the model acts on the page (ADR 0073). */
+    holdWindowOpens?: () => () => void
     /** Auth-popup opens queued by the pane, opened here (main pane only). */
     consumeAuthPopupOpens?: () => string[]
   },
@@ -83,6 +85,7 @@ export function createPaneBrowserController(
     page,
     collectScript: COLLECT_PAGE_SCRIPT,
     ...(pane.consumePopupBlocks ? { consumePopupBlocks: pane.consumePopupBlocks } : {}),
+    ...(pane.holdWindowOpens ? { holdWindowOpens: pane.holdWindowOpens } : {}),
     ...(pane.consumeAuthPopupOpens ? { consumeAuthPopupOpens: pane.consumeAuthPopupOpens } : {}),
     ...(deps?.subspans ? { subspans: deps.subspans } : {}),
   })

@@ -142,6 +142,14 @@ export const NOT_EXECUTED_PREFIX = 'Not executed — '
 export const END_OF_PAGE_MARK = 'end of page'
 /** The head of the line every Tier-1 consent dismissal reports (`consentDismissalLine`, dialogPolicy.ts; #263). */
 export const CONSENT_DISMISSAL_MARK = 'dismissed consent dialog: clicked ['
+/** The clause a click carries when the open it caused was followed (`NEW_WINDOW_FOLLOWED_CLAUSE`, newWindowLink.ts; #299). */
+export const NEW_WINDOW_FOLLOWED_MARK = 'the link asked for a new window; opened here'
+/** The head of every denied open's report (`popupBlockedLine`, newWindowLink.ts; #299). */
+export const POPUP_BLOCKED_MARK = 'popup blocked: '
+/** The head of every Auth Popup's report (`authPopupOpenedLine`, newWindowLink.ts; ADR 0018). */
+export const AUTH_POPUP_OPENED_MARK = 'auth popup opened: '
+/** The head of every native dialog's report, up to its kind (`nativeDialogReports`, createCdpBrowserController.ts). */
+export const NATIVE_DIALOG_MARK = 'native '
 /**
  * A consent-style control label (`CONSENT_LABEL_RE`, dialogPolicy.ts; #263,
  * ADR 0061), copied rather than imported like every fragment here, and
@@ -622,6 +630,14 @@ export interface AuditMechanical {
    * written before the counter.
    */
   readonly consentWalls?: ConsentWallRounds
+  /**
+   * The window opens (#299, ADR 0073): the round of every open a click
+   * followed into the pane, and of every open reported as a denied popup,
+   * one entry an open. Read from the full result text, where the app
+   * prints its reports, beside the rounds and never in them. Reported,
+   * never gated. Absent on an audit written before the counter.
+   */
+  readonly windowOpens?: WindowOpenRounds
   readonly walledRounds: number
   /**
    * The round of every navigate that landed on a Not-found Page, one entry per
@@ -954,6 +970,8 @@ export interface AuditPopulation {
   readonly unavailableLandings?: Readonly<Record<keyof UnavailableLandingRounds, number>>
   /** Consent dismissals, hand consent clicks, and blocks a hand consent click followed, over the attempts that count them (#263); absent when none does. */
   readonly consentWalls?: Readonly<ConsentWallCounts>
+  /** Window opens followed into the pane and denied, over the attempts that count them (#299); absent when none does. */
+  readonly windowOpens?: Readonly<WindowOpenCounts>
   /** Automatic Tier Escalations by arm, replay verdicts on the round before each, and declines by reason, over the attempts that count them (#266); absent when none does. */
   readonly tierEscalations?: Readonly<TierEscalationCounts>
   readonly inheritedRounds: number
@@ -1466,6 +1484,14 @@ function consentWallsText(counted: ConsentWallRounds | undefined): string {
   return counted === undefined
     ? 'consent walls not counted'
     : `consent walls: dismissals ${roundsText(counted.dismissals)}, hand consent clicks ${roundsText(counted.handConsentClicks)}, blocked then hand consent ${roundsText(counted.blockedThenHandConsent)}`
+}
+
+function windowOpensText(counted: WindowOpenRounds | undefined): string {
+  return counted === undefined ? 'window opens not counted' : `window opens: followed ${roundsText(counted.followed)}, denied ${roundsText(counted.denied)}`
+}
+
+function populationWindowOpensText(counted: AuditPopulation['windowOpens']): string {
+  return counted === undefined ? 'window opens not counted' : `${counted.followed} window open(s) followed, ${counted.denied} denied`
 }
 
 function populationConsentWallsText(counted: AuditPopulation['consentWalls']): string {
@@ -2592,6 +2618,61 @@ function consentWallsOf(raw: readonly RawRound[]): ConsentWallRounds {
   return { dismissals, handConsentClicks, blockedThenHandConsent }
 }
 
+/** The rounds of an attempt's window opens, followed and denied, one entry an open (#299). */
+export interface WindowOpenRounds {
+  readonly followed: readonly number[]
+  readonly denied: readonly number[]
+}
+
+/** The window opens as counts, over a population. */
+export type WindowOpenCounts = Record<keyof WindowOpenRounds, number>
+
+/** How many times a mark stands in a text. */
+function occurrences(text: string, mark: string): number {
+  return text.split(mark).length - 1
+}
+
+/**
+ * The lines the app's reports can stand on: a Page Read prints them under
+ * the page, each on a line of its own, and every other outcome joins them
+ * to its first line. The page's own text is on neither, so a page that
+ * says `popup blocked:` is never counted.
+ */
+function reportLinesOf(name: string, text: string): string[] {
+  const lines = text.split('\n')
+  if (name !== 'read_page') return [`; ${lines[0]!}`]
+  const footer: string[] = []
+  for (let index = lines.length - 1; index > 0 && isReportLine(lines[index]!); index -= 1) footer.push(`; ${lines[index]!}`)
+  return footer
+}
+
+/** A report on a line of its own, as `drainedReports` prints them under a Page Read. */
+function isReportLine(line: string): boolean {
+  return [POPUP_BLOCKED_MARK, AUTH_POPUP_OPENED_MARK, NATIVE_DIALOG_MARK].some((mark) => line.startsWith(mark))
+}
+
+/**
+ * An attempt's window opens over its raw rounds (#299, ADR 0073), read from
+ * the full result text because a report can sit past the digest's head:
+ * one entry per click whose open was followed into the pane, and one per
+ * open reported as a denied popup.
+ */
+function windowOpensOf(raw: readonly RawRound[]): WindowOpenRounds {
+  const followed: number[] = []
+  const denied: number[] = []
+  for (const round of raw) {
+    for (const entry of round.calls) {
+      const text = entry.result !== undefined && entry.result.ok ? resultText(entry.result.result) : null
+      if (text === null) continue
+      for (const line of reportLinesOf(entry.call.name, text)) {
+        if (line.includes(`; ${NEW_WINDOW_FOLLOWED_MARK}`)) followed.push(round.round)
+        for (let open = occurrences(line, `; ${POPUP_BLOCKED_MARK}`); open > 0; open -= 1) denied.push(round.round)
+      }
+    }
+  }
+  return { followed, denied }
+}
+
 /**
  * An audit's rounds with the Unavailable Landings a report written before
  * the counter never marked, recounted by the app's title rule over the page
@@ -3618,6 +3699,7 @@ export function classifyAttempt(input: AuditTraceInput): AuditMechanical {
     // be recorded, where its trace is new enough to have said.
     answerCheckpoints: traceAtLeast(ANSWER_CHECKPOINT_TRACE_VERSION) ? answerCheckpointsOf(records) : null,
     consentWalls: consentWallsOf(raw),
+    windowOpens: windowOpensOf(raw),
     walledRounds: rounds.filter((round) => round.tags.wall).length,
     notFoundNavigates: rounds.flatMap((round) => round.calls.filter((call) => call.name === 'navigate' && call.notFound !== undefined).map(() => round.round)),
     rewrittenComposedAddresses: rounds.flatMap((round) => round.calls.filter((call) => call.rewritten !== undefined).map(() => round.round)),
@@ -4216,6 +4298,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
   let blockedOrInert: Record<keyof BlockedOrInertCounts, number> | undefined
   let unavailableLandings: Record<keyof UnavailableLandingRounds, number> | undefined
   let consentWalls: ConsentWallCounts | undefined
+  let windowOpens: WindowOpenCounts | undefined
   let tierEscalations: TierEscalationCounts | undefined
   let subagentCitations: SubagentCitationCounts | undefined
   let slipAnswers = 0
@@ -4326,6 +4409,11 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
       unavailableLandings.followedBySearch += mechanical.unavailableLandings.followedBySearch.length
     }
     if (mechanical.consentWalls !== undefined) addConsentWalls((consentWalls ??= emptyConsentWallCounts()), mechanical.consentWalls)
+    if (mechanical.windowOpens !== undefined) {
+      windowOpens ??= { followed: 0, denied: 0 }
+      windowOpens.followed += mechanical.windowOpens.followed.length
+      windowOpens.denied += mechanical.windowOpens.denied.length
+    }
     if (mechanical.tierEscalations !== undefined) tierEscalations = addTierEscalations(tierEscalations ?? emptyTierEscalationCounts(), mechanical.tierEscalations)
     if (mechanical.subagentCitations !== undefined) addSubagentCitations((subagentCitations ??= emptySubagentCitationCounts()), mechanical.subagentCitations)
     if (mechanical.identitySlips === null) slipsNotRecorded += 1
@@ -4397,6 +4485,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
     ...(blockedOrInert === undefined ? {} : { blockedOrInert }),
     ...(unavailableLandings === undefined ? {} : { unavailableLandings }),
     ...(consentWalls === undefined ? {} : { consentWalls }),
+    ...(windowOpens === undefined ? {} : { windowOpens }),
     ...(tierEscalations === undefined ? {} : { tierEscalations }),
     ...(subagentCitations === undefined ? {} : { subagentCitations }),
     inheritedRounds: inherited,
@@ -4922,7 +5011,7 @@ export function restateVerifiedOrUnaskedMarkdown(markdown: string, aggregate: Au
 function judgementLines(populations: readonly AuditPopulation[]): string[] {
   return populations.map(
     (population) =>
-      `- ${population.label}: ${population.offKeyRounds} Off-key round(s), ${population.searchLoopRounds} Search Loop round(s) by the reviewer (${population.mechanicalSearchRounds} by the streak rule, heads included: ${population.searchRoundsAtStreak2} at streak 2 or beyond, ${population.searchRoundsAtStreak3} at 3 or beyond; attempts by search source ${SEARCH_SOURCES.map((source) => `${source} ${population.searchSources[source]}`).join(', ')}; navigate searches by Search URL form ${searchFormsText(population.searchForms)}; ${populationBlockedOrInertText(population.blockedOrInert)}; ${populationUnavailableLandingsText(population.unavailableLandings)}; ${populationConsentWallsText(population.consentWalls)}; ${populationTierEscalationsText(population.tierEscalations)}), ` +
+      `- ${population.label}: ${population.offKeyRounds} Off-key round(s), ${population.searchLoopRounds} Search Loop round(s) by the reviewer (${population.mechanicalSearchRounds} by the streak rule, heads included: ${population.searchRoundsAtStreak2} at streak 2 or beyond, ${population.searchRoundsAtStreak3} at 3 or beyond; attempts by search source ${SEARCH_SOURCES.map((source) => `${source} ${population.searchSources[source]}`).join(', ')}; navigate searches by Search URL form ${searchFormsText(population.searchForms)}; ${populationBlockedOrInertText(population.blockedOrInert)}; ${populationUnavailableLandingsText(population.unavailableLandings)}; ${populationConsentWallsText(population.consentWalls)}; ${populationWindowOpensText(population.windowOpens)}; ${populationTierEscalationsText(population.tierEscalations)}), ` +
       `${population.inheritedRounds} inherited, ${population.rejectedCheckpoints} rejected Evidence Checkpoint(s), ${population.walledRounds} walled round(s), ${population.notFoundNavigates} navigate(s) landed on a Not-found Page (${population.notFoundOffKey} judged Off-key), ${population.rewrittenComposedAddresses ?? 0} Composed Address(es) rewritten into a site search (${population.rewrittenComposedAddressesOffKey ?? 0} judged Off-key, ${population.rewrittenShownAddresses ?? 'not counted'} to an address the Run was shown), ${population.unseenPhraseRewrites ?? 'not counted'} search(es) ran with an Unseen Phrase unquoted (${population.unseenPhraseRewritesOffKey ?? 0} judged Off-key), ${population.engineRewrites ?? 'not counted'} search(es) ran on the Run Engine in place of another Web Engine (${population.engineRewritesOffKey ?? 0} judged Off-key), ${populationResultPicksText(population)}, ${populationSelectedPassagesText(population)}, ${populationRunMadeUseText(population)}, ${populationContradictionNotesText(population)}, ${population.subagentRounds} Subagent round(s), ` +
       `${population.mergedCheckpoints} merged Evidence Checkpoint(s) (a floor), ${population.heldPageRoundsWithoutProgress} Held Page round(s) without Progress, ${population.bundledCheckpoints} bundled checkpoint round(s), ${population.sameSourceUnsupportedRounds} same-source unsupported round(s), ${subagentCitationsText(population.subagentCitations)}, ${populationSlipsText(population)}, ${delegatedPageCountsText(population.delegatedPageRounds)}, ${populationPastTheEndReadsText(population)}, ${populationBookkeepingBeforeAnswerText(population)}, ${populationBookkeepingBeforeCutText(population)}, ${populationAnswerCheckpointsText(population)}, ` +
       `${population.malformedAnswers} Malformed Answer(s) (${population.answerRetries} retried), ${populationOffLanguageAnswersText(population)}, ` +
@@ -5013,6 +5102,7 @@ function attemptSection(attempt: AuditAttempt): string[] {
   lines.push(`- ${blockedOrInertText(mechanical.blockedOrInert)}`)
   lines.push(`- ${unavailableLandingsText(mechanical.unavailableLandings)}`)
   lines.push(`- ${consentWallsText(mechanical.consentWalls)}`)
+  lines.push(`- ${windowOpensText(mechanical.windowOpens)}`)
   lines.push(`- ${tierEscalationsText(mechanical.tierEscalations)}`)
   lines.push(`- reads refused as past the end: ${mechanical.pastTheEndReads === undefined ? 'not counted' : rounds(mechanical.pastTheEndReads)}`)
   lines.push(`- bookkeeping rounds right before the Answer: ${attempt.bookkeepingBeforeAnswer === undefined ? 'not counted' : rounds(attempt.bookkeepingBeforeAnswer)}`)

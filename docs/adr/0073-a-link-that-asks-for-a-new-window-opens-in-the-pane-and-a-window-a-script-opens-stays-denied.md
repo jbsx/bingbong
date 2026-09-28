@@ -97,6 +97,34 @@ inside an in-flight CDP mouse event wedges the command forever.
 On tests: the outcome lines in unit tests, and one e2e fixture with a
 New-window Link, a link rewritten on click, and a window a script opens.
 
+## Note, 2026-09-28: as implemented (#299)
+
+The calls the decision left to the implementer, and what review added.
+
+- **Whose open it is.** The controller holds the pane's denied opens while
+  it sends input to the page: a click, a type, a key press. A click judges
+  the opens it caused against its ref. A type or a key press follows
+  nothing, and what it opened is reported on the next outcome.
+- **An open just after the model acted is the model's.** A handler on a
+  timer can open its window after the outcome is written. For 2 seconds
+  after a hold is released an open is reported and never followed.
+- **The user's press** is read from the page: the link a mouse press or
+  Enter landed on, remembered by node for those same 2 seconds, and its
+  address asked for after the open. Focus is not read, since the model's
+  click leaves focus behind it.
+- **A user's press while the model acts** is judged as the model's, and an
+  open it makes is reported. The two cannot be told apart from the pane.
+- **Addresses are compared** by URL fingerprint, as the Composed Address
+  rail compares them, so a fragment is no part of the address.
+- **A followed open whose load fails** fails the click, and the error names
+  the address. A load the site aborted by navigating on is a landing.
+- **A link to the page's own address** reloads it and reads
+  `urlChanged=false` beside the clause.
+- **The short cut** for a target that is no address is 40 characters. Only
+  `http:` and `https:` are addresses to navigate to.
+- **A cut address is not offered.** Over 2,000 characters the printed form
+  is not the address.
+
 ## Relationships
 
 Narrows [ADR 0018](0018-auth-host-identity-and-popups.md). Adds a source to

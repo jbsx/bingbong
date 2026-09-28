@@ -1105,6 +1105,24 @@ function finds over the captures themselves: one, the Voyager initial of
 `fix-283-3`, in 371 attempts on disk on 2026-09-28. It is reported, never
 gated.
 
+**Window opens** (#299, ADR 0073) count the opens a page made, by what
+became of each. **Followed** is the round of every click whose outcome
+carries `the link asked for a new window; opened here`: a New-window Link the
+pane navigated to. **Denied** is the round of every open reported as `popup
+blocked:`, one entry an open, so a click that opened two windows counts its
+round twice. Both are read from the full result text, since a report can sit
+past the digest's head, and only from where the app prints its reports: the
+first line of an outcome, and the lines under a Page Read. A page whose own
+text says `popup blocked:` is not counted, unless that text is the last of
+the page and a Page Read printed a report under it. An `auth popup opened:`
+line is neither. The user's own click is reported to nobody and is not in
+the trace. The count sits beside the rounds and does not move the digest. An
+audit written before the counter has no field for it and prints "not
+counted"; its denied opens can be recounted from its traces, and a followed
+one cannot exist in it. It is reported, never gated: on 2026-09-28 the traces
+held 28 denied opens in 294 run directories, and one in the 99 since
+`fix-270`.
+
 Two more count the Finalization bookkeeping round (#256, ADR 0056).
 **Skipped bookkeeping rounds** are the Run's own `finalization_entry` records
 whose `bookkeeping` is `skipped`: Finalization entries that went straight to

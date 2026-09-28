@@ -98,6 +98,8 @@ class FakeCdp implements CdpDebugger {
   /** When set, the next click-prep reports a stale registry once (re-collect path). */
   prepStaleOnce = false
   actionProbe: unknown = undefined
+  /** The address the clicked link carries right after the click (#299); undefined answers the element's own href. */
+  linkAddress: string | null | undefined = undefined
   mediaProbe: unknown = { paused: true, currentTime: 12.5, volume: 0.4 }
   collectValues: unknown[] = []
   /**
@@ -234,6 +236,11 @@ class FakeCdp implements CdpDebugger {
         }
         return { result: { value: true } } as T
       }
+      if (expression.includes('/* LINK_ADDRESS */')) {
+        if (this.linkAddress !== undefined) return { result: { value: this.linkAddress } } as T
+        const element = this.collectedElements[registryIndexOf(expression)] as { href?: string | null } | undefined
+        return { result: { value: element?.href ?? null } } as T
+      }
       if (expression.includes('/* CONSENT_RETRY_KEEP */')) {
         this.keptNode = this.collectedElements[registryIndexOf(expression)]
         return { result: { value: true } } as T
@@ -342,9 +349,12 @@ class FakePage implements CdpPageDriver {
   private hops: { url: string; title: string }[] | null = null
   failBack = false
   failForward = false
+  /** Runs on every load — the page the tab lands on starts being served. */
+  onLoad: ((url: string) => void) | null = null
 
   async loadUrl(url: string): Promise<void> {
     this.loadedUrls.push(url)
+    this.onLoad?.(url)
     this.hops = this.landingHops.length > 0 ? [...this.landingHops] : null
     if (this.abortLoad) throw new Error('net::ERR_ABORTED')
     if (this.failLoadError) throw this.failLoadError
@@ -375,10 +385,19 @@ class FakePage implements CdpPageDriver {
   }
 }
 
-function makeController(options?: { cdp?: FakeCdp; page?: FakePage; popupBlocks?: string[]; subspans?: BrowserSubspans }) {
+function makeController(options?: {
+  cdp?: FakeCdp
+  page?: FakePage
+  popupBlocks?: string[]
+  authPopupOpens?: string[]
+  subspans?: BrowserSubspans
+}) {
   const cdp = options?.cdp ?? new FakeCdp()
   const page = options?.page ?? new FakePage()
   const popupQueue = options?.popupBlocks ? [...options.popupBlocks] : []
+  const authQueue = options?.authPopupOpens ? [...options.authPopupOpens] : []
+  /** What the pane's hold saw: taken at a click's start, released at its end. */
+  const holds = { taken: 0, released: 0 }
   const controller = createCdpBrowserController({
     cdp,
     page,
@@ -387,9 +406,16 @@ function makeController(options?: { cdp?: FakeCdp; page?: FakePage; popupBlocks?
     // sequence of CDP messages, so don't pay the human-paced sleeps.
     pacing: { settleMs: 0, moveMs: 0, clickMs: 0, keystrokeMs: 0, scrollTickMs: 0 },
     consumePopupBlocks: () => popupQueue.splice(0),
+    consumeAuthPopupOpens: () => authQueue.splice(0),
+    holdWindowOpens: () => {
+      holds.taken += 1
+      return () => {
+        holds.released += 1
+      }
+    },
     ...(options?.subspans ? { subspans: options.subspans } : {}),
   })
-  return { cdp, page, controller }
+  return { cdp, page, controller, popupQueue, holds }
 }
 
 /** A distinct link element — a distinct DOM node, which is what a ref
@@ -1639,6 +1665,235 @@ describe('createCdpBrowserController native dialogs and popups', () => {
     const text = await controller.readPage()
 
     expect(text.endsWith('\npopup blocked: http://x.test/popup')).toBe(true)
+  })
+})
+
+// #299, ADR 0073: a link that asks for a new window opens in the pane; a
+// window a script opens stays denied and reported.
+describe('createCdpBrowserController New-window Links', () => {
+  const FOLLOWED = 'the link asked for a new window; opened here'
+
+  /** A page of links on one site. */
+  function linksPage(): CollectedPage {
+    return { ...youtubeFixture, elements: [link('one'), link('two')] }
+  }
+
+  /** The page a followed link lands on. */
+  function landingPage(url: string): CollectedPage {
+    return { ...youtubeFixture, url, title: 'Landed', elements: [link('onward')] }
+  }
+
+  function makeLinksController(options?: { popupBlocks?: string[]; authPopupOpens?: string[] }) {
+    return makeController({ cdp: new FakeCdp(linksPage()), page: new FakePage(), ...options })
+  }
+
+  /** From here a load lands on a page of that address. */
+  function landOnLoad(cdp: FakeCdp, page: FakePage): void {
+    page.onLoad = (url) => cdp.serve(landingPage(url))
+  }
+
+  it('opens a New-window Link in the pane, as a navigating click with its landing and settled page', async () => {
+    const { cdp, page, controller, popupQueue } = makeLinksController()
+    await showRefs(controller)
+    landOnLoad(cdp, page)
+    popupQueue.push('https://example.com/one')
+
+    const outcome = await controller.click(1)
+
+    expect(page.loadedUrls.at(-1)).toBe('https://example.com/one')
+    expect(outcome).toBe(
+      `clicked [1]: urlChanged=true dialogOpen=false; page signature changed; url=https://example.com/one title="Landed"; ${FOLLOWED}\n` +
+        settledBlock(landingPage('https://example.com/one')),
+    )
+    expect(outcome).not.toContain('popup blocked')
+  })
+
+  it('follows a link rewritten as it is clicked to the rewritten address', async () => {
+    const { cdp, page, controller, popupQueue } = makeLinksController()
+    await showRefs(controller)
+    landOnLoad(cdp, page)
+    const rewritten = 'https://example.com/redirect?to=one'
+    cdp.linkAddress = rewritten
+    popupQueue.push(rewritten)
+
+    const outcome = await controller.click(1)
+
+    expect(page.loadedUrls.at(-1)).toBe(rewritten)
+    expect(outcome).toContain(`urlChanged=true dialogOpen=false; page signature changed; url=${rewritten} title="Landed"; ${FOLLOWED}`)
+  })
+
+  it('follows the address the snapshot showed when the link carries another after the click', async () => {
+    const { cdp, page, controller, popupQueue } = makeLinksController()
+    await showRefs(controller)
+    landOnLoad(cdp, page)
+    cdp.linkAddress = 'https://example.com/tracked'
+    popupQueue.push('https://example.com/one')
+
+    await controller.click(1)
+
+    expect(page.loadedUrls.at(-1)).toBe('https://example.com/one')
+  })
+
+  it('denies a link click that opens some other address, and does not navigate', async () => {
+    const { page, controller, popupQueue } = makeLinksController()
+    await showRefs(controller)
+    const loadsBefore = page.loadedUrls.length
+    popupQueue.push('https://ads.test/window')
+
+    const outcome = await controller.click(1)
+
+    expect(page.loadedUrls).toHaveLength(loadsBefore)
+    expect(outcome).toBe('clicked [1]: urlChanged=false dialogOpen=false; no observable change; popup blocked: https://ads.test/window')
+  })
+
+  it('denies a window a button opens, whatever its address', async () => {
+    const cdp = new FakeCdp()
+    const page = new FakePage()
+    const { controller, popupQueue } = makeController({ cdp, page })
+    await showRefs(controller)
+    const loadsBefore = page.loadedUrls.length
+    // A button carries no address, and the probe of the node finds no link.
+    cdp.linkAddress = null
+    popupQueue.push('https://www.youtube.com/second')
+
+    const outcome = await controller.click(3)
+
+    expect(page.loadedUrls).toHaveLength(loadsBefore)
+    expect(outcome).toBe('clicked [3]: urlChanged=false dialogOpen=false; no observable change; popup blocked: https://www.youtube.com/second')
+  })
+
+  it('follows the open that matches and reports the other on the same outcome', async () => {
+    const { cdp, page, controller, popupQueue } = makeLinksController()
+    await showRefs(controller)
+    landOnLoad(cdp, page)
+    popupQueue.push('https://ads.test/window', 'https://example.com/one')
+
+    const outcome = await controller.click(1)
+
+    expect(page.loadedUrls.at(-1)).toBe('https://example.com/one')
+    expect(outcome.split('\n')[0]).toBe(
+      `clicked [1]: urlChanged=true dialogOpen=false; page signature changed; url=https://example.com/one title="Landed"; ${FOLLOWED}; popup blocked: https://ads.test/window`,
+    )
+  })
+
+  it('asks the page for the link’s address only when the click opened something', async () => {
+    const { cdp, controller } = makeLinksController()
+    await showRefs(controller)
+
+    await controller.click(1)
+
+    expect(cdp.calls.some((call) => String(call.params?.expression ?? '').includes('/* LINK_ADDRESS */'))).toBe(false)
+  })
+
+  it('holds the pane’s opens for the length of the click, a refused one included', async () => {
+    const { controller, holds } = makeLinksController()
+    await showRefs(controller)
+
+    await controller.click(1)
+    expect(holds).toEqual({ taken: 1, released: 1 })
+
+    await expect(controller.click(99)).rejects.toThrow(/ref 99 refused/)
+    expect(holds).toEqual({ taken: 2, released: 2 })
+  })
+
+  it('holds them for a type and a key press too, and reports what they opened on the next outcome', async () => {
+    const { page, controller, popupQueue, holds } = makeController()
+    await showRefs(controller)
+    const loadsBefore = page.loadedUrls.length
+
+    await controller.type(3, 'longitude')
+    await controller.pressKey({ key: 'Enter' })
+    expect(holds).toEqual({ taken: 2, released: 2 })
+
+    popupQueue.push('https://www.youtube.com/opened-by-enter')
+    const text = await controller.readPage()
+
+    expect(page.loadedUrls).toHaveLength(loadsBefore)
+    expect(text.endsWith('\npopup blocked: https://www.youtube.com/opened-by-enter')).toBe(true)
+  })
+
+  it('cuts the address in the failure it throws, as every outcome does', async () => {
+    const { page, controller, popupQueue } = makeLinksController()
+    await showRefs(controller)
+    page.failLoad = true
+    const over = `https://example.com/one#${'f'.repeat(2_000)}`
+    popupQueue.push(over)
+
+    await expect(controller.click(1)).rejects.toThrow(`opening ${over.slice(0, 1_999)}… here failed: ERR_NAME_NOT_RESOLVED`)
+  })
+
+  it('says the address when opening it here failed', async () => {
+    const { page, controller, popupQueue } = makeLinksController()
+    await showRefs(controller)
+    page.failLoad = true
+    popupQueue.push('https://example.com/one')
+
+    await expect(controller.click(1)).rejects.toThrow(
+      'the link asked for a new window; opening https://example.com/one here failed: ERR_NAME_NOT_RESOLVED',
+    )
+  })
+
+  it('follows through a load the site aborted by navigating on', async () => {
+    const { cdp, page, controller, popupQueue } = makeLinksController()
+    await showRefs(controller)
+    page.abortLoad = true
+    page.landingHops = [{ url: 'https://example.com/final', title: 'Landed' }]
+    page.onLoad = () => cdp.serve(landingPage('https://example.com/final'))
+    popupQueue.push('https://example.com/one')
+
+    const outcome = await controller.click(1)
+
+    expect(outcome).toContain(`url=https://example.com/final title="Landed"; ${FOLLOWED}`)
+  })
+
+  it('prints a denied address of 1,000 characters whole and cuts one over 2,000', async () => {
+    const whole = `https://ads.test/${'p'.repeat(983)}`
+    const over = `https://ads.test/${'p'.repeat(2_000)}`
+    expect(whole).toHaveLength(1_000)
+    const { controller } = makeLinksController({ popupBlocks: [whole, over] })
+    await showRefs(controller)
+
+    const outcome = await controller.click(2)
+
+    expect(outcome).toBe(
+      `clicked [2]: urlChanged=false dialogOpen=false; no observable change; popup blocked: ${whole}; popup blocked: ${over.slice(0, 1_999)}…`,
+    )
+  })
+
+  it('prints a data: target as its scheme and a short cut', async () => {
+    const data = `data:text/html,${'<b>x</b>'.repeat(100)}`
+    const { controller } = makeLinksController({ popupBlocks: [data] })
+    await showRefs(controller)
+
+    const outcome = await controller.click(2)
+
+    expect(outcome).toBe(`clicked [2]: urlChanged=false dialogOpen=false; no observable change; popup blocked: ${data.slice(0, 39)}…`)
+  })
+
+  it('prints an auth popup’s address by the same rule', async () => {
+    const whole = `https://accounts.test/${'p'.repeat(978)}`
+    const over = `https://accounts.test/${'p'.repeat(2_000)}`
+    expect(whole).toHaveLength(1_000)
+    const { controller } = makeLinksController({ authPopupOpens: [whole, over] })
+    await showRefs(controller)
+
+    const outcome = await controller.click(2)
+
+    expect(outcome).toBe(
+      `clicked [2]: urlChanged=false dialogOpen=false; no observable change; auth popup opened: ${whole}; auth popup opened: ${over.slice(0, 1_999)}…`,
+    )
+  })
+
+  it('reports an open a page read finds waiting as denied, never following it', async () => {
+    const { page, controller, popupQueue } = makeLinksController()
+    await showRefs(controller)
+    const loadsBefore = page.loadedUrls.length
+    popupQueue.push('https://example.com/one')
+
+    const text = await controller.readPage()
+
+    expect(page.loadedUrls).toHaveLength(loadsBefore)
+    expect(text.endsWith('\npopup blocked: https://example.com/one')).toBe(true)
   })
 })
 
