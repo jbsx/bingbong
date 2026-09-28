@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { bookkeepingBeforeAnswerOver, offLanguageAnswersOver, pastTheEndReadsOf, pastTheEndReadsOver, populationOf, PRE_RULE_OFF_LANGUAGE_ANSWERS, replaySearchStreaks, restateVerifiedOrUnasked, restateVerifiedOrUnaskedMarkdown, SEARCH_STREAK_RULE, searchLoopCountsOf, type AuditAggregate, type AuditAttempt, type AuditPopulation, type AuditSetOutput } from './audit.ts'
+import { bookkeepingBeforeAnswerOver, offLanguageAnswersOver, pastTheEndReadsOf, pastTheEndReadsOver, populationOf, PRE_RULE_OFF_LANGUAGE_ANSWERS, replaySearchStreaks, restateVerifiedOrUnasked, restateVerifiedOrUnaskedMarkdown, SEARCH_STREAK_RULE, searchLoopCountsOf, unavailableLandingsOf, type AuditAggregate, type AuditAttempt, type AuditPopulation, type AuditSetOutput } from './audit.ts'
 import {
   HEADLINE_METRICS,
   buildLedger,
@@ -210,7 +210,8 @@ describe('the checkpoint hold recount (#289)', () => {
   })
 
   it('moves nothing but the streak-rule counters on any committed family', () => {
-    const STREAK_RULE_LABELS = ['Search Loop rounds by the streak rule', 'Search rounds at streak 2 or beyond', 'Search rounds at streak 3 or beyond']
+    // #294: and the landings followed by a search, whose wait reads the same rule.
+    const STREAK_RULE_LABELS = ['Search Loop rounds by the streak rule', 'Search rounds at streak 2 or beyond', 'Search rounds at streak 3 or beyond', 'Unavailable landings followed by a search']
     for (const listed of committed.families) {
       const attempts = listed.passes.flatMap((pass) => pass.audit?.attempts ?? []).filter((attempt) => attempt.mechanical.relation === 'initial')
       const population = listed.aggregate?.audit.populations.initial ?? populationOf('initial', attempts)
@@ -253,7 +254,7 @@ describe('the escape recount (#293)', () => {
 })
 
 describe('the Unavailable Landing recount (#262, ADR 0060)', () => {
-  it('restates fix-258-259 with its Unavailable Landings held and its rewrites no search of the loop (#293): 17/23 becomes 12/23, and the landings are counted by title only', () => {
+  it('restates fix-258-259 with its Unavailable Landings held and its rewrites no search of the loop (#293): 17/23 becomes 12/23, and the landings are counted by title only, both followed by a search (#294)', () => {
     const aggregate = readAudit('audit-aggregate-fix-258-259.json') as unknown as AuditAggregate
     const initials = [1, 2, 3].flatMap((pass) => readAudit(`audit-fix-258-259-${pass}.json`).attempts.filter((attempt) => attempt.mechanical.relation === 'initial'))
     const population = aggregate.populations.initial
@@ -271,7 +272,9 @@ describe('the Unavailable Landing recount (#262, ADR 0060)', () => {
     // The status was never in a trace: a recount counts by title and says nothing of status.
     expect(valueOf('Unavailable landings by status')).toBeNull()
     expect(valueOf('Unavailable landings by title')).toBe(2)
-    expect(valueOf('Unavailable landings followed by a search')).toBe(1)
+    // Pass 3's landing has three checkpoints between it and the search: the
+    // wait holds across them as the streak does (#294), where it read 1.
+    expect(valueOf('Unavailable landings followed by a search')).toBe(2)
 
     // An audit written with the counter, its streak counted by the rail's current rule (#289), is read as written.
     const underCurrentRule = initials.map((attempt) => ({ ...attempt, mechanical: { ...attempt.mechanical, searchStreakRule: SEARCH_STREAK_RULE } }))
@@ -279,6 +282,49 @@ describe('the Unavailable Landing recount (#262, ADR 0060)', () => {
     expect(counted.find((counter) => counter.label === 'Search Loop rounds by the streak rule')?.value).toBe(17)
     expect(counted.find((counter) => counter.label === 'Unavailable landings by status')?.value).toBe(1)
     expect(counted.find((counter) => counter.label === 'Search rounds at streak 2 or beyond')?.value).toBe(11)
+  })
+})
+
+describe('the landing wait recount (#294)', () => {
+  const FOLLOWED = 'Unavailable landings followed by a search'
+  const valueOf = (counters: ReturnType<typeof countersOf>, label: string) => counters.find((counter) => counter.label === label)?.value
+
+  it('recounts followed-by-a-search from the rounds of an audit under a streak rule below 3, and reads one under the rule as written', () => {
+    const aggregate = readAudit('audit-aggregate-fix-288-290.json') as unknown as AuditAggregate
+    const initials = [1, 2, 3].flatMap((pass) => readAudit(`audit-fix-288-290-${pass}.json`).attempts.filter((attempt) => attempt.mechanical.relation === 'initial'))
+    expect(initials.map((attempt) => attempt.mechanical.searchStreakRule)).toEqual(initials.map(() => 2))
+    const fromRounds = initials.reduce((total, attempt) => total + unavailableLandingsOf(replaySearchStreaks(attempt.mechanical.rounds)).followedBySearch.length, 0)
+    const landings = aggregate.populations.initial.unavailableLandings!
+    // What the file says and what its rounds say agree on this capture; a
+    // count the older wait wrote is stood in for by one no round gives.
+    expect(landings.followedBySearch).toBe(fromRounds)
+    const written = { ...aggregate.populations.initial, unavailableLandings: { ...landings, followedBySearch: fromRounds + 5 } }
+
+    expect(valueOf(countersOf(written, initials), FOLLOWED)).toBe(fromRounds)
+    // By status and by title are the audit's own: a recount has no status to count.
+    expect(valueOf(countersOf(written, initials), 'Unavailable landings by status')).toBe(landings.status)
+    expect(valueOf(countersOf(written, initials), 'Unavailable landings by title')).toBe(landings.title)
+    const underCurrentRule = initials.map((attempt) => ({ ...attempt, mechanical: { ...attempt.mechanical, searchStreakRule: SEARCH_STREAK_RULE } }))
+    expect(valueOf(countersOf(written, underCurrentRule), FOLLOWED)).toBe(fromRounds + 5)
+  })
+
+  it('recounts over the landings the audit marked where it wrote the counter, so the row’s three counts are of one set', () => {
+    const audit = readAudit('audit-fix-288-290-1.json')
+    const attempt = audit.attempts.find((candidate) => candidate.mechanical.relation === 'initial')!
+    expect(attempt.mechanical.unavailableLandings).toBeDefined()
+    // A page the title rule would mark today and the audit did not, followed by a search.
+    const base = attempt.mechanical.rounds.find((round) => round.calls.length > 0)!
+    const call = base.calls[0]!
+    const unmarked = { ...call, name: 'navigate', ok: true, refused: false, wall: null, url: 'https://web.archive.org/web/2013/x', title: 'Internet Archive: Temporarily Offline', resultHead: 'navigated: url=https://web.archive.org/web/2013/x', search: null, notFound: undefined, unavailable: undefined, rewritten: undefined, resultPick: undefined }
+    const search = { ...unmarked, url: 'https://duckduckgo.com/?q=x', title: 'x at DuckDuckGo', search: { query: 'x', streak: 1 } }
+    const rounds = [{ ...base, round: 1, calls: [unmarked] }, { ...base, round: 2, calls: [search] }]
+    const wrote = { ...attempt, mechanical: { ...attempt.mechanical, rounds, unavailableLandings: { status: [], title: [], followedBySearch: [] } } }
+    const population = { ...populationOf('initial', [wrote]), unavailableLandings: { status: 0, title: 0, followedBySearch: 0 } }
+    expect(valueOf(countersOf(population, [wrote]), FOLLOWED)).toBe(0)
+    // An audit from before the counter has the title rule read its rounds.
+    const before = { ...wrote, mechanical: { ...wrote.mechanical, unavailableLandings: undefined } }
+    const older = { ...population, unavailableLandings: undefined }
+    expect(valueOf(countersOf(older as unknown as AuditPopulation, [before as unknown as AuditAttempt]), FOLLOWED)).toBe(1)
   })
 })
 
@@ -580,6 +626,11 @@ describe('fixtures cut from the committed audits', () => {
     expect(markersOf(base, { ...base, reviewerPromptVersion: 'audit-p3' })).toEqual({
       every: [],
       judgement: [{ axis: 'reviewer prompt', reference: 'audit-p2', subject: 'audit-p3' }],
+    })
+    // #294: a Subject judged under audit-p4 against a Reference not yet re-judged under it.
+    expect(markersOf({ ...base, reviewerPromptVersion: 'audit-p3' }, { ...base, reviewerPromptVersion: 'audit-p4' })).toEqual({
+      every: [],
+      judgement: [{ axis: 'reviewer prompt', reference: 'audit-p3', subject: 'audit-p4' }],
     })
   })
 

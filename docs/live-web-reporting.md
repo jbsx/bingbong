@@ -755,7 +755,11 @@ line, whatever Search Observation an older trace holds for it. Whether the
 user answered is the trace's own `ask_resolved` record, never the wording of
 the result; a call says what it delivered in `delivered` only where its
 result's head cannot, so a report that opens the result leaves the digest as
-it was. Where the trace carries the rail's Search
+it was. The count of Unavailable Landings followed by a search reads the
+same move (#294): the wait after a landing holds on whatever holds the
+streak, ends uncounted on escape, and counts when the next move is a search,
+so a Composed Address rewrite after a landing holds it and the function
+keeps no list of its own. Where the trace carries the rail's Search
 Observations (#243, ADR 0049), which calls were searches — typed and refused
 ones included — and their query and signature (`url` or `input`) are read from
 them, and the attempt's `searchSource` reads `rail`; the streak itself is the
@@ -798,7 +802,13 @@ marker sentences to the app's constants.
 **Code builds a per-round digest**: round number, kind and the rule behind it,
 tool names and bounded arguments, the page each call put in front of the
 assistant, the result head, checkpoint verdict, Notices, tokens, latency, and
-how much the assistant reasoned, as a length. A 24-round attempt is tens of
+how much the assistant reasoned, as a length. A search prints its query, its
+streak and whether it rewords the one before it; a Composed Address the app
+rewrote into a search prints the search that ran, marked rewritten and with
+no streak, and a search whose result a Result Pick opened prints the pick
+under it, with the link's label and address, and a landing on a Not-found or
+an Unavailable Page prints its mark as a wall does (#294). The lines are
+`digestCallLines` in `e2e/live/audit.ts`, which the script sends as they are. A 24-round attempt is tens of
 kilobytes; raw traces never enter a prompt.
 
 **A model that is not the measured one judges** what needs judgement, from the
@@ -884,6 +894,22 @@ judged stopped early by construction. The three Baseline sets and their
 aggregate are re-judged under `audit-p2`; the fix-235 through fix-239 audits are
 not, and since the aggregate refuses a differing audit prompt version they
 aggregate only among themselves.
+
+**`audit-p4` (#294)** defines a Search Loop as the rule has stood since #289
+and #293: a loop ends only when something new is put in front of the
+assistant — a page opened, the user's answer to a question, or a Subagent
+Report. It names what holds: inspection, a checkpoint or a Run Plan report,
+a call that acts on no page, a landing on a Not-found page, an Unavailable
+Page or a wall, and a rewritten search. `audit-p3` (#259) told the reviewer
+that every successful call that is not a search was an opening, which the
+rule stopped saying at #289. The reviewer keeps both freedoms: to say a
+marked streak is not one loop, and to extend a loop across an opening that
+put nothing before the assistant. Nothing was re-judged for the change. The
+Reference is re-judged under `audit-p4` when the next capture is taken, as
+`fix-258-259` was for `audit-p3`; until then every committed audit is
+`audit-p3` or older, the aggregate refuses an `audit-p4` set with an
+`audit-p3` one, and the Fix Ledger marks the reviewer-prompt axis on the
+judgement metrics of a row across the two.
 
 **Regenerating an audit.** Outputs are written once, and the prompt version is
 bumped by hand (`AUDIT_PROMPT_VERSION` in `scripts/live-audit.ts`) — nothing
@@ -1159,7 +1185,11 @@ landing and a call that acts on no page: from each call's name, `wall` and
 Search URL names #293 added are not recounted. On initials the `fix-284`
 Reference reads 14 and 5 where its aggregate wrote 15 and 5, `fix-288-290`
 17 and 7 where it wrote 22 and 8, and `fix-291` 11 and 6 where it wrote 14
-and 7. And since #288 for `Bookkeeping rounds
+and 7. `Unavailable landings followed by a search` is recounted with them
+since #294, its wait reading the same rule: `fix-258-259` reads 2 on
+initials where the older wait gave 1, pass 3's landing having three
+checkpoints between it and the search, and no audit that wrote the counter
+moves. And since #288 for `Bookkeeping rounds
 right before the Answer`: an audit written before the counter is recounted
 from its rounds and its reviews' overrules, with no trace and no reviewer.
 Over `fix-270`, `jev-off`, `jev-on`, `fix-281`, `fix-284` and `fix-283` that

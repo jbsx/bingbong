@@ -5,6 +5,7 @@ import { landedOnNotFoundPage } from '../browser/notFoundPage'
 import { landedOnUnavailablePage } from '../browser/unavailablePage'
 import { actionFingerprint, pageFingerprint, pageReadPartOf, type SettledPageState } from './progressFingerprints'
 import { classifyToolObservation } from './toolObservations'
+import { CHECKPOINT_TOOL_NAMES } from './checkpointTools'
 import { reportFault } from '../trace/fault'
 import { collectedReportIn } from '../agent/agentResultsHeader'
 
@@ -78,9 +79,6 @@ function isEndOfPageScroll(call: ToolCall, outcome: ToolResultOutcome): boolean 
   // page", and that is the page talking, not the browser.
   return outcome.result.split('\n')[1] === SCROLL_END_OF_PAGE
 }
-
-/** Bookkeeping whose acceptance is decision-relevant evidence (#126/AC3). */
-const CHECKPOINT_TOOLS: ReadonlySet<string> = new Set(['record_evidence', 'record_candidate'])
 
 /** Collection whose success hands the run a Subagent Report it may still need to record (#256). */
 const COLLECTION_TOOLS: ReadonlySet<string> = new Set(['agent_results'])
@@ -345,7 +343,7 @@ export function createNoProgressRail(deps: NoProgressRailDeps = {}): NoProgressR
       // What a bookkeeping round would have to record (#256, ADR 0056) is
       // read ahead of the trip: the trip round's later siblings still run
       // their bookkeeping and Collection, and the round after it asks.
-      if (outcome.ok && CHECKPOINT_TOOLS.has(call.name)) somethingNew = false
+      if (outcome.ok && CHECKPOINT_TOOL_NAMES.has(call.name)) somethingNew = false
       // A Collection call counts only when it collected: agent_results also
       // answers `ok` with a listing of running agents or with nothing to
       // collect, and neither gives the round anything to record.
@@ -355,13 +353,13 @@ export function createNoProgressRail(deps: NoProgressRailDeps = {}): NoProgressR
       // rejected ones contribute to no-progress handling (#121/#126/AC3)
       // — once per Tool Round (#197): the round's sibling rejections were
       // made blind to the first and are not separate actions.
-      if (CHECKPOINT_TOOLS.has(call.name) || PLAN_TOOLS.has(call.name)) {
+      if (CHECKPOINT_TOOL_NAMES.has(call.name) || PLAN_TOOLS.has(call.name)) {
         if (!outcome.ok) {
           if (bookkeepingRejectedThisRound) return null
           bookkeepingRejectedThisRound = true
           return escalate()
         }
-        if (CHECKPOINT_TOOLS.has(call.name)) progress()
+        if (CHECKPOINT_TOOL_NAMES.has(call.name)) progress()
         return null
       }
       // A successful requested state change is Progress by definition; a

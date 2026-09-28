@@ -41,6 +41,7 @@ import {
   classifyAttempt,
   bookkeepingBeforeAnswerOf,
   countsAfterOverrulesOf,
+  digestCallLines,
   formatAuditAggregate,
   checksUnsatisfiedText,
   formatAuditSet,
@@ -77,9 +78,17 @@ const DEFAULT_AGGREGATE = 'audit-aggregate'
  * opened between them, whatever their terms — so the reviewer's loops and
  * the streak rule's count are read over one definition. The aggregate
  * refuses to count it with `audit-p2` sets; the Fix Ledger marks the
- * reviewer-prompt axis on a marginal across the two.
+ * reviewer-prompt axis on a marginal across the two. `audit-p4` (#294)
+ * defines it as the rule has stood since #289 and #293 (notes on ADR 0058):
+ * a loop ends only when something new is put in front of the assistant — a
+ * page opened, the user's answer, a Subagent Report — where `audit-p3` told
+ * the reviewer every successful call that is not a search was an opening,
+ * a checkpoint among them. The digest marks a rewritten search and shows a
+ * Result Pick. Nothing is re-judged for it: the Reference is re-judged with
+ * the next capture, and until then the aggregate refuses to count an
+ * `audit-p4` set with an `audit-p3` one and the Fix Ledger marks the axis.
  */
-const AUDIT_PROMPT_VERSION = 'audit-p3'
+const AUDIT_PROMPT_VERSION = 'audit-p4'
 const CACHE_DIR = join(LIVE_ARTIFACTS_ROOT, 'audit-cache')
 
 class UsageError extends Error {}
@@ -322,7 +331,7 @@ The taxonomy, one kind per round (glossary terms):
 Off-key is a judgement laid over Acquisition rounds, not a seventh kind: an Acquisition on a page that can carry none of the key's required facts for this task.
 
 What you judge, in this order:
-1. Search Loop membership: consecutive searches with nothing opened between them, whatever their terms, engine or surface — a Run flailing blind. A page read, a Look, a scroll or a Not-found Landing between two searches does not break the loop; opening a result, or any other successful call that is not a search, does. Two searches in a row are a loop. The digest marks each search's query, the streak the app's own rule counted, and whether it rewords the one before it; the rule counts every successful non-search call as an opening, so you may say a marked streak is not one loop where something was in fact opened between its searches, and you may extend a loop across a call the rule took as an opening that put nothing before the assistant — a wall, an interstitial, a page that failed to load. Searches that reword one intent with a result opened between them are not a loop: raise them as a flag where they matter.
+1. Search Loop membership: consecutive searches with nothing new put in front of the assistant between them, whatever their terms, engine or surface — a Run flailing blind. Two searches in a row are a loop. A loop ends only when something new is put in front of the assistant: a page opened, the user's answer to a question, or a Subagent Report. None of these between two searches ends it: a page read, a Look or a scroll; a checkpoint or a Run Plan report; a call that acts on no page, such as spawning a Subagent, a wait that returned no report, or a question the user did not answer; a landing on a Not-found page, an Unavailable Page or a wall, each marked on its call; an address the app rewrote into a search, marked rewritten, which is neither a search of the loop nor an end to it. The digest marks each search's query, the streak the app's own rule counted, whether it rewords the one before it, and its Result Pick where it has one: a result of that search the app opened on the assistant's behalf, with the link's label and address. The rule reads each call by its kind and the marks on its result, so you may say a marked streak is not one loop where something was in fact opened between its searches, and you may extend a loop across a call the rule took as an opening that put nothing before the assistant — an interstitial, a page that failed to load or rendered empty, a Result Pick that opened a link of the site's navigation. Searches that reword one intent with a result opened between them are not a loop: raise them as a flag where they matter.
 2. Off-key: for each Acquisition round, could the page it landed on carry any required fact of this task? Judge from the URL, title and result head against the key's facts and verified sources. A search results page, a 404, a walled page, a page on the right site but the wrong subject: say which and why.
 3. Overrules: where a mechanical label is wrong on the evidence in the digest, give the round its right kind with a reason. Do not overrule to match a verdict.
 4. Early Stop and Answer Omission: for each check listed as unsatisfied, decide one thing: did it need a page the Run had not read, or does it follow from material on a page the Run had read, whether or not that material was recorded as Evidence?
@@ -383,22 +392,7 @@ function digestBlock(mechanical: AuditMechanical): string {
       `outcome ${round.outcome}; effort ${round.effort ?? '?'}; ${round.latencyMs === null ? 'latency unjoined' : `${round.latencyMs} ms`}; tokens ${round.promptTokens ?? '?'} in / ${round.completionTokens ?? '?'} out; request ${round.requestChars ?? '?'} chars with ${round.toolResultsInRequest ?? '?'} tool results; reasoning ${round.reasoningChars} chars` +
         `${round.tags.inherited ? '; inherited' : ''}${round.tags.wall ? '; walled' : ''}${round.tags.rejectedCheckpoints > 0 ? `; ${round.tags.rejectedCheckpoints} rejected checkpoint(s)` : ''}`,
     )
-    for (const call of round.calls) {
-      const parts = [
-        `- ${call.name}${call.refused ? ' (refused)' : call.ok === null ? ' (no result)' : ''} ${JSON.stringify(call.args)}`,
-        call.url ? `  page: ${call.url}${call.title ? ` — "${clip(call.title, 80)}"` : ''}` : '',
-        // A rail-sourced search names its signature (#243); a replayed one prints as it always did.
-        call.search
-          ? `  search: "${call.search.query}" (${call.search.signature === undefined ? '' : `${call.search.signature}, `}streak ${call.search.streak}${call.search.rewords === undefined ? '' : call.search.rewords ? ', rewords the one before it' : ', new terms'})`
-          : '',
-        call.wall ? `  wall: ${call.wall}` : '',
-        call.checkpoint ? `  checkpoint: ${call.checkpoint.accepted ? 'accepted' : `REJECTED — ${call.checkpoint.outcome}`}` : '',
-        call.progress ? `  progress: ${call.progress.made ? 'yes' : 'no'} — ${call.progress.reason}` : '',
-        call.notices.length > 0 ? `  notices: ${call.notices.join(', ')}` : '',
-        call.resultHead ? `  result: ${call.resultHead}` : '',
-      ].filter((part) => part !== '')
-      lines.push(...parts)
-    }
+    for (const call of round.calls) lines.push(...digestCallLines(call))
     lines.push('')
   }
   return lines.join('\n')

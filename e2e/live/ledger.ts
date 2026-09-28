@@ -552,13 +552,19 @@ interface Recounted {
  * checkpoint tool (#289), and across a call that acts on no page, a landing
  * on a Blocker and a Composed Address rewrite (#293), each read from the
  * call's name, wall and rewrite stamp — the rounds as judged are untouched.
+ * The landings followed by a search are recounted with them (#294): their
+ * wait holds and ends where the streak does.
  */
 function recountedUnderCurrentRuleOf(attempts: readonly AuditAttempt[]): Recounted {
   const totals = { mechanicalSearchRounds: 0, searchRoundsAtStreak2: 0, searchRoundsAtStreak3: 0, unavailableByTitle: 0, unavailableFollowedBySearch: 0 }
   for (const attempt of attempts) {
     const rounds = replaySearchStreaks(recountUnavailableByTitle(attempt.mechanical.rounds))
     const counts = searchLoopCountsOf(rounds)
-    const landings = unavailableLandingsOf(rounds)
+    // An audit that wrote the counter marked its own landings (#294): the
+    // ones followed by a search are counted over those, the set its counts
+    // by status and by title are of, and the title rule reads only an audit
+    // from before the counter.
+    const landings = unavailableLandingsOf(attempt.mechanical.unavailableLandings === undefined ? rounds : replaySearchStreaks(attempt.mechanical.rounds))
     totals.mechanicalSearchRounds += counts.mechanicalSearchRounds
     totals.searchRoundsAtStreak2 += counts.searchRoundsAtStreak2
     totals.searchRoundsAtStreak3 += counts.searchRoundsAtStreak3
@@ -692,7 +698,10 @@ export function countersOf(population: AuditPopulation, attempts: readonly Audit
     // #262: the status was never in a trace, so a recount has no status count.
     mechanical('Unavailable landings by status', older.unavailableLandings?.status),
     mechanical('Unavailable landings by title', older.unavailableLandings?.title ?? recounted?.unavailableByTitle),
-    mechanical('Unavailable landings followed by a search', older.unavailableLandings?.followedBySearch ?? recounted?.unavailableFollowedBySearch),
+    // #294: the wait after a landing reads the rule's own move, so an audit
+    // counted under an older rule is recounted from its rounds as its
+    // streaks are; the file stays as it was written.
+    mechanical('Unavailable landings followed by a search', recounted?.unavailableFollowedBySearch ?? older.unavailableLandings?.followedBySearch),
     // #297: what #263 and #264 were gated on, read as the audit wrote them.
     // Lower is better for each; none is a headline metric and none is gated.
     mechanical('Consent dismissals', older.consentWalls?.dismissals),
