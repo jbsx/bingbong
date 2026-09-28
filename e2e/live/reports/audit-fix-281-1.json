@@ -35,9 +35,9 @@
     "reviewerModel": "claude-opus-5",
     "reviewerEffort": "high",
     "reviewerPromptVersion": "audit-p3",
-    "auditCommit": "03c966ef05b2772b434ac937298ee1cc4247e881",
+    "auditCommit": "303df94702e978719dfbf733f4ef51b8ae1bf365",
     "auditDirtyTree": false,
-    "generatedAt": "2026-09-27T17:59:30.353Z"
+    "generatedAt": "2026-09-28T00:52:17.595Z"
   },
   "attempts": [
     {
@@ -797,6 +797,8 @@
         "runMadeCheckpoints": [],
         "runMadeRecordedAgain": [],
         "runMadeQuotedAgain": [],
+        "runMadeContained": [],
+        "runMadeCited": [],
         "modelRecordEvidenceCalls": 3,
         "identitySlips": {
           "answers": 0,
@@ -1718,6 +1720,8 @@
         "runMadeCheckpoints": [],
         "runMadeRecordedAgain": [],
         "runMadeQuotedAgain": [],
+        "runMadeContained": [],
+        "runMadeCited": [],
         "modelRecordEvidenceCalls": 4,
         "identitySlips": {
           "answers": 0,
@@ -3372,6 +3376,14 @@
           4,
           4
         ],
+        "runMadeContained": [
+          4,
+          4,
+          4,
+          4,
+          4
+        ],
+        "runMadeCited": [],
         "modelRecordEvidenceCalls": 3,
         "identitySlips": {
           "answers": 0,
@@ -4407,6 +4419,8 @@
         "runMadeCheckpoints": [],
         "runMadeRecordedAgain": [],
         "runMadeQuotedAgain": [],
+        "runMadeContained": [],
+        "runMadeCited": [],
         "modelRecordEvidenceCalls": 2,
         "identitySlips": {
           "answers": 1,
@@ -4922,6 +4936,10 @@
         "runMadeQuotedAgain": [
           1
         ],
+        "runMadeContained": [
+          1
+        ],
+        "runMadeCited": [],
         "modelRecordEvidenceCalls": 1,
         "identitySlips": {
           "answers": 0,
@@ -6413,6 +6431,10 @@
         "runMadeQuotedAgain": [
           12
         ],
+        "runMadeContained": [
+          12
+        ],
+        "runMadeCited": [],
         "modelRecordEvidenceCalls": 5,
         "identitySlips": {
           "answers": 0,
@@ -6869,6 +6891,8 @@
       "runMadeCheckpoints": 6,
       "runMadeRecordedAgain": 6,
       "runMadeQuotedAgain": 5,
+      "runMadeContained": 6,
+      "runMadeCited": 0,
       "modelRecordEvidenceCalls": 13,
       "bookkeepingRoundsWherePassagesCounted": 10,
       "contradictionNotes": 4,
@@ -7096,6 +7120,8 @@
       "runMadeCheckpoints": 1,
       "runMadeRecordedAgain": 1,
       "runMadeQuotedAgain": 1,
+      "runMadeContained": 1,
+      "runMadeCited": 0,
       "modelRecordEvidenceCalls": 5,
       "bookkeepingRoundsWherePassagesCounted": 3,
       "contradictionNotes": 3,
