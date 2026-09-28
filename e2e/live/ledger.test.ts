@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { pastTheEndReadsOf, pastTheEndReadsOver, populationOf, replaySearchStreaks, searchLoopCountsOf, type AuditAggregate, type AuditPopulation, type AuditSetOutput } from './audit.ts'
+import { pastTheEndReadsOf, pastTheEndReadsOver, populationOf, replaySearchStreaks, SEARCH_STREAK_RULE, searchLoopCountsOf, type AuditAggregate, type AuditAttempt, type AuditPopulation, type AuditSetOutput } from './audit.ts'
 import {
   HEADLINE_METRICS,
   buildLedger,
@@ -166,10 +166,19 @@ describe('the streak-rule counters (#259, ADR 0058)', () => {
       { label: 'Search rounds at streak 2 or beyond', judgement: false, value: sum('searchRoundsAtStreak2'), over: budgeted },
       { label: 'Search rounds at streak 3 or beyond', judgement: false, value: sum('searchRoundsAtStreak3'), over: budgeted },
     ])
-    // Read as written once the audit carries every counter the recount stands in for (#262 added the last).
-    expect(streakOf({ ...older.populations.initial, searchRoundsAtStreak2: 12, searchRoundsAtStreak3: 7, unavailableLandings: { status: 0, title: 0, followedBySearch: 0 } })).toEqual([
+    // Read as written once the audit carries every counter the recount stands
+    // in for (#262 added the last) and its attempts were counted by the
+    // rail's current rule (#289).
+    const underCurrentRule: AuditAttempt[] = initials.map((attempt) => ({ ...attempt, mechanical: { ...attempt.mechanical, searchStreakRule: SEARCH_STREAK_RULE } }))
+    const written = { ...older.populations.initial, searchRoundsAtStreak2: 12, searchRoundsAtStreak3: 7, unavailableLandings: { status: 0, title: 0, followedBySearch: 0 } }
+    expect(countersOf(written, underCurrentRule).filter((counter) => counter.label.startsWith('Search rounds at streak'))).toEqual([
       { label: 'Search rounds at streak 2 or beyond', judgement: false, value: 12, over: budgeted },
       { label: 'Search rounds at streak 3 or beyond', judgement: false, value: 7, over: budgeted },
+    ])
+    // The same population over attempts no rule is recorded for is recounted, whatever it wrote.
+    expect(streakOf(written)).toEqual([
+      { label: 'Search rounds at streak 2 or beyond', judgement: false, value: sum('searchRoundsAtStreak2'), over: budgeted },
+      { label: 'Search rounds at streak 3 or beyond', judgement: false, value: sum('searchRoundsAtStreak3'), over: budgeted },
     ])
     // The counter the ledger already compared keeps its name and its reading, whichever rule wrote it.
     expect(countersOf(older.populations.initial, initials).find((counter) => counter.label === 'Search Loop rounds by the streak rule')).toEqual({
@@ -178,6 +187,39 @@ describe('the streak-rule counters (#259, ADR 0058)', () => {
       value: older.populations.initial.mechanicalSearchRounds,
       over: budgeted,
     })
+  })
+})
+
+describe('the checkpoint hold recount (#289)', () => {
+  const valueOf = (counters: ReturnType<typeof countersOf>, label: string) => counters.find((counter) => counter.label === label)?.value
+
+  it('restates the fix-284 Reference’s initials with its checkpoints held: 15 at streak 2 or beyond becomes 16, the reviewer’s 18 stay', () => {
+    const aggregate = readAudit('audit-aggregate-fix-284.json') as unknown as AuditAggregate
+    const initials = [1, 2, 3].flatMap((pass) => readAudit(`audit-fix-284-${pass}.json`).attempts.filter((attempt) => attempt.mechanical.relation === 'initial'))
+    const population = aggregate.populations.initial
+    expect(population).toMatchObject({ mechanicalSearchRounds: 24, searchLoopRounds: 18, searchRoundsAtStreak2: 15, searchRoundsAtStreak3: 5 })
+
+    const counters = countersOf(population, initials)
+    expect(valueOf(counters, 'Search rounds at streak 2 or beyond')).toBe(16)
+    expect(valueOf(counters, 'Search rounds at streak 3 or beyond')).toBe(5)
+    // Pass 2, the longitude watch: round 7 heads a loop the older rule ended at a checkpoint.
+    expect(valueOf(counters, 'Search Loop rounds by the streak rule')).toBe(26)
+    // A judgement is never recounted.
+    expect(valueOf(counters, 'Search Loop rounds')).toBe(18)
+  })
+
+  it('moves nothing but the streak-rule counters on any committed family', () => {
+    const STREAK_RULE_LABELS = ['Search Loop rounds by the streak rule', 'Search rounds at streak 2 or beyond', 'Search rounds at streak 3 or beyond']
+    for (const listed of committed.families) {
+      const attempts = listed.passes.flatMap((pass) => pass.audit?.attempts ?? []).filter((attempt) => attempt.mechanical.relation === 'initial')
+      const population = listed.aggregate?.audit.populations.initial ?? populationOf('initial', attempts)
+      // An audit that says it counted by the current rule is read as written: mark every attempt so and compare.
+      const marked = attempts.map((attempt) => ({ ...attempt, mechanical: { ...attempt.mechanical, searchStreakRule: SEARCH_STREAK_RULE } }))
+      const recounted = countersOf(population, attempts)
+      const asWritten = countersOf(population, marked)
+      const moved = recounted.filter((counter, index) => counter.value !== asWritten[index]!.value).map((counter) => counter.label)
+      for (const label of moved) expect(STREAK_RULE_LABELS, `${listed.id}: ${label}`).toContain(label)
+    }
   })
 })
 
@@ -201,8 +243,9 @@ describe('the Unavailable Landing recount (#262, ADR 0060)', () => {
     expect(valueOf('Unavailable landings by title')).toBe(2)
     expect(valueOf('Unavailable landings followed by a search')).toBe(1)
 
-    // An audit written with the counter is read as written.
-    const counted = countersOf({ ...population, unavailableLandings: { status: 1, title: 0, followedBySearch: 0 } }, initials)
+    // An audit written with the counter, its streak counted by the rail's current rule (#289), is read as written.
+    const underCurrentRule = initials.map((attempt) => ({ ...attempt, mechanical: { ...attempt.mechanical, searchStreakRule: SEARCH_STREAK_RULE } }))
+    const counted = countersOf({ ...population, unavailableLandings: { status: 1, title: 0, followedBySearch: 0 } }, underCurrentRule)
     expect(counted.find((counter) => counter.label === 'Search Loop rounds by the streak rule')?.value).toBe(17)
     expect(counted.find((counter) => counter.label === 'Unavailable landings by status')?.value).toBe(1)
     expect(counted.find((counter) => counter.label === 'Search rounds at streak 2 or beyond')?.value).toBe(11)

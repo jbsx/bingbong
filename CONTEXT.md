@@ -680,9 +680,12 @@ need rarely share words. Inspection between searches does not break it: a
 page read, a Look, or a scroll looks at what the search returned and is not
 escape; neither is a Not-found Landing or an Unavailable Landing, a navigate
 that settled on nothing, nor a Blocked Action or an inert click, which
-reached nothing. Only escape
+reached nothing, nor an Evidence or a Candidate Checkpoint, which records
+what the Run already had. Only escape
 breaks it — opening a result, or any other tool call that succeeded and
 changed something.
+The second search of a loop carries a Notice to change strategy, and so does
+every search after it; the sixth is refused.
 That rule is this rail's own and independent of Progress: a first page read
 of a search result page is neutral to the Approach accounting, and still no
 escape. One search observation is the visible search signature: a navigate

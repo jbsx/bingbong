@@ -743,7 +743,8 @@ Search Loop rail's own rule, imported from `searchLoopRule.ts` rather than
 copied (ADR 0048, ADR 0058): a search after a search with nothing opened
 between them is streak + 1 whatever its terms, an escape resets, and a page
 read, a Look, a scroll or a Not-found Landing between them is inspection that
-never resets the streak. Where the trace carries the rail's Search
+never resets the streak; nor does a checkpoint tool (`record_evidence`,
+`record_candidate`), accepted or not (#289). Where the trace carries the rail's Search
 Observations (#243, ADR 0049), which calls were searches — typed and refused
 ones included — and their query and signature (`url` or `input`) are read from
 them, and the attempt's `searchSource` reads `rail`; the streak itself is the
@@ -764,12 +765,19 @@ its head too — the round whose search started the streak — as
 re-keys no cached judgement; `mechanicalSearchRounds` is the rounds at streak 2
 or beyond plus those heads, and beside it `searchRoundsAtStreak2` and
 `searchRoundsAtStreak3` (#259) count the rounds at streak 2 or beyond and at 3
-or beyond — 3 is the rail's nudge tier, so the second is the rounds the live
-rail nudged or refused on. `replaySearchStreaks` re-derives the streaks of a
+or beyond. The rail nudged from streak 3 until #289 and nudges from 2 since,
+so the rounds the live rail nudged or refused on are the second count on a
+capture before it and the first on one after; the counters keep their
+streaks. An attempt says which reading of the rule counted it in
+`searchStreakRule` (`SEARCH_STREAK_RULE`, 2 since #289; absent on an audit
+written before it, which counted an accepted checkpoint as an opening).
+`replaySearchStreaks` re-derives the streaks of a
 report already written: the Fix Ledger uses it to recount an audit that
-predates the two counters when it reads one, so a Subject under the rule
-compares like for like with a Reference audited under the same-intent one,
-and `audit.test.ts` pins the recount of the committed fix-257 audits. Rounds are numbered by position in the digest,
+predates the two counters, or whose attempts were counted by an older reading
+of the rule, when it reads one, so a Subject under the rule
+compares like for like with a Reference audited under an older one,
+and `audit.test.ts` pins the recount of the committed fix-257 audits and of
+the four attempts the checkpoint hold moves. Rounds are numbered by position in the digest,
 with the trace's round and attempt beside them, because a retried round repeats
 its number. The same trace classifies identically on every run, and every attempt carries a `digestHash` over the
 digest the reviewer was shown; `audit.test.ts` pins the copied budgets, rungs and
@@ -1083,7 +1091,14 @@ carries its unsatisfied checks as `checksNotReached`, and the ledger reads
 both names. One exception (#259, ADR 0058): the two search-streak counters
 of an audit that predates them are recounted from its rounds under the
 rail's current rule, because the rule changed and a nothing there would
-leave a Subject with no like-for-like Reference.
+leave a Subject with no like-for-like Reference. The same holds since #289
+for an audit whose attempts do not say they were counted by the rail's
+current rule, which is every audit committed before it: the two counters,
+and `Search Loop rounds by the streak rule` with them, are recounted with
+the streak held across a checkpoint tool, and the files stay as written.
+Over the audits from `fix-258-259` on, four attempts move, each by one round
+at streak 2 or beyond; the `fix-284` Reference's initials read 16 and 5
+where its aggregate wrote 15 and 5.
 
 **The markers**, per metric, never a refusal. Judgement metrics (the verdicts,
 Off-key, and in the expander Search Loop, Early Stop, Answer Omission,

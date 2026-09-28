@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import {
+  isSearchCheckpoint,
   isSearchInspection,
   queryTokens,
   SEARCH_LOOP_NUDGE_AFTER,
   SEARCH_LOOP_REFUSE_AFTER,
+  SEARCH_STREAK_RULE,
+  searchCallKindOf,
   searchStreakAfter,
   searchStreakMoveOf,
   similarQueries,
@@ -13,7 +16,9 @@ import {
 // Intent is (its terms with scope removed), and which calls inspect a
 // search's results rather than escape them. The Round Audit replays these
 // same functions over the Run Trace. #259 (ADR 0058) added the streak
-// itself: a search after a search continues it, whatever the terms.
+// itself: a search after a search continues it, whatever the terms. #289
+// moved the nudge to the second search and made a checkpoint tool hold the
+// streak: recording is not opening.
 
 describe('queryTokens folds scope out of a Search Intent', () => {
   it('drops a search operator together with its argument', () => {
@@ -101,6 +106,25 @@ describe('isSearchInspection (Decision 5)', () => {
   })
 })
 
+describe('isSearchCheckpoint (#289)', () => {
+  it('names the two checkpoint tools, and nothing that looks at or leaves a page', () => {
+    expect(isSearchCheckpoint('record_evidence')).toBe(true)
+    expect(isSearchCheckpoint('record_candidate')).toBe(true)
+    for (const name of ['read_page', 'look', 'scroll', 'click', 'navigate', 'type', 'report_run_plan', 'ask_user']) {
+      expect(isSearchCheckpoint(name)).toBe(false)
+    }
+  })
+
+  it('reads a call that is not a search by its name: inspection, a checkpoint, or any other call', () => {
+    expect(searchCallKindOf('read_page')).toBe('inspection')
+    expect(searchCallKindOf('record_evidence')).toBe('checkpoint')
+    expect(searchCallKindOf('record_candidate')).toBe('checkpoint')
+    expect(searchCallKindOf('click')).toBe('other')
+    // A navigate or a type is a search only by its arguments, which the caller reads.
+    expect(searchCallKindOf('navigate')).toBe('other')
+  })
+})
+
 describe('the streak (#259, ADR 0058): a search after a search, with nothing opened between them', () => {
   it('advances on a search, ends on an escape, and holds on anything else', () => {
     expect(searchStreakAfter(0, 'search')).toBe(1)
@@ -113,13 +137,35 @@ describe('the streak (#259, ADR 0058): a search after a search, with nothing ope
     expect(searchStreakMoveOf('search', false)).toBe('search')
     expect(searchStreakMoveOf('search', true)).toBe('search')
     expect(searchStreakMoveOf('inspection', true)).toBe('hold')
+    // #289: an accepted checkpoint recorded what the Run already had; nothing was opened.
+    expect(searchStreakMoveOf('checkpoint', true)).toBe('hold')
+    expect(searchStreakMoveOf('checkpoint', false)).toBe('hold')
     expect(searchStreakMoveOf('other', true)).toBe('escape')
     // A failed or refused call, or one that landed on a Not-found Page, consumed nothing.
     expect(searchStreakMoveOf('other', false)).toBe('hold')
   })
 
-  it('keeps the tiers where #74 set them: nudge at three, refuse at five, and two in a row free', () => {
-    expect(SEARCH_LOOP_NUDGE_AFTER).toBe(3)
+  it('is reading 2 of the rule: the whole table of moves, which a change to must raise SEARCH_STREAK_RULE with (#289)', () => {
+    const kinds = ['search', 'inspection', 'checkpoint', 'other'] as const
+    const table = kinds.flatMap((kind) => [true, false].map((consumed) => `${kind} ${consumed ? 'consumed' : 'nothing'}: ${searchStreakMoveOf(kind, consumed)}`))
+    expect({ rule: SEARCH_STREAK_RULE, table, held: ['read_page', 'look', 'scroll', 'record_evidence', 'record_candidate'].map(searchCallKindOf) }).toEqual({
+      rule: 2,
+      table: [
+        'search consumed: search',
+        'search nothing: search',
+        'inspection consumed: hold',
+        'inspection nothing: hold',
+        'checkpoint consumed: hold',
+        'checkpoint nothing: hold',
+        'other consumed: escape',
+        'other nothing: hold',
+      ],
+      held: ['inspection', 'inspection', 'inspection', 'checkpoint', 'checkpoint'],
+    })
+  })
+
+  it('nudges at the second search and refuses after the fifth (#289): the refusal is where #74 set it', () => {
+    expect(SEARCH_LOOP_NUDGE_AFTER).toBe(2)
     expect(SEARCH_LOOP_REFUSE_AFTER).toBe(5)
   })
 })

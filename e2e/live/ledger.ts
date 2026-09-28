@@ -35,6 +35,7 @@ import {
   populationOf,
   recountUnavailableByTitle,
   replaySearchStreaks,
+  SEARCH_STREAK_RULE,
   ROUND_KINDS,
   searchLoopCountsOf,
   unavailableLandingsOf,
@@ -524,7 +525,8 @@ interface Recounted {
  * An older audit's streak counts recounted from its attempts' rounds under
  * the rail's current rule (ADR 0058) by the audit's own replay, with the
  * Unavailable Landings an audit written before #262 never marked recounted
- * by the title rule and held (ADR 0060) — the rounds as judged are untouched.
+ * by the title rule and held (ADR 0060), and the streak held across a
+ * checkpoint tool (#289) — the rounds as judged are untouched.
  */
 function recountedUnderCurrentRuleOf(attempts: readonly AuditAttempt[]): Recounted {
   const totals = { mechanicalSearchRounds: 0, searchRoundsAtStreak2: 0, searchRoundsAtStreak3: 0, unavailableByTitle: 0, unavailableFollowedBySearch: 0 }
@@ -561,11 +563,18 @@ export function countersOf(population: AuditPopulation, attempts: readonly Audit
   // can answer, and its streak replayed with them held — so a Subject under
   // the rule compares with a Reference read by the same rule.
   const streakRuleWritten = older.searchRoundsAtStreak2 !== undefined && older.searchRoundsAtStreak3 !== undefined
-  const recounted = streakRuleWritten && older.unavailableLandings !== undefined ? null : recountedUnderCurrentRuleOf(attempts)
+  // #289, note on ADR 0058: and so is an audit whose attempts were counted
+  // while an accepted checkpoint still ended a streak. Every audit before
+  // the rule is one, the Reference a Subject under it is compared with
+  // among them; an attempt says which rule counted it, and one that does not
+  // say was counted by the older.
+  const underCurrentRule = attempts.every((attempt) => attempt.mechanical.searchStreakRule === SEARCH_STREAK_RULE)
+  const recounted = streakRuleWritten && older.unavailableLandings !== undefined && underCurrentRule ? null : recountedUnderCurrentRuleOf(attempts)
   const streakRounds = recounted ?? older
   // The counter the ledger compared first keeps the reading its rule gave:
   // an audit under the same-intent rule stays as written, one under the
-  // consecutive rule is restated with its Unavailable Landings held.
+  // consecutive rule is restated with its Unavailable Landings and its
+  // checkpoints held.
   const mechanicalSearchRounds = streakRuleWritten && recounted !== null ? recounted.mechanicalSearchRounds : population.mechanicalSearchRounds
   return [
     mechanical('Attempts', population.attempts),

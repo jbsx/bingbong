@@ -5,9 +5,9 @@ import { landedOnUnavailablePage } from '../browser/unavailablePage'
 import { wasBlockedOrInert } from '../browser/actionOutcome'
 import { isSearchInputRef, refNumberOf, searchQueryFromUrl, typedQuery } from './progressFingerprints'
 import {
-  isSearchInspection,
   SEARCH_LOOP_NUDGE_AFTER,
   SEARCH_LOOP_REFUSE_AFTER,
+  searchCallKindOf,
   searchStreakAfter,
   searchStreakMoveOf,
   similarQueries,
@@ -98,6 +98,13 @@ import { reportFault } from '../trace/fault'
 // on an Unavailable Page — the site's outage, not an opening — holds the
 // streak too, read from its `UNAVAILABLE:` marker by
 // `landedOnUnavailablePage` in unavailablePage.ts.
+//
+// #289 (note on ADR 0058) moved the nudge to the second consecutive search
+// and left the refusal at five. Over six captures the reviewer placed 158
+// initial rounds in a Search Loop, which it counts from the second search;
+// the Notice was delivered 34 times and obeyed, and no search was refused.
+// And a checkpoint tool holds the streak: `record_evidence` beside a search
+// came back `ok` and restarted a streak in which nothing had been opened.
 
 // The tiers and the signature surface live in searchLoopRule.ts and
 // progressFingerprints.ts; re-exported here so the module's consumers (and
@@ -145,10 +152,10 @@ export interface SearchLoopRail {
   /**
    * Post-execution observation of every processed tool call — this is what
    * tracks (and resets) the streak. A successful escaping call (anything
-   * but a search or inspection) resets it; inspection never resets, failed
-   * calls leave it alone. The verdict carries the advisory nudge once the
-   * streak reaches the nudge tier, and a Search Observation for every
-   * search (#243).
+   * but a search, inspection or a checkpoint tool) resets it; inspection
+   * and a checkpoint never reset, failed calls leave it alone. The verdict
+   * carries the advisory nudge once the streak reaches the nudge tier, and
+   * a Search Observation for every search (#243).
    */
   observe(call: ToolCall, outcome: ToolResultOutcome): Promise<SearchLoopVerdict>
 }
@@ -160,12 +167,12 @@ const NO_VERDICT: SearchLoopVerdict = { notice: null, observation: null }
 export const SEARCH_LOOP_NUDGE =
   'The last searches ran one after another with nothing opened between them (each a navigate to a search URL or a search box query) — more searches will not surface new results. Change strategy: open a promising result by its ref or its href, read the page (read_page), or answer from what you already have. If you cannot proceed, say so and ask_user.'
 
-const REFUSAL = `Search loop limit (${SEARCH_LOOP_REFUSE_AFTER} consecutive searches with nothing opened between them — each a navigate to a search URL or a search box query) reached for this run. Change strategy or ask_user; only escaping clears the limit (open a result by its ref or its href, or any successful tool call other than read_page, look or scroll).`
+const REFUSAL = `Search loop limit (${SEARCH_LOOP_REFUSE_AFTER} consecutive searches with nothing opened between them — each a navigate to a search URL or a search box query) reached for this run. Change strategy or ask_user; only escaping clears the limit (open a result by its ref or its href, or any successful tool call other than read_page, look, scroll, record_evidence or record_candidate).`
 
 /**
  * What a call is to the rail: a search observation with its query,
- * inspection (observed, never resets), or an escaping call (resets on
- * success only).
+ * inspection or a checkpoint tool (observed, never resets), or an escaping
+ * call (resets on success only).
  */
 type Classification = { kind: 'search'; query: string; signature: SearchSignature } | { kind: Exclude<SearchCallKind, 'search'> }
 
@@ -198,7 +205,9 @@ export function createSearchLoopRail(deps: SearchLoopRailDeps = {}): SearchLoopR
   async function classify(call: ToolCall): Promise<Classification> {
     // Inspection never resets the streak (run 53, ADR 0048): reading,
     // looking at or scrolling a page between reworded searches is not escape.
-    if (isSearchInspection(call.name)) return { kind: 'inspection' }
+    // Nor does a checkpoint tool (#289): it records, and opens nothing.
+    const kind = searchCallKindOf(call.name)
+    if (kind !== 'other') return { kind }
     if (call.name === 'navigate') {
       const url = call.args.url
       if (typeof url !== 'string' || url.trim() === '') return { kind: 'other' }

@@ -51,7 +51,7 @@ import type { PipelineEvent } from '../../src/core/pipeline/events'
 import type { EffortTier } from '../../src/core/pipeline/runPlan'
 import { DECISION_THRESHOLDS } from '../../src/core/ports/decisionModel.ts'
 import type { SearchObservation, SearchSignature } from '../../src/core/pipeline/searchLoopRail'
-import { isSearchInspection, SEARCH_LOOP_NUDGE_AFTER, SEARCH_SIGNATURES, searchStreakAfter, searchStreakMoveOf, similarQueries } from '../../src/core/pipeline/searchLoopRule.ts'
+import { isSearchInspection, SEARCH_SIGNATURES, SEARCH_STREAK_RULE, searchCallKindOf, searchStreakAfter, searchStreakMoveOf, similarQueries } from '../../src/core/pipeline/searchLoopRule.ts'
 import { normalizeUrlInput, parseSearchUrl, SEARCH_URL_FORMS, type SearchUrlForm } from '../../src/core/browser/urlInput.ts'
 import type { TraceRecord } from '../../src/core/trace/runTrace'
 import { decisionSeamsLabel } from './launchRouting.ts'
@@ -174,8 +174,16 @@ export const TIER_ESCALATION_DECLINE_TRACE_VERSION = 5
 const LATENCY_JOIN_TOLERANCE_MS = 2_000
 /** A search at this streak followed a search with nothing opened between them (ADR 0058): no Progress. */
 const SEARCH_STREAK_WITHOUT_PROGRESS = 2
-/** The streak from which a search is a Search Loop round for the second counter (#259): the rail's own nudge tier, never a copy of it. */
-const SEARCH_STREAK_NUDGED = SEARCH_LOOP_NUDGE_AFTER
+/**
+ * The streak from which a search counts for the second counter,
+ * `searchRoundsAtStreak3` (#259). It was the rail's nudge tier until #289
+ * moved the nudge to 2; the counter is named for its streak and stays there,
+ * or every audit's two counters would read the same.
+ */
+const SEARCH_STREAK_THIRD = 3
+// The reading of the rule an attempt's streak was counted by (#289) lives
+// beside the rule; re-exported so the audit's readers keep one import path.
+export { SEARCH_STREAK_RULE }
 
 // ---------------------------------------------------------------------------
 // Shapes
@@ -517,12 +525,14 @@ export interface AuditMechanical {
   readonly searchLoopHeads: readonly number[]
   /**
    * The rounds with a search at streak 2 or beyond, and at 3 or beyond, by
-   * the rail's rule (#259, ADR 0058). Two searches in a row are free to the
-   * rail; 3 is its nudge tier, so the second count is the rounds the live
-   * rail nudged or refused on. Beside the rounds, never in them.
+   * the rail's rule (#259, ADR 0058). The rail nudged from 3 until #289 and
+   * nudges from 2 since, so which count is the rounds the live rail nudged
+   * or refused on depends on the capture. Beside the rounds, never in them.
    */
   readonly searchRoundsAtStreak2: number
   readonly searchRoundsAtStreak3: number
+  /** The rule the streak was counted by, `SEARCH_STREAK_RULE` (#289); absent on an audit written before the field, which counted a checkpoint as an opening. */
+  readonly searchStreakRule?: number
   /** Where the search rounds came from (#243) — beside the rounds, never in them, so it re-keys no cached judgement. */
   readonly searchSource: AuditSearchSource
   /**
@@ -1731,7 +1741,7 @@ export function searchLoopCountsOf(rounds: readonly AuditRound[]): Pick<AuditMec
       if (call.search.streak === 1) streakHead = round.round
       else if (call.search.streak === SEARCH_STREAK_WITHOUT_PROGRESS && streakHead !== null) heads.add(streakHead)
       if (call.search.streak >= SEARCH_STREAK_WITHOUT_PROGRESS) atStreak2.add(round.round)
-      if (call.search.streak >= SEARCH_STREAK_NUDGED) atStreak3.add(round.round)
+      if (call.search.streak >= SEARCH_STREAK_THIRD) atStreak3.add(round.round)
     }
   }
   return {
@@ -2037,9 +2047,9 @@ export function blockedOrInertOf(rounds: readonly AuditRound[]): BlockedOrInertR
         streak = call.search.streak
         continue
       }
-      const inspection = isSearchInspection(call.name)
-      if (verdict !== null && !inspection && streak >= 1) inStreak.push(round.round)
-      streak = searchStreakAfter(streak, searchStreakMoveOf(inspection ? 'inspection' : 'other', consumedOf(call)))
+      const kind = searchCallKindOf(call.name)
+      if (verdict !== null && kind !== 'inspection' && streak >= 1) inStreak.push(round.round)
+      streak = searchStreakAfter(streak, searchStreakMoveOf(kind, consumedOf(call)))
     }
   }
   return { covered, notShown, blocked, inert, inStreak, postBlockVision, recoveries }
@@ -2091,7 +2101,9 @@ export interface UnavailableLandingRounds {
  * An attempt's Unavailable Landings over its rounds as audited (#262, ADR
  * 0060): one entry per call, by basis, and of those, the ones whose next call
  * that was not inspection was a search — the move the landing held the
- * streak for. A landing with no call after it was followed by nothing.
+ * streak for. A landing with no call after it was followed by nothing. A
+ * checkpoint tool after a landing still ends the wait, as it did before it
+ * held the streak (#289): that change was to move the streak counters alone.
  */
 export function unavailableLandingsOf(rounds: readonly AuditRound[]): UnavailableLandingRounds {
   const status: number[] = []
@@ -2226,7 +2238,8 @@ interface SearchStreakState {
  * recount of a written report so the two cannot drift: a search advances the
  * streak and yields its search line (`rewords` from streak 2, against the
  * streak's previous search); any other call holds or, when it consumed
- * something and is not inspection, escapes. The caller says what the call
+ * something and is neither inspection nor a checkpoint tool (#289), escapes.
+ * The caller says what the call
  * was — which only it can read off its source — and whether it consumed.
  */
 function advanceSearchStreak(
@@ -2239,7 +2252,7 @@ function advanceSearchStreak(
     state.lastSearchQuery = call.search.query
     return { query: head(call.search.query, 120)!, streak: state.streak, ...(call.search.signature === undefined ? {} : { signature: call.search.signature }), ...rewords }
   }
-  const move = searchStreakMoveOf(isSearchInspection(call.name) ? 'inspection' : 'other', call.consumed)
+  const move = searchStreakMoveOf(searchCallKindOf(call.name), call.consumed)
   state.streak = searchStreakAfter(state.streak, move)
   if (move === 'escape') state.lastSearchQuery = null
   return null
@@ -3147,6 +3160,7 @@ export function classifyAttempt(input: AuditTraceInput): AuditMechanical {
     searchLoopHeads: searchLoop.searchLoopHeads,
     searchRoundsAtStreak2: searchLoop.searchRoundsAtStreak2,
     searchRoundsAtStreak3: searchLoop.searchRoundsAtStreak3,
+    searchStreakRule: SEARCH_STREAK_RULE,
     searchSource: railObservations !== null ? 'rail' : rounds.some((round) => round.tags.search) ? 'replay' : 'none',
     searchForms: searchFormsOf(rounds),
     blockedOrInert: blockedOrInertOf(rounds),

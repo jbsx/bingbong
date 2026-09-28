@@ -6,6 +6,7 @@ import run47Sequence from './fixtures/run47-tool-sequence.json'
 import {
   createSearchLoopRail,
   isSearchInputRef,
+  SEARCH_LOOP_NUDGE,
   SEARCH_LOOP_NUDGE_AFTER,
   SEARCH_LOOP_REFUSE_AFTER,
   searchQueryFromUrl,
@@ -138,14 +139,45 @@ describe('createSearchLoopRail', () => {
     expect(SEARCH_LOOP_REFUSE_AFTER).toBeGreaterThan(SEARCH_LOOP_NUDGE_AFTER)
   })
 
-  it('two searches in a row are free, whatever their terms (ADR 0058)', async () => {
+  it('carries the Notice on the second consecutive search, whatever their terms, and refuses neither (#289)', async () => {
     const rail = createSearchLoopRail(searchBoxAt)
     expect(await rail.gate(search('mechanical keyboards'))).toEqual({ ok: true })
-    expect((await rail.observe(search('mechanical keyboards'), ok)).observation?.streak).toBe(1)
+    const first = await rail.observe(search('mechanical keyboards'), ok)
+    expect(first.notice).toBeNull()
+    expect(first.observation?.streak).toBe(1)
     expect(await rail.gate(search('weather london'))).toEqual({ ok: true })
     const second = await rail.observe(search('weather london'), ok)
-    expect(second.notice).toBeNull()
+    expect(second.notice).toBe(SEARCH_LOOP_NUDGE)
     expect(second.observation?.streak).toBe(2)
+  })
+
+  it('leaves the streak one higher after a round of record_evidence and a search, never reset (#289)', async () => {
+    const rail = createSearchLoopRail(searchBoxAt)
+    expect((await rail.observe(search('harrison sea watch'), ok)).observation?.streak).toBe(1)
+    // The round the six captures held ten of: an accepted checkpoint beside a search.
+    expect(await rail.observe(other('record_evidence'), ok)).toEqual({ notice: null, observation: null })
+    const after = await rail.observe(search('harrison h4 maker'), ok)
+    expect(after.observation?.streak).toBe(2)
+    expect(after.notice).toBe(SEARCH_LOOP_NUDGE)
+    // A Candidate Checkpoint is a checkpoint too, and a rejected one holds as any failed call does.
+    await rail.observe(other('record_candidate'), ok)
+    await rail.observe(other('record_evidence'), fail)
+    expect((await rail.observe(search('harrison h4 1759'), ok)).observation?.streak).toBe(3)
+  })
+
+  it('refuses the sixth consecutive search first, checkpoints between them or not (#289)', async () => {
+    const rail = createSearchLoopRail(searchBoxAt)
+    for (let i = 1; i <= 5; i += 1) {
+      expect(await rail.gate(search(`harrison sea watch ${i}`)), `search ${i}`).toEqual({ ok: true })
+      await rail.observe(search(`harrison sea watch ${i}`), ok)
+      await rail.observe(other('record_evidence'), ok)
+    }
+    expect((await rail.gate(search('harrison sea watch 6'))).ok).toBe(false)
+    // Recording does not clear the limit; opening a result does.
+    await rail.observe(other('record_candidate'), ok)
+    expect((await rail.gate(search('harrison sea watch 6'))).ok).toBe(false)
+    await rail.observe(other('click'), ok)
+    expect(await rail.gate(search('harrison sea watch 6'))).toEqual({ ok: true })
   })
 
   it('nudges on the nth consecutive search — advisory, never a refusal', async () => {
@@ -168,16 +200,17 @@ describe('createSearchLoopRail', () => {
     expect(nudge).toContain('open a promising result by its ref or its href')
   })
 
-  it('nudges on the third consecutive search when the searches share no words (AC1)', async () => {
+  it('nudges on the second consecutive search and every one after when the searches share no words (AC1; the second since #289)', async () => {
     const rail = createSearchLoopRail(searchBoxAt)
     expect(await noticeOf(rail, search('mechanical keyboards'), ok)).toBeNull()
-    expect(await noticeOf(rail, search('weather in london'), ok)).toBeNull()
+    expect(await noticeOf(rail, search('weather in london'), ok)).toMatch(/ask_user/)
     expect(await noticeOf(rail, search('train times tokyo osaka'), ok)).toMatch(/ask_user/)
   })
 
   it('replays Voyager fix-257 pass 2 rounds 16–19 to streak 4 — four queries whose only shared token is Voyager (AC1)', async () => {
     // The rail under ADR 0048 scored each pair under 0.45 and recorded
     // streak 1, 1, 2, 1: no nudge in a loop the reviewer placed four rounds in.
+    // Since #289 the nudge rides round 17, the second search, as well.
     const rail = createSearchLoopRail(searchBoxAt)
     const round16 = await rail.observe(nav('https://duckduckgo.com/?q=site%3Ajpl.nasa.gov+Voyager+June+2013+%22has+not+yet%22+OR+%22not+yet+reached%22+status+update'), ok)
     expect(round16.observation?.streak).toBe(1)
@@ -185,7 +218,7 @@ describe('createSearchLoopRail', () => {
     expect((await rail.observe(other('look'), ok)).observation).toBeNull()
     const round17 = await rail.observe(nav('https://duckduckgo.com/?q=%22Voyager%22+%22June+27%2C+2013%22+JPL+OR+NASA+%22not+yet%22+interstellar'), ok)
     expect(round17.observation?.streak).toBe(2)
-    expect(round17.notice).toBeNull()
+    expect(round17.notice).toMatch(/ask_user/)
     const round18 = await rail.observe(nav('https://duckduckgo.com/?q=%22Voyager+1%22+NASA+June+27+2013+statement+interstellar+space+McComas'), ok)
     expect(round18.observation?.streak).toBe(3)
     expect(round18.notice).toMatch(/ask_user/)
@@ -238,6 +271,8 @@ describe('createSearchLoopRail', () => {
       expect(refusal.reason).toMatch(/ask_user|change strategy/i)
       // AC2: unchanged but where it names the move the nudge names.
       expect(refusal.reason).toContain('open a result by its ref or its href')
+      // #289: the calls that hold the streak, the checkpoint tools among them.
+      expect(refusal.reason).toContain('other than read_page, look, scroll, record_evidence or record_candidate')
     }
   })
 
@@ -484,7 +519,7 @@ describe('createSearchLoopRail — the verdict carries what the rail observed (#
     expect((await rail.observe(nav('https://www.rmg.co.uk/collections/objects/search/Harrison%20timekeeper'), ok)).observation?.streak).toBe(1)
   })
 
-  it('replays the longitude-watch loop of fix-258-259 pass 1 to the nudge at round 12 (#260, AC3)', async () => {
+  it('replays the longitude-watch loop of fix-258-259 pass 1 to streak 3 at round 12, nudged from round 5 (#260, AC3; #289)', async () => {
     // Round 4 typed into the museum's search box, which settled on the path
     // form; rounds 5 and 12 composed that form by hand, with a page read and
     // five scrolls of the listing between. Before ADR 0059 each hand-composed
@@ -508,7 +543,8 @@ describe('createSearchLoopRail — the verdict carries what the rail observed (#
     }
     expect([4, 5, 12].map((round) => verdicts.get(round)?.observation?.streak)).toEqual([1, 2, 3])
     expect(verdicts.get(12)?.observation).toMatchObject({ query: 'Harrison timekeeper', signature: 'url' })
-    expect(verdicts.get(5)?.notice).toBeNull()
+    expect(verdicts.get(4)?.notice).toBeNull()
+    expect(verdicts.get(5)?.notice).toContain('nothing opened between them')
     expect(verdicts.get(12)?.notice).toContain('nothing opened between them')
   })
 
@@ -617,9 +653,12 @@ describe('createSearchLoopRail — an Unavailable Landing holds the streak (#262
       observation: null,
     })
     // Round 22: the composed nasa.gov address, rewritten into a site search before it ran.
-    expect((await rail.observe(nav('https://duckduckgo.com/?q=missionpages+voyager+voyager20130627+site%3Anasa.gov'), ok)).observation?.streak).toBe(2)
+    const round22 = await rail.observe(nav('https://duckduckgo.com/?q=missionpages+voyager+voyager20130627+site%3Anasa.gov'), ok)
+    expect(round22.observation?.streak).toBe(2)
+    // The landing held the streak, so the nudge (at 2 since #289) rides the search after it.
+    expect(round22.notice).not.toBeNull()
     const round23 = await rail.observe(nav('https://duckduckgo.com/?q=Voyager+1+explores+final+frontier+of+our+solar+bubble+jpl+news+2013'), ok)
-    expect(round23.observation?.streak).toBe(SEARCH_LOOP_NUDGE_AFTER)
+    expect(round23.observation?.streak).toBe(3)
     expect(round23.notice).not.toBeNull()
   })
 })

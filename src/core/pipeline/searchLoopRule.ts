@@ -18,15 +18,30 @@ import { looksLikeDomain } from '../browser/urlInput.ts'
 // everything else — inspection, a failed or refused call, a Not-found or
 // Unavailable Landing — holds it. Search Intent no longer decides the streak; it stays
 // as the no-progress fingerprint and the audit's aid beside the streak.
+//
+// #289 (note on ADR 0058) moved the nudge from the third search to the
+// second — the loop the reviewer counts has begun by then, and the nudge is
+// the tier that is obeyed — and made a checkpoint tool hold the streak as
+// inspection does: recording is not opening.
 
-/** Consecutive searches with nothing opened between them before the advisory nudge rides the result (#74). */
-export const SEARCH_LOOP_NUDGE_AFTER = 3
+/** Consecutive searches with nothing opened between them before the advisory nudge rides the result (#74; 2 since #289). */
+export const SEARCH_LOOP_NUDGE_AFTER = 2
 
 /** Consecutive searches with nothing opened between them before the gate refuses the next (#74). */
 export const SEARCH_LOOP_REFUSE_AFTER = 5
 
-/** What the rail read a call as: a search, inspection of a search's results, or any other call. */
-export type SearchCallKind = 'search' | 'inspection' | 'other'
+/**
+ * Which reading of the rule this module holds (#289). 1 is the consecutive
+ * rule as #259 to #262 left it, where an accepted checkpoint was an opening;
+ * 2 holds the streak across a checkpoint tool. The Round Audit writes it on
+ * every attempt it counts, and the Fix Ledger recounts an attempt written
+ * under any other. Raise it whenever what holds or ends a streak changes —
+ * the test beside this module pins it to the table of moves.
+ */
+export const SEARCH_STREAK_RULE = 2
+
+/** What the rail read a call as: a search, inspection of a search's results, a checkpoint tool, or any other call. */
+export type SearchCallKind = 'search' | 'inspection' | 'checkpoint' | 'other'
 
 /** What one processed call is to the streak (ADR 0058). */
 export type SearchStreakMove = 'search' | 'escape' | 'hold'
@@ -47,13 +62,14 @@ export function searchStreakAfter(streak: number, move: SearchStreakMove): numbe
  * The move of a call the rail classified: a search advances the streak
  * whatever its outcome (a refused search included — that is the number the
  * live rail nudged and refused on, ADR 0049); inspection looks at what the
- * search returned without leaving it; any other call escapes only when it
- * consumed something — it succeeded, and did not land on a Not-found or an
+ * search returned without leaving it, and a checkpoint tool records what the
+ * Run already had (#289); any other call escapes only when it consumed
+ * something — it succeeded, and did not land on a Not-found or an
  * Unavailable Page.
  */
 export function searchStreakMoveOf(kind: SearchCallKind, consumed: boolean): SearchStreakMove {
   if (kind === 'search') return 'search'
-  if (kind === 'inspection') return 'hold'
+  if (kind === 'inspection' || kind === 'checkpoint') return 'hold'
   return consumed ? 'escape' : 'hold'
 }
 
@@ -68,6 +84,9 @@ const CONNECTIVES: ReadonlySet<string> = new Set(['OR', 'AND'])
 
 /** Calls that look at what a search returned without leaving it (run 53 for read_page; ADR 0048 for look and scroll). */
 const SEARCH_INSPECTION_TOOLS: ReadonlySet<string> = new Set(['read_page', 'look', 'scroll'])
+
+/** Calls that record an Evidence or a Candidate Checkpoint: accepted, they opened nothing (#289). */
+const SEARCH_CHECKPOINT_TOOLS: ReadonlySet<string> = new Set(['record_evidence', 'record_candidate'])
 
 /**
  * The two halves of the search signature (CONTEXT.md): a navigate to a
@@ -162,4 +181,20 @@ export function similarQueries(a: string, b: string): boolean {
 /** A call that inspects a search's results — observed by the rail, never escape. */
 export function isSearchInspection(toolName: string): boolean {
   return SEARCH_INSPECTION_TOOLS.has(toolName)
+}
+
+/** A call to a checkpoint tool — observed by the rail, never escape (#289). */
+export function isSearchCheckpoint(toolName: string): boolean {
+  return SEARCH_CHECKPOINT_TOOLS.has(toolName)
+}
+
+/**
+ * What a call that is not a search is to the rail, by its name. Whether a
+ * navigate or a type is a search is in its arguments, which only the caller
+ * can read; the rail and the Round Audit both come here for the rest.
+ */
+export function searchCallKindOf(toolName: string): Exclude<SearchCallKind, 'search'> {
+  if (isSearchInspection(toolName)) return 'inspection'
+  if (isSearchCheckpoint(toolName)) return 'checkpoint'
+  return 'other'
 }

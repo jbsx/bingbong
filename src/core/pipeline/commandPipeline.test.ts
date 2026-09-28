@@ -4916,7 +4916,7 @@ describe('command pipeline', () => {
   // the gate's place after the Vision Budget in toolRound.test.ts's gate
   // order suite. That a gate refusal redirects rather than failing the run
   // is pinned once here, by the Blocker test below.
-  it('appends the search-loop nudge to the third consecutive similar typed search result (#74/#83)', async () => {
+  it('appends the search-loop nudge to the second consecutive typed search result, and to the third (#74/#83, #289)', async () => {
     let executions = 0
     const type = {
       name: 'type',
@@ -4944,6 +4944,11 @@ describe('command pipeline', () => {
     expect(executions).toBe(3)
     const results = events.filter((event) => event.type === 'tool_result' && event.ok)
     expect(results[0]).toMatchObject({ result: expect.not.stringMatching(/ask_user/) })
+    expect(results[1]).toMatchObject({
+      result: expect.stringMatching(/typed \[7\][\s\S]*search box[\s\S]*ask_user/),
+    })
+    // The second search's nudge is in front of the model when it writes the third.
+    expect(llm.requests[2].toolResults.at(-1)?.outcome).toMatchObject({ ok: true, result: expect.stringMatching(/ask_user/) })
     expect(results[2]).toMatchObject({
       result: expect.stringMatching(/typed \[7\][\s\S]*search box[\s\S]*ask_user/),
     })
@@ -7194,7 +7199,7 @@ describe('evidence checkpoints (#121)', () => {
     expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done' })
   })
 
-  it('counts no Progress on failure: an invalid checkpoint never resets the search-loop streak, an accepted one does', async () => {
+  it('never resets the search-loop streak on a checkpoint, invalid or accepted: recording is not opening (#289)', async () => {
     const store = storeHarness()
     const SEARCH_URL = 'https://search.example/?q=acme+router+price'
     const navigate: Tool = {
@@ -7223,13 +7228,14 @@ describe('evidence checkpoints (#121)', () => {
       }] },
       // Sixth similar search: refused, because the streak never broke.
       searchRound('s6'),
-      // An accepted checkpoint is Progress (#108): the streak resets…
+      // An accepted checkpoint is Progress (#108) to the no-progress rails,
+      // and nothing opened to this one (#289): the streak holds…
       { kind: 'tool_calls', calls: [{
         id: 'good',
         name: 'record_evidence',
         args: { observation: 'The Acme router costs $39.', source_url: 'https://shop.example/acme-router', excerpt: 'Price: $39' },
       }] },
-      // …so the same search runs again.
+      // …so the same search is refused again.
       searchRound('s7'),
       { kind: 'answer', speak: 'Done.', display: 'Done.' },
     ])
@@ -7249,7 +7255,10 @@ describe('evidence checkpoints (#121)', () => {
       error: expect.stringMatching(/Search loop limit/),
     })
     expect(events.find((e) => e.type === 'tool_result' && e.callId === 'good')).toMatchObject({ ok: true })
-    expect(events.find((e) => e.type === 'tool_result' && e.callId === 's7')).toMatchObject({ ok: true })
+    expect(events.find((e) => e.type === 'tool_result' && e.callId === 's7')).toMatchObject({
+      ok: false,
+      error: expect.stringMatching(/Search loop limit/),
+    })
     expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done' })
   })
 

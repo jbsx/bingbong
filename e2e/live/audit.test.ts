@@ -46,6 +46,7 @@ import {
   tierShadowOf,
   searchQueryOf,
   replaySearchStreaks,
+  SEARCH_STREAK_RULE,
   RESULT_OPENED_PREFIX,
   blockedOrInertOf,
   recountUnavailableByTitle,
@@ -580,6 +581,30 @@ describe('the mechanical classification', () => {
     expect(mechanical.searchRoundsAtStreak2).toBe(2)
     expect(mechanical.searchRoundsAtStreak3).toBe(1)
     expect(similarQueries('voyager interstellar crossing', 'harrison longitude watch catalogue')).toBe(false)
+  })
+
+  it('holds the streak across a checkpoint tool, accepted or rejected, and says which rule counted (#289)', () => {
+    const rounds: RoundSpec[] = [
+      { round: 1, at: 1_000, calls: [{ name: 'navigate', args: { url: SEARCH_A }, result: PAGE('search', SEARCH_A, 'bbbb2222') }] },
+      {
+        round: 2,
+        at: 2_000,
+        calls: [
+          { name: 'record_evidence', args: { kind: 'web', observation: 'one', source_url: SEARCH_A }, result: 'Session Evidence recorded: memory-1', checkpoint: 'accepted' },
+          { name: 'navigate', args: { url: SEARCH_B }, result: PAGE('search', SEARCH_B, 'cccc3333') },
+        ],
+      },
+      { round: 3, at: 3_000, calls: [{ name: 'record_candidate', args: { label: 'H4', reason: 'named on the results' }, result: 'Candidate recorded: candidate-1' }] },
+      { round: 4, at: 4_000, calls: [{ name: 'navigate', args: { url: SEARCH_A }, result: PAGE('search', SEARCH_A, 'bbbb2222') }] },
+    ]
+    const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(rounds, EXTRA) }))
+    expect(mechanical.rounds.map((round) => round.calls.map((call) => call.search?.streak ?? null))).toEqual([[1], [null, 2], [null], [3]])
+    expect(mechanical.searchLoopHeads).toEqual([1])
+    expect(mechanical.searchRoundsAtStreak2).toBe(2)
+    expect(mechanical.searchRoundsAtStreak3).toBe(1)
+    expect(mechanical.searchStreakRule).toBe(SEARCH_STREAK_RULE)
+    // The recount of a written report is the same replay.
+    expect(searchLoopCountsOf(replaySearchStreaks(mechanical.rounds))).toEqual(searchLoopCountsOf(mechanical.rounds))
   })
 })
 
@@ -2467,6 +2492,60 @@ describe('the consecutive-search rule recounted on the committed fix-257 audits 
     expect(replayed.filter((round) => round.round >= 17 && round.round <= 19).map((round) => round.calls.at(-1)!.search!.rewords)).toEqual([false, true, false])
     // What was judged stays as judged: the digest's kinds and reasons are untouched.
     expect(replayed.map((round) => `${round.kind}: ${round.reason}`)).toEqual(voyager.rounds.map((round) => `${round.kind}: ${round.reason}`))
+  })
+})
+
+describe('the checkpoint hold recounted on the committed audits (#289)', () => {
+  type Report = { attempts: { mechanical: { huntId: string; stepId: string; relation: string; rounds: AuditRound[]; searchRoundsAtStreak2?: number; searchRoundsAtStreak3?: number; searchStreakRule?: number } }[] }
+  const readSet = (setId: string) => JSON.parse(readFileSync(join(REPORTS_DIR, `audit-${setId}.json`), 'utf8')) as Report
+  const FAMILIES = ['fix-258-259', 'fix-260-262', 'fix-263-264', 'fix-265-267', 'fix-270', 'jev-off', 'jev-on', 'fix-281', 'fix-283', 'fix-284']
+  const passesOf = (family: string) => (family === 'fix-265-267' ? [1, 2, 3, 4, 5] : [1, 2, 3]).map((pass) => `${family}-${pass}`)
+
+  it('moves four attempts among the audits written under the consecutive rule, each by the rounds a checkpoint had restarted', () => {
+    const moved: string[] = []
+    for (const setId of FAMILIES.flatMap(passesOf)) {
+      for (const { mechanical } of readSet(setId).attempts) {
+        // Written before the rule: no audit on main says it counted this way.
+        expect(mechanical.searchStreakRule, setId).toBeUndefined()
+        const written = searchLoopCountsOf(mechanical.rounds)
+        expect([written.searchRoundsAtStreak2, written.searchRoundsAtStreak3], setId).toEqual([mechanical.searchRoundsAtStreak2, mechanical.searchRoundsAtStreak3])
+        const recounted = searchLoopCountsOf(replaySearchStreaks(mechanical.rounds))
+        if (recounted.searchRoundsAtStreak2 === written.searchRoundsAtStreak2 && recounted.searchRoundsAtStreak3 === written.searchRoundsAtStreak3) continue
+        moved.push(`${setId} ${mechanical.huntId} ${mechanical.stepId}: ${written.searchRoundsAtStreak2}/${written.searchRoundsAtStreak3} -> ${recounted.searchRoundsAtStreak2}/${recounted.searchRoundsAtStreak3}`)
+      }
+    }
+    expect(moved).toEqual([
+      'fix-263-264-1 superseded-voyager-interstellar initial: 5/3 -> 6/3',
+      'fix-265-267-5 historical-longitude-watch initial: 1/0 -> 2/1',
+      'fix-281-3 rule-eurostar-luggage initial: 1/0 -> 2/0',
+      'fix-284-2 historical-longitude-watch initial: 1/0 -> 2/0',
+    ])
+  })
+
+  it('reads the fix-284 Reference’s initials as 16 rounds at streak 2 or beyond and 5 at 3 or beyond, from 15 and 5 as written', () => {
+    const initials = passesOf('fix-284').flatMap((setId) => readSet(setId).attempts.filter(({ mechanical }) => mechanical.relation === 'initial'))
+    const sum = (counts: { searchRoundsAtStreak2?: number; searchRoundsAtStreak3?: number }[]) => [
+      counts.reduce((total, entry) => total + (entry.searchRoundsAtStreak2 ?? 0), 0),
+      counts.reduce((total, entry) => total + (entry.searchRoundsAtStreak3 ?? 0), 0),
+    ]
+    expect(sum(initials.map(({ mechanical }) => mechanical))).toEqual([15, 5])
+    expect(sum(initials.map(({ mechanical }) => searchLoopCountsOf(replaySearchStreaks(mechanical.rounds))))).toEqual([16, 5])
+  })
+
+  it('holds the streak in fix-284 pass 2 where record_evidence ran between the longitude watch’s searches', () => {
+    const watch = readSet('fix-284-2').attempts.find(({ mechanical }) => mechanical.huntId === 'historical-longitude-watch' && mechanical.stepId === 'initial')!.mechanical
+    const searchesOf = (rounds: readonly AuditRound[]) => rounds.flatMap((round) => round.calls.filter((call) => call.search !== null).map((call) => `${round.round}:${call.search!.streak}`))
+    const written = searchesOf(watch.rounds)
+    const recounted = searchesOf(replaySearchStreaks(watch.rounds))
+    const changed = recounted.filter((entry, index) => entry !== written[index])
+    expect(changed.length).toBeGreaterThan(0)
+    // Every search that moved sits after a checkpoint call the older rule read as an opening.
+    const firstMoved = Number(changed[0]!.split(':')[0])
+    const before = watch.rounds.filter((round) => round.round <= firstMoved).flatMap((round) => round.calls)
+    const lastSearch = before.map((call) => call.search !== null).lastIndexOf(true, before.length - 2)
+    expect(before.slice(lastSearch + 1, -1).some((call) => call.name === 'record_evidence' || call.name === 'record_candidate')).toBe(true)
+    // What was judged stays as judged.
+    expect(replaySearchStreaks(watch.rounds).map((round) => `${round.kind}: ${round.reason}`)).toEqual(watch.rounds.map((round) => `${round.kind}: ${round.reason}`))
   })
 })
 
