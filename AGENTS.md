@@ -1,7 +1,7 @@
 # Bing Bong
 
 Voice assistant with a live web-browsing dashboard. Local voice pipeline
-(wake word, STT, TTS) + LLM agents (GLM-4.6 orchestrator, DeepSeek subagents)
+(wake word, STT, TTS) + LLM agents (a GLM orchestrator and GLM subagents)
 driving a real embedded Chromium via CDP.
 
 ## Agent skills

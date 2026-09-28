@@ -22,7 +22,7 @@ import { parseAssistantAnswer } from '../../core/agent/answerContract'
 import { reportFault } from '../../core/trace/fault'
 
 // OpenAI-compatible chat-completions adapter for the LlmClient seam. One
-// client serves any provider (GLM coding plan, DeepSeek, …) — the endpoint
+// client serves any provider (the GLM coding plan among them) — the endpoint
 // and model id come entirely from the model router config.
 
 interface WireToolCall {
@@ -848,7 +848,7 @@ export function createOpenAiLlmClient(deps: OpenAiLlmClientDeps): LlmClient {
     const assembly: StreamAssembly = { content: '', reasoning: '', toolCalls: new Map(), sawToolCall: false }
     const rawChunks: string[] = []
     let buffer = ''
-    // Some providers (GLM, DeepSeek) carry request_id in every SSE chunk
+    // Some providers (GLM among them) carry request_id in every SSE chunk
     // body instead of an x-request-id header — the give-up error keeps the
     // id on that convention too (#47: header-less providers stay reportable).
     let bodyRequestId: string | undefined

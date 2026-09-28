@@ -109,18 +109,18 @@ describe('createSetSettingTool', () => {
     const model = await executeSetting({
       setting: 'model_routing_model',
       role: 'subagent',
-      string_value: 'deepseek-chat',
+      string_value: 'glm-5.3-flash',
     })
-    expect(model.settings.get().modelRouting.subagent.model).toBe('deepseek-chat')
-    expect(model.result).toBe('subagent model set to deepseek-chat.')
+    expect(model.settings.get().modelRouting.subagent.model).toBe('glm-5.3-flash')
+    expect(model.result).toBe('subagent model set to glm-5.3-flash.')
 
     const baseUrl = await executeSetting({
       setting: 'model_routing_base_url',
       role: 'orchestrator',
-      string_value: 'https://api.deepseek.com/v1',
+      string_value: 'https://other.example/v1',
     })
-    expect(baseUrl.settings.get().modelRouting.orchestrator.baseUrl).toBe('https://api.deepseek.com/v1')
-    expect(baseUrl.result).toBe('orchestrator base URL set to https://api.deepseek.com/v1.')
+    expect(baseUrl.settings.get().modelRouting.orchestrator.baseUrl).toBe('https://other.example/v1')
+    expect(baseUrl.result).toBe('orchestrator base URL set to https://other.example/v1.')
   })
 
   it('sets the STT tier, rejecting a value the fold would silently coerce', async () => {

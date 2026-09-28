@@ -182,7 +182,7 @@ describe('buildTraceTimeline', () => {
         at: T0 + 1,
         turnId: 'turn-1',
         kind: 'pipeline_event',
-        models: { orchestrator: 'glm-5.3', subagent: 'deepseek-chat', vision: 'glm-4.6v' },
+        models: { orchestrator: 'glm-5.3', subagent: 'glm-5.3-flash', vision: 'glm-4.6v' },
         event: { type: 'run_plan', turnId: 'turn-1', objective: 'find the fare', headline: 'Fares', effortTier: 'investigation', source: 'model', at: T0 + 1 },
       }),
       run({
@@ -223,7 +223,7 @@ describe('buildTraceTimeline', () => {
 
     const entries = timeline.lanes[0].entries
     expect(entries.map((entry) => entry.summary)).toEqual([
-      'investigation (model): find the fare [orchestrator glm-5.3, subagent deepseek-chat, vision glm-4.6v]',
+      'investigation (model): find the fare [orchestrator glm-5.3, subagent glm-5.3-flash, vision glm-4.6v]',
       'round 3 attempt 2 orchestrator glm-5.3 @high 4 results / 38000 chars thought 812 chars → 12345 in / 210 out prompt deadbeefcafef00d',
       'round 1 attempt 1 subagent 0 results / 900 chars ✗ deadline',
       'done (no_progress)',

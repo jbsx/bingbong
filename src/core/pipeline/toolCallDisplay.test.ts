@@ -46,8 +46,8 @@ describe('describeToolIntent', () => {
       'set weather_city to Berlin',
     )
     expect(
-      describeToolAction('set_setting', { setting: 'model_routing_model', role: 'subagent', string_value: 'deepseek-chat' }),
-    ).toBe('set model_routing_model (subagent) to deepseek-chat')
+      describeToolAction('set_setting', { setting: 'model_routing_model', role: 'subagent', string_value: 'glm-5.3-flash' }),
+    ).toBe('set model_routing_model (subagent) to glm-5.3-flash')
     expect(describeToolAction('app_control', { action: 'quit' })).toBe('app quit')
   })
 

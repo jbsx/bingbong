@@ -31,7 +31,6 @@ interface ModelPrices {
 // Rough list-price estimates (USD per 1M tokens) at the time of writing;
 // adjust here when providers reprice. Unknown models fall back to the GLM row.
 const DEFAULT_PRICES: { match: RegExp; prices: ModelPrices }[] = [
-  { match: /deepseek/i, prices: { inputPerMTok: 0.27, outputPerMTok: 1.1 } },
   { match: /glm/i, prices: { inputPerMTok: 0.6, outputPerMTok: 2.2 } },
 ]
 const FALLBACK_PRICES: ModelPrices = { inputPerMTok: 0.6, outputPerMTok: 2.2 }

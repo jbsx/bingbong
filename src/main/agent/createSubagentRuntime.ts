@@ -22,7 +22,7 @@ import { createZaiVisionApi } from '../vision/createZaiVisionApi'
 
 // Composes the whole subagent surface for one window (issue #13): tab
 // machine + pane pool (Electron), manager + bridge (core), workhorse taskApi
-// (deepseek loops), and the orchestrator-facing tools. Pipeline events
+// (subagent loops), and the orchestrator-facing tools. Pipeline events
 // (agent_update cards, speak announcements) flow to the dashboard through
 // `emit`; spoken announcements also reach TTS directly, like the download
 // router's completions. The whole surface is Session-owned (#97): retire()

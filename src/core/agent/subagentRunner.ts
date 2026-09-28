@@ -52,7 +52,7 @@ import type { SubagentPipelineEventTrace } from '../trace/pipelineEventTrace'
 import type { VisionTraceReporter } from '../trace/visionTrace'
 import { reportFault } from '../trace/fault'
 
-// The subagent workhorse loop (issue #13): one LLM (deepseek-chat via the
+// The subagent workhorse loop (issue #13): one LLM (the subagent model via the
 // model router) driving its own tool set until it produces a final report.
 // No confirmations flow here (subagents cannot ask — the policy wrapper
 // already downgraded confirm verdicts to denials); cancellation is polled at

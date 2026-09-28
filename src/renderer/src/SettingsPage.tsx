@@ -314,17 +314,6 @@ export function SettingsPage({
               }
             />
           </Field>
-          <Field label="DeepSeek API key">
-            <input
-              type="password"
-              value={draft.apiKeys.deepseek ?? ''}
-              autoComplete="off"
-              aria-label="DeepSeek API key"
-              onChange={(event) =>
-                setDraft({ ...draft, apiKeys: { ...draft.apiKeys, deepseek: event.target.value } })
-              }
-            />
-          </Field>
         </section>
 
         <section className="settings-section">

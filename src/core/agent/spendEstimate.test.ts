@@ -24,14 +24,14 @@ describe('withUsageTracking', () => {
       { kind: 'answer', speak: 's', display: 'd', usage: { promptTokens: 200, completionTokens: 50 } },
     ])
     const recorded: { role: string; model: string; usage?: { promptTokens: number; completionTokens: number } }[] = []
-    const tracked = withUsageTracking(llm, 'subagent', () => 'deepseek-chat', (entry) => recorded.push(entry))
+    const tracked = withUsageTracking(llm, 'subagent', () => 'glm-5.3-flash', (entry) => recorded.push(entry))
 
     await tracked.complete({ command: 't', toolResults: [] })
     await tracked.complete({ command: 't', toolResults: [] })
 
     expect(recorded).toEqual([
-      { role: 'subagent', model: 'deepseek-chat', usage: { promptTokens: 120, completionTokens: 30 } },
-      { role: 'subagent', model: 'deepseek-chat', usage: { promptTokens: 200, completionTokens: 50 } },
+      { role: 'subagent', model: 'glm-5.3-flash', usage: { promptTokens: 120, completionTokens: 30 } },
+      { role: 'subagent', model: 'glm-5.3-flash', usage: { promptTokens: 200, completionTokens: 50 } },
     ])
   })
 
@@ -54,19 +54,18 @@ describe('withUsageTracking', () => {
   })
 })
 describe('spend estimate', () => {
-  it('prices deepseek and glm families, with a fallback for unknown models', () => {
+  it('prices the glm family, with a fallback for unknown models', () => {
     const usage = { promptTokens: 1_000_000, completionTokens: 500_000 }
-    const deepseek = estimateSpendUsd('deepseek-chat', usage)
     const glm = estimateSpendUsd('glm-4.6', usage)
     const unknown = estimateSpendUsd('mystery-model', usage)
 
-    expect(deepseek).toBeCloseTo(0.27 + 0.55, 4)
+    expect(glm).toBeCloseTo(0.6 + 1.1, 4)
     expect(glm).toBe(unknown) // fallback is the glm-family price
     expect(glm).toBeGreaterThan(0)
   })
 
   it('estimates zero for zero usage', () => {
-    expect(estimateSpendUsd('deepseek-chat', { promptTokens: 0, completionTokens: 0 })).toBe(0)
+    expect(estimateSpendUsd('glm-5.3-flash', { promptTokens: 0, completionTokens: 0 })).toBe(0)
   })
 })
 
@@ -75,7 +74,7 @@ describe('daily usage ledger', () => {
     let state = emptyDailyUsage('2026-08-17')
     state = recordUsage(state, '2026-08-17', 'orchestrator', 'glm-4.6', { promptTokens: 10, completionTokens: 5 })
     state = recordUsage(state, '2026-08-17', 'orchestrator', 'glm-4.6', { promptTokens: 20, completionTokens: 5 })
-    state = recordUsage(state, '2026-08-17', 'subagent', 'deepseek-chat', { promptTokens: 100, completionTokens: 50 })
+    state = recordUsage(state, '2026-08-17', 'subagent', 'glm-5.3-flash', { promptTokens: 100, completionTokens: 50 })
 
     const summary = summarizeUsage(state, 0) // warn at $0 → always over
     expect(summary.date).toBe('2026-08-17')
@@ -92,9 +91,9 @@ describe('daily usage ledger', () => {
 
   it('rolls over to a fresh day when the date changes', () => {
     let state = emptyDailyUsage('2026-08-17')
-    state = recordUsage(state, '2026-08-17', 'subagent', 'deepseek-chat', { promptTokens: 100, completionTokens: 50 })
+    state = recordUsage(state, '2026-08-17', 'subagent', 'glm-5.3-flash', { promptTokens: 100, completionTokens: 50 })
 
-    state = recordUsage(state, '2026-08-18', 'subagent', 'deepseek-chat', { promptTokens: 1, completionTokens: 1 })
+    state = recordUsage(state, '2026-08-18', 'subagent', 'glm-5.3-flash', { promptTokens: 1, completionTokens: 1 })
 
     expect(state.date).toBe('2026-08-18')
     expect(state.entries).toHaveLength(1)
@@ -118,13 +117,13 @@ describe('daily usage ledger', () => {
     const valid = sanitizeDailyUsage({
       date: '2026-08-17',
       entries: [
-        { role: 'subagent', model: 'deepseek-chat', requests: 2, promptTokens: 10, completionTokens: 5 },
+        { role: 'subagent', model: 'glm-5.3-flash', requests: 2, promptTokens: 10, completionTokens: 5 },
         { role: 'wizard', model: 'x', requests: 1 },
         'junk',
       ],
     })
     expect(valid.date).toBe('2026-08-17')
-    expect(valid.entries).toEqual([{ role: 'subagent', model: 'deepseek-chat', requests: 2, promptTokens: 10, completionTokens: 5 }])
+    expect(valid.entries).toEqual([{ role: 'subagent', model: 'glm-5.3-flash', requests: 2, promptTokens: 10, completionTokens: 5 }])
   })
 
   it('counts requests without reported usage (tokens unknown, request counted)', () => {

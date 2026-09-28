@@ -24,7 +24,6 @@ function envWithRole(role: AgentRole, vars: Record<string, string>): Record<stri
     [`${prefix}_BASE_URL`]: GLM_CODING_PLAN_URL,
     [`${prefix}_MODEL`]: 'glm-5.3',
     ZAI_API_KEY: 'zai-secret',
-    DEEPSEEK_API_KEY: 'deepseek-secret',
     ...vars,
   }
 }
@@ -40,10 +39,10 @@ describe('resolveModelEndpoint', () => {
     })
   })
 
-  it('defaults the key env per role: deepseek for subagents, z.ai for vision', () => {
-    expect(resolveModelEndpoint(envWithRole('subagent', { BINGBONG_SUBAGENT_MODEL: 'deepseek-chat' }), 'subagent')).toMatchObject({
-      apiKey: 'deepseek-secret',
-      model: 'deepseek-chat',
+  it('defaults the key env to z.ai for every role', () => {
+    expect(resolveModelEndpoint(envWithRole('subagent', { BINGBONG_SUBAGENT_MODEL: 'glm-5.3-flash' }), 'subagent')).toMatchObject({
+      apiKey: 'zai-secret',
+      model: 'glm-5.3-flash',
     })
     expect(resolveModelEndpoint(envWithRole('vision', {}), 'vision')).toMatchObject({ apiKey: 'zai-secret' })
   })
@@ -51,16 +50,16 @@ describe('resolveModelEndpoint', () => {
   it('swaps providers config-only: any base url and model id work for any role', () => {
     const endpoint = resolveModelEndpoint(
       envWithRole('orchestrator', {
-        BINGBONG_ORCHESTRATOR_BASE_URL: 'https://api.deepseek.com/v1',
-        BINGBONG_ORCHESTRATOR_MODEL: 'deepseek-chat',
+        BINGBONG_ORCHESTRATOR_BASE_URL: 'https://other.example/v1',
+        BINGBONG_ORCHESTRATOR_MODEL: 'glm-5.3-flash',
         BINGBONG_ORCHESTRATOR_API_KEY: 'other-secret',
       }),
       'orchestrator',
     )
 
     expect(endpoint).toEqual({
-      baseUrl: 'https://api.deepseek.com/v1',
-      model: 'deepseek-chat',
+      baseUrl: 'https://other.example/v1',
+      model: 'glm-5.3-flash',
       apiKey: 'other-secret',
     })
   })

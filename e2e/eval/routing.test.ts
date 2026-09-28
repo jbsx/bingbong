@@ -57,15 +57,14 @@ describe('resolveProductionRouting', () => {
     const routing = resolveProductionRouting({
       ...ORCHESTRATOR_ENV,
       ZAI_API_KEY: 'sk-zai-key',
-      DEEPSEEK_API_KEY: 'sk-deepseek-key',
-      BINGBONG_SUBAGENT_BASE_URL: 'https://api.deepseek.com/v1',
-      BINGBONG_SUBAGENT_MODEL: 'deepseek-chat',
+      BINGBONG_SUBAGENT_BASE_URL: 'https://other.example/v1',
+      BINGBONG_SUBAGENT_MODEL: 'glm-5.3-flash',
       BINGBONG_VISION_BASE_URL: 'https://vision.example/v4',
       BINGBONG_VISION_MODEL: 'glm-vision',
     })
     expect(routing.identity.subagent.configured).toBe(true)
     expect(routing.identity.vision.configured).toBe(true)
-    expect(routing.env.BINGBONG_SUBAGENT_API_KEY).toBe('sk-deepseek-key')
+    expect(routing.env.BINGBONG_SUBAGENT_API_KEY).toBe('sk-zai-key')
     expect(routing.env.BINGBONG_VISION_API_KEY).toBe('sk-zai-key')
   })
 })

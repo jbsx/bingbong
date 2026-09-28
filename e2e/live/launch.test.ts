@@ -18,7 +18,7 @@ const PRODUCTION = {
   BINGBONG_ORCHESTRATOR_API_KEY: 'sk-orchestrator-key-123',
   BINGBONG_SUBAGENT_BASE_URL: 'https://worker.example/v1',
   BINGBONG_SUBAGENT_MODEL: 'worker-test',
-  DEEPSEEK_API_KEY: 'sk-worker-key-456',
+  ZAI_API_KEY: 'sk-worker-key-456',
 }
 
 const fixture = { url: (path: string) => `http://127.0.0.1:1${path}` } as FixtureServer

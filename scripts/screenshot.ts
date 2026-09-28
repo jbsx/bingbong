@@ -293,7 +293,7 @@ function buildEnv(
 ): Record<string, string> {
   const env: Record<string, string> = {}
   for (const [key, value] of Object.entries(process.env)) {
-    if (value !== undefined && !key.startsWith('BINGBONG_') && !key.startsWith('ZAI_') && !key.startsWith('DEEPSEEK_')) {
+    if (value !== undefined && !key.startsWith('BINGBONG_') && !key.startsWith('ZAI_')) {
       env[key] = value
     }
   }

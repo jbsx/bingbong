@@ -51,7 +51,7 @@ export interface RoleRoutingSettings {
 
 export interface AppSettings {
   /** Provider keys used as the fallback key for roles without their own. */
-  apiKeys: { zai?: string; deepseek?: string }
+  apiKeys: { zai?: string }
   /** Microphone device id from enumerateDevices; 'default' follows the OS. */
   micId: string
   wakeWordThreshold: number
@@ -157,7 +157,6 @@ export function sanitizeSettings(raw: unknown): AppSettings {
   return {
     apiKeys: {
       ...(typeof keys?.zai === 'string' ? { zai: keys.zai } : {}),
-      ...(typeof keys?.deepseek === 'string' ? { deepseek: keys.deepseek } : {}),
     },
     micId: asString(record.micId, defaults.micId),
     wakeWordThreshold: asThreshold(record.wakeWordThreshold, defaults.wakeWordThreshold),
@@ -198,7 +197,6 @@ function setIfPresent(env: Record<string, string>, name: string, value: string |
 export function settingsToEnv(settings: AppSettings): Record<string, string> {
   const env: Record<string, string> = {}
   setIfPresent(env, 'ZAI_API_KEY', settings.apiKeys.zai)
-  setIfPresent(env, 'DEEPSEEK_API_KEY', settings.apiKeys.deepseek)
   for (const role of AGENT_ROLES) {
     const prefix = ROLE_ENV_PREFIX[role]
     const routing = settings.modelRouting[role]

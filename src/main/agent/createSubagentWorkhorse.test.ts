@@ -542,8 +542,8 @@ describe('createSubagentTaskApi', () => {
     // Routed subagent (no script override), so the real OpenAI client posts
     // the wire messages — one spawn before local midnight, one after.
     const ROUTED_ENV = {
-      BINGBONG_SUBAGENT_BASE_URL: 'https://api.deepseek.test/v1',
-      BINGBONG_SUBAGENT_MODEL: 'deepseek-chat',
+      BINGBONG_SUBAGENT_BASE_URL: 'https://subagent.test/v1',
+      BINGBONG_SUBAGENT_MODEL: 'glm-5.3-flash',
       BINGBONG_SUBAGENT_API_KEY: 'test-key',
     }
     const bodies: Record<string, unknown>[] = []

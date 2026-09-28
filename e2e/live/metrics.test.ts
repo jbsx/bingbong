@@ -173,7 +173,7 @@ describe('roleUsage', () => {
     const usage = roleUsage([
       llmRound({ round: 1, model: 'glm', usage: { promptTokens: 100, completionTokens: 10 } }),
       llmRound({ round: 2, model: 'glm' }),
-      llmRound({ round: 1, role: 'subagent', agentId: 'w1', model: 'deepseek', usage: { promptTokens: 5, completionTokens: 1 } }),
+      llmRound({ round: 1, role: 'subagent', agentId: 'w1', model: 'glm-5.3-flash', usage: { promptTokens: 5, completionTokens: 1 } }),
       { v: 1, at: 1, turnId: 't1', kind: 'vision_request', capability: 'describe', reason: 'look', durationMs: 20, outcome: 'ok' } as TraceRecord,
     ])
     expect(usage.orchestrator).toEqual({

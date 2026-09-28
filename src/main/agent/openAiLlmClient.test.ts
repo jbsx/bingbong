@@ -1347,7 +1347,7 @@ describe('openAiLlmClient streaming (#47)', () => {
     expect(fetch.calls[2].body.messages.at(-1)).toMatchObject({ role: 'user', content: expect.stringContaining('previous reply was empty') })
   })
 
-  it('names the request id from the SSE body when the header is absent (GLM/DeepSeek convention)', async () => {
+  it('names the request id from the SSE body when the header is absent (GLM convention)', async () => {
     // Chunks carry request_id in the JSON body; the response has no
     // x-request-id header — the streaming give-up must not degrade to
     // "unknown" while the non-streaming path would have had the id.

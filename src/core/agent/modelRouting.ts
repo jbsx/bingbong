@@ -26,7 +26,7 @@ interface RoleConfig {
 
 const ROLES: Record<AgentRole, RoleConfig> = {
   orchestrator: { envPrefix: 'BINGBONG_ORCHESTRATOR', defaultKeyEnv: 'ZAI_API_KEY' },
-  subagent: { envPrefix: 'BINGBONG_SUBAGENT', defaultKeyEnv: 'DEEPSEEK_API_KEY' },
+  subagent: { envPrefix: 'BINGBONG_SUBAGENT', defaultKeyEnv: 'ZAI_API_KEY' },
   vision: { envPrefix: 'BINGBONG_VISION', defaultKeyEnv: 'ZAI_API_KEY' },
 }
 

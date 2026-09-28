@@ -30,7 +30,7 @@ import { createOpenAiLlmClient } from './openAiLlmClient'
 import { subagentSystemPrompt } from './subagentPrompt'
 
 // The manager's taskApi, backed by real workhorse loops (issue #13): each
-// spawn resolves the subagent LLM fresh (deepseek-chat via the router; a
+// spawn resolves the subagent LLM fresh (the subagent model via the router; a
 // scripted override for tests/keyless demos — every agent starts the script
 // from the top), gets the tool catalog for its kind, and runs runSubagent.
 // Every kind carries the escalation-only ask_user (issue #18): subagents

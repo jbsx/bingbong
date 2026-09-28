@@ -1,7 +1,7 @@
 # Bing Bong
 
 A voice-first assistant: a local voice pipeline (wake word, STT, TTS) drives
-LLM agents (GLM-4.6 orchestrator, DeepSeek subagents) operating a real
+LLM agents (a GLM orchestrator and GLM subagents) operating a real
 embedded Chromium via CDP — every web read and write happens in a visible
 tab, on a live dashboard.
 
@@ -90,8 +90,8 @@ Routing is env-only — no model ids are hardcoded. Per role
 ```sh
 BINGBONG_ORCHESTRATOR_BASE_URL   # e.g. https://ai.z.ai/api/coding/paas/v4 (z.ai coding plan)
 BINGBONG_ORCHESTRATOR_MODEL      # e.g. glm-5.3-flash
-BINGBONG_ORCHESTRATOR_API_KEY    # or rely on the default key env (ZAI_API_KEY for
-                                 # orchestrator/vision, DEEPSEEK_API_KEY for subagent),
+BINGBONG_ORCHESTRATOR_API_KEY    # or rely on the default key env (ZAI_API_KEY, for
+                                 # every role),
                                  # or point elsewhere with BINGBONG_ORCHESTRATOR_API_KEY_ENV
 ```
 

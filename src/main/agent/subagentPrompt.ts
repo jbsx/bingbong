@@ -1,4 +1,4 @@
-// System prompt for subagent workhorse loops (deepseek-chat via the model
+// System prompt for subagent workhorse loops (the subagent model via the model
 // router). Subagents never talk to the user: they do the task and return a
 // structured report the orchestrator merges. Tools travel separately via the
 // OpenAI tools field. The strategic browsing policy is the one shared

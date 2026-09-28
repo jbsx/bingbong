@@ -59,13 +59,13 @@ describe('the pipeline_event tap (#185)', () => {
     const trace = createPipelineEventTraceWriter({
       sink,
       now: () => 0,
-      models: () => ({ orchestrator: 'glm-5.3', vision: 'glm-4.6v', subagent: 'deepseek-chat' }),
+      models: () => ({ orchestrator: 'glm-5.3', vision: 'glm-4.6v', subagent: 'glm-5.3-flash' }),
     })
 
     trace(owned({ type: 'run_plan', turnId: 't-1', objective: 'find the fare', headline: null, effortTier: 'direct_action', source: 'fallback', at: 5 }))
     trace(owned({ type: 'status', turnId: 't-1', status: 'acting', at: 6 }))
 
-    expect(records[0]).toMatchObject({ kind: 'pipeline_event', models: { orchestrator: 'glm-5.3', vision: 'glm-4.6v', subagent: 'deepseek-chat' } })
+    expect(records[0]).toMatchObject({ kind: 'pipeline_event', models: { orchestrator: 'glm-5.3', vision: 'glm-4.6v', subagent: 'glm-5.3-flash' } })
     expect(records[1]).not.toHaveProperty('models')
   })
 

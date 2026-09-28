@@ -19,7 +19,7 @@ import { LlmTransportError, type LlmRequest } from '../ports/llm'
 import { HELD_PAGE_INSTRUCTION } from '../pipeline/heldPage'
 import { createSessionEvidence } from '../session/sessionEvidence'
 
-// The workhorse loop behind every subagent (issue #13): a deepseek-chat LLM
+// The workhorse loop behind every subagent (issue #13): a glm-5.3-flash LLM
 // with its own tool set, no confirmations (the policy wrapper already
 // downgraded those to denials), progress reported per step, cancellation
 // polled at every checkpoint. The manager above it owns lifecycle rails.
@@ -1689,11 +1689,11 @@ describe("a delegated worker's reasoning records (#183)", () => {
     const llm = {
       complete: (request: LlmRequest) => {
         round += 1
-        request.onAttempt?.({ model: 'deepseek-chat', promptHash: 'abc123', reasoningEffort: 'low' })
+        request.onAttempt?.({ model: 'glm-5.3-flash', promptHash: 'abc123', reasoningEffort: 'low' })
         if (round === 1) {
           request.onDelta?.({ kind: 'reasoning', text: 'the provider hung up' })
           request.onRetryAttempt?.(2, 3, 'empty')
-          request.onAttempt?.({ model: 'deepseek-chat', promptHash: 'abc123', reasoningEffort: 'low' })
+          request.onAttempt?.({ model: 'glm-5.3-flash', promptHash: 'abc123', reasoningEffort: 'low' })
         }
         request.onDelta?.({ kind: 'reasoning', text: 'second time lucky' })
         return Promise.resolve({ kind: 'answer' as const, speak: 's', display: 'Done.', usage: { promptTokens: 40, completionTokens: 4 } })
@@ -1717,8 +1717,8 @@ describe("a delegated worker's reasoning records (#183)", () => {
       // client retries — and each attempt's record counts the reasoning it
       // streamed (#218) and how long its first fragment took from its own
       // dispatch (#256): nothing, on a clock the test never advances.
-      { round: 1, attempt: 1, role: 'subagent', outcome: 'empty', reasoningChars: 'the provider hung up'.length, firstTokenMs: 0, sent: { model: 'deepseek-chat', promptHash: 'abc123', reasoningEffort: 'low' }, reasoningEffort: 'low', request: { toolResults: 0, chars: expect.any(Number) }, agentId: 'a-8' },
-      { round: 1, attempt: 2, role: 'subagent', outcome: 'completed', reasoningChars: 'second time lucky'.length, firstTokenMs: 0, sent: { model: 'deepseek-chat', promptHash: 'abc123', reasoningEffort: 'low' }, usage: { promptTokens: 40, completionTokens: 4 }, reasoningEffort: 'low', request: { toolResults: 0, chars: expect.any(Number) }, agentId: 'a-8' },
+      { round: 1, attempt: 1, role: 'subagent', outcome: 'empty', reasoningChars: 'the provider hung up'.length, firstTokenMs: 0, sent: { model: 'glm-5.3-flash', promptHash: 'abc123', reasoningEffort: 'low' }, reasoningEffort: 'low', request: { toolResults: 0, chars: expect.any(Number) }, agentId: 'a-8' },
+      { round: 1, attempt: 2, role: 'subagent', outcome: 'completed', reasoningChars: 'second time lucky'.length, firstTokenMs: 0, sent: { model: 'glm-5.3-flash', promptHash: 'abc123', reasoningEffort: 'low' }, usage: { promptTokens: 40, completionTokens: 4 }, reasoningEffort: 'low', request: { toolResults: 0, chars: expect.any(Number) }, agentId: 'a-8' },
     ])
   })
 
@@ -1944,7 +1944,7 @@ describe('runSubagent when the model is unreachable (#271)', () => {
     const llm = {
       complete: (request: LlmRequest) => {
         calls += 1
-        request.onAttempt?.({ model: 'deepseek-chat' })
+        request.onAttempt?.({ model: 'glm-5.3-flash' })
         if (calls === 1) return Promise.resolve({ kind: 'tool_calls' as const, calls: [{ id: 'c1', name: 'work', args: {} }] })
         return Promise.reject(unreachable())
       },
@@ -1968,9 +1968,9 @@ describe('runSubagent when the model is unreachable (#271)', () => {
     const rejection = new TypeError('fetch failed', { cause: Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' }) })
     const llm = {
       complete: (request: LlmRequest) => {
-        request.onAttempt?.({ model: 'deepseek-chat' })
+        request.onAttempt?.({ model: 'glm-5.3-flash' })
         request.onRetryAttempt?.(2, 2, 'transport', rejection)
-        request.onAttempt?.({ model: 'deepseek-chat' })
+        request.onAttempt?.({ model: 'glm-5.3-flash' })
         return Promise.resolve({ kind: 'answer' as const, speak: 's', display: 'Done.' })
       },
     }
