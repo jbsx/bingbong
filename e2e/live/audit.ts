@@ -1760,7 +1760,10 @@ function rawRounds(records: readonly TraceLine[]): RawRound[] {
   }
   let current: RawRound | null = null
   for (const record of records) {
-    if (record.agentId !== undefined) continue
+    // A Subagent's own records are none of the Run's rounds. A checkpoint
+    // record is never one of them (#296): only the Run's own grading writes
+    // it, and the `agentId` it carries is the Subagent its citation names.
+    if (record.agentId !== undefined && record.kind !== 'evidence_checkpoint') continue
     if (record.kind === 'llm_round') {
       const round = isFiniteNumber(record.round) ? record.round : rounds.length + 1
       // An attempt a Transport Retry abandoned (#271) is not a round of its
@@ -3101,6 +3104,36 @@ export function sameSourceUnsupportedRoundsOf(rounds: readonly AuditRound[]): nu
   return count
 }
 
+// The head of a refused `record_evidence` call, which names the verdict
+// word (`refusalLine` in malformedCall.ts). Kept apart because the
+// audit's CLI loads under plain Node, which that module's imports do not.
+const REFUSED_EVIDENCE_HEAD_RE = /^record_evidence rejected \(([a-z_]+)\): /
+
+/**
+ * An attempt's rounds with the verdict word restored on the refused
+ * checkpoints that cite a Subagent (#296). An audit written before the
+ * round join kept their records read each verdict from the result's error
+ * head, which opens with the word, so it is restored from the rounds with
+ * no trace and no reviewer. A web or user citation's error head is left as
+ * it is: that is a trace which kept no checkpoint record at all. Rounds
+ * under the join come back as they were.
+ */
+export function restoreSubagentVerdicts(rounds: readonly AuditRound[]): AuditRound[] {
+  return rounds.map((round) => ({
+    ...round,
+    calls: round.calls.map((call) => {
+      if (call.name !== 'record_evidence' || call.args.kind !== 'subagent' || call.checkpoint === null || call.checkpoint.accepted) return call
+      const word = REFUSED_EVIDENCE_HEAD_RE.exec(call.checkpoint.outcome)?.[1]
+      return word === undefined ? call : { ...call, checkpoint: { accepted: false, outcome: word } }
+    }),
+  }))
+}
+
+/** The same-source unsupported rounds some attempts hold beyond what their audits counted (#296): those of a Subagent's source, which the older join never saw. */
+export function sameSourceUnsupportedRoundsMissedOver(attempts: readonly AuditAttempt[]): number {
+  return attempts.reduce((total, { mechanical }) => total + sameSourceUnsupportedRoundsOf(restoreSubagentVerdicts(mechanical.rounds)) - sameSourceUnsupportedRoundsOf(mechanical.rounds), 0)
+}
+
 /** The two numbers the #272 gate reads over kind "subagent" citations. */
 export interface SubagentCitationCounts {
   /** Refused `excerpt_unsupported`: none should remain once the excerpt is dropped. */
@@ -3112,9 +3145,11 @@ export interface SubagentCitationCounts {
 /**
  * An attempt's kind "subagent" citations (#272, ADR 0054), read straight
  * from the trace's checkpoint records rather than the rounds: such a record
- * carries the cited Subagent's `agentId`, which the round join reads as a
- * Subagent's own record and skips, so the digest never holds its verdict.
- * No Subagent checkpoints for itself, so every one is the orchestrator's.
+ * carries the cited Subagent's `agentId`, and the Notice of a dropped
+ * excerpt is on the record alone. The round join keeps the same records
+ * (#296); an audit written before it skipped them, so its digest has the
+ * error's head where the verdict word would be. No Subagent checkpoints for
+ * itself, so every one is the orchestrator's.
  */
 export function subagentCitationsOf(traceRecords: readonly object[]): SubagentCitationCounts {
   const counts = emptySubagentCitationCounts()

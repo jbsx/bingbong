@@ -973,7 +973,11 @@ passage-naming refusal and the reference-marker tolerance are measured by
 (5 on `fix-253-256`), not the raw rejected count, which keeps the first
 refusal of every genuine paraphrase. Code-counted from the trace's verdict
 word and outside the digest like the others; an audit written before it has
-no such field, and the Fix Ledger reads that as nothing.
+no such field, and the Fix Ledger reads that as nothing. A refusal that cites
+a Subagent counts like any other (#296). An audit written before the round
+join kept those records missed them, so the Fix Ledger adds the rounds it
+missed, restored from the reason word its rounds keep in the error head: 3 on
+`baseline3`'s initials, where the audit wrote 0, and nothing anywhere else.
 
 A fifth pair sits beside it (#272, ADR 0054): **subagent citations** refused
 `excerpt_unsupported`, and those **applied with a dropped excerpt** — a kind
@@ -982,11 +986,23 @@ checked, so its acceptance carries a Notice. The #272 gate reads both: the
 first should stay at zero now that no excerpt is checked on this kind, and the
 second shows how often the orchestrator still offers one. They are counted
 straight from the trace's `evidence_checkpoint` records by their `agentId`
-(the cited Subagent) and `correction`, not from the rounds: the round join
-skips every record carrying an `agentId` as a Subagent's own, so such a
-checkpoint's verdict never reached the digest, and the rounds read it from the
-result's error head instead. Outside the digest like the others; an audit
-written before the pair reads "subagent citations not counted".
+(the cited Subagent) and `correction`, not from the rounds, which keep no
+Notice. Outside the digest like the others; an audit written before the pair
+reads "subagent citations not counted".
+
+The round join keeps those records too (#296). It leaves out what a Subagent
+wrote itself, and a checkpoint record is never that: only the Run's own
+grading writes one, and the `agentId` on it is the Subagent its citation
+names. Until #296 the join skipped every record carrying an `agentId`, so the
+verdict of a refused citation of a Subagent reached the digest as the
+result's error head. Fourteen attempts among the committed audits hold such a
+refusal, all the Pi camera's: the initials of `baseline2-3`, `baseline3-3`,
+`fix-250-3`, `fix-260-262-3` and `fix-265-267-1`, and the follow-ups of
+`fix-235-1`, `fix-236-2`, `fix-237-1`, `fix-242-3`, `fix-242r-3`, `fix-250-3`,
+`fix-257-3`, `fix-258-259-1` and `fix-260-262-3`. Their committed audits stay
+as written. Auditing one of them again gives a digest with the verdict word in
+it, which no cached judgement is keyed on, so the reviewer is asked again for
+that attempt; no other attempt's digest moves.
 
 One more sits beside them (#284, ADR 0071): the **accepted records answered
 with the contradiction Note**, by round — the Note the checkpoint tool

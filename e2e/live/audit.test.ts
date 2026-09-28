@@ -42,6 +42,8 @@ import {
   selectedPassageCountsOf,
   keyLeaks,
   sameSourceUnsupportedRoundsOf,
+  sameSourceUnsupportedRoundsMissedOver,
+  restoreSubagentVerdicts,
   delegatedPageRoundsOf,
   tierShadowOf,
   searchQueryOf,
@@ -75,6 +77,7 @@ import {
   engineRewriteOffKeyOf,
 } from './audit.ts'
 import { resultOpenedLine } from '../../src/core/pipeline/resultPick'
+import { refusalLine } from '../../src/core/pipeline/malformedCall'
 import * as auditModule from './audit.ts'
 import type { LiveGradeEntry, LiveKeyTask } from './grades.ts'
 import { attemptCapture, T0, turnIdOf } from './gradingFixtures.ts'
@@ -701,6 +704,75 @@ describe('subagent citations: excerpt_unsupported and dropped excerpts (#272)', 
     const legacy = buildAuditSet(provenanceOf(), [{ mechanical: before, review: null, countsAfterOverrules: initial.counts }], [])
     expect(legacy.populations.initial.subagentCitations).toBeUndefined()
     expect(formatAuditSet(legacy)).toMatch(/- initial: .*subagent citations not counted/)
+  })
+
+  describe('joined to the rounds that made them (#296)', () => {
+    const refused = (observation: string) => ({
+      name: 'record_evidence',
+      args: { ...subagentArgs('from the report'), observation },
+      ok: false,
+      error: 'record_evidence rejected (excerpt_unsupported): not in what subagent a-1 retained',
+      checkpoint: 'excerpt_unsupported',
+      checkpointAgentId: 'a-1',
+    })
+
+    it('reads the verdict of a checkpoint that cites a Subagent from its record, never the error head', () => {
+      const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, [EXTRA[0]!]) }))
+      expect(mechanical.rounds.map((round) => round.calls.map((call) => call.checkpoint))).toEqual([
+        [
+          { accepted: false, outcome: 'excerpt_unsupported' },
+          { accepted: false, outcome: 'excerpt_unsupported' },
+        ],
+        [
+          { accepted: true, outcome: 'accepted' },
+          { accepted: true, outcome: 'accepted' },
+        ],
+      ])
+      expect([mechanical.acceptedCheckpoints, mechanical.rejectedCheckpoints]).toEqual([2, 2])
+    })
+
+    it('counts a Subagent’s source refused in consecutive rounds as same-source unsupported rounds', () => {
+      const rounds: RoundSpec[] = [
+        { round: 1, at: 1_000, calls: [refused('one')] },
+        { round: 2, at: 2_000, calls: [refused('two')] },
+      ]
+      const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(rounds, [EXTRA[0]!]) }))
+      expect(mechanical.sameSourceUnsupportedRounds).toBe(2)
+      expect(mechanical.subagentCitations).toEqual({ excerptUnsupported: 2, droppedExcerpts: 0 })
+    })
+
+    it('counts the merge of one and holds the page it cites, beside the digest', () => {
+      const rounds: RoundSpec[] = [
+        { round: 1, at: 1_000, calls: [{ name: 'navigate', args: { url: DOCS }, result: PAGE('Camera', DOCS, 'aaaa1111') }] },
+        { round: 2, at: 2_000, calls: [{ name: 'record_evidence', args: subagentArgs(), result: cited('memory-3'), checkpoint: 'accepted', checkpointAgentId: 'a-1', merged: true }] },
+        { round: 3, at: 3_000, calls: [{ name: 'scroll', args: { direction: 'down' }, result: `scrolled down: x=0 y=277\n${SCROLL_END_OF_PAGE}` }] },
+      ]
+      const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(rounds, [EXTRA[0]!]) }))
+      expect(mechanical.mergedCheckpoints).toBe(1)
+      expect(mechanical.heldPageRoundsWithoutProgress).toBe(1)
+
+      // An accepted one reads as it did from the result: the hash a cached judgement is keyed on does not move.
+      const asWebRecords = rounds.map((spec) => ({ ...spec, calls: spec.calls?.map(({ checkpointAgentId: _agent, merged: _merged, ...rest }) => rest) }))
+      expect(classifyAttempt(inputOf({ traceRecords: traceOf(asWebRecords, [EXTRA[0]!]) })).digestHash).toBe(mechanical.digestHash)
+    })
+
+    it('still leaves out what a Subagent wrote itself, a call of the same tool included', () => {
+      const own = (at: number, event: Record<string, unknown>): Record<string, unknown> => ({ ...identity, at: T0 + at, kind: 'pipeline_event', agentId: 'a-1', event: { turnId: TURN, at: T0 + at, ...event } })
+      const records = traceOf(ROUNDS, [EXTRA[0]!])
+      // The Subagent's round and its call land inside the orchestrator's round 1, before the first checkpoint record.
+      const firstCheckpoint = records.findIndex((record) => (record as unknown as { kind: string }).kind === 'evidence_checkpoint')
+      const interleaved = [
+        ...records.slice(0, firstCheckpoint),
+        { ...identity, at: T0 + 1_001, kind: 'llm_round', round: 1, attempt: 1, role: 'subagent', outcome: 'completed', reasoningChars: 0, agentId: 'a-1', request: { toolResults: 0, chars: 10 } },
+        own(1_001, { type: 'tool_call', callId: 'a-1-call-1', name: 'record_evidence', args: { kind: 'web', observation: 'its own', source_url: OTHER_URL } }),
+        own(1_001, { type: 'tool_result', callId: 'a-1-call-1', name: 'record_evidence', ok: false, error: 'unknown tool' }),
+        ...records.slice(firstCheckpoint),
+      ] as unknown as TraceRecord[]
+
+      const mechanical = classifyAttempt(inputOf({ traceRecords: interleaved }))
+      expect(mechanical.rounds).toEqual(classifyAttempt(inputOf({ traceRecords: records })).rounds)
+      expect(mechanical.subagent.rounds).toBe(1)
+    })
   })
 })
 
@@ -2799,6 +2871,86 @@ describe('same-source unsupported rounds (#257, ADR 0054)', () => {
       return audit.attempts.reduce((total, attempt) => total + sameSourceUnsupportedRoundsOf(attempt.mechanical.rounds), 0)
     })
     expect(perPass).toEqual([0, 5, 0])
+  })
+})
+
+describe('the verdicts of the checkpoints that cite a Subagent, restored on the committed audits (#296)', () => {
+  type Report = { attempts: { mechanical: { attemptId: string; rounds: AuditRound[]; sameSourceUnsupportedRounds?: number } }[] }
+  // Every per-Pass audit on main, whichever prompt judged it.
+  const sets = readdirSync(REPORTS_DIR)
+    .filter((name) => /^audit-(?!aggregate).+-\d+\.json$/.test(name))
+    .sort()
+    .map((name) => ({ setId: name.slice('audit-'.length, -'.json'.length), report: JSON.parse(readFileSync(join(REPORTS_DIR, name), 'utf8')) as Report }))
+
+  it('restores fourteen attempts’ refusals, all the Pi camera’s, and moves the same-source rounds of one', () => {
+    const restored: string[] = []
+    expect(sets.length).toBeGreaterThan(60)
+    for (const { setId, report } of sets) {
+      for (const { mechanical } of report.attempts) {
+        const rounds = restoreSubagentVerdicts(mechanical.rounds)
+        const words = rounds.flatMap((round, index) =>
+          round.calls.flatMap((call, position) => (call.checkpoint?.outcome === mechanical.rounds[index]!.calls[position]!.checkpoint?.outcome ? [] : [`${round.round} ${call.checkpoint!.outcome}`])),
+        )
+        if (words.length === 0) {
+          expect(rounds).toEqual(mechanical.rounds)
+          continue
+        }
+        const sameSource = mechanical.sameSourceUnsupportedRounds === undefined ? 'not counted' : `${mechanical.sameSourceUnsupportedRounds} -> ${sameSourceUnsupportedRoundsOf(rounds)}`
+        restored.push(`${setId} ${mechanical.attemptId}: ${words.join(', ')}; same-source ${sameSource}`)
+        // Nothing but the verdict word: what was judged stays as judged.
+        expect(rounds.map((round) => ({ ...round, calls: round.calls.map((call) => ({ ...call, checkpoint: null })) }))).toEqual(
+          mechanical.rounds.map((round) => ({ ...round, calls: round.calls.map((call) => ({ ...call, checkpoint: null })) })),
+        )
+      }
+    }
+    expect(restored).toEqual([
+      'baseline2-3 compatibility-pi-camera--initial: 16 excerpt_unsupported, 17 excerpt_unsupported, 22 excerpt_unsupported; same-source not counted',
+      'baseline3-3 compatibility-pi-camera--initial: 20 excerpt_unsupported, 21 excerpt_unsupported, 22 excerpt_unsupported; same-source 0 -> 3',
+      'fix-235-1 compatibility-pi-camera--follow_up: 9 unknown_source; same-source not counted',
+      'fix-236-2 compatibility-pi-camera--follow_up: 20 unknown_source, 21 unknown_source; same-source not counted',
+      'fix-237-1 compatibility-pi-camera--follow_up: 13 unknown_source; same-source not counted',
+      'fix-242-3 compatibility-pi-camera--follow_up: 15 unknown_source, 16 unknown_source; same-source not counted',
+      'fix-242r-3 compatibility-pi-camera--follow_up: 6 excerpt_unsupported, 6 excerpt_unsupported, 11 excerpt_unsupported, 13 excerpt_unsupported; same-source not counted',
+      'fix-250-3 compatibility-pi-camera--initial: 12 excerpt_unsupported; same-source not counted',
+      'fix-250-3 compatibility-pi-camera--follow_up: 19 unknown_source; same-source not counted',
+      'fix-257-3 compatibility-pi-camera--follow_up: 6 excerpt_unsupported; same-source 0 -> 0',
+      'fix-258-259-1 compatibility-pi-camera--follow_up: 9 excerpt_unsupported; same-source 0 -> 0',
+      'fix-260-262-3 compatibility-pi-camera--initial: 13 excerpt_unsupported; same-source 0 -> 0',
+      'fix-260-262-3 compatibility-pi-camera--follow_up: 17 excerpt_unsupported; same-source 0 -> 0',
+      'fix-265-267-1 compatibility-pi-camera--initial: 13 excerpt_unsupported; same-source 0 -> 0',
+    ])
+  })
+
+  it('reads the word from the head the app’s refusal opens with', () => {
+    const call = (reason: string) => ({
+      name: 'record_evidence',
+      args: { kind: 'subagent', agent_id: 'a-1', observation: 'a finding', source_url: OTHER_URL },
+      ok: false,
+      error: refusalLine('record_evidence', { reason, error: 'the app’s own words' }),
+    })
+    const old = classifyAttempt(inputOf({ traceRecords: traceOf([{ round: 1, at: 1_000, calls: [call('excerpt_unsupported'), call('unknown_source'), call('malformed')] }], [EXTRA[0]!]) }))
+    expect(restoreSubagentVerdicts(old.rounds)[0]!.calls.map((entry) => entry.checkpoint)).toEqual([
+      { accepted: false, outcome: 'excerpt_unsupported' },
+      { accepted: false, outcome: 'unknown_source' },
+      { accepted: false, outcome: 'malformed' },
+    ])
+  })
+
+  it('leaves the rounds of an audit under the join as they are, and a web citation’s error head as it is', () => {
+    const refusal = (kind: 'web' | 'subagent', checkpointAgentId?: string) => ({
+      name: 'record_evidence',
+      args: { kind, ...(kind === 'subagent' ? { agent_id: 'a-1' } : { excerpt: 'not there' }), observation: 'a finding', source_url: OTHER_URL },
+      ok: false,
+      error: 'record_evidence rejected (excerpt_unsupported): the excerpt does not appear',
+      ...(checkpointAgentId !== undefined ? { checkpoint: 'excerpt_unsupported', checkpointAgentId } : {}),
+    })
+    const joined = classifyAttempt(inputOf({ traceRecords: traceOf([{ round: 1, at: 1_000, calls: [refusal('subagent', 'a-1')] }, { round: 2, at: 2_000, calls: [refusal('subagent', 'a-1')] }], [EXTRA[0]!]) }))
+    expect(restoreSubagentVerdicts(joined.rounds)).toEqual(joined.rounds)
+    expect(sameSourceUnsupportedRoundsMissedOver([{ mechanical: joined, review: null, countsAfterOverrules: joined.counts }])).toBe(0)
+
+    // A trace that kept no checkpoint record at all: the kind the citation names decides.
+    const old = classifyAttempt(inputOf({ traceRecords: traceOf([{ round: 1, at: 1_000, calls: [refusal('web')] }, { round: 2, at: 2_000, calls: [refusal('web')] }], [EXTRA[0]!]) }))
+    expect(restoreSubagentVerdicts(old.rounds)).toEqual(old.rounds)
   })
 })
 

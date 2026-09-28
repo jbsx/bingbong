@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { bookkeepingBeforeAnswerOf, bookkeepingBeforeAnswerOver, bookkeepingBeforeCutOf, bookkeepingBeforeCutOver, offLanguageAnswersOver, pastTheEndReadsOf, pastTheEndReadsOver, populationOf, PRE_RULE_OFF_LANGUAGE_ANSWERS, replaySearchStreaks, restateVerifiedOrUnasked, restateVerifiedOrUnaskedMarkdown, SEARCH_STREAK_RULE, searchLoopCountsOf, unavailableLandingsOf, type AuditAggregate, type AuditAttempt, type AuditPopulation, type AuditSetOutput } from './audit.ts'
+import { bookkeepingBeforeAnswerOf, bookkeepingBeforeAnswerOver, bookkeepingBeforeCutOf, bookkeepingBeforeCutOver, offLanguageAnswersOver, pastTheEndReadsOf, pastTheEndReadsOver, populationOf, PRE_RULE_OFF_LANGUAGE_ANSWERS, replaySearchStreaks, restateVerifiedOrUnasked, restateVerifiedOrUnaskedMarkdown, restoreSubagentVerdicts, SEARCH_STREAK_RULE, searchLoopCountsOf, unavailableLandingsOf, type AuditAggregate, type AuditAttempt, type AuditPopulation, type AuditSetOutput } from './audit.ts'
 import {
   HEADLINE_METRICS,
   buildLedger,
@@ -72,6 +72,35 @@ describe('same-source unsupported rounds (#257, ADR 0054)', () => {
     expect(counter.judgement).toBe(false)
     expect(counter.value).toBe(5)
     expect(counter.over).toBe(population.budgetedRounds)
+  })
+
+  it('adds the rounds the older join missed on a Subagent’s source: baseline3 reads 3 on its initials, from 0 as written (#296)', () => {
+    const aggregate = readAudit('audit-aggregate-baseline3.json') as unknown as AuditAggregate
+    const initials = [1, 2, 3].flatMap((pass) => readAudit(`audit-baseline3-${pass}.json`).attempts.filter((attempt) => attempt.mechanical.relation === 'initial'))
+    expect(aggregate.populations.initial.sameSourceUnsupportedRounds).toBe(0)
+    const LABEL = 'Same-source unsupported rounds'
+    expect(countersOf(aggregate.populations.initial, initials).find((entry) => entry.label === LABEL)!.value).toBe(3)
+
+    // An audit written before the counter is still nothing, whatever its rounds hold.
+    const before = readAudit('audit-baseline2-3.json')
+    expect(before.populations.initial.sameSourceUnsupportedRounds).toBeUndefined()
+    expect(countersOf(before.populations.initial, before.attempts.filter((attempt) => attempt.mechanical.relation === 'initial')).find((entry) => entry.label === LABEL)!.value).toBeNull()
+  })
+
+  it('moves that counter on no other committed family, and no other counter on any', () => {
+    const moved: string[] = []
+    for (const listed of committed.families) {
+      for (const key of ['initial', 'followUp'] as const) {
+        const attempts = listed.passes.flatMap((pass) => pass.audit?.attempts ?? []).filter((attempt) => (attempt.mechanical.relation === 'initial') === (key === 'initial'))
+        const population = listed.aggregate?.audit.populations[key] ?? populationOf(key, attempts)
+        const restored = attempts.map((attempt) => ({ ...attempt, mechanical: { ...attempt.mechanical, rounds: restoreSubagentVerdicts(attempt.mechanical.rounds) } }))
+        const asWritten = countersOf(population, restored)
+        countersOf(population, attempts).forEach((counter, index) => {
+          if (counter.value !== asWritten[index]!.value) moved.push(`${listed.id} ${key}: ${counter.label} ${asWritten[index]!.value} -> ${counter.value}`)
+        })
+      }
+    }
+    expect(moved).toEqual(['baseline3 initial: Same-source unsupported rounds 0 -> 3'])
   })
 })
 

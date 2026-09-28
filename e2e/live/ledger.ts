@@ -37,6 +37,7 @@ import {
   pastTheEndReadsOver,
   populationOf,
   recountUnavailableByTitle,
+  sameSourceUnsupportedRoundsMissedOver,
   replaySearchStreaks,
   SEARCH_STREAK_RULE,
   ROUND_KINDS,
@@ -677,7 +678,11 @@ export function countersOf(population: AuditPopulation, attempts: readonly Audit
     mechanical('Inherited rounds', population.inheritedRounds, budgeted),
     mechanical('Merged Evidence Checkpoints', older.mergedCheckpoints),
     mechanical('Bundled checkpoint rounds', older.bundledCheckpoints, budgeted),
-    mechanical('Same-source unsupported rounds', older.sameSourceUnsupportedRounds, budgeted),
+    // #296: an audit written before the round join kept the checkpoints
+    // that cite a Subagent missed the retries of a Subagent's source. Their
+    // refusals are in its rounds, so what it counted is restated with them;
+    // one written before the counter is still nothing.
+    mechanical('Same-source unsupported rounds', older.sameSourceUnsupportedRounds === undefined ? undefined : older.sameSourceUnsupportedRounds + sameSourceUnsupportedRoundsMissedOver(attempts), budgeted),
     mechanical('Held Page rounds without Progress', older.heldPageRoundsWithoutProgress, budgeted),
     // #290: the refusal's text is in every audit's rounds, so an audit
     // written before the counter is recounted from them rather than read as
