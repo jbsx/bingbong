@@ -757,6 +757,10 @@ The result of a search landing that the Decision Model chose as fitting the
 objective, opened by the Run in the same round as the model would open it —
 a navigate to its whole href through every gate and rail — for a Lookup or
 Investigation with an open Asked Item, never for a Direct Action (ADR 0070).
+It is chosen among the links of the whole listing, not only those in view: a
+listing's results often begin below the fold, and the links in view are then
+the site's own navigation. When the page's links cannot be read, nothing is
+picked and the listing is returned as it is.
 It is a result opened, and so escape from a Search Loop.
 _Avoid_: auto-click, auto-open, first result, I'm-feeling-lucky
 
@@ -1179,10 +1183,13 @@ _Avoid_: overlay error, intercepted click, blocked by overlay (as a category)
 **Composed Address**:
 A URL the model navigates to that it was not shown this Run — not an href in a
 result it read, not a page the Run landed on, not a source in Session
-Evidence, not the address of a popup the Run was told was denied. An Offered
-Address is any of those four, and an href is offered
+Evidence, not the address of a popup the Run was told was denied, not the
+address of a Result Pick. An Offered
+Address is any of those five, and an href is offered
 whole: the address the link carries, not the shortened form a snapshot may
-print it in. A site allows one
+print it in. A Result Pick's address is offered from the moment it is picked,
+since the page showed it to the Run; the listing's other links below the fold
+are not, since the model never read them. A site allows one
 Not-found Landing by a Composed Address per Run; after it, a Composed Address
 to that site is rewritten into a search of that site, and searches and
 Offered Addresses stay open. The search it is rewritten into is a search to

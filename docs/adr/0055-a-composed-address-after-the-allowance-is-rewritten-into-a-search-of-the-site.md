@@ -97,3 +97,11 @@ spends the allowance.
   on `fix-288-290` and 6 of 17 on `fix-291`, where three rewrites in a row
   earned two Notices with no search by the model at all. The audit reads
   an older Search Observation that carries the stamp as a hold.
+- 2026-09-28 (#303, grilled): the address of a Result Pick is a fifth
+  Offered Address, offered from the moment it is picked. The pick is
+  chosen among the links of the whole page (ADR 0070), and a link below
+  the fold was offered by nothing: the rail reads the viewport's refs, and
+  page text carries no href. On a site whose allowance was spent, the
+  pick's navigate would have been rewritten into a search of that site.
+  Only the picked address is offered; the rest of the list was never in
+  front of the model.

@@ -131,3 +131,52 @@ lets the model do.
   rest from their audits. Whether the pick should refuse a link that is no
   result, or the rule should hold on an open that lands back on the
   listing, is #303's to decide and is not changed here.
+- 2026-09-28 (#303, grilled with every recommendation taken): the Choice
+  is over the links of the whole page, not the viewport's refs. The fault
+  was the candidate list, not the Search Loop rule, which is unchanged
+  (`SEARCH_STREAK_RULE` stays 3, no audit is recounted).
+  - What was found. Sixteen acted picks, not eleven, chose the "Objects"
+    tab: five more in `fix-291-2` and `fix-291-4`. Of 318 Decision Records
+    of the result seam 52 acted, 36 on DuckDuckGo listings, all of which
+    opened an off-engine result, and these 16. The rmg.co.uk listing held
+    its results (24 links in the document) below the fold: after a
+    navigate, 0 of 89 snapshots of that listing carried one as a ref, so
+    the five options were the site's home, "BETA", "Objects", "Library"
+    and "Archive". The tab sits inside `main`, so a landmark would not
+    have told it from a result. 13 of the 16 landed on
+    `/collections/object`, which is neither the listing nor a Search URL,
+    so the rule could not have told the open from a result opened by its
+    address. An engine's listing is cut the same way: 2 or 3 results in
+    view, on a page 1.6 to 5.1 viewports tall.
+  - Candidates. Every link of the document that has size and is not
+    hidden, inert or inside a dialog, in document order, less a link that
+    is not http(s) and a link to another Search URL, as before. Links to
+    one address by URL fingerprint are one candidate, carrying the longest
+    label. The list is cut at 100. Site chrome stays in it. The bars stay
+    at 0.7 / 0.7.
+  - Naming. The Choice's options are numbered by position in that list,
+    never by snapshot ref. The stamp's `ref` is written only when the link
+    is a ref the listing showed. The model reads `Opened [n] "label" —
+    href` when there is one and `Opened "label" — href` when there is
+    none; the Round Audit reads both.
+  - The picked href is an Offered Address from the moment it is picked
+    (ADR 0055), so a result below the fold is never rewritten into a
+    search of its site. The rest of the list is not offered.
+  - When the page's links cannot be read, or there are none, nothing is
+    asked and the listing is returned as it is. The viewport's refs are
+    never the fallback.
+  - The Decision Record of the result seam carries its candidates: label,
+    href, and ref where there is one. Run Trace version 9. The Shadow
+    Replay reads the recorded list on a version 9 trace and rebuilds the
+    options from the listing's head on an older one.
+  - Rejected. A Noul bar of 0.82 drops all 16 and 6 of the 36 good picks,
+    and is set on one site's scores. Dropping candidates by host or path
+    drops a site's own results, which are on the listing's host. Holding
+    the streak on every picked open puts a false Notice on the search
+    after each good pick.
+  - It closes on tests and one e2e fixture, a listing taller than the
+    viewport with site chrome in view and results below, with no capture.
+    The next capture taken for any reason reports, ungated: picks that
+    opened a link of the listing's own chrome, Result Pick timeouts, and
+    the option count. The landed line that named the listing's address in
+    three of the rounds is #308.
