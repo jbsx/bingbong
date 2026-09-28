@@ -745,7 +745,7 @@ describe('subagent citations: excerpt_unsupported and dropped excerpts (#272)', 
       ]
       const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(rounds, [EXTRA[0]!]) }))
       expect(mechanical.sameSourceUnsupportedRounds).toBe(2)
-      expect(mechanical.subagentCitations).toEqual({ excerptUnsupported: 2, droppedExcerpts: 0 })
+      expect(mechanical.subagentCitations).toEqual({ excerptUnsupported: 2, droppedExcerpts: 0, wallSourceRefusals: 0, offFindingCitations: 0 })
     })
 
     it('counts the merge of one and holds the page it cites, beside the digest', () => {
