@@ -2806,6 +2806,27 @@ describe('escape is something new put in front of the Run (#293)', () => {
     expect(mechanical.rewrittenComposedAddresses).toEqual([2])
   })
 
+  it('keeps a collected report whose head is withheld for restating Grading Key text: the written report recounts as the fresh one counted', () => {
+    const claim = 'the invented watch carries catalogue number nine hundred and ninety nine'
+    const keyed: RoundSpec[] = [
+      ROUNDS[0]!,
+      ROUNDS[1]!,
+      { round: 3, at: 3_000, calls: [{ name: 'agent_results', args: { wait: true }, result: `a-1 [browsing] completed — find the H4 catalogue entry\nChecked: ${claim}.` }] },
+      { round: 4, at: 4_000, calls: [{ name: 'navigate', args: { url: SEARCH('zaa0037') }, result: LISTING('zaa0037', 'ddg00013') }] },
+    ]
+    const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(keyed, EXTRA) }))
+    expect(mechanical.rounds.map((round) => round.calls[0]!.search?.streak ?? null)).toEqual([1, 2, null, 1])
+    expect(mechanical.rounds[2]!.calls[0]).not.toHaveProperty('delivered')
+
+    const { attempts, withheld } = withholdKeyText([{ mechanical, review: null, countsAfterOverrules: mechanical.counts }], () => [{ label: 'required fact', text: claim }])
+    expect(withheld).toBe(1)
+    const written = attempts[0]!.mechanical
+    expect(written.rounds[2]!.calls[0]).toMatchObject({ resultHead: WITHHELD_KEY_TEXT, delivered: 'report' })
+    // Only what is written changed: the digest the reviewer judged is as it was.
+    expect(written.digestHash).toBe(mechanical.digestHash)
+    expect(replaySearchStreaks(written.rounds).map((round) => round.calls[0]!.search?.streak ?? null)).toEqual([1, 2, null, 1])
+  })
+
   it('recounts a report written under rule 2, where a rewrite carried a search line, and leaves what was judged as judged', () => {
     const written = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, EXTRA) }))
     // As rule 2 wrote it: the rewrite a search at streak 4, and everything after it one higher until the report.

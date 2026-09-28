@@ -1923,6 +1923,46 @@ describe('the Result Pick opens a search landing’s best result in the same rou
     expect(resultOf(picked.outcome.results[0]!.outcome)).not.toContain('The last searches ran one after another')
   })
 
+  it('opened nothing where the pick landed on a Blocker (#293): the streak holds, and the nudge the search owed is delivered', async () => {
+    const observations: ToolTraceEvent[] = []
+    const trace: string[] = []
+    let model: DecisionModel = unavailable
+    const walled: Tool = {
+      name: 'navigate',
+      acquisition: true,
+      async execute(callArg: ToolCall): Promise<unknown> {
+        const url = String(callArg.args.url)
+        trace.push(`execute:navigate:${url}`)
+        if (url.includes('?q=')) return LISTING.replaceAll(SEARCH, url)
+        return `navigated: url=${url} title="Just a moment..."\n# Just a moment... — ${url}\nBLOCKER:challenge science.nasa.gov\nA challenge is in the way.`
+      },
+    }
+    const h = harness([walled], {
+      trace,
+      turnId: 'turn-1',
+      traceVision: (event) => observations.push(event),
+      capabilities: { ...ALL_RAILS, noProgressRail: false },
+      resultPick: createResultPick({
+        model: { model: 'jev-1.13.0', ask: (request) => model.ask(request) },
+        threshold: { choice: 0.7, noul: 0.7 },
+        runPlan: () => LOOKUP,
+        round: () => 1,
+        record: () => {},
+      }),
+    })
+    const search = (n: number): ToolCall => call('navigate', { url: `https://duckduckgo.com/?q=golden+record+${n}` }, `s${n}`)
+    await h.round([search(1)])
+    model = choosing('3')
+    const picked = await h.round([search(2)])
+    model = unavailable
+    await h.round([search(3)])
+
+    expect(executed(trace)).toContain(`execute:navigate:${RESULT}`)
+    const streaks = observations.filter((event) => event.kind === 'search_observation').map((event) => (event as { streak: number }).streak)
+    expect(streaks).toEqual([1, 2, 3])
+    expect(resultOf(picked.outcome.results[0]!.outcome)).toContain('The last searches ran one after another')
+  })
+
   it('passes the pick’s navigate through the Risk Gate like any other: a denied open leaves the whole listing and says what failed', async () => {
     const { h, trace } = withPick(choosing('3'), { deny: RESULT })
     const round = await h.round([call('navigate', { url: SEARCH }, 'search')])

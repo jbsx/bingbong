@@ -874,8 +874,10 @@ export function createToolRoundExecutor(config: ToolRoundConfig): ToolRoundExecu
     if (pick === null) return null
     const landed = yield* step(resultPickCall(call, pick), turnId)
     // A result opened is escape (ADR 0058): a Search Loop nudge the search
-    // owed speaks of searches with nothing opened between them.
-    if (landed.outcome.ok) notices.clear('search_loop')
+    // owed speaks of searches with nothing opened between them. An open that
+    // landed on a Blocker, a Not-found or an Unavailable Page opened nothing
+    // (#293): the rail held the streak, and the nudge stands.
+    if (landed.outcome.ok && searchLoopRail?.streak() === 0) notices.clear('search_loop')
     return { pick, landed }
   }
 

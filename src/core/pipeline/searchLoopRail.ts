@@ -4,6 +4,7 @@ import { landedOnNotFoundPage } from '../browser/notFoundPage'
 import { landedOnUnavailablePage } from '../browser/unavailablePage'
 import { wasBlockedOrInert } from '../browser/actionOutcome'
 import { landedOnBlocker } from '../browser/blockerNudge'
+import { collectedReportIn } from '../agent/agentResultsHeader'
 import { isSearchInputRef, refNumberOf, searchQueryFromUrl, typedQuery } from './progressFingerprints'
 import {
   SEARCH_LOOP_NUDGE_AFTER,
@@ -181,6 +182,8 @@ export interface SearchLoopRail {
    * a Search Observation for every search (#243).
    */
   observe(call: ToolCall, outcome: ToolResultOutcome, facts?: SearchLoopCallFacts): Promise<SearchLoopVerdict>
+  /** The consecutive searches with nothing opened between them, as the last observed call left them. */
+  streak(): number
 }
 
 const NO_VERDICT: SearchLoopVerdict = { notice: null, observation: null }
@@ -257,6 +260,7 @@ export function createSearchLoopRail(deps: SearchLoopRailDeps = {}): SearchLoopR
       if (classified.kind !== 'search') return { ok: true }
       return streak >= SEARCH_LOOP_REFUSE_AFTER ? { ok: false, reason: REFUSAL } : { ok: true }
     },
+    streak: () => streak,
     async observe(call, outcome, facts = {}) {
       const classified = await classify(call, facts)
       // A successful escape consumed something, breaking the blind loop; a
@@ -275,7 +279,7 @@ export function createSearchLoopRail(deps: SearchLoopRailDeps = {}): SearchLoopR
         !landedOnNotFoundPage(outcome) &&
         !landedOnUnavailablePage(outcome) &&
         !wasBlockedOrInert(outcome) &&
-        putSomethingNew(call.name, { blocker: landedOnBlocker(outcome), userAnswered: facts.userAnswered === true, result: outcome.result })
+        putSomethingNew(call.name, { blocker: landedOnBlocker(outcome), userAnswered: facts.userAnswered === true, collectedReport: collectedReportIn(outcome.result) })
       streak = searchStreakAfter(streak, searchStreakMoveOf(classified.kind, consumed))
       if (classified.kind !== 'search') return NO_VERDICT
       return {

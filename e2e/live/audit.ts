@@ -54,7 +54,7 @@ import type { PipelineEvent } from '../../src/core/pipeline/events'
 import type { EffortTier } from '../../src/core/pipeline/runPlan'
 import { DECISION_THRESHOLDS } from '../../src/core/ports/decisionModel.ts'
 import type { SearchObservation, SearchSignature } from '../../src/core/pipeline/searchLoopRail'
-import { agentResultsHeader, collectedReportIn } from '../../src/core/agent/agentResultsHeader.ts'
+import { collectedReportIn } from '../../src/core/agent/agentResultsHeader.ts'
 import {
   isSearchInspection,
   putSomethingNew,
@@ -2106,13 +2106,10 @@ function escapedOf(call: AuditCall): boolean {
     putSomethingNew(call.name, {
       blocker: call.wall !== null,
       userAnswered: call.delivered === 'answer',
-      result: call.delivered === 'report' ? REPORT_DELIVERED : call.resultHead,
+      collectedReport: call.delivered === 'report' || collectedReportIn(call.resultHead),
     })
   )
 }
-
-/** A result that reads as a collected Subagent Report to the rail's own test, standing in for the whole result a written call no longer holds. */
-const REPORT_DELIVERED = agentResultsHeader('a', 'browsing', 'completed', '')
 
 /**
  * A written call's Blocked Action or inert click (#261), read by the rail's
@@ -2272,6 +2269,9 @@ export interface UnavailableLandingRounds {
   readonly followedBySearch: readonly number[]
 }
 
+/** The calls the wait after an Unavailable Landing looks past: inspection as the rail read it when the counter was written (#262). */
+const LANDING_WAIT_SKIPS: ReadonlySet<string> = new Set(['read_page', 'look', 'scroll'])
+
 /**
  * An attempt's Unavailable Landings over its rounds as audited (#262, ADR
  * 0060): one entry per call, by basis, and of those, the ones whose next call
@@ -2283,9 +2283,6 @@ export interface UnavailableLandingRounds {
  * did, ends at a call that acts on no page, and takes a Composed Address
  * rewrite as the search it ran.
  */
-/** The calls the wait after an Unavailable Landing looks past: inspection as the rail read it when the counter was written (#262). */
-const LANDING_WAIT_SKIPS: ReadonlySet<string> = new Set(['read_page', 'look', 'scroll'])
-
 export function unavailableLandingsOf(rounds: readonly AuditRound[]): UnavailableLandingRounds {
   const status: number[] = []
   const title: number[] = []
@@ -2723,7 +2720,7 @@ function classifyCall(
     landing === null &&
     unavailable === null &&
     (settled === null || consumedNothingOf(settled) === null) &&
-    putSomethingNew(call.name, { blocker: wall !== null, userAnswered: entry.answered, result: result.result })
+    putSomethingNew(call.name, { blocker: wall !== null, userAnswered: entry.answered, collectedReport: collectedReportIn(result.result) })
   const search = advanceSearchStreak(state.search, { kind: streakKind, consumed, search: observed })
   if (entry.resultPick?.opened === true) replayResultPick(state.search, consumed)
 
@@ -3932,7 +3929,10 @@ export const WITHHELD_KEY_TEXT = '[withheld: restates Grading Key text]'
  * the key uses, and those words are the model's, copied into the digest — the
  * write guard would otherwise refuse the whole set for a hunt that succeeded.
  * Only what is written changes: the digest the reviewer judged, and its hash,
- * stay as they were, so no cached judgement re-keys.
+ * stay as they were, so no cached judgement re-keys. A withheld head that
+ * opened with a collected Subagent Report says so in `delivered` (#293), or
+ * the recount of the written report would read the call as a wait that
+ * collected nothing.
  */
 export function withholdKeyText(
   attempts: readonly AuditAttempt[],
@@ -3949,12 +3949,17 @@ export function withholdKeyText(
     if (texts.length === 0) return attempt
     const rounds = attempt.mechanical.rounds.map((round) => ({
       ...round,
-      calls: round.calls.map((call) => ({
-        ...call,
-        args: Object.fromEntries(Object.entries(call.args).map(([name, value]) => [name, typeof value === 'string' ? guard(value, texts) : value])),
-        resultHead: call.resultHead === null ? null : guard(call.resultHead, texts),
-        search: call.search === null ? null : { ...call.search, query: guard(call.search.query, texts) },
-      })),
+      calls: round.calls.map((call) => {
+        const resultHead = call.resultHead === null ? null : guard(call.resultHead, texts)
+        const report = resultHead !== call.resultHead && call.delivered === undefined && COLLECTION_TOOLS.has(call.name) && collectedReportIn(call.resultHead)
+        return {
+          ...call,
+          args: Object.fromEntries(Object.entries(call.args).map(([name, value]) => [name, typeof value === 'string' ? guard(value, texts) : value])),
+          resultHead,
+          ...(report ? { delivered: 'report' as const } : {}),
+          search: call.search === null ? null : { ...call.search, query: guard(call.search.query, texts) },
+        }
+      }),
     }))
     return { ...attempt, mechanical: { ...attempt.mechanical, rounds } }
   })

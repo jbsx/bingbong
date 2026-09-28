@@ -727,6 +727,15 @@ describe('createSearchLoopRail — escape is something new put in front of the R
     }
   })
 
+  it('says the streak the last observed call left', async () => {
+    const rail = await atStreakTwo()
+    expect(rail.streak()).toBe(2)
+    await rail.observe(other('read_page'), ok)
+    expect(rail.streak()).toBe(2)
+    await rail.observe(other('click'), ok)
+    expect(rail.streak()).toBe(0)
+  })
+
   it('leaves the streak as it was across a navigate that landed on a Blocker, and a search that landed on one is still a search', async () => {
     const rail = await atStreakTwo()
     expect(await rail.observe(nav('https://www.rmg.co.uk/collections'), blocked)).toEqual({ notice: null, observation: null })

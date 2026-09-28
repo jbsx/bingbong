@@ -118,7 +118,7 @@ describe('isSearchCheckpoint (#289)', () => {
   it('names the two checkpoint tools, and nothing that looks at or leaves a page', () => {
     expect(isSearchCheckpoint('record_evidence')).toBe(true)
     expect(isSearchCheckpoint('record_candidate')).toBe(true)
-    for (const name of ['read_page', 'look', 'scroll', 'click', 'navigate', 'type', 'report_run_plan', 'ask_user']) {
+    for (const name of ['read_page', 'look', 'scroll', 'click', 'navigate', 'type']) {
       expect(isSearchCheckpoint(name)).toBe(false)
     }
   })
@@ -218,17 +218,19 @@ describe('the streak (#259, ADR 0058): a search after a search, with nothing ope
   })
 
   it('reads what a call that can escape put in front of the Run: a page, the user’s answer, or a Subagent Report (#293)', () => {
-    const page = { blocker: false, userAnswered: false, result: 'navigated' }
+    const page = { blocker: false, userAnswered: false, collectedReport: false }
     expect(putSomethingNew('navigate', page)).toBe(true)
     // A landing on a Blocker put a wall in front of the Run and no page.
     expect(putSomethingNew('navigate', { ...page, blocker: true })).toBe(false)
     expect(putSomethingNew('click', { ...page, blocker: true })).toBe(false)
     // The pipeline's own resolution, never the wording of the result.
-    expect(putSomethingNew('ask_user', { blocker: false, userAnswered: true, result: "user didn't answer" })).toBe(true)
-    expect(putSomethingNew('ask_user', { blocker: false, userAnswered: false, result: 'the blue one' })).toBe(false)
-    expect(putSomethingNew('agent_results', { blocker: false, userAnswered: false, result: 'a-1 [browsing] completed — find the fact\nIt is 42.' })).toBe(true)
-    expect(putSomethingNew('agent_results', { blocker: false, userAnswered: false, result: 'a-1 [browsing] running — find the fact' })).toBe(false)
-    expect(putSomethingNew('agent_results', { blocker: false, userAnswered: false, result: 'no uncollected subagent reports' })).toBe(false)
+    expect(putSomethingNew('ask_user', { ...page, userAnswered: true })).toBe(true)
+    expect(putSomethingNew('ask_user', page)).toBe(false)
+    expect(putSomethingNew('agent_results', { ...page, collectedReport: true })).toBe(true)
+    expect(putSomethingNew('agent_results', page)).toBe(false)
+    // Each reads its own fact alone: an answer is no report, and a wall is no bar to either.
+    expect(putSomethingNew('agent_results', { ...page, userAnswered: true })).toBe(false)
+    expect(putSomethingNew('ask_user', { blocker: true, userAnswered: true, collectedReport: false })).toBe(true)
   })
 
   it('nudges at the second search and refuses after the fifth (#289): the refusal is where #74 set it', () => {

@@ -1,4 +1,3 @@
-import { collectedReportIn } from '../agent/agentResultsHeader.ts'
 import { looksLikeDomain } from '../browser/urlInput.ts'
 import { classifyToolObservation } from './toolObservations.ts'
 
@@ -232,8 +231,8 @@ export interface SearchCallFacts {
   readonly blocker: boolean
   /** The user answered the question, by the pipeline's own resolution — never the wording of the result. */
   readonly userAnswered: boolean
-  /** The result, which an `agent_results` reply says its collected reports in. */
-  readonly result: unknown
+  /** The reply of an `agent_results` carried at least one collected Subagent Report. */
+  readonly collectedReport: boolean
 }
 
 /**
@@ -244,6 +243,6 @@ export interface SearchCallFacts {
  */
 export function putSomethingNew(toolName: string, facts: SearchCallFacts): boolean {
   if (toolName === ASK_TOOL) return facts.userAnswered
-  if (toolName === COLLECTION_TOOL) return collectedReportIn(facts.result)
+  if (toolName === COLLECTION_TOOL) return facts.collectedReport
   return !facts.blocker
 }
