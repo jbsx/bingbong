@@ -16,6 +16,42 @@ completed in five to eight seconds with one or two checkpoints, and the
 premise above that most stopped Runs have checkpointed everything did not
 hold: 8 of 11 entries kept the round.
 
+Note (2026-09-28, #292): the round stays and the texts change. Grilled the
+same day with every recommendation taken. Not yet built.
+
+- **The round stays.** Over every trace on disk that records the entry, 104
+  Finalization entries in 16 families, 57 kept the round and 47 skipped it.
+  Of the 57, 35 completed with calls, 41 of their 48 checkpoints accepted;
+  20 were cut by the allowance with nothing recorded, 228 s; 2 completed
+  with no call. In `fix-291`, 3 were kept, all 3 completed, and 3
+  checkpoints were accepted. The Answer's own `checkpoints`
+  ([ADR 0072](0072-an-answer-carries-its-own-checkpoints-so-no-round-is-spent-recording-before-it.md))
+  do not yet replace it: of the three reserved Answers the model wrote in
+  `fix-291`, one used the field, and none of its 7 entries was accepted.
+- **A skipped round's texts name the Answer's `checkpoints`**, where the
+  Decision says the memory patch and evidence ids. `evidence_ids` cites
+  identities that already exist, so it never could hold a finding that was
+  not recorded. The sentence is `What you found and have not recorded goes
+  in its "checkpoints": [] when everything is already recorded.` and it
+  comes last, after the demand to state honestly what was completed.
+- **The Answer-only text is one text.** After a kept round it said nothing
+  of findings, so a round cut by the allowance left them with no place
+  named. It now ends on the same sentence, and the wording for a skipped
+  round is no longer a second constant.
+- **A kept round asks for at most two Evidence Checkpoints "in this
+  round"**, and an injected Subagent Report for "at most two checkpoints in
+  this round" where it said "in all". One Run read the limit as the
+  Session's: it had two checkpoints, recorded nothing, and answered.
+- The sentence lives with the Finalization texts, not with #291's phrases,
+  so a revert of #291's commit leaves it standing. Every text keeps the
+  opening the Round Audit marks a Finalization round by.
+- The Subagent's Finalize Instruction is its own and is unchanged. Both
+  tools' line, `Not for a Run that is ready to answer`, is unchanged: a Run
+  that was stopped is not one that chose to answer.
+- Closed on tests that pin each text. A capture has 3 or 4 Finalization
+  Runs, too few to gate; the entries a reserved Answer offered, accepted
+  and dropped are reported.
+
 ## Context
 
 In fix-252, 10 of 18 Runs — every Run that did not end `objective_met` —

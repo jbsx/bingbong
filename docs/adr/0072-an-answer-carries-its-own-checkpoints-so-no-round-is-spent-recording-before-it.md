@@ -90,6 +90,19 @@ Built the same day; the `fix-291` capture is not yet run.
   name it at all: no corrected entry answers it, and the Answer's entry
   would meet the same refusal.
 
+Note (2026-09-28, #292): the Finalization texts name the field. The #288
+note above left the Finalize Instruction's wording unchanged, a reserved
+Answer learning the field from the prompt; both reserved Answers the model
+wrote in `fix-288-290` then sent it empty. A skipped bookkeeping round's
+texts and the Answer-only text now say where an unrecorded finding goes.
+The Finalization bookkeeping round, refused for removal under "Considered
+and refused" until a capture showed its use, stays: the numbers and the
+texts are in the note of the same date on
+[ADR 0056](0056-the-finalization-bookkeeping-round-is-skipped-when-there-is-nothing-new-to-record.md).
+Why 6 of the 7 entries one reserved Answer offered in `fix-291` were
+malformed cannot be read, since the Run Trace keeps no Answer JSON for an
+Answer that was accepted; it is left to the reading of that capture.
+
 ## Context
 
 A round whose only calls are `record_evidence` or `record_candidate` costs
