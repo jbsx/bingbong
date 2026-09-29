@@ -261,6 +261,85 @@ describe('validateReportFindings (#123)', () => {
     })
   })
 
+  describe('a reference read under a referral parameter is the page observed (#310)', () => {
+    const PAGE = 'https://site.test/page'
+    const WALLED = 'https://shop.test/camera'
+    const wallAt = (id: string, url: string): ObservationRecord => ({
+      id: id as ObservationRecord['id'],
+      at: 0,
+      producer: 'action_outcome',
+      ok: true,
+      payload: `navigated: url=${url} title="a title"\nBLOCKER:challenge shop.test\nthe user can complete it on screen`,
+      sourceUrl: url,
+    })
+
+    it('keeps a finding whose reference differs from an observed address only by a referral parameter, stored as observed', () => {
+      const validated = validateReportFindings([finding('Price', PAGE)], [observed('w1', `${PAGE}?ref=a`)])
+
+      expect(validated).toEqual({ findings: [finding('Price', `${PAGE}?ref=a`)], dropped: 0 })
+    })
+
+    it('folds from the cited side too, and keeps the title', () => {
+      const cited = { subject: 'Price', detail: 'Price detail', references: [{ url: `${PAGE}?utm_source=x&id=7`, title: 'Page' }] }
+
+      const validated = validateReportFindings([cited], [observed('w1', `${PAGE}?id=7&fbclid=q`)])
+
+      expect(validated).toEqual({
+        // Stored canonical, as #306 stores a citation: the query sorted.
+        findings: [{ ...cited, references: [{ url: `${PAGE}?fbclid=q&id=7`, title: 'Page' }] }],
+        dropped: 0,
+      })
+    })
+
+    it('an Observation of the cited address itself grounds it before the fold', () => {
+      const validated = validateReportFindings([finding('Price', PAGE)], [observed('w1', `${PAGE}?ref=a`), observed('w2', PAGE)])
+
+      expect(validated).toEqual({ findings: [finding('Price', PAGE)], dropped: 0 })
+    })
+
+    it('two references folding to one observed page are one reference', () => {
+      const validated = validateReportFindings([finding('Price', PAGE, `${PAGE}?gclid=z`)], [observed('w1', `${PAGE}?ref=a`)])
+
+      expect(validated).toEqual({ findings: [finding('Price', `${PAGE}?ref=a`)], dropped: 0 })
+    })
+
+    it('drops a finding whose reference no Observation has, folded or not', () => {
+      const validated = validateReportFindings(
+        [finding('Other', `${PAGE}?id=8`), finding('Cased', `${PAGE}?REF=a`), finding('Kept', PAGE)],
+        [observed('w1', `${PAGE}?id=7&ref=a`), observed('w2', `${PAGE}?ref=b`)],
+      )
+
+      expect(validated).toEqual({ findings: [finding('Kept', `${PAGE}?ref=b`)], dropped: 2 })
+    })
+
+    it('a wall reached under a referral is no source cited without it', () => {
+      const validated = validateReportFindings([finding('Price', WALLED)], [wallAt('w1', `${WALLED}?ref=a`)])
+
+      expect(validated).toEqual({ findings: [], dropped: 1 })
+    })
+
+    it('a page held under one referral stays a source when another met a wall', () => {
+      const validated = validateReportFindings(
+        [finding('Price', WALLED)],
+        [observed('w1', `${WALLED}?ref=a`), wallAt('w2', `${WALLED}?ref=b`)],
+      )
+
+      expect(validated).toEqual({ findings: [finding('Price', `${WALLED}?ref=a`)], dropped: 0 })
+    })
+
+    it('a reference walled under a referral is taken out of a finding that keeps another', () => {
+      const validated = validateReportFindings([finding('Price', PAGE, WALLED)], [observed('w1', PAGE), wallAt('w2', `${WALLED}?ref=a`)])
+
+      expect(validated).toEqual({ findings: [finding('Price', PAGE)], dropped: 0 })
+    })
+
+    it('the cited address walled itself is no source, though held under a referral', () => {
+      const validated = validateReportFindings([finding('Price', WALLED)], [observed('w1', `${WALLED}?ref=a`), wallAt('w2', WALLED)])
+
+      expect(validated).toEqual({ findings: [], dropped: 1 })
+    })
+  })
+
   it('the drop note states the count honestly', () => {
     expect(droppedFindingsNote(1)).toMatch(/^1 finding dropped — the cited source was not observed/)
     expect(droppedFindingsNote(2)).toMatch(/^2 findings dropped — the cited sources were not observed/)

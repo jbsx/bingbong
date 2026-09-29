@@ -1031,6 +1031,18 @@ function heldObservations(
   return observed.filter((record) => !unheld.has(observedAddress(record, sourceUrl)))
 }
 
+/**
+ * The address a Subagent's reference to a source is stored under (#310):
+ * the observed one of the page it held content from, which is the cited
+ * address unless the two differ by a referral parameter. Null when the
+ * Subagent held nothing there. The rule its report's findings and the
+ * grading of a citation of it share.
+ */
+export function subagentHeldAddress(workerRecords: readonly ObservationRecord[], sourceUrl: string): string | null {
+  const source = latest(heldObservations(workerRecords, sourceObservations(workerRecords, sourceUrl), sourceUrl))
+  return source === null ? null : observedAddress(source, sourceUrl)
+}
+
 /** A subagent citation's grounding (#123): the named Subagent's own retained observation of the source. */
 function groundSubagentCitation(
   citation: SubagentCitation,

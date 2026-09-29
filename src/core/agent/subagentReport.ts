@@ -8,8 +8,8 @@ import {
   type WorkingMemorySnapshot,
 } from '../session/workingMemory'
 import type { ObservationRecord } from '../session/observationLedger'
-import { canonicalObservedUrls, canonicalUnheldUrls } from '../session/observationLedger'
 import type { FinalizationCause } from '../session/runJournal'
+import { sourceObservations, subagentHeldAddress } from '../pipeline/evidenceCheckpoint'
 import { SUBAGENT_LIMITS } from './subagentRails'
 
 // The Subagent Report contract (#98): a delegated worker's validated return
@@ -193,20 +193,29 @@ export function selectDelegatedMemory(
  * Unavailable Page is taken out of its finding, and the finding is dropped
  * only when no reference is left. A search results page is a source like
  * any other.
+ *
+ * A reference is read as the Evidence Checkpoint reads a citation of the
+ * Subagent (#310): an address the Subagent observed only under a referral
+ * parameter is that page, and the reference kept is the observed address,
+ * so the report and the grading agree about one page.
  */
 export function validateReportFindings(
   findings: readonly SubagentReportFinding[],
   records: readonly ObservationRecord[],
 ): { findings: readonly SubagentReportFinding[]; dropped: number } {
-  const observed = canonicalObservedUrls(records)
-  const unheld = canonicalUnheldUrls(records)
   const kept: SubagentReportFinding[] = []
   for (const finding of findings) {
-    const canonicals = finding.references.map((reference) => canonicalizeMemoryUrl(reference.url))
-    if (canonicals.some((canonical) => canonical === null || !observed.has(canonical))) continue
-    const references = finding.references.filter((_, index) => !unheld.has(canonicals[index]!))
+    if (finding.references.some((reference) => sourceObservations(records, reference.url).length === 0)) continue
+    const references: MemoryReference[] = []
+    const seen = new Set<string>()
+    for (const reference of finding.references) {
+      const address = subagentHeldAddress(records, reference.url)
+      if (address === null || seen.has(address)) continue
+      seen.add(address)
+      references.push(address === canonicalizeMemoryUrl(reference.url) ? reference : { ...reference, url: address })
+    }
     if (references.length === 0) continue
-    kept.push(references.length === finding.references.length ? finding : { ...finding, references })
+    kept.push({ ...finding, references })
   }
   return { findings: kept, dropped: findings.length - kept.length }
 }
