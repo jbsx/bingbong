@@ -13,6 +13,13 @@ import type { ToolResultOutcome } from '../ports/llm'
 /** What an inert click reports when it did not touch a state-bearing control. */
 export const NO_OBSERVABLE_CHANGE = 'no observable change'
 
+/**
+ * What a landing reports under its line when no collection could read the
+ * page (#308, note on ADR 0027): the line names the address the tab reports,
+ * and the outcome carries no page.
+ */
+export const PAGE_NOT_READ = 'The page could not be read; read_page will show it.'
+
 /** What a click reports when only the page's signature moved — meaningful, never inert. */
 export const PAGE_SIGNATURE_CHANGED = 'page signature changed'
 

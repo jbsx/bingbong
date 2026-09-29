@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   EMPTY_LANDING_ADVICE,
   arrivedAtDocument,
+  carriedNoPage,
   classifyEmptyLanding,
   isPageArrival,
   pageReadReturnedText,
@@ -10,6 +11,7 @@ import {
   showedNoPageText,
 } from './emptyLanding'
 import { emptyPageReadLine, pageReadPartLine } from './pageText'
+import { PAGE_NOT_READ } from './actionOutcome'
 
 // fix-288-290 pass 1, the longitude initial, round 13: rmg.co.uk answers an
 // object id it cannot resolve with a 200 and its template around an empty <main>.
@@ -44,6 +46,19 @@ describe('showedNoPageText (#304)', () => {
 
   it('reads a line of the page that says "page text:" inside a ref as no heading', () => {
     expect(showedNoPageText(`${RMG_TEMPLATE}\n[3] link "page text: a guide" href="https://www.rmg.co.uk/guide"`)).toBe(true)
+  })
+})
+
+describe('carriedNoPage (#308)', () => {
+  it('is true of a landing whose outcome holds no settled page, with or without the sentence and a marker', () => {
+    expect(carriedNoPage(`navigated: url=${RMG_URL} title="| Royal Museums Greenwich"`)).toBe(true)
+    expect(carriedNoPage(`went back: url=${RMG_URL} title="| Royal Museums Greenwich"\n${PAGE_NOT_READ}`)).toBe(true)
+    expect(carriedNoPage(`navigated: url=${RMG_URL} title="Sorry"\n${PAGE_NOT_READ}\nBLOCKER:challenge rmg.co.uk`)).toBe(true)
+  })
+
+  it('is false of a landing that carried a page, with text or without', () => {
+    expect(carriedNoPage(RMG_TEMPLATE)).toBe(false)
+    expect(carriedNoPage(WITH_TEXT)).toBe(false)
   })
 })
 

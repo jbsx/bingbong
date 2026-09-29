@@ -99,6 +99,39 @@ function emptyMainPage(): string {
 </html>`
 }
 
+// #308: a page that leaves for another after its load, at the moment it is
+// first read — the collector's first write into the page sends the tab on
+// and throws, as a page torn down under a collection does. The navigate
+// that lands here is left holding a failed collection while the tab moves.
+function leavesWhenReadPage(): string {
+  return `<!doctype html>
+<html>
+<head><title>The page being left</title></head>
+<body style="background:#222;color:#fff">
+  <main><p>This listing is on its way out.</p></main>
+  <script>
+    Object.defineProperty(window, '__bingbongDescribeElement', {
+      configurable: true,
+      set() {
+        location.replace('/moved-on')
+        throw new Error('the page is being left')
+      },
+    })
+  </script>
+</body>
+</html>`
+}
+
+function movedOnPage(): string {
+  return `<!doctype html>
+<html>
+<head><title>The page landed on</title></head>
+<body style="background:#222;color:#fff">
+  <main><p>The object record the tab moved on to.</p><a href="/second">Related object</a></main>
+</body>
+</html>`
+}
+
 // Interactive elements the CDP controller e2e drives: buttons that record
 // clicks via the title, an input/textarea/select/checkbox/video mix for
 // snapshot coverage, and a below-the-fold button that only appears in the
@@ -1401,6 +1434,14 @@ export async function startFixtureServer(): Promise<FixtureServer> {
     }
     if (req.url === '/empty-main') {
       res.end(emptyMainPage())
+      return
+    }
+    if (req.url === '/leaves-when-read') {
+      res.end(leavesWhenReadPage())
+      return
+    }
+    if (req.url === '/moved-on') {
+      res.end(movedOnPage())
       return
     }
     if (req.url === '/native-dialog') {

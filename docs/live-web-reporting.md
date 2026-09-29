@@ -770,7 +770,13 @@ text from the page a landing settled on, before the next page arrival, ends
 the streak and is the call's `readEmptyLanding`; a landing that was itself a
 search leaves no such read, its page being a listing. `emptyLandings` counts
 the landings, those followed by a search and those read with text, beside the
-rounds; reported, never gated. Where the trace carries the rail's Search
+rounds; reported, never gated. Since #308 `pagelessLandings` counts, beside
+the rounds and out of the digest, the navigate, `back` and `go_forward` calls
+that succeeded with no settled page in their whole result — no signature
+line — a Result Pick's by the page after its Opened line. It reads the
+result text of the Run Trace, so a trace written before the fix reads the
+same, its degraded outcome being the line alone; reported, never gated.
+Where the trace carries the rail's Search
 Observations (#243, ADR 0049), which calls were searches — typed and refused
 ones included — and their query and signature (`url` or `input`) are read from
 them, and the attempt's `searchSource` reads `rail`; the streak itself is the

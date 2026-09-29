@@ -16,6 +16,7 @@ import {
   blockedActionHead,
   clickFlagsHead,
   NO_OBSERVABLE_CHANGE,
+  PAGE_NOT_READ,
   PAGE_SIGNATURE_CHANGED,
   STATE_DELTA,
   UNFINISHED_LOAD_CLAUSE,
@@ -132,7 +133,8 @@ export interface CdpBrowserControllerDeps {
 
 interface EvaluateResponse {
   result?: { value?: unknown }
-  exceptionDetails?: { text: string }
+  /** `text` is the bare `Uncaught`; the thrown value's own description rides on `exception` (#308). */
+  exceptionDetails?: { text: string; exception?: { description?: string } }
 }
 
 interface ScreenshotResponse {
@@ -454,7 +456,9 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
       returnByValue: true,
     })
     if (response.exceptionDetails) {
-      throw new Error(`page evaluation failed: ${response.exceptionDetails.text}`)
+      const { text, exception } = response.exceptionDetails
+      const description = exception?.description
+      throw new Error(`page evaluation failed: ${description === undefined ? text : `${text} ${description}`}`)
     }
     return (response.result?.value ?? undefined) as T
   }
@@ -685,28 +689,53 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     }
   }
 
-  /** Navigation outcome: the settled URL/title line plus the settled page
-   * state (signature, refs, digest), so the next decision continues from
-   * the landing itself (ADR 0027). */
-  async function navigationOutcome(): Promise<string> {
-    return landingOutcome(`navigated: url=${page.url()} title=${JSON.stringify(page.title())}`)
+  /**
+   * A landing's page (#308, note on ADR 0027): the collection its line is
+   * written from. The tab can move between the settle and the collect — a
+   * site sending it on after its load — and the collection then throws; it
+   * is collected once more when the tab has stopped changing. Null when
+   * that fails too. A first collection that succeeds pays no wait.
+   */
+  async function collectLanding(): Promise<PageSnapshot | null> {
+    try {
+      return await recollection('settled-state', () => collectSnapshot())
+    } catch (error) {
+      reportFault('browser.createCdpBrowserController.landingOutcome', error)
+    }
+    await settleUntilStill('landing-retry')
+    try {
+      return await recollection('landing-retry', () => collectSnapshot())
+    } catch (error) {
+      reportFault('browser.createCdpBrowserController.landingOutcome', error)
+      return null
+    }
+  }
+
+  /** A landing's line: the verb, then the address and title of the page it carries. */
+  function landingLine(verb: string, url: string, title: string): string {
+    return `${verb}: url=${url} title=${JSON.stringify(title)}`
+  }
+
+  /** A landing no collection could read: the address the tab reports now, and that the page could not be read. */
+  function unreadLanding(verb: string, clause = ''): string {
+    return `${landingLine(verb, page.url(), page.title())}${clause}\n${PAGE_NOT_READ}`
   }
 
   /**
+   * Navigation outcome (ADR 0027): the settled page state — signature,
+   * refs, digest — under a line naming that same page, so the next
+   * decision continues from the landing itself.
+   *
    * ADR 0061: a landing is where a consent wall is met. A Tier-1 consent root
    * on the settled page is dismissed before the model sees its refs, the
    * one-line report rides above the listing, and the listing is the page
    * behind the wall — the snapshot the Blocker classifier then reads, so a
    * login wall behind a consent wall is judged only once the wall is gone.
    */
-  async function landingOutcome(line: string): Promise<string> {
-    let landed: PageSnapshot
-    try {
-      landed = await recollection('settled-state', () => collectSnapshot())
-    } catch (error) {
-      reportFault('browser.createCdpBrowserController.landingOutcome', error)
-      return line
-    }
+  async function navigationOutcome(): Promise<string> {
+    const landed = await collectLanding()
+    if (landed === null) return unreadLanding('navigated')
+    const line = landingLine('navigated', landed.url, landed.title)
     let dismissal: string | null = null
     try {
       dismissal = await dismissConsentIfOpen(landed)
@@ -716,12 +745,20 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     return dismissal === null ? withSettledState(line, landed) : withSettledState(`${line}\n${dismissal}`)
   }
 
-  /** Wait out a mid-load abort: poll until the tab's landing stops changing
-   * (or the poll budget runs out), so the outcome names a settled page. */
-  async function settleAfterAbort(): Promise<void> {
+  /** A step through history's outcome: written as a navigate's, with no
+   * consent dismissal, its line carrying the Unfinished Load clause (#309). */
+  async function historyOutcome(verb: 'went back' | 'went forward', clause: string): Promise<string> {
+    const landed = await collectLanding()
+    return landed === null ? unreadLanding(verb, clause) : withSettledState(`${landingLine(verb, landed.url, landed.title)}${clause}`, landed)
+  }
+
+  /** Poll until the tab's address and title stop changing (or the poll
+   * budget runs out): a mid-load abort's landing, or a landing whose
+   * collection failed (#308). */
+  async function settleUntilStill(action: 'navigate-abort' | 'landing-retry'): Promise<void> {
     let previous = `${page.url()}\u0000${page.title()}`
     for (let poll = 0; poll < ABORT_SETTLE_POLLS; poll++) {
-      await settle('navigate-abort', pacing.settleMs)
+      await settle(action, pacing.settleMs)
       const current = `${page.url()}\u0000${page.title()}`
       if (current === previous && page.url() !== '') return
       previous = current
@@ -741,7 +778,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
       // hard errors.
       if (!isAbortedLoad(error)) throw error
       lastSnapshot = undefined
-      await settleAfterAbort()
+      await settleUntilStill('navigate-abort')
       return
     }
     lastSnapshot = undefined
@@ -789,7 +826,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     await page.goBack()
     lastSnapshot = undefined
     const arrival = await settleArrival('back', watch)
-    return withSettledState(`went back: url=${page.url()} title=${JSON.stringify(page.title())}${unfinishedClause(arrival)}`)
+    return historyOutcome('went back', unfinishedClause(arrival))
   }
 
   async function forward(): Promise<string> {
@@ -797,7 +834,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     await page.goForward()
     lastSnapshot = undefined
     const arrival = await settleArrival('forward', watch)
-    return withSettledState(`went forward: url=${page.url()} title=${JSON.stringify(page.title())}${unfinishedClause(arrival)}`)
+    return historyOutcome('went forward', unfinishedClause(arrival))
   }
 
   /** A Page Read (ADR 0047): the refs and one part of the page's whole text. */

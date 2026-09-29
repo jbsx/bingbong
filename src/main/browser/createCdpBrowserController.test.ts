@@ -1,9 +1,10 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import challengeIframe from '../../core/browser/fixtures/challenge-iframe.json'
 import youtubeHome from '../../core/browser/fixtures/youtube-home.json'
 import type { CollectedElement, CollectedPage } from '../../core/browser/snapshot'
 import { buildPageSnapshot, clickPoint, formatPageSnapshot, formatRefLine } from '../../core/browser/snapshot'
-import { ARRIVED_CLAUSE, UNFINISHED_LOAD_CLAUSE, arrivedAtAnotherDocument, blockedOrInertAction, isUnfinishedLoad } from '../../core/browser/actionOutcome'
+import { ARRIVED_CLAUSE, UNFINISHED_LOAD_CLAUSE, arrivedAtAnotherDocument, blockedOrInertAction, isUnfinishedLoad, PAGE_NOT_READ } from '../../core/browser/actionOutcome'
+import { setFaultSink, type FaultReport } from '../../core/trace/fault'
 import type { BrowserSubspans } from '../../core/perf/browserSubspans'
 import { createBrowserSubspans } from '../../core/perf/browserSubspans'
 import type { PerfSpanRecord } from '../../core/perf/perfTracer'
@@ -81,6 +82,8 @@ class FakeCdp implements CdpDebugger {
   evaluateException: string | null = null
   /** When set, only the collector script fails — probes still answer. */
   collectException: string | null = null
+  /** How many collects from here throw before the rest answer (#308): a page the tab is leaving. */
+  collectFailures = 0
   /** When set, click-prep reports the element as covered (blocked path). */
   prepCovered = false
   /** How many click-preps from here report a cover before the rest land (a wall that goes). */
@@ -144,6 +147,15 @@ class FakeCdp implements CdpDebugger {
       const expression = typeof params?.expression === 'string' ? params.expression : ''
       if (expression === COLLECT_EXPRESSION && this.collectException) {
         return { exceptionDetails: { text: this.collectException } } as T
+      }
+      if (expression === COLLECT_EXPRESSION && this.collectFailures > 0) {
+        this.collectFailures -= 1
+        return {
+          exceptionDetails: {
+            text: 'Uncaught',
+            exception: { description: 'TypeError: Cannot read properties of null (reading \'getBoundingClientRect\')' },
+          },
+        } as T
       }
       if (expression === COLLECT_EXPRESSION) {
         const collected = this.collectValues.length > 0 ? this.collectValues.shift() : this.evaluateValue
@@ -1960,11 +1972,11 @@ describe('createCdpBrowserController navigate and back', () => {
     expect(cdp.collectCalls().length).toBe(collectsBefore)
   })
 
-  it('degrades to the concise outcome line when the landing cannot be collected', async () => {
+  it('says the page could not be read when the landing cannot be collected (#308)', async () => {
     const cdp = new FakeCdp({ nonsense: true })
     const { controller } = makeController({ cdp })
 
-    await expect(controller.navigate('youtube.com')).resolves.toBe('navigated: url=https://www.youtube.com/ title="YouTube"')
+    await expect(controller.navigate('youtube.com')).resolves.toBe(`navigated: url=https://www.youtube.com/ title="YouTube"\n${PAGE_NOT_READ}`)
   })
 
   it('rejects input that is not navigable', async () => {
@@ -2023,6 +2035,125 @@ describe('createCdpBrowserController navigate and back', () => {
   })
 })
 
+// #308 (note on ADR 0027): a landing's line is written from the page it
+// carries. The tab can move between the settle and the collect — the
+// collection then fails, and the line named the page the tab was leaving.
+describe('createCdpBrowserController a landing names the page it carries (#308)', () => {
+  afterEach(() => setFaultSink(null))
+
+  const landed = { ...youtubeFixture, url: 'https://www.rmg.co.uk/collections/objects/rmgc-object-79142', title: 'H4 | Royal Museums Greenwich' }
+
+  it('writes the line from the collected page, not from the tab read before it', async () => {
+    // The tab still reports the listing it was leaving; the collection is of the object page.
+    const cdp = new FakeCdp(landed)
+    const { controller } = makeController({ cdp })
+
+    const outcome = await controller.navigate('https://www.rmg.co.uk/collections/objects/rmgc-object-79142')
+
+    expect(outcome).toBe(`navigated: url=${landed.url} title="${landed.title}"\n${settledBlock(landed)}`)
+  })
+
+  it('writes back and go_forward the same way', async () => {
+    const cdp = new FakeCdp(landed)
+    const { controller } = makeController({ cdp })
+
+    expect((await controller.back()).split('\n')[0]).toBe(`went back: url=${landed.url} title="${landed.title}"`)
+    expect((await controller.forward()).split('\n')[0]).toBe(`went forward: url=${landed.url} title="${landed.title}"`)
+  })
+
+  it('waits for the tab to stop changing and collects once more when the first collection throws', async () => {
+    const { records, tracer } = fakePerfHarness()
+    const subspans = createBrowserSubspans({ tracer, enabled: true })
+    const cdp = new FakeCdp(landed)
+    cdp.collectFailures = 1
+    const { controller } = makeController({ cdp, subspans })
+
+    const outcome = await subspans.runInTurn('turn-1', () => controller.navigate(landed.url))
+
+    expect(outcome).toBe(`navigated: url=${landed.url} title="${landed.title}"\n${settledBlock(landed)}`)
+    expect(cdp.collectCalls()).toHaveLength(2)
+    expect(records.map((record) => [record.stage, record.detail])).toEqual([
+      ['browser-settle', { action: 'navigate', ms: 0 }],
+      ['browser-recollection', { reason: 'settled-state' }],
+      // The tab reads the same twice running: one poll settles it.
+      ['browser-settle', { action: 'landing-retry', ms: 0 }],
+      ['browser-recollection', { reason: 'landing-retry' }],
+    ])
+  })
+
+  it('retries back and go_forward the same way', async () => {
+    const cdp = new FakeCdp(landed)
+    const { controller } = makeController({ cdp })
+
+    cdp.collectFailures = 1
+    expect(await controller.back()).toBe(`went back: url=${landed.url} title="${landed.title}"\n${settledBlock(landed)}`)
+    cdp.collectFailures = 1
+    expect(await controller.forward()).toBe(`went forward: url=${landed.url} title="${landed.title}"\n${settledBlock(landed)}`)
+  })
+
+  it('says the page could not be read when the second collection throws too, naming the address read after the failure', async () => {
+    const page = new FakePage()
+    page.landingHops = [{ url: 'https://www.rmg.co.uk/collections/objects/rmgc-object-79142', title: 'H4 | Royal Museums Greenwich' }]
+    const cdp = new FakeCdp(landed)
+    cdp.collectFailures = 2
+    const { controller } = makeController({ cdp, page })
+
+    const outcome = await controller.navigate(landed.url)
+
+    expect(outcome).toBe(`navigated: url=${landed.url} title="${landed.title}"\n${PAGE_NOT_READ}`)
+    expect(outcome).not.toContain('signature ')
+    expect(cdp.collectCalls()).toHaveLength(2)
+  })
+
+  it('says so for back and go_forward too', async () => {
+    const cdp = new FakeCdp(landed)
+    const { controller } = makeController({ cdp })
+
+    cdp.collectFailures = 2
+    expect(await controller.back()).toBe(`went back: url=https://www.youtube.com/ title="YouTube"\n${PAGE_NOT_READ}`)
+    cdp.collectFailures = 2
+    expect(await controller.forward()).toBe(`went forward: url=https://www.youtube.com/ title="YouTube"\n${PAGE_NOT_READ}`)
+  })
+
+  it('runs no extra wait when the first collection succeeds', async () => {
+    const { records, tracer } = fakePerfHarness()
+    const subspans = createBrowserSubspans({ tracer, enabled: true })
+    const { controller } = makeController({ subspans })
+
+    await subspans.runInTurn('turn-1', async () => {
+      await controller.navigate('youtube.com')
+      await controller.back()
+      await controller.forward()
+    })
+
+    expect(records.map((record) => [record.stage, record.detail])).toEqual([
+      ['browser-settle', { action: 'navigate', ms: 0 }],
+      ['browser-recollection', { reason: 'settled-state' }],
+      ['browser-settle', { action: 'back', ms: 0 }],
+      ['browser-recollection', { reason: 'settled-state' }],
+      ['browser-settle', { action: 'forward', ms: 0 }],
+      ['browser-recollection', { reason: 'settled-state' }],
+    ])
+  })
+
+  it("records the exception's description on the collector's fault", async () => {
+    const faults: FaultReport[] = []
+    setFaultSink((report) => faults.push(report))
+    const cdp = new FakeCdp(landed)
+    cdp.collectFailures = 1
+    const { controller } = makeController({ cdp })
+
+    await controller.navigate(landed.url)
+
+    expect(faults).toEqual([
+      expect.objectContaining({
+        site: 'browser.createCdpBrowserController.landingOutcome',
+        message: "page evaluation failed: Uncaught TypeError: Cannot read properties of null (reading 'getBoundingClientRect')",
+      }),
+    ])
+  })
+})
+
 // #79: a site's own mid-load redirect (Google's consent jump, Reddit's
 // challenge reload) aborts the requested load with ERR_ABORTED while the
 // tab lands somewhere readable. Navigate waits for the landing and reports
@@ -2061,11 +2192,17 @@ describe('createCdpBrowserController navigate abort recovery (#79)', () => {
       { url: 'http://127.0.0.1:1/hop-2', title: 'Second hop' },
       { url: 'http://127.0.0.1:1/landed', title: 'Landed page' },
     ]
-    const { controller } = makeController({ page })
+    const { records, tracer } = fakePerfHarness()
+    const subspans = createBrowserSubspans({ tracer, enabled: true })
+    // The line is the collected page's (#308); the tab serves the landing it settles on.
+    const cdp = new FakeCdp({ ...youtubeFixture, url: 'http://127.0.0.1:1/landed', title: 'Landed page' })
+    const { controller } = makeController({ cdp, page, subspans })
 
-    const outcome = await controller.navigate('http://127.0.0.1:1/original')
+    const outcome = await subspans.runInTurn('turn-1', () => controller.navigate('http://127.0.0.1:1/original'))
 
     expect(outcome.split('\n')[0]).toBe('navigated: url=http://127.0.0.1:1/landed title="Landed page"')
+    // One poll per hop the tab moved through, then one that saw it still.
+    expect(records.filter((record) => record.detail?.action === 'navigate-abort')).toHaveLength(2)
   })
 
   it('reports the current page when an abort leaves the tab where it was', async () => {

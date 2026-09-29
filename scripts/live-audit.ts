@@ -794,7 +794,8 @@ function main(): void {
           `${output.audit.provenance.setId} ${mechanical.attemptId}: ${mechanical.orchestratorRounds} rounds, ${mechanical.toolRoundsUsed}/${mechanical.toolRoundBudget ?? '?'} Tool Rounds, ` +
             `${ROUND_KINDS.map((kind) => `${kind.replace(/_/g, ' ')} ${mechanical.counts[kind]}`).join(', ')}; ` +
             `${mechanical.mechanicalSearchRounds} Search Loop round(s) by the streak rule${mechanical.searchLoopHeads.length > 0 ? ` (heads ${mechanical.searchLoopHeads.join(', ')})` : ''}, ${mechanical.searchRoundsAtStreak2} at streak 2 or beyond, ${mechanical.searchRoundsAtStreak3} at 3 or beyond; search source ${mechanical.searchSource}; ` +
-            `${mechanical.notFoundNavigates.length} navigate(s) landed on a Not-found Page${mechanical.notFoundNavigates.length > 0 ? ` (round ${mechanical.notFoundNavigates.join(', ')})` : ''}; digest ${mechanical.digestHash.slice(0, 19)}…\n`,
+            `${mechanical.notFoundNavigates.length} navigate(s) landed on a Not-found Page${mechanical.notFoundNavigates.length > 0 ? ` (round ${mechanical.notFoundNavigates.join(', ')})` : ''}; ` +
+            `${mechanical.pagelessLandings?.length ?? 0} landing(s) carried no page${(mechanical.pagelessLandings?.length ?? 0) > 0 ? ` (round ${mechanical.pagelessLandings!.join(', ')})` : ''}; digest ${mechanical.digestHash.slice(0, 19)}…\n`,
         )
       }
     }

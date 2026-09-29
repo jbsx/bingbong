@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest'
 import { FINALIZATION_REASONING_EFFORT as SOURCE_FINALIZATION_EFFORT, TIER_REASONING_EFFORT as SOURCE_TIER_EFFORT, TIER_TOOL_ROUND_BUDGETS as SOURCE_BUDGETS, TIER_ESCALATION_DECLINE_REASONS as SOURCE_DECLINE_REASONS, TIER_ESCALATION_ARMS as SOURCE_ARMS, budgetWarningMessage, finalizeInstruction, notExecuted } from '../../src/core/pipeline/effortEpoch'
 import { SCROLL_END_OF_PAGE } from '../../src/core/browser/scrollDelta'
 import { CONSENT_LABEL_RE, consentDismissalLine, consentRetryNote } from '../../src/core/browser/dialogPolicy'
-import { blockedActionHead } from '../../src/core/browser/actionOutcome'
+import { blockedActionHead, PAGE_NOT_READ } from '../../src/core/browser/actionOutcome'
 import { authPopupOpenedLine, NEW_WINDOW_FOLLOWED_CLAUSE, popupBlockedLine } from '../../src/core/browser/newWindowLink'
 import { similarQueries as ruleSimilarQueries } from '../../src/core/pipeline/searchLoopRule'
 import { createSearchLoopRail, SEARCH_LOOP_NUDGE, searchQueryFromUrl as railSearchQueryFromUrl, type SearchObservation } from '../../src/core/pipeline/searchLoopRail'
@@ -4245,6 +4245,58 @@ describe('reads refused as past the end (#290)', () => {
     const olderText = formatAuditSet(older)
     expect(olderText).toContain('- reads refused as past the end: not counted')
     expect(olderText).toMatch(/- initial: .*reads refused as past the end not counted/)
+  })
+})
+
+describe('landings that carried no page (#308, note on ADR 0027)', () => {
+  const SEARCH = 'https://duckduckgo.com/?q=harrison+h4'
+  const WALL = 'https://www.google.com/sorry/index'
+  const listingHead = PAGE('search', SEARCH, 'aaaa0001').split('\npage text:')[0]
+  const ROUNDS: RoundSpec[] = [
+    { round: 1, at: 1_000, calls: [{ name: 'navigate', args: { url: SPEC_URL }, result: PAGE('Watch spec', SPEC_URL, 'aaaa1111') }] },
+    // A trace written before the fix: the line alone.
+    { round: 2, at: 2_000, calls: [{ name: 'navigate', args: { url: OTHER_URL }, result: `navigated: url=${SPEC_URL} title="Watch spec"` }] },
+    { round: 3, at: 3_000, calls: [{ name: 'back', args: {}, result: `went back: url=${SPEC_URL} title="Watch spec"\n${PAGE_NOT_READ}` }] },
+    // A wall's marker rides a landing that carried no page all the same.
+    { round: 4, at: 4_000, calls: [{ name: 'navigate', args: { url: WALL }, result: `navigated: url=${WALL} title="Sorry"\nBLOCKER:challenge google.com\nA challenge wall.` }] },
+    // A Result Pick whose open carried no page, below a listing that carried one.
+    {
+      round: 5,
+      at: 5_000,
+      calls: [
+        {
+          name: 'navigate',
+          args: { url: SEARCH },
+          result: `${listingHead}\nOpened [1] "Home" — ${OTHER_URL}\nnavigated: url=${SEARCH} title="search"`,
+          resultPick: { ref: 1, label: 'Home', href: OTHER_URL, opened: true },
+        },
+      ],
+    },
+    { round: 6, at: 6_000, calls: [{ name: 'navigate', args: { url: OTHER_URL }, ok: false, error: 'navigate: timed out loading' }] },
+    { round: 7, at: 7_000, calls: [{ name: 'go_forward', args: {}, result: PAGE('Other', OTHER_URL, 'cccc0001').replace('navigated:', 'went forward:') }] },
+  ]
+
+  it('counts, per attempt, the navigation calls whose whole result holds no page, beside the digest', () => {
+    const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, EXTRA) }))
+    expect(mechanical.pagelessLandings).toEqual([2, 3, 4, 5])
+    expect(JSON.stringify(auditModule.digestPayloadOf(mechanical))).not.toContain('pageless')
+  })
+
+  it('sums them per population, prints them per attempt and per population, and reads "not counted" for an older audit', () => {
+    const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, EXTRA) }))
+    const set = buildAuditSet(provenanceOf(), [{ mechanical, review: null, countsAfterOverrules: mechanical.counts }], [])
+    expect(set.populations.initial.pagelessLandings).toBe(4)
+    const markdown = formatAuditSet(set)
+    expect(markdown).toContain('- landings that carried no page: 4 (round 2, 3, 4, 5)')
+    expect(markdown).toMatch(/- initial: .*4 landing\(s\) that carried no page/)
+
+    const before = { ...mechanical } as AuditMechanical & { pagelessLandings?: number[] }
+    delete before.pagelessLandings
+    const older = buildAuditSet(provenanceOf(), [{ mechanical: before, review: null, countsAfterOverrules: before.counts }], [])
+    expect('pagelessLandings' in older.populations.initial).toBe(false)
+    const olderText = formatAuditSet(older)
+    expect(olderText).toContain('- landings that carried no page: not counted')
+    expect(olderText).toMatch(/- initial: .*landings that carried no page not counted/)
   })
 })
 

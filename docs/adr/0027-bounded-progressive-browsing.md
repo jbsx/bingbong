@@ -259,3 +259,14 @@ mechanics and encourage redundant reads, clicks, screenshots, and vision calls.
   on tests and one e2e whose fixture leaves for another page after its
   load; on the next capture, outcomes whose line and page disagree are
   counted, and none is expected.
+  - **Implemented** 2026-09-29. The retry's wait is the abort's polling,
+    its settles named `landing-retry` beside `navigate-abort`. The second
+    failure's sentence is `PAGE_NOT_READ` in `actionOutcome.ts`: "The page
+    could not be read; read_page will show it." A `back` and a `go_forward`
+    take the retry and the line but no consent dismissal, which they never
+    had. The audit's `pagelessLandings` reads the Run Trace's whole result;
+    recounted, it finds each of the four rmg.co.uk picks, the rewritten
+    search in `fix-265-267-3` and two landings in `baseline3-1`. The e2e
+    fixture leaves when the collector first writes to it, which makes the
+    first collection throw; against the old controller its line names the
+    page left.

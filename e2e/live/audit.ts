@@ -45,7 +45,7 @@ import { classifyNotFoundPage, NOT_FOUND_BASES, type NotFoundBasis, type NotFoun
 import { offLanguageRenderings } from '../../src/core/agent/answerLanguage.ts'
 import { isPartPastTheEnd } from '../../src/core/browser/pageText.ts'
 import { classifyUnavailablePage, isUnavailableBasis, type UnavailableLanding } from '../../src/core/browser/unavailablePage.ts'
-import { arrivedAtDocument, classifyEmptyLanding, isPageArrival, NAVIGATION_VERBS, pageReadReturnedText, showedNoPageText, type EmptyLanding } from '../../src/core/browser/emptyLanding.ts'
+import { arrivedAtDocument, carriedNoPage, classifyEmptyLanding, isPageArrival, NAVIGATION_VERBS, pageReadReturnedText, showedNoPageText, type EmptyLanding } from '../../src/core/browser/emptyLanding.ts'
 import type { ComposedAddressRewriteStamp } from '../../src/core/pipeline/composedAddressRail.ts'
 import type { UnseenPhraseRewriteStamp } from '../../src/core/pipeline/unseenPhraseRail.ts'
 import type { EngineRewriteStamp } from '../../src/core/pipeline/engineRewriteRail.ts'
@@ -666,6 +666,15 @@ export interface AuditMechanical {
    */
   readonly pageArrivals?: PageArrivalRounds
   /**
+   * The landings that carried no page (#308, note on ADR 0027): the round of
+   * every navigate, `back` and `go_forward` that succeeded with no settled
+   * page in its whole result — a Result Pick's by the page it opened — one
+   * entry per call. Read off the result text, which the rounds keep only the
+   * head of, so it sits beside the rounds and out of the digest. Absent on an
+   * audit written before the counter. Reported, never gated.
+   */
+  readonly pagelessLandings?: readonly number[]
+  /**
    * The reads refused as past the end (#290): the round of every `read_page`
    * call the app answered with its refusal for a part the page does not
    * have, one entry per call. Beside the rounds, never in them. Absent on an
@@ -1054,6 +1063,8 @@ export interface AuditPopulation {
    * counter, which the Fix Ledger recounts from the rounds.
    */
   readonly pastTheEndReads?: number
+  /** Landings that carried no page over the attempts that count them (#308); absent when none does. */
+  readonly pagelessLandings?: number
   /**
    * Bookkeeping rounds right before the Answer over the attempts that count
    * them (#288); absent when none does, as on an audit written before the
@@ -2608,6 +2619,28 @@ export function pastTheEndReadsOf(rounds: readonly AuditRound[]): number[] {
   )
 }
 
+/**
+ * The rounds of an attempt's landings that carried no page (#308, note on
+ * ADR 0027): one entry per navigate, `back` or `go_forward` that succeeded
+ * and whose result holds no settled page. A Result Pick's open is read by
+ * the page after its Opened line, where the Run settled. Read off the whole
+ * text by the app's own reading of an outcome, since the rounds keep 240
+ * characters of it; a trace written before the fix is read the same way,
+ * its degraded outcome being the line alone. Reported, never gated.
+ */
+function pagelessLandingsOf(raw: readonly RawRound[]): number[] {
+  return raw.flatMap((round) =>
+    round.calls
+      .filter((entry) => {
+        if (!NAVIGATION_VERBS.has(entry.call.name) || entry.result === undefined || !entry.result.ok) return false
+        const text = resultText(entry.result.result)
+        const settled = entry.resultPick?.opened === true ? openedPageText(text) : text
+        return settled !== null && !settled.startsWith(NOT_EXECUTED_PREFIX) && carriedNoPage(settled)
+      })
+      .map(() => round.round),
+  )
+}
+
 /** How many of them some attempts hold, recounted from their rounds whether or not their audit counted (#290). */
 export function pastTheEndReadsOver(attempts: readonly AuditAttempt[]): number {
   return attempts.reduce((total, attempt) => total + pastTheEndReadsOf(attempt.mechanical.rounds).length, 0)
@@ -4092,6 +4125,7 @@ export function classifyAttempt(input: AuditTraceInput): AuditMechanical {
     emptyLandings: emptyLandingsOf(rounds),
     pageArrivals: pageArrivalsOf(rounds),
     pastTheEndReads: pastTheEndReadsOf(rounds),
+    pagelessLandings: pagelessLandingsOf(raw),
     // Beside the rounds (#288, ADR 0072): what the Run's Answers carried to
     // be recorded, where its trace is new enough to have said.
     answerCheckpoints: traceAtLeast(ANSWER_CHECKPOINT_TRACE_VERSION) ? answerCheckpointsOf(records) : null,
@@ -4673,6 +4707,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
   let sameSourceUnsupported = 0
   let heldPageRounds = 0
   let pastTheEndReads: number | undefined
+  let pagelessLandings: number | undefined
   let bookkeepingBeforeAnswer: number | undefined
   let bookkeepingBeforeCut: number | undefined
   let answerCheckpoints: { answers: number; offered: number; accepted: number; dropped: number; dropReasons: Record<string, number>; notRecorded: number } | undefined
@@ -4753,6 +4788,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
     sameSourceUnsupported += mechanical.sameSourceUnsupportedRounds
     heldPageRounds += mechanical.heldPageRoundsWithoutProgress
     if (mechanical.pastTheEndReads !== undefined) pastTheEndReads = (pastTheEndReads ?? 0) + mechanical.pastTheEndReads.length
+    if (mechanical.pagelessLandings !== undefined) pagelessLandings = (pagelessLandings ?? 0) + mechanical.pagelessLandings.length
     if (attempt.bookkeepingBeforeAnswer !== undefined) bookkeepingBeforeAnswer = (bookkeepingBeforeAnswer ?? 0) + attempt.bookkeepingBeforeAnswer.length
     if (attempt.bookkeepingBeforeCut !== undefined) bookkeepingBeforeCut = (bookkeepingBeforeCut ?? 0) + attempt.bookkeepingBeforeCut.length
     if (mechanical.answerCheckpoints !== undefined) {
@@ -4910,6 +4946,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
     sameSourceUnsupportedRounds: sameSourceUnsupported,
     heldPageRoundsWithoutProgress: heldPageRounds,
     ...(pastTheEndReads !== undefined ? { pastTheEndReads } : {}),
+    ...(pagelessLandings !== undefined ? { pagelessLandings } : {}),
     ...(bookkeepingBeforeAnswer !== undefined ? { bookkeepingBeforeAnswer } : {}),
     ...(bookkeepingBeforeCut !== undefined ? { bookkeepingBeforeCut } : {}),
     ...(answerCheckpoints !== undefined ? { answerCheckpoints: { ...answerCheckpoints, dropReasons: byReason(answerCheckpoints.dropReasons) } } : {}),
@@ -5323,6 +5360,11 @@ function populationPastTheEndReadsText(population: AuditPopulation): string {
   return `${population.pastTheEndReads} read(s) refused as past the end`
 }
 
+function populationPagelessLandingsText(population: AuditPopulation): string {
+  if (population.pagelessLandings === undefined) return 'landings that carried no page not counted'
+  return `${population.pagelessLandings} landing(s) that carried no page`
+}
+
 /** A population's Off-language Answers (#286), or "not counted" on an audit written before the counter. */
 function populationOffLanguageAnswersText(population: AuditPopulation): string {
   if (population.offLanguageAnswers === undefined) return 'Off-language Answers not counted'
@@ -5433,7 +5475,7 @@ function judgementLines(populations: readonly AuditPopulation[]): string[] {
     (population) =>
       `- ${population.label}: ${population.offKeyRounds} Off-key round(s), ${population.searchLoopRounds} Search Loop round(s) by the reviewer (${population.mechanicalSearchRounds} by the streak rule, heads included: ${population.searchRoundsAtStreak2} at streak 2 or beyond, ${population.searchRoundsAtStreak3} at 3 or beyond; attempts by search source ${SEARCH_SOURCES.map((source) => `${source} ${population.searchSources[source]}`).join(', ')}; navigate searches by Search URL form ${searchFormsText(population.searchForms)}; ${populationBlockedOrInertText(population.blockedOrInert)}; ${populationUnavailableLandingsText(population.unavailableLandings)}; ${populationEmptyLandingsText(population.emptyLandings)}; ${populationPageArrivalsText(population.pageArrivals)}; ${populationConsentWallsText(population.consentWalls)}; ${populationWindowOpensText(population.windowOpens)}; ${populationTierEscalationsText(population.tierEscalations)}), ` +
       `${population.inheritedRounds} inherited, ${population.rejectedCheckpoints} rejected Evidence Checkpoint(s), ${population.walledRounds} walled round(s), ${population.notFoundNavigates} navigate(s) landed on a Not-found Page (${population.notFoundOffKey} judged Off-key), ${population.rewrittenComposedAddresses ?? 0} Composed Address(es) rewritten into a site search (${population.rewrittenComposedAddressesOffKey ?? 0} judged Off-key, ${population.rewrittenShownAddresses ?? 'not counted'} to an address the Run was shown), ${population.unseenPhraseRewrites ?? 'not counted'} search(es) ran with an Unseen Phrase unquoted (${population.unseenPhraseRewritesOffKey ?? 0} judged Off-key), ${population.engineRewrites ?? 'not counted'} search(es) ran on the Run Engine in place of another Web Engine (${population.engineRewritesOffKey ?? 0} judged Off-key), ${populationResultPicksText(population)}, ${populationSelectedPassagesText(population)}, ${populationRunMadeUseText(population)}, ${populationContradictionNotesText(population)}, ${population.subagentRounds} Subagent round(s), ` +
-      `${population.mergedCheckpoints} merged Evidence Checkpoint(s) (a floor), ${population.heldPageRoundsWithoutProgress} Held Page round(s) without Progress, ${population.bundledCheckpoints} bundled checkpoint round(s), ${population.sameSourceUnsupportedRounds} same-source unsupported round(s), ${subagentCitationsText(population.subagentCitations)}, ${populationSlipsText(population)}, ${delegatedPageCountsText(population.delegatedPageRounds)}, ${populationPastTheEndReadsText(population)}, ${populationBookkeepingBeforeAnswerText(population)}, ${populationBookkeepingBeforeCutText(population)}, ${populationAnswerCheckpointsText(population)}, ` +
+      `${population.mergedCheckpoints} merged Evidence Checkpoint(s) (a floor), ${population.heldPageRoundsWithoutProgress} Held Page round(s) without Progress, ${population.bundledCheckpoints} bundled checkpoint round(s), ${population.sameSourceUnsupportedRounds} same-source unsupported round(s), ${subagentCitationsText(population.subagentCitations)}, ${populationSlipsText(population)}, ${delegatedPageCountsText(population.delegatedPageRounds)}, ${populationPastTheEndReadsText(population)}, ${populationPagelessLandingsText(population)}, ${populationBookkeepingBeforeAnswerText(population)}, ${populationBookkeepingBeforeCutText(population)}, ${populationAnswerCheckpointsText(population)}, ` +
       `${population.malformedAnswers} Malformed Answer(s) (${population.answerRetries} retried), ${populationOffLanguageAnswersText(population)}, ` +
       `${transportText(population)}, ` +
       `${populationSkipsText(population)}, ${populationCutsText(population)}, ` +
@@ -5527,6 +5569,7 @@ function attemptSection(attempt: AuditAttempt): string[] {
   lines.push(`- ${windowOpensText(mechanical.windowOpens)}`)
   lines.push(`- ${tierEscalationsText(mechanical.tierEscalations)}`)
   lines.push(`- reads refused as past the end: ${mechanical.pastTheEndReads === undefined ? 'not counted' : rounds(mechanical.pastTheEndReads)}`)
+  lines.push(`- landings that carried no page: ${mechanical.pagelessLandings === undefined ? 'not counted' : rounds(mechanical.pagelessLandings)}`)
   lines.push(`- bookkeeping rounds right before the Answer: ${attempt.bookkeepingBeforeAnswer === undefined ? 'not counted' : rounds(attempt.bookkeepingBeforeAnswer)}`)
   lines.push(`- bookkeeping rounds right before the cut: ${attempt.bookkeepingBeforeCut === undefined ? 'not counted' : rounds(attempt.bookkeepingBeforeCut)}`)
   lines.push(
