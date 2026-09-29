@@ -16,6 +16,9 @@ import { parseNotFoundMarker } from '../browser/notFoundPage'
 import { parseUnavailableMarker } from '../browser/unavailablePage'
 import { parseEmptyMarker } from '../browser/emptyLanding'
 import { isUnfinishedLoad } from '../browser/actionOutcome'
+
+/** The verbs whose outcome can be an Unfinished Load (#309): a navigate's load is the action. */
+const UNFINISHED_LOAD_VERBS: ReadonlySet<string> = new Set(['click', 'type', 'back', 'go_forward'])
 import { resultOpenedLine } from '../pipeline/resultPick'
 import {
   RUN_TRACE_VERSION,
@@ -90,8 +93,8 @@ export function pipelineEventTraceBody(event: PipelineEvent, agentId?: string): 
   // text carries the marker above the page a Result Pick opened from it, so
   // the landing the call settled on is read below the Opened line.
   const emptyLanding = event.ok ? parseEmptyMarker(settledText(event.result, event.resultPick)) : null
-  // An Unfinished Load (#309) says so on the outcome's first line.
-  const unfinishedLoad = event.ok && isUnfinishedLoad(event.result)
+  // An Unfinished Load (#309) says so on the first line of the verbs that write it.
+  const unfinishedLoad = event.ok && UNFINISHED_LOAD_VERBS.has(event.name) && isUnfinishedLoad(event.result)
   return {
     kind: 'pipeline_event',
     event: whole ? event : { ...event, result: event.result.slice(0, TRACE_TOOL_RESULT_MAX_CHARS) },

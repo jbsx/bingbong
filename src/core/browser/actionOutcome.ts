@@ -123,12 +123,14 @@ export function wasBlockedOrInert(outcome: ToolResultOutcome): boolean {
 // the bounded wait ended is an Unfinished Load, and says that too. Both are
 // read off the first line alone: the page's own text follows it.
 
+/** How long an action's page arrival is waited for before its snapshot is taken of the page as it stands (#309). */
+export const ARRIVAL_LOAD_BOUND_MS = 10_000
+
 /** The clause a click's or a type's outcome line carries when it arrived at another document (#309). */
 export const ARRIVED_CLAUSE = 'arrived at another page'
 
 /** The clause an Unfinished Load's outcome line carries (#309): the page as it stood, and that it may be less than the page. */
-export const UNFINISHED_LOAD_CLAUSE =
-  'the page was still loading when the wait for it ended at 10 s, so what is shown may be less than the page'
+export const UNFINISHED_LOAD_CLAUSE = `the page was still loading when the wait for it ended at ${ARRIVAL_LOAD_BOUND_MS / 1_000} s, so what is shown may be less than the page`
 
 function firstLineClauses(text: string): string[] {
   return (text.split('\n', 1)[0] ?? '').split('; ')

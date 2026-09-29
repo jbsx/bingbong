@@ -233,8 +233,19 @@ describe('an action’s page arrival (#309, ADR 0027)', () => {
 
     const watch = page.watchArrival!()
     wc.start(toAnotherDocument)
+    wc.commit('https://example.com/next', 200)
     wc.stopLoading()
     await expect(watch.arrival()).resolves.toBe('loaded')
+  })
+
+  it('is none when the navigation stopped without committing: a download, a 204, an aborted load', async () => {
+    const wc = fakeWebContents()
+    const page = createPaneNavigation(wc.target, new FakeClock())
+
+    const watch = page.watchArrival!()
+    wc.start(toAnotherDocument)
+    wc.stopLoading()
+    await expect(watch.arrival()).resolves.toBe('none')
   })
 
   it('ignores a navigation that started before the watch and a load that stopped before the navigation', async () => {
@@ -292,6 +303,7 @@ describe('an action’s page arrival (#309, ADR 0027)', () => {
     const watch = page.watchArrival!()
     const back = page.goBack()
     wc.fireDidNavigate()
+    wc.commit('https://example.com/previous', 200)
     await back
     let arrival: string | undefined
     void watch.arrival().then((value) => (arrival = value))

@@ -1,5 +1,6 @@
 import { systemClock, withDeadline, type Clock } from '../../core/ports/clock'
 import { boundedWait } from '../../core/browser/unsettledAction'
+import { ARRIVAL_LOAD_BOUND_MS } from '../../core/browser/actionOutcome'
 import type { ArrivalWatch, CdpPageDriver } from './createCdpBrowserController'
 
 // The pane's navigation surface (#205), split out of createPaneBrowserController
@@ -23,7 +24,7 @@ export const HISTORY_STEP_TIMEOUT_MS = 15_000
  * Unfinished Load, never an Unsettled Action: the action ended, only the
  * page's load did not.
  */
-export const ARRIVAL_LOAD_TIMEOUT_MS = 10_000
+export const ARRIVAL_LOAD_TIMEOUT_MS = ARRIVAL_LOAD_BOUND_MS
 
 /** Electron's `did-navigate` listener, narrowed to the arguments read here. */
 export type DidNavigateListener = (event: unknown, url: string, httpResponseCode: number) => void
@@ -60,7 +61,12 @@ export function createPaneNavigation(wc: PaneNavigationTarget, clock: Clock = sy
   // shows a page no response was served for, so the status is unknown then,
   // and the Not-found classification falls back to the title.
   let status: number | null = null
+  // Main-frame commits to another document, counted for an action's page
+  // arrival (#309): a navigation that started and stopped loading without
+  // one — a download, a 204, an aborted load — arrived nowhere.
+  let commits = 0
   wc.on('did-navigate', (_event, _url, httpResponseCode) => {
+    commits += 1
     status = typeof httpResponseCode === 'number' && httpResponseCode > 0 ? httpResponseCode : null
   })
   wc.on('did-navigate-in-page', (_event, _url, isMainFrame) => {
@@ -89,18 +95,27 @@ export function createPaneNavigation(wc: PaneNavigationTarget, clock: Clock = sy
   })
 
   /** Resolves when the tab has stopped loading the latest navigation that started. */
-  function loadStopped(): Promise<void> {
-    if (stopAfterLatestStart) return Promise.resolve()
-    return new Promise<void>((resolve) => stopWaiters.add(resolve))
+  function loadStopped(): { stopped: Promise<void>; forget: () => void } {
+    if (stopAfterLatestStart) return { stopped: Promise.resolve(), forget: () => {} }
+    let wake: () => void = () => {}
+    const stopped = new Promise<void>((resolve) => stopWaiters.add((wake = resolve)))
+    return { stopped, forget: () => stopWaiters.delete(wake) }
   }
 
   function watchArrival(): ArrivalWatch {
     const startsBefore = starts
+    const commitsBefore = commits
     return {
       async arrival() {
         if (starts === startsBefore) return 'none'
-        const loaded = await withDeadline(loadStopped().then(() => true), clock, ARRIVAL_LOAD_TIMEOUT_MS)
-        return loaded === null ? 'unfinished' : 'loaded'
+        const { stopped, forget } = loadStopped()
+        const loaded = await withDeadline(stopped.then(() => true), clock, ARRIVAL_LOAD_TIMEOUT_MS)
+        // An expired wait leaves no waiter behind on a tab that never stops loading.
+        if (loaded === null) {
+          forget()
+          return 'unfinished'
+        }
+        return commits === commitsBefore ? 'none' : 'loaded'
       },
     }
   }
