@@ -144,3 +144,57 @@ mechanics and encourage redundant reads, clicks, screenshots, and vision calls.
   requested.
 - Budget warnings remain internal. Finalization may update the Run Headline but
   does not expose counters outside diagnostics.
+
+## Notes
+
+- 2026-09-29 (#309, grilled from every retained capture): **an action that
+  leaves for another document waits for that document's load before its
+  snapshot is taken.** A navigate waited for its load and then 300 ms. A
+  click, a type and a `press_key` waited 300 ms and for nothing else, and a
+  `back` or a `go_forward` for the navigation to commit and then 300 ms, so
+  the Action Outcome of a click that opened a page was a snapshot of the
+  page 300 ms after the click.
+  - **Measured** over 385 orchestrator turns and 54 Subagent runs in 65
+    capture sets. Of 170 orchestrator clicks that changed the URL, 47 came
+    back with a settled page, no refs, no page text and a scroll height at
+    or below the viewport; of 5 Subagent clicks, 2. A `read_page` returned
+    text in the next round after 44 of the 49, a round each. Of 68 types
+    that changed the page, 7, all rmg.co.uk collection searches, each
+    followed by a read with text. Of 7 `back`s, none; no capture holds a
+    `go_forward` or a `press_key`. The title was the new page's in 27 of
+    the 49 and empty in 22, never the old page's: the document had
+    committed and often had not parsed its head.
+  - **The load is enough, and content is not waited for.** Of 2,463
+    orchestrator navigates, which wait for the load, 7 showed the same
+    empty snapshot and no later read returned text from one (PDF hosts, a
+    login page, an archive's index). A wait for content would have to say
+    what content is, and a page with none would pay the whole bound.
+  - **All five actions, by the navigation's start and never the URL.** The
+    settle watches for a main-frame navigation to another document that
+    starts during the action, and waits for that one's load, then the
+    300 ms. A link to a slow server has not changed the URL at 300 ms and
+    reported `urlChanged=false` over the old page; watching the start
+    covers it. The captures cannot count those, which read as clicks that
+    did nothing.
+  - **The wait is bounded at 10 s, and its expiry is an Unfinished Load,
+    not an Unsettled Action.** The action ended; only the page's load did
+    not. The snapshot is taken of what is there, the outcome says the page
+    was still loading, and no resource is withheld. A navigate's 95th
+    percentile is 5.9 s, so a bound of 5 s would expire on about one load
+    in twenty. An early click took a median of 954 ms and a navigate takes
+    1,247 ms, so the wait costs under a second where it is needed.
+  - **A navigate keeps its 30 s bound and its failure.** Its load is the
+    action, and a load that outlives its wait is an Unsettled Action under
+    the custody rules (#205). The two bounds differ for that reason.
+  - **A change of address inside one document is left as it is**: 300 ms
+    and the snapshot. No document loads, so there is no event to wait for.
+  - **An Empty Landing is no longer a matter of the verb**
+    ([ADR 0058](0058-a-search-loop-is-consecutive-searches-with-nothing-opened-between-them.md),
+    note of this date).
+  The Round Audit and the Fix Ledger report three counts a capture set,
+  never gated: page arrivals by the five actions, those that showed no
+  text, and Unfinished Loads. Older captures are recounted from their
+  traces by the result's shape, as #304's were, and the 47 and the 7 are
+  what the next capture is read against. Closes on tests, one e2e that
+  clicks a link to a fixture whose response is held, and the recount; no
+  capture.

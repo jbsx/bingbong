@@ -406,3 +406,17 @@ on not tuning to the judged data.
     results the trace cut. Recounted, the initials at streak 2 or beyond
     read 19 on `fix-288-290` where they read 17, 15 on `fix-284` where
     they read 14, and 27 on `fix-257` where they read 26.
+- 2026-09-29 (#309, grilled from every retained capture): **a click makes
+  an Empty Landing as a navigate does.** The exception above rested on the
+  click's snapshot being early, and that ends when the click waits for the
+  load it started ([ADR 0027](0027-bounded-progressive-browsing.md), note of
+  this date). Any of a click, a type, a `press_key`, a `back` or a
+  `go_forward` that arrives at another document and shows no text carries
+  the marker, the advice and the read escape of the note above, unchanged.
+  An Unfinished Load that showed no text is one too, and says both: the
+  entry already names a page not yet rendered, and the Page Read that
+  returns text is the escape if the page fills in. A change of address
+  inside one document is none, its snapshot being as early as it was.
+  The counts above are corrected by the sweep for this issue: of the 49
+  clicks, 47 are the orchestrator's and 2 a Subagent's, and a read returned
+  text after 44, each in the next round.

@@ -1176,18 +1176,29 @@ because it is not evidence the address was wrong.
 _Avoid_: outage hit, failed navigate, timeout, wall
 
 **Empty Landing**:
-A navigation or a step through history settling on a page the Run was shown
-no text from, and that is no Blocker, Not-found Page or Unavailable Page. It
-is a fact about what the Run was shown, never about the page or its address:
+A browser action arriving at another document — a navigation, a step through
+history, a click, or typing or a key press the page left under — and settling
+on a page the Run was shown no text from, and that is no Blocker, Not-found
+Page or Unavailable Page. It is a fact about what the Run was shown, never about the page or its address:
 a site's template around nothing, a document whose text was not collected
 and a page not yet rendered all land the same. Its Action Outcome says so,
 with the advice to read it or Look at it once or use another source; it is
 neutral to Progress; it is not escape from a Search Loop, though a Page Read
 that returns text from that page is; it spends no Composed Address
 allowance, because it is not evidence the address was wrong; and it takes
-no page out of a Run's sources. A click that left for another page is not
-one.
+no page out of a Run's sources. An Unfinished Load that showed no text is
+one. A change of address inside one document is not: no document arrived,
+and what it shows may not be there yet.
 _Avoid_: blank page, empty page, soft 404, failed render, rendered empty
+
+**Unfinished Load**:
+A page arrival by a click, by typing, by a key press or by a step through
+history whose load had not finished when the wait for it ended. The action
+itself ended, so nothing is unsettled and no resource is withheld: its Action
+Outcome carries the page as it stood and says the page was still loading, so
+what is shown may be less than the page. A navigation is never one — its load
+is the action, and a load that outlives its wait is an Unsettled Action.
+_Avoid_: slow page, timeout, still loading, partial page, Unsettled Action
 
 **Blocked Action**:
 A click or type the browser did not perform because the page's hit test at
