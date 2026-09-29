@@ -5360,6 +5360,7 @@ function populationPastTheEndReadsText(population: AuditPopulation): string {
   return `${population.pastTheEndReads} read(s) refused as past the end`
 }
 
+/** A population's landings that carried no page (#308), or "not counted" on an audit written before the counter. */
 function populationPagelessLandingsText(population: AuditPopulation): string {
   if (population.pagelessLandings === undefined) return 'landings that carried no page not counted'
   return `${population.pagelessLandings} landing(s) that carried no page`

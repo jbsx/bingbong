@@ -1389,6 +1389,25 @@ describe('createCdpBrowserController dialog tiers', () => {
     expect(cdp.collectCalls()).toHaveLength(2)
   })
 
+  it('collects the page behind a dismissed wall as a landing, and says so when it cannot be read (#308)', async () => {
+    const wall = consentWallPage()
+    const cleared = { ...wall, dialogOpen: false, dialogText: '', elements: wall.elements.slice(2) }
+    const cdp = new FakeCdp(cleared)
+    cdp.collectValues = [wall]
+    // The dismissal sends the page on: the next two collections throw.
+    cdp.onDomClick = () => {
+      cdp.collectFailures = 2
+    }
+    const { controller } = makeController({ cdp })
+
+    const outcome = await controller.navigate('youtube.com')
+
+    expect(outcome).toBe(
+      `navigated: url=https://www.youtube.com/ title="YouTube"\ndismissed consent dialog: clicked [2] "Reject all"\n${PAGE_NOT_READ}`,
+    )
+    expect(cdp.collectCalls()).toHaveLength(3)
+  })
+
   it('leaves a Tier-2 dialog met on navigate open and listed', async () => {
     const cdp = new FakeCdp(signInDialogPage())
     const { controller } = makeController({ cdp })

@@ -275,6 +275,9 @@ const ABORT_ERROR_CODE = 'ERR_ABORTED'
 // before the outcome reports whatever page is current anyway.
 const ABORT_SETTLE_POLLS = 50
 
+/** The verb a landing's outcome line opens with: a navigate, or a step through history. */
+type LandingVerb = 'navigated' | 'went back' | 'went forward'
+
 function isAbortedLoad(error: unknown): boolean {
   if ((error as { code?: unknown } | null)?.code === ABORT_ERROR_CODE) return true
   return error instanceof Error && error.message.includes(ABORT_ERROR_CODE)
@@ -706,18 +709,18 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     try {
       return await recollection('landing-retry', () => collectSnapshot())
     } catch (error) {
-      reportFault('browser.createCdpBrowserController.landingOutcome', error)
+      reportFault('browser.createCdpBrowserController.landingOutcome.retry', error)
       return null
     }
   }
 
   /** A landing's line: the verb, then the address and title of the page it carries. */
-  function landingLine(verb: string, url: string, title: string): string {
+  function landingLine(verb: LandingVerb, url: string, title: string): string {
     return `${verb}: url=${url} title=${JSON.stringify(title)}`
   }
 
   /** A landing no collection could read: the address the tab reports now, and that the page could not be read. */
-  function unreadLanding(verb: string, clause = ''): string {
+  function unreadLanding(verb: LandingVerb, clause = ''): string {
     return `${landingLine(verb, page.url(), page.title())}${clause}\n${PAGE_NOT_READ}`
   }
 
@@ -742,12 +745,15 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     } catch (error) {
       reportFault('browser.createCdpBrowserController.landingOutcome', error)
     }
-    return dismissal === null ? withSettledState(line, landed) : withSettledState(`${line}\n${dismissal}`)
+    if (dismissal === null) return withSettledState(line, landed)
+    // The page behind the wall is collected the way the landing was.
+    const behind = await collectLanding()
+    return behind === null ? `${line}\n${dismissal}\n${PAGE_NOT_READ}` : withSettledState(`${line}\n${dismissal}`, behind)
   }
 
   /** A step through history's outcome: written as a navigate's, with no
    * consent dismissal, its line carrying the Unfinished Load clause (#309). */
-  async function historyOutcome(verb: 'went back' | 'went forward', clause: string): Promise<string> {
+  async function historyOutcome(verb: Exclude<LandingVerb, 'navigated'>, clause: string): Promise<string> {
     const landed = await collectLanding()
     return landed === null ? unreadLanding(verb, clause) : withSettledState(`${landingLine(verb, landed.url, landed.title)}${clause}`, landed)
   }

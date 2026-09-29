@@ -262,11 +262,17 @@ mechanics and encourage redundant reads, clicks, screenshots, and vision calls.
   - **Implemented** 2026-09-29. The retry's wait is the abort's polling,
     its settles named `landing-retry` beside `navigate-abort`. The second
     failure's sentence is `PAGE_NOT_READ` in `actionOutcome.ts`: "The page
-    could not be read; read_page will show it." A `back` and a `go_forward`
-    take the retry and the line but no consent dismissal, which they never
-    had. The audit's `pagelessLandings` reads the Run Trace's whole result;
-    recounted, it finds each of the four rmg.co.uk picks, the rewritten
-    search in `fix-265-267-3` and two landings in `baseline3-1`. The e2e
+    could not be read; read_page will show it." The page behind a
+    dismissed consent wall is collected the same way, and says the same
+    when it cannot be read. A `back` and a `go_forward` take the retry and
+    the line but no consent dismissal, which they never had. The fault of a
+    retry that failed is reported at `landingOutcome.retry`. The thrown
+    value's description is added in the one page-evaluation seam, so any
+    page evaluation that fails now says why. The audit's
+    `pagelessLandings` reads the Run Trace's whole result; recounted, it
+    finds each of the four rmg.co.uk picks, the rewritten search in
+    `fix-265-267-3`, and in `baseline3-1` the DuckDuckGo hop and one
+    Google challenge wall. The e2e
     fixture leaves when the collector first writes to it, which makes the
     first collection throw; against the old controller its line names the
     page left.

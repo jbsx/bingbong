@@ -49,7 +49,9 @@ export function showedNoPageText(outcome: string): boolean {
  * Whether a landing's Action Outcome carried no page at all (#308, note on
  * ADR 0027): no settled page's signature line, because no collection could
  * read the page. What remains is the line, the sentence saying so, and any
- * marker the landing earned.
+ * marker the landing earned. It is not an Empty Landing, which carried a page
+ * and no text from it ({@link showedNoPageText}); the two never both hold.
+ * It lives here because both read the one signature line.
  */
 export function carriedNoPage(outcome: string): boolean {
   return !SIGNATURE_LINE_RE.test(outcome)
