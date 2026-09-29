@@ -2274,8 +2274,23 @@ export function selectedPassageCountsOf(
 
 /** A checkpoint's source page as an address. */
 function checkpointPage(raw: Record<string, unknown>): string | null {
-  const source = (raw.args as Record<string, unknown> | undefined)?.source_url
-  return typeof source === 'string' ? comparableAddress(source) : null
+  const source = checkpointAddressOf(raw)
+  return source === null ? null : comparableAddress(source)
+}
+
+/**
+ * The address a checkpoint names its page by (#307, ADR 0051): the observed
+ * address of the retention its grader matched, which is what the store keeps
+ * since a citation may be grounded across a referral parameter (#306), and the
+ * cited `source_url` where the record names none — a rejection, a kind "user"
+ * record, a record from before the field. Each reader applies its own address
+ * rule to what this returns.
+ */
+function checkpointAddressOf(raw: Readonly<Record<string, unknown>>): string | null {
+  const observed = matchedRetentions(raw).find((observation) => isString(observation.sourceUrl))?.sourceUrl
+  if (isString(observed)) return observed
+  const source = isRecord(raw.args) ? raw.args.source_url : undefined
+  return isString(source) ? source : null
 }
 
 /** A normalized excerpt's verbatim pieces long enough to pin a passage — twelve characters, unless the count sets no floor (#283): split where the grader joins them (ADR 0054). */
@@ -2288,8 +2303,13 @@ function excerptPieces(excerpt: string, floor = 12): string[] {
 
 /** The observations a checkpoint's grader matched it on. */
 function matchedObservations(raw: Record<string, unknown>): Set<string> {
-  const graded = Array.isArray(raw.graded) ? (raw.graded as Record<string, unknown>[]) : []
-  return new Set(graded.flatMap((observation) => (observation.matched === true && typeof observation.observationId === 'string' ? [observation.observationId] : [])))
+  return new Set(matchedRetentions(raw).flatMap((observation) => (typeof observation.observationId === 'string' ? [observation.observationId] : [])))
+}
+
+/** The `graded` entries of a checkpoint record its grader matched it on. */
+function matchedRetentions(raw: Readonly<Record<string, unknown>>): Record<string, unknown>[] {
+  const graded = Array.isArray(raw.graded) ? (raw.graded as readonly unknown[]) : []
+  return graded.filter((observation): observation is Record<string, unknown> => isRecord(observation) && observation.matched === true)
 }
 
 /**
@@ -3555,10 +3575,10 @@ export function delegatedPageRoundsOf(records: readonly TraceLine[]): DelegatedP
   return { running: sorted(phases.running), finished: sorted(phases.finished), collected: sorted(phases.collected) }
 }
 
-/** The canonical source a checkpoint call's arguments cite, or null when they cite none the audit can canonicalize. */
-function canonicalSourceOf(args: Readonly<Record<string, unknown>>): string | null {
-  const source = args.source_url
-  return isString(source) ? canonicalUrl(source) : null
+/** A checkpoint's canonical source, or null when it names none the audit can canonicalize. */
+function canonicalSourceOf(checkpoint: Readonly<Record<string, unknown>>): string | null {
+  const source = checkpointAddressOf(checkpoint)
+  return source === null ? null : canonicalUrl(source)
 }
 
 /**
@@ -3575,7 +3595,8 @@ export function sameSourceUnsupportedRoundsOf(rounds: readonly AuditRound[]): nu
     const sources = new Set<string>()
     for (const call of round.calls) {
       if (call.checkpoint === null || call.checkpoint.accepted || call.checkpoint.outcome !== 'excerpt_unsupported') continue
-      const canonical = canonicalSourceOf(call.args)
+      // A rejection matched no retention, so it keeps the cited address.
+      const canonical = canonicalSourceOf({ args: call.args })
       if (canonical !== null) sources.add(canonical)
     }
     return sources
@@ -3814,12 +3835,12 @@ function addSubagentCitations(into: SubagentCitationCounts, from: Readonly<Subag
   if (from.offFindingCitations !== undefined) into.offFindingCitations = (into.offFindingCitations ?? 0) + from.offFindingCitations
 }
 
-/** The canonical URLs an attempt's accepted Evidence Checkpoints cite — what a follow-up would inherit. */
+/** The canonical URLs an attempt's accepted Evidence Checkpoints hold their pages at — what a follow-up would inherit. */
 export function checkpointedUrlsOf(traceRecords: readonly object[]): Set<string> {
   const urls = new Set<string>()
   for (const raw of traceRecords as unknown as readonly TraceLine[]) {
-    if (raw.kind !== 'evidence_checkpoint' || raw.outcome !== 'accepted' || !isRecord(raw.args)) continue
-    const canonical = canonicalSourceOf(raw.args)
+    if (raw.kind !== 'evidence_checkpoint' || raw.outcome !== 'accepted') continue
+    const canonical = canonicalSourceOf(raw)
     if (canonical !== null) urls.add(canonical)
   }
   return urls

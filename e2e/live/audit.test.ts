@@ -11,7 +11,7 @@ import { authPopupOpenedLine, NEW_WINDOW_FOLLOWED_CLAUSE, popupBlockedLine } fro
 import { similarQueries as ruleSimilarQueries } from '../../src/core/pipeline/searchLoopRule'
 import { createSearchLoopRail, SEARCH_LOOP_NUDGE, searchQueryFromUrl as railSearchQueryFromUrl, type SearchObservation } from '../../src/core/pipeline/searchLoopRail'
 import type { PerfSpanRecord } from '../../src/core/perf/perfTracer'
-import type { TraceRecord } from '../../src/core/trace/runTrace'
+import type { TraceRecord, TracedObservation } from '../../src/core/trace/runTrace'
 import type { SnapshotRef } from '../../src/core/browser/snapshot'
 import {
   AUDIT_COUNTS_NOTE,
@@ -110,6 +110,9 @@ const ATTEMPT = 'hunt-x--initial'
 const TURN = turnIdOf(ATTEMPT)
 const identity = { v: 1, runId: 'run-x', sessionId: 'session-x', generation: 0, turnId: TURN } as const
 
+/** One retention an Evidence Checkpoint was graded against, as the Run Trace records it. */
+type GradedRetention = Pick<TracedObservation, 'observationId' | 'sourceUrl' | 'matched'>
+
 interface RoundSpec {
   readonly round: number
   readonly attempt?: number
@@ -130,6 +133,8 @@ interface RoundSpec {
     correction?: string
     sourceUnheld?: true
     citesFinding?: boolean
+    /** The retentions the checkpoint was graded against (#307): absent, the fixture traces none. */
+    graded?: readonly GradedRetention[]
     /** The Search Observation the rail recorded for this call (#243) — a trace written after observations were kept. */
     observation?: SearchObservation
     /** The Not-found Landing the Run Trace records on the result (#239) — a trace written after the field was kept. */
@@ -194,7 +199,7 @@ function traceOf(rounds: readonly RoundSpec[], extra: readonly Record<string, un
       const callId = `call-${calls}`
       records.push({ ...identity, at: T0 + spec.at + 1, kind: 'pipeline_event', event: { type: 'tool_call', turnId: TURN, callId, name: call.name, args: call.args, at: T0 + spec.at + 1 } })
       if (call.checkpoint !== undefined) {
-        records.push({ ...identity, at: T0 + spec.at + 2, kind: 'evidence_checkpoint', tool: call.name, args: call.args, outcome: call.checkpoint, matched: call.checkpoint === 'accepted', graded: [], ...(call.merged !== undefined ? { merged: call.merged } : {}), ...(call.checkpointAgentId !== undefined ? { agentId: call.checkpointAgentId } : {}), ...(call.correction !== undefined ? { correction: call.correction } : {}), ...(call.sourceUnheld !== undefined ? { sourceUnheld: call.sourceUnheld } : {}), ...(call.citesFinding !== undefined ? { citesFinding: call.citesFinding } : {}) })
+        records.push({ ...identity, at: T0 + spec.at + 2, kind: 'evidence_checkpoint', tool: call.name, args: call.args, outcome: call.checkpoint, matched: call.checkpoint === 'accepted', graded: call.graded ?? [], ...(call.merged !== undefined ? { merged: call.merged } : {}), ...(call.checkpointAgentId !== undefined ? { agentId: call.checkpointAgentId } : {}), ...(call.correction !== undefined ? { correction: call.correction } : {}), ...(call.sourceUnheld !== undefined ? { sourceUnheld: call.sourceUnheld } : {}), ...(call.citesFinding !== undefined ? { citesFinding: call.citesFinding } : {}) })
       }
       if (call.runCheckpoint !== undefined) {
         // A Run-made checkpoint (#276) is traced inside the landing's step,
@@ -944,6 +949,73 @@ describe('merged checkpoints and Held Page rounds without Progress (#240, ADR 00
     const initial = classifyAttempt(inputOf({ traceRecords: traceOf(HELD_ROUNDS, [EXTRA[0]!]) }))
     expect(initial.heldPageRoundsWithoutProgress).toBe(1)
     expect(initial.inheritedRounds).toBe(0)
+  })
+
+  describe('a checkpoint grounded across a referral parameter (#307, ADR 0051)', () => {
+    const BARE = 'https://spec.invalid/page'
+    const REFERRED = 'https://spec.invalid/page?ref=a'
+    const grounded = (sourceUrl: string | undefined, matched = true): GradedRetention[] => [
+      { observationId: 'obs-0', sourceUrl: 'https://spec.invalid/elsewhere', matched: false },
+      { observationId: 'obs-1', ...(sourceUrl !== undefined ? { sourceUrl } : {}), matched },
+    ]
+    const checkpoint = (args: Record<string, unknown>, graded: readonly GradedRetention[], outcome = 'accepted'): TraceRecord =>
+      ({ ...identity, at: T0, kind: 'evidence_checkpoint', tool: 'record_evidence', args, outcome, matched: outcome === 'accepted', graded }) as unknown as TraceRecord
+
+    it('names the observed address of an accepted checkpoint, and the cited one wherever no matched retention names one', () => {
+      expect([...checkpointedUrlsOf([checkpoint({ kind: 'web', source_url: BARE }, grounded(REFERRED))])]).toEqual([REFERRED])
+      // The same address observed and cited, or no graded retention at all: the argument, as before.
+      expect([...checkpointedUrlsOf([checkpoint({ kind: 'web', source_url: BARE }, grounded(BARE))])]).toEqual([BARE])
+      expect([...checkpointedUrlsOf([checkpoint({ kind: 'web', source_url: BARE }, [])])]).toEqual([BARE])
+      // A matched retention that names no address, and one that did not match.
+      expect([...checkpointedUrlsOf([checkpoint({ kind: 'web', source_url: BARE }, grounded(undefined))])]).toEqual([BARE])
+      expect([...checkpointedUrlsOf([checkpoint({ kind: 'web', source_url: BARE }, grounded(REFERRED, false))])]).toEqual([BARE])
+      // Kind user cites no address; a rejection is no checkpoint held.
+      expect([...checkpointedUrlsOf([checkpoint({ kind: 'user', observation: 'said so' }, [])])]).toEqual([])
+      // As the writer traces one: matched on the user's command, which has no address.
+      expect([...checkpointedUrlsOf([checkpoint({ kind: 'user', observation: 'said so' }, [{ observationId: 'command-1', matched: true }])])]).toEqual([])
+      expect([...checkpointedUrlsOf([checkpoint({ kind: 'web', source_url: BARE }, grounded(REFERRED, false), 'excerpt_unsupported')])]).toEqual([])
+    })
+
+    it('holds the page at the observed address for a follow-up: a landing there is a Held Page round, one on the cited address is none', () => {
+      const parent = checkpointedUrlsOf([checkpoint({ kind: 'web', source_url: BARE }, grounded(REFERRED))])
+      const readsOn = (url: string): RoundSpec[] => [
+        { round: 1, at: 1_000, calls: [{ name: 'navigate', args: { url }, result: PAGE('Page', url, 'ffff6666') }] },
+        { round: 2, at: 2_000, calls: [{ name: 'read_page', args: {}, result: READ('Page', url, 'ffff6666') }] },
+        { round: 3, at: 3_000, calls: [{ name: 'read_page', args: {}, result: READ('Page', url, 'ffff6666') }] },
+      ]
+      const followUp = (url: string) =>
+        classifyAttempt(
+          inputOf({
+            attempt: attemptCapture({ attemptId: 'hunt-x--follow_up', huntId: 'hunt-x', stepId: 'follow_up', relation: 'revised_objective', parentAttemptId: ATTEMPT, terminal: { at: 16_000, finalizationCause: 'objective_met' } }),
+            traceRecords: traceOf(readsOn(url), [EXTRA[0]!]),
+            parentCheckpointedUrls: parent,
+          }),
+        )
+      expect(followUp(REFERRED).heldPageRoundsWithoutProgress).toBe(1)
+      expect(followUp(BARE).heldPageRoundsWithoutProgress).toBe(0)
+    })
+
+    it('holds this attempt’s own checkpoint at its observed address too', () => {
+      const rounds: RoundSpec[] = [
+        { round: 1, at: 1_000, calls: [{ name: 'navigate', args: { url: REFERRED }, result: PAGE('Page', REFERRED, 'ffff6666') }] },
+        { round: 2, at: 2_000, calls: [{ name: 'record_evidence', args: { kind: 'web', observation: 'a claim', source_url: BARE }, result: recorded('memory-1', REFERRED), checkpoint: 'accepted', graded: grounded(REFERRED) }] },
+        { round: 3, at: 3_000, calls: [{ name: 'scroll', args: { direction: 'down' }, result: endOfPage }] },
+      ]
+      expect(classifyAttempt(inputOf({ traceRecords: traceOf(rounds, [EXTRA[0]!]) })).heldPageRoundsWithoutProgress).toBe(1)
+    })
+
+    it('judges a model record against a Run-made one on its observed page', () => {
+      const lines = [
+        { kind: 'llm_round', round: 1 },
+        { kind: 'evidence_checkpoint', origin: 'run', outcome: 'accepted', args: { source_url: REFERRED }, excerpt: 'x', graded: [] },
+        { kind: 'llm_round', round: 2 },
+        // Grounded on an Observation the Run-made one was not: only the page joins them.
+        { kind: 'evidence_checkpoint', outcome: 'accepted', args: { source_url: BARE }, excerpt: 'y', graded: [{ observationId: 'obs-9', sourceUrl: REFERRED, matched: true }] },
+      ]
+      expect(selectedPassageCountsOf(lines, [])).toMatchObject({ runMadeRecordedAgain: [1] })
+      const cited = lines.map((line, index) => (index === 3 ? { ...line, graded: [{ observationId: 'obs-9', sourceUrl: BARE, matched: true }] } : line))
+      expect(selectedPassageCountsOf(cited, [])).toMatchObject({ runMadeRecordedAgain: [] })
+    })
   })
 
   it('sums both per population and prints them per attempt and per population', () => {
