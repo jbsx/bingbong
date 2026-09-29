@@ -61,6 +61,8 @@ import {
   recountUnavailableByTitle,
   unavailableLandingsOf,
   emptyLandingsOf,
+  pageArrivalsOf,
+  pageArrivalMarksOf,
   searchLoopCountsOf,
   similarQueries,
   validateJudgement,
@@ -140,6 +142,8 @@ interface RoundSpec {
     v?: number
     /** The result's whole length, where the trace cut it (#304): absent, the text is whole. */
     chars?: number
+    /** The Unfinished Load the Run Trace records on the result (#309) — a trace written at version 11 or later. */
+    unfinishedLoad?: true
     /** The Composed Address rewrite the Run Trace records on the result (#255, ADR 0055). */
     rewritten?: { site: string; query: string }
     /** The Unseen Phrase rewrite the Run Trace records on the result (#267, ADR 0064). */
@@ -217,6 +221,7 @@ function traceOf(rounds: readonly RoundSpec[], extra: readonly Record<string, un
         ...(call.notFound !== undefined ? { notFound: call.notFound } : {}),
         ...(call.unavailable !== undefined ? { unavailable: call.unavailable } : {}),
         ...(call.emptyLanding !== undefined ? { emptyLanding: call.emptyLanding } : {}),
+        ...(call.unfinishedLoad !== undefined ? { unfinishedLoad: call.unfinishedLoad } : {}),
         ...(call.v !== undefined ? { v: call.v } : {}),
         ...(call.chars !== undefined ? { chars: call.chars } : {}),
         ...(call.rewritten !== undefined ? { rewritten: call.rewritten } : {}),
@@ -1644,6 +1649,82 @@ describe('Empty Landings (#304, note on ADR 0058)', () => {
     const set = buildAuditSet(provenanceOf(), [{ mechanical: older, review: null, countsAfterOverrules: mechanical.counts }], [])
     expect(set.populations.initial.emptyLandings).toBeUndefined()
     expect(formatAuditSet(set)).toContain('Empty Landings not counted')
+  })
+})
+
+describe('Page arrivals (#309, note on ADR 0027)', () => {
+  const RMG = 'https://www.rmg.co.uk/collections/objects/rmgc-object-79142'
+  const ADVICE = 'This page showed no text. If it should hold content, read it or Look at it once; otherwise use another source.'
+  const UNFINISHED = 'the page was still loading when the wait for it ended at 10 s, so what is shown may be less than the page'
+  const settledPage = (line: string, signature: string, text: string | null): string =>
+    `${line}\n# H4 | Royal Museums Greenwich — ${RMG}\nviewport 985x575 scroll 0/575\nsignature ${signature}${text === null ? '' : `\npage text:\n${text}`}`
+  const clicked = (clauses: string): string => `clicked [1]: urlChanged=true dialogOpen=false; page signature changed; url=${RMG} title="H4 | Royal Museums Greenwich"${clauses}`
+  const round = (n: number, call: NonNullable<RoundSpec['calls']>[number]): RoundSpec => ({ round: n, at: n * 1_000, calls: [call] })
+  const arrivalsOf = (rounds: readonly AuditRound[]) => rounds.map((r) => r.calls[0]!.arrival ?? null)
+
+  it('reads a version-11 trace by the clause and the field: arrivals, those that showed no text, and Unfinished Loads', () => {
+    const rounds: RoundSpec[] = [
+      round(1, { name: 'navigate', args: { url: RMG }, result: settledPage(`navigated: url=${RMG} title="H4"`, 'a0c00001', 'H4'), v: 11 }),
+      round(2, { name: 'click', args: { ref: 1 }, result: `${settledPage(clicked('; arrived at another page'), 'a0c00002', null)}\nEMPTY:no-text www.rmg.co.uk\n${ADVICE}`, emptyLanding: { host: 'www.rmg.co.uk' }, v: 11 }),
+      round(3, { name: 'click', args: { ref: 1 }, result: settledPage(clicked(`; arrived at another page; ${UNFINISHED}`), 'a0c00003', 'H4, completed in 1759.'), unfinishedLoad: true, v: 11 }),
+      round(4, { name: 'type', args: { ref: 2, text: 'H4\n' }, result: settledPage(`typed [2]: field unavailable after page change; url=${RMG} title="H4"; arrived at another page`, 'a0c00004', 'H4'), v: 11 }),
+      round(5, { name: 'back', args: {}, result: settledPage(`went back: url=${RMG} title="H4"`, 'a0c00005', 'H4'), v: 11 }),
+      // A change of address inside one document: no clause, no arrival.
+      round(6, { name: 'click', args: { ref: 1 }, result: settledPage(clicked(''), 'a0c00006', null), v: 11 }),
+    ]
+    const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(rounds, EXTRA) }))
+
+    expect(arrivalsOf(mechanical.rounds)).toEqual([null, { noText: true }, { unfinished: true }, {}, {}, null])
+    expect(mechanical.rounds[1]!.calls[0]).toHaveProperty('emptyLanding', 'www.rmg.co.uk')
+    expect(mechanical.pageArrivals).toEqual({ arrivals: [2, 3, 4, 5], withoutText: [2], unfinishedLoads: [3] })
+    expect(pageArrivalsOf(mechanical.rounds)).toEqual(mechanical.pageArrivals)
+  })
+
+  it('reads a trace written before the clause by the result’s shape: a click that left the URL and typing the page changed under, never as an Empty Landing', () => {
+    const rounds: RoundSpec[] = [
+      round(1, { name: 'click', args: { ref: 1 }, result: settledPage(clicked(''), 'a0c00001', null) }),
+      round(2, { name: 'type', args: { ref: 2, text: 'H4\n' }, result: settledPage(`typed [2]: field unavailable after page change; url=${RMG} title="H4"`, 'a0c00002', null), v: 9 }),
+      round(3, { name: 'click', args: { ref: 1 }, result: settledPage(clicked(''), 'a0c00003', 'H4') }),
+      // Cut: whether it showed text is past what the trace kept.
+      round(4, { name: 'click', args: { ref: 1 }, result: settledPage(clicked(''), 'a0c00004', null), chars: 9_000 }),
+      round(5, { name: 'click', args: { ref: 1 }, result: 'clicked [1]: urlChanged=false dialogOpen=false; page signature changed' }),
+    ]
+    const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(rounds, EXTRA) }))
+
+    expect(arrivalsOf(mechanical.rounds)).toEqual([{ noText: true }, { noText: true }, {}, {}, null])
+    expect(mechanical.rounds.map((r) => r.calls[0]!.emptyLanding ?? null)).toEqual([null, null, null, null, null])
+    expect(mechanical.pageArrivals).toEqual({ arrivals: [1, 2, 3, 4], withoutText: [1, 2], unfinishedLoads: [] })
+  })
+
+  it('marks where an attempt’s rounds hold each arrival, for the sweep', () => {
+    const rounds: RoundSpec[] = [
+      round(1, { name: 'navigate', args: { url: RMG }, result: settledPage(`navigated: url=${RMG} title="H4"`, 'a0c00001', 'H4') }),
+      round(2, { name: 'click', args: { ref: 1 }, result: settledPage(clicked(''), 'a0c00002', null) }),
+      round(3, { name: 'back', args: {}, result: settledPage(`went back: url=${RMG} title="H4"; ${UNFINISHED}`, 'a0c00003', 'H4'), unfinishedLoad: true, v: 11 }),
+    ]
+    expect(pageArrivalMarksOf(traceOf(rounds, EXTRA))).toEqual([
+      { round: 2, call: 0, name: 'click', noText: true },
+      { round: 3, call: 0, name: 'back', unfinished: true },
+    ])
+  })
+
+  it('shows the reviewer the arrival, and counts the three in the set and its Markdown', () => {
+    const rounds: RoundSpec[] = [round(1, { name: 'click', args: { ref: 1 }, result: settledPage(clicked(`; arrived at another page; ${UNFINISHED}`), 'a0c00001', null), unfinishedLoad: true, v: 11 })]
+    const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(rounds, EXTRA) }))
+    expect(digestCallLines(mechanical.rounds[0]!.calls[0]!)).toContain('  arrival: another page, which showed no text; an Unfinished Load')
+    const set = buildAuditSet(provenanceOf(), [{ mechanical, review: null, countsAfterOverrules: mechanical.counts }], [])
+    expect(set.populations.initial.pageArrivals).toEqual({ arrivals: 1, withoutText: 1, unfinishedLoads: 1 })
+    const markdown = formatAuditSet(set)
+    expect(markdown).toContain('- page arrivals by a click, a type or a step through history 1 (round 1); showed no text: 1 (round 1); Unfinished Loads: 1 (round 1)')
+    expect(markdown).toContain('1 page arrival(s) by a click, a type or a step through history, 1 that showed no text, 1 Unfinished Load(s)')
+  })
+
+  it('reads an audit written before the counter as not counted, never as zero', () => {
+    const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf([round(1, { name: 'back', args: {}, result: 'went back' })], EXTRA) }))
+    const older = Object.fromEntries(Object.entries(mechanical).filter(([field]) => field !== 'pageArrivals')) as typeof mechanical
+    const set = buildAuditSet(provenanceOf(), [{ mechanical: older, review: null, countsAfterOverrules: mechanical.counts }], [])
+    expect(set.populations.initial.pageArrivals).toBeUndefined()
+    expect(formatAuditSet(set)).toContain('page arrivals not counted')
   })
 })
 

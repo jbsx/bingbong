@@ -15,6 +15,7 @@ import type { PipelineEvent, UnstampedEvent } from '../pipeline/events'
 import { parseNotFoundMarker } from '../browser/notFoundPage'
 import { parseUnavailableMarker } from '../browser/unavailablePage'
 import { parseEmptyMarker } from '../browser/emptyLanding'
+import { isUnfinishedLoad } from '../browser/actionOutcome'
 import { resultOpenedLine } from '../pipeline/resultPick'
 import {
   RUN_TRACE_VERSION,
@@ -89,6 +90,8 @@ export function pipelineEventTraceBody(event: PipelineEvent, agentId?: string): 
   // text carries the marker above the page a Result Pick opened from it, so
   // the landing the call settled on is read below the Opened line.
   const emptyLanding = event.ok ? parseEmptyMarker(settledText(event.result, event.resultPick)) : null
+  // An Unfinished Load (#309) says so on the outcome's first line.
+  const unfinishedLoad = event.ok && isUnfinishedLoad(event.result)
   return {
     kind: 'pipeline_event',
     event: whole ? event : { ...event, result: event.result.slice(0, TRACE_TOOL_RESULT_MAX_CHARS) },
@@ -96,6 +99,7 @@ export function pipelineEventTraceBody(event: PipelineEvent, agentId?: string): 
     ...(notFound !== null ? { notFound } : {}),
     ...(unavailable !== null ? { unavailable } : {}),
     ...(emptyLanding !== null ? { emptyLanding } : {}),
+    ...(unfinishedLoad ? { unfinishedLoad: true as const } : {}),
     ...rewritten,
     ...unquoted,
     ...engineRewrite,

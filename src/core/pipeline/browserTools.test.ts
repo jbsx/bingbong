@@ -73,6 +73,8 @@ class FixtureBrowserController implements BrowserController {
 
   /** What a click answers; a landing click reports `urlChanged=true`. */
   clickResult = 'click outcome'
+  /** What typing answers. */
+  typeResult = 'type outcome'
 
   async click(ref: number): Promise<string> {
     this.clicks.push(ref)
@@ -81,7 +83,7 @@ class FixtureBrowserController implements BrowserController {
 
   async type(ref: number, text: string): Promise<string> {
     this.typed.push({ ref, text })
-    return 'type outcome'
+    return this.typeResult
   }
 
   async scroll(direction: 'up' | 'down'): Promise<string> {
@@ -359,11 +361,47 @@ describe('an Empty Landing rides the Action Outcome (#304, note on ADR 0058)', (
     expect(await resultsOf(browser, [{ id: 'c1', name: 'back', args: {} }])).toEqual([browser.settledOutcome])
   })
 
-  it('marks no click that changed the URL and showed no text: its snapshot is taken before the page renders (#309)', async () => {
+  it('marks a click and a type that arrived at another document and showed no text (#309)', async () => {
     const browser = emptyPage()
-    browser.clickResult = `clicked [7]: urlChanged=true dialogOpen=false; page signature changed\n${TEMPLATE}`
+    browser.clickResult = `clicked [7]: urlChanged=true dialogOpen=false; page signature changed; url=${RMG_URL} title="x"; arrived at another page\n${TEMPLATE}`
+    browser.typeResult = `typed [4]: field unavailable after page change; url=${RMG_URL} title="x"; arrived at another page\n${TEMPLATE}`
+
+    const [clicked, typed] = await resultsOf(browser, [
+      { id: 'c1', name: 'click', args: { ref: 7 } },
+      { id: 'c2', name: 'type', args: { ref: 4, text: 'H4\n' } },
+    ])
+
+    const marker = '\nEMPTY:no-text www.rmg.co.uk\nThis page showed no text. If it should hold content, read it or Look at it once; otherwise use another source.'
+    expect(clicked).toBe(`${browser.clickResult}${marker}`)
+    expect(typed).toBe(`${browser.typeResult}${marker}`)
+  })
+
+  it('marks an Unfinished Load that showed no text, beside its own clause (#309)', async () => {
+    const browser = emptyPage()
+    const unfinished = 'the page was still loading when the wait for it ended at 10 s, so what is shown may be less than the page'
+    browser.clickResult = `clicked [7]: urlChanged=true dialogOpen=false; page signature changed; url=${RMG_URL} title=""; arrived at another page; ${unfinished}\n${TEMPLATE}`
+
+    const [clicked] = await resultsOf(browser, [{ id: 'c1', name: 'click', args: { ref: 7 } }])
+
+    expect(clicked).toContain(unfinished)
+    expect(clicked).toContain('\nEMPTY:no-text www.rmg.co.uk\n')
+  })
+
+  it('marks no click that changed the address inside one document, however little it showed (#309)', async () => {
+    const browser = emptyPage()
+    browser.clickResult = `clicked [7]: urlChanged=true dialogOpen=false; page signature changed; url=${RMG_URL}#objects title="x"\n${TEMPLATE}`
 
     expect(await resultsOf(browser, [{ id: 'c1', name: 'click', args: { ref: 7 } }])).toEqual([browser.clickResult])
+  })
+
+  it('carries a Not-found marker alone on a type that arrived at a page naming nothing (#309)', async () => {
+    const browser = emptyPage('Page not found')
+    browser.typeResult = `typed [4]: field unavailable after page change; url=${RMG_URL} title="Page not found"; arrived at another page\n${TEMPLATE}`
+
+    const [typed] = await resultsOf(browser, [{ id: 'c1', name: 'type', args: { ref: 4, text: 'H4\n' } }])
+
+    expect(typed).toContain('NOT-FOUND:title www.rmg.co.uk')
+    expect(typed).not.toContain('EMPTY:')
   })
 })
 

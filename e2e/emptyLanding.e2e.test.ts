@@ -107,7 +107,7 @@ describe('Empty Landing e2e (#304)', () => {
 
     const traced = harness.readRunTrace() as { kind?: string; v?: number; event?: { type?: string; callId?: string }; emptyLanding?: { host: string } }[]
     const record = traced.find((entry) => entry.kind === 'pipeline_event' && entry.event?.type === 'tool_result' && entry.event.callId === 'landing')
-    expect(record).toMatchObject({ v: 9, emptyLanding: { host } })
+    expect(record).toMatchObject({ v: 11, emptyLanding: { host } })
     const others = traced.filter((entry) => entry.kind === 'pipeline_event' && entry.event?.type === 'tool_result' && entry.event.callId !== 'landing')
     expect(others.filter((entry) => entry.emptyLanding !== undefined)).toEqual([])
   })

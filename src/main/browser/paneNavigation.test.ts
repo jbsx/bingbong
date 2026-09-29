@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { UnsettledActionError } from '../../core/browser/unsettledAction'
 import { FakeClock, flushMicrotasks } from '../../core/testing/doubles'
-import { HISTORY_STEP_TIMEOUT_MS, LOAD_TIMEOUT_MS, createPaneNavigation, type PaneNavigationTarget } from './paneNavigation'
+import {
+  ARRIVAL_LOAD_TIMEOUT_MS,
+  HISTORY_STEP_TIMEOUT_MS,
+  LOAD_TIMEOUT_MS,
+  createPaneNavigation,
+  type PaneNavigationTarget,
+} from './paneNavigation'
 
 /**
  * A webContents that does not cooperate: `loadURL` returns a promise
@@ -11,9 +17,12 @@ import { HISTORY_STEP_TIMEOUT_MS, LOAD_TIMEOUT_MS, createPaneNavigation, type Pa
 function fakeWebContents(overrides: Partial<PaneNavigationTarget> = {}) {
   let settleLoad: ((outcome: { ok: true } | { ok: false; error: Error }) => void) | null = null
   let navigated: (() => void) | null = null
-  const listeners: { event: string; listener: (event: unknown, url: string, detail: number | boolean) => void }[] = []
+  const listeners: { event: string; listener: (event: unknown, url?: string, detail?: number | boolean) => void }[] = []
+  const fire = (event: string, ...args: [unknown?, string?, (number | boolean)?]) => {
+    for (const entry of listeners) if (entry.event === event) entry.listener(...args)
+  }
   const target: PaneNavigationTarget = {
-    on: ((event: string, listener: (event: unknown, url: string, detail: number | boolean) => void) => {
+    on: ((event: string, listener: (event: unknown, url?: string, detail?: number | boolean) => void) => {
       listeners.push({ event, listener })
     }) as unknown as PaneNavigationTarget['on'],
     loadURL: () =>
@@ -42,13 +51,14 @@ function fakeWebContents(overrides: Partial<PaneNavigationTarget> = {}) {
     failLate: (error: Error) => settleLoad?.({ ok: false, error }),
     fireDidNavigate: () => navigated?.(),
     /** A main-frame navigation commits with this top-level response code. */
-    commit: (url: string, httpResponseCode: number) => {
-      for (const entry of listeners) if (entry.event === 'did-navigate') entry.listener({}, url, httpResponseCode)
-    },
+    commit: (url: string, httpResponseCode: number) => fire('did-navigate', {}, url, httpResponseCode),
     /** An in-page navigation — a pushState route change or an anchor — in the main frame or a subframe. */
-    inPage: (url: string, isMainFrame: boolean) => {
-      for (const entry of listeners) if (entry.event === 'did-navigate-in-page') entry.listener({}, url, isMainFrame)
-    },
+    inPage: (url: string, isMainFrame: boolean) => fire('did-navigate-in-page', {}, url, isMainFrame),
+    /** A navigation starts, in the main frame or a subframe, to another document or inside this one. */
+    start: (details: { isMainFrame: boolean; isSameDocument: boolean }) =>
+      fire('did-start-navigation', { url: 'https://example.com/next', ...details }),
+    /** The tab stops loading: the load it was on finished, failed or was cancelled. */
+    stopLoading: () => fire('did-stop-loading'),
   }
 }
 
@@ -172,5 +182,123 @@ describe('createPaneNavigation', () => {
     expect(page.title()).toBe('Example')
     page.focus()
     expect(focused).toBe(0)
+  })
+})
+
+describe('an action’s page arrival (#309, ADR 0027)', () => {
+  const toAnotherDocument = { isMainFrame: true, isSameDocument: false }
+
+  it('is none when the action started no navigation, and waits for nothing', async () => {
+    const wc = fakeWebContents()
+    const page = createPaneNavigation(wc.target, new FakeClock())
+
+    const watch = page.watchArrival!()
+    await expect(watch.arrival()).resolves.toBe('none')
+  })
+
+  it('is none for a change of address inside the document, and for a subframe’s navigation', async () => {
+    const wc = fakeWebContents()
+    const page = createPaneNavigation(wc.target, new FakeClock())
+
+    const watch = page.watchArrival!()
+    wc.start({ isMainFrame: true, isSameDocument: true })
+    wc.start({ isMainFrame: false, isSameDocument: false })
+    await expect(watch.arrival()).resolves.toBe('none')
+  })
+
+  it('waits for the load of a navigation to another document the action started, however late it commits', async () => {
+    const wc = fakeWebContents()
+    const page = createPaneNavigation(wc.target, new FakeClock())
+
+    const watch = page.watchArrival!()
+    // A link to a slow server: the navigation has started, nothing has committed.
+    wc.start(toAnotherDocument)
+    let arrival: string | undefined
+    void watch.arrival().then((value) => (arrival = value))
+    await flushMicrotasks()
+    expect(arrival).toBeUndefined()
+
+    wc.commit('https://example.com/next', 200)
+    await flushMicrotasks()
+    expect(arrival).toBeUndefined()
+
+    wc.stopLoading()
+    await flushMicrotasks()
+    expect(arrival).toBe('loaded')
+  })
+
+  it('is loaded at once when the load finished before it was asked', async () => {
+    const wc = fakeWebContents()
+    const page = createPaneNavigation(wc.target, new FakeClock())
+
+    const watch = page.watchArrival!()
+    wc.start(toAnotherDocument)
+    wc.stopLoading()
+    await expect(watch.arrival()).resolves.toBe('loaded')
+  })
+
+  it('ignores a navigation that started before the watch and a load that stopped before the navigation', async () => {
+    const wc = fakeWebContents()
+    const clock = new FakeClock()
+    const page = createPaneNavigation(wc.target, clock)
+
+    wc.start(toAnotherDocument)
+    const watch = page.watchArrival!()
+    await expect(watch.arrival()).resolves.toBe('none')
+
+    const next = page.watchArrival!()
+    wc.stopLoading()
+    wc.start(toAnotherDocument)
+    const arrival = next.arrival()
+    clock.advance(ARRIVAL_LOAD_TIMEOUT_MS)
+    await expect(arrival).resolves.toBe('unfinished')
+  })
+
+  it('ends at 10 s as an Unfinished Load when the load never finishes, and nothing is left pending', async () => {
+    const wc = fakeWebContents()
+    const clock = new FakeClock()
+    const page = createPaneNavigation(wc.target, clock)
+
+    const watch = page.watchArrival!()
+    wc.start(toAnotherDocument)
+    let arrival: string | undefined
+    void watch.arrival().then((value) => (arrival = value))
+    clock.advance(ARRIVAL_LOAD_TIMEOUT_MS - 1)
+    await flushMicrotasks()
+    expect(arrival).toBeUndefined()
+
+    clock.advance(1)
+    await flushMicrotasks()
+    expect(arrival).toBe('unfinished')
+    expect(ARRIVAL_LOAD_TIMEOUT_MS).toBe(10_000)
+
+    // The load finishing afterwards changes nothing that was reported.
+    wc.stopLoading()
+    await flushMicrotasks()
+    expect(arrival).toBe('unfinished')
+  })
+
+  it('a history step waits for the load it started, not for its commit alone', async () => {
+    const wc = fakeWebContents({
+      navigationHistory: {
+        canGoBack: () => true,
+        canGoForward: () => true,
+        goBack: () => wc.start(toAnotherDocument),
+        goForward: () => {},
+      },
+    })
+    const page = createPaneNavigation(wc.target, new FakeClock())
+
+    const watch = page.watchArrival!()
+    const back = page.goBack()
+    wc.fireDidNavigate()
+    await back
+    let arrival: string | undefined
+    void watch.arrival().then((value) => (arrival = value))
+    await flushMicrotasks()
+    expect(arrival).toBeUndefined()
+    wc.stopLoading()
+    await flushMicrotasks()
+    expect(arrival).toBe('loaded')
   })
 })

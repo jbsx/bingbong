@@ -1,5 +1,7 @@
-// #304, note on ADR 0058: the Empty Landing. A navigation or a step through
-// history that settled on a page the Run was shown no text from, and that is
+// #304, note on ADR 0058: the Empty Landing. A browser action arriving at
+// another document — a navigation, a step through history, and since #309 a
+// click or typing that left for one — and settling on a page the Run was
+// shown no text from, and that is
 // no Blocker, Not-found Page or Unavailable Page. It is a fact about what
 // the Run was shown, never about the page or its address: a site's template
 // around nothing, a document whose text was not collected and a page not
@@ -15,6 +17,7 @@
 
 import type { ToolResultOutcome } from '../ports/llm'
 import { reportFault } from '../trace/fault.ts'
+import { arrivedAtAnotherDocument } from './actionOutcome.ts'
 
 /** One Empty Landing as a marker line parses to. */
 export interface EmptyLanding {
@@ -71,16 +74,30 @@ export function parseEmptyMarker(text: string): EmptyLanding | null {
   return last
 }
 
-/** The navigation verbs: each settles on a page, whatever it was before, and only they carry the marker. */
+/** The navigation verbs: each settles on a page, whatever it was before. */
 export const NAVIGATION_VERBS: ReadonlySet<string> = new Set(['navigate', 'back', 'go_forward'])
 
+/** The verbs that arrive at another document when their outcome's first line says so (#309). */
+const ARRIVING_INPUT_VERBS: ReadonlySet<string> = new Set(['click', 'type'])
+
 /**
- * Whether a successful call settled on an Empty Landing: a navigation verb
- * whose outcome carries the marker. A Page Read of a page whose own text
- * holds such a line settled nowhere.
+ * Whether a call arrived at another document (#309): a navigation verb by
+ * its verb, a click or a type by the clause its outcome's first line
+ * carries. A click that changed the address inside its document carries
+ * none, and arrived nowhere. Only such a call carries the marker.
+ */
+export function arrivedAtDocument(toolName: string, result: string): boolean {
+  if (NAVIGATION_VERBS.has(toolName)) return true
+  return ARRIVING_INPUT_VERBS.has(toolName) && arrivedAtAnotherDocument(result)
+}
+
+/**
+ * Whether a successful call settled on an Empty Landing: a call that
+ * arrived at another document and whose outcome carries the marker. A Page
+ * Read of a page whose own text holds such a line settled nowhere.
  */
 export function settledOnEmptyLanding(toolName: string, outcome: ToolResultOutcome): boolean {
-  return NAVIGATION_VERBS.has(toolName) && outcome.ok && typeof outcome.result === 'string' && parseEmptyMarker(outcome.result) !== null
+  return outcome.ok && typeof outcome.result === 'string' && arrivedAtDocument(toolName, outcome.result) && parseEmptyMarker(outcome.result) !== null
 }
 
 /**

@@ -122,8 +122,9 @@ import { reportFault } from '../trace/fault'
 // that the user answered — the Tool Round says beside them.
 //
 // #304 (note on ADR 0058) added a fourth landing that holds: an Empty
-// Landing, a navigate, a back or a go_forward that settled on a page the
-// Run was shown no text from, read from its `EMPTY:` marker by
+// Landing, a navigate, a back or a go_forward — and since #309 a click or a
+// type that arrived at another document — that settled on a page the Run
+// was shown no text from, read from its `EMPTY:` marker by
 // `settledOnEmptyLanding` in emptyLanding.ts. The Page Read that returns text
 // from that page is the escape the landing was not, until the next page
 // arrival; the rail holds whether one is unread beside the streak.

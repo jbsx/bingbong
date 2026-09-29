@@ -45,7 +45,7 @@ import { classifyNotFoundPage, NOT_FOUND_BASES, type NotFoundBasis, type NotFoun
 import { offLanguageRenderings } from '../../src/core/agent/answerLanguage.ts'
 import { isPartPastTheEnd } from '../../src/core/browser/pageText.ts'
 import { classifyUnavailablePage, isUnavailableBasis, type UnavailableLanding } from '../../src/core/browser/unavailablePage.ts'
-import { classifyEmptyLanding, isPageArrival, NAVIGATION_VERBS, pageReadReturnedText, type EmptyLanding } from '../../src/core/browser/emptyLanding.ts'
+import { arrivedAtDocument, classifyEmptyLanding, isPageArrival, NAVIGATION_VERBS, pageReadReturnedText, showedNoPageText, type EmptyLanding } from '../../src/core/browser/emptyLanding.ts'
 import type { ComposedAddressRewriteStamp } from '../../src/core/pipeline/composedAddressRail.ts'
 import type { UnseenPhraseRewriteStamp } from '../../src/core/pipeline/unseenPhraseRail.ts'
 import type { EngineRewriteStamp } from '../../src/core/pipeline/engineRewriteRail.ts'
@@ -207,6 +207,13 @@ export const TIER_ESCALATION_DECLINE_TRACE_VERSION = 5
 export const ANSWER_CHECKPOINT_TRACE_VERSION = 6
 /** The Run Trace version from which a result's record says an Empty Landing as a field (#304); a record below it is read by the result's shape. */
 export const EMPTY_LANDING_TRACE_VERSION = 9
+/**
+ * The Run Trace version from which a click or a type says on its result
+ * that it arrived at another document, and a result carries an Unfinished
+ * Load as a field (#309); below it an arrival is read by the result's shape
+ * and no Unfinished Load was possible.
+ */
+export const PAGE_ARRIVAL_TRACE_VERSION = 11
 /** How far apart a perf `llm` span's end and an `llm_round` record may be and still be the same round. */
 const LATENCY_JOIN_TOLERANCE_MS = 2_000
 /** A search at this streak followed a search with nothing opened between them (ADR 0058): no Progress. */
@@ -327,6 +334,18 @@ export interface AuditCall {
    * that read, so an attempt with none keeps its digest.
    */
   readonly readEmptyLanding?: true
+  /**
+   * A page arrival by a click, a type or a step through history (#309, note
+   * on ADR 0027): whether the page it settled on showed the Run no text, and
+   * whether its load was an Unfinished Load. On a trace written at version
+   * 11 or later a click or a type arrived when its outcome said so; on an
+   * older one by its shape — a click that left the URL, typing the page
+   * changed under — which cannot tell a change of address inside one
+   * document. No text is read off the whole result, or an Empty Landing's
+   * field. A navigate's load is the action, and is none. Present only on an
+   * arrival, so an attempt with none keeps its digest.
+   */
+  readonly arrival?: PageArrivalOutcome
   /**
    * The search a Composed Address was rewritten into (#255, ADR 0055): the
    * query that ran, read from the Run Trace's field on the result, while
@@ -638,6 +657,14 @@ export interface AuditMechanical {
    * gated.
    */
   readonly emptyLandings?: EmptyLandingRounds
+  /**
+   * The page arrivals by a click, a type or a step through history (#309,
+   * note on ADR 0027): the round of every one, one entry per call; of those,
+   * the ones that showed no text; and the Unfinished Loads. Beside the
+   * rounds, never in them. Absent on an audit written before the counter.
+   * Reported, never gated.
+   */
+  readonly pageArrivals?: PageArrivalRounds
   /**
    * The reads refused as past the end (#290): the round of every `read_page`
    * call the app answered with its refusal for a part the page does not
@@ -1004,6 +1031,8 @@ export interface AuditPopulation {
   readonly unavailableLandings?: Readonly<Record<keyof UnavailableLandingRounds, number>>
   /** Empty Landings, those followed by a search and those read with text, over the attempts that count them (#304); absent when none does. */
   readonly emptyLandings?: Readonly<EmptyLandingCounts>
+  /** Page arrivals by a click, a type or a step through history, those that showed no text and Unfinished Loads, over the attempts that count them (#309); absent when none does. */
+  readonly pageArrivals?: Readonly<PageArrivalCounts>
   /** Consent dismissals, hand consent clicks, and blocks a hand consent click followed, over the attempts that count them (#263); absent when none does. */
   readonly consentWalls?: Readonly<ConsentWallCounts>
   /** Window opens followed into the pane and denied, over the attempts that count them (#299); absent when none does. */
@@ -1522,6 +1551,14 @@ function emptyLandingsText(counted: EmptyLandingRounds | undefined): string {
     : `Empty Landings ${roundsText(counted.landings)}; followed by a search: ${roundsText(counted.followedBySearch)}; read with text: ${roundsText(counted.readWithText)}`
 }
 
+const PAGE_ARRIVALS = 'page arrivals by a click, a type or a step through history'
+
+function pageArrivalsText(counted: PageArrivalRounds | undefined): string {
+  return counted === undefined
+    ? 'page arrivals not counted'
+    : `${PAGE_ARRIVALS} ${roundsText(counted.arrivals)}; showed no text: ${roundsText(counted.withoutText)}; Unfinished Loads: ${roundsText(counted.unfinishedLoads)}`
+}
+
 function consentWallsText(counted: ConsentWallRounds | undefined): string {
   return counted === undefined
     ? 'consent walls not counted'
@@ -1613,6 +1650,12 @@ function populationUnavailableLandingsText(counted: AuditPopulation['unavailable
     : `${counted.status + counted.title} Unavailable Landing(s) (${counted.status} by status, ${counted.title} by title), ${counted.followedBySearch} followed by a search`
 }
 
+function populationPageArrivalsText(counted: AuditPopulation['pageArrivals']): string {
+  return counted === undefined
+    ? 'page arrivals not counted'
+    : `${counted.arrivals} page arrival(s) by a click, a type or a step through history, ${counted.withoutText} that showed no text, ${counted.unfinishedLoads} Unfinished Load(s)`
+}
+
 function populationEmptyLandingsText(counted: AuditPopulation['emptyLandings']): string {
   return counted === undefined
     ? 'Empty Landings not counted'
@@ -1700,6 +1743,12 @@ interface ResultFields {
    * text whole — a page of many refs cut before its page text shows none.
    */
   readableByShape: boolean
+  /** Whether the record carries an Unfinished Load as a field (#309). */
+  unfinishedLoad: boolean
+  /** Whether the record was written when a click or a type said its arrival at another document (#309). */
+  saysArrival: boolean
+  /** Whether the trace kept the result's text whole, so what it did not show can be read off it. */
+  wholeResult: boolean
   rewritten: ComposedAddressRewriteStamp | null
   unquoted: UnseenPhraseRewriteStamp | null
   engineRewrite: EngineRewriteStamp | null
@@ -1766,6 +1815,11 @@ function emptyLandingFieldOf(record: TraceLine): EmptyLanding | null {
 /** Whether a `tool_result` record predates the Empty Landing field and holds its text whole (#304). */
 function readableByShapeOf(record: TraceLine, event: Record<string, unknown>): boolean {
   if (isFiniteNumber(record.v) && record.v >= EMPTY_LANDING_TRACE_VERSION) return false
+  return wholeResultOf(record, event)
+}
+
+/** Whether a `tool_result` record holds its text whole: the trace cuts a long one and keeps its length beside it. */
+function wholeResultOf(record: TraceLine, event: Record<string, unknown>): boolean {
   if (!isString(event.result)) return false
   return !isFiniteNumber(record.chars) || record.chars <= event.result.length
 }
@@ -1847,6 +1901,9 @@ function rawRounds(records: readonly TraceLine[]): RawRound[] {
         unavailable: unavailableFieldOf(record),
         emptyLanding: emptyLandingFieldOf(record),
         readableByShape: readableByShapeOf(record, event),
+        unfinishedLoad: record.unfinishedLoad === true,
+        saysArrival: isFiniteNumber(record.v) && record.v >= PAGE_ARRIVAL_TRACE_VERSION,
+        wholeResult: wholeResultOf(record, event),
         rewritten: rewrittenFieldOf(record),
         unquoted: unquotedFieldOf(record),
         engineRewrite: engineRewriteFieldOf(record),
@@ -1893,6 +1950,9 @@ function rawRounds(records: readonly TraceLine[]): RawRound[] {
       unavailable: settled?.unavailable ?? null,
       emptyLanding: settled?.emptyLanding ?? null,
       readableByShape: settled?.readableByShape ?? false,
+      unfinishedLoad: settled?.unfinishedLoad ?? false,
+      saysArrival: settled?.saysArrival ?? false,
+      wholeResult: settled?.wholeResult ?? false,
       rewritten: settled?.rewritten ?? null,
       unquoted: settled?.unquoted ?? null,
       engineRewrite: settled?.engineRewrite ?? null,
@@ -2503,6 +2563,38 @@ export function emptyLandingsOf(rounds: readonly AuditRound[]): EmptyLandingRoun
   return { landings, followedBySearch, readWithText }
 }
 
+/** What a page arrival was (#309): the page showed no text, its load was an Unfinished Load; neither, and neither field is present. */
+export interface PageArrivalOutcome {
+  readonly noText?: true
+  readonly unfinished?: true
+}
+
+/** The rounds of an attempt's page arrivals by a click, a type or a step through history, of those that showed no text, and of its Unfinished Loads (#309). */
+export interface PageArrivalRounds {
+  readonly arrivals: readonly number[]
+  readonly withoutText: readonly number[]
+  readonly unfinishedLoads: readonly number[]
+}
+
+/** The same three as counts: over a population, or a recount. */
+export type PageArrivalCounts = Record<keyof PageArrivalRounds, number>
+
+/** An attempt's page arrivals over its rounds as audited (#309, note on ADR 0027): one entry per call. Reported, never gated. */
+export function pageArrivalsOf(rounds: readonly AuditRound[]): PageArrivalRounds {
+  const arrivals: number[] = []
+  const withoutText: number[] = []
+  const unfinishedLoads: number[] = []
+  for (const round of rounds) {
+    for (const call of round.calls) {
+      if (call.arrival === undefined) continue
+      arrivals.push(round.round)
+      if (call.arrival.noText === true) withoutText.push(round.round)
+      if (call.arrival.unfinished === true) unfinishedLoads.push(round.round)
+    }
+  }
+  return { arrivals, withoutText, unfinishedLoads }
+}
+
 /**
  * The rounds of an attempt's reads refused as past the end (#290): one entry
  * per `read_page` call the app answered with its refusal for a part the page
@@ -2902,12 +2994,31 @@ function unavailableByTitle(name: string, text: string | null, page: { url: stri
 /**
  * An Empty Landing on a trace written before the Run Trace kept the field
  * (#304): the app's own reading of the result the Run was shown, on the
- * calls that carry the marker live — the navigation verbs, never a click.
+ * navigation verbs alone. A click or a type carries the marker live since
+ * #309, but one in a trace this old came back before its page loaded, so
+ * what it showed says nothing of the page.
  */
 function emptyLandingByShape(name: string, text: string | null, page: { url: string; title: string | null } | null): EmptyLanding | null {
   if (page === null || text === null || !NAVIGATION_VERBS.has(name)) return null
   const verdict = classifyEmptyLanding({ url: page.url, outcome: text })
   return verdict === null ? null : { host: verdict.host }
+}
+
+/** The verbs whose page arrivals are counted (#309): a navigate's load is the action, and is none of them. */
+const COUNTED_ARRIVAL_VERBS: ReadonlySet<string> = new Set(['click', 'type', 'back', 'go_forward'])
+
+/**
+ * A call's page arrival (#309, note on ADR 0027), or null: a click or a
+ * type by the clause its outcome carries on a trace written when it said
+ * so, else by the result's shape, and a step through history by its verb.
+ * It showed no text when an Empty Landing says so or the whole result
+ * does; an Unfinished Load is the record's field.
+ */
+function pageArrivalOf(name: string, text: string, entry: ResultFields, emptyLanding: boolean): PageArrivalOutcome | null {
+  if (!COUNTED_ARRIVAL_VERBS.has(name)) return null
+  if (!(entry.saysArrival ? arrivedAtDocument(name, text) : isPageArrival(name, text))) return null
+  const noText = emptyLanding || (entry.wholeResult && showedNoPageText(text))
+  return { ...(noText ? { noText: true as const } : {}), ...(entry.unfinishedLoad ? { unfinished: true as const } : {}) }
 }
 
 /** The calls that carry a landing marker live: the navigation verbs, and a click that left the page. */
@@ -2982,6 +3093,8 @@ function classifyCall(
     result !== undefined && result.ok && !refused && wall === null && landing === null && unavailable === null
       ? (entry.emptyLanding ?? (entry.readableByShape ? emptyLandingByShape(call.name, settled, page) : null))
       : null
+  // A page arrival by a click, a type or a step through history (#309).
+  const arrival = result !== undefined && result.ok && !refused && text !== null ? pageArrivalOf(call.name, text, entry, emptyLanding !== null) : null
   const notices = noticesOf(text)
   // What a call that acts on no page delivered that the head kept below
   // cannot say (#293): the user's answer by the trace's own resolution, and
@@ -3024,6 +3137,7 @@ function classifyCall(
     ...(landing !== null ? { notFound: `${landing.basis} ${landing.host}` } : {}),
     ...(unavailable !== null ? { unavailable: `${unavailable.basis} ${unavailable.host}` } : {}),
     ...(emptyLanding !== null ? { emptyLanding: emptyLanding.host } : {}),
+    ...(arrival !== null ? { arrival } : {}),
     ...(entry.rewritten !== null ? { rewritten: entry.rewritten.query } : {}),
     ...(entry.unquoted !== null ? { unquoted: entry.unquoted.phrases } : {}),
     ...(entry.engineRewrite !== null ? { engineRewrite: `${entry.engineRewrite.from} → ${entry.engineRewrite.to}` } : {}),
@@ -3219,6 +3333,35 @@ export function emptyLandingMarksOf(traceRecords: readonly object[]): EmptyLandi
       const { call } = classifyCall(entry, state, null, observations.size > 0 ? observations : null)
       if (call.emptyLanding !== undefined) marks.push({ round: index + 1, call: position, name: call.name, host: call.emptyLanding })
       if (call.readEmptyLanding === true) marks.push({ round: index + 1, call: position, name: call.name, read: true })
+    })
+  })
+  return marks
+}
+
+/** One page arrival by where an attempt's rounds hold it (#309), and what it was. */
+export interface PageArrivalMark extends PageArrivalOutcome {
+  /** The digest's round number, and the call's position in that round from 0. */
+  readonly round: number
+  readonly call: number
+  /** The tool, so a recount can tell it found the call the mark was read from. */
+  readonly name: string
+}
+
+/**
+ * The page arrivals of one attempt's Run Trace (#309), as `classifyAttempt`
+ * marks them and by the same reading. What the Fix Ledger recounts an audit
+ * written before the counter from: a committed audit keeps 240 characters
+ * of a result, which cannot say whether the page showed text.
+ */
+export function pageArrivalMarksOf(traceRecords: readonly object[]): PageArrivalMark[] {
+  const records = traceRecords as unknown as readonly TraceLine[]
+  const observations = railObservationsOf(records)
+  const state: ProgressState = { acquiredUrls: new Set(), observed: new Set(), currentUrl: null, search: newSearchStreakState() }
+  const marks: PageArrivalMark[] = []
+  rawRounds(records).forEach((round, index) => {
+    round.calls.forEach((entry, position) => {
+      const { call } = classifyCall(entry, state, null, observations.size > 0 ? observations : null)
+      if (call.arrival !== undefined) marks.push({ round: index + 1, call: position, name: call.name, ...call.arrival })
     })
   })
   return marks
@@ -3947,6 +4090,7 @@ export function classifyAttempt(input: AuditTraceInput): AuditMechanical {
     blockedOrInert: blockedOrInertOf(rounds),
     unavailableLandings: unavailableLandingsOf(rounds),
     emptyLandings: emptyLandingsOf(rounds),
+    pageArrivals: pageArrivalsOf(rounds),
     pastTheEndReads: pastTheEndReadsOf(rounds),
     // Beside the rounds (#288, ADR 0072): what the Run's Answers carried to
     // be recorded, where its trace is new enough to have said.
@@ -4056,6 +4200,7 @@ export function digestCallLines(call: AuditCall): string[] {
     call.unavailable !== undefined ? `  landing: Unavailable Page (${call.unavailable})` : '',
     call.emptyLanding !== undefined ? `  landing: Empty Landing (${call.emptyLanding})` : '',
     call.readEmptyLanding === true ? '  read: returned text from the page the Empty Landing settled on' : '',
+    call.arrival !== undefined ? `  arrival: another page${call.arrival.noText === true ? ', which showed no text' : ''}${call.arrival.unfinished === true ? '; an Unfinished Load' : ''}` : '',
     digestSearchLine(call),
     digestResultPickLine(call),
     call.wall ? `  wall: ${call.wall}` : '',
@@ -4553,6 +4698,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
   let blockedOrInert: Record<keyof BlockedOrInertCounts, number> | undefined
   let unavailableLandings: Record<keyof UnavailableLandingRounds, number> | undefined
   let emptyLandings: EmptyLandingCounts | undefined
+  let pageArrivals: PageArrivalCounts | undefined
   let consentWalls: ConsentWallCounts | undefined
   let windowOpens: WindowOpenCounts | undefined
   let tierEscalations: TierEscalationCounts | undefined
@@ -4670,6 +4816,12 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
       emptyLandings.followedBySearch += mechanical.emptyLandings.followedBySearch.length
       emptyLandings.readWithText += mechanical.emptyLandings.readWithText.length
     }
+    if (mechanical.pageArrivals !== undefined) {
+      pageArrivals ??= { arrivals: 0, withoutText: 0, unfinishedLoads: 0 }
+      pageArrivals.arrivals += mechanical.pageArrivals.arrivals.length
+      pageArrivals.withoutText += mechanical.pageArrivals.withoutText.length
+      pageArrivals.unfinishedLoads += mechanical.pageArrivals.unfinishedLoads.length
+    }
     if (mechanical.consentWalls !== undefined) addConsentWalls((consentWalls ??= emptyConsentWallCounts()), mechanical.consentWalls)
     if (mechanical.windowOpens !== undefined) {
       windowOpens ??= { followed: 0, denied: 0 }
@@ -4747,6 +4899,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
     ...(blockedOrInert === undefined ? {} : { blockedOrInert }),
     ...(unavailableLandings === undefined ? {} : { unavailableLandings }),
     ...(emptyLandings === undefined ? {} : { emptyLandings }),
+    ...(pageArrivals === undefined ? {} : { pageArrivals }),
     ...(consentWalls === undefined ? {} : { consentWalls }),
     ...(windowOpens === undefined ? {} : { windowOpens }),
     ...(tierEscalations === undefined ? {} : { tierEscalations }),
@@ -5278,7 +5431,7 @@ export function restateVerifiedOrUnaskedMarkdown(markdown: string, aggregate: Au
 function judgementLines(populations: readonly AuditPopulation[]): string[] {
   return populations.map(
     (population) =>
-      `- ${population.label}: ${population.offKeyRounds} Off-key round(s), ${population.searchLoopRounds} Search Loop round(s) by the reviewer (${population.mechanicalSearchRounds} by the streak rule, heads included: ${population.searchRoundsAtStreak2} at streak 2 or beyond, ${population.searchRoundsAtStreak3} at 3 or beyond; attempts by search source ${SEARCH_SOURCES.map((source) => `${source} ${population.searchSources[source]}`).join(', ')}; navigate searches by Search URL form ${searchFormsText(population.searchForms)}; ${populationBlockedOrInertText(population.blockedOrInert)}; ${populationUnavailableLandingsText(population.unavailableLandings)}; ${populationEmptyLandingsText(population.emptyLandings)}; ${populationConsentWallsText(population.consentWalls)}; ${populationWindowOpensText(population.windowOpens)}; ${populationTierEscalationsText(population.tierEscalations)}), ` +
+      `- ${population.label}: ${population.offKeyRounds} Off-key round(s), ${population.searchLoopRounds} Search Loop round(s) by the reviewer (${population.mechanicalSearchRounds} by the streak rule, heads included: ${population.searchRoundsAtStreak2} at streak 2 or beyond, ${population.searchRoundsAtStreak3} at 3 or beyond; attempts by search source ${SEARCH_SOURCES.map((source) => `${source} ${population.searchSources[source]}`).join(', ')}; navigate searches by Search URL form ${searchFormsText(population.searchForms)}; ${populationBlockedOrInertText(population.blockedOrInert)}; ${populationUnavailableLandingsText(population.unavailableLandings)}; ${populationEmptyLandingsText(population.emptyLandings)}; ${populationPageArrivalsText(population.pageArrivals)}; ${populationConsentWallsText(population.consentWalls)}; ${populationWindowOpensText(population.windowOpens)}; ${populationTierEscalationsText(population.tierEscalations)}), ` +
       `${population.inheritedRounds} inherited, ${population.rejectedCheckpoints} rejected Evidence Checkpoint(s), ${population.walledRounds} walled round(s), ${population.notFoundNavigates} navigate(s) landed on a Not-found Page (${population.notFoundOffKey} judged Off-key), ${population.rewrittenComposedAddresses ?? 0} Composed Address(es) rewritten into a site search (${population.rewrittenComposedAddressesOffKey ?? 0} judged Off-key, ${population.rewrittenShownAddresses ?? 'not counted'} to an address the Run was shown), ${population.unseenPhraseRewrites ?? 'not counted'} search(es) ran with an Unseen Phrase unquoted (${population.unseenPhraseRewritesOffKey ?? 0} judged Off-key), ${population.engineRewrites ?? 'not counted'} search(es) ran on the Run Engine in place of another Web Engine (${population.engineRewritesOffKey ?? 0} judged Off-key), ${populationResultPicksText(population)}, ${populationSelectedPassagesText(population)}, ${populationRunMadeUseText(population)}, ${populationContradictionNotesText(population)}, ${population.subagentRounds} Subagent round(s), ` +
       `${population.mergedCheckpoints} merged Evidence Checkpoint(s) (a floor), ${population.heldPageRoundsWithoutProgress} Held Page round(s) without Progress, ${population.bundledCheckpoints} bundled checkpoint round(s), ${population.sameSourceUnsupportedRounds} same-source unsupported round(s), ${subagentCitationsText(population.subagentCitations)}, ${populationSlipsText(population)}, ${delegatedPageCountsText(population.delegatedPageRounds)}, ${populationPastTheEndReadsText(population)}, ${populationBookkeepingBeforeAnswerText(population)}, ${populationBookkeepingBeforeCutText(population)}, ${populationAnswerCheckpointsText(population)}, ` +
       `${population.malformedAnswers} Malformed Answer(s) (${population.answerRetries} retried), ${populationOffLanguageAnswersText(population)}, ` +
@@ -5369,6 +5522,7 @@ function attemptSection(attempt: AuditAttempt): string[] {
   lines.push(`- ${blockedOrInertText(mechanical.blockedOrInert)}`)
   lines.push(`- ${unavailableLandingsText(mechanical.unavailableLandings)}`)
   lines.push(`- ${emptyLandingsText(mechanical.emptyLandings)}`)
+  lines.push(`- ${pageArrivalsText(mechanical.pageArrivals)}`)
   lines.push(`- ${consentWallsText(mechanical.consentWalls)}`)
   lines.push(`- ${windowOpensText(mechanical.windowOpens)}`)
   lines.push(`- ${tierEscalationsText(mechanical.tierEscalations)}`)

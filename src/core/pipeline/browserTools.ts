@@ -8,6 +8,7 @@ import { classifyBlockerPage, type BlockerClassification, type BlockerPageFacts 
 import { classifyNotFoundPage, notFoundAdvice } from '../browser/notFoundPage'
 import { classifyUnavailablePage, unavailableAdvice } from '../browser/unavailablePage'
 import { EMPTY_LANDING_ADVICE, classifyEmptyLanding } from '../browser/emptyLanding'
+import { arrivedAtAnotherDocument } from '../browser/actionOutcome'
 import { siteOfHost } from './blockerGate'
 import { tracedVisionRequest } from '../trace/visionTrace'
 import { traceVisionBudget, visionSeam } from './visionSeam'
@@ -70,17 +71,37 @@ function landingSuffix(facts: BlockerPageFacts): string | null {
 // serve (#262), gets the Not-found or Unavailable marker instead: a wall is
 // the fact that decides what to do next, so it wins. A page with none of
 // the three that showed the Run no text is an Empty Landing (#304), read
-// off the outcome itself: the marker says what the Run was shown. A click
-// never carries it — its snapshot is taken before the page renders (#309).
+// off the outcome itself: the marker says what the Run was shown.
 async function withLandingClassification(browser: BrowserController, action: () => Promise<string>): Promise<string> {
   const outcome = await action()
   const facts = await landingFacts(browser)
   const wall = classifyBlockerPage(facts)
   if (wall !== null) return `${outcome}\n${blockerSuffix(wall)}`
+  return withArrivalClassification(outcome, facts)
+}
+
+/** A landing's Not-found, Unavailable or Empty Landing marker, in that order, riding its outcome. */
+function withArrivalClassification(outcome: string, facts: BlockerPageFacts): string {
   const landing = landingSuffix(facts)
   if (landing !== null) return `${outcome}\n${landing}`
   const empty = classifyEmptyLanding({ url: facts.url, outcome })
   return empty === null ? outcome : `${outcome}\n${empty.marker}\n${EMPTY_LANDING_ADVICE}`
+}
+
+/**
+ * A click or a type that left the page (#309). One that arrived at another
+ * document is a landing like a navigate's, bar walls, which stay with the
+ * navigation verbs and read_page as ADR 0010 placed them: it waited for
+ * the load, so a page that showed no text is an Empty Landing. A click
+ * that changed the address inside its document settled on no new document;
+ * a Not-found or Unavailable Page there is still the fact it is (#239,
+ * #262), and nothing else is read off its early snapshot.
+ */
+async function withInputLandingClassification(browser: BrowserController, result: string, leftTheUrl: boolean): Promise<string> {
+  if (arrivedAtAnotherDocument(result)) return withArrivalClassification(result, await landingFacts(browser))
+  if (!leftTheUrl) return result
+  const landing = landingSuffix(await landingFacts(browser))
+  return landing === null ? result : `${result}\n${landing}`
 }
 
 /** The refs each part's last read listed (ADR 0047): near-identical reads are compared part by part. */
@@ -286,7 +307,7 @@ export function createBrowserTools(browser: BrowserController, vision?: VisionDe
       description:
         'Click a ref, then return the URL-change flag, dialog-open flag, clicked state delta, and any coarse page change. When the click meaningfully changes the page (navigation, dialog, state change), the settled page state with fresh refs follows — continue from those refs; ' +
         PAGE_PREVIEW_GUIDANCE +
-        ' A click that lands on a page that names nothing carries a NOT-FOUND marker, and one the site could not serve right now an UNAVAILABLE marker. An inert click returns only the concise no-change line. ' + BLOCKED_ACTION_GUIDANCE,
+        ' A click that opens another page waits for it to load and says it arrived at another page. A click that lands on a page that names nothing carries a NOT-FOUND marker, one the site could not serve right now an UNAVAILABLE marker, and one that arrived at a page that showed no text an EMPTY marker. An inert click returns only the concise no-change line. ' + BLOCKED_ACTION_GUIDANCE,
       parameters: {
         ref: { type: 'integer', description: 'Element ref number from the snapshot, e.g. 7 for the element shown as [7]' },
       },
@@ -297,12 +318,9 @@ export function createBrowserTools(browser: BrowserController, vision?: VisionDe
         // A click that left the page settled on a new landing, and a
         // Not-found or Unavailable Page there is the same fact it is after
         // a navigate (#239, #262). A click that stayed put landed nowhere
-        // new. Walls stay with the navigation verbs and read_page, as ADR
-        // 0010 placed them.
-        if (CLICK_LEFT_THE_PAGE_RE.test(result)) {
-          const landing = landingSuffix(await landingFacts(browser))
-          if (landing !== null) return `${result}\n${landing}`
-        }
+        // new.
+        const landed = await withInputLandingClassification(browser, result, CLICK_LEFT_THE_PAGE_RE.test(result))
+        if (landed !== result) return landed
         if (autoVision && /\bno observable change\b/i.test(result)) {
           return `${result}\n${await autoVision(context, 'no observable change')}`
         }
@@ -313,15 +331,16 @@ export function createBrowserTools(browser: BrowserController, vision?: VisionDe
       name: 'type',
       acquisition: true,
       description:
-        'Focus the target ref and type text; no separate click is needed. Returns the field actual current value. For a select ref, type the visible label of the option to choose — keyboard selection; newlines are ignored (a select never submits), and the outcome reports the now-selected option, so a pick that did not land is visible. In other fields a trailing newline ("\\n") sends Enter and may navigate — a page change returns the settled page state with fresh refs. ' + BLOCKED_ACTION_GUIDANCE,
+        'Focus the target ref and type text; no separate click is needed. Returns the field actual current value. For a select ref, type the visible label of the option to choose — keyboard selection; newlines are ignored (a select never submits), and the outcome reports the now-selected option, so a pick that did not land is visible. In other fields a trailing newline ("\\n") sends Enter and may navigate — a page change returns the settled page state with fresh refs, after the page it opened has loaded, and an EMPTY marker when that page showed no text. ' + BLOCKED_ACTION_GUIDANCE,
       parameters: {
         ref: { type: 'integer', description: 'Element ref number to type into' },
         text: { type: 'string', description: 'Text to type' },
       },
       assessRisk: (call) => assessRefAction(browser, call, 'type'),
-      execute(call, context) {
+      async execute(call, context) {
         resetReads(context)
-        return browser.type(refArg(call, 'type'), stringArg(call, 'text', 'type'))
+        const result = await browser.type(refArg(call, 'type'), stringArg(call, 'text', 'type'))
+        return withInputLandingClassification(browser, result, false)
       },
     },
     {

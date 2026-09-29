@@ -59,8 +59,15 @@ import type { VisionRunTraceRecord } from './visionTrace'
  * 9 (#304, note on ADR 0058): a navigate, a `back` or a `go_forward` result
  * with no `emptyLanding` field showed the Run text or carried another
  * landing's marker, which a version-8 trace can say only by its result text.
+ * 10 is #303's (ADR 0070: a result-seam `decision` record's `candidates`),
+ * taken on its branch.
+ * 11 (#309, note on ADR 0027): a click, a type, a `back` or a `go_forward`
+ * result with no `unfinishedLoad` field was no Unfinished Load, and a click
+ * or a type carries an Empty Landing when it arrived at another document,
+ * which a version-9 trace cannot say: its click and type never waited for
+ * the load they started.
  */
-export const RUN_TRACE_VERSION = 9
+export const RUN_TRACE_VERSION = 11
 
 /** How much of a graded observation's retained text a record keeps. */
 export const TRACE_PAYLOAD_HEAD_CHARS = 500
@@ -490,6 +497,13 @@ export interface PipelineEventTraceEvent {
    * on every other result and kind.
    */
   readonly emptyLanding?: EmptyLanding
+  /**
+   * The Unfinished Load a `tool_result` settled on (#309, note on ADR 0027):
+   * a click, a type or a step through history whose page's load had not
+   * finished when the wait for it ended, read off the outcome's first line.
+   * Absent on every other result and kind.
+   */
+  readonly unfinishedLoad?: true
   /**
    * The Composed Address rewrite a `tool_result` opens with (#255, ADR 0055):
    * the site whose allowance was spent and the search that ran in place of

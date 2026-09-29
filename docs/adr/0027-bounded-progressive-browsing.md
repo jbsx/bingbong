@@ -198,3 +198,24 @@ mechanics and encourage redundant reads, clicks, screenshots, and vision calls.
   what the next capture is read against. Closes on tests, one e2e that
   clicks a link to a fixture whose response is held, and the recount; no
   capture.
+- 2026-09-29 (#309, implementation): the pane counts main-frame navigations
+  to another document as `did-start-navigation` reports them and takes the
+  tab's `did-stop-loading` after the latest as its load finishing; an action
+  takes a watch before it acts and asks it after its 300 ms settle.
+  A click or a type that arrived says `arrived at another page` on its
+  outcome's first line, since a change of address inside one document also
+  moves the URL; an Unfinished Load says `the page was still loading when
+  the wait for it ended at 10 s, so what is shown may be less than the
+  page` there too. A `back` and a `go_forward` still wait 15 s for their
+  commit, and then for the load. No tool is named `press_key`: the
+  controller's key press, which `media_control` sends, waits for a load
+  it starts, and no outcome of it carries a page. The Run Trace records
+  `unfinishedLoad` on the tool result and becomes version 11, 10 being
+  #303's on its branch. Recounted from the traces the committed audits
+  name (62 capture sets), 166 clicks arrived, 46 showing no text, and 66
+  types, 7 showing no text; over the 65 sets the grill swept, 170 and 48,
+  the one beyond its 47 a click on `fix-257-3` whose snapshot listed refs
+  and no text, which the grill's count of early snapshots left out. An e2e
+  clicks a link whose document commits at once and whose body is held
+  3 s: without the wait the outcome is `title=""`, `scroll 0/575`, no refs
+  and no text, as the captures showed.

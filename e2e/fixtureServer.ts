@@ -1166,6 +1166,18 @@ export async function startFixtureServer(): Promise<FixtureServer> {
       }, 3_000)
       return
     }
+    // #309: a page whose document commits at once and whose body is held for
+    // 3 s — the page a click opened as the early snapshot saw it, committed
+    // and not yet rendered, its title often still empty.
+    if (req.url === '/slow-body') {
+      res.writeHead(200, { 'Content-Type': 'text/html' })
+      res.write(`<!doctype html><html><head><!-- ${' '.repeat(2_048)} -->`)
+      setTimeout(() => {
+        if (res.destroyed) return
+        res.end('<title>Held body</title></head><body style="background:#222"><main><p style="color:#fff">held body fixture text</p></main></body></html>')
+      }, 3_000)
+      return
+    }
     res.writeHead(200, { 'Content-Type': 'text/html' })
     if (req.url === '/cookie-echo') {
       res.end(page('<h1 style="color:#fff">cookie echo fixture page</h1>'))
@@ -1173,6 +1185,12 @@ export async function startFixtureServer(): Promise<FixtureServer> {
     }
     if (req.url === '/second') {
       res.end(page('<h1 style="color:#fff">second fixture page</h1>'))
+      return
+    }
+    // #309: a link to a page whose response is held (/slow, 3 s). The
+    // click's own outcome carries the page it opened once that page loaded.
+    if (req.url === '/slow-link') {
+      res.end(page('<main><p style="color:#fff">A link to a page served slowly.</p><a href="/slow" style="color:#fff">open the slow page</a> <a href="/slow-body" style="color:#fff">open the held page</a></main>'))
       return
     }
     if (req.url === '/interactive') {

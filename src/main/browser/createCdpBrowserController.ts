@@ -11,7 +11,16 @@ import { settledStateFromSnapshot, type SettledPageState } from '../../core/pipe
 import { blockerFactsFromSnapshot } from '../../core/browser/blockerNudge'
 import type { BrowserSubspans } from '../../core/perf/browserSubspans'
 import { normalizeUrlInput } from '../../core/browser/urlInput'
-import { blockedActionHead, clickFlagsHead, NO_OBSERVABLE_CHANGE, PAGE_SIGNATURE_CHANGED, STATE_DELTA, type BlockedAction } from '../../core/browser/actionOutcome'
+import {
+  ARRIVED_CLAUSE,
+  blockedActionHead,
+  clickFlagsHead,
+  NO_OBSERVABLE_CHANGE,
+  PAGE_SIGNATURE_CHANGED,
+  STATE_DELTA,
+  UNFINISHED_LOAD_CLAUSE,
+  type BlockedAction,
+} from '../../core/browser/actionOutcome'
 import { chooseConsentDismissal, consentDismissalLine, consentRetryNote, isConsentDialog } from '../../core/browser/dialogPolicy'
 import {
   buildPageSnapshot,
@@ -38,11 +47,30 @@ export interface CdpDebugger {
   on?(event: string, handler: (params: unknown) => void): void
 }
 
+/**
+ * What an action's watch saw of the page it left for (#309, ADR 0027): no
+ * main-frame navigation to another document, one whose load finished, or
+ * one whose load had not finished when the bounded wait for it ended — an
+ * Unfinished Load.
+ */
+export type PageArrival = 'none' | 'loaded' | 'unfinished'
+
+/** Taken before an action; asked after it whether the action left for another document, and waits for that load. */
+export interface ArrivalWatch {
+  arrival(): Promise<PageArrival>
+}
+
 // Page-level operations the pane already knows how to do (load, history, url).
 export interface CdpPageDriver {
   loadUrl(url: string): Promise<void>
   goBack(): Promise<void>
   goForward(): Promise<void>
+  /**
+   * Starts watching for a main-frame navigation to another document (#309).
+   * Optional: a driver that cannot see navigations start leaves every
+   * action to its fixed settle.
+   */
+  watchArrival?(): ArrivalWatch
   url(): string
   title(): string
   /**
@@ -289,6 +317,33 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     const start = subspans.now()
     await sleep(ms)
     subspans.emit('browser-settle', subspans.now() - start, { action, ms })
+  }
+
+  /**
+   * #309, ADR 0027: the settle after an action that sends input or steps
+   * through history. The fixed settle it always had; then, when the action
+   * started a main-frame navigation to another document, that document's
+   * load, bounded — an Unfinished Load when the bound ends it — and the
+   * settle again, as a navigate settles after its load. Content is not
+   * waited for, and a change of address inside one document is no arrival.
+   */
+  async function settleArrival(action: string, watch: ArrivalWatch | undefined): Promise<PageArrival> {
+    await settle(action, pacing.settleMs)
+    const arrival = watch === undefined ? 'none' : await watch.arrival()
+    if (arrival === 'none') return arrival
+    lastSnapshot = undefined
+    await settle(action, pacing.settleMs)
+    return arrival
+  }
+
+  /** The clause an Unfinished Load rides its outcome line with; empty for any other arrival. */
+  function unfinishedClause(arrival: PageArrival): string {
+    return arrival === 'unfinished' ? `; ${UNFINISHED_LOAD_CLAUSE}` : ''
+  }
+
+  /** The clauses a click or a type that arrived at another document rides its outcome line with. */
+  function arrivalClauses(arrival: PageArrival): string {
+    return arrival === 'none' ? '' : `; ${ARRIVED_CLAUSE}${unfinishedClause(arrival)}`
   }
 
   /** An extra snapshot round-trip inside an action — one `browser-recollection` sub-span. */
@@ -727,18 +782,22 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     return new Uint8Array(Buffer.from(response.data, 'base64'))
   }
 
+  // A step through history waits for its commit (paneNavigation), then for
+  // the load it started, not for the commit alone (#309).
   async function back(): Promise<string> {
+    const watch = page.watchArrival?.()
     await page.goBack()
     lastSnapshot = undefined
-    await settle('back', pacing.settleMs)
-    return withSettledState(`went back: url=${page.url()} title=${JSON.stringify(page.title())}`)
+    const arrival = await settleArrival('back', watch)
+    return withSettledState(`went back: url=${page.url()} title=${JSON.stringify(page.title())}${unfinishedClause(arrival)}`)
   }
 
   async function forward(): Promise<string> {
+    const watch = page.watchArrival?.()
     await page.goForward()
     lastSnapshot = undefined
-    await settle('forward', pacing.settleMs)
-    return withSettledState(`went forward: url=${page.url()} title=${JSON.stringify(page.title())}`)
+    const arrival = await settleArrival('forward', watch)
+    return withSettledState(`went forward: url=${page.url()} title=${JSON.stringify(page.title())}${unfinishedClause(arrival)}`)
   }
 
   /** A Page Read (ADR 0047): the refs and one part of the page's whole text. */
@@ -1040,23 +1099,26 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
   }
 
   async function clickRef(ref: number): Promise<string> {
+    const watch = page.watchArrival?.()
     const attempt = await performClick(ref)
     if (attempt.kind === 'blocked') return blockedOutcome('click', ref, attempt)
-    await settle('click', pacing.settleMs)
+    const arrival = await settleArrival('click', watch)
     const openedHere = await followNewWindowLink(attempt)
+    // A New-window Link followed here is a navigate's arrival, load and all.
+    const arrived = arrival !== 'none' || openedHere
     const after = await probeAction(attempt.index, attempt.label)
     const urlChanged = attempt.signature.url !== after.signature.url
     const dialogNowOpen = after.signature.dialogOpen
     let fresh: PageSnapshot | undefined
-    if (urlChanged || dialogNowOpen) fresh = await recollection('post-action', () => collectSnapshot())
-    if (urlChanged && fresh) after.signature = signatureOf(fresh)
+    if (urlChanged || arrived || dialogNowOpen) fresh = await recollection('post-action', () => collectSnapshot())
+    if ((urlChanged || arrived) && fresh) after.signature = signatureOf(fresh)
     const deltas = stateDeltas(attempt.before, after.target)
     const controls = unchangedControlState(attempt.before, after.target)
     const pageChanged = !signaturesEqual(attempt.signature, after.signature)
     const rawChanges = deltas.length > 0 || controls.length > 0
       ? [...deltas, ...controls].join(', ')
       : pageChanged ? PAGE_SIGNATURE_CHANGED : NO_OBSERVABLE_CHANGE
-    const location = urlChanged ? `; ${urlTitleSuffix(after.signature)}` : ''
+    const location = urlChanged || arrived ? `; ${urlTitleSuffix(after.signature)}` : ''
     const prefix = clickFlagsHead(ref, urlChanged, after.signature.dialogOpen)
     const changes = truncateOutcomeText(rawChanges, Math.min(240, Math.max(30, 300 - prefix.length - location.length)))
 
@@ -1064,6 +1126,8 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     // (Tier 1); anything else has its text surfaced for the model to decide
     // (Tier 2 — dismiss, interact, or ask_user).
     const extras: string[] = []
+    if (arrived) extras.push(ARRIVED_CLAUSE)
+    if (arrival === 'unfinished') extras.push(UNFINISHED_LOAD_CLAUSE)
     const cleared = consentNote(attempt, ref)
     if (cleared !== null) extras.push(cleared)
     if (attempt.direct) extras.push('activated directly (outside viewport)')
@@ -1089,7 +1153,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     // page change) returns the settled page state so the next decision
     // continues from the result; an inert click stays concise.
     // A click that first cleared a consent wall hands over the page behind it.
-    const meaningful = urlChanged || dialogNowOpen || deltas.length > 0 || pageChanged || attempt.dismissal !== null
+    const meaningful = urlChanged || arrived || dialogNowOpen || deltas.length > 0 || pageChanged || attempt.dismissal !== null
     if (!meaningful) return line
     return withSettledState(line, settled)
   }
@@ -1188,18 +1252,19 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     await settle('type', pacing.settleMs)
     // Newlines would send Enter, which opens the select popup — a dead end
     // for synthetic input. Letters carry the whole choice.
+    const watch = page.watchArrival?.()
     await dispatchText(text.replace(/[\r\n]+/g, ''))
-    await settle('type', pacing.settleMs)
+    const arrival = await settleArrival('type', watch)
     const after = await probeAction(index, target.label)
     if (!after.target) {
-      const head = `typed [${ref}]: field unavailable after page change; ${urlTitleSuffix(after.signature)}`
+      const head = `typed [${ref}]: field unavailable after page change; ${urlTitleSuffix(after.signature)}${arrivalClauses(arrival)}`
       return withSettledState(head)
     }
     const selected = after.target.selectedOption ?? after.target.value ?? ''
     const urlChanged = before.url !== after.signature.url
     const pageChanged = !signaturesEqual(before, after.signature)
-    if (urlChanged || pageChanged) {
-      return withSettledState(`typed [${ref}]: selected=${JSON.stringify(selected)}; page changed`)
+    if (urlChanged || pageChanged || arrival !== 'none') {
+      return withSettledState(`typed [${ref}]: selected=${JSON.stringify(selected)}; page changed${arrivalClauses(arrival)}`)
     }
     return `typed [${ref}]: selected=${JSON.stringify(selected)}`
   }
@@ -1209,24 +1274,26 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     if (target.selectedOption != null) {
       return typeIntoSelect(ref, target, signatureOf(snapshot), text)
     }
+    // The focusing click can leave the page as well as the typing can.
+    const watch = page.watchArrival?.()
     const clicked = await performClick(ref)
     if (clicked.kind === 'blocked') return blockedOutcome('type', ref, clicked)
     const cleared = consentClause(clicked, ref)
     await settle('type', pacing.settleMs)
     await dispatchText(text)
-    await settle('type', pacing.settleMs)
+    const arrival = await settleArrival('type', watch)
     const after = await probeAction(clicked.index, clicked.label)
     if (!after.target) {
       // The typing navigated (e.g. a submitted search): the resulting page
       // state and refs ride the outcome (ADR 0027).
-      const head = `typed [${ref}]: field unavailable after page change; ${urlTitleSuffix(after.signature)}${cleared}`
+      const head = `typed [${ref}]: field unavailable after page change; ${urlTitleSuffix(after.signature)}${arrivalClauses(arrival)}${cleared}`
       return withSettledState(head)
     }
     const value = after.target.value ?? after.target.selectedOption ?? ''
     const urlChanged = clicked.signature.url !== after.signature.url
     const pageChanged = !signaturesEqual(clicked.signature, after.signature)
-    if (urlChanged || pageChanged) {
-      return withSettledState(`typed [${ref}]: value=${JSON.stringify(value)}; page changed${cleared}`)
+    if (urlChanged || pageChanged || arrival !== 'none') {
+      return withSettledState(`typed [${ref}]: value=${JSON.stringify(value)}; page changed${arrivalClauses(arrival)}${cleared}`)
     }
     // Typing that first cleared a consent wall hands over the page behind it.
     if (clicked.dismissal !== null) return withSettledState(`typed [${ref}]: value=${JSON.stringify(value)}${cleared}`)
@@ -1253,9 +1320,16 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     // the dashboard holds focus, so claim it for the page first.
     page.focus()
     await settle('press-key', pacing.settleMs)
+    const watch = page.watchArrival?.()
     for (let i = 0; i < times; i++) {
       await dispatchShortcut(event)
       if (i < times - 1) await settle('keystroke', pacing.keystrokeMs)
+    }
+    // A key that left the page (#309) waits for the load it started; any
+    // other key returns as it did. No outcome carries a page here.
+    if (watch !== undefined && (await watch.arrival()) !== 'none') {
+      lastSnapshot = undefined
+      await settle('press-key', pacing.settleMs)
     }
   }
 

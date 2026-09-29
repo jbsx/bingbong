@@ -1,14 +1,14 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import challengeIframe from '../../core/browser/fixtures/challenge-iframe.json'
 import youtubeHome from '../../core/browser/fixtures/youtube-home.json'
 import type { CollectedElement, CollectedPage } from '../../core/browser/snapshot'
 import { buildPageSnapshot, clickPoint, formatPageSnapshot, formatRefLine } from '../../core/browser/snapshot'
-import { blockedOrInertAction } from '../../core/browser/actionOutcome'
+import { ARRIVED_CLAUSE, UNFINISHED_LOAD_CLAUSE, arrivedAtAnotherDocument, blockedOrInertAction, isUnfinishedLoad } from '../../core/browser/actionOutcome'
 import type { BrowserSubspans } from '../../core/perf/browserSubspans'
 import { createBrowserSubspans } from '../../core/perf/browserSubspans'
 import type { PerfSpanRecord } from '../../core/perf/perfTracer'
 import { fakePerfHarness } from '../../core/testing/doubles'
-import type { CdpDebugger, CdpPageDriver } from './createCdpBrowserController'
+import type { ArrivalWatch, CdpDebugger, CdpPageDriver, PageArrival } from './createCdpBrowserController'
 import { createCdpBrowserController } from './createCdpBrowserController'
 import type { ClickPrep } from './collectPageScript'
 
@@ -351,6 +351,14 @@ class FakePage implements CdpPageDriver {
   failForward = false
   /** Runs on every load — the page the tab lands on starts being served. */
   onLoad: ((url: string) => void) | null = null
+  /**
+   * What the next watch an action takes will see (#309): an answer, or a
+   * pending one the test settles. Null: the driver cannot watch, as a
+   * driver without `watchArrival` cannot.
+   */
+  nextArrival: Promise<PageArrival> | PageArrival | null = null
+  watches = 0
+  arrivalsAsked = 0
 
   async loadUrl(url: string): Promise<void> {
     this.loadedUrls.push(url)
@@ -383,6 +391,24 @@ class FakePage implements CdpPageDriver {
   focus(): void {
     this.focusCount += 1
   }
+
+  watchArrival(): ArrivalWatch {
+    this.watches += 1
+    const next = this.nextArrival
+    return {
+      arrival: async () => {
+        this.arrivalsAsked += 1
+        return next ?? 'none'
+      },
+    }
+  }
+}
+
+/** A pending page arrival the test settles (#309). */
+function pendingArrival(): { promise: Promise<PageArrival>; settle: (arrival: PageArrival) => void } {
+  let settle: (arrival: PageArrival) => void = () => {}
+  const promise = new Promise<PageArrival>((resolve) => (settle = resolve))
+  return { promise, settle }
 }
 
 function makeController(options?: {
@@ -1702,7 +1728,7 @@ describe('createCdpBrowserController New-window Links', () => {
 
     expect(page.loadedUrls.at(-1)).toBe('https://example.com/one')
     expect(outcome).toBe(
-      `clicked [1]: urlChanged=true dialogOpen=false; page signature changed; url=https://example.com/one title="Landed"; ${FOLLOWED}\n` +
+      `clicked [1]: urlChanged=true dialogOpen=false; page signature changed; url=https://example.com/one title="Landed"; ${ARRIVED_CLAUSE}; ${FOLLOWED}\n` +
         settledBlock(landingPage('https://example.com/one')),
     )
     expect(outcome).not.toContain('popup blocked')
@@ -1719,7 +1745,7 @@ describe('createCdpBrowserController New-window Links', () => {
     const outcome = await controller.click(1)
 
     expect(page.loadedUrls.at(-1)).toBe(rewritten)
-    expect(outcome).toContain(`urlChanged=true dialogOpen=false; page signature changed; url=${rewritten} title="Landed"; ${FOLLOWED}`)
+    expect(outcome).toContain(`urlChanged=true dialogOpen=false; page signature changed; url=${rewritten} title="Landed"; ${ARRIVED_CLAUSE}; ${FOLLOWED}`)
   })
 
   it('follows the address the snapshot showed when the link carries another after the click', async () => {
@@ -1772,7 +1798,7 @@ describe('createCdpBrowserController New-window Links', () => {
 
     expect(page.loadedUrls.at(-1)).toBe('https://example.com/one')
     expect(outcome.split('\n')[0]).toBe(
-      `clicked [1]: urlChanged=true dialogOpen=false; page signature changed; url=https://example.com/one title="Landed"; ${FOLLOWED}; popup blocked: https://ads.test/window`,
+      `clicked [1]: urlChanged=true dialogOpen=false; page signature changed; url=https://example.com/one title="Landed"; ${ARRIVED_CLAUSE}; ${FOLLOWED}; popup blocked: https://ads.test/window`,
     )
   })
 
@@ -1843,7 +1869,7 @@ describe('createCdpBrowserController New-window Links', () => {
 
     const outcome = await controller.click(1)
 
-    expect(outcome).toContain(`url=https://example.com/final title="Landed"; ${FOLLOWED}`)
+    expect(outcome).toContain(`url=https://example.com/final title="Landed"; ${ARRIVED_CLAUSE}; ${FOLLOWED}`)
   })
 
   it('prints a denied address of 1,000 characters whole and cuts one over 2,000', async () => {
@@ -2436,5 +2462,149 @@ describe('createCdpBrowserController outcome heads the Search Loop rail reads (#
 
     expect(outcome.split('\n')[0]).toBe('clicked [3]: urlChanged=false dialogOpen=false; page signature changed')
     expect(blockedOrInertAction(outcome)).toBeNull()
+  })
+})
+
+describe('createCdpBrowserController an action’s page arrival (#309, ADR 0027)', () => {
+  const landed = {
+    ...youtubeFixture,
+    url: 'https://www.rmg.co.uk/collections/objects/rmgc-object-79142',
+    title: 'H4 | Royal Museums Greenwich',
+  }
+  const leftProbe = {
+    target: null,
+    signature: { url: landed.url, title: landed.title, scrollX: 0, scrollY: 0, refCount: 0, labels: [], dialogOpen: false },
+  }
+
+  it('a click that started a navigation to another document collects the page only once its load finished', async () => {
+    const cdp = new FakeCdp(youtubeFixture)
+    const page = new FakePage()
+    const { controller } = makeController({ cdp, page })
+    await showRefs(controller)
+    const load = pendingArrival()
+    page.nextArrival = load.promise
+    cdp.serve(landed)
+    cdp.actionProbe = leftProbe
+
+    const collectsBefore = cdp.collectCalls().length
+    const clicked = controller.click(3)
+    // Waiting on the load: nothing of the page it left for is read yet.
+    await vi.waitFor(() => expect(page.arrivalsAsked).toBe(1))
+    expect(cdp.collectCalls().length).toBe(collectsBefore)
+    expect(cdp.calls.some((call) => String(call.params?.expression ?? '').includes('/* ACTION_OUTCOME */'))).toBe(false)
+
+    load.settle('loaded')
+    const outcome = await clicked
+
+    expect(outcome.split('\n')[0]).toBe(
+      `clicked [3]: urlChanged=true dialogOpen=false; page signature changed; url=${landed.url} title=${JSON.stringify(landed.title)}; ${ARRIVED_CLAUSE}`,
+    )
+    expect(outcome).toContain(settledBlock(landed))
+    expect(arrivedAtAnotherDocument(outcome)).toBe(true)
+    expect(isUnfinishedLoad(outcome)).toBe(false)
+  })
+
+  it('a click that reached a page whose URL did not change yet is still an arrival once its load is waited for', async () => {
+    const cdp = new FakeCdp(youtubeFixture)
+    const page = new FakePage()
+    const { controller } = makeController({ cdp, page })
+    await showRefs(controller)
+    page.nextArrival = 'loaded'
+    cdp.serve(landed)
+    cdp.actionProbe = leftProbe
+
+    const outcome = await controller.click(3)
+
+    expect(outcome).toContain(`url=${landed.url}`)
+    expect(arrivedAtAnotherDocument(outcome)).toBe(true)
+  })
+
+  it('a click that started no navigation carries no arrival, as before', async () => {
+    const { page, controller } = makeController()
+    await showRefs(controller)
+
+    const outcome = await controller.click(3)
+
+    expect(page.watches).toBeGreaterThan(0)
+    expect(outcome).toBe('clicked [3]: urlChanged=false dialogOpen=false; no observable change')
+  })
+
+  it('a click inside one document that changed the address is no arrival', async () => {
+    const cdp = new FakeCdp(youtubeFixture)
+    const { page, controller } = makeController({ cdp })
+    await showRefs(controller)
+    page.nextArrival = 'none'
+    const routed = { ...youtubeFixture, url: 'https://www.youtube.com/feed/trending' }
+    cdp.serve(routed)
+    cdp.actionProbe = { ...leftProbe, signature: { ...leftProbe.signature, url: routed.url, title: routed.title } }
+
+    const outcome = await controller.click(3)
+
+    expect(outcome.split('\n')[0]).toContain('urlChanged=true')
+    expect(arrivedAtAnotherDocument(outcome)).toBe(false)
+  })
+
+  it('an Unfinished Load carries the page as it stood and says so; the call succeeds', async () => {
+    const cdp = new FakeCdp(youtubeFixture)
+    const { page, controller } = makeController({ cdp })
+    await showRefs(controller)
+    page.nextArrival = 'unfinished'
+    cdp.serve(landed)
+    cdp.actionProbe = leftProbe
+
+    const outcome = await controller.click(3)
+
+    expect(outcome.split('\n')[0]).toMatch(new RegExp(`; ${ARRIVED_CLAUSE}; ${UNFINISHED_LOAD_CLAUSE}$`))
+    expect(outcome).toContain(settledBlock(landed))
+    expect(isUnfinishedLoad(outcome)).toBe(true)
+  })
+
+  it('typing the page left under waits for the load and says it arrived', async () => {
+    const cdp = new FakeCdp(youtubeFixture)
+    const { page, controller } = makeController({ cdp })
+    await showRefs(controller)
+    page.nextArrival = 'loaded'
+    cdp.collectValues = [youtubeFixture, landed]
+    cdp.actionProbe = leftProbe
+
+    const outcome = await controller.type(3, 'H4\n')
+
+    expect(outcome.split('\n')[0]).toBe(
+      `typed [3]: field unavailable after page change; url=${landed.url} title=${JSON.stringify(landed.title)}; ${ARRIVED_CLAUSE}`,
+    )
+    expect(page.arrivalsAsked).toBe(1)
+  })
+
+  it('a step through history says when its load was unfinished, and nothing when it finished', async () => {
+    const { page, controller } = makeController()
+
+    page.nextArrival = 'loaded'
+    expect(await controller.back()).toBe(`went back: url=https://www.youtube.com/ title="YouTube"\n${settledBlock(youtubeFixture)}`)
+    page.nextArrival = 'unfinished'
+    const forward = await controller.forward()
+    expect(forward.split('\n')[0]).toBe(`went forward: url=https://www.youtube.com/ title="YouTube"; ${UNFINISHED_LOAD_CLAUSE}`)
+    expect(page.arrivalsAsked).toBe(2)
+  })
+
+  it('a key press that started a navigation waits for its load', async () => {
+    const { page, controller } = makeController()
+    const load = pendingArrival()
+    page.nextArrival = load.promise
+
+    let done = false
+    const pressed = controller.pressKey({ key: 'n', shift: true }).then(() => (done = true))
+    await vi.waitFor(() => expect(page.arrivalsAsked).toBe(1))
+    expect(done).toBe(false)
+    load.settle('loaded')
+    await pressed
+    expect(done).toBe(true)
+  })
+
+  it('a navigate takes no watch: its load is the action', async () => {
+    const { page, controller } = makeController()
+
+    await controller.navigate('youtube.com')
+
+    expect(page.watches).toBe(0)
   })
 })

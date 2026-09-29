@@ -814,7 +814,16 @@ worktree holds none. A capture set with no trace on disk (`fix-235`,
 `fix-236`, `fix-237`, `fix-239`, `fix-240`, `fix-242`, `fix-242r`,
 `fix-256r2`) is left out of the marks, keeps the counts its replay gives
 without them, reads its three Empty Landing counters as nothing, and is
-named in its family's notes. Rounds are numbered by position in the digest,
+named in its family's notes. The same sweep writes `e2e/live/pageArrivalMarks.ts`
+(#309): each page arrival by a click, a type, a `back` or a `go_forward`,
+whether it showed no text and whether it was an Unfinished Load. The audit
+counts the three beside the rounds — reported, never gated — reading a click
+or a type as an arrival by the clause its outcome carries on a Run Trace of
+version 11 or later, and by the result's shape on an older one (a click that
+left the URL, typing the page changed under), which cannot tell a change of
+address inside one document. The Fix Ledger sums the marks for an audit
+written before the counter; they hold no streak, since a click read by its
+shape came back before its page loaded. Rounds are numbered by position in the digest,
 with the trace's round and attempt beside them, because a retried round repeats
 its number. The same trace classifies identically on every run, and every attempt carries a `digestHash` over the
 digest the reviewer was shown; `audit.test.ts` pins the copied budgets, rungs and

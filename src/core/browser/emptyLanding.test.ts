@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   EMPTY_LANDING_ADVICE,
+  arrivedAtDocument,
   classifyEmptyLanding,
   isPageArrival,
   pageReadReturnedText,
@@ -74,14 +75,29 @@ describe('the marker and the advice (#304)', () => {
     expect(parseEmptyMarker(RMG_TEMPLATE)).toBeNull()
   })
 
-  it('reads a landing off a successful outcome of a navigation verb only', () => {
+  it('reads a landing off a successful outcome of a call that arrived at another document', () => {
     const result = `${RMG_TEMPLATE}\nEMPTY:no-text www.rmg.co.uk\n${EMPTY_LANDING_ADVICE}`
     for (const name of ['navigate', 'back', 'go_forward']) expect(settledOnEmptyLanding(name, { ok: true, result })).toBe(true)
     expect(settledOnEmptyLanding('navigate', { ok: true, result: WITH_TEXT })).toBe(false)
     expect(settledOnEmptyLanding('navigate', { ok: false, error: result })).toBe(false)
     // A page whose own text holds the line was read, and settled nowhere.
     expect(settledOnEmptyLanding('read_page', { ok: true, result: `${WITH_TEXT}\nEMPTY:no-text www.rmg.co.uk` })).toBe(false)
+    // A click or a type arrived when its first line says so (#309); one
+    // that changed the address inside its document did not.
     expect(settledOnEmptyLanding('click', { ok: true, result })).toBe(false)
+    const arrived = `clicked [7]: urlChanged=true dialogOpen=false; page signature changed; arrived at another page\n${result}`
+    expect(settledOnEmptyLanding('click', { ok: true, result: arrived })).toBe(true)
+    expect(settledOnEmptyLanding('type', { ok: true, result: `typed [4]: value="h4"; page changed; arrived at another page\n${result}` })).toBe(true)
+    expect(settledOnEmptyLanding('scroll', { ok: true, result: arrived })).toBe(false)
+  })
+
+  it('reads an arrival at another document off a click’s or a type’s first line alone (#309)', () => {
+    expect(arrivedAtDocument('navigate', 'navigated outcome')).toBe(true)
+    expect(arrivedAtDocument('back', 'went back')).toBe(true)
+    expect(arrivedAtDocument('click', 'clicked [7]: urlChanged=true dialogOpen=false; page signature changed; url=https://x.test/ title=""; arrived at another page')).toBe(true)
+    expect(arrivedAtDocument('click', 'clicked [7]: urlChanged=true dialogOpen=false; page signature changed; url=https://x.test/#a title=""')).toBe(false)
+    expect(arrivedAtDocument('click', 'clicked [7]: urlChanged=false dialogOpen=false; page signature changed\npage text:\narrived at another page')).toBe(false)
+    expect(arrivedAtDocument('read_page', 'arrived at another page')).toBe(false)
   })
 })
 

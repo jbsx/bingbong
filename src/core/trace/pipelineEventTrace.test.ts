@@ -147,6 +147,23 @@ describe('the pipeline_event tap (#185)', () => {
     expect(records[3]).not.toHaveProperty('emptyLanding')
   })
 
+  it('records an Unfinished Load on the tool result, read off its first line (#309)', () => {
+    const { records, sink } = collector()
+    const trace = createPipelineEventTraceWriter({ sink, now: () => 0 })
+    const unfinished = 'the page was still loading when the wait for it ended at 10 s, so what is shown may be less than the page'
+
+    trace({ type: 'tool_result', turnId: 't-1', callId: 'c-1', name: 'click', ok: true, result: `clicked [3]: urlChanged=true dialogOpen=false; page signature changed; url=https://x.test/ title=""; arrived at another page; ${unfinished}\nsignature 162b2d4d`, at: 1 })
+    trace({ type: 'tool_result', turnId: 't-1', callId: 'c-2', name: 'back', ok: true, result: `went back: url=https://x.test/ title=""; ${unfinished}\nsignature 162b2d4d`, at: 2 })
+    trace({ type: 'tool_result', turnId: 't-1', callId: 'c-3', name: 'click', ok: true, result: 'clicked [3]: urlChanged=true dialogOpen=false; page signature changed; url=https://x.test/ title=""; arrived at another page\nsignature 162b2d4d', at: 3 })
+    // A page whose own text quotes the clause settled nowhere unfinished.
+    trace({ type: 'tool_result', turnId: 't-1', callId: 'c-4', name: 'read_page', ok: true, result: `# x — https://x.test/\npage text:\n${unfinished}`, at: 4 })
+
+    expect(records[0]).toMatchObject({ unfinishedLoad: true })
+    expect(records[1]).toMatchObject({ unfinishedLoad: true })
+    expect(records[2]).not.toHaveProperty('unfinishedLoad')
+    expect(records[3]).not.toHaveProperty('unfinishedLoad')
+  })
+
   it('records the landing a Result Pick settled on, never the listing’s above it (#304)', () => {
     const { records, sink } = collector()
     const trace = createPipelineEventTraceWriter({ sink, now: () => 0 })

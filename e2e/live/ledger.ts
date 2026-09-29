@@ -32,7 +32,8 @@
 // is read from the marks `pnpm live:empty-landings` took from the Run Traces
 // and committed (emptyLandingRecount.ts), so the ledger still reads no
 // capture; a capture set the sweep found no trace of is named as not
-// recounted and keeps its counts.
+// recounted and keeps its counts. The page arrivals (#309) are read from
+// the same sweep's marks (pageArrivalRecount.ts), and count only.
 
 import {
   AUDIT_VERDICTS,
@@ -59,9 +60,11 @@ import {
   type AuditProvenance,
   type AuditSetOutput,
   type EmptyLandingCounts,
+  type PageArrivalCounts,
   type RoundKind,
 } from './audit.ts'
 import { emptyLandingsKnown, recountEmptyLandings, saysEmptyLandings } from './emptyLandingRecount.ts'
+import { pageArrivalCountsOf, saysPageArrivals } from './pageArrivalRecount.ts'
 import { medianOf } from './summary.ts'
 import type { AttemptRelation } from './types.ts'
 
@@ -417,6 +420,11 @@ export function buildLedger(files: readonly LedgerFile[]): Ledger {
     if (unknown.length > 0) {
       notes.push(`${unknown.map((pass) => pass.setId).join(', ')}: no Run Trace on disk, so Empty Landings are not recounted and the streak counts stand without them`)
     }
+    // #309: and so are its page arrivals, which count and hold nothing.
+    const arrivalsUnknown = audited.filter((pass) => pass.audit.attempts.some((attempt) => pageArrivalCountsOf(attempt.mechanical) === null))
+    if (arrivalsUnknown.length > 0) {
+      notes.push(`${arrivalsUnknown.map((pass) => pass.setId).join(', ')}: no Run Trace on disk, so page arrivals are not recounted`)
+    }
     for (const axis of CONDITION_AXES) {
       const values = audited.map((pass) => axis.of(conditionsOf(pass.audit.provenance)))
       if (new Set(values).size > 1) notes.push(`the Passes differ on ${axis.axis}: ${audited.map((pass, index) => `${pass.setId}=${values[index]}`).join(', ')}`)
@@ -606,6 +614,27 @@ function recountedUnderCurrentRuleOf(attempts: readonly AuditAttempt[]): Recount
   return { ...totals, emptyLandings: known === 0 ? null : empty }
 }
 
+/**
+ * The page arrivals by a click, a type or a step through history (#309):
+ * as the audits counted them where every attempt's did, else summed over
+ * the attempts whose count is known — its audit's own, or the marks the
+ * sweep read from its capture set's traces. Nothing where none is.
+ */
+function pageArrivalsOver(population: Partial<AuditPopulation>, attempts: readonly AuditAttempt[]): Readonly<PageArrivalCounts> | undefined {
+  if (attempts.length > 0 && attempts.every((attempt) => saysPageArrivals(attempt.mechanical))) return population.pageArrivals
+  const totals: PageArrivalCounts = { arrivals: 0, withoutText: 0, unfinishedLoads: 0 }
+  let known = 0
+  for (const attempt of attempts) {
+    const counts = pageArrivalCountsOf(attempt.mechanical)
+    if (counts === null) continue
+    known += 1
+    totals.arrivals += counts.arrivals
+    totals.withoutText += counts.withoutText
+    totals.unfinishedLoads += counts.unfinishedLoads
+  }
+  return known === 0 ? undefined : totals
+}
+
 /** The Answer Checkpoint counters (#288): offered, accepted and dropped, then the dropped by reason. */
 function answerCheckpointCounters(counts: AuditPopulation['answerCheckpoints'], attempts: number): [string, number | undefined][] {
   const said = counts !== undefined && counts.notRecorded < attempts ? counts : undefined
@@ -674,6 +703,7 @@ export function countersOf(population: AuditPopulation, attempts: readonly Audit
   // it is recounted from the marks the sweep took from the Run Traces, and
   // reads as nothing where no attempt's traces were on disk.
   const emptyLandings = attempts.length > 0 && attempts.every((attempt) => saysEmptyLandings(attempt.mechanical)) ? older.emptyLandings : (recounted?.emptyLandings ?? undefined)
+  const pageArrivals = pageArrivalsOver(older, attempts)
   // The counter the ledger compared first keeps the reading its rule gave:
   // an audit under the same-intent rule stays as written, one under the
   // consecutive rule is restated with its Unavailable Landings and its
@@ -742,6 +772,10 @@ export function countersOf(population: AuditPopulation, attempts: readonly Audit
     mechanical('Empty Landings', emptyLandings?.landings),
     mechanical('Empty Landings followed by a search', emptyLandings?.followedBySearch),
     mechanical('Empty Landings read with text', emptyLandings?.readWithText),
+    // #309: reported, never gated.
+    mechanical('Page arrivals by a click, a type or a step through history', pageArrivals?.arrivals),
+    mechanical('Page arrivals that showed no text', pageArrivals?.withoutText),
+    mechanical('Unfinished Loads', pageArrivals?.unfinishedLoads),
     mechanical('Not-found landings', older.notFoundNavigates),
     judged('Not-found landings judged Off-key', older.notFoundOffKey),
     // #262: the status was never in a trace, so a recount has no status count.

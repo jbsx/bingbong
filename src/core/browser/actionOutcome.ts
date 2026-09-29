@@ -114,3 +114,32 @@ export function blockedOrInertAction(text: string): ConsumedNothing | null {
 export function wasBlockedOrInert(outcome: ToolResultOutcome): boolean {
   return outcome.ok && typeof outcome.result === 'string' && blockedOrInertAction(outcome.result) !== null
 }
+
+// #309, note on ADR 0027: a click or a type that started a main-frame
+// navigation to another document waits for that document's load, and says
+// so on its outcome's first line, since a change of address inside one
+// document also changes the URL and arrives nowhere. A step through history
+// is an arrival by its verb. Any of them whose load had not finished when
+// the bounded wait ended is an Unfinished Load, and says that too. Both are
+// read off the first line alone: the page's own text follows it.
+
+/** The clause a click's or a type's outcome line carries when it arrived at another document (#309). */
+export const ARRIVED_CLAUSE = 'arrived at another page'
+
+/** The clause an Unfinished Load's outcome line carries (#309): the page as it stood, and that it may be less than the page. */
+export const UNFINISHED_LOAD_CLAUSE =
+  'the page was still loading when the wait for it ended at 10 s, so what is shown may be less than the page'
+
+function firstLineClauses(text: string): string[] {
+  return (text.split('\n', 1)[0] ?? '').split('; ')
+}
+
+/** Whether an outcome's first line says the click or the typing arrived at another document (#309). */
+export function arrivedAtAnotherDocument(text: string): boolean {
+  return firstLineClauses(text).includes(ARRIVED_CLAUSE)
+}
+
+/** Whether an outcome's first line says its page arrival was an Unfinished Load (#309). */
+export function isUnfinishedLoad(text: string): boolean {
+  return firstLineClauses(text).includes(UNFINISHED_LOAD_CLAUSE)
+}

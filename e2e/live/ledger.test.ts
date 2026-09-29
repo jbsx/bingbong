@@ -17,6 +17,8 @@ import {
 } from './ledger.ts'
 import { EMPTY_LANDING_MARKS, EMPTY_LANDING_SETS_RECOUNTED } from './emptyLandingMarks.ts'
 import { emptyLandingsKnown, recountEmptyLandings, setIdOfCapture } from './emptyLandingRecount.ts'
+import { PAGE_ARRIVAL_MARKS, PAGE_ARRIVAL_SETS_RECOUNTED } from './pageArrivalMarks.ts'
+import { pageArrivalCountsOf } from './pageArrivalRecount.ts'
 
 // The Fix Ledger's pure half (#251), read two ways: against the committed
 // Round Audits — the acceptance criteria name their families and numbers —
@@ -292,6 +294,59 @@ describe('the escape recount (#293)', () => {
     const underCurrentRule = initials.map((attempt) => ({ ...attempt, mechanical: { ...attempt.mechanical, searchStreakRule: SEARCH_STREAK_RULE } }))
     expect(valueOf(countersOf(population, underCurrentRule), STREAK_2)).toBe(22)
     expect(valueOf(countersOf(population, underCurrentRule), STREAK_3)).toBe(8)
+  })
+})
+
+describe('the page arrival recount (#309, note on ADR 0027)', () => {
+  const valueOf = (counters: ReturnType<typeof countersOf>, label: string) => counters.find((counter) => counter.label === label)?.value
+  const ARRIVALS = 'Page arrivals by a click, a type or a step through history'
+  const NO_TEXT = 'Page arrivals that showed no text'
+  const count = (name: string, noText: boolean) =>
+    PAGE_ARRIVAL_MARKS.flatMap((attempt) => attempt.marks).filter((mark) => mark.name === name && (!noText || mark.noText === true)).length
+
+  it('reads the orchestrator arrivals of every committed audit’s traces, and those that showed no text', () => {
+    // The issue's sweep read 170 clicks, 47 of them early, 68 types, 7 of
+    // them early, and 7 backs, over 65 capture sets; the committed audits
+    // name 62 of them. Over those, a click whose snapshot listed refs and
+    // no text (fix-257-3) showed no text as well.
+    expect(PAGE_ARRIVAL_SETS_RECOUNTED).toHaveLength(62)
+    expect([count('click', false), count('click', true)]).toEqual([166, 46])
+    expect([count('type', false), count('type', true)]).toEqual([66, 7])
+    expect([count('back', false), count('back', true)]).toEqual([7, 0])
+    expect(PAGE_ARRIVAL_MARKS.flatMap((attempt) => attempt.marks).some((mark) => mark.unfinished === true)).toBe(false)
+  })
+
+  it('puts every mark on the call the committed audit holds at that round', () => {
+    for (const { captureId, attemptId, marks } of PAGE_ARRIVAL_MARKS) {
+      const attempt = readAudit(`audit-${setIdOfCapture(captureId)}.json`).attempts.find(({ mechanical }) => mechanical.captureId === captureId && mechanical.attemptId === attemptId)
+      expect(attempt, `${captureId} ${attemptId}`).toBeDefined()
+      for (const mark of marks) {
+        expect(attempt!.mechanical.rounds.find((round) => round.round === mark.round)?.calls[mark.call], `${captureId} round ${mark.round}`).toMatchObject({ name: mark.name, ok: true })
+      }
+    }
+  })
+
+  it('counts a family’s arrivals from the marks, and reads an audit that counted its own as written', () => {
+    const initials = [1, 2, 3].flatMap((pass) => readAudit(`audit-fix-252-${pass}.json`).attempts.filter((attempt) => attempt.mechanical.relation === 'initial'))
+    const population = populationOf('initial', initials)
+    const counters = countersOf(population, initials)
+    const summed = initials.map((attempt) => pageArrivalCountsOf(attempt.mechanical)!)
+    expect(valueOf(counters, ARRIVALS)).toBe(summed.reduce((total, counts) => total + counts.arrivals, 0))
+    expect(valueOf(counters, NO_TEXT)).toBe(summed.reduce((total, counts) => total + counts.withoutText, 0))
+    // fix-252-3's longitude initial, round 5: the click the issue names.
+    expect(valueOf(counters, NO_TEXT)).toBeGreaterThanOrEqual(1)
+    expect(valueOf(counters, 'Unfinished Loads')).toBe(0)
+
+    const said = initials.map((attempt) => ({ ...attempt, mechanical: { ...attempt.mechanical, pageArrivals: { arrivals: [3], withoutText: [3], unfinishedLoads: [3] } } }))
+    const asWritten = countersOf({ ...population, pageArrivals: { arrivals: 9, withoutText: 2, unfinishedLoads: 1 } }, said)
+    expect([valueOf(asWritten, ARRIVALS), valueOf(asWritten, NO_TEXT), valueOf(asWritten, 'Unfinished Loads')]).toEqual([9, 2, 1])
+  })
+
+  it('reads the arrivals of a capture set with no trace on disk as nothing, never as zero, and names it', () => {
+    const attempts = family(committed, 'fix-242r').passes.flatMap((pass) => pass.audit?.attempts ?? []).filter((attempt) => attempt.mechanical.relation === 'initial')
+    expect(valueOf(countersOf(populationOf('initial', attempts), attempts), ARRIVALS)).toBeNull()
+    expect(family(committed, 'fix-242r').notes).toContain('fix-242r-1, fix-242r-2, fix-242r-3: no Run Trace on disk, so page arrivals are not recounted')
+    expect(family(committed, 'fix-252').notes.filter((note) => note.includes('page arrivals'))).toEqual([])
   })
 })
 
