@@ -219,3 +219,43 @@ mechanics and encourage redundant reads, clicks, screenshots, and vision calls.
   clicks a link whose document commits at once and whose body is held
   3 s: without the wait the outcome is `title=""`, `scroll 0/575`, no refs
   and no text, as the captures showed.
+- 2026-09-29 (#308, grilled from every retained capture): **an Action
+  Outcome names the page it carries, and a landing whose collection failed
+  is collected again once the tab has stopped changing.** A navigate wrote
+  its line from the tab's address, then collected the page. When the tab
+  moved between the two, the line named the page the tab was leaving, the
+  collection failed, and the outcome degraded to that line alone.
+  - **Measured** over 2,803 successful navigate results in 258 log
+    directories, orchestrator and Subagent. 26 carry no page, and each has
+    a collector fault beside it in the host trace. 4 are Result Picks of
+    one rmg.co.uk link whose line names the listing the tab had left; 20
+    are Google challenge walls, whose address is right and whose Blocker
+    marker is present; 1 names a DuckDuckGo redirect hop; 1 is a rewritten
+    search. In the 4, the load's wait ended about 870 ms after the open
+    began and the collection ran 3.2 to 3.6 s before it failed.
+  - **It is a navigate's fault, not a Result Pick's.** A picked open is an
+    ordinary navigate, and 22 of the 26 had no pick.
+  - **The line is written from the collected page.** One collection gives
+    the address, the title and the snapshot, so they cannot disagree.
+  - **A failed collection waits for the tab to stop changing, then collects
+    once more.** The wait is the one a mid-load abort already uses, entered
+    only after a failure, so a navigate that collects pays nothing. A
+    second settle alone was rejected: the tab may still be moving.
+  - **A second failure says so.** The outcome names the address read after
+    the failure and says the page could not be read and a Page Read will
+    show it. A marker the landing earned is kept.
+  - **The navigate does not wait for the commit.** A reload of the same
+    address and a change of address inside one document commit
+    differently, and the two decisions above remove both symptoms. It is
+    reconsidered if a capture still shows collections repeated.
+  - **No Run Trace field.** The Round Audit counts landings that carried no
+    page from the result's text, reported and never gated. The collector's
+    fault records the exception's description, which the retained traces
+    lack: they say `Uncaught` and nothing of why.
+  A `back` and a `go_forward` write their line the same way and are given
+  the same treatment; no capture holds an instance. #309 changes what a
+  click, a type, a key press and a step through history wait for and leaves
+  a navigate's wait as it is, so neither issue waits on the other. Closes
+  on tests and one e2e whose fixture leaves for another page after its
+  load; on the next capture, outcomes whose line and page disagree are
+  counted, and none is expected.

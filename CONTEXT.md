@@ -1020,7 +1020,9 @@ _Avoid_: browser context, browser workspace
 The resulting state returned by a browser, media, application, setting, panel,
 or Session action, including a fresh page snapshot when a browser action
 meaningfully changes the page. It is the next decision's observation, not merely
-confirmation that a call ran.
+confirmation that a call ran. The address and title it names are those of the
+page it carries, never a separate reading of the tab; one that carries no page
+says the page could not be read.
 _Avoid_: tool result, success flag
 
 **Unsettled Action**:
