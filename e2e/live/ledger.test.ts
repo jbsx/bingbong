@@ -1061,11 +1061,11 @@ describe('Off-language Answers (#286, ADR 0034)', () => {
     audits.flatMap((audit) => audit.attempts).filter((attempt) => attempt.mechanical.relation === relation)
   const committedAggregate = (): AuditAggregate => JSON.parse(readFileSync(join(REPORTS_DIR, 'audit-aggregate-fix-283.json'), 'utf8')) as AuditAggregate
 
-  it('recounts every committed audit, those of main-4dc72e9 alone written with the counter: one, in the initials of fix-283', () => {
+  it('recounts every committed audit, those of main-4dc72e9 and flash-orch alone written with the counter: one, in the initials of fix-283', () => {
     const audits = perPassAudits()
     const withCounter = audits.filter((audit) => audit.attempts.some((attempt) => attempt.mechanical.offLanguageAnswers !== undefined))
 
-    expect(withCounter.map((audit) => audit.provenance.setId)).toEqual(['main-4dc72e9-1', 'main-4dc72e9-2', 'main-4dc72e9-3'])
+    expect(withCounter.map((audit) => audit.provenance.setId)).toEqual(['flash-orch-1', 'flash-orch-2', 'flash-orch-3', 'main-4dc72e9-1', 'main-4dc72e9-2', 'main-4dc72e9-3'])
     expect(withCounter.every((audit) => audit.attempts.every((attempt) => attempt.mechanical.offLanguageAnswers !== undefined))).toBe(true)
     expect(offLanguageAnswersOver(audits.flatMap((audit) => audit.attempts))).toBe(1)
     expect(offLanguageAnswersOver(attemptsOf(audits, 'revised_objective'))).toBe(0)
