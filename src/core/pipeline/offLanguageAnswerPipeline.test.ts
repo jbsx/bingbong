@@ -315,7 +315,24 @@ describe('the Answer Retry stays one per Run across its three users (#286)', () 
     ])
 
     expect(run.llm.requests.filter((request) => request.answerRetry !== undefined)).toHaveLength(1)
-    expect(run.llm.requests[2]?.answerRetry?.message).toBe(askedItemsRetryMessage({ missing: ['the September statement'], undeclared: [] }))
+    expect(run.llm.requests[2]?.answerRetry?.message).toBe(askedItemsRetryMessage(DECLARED, { missing: ['the September statement'], undeclared: [] }, 'list'))
+    // The reply to the list-only retry is read for its list alone (#311):
+    // its off-language renderings are not the Answer's, which stands as
+    // first written in English with the list merged in.
+    expect(run.llm.requests).toHaveLength(3)
+    expect(run.displays).toEqual([expect.objectContaining({ text: ENGLISH.kind === 'answer' ? ENGLISH.display : '', askedItems: [june, september] })])
+    expect(run.done).toMatchObject({ outcome: 'done', resolution: 'completed' })
+  })
+
+  it('meets an Off-language Answer after a prose reply spent the retry with the deterministic Answer', async () => {
+    const run = await runScript([
+      plan('lookup', DECLARED),
+      { kind: 'answer', speak: 'Both are right.', display: 'Both are right.', shape: 'off_contract' },
+      { ...CHINESE, askedItems: [june, september] } as ScriptedTurn,
+    ])
+
+    expect(run.llm.requests.filter((request) => request.answerRetry !== undefined)).toHaveLength(1)
+    expect(run.llm.requests[2]?.answerRetry?.message).toBe(askedItemsRetryMessage(DECLARED, { missing: DECLARED, undeclared: [] }, 'prose'))
     expect(run.displays).toEqual([expect.objectContaining({ text: expect.stringContaining('I have not'), deterministicAnswer: true })])
     expect(run.done).toEqual({ type: 'done', outcome: 'failed', at: 0 })
   })

@@ -96,6 +96,64 @@ describe('Asked Items on the Answer Card e2e (#250)', () => {
     }
   })
 
+  // #311: an Answer whose list is missing is sent back for the list alone,
+  // and the list-only reply is merged into it — the Card is the first
+  // Answer's display, written once.
+  it('merges a list-only reply into an Answer that left its list out, keeping the first display', async () => {
+    const page = fixture.url('/second')
+    const reply = { asked_items: [{ n: 1, standing: 'stated', statement: 'It reads "second fixture page".' }, { n: 2, standing: 'stated', statement: 'The twin loaded too.' }] }
+    const script: AssistantTurn[] = [
+      {
+        kind: 'tool_calls',
+        calls: [
+          {
+            id: 'p1',
+            name: 'report_run_plan',
+            args: {
+              objective: 'Report the heading and the twin page',
+              headline: 'Reading the second page',
+              effort_tier: 'lookup',
+              asked_items: ['the heading', 'the twin page'],
+            },
+          },
+          { id: 'n1', name: 'navigate', args: { url: page } },
+        ],
+      },
+      { kind: 'answer', speak: 'The heading is noted.', display: 'The first Answer’s Card.', shape: 'on_contract', resolution: 'completed', finalizationCause: 'objective_met' },
+      // What the wire client makes of a list-only reply: no `speak` or `display`, so off contract, the raw text kept.
+      { kind: 'answer', speak: JSON.stringify(reply), display: JSON.stringify(reply), shape: 'off_contract' },
+    ]
+    const app = await startHarness({ fixture, env: { BINGBONG_LLM_SCRIPT: JSON.stringify(script) } })
+    try {
+      await app.ensurePanelOpen()
+      expect(await app.submitCommand('report the heading and the twin page')).toBe('submitted')
+
+      const rendered = await waitFor(
+        async () => {
+          const items = await app.overlayEval<RenderedStanding[]>(ASKED_ITEMS_EVAL)
+          return items.length === 2 ? items : undefined
+        },
+        { timeoutMs: 20_000, intervalMs: 100 },
+      )
+      expect(rendered).toEqual([
+        { item: 'the heading', standing: 'stated', statement: 'It reads "second fixture page".' },
+        { item: 'the twin page', standing: 'stated', statement: 'The twin loaded too.' },
+      ])
+      expect(
+        await app.overlayEval<string>(`document.querySelector('.feed-entry--display .feed-text--markdown')?.textContent ?? ''`),
+      ).toBe('The first Answer’s Card.')
+      const done = await waitFor(
+        async () => tracedEvents(app.readRunTrace(), 'done').find((event) => event.outcome === 'done'),
+        { timeoutMs: 10_000, intervalMs: 250 },
+      )
+      expect(done).toMatchObject({ resolution: 'completed', finalizationCause: 'objective_met' })
+      const traced = app.readRunTrace() as { kind?: string }[]
+      expect(traced.filter((record) => record.kind === 'asked_items_shape')).toEqual([expect.objectContaining({ missing: ['the heading', 'the twin page'], retried: true, listOnly: true })])
+    } finally {
+      await app.quit()
+    }
+  })
+
   it('lists every declared item unverified under a deterministic Answer', async () => {
     const page = fixture.url('/second')
     const work = (i: number): AssistantTurn => ({ kind: 'tool_calls', calls: [{ id: `w${i}`, name: 'read_page', args: {} }] })

@@ -9182,12 +9182,12 @@ describe('Asked Items on the Answer (#250, ADR 0052)', () => {
     expect(run.llm.requests).toHaveLength(3)
     expect(run.llm.requests[2]?.answerRetry).toEqual({
       reply: expect.any(String),
-      message: askedItemsRetryMessage({ missing: ['the piece count'], undeclared: [] }),
+      message: askedItemsRetryMessage(DECLARED, { missing: ['the piece count'], undeclared: [] }, 'list'),
     })
-    expect(askedItemsRetryMessage({ missing: ['the piece count'], undeclared: [] })).toContain('"the piece count"')
+    expect(askedItemsRetryMessage(DECLARED, { missing: ['the piece count'], undeclared: [] }, 'list')).toContain('2. "the piece count"')
     expect(run.askedItems).toEqual([guitar, pieces])
     expect(run.done).toMatchObject({ resolution: 'completed' })
-    expect(run.shapeRecords).toEqual([{ kind: 'asked_items_shape', turnId: 'turn-asked', missing: ['the piece count'], undeclared: [], retried: true }])
+    expect(run.shapeRecords).toEqual([{ kind: 'asked_items_shape', turnId: 'turn-asked', missing: ['the piece count'], undeclared: [], retried: true, listOnly: true }])
     expect(run.retryRecords).toEqual([{ kind: 'answer_retry', turnId: 'turn-asked', role: 'orchestrator', outcome: 'on_contract' }])
   })
 
@@ -9195,11 +9195,72 @@ describe('Asked Items on the Answer (#250, ADR 0052)', () => {
     const fare = { item: 'the fare', standing: 'stated', statement: '£50.' } as const
     const run = await runScript([planRound(), answer([guitar, pieces, fare]), answer([guitar, pieces, fare])])
 
-    expect(run.llm.requests[2]?.answerRetry?.message).toBe(askedItemsRetryMessage({ missing: [], undeclared: ['the fare'] }))
+    expect(run.llm.requests[2]?.answerRetry?.message).toBe(askedItemsRetryMessage(DECLARED, { missing: [], undeclared: ['the fare'] }, 'list'))
     // The retry reply still names it; the Card renders the declaration, and
     // nothing declared is missing, so the Run completes.
     expect(run.askedItems).toEqual([guitar, pieces])
     expect(run.done).toMatchObject({ resolution: 'completed' })
+  })
+
+  describe('the list-only retry (#311)', () => {
+    const listReply = (entries: readonly unknown[]): ScriptedTurn => ({ kind: 'answer', ...parseAssistantAnswer(JSON.stringify({ asked_items: entries })) })
+    const written = (askedItems: readonly AskedItemStanding[], speak: string, display: string): ScriptedTurn =>
+      ({ kind: 'answer', speak, display, shape: 'on_contract', resolution: 'completed', finalizationCause: 'objective_met', askedItems })
+    const first = written([guitar], 'First spoken.', 'First display.')
+    const finalDisplay = (run: Awaited<ReturnType<typeof runScript>>) => run.events.find((event) => event.type === 'display' && event.finalAnswer)
+
+    it('merges a list-only reply into the Answer it sent back: the first speak and display stand', async () => {
+      const run = await runScript([planRound(), first, listReply([{ n: 2, item: 'piece count', standing: 'stated', statement: 'Two pieces are allowed.' }])])
+
+      expect(run.llm.requests[2]?.answerRetry?.message).toBe(askedItemsRetryMessage(DECLARED, { missing: ['the piece count'], undeclared: [] }, 'list'))
+      expect(finalDisplay(run)).toMatchObject({ text: 'First display.' })
+      expect(run.events.filter((event) => event.type === 'display' && event.finalAnswer)).toHaveLength(1)
+      expect(run.events).toContainEqual(expect.objectContaining({ type: 'speak', text: 'First spoken.' }))
+      expect(run.askedItems).toEqual([guitar, pieces])
+      expect(run.done).toMatchObject({ type: 'done', outcome: 'done', resolution: 'completed', finalizationCause: 'objective_met' })
+      expect(run.shapeRecords).toEqual([{ kind: 'asked_items_shape', turnId: 'turn-asked', missing: ['the piece count'], undeclared: [], retried: true, listOnly: true }])
+      expect(run.retryRecords).toEqual([{ kind: 'answer_retry', turnId: 'turn-asked', role: 'orchestrator', outcome: 'on_contract' }])
+    })
+
+    it('takes only the list of a reply that is a whole Answer', async () => {
+      const run = await runScript([planRound(), first, written([guitar, pieces], 'Second spoken.', 'Second display.')])
+
+      expect(finalDisplay(run)).toMatchObject({ text: 'First display.' })
+      expect(run.events.some((event) => event.type === 'speak' && event.text === 'Second spoken.')).toBe(false)
+      expect(run.askedItems).toEqual([guitar, pieces])
+      expect(run.done).toMatchObject({ resolution: 'completed' })
+    })
+
+    it('judges the merged Answer as one: an unverified entry in the reply makes a completed Run partial', async () => {
+      const run = await runScript([planRound(), first, listReply([{ n: 2, standing: 'unverified', statement: 'The luggage page did not load.' }])])
+
+      expect(finalDisplay(run)).toMatchObject({ text: 'First display.' })
+      expect(run.askedItems).toEqual([guitar, { item: 'the piece count', standing: 'unverified', statement: 'The luggage page did not load.' }])
+      expect(run.done).toMatchObject({ resolution: 'partial' })
+      expect(run.committed[0]?.stop).toEqual({ override: askedItemsOverride(['the piece count']) })
+    })
+
+    it('lets the first Answer stand as a spent retry does when the reply carries no list', async () => {
+      const run = await runScript([planRound(), first, { kind: 'answer', speak: 'Two pieces.', display: 'Two pieces.', shape: 'off_contract' }])
+
+      expect(finalDisplay(run)).toMatchObject({ text: 'First display.' })
+      expect(run.askedItems).toEqual([guitar, { item: 'the piece count', standing: 'unverified', statement: ASKED_ITEM_UNSTATED }])
+      expect(run.done).toMatchObject({ resolution: 'partial' })
+      expect(run.shapeRecords.map((record) => record.kind === 'asked_items_shape' && record.retried)).toEqual([true, false])
+      expect(run.retryRecords).toEqual([{ kind: 'answer_retry', turnId: 'turn-asked', role: 'orchestrator', outcome: 'prose' }])
+    })
+
+    it('keeps the prose case on the whole-Answer retry, with nothing held', async () => {
+      const run = await runScript([
+        planRound(),
+        { kind: 'answer', speak: 'Prose.', display: 'Prose.', shape: 'off_contract' },
+        written([guitar, pieces], 'Yes.', 'The rewritten Answer.'),
+      ])
+
+      expect(run.llm.requests[2]?.answerRetry?.message).toBe(askedItemsRetryMessage(DECLARED, { missing: DECLARED, undeclared: [] }, 'prose'))
+      expect(finalDisplay(run)).toMatchObject({ text: 'The rewritten Answer.' })
+      expect(run.shapeRecords).toEqual([{ kind: 'asked_items_shape', turnId: 'turn-asked', missing: DECLARED, undeclared: [], retried: true, listOnly: false }])
+    })
   })
 
   it('settles a still-short reply as unverified and resolves the Run partial, the override on the Stop Record (#250/AC3-4)', async () => {
@@ -9219,7 +9280,7 @@ describe('Asked Items on the Answer (#250, ADR 0052)', () => {
       answer([guitar, pieces]),
     ])
 
-    expect(run.llm.requests[2]?.answerRetry?.message).toBe(askedItemsRetryMessage({ missing: DECLARED, undeclared: [] }, true))
+    expect(run.llm.requests[2]?.answerRetry?.message).toBe(askedItemsRetryMessage(DECLARED, { missing: DECLARED, undeclared: [] }, 'prose'))
     expect(run.llm.requests[2]?.answerRetry?.message).toMatch(/was not the JSON object, so it carries no "asked_items"/)
     expect(run.askedItems).toEqual([guitar, pieces])
     expect(run.done).toMatchObject({ resolution: 'completed' })

@@ -7,7 +7,7 @@ import type { InspectionSubject } from '../session/inspectionReference'
 import type { UserCorrectionSubject } from '../session/userCorrections'
 import type { VerificationSubject } from '../session/verificationAttempts'
 import type { AnswerShape } from '../agent/answerContract'
-import type { AskedItemStanding } from '../agent/askedItems'
+import type { AskedItemEntry } from '../agent/askedItems'
 import type { SubagentReportFinding } from '../agent/subagentReport'
 import type { MishearProposal } from '../voice/learnedTerms'
 import { toErrorMessage } from '../errors.ts'
@@ -310,7 +310,7 @@ export type AssistantTurn =
        * `unverified` with why. Validated at the contract; malformed drops
        * the list, which the pipeline then reads as missing.
        */
-      askedItems?: readonly AskedItemStanding[]
+      askedItems?: readonly AskedItemEntry[]
       askedItemsIssue?: 'malformed'
       /**
        * The Answer Checkpoints (#288, ADR 0072): the Observations and

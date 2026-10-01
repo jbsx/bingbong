@@ -491,7 +491,10 @@ a yes or no, a qualification, a named item's standing — declared by the model
 in the Run's first Run Plan and revised only by a Steering replan. The Answer
 carries a standing for every one of them, `stated` with the statement or
 `unverified` with why, and an unverified Asked Item makes the Run Resolution
-`partial` whatever the model claimed. A Run that hunts and declares none has
+`partial` whatever the model claimed. An entry names its item by its number
+in the declared list or by its wording; a list that is not the declared one
+is sent back once for the list alone, merged into the Answer as first
+written (ADR 0052, #311). A Run that hunts and declares none has
 not planned. Direct Actions declare none; Subagents, which write Reports,
 never declare any.
 _Avoid_: ask, requirement, sub-question, deliverable, checklist

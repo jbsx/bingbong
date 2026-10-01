@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { answerRetryMessage, capSentences, parseAssistantAnswer, partialAnswerText, spokenErrorLine } from './answerContract'
+import { answerRetryMessage, capSentences, parseAskedItemsReply, parseAssistantAnswer, partialAnswerText, spokenErrorLine } from './answerContract'
 
 describe('capSentences', () => {
   it('keeps the first n sentences', () => {
@@ -315,6 +315,40 @@ describe('parseAssistantAnswer', () => {
     const answer = parseAssistantAnswer(JSON.stringify({ speak: 'Yes.', display: 'The guitar can travel.', asked_items: askedItems }))
 
     expect(answer).toEqual({ speak: 'Yes.', display: 'The guitar can travel.', askedItemsIssue: 'malformed', shape: 'on_contract' })
+  })
+
+  it('reads an entry that names its item by number (#311)', () => {
+    const answer = parseAssistantAnswer(JSON.stringify({
+      speak: 'Yes.',
+      display: 'The guitar can travel.',
+      asked_items: [{ n: 2, item: 'guitar', standing: 'stated', statement: 'One piece.' }, { n: 1, standing: 'unverified', statement: 'Not loaded.' }],
+    }))
+
+    expect(answer.askedItems).toEqual([
+      { n: 2, item: 'guitar', standing: 'stated', statement: 'One piece.' },
+      { n: 1, standing: 'unverified', statement: 'Not loaded.' },
+    ])
+  })
+
+  describe('a list-only reply to the Asked Items retry (#311)', () => {
+    const list = [{ n: 1, standing: 'stated', statement: 'Two pieces.' }]
+
+    it.each([
+      ['bare', JSON.stringify({ asked_items: list })],
+      ['fenced', '```json\n' + JSON.stringify({ asked_items: list }) + '\n```'],
+      ['inside prose', 'Here is the list: ' + JSON.stringify({ asked_items: list })],
+      ['whole Answer, its other fields ignored', JSON.stringify({ speak: 'Other.', display: 'Other.', asked_items: list })],
+    ])('reads the list from a %s reply', (_, reply) => {
+      expect(parseAskedItemsReply(reply)).toEqual(list)
+    })
+
+    it.each([
+      ['prose', 'The piece count is two.'],
+      ['no list', JSON.stringify({ speak: 'Yes.', display: 'Yes.' })],
+      ['a malformed list', JSON.stringify({ asked_items: [{ n: 1, standing: 'maybe', statement: 'x' }] })],
+    ])('reads no list from %s', (_, reply) => {
+      expect(parseAskedItemsReply(reply)).toBeNull()
+    })
   })
 
   it('accepts the one Candidate an Answer presents for inspection (#210)', () => {

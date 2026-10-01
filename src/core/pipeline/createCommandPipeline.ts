@@ -19,12 +19,13 @@ import { LlmRequestTimeoutError, LlmTransportError } from '../ports/llm'
 import { selectDelegatedMemory } from '../agent/subagentReport'
 import { createLlmDeltaBatcher } from './deltaBatcher'
 import type { TtsSpeaker } from '../ports/tts'
-import { answerRetryMessage, answerText, malformedErrorOf, spokenErrorLine } from '../agent/answerContract'
+import { answerRetryMessage, answerText, malformedErrorOf, parseAskedItemsReply, spokenErrorLine } from '../agent/answerContract'
 import {
   ASKED_ITEM_UNESTABLISHED,
   askedItemsCoverage,
   askedItemsCovered,
   askedItemsRetryMessage,
+  mergeAskedItems,
   settleAskedItems,
   unverifiedAskedItems,
   type AskedItemStanding,
@@ -1590,6 +1591,11 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
         // round the loop makes it.
         let answerRetrySpent = false
         let owedAnswerRetry: AnswerRetryRequest | undefined
+        // The Answer a list-only Asked Items retry sent back (#311): read,
+        // judged, and waiting only for its list. The round that carries
+        // the retry takes it, and whatever that round replies, the Answer
+        // is this one with the reply's list merged in.
+        let owedHeldAnswer: Extract<AssistantTurn, { kind: 'answer' }> | undefined
         // The cause that fallback answers under, asked in one place so the
         // Answer the user hears and the trace record of the failed round
         // can never disagree: the phase's own Finalization Cause, or the
@@ -1917,6 +1923,8 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           // in the finally, where a round that threw is known too.
           const roundAnswerRetry = owedAnswerRetry
           owedAnswerRetry = undefined
+          const roundHeldAnswer = owedHeldAnswer
+          owedHeldAnswer = undefined
           let roundAnswerRetryOutcome: AnswerRetryOutcome = 'round_failed'
           // The renderings of this round's Answer that are off-language (#286).
           let roundOffLanguage: readonly OffLanguageFinding[] = []
@@ -2048,10 +2056,26 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             turn = await llm.complete(request)
             roundUsage = turn.usage
             roundOutcome = 'completed'
-            // An Off-language Answer is that whatever its shape (#286),
-            // judged once here for the record and the check below.
-            if (turn.kind === 'answer') roundOffLanguage = offLanguageRenderings(turn)
-            roundAnswerRetryOutcome = roundOffLanguage.length > 0 ? 'off_language' : answerRetryOutcome(turn)
+            if (roundHeldAnswer !== undefined) {
+              // The reply to a list-only retry (#311) is read for its list
+              // alone — a list-only object, or a whole Answer whose other
+              // fields are ignored — and the Answer is the one sent back,
+              // with that list merged in. Its renderings were judged when
+              // it was first written, so nothing here is judged for
+              // language. A reply with no readable list, tool calls
+              // included, leaves the first list as written, and the check
+              // below settles it as a spent retry.
+              const reply =
+                turn.kind !== 'answer' ? null : turn.shape === 'on_contract' ? (turn.askedItems ?? null) : parseAskedItemsReply(answerText(turn))
+              roundAnswerRetryOutcome = reply !== null ? 'on_contract' : answerRetryOutcome(turn)
+              const merged = mergeAskedItems(runPlan?.askedItems ?? [], roundHeldAnswer.askedItems, reply)
+              turn = merged !== undefined ? { ...roundHeldAnswer, askedItems: merged } : roundHeldAnswer
+            } else {
+              // An Off-language Answer is that whatever its shape (#286),
+              // judged once here for the record and the check below.
+              if (turn.kind === 'answer') roundOffLanguage = offLanguageRenderings(turn)
+              roundAnswerRetryOutcome = roundOffLanguage.length > 0 ? 'off_language' : answerRetryOutcome(turn)
+            }
           } catch (err) {
             roundError = err
             // What ended the round, for its record (#218): the cuts this
@@ -2317,15 +2341,30 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           // spent retry is spent: the Answer then stands as written, and
           // every declared item it left unstated settles `unverified`
           // below, which is what makes the Run partial.
+          //
+          // An Answer the runtime could read is asked for its list alone
+          // (#311) and held: the reply's list is merged into it, so its
+          // `speak`, `display` and every other field stand as first
+          // written instead of being written a second time. A prose reply
+          // has no Answer to merge into and is asked for the whole Answer.
           const declaredAskedItems = runPlan?.askedItems ?? []
           if (turn.kind === 'answer' && turn.shape !== 'malformed' && declaredAskedItems.length > 0) {
             const coverage = askedItemsCoverage(declaredAskedItems, turn.askedItems)
             if (!askedItemsCovered(coverage)) {
               const retried = !reservedRound && !answerRetrySpent
-              traceRun?.(() => ({ turnId, kind: 'asked_items_shape', missing: coverage.missing, undeclared: coverage.undeclared, retried }))
+              const listOnly = turn.shape !== 'off_contract'
+              traceRun?.(() => ({
+                turnId,
+                kind: 'asked_items_shape',
+                missing: coverage.missing,
+                undeclared: coverage.undeclared,
+                retried,
+                ...(retried ? { listOnly } : {}),
+              }))
               if (retried) {
                 answerRetrySpent = true
-                owedAnswerRetry = { reply: answerText(turn), message: askedItemsRetryMessage(coverage, turn.shape === 'off_contract') }
+                owedAnswerRetry = { reply: answerText(turn), message: askedItemsRetryMessage(declaredAskedItems, coverage, listOnly ? 'list' : 'prose') }
+                if (listOnly) owedHeldAnswer = turn
                 continue
               }
             }

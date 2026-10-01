@@ -425,8 +425,22 @@ describe('orchestrator prompt verification policy (#212)', () => {
     expect(askedItem).toMatch(/the Answer's "asked_items" carries exactly one entry per declared item/)
     expect(askedItem).toMatch(/"standing": "stated" or "unverified"/)
     expect(askedItem).toMatch(/An "unverified" entry makes "resolution" "partial"/)
-    // Stated once: no other line teaches the field.
-    expect(lines.filter((candidate) => candidate.includes('asked_items'))).toHaveLength(1)
+    // The numbered form and the list-only retry (#311).
+    expect(askedItem).toMatch(/\{"n": the item's number in the declared list, 1 for the first, "item": the item as declared/)
+    expect(askedItem).toMatch(/An entry's "n" names its item whatever its "item" says/)
+    expect(askedItem).toMatch(/asking for \{"asked_items": \[\.\.\.\]\} alone while the rest of the Answer stands as written/)
+    // Taught once: the only other line naming the field is the Answer's example object.
+    expect(lines.filter((candidate) => candidate.includes('asked_items'))).toEqual([line('{"speak":'), askedItem])
+  })
+
+  // #311: the example object shows the field, so an Answer written from it
+  // carries the list instead of ending at "checkpoints".
+  it('shows the Answer carrying asked_items with one numbered entry, before its checkpoints', () => {
+    const example = line('{"speak":')
+    const parsed = parseAssistantAnswer(example.trim())
+    expect(parsed.shape).toBe('on_contract')
+    expect(parsed.askedItems).toEqual([{ n: 1, item: '<the first declared Asked Item>', standing: 'stated', statement: '<what you established>' }])
+    expect(example.indexOf('"asked_items"')).toBeLessThan(example.indexOf('"checkpoints"'))
   })
 
   it('describes a failed check as the attempt, not the route', () => {

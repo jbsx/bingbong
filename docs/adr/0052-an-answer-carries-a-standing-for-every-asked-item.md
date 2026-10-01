@@ -97,3 +97,42 @@ item `unverified`.
   initial against baseline2 as targets, and the median Run duration against
   a bound of one round's latency as a closing condition: completeness bought
   with minutes is a different trade the owner should see as a number.
+
+## Notes
+
+- 2026-10-01 (#311): **an Answer sent back for its `asked_items` is asked
+  for the list alone, and the list is merged into it.** The retry asked
+  for "only the JSON object", and the model rewrote `speak`, `display`,
+  `run_note`, `checkpoints` and the rest to add a list of about 350
+  tokens: over the retained live traces, `baseline3` through
+  `main-4dc72e9` (406 Runs), 53 `asked_items_shape` records, 29 retried;
+  on `main-4dc72e9` the three rejected rounds took 32.9 s, 37.1 s and
+  32.4 s and wrote 2,147, 2,474 and 2,027 tokens.
+  - **The list alone.** When the Answer was readable and only its list
+    was wrong, the retry message asks for `{"asked_items": [...]}` and
+    nothing else, and the pipeline holds the Answer. Whatever the next
+    round replies, the Answer is the one held: its list is the reply's
+    entries, then — for a declared item the reply gave no standing — the
+    standing first written. A reply that is a whole Answer is read for
+    its list and the rest ignored, its renderings included, which were
+    never the Answer's; a reply with no readable list, tool calls
+    included, leaves the first list, and what it left unstated settles
+    `unverified` as after any spent retry. The merged Answer is judged
+    as one, so an `unverified` entry from the reply still moves
+    `completed` to `partial`. The prose reply and the Malformed Answer
+    keep the whole-Answer retry, since there is no Answer to merge into.
+  - **An entry names its item by number.** An entry may carry `n`, the
+    item's 1-based position in the declared list, beside or in place of
+    `item`. An entry with a valid `n` is that item whatever its wording
+    says, and the disagreement is not recorded; an `n` outside the list,
+    or one an earlier entry already used, makes its entry undeclared, as
+    an unknown wording does. An entry without `n` is matched by wording
+    as before. The Run Plan's acknowledgement, the Answer contract's
+    rule and both retry messages number the declared items, and the
+    contract's example object carries the field — it showed none, and
+    the lists that were written came last, after `checkpoints`.
+  - **The record.** The rejected round keeps its `asked_items_shape`
+    record, which gains `listOnly` on a retried record: whether the
+    retry asked for the list alone. A record written before #311 has no
+    such field, and every retry it records asked for the whole Answer.
+    The Run Trace version does not move.

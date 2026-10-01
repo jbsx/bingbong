@@ -7,7 +7,7 @@
 // keeps the Command Echo as the Peek Card's title.
 
 import type { ToolCall } from '../ports/llm'
-import { MAX_ASKED_ITEM_CHARS, MAX_ASKED_ITEMS, quoteAskedItems, sameAskedItems } from '../agent/askedItems.ts'
+import { MAX_ASKED_ITEM_CHARS, MAX_ASKED_ITEMS, numberedAskedItems, quoteAskedItems, sameAskedItems } from '../agent/askedItems.ts'
 
 /** The bounded classes of autonomous work a Run may spend (glossary). */
 export type EffortTier = 'direct_action' | 'lookup' | 'investigation'
@@ -136,8 +136,8 @@ export const RUN_PLAN_NO_ASKED_ITEMS =
 /** What an accepted plan's acknowledgement reads back (#250): the standing Asked Items, and what the Answer owes them. */
 export function askedItemsAcknowledgement(standingItems: readonly string[]): string {
   return (
-    `Asked Items (${standingItems.length}): ${quoteAskedItems(standingItems)}. ` +
-    'The Answer’s asked_items carries one entry per item, "stated" with the statement or "unverified" with why.'
+    `Asked Items (${standingItems.length}): ${numberedAskedItems(standingItems)}. ` +
+    'The Answer’s asked_items carries one entry per item, "n" its number here, "stated" with the statement or "unverified" with why.'
   )
 }
 

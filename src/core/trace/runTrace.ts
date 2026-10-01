@@ -598,6 +598,14 @@ export interface AskedItemsShapeEvent {
   readonly missing: readonly string[]
   readonly undeclared: readonly string[]
   readonly retried: boolean
+  /**
+   * On a retried record (#311): whether the retry asked for the list
+   * alone, to be merged into this Answer, rather than for the whole
+   * Answer — the prose case. Absent on a record that was not retried,
+   * and on every record written before #311, whose retries all asked for
+   * the whole Answer.
+   */
+  readonly listOnly?: boolean
 }
 
 /**

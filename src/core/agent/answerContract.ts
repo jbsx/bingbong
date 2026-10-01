@@ -3,7 +3,7 @@
 // errors get a spoken one-liner while the dashboard keeps the detail.
 
 import { MAX_RUN_NOTE_CHARS, parseFinalizationCause, parseRunResolution, type FinalizationCause, type RunResolution } from '../session/runJournal'
-import { parseAskedItemStandings, type AskedItemStanding } from './askedItems'
+import { parseAskedItemStandings, type AskedItemEntry } from './askedItems'
 import { boundedString, MAX_MEMORY_REFERENCES, MAX_MEMORY_SUBJECT_CHARS, parseMemoryPatch, type MemoryEntryId, type MemoryPatch } from '../session/workingMemory'
 import { parseMishearProposals, type MishearProposal } from '../voice/learnedTerms'
 import { parseSubagentReportSections } from './subagentReport'
@@ -195,6 +195,31 @@ export function answerRetryMessage(malformedError: string): string {
 }
 
 /**
+ * The list a reply to the list-only Asked Items retry carries (#311):
+ * `asked_items` from the JSON object it holds — bare, fenced, or with
+ * prose around it, the candidates `parseAssistantAnswer` tries. A whole
+ * Answer object is read the same way, its list taken and every other
+ * field ignored. Null when no candidate holds a readable list.
+ */
+export function parseAskedItemsReply(content: string): AskedItemEntry[] | null {
+  const trimmed = content.trim()
+  for (const candidate of [trimmed, extractFenced(trimmed), extractJsonSlice(trimmed)]) {
+    if (candidate === null) continue
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(candidate)
+    } catch (error) {
+      reportFault('agent.answerContract.parseAskedItemsReply', error)
+      continue
+    }
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) continue
+    const entries = parseAskedItemStandings((parsed as Record<string, unknown>).asked_items)
+    if (entries !== null) return entries
+  }
+  return null
+}
+
+/**
  * Parse the model's final message into {speak, display}. Accepted shapes, in
  * order: a bare JSON object, a JSON object in a code fence, a JSON object with
  * surrounding prose. Anything else falls back to the raw text — capped for
@@ -224,7 +249,7 @@ export function parseAssistantAnswer(content: string): {
   evidenceIssue?: 'malformed'
   inspectionCandidateId?: MemoryEntryId
   inspectionIssue?: 'malformed'
-  askedItems?: AskedItemStanding[]
+  askedItems?: AskedItemEntry[]
   askedItemsIssue?: 'malformed'
   answerCheckpoints?: unknown[]
   answerCheckpointsIssue?: 'malformed'
@@ -285,7 +310,7 @@ export function parseAssistantAnswer(content: string): {
           evidenceIssue?: 'malformed'
           inspectionCandidateId?: MemoryEntryId
           inspectionIssue?: 'malformed'
-          askedItems?: AskedItemStanding[]
+          askedItems?: AskedItemEntry[]
           askedItemsIssue?: 'malformed'
           answerCheckpoints?: unknown[]
           answerCheckpointsIssue?: 'malformed'
