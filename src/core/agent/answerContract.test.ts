@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { answerRetryMessage, capSentences, parseAskedItemsReply, parseAssistantAnswer, partialAnswerText, spokenErrorLine } from './answerContract'
+import { answerRetryMessage, capSentences, closedSpokenSentence, parseAskedItemsReply, parseAssistantAnswer, partialAnswerText, spokenErrorLine } from './answerContract'
 
 describe('capSentences', () => {
   it('keeps the first n sentences', () => {
@@ -524,7 +524,22 @@ describe('partialAnswerText', () => {
 
   it('passes prose straight through — the fallback contract streams raw', () => {
     expect(partialAnswerText('Plain reply, no JS')).toBe('Plain reply, no JS')
-    expect(partialAnswerText('Here you go: {"speak')).toBe('Here you go: {"speak')
+    expect(partialAnswerText('A set {x, y} of two')).toBe('A set {x, y} of two')
+  })
+
+  it('holds back a brace that may yet open the Answer object behind prose (#312)', () => {
+    expect(partialAnswerText('Here you go.\n\n{')).toBe('Here you go.\n\n')
+    expect(partialAnswerText('Here you go: {"speak')).toBe('Here you go: ')
+    expect(partialAnswerText('Here you go: {"speak" ')).toBe('Here you go: ')
+    // A brace that cannot open an object with a key is prose after all.
+    expect(partialAnswerText('Here you go: {x')).toBe('Here you go: {x')
+  })
+
+  it('reads the Answer object behind a preamble: the preamble is not shown and the envelope is never streamed (#312)', () => {
+    expect(partialAnswerText('Everything is verified. Here is the answer.\n\n{"speak":"It is 42.","display":"# The')).toBe('It is 42.')
+    expect(partialAnswerText('All points are resolved. {"run_note":"n","display":"# Det')).toBe('# Det')
+    expect(partialAnswerText('All points are resolved.\n\n{"run_note":"n"')).toBe('')
+    expect(partialAnswerText('All points are resolved.\n\n{ "speak" : "Yes')).toBe('Yes')
   })
 
   it('is monotonic as the buffer grows', () => {
@@ -543,6 +558,36 @@ describe('partialAnswerText', () => {
     expect(partialAnswerText(' \n\t')).toBe('')
     expect(partialAnswerText('\n{"display":"Hello')).toBe('Hello')
     expect(partialAnswerText('\nHello')).toBe('\nHello')
+  })
+})
+
+describe('closedSpokenSentence (#312)', () => {
+  it('is nothing until the sentence has closed and the display key has opened', () => {
+    expect(closedSpokenSentence('')).toBeNull()
+    expect(closedSpokenSentence('{"speak":"It is 4')).toBeNull()
+    expect(closedSpokenSentence('{"speak":"It is 42."')).toBeNull()
+    expect(closedSpokenSentence('{"speak":"It is 42.","disp')).toBeNull()
+    expect(closedSpokenSentence('{"speak":"It is 42.","display"')).toBeNull()
+    expect(closedSpokenSentence('{"speak":"It is 42.","display":')).toBe('It is 42.')
+    expect(closedSpokenSentence('{"speak":"It is 42.","display":"# The answer')).toBe('It is 42.')
+  })
+
+  it('unescapes the sentence as the parse would', () => {
+    expect(closedSpokenSentence('{"speak":"It\'s \\"42\\".\\nDone.","display":"x')).toBe('It\'s "42".\nDone.')
+  })
+
+  it('reads the sentence when display came first, once the sentence closes', () => {
+    expect(closedSpokenSentence('{"display":"# Full.","speak":"Short')).toBeNull()
+    expect(closedSpokenSentence('{"display":"# Full.","speak":"Short."')).toBe('Short.')
+  })
+
+  it('reads the sentence from the object behind a preamble', () => {
+    expect(closedSpokenSentence('Here is the answer.\n\n{"speak":"It is 42.","display":"#')).toBe('It is 42.')
+  })
+
+  it('is nothing for prose, for a speak key in prose, and for an object that is not the Answer', () => {
+    expect(closedSpokenSentence('I said "speak": "x", "display": "y" earlier')).toBeNull()
+    expect(closedSpokenSentence('{"query":"speak","display":"x"}')).toBeNull()
   })
 })
 

@@ -846,6 +846,19 @@ export interface AuditMechanical {
    */
   readonly offLanguageAnswers?: number
   /**
+   * Sentences spoken early (#312): the Run's `early_sentence` records, each
+   * an Answer's sentence spoken when it closed in the stream, before its
+   * round ended. Beside the rounds, never in them, reported and never
+   * gated. Absent on an audit written before the counter.
+   */
+  readonly earlySentences?: number
+  /**
+   * Second utterances (#312): the Run's `second_utterance` records, an
+   * Answer spoken after an early sentence that was not its own. Absent on
+   * an audit written before the counter.
+   */
+  readonly secondUtterances?: number
+  /**
    * Transport Failures (#271): `llm_round` attempts, the Run's and its
    * Subagents', that ended `transport`. Absent from an audit written before
    * the counter; beside the rounds, never in them.
@@ -1153,6 +1166,10 @@ export interface AuditPopulation {
    * Ledger recounts.
    */
   readonly offLanguageAnswers?: number
+  /** Sentences spoken early over the attempts that count them (#312); absent when none does. */
+  readonly earlySentences?: number
+  /** Second utterances over the attempts that count them (#312); absent when none does. */
+  readonly secondUtterances?: number
   /** Transport Failure attempts over the attempts (#271); absent on an audit written before the counter. */
   readonly transportAttempts?: number
   /** Rounds recovered by a Transport Retry over the attempts (#271). */
@@ -4180,6 +4197,11 @@ export function classifyAttempt(input: AuditTraceInput): AuditMechanical {
     malformedAnswers: records.filter((record) => record.kind === 'malformed_answer').length,
     answerRetries: records.filter((record) => record.kind === 'answer_retry').length,
     offLanguageAnswers: offLanguageAnswersOf(records),
+    // The Answer's sentence spoken early, and an Answer heard after one that
+    // was not its own (#312): the Run's own records, which a Subagent never
+    // writes.
+    earlySentences: records.filter((record) => record.kind === 'early_sentence').length,
+    secondUtterances: records.filter((record) => record.kind === 'second_utterance').length,
     // Transport Failures (#271), the Run's and its Subagents', from the
     // `llm_round` records alone: every attempt that failed at the transport,
     // the rounds whose Transport Retry then completed, and whether the Run
@@ -4777,6 +4799,8 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
   let malformedAnswers = 0
   let answerRetries = 0
   let offLanguageAnswers: number | undefined
+  let earlySentences: number | undefined
+  let secondUtterances: number | undefined
   let transportAttempts = 0
   let transportRetriesRecovered = 0
   let modelUnreachableRuns = 0
@@ -4907,6 +4931,8 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
     malformedAnswers += mechanical.malformedAnswers
     answerRetries += mechanical.answerRetries
     if (mechanical.offLanguageAnswers !== undefined) offLanguageAnswers = (offLanguageAnswers ?? 0) + mechanical.offLanguageAnswers
+    if (mechanical.earlySentences !== undefined) earlySentences = (earlySentences ?? 0) + mechanical.earlySentences
+    if (mechanical.secondUtterances !== undefined) secondUtterances = (secondUtterances ?? 0) + mechanical.secondUtterances
     transportAttempts += mechanical.transportAttempts ?? 0
     transportRetriesRecovered += mechanical.transportRetriesRecovered ?? 0
     modelUnreachableRuns += mechanical.modelUnreachableRuns ?? 0
@@ -5023,6 +5049,8 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
     malformedAnswers,
     answerRetries,
     ...(offLanguageAnswers !== undefined ? { offLanguageAnswers } : {}),
+    ...(earlySentences !== undefined ? { earlySentences } : {}),
+    ...(secondUtterances !== undefined ? { secondUtterances } : {}),
     transportAttempts,
     transportRetriesRecovered,
     modelUnreachableRuns,
@@ -5405,6 +5433,12 @@ function populationOffLanguageAnswersText(population: AuditPopulation): string {
   return `${population.offLanguageAnswers} Off-language Answer(s)`
 }
 
+/** A population's sentences spoken early and second utterances (#312), or "not counted" on audits written before the counter. */
+function populationEarlySentencesText(population: AuditPopulation): string {
+  if (population.earlySentences === undefined) return 'sentences spoken early not counted'
+  return `${population.earlySentences} sentence(s) spoken early (${population.secondUtterances ?? 0} second utterance(s))`
+}
+
 /** A population's bookkeeping rounds right before the Answer (#288), or "not counted" on an audit written before the counter. */
 function populationBookkeepingBeforeAnswerText(population: AuditPopulation): string {
   if (population.bookkeepingBeforeAnswer === undefined) return 'bookkeeping rounds right before the Answer not counted'
@@ -5510,7 +5544,7 @@ function judgementLines(populations: readonly AuditPopulation[]): string[] {
       `- ${population.label}: ${population.offKeyRounds} Off-key round(s), ${population.searchLoopRounds} Search Loop round(s) by the reviewer (${population.mechanicalSearchRounds} by the streak rule, heads included: ${population.searchRoundsAtStreak2} at streak 2 or beyond, ${population.searchRoundsAtStreak3} at 3 or beyond; attempts by search source ${SEARCH_SOURCES.map((source) => `${source} ${population.searchSources[source]}`).join(', ')}; navigate searches by Search URL form ${searchFormsText(population.searchForms)}; ${populationBlockedOrInertText(population.blockedOrInert)}; ${populationUnavailableLandingsText(population.unavailableLandings)}; ${populationEmptyLandingsText(population.emptyLandings)}; ${populationPageArrivalsText(population.pageArrivals)}; ${populationConsentWallsText(population.consentWalls)}; ${populationWindowOpensText(population.windowOpens)}; ${populationTierEscalationsText(population.tierEscalations)}), ` +
       `${population.inheritedRounds} inherited, ${population.rejectedCheckpoints} rejected Evidence Checkpoint(s), ${population.walledRounds} walled round(s), ${population.notFoundNavigates} navigate(s) landed on a Not-found Page (${population.notFoundOffKey} judged Off-key), ${population.rewrittenComposedAddresses ?? 0} Composed Address(es) rewritten into a site search (${population.rewrittenComposedAddressesOffKey ?? 0} judged Off-key, ${population.rewrittenShownAddresses ?? 'not counted'} to an address the Run was shown), ${population.unseenPhraseRewrites ?? 'not counted'} search(es) ran with an Unseen Phrase unquoted (${population.unseenPhraseRewritesOffKey ?? 0} judged Off-key), ${population.engineRewrites ?? 'not counted'} search(es) ran on the Run Engine in place of another Web Engine (${population.engineRewritesOffKey ?? 0} judged Off-key), ${populationResultPicksText(population)}, ${populationSelectedPassagesText(population)}, ${populationRunMadeUseText(population)}, ${populationContradictionNotesText(population)}, ${population.subagentRounds} Subagent round(s), ` +
       `${population.mergedCheckpoints} merged Evidence Checkpoint(s) (a floor), ${population.heldPageRoundsWithoutProgress} Held Page round(s) without Progress, ${population.bundledCheckpoints} bundled checkpoint round(s), ${population.sameSourceUnsupportedRounds} same-source unsupported round(s), ${subagentCitationsText(population.subagentCitations)}, ${populationSlipsText(population)}, ${delegatedPageCountsText(population.delegatedPageRounds)}, ${populationPastTheEndReadsText(population)}, ${populationPagelessLandingsText(population)}, ${populationBookkeepingBeforeAnswerText(population)}, ${populationBookkeepingBeforeCutText(population)}, ${populationAnswerCheckpointsText(population)}, ` +
-      `${population.malformedAnswers} Malformed Answer(s) (${population.answerRetries} retried), ${populationOffLanguageAnswersText(population)}, ` +
+      `${population.malformedAnswers} Malformed Answer(s) (${population.answerRetries} retried), ${populationOffLanguageAnswersText(population)}, ${populationEarlySentencesText(population)}, ` +
       `${transportText(population)}, ` +
       `${populationSkipsText(population)}, ${populationCutsText(population)}, ` +
       `${population.askedItemsDeclared} declared Asked Items (${population.askedItemsUnverified} with an unverified standing, ${population.askedItemsShapeFailures} shape failure(s), ${population.askedItemsShapeRetried} retried), ` +
@@ -5546,6 +5580,9 @@ function attemptSection(attempt: AuditAttempt): string[] {
   lines.push(`- Tier shadow: ${tierShadowText(mechanical.tierShadow)}`)
   lines.push(`- Malformed Answers: ${mechanical.malformedAnswers} (${mechanical.answerRetries} retried)`)
   lines.push(`- Off-language Answers: ${mechanical.offLanguageAnswers ?? 'not counted'}`)
+  lines.push(
+    `- Sentences spoken early: ${mechanical.earlySentences === undefined ? 'not counted' : `${mechanical.earlySentences} (${mechanical.secondUtterances ?? 0} second utterance(s))`}`,
+  )
   lines.push(`- Transport Failures: ${transportText(mechanical)}`)
   lines.push(`- Finalization: ${finalizationText(mechanical)}`)
   lines.push(`- Asked Items: ${askedItemsText(mechanical.askedItems)}`)

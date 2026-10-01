@@ -54,6 +54,42 @@ describe('llm delta batcher', () => {
     expect(texts(flushed)).toEqual(['Opening You', 'Tube.'])
   })
 
+  it('restarts the stream at the Answer object behind a preamble: the preamble goes, the envelope never streams (#312)', () => {
+    const { clock, flushed, batcher } = makeBatcher()
+
+    batcher.onDelta({ kind: 'text', text: 'Everything is verified. Here is the answer.' })
+    clock.advance(DELTA_FLUSH_MS)
+    batcher.onDelta({ kind: 'text', text: '\n\n{' })
+    clock.advance(DELTA_FLUSH_MS)
+    batcher.onDelta({ kind: 'text', text: '"speak":"It is ' })
+    clock.advance(DELTA_FLUSH_MS)
+    batcher.onDelta({ kind: 'text', text: '42.","display":"# The answer","run_note":"n"}' })
+    batcher.flush()
+
+    expect(flushed).toEqual([
+      { kind: 'text', text: 'Everything is verified. Here is the answer.', at: DELTA_FLUSH_MS },
+      // The brace is held back: it may yet open the object.
+      { kind: 'text', text: '\n\n', at: DELTA_FLUSH_MS * 2 },
+      // The object opened: the stream restarts at its value.
+      { kind: 'text', text: 'It is ', restart: true, at: DELTA_FLUSH_MS * 3 },
+      { kind: 'text', text: '42.', at: DELTA_FLUSH_MS * 3 },
+    ])
+  })
+
+  it('restarts with nothing when the object behind a preamble has shown no value yet (#312)', () => {
+    const { clock, flushed, batcher } = makeBatcher()
+
+    batcher.onDelta({ kind: 'text', text: 'All points are resolved.' })
+    clock.advance(DELTA_FLUSH_MS)
+    batcher.onDelta({ kind: 'text', text: ' {"run_note":"hidden",' })
+    clock.advance(DELTA_FLUSH_MS)
+    batcher.onDelta({ kind: 'text', text: '"display":"Hi' })
+    clock.advance(DELTA_FLUSH_MS)
+
+    expect(texts(flushed)).toEqual(['All points are resolved.', '', 'Hi'])
+    expect(flushed[1]).toEqual({ kind: 'text', text: '', restart: true, at: DELTA_FLUSH_MS * 2 })
+  })
+
   it('streams only the display value of a JSON Answer delivered across three windows (#305)', () => {
     const { clock, flushed, batcher } = makeBatcher()
 

@@ -135,25 +135,75 @@ export function scanPartialJsonString(content: string, openQuote: number): { val
   return { value: out, closed: false }
 }
 
+/** A JSON object opening with a key (#312): how the Answer object is told from a brace in prose. */
+const OBJECT_OPENING = /\{\s*"[A-Za-z_]+"\s*:/
+
+/** A tail that may yet become {@link OBJECT_OPENING}: a brace and as much of a key as has arrived. */
+const OBJECT_OPENING_PREFIX = /\{\s*(?:"[A-Za-z_]*(?:"\s*)?)?$/
+
+/**
+ * Where the Answer object in a streamed reply starts (#312): at the
+ * reply's first character that is not whitespace when that is a brace, or
+ * behind prose where an object opens with a key. Null while there is none.
+ * Eight of `main-4dc72e9`'s eighteen final Answers wrote a sentence of
+ * prose before the object, every one of them separated from it by
+ * whitespace.
+ */
+function answerObjectStart(content: string): number | null {
+  const opening = content.trimStart()
+  if (opening.startsWith('{')) return content.length - opening.length
+  const match = OBJECT_OPENING.exec(content)
+  return match === null ? null : match.index
+}
+
 /**
  * The visible fragment of a partially streamed answer (#47): the raw
  * content buffer is the answer-contract JSON in flight, so the first
  * `"display"`/`"speak"` value that opens streams (unescaping completed
- * escapes); prose — the fallback contract — streams raw. Monotonic: the
- * visible text only grows as the buffer grows, so successive calls diff
- * cleanly into flush fragments. The first key to open owns the stream; a
- * later key never shrinks it (the final display entry replaces the
- * partial at round end). A buffer that is whitespace so far shows nothing
- * (#305): it may yet open as JSON, and whitespace sent as prose would be
- * text the JSON's value never starts with.
+ * escapes); prose — the fallback contract — streams raw. The first key to
+ * open owns the stream; a later key never shrinks it (the final display
+ * entry replaces the partial at round end). A buffer that is whitespace so
+ * far shows nothing (#305): it may yet open as JSON, and whitespace sent
+ * as prose would be text the JSON's value never starts with.
+ *
+ * Prose that an Answer object follows is a preamble (#312), and the object
+ * is read behind it: once the object opens, the visible text is its value
+ * and nothing of the preamble. Until then prose is all there is to show —
+ * a tool round's narration reads exactly like a preamble — so the visible
+ * text is monotonic but for that one restart, and a brace at the tail that
+ * may yet open the object is held back, so the envelope never shows.
  */
 export function partialAnswerText(content: string): string {
   const opening = content.trimStart()
   if (opening === '') return ''
-  if (!opening.startsWith('{')) return content
-  const key = /"(?:display|speak)"\s*:\s*"/.exec(content)
+  const start = answerObjectStart(content)
+  if (start === null) {
+    const held = OBJECT_OPENING_PREFIX.exec(content)
+    return held === null ? content : content.slice(0, held.index)
+  }
+  const object = content.slice(start)
+  const key = /"(?:display|speak)"\s*:\s*"/.exec(object)
   if (!key) return ''
-  return scanPartialJsonString(content, key.index + key[0].length - 1).value
+  return scanPartialJsonString(object, key.index + key[0].length - 1).value
+}
+
+/**
+ * The Answer's spoken sentence once the stream has closed it (#312): the
+ * `speak` value of the reply's Answer object, unescaped, once its closing
+ * quote has arrived and the object's `"display"` key has opened — the key
+ * that says the object is the Answer and not some other JSON. Null until
+ * then, and for prose. What the sentence must still pass before it is
+ * spoken is the pipeline's to ask.
+ */
+export function closedSpokenSentence(content: string): string | null {
+  const start = answerObjectStart(content)
+  if (start === null) return null
+  const object = content.slice(start)
+  const key = /"speak"\s*:\s*"/.exec(object)
+  if (!key) return null
+  const sentence = scanPartialJsonString(object, key.index + key[0].length - 1)
+  if (!sentence.closed) return null
+  return /"display"\s*:/.test(object) ? sentence.value : null
 }
 
 /**

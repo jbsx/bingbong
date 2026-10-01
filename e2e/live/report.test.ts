@@ -243,6 +243,23 @@ describe('Task Success and Task Completion Time', () => {
     return { set: captureSet({ slots: [slotOf(attempt)], sessions: [session] }), sessions: [session] }
   }
 
+  it('reports the spoken sentence beside the Answer latency, as its own number (#312)', () => {
+    const early = { v: 12, at: T0, turnId: 'turn-a1', kind: 'early_sentence', round: 3, publishedAt: T0 + 4_000, sinceRoundStartMs: 900, untilRoundEndMs: 5_000, ended: 'answer' }
+    const attempt = attemptCapture({
+      attemptId: 'a1',
+      huntId: 'hunt-a',
+      answer: { at: 9_000, text: 'the Answer' },
+      traceRecords: [early as unknown as NonNullable<Parameters<typeof attemptCapture>[0]['traceRecords']>[number]],
+    })
+    const { set, sessions } = single(attempt)
+    const report = built(inputFor(set, sessions, manifest, (grades) => grade(grades, 'a1', 'unsuccessful')))
+    const row = rowOf(report, 'a1')
+
+    expect(row.timing.observedAnswerLatencyMs).toEqual({ status: 'observed', value: 9_000 })
+    expect(row.timing.observedSentenceLatencyMs).toEqual({ status: 'observed', value: 4_000 })
+    expect(formatLiveReport(report)).toContain('| answer latency | sentence latency |')
+  })
+
   it('does not treat a self-declared completed Run as success', () => {
     const attempt = attemptCapture({
       attemptId: 'a1',

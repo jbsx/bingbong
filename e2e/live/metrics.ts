@@ -112,6 +112,24 @@ export function finalAnswerDisplay(events: readonly PipelineEvent[]): Observed<E
   return observed(marked[0]!)
 }
 
+/**
+ * When the Answer's spoken sentence was published (#312): a sentence
+ * spoken early in the round that ended with the Answer, at its
+ * `early_sentence` record's `publishedAt`; else the first `speak` published
+ * after the marked final Answer, as every Run spoke before the change. On
+ * the events' own clock, so it subtracts from the accepted command's `at`.
+ */
+export function answerSentenceAt(events: readonly PipelineEvent[], traceRecords: readonly object[]): Observed<number> {
+  const held = (traceRecords as readonly { kind?: unknown; ended?: unknown; publishedAt?: unknown }[]).find(
+    (record) => record.kind === 'early_sentence' && record.ended === 'answer' && typeof record.publishedAt === 'number',
+  )
+  if (held !== undefined) return stampOf(held.publishedAt as number, 'the early sentence')
+  const answer = finalAnswerDisplay(events)
+  if (answer.status !== 'observed') return { ...answer }
+  const spoken = events.slice(events.indexOf(answer.value) + 1).find((event) => event.type === 'speak')
+  return spoken === undefined ? unavailable('nothing was spoken after the final Answer') : stampOf(spoken.at, 'the spoken sentence')
+}
+
 /** Every ask and confirmation the Run raised, paired with its resolution. */
 export function waitIntervals(events: readonly PipelineEvent[]): LiveWaitInterval[] {
   const asks = ofType(events, 'ask_requested').map((request): LiveWaitInterval => {
@@ -235,7 +253,8 @@ export function extractLiveMetrics(input: LiveMetricsInput): LiveMetrics {
     finalAnswerAt,
     terminalAt,
     answerLatencyMs: elapsed(acceptedAt, finalAnswerAt, 'the final Answer'),
-    runDurationMs: elapsed(acceptedAt, terminalAt, 'the terminal'),
+    sentenceLatencyMs: elapsed(acceptedAt, answerSentenceAt(events, traceRecords), 'the spoken sentence'),
+    runDurationMs:elapsed(acceptedAt, terminalAt, 'the terminal'),
     userWaitMs: userWait(waits),
     waits,
     speech: {

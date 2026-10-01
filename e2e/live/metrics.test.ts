@@ -50,6 +50,31 @@ function llmRound(overrides: Record<string, unknown>): TraceRecord {
   } as TraceRecord
 }
 
+describe('the Answer’s spoken sentence (#312)', () => {
+  const early = (publishedAt: number, ended: string): TraceRecord =>
+    ({ v: 12, at: 9_999, turnId: 't1', runId: 'r1', sessionId: 's1', generation: 1, kind: 'early_sentence', round: 1, publishedAt, sinceRoundStartMs: 1, untilRoundEndMs: 1, ended }) as unknown as TraceRecord
+
+  it('is the speak after the marked final Answer when no sentence was spoken early, beside the Answer latency', () => {
+    const metrics = extractLiveMetrics({ events, perfRecords: perf, traceRecords: [], input: 'typed', clockOrigin: 'cap-1' })
+    expect(metrics.sentenceLatencyMs).toEqual({ status: 'observed', value: 501 })
+    expect(metrics.answerLatencyMs).toEqual({ status: 'observed', value: 500 })
+  })
+
+  it('is the sentence spoken early in the round that ended with the Answer, when one was', () => {
+    const traced = [early(1_100, 'tool_calls'), early(1_350, 'answer')]
+    const metrics = extractLiveMetrics({ events, perfRecords: perf, traceRecords: traced, input: 'typed', clockOrigin: 'cap-1' })
+    expect(metrics.sentenceLatencyMs).toEqual({ status: 'observed', value: 350 })
+    // The Answer latency keeps its boundary.
+    expect(metrics.answerLatencyMs).toEqual({ status: 'observed', value: 500 })
+  })
+
+  it('is unavailable when nothing spoke the Answer', () => {
+    const silent = events.filter((event) => event.type !== 'speak')
+    const metrics = extractLiveMetrics({ events: silent, perfRecords: perf, traceRecords: [], input: 'typed', clockOrigin: 'cap-1' })
+    expect(metrics.sentenceLatencyMs?.status).toBe('unavailable')
+  })
+})
+
 describe('extractLiveMetrics', () => {
   it('reads the marked final Answer, not the last display, and keeps Answer latency apart from Run duration', () => {
     const metrics = extractLiveMetrics({ events, perfRecords: perf, traceRecords: [], input: 'typed', clockOrigin: 'cap-1' })

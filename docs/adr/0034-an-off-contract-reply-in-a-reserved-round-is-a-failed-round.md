@@ -104,6 +104,46 @@ decision. The loop now counts its own LLM rounds, whether or not a Run Trace
 is written, and the count is the one the `llm_round` record carries. The
 fault and the record name the same round, and neither says 0.
 
+Note of 2026-10-01 (#312): the Answer's sentence is spoken when it closes in
+the stream, before its round ends, so the Answer Retry can now meet an Answer
+whose sentence the user has already heard. In `main-4dc72e9` the sentence
+closed 8.4 to 36.9 s before it was spoken, median 16.7 s, because `speak` was
+published only when the whole round ended. Decided:
+
+- **What the user heard is the Answer's sentence.** A round that spoke its
+  sentence early and then ended with an Answer, whatever its shape, holds that
+  sentence for the Run. A Malformed Answer, an Off-language Answer whose
+  sentence passed and an Asked Items list that falls short each still spend
+  the one Answer Retry, but the retried Answer's own `speak` is not spoken:
+  the held sentence is the one the Answer records, the one the Identity Slip
+  repair reads and the one the Off-language check judges. A Steering replan
+  lets the sentence go, because the corrected objective's Answer is a new one.
+- **A round that ends with no Answer spoke for none.** That covers a deadline
+  cut, a client timeout, a transport failure, and a round that called tools
+  after closing a sentence. The Answer that finally lands, the deterministic
+  one included, is spoken as before, and the user hears it as a second
+  utterance. This is counted (`second_utterance`, and in the Round Audit),
+  not guarded against.
+- **Only the checks the sentence can meet alone run before it is spoken**:
+  the two-sentence cap, the Identity Slip repair (deletion, as for any
+  Spoken Rendering) and the Off-language check. A sentence that fails one is
+  not spoken early, and its round is handled as before.
+- **The sentence is spoken once `speak` has closed and the object's
+  `"display"` key has opened**, the key that marks the object as the Answer.
+  The reserved rounds still stream nothing, so they speak at their end. A
+  Subagent's reply is never spoken.
+- **The stream reader finds the object behind a preamble.** Eight of that
+  capture's eighteen final Answers wrote a sentence of prose before the
+  object, and the whole envelope then streamed as text. Prose cannot be held
+  back, because 61 of its 216 tool rounds streamed narration that reads
+  exactly like a preamble. So prose streams as before, a brace at the tail
+  that may yet open an object is held back, and once an object opens the
+  stream restarts at its value. The feed drops what streamed before, so the
+  preamble does not stay on screen and the envelope never shows.
+- **No new ADR, and no Run Trace version.** `early_sentence` and
+  `second_utterance` are new records whose absence in an older trace means
+  what it means now: no sentence was spoken early.
+
 ## Context
 
 The Answer contract is JSON with `speak` and `display`. The parser tries the
