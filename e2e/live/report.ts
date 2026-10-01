@@ -99,6 +99,13 @@ export interface LiveRowTiming {
   /** Accepted command to the marked final Answer. Kept whatever the grade says. */
   readonly observedAnswerLatencyMs: Observed<number>
   /**
+   * Accepted command to the Answer's spoken sentence (#312), its own number
+   * beside the Answer latency: the sentence may be spoken before its round
+   * ends, and the Answer latency keeps the Card as its boundary. Absent from
+   * a report written before the measure.
+   */
+  readonly observedSentenceLatencyMs?: Observed<number>
+  /**
    * The Task Completion Time, present only for an independently verified
    * Answer. For a corrective chain it runs from the chain's first accepted
    * command, so the failed work before the correction is inside it.
@@ -586,6 +593,10 @@ function rowFor(view: SlotView, entry: LiveGradeEntry, byId: ReadonlyMap<string,
     timing: {
       boundary: metrics?.answerBoundary ?? null,
       observedAnswerLatencyMs: answerLatency,
+      observedSentenceLatencyMs:
+        metrics === null
+          ? unavailable('no attempt was dispatched into this slot')
+          : (metrics.sentenceLatencyMs ?? unavailable('the capture was written before the spoken sentence was measured')),
       successfulTaskCompletionTimeMs: completion,
       runDurationMs: metrics?.runDurationMs ?? unavailable('no attempt was dispatched into this slot'),
       userWaitMs: metrics?.userWaitMs ?? unavailable('no attempt was dispatched into this slot'),
@@ -1114,13 +1125,13 @@ export function formatLiveReport(report: LiveReport): string {
   lines.push('')
   lines.push('## Attempts')
   lines.push('')
-  lines.push('| slot | hunt/step | disposition | grade | outcome | proposed | cause | answer latency | task completion | run duration | flags |')
-  lines.push('| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |')
+  lines.push('| slot | hunt/step | disposition | grade | outcome | proposed | cause | answer latency | sentence latency | task completion | run duration | flags |')
+  lines.push('| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |')
   for (const row of report.rows) {
     lines.push(
       `| ${row.attemptId} | ${row.huntId}/${row.stepId} | ${row.disposition} | ${row.grade} | ` +
         `${row.mechanical.outcome ?? '—'} | ${row.mechanical.resolution ?? '—'} | ${row.mechanical.finalizationCause ?? '—'} | ` +
-        `${ms(row.timing.observedAnswerLatencyMs)} | ${ms(row.timing.successfulTaskCompletionTimeMs)} | ${ms(row.timing.runDurationMs)} | ` +
+        `${ms(row.timing.observedAnswerLatencyMs)} | ${ms(row.timing.observedSentenceLatencyMs ?? unavailable('not measured'))} | ${ms(row.timing.successfulTaskCompletionTimeMs)} | ${ms(row.timing.runDurationMs)} | ` +
         `${row.flags.length === 0 ? '—' : row.flags.join(' ')} |`,
     )
   }

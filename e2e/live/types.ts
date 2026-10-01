@@ -335,6 +335,13 @@ export interface LiveMetrics {
   readonly terminalAt: Observed<number>
   /** Marked final display `at` minus accepted command `at`. */
   readonly answerLatencyMs: Observed<number>
+  /**
+   * The Answer's spoken sentence `at` minus accepted command `at` (#312):
+   * its own number beside the Answer latency, which keeps the Card as its
+   * boundary. The sentence may be spoken before its round ends. Absent from
+   * a capture written before the measure.
+   */
+  readonly sentenceLatencyMs?: Observed<number>
   /** `done.at` minus accepted command `at` — full Run duration, distinct from the Answer. */
   readonly runDurationMs: Observed<number>
   /** Sum of resolved user waits; observed 0 when the Run never waited. */

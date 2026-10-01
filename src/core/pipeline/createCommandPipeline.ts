@@ -18,7 +18,8 @@ import type {
 import { LlmRequestTimeoutError, LlmTransportError } from '../ports/llm'
 import { selectDelegatedMemory } from '../agent/subagentReport'
 import { createLlmDeltaBatcher } from './deltaBatcher'
-import type { TtsSpeaker } from '../ports/tts'
+import { createSpokenSentenceWatch, type EarlySentence } from './earlySentence'
+import type { SpeakOutcome, TtsSpeaker } from '../ports/tts'
 import { answerRetryMessage, answerText, malformedErrorOf, spokenErrorLine } from '../agent/answerContract'
 import {
   ASKED_ITEM_UNESTABLISHED,
@@ -381,6 +382,12 @@ const RUN_FAILED_SPOKEN = 'I could not finish that request.'
  * One automatic Tier Escalation waiting to be announced (#216): what the
  * epoch decided, the plan it produced, and when the tier actually rose.
  */
+/** An Answer's sentence spoken before its round ended (#312), and its playback. */
+interface PublishedSentence {
+  readonly sentence: EarlySentence
+  readonly playback: Promise<SpeakOutcome>
+}
+
 interface TierEscalationAnnouncement {
   readonly escalation: TierEscalation
   readonly plan: RunPlan
@@ -757,6 +764,17 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
     }
   }
 
+  /**
+   * The end of an Answer whose sentence was spoken before its round ended
+   * (#312): the status the spoken line sets, then the playback that
+   * started then — the sentence is not spoken a second time.
+   */
+  async function* finishSpokenSentence(held: PublishedSentence): AsyncGenerator<UnstampedEvent> {
+    yield { type: 'status', status: 'speaking', at: clock.now() }
+    const outcome = await held.playback
+    if (!outcome.ok) yield { type: 'error', message: spokenErrorLine(outcome.error), at: clock.now() }
+  }
+
   async function* execute(
     command: string,
     turnId?: string,
@@ -799,7 +817,17 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
      * it and declare the Run back down.
      */
     let tierRaisedByEpoch = false
-    /** The pending announcement, once: the loop top makes it and it is gone. */
+    /**
+     * The Answer's sentence spoken before its round ended (#312), held by
+     * the Run once that round ended with an Answer: what the user heard is
+     * that sentence, so a later Answer of the Run — an Answer Retry's, or
+     * the reserved round's after a cutoff — is not spoken again, and the
+     * sentence is the `speak` it records. A Steering replan lets it go: the
+     * corrected objective's Answer is a new one, and it is spoken.
+     */
+    let heldSentence: PublishedSentence | undefined
+    /** How many sentences this Run has spoken early: an Answer heard after one that was not its own is a second utterance. */
+    let sentencesSpokenEarly = 0
     const takeTierEscalation = (): TierEscalationAnnouncement | null => {
       const announcement = pendingTierEscalation
       pendingTierEscalation = null
@@ -1144,6 +1172,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           if (effortEpoch.replan(DEFAULT_EFFORT_TIER)) dropAllowance()
           correctedObjective = directive
           standingDirective = directive
+          heldSentence = undefined
         }
         return directive
       },
@@ -1168,7 +1197,13 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             emitDetail(
               fragment.kind === 'tool_intent'
                 ? { type: 'llm_tool_intent', index: fragment.index, name: fragment.name, args: fragment.args, at: fragment.at }
-                : { type: 'llm_delta', kind: fragment.kind, text: fragment.text, at: fragment.at },
+                : {
+                    type: 'llm_delta',
+                    kind: fragment.kind,
+                    text: fragment.text,
+                    ...('restart' in fragment ? { restart: fragment.restart } : {}),
+                    at: fragment.at,
+                  },
             ),
         })
       : undefined
@@ -1921,6 +1956,14 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           // The renderings of this round's Answer that are off-language (#286).
           let roundOffLanguage: readonly OffLanguageFinding[] = []
           llmRound += 1
+          // The Answer's sentence, watched for as the round streams (#312):
+          // in an ordinary round, while the Run holds none. A reserved round
+          // streams nothing (#198), so it speaks at its end as before, and
+          // a Subagent's reply is never spoken at all.
+          const sentenceWatch = !reservedRound && heldSentence === undefined ? createSpokenSentenceWatch() : undefined
+          const roundStartedAt = clock.now()
+          let roundSentence: { readonly published: PublishedSentence; readonly at: number } | undefined
+          let roundTurnKind: AssistantTurn['kind'] | undefined
           try {
             const request: LlmRequest = {
               command,
@@ -1997,6 +2040,9 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
                       // next attempt streams fresh instead of concatenating
                       // onto stale buffer.
                       batcher?.flush()
+                      // And a sentence it had not closed is dropped (#312):
+                      // the next attempt writes its own.
+                      sentenceWatch?.restart()
                       // The abandoned attempt's thinking (#182) closes with
                       // it, as its own record: concatenating it into the
                       // attempt that survives would hide that two happened.
@@ -2034,6 +2080,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
                       // reserved round's thinking is exactly what a
                       // diagnosis wants (#183), and it reaches no view.
                       if (!reservedRound) batcher?.onDelta(delta)
+                      if (delta.kind === 'text') sentenceWatch?.onText(delta.text)
                       reasoningRounds?.onDelta(delta)
                       // And the round's record counts it (#218): how much
                       // thinking a cut round streamed is what tells it
@@ -2045,12 +2092,31 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
               signal: armedRound.signal,
             }
             if (llmRounds) sentRound = { request: llmRequestShape(request), reasoningEffort: request.reasoningEffort ?? effortEpoch.reasoningEffort }
-            turn = await llm.complete(request)
+            const completion = llm.complete(request)
+            // The sentence is spoken when it closes (#312), and the round
+            // goes on: whichever comes first, the sentence or the round's
+            // end, and a round that ends first speaks at its end as before.
+            // A round that streams nothing never closes a sentence.
+            if (sentenceWatch !== undefined && request.onDelta !== undefined) {
+              const sentence = await Promise.race([sentenceWatch.ready, completion.then(() => null, () => null)])
+              if (sentence !== null) {
+                const at = clock.now()
+                sentencesSpokenEarly += 1
+                yield { type: 'speak', text: sentence.spoken, at }
+                roundSentence = { published: { sentence, playback: tts.speak(sentence.spoken, turnId) }, at }
+              }
+            }
+            turn = await completion
+            roundTurnKind = turn.kind
             roundUsage = turn.usage
             roundOutcome = 'completed'
             // An Off-language Answer is that whatever its shape (#286),
-            // judged once here for the record and the check below.
-            if (turn.kind === 'answer') roundOffLanguage = offLanguageRenderings(turn)
+            // judged once here for the record and the check below. The
+            // spoken rendering judged is the one the user heard: a sentence
+            // the Run holds already passed, and this Answer's is not spoken.
+            if (turn.kind === 'answer') {
+              roundOffLanguage = offLanguageRenderings(heldSentence === undefined ? turn : { display: turn.display, speak: heldSentence.sentence.speak })
+            }
             roundAnswerRetryOutcome = roundOffLanguage.length > 0 ? 'off_language' : answerRetryOutcome(turn)
           } catch (err) {
             roundError = err
@@ -2196,6 +2262,22 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             if (roundAnswerRetry !== undefined) {
               writeAnswerRetry?.({ kind: 'answer_retry', role: 'orchestrator', outcome: roundAnswerRetryOutcome })
             }
+            // The sentence this round spoke early (#312): when, and how the
+            // round it spoke in ended — a round that threw ended with no turn.
+            const spokenEarly = roundSentence
+            if (spokenEarly !== undefined) {
+              const endedAt = clock.now()
+              const ended = roundTurnKind === 'answer' ? 'answer' : roundTurnKind === 'tool_calls' ? 'tool_calls' : 'no_turn'
+              traceRun?.(() => ({
+                turnId,
+                kind: 'early_sentence',
+                round: llmRound,
+                publishedAt: spokenEarly.at,
+                sinceRoundStartMs: spokenEarly.at - roundStartedAt,
+                untilRoundEndMs: endedAt - spokenEarly.at,
+                ended,
+              }))
+            }
           }
           // The round can resolve despite the deadline abort (a client that
           // ignored the signal, or the response landing in the race
@@ -2209,6 +2291,10 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             steering = afterModelSteering
             continue
           }
+          // The round ended with an Answer, so the sentence it spoke early
+          // is the Answer's (#312) — whatever an Answer Retry below makes of
+          // the rest of it. A round that called tools spoke for no Answer.
+          if (roundSentence !== undefined && turn.kind === 'answer') heldSentence = roundSentence.published
           // An Off-contract Reply in the reserved Answer round (#198, ADR
           // 0034): prose, or JSON of the wrong shape, where the round's one
           // job was the Answer contract the Finalize Instruction stated a
@@ -2374,7 +2460,11 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             // (#300): an id in a name or a statement is removed, and the
             // list the Run's own resolution reads stays as settled.
             const card = repairCard(turn.display, resolveSessionObservation)
-            const spoken = repairSpokenRendering(turn.speak)
+            // What the user heard is the Answer's sentence (#312): one the
+            // Run holds was spoken when it closed, and it is the `speak`
+            // repaired and recorded here, an Answer Retry's own unspoken.
+            const held = heldSentence
+            const spoken = repairSpokenRendering(held?.sentence.speak ?? turn.speak)
             const listed = finalAskedItems !== undefined ? repairAskedItems(finalAskedItems) : undefined
             const slips = [...card.slips, ...spoken.slips, ...(listed?.slips ?? [])]
             if (slips.length > 0) traceRun?.(() => ({ turnId, kind: 'identity_slip', slips }))
@@ -2437,7 +2527,13 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
                 }
               }
             }
-            yield* speakLine(spoken.text, turnId)
+            // A sentence held is not spoken again (#312); one spoken early
+            // for no Answer, before this one, was a second utterance.
+            if (sentencesSpokenEarly > (held !== undefined ? 1 : 0)) {
+              traceRun?.(() => ({ turnId, kind: 'second_utterance', deterministic: false }))
+            }
+            if (held !== undefined) yield* finishSpokenSentence(held)
+            else yield* speakLine(spoken.text, turnId)
             yield* checkpoint(run, 'thinking')
             break
           }
@@ -2679,6 +2775,9 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             ...(listed !== undefined ? { askedItems: listed.items } : {}),
             at: clock.now(),
           }
+          // The deterministic Answer is always spoken (#312): after a
+          // sentence spoken early, the user hears it as a second utterance.
+          if (sentencesSpokenEarly > 0) traceRun?.(() => ({ turnId, kind: 'second_utterance', deterministic: true }))
           yield* speakLine(fallback.speak, turnId)
           yield* checkpoint(run, 'thinking')
         }

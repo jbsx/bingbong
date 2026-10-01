@@ -312,6 +312,9 @@ export function createFeedProjection(deps?: {
       }
       switch (event.type) {
         case 'llm_delta':
+          // A restart replaces the streamed text (#312): what streamed was
+          // the preamble of an Answer object, never part of the Answer.
+          if (event.kind === 'text' && event.restart === true) dropOpenText()
           appendDelta(event.kind === 'text' ? 'answer_stream' : 'reasoning', event.text, event.at, event.turnId)
           return
         case 'llm_tool_intent':

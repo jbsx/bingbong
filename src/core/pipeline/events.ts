@@ -235,9 +235,11 @@ export type PipelineEvent = SessionEventIdentity & (
    * (the visible part of the raw content, answer-contract aware) or a
    * reasoning trace, flushed every ~120ms while the round is in flight —
    * not per token. Emitted on the detail channel like `llm_retry`; maps to
-   * no history entry, so history.db recording is unchanged.
+   * no history entry, so history.db recording is unchanged. A text
+   * fragment marked `restart` replaces the round's streamed text rather
+   * than extending it (#312): the Answer object opened behind a preamble.
    */
-  | { type: 'llm_delta'; turnId: string; kind: 'text' | 'reasoning'; text: string; at: number }
+  | { type: 'llm_delta'; turnId: string; kind: 'text' | 'reasoning'; text: string; restart?: true; at: number }
   /**
    * A tool call's intent while its arguments are still streaming (#48):
    * the accumulated tool name and raw argument JSON so far for the call

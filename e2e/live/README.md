@@ -93,6 +93,7 @@ try {
 | `terminal` | the `done` event | Full Run boundary: outcome, the model-proposed `resolution` (never Task Success), Finalization Cause. |
 | `settlement` | the Prompt Bar form's `aria-busy` clearing | The submit IPC settled — the runner unwound, failure screenshot included. Evaluator clock (ISO). |
 | `metrics.answerLatencyMs` | `finalAnswer.at − accepted.at` | The primary recorded latency. |
+| `metrics.sentenceLatencyMs` | the Answer's spoken sentence `at − accepted.at`: the `early_sentence` record's `publishedAt` when the sentence was spoken before its round ended (#312), else the first `speak` after `finalAnswer` | Its own number beside the Answer latency, which keeps its boundary. Absent from a capture written before #312; the report reads that as unavailable. |
 | `metrics.runDurationMs` | `terminal.at − accepted.at` | Kept separately; never substituted for the Answer. |
 | `metrics.userWaitMs` | resolved ask/confirmation intervals | `observed 0` when the Run never waited; `unavailable` while one is open. |
 | `metrics.speech` | perf `tts-synthesis` / `tts-playback` spans | Voice-input latency is `not_applicable` for typed capture, never zero. |

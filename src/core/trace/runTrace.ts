@@ -710,6 +710,36 @@ export interface AnswerCheckpointsEvent {
   readonly malformed?: true
 }
 
+/**
+ * The Answer's sentence, spoken before its round ended (#312): when the
+ * pipeline published it, from the round's start, and how long the round
+ * ran after that. `ended` is how the round ended. With an Answer the
+ * sentence is the Run's spoken one, whatever an Answer Retry then made of
+ * the Answer; with tool calls or no turn at all it spoke for no Answer, and
+ * the Answer that lands later is a second utterance. No record is written
+ * for a sentence that was not spoken early, and a trace written before the
+ * record spoke none, so no version marks it.
+ */
+export interface EarlySentenceEvent {
+  readonly kind: 'early_sentence'
+  readonly round: number
+  /** The `speak` event's own `at`, on the clock the Run's events carry. */
+  readonly publishedAt: number
+  readonly sinceRoundStartMs: number
+  readonly untilRoundEndMs: number
+  readonly ended: 'answer' | 'tool_calls' | 'no_turn'
+}
+
+/**
+ * An Answer spoken after an early sentence that was not its own (#312):
+ * the user heard two. `deterministic` when the Answer was the
+ * deterministic one.
+ */
+export interface SecondUtteranceEvent {
+  readonly kind: 'second_utterance'
+  readonly deterministic: boolean
+}
+
 /** One decision a Run traces, whatever kind it is. */
 export type RunTraceEventBody =
   | AnswerCheckpointsEvent
@@ -727,6 +757,8 @@ export type RunTraceEventBody =
   | SearchObservationEvent
   | IdentitySlipEvent
   | AskedItemsShapeEvent
+  | EarlySentenceEvent
+  | SecondUtteranceEvent
 
 /** What a Run hands the writer: one event, stamped with the turn it happened in. */
 export type RunTraceEvent = { readonly turnId: string } & RunTraceEventBody

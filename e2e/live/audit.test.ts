@@ -1282,6 +1282,48 @@ describe('Malformed Answers and Answer Retries (#245)', () => {
   })
 })
 
+describe('sentences spoken early and second utterances (#312)', () => {
+  const early = (at: number, ended: string): Record<string, unknown> => ({
+    ...identity,
+    at: T0 + at,
+    kind: 'early_sentence',
+    round: 2,
+    publishedAt: T0 + at - 1_000,
+    sinceRoundStartMs: 3_000,
+    untilRoundEndMs: 1_000,
+    ended,
+  })
+  const second = (at: number): Record<string, unknown> => ({ ...identity, at: T0 + at, kind: 'second_utterance', deterministic: false })
+  const RECORDS = [early(4_500, 'tool_calls'), early(14_500, 'answer'), second(15_000)]
+
+  it('counts both from the Run’s records, beside the rounds, reported and never gated', () => {
+    const plain = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, EXTRA) }))
+    const counted = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, [...EXTRA, ...RECORDS]) }))
+
+    expect([counted.earlySentences, counted.secondUtterances]).toEqual([2, 1])
+    expect([plain.earlySentences, plain.secondUtterances]).toEqual([0, 0])
+    expect(counted.rounds).toEqual(plain.rounds)
+    expect(counted.digestHash).toBe(plain.digestHash)
+  })
+
+  it('sums both per population and prints them, and says an audit written before the counter did not count them', () => {
+    const counted = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, [...EXTRA, ...RECORDS]) }))
+    const set = buildAuditSet(provenanceOf(), [{ mechanical: counted, review: null, countsAfterOverrules: counted.counts }], [])
+
+    expect([set.populations.initial.earlySentences, set.populations.initial.secondUtterances]).toEqual([2, 1])
+    const markdown = formatAuditSet(set)
+    expect(markdown).toContain('- Sentences spoken early: 2 (1 second utterance(s))')
+    expect(markdown).toMatch(/- initial: .*2 sentence\(s\) spoken early \(1 second utterance\(s\)\)/)
+
+    const older = { ...counted }
+    delete (older as { earlySentences?: number }).earlySentences
+    delete (older as { secondUtterances?: number }).secondUtterances
+    const before = buildAuditSet(provenanceOf(), [{ mechanical: older, review: null, countsAfterOverrules: older.counts }], [])
+    expect(before.populations.initial.earlySentences).toBeUndefined()
+    expect(formatAuditSet(before)).toContain('- Sentences spoken early: not counted')
+  })
+})
+
 describe('skipped bookkeeping rounds and Finalization rounds cut by the Allowance (#256, ADR 0056)', () => {
   const entry = (at: number, bookkeeping: 'kept' | 'skipped', agentId?: string): Record<string, unknown> => ({
     ...identity,

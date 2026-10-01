@@ -9048,10 +9048,19 @@ describe('the Answer Retry after a Malformed Answer (#245)', () => {
     expect(run.llm.requests[1]).not.toHaveProperty('answerOnly')
     // The repaired Answer is the one Answer, and its claims stand.
     expect(run.displays).toEqual([expect.objectContaining({ text: 'The guitar can travel as one of your two pieces.', finalAnswer: true })])
-    expect(run.events.filter((event) => event.type === 'speak').map((event) => (event.type === 'speak' ? event.text : ''))).toEqual(['The guitar can travel.'])
+    // The broken reply closed its sentence in the stream, so that sentence
+    // was spoken then (#312) and is the one the user heard: the retry's own
+    // is not spoken.
+    expect(run.events.filter((event) => event.type === 'speak').map((event) => (event.type === 'speak' ? event.text : ''))).toEqual([
+      "The guitar is allowed on board despite being 90 centimetres — guitars are a named exception to the 85 centimetre London-route limit. But it uses one of the two luggage slots, so with two suitcases you're one piece over: leave one suitcase behind and everything fits.",
+    ])
     expect(run.events.at(-1)).toMatchObject({ type: 'done', outcome: 'done', finalizationCause: 'objective_met' })
-    // The broken reply streamed as it arrived, and no new feed event says so.
-    expect(JSON.stringify(run.detail.filter((event) => event.type === 'llm_delta'))).toContain('the resolution')
+    // The broken reply streamed as it arrived, and no new feed event says
+    // so; its preamble was not shown and its envelope never streamed (#312).
+    const streamed = JSON.stringify(run.detail.filter((event) => event.type === 'llm_delta'))
+    expect(streamed).toContain('The guitar is allowed on board')
+    expect(streamed).not.toContain('the resolution')
+    expect(streamed).not.toContain('\\"display\\"')
     // Recorded, not stored: two records and a fault, one commit.
     expect(run.retryRecords).toEqual([
       { kind: 'malformed_answer', turnId: 'turn-retry', role: 'orchestrator', text: reply, chars: reply.length, error: malformed.malformedError },

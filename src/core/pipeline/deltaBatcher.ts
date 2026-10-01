@@ -18,8 +18,12 @@ import { partialAnswerText } from '../agent/answerContract'
 /** The flush window (spec #42/#47: ~100–150ms, not per-token IPC). */
 export const DELTA_FLUSH_MS = 120
 
-/** One batched flush: a streamed fragment plus the wall-clock time. */
-export type DeltaFlush = LlmStreamDelta & { at: number }
+/**
+ * One batched flush: a streamed fragment plus the wall-clock time. A text
+ * fragment marked `restart` replaces the round's visible text rather than
+ * extending it (#312): the Answer object opened behind a preamble.
+ */
+export type DeltaFlush = (LlmStreamDelta & { at: number }) | { kind: 'text'; text: string; restart: true; at: number }
 
 export interface LlmDeltaBatcher {
   /** One streamed fragment from the client, as SSE chunks arrive. */
@@ -52,10 +56,16 @@ export function createLlmDeltaBatcher(deps: {
       deps.emit({ kind: 'tool_intent', index, name: snapshot.name, args: snapshot.args, at })
     }
     const visible = partialAnswerText(rawText)
-    if (visible.startsWith(lastVisible) && visible.length > lastVisible.length) {
-      deps.emit({ kind: 'text', text: visible.slice(lastVisible.length), at })
-      lastVisible = visible
+    if (visible.startsWith(lastVisible)) {
+      if (visible.length > lastVisible.length) deps.emit({ kind: 'text', text: visible.slice(lastVisible.length), at })
+    } else {
+      // The one way the visible text stops growing from what was sent
+      // (#312): an Answer object opened behind prose, which was its
+      // preamble. The stream restarts at the object's value, even an
+      // empty one, so the preamble goes now rather than at round end.
+      deps.emit({ kind: 'text', text: visible, restart: true, at })
     }
+    lastVisible = visible
     reasoning = ''
     intents.clear()
   }

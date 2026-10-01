@@ -365,6 +365,27 @@ describe('feed projection', () => {
       expect(feed.entries()[1]!.id).toBe(1)
     })
 
+    it('replaces the streamed preamble when a fragment restarts the stream at the Answer object (#312)', () => {
+      const feed = openFeed()
+      feed.onEvent(command('go', 1_000))
+      feed.onEvent(delta('text', 'Everything is verified.\n\n', 2_000))
+      feed.onEvent({ type: 'llm_delta', turnId: T, kind: 'text', text: 'It is ', restart: true, at: 2_120 })
+      feed.onEvent(delta('text', '42.', 2_240))
+
+      expect(outline(feed.entries())).toEqual([
+        { kind: 'command', role: USER, text: 'go', detail: false },
+        { kind: 'answer_stream', role: ASSISTANT, text: 'It is 42.', detail: true },
+      ])
+    })
+
+    it('drops the streamed preamble on an empty restart, before the object shows a value (#312)', () => {
+      const feed = openFeed()
+      feed.onEvent(delta('text', 'Everything is verified.', 2_000))
+      feed.onEvent({ type: 'llm_delta', turnId: T, kind: 'text', text: '', restart: true, at: 2_120 })
+
+      expect(outline(feed.entries())).toEqual([])
+    })
+
     it('renders reasoning as its own dim detail line, separate from the answer run', () => {
       const feed = openFeed()
       feed.onEvent(delta('reasoning', 'the user wants music', 1_000))
