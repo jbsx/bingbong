@@ -378,16 +378,17 @@ export const ASK_TIMEOUT_MS = 45_000
  */
 const RUN_FAILED_SPOKEN = 'I could not finish that request.'
 
+/** An Answer's sentence spoken before its round ended (#312): when it was published, and its playback. */
+interface PublishedSentence {
+  readonly sentence: EarlySentence
+  readonly at: number
+  readonly playback: Promise<SpeakOutcome>
+}
+
 /**
  * One automatic Tier Escalation waiting to be announced (#216): what the
  * epoch decided, the plan it produced, and when the tier actually rose.
  */
-/** An Answer's sentence spoken before its round ended (#312), and its playback. */
-interface PublishedSentence {
-  readonly sentence: EarlySentence
-  readonly playback: Promise<SpeakOutcome>
-}
-
 interface TierEscalationAnnouncement {
   readonly escalation: TierEscalation
   readonly plan: RunPlan
@@ -765,13 +766,12 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
   }
 
   /**
-   * The end of an Answer whose sentence was spoken before its round ended
-   * (#312): the status the spoken line sets, then the playback that
-   * started then — the sentence is not spoken a second time.
+   * A sentence spoken before its round ended, waited out (#312): its
+   * playback started when it was published, and a failed one degrades to a
+   * displayed one-liner as a Spoken Rendering's does in speakLine.
    */
-  async function* finishSpokenSentence(held: PublishedSentence): AsyncGenerator<UnstampedEvent> {
-    yield { type: 'status', status: 'speaking', at: clock.now() }
-    const outcome = await held.playback
+  async function* awaitSpokenEarly(published: PublishedSentence): AsyncGenerator<UnstampedEvent> {
+    const outcome = await published.playback
     if (!outcome.ok) yield { type: 'error', message: spokenErrorLine(outcome.error), at: clock.now() }
   }
 
@@ -826,8 +826,13 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
      * corrected objective's Answer is a new one, and it is spoken.
      */
     let heldSentence: PublishedSentence | undefined
-    /** How many sentences this Run has spoken early: an Answer heard after one that was not its own is a second utterance. */
-    let sentencesSpokenEarly = 0
+    /**
+     * Every sentence this Run spoke early (#312): an Answer heard after one
+     * that was not its own is a second utterance, and the Answer waits out
+     * each one's playback, as a spoken line is waited out.
+     */
+    const sentencesSpokenEarly: PublishedSentence[] = []
+    /** The pending announcement, once: the loop top makes it and it is gone. */
     const takeTierEscalation = (): TierEscalationAnnouncement | null => {
       const announcement = pendingTierEscalation
       pendingTierEscalation = null
@@ -1962,7 +1967,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           // a Subagent's reply is never spoken at all.
           const sentenceWatch = !reservedRound && heldSentence === undefined ? createSpokenSentenceWatch() : undefined
           const roundStartedAt = clock.now()
-          let roundSentence: { readonly published: PublishedSentence; readonly at: number } | undefined
+          let roundSentence: PublishedSentence | undefined
           let roundTurnKind: AssistantTurn['kind'] | undefined
           try {
             const request: LlmRequest = {
@@ -2041,7 +2046,8 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
                       // onto stale buffer.
                       batcher?.flush()
                       // And a sentence it had not closed is dropped (#312):
-                      // the next attempt writes its own.
+                      // the next attempt writes its own. One it had closed
+                      // was spoken for a reply that never landed.
                       sentenceWatch?.restart()
                       // The abandoned attempt's thinking (#182) closes with
                       // it, as its own record: concatenating it into the
@@ -2101,9 +2107,9 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
               const sentence = await Promise.race([sentenceWatch.ready, completion.then(() => null, () => null)])
               if (sentence !== null) {
                 const at = clock.now()
-                sentencesSpokenEarly += 1
                 yield { type: 'speak', text: sentence.spoken, at }
-                roundSentence = { published: { sentence, playback: tts.speak(sentence.spoken, turnId) }, at }
+                roundSentence = { sentence, at, playback: tts.speak(sentence.spoken, turnId) }
+                sentencesSpokenEarly.push(roundSentence)
               }
             }
             turn = await completion
@@ -2267,7 +2273,6 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             const spokenEarly = roundSentence
             if (spokenEarly !== undefined) {
               const endedAt = clock.now()
-              const ended = roundTurnKind === 'answer' ? 'answer' : roundTurnKind === 'tool_calls' ? 'tool_calls' : 'no_turn'
               traceRun?.(() => ({
                 turnId,
                 kind: 'early_sentence',
@@ -2275,7 +2280,9 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
                 publishedAt: spokenEarly.at,
                 sinceRoundStartMs: spokenEarly.at - roundStartedAt,
                 untilRoundEndMs: endedAt - spokenEarly.at,
-                ended,
+                // A sentence from an attempt the client retried belongs to
+                // a reply that never landed, whatever the retry returned.
+                ended: sentenceWatch?.abandoned === true ? 'no_turn' : (roundTurnKind ?? 'no_turn'),
               }))
             }
           }
@@ -2294,7 +2301,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           // The round ended with an Answer, so the sentence it spoke early
           // is the Answer's (#312) — whatever an Answer Retry below makes of
           // the rest of it. A round that called tools spoke for no Answer.
-          if (roundSentence !== undefined && turn.kind === 'answer') heldSentence = roundSentence.published
+          if (roundSentence !== undefined && turn.kind === 'answer' && sentenceWatch?.abandoned !== true) heldSentence = roundSentence
           // An Off-contract Reply in the reserved Answer round (#198, ADR
           // 0034): prose, or JSON of the wrong shape, where the round's one
           // job was the Answer contract the Finalize Instruction stated a
@@ -2528,12 +2535,17 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
               }
             }
             // A sentence held is not spoken again (#312); one spoken early
-            // for no Answer, before this one, was a second utterance.
-            if (sentencesSpokenEarly > (held !== undefined ? 1 : 0)) {
-              traceRun?.(() => ({ turnId, kind: 'second_utterance', deterministic: false }))
+            // for no Answer, before this one, was a second utterance, and
+            // its playback is waited out first, as a spoken line's is.
+            const spokenForNone = sentencesSpokenEarly.filter((published) => published !== held)
+            if (spokenForNone.length > 0) traceRun?.(() => ({ turnId, kind: 'second_utterance', deterministic: false }))
+            for (const published of spokenForNone) yield* awaitSpokenEarly(published)
+            if (held !== undefined) {
+              yield { type: 'status', status: 'speaking', at: clock.now() }
+              yield* awaitSpokenEarly(held)
+            } else {
+              yield* speakLine(spoken.text, turnId)
             }
-            if (held !== undefined) yield* finishSpokenSentence(held)
-            else yield* speakLine(spoken.text, turnId)
             yield* checkpoint(run, 'thinking')
             break
           }
@@ -2777,7 +2789,8 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           }
           // The deterministic Answer is always spoken (#312): after a
           // sentence spoken early, the user hears it as a second utterance.
-          if (sentencesSpokenEarly > 0) traceRun?.(() => ({ turnId, kind: 'second_utterance', deterministic: true }))
+          if (sentencesSpokenEarly.length > 0) traceRun?.(() => ({ turnId, kind: 'second_utterance', deterministic: true }))
+          for (const published of sentencesSpokenEarly) yield* awaitSpokenEarly(published)
           yield* speakLine(fallback.speak, turnId)
           yield* checkpoint(run, 'thinking')
         }

@@ -123,7 +123,12 @@ published only when the whole round ended. Decided:
   after closing a sentence. The Answer that finally lands, the deterministic
   one included, is spoken as before, and the user hears it as a second
   utterance. This is counted (`second_utterance`, and in the Round Audit),
-  not guarded against.
+  not guarded against. A sentence closed by an attempt the client then
+  retried (#271) belongs to a reply that never landed, so it too spoke for
+  none. The Answer waits out the playback of every sentence spoken early, as
+  it waits out a spoken line, so a failed one is reported and the Run is not
+  done while one is still queued. The `speaking` status is still set when
+  the Answer lands, not when a sentence is published mid-round.
 - **Only the checks the sentence can meet alone run before it is spoken**:
   the two-sentence cap, the Identity Slip repair (deletion, as for any
   Spoken Rendering) and the Off-language check. A sentence that fails one is

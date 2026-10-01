@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { parseAssistantAnswer } from '../agent/answerContract'
 import type { AssistantTurn, LlmClient, LlmRequest } from '../ports/llm'
-import { FakeClock, RecordingTts, until, withoutTurnId } from '../testing/doubles'
+import { FailingTts, FakeClock, RecordingTts, until, withoutTurnId } from '../testing/doubles'
 import type { RunTraceEvent } from '../trace/runTrace'
 import { createCommandPipeline } from './createCommandPipeline'
 import type { PipelineEvent } from './events'
@@ -38,7 +38,7 @@ function abortable(request: LlmRequest): Promise<AssistantTurn> {
 const text = (request: LlmRequest, chunk: string): void => request.onDelta?.({ kind: 'text', text: chunk })
 const answer = (content: string): AssistantTurn => ({ kind: 'answer', ...parseAssistantAnswer(content) })
 
-function start(rounds: Round[], options: { activeWorkDeadlineMs?: number } = {}) {
+function start(rounds: Round[], options: { activeWorkDeadlineMs?: number; failingTts?: boolean } = {}) {
   const clock = new FakeClock()
   const tts = new RecordingTts()
   const requests: LlmRequest[] = []
@@ -55,7 +55,7 @@ function start(rounds: Round[], options: { activeWorkDeadlineMs?: number } = {})
   const traced: RunTraceEvent[] = []
   const pipeline = createCommandPipeline({
     llm,
-    tts,
+    tts: options.failingTts === true ? new FailingTts('no audio device') : tts,
     clock,
     tools: [createReportRunPlanTool(), readPage],
     emitDetail: (event) => detail.push(event),
@@ -224,6 +224,39 @@ describe('the sentence is spoken when it closes (#312)', () => {
     expect(run.spoken()).toEqual(['Early.', 'Final.'])
     expect(run.records('early_sentence')).toMatchObject([{ round: 1, ended: 'tool_calls' }])
     expect(run.records('second_utterance')).toEqual([{ turnId: 'turn-early', kind: 'second_utterance', deterministic: false }])
+  })
+
+  it('treats a sentence spoken in an attempt the client then retried as spoken for no Answer (#271)', async () => {
+    const run = start([
+      async (request) => {
+        text(request, '{"speak":"Early.","display":"# Ea')
+        request.onRetryAttempt?.(2, 3, 'transport')
+        text(request, '{"speak":"Retried.","display":"The retried Card."}')
+        return answer('{"speak":"Retried.","display":"The retried Card."}')
+      },
+    ])
+    await run.finished
+
+    expect(run.spoken()).toEqual(['Early.', 'Retried.'])
+    expect(run.records('early_sentence')).toMatchObject([{ round: 1, ended: 'no_turn' }])
+    expect(run.records('second_utterance')).toEqual([{ turnId: 'turn-early', kind: 'second_utterance', deterministic: false }])
+  })
+
+  it('reports a failed playback of a sentence spoken for no Answer, as a spoken line’s is', async () => {
+    const run = start(
+      [
+        async (request) => {
+          text(request, '{"speak":"Early.","display":"x"}')
+          return { kind: 'tool_calls', calls: [{ id: 'r1', name: 'read_page', args: {} }] }
+        },
+        async () => answer('{"speak":"Final.","display":"The final Card."}'),
+      ],
+      { failingTts: true },
+    )
+    await run.finished
+
+    expect(run.events.filter((event) => event.type === 'error')).toHaveLength(2)
+    expect(run.events.at(-1)).toMatchObject({ type: 'done', outcome: 'done' })
   })
 
   it('does not speak early a sentence that fails the Off-language check (#286): the round is handled as before', async () => {

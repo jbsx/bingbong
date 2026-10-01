@@ -34,8 +34,14 @@ export function earlySentenceOf(sentence: string): EarlySentence | null {
 export interface SpokenSentenceWatch {
   /** One streamed fragment of the round's raw content. */
   onText(text: string): void
-  /** The client retried the attempt (#47): its partial text is dropped. */
+  /**
+   * The client retried the attempt (#47, #271): its partial text is
+   * dropped, and a sentence it had already closed belongs to a reply that
+   * never landed.
+   */
   restart(): void
+  /** Whether the sentence came from an attempt the client then retried: it was spoken for no Answer. */
+  readonly abandoned: boolean
   readonly ready: Promise<EarlySentence>
 }
 
@@ -43,6 +49,7 @@ export function createSpokenSentenceWatch(): SpokenSentenceWatch {
   let buffer = ''
   // Judged once: a later sentence in the same reply is not the Answer's.
   let judged = false
+  let abandoned = false
   let resolve: (sentence: EarlySentence) => void = () => {}
   const ready = new Promise<EarlySentence>((settle) => {
     resolve = settle
@@ -58,7 +65,11 @@ export function createSpokenSentenceWatch(): SpokenSentenceWatch {
       if (early !== null) resolve(early)
     },
     restart() {
-      if (!judged) buffer = ''
+      if (judged) abandoned = true
+      else buffer = ''
+    },
+    get abandoned() {
+      return abandoned
     },
     ready,
   }

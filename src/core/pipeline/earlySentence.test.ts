@@ -59,5 +59,13 @@ describe('createSpokenSentenceWatch', () => {
     watch.restart()
     watch.onText('{"speak":"Kept.","display":"')
     expect(await settled(watch)).toEqual({ speak: 'Kept.', spoken: 'Kept.' })
+    expect(watch.abandoned).toBe(false)
+  })
+
+  it('marks a sentence the retried attempt had already closed as abandoned (#271)', () => {
+    const watch = createSpokenSentenceWatch()
+    watch.onText('{"speak":"Spoken.","display":"')
+    watch.restart()
+    expect(watch.abandoned).toBe(true)
   })
 })

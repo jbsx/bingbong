@@ -68,6 +68,12 @@ describe('the Answer’s spoken sentence (#312)', () => {
     expect(metrics.answerLatencyMs).toEqual({ status: 'observed', value: 500 })
   })
 
+  it('is the last such sentence, when a Steering replan discarded an earlier round’s Answer', () => {
+    const traced = [early(1_100, 'answer'), early(1_350, 'answer')]
+    const metrics = extractLiveMetrics({ events, perfRecords: perf, traceRecords: traced, input: 'typed', clockOrigin: 'cap-1' })
+    expect(metrics.sentenceLatencyMs).toEqual({ status: 'observed', value: 350 })
+  })
+
   it('is unavailable when nothing spoke the Answer', () => {
     const silent = events.filter((event) => event.type !== 'speak')
     const metrics = extractLiveMetrics({ events: silent, perfRecords: perf, traceRecords: [], input: 'typed', clockOrigin: 'cap-1' })

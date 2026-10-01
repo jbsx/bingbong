@@ -853,6 +853,13 @@ export interface AuditMechanical {
    */
   readonly earlySentences?: number
   /**
+   * Each sentence spoken early (#312), from its record: its round, the time
+   * from that round's start to the sentence, the time from the sentence to
+   * the round's end, and how the round ended. Absent on an audit written
+   * before the counter.
+   */
+  readonly earlySentenceTimes?: readonly EarlySentenceTime[]
+  /**
    * Second utterances (#312): the Run's `second_utterance` records, an
    * Answer spoken after an early sentence that was not its own. Absent on
    * an audit written before the counter.
@@ -2720,6 +2727,27 @@ export function offLanguageAnswersOf(traceRecords: readonly object[]): number {
   return count
 }
 
+/** One sentence spoken early (#312), as the audit reports it. */
+export interface EarlySentenceTime {
+  readonly round: number
+  readonly sinceRoundStartMs: number
+  readonly untilRoundEndMs: number
+  readonly ended: string
+}
+
+/** The Run's sentences spoken early (#312), from its `early_sentence` records. */
+export function earlySentenceTimesOf(traceRecords: readonly object[]): EarlySentenceTime[] {
+  return (traceRecords as readonly Record<string, unknown>[]).flatMap((record) =>
+    record.kind === 'early_sentence' &&
+    isFiniteNumber(record.round) &&
+    isFiniteNumber(record.sinceRoundStartMs) &&
+    isFiniteNumber(record.untilRoundEndMs) &&
+    isString(record.ended)
+      ? [{ round: record.round, sinceRoundStartMs: record.sinceRoundStartMs, untilRoundEndMs: record.untilRoundEndMs, ended: record.ended }]
+      : [],
+  )
+}
+
 /**
  * The Answers rendered off-language before the rule existed (#286), named
  * from the reading of every capture on disk on 2026-09-28: one in 371
@@ -4201,6 +4229,7 @@ export function classifyAttempt(input: AuditTraceInput): AuditMechanical {
     // was not its own (#312): the Run's own records, which a Subagent never
     // writes.
     earlySentences: records.filter((record) => record.kind === 'early_sentence').length,
+    earlySentenceTimes: earlySentenceTimesOf(records),
     secondUtterances: records.filter((record) => record.kind === 'second_utterance').length,
     // Transport Failures (#271), the Run's and its Subagents', from the
     // `llm_round` records alone: every attempt that failed at the transport,
@@ -5433,6 +5462,13 @@ function populationOffLanguageAnswersText(population: AuditPopulation): string {
   return `${population.offLanguageAnswers} Off-language Answer(s)`
 }
 
+/** Where each sentence spoken early fell in its round (#312), or nothing when none was timed. */
+function earlySentenceTimesText(times: readonly EarlySentenceTime[] | undefined): string {
+  if (times === undefined || times.length === 0) return ''
+  const seconds = (ms: number): string => `${(ms / 1000).toFixed(1)} s`
+  return `; ${times.map((time) => `round ${time.round}: ${seconds(time.sinceRoundStartMs)} after its start, ${seconds(time.untilRoundEndMs)} before its end, ended ${time.ended}`).join('; ')}`
+}
+
 /** A population's sentences spoken early and second utterances (#312), or "not counted" on audits written before the counter. */
 function populationEarlySentencesText(population: AuditPopulation): string {
   if (population.earlySentences === undefined) return 'sentences spoken early not counted'
@@ -5581,7 +5617,7 @@ function attemptSection(attempt: AuditAttempt): string[] {
   lines.push(`- Malformed Answers: ${mechanical.malformedAnswers} (${mechanical.answerRetries} retried)`)
   lines.push(`- Off-language Answers: ${mechanical.offLanguageAnswers ?? 'not counted'}`)
   lines.push(
-    `- Sentences spoken early: ${mechanical.earlySentences === undefined ? 'not counted' : `${mechanical.earlySentences} (${mechanical.secondUtterances ?? 0} second utterance(s))`}`,
+    `- Sentences spoken early: ${mechanical.earlySentences === undefined ? 'not counted' : `${mechanical.earlySentences} (${mechanical.secondUtterances ?? 0} second utterance(s))${earlySentenceTimesText(mechanical.earlySentenceTimes)}`}`,
   )
   lines.push(`- Transport Failures: ${transportText(mechanical)}`)
   lines.push(`- Finalization: ${finalizationText(mechanical)}`)
