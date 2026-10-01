@@ -1312,7 +1312,9 @@ describe('sentences spoken early and second utterances (#312)', () => {
 
     expect([set.populations.initial.earlySentences, set.populations.initial.secondUtterances]).toEqual([2, 1])
     const markdown = formatAuditSet(set)
-    expect(markdown).toContain('- Sentences spoken early: 2 (1 second utterance(s))')
+    expect(markdown).toContain(
+      '- Sentences spoken early: 2 (1 second utterance(s)); round 2: 3.0 s after its start, 1.0 s before its end, ended tool_calls; round 2: 3.0 s after its start, 1.0 s before its end, ended answer',
+    )
     expect(markdown).toMatch(/- initial: .*2 sentence\(s\) spoken early \(1 second utterance\(s\)\)/)
 
     const older = { ...counted }

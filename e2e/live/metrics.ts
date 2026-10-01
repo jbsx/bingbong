@@ -113,14 +113,15 @@ export function finalAnswerDisplay(events: readonly PipelineEvent[]): Observed<E
 }
 
 /**
- * When the Answer's spoken sentence was published (#312): a sentence
- * spoken early in the round that ended with the Answer, at its
+ * When the Answer's spoken sentence was published (#312): the last
+ * sentence spoken early in a round that ended with an Answer (a Steering
+ * replan can discard an earlier one's Answer), at its
  * `early_sentence` record's `publishedAt`; else the first `speak` published
  * after the marked final Answer, as every Run spoke before the change. On
  * the events' own clock, so it subtracts from the accepted command's `at`.
  */
 export function answerSentenceAt(events: readonly PipelineEvent[], traceRecords: readonly object[]): Observed<number> {
-  const held = (traceRecords as readonly { kind?: unknown; ended?: unknown; publishedAt?: unknown }[]).find(
+  const held = (traceRecords as readonly { kind?: unknown; ended?: unknown; publishedAt?: unknown }[]).findLast(
     (record) => record.kind === 'early_sentence' && record.ended === 'answer' && typeof record.publishedAt === 'number',
   )
   if (held !== undefined) return stampOf(held.publishedAt as number, 'the early sentence')
@@ -254,7 +255,7 @@ export function extractLiveMetrics(input: LiveMetricsInput): LiveMetrics {
     terminalAt,
     answerLatencyMs: elapsed(acceptedAt, finalAnswerAt, 'the final Answer'),
     sentenceLatencyMs: elapsed(acceptedAt, answerSentenceAt(events, traceRecords), 'the spoken sentence'),
-    runDurationMs:elapsed(acceptedAt, terminalAt, 'the terminal'),
+    runDurationMs: elapsed(acceptedAt, terminalAt, 'the terminal'),
     userWaitMs: userWait(waits),
     waits,
     speech: {

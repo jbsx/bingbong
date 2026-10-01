@@ -135,8 +135,13 @@ export function scanPartialJsonString(content: string, openQuote: number): { val
   return { value: out, closed: false }
 }
 
-/** A JSON object opening with a key (#312): how the Answer object is told from a brace in prose. */
-const OBJECT_OPENING = /\{\s*"[A-Za-z_]+"\s*:/
+/**
+ * A JSON object opening with a key of the Answer contract (#312): how the
+ * Answer object behind prose is told from a brace in it, or from other JSON
+ * that narration quotes, such as a search's arguments.
+ */
+const OBJECT_OPENING =
+  /\{\s*"(?:speak|display|run_note|memory_patch|mishear_proposals|resolution|finalization_cause|evidence_ids|inspection_candidate_id|asked_items|checkpoints|findings|unresolved)"\s*:/
 
 /** A tail that may yet become {@link OBJECT_OPENING}: a brace and as much of a key as has arrived. */
 const OBJECT_OPENING_PREFIX = /\{\s*(?:"[A-Za-z_]*(?:"\s*)?)?$/

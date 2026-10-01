@@ -535,6 +535,12 @@ describe('partialAnswerText', () => {
     expect(partialAnswerText('Here you go: {x')).toBe('Here you go: {x')
   })
 
+  it('reads prose that quotes some other JSON as prose: only a key of the Answer contract opens the object behind it (#312)', () => {
+    expect(partialAnswerText('I will search with {"query": "voyager"} next.')).toBe('I will search with {"query": "voyager"} next.')
+    expect(partialAnswerText('Searching {"query"')).toBe('Searching ')
+    expect(partialAnswerText('Searching {"query":')).toBe('Searching {"query":')
+  })
+
   it('reads the Answer object behind a preamble: the preamble is not shown and the envelope is never streamed (#312)', () => {
     expect(partialAnswerText('Everything is verified. Here is the answer.\n\n{"speak":"It is 42.","display":"# The')).toBe('It is 42.')
     expect(partialAnswerText('All points are resolved. {"run_note":"n","display":"# Det')).toBe('# Det')
