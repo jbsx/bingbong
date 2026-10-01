@@ -1921,6 +1921,14 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           // The Answer Retry this request carries, taken once (#245), and
           // how the round that carried it resolved — the record is written
           // in the finally, where a round that threw is known too.
+          // A Steering directive supersedes a held Answer (#311): the list
+          // it lacked is no longer worth asking for, and a round told only
+          // to write a list would answer the directive with nothing. The
+          // retry stays spent.
+          if (steering !== undefined && owedHeldAnswer !== undefined) {
+            owedAnswerRetry = undefined
+            owedHeldAnswer = undefined
+          }
           const roundAnswerRetry = owedAnswerRetry
           owedAnswerRetry = undefined
           const roundHeldAnswer = owedHeldAnswer
@@ -2091,114 +2099,124 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             // The aborted signal rejects the request; the run was stopped,
             // so this is a cancellation whatever the rejection looks like.
             if (run.aborted) throw new CommandAbortedError()
-            // The deadline aborted the in-flight round (#135): acquisition
-            // work stops here — no provider or abort error is surfaced.
-            // The run enters Finalization like every work rail and picks
-            // up at its normal phase: a pending Steering directive is
-            // consumed at the loop-top checkpoint (where a replan can
-            // still exit a tier-rail Finalization), then bookkeeping and
-            // the reserved Answer round follow as always.
-            if (armedRound.deadlineAborted) continue
-            // The reserved Answer round failed (#117): the run still ends
-            // with a guaranteed Answer — the deterministic fallback — not
-            // a raw provider error. The lost round is diagnostics (#207,
-            // ADR 0038): the run is not stopping *because* this request
-            // failed — it stopped for its own cause a round ago, and that
-            // cause is what the Answer and the record still say. So the
-            // failure is reported under a site naming the round it lost,
-            // carrying the thrown error itself so a provider failure keeps
-            // its stack, and joined to the Run's own cause by the turn id.
-            if (reservedRound) {
-              if (allowanceSpent) {
-                // The round ran out of allowance rather than failing
-                // (#209/AC3): the bound did its job, so the record names
-                // the exhaustion instead of the abort error it produced.
-                reportFault(
-                  'pipeline.createCommandPipeline.reservedAnswerAllowanceSpent',
-                  `the reserved Answer round ran out of Finalization Allowance (${fallbackCause()})`,
-                  { turnId },
-                )
-                finalizationFailure = 'the reserved Answer round ran out of Finalization Allowance'
-              } else {
-                reportFault('pipeline.createCommandPipeline.reservedAnswerRequestFailed', err, { turnId })
-                finalizationFailure = `the reserved Answer round failed: ${toErrorMessage(err)}`
+            // A list-only retry round that was cut or failed (#311) loses
+            // only the list it was asked for: the Answer it held was read
+            // and judged whole, so it stands as a spent retry's does, its
+            // unstated items settling `unverified`, under whatever phase
+            // the cut left the Run in — rather than a later round writing
+            // it again, or the deterministic Answer standing in for it.
+            if (roundHeldAnswer !== undefined) {
+              turn = roundHeldAnswer
+            } else {
+              // The deadline aborted the in-flight round (#135): acquisition
+              // work stops here — no provider or abort error is surfaced.
+              // The run enters Finalization like every work rail and picks
+              // up at its normal phase: a pending Steering directive is
+              // consumed at the loop-top checkpoint (where a replan can
+              // still exit a tier-rail Finalization), then bookkeeping and
+              // the reserved Answer round follow as always.
+              if (armedRound.deadlineAborted) continue
+              // The reserved Answer round failed (#117): the run still ends
+              // with a guaranteed Answer — the deterministic fallback — not
+              // a raw provider error. The lost round is diagnostics (#207,
+              // ADR 0038): the run is not stopping *because* this request
+              // failed — it stopped for its own cause a round ago, and that
+              // cause is what the Answer and the record still say. So the
+              // failure is reported under a site naming the round it lost,
+              // carrying the thrown error itself so a provider failure keeps
+              // its stack, and joined to the Run's own cause by the turn id.
+              if (reservedRound) {
+                if (allowanceSpent) {
+                  // The round ran out of allowance rather than failing
+                  // (#209/AC3): the bound did its job, so the record names
+                  // the exhaustion instead of the abort error it produced.
+                  reportFault(
+                    'pipeline.createCommandPipeline.reservedAnswerAllowanceSpent',
+                    `the reserved Answer round ran out of Finalization Allowance (${fallbackCause()})`,
+                    { turnId },
+                  )
+                  finalizationFailure = 'the reserved Answer round ran out of Finalization Allowance'
+                } else {
+                  reportFault('pipeline.createCommandPipeline.reservedAnswerRequestFailed', err, { turnId })
+                  finalizationFailure = `the reserved Answer round failed: ${toErrorMessage(err)}`
+                }
+                deterministicFallback = true
+                break
               }
-              deterministicFallback = true
-              break
-            }
-            // The bookkeeping request failed (#207, ADR 0038). Bookkeeping
-            // is one *optional* opportunity: a request that failed has
-            // used it, so the run advances to its reserved Answer under
-            // the cause it entered Finalization with. It does not reopen
-            // Acquisition, does not ask for bookkeeping again, and does
-            // not escape as the raw provider error the user would
-            // otherwise hear instead of an Answer.
-            if (effortEpoch.spendBookkeepingOpportunity()) {
-              // Retained for a later "why did you stop?" (#203) on the
-              // same terms as the round's own record: a Finalization
-              // failure beside the entry cause, never in place of it. The
-              // reserved Answer round is still to come, and if that fails
-              // too its failure supersedes this one — it is the more
-              // proximate answer to what the user actually got.
-              if (allowanceSpent) {
-                // Filed like the reserved Answer's exhaustion, and worded
-                // for the bound rather than the abort error it produced.
-                reportFault(
-                  'pipeline.createCommandPipeline.bookkeepingAllowanceSpent',
-                  `the bookkeeping round ran out of Finalization Allowance ${bookkeepingStreamed ? 'after' : 'before'} its first token (${fallbackCause()})`,
-                  { turnId },
-                )
-                finalizationFailure = 'the Finalization bookkeeping round ran out of Finalization Allowance'
-              } else {
-                reportFault('pipeline.createCommandPipeline.bookkeepingRequestFailed', err, { turnId })
-                finalizationFailure = `the Finalization bookkeeping round failed: ${toErrorMessage(err)}`
+              // The bookkeeping request failed (#207, ADR 0038). Bookkeeping
+              // is one *optional* opportunity: a request that failed has
+              // used it, so the run advances to its reserved Answer under
+              // the cause it entered Finalization with. It does not reopen
+              // Acquisition, does not ask for bookkeeping again, and does
+              // not escape as the raw provider error the user would
+              // otherwise hear instead of an Answer.
+              if (effortEpoch.spendBookkeepingOpportunity()) {
+                // Retained for a later "why did you stop?" (#203) on the
+                // same terms as the round's own record: a Finalization
+                // failure beside the entry cause, never in place of it. The
+                // reserved Answer round is still to come, and if that fails
+                // too its failure supersedes this one — it is the more
+                // proximate answer to what the user actually got.
+                if (allowanceSpent) {
+                  // Filed like the reserved Answer's exhaustion, and worded
+                  // for the bound rather than the abort error it produced.
+                  reportFault(
+                    'pipeline.createCommandPipeline.bookkeepingAllowanceSpent',
+                    `the bookkeeping round ran out of Finalization Allowance ${bookkeepingStreamed ? 'after' : 'before'} its first token (${fallbackCause()})`,
+                    { turnId },
+                  )
+                  finalizationFailure = 'the Finalization bookkeeping round ran out of Finalization Allowance'
+                } else {
+                  reportFault('pipeline.createCommandPipeline.bookkeepingRequestFailed', err, { turnId })
+                  finalizationFailure = `the Finalization bookkeeping round failed: ${toErrorMessage(err)}`
+                }
+                continue
               }
-              continue
+              // The client cut an acquisition round at its own request
+              // timeout (#219). Reaching here, the round was acquisition:
+              // Stop, the deadline abort, the reserved Answer round and
+              // the bookkeeping round have each already been asked, so
+              // what is left is an acquisition round the transport ended.
+              // A cut is a cut whichever timer fired, so this takes the
+              // deadline's path rather than escaping as a failure that
+              // costs the user every Observation the Session holds: the
+              // door opens here, and the loop picks the run up at its
+              // Finalization phase exactly as `deadlineAborted` does — the
+              // loop-top Steering checkpoint, bookkeeping, the reserved
+              // Answer round, then the deterministic Answer if those fail.
+              // No new Finalization Cause: the round's own record already
+              // says `timeout`, which is where the distinction lives.
+              //
+              // No Tier Escalation is offered here, unlike the deadline's
+              // own `expire()`. The transport's timeout sits above every
+              // active-work deadline by construction (#216's raised one
+              // included) and effortEpoch.test.ts pins that against the
+              // tier table, so by the time this fires the epoch's timer
+              // has already run and already decided the escalation
+              // question — either it escalated, spending the Run's one,
+              // or it aborted the round and the branch above caught it.
+              if (err instanceof LlmRequestTimeoutError) {
+                effortEpoch.enterFinalization('deadline_reached')
+                continue
+              }
+              // The round and its one Transport Retry both failed at the
+              // transport (#271, ADR 0066): no response at all, twice. Placed
+              // beside the timeout's arm and for the same reason — every arm
+              // above has already had its say, so this is an acquisition
+              // round — and it takes the same road into Finalization: the
+              // loop-top Steering checkpoint, bookkeeping when there is
+              // something new, the reserved Answer round (itself covered by
+              // the client's retry), the deterministic Answer if that fails.
+              // Its own cause, not `deadline_reached`: a request that failed
+              // in under a second crossed no deadline, and naming one is the
+              // substitution ADR 0038 forbids. No Tier Escalation either —
+              // a higher tier reaches the same unreachable model.
+              if (err instanceof LlmTransportError) {
+                effortEpoch.enterFinalization('model_unreachable', modelUnreachableOf(err))
+                continue
+              }
+              throw err
             }
-            // The client cut an acquisition round at its own request
-            // timeout (#219). Reaching here, the round was acquisition:
-            // Stop, the deadline abort, the reserved Answer round and
-            // the bookkeeping round have each already been asked, so
-            // what is left is an acquisition round the transport ended.
-            // A cut is a cut whichever timer fired, so this takes the
-            // deadline's path rather than escaping as a failure that
-            // costs the user every Observation the Session holds: the
-            // door opens here, and the loop picks the run up at its
-            // Finalization phase exactly as `deadlineAborted` does — the
-            // loop-top Steering checkpoint, bookkeeping, the reserved
-            // Answer round, then the deterministic Answer if those fail.
-            // No new Finalization Cause: the round's own record already
-            // says `timeout`, which is where the distinction lives.
-            //
-            // No Tier Escalation is offered here, unlike the deadline's
-            // own `expire()`. The transport's timeout sits above every
-            // active-work deadline by construction (#216's raised one
-            // included) and effortEpoch.test.ts pins that against the
-            // tier table, so by the time this fires the epoch's timer
-            // has already run and already decided the escalation
-            // question — either it escalated, spending the Run's one,
-            // or it aborted the round and the branch above caught it.
-            if (err instanceof LlmRequestTimeoutError) {
-              effortEpoch.enterFinalization('deadline_reached')
-              continue
-            }
-            // The round and its one Transport Retry both failed at the
-            // transport (#271, ADR 0066): no response at all, twice. Placed
-            // beside the timeout's arm and for the same reason — every arm
-            // above has already had its say, so this is an acquisition
-            // round — and it takes the same road into Finalization: the
-            // loop-top Steering checkpoint, bookkeeping when there is
-            // something new, the reserved Answer round (itself covered by
-            // the client's retry), the deterministic Answer if that fails.
-            // Its own cause, not `deadline_reached`: a request that failed
-            // in under a second crossed no deadline, and naming one is the
-            // substitution ADR 0038 forbids. No Tier Escalation either —
-            // a higher tier reaches the same unreachable model.
-            if (err instanceof LlmTransportError) {
-              effortEpoch.enterFinalization('model_unreachable', modelUnreachableOf(err))
-              continue
-            }
-            throw err
           } finally {
             cancelRoundWatch()
             armedRound.disarm()

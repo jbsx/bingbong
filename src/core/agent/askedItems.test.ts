@@ -4,7 +4,7 @@ import {
   askedItemsCoverage,
   askedItemsRetryMessage,
   mergeAskedItems,
-  parseAskedItemStandings,
+  parseAskedItemEntries,
   settleAskedItems,
 } from './askedItems'
 
@@ -12,12 +12,12 @@ const DECLARED = ['smallest reduction to carried items that fits the allowance',
 
 describe('an Asked Item entry named by number (#311)', () => {
   it('parses `n` in place of `item` or beside it, and refuses an entry with neither', () => {
-    expect(parseAskedItemStandings([{ n: 1, standing: 'stated', statement: 'Drop the bag.' }])).toEqual([{ n: 1, standing: 'stated', statement: 'Drop the bag.' }])
-    expect(parseAskedItemStandings([{ n: '2', item: 'guitar', standing: 'stated', statement: 'One piece.' }])).toEqual([
+    expect(parseAskedItemEntries([{ n: 1, standing: 'stated', statement: 'Drop the bag.' }])).toEqual([{ n: 1, standing: 'stated', statement: 'Drop the bag.' }])
+    expect(parseAskedItemEntries([{ n: '2', item: 'guitar', standing: 'stated', statement: 'One piece.' }])).toEqual([
       { n: 2, item: 'guitar', standing: 'stated', statement: 'One piece.' },
     ])
-    expect(parseAskedItemStandings([{ standing: 'stated', statement: 'Drop the bag.' }])).toBeNull()
-    expect(parseAskedItemStandings([{ n: 'first', standing: 'stated', statement: 'Drop the bag.' }])).toBeNull()
+    expect(parseAskedItemEntries([{ standing: 'stated', statement: 'Drop the bag.' }])).toBeNull()
+    expect(parseAskedItemEntries([{ n: 'first', standing: 'stated', statement: 'Drop the bag.' }])).toBeNull()
   })
 
   it('covers the item it numbers whatever its wording says', () => {

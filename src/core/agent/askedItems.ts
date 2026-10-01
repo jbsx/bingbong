@@ -93,7 +93,7 @@ function parseItemNumber(raw: unknown): number | undefined | null {
  * as missing. Whether an `n` names a declared item is the coverage
  * check's question, since only it holds the declaration.
  */
-export function parseAskedItemStandings(raw: unknown): AskedItemEntry[] | null {
+export function parseAskedItemEntries(raw: unknown): AskedItemEntry[] | null {
   if (!Array.isArray(raw)) return null
   const entries: AskedItemEntry[] = []
   for (const entry of raw) {
@@ -148,15 +148,15 @@ export interface AskedItemsCoverage {
  */
 export function askedItemsCoverage(
   declared: readonly string[],
-  standings: readonly AskedItemEntry[] | undefined,
+  entries: readonly AskedItemEntry[] | undefined,
 ): AskedItemsCoverage {
   if (declared.length === 0) return { missing: [], undeclared: [] }
-  const entries = standings ?? []
-  const resolved = resolveAskedItems(declared, entries)
+  const listed = entries ?? []
+  const resolved = resolveAskedItems(declared, listed)
   const carried = new Set(resolved.filter((index) => index !== null))
   return {
     missing: declared.filter((_, index) => !carried.has(index)),
-    undeclared: entries.filter((_, at) => resolved[at] === null).map(entryLabel),
+    undeclared: listed.filter((_, at) => resolved[at] === null).map(entryLabel),
   }
 }
 
@@ -244,12 +244,12 @@ export function mergeAskedItems(
  */
 export function settleAskedItems(
   declared: readonly string[],
-  standings: readonly AskedItemEntry[] | undefined,
+  entries: readonly AskedItemEntry[] | undefined,
 ): AskedItemStanding[] {
-  const entries = standings ?? []
+  const listed = entries ?? []
   const byIndex = new Map<number, AskedItemEntry>()
-  resolveAskedItems(declared, entries).forEach((index, at) => {
-    if (index !== null) byIndex.set(index, entries[at]!)
+  resolveAskedItems(declared, listed).forEach((index, at) => {
+    if (index !== null) byIndex.set(index, listed[at]!)
   })
   return declared.map((item, index) => {
     const given = byIndex.get(index)

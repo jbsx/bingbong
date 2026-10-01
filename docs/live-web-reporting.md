@@ -1129,9 +1129,10 @@ The **Asked Items** (#250, ADR 0052) sit beside the rounds on the same terms:
 carried, and `shapeFailures` counts the `asked_items_shape` records — Answers
 whose list was not the declared one — with `shapeRetried` the ones the Answer
 Retry was spent on. A retried record written since #311 also says whether the
-retry asked for the list alone (`listOnly`), and the round that answered it is
-its `answer_retry` record's; neither is counted. Each population counts the attempts that declared any and
-the attempts whose Answer carried an `unverified` standing. A trace written
+retry asked for the list alone (`listOnly`); how the round that carried it
+resolved is its `answer_retry` record. Neither is counted. Each population
+counts the attempts that declared any and the attempts whose Answer carried an
+`unverified` standing. A trace written
 before the field reads "not recorded", and the digest does not move.
 
 Two more sit beside those, for an Answer the runtime could not read (#245),

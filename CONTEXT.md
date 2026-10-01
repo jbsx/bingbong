@@ -429,12 +429,16 @@ Answer in English that quotes a few words of another script is not one.
 _Avoid_: foreign answer, Chinese answer, translated answer, wrong-language answer
 
 **Answer Retry**:
-The one model round spent after a Malformed Answer or an Off-language
-Answer: the next request carries what could not be taken and asks for the
-Answer alone, once per Run or Subagent. It is not a Tool Round and spends no
-Tool Round budget, only time. Whatever round the Run is in judges the reply
-by its own rule: it stands whatever its shape, but never whatever its
-language. The runtime never repairs a reply it could not read.
+The one model round spent after a Malformed Answer, an Off-language Answer,
+or an Answer whose Asked Items are not the declared list: the next request
+carries what could not be taken and asks for the Answer alone, once per Run
+or Subagent. It is not a Tool Round and spends no Tool Round budget, only
+time. Whatever round the Run is in judges the reply by its own rule: it
+stands whatever its shape, but never whatever its language. The one
+exception is a readable Answer whose list alone was wrong (#311). It is
+held, the retry asks for `{"asked_items": [...]}` alone, and the reply's
+list is merged into the held Answer, which stands as first written. The
+runtime never repairs a reply it could not read.
 _Avoid_: repair, fix-up, re-prompt, JSON retry
 
 **Transport Failure**:

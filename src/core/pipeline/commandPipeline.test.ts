@@ -9250,6 +9250,30 @@ describe('Asked Items on the Answer (#250, ADR 0052)', () => {
       expect(run.retryRecords).toEqual([{ kind: 'answer_retry', turnId: 'turn-asked', role: 'orchestrator', outcome: 'prose' }])
     })
 
+    it('lets the held Answer stand when the list-only round is cut, its unstated items unverified', async () => {
+      const scripted = new ScriptedLlm([planRound(), first])
+      const llm: LlmClient = {
+        complete: (request) => (scripted.requests.length === 2 ? Promise.reject(new LlmRequestTimeoutError(120_000)) : scripted.complete(request)),
+      }
+      const traced: RunTraceEvent[] = []
+      const pipeline = createCommandPipeline({ llm, tts: new RecordingTts(), clock: new FakeClock(), tools: [createReportRunPlanTool(), readPage] })
+      const events: PipelineEvent[] = []
+      for await (const raw of pipeline.execute('can I take my guitar on the eurostar', 'turn-asked', false, {
+        snapshot: [],
+        memory: [],
+        commit: () => 'committed',
+        traceRun: (build) => traced.push(build()),
+      })) {
+        events.push(withoutTurnId(raw))
+      }
+
+      expect(events.filter((event) => event.type === 'display' && event.finalAnswer)).toEqual([
+        expect.objectContaining({ text: 'First display.', askedItems: [guitar, { item: 'the piece count', standing: 'unverified', statement: ASKED_ITEM_UNSTATED }] }),
+      ])
+      expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done', resolution: 'partial' })
+      expect(traced.filter((record) => record.kind === 'answer_retry')).toEqual([{ kind: 'answer_retry', turnId: 'turn-asked', role: 'orchestrator', outcome: 'round_failed' }])
+    })
+
     it('keeps the prose case on the whole-Answer retry, with nothing held', async () => {
       const run = await runScript([
         planRound(),

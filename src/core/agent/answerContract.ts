@@ -3,7 +3,7 @@
 // errors get a spoken one-liner while the dashboard keeps the detail.
 
 import { MAX_RUN_NOTE_CHARS, parseFinalizationCause, parseRunResolution, type FinalizationCause, type RunResolution } from '../session/runJournal'
-import { parseAskedItemStandings, type AskedItemEntry } from './askedItems'
+import { parseAskedItemEntries, type AskedItemEntry } from './askedItems'
 import { boundedString, MAX_MEMORY_REFERENCES, MAX_MEMORY_SUBJECT_CHARS, parseMemoryPatch, type MemoryEntryId, type MemoryPatch } from '../session/workingMemory'
 import { parseMishearProposals, type MishearProposal } from '../voice/learnedTerms'
 import { parseSubagentReportSections } from './subagentReport'
@@ -81,6 +81,16 @@ function extractJsonSlice(content: string): string | null {
   if (start === -1 || end <= start) return null
   const slice = content.slice(start, end + 1)
   return slice === content ? null : slice
+}
+
+/**
+ * Where a reply's JSON object may be, in the order to try them: the whole
+ * reply, a code fence's body, the slice from the first `{` to the last
+ * `}`. A candidate a shape cannot hold is null. Both readers of a reply —
+ * the Answer and a list-only Asked Items reply (#311) — try these.
+ */
+function jsonCandidates(trimmed: string): (string | null)[] {
+  return [trimmed, extractFenced(trimmed), extractJsonSlice(trimmed)]
 }
 
 const ESCAPES: Record<string, string> = {
@@ -203,7 +213,7 @@ export function answerRetryMessage(malformedError: string): string {
  */
 export function parseAskedItemsReply(content: string): AskedItemEntry[] | null {
   const trimmed = content.trim()
-  for (const candidate of [trimmed, extractFenced(trimmed), extractJsonSlice(trimmed)]) {
+  for (const candidate of jsonCandidates(trimmed)) {
     if (candidate === null) continue
     let parsed: unknown
     try {
@@ -213,7 +223,7 @@ export function parseAskedItemsReply(content: string): AskedItemEntry[] | null {
       continue
     }
     if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) continue
-    const entries = parseAskedItemStandings((parsed as Record<string, unknown>).asked_items)
+    const entries = parseAskedItemEntries((parsed as Record<string, unknown>).asked_items)
     if (entries !== null) return entries
   }
   return null
@@ -255,7 +265,7 @@ export function parseAssistantAnswer(content: string): {
   answerCheckpointsIssue?: 'malformed'
 } {
   const trimmed = content.trim()
-  const candidates = [trimmed, extractFenced(trimmed), extractJsonSlice(trimmed)]
+  const candidates = jsonCandidates(trimmed)
   // What the last candidate tried failed on (#245): the candidates narrow
   // toward the object the reply meant, so the last one's failure is the
   // one that names what could not be read.
@@ -320,7 +330,7 @@ export function parseAssistantAnswer(content: string): {
         // stands — and whether the list is the declared one is the
         // pipeline's question, since only it holds the declaration.
         if (rawAskedItems !== undefined) {
-          const askedItems = parseAskedItemStandings(rawAskedItems)
+          const askedItems = parseAskedItemEntries(rawAskedItems)
           answer = askedItems ? { ...answer, askedItems } : { ...answer, askedItemsIssue: 'malformed' }
         }
         // Subagent Report sections (#98): validated independently, absent

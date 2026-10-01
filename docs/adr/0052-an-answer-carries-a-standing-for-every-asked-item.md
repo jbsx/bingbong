@@ -121,6 +121,12 @@ item `unverified`.
     as one, so an `unverified` entry from the reply still moves
     `completed` to `partial`. The prose reply and the Malformed Answer
     keep the whole-Answer retry, since there is no Answer to merge into.
+    A list-only round that is cut or fails — the deadline, the client's
+    timeout, a Transport Failure — leaves the held Answer standing as a
+    spent retry's does, rather than a later round writing it again or the
+    deterministic Answer standing in for an Answer that was read. A
+    Steering directive reaching the request first drops the held Answer
+    and the retry with it; the retry stays spent.
   - **An entry names its item by number.** An entry may carry `n`, the
     item's 1-based position in the declared list, beside or in place of
     `item`. An entry with a valid `n` is that item whatever its wording
