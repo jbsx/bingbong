@@ -68,6 +68,30 @@ Note (2026-10-05, #319): what building the early Card settled. #318 and
 - The live Answer latency is taken at the `display` event marked
   `finalAnswer`, so it now ends at the Card and not at the round's end.
 
+Note (2026-10-05, #320): `display` leaving the standings to the Asked Items
+list was grilled and refused, and #320 is closed. `display` stays
+self-sufficient, the Itemized Verdict stands as written, and the reviewer
+still reads the `display` text alone. Measured on the retained Run Traces of
+`fix-311-312`, 17 final Answers, all written before #313's shorter entry:
+
+- Every Answer declared Asked Items: 78 in all, every one `stated`. They are
+  each fact the command asks for, not only a named item's standing, so
+  leaving what the list carries out of `display` would remove most of the
+  Answer and not a verdict table. 7 of 17 `display` texts hold an itemized
+  table.
+- `display` is a mean 2,832 characters and the statements 1,033 an Answer.
+  57 of 78 statements have at least 80% of their words in `display`, and
+  none is found there word for word. How much of `display` restates the
+  list, as against reasoning and links, was not measured.
+- Since #313 a `stated` statement is the established value alone. It cannot
+  carry the reason beside a standing, so `display` would still name each
+  item to give it.
+- The user hears the sentence early (#312) and sees the Card when its fields
+  close (#319). A shorter `display` would only show the Card sooner, about
+  1.2 s for every 100 tokens at 81 tokens a second, and would cost the
+  comparison with every earlier capture or a re-grade of each from its
+  traces.
+
 ## Context
 
 The round that writes the Answer is the dearest round of a Run. On
@@ -158,7 +182,8 @@ What the code does, on main at 2d2900e:
   nothing beside it.
 - **`display` leaving the standings to the list.** It is the larger cut,
   and it changes what the reviewer must read, which breaks comparison with
-  every earlier capture. Filed as #320 for its own grill.
+  every earlier capture. Filed as #320 for its own grill, and refused there
+  on 2026-10-05 (see the note under Status).
 - **A second model call for the Answer Tail.** It pays another first token,
   a median 4.6 s, and a second request to save the reader nothing the
   field order does not.
@@ -211,5 +236,6 @@ last amended; Answer Checkpoints are still recorded after the Card, and
 their cap of six is unchanged. Follows the #312 note on
 [ADR 0034](0034-an-off-contract-reply-in-a-reserved-round-is-a-failed-round.md):
 a spoken sentence stands, and now a shown Card does. Leaves the reasoning
-inside the round to #314, what a hard failure may say to #315, and the
-Itemized Verdict's place in `display` to #320.
+inside the round to #314, and what a hard failure may say to #315. The
+Itemized Verdict keeps its place in `display`: #320, which asked whether it
+should, is closed.
