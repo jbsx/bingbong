@@ -28,8 +28,9 @@ export interface AskedItemStanding {
  * One entry of an Answer's `asked_items` as written (#311): the item by
  * its 1-based position in the declared list, by its wording, or both. An
  * entry with `n` is the item it numbers whatever its wording says; one
- * without is matched by wording. The prompt asks for `n` alone (#313);
- * the wording is still read. What the Card renders is the settled
+ * without is matched by wording. The prompt asks for the item by `n`
+ * and not by wording (#313); a wording is still read. What the Card
+ * renders is the settled
  * `AskedItemStanding`, which names the item as declared and carries no
  * number.
  */
