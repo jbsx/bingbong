@@ -377,6 +377,12 @@ export function createFeedProjection(deps?: {
           if (event.turnId !== undefined) renderedSpeakIds.set(event.turnId, id)
           return
         }
+        case 'llm_retry':
+          // No line: the Feed does not count the model's retries (#315,
+          // ADR 0038). The abandoned attempt's streamed text is still
+          // dropped here, so the next attempt streams fresh.
+          closeStreaming()
+          return
         case 'status':
           // Stage entries (#42 story 17): every stage transition lands as a
           // timestamped detail line, so consecutive lines reconstruct how

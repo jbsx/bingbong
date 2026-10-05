@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { FakeClock } from '../testing/doubles'
 import type { SessionId } from '../session/sessionIdentity'
 import { createSubagentManager, type SubagentEvent, type SubagentManager, type SubagentOwner } from './subagentManager'
@@ -6,6 +6,7 @@ import { createSubagentTabs, type SubagentTab, type SubagentTabs } from '../brow
 import { createSubagentCardBridge } from './subagentCards'
 import type { PipelineEvent } from '../pipeline/events'
 import type { SubagentReport } from './subagentReport'
+import { setFaultSink, type FaultReport } from '../trace/fault'
 
 // The live-card seam (issue #13): manager events and tab-machine transitions
 // merge into agent_update pipeline events the dashboard reduces into cards,
@@ -91,6 +92,8 @@ function agentUpdates(events: PipelineEvent[]): Extract<PipelineEvent, { type: '
 }
 
 describe('subagent card bridge', () => {
+  afterEach(() => setFaultSink(null))
+
   it('merges manager and tab state into agent_update events', async () => {
     const w = wiring()
     w.manager.spawn('browse', 'compare prices')
@@ -122,7 +125,9 @@ describe('subagent card bridge', () => {
     expect(spoken).toEqual(['The background agent finished: Found it.', 'The background agent failed.'])
   })
 
-  it('shows a failed Subagent’s card with no error text, and keeps the error on the record (#315)', async () => {
+  it('shows a failed Subagent’s card with no error text, and keeps the error on the record and in a fault (#315)', async () => {
+    const faults: FaultReport[] = []
+    setFaultSink((report) => faults.push(report))
     const w = wiring()
     w.manager.spawn('background', 'two')
     w.settle('a-1', 'reject', 'model routing for subagent is not configured')
@@ -132,6 +137,7 @@ describe('subagent card bridge', () => {
     expect(card).toMatchObject({ status: 'failed', error: null })
     expect(JSON.stringify(w.events)).not.toContain('model routing')
     expect(w.manager.list()[0]?.error).toBe('model routing for subagent is not configured')
+    expect(faults).toMatchObject([{ kind: 'fault', site: 'agent.subagentManager.failed', message: 'model routing for subagent is not configured' }])
   })
 
   it('shows and speaks a Subagent stopped at a bound by the opening alone, and keeps its report on the record (#315)', async () => {

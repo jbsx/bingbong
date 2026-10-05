@@ -21,7 +21,8 @@ import { createLlmDeltaBatcher } from './deltaBatcher'
 import { createSpokenSentenceWatch, type EarlySentence } from './earlySentence'
 import { createCardWatch } from './earlyCard'
 import type { SpeakOutcome, TtsSpeaker } from '../ports/tts'
-import { answerRetryMessage, answerText, malformedErrorOf, parseAskedItemsReply, VOICE_FAILED_LINE } from '../agent/answerContract'
+import { answerRetryMessage, answerText, malformedErrorOf, parseAskedItemsReply } from '../agent/answerContract'
+import { VOICE_FAILED_LINE } from '../tts/voiceFailureLines'
 import {
   ASKED_ITEM_UNESTABLISHED,
   askedItemsCoverage,

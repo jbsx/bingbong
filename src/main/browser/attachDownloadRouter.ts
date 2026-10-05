@@ -4,7 +4,7 @@ import type { PipelineEvent } from '../../core/pipeline/events'
 import { systemClock, type Clock } from '../../core/ports/clock'
 import type { TtsSpeaker } from '../../core/ports/tts'
 import { downloadAnnouncements, sanitizeDownloadFilename, uniqueDownloadPath } from '../../core/downloads/downloadRouting'
-import { VOICE_UNAVAILABLE_LINE } from '../../core/agent/answerContract'
+import { VOICE_UNAVAILABLE_LINE } from '../../core/tts/voiceFailureLines'
 
 // Agent-initiated downloads: the risk gate has already asked the user before
 // the click that started this download (core/pipeline/riskGate.ts), and the

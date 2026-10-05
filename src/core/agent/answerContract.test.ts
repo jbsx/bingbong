@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { answerRetryMessage, capSentences, closedSpokenSentence, parseAskedItemsReply, parseAssistantAnswer, partialAnswerText, VOICE_FAILED_LINE, VOICE_UNAVAILABLE_LINE } from './answerContract'
+import { answerRetryMessage, capSentences, closedSpokenSentence, parseAskedItemsReply, parseAssistantAnswer, partialAnswerText } from './answerContract'
 
 describe('capSentences', () => {
   it('keeps the first n sentences', () => {
@@ -594,15 +594,5 @@ describe('closedSpokenSentence (#312)', () => {
   it('is nothing for prose, for a speak key in prose, and for an object that is not the Answer', () => {
     expect(closedSpokenSentence('I said "speak": "x", "display": "y" earlier')).toBeNull()
     expect(closedSpokenSentence('{"query":"speak","display":"x"}')).toBeNull()
-  })
-})
-
-describe('VOICE_FAILED_LINE', () => {
-  it('names no error: what failed stays in the fault report (#315)', () => {
-    expect(VOICE_FAILED_LINE).toBe('Something went wrong.')
-  })
-
-  it('names none for a line spoken outside a Run either: a Subagent Announcement, a download (#315)', () => {
-    expect(VOICE_UNAVAILABLE_LINE).toBe('Voice unavailable.')
   })
 })

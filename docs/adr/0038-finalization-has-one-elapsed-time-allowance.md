@@ -161,7 +161,9 @@ The confirmed scope and verification boundary are in
   - **The Subagent card** of a Subagent stopped at a bound, or failed,
     shows its status and nothing under it: the bounded report and the
     error are withheld from the card as they are from the announcement,
-    and stay on the record `agent_results` reads.
+    and stay on the record `agent_results` reads. A failure is also
+    reported as a fault (`agent.subagentManager.failed`), since no
+    published event carries its error any more.
   - **A model retry leaves no line in the Feed**, as it leaves none in the
     run hint and the Peek Card. The `llm_retry` event is still emitted and
     the Run Trace keeps it.

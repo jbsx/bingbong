@@ -64,15 +64,6 @@ export function answerText(turn: { speak: string; display: string }): string {
   return turn.display !== '' ? turn.display : turn.speak
 }
 
-/**
- * The line shown when a Run's voice fails. It names no error (#315, ADR
- * 0038): what failed is in the fault report the speech coordinator makes.
- */
-export const VOICE_FAILED_LINE = 'Something went wrong.'
-
-/** The same for a line spoken outside a Run — a Subagent Announcement, a download (#315). */
-export const VOICE_UNAVAILABLE_LINE = 'Voice unavailable.'
-
 function extractFenced(content: string): string | null {
   const match = content.match(/^```[a-zA-Z]*\s*([\s\S]*?)\s*```$/)
   return match ? match[1] : null

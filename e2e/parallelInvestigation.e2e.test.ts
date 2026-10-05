@@ -137,7 +137,8 @@ describe('parallel Investigation e2e (#120) — concurrency, bounds, graceful co
     })
 
     // Each worker terminated gracefully inside its leash: completed (not
-    // failed), carrying the deterministic bounded report on its card.
+    // failed). The deterministic bounded report is the orchestrator's to
+    // read; the card shows the status alone and names no limit (#315).
     await waitFor(
       async () => {
         const completed = await harness.dashboardEval<number>(`document.querySelectorAll('.subagent-card--completed').length`)
@@ -147,10 +148,12 @@ describe('parallel Investigation e2e (#120) — concurrency, bounds, graceful co
     )
     const failed = await harness.dashboardEval<number>(`document.querySelectorAll('.subagent-card--failed').length`)
     expect(failed).toBe(0)
-    const result = await harness.dashboardEval<string>(
-      `document.querySelector('.subagent-card--completed .subagent-card-result')?.textContent ?? ''`,
+    const results = await harness.dashboardEval<number>(`document.querySelectorAll('.subagent-card--completed .subagent-card-result').length`)
+    expect(results).toBe(0)
+    const cards = await harness.dashboardEval<string>(
+      `[...document.querySelectorAll('.subagent-card')].map((card) => card.textContent ?? '').join(' | ')`,
     )
-    expect(result).toMatch(/Stopped at the delegated work limit after 12 tool rounds/)
+    expect(cards).not.toMatch(/delegated work limit|tool rounds/)
 
     // The bound is real: the thirteenth scripted round targets a page no
     // worker tab ever reached — acquisition stopped at exactly twelve.

@@ -13,6 +13,7 @@ import type { SubagentPipelineEventTrace } from '../trace/pipelineEventTrace'
 import type { VisionTraceReporter } from '../trace/visionTrace'
 import type { WebEngine } from '../pipeline/webEngine'
 import { removeIdentities } from '../pipeline/answerEvidence'
+import { reportFault } from '../trace/fault'
 import type { SubagentReport } from './subagentReport'
 import { SubagentCancelledError } from './subagentRunner'
 import { canonicalizeMemoryUrl } from '../session/workingMemory'
@@ -569,6 +570,9 @@ export function createSubagentManager(deps: SubagentManagerDeps): SubagentManage
             if (err instanceof SubagentCancelledError || cancelled.has(id) || spawnEpoch !== epoch) {
               finish(record, spawnEpoch, 'cancelled', null, null)
             } else {
+              // Neither the announcement nor the card says what failed
+              // (#315), so the fault report is where it is kept.
+              reportFault('agent.subagentManager.failed', err, record.turnId !== undefined ? { turnId: record.turnId } : {})
               finish(record, spawnEpoch, 'failed', null, err instanceof Error ? err.message : String(err))
             }
           },

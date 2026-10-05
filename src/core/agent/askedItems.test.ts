@@ -152,7 +152,7 @@ describe('an Asked Item entry as the prompt asks for it (#313)', () => {
   })
 })
 
-describe('the reason a deterministic Answer gives every Asked Item (#315)', () => {
+describe('the reason a Deterministic Answer gives every Asked Item (#315)', () => {
   it('says the item is not established and names no stop', () => {
     expect(ASKED_ITEM_UNESTABLISHED).toBe('not established')
   })

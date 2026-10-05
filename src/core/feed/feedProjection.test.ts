@@ -370,6 +370,19 @@ describe('feed projection', () => {
       expect(feed.entries()[1]!.id).toBe(1)
     })
 
+    it('a retry drops the abandoned attempt’s streamed text and leaves no line: the next attempt streams fresh (#315)', () => {
+      const feed = openFeed()
+      feed.onEvent(command('go', 1_000))
+      feed.onEvent(delta('text', 'Attempt one.', 2_000))
+      feed.onEvent(retry(2, 2_100))
+      feed.onEvent(delta('text', 'Attempt two.', 2_200))
+
+      expect(outline(feed.entries())).toEqual([
+        { kind: 'command', role: USER, text: 'go', detail: false },
+        { kind: 'answer_stream', role: ASSISTANT, text: 'Attempt two.', detail: true },
+      ])
+    })
+
     it('replaces the streamed preamble when a fragment restarts the stream at the Answer object (#312)', () => {
       const feed = openFeed()
       feed.onEvent(command('go', 1_000))

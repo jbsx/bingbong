@@ -6196,7 +6196,7 @@ describe('orchestrator streaming (#47)', () => {
 
     await collect(pipeline, 'work')
 
-    // Attempt one's partial closes as its own run ahead of the retry line;
+    // Attempt one's partial closes as its own run ahead of the retry;
     // attempt two streams fresh — no cross-attempt junk fragment.
     expect(sink.map((event) => (event.type === 'llm_delta' ? `${event.kind}:${event.text}` : event.type))).toEqual([
       'text:Attempt one.',
