@@ -224,7 +224,10 @@ describe('the sentence is spoken when it closes (#312)', () => {
     const run = start(
       [
         async (request) => {
-          text(request, '{"speak":"Early.","display":"# The early Card.","run_note":"half a no')
+          // `display` has closed and no key has opened after it: the
+          // Card's fields were not yet known to be closed, so no Card was
+          // published early (#319).
+          text(request, '{"speak":"Early.","display":"# The early Card."')
           return abortable(request)
         },
         failing,
@@ -277,10 +280,13 @@ describe('the sentence is spoken when it closes (#312)', () => {
     expect(run.records('second_utterance')).toEqual([])
   })
 
+  // A tool round's reply here stops inside `display`: one that had closed
+  // its Card's fields would have shown the Card, and a shown Card stands
+  // and ends the Run (#319).
   it('speaks the final Answer as a second utterance when the round the sentence was spoken in called tools', async () => {
     const run = start([
       async (request) => {
-        text(request, '{"speak":"Early.","display":"x"}')
+        text(request, '{"speak":"Early.","display":"x')
         return { kind: 'tool_calls', calls: [{ id: 'r1', name: 'read_page', args: {} }] }
       },
       async () => answer('{"speak":"Final.","display":"The final Card."}'),
@@ -319,7 +325,7 @@ describe('the sentence is spoken when it closes (#312)', () => {
         async (request) => {
           text(request, '{"speak":"It is 42.","display":"# Fo')
           request.onRetryAttempt?.(2, 3, 'transport')
-          text(request, '{"speak":"I could not find it.","display":"# Nothing found.","run_note":"ha')
+          text(request, '{"speak":"I could not find it.","display":"# Nothing found."')
           return abortable(request)
         },
         failing,
@@ -344,7 +350,7 @@ describe('the sentence is spoken when it closes (#312)', () => {
     const run = start(
       [
         async (request) => {
-          text(request, '{"speak":"First.","display":"x"}')
+          text(request, '{"speak":"First.","display":"x')
           return { kind: 'tool_calls', calls: [{ id: 'r1', name: 'read_page', args: {} }] }
         },
         async (request) => {
@@ -416,7 +422,7 @@ describe('the sentence is spoken when it closes (#312)', () => {
     const run = start(
       [
         async (request) => {
-          text(request, '{"speak":"Early.","display":"x"}')
+          text(request, '{"speak":"Early.","display":"x')
           return { kind: 'tool_calls', calls: [{ id: 'r1', name: 'read_page', args: {} }] }
         },
         async () => answer('{"speak":"Final.","display":"The final Card."}'),

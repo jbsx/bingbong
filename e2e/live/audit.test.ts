@@ -1327,6 +1327,60 @@ describe('sentences spoken early and second utterances (#312)', () => {
   })
 })
 
+describe('Cards published early, Answers out of field order and Answer Tails that fell back (#319, ADR 0074)', () => {
+  const at13 = (record: Record<string, unknown>): Record<string, unknown> => ({ ...identity, ...record, v: 13 })
+  const card = (round: number): Record<string, unknown> =>
+    at13({ at: T0 + 14_500, kind: 'early_card', round, publishedAt: T0 + 12_000, sinceRoundStartMs: 12_000, untilRoundEndMs: 9_500 })
+  const RECORDS = [
+    card(2),
+    card(3),
+    at13({ at: T0 + 15_000, kind: 'answer_out_of_order', round: 1 }),
+    at13({ at: T0 + 15_500, kind: 'answer_tail_fallback', round: 3, reason: 'cut' }),
+  ]
+
+  it('counts the three from the Run’s records, beside the rounds, reported and never gated', () => {
+    const plain = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, [...EXTRA, at13({ at: T0, kind: 'second_utterance', deterministic: false })]) }))
+    const counted = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, [...EXTRA, ...RECORDS]) }))
+
+    expect(counted.earlyCards).toEqual({
+      published: 2,
+      times: [
+        { round: 2, sinceRoundStartMs: 12_000, untilRoundEndMs: 9_500 },
+        { round: 3, sinceRoundStartMs: 12_000, untilRoundEndMs: 9_500 },
+      ],
+      outOfOrder: 1,
+      tailFallbacks: [{ round: 3, reason: 'cut' }],
+    })
+    // A trace new enough to have written the records, and holding none.
+    expect(plain.earlyCards).toEqual({ published: 0, times: [], outOfOrder: 0, tailFallbacks: [] })
+    expect(counted.rounds).toEqual(plain.rounds)
+    expect(counted.digestHash).toBe(plain.digestHash)
+  })
+
+  it('reads a trace written before the records as absent, never as zero', () => {
+    const older = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, EXTRA) }))
+
+    expect(older.earlyCards).toBeUndefined()
+    const set = buildAuditSet(provenanceOf(), [{ mechanical: older, review: null, countsAfterOverrules: older.counts }], [])
+    expect(set.populations.initial.earlyCards).toBeUndefined()
+    const markdown = formatAuditSet(set)
+    expect(markdown).toContain('- Cards published early: not counted')
+    expect(markdown).toMatch(/- initial: .*Cards published early not counted/)
+  })
+
+  it('sums the three per population and prints them, the fallbacks by reason', () => {
+    const counted = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, [...EXTRA, ...RECORDS, at13({ at: T0 + 16_000, kind: 'answer_tail_fallback', round: 2, reason: 'broken_json' })]) }))
+    const set = buildAuditSet(provenanceOf(), [{ mechanical: counted, review: null, countsAfterOverrules: counted.counts }, { mechanical: counted, review: null, countsAfterOverrules: counted.counts }], [])
+
+    expect(set.populations.initial.earlyCards).toEqual({ published: 4, outOfOrder: 2, tailFallbacks: { cut: 2, broken_json: 2 } })
+    const markdown = formatAuditSet(set)
+    expect(markdown).toContain(
+      '- Cards published early: 2 (1 Answer(s) out of field order, 2 Answer Tail(s) fell back: round 3 cut, round 2 broken_json); round 2: 12.0 s after its start, 9.5 s before its end; round 3: 12.0 s after its start, 9.5 s before its end',
+    )
+    expect(markdown).toMatch(/- initial: .*4 Card\(s\) published early \(2 Answer\(s\) out of field order, 4 Answer Tail\(s\) fell back: 2 cut, 2 broken_json\)/)
+  })
+})
+
 describe('skipped bookkeeping rounds and Finalization rounds cut by the Allowance (#256, ADR 0056)', () => {
   const entry = (at: number, bookkeeping: 'kept' | 'skipped', agentId?: string): Record<string, unknown> => ({
     ...identity,

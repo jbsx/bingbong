@@ -19,6 +19,7 @@ import { LlmRequestTimeoutError, LlmTransportError } from '../ports/llm'
 import { selectDelegatedMemory } from '../agent/subagentReport'
 import { createLlmDeltaBatcher } from './deltaBatcher'
 import { createSpokenSentenceWatch, type EarlySentence } from './earlySentence'
+import { createCardWatch } from './earlyCard'
 import type { SpeakOutcome, TtsSpeaker } from '../ports/tts'
 import { answerRetryMessage, answerText, malformedErrorOf, parseAskedItemsReply, spokenErrorLine } from '../agent/answerContract'
 import {
@@ -103,7 +104,7 @@ import {
   type EvidenceCommitInput,
 } from './evidenceCheckpoint'
 import { candidateCheckpointEvent, evidenceCheckpointEvent } from '../trace/evidenceCheckpointTrace'
-import type { AnswerRetryOutcome, DecisionEvent, LlmRequestShape, LlmRoundOutcome, RunTraceWriter } from '../trace/runTrace'
+import type { AnswerRetryOutcome, AnswerTailFallbackReason, DecisionEvent, LlmRequestShape, LlmRoundOutcome, RunTraceWriter } from '../trace/runTrace'
 import { DECISION_THRESHOLDS, type ConfiguredDecisionModel } from '../ports/decisionModel'
 import { createResultPick } from './resultPick'
 import type { VisionTraceReporter } from '../trace/visionTrace'
@@ -419,9 +420,11 @@ function isAssessmentAdd(operation: MemoryPatch[number]): boolean {
 }
 
 /**
- * What a Run could not keep of its own continuity. The last is an Answer
- * Checkpoint that was dropped (#288, ADR 0072): what the Answer carried to
- * be recorded, and the Session does not hold.
+ * What a Run could not keep of its own continuity. `answer_checkpoint_dropped`
+ * is an Answer Checkpoint that was dropped (#288, ADR 0072): what the
+ * Answer carried to be recorded, and the Session does not hold.
+ * `answer_tail_fell_back` is an Answer Tail lost behind a Card already
+ * shown (#319, ADR 0074): each of its fields is taken as missing.
  */
 export type ContinuityDegradationReason =
   | 'missing'
@@ -430,6 +433,7 @@ export type ContinuityDegradationReason =
   | 'commit_rejected'
   | 'unsupported_assessment'
   | 'answer_checkpoint_dropped'
+  | 'answer_tail_fell_back'
 
 function logContinuityDegradation(
   sink: CommandPipelineDeps['onContinuityDegraded'],
@@ -1647,6 +1651,74 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
         // the retry takes it, and whatever that round replies, the Answer
         // is this one with the reply's list merged in.
         let owedHeldAnswer: Extract<AssistantTurn, { kind: 'answer' }> | undefined
+        /**
+         * Publishes an Answer's Card: at the round's end, or while the
+         * round is still writing the Answer Tail (#319, ADR 0074), from the
+         * Card's fields alone. Nothing here reads the Tail.
+         */
+        const publishCard = function* (answer: Extract<AssistantTurn, { kind: 'answer' }>, at: number): Generator<UnstampedEvent> {
+          // The standings the Card renders (#250): the declaration in
+          // declared order, the Answer's own standing where it gave one.
+          const declared = runPlan?.askedItems ?? []
+          if (declared.length > 0) finalAskedItems = settleAskedItems(declared, answer.askedItems)
+          // Displayed Answers are evidence-grounded (#122, ADR 0028;
+          // #141): the live text is the model's own wording with its
+          // Identity Slips repaired — nothing else. The declared
+          // evidence identities ride the event as Session-only
+          // metadata for the live Answer Evidence Summary, and the
+          // derived source links travel beside them for Recorded
+          // History to flatten back into the recorded text; the live
+          // Feed renders the structured summary instead of a
+          // generated Sources list.
+          const answerSources = deriveAnswerSources(answer.evidenceIds, resolveSessionObservation)
+          // The Inspection Reference lands here (#210, ADR 0039) — at
+          // the presentation itself, not at the parse. A draft the
+          // model abandoned, a reserved round that asked for tools
+          // instead of answering, a run that failed on its way here:
+          // none of them presented a Candidate to anyone, so none of
+          // them may leave a subject behind for the next command to
+          // address. The store refuses an identity that is not a live
+          // Candidate, and a refusal leaves the standing subject
+          // untouched rather than silently clearing it.
+          presentInspectionSubject(answer.inspectionCandidateId)
+          // And the user's unresolved words are resolved here (#211,
+          // ADR 0039) — after the presentation, never before. The Run
+          // had them in front of it on every round and has now
+          // answered; what the words decided about a Candidate it
+          // recorded on the way, and the gate above still held for
+          // this Answer. Every other way a Run can end reaches none of
+          // this, so the words outlive it.
+          continuity?.resolveCorrections?.()
+          // The display boundary (#246, ADR 0028): an internal id the
+          // model wrote into either rendering is an Identity Slip. The
+          // Card substitutes a source link where the id resolves; the
+          // spoken line only deletes. The declared evidence identities
+          // are the model's and stay as written, and the repair is
+          // recorded, since the raw Answer is kept nowhere else. The
+          // Asked Items the Card lists are renderings of the Answer too
+          // (#300): an id in a name or a statement is removed, and the
+          // list the Run's own resolution reads stays as settled.
+          const card = repairCard(answer.display, resolveSessionObservation)
+          // A sentence the Run holds (#312) is the `speak` repaired and
+          // recorded here.
+          const spoken = repairSpokenRendering(heldSentence?.sentence.speak ?? answer.speak)
+          const listed = finalAskedItems !== undefined ? repairAskedItems(finalAskedItems) : undefined
+          const slips = [...card.slips, ...spoken.slips, ...(listed?.slips ?? [])]
+          if (slips.length > 0) traceRun?.(() => ({ turnId, kind: 'identity_slip', slips }))
+          // The Run's final Answer, marked as such (#224): this display
+          // and the deterministic fallback's are the two the mark rides,
+          // so an observer never has to guess which display was the
+          // Answer from position or wording.
+          yield {
+            type: 'display',
+            text: card.text,
+            at,
+            ...(answer.evidenceIds !== undefined ? { evidenceIds: answer.evidenceIds } : {}),
+            ...(answerSources.length > 0 ? { sources: answerSources } : {}),
+            ...(listed !== undefined ? { askedItems: listed.items } : {}),
+            finalAnswer: true,
+          }
+        }
         // The cause that fallback answers under, asked in one place so the
         // Answer the user hears and the trace record of the failed round
         // can never disagree: the phase's own Finalization Cause, or the
@@ -1997,6 +2069,17 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           // held Answer's own.
           const sentenceWatch =
             !reservedRound && heldSentence === undefined && roundHeldAnswer === undefined ? createSpokenSentenceWatch() : undefined
+          // The Answer's Card, watched for as the round streams (#319, ADR
+          // 0074): published when its fields have closed, while the round
+          // writes the Answer Tail. Not in a reserved round, which streams
+          // nothing, nor in an Answer Retry round, the list-only one
+          // (#311) included: as no sentence is spoken early there, no
+          // Card is shown early there.
+          const cardWatch = !reservedRound && roundAnswerRetry === undefined && roundHeldAnswer === undefined ? createCardWatch() : undefined
+          /** The Card this round published early, and when. */
+          let roundCard: { readonly answer: Extract<AssistantTurn, { kind: 'answer' }>; readonly at: number } | undefined
+          /** Why the Answer Tail behind that Card was lost, when it was. */
+          let roundTailFallback: AnswerTailFallbackReason | undefined
           const roundStartedAt = clock.now()
           let roundSentence: PublishedSentence | undefined
           let roundTurnKind: AssistantTurn['kind'] | undefined
@@ -2080,6 +2163,8 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
                       // the next attempt writes its own. One it had closed
                       // was spoken for a reply that never landed.
                       sentenceWatch?.restart()
+                      // As is a Card it had not closed (#319).
+                      cardWatch?.restart()
                       // The abandoned attempt's thinking (#182) closes with
                       // it, as its own record: concatenating it into the
                       // attempt that survives would hide that two happened.
@@ -2117,7 +2202,10 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
                       // reserved round's thinking is exactly what a
                       // diagnosis wants (#183), and it reaches no view.
                       if (!reservedRound) batcher?.onDelta(delta)
-                      if (delta.kind === 'text') sentenceWatch?.onText(delta.text)
+                      if (delta.kind === 'text') {
+                        sentenceWatch?.onText(delta.text)
+                        cardWatch?.onText(delta.text)
+                      }
                       reasoningRounds?.onDelta(delta)
                       // And the round's record counts it (#218): how much
                       // thinking a cut round streamed is what tells it
@@ -2134,16 +2222,65 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             // goes on: whichever comes first, the sentence or the round's
             // end, and a round that ends first speaks at its end as before.
             // A round that streams nothing never closes a sentence.
-            if (sentenceWatch !== undefined && request.onDelta !== undefined) {
-              const sentence = await Promise.race([sentenceWatch.ready, completion.then(() => null, () => null)])
-              if (sentence !== null) {
-                const at = clock.now()
-                yield { type: 'speak', text: sentence.spoken, at }
-                roundSentence = { sentence, at, playback: tts.speak(sentence.spoken, turnId) }
-                sentencesSpokenEarly.push(roundSentence)
+            //
+            // The Card is published the same way (#319, ADR 0074), when
+            // its fields have closed, which is after the sentence has. Its
+            // checks run here on those fields alone and act as they do at
+            // the round's end: a Card that is Off-language, or whose
+            // `asked_items` does not cover the declaration, is not
+            // published, and the round's end meets it with the Answer
+            // Retry or the list-only retry as before. A Card that is not
+            // the contract's shape never settles the watch.
+            if (request.onDelta !== undefined) {
+              const ended = completion.then(() => null, () => null)
+              let sentenceReady = sentenceWatch?.ready.then((sentence) => ({ sentence }))
+              let cardReady = cardWatch?.ready.then((card) => ({ card }))
+              while (sentenceReady !== undefined || cardReady !== undefined) {
+                const first = await Promise.race([...(sentenceReady !== undefined ? [sentenceReady] : []), ...(cardReady !== undefined ? [cardReady] : []), ended])
+                if (first === null) break
+                if ('sentence' in first) {
+                  sentenceReady = undefined
+                  const at = clock.now()
+                  yield { type: 'speak', text: first.sentence.spoken, at }
+                  roundSentence = { sentence: first.sentence, at, playback: tts.speak(first.sentence.spoken, turnId) }
+                  sentencesSpokenEarly.push(roundSentence)
+                } else {
+                  cardReady = undefined
+                  const closed: Extract<AssistantTurn, { kind: 'answer' }> = { kind: 'answer', ...first.card }
+                  const declared = runPlan?.askedItems ?? []
+                  const offLanguage = offLanguageRenderings(
+                    heldSentence === undefined ? closed : { display: closed.display, speak: heldSentence.sentence.speak },
+                  )
+                  if (offLanguage.length === 0 && (declared.length === 0 || askedItemsCovered(askedItemsCoverage(declared, closed.askedItems)))) {
+                    const at = clock.now()
+                    yield* publishCard(closed, at)
+                    roundCard = { answer: closed, at }
+                  }
+                }
               }
             }
             turn = await completion
+            // A shown Card stands (#319, ADR 0074). When the reply that
+            // lands is not the Answer it began — the object cannot be read
+            // past the Card, the round ended with tool calls beside it, or
+            // the client retried the attempt that wrote it — the Answer is
+            // the Card, with nothing of a Tail. The tool calls are not
+            // run: the user has been shown the Run's Answer.
+            if (roundCard !== undefined) {
+              roundTailFallback =
+                cardWatch?.abandoned === true
+                  ? 'transport_failure'
+                  : turn.kind !== 'answer'
+                    ? 'tool_calls'
+                    : turn.shape === 'malformed' || turn.shape === 'off_contract'
+                      ? 'broken_json'
+                      : undefined
+              if (roundTailFallback !== undefined) turn = { ...roundCard.answer, ...(turn.usage !== undefined ? { usage: turn.usage } : {}) }
+            } else if (cardWatch?.outOfOrder() === true && turn.kind === 'answer' && turn.shape !== 'malformed' && turn.shape !== 'off_contract') {
+              // An Answer out of field order is published at its object's
+              // end, as before, and counted.
+              traceRun?.(() => ({ turnId, kind: 'answer_out_of_order', round: llmRound }))
+            }
             roundTurnKind = turn.kind
             roundUsage = turn.usage
             roundOutcome = 'completed'
@@ -2193,7 +2330,15 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             // unstated items settling `unverified`, under whatever phase
             // the cut left the Run in — rather than a later round writing
             // it again, or the deterministic Answer standing in for it.
-            if (roundHeldAnswer !== undefined) {
+            if (roundCard !== undefined) {
+              // A shown Card stands (#319, ADR 0074): the round was cut or
+              // its request failed inside the Answer Tail, and the Run ends
+              // on the Card it had published, under whatever phase the cut
+              // left it in. No later round writes the Answer again, and
+              // nothing about the failure is surfaced.
+              turn = roundCard.answer
+              roundTailFallback = roundOutcome === 'deadline' || roundOutcome === 'allowance' || roundOutcome === 'timeout' ? 'cut' : 'transport_failure'
+            } else if (roundHeldAnswer !== undefined) {
               turn = roundHeldAnswer
             } else {
               // The deadline aborted the in-flight round (#135): acquisition
@@ -2325,6 +2470,20 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             if (llmRounds) closeLlmAttempt(llmRounds.takeRound(roundOutcome, roundUsage, roundError))
             if (roundAnswerRetry !== undefined) {
               writeAnswerRetry?.({ kind: 'answer_retry', role: 'orchestrator', outcome: roundAnswerRetryOutcome })
+            }
+            // The Card this round published early (#319): when, as the
+            // sentence's record below has it.
+            const shownEarly = roundCard
+            if (shownEarly !== undefined) {
+              const endedAt = clock.now()
+              traceRun?.(() => ({
+                turnId,
+                kind: 'early_card',
+                round: llmRound,
+                publishedAt: shownEarly.at,
+                sinceRoundStartMs: shownEarly.at - roundStartedAt,
+                untilRoundEndMs: endedAt - shownEarly.at,
+              }))
             }
             // The sentence this round spoke early (#312): when, and how the
             // round it spoke in ended — a round that threw ended with no turn.
@@ -2517,68 +2676,22 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
 
           if (turn.kind === 'answer') {
             finalAnswer = turn
-            // The standings the Card renders (#250): the declaration in
-            // declared order, the Answer's own standing where it gave one.
-            if (declaredAskedItems.length > 0) finalAskedItems = settleAskedItems(declaredAskedItems, turn.askedItems)
-            // Displayed Answers are evidence-grounded (#122, ADR 0028;
-            // #141): the live text is the model's own wording with its
-            // Identity Slips repaired — nothing else. The declared
-            // evidence identities ride the event as Session-only
-            // metadata for the live Answer Evidence Summary, and the
-            // derived source links travel beside them for Recorded
-            // History to flatten back into the recorded text; the live
-            // Feed renders the structured summary instead of a
-            // generated Sources list.
-            const answerSources = deriveAnswerSources(turn.evidenceIds, resolveSessionObservation)
-            // The Inspection Reference lands here (#210, ADR 0039) — at
-            // the presentation itself, not at the parse. A draft the
-            // model abandoned, a reserved round that asked for tools
-            // instead of answering, a run that failed on its way here:
-            // none of them presented a Candidate to anyone, so none of
-            // them may leave a subject behind for the next command to
-            // address. The store refuses an identity that is not a live
-            // Candidate, and a refusal leaves the standing subject
-            // untouched rather than silently clearing it.
-            presentInspectionSubject(turn.inspectionCandidateId)
-            // And the user's unresolved words are resolved here (#211,
-            // ADR 0039) — after the presentation, never before. The Run
-            // had them in front of it on every round and has now
-            // answered; what the words decided about a Candidate it
-            // recorded on the way, and the gate above still held for
-            // this Answer. Every other way a Run can end reaches none of
-            // this, so the words outlive it.
-            continuity?.resolveCorrections?.()
-            // The display boundary (#246, ADR 0028): an internal id the
-            // model wrote into either rendering is an Identity Slip. The
-            // Card substitutes a source link where the id resolves; the
-            // spoken line only deletes. The declared evidence identities
-            // are the model's and stay as written, and the repair is
-            // recorded, since the raw Answer is kept nowhere else. The
-            // Asked Items the Card lists are renderings of the Answer too
-            // (#300): an id in a name or a statement is removed, and the
-            // list the Run's own resolution reads stays as settled.
-            const card = repairCard(turn.display, resolveSessionObservation)
+            // A Card published while its round was in flight stands
+            // (#319, ADR 0074) and is not published again. An Answer Tail
+            // lost behind it is recorded here, where the Run ends on that
+            // Card: no Answer Retry was spent, and each field of the Tail
+            // falls back below as a missing one does.
+            const tailFallback = roundTailFallback
+            if (tailFallback !== undefined) {
+              traceRun?.(() => ({ turnId, kind: 'answer_tail_fallback', round: llmRound, reason: tailFallback }))
+              logContinuityDegradation(deps.onContinuityDegraded, 'answer_tail_fell_back', turnId, tailFallback)
+            }
+            if (roundCard === undefined) yield* publishCard(turn, clock.now())
             // What the user heard is the Answer's sentence (#312): one the
-            // Run holds was spoken when it closed, and it is the `speak`
-            // repaired and recorded here, an Answer Retry's own unspoken.
+            // Run holds was spoken when it closed, an Answer Retry's own
+            // unspoken.
             const held = heldSentence
             const spoken = repairSpokenRendering(held?.sentence.speak ?? turn.speak)
-            const listed = finalAskedItems !== undefined ? repairAskedItems(finalAskedItems) : undefined
-            const slips = [...card.slips, ...spoken.slips, ...(listed?.slips ?? [])]
-            if (slips.length > 0) traceRun?.(() => ({ turnId, kind: 'identity_slip', slips }))
-            // The Run's final Answer, marked as such (#224): this display
-            // and the deterministic fallback's are the two the mark rides,
-            // so an observer never has to guess which display was the
-            // Answer from position or wording.
-            yield {
-              type: 'display',
-              text: card.text,
-              at: clock.now(),
-              ...(turn.evidenceIds !== undefined ? { evidenceIds: turn.evidenceIds } : {}),
-              ...(answerSources.length > 0 ? { sources: answerSources } : {}),
-              ...(listed !== undefined ? { askedItems: listed.items } : {}),
-              finalAnswer: true,
-            }
             // The Answer Checkpoints (#288, ADR 0072), recorded here and
             // no earlier: the Card is published, so the user never waits
             // on them, and nothing below can change what was displayed. A

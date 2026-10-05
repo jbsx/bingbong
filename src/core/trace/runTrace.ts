@@ -71,8 +71,12 @@ import type { VisionRunTraceRecord } from './visionTrace'
  * `candidates`, and its Choice is a position in that list — in a trace
  * below version 12 the Choice is a snapshot ref of the listing, and the
  * list is not recorded.
+ * 13 (#319, ADR 0074): a Run with no `early_card`, `answer_out_of_order`
+ * or `answer_tail_fallback` record published no Card early, wrote no
+ * Answer out of field order and lost no Answer Tail, which a version-12
+ * trace cannot say: every Card there waited for its object's end.
  */
-export const RUN_TRACE_VERSION = 12
+export const RUN_TRACE_VERSION = 13
 
 /** How much of a graded observation's retained text a record keeps. */
 export const TRACE_PAYLOAD_HEAD_CHARS = 500
@@ -764,6 +768,51 @@ export interface StoodSentenceEvent {
   readonly card: 'answer' | 'cut_round' | 'deterministic'
 }
 
+/**
+ * The Answer's Card, published before its round ended (#319, ADR 0074):
+ * when the pipeline published it, from the round's start, and how long the
+ * round ran after that, as {@link EarlySentenceEvent} has them for the
+ * sentence. No record is written for a Card published at its object's
+ * end. A trace below version 13 published none early.
+ */
+export interface EarlyCardEvent {
+  readonly kind: 'early_card'
+  readonly round: number
+  /** The `display` event's own `at`, on the clock the Run's events carry. */
+  readonly publishedAt: number
+  readonly sinceRoundStartMs: number
+  readonly untilRoundEndMs: number
+}
+
+/**
+ * A round that ended with an on-contract Answer whose Card's fields did
+ * not lead the object in the contract's order (#319, ADR 0074): its Card
+ * could only be published at the object's end.
+ */
+export interface AnswerOutOfOrderEvent {
+  readonly kind: 'answer_out_of_order'
+  readonly round: number
+}
+
+/**
+ * Why an Answer Tail fell back behind a Card already shown (#319): the
+ * round was cut (a deadline, the Finalization Allowance, the client's
+ * timeout), the request failed, the object could not be read past the
+ * Card, or the round ended with tool calls beside it.
+ */
+export type AnswerTailFallbackReason = 'cut' | 'transport_failure' | 'broken_json' | 'tool_calls'
+
+/**
+ * An Answer Tail that fell back (#319, ADR 0074): the Card published early
+ * in `round` stood, and every field of the Tail was taken as missing. No
+ * Answer Retry was spent on it.
+ */
+export interface AnswerTailFallbackEvent {
+  readonly kind: 'answer_tail_fallback'
+  readonly round: number
+  readonly reason: AnswerTailFallbackReason
+}
+
 /** One decision a Run traces, whatever kind it is. */
 export type RunTraceEventBody =
   | AnswerCheckpointsEvent
@@ -784,6 +833,9 @@ export type RunTraceEventBody =
   | EarlySentenceEvent
   | SecondUtteranceEvent
   | StoodSentenceEvent
+  | EarlyCardEvent
+  | AnswerOutOfOrderEvent
+  | AnswerTailFallbackEvent
 
 /** What a Run hands the writer: one event, stamped with the turn it happened in. */
 export type RunTraceEvent = { readonly turnId: string } & RunTraceEventBody

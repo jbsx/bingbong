@@ -5,8 +5,8 @@
 Accepted on 2026-10-05 for #313, grilled the same day from the Round Audits
 of `main-4dc72e9` and the code on main at 2d2900e, with every recommendation
 taken. Amends the Answer contract. The work is #318 (the measurement),
-#313 (the Asked Item entry, built on 2026-10-05) and #319 (the early Card);
-#318 and #319 are not built, and no capture has been run.
+#313 (the Asked Item entry, built on 2026-10-05) and #319 (the early Card,
+built on 2026-10-05); #318 is not built, and no capture has been run.
 
 Note (2026-10-05, #313): what building the Asked Item entry settled.
 
@@ -22,6 +22,43 @@ Note (2026-10-05, #313): what building the Asked Item entry settled.
   sentence. The acknowledgement and the Answer Retry say "the established value
   alone" and carry no example.
 - The Card names each entry from the declared list, as it did.
+
+Note (2026-10-05, #319): what building the early Card settled. #318 and
+#313 are separate work, and no capture has been run.
+
+- The Card's fields are known to have closed at one of three points:
+  `asked_items` closes, a key that is not one of the Card's opens, or the
+  object ends. `display` closing is not enough, since `evidence_ids` or
+  `inspection_candidate_id` may follow it. A Run that declared no Asked
+  Items therefore publishes when the first key of the Answer Tail opens,
+  which is no later than that key closing.
+- An Answer is in field order when `speak` and `display` open the object
+  and the Card's other fields follow in the contract's order before any
+  other key. The order inside the Answer Tail is not read.
+- No Card is published early in a reserved round, an Answer Retry round or
+  a list-only retry round, as no sentence is spoken early there. This was
+  the reading #319 asked to be confirmed.
+- A Card published early ends the Run when its round is cut or its request
+  fails for any reason, not only at the transport: no bookkeeping round and
+  no reserved round follow, and no error is shown or spoken. The cause the
+  Run records is the one the cut entered Finalization under.
+- A round that ends with tool calls after its Card was shown also ends the
+  Run on that Card, and the calls are not run. The ruling named a cut, a
+  transport failure and broken JSON; this fourth case is recorded with the
+  reason `tool_calls`. Under #312 a round that closed only its sentence and
+  then called tools still works on, and the Answer that lands later is
+  spoken.
+- A Steering replan after a Card was shown lets it go, as it lets a held
+  sentence go. The corrected objective's Answer publishes its own Card, so
+  that Run carries two `display` events marked `finalAnswer`.
+- The Run Trace becomes version 13 with three records: `early_card` (round,
+  `publishedAt`, time from the round's start and to its end),
+  `answer_out_of_order` and `answer_tail_fallback` (round and reason:
+  `cut`, `transport_failure`, `broken_json`, `tool_calls`). The Round Audit
+  counts all three beside the rounds and reads a trace below version 13 as
+  not counted. The continuity degradation is `answer_tail_fell_back`.
+- The live Answer latency is taken at the `display` event marked
+  `finalAnswer`, so it now ends at the Card and not at the round's end.
 
 ## Context
 
