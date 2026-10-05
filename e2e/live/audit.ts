@@ -4083,20 +4083,25 @@ export function checkpointedUrlsOf(traceRecords: readonly object[]): Set<string>
  * when a `malformed_answer` record does and the next round is the retry: a
  * Malformed Answer met with the retry already spent stands as written. The
  * taken round is the Run's last, where the Answer the user got was a
- * model's and the round completed with no call, or published its Card
- * early: a round cut while it drafted an Answer wrote none (#321,
- * assumption 2), whatever Card of its stream then stood.
+ * model's and the round completed, with no call or with its Card published
+ * early beside calls that were not run (#319). A round cut while it drafted
+ * an Answer wrote none (#321, assumption 2), whatever Card of its stream
+ * then stood, published early or closed at the cut.
  */
 function answerRoundsOfTrace(raw: readonly RawRound[], modelAnswered: boolean): AnswerRounds {
-  const retryRounds = new Set(raw.filter((round) => round.answer.retry).map((round) => round.round))
+  // Two numberings: a mark names a round by its position, the digest's own,
+  // and the retry is found by the trace's `llm_round` number, which an
+  // abandoned attempt shares with the attempt that followed it.
+  const retryLlmRounds = new Set(raw.filter((round) => round.answer.retry).map((round) => round.round))
   const taken: number[] = []
   const sentBack: number[] = []
   const retries: number[] = []
   raw.forEach((round, index) => {
     const { answer } = round
-    if (answer.retry) retries.push(index + 1)
-    else if (answer.listRetried || answer.offLanguage || (answer.malformed && retryRounds.has(round.round + 1))) sentBack.push(index + 1)
-    else if (index === raw.length - 1 && modelAnswered && (answer.earlyCard || (round.record.outcome === 'completed' && round.calls.length === 0))) taken.push(index + 1)
+    const digestRound = index + 1
+    if (answer.retry) retries.push(digestRound)
+    else if (answer.listRetried || answer.offLanguage || (answer.malformed && retryLlmRounds.has(round.round + 1))) sentBack.push(digestRound)
+    else if (index === raw.length - 1 && modelAnswered && round.record.outcome === 'completed' && (answer.earlyCard || round.calls.length === 0)) taken.push(digestRound)
   })
   return { taken, sentBack, retries }
 }
@@ -4104,20 +4109,24 @@ function answerRoundsOfTrace(raw: readonly RawRound[], modelAnswered: boolean): 
 /**
  * The same marks read from an audit's rounds alone, for an audit written
  * before them (#321): no record is in an audit, and the shape of the rounds
- * says the same on every audit on main. A round that completed with no call
- * and was not the Run's last wrote an Answer the application sent back —
- * nothing else leaves a completed round without a call and the Run going
- * on — and the last attempt of the round after it carried the Answer Retry.
+ * says the same on every audit on main. In an attempt whose trace recorded
+ * an Answer Retry, a round that completed with no call and was not the
+ * Run's last wrote an Answer the application sent back, and the last
+ * attempt of the round after it carried the retry. Without a recorded retry
+ * no round is read as sent back: an Answer that Steering arrived behind
+ * leaves the same shape, and the Run going on. The count of retries is the
+ * turn's, a Subagent's included, so an attempt holding a Subagent's retry
+ * and such an Answer of its own is still misread; no capture on main steers.
  * The last round, completed with no call and no retry, wrote the Answer
  * taken; a reserved round whose reply was off contract reads the same, which
  * the trace's records tell apart and the rounds cannot.
  */
-export function answerRoundsByShapeOf(rounds: readonly AuditRound[]): AnswerRounds {
+export function answerRoundsByShapeOf(rounds: readonly AuditRound[], answerRetries: number): AnswerRounds {
   const sentBack: number[] = []
   const retries: number[] = []
   const wroteNoCall = (round: AuditRound): boolean => round.outcome === 'completed' && round.calls.length === 0
   rounds.forEach((round, index) => {
-    if (index === rounds.length - 1 || !wroteNoCall(round) || retries.includes(round.round)) return
+    if (answerRetries === 0 || index === rounds.length - 1 || !wroteNoCall(round) || retries.includes(round.round)) return
     sentBack.push(round.round)
     const retry = rounds.filter((later) => later.llmRound === round.llmRound + 1).at(-1)
     if (retry !== undefined) retries.push(retry.round)
@@ -4128,15 +4137,18 @@ export function answerRoundsByShapeOf(rounds: readonly AuditRound[]): AnswerRoun
 }
 
 /** An attempt's marks: its audit's own, or its rounds' shape where the audit predates them (#321). */
-export function answerRoundsOf(mechanical: Pick<AuditMechanical, 'rounds' | 'answerRounds'>): AnswerRounds {
-  return mechanical.answerRounds ?? answerRoundsByShapeOf(mechanical.rounds)
+export function answerRoundsOf(mechanical: Pick<AuditMechanical, 'rounds' | 'answerRounds' | 'answerRetries'>): AnswerRounds {
+  return mechanical.answerRounds ?? answerRoundsByShapeOf(mechanical.rounds, mechanical.answerRetries)
 }
 
-function emptyRoundCost(): { -readonly [K in keyof RoundCost]: RoundCost[K] } {
+/** A {@link RoundCost} while it is being summed. */
+type RoundCostSum = { -readonly [K in keyof RoundCost]: RoundCost[K] }
+
+function emptyRoundCost(): RoundCostSum {
   return { rounds: 0, reasoningChars: 0, completionTokens: 0, latencyMs: 0 }
 }
 
-function addRoundCost(into: { -readonly [K in keyof RoundCost]: RoundCost[K] }, from: RoundCost): void {
+function addRoundCost(into: RoundCostSum, from: RoundCost): void {
   into.rounds += from.rounds
   into.reasoningChars += from.reasoningChars
   into.completionTokens += from.completionTokens
@@ -5819,36 +5831,58 @@ function populationBookkeepingBeforeCutText(population: AuditPopulation): string
   return `${population.bookkeepingBeforeCut} bookkeeping round(s) right before the cut`
 }
 
-/** Some Answer Checkpoints as offered, accepted and dropped, with the reasons they were dropped for (#288). */
+/** Milliseconds as seconds to one decimal, the unit a round's cost is printed in (#321). */
 const secondsOf = (ms: number): string => (ms / 1000).toFixed(1)
 
+/** One kind of round's cost: its rounds, reasoning characters, output tokens and seconds. */
 function roundCostText(cost: RoundCost): string {
   return `${cost.rounds} round(s), ${cost.reasoningChars} reasoning characters, ${cost.completionTokens} output tokens, ${secondsOf(cost.latencyMs)} s`
 }
 
+/** An attempt's rounds that wrote an Answer, by mark (#321); "not counted" on an audit written before the marks. */
 export function answerRoundsText(marks: AnswerRounds | undefined): string {
   if (marks === undefined) return 'not counted'
   return `taken ${roundsText(marks.taken)}; sent back ${roundsText(marks.sentBack)}; Answer Retry ${roundsText(marks.retries)}`
 }
 
+/** An attempt's cost in the two kinds of round (#321); "not counted" on an audit written before the marks. */
 export function roundCostsText(costs: RoundCosts | undefined): string {
   return costs === undefined ? 'not counted' : `bookkeeping-only ${roundCostText(costs.bookkeepingOnly)}; wrote an Answer ${roundCostText(costs.answer)}`
 }
 
+/** The heading of the per-population section (#321), which only an audit whose attempts carry the marks prints. */
 export const ROUND_COSTS_HEADING = '## Reasoning by kind of round'
 
 const ROUND_COSTS_NOTE =
-  'A bookkeeping-only round is a round outside Finalization whose every call is Bookkeeping. A round that wrote an Answer is one whose Answer was taken, one whose Answer was sent back, or an Answer Retry, whatever kind the round is counted as above. Per Run is over the attempts counted. Reported, never gated.'
+  'A bookkeeping-only round is a round outside Finalization whose every call is Bookkeeping. A round that wrote an Answer is one whose Answer was taken, one whose Answer was sent back, or an Answer Retry, whatever kind the round is counted as above. Per Run is over the attempts counted, and "all" is every population summed. Reported, never gated.'
+
+/** Two populations' costs as one (#321): the sum for the pass, or for the sets of an aggregate. */
+function summedRoundCosts(costs: readonly PopulationRoundCosts[]): PopulationRoundCosts {
+  const bookkeepingOnly = emptyRoundCost()
+  const answer = emptyRoundCost()
+  const answerRounds = { taken: 0, sentBack: 0, retries: 0 }
+  let attempts = 0
+  for (const each of costs) {
+    attempts += each.attempts
+    addRoundCost(bookkeepingOnly, each.bookkeepingOnly)
+    addRoundCost(answer, each.answer)
+    answerRounds.taken += each.answerRounds.taken
+    answerRounds.sentBack += each.answerRounds.sentBack
+    answerRounds.retries += each.answerRounds.retries
+  }
+  return { attempts, answerRounds, bookkeepingOnly, answer }
+}
 
 /** The cost of the two kinds of round per population (#321); nothing where no population's attempts carry the marks. */
 function roundCostsSection(populations: readonly AuditPopulation[]): string[] {
   const counted = populations.filter((population) => population.roundCosts !== undefined)
   if (counted.length === 0) return []
   const lines = [ROUND_COSTS_HEADING, '', ROUND_COSTS_NOTE, '', '| population | kind of round | attempts | rounds | reasoning characters | per Run | output tokens | seconds |', '| --- | --- | --- | --- | --- | --- | --- | --- |']
-  for (const population of counted) {
-    const costs = population.roundCosts!
+  const rows = counted.map((population) => ({ label: population.label, costs: population.roundCosts! }))
+  if (rows.length > 1) rows.push({ label: 'all', costs: summedRoundCosts(rows.map((row) => row.costs)) })
+  for (const { label, costs } of rows) {
     const row = (kind: string, cost: RoundCost): string =>
-      `| ${population.label} | ${kind} | ${costs.attempts} | ${cost.rounds} | ${cost.reasoningChars} | ${Math.round(cost.reasoningChars / costs.attempts)} | ${cost.completionTokens} | ${secondsOf(cost.latencyMs)} |`
+      `| ${label} | ${kind} | ${costs.attempts} | ${cost.rounds} | ${cost.reasoningChars} | ${Math.round(cost.reasoningChars / costs.attempts)} | ${cost.completionTokens} | ${secondsOf(cost.latencyMs)} |`
     const marks = costs.answerRounds
     lines.push(row('bookkeeping-only', costs.bookkeepingOnly))
     lines.push(row(`wrote an Answer (${marks.taken} taken, ${marks.sentBack} sent back, ${marks.retries} Answer Retries)`, costs.answer))
@@ -5856,6 +5890,7 @@ function roundCostsSection(populations: readonly AuditPopulation[]): string[] {
   return lines
 }
 
+/** Some Answer Checkpoints as offered, accepted and dropped, with the reasons they were dropped for (#288). */
 function answerCheckpointCountsText(counts: AnswerCheckpointCounts): string {
   const reasons = Object.entries(counts.dropReasons)
   return `${counts.offered} offered in ${counts.answers} Answer(s), ${counts.accepted} accepted, ${counts.dropped} dropped${

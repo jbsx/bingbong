@@ -1400,9 +1400,13 @@ describe('the rounds that wrote an Answer, and what they and the bookkeeping-onl
     expect(classify(cut, [answerShown(2_500, true), done(2_600, 'deadline_reached')]).answerRounds).toEqual({ taken: [], sentBack: [], retries: [] })
     // The Card a cut round had closed in its stream stood (#312): the round still wrote no Answer.
     expect(classify(cut, [answerShown(2_500), done(2_600, 'deadline_reached')]).answerRounds).toEqual({ taken: [], sentBack: [], retries: [] })
-    // A Card published early stands whatever became of its round (#319), and that round wrote it.
-    const early: RoundSpec[] = [READ_ROUND, { round: 2, at: 2_000, outcome: 'deadline', after: [record(2_100, 'early_card', { round: 2, publishedAt: T0 + 2_050, sinceRoundStartMs: 50, untilRoundEndMs: 50 })] }]
-    expect(classify(early, [answerShown(2_050), done(2_600, 'deadline_reached')]).answerRounds).toEqual({ taken: [2], sentBack: [], retries: [] })
+    // And so with a Card published early (#319): it stood, and the round it was cut in is still not marked.
+    const earlyCard = record(2_100, 'early_card', { round: 2, publishedAt: T0 + 2_050, sinceRoundStartMs: 50, untilRoundEndMs: 50 })
+    const early: RoundSpec[] = [READ_ROUND, { round: 2, at: 2_000, outcome: 'deadline', after: [earlyCard] }]
+    expect(classify(early, [answerShown(2_050), done(2_600, 'deadline_reached')]).answerRounds).toEqual({ taken: [], sentBack: [], retries: [] })
+    // A round that completed with calls beside its early Card ended the Run on that Card: the calls were not run, and the Answer was taken.
+    const beside: RoundSpec[] = [READ_ROUND, { round: 2, at: 2_000, calls: [{ name: 'read_page', args: {}, result: READ('Watch spec', SPEC_URL, 'aaaa1111') }], after: [earlyCard] }]
+    expect(classify(beside, [answerShown(2_050), done(2_600)]).answerRounds).toEqual({ taken: [2], sentBack: [], retries: [] })
   })
 
   it('leaves a Subagent’s Answer records out: its report is none of the Run’s rounds', () => {
@@ -1421,9 +1425,18 @@ describe('the rounds that wrote an Answer, and what they and the bookkeeping-onl
       [[READ_ROUND, SENT_BACK[2]!, { round: 4, at: 3_500, outcome: 'empty' }, { ...SENT_BACK[3]!, attempt: 2 }], [answerShown(4_500), done(4_600)]],
     ] as const) {
       const mechanical = classify(rounds, extra)
-      expect(answerRoundsByShapeOf(mechanical.rounds)).toEqual(mechanical.answerRounds)
-      expect(answerRoundsOf({ rounds: mechanical.rounds })).toEqual(mechanical.answerRounds)
+      expect(answerRoundsByShapeOf(mechanical.rounds, mechanical.answerRetries)).toEqual(mechanical.answerRounds)
+      expect(answerRoundsOf({ rounds: mechanical.rounds, answerRetries: mechanical.answerRetries })).toEqual(mechanical.answerRounds)
     }
+  })
+
+  it('reads no round as sent back from the rounds of an attempt whose trace recorded no Answer Retry', () => {
+    // An Answer that Steering arrived behind: the round completed with no
+    // call and the Run went on to act. Nothing sent it back.
+    const steered: RoundSpec[] = [READ_ROUND, { round: 2, at: 2_000 }, { round: 3, at: 3_000, calls: [{ name: 'navigate', args: { url: OTHER_URL }, result: PAGE('Other', OTHER_URL, 'dddd4444') }] }, { round: 4, at: 4_000 }]
+    const mechanical = classify(steered, [answerShown(4_500), done(4_600)])
+    expect(mechanical.answerRounds).toEqual({ taken: [4], sentBack: [], retries: [] })
+    expect(answerRoundsByShapeOf(mechanical.rounds, mechanical.answerRetries)).toEqual(mechanical.answerRounds)
   })
 
   it('sums reasoning, output tokens and seconds over the bookkeeping-only rounds and the rounds that wrote an Answer, per Run and per population', () => {
@@ -1451,6 +1464,13 @@ describe('the rounds that wrote an Answer, and what they and the bookkeeping-onl
     expect(markdown).toContain(ROUND_COSTS_HEADING)
     expect(markdown).toContain('| initial | bookkeeping-only | 2 | 2 | 6000 | 3000 | 100 | 4.0 |')
     expect(markdown).toContain('| initial | wrote an Answer (0 taken, 2 sent back, 2 Answer Retries) | 2 | 4 | 11400 | 5700 | 200 | 14.0 |')
+    // One population counted: the pass's sum is that population's, and no row repeats it.
+    expect(markdown).not.toContain('| all | bookkeeping-only')
+
+    const followUp = { ...mechanical, relation: 'revised_objective' as const }
+    const both = formatAuditSet(buildAuditSet(provenanceOf(), [attempt, { mechanical: followUp, review: null, countsAfterOverrules: followUp.counts }], []))
+    expect(both).toContain('| all | bookkeeping-only | 2 | 2 | 6000 | 3000 | 100 | 4.0 |')
+    expect(both).toContain('| all | wrote an Answer (0 taken, 2 sent back, 2 Answer Retries) | 2 | 4 | 11400 | 5700 | 200 | 14.0 |')
   })
 
   it('writes neither sum for a population whose attempts were audited before the marks, and prints them as not counted', () => {

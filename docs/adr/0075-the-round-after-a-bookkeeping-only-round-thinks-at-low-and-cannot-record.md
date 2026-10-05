@@ -29,14 +29,16 @@ when an `asked_items_shape` record says the retry was spent on it, when an
 record does and the next round is the retry; an Off-language Answer the
 deterministic Answer stood in for is marked sent back too, since the
 application did not take it. The taken round is the Run's last, when the
-Answer shown was a model's and the round completed with no call or
-published its Card early. A round cut while it drafted an Answer is not
-marked. An audit written before the marks is read from its rounds: a round
-that completed with no call and was not the last was sent back, and the
-last attempt of the round after it is the retry. Over every audit on main
-that rule finds as many sent-back rounds as the traces recorded Answer
-Retries of the Run's own; it cannot tell an Off-contract Reply in a
-reserved round from an Answer taken, which the records can.
+Answer shown was a model's and the round completed. A round cut while it
+drafted an Answer is not marked, whether its Card was published early or
+closed at the cut, and an Answer Retry is marked however it resolved. An
+audit written before the marks is read from its rounds: where its trace
+recorded an Answer Retry, a round that completed with no call and was not
+the last was sent back, and the last attempt of the round after it is the
+retry. On each of the 18 attempts of `main-4dc72e9` that rule gives the
+marks the records give. It cannot tell an Off-contract Reply in a reserved
+round from an Answer taken, which the records can, and an abandoned attempt
+of an Answer round is in neither sum.
 
 Per Run and per population the audit sums reasoning characters, output
 tokens and seconds over the bookkeeping-only rounds, which are the rounds

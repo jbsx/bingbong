@@ -1217,8 +1217,9 @@ Finalization. With the marks the audit reports **reasoning by kind of
 round**: the reasoning characters, output tokens and seconds of the
 bookkeeping-only rounds (the rounds of kind Bookkeeping) and of the rounds
 that wrote an Answer, per attempt and, in a section of its own, per
-population with a mean over the Runs. An audit written before the marks
-prints "not counted" and has no such section. Reported, never gated, and
+population with a mean over the Runs, and summed over the populations as
+"all". A round cut while it drafted an Answer is not marked. An audit
+written before the marks prints "not counted" and has no such section. Reported, never gated, and
 outside the digest.
 
 They name check ids and URLs only, never key text: the reviewer is told to
@@ -1335,10 +1336,11 @@ carried, so they read as nothing there.
 characters per Run in rounds that wrote an Answer` (#321) are means over the
 Runs, summed from each attempt's rounds. An audit that marked its Answer
 rounds is read by its marks. One written before them is recounted from the
-shape of its rounds, with no trace and no reviewer: a round that completed
-with no call and was not the Run's last was sent back, the last attempt of
-the round after it is the Answer Retry, and a last round that completed
-with no call wrote the Answer taken. `main-4dc72e9` reads 7,504 and 4,511
+shape of its rounds, with no trace and no reviewer: where the attempt
+recorded an Answer Retry, a round that completed with no call and was not
+the Run's last was sent back and the last attempt of the round after it is
+the retry, and a last round that completed with no call wrote the Answer
+taken. `main-4dc72e9` reads 7,504 and 4,511
 on initials and 2,558 and 9,354 on follow-ups. Neither line is gated here;
 #314's capture gates on their sum.
 
