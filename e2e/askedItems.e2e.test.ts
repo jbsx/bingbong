@@ -176,10 +176,12 @@ describe('Asked Items on the Answer Card e2e (#250)', () => {
       },
       // The limit that ends this Run is the Investigation Tool Round budget
       // (`budget_exhausted`). The plan declares the top tier because a
-      // lower one would not stop here (#317): a repeated read is refused
-      // and so never counts against Progress, and a Run still making
-      // Progress at its budget rises one Effort Tier (#266) rather than
-      // finalizing. The budget is spent on reads; the bookkeeping round
+      // lower one would not stop here (#317): of these identical reads
+      // only the second is a no-Progress action — the first is new
+      // material and the rest are refused unexecuted — so no Approach is
+      // exhausted, and a Run still making Progress at its budget takes a
+      // Tier Escalation (#266) rather than finalizing. The budget is spent
+      // on reads, most of them refused; the bookkeeping round
       // and the reserved Answer round both ask for more work, so the
       // Answer the user sees is the deterministic one.
       ...Array.from({ length: TIER_TOOL_ROUND_BUDGETS.investigation + 1 }, (_, i) => work(i)),
