@@ -23,6 +23,7 @@
     "delegation:summary": "node scripts/delegation-summary.ts",
     "test:watch": "vitest",
     "cli": "pnpm build && electron . --browser-cli",
+    "live:answer-namings": "node scripts/live-answer-namings.ts",
     "live:audit": "node scripts/live-audit.ts",
     "live:empty-landings": "node scripts/live-empty-landings.ts",
     "live:grade": "node scripts/live-grade.ts",

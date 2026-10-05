@@ -700,14 +700,14 @@ describe('openAiLlmClient', () => {
       // The captured failure's shape: a Run whose first request ended at
       // the active-work deadline has executed nothing at all.
       toolResults: [],
-      finalizeInstruction: 'The run\u2019s active-work deadline has passed \u2014 Finalize now.',
+      finalizeInstruction: 'No further acquisition is possible in this run \u2014 Finalize now.',
     })
 
     // Last of all, past the command and any correction: the operational
     // fact about the round being sent, as written.
     expect(fetch.calls[0].body.messages.at(-1)).toEqual({
       role: 'user',
-      content: 'The run\u2019s active-work deadline has passed \u2014 Finalize now.',
+      content: 'No further acquisition is possible in this run \u2014 Finalize now.',
     })
   })
 

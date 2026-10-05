@@ -58,7 +58,10 @@ lost too.
   Answer round (itself covered by the retry), the deterministic Answer if
   that fails. No Tier Escalation is offered: a higher tier reaches the same
   unreachable model. The cause is runtime-only, so a model that proposes it
-  is dropped; the model-facing reason is "The model could not be reached";
+  is dropped; the model-facing reason was "The model could not be reached"
+  and, since #323 (2026-10-05), is the sentence the budget and the deadline
+  open on, which names no model
+  ([ADR 0038](0038-finalization-has-one-elapsed-time-allowance.md)'s note);
   the Stop Record's detail names the attempts and the transport code; it
   earns the failure screenshot the old `failed` path took. What the user
   hears does not change: the deterministic Answer names no cause.

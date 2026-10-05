@@ -21,10 +21,10 @@
 // e2e/live/emptyLandingMarks.ts and e2e/live/pageArrivalMarks.ts. Run it where the captures are: a worktree
 // holds none, and would name every set as not recounted.
 
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
-import { join, resolve, sep } from 'node:path'
+import { readdirSync, readFileSync } from 'node:fs'
+import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { LIVE_ARTIFACTS_ROOT, parseJsonl, readSessionCapture, writeFileAtomic } from '../e2e/live/artifacts.ts'
+import { LIVE_ARTIFACTS_ROOT, attemptTraceRecords, writeFileAtomic } from '../e2e/live/artifacts.ts'
 import { LIVE_AUDIT_KIND, SEARCH_STREAK_RULE, emptyLandingMarksOf, pageArrivalMarksOf, type AuditSetOutput, type EmptyLandingMark } from '../e2e/live/audit.ts'
 import { familyIdOf } from '../e2e/live/ledger.ts'
 import { EMPTY_LANDING_RECOUNT_RULE, type RecountedAttempt } from '../e2e/live/emptyLandingRecount.ts'
@@ -63,27 +63,6 @@ function parseArgv(argv: readonly string[]): { reportsDir: string; artifactsDir:
   return { reportsDir, artifactsDir, out, arrivalsOut, dryRun }
 }
 
-/** The turn's Run Trace records from every retained trace file of one capture, in file order; null when the capture is not on disk. */
-function traceRecordsOf(artifactsDir: string, captureId: string, attemptId: string): object[] | null {
-  const directory = join(artifactsDir, captureId)
-  const capturePath = join(directory, 'capture.json')
-  if (!existsSync(capturePath)) return null
-  const session = readSessionCapture(capturePath)
-  if (!session.ok) return null
-  const attempt = session.value.attempts.find((candidate) => candidate.attemptId === attemptId)
-  if (attempt === undefined || attempt.kind !== 'attempt' || attempt.accepted.status !== 'observed') return []
-  const turnId = attempt.accepted.value.turnId
-  const records: object[] = []
-  for (const artifact of session.value.artifacts.filter((candidate) => candidate.family === 'run_trace')) {
-    const path = resolve(directory, artifact.path)
-    if (!path.startsWith(`${directory}${sep}`) || !existsSync(path)) return null
-    for (const record of parseJsonl(readFileSync(path, 'utf8')).records) {
-      if (typeof record === 'object' && record !== null && (record as { turnId?: unknown }).turnId === turnId) records.push(record)
-    }
-  }
-  return records
-}
-
 const { reportsDir, artifactsDir, out, arrivalsOut, dryRun } = parseArgv(process.argv.slice(2))
 
 const recounted: RecountedAttempt[] = []
@@ -101,7 +80,7 @@ for (const name of readdirSync(reportsDir).filter((candidate) => candidate.start
   const found: RecountedAttempt[] = []
   const foundArrivals: RecountedArrivals[] = []
   for (const { mechanical } of audit.attempts) {
-    const records = traceRecordsOf(artifactsDir, mechanical.captureId, mechanical.attemptId)
+    const records = attemptTraceRecords(artifactsDir, mechanical.captureId, mechanical.attemptId)
     if (records === null || (records.length === 0 && mechanical.rounds.length > 0)) {
       onDisk = false
       break

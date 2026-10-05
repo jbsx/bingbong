@@ -164,7 +164,7 @@ describe('only a check that was actually asked can spend a route (#212)', () => 
   // the route's. Counting one closes the route on a request nobody made
   // and then quotes our own sentence to the next Run as what the
   // provider said.
-  const OURS = 'Not executed — The run’s work budget is exhausted. Finalize now: reply with your final answer JSON.'
+  const OURS = 'Not executed — No further acquisition is possible in this run. Finalize now: reply with your final answer JSON.'
 
   it('spends nothing when the call never reached the tool', () => {
     const rail = createVerificationRail()

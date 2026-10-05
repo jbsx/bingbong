@@ -366,7 +366,8 @@ describe('runSubagent', () => {
     const lastOutcome = reserved?.[1]?.outcome
     expect(lastOutcome).toMatchObject({
       ok: true,
-      result: expect.stringMatching(/delegated work budget \(2 tool rounds\) is spent[\s\S]*final report JSON/),
+      // The worker's notice keeps its reason (it is the orchestrator that reads the report) and closes as every Finalization text does (#323).
+      result: expect.stringMatching(/delegated work budget \(2 tool rounds\) is spent\. Tool calls are closed\. Reply now with ONLY your final report JSON — say what you established and what is still unverified\.$/),
     })
   })
 
@@ -1826,7 +1827,9 @@ describe('runSubagent under the parent Run\'s Finalization (#199)', () => {
     expect(report.bounded).toBeUndefined()
     expect(llm.requests[1]?.toolResults[0]?.outcome).toMatchObject({
       ok: true,
-      result: expect.stringContaining('The parent run is finalizing. Tool calls are closed. Reply now with ONLY your final report JSON'),
+      result: expect.stringContaining(
+        'The parent run is finalizing. Tool calls are closed. Reply now with ONLY your final report JSON — say what you established and what is still unverified.',
+      ),
     })
   })
 

@@ -151,3 +151,32 @@ The confirmed scope and verification boundary are in
     mid-Run warnings and the Stop Record keep the real cause. The Round
     Audit counts Answers that name the stop, reported and never gated; a
     check is the next step only if that count does not fall.
+
+- 2026-10-05 (#323, implementation of the note above). The Finalize
+  Instruction's opening for `budget_exhausted`, `deadline_reached`,
+  `hard_limit` and `model_unreachable` is one sentence, "No further
+  acquisition is possible in this run" (`ACQUISITION_ENDED_REASON`), on
+  every carrier: a closed tool's refusal, the Notice on a bookkeeping
+  result, an injected Subagent Report and the Finalization request.
+  `no_progress` and `blocker` open as before. The closing is one text
+  (`ANSWER_CLOSING`), "say what you established and what is still
+  unverified": in the four Finalization texts, the directive of the action
+  that exhausts the second Approach, the worker's three finalize texts, the
+  system prompt's line for a failed Run and the shared policy's
+  Finalization sentence, which read "when a notice says the work budget is
+  spent" and now reads "when a notice says to finalize", since no notice
+  to the Run's model says so any longer. The worker's finalize notice keeps
+  its reason ("Your delegated work budget … is spent", "The parent run's
+  active-work deadline has passed"): its report goes to the orchestrator
+  and never to the user. The mid-Run warnings, the Stop Record's detail
+  sentences and the Run Trace are unchanged.
+  - **The counter.** The Round Audit's `answerNamings` reads the last
+    model-written Answer the user met — the Spoken Rendering, the Card and
+    the Asked Item statements — against a phrase list for the stop and the
+    bound, and a second for internal names, and lists each hit with the
+    words around it. The base over the 71 capture sets on disk: 22 of 152
+    Answers on a Run that did not end `objective_met` name the stop (the
+    hand count was 24 of 156), and 0 of 254 on a Run that did; 5 of 69 from
+    fix-260-262 on. A set family's own number is in
+    `docs/live-web-reporting.md`. The list also reads the new opening,
+    should an Answer repeat it. Reported, never gated.

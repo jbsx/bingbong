@@ -768,7 +768,7 @@ function main(): void {
       const key = gradingKeyFor(huntId)
       return key === undefined ? [] : keyTextsOf(key).filter((entry) => !entry.label.endsWith('source statement'))
     })
-    if (guarded.withheld > 0) caveats.push(`${guarded.withheld} call argument(s), result head(s) or search quer(ies) withheld from this output: each restated Grading Key text`)
+    if (guarded.withheld > 0) caveats.push(`${guarded.withheld} call argument(s), result head(s), search quer(ies) or Answer excerpt(s) withheld from this output: each restated Grading Key text`)
     outputs.push({ context, audit: buildAuditSet(provenance, guarded.attempts, caveats), jsonPath, mdPath })
   }
 

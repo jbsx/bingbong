@@ -1381,7 +1381,7 @@ describe('command pipeline', () => {
     expect(events.filter((e) => e.type === 'tool_result' && e.name === 'spin')).toHaveLength(ceiling)
     expect(events.find((e) => e.type === 'tool_result' && e.callId === `c${ceiling}`)).toMatchObject({
       ok: false,
-      error: expect.stringMatching(/has reached its hard work limit/),
+      error: expect.stringMatching(/No further acquisition is possible in this run/),
     })
     expect(llm.requests).toHaveLength(ceiling + 1)
     // No raw round-limit error: the guaranteed Answer replaces it.
@@ -1478,7 +1478,7 @@ describe('command pipeline', () => {
       expect(events.filter((e) => e.type === 'tool_result' && e.name === 'work' && e.ok)).toHaveLength(6)
       expect(events.find((e) => e.type === 'tool_result' && e.callId === 'w6')).toMatchObject({
         ok: false,
-        error: expect.stringMatching(/work budget is exhausted/),
+        error: expect.stringMatching(/No further acquisition is possible in this run/),
       })
       // The counters stay internal: no user-facing surface carries them.
       for (const event of events) {
@@ -1801,7 +1801,7 @@ describe('command pipeline', () => {
       expect(events.filter((e) => e.type === 'tool_result' && e.name === 'work' && e.ok)).toHaveLength(12)
       expect(events.find((e) => e.type === 'tool_result' && e.callId === 'w12')).toMatchObject({
         ok: false,
-        error: expect.stringMatching(/work budget is exhausted/),
+        error: expect.stringMatching(/No further acquisition is possible in this run/),
       })
       expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done', finalizationCause: 'budget_exhausted' })
     })
@@ -2434,9 +2434,9 @@ describe('command pipeline', () => {
       // Every Finalization round after the failure is told why, and the
       // Answer comes from the reserved round.
       expect(requests).toHaveLength(3)
-      expect(requests[1]?.finalizeInstruction).toMatch(/^The model could not be reached — /)
+      expect(requests[1]?.finalizeInstruction).toMatch(/^No further acquisition is possible in this run — /)
       expect(requests[2]).toMatchObject({ answerOnly: true })
-      expect(requests[2]?.finalizeInstruction).toMatch(/^The model could not be reached\./)
+      expect(requests[2]?.finalizeInstruction).toMatch(/^No further acquisition is possible in this run\./)
       expect(stops).toHaveLength(1)
       expect(stops[0]).toMatchObject({
         cause: 'model_unreachable',
@@ -2596,7 +2596,7 @@ describe('command pipeline', () => {
       // The reserved Answer round is told the phase it actually runs in.
       expect(requests[2].answerOnly).toBe(true)
       expect(requests[2].finalizeInstruction).toBe(
-        `The run’s active-work deadline has passed. ${ANSWER_ONLY_REPORT_DIRECTIVE}`,
+        `No further acquisition is possible in this run. ${ANSWER_ONLY_REPORT_DIRECTIVE}`,
       )
       // Acquisition never reopened: no tool call was ever made.
       expect(events.some((e) => e.type === 'tool_call')).toBe(false)
@@ -2839,7 +2839,7 @@ describe('command pipeline', () => {
       expect(llm.requests.slice(0, 6).map((request) => request.finalizeInstruction)).toEqual(Array(6).fill(undefined))
       expect(llm.requests[6].finalizeInstruction).toBe(finalizeInstruction('budget_exhausted'))
       expect(llm.requests[7].finalizeInstruction).toBe(
-        `The run’s work budget is exhausted. ${ANSWER_ONLY_REPORT_DIRECTIVE}`,
+        `No further acquisition is possible in this run. ${ANSWER_ONLY_REPORT_DIRECTIVE}`,
       )
     })
   })
@@ -3346,11 +3346,11 @@ describe('command pipeline', () => {
       expect(events.find((e) => e.type === 'tool_result' && e.callId === 'w1')).toMatchObject({ ok: true })
       expect(events.find((e) => e.type === 'tool_result' && e.callId === 'w2')).toMatchObject({
         ok: false,
-        error: expect.stringMatching(/active-work deadline has passed[\s\S]*final answer JSON/),
+        error: expect.stringMatching(/No further acquisition is possible in this run[\s\S]*final answer JSON/),
       })
       expect(events.find((e) => e.type === 'tool_result' && e.callId === 'ask1')).toMatchObject({
         ok: false,
-        error: expect.stringMatching(/active-work deadline has passed[\s\S]*final answer JSON/),
+        error: expect.stringMatching(/No further acquisition is possible in this run[\s\S]*final answer JSON/),
       })
       expect(events.some((e) => e.type === 'ask_requested')).toBe(false)
       expect(llm.requests).toHaveLength(3)
@@ -3493,7 +3493,7 @@ describe('command pipeline', () => {
       expect(events.filter((e) => e.type === 'tool_result' && e.name === 'work' && e.ok)).toHaveLength(17)
       expect(events.find((e) => e.type === 'tool_result' && e.callId === 'w17')).toMatchObject({
         ok: false,
-        error: expect.stringMatching(/work budget is exhausted/),
+        error: expect.stringMatching(/No further acquisition is possible in this run/),
       })
       expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done', finalizationCause: 'budget_exhausted' })
     })
@@ -3529,7 +3529,7 @@ describe('command pipeline', () => {
       expect(events.filter((e) => e.type === 'tool_result' && e.name === 'work' && e.ok)).toHaveLength(3)
       expect(events.find((e) => e.type === 'tool_result' && e.callId === 'w3')).toMatchObject({
         ok: false,
-        error: expect.stringMatching(/active-work deadline has passed/),
+        error: expect.stringMatching(/No further acquisition is possible in this run/),
       })
       expect(events.at(-1)).toEqual({ type: 'done', outcome: 'done', resolution: 'partial', finalizationCause: 'deadline_reached', at: 411_000 })
     })
@@ -3610,7 +3610,7 @@ describe('command pipeline', () => {
       expect(events.filter((e) => e.type === 'tool_result' && e.name === 'work' && e.ok)).toHaveLength(31)
       expect(events.find((e) => e.type === 'tool_result' && e.callId === 'w31')).toMatchObject({
         ok: false,
-        error: expect.stringMatching(/has reached its hard work limit[\s\S]*final answer JSON/),
+        error: expect.stringMatching(/No further acquisition is possible in this run[\s\S]*final answer JSON/),
       })
       // 32 Tool Rounds inside the ceiling plus the Answer-only round
       // outside it.
@@ -3889,7 +3889,7 @@ describe('command pipeline', () => {
       expect(events.filter((e) => e.type === 'tool_result' && e.name === 'work' && e.ok)).toHaveLength(3)
       expect(events.find((e) => e.type === 'tool_result' && e.callId === 'w3')).toMatchObject({
         ok: false,
-        error: expect.stringMatching(/active-work deadline has passed/),
+        error: expect.stringMatching(/No further acquisition is possible in this run/),
       })
       expect(events.at(-1)).toMatchObject({ type: 'done', finalizationCause: 'deadline_reached' })
     })

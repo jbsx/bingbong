@@ -7,6 +7,7 @@ import { settledOnEmptyLanding } from '../browser/emptyLanding'
 import { actionFingerprint, pageFingerprint, pageReadPartOf, type SettledPageState } from './progressFingerprints'
 import { classifyToolObservation } from './toolObservations'
 import { CHECKPOINT_TOOL_NAMES } from './checkpointTools'
+import { ANSWER_CLOSING } from './effortEpoch'
 import { reportFault } from '../trace/fault'
 import { collectedReportIn } from '../agent/agentResultsHeader'
 
@@ -129,8 +130,7 @@ const APPROACH_CHANGE_INSTRUCTION =
  */
 export const ORCHESTRATOR_APPROACH_EXHAUSTED_DIRECTIVE =
   'A second Approach has made no progress — the run is finalizing. Acquisition, vision, media, delegation, and ' +
-  'ask_user tools are closed. Finalize now: reply with your final answer JSON and state honestly what was and ' +
-  'was not completed.'
+  `ask_user tools are closed. Finalize now: reply with your final answer JSON and ${ANSWER_CLOSING}.`
 
 export interface NoProgressRailDeps {
   /**

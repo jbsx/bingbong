@@ -43,6 +43,7 @@ import { blockedOrInertAction, type ConsumedNothing } from '../../src/core/brows
 import { parseBlockerMarker } from '../../src/core/browser/blockerNudge.ts'
 import { classifyNotFoundPage, NOT_FOUND_BASES, type NotFoundBasis, type NotFoundLanding } from '../../src/core/browser/notFoundPage.ts'
 import { offLanguageRenderings } from '../../src/core/agent/answerLanguage.ts'
+import { answerNamingsIn, type AnswerNamings } from './answerNamings.ts'
 import { isPartPastTheEnd } from '../../src/core/browser/pageText.ts'
 import { classifyUnavailablePage, isUnavailableBasis, type UnavailableLanding } from '../../src/core/browser/unavailablePage.ts'
 import { arrivedAtDocument, carriedNoPage, classifyEmptyLanding, isPageArrival, NAVIGATION_VERBS, pageReadReturnedText, showedNoPageText, type EmptyLanding } from '../../src/core/browser/emptyLanding.ts'
@@ -921,6 +922,16 @@ export interface AuditMechanical {
    */
   readonly offLanguageAnswers?: number
   /**
+   * What the Answer names (#323, note on ADR 0038): each phrase for the stop
+   * or the bound, and each of the application's internal names, that the
+   * Spoken Rendering, the Card or an Asked Item statement carried, with the
+   * words around it. Read off the Answer's text, which the rounds do not
+   * keep, so it sits beside them and out of the digest. Null when the user
+   * met no model-written Answer; absent on an audit written before the
+   * counter. Reported, never gated.
+   */
+  readonly answerNamings?: AnswerNamings | null
+  /**
    * Sentences spoken early (#312): the Run's `early_sentence` records, each
    * an Answer's sentence spoken when it closed in the stream, before its
    * round ended. Beside the rounds, never in them, reported and never
@@ -1271,6 +1282,12 @@ export interface AuditPopulation {
    * Ledger recounts.
    */
   readonly offLanguageAnswers?: number
+  /**
+   * The Answers that name the stop and the ones that carry internal names,
+   * over the attempts that count them (#323); absent when none does, as on
+   * an audit written before the counter, which the Fix Ledger recounts.
+   */
+  readonly answerNamings?: Readonly<AnswerNamingCounts>
   /** Sentences spoken early over the attempts that count them (#312); absent when none does. */
   readonly earlySentences?: number
   /** Second utterances over the attempts that count them (#312); absent when none does. */
@@ -2855,6 +2872,88 @@ export function offLanguageAnswersOf(traceRecords: readonly object[]): number {
     if (offLanguageRenderings({ display: textOf(event), speak: textOf(spoken) }).length > 0) count += 1
   })
   return count
+}
+
+/**
+ * What the Answer the user met names (#323, note on ADR 0038): the stop or
+ * the bound, and the application's internal names, read by the phrase lists
+ * of answerNamings.ts over the Card, its Spoken Rendering and the Card's
+ * Asked Item statements. The last final Answer is the one read, an Answer
+ * Retry's included. Its Spoken Rendering is the line spoken after the Card
+ * and, since #312, the sentence spoken early before it — the `speak` an
+ * `early_sentence` record follows — so a status line spoken while the Run
+ * worked is not read as the Answer. Null when there is no final Answer or
+ * it is the Deterministic Answer, whose sentences are the application's own
+ * and are pinned by tests; nothing a Subagent wrote is read.
+ */
+export function answerNamingsOf(traceRecords: readonly object[]): AnswerNamings | null {
+  const records = (traceRecords as unknown as readonly TraceLine[]).filter((record) => record.agentId === undefined)
+  const isCard = (record: TraceLine): boolean => {
+    const event = eventOf(record)
+    return event !== null && event.type === 'display' && event.finalAnswer === true
+  }
+  const spokenText = (record: TraceLine | undefined): string | null => {
+    const event = record === undefined ? null : eventOf(record)
+    return event !== null && event.type === 'speak' && isString(event.text) ? event.text : null
+  }
+  const at = records.findLastIndex(isCard)
+  const card = at === -1 ? null : eventOf(records[at]!)
+  if (card === null || card.deterministicAnswer === true) return null
+  // The sentences spoken early for this Answer: since the Answer before it, each `speak` its `early_sentence` record follows.
+  const since = records.slice(0, at).findLastIndex(isCard)
+  const early = records.slice(since + 1, at).flatMap((record, index, span) => {
+    const text = spokenText(record)
+    return text !== null && span[index + 1]?.kind === 'early_sentence' ? [text] : []
+  })
+  const after = records.slice(at + 1).map(spokenText).find((text) => text !== null)
+  const statements = (Array.isArray(card.askedItems) ? (card.askedItems as readonly { statement?: unknown }[]) : []).flatMap((entry) =>
+    isString(entry.statement) ? [entry.statement] : [],
+  )
+  return answerNamingsIn({ speak: [...early, ...(after === undefined || after === null ? [] : [after])].join('\n'), display: isString(card.text) ? card.text : '', statements })
+}
+
+/**
+ * A population's Answers by what they name (#323): the model-written
+ * Answers read, the ones that name the stop or the bound, and the ones that
+ * carry an internal name — each with the part of it on a Run that ended on
+ * anything but `objective_met`, the Runs whose Finalize Instruction the
+ * words come from. An Answer counts once however many phrases it carries.
+ */
+export interface AnswerNamingCounts {
+  /** Model-written Answers read. */
+  answers: number
+  /** Those on a Run that ended on anything but `objective_met`. */
+  unmetAnswers: number
+  /** Answers that name the stop or the bound, and those of them on such a Run. */
+  namingStop: number
+  namingStopUnmet: number
+  /** Answers that carry an internal name, and those of them on such a Run. */
+  internalNames: number
+  internalNamesUnmet: number
+}
+
+/** A population's counts before any Answer is added. */
+export function emptyAnswerNamingCounts(): AnswerNamingCounts {
+  return { answers: 0, unmetAnswers: 0, namingStop: 0, namingStopUnmet: 0, internalNames: 0, internalNamesUnmet: 0 }
+}
+
+/** One Answer added to a population's counts: whether its Run ended on anything but `objective_met`, and how many phrases of each list it carried. */
+export function addAnswerNaming(into: AnswerNamingCounts, unmet: boolean, stopPhrases: number, internalPhrases: number): void {
+  into.answers += 1
+  if (unmet) into.unmetAnswers += 1
+  if (stopPhrases > 0) {
+    into.namingStop += 1
+    if (unmet) into.namingStopUnmet += 1
+  }
+  if (internalPhrases > 0) {
+    into.internalNames += 1
+    if (unmet) into.internalNamesUnmet += 1
+  }
+}
+
+/** Whether an attempt's Run ended on anything but `objective_met` (#323): the Runs a Finalize Instruction was written for. */
+export function endedUnmet(mechanical: Pick<AuditMechanical, 'terminal'>): boolean {
+  return mechanical.terminal?.finalizationCause !== 'objective_met'
 }
 
 /** One Card published early (#319), as the audit reports it: its round, and where in the round it fell. */
@@ -4531,6 +4630,7 @@ export function classifyAttempt(input: AuditTraceInput): AuditMechanical {
     answerRounds,
     roundCosts: roundCostsOf(rounds, answerRounds),
     offLanguageAnswers: offLanguageAnswersOf(records),
+    answerNamings: answerNamingsOf(records),
     // The Answer's sentence spoken early, and an Answer heard after one that
     // was not its own (#312): the Run's own records, which a Subagent never
     // writes.
@@ -5037,7 +5137,16 @@ export function withholdKeyText(
         }
       }),
     }))
-    return { ...attempt, mechanical: { ...attempt.mechanical, rounds } }
+    // #323: the words around a phrase are the Answer's own, and an Answer states the facts a key holds.
+    const namings = attempt.mechanical.answerNamings
+    const answerNamings =
+      namings === undefined || namings === null
+        ? namings
+        : {
+            stop: namings.stop.map((hit) => ({ ...hit, excerpt: guard(hit.excerpt, texts) })),
+            internal: namings.internal.map((hit) => ({ ...hit, excerpt: guard(hit.excerpt, texts) })),
+          }
+    return { ...attempt, mechanical: { ...attempt.mechanical, rounds, ...(answerNamings === undefined ? {} : { answerNamings }) } }
   })
   return { attempts: guarded, withheld }
 }
@@ -5140,6 +5249,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
   // The attempts whose audit marked their Answer rounds (#321).
   const marked: AuditAttempt[] = []
   let offLanguageAnswers: number | undefined
+  let answerNamings: AnswerNamingCounts | undefined
   let earlySentences: number | undefined
   let secondUtterances: number | undefined
   let stoodSentences: number | undefined
@@ -5275,6 +5385,11 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
     answerRetries += mechanical.answerRetries
     if (mechanical.answerRounds !== undefined) marked.push(attempt)
     if (mechanical.offLanguageAnswers !== undefined) offLanguageAnswers = (offLanguageAnswers ?? 0) + mechanical.offLanguageAnswers
+    if (mechanical.answerNamings !== undefined) {
+      answerNamings ??= emptyAnswerNamingCounts()
+      const namings = mechanical.answerNamings
+      if (namings !== null) addAnswerNaming(answerNamings, endedUnmet(mechanical), namings.stop.length, namings.internal.length)
+    }
     if (mechanical.earlySentences !== undefined) earlySentences = (earlySentences ?? 0) + mechanical.earlySentences
     if (mechanical.secondUtterances !== undefined) secondUtterances = (secondUtterances ?? 0) + mechanical.secondUtterances
     if (mechanical.stoodSentences !== undefined) stoodSentences = (stoodSentences ?? 0) + mechanical.stoodSentences
@@ -5402,6 +5517,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
     answerRetries,
     ...(roundCosts !== null ? { roundCosts } : {}),
     ...(offLanguageAnswers !== undefined ? { offLanguageAnswers } : {}),
+    ...(answerNamings !== undefined ? { answerNamings } : {}),
     ...(earlySentences !== undefined ? { earlySentences } : {}),
     ...(secondUtterances !== undefined ? { secondUtterances } : {}),
     ...(stoodSentences !== undefined ? { stoodSentences } : {}),
@@ -5782,6 +5898,23 @@ function populationPagelessLandingsText(population: AuditPopulation): string {
   return `${population.pagelessLandings} landing(s) that carried no page`
 }
 
+/** A population's Answers that name the stop and that carry internal names (#323), or "not counted" on an audit written before the counter. */
+export function answerNamingCountsText(counts: Readonly<AnswerNamingCounts> | undefined): string {
+  if (counts === undefined) return 'Answers that name the stop not counted'
+  return (
+    `${counts.namingStop} of ${counts.answers} Answer(s) name the stop (${counts.namingStopUnmet} of ${counts.unmetAnswers} on a Run that did not end objective_met), ` +
+    `${counts.internalNames} carry internal names (${counts.internalNamesUnmet} on such a Run)`
+  )
+}
+
+/** One attempt's Answer by what it names (#323): the phrases of each list, in the order the user met them. */
+function answerNamingsText(namings: AnswerNamings | null | undefined): string {
+  if (namings === undefined) return 'not counted'
+  if (namings === null) return 'no model-written Answer'
+  const listed = (hits: AnswerNamings['stop']): string => (hits.length === 0 ? 'nothing' : hits.map((hit) => `"${hit.phrase}" (${hit.where.replace('_', ' ')})`).join(', '))
+  return `the stop: ${listed(namings.stop)}; internal names: ${listed(namings.internal)}`
+}
+
 /** A population's Off-language Answers (#286), or "not counted" on an audit written before the counter. */
 function populationOffLanguageAnswersText(population: AuditPopulation): string {
   if (population.offLanguageAnswers === undefined) return 'Off-language Answers not counted'
@@ -5983,7 +6116,7 @@ function judgementLines(populations: readonly AuditPopulation[]): string[] {
       `- ${population.label}: ${population.offKeyRounds} Off-key round(s), ${population.searchLoopRounds} Search Loop round(s) by the reviewer (${population.mechanicalSearchRounds} by the streak rule, heads included: ${population.searchRoundsAtStreak2} at streak 2 or beyond, ${population.searchRoundsAtStreak3} at 3 or beyond; attempts by search source ${SEARCH_SOURCES.map((source) => `${source} ${population.searchSources[source]}`).join(', ')}; navigate searches by Search URL form ${searchFormsText(population.searchForms)}; ${populationBlockedOrInertText(population.blockedOrInert)}; ${populationUnavailableLandingsText(population.unavailableLandings)}; ${populationEmptyLandingsText(population.emptyLandings)}; ${populationPageArrivalsText(population.pageArrivals)}; ${populationConsentWallsText(population.consentWalls)}; ${populationWindowOpensText(population.windowOpens)}; ${populationTierEscalationsText(population.tierEscalations)}), ` +
       `${population.inheritedRounds} inherited, ${population.rejectedCheckpoints} rejected Evidence Checkpoint(s), ${population.walledRounds} walled round(s), ${population.notFoundNavigates} navigate(s) landed on a Not-found Page (${population.notFoundOffKey} judged Off-key), ${population.rewrittenComposedAddresses ?? 0} Composed Address(es) rewritten into a site search (${population.rewrittenComposedAddressesOffKey ?? 0} judged Off-key, ${population.rewrittenShownAddresses ?? 'not counted'} to an address the Run was shown), ${population.unseenPhraseRewrites ?? 'not counted'} search(es) ran with an Unseen Phrase unquoted (${population.unseenPhraseRewritesOffKey ?? 0} judged Off-key), ${population.engineRewrites ?? 'not counted'} search(es) ran on the Run Engine in place of another Web Engine (${population.engineRewritesOffKey ?? 0} judged Off-key), ${populationResultPicksText(population)}, ${populationSelectedPassagesText(population)}, ${populationRunMadeUseText(population)}, ${populationContradictionNotesText(population)}, ${population.subagentRounds} Subagent round(s), ` +
       `${population.mergedCheckpoints} merged Evidence Checkpoint(s) (a floor), ${population.heldPageRoundsWithoutProgress} Held Page round(s) without Progress, ${population.bundledCheckpoints} bundled checkpoint round(s), ${population.sameSourceUnsupportedRounds} same-source unsupported round(s), ${subagentCitationsText(population.subagentCitations)}, ${populationSlipsText(population)}, ${delegatedPageCountsText(population.delegatedPageRounds)}, ${populationPastTheEndReadsText(population)}, ${populationPagelessLandingsText(population)}, ${populationBookkeepingBeforeAnswerText(population)}, ${populationBookkeepingBeforeCutText(population)}, ${populationAnswerCheckpointsText(population)}, ` +
-      `${population.malformedAnswers} Malformed Answer(s) (${population.answerRetries} retried), ${populationOffLanguageAnswersText(population)}, ${populationEarlySentencesText(population)}, ${populationEarlyCardsText(population)}, ` +
+      `${population.malformedAnswers} Malformed Answer(s) (${population.answerRetries} retried), ${populationOffLanguageAnswersText(population)}, ${answerNamingCountsText(population.answerNamings)}, ${populationEarlySentencesText(population)}, ${populationEarlyCardsText(population)}, ` +
       `${transportText(population)}, ` +
       `${populationSkipsText(population)}, ${populationCutsText(population)}, ` +
       `${population.askedItemsDeclared} declared Asked Items (${population.askedItemsUnverified} with an unverified standing, ${population.askedItemsShapeFailures} shape failure(s), ${population.askedItemsShapeRetried} retried), ` +
@@ -6021,6 +6154,10 @@ function attemptSection(attempt: AuditAttempt): string[] {
   lines.push(`- Rounds that wrote an Answer: ${answerRoundsText(mechanical.answerRounds)}`)
   lines.push(`- Reasoning by kind of round: ${roundCostsText(mechanical.roundCosts)}`)
   lines.push(`- Off-language Answers: ${mechanical.offLanguageAnswers ?? 'not counted'}`)
+  lines.push(`- What the Answer names: ${answerNamingsText(mechanical.answerNamings)}`)
+  for (const hit of [...(mechanical.answerNamings?.stop ?? []), ...(mechanical.answerNamings?.internal ?? [])]) {
+    lines.push(`  - ${hit.where.replace('_', ' ')}, "${hit.phrase}": …${hit.excerpt}…`)
+  }
   lines.push(
     `- Sentences spoken early: ${mechanical.earlySentences === undefined ? 'not counted' : `${mechanical.earlySentences} (${mechanical.secondUtterances ?? 0} second utterance(s), ${mechanical.stoodSentences ?? 0} stood for an Answer not its own)${earlySentenceTimesText(mechanical.earlySentenceTimes)}`}`,
   )

@@ -394,9 +394,9 @@ describe('mid-round trips close the round’s remaining siblings (#157/AC2)', ()
     expect(errorOf(outcome.results[5]!.outcome)).toBe(finalizationToolRefusal('no_progress'))
     // One reason per round (#201): the tripping call's rail sentence and
     // every sibling refused after it name the same stop — no sibling
-    // claims a spent work budget the run never spent.
-    expect(resultOf(outcome.results[4]!.outcome)).not.toContain('work budget is exhausted')
-    expect(errorOf(outcome.results[5]!.outcome)).not.toContain('work budget is exhausted')
+    // opens on the sentence of a bound the run never met (#323).
+    expect(resultOf(outcome.results[4]!.outcome)).not.toContain('No further acquisition is possible')
+    expect(errorOf(outcome.results[5]!.outcome)).not.toContain('No further acquisition is possible')
     expect(errorOf(outcome.results[5]!.outcome)).toContain('made no progress')
     expect(trace.filter((entry) => entry === 'execute:navigate')).toHaveLength(5)
   })
@@ -456,7 +456,7 @@ describe('mid-round trips close the round’s remaining siblings (#157/AC2)', ()
     const sibling = errorOf(outcome.results[1]!.outcome)
     expect(sibling).toBe(finalizationToolRefusal('blocker', { signal: 'challenge', host: 'www.reddit.com' }))
     expect(sibling).toContain('www.reddit.com')
-    expect(sibling).not.toContain('work budget is exhausted')
+    expect(sibling).not.toContain('No further acquisition is possible')
     expect(sibling).not.toContain('made no progress')
     // Only the wall-detecting read ever executed.
     expect(trace.filter((entry) => entry.startsWith('execute:'))).toEqual(['execute:read_page'])

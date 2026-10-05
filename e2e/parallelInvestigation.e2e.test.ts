@@ -247,7 +247,7 @@ describe('parallel Investigation e2e (#120/#199) — Finalization waits a Report
     expect(navigations.slice(0, 24).every((event) => event.ok)).toBe(true)
     expect(navigations[24]).toMatchObject({
       ok: false,
-      error: expect.stringMatching(/work budget is exhausted/),
+      error: expect.stringMatching(/No further acquisition is possible in this run/),
     })
 
     // #199 / ADR 0035: Finalization no longer cancels the branch. The
@@ -375,7 +375,7 @@ describe('parallel Investigation e2e (#120) — Finalization still uses a comple
     expect(navigations.slice(0, 23).every((event) => event.ok)).toBe(true)
     expect(navigations[23]).toMatchObject({
       ok: false,
-      error: expect.stringMatching(/work budget is exhausted/),
+      error: expect.stringMatching(/No further acquisition is possible in this run/),
     })
     const display = events.find((event) => event.type === 'display')
     expect(display).toMatchObject({

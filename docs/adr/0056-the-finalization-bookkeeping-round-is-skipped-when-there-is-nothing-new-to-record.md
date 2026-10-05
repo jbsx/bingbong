@@ -36,7 +36,8 @@ round was skipped, since neither of its texts depends on it.
   identities that already exist, so it never could hold a finding that was
   not recorded. The sentence is `What you found and have not recorded goes
   in its "checkpoints": [] when everything is already recorded.` and it
-  comes last, after the demand to state honestly what was completed.
+  comes last, after the demand to state honestly what was completed (since
+  #323, to say what was established and what is still unverified).
 - **The Answer-only text is one text.** After a kept round it said nothing
   of findings, so a round cut by the allowance left them with no place
   named. It now ends on the same sentence, and the wording for a skipped

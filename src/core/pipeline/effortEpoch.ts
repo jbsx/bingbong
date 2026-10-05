@@ -244,8 +244,8 @@ export type FinalizationDetail = BlockerWall | TierEscalationDecline | ModelUnre
 /**
  * What a `model_unreachable` stop knows (#271, ADR 0066): how many attempts
  * of the round failed at the transport, and the transport's own code for
- * the last one when it named one. Only the Stop Record says it; the model
- * and the user hear only that the model could not be reached.
+ * the last one when it named one. Only the Stop Record says it: the model
+ * reads the sentence every bound shares (#323) and the user hears no cause.
  */
 export interface ModelUnreachable {
   readonly attempts: number
@@ -476,22 +476,32 @@ export const NO_PROGRESS_FINALIZATION_REASON =
   'Two Approaches in a row made no progress — repeated actions stopped producing anything new'
 
 /**
+ * What a Finalize Instruction opens on when the stop is a limit or a failure
+ * of the application's own (#323, dated note on ADR 0038): one sentence for
+ * all four such causes, naming no time, budget, round, limit, model or
+ * error. An Answer repeats the words it is handed — "I ran out of browsing
+ * budget", "before the deadline" — so the model is told what is true of the
+ * task, that nothing more can be acquired, and not which bound said so. The
+ * Stop Record, the Run Trace and fault reports keep the real cause.
+ */
+export const ACQUISITION_ENDED_REASON = 'No further acquisition is possible in this run'
+
+/**
  * Why the Run is finalizing, as its own model reads it (#201). Only these
  * mechanical stops reach a Run's model: `objective_met` is the
  * model's own attestation, and `user_unavailable` and `parent_finalized`
  * are reached by nothing a Run does. `blocker` is not in the table
  * because its sentence is not a constant — it names the wall the run kept
- * at (#202), so it is built from the detail below.
+ * at (#202), so it is built from the detail below. A cause that is a fact
+ * about the task keeps its reason; one that is a bound or a failure of the
+ * application's own shares the sentence above (#323).
  */
 const RUN_FINALIZATION_REASONS: Partial<Record<FinalizationCause, string>> = {
-  budget_exhausted: 'The run\u2019s work budget is exhausted',
-  deadline_reached: 'The run\u2019s active-work deadline has passed',
+  budget_exhausted: ACQUISITION_ENDED_REASON,
+  deadline_reached: ACQUISITION_ENDED_REASON,
   no_progress: NO_PROGRESS_FINALIZATION_REASON,
-  hard_limit: 'The run has reached its hard work limit',
-  // No round, deadline or budget is named (#271, ADR 0066): two requests
-  // failed at the transport, and the model reading this is the one that
-  // could not be reached a round ago.
-  model_unreachable: 'The model could not be reached',
+  hard_limit: ACQUISITION_ENDED_REASON,
+  model_unreachable: ACQUISITION_ENDED_REASON,
 }
 
 /**
@@ -538,6 +548,14 @@ function runFinalizationReason(cause: FinalizationCause | null, detail?: Finaliz
 export type BookkeepingRound = 'kept' | 'skipped'
 
 /**
+ * What every Finalization text asks the Answer to say (#323, dated note on
+ * ADR 0038), in the words the system prompt's Outcome-First Ending rule
+ * already uses. It was "state honestly what was and was not completed",
+ * which asks for an account of the stop and got one.
+ */
+export const ANSWER_CLOSING = 'say what you established and what is still unverified'
+
+/**
  * Where a finding that never became a checkpoint goes once no tool round
  * is to come (#292, ADR 0056, ADR 0072): the Answer's own `checkpoints`,
  * the field #288 built for it. One sentence, the same wherever it appears,
@@ -558,7 +576,7 @@ export const ANSWER_CHECKPOINTS_SENTENCE =
 const FINALIZE_INSTRUCTION_DEMAND =
   'Acquisition tools (browser, vision, media, and delegation) and ask_user are closed; Collection and Bookkeeping ' +
   'remain open for one tool round. Record at most two Evidence Checkpoints in this round, for the findings that ' +
-  'matter most. Finalize now: reply with your final answer JSON and state honestly what was and was not completed.'
+  `matter most. Finalize now: reply with your final answer JSON and ${ANSWER_CLOSING}.`
 
 /**
  * What it demands when the bookkeeping round is skipped (#256, ADR 0056):
@@ -567,18 +585,19 @@ const FINALIZE_INSTRUCTION_DEMAND =
  */
 const SKIPPED_BOOKKEEPING_DEMAND =
   'Acquisition tools (browser, vision, media, and delegation) and ask_user are closed, and no bookkeeping round ' +
-  'follows: nothing new has been acquired to record. Finalize now: reply with your final answer JSON and state ' +
-  `honestly what was and was not completed. ${ANSWER_CHECKPOINTS_SENTENCE}`
+  'follows: nothing new has been acquired to record. Finalize now: reply with your final answer JSON and ' +
+  `${ANSWER_CLOSING}. ${ANSWER_CHECKPOINTS_SENTENCE}`
 
 /**
  * The Finalize Instruction (#117/#201, ADR 0027): rides every tool result
  * of a Finalization Tool Round — the refusal a closed tool answers with,
  * and the advisory a successful bookkeeping result carries, so the model
- * always learns that the Answer round is next. It opens on the cause the
- * run actually stopped for: the closing asks the model to state honestly
- * what it completed, which it can only do from a true premise about why
- * it was stopped. Its demand is worded for the round that comes next
- * (#256): a bookkeeping round, or the Answer.
+ * always learns that the Answer round is next. It opens on the reason the
+ * run stopped for when that is a fact about the task — a Blocker, no
+ * Progress — and on one sentence naming no bound when it is a limit or a
+ * failure of the application's own (#323): one reason per round either
+ * way, and never another run's. Its demand is worded for the round that
+ * comes next (#256): a bookkeeping round, or the Answer.
  */
 export function finalizeInstruction(
   cause: FinalizationCause | null,
@@ -622,8 +641,7 @@ export function finalizationToolRefusal(
 export const FINALIZATION_REPORT_CHECKPOINT_DIRECTIVE =
   'Acquisition tools (browser, vision, media, and delegation) and ask_user are closed; Collection and Bookkeeping ' +
   'are open for one more tool round. Record an Evidence Checkpoint for what in this report matters most, at most ' +
-  'two checkpoints in this round, then reply with your final answer JSON and state honestly what was and was not ' +
-  'completed.'
+  `two checkpoints in this round, then reply with your final answer JSON and ${ANSWER_CLOSING}.`
 
 /**
  * What the same report says once the run is Answer-only (#200, ADR 0036):
@@ -634,8 +652,8 @@ export const FINALIZATION_REPORT_CHECKPOINT_DIRECTIVE =
  * way they go into the Answer's checkpoints or nowhere.
  */
 export const ANSWER_ONLY_REPORT_DIRECTIVE =
-  'No tool round remains — every tool is closed. Reply with your final answer JSON and state honestly what was and ' +
-  `was not completed. ${ANSWER_CHECKPOINTS_SENTENCE}`
+  `No tool round remains — every tool is closed. Reply with your final answer JSON and ${ANSWER_CLOSING}. ` +
+  ANSWER_CHECKPOINTS_SENTENCE
 
 /** Why a Finalization entry skipped its bookkeeping round, as the Run Trace records it (#256, ADR 0056). */
 export const BOOKKEEPING_SKIPPED_REASON =

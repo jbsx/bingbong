@@ -129,7 +129,7 @@ describe('bounded Lookup e2e (#118) — exhausted path', () => {
     expect(navigations[11].result).toMatch(/navigated: url=\S*\/widgets-article/)
     expect(navigations[12]).toMatchObject({
       ok: false,
-      error: expect.stringMatching(/work budget is exhausted[\s\S]*final answer JSON/),
+      error: expect.stringMatching(/No further acquisition is possible in this run[\s\S]*final answer JSON/),
     })
 
     // Internal warnings near 75% and 90%: after rounds 9 and 10, riding
@@ -356,7 +356,7 @@ describe('bounded Investigation e2e (#118) — escalation to the 32-round hard c
     expect(navigations.slice(0, 31).every((event) => event.ok)).toBe(true)
     expect(navigations[31]).toMatchObject({
       ok: false,
-      error: expect.stringMatching(/has reached its hard work limit[\s\S]*final answer JSON/),
+      error: expect.stringMatching(/No further acquisition is possible in this run[\s\S]*final answer JSON/),
     })
     // The last executed page stays visible.
     expect(navigations[30].result).toMatch(/navigated: url=\S*\/header-echo/)

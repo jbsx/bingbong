@@ -65,6 +65,12 @@ describe('orchestrator outcome-first stopping policy (#203, ADR 0038)', () => {
     expect(policy).toMatch(/the application records those itself/)
   })
 
+  it('asks a failed Run for the same thing, never for what went wrong (#323)', () => {
+    const failed = line('If something failed')
+    expect(failed).toContain('still answer with the JSON object and say what you established and what is still unverified in both fields.')
+    expect(failed).not.toMatch(/went wrong|say plainly/)
+  })
+
   it('asks for grounded progress, remaining uncertainty, and clearable blockers instead', () => {
     const policy = line('End on the state of the task')
     expect(policy).toMatch(/Say what you established, what is still unverified/)

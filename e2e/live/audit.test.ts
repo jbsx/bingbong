@@ -110,7 +110,7 @@ import { gradingKeyFor } from './keyManifest.ts'
 const SCRIPT = fileURLToPath(new URL('../../scripts/live-audit.ts', import.meta.url))
 const REPORTS_DIR = fileURLToPath(new URL('./reports/', import.meta.url))
 /** The fixture attempt's digest hash: a pin on what the reviewer is shown, moved only on purpose. */
-const DIGEST_HASH_PIN = 'sha256:23b447f2e0fc361a1d28d6dee08cb1e7c49f83e925efa68a423ad7058fff0151'
+const DIGEST_HASH_PIN = 'sha256:6f9e6a99cb2d682e99b4a234c51a504fdf38825ecbf43398e57b9a5429bf8194'
 const [major, minor] = process.versions.node.split('.').map(Number)
 const stripsTypes = major! > 22 || (major === 22 && minor! >= 18)
 
@@ -626,12 +626,13 @@ describe('the mechanical classification', () => {
 
   it('counts a loop’s head by the streak rule without touching its kind, its reason or the digest (Decision 8)', () => {
     const mechanical = classifyAttempt(inputOf())
-    // Counting the head re-keys no cached judgement. The pin moved three times
+    // Counting the head re-keys no cached judgement. The pin moved four times
     // since, on purpose: #244 renamed `checksUnsatisfied` and hashed the grade
     // status, #256 reworded the Finalize Instruction the fixture's round 13
     // carries (a captured trace keeps the words it recorded, so no cache
-    // re-keys), and #259 changed what a search line in the digest says — the
-    // streak by the consecutive rule and `rewords` beside it.
+    // re-keys), #259 changed what a search line in the digest says — the
+    // streak by the consecutive rule and `rewords` beside it — and #323
+    // reworded that instruction again, its opening and its closing.
     expect(mechanical.digestHash).toBe(DIGEST_HASH_PIN)
     // Round 2's search starts the streak round 3's continues.
     expect(mechanical.searchLoopHeads).toEqual([2])
@@ -5182,5 +5183,126 @@ describe('Off-language Answers (#286, ADR 0034)', () => {
     expect(auditModule.offLanguageAnswersOver([attemptOf(before), attemptOf(plain)])).toBe(1)
     expect(auditModule.offLanguageAnswersOver([attemptOf({ ...before, offLanguageAnswers: 0 })])).toBe(0)
     expect(auditModule.offLanguageAnswersOver([attemptOf({ ...plain, offLanguageAnswers: 3 })])).toBe(3)
+  })
+})
+
+describe('the Answers that name the stop (#323, note on ADR 0038)', () => {
+  const published = (at: number, event: Record<string, unknown>): Record<string, unknown> => ({
+    ...identity,
+    at: T0 + at,
+    kind: 'pipeline_event',
+    event: { turnId: TURN, at: T0 + at, ...event },
+  })
+  /** The Answer a Run rendered, as its two events: the Card, then the spoken line. */
+  const answered = (answer: { display: string; speak: string }, card: Record<string, unknown> = {}): Record<string, unknown>[] => [
+    published(15_500, { type: 'display', text: answer.display, finalAnswer: true, ...card }),
+    published(15_600, { type: 'speak', text: answer.speak }),
+  ]
+  const PLAIN = { display: 'The case is ZAA0037.1 and holds H4 with K1.', speak: 'The case holds H4 with K1.' }
+  const NAMING = {
+    display: 'The case is ZAA0037.1. **Not verified before the budget ran out:** which watch sits on each side (memory-4).',
+    speak: 'The case holds H4 with K1, but I ran out of time before opening its own page.',
+  }
+  const ITEMS = [
+    { item: 'The case', standing: 'stated', statement: 'ZAA0037.1' },
+    { item: 'Which side', standing: 'unverified', statement: 'The case record was not opened before work stopped.' },
+  ]
+  const DONE_MET = published(16_500, { type: 'done', outcome: 'done', resolution: 'completed', finalizationCause: 'objective_met' })
+  const namingsOf = (extra: readonly Record<string, unknown>[]) => classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, [...EXTRA, ...extra]) })).answerNamings
+  const attemptOf = (mechanical: AuditMechanical): AuditAttempt => ({ mechanical, review: null, countsAfterOverrules: mechanical.counts })
+
+  it('reads the Spoken Rendering, the Card and the Asked Item statements, beside the digest', () => {
+    const plain = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, [...EXTRA, ...answered(PLAIN)]) }))
+    const naming = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, [...EXTRA, ...answered(NAMING, { askedItems: ITEMS })]) }))
+
+    expect(plain.answerNamings).toEqual({ stop: [], internal: [] })
+    expect(naming.answerNamings!.stop.map((hit) => [hit.where, hit.phrase])).toEqual([
+      ['speak', 'ran out of time'],
+      ['display', 'budget ran out'],
+      ['asked_item', 'before work stopped'],
+    ])
+    expect(naming.answerNamings!.internal.map((hit) => [hit.where, hit.phrase])).toEqual([['display', 'memory-4']])
+    expect(naming.answerNamings!.stop[2]!.excerpt).toBe('The case record was not opened before work stopped.')
+    expect(naming.digestHash).toBe(plain.digestHash)
+    expect(JSON.stringify(auditModule.digestPayloadOf(naming))).not.toContain('answerNamings')
+  })
+
+  it('reads the last final Answer, and the spoken line that followed it', () => {
+    // An Answer Retry's Answer replaces the one it retried; a status line before the Card is not the Answer.
+    const retried = [...answered(NAMING), published(15_700, { type: 'display', text: PLAIN.display, finalAnswer: true }), published(15_800, { type: 'speak', text: PLAIN.speak })]
+    expect(namingsOf(retried)).toEqual({ stop: [], internal: [] })
+    expect(namingsOf([published(9_500, { type: 'speak', text: NAMING.speak }), ...answered(PLAIN)])).toEqual({ stop: [], internal: [] })
+  })
+
+  it('reads the sentence spoken early before the Card as the Answer’s Spoken Rendering (#312)', () => {
+    // A sentence spoken when it closed in the stream is published before its Card, its record right behind it.
+    const early = { ...identity, v: 12, at: T0 + 15_450, kind: 'early_sentence', round: 14, publishedAt: T0 + 15_400, sinceRoundStartMs: 900, untilRoundEndMs: 100, ended: 'answer' }
+    const spokenEarly = [published(15_400, { type: 'speak', text: NAMING.speak }), early, published(15_500, { type: 'display', text: PLAIN.display, finalAnswer: true })]
+    expect(namingsOf(spokenEarly)!.stop.map((hit) => [hit.where, hit.phrase])).toEqual([['speak', 'ran out of time']])
+    // A second utterance after the Card is heard too, and a sentence spoken early for an Answer before this one is not this one's.
+    const second = [...spokenEarly, published(15_600, { type: 'speak', text: 'It was not opened before the deadline.' })]
+    expect(namingsOf(second)!.stop.map((hit) => hit.phrase)).toEqual(['ran out of time', 'deadline'])
+    expect(namingsOf([...spokenEarly, ...answered(PLAIN)])).toEqual({ stop: [], internal: [] })
+  })
+
+  it('reads no Deterministic Answer, no Run that showed none, and nothing a Subagent wrote', () => {
+    expect(namingsOf(answered(NAMING, { deterministicAnswer: true }))).toBeNull()
+    expect(namingsOf([])).toBeNull()
+    const worker = answered(NAMING).map((record) => ({ ...record, agentId: 'a-1' }))
+    expect(namingsOf(worker)).toBeNull()
+    expect(namingsOf([...worker, ...answered(PLAIN)])).toEqual({ stop: [], internal: [] })
+  })
+
+  it('counts an Answer once per list, and apart for the Runs that did not end objective_met', () => {
+    // EXTRA ends the Run `budget_exhausted`; a later `done` ends it `objective_met`.
+    const stoppedNaming = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, [...EXTRA, ...answered(NAMING, { askedItems: ITEMS })]) }))
+    const stoppedPlain = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, [...EXTRA, ...answered(PLAIN)]) }))
+    const metInternal = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, [...EXTRA, ...answered({ ...PLAIN, display: 'Both rows are retained in Session Evidence.' }), DONE_MET]) }))
+    const unanswered = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, [...EXTRA, ...answered(NAMING, { deterministicAnswer: true })]) }))
+    expect(auditModule.endedUnmet(stoppedNaming)).toBe(true)
+    expect(auditModule.endedUnmet(metInternal)).toBe(false)
+
+    const set = buildAuditSet(provenanceOf(), [stoppedNaming, stoppedPlain, metInternal, unanswered].map(attemptOf), [])
+    expect(set.populations.initial.answerNamings).toEqual({ answers: 3, unmetAnswers: 2, namingStop: 1, namingStopUnmet: 1, internalNames: 2, internalNamesUnmet: 1 })
+  })
+
+  it('prints the counts per population and every hit per attempt, and reads "not counted" for an audit written before the counter', () => {
+    const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, [...EXTRA, ...answered(NAMING, { askedItems: ITEMS })]) }))
+    const markdown = formatAuditSet(buildAuditSet(provenanceOf(), [attemptOf(mechanical)], []))
+    expect(markdown).toContain(
+      '- What the Answer names: the stop: "ran out of time" (speak), "budget ran out" (display), "before work stopped" (asked item); internal names: "memory-4" (display)',
+    )
+    expect(markdown).toContain('  - speak, "ran out of time": …The case holds H4 with K1, but I ran out of time before opening its own page.…')
+    expect(markdown).toContain('  - asked item, "before work stopped": …The case record was not opened before work stopped.…')
+    expect(markdown).toMatch(/- initial: .*1 of 1 Answer\(s\) name the stop \(1 of 1 on a Run that did not end objective_met\), 1 carry internal names \(1 on such a Run\)/)
+
+    const unanswered = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, EXTRA) }))
+    expect(formatAuditSet(buildAuditSet(provenanceOf(), [attemptOf(unanswered)], []))).toContain('- What the Answer names: no model-written Answer')
+
+    // Absent, never zero: an aggregate rebuilt from audits written before the counter stays the one committed.
+    const before = { ...mechanical } as AuditMechanical & { answerNamings?: unknown }
+    delete before.answerNamings
+    const older = buildAuditSet(provenanceOf(), [attemptOf(before)], [])
+    expect('answerNamings' in older.populations.initial).toBe(false)
+    const olderText = formatAuditSet(older)
+    expect(olderText).toContain('- What the Answer names: not counted')
+    expect(olderText).toMatch(/- initial: .*Answers that name the stop not counted/)
+  })
+
+  it('withholds the words around a phrase where they restate Grading Key text, and keeps the phrase', () => {
+    const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, [...EXTRA, ...answered(NAMING)]) }))
+    const texts = [{ label: 'required fact', text: 'The case holds H4 with K1, but I ran out of time before opening its own page.' }]
+    const { attempts, withheld } = withholdKeyText([attemptOf(mechanical)], () => texts)
+    expect(withheld).toBe(1)
+    expect(attempts[0]!.mechanical.answerNamings!.stop.map((hit) => [hit.phrase, hit.excerpt])).toEqual([
+      ['ran out of time', auditModule.WITHHELD_KEY_TEXT],
+      ['budget ran out', mechanical.answerNamings!.stop[1]!.excerpt],
+    ])
+    // An attempt with no Answer, and an audit written before the counter, pass through as they were.
+    const unanswered = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, EXTRA) }))
+    expect(withholdKeyText([attemptOf(unanswered)], () => texts).attempts[0]!.mechanical.answerNamings).toBeNull()
+    const before = { ...mechanical } as AuditMechanical & { answerNamings?: unknown }
+    delete before.answerNamings
+    expect('answerNamings' in withholdKeyText([attemptOf(before)], () => texts).attempts[0]!.mechanical).toBe(false)
   })
 })

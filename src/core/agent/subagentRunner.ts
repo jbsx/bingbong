@@ -23,6 +23,7 @@ import { ASK_ESCALATION_PREFIX } from '../pipeline/askUserTools'
 import { subagentBlockerEscalation } from '../pipeline/blockerGate'
 import { BLOCKER_HELP_BY_SIGNAL, type BlockerWall } from '../browser/blockerNudge'
 import {
+  ANSWER_CLOSING,
   blockerFinalizationReason,
   createEffortEpoch,
   NO_PROGRESS_FINALIZATION_REASON,
@@ -338,7 +339,7 @@ const CONFIRMATION_REFUSAL = 'subagents cannot ask the user for confirmation —
  */
 const WORKER_FINALIZE_INSTRUCTION =
   'The delegated work is over \u2014 browsing, vision, and ask_user tools are closed. Reply now with ONLY ' +
-  'your final report JSON \u2014 state honestly what you found and what remains open.'
+  `your final report JSON \u2014 ${ANSWER_CLOSING}.`
 
 /**
  * And how it reads when the parent Run is what closed the work (#199,
@@ -348,7 +349,7 @@ const WORKER_FINALIZE_INSTRUCTION =
  */
 const WORKER_PARENT_FINALIZING_INSTRUCTION =
   'The parent run is finalizing. Tool calls are closed. Reply now with ONLY your final report JSON ' +
-  '\u2014 state honestly what you found and what remains open.'
+  `\u2014 ${ANSWER_CLOSING}.`
 
 /**
  * And how it reads when a wall closed the work (#202, ADR 0037). The
@@ -408,7 +409,7 @@ function workerFinalizationNotice(cause: FinalizationCause, maxToolRounds: numbe
         : wall !== undefined
           ? blockerFinalizationReason(wall)
           : `Your delegated work budget (${maxToolRounds} tool rounds) is spent`
-  return `${reason}. Tool calls are closed. Reply now with ONLY your final report JSON — state honestly what you found and what remains open.`
+  return `${reason}. Tool calls are closed. Reply now with ONLY your final report JSON — ${ANSWER_CLOSING}.`
 }
 
 /**

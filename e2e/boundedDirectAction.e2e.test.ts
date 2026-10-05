@@ -197,7 +197,7 @@ describe('bounded Direct Action e2e (#117) — exhausted path', () => {
     expect(navigations[5].result).toMatch(/navigated: url=\S*\/widget-review/)
     expect(navigations[6]).toMatchObject({
       ok: false,
-      error: expect.stringMatching(/work budget is exhausted[\s\S]*final answer JSON/),
+      error: expect.stringMatching(/No further acquisition is possible in this run[\s\S]*final answer JSON/),
     })
 
     // Internal warnings near 75% and 90%: after rounds 4 and 5, riding

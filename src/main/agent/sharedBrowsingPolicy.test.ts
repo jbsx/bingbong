@@ -101,13 +101,13 @@ describe('shared policy Progress and stopping invariants (#126, ADR 0027)', () =
     expect(bullet('Progress means')).toMatch(/unchanged page state/i)
   })
 
-  it('teaches the exhausted-budget exit: stop acquiring, answer honestly (#117)', () => {
+  it('teaches the Finalization exit: stop acquiring, say what is established and what is not (#117, #323)', () => {
     const line = bullet('Work is bounded')
-    expect(line).toMatch(/work budget is spent/i)
-    expect(line).toMatch(/stop acquisition work/i)
+    expect(line).toMatch(/When a notice says to finalize, stop acquisition work/)
     expect(line).toMatch(/terminal bookkeeping the notice still allows/i)
-    expect(line).toMatch(/reply immediately with your final answer/i)
-    expect(line).toMatch(/state honestly/i)
+    expect(line).toMatch(/reply immediately with your final answer — say what you established and what is still unverified\.$/)
+    // The Finalize Instruction names no bound for a limit of the application's own, and neither does the rule that points at it.
+    expect(line).not.toMatch(/budget is spent|state honestly/i)
   })
 })
 

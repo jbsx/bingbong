@@ -66,6 +66,7 @@ import {
   type RoundKind,
 } from './audit.ts'
 import { emptyLandingsKnown, recountEmptyLandings, saysEmptyLandings } from './emptyLandingRecount.ts'
+import { answerNamingCountsOver, answerNamingOf, saysAnswerNamings } from './answerNamingRecount.ts'
 import { pageArrivalCountsOf, saysPageArrivals } from './pageArrivalRecount.ts'
 import { medianOf } from './summary.ts'
 import type { AttemptRelation } from './types.ts'
@@ -427,6 +428,11 @@ export function buildLedger(files: readonly LedgerFile[]): Ledger {
     if (arrivalsUnknown.length > 0) {
       notes.push(`${arrivalsUnknown.map((pass) => pass.setId).join(', ')}: no Run Trace on disk, so page arrivals are not recounted`)
     }
+    // #323: and so are the Answers that name the stop, which an audit keeps no text of.
+    const namingsUnknown = audited.filter((pass) => pass.audit.attempts.some((attempt) => answerNamingOf(attempt.mechanical) === null))
+    if (namingsUnknown.length > 0) {
+      notes.push(`${namingsUnknown.map((pass) => pass.setId).join(', ')}: no Run Trace on disk, so the Answers that name the stop are not recounted`)
+    }
     for (const axis of CONDITION_AXES) {
       const values = audited.map((pass) => axis.of(conditionsOf(pass.audit.provenance)))
       if (new Set(values).size > 1) notes.push(`the Passes differ on ${axis.axis}: ${audited.map((pass, index) => `${pass.setId}=${values[index]}`).join(', ')}`)
@@ -711,6 +717,9 @@ export function countersOf(population: AuditPopulation, attempts: readonly Audit
   // reads as nothing where no attempt's traces were on disk.
   const emptyLandings = attempts.length > 0 && attempts.every((attempt) => saysEmptyLandings(attempt.mechanical)) ? older.emptyLandings : (recounted?.emptyLandings ?? undefined)
   const pageArrivals = pageArrivalsOver(older, attempts)
+  // #323: as its audit wrote them where every attempt's did, a family with no per-Pass audit included.
+  const answerNamings =
+    attempts.every((attempt) => saysAnswerNamings(attempt.mechanical)) ? older.answerNamings : (answerNamingCountsOver(attempts) ?? undefined)
   // #321: a family with no per-Pass audit has no rounds to sum, and reads what its aggregate wrote.
   const roundCosts = roundCostsOver(attempts) ?? older.roundCosts
   // The counter the ledger compared first keeps the reading its rule gave:
@@ -820,6 +829,13 @@ export function countersOf(population: AuditPopulation, attempts: readonly Audit
     // carry one, so the named Answers are added for the attempts that do
     // not, and a population holding both kinds loses neither.
     mechanical('Off-language Answers', (older.offLanguageAnswers ?? 0) + preRuleOffLanguageAnswersOver(attempts)),
+    // #323, note on ADR 0038: an audit under the counter read its own
+    // Answers; one from before it is recounted from the marks the sweep took
+    // from the Run Traces, and reads as nothing where no attempt's traces
+    // were on disk. Over the model-written Answers. Reported, never gated.
+    mechanical('Answers that name the stop', answerNamings?.namingStop, answerNamings?.answers ?? null),
+    mechanical('Answers that name the stop on a Run that did not end objective_met', answerNamings?.namingStopUnmet, answerNamings?.unmetAnswers ?? null),
+    mechanical('Answers that carry internal names', answerNamings?.internalNames, answerNamings?.answers ?? null),
     // #256: a population none of whose traces could record a skip reads as nothing, never as zero.
     mechanical(
       'Skipped bookkeeping rounds',

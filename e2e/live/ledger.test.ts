@@ -17,6 +17,8 @@ import {
 } from './ledger.ts'
 import { EMPTY_LANDING_MARKS, EMPTY_LANDING_SETS_RECOUNTED } from './emptyLandingMarks.ts'
 import { emptyLandingsKnown, recountEmptyLandings, setIdOfCapture } from './emptyLandingRecount.ts'
+import { ANSWER_NAMING_MARKS, ANSWER_NAMING_SETS_RECOUNTED, ANSWER_NAMING_UNANSWERED } from './answerNamingMarks.ts'
+import { answerNamingCountsOver, answerNamingOf } from './answerNamingRecount.ts'
 import { PAGE_ARRIVAL_MARKS, PAGE_ARRIVAL_SETS_RECOUNTED } from './pageArrivalMarks.ts'
 import { pageArrivalCountsOf } from './pageArrivalRecount.ts'
 
@@ -1275,5 +1277,89 @@ describe('the committed aggregates and the second reading (#287)', () => {
     const markdownOf = (name: string) => readFileSync(join(REPORTS_DIR, name), 'utf8')
     expect(markdownOf('audit-aggregate-fix-284.md')).toContain('| initial | 12 | 8 | 3 | 11 of 12 | 0 |')
     expect(markdownOf('audit-aggregate-fix-239.md')).toContain('| initial | 12 | not recorded | not recorded | not recorded | 12 |')
+  })
+})
+
+describe('the Answer naming recount (#323, note on ADR 0038)', () => {
+  const counterOf = (counters: ReturnType<typeof countersOf>, label: string) => counters.find((counter) => counter.label === label)
+  const NAMING = 'Answers that name the stop'
+  const NAMING_STOPPED = 'Answers that name the stop on a Run that did not end objective_met'
+  const INTERNAL = 'Answers that carry internal names'
+  const perPassAudits = (): AuditSetOutput[] =>
+    readdirSync(REPORTS_DIR)
+      .filter((name) => name.startsWith('audit-') && name.endsWith('.json'))
+      .sort()
+      .map((name) => readAudit(name))
+      .filter((audit) => Array.isArray(audit.attempts))
+
+  it('reads the Answers of every committed audit whose traces were on disk: 22 of 152 on a stopped Run name the stop', () => {
+    // The hand count the issue was filed on is 24 of 156 such Answers, and 1
+    // of 247 on a Run that ended `objective_met`; the phrase list lands on
+    // 22 and 0 over the 71 capture sets the committed audits name.
+    expect(ANSWER_NAMING_SETS_RECOUNTED).toHaveLength(71)
+    expect(ANSWER_NAMING_UNANSWERED).toHaveLength(20)
+    const attempts = perPassAudits()
+      .filter((audit) => ANSWER_NAMING_SETS_RECOUNTED.includes(audit.provenance.setId))
+      .flatMap((audit) => audit.attempts)
+    expect(answerNamingCountsOver(attempts)).toEqual({ answers: 406, unmetAnswers: 152, namingStop: 22, namingStopUnmet: 22, internalNames: 46, internalNamesUnmet: 31 })
+  })
+
+  it('marks only attempts the committed audits hold, each once, and never one the user met no Answer in', () => {
+    const held = new Set(perPassAudits().flatMap((audit) => audit.attempts.map(({ mechanical }) => `${mechanical.captureId} ${mechanical.attemptId}`)))
+    const marked = ANSWER_NAMING_MARKS.map((attempt) => `${attempt.captureId} ${attempt.attemptId}`)
+    const unanswered = ANSWER_NAMING_UNANSWERED.map((attempt) => `${attempt.captureId} ${attempt.attemptId}`)
+    for (const key of [...marked, ...unanswered]) expect(held.has(key), key).toBe(true)
+    expect(new Set([...marked, ...unanswered]).size).toBe(marked.length + unanswered.length)
+    for (const attempt of ANSWER_NAMING_MARKS) {
+      expect(attempt.stop.length + attempt.internal.length, attempt.captureId).toBeGreaterThan(0)
+      expect(ANSWER_NAMING_SETS_RECOUNTED).toContain(setIdOfCapture(attempt.captureId))
+    }
+  })
+
+  it('holds the phrases alone: no mark carries the words around one', () => {
+    for (const mark of ANSWER_NAMING_MARKS.flatMap((attempt) => [...attempt.stop, ...attempt.internal])) {
+      expect(Object.keys(mark).sort()).toEqual(['phrase', 'where'])
+      expect(mark.phrase.split(' ').length).toBeLessThanOrEqual(6)
+    }
+  })
+
+  it('counts a family’s Answers from the marks, over its model-written Answers', () => {
+    // fix-252: four initials name the stop — the three longitude hunts and the Voyager hunt of Pass 2.
+    const initials = [1, 2, 3].flatMap((pass) => readAudit(`audit-fix-252-${pass}.json`).attempts.filter((attempt) => attempt.mechanical.relation === 'initial'))
+    const counters = countersOf(populationOf('initial', initials), initials)
+    expect(counterOf(counters, NAMING)).toMatchObject({ value: 4, over: 11, judgement: false })
+    expect(counterOf(counters, NAMING_STOPPED)).toMatchObject({ value: 4, over: 6 })
+    expect(counterOf(counters, INTERNAL)).toMatchObject({ value: 2, over: 11 })
+  })
+
+  it('reads an audit that read its own Answers as written, and one with no trace on disk as nothing, never as zero', () => {
+    const initials = readAudit('audit-fix-252-1.json').attempts.filter((attempt) => attempt.mechanical.relation === 'initial')
+    const said = initials.map((attempt) => ({ ...attempt, mechanical: { ...attempt.mechanical, answerNamings: { stop: [], internal: [] } } }))
+    const written = { answers: 4, unmetAnswers: 3, namingStop: 2, namingStopUnmet: 1, internalNames: 3, internalNamesUnmet: 2 }
+    const asWritten = countersOf({ ...populationOf('initial', said), answerNamings: written }, said)
+    expect([counterOf(asWritten, NAMING), counterOf(asWritten, NAMING_STOPPED), counterOf(asWritten, INTERNAL)].map((counter) => [counter!.value, counter!.over])).toEqual([
+      [2, 4],
+      [1, 3],
+      [3, 4],
+    ])
+
+    const untraced = family(committed, 'fix-242r')
+      .passes.flatMap((pass) => pass.audit?.attempts ?? [])
+      .filter((attempt) => attempt.mechanical.relation === 'initial')
+    expect(answerNamingOf(untraced[0]!.mechanical)).toBeNull()
+    expect(counterOf(countersOf(populationOf('initial', untraced), untraced), NAMING)).toMatchObject({ value: null, over: null })
+    expect(family(committed, 'fix-242r').notes).toContain('fix-242r-1, fix-242r-2, fix-242r-3: no Run Trace on disk, so the Answers that name the stop are not recounted')
+    expect(family(committed, 'fix-252').notes.filter((note) => note.includes('name the stop'))).toEqual([])
+  })
+
+  it('reads an attempt the sweep found no model-written Answer in as unanswered, and one with no mark as naming nothing', () => {
+    const marks = { attempts: [], unanswered: [{ captureId: 'fix-252-1--rule-eurostar-luggage', attemptId: 'rule-eurostar-luggage--initial' }], setsRecounted: ['fix-252-1'] }
+    const initials = readAudit('audit-fix-252-1.json').attempts.filter((attempt) => attempt.mechanical.relation === 'initial')
+    const eurostar = initials.find((attempt) => attempt.mechanical.huntId === 'rule-eurostar-luggage')!
+    const other = initials.find((attempt) => attempt.mechanical.huntId !== 'rule-eurostar-luggage')!
+    expect(answerNamingOf(eurostar.mechanical, marks)).toEqual({ answered: false })
+    expect(answerNamingOf(other.mechanical, marks)).toEqual({ answered: true, stop: 0, internal: 0 })
+    expect(answerNamingCountsOver(initials, marks)!.answers).toBe(initials.length - 1)
+    expect(answerNamingCountsOver(initials, { ...marks, setsRecounted: [] })).toBeNull()
   })
 })

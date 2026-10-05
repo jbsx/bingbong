@@ -576,6 +576,32 @@ export function listSessionCaptures(root: string): string[] {
   }
 }
 
+/**
+ * One attempt's Run Trace records from every retained trace file of its
+ * capture, in file order: what a sweep recounts an older audit from (#304,
+ * #309, #323). Null when the capture is not on disk; empty when the attempt
+ * was not observed.
+ */
+export function attemptTraceRecords(artifactsDir: string, captureId: string, attemptId: string): object[] | null {
+  const directory = join(artifactsDir, captureId)
+  const capturePath = join(directory, SESSION_CAPTURE_FILE)
+  if (!existsSync(capturePath)) return null
+  const session = readSessionCapture(capturePath)
+  if (!session.ok) return null
+  const attempt = session.value.attempts.find((candidate) => candidate.attemptId === attemptId)
+  if (attempt === undefined || attempt.kind !== 'attempt' || attempt.accepted.status !== 'observed') return []
+  const turnId = attempt.accepted.value.turnId
+  const records: object[] = []
+  for (const artifact of session.value.artifacts.filter((candidate) => candidate.family === 'run_trace')) {
+    const path = resolve(directory, artifact.path)
+    if (!path.startsWith(`${directory}${sep}`) || !existsSync(path)) return null
+    for (const record of parseJsonl(readFileSync(path, 'utf8')).records) {
+      if (typeof record === 'object' && record !== null && (record as { turnId?: unknown }).turnId === turnId) records.push(record)
+    }
+  }
+  return records
+}
+
 /** Verify that every artifact a capture names exists beside it with the digest it recorded. */
 export function verifyArtifacts(captureDir: string, capture: LiveSessionCapture): readonly string[] {
   const problems: string[] = []

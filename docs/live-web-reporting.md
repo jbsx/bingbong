@@ -1171,6 +1171,74 @@ function finds over the captures themselves: one, the Voyager initial of
 `fix-283-3`, in 371 attempts on disk on 2026-09-28. It is reported, never
 gated.
 
+**Answers that name the stop** (#323, note on ADR 0038) count the
+model-written Answers that say how the Run was bounded: "I ran out of time",
+"before the budget closed", "my working time". An attempt's `answerNamings`
+reads the last final Answer the user met — the Card, its Spoken Rendering
+(the line spoken after it and, since #312, the sentence spoken early before
+it, which is the `speak` an `early_sentence` record follows) and the Card's
+Asked Item statements — against two phrase
+lists in `e2e/live/answerNamings.ts`: the stop and the bound, and beside it
+the application's internal names (`memory-N`, Session Evidence, a subagent, a
+field of the Answer contract, "this run"). Each hit keeps where it was read,
+the phrase and the words around it, and the audit's Markdown lists them under
+the attempt so a count can be read; where those words restate Grading Key
+text they are withheld as a result head is, and the phrase stays. The
+Deterministic Answer is the application's own text and is not read
+(`answerNamings` is null, as it is when no Answer was shown), and neither is
+anything a Subagent wrote. A population counts an Answer once per list,
+over its model-written Answers, and apart for the Runs that ended on anything
+but `objective_met`, since those are the Runs whose Finalize Instruction the
+words came from. The lists are the wordings the retained captures hold: a
+bare "budget" or "timeout" is a user's topic and does not count. The field
+sits beside the rounds and does not move the digest. It is reported, never
+gated, and nothing in the application checks an Answer for it.
+
+A committed audit keeps no Answer text, so an audit written before the
+counter is recounted from the Run Traces: `pnpm live:answer-namings` reads
+the trace of every attempt the committed audits name and writes
+`e2e/live/answerNamingMarks.ts` — for each Answer that carried a phrase,
+where and which, and the attempts with no model-written Answer. The marks
+hold the phrases alone; the words around them are printed by the sweep and
+not committed. Run it where the captures are; a worktree holds none. The Fix
+Ledger reads the marks for such an audit and names a capture set with no
+trace on disk in its family's notes. The base, read on 2026-10-05 over the
+71 capture sets on disk (426 attempts, 406 model-written Answers): 22 of the
+152 Answers on a Run that did not end `objective_met` name the stop, and none
+of the 254 on a Run that did; 46 carry an internal name, 31 of them on a
+such Run. The hand count the issue was filed on was 24 of 156 and 1 of
+247. By family:
+
+| Family | Name the stop | Answers on a Run not `objective_met` | Internal names | Answers |
+| --- | --- | --- | --- | --- |
+| baseline | 3 | 14 | 6 | 18 |
+| baseline2 | 1 | 6 | 4 | 18 |
+| baseline3 | 1 | 8 | 1 | 16 |
+| fix-250 | 1 | 9 | 2 | 17 |
+| fix-252 | 4 | 9 | 2 | 17 |
+| fix-253-256 | 2 | 11 | 4 | 18 |
+| fix-256r | 2 | 9 | 2 | 17 |
+| fix-257 | 2 | 11 | 1 | 18 |
+| fix-258-259 | 1 | 6 | 2 | 16 |
+| fix-260-262 | 0 | 9 | 5 | 17 |
+| fix-263-264 | 1 | 9 | 4 | 17 |
+| fix-265-267 | 0 | 6 | 3 | 28 |
+| fix-270 | 0 | 3 | 1 | 18 |
+| fix-281 | 0 | 4 | 1 | 16 |
+| fix-283 | 0 | 4 | 2 | 18 |
+| fix-284 | 0 | 4 | 0 | 18 |
+| fix-288-290 | 1 | 3 | 1 | 17 |
+| fix-291 | 1 | 3 | 1 | 17 |
+| fix-311-312 | 0 | 1 | 1 | 17 |
+| flash-orch | 0 | 12 | 1 | 16 |
+| jev-off | 1 | 5 | 0 | 17 |
+| jev-on | 0 | 2 | 1 | 17 |
+| main-4dc72e9 | 1 | 4 | 1 | 18 |
+
+From fix-260-262 on that is 5 of 69. `fix-235`, `fix-236`, `fix-237`,
+`fix-239`, `fix-240`, `fix-242`, `fix-242r` and `fix-256r2` had no trace on
+disk and are not recounted.
+
 **Window opens** (#299, ADR 0073) count the opens a page made, by what
 became of each. **Followed** is the round of every click whose outcome
 carries `the link asked for a new window; opened here`: a New-window Link the

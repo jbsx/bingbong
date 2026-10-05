@@ -2,7 +2,9 @@ import { describe, expect, it, vi } from 'vitest'
 import { FakeClock } from '../testing/doubles'
 import { FORBIDDEN_ENDINGS, RESOURCE_ACCOUNTING } from '../testing/stoppingPolicy'
 import {
+  ACQUISITION_ENDED_REASON,
   ANSWER_CHECKPOINTS_SENTENCE,
+  ANSWER_CLOSING,
   ANSWER_ONLY_REPORT_DIRECTIVE,
   budgetWarningCrossed,
   budgetWarningMessage,
@@ -37,6 +39,7 @@ import {
   type TierEscalation,
 } from './effortEpoch'
 import { DEFAULT_EFFORT_TIER, type EffortTier } from './runPlan'
+import { ORCHESTRATOR_APPROACH_EXHAUSTED_DIRECTIVE } from './noProgressRail'
 import type { FinalizationCause } from '../session/runJournal'
 import { SUBAGENT_LIMITS } from '../agent/subagentRails'
 
@@ -646,12 +649,12 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
       )
     })
 
-    it('opens an unreachable model’s instruction on that reason, and names no deadline (#271)', () => {
-      expect(finalizeInstruction('model_unreachable')).toMatch(/^The model could not be reached — /)
+    it('opens an unreachable model’s instruction on the sentence that names no bound, and no model or deadline (#271, #323)', () => {
+      expect(finalizeInstruction('model_unreachable')).toMatch(/^No further acquisition is possible in this run — /)
       expect(requestFinalizeInstruction({ kind: 'answer_only', cause: 'model_unreachable', detail: { attempts: 2, code: 'ECONNRESET' } })).toBe(
-        `The model could not be reached. ${ANSWER_ONLY_REPORT_DIRECTIVE}`,
+        `No further acquisition is possible in this run. ${ANSWER_ONLY_REPORT_DIRECTIVE}`,
       )
-      expect(finalizeInstruction('model_unreachable')).not.toMatch(/deadline/)
+      expect(finalizeInstruction('model_unreachable')).not.toMatch(/deadline|model|reached|ECONNRESET/)
     })
 
     it('words the Stop Record detail of an unreachable model with its attempts and the transport code (#271)', () => {
@@ -667,7 +670,7 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
 
     it('tells the reserved Answer round that no tool round remains', () => {
       expect(requestFinalizeInstruction({ kind: 'answer_only', cause: 'deadline_reached' })).toBe(
-        `The run\u2019s active-work deadline has passed. ${ANSWER_ONLY_REPORT_DIRECTIVE}`,
+        `No further acquisition is possible in this run. ${ANSWER_ONLY_REPORT_DIRECTIVE}`,
       )
     })
 
@@ -1970,21 +1973,22 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
     const KEPT =
       'Acquisition tools (browser, vision, media, and delegation) and ask_user are closed; Collection and Bookkeeping ' +
       'remain open for one tool round. Record at most two Evidence Checkpoints in this round, for the findings that ' +
-      'matter most. Finalize now: reply with your final answer JSON and state honestly what was and was not completed.'
+      'matter most. Finalize now: reply with your final answer JSON and say what you established and what is still ' +
+      'unverified.'
     const SKIPPED =
       'Acquisition tools (browser, vision, media, and delegation) and ask_user are closed, and no bookkeeping round ' +
-      'follows: nothing new has been acquired to record. Finalize now: reply with your final answer JSON and state ' +
-      'honestly what was and was not completed. What you found and have not recorded goes in its "checkpoints": [] ' +
-      'when everything is already recorded.'
+      'follows: nothing new has been acquired to record. Finalize now: reply with your final answer JSON and say ' +
+      'what you established and what is still unverified. What you found and have not recorded goes in its ' +
+      '"checkpoints": [] when everything is already recorded.'
     const ANSWER_ONLY =
-      'No tool round remains — every tool is closed. Reply with your final answer JSON and state honestly what was ' +
-      'and was not completed. What you found and have not recorded goes in its "checkpoints": [] when everything is ' +
-      'already recorded.'
+      'No tool round remains — every tool is closed. Reply with your final answer JSON and say what you established ' +
+      'and what is still unverified. What you found and have not recorded goes in its "checkpoints": [] when ' +
+      'everything is already recorded.'
     const REPORT =
       'Acquisition tools (browser, vision, media, and delegation) and ask_user are closed; Collection and Bookkeeping ' +
       'are open for one more tool round. Record an Evidence Checkpoint for what in this report matters most, at most ' +
-      'two checkpoints in this round, then reply with your final answer JSON and state honestly what was and was not ' +
-      'completed.'
+      'two checkpoints in this round, then reply with your final answer JSON and say what you established and what ' +
+      'is still unverified.'
 
     it('reads each of the four texts word for word', () => {
       expect(finalizeInstruction(null)).toBe(KEPT)
@@ -2037,19 +2041,20 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
       'no_progress',
       'hard_limit',
     ]
+    // #323: a bound of the application's own is not named; no Progress is a fact about the task and is.
     const REASON: Readonly<Record<string, string>> = {
-      budget_exhausted: 'The run’s work budget is exhausted',
-      deadline_reached: 'The run’s active-work deadline has passed',
+      budget_exhausted: 'No further acquisition is possible in this run',
+      deadline_reached: 'No further acquisition is possible in this run',
       no_progress: 'Two Approaches in a row made no progress — repeated actions stopped producing anything new',
-      hard_limit: 'The run has reached its hard work limit',
+      hard_limit: 'No further acquisition is possible in this run',
     }
     const CLOSING =
       'Acquisition tools (browser, vision, media, and delegation) and ask_user are closed; Collection and ' +
       'Bookkeeping remain open for one tool round. Record at most two Evidence Checkpoints in this round, for the ' +
-      'findings that matter most. Finalize now: reply with your final answer JSON and state honestly what was and ' +
-      'was not completed.'
+      'findings that matter most. Finalize now: reply with your final answer JSON and say what you established and ' +
+      'what is still unverified.'
 
-    it('opens on the true reason and closes on the unchanged demand', () => {
+    it('opens on the reason and closes on the one demand', () => {
       for (const cause of RUN_CAUSES) {
         expect(finalizeInstruction(cause)).toBe(`${REASON[cause]} — ${CLOSING}`)
       }
@@ -2059,10 +2064,8 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
       for (const cause of RUN_CAUSES) {
         expect(finalizationToolRefusal(cause)).toBe(`Not executed — ${finalizeInstruction(cause)}`)
       }
-      // Exactly one cause may claim a spent budget.
-      expect(RUN_CAUSES.filter((c) => finalizationToolRefusal(c).includes('work budget is exhausted'))).toEqual([
-        'budget_exhausted',
-      ])
+      // Only the cause that is a fact about the task says what stopped the run.
+      expect(RUN_CAUSES.filter((c) => finalizationToolRefusal(c).includes('made no progress'))).toEqual(['no_progress'])
     })
 
     it('words the Finalization notice by the cause the epoch entered under', () => {
@@ -2087,9 +2090,9 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
         )
       }
       expect(injectedReportDirective({ kind: 'answer_only', cause: 'hard_limit' })).toBe(
-        'The run has reached its hard work limit. No tool round remains — every tool is closed. Reply with your ' +
-          'final answer JSON and state honestly what was and was not completed. What you found and have not ' +
-          'recorded goes in its "checkpoints": [] when everything is already recorded.',
+        'No further acquisition is possible in this run. No tool round remains — every tool is closed. Reply with ' +
+          'your final answer JSON and say what you established and what is still unverified. What you found and ' +
+          'have not recorded goes in its "checkpoints": [] when everything is already recorded.',
       )
     })
 
@@ -2118,7 +2121,7 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
 
     it('claims no other run’s stop — one reason per round (#201)', () => {
       const instruction = finalizeInstruction('blocker', WALL)
-      expect(instruction).not.toContain('work budget is exhausted')
+      expect(instruction).not.toContain('No further acquisition is possible')
       expect(instruction).not.toContain('made no progress')
       expect(instruction).not.toContain('active-work deadline')
     })
@@ -2247,5 +2250,82 @@ describe('the deterministic Answer separates what was found from what was checke
 
     expect(answer.speak).toBe('I do not have anything to show for that request yet.')
     expect(answer.display).not.toContain('I could not read the image')
+  })
+})
+
+// Issue #323, dated note on ADR 0038: an Answer repeats the words it is
+// handed. 24 of 156 Answers on stopped Runs named the budget or the
+// deadline, in the Finalize Instruction's own words, so the instruction no
+// longer says which bound stopped the run, and no Finalization text asks
+// for an account of what "was not completed".
+describe('the Finalization texts name no bound (#323)', () => {
+  const OPENING = 'No further acquisition is possible in this run'
+  const CLOSING = 'say what you established and what is still unverified'
+  const BOUNDED: readonly FinalizationCause[] = ['budget_exhausted', 'deadline_reached', 'hard_limit', 'model_unreachable']
+  const WALL = { signal: 'challenge', host: 'www.reddit.com' } as const
+  const NO_PROGRESS = 'Two Approaches in a row made no progress — repeated actions stopped producing anything new'
+  /** Every text one cause's Finalization can put in front of the Run's model. */
+  const textsOf = (cause: FinalizationCause, detail?: Parameters<typeof finalizeInstruction>[1]): string[] => [
+    finalizeInstruction(cause, detail, 'kept'),
+    finalizeInstruction(cause, detail, 'skipped'),
+    finalizationToolRefusal(cause, detail, 'kept'),
+    finalizationToolRefusal(cause, detail, 'skipped'),
+    requestFinalizeInstruction({ kind: 'finalizing', cause, ...(detail === undefined ? {} : { detail }) }, 'kept')!,
+    requestFinalizeInstruction({ kind: 'finalizing', cause, ...(detail === undefined ? {} : { detail }) }, 'skipped')!,
+    requestFinalizeInstruction({ kind: 'answer_only', cause, ...(detail === undefined ? {} : { detail }) })!,
+    injectedReportDirective({ kind: 'finalizing', cause, ...(detail === undefined ? {} : { detail }) }),
+    injectedReportDirective({ kind: 'answer_only', cause, ...(detail === undefined ? {} : { detail }) }),
+  ]
+
+  it('opens on one sentence for a budget, a deadline, the hard limit and an unreachable model', () => {
+    expect(ACQUISITION_ENDED_REASON).toBe(OPENING)
+    for (const cause of BOUNDED) {
+      expect(finalizeInstruction(cause).startsWith(`${OPENING} — Acquisition tools`), cause).toBe(true)
+      expect(finalizationToolRefusal(cause).startsWith(`Not executed — ${OPENING} — `), cause).toBe(true)
+      expect(requestFinalizeInstruction({ kind: 'answer_only', cause }), cause).toBe(`${OPENING}. ${ANSWER_ONLY_REPORT_DIRECTIVE}`)
+      expect(injectedReportDirective({ kind: 'finalizing', cause }), cause).toBe(`${OPENING}. ${FINALIZATION_REPORT_CHECKPOINT_DIRECTIVE}`)
+    }
+    // One text for all four: nothing in it says which of them stopped the run.
+    expect(new Set(BOUNDED.map((cause) => textsOf(cause).join('\n'))).size).toBe(1)
+  })
+
+  it('names no time, budget, round count, limit, model or error in any of those texts', () => {
+    // "One tool round" and "no tool round remains" say which round is next, not how many the run had.
+    const BOUND = /budget|deadline|time|limit|\d+ (?:tool )?rounds?|model|reach|error|fail|exhaust|spent|transport|ECONN/i
+    for (const cause of BOUNDED) {
+      for (const text of textsOf(cause, cause === 'model_unreachable' ? { attempts: 2, code: 'ECONNRESET' } : undefined)) expect(text, cause).not.toMatch(BOUND)
+    }
+  })
+
+  it('keeps the reason of a stop that is a fact about the task: no Progress, and a Blocker', () => {
+    for (const text of textsOf('no_progress')) expect(text.replace(/^Not executed — /, '').startsWith(NO_PROGRESS)).toBe(true)
+    for (const text of textsOf('blocker', WALL)) {
+      expect(text.replace(/^Not executed — /, '').startsWith('The run kept interacting with www.reddit.com after it was walled (Blocker: challenge), and what helps is ')).toBe(true)
+    }
+    for (const text of [...textsOf('no_progress'), ...textsOf('blocker', WALL)]) expect(text).not.toContain(OPENING)
+  })
+
+  it('closes every Finalization text on what was established and what is still unverified', () => {
+    expect(ANSWER_CLOSING).toBe(CLOSING)
+    const causes: readonly (readonly [FinalizationCause, Parameters<typeof finalizeInstruction>[1]?])[] = [...BOUNDED.map((cause) => [cause] as const), ['no_progress'], ['blocker', WALL]]
+    for (const [cause, detail] of causes) {
+      for (const text of textsOf(cause, detail)) {
+        expect(text, cause).toContain(`your final answer JSON and ${CLOSING}.`)
+        expect(text, cause).not.toMatch(/state honestly|was and was not completed/)
+      }
+    }
+    expect(ORCHESTRATOR_APPROACH_EXHAUSTED_DIRECTIVE).toBe(
+      'A second Approach has made no progress — the run is finalizing. Acquisition, vision, media, delegation, and ' +
+        'ask_user tools are closed. Finalize now: reply with your final answer JSON and say what you established and ' +
+        'what is still unverified.',
+    )
+  })
+
+  it('leaves the mid-Run warnings and the Stop Record’s sentences with the real cause', () => {
+    expect(budgetWarningMessage('near', 3, 6)).toMatch(/Work budget: 3 of 6 tool rounds remain/)
+    expect(budgetWarningMessage('time', 3, 6)).toMatch(/^Time: 60% of this run/)
+    expect(finalizationDetailSentence({ kind: 'answer_only', cause: 'model_unreachable', detail: { attempts: 2 } })).toBe(
+      'The model could not be reached: all 2 attempts of one round failed at the transport',
+    )
   })
 })
