@@ -126,7 +126,7 @@ describe('the Result Pick on a listing whose results are below the fold e2e (#30
     const decisions = trace.filter((record) => record.kind === 'decision')
     expect(decisions).toHaveLength(1)
     expect(decisions[0]).toMatchObject({ v: RUN_TRACE_VERSION, seam: 'result', acted: 'acted', answers: { result: { choice: PICKED } } })
-    expect(RUN_TRACE_VERSION).toBe(12)
+    expect(RUN_TRACE_VERSION).toBeGreaterThanOrEqual(12)
     expect(decisions[0]!.candidates).toEqual([
       { label: 'Home', href: fixture.url('/'), ref: 1 },
       { label: 'Objects', href: fixture.url('/collections/object'), ref: 2 },

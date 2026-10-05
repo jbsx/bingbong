@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseAssistantAnswer } from '../../core/agent/answerContract'
+import { CARD_FIELDS, closedSpokenSentence, parseAssistantAnswer, streamedCard } from '../../core/agent/answerContract'
 import { ANSWER_LANGUAGE_INSTRUCTION } from '../../core/agent/answerLanguage'
 import { ANSWER_CHECKPOINT_GUIDANCE, ANSWER_CHECKPOINT_INSTRUCTION } from '../../core/pipeline/answerCheckpointGuidance'
 import { recordAnswerCheckpoints } from '../../core/pipeline/answerCheckpoints'
@@ -429,8 +429,9 @@ describe('orchestrator prompt verification policy (#212)', () => {
     expect(askedItem).toMatch(/\{"n": the item's number in the declared list, 1 for the first, "item": the item as declared/)
     expect(askedItem).toMatch(/An entry's "n" names its item whatever its "item" says/)
     expect(askedItem).toMatch(/asking for \{"asked_items": \[\.\.\.\]\} alone while the rest of the Answer stands as written/)
-    // Taught once: the only other line naming the field is the Answer's example object.
-    expect(lines.filter((candidate) => candidate.includes('asked_items'))).toEqual([line('{"speak":'), askedItem])
+    // Taught once: the only other lines naming the field are the Answer's
+    // example object and the sentence that gives its fields' order (#319).
+    expect(lines.filter((candidate) => candidate.includes('asked_items'))).toEqual([line('{"speak":'), line('Write the fields in the order shown'), askedItem])
   })
 
   // #311: the example object shows the field, so an Answer written from it
@@ -496,5 +497,37 @@ describe('orchestrator prompt Candidate bookkeeping (#221)', () => {
     expect(admitted).toMatch(/a constraint they set/)
     expect(admitted).toMatch(/a decision made on their authority/)
     expect(admitted).toMatch(/a rejection of what you presented/)
+  })
+})
+
+// #319 (ADR 0074): field order is part of the Answer contract. The model
+// follows the example object, so the example is in the order and one
+// sentence states it.
+describe('the Answer contract’s field order (#319)', () => {
+  const example = ORCHESTRATOR_SYSTEM_PROMPT.split('\n').find((entry) => entry.trimStart().startsWith('{"speak":')) ?? ''
+
+  it('gives the example object in the contract’s order: the Card’s fields, then the Answer Tail', () => {
+    expect(Object.keys(JSON.parse(example) as object)).toEqual([
+      ...CARD_FIELDS,
+      'resolution',
+      'finalization_cause',
+      'run_note',
+      'memory_patch',
+      'mishear_proposals',
+      'checkpoints',
+    ])
+  })
+
+  it('writes an example whose Card closes before its Answer Tail, and whose sentence is still found first', () => {
+    const upToTail = example.slice(0, example.indexOf('"resolution"') + '"resolution":'.length)
+    expect(streamedCard(upToTail)).toMatchObject({ order: 'in_order', card: { shape: 'on_contract' } })
+    expect(closedSpokenSentence(upToTail)).toBe('<at most two short sentences, read aloud to the user>')
+  })
+
+  it('states the order in one sentence, right under the example', () => {
+    const lines = ORCHESTRATOR_SYSTEM_PROMPT.split('\n')
+    const stated = lines[lines.indexOf(example) + 1] ?? ''
+    expect(stated).toMatch(/^- Write the fields in the order shown: "speak" and "display" first, then "evidence_ids", "inspection_candidate_id" and "asked_items", and every other field after those\./)
+    expect(ORCHESTRATOR_SYSTEM_PROMPT.split('Write the fields in the order shown')).toHaveLength(2)
   })
 })

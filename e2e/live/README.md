@@ -89,7 +89,7 @@ try {
 | Field | Source | Meaning |
 | --- | --- | --- |
 | `accepted` | the app's `command` event after the attempt's tape cursor, with `runId`/`sessionId`/`sessionGeneration`/`submissionId`/`turnId` | Pipeline acceptance. The Prompt Bar's form having submitted is **not** acceptance; a busy rejection is recorded as `stop.reason: 'rejected'`. |
-| `finalAnswer` | the one `display` event the pipeline stamped `finalAnswer: true` (model Answer or deterministic fallback) | Final Answer availability at the **event publication** stamp. Not renderer paint, not audible onset. Earlier displays, streams and speak lines are never candidates; two marks are `invalid`. |
+| `finalAnswer` | the one `display` event the pipeline stamped `finalAnswer: true` (model Answer or deterministic fallback) | Final Answer availability at the **event publication** stamp. Not renderer paint, not audible onset. Earlier displays, streams and speak lines are never candidates; two marks are `invalid`. Since #319 a Card whose fields closed in the stream is published before its round ends, so on a capture from then on this stamp can precede the end of the Answer round; the `early_card` record says when it did. |
 | `terminal` | the `done` event | Full Run boundary: outcome, the model-proposed `resolution` (never Task Success), Finalization Cause. |
 | `settlement` | the Prompt Bar form's `aria-busy` clearing | The submit IPC settled — the runner unwound, failure screenshot included. Evaluator clock (ISO). |
 | `metrics.answerLatencyMs` | `finalAnswer.at − accepted.at` | The primary recorded latency. |

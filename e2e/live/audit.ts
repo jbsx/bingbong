@@ -214,6 +214,13 @@ export const EMPTY_LANDING_TRACE_VERSION = 9
  * and no Unfinished Load was possible.
  */
 export const PAGE_ARRIVAL_TRACE_VERSION = 11
+/**
+ * The Run Trace version from which a Run records a Card it published early,
+ * an Answer out of field order and an Answer Tail that fell back (#319,
+ * ADR 0074): a trace below it published every Card at its object's end and
+ * counted none of the three, so it reads "not counted", never zero.
+ */
+export const EARLY_CARD_TRACE_VERSION = 13
 /** How far apart a perf `llm` span's end and an `llm_round` record may be and still be the same round. */
 const LATENCY_JOIN_TOLERANCE_MS = 2_000
 /** A search at this streak followed a search with nothing opened between them (ADR 0058): no Progress. */
@@ -874,6 +881,14 @@ export interface AuditMechanical {
    */
   readonly stoodSentences?: number
   /**
+   * Cards published early, Answers out of field order and Answer Tails
+   * that fell back (#319, ADR 0074), from the Run's own records. Beside the
+   * rounds, never in them, reported and never gated. Absent on a trace
+   * below {@link EARLY_CARD_TRACE_VERSION} and on an audit written before
+   * the counter.
+   */
+  readonly earlyCards?: EarlyCardCounts
+  /**
    * Transport Failures (#271): `llm_round` attempts, the Run's and its
    * Subagents', that ended `transport`. Absent from an audit written before
    * the counter; beside the rounds, never in them.
@@ -1187,6 +1202,12 @@ export interface AuditPopulation {
   readonly secondUtterances?: number
   /** Sentences that stood over the attempts that count them (#312); absent when none does. */
   readonly stoodSentences?: number
+  /**
+   * Cards published early, Answers out of field order and Answer Tails
+   * that fell back, by reason, over the attempts that count them (#319);
+   * absent when none does.
+   */
+  readonly earlyCards?: { readonly published: number; readonly outOfOrder: number; readonly tailFallbacks: Readonly<Record<string, number>> }
   /** Transport Failure attempts over the attempts (#271); absent on an audit written before the counter. */
   readonly transportAttempts?: number
   /** Rounds recovered by a Transport Retry over the attempts (#271). */
@@ -2737,6 +2758,42 @@ export function offLanguageAnswersOf(traceRecords: readonly object[]): number {
   return count
 }
 
+/** One Card published early (#319), as the audit reports it: its round, and where in the round it fell. */
+export interface EarlyCardTime {
+  readonly round: number
+  readonly sinceRoundStartMs: number
+  readonly untilRoundEndMs: number
+}
+
+/** One Run's early Cards (#319, ADR 0074), from its `early_card`, `answer_out_of_order` and `answer_tail_fallback` records. */
+export interface EarlyCardCounts {
+  /** Cards published before their round ended. */
+  readonly published: number
+  readonly times: readonly EarlyCardTime[]
+  /** Rounds that ended with an on-contract Answer whose Card's fields did not lead it in order. */
+  readonly outOfOrder: number
+  /** Answer Tails lost behind a Card already shown, each with its round and the reason. */
+  readonly tailFallbacks: readonly { readonly round: number; readonly reason: string }[]
+}
+
+/** The Run's early Cards (#319), from its records. */
+export function earlyCardCountsOf(traceRecords: readonly object[]): EarlyCardCounts {
+  const records = traceRecords as readonly Record<string, unknown>[]
+  const times = records.flatMap((record) =>
+    record.kind === 'early_card' && isFiniteNumber(record.round) && isFiniteNumber(record.sinceRoundStartMs) && isFiniteNumber(record.untilRoundEndMs)
+      ? [{ round: record.round, sinceRoundStartMs: record.sinceRoundStartMs, untilRoundEndMs: record.untilRoundEndMs }]
+      : [],
+  )
+  return {
+    published: records.filter((record) => record.kind === 'early_card').length,
+    times,
+    outOfOrder: records.filter((record) => record.kind === 'answer_out_of_order').length,
+    tailFallbacks: records.flatMap((record) =>
+      record.kind === 'answer_tail_fallback' && isFiniteNumber(record.round) && isString(record.reason) ? [{ round: record.round, reason: record.reason }] : [],
+    ),
+  }
+}
+
 /** One sentence spoken early (#312), as the audit reports it. */
 export interface EarlySentenceTime {
   readonly round: number
@@ -4242,6 +4299,9 @@ export function classifyAttempt(input: AuditTraceInput): AuditMechanical {
     earlySentenceTimes: earlySentenceTimesOf(records),
     secondUtterances: records.filter((record) => record.kind === 'second_utterance').length,
     stoodSentences: records.filter((record) => record.kind === 'stood_sentence').length,
+    // Cards published early, Answers out of field order and Answer Tails
+    // that fell back (#319): only a trace new enough to have written them.
+    ...(traceAtLeast(EARLY_CARD_TRACE_VERSION) ? { earlyCards: earlyCardCountsOf(records) } : {}),
     // Transport Failures (#271), the Run's and its Subagents', from the
     // `llm_round` records alone: every attempt that failed at the transport,
     // the rounds whose Transport Retry then completed, and whether the Run
@@ -4842,6 +4902,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
   let earlySentences: number | undefined
   let secondUtterances: number | undefined
   let stoodSentences: number | undefined
+  let earlyCards: { published: number; outOfOrder: number; tailFallbacks: Record<string, number> } | undefined
   let transportAttempts = 0
   let transportRetriesRecovered = 0
   let modelUnreachableRuns = 0
@@ -4975,6 +5036,12 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
     if (mechanical.earlySentences !== undefined) earlySentences = (earlySentences ?? 0) + mechanical.earlySentences
     if (mechanical.secondUtterances !== undefined) secondUtterances = (secondUtterances ?? 0) + mechanical.secondUtterances
     if (mechanical.stoodSentences !== undefined) stoodSentences = (stoodSentences ?? 0) + mechanical.stoodSentences
+    if (mechanical.earlyCards !== undefined) {
+      earlyCards ??= { published: 0, outOfOrder: 0, tailFallbacks: {} }
+      earlyCards.published += mechanical.earlyCards.published
+      earlyCards.outOfOrder += mechanical.earlyCards.outOfOrder
+      for (const fallback of mechanical.earlyCards.tailFallbacks) earlyCards.tailFallbacks[fallback.reason] = (earlyCards.tailFallbacks[fallback.reason] ?? 0) + 1
+    }
     transportAttempts += mechanical.transportAttempts ?? 0
     transportRetriesRecovered += mechanical.transportRetriesRecovered ?? 0
     modelUnreachableRuns += mechanical.modelUnreachableRuns ?? 0
@@ -5094,6 +5161,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
     ...(earlySentences !== undefined ? { earlySentences } : {}),
     ...(secondUtterances !== undefined ? { secondUtterances } : {}),
     ...(stoodSentences !== undefined ? { stoodSentences } : {}),
+    ...(earlyCards !== undefined ? { earlyCards } : {}),
     transportAttempts,
     transportRetriesRecovered,
     modelUnreachableRuns,
@@ -5489,6 +5557,24 @@ function populationEarlySentencesText(population: AuditPopulation): string {
   return `${population.earlySentences} sentence(s) spoken early (${population.secondUtterances ?? 0} second utterance(s), ${population.stoodSentences ?? 0} stood for an Answer not its own)`
 }
 
+/** One attempt's Cards published early, Answers out of field order and Answer Tails that fell back (#319), or "not counted". */
+function earlyCardsText(counts: EarlyCardCounts | undefined): string {
+  if (counts === undefined) return 'not counted'
+  const seconds = (ms: number): string => `${(ms / 1000).toFixed(1)} s`
+  const fallbacks = counts.tailFallbacks.map((fallback) => `round ${fallback.round} ${fallback.reason}`).join(', ')
+  const times = counts.times.map((time) => `; round ${time.round}: ${seconds(time.sinceRoundStartMs)} after its start, ${seconds(time.untilRoundEndMs)} before its end`).join('')
+  return `${counts.published} (${counts.outOfOrder} Answer(s) out of field order, ${counts.tailFallbacks.length} Answer Tail(s) fell back${fallbacks === '' ? '' : `: ${fallbacks}`})${times}`
+}
+
+/** A population's Cards published early, Answers out of field order and Answer Tails that fell back (#319), or "not counted". */
+function populationEarlyCardsText(population: AuditPopulation): string {
+  const counts = population.earlyCards
+  if (counts === undefined) return 'Cards published early not counted'
+  const reasons = Object.entries(counts.tailFallbacks)
+  const fallen = reasons.reduce((total, [, count]) => total + count, 0)
+  return `${counts.published} Card(s) published early (${counts.outOfOrder} Answer(s) out of field order, ${fallen} Answer Tail(s) fell back${reasons.length === 0 ? '' : `: ${reasons.map(([reason, count]) => `${count} ${reason}`).join(', ')}`})`
+}
+
 /** A population's bookkeeping rounds right before the Answer (#288), or "not counted" on an audit written before the counter. */
 function populationBookkeepingBeforeAnswerText(population: AuditPopulation): string {
   if (population.bookkeepingBeforeAnswer === undefined) return 'bookkeeping rounds right before the Answer not counted'
@@ -5594,7 +5680,7 @@ function judgementLines(populations: readonly AuditPopulation[]): string[] {
       `- ${population.label}: ${population.offKeyRounds} Off-key round(s), ${population.searchLoopRounds} Search Loop round(s) by the reviewer (${population.mechanicalSearchRounds} by the streak rule, heads included: ${population.searchRoundsAtStreak2} at streak 2 or beyond, ${population.searchRoundsAtStreak3} at 3 or beyond; attempts by search source ${SEARCH_SOURCES.map((source) => `${source} ${population.searchSources[source]}`).join(', ')}; navigate searches by Search URL form ${searchFormsText(population.searchForms)}; ${populationBlockedOrInertText(population.blockedOrInert)}; ${populationUnavailableLandingsText(population.unavailableLandings)}; ${populationEmptyLandingsText(population.emptyLandings)}; ${populationPageArrivalsText(population.pageArrivals)}; ${populationConsentWallsText(population.consentWalls)}; ${populationWindowOpensText(population.windowOpens)}; ${populationTierEscalationsText(population.tierEscalations)}), ` +
       `${population.inheritedRounds} inherited, ${population.rejectedCheckpoints} rejected Evidence Checkpoint(s), ${population.walledRounds} walled round(s), ${population.notFoundNavigates} navigate(s) landed on a Not-found Page (${population.notFoundOffKey} judged Off-key), ${population.rewrittenComposedAddresses ?? 0} Composed Address(es) rewritten into a site search (${population.rewrittenComposedAddressesOffKey ?? 0} judged Off-key, ${population.rewrittenShownAddresses ?? 'not counted'} to an address the Run was shown), ${population.unseenPhraseRewrites ?? 'not counted'} search(es) ran with an Unseen Phrase unquoted (${population.unseenPhraseRewritesOffKey ?? 0} judged Off-key), ${population.engineRewrites ?? 'not counted'} search(es) ran on the Run Engine in place of another Web Engine (${population.engineRewritesOffKey ?? 0} judged Off-key), ${populationResultPicksText(population)}, ${populationSelectedPassagesText(population)}, ${populationRunMadeUseText(population)}, ${populationContradictionNotesText(population)}, ${population.subagentRounds} Subagent round(s), ` +
       `${population.mergedCheckpoints} merged Evidence Checkpoint(s) (a floor), ${population.heldPageRoundsWithoutProgress} Held Page round(s) without Progress, ${population.bundledCheckpoints} bundled checkpoint round(s), ${population.sameSourceUnsupportedRounds} same-source unsupported round(s), ${subagentCitationsText(population.subagentCitations)}, ${populationSlipsText(population)}, ${delegatedPageCountsText(population.delegatedPageRounds)}, ${populationPastTheEndReadsText(population)}, ${populationPagelessLandingsText(population)}, ${populationBookkeepingBeforeAnswerText(population)}, ${populationBookkeepingBeforeCutText(population)}, ${populationAnswerCheckpointsText(population)}, ` +
-      `${population.malformedAnswers} Malformed Answer(s) (${population.answerRetries} retried), ${populationOffLanguageAnswersText(population)}, ${populationEarlySentencesText(population)}, ` +
+      `${population.malformedAnswers} Malformed Answer(s) (${population.answerRetries} retried), ${populationOffLanguageAnswersText(population)}, ${populationEarlySentencesText(population)}, ${populationEarlyCardsText(population)}, ` +
       `${transportText(population)}, ` +
       `${populationSkipsText(population)}, ${populationCutsText(population)}, ` +
       `${population.askedItemsDeclared} declared Asked Items (${population.askedItemsUnverified} with an unverified standing, ${population.askedItemsShapeFailures} shape failure(s), ${population.askedItemsShapeRetried} retried), ` +
@@ -5633,6 +5719,7 @@ function attemptSection(attempt: AuditAttempt): string[] {
   lines.push(
     `- Sentences spoken early: ${mechanical.earlySentences === undefined ? 'not counted' : `${mechanical.earlySentences} (${mechanical.secondUtterances ?? 0} second utterance(s), ${mechanical.stoodSentences ?? 0} stood for an Answer not its own)${earlySentenceTimesText(mechanical.earlySentenceTimes)}`}`,
   )
+  lines.push(`- Cards published early: ${earlyCardsText(mechanical.earlyCards)}`)
   lines.push(`- Transport Failures: ${transportText(mechanical)}`)
   lines.push(`- Finalization: ${finalizationText(mechanical)}`)
   lines.push(`- Asked Items: ${askedItemsText(mechanical.askedItems)}`)

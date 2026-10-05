@@ -482,3 +482,106 @@ export function parseAssistantAnswer(content: string): {
     ? { ...fallback, shape: 'malformed', malformedError: lastFailure }
     : { ...fallback, shape: 'off_contract' }
 }
+
+/**
+ * The fields an Answer's Card is made from, in the order the Answer
+ * contract gives them (#319, ADR 0074). They come first in the object, and
+ * everything after them is the Answer Tail.
+ */
+export const CARD_FIELDS = ['speak', 'display', 'evidence_ids', 'inspection_candidate_id', 'asked_items'] as const
+
+/** Where the JSON value starting at `start` ends (the index after it), or null while the stream has not closed it. */
+function jsonValueEnd(text: string, start: number): number | null {
+  const first = text[start]
+  if (first === '"') {
+    for (let i = start + 1; i < text.length; i += 1) {
+      if (text[i] === '\\') i += 1
+      else if (text[i] === '"') return i + 1
+    }
+    return null
+  }
+  if (first === '{' || first === '[') {
+    let depth = 0
+    for (let i = start; i < text.length; i += 1) {
+      const char = text[i]!
+      if (char === '"') {
+        const end = jsonValueEnd(text, i)
+        if (end === null) return null
+        i = end - 1
+      } else if (char === '{' || char === '[') {
+        depth += 1
+      } else if (char === '}' || char === ']') {
+        depth -= 1
+        if (depth === 0) return i + 1
+      }
+    }
+    return null
+  }
+  // A number or a literal ends at what follows it, which must have arrived.
+  const end = text.slice(start).search(/[,}\]\s]/)
+  return end === -1 ? null : start + end
+}
+
+/**
+ * The top-level entries of a partially streamed JSON object, as far as the
+ * stream has closed them: each key with its value's raw text, the key that
+ * has opened after them (its colon written, its value not yet closed), and
+ * whether the object itself has closed.
+ */
+function scanStreamedObject(object: string): { entries: { key: string; raw: string }[]; opened: string | null; ended: boolean } {
+  const entries: { key: string; raw: string }[] = []
+  let i = 1
+  for (;;) {
+    while (i < object.length && /[\s,]/.test(object[i]!)) i += 1
+    if (object[i] === '}') return { entries, opened: null, ended: true }
+    // Anything but a key here is no object the contract reads: stop where it stood.
+    if (object[i] !== '"') return { entries, opened: null, ended: false }
+    const keyEnd = jsonValueEnd(object, i)
+    if (keyEnd === null) return { entries, opened: null, ended: false }
+    const key = scanPartialJsonString(object, i).value
+    i = keyEnd
+    while (i < object.length && /\s/.test(object[i]!)) i += 1
+    if (object[i] !== ':') return { entries, opened: null, ended: false }
+    i += 1
+    while (i < object.length && /\s/.test(object[i]!)) i += 1
+    const valueEnd = i < object.length ? jsonValueEnd(object, i) : null
+    if (valueEnd === null) return { entries, opened: key, ended: false }
+    entries.push({ key, raw: object.slice(i, valueEnd) })
+    i = valueEnd
+  }
+}
+
+/**
+ * The Card of a partially streamed Answer (#319, ADR 0074). `in_order`
+ * once the Card's fields have closed: `speak`, `display` and whichever of
+ * the other {@link CARD_FIELDS} the Answer writes, in that order, closed
+ * by `asked_items` closing, by a key of the Answer Tail opening, or by the
+ * object's end. `card` is those fields alone, read as an Answer holding
+ * nothing else is, so every field falls to the check it meets at the
+ * object's end. `out_of_order` as soon as the Card's fields do not lead
+ * the object in the contract's order: that Answer is published at its end.
+ * Null until either is known, and for prose.
+ */
+export function streamedCard(
+  content: string,
+): { order: 'in_order'; card: ReturnType<typeof parseAssistantAnswer> } | { order: 'out_of_order' } | null {
+  const start = answerObjectStart(content)
+  if (start === null) return null
+  const { entries, opened, ended } = scanStreamedObject(content.slice(start))
+  const fields: readonly string[] = CARD_FIELDS
+  // The last Card field closed, by its place in the contract's order.
+  let last = -1
+  let tail = false
+  for (const key of [...entries.map((entry) => entry.key), ...(opened !== null ? [opened] : [])]) {
+    const place = fields.indexOf(key)
+    // `speak` then `display` open the object; the optional fields follow in order.
+    if (place === -1 ? last < 1 : tail || place <= last || (last < 1 && place !== last + 1)) return { order: 'out_of_order' }
+    if (place === -1) tail = true
+    else last = place
+  }
+  // A Card field that has opened is still being written.
+  if (last < 1 || (opened !== null && fields.includes(opened))) return null
+  const card = entries.filter((entry) => fields.includes(entry.key))
+  if (!ended && !tail && card.at(-1)?.key !== 'asked_items') return null
+  return { order: 'in_order', card: parseAssistantAnswer(`{${card.map((entry) => `${JSON.stringify(entry.key)}:${entry.raw}`).join(',')}}`) }
+}
