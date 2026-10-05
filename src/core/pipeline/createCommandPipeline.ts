@@ -837,16 +837,20 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
     let heldUnlanded: { readonly card: string | null } | undefined
     /**
      * The Answer's Card once the Run has shown one, with its spoken line
-     * and whether the user has been given that line (#322): a Run that
-     * fails after it keeps the Card and shows no other. A Steering replan
-     * lets it go with the sentence.
+     * and whether that line has been handed to the voice (#322): a Run
+     * that fails after it keeps the Card and shows no other. A Steering
+     * replan lets it go with the sentence.
      */
-    let shownCard: { readonly speak: string; voiced: boolean } | undefined
-    /** Read through a call, so a caller that saw no Card before a presenter ran sees the one it showed. */
-    const cardShown = (): typeof shownCard => shownCard
-    /** The shown Card's line has reached the user, or is about to. */
-    const markCardVoiced = (): void => {
-      if (shownCard !== undefined) shownCard.voiced = true
+    let shownCard: { readonly speak: string; lineHandedToVoice: boolean } | undefined
+    /**
+     * The shown Card as it is now. Read through a call because the
+     * presenters assign it from inside their own functions, which the
+     * compiler's narrowing of the variable does not follow.
+     */
+    const currentShownCard = (): typeof shownCard => shownCard
+    /** The shown Card's line is being handed to the voice: set before the hand-over, so a failure inside it does not speak the line again. */
+    const markCardLineHandedToVoice = (): void => {
+      if (shownCard !== undefined) shownCard.lineHandedToVoice = true
     }
     /**
      * Every sentence this Run spoke early (#312): an Answer heard after one
@@ -1417,7 +1421,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           ...(listed !== undefined ? { askedItems: listed.items } : {}),
           at: clock.now(),
         }
-        shownCard = { speak: fallback.speak, voiced: true }
+        shownCard = { speak: fallback.speak, lineHandedToVoice: true }
         // A sentence spoken early for no Answer — its round went on to
         // call tools — is waited out, and the Answer heard after it is a
         // second utterance.
@@ -1814,7 +1818,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             ...(listed !== undefined ? { askedItems: listed.items } : {}),
             finalAnswer: true,
           }
-          shownCard = { speak: spoken.text, voiced: heldSentence !== undefined }
+          shownCard = { speak: spoken.text, lineHandedToVoice: heldSentence !== undefined }
         }
         // The cause that fallback answers under, asked in one place so the
         // Answer the user hears and the trace record of the failed round
@@ -2359,7 +2363,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
                   ) {
                     const at = clock.now()
                     yield* publishCard(closed, at)
-                    if (roundSentence !== undefined) markCardVoiced()
+                    if (roundSentence !== undefined) markCardLineHandedToVoice()
                     roundCard = { answer: closed, at }
                   }
                 }
@@ -2859,7 +2863,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             if (held !== undefined && heldUnlanded !== undefined) {
               traceRun?.(() => ({ turnId, kind: 'stood_sentence', publishedAt: held.at, card: 'answer' }))
             }
-            markCardVoiced()
+            markCardLineHandedToVoice()
             if (held !== undefined) {
               yield { type: 'status', status: 'speaking', at: clock.now() }
               yield* awaitSpokenEarly(held)
@@ -3053,7 +3057,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           yield { type: 'status', status: 'thinking', at: clock.now() }
         }
 
-        // The deterministic fallback Answer (#117/#137/AC4): displayed and
+        // The Deterministic Answer (#117/#137/AC4): displayed and
         // spoken like any Answer, but the run completes mechanically
         // failed — no model Assessment, no memory patch, only the
         // deterministic Run Note the commit below records.
@@ -3090,20 +3094,22 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           // instruction and not a provider's words, and without it every
           // command would come back with nothing to show and no reason.
           if (err instanceof LlmNotConfiguredError) yield { type: 'error', message: err.message, at: clock.now() }
-          const phase = effortEpoch.phase
-          const cardAtFailure = cardShown()
+          // A Run that had entered Finalization answers under the cause
+          // it entered for, and one still working under none.
+          const stopped = effortEpoch.phase.kind === 'working' ? undefined : effortEpoch.phase
+          const cardAtFailure = currentShownCard()
           try {
             if (cardAtFailure === undefined) {
-              yield* presentDeterministicAnswer(
-                phase.kind === 'working' ? undefined : phase.cause,
-                phase.kind === 'working' ? undefined : phase.detail,
-              )
+              yield* presentDeterministicAnswer(stopped?.cause, stopped?.detail)
             } else {
               // A Card already shown is kept (#319): the Run's Answer is
               // that Card, and its line is spoken if the failure came
-              // before it was.
+              // before it was — a second utterance when an earlier round
+              // had spoken a sentence for no Answer.
+              const unspoken = !cardAtFailure.lineHandedToVoice
+              if (unspoken && sentencesSpokenEarly.length > 0) traceRun?.(() => ({ turnId, kind: 'second_utterance', deterministic: false }))
               for (const published of sentencesSpokenEarly) yield* awaitSpokenEarly(published)
-              if (!cardAtFailure.voiced) yield* speakLine(cardAtFailure.speak, turnId)
+              if (unspoken) yield* speakLine(cardAtFailure.speak, turnId)
             }
           } catch (unpresented) {
             reportFault('pipeline.createCommandPipeline.failedRunAnswer', unpresented, { turnId })
@@ -3111,7 +3117,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             // says it has nothing to show, which composes from the
             // command alone. After a sentence spoken early nothing more
             // is spoken (#312).
-            if (cardShown() === undefined) {
+            if (currentShownCard() === undefined) {
               const nothing = deterministicFinalAnswer({ command: correctedObjective ?? command, sources: [] })
               yield { type: 'display', text: nothing.display, deterministicAnswer: true, finalAnswer: true, at: clock.now() }
               if (heldSentence === undefined) yield* speakLine(nothing.speak, turnId)

@@ -409,11 +409,12 @@ export class LlmTransportError extends Error {
 }
 
 /**
- * No model serves this role (#322): its routing is missing or could not be
- * read, so no request was made. The message is the application's own
- * instruction to whoever set it up — which settings to give — and not a
- * provider's words, so it is the one failure a Run still shows as a Feed
- * line: nothing else tells the user why every command comes back empty.
+ * No model serves this role (#322): its routing is missing, or the
+ * client could not be built from it — the developer's script override
+ * that does not parse is one — so no request was made. The message is the
+ * application's own account of what to set and not a provider's words, so
+ * it is the one failure a Run still shows as a Feed line: nothing else
+ * tells the user why every command comes back empty.
  */
 export class LlmNotConfiguredError extends Error {
   constructor(reason: string) {

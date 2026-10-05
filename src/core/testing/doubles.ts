@@ -205,7 +205,7 @@ export class ScriptedLlm implements LlmClient {
     })
     await streamScriptedChunks(next, request.onDelta, request.signal)
     const failure = (next as ScriptedTurn).failsWith
-    if (typeof failure === 'string') throw new Error(failure)
+    if (failure !== undefined) throw new Error(failure)
     // Renders continuity fields into scripted text so E2E can prove what the
     // current Run received without exposing private request objects.
     const substitutions: [string, string][] = [

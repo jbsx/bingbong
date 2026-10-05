@@ -199,6 +199,24 @@ describe('a Run that fails outright ends on the Deterministic Answer (#322)', ()
     expect(run.events.at(-1)).toMatchObject({ type: 'done', outcome: 'failed' })
   })
 
+  it('speaks the Deterministic Answer as a second utterance when the sentence heard was an earlier tool round’s (#312)', async () => {
+    const run = start([
+      async (request) => {
+        text(request, '{"speak":"Let me check.",')
+        text(request, '"display":"# Checking')
+        await until(() => run.spoken().length > 0, 'the early sentence')
+        return readsThePage(request)
+      },
+      fails,
+    ])
+    await run.finished
+
+    expect(run.spoken()).toEqual(['Let me check.', UNCONFIRMED_SPOKEN])
+    expect(run.cards()).toEqual([expect.objectContaining({ deterministicAnswer: true, finalAnswer: true })])
+    expect(run.records('second_utterance')).toEqual([expect.objectContaining({ kind: 'second_utterance', deterministic: true })])
+    expectNoErrorSurfaced(run)
+  })
+
   it('keeps a Card already shown when the Run fails after it, and shows no second one', async () => {
     // The Answer's Card is published, and the voice then throws rather
     // than reporting a failed playback.
