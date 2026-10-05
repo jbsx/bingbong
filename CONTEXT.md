@@ -265,9 +265,12 @@ shape the call should have had.
 _Avoid_: nudge, warning text, hint
 
 **Finalize Instruction**:
-The model-facing instruction that Finalization has been entered: the reason —
-the Finalization Cause the Run or Subagent actually stopped for — which tools
-are closed, and what reply is wanted. It is carried by a closed tool's
+The model-facing instruction that Finalization has been entered: the reason,
+which tools are closed, and what reply is wanted. The reason is the
+Finalization Cause the Run or Subagent actually stopped for when that cause
+is a fact about the task — a Blocker, no Progress — and one sentence naming
+no bound when it is a limit or a failure of the application's own, because
+an Answer repeats the words it is handed (#315). It is carried by a closed tool's
 refusal, by a Notice on a bookkeeping result, by an injected Subagent
 Report, and by the Finalization model request itself, and it names one reason
 wherever it appears in a round. The request carries it because the other three
@@ -474,10 +477,24 @@ The rule that an Answer closes on the state of the task rather than on the
 limit that ended the Run. Time limits, work budgets, round counts, and
 provider failures stay in the Stop Record; grounded progress, unresolved
 checks, and blockers the user can clear are what the Spoken Rendering and the
-Card carry. It binds model-written and deterministic Answers alike, and never
-implies an exhaustive search, work continuing after the Run, or a rejection
-that was not actually decided.
+Card carry. The test is whether a sentence would still be true and mean
+something had a person done the research by hand: a record that could not be
+opened or a site that is down passes, and the application's bounds and its
+internal names and tooling do not. It binds model-written and deterministic
+Answers alike, and every line the application speaks or shows as its own —
+the Peek Card, a Subagent Announcement, a line in the Feed — but not the
+opened record of a Run's tool calls. It never implies an exhaustive search,
+work continuing after the Run, or a rejection that was not actually decided
+(ADR 0038, #315).
 _Avoid_: apology, excuse, status update
+
+**Deterministic Answer**:
+The Answer the application composes itself when no model round wrote one the
+Run could take: what the Run observed so far, said to be unconfirmed, with
+every Asked Item `unverified`. It names no Finalization Cause — only a
+Blocker speaks for itself — and a Run that failed outright ends on it as a
+Run that was stopped does.
+_Avoid_: fallback answer, error message, canned answer
 
 **Itemized Verdict**:
 The rule that when a command names the items or options it asks about, the
@@ -500,7 +517,8 @@ a yes or no, a qualification, a named item's standing — declared by the model
 in the Run's first Run Plan and revised only by a Steering replan. The Answer
 carries a standing for every one of them, `stated` with the statement or
 `unverified` with why, and an unverified Asked Item makes the Run Resolution
-`partial` whatever the model claimed. A `stated` statement is the value
+`partial` whatever the model claimed. The why is about the task, never about
+the Run's stop. A `stated` statement is the value
 established, not the item's wording again (ADR 0074). An entry names its item by its number
 in the declared list or by its wording; a list that is not the declared one
 is sent back once for the list alone, merged into the Answer as first
@@ -1363,9 +1381,11 @@ whole.
 
 **Subagent Announcement**:
 The one line the user hears and reads when a Subagent finishes or fails: the
-product's own opening, then the first sentence of the Subagent Report or of
-the failure. It is a rendering for the user, not the report, so an internal
-identity in it is removed. A cancelled Subagent is not announced.
+product's own opening, then the first sentence of the Subagent Report the
+Subagent wrote. A Subagent that was stopped at a bound, or that failed, is
+announced by the opening alone (#315). It is a rendering for the user, not
+the report, so an internal identity in it is removed. A cancelled Subagent
+is not announced.
 _Avoid_: completion message, agent notification
 
 **Delegated Page**:

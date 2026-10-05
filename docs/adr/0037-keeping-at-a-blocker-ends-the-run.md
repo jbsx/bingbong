@@ -110,3 +110,12 @@ Two other shapes were considered.
   that merely ran out of budget. The pinned #130 baseline tree is untouched.
 - A wall the classifier cannot attribute (`UNKNOWN_BLOCKER_HOST`) never
   arms the gate and therefore never trips it, unchanged from ADR 0010.
+
+## Notes
+
+- 2026-10-05 (#315, [ADR 0038](0038-finalization-has-one-elapsed-time-allowance.md)).
+  The Card's lead for `blocker` said "The run kept at a sign-in wall it
+  cannot pass", which names the Run. It becomes the spoken sentence
+  followed by the help — "I could not get past the sign-in wall on
+  example.com. To get past it, …". The wall is a fact about the site and
+  the one thing only the user can clear, so it still reaches them.

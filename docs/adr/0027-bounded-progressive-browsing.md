@@ -276,3 +276,9 @@ mechanics and encourage redundant reads, clicks, screenshots, and vision calls.
     fixture leaves when the collector first writes to it, which makes the
     first collection throw; against the old controller its line names the
     page left.
+- 2026-10-05 (#315, [ADR 0038](0038-finalization-has-one-elapsed-time-allowance.md)).
+  "A deterministic Answer … rather than a raw limit error" held for a
+  failed reserved round and not for a working round that failed outright:
+  a provider error that was neither a timeout nor a Transport Failure
+  spoke one error line, showed the raw message and discarded what the Run
+  had found. That Run now ends on the deterministic Answer too.
