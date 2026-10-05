@@ -98,7 +98,7 @@ function start(rounds: Round[], options: { activeWorkDeadlineMs?: number } = {})
   })()
   const cards = () => events.flatMap((event) => (event.type === 'display' ? [event] : []))
   const records = (kind: RunTraceEvent['kind']) => traced.filter((record) => record.kind === kind)
-  return { clock, tts, requests, events, finished, cards, records, degraded, notes, pagesRead }
+  return { clock, tts, requests, events, finished, cards, records, degraded, notes, pagesRead, pipeline }
 }
 
 describe('the Card is published when its fields close (#319)', () => {
@@ -229,9 +229,76 @@ describe('a shown Card stands (#319)', () => {
     expect(run.requests).toHaveLength(1)
     expect(run.events.some((event) => event.type === 'error')).toBe(false)
     expect(run.events.at(-1)).toMatchObject({ type: 'done', outcome: 'done' })
-    expect(run.records('answer_tail_fallback')).toMatchObject([{ round: 1, reason: 'transport_failure' }])
+    // No Finalization was entered for a request that failed: the Run
+    // records the Answer it gave.
+    expect(run.events.at(-1)).toMatchObject({ finalizationCause: 'model_answered' })
+    expect(run.records('answer_tail_fallback')).toMatchObject([{ round: 1, reason: 'request_failed' }])
     expect(run.records('answer_retry')).toEqual([])
     expect(run.degraded).toContain('answer_tail_fell_back')
+  })
+
+  it('keeps the Card when the client retries the attempt that wrote it: the retry’s Answer is not its Answer Tail', async () => {
+    const run = start([
+      async (request) => {
+        text(request, '{"speak":"Early.","display":"# The Card.","resolution":"comp')
+        // The Card is published before the client gives the attempt up.
+        await until(() => run.cards().length > 0, 'the early Card')
+        request.onRetryAttempt?.(2, 3, 'transport')
+        const retried = '{"speak":"Retried.","display":"# The retried Card.","resolution":"completed","run_note":"The retry’s note."}'
+        text(request, retried)
+        return answer(retried)
+      },
+    ])
+    await run.finished
+
+    expect(run.cards()).toEqual([expect.objectContaining({ text: '# The Card.', finalAnswer: true })])
+    expect(run.tts.spoken).toEqual(['Early.'])
+    expect(run.records('answer_tail_fallback')).toMatchObject([{ round: 1, reason: 'request_failed' }])
+    expect(run.notes).not.toContain('The retry’s note.')
+  })
+
+  it('publishes no Card early from an attempt the client has already retried', async () => {
+    const run = start([
+      async (request) => {
+        // The Card closes and the attempt is given up in the same turn of
+        // the stream, before the pipeline has published anything.
+        text(request, '{"speak":"Early.","display":"# The abandoned Card.","resolution":"comp')
+        request.onRetryAttempt?.(2, 3, 'transport')
+        const retried = '{"speak":"Retried.","display":"# The retried Card.","resolution":"completed"}'
+        text(request, retried)
+        return answer(retried)
+      },
+    ])
+    await run.finished
+
+    expect(run.cards()).toEqual([expect.objectContaining({ text: '# The retried Card.', finalAnswer: true })])
+    expect(run.records('early_card')).toEqual([])
+    expect(run.records('answer_tail_fallback')).toEqual([])
+  })
+
+  it('lets a shown Card go at a Steering replan: the corrected objective’s Card carries none of its standings', async () => {
+    const rest = gate()
+    const card = `{"speak":"Both hold.","display":"# Both hold.","asked_items":${BOTH}`
+    const run = start([
+      plan,
+      async (request) => {
+        text(request, card)
+        await rest.promise
+        return answer(`${card},"resolution":"completed"}`)
+      },
+      async () => answer('{"speak":"Corrected.","display":"# The corrected Card."}'),
+    ])
+
+    await until(() => run.cards().length > 0, 'the early Card')
+    run.pipeline.pause()
+    run.pipeline.resume('actually, find the other one')
+    rest.open()
+    await run.finished
+
+    expect(run.cards().map((event) => event.text)).toEqual(['# Both hold.', '# The corrected Card.'])
+    expect(run.cards()[0]).toHaveProperty('askedItems')
+    expect(run.cards()[1]).not.toHaveProperty('askedItems')
+    expect(run.events.at(-1)).toMatchObject({ type: 'done', outcome: 'done' })
   })
 
   it('keeps the Card when the stream breaks for any other reason', async () => {
@@ -246,7 +313,7 @@ describe('a shown Card stands (#319)', () => {
     expect(run.cards()).toEqual([expect.objectContaining({ text: '# The Card.', finalAnswer: true })])
     expect(run.events.some((event) => event.type === 'error')).toBe(false)
     expect(run.events.at(-1)).toMatchObject({ type: 'done', outcome: 'done' })
-    expect(run.records('answer_tail_fallback')).toMatchObject([{ reason: 'transport_failure' }])
+    expect(run.records('answer_tail_fallback')).toMatchObject([{ reason: 'request_failed' }])
   })
 
   it('keeps the Card when the JSON breaks inside the Answer Tail, and spends no Answer Retry', async () => {

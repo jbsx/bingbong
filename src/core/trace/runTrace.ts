@@ -797,10 +797,11 @@ export interface AnswerOutOfOrderEvent {
 /**
  * Why an Answer Tail fell back behind a Card already shown (#319): the
  * round was cut (a deadline, the Finalization Allowance, the client's
- * timeout), the request failed, the object could not be read past the
- * Card, or the round ended with tool calls beside it.
+ * timeout), the request failed — at the transport or after it, or the
+ * client retried the attempt that wrote the Card — the object could not be
+ * read past the Card, or the round ended with tool calls beside it.
  */
-export type AnswerTailFallbackReason = 'cut' | 'transport_failure' | 'broken_json' | 'tool_calls'
+export type AnswerTailFallbackReason = 'cut' | 'request_failed' | 'broken_json' | 'tool_calls'
 
 /**
  * An Answer Tail that fell back (#319, ADR 0074): the Card published early

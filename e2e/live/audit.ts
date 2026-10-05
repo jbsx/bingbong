@@ -1207,7 +1207,7 @@ export interface AuditPopulation {
    * that fell back, by reason, over the attempts that count them (#319);
    * absent when none does.
    */
-  readonly earlyCards?: { readonly published: number; readonly outOfOrder: number; readonly tailFallbacks: Readonly<Record<string, number>> }
+  readonly earlyCards?: PopulationEarlyCards
   /** Transport Failure attempts over the attempts (#271); absent on an audit written before the counter. */
   readonly transportAttempts?: number
   /** Rounds recovered by a Transport Retry over the attempts (#271). */
@@ -2774,6 +2774,13 @@ export interface EarlyCardCounts {
   readonly outOfOrder: number
   /** Answer Tails lost behind a Card already shown, each with its round and the reason. */
   readonly tailFallbacks: readonly { readonly round: number; readonly reason: string }[]
+}
+
+/** A population's early Cards (#319): the attempts' counts summed, the Answer Tails that fell back by reason. */
+export interface PopulationEarlyCards {
+  published: number
+  outOfOrder: number
+  tailFallbacks: Record<string, number>
 }
 
 /** The Run's early Cards (#319), from its records. */
@@ -4902,7 +4909,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
   let earlySentences: number | undefined
   let secondUtterances: number | undefined
   let stoodSentences: number | undefined
-  let earlyCards: { published: number; outOfOrder: number; tailFallbacks: Record<string, number> } | undefined
+  let earlyCards: PopulationEarlyCards | undefined
   let transportAttempts = 0
   let transportRetriesRecovered = 0
   let modelUnreachableRuns = 0

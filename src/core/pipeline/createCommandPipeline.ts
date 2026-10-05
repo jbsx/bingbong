@@ -1659,8 +1659,11 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
         const publishCard = function* (answer: Extract<AssistantTurn, { kind: 'answer' }>, at: number): Generator<UnstampedEvent> {
           // The standings the Card renders (#250): the declaration in
           // declared order, the Answer's own standing where it gave one.
+          // Set either way: a Card published early can be let go by a
+          // Steering replan (#319), and the corrected objective's Card
+          // must not list the standings of the one it replaced.
           const declared = runPlan?.askedItems ?? []
-          if (declared.length > 0) finalAskedItems = settleAskedItems(declared, answer.askedItems)
+          finalAskedItems = declared.length > 0 ? settleAskedItems(declared, answer.askedItems) : undefined
           // Displayed Answers are evidence-grounded (#122, ADR 0028;
           // #141): the live text is the model's own wording with its
           // Identity Slips repaired — nothing else. The declared
@@ -2163,7 +2166,9 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
                       // the next attempt writes its own. One it had closed
                       // was spoken for a reply that never landed.
                       sentenceWatch?.restart()
-                      // As is a Card it had not closed (#319).
+                      // The Card's watch drops the attempt's text too
+                      // (#319). A Card already shown stands, and whatever
+                      // the retry returns is not its Answer Tail.
                       cardWatch?.restart()
                       // The abandoned attempt's thinking (#182) closes with
                       // it, as its own record: concatenating it into the
@@ -2251,7 +2256,13 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
                   const offLanguage = offLanguageRenderings(
                     heldSentence === undefined ? closed : { display: closed.display, speak: heldSentence.sentence.speak },
                   )
-                  if (offLanguage.length === 0 && (declared.length === 0 || askedItemsCovered(askedItemsCoverage(declared, closed.askedItems)))) {
+                  // Nor is a Card of an attempt the client has since
+                  // retried: its reply never landed.
+                  if (
+                    cardWatch?.abandoned !== true &&
+                    offLanguage.length === 0 &&
+                    (declared.length === 0 || askedItemsCovered(askedItemsCoverage(declared, closed.askedItems)))
+                  ) {
                     const at = clock.now()
                     yield* publishCard(closed, at)
                     roundCard = { answer: closed, at }
@@ -2269,7 +2280,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             if (roundCard !== undefined) {
               roundTailFallback =
                 cardWatch?.abandoned === true
-                  ? 'transport_failure'
+                  ? 'request_failed'
                   : turn.kind !== 'answer'
                     ? 'tool_calls'
                     : turn.shape === 'malformed' || turn.shape === 'off_contract'
@@ -2281,6 +2292,8 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
               // end, as before, and counted.
               traceRun?.(() => ({ turnId, kind: 'answer_out_of_order', round: llmRound }))
             }
+            // Read after the Card has stood: a round whose Card ended the
+            // Run ended with an Answer, whatever it returned beside it.
             roundTurnKind = turn.kind
             roundUsage = turn.usage
             roundOutcome = 'completed'
@@ -2337,7 +2350,11 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
               // left it in. No later round writes the Answer again, and
               // nothing about the failure is surfaced.
               turn = roundCard.answer
-              roundTailFallback = roundOutcome === 'deadline' || roundOutcome === 'allowance' || roundOutcome === 'timeout' ? 'cut' : 'transport_failure'
+              // Only the deadline and the allowance entered Finalization
+              // for this round, and theirs is the cause the Run records; a
+              // timeout or a failed request enters none here, and the Run
+              // records the Answer it gave.
+              roundTailFallback = roundOutcome === 'deadline' || roundOutcome === 'allowance' || roundOutcome === 'timeout' ? 'cut' : 'request_failed'
             } else if (roundHeldAnswer !== undefined) {
               turn = roundHeldAnswer
             } else {
