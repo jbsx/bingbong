@@ -222,6 +222,20 @@ describe('the llm_round record (#191)', () => {
     })
   })
 
+  it('names the reason for the rung, and the override when the client says its rung outranked the request\u2019s (#321)', () => {
+    const round = { round: 3, attempt: 1, role: 'orchestrator', outcome: 'completed', reasoningChars: 0, request: { toolResults: 0, chars: 20 } } as const
+    expect(llmRoundEvent({ ...round, sent: { model: 'glm-5.3', reasoningEffort: 'low' }, reasoningEffort: 'low', rungReason: 'finalization' })).toMatchObject({
+      reasoningEffort: 'low',
+      rungReason: 'finalization',
+    })
+    // The override's rung is the one on the wire, so its reason is the one recorded.
+    expect(
+      llmRoundEvent({ ...round, sent: { model: 'glm-5.3', reasoningEffort: 'low', rungOverridden: true }, reasoningEffort: 'max', rungReason: 'tier' }),
+    ).toMatchObject({ reasoningEffort: 'low', rungReason: 'override' })
+    // A loop that names none records none.
+    expect(llmRoundEvent(round)).not.toHaveProperty('rungReason')
+  })
+
   it("prefers the rung the client actually sent over the request's, and omits what nobody reported", () => {
     expect(
       llmRoundEvent({

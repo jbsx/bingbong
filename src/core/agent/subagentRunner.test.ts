@@ -1717,8 +1717,8 @@ describe("a delegated worker's reasoning records (#183)", () => {
       // client retries — and each attempt's record counts the reasoning it
       // streamed (#218) and how long its first fragment took from its own
       // dispatch (#256): nothing, on a clock the test never advances.
-      { round: 1, attempt: 1, role: 'subagent', outcome: 'empty', reasoningChars: 'the provider hung up'.length, firstTokenMs: 0, sent: { model: 'glm-5.3-flash', promptHash: 'abc123', reasoningEffort: 'low' }, reasoningEffort: 'low', request: { toolResults: 0, chars: expect.any(Number) }, agentId: 'a-8' },
-      { round: 1, attempt: 2, role: 'subagent', outcome: 'completed', reasoningChars: 'second time lucky'.length, firstTokenMs: 0, sent: { model: 'glm-5.3-flash', promptHash: 'abc123', reasoningEffort: 'low' }, usage: { promptTokens: 40, completionTokens: 4 }, reasoningEffort: 'low', request: { toolResults: 0, chars: expect.any(Number) }, agentId: 'a-8' },
+      { round: 1, attempt: 1, role: 'subagent', outcome: 'empty', reasoningChars: 'the provider hung up'.length, firstTokenMs: 0, sent: { model: 'glm-5.3-flash', promptHash: 'abc123', reasoningEffort: 'low' }, reasoningEffort: 'low', rungReason: 'subagent', request: { toolResults: 0, chars: expect.any(Number) }, agentId: 'a-8' },
+      { round: 1, attempt: 2, role: 'subagent', outcome: 'completed', reasoningChars: 'second time lucky'.length, firstTokenMs: 0, sent: { model: 'glm-5.3-flash', promptHash: 'abc123', reasoningEffort: 'low' }, usage: { promptTokens: 40, completionTokens: 4 }, reasoningEffort: 'low', rungReason: 'subagent', request: { toolResults: 0, chars: expect.any(Number) }, agentId: 'a-8' },
     ])
   })
 

@@ -169,6 +169,47 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
       })
     })
 
+    describe('the reason for the rung (#321, ADR 0075)', () => {
+      it('names the Run Plan rung, then the tier\u2019s, then Finalization\u2019s, as the rung moves', () => {
+        const epoch = createEffortEpoch({ clock: new FakeClock() })
+        expect(epoch.rungReason).toBe('run_plan')
+
+        expect(epoch.declareTier('investigation', true)).toBe(true)
+        expect(epoch.rungReason).toBe('tier')
+
+        epoch.enterFinalization('deadline_reached')
+        expect(epoch.rungReason).toBe('finalization')
+        // The reserved Answer round is Finalization too.
+        expect(epoch.beginToolRound()).toBe(true)
+        expect(epoch.phase.kind).toBe('answer_only')
+        expect(epoch.rungReason).toBe('finalization')
+      })
+
+      it('names the tier after a Steering replan, declared or not', () => {
+        const epoch = createEffortEpoch({ clock: new FakeClock() })
+        expect(epoch.replan()).toBe(true)
+        expect(epoch.rungReason).toBe('tier')
+      })
+
+      it('names Finalization when it opens before any declaration', () => {
+        const epoch = createEffortEpoch({ clock: new FakeClock() })
+        epoch.enterFinalization('no_progress')
+        expect(epoch.rungReason).toBe('finalization')
+      })
+
+      it('names the Browse Subagent in every phase of a worker\u2019s epoch', () => {
+        // A worker's rung is `low` and so is Finalization's: the reason is
+        // what tells the two apart.
+        const epoch = createEffortEpoch({
+          clock: new FakeClock(),
+          subagent: { toolRoundBudget: SUBAGENT_LIMITS.maxToolRoundsPerTask, deadline: { expired: () => false } },
+        })
+        expect(epoch.rungReason).toBe('subagent')
+        epoch.enterFinalization('budget_exhausted')
+        expect(epoch.rungReason).toBe('subagent')
+      })
+    })
+
     it('raises the rung from the round after a tier escalation', () => {
       const epoch = createEffortEpoch({ clock: new FakeClock(), initialTier: 'lookup' })
       expect(epoch.reasoningEffort).toBe('high')

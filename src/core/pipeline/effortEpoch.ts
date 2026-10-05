@@ -4,7 +4,7 @@
 
 import { DEFAULT_EFFORT_TIER, effortTierLabel, type EffortTier } from './runPlan.ts'
 import { createSuspendableClock, type Clock } from '../ports/clock.ts'
-import type { ReasoningEffort } from '../ports/llm'
+import type { ReasoningEffort, RungReason } from '../ports/llm'
 import type { SubagentSharedDeadline } from '../agent/subagentRails'
 import type { FinalizationCause } from '../session/runJournal'
 import { BLOCKER_HELP_BY_SIGNAL, type BlockerSignal, type BlockerWall } from '../browser/blockerNudge.ts'
@@ -127,6 +127,12 @@ export const RUN_PLAN_REASONING_EFFORT: ReasoningEffort = 'medium'
 function reasoningEffortFor(tier: EffortTier, phase: EffortPhase, runPlanDeclared: boolean): ReasoningEffort {
   if (phase.kind !== 'working') return FINALIZATION_REASONING_EFFORT
   return runPlanDeclared ? TIER_REASONING_EFFORT[tier] : RUN_PLAN_REASONING_EFFORT
+}
+
+/** Which arm of {@link reasoningEffortFor} answered (#321): the reason beside the rung, never read from its value. */
+function rungReasonFor(phase: EffortPhase, runPlanDeclared: boolean): Exclude<RungReason, 'subagent' | 'override'> {
+  if (phase.kind !== 'working') return 'finalization'
+  return runPlanDeclared ? 'tier' : 'run_plan'
 }
 
 /**
@@ -724,6 +730,12 @@ export interface EffortEpoch {
    * acquisition returns it to the tier's rung.
    */
   readonly reasoningEffort: ReasoningEffort
+  /**
+   * Why the next round runs at that rung (#321, ADR 0075): derived with
+   * the rung, from the same tier, phase and declaration, so the two cannot
+   * disagree. Never `override`: the client alone knows of that one.
+   */
+  readonly rungReason: Exclude<RungReason, 'override'>
   readonly tierRounds: number
   readonly cumulativeRounds: number
   readonly phase: EffortPhase
@@ -1100,6 +1112,9 @@ export function createEffortEpoch(deps: {
     },
     get reasoningEffort() {
       return subagent !== undefined ? SUBAGENT_REASONING_EFFORT : reasoningEffortFor(tier, phase, runPlanDeclared)
+    },
+    get rungReason() {
+      return subagent !== undefined ? 'subagent' : rungReasonFor(phase, runPlanDeclared)
     },
     get tierRounds() {
       return tierRounds

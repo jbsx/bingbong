@@ -736,7 +736,10 @@ joined to per-round latency from the perf `llm` spans by turn id and stamp, the
 way `trace:ui` joins them. Finalization is read from the app's own marks: the
 Finalize Instruction riding a result, an `allowance` outcome, the Finalization
 rung (#215, skipped under a reasoning override), and the last round replying
-with no tool call under a known Finalization Cause. Progress is read from the
+with no tool call under a known Finalization Cause. Since Run Trace version
+14 a round names the reason for its rung (`rungReason`, #321), and the
+Finalization rung is read from that reason alone; a round below version 14
+is read by the rung's value, `low` under a higher tier rung, as before. Progress is read from the
 result texts the app wrote — the navigated line and page header, the page
 signature, `end of page`, the no-progress Notice — and the search streak is the
 Search Loop rail's own rule, imported from `searchLoopRule.ts` rather than
@@ -1203,6 +1206,21 @@ population's rounds that streamed, with every round's latency listed beside
 the attempt's rounds. The Fix Ledger reads all of them. None of these moves
 the digest either.
 
+**The rounds that wrote an Answer** (#321, ADR 0075) are marked beside the
+rounds, by round number: the one whose Answer was taken, the ones whose
+Answer was sent back, and the Answer Retries. They are read from the
+records the Run wrote after each round (`answer_retry`, `malformed_answer`,
+`off_language_answer`, `asked_items_shape`, `early_card`) and from whether
+the Answer shown was a model's. A round's kind does not move: a first
+Answer that was sent back is still a failed round, and its retry is still
+Finalization. With the marks the audit reports **reasoning by kind of
+round**: the reasoning characters, output tokens and seconds of the
+bookkeeping-only rounds (the rounds of kind Bookkeeping) and of the rounds
+that wrote an Answer, per attempt and, in a section of its own, per
+population with a mean over the Runs. An audit written before the marks
+prints "not counted" and has no such section. Reported, never gated, and
+outside the digest.
+
 They name check ids and URLs only, never key text: the reviewer is told to
 refer to checks by id, every output is checked for any key string or any run of
 eight consecutive words of one before it is written, and `audit.test.ts`
@@ -1312,6 +1330,17 @@ reads 103 on initials (13, 16, 18, 19, 20 and 17) and 91 on follow-ups (13,
 judgement counter, since an overrule moves it. The Answer Checkpoint
 counters are not recounted: no trace before version 6 says what an Answer
 carried, so they read as nothing there.
+
+`Reasoning characters per Run in bookkeeping-only rounds` and `Reasoning
+characters per Run in rounds that wrote an Answer` (#321) are means over the
+Runs, summed from each attempt's rounds. An audit that marked its Answer
+rounds is read by its marks. One written before them is recounted from the
+shape of its rounds, with no trace and no reviewer: a round that completed
+with no call and was not the Run's last was sent back, the last attempt of
+the round after it is the Answer Retry, and a last round that completed
+with no call wrote the Answer taken. `main-4dc72e9` reads 7,504 and 4,511
+on initials and 2,558 and 9,354 on follow-ups. Neither line is gated here;
+#314's capture gates on their sum.
 
 The counters #263 and #264 were gated on sit in the expander beside the
 Unavailable Landing rows (#297): `Consent dismissals`, `Hand consent clicks`,

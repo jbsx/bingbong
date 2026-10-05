@@ -524,6 +524,8 @@ describe('the Run Trace file', () => {
     ])
     // A worker runs at the Subagent rung (#166), and the record says so.
     expect(worker.map((record) => record.reasoningEffort)).toEqual(['low', 'low'])
+    // And why (#321): `low` is Finalization's rung too, and the reason tells them apart.
+    expect(worker.map((record) => record.rungReason)).toEqual(['subagent', 'subagent'])
     for (const record of worker) {
       expect(record.runId).toBe('run-1')
       expect(record.sessionId).toBe('session-1')

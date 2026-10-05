@@ -585,6 +585,55 @@ describe('the consent wall and Blocked Action counters (#297)', () => {
   })
 })
 
+describe('reasoning by kind of round (#321, ADR 0075)', () => {
+  const BOOKKEEPING_ONLY = 'Reasoning characters per Run in bookkeeping-only rounds'
+  const ANSWER = 'Reasoning characters per Run in rounds that wrote an Answer'
+  const valueOf = (counters: ReturnType<typeof countersOf>, label: string) => counters.find((counter) => counter.label === label)?.value
+
+  function sideOf(id: string, key: 'initial' | 'followUp'): { population: AuditPopulation; attempts: AuditAttempt[] } {
+    const listed = family(committed, id)
+    const relation = key === 'initial' ? 'initial' : 'revised_objective'
+    return {
+      population: listed.aggregate!.audit.populations[key],
+      attempts: listed.passes.flatMap((pass) => pass.audit?.attempts ?? []).filter((attempt) => attempt.mechanical.relation === relation),
+    }
+  }
+
+  it('recounts both lines from the rounds of main-4dc72e9, audited before the marks: a mean over the Runs', () => {
+    const initial = sideOf('main-4dc72e9', 'initial')
+    // No population of the capture wrote the sums; the 12 initials hold
+    // 90,043 characters in bookkeeping-only rounds and 54,134 in Answer rounds.
+    expect(initial.population.roundCosts).toBeUndefined()
+    expect(initial.attempts).toHaveLength(12)
+    const counters = countersOf(initial.population, initial.attempts)
+    expect([valueOf(counters, BOOKKEEPING_ONLY), valueOf(counters, ANSWER)]).toEqual([7_504, 4_511])
+    for (const label of [BOOKKEEPING_ONLY, ANSWER]) expect(counters.find((counter) => counter.label === label)).toMatchObject({ judgement: false, over: null })
+
+    // The six follow-ups: 15,346 and 56,126. The two populations hold the 105,389 of the 21 rounds between them.
+    const followUp = sideOf('main-4dc72e9', 'followUp')
+    const after = countersOf(followUp.population, followUp.attempts)
+    expect([valueOf(after, BOOKKEEPING_ONLY), valueOf(after, ANSWER)]).toEqual([2_558, 9_354])
+  })
+
+  it('shows both lines for every committed family, old or new', () => {
+    for (const listed of committed.families) {
+      const attempts = listed.passes.flatMap((pass) => pass.audit?.attempts ?? []).filter((attempt) => attempt.mechanical.relation === 'initial')
+      if (attempts.length === 0) continue
+      const counters = countersOf(listed.aggregate?.audit.populations.initial ?? populationOf('initial', attempts), attempts)
+      for (const label of [BOOKKEEPING_ONLY, ANSWER]) expect(valueOf(counters, label), `${listed.id}: ${label}`).toEqual(expect.any(Number))
+    }
+  })
+
+  it('reads the sums an aggregate wrote where no per-Pass audit holds the rounds, and nothing where neither does', () => {
+    const { population } = sideOf('main-4dc72e9', 'initial')
+    const written = { ...population, roundCosts: { attempts: 4, answerRounds: { taken: 4, sentBack: 0, retries: 0 }, bookkeepingOnly: { rounds: 2, reasoningChars: 1_000, completionTokens: 0, latencyMs: 0 }, answer: { rounds: 4, reasoningChars: 2_002, completionTokens: 0, latencyMs: 0 } } }
+    const counters = countersOf(written, [])
+    expect([valueOf(counters, BOOKKEEPING_ONLY), valueOf(counters, ANSWER)]).toEqual([250, 501])
+    const none = countersOf(population, [])
+    expect([valueOf(none, BOOKKEEPING_ONLY), valueOf(none, ANSWER)]).toEqual([null, null])
+  })
+})
+
 describe('the committed Round Audits', () => {
   it('lists the families in capture order, Baselines by the id convention, each with its Reference', () => {
     const ids = committed.families.map((listed) => listed.id)

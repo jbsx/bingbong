@@ -616,6 +616,8 @@ export function createOpenAiLlmClient(deps: OpenAiLlmClientDeps): LlmClient {
       model: endpoint.model,
       promptHash: promptHashOf(messages[0]?.content ?? ''),
       ...(effort !== undefined ? { reasoningEffort: effort } : {}),
+      // And whose rung it is (#321): the round's record names the override as the reason.
+      ...(effortOverride !== undefined ? { rungOverridden: true as const } : {}),
     }
     // Streaming (#47): a round streams only when the caller subscribed a
     // delta listener (the orchestrator pipeline does; subagent clients

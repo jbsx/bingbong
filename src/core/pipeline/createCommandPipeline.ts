@@ -10,6 +10,7 @@ import type {
   LlmRetryReason,
   LlmStreamDelta,
   ReasoningEffort,
+  RungReason,
   ToolCall,
   ToolResult,
   ToolResultOutcome,
@@ -2015,7 +2016,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           // shape and rung as it was sent — captured once the request is
           // built, so an attempt closed after an escalation still says what
           // it went out under — and the usage of the attempt that returned.
-          let sentRound: { readonly request: LlmRequestShape; readonly reasoningEffort: ReasoningEffort } | undefined
+          let sentRound: { readonly request: LlmRequestShape; readonly reasoningEffort: ReasoningEffort; readonly rungReason: RungReason } | undefined
           let roundUsage: AssistantTurn['usage']
           // How the round ended (#218): set where the outcome is decided
           // — the return, or the catch that maps the abort back to what
@@ -2221,7 +2222,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
                 : {}),
               signal: armedRound.signal,
             }
-            if (llmRounds) sentRound = { request: llmRequestShape(request), reasoningEffort: request.reasoningEffort ?? effortEpoch.reasoningEffort }
+            if (llmRounds) sentRound = { request: llmRequestShape(request), reasoningEffort: request.reasoningEffort ?? effortEpoch.reasoningEffort, rungReason: effortEpoch.rungReason }
             const completion = llm.complete(request)
             // The sentence is spoken when it closes (#312), and the round
             // goes on: whichever comes first, the sentence or the round's

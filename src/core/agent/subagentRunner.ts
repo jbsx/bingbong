@@ -728,6 +728,7 @@ export async function runSubagent(deps: RunSubagentDeps, options: RunSubagentOpt
       ...closed,
       role: 'subagent',
       ...(request.reasoningEffort !== undefined ? { reasoningEffort: request.reasoningEffort } : {}),
+      rungReason: epoch.rungReason,
       request: llmRequestShape(request),
       ...(options.agentId !== undefined ? { agentId: options.agentId } : {}),
     })

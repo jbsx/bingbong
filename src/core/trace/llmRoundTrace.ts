@@ -24,6 +24,7 @@ import {
   type LlmRequest,
   type LlmStreamDelta,
   type ReasoningEffort,
+  type RungReason,
   type TokenUsage,
 } from '../ports/llm'
 import type { LlmRequestShape, LlmRoundEvent, LlmRoundFailure, LlmRoundOutcome, LlmRoundRole } from './runTrace'
@@ -195,6 +196,8 @@ export interface TracedLlmRound extends LlmRound {
   readonly role: LlmRoundRole
   /** The rung the request asked for; the client's own word outranks it when reported. */
   readonly reasoningEffort?: ReasoningEffort
+  /** Why the request asked for that rung (#321); the client's override outranks it as it outranks the rung. */
+  readonly rungReason?: RungReason
   readonly request: LlmRequestShape
   readonly agentId?: string
 }
@@ -202,6 +205,7 @@ export interface TracedLlmRound extends LlmRound {
 /** One attempt as the file records it. */
 export function llmRoundEvent(input: TracedLlmRound): LlmRoundEvent {
   const effort = input.sent?.reasoningEffort ?? input.reasoningEffort
+  const rungReason: RungReason | undefined = input.sent?.rungOverridden === true ? 'override' : input.rungReason
   return {
     kind: 'llm_round',
     round: input.round,
@@ -212,6 +216,7 @@ export function llmRoundEvent(input: TracedLlmRound): LlmRoundEvent {
     ...(input.firstTokenMs !== undefined ? { firstTokenMs: input.firstTokenMs } : {}),
     ...(input.sent !== undefined ? { model: input.sent.model } : {}),
     ...(effort !== undefined ? { reasoningEffort: effort } : {}),
+    ...(rungReason !== undefined ? { rungReason } : {}),
     ...(input.usage !== undefined ? { usage: input.usage } : {}),
     ...(input.sent?.promptHash !== undefined ? { promptHash: input.sent.promptHash } : {}),
     request: input.request,

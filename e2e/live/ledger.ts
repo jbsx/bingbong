@@ -45,6 +45,7 @@ import {
   pastTheEndReadsOver,
   populationOf,
   recountUnavailableByTitle,
+  roundCostsOver,
   sameSourceUnsupportedRoundsMissedOver,
   replaySearchStreaks,
   emptyLandingsOf,
@@ -61,6 +62,7 @@ import {
   type AuditSetOutput,
   type EmptyLandingCounts,
   type PageArrivalCounts,
+  type PopulationRoundCosts,
   type RoundKind,
 } from './audit.ts'
 import { emptyLandingsKnown, recountEmptyLandings, saysEmptyLandings } from './emptyLandingRecount.ts'
@@ -635,6 +637,11 @@ function pageArrivalsOver(population: Partial<AuditPopulation>, attempts: readon
   return known === 0 ? undefined : totals
 }
 
+/** The reasoning characters of one kind of round as a mean over the Runs counted (#321); nothing where none was. */
+function reasoningPerRun(costs: PopulationRoundCosts | undefined, kind: 'bookkeepingOnly' | 'answer'): number | undefined {
+  return costs === undefined || costs.attempts === 0 ? undefined : Math.round(costs[kind].reasoningChars / costs.attempts)
+}
+
 /** The Answer Checkpoint counters (#288): offered, accepted and dropped, then the dropped by reason. */
 function answerCheckpointCounters(counts: AuditPopulation['answerCheckpoints'], attempts: number): [string, number | undefined][] {
   const said = counts !== undefined && counts.notRecorded < attempts ? counts : undefined
@@ -704,6 +711,8 @@ export function countersOf(population: AuditPopulation, attempts: readonly Audit
   // reads as nothing where no attempt's traces were on disk.
   const emptyLandings = attempts.length > 0 && attempts.every((attempt) => saysEmptyLandings(attempt.mechanical)) ? older.emptyLandings : (recounted?.emptyLandings ?? undefined)
   const pageArrivals = pageArrivalsOver(older, attempts)
+  // #321: a family with no per-Pass audit has no rounds to sum, and reads what its aggregate wrote.
+  const roundCosts = roundCostsOver(attempts) ?? older.roundCosts
   // The counter the ledger compared first keeps the reading its rule gave:
   // an audit under the same-intent rule stays as written, one under the
   // consecutive rule is restated with its Unavailable Landings and its
@@ -799,6 +808,12 @@ export function countersOf(population: AuditPopulation, attempts: readonly Audit
     mechanical('Attempts with Identity Slips not recorded', older.identitySlipsNotRecorded),
     mechanical('Malformed Answers', older.malformedAnswers),
     mechanical('Answer Retries', older.answerRetries),
+    // #321, ADR 0075: the reasoning in the two kinds of round #314 moves, a
+    // mean over the Runs. Summed from each attempt's rounds, by the marks its
+    // audit wrote or, for an audit written before them, by the shape of the
+    // rounds, so every audit has both lines. Reported, never gated here.
+    mechanical('Reasoning characters per Run in bookkeeping-only rounds', reasoningPerRun(roundCosts, 'bookkeepingOnly')),
+    mechanical('Reasoning characters per Run in rounds that wrote an Answer', reasoningPerRun(roundCosts, 'answer')),
     // #286: an audit keeps no Answer text, so one written before the counter
     // is recounted from the Answers the reading of the captures named rather
     // than read as nothing. The population's count is of the attempts that

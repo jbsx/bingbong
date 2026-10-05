@@ -12,6 +12,7 @@ import { similarQueries as ruleSimilarQueries } from '../../src/core/pipeline/se
 import { createSearchLoopRail, SEARCH_LOOP_NUDGE, searchQueryFromUrl as railSearchQueryFromUrl, type SearchObservation } from '../../src/core/pipeline/searchLoopRail'
 import type { PerfSpanRecord } from '../../src/core/perf/perfTracer'
 import type { TraceRecord, TracedObservation } from '../../src/core/trace/runTrace'
+import { RUN_TRACE_VERSION } from '../../src/core/trace/runTrace'
 import type { SnapshotRef } from '../../src/core/browser/snapshot'
 import {
   AUDIT_COUNTS_NOTE,
@@ -74,6 +75,15 @@ import {
   VERIFIED_OR_UNASKED_HEADING,
   WITHHELD_KEY_TEXT,
   withholdKeyText,
+  RUNG_REASON_TRACE_VERSION,
+  ROUND_COSTS_HEADING,
+  answerRoundsByShapeOf,
+  answerRoundsOf,
+  digestPayloadOf,
+  roundCostsOf,
+  roundCostsOver,
+  type AnswerRounds,
+  type AuditSetOutput,
   type AuditAttempt,
   type AuditJudgement,
   type AuditMechanical,
@@ -168,6 +178,12 @@ interface RoundSpec {
   readonly reasoning?: string
   /** How long the attempt waited for its first fragment (#256, ADR 0057) — a trace written after the field was kept. */
   readonly firstTokenMs?: number
+  /** Why the round got its rung (#321) — a trace written at version 14 or later, which the record then says. */
+  readonly rungReason?: string
+  /** How much the round reasoned, where a test counts it (#321); 40 characters when unset. */
+  readonly reasoningChars?: number
+  /** Records the Run wrote after this round and before the next (#321): what became of its Answer. */
+  readonly after?: readonly Record<string, unknown>[]
 }
 
 const PAGE = (title: string, url: string, signature: string, text = ''): string => `navigated: url=${url} title="${title}"\n# ${title} — ${url}\nviewport 985x575 scroll 0/4000\nsignature ${signature}\n[1] link "Home" href="${url}"\npage text:\n${text}`
@@ -188,10 +204,11 @@ function traceOf(rounds: readonly RoundSpec[], extra: readonly Record<string, un
       attempt,
       role: 'orchestrator',
       outcome,
-      reasoningChars: 40,
+      reasoningChars: spec.reasoningChars ?? 40,
       ...(spec.firstTokenMs !== undefined ? { firstTokenMs: spec.firstTokenMs } : {}),
       model: 'model-o',
       reasoningEffort: spec.effort ?? 'max',
+      ...(spec.rungReason !== undefined ? { rungReason: spec.rungReason, v: RUNG_REASON_TRACE_VERSION } : {}),
       ...(outcome === 'completed' ? { usage: { promptTokens: 1000 + spec.round, completionTokens: 50 } } : {}),
       request: { toolResults: spec.round - 1, chars: 500 * spec.round },
     })
@@ -236,6 +253,7 @@ function traceOf(rounds: readonly RoundSpec[], extra: readonly Record<string, un
         ...(call.resultPick !== undefined ? { resultPick: call.resultPick } : {}),
       })
     }
+    records.push(...(spec.after ?? []))
   }
   records.push(...extra)
   return records as unknown as TraceRecord[]
@@ -456,8 +474,8 @@ describe('the mechanical classification', () => {
     expect(JSON.stringify(mechanical)).not.toContain('secret thought')
     expect((round.calls[0]!.args.note as string).length).toBeLessThanOrEqual(201)
     expect(round.calls[0]!.resultHead!.length).toBeLessThanOrEqual(241)
-    // Well under the 5,000-character inputs above; the headroom is the per-attempt counters added since (#276, #281, #312).
-    expect(JSON.stringify(mechanical).length).toBeLessThan(4_600)
+    // Well under the 5,000-character inputs above; the headroom is the per-attempt counters added since (#276, #281, #312, #321).
+    expect(JSON.stringify(mechanical).length).toBeLessThan(4_900)
   })
 
   it('tags a follow-up’s re-acquisition of a page the initial checkpointed as inherited and without Progress', () => {
@@ -504,6 +522,32 @@ describe('the mechanical classification', () => {
     ]
     const met = classifyAttempt(inputOf({ traceRecords: traceOf(answered, [EXTRA[0]!, { ...identity, at: T0 + 3_000, kind: 'pipeline_event', event: { type: 'done', turnId: TURN, outcome: 'done', resolution: 'completed', finalizationCause: 'objective_met', at: T0 + 3_000 } }]) }))
     expect(met.rounds.map((round) => round.kind)).toEqual(['acquisition_with_progress', 'finalization'])
+  })
+
+  it('reads the Finalization rung from the reason a round names for its rung, and never from the rung’s value (#321, ADR 0075)', () => {
+    // A round at `low` for a reason that is not Finalization's: no trace of
+    // this tree holds one, and ADR 0075 adds two. By the rung's value it
+    // would be Finalization, and every round after it with it.
+    const rounds: RoundSpec[] = [
+      { round: 1, at: 1_000, effort: 'max', rungReason: 'tier', calls: [{ name: 'record_evidence', args: { kind: 'web', observation: 'a claim', source_url: SPEC_URL }, result: 'Session Evidence recorded: memory-1', checkpoint: 'accepted' }] },
+      { round: 2, at: 2_000, effort: 'low', rungReason: 'tier', calls: [{ name: 'navigate', args: { url: SPEC_URL }, result: PAGE('Watch spec', SPEC_URL, 'aaaa1111') }] },
+      { round: 3, at: 3_000, effort: 'max', rungReason: 'tier', calls: [{ name: 'navigate', args: { url: OTHER_URL }, result: PAGE('Other', OTHER_URL, 'dddd4444') }] },
+      { round: 4, at: 4_000, effort: 'low', rungReason: 'finalization', calls: [{ name: 'record_evidence', args: { kind: 'web', observation: 'a claim', source_url: OTHER_URL }, result: 'Session Evidence recorded: memory-2', checkpoint: 'accepted' }] },
+      { round: 5, at: 5_000, effort: 'low', rungReason: 'finalization' },
+    ]
+    const named = classifyAttempt(inputOf({ traceRecords: traceOf(rounds, EXTRA) }))
+    expect(named.rounds.map((round) => round.kind)).toEqual(['bookkeeping', 'acquisition_with_progress', 'acquisition_with_progress', 'finalization', 'finalization'])
+
+    // The same rounds from a trace written before the reason: the audit
+    // keeps its rule, and the round at `low` opens Finalization.
+    const unnamed = classifyAttempt(inputOf({ traceRecords: traceOf(rounds.map(({ rungReason: _, ...spec }) => spec), EXTRA) }))
+    expect(unnamed.rounds.map((round) => round.kind)).toEqual(['bookkeeping', 'finalization', 'finalization', 'finalization', 'finalization'])
+
+    // A round that names the override was sent at no rung of the Run's own:
+    // the app's other marks still open Finalization, and the rung does not.
+    const overridden = classifyAttempt(inputOf({ traceRecords: traceOf(rounds.map((spec) => ({ ...spec, effort: 'low', rungReason: 'override' })), EXTRA), reasoningEffortOverride: 'low' }))
+    expect(overridden.rounds.map((round) => round.kind)).toEqual(['bookkeeping', 'acquisition_with_progress', 'acquisition_with_progress', 'bookkeeping', 'finalization'])
+    expect(RUNG_REASON_TRACE_VERSION).toBe(RUN_TRACE_VERSION)
   })
 
   it('pins its copies of the budgets, rungs and marker sentences to the app’s own constants', () => {
@@ -1279,6 +1323,176 @@ describe('Malformed Answers and Answer Retries (#245)', () => {
     expect(holding.populations.initial.malformedAnswers).toBe(0)
     expect(formatAuditSet(holding)).toContain('replied with a Malformed Answer in round 7')
     expect(other.caveats).toEqual([])
+  })
+})
+
+describe('the rounds that wrote an Answer, and what they and the bookkeeping-only rounds cost (#321, ADR 0075)', () => {
+  const event = (at: number, body: Record<string, unknown>): Record<string, unknown> => ({ ...identity, at: T0 + at, kind: 'pipeline_event', event: { turnId: TURN, at: T0 + at, ...body } })
+  const PLAN = EXTRA[0]!
+  const answerShown = (at: number, deterministic = false): Record<string, unknown> => event(at, { type: 'display', text: 'The answer.', finalAnswer: true, ...(deterministic ? { deterministicAnswer: true } : {}) })
+  const done = (at: number, finalizationCause = 'objective_met'): Record<string, unknown> => event(at, { type: 'done', outcome: 'done', resolution: 'completed', finalizationCause })
+  const record = (at: number, kind: string, fields: Record<string, unknown> = {}): Record<string, unknown> => ({ ...identity, at: T0 + at, kind, ...fields })
+  const perfOf = (rounds: readonly RoundSpec[]): PerfSpanRecord[] => rounds.map((spec) => ({ turnId: TURN, stage: 'llm', durMs: 1_000 * spec.round, at: T0 + spec.at - 1, t: spec.at }))
+  const READ_ROUND: RoundSpec = { round: 1, at: 1_000, reasoningChars: 300, calls: [{ name: 'navigate', args: { url: SPEC_URL }, result: PAGE('Watch spec', SPEC_URL, 'aaaa1111') }] }
+  const RECORD_ROUND: RoundSpec = { round: 2, at: 2_000, reasoningChars: 3_000, calls: [{ name: 'record_evidence', args: { kind: 'web', observation: 'a claim', source_url: SPEC_URL }, result: 'Session Evidence recorded: memory-1', checkpoint: 'accepted' }] }
+  const classify = (rounds: readonly RoundSpec[], extra: readonly Record<string, unknown>[]) => classifyAttempt(inputOf({ traceRecords: traceOf(rounds, [PLAN, ...extra]), perfRecords: perfOf(rounds) }))
+
+  // A Run whose first Answer left an Asked Item out: sent back, and written again.
+  const SENT_BACK: RoundSpec[] = [
+    READ_ROUND,
+    RECORD_ROUND,
+    { round: 3, at: 3_000, reasoningChars: 5_000, after: [record(3_100, 'asked_items_shape', { missing: ['the price'], undeclared: [], retried: true, listOnly: true })] },
+    { round: 4, at: 4_000, reasoningChars: 700, after: [record(4_100, 'answer_retry', { role: 'orchestrator', outcome: 'on_contract' })] },
+  ]
+
+  it('marks the Answer taken, beside a round whose kind does not move', () => {
+    const rounds: RoundSpec[] = [READ_ROUND, RECORD_ROUND, { round: 3, at: 3_000, reasoningChars: 5_000 }]
+    const answered = classify(rounds, [answerShown(3_500), done(3_600)])
+    expect(answered.answerRounds).toEqual({ taken: [3], sentBack: [], retries: [] })
+    expect(answered.rounds.map((round) => round.kind)).toEqual(['acquisition_with_progress', 'bookkeeping', 'finalization'])
+    // Beside the rounds: the digest a cached judgement is keyed on holds none of it.
+    expect(JSON.stringify(digestPayloadOf(answered))).not.toMatch(/answerRounds|roundCosts/)
+  })
+
+  it('marks a first Answer the application sent back, and the Answer Retry after it, and leaves the first a failed round', () => {
+    const mechanical = classify(SENT_BACK, [answerShown(4_500), done(4_600)])
+    expect(mechanical.answerRounds).toEqual({ taken: [], sentBack: [3], retries: [4] })
+    expect(mechanical.rounds.map((round) => `${round.kind}: ${round.reason}`).slice(2)).toEqual([
+      'failed_round: the round completed with no tool call and no Answer',
+      'finalization: the reserved Answer',
+    ])
+    // The records move no round and no digest: an audit of the same rounds without them reads the same.
+    const plain = classify(SENT_BACK.map(({ after: _, ...spec }) => spec), [answerShown(4_500), done(4_600)])
+    expect(mechanical.rounds).toEqual(plain.rounds)
+    expect(mechanical.digestHash).toBe(plain.digestHash)
+  })
+
+  it('reads each way an Answer is sent back from its own record', () => {
+    const retried = [record(4_100, 'answer_retry', { role: 'orchestrator', outcome: 'on_contract' })]
+    const sentBackBy = (after: Record<string, unknown>): AnswerRounds =>
+      classify([READ_ROUND, { round: 2, at: 2_000, after: [after] }, { round: 3, at: 3_000, after: retried }], [answerShown(3_500), done(3_600)]).answerRounds!
+    const expected = { taken: [], sentBack: [2], retries: [3] }
+    expect(sentBackBy(record(2_100, 'malformed_answer', { role: 'orchestrator', text: '{', chars: 1, error: 'x' }))).toEqual(expected)
+    expect(sentBackBy(record(2_100, 'off_language_answer', { round: 2, renderings: [], retried: true, text: 'x', chars: 1 }))).toEqual(expected)
+    expect(sentBackBy(record(2_100, 'asked_items_shape', { missing: ['x'], undeclared: [], retried: true }))).toEqual(expected)
+  })
+
+  it('takes a Malformed Answer that met a spent retry as the Answer it stood as, and an `asked_items` left as written', () => {
+    // The retry was spent on round 2; round 3's Malformed Answer stands as written (#245).
+    const rounds: RoundSpec[] = [
+      READ_ROUND,
+      { round: 2, at: 2_000, after: [record(2_100, 'asked_items_shape', { missing: ['x'], undeclared: [], retried: true })] },
+      { round: 3, at: 3_000, after: [record(3_100, 'answer_retry', { role: 'orchestrator', outcome: 'malformed' }), record(3_150, 'malformed_answer', { role: 'orchestrator', text: '{', chars: 1, error: 'x' })] },
+    ]
+    expect(classify(rounds, [answerShown(3_500), done(3_600)]).answerRounds).toEqual({ taken: [], sentBack: [2], retries: [3] })
+    // With no retry before it, a Malformed Answer nothing retried is the Answer taken.
+    const stood: RoundSpec[] = [READ_ROUND, { round: 2, at: 2_000, after: [record(2_100, 'malformed_answer', { role: 'orchestrator', text: '{', chars: 1, error: 'x' }), record(2_150, 'asked_items_shape', { missing: ['x'], undeclared: [], retried: false })] }]
+    expect(classify(stood, [answerShown(2_500), done(2_600)]).answerRounds).toEqual({ taken: [2], sentBack: [], retries: [] })
+  })
+
+  it('marks an Off-language Answer the deterministic Answer stood in for as sent back, and no round as taken', () => {
+    const rounds: RoundSpec[] = [READ_ROUND, { round: 2, at: 2_000, after: [record(2_100, 'off_language_answer', { round: 2, renderings: [], retried: false, cause: 'model_answered', text: 'x', chars: 1 })] }]
+    expect(classify(rounds, [answerShown(2_500, true), done(2_600)]).answerRounds).toEqual({ taken: [], sentBack: [2], retries: [] })
+  })
+
+  it('marks no round of a Run that ended on the deterministic Answer, nor a round cut while it drafted one', () => {
+    const cut: RoundSpec[] = [READ_ROUND, { round: 2, at: 2_000, effort: 'low', outcome: 'allowance' }]
+    expect(classify(cut, [answerShown(2_500, true), done(2_600, 'deadline_reached')]).answerRounds).toEqual({ taken: [], sentBack: [], retries: [] })
+    // The Card a cut round had closed in its stream stood (#312): the round still wrote no Answer.
+    expect(classify(cut, [answerShown(2_500), done(2_600, 'deadline_reached')]).answerRounds).toEqual({ taken: [], sentBack: [], retries: [] })
+    // A Card published early stands whatever became of its round (#319), and that round wrote it.
+    const early: RoundSpec[] = [READ_ROUND, { round: 2, at: 2_000, outcome: 'deadline', after: [record(2_100, 'early_card', { round: 2, publishedAt: T0 + 2_050, sinceRoundStartMs: 50, untilRoundEndMs: 50 })] }]
+    expect(classify(early, [answerShown(2_050), done(2_600, 'deadline_reached')]).answerRounds).toEqual({ taken: [2], sentBack: [], retries: [] })
+  })
+
+  it('leaves a Subagent’s Answer records out: its report is none of the Run’s rounds', () => {
+    const rounds: RoundSpec[] = [
+      { ...READ_ROUND, after: [record(1_100, 'malformed_answer', { role: 'subagent', agentId: 'a-1', text: '{', chars: 1, error: 'x' }), record(1_200, 'answer_retry', { role: 'subagent', agentId: 'a-1', outcome: 'on_contract' })] },
+      { round: 2, at: 2_000 },
+    ]
+    expect(classify(rounds, [answerShown(2_500), done(2_600)]).answerRounds).toEqual({ taken: [2], sentBack: [], retries: [] })
+  })
+
+  it('reads the same marks from the rounds alone, for an audit written before them', () => {
+    for (const [rounds, extra] of [
+      [SENT_BACK, [answerShown(4_500), done(4_600)]],
+      [[READ_ROUND, RECORD_ROUND, { round: 3, at: 3_000 }], [answerShown(3_500), done(3_600)]],
+      // A retried round's abandoned attempt is a round of the digest, and the retry is the attempt that returned.
+      [[READ_ROUND, SENT_BACK[2]!, { round: 4, at: 3_500, outcome: 'empty' }, { ...SENT_BACK[3]!, attempt: 2 }], [answerShown(4_500), done(4_600)]],
+    ] as const) {
+      const mechanical = classify(rounds, extra)
+      expect(answerRoundsByShapeOf(mechanical.rounds)).toEqual(mechanical.answerRounds)
+      expect(answerRoundsOf({ rounds: mechanical.rounds })).toEqual(mechanical.answerRounds)
+    }
+  })
+
+  it('sums reasoning, output tokens and seconds over the bookkeeping-only rounds and the rounds that wrote an Answer, per Run and per population', () => {
+    const mechanical = classify(SENT_BACK, [answerShown(4_500), done(4_600)])
+    // Round 2 recorded only; rounds 3 and 4 wrote an Answer. The acquisition round is in neither.
+    expect(mechanical.roundCosts).toEqual({
+      bookkeepingOnly: { rounds: 1, reasoningChars: 3_000, completionTokens: 50, latencyMs: 2_000 },
+      answer: { rounds: 2, reasoningChars: 5_700, completionTokens: 100, latencyMs: 7_000 },
+    })
+    expect(roundCostsOf(mechanical.rounds, mechanical.answerRounds!)).toEqual(mechanical.roundCosts)
+
+    const attempt = { mechanical, review: null, countsAfterOverrules: mechanical.counts }
+    const set = buildAuditSet(provenanceOf(), [attempt, attempt], [])
+    expect(set.populations.initial.roundCosts).toEqual({
+      attempts: 2,
+      answerRounds: { taken: 0, sentBack: 2, retries: 2 },
+      bookkeepingOnly: { rounds: 2, reasoningChars: 6_000, completionTokens: 100, latencyMs: 4_000 },
+      answer: { rounds: 4, reasoningChars: 11_400, completionTokens: 200, latencyMs: 14_000 },
+    })
+    expect(set.populations.followUp.roundCosts).toBeUndefined()
+
+    const markdown = formatAuditSet(set)
+    expect(markdown).toContain('- Rounds that wrote an Answer: taken 0; sent back 1 (round 3); Answer Retry 1 (round 4)')
+    expect(markdown).toContain('- Reasoning by kind of round: bookkeeping-only 1 round(s), 3000 reasoning characters, 50 output tokens, 2.0 s; wrote an Answer 2 round(s), 5700 reasoning characters, 100 output tokens, 7.0 s')
+    expect(markdown).toContain(ROUND_COSTS_HEADING)
+    expect(markdown).toContain('| initial | bookkeeping-only | 2 | 2 | 6000 | 3000 | 100 | 4.0 |')
+    expect(markdown).toContain('| initial | wrote an Answer (0 taken, 2 sent back, 2 Answer Retries) | 2 | 4 | 11400 | 5700 | 200 | 14.0 |')
+  })
+
+  it('writes neither sum for a population whose attempts were audited before the marks, and prints them as not counted', () => {
+    const before = Object.fromEntries(Object.entries(classify(SENT_BACK, [answerShown(4_500), done(4_600)])).filter(([field]) => field !== 'answerRounds' && field !== 'roundCosts')) as unknown as AuditMechanical
+    const set = buildAuditSet(provenanceOf(), [{ mechanical: before, review: null, countsAfterOverrules: before.counts }], [])
+    expect(set.populations.initial.roundCosts).toBeUndefined()
+    const markdown = formatAuditSet(set)
+    expect(markdown).not.toContain(ROUND_COSTS_HEADING)
+    expect(markdown).toContain('- Rounds that wrote an Answer: not counted')
+    // The Fix Ledger's recount still reads them, from the rounds.
+    expect(roundCostsOver(set.attempts)).toMatchObject({ attempts: 1, answerRounds: { taken: 0, sentBack: 1, retries: 1 }, answer: { rounds: 2, reasoningChars: 5_700 } })
+  })
+})
+
+describe('the bookkeeping-only and Answer rounds recounted on the committed main-4dc72e9 audits (#321)', () => {
+  const attempts = [1, 2, 3].flatMap((pass) => (JSON.parse(readFileSync(join(REPORTS_DIR, `audit-main-4dc72e9-${pass}.json`), 'utf8')) as AuditSetOutput).attempts)
+  const costOf = (pick: (marks: AnswerRounds) => readonly number[]) => {
+    const rounds = attempts.flatMap(({ mechanical }) => mechanical.rounds.filter((round) => pick(answerRoundsOf(mechanical)).includes(round.round)))
+    return { rounds: rounds.length, reasoningChars: rounds.reduce((sum, round) => sum + round.reasoningChars, 0), seconds: (rounds.reduce((sum, round) => sum + (round.latencyMs ?? 0), 0) / 1000).toFixed(1) }
+  }
+
+  it('finds the 21 bookkeeping-only rounds ADR 0075 counted: 105,389 reasoning characters and 550.3 s', () => {
+    // No audit of the capture carries the marks: this is the recount from its rounds.
+    expect(attempts.every(({ mechanical }) => mechanical.answerRounds === undefined)).toBe(true)
+    const costs = roundCostsOver(attempts)!
+    expect(costs.attempts).toBe(18)
+    expect(costs.bookkeepingOnly).toMatchObject({ rounds: 21, reasoningChars: 105_389 })
+    expect((costs.bookkeepingOnly.latencyMs / 1000).toFixed(1)).toBe('550.3')
+  })
+
+  it('marks the four first Answers sent back and the four Answer Retries, which the audits count as failed and Finalization rounds', () => {
+    expect(costOf((marks) => marks.sentBack)).toEqual({ rounds: 4, reasoningChars: 24_185, seconds: '171.9' })
+    expect(costOf((marks) => marks.retries)).toEqual({ rounds: 4, reasoningChars: 9_361, seconds: '113.5' })
+    // And the 14 Answers taken of the model's own accord: 18 Runs, four of which ended on their retry.
+    expect(costOf((marks) => marks.taken).rounds).toBe(14)
+    const marked = attempts.flatMap(({ mechanical }) => {
+      const marks = answerRoundsOf(mechanical)
+      return mechanical.rounds.filter((round) => marks.sentBack.includes(round.round) || marks.retries.includes(round.round)).map((round) => `${marks.sentBack.includes(round.round) ? 'sent back' : 'retry'}: ${round.kind}`)
+    })
+    expect(marked).toEqual(Array.from({ length: 4 }, () => ['sent back: failed_round', 'retry: finalization']).flat())
+    // The retries the rounds show are the retries the traces recorded.
+    expect(attempts.reduce((sum, { mechanical }) => sum + mechanical.answerRetries, 0)).toBe(4)
   })
 })
 

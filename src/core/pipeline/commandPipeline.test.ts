@@ -3462,6 +3462,9 @@ describe('command pipeline', () => {
       expect(llm.requests[25]?.answerOnly).toBe(true)
       const rounds = traced.filter((record): record is Extract<RunTraceEvent, { kind: 'llm_round' }> => record.kind === 'llm_round')
       expect(rounds.map((record) => [record.round, record.reasoningEffort])).toEqual(rungs.map((rung, i) => [i + 1, rung]))
+      // And each record says why (#321): the Run Plan rung, the tier's,
+      // then Finalization's for the bookkeeping round and the reserved Answer.
+      expect(rounds.map((record) => record.rungReason)).toEqual(['run_plan', ...Array<string>(23).fill('tier'), 'finalization', 'finalization'])
     })
 
     it('grants an escalated tier its full fresh Tool-Round budget (#118/AC2)', async () => {

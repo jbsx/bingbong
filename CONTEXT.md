@@ -810,8 +810,8 @@ _Avoid_: hydration, restore, session replay
 A durable, machine-readable record of a Run's internal decisions — every event
 the Run published, its Tool Rounds and those of its Subagents, evidence
 grading, the model's per-round reasoning, each LLM attempt's model, prompt
-hash, rung, request shape, usage, how it ended and how much reasoning it
-streamed (`llm_round`), the models the Run Plan
+hash, rung and the reason for it, request shape, usage, how it ended and how
+much reasoning it streamed (`llm_round`), the models the Run Plan
 was declared under, the vision calls it made and what they cost, each
 Search Observation its Search Loop rail made, and a
 screenshot of the visible tab when the Run finalized failed or on a work rail
@@ -1596,6 +1596,8 @@ Trace and never vary between readings; the judgements — a Search Loop, an
 Off-key Acquisition, an Early Stop, an Answer Omission, the verdict — belong to
 a reviewer that is not the measured model. It names check ids and pages, never
 Grading Key text, and it counts across attempts without judging across them.
+Beside a round's kind it marks the rounds that wrote an Answer — one taken,
+one sent back, an Answer Retry — without moving the kind.
 _Avoid_: waste audit, round classification, trace review
 
 **Early Stop**:

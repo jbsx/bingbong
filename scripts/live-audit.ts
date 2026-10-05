@@ -35,6 +35,8 @@ import {
   AUDIT_VERDICTS,
   JUDGEMENT_SCHEMA,
   ROUND_KINDS,
+  answerRoundsText,
+  roundCostsText,
   buildAuditAggregate,
   buildAuditSet,
   checkpointedUrlsOf,
@@ -796,7 +798,8 @@ function main(): void {
             `${ROUND_KINDS.map((kind) => `${kind.replace(/_/g, ' ')} ${mechanical.counts[kind]}`).join(', ')}; ` +
             `${mechanical.mechanicalSearchRounds} Search Loop round(s) by the streak rule${mechanical.searchLoopHeads.length > 0 ? ` (heads ${mechanical.searchLoopHeads.join(', ')})` : ''}, ${mechanical.searchRoundsAtStreak2} at streak 2 or beyond, ${mechanical.searchRoundsAtStreak3} at 3 or beyond; search source ${mechanical.searchSource}; ` +
             `${mechanical.notFoundNavigates.length} navigate(s) landed on a Not-found Page${mechanical.notFoundNavigates.length > 0 ? ` (round ${mechanical.notFoundNavigates.join(', ')})` : ''}; ` +
-            `${pageless.length} landing(s) carried no page${pageless.length > 0 ? ` (round ${pageless.join(', ')})` : ''}; digest ${mechanical.digestHash.slice(0, 19)}…\n`,
+            `${pageless.length} landing(s) carried no page${pageless.length > 0 ? ` (round ${pageless.join(', ')})` : ''}; ` +
+            `rounds that wrote an Answer: ${answerRoundsText(mechanical.answerRounds)}; reasoning by kind of round: ${roundCostsText(mechanical.roundCosts)}; digest ${mechanical.digestHash.slice(0, 19)}…\n`,
         )
       }
     }

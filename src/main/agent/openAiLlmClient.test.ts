@@ -1116,12 +1116,29 @@ describe('openAiLlmClient', () => {
     await client.complete({ command: 'x', toolResults: [], reasoningEffort: 'low', onAttempt: (attempt) => sent.push(attempt) })
 
     // One report per attempt, the retry included; the override's rung is
-    // the one on the wire, so it is the one reported.
+    // the one on the wire, so it is the one reported, and reported as the
+    // override's (#321).
     expect(sent).toEqual([
-      { model: 'glm-5.3', promptHash: expect.stringMatching(/^[0-9a-f]{16}$/), reasoningEffort: 'max' },
-      { model: 'glm-5.3', promptHash: expect.stringMatching(/^[0-9a-f]{16}$/), reasoningEffort: 'max' },
+      { model: 'glm-5.3', promptHash: expect.stringMatching(/^[0-9a-f]{16}$/), reasoningEffort: 'max', rungOverridden: true },
+      { model: 'glm-5.3', promptHash: expect.stringMatching(/^[0-9a-f]{16}$/), reasoningEffort: 'max', rungOverridden: true },
     ])
     expect(promptHashOf(ORCHESTRATOR_SYSTEM_PROMPT)).toEqual((sent[0] as { promptHash: string }).promptHash)
+  })
+
+  it('reports the request\u2019s own rung as its own when no override is set (#321)', async () => {
+    const fetch = new ScriptedFetch([completionResponse({ content: '{"speak":"hi","display":"hi"}' })])
+    const client = createOpenAiLlmClient({
+      endpoint: ENDPOINT,
+      systemPrompt: ORCHESTRATOR_SYSTEM_PROMPT,
+      tools: createBrowserTools(new FakeBrowser()),
+      fetchFn: fetch.fetchFn,
+      requestTimeoutMs: TEST_REQUEST_TIMEOUT_MS,
+    })
+    const sent: unknown[] = []
+
+    await client.complete({ command: 'x', toolResults: [], reasoningEffort: 'low', onAttempt: (attempt) => sent.push(attempt) })
+
+    expect(sent).toEqual([{ model: 'glm-5.3', promptHash: expect.stringMatching(/^[0-9a-f]{16}$/), reasoningEffort: 'low' }])
   })
 
   it('hashes the prompt text it will send, so a changed prompt changes the hash and nothing else does (#191)', async () => {

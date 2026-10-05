@@ -28,7 +28,7 @@ import type { PageLink } from '../browser/snapshot'
 import type { AnswerShape } from '../agent/answerContract'
 import type { AgentRole, DecisionSeam } from '../agent/modelRouting'
 import type { DecisionAnswer, DecisionThresholds, DecisionUnavailableReason } from '../ports/decisionModel'
-import type { ReasoningEffort, TokenUsage } from '../ports/llm'
+import type { ReasoningEffort, RungReason, TokenUsage } from '../ports/llm'
 import type { ObservationProducer } from '../session/observationLedger'
 import type { FinalizationCause } from '../session/runJournal'
 import type { OffLanguageFinding } from '../agent/answerLanguage'
@@ -75,8 +75,13 @@ import type { VisionRunTraceRecord } from './visionTrace'
  * or `answer_tail_fallback` record published no Card early, wrote no
  * Answer out of field order and lost no Answer Tail, which a version-12
  * trace cannot say: every Card there waited for its object's end.
+ * 14 (#321, ADR 0075): an `llm_round` names the reason for its rung in
+ * `rungReason`, and a round whose reason is not `finalization` was not sent
+ * at the Finalization rung, which a version-13 trace can say only by the
+ * rung's value: there a round at `low` under a higher tier rung is read as
+ * Finalization.
  */
-export const RUN_TRACE_VERSION = 13
+export const RUN_TRACE_VERSION = 14
 
 /** How much of a graded observation's retained text a record keeps. */
 export const TRACE_PAYLOAD_HEAD_CHARS = 500
@@ -313,6 +318,13 @@ export interface LlmRoundEvent {
   readonly model?: string
   /** The rung sent: the client's word when it reported one, else the request's. */
   readonly reasoningEffort?: ReasoningEffort
+  /**
+   * Why the round was sent at that rung (#321, ADR 0075): the loop's own
+   * reason, or `override` when the experiment override outranked it.
+   * Absent on a round whose loop named none, and on every record below
+   * version 14.
+   */
+  readonly rungReason?: RungReason
   /** Token usage, when the provider reported it — only an attempt that returned has one. */
   readonly usage?: TokenUsage
   /** A stable hash of the system prompt text sent, never the text. */

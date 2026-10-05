@@ -8,8 +8,47 @@ with every recommendation taken. Adds one rung to the Effort Epoch's
 reasoning-effort rule (#166, #215, [ADR 0053](0053-the-rounds-before-the-first-run-plan-think-at-medium.md))
 and decides the rule on bookkeeping rounds in the middle of a Run that
 [ADR 0072](0072-an-answer-carries-its-own-checkpoints-so-no-round-is-spent-recording-before-it.md)
-left to be read again. Not built: the work is #321 (the measurement) and
-#314 (the rung and the withdrawn tools), and no capture has been run.
+left to be read again. #321 (the measurement) is built; #314 (the rung and
+the withdrawn tools) is not, and no capture has been run.
+
+Implementation note, #321. The Run Trace is version 14: an `llm_round`
+names the reason for its rung in `rungReason`, one of `tier`, `run_plan`,
+`finalization`, `subagent` and `override`. The Effort Epoch answers the
+first four with the rung, from the same tier, phase and declaration; the
+client says when the experiment override outranked the request's rung, and
+the record then names `override`. The Answer-ready rung adds its own name
+under #314. The Round Audit reads a Finalization round from that reason on
+a version-14 record and by the rung's value below it, so no committed audit
+moves.
+
+The audit marks the rounds that wrote an Answer beside the rounds and
+outside the digest: `taken`, `sentBack` and `retries`, by round number. A
+retry is the round an `answer_retry` record follows. A round is sent back
+when an `asked_items_shape` record says the retry was spent on it, when an
+`off_language_answer` record follows it, or when a `malformed_answer`
+record does and the next round is the retry; an Off-language Answer the
+deterministic Answer stood in for is marked sent back too, since the
+application did not take it. The taken round is the Run's last, when the
+Answer shown was a model's and the round completed with no call or
+published its Card early. A round cut while it drafted an Answer is not
+marked. An audit written before the marks is read from its rounds: a round
+that completed with no call and was not the last was sent back, and the
+last attempt of the round after it is the retry. Over every audit on main
+that rule finds as many sent-back rounds as the traces recorded Answer
+Retries of the Run's own; it cannot tell an Off-contract Reply in a
+reserved round from an Answer taken, which the records can.
+
+Per Run and per population the audit sums reasoning characters, output
+tokens and seconds over the bookkeeping-only rounds, which are the rounds
+of kind `bookkeeping`, and over the rounds that wrote an Answer. The Fix
+Ledger carries the two reasoning sums as a mean over the Runs, recounted
+from the rounds for an audit written before them. On the committed
+`main-4dc72e9` audits the recount gives the figures above: 21
+bookkeeping-only rounds with 105,389 characters and 550.3 s, four first
+Answers sent back with 24,185 and 171.9 s, four Answer Retries with 9,361
+and 113.5 s, and 14 Answers taken. By population that is 7,504 characters a
+Run in bookkeeping-only rounds and 4,511 in Answer rounds over the 12
+initials, and 2,558 and 9,354 over the six follow-ups.
 
 ## Context
 

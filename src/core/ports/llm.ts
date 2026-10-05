@@ -40,6 +40,19 @@ export interface ToolResult {
 export const REASONING_EFFORTS = ['low', 'medium', 'high', 'max'] as const
 export type ReasoningEffort = (typeof REASONING_EFFORTS)[number]
 
+/**
+ * Why a round was sent at its rung (#321, ADR 0075): the Effort Tier's
+ * rung, the Run Plan rung before the first declaration (#252), the
+ * Finalization rung (#215), a Browse Subagent's own, or the experiment
+ * override (#166), which outranks the other four. The Effort Epoch names
+ * the first four with the rung it answers; the client names the last. A
+ * closed list, so the Round Audit reads a Finalization round from its
+ * reason and no longer from the rung's value, which more than one reason
+ * can share.
+ */
+export const RUNG_REASONS = ['tier', 'run_plan', 'finalization', 'subagent', 'override'] as const
+export type RungReason = (typeof RUNG_REASONS)[number]
+
 export interface LlmRequest {
   command: string
   toolResults: ToolResult[]
@@ -243,6 +256,11 @@ export interface LlmAttemptSent {
    * experiment override (#166) outranked it.
    */
   reasoningEffort?: ReasoningEffort
+  /**
+   * True when that rung is the experiment override's (#321): the request's
+   * own rung, and its reason, were outranked. Absent otherwise.
+   */
+  rungOverridden?: true
 }
 
 export type AssistantTurn =
