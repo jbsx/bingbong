@@ -167,17 +167,22 @@ describe('Asked Items on the Answer Card e2e (#250)', () => {
             args: {
               objective: 'Report the heading and the twin page',
               headline: 'Reading the second page',
-              effort_tier: 'lookup',
+              effort_tier: 'investigation',
               asked_items: ['the heading', 'the twin page'],
             },
           },
           { id: 'n1', name: 'navigate', args: { url: page } },
         ],
       },
-      // The Lookup budget is spent on reads; the bookkeeping round and the
-      // reserved Answer round both ask for more work, so the Answer the
-      // user sees is the deterministic one.
-      ...Array.from({ length: TIER_TOOL_ROUND_BUDGETS.lookup + 1 }, (_, i) => work(i)),
+      // The limit that ends this Run is the Investigation Tool Round budget
+      // (`budget_exhausted`). The plan declares the top tier because a
+      // lower one would not stop here (#317): a repeated read is refused
+      // and so never counts against Progress, and a Run still making
+      // Progress at its budget rises one Effort Tier (#266) rather than
+      // finalizing. The budget is spent on reads; the bookkeeping round
+      // and the reserved Answer round both ask for more work, so the
+      // Answer the user sees is the deterministic one.
+      ...Array.from({ length: TIER_TOOL_ROUND_BUDGETS.investigation + 1 }, (_, i) => work(i)),
     ]
     const app = await startHarness({ fixture, env: { BINGBONG_LLM_SCRIPT: JSON.stringify(script) } })
     try {
@@ -200,6 +205,11 @@ describe('Asked Items on the Answer Card e2e (#250)', () => {
         { timeoutMs: 10_000, intervalMs: 250 },
       )
       expect(display).toMatchObject({ deterministicAnswer: true })
+      const done = await waitFor(
+        async () => tracedEvents(app.readRunTrace(), 'done')[0],
+        { timeoutMs: 10_000, intervalMs: 250 },
+      )
+      expect(done).toMatchObject({ outcome: 'failed', finalizationCause: 'budget_exhausted' })
     } finally {
       await app.quit()
     }
