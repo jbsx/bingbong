@@ -334,6 +334,36 @@ describe('a shown Card stands (#319)', () => {
     expect(run.events.at(-1)).toMatchObject({ type: 'done', outcome: 'done' })
   })
 
+  it('keeps the reply that broke behind the Card as one that was not the Run’s Answer (#318)', async () => {
+    const broken = '{"speak":"Early.","display":"# The Card.","resolution":"completed","run_note":"never closed}'
+    const run = start([
+      async (request) => {
+        text(request, broken)
+        return { ...answer(broken), replyText: broken }
+      },
+    ])
+    await run.finished
+
+    expect(run.cards()).toEqual([expect.objectContaining({ text: '# The Card.', finalAnswer: true })])
+    expect(run.records('answer_reply')).toEqual([
+      { turnId: 'turn-card', kind: 'answer_reply', round: 1, read: 'card_stood', shape: 'malformed', text: broken, chars: broken.length },
+    ])
+  })
+
+  it('keeps the reply whose Card was published early as the accepted one (#318)', async () => {
+    const whole = '{"speak":"Early.","display":"# The Card.","resolution":"completed","run_note":"closed"}'
+    const run = start([
+      async (request) => {
+        text(request, whole)
+        return { ...answer(whole), replyText: whole }
+      },
+    ])
+    await run.finished
+
+    expect(run.records('early_card')).toHaveLength(1)
+    expect(run.records('answer_reply')).toMatchObject([{ round: 1, read: 'accepted', shape: 'on_contract', text: whole }])
+  })
+
   it('keeps the Card, and runs no tool, when the round that wrote it ends with tool calls', async () => {
     const run = start([
       async (request) => {

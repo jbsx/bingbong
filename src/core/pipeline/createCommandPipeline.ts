@@ -2291,9 +2291,9 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             // alone: taken off the turn here, before anything reads the
             // Answer, so no event, commit or later request carries it.
             if (turn.kind === 'answer' && turn.replyText !== undefined) {
-              const { replyText, ...read } = turn
-              roundReply = { text: replyText, ...(read.shape !== undefined ? { shape: read.shape } : {}) }
-              turn = read
+              const { replyText, ...landed } = turn
+              roundReply = { text: replyText, ...(landed.shape !== undefined ? { shape: landed.shape } : {}) }
+              turn = landed
             }
             // A shown Card stands (#319, ADR 0074). When the reply that
             // lands is not the Answer it began — the object cannot be read
@@ -2310,7 +2310,11 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
                     : turn.shape === 'malformed' || turn.shape === 'off_contract'
                       ? 'broken_json'
                       : undefined
-              if (roundTailFallback !== undefined) turn = { ...roundCard.answer, ...(turn.usage !== undefined ? { usage: turn.usage } : {}) }
+              if (roundTailFallback !== undefined) {
+                // The reply that landed is not the Run's Answer (#318): the Card is.
+                traceReply('card_stood')
+                turn = { ...roundCard.answer, ...(turn.usage !== undefined ? { usage: turn.usage } : {}) }
+              }
             } else if (cardWatch?.outOfOrder() === true && turn.kind === 'answer' && turn.shape !== 'malformed' && turn.shape !== 'off_contract') {
               // An Answer out of field order is published at its object's
               // end, as before, and counted.

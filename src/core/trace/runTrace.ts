@@ -836,19 +836,22 @@ export interface AnswerTailFallbackEvent {
  * Answer, or, for an Off-language Answer with none left, with the
  * deterministic Answer; `off_contract` is a reserved round's reply that
  * was not the contract's shape, which the deterministic Answer stood in
- * for.
+ * for; `card_stood` landed behind a Card already shown and was not taken
+ * as its Answer (#319): an object that could not be read past the Card,
+ * or the reply of an attempt the client made after the one that wrote it.
  */
-export type AnswerReplyReading = 'accepted' | 'held' | 'list_only' | 'malformed' | 'off_language' | 'asked_items' | 'off_contract'
+export type AnswerReplyReading = 'accepted' | 'held' | 'list_only' | 'malformed' | 'off_language' | 'asked_items' | 'off_contract' | 'card_stood'
 
 /**
  * The reply of one round the pipeline read as an Answer, as the model
  * wrote it (#318): the whole object, its Answer Tail and its keys
  * included, where the published events carry only the renderings. Written
  * in the orchestrator loop only, once per reply, when the pipeline
- * decides what the reply is. Three Answers leave none: a Card that stood
- * for a round that was cut or ended with tool calls (#319), whose reply
- * never landed as an Answer; the deterministic Answer, which no model
- * wrote; and an Answer a Steering replan let go before it was read.
+ * decides what the reply is. Three Answers leave none read `accepted`: a
+ * Card that stood (#319), whose round was cut or ended with tool calls and
+ * landed no Answer, or landed one read `card_stood`; the deterministic
+ * Answer, which no model wrote; and an Answer a Steering replan let go
+ * before it was read.
  */
 export interface AnswerReplyEvent {
   readonly kind: 'answer_reply'

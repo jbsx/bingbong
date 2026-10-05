@@ -79,6 +79,7 @@ import { allowedDifferenceLine, type AllowedDifference, type AllowedDifferenceRe
 import type { Validation } from './artifacts.ts'
 import type { LiveGradeEntry, LiveKeyTask } from './grades.ts'
 import type { AttemptRelation, LiveAttemptCapture, Observed } from './types.ts'
+import { medianOf } from './summary.ts'
 import { UNASKED_FACTS, unaskedFactsOf } from './unaskedFacts.ts'
 
 export const LIVE_AUDIT_KIND = 'bingbong.live.round-audit'
@@ -1228,7 +1229,7 @@ export interface AuditPopulation {
    * reply, over the Runs whose reply could be split (#318); `medians` is
    * null when none could. Absent when no attempt's trace kept a reply.
    */
-  readonly answerFields?: { readonly runs: number; readonly medians: Readonly<Record<AnswerField | 'total', number>> | null }
+  readonly answerFields?: { readonly runs: number; readonly medians: AnswerCharsByField | null }
   /** Transport Failure attempts over the attempts (#271); absent on an audit written before the counter. */
   readonly transportAttempts?: number
   /** Rounds recovered by a Transport Retry over the attempts (#271). */
@@ -2835,11 +2836,13 @@ export type AnswerField = (typeof ANSWER_FIELDS)[number]
  * `total`, the reply as written: the keys, the other fields, the rest of
  * each `asked_items` entry, string escapes and whitespace.
  */
-export type AnswerFieldChars = Readonly<Record<AnswerField, number>> & {
+export type AnswerFieldChars = AnswerCharsByField & {
   /** The trace's `llm_round` number of the round that wrote the reply. */
   readonly round: number
-  readonly total: number
 }
+
+/** Characters by field with the whole reply's beside them (#318): one Run's, or a population's medians. */
+export type AnswerCharsByField = Readonly<Record<AnswerField | 'total', number>>
 
 /** Where a reply's JSON object may be, as the Answer contract's parser tries them: the whole reply, a code fence's body, the first `{` to the last `}`. */
 function replyObjectOf(text: string): Record<string, unknown> | null {
@@ -2864,7 +2867,8 @@ function replyObjectOf(text: string): Record<string, unknown> | null {
  * its Answer, `accepted` or `held` for a list-only retry, whose reply is
  * not in the split. Null where no such reply can be split: the Answer was
  * the deterministic one, a Card stood for a round whose reply never landed
- * (#319), the reply was prose or could not be read, or its record was cut.
+ * (#319), whatever an earlier round had kept, the reply was prose or could
+ * not be read, or its record was cut.
  */
 export function answerFieldsOf(traceRecords: readonly object[]): AnswerFieldChars | null {
   const records = (traceRecords as unknown as readonly TraceLine[]).filter((record) => record.agentId === undefined)
@@ -2875,6 +2879,10 @@ export function answerFieldsOf(traceRecords: readonly object[]): AnswerFieldChar
   if (answers.at(-1)?.deterministicAnswer === true) return null
   const reply = records.filter((record) => record.kind === 'answer_reply' && (record.read === 'accepted' || record.read === 'held')).at(-1)
   if (reply === undefined || !isString(reply.text) || !isFiniteNumber(reply.chars) || !isFiniteNumber(reply.round) || reply.chars > reply.text.length) return null
+  // A Card that stood in a later round, for a reply that never landed
+  // (#319), is the Run's Answer, and the reply kept before it is not.
+  const replyRound = reply.round
+  if (records.some((record) => record.kind === 'answer_tail_fallback' && isFiniteNumber(record.round) && record.round > replyRound)) return null
   const object = replyObjectOf(reply.text)
   if (object === null) return null
   const chars = (value: unknown): number => (value === undefined ? 0 : isString(value) ? value.length : JSON.stringify(value).length)
@@ -5683,20 +5691,13 @@ function populationEarlyCardsText(population: AuditPopulation): string {
   return `${counts.published} Card(s) published early (${counts.outOfOrder} Answer(s) out of field order, ${fallen} Answer Tail(s) fell back${reasons.length === 0 ? '' : `: ${reasons.map(([reason, count]) => `${count} ${reason}`).join(', ')}`})`
 }
 
-/** The median of some counts, the mean of the middle two of an even number, as the cross-pass summary's median is. */
-function medianCharsOf(values: readonly number[]): number {
-  const sorted = [...values].sort((left, right) => left - right)
-  const middle = Math.floor(sorted.length / 2)
-  return sorted.length % 2 === 1 ? sorted[middle]! : (sorted[middle - 1]! + sorted[middle]!) / 2
-}
-
 /** The median of each field, and of the whole reply, over the final Answers that could be split (#318). */
 function answerFieldMediansOf(split: readonly AnswerFieldChars[]): NonNullable<AuditPopulation['answerFields']> {
   if (split.length === 0) return { runs: 0, medians: null }
-  const medianOf = (field: AnswerField | 'total'): number => medianCharsOf(split.map((fields) => fields[field]))
+  const medianOver = (field: AnswerField | 'total'): number => medianOf(split.map((fields) => fields[field]).sort((left, right) => left - right))
   return {
     runs: split.length,
-    medians: { total: medianOf('total'), ...(Object.fromEntries(ANSWER_FIELDS.map((field) => [field, medianOf(field)])) as Record<AnswerField, number>) },
+    medians: { total: medianOver('total'), ...(Object.fromEntries(ANSWER_FIELDS.map((field) => [field, medianOver(field)])) as Record<AnswerField, number>) },
   }
 }
 
@@ -5713,7 +5714,7 @@ const ANSWER_FIELD_LABELS: Readonly<Record<AnswerField, string>> = {
 }
 
 /** A final Answer's characters, the whole reply and then each field (#318). */
-function answerFieldCharsText(chars: Readonly<Record<AnswerField | 'total', number>>): string {
+function answerFieldCharsText(chars: AnswerCharsByField): string {
   return `${chars.total} characters: ${ANSWER_FIELDS.map((field) => `${ANSWER_FIELD_LABELS[field]} ${chars[field]}`).join(', ')}`
 }
 

@@ -1464,6 +1464,10 @@ describe('the final Answer by field (#318)', () => {
     expect(fieldsOf([reply(TEXT.slice(0, 40), { chars: TEXT.length }), shown()])).toBeNull()
     // A Card that stood for a round cut inside its Answer Tail (#319): the reply never landed.
     expect(fieldsOf([shown()])).toBeNull()
+    // And one that stood after a Steering replan let a held Answer go: the reply kept is not the Run's Answer.
+    expect(fieldsOf([reply(TEXT, { round: 5, read: 'held' }), at14({ at: T0 + 15_050, kind: 'answer_tail_fallback', round: 7, reason: 'cut' }), shown()])).toBeNull()
+    // An object that could not be read past its Card is that round's own reply, and is not split either.
+    expect(fieldsOf([reply('{"speak":"Yes.","display":"It is.","run_note":', { read: 'card_stood', shape: 'malformed' }), at14({ at: T0 + 15_050, kind: 'answer_tail_fallback', round: 7, reason: 'broken_json' }), shown()])).toBeNull()
   })
 
   it('leaves a Subagent’s records out', () => {

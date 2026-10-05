@@ -15,12 +15,15 @@ Note (2026-10-05, #318): what building the measurement settled.
   the reply as the model wrote it, the parser's shape, whether the round
   was reserved, and how the pipeline read it: `accepted`, `held` (the
   Answer a list-only retry kept), `list_only`, `malformed`, `off_language`,
-  `asked_items` (a prose reply asked for the whole Answer again) or
-  `off_contract`. The reply is kept whole up to 64,000 characters.
-- Three Answers leave no record. A Card that stood for a round that was cut
-  or ended with tool calls: no reply landed as an Answer. The deterministic
-  Answer: no model wrote it. An Answer a Steering replan let go before it
-  was read.
+  `asked_items` (a prose reply asked for the whole Answer again),
+  `off_contract` or `card_stood` (a reply that landed behind a Card already
+  shown and was not taken as its Answer). The reply is kept whole up to
+  64,000 characters; the issue named no cap, and a record cut there is not
+  split.
+- Three Answers leave no reply read `accepted`. A Card that stood: its
+  round was cut or ended with tool calls and no reply landed as an Answer,
+  or one landed and is read `card_stood`. The deterministic Answer: no
+  model wrote it. An Answer a Steering replan let go before it was read.
 - The Round Audit splits the last reply read `accepted` or `held`. `speak`,
   `display` and `run_note` are the text of the string; the `item` wording
   and the statements are summed over the entries; `evidence_ids`,
