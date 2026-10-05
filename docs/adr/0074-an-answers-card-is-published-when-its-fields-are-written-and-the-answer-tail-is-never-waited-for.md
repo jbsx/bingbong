@@ -8,6 +8,21 @@ taken. Amends the Answer contract. Not built: the work is #318 (the
 measurement), #313 (the Asked Item entry) and #319 (the early Card), and no
 capture has been run.
 
+Note (2026-10-05, #313): what building the Asked Item entry settled.
+
+- Four texts changed and nothing that reads an entry: the Answer contract's
+  `asked_items` sentence, its example object, the Run Plan acknowledgement
+  and the retry's description of an entry. Each asks for `n`, the standing
+  and the statement.
+- The contract no longer says how an entry carrying `item`, or one without
+  `n`, is read. Both are read as before, and unit tests pin the parse, the
+  match, the merge and the settled list for each; saying so in the prompt
+  would ask for the wording again.
+- The one example of a `stated` statement is "£4.20", in the contract's
+  sentence. The acknowledgement and the retry say "the established value
+  alone" and carry no example.
+- The Card names each entry from the declared list, as it did.
+
 ## Context
 
 The round that writes the Answer is the dearest round of a Run. On

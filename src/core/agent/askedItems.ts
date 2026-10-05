@@ -28,7 +28,8 @@ export interface AskedItemStanding {
  * One entry of an Answer's `asked_items` as written (#311): the item by
  * its 1-based position in the declared list, by its wording, or both. An
  * entry with `n` is the item it numbers whatever its wording says; one
- * without is matched by wording. What the Card renders is the settled
+ * without is matched by wording. The prompt asks for `n` alone (#313);
+ * the wording is still read. What the Card renders is the settled
  * `AskedItemStanding`, which names the item as declared and carries no
  * number.
  */
@@ -169,9 +170,13 @@ export function numberedAskedItems(declared: readonly string[], items: readonly 
   return items.map((item) => `${declared.indexOf(item) + 1}. "${item}"`).join('; ')
 }
 
-/** What one entry of `asked_items` holds, worded for a retry message. */
+/**
+ * What one entry of `asked_items` holds, worded for a retry message: the
+ * item's number and never its wording, which the application holds, and
+ * for a `stated` entry the bare value (#313, ADR 0074).
+ */
 const ASKED_ITEM_ENTRY_FORM =
-  '{"n": the item\'s number in the declared list, "standing": "stated" or "unverified", "statement": what you established, or why you could not}'
+  '{"n": the item\'s number in the declared list, "standing": "stated" or "unverified", "statement": the established value alone, or why you could not}'
 
 /**
  * The Answer Retry's message for a list that is not the declared list

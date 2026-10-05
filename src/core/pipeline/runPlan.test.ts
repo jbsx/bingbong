@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  askedItemsAcknowledgement,
   EFFORT_TIERS,
   effortTierVocabulary,
   TIER_COMPLETION_STANDARDS,
@@ -153,6 +154,16 @@ describe('Asked Items on the Run Plan (#250, ADR 0052)', () => {
     askedItems,
   })
   const declared: RunPlan = { objective: 'o', headline: 'h', effortTier: 'lookup', askedItems: ['the guitar', 'the piece count'] }
+
+  // #313, ADR 0074: the acknowledgement asks for the number, the standing
+  // and the established value, and never for the item's wording.
+  it('acknowledges a plan with its items numbered and the entry the Answer owes each', () => {
+    expect(askedItemsAcknowledgement(declared.askedItems)).toBe(
+      'Asked Items (2): 1. "the guitar"; 2. "the piece count". ' +
+        'The Answer’s asked_items carries one entry per item: "n" its number here, "standing" "stated" or "unverified", ' +
+        'and "statement" the established value alone, or why you could not.',
+    )
+  })
 
   describe('parsePlanReport', () => {
     it('reads asked_items as trimmed strings, dropping empty ones, and absent as none', () => {

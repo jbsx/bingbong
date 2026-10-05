@@ -426,8 +426,12 @@ describe('orchestrator prompt verification policy (#212)', () => {
     expect(askedItem).toMatch(/"standing": "stated" or "unverified"/)
     expect(askedItem).toMatch(/An "unverified" entry makes "resolution" "partial"/)
     // The numbered form and the list-only retry (#311).
-    expect(askedItem).toMatch(/\{"n": the item's number in the declared list, 1 for the first, "item": the item as declared/)
-    expect(askedItem).toMatch(/An entry's "n" names its item whatever its "item" says/)
+    expect(askedItem).toMatch(/\{"n": the item's number in the declared list, 1 for the first, "standing": "stated" or "unverified", "statement": the established value alone, or why you could not\}/)
+    // #313, ADR 0074: the entry no longer repeats its item's wording, and a
+    // stated statement is the value, shown by one example.
+    expect(askedItem).not.toMatch(/"item"/)
+    expect(askedItem).toMatch(/The application holds each item's wording, so an entry never repeats it/)
+    expect(askedItem).toMatch(/A "stated" statement is the value and nothing more, a phrase and not a sentence \("£4\.20"\)/)
     expect(askedItem).toMatch(/asking for \{"asked_items": \[\.\.\.\]\} alone while the rest of the Answer stands as written/)
     // Taught once: the only other line naming the field is the Answer's example object.
     expect(lines.filter((candidate) => candidate.includes('asked_items'))).toEqual([line('{"speak":'), askedItem])
@@ -439,7 +443,7 @@ describe('orchestrator prompt verification policy (#212)', () => {
     const example = line('{"speak":')
     const parsed = parseAssistantAnswer(example.trim())
     expect(parsed.shape).toBe('on_contract')
-    expect(parsed.askedItems).toEqual([{ n: 1, item: '<the first declared Asked Item>', standing: 'stated', statement: '<what you established>' }])
+    expect(parsed.askedItems).toEqual([{ n: 1, standing: 'stated', statement: '<the established value>' }])
     expect(example.indexOf('"asked_items"')).toBeLessThan(example.indexOf('"checkpoints"'))
   })
 
