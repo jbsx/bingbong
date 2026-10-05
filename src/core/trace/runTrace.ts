@@ -723,8 +723,9 @@ export interface AnswerCheckpointsEvent {
  * pipeline published it, from the round's start, and how long the round
  * ran after that. `ended` is how the round ended. With an Answer the
  * sentence is the Run's spoken one, whatever an Answer Retry then made of
- * the Answer; with tool calls or no turn at all it spoke for no Answer, and
- * the Answer that lands later is a second utterance. No record is written
+ * the Answer; with tool calls it spoke for no Answer, and the Answer that
+ * lands later is a second utterance; with no turn at all its reply never
+ * landed, and it stands ({@link StoodSentenceEvent}). No record is written
  * for a sentence that was not spoken early, and a trace written before the
  * record spoke none, so no version marks it.
  */
@@ -748,6 +749,20 @@ export interface SecondUtteranceEvent {
   readonly deterministic: boolean
 }
 
+/**
+ * A sentence spoken early that stood for an Answer its own reply never
+ * delivered (#312): the round that spoke it was cut, or the client retried
+ * the attempt, and the Answer the Run then ended on was not spoken after
+ * it. `card` is where that Answer's Card came from: a model round's Answer
+ * that landed afterwards, the text the cut round had closed in its stream,
+ * or the deterministic Answer. `publishedAt` is the sentence's own.
+ */
+export interface StoodSentenceEvent {
+  readonly kind: 'stood_sentence'
+  readonly publishedAt: number
+  readonly card: 'answer' | 'cut_round' | 'deterministic'
+}
+
 /** One decision a Run traces, whatever kind it is. */
 export type RunTraceEventBody =
   | AnswerCheckpointsEvent
@@ -767,6 +782,7 @@ export type RunTraceEventBody =
   | AskedItemsShapeEvent
   | EarlySentenceEvent
   | SecondUtteranceEvent
+  | StoodSentenceEvent
 
 /** What a Run hands the writer: one event, stamped with the turn it happened in. */
 export type RunTraceEvent = { readonly turnId: string } & RunTraceEventBody

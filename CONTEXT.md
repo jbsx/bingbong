@@ -865,7 +865,9 @@ _Avoid_: message, reply, response
 The ear-facing half of an Answer: what TTS says. Never renders beside its
 Card. It is spoken as soon as it closes in the model's stream, before the
 rest of the Answer has arrived; once spoken, it is the Answer's Spoken
-Rendering even if an Answer Retry rewrites the rest (ADR 0034, #312).
+Rendering even if an Answer Retry rewrites the rest, and even if its round
+is then cut: the Answer the Run ends on is not spoken after it, because the
+user is not told that a limit was reached (ADR 0034, #312).
 _Avoid_: speak line, voice line
 
 **Card**:

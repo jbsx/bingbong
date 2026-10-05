@@ -74,6 +74,13 @@ describe('the Answer’s spoken sentence (#312)', () => {
     expect(metrics.sentenceLatencyMs).toEqual({ status: 'observed', value: 350 })
   })
 
+  it('is the sentence that stood when its round was cut: the Answer the Run ended on was not spoken after it', () => {
+    const stood = { v: 12, at: 9_999, turnId: 't1', runId: 'r1', sessionId: 's1', generation: 1, kind: 'stood_sentence', publishedAt: 1_200, card: 'answer' } as unknown as TraceRecord
+    const silent = events.filter((event) => event.type !== 'speak')
+    const metrics = extractLiveMetrics({ events: silent, perfRecords: perf, traceRecords: [early(1_200, 'no_turn'), stood], input: 'typed', clockOrigin: 'cap-1' })
+    expect(metrics.sentenceLatencyMs).toEqual({ status: 'observed', value: 200 })
+  })
+
   it('is unavailable when nothing spoke the Answer', () => {
     const silent = events.filter((event) => event.type !== 'speak')
     const metrics = extractLiveMetrics({ events: silent, perfRecords: perf, traceRecords: [], input: 'typed', clockOrigin: 'cap-1' })

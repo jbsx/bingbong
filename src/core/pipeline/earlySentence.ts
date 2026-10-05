@@ -1,4 +1,4 @@
-import { capSentences, closedSpokenSentence, SPEAK_SENTENCE_LIMIT } from '../agent/answerContract'
+import { capSentences, closedCardText, closedSpokenSentence, SPEAK_SENTENCE_LIMIT } from '../agent/answerContract'
 import { isOffLanguageRendering } from '../agent/answerLanguage'
 import { repairSpokenRendering } from './answerEvidence'
 
@@ -40,8 +40,13 @@ export interface SpokenSentenceWatch {
    * never landed.
    */
   restart(): void
-  /** Whether the sentence came from an attempt the client then retried: it was spoken for no Answer. */
+  /** Whether the sentence came from an attempt the client then retried: its reply never landed. */
   readonly abandoned: boolean
+  /**
+   * The Card text the attempt in flight has closed, or null: what a round
+   * cut after its sentence was spoken still has to show.
+   */
+  cardText(): string | null
   readonly ready: Promise<EarlySentence>
 }
 
@@ -56,8 +61,8 @@ export function createSpokenSentenceWatch(): SpokenSentenceWatch {
   })
   return {
     onText(text) {
-      if (judged) return
       buffer += text
+      if (judged) return
       const sentence = closedSpokenSentence(buffer)
       if (sentence === null) return
       judged = true
@@ -66,7 +71,10 @@ export function createSpokenSentenceWatch(): SpokenSentenceWatch {
     },
     restart() {
       if (judged) abandoned = true
-      else buffer = ''
+      buffer = ''
+    },
+    cardText() {
+      return closedCardText(buffer)
     },
     get abandoned() {
       return abandoned

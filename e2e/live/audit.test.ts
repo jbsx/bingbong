@@ -456,8 +456,8 @@ describe('the mechanical classification', () => {
     expect(JSON.stringify(mechanical)).not.toContain('secret thought')
     expect((round.calls[0]!.args.note as string).length).toBeLessThanOrEqual(201)
     expect(round.calls[0]!.resultHead!.length).toBeLessThanOrEqual(241)
-    // Well under the 5,000-character inputs above; the headroom is the per-attempt counters added since (#276, #281).
-    expect(JSON.stringify(mechanical).length).toBeLessThan(4_500)
+    // Well under the 5,000-character inputs above; the headroom is the per-attempt counters added since (#276, #281, #312).
+    expect(JSON.stringify(mechanical).length).toBeLessThan(4_600)
   })
 
   it('tags a follow-up’s re-acquisition of a page the initial checkpointed as inherited and without Progress', () => {
@@ -1294,14 +1294,15 @@ describe('sentences spoken early and second utterances (#312)', () => {
     ended,
   })
   const second = (at: number): Record<string, unknown> => ({ ...identity, at: T0 + at, kind: 'second_utterance', deterministic: false })
-  const RECORDS = [early(4_500, 'tool_calls'), early(14_500, 'answer'), second(15_000)]
+  const stood = (at: number): Record<string, unknown> => ({ ...identity, at: T0 + at, kind: 'stood_sentence', publishedAt: T0 + at - 2_000, card: 'answer' })
+  const RECORDS = [early(4_500, 'tool_calls'), early(14_500, 'answer'), second(15_000), stood(15_500)]
 
   it('counts both from the Run’s records, beside the rounds, reported and never gated', () => {
     const plain = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, EXTRA) }))
     const counted = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, [...EXTRA, ...RECORDS]) }))
 
-    expect([counted.earlySentences, counted.secondUtterances]).toEqual([2, 1])
-    expect([plain.earlySentences, plain.secondUtterances]).toEqual([0, 0])
+    expect([counted.earlySentences, counted.secondUtterances, counted.stoodSentences]).toEqual([2, 1, 1])
+    expect([plain.earlySentences, plain.secondUtterances, plain.stoodSentences]).toEqual([0, 0, 0])
     expect(counted.rounds).toEqual(plain.rounds)
     expect(counted.digestHash).toBe(plain.digestHash)
   })
@@ -1310,12 +1311,12 @@ describe('sentences spoken early and second utterances (#312)', () => {
     const counted = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, [...EXTRA, ...RECORDS]) }))
     const set = buildAuditSet(provenanceOf(), [{ mechanical: counted, review: null, countsAfterOverrules: counted.counts }], [])
 
-    expect([set.populations.initial.earlySentences, set.populations.initial.secondUtterances]).toEqual([2, 1])
+    expect([set.populations.initial.earlySentences, set.populations.initial.secondUtterances, set.populations.initial.stoodSentences]).toEqual([2, 1, 1])
     const markdown = formatAuditSet(set)
     expect(markdown).toContain(
-      '- Sentences spoken early: 2 (1 second utterance(s)); round 2: 3.0 s after its start, 1.0 s before its end, ended tool_calls; round 2: 3.0 s after its start, 1.0 s before its end, ended answer',
+      '- Sentences spoken early: 2 (1 second utterance(s), 1 stood for a reply that never landed); round 2: 3.0 s after its start, 1.0 s before its end, ended tool_calls; round 2: 3.0 s after its start, 1.0 s before its end, ended answer',
     )
-    expect(markdown).toMatch(/- initial: .*2 sentence\(s\) spoken early \(1 second utterance\(s\)\)/)
+    expect(markdown).toMatch(/- initial: .*2 sentence\(s\) spoken early \(1 second utterance\(s\), 1 stood for a reply that never landed\)/)
 
     const older = { ...counted }
     delete (older as { earlySentences?: number }).earlySentences

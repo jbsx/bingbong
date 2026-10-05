@@ -212,6 +212,23 @@ export function closedSpokenSentence(content: string): string | null {
 }
 
 /**
+ * The Answer's Card text once the stream has closed it (#312): the
+ * `display` value of the reply's Answer object, unescaped, once its closing
+ * quote has arrived. Null until then, and for prose. It is what a round cut
+ * after its sentence was spoken leaves the Run to show: the rest of that
+ * Answer never arrived, and a Card cut mid-sentence is no Card.
+ */
+export function closedCardText(content: string): string | null {
+  const start = answerObjectStart(content)
+  if (start === null) return null
+  const object = content.slice(start)
+  const key = /"display"\s*:\s*"/.exec(object)
+  if (!key) return null
+  const card = scanPartialJsonString(object, key.index + key[0].length - 1)
+  return card.closed && card.value.trim() !== '' ? card.value : null
+}
+
+/**
  * Which contract a reply matched (#198, ADR 0034). `on_contract` is the
  * JSON branch below — the shape with `speak` and `display`; `malformed`
  * (#245) is a reply that carries both of the contract's keys but that no

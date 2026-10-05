@@ -68,4 +68,15 @@ describe('createSpokenSentenceWatch', () => {
     watch.restart()
     expect(watch.abandoned).toBe(true)
   })
+
+  it('keeps the Card text the attempt in flight has closed, for a round cut after its sentence was spoken', () => {
+    const watch = createSpokenSentenceWatch()
+    watch.onText('{"speak":"It is 42.","display":"# The ans')
+    expect(watch.cardText()).toBeNull()
+    watch.onText('wer is 42.","run_note":"half')
+    expect(watch.cardText()).toBe('# The answer is 42.')
+    // A retried attempt's text is dropped with it.
+    watch.restart()
+    expect(watch.cardText()).toBeNull()
+  })
 })

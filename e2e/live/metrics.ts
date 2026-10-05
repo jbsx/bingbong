@@ -113,7 +113,9 @@ export function finalAnswerDisplay(events: readonly PipelineEvent[]): Observed<E
 }
 
 /**
- * When the Answer's spoken sentence was published (#312): the last
+ * When the Answer's spoken sentence was published (#312): the sentence
+ * that stood for a reply that never landed, at its `stood_sentence`
+ * record's `publishedAt`; else the last
  * sentence spoken early in a round that ended with an Answer (a Steering
  * replan can discard an earlier one's Answer), at its
  * `early_sentence` record's `publishedAt`; else the first `speak` published
@@ -121,9 +123,12 @@ export function finalAnswerDisplay(events: readonly PipelineEvent[]): Observed<E
  * the events' own clock, so it subtracts from the accepted command's `at`.
  */
 export function answerSentenceAt(events: readonly PipelineEvent[], traceRecords: readonly object[]): Observed<number> {
-  const held = (traceRecords as readonly { kind?: unknown; ended?: unknown; publishedAt?: unknown }[]).findLast(
-    (record) => record.kind === 'early_sentence' && record.ended === 'answer' && typeof record.publishedAt === 'number',
-  )
+  const records = traceRecords as readonly { kind?: unknown; ended?: unknown; publishedAt?: unknown }[]
+  // A Run ends on one Answer, so at most one sentence stood, and it is the
+  // one the user heard whatever earlier rounds spoke.
+  const held =
+    records.findLast((record) => record.kind === 'stood_sentence' && typeof record.publishedAt === 'number') ??
+    records.findLast((record) => record.kind === 'early_sentence' && record.ended === 'answer' && typeof record.publishedAt === 'number')
   if (held !== undefined) return stampOf(held.publishedAt as number, 'the early sentence')
   const answer = finalAnswerDisplay(events)
   if (answer.status !== 'observed') return { ...answer }

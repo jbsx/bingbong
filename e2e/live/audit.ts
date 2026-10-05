@@ -866,6 +866,14 @@ export interface AuditMechanical {
    */
   readonly secondUtterances?: number
   /**
+   * Sentences that stood (#312): the Run's `stood_sentence` records, a
+   * sentence spoken early whose own reply never landed — its round was
+   * cut, or the client retried the attempt — and after which the Answer
+   * the Run ended on was not spoken. Absent on an audit written before the
+   * counter.
+   */
+  readonly stoodSentences?: number
+  /**
    * Transport Failures (#271): `llm_round` attempts, the Run's and its
    * Subagents', that ended `transport`. Absent from an audit written before
    * the counter; beside the rounds, never in them.
@@ -1177,6 +1185,8 @@ export interface AuditPopulation {
   readonly earlySentences?: number
   /** Second utterances over the attempts that count them (#312); absent when none does. */
   readonly secondUtterances?: number
+  /** Sentences that stood over the attempts that count them (#312); absent when none does. */
+  readonly stoodSentences?: number
   /** Transport Failure attempts over the attempts (#271); absent on an audit written before the counter. */
   readonly transportAttempts?: number
   /** Rounds recovered by a Transport Retry over the attempts (#271). */
@@ -4231,6 +4241,7 @@ export function classifyAttempt(input: AuditTraceInput): AuditMechanical {
     earlySentences: records.filter((record) => record.kind === 'early_sentence').length,
     earlySentenceTimes: earlySentenceTimesOf(records),
     secondUtterances: records.filter((record) => record.kind === 'second_utterance').length,
+    stoodSentences: records.filter((record) => record.kind === 'stood_sentence').length,
     // Transport Failures (#271), the Run's and its Subagents', from the
     // `llm_round` records alone: every attempt that failed at the transport,
     // the rounds whose Transport Retry then completed, and whether the Run
@@ -4830,6 +4841,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
   let offLanguageAnswers: number | undefined
   let earlySentences: number | undefined
   let secondUtterances: number | undefined
+  let stoodSentences: number | undefined
   let transportAttempts = 0
   let transportRetriesRecovered = 0
   let modelUnreachableRuns = 0
@@ -4962,6 +4974,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
     if (mechanical.offLanguageAnswers !== undefined) offLanguageAnswers = (offLanguageAnswers ?? 0) + mechanical.offLanguageAnswers
     if (mechanical.earlySentences !== undefined) earlySentences = (earlySentences ?? 0) + mechanical.earlySentences
     if (mechanical.secondUtterances !== undefined) secondUtterances = (secondUtterances ?? 0) + mechanical.secondUtterances
+    if (mechanical.stoodSentences !== undefined) stoodSentences = (stoodSentences ?? 0) + mechanical.stoodSentences
     transportAttempts += mechanical.transportAttempts ?? 0
     transportRetriesRecovered += mechanical.transportRetriesRecovered ?? 0
     modelUnreachableRuns += mechanical.modelUnreachableRuns ?? 0
@@ -5080,6 +5093,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
     ...(offLanguageAnswers !== undefined ? { offLanguageAnswers } : {}),
     ...(earlySentences !== undefined ? { earlySentences } : {}),
     ...(secondUtterances !== undefined ? { secondUtterances } : {}),
+    ...(stoodSentences !== undefined ? { stoodSentences } : {}),
     transportAttempts,
     transportRetriesRecovered,
     modelUnreachableRuns,
@@ -5469,10 +5483,10 @@ function earlySentenceTimesText(times: readonly EarlySentenceTime[] | undefined)
   return `; ${times.map((time) => `round ${time.round}: ${seconds(time.sinceRoundStartMs)} after its start, ${seconds(time.untilRoundEndMs)} before its end, ended ${time.ended}`).join('; ')}`
 }
 
-/** A population's sentences spoken early and second utterances (#312), or "not counted" on audits written before the counter. */
+/** A population's sentences spoken early, second utterances and sentences that stood (#312), or "not counted" on audits written before the counter. */
 function populationEarlySentencesText(population: AuditPopulation): string {
   if (population.earlySentences === undefined) return 'sentences spoken early not counted'
-  return `${population.earlySentences} sentence(s) spoken early (${population.secondUtterances ?? 0} second utterance(s))`
+  return `${population.earlySentences} sentence(s) spoken early (${population.secondUtterances ?? 0} second utterance(s), ${population.stoodSentences ?? 0} stood for a reply that never landed)`
 }
 
 /** A population's bookkeeping rounds right before the Answer (#288), or "not counted" on an audit written before the counter. */
@@ -5617,7 +5631,7 @@ function attemptSection(attempt: AuditAttempt): string[] {
   lines.push(`- Malformed Answers: ${mechanical.malformedAnswers} (${mechanical.answerRetries} retried)`)
   lines.push(`- Off-language Answers: ${mechanical.offLanguageAnswers ?? 'not counted'}`)
   lines.push(
-    `- Sentences spoken early: ${mechanical.earlySentences === undefined ? 'not counted' : `${mechanical.earlySentences} (${mechanical.secondUtterances ?? 0} second utterance(s))${earlySentenceTimesText(mechanical.earlySentenceTimes)}`}`,
+    `- Sentences spoken early: ${mechanical.earlySentences === undefined ? 'not counted' : `${mechanical.earlySentences} (${mechanical.secondUtterances ?? 0} second utterance(s), ${mechanical.stoodSentences ?? 0} stood for a reply that never landed)${earlySentenceTimesText(mechanical.earlySentenceTimes)}`}`,
   )
   lines.push(`- Transport Failures: ${transportText(mechanical)}`)
   lines.push(`- Finalization: ${finalizationText(mechanical)}`)

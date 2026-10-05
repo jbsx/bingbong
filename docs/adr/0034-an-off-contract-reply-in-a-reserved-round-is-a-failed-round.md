@@ -118,17 +118,37 @@ published only when the whole round ended. Decided:
   the held sentence is the one the Answer records, the one the Identity Slip
   repair reads and the one the Off-language check judges. A Steering replan
   lets the sentence go, because the corrected objective's Answer is a new one.
-- **A round that ends with no Answer spoke for none.** That covers a deadline
-  cut, a client timeout, a transport failure, and a round that called tools
-  after closing a sentence. The Answer that finally lands, the deterministic
-  one included, is spoken as before, and the user hears it as a second
-  utterance. This is counted (`second_utterance`, and in the Round Audit),
-  not guarded against. A sentence closed by an attempt the client then
-  retried (#271) belongs to a reply that never landed, so it too spoke for
-  none. The Answer waits out the playback of every sentence spoken early, as
-  it waits out a spoken line, so a failed one is reported and the Run is not
-  done while one is still queued. The `speaking` status is still set when
-  the Answer lands, not when a sentence is published mid-round.
+- **A round that called tools after closing a sentence spoke for none.** The
+  Run worked on, and the Answer that finally lands, the deterministic one
+  included, is spoken as before: the user hears it as a second utterance.
+  This is counted (`second_utterance`, and in the Round Audit), not guarded
+  against. The Answer waits out the playback of every sentence spoken early,
+  as it waits out a spoken line, so a failed one is reported and the Run is
+  not done while one is still queued. The `speaking` status is still set
+  when the Answer lands, not when a sentence is published mid-round.
+- **A sentence whose reply never landed stands** (the owner's ruling of
+  2026-10-05, which replaces the first reading of this note: a second
+  utterance there told the user that a limit had been reached, and the user
+  is not to hear about the application's limits). That covers a round cut
+  after it spoke — a deadline, a client timeout, a transport failure — and a
+  sentence closed by an attempt the client then retried (#271). The Run
+  holds the sentence, and the Answer it ends on is not spoken after it: the
+  reserved Answer when that lands, the deterministic Answer when it does
+  not. The Card is that Answer's, with one exception: when no model round
+  writes another and the cut round had closed its `display` in the stream,
+  that text is the Card, after the Off-language check and the Identity Slip
+  repair, and it is not marked `deterministicAnswer`. A Card that differs
+  from the sentence heard is accepted. The Asked Items of an Answer cut
+  before its list show `unverified`, which says how sure the Answer is and
+  is no report of a limit. Recorded as `stood_sentence` with where the Card
+  came from, and counted in the Round Audit.
+- **A cut round is never followed by a Tier Escalation.** At its deadline a
+  Run still making Progress rises a tier and the round in flight goes on; a
+  round that is cut has entered Finalization. So a sentence is never left
+  standing over work that browses on.
+- **No sentence is spoken early in a list-only retry round** (#311). The
+  reply is read for its list alone, and a whole Answer written there would
+  otherwise speak a sentence beside the held Answer's own.
 - **Only the checks the sentence can meet alone run before it is spoken**:
   the two-sentence cap, the Identity Slip repair (deletion, as for any
   Spoken Rendering) and the Off-language check. A sentence that fails one is
@@ -145,9 +165,9 @@ published only when the whole round ended. Decided:
   that may yet open an object is held back, and once an object opens the
   stream restarts at its value. The feed drops what streamed before, so the
   preamble does not stay on screen and the envelope never shows.
-- **No new ADR, and no Run Trace version.** `early_sentence` and
-  `second_utterance` are new records whose absence in an older trace means
-  what it means now: no sentence was spoken early.
+- **No new ADR, and no Run Trace version.** `early_sentence`,
+  `second_utterance` and `stood_sentence` are new records whose absence in
+  an older trace means what it means now: no sentence was spoken early.
 
 ## Context
 

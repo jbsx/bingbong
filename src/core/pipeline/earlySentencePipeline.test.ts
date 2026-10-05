@@ -187,7 +187,10 @@ describe('the sentence is spoken when it closes (#312)', () => {
     expect(run.records('early_sentence')).toMatchObject([{ round: 2, ended: 'answer' }])
   })
 
-  it('speaks the final Answer as a second utterance when a deadline cut the round the sentence was spoken in', async () => {
+  // The owner's ruling of 2026-10-05: the user is never told about the
+  // application's limits. A sentence spoken before its round was cut
+  // stands, and whatever Answer Finalization then lands is not spoken.
+  it('lets the sentence stand when a deadline cut the round it was spoken in: the reserved Answer gives the Card and is not spoken', async () => {
     const run = start(
       [
         async (request) => {
@@ -204,11 +207,74 @@ describe('the sentence is spoken when it closes (#312)', () => {
     run.clock.advance(1_000)
     await run.finished
 
-    expect(run.spoken()).toEqual(['Early.', 'Final.'])
-    expect(run.tts.spoken).toEqual(['Early.', 'Final.'])
+    expect(run.spoken()).toEqual(['Early.'])
+    expect(run.tts.spoken).toEqual(['Early.'])
+    expect(run.events.filter((event) => event.type === 'display')).toEqual([expect.objectContaining({ text: 'The final Card.', finalAnswer: true })])
+    // The cut entered Finalization: no Tier Escalation follows a cut round.
     expect(run.events.at(-1)).toMatchObject({ type: 'done', finalizationCause: 'deadline_reached' })
     expect(run.records('early_sentence')).toMatchObject([{ round: 1, ended: 'no_turn', untilRoundEndMs: 1_000 }])
-    expect(run.records('second_utterance')).toEqual([{ turnId: 'turn-early', kind: 'second_utterance', deterministic: false }])
+    expect(run.records('stood_sentence')).toEqual([{ turnId: 'turn-early', kind: 'stood_sentence', publishedAt: 0, card: 'answer' }])
+    expect(run.records('second_utterance')).toEqual([])
+  })
+
+  it('shows the Card the cut round had closed when no model round writes another, and does not speak the deterministic Answer', async () => {
+    const failing = async (): Promise<AssistantTurn> => {
+      throw new Error('provider down')
+    }
+    const run = start(
+      [
+        async (request) => {
+          text(request, '{"speak":"Early.","display":"# The early Card.","run_note":"half a no')
+          return abortable(request)
+        },
+        failing,
+        failing,
+      ],
+      { activeWorkDeadlineMs: 1_000 },
+    )
+
+    await until(() => run.spoken().length > 0, 'the early sentence')
+    run.clock.advance(1_000)
+    await run.finished
+
+    expect(run.spoken()).toEqual(['Early.'])
+    expect(run.tts.spoken).toEqual(['Early.'])
+    const cards = run.events.filter((event) => event.type === 'display')
+    expect(cards).toEqual([expect.objectContaining({ text: '# The early Card.', finalAnswer: true })])
+    // A Card a model round wrote is not marked as the deterministic Answer.
+    expect(cards[0]).not.toHaveProperty('deterministicAnswer')
+    expect(run.events.at(-1)).toMatchObject({ type: 'done', finalizationCause: 'deadline_reached' })
+    expect(run.records('stood_sentence')).toMatchObject([{ card: 'cut_round' }])
+    expect(run.records('second_utterance')).toEqual([])
+  })
+
+  it('shows the deterministic Card, unspoken, when the cut round had not closed its own', async () => {
+    const failing = async (): Promise<AssistantTurn> => {
+      throw new Error('provider down')
+    }
+    const run = start(
+      [
+        async (request) => {
+          text(request, '{"speak":"Early.","display":"# Ea')
+          return abortable(request)
+        },
+        failing,
+        failing,
+      ],
+      { activeWorkDeadlineMs: 1_000 },
+    )
+
+    await until(() => run.spoken().length > 0, 'the early sentence')
+    run.clock.advance(1_000)
+    await run.finished
+
+    expect(run.spoken()).toEqual(['Early.'])
+    expect(run.tts.spoken).toEqual(['Early.'])
+    expect(run.events.filter((event) => event.type === 'display')).toEqual([
+      expect.objectContaining({ deterministicAnswer: true, finalAnswer: true }),
+    ])
+    expect(run.records('stood_sentence')).toMatchObject([{ card: 'deterministic' }])
+    expect(run.records('second_utterance')).toEqual([])
   })
 
   it('speaks the final Answer as a second utterance when the round the sentence was spoken in called tools', async () => {
@@ -226,7 +292,7 @@ describe('the sentence is spoken when it closes (#312)', () => {
     expect(run.records('second_utterance')).toEqual([{ turnId: 'turn-early', kind: 'second_utterance', deterministic: false }])
   })
 
-  it('treats a sentence spoken in an attempt the client then retried as spoken for no Answer (#271)', async () => {
+  it('lets a sentence spoken in an attempt the client then retried stand: the retry’s Answer gives the Card and is not spoken (#271)', async () => {
     const run = start([
       async (request) => {
         text(request, '{"speak":"Early.","display":"# Ea')
@@ -237,9 +303,40 @@ describe('the sentence is spoken when it closes (#312)', () => {
     ])
     await run.finished
 
-    expect(run.spoken()).toEqual(['Early.', 'Retried.'])
+    expect(run.spoken()).toEqual(['Early.'])
+    expect(run.events.find((event) => event.type === 'display')).toMatchObject({ text: 'The retried Card.' })
     expect(run.records('early_sentence')).toMatchObject([{ round: 1, ended: 'no_turn' }])
-    expect(run.records('second_utterance')).toEqual([{ turnId: 'turn-early', kind: 'second_utterance', deterministic: false }])
+    expect(run.records('stood_sentence')).toMatchObject([{ card: 'answer' }])
+    expect(run.records('second_utterance')).toEqual([])
+  })
+
+  it('never speaks early in a list-only retry round (#311): a whole Answer written there is read for its list alone', async () => {
+    const short = '{"speak":"Both hold.","display":"Both hold.","asked_items":[{"item":"price","standing":"stated","statement":"$39"}]}'
+    const full =
+      '{"speak":"Both hold, again.","display":"Rewritten.","asked_items":[{"item":"price","standing":"stated","statement":"$39"},{"item":"size","standing":"stated","statement":"M"}]}'
+    const run = start([
+      async () => ({
+        kind: 'tool_calls',
+        calls: [
+          { id: 'p1', name: 'report_run_plan', args: { objective: 'Find it', headline: 'Finding', effort_tier: 'lookup', asked_items: ['price', 'size'] } },
+          { id: 'r1', name: 'read_page', args: {} },
+        ],
+      }),
+      // The first Answer streams nothing, so the Run holds no sentence when
+      // the retry's reply streams a whole Answer of its own.
+      async () => answer(short),
+      async (request) => {
+        text(request, full)
+        return answer(full)
+      },
+    ])
+    await run.finished
+
+    expect(run.requests[2]?.answerRetry).toBeDefined()
+    expect(run.spoken()).toEqual(['Both hold.'])
+    expect(run.tts.spoken).toEqual(['Both hold.'])
+    expect(run.events.find((event) => event.type === 'display')).toMatchObject({ text: 'Both hold.' })
+    expect(run.records('early_sentence')).toEqual([])
   })
 
   it('reports a failed playback of a sentence spoken for no Answer, as a spoken line’s is', async () => {
