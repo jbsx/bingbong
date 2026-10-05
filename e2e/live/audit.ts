@@ -867,10 +867,10 @@ export interface AuditMechanical {
   readonly secondUtterances?: number
   /**
    * Sentences that stood (#312): the Run's `stood_sentence` records, a
-   * sentence spoken early whose own reply never landed — its round was
-   * cut, or the client retried the attempt — and after which the Answer
-   * the Run ended on was not spoken. Absent on an audit written before the
-   * counter.
+   * sentence spoken early that stood for an Answer not its own reply's —
+   * its round was cut, the client retried the attempt, or its Answer could
+   * not be taken and the deterministic one stood in — and after which that
+   * Answer was not spoken. Absent on an audit written before the counter.
    */
   readonly stoodSentences?: number
   /**
@@ -5486,7 +5486,7 @@ function earlySentenceTimesText(times: readonly EarlySentenceTime[] | undefined)
 /** A population's sentences spoken early, second utterances and sentences that stood (#312), or "not counted" on audits written before the counter. */
 function populationEarlySentencesText(population: AuditPopulation): string {
   if (population.earlySentences === undefined) return 'sentences spoken early not counted'
-  return `${population.earlySentences} sentence(s) spoken early (${population.secondUtterances ?? 0} second utterance(s), ${population.stoodSentences ?? 0} stood for a reply that never landed)`
+  return `${population.earlySentences} sentence(s) spoken early (${population.secondUtterances ?? 0} second utterance(s), ${population.stoodSentences ?? 0} stood for an Answer not its own)`
 }
 
 /** A population's bookkeeping rounds right before the Answer (#288), or "not counted" on an audit written before the counter. */
@@ -5631,7 +5631,7 @@ function attemptSection(attempt: AuditAttempt): string[] {
   lines.push(`- Malformed Answers: ${mechanical.malformedAnswers} (${mechanical.answerRetries} retried)`)
   lines.push(`- Off-language Answers: ${mechanical.offLanguageAnswers ?? 'not counted'}`)
   lines.push(
-    `- Sentences spoken early: ${mechanical.earlySentences === undefined ? 'not counted' : `${mechanical.earlySentences} (${mechanical.secondUtterances ?? 0} second utterance(s), ${mechanical.stoodSentences ?? 0} stood for a reply that never landed)${earlySentenceTimesText(mechanical.earlySentenceTimes)}`}`,
+    `- Sentences spoken early: ${mechanical.earlySentences === undefined ? 'not counted' : `${mechanical.earlySentences} (${mechanical.secondUtterances ?? 0} second utterance(s), ${mechanical.stoodSentences ?? 0} stood for an Answer not its own)${earlySentenceTimesText(mechanical.earlySentenceTimes)}`}`,
   )
   lines.push(`- Transport Failures: ${transportText(mechanical)}`)
   lines.push(`- Finalization: ${finalizationText(mechanical)}`)

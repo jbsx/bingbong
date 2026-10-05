@@ -114,7 +114,7 @@ export function finalAnswerDisplay(events: readonly PipelineEvent[]): Observed<E
 
 /**
  * When the Answer's spoken sentence was published (#312): the sentence
- * that stood for a reply that never landed, at its `stood_sentence`
+ * that stood for an Answer not its own reply's, at its `stood_sentence`
  * record's `publishedAt`; else the last
  * sentence spoken early in a round that ended with an Answer (a Steering
  * replan can discard an earlier one's Answer), at its

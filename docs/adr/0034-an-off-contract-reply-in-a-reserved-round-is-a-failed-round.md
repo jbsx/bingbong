@@ -140,8 +140,15 @@ published only when the whole round ended. Decided:
   repair, and it is not marked `deterministicAnswer`. A Card that differs
   from the sentence heard is accepted. The Asked Items of an Answer cut
   before its list show `unverified`, which says how sure the Answer is and
-  is no report of a limit. Recorded as `stood_sentence` with where the Card
-  came from, and counted in the Round Audit.
+  is no report of a limit. A sentence from an attempt the client retried
+  never takes the retry's text as its Card. The same holds, by the same
+  rule and beyond the cases the ruling named, for a sentence whose Answer
+  landed and could not be taken — a Malformed or an Off-language one, the
+  retry spent: the deterministic Answer that stands in gives the Card and
+  is not spoken. Recorded as `stood_sentence` with where the Card came
+  from, and counted in the Round Audit. A hard failure of a working round
+  after a sentence still speaks its one line; what an error may say is
+  #315's.
 - **A cut round is never followed by a Tier Escalation.** At its deadline a
   Run still making Progress rises a tier and the round in flight goes on; a
   round that is cut has entered Finalization. So a sentence is never left

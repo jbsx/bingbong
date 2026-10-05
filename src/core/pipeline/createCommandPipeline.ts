@@ -2348,10 +2348,12 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
               // deadline a Run still making Progress rises a tier and the
               // round is not cut at all — so the sentence is held for the
               // Answer Finalization lands, with the Card text the round
-              // had closed.
+              // had closed — unless the client had retried the attempt that
+              // spoke: the text in flight is then the retry's, and its Card
+              // is not the spoken sentence's.
               if (roundOutcome !== 'completed') {
                 heldSentence = spokenEarly
-                heldUnlanded = { card: sentenceWatch?.cardText() ?? null }
+                heldUnlanded = { card: sentenceWatch?.abandoned === true ? null : (sentenceWatch?.cardText() ?? null) }
               }
             }
           }
@@ -2872,7 +2874,9 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
               : undefined
           if (listed !== undefined && listed.slips.length > 0) traceRun?.(() => ({ turnId, kind: 'identity_slip', slips: listed.slips }))
           // A sentence the Run holds stands (#312): the user heard an
-          // Answer begin and is not told that a limit ended it. The Card
+          // Answer begin and is not told that a limit ended it — whether
+          // its round was cut or its Answer landed and could not be taken
+          // (a Malformed or an Off-language one, the retry spent). The Card
           // is the one the cut round had closed in its stream, when it had
           // and it passes what a Card must — the Off-language check (#286)
           // and the display boundary (#246); the deterministic Card
@@ -2895,13 +2899,13 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           // call tools — is waited out, and the Answer heard after it is a
           // second utterance.
           const spokenForNone = sentencesSpokenEarly.filter((published) => published !== held)
+          if (spokenForNone.length > 0) traceRun?.(() => ({ turnId, kind: 'second_utterance', deterministic: true }))
           for (const published of spokenForNone) yield* awaitSpokenEarly(published)
           if (held !== undefined) {
             traceRun?.(() => ({ turnId, kind: 'stood_sentence', publishedAt: held.at, card: cutCard !== undefined ? 'cut_round' : 'deterministic' }))
             yield { type: 'status', status: 'speaking', at: clock.now() }
             yield* awaitSpokenEarly(held)
           } else {
-            if (spokenForNone.length > 0) traceRun?.(() => ({ turnId, kind: 'second_utterance', deterministic: true }))
             yield* speakLine(fallback.speak, turnId)
           }
           yield* checkpoint(run, 'thinking')

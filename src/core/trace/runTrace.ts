@@ -750,12 +750,13 @@ export interface SecondUtteranceEvent {
 }
 
 /**
- * A sentence spoken early that stood for an Answer its own reply never
- * delivered (#312): the round that spoke it was cut, or the client retried
- * the attempt, and the Answer the Run then ended on was not spoken after
- * it. `card` is where that Answer's Card came from: a model round's Answer
- * that landed afterwards, the text the cut round had closed in its stream,
- * or the deterministic Answer. `publishedAt` is the sentence's own.
+ * A sentence spoken early that stood for an Answer that was not its own
+ * reply's (#312), which was not spoken after it. Its round was cut, or the
+ * client retried the attempt that spoke it, or — `deterministic` only — its
+ * Answer landed, could not be taken, and the Run ended on the deterministic
+ * one. `card` is where the Card came from: a model round's Answer that
+ * landed afterwards, the text the cut round had closed in its stream, or
+ * the deterministic Answer. `publishedAt` is the sentence's own.
  */
 export interface StoodSentenceEvent {
   readonly kind: 'stood_sentence'
