@@ -187,8 +187,9 @@ _Avoid_: complexity, mode
 The current bounded-effort window: one Effort Tier's Tool Round budget,
 warnings, and active-work deadline. It counts the Run's Tool Rounds, owes the
 internal budget warnings — two by rounds used, and one by elapsed time at 60%
-of the deadline that asks for a Tier Escalation or an ending (#216) — and arms
-each acquisition round against the deadline as a cancellation boundary. A Tier
+of the deadline (#216), each saying what its boundary will do (#266, #316) —
+and arms each acquisition round against the deadline as a cancellation
+boundary. A Tier
 Escalation or Steering replan re-arms it while cumulative Tool Rounds keep
 counting toward the hard ceiling. It is also
 Finalization's one door: every mechanically known Finalization Cause — budget,

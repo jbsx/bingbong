@@ -9,6 +9,11 @@ performed at the tier's Tool Round budget, under the same Progress test and
 the same once-per-Run bound. ADR 0027's budgets and Finalization Causes are
 unchanged; ADR 0042 carries a note.
 
+Note (2026-10-05, #316): the Decision below says the 60% warning "already
+asks for a decision; it is unchanged". From #316 it asks for none: it says
+of the deadline what the round-based warnings say of the budget. ADR 0042
+carries the note.
+
 Amended on 2026-09-21 by the #266 implementation grill, before any code:
 the Context's account of round 11 is corrected against the trace; the
 Decision gains the decline record, the Notice's last sentence and the

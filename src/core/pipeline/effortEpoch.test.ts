@@ -24,6 +24,7 @@ import {
   tierEscalationNotice,
   DEADLINE_TIER_ESCALATION_REASON,
   BUDGET_ARM_WARNING_SENTENCE,
+  DEADLINE_ARM_WARNING_SENTENCE,
   BUDGET_TIER_ESCALATION_REASON,
   TIER_ESCALATION_DECLINE_REASONS,
   tierEscalationDeclineOf,
@@ -736,11 +737,13 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
       expect(TIME_MILESTONE_FRACTION).toBe(0.6)
     })
 
-    it('asks the time milestone for a decision, not for a counter (#216)', () => {
-      expect(budgetWarningMessage('time', 8, 12)).toBe(
-        'Time: 60% of this run\u2019s active-work deadline is spent. Decide now \u2014 escalate the Effort Tier with ' +
-          'report_run_plan and the escalation_reason that justifies it, or finish with what you have.',
-      )
+    // Issue #316. The warning used to ask the model to escalate the tier
+    // itself; since #216 the application does that at the deadline, and
+    // the warning says so instead of asking.
+    it('tells the time milestone what the deadline will do, and asks for no escalation (#316)', () => {
+      const warning = budgetWarningMessage('time', 8, 12)
+      expect(warning).toBe(`Time: 60% of this run\u2019s active-work deadline is spent. ${DEADLINE_ARM_WARNING_SENTENCE}`)
+      expect(warning).not.toMatch(/escalat|report_run_plan|decide/i)
     })
 
     it('tells the model how much work remains without user-facing counters', () => {
@@ -754,15 +757,18 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
 
     // Issue #266 (ADR 0063). The two round-based warnings say what the
     // budget will do — rise one tier for a Run still making progress,
-    // once, or end one that is not — and the time warning, which asks for
-    // a decision, does not.
-    it('names the budget arm on the round-based warnings and not on the time warning', () => {
+    // once, or end one that is not — and since #316 the time warning says
+    // the same of the deadline, each naming its own boundary.
+    it('names the arm on every warning, by the boundary that warning counts', () => {
       expect(BUDGET_ARM_WARNING_SENTENCE).toBe(
         'A run still making progress when its budget is spent rises one Effort Tier, once; a run that is not is ended.',
       )
+      expect(DEADLINE_ARM_WARNING_SENTENCE).toBe(
+        'A run still making progress when its deadline is reached rises one Effort Tier, once; a run that is not is ended.',
+      )
       expect(budgetWarningMessage('near', 3, 12)).toContain(BUDGET_ARM_WARNING_SENTENCE)
       expect(budgetWarningMessage('imminent', 1, 12)).toContain(BUDGET_ARM_WARNING_SENTENCE)
-      expect(budgetWarningMessage('time', 8, 12)).not.toContain(BUDGET_ARM_WARNING_SENTENCE)
+      expect(budgetWarningMessage('time', 8, 12)).toContain(DEADLINE_ARM_WARNING_SENTENCE)
       expect(budgetWarningMessage('time', 8, 12)).not.toContain('budget is spent')
     })
   })
@@ -841,7 +847,7 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
       clock.advance(TIER_ACTIVE_WORK_DEADLINES_MS.lookup * TIME_MILESTONE_FRACTION)
       const warning = epoch.takeBudgetWarning()
       expect(warning).toContain('60% of this run')
-      expect(warning).toContain('escalate the Effort Tier')
+      expect(warning).toContain(DEADLINE_ARM_WARNING_SENTENCE)
       expect(epoch.takeBudgetWarning()).toBeNull()
     })
 

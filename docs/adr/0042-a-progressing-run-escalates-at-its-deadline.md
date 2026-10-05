@@ -21,6 +21,18 @@ the escalation's Run Plan event carries it. The warnings then count what is
 actually left, and the Run ends for its budget. The ceiling itself, and the
 refusal to escalate a Run already at it, are unchanged.
 
+Note (2026-10-05, #316): the time warning at 60% of the deadline no longer
+asks the model to escalate the tier or finish. Over the retained live Run
+Traces the model declared a higher tier after none of 195 such warnings on
+GLM-5.3, while the application raised the tier itself after 23 of them. The
+warning now says how much of the deadline is spent and what this decision
+does at it — a Run still making Progress when its deadline is reached rises
+one Effort Tier, once; a Run that is not is ended — in the round warnings'
+sentence (#266) with the deadline named in place of the budget. The model
+may still declare a higher tier with `report_run_plan`; the prompt's rule
+for that, the 60% milestone, and when the warning is delivered are
+unchanged.
+
 One thing the implementation settled that the decision below leaves open: the
 escalation needs someone to vouch for Progress, and the no-progress rail can
 only do that where it observes the page. A rail with no settled state to read

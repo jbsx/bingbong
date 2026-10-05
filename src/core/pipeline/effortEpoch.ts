@@ -397,8 +397,8 @@ const MILESTONE_FRACTIONS: Readonly<Record<(typeof ROUND_MILESTONES)[number], nu
 
 /**
  * The share of the active-work deadline the time milestone fires at
- * (#216, ADR 0042): early enough that an escalation still has a tier's
- * work left in it, late enough that it is not a running commentary.
+ * (#216, ADR 0042): early enough that the Run can still act on what the
+ * deadline will do, late enough that it is not a running commentary.
  */
 export const TIME_MILESTONE_FRACTION = 0.6
 
@@ -428,7 +428,7 @@ export function budgetWarningCrossed(
 
 /**
  * The model-facing warning line (#117): tells the model how much work
- * remains and demands decisive evidence. Internal and diagnostic-only —
+ * remains and what its boundary will do. Internal and diagnostic-only —
  * it rides tool results like the Run Plan nudge and never becomes a
  * user-facing counter, headline, or status. `remaining` is computed by
  * the caller at delivery, so a late-delivered warning stays honest.
@@ -436,12 +436,11 @@ export function budgetWarningCrossed(
 export function budgetWarningMessage(milestone: BudgetWarningMilestone, remaining: number, budget: number): string {
   if (milestone === 'time') {
     // Time, not rounds: the counters would be the honest answer to a
-    // question nobody asked, and this milestone asks for a decision
-    // (#216, ADR 0042) — the tier this Run declared may be the wrong one.
-    return (
-      'Time: 60% of this run\u2019s active-work deadline is spent. Decide now \u2014 escalate the Effort Tier with ' +
-      'report_run_plan and the escalation_reason that justifies it, or finish with what you have.'
-    )
+    // question nobody asked. It says what the deadline will do and asks
+    // for nothing (#316): the application raises the tier itself (#216,
+    // ADR 0042), and the escalation this line used to ask the model to
+    // declare was declared after none of 195 warnings.
+    return `Time: 60% of this run\u2019s active-work deadline is spent. ${DEADLINE_ARM_WARNING_SENTENCE}`
   }
   if (milestone === 'near') {
     return `Work budget: ${remaining} of ${budget} tool rounds remain. Prioritize decisive evidence — finalize as soon as the objective is met. ${BUDGET_ARM_WARNING_SENTENCE}`
@@ -453,11 +452,18 @@ export function budgetWarningMessage(milestone: BudgetWarningMilestone, remainin
  * What the two round-based warnings say will happen at the budget (#266,
  * ADR 0063): the model is told the arm exists and what it reads, so a Run
  * that is landing findings is not stampeded into finalizing by the count
- * alone, and one that is not is not told a rescue is coming. The time
- * warning asks for a decision instead and does not carry it.
+ * alone, and one that is not is not told a rescue is coming.
  */
 export const BUDGET_ARM_WARNING_SENTENCE =
   'A run still making progress when its budget is spent rises one Effort Tier, once; a run that is not is ended.'
+
+/**
+ * The same sentence for the time warning (#316), naming the boundary that
+ * warning counts: the deadline arms the escalation as the budget does
+ * (ADR 0042), under the same Progress test and the same once-per-Run bound.
+ */
+export const DEADLINE_ARM_WARNING_SENTENCE =
+  'A run still making progress when its deadline is reached rises one Effort Tier, once; a run that is not is ended.'
 
 /**
  * The reason sentence a no-progress Finalization opens with, in the one
