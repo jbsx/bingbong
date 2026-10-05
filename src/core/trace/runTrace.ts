@@ -75,8 +75,11 @@ import type { VisionRunTraceRecord } from './visionTrace'
  * or `answer_tail_fallback` record published no Card early, wrote no
  * Answer out of field order and lost no Answer Tail, which a version-12
  * trace cannot say: every Card there waited for its object's end.
+ * 14 (#318): a round that landed an Answer and left no `answer_reply`
+ * record had a reply the pipeline did not read as one, which a version-13
+ * trace cannot say: it kept no Answer as the model wrote it.
  */
-export const RUN_TRACE_VERSION = 13
+export const RUN_TRACE_VERSION = 14
 
 /** How much of a graded observation's retained text a record keeps. */
 export const TRACE_PAYLOAD_HEAD_CHARS = 500
@@ -92,6 +95,15 @@ export const TRACE_REASONING_MAX_CHARS = 8_000
  * visible.
  */
 export const TRACE_OFF_CONTRACT_TEXT_MAX_CHARS = 4_000
+
+/**
+ * How much of a reply an `answer_reply` record keeps (#318). An Answer is
+ * about 8 KB as written and is kept whole, since the Round Audit reads its
+ * fields out of the text; the cut exists so a model that dumps a page into
+ * its Answer cannot dominate the roll, and `chars` beside it keeps the cut
+ * visible.
+ */
+export const TRACE_ANSWER_REPLY_MAX_CHARS = 64_000
 
 /**
  * How much of a `tool_result` event's text a `pipeline_event` record keeps
@@ -578,8 +590,9 @@ export interface SearchObservationEvent {
  * an Identity Slip (#246, #300, ADR 0028): the internal ids the model
  * wrote where the user reads or hears, and what the display boundary did
  * with each. The published
- * `display` and `speak` events carry the repaired text and the raw Answer
- * is kept nowhere, so this is the only record that a repair happened. Not
+ * `display` and `speak` events carry the repaired text, so this is the
+ * only record that says a repair happened; the reply as written is in the
+ * Answer's `answer_reply` record (#318). Not
  * a fault — no code failed — and not an `off_contract_reply` — the reply's
  * shape was fine. Written once per slipped Answer; an Answer with no slip
  * writes none.
@@ -814,8 +827,47 @@ export interface AnswerTailFallbackEvent {
   readonly reason: AnswerTailFallbackReason
 }
 
+/**
+ * How the pipeline read a reply it took as an Answer (#318): `accepted`
+ * is the Run's Answer; `held` is the Run's Answer too, kept while a
+ * list-only retry asks for its `asked_items` again (#311), and
+ * `list_only` is the reply to that retry; `malformed`, `off_language` and
+ * `asked_items` were met with an Answer Retry that asked for the whole
+ * Answer, or, for an Off-language Answer with none left, with the
+ * deterministic Answer; `off_contract` is a reserved round's reply that
+ * was not the contract's shape, which the deterministic Answer stood in
+ * for.
+ */
+export type AnswerReplyReading = 'accepted' | 'held' | 'list_only' | 'malformed' | 'off_language' | 'asked_items' | 'off_contract'
+
+/**
+ * The reply of one round the pipeline read as an Answer, as the model
+ * wrote it (#318): the whole object, its Answer Tail and its keys
+ * included, where the published events carry only the renderings. Written
+ * in the orchestrator loop only, once per reply, when the pipeline
+ * decides what the reply is. Three Answers leave none: a Card that stood
+ * for a round that was cut or ended with tool calls (#319), whose reply
+ * never landed as an Answer; the deterministic Answer, which no model
+ * wrote; and an Answer a Steering replan let go before it was read.
+ */
+export interface AnswerReplyEvent {
+  readonly kind: 'answer_reply'
+  /** The LLM round that replied, numbered as `llm_round` numbers it. */
+  readonly round: number
+  readonly read: AnswerReplyReading
+  /** The parser's shape marker, when the client gave one. */
+  readonly shape?: AnswerShape
+  /** True on a reserved Answer round's reply; absent on every other. */
+  readonly reserved?: true
+  /** The reply as the model wrote it, cut at {@link TRACE_ANSWER_REPLY_MAX_CHARS}. */
+  readonly text: string
+  /** Full length in characters before the cut. */
+  readonly chars: number
+}
+
 /** One decision a Run traces, whatever kind it is. */
 export type RunTraceEventBody =
+  | AnswerReplyEvent
   | AnswerCheckpointsEvent
   | DecisionEvent
   | FinalizationEntryEvent

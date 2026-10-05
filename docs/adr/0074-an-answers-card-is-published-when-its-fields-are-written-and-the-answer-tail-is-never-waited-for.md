@@ -6,7 +6,34 @@ Accepted on 2026-10-05 for #313, grilled the same day from the Round Audits
 of `main-4dc72e9` and the code on main at 2d2900e, with every recommendation
 taken. Amends the Answer contract. The work is #318 (the measurement),
 #313 (the Asked Item entry, built on 2026-10-05) and #319 (the early Card,
-built on 2026-10-05); #318 is not built, and no capture has been run.
+built on 2026-10-05); #318 was built on 2026-10-05, after the `fix-311-312`
+capture it was meant to precede, so that capture's traces keep no reply.
+
+Note (2026-10-05, #318): what building the measurement settled.
+
+- The Run Trace is version 14 with one record, `answer_reply`: the round,
+  the reply as the model wrote it, the parser's shape, whether the round
+  was reserved, and how the pipeline read it: `accepted`, `held` (the
+  Answer a list-only retry kept), `list_only`, `malformed`, `off_language`,
+  `asked_items` (a prose reply asked for the whole Answer again) or
+  `off_contract`. The reply is kept whole up to 64,000 characters.
+- Three Answers leave no record. A Card that stood for a round that was cut
+  or ended with tool calls: no reply landed as an Answer. The deterministic
+  Answer: no model wrote it. An Answer a Steering replan let go before it
+  was read.
+- The Round Audit splits the last reply read `accepted` or `held`. `speak`,
+  `display` and `run_note` are the text of the string; the `item` wording
+  and the statements are summed over the entries; `evidence_ids`,
+  `memory_patch` and `checkpoints` are the value as JSON. The remainder is
+  the rest of the reply as written: keys, the other fields, the rest of
+  each `asked_items` entry, string escapes and whitespace. A list-only
+  reply is not in the split. A Run with no reply to split reads so, and a
+  trace below version 14 reads "not recorded".
+- A Finalization-class round is a round the audit filed as Finalization
+  that reported its usage. Over the 18 Runs of `main-4dc72e9` the median
+  is 2,138, as above. The Fix Ledger's line is per population, as every
+  counter there is: 2,201 on initials and 2,056 on follow-ups for
+  `main-4dc72e9`, 2,612 and 2,907 for `fix-311-312`.
 
 Note (2026-10-05, #313): what building the Asked Item entry settled.
 

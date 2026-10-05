@@ -335,6 +335,12 @@ export type AssistantTurn =
       shape?: AnswerShape
       /** What could not be read (#245), the parser's own words; present with a `malformed` shape. */
       malformedError?: string
+      /**
+       * The reply as the model wrote it (#318), before any parsing: what
+       * the Run Trace keeps of an Answer, and read by nothing else. Absent
+       * when a client said nothing.
+       */
+      replyText?: string
       usage?: TokenUsage
     }
   | { kind: 'tool_calls'; calls: ToolCall[]; usage?: TokenUsage }

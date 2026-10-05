@@ -957,7 +957,7 @@ export function createOpenAiLlmClient(deps: OpenAiLlmClientDeps): LlmClient {
     const content = message?.content
     if (typeof content === 'string' && content.trim() !== '') {
       const answer = parseAssistantAnswer(content)
-      return { kind: 'answer', ...answer, ...(usage ? { usage } : {}) }
+      return { kind: 'answer', ...answer, replyText: content, ...(usage ? { usage } : {}) }
     }
     return null
   }

@@ -221,6 +221,13 @@ export const PAGE_ARRIVAL_TRACE_VERSION = 11
  * counted none of the three, so it reads "not counted", never zero.
  */
 export const EARLY_CARD_TRACE_VERSION = 13
+/**
+ * The Run Trace version from which a Run keeps the reply of every round it
+ * read as an Answer (#318): a trace below it kept no Answer as the model
+ * wrote it, so its final Answer's characters by field read "not recorded",
+ * never zero.
+ */
+export const ANSWER_REPLY_TRACE_VERSION = 14
 /** How far apart a perf `llm` span's end and an `llm_round` record may be and still be the same round. */
 const LATENCY_JOIN_TOLERANCE_MS = 2_000
 /** A search at this streak followed a search with nothing opened between them (ADR 0058): no Progress. */
@@ -889,6 +896,14 @@ export interface AuditMechanical {
    */
   readonly earlyCards?: EarlyCardCounts
   /**
+   * The Run's final Answer by field, in characters (#318), from the reply
+   * its trace kept. Beside the rounds, never in them, reported and never
+   * gated. Null where the Run left no reply to split. Absent on a trace
+   * below {@link ANSWER_REPLY_TRACE_VERSION} and on an audit written before
+   * the field.
+   */
+  readonly answerFields?: AnswerFieldChars | null
+  /**
    * Transport Failures (#271): `llm_round` attempts, the Run's and its
    * Subagents', that ended `transport`. Absent from an audit written before
    * the counter; beside the rounds, never in them.
@@ -1208,6 +1223,12 @@ export interface AuditPopulation {
    * absent when none does.
    */
   readonly earlyCards?: PopulationEarlyCards
+  /**
+   * The median characters of each field of a final Answer, and of the whole
+   * reply, over the Runs whose reply could be split (#318); `medians` is
+   * null when none could. Absent when no attempt's trace kept a reply.
+   */
+  readonly answerFields?: { readonly runs: number; readonly medians: Readonly<Record<AnswerField | 'total', number>> | null }
   /** Transport Failure attempts over the attempts (#271); absent on an audit written before the counter. */
   readonly transportAttempts?: number
   /** Rounds recovered by a Transport Retry over the attempts (#271). */
@@ -2801,6 +2822,78 @@ export function earlyCardCountsOf(traceRecords: readonly object[]): EarlyCardCou
   }
 }
 
+/** The parts a final Answer's characters are split into (#318), in the order they are printed. */
+export const ANSWER_FIELDS = ['speak', 'display', 'askedItemsItem', 'askedItemsStatement', 'evidenceIds', 'runNote', 'memoryPatch', 'checkpoints', 'remainder'] as const
+export type AnswerField = (typeof ANSWER_FIELDS)[number]
+
+/**
+ * One Run's final Answer by field, in characters (#318), read from the
+ * reply its `answer_reply` record kept. `speak`, `display` and `runNote`
+ * are the text of the string; an Asked Item entry's `item` wording and its
+ * statement are summed over the entries; `evidenceIds`, `memoryPatch` and
+ * `checkpoints` are the value as JSON. `remainder` is what is left of
+ * `total`, the reply as written: the keys, the other fields, the rest of
+ * each `asked_items` entry, string escapes and whitespace.
+ */
+export type AnswerFieldChars = Readonly<Record<AnswerField, number>> & {
+  /** The trace's `llm_round` number of the round that wrote the reply. */
+  readonly round: number
+  readonly total: number
+}
+
+/** Where a reply's JSON object may be, as the Answer contract's parser tries them: the whole reply, a code fence's body, the first `{` to the last `}`. */
+function replyObjectOf(text: string): Record<string, unknown> | null {
+  const trimmed = text.trim()
+  const fenced = /^```[a-zA-Z]*\s*([\s\S]*?)\s*```$/.exec(trimmed)
+  const start = trimmed.indexOf('{')
+  const end = trimmed.lastIndexOf('}')
+  for (const candidate of [trimmed, fenced?.[1], start !== -1 && end > start ? trimmed.slice(start, end + 1) : undefined]) {
+    if (candidate === undefined) continue
+    try {
+      const parsed: unknown = JSON.parse(candidate)
+      if (isRecord(parsed)) return parsed
+    } catch {
+      // Not this candidate; the next one narrows toward the object.
+    }
+  }
+  return null
+}
+
+/**
+ * The Run's final Answer by field (#318): the last reply the Run read as
+ * its Answer, `accepted` or `held` for a list-only retry, whose reply is
+ * not in the split. Null where no such reply can be split: the Answer was
+ * the deterministic one, a Card stood for a round whose reply never landed
+ * (#319), the reply was prose or could not be read, or its record was cut.
+ */
+export function answerFieldsOf(traceRecords: readonly object[]): AnswerFieldChars | null {
+  const records = (traceRecords as unknown as readonly TraceLine[]).filter((record) => record.agentId === undefined)
+  const answers = records.flatMap((record): Record<string, unknown>[] => {
+    const event = eventOf(record)
+    return event !== null && event.type === 'display' && event.finalAnswer === true ? [event] : []
+  })
+  if (answers.at(-1)?.deterministicAnswer === true) return null
+  const reply = records.filter((record) => record.kind === 'answer_reply' && (record.read === 'accepted' || record.read === 'held')).at(-1)
+  if (reply === undefined || !isString(reply.text) || !isFiniteNumber(reply.chars) || !isFiniteNumber(reply.round) || reply.chars > reply.text.length) return null
+  const object = replyObjectOf(reply.text)
+  if (object === null) return null
+  const chars = (value: unknown): number => (value === undefined ? 0 : isString(value) ? value.length : JSON.stringify(value).length)
+  const entries = Array.isArray(object.asked_items) ? object.asked_items.filter(isRecord) : []
+  const worded = (key: 'item' | 'statement'): number => entries.reduce((total, entry) => total + (isString(entry[key]) ? entry[key].length : 0), 0)
+  const fields = {
+    speak: chars(object.speak),
+    display: chars(object.display),
+    askedItemsItem: worded('item'),
+    askedItemsStatement: worded('statement'),
+    evidenceIds: chars(object.evidence_ids),
+    runNote: chars(object.run_note),
+    memoryPatch: chars(object.memory_patch),
+    checkpoints: chars(object.checkpoints),
+  }
+  const attributed = Object.values(fields).reduce((total, count) => total + count, 0)
+  return { round: reply.round, total: reply.chars, ...fields, remainder: reply.chars - attributed }
+}
+
 /** One sentence spoken early (#312), as the audit reports it. */
 export interface EarlySentenceTime {
   readonly round: number
@@ -4309,6 +4402,8 @@ export function classifyAttempt(input: AuditTraceInput): AuditMechanical {
     // Cards published early, Answers out of field order and Answer Tails
     // that fell back (#319): only a trace new enough to have written them.
     ...(traceAtLeast(EARLY_CARD_TRACE_VERSION) ? { earlyCards: earlyCardCountsOf(records) } : {}),
+    // The final Answer by field (#318): only a trace new enough to have kept the reply.
+    ...(traceAtLeast(ANSWER_REPLY_TRACE_VERSION) ? { answerFields: answerFieldsOf(records) } : {}),
     // Transport Failures (#271), the Run's and its Subagents', from the
     // `llm_round` records alone: every attempt that failed at the transport,
     // the rounds whose Transport Retry then completed, and whether the Run
@@ -4910,6 +5005,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
   let secondUtterances: number | undefined
   let stoodSentences: number | undefined
   let earlyCards: PopulationEarlyCards | undefined
+  let answerFields: AnswerFieldChars[] | undefined
   let transportAttempts = 0
   let transportRetriesRecovered = 0
   let modelUnreachableRuns = 0
@@ -5049,6 +5145,10 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
       earlyCards.outOfOrder += mechanical.earlyCards.outOfOrder
       for (const fallback of mechanical.earlyCards.tailFallbacks) earlyCards.tailFallbacks[fallback.reason] = (earlyCards.tailFallbacks[fallback.reason] ?? 0) + 1
     }
+    if (mechanical.answerFields !== undefined) {
+      answerFields ??= []
+      if (mechanical.answerFields !== null) answerFields.push(mechanical.answerFields)
+    }
     transportAttempts += mechanical.transportAttempts ?? 0
     transportRetriesRecovered += mechanical.transportRetriesRecovered ?? 0
     modelUnreachableRuns += mechanical.modelUnreachableRuns ?? 0
@@ -5169,6 +5269,7 @@ export function populationOf(label: string, attempts: readonly AuditAttempt[]): 
     ...(secondUtterances !== undefined ? { secondUtterances } : {}),
     ...(stoodSentences !== undefined ? { stoodSentences } : {}),
     ...(earlyCards !== undefined ? { earlyCards } : {}),
+    ...(answerFields !== undefined ? { answerFields: answerFieldMediansOf(answerFields) } : {}),
     transportAttempts,
     transportRetriesRecovered,
     modelUnreachableRuns,
@@ -5582,6 +5683,55 @@ function populationEarlyCardsText(population: AuditPopulation): string {
   return `${counts.published} Card(s) published early (${counts.outOfOrder} Answer(s) out of field order, ${fallen} Answer Tail(s) fell back${reasons.length === 0 ? '' : `: ${reasons.map(([reason, count]) => `${count} ${reason}`).join(', ')}`})`
 }
 
+/** The median of some counts, the mean of the middle two of an even number, as the cross-pass summary's median is. */
+function medianCharsOf(values: readonly number[]): number {
+  const sorted = [...values].sort((left, right) => left - right)
+  const middle = Math.floor(sorted.length / 2)
+  return sorted.length % 2 === 1 ? sorted[middle]! : (sorted[middle - 1]! + sorted[middle]!) / 2
+}
+
+/** The median of each field, and of the whole reply, over the final Answers that could be split (#318). */
+function answerFieldMediansOf(split: readonly AnswerFieldChars[]): NonNullable<AuditPopulation['answerFields']> {
+  if (split.length === 0) return { runs: 0, medians: null }
+  const medianOf = (field: AnswerField | 'total'): number => medianCharsOf(split.map((fields) => fields[field]))
+  return {
+    runs: split.length,
+    medians: { total: medianOf('total'), ...(Object.fromEntries(ANSWER_FIELDS.map((field) => [field, medianOf(field)])) as Record<AnswerField, number>) },
+  }
+}
+
+const ANSWER_FIELD_LABELS: Readonly<Record<AnswerField, string>> = {
+  speak: '`speak`',
+  display: '`display`',
+  askedItemsItem: '`asked_items` item wording',
+  askedItemsStatement: '`asked_items` statements',
+  evidenceIds: '`evidence_ids`',
+  runNote: '`run_note`',
+  memoryPatch: '`memory_patch`',
+  checkpoints: '`checkpoints`',
+  remainder: 'the remainder',
+}
+
+/** A final Answer's characters, the whole reply and then each field (#318). */
+function answerFieldCharsText(chars: Readonly<Record<AnswerField | 'total', number>>): string {
+  return `${chars.total} characters: ${ANSWER_FIELDS.map((field) => `${ANSWER_FIELD_LABELS[field]} ${chars[field]}`).join(', ')}`
+}
+
+/** One attempt's final Answer by field (#318), or why it has none. */
+function answerFieldsText(fields: AnswerFieldChars | null | undefined): string {
+  if (fields === undefined) return 'not recorded'
+  if (fields === null) return 'no reply to split'
+  return `round ${fields.round}, ${answerFieldCharsText(fields)}`
+}
+
+/** A population's final Answers by field, as medians (#318), or "not recorded". */
+function populationAnswerFieldsText(population: AuditPopulation): string {
+  const fields = population.answerFields
+  if (fields === undefined) return 'final Answers by field not recorded'
+  if (fields.medians === null) return 'final Answers by field: no reply to split'
+  return `final Answers by field, medians over ${fields.runs} Run(s): ${answerFieldCharsText(fields.medians)}`
+}
+
 /** A population's bookkeeping rounds right before the Answer (#288), or "not counted" on an audit written before the counter. */
 function populationBookkeepingBeforeAnswerText(population: AuditPopulation): string {
   if (population.bookkeepingBeforeAnswer === undefined) return 'bookkeeping rounds right before the Answer not counted'
@@ -5687,7 +5837,7 @@ function judgementLines(populations: readonly AuditPopulation[]): string[] {
       `- ${population.label}: ${population.offKeyRounds} Off-key round(s), ${population.searchLoopRounds} Search Loop round(s) by the reviewer (${population.mechanicalSearchRounds} by the streak rule, heads included: ${population.searchRoundsAtStreak2} at streak 2 or beyond, ${population.searchRoundsAtStreak3} at 3 or beyond; attempts by search source ${SEARCH_SOURCES.map((source) => `${source} ${population.searchSources[source]}`).join(', ')}; navigate searches by Search URL form ${searchFormsText(population.searchForms)}; ${populationBlockedOrInertText(population.blockedOrInert)}; ${populationUnavailableLandingsText(population.unavailableLandings)}; ${populationEmptyLandingsText(population.emptyLandings)}; ${populationPageArrivalsText(population.pageArrivals)}; ${populationConsentWallsText(population.consentWalls)}; ${populationWindowOpensText(population.windowOpens)}; ${populationTierEscalationsText(population.tierEscalations)}), ` +
       `${population.inheritedRounds} inherited, ${population.rejectedCheckpoints} rejected Evidence Checkpoint(s), ${population.walledRounds} walled round(s), ${population.notFoundNavigates} navigate(s) landed on a Not-found Page (${population.notFoundOffKey} judged Off-key), ${population.rewrittenComposedAddresses ?? 0} Composed Address(es) rewritten into a site search (${population.rewrittenComposedAddressesOffKey ?? 0} judged Off-key, ${population.rewrittenShownAddresses ?? 'not counted'} to an address the Run was shown), ${population.unseenPhraseRewrites ?? 'not counted'} search(es) ran with an Unseen Phrase unquoted (${population.unseenPhraseRewritesOffKey ?? 0} judged Off-key), ${population.engineRewrites ?? 'not counted'} search(es) ran on the Run Engine in place of another Web Engine (${population.engineRewritesOffKey ?? 0} judged Off-key), ${populationResultPicksText(population)}, ${populationSelectedPassagesText(population)}, ${populationRunMadeUseText(population)}, ${populationContradictionNotesText(population)}, ${population.subagentRounds} Subagent round(s), ` +
       `${population.mergedCheckpoints} merged Evidence Checkpoint(s) (a floor), ${population.heldPageRoundsWithoutProgress} Held Page round(s) without Progress, ${population.bundledCheckpoints} bundled checkpoint round(s), ${population.sameSourceUnsupportedRounds} same-source unsupported round(s), ${subagentCitationsText(population.subagentCitations)}, ${populationSlipsText(population)}, ${delegatedPageCountsText(population.delegatedPageRounds)}, ${populationPastTheEndReadsText(population)}, ${populationPagelessLandingsText(population)}, ${populationBookkeepingBeforeAnswerText(population)}, ${populationBookkeepingBeforeCutText(population)}, ${populationAnswerCheckpointsText(population)}, ` +
-      `${population.malformedAnswers} Malformed Answer(s) (${population.answerRetries} retried), ${populationOffLanguageAnswersText(population)}, ${populationEarlySentencesText(population)}, ${populationEarlyCardsText(population)}, ` +
+      `${population.malformedAnswers} Malformed Answer(s) (${population.answerRetries} retried), ${populationOffLanguageAnswersText(population)}, ${populationEarlySentencesText(population)}, ${populationEarlyCardsText(population)}, ${populationAnswerFieldsText(population)}, ` +
       `${transportText(population)}, ` +
       `${populationSkipsText(population)}, ${populationCutsText(population)}, ` +
       `${population.askedItemsDeclared} declared Asked Items (${population.askedItemsUnverified} with an unverified standing, ${population.askedItemsShapeFailures} shape failure(s), ${population.askedItemsShapeRetried} retried), ` +
@@ -5727,6 +5877,7 @@ function attemptSection(attempt: AuditAttempt): string[] {
     `- Sentences spoken early: ${mechanical.earlySentences === undefined ? 'not counted' : `${mechanical.earlySentences} (${mechanical.secondUtterances ?? 0} second utterance(s), ${mechanical.stoodSentences ?? 0} stood for an Answer not its own)${earlySentenceTimesText(mechanical.earlySentenceTimes)}`}`,
   )
   lines.push(`- Cards published early: ${earlyCardsText(mechanical.earlyCards)}`)
+  lines.push(`- Final Answer by field: ${answerFieldsText(mechanical.answerFields)}`)
   lines.push(`- Transport Failures: ${transportText(mechanical)}`)
   lines.push(`- Finalization: ${finalizationText(mechanical)}`)
   lines.push(`- Asked Items: ${askedItemsText(mechanical.askedItems)}`)

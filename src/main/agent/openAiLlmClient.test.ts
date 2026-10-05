@@ -234,6 +234,7 @@ describe('openAiLlmClient', () => {
 
     expect(turn).toEqual({
       kind: 'answer',
+      replyText: expect.any(String),
       speak: 'Done. Playing it now.',
       display: 'Opened YouTube and played the first MKBHD result: <a>…</a>',
       shape: 'on_contract',
@@ -300,6 +301,7 @@ describe('openAiLlmClient', () => {
 
     expect(turn).toEqual({
       kind: 'answer',
+      replyText: expect.any(String),
       speak: 'The second one.',
       display: 'Chose B.',
       runNote: 'Selected B.',
@@ -492,6 +494,7 @@ describe('openAiLlmClient', () => {
 
     await expect(makeClient(fetch).complete({ command: 'work', toolResults: [] })).resolves.toEqual({
       kind: 'answer',
+      replyText: expect.any(String),
       speak: 'Done.',
       display: 'Useful detail.',
       runNoteIssue: 'malformed',
@@ -966,7 +969,7 @@ describe('openAiLlmClient', () => {
 
     const turn = await client.complete({ command: 'x', toolResults: [] })
 
-    expect(turn).toEqual({ kind: 'answer', speak: 'First. Second.', display: 'detail', shape: 'on_contract' })
+    expect(turn).toEqual({ kind: 'answer', replyText: expect.any(String), speak: 'First. Second.', display: 'detail', shape: 'on_contract' })
   })
 
   it('falls back to raw content when the answer is not the JSON contract', async () => {
@@ -980,6 +983,8 @@ describe('openAiLlmClient', () => {
     // marker as a failed round.
     expect(turn).toEqual({
       kind: 'answer',
+      // The reply as the model wrote it (#318), for the Run Trace alone.
+      replyText: 'Plain reply, no JSON here.',
       speak: 'Plain reply, no JSON here.',
       display: 'Plain reply, no JSON here.',
       shape: 'off_contract',
@@ -1013,7 +1018,7 @@ describe('openAiLlmClient', () => {
 
     const turn = await client.complete({ command: 'x', toolResults: [] })
 
-    expect(turn).toEqual({ kind: 'answer', speak: 'hi', display: 'hi', shape: 'on_contract' })
+    expect(turn).toEqual({ kind: 'answer', replyText: expect.any(String), speak: 'hi', display: 'hi', shape: 'on_contract' })
     expect(fetch.calls).toHaveLength(2)
   })
 
@@ -1199,6 +1204,7 @@ describe('openAiLlmClient streaming (#47)', () => {
     expect(deltas).toEqual(['{"speak":"Done. ', 'Playing.","display":"Opened <a>yt</a>"}'])
     expect(turn).toEqual({
       kind: 'answer',
+      replyText: expect.any(String),
       speak: 'Done. Playing.',
       display: 'Opened <a>yt</a>',
       shape: 'on_contract',
@@ -1370,7 +1376,7 @@ describe('openAiLlmClient streaming (#47)', () => {
 
     const turn = await client.complete({ command: 'x', toolResults: [], onDelta: () => {} })
 
-    expect(turn).toEqual({ kind: 'answer', speak: 'hi', display: 'hi', shape: 'on_contract' })
+    expect(turn).toEqual({ kind: 'answer', replyText: expect.any(String), speak: 'hi', display: 'hi', shape: 'on_contract' })
     expect(fetch.calls).toHaveLength(2)
   })
 
@@ -1414,6 +1420,8 @@ describe('openAiLlmClient streaming (#47)', () => {
     expect(deltas).toEqual(['{"speak":"Done.","dis', 'play":"Done."}'])
     expect(turn).toEqual({
       kind: 'answer',
+      // The streamed reply assembled, keys and all (#318).
+      replyText: '{"speak":"Done.","display":"Done."}',
       speak: 'Done.',
       display: 'Done.',
       shape: 'on_contract',

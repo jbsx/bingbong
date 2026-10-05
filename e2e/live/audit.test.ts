@@ -1381,6 +1381,143 @@ describe('Cards published early, Answers out of field order and Answer Tails tha
   })
 })
 
+describe('the final Answer by field (#318)', () => {
+  const at14 = (record: Record<string, unknown>): Record<string, unknown> => ({ ...identity, ...record, v: 14 })
+  const reply = (text: string, overrides: Record<string, unknown> = {}): Record<string, unknown> =>
+    at14({ at: T0 + 15_000, kind: 'answer_reply', round: 7, read: 'accepted', shape: 'on_contract', text, chars: text.length, ...overrides })
+  const shown = (overrides: Record<string, unknown> = {}): Record<string, unknown> =>
+    at14({ at: T0 + 15_100, kind: 'pipeline_event', event: { type: 'display', turnId: TURN, text: 'the Card', finalAnswer: true, at: T0 + 15_100, ...overrides } })
+  const OBJECT = {
+    speak: 'Yes.',
+    display: 'It is £4.20.',
+    evidence_ids: ['mem-1', 'mem-2'],
+    asked_items: [
+      { n: 1, item: 'the fare', standing: 'stated', statement: '£4.20' },
+      { n: 2, standing: 'unverified', statement: 'no page said' },
+    ],
+    run_note: 'checked the fare page',
+    memory_patch: { add: [{ kind: 'fact', text: 'fare' }] },
+    checkpoints: [{ tool: 'record_observation', excerpt: 'the fare is £4.20' }],
+    resolution: 'completed',
+  }
+  const TEXT = JSON.stringify(OBJECT, null, 1)
+  const fieldsOf = (records: Record<string, unknown>[]) => classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, [...EXTRA, ...records]) })).answerFields
+  const ATTRIBUTED = 4 + 12 + 8 + (5 + 12) + JSON.stringify(OBJECT.evidence_ids).length + 21 + JSON.stringify(OBJECT.memory_patch).length + JSON.stringify(OBJECT.checkpoints).length
+
+  it('splits the reply the Run read as its Answer, the remainder being what no field holds', () => {
+    expect(fieldsOf([reply(TEXT), shown()])).toEqual({
+      round: 7,
+      total: TEXT.length,
+      speak: 4,
+      display: 12,
+      askedItemsItem: 8,
+      // An entry with no `item` adds nothing to the item wording, and its statement still counts.
+      askedItemsStatement: 5 + 12,
+      evidenceIds: JSON.stringify(OBJECT.evidence_ids).length,
+      runNote: 21,
+      memoryPatch: JSON.stringify(OBJECT.memory_patch).length,
+      checkpoints: JSON.stringify(OBJECT.checkpoints).length,
+      remainder: TEXT.length - ATTRIBUTED,
+    })
+  })
+
+  it('reads an Answer with no `asked_items`, and one with only the required fields, as zeros and never as absent', () => {
+    const bare = '{"speak":"Yes.","display":"It is £4.20."}'
+
+    expect(fieldsOf([reply(bare), shown()])).toEqual({
+      round: 7,
+      total: bare.length,
+      speak: 4,
+      display: 12,
+      askedItemsItem: 0,
+      askedItemsStatement: 0,
+      evidenceIds: 0,
+      runNote: 0,
+      memoryPatch: 0,
+      checkpoints: 0,
+      remainder: bare.length - 16,
+    })
+  })
+
+  it('reads the object out of a code fence, the whole reply being the total', () => {
+    const fenced = '```json\n{"speak":"Yes.","display":"It is £4.20."}\n```'
+
+    expect(fieldsOf([reply(fenced), shown()])).toMatchObject({ total: fenced.length, speak: 4, display: 12, remainder: fenced.length - 16 })
+  })
+
+  it('splits the Answer a list-only retry held, and not the list-only reply after it', () => {
+    const list = '{"asked_items":[{"n":2,"standing":"stated","statement":"two"}]}'
+
+    expect(fieldsOf([reply(TEXT, { round: 6, read: 'held' }), reply(list, { read: 'list_only' }), shown()])).toMatchObject({ round: 6, total: TEXT.length, askedItemsItem: 8 })
+  })
+
+  it('takes the last accepted reply, past the replies an Answer Retry met', () => {
+    const second = '{"speak":"No.","display":"It is not."}'
+
+    expect(fieldsOf([reply('{"speak": "Yes.", "display": }', { round: 6, read: 'malformed', shape: 'malformed' }), reply(second), shown()])).toMatchObject({ round: 7, total: second.length, speak: 3 })
+  })
+
+  it('has no reply to split where the Answer was deterministic, was prose, was cut in the record, or left no record', () => {
+    expect(fieldsOf([reply(TEXT, { read: 'off_language' }), shown({ deterministicAnswer: true })])).toBeNull()
+    expect(fieldsOf([reply(TEXT, { round: 6 }), shown(), shown({ deterministicAnswer: true })])).toBeNull()
+    expect(fieldsOf([reply('The fare is £4.20.', { shape: 'off_contract' }), shown()])).toBeNull()
+    expect(fieldsOf([reply(TEXT.slice(0, 40), { chars: TEXT.length }), shown()])).toBeNull()
+    // A Card that stood for a round cut inside its Answer Tail (#319): the reply never landed.
+    expect(fieldsOf([shown()])).toBeNull()
+  })
+
+  it('leaves a Subagent’s records out', () => {
+    expect(fieldsOf([reply(TEXT, { agentId: 'a-1' }), shown()])).toBeNull()
+  })
+
+  it('sits beside the rounds: the rounds and the digest are as they were', () => {
+    const plain = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, [...EXTRA, shown()]) }))
+    const split = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, [...EXTRA, reply(TEXT), shown()]) }))
+
+    expect(split.rounds).toEqual(plain.rounds)
+    expect(split.digestHash).toBe(plain.digestHash)
+  })
+
+  it('reads a trace written before the record as absent, never as zero', () => {
+    const older = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, EXTRA) }))
+
+    expect('answerFields' in older).toBe(false)
+    const set = buildAuditSet(provenanceOf(), [{ mechanical: older, review: null, countsAfterOverrules: older.counts }], [])
+    expect('answerFields' in set.populations.initial).toBe(false)
+    const markdown = formatAuditSet(set)
+    expect(markdown).toContain('- Final Answer by field: not recorded')
+    expect(markdown).toMatch(/- initial: .*final Answers by field not recorded/)
+  })
+
+  it('reports the medians per population over the Runs that could be split, and prints both', () => {
+    const bare = '{"speak":"Yes.","display":"It is £4.20."}'
+    const attempts = [[reply(TEXT), shown()], [reply(bare), shown()], [reply(bare), shown()], [shown({ deterministicAnswer: true })]].map((records) => {
+      const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, [...EXTRA, ...records]) }))
+      return { mechanical, review: null, countsAfterOverrules: mechanical.counts }
+    })
+    const set = buildAuditSet(provenanceOf(), attempts, [])
+
+    expect(set.populations.initial.answerFields).toMatchObject({
+      runs: 3,
+      medians: { total: bare.length, speak: 4, display: 12, askedItemsItem: 0, askedItemsStatement: 0, runNote: 0, remainder: bare.length - 16 },
+    })
+    const markdown = formatAuditSet(set)
+    expect(markdown).toContain(
+      `- Final Answer by field: round 7, ${bare.length} characters: \`speak\` 4, \`display\` 12, \`asked_items\` item wording 0, \`asked_items\` statements 0, \`evidence_ids\` 0, \`run_note\` 0, \`memory_patch\` 0, \`checkpoints\` 0, the remainder ${bare.length - 16}`,
+    )
+    expect(markdown).toContain('- Final Answer by field: no reply to split')
+    expect(markdown).toMatch(new RegExp(`- initial: .*final Answers by field, medians over 3 Run\\(s\\): ${bare.length} characters: \`speak\` 4, \`display\` 12, `))
+  })
+
+  it('says a population whose traces kept replies and split none has none to split', () => {
+    const mechanical = classifyAttempt(inputOf({ traceRecords: traceOf(ROUNDS, [...EXTRA, shown({ deterministicAnswer: true })]) }))
+    const set = buildAuditSet(provenanceOf(), [{ mechanical, review: null, countsAfterOverrules: mechanical.counts }], [])
+
+    expect(set.populations.initial.answerFields).toEqual({ runs: 0, medians: null })
+    expect(formatAuditSet(set)).toMatch(/- initial: .*final Answers by field: no reply to split/)
+  })
+})
+
 describe('skipped bookkeeping rounds and Finalization rounds cut by the Allowance (#256, ADR 0056)', () => {
   const entry = (at: number, bookkeeping: 'kept' | 'skipped', agentId?: string): Record<string, unknown> => ({
     ...identity,

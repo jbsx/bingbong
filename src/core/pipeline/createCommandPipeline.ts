@@ -114,6 +114,7 @@ import { pipelineEventTraceBody, tracesPipelineEvent } from '../trace/pipelineEv
 import { offContractReplyEvent, recordOffContractReply, type TracedOffContractReply } from '../trace/offContractReplyTrace'
 import { answerRetryOutcome, answerRetryTraceEvent, recordMalformedAnswer, type TracedAnswerRetryRecord } from '../trace/answerRetryTrace'
 import { offLanguageAnswerEvent, recordOffLanguageAnswer, type TracedOffLanguageAnswer } from '../trace/offLanguageAnswerTrace'
+import { answerReplyEvent, type TracedAnswerReply } from '../trace/answerReplyTrace'
 import { isOffLanguageRendering, OFF_LANGUAGE_RETRY_MESSAGE, offLanguageRenderings, type OffLanguageFinding } from '../agent/answerLanguage'
 import { completedEvidenceIsFresh } from './evidenceFreshness'
 import { evaluateCandidateCheckpoint, type CandidateCheckpointOutcome, type EvidenceSessionSource } from './candidateCheckpoint'
@@ -1285,6 +1286,11 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
     const writeOffLanguageAnswer = traceRun
       ? (record: TracedOffLanguageAnswer): void => traceRun(() => ({ turnId, ...offLanguageAnswerEvent(record) }))
       : undefined
+    // The answer_reply records (#318): the reply of every round the Run read
+    // as an Answer, as the model wrote it. The Run's own only.
+    const writeAnswerReply = traceRun
+      ? (reply: TracedAnswerReply): void => traceRun(() => ({ turnId, ...answerReplyEvent(reply) }))
+      : undefined
     // A delegated worker's Tool Rounds (#185): the same one write, for the
     // events a worker's rounds publish to nobody. Its events arrive
     // unstamped — a worker knows no turn — so the Run stamps its own,
@@ -1697,7 +1703,8 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           // Card substitutes a source link where the id resolves; the
           // spoken line only deletes. The declared evidence identities
           // are the model's and stay as written, and the repair is
-          // recorded, since the raw Answer is kept nowhere else. The
+          // recorded: the events carry the repaired text, and the reply
+          // as written is kept only in a Run Trace (#318). The
           // Asked Items the Card lists are renderings of the Answer too
           // (#300): an id in a name or a statement is removed, and the
           // list the Run's own resolution reads stays as settled.
@@ -2083,6 +2090,15 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           let roundCard: { readonly answer: Extract<AssistantTurn, { kind: 'answer' }>; readonly at: number } | undefined
           /** Why the Answer Tail behind that Card was lost, when it was. */
           let roundTailFallback: AnswerTailFallbackReason | undefined
+          /** The reply this round landed as an Answer, as the model wrote it (#318), until its record is written. */
+          let roundReply: Pick<TracedAnswerReply, 'text' | 'shape'> | undefined
+          // Written once, where the Run decides what the reply is.
+          const traceReply = (read: TracedAnswerReply['read']): void => {
+            const reply = roundReply
+            if (reply === undefined) return
+            roundReply = undefined
+            writeAnswerReply?.({ round: llmRound, read, reserved: reservedRound, ...reply })
+          }
           const roundStartedAt = clock.now()
           let roundSentence: PublishedSentence | undefined
           let roundTurnKind: AssistantTurn['kind'] | undefined
@@ -2271,6 +2287,14 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
               }
             }
             turn = await completion
+            // The reply as the model wrote it (#318) is the Run Trace's
+            // alone: taken off the turn here, before anything reads the
+            // Answer, so no event, commit or later request carries it.
+            if (turn.kind === 'answer' && turn.replyText !== undefined) {
+              const { replyText, ...read } = turn
+              roundReply = { text: replyText, ...(read.shape !== undefined ? { shape: read.shape } : {}) }
+              turn = read
+            }
             // A shown Card stands (#319, ADR 0074). When the reply that
             // lands is not the Answer it began — the object cannot be read
             // past the Card, the round ended with tool calls beside it, or
@@ -2306,6 +2330,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
               // language. A reply with no readable list, tool calls
               // included, leaves the first list as written, and the check
               // below settles it as a spent retry.
+              traceReply('list_only')
               const reply =
                 turn.kind !== 'answer' ? null : turn.shape === 'on_contract' ? (turn.askedItems ?? null) : parseAskedItemsReply(answerText(turn))
               roundAnswerRetryOutcome = reply !== null ? 'on_contract' : answerRetryOutcome(turn)
@@ -2571,6 +2596,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           // has none. A retry a cutoff carried into this round is judged
           // here like any reply.
           if (reservedRound && turn.kind === 'answer' && (turn.shape === 'off_contract' || turn.shape === 'malformed')) {
+            traceReply('off_contract')
             recordOffContractReply({
               site: 'pipeline.createCommandPipeline.offContractReply',
               role: 'orchestrator',
@@ -2604,6 +2630,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
               turnId,
             })
             if (!answerRetrySpent) {
+              traceReply('malformed')
               answerRetrySpent = true
               owedAnswerRetry = { reply: answerText(turn), message: answerRetryMessage(malformedErrorOf(turn)) }
               continue
@@ -2629,6 +2656,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
               // The cause the deterministic Answer will use, asked where
               // the Answer asks it; a retry has no fallback and so none.
               const cause = retried ? undefined : offLanguageCause()
+              traceReply('off_language')
               recordOffLanguageAnswer({
                 site: 'pipeline.createCommandPipeline.offLanguageAnswer',
                 round: llmRound,
@@ -2683,6 +2711,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
                 ...(retried ? { listOnly } : {}),
               }))
               if (retried) {
+                traceReply(listOnly ? 'held' : 'asked_items')
                 answerRetrySpent = true
                 owedAnswerRetry = { reply: answerText(turn), message: askedItemsRetryMessage(declaredAskedItems, coverage, listOnly ? 'list' : 'prose') }
                 if (listOnly) owedHeldAnswer = turn
@@ -2693,6 +2722,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
 
           if (turn.kind === 'answer') {
             finalAnswer = turn
+            traceReply('accepted')
             // A Card published while its round was in flight stands
             // (#319, ADR 0074) and is not published again. An Answer Tail
             // lost behind it is recorded here, where the Run ends on that

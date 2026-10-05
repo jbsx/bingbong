@@ -670,6 +670,19 @@ function postBlockVisionOf(counts: BlockedOrInertAsWritten | undefined, attempts
   return everyAttemptSaid ? counts?.postBlockVision : undefined
 }
 
+/**
+ * The median output tokens of a Finalization-class round (#318): the rounds
+ * the audit filed as Finalization, over the attempts, by the
+ * `completionTokens` each carries. A round whose provider reported no usage
+ * is left out; nothing where no round is left.
+ */
+function finalizationOutputTokensOf(attempts: readonly AuditAttempt[]): number | undefined {
+  const tokens = attempts.flatMap((attempt) =>
+    attempt.mechanical.rounds.flatMap((audited) => (audited.kind === 'finalization' && typeof audited.completionTokens === 'number' ? [audited.completionTokens] : [])),
+  )
+  return tokens.length === 0 ? undefined : medianOf([...tokens].sort((left, right) => left - right))
+}
+
 /** Every counter of a population, in a fixed order, for the all-counters expander (#251, Decision 4). */
 export function countersOf(population: AuditPopulation, attempts: readonly AuditAttempt[]): readonly Counter[] {
   const mechanical = (label: string, value: number | undefined, over: number | null = null): Counter => ({ label, judgement: false, value: recorded(value), over })
@@ -813,6 +826,10 @@ export function countersOf(population: AuditPopulation, attempts: readonly Audit
     mechanical('Finalization rounds cut by the Allowance', older.allowanceFinalizationRounds, population.rounds),
     mechanical('Finalization rounds cut after a first token', splitUnrecorded ? undefined : older.allowanceFinalizationRoundsStreaming, population.rounds),
     mechanical('Finalization rounds cut silent', splitUnrecorded ? undefined : older.allowanceFinalizationRoundsSilent, population.rounds),
+    // #318: every audit's rounds carry their output tokens, so this reads an
+    // old audit as it reads a new one. Reported, never gated here; #313 sets
+    // a bar on it.
+    mechanical('Median output tokens per Finalization-class round', finalizationOutputTokensOf(attempts)),
     mechanical('First-token latency p50 (ms)', older.firstToken?.p50 ?? undefined),
     mechanical('First-token latency p90 (ms)', older.firstToken?.p90 ?? undefined),
     mechanical('Subagent rounds', population.subagentRounds, budgeted),

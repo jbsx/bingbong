@@ -1228,3 +1228,42 @@ describe('the committed aggregates and the second reading (#287)', () => {
     expect(markdownOf('audit-aggregate-fix-239.md')).toContain('| initial | 12 | not recorded | not recorded | not recorded | 12 |')
   })
 })
+
+describe('the median output tokens per Finalization-class round (#318)', () => {
+  const LABEL = 'Median output tokens per Finalization-class round'
+  const passesOf = (family: string): AuditSetOutput[] => [1, 2, 3].map((pass) => readAudit(`audit-${family}-${pass}.json`))
+  const attemptsOf = (family: string, relation?: string): AuditAttempt[] =>
+    passesOf(family).flatMap((audit) => audit.attempts).filter((attempt) => relation === undefined || attempt.mechanical.relation === relation)
+  const medianOver = (attempts: readonly AuditAttempt[]) => countersOf(populationOf('initial', attempts), attempts).find((counter) => counter.label === LABEL)
+
+  it('reads 2,138 over the 18 Runs of main-4dc72e9, the number ADR 0074 was written from, and each population on its own', () => {
+    expect(attemptsOf('main-4dc72e9')).toHaveLength(18)
+    expect(medianOver(attemptsOf('main-4dc72e9'))).toEqual({ label: LABEL, judgement: false, value: 2138, over: null })
+    expect(medianOver(attemptsOf('main-4dc72e9', 'initial'))?.value).toBe(2201)
+    expect(medianOver(attemptsOf('main-4dc72e9', 'revised_objective'))?.value).toBe(2056)
+  })
+
+  it('reads an audit written long before it, since every audited round carries its output tokens', () => {
+    expect(medianOver(attemptsOf('baseline', 'initial'))?.value).toBe(972)
+    expect(medianOver(attemptsOf('fix-311-312', 'initial'))?.value).toBe(2612)
+  })
+
+  it('leaves out a round whose provider reported no usage, and reads nothing where no Finalization round is left', () => {
+    const [attempt] = attemptsOf('main-4dc72e9', 'initial')
+    const finalization = attempt!.mechanical.rounds.find((round) => round.kind === 'finalization')!
+    const withRounds = (rounds: AuditAttempt['mechanical']['rounds']): AuditAttempt => ({ ...attempt!, mechanical: { ...attempt!.mechanical, rounds } })
+    const tokens = (completionTokens: number | null) => ({ ...finalization, completionTokens })
+
+    expect(medianOver([withRounds([tokens(100), tokens(null), tokens(300), tokens(400)])])?.value).toBe(300)
+    expect(medianOver([withRounds([tokens(100), tokens(300)])])?.value).toBe(200)
+    expect(medianOver([withRounds([{ ...tokens(900), kind: 'bookkeeping' }, tokens(null)])])?.value).toBeNull()
+  })
+
+  it('is a line of the row, each side read from its own audits', () => {
+    const row = compareFamilies(family(committed, 'fix-311-312'), family(committed, 'main-4dc72e9'))
+    const line = row.counters.find((counter) => counter.label === LABEL)
+
+    expect(line?.populations.initial).toEqual({ reference: { value: 2201, over: null }, subject: { value: 2612, over: null }, delta: 411 })
+    expect(line?.populations.followUp).toEqual({ reference: { value: 2056, over: null }, subject: { value: 2907, over: null }, delta: 851 })
+  })
+})
