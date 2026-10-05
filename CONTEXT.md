@@ -495,7 +495,8 @@ a yes or no, a qualification, a named item's standing — declared by the model
 in the Run's first Run Plan and revised only by a Steering replan. The Answer
 carries a standing for every one of them, `stated` with the statement or
 `unverified` with why, and an unverified Asked Item makes the Run Resolution
-`partial` whatever the model claimed. An entry names its item by its number
+`partial` whatever the model claimed. A `stated` statement is the value
+established, not the item's wording again (ADR 0074). An entry names its item by its number
 in the declared list or by its wording; a list that is not the declared one
 is sent back once for the list alone, merged into the Answer as first
 written (ADR 0052, #311). A Run that hunts and declares none has
@@ -872,8 +873,19 @@ _Avoid_: speak line, voice line
 
 **Card**:
 The view-facing half of an Answer: markdown shown in the Feed. Replaces the
-live answer stream and the Spoken rendering.
+live answer stream and the Spoken rendering. It is shown once what it is made
+from has been written, before the Answer Tail, and once shown it stands
+(ADR 0074).
 _Avoid_: display text, answer card
+
+**Answer Tail**:
+The part of an Answer written after everything its Card is made from: the Run
+Resolution and Finalization Cause the model proposes, the Run Note, the memory
+patch, the mishear proposals and the Answer Checkpoints. Nothing the user sees
+or hears waits on it. One that is cut or cannot be read never fails the Answer:
+each part falls back as a missing one does, and no Answer Retry is spent
+(ADR 0074).
+_Avoid_: bookkeeping fields, metadata, trailer
 
 **Identity Slip**:
 An internal identity — a Memory Entry id or a Run Observation id — that the
