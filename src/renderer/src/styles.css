@@ -558,15 +558,8 @@ body {
   font-size: 0.9rem;
 }
 
-/* Retry lines: ephemeral detail — quiet, so outcomes read first. */
-.feed-entry--retry .feed-text {
-  color: var(--muted);
-  font-size: 0.85rem;
-  font-style: italic;
-}
-
-/* Steer echoes: your directive, received and pending — quiet like retry
-   detail, but accented so it never reads as the model's words. */
+/* Steer echoes: your directive, received and pending — quiet detail,
+   but accented so it never reads as the model's words. */
 .feed-entry--steer .feed-text {
   color: var(--muted);
   font-size: 0.85rem;
@@ -1524,16 +1517,13 @@ body {
   object-fit: cover;
 }
 
-.subagent-card-url,
-.subagent-card-error {
+.subagent-card-url {
   margin: 0;
   padding: 10px 16px;
   font-size: 0.85rem;
   color: var(--muted);
   overflow-wrap: anywhere;
 }
-
-.subagent-card-error { color: var(--status-red); }
 
 .subagent-card-result summary {
   padding: 6px 16px;

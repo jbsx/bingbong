@@ -449,7 +449,7 @@ describe('command pipeline', () => {
     expect(committed[0]!.stop).not.toHaveProperty('cause')
   })
 
-  it('degrades to display-only with a one-liner when TTS fails', async () => {
+  it('degrades to display-only with a one-liner naming no error when TTS fails (#315)', async () => {
     const llm = new ScriptedLlm([{ kind: 'answer', speak: 'Done.', display: 'Full detail here.' }])
     const pipeline = createCommandPipeline({
       llm,
@@ -464,7 +464,7 @@ describe('command pipeline', () => {
     expect(events).toContainEqual({ type: 'speak', text: 'Done.', at: 1000 })
     expect(events).toContainEqual({
       type: 'error',
-      message: 'Something went wrong: piper binary not found',
+      message: 'Something went wrong.',
       at: 1000,
     })
     expect(events.at(-1)).toMatchObject({ type: 'done' })
@@ -4454,7 +4454,7 @@ describe('command pipeline', () => {
         'I could not get past the challenge on www.reddit.com.',
       ])
       expect(events.find((e) => e.type === 'display')).toMatchObject({
-        text: expect.stringContaining('complete the challenge on www.reddit.com in the browser tab and ask again'),
+        text: expect.stringContaining('I could not get past the challenge on www.reddit.com. To get past it, complete the challenge in the browser tab and ask again.'),
       })
       expect(events.find((e) => e.type === 'display')).toMatchObject({
         text: expect.not.stringContaining('work budget'),

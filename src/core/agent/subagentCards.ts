@@ -1,7 +1,7 @@
 import type { Clock } from '../ports/clock'
 import type { PipelineEvent, SubagentCard, SubagentCardTab } from '../pipeline/events'
 import type { SubagentEvent, SubagentManager, SubagentRecord } from './subagentManager'
-import { subagentAnnouncement } from './subagentManager'
+import { endedWithoutOwnReport, subagentAnnouncement } from './subagentManager'
 import type { SubagentTab, SubagentTabs } from '../browser/subagentTabs'
 
 // Merges the manager's lifecycle events and the tab machine's phase changes
@@ -54,7 +54,13 @@ export function createSubagentCardBridge(deps: SubagentCardBridgeDeps): Subagent
     // (result) but not the structured sections (#98) — those reconcile
     // through agent_results, not the dashboard — and not the spawning
     // turn id (#162), which is bookkeeping for the diagnostic event below.
-    const card: SubagentCard & { report?: unknown; turnId?: unknown } = { ...record }
+    // A Subagent stopped at a bound, or one that failed, shows its status
+    // alone, as its announcement says the opening alone (#315): the
+    // bounded report and the error stay on the record.
+    const card: SubagentCard & { report?: unknown; turnId?: unknown } = {
+      ...record,
+      ...(endedWithoutOwnReport(record) ? { result: null, error: null } : {}),
+    }
     delete card.report
     delete card.turnId
     return { ...card, ...(tab ? { tab: tabCard(tab) } : {}) }

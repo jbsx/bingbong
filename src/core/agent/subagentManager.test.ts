@@ -771,17 +771,28 @@ describe('subagentAnnouncement', () => {
     expect(subagentAnnouncement({ ...base, result: '' })).toBe('The background agent finished.')
   })
 
-  it('speaks the failure plainly, naming the kind', () => {
+  it('announces a failure by the opening alone, naming the kind and never the error (#315)', () => {
     expect(
       subagentAnnouncement({ ...base, status: 'failed', error: 'model routing for subagent is not configured. Set vars.' }),
-    ).toBe('The background agent failed: model routing for subagent is not configured.')
+    ).toBe('The background agent failed.')
+    expect(subagentAnnouncement({ ...base, kind: 'browse', status: 'failed', error: '' })).toBe('The browsing agent failed.')
+    expect(subagentAnnouncement({ ...base, status: 'failed' })).toBe('The background agent failed.')
+  })
+
+  it('announces a Subagent stopped at a bound by the opening alone, and one that wrote its report by its first sentence (#315)', () => {
+    const text = 'Stopped at the delegated work limit after 12 tool rounds — the delegated work budget (12 tool rounds) was spent, and no final report was produced.'
+    const bounded = { text, findings: [], unresolved: ['Cut short at the delegated work limit — the task is incomplete.'], bounded: true as const }
+    expect(subagentAnnouncement({ ...base, kind: 'browse', result: text, report: bounded })).toBe('The browsing agent finished.')
+    expect(
+      subagentAnnouncement({ ...base, kind: 'browse', result: 'Keyboards compared. Bye.', report: { text: 'Keyboards compared. Bye.', findings: [], unresolved: [] } }),
+    ).toBe('The browsing agent finished: Keyboards compared.')
   })
 
   it('stays silent for cancelled agents', () => {
     expect(subagentAnnouncement({ ...base, status: 'cancelled' })).toBeNull()
   })
 
-  it('removes an internal id from the sentence it speaks, on both branches (#300)', () => {
+  it('removes an internal id from the sentence it speaks (#300)', () => {
     expect(subagentAnnouncement({ ...base, result: 'The K2 is cheapest at $79 (memory-4, obs-2). Full table on screen.' })).toBe(
       'The background agent finished: The K2 is cheapest at $79.',
     )
@@ -789,14 +800,10 @@ describe('subagentAnnouncement', () => {
     expect(subagentAnnouncement({ ...base, result: 'Per memory-1..6 the K2 is cheapest. Full table on screen.' })).toBe(
       'The background agent finished: Per the K2 is cheapest.',
     )
-    expect(subagentAnnouncement({ ...base, status: 'failed', error: 'the page held as memory-3 never loaded. Retry later.' })).toBe(
-      'The background agent failed: the page held as never loaded.',
-    )
   })
 
   it('speaks the plain line when removal leaves the sentence empty (#300)', () => {
     expect(subagentAnnouncement({ ...base, result: '(memory-4)' })).toBe('The background agent finished.')
-    expect(subagentAnnouncement({ ...base, status: 'failed', error: 'memory-4' })).toBe('The background agent failed.')
   })
 
   it('leaves a sentence with no id byte for byte, and an id inside a URL where it is (#300)', () => {
@@ -805,8 +812,6 @@ describe('subagentAnnouncement', () => {
     expect(subagentAnnouncement({ ...base, result })).toBe(announced)
     // An id a later sentence cites tidies nothing in the sentence spoken.
     expect(subagentAnnouncement({ ...base, result: `${result} Sources held (memory-4).` })).toBe(announced)
-    // An error that said nothing announces as it always did.
-    expect(subagentAnnouncement({ ...base, status: 'failed', error: '' })).toBe('The background agent failed: ')
   })
 })
 

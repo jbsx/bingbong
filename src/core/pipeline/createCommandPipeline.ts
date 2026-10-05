@@ -21,7 +21,7 @@ import { createLlmDeltaBatcher } from './deltaBatcher'
 import { createSpokenSentenceWatch, type EarlySentence } from './earlySentence'
 import { createCardWatch } from './earlyCard'
 import type { SpeakOutcome, TtsSpeaker } from '../ports/tts'
-import { answerRetryMessage, answerText, malformedErrorOf, parseAskedItemsReply, spokenErrorLine } from '../agent/answerContract'
+import { answerRetryMessage, answerText, malformedErrorOf, parseAskedItemsReply, VOICE_FAILED_LINE } from '../agent/answerContract'
 import {
   ASKED_ITEM_UNESTABLISHED,
   askedItemsCoverage,
@@ -766,7 +766,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
     if (!outcome.ok) {
       // Voice is gone — the text is already on the dashboard, so the failure
       // itself degrades to a displayed one-liner.
-      yield { type: 'error', message: spokenErrorLine(outcome.error), at: clock.now() }
+      yield { type: 'error', message: VOICE_FAILED_LINE, at: clock.now() }
     }
   }
 
@@ -777,7 +777,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
    */
   async function* awaitSpokenEarly(published: PublishedSentence): AsyncGenerator<UnstampedEvent> {
     const outcome = await published.playback
-    if (!outcome.ok) yield { type: 'error', message: spokenErrorLine(outcome.error), at: clock.now() }
+    if (!outcome.ok) yield { type: 'error', message: VOICE_FAILED_LINE, at: clock.now() }
   }
 
   async function* execute(
@@ -3047,7 +3047,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           yield { type: 'speak', text: 'Stopped.', at: clock.now() }
           const outcome = await tts.speak('Stopped.', turnId)
           if (!outcome.ok) {
-            yield { type: 'error', message: spokenErrorLine(outcome.error), at: clock.now() }
+            yield { type: 'error', message: VOICE_FAILED_LINE, at: clock.now() }
           }
         } else {
           runOutcome = 'failed'

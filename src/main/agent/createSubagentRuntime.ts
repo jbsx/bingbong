@@ -11,6 +11,7 @@ import type { HeldObservationsLookup } from '../../core/session/sessionEvidence'
 import type { DelegatedHolder } from '../../core/pipeline/delegatedPage'
 import type { CollectedSubagentReport, SubagentOwner } from '../../core/agent/subagentManager'
 import { SUBAGENT_LIMITS } from '../../core/agent/subagentRails'
+import { VOICE_UNAVAILABLE_LINE } from '../../core/agent/answerContract'
 import { createSubagentManager } from '../../core/agent/subagentManager'
 import { createSubagentCardBridge, type SubagentCardBridge } from '../../core/agent/subagentCards'
 import { createSubagentTabs } from '../../core/browser/subagentTabs'
@@ -184,7 +185,7 @@ export function createSubagentRuntime(deps: SubagentRuntimeDeps): SubagentRuntim
       if (event.type === 'speak') {
         void deps.tts.speak(event.text).then((outcome) => {
           if (!outcome.ok) {
-            const failure: PipelineEvent = { type: 'error', message: `Voice unavailable: ${outcome.error}`, at: clock.now() }
+            const failure: PipelineEvent = { type: 'error', message: VOICE_UNAVAILABLE_LINE, at: clock.now() }
             if (deps.canPublish && !deps.canPublish(failure)) return
             deps.emit(failure)
           }

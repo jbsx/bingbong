@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { answerRetryMessage, capSentences, closedSpokenSentence, parseAskedItemsReply, parseAssistantAnswer, partialAnswerText, spokenErrorLine } from './answerContract'
+import { answerRetryMessage, capSentences, closedSpokenSentence, parseAskedItemsReply, parseAssistantAnswer, partialAnswerText, VOICE_FAILED_LINE, VOICE_UNAVAILABLE_LINE } from './answerContract'
 
 describe('capSentences', () => {
   it('keeps the first n sentences', () => {
@@ -597,21 +597,12 @@ describe('closedSpokenSentence (#312)', () => {
   })
 })
 
-describe('spokenErrorLine', () => {
-  it('prefixes the first sentence of the error', () => {
-    expect(spokenErrorLine('timed out loading https://youtube.com. gave up after 30s')).toBe(
-      'Something went wrong: timed out loading https://youtube.com.',
-    )
+describe('VOICE_FAILED_LINE', () => {
+  it('names no error: what failed stays in the fault report (#315)', () => {
+    expect(VOICE_FAILED_LINE).toBe('Something went wrong.')
   })
 
-  it('speaks a plain line when the message is empty', () => {
-    expect(spokenErrorLine('')).toBe('Something went wrong.')
-  })
-
-  it('keeps the spoken line short for config errors while the dashboard gets the detail', () => {
-    const message =
-      "model routing for 'orchestrator' is not configured. Set BINGBONG_ORCHESTRATOR_BASE_URL, BINGBONG_ORCHESTRATOR_MODEL, BINGBONG_ORCHESTRATOR_API_KEY, BINGBONG_ORCHESTRATOR_API_KEY_ENV or ZAI_API_KEY."
-
-    expect(spokenErrorLine(message)).toBe("Something went wrong: model routing for 'orchestrator' is not configured.")
+  it('names none for a line spoken outside a Run either: a Subagent Announcement, a download (#315)', () => {
+    expect(VOICE_UNAVAILABLE_LINE).toBe('Voice unavailable.')
   })
 })

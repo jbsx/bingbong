@@ -36,7 +36,6 @@ function runAnswer(
 function liveStep(progress: RunProgress | null): string {
   if (!progress) return 'working'
   if (progress.waitingOnAgents) return `waiting on ${progress.waitingOnAgents.running} agents`
-  if (progress.retry) return `${progress.stage} — retrying`
   return progress.stage
 }
 

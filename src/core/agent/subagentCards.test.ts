@@ -119,8 +119,34 @@ describe('subagent card bridge', () => {
     await flush()
 
     const spoken = w.events.filter((e): e is Extract<PipelineEvent, { type: 'speak' }> => e.type === 'speak').map((e) => e.text)
-    expect(spoken.some((text) => /Found it\./.test(text))).toBe(true)
-    expect(spoken.some((text) => /failed/.test(text))).toBe(true)
+    expect(spoken).toEqual(['The background agent finished: Found it.', 'The background agent failed.'])
+  })
+
+  it('shows a failed Subagent’s card with no error text, and keeps the error on the record (#315)', async () => {
+    const w = wiring()
+    w.manager.spawn('background', 'two')
+    w.settle('a-1', 'reject', 'model routing for subagent is not configured')
+    await flush()
+
+    const card = agentUpdates(w.events).at(-1)!.agent
+    expect(card).toMatchObject({ status: 'failed', error: null })
+    expect(JSON.stringify(w.events)).not.toContain('model routing')
+    expect(w.manager.list()[0]?.error).toBe('model routing for subagent is not configured')
+  })
+
+  it('shows and speaks a Subagent stopped at a bound by the opening alone, and keeps its report on the record (#315)', async () => {
+    const w = wiring()
+    const text = 'Stopped at the delegated work limit after 12 tool rounds — the delegated work budget (12 tool rounds) was spent, and no final report was produced.'
+    w.manager.spawn('browse', 'compare prices')
+    w.settle('a-1', 'resolve', { text, findings: [], unresolved: ['Cut short at the delegated work limit — the task is incomplete.'], bounded: true })
+    await flush()
+
+    const spoken = w.events.filter((e): e is Extract<PipelineEvent, { type: 'speak' }> => e.type === 'speak').map((e) => e.text)
+    expect(spoken).toEqual(['The browsing agent finished.'])
+    expect(agentUpdates(w.events).at(-1)!.agent).toMatchObject({ status: 'completed', result: null })
+    expect(JSON.stringify(w.events)).not.toContain('delegated work limit')
+    // The report the orchestrator collects is model-facing and says how the worker stopped.
+    expect(w.manager.list()[0]?.result).toBe(text)
   })
 
   it('speaks the announcement without the report’s internal ids, and shows the card’s result as written (#300)', async () => {

@@ -1,6 +1,5 @@
 import type { PipelineEvent } from '../pipeline/events'
 import { describeToolIntent } from '../pipeline/toolCallDisplay'
-import { formatRetryLine } from '../pipeline/runProgress'
 import type { SessionId } from '../session/sessionIdentity'
 import type { MemoryEntryId } from '../session/workingMemory'
 import type { SessionAdoptionPayload } from '../session/ipcChannels'
@@ -10,7 +9,7 @@ import { projectPipelineEvent, type TranscriptEvent } from './transcriptProjecti
 // Feed projection (#44): the right-edge activity feed as a pure function —
 // pipeline events in, ordered feed entries out. Outcome lines reuse the
 // shared transcript projection word-for-word, so the dashboard and the
-// panel overlay show the same outcome line; retry lines are ephemeral
+// panel overlay show the same outcome line; stage and steer lines are ephemeral
 // detail (never a Feed entry, trimmed beyond the cap). Streamed
 // deltas (#47) grow live answer/reasoning runs — also ephemeral detail —
 // with the answer's display entry replacing its partial at round end.
@@ -38,7 +37,6 @@ export type FeedRole = 'user' | 'assistant' | 'system'
 /** The entry kinds the feed renders: transcript kinds plus detail lines. */
 export type FeedEntryKind =
   | TranscriptEvent['kind']
-  | 'retry'
   | 'steer'
   | 'stage'
   | 'answer_stream'
@@ -204,7 +202,7 @@ export function createFeedProjection(deps?: {
   const appendDetail = (
     at: number,
     text: string,
-    kind: 'retry' | 'steer' | 'stage' = 'retry',
+    kind: 'steer' | 'stage',
     runId?: string,
   ): void => {
     closeStreaming()
@@ -379,9 +377,6 @@ export function createFeedProjection(deps?: {
           if (event.turnId !== undefined) renderedSpeakIds.set(event.turnId, id)
           return
         }
-        case 'llm_retry':
-          appendDetail(event.at, formatRetryLine(event.attempt, event.maxAttempts, event.reason), 'retry', event.turnId)
-          return
         case 'status':
           // Stage entries (#42 story 17): every stage transition lands as a
           // timestamped detail line, so consecutive lines reconstruct how

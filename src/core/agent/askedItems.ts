@@ -44,8 +44,11 @@ export interface AskedItemEntry {
 /** The reason a runtime-filled `unverified` standing carries when the Answer left the item unstated. */
 export const ASKED_ITEM_UNSTATED = 'not stated in the Answer'
 
-/** The reason every declared Asked Item carries on a deterministic Answer: the Run stopped first. */
-export const ASKED_ITEM_UNESTABLISHED = 'not established before the run stopped'
+/**
+ * The reason every declared Asked Item carries on a Deterministic Answer.
+ * It is about the item and names no stop (#315, ADR 0038).
+ */
+export const ASKED_ITEM_UNESTABLISHED = 'not established'
 
 /**
  * One Asked Item's identity for matching (#250): case, surrounding

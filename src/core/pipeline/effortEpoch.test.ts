@@ -1818,8 +1818,8 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
       })
       expect(answer.speak).toBe('I could not get past the sign-in wall on reddit.com.')
       expect(answer.display).toBe(
-        'The run kept at a sign-in wall it cannot pass. To get past it, sign in to reddit.com once in the ' +
-          'browser tab and ask again.\n\n' +
+        'I could not get past the sign-in wall on reddit.com. To get past it, sign in once in the browser tab ' +
+          'and ask again.\n\n' +
           'What I have so far:\n' +
           '- https://www.reddit.com/r/manhwa/\n\n' +
           'I have not verified that any of these answers the request.',
@@ -2133,23 +2133,26 @@ describe('Effort Epoch (#146, ADR 0027)', () => {
     it('tells the user to complete a challenge, on the host it is on', () => {
       const answer = answerFor('challenge', 'www.reddit.com')
       expect(answer.speak).toBe('I could not get past the challenge on www.reddit.com.')
-      expect(answer.display).toContain('The run kept at a challenge it cannot pass.')
-      expect(answer.display).toContain('complete the challenge on www.reddit.com in the browser tab and ask again')
+      expect(answer.display).toBe(
+        'I could not get past the challenge on www.reddit.com. To get past it, complete the challenge in the browser tab and ask again.',
+      )
       expect(answer.display).not.toContain('work limit')
     })
 
     it('tells the user to sign in or reroute past a network block', () => {
       const answer = answerFor('network-block', 'news.example.com')
       expect(answer.speak).toBe('I could not get past the network block on news.example.com.')
-      expect(answer.display).toContain('The run kept at a network block it cannot pass.')
-      expect(answer.display).toContain('sign in to news.example.com once in the browser tab, or ask me to try a different route')
+      expect(answer.display).toBe(
+        'I could not get past the network block on news.example.com. To get past it, sign in once in the browser tab, or ask me to try a different route.',
+      )
     })
 
     it('tells the user to sign in past a login wall', () => {
       const answer = answerFor('login-wall', 'accounts.example.com')
       expect(answer.speak).toBe('I could not get past the sign-in wall on accounts.example.com.')
-      expect(answer.display).toContain('The run kept at a sign-in wall it cannot pass.')
-      expect(answer.display).toContain('sign in to accounts.example.com once in the browser tab and ask again')
+      expect(answer.display).toBe(
+        'I could not get past the sign-in wall on accounts.example.com. To get past it, sign in once in the browser tab and ask again.',
+      )
     })
 
     it('never says “the run stopped” when it knows which wall stopped it', () => {

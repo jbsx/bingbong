@@ -29,6 +29,11 @@ function retry(attempt: number, at: number, turnId = T): PipelineEvent {
   return { type: 'llm_retry', turnId, attempt, maxAttempts: 3, at }
 }
 
+/** A detail line: the stage marker a status event leaves. */
+function stage(at: number, turnId = T): PipelineEvent {
+  return { type: 'status', turnId, status: 'thinking', at }
+}
+
 /** The entry surface the panel renders: order + kind + role + text + detail flag. */
 function outline(entries: ReturnType<ReturnType<typeof createFeedProjection>['entries']>) {
   return entries.map(({ kind, role, text, detail }) => ({ kind, role, text, detail }))
@@ -86,16 +91,6 @@ describe('feed projection', () => {
       { kind: 'error', role: SYSTEM, text: 'click failed: ref gone', detail: false },
     ],
     [
-      'retry line',
-      retry(2, 7_000),
-      { kind: 'retry', role: SYSTEM, text: 'empty response — retrying 2/3', detail: true },
-    ],
-    [
-      'Transport Retry line (#271)',
-      { type: 'llm_retry', turnId: T, attempt: 2, maxAttempts: 2, reason: 'transport', at: 7_500 } as PipelineEvent,
-      { kind: 'retry', role: SYSTEM, text: 'no response from the model — retrying 2/2', detail: true },
-    ],
-    [
       'steer echo',
       { type: 'steer', turnId: T, text: 'use Paris instead', at: 8_000 } as PipelineEvent,
       { kind: 'steer', role: SYSTEM, text: 'steer: use Paris instead', detail: true },
@@ -111,17 +106,27 @@ describe('feed projection', () => {
     expect(outline(feed.entries())).toEqual([expected])
   })
 
+  it.each([
+    ['an empty completion', retry(2, 7_000)],
+    ['a Transport Retry (#271)', { type: 'llm_retry', turnId: T, attempt: 2, maxAttempts: 2, reason: 'transport', at: 7_500 } as PipelineEvent],
+  ])('leaves no line for a retry after %s: the Feed does not count the model’s retries (#315)', (_name, event) => {
+    const feed = openFeed()
+    feed.onEvent(command('go', 1_000))
+    feed.onEvent(event)
+    expect(outline(feed.entries())).toEqual([{ kind: 'command', role: USER, text: 'go', detail: false }])
+  })
+
   it('keeps the event order: entries land as the stream delivers them', () => {
     const feed = openFeed()
     feed.onEvent(command('go', 1_000))
     feed.onEvent({ type: 'tool_call', turnId: T, callId: 'c1', name: 'type', args: { ref: 7, text: 'cats\\n' }, at: 2_000 })
-    feed.onEvent(retry(2, 3_000))
+    feed.onEvent(stage(3_000))
     feed.onEvent({ type: 'speak', turnId: T, text: 'Found cats.', at: 4_000 })
 
     expect(outline(feed.entries())).toEqual([
       { kind: 'command', role: USER, text: 'go', detail: false },
       { kind: 'tool', role: SYSTEM, text: 'type "cats\\n" into [7]', detail: false },
-      { kind: 'retry', role: SYSTEM, text: 'empty response — retrying 2/3', detail: true },
+      { kind: 'stage', role: SYSTEM, text: 'thinking', detail: true },
       { kind: 'speak', role: ASSISTANT, text: 'Found cats.', detail: false },
     ])
   })
@@ -154,7 +159,7 @@ describe('feed projection', () => {
     const second = { sessionId: 'session-2', sessionGeneration: 1 } as const
     feed.onEvent({ type: 'session_started', at: 500, ...first } as PipelineEvent)
     feed.onEvent({ ...command('old session', 1_000), ...first } as PipelineEvent)
-    feed.onEvent({ ...retry(2, 2_000), ...first } as PipelineEvent)
+    feed.onEvent({ ...stage(2_000), ...first } as PipelineEvent)
     feed.onEvent({ type: 'speak', turnId: T, text: 'Old answer.', at: 3_000, ...first } as PipelineEvent)
 
     feed.onEvent({ type: 'session_ended', reason: 'reset', at: 4_000, ...first } as PipelineEvent)
@@ -174,7 +179,7 @@ describe('feed projection', () => {
     const foreign = { sessionId: 'session-2', sessionGeneration: 1 } as const
     feed.onEvent({ type: 'session_started', at: 500, ...first } as PipelineEvent)
     feed.onEvent({ ...command('one', 1_000), ...first } as PipelineEvent)
-    feed.onEvent({ ...retry(2, 2_000), ...first } as PipelineEvent)
+    feed.onEvent({ ...stage(2_000), ...first } as PipelineEvent)
     // A foreign end is ignored, so it wipes nothing and reports nothing.
     feed.onEvent({ type: 'session_ended', reason: 'reset', at: 3_000, ...foreign } as PipelineEvent)
     expect(cleared).toEqual([])
@@ -310,7 +315,7 @@ describe('feed projection', () => {
       const feed = openFeed()
       feed.onEvent(command('keep me', 0))
       for (let i = 0; i < MAX_DETAIL_ENTRIES + 25; i += 1) {
-        feed.onEvent(retry((i % 3) + 1, i + 1))
+        feed.onEvent(stage(i + 1))
       }
       feed.onEvent({ type: 'speak', turnId: T, text: 'Done.', at: 10_000 })
 
@@ -322,22 +327,22 @@ describe('feed projection', () => {
         { kind: 'speak', role: ASSISTANT, text: 'Done.', detail: false },
       ])
       // …and the kept detail lines are the newest MAX_DETAIL_ENTRIES.
-      const retried = entries.filter((entry) => entry.detail)
-      expect(retried).toHaveLength(MAX_DETAIL_ENTRIES)
-      expect(retried[0]!.at).toBe(26)
-      expect(retried.at(-1)!.at).toBe(MAX_DETAIL_ENTRIES + 25)
+      const detail = entries.filter((entry) => entry.detail)
+      expect(detail).toHaveLength(MAX_DETAIL_ENTRIES)
+      expect(detail[0]!.at).toBe(26)
+      expect(detail.at(-1)!.at).toBe(MAX_DETAIL_ENTRIES + 25)
     })
 
     it('keeps exactly the cap at the boundary', () => {
       const feed = openFeed()
-      for (let i = 0; i < MAX_DETAIL_ENTRIES; i += 1) feed.onEvent(retry(1, i + 1))
+      for (let i = 0; i < MAX_DETAIL_ENTRIES; i += 1) feed.onEvent(stage(i + 1))
       expect(feed.entries()).toHaveLength(MAX_DETAIL_ENTRIES)
     })
 
     it('trims again after the feed grows past the cap a second time', () => {
       const feed = openFeed()
-      for (let i = 0; i < MAX_DETAIL_ENTRIES; i += 1) feed.onEvent(retry(1, i + 1))
-      for (let i = 0; i < 10; i += 1) feed.onEvent(retry(2, MAX_DETAIL_ENTRIES + i + 1))
+      for (let i = 0; i < MAX_DETAIL_ENTRIES; i += 1) feed.onEvent(stage(i + 1))
+      for (let i = 0; i < 10; i += 1) feed.onEvent(stage(MAX_DETAIL_ENTRIES + i + 1))
 
       const entries = feed.entries()
       expect(entries).toHaveLength(MAX_DETAIL_ENTRIES)
@@ -658,7 +663,6 @@ describe('feed projection', () => {
       ],
       ['tool lines', { type: 'tool_call', turnId: T, callId: 'c1', name: 'navigate', args: {}, at: 6_000 } as PipelineEvent, SYSTEM],
       ['errors', { type: 'error', turnId: T, message: 'boom', at: 7_000 } as PipelineEvent, SYSTEM],
-      ['retries', retry(2, 8_000), SYSTEM],
       ['stage markers', { type: 'status', turnId: T, status: 'thinking', at: 9_000 } as PipelineEvent, SYSTEM],
       ['steer echoes', { type: 'steer', turnId: T, text: 'use Paris', at: 10_000 } as PipelineEvent, SYSTEM],
       [
@@ -762,7 +766,6 @@ describe('feed projection', () => {
         'reasoning runs',
         { type: 'llm_delta', turnId: T, kind: 'reasoning', text: 'thinking…', at: 4_000 } as PipelineEvent,
       ],
-      ['retries', retry(2, 5_000)],
       ['stage markers', { type: 'status', turnId: T, status: 'thinking', at: 6_000 } as PipelineEvent],
       ['steer echoes', { type: 'steer', turnId: T, text: 'use Paris', at: 7_000 } as PipelineEvent],
     ])('groups %s under the run — the entry carries the turn id', (_name, event) => {

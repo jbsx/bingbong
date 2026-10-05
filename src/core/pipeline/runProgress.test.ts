@@ -5,9 +5,9 @@ import type { SessionId } from '../session/sessionIdentity'
 
 // Progress projection (#43): the renderer's hint state as a pure function
 // over the pipeline event stream — stage + started-at from status events
-// (the renderer ticks elapsed itself, no per-second IPC), retry and
-// agent-wait details from the new detail variants, live agent counts from
-// agent_update cards. Table-driven like the transcript projection's suite.
+// (the renderer ticks elapsed itself, no per-second IPC), the agent-wait
+// detail from its detail variant, live agent counts from agent_update
+// cards. A model retry changes nothing here (#315). Table-driven like the transcript projection's suite.
 
 const T = 'turn-1'
 
@@ -48,7 +48,6 @@ describe('run progress tracker', () => {
     expect(tracker.current()).toEqual({
       stage: 'thinking',
       startedAt: 1_000,
-      retry: null,
       waitingOnAgents: null,
     })
   })
@@ -57,13 +56,12 @@ describe('run progress tracker', () => {
     const tracker = createRunProgressTracker()
     tracker.onEvent(command(1_000))
     tracker.onEvent(status('thinking', 1_000))
-    tracker.onEvent({ type: 'llm_retry', turnId: T, attempt: 2, maxAttempts: 3, at: 61_000 })
+    tracker.onEvent({ type: 'waiting_on_agents', turnId: T, running: 1, at: 61_000 })
     tracker.onEvent(status('acting', 70_000))
 
     expect(tracker.current()).toEqual({
       stage: 'acting',
       startedAt: 70_000,
-      retry: null,
       waitingOnAgents: null,
     })
   })
@@ -71,13 +69,26 @@ describe('run progress tracker', () => {
   it('ignores detail before any turn starts, records it once one has', () => {
     const tracker = createRunProgressTracker()
 
-    tracker.onEvent({ type: 'llm_retry', turnId: T, attempt: 2, maxAttempts: 3, at: 0 })
+    tracker.onEvent({ type: 'waiting_on_agents', turnId: T, running: 2, at: 0 })
     expect(tracker.current()).toBeNull()
 
     tracker.onEvent(command(1_000))
     tracker.onEvent(status('thinking', 1_000))
-    tracker.onEvent({ type: 'llm_retry', turnId: T, attempt: 3, maxAttempts: 3, at: 120_000 })
-    expect(tracker.current()?.retry).toEqual({ attempt: 3, maxAttempts: 3 })
+    tracker.onEvent({ type: 'waiting_on_agents', turnId: T, running: 3, at: 120_000 })
+    expect(tracker.current()?.waitingOnAgents).toEqual({ running: 3 })
+  })
+
+  it.each([
+    ['an empty completion', {}],
+    ['a Transport Retry (#271)', { reason: 'transport' as const }],
+  ])('a retry after %s leaves the hint at its stage and elapsed time (#315)', (_name, reason) => {
+    const tracker = createRunProgressTracker()
+    tracker.onEvent(command(1_000))
+    tracker.onEvent(status('thinking', 1_000))
+    tracker.onEvent({ type: 'llm_retry', turnId: T, attempt: 2, maxAttempts: 3, ...reason, at: 61_000 })
+
+    expect(tracker.current()).toEqual({ stage: 'thinking', startedAt: 1_000, waitingOnAgents: null })
+    expect(describeRunProgress(tracker.current()!, 76_000)).toBe('thinking — 75s')
   })
 
   it('a stray detail event from another turn cannot corrupt the live hint', () => {
@@ -85,23 +96,21 @@ describe('run progress tracker', () => {
     tracker.onEvent(command(1_000))
     tracker.onEvent(status('thinking', 1_000))
 
-    tracker.onEvent({ type: 'llm_retry', turnId: 'turn-other', attempt: 2, maxAttempts: 3, at: 2_000 })
     tracker.onEvent({ type: 'waiting_on_agents', turnId: 'turn-other', running: 4, at: 2_001 })
 
     expect(tracker.current()).toEqual({
       stage: 'thinking',
       startedAt: 1_000,
-      retry: null,
       waitingOnAgents: null,
     })
   })
 
-  it('a straggler retry after done cannot revive the hint', () => {
+  it('a straggler detail event after done cannot revive the hint', () => {
     const tracker = createRunProgressTracker()
     tracker.onEvent(command(1_000))
     tracker.onEvent(status('thinking', 1_000))
     tracker.onEvent({ type: 'done', turnId: T, outcome: 'done', at: 9_000 })
-    tracker.onEvent({ type: 'llm_retry', turnId: T, attempt: 2, maxAttempts: 3, at: 9_100 })
+    tracker.onEvent({ type: 'waiting_on_agents', turnId: T, running: 1, at: 9_100 })
 
     expect(tracker.current()).toBeNull()
   })
@@ -162,37 +171,25 @@ describe('describeRunProgress', () => {
   it.each([
     [
       'plain stage with climbing elapsed',
-      { stage: 'thinking' as const, startedAt: 1_000, retry: null, waitingOnAgents: null },
+      { stage: 'thinking' as const, startedAt: 1_000, waitingOnAgents: null },
       15_100,
       'thinking — 14s',
     ],
     [
       'sub-second elapsed floors to 0s and never goes negative',
-      { stage: 'acting' as const, startedAt: 10_000, retry: null, waitingOnAgents: null },
+      { stage: 'acting' as const, startedAt: 10_000, waitingOnAgents: null },
       10_999,
       'acting — 0s',
     ],
     [
       'waiting on agents names the count',
-      { stage: 'acting' as const, startedAt: 10_000, retry: null, waitingOnAgents: { running: 2 } },
+      { stage: 'acting' as const, startedAt: 10_000, waitingOnAgents: { running: 2 } },
       22_000,
       'acting — 12s · waiting on agents (2 running)',
     ],
     [
-      'a retry reads as activity, not a dead app',
-      { stage: 'thinking' as const, startedAt: 1_000, retry: { attempt: 2, maxAttempts: 3 }, waitingOnAgents: null },
-      76_000,
-      'thinking — 75s · empty response — retrying 2/3',
-    ],
-    [
-      'a Transport Retry names itself (#271)',
-      { stage: 'thinking' as const, startedAt: 1_000, retry: { attempt: 2, maxAttempts: 2, reason: 'transport' as const }, waitingOnAgents: null },
-      9_000,
-      'thinking — 8s · no response from the model — retrying 2/2',
-    ],
-    [
       'a hang is an honestly climbing counter',
-      { stage: 'thinking' as const, startedAt: 0, retry: null, waitingOnAgents: null },
+      { stage: 'thinking' as const, startedAt: 0, waitingOnAgents: null },
       119_000,
       'thinking — 119s',
     ],

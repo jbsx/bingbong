@@ -218,7 +218,7 @@ describe('a stopped Run ends on the state of the task (#203, ADR 0038)', () => {
     const answer = rendered(events)
     // The blocker is the one stop the user is told about, because it is
     // the one they can act on.
-    expect(answer.some((text) => text.includes('sign in to www.reddit.com once in the browser tab'))).toBe(true)
+    expect(answer.some((text) => text.includes('I could not get past the sign-in wall on www.reddit.com. To get past it, sign in once in the browser tab and ask again.'))).toBe(true)
     expect(answer.some((text) => text.includes('I could not get past the sign-in wall on www.reddit.com.'))).toBe(true)
     for (const text of answer) expect(text).not.toMatch(RESOURCE_ACCOUNTING)
   })

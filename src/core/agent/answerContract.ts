@@ -64,11 +64,14 @@ export function answerText(turn: { speak: string; display: string }): string {
   return turn.display !== '' ? turn.display : turn.speak
 }
 
-/** A spoken one-liner for an error; the full message stays on the dashboard. */
-export function spokenErrorLine(message: string): string {
-  const first = capSentences(message, 1)
-  return first === '' ? 'Something went wrong.' : `Something went wrong: ${first}`
-}
+/**
+ * The line shown when a Run's voice fails. It names no error (#315, ADR
+ * 0038): what failed is in the fault report the speech coordinator makes.
+ */
+export const VOICE_FAILED_LINE = 'Something went wrong.'
+
+/** The same for a line spoken outside a Run — a Subagent Announcement, a download (#315). */
+export const VOICE_UNAVAILABLE_LINE = 'Voice unavailable.'
 
 function extractFenced(content: string): string | null {
   const match = content.match(/^```[a-zA-Z]*\s*([\s\S]*?)\s*```$/)

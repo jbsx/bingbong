@@ -6,7 +6,7 @@ import { FeedMarkdown } from './FeedMarkdown'
 
 /**
  * The activity feed list (#44): timestamped entries for commands, tool
- * lines, spoken/displayed text, errors, and retry detail lines —
+ * lines, spoken/displayed text, errors, and detail lines —
  * observation only. Conversation structure (#54): user entries render
  * right-aligned in muted bubbles, assistant Answers as left-aligned
  * railed cards; everything else stays a plain system line. Attribution

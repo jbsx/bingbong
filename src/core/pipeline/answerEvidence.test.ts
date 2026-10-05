@@ -243,3 +243,30 @@ describe('removeIdentities (#300)', () => {
     expect(removeIdentities('Plain  text, as written ().')).toBe('Plain  text, as written ().')
   })
 })
+
+describe('a `memory-N` token never reaches the user (#315)', () => {
+  const FORMS = [
+    ['a token in round brackets, with the space before it', 'The Module 3 has autofocus (memory-3).', 'The Module 3 has autofocus.'],
+    ['a bare token', 'Candidate memory-5 rejected.', 'Candidate rejected.'],
+    ['a token that is the whole text', '(memory-3)', ''],
+  ] as const
+
+  it.each(FORMS)('the Spoken Rendering loses %s', (_name, written, repaired) => {
+    expect(repairSpokenRendering(written).text).toBe(repaired)
+  })
+
+  it.each(FORMS)('the Card loses %s when the id names nothing it can show', (_name, written, repaired) => {
+    expect(repairCard(written, nothing).text).toBe(repaired)
+  })
+
+  it('the Card shows the source and never the token when the id names an Observation', () => {
+    const resolve = resolverOf([observation(entryId('memory-3'), ['https://www.raspberrypi.com/documentation/'], 'Camera docs')])
+    const card = repairCard('The Module 3 has autofocus (memory-3).', resolve).text
+    expect(card).toBe('The Module 3 has autofocus ([Camera docs](https://www.raspberrypi.com/documentation/)).')
+  })
+
+  it.each(FORMS)('an Asked Item statement loses %s, and one left empty stays empty', (_name, written, repaired) => {
+    const items = repairAskedItems([{ item: 'the camera', standing: 'stated', statement: written }]).items
+    expect(items).toEqual([{ item: 'the camera', standing: 'stated', statement: repaired }])
+  })
+})

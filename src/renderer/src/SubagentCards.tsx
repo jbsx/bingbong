@@ -102,9 +102,6 @@ export function SubagentCardView({ agent }: { agent: SubagentCard }) {
           <pre>{agent.result}</pre>
         </details>
       ) : null}
-      {agent.status === 'failed' && agent.error ? (
-        <p className="subagent-card-error">{agent.error}</p>
-      ) : null}
     </article>
   )
 }

@@ -1340,8 +1340,8 @@ const FOUND_BUT_UNCHECKED_SPOKEN =
 /**
  * How each Blocker flavor reaches the *user* (#202): what it is called out
  * loud — the gate's own vocabulary ("network-block") is a marker token,
- * not a noun anyone says — and what the user is asked to do about it, on
- * the host it is on.
+ * not a noun anyone says — and what the user is asked to do about it.
+ * The help names no host: the sentence it follows already has (#315).
  *
  * The sibling of BLOCKER_HELP_BY_SIGNAL, which is what the *model* is
  * told, and deliberately not shared with it (#201): the model's
@@ -1351,25 +1351,28 @@ const FOUND_BUT_UNCHECKED_SPOKEN =
  * (#203) — a user who hears "the run stopped" learns nothing they can act
  * on, so this table is imperative where the model's is a noun phrase.
  */
-const BLOCKER_FOR_THE_USER: Readonly<Record<BlockerSignal, { label: string; help: (host: string) => string }>> = {
+const BLOCKER_FOR_THE_USER: Readonly<Record<BlockerSignal, { label: string; help: string }>> = {
   challenge: {
     label: 'challenge',
-    help: (host) => `complete the challenge on ${host} in the browser tab and ask again`,
+    help: 'complete the challenge in the browser tab and ask again',
   },
   'network-block': {
     label: 'network block',
-    help: (host) => `sign in to ${host} once in the browser tab, or ask me to try a different route`,
+    help: 'sign in once in the browser tab, or ask me to try a different route',
   },
   'login-wall': {
     label: 'sign-in wall',
-    help: (host) => `sign in to ${host} once in the browser tab and ask again`,
+    help: 'sign in once in the browser tab and ask again',
   },
 }
 
-/** The displayed sentence a Blocker stop opens on instead of the task's state (#202). */
+/**
+ * The displayed lead of a Blocker stop, instead of the task's state
+ * (#202): the spoken sentence, then what the user can do about the wall
+ * (#315).
+ */
 function blockerCauseSentence(wall: BlockerWall): string {
-  const flavor = BLOCKER_FOR_THE_USER[wall.signal]
-  return `The run kept at a ${flavor.label} it cannot pass. To get past it, ${flavor.help(wall.host)}.`
+  return `${blockerSpokenSentence(wall)} To get past it, ${BLOCKER_FOR_THE_USER[wall.signal].help}.`
 }
 
 /** The spoken half of the same stop (#202): the wall, named, in one breath. */

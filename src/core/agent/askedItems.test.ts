@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  ASKED_ITEM_UNESTABLISHED,
   ASKED_ITEM_UNSTATED,
   askedItemsCoverage,
   askedItemsRetryMessage,
@@ -148,5 +149,11 @@ describe('an Asked Item entry as the prompt asks for it (#313)', () => {
       { item: DECLARED[0], standing: 'stated', statement: 'drop the bag' },
       { item: 'the guitar', standing: 'stated', statement: 'one piece' },
     ])
+  })
+})
+
+describe('the reason a deterministic Answer gives every Asked Item (#315)', () => {
+  it('says the item is not established and names no stop', () => {
+    expect(ASKED_ITEM_UNESTABLISHED).toBe('not established')
   })
 })

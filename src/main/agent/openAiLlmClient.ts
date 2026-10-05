@@ -634,9 +634,9 @@ export function createOpenAiLlmClient(deps: OpenAiLlmClientDeps): LlmClient {
     let lastRaw = ''
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
       // Retry visibility (#29/#43): attempts beyond the first are reported
-      // with the loop's ceiling — so the dashboard can show "retrying 2/3"
-      // before the attempt starts, and the perf log shows a tripled
-      // round-trip as separate events.
+      // with the loop's ceiling before the attempt starts, so the Run
+      // Trace says which attempt of how many and the perf log shows a
+      // tripled round-trip as separate events.
       if (attempt > 1) request.onRetryAttempt?.(attempt, MAX_ATTEMPTS, 'empty')
       const outgoing =
         attempt === MAX_ATTEMPTS

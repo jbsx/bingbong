@@ -702,27 +702,31 @@ const KIND_LABEL: Record<SubagentKind, string> = {
 }
 
 /**
+ * Whether what a finished Subagent has to say is the application's own
+ * account of a bound or a failure (#315, ADR 0038) and not a report the
+ * Subagent wrote: a failure's error, or the deterministic bounded report.
+ * Neither is said or shown to the user; the record keeps both.
+ */
+export function endedWithoutOwnReport(record: SubagentRecord): boolean {
+  return record.status === 'failed' || (record.status === 'completed' && record.report?.bounded === true)
+}
+
+/**
  * The Subagent Announcement (issue #13: completion announced via TTS), the
  * one-liner spoken and shown for a finished agent. Completed speaks the
- * report's first sentence; failed speaks the error; cancelled stays silent
- * — the user asked for it. The report is model-facing and may cite
- * internal ids; the announcement is a rendering, so they are removed from
- * it and no Identity Slip is recorded (#300). The record's own result and
- * error stay as written.
+ * opening and the report's first sentence; a Subagent stopped at a bound,
+ * or one that failed, is announced by the opening alone (#315); cancelled
+ * stays silent — the user asked for it. The report is model-facing and may
+ * cite internal ids; the announcement is a rendering, so they are removed
+ * from it and no Identity Slip is recorded (#300). The record's own result
+ * and error stay as written.
  */
 export function subagentAnnouncement(record: SubagentRecord): string | null {
   if (record.status === 'completed') {
-    const first = announcedSentence(record.result ?? '')
+    const first = endedWithoutOwnReport(record) ? '' : announcedSentence(record.result ?? '')
     return first === '' ? `The ${KIND_LABEL[record.kind]} agent finished.` : `The ${KIND_LABEL[record.kind]} agent finished: ${first}`
   }
-  if (record.status === 'failed') {
-    const error = record.error ?? 'unknown error'
-    const first = announcedSentence(error)
-    // Only a sentence the removal emptied takes the plain line: an error
-    // that said nothing announces as it always did.
-    const emptied = first === '' && capSentences(error, 1) !== ''
-    return emptied ? `The ${KIND_LABEL[record.kind]} agent failed.` : `The ${KIND_LABEL[record.kind]} agent failed: ${first}`
-  }
+  if (record.status === 'failed') return `The ${KIND_LABEL[record.kind]} agent failed.`
   return null
 }
 

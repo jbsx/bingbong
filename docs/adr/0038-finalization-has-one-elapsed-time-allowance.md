@@ -151,3 +151,26 @@ The confirmed scope and verification boundary are in
     mid-Run warnings and the Stop Record keep the real cause. The Round
     Audit counts Answers that name the stop, reported and never gated; a
     check is the next step only if that count does not fall.
+
+- 2026-10-05 (#315, implementation). The product-owned texts are built;
+  #322 and #323 are not. What the build settled beyond the note above:
+  - **The Blocker Card's lead** is the spoken sentence and then the help,
+    and the help no longer names the host the sentence has just named:
+    "I could not get past the sign-in wall on reddit.com. To get past it,
+    sign in once in the browser tab and ask again."
+  - **The Subagent card** of a Subagent stopped at a bound, or failed,
+    shows its status and nothing under it: the bounded report and the
+    error are withheld from the card as they are from the announcement,
+    and stay on the record `agent_results` reads.
+  - **A model retry leaves no line in the Feed**, as it leaves none in the
+    run hint and the Peek Card. The `llm_retry` event is still emitted and
+    the Run Trace keeps it.
+  - **A voice failure** shows "Something went wrong.", or "Voice
+    unavailable." for a line spoken outside a Run. The speech coordinator
+    reports the error as a fault (`tts.speechCoordinator.speak`), which it
+    did not before, so the fault report is where it is kept.
+  - **The `memory-N` deletion was already built** by the Identity Slip
+    repair (#246, #300), which also removes `obs-N`. On the Card an id
+    that names an Observation still becomes a link to its source, so the
+    token is gone either way. #315 added tests that pin the three
+    surfaces and changed no code there.

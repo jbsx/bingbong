@@ -1,9 +1,10 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { createSpeechCoordinator } from './speechCoordinator'
 import type { AudioPlayback, AudioPlayer, SpeechSynthesizer } from '../ports/tts'
 import { createPerfTracer } from '../perf/perfTracer'
 import { fakePerfHarness } from '../testing/doubles'
 import type { HostTraceEvent } from '../trace/hostTrace'
+import { setFaultSink, type FaultReport } from '../trace/fault'
 
 class FakeSynth implements SpeechSynthesizer {
   readonly texts: string[] = []
@@ -175,6 +176,23 @@ describe('speech coordinator', () => {
     expect(await outcome).toEqual({ ok: false, error: 'piper binary not found' })
     expect(events).toEqual(['duck', 'restore'])
     expect(player.playbacks).toHaveLength(0)
+  })
+
+  describe('a voice failure reaches the fault report (#315)', () => {
+    afterEach(() => setFaultSink(null))
+
+    it('reports the error with the turn it was spoken for, since the line shown names none', async () => {
+      const faults: FaultReport[] = []
+      setFaultSink((report) => faults.push(report))
+      const synth = new FakeSynth()
+      const tts = createSpeechCoordinator({ synth, player: new FakePlayer() })
+
+      const outcome = tts.speak('hello', 'turn-7')
+      synth.failNext('piper binary not found')
+
+      expect(await outcome).toEqual({ ok: false, error: 'piper binary not found' })
+      expect(faults).toMatchObject([{ kind: 'fault', site: 'tts.speechCoordinator.speak', message: 'piper binary not found', turnId: 'turn-7' }])
+    })
   })
 
   it('restores page audio and reports the error when playback fails', async () => {

@@ -130,7 +130,7 @@ export interface LlmRequest {
   /**
    * Retry visibility (#29, #43): a client with an internal retry loop
    * reports each attempt beyond the first — with the loop's ceiling, so
-   * the dashboard can render "retrying 2/3" — before the attempt starts.
+   * the Run Trace can say which attempt of how many — before the attempt starts.
    * The reason names which loop retried (#271): an empty completion, or a
    * Transport Retry, which also hands over the rejection it repeats so the
    * abandoned attempt's record can say what failed.

@@ -143,6 +143,9 @@ export function createSpeechCoordinator(deps: SpeechCoordinatorDeps): TtsSpeaker
       }
       return { ok: true }
     } catch (err) {
+      // The line the user is shown names no error (#315), so this is
+      // where the failure is kept.
+      reportFault('tts.speechCoordinator.speak', err, turnId !== undefined ? { turnId } : {})
       return { ok: false, error: err instanceof Error ? err.message : String(err) }
     } finally {
       current = null

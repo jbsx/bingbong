@@ -4,6 +4,7 @@ import type { PipelineEvent } from '../../core/pipeline/events'
 import { systemClock, type Clock } from '../../core/ports/clock'
 import type { TtsSpeaker } from '../../core/ports/tts'
 import { downloadAnnouncements, sanitizeDownloadFilename, uniqueDownloadPath } from '../../core/downloads/downloadRouting'
+import { VOICE_UNAVAILABLE_LINE } from '../../core/agent/answerContract'
 
 // Agent-initiated downloads: the risk gate has already asked the user before
 // the click that started this download (core/pipeline/riskGate.ts), and the
@@ -45,7 +46,7 @@ export function attachDownloadRouter(target: Session, deps: DownloadRouterDeps):
       const { speak, display } = downloadAnnouncements(filename, savePath)
       emit({ type: 'display', text: display, at: clock.now() })
       void tts.speak(speak).then((outcome) => {
-        if (!outcome.ok) emit({ type: 'error', message: `Voice unavailable: ${outcome.error}`, at: clock.now() })
+        if (!outcome.ok) emit({ type: 'error', message: VOICE_UNAVAILABLE_LINE, at: clock.now() })
       })
     })
   })
