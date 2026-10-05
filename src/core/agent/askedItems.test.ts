@@ -134,11 +134,16 @@ describe('an Asked Item entry written the old way (#313)', () => {
   })
 
   it('merges a held list and a reply written either way', () => {
+    // The reply's entries as written, then the held standing named as declared.
+    expect(mergeAskedItems(DECLARED, [worded[0]], [numbered[1]])).toEqual([numbered[1], { item: 'the guitar', standing: 'stated', statement: 'One piece.' }])
+    expect(mergeAskedItems(DECLARED, [numbered[0]], [worded[1]])).toEqual([worded[1], { item: 'the guitar', standing: 'stated', statement: 'One piece.' }])
     expect(settleAskedItems(DECLARED, mergeAskedItems(DECLARED, [worded[0]], [numbered[1]]))).toEqual(settled)
     expect(settleAskedItems(DECLARED, mergeAskedItems(DECLARED, [numbered[0]], [worded[1]]))).toEqual(settled)
   })
+})
 
-  it('gives an entry that carries a number alone its declared wording', () => {
+describe('an Asked Item entry as the prompt asks for it (#313)', () => {
+  it('is named on the Card by its declared wording, which it does not carry', () => {
     expect(settleAskedItems(DECLARED, [{ n: 2, standing: 'stated', statement: 'one piece' }, { n: 1, standing: 'stated', statement: 'drop the bag' }])).toEqual([
       { item: DECLARED[0], standing: 'stated', statement: 'drop the bag' },
       { item: 'the guitar', standing: 'stated', statement: 'one piece' },
