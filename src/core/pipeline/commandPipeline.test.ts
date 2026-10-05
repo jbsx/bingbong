@@ -403,24 +403,23 @@ describe('command pipeline', () => {
     expect(llm.requests[0].truncated).toBeUndefined()
   })
 
-  it('emits an error event and speaks a one-liner when the LLM fails', async () => {
+  it('ends on the Deterministic Answer, with no error event, when the LLM fails (#322)', async () => {
     const llm = new ScriptedLlm([])
     const tts = new RecordingTts()
     const pipeline = createCommandPipeline({ llm, tts, clock: new FakeClock(), tools: [] })
 
     const events = await collect(pipeline, 'hello')
 
-    expect(events.map((e) => e.type)).toEqual(['command', 'status', 'error', 'status', 'speak', 'done'])
-    // The provider's own words reach the dashboard in full…
-    const error = events.find((e) => e.type === 'error')
-    expect(error).toMatchObject({ type: 'error', message: 'ScriptedLlm ran out of scripted turns' })
-    // …and never the Spoken Rendering (#203/AC1): a raw exception read
-    // aloud tells the user nothing they can act on.
-    expect(events.find((e) => e.type === 'speak')).toMatchObject({
-      type: 'speak',
-      text: 'I could not finish that request.',
+    // The provider's own words reach neither the Feed nor the Spoken
+    // Rendering (#203/AC1, #322): the fault report and the Stop Record
+    // keep them.
+    expect(events.map((e) => e.type)).toEqual(['command', 'status', 'display', 'status', 'speak', 'done'])
+    expect(events.find((e) => e.type === 'display')).toMatchObject({
+      text: 'I have not made progress I can show on “hello” yet.',
+      deterministicAnswer: true,
+      finalAnswer: true,
     })
-    expect(tts.spoken).toEqual(['I could not finish that request.'])
+    expect(tts.spoken).toEqual(['I do not have anything to show for that request yet.'])
   })
 
   it('retains a hard run failure as a stop record with no invented cause (#203/AC5-6)', async () => {
@@ -2505,7 +2504,8 @@ describe('command pipeline', () => {
       const { events, stops, tts } = await runWithRecords(llm, 'find the voyager paper')
 
       expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'failed' })
-      expect(tts.spoken).toEqual(['I could not finish that request.'])
+      expect(tts.spoken).toEqual(['I do not have anything to show for that request yet.'])
+      expect(events.filter((event) => event.type === 'error')).toEqual([])
       expect(faults).toContainEqual(expect.objectContaining({ site: 'pipeline.createCommandPipeline.runFailedOutsideFinalization', turnId: 'turn-271' }))
       expect(stops[0]).toMatchObject({ failure: 'the run failed outside Finalization: orchestrator request failed (HTTP 502)' })
     })
@@ -7129,7 +7129,11 @@ describe('evidence checkpoints (#121)', () => {
     const events = await collectWithContinuity(pipeline, 'find the price', continuityFor(store))
 
     expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'failed' })
-    expect(events.some((e) => e.type === 'error')).toBe(true)
+    // The failed Run ends on the Deterministic Answer (#322), which shows
+    // the page the checkpoint was recorded from.
+    expect(events.some((e) => e.type === 'error')).toBe(false)
+    expect(events.find((e) => e.type === 'display')).toMatchObject({ deterministicAnswer: true })
+    expect(events.find((e) => e.type === 'display')?.text).toContain(PAGE_URL)
     expect(store.snapshot().observations.map(({ id }) => id)).toEqual(['memory-1'])
   })
 

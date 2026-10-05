@@ -151,3 +151,35 @@ The confirmed scope and verification boundary are in
     mid-Run warnings and the Stop Record keep the real cause. The Round
     Audit counts Answers that name the stop, reported and never gated; a
     check is the next step only if that count does not fall.
+
+- 2026-10-05 (#322, built). A Run that fails outright ends on the
+  deterministic Answer as the note above decided, and four things it left
+  open are settled in code.
+  - **The Card.** It is marked `deterministicAnswer`, and declared Asked
+    Items are listed `unverified`, as on every deterministic path. A
+    sentence spoken early stands and nothing is spoken after it; the Card
+    beside it is the one its round had closed in the stream when it had,
+    and that Card is a model round's and carries no mark, as for a cut
+    round (#312).
+  - **A Card already shown is kept** (#319): a Run that fails after its
+    Answer's Card shows no second one, and speaks that Answer's line only
+    if the failure came before it was spoken.
+  - **A Run that entered Finalization before it failed** answers under the
+    cause it entered for, so a Blocker still names its wall; a Run that was
+    still working answers under none. Neither is a new cause.
+  - **If the deterministic Answer cannot be composed**, the Run shows and
+    speaks that it has nothing to show, which is built from the command
+    alone, and the second failure is filed as a fault of its own.
+  - **Where the error is kept.** The Stop Record's failure, and the fault
+    filed at `runFailedOutsideFinalization`, which rides the Run Trace by
+    its turn id and is what says which path ended the Run. No `error`
+    event is published for it and no Run Trace field was added, so the
+    version is unchanged.
+  - **One line is still shown: no model is configured.** The grill read
+    provider failures; a role with no routing makes no request, and its
+    message ("model routing for 'orchestrator' is not configured. Set …")
+    is the application's instruction to whoever set it up. The Run still
+    ends on the deterministic Answer, and the line stays in the Feed
+    beside it, since nothing else on that screen says why every command
+    comes back with nothing to show. This was an agent's assumption, not
+    a ruling.

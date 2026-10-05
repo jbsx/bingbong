@@ -1,5 +1,5 @@
 import type { Clock } from '../ports/clock'
-import type { AssistantTurn, LlmClient, LlmRequest, LlmStreamDelta } from '../ports/llm'
+import { LlmNotConfiguredError, type AssistantTurn, type LlmClient, type LlmRequest, type LlmStreamDelta } from '../ports/llm'
 import type { TtsSpeaker } from '../ports/tts'
 import type { Transcriber, VadScorer } from '../ports/stt'
 import { WAKE_HEADS, type WakeScores, type WakeWordDetector } from '../ports/wake'
@@ -137,6 +137,12 @@ export type ScriptedStreamChunk = string | { kind: 'reasoning'; text: string }
 
 export type ScriptedTurn = AssistantTurn & {
   streamChunks?: ScriptedStreamChunk[]
+  /**
+   * The round throws an error of this message once its chunks have
+   * streamed (#322), in place of resolving with the turn: a request that
+   * failed partway, as an HTTP error or a broken stream does.
+   */
+  failsWith?: string
 }
 
 /**
@@ -198,6 +204,8 @@ export class ScriptedLlm implements LlmClient {
       ...(request.reasoningEffort !== undefined ? { reasoningEffort: request.reasoningEffort } : {}),
     })
     await streamScriptedChunks(next, request.onDelta, request.signal)
+    const failure = (next as ScriptedTurn).failsWith
+    if (typeof failure === 'string') throw new Error(failure)
     // Renders continuity fields into scripted text so E2E can prove what the
     // current Run received without exposing private request objects.
     const substitutions: [string, string][] = [
@@ -753,7 +761,7 @@ export class UnavailableLlm implements LlmClient {
   constructor(private readonly reason: string) {}
 
   async complete(): Promise<AssistantTurn> {
-    throw new Error(this.reason)
+    throw new LlmNotConfiguredError(this.reason)
   }
 }
 

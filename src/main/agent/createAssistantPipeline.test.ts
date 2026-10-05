@@ -28,7 +28,7 @@ async function collect(pipeline: CommandPipeline, command: string): Promise<Pipe
 }
 
 describe('createAssistantPipeline', () => {
-  it('errors with a spoken one-liner when model routing is unconfigured', async () => {
+  it('shows what to configure, and ends on the Deterministic Answer, when model routing is unconfigured (#322)', async () => {
     const browser = new FakeBrowser()
     const pipeline = createAssistantPipeline({ browser: holdBrowserCustody(browser), env: {} })
 
@@ -36,8 +36,9 @@ describe('createAssistantPipeline', () => {
 
     const error = events.find((e) => e.type === 'error')
     expect(error?.message).toMatch(/model routing for 'orchestrator' is not configured/)
-    expect(events.find((e) => e.type === 'speak')).toMatchObject({ type: 'speak' })
-    expect(events.at(-1)).toMatchObject({ type: 'done' })
+    expect(events.find((e) => e.type === 'display')).toMatchObject({ deterministicAnswer: true, finalAnswer: true })
+    expect(events.find((e) => e.type === 'speak')).toMatchObject({ type: 'speak', text: 'I do not have anything to show for that request yet.' })
+    expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'failed' })
   })
 
   it('runs the loop from a scripted LLM override and drives the browser', async () => {

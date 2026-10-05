@@ -16,7 +16,7 @@ import type {
   ToolResultOutcome,
   AnswerRetryRequest,
 } from '../ports/llm'
-import { LlmRequestTimeoutError, LlmTransportError } from '../ports/llm'
+import { LlmNotConfiguredError, LlmRequestTimeoutError, LlmTransportError } from '../ports/llm'
 import { selectDelegatedMemory } from '../agent/subagentReport'
 import { createLlmDeltaBatcher } from './deltaBatcher'
 import { createSpokenSentenceWatch, type EarlySentence } from './earlySentence'
@@ -373,13 +373,6 @@ interface ActiveRun {
 
 /** Default ask_user window: ~45s for a spoken or typed free-text answer. */
 export const ASK_TIMEOUT_MS = 45_000
-
-/**
- * What a hard run failure says out loud (#203/AC1): the state of the
- * task, with the provider's own words left to the error event and the
- * Run's stop record. The user cannot act on an exception message.
- */
-const RUN_FAILED_SPOKEN = 'I could not finish that request.'
 
 /** An Answer's sentence spoken before its round ended (#312): when it was published, and its playback. */
 interface PublishedSentence {
@@ -843,6 +836,19 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
      */
     let heldUnlanded: { readonly card: string | null } | undefined
     /**
+     * The Answer's Card once the Run has shown one, with its spoken line
+     * and whether the user has been given that line (#322): a Run that
+     * fails after it keeps the Card and shows no other. A Steering replan
+     * lets it go with the sentence.
+     */
+    let shownCard: { readonly speak: string; voiced: boolean } | undefined
+    /** Read through a call, so a caller that saw no Card before a presenter ran sees the one it showed. */
+    const cardShown = (): typeof shownCard => shownCard
+    /** The shown Card's line has reached the user, or is about to. */
+    const markCardVoiced = (): void => {
+      if (shownCard !== undefined) shownCard.voiced = true
+    }
+    /**
      * Every sentence this Run spoke early (#312): an Answer heard after one
      * that was not its own is a second utterance, and the Answer waits out
      * each one's playback, as a spoken line is waited out.
@@ -1195,6 +1201,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           standingDirective = directive
           heldSentence = undefined
           heldUnlanded = undefined
+          shownCard = undefined
         }
         return directive
       },
@@ -1339,6 +1346,91 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
       } catch (error) {
         reportFault('pipeline.createCommandPipeline.observeTranscript', error, { turnId })
         // swallowed — the ledger is advisory
+      }
+
+      /**
+       * Shows and speaks the Deterministic Answer (#117/#137/AC4, #322),
+       * under the Finalization Cause the Run stopped for, if it entered
+       * Finalization. Built solely from the command, that cause, and the
+       * retained sources derived from the run's verified Observations and
+       * its accepted Evidence Checkpoints — bounded inspectable detail for
+       * the strongest source, never a bare URL list and never an
+       * unverified model claim. Everything is composed before the Card is
+       * shown, so a throw from here that left no shown Card showed
+       * nothing.
+       */
+      const presentDeterministicAnswer = async function* (
+        cause: FinalizationCause | undefined,
+        detail: FinalizationDetail | undefined,
+      ): AsyncGenerator<UnstampedEvent> {
+        const fallbackRecords = ledger.snapshot()
+        const fallback = deterministicFinalAnswer({
+          // The task the stopped run was working on, in words the user
+          // recognizes: their Steering correction once one landed (#119)
+          // — the fresh plan's objective when that declaration made it,
+          // the directive's own words otherwise — and their command on
+          // a never-steered run.
+          command: correctedObjective ?? command,
+          ...(cause !== undefined ? { cause } : {}),
+          ...(detail !== undefined ? { detail } : {}),
+          sources: deriveFallbackSources({
+            records: fallbackRecords,
+            checkpoints: acceptedCheckpoints,
+            resolveObservation: resolveSessionObservation,
+          }),
+          // A Look the run could not complete is the one unresolved
+          // check it actually established (#203/AC2) — named as that,
+          // never as the vision failure behind it.
+          ...(hasUnresolvedImageCheck(fallbackRecords) ? { imageUnverified: true } : {}),
+        })
+        // Every declared Asked Item is unverified on a deterministic
+        // Answer (#250): the Run stopped before it could state any.
+        // Their names are the model's wording all the same, so they
+        // pass the display boundary like any Answer's (#300).
+        const listed =
+          runPlan !== null && runPlan.askedItems.length > 0
+            ? repairAskedItems(unverifiedAskedItems(runPlan.askedItems, ASKED_ITEM_UNESTABLISHED))
+            : undefined
+        if (listed !== undefined && listed.slips.length > 0) traceRun?.(() => ({ turnId, kind: 'identity_slip', slips: listed.slips }))
+        // A sentence the Run holds stands (#312): the user heard an
+        // Answer begin and is not told that a limit ended it — whether
+        // its round was cut, its request failed (#322), or its Answer
+        // landed and could not be taken (a Malformed or an Off-language
+        // one, the retry spent). The Card is the one that round had
+        // closed in its stream, when it had and it passes what a Card
+        // must — the Off-language check (#286) and the display boundary
+        // (#246); the deterministic Card otherwise, shown and not spoken.
+        const held = heldSentence
+        const closedCard = held !== undefined ? (heldUnlanded?.card ?? null) : null
+        const cutCard = closedCard !== null && !isOffLanguageRendering(closedCard) ? repairCard(closedCard, resolveSessionObservation) : undefined
+        if (cutCard !== undefined && cutCard.slips.length > 0) traceRun?.(() => ({ turnId, kind: 'identity_slip', slips: cutCard.slips }))
+        yield {
+          type: 'display',
+          text: cutCard?.text ?? fallback.display,
+          // The Answer's origin travels with the Answer (#214): the eval's
+          // per-run `deterministicAnswer` reads this flag, so it can never
+          // be inferred from the wording of the sentences above. The mark
+          // is the Card's origin: one a model round wrote is not the
+          // deterministic Answer.
+          ...(cutCard === undefined ? { deterministicAnswer: true } : {}),
+          finalAnswer: true,
+          ...(listed !== undefined ? { askedItems: listed.items } : {}),
+          at: clock.now(),
+        }
+        shownCard = { speak: fallback.speak, voiced: true }
+        // A sentence spoken early for no Answer — its round went on to
+        // call tools — is waited out, and the Answer heard after it is a
+        // second utterance.
+        const spokenForNone = sentencesSpokenEarly.filter((published) => published !== held)
+        if (spokenForNone.length > 0) traceRun?.(() => ({ turnId, kind: 'second_utterance', deterministic: true }))
+        for (const published of spokenForNone) yield* awaitSpokenEarly(published)
+        if (held !== undefined) {
+          traceRun?.(() => ({ turnId, kind: 'stood_sentence', publishedAt: held.at, card: cutCard !== undefined ? 'cut_round' : 'deterministic' }))
+          yield { type: 'status', status: 'speaking', at: clock.now() }
+          yield* awaitSpokenEarly(held)
+        } else {
+          yield* speakLine(fallback.speak, turnId)
+        }
       }
 
       try {
@@ -1722,6 +1814,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             ...(listed !== undefined ? { askedItems: listed.items } : {}),
             finalAnswer: true,
           }
+          shownCard = { speak: spoken.text, voiced: heldSentence !== undefined }
         }
         // The cause that fallback answers under, asked in one place so the
         // Answer the user hears and the trace record of the failed round
@@ -2266,6 +2359,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
                   ) {
                     const at = clock.now()
                     yield* publishCard(closed, at)
+                    if (roundSentence !== undefined) markCardVoiced()
                     roundCard = { answer: closed, at }
                   }
                 }
@@ -2765,6 +2859,7 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
             if (held !== undefined && heldUnlanded !== undefined) {
               traceRun?.(() => ({ turnId, kind: 'stood_sentence', publishedAt: held.at, card: 'answer' }))
             }
+            markCardVoiced()
             if (held !== undefined) {
               yield { type: 'status', status: 'speaking', at: clock.now() }
               yield* awaitSpokenEarly(held)
@@ -2961,84 +3056,12 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
         // The deterministic fallback Answer (#117/#137/AC4): displayed and
         // spoken like any Answer, but the run completes mechanically
         // failed — no model Assessment, no memory patch, only the
-        // deterministic Run Note the commit below records. Built solely
-        // from the command, the mechanical stop cause, and the retained
-        // sources derived from the run's verified Observations and its
-        // accepted Evidence Checkpoints — bounded inspectable detail for
-        // the strongest source, never a bare URL list and never an
-        // unverified model claim.
+        // deterministic Run Note the commit below records.
         if (deterministicFallback) {
           runOutcome = 'failed'
-          const fallbackWall = fallbackDetail()
-          const fallbackRecords = ledger.snapshot()
-          const fallback = deterministicFinalAnswer({
-            // The task the stopped run was working on, in words the user
-            // recognizes: their Steering correction once one landed (#119)
-            // — the fresh plan's objective when that declaration made it,
-            // the directive's own words otherwise — and their command on
-            // a never-steered run.
-            command: correctedObjective ?? command,
-            // An Off-language Answer's stand-in asks its own cause (#286),
-            // which is none while the phase was working.
-            cause: offLanguageFallback ? offLanguageCause() : fallbackCause(),
-            ...(fallbackWall !== undefined ? { detail: fallbackWall } : {}),
-            sources: deriveFallbackSources({
-              records: fallbackRecords,
-              checkpoints: acceptedCheckpoints,
-              resolveObservation: resolveSessionObservation,
-            }),
-            // A Look the run could not complete is the one unresolved
-            // check it actually established (#203/AC2) — named as that,
-            // never as the vision failure behind it.
-            ...(hasUnresolvedImageCheck(fallbackRecords) ? { imageUnverified: true } : {}),
-          })
-          // The Answer's origin travels with the Answer (#214): the eval's
-          // per-run `deterministicAnswer` reads this flag, so it can never
-          // be inferred from the wording of the sentences above.
-          // Every declared Asked Item is unverified on a deterministic
-          // Answer (#250): the Run stopped before it could state any.
-          // Their names are the model's wording all the same, so they
-          // pass the display boundary like any Answer's (#300).
-          const listed =
-            runPlan !== null && runPlan.askedItems.length > 0
-              ? repairAskedItems(unverifiedAskedItems(runPlan.askedItems, ASKED_ITEM_UNESTABLISHED))
-              : undefined
-          if (listed !== undefined && listed.slips.length > 0) traceRun?.(() => ({ turnId, kind: 'identity_slip', slips: listed.slips }))
-          // A sentence the Run holds stands (#312): the user heard an
-          // Answer begin and is not told that a limit ended it — whether
-          // its round was cut or its Answer landed and could not be taken
-          // (a Malformed or an Off-language one, the retry spent). The Card
-          // is the one the cut round had closed in its stream, when it had
-          // and it passes what a Card must — the Off-language check (#286)
-          // and the display boundary (#246); the deterministic Card
-          // otherwise, shown and not spoken.
-          const held = heldSentence
-          const closedCard = held !== undefined ? (heldUnlanded?.card ?? null) : null
-          const cutCard = closedCard !== null && !isOffLanguageRendering(closedCard) ? repairCard(closedCard, resolveSessionObservation) : undefined
-          if (cutCard !== undefined && cutCard.slips.length > 0) traceRun?.(() => ({ turnId, kind: 'identity_slip', slips: cutCard.slips }))
-          yield {
-            type: 'display',
-            text: cutCard?.text ?? fallback.display,
-            // The mark is the Card's origin: one a model round wrote is
-            // not the deterministic Answer.
-            ...(cutCard === undefined ? { deterministicAnswer: true } : {}),
-            finalAnswer: true,
-            ...(listed !== undefined ? { askedItems: listed.items } : {}),
-            at: clock.now(),
-          }
-          // A sentence spoken early for no Answer — its round went on to
-          // call tools — is waited out, and the Answer heard after it is a
-          // second utterance.
-          const spokenForNone = sentencesSpokenEarly.filter((published) => published !== held)
-          if (spokenForNone.length > 0) traceRun?.(() => ({ turnId, kind: 'second_utterance', deterministic: true }))
-          for (const published of spokenForNone) yield* awaitSpokenEarly(published)
-          if (held !== undefined) {
-            traceRun?.(() => ({ turnId, kind: 'stood_sentence', publishedAt: held.at, card: cutCard !== undefined ? 'cut_round' : 'deterministic' }))
-            yield { type: 'status', status: 'speaking', at: clock.now() }
-            yield* awaitSpokenEarly(held)
-          } else {
-            yield* speakLine(fallback.speak, turnId)
-          }
+          // An Off-language Answer's stand-in asks its own cause (#286),
+          // which is none while the phase was working.
+          yield* presentDeterministicAnswer(offLanguageFallback ? offLanguageCause() : fallbackCause(), fallbackDetail())
           yield* checkpoint(run, 'thinking')
         }
       } catch (err) {
@@ -3052,19 +3075,48 @@ export function createCommandPipeline(deps: CommandPipelineDeps): CommandPipelin
           }
         } else {
           runOutcome = 'failed'
-          // The full detail reaches the dashboard on the error event and
-          // the Run's stop record; what the user hears names no provider
-          // (#203/AC1). A raw exception read aloud tells them nothing
-          // they can act on, and it is the same leak the stopping policy
-          // closes everywhere else.
-          const message = toErrorMessage(err)
-          // Filed with its stack (#271): a Transport Failure no longer
-          // lands here, so whatever still does is unexplained, and the
-          // message alone is all the error event keeps.
+          // A Run that fails outright ends on the Deterministic Answer
+          // (#322, ADR 0038), built from what it holds: no model round is
+          // tried, no Finalization Cause is invented, and nothing the
+          // user is shown or hears carries the error. The Stop Record
+          // keeps it, and the fault below — filed with its stack (#271),
+          // since a Transport Failure no longer lands here and whatever
+          // still does is unexplained — keeps it for the fault report and
+          // the Run Trace, where its site says what ended the Run.
           reportFault('pipeline.createCommandPipeline.runFailedOutsideFinalization', err, { turnId })
-          finalizationFailure = `the run failed outside Finalization: ${message}`
-          yield { type: 'error', message, at: clock.now() }
-          yield* speakLine(RUN_FAILED_SPOKEN, turnId)
+          finalizationFailure = `the run failed outside Finalization: ${toErrorMessage(err)}`
+          // The one line still shown: no model is configured, and the
+          // message says which settings to give. It is the application's
+          // instruction and not a provider's words, and without it every
+          // command would come back with nothing to show and no reason.
+          if (err instanceof LlmNotConfiguredError) yield { type: 'error', message: err.message, at: clock.now() }
+          const phase = effortEpoch.phase
+          const cardAtFailure = cardShown()
+          try {
+            if (cardAtFailure === undefined) {
+              yield* presentDeterministicAnswer(
+                phase.kind === 'working' ? undefined : phase.cause,
+                phase.kind === 'working' ? undefined : phase.detail,
+              )
+            } else {
+              // A Card already shown is kept (#319): the Run's Answer is
+              // that Card, and its line is spoken if the failure came
+              // before it was.
+              for (const published of sentencesSpokenEarly) yield* awaitSpokenEarly(published)
+              if (!cardAtFailure.voiced) yield* speakLine(cardAtFailure.speak, turnId)
+            }
+          } catch (unpresented) {
+            reportFault('pipeline.createCommandPipeline.failedRunAnswer', unpresented, { turnId })
+            // The Deterministic Answer could not be composed: the Run
+            // says it has nothing to show, which composes from the
+            // command alone. After a sentence spoken early nothing more
+            // is spoken (#312).
+            if (cardShown() === undefined) {
+              const nothing = deterministicFinalAnswer({ command: correctedObjective ?? command, sources: [] })
+              yield { type: 'display', text: nothing.display, deterministicAnswer: true, finalAnswer: true, at: clock.now() }
+              if (heldSentence === undefined) yield* speakLine(nothing.speak, turnId)
+            }
+          }
         }
       }
       // The cause the Run actually entered Finalization under (#110/#203):
