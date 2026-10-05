@@ -25,8 +25,16 @@ Note (2026-10-05, #319): what building the early Card settled. #318 and
   the reading #319 asked to be confirmed.
 - A Card published early ends the Run when its round is cut or its request
   fails for any reason, not only at the transport: no bookkeeping round and
-  no reserved round follow, and no error is shown or spoken. The cause the
-  Run records is the one the cut entered Finalization under.
+  no reserved round follow, and no error is shown or spoken. A deadline or
+  the Finalization Allowance entered Finalization for that round, and the
+  Run records that cause. A client timeout or a failed request enters none
+  once a Card is shown, and the Run records `model_answered`.
+- A Stop inside the Answer Tail cancels the Run as a Stop during the spoken
+  line does: the Card stays in the Feed and the Run ends `cancelled`.
+- A Card from an attempt the client then retried stands, and the Answer the
+  retry returns is not taken as its Tail. The client retries only an
+  attempt that returned nothing, so this is a guard and not a path a
+  capture should show.
 - A round that ends with tool calls after its Card was shown also ends the
   Run on that Card, and the calls are not run. The ruling named a cut, a
   transport failure and broken JSON; this fourth case is recorded with the
@@ -39,7 +47,7 @@ Note (2026-10-05, #319): what building the early Card settled. #318 and
 - The Run Trace becomes version 13 with three records: `early_card` (round,
   `publishedAt`, time from the round's start and to its end),
   `answer_out_of_order` and `answer_tail_fallback` (round and reason:
-  `cut`, `transport_failure`, `broken_json`, `tool_calls`). The Round Audit
+  `cut`, `request_failed`, `broken_json`, `tool_calls`). The Round Audit
   counts all three beside the rounds and reads a trace below version 13 as
   not counted. The continuity degradation is `answer_tail_fell_back`.
 - The live Answer latency is taken at the `display` event marked
