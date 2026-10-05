@@ -176,7 +176,9 @@ fresh Run Plan after a directive is the round `low` lost the correction in.
 Finalization rounds are the other exception (#215): bookkeeping and the
 reserved Answer think at their own rung, `low`, whatever the tier, because
 neither acquires anything and both must fit their share of the Finalization
-Allowance. The rung is read from the Effort Epoch as each request is built, so
+Allowance. The round after a bookkeeping-only round, and an Answer Retry, are
+the third (#314): they think at `low`, the Answer-ready rung, because the round
+before has done the deciding. The rung is read from the Effort Epoch as each request is built, so
 a Tier Escalation, a Steering replan, or Finalization entry carries it with
 everything else.
 _Avoid_: complexity, mode
@@ -241,8 +243,11 @@ _Avoid_: acquisition, polling
 **Bookkeeping**:
 Recording what a Run has decided or observed — its Run Plan, an Evidence
 Checkpoint, a Candidate decision. Bookkeeping brings nothing new in and stays
-open through Finalization so the Answer can be grounded.
-_Avoid_: metadata tools, housekeeping
+open through Finalization so the Answer can be grounded. A bookkeeping-only
+round is a round outside Finalization whose every call is Bookkeeping; the
+round after one cannot record, so it acts or answers, and what is unrecorded
+goes in the Answer's checkpoints.
+_Avoid_: metadata tools, housekeeping, records-only round
 
 **Notice**:
 An advisory line the runtime appends to a tool result for the model, never

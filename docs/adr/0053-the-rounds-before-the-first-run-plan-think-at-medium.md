@@ -7,6 +7,13 @@ rung in the Effort Epoch's reasoning-effort rule (#166, #215) and widens the
 rung type by the one value the provider defines and the tier map never used.
 Amends nothing in the Run Plan, the prompt, the budgets or the deadlines.
 
+Note (2026-10-05, #314): a cap is refused a second time, for every round, by
+[ADR 0075](0075-the-round-after-a-bookkeeping-only-round-thinks-at-low-and-cannot-record.md).
+On `main-4dc72e9` a ceiling of 8,000 reasoning characters cuts 9
+bookkeeping-only and Answer rounds and 4 acting rounds in 18 Runs, for an
+estimated 12 s a Run, and a cut round would have to be sent again. That ADR
+adds a third exception to the tier's rung, the Answer-ready rung at `low`.
+
 ## Context
 
 Every audited round in the second Baseline (#247, `baseline2-1..3`) and the

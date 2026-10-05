@@ -137,6 +137,21 @@ it cannot see. No gate is restated and no capture was run.
   such audits is the one committed, and the Fix Ledger recounts it from the
   rounds and the review. Reported, never gated.
 
+Note (2026-10-05, #314): the rule on bookkeeping rounds in the middle of a
+Run, refused below until this was captured, is decided by
+[ADR 0075](0075-the-round-after-a-bookkeeping-only-round-thinks-at-low-and-cannot-record.md).
+
+- On `main-4dc72e9`, 18 of 21 bookkeeping-only rounds sit in a chain that
+  ends at an Answer, and 10 of the 15 that reasoned drafted the Answer
+  before sending the record.
+- The round after a bookkeeping-only round thinks at `low`, cannot record,
+  and is told so in its own request. The Bookkeeping-only Notice is
+  removed.
+- The refusal of a lower rung for a round that turns out to be bookkeeping
+  stands: the rung is chosen from the round before.
+- The fallback this ADR named for a miss, a Run answered without a further
+  round, is not taken up. No Answer exists until a model round writes it.
+
 ## Context
 
 A round whose only calls are `record_evidence` or `record_candidate` costs
