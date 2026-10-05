@@ -137,7 +137,8 @@ export const RUN_PLAN_NO_ASKED_ITEMS =
 export function askedItemsAcknowledgement(standingItems: readonly string[]): string {
   return (
     `Asked Items (${standingItems.length}): ${numberedAskedItems(standingItems)}. ` +
-    'The Answer’s asked_items carries one entry per item, "n" its number here, "stated" with the statement or "unverified" with why.'
+    'The Answer’s asked_items carries one entry per item: "n" its number here, "standing" "stated" or "unverified", ' +
+    'and "statement" the established value alone, or why you could not.'
   )
 }
 

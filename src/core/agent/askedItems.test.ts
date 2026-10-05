@@ -8,6 +8,9 @@ import {
   settleAskedItems,
 } from './askedItems'
 
+const ENTRY_FORM =
+  '{"n": the item\'s number in the declared list, "standing": "stated" or "unverified", "statement": the established value alone, or why you could not}'
+
 const DECLARED = ['smallest reduction to carried items that fits the allowance', 'the guitar']
 
 describe('an Asked Item entry named by number (#311)', () => {
@@ -85,7 +88,8 @@ describe('the Asked Items retry message (#311)', () => {
     expect(message).toContain(`1. "${DECLARED[0]}"`)
     expect(message).toContain('"the fare"')
     expect(message).toContain('{"asked_items": [...]}')
-    expect(message).toContain('"n"')
+    expect(message).toContain(ENTRY_FORM)
+    expect(message).not.toContain('"item"')
     expect(message).toMatch(/stands as written/)
     expect(message).not.toMatch(/only the JSON object,/)
   })
@@ -95,6 +99,49 @@ describe('the Asked Items retry message (#311)', () => {
     expect(message).toMatch(/was not the JSON object, so it carries no "asked_items"/)
     expect(message).toContain('Reply with only the JSON object')
     expect(message).toContain(`1. "${DECLARED[0]}"; 2. "the guitar"`)
-    expect(message).toContain('"n"')
+    expect(message).toContain(ENTRY_FORM)
+    expect(message).not.toContain('"item"')
+  })
+})
+
+// #313, ADR 0074: the prompt stopped asking for the item's wording, and
+// nothing about reading an entry changed with it.
+describe('an Asked Item entry written the old way (#313)', () => {
+  const numbered = [
+    { n: 2, item: 'the guitar', standing: 'stated', statement: 'One piece.' },
+    { n: 1, item: DECLARED[0], standing: 'unverified', statement: 'The allowance page did not load.' },
+  ] as const
+  const worded = [
+    { item: 'The Guitar.', standing: 'stated', statement: 'One piece.' },
+    { item: DECLARED[0], standing: 'unverified', statement: 'The allowance page did not load.' },
+  ] as const
+  const settled = [
+    { item: DECLARED[0], standing: 'unverified', statement: 'The allowance page did not load.' },
+    { item: 'the guitar', standing: 'stated', statement: 'One piece.' },
+  ]
+
+  it('parses, matches and settles an entry carrying `item` beside its `n`', () => {
+    expect(parseAskedItemEntries(numbered.map((entry) => ({ ...entry })))).toEqual(numbered)
+    expect(askedItemsCoverage(DECLARED, numbered)).toEqual({ missing: [], undeclared: [] })
+    expect(settleAskedItems(DECLARED, numbered)).toEqual(settled)
+  })
+
+  it('parses, matches and settles an entry without `n` by its wording', () => {
+    expect(parseAskedItemEntries(worded.map((entry) => ({ ...entry })))).toEqual(worded)
+    expect(askedItemsCoverage(DECLARED, worded)).toEqual({ missing: [], undeclared: [] })
+    expect(askedItemsCoverage(DECLARED, [{ item: 'the fare', standing: 'stated', statement: '£50.' }])).toEqual({ missing: DECLARED, undeclared: ['the fare'] })
+    expect(settleAskedItems(DECLARED, worded)).toEqual(settled)
+  })
+
+  it('merges a held list and a reply written either way', () => {
+    expect(settleAskedItems(DECLARED, mergeAskedItems(DECLARED, [worded[0]], [numbered[1]]))).toEqual(settled)
+    expect(settleAskedItems(DECLARED, mergeAskedItems(DECLARED, [numbered[0]], [worded[1]]))).toEqual(settled)
+  })
+
+  it('gives an entry that carries a number alone its declared wording', () => {
+    expect(settleAskedItems(DECLARED, [{ n: 2, standing: 'stated', statement: 'one piece' }, { n: 1, standing: 'stated', statement: 'drop the bag' }])).toEqual([
+      { item: DECLARED[0], standing: 'stated', statement: 'drop the bag' },
+      { item: 'the guitar', standing: 'stated', statement: 'one piece' },
+    ])
   })
 })
