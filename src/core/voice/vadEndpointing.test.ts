@@ -21,8 +21,13 @@ const FRAME = new Float32Array(SAMPLES)
 const SPEECH = 0.95
 const SILENCE = 0.01
 
+/**
+ * The merge window under test (#60): the branch default is off (ADR 0076),
+ * so the hold's own tests turn it on explicitly, at the 1.5 s `main` holds.
+ */
+const MERGED = { resumptionMergeMs: 1_500 }
 /** Silence frames the merge window holds after the endpoint fires (#60). */
-const MERGE_FRAMES = mergeFramesFor(vadDefaults())
+const MERGE_FRAMES = mergeFramesFor({ ...vadDefaults(), ...MERGED })
 
 interface Harness {
   pushProbs: (probs: number[]) => { speechMs: number; totalMs: number; truncated: boolean }[]
@@ -44,15 +49,15 @@ function endpointerWith(overrides?: Partial<ReturnType<typeof vadDefaults>>): Ha
 }
 
 describe('utterance endpointing', () => {
-  it('defaults to ~900 ms of trailing silence before the endpoint fires (#60)', () => {
+  it('defaults to ~300 ms of trailing silence before the endpoint fires (ADR 0076)', () => {
     const defaults = vadDefaults()
-    expect(defaults.endFrames * 32).toBeGreaterThanOrEqual(900 - 32)
-    expect(defaults.endFrames * 32).toBeLessThan(900 + 32)
+    expect(defaults.endFrames * 32).toBeGreaterThanOrEqual(300 - 32)
+    expect(defaults.endFrames * 32).toBeLessThan(300 + 32)
   })
 
-  it('defaults to a ~1.5 s resumption-merge window (#60)', () => {
+  it('defaults to no resumption-merge hold (ADR 0076); #60 left the window tunable', () => {
     expect(vadDefaults().resumptionMergeMs).toBe(RESUMPTION_MERGE_MS_DEFAULT)
-    expect(RESUMPTION_MERGE_MS_DEFAULT).toBe(1_500)
+    expect(RESUMPTION_MERGE_MS_DEFAULT).toBe(0)
   })
 
   it('defaults to a 30 s hard cap — the STT model ceiling (#61)', () => {
@@ -97,7 +102,7 @@ describe('utterance endpointing', () => {
     const probs = [
       ...Array.from({ length: leadingSilence }, () => 0.01),
       ...Array.from({ length: speechFrames }, () => 0.95),
-      ...Array.from({ length: defaults.endFrames + MERGE_FRAMES }, () => 0.01),
+      ...Array.from({ length: defaults.endFrames }, () => 0.01),
     ]
     let ended: { pcm: Float32Array } | null = null
     probs.forEach((prob, i) => {
@@ -112,7 +117,7 @@ describe('utterance endpointing', () => {
     const preRollSilence = 192 / 32 - defaults.startFrames
     const startFrameIndex = leadingSilence - preRollSilence
     const expectedFrames =
-      192 / 32 + speechFrames - defaults.startFrames + defaults.endFrames + MERGE_FRAMES - defaults.endPaddingMs / 32
+      192 / 32 + speechFrames - defaults.startFrames + defaults.endFrames - defaults.endPaddingMs / 32
     expect(ended!.pcm.length).toBe(expectedFrames * SAMPLES)
     // …and the first sample is genuinely from the pre-roll frame, not the trigger.
     expect(ended!.pcm[0]).toBeCloseTo((startFrameIndex * SAMPLES) / 1000, 5)
@@ -194,7 +199,7 @@ describe('utterance endpointing', () => {
 
 describe('resumption-merge window (#60)', () => {
   it('rejoins speech that resumes inside the window into the same utterance', () => {
-    const { pushProbs } = endpointerWith()
+    const { pushProbs } = endpointerWith(MERGED)
     const defaults = vadDefaults()
     const halfA = defaults.minSpeechMs / 32 + 2 // 7 frames
 
@@ -214,7 +219,7 @@ describe('resumption-merge window (#60)', () => {
   })
 
   it('a burst shorter than startFrames does not rejoin — noise must not re-arm the window', () => {
-    const { pushProbs } = endpointerWith()
+    const { pushProbs } = endpointerWith(MERGED)
     const defaults = vadDefaults()
     const speechFrames = defaults.minSpeechMs / 32 + 2
 
@@ -236,7 +241,7 @@ describe('resumption-merge window (#60)', () => {
   })
 
   it('holds the utterance while the window is open, submitting only when it closes in silence', () => {
-    const endpointer = createUtteranceEndpointer()
+    const endpointer = createUtteranceEndpointer(MERGED)
     const defaults = vadDefaults()
     const speechFrames = defaults.minSpeechMs / 32 + 2
     const submitSilence = defaults.endFrames + MERGE_FRAMES
@@ -283,7 +288,7 @@ describe('resumption-merge window (#60)', () => {
   })
 
   it('the hard cap outranks the hold — a held utterance still submits at the cap, flagged truncated', () => {
-    const { pushProbs } = endpointerWith({ maxUtteranceMs: 1_500 })
+    const { pushProbs } = endpointerWith({ ...MERGED, maxUtteranceMs: 1_500 })
     const defaults = vadDefaults()
 
     // 10 speech frames (320 ms) + silence into the hold crosses 1500 ms of
@@ -300,7 +305,7 @@ describe('resumption-merge window (#60)', () => {
   })
 
   it('reports idle only between utterances — the hold keeps the utterance in flight (#60)', () => {
-    const endpointer = createUtteranceEndpointer()
+    const endpointer = createUtteranceEndpointer(MERGED)
     const defaults = vadDefaults()
 
     expect(endpointer.isIdle()).toBe(true) // waiting before any speech

@@ -15,8 +15,13 @@ export interface ModelEndpointConfig {
 
 const DECISION_ENV_PREFIX = 'BINGBONG_DECISION'
 const DECISION_DEFAULT_BASE_URL = 'https://api.typesafe.ai'
-/** Pinned, never `jev-latest`: thresholds are tuned per model version. */
-const DECISION_DEFAULT_MODEL = 'jev-1.13.0'
+/**
+ * Pinned, never `jev-latest`. `jev-1.14.0` by the owner's ruling (ADR 0076):
+ * no confidence bar is tuned on this branch, so nothing holds the `jev-1.13.0`
+ * pin the adapter inherited, and 1.14 is the release whose Box question can
+ * locate a target in a screenshot.
+ */
+const DECISION_DEFAULT_MODEL = 'jev-1.14.0'
 const DECISION_DEFAULT_KEY_ENV = 'TYPESAFE_API_KEY'
 
 /** The scripted stand-in's hook: set, it serves the role and no request leaves the machine. */

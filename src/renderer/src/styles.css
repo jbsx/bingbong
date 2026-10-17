@@ -245,9 +245,7 @@ body {
 }
 
 .status-orb--listening,
-.status-pill--listening,
-.status-orb--paused,
-.status-pill--paused {
+.status-pill--listening {
   --status-color: var(--status-purple);
 }
 
@@ -264,10 +262,6 @@ body {
 .status-orb--cancelled,
 .status-pill--cancelled {
   --status-color: var(--status-red);
-}
-
-.status-orb--paused {
-  box-shadow: 0 0 0 4px rgba(175, 82, 222, 0.16);
 }
 
 .dashboard-main {

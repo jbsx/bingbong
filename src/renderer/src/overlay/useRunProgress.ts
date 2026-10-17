@@ -5,8 +5,7 @@ import { createRunProgressTracker, type RunProgress } from '../../../core/pipeli
 // 0029) ride one fold: a run is active while the progress tracker holds a
 // stage — the same projection that drives the dashboard's hint line, so
 // "will this steer or submit?" and "what is it doing?" answer from one
-// place. Paused runs stay active: steering while paused is the canonical
-// voice pattern.
+// place.
 export function useRunProgress(): RunProgress | null {
   const tracker = useRef(createRunProgressTracker())
   const [progress, setProgress] = useState<RunProgress | null>(null)

@@ -8,8 +8,13 @@ export const WAKE_WORD_THRESHOLD_MAX = 1
 /** Endpoint-delay slider bounds (#37): silence that ends an utterance. */
 export const ENDPOINT_DELAY_MS_MIN = 200
 export const ENDPOINT_DELAY_MS_MAX = 1500
-/** Raised 500 → 900 ms (#60): half-commands from mid-sentence pauses die here. */
-export const ENDPOINT_DELAY_MS_DEFAULT = 900
+/**
+ * 300 ms on this branch (ADR 0076, #324): the Reaction is the one clock the
+ * user feels, so an Utterance is released 300 ms into silence. A pause
+ * mid-sentence makes two Commands; a Misfire is recovered, never prevented.
+ * (`main` holds 900 ms, raised from 500 in #60.)
+ */
+export const ENDPOINT_DELAY_MS_DEFAULT = 300
 /**
  * Resumption-merge window bounds (#60/#59): silence held after the endpoint
  * before the utterance submits. 0 disables the hold — the endpoint submits
@@ -17,7 +22,8 @@ export const ENDPOINT_DELAY_MS_DEFAULT = 900
  */
 export const RESUMPTION_MERGE_MS_MIN = 0
 export const RESUMPTION_MERGE_MS_MAX = 3_000
-export const RESUMPTION_MERGE_MS_DEFAULT = 1_500
+/** 0 on this branch (ADR 0076): no hold after the Endpoint. (`main` holds 1,500 ms.) */
+export const RESUMPTION_MERGE_MS_DEFAULT = 0
 /** Web-zoom slider bounds (#53): readable-from-the-couch page zoom. */
 export const WEB_ZOOM_PERCENT_MIN = 75
 export const WEB_ZOOM_PERCENT_MAX = 200

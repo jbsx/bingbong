@@ -12,7 +12,6 @@ const PILL_LABELS: Record<OrbStatus, string> = {
   thinking: 'Thinking…',
   acting: 'Acting…',
   speaking: 'Speaking…',
-  paused: 'Paused',
   cancelled: 'Cancelled',
   listening: 'Listening…',
   transcribing: 'Transcribing…',

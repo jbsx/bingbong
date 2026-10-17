@@ -62,8 +62,8 @@ export function vadDefaults(): UtteranceEndpointerConfig {
   return {
     speechThreshold: 0.5,
     startFrames: 3, // ~96 ms of speech before an utterance counts
-    endFrames: silenceFramesForMs(ENDPOINT_DELAY_MS_DEFAULT), // ~900 ms of silence ends it (#37/#60)
-    resumptionMergeMs: RESUMPTION_MERGE_MS_DEFAULT, // then ~1.5 s holds submission for rejoined speech (#60)
+    endFrames: silenceFramesForMs(ENDPOINT_DELAY_MS_DEFAULT), // ~300 ms of silence ends it (#37/#60, ADR 0076)
+    resumptionMergeMs: RESUMPTION_MERGE_MS_DEFAULT, // no hold on this branch (ADR 0076); #60's merge is tunable, off by default
     startPaddingMs: 192, // ~6 frames of pre-roll
     endPaddingMs: 64, // ~2 frames of tail
     // The STT model's ceiling (#61): long spoken requests survive whole;

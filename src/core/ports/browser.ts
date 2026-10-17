@@ -141,6 +141,14 @@ export interface BrowserController {
    * cannot be read, or is no longer the page the last result printed.
    */
   pageLinks(): Promise<readonly PageLink[] | null>
+  /**
+   * The page's refs as data, those numbers shown (ADR 0033): what a
+   * Command is read against (#324). Collected at speech start so the list
+   * is in hand at the Endpoint; the click that follows is not refused.
+   */
+  collectPage(): Promise<PageSnapshot>
+  /** Clear the focused editable element (#324): the `clear` verb. Answers what was cleared. */
+  clearFocused(): Promise<string>
 }
 
 /** Extra browser capability required only by visual grounding. */

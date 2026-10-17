@@ -94,6 +94,14 @@ class FakeController implements BrowserController {
     return pageLinksOf(buildPageSnapshot(youtubeFixture))
   }
 
+  async collectPage() {
+    return buildPageSnapshot(youtubeFixture)
+  }
+
+  async clearFocused(): Promise<string> {
+    return 'cleared input[text]'
+  }
+
 }
 
 function harnessWith(overrides?: Partial<CliHarnessDeps>) {

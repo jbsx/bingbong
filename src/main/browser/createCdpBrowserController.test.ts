@@ -9,8 +9,10 @@ import type { BrowserSubspans } from '../../core/perf/browserSubspans'
 import { createBrowserSubspans } from '../../core/perf/browserSubspans'
 import type { PerfSpanRecord } from '../../core/perf/perfTracer'
 import { fakePerfHarness } from '../../core/testing/doubles'
-import type { ArrivalWatch, CdpDebugger, CdpPageDriver, PageArrival } from './createCdpBrowserController'
-import { createCdpBrowserController } from './createCdpBrowserController'
+import type { Clock } from '../../core/ports/clock'
+import { FakeClock } from '../../core/testing/doubles'
+import type { ActionEffect, ActionEffects, ArrivalWatch, CdpDebugger, CdpPageDriver, PageArrival } from './createCdpBrowserController'
+import { createCdpBrowserController, READINESS_CAP_MS } from './createCdpBrowserController'
 import type { ClickPrep } from './collectPageScript'
 
 const youtubeFixture = youtubeHome as unknown as CollectedPage
@@ -141,12 +143,34 @@ class FakeCdp implements CdpDebugger {
     for (const handler of this.handlers.get(event) ?? []) handler(params)
   }
 
+  /**
+   * What the armed readiness watch answers (#324): an effect, or the page's
+   * own cap. A test that sets `readyHangs` gets a wait that never answers —
+   * the controller's cap on its clock is what ends it.
+   */
+  readyOutcome: ActionEffect | 'timeout' = 'mutation'
+  readyHangs = false
+  /** How many readiness watches were armed and waited on. */
+  readyArmed = 0
+  readyWaited = 0
+
   async send<T = unknown>(method: string, params?: Record<string, unknown>): Promise<T> {
     this.calls.push({ method, params })
     if (method === 'Page.handleJavaScriptDialog') return {} as T
     if (method === 'Runtime.evaluate') {
-      if (this.evaluateException) return { exceptionDetails: { text: this.evaluateException } } as T
       const expression = typeof params?.expression === 'string' ? params.expression : ''
+      if (expression.includes('/* READY_ARM */')) {
+        this.readyArmed += 1
+        return { result: { value: true } } as T
+      }
+      if (expression.includes('/* READY_WAIT */')) {
+        this.readyWaited += 1
+        if (this.readyHangs) return new Promise<T>(() => {})
+        return { result: { value: this.readyOutcome } } as T
+      }
+      if (expression.includes('/* FLASH_REF */')) return { result: { value: true } } as T
+      if (expression.includes('/* CLEAR_FOCUSED */')) return { result: { value: 'input[text]' } } as T
+      if (this.evaluateException) return { exceptionDetails: { text: this.evaluateException } } as T
       if (expression === COLLECT_EXPRESSION && this.collectException) {
         return { exceptionDetails: { text: this.collectException } } as T
       }
@@ -407,6 +431,27 @@ class FakePage implements CdpPageDriver {
     this.focusCount += 1
   }
 
+  /** Who hears a commit (#324). */
+  private readonly commitHandlers = new Set<() => void>()
+  get commitListeners(): number {
+    return this.commitHandlers.size
+  }
+
+  onNavigationCommitted(listener: () => void): () => void {
+    this.commitHandlers.add(listener)
+    return () => this.commitHandlers.delete(listener)
+  }
+
+  /** The next load commits: every listener hears it as the load starts. */
+  commit(): void {
+    const previous = this.onLoad
+    this.onLoad = (url) => {
+      for (const handler of [...this.commitHandlers]) handler()
+      this.onLoad = previous
+      previous?.(url)
+    }
+  }
+
   watchArrival(): ArrivalWatch {
     this.watches += 1
     const next = this.nextArrival
@@ -426,12 +471,25 @@ function pendingArrival(): { promise: Promise<PageArrival>; settle: (arrival: Pa
   return { promise, settle }
 }
 
+/** A clock whose every timer fires on the next tick: waits cost nothing, order is kept. */
+function instantClock(): Clock {
+  return {
+    now: () => 0,
+    setTimer: (_ms, fn) => {
+      const handle = setTimeout(fn, 0)
+      return () => clearTimeout(handle)
+    },
+  }
+}
+
 function makeController(options?: {
   cdp?: FakeCdp
   page?: FakePage
   popupBlocks?: string[]
   authPopupOpens?: string[]
   subspans?: BrowserSubspans
+  clock?: Clock
+  effects?: ActionEffects
 }) {
   const cdp = options?.cdp ?? new FakeCdp()
   const page = options?.page ?? new FakePage()
@@ -443,9 +501,10 @@ function makeController(options?: {
     cdp,
     page,
     collectScript: '/* COLLECT */',
-    // Real pacing is policy for the live page; tests only care about the
-    // sequence of CDP messages, so don't pay the human-paced sleeps.
-    pacing: { settleMs: 0, moveMs: 0, clickMs: 0, keystrokeMs: 0, scrollTickMs: 0 },
+    // The readiness cap and the landing poll run on an instant clock unless
+    // a test brings its own (the cap is pinned on a FakeClock, #324).
+    clock: options?.clock ?? instantClock(),
+    ...(options?.effects ? { effects: options.effects } : {}),
     consumePopupBlocks: () => popupQueue.splice(0),
     consumeAuthPopupOpens: () => authQueue.splice(0),
     holdWindowOpens: () => {
@@ -1005,19 +1064,14 @@ describe('createCdpBrowserController type', () => {
     expect(outcome).toBe('typed [3]: value="hello"')
   })
 
-  it('focuses the ref with a click, then sends keyDown/keyUp per character', async () => {
+  it('focuses the ref with a click, then inserts the text whole with Input.insertText (#324)', async () => {
     const { cdp, controller } = makeController()
     await showRefs(controller)
 
-    await controller.type(3, 'hi')
+    await controller.type(3, 'hi there')
 
-    const keys = cdp.calls.filter((call) => call.method === 'Input.dispatchKeyEvent')
-    expect(keys.map((call) => call.params)).toEqual([
-      { type: 'keyDown', key: 'h', text: 'h', windowsVirtualKeyCode: 72 },
-      { type: 'keyUp', key: 'h', windowsVirtualKeyCode: 72 },
-      { type: 'keyDown', key: 'i', text: 'i', windowsVirtualKeyCode: 73 },
-      { type: 'keyUp', key: 'i', windowsVirtualKeyCode: 73 },
-    ])
+    expect(cdp.calls.filter((call) => call.method === 'Input.insertText').map((call) => call.params)).toEqual([{ text: 'hi there' }])
+    expect(cdp.calls.filter((call) => call.method === 'Input.dispatchKeyEvent')).toEqual([])
   })
 
   it('focuses the target before typing', async () => {
@@ -1030,26 +1084,26 @@ describe('createCdpBrowserController type', () => {
     expect(mouse[0]?.params).toMatchObject({ type: 'mouseMoved', x: 654, y: 32 })
     expect(mouse[1]?.params).toMatchObject({ type: 'mousePressed' })
     expect(mouse[2]?.params).toMatchObject({ type: 'mouseReleased' })
-    // Focus click happens before any key event.
-    expect(cdp.calls.findIndex((call) => call.method === 'Input.dispatchKeyEvent')).toBeGreaterThan(
+    // Focus click happens before the insert.
+    expect(cdp.calls.findIndex((call) => call.method === 'Input.insertText')).toBeGreaterThan(
       cdp.calls.findIndex((call) => call.params?.type === 'mouseReleased'),
     )
   })
 
-  it('maps newline to Enter with the Enter key code', async () => {
+  it('maps newline to an Enter key event between the inserted runs', async () => {
     const { cdp, controller } = makeController()
     await showRefs(controller)
 
-    await controller.type(3, 'a\n')
+    await controller.type(3, 'a\nb')
 
-    const keys = cdp.calls.filter((call) => call.method === 'Input.dispatchKeyEvent')
-    expect(keys.map((call) => call.params?.key)).toEqual(['a', 'a', 'Enter', 'Enter'])
-    expect(keys[2]?.params).toMatchObject({
-      type: 'keyDown',
-      code: 'Enter',
-      windowsVirtualKeyCode: 13,
-      text: '\r',
-    })
+    const input = cdp.inputCalls().filter((call) => call.method !== 'Input.dispatchMouseEvent')
+    expect(input.map((call) => [call.method, call.params?.text ?? call.params?.key])).toEqual([
+      ['Input.insertText', 'a'],
+      ['Input.dispatchKeyEvent', '\r'],
+      ['Input.dispatchKeyEvent', 'Enter'],
+      ['Input.insertText', 'b'],
+    ])
+    expect(input[1]?.params).toMatchObject({ type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, text: '\r' })
   })
 
   it('refuses a number the model was never shown', async () => {
@@ -1625,7 +1679,7 @@ describe('createCdpBrowserController a blocked action under a consent wall (#263
 
     expect(outcome.split('\n')[0]).toMatch(/^typed \[3\]: value=".*"; dismissed consent dialog: clicked \[2\] "Reject all" \(it covered \[3\]; retried\)$/)
     expect(outcome).toContain(settledBlock(youtubeFixture))
-    expect(cdp.inputCalls().filter((call) => call.params?.type === 'keyDown')).toHaveLength('longitude'.length)
+    expect(cdp.calls.filter((call) => call.method === 'Input.insertText').map((call) => call.params?.text)).toEqual(['longitude'])
     expect(domClicks(cdp)).toHaveLength(1)
   })
 
@@ -2147,10 +2201,9 @@ describe('createCdpBrowserController a landing names the page it carries (#308)'
     expect(outcome).toBe(`navigated: url=${landed.url} title="${landed.title}"\n${settledBlock(landed)}`)
     expect(cdp.collectCalls()).toHaveLength(2)
     expect(records.map((record) => [record.stage, record.detail])).toEqual([
-      ['browser-settle', { action: 'navigate', ms: 0 }],
       ['browser-recollection', { reason: 'settled-state' }],
       // The tab reads the same twice running: one poll settles it.
-      ['browser-settle', { action: 'landing-retry', ms: 0 }],
+      ['browser-settle', { action: 'landing-retry', ms: 100 }],
       ['browser-recollection', { reason: 'landing-retry' }],
     ])
   })
@@ -2189,7 +2242,7 @@ describe('createCdpBrowserController a landing names the page it carries (#308)'
     expect(await controller.forward()).toBe(`went forward: url=https://www.youtube.com/ title="YouTube"\n${PAGE_NOT_READ}`)
   })
 
-  it('runs no extra wait when the first collection succeeds', async () => {
+  it('runs no extra wait when the first collection succeeds — and no sleep at all around a landing (#324)', async () => {
     const { records, tracer } = fakePerfHarness()
     const subspans = createBrowserSubspans({ tracer, enabled: true })
     const { controller } = makeController({ subspans })
@@ -2201,11 +2254,8 @@ describe('createCdpBrowserController a landing names the page it carries (#308)'
     })
 
     expect(records.map((record) => [record.stage, record.detail])).toEqual([
-      ['browser-settle', { action: 'navigate', ms: 0 }],
       ['browser-recollection', { reason: 'settled-state' }],
-      ['browser-settle', { action: 'back', ms: 0 }],
       ['browser-recollection', { reason: 'settled-state' }],
-      ['browser-settle', { action: 'forward', ms: 0 }],
       ['browser-recollection', { reason: 'settled-state' }],
     ])
   })
@@ -2323,19 +2373,18 @@ describe('createCdpBrowserController verbose sub-spans (#32)', () => {
     return { records, subspans: createBrowserSubspans({ tracer, enabled }) }
   }
 
-  it('emits a settle sub-span for the navigate sleep, keyed by the open turn', async () => {
+  it('emits only the recollection for a navigate, keyed by the open turn — the load is its own wait (#324)', async () => {
     const { records, subspans } = subspanHarness(true)
     const { controller } = makeController({ subspans })
 
     await subspans.runInTurn('turn-1', () => controller.navigate('youtube.com'))
 
     expect(records).toEqual([
-      { turnId: 'turn-1', stage: 'browser-settle', durMs: 0, at: 1_700_000_000_000, t: 0, detail: { action: 'navigate', ms: 0 } },
       { turnId: 'turn-1', stage: 'browser-recollection', durMs: 0, at: 1_700_000_000_000, t: 0, detail: { reason: 'settled-state' } },
     ])
   })
 
-  it('emits recollection, safety, and settle sub-spans in order for a cold click', async () => {
+  it('emits recollection, safety, and the readiness wait in order for a cold click', async () => {
     const { records, subspans } = subspanHarness(true)
     const { controller } = makeController({ subspans })
     // Outside the turn scope, so nothing they emit lands in the records:
@@ -2349,24 +2398,22 @@ describe('createCdpBrowserController verbose sub-spans (#32)', () => {
     expect(records.map((record) => [record.turnId, record.stage, record.detail])).toEqual([
       ['turn-1', 'browser-recollection', { reason: 'resolve-ref' }],
       ['turn-1', 'browser-safety', { kind: 'click-prep' }],
-      ['turn-1', 'browser-settle', { action: 'pointer', ms: 0 }],
-      ['turn-1', 'browser-settle', { action: 'pointer', ms: 0 }],
-      ['turn-1', 'browser-settle', { action: 'click', ms: 0 }],
+      ['turn-1', 'browser-ready', { action: 'click', outcome: 'mutation' }],
     ])
   })
 
-  it('emits a keystroke settle per typed character plus the focus/settle waits', async () => {
+  it('emits one readiness wait for a type — no pointer, keystroke or focus settle (#324)', async () => {
     const { records, subspans } = subspanHarness(true)
     const { controller } = makeController({ subspans })
     await showRefs(controller)
 
     await subspans.runInTurn('turn-1', () => controller.type(3, 'hi'))
 
-    const settles = records.filter((record) => record.stage === 'browser-settle').map((record) => record.detail?.action)
-    expect(settles).toEqual(['pointer', 'pointer', 'type', 'keystroke', 'keystroke', 'type'])
+    expect(records.filter((record) => record.stage === 'browser-settle')).toEqual([])
+    expect(records.filter((record) => record.stage === 'browser-ready').map((record) => record.detail)).toEqual([{ action: 'type', outcome: 'mutation' }])
   })
 
-  it('emits a settle per scroll tick, the missing-snapshot collect, and the delta collect', async () => {
+  it('emits one readiness wait for a scroll — no tick is paced — beside the missing-snapshot collect and the delta collect', async () => {
     const { records, subspans } = subspanHarness(true)
     const { controller } = makeController({ subspans })
 
@@ -2376,11 +2423,8 @@ describe('createCdpBrowserController verbose sub-spans (#32)', () => {
       { reason: 'no-snapshot' },
       { reason: 'scroll-delta' },
     ])
-    expect(records.filter((record) => record.stage === 'browser-settle').map((record) => record.detail?.action)).toEqual([
-      'scroll',
-      'scroll',
-      'scroll',
-    ])
+    expect(records.filter((record) => record.stage === 'browser-settle')).toEqual([])
+    expect(records.filter((record) => record.stage === 'browser-ready').map((record) => record.detail)).toEqual([{ action: 'scroll', outcome: 'mutation' }])
   })
 
   it('emits the stale-ref recollection when a click is refused', async () => {
@@ -2413,7 +2457,7 @@ describe('createCdpBrowserController verbose sub-spans (#32)', () => {
       { reason: 'post-dismissal' },
     ])
     expect(records).toContainEqual(
-      expect.objectContaining({ stage: 'browser-settle', detail: { action: 'consent-dismiss', ms: 0 } }),
+      expect.objectContaining({ stage: 'browser-ready', detail: { action: 'consent-dismiss', outcome: 'mutation' } }),
     )
   })
 
@@ -2817,5 +2861,128 @@ describe('createCdpBrowserController an action’s page arrival (#309, ADR 0027)
     await controller.navigate('youtube.com')
 
     expect(page.watches).toBe(0)
+  })
+})
+
+// The post-action wait (#324, ADR 0076): the page's first observable
+// effect, or a 150 ms cap on the controller's clock — never a pacing
+// sleep. The effect is reported the moment it is seen: it is what closes
+// the Reaction span.
+describe('createCdpBrowserController readiness wait and effects (#324)', () => {
+  function effectsRecorder(): { observed: ActionEffect[]; effects: ActionEffects } {
+    const observed: ActionEffect[] = []
+    return { observed, effects: { observed: (effect) => observed.push(effect) } }
+  }
+
+  it('arms the watch before the click lands and waits on it once after — no timer is asked of the clock', async () => {
+    const timers: number[] = []
+    const clock: Clock = {
+      now: () => 0,
+      setTimer: (ms, fn) => {
+        timers.push(ms)
+        const handle = setTimeout(fn, 0)
+        return () => clearTimeout(handle)
+      },
+    }
+    const { cdp, controller } = makeController({ clock })
+    await showRefs(controller)
+
+    await controller.click(3)
+
+    expect(cdp.readyArmed).toBe(1)
+    expect(cdp.readyWaited).toBe(1)
+    const armedAt = cdp.calls.findIndex((call) => String(call.params?.expression ?? '').includes('/* READY_ARM */'))
+    const pressedAt = cdp.calls.findIndex((call) => call.params?.type === 'mousePressed')
+    const waitedAt = cdp.calls.findIndex((call) => String(call.params?.expression ?? '').includes('/* READY_WAIT */'))
+    expect(armedAt).toBeLessThan(pressedAt)
+    expect(pressedAt).toBeLessThan(waitedAt)
+    // The one timer is the cap, cancelled when the effect lands first.
+    expect(timers).toEqual([READINESS_CAP_MS])
+  })
+
+  it('ends the wait at the cap on its own clock when the page never answers', async () => {
+    const clock = new FakeClock()
+    const cdp = new FakeCdp()
+    cdp.readyHangs = true
+    const { observed, effects } = effectsRecorder()
+    const { controller } = makeController({ cdp, clock, effects })
+    await showRefs(controller)
+
+    let settled = false
+    const click = controller.click(3).then((outcome) => {
+      settled = true
+      return outcome
+    })
+    for (let i = 0; i < 20; i += 1) await Promise.resolve()
+    clock.advance(READINESS_CAP_MS - 1)
+    for (let i = 0; i < 20; i += 1) await Promise.resolve()
+    expect(settled).toBe(false)
+    clock.advance(1)
+    await click
+    expect(settled).toBe(true)
+    // Nothing was observed: the cap is not an effect.
+    expect(observed).toEqual([])
+  })
+
+  it('reports the first observable effect of a click, a type, a scroll and a key press', async () => {
+    const cdp = new FakeCdp()
+    const { observed, effects } = effectsRecorder()
+    const { controller } = makeController({ cdp, effects })
+    await showRefs(controller)
+
+    cdp.readyOutcome = 'mutation'
+    await controller.click(1)
+    cdp.readyOutcome = 'input'
+    await controller.type(3, 'hi')
+    cdp.readyOutcome = 'scroll'
+    await controller.scroll('down')
+    cdp.readyOutcome = 'timeout'
+    await controller.pressKey({ key: 'k' })
+
+    expect(observed).toEqual(['mutation', 'input', 'scroll'])
+  })
+
+  it('reads a wait the document left behind as a navigation, and hears a landing commit as one', async () => {
+    const cdp = new FakeCdp()
+    const page = new FakePage()
+    const { observed, effects } = effectsRecorder()
+    const { controller } = makeController({ cdp, page, effects })
+    await showRefs(controller)
+
+    cdp.readyOutcome = 'none' as unknown as ActionEffect
+    await controller.click(1)
+    page.commit()
+    await controller.navigate('youtube.com')
+    expect(page.commitListeners).toBe(0)
+
+    expect(observed).toEqual(['navigation', 'navigation'])
+  })
+
+  it('collects the page as data and marks those numbers shown, so the click that follows is not refused', async () => {
+    const cdp = new FakeCdp()
+    const { controller } = makeController({ cdp })
+
+    const snapshot = await controller.collectPage()
+
+    expect(snapshot.refs.map((ref) => ref.ref).slice(0, 3)).toEqual([1, 2, 3])
+    expect(cdp.calls.some((call) => String(call.params?.expression ?? '').includes('__bingbongMarkShown'))).toBe(true)
+    await expect(controller.click(3)).resolves.toMatch(/^clicked \[3\]/)
+  })
+
+  it('clears the focused field and says what it cleared', async () => {
+    const { controller } = makeController()
+
+    expect(await controller.clearFocused()).toBe('cleared input[text]')
+  })
+
+  it('flashes the shown ref in the page', async () => {
+    const cdp = new FakeCdp()
+    const { controller } = makeController({ cdp })
+    await showRefs(controller)
+
+    await controller.showRef(2)
+
+    const flash = cdp.calls.find((call) => String(call.params?.expression ?? '').includes('/* FLASH_REF */'))
+    expect(String(flash?.params?.expression)).toContain('(window.__bingbongRefs || [])[1]')
   })
 })

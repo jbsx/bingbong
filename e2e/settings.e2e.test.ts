@@ -45,6 +45,16 @@ describe('settings page e2e', () => {
       { timeoutMs: 10000, intervalMs: 250 },
     )
 
+    // A fresh profile opens on this branch's endpoint defaults (ADR 0076,
+    // #324): released 300 ms into silence, with no merge hold.
+    const endpointDefaults = await harness.dashboardEval<{ delay: number; merge: number }>(
+      `({ delay: Number(document.querySelector('input[aria-label="Endpoint delay"]').value), merge: Number(document.querySelector('input[aria-label="Merge window"]').value) })`,
+    )
+    expect(endpointDefaults).toEqual({ delay: 300, merge: 0 })
+    const endpointLabels = await harness.dashboardEval<string>(`document.querySelector('.settings-page').textContent`)
+    expect(endpointLabels).toContain('Endpoint delay — 300 ms')
+    expect(endpointLabels).toContain('Merge window — off')
+
     // The city field is addressed by its aria-label.
     const edited = await harness.dashboardEval<string>(setWeatherCityScript('Berlin'))
     expect(edited).toBe('edited')

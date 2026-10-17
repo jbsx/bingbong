@@ -65,9 +65,13 @@ export function createPaneNavigation(wc: PaneNavigationTarget, clock: Clock = sy
   // arrival (#309): a navigation that started and stopped loading without
   // one — a download, a 204, an aborted load — arrived nowhere.
   let commits = 0
+  // Who hears a commit the moment it lands (#324): the Reaction's first
+  // observable effect for a navigate, a back or a forward.
+  const commitListeners = new Set<() => void>()
   wc.on('did-navigate', (_event, _url, httpResponseCode) => {
     commits += 1
     status = typeof httpResponseCode === 'number' && httpResponseCode > 0 ? httpResponseCode : null
+    for (const listener of [...commitListeners]) listener()
   })
   wc.on('did-navigate-in-page', (_event, _url, isMainFrame) => {
     if (isMainFrame) status = null
@@ -136,6 +140,10 @@ export function createPaneNavigation(wc: PaneNavigationTarget, clock: Clock = sy
     goBack: () => historyStep(wc.navigationHistory.canGoBack(), () => wc.navigationHistory.goBack(), 'back'),
     goForward: () => historyStep(wc.navigationHistory.canGoForward(), () => wc.navigationHistory.goForward(), 'forward'),
     watchArrival,
+    onNavigationCommitted(listener) {
+      commitListeners.add(listener)
+      return () => commitListeners.delete(listener)
+    },
     url: () => wc.getURL(),
     title: () => wc.getTitle(),
     status: () => status,

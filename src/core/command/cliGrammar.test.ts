@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseCliCommand } from './parseCliCommand'
+import { parseCliCommand } from './cliGrammar'
 
 describe('parseCliCommand', () => {
   it('parses navigate with its url input', () => {

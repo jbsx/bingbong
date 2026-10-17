@@ -2,7 +2,7 @@ import type { BrowserController, VisualGroundingController } from '../../core/po
 import type { BrowserSubspans } from '../../core/perf/browserSubspans'
 import { authIdentityScript, resolveAuthIdentity, type AuthIdentity } from '../../core/browser/authIdentity'
 import { COLLECT_PAGE_SCRIPT } from './collectPageScript'
-import { createCdpBrowserController, type CdpDebugger } from './createCdpBrowserController'
+import { createCdpBrowserController, type ActionEffects, type CdpDebugger } from './createCdpBrowserController'
 import { createPaneNavigation } from './paneNavigation'
 
 // Electron glue: adapts webContents.debugger + the pane's navigation surface
@@ -26,6 +26,8 @@ export function createPaneBrowserController(
   deps?: {
     /** Verbose browser sub-spans (#32); absent — no sub-span emission. */
     subspans?: BrowserSubspans
+    /** Hears each action's first observable effect (#324); absent — nothing is reported. */
+    effects?: ActionEffects
     /** Auth-host identity (ADR 0018); defaults to the env-resolved policy. */
     authIdentity?: AuthIdentity
   },
@@ -88,5 +90,6 @@ export function createPaneBrowserController(
     ...(pane.holdWindowOpens ? { holdWindowOpens: pane.holdWindowOpens } : {}),
     ...(pane.consumeAuthPopupOpens ? { consumeAuthPopupOpens: pane.consumeAuthPopupOpens } : {}),
     ...(deps?.subspans ? { subspans: deps.subspans } : {}),
+    ...(deps?.effects ? { effects: deps.effects } : {}),
   })
 }

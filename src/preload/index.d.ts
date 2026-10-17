@@ -1,14 +1,14 @@
 import type { BrowserPaneState, PaneRect } from '../core/browser/paneState'
 import type { PipelineEvent } from '../core/pipeline/events'
 import type { AppSettings } from '../core/settings/settings'
-import type { VoiceErrorEvent, VoiceHeardEvent, VoiceState } from '../core/voice/ipcChannels'
+import type { VoiceErrorEvent, VoiceHeardEvent, VoicePartialEvent, VoiceState } from '../core/voice/ipcChannels'
 import type { LaunchConfig } from '../core/app/launchConfig'
 import type { FeedPanelMode, FeedPanelState } from '../core/panel/feedPanelState'
 
 export type { BrowserPaneState, PaneRect }
 export type { PipelineEvent }
 export type { AppSettings }
-export type { VoiceErrorEvent, VoiceHeardEvent, VoiceState }
+export type { VoiceErrorEvent, VoiceHeardEvent, VoicePartialEvent, VoiceState }
 export type { LaunchConfig }
 
 export interface BingbongBrowserApi {
@@ -21,9 +21,9 @@ export interface BingbongBrowserApi {
 }
 
 export interface BingbongAssistantApi {
-  /** Run one typed command; false when a run is already active or the text is blank. */
+  /** Run one typed Command; false only when the text is blank — a Command in flight is superseded (#324). */
   submit(text: string): Promise<boolean>
-  /** Abort the active run; false means there was no run to stop. */
+  /** Abort the Command in flight; false means there was none to stop. */
   abort(): Promise<boolean>
   onEvent(listener: (event: PipelineEvent) => void): () => void
 }
@@ -60,6 +60,8 @@ export interface BingbongVoiceApi {
   onState(listener: (state: VoiceState) => void): () => void
   onHeard(listener: (heard: VoiceHeardEvent) => void): () => void
   onError(listener: (error: VoiceErrorEvent) => void): () => void
+  /** The live partial transcript while the user speaks (#324); '' clears it. */
+  onPartial(listener: (partial: VoicePartialEvent) => void): () => void
 }
 
 export interface BingbongFeedPanelApi {

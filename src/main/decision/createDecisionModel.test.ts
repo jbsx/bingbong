@@ -20,7 +20,7 @@ describe('createDecisionModel', () => {
 
   it('serves the configured role with Jev at its pinned model', () => {
     const decision = createDecisionModel({ TYPESAFE_API_KEY: 'ts-secret' })
-    expect(decision?.model).toBe('jev-1.13.0')
+    expect(decision?.model).toBe('jev-1.14.0')
   })
 
   it('serves BINGBONG_DECISION_SCRIPT in order, before any key, and never reaches the network', async () => {
@@ -59,7 +59,7 @@ describe('createDecisionModel', () => {
     const before = source()
     env = { TYPESAFE_API_KEY: 'ts-secret' }
     expect(source()).not.toBe(before)
-    expect(source()?.model).toBe('jev-1.13.0')
+    expect(source()?.model).toBe('jev-1.14.0')
     env = {}
     expect(source()).toBeNull()
   })

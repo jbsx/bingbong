@@ -12,8 +12,9 @@ import type { WindowEventPublisher } from '../session/windowEventPublisher'
 
 // IPC glue for the ears (T9): the renderer's worklet streams 16 kHz mono PCM
 // here, the voice session (seam-tested in core) endpoints and transcribes it,
-// and transcripts enter the same command runner as the prompt bar. Arm/disarm
-// state flows back so the orb can show the listening state.
+// and transcripts enter the same command runner as the Prompt Bar, with the
+// Endpoint's turn id and clock reading beside them (#324). Arm/disarm state
+// and the live partial flow back so the Status Capsule can show them.
 
 const sessions = new WeakMap<BrowserWindow, VoiceSession>()
 
@@ -52,13 +53,16 @@ export function attachVoiceToWindow(win: BrowserWindow, deps: AttachVoiceDeps): 
     getEndpointerConfig: deps.getEndpointerConfig,
     tracer: deps.tracer,
     dumper: deps.dumper,
-    onSubmitCommand: (text, turnId, truncated) => {
-      void runCommand(win, text, turnId, truncated)
+    onSubmitCommand: (text, submitted) => {
+      void runCommand(win, text, { ...submitted, source: 'spoken' })
+    },
+    // Speech started (#324): the page's refs are collected while the user speaks.
+    onSpeechStart: () => runnerFor(win)?.prepare(),
+    onPartial: (text) => {
+      deps.publisher.publish({ source: 'voice-partial', partial: { text, at: Date.now() } })
     },
     getRunState: () => runnerFor(win)?.getState() ?? 'idle',
     onAbort: () => runnerFor(win)?.abort(),
-    onPause: () => runnerFor(win)?.pause(),
-    onResume: (steering) => runnerFor(win)?.resume(steering),
     onStateChange: (state: VoiceState) => {
       deps.publisher.publish({ source: 'voice-state', state })
     },

@@ -8,6 +8,7 @@ import type {
   VisualGroundingController,
 } from '../../core/ports/browser'
 import { settledStateFromSnapshot, type SettledPageState } from '../../core/browser/pageFingerprints'
+import { systemClock, withDeadline, type Clock } from '../../core/ports/clock'
 import { blockerFactsFromSnapshot } from '../../core/browser/blockerNudge'
 import type { BrowserSubspans } from '../../core/perf/browserSubspans'
 import { normalizeUrlInput } from '../../core/browser/urlInput'
@@ -39,7 +40,18 @@ import {
 } from '../../core/browser/snapshot'
 import { SCROLL_END_OF_PAGE, formatNewInView } from '../../core/browser/scrollDelta'
 import { authPopupOpenedLine, formatOpenAddress, judgeWindowOpens, LINK_SELECTOR, NEW_WINDOW_FOLLOWED_CLAUSE, popupBlockedLine } from '../../core/browser/newWindowLink'
-import { clickPrepScript, markShownRefsScript, overlayShownRefsScript, refIsShownScript, type ClickPrep, type CoverNaming } from './collectPageScript'
+import {
+  clearFocusedScript,
+  clickPrepScript,
+  flashRefScript,
+  markShownRefsScript,
+  overlayShownRefsScript,
+  readinessArmScript,
+  readinessWaitScript,
+  refIsShownScript,
+  type ClickPrep,
+  type CoverNaming,
+} from './collectPageScript'
 import { reportFault } from '../../core/trace/fault'
 
 // Minimal CDP surface the controller needs, so tests can drive it with a fake
@@ -84,29 +96,48 @@ export interface CdpPageDriver {
   status?(): number | null
   /** Makes the page the focused webContents — synthetic keys are dropped otherwise. */
   focus(): void
+  /**
+   * Hears every main-frame commit from now until the returned release is
+   * called (#324): the moment a navigate, a back or a forward has visibly
+   * left — the Reaction's first observable effect. Optional: a driver that
+   * cannot see commits leaves the effect to the load's end.
+   */
+  onNavigationCommitted?(listener: () => void): () => void
 }
 
-export interface ControllerPacing {
-  settleMs: number
-  moveMs: number
-  clickMs: number
-  keystrokeMs: number
-  scrollTickMs: number
+/**
+ * An action's first observable effect (#324, ADR 0076): what closes the
+ * Reaction span. A DOM mutation or an input event the action caused, the
+ * page scrolling, or the document going — a navigation committed.
+ */
+export type ActionEffect = 'mutation' | 'input' | 'scroll' | 'navigation'
+
+/** Where the controller reports an action's first observable effect, the moment it sees it. */
+export interface ActionEffects {
+  observed(effect: ActionEffect): void
 }
 
-export const HUMAN_PACING: ControllerPacing = {
-  settleMs: 300,
-  moveMs: 60,
-  clickMs: 90,
-  keystrokeMs: 45,
-  scrollTickMs: 70,
-}
+/**
+ * The most the post-action wait may cost (#324, ADR 0076): the page is
+ * watched for the action's first effect — a mutation, an input, a scroll,
+ * the document leaving — and the wait ends at that effect or at this cap,
+ * whichever is first. No pacing sleep remains: every delay the controller
+ * had (`HUMAN_PACING`: 300 ms settles, 60/90 ms pointer gaps, 45 ms per
+ * keystroke, 70 ms per scroll tick) is gone, and text is inserted whole.
+ */
+export const READINESS_CAP_MS = 150
+
+/** The poll between reads of a tab still landing after an aborted load (#308) — a wait on the tab, not pacing. */
+const STILL_POLL_MS = 100
 
 export interface CdpBrowserControllerDeps {
   cdp: CdpDebugger
   page: CdpPageDriver
   collectScript: string
-  pacing?: Partial<ControllerPacing>
+  /** The clock the readiness cap and the landing poll run on; tests fake it. */
+  clock?: Clock
+  /** Hears each action's first observable effect (#324); absent, nothing is reported. */
+  effects?: ActionEffects
   /** Drains popup-block URLs the pane recorded (window.open denied + closed). */
   consumePopupBlocks?: () => string[]
   /**
@@ -191,10 +222,6 @@ interface ActionProbe {
 interface PointRefResult {
   index: number
   element: import('../../core/browser/snapshot').CollectedElement
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 interface KeyEvent {
@@ -305,41 +332,80 @@ class StaleRefError extends Error {
 
 export function createCdpBrowserController(deps: CdpBrowserControllerDeps): BrowserController & VisualGroundingController {
   const { cdp, page, collectScript } = deps
-  const pacing: ControllerPacing = { ...HUMAN_PACING, ...deps.pacing }
+  const clock = deps.clock ?? systemClock
   const subspans = deps.subspans
   let lastSnapshot: PageSnapshot | undefined
   const visualPoints = new Map<number, ViewportPoint>()
 
-  // Verbose sub-span instrumentation (#32). Timing-only wrappers: the sleep,
+  // Verbose sub-span instrumentation (#32). Timing-only wrappers: the wait,
   // collect, or probe always runs exactly as before; a channel is present
   // only when main wired one, and emission inside it is gated by the env
   // flag and the pipeline's open turn scope.
 
-  /** A deliberate delay inside a browser action — one `browser-settle` sub-span when verbose. */
+  /** A wait on the clock — the landing poll's only; one `browser-settle` sub-span when verbose. */
   async function settle(action: string, ms: number): Promise<void> {
-    if (subspans === undefined) {
-      await sleep(ms)
-      return
-    }
-    const start = subspans.now()
-    await sleep(ms)
-    subspans.emit('browser-settle', subspans.now() - start, { action, ms })
+    const start = subspans?.now()
+    await new Promise<void>((resolve) => clock.setTimer(ms, resolve))
+    if (subspans !== undefined && start !== undefined) subspans.emit('browser-settle', subspans.now() - start, { action, ms })
   }
 
   /**
-   * #309, ADR 0027: the settle after an action that sends input or steps
-   * through history. The fixed settle it always had; then, when the action
-   * started a main-frame navigation to another document, that document's
-   * load, bounded — an Unfinished Load when the bound ends it — and the
-   * settle again, as a navigate settles after its load. Content is not
-   * waited for, and a change of address inside one document is no arrival.
+   * Arm the page's readiness watch before an action sends it input (#324):
+   * from here the page records its first mutation, input event or scroll.
+   * A page that cannot be armed is waited for by the cap alone.
+   */
+  async function armReadiness(): Promise<void> {
+    try {
+      await evaluateInPage(readinessArmScript())
+    } catch (error) {
+      reportFault('browser.createCdpBrowserController.armReadiness', error)
+    }
+  }
+
+  /** What the armed watch saw: an effect, the cap, or no watch at all — the document went. */
+  async function readinessOutcome(): Promise<ActionEffect | 'timeout'> {
+    try {
+      const outcome = await evaluateInPage<unknown>(readinessWaitScript(READINESS_CAP_MS), { awaitPromise: true })
+      if (outcome === 'mutation' || outcome === 'input' || outcome === 'scroll' || outcome === 'timeout') return outcome
+      return 'navigation'
+    } catch (error) {
+      // The context the watch lived in is gone: the action left the page.
+      reportFault('browser.createCdpBrowserController.readinessOutcome', error)
+      return 'navigation'
+    }
+  }
+
+  /**
+   * The post-action wait (#324, ADR 0076): the action's first observable
+   * effect, or the cap — never a fixed sleep. The effect is reported the
+   * moment it is seen, so the Reaction span closes on it. One
+   * `browser-ready` sub-span when verbose.
+   */
+  async function awaitReadiness(action: string): Promise<ActionEffect | 'timeout'> {
+    const start = subspans?.now()
+    const outcome = (await withDeadline(readinessOutcome(), clock, READINESS_CAP_MS)) ?? 'timeout'
+    if (subspans !== undefined && start !== undefined) subspans.emit('browser-ready', subspans.now() - start, { action, outcome })
+    if (outcome !== 'timeout') deps.effects?.observed(outcome)
+    return outcome
+  }
+
+  /** Hear the next main-frame commit as the action's first effect (#324); released when the action's wait ends. */
+  function observingCommits(): () => void {
+    return page.onNavigationCommitted?.(() => deps.effects?.observed('navigation')) ?? (() => {})
+  }
+
+  /**
+   * #309, ADR 0027: the wait after an action that sends input. The
+   * readiness wait (#324) in place of the fixed settle it had; then, when
+   * the action started a main-frame navigation to another document, that
+   * document's load, bounded — an Unfinished Load when the bound ends it.
+   * Content is not waited for, and a change of address inside one document
+   * is no arrival.
    */
   async function settleArrival(action: string, watch: ArrivalWatch | undefined): Promise<PageArrival> {
-    await settle(action, pacing.settleMs)
+    await awaitReadiness(action)
     const arrival = watch === undefined ? 'none' : await watch.arrival()
-    if (arrival === 'none') return arrival
-    lastSnapshot = undefined
-    await settle(action, pacing.settleMs)
+    if (arrival !== 'none') lastSnapshot = undefined
     return arrival
   }
 
@@ -412,6 +478,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     const choice = chooseConsentDismissal(labels)
     if (choice === null) return null
     const target = controls[choice]
+    await armReadiness()
     const clicked = await evaluateInPage<boolean>(`(() => {
       const el = (window.__bingbongRefs || [])[${target.ref - 1}]
       if (!el || !el.isConnected) return false
@@ -420,7 +487,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
       return true
     })()`)
     lastSnapshot = undefined
-    await settle('consent-dismiss', pacing.settleMs)
+    await awaitReadiness('consent-dismiss')
     return clicked ? consentDismissalLine(target.ref, truncateOutcomeText(target.label, 60)) : null
   }
 
@@ -455,10 +522,11 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     return snapshot
   }
 
-  async function evaluateInPage<T>(expression: string): Promise<T> {
+  async function evaluateInPage<T>(expression: string, options?: { awaitPromise?: boolean }): Promise<T> {
     const response = await cdp.send<EvaluateResponse>('Runtime.evaluate', {
       expression,
       returnByValue: true,
+      ...(options?.awaitPromise ? { awaitPromise: true } : {}),
     })
     if (response.exceptionDetails) {
       const { text, exception } = response.exceptionDetails
@@ -669,10 +737,12 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     const deltaY = direction === 'down' ? SCROLL_STEP_PX : -SCROLL_STEP_PX
     const x = Math.floor(before.viewport.width / 2)
     const y = Math.floor(before.viewport.height / 2)
+    await armReadiness()
     for (let tick = 0; tick < SCROLL_TICKS; tick++) {
       await cdp.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x, y, deltaX: 0, deltaY })
-      await settle('scroll', pacing.scrollTickMs)
     }
+    // The scroll's first effect, or the cap (#324); no tick is paced.
+    await awaitReadiness('scroll')
     // Viewport-relative rects shift with the scroll; refs must be re-read.
     lastSnapshot = undefined
     try {
@@ -766,7 +836,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
   async function settleUntilStill(action: 'navigate-abort' | 'landing-retry'): Promise<void> {
     let previous = `${page.url()}\u0000${page.title()}`
     for (let poll = 0; poll < ABORT_SETTLE_POLLS; poll++) {
-      await settle(action, pacing.settleMs)
+      await settle(action, STILL_POLL_MS)
       const current = `${page.url()}\u0000${page.title()}`
       if (current === previous && page.url() !== '') return
       previous = current
@@ -789,14 +859,19 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
       await settleUntilStill('navigate-abort')
       return
     }
+    // The load's own end is the wait (#324); nothing is slept after it.
     lastSnapshot = undefined
-    await settle('navigate', pacing.settleMs)
   }
 
   async function navigate(input: string): Promise<string> {
     const url = normalizeUrlInput(input)
     if (!url) throw new Error(`cannot navigate to: "${input}"`)
-    await loadAndSettle(url)
+    const release = observingCommits()
+    try {
+      await loadAndSettle(url)
+    } finally {
+      release()
+    }
     return navigationOutcome()
   }
 
@@ -828,22 +903,23 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
   }
 
   // A step through history waits for its commit (paneNavigation), then for
-  // the load it started, not for the commit alone (#309).
-  async function back(): Promise<string> {
+  // the load it started, not for the commit alone (#309). The commit is the
+  // step's first effect (#324); nothing is slept around it.
+  async function historyStep(verb: Exclude<LandingVerb, 'navigated'>, go: () => Promise<void>): Promise<string> {
     const watch = page.watchArrival?.()
-    await page.goBack()
+    const release = observingCommits()
+    try {
+      await go()
+    } finally {
+      release()
+    }
     lastSnapshot = undefined
-    const arrival = await settleArrival('back', watch)
-    return historyOutcome('went back', unfinishedClause(arrival))
+    const arrival = watch === undefined ? 'none' : await watch.arrival()
+    return historyOutcome(verb, unfinishedClause(arrival))
   }
 
-  async function forward(): Promise<string> {
-    const watch = page.watchArrival?.()
-    await page.goForward()
-    lastSnapshot = undefined
-    const arrival = await settleArrival('forward', watch)
-    return historyOutcome('went forward', unfinishedClause(arrival))
-  }
+  const back = (): Promise<string> => historyStep('went back', () => page.goBack())
+  const forward = (): Promise<string> => historyStep('went forward', () => page.goForward())
 
   /** A Page Read (ADR 0047): the refs and one part of the page's whole text. */
   async function readPage(part = 1): Promise<string> {
@@ -1145,6 +1221,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
 
   async function clickRef(ref: number): Promise<string> {
     const watch = page.watchArrival?.()
+    await armReadiness()
     const attempt = await performClick(ref)
     if (attempt.kind === 'blocked') return blockedOutcome('click', ref, attempt)
     const arrival = await settleArrival('click', watch)
@@ -1205,8 +1282,8 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
 
   async function dispatchPointClick(point: ViewportPoint): Promise<void> {
     const { x, y } = point
+    // Move, press, release back to back (#324): no pointer pacing.
     await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y })
-    await settle('pointer', pacing.moveMs)
     await cdp.send('Input.dispatchMouseEvent', {
       type: 'mousePressed',
       x,
@@ -1215,7 +1292,6 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
       buttons: 1,
       clickCount: 1,
     })
-    await settle('pointer', pacing.clickMs)
     await cdp.send('Input.dispatchMouseEvent', {
       type: 'mouseReleased',
       x,
@@ -1253,25 +1329,52 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     })()`)
   }
 
-  /** Send text as paced real key events, one keyDown/keyUp pair per char. */
-  async function dispatchText(text: string): Promise<void> {
-    for (const ch of text) {
-      const key = keyEventFor(ch)
-      await cdp.send('Input.dispatchKeyEvent', {
-        type: 'keyDown',
-        key: key.key,
-        ...(key.code ? { code: key.code } : {}),
-        ...(key.text ? { text: key.text } : {}),
-        windowsVirtualKeyCode: key.keyCode,
-      })
-      await cdp.send('Input.dispatchKeyEvent', {
-        type: 'keyUp',
-        key: key.key,
-        ...(key.code ? { code: key.code } : {}),
-        windowsVirtualKeyCode: key.keyCode,
-      })
-      await settle('keystroke', pacing.keystrokeMs)
+  /** One keyDown/keyUp pair for a character or a special key. */
+  async function dispatchKey(key: KeyEvent): Promise<void> {
+    await cdp.send('Input.dispatchKeyEvent', {
+      type: 'keyDown',
+      key: key.key,
+      ...(key.code ? { code: key.code } : {}),
+      ...(key.text ? { text: key.text } : {}),
+      windowsVirtualKeyCode: key.keyCode,
+    })
+    await cdp.send('Input.dispatchKeyEvent', {
+      type: 'keyUp',
+      key: key.key,
+      ...(key.code ? { code: key.code } : {}),
+      windowsVirtualKeyCode: key.keyCode,
+    })
+  }
+
+  /** Send text as real key events, one keyDown/keyUp pair per character, back to back — what a select's type-ahead needs. */
+  async function dispatchKeys(text: string): Promise<void> {
+    for (const ch of text) await dispatchKey(keyEventFor(ch))
+  }
+
+  /**
+   * Insert text whole (#324, ADR 0076): `Input.insertText` in place of a
+   * paced key event per character. The specials — a newline (Enter), a
+   * tab, a backspace, an escape — stay key events, since inserting them
+   * types nothing.
+   */
+  async function insertText(text: string): Promise<void> {
+    let run = ''
+    const flush = async (): Promise<void> => {
+      if (run === '') return
+      const chunk = run
+      run = ''
+      await cdp.send('Input.insertText', { text: chunk })
     }
+    for (const ch of text) {
+      const special = SPECIAL_KEYS[ch]
+      if (special === undefined) {
+        run += ch
+        continue
+      }
+      await flush()
+      await dispatchKey(special)
+    }
+    await flush()
   }
 
   /** #133: choose a native select option by typing its label at the focused
@@ -1294,11 +1397,11 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     // path claims it here — DOM focus() moved element focus only.
     page.focus()
     lastSnapshot = undefined
-    await settle('type', pacing.settleMs)
     // Newlines would send Enter, which opens the select popup — a dead end
     // for synthetic input. Letters carry the whole choice.
     const watch = page.watchArrival?.()
-    await dispatchText(text.replace(/[\r\n]+/g, ''))
+    await armReadiness()
+    await dispatchKeys(text.replace(/[\r\n]+/g, ''))
     const arrival = await settleArrival('type', watch)
     const after = await probeAction(index, target.label)
     if (!after.target) {
@@ -1324,8 +1427,10 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     const clicked = await performClick(ref)
     if (clicked.kind === 'blocked') return blockedOutcome('type', ref, clicked)
     const cleared = consentClause(clicked, ref)
-    await settle('type', pacing.settleMs)
-    await dispatchText(text)
+    // The click's focus lands before the insert: input events are processed
+    // in order (#324), so nothing is slept between them.
+    await armReadiness()
+    await insertText(text)
     const arrival = await settleArrival('type', watch)
     const after = await probeAction(clicked.index, clicked.label)
     if (!after.target) {
@@ -1364,18 +1469,13 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     // Keys only land on the focused webContents — after a text-box command
     // the dashboard holds focus, so claim it for the page first.
     page.focus()
-    await settle('press-key', pacing.settleMs)
     const watch = page.watchArrival?.()
-    for (let i = 0; i < times; i++) {
-      await dispatchShortcut(event)
-      if (i < times - 1) await settle('keystroke', pacing.keystrokeMs)
-    }
-    // A key that left the page (#309) waits for the load it started; any
-    // other key returns as it did. No outcome carries a page here.
-    if (watch !== undefined && (await watch.arrival()) !== 'none') {
-      lastSnapshot = undefined
-      await settle('press-key', pacing.settleMs)
-    }
+    await armReadiness()
+    for (let i = 0; i < times; i++) await dispatchShortcut(event)
+    // The key's first effect, or the cap (#324); then a key that left the
+    // page (#309) waits for the load it started. No outcome carries a page here.
+    await awaitReadiness('press-key')
+    if (watch !== undefined && (await watch.arrival()) !== 'none') lastSnapshot = undefined
   }
 
   function readMediaState(): Promise<MediaState | null> {
@@ -1389,7 +1489,6 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
   }
 
   async function mediaState(): Promise<MediaState | null> {
-    await settle('media-state', pacing.settleMs)
     return readMediaState()
   }
 
@@ -1489,9 +1588,34 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
 
   /** A number handed to the model outside a page read — the DOM match
    * `ground_visual` answers with — is a shown number too, or the click that
-   * follows it would be refused (ADR 0033). */
+   * follows it would be refused (ADR 0033). On this branch it also flashes
+   * the element (#324): the Command's chosen ref, lit as the click lands. */
   async function showRef(ref: number): Promise<void> {
     await overlayShown([ref])
+    try {
+      await evaluateInPage(flashRefScript(ref - 1))
+    } catch (error) {
+      reportFault('browser.createCdpBrowserController.flashRef', error)
+    }
+  }
+
+  /**
+   * The page's refs as data, those numbers shown (ADR 0033): what a Command
+   * is read against (#324) — collected at speech start so the list is in
+   * hand at the Endpoint, and the click that follows is not refused.
+   */
+  async function collectPage(): Promise<PageSnapshot> {
+    const snapshot = await collectSnapshot()
+    await markShown(snapshot.refs.length)
+    return snapshot
+  }
+
+  /** Clear the focused editable element (#324): the `clear` verb, one of the four a Misfire is recovered by. */
+  async function clearFocused(): Promise<string> {
+    await armReadiness()
+    const cleared = await evaluateInPage<string | null>(clearFocusedScript())
+    await awaitReadiness('clear')
+    return cleared === null ? 'nothing to clear: no text field has focus' : `cleared ${cleared}`
   }
 
   function state(): BrowserState {
@@ -1551,6 +1675,8 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     describeRef,
     linkHrefs,
     pageLinks,
+    collectPage,
+    clearFocused,
     groundingSnapshot,
     refAtPoint,
     showRef,

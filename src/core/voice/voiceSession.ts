@@ -1,29 +1,25 @@
-import type { PipelineEvent } from '../pipeline/events'
 import type { CommandRunState } from '../pipeline/runState'
 import type { Clock } from '../ports/clock'
 import type { TtsSpeaker } from '../ports/tts'
 import type { Transcriber, VadScorer } from '../ports/stt'
 import type { WakeWordDetector } from '../ports/wake'
 import type { VoiceHeardEvent, VoiceListenReason, VoiceState } from './ipcChannels'
-import { createUtteranceEndpointer, VAD_FRAME_SAMPLES, vadDefaults, type UtteranceEnd, type UtteranceEndpointerConfig } from './vadEndpointing'
+import { createUtteranceEndpointer, VAD_FRAME_SAMPLES, type UtteranceEnd, type UtteranceEndpointerConfig } from './vadEndpointing'
 import type { UtteranceDumper } from './utteranceDump'
 import { createWakeMonitor } from './wakeMonitor'
 import type { PerfTracer } from '../perf/perfTracer'
 import { reportFault } from '../trace/fault'
 
-/** Pause Listen mic-silence cap (ADR 0024): a false pause costs seconds, not a wedged kiosk. */
-export const PAUSE_LISTEN_TIMEOUT_MS = 5_000
-
 /**
- * The complete local phrase-routing vocabulary — run control only (abort,
- * pause, resume), the sanctioned exceptions (ADR 0006). Everything else a
- * user says rides to the runner as a command; tests pin that UI vocabulary
+ * The complete local phrase-routing vocabulary — abort alone, the one
+ * sanctioned exception (ADR 0006). Pause and Resume left this branch with
+ * the Pause Listen (ADR 0076, #324): a later Command supersedes the one in
+ * flight, so nothing is parked and nothing is steered. Everything else a
+ * user says rides to the runner as a Command; tests pin that UI vocabulary
  * (panel, dock, overlay…) never joins this list.
  */
-export const LOCAL_CONTROL_PHRASES: Readonly<Record<'abort' | 'pause' | 'resume', readonly string[]>> = {
+export const LOCAL_CONTROL_PHRASES: Readonly<Record<'abort', readonly string[]>> = {
   abort: ['stop', 'abort', 'cancel', 'never mind'],
-  pause: ['pause', 'hold on', 'wait'],
-  resume: ['continue', 'resume'],
 }
 
 /** Wake-word plumbing (T10); absent means the session stays hotkey-only. */
@@ -35,6 +31,16 @@ export interface VoiceWakeDeps {
   vadGate?: number
   /** Audible activation cue; playback failures are the caller's problem. */
   chime(): void
+}
+
+/** What rides with a submitted Command besides its words (#324). */
+export interface SubmittedCommand {
+  /** The turn id minted at the Endpoint, when a tracer is wired. */
+  readonly turnId?: string
+  /** The Utterance hit the 30 s cap (#61): submitted anyway, flagged. */
+  readonly truncated: boolean
+  /** The tracer's monotonic ms at the Endpoint — where the Reaction span opens (#324). */
+  readonly endpointAt?: number
 }
 
 export interface VoiceSessionDeps {
@@ -56,15 +62,22 @@ export interface VoiceSessionDeps {
   /** Opt-in utterance audio dumps (#34); absent keeps the session dump-free. */
   dumper?: UtteranceDumper
   /**
-   * Where recognized commands go — the exact path the prompt bar takes. The
-   * truncation flag (#61) is true when the utterance hit the hard cap: the
-   * command still submits, flagged as possibly cut off mid-sentence.
+   * Where recognized Commands go — the exact path the Prompt Bar takes,
+   * with the Endpoint's turn id and clock reading beside the words (#324).
    */
-  onSubmitCommand(text: string, turnId?: string, truncated?: boolean): void
+  onSubmitCommand(text: string, submitted: SubmittedCommand): void
+  /**
+   * Speech started inside a listen (#324): the runner collects the page's
+   * refs now, in parallel with the speech, so they are in hand at the Endpoint.
+   */
+  onSpeechStart?(): void
+  /**
+   * The live partial transcript while the user speaks (#324), for the
+   * Status Capsule; '' when the Utterance ends or the listen closes.
+   */
+  onPartial?(text: string): void
   getRunState(): CommandRunState
   onAbort(): void
-  onPause(): void
-  onResume(steering?: string): void
   onStateChange(state: VoiceState): void
   onHeard(event: VoiceHeardEvent): void
   onError(message: string): void
@@ -80,10 +93,8 @@ export interface VoiceSession {
   getState(): VoiceState
   /** One mono 16 kHz PCM chunk from the worklet; frames are 512 samples. */
   pushAudio(chunk: Float32Array): Promise<void>
-  /** Pipeline events close a Pause Listen whose run ended elsewhere. */
-  handlePipelineEvent(event: PipelineEvent): void
-  /** Handler surface for the dedicated abort wake head (#22), the keyword interception (#20), and the wake/hotkey pause seam (ADR 0024). */
-  interrupt(kind: 'abort' | 'pause'): boolean
+  /** Handler surface for the dedicated abort wake head (#22) and the keyword interception (#20). */
+  interrupt(kind: 'abort'): boolean
 }
 
 /**
@@ -91,8 +102,10 @@ export interface VoiceSession {
  * single-shot listening; with a wake detector wired (T10) the session can
  * also monitor continuously — the wake word chimes, barges in on any speech
  * in flight, and opens the same single-shot listen. One utterance is
- * transcribed and submitted through the same surface as the prompt bar,
- * then listening ends (monitoring resumes if it was on).
+ * transcribed and submitted through the same surface as the Prompt Bar,
+ * then listening ends (monitoring resumes if it was on). An activation
+ * while a Command is in flight opens a listen like any other (#324): the
+ * Command it yields supersedes the one running.
  */
 export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
   let appliedEndpointerConfig: Partial<UtteranceEndpointerConfig> | undefined = deps.endpointerConfig
@@ -125,7 +138,6 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
   // listen stays open (its reason survives a discarded utterance).
   let transcribing = false
   let reason: VoiceListenReason | null = null
-  let cancelPauseTimer: (() => void) | null = null
   // Chunks are processed strictly in arrival order; scoring is async.
   let audioChain: Promise<void> = Promise.resolve()
   let monitorChain: Promise<void> = Promise.resolve()
@@ -134,13 +146,15 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
   let commandListenStart: number | null = null
 
   const abortPhrases = new Set(LOCAL_CONTROL_PHRASES.abort)
-  const pausePhrases = new Set(LOCAL_CONTROL_PHRASES.pause)
-  const resumePhrases = new Set(LOCAL_CONTROL_PHRASES.resume)
 
-  /** The endpointer's own speech bar — re-arming uses the same definition of speech. */
-  const defaultSpeechThreshold = vadDefaults().speechThreshold
-  function speechThreshold(): number {
-    return appliedEndpointerConfig?.speechThreshold ?? defaultSpeechThreshold
+  // The live partial (#324): the Status Capsule shows it while the user
+  // speaks; a partial from a capture that has ended is dropped here.
+  deps.transcriber.onPartial((text) => {
+    if (listening && !transcribing) deps.onPartial?.(text)
+  })
+
+  function clearPartial(): void {
+    deps.onPartial?.('')
   }
 
   function normalizedPhrase(text: string): string {
@@ -176,7 +190,7 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
         onWake: () => activateFromWake(),
         // The dedicated abort head (#22) feeds the #20 interrupt surface;
         // interrupt() gates on the run state, so idle detections are no-ops.
-        // The "hold on" head is unwired — wake-pauses-run replaced it (ADR 0024).
+        // The "hold on" head stays unwired: there is no Pause on this branch.
         onAbort: () => {
           interrupt('abort')
         },
@@ -190,27 +204,9 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
       })
     : null
 
-  /**
-   * The shared activation-to-pause seam (ADR 0024): barge in, then park the
-   * run. Wake and hotkey both land here — the only intended difference is
-   * the wake path's chime.
-   */
-  function pauseRunningRun(): void {
-    deps.tts.stop()
-    interrupt('pause')
-  }
-
   function activateFromWake(): void {
     // A hotkey listen — or an in-flight transcript — owns the mic; nothing to do.
     if (listening || transcribing) return
-    // Wake during a running Run pauses it and opens the Pause Listen — the
-    // bare "hold on" head's replacement (ADR 0024). Barge-in first: speech
-    // dies, then the cue confirms, same as the command activation.
-    if (deps.getRunState() === 'running') {
-      pauseRunningRun()
-      deps.wake?.chime()
-      return
-    }
     startListening('wake')
     // The chime follows the barge-in stop: speech dies first, then the cue
     // confirms activation before the user finishes their sentence.
@@ -234,8 +230,6 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
   }
 
   function stopListening(): void {
-    cancelPauseTimer?.()
-    cancelPauseTimer = null
     if (!listening) return
     listening = false
     transcribing = false
@@ -246,58 +240,18 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
     // Drop any in-flight utterance capture with the listen (#40); a finished
     // capture makes this a no-op for the engine.
     deps.transcriber.cancel()
+    clearPartial()
     emitState()
     // Back to a clean ear: the wake word itself must not echo into the next
     // detection window (the monitor latches until this reset).
     if (monitoring) monitor?.reset()
   }
 
-  /**
-   * The Pause Listen's mic-silence clock (ADR 0024): five seconds without
-   * speech silently resumes the Run — only the Status Capsule moves. Speech
-   * re-arms it, so a user mid-thought at 4.9 s keeps the listen open.
-   */
-  function armPauseTimeout(): void {
-    cancelPauseTimer?.()
-    cancelPauseTimer = deps.clock.setTimer(PAUSE_LISTEN_TIMEOUT_MS, () => {
-      cancelPauseTimer = null
-      if (!listening || reason !== 'pause') return
-      // The STT window is not mic silence: a slow transcript re-arms the
-      // clock rather than dropping the spoken Directive.
-      if (transcribing) {
-        armPauseTimeout()
-        return
-      }
-      // A run resumed by other means needs no second resume.
-      if (deps.getRunState() === 'paused') deps.onResume()
-      stopListening()
-    })
-  }
-
-  function enterPauseListening(): void {
-    listening = true
-    transcribing = false
-    reason = 'pause'
-    resetEndpointer()
-    // The interrupted utterance's capture dies with the endpointer reset —
-    // the pause listen starts a fresh one (#40).
-    deps.transcriber.cancel()
-    deps.vad.reset()
-    armPauseTimeout()
-    emitState()
-  }
-
-  function interrupt(kind: 'abort' | 'pause'): boolean {
-    const runState = deps.getRunState()
-    if (kind === 'abort') {
-      if (runState === 'idle') return false
-      deps.onAbort()
-      stopListening()
-      return true
-    }
-    if (runState !== 'running') return false
-    deps.onPause()
-    enterPauseListening()
+  function interrupt(kind: 'abort'): boolean {
+    void kind
+    if (deps.getRunState() === 'idle') return false
+    deps.onAbort()
+    stopListening()
     return true
   }
 
@@ -308,8 +262,7 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
 
   async function handleChunk(chunk: Float32Array): Promise<void> {
     // Live endpoint delay (#37): swap in a changed config as audio arrives,
-    // but only between utterances — never mid-flight. A pause listen that
-    // survives an utterance gets the new value on its very next utterance.
+    // but only between utterances — never mid-flight.
     if (endpointer.isIdle()) syncEndpointer()
     for (let offset = 0; offset + VAD_FRAME_SAMPLES <= chunk.length; offset += VAD_FRAME_SAMPLES) {
       if (!listening) return
@@ -322,9 +275,6 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
         return
       }
       if (!listening) return
-      // Pause Listen silence clock (ADR 0024): any speech-probable frame
-      // restarts it — the same threshold the endpointer counts speech with.
-      if (reason === 'pause' && prob >= speechThreshold()) armPauseTimeout()
       const wasIdle = endpointer.isIdle()
       const utterance = endpointer.push(prob, frame)
       if (utterance) {
@@ -334,11 +284,16 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
         // they arrive, so a streaming engine transcribes during speech; a
         // final-only engine ignores them and still gets the whole utterance
         // at finish().
-        if (wasIdle) deps.transcriber.begin()
+        if (wasIdle) {
+          deps.transcriber.begin()
+          // Speech started (#324): the page is collected in parallel with it.
+          deps.onSpeechStart?.()
+        }
         deps.transcriber.push(frame)
       } else if (!wasIdle) {
         // The endpointer discarded a blip — drop the in-flight capture too.
         deps.transcriber.cancel()
+        clearPartial()
       }
     }
   }
@@ -348,6 +303,7 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
     // (#38) — the state flips here, not when the transcript arrives, so the
     // UI never claims "listening" while it thinks.
     transcribing = true
+    clearPartial()
     emitState()
 
     // The dump rides detection, not transcription (#34): the WAV exists for
@@ -357,15 +313,16 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
 
     // The turn id rides utterance end, not wake detection, so blips that
     // never become turns mint nothing; STT is the turn's first span (#27).
+    // The same instant is the Endpoint the Reaction is measured from (#324).
     const tracer = deps.tracer
     const turnId = tracer ? tracer.mintTurnId() : null
-    const sttStart = tracer ? tracer.now() : 0
+    const endpointAt = tracer ? tracer.now() : null
     const recordStt = (extra?: Record<string, unknown>): void => {
-      if (!tracer || turnId === null) return
+      if (!tracer || turnId === null || endpointAt === null) return
       // The log is advisory; never fail an utterance over bookkeeping (the
       // same guard every other perf call site gives its tracer).
       try {
-        tracer.span(turnId, 'stt', tracer.now() - sttStart, {
+        tracer.span(turnId, 'stt', tracer.now() - endpointAt, {
           speechMs: utterance.speechMs,
           totalMs: utterance.totalMs,
           truncated: utterance.truncated,
@@ -388,8 +345,8 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
     }
     recordStt()
     if (!listening) {
-      // The listen closed under the STT window (disarm, pause timeout) —
-      // stopListening emitted the terminal state; drop the transcript.
+      // The listen closed under the STT window (disarm) — stopListening
+      // emitted the terminal state; drop the transcript.
       transcribing = false
       return
     }
@@ -412,33 +369,10 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
     }
 
     const phrase = normalizedPhrase(text)
-    const runState = deps.getRunState()
-    if (runState !== 'idle' && abortPhrases.has(phrase)) {
+    if (deps.getRunState() !== 'idle' && abortPhrases.has(phrase)) {
       deps.onAbort()
       deps.onHeard({ text, routed: 'abort' })
       stopListening()
-      return
-    }
-    if (runState === 'paused') {
-      if (resumePhrases.has(phrase)) {
-        deps.onResume()
-        deps.onHeard({ text, routed: 'resume' })
-        stopListening()
-        return
-      }
-      if (pausePhrases.has(phrase)) {
-        deps.onHeard({ text, routed: 'pause' })
-        backToListening()
-        return
-      }
-      deps.onResume(text)
-      deps.onHeard({ text, routed: 'steering' })
-      stopListening()
-      return
-    }
-    if (runState === 'running' && pausePhrases.has(phrase)) {
-      interrupt('pause')
-      deps.onHeard({ text, routed: 'pause' })
       return
     }
 
@@ -447,21 +381,20 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
       backToListening()
       return
     }
-    deps.onSubmitCommand(text, turnId ?? undefined, utterance.truncated)
+    deps.onSubmitCommand(text, {
+      ...(turnId !== null ? { turnId } : {}),
+      truncated: utterance.truncated,
+      ...(endpointAt !== null ? { endpointAt } : {}),
+    })
     deps.onHeard({ text, routed: 'command' })
     stopListening()
   }
 
   return {
     arm() {
-      // The hotkey shares the wake word's pause seam (ADR 0024): pressing it
-      // during a running Run pauses that Run instead of opening a listen.
       // An open listen still owns the mic — the press falls through to
-      // startListening's no-op.
-      if (!listening && !transcribing && deps.getRunState() === 'running') {
-        pauseRunningRun()
-        return
-      }
+      // startListening's no-op. A Command in flight is no bar (#324): the
+      // Command this listen yields supersedes it.
       startListening('hotkey')
     },
 
@@ -498,15 +431,6 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
         return monitorChain
       }
       return Promise.resolve()
-    },
-
-    handlePipelineEvent(event) {
-      if (event.type === 'done') {
-        // The run ended outside the voice session (Escape, UI stop). The
-        // Pause Listen's silence timeout would linger otherwise — and under
-        // continuous speech it never fires, so close it eagerly here.
-        if (listening && reason === 'pause') stopListening()
-      }
     },
 
     interrupt,

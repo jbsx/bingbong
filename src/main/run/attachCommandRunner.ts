@@ -1,9 +1,9 @@
 import { BrowserWindow, ipcMain, type WebContents } from 'electron'
 import { PIPELINE_IPC } from '../../core/pipeline/ipcChannels'
-import type { CommandRunner } from './commandRunner'
+import type { CommandRunner, CommandRunOptions } from './commandRunner'
 
 // Glue between the dashboard and the window's command runner: submit a
-// command (prompt bar or voice), abort it. The runner owns admission and
+// Command (Prompt Bar or voice), abort it. The runner owns the reading and
 // publication; this file owns only window routing and IPC.
 
 const runners = new WeakMap<BrowserWindow, CommandRunner>()
@@ -12,11 +12,11 @@ export function runnerFor(win: BrowserWindow): CommandRunner | undefined {
   return runners.get(win)
 }
 
-/** Runs one command through the window's runner; false when there is no window or it is busy. */
-export async function runCommand(win: BrowserWindow, text: string, turnId?: string, truncated?: boolean): Promise<boolean> {
+/** Runs one Command through the window's runner; false when there is no window or the line is blank. */
+export async function runCommand(win: BrowserWindow, text: string, options?: CommandRunOptions): Promise<boolean> {
   const runner = runners.get(win)
   if (!runner) return false
-  return runner.run(text, turnId, truncated)
+  return runner.run(text, options)
 }
 
 export function registerCommandRunnerIpc(): void {
@@ -24,7 +24,8 @@ export function registerCommandRunnerIpc(): void {
     const win = BrowserWindow.fromWebContents(event.sender)
     if (!win) return false
     if (typeof text !== 'string' || text.trim() === '') return false
-    return runCommand(win, text.trim())
+    // A typed Command: its Reaction opens at submit (#324).
+    return runCommand(win, text.trim(), { source: 'typed' })
   })
 
   ipcMain.handle(PIPELINE_IPC.abort, (event) => {

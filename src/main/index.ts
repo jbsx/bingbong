@@ -16,7 +16,9 @@ import { resolveAuthIdentity } from '../core/browser/authIdentity'
 import { attachDownloadRouter } from './browser/attachDownloadRouter'
 import { runCliHarness, saveScreenshotFile } from './cli/runCliHarness'
 import { attachCommandRunnerToWindow, registerCommandRunnerIpc } from './run/attachCommandRunner'
-import { createDirectCommandRunner } from './run/commandRunner'
+import { createCommandRunner } from './run/commandRunner'
+import type { ActionEffect, ActionEffects } from './browser/createCdpBrowserController'
+import { createDecisionLogSink } from './run/decisionLogSink'
 import { resolveDownloadsDir } from './downloadsDir'
 import { resolvePreloadPath } from './preloadPath'
 import { createSettingsStore } from './settings/settingsStore'
@@ -56,8 +58,8 @@ import { createDecisionModelSource } from './decision/createDecisionModel'
 // kachow: the browser, the interaction surface the agent drives (the
 // numbered-ref snapshot over CDP), the dashboard and the local voice
 // pipeline — and nothing that generates text. The one model this branch
-// knows is Jev, the Decision Model (`decisionModel()` below); the command
-// seam it will drive is `createDirectCommandRunner`.
+// knows is Jev, the Decision Model (`decisionModel()` below), asked one
+// Choice-triple per Command the Local Match cannot settle (#324, ADR 0076).
 
 // Appliance mode (T11): --kiosk goes fullscreen; the idle timeout reaches the
 // renderer through the preload's launch-config snapshot.
@@ -111,9 +113,11 @@ const envFileValues = loadEnvFile(process.env, app.getAppPath())
 
 // Always-on perf logging (#27): one JSONL span per finished stage under the
 // profile's logs dir — zero configuration, no timers; rolling and the 7-day
-// purge ride startup and writes.
+// purge ride startup and writes. The decision log (#324) sits beside it:
+// one record per Command and its Misfire signals, `pnpm perf:report` reads both.
 const logsDir = join(app.getPath('userData'), 'logs')
 const perfTracer = createPerfTracer({ sink: createJsonlPerfSink(logsDir) })
+const decisionLog = createDecisionLogSink(logsDir)
 
 // Learned Terms ledger (ADR 0022): the Bias Lexicon's runtime-grown half —
 // one app-global lexicon.json beside the settings file. The settings page
@@ -151,9 +155,10 @@ const wakeDetector = createMainWake(wakeConfig)
 const chimeWav = createChimeWav()
 const chimePlayer = createAplayPlayer()
 
-// The Decision Model (Jev, ADR 0068): resolved from the live env on each
-// read, kept while its config is unchanged. Null when no key is configured.
-// Nothing asks it yet on this branch; the runner that will is the next step.
+// The Decision Model (Jev, ADR 0068, pinned to jev-1.14.0 by ADR 0076):
+// resolved from the live env on each read, kept while its config is
+// unchanged. Null when no key is configured — the runner then fires the
+// Local Match's best guess for what the Local Match cannot settle.
 export const decisionModel = createDecisionModelSource(currentEnv)
 
 function currentEnv(): Record<string, string | undefined> {
@@ -162,6 +167,9 @@ function currentEnv(): Record<string, string | undefined> {
 
 let cliHarnessStarted = false
 
+// TODO(#324, next session): drive the harness through the runner so a typed
+// CLI line takes the same road as the Prompt Bar; today it still executes
+// the grammar against the controller directly.
 function startCliHarness(controller: BrowserController, downloadsDir: string): void {
   if (cliHarnessStarted) return
   cliHarnessStarted = true
@@ -227,7 +235,7 @@ async function createWindow(): Promise<BrowserWindow> {
     sendVoiceHeard: (heard) => sendToRenderer(VOICE_IPC.heard, heard),
     sendVoiceError: (error) => sendToRenderer(VOICE_IPC.error, error),
     sendBrowserState: (state) => sendToRenderer(BROWSER_IPC.stateChanged, state),
-    observeVoicePipelineEvent: (event) => voiceSession.handlePipelineEvent(event),
+    sendVoicePartial: (partial) => sendToRenderer(VOICE_IPC.partial, partial),
     overlayPipelineEvent: (event) => feedPanel.handlePipelineEvent(event),
     overlayVoiceHeard: (heard) => feedPanel.forwardHeard(heard),
     overlayVoiceError: (error) => feedPanel.forwardVoiceError(error),
@@ -245,8 +253,16 @@ async function createWindow(): Promise<BrowserWindow> {
   // that reaches the pane reaches it through the same handle — the runner,
   // the CLI harness — so an action abandoned by Stop cannot be worked
   // around by a caller that kept its own reference.
+  // An action's first observable effect (#324): the controller reports it,
+  // the runner hears it and closes the Reaction span on it.
+  const effectListeners = new Set<(effect: ActionEffect) => void>()
+  const effects: ActionEffects = {
+    observed: (effect) => {
+      for (const listener of [...effectListeners]) listener(effect)
+    },
+  }
   const paneCustody = holdBrowserCustody(
-    withAgentActivity(authPopups.route(createPaneBrowserController(pane, { subspans: browserSubspans })), agentActivity),
+    withAgentActivity(authPopups.route(createPaneBrowserController(pane, { subspans: browserSubspans, effects })), agentActivity),
   )
   const controller: BrowserController & VisualGroundingController = paneCustody.controller
 
@@ -268,10 +284,35 @@ async function createWindow(): Promise<BrowserWindow> {
     emit: (event) => eventPublisher.publish({ source: 'download', event }),
   })
 
+  // The command seam (#324, ADR 0076): a typed or spoken line becomes one
+  // Command — the Local Match, else one Jev call, else the best guess — and
+  // acts at once. The CLI harness and the Prompt Bar take the same road.
+  const runner = createCommandRunner({
+    browser: controller,
+    decisionModel,
+    publish: (event) => eventPublisher.publish({ source: 'run', event }),
+    now: systemClock.now,
+    tracer: perfTracer,
+    decisionLog,
+    onEffect: (listener) => {
+      effectListeners.add(listener)
+      return () => effectListeners.delete(listener)
+    },
+    screenshotDir: () => downloadsDir,
+    saveScreenshot: saveScreenshotFile,
+  })
+  attachCommandRunnerToWindow(runner, win)
+  // Escape aborts from the pane too, where React never sees the key.
+  const onPaneInput = (event: Electron.Event, input: Electron.Input): void => {
+    if (input.type === 'keyDown' && input.key === 'Escape' && runner.abort()) event.preventDefault()
+  }
+  pane.view.webContents.on('before-input-event', onPaneInput)
+  win.on('closed', () => pane.view.webContents.removeListener('before-input-event', onPaneInput))
+
   if (runningCliHarness) startCliHarness(controller, downloadsDir)
 
   const voice = await createMainVoice(voiceConfig, () => learnedTermsStore.biasPhrases())
-  const voiceSession = attachVoiceToWindow(win, {
+  attachVoiceToWindow(win, {
     vad: voice.vad,
     transcriber: voice.transcriber,
     tts: speakingGate.tts,
@@ -297,25 +338,6 @@ async function createWindow(): Promise<BrowserWindow> {
     tracer: perfTracer,
     dumper: utteranceDumper,
   })
-
-  // The command seam: typed and spoken commands land here. Direct browser
-  // commands for now; the Jev-driven agent replaces this behind the same
-  // interface.
-  const runner = createDirectCommandRunner({
-    browser: controller,
-    publish: (event) => eventPublisher.publish({ source: 'run', event }),
-    now: systemClock.now,
-    mintTurnId: () => perfTracer.mintTurnId(),
-    screenshotDir: () => downloadsDir,
-    saveScreenshot: saveScreenshotFile,
-  })
-  attachCommandRunnerToWindow(runner, win)
-  // Escape aborts from the pane too, where React never sees the key.
-  const onPaneInput = (event: Electron.Event, input: Electron.Input): void => {
-    if (input.type === 'keyDown' && input.key === 'Escape' && runner.abort()) event.preventDefault()
-  }
-  pane.view.webContents.on('before-input-event', onPaneInput)
-  win.on('closed', () => pane.view.webContents.removeListener('before-input-event', onPaneInput))
 
   if (process.env.ELECTRON_RENDERER_URL) {
     void win.loadURL(process.env.ELECTRON_RENDERER_URL)

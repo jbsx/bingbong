@@ -11,7 +11,7 @@ import { resolveLaunchConfig } from '../core/app/launchConfig'
 import type { BrowserPaneState, PaneRect } from '../core/browser/paneState'
 import type { PipelineEvent } from '../core/pipeline/events'
 import type { AppSettings } from '../core/settings/settings'
-import type { VoiceErrorEvent, VoiceHeardEvent, VoiceState } from '../core/voice/ipcChannels'
+import type { VoiceErrorEvent, VoiceHeardEvent, VoicePartialEvent, VoiceState } from '../core/voice/ipcChannels'
 
 // Launch config is a snapshot: the flags and env can't change after start.
 const launch = resolveLaunchConfig(process.argv, process.env)
@@ -111,6 +111,11 @@ contextBridge.exposeInMainWorld('bingbong', {
       const wrapped = (_event: unknown, error: VoiceErrorEvent): void => listener(error)
       ipcRenderer.on(VOICE_IPC.error, wrapped)
       return () => ipcRenderer.removeListener(VOICE_IPC.error, wrapped)
+    },
+    onPartial: (listener: (partial: VoicePartialEvent) => void): (() => void) => {
+      const wrapped = (_event: unknown, partial: VoicePartialEvent): void => listener(partial)
+      ipcRenderer.on(VOICE_IPC.partial, wrapped)
+      return () => ipcRenderer.removeListener(VOICE_IPC.partial, wrapped)
     },
   },
 })

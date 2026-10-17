@@ -105,8 +105,9 @@ export function App() {
               transcribing…
             </span>
           ) : voice.listening ? (
+            // The live partial transcript shows while the user speaks (#324).
             <span className="voice-hint" role="status">
-              {voice.reason === 'pause' ? 'paused — say resume or steer me' : 'listening — say a command'}
+              {voice.partial !== '' ? `“${voice.partial}…”` : 'listening — say a command'}
             </span>
           ) : voice.monitoring ? (
             <span className="voice-hint voice-hint--monitoring" role="status">

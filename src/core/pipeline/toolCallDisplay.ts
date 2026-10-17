@@ -21,6 +21,10 @@ export function describeToolAction(name: string, args: Record<string, unknown>):
       return 'go back'
     case 'forward':
       return 'go forward'
+    case 'clear':
+      return 'clear the field'
+    case 'help':
+      return 'help'
     default:
       return Object.keys(args).length > 0 ? `${name} ${JSON.stringify(args)}` : name
   }

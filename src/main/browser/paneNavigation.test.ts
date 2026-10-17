@@ -314,3 +314,19 @@ describe('an action’s page arrival (#309, ADR 0027)', () => {
     expect(arrival).toBe('loaded')
   })
 })
+
+describe('a commit heard as the first observable effect (#324)', () => {
+  it('tells every listener of each main-frame commit until it is released', () => {
+    const wc = fakeWebContents()
+    const page = createPaneNavigation(wc.target, new FakeClock())
+    const heard: number[] = []
+    const release = page.onNavigationCommitted!(() => heard.push(1))
+
+    wc.commit('https://example.com/next', 200)
+    wc.commit('https://example.com/after', 200)
+    release()
+    wc.commit('https://example.com/later', 200)
+
+    expect(heard).toEqual([1, 1])
+  })
+})

@@ -3,8 +3,8 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import type { Readable, Writable } from 'node:stream'
 import type { BrowserController } from '../../core/ports/browser'
-import { parseCliCommand } from './parseCliCommand'
-import type { CliCommand } from './parseCliCommand'
+import { parseCliCommand } from '../../core/command/cliGrammar'
+import type { CliCommand } from '../../core/command/cliGrammar'
 
 /** Writes a captured screenshot to disk, creating parent directories. */
 export async function saveScreenshotFile(path: string, bytes: Uint8Array): Promise<void> {

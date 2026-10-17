@@ -271,6 +271,21 @@ export class FakeBrowser implements BrowserController, VisualGroundingController
     return pageLinksOf(this.snapshot)
   }
 
+  /** Every collect of the page's refs (#324), in order. */
+  collects = 0
+  /** Every clear of the focused field (#324). */
+  clears = 0
+
+  async collectPage(): Promise<PageSnapshot> {
+    this.collects += 1
+    return this.snapshot
+  }
+
+  async clearFocused(): Promise<string> {
+    this.clears += 1
+    return 'cleared input[text]'
+  }
+
   async groundingSnapshot(): Promise<PageSnapshot> {
     return this.snapshot
   }

@@ -1,0 +1,132 @@
+import { describe, expect, it } from 'vitest'
+import type { CommandRef } from './command'
+import { bestGuess, localMatch } from './localMatch'
+
+// The Local Match (CONTEXT.md, ADR 0076): a Command settled from the
+// Utterance and the page alone — the CLI grammar, or a plain verb and a
+// label exactly one ref carries. The best guess is the same reading made
+// lenient: what fires when Jev does not answer in time.
+
+const REFS: CommandRef[] = [
+  { ref: 1, kind: 'link', label: 'Home', href: 'https://example.com/', inputType: null },
+  { ref: 2, kind: 'button', label: 'Sign in', href: null, inputType: null },
+  { ref: 3, kind: 'input', label: 'Search', href: null, inputType: 'search' },
+  { ref: 4, kind: 'link', label: 'Sign in with Google', href: 'https://example.com/google', inputType: null },
+  { ref: 5, kind: 'button', label: 'Accept all', href: null, inputType: null },
+  { ref: 6, kind: 'link', label: 'Trending', href: 'https://example.com/trending', inputType: null },
+]
+
+describe('the Local Match: the CLI grammar', () => {
+  it('reads the CLI grammar as Commands, with no page needed', () => {
+    expect(localMatch('navigate youtube.com', [])).toEqual({ verb: 'open', target: null, slot: 'youtube.com' })
+    expect(localMatch('read', [])).toEqual({ verb: 'read', target: null, slot: null })
+    expect(localMatch('click 7', [])).toEqual({ verb: 'click', target: 7, slot: null })
+    expect(localMatch('type 3 hello world', [])).toEqual({ verb: 'type', target: 3, slot: 'hello world' })
+    expect(localMatch('scroll down', [])).toEqual({ verb: 'scroll_down', target: null, slot: null })
+    expect(localMatch('scroll up', [])).toEqual({ verb: 'scroll_up', target: null, slot: null })
+    expect(localMatch('press enter 2', [])).toEqual({ verb: 'press', target: null, slot: 'enter', key: { key: 'Enter' }, times: 2 })
+    expect(localMatch('press next', [])).toMatchObject({ verb: 'press', key: { key: 'n', shift: true }, times: 1 })
+    expect(localMatch('back', [])).toEqual({ verb: 'back', target: null, slot: null })
+    expect(localMatch('screenshot /tmp/x.jpg', [])).toEqual({ verb: 'screenshot', target: null, slot: '/tmp/x.jpg' })
+    expect(localMatch('help', [])).toEqual({ verb: 'help', target: null, slot: null })
+  })
+
+  it('leaves a grammar line that does not parse to the spoken reading', () => {
+    // `click sign in` is not `click <ref>`; the spoken reading takes it.
+    expect(localMatch('click sign in', REFS)).toEqual({ verb: 'click', target: 2, slot: null })
+    // `quit` is the CLI harness's alone: no Command.
+    expect(localMatch('quit', REFS)).toBeNull()
+  })
+})
+
+describe('the Local Match: plain verbs', () => {
+  it('reads the page-free verbs however they are phrased', () => {
+    expect(localMatch('scroll down', REFS)).toMatchObject({ verb: 'scroll_down' })
+    expect(localMatch('Scroll down.', REFS)).toMatchObject({ verb: 'scroll_down' })
+    expect(localMatch('page up', REFS)).toMatchObject({ verb: 'scroll_up' })
+    expect(localMatch('go back', REFS)).toMatchObject({ verb: 'back' })
+    expect(localMatch('forward', REFS)).toMatchObject({ verb: 'forward' })
+    expect(localMatch('read the page', REFS)).toMatchObject({ verb: 'read' })
+    expect(localMatch('clear', REFS)).toMatchObject({ verb: 'clear' })
+    expect(localMatch('stop', REFS)).toMatchObject({ verb: 'stop' })
+    expect(localMatch('never mind', REFS)).toMatchObject({ verb: 'stop' })
+  })
+
+  it('reads press with the key the words name', () => {
+    expect(localMatch('press enter', REFS)).toEqual({ verb: 'press', target: null, slot: 'enter', key: { key: 'Enter' }, times: 1 })
+    expect(localMatch('hit escape', REFS)).toMatchObject({ verb: 'press', key: { key: 'Escape' } })
+    expect(localMatch('press the down arrow', REFS)).toMatchObject({ verb: 'press', slot: 'the down arrow', key: { key: 'ArrowDown' } })
+    expect(localMatch('enter', REFS)).toMatchObject({ verb: 'press', key: { key: 'Enter' } })
+  })
+
+  it('reads open with the Slot verbatim, and search phrasing as search terms', () => {
+    expect(localMatch('open youtube', REFS)).toEqual({ verb: 'open', target: null, slot: 'youtube' })
+    expect(localMatch('go to news.ycombinator.com', REFS)).toEqual({ verb: 'open', target: null, slot: 'news.ycombinator.com' })
+    expect(localMatch('search for rust async book', REFS)).toEqual({ verb: 'open', target: null, slot: 'rust async book', search: true })
+    expect(localMatch('look up weather in berlin', REFS)).toMatchObject({ verb: 'open', slot: 'weather in berlin', search: true })
+  })
+
+  it('clicks the one ref whose label the words name — articles and kind words aside', () => {
+    expect(localMatch('click sign in', REFS)).toEqual({ verb: 'click', target: 2, slot: null })
+    expect(localMatch('click the Sign In button', REFS)).toEqual({ verb: 'click', target: 2, slot: null })
+    expect(localMatch('tap trending', REFS)).toEqual({ verb: 'click', target: 6, slot: null })
+    expect(localMatch('press accept all', REFS)).toEqual({ verb: 'click', target: 5, slot: null })
+    // `open` of a label exactly one ref carries is a click on this page, not a navigate.
+    expect(localMatch('open trending', REFS)).toEqual({ verb: 'click', target: 6, slot: null })
+  })
+
+  it('makes no Local Match when the label names no ref, or more than one', () => {
+    expect(localMatch('click sign', REFS)).toBeNull()
+    expect(localMatch('click the first video', REFS)).toBeNull()
+    const twoSearches = [...REFS, { ref: 7, kind: 'button' as const, label: 'Search', href: null, inputType: null }]
+    expect(localMatch('click search', twoSearches)).toBeNull()
+  })
+
+  it('types the Slot into the one ref the words name, or into the one text field', () => {
+    expect(localMatch('type hello in the search box', REFS)).toEqual({ verb: 'type', target: 3, slot: 'hello' })
+    expect(localMatch('type rust async book into search', REFS)).toEqual({ verb: 'type', target: 3, slot: 'rust async book' })
+    expect(localMatch('type hello', REFS)).toEqual({ verb: 'type', target: 3, slot: 'hello' })
+    // A page with two text fields leaves a target-less type to Jev.
+    const twoFields = [...REFS, { ref: 7, kind: 'input' as const, label: 'Email', href: null, inputType: 'email' }]
+    expect(localMatch('type hello', twoFields)).toBeNull()
+    expect(localMatch('type hello in the email field', twoFields)).toEqual({ verb: 'type', target: 7, slot: 'hello' })
+  })
+
+  it('makes no Local Match of words with no plain verb', () => {
+    expect(localMatch('what is the weather like', REFS)).toBeNull()
+    expect(localMatch('the first video please', REFS)).toBeNull()
+    expect(localMatch('', REFS)).toBeNull()
+  })
+})
+
+describe('the best guess: the Local Match made lenient', () => {
+  it('is the Local Match where one exists', () => {
+    expect(bestGuess('click sign in', REFS)).toEqual(localMatch('click sign in', REFS))
+    expect(bestGuess('scroll down', REFS)).toEqual(localMatch('scroll down', REFS))
+  })
+
+  it('clicks the ref whose label shares the most words, the first on a tie', () => {
+    expect(bestGuess('click sign', REFS)).toEqual({ verb: 'click', target: 2, slot: null })
+    expect(bestGuess('click the google sign in thing', REFS)).toEqual({ verb: 'click', target: 4, slot: null })
+    expect(bestGuess('tap on trending videos', REFS)).toEqual({ verb: 'click', target: 6, slot: null })
+  })
+
+  it('drops a click whose words name nothing on the page', () => {
+    expect(bestGuess('click the first video', REFS)).toEqual({ verb: 'none', target: null, slot: null })
+  })
+
+  it('types into the nearest field by words, else the first text field', () => {
+    const twoFields = [...REFS, { ref: 7, kind: 'input' as const, label: 'Email address', href: null, inputType: 'email' }]
+    expect(bestGuess('type bob at example dot com in the email', twoFields)).toEqual({ verb: 'type', target: 7, slot: 'bob at example dot com' })
+    expect(bestGuess('type hello', twoFields)).toEqual({ verb: 'type', target: 3, slot: 'hello' })
+    expect(bestGuess('type hello', [])).toEqual({ verb: 'none', target: null, slot: null })
+  })
+
+  it('reads words with no plain verb as a search — the Misfire the next Command recovers (ADR 0076)', () => {
+    expect(bestGuess('rust async book', REFS)).toEqual({ verb: 'open', target: null, slot: 'rust async book', search: true })
+  })
+
+  it('reads nothing as nothing', () => {
+    expect(bestGuess('', REFS)).toEqual({ verb: 'none', target: null, slot: null })
+  })
+})

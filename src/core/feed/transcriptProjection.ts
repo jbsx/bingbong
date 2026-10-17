@@ -15,13 +15,23 @@ export interface TranscriptEvent {
   kind: TranscriptKind
   text: string
   at: number
+  /** A Command's action taken (#324), shown under the words heard. */
+  action?: string
+  /** An Utterance read as no Command (#324): the words alone, greyed. */
+  muted?: boolean
 }
 
 /** The single projection the dashboard and the Feed panel overlay share. */
 export function projectPipelineEvent(event: PipelineEvent): TranscriptEvent | null {
   switch (event.type) {
     case 'command':
-      return { kind: 'command', text: event.text, at: event.at }
+      return {
+        kind: 'command',
+        text: event.text,
+        at: event.at,
+        ...(event.action !== undefined ? { action: event.action } : {}),
+        ...(event.dropped ? { muted: true } : {}),
+      }
     case 'tool_call':
       return { kind: 'tool', text: describeToolAction(event.name, event.args), at: event.at }
     case 'tool_result':

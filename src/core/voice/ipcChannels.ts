@@ -11,11 +11,13 @@ export const VOICE_IPC = {
   stateChanged: 'voice:stateChanged',
   /** Main → renderer: a transcript was heard and where it went. */
   heard: 'voice:heard',
+  /** Main → renderer: the live partial transcript while the user speaks (#324); '' clears it. */
+  partial: 'voice:partial',
   /** Main → renderer: the voice pipeline failed (surfaced next to the orb). */
   error: 'voice:error',
 } as const
 
-export type VoiceListenReason = 'hotkey' | 'wake' | 'pause'
+export type VoiceListenReason = 'hotkey' | 'wake'
 
 export interface VoiceState {
   listening: boolean
@@ -32,12 +34,18 @@ export interface VoiceState {
 
 export interface VoiceHeardEvent {
   text: string
-  routed: 'command' | 'abort' | 'pause' | 'resume' | 'steering' | 'ignored'
+  routed: 'command' | 'abort' | 'ignored'
   /** Main stamps this before IPC; core session tests may omit it. */
   at?: number
 }
 
 export interface VoiceErrorEvent {
   message: string
+  at: number
+}
+
+/** The live partial transcript (#324): what the Status Capsule shows while the user speaks. */
+export interface VoicePartialEvent {
+  text: string
   at: number
 }

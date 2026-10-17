@@ -1,5 +1,5 @@
-import type { KeyPress } from '../../core/ports/browser'
-import { NEXT_TRACK_KEY } from '../../core/browser/mediaKeys'
+import type { KeyPress } from '../ports/browser'
+import { NEXT_TRACK_KEY } from '../browser/mediaKeys'
 
 export type CliCommand =
   | { type: 'navigate'; input: string }

@@ -1,4 +1,4 @@
-export type PipelineStatus = 'thinking' | 'acting' | 'speaking' | 'paused' | 'cancelled'
+export type PipelineStatus = 'thinking' | 'acting' | 'speaking' | 'cancelled'
 
 /**
  * The command stream every observer rides — the Feed, the Peek Card, the
@@ -9,9 +9,14 @@ export type PipelineStatus = 'thinking' | 'acting' | 'speaking' | 'paused' | 'ca
  * This is the stripped shape (kachow): a command, its stages, the browser
  * actions it took, what it showed and said, and its end. Whatever drives
  * the browser publishes through it.
+ *
+ * A `command` is one Command (#324, ADR 0076): the words heard and, once
+ * read, the action taken — the Feed's one entry per Command. An Utterance
+ * read as no Command is published `dropped`, the words alone, and ends
+ * with its `done` like any other; nothing else follows it.
  */
 export type PipelineEvent =
-  | { type: 'command'; turnId: string; text: string; at: number }
+  | { type: 'command'; turnId: string; text: string; action?: string; dropped?: boolean; at: number }
   | { type: 'status'; turnId: string; status: PipelineStatus; at: number }
   | { type: 'tool_call'; turnId: string; callId: string; name: string; args: Record<string, unknown>; at: number }
   | {

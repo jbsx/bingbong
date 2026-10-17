@@ -38,14 +38,6 @@ describe('createPeekCardFold', () => {
     expect(fold.state().phase).toBe('live')
   })
 
-  it('a paused run keeps the card live — a Pause is a parked live Run (ADR 0026)', () => {
-    const fold = createPeekCardFold()
-    fold.onEvent(command())
-    fold.onEvent({ type: 'status', turnId: 't1', status: 'paused', at: 3_000 })
-    expect(fold.state().phase).toBe('live')
-    expect(peekCardVisible(fold.state())).toBe(true)
-  })
-
   it("a foreign run's cancelled status never hides the reported run's answer", () => {
     const fold = createPeekCardFold()
     fold.onEvent(command())

@@ -635,3 +635,104 @@ export function clickPrepScript(index: number, naming: CoverNaming): string {
     return covered({ tag: first.tagName.toLowerCase(), contains: contained(first) })
   })()`
 }
+
+
+/**
+ * Arm the page's readiness watch (#324, ADR 0076): from here the page
+ * records the first thing an action does to it — a DOM mutation, an input
+ * event, a scroll — so the post-action wait ends at that effect and never
+ * at a fixed sleep. Re-arming replaces the watch before it.
+ */
+export function readinessArmScript(): string {
+  return `(() => {
+    /* READY_ARM */
+    const previous = window.__bingbongReady
+    if (previous && typeof previous.stop === 'function') previous.stop()
+    const state = { fired: null, waiters: [], stop: () => {}, wait: null }
+    const fire = (kind) => {
+      if (state.fired !== null) return
+      state.fired = kind
+      state.stop()
+      for (const resolve of state.waiters.splice(0)) resolve(kind)
+    }
+    const observer = new MutationObserver(() => fire('mutation'))
+    observer.observe(document.documentElement || document, { subtree: true, childList: true, attributes: true, characterData: true })
+    const onInput = () => fire('input')
+    const onScroll = () => fire('scroll')
+    window.addEventListener('input', onInput, { capture: true, passive: true })
+    window.addEventListener('scroll', onScroll, { capture: true, passive: true })
+    state.stop = () => {
+      observer.disconnect()
+      window.removeEventListener('input', onInput, { capture: true })
+      window.removeEventListener('scroll', onScroll, { capture: true })
+    }
+    state.wait = (ms) => new Promise((resolve) => {
+      if (state.fired !== null) return resolve(state.fired)
+      state.waiters.push(resolve)
+      setTimeout(() => fire('timeout'), ms)
+    })
+    window.__bingbongReady = state
+    return true
+  })()`
+}
+
+/**
+ * Wait for the armed watch's first effect, at most `ms` (#324). Evaluated
+ * with `awaitPromise`. Answers `none` when no watch is armed in this
+ * document — the one the action armed went with the page.
+ */
+export function readinessWaitScript(ms: number): string {
+  return `(() => {
+    /* READY_WAIT */
+    const state = window.__bingbongReady
+    return state && typeof state.wait === 'function' ? state.wait(${ms}) : 'none'
+  })()`
+}
+
+/** Light the element at this zero-based registry position for a moment (#324): the Command's chosen ref, as the click lands. */
+export function flashRefScript(index: number): string {
+  return `(() => {
+    /* FLASH_REF */
+    const el = (window.__bingbongRefs || [])[${index}]
+    if (!el || !el.isConnected || !el.style) return false
+    const outline = el.style.outline
+    const offset = el.style.outlineOffset
+    el.style.outline = '3px solid #4c9ffe'
+    el.style.outlineOffset = '2px'
+    setTimeout(() => {
+      el.style.outline = outline
+      el.style.outlineOffset = offset
+    }, 400)
+    return true
+  })()`
+}
+
+/**
+ * Clear the focused editable element (#324): an input, a textarea or a
+ * contenteditable. The value is set through the prototype's setter so a
+ * framework-bound field notices, and an input event follows. Answers what
+ * was cleared, or null when nothing editable has focus.
+ */
+export function clearFocusedScript(): string {
+  return `(() => {
+    /* CLEAR_FOCUSED */
+    const el = document.activeElement
+    if (!el || el === document.body) return null
+    const tag = el.tagName ? el.tagName.toLowerCase() : ''
+    if (tag === 'input' || tag === 'textarea') {
+      const proto = tag === 'input' ? HTMLInputElement.prototype : HTMLTextAreaElement.prototype
+      const descriptor = Object.getOwnPropertyDescriptor(proto, 'value')
+      if (descriptor && descriptor.set) descriptor.set.call(el, '')
+      else el.value = ''
+      el.dispatchEvent(new Event('input', { bubbles: true }))
+      el.dispatchEvent(new Event('change', { bubbles: true }))
+      return tag === 'input' ? 'input[' + (el.type || 'text') + ']' : 'textarea'
+    }
+    if (el.isContentEditable) {
+      el.textContent = ''
+      el.dispatchEvent(new Event('input', { bubbles: true }))
+      return 'editable ' + tag
+    }
+    return null
+  })()`
+}

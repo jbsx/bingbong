@@ -16,6 +16,8 @@ export interface VoiceApi {
   reason: VoiceListenReason | null
   /** Wake-word monitoring is live — the mic stays open between commands. */
   monitoring: boolean
+  /** The live partial transcript while the user speaks (#324); '' between Utterances. */
+  partial: string
   /** Hotkey handler — arm when idle, disarm when listening. */
   toggleHotkey(): void
 }
@@ -43,8 +45,7 @@ async function preferC920(micId: string): Promise<string> {
 /**
  * Renderer half of the ears (T9/T10): the hotkey (Ctrl/Cmd+Space) arms the
  * main-process session, and the mic opens whenever the session says it is
- * listening — for the hotkey, the wake word, or the confirmation window's
- * 12 s voice answers. With wake monitoring enabled the mic simply stays
+ * listening — for the hotkey or the wake word. With wake monitoring enabled the mic simply stays
  * open: the session endpoints an utterance after each activation, then falls
  * back to listening for the wake word. The AudioContext resamples to 16 kHz;
  * the worklet downmixes to mono and whole 512-sample frames go over IPC.
@@ -54,6 +55,7 @@ export function useVoice(deps: UseVoiceDeps): VoiceApi {
   const [transcribing, setTranscribing] = useState(false)
   const [reason, setReason] = useState<VoiceListenReason | null>(null)
   const [monitoring, setMonitoring] = useState(false)
+  const [partial, setPartial] = useState('')
 
   // Latest deps without resubscribing when callers rebuild the object.
   const depsRef = useRef(deps)
@@ -164,14 +166,16 @@ export function useVoice(deps: UseVoiceDeps): VoiceApi {
     const unsubscribeError = window.bingbong.voice.onError((error) =>
       depsRef.current.onError(error.message, error.at),
     )
+    const unsubscribePartial = window.bingbong.voice.onPartial((event) => setPartial(event.text))
     return () => {
       unsubscribeState()
       unsubscribeHeard()
       unsubscribeError()
+      unsubscribePartial()
     }
   }, [startCapture, stopCapture])
 
   useEffect(() => stopCapture, [stopCapture])
 
-  return { listening, transcribing, reason, monitoring, toggleHotkey }
+  return { listening, transcribing, reason, monitoring, partial, toggleHotkey }
 }
