@@ -1,6 +1,6 @@
 import type { CommandRunState } from '../pipeline/runState'
 import type { Clock } from '../ports/clock'
-import type { TtsSpeaker } from '../ports/tts'
+import type { TtsIdle, TtsSpeaker } from '../ports/tts'
 import type { Transcriber, VadScorer } from '../ports/stt'
 import type { WakeWordDetector } from '../ports/wake'
 import type { VoiceHeardEvent, VoiceListenReason, VoiceState } from './ipcChannels'
@@ -21,6 +21,12 @@ import { reportFault } from '../trace/fault'
 export const LOCAL_CONTROL_PHRASES: Readonly<Record<'abort', readonly string[]>> = {
   abort: ['stop', 'abort', 'cancel', 'never mind'],
 }
+
+/**
+ * The silence after the last Endpoint that closes a Hot Listen (#326):
+ * the `hotListenSilenceMs` Setting's default.
+ */
+export const HOT_LISTEN_SILENCE_MS_DEFAULT = 8_000
 
 /** Wake-word plumbing (T10); absent means the session stays hotkey-only. */
 export interface VoiceWakeDeps {
@@ -57,6 +63,14 @@ export interface VoiceSessionDeps {
    * config is captured at construction) — the getThreshold pattern.
    */
   getEndpointerConfig?(): Partial<UtteranceEndpointerConfig>
+  /** Live `hotListenSilenceMs` (#326): the silence after the last Endpoint that closes a Hot Listen; absent holds the default. */
+  getHotListenSilenceMs?(): number
+  /**
+   * The speaking gate (#326): speech captured while a line plays is the
+   * app's own voice, dropped untranscribed, and a Hot Listen's silence
+   * clock waits out the playback. Absent hears everything.
+   */
+  speaking?: TtsIdle
   /** Always-on perf logging (#27); absent keeps the session uninstrumented. */
   tracer?: PerfTracer
   /** Opt-in utterance audio dumps (#34); absent keeps the session dump-free. */
@@ -95,17 +109,24 @@ export interface VoiceSession {
   pushAudio(chunk: Float32Array): Promise<void>
   /** Handler surface for the dedicated abort wake head (#22) and the keyword interception (#20). */
   interrupt(kind: 'abort'): boolean
+  /** Escape (#326): closes a Hot Listen at once. Returns whether one was open. */
+  closeHotListen(): boolean
 }
 
 /**
  * Ears: mic audio in, command-runner callbacks out. The hotkey arms
- * single-shot listening; with a wake detector wired (T10) the session can
- * also monitor continuously — the wake word chimes, barges in on any speech
- * in flight, and opens the same single-shot listen. One utterance is
- * transcribed and submitted through the same surface as the Prompt Bar,
- * then listening ends (monitoring resumes if it was on). An activation
- * while a Command is in flight opens a listen like any other (#324): the
- * Command it yields supersedes the one running.
+ * single-shot listening: one utterance is transcribed and submitted through
+ * the same surface as the Prompt Bar, then listening ends. With a wake
+ * detector wired (T10) the session also monitors continuously — the wake
+ * word chimes, barges in on any speech in flight, and opens a Hot Listen
+ * (#326): after each submitted utterance the ear stays open for the next,
+ * with no wake and no chime, until `hotListenSilenceMs` of silence after
+ * the last Endpoint, disarm, Escape or the abort head closes it and
+ * monitoring resumes. While it is open the monitor hears the listen's own
+ * audio, so the abort head and a wake still cut speech; a wake changes
+ * nothing else. Speech captured while a line plays is dropped. An
+ * activation while a Command is in flight opens a listen like any other
+ * (#324): the Command it yields supersedes the one running.
  */
 export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
   let appliedEndpointerConfig: Partial<UtteranceEndpointerConfig> | undefined = deps.endpointerConfig
@@ -144,14 +165,57 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
   // Wake→transcript span (#27): the monotonic marker of the command listen's
   // start (hotkey or wake word); null outside a command listen.
   let commandListenStart: number | null = null
+  // The Hot Listen (#326): a wake listen that has submitted an utterance
+  // and stays open for the next; its silence clock, when running.
+  let hot = false
+  let cancelSilence: (() => void) | null = null
+  // Bumped whenever the silence clock is stopped, so a playback wait that
+  // ends after it re-arms nothing.
+  let silenceEpoch = 0
+  // The utterance in capture is the app's own voice (#326): a line was
+  // playing when it started, or started under it. Dropped at its Endpoint.
+  let muted = false
 
   const abortPhrases = new Set(LOCAL_CONTROL_PHRASES.abort)
 
   // The live partial (#324): the Status Capsule shows it while the user
   // speaks; a partial from a capture that has ended is dropped here.
+  const speaking = (): boolean => deps.speaking?.isSpeaking() ?? false
+
   deps.transcriber.onPartial((text) => {
-    if (listening && !transcribing) deps.onPartial?.(text)
+    // A partial heard over a line playing is the app's own voice (#326): never shown, never considered.
+    if (listening && !transcribing && !muted && !speaking()) deps.onPartial?.(text)
   })
+
+  function stopSilenceClock(): void {
+    silenceEpoch += 1
+    cancelSilence?.()
+    cancelSilence = null
+  }
+
+  /**
+   * The Hot Listen's silence clock (#326), started at each Endpoint: when
+   * it runs out the listen closes. A line playing holds it — the listen
+   * stays open through the playback and the clock restarts when it ends.
+   */
+  function startSilenceClock(): void {
+    stopSilenceClock()
+    if (!hot) return
+    const epoch = silenceEpoch
+    if (speaking()) {
+      void deps.speaking?.waitIdle().then(() => {
+        if (epoch === silenceEpoch) startSilenceClock()
+      })
+      return
+    }
+    const ms = deps.getHotListenSilenceMs?.() ?? HOT_LISTEN_SILENCE_MS_DEFAULT
+    cancelSilence = deps.clock.setTimer(ms, () => {
+      cancelSilence = null
+      if (epoch !== silenceEpoch) return
+      if (speaking()) startSilenceClock()
+      else stopListening()
+    })
+  }
 
   function clearPartial(): void {
     deps.onPartial?.('')
@@ -205,6 +269,14 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
     : null
 
   function activateFromWake(): void {
+    if (hot) {
+      // A wake inside a Hot Listen changes nothing (#326) but still cuts
+      // speech; the monitor is let go of its latch so the abort head and
+      // the next wake stay heard.
+      deps.tts.stop()
+      monitor?.reset()
+      return
+    }
     // A hotkey listen — or an in-flight transcript — owns the mic; nothing to do.
     if (listening || transcribing) return
     startListening('wake')
@@ -233,6 +305,9 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
     if (!listening) return
     listening = false
     transcribing = false
+    hot = false
+    muted = false
+    stopSilenceClock()
     reason = null
     commandListenStart = null
     endpointer.reset()
@@ -249,10 +324,26 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
 
   function interrupt(kind: 'abort'): boolean {
     void kind
-    if (deps.getRunState() === 'idle') return false
+    if (deps.getRunState() === 'idle') {
+      // The abort head closes a Hot Listen whether a Command runs or not (#326).
+      if (!hot) return false
+      stopListening()
+      return true
+    }
     deps.onAbort()
     stopListening()
     return true
+  }
+
+  /** The utterance was submitted inside a wake listen: the ear stays open for the next (#326). */
+  function stayHot(): void {
+    hot = true
+    transcribing = false
+    emitState()
+    // The wake's latch is let go: from here the monitor hears the listen's
+    // audio for the abort head and a wake.
+    if (monitoring) monitor?.reset()
+    startSilenceClock()
   }
 
   function fail(message: string): void {
@@ -260,45 +351,68 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
     stopListening()
   }
 
-  async function handleChunk(chunk: Float32Array): Promise<void> {
+  /** Scores the chunk's frames and endpoints them; resolves the probabilities scored, for the monitor a Hot Listen feeds. */
+  async function handleChunk(chunk: Float32Array): Promise<number[]> {
     // Live endpoint delay (#37): swap in a changed config as audio arrives,
     // but only between utterances — never mid-flight.
     if (endpointer.isIdle()) syncEndpointer()
+    const scored: number[] = []
     for (let offset = 0; offset + VAD_FRAME_SAMPLES <= chunk.length; offset += VAD_FRAME_SAMPLES) {
-      if (!listening) return
+      if (!listening) return scored
       const frame = chunk.subarray(offset, offset + VAD_FRAME_SAMPLES)
       let prob: number
       try {
         prob = await deps.vad.score(frame)
       } catch (err) {
         fail(err instanceof Error ? err.message : String(err))
-        return
+        return scored
       }
-      if (!listening) return
+      scored.push(prob)
+      if (!listening) return scored
       const wasIdle = endpointer.isIdle()
       const utterance = endpointer.push(prob, frame)
       if (utterance) {
         await handleUtterance(utterance)
       } else if (!endpointer.isIdle()) {
+        if (wasIdle) {
+          // Speech inside a Hot Listen stops its silence clock (#326).
+          stopSilenceClock()
+          // A line is playing: this is the app's own voice — not transcribed, dropped at its Endpoint (#326).
+          muted = speaking()
+          if (!muted) {
+            deps.transcriber.begin()
+            // Speech started (#324): the page is collected in parallel with it.
+            deps.onSpeechStart?.()
+          }
+        } else if (!muted && speaking()) {
+          // A line started under the speech: the capture so far is let go.
+          muted = true
+          deps.transcriber.cancel()
+          clearPartial()
+        }
         // Streaming STT (#40): utterance frames flow to the transcriber as
         // they arrive, so a streaming engine transcribes during speech; a
         // final-only engine ignores them and still gets the whole utterance
         // at finish().
-        if (wasIdle) {
-          deps.transcriber.begin()
-          // Speech started (#324): the page is collected in parallel with it.
-          deps.onSpeechStart?.()
-        }
-        deps.transcriber.push(frame)
+        if (!muted) deps.transcriber.push(frame)
       } else if (!wasIdle) {
         // The endpointer discarded a blip — drop the in-flight capture too.
-        deps.transcriber.cancel()
+        if (!muted) deps.transcriber.cancel()
+        muted = false
         clearPartial()
+        startSilenceClock()
       }
     }
+    return scored
   }
 
   async function handleUtterance(utterance: UtteranceEnd): Promise<void> {
+    if (muted) {
+      // Captured while a line played (#326): no transcript, no Command; the listen stays open.
+      muted = false
+      startSilenceClock()
+      return
+    }
     // The endpoint fired: the ear is closed for this utterance's STT window
     // (#38) — the state flips here, not when the transcript arrives, so the
     // UI never claims "listening" while it thinks.
@@ -353,6 +467,7 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
     if (text === '') {
       // A blip, not a command: back to the open ear, reason intact.
       backToListening()
+      startSilenceClock()
       return
     }
 
@@ -387,7 +502,9 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
       ...(endpointAt !== null ? { endpointAt } : {}),
     })
     deps.onHeard({ text, routed: 'command' })
-    stopListening()
+    // One wake, one spoken session (#326): a wake listen stays open; the hotkey's is single-shot.
+    if (reason === 'wake') stayHot()
+    else stopListening()
   }
 
   return {
@@ -417,10 +534,13 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
 
     pushAudio(chunk) {
       if (listening) {
-        audioChain = audioChain.then(
-          () => handleChunk(chunk),
-          () => handleChunk(chunk),
-        )
+        const step = async (): Promise<void> => {
+          const scored = await handleChunk(chunk)
+          // A Hot Listen's audio reaches the monitor too, on the scores the
+          // listen already made — the one VAD is never scored twice (#326).
+          if (hot && monitoring && monitor) await monitor.pushAudio(chunk, scored)
+        }
+        audioChain = audioChain.then(step, step)
         return audioChain
       }
       if (monitoring && monitor) {
@@ -434,5 +554,11 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
     },
 
     interrupt,
+
+    closeHotListen() {
+      if (!hot) return false
+      stopListening()
+      return true
+    },
   }
 }

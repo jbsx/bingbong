@@ -58,6 +58,22 @@ export interface DecisionRecord {
   readonly jevAsked: boolean
   /** Jev's answer, or why it gave none; absent when it was not asked. */
   readonly jev?: JevDetail | JevUnavailable
+  /** The Utterance spoken over the page hit the 30 s cap. */
+  readonly truncated?: boolean
+  /** The Command fired on a partial transcript, before the Endpoint (#326); absent for one read at the Endpoint. */
+  readonly earlyFire?: EarlyFireDetail
+  /** Jev calls made on this Utterance's partials (#326), whether one fired or not; absent when none was. */
+  readonly partialCalls?: number
+}
+
+/** An Early Fire as the record keeps it. */
+export interface EarlyFireDetail {
+  /** The partial transcript the Command fired on. */
+  readonly partial: string
+  /** How long before the Endpoint it fired; absent when the Utterance never reached one (the Listen closed under it). */
+  readonly leadMs?: number
+  /** Jev's "complete command?" Noul, when Jev settled the partial. */
+  readonly noul?: number
 }
 
 export type MisfireSignal = 'back' | 'clear' | 'escape' | 'opposite_scroll'

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { FakeClock, FakeTranscriber, FakeVad, FakeWakeDetector, RecordingTts } from '../testing/doubles'
 import type { VoiceHeardEvent, VoiceState } from './ipcChannels'
-import { createVoiceSession, type SubmittedCommand } from './voiceSession'
+import { createVoiceSession, HOT_LISTEN_SILENCE_MS_DEFAULT, type SubmittedCommand } from './voiceSession'
 import { mergeFramesFor, vadDefaults, type UtteranceEndpointerConfig } from './vadEndpointing'
 import type { CommandRunState } from '../pipeline/runState'
 import { createPerfTracer, type PerfSpanRecord } from '../perf/perfTracer'
@@ -55,6 +55,25 @@ interface SessionHarness {
   session: ReturnType<typeof createVoiceSession>
 }
 
+/** The speaking gate as the session reads it (#326): whether a line is playing, and when it stops. */
+class FakeSpeaking {
+  speaking = false
+  private waiters: (() => void)[] = []
+
+  isSpeaking(): boolean {
+    return this.speaking
+  }
+
+  waitIdle(): Promise<void> {
+    return this.speaking ? new Promise((resolve) => this.waiters.push(resolve)) : Promise.resolve()
+  }
+
+  finish(): void {
+    this.speaking = false
+    for (const waiter of this.waiters.splice(0)) waiter()
+  }
+}
+
 async function flush(microtasks = 5): Promise<void> {
   for (let i = 0; i < microtasks; i++) await Promise.resolve()
 }
@@ -74,6 +93,10 @@ async function createSession(overrides?: {
   endpointerConfig?: Partial<UtteranceEndpointerConfig>
   /** Parks every finish() until settleStt — the STT-window seam (ADR 0024). */
   deferStt?: boolean
+  /** The speaking gate (#326): TTS in flight drops the Utterance. */
+  speaking?: FakeSpeaking
+  /** Live `hotListenSilenceMs` (#326). */
+  hotListenSilenceMs?: () => number
 }): Promise<SessionHarness> {
   const vad = overrides?.vad ?? new FakeVad()
   const baseTranscriber = overrides?.transcriber ?? new FakeTranscriber()
@@ -158,6 +181,8 @@ async function createSession(overrides?: {
     getEndpointerConfig: overrides?.getEndpointerConfig,
     tracer,
     dumper,
+    speaking: overrides?.speaking,
+    getHotListenSilenceMs: overrides?.hotListenSilenceMs,
     wake: overrides?.wake
       ? {
           detector: overrides.wake.detector,
@@ -551,7 +576,7 @@ describe('voice session — wake word (T10)', () => {
     expect(harness.transcriber.audio).toHaveLength(0)
   })
 
-  it('wake detection chimes, barges in on speech, and listens — one utterance, then back to monitoring', async () => {
+  it('wake detection chimes, barges in on speech, and opens a Hot Listen that stays open after the Utterance', async () => {
     const detector = new FakeWakeDetector([0.9])
     const harness = await createSession({
       transcriber: new FakeTranscriber(['open youtube']),
@@ -567,11 +592,11 @@ describe('voice session — wake word (T10)', () => {
     expect(harness.tts.stopCalls).toBe(1)
     expect(harness.states.at(-1)).toEqual({ listening: true, reason: 'wake', monitoring: true, transcribing: false })
 
-    // The utterance submits like a hotkey command, then monitoring resumes.
+    // The utterance submits like a hotkey command, and the ear stays open (#326).
     await harness.speakUtterance()
     expect(harness.commands).toEqual(['open youtube'])
     expect(harness.heard).toEqual([{ text: 'open youtube', routed: 'command' }])
-    expect(harness.states.at(-1)).toEqual({ listening: false, reason: null, monitoring: true, transcribing: false })
+    expect(harness.states.at(-1)).toEqual({ listening: true, reason: 'wake', monitoring: true, transcribing: false })
   })
 
   it('a barge-in tail that transcribes empty is a harmless no-op — the real command after it is not swallowed (#41 acceptance)', async () => {
@@ -601,8 +626,8 @@ describe('voice session — wake word (T10)', () => {
     expect(harness.heard).toEqual([{ text: 'open youtube', routed: 'command' }])
   })
 
-  it('keeps monitoring after a wake so the next wake word lands', async () => {
-    const detector = new FakeWakeDetector([0.9, 0.9])
+  it('keeps monitoring after a Hot Listen closes so the next wake word lands', async () => {
+    const detector = new FakeWakeDetector([0.9])
     const harness = await createSession({
       transcriber: new FakeTranscriber(['first', 'second']),
       wake: { detector },
@@ -613,7 +638,10 @@ describe('voice session — wake word (T10)', () => {
     await harness.speakUtterance()
     expect(harness.commands).toEqual(['first'])
 
-    // Monitoring resumed: the detector fires again on new audio.
+    // Silence closes the Hot Listen; monitoring resumes and the detector fires again on new audio.
+    harness.clock.advance(HOT_LISTEN_SILENCE_MS_DEFAULT)
+    expect(harness.states.at(-1)).toEqual({ listening: false, reason: null, monitoring: true, transcribing: false })
+    detector.push('wake', 0.9)
     await monitorFrames(harness, [SPEECH, SPEECH, SPEECH])
     expect(harness.states.at(-1)).toEqual({ listening: true, reason: 'wake', monitoring: true, transcribing: false })
     await harness.speakUtterance()
@@ -1011,3 +1039,165 @@ describe('voice session — utterance audio dumps (#34)', () => {
 // The ear's Host Trace records (#186, ADR 0031). Host-scoped by the
 // boundary rule: a listen runs outside every Run — it is what starts one —
 // so nothing here names a turn.
+
+describe('voice session — Hot Listen (#326)', () => {
+  async function monitorFrames(harness: SessionHarness, probs: number[]): Promise<void> {
+    for (const prob of probs) {
+      harness.vad.queue.push(prob)
+      await harness.session.pushAudio(new Float32Array(512))
+    }
+  }
+
+  /** A wake opens the Hot Listen; the detector stays quiet after it. */
+  async function hotListen(script: string[], overrides?: Parameters<typeof createSession>[0]) {
+    const detector = new FakeWakeDetector({ wake: [0.9, 0], abort: [0] })
+    const harness = await createSession({ transcriber: new FakeTranscriber(script), wake: { detector }, ...overrides })
+    harness.session.enableWakeMonitoring()
+    await monitorFrames(harness, [SPEECH, SPEECH, SPEECH])
+    expect(harness.states.at(-1)).toEqual({ listening: true, reason: 'wake', monitoring: true, transcribing: false })
+    return { harness, detector }
+  }
+
+  const open = { listening: true, reason: 'wake', monitoring: true, transcribing: false }
+  const closed = { listening: false, reason: null, monitoring: true, transcribing: false }
+
+  it('submits the next Utterance as the next Command with no wake and no chime', async () => {
+    const { harness } = await hotListen(['scroll down', 'go back'])
+    await harness.speakUtterance()
+    expect(harness.states.at(-1)).toEqual(open)
+    await harness.speakUtterance()
+    expect(harness.commands).toEqual(['scroll down', 'go back'])
+    expect(harness.chimes).toHaveLength(1)
+    expect(harness.states.at(-1)).toEqual(open)
+  })
+
+  it('a wake heard while it is open changes nothing: no chime, no reset of the listen', async () => {
+    const { harness, detector } = await hotListen(['scroll down', 'go back'])
+    await harness.speakUtterance()
+    const states = harness.states.length
+    detector.push('wake', 0.9, 0)
+    await monitorFrames(harness, [SILENCE, SILENCE, SILENCE])
+    expect(harness.chimes).toHaveLength(1)
+    expect(harness.states).toHaveLength(states)
+    await harness.speakUtterance()
+    expect(harness.commands).toEqual(['scroll down', 'go back'])
+  })
+
+  it('closes after hotListenSilenceMs of silence since the last Endpoint, and monitoring resumes', async () => {
+    const { harness, detector } = await hotListen(['scroll down', 'go back'], { hotListenSilenceMs: () => 5_000 })
+    await harness.speakUtterance()
+    harness.clock.advance(4_000)
+    expect(harness.states.at(-1)).toEqual(open)
+    // A second Utterance restarts the clock at its Endpoint.
+    await harness.speakUtterance()
+    harness.clock.advance(4_999)
+    expect(harness.states.at(-1)).toEqual(open)
+    const resets = detector.resets
+    harness.clock.advance(1)
+    expect(harness.states.at(-1)).toEqual(closed)
+    // The monitor is reset so the next wake is heard.
+    expect(detector.resets).toBe(resets + 1)
+    expect(harness.commands).toEqual(['scroll down', 'go back'])
+  })
+
+  it('defaults to 8 s of silence', async () => {
+    const { harness } = await hotListen(['scroll down'])
+    await harness.speakUtterance()
+    harness.clock.advance(HOT_LISTEN_SILENCE_MS_DEFAULT - 1)
+    expect(harness.states.at(-1)).toEqual(open)
+    harness.clock.advance(1)
+    expect(harness.states.at(-1)).toEqual(closed)
+    expect(HOT_LISTEN_SILENCE_MS_DEFAULT).toBe(8_000)
+  })
+
+  it('disarm closes it at once', async () => {
+    const { harness } = await hotListen(['scroll down'])
+    await harness.speakUtterance()
+    harness.session.disarm()
+    expect(harness.states.at(-1)).toEqual(closed)
+  })
+
+  it('Escape closes it at once, and closes nothing when no Hot Listen is open', async () => {
+    const { harness } = await hotListen(['scroll down'])
+    await harness.speakUtterance()
+    expect(harness.session.closeHotListen()).toBe(true)
+    expect(harness.states.at(-1)).toEqual(closed)
+    expect(harness.session.closeHotListen()).toBe(false)
+  })
+
+  it('the Abort Head closes it at once, idle or not', async () => {
+    const { harness, detector } = await hotListen(['scroll down'])
+    await harness.speakUtterance()
+    detector.push('abort', 0.95, 0)
+    await monitorFrames(harness, [SPEECH, SPEECH, SPEECH])
+    expect(harness.states.at(-1)).toEqual(closed)
+  })
+
+  it('a hotkey Listen stays single-shot', async () => {
+    const harness = await createSession({ transcriber: new FakeTranscriber(['scroll down']) })
+    harness.session.arm()
+    await harness.speakUtterance()
+    expect(harness.states.at(-1)).toEqual({ listening: false, reason: null, monitoring: false, transcribing: false })
+  })
+
+  it('drops an Utterance captured while TTS is in flight: no transcript, no Command, no speech start, and the Listen stays open', async () => {
+    const speaking = new FakeSpeaking()
+    const { harness } = await hotListen(['scroll down', 'go back'], { speaking })
+    speaking.speaking = true
+    harness.transcriber.events.length = 0
+    await harness.speakUtterance()
+    expect(harness.transcriber.events).toEqual([])
+    expect(harness.transcriber.audio).toHaveLength(0)
+    expect(harness.speechStarts).toEqual([])
+    expect(harness.commands).toEqual([])
+    expect(harness.states.at(-1)).toEqual(open)
+    speaking.finish()
+    await flush()
+    await harness.speakUtterance()
+    expect(harness.commands).toEqual(['scroll down'])
+  })
+
+  it('drops an Utterance that TTS starts under, and forwards no partial from it', async () => {
+    const speaking = new FakeSpeaking()
+    const { harness } = await hotListen(['scroll down'], { speaking })
+    const probs = utteranceProbs()
+    for (const [i, prob] of probs.entries()) {
+      if (i === 3) {
+        speaking.speaking = true
+        harness.transcriber.emitPartial('scroll')
+      }
+      harness.vad.queue.push(prob)
+      await harness.session.pushAudio(new Float32Array(512))
+    }
+    expect(harness.transcriber.events.at(-1)).toBe('cancel')
+    expect(harness.partials.filter((text) => text !== '')).toEqual([])
+    expect(harness.commands).toEqual([])
+  })
+
+  it('stays open through playback: the silence clock starts when it ends', async () => {
+    const speaking = new FakeSpeaking()
+    const { harness } = await hotListen(['scroll down'], { speaking })
+    await harness.speakUtterance()
+    speaking.speaking = true
+    harness.clock.advance(HOT_LISTEN_SILENCE_MS_DEFAULT * 2)
+    expect(harness.states.at(-1)).toEqual(open)
+    speaking.finish()
+    await flush()
+    harness.clock.advance(HOT_LISTEN_SILENCE_MS_DEFAULT - 1)
+    expect(harness.states.at(-1)).toEqual(open)
+    harness.clock.advance(1)
+    expect(harness.states.at(-1)).toEqual(closed)
+  })
+
+  it('the Abort Head still interrupts a run while TTS plays', async () => {
+    const speaking = new FakeSpeaking()
+    const runState = { value: 'running' as CommandRunState }
+    const { harness, detector } = await hotListen(['scroll down'], { speaking, runState })
+    await harness.speakUtterance()
+    speaking.speaking = true
+    detector.push('abort', 0.95, 0)
+    await monitorFrames(harness, [SPEECH, SPEECH, SPEECH])
+    expect(harness.aborts).toHaveLength(1)
+    expect(harness.states.at(-1)).toEqual(closed)
+  })
+})

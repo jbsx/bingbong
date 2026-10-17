@@ -40,8 +40,13 @@ export interface WakeMonitorDeps {
 }
 
 export interface WakeMonitor {
-  /** One mono 16 kHz PCM chunk; carved into 512-sample VAD frames and 1280-sample wake chunks internally. */
-  pushAudio(chunk: Float32Array): Promise<void>
+  /**
+   * One mono 16 kHz PCM chunk; carved into 512-sample VAD frames and
+   * 1280-sample wake chunks internally. `scored` is the chunk's frames'
+   * speech probabilities when the caller already scored them (a Hot
+   * Listen, #326): the VAD is then not asked again.
+   */
+  pushAudio(chunk: Float32Array, scored?: readonly number[]): Promise<void>
   /** Fresh buffers after a listening episode; clears the fired/error latch. */
   reset(): void
 }
@@ -72,14 +77,17 @@ export function createWakeMonitor(deps: WakeMonitorDeps): WakeMonitor {
     return merged
   }
 
+  function remember(prob: number): void {
+    recentVad.push(prob)
+    if (recentVad.length > VAD_GATE_WINDOW_FRAMES) recentVad.shift()
+  }
+
   async function scoreVadFrames(chunk: Float32Array): Promise<void> {
     vadCarry = concat(vadCarry, chunk)
     while (vadCarry.length >= VAD_FRAME_SAMPLES) {
       const frame = vadCarry.slice(0, VAD_FRAME_SAMPLES)
       vadCarry = vadCarry.slice(VAD_FRAME_SAMPLES)
-      const prob = await deps.vad.score(frame)
-      recentVad.push(prob)
-      if (recentVad.length > VAD_GATE_WINDOW_FRAMES) recentVad.shift()
+      remember(await deps.vad.score(frame))
     }
   }
 
@@ -106,11 +114,12 @@ export function createWakeMonitor(deps: WakeMonitorDeps): WakeMonitor {
   }
 
   return {
-    async pushAudio(chunk) {
+    async pushAudio(chunk, scored) {
       if (latched !== null) return
       wakeCarry = concat(wakeCarry, chunk)
       try {
-        await scoreVadFrames(chunk)
+        if (scored !== undefined) for (const prob of scored) remember(prob)
+        else await scoreVadFrames(chunk)
         await scoreWakeChunks()
       } catch (err) {
         latched = 'error'

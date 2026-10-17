@@ -1,4 +1,4 @@
-import type { DecisionChoiceAnswer, DecisionChoiceQuestion } from '../ports/decisionModel'
+import type { DecisionChoiceAnswer, DecisionChoiceQuestion, DecisionNoulQuestion } from '../ports/decisionModel'
 import { JEV_VERBS, PRESS_KEYS, pressKeyOf, verbTakesSlot, verbTakesTarget, type Command, type CommandPage, type CommandRef, type CommandVerb } from './command'
 import { wordsAfterVerb } from './localMatch'
 import { isAddressShaped } from './openAddress'
@@ -110,6 +110,20 @@ export function commandQuestions(text: string, page: CommandPage): CommandQuesti
       instructions: 'Which words of the transcript are the thing the command carries verbatim: the address to open, the search terms, the text to type, the key to press? Choose none when it carries none.',
       options: { none: 'the command carries no words of its own', ...Object.fromEntries(slotSpans(text).map((span) => [`s${span.start}-${span.end}`, span.words])) },
     },
+  }
+}
+
+/**
+ * A partial transcript's questions (Early Fire, #326): the three Choices
+ * and one Noul — whether the words so far are the whole Command. The Noul
+ * decides only whether to wait for more words, never whether to act.
+ */
+export type PartialQuestions = CommandQuestions & { readonly complete: DecisionNoulQuestion }
+
+export function partialQuestions(text: string, page: CommandPage): PartialQuestions {
+  return {
+    ...commandQuestions(text, page),
+    complete: { type: 'noul', instructions: 'Is this a complete command, with nothing still to be said?' },
   }
 }
 

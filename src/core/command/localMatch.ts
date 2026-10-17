@@ -360,6 +360,20 @@ export function wordsAfterVerb(text: string): string {
 }
 
 /**
+ * Whether the words are a whole verb phrase that heads a longer one of
+ * another kind — "scroll" (down) heads "scroll up" — so a partial
+ * transcript that reads this way may still become a different Command
+ * (Early Fire, #326). "read" heading "read the page" is the same Command,
+ * and holds nothing back.
+ */
+export function headsAnotherVerb(text: string): boolean {
+  const clean = cleanOf(tokenize(text))
+  const kind = BARE_WORDS[clean] ?? VERB_PHRASES.find(([phrase]) => phrase === clean)?.[1]
+  if (kind === undefined) return false
+  return VERB_PHRASES.some(([phrase, other]) => other !== kind && phrase.startsWith(`${clean} `))
+}
+
+/**
  * The Local Match: the CLI grammar, or a plain verb and the one element the
  * words can name — the label exactly one ref carries, or the Nth result on
  * a search page (`url` is the page's address). Null when the words and the

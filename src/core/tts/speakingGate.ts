@@ -46,6 +46,7 @@ export function createSpeakingGate(inner: TtsSpeaker): SpeakingGate {
 
   return {
     tts,
+    isSpeaking: () => outstanding > 0,
     waitIdle: () =>
       outstanding === 0
         ? Promise.resolve()

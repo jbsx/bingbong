@@ -652,3 +652,129 @@ describe('learning from a retry chain (ADR 0077)', () => {
     expect(proposed).toEqual([])
   })
 })
+
+describe('Early Fire (#326)', () => {
+  it('fires a partial the Local Match settles without a Slot before the Endpoint, with no Jev call; the Endpoint makes no second Command', async () => {
+    const { browser, events, records, perf, decision, runner } = harness()
+    perf.state.monotonicMs = 1_000
+    void runner.prepare()
+    await runner.consider('scroll down')
+    expect(browser.scrolls).toEqual(['down'])
+    expect(decision.requests).toEqual([])
+    expect(events.filter((event) => event.type === 'command')).toHaveLength(1)
+
+    perf.state.monotonicMs = 1_400
+    expect(await runner.run('scroll down.', { source: 'spoken', turnId: 'voice-1', endpointAt: 1_400 })).toBe(true)
+    expect(browser.scrolls).toEqual(['down'])
+    expect(events.filter((event) => event.type === 'command')).toHaveLength(1)
+    const decisions = records.filter((record) => record.type === 'decision')
+    expect(decisions).toHaveLength(1)
+    expect(decisions[0]).toMatchObject({ verb: 'scroll_down', reading: 'local_match', jevAsked: false, transcript: 'scroll down.', earlyFire: { partial: 'scroll down', leadMs: 400 } })
+    const reaction = perf.records.find((record) => record.stage === 'reaction')
+    expect(reaction).toMatchObject({ durMs: 0, detail: { verb: 'scroll_down', earlyFire: true, leadMs: 400 } })
+  })
+
+  const noul = (value: number): DecisionAnswer => ({ type: 'noul', noul: value })
+  const openYoutube = (complete: number): Record<string, DecisionAnswer> => ({ verb: choice('open'), target: choice('none'), slot: choice('s1-1'), complete: noul(complete) })
+
+  it('never fires a Slot-carrying partial on the Local Match; asks Jev the three Choices and one Noul, and fires only when the Noul clears 0.7', async () => {
+    const { browser, events, records, decision, runner } = harness()
+    void runner.prepare()
+    decision.script.push({ answers: openYoutube(0.3) })
+    await runner.consider('open you')
+    expect(browser.navigations).toEqual([])
+    expect(decision.requests).toHaveLength(1)
+    const questions = decision.requests[0]!.questions
+    expect(Object.keys(questions).sort()).toEqual(['complete', 'slot', 'target', 'verb'])
+    expect(questions.complete).toEqual({ type: 'noul', instructions: 'Is this a complete command, with nothing still to be said?' })
+    expect([questions.verb, questions.target, questions.slot].map((question) => question.type)).toEqual(['choice', 'choice', 'choice'])
+
+    decision.script.push({ answers: openYoutube(0.9) })
+    await runner.consider('open youtube')
+    expect(browser.navigations).toEqual(['https://youtube.com'])
+    expect(decision.requests).toHaveLength(2)
+
+    // The Endpoint's transcript is not read: no third call, no second navigation.
+    await runner.run('open youtube please', { source: 'spoken', endpointAt: 0 })
+    expect(decision.requests).toHaveLength(2)
+    expect(browser.navigations).toEqual(['https://youtube.com'])
+    expect(events.filter((event) => event.type === 'command')).toHaveLength(1)
+    const decisions = records.filter((record) => record.type === 'decision')
+    expect(decisions).toHaveLength(1)
+    expect(decisions[0]).toMatchObject({ verb: 'open', slot: 'youtube', reading: 'jev', jevAsked: true, partialCalls: 2, earlyFire: { partial: 'open youtube', noul: 0.9 } })
+  })
+
+  it('holds a bare verb that may still become another Command: "scroll" waits for "scroll up"', async () => {
+    const { browser, decision, runner } = harness()
+    void runner.prepare()
+    decision.script.push({ unavailable: 'timeout' })
+    await runner.consider('scroll')
+    expect(browser.scrolls).toEqual([])
+    await runner.consider('scroll up')
+    expect(browser.scrolls).toEqual(['up'])
+  })
+
+  it('makes no call for a partial identical to the last one considered', async () => {
+    const { decision, runner } = harness()
+    void runner.prepare()
+    decision.script.push({ answers: openYoutube(0.3) }, { answers: openYoutube(0.3) })
+    await runner.consider('open you')
+    await runner.consider('open you ')
+    expect(decision.requests).toHaveLength(1)
+  })
+
+  it('fires nothing for a partial still being read at the Endpoint, and reads the final transcript as before', async () => {
+    const { browser, events, decision, runner } = harness()
+    void runner.prepare()
+    let answer: (result: DecisionResult<DecisionQuestions>) => void = () => {}
+    const ask = decision.ask.bind(decision)
+    decision.ask = ((request: DecisionRequest<DecisionQuestions>) => {
+      if (decision.requests.length > 0) return ask(request)
+      decision.requests.push(request)
+      return new Promise<DecisionResult<DecisionQuestions>>((resolve) => (answer = resolve))
+    }) as typeof decision.ask
+    const partial = runner.consider('open you')
+    await flushMicrotasks()
+    decision.script.push({ answers: { verb: choice('open'), target: choice('none'), slot: choice('s1-1') } })
+    const endpoint = runner.run('open youtube', { source: 'spoken' })
+    await flushMicrotasks()
+    answer({ status: 'answered', answers: openYoutube(0.95) as never, latencyMs: 1, model: 'jev-1.14.0' })
+    await partial
+    await endpoint
+    expect(browser.navigations).toEqual(['https://youtube.com'])
+    expect(events.filter((event) => event.type === 'command')).toHaveLength(1)
+    expect(events.find((event) => event.type === 'command')).toMatchObject({ text: 'open youtube' })
+  })
+
+  it('fires nothing and publishes no error when Jev is unavailable on a partial; the Endpoint reads as before', async () => {
+    const { browser, events, decision, runner } = harness()
+    void runner.prepare()
+    decision.script.push({ unavailable: 'transport' })
+    await runner.consider('open you')
+    expect(browser.navigations).toEqual([])
+    expect(events).toEqual([])
+    decision.script.push({ answers: { verb: choice('open'), target: choice('none'), slot: choice('s1-1') } })
+    await runner.run('open youtube', { source: 'spoken' })
+    expect(browser.navigations).toEqual(['https://youtube.com'])
+    expect(events.some((event) => event.type === 'error')).toBe(false)
+  })
+
+  it('keeps one partial call in flight: a partial heard meanwhile waits, and only the newest is read next', async () => {
+    const { decision, runner } = harness()
+    void runner.prepare()
+    decision.script.push({ answers: openYoutube(0.3) }, { answers: openYoutube(0.3) })
+    const first = runner.consider('open you')
+    void runner.consider('open yout')
+    void runner.consider('open youtu')
+    await first
+    expect(decision.requests.map((request) => request.state.split('\n')[0])).toEqual(['The user spoke to a web browser: "open you"', 'The user spoke to a web browser: "open youtu"'])
+  })
+
+  it('records an Early Fire whose Utterance never reached an Endpoint at the next speech start, without a lead', async () => {
+    const { records, runner } = harness()
+    void runner.prepare()
+    await runner.consider('go back')
+    void runner.prepare()
+    expect(records.filter((record) => record.type === 'decision')).toEqual([expect.objectContaining({ verb: 'back', earlyFire: { partial: 'go back' } })])
+  })
+})

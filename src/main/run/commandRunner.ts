@@ -1,13 +1,13 @@
 import type { BrowserController, VisualGroundingController } from '../../core/ports/browser'
-import type { DecisionModel } from '../../core/ports/decisionModel'
+import { DEFAULT_DECISION_THRESHOLDS, type DecisionModel } from '../../core/ports/decisionModel'
 import type { PipelineEvent } from '../../core/pipeline/events'
 import type { CommandRunState } from '../../core/pipeline/runState'
 import type { PageSnapshot } from '../../core/browser/snapshot'
 import type { PerfTracer } from '../../core/perf/perfTracer'
 import { commandRefOf, describeCommand, type Command, type CommandPage } from '../../core/command/command'
 import { COMMAND_HELP } from '../../core/command/help'
-import { bestGuess, localMatch } from '../../core/command/localMatch'
-import { commandQuestions, commandState, readCommandAnswers } from '../../core/command/jevReading'
+import { bestGuess, headsAnotherVerb, localMatch } from '../../core/command/localMatch'
+import { commandQuestions, commandState, partialQuestions, readCommandAnswers } from '../../core/command/jevReading'
 import { isAddressShaped, openAddress } from '../../core/command/openAddress'
 import { nameMatch, soundsAlike } from '../../core/command/nameMatch'
 import { jevDetailOf, misfireSignal, type CommandLogRecord, type CommandReading, type CommandSource, type DecisionRecord, type NameSource } from '../../core/command/decisionRecord'
@@ -66,6 +66,16 @@ export interface CommandRunner {
    * same speech is decoded under (ADR 0077).
    */
   prepare(): Promise<PageSnapshot | null>
+  /**
+   * A partial transcript while the user speaks (Early Fire, #326): fires
+   * it now when the words so far read as a complete Command — the Local
+   * Match on one that carries no Slot, else Jev's "complete command?" Noul
+   * — and the Endpoint's `run` then only closes the Utterance. A partial
+   * identical to the last is skipped; nothing fires once one has, nor
+   * when Jev does not answer. Resolves when the partial is let go, or when
+   * the Command it fired settles.
+   */
+  consider(partial: string): Promise<void>
 }
 
 /** The Learned Terms as the runner reads and grows them (ADR 0077). */
@@ -155,6 +165,18 @@ function pageFree(command: Command | null): command is Command {
   // "open <label>" clicks the ref that carries the label (localMatch): the page decides.
   if (command.verb === 'open' && !command.search) return false
   return true
+}
+
+/**
+ * Whether a partial's Local Match may fire before the Endpoint (#326): a
+ * Command that carries no Slot still being spoken — never an `open`, a
+ * search or a `type` ("open you" is a bare word, and the user is still
+ * saying "youtube"), and never a verb phrase that heads a longer one of
+ * another kind ("scroll" may yet be "scroll up").
+ */
+function firesEarly(words: string, command: Command): boolean {
+  if (command.verb === 'open' || command.verb === 'type' || command.verb === 'screenshot' || command.verb === 'none') return false
+  return !headsAnotherVerb(words)
 }
 
 function toolOf(command: Command): { name: string; args: Record<string, unknown> } {
@@ -378,6 +400,250 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     return shown === '' ? 'done' : shown
   }
 
+  /** The Name Match (ADR 0077): a spoken Slot that sounds like a name on the page, or one the user taught, is carried as that name. */
+  function matchName(heard: Command, page: CommandPage, spoken: boolean): { command: Command; matched: NameMatched | null } {
+    if (!spoken || !slotIsNameable(heard)) return { command: heard, matched: null }
+    const pageTerms = page.terms ?? []
+    const match = nameMatch(heard.slot, [...pageTerms, ...learnedTerms()])
+    if (match === null) return { command: heard, matched: null }
+    return {
+      command: { ...heard, slot: match.slot },
+      matched: { heard: match.heard, candidate: match.candidate, from: pageTerms.includes(match.candidate) ? 'page' : 'learned' },
+    }
+  }
+
+  function recordOf(turnId: string, firedAt: number, source: CommandSource, transcript: string, read: Reading, command: Command, matched: NameMatched | null, truncated: boolean): DecisionRecord {
+    const targetLabel = command.target === null ? undefined : read.page.refs.find((ref) => ref.ref === command.target)?.label
+    return {
+      type: 'decision',
+      turnId,
+      at: firedAt,
+      source,
+      transcript,
+      reading: read.reading,
+      verb: command.verb,
+      target: command.target,
+      ...(targetLabel !== undefined ? { targetLabel } : {}),
+      slot: command.slot,
+      ...(matched !== null ? { slotHeard: matched.heard, slotFrom: matched.from } : {}),
+      jevAsked: read.jevAsked,
+      ...(read.jev !== undefined ? { jev: read.jev } : {}),
+      ...(truncated ? { truncated: true } : {}),
+    }
+  }
+
+  /** How a fired Command's Reaction is measured and its turn closed. */
+  interface Reacting {
+    /** The action's first observable effect (or its end): the Reaction closes on it. */
+    react(effect: string, detail: Record<string, unknown>): void
+    /** The action settled: the turn closes, once its Reaction is in. */
+    settled(): void
+  }
+
+  /**
+   * What firing a Command does once it is read: the Misfire signal, the
+   * learning, superseding the Command in flight, and the action — its
+   * events, its Reaction, its result. Resolves when the action settles.
+   */
+  async function fire(turnId: string, text: string, source: CommandSource, command: Command, page: CommandPage, readingKind: CommandReading, matched: NameMatched | null, firedAt: number, reacting: Reacting): Promise<void> {
+    // The Misfire signal (ADR 0076): this Command as the recovery of the one that fired before it.
+    if (previous !== null) {
+      const signal = misfireSignal(previous, { verb: command.verb, key: command.key, at: firedAt })
+      if (signal !== null) log({ type: 'misfire', turnId: previous.turnId, at: firedAt, signal, signalTurnId: turnId, withinMs: firedAt - previous.at })
+    }
+    previous = { turnId, verb: command.verb, key: command.key, at: firedAt }
+    if (source === 'spoken') learnFrom(command, matched, firedAt)
+
+    // A later Command supersedes the one in flight; `stop` is only that.
+    cancelInFlight()
+    generation += 1
+    const mine = generation
+    inFlight = { turnId, generation: mine }
+    const current = (): boolean => inFlight !== null && inFlight.generation === mine
+
+    publish({ type: 'command', turnId, text, action: describeCommand(command, page), at: firedAt })
+    if (command.verb === 'stop') {
+      inFlight = null
+      publish({ type: 'done', turnId, outcome: 'done', at: at() })
+      return
+    }
+    publish({ type: 'status', turnId, status: 'acting', at: at() })
+    const callId = `${turnId}-1`
+    const { name, args } = toolOf(command)
+    publish({ type: 'tool_call', turnId, callId, name, args, at: at() })
+
+    // The Reaction (CONTEXT.md): Endpoint to the action's first observable effect.
+    let reacted = false
+    const react = (effect: string): void => {
+      if (reacted) return
+      reacted = true
+      reacting.react(effect, { verb: command.verb, effect, reading: readingKind, source })
+    }
+    const release = deps.onEffect?.((effect) => {
+      if (current()) react(effect)
+    })
+    try {
+      const result = await perform(command)
+      if (!current()) return
+      const card = cardOf(command, result)
+      react(card !== null && command.verb === 'read' ? 'display' : 'settled')
+      publish({ type: 'tool_result', turnId, callId, name, ok: true, result, at: at() })
+      if (card !== null) publish({ type: 'display', turnId, text: card, at: at() })
+      inFlight = null
+      publish({ type: 'done', turnId, outcome: 'done', at: at() })
+    } catch (error) {
+      if (!current()) return
+      react('failed')
+      const message = error instanceof Error ? error.message : String(error)
+      publish({ type: 'tool_result', turnId, callId, name, ok: false, error: message, at: at() })
+      inFlight = null
+      publish({ type: 'done', turnId, outcome: 'failed', at: at() })
+    } finally {
+      release?.()
+      reacting.settled()
+    }
+  }
+
+  function summarize(turnId: string): void {
+    try {
+      tracer?.summarize(turnId)
+    } catch (error) {
+      reportFault('run.commandRunner.summarize', error, { turnId })
+    }
+  }
+
+  // Early Fire (#326, ADR 0076): a partial transcript that already reads
+  // as a complete Command fires before the Endpoint. Each Utterance is the
+  // speech between one speech start (`prepare`) and its Endpoint (`run`);
+  // its partials are considered in order, at most one Jev call in flight,
+  // and once one fires the rest are let go.
+
+  /** Counts Utterances: bumped at speech start and at each Endpoint, so a partial's late reading knows its Utterance is gone. */
+  let utterance = 0
+  /** The partial last considered in this Utterance: an identical one is skipped. */
+  let lastPartial: string | null = null
+  /** A partial heard while another was being read: considered next, the newest only. */
+  let waitingPartial: string | null = null
+  let considering = false
+  /** Jev calls made on this Utterance's partials, for the record its Endpoint writes. */
+  let partialCalls = 0
+
+  /** A Command fired on a partial, waiting for its Utterance's Endpoint to write its record and close its Reaction. */
+  interface EarlyFired {
+    readonly utterance: number
+    readonly turnId: string
+    readonly partial: string
+    /** The tracer's monotonic ms when it fired. */
+    readonly firedAt: number
+    readonly record: DecisionRecord
+    readonly noul?: number
+    /** The Endpoint's monotonic ms, once it came. */
+    endpointAt: number | null
+    /** The first effect seen before the Endpoint: the Reaction closes on it, at 0, once the Endpoint comes. */
+    effect: { detail: Record<string, unknown>; at: number } | null
+    settled: boolean
+  }
+  let early: EarlyFired | null = null
+
+  function leadOf(fired: EarlyFired): number {
+    return Math.max(0, (fired.endpointAt ?? fired.firedAt) - fired.firedAt)
+  }
+
+  function reactingEarly(fired: EarlyFired): Reacting {
+    return {
+      react(effect, detail) {
+        void effect
+        const now = monotonic()
+        if (fired.endpointAt === null) {
+          fired.effect = { detail, at: now }
+          return
+        }
+        span(fired.turnId, Math.max(0, now - fired.endpointAt), { ...detail, earlyFire: true, leadMs: leadOf(fired) })
+      },
+      settled() {
+        fired.settled = true
+        if (early !== fired) summarize(fired.turnId)
+      },
+    }
+  }
+
+  /**
+   * An Early Fire's Utterance is over: its decision record is written —
+   * with the Endpoint's transcript and the lead, when the Endpoint is what
+   * closed it — and a Reaction whose effect came first is closed at 0.
+   */
+  function closeEarly(fired: EarlyFired, endpoint: { transcript: string; at: number; truncated: boolean } | null): void {
+    early = null
+    if (endpoint !== null) fired.endpointAt = endpoint.at
+    log({
+      ...fired.record,
+      ...(endpoint !== null ? { transcript: endpoint.transcript } : {}),
+      ...(endpoint?.truncated ? { truncated: true } : {}),
+      earlyFire: { partial: fired.partial, ...(endpoint !== null ? { leadMs: leadOf(fired) } : {}), ...(fired.noul !== undefined ? { noul: fired.noul } : {}) },
+      ...(partialCalls > 0 ? { partialCalls } : {}),
+    })
+    if (endpoint !== null && fired.effect !== null) {
+      span(fired.turnId, Math.max(0, fired.effect.at - endpoint.at), { ...fired.effect.detail, earlyFire: true, leadMs: leadOf(fired) })
+    }
+    if (fired.settled) summarize(fired.turnId)
+  }
+
+  /** A new Utterance (speech start) or the end of one (its Endpoint): what the last one's partials left is let go. */
+  function nextUtterance(): void {
+    utterance += 1
+    lastPartial = null
+    waitingPartial = null
+    partialCalls = 0
+  }
+
+  /** A partial's reading, when it settles a Command that may fire before the Endpoint. */
+  async function readPartial(words: string, stale: () => boolean): Promise<(Reading & { noul?: number }) | null> {
+    const quick = localMatch(words, [])
+    if (pageFree(quick) && firesEarly(words, quick)) return { command: quick, page: blankPage(browser), reading: 'local_match', jevAsked: false }
+    const page = await collectPage(prepared)
+    if (stale()) return null
+    const local = localMatch(words, page.refs, page.url)
+    if (local !== null && firesEarly(words, local)) return { command: local, page, reading: 'local_match', jevAsked: false }
+    const model = deps.decisionModel()
+    if (model === null) return null
+    partialCalls += 1
+    const result = await model.ask({ state: commandState(words, page), questions: partialQuestions(words, page) })
+    // Jev unavailable on a partial: nothing fires, and the Endpoint reads as before.
+    if (stale() || result.status !== 'answered') return null
+    const noul = result.answers.complete.noul
+    if (noul < DEFAULT_DECISION_THRESHOLDS.noul) return null
+    const command = readCommandAnswers(result.answers, words, page)
+    if (command.verb === 'none') return null
+    return { command, page, reading: 'jev', jevAsked: true, jev: jevDetailOf(result.answers, result.latencyMs, result.model), noul }
+  }
+
+  async function considerOne(words: string): Promise<void> {
+    const mine = utterance
+    const since = submitted
+    // A later Endpoint, Utterance, submission or abort makes the reading stale; so does a partial of the same Utterance that fired first.
+    const stale = (): boolean => mine !== utterance || since !== submitted || early?.utterance === mine
+    const found = await readPartial(words, stale)
+    if (found === null || stale()) return
+    // An Early Fire is a submission: a reading still under way for an earlier Command is stale now.
+    submitted += 1
+    const turnId = tracer?.mintTurnId() ?? `turn-${at().toString(36)}`
+    const firedAt = at()
+    const { command, matched } = matchName(found.command, found.page, true)
+    const fired: EarlyFired = {
+      utterance: mine,
+      turnId,
+      partial: words,
+      firedAt: monotonic(),
+      record: recordOf(turnId, firedAt, 'spoken', words, found, command, matched, false),
+      ...(found.noul !== undefined ? { noul: found.noul } : {}),
+      endpointAt: null,
+      effect: null,
+      settled: false,
+    }
+    early = fired
+    await fire(turnId, words, 'spoken', command, found.page, found.reading, matched, firedAt, reactingEarly(fired))
+  }
+
   return {
     getState: () => (inFlight === null && reading === null ? 'idle' : 'running'),
 
@@ -391,6 +657,9 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     },
 
     prepare() {
+      // Speech started: a new Utterance. An Early Fire whose Utterance never reached an Endpoint is recorded without one.
+      if (early !== null) closeEarly(early, null)
+      nextUtterance()
       prepared = {
         at: monotonic(),
         snapshot: browser.collectPage().catch((error: unknown) => {
@@ -401,12 +670,51 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       return prepared.snapshot
     },
 
+    async consider(partial) {
+      const words = partial.trim()
+      if (words === '' || words === lastPartial) return
+      lastPartial = words
+      if (early !== null && early.utterance === utterance) return
+      if (considering) {
+        waitingPartial = words
+        return
+      }
+      considering = true
+      try {
+        let next: string | null = words
+        while (next !== null) {
+          waitingPartial = null
+          await considerOne(next)
+          next = early !== null && early.utterance === utterance ? null : waitingPartial
+        }
+      } finally {
+        considering = false
+      }
+    },
+
     async run(text, options) {
       const trimmed = text.trim()
       if (trimmed === '') return false
-      const turnId = options?.turnId ?? tracer?.mintTurnId() ?? `turn-${at().toString(36)}`
       const source: CommandSource = options?.source ?? 'typed'
       const endpointAt = options?.endpointAt ?? monotonic()
+      const truncated = options?.truncated === true
+
+      // The Endpoint of an Utterance a partial already fired on only closes it (#326): the final transcript is not read.
+      const fired = early
+      if (fired !== null && source === 'spoken' && fired.utterance === utterance) {
+        observeTerms(trimmed)
+        prepared = null
+        closeEarly(fired, { transcript: trimmed, at: endpointAt, truncated })
+        nextUtterance()
+        if (options?.turnId !== undefined) summarize(options.turnId)
+        return true
+      }
+      if (fired !== null) closeEarly(fired, null)
+      const calls = source === 'spoken' ? partialCalls : 0
+      // An Endpoint (or a typed line) ends the Utterance: a partial still being read fires nothing.
+      if (source === 'spoken') nextUtterance()
+
+      const turnId = options?.turnId ?? tracer?.mintTurnId() ?? `turn-${at().toString(36)}`
       // This submission: a reading still under way for an earlier one is stale now.
       submitted += 1
       const submission = submitted
@@ -415,41 +723,13 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       const pending = prepared
       prepared = null
 
-      const { command: heard, page, reading: readingKind, jevAsked, jev } = await read(trimmed, pending, source === 'spoken')
+      const heard = await read(trimmed, pending, source === 'spoken')
       if (reading !== null && reading.submission === submission) reading = null
       const firedAt = at()
       if (source === 'spoken') observeTerms(trimmed)
 
-      // The Name Match (ADR 0077): a spoken Slot that sounds like a name on the page, or one the user taught, is carried as that name.
-      let command = heard
-      let matched: NameMatched | null = null
-      if (source === 'spoken' && slotIsNameable(heard)) {
-        const pageTerms = page.terms ?? []
-        const match = nameMatch(heard.slot, [...pageTerms, ...learnedTerms()])
-        if (match !== null) {
-          command = { ...heard, slot: match.slot }
-          matched = { heard: match.heard, candidate: match.candidate, from: pageTerms.includes(match.candidate) ? 'page' : 'learned' }
-        }
-      }
-
-      const targetLabel = command.target === null ? undefined : page.refs.find((ref) => ref.ref === command.target)?.label
-      const record: DecisionRecord = {
-        type: 'decision',
-        turnId,
-        at: firedAt,
-        source,
-        transcript: trimmed,
-        reading: readingKind,
-        verb: command.verb,
-        target: command.target,
-        ...(targetLabel !== undefined ? { targetLabel } : {}),
-        slot: command.slot,
-        ...(matched !== null ? { slotHeard: matched.heard, slotFrom: matched.from } : {}),
-        jevAsked,
-        ...(jev !== undefined ? { jev } : {}),
-        ...(options?.truncated ? { truncated: true } : {}),
-      }
-      log(record)
+      const { command, matched } = matchName(heard.command, heard.page, source === 'spoken')
+      log({ ...recordOf(turnId, firedAt, source, trimmed, heard, command, matched, truncated), ...(calls > 0 ? { partialCalls: calls } : {}) })
 
       if (submission !== submitted) {
         // A later Command (or an abort) arrived while this one was being
@@ -466,66 +746,13 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         return true
       }
 
-      // The Misfire signal (ADR 0076): this Command as the recovery of the one that fired before it.
-      if (previous !== null) {
-        const signal = misfireSignal(previous, { verb: command.verb, key: command.key, at: firedAt })
-        if (signal !== null) log({ type: 'misfire', turnId: previous.turnId, at: firedAt, signal, signalTurnId: turnId, withinMs: firedAt - previous.at })
-      }
-      previous = { turnId, verb: command.verb, key: command.key, at: firedAt }
-      if (source === 'spoken') learnFrom(command, matched, firedAt)
-
-      // A later Command supersedes the one in flight; `stop` is only that.
-      cancelInFlight()
-      generation += 1
-      const mine = generation
-      inFlight = { turnId, generation: mine }
-      const current = (): boolean => inFlight !== null && inFlight.generation === mine
-
-      publish({ type: 'command', turnId, text: trimmed, action: describeCommand(command, page), at: firedAt })
-      if (command.verb === 'stop') {
-        inFlight = null
-        publish({ type: 'done', turnId, outcome: 'done', at: at() })
-        return true
-      }
-      publish({ type: 'status', turnId, status: 'acting', at: at() })
-      const callId = `${turnId}-1`
-      const { name, args } = toolOf(command)
-      publish({ type: 'tool_call', turnId, callId, name, args, at: at() })
-
-      // The Reaction (CONTEXT.md): Endpoint to the action's first observable effect.
-      let reacted = false
-      const react = (effect: string): void => {
-        if (reacted) return
-        reacted = true
-        span(turnId, monotonic() - endpointAt, { verb: command.verb, effect, reading: readingKind, source })
-      }
-      const release = deps.onEffect?.((effect) => {
-        if (current()) react(effect)
+      await fire(turnId, trimmed, source, command, heard.page, heard.reading, matched, firedAt, {
+        react: (effect, detail) => {
+          void effect
+          span(turnId, monotonic() - endpointAt, detail)
+        },
+        settled: () => summarize(turnId),
       })
-      try {
-        const result = await perform(command)
-        if (!current()) return true
-        const card = cardOf(command, result)
-        react(card !== null && command.verb === 'read' ? 'display' : 'settled')
-        publish({ type: 'tool_result', turnId, callId, name, ok: true, result, at: at() })
-        if (card !== null) publish({ type: 'display', turnId, text: card, at: at() })
-        inFlight = null
-        publish({ type: 'done', turnId, outcome: 'done', at: at() })
-      } catch (error) {
-        if (!current()) return true
-        react('failed')
-        const message = error instanceof Error ? error.message : String(error)
-        publish({ type: 'tool_result', turnId, callId, name, ok: false, error: message, at: at() })
-        inFlight = null
-        publish({ type: 'done', turnId, outcome: 'failed', at: at() })
-      } finally {
-        release?.()
-        try {
-          tracer?.summarize(turnId)
-        } catch (error) {
-          reportFault('run.commandRunner.summarize', error, { turnId })
-        }
-      }
       return true
     },
   }

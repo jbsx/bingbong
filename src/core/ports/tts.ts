@@ -34,7 +34,10 @@ export interface AudioDucker {
   restore(): void
 }
 
-/** Answers "is anything being said right now" — the confirmation voice window waits for the prompt to finish. */
+/** Answers "is anything being said right now" — the mic takes no Utterance while a line plays (#326). */
 export interface TtsIdle {
+  /** Whether a line is being synthesized or played now. */
+  isSpeaking(): boolean
+  /** Resolves when nothing is being said. */
   waitIdle(): Promise<void>
 }
