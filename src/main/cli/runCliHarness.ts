@@ -1,7 +1,6 @@
 import { createInterface } from 'node:readline'
-import { mkdir, writeFile } from 'node:fs/promises'
-import { dirname } from 'node:path'
 import type { Readable, Writable } from 'node:stream'
+import { COMMAND_HELP_LINES } from '../../core/command/help'
 import type { PipelineEvent } from '../../core/pipeline/events'
 import type { CommandRunOptions } from '../run/commandRunner'
 
@@ -11,13 +10,9 @@ import type { CommandRunOptions } from '../run/commandRunner'
 // still works and plain words work too. The harness owns only the REPL:
 // `help` and `quit` are its own, everything else is one Command, and what
 // it prints is what the runner published for that Command's turn — the
-// action's outcome line, a Page Read, a failure as `error: …`.
-
-/** Writes a captured screenshot to disk, creating parent directories. */
-export async function saveScreenshotFile(path: string, bytes: Uint8Array): Promise<void> {
-  await mkdir(dirname(path), { recursive: true })
-  await writeFile(path, bytes)
-}
+// action's outcome line, a Page Read, a failure as `error: …`. The harness
+// mints the turn id it submits under, so a spoken Command landing meanwhile
+// is never printed as the typed line's.
 
 export interface CliHarnessDeps {
   /** The window's Command runner: one typed line, read and performed (#324). */
@@ -29,22 +24,7 @@ export interface CliHarnessDeps {
   exit(): void
 }
 
-const HELP_TEXT = [
-  'a line is one command — plain words or the grammar:',
-  '  open <site or words>     a bare word opens its .com, a url is opened, other words are searched',
-  '  search for <words>       search the words',
-  '  click <label or ref>     click the element the label names, or ref <n> from the last read',
-  '  type <text> in <field>   type into the field the label names (or: type <ref> <text>)',
-  '  scroll up|down           scroll the page',
-  '  back | forward           move in history',
-  '  press enter|escape|space|up|down|left|right [n]',
-  '  read                     print a numbered-ref snapshot of visible interactive elements',
-  '  clear                    clear the focused field',
-  '  screenshot [path]        save a jpeg screenshot (default: the downloads dir)',
-  '  stop                     interrupt the command in flight',
-  '  help                     this text',
-  '  quit                     exit the app',
-].join('\n')
+const HELP_TEXT = [...COMMAND_HELP_LINES, '  quit | exit              exit the app'].join('\n')
 
 const PROMPT = 'bingbong> '
 
@@ -69,28 +49,26 @@ export function runCliHarness(deps: CliHarnessDeps): Promise<void> {
   }
 
   let finished = false
+  let lineCount = 0
   let closeInput: () => void = () => {}
 
-  /** Runs one line as a Command and prints what its turn published. */
+  /** Runs one line as a Command under a turn id of the harness's own, and prints what that turn published. */
   async function runCommand(line: string): Promise<void> {
-    // The turn is known from its `command` event; nothing from another
-    // turn (a superseded Command's late done) is printed here.
-    let turnId: string | null = null
+    lineCount += 1
+    const turnId = `cli-${lineCount}-${Date.now().toString(36)}`
     let printed = false
     let action: string | null = null
     const release = subscribe((event) => {
-      if (event.type === 'command' && turnId === null) {
-        turnId = event.turnId
-        if (event.dropped) {
-          write(`not a command: ${JSON.stringify(event.text)}\n`)
-          printed = true
-        } else {
-          action = event.action ?? null
-        }
-        return
-      }
-      if (turnId === null || event.turnId !== turnId) return
+      if (!('turnId' in event) || event.turnId !== turnId) return
       switch (event.type) {
+        case 'command':
+          if (event.dropped) {
+            write(`not a command: ${JSON.stringify(event.text)}\n`)
+            printed = true
+          } else {
+            action = event.action ?? null
+          }
+          return
         case 'tool_result':
           if (event.ok) {
             const result = typeof event.result === 'string' ? event.result : JSON.stringify(event.result)
@@ -117,7 +95,7 @@ export function runCliHarness(deps: CliHarnessDeps): Promise<void> {
       }
     })
     try {
-      await run(line, { source: 'typed' })
+      await run(line, { source: 'typed', turnId })
       // A Command with no tool behind it (stop) prints its action.
       if (!printed && action !== null) write(`${action}\n`)
     } finally {

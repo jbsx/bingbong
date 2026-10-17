@@ -1,4 +1,4 @@
-import type { CommandLogRecord, CommandReading } from '../command/decisionRecord'
+import type { CommandLogRecord, CommandReading, MisfireSignal } from '../command/decisionRecord'
 import type { PerfSpanRecord } from './perfTracer'
 import { formatMs, nearestRankPercentile } from '../report/stats.ts'
 
@@ -39,7 +39,7 @@ export interface DecisionReport {
   jevLatency: { p50: number; p95: number } | null
   misfires: number
   /** Misfires by the signal that recorded them. */
-  misfiresBySignal: Record<string, number>
+  misfiresBySignal: Partial<Record<MisfireSignal, number>>
 }
 
 function statsOf(verb: string, durations: readonly number[]): ReactionStats {

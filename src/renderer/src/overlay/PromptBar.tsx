@@ -36,7 +36,7 @@ export function PromptBar() {
     setFeedback('')
     const taken = await submitCommand(text)
     if (!taken) {
-      setFeedback('Not taken — try again.')
+      setFeedback('No window took the command — try again.')
       setDraft((current) => (current === '' ? text : current))
     }
   }

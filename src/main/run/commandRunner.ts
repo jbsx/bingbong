@@ -5,6 +5,7 @@ import type { CommandRunState } from '../../core/pipeline/runState'
 import type { PageSnapshot } from '../../core/browser/snapshot'
 import type { PerfTracer } from '../../core/perf/perfTracer'
 import { commandRefOf, describeCommand, type Command, type CommandPage } from '../../core/command/command'
+import { COMMAND_HELP } from '../../core/command/help'
 import { bestGuess, localMatch } from '../../core/command/localMatch'
 import { commandQuestions, commandState, readCommandAnswers } from '../../core/command/jevReading'
 import { openAddress } from '../../core/command/openAddress'
@@ -39,17 +40,18 @@ export interface CommandRunOptions {
 export interface CommandRunner {
   /**
    * Reads one line as a Command and performs it. A Command already in
-   * flight is superseded: its late result reaches nothing. Resolves false
-   * for a blank line — nothing is published then.
+   * flight — or still being read — is superseded: the later Command
+   * stands and the earlier one's late result reaches nothing. Resolves
+   * false for a blank line — nothing is published then.
    */
   run(text: string, options?: CommandRunOptions): Promise<boolean>
   getState(): CommandRunState
-  /** Interrupt the Command in flight (Escape, the Abort Head). Returns whether one was. */
+  /** Interrupt the Command in flight or being read (Escape, the Abort Head). Returns whether one was. */
   abort(): boolean
   /**
    * Speech started (#324): collect the page's refs now, in parallel with
    * the speech, so the list is in hand at the Endpoint. The next Command
-   * reads against it.
+   * reads against it; a Command that needs no page lets it go.
    */
   prepare(): void
 }
@@ -74,11 +76,12 @@ export interface CommandRunnerDeps {
 /** How much of a Page Read the Feed card shows. */
 const DISPLAY_LIMIT = 4_000
 
-const HELP_TEXT = [
-  'say or type a command: open <site or words>, search for <words>, click <label or ref>, type <text> in <field>,',
-  'scroll up|down, back, forward, press enter|escape|space|up|down|left|right, read, clear, stop',
-  'the CLI grammar still works: navigate <url>, read, click <ref>, type <ref> <text>, scroll up|down, press <key> [n], screenshot [path], back',
-].join('\n')
+/**
+ * How long a page collected at speech start stays good for: an Utterance
+ * can be at most this long, so a prepared page older than this belongs to
+ * speech the VAD let go, and the page may have moved on since.
+ */
+const PREPARED_MAX_AGE_MS = 30_000
 
 /** The page the reading sees when none can be collected: the address alone, no refs. */
 function blankPage(browser: BrowserController): CommandPage {
@@ -122,15 +125,28 @@ function toolOf(command: Command): { name: string; args: Record<string, unknown>
   }
 }
 
+/** A page collected at speech start, and when. */
+interface PreparedPage {
+  readonly at: number
+  readonly snapshot: Promise<PageSnapshot | null>
+}
+
 export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   const { browser, publish, tracer } = deps
   /** The Command whose action is in flight, if one is. */
   let inFlight: { turnId: string; generation: number } | null = null
   let generation = 0
+  /**
+   * Counts every submission and abort: a reading that finishes after a
+   * later submission (or an abort) is stale, and fires nothing.
+   */
+  let submitted = 0
+  /** The Command being read, if one is — so abort reaches it and the state says running. */
+  let reading: { turnId: string; submission: number } | null = null
   let screenshotCount = 0
   /** The page collected at speech start, waiting for the Endpoint's Command. */
-  let prepared: Promise<PageSnapshot | null> | null = null
-  /** The Command before, for the Misfire signal. */
+  let prepared: PreparedPage | null = null
+  /** The Command that last fired, for the Misfire signal. */
   let previous: { turnId: string; verb: Command['verb']; key?: Command['key']; at: number } | null = null
 
   const at = (): number => deps.now()
@@ -152,14 +168,15 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     }
   }
 
-  /** The page the Command is read against: the one collected at speech start, else one collected now. */
-  async function collectPage(): Promise<CommandPage> {
-    const pending = prepared
-    prepared = null
-    const snapshot = pending !== null ? await pending : await browser.collectPage().catch((error: unknown) => {
-      reportFault('run.commandRunner.collectPage', error)
-      return null
-    })
+  /** The page the Command is read against: the one prepared at speech start while it is fresh, else one collected now. */
+  async function collectPage(pending: PreparedPage | null): Promise<CommandPage> {
+    const fresh = pending !== null && monotonic() - pending.at <= PREPARED_MAX_AGE_MS
+    const snapshot = fresh
+      ? await pending.snapshot
+      : await browser.collectPage().catch((error: unknown) => {
+          reportFault('run.commandRunner.collectPage', error)
+          return null
+        })
     return snapshot === null ? blankPage(browser) : pageOf(snapshot)
   }
 
@@ -182,10 +199,10 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   }
 
   /** The Local Match first; else one Jev call; else the best guess. */
-  async function read(text: string): Promise<Reading> {
+  async function read(text: string, pending: PreparedPage | null): Promise<Reading> {
     const quick = localMatch(text, [])
     if (pageFree(quick)) return { command: quick, page: blankPage(browser), reading: 'local_match', jevAsked: false }
-    const page = await collectPage()
+    const page = await collectPage(pending)
     const local = localMatch(text, page.refs)
     if (local !== null) return { command: local, page, reading: 'local_match', jevAsked: false }
     const model = deps.decisionModel()
@@ -209,20 +226,24 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     }
   }
 
+  /** The chosen ref lights as the action lands — after it, never before: the flash is a DOM change of our own making, and must not be the effect the Reaction closes on. */
+  function flash(ref: number): void {
+    void browser.showRef(ref).catch((error: unknown) => reportFault('run.commandRunner.showRef', error))
+  }
+
   async function perform(command: Command): Promise<string> {
     switch (command.verb) {
       case 'open':
         return browser.navigate(openAddress(command.slot ?? '', command.search === true))
       case 'click': {
-        const click = browser.click(command.target ?? 0)
-        // The chosen ref lights as the click lands: in parallel, never before it.
-        void browser.showRef(command.target ?? 0).catch((error: unknown) => reportFault('run.commandRunner.showRef', error))
-        return click
+        const result = await browser.click(command.target ?? 0)
+        flash(command.target ?? 0)
+        return result
       }
       case 'type': {
-        const typed = browser.type(command.target ?? 0, command.slot ?? '')
-        void browser.showRef(command.target ?? 0).catch((error: unknown) => reportFault('run.commandRunner.showRef', error))
-        return typed
+        const result = await browser.type(command.target ?? 0, command.slot ?? '')
+        flash(command.target ?? 0)
+        return result
       }
       case 'scroll_up':
         return browser.scroll('up')
@@ -249,7 +270,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         return `screenshot saved: ${path}`
       }
       case 'help':
-        return HELP_TEXT
+        return COMMAND_HELP
       case 'stop':
         return 'stopped'
       case 'none':
@@ -265,15 +286,25 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   }
 
   return {
-    getState: () => (inFlight === null ? 'idle' : 'running'),
+    getState: () => (inFlight === null && reading === null ? 'idle' : 'running'),
 
-    abort: () => cancelInFlight(),
+    abort() {
+      const had = reading !== null || inFlight !== null
+      // A reading under way is stale from here: when its answer comes, it fires nothing.
+      submitted += 1
+      reading = null
+      cancelInFlight()
+      return had
+    },
 
     prepare() {
-      prepared = browser.collectPage().catch((error: unknown) => {
-        reportFault('run.commandRunner.prepare', error)
-        return null
-      })
+      prepared = {
+        at: monotonic(),
+        snapshot: browser.collectPage().catch((error: unknown) => {
+          reportFault('run.commandRunner.prepare', error)
+          return null
+        }),
+      }
     },
 
     async run(text, options) {
@@ -282,23 +313,26 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       const turnId = options?.turnId ?? tracer?.mintTurnId() ?? `turn-${at().toString(36)}`
       const source: CommandSource = options?.source ?? 'typed'
       const endpointAt = options?.endpointAt ?? monotonic()
+      // This submission: a reading still under way for an earlier one is stale now.
+      submitted += 1
+      const submission = submitted
+      reading = { turnId, submission }
+      // The prepared page is this Command's, whether it needs it or not.
+      const pending = prepared
+      prepared = null
 
-      const { command, page, reading, jevAsked, jev } = await read(trimmed)
+      const { command, page, reading: readingKind, jevAsked, jev } = await read(trimmed, pending)
+      if (reading !== null && reading.submission === submission) reading = null
       const firedAt = at()
 
-      // The Misfire signal (ADR 0076): this Command as the recovery of the one before.
-      if (previous !== null) {
-        const signal = misfireSignal(previous, { verb: command.verb, key: command.key, at: firedAt })
-        if (signal !== null) log({ type: 'misfire', turnId: previous.turnId, at: firedAt, signal, signalTurnId: turnId, withinMs: firedAt - previous.at })
-      }
       const targetLabel = command.target === null ? undefined : page.refs.find((ref) => ref.ref === command.target)?.label
-      log({
+      const record: DecisionRecord = {
         type: 'decision',
         turnId,
         at: firedAt,
         source,
         transcript: trimmed,
-        reading,
+        reading: readingKind,
         verb: command.verb,
         target: command.target,
         ...(targetLabel !== undefined ? { targetLabel } : {}),
@@ -306,8 +340,16 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         jevAsked,
         ...(jev !== undefined ? { jev } : {}),
         ...(options?.truncated ? { truncated: true } : {}),
-      } as DecisionRecord)
-      previous = { turnId, verb: command.verb, key: command.key, at: firedAt }
+      }
+      log(record)
+
+      if (submission !== submitted) {
+        // A later Command (or an abort) arrived while this one was being
+        // read: the later one stands. The reading is data; nothing fires.
+        publish({ type: 'command', turnId, text: trimmed, action: 'abandoned', dropped: true, at: firedAt })
+        publish({ type: 'done', turnId, outcome: 'cancelled', at: at() })
+        return true
+      }
 
       if (command.verb === 'none') {
         // An Utterance read as no Command: one greyed entry of the words, nothing else.
@@ -315,6 +357,13 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         publish({ type: 'done', turnId, outcome: 'done', at: at() })
         return true
       }
+
+      // The Misfire signal (ADR 0076): this Command as the recovery of the one that fired before it.
+      if (previous !== null) {
+        const signal = misfireSignal(previous, { verb: command.verb, key: command.key, at: firedAt })
+        if (signal !== null) log({ type: 'misfire', turnId: previous.turnId, at: firedAt, signal, signalTurnId: turnId, withinMs: firedAt - previous.at })
+      }
+      previous = { turnId, verb: command.verb, key: command.key, at: firedAt }
 
       // A later Command supersedes the one in flight; `stop` is only that.
       cancelInFlight()
@@ -339,7 +388,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       const react = (effect: string): void => {
         if (reacted) return
         reacted = true
-        span(turnId, monotonic() - endpointAt, { verb: command.verb, effect, reading, source })
+        span(turnId, monotonic() - endpointAt, { verb: command.verb, effect, reading: readingKind, source })
       }
       const release = deps.onEffect?.((effect) => {
         if (current()) react(effect)

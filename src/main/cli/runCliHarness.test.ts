@@ -233,6 +233,38 @@ describe('runCliHarness', () => {
     await cli.done
   })
 
+  it('prints only its own turn: a spoken Command landing mid-line is not mistaken for the typed one', async () => {
+    const listeners = new Set<(event: PipelineEvent) => void>()
+    const publish = (event: PipelineEvent): void => {
+      for (const listener of [...listeners]) listener(event)
+    }
+    const cli = harnessWith({
+      subscribe: (listener) => {
+        listeners.add(listener)
+        return () => listeners.delete(listener)
+      },
+      run: async (line, options) => {
+        const turnId = options.turnId!
+        expect(turnId).toMatch(/^cli-1-/)
+        // A spoken Command's turn, published while the typed line runs.
+        publish({ type: 'command', turnId: 'voice-7', text: 'scroll down', action: 'scroll down', at: 1 })
+        publish({ type: 'tool_result', turnId: 'voice-7', callId: 'voice-7-1', name: 'scroll', ok: true, result: 'scrolled down: x=0 y=360', at: 2 })
+        publish({ type: 'command', turnId, text: line, action: 'click [2] "Sign in"', at: 3 })
+        publish({ type: 'tool_result', turnId, callId: `${turnId}-1`, name: 'click', ok: true, result: 'clicked [2]: urlChanged=false', at: 4 })
+        publish({ type: 'done', turnId, outcome: 'done', at: 5 })
+        return true
+      },
+    })
+    await cli.expectOutput('bingbong> ')
+
+    cli.input.write('click sign in\n')
+    await cli.expectOutput('clicked [2]: urlChanged=false')
+    expect(cli.readOutput()).not.toContain('scrolled down')
+
+    cli.input.write('quit\n')
+    await cli.done
+  })
+
   it('resolves when stdin closes without quit', async () => {
     const cli = harnessWith()
     await cli.expectOutput('bingbong> ')

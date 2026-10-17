@@ -5,6 +5,7 @@ import type { CommandLogRecord } from '../../core/command/decisionRecord'
 import type { DecisionAnswer, DecisionChoiceQuestion, DecisionModel, DecisionQuestions, DecisionRequest, DecisionResult, DecisionUnavailableReason } from '../../core/ports/decisionModel'
 import { FakeBrowser, fakePerfHarness, flushMicrotasks } from '../../core/testing/doubles'
 import type { ActionEffect } from '../browser/createCdpBrowserController'
+import { JEV_VERBS } from '../../core/command/command'
 import { createCommandRunner, type CommandRunner } from './commandRunner'
 
 // The Command runner (#324, ADR 0076): a typed or spoken line becomes one
@@ -104,9 +105,18 @@ describe('a Command the Local Match settles', () => {
     expect(events.some((event) => event.type === 'speak')).toBe(false)
   })
 
-  it('fires at once with no Jev call: a plain verb and the one ref its label names, flashing the ref as the click lands', async () => {
+  it('fires at once with no Jev call: a plain verb and the one ref its label names, flashing the ref as the click lands and never before it', async () => {
     const { browser, events, decision, runner } = harness()
-    await runner.run('click sign in', { source: 'spoken' })
+    let release: () => void = () => {}
+    const click = browser.click.bind(browser)
+    browser.click = (ref) => new Promise((resolve) => (release = () => void click(ref).then(resolve)))
+    const run = runner.run('click sign in', { source: 'spoken' })
+    await flushMicrotasks()
+    // The flash is a DOM change of the browser's own making: it must not be
+    // the first effect the Reaction closes on, so it follows the click.
+    expect(browser.shownRefs).toEqual([])
+    release()
+    await run
     expect(browser.clicks).toEqual([2])
     expect(browser.shownRefs).toEqual([2])
     expect(decision.requests).toEqual([])
@@ -185,6 +195,7 @@ describe('a Command the Local Match cannot settle', () => {
     expect(request.state).toContain('[1] link "Home" https://example.com/1')
     expect(request.state).toContain('[3] input[search] "Search"')
     expect(request.state).not.toContain('<page>')
+    expect(Object.keys((request.questions.verb as DecisionChoiceQuestion).options)).toEqual([...JEV_VERBS])
     expect(Object.keys((request.questions.target as DecisionChoiceQuestion).options)).toEqual(['none', 'ref-1', 'ref-2', 'ref-3'])
     expect(Object.keys((request.questions.slot as DecisionChoiceQuestion).options)).toContain('s0-2')
     expect(browser.clicks).toEqual([1])
@@ -225,6 +236,96 @@ describe('a Command the Local Match cannot settle', () => {
     expect(browser.navigations).toEqual([])
     expect(records[0]).toMatchObject({ type: 'decision', verb: 'none', reading: 'jev', jev: { confidence: { verb: 0.7 } } })
     expect(runner.getState()).toBe('idle')
+  })
+})
+
+describe('a Command still being read', () => {
+  /** A Jev that answers only when released. */
+  function slowJev(decision: CountingDecisionModel): () => void {
+    let release: () => void = () => {}
+    const ask = decision.ask.bind(decision)
+    decision.ask = ((request) => new Promise((resolve) => (release = () => void ask(request).then(resolve)))) as typeof decision.ask
+    return () => release()
+  }
+
+  it('is superseded by a later Command that fires first: its reading is abandoned, the later Command stands', async () => {
+    const { browser, events, decision, runner, records, perf } = harness()
+    const release = slowJev(decision)
+    decision.script.push({ answers: { verb: choice('click'), target: choice('ref-1'), slot: choice('none') } })
+    const first = runner.run('take me home', { source: 'spoken' })
+    await flushMicrotasks()
+    expect(runner.getState()).toBe('running')
+
+    expect(await runner.run('scroll down', { source: 'spoken' })).toBe(true)
+    release()
+    expect(await first).toBe(true)
+
+    // The later Command acted; the earlier one never did, and did not cancel it.
+    expect(browser.scrolls).toEqual(['down'])
+    expect(browser.clicks).toEqual([])
+    const scrollTurn = (events.find((event) => event.type === 'command' && event.text === 'scroll down') as { turnId: string }).turnId
+    expect(events.filter((event) => 'turnId' in event && event.turnId === scrollTurn).at(-1)).toMatchObject({ type: 'done', outcome: 'done' })
+    const abandoned = events.filter((event) => event.type === 'command' && event.text === 'take me home')
+    expect(abandoned).toHaveLength(1)
+    expect(abandoned[0]).toMatchObject({ dropped: true, action: 'abandoned' })
+    const abandonedTurn = (abandoned[0] as { turnId: string }).turnId
+    expect(types(events.filter((event) => 'turnId' in event && event.turnId === abandonedTurn))).toEqual(['command', 'done'])
+    expect(events.filter((event) => 'turnId' in event && event.turnId === abandonedTurn).at(-1)).toMatchObject({ outcome: 'cancelled' })
+    // The reading is still recorded — it is data — but no Reaction was measured for it.
+    expect(records.filter((record) => record.type === 'decision' && record.turnId === abandonedTurn)).toHaveLength(1)
+    expect(perf.records.filter((record) => record.stage === 'reaction' && record.turnId === abandonedTurn)).toEqual([])
+  })
+
+  it('is interrupted by abort while it waits on Jev: nothing fires when the answer comes', async () => {
+    const { browser, events, decision, runner } = harness()
+    const release = slowJev(decision)
+    decision.script.push({ answers: { verb: choice('click'), target: choice('ref-1'), slot: choice('none') } })
+    const run = runner.run('take me home', { source: 'spoken' })
+    await flushMicrotasks()
+
+    expect(runner.abort()).toBe(true)
+    expect(runner.getState()).toBe('idle')
+    release()
+    await run
+    expect(browser.clicks).toEqual([])
+    expect(types(events)).toEqual(['command', 'done'])
+    expect(events[0]).toMatchObject({ dropped: true, action: 'abandoned' })
+    expect(events[1]).toMatchObject({ outcome: 'cancelled' })
+  })
+
+  it('reads against the page prepared at speech start once, and a page-free Command lets a prepared page go', async () => {
+    const { browser, decision, runner } = harness()
+    runner.prepare()
+    await flushMicrotasks()
+    // The page moved on after the prepared collect: only "Later" is on it now.
+    browser.snapshot = { ...browser.snapshot, refs: [ref(5, 'button', 'Later')] }
+    await runner.run('scroll down', { source: 'spoken' })
+    await runner.run('click later', { source: 'spoken' })
+    expect(browser.clicks).toEqual([5])
+    expect(decision.requests).toEqual([])
+  })
+
+  it('lets a prepared page go once it is older than an Utterance can be', async () => {
+    const { browser, decision, runner, perf } = harness()
+    runner.prepare()
+    await flushMicrotasks()
+    browser.snapshot = { ...browser.snapshot, refs: [ref(5, 'button', 'Later')] }
+    perf.state.monotonicMs += 31_000
+    await runner.run('click later', { source: 'spoken' })
+    expect(browser.clicks).toEqual([5])
+    expect(decision.requests).toEqual([])
+  })
+})
+
+describe('the Misfire signal', () => {
+  it('reads past a dropped Utterance: the recovery counts against the Command that fired', async () => {
+    const { decision, runner, records } = harness()
+    await runner.run('scroll down', { source: 'spoken' })
+    decision.script.push({ answers: { verb: choice('none'), target: choice('none'), slot: choice('none') } })
+    await runner.run('um never mind', { source: 'spoken' })
+    await runner.run('back', { source: 'spoken' })
+    const scrollTurn = records.find((record) => record.type === 'decision' && record.verb === 'scroll_down')!.turnId
+    expect(records.filter((record) => record.type === 'misfire')).toEqual([expect.objectContaining({ turnId: scrollTurn, signal: 'back' })])
   })
 })
 

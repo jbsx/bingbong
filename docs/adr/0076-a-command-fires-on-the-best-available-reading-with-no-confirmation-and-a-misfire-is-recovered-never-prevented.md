@@ -94,7 +94,28 @@ Command recovers rather than a question asked:
   does; otherwise it is an address.
 - **A `none` reading records a decision record but no `reaction` span.**
   Nothing fired, so there is no Reaction to measure; the Feed shows the
-  words greyed and the `command` event carries `dropped`.
+  words greyed and the `command` event carries `dropped`. It does not
+  become the Command the next Misfire signal is read against: a "back"
+  after "um, never mind" counts against the Command that fired before it.
+- **Superseding reaches the reading, not only the action.** A Command
+  still waiting on Jev when a later Command arrives — or when Escape is
+  pressed — is abandoned when its answer comes: its decision record is
+  written (the reading is data), the Feed shows its words greyed with
+  `abandoned`, and nothing fires. Otherwise a slow Jev read would fire
+  after, and cancel, the faster Command that came later.
+- **The ref flashes after the action lands, never in parallel with it.**
+  The flash is a DOM change of the app's own making; started alongside the
+  click it could be the first mutation the readiness wait and the Reaction
+  observed. It follows the action's result instead, well inside the next
+  Command's time.
+- **A prepared page is one Command's and lives 30 s.** The page collected
+  at speech start goes to the next Command whether it needs the refs or
+  not — "scroll down" lets it go — and one older than an Utterance can be
+  (the 30 s cap) is discarded for a fresh collect: it belonged to speech
+  the VAD let go, and the page may have moved on.
+- **`read` closes its Reaction on the Card.** Nothing speaks on this
+  branch's increment 1, so the issue's "first TTS sample played" has no
+  path; a Page Read's first observable effect is its `display`.
 - **A truncated Utterance** (the 30 s cap) is recorded on its decision
   record and never shown as an error.
 - **`screenshot` and `help` stay grammar-only verbs**: Jev is offered the
