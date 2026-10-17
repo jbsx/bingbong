@@ -58,12 +58,16 @@ function choice(label: string, confidence = 0.9, probabilities: Record<string, n
   return { type: 'choice', choice: label, confidence, probabilities }
 }
 
-function harness(options?: { decision?: null }) {
+function harness(options?: { decision?: null; learned?: string[] }) {
   const browser = new FakeBrowser()
   browser.snapshot = { ...browser.snapshot, url: 'https://example.com/', title: 'Example', refs: PAGE_REFS }
   const events: PipelineEvent[] = []
   const records: CommandLogRecord[] = []
   const screenshots: string[] = []
+  const admitted: string[] = []
+  const proposed: string[] = []
+  const observed: string[] = []
+  const learned = options?.learned ?? []
   const perf = fakePerfHarness()
   const effectListeners = new Set<(effect: ActionEffect) => void>()
   const decision = new CountingDecisionModel()
@@ -84,11 +88,20 @@ function harness(options?: { decision?: null }) {
     saveScreenshot: async (path) => {
       screenshots.push(path)
     },
+    terms: {
+      learned: () => learned,
+      admit: (term) => {
+        admitted.push(term)
+        if (!learned.includes(term)) learned.push(term)
+      },
+      propose: (term) => proposed.push(term),
+      observe: (text) => observed.push(text),
+    },
   })
   const observe = (effect: ActionEffect): void => {
     for (const listener of effectListeners) listener(effect)
   }
-  return { browser, events, records, screenshots, perf, decision, runner, observe, setWall: (at: number) => (wall = at) }
+  return { browser, events, records, screenshots, perf, decision, runner, observe, admitted, proposed, observed, setWall: (at: number) => (wall = at) }
 }
 
 const types = (events: PipelineEvent[]): string[] => events.map((event) => event.type)
@@ -519,5 +532,123 @@ describe('what every Command records', () => {
     await runner.run('screenshot')
     expect(screenshots).toEqual(['/shots/screenshot-1.jpg'])
     expect(events.find((event) => event.type === 'display')).toMatchObject({ text: 'screenshot saved: /shots/screenshot-1.jpg' })
+  })
+})
+
+describe('the Name Match (ADR 0077)', () => {
+  /** A YouTube-shaped page: the channel's name on a link, in a suggestion, and in the title. */
+  const NAMED_REFS: SnapshotRef[] = [
+    ...PAGE_REFS,
+    ref(4, 'link', 'Linus Tech Tips'),
+    ref(5, 'button', 'linus tech tips', { className: 'suggestion' }),
+    ref(6, 'link', 'The $5000 Gaming PC - Linus Tech Tips'),
+  ]
+  const decision = (record: CommandLogRecord): Extract<CommandLogRecord, { type: 'decision' }> => {
+    if (record.type !== 'decision') throw new Error('not a decision record')
+    return record
+  }
+
+  it('carries a spoken search whose words sound like a name on the page as that name, records what was heard, and admits the name', async () => {
+    const { browser, events, records, admitted, runner } = harness()
+    browser.snapshot = { ...browser.snapshot, title: 'Linus Tech Tips - YouTube', refs: NAMED_REFS }
+    expect(await runner.run('search line stack tips', { source: 'spoken' })).toBe(true)
+    expect(browser.navigations[0]).toContain('linus')
+    expect(browser.navigations[0]).not.toContain('stack')
+    expect(events[0]).toMatchObject({ type: 'command', text: 'search line stack tips', action: 'open linus tech tips' })
+    expect(decision(records[0])).toMatchObject({ slot: 'linus tech tips', slotHeard: 'line stack tips', slotFrom: 'page', reading: 'local_match' })
+    expect(admitted).toEqual(['linus tech tips'])
+  })
+
+  it('types the page\'s spelling into the field named, keeping the words around the name', async () => {
+    const { browser, records, runner } = harness()
+    browser.snapshot = { ...browser.snapshot, refs: NAMED_REFS }
+    await runner.run('type Linus Tech dips laptop in search', { source: 'spoken' })
+    expect(browser.typed).toEqual([{ ref: 3, text: 'linus tech tips laptop' }])
+    expect(decision(records[0])).toMatchObject({ slotHeard: 'Linus Tech dips', slotFrom: 'page' })
+  })
+
+  it('reads a typed line as typed: a name is matched only in speech', async () => {
+    const { browser, records, admitted, runner } = harness()
+    browser.snapshot = { ...browser.snapshot, refs: NAMED_REFS }
+    await runner.run('search line stack tips')
+    expect(browser.navigations[0]).toContain('stack')
+    expect(decision(records[0]).slotHeard).toBeUndefined()
+    expect(admitted).toEqual([])
+  })
+
+  it('leaves a Slot alone that already carries the name, and one that sounds like no name', async () => {
+    const { browser, records, admitted, runner } = harness()
+    browser.snapshot = { ...browser.snapshot, refs: NAMED_REFS }
+    await runner.run('search linus tech tips', { source: 'spoken' })
+    await runner.run('search rust async book', { source: 'spoken' })
+    expect(records.filter((record) => record.type === 'decision').map((record) => decision(record).slotHeard)).toEqual([undefined, undefined])
+    expect(browser.navigations[1]).toContain('rust')
+    expect(admitted).toEqual([])
+  })
+
+  it('matches a Learned Term the page does not show, after the Page Terms, without admitting it again', async () => {
+    const { browser, records, admitted, runner } = harness({ learned: ['elon musk'] })
+    await runner.run('type elon mask in search', { source: 'spoken' })
+    expect(browser.typed).toEqual([{ ref: 3, text: 'elon musk' }])
+    expect(decision(records[0])).toMatchObject({ slotHeard: 'elon mask', slotFrom: 'learned' })
+    expect(admitted).toEqual([])
+  })
+
+  it('never rewrites an address or a key: "open youtube" opens youtube', async () => {
+    const { browser, records, runner } = harness({ learned: ['you tube music'] })
+    await runner.run('open youtube', { source: 'spoken' })
+    expect(browser.navigations).toEqual(['https://youtube.com'])
+    expect(decision(records[0]).slotHeard).toBeUndefined()
+  })
+
+  it('waits for the page collected at speech start before reading a spoken search, so the Page Terms are in hand', async () => {
+    const { browser, records, runner } = harness()
+    browser.snapshot = { ...browser.snapshot, refs: NAMED_REFS }
+    void runner.prepare()
+    // The page moves on after speech start; the Command reads against the page spoken over.
+    browser.snapshot = { ...browser.snapshot, refs: PAGE_REFS }
+    await runner.run('search liner stack tips', { source: 'spoken' })
+    expect(decision(records[0])).toMatchObject({ slot: 'linus tech tips', slotFrom: 'page' })
+  })
+
+  it('tells the Learned Terms every spoken transcript, so the terms it carries stay in use', async () => {
+    const { observed, runner } = harness()
+    await runner.run('scroll down', { source: 'spoken' })
+    await runner.run('scroll down')
+    expect(observed).toEqual(['scroll down'])
+  })
+})
+
+describe('learning from a retry chain (ADR 0077)', () => {
+  it('proposes the last Slot of a chain of similar-sounding Slots once the user moves on', async () => {
+    const { proposed, runner } = harness()
+    await runner.run('search line of factors', { source: 'spoken' })
+    await runner.run('back', { source: 'spoken' })
+    await runner.run('search line of tactics', { source: 'spoken' })
+    expect(proposed).toEqual([])
+    await runner.run('click sign in', { source: 'spoken' })
+    expect(proposed).toEqual(['line of tactics'])
+    // The chain is spent: moving on again proposes nothing more.
+    await runner.run('scroll down', { source: 'spoken' })
+    expect(proposed).toEqual(['line of tactics'])
+  })
+
+  it('proposes nothing for a single search, or for two that sound nothing alike', async () => {
+    const { proposed, runner } = harness()
+    await runner.run('search cats', { source: 'spoken' })
+    await runner.run('click sign in', { source: 'spoken' })
+    await runner.run('search rust async book', { source: 'spoken' })
+    await runner.run('search linus tech tips', { source: 'spoken' })
+    await runner.run('click sign in', { source: 'spoken' })
+    expect(proposed).toEqual([])
+  })
+
+  it('lets a chain lapse after a minute', async () => {
+    const { proposed, runner, setWall } = harness()
+    await runner.run('search line of factors', { source: 'spoken' })
+    setWall(1_700_000_000_000 + 120_000)
+    await runner.run('search line of tactics', { source: 'spoken' })
+    await runner.run('click sign in', { source: 'spoken' })
+    expect(proposed).toEqual([])
   })
 })

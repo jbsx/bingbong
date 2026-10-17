@@ -71,8 +71,28 @@ _Avoid_: run, task, request, intent
 **Slot**:
 The words of an Utterance a Command carries verbatim: the search terms, the
 text to type, the address to open. Chosen from the Utterance's own words,
-never composed.
+never composed — a Name Match may carry them in the page's spelling, and
+that is the one amendment.
 _Avoid_: argument, parameter, entity, free text
+
+**Page Terms**:
+The names the page shows at the moment speech starts — link titles, channel
+names, the suggestions under a search box, the page's title — read off the
+page collected at speech start, ranked by how often the page shows them and
+capped. They bias the decode of the one Utterance spoken over that page,
+less than the Bias Lexicon does, and they are the first candidates a Name
+Match reads against. Replaced at the next speech start; never kept.
+_Avoid_: dynamic vocabulary, on-screen hotwords, context phrases
+
+**Name Match**:
+Reading a spoken Slot — search terms, text to type — after recognition
+against the names it could have been: the Page Terms, then the Learned
+Terms, by sound. The nearest within tolerance is the spelling the Command
+carries; what was heard stays on the decision record. An address and a key
+are never matched, a typed line never is, and nothing asks "did you mean":
+a wrong Name Match is a Misfire. It is how the recogniser is allowed to be
+wrong about a name.
+_Avoid_: fuzzy match, autocorrect, spell check, entity resolution
 
 **Local Match**:
 A Command settled from the Utterance and the page alone, without asking the
@@ -109,10 +129,11 @@ The compiled-in part of the Bias Lexicon: the app's shipped vocabulary.
 _Avoid_: base lexicon, default words
 
 **Mishear**:
-A divergence between what was said and what the transcript carries. The
-assistant proposes its repair at the end of its message; a proposal admits
-nothing by itself — the same proposed term must recur across Runs before it
-becomes a Learned Term. The user is never asked; the pipeline handles it.
+A divergence between what was said and what the transcript carries. On this
+branch two things repair one without asking: a Name Match carries the name
+the page shows, and the name is learned at once; a chain of retries that
+ends with the user moving on proposes its last Slot, admitted only when it
+recurs. The user is never asked; the pipeline handles it.
 _Avoid_: typo, STT error
 
 **Transcription Failure**:
@@ -130,10 +151,13 @@ measure of transcription quality; verbatim word accuracy is diagnostic.
 _Avoid_: exact match, transcript accuracy
 
 **Learned Term**:
-A Bias Lexicon entry admitted at runtime after its proposal recurred across
-Runs. Same decode effect as the Seed Lexicon; capped (default 500,
-least-recently-used evicted), survives Sessions and restarts, and is
-inspected or edited only in Settings — never voice-reachable.
+A Bias Lexicon entry admitted at runtime: a name the page witnessed a Name
+Match on is admitted at once; a name a retry chain settled on is admitted
+when it recurs. Same decode effect as the Seed Lexicon, and the second
+candidate list a Name Match reads; capped (default 500, least-recently-used
+evicted, every spoken transcript touching the terms it carries), survives
+Sessions and restarts, and is inspected or edited only in Settings — never
+voice-reachable. A term deleted there is never readmitted by either door.
 _Avoid_: custom word, user dictionary entry
 
 ### Views

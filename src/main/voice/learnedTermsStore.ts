@@ -30,6 +30,14 @@ export interface LearnedTermsStore extends LearnedTermsControls {
    * cache rebuilds only when the vocabulary actually changes.
    */
   biasPhrases(): readonly string[]
+  /**
+   * A name the page witnessed (ADR 0077): admitted at once, the page's
+   * spelling being the proof a proposal's recurrence stands in for. A
+   * rejected or seed term stays out; an admitted one is touched.
+   */
+  admit(raw: string): boolean
+  /** A name a retry chain settled on (ADR 0077): one proposal, recurrence-gated like any other. */
+  propose(raw: string): void
   /** Settings surface: admit directly and clear any rejection mark. */
   manualAdd(raw: string): boolean
   /** Settings surface: remove and plant a rejection proposals cannot cross. */
@@ -97,6 +105,26 @@ export function createLearnedTermsStore(
     biasPhrases() {
       if (union === null) union = [...BIAS_LEXICON, ...state.admitted.map((t) => t.term)]
       return union
+    },
+    admit(raw) {
+      const term = normalizeLearnedTerm(raw)
+      if (term === null || reserved.has(term) || state.rejected.includes(term)) return false
+      const at = now()
+      const next: LearnedTermsState = {
+        pending: state.pending.filter((p) => p.term !== term),
+        admitted: state.admitted.some((t) => t.term === term)
+          ? state.admitted.map((t) => (t.term === term ? { ...t, lastTouched: at } : t))
+          : [...state.admitted, { term, admittedAt: at, lastTouched: at }],
+        rejected: state.rejected,
+      }
+      commit(next)
+      return true
+    },
+    propose(raw) {
+      const term = normalizeLearnedTerm(raw)
+      if (term === null) return
+      const { state: next } = applyMishearProposals(state, [{ op: 'add', suspect: term, repair: term }], now(), reserved)
+      if (next !== state) commit(next)
     },
     manualAdd(raw) {
       const term = normalizeLearnedTerm(raw)

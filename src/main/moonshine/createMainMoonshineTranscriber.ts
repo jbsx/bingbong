@@ -4,7 +4,7 @@ import type { Transcriber } from '../../core/ports/stt'
 import type { SttModel } from '../../core/settings/settings'
 import { parseMoonshineTokenizer } from '../../core/moonshine/bpeTokenizer'
 import { BIAS_LEXICON } from './biasLexicon'
-import { createMoonshineTranscriber } from './createMoonshineTranscriber'
+import { createMoonshineTranscriber, type BiasInput } from './createMoonshineTranscriber'
 import { ensureMoonshineModels, fsMoonshineStore, MOONSHINE_TIERS } from './moonshineModels'
 import { createRetriable } from './retriable'
 
@@ -23,9 +23,10 @@ export function createMainMoonshineTranscriber(deps: {
   sttModel: SttModel
   /**
    * Live bias input (ADR 0022): the Seed Lexicon unioned with Learned
-   * Terms. Absent decodes against the seed alone (tests, scripted runs).
+   * Terms, and the Page Terms of the page spoken over as a set of their
+   * own (ADR 0077). Absent decodes against the seed alone (tests, scripted runs).
    */
-  getBiasPhrases?: () => readonly string[]
+  getBiasPhrases?: () => BiasInput
 }): Transcriber {
   const tier = MOONSHINE_TIERS[deps.sttModel]
   // A failed fetch un-memoizes so the next utterance retries a transient

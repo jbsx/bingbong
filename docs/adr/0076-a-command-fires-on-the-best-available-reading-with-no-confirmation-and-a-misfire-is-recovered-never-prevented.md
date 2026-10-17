@@ -152,6 +152,11 @@ Command recovers rather than a question asked:
   spans, overall row first) and one decisions line: Jev's share of
   Commands and its latency p50/p95, the readings, the Misfires by signal.
 
+- **A Slot may be carried in the page's spelling** (ADR 0077, #325): the
+  Name Match reads a spoken search or type Slot against the Page Terms and
+  the Learned Terms by sound after the reading, and what was heard stays
+  on the decision record. The one amendment to "never composed".
+
 Not built in increment 1: Early Fire, Hot Listen, the persistent Piper.
 The Reaction distribution this increment measures is their baseline.
 - Moonshine Small stays the default STT tier until increment 1's replay

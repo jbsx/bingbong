@@ -39,6 +39,8 @@ import { createJsonlPerfSink } from './perf/jsonlPerfSink'
 import { resolveVoiceConfig } from './voice/voiceConfig'
 import { createMainVoice } from './voice/createMainVoice'
 import { createLearnedTermsStore, seedLexiconSet } from './voice/learnedTermsStore'
+import { createBiasUnion } from '../core/voice/biasUnion'
+import { pageTermsOf } from '../core/voice/pageTerms'
 import { registerLearnedTermsIpc } from './voice/attachLearnedTerms'
 import { attachVoiceToWindow, registerVoiceIpc } from './voice/attachVoice'
 import { attachFeedPanelOverlayToWindow, registerFeedPanelIpc } from './panel/createFeedPanelOverlay'
@@ -307,6 +309,15 @@ async function createWindow(): Promise<BrowserWindow> {
     },
     screenshotDir: () => downloadsDir,
     saveScreenshot: saveScreenshotFile,
+    // The Learned Terms (ADR 0077): read for the Name Match, grown by it.
+    terms: {
+      learned: () => learnedTermsStore.list(),
+      admit: (term) => {
+        learnedTermsStore.admit(term)
+      },
+      propose: (term) => learnedTermsStore.propose(term),
+      observe: (text) => learnedTermsStore.observeTranscript(text),
+    },
   })
   attachCommandRunnerToWindow(runner, win)
   // Escape aborts from the pane too, where React never sees the key.
@@ -323,8 +334,13 @@ async function createWindow(): Promise<BrowserWindow> {
     })
   }
 
-  const voice = await createMainVoice(voiceConfig, () => learnedTermsStore.biasPhrases())
+  // The decode's bias (ADR 0077): the Bias Lexicon, and the Page Terms of
+  // the page collected at speech start, set for the one Utterance over it.
+  const biasUnion = createBiasUnion({ lexicon: () => learnedTermsStore.biasPhrases() })
+  const voice = await createMainVoice(voiceConfig, () => biasUnion.phrases())
   attachVoiceToWindow(win, {
+    onPagePrepared: (snapshot) =>
+      biasUnion.setPageTerms(snapshot === null ? [] : pageTermsOf({ title: snapshot.title, labels: snapshot.refs.map((ref) => ref.label), text: snapshot.viewportText })),
     vad: voice.vad,
     transcriber: voice.transcriber,
     tts: speakingGate.tts,

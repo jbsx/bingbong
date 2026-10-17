@@ -3,6 +3,7 @@ import { systemClock } from '../../core/ports/clock'
 import type { TtsSpeaker } from '../../core/ports/tts'
 import type { Transcriber, VadScorer } from '../../core/ports/stt'
 import type { PerfTracer } from '../../core/perf/perfTracer'
+import type { PageSnapshot } from '../../core/browser/snapshot'
 import type { UtteranceDumper } from '../../core/voice/utteranceDump'
 import type { UtteranceEndpointerConfig } from '../../core/voice/vadEndpointing'
 import { VOICE_IPC, type VoiceState } from '../../core/voice/ipcChannels'
@@ -56,8 +57,13 @@ export function attachVoiceToWindow(win: BrowserWindow, deps: AttachVoiceDeps): 
     onSubmitCommand: (text, submitted) => {
       void runCommand(win, text, { ...submitted, source: 'spoken' })
     },
-    // Speech started (#324): the page's refs are collected while the user speaks.
-    onSpeechStart: () => runnerFor(win)?.prepare(),
+    // Speech started (#324): the page's refs are collected while the user
+    // speaks — and the page, once collected, names the Page Terms the same
+    // speech is decoded under (ADR 0077).
+    onSpeechStart: () => {
+      const page = runnerFor(win)?.prepare()
+      if (page !== undefined && deps.onPagePrepared !== undefined) void page.then((snapshot) => deps.onPagePrepared?.(snapshot))
+    },
     onPartial: (text) => {
       deps.publisher.publish({ source: 'voice-partial', partial: { text, at: Date.now() } })
     },
@@ -97,4 +103,6 @@ export interface AttachVoiceDeps {
   /** Opt-in utterance audio dumps (#34); absent keeps the session dump-free. */
   dumper?: UtteranceDumper
   publisher: Pick<WindowEventPublisher, 'publish'>
+  /** The page collected at speech start (ADR 0077), null when none could be; absent biases the decode toward the Bias Lexicon alone. */
+  onPagePrepared?(snapshot: PageSnapshot | null): void
 }

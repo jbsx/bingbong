@@ -86,7 +86,25 @@ describe('buildDecisionReport', () => {
       jevLatency: { p50: 260, p95: 800 },
       misfires: 3,
       misfiresBySignal: { back: 2, opposite_scroll: 1 },
+      names: { page: 0, learned: 0 },
     })
+  })
+
+  it('counts the Name Matches by whose spelling they carried (ADR 0077)', () => {
+    const named = (turnId: string, heard: string, slot: string, slotFrom: 'page' | 'learned'): CommandLogRecord => ({
+      ...(decision(turnId, 'local_match') as Extract<CommandLogRecord, { type: 'decision' }>),
+      slot,
+      slotHeard: heard,
+      slotFrom,
+    })
+    const report = buildDecisionReport([
+      named('t1', 'line stack tips', 'linus tech tips', 'page'),
+      named('t2', 'your masks', 'elon musk', 'learned'),
+      named('t3', 'liner stack tips', 'linus tech tips', 'page'),
+      decision('t4', 'local_match'),
+    ])
+    expect(report.names).toEqual({ page: 2, learned: 1 })
+    expect(formatCommandReport(buildReactionReport([]), report)[0]).toContain('| names matched 3 (page 2, learned 1)')
   })
 
   it('reports no latency when Jev was never asked', () => {
@@ -110,7 +128,7 @@ describe('formatCommandReport', () => {
       'click      1  200ms  200ms  200ms',
       'open       1  400ms  400ms  400ms',
       '',
-      'decisions: 2 commands | jev asked 1 (50%), answered 1, latency p50 220ms p95 220ms | local match 1, jev 1, best guess 0 | misfires 1 (back 1)',
+      'decisions: 2 commands | jev asked 1 (50%), answered 1, latency p50 220ms p95 220ms | local match 1, jev 1, best guess 0 | misfires 1 (back 1) | names matched 0',
     ])
   })
 

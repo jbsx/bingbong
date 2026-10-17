@@ -18,7 +18,11 @@ fast as it can, built on top of this shell.
   `navigate <url>`, `read`, `click <ref>`, `type <ref> <text>`,
   `scroll up|down`, `press <key> [n]`, `screenshot`, `back` — or a plain
   verb and the label exactly one ref carries), else one Jev call, else the
-  Local Match's best guess; it fires with no confirmation. Every step is
+  Local Match's best guess; it fires with no confirmation. A spoken Slot
+  that is search terms or text to type passes the Name Match (ADR 0077,
+  `src/core/command/nameMatch.ts`) against the page's names (Page Terms,
+  `src/core/voice/pageTerms.ts`, which also bias the decode of that
+  Utterance) and the Learned Terms. Every step is
   published as a `PipelineEvent` (`src/core/pipeline/events.ts`) that the
   Feed, the Status Capsule and the voice session read: one `command` per
   Command carrying the words and the action, a `reaction` perf span and one

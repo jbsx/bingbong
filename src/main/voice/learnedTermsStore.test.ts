@@ -48,6 +48,37 @@ describe('learned terms store', () => {
     expect(reopened.list()).toEqual(['linus tech tips'])
   })
 
+  it('admits a name the page witnessed at once, and keeps a rejected or seed term out (ADR 0077)', async () => {
+    const dir = await tempDir()
+    let now = 1_000
+    const store = createLearnedTermsStore(join(dir, 'lexicon.json'), SEED, { now: () => now })
+
+    expect(store.admit('Linus Tech Tips')).toBe(true)
+    expect(store.list()).toEqual(['linus tech tips'])
+    // A page name the user deleted stays deleted; the seed is not the ledger's business.
+    store.manualRemove('elon musk')
+    expect(store.admit('Elon Musk')).toBe(false)
+    expect(store.admit('feed panel')).toBe(false)
+    expect(store.list()).toEqual(['linus tech tips'])
+    // Admitting again is a touch, not a duplicate.
+    now = 2_000
+    expect(store.admit('linus tech tips')).toBe(true)
+    expect(store.list()).toEqual(['linus tech tips'])
+    expect(JSON.parse(await readFile(join(dir, 'lexicon.json'), 'utf8')).admitted[0].lastTouched).toBe(2_000)
+  })
+
+  it('proposes a name a retry chain settled on through the recurrence gate (ADR 0077)', async () => {
+    const dir = await tempDir()
+    let now = 1_000
+    const store = createLearnedTermsStore(join(dir, 'lexicon.json'), SEED, { now: () => now })
+
+    store.propose('line of tactics')
+    expect(store.list()).toEqual([])
+    now = 2_000
+    store.propose('line of tactics')
+    expect(store.list()).toEqual(['line of tactics'])
+  })
+
   it('fails closed to seed-only on a corrupt file', async () => {
     const dir = await tempDir()
     await writeFile(join(dir, 'lexicon.json'), '{ not json', 'utf8')

@@ -194,16 +194,50 @@ function boostWordStartPieces(
   return { best, bestScore }
 }
 
-export function createBiasApplier(vocab: MoonshineVocab, phrases: readonly string[]): BiasApplier {
-  const boost = DEFAULT_BIAS_BOOST
-  const normalized = normalizePhrases(phrases)
-  const phraseTrie = buildPhraseTrie(normalized)
-  const pieceTrie = buildPieceTrie(vocab)
+/**
+ * The vocab's half of the applier, built once per loaded vocab: the trie
+ * over every token piece. A lexicon that changes per Utterance (Page
+ * Terms, ADR 0077) rebuilds only the phrase tries over it, never this.
+ */
+export interface BiasIndex {
+  readonly vocab: MoonshineVocab
+  readonly pieceTrie: PieceNode
+}
+
+export function createBiasIndex(vocab: MoonshineVocab): BiasIndex {
+  return { vocab, pieceTrie: buildPieceTrie(vocab) }
+}
+
+/** One phrase list and the lift its pieces get; several lists can bias one pass at different strengths. */
+export interface BiasPhraseSet {
+  readonly phrases: readonly string[]
+  /** Logit lift for a piece continuing one of these phrases; {@link DEFAULT_BIAS_BOOST} when absent. */
+  readonly boost?: number
+}
+
+function isIndex(value: MoonshineVocab | BiasIndex): value is BiasIndex {
+  return 'pieceTrie' in value
+}
+
+function phraseSetsOf(value: readonly string[] | readonly BiasPhraseSet[]): BiasPhraseSet[] {
+  if (value.length === 0) return []
+  return typeof value[0] === 'string' ? [{ phrases: value as readonly string[] }] : [...(value as readonly BiasPhraseSet[])]
+}
+
+export function createBiasApplier(vocabOrIndex: MoonshineVocab | BiasIndex, phrases: readonly string[] | readonly BiasPhraseSet[]): BiasApplier {
+  const index = isIndex(vocabOrIndex) ? vocabOrIndex : createBiasIndex(vocabOrIndex)
+  const pieceTrie = index.pieceTrie
+  // One applier per phrase set, strongest boost first so a piece two sets
+  // share keeps the larger lift (`boosted` is shared across the walk).
+  const sets = phraseSetsOf(phrases)
+    .map((set) => ({ boost: set.boost ?? DEFAULT_BIAS_BOOST, normalized: normalizePhrases(set.phrases) }))
+    .filter((set) => set.normalized.length > 0)
+    .sort((a, b) => b.boost - a.boost)
+    .map((set) => ({ boost: set.boost, phraseTrie: buildPhraseTrie(set.normalized), wordStartTrie: buildRestTrie(set.normalized.map((phrase) => ` ${phrase}`)) }))
   // The static half of the rests — every whole phrase with a leading
   // space, so only word-starting pieces can take the word-start boost —
-  // precomputed once (ADR 0022: a 500-term lexicon must not rebuild 500
-  // strings, or walk 500 rests, at every greedy step).
-  const wordStartTrie = buildRestTrie(normalized.map((phrase) => ` ${phrase}`))
+  // precomputed once per set (ADR 0022: a 500-term lexicon must not
+  // rebuild 500 strings, or walk 500 rests, at every greedy step).
 
   return {
     nextToken(decoded, logits) {
@@ -222,24 +256,26 @@ export function createBiasApplier(vocab: MoonshineVocab, phrases: readonly strin
       }
 
       const boosted = new Set<number>()
-      // Word-start half: one lockstep walk over the merged rest trie.
-      const wordStart = boostWordStartPieces(wordStartTrie, pieceTrie, row, base, boost, boosted)
-      if (wordStart.best !== -1 && wordStart.bestScore > bestScore) {
-        bestScore = wordStart.bestScore
-        best = wordStart.best
-      }
-      // Decoded-suffix half: few rests, walked directly.
-      for (const rest of suffixRests(decoded, phraseTrie)) {
-        let node: PieceNode | undefined = pieceTrie
-        for (let k = 0; k < rest.length; k++) {
-          node = node.children.get(rest[k])
-          if (!node) break
-          for (const id of node.ids) {
-            if (boosted.has(id)) continue
-            boosted.add(id)
-            if (row[base + id] + boost > bestScore) {
-              bestScore = row[base + id] + boost
-              best = id
+      for (const { boost, phraseTrie, wordStartTrie } of sets) {
+        // Word-start half: one lockstep walk over the merged rest trie.
+        const wordStart = boostWordStartPieces(wordStartTrie, pieceTrie, row, base, boost, boosted)
+        if (wordStart.best !== -1 && wordStart.bestScore > bestScore) {
+          bestScore = wordStart.bestScore
+          best = wordStart.best
+        }
+        // Decoded-suffix half: few rests, walked directly.
+        for (const rest of suffixRests(decoded, phraseTrie)) {
+          let node: PieceNode | undefined = pieceTrie
+          for (let k = 0; k < rest.length; k++) {
+            node = node.children.get(rest[k])
+            if (!node) break
+            for (const id of node.ids) {
+              if (boosted.has(id)) continue
+              boosted.add(id)
+              if (row[base + id] + boost > bestScore) {
+                bestScore = row[base + id] + boost
+                best = id
+              }
             }
           }
         }

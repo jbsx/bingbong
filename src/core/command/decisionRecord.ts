@@ -13,6 +13,9 @@ import type { CommandAnswers } from './jevReading'
 /** Where the words came from. */
 export type CommandSource = 'spoken' | 'typed'
 
+/** Whose spelling a Name Match carried: the page's, or the user's own Learned Terms. */
+export type NameSource = 'page' | 'learned'
+
 /** Who settled the reading: the Local Match, Jev's top Choices, or the best guess that fires when Jev does not answer. */
 export type CommandReading = 'local_match' | 'jev' | 'best_guess'
 
@@ -47,6 +50,10 @@ export interface DecisionRecord {
   readonly target: number | null
   readonly targetLabel?: string
   readonly slot: string | null
+  /** The Name Match (ADR 0077): the words heard where `slot` carries a name the page shows or the user taught instead; absent when the Slot is as heard. */
+  readonly slotHeard?: string
+  /** Where the Slot's name came from: the Page Terms, or the Learned Terms. */
+  readonly slotFrom?: NameSource
   /** Whether a Jev call was made for this Command. */
   readonly jevAsked: boolean
   /** Jev's answer, or why it gave none; absent when it was not asked. */

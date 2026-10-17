@@ -2,6 +2,7 @@ import type { Transcriber, VadScorer } from '../../core/ports/stt'
 import type { VoiceConfig } from './voiceConfig'
 import { createSileroVad } from './createSileroVad'
 import { createMainMoonshineTranscriber } from '../moonshine/createMainMoonshineTranscriber'
+import type { BiasInput } from '../moonshine/createMoonshineTranscriber'
 import { createScriptedVad } from './createScriptedVad'
 import { createScriptedTranscriber } from './createScriptedTranscriber'
 
@@ -16,7 +17,7 @@ export interface MainVoice {
  * keyless demos) drop in via BINGBONG_VAD_SCRIPT / BINGBONG_STT_SCRIPT.
  * The bias union getter (ADR 0022) rides through to the decoder.
  */
-export async function createMainVoice(config: VoiceConfig, getBiasPhrases?: () => readonly string[]): Promise<MainVoice> {
+export async function createMainVoice(config: VoiceConfig, getBiasPhrases?: () => BiasInput): Promise<MainVoice> {
   const vad: VadScorer = config.vadScript ? createScriptedVad(config.vadScript) : await createSileroVad({ modelPath: config.vadModel })
   const transcriber: Transcriber = config.sttScript
     ? createScriptedTranscriber(config.sttScript)

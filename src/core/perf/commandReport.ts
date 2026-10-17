@@ -40,6 +40,8 @@ export interface DecisionReport {
   misfires: number
   /** Misfires by the signal that recorded them. */
   misfiresBySignal: Partial<Record<MisfireSignal, number>>
+  /** Name Matches (ADR 0077): Slots carried as a name the page showed, or one the user taught. */
+  names: { page: number; learned: number }
 }
 
 function statsOf(verb: string, durations: readonly number[]): ReactionStats {
@@ -87,6 +89,7 @@ export function buildDecisionReport(records: readonly CommandLogRecord[]): Decis
     jevLatency: null,
     misfires: 0,
     misfiresBySignal: {},
+    names: { page: 0, learned: 0 },
   }
   const latencies: number[] = []
   for (const record of records) {
@@ -97,6 +100,7 @@ export function buildDecisionReport(records: readonly CommandLogRecord[]): Decis
     }
     report.commands += 1
     if (record.reading in report.readings) report.readings[record.reading] += 1
+    if (record.slotFrom === 'page' || record.slotFrom === 'learned') report.names[record.slotFrom] += 1
     if (record.jevAsked) {
       report.jevAsked += 1
       if (record.reading === 'jev') report.jevAnswered += 1
@@ -144,10 +148,12 @@ export function formatCommandReport(reaction: ReactionReport, decisions: Decisio
       .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
       .map(([signal, count]) => `${signal} ${count}`)
       .join(', ')
+    const names = decisions.names.page + decisions.names.learned
     lines.push(
       `decisions: ${decisions.commands} commands | ${jev}` +
         ` | local match ${readings.local_match}, jev ${readings.jev}, best guess ${readings.best_guess}` +
-        ` | misfires ${decisions.misfires}${signals ? ` (${signals})` : ''}`,
+        ` | misfires ${decisions.misfires}${signals ? ` (${signals})` : ''}` +
+        ` | names matched ${names}${names > 0 ? ` (page ${decisions.names.page}, learned ${decisions.names.learned})` : ''}`,
     )
   }
   return lines

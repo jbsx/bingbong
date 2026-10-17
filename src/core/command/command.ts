@@ -77,6 +77,8 @@ export interface CommandPage {
   readonly url: string
   readonly title: string
   readonly refs: readonly CommandRef[]
+  /** The Page Terms (ADR 0077): the names the page shows, ranked, for the Name Match; absent for a page read without them. */
+  readonly terms?: readonly string[]
 }
 
 export function commandRefOf(ref: SnapshotRef): CommandRef {

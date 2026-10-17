@@ -8,8 +8,10 @@ import { commandRefOf, describeCommand, type Command, type CommandPage } from '.
 import { COMMAND_HELP } from '../../core/command/help'
 import { bestGuess, localMatch } from '../../core/command/localMatch'
 import { commandQuestions, commandState, readCommandAnswers } from '../../core/command/jevReading'
-import { openAddress } from '../../core/command/openAddress'
-import { jevDetailOf, misfireSignal, type CommandLogRecord, type CommandReading, type CommandSource, type DecisionRecord } from '../../core/command/decisionRecord'
+import { isAddressShaped, openAddress } from '../../core/command/openAddress'
+import { nameMatch, soundsAlike } from '../../core/command/nameMatch'
+import { jevDetailOf, misfireSignal, type CommandLogRecord, type CommandReading, type CommandSource, type DecisionRecord, type NameSource } from '../../core/command/decisionRecord'
+import { pageTermsOf } from '../../core/voice/pageTerms'
 import { reportFault } from '../../core/trace/fault'
 import type { ActionEffect } from '../browser/createCdpBrowserController'
 
@@ -23,6 +25,14 @@ import type { ActionEffect } from '../browser/createCdpBrowserController'
 // step is published on the event stream the Feed and the Status Capsule
 // read: one `command` per Command carrying the words heard and the action
 // taken, and a `reaction` span and one decision record for each.
+//
+// The Name Match (ADR 0077, #325) sits between the reading and the action:
+// a spoken Slot that is search terms or text to type, and sounds like a
+// name the page shows (its Page Terms) or one the user has taught the app
+// (the Learned Terms), is carried as that name's spelling; what was heard
+// stays on the decision record. A name the page witnessed is learned at
+// once; a chain of retries that ends with the user moving on proposes its
+// last Slot, admitted when it recurs.
 
 export type { CommandRunState }
 
@@ -51,9 +61,23 @@ export interface CommandRunner {
   /**
    * Speech started (#324): collect the page's refs now, in parallel with
    * the speech, so the list is in hand at the Endpoint. The next Command
-   * reads against it; a Command that needs no page lets it go.
+   * reads against it; a Command that needs no page lets it go. Resolves
+   * to the page collected (null when none could be), for the bias the
+   * same speech is decoded under (ADR 0077).
    */
-  prepare(): void
+  prepare(): Promise<PageSnapshot | null>
+}
+
+/** The Learned Terms as the runner reads and grows them (ADR 0077). */
+export interface CommandTerms {
+  /** The names the user has taught the app, for the Name Match after the Page Terms. */
+  learned(): readonly string[]
+  /** A name the page witnessed a Slot sounding like: admitted at once. */
+  admit(term: string): void
+  /** A name a retry chain settled on: proposed, admitted when it recurs. */
+  propose(term: string): void
+  /** A spoken transcript: the Learned Terms it carries are in use. */
+  observe(text: string): void
 }
 
 export interface CommandRunnerDeps {
@@ -71,6 +95,8 @@ export interface CommandRunnerDeps {
   onEffect?(listener: (effect: ActionEffect) => void): () => void
   screenshotDir(): string
   saveScreenshot(path: string, bytes: Uint8Array): Promise<void>
+  /** The Learned Terms (ADR 0077); absent reads names off the page alone and learns nothing. */
+  terms?: CommandTerms
 }
 
 /** How much of a Page Read the Feed card shows. */
@@ -83,6 +109,23 @@ const DISPLAY_LIMIT = 4_000
  */
 const PREPARED_MAX_AGE_MS = 30_000
 
+/**
+ * How long a retry chain stays open (ADR 0077): a Slot spoken this long
+ * after the one before, sounding like it, is a retry of it; the Command
+ * that moves on inside this window settles the chain on its last Slot.
+ */
+const RETRY_CHAIN_WINDOW_MS = 60_000
+
+/** The verbs that say the user moved on from a Slot: the retry chain settles on them. */
+const MOVES_ON: ReadonlySet<Command['verb']> = new Set(['click', 'scroll_up', 'scroll_down', 'read', 'forward'])
+
+/** A Name Match as the runner carries it: the words heard, the name they became, and whose spelling it is. */
+interface NameMatched {
+  readonly heard: string
+  readonly candidate: string
+  readonly from: NameSource
+}
+
 /** The page the reading sees when none can be collected: the address alone, no refs. */
 function blankPage(browser: BrowserController): CommandPage {
   const state = browser.state()
@@ -90,7 +133,19 @@ function blankPage(browser: BrowserController): CommandPage {
 }
 
 function pageOf(snapshot: PageSnapshot): CommandPage {
-  return { url: snapshot.url, title: snapshot.title, refs: snapshot.refs.map(commandRefOf) }
+  return {
+    url: snapshot.url,
+    title: snapshot.title,
+    refs: snapshot.refs.map(commandRefOf),
+    terms: pageTermsOf({ title: snapshot.title, labels: snapshot.refs.map((ref) => ref.label), text: snapshot.viewportText }),
+  }
+}
+
+/** Whether a Command's Slot is words a name could be misheard in: search terms, or text to type — never an address or a key. */
+function slotIsNameable(command: Command): command is Command & { slot: string } {
+  if (command.slot === null || command.slot === '') return false
+  if (command.verb === 'type') return true
+  return command.verb === 'open' && (command.search === true || !isAddressShaped(command.slot))
 }
 
 /** Whether the Local Match's page-free reading settles the line without the page's refs. */
@@ -198,11 +253,12 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     jev?: DecisionRecord['jev']
   }
 
-  /** The Local Match first; else one Jev call; else the best guess. */
-  async function read(text: string, pending: PreparedPage | null): Promise<Reading> {
+  /** The Local Match first; else one Jev call; else the best guess. A spoken Slot that could carry a name waits for the page, so the Name Match can read it against the Page Terms. */
+  async function read(text: string, pending: PreparedPage | null, spoken: boolean): Promise<Reading> {
     const quick = localMatch(text, [])
-    if (pageFree(quick)) return { command: quick, page: blankPage(browser), reading: 'local_match', jevAsked: false }
+    if (pageFree(quick) && !(spoken && slotIsNameable(quick))) return { command: quick, page: blankPage(browser), reading: 'local_match', jevAsked: false }
     const page = await collectPage(pending)
+    if (pageFree(quick)) return { command: quick, page, reading: 'local_match', jevAsked: false }
     const local = localMatch(text, page.refs, page.url)
     if (local !== null) return { command: local, page, reading: 'local_match', jevAsked: false }
     const model = deps.decisionModel()
@@ -223,6 +279,43 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       reading: 'best_guess',
       jevAsked: true,
       jev: { model: result.model, latencyMs: result.latencyMs, reason: result.reason },
+    }
+  }
+
+  /** The Learned Terms, when wired. */
+  const learnedTerms = (): readonly string[] => deps.terms?.learned() ?? []
+
+  function observeTerms(text: string): void {
+    try {
+      deps.terms?.observe(text)
+    } catch (error) {
+      reportFault('run.commandRunner.observeTerms', error)
+    }
+  }
+
+  /** The retry chain (ADR 0077): the last spoken Slot, when it was spoken, and how many retries it closes. */
+  let chain: { slot: string; at: number; length: number } | null = null
+
+  /**
+   * What a fired spoken Command teaches: a Name Match the page witnessed
+   * is a name the user says and the page spells, admitted at once; a Slot
+   * sounding like the one before extends a retry chain; a Command that
+   * moves on after a chain of two or more settles it on its last Slot,
+   * proposed and admitted only when it recurs.
+   */
+  function learnFrom(command: Command, name: NameMatched | null, firedAt: number): void {
+    try {
+      if (name?.from === 'page') deps.terms?.admit(name.candidate)
+      if (slotIsNameable(command)) {
+        const retry = chain !== null && firedAt - chain.at <= RETRY_CHAIN_WINDOW_MS && soundsAlike(chain.slot, command.slot, 1)
+        chain = { slot: command.slot, at: firedAt, length: retry ? chain!.length + 1 : 1 }
+        return
+      }
+      if (chain === null || !MOVES_ON.has(command.verb)) return
+      if (chain.length >= 2 && firedAt - chain.at <= RETRY_CHAIN_WINDOW_MS) deps.terms?.propose(chain.slot)
+      chain = null
+    } catch (error) {
+      reportFault('run.commandRunner.learnFrom', error)
     }
   }
 
@@ -305,6 +398,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
           return null
         }),
       }
+      return prepared.snapshot
     },
 
     async run(text, options) {
@@ -321,9 +415,22 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       const pending = prepared
       prepared = null
 
-      const { command, page, reading: readingKind, jevAsked, jev } = await read(trimmed, pending)
+      const { command: heard, page, reading: readingKind, jevAsked, jev } = await read(trimmed, pending, source === 'spoken')
       if (reading !== null && reading.submission === submission) reading = null
       const firedAt = at()
+      if (source === 'spoken') observeTerms(trimmed)
+
+      // The Name Match (ADR 0077): a spoken Slot that sounds like a name on the page, or one the user taught, is carried as that name.
+      let command = heard
+      let matched: NameMatched | null = null
+      if (source === 'spoken' && slotIsNameable(heard)) {
+        const pageTerms = page.terms ?? []
+        const match = nameMatch(heard.slot, [...pageTerms, ...learnedTerms()])
+        if (match !== null) {
+          command = { ...heard, slot: match.slot }
+          matched = { heard: match.heard, candidate: match.candidate, from: pageTerms.includes(match.candidate) ? 'page' : 'learned' }
+        }
+      }
 
       const targetLabel = command.target === null ? undefined : page.refs.find((ref) => ref.ref === command.target)?.label
       const record: DecisionRecord = {
@@ -337,6 +444,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         target: command.target,
         ...(targetLabel !== undefined ? { targetLabel } : {}),
         slot: command.slot,
+        ...(matched !== null ? { slotHeard: matched.heard, slotFrom: matched.from } : {}),
         jevAsked,
         ...(jev !== undefined ? { jev } : {}),
         ...(options?.truncated ? { truncated: true } : {}),
@@ -364,6 +472,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         if (signal !== null) log({ type: 'misfire', turnId: previous.turnId, at: firedAt, signal, signalTurnId: turnId, withinMs: firedAt - previous.at })
       }
       previous = { turnId, verb: command.verb, key: command.key, at: firedAt }
+      if (source === 'spoken') learnFrom(command, matched, firedAt)
 
       // A later Command supersedes the one in flight; `stop` is only that.
       cancelInFlight()

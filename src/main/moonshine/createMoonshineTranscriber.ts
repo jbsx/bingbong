@@ -1,7 +1,7 @@
 import type { Transcriber } from '../../core/ports/stt'
 import type { MoonshineVocab } from '../../core/moonshine/bpeTokenizer.ts'
 import { decodeMoonshineTokens } from '../../core/moonshine/bpeTokenizer.ts'
-import { createBiasApplier, type BiasApplier, type LogitsTensor } from '../../core/moonshine/contextualBiasing.ts'
+import { createBiasApplier, createBiasIndex, type BiasApplier, type BiasIndex, type BiasPhraseSet, type LogitsTensor } from '../../core/moonshine/contextualBiasing.ts'
 import { WAV_SAMPLE_RATE } from '../../core/voice/utteranceDump.ts'
 import { createRetriable } from './retriable.ts'
 import { reportFault } from '../../core/trace/fault.ts'
@@ -88,8 +88,11 @@ export interface MoonshineTranscriberDeps {
    * rebuilds when the resolved array's identity changes — the learned
    * union is stable until the ledger changes it.
    */
-  biasPhrases?: readonly string[] | (() => readonly string[])
+  biasPhrases?: BiasInput | (() => BiasInput)
 }
+
+/** The bias input: one phrase list at the default boost, or several sets each with its own (Page Terms, ADR 0077). */
+export type BiasInput = readonly string[] | readonly BiasPhraseSet[]
 
 /** Greedy argmax over the LAST logits row ([1, seq, vocab] → id). */
 function argmaxLastRow(logits: LogitsTensor): number {
@@ -138,13 +141,19 @@ export function createMoonshineTranscriber(deps: MoonshineTranscriberDeps): Tran
    * vocab reload — only possible after a failed pass un-memoized it — or a
    * live lexicon whose union array changed rebuilds lazily.
    */
-  let biasCache: { vocab: MoonshineVocab; phrases: readonly string[]; applier: BiasApplier } | null = null
+  let biasIndex: BiasIndex | null = null
+  let biasCache: { phrases: BiasInput; applier: BiasApplier } | null = null
   function applierFor(vocab: MoonshineVocab): BiasApplier | null {
     const phrases = typeof deps.biasPhrases === 'function' ? deps.biasPhrases() : deps.biasPhrases
     if (!phrases || phrases.length === 0) return null
-    if (biasCache?.vocab !== vocab || biasCache?.phrases !== phrases) {
-      biasCache = { vocab, phrases, applier: createBiasApplier(vocab, phrases) }
+    if (biasIndex?.vocab !== vocab) {
+      // The piece trie over the whole vocab is the costly half: once per
+      // vocab, never per Utterance — Page Terms (ADR 0077) change the
+      // phrase list at every speech start and rebuild only the phrase tries.
+      biasIndex = createBiasIndex(vocab)
+      biasCache = null
     }
+    if (biasCache?.phrases !== phrases) biasCache = { phrases, applier: createBiasApplier(biasIndex, phrases) }
     return biasCache.applier
   }
 

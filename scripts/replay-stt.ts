@@ -19,6 +19,9 @@
 // (the Moonshine export auto-fetches on first run). With no dumps present
 // the script falls back to the models-dir's jfk.wav fixture. Set
 // BINGBONG_STT_MODEL=medium to replay through the opt-in tier (#63).
+// The decode is biased toward the Seed Lexicon as the app's is; set
+// BINGBONG_STT_BIAS="Linus Tech Tips,Elon Musk" to add those as Page
+// Terms (ADR 0077), standing in for the names a page would have shown.
 
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -29,7 +32,8 @@ import { readUtteranceWavPcm } from '../src/core/sttAb/utteranceWav.ts'
 import { formatReplayReport, type ReplayRow } from '../src/core/sttAb/replayReport.ts'
 import { VAD_FRAME_SAMPLES, VAD_FRAME_MS } from '../src/core/voice/vadEndpointing.ts'
 import { parseMoonshineTokenizer } from '../src/core/moonshine/bpeTokenizer.ts'
-import { createMoonshineTranscriber } from '../src/main/moonshine/createMoonshineTranscriber.ts'
+import { createMoonshineTranscriber, type BiasInput } from '../src/main/moonshine/createMoonshineTranscriber.ts'
+import { PAGE_TERMS_BOOST } from '../src/core/voice/biasUnion.ts'
 import { ensureMoonshineModels, fsMoonshineStore, MOONSHINE_TIERS } from '../src/main/moonshine/moonshineModels.ts'
 
 const dumpsDir = process.argv[2] ?? join(homedir(), '.config/bingbong/audio-dumps')
@@ -38,6 +42,11 @@ const modelsDir = process.argv[3] ?? join(homedir(), '.config/bingbong/models')
 // extensionless main-tree module graph into Node's type-stripping runtime.
 const envTier = process.env.BINGBONG_STT_MODEL
 const sttModel: SttModel = envTier === 'base' || envTier === 'medium' || envTier === 'small' ? envTier : 'small'
+// The Seed Lexicon, read off its source: biasLexicon.ts imports core
+// without a .ts extension, which this type-stripping runtime cannot follow.
+const seedLexicon = [...readFileSync(new URL('../src/main/moonshine/biasLexicon.ts', import.meta.url), 'utf8').matchAll(/^\s+'([^']+)',$/gm)].map((match) => match[1]!)
+const pageTerms = (process.env.BINGBONG_STT_BIAS ?? '').split(',').map((term) => term.trim()).filter((term) => term !== '')
+const biasPhrases: BiasInput = pageTerms.length === 0 ? seedLexicon : [{ phrases: seedLexicon }, { phrases: pageTerms, boost: PAGE_TERMS_BOOST }]
 
 function wavFiles(dir: string): string[] {
   if (!existsSync(dir)) return []
@@ -72,7 +81,9 @@ const transcriber = createMoonshineTranscriber({
     parseMoonshineTokenizer(readFileSync(join(moonshine.dir, 'tokenizer.json'), 'utf8')),
   dims: tier.dims,
   frameSamples: tier.frameSamples,
+  biasPhrases,
 })
+console.log(`tier ${sttModel}; seed lexicon ${seedLexicon.length} terms${pageTerms.length > 0 ? `; page terms at ${PAGE_TERMS_BOOST}: ${pageTerms.join(' | ')}` : ''}`)
 
 /** Real-time-paced push: partials overlap speech the way they do live. */
 async function replay(file: string): Promise<ReplayRow> {
