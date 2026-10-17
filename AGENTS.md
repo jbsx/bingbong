@@ -1,11 +1,13 @@
-# Bing Bong — `kachow`
+# Bing Bong
 
-An experimental branch. The browser, the interaction surface an agent drives
+The `main` branch, which `kachow` became on 2026-10-17 by the owner's
+ruling. The browser, the interaction surface an agent drives
 (the numbered-ref snapshot over CDP — see `src/main/browser/collectPageScript.ts`
 and `src/core/browser/snapshot.ts`), the dashboard, and the local voice
 pipeline (wake word, STT, TTS). No generating model: the orchestrator, its
 subagents, the Session and evidence machinery, vision and the evaluation
-harnesses were stripped from `main`. The one model this branch knows is Jev,
+harnesses were stripped on the `kachow` branch and are gone. The one model
+this branch knows is Jev,
 the Decision Model (`src/main/decision/`, `src/core/ports/decisionModel.ts`),
 armed by `TYPESAFE_API_KEY`. The aim is an agent that completes a task as
 fast as it can, built on top of this shell.
@@ -49,7 +51,7 @@ Default five-role vocabulary (`needs-triage`, `needs-info`, `ready-for-agent`, `
 
 Single-context: `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
 `CONTEXT.md` is inherited from `main` with the removed sections cut; the
-ADRs are `main`'s history and many describe machinery this branch no longer
+ADRs before 0076 are the orchestrator's history and many describe machinery this branch no longer
 has.
 
 ## Testing

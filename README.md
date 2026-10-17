@@ -1,6 +1,6 @@
-# Bing Bong — `kachow`
+# Bing Bong
 
-An experimental branch of Bing Bong: the voice-driven browser shell with the
+The voice-driven browser shell with the
 generating-model layers stripped out. What is left is a local voice pipeline
 (wake word, STT, TTS), a real embedded Chromium driven over CDP through a
 numbered-ref interaction surface, a dashboard that shows every step, and one

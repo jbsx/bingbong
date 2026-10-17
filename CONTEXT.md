@@ -1,11 +1,12 @@
-# Bing Bong (kachow)
+# Bing Bong
 
 A voice-driven browser shell: a local voice pipeline (wake word, STT, TTS), a
 real embedded browser with a numbered-ref interaction surface for an agent to
 act through, and a dashboard that shows what is happening. This branch
 strips the generating-model layers — the orchestrator, its subagents, the
 Session and evidence machinery, vision — and keeps one model, Jev, the
-Decision Model. The glossary below is inherited from `main` with the removed
+Decision Model (the `kachow` branch, `main` since 2026-10-17). The glossary
+below is inherited from the orchestrator's `main` with the removed
 sections cut; an entry in Voice, Views or Browser that names a Run Plan, a
 Session, a Subagent or an Answer contract describes machinery that is gone
 here and names what is left to build.

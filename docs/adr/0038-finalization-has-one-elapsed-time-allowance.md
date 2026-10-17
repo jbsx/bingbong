@@ -100,3 +100,86 @@ The confirmed scope and verification boundary are in
   reserved Answer and the deterministic fallback run as for any cause, and
   a transport failure inside Finalization keeps the handling its round
   already had.
+
+- 2026-10-05 (#315, grilled from the 423 live Runs retained). The last
+  Decision bullet — limits and provider errors stay in diagnostics — is the
+  rule the owner restated while grilling #312: the user never has to deal
+  with the application's limits or errors. It was already written here; it
+  leaked. The deterministic Answer named no bound, but 24 of 156
+  model-written Answers on Runs that did not meet their objective named the
+  stop ("before the budget closed"), 15 of them in speech, and 22 more
+  carried internal names; every Asked Item of a deterministic Answer read
+  "not established before the run stopped" (100 items in 15 Runs); and 3
+  Runs that failed outright spoke "I could not finish that request." with
+  the raw provider error as a Feed line and no Card.
+  - **The test.** A sentence may be said if it would still be true and mean
+    something had a person done the research by hand. "I could not open the
+    catalogue record", "the thread is behind a check I could not pass" and
+    "the collections search is down" pass, and so does "this run" used as
+    "this time". The application's bounds (time, budget, rounds, "before the
+    run stopped") and its internal names and tooling (`memory-N`, Session
+    Evidence, a subagent, a tool's error) do not.
+  - **Its reach.** The Spoken Rendering, the Card, the Peek Card, a
+    Subagent Announcement and every top-level Feed line. The raw error line
+    leaves the Feed; the run hint and the Peek Card no longer count model
+    retries; a voice failure shows "Something went wrong." without the
+    error. The per-Run expander is the opened record of tool calls and is
+    left as it is. The Tier Escalation line stays (it reports that work
+    continues, not that a limit was reached), a Blocker still reaches the
+    user, and the Stop Record still answers a direct "why did you stop".
+  - **A Run that fails outright ends on the deterministic Answer**, as ADR
+    0027 promised of a failed reserved round: what it found so far, or that
+    it has nothing to show. No model round is tried and no Finalization
+    Cause is invented; the outcome stays `failed` and the failure stays in
+    the Stop Record. After a sentence spoken early nothing more is spoken
+    (ADR 0034, #312). These Runs now count in `deterministicAnswer`.
+  - **Product-owned texts.** The Asked Item text is "not established". A
+    Subagent stopped at a bound or failed is announced by the opening
+    alone. A `memory-N` token is deleted from the Spoken Rendering, the
+    Card and Asked Item statements: it is an exact token with no ordinary
+    meaning, so a deletion cannot misfire.
+  - **Model-written Answers are not checked in code.** The words involved
+    are ordinary English a user's own topic can carry (a keyword sweep made
+    121 false hits against 45 true ones), an Answer Retry would spend 15–20
+    s of the allowance, and deleting the sentence would take its accurate
+    half. The cause is treated instead: the Answers repeat the Finalize
+    Instruction's words, so for `budget_exhausted`, `deadline_reached`,
+    `hard_limit` and `model_unreachable` it opens on one sentence naming no
+    bound, and "state honestly what was and was not completed" becomes "say
+    what you established and what is still unverified", there and in the
+    system prompt. `blocker` and `no_progress` keep their reasons; the
+    mid-Run warnings and the Stop Record keep the real cause. The Round
+    Audit counts Answers that name the stop, reported and never gated; a
+    check is the next step only if that count does not fall.
+
+- 2026-10-05 (#322, built). A Run that fails outright ends on the
+  deterministic Answer as the note above decided, and four things it left
+  open are settled in code.
+  - **The Card.** It is marked `deterministicAnswer`, and declared Asked
+    Items are listed `unverified`, as on every deterministic path. A
+    sentence spoken early stands and nothing is spoken after it; the Card
+    beside it is the one its round had closed in the stream when it had,
+    and that Card is a model round's and carries no mark, as for a cut
+    round (#312).
+  - **A Card already shown is kept** (#319): a Run that fails after its
+    Answer's Card shows no second one, and speaks that Answer's line only
+    if the failure came before it was spoken.
+  - **A Run that entered Finalization before it failed** answers under the
+    cause it entered for, so a Blocker still names its wall; a Run that was
+    still working answers under none. Neither is a new cause.
+  - **If the deterministic Answer cannot be composed**, the Run shows and
+    speaks that it has nothing to show, which is built from the command
+    alone, and the second failure is filed as a fault of its own.
+  - **Where the error is kept.** The Stop Record's failure, and the fault
+    filed at `runFailedOutsideFinalization`, which rides the Run Trace by
+    its turn id and is what says which path ended the Run. No `error`
+    event is published for it and no Run Trace field was added, so the
+    version is unchanged.
+  - **One line is still shown: no model is configured.** The grill read
+    provider failures; a role with no routing makes no request, and its
+    message ("model routing for 'orchestrator' is not configured. Set …")
+    is the application's instruction to whoever set it up. The Run still
+    ends on the deterministic Answer, and the line stays in the Feed
+    beside it, since nothing else on that screen says why every command
+    comes back with nothing to show. This was an agent's assumption, not
+    a ruling.
