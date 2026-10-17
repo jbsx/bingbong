@@ -4,6 +4,7 @@ import type { PerfTracer } from '../../core/perf/perfTracer'
 import { createSpeechCoordinator } from '../../core/tts/speechCoordinator'
 import type { PiperConfig } from './piperConfig'
 import { createPiperSynthesizer } from './createPiperSynthesizer'
+import { createPersistentPiperSynthesizer } from './createPersistentPiperSynthesizer'
 import { createAplayPlayer } from './createAplayPlayer'
 import { createPaneAudioDucker } from './createPaneAudioDucker'
 
@@ -11,21 +12,26 @@ export interface MainTtsDeps {
   config: PiperConfig
   /** The browser pane whose page audio ducks during speech. */
   pane: WebContents
-  /** Resolved per line, so a settings-page voice change applies immediately. */
+  /** Resolved per line, so a settings-page voice change applies at the next line. */
   getVoiceId(): string
-  /** Always-on perf tracer (#31): keys the per-line synthesis/playback spans. */
+  /** Always-on perf tracer (#31): keys the per-sentence synthesis, first-sound and playback spans. */
   tracer?: PerfTracer
+  /** Start piper at once (#327), as the Moonshine models are prefetched, so the first line pays no model load. */
+  prefetch?: boolean
 }
 
-/** Composition root for spoken output (T8): piper → aplay, ducking the pane. */
+/**
+ * Composition root for spoken output (T8, #327): a persistent piper — the
+ * per-line spawn behind it when it cannot start — streaming sentence by
+ * sentence into one aplay per spoken text, ducking the pane.
+ */
 export function createMainTts(deps: MainTtsDeps): TtsSpeaker {
+  const voice = { bin: deps.config.bin, voicesDir: deps.config.voicesDir, getVoiceId: deps.getVoiceId }
+  const synth = createPersistentPiperSynthesizer({ ...voice, fallback: createPiperSynthesizer(voice) })
+  if (deps.prefetch) synth.prefetch()
   return createSpeechCoordinator({
-    synth: createPiperSynthesizer({
-      bin: deps.config.bin,
-      voicesDir: deps.config.voicesDir,
-      getVoiceId: deps.getVoiceId,
-    }),
-    player: createAplayPlayer(),
+    synth,
+    player: createAplayPlayer({ bin: deps.config.playerBin }),
     ducker: createPaneAudioDucker(deps.pane),
     ...(deps.tracer ? { tracer: deps.tracer } : {}),
   })

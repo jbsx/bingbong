@@ -6,6 +6,11 @@ import type { DecisionAnswer, DecisionChoiceQuestion, DecisionModel, DecisionQue
 import { FakeBrowser, fakePerfHarness, flushMicrotasks } from '../../core/testing/doubles'
 import type { ActionEffect } from '../browser/createCdpBrowserController'
 import { JEV_VERBS } from '../../core/command/command'
+import type { AudioStream, SpeakOptions, SpeakOutcome, TtsSpeaker } from '../../core/ports/tts'
+import { pageReadPartLine } from '../../core/browser/pageText'
+import { blockedActionHead } from '../../core/browser/actionOutcome'
+import { SPOKEN_FAILURES } from '../../core/command/spokenFailure'
+import { createSpeechCoordinator } from '../../core/tts/speechCoordinator'
 import { createCommandRunner, type CommandRunner } from './commandRunner'
 
 // The Command runner (#324, ADR 0076): a typed or spoken line becomes one
@@ -58,7 +63,45 @@ function choice(label: string, confidence = 0.9, probabilities: Record<string, n
   return { type: 'choice', choice: label, confidence, probabilities }
 }
 
-function harness(options?: { decision?: null; learned?: string[] }) {
+/** A speaker double (#327): records each text, sounds its first sample and finishes it on demand. */
+class FakeSpeech {
+  readonly spoken: { text: string; turnId?: string }[] = []
+  stops = 0
+  private pending: { onFirstSound?: () => void; resolve: (outcome: SpeakOutcome) => void }[] = []
+
+  speak = (text: string, options?: SpeakOptions): Promise<SpeakOutcome> => {
+    this.spoken.push({ text, ...(options?.turnId !== undefined ? { turnId: options.turnId } : {}) })
+    return new Promise((resolve) => this.pending.push({ ...(options?.onFirstSound ? { onFirstSound: options.onFirstSound } : {}), resolve }))
+  }
+
+  stop = (): void => {
+    this.stops += 1
+    for (const item of this.pending.splice(0)) item.resolve({ ok: true })
+  }
+
+  /** The text in flight hands its first sample to the player. */
+  sound(): void {
+    this.pending[0]?.onFirstSound?.()
+  }
+
+  finish(outcome: SpeakOutcome = { ok: true }): void {
+    this.pending.shift()?.resolve(outcome)
+  }
+}
+
+/** A Page Read as the controller writes one: the head, the refs, then the page's text and its part line. */
+const PAGE_READ = [
+  '# Example — https://example.com/',
+  'viewport 985x575 scroll 0/2000',
+  'signature 1a2b3c4d',
+  '[1] link "Home"',
+  'page text:',
+  'Welcome to the example. It has two sentences.',
+  'A second block.',
+  pageReadPartLine(1, 1),
+].join('\n')
+
+function harness(options?: { decision?: null; learned?: string[]; speech?: Pick<TtsSpeaker, 'speak' | 'stop'> }) {
   const browser = new FakeBrowser()
   browser.snapshot = { ...browser.snapshot, url: 'https://example.com/', title: 'Example', refs: PAGE_REFS }
   const events: PipelineEvent[] = []
@@ -84,6 +127,7 @@ function harness(options?: { decision?: null; learned?: string[] }) {
       effectListeners.add(listener)
       return () => effectListeners.delete(listener)
     },
+    ...(options?.speech ? { speech: options.speech } : {}),
     screenshotDir: () => '/shots',
     saveScreenshot: async (path) => {
       screenshots.push(path)
@@ -835,5 +879,167 @@ describe('Early Fire (#326)', () => {
     await runner.consider('go back')
     void runner.prepare()
     expect(records.filter((record) => record.type === 'decision')).toEqual([expect.objectContaining({ verb: 'back', earlyFire: { partial: 'go back' } })])
+  })
+})
+
+// Increment 3 (#327, ADR 0076): `read` speaks the Page Read, sentence by
+// sentence, and a failure speaks one line; actions that succeed stay silent.
+// The Reaction of a Command whose output is speech closes on its first
+// spoken sample.
+describe('a Command whose output is speech', () => {
+  it('reads the page aloud: the Card as today, one speak of the page text, the Reaction on the first spoken sample (AC3)', async () => {
+    const speech = new FakeSpeech()
+    const { browser, events, perf, runner } = harness({ speech })
+    browser.readPage = async () => PAGE_READ
+    perf.state.monotonicMs = 500
+    const run = runner.run('read', { source: 'spoken', turnId: 'voice-1', endpointAt: 400 })
+    await flushMicrotasks()
+
+    // The Card is shown when the text is in hand, before a word is spoken.
+    expect(events.find((event) => event.type === 'display')).toMatchObject({ text: PAGE_READ })
+    expect(speech.spoken).toEqual([{ text: 'Welcome to the example. It has two sentences.\nA second block.', turnId: 'voice-1' }])
+    expect(events.filter((event) => event.type === 'speak')).toEqual([
+      { type: 'speak', turnId: 'voice-1', text: 'Welcome to the example. It has two sentences.\nA second block.', at: expect.any(Number) },
+    ])
+    expect(types(events).indexOf('display')).toBeLessThan(types(events).indexOf('speak'))
+    expect(perf.records.filter((record) => record.stage === 'reaction')).toEqual([])
+    // Still the Command in flight while it speaks: the Abort Head reaches it.
+    expect(runner.getState()).toBe('running')
+    expect(events).toContainEqual(expect.objectContaining({ type: 'status', turnId: 'voice-1', status: 'speaking' }))
+
+    perf.state.monotonicMs = 1_150
+    speech.sound()
+    expect(perf.records.find((record) => record.stage === 'reaction')).toMatchObject({ durMs: 750, detail: { verb: 'read', effect: 'spoken' } })
+    speech.finish()
+    await run
+    expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done' })
+    expect(runner.getState()).toBe('idle')
+  })
+
+  it('closes the Reaction on the Card when no sample was ever spoken', async () => {
+    const speech = new FakeSpeech()
+    const { browser, perf, runner } = harness({ speech })
+    browser.readPage = async () => PAGE_READ
+    perf.state.monotonicMs = 500
+    const run = runner.run('read', { source: 'spoken', turnId: 'voice-1', endpointAt: 400 })
+    await flushMicrotasks()
+    perf.state.monotonicMs = 2_000
+    speech.finish({ ok: false, error: 'piper missing' })
+    await run
+    expect(perf.records.find((record) => record.stage === 'reaction')).toMatchObject({ durMs: 100, detail: { verb: 'read', effect: 'display' } })
+  })
+
+  it('speaks that the page has no text when a read finds none', async () => {
+    const speech = new FakeSpeech()
+    const { runner } = harness({ speech })
+    const run = runner.run('read')
+    await flushMicrotasks()
+    expect(speech.spoken.map((line) => line.text)).toEqual([SPOKEN_FAILURES.empty])
+    speech.finish()
+    await run
+  })
+
+  it('a later Command silences the reading, ends its turn cancelled, and the reading\'s remaining sentences are never synthesized (AC3)', async () => {
+    const synthesized: string[] = []
+    const renders: (() => void)[] = []
+    const streams: { stopped: boolean }[] = []
+    const speech = createSpeechCoordinator({
+      synth: {
+        synthesize: (text) => {
+          synthesized.push(text)
+          return new Promise((resolve) => renders.push(() => resolve(new Uint8Array([1]))))
+        },
+      },
+      player: {
+        open(): AudioStream {
+          const state = { stopped: false }
+          streams.push(state)
+          let resolveDone!: () => void
+          const done = new Promise<void>((resolve) => (resolveDone = resolve))
+          return { done, write: () => {}, end: () => {}, stop: () => ((state.stopped = true), resolveDone()) }
+        },
+      },
+    })
+    const { browser, events, runner } = harness({ speech })
+    browser.readPage = async () => PAGE_READ
+    const reading = runner.run('read', { turnId: 'read-1' })
+    await flushMicrotasks()
+    renders.shift()!()
+    await new Promise((resolve) => setImmediate(resolve))
+    expect(synthesized).toEqual(['Welcome to the example.', 'It has two sentences.'])
+
+    await runner.run('scroll down')
+    expect(streams[0]!.stopped).toBe(true)
+    renders.shift()!()
+    await reading
+    await new Promise((resolve) => setImmediate(resolve))
+    expect(synthesized).toEqual(['Welcome to the example.', 'It has two sentences.'])
+    const readTurn = events.filter((event) => 'turnId' in event && event.turnId === 'read-1')
+    expect(readTurn.at(-1)).toMatchObject({ type: 'done', outcome: 'cancelled' })
+  })
+
+  it('abort silences the reading', async () => {
+    const speech = new FakeSpeech()
+    const { browser, runner } = harness({ speech })
+    browser.readPage = async () => PAGE_READ
+    const run = runner.run('read')
+    await flushMicrotasks()
+    expect(runner.abort()).toBe(true)
+    expect(speech.stops).toBe(1)
+    await run
+    expect(runner.getState()).toBe('idle')
+  })
+
+  it('a failed open speaks its one line, and the turn still ends failed at once (AC4)', async () => {
+    const speech = new FakeSpeech()
+    const { browser, events, runner } = harness({ speech })
+    browser.navigate = async () => {
+      throw new Error('net::ERR_NAME_NOT_RESOLVED at https://nope.example/')
+    }
+    await runner.run('open nope.example')
+    expect(speech.spoken.map((line) => line.text)).toEqual([SPOKEN_FAILURES.failed])
+    expect(events.find((event) => event.type === 'speak')).toMatchObject({ text: SPOKEN_FAILURES.failed })
+    expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'failed' })
+    // The line still sounding counts as the runner's: the Abort Head reaches it, and the next Command silences it.
+    expect(runner.getState()).toBe('running')
+    await runner.run('scroll down')
+    expect(speech.stops).toBe(1)
+  })
+
+  it('a landing on an Action Outcome class speaks that class\'s line (AC4)', async () => {
+    const landings: [string, string, string][] = [
+      ['https://example.com/missing', 'Page Not Found', SPOKEN_FAILURES.notFound],
+      ['https://example.com/down', '503 Service Unavailable', SPOKEN_FAILURES.unavailable],
+      ['https://accounts.example.com/signin', 'Sign in', SPOKEN_FAILURES.blocker],
+    ]
+    for (const [url, title, line] of landings) {
+      const speech = new FakeSpeech()
+      const { browser, runner } = harness({ speech })
+      browser.navigate = async () => `navigated: url=${url} title=${JSON.stringify(title)}\nsignature 1a2b3c4d\npage text:\nsome text`
+      await runner.run(`open ${url}`)
+      expect(speech.spoken.map((spoken) => spoken.text)).toEqual([line])
+    }
+    const speech = new FakeSpeech()
+    const { browser, runner } = harness({ speech })
+    browser.navigate = async () => 'navigated: url=https://example.com/ title="Home"\nsignature 1a2b3c4d'
+    await runner.run('open example.com')
+    browser.click = async () => blockedActionHead('click', 2, { fact: 'notShown' })
+    await runner.run('click 2')
+    expect(speech.spoken.map((spoken) => spoken.text)).toEqual([SPOKEN_FAILURES.empty, SPOKEN_FAILURES.blocked])
+  })
+
+  it('a successful click, type, scroll, back and a none publish no speak (AC4)', async () => {
+    const speech = new FakeSpeech()
+    const { decision, events, runner } = harness({ speech })
+    await runner.run('click 2')
+    await runner.run('type 3 hello')
+    await runner.run('scroll down')
+    await runner.run('back')
+    await runner.run('open example.com')
+    decision.script.push({ answers: { verb: choice('none', 0.7), target: choice('none'), slot: choice('none') } })
+    await runner.run('what a lovely day', { source: 'spoken' })
+    expect(events.some((event) => event.type === 'command' && event.dropped === true)).toBe(true)
+    expect(speech.spoken).toEqual([])
+    expect(events.filter((event) => event.type === 'speak')).toEqual([])
   })
 })

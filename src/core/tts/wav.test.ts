@@ -1,5 +1,24 @@
 import { describe, expect, it } from 'vitest'
-import { wrapRawPcmAsWav } from './wav'
+import { parseWav, wrapRawPcmAsWav } from './wav'
+
+describe('parseWav', () => {
+  it('reads the format and the samples back out of a WAV', () => {
+    const pcm = new Uint8Array([5, 6, 7, 8])
+    expect(parseWav(wrapRawPcmAsWav(pcm, 16000))).toEqual({ sampleRate: 16000, channels: 1, bitsPerSample: 16, pcm })
+  })
+
+  it('skips chunks before the data chunk', () => {
+    const wav = wrapRawPcmAsWav(new Uint8Array([1, 2]), 22050)
+    // Splice a 4-byte LIST chunk between fmt and data.
+    const list = new Uint8Array([0x4c, 0x49, 0x53, 0x54, 4, 0, 0, 0, 9, 9, 9, 9])
+    const spliced = new Uint8Array([...wav.slice(0, 36), ...list, ...wav.slice(36)])
+    expect(parseWav(spliced)?.pcm).toEqual(new Uint8Array([1, 2]))
+  })
+
+  it('is null for bytes that are not a WAV', () => {
+    expect(parseWav(new Uint8Array([1, 2, 3]))).toBeNull()
+  })
+})
 
 describe('wrapRawPcmAsWav', () => {
   it('writes a 44-byte PCM header for 16-bit mono audio', () => {

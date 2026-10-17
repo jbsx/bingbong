@@ -3,6 +3,7 @@ import {
   MAX_PAGE_READ_TEXT,
   emptyPageReadLine,
   isPageTextFactLine,
+  pageReadText,
   isPartPastTheEnd,
   pageReadPartLine,
   partPastTheEnd,
@@ -195,5 +196,16 @@ describe('fact lines (#235/AC1, AC2)', () => {
     expect(isPartPastTheEnd(`Not executed — ${partPastTheEnd(2, 1)}`)).toBe(true)
     expect(isPartPastTheEnd('page text: part 3 of 3 — the last part')).toBe(false)
     expect(isPartPastTheEnd('read_page: part must be a whole number from 1')).toBe(false)
+  })
+})
+
+describe('pageReadText (#327)', () => {
+  it('is the page\'s own text a Page Read carries: after its heading, up to its part line, nothing of the head, refs or reports', () => {
+    const read = ['# Example — https://example.com/', 'signature 1a2b', '[1] link "Home"', 'page text:', 'First block.', 'Second block.', pageReadPartLine(1, 2), 'native alert dialog auto-dismissed: "hi"'].join('\n')
+    expect(pageReadText(read)).toBe('First block.\nSecond block.')
+  })
+
+  it('is empty for a read that carries no text', () => {
+    expect(pageReadText(['# Blank — about:blank', 'signature 0000', emptyPageReadLine()].join('\n'))).toBe('')
   })
 })

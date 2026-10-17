@@ -132,6 +132,28 @@ describe.skipIf(!stripsTypes)('perf:report script', () => {
     expect(stdout).toContain('early fire: 2 of 3 spoken (67%), lead p50 350ms p95 450ms | jev calls per spoken utterance 0.33 (1 on partials)')
   })
 
+  it('prints tts-first-sound p50/p95 beside the Reaction rows, a spoken read on its own row (#327)', () => {
+    const reaction = (turnId: string, effect: string, durMs: number): string =>
+      JSON.stringify({ ...span(turnId, 'reaction', durMs), detail: { verb: 'read', effect, reading: 'local_match', source: 'spoken' } })
+    writeFileSync(
+      join(dir, 'perf-1-1.jsonl'),
+      [
+        reaction('turn-1', 'display', 310),
+        reaction('turn-2', 'spoken', 940),
+        JSON.stringify(span('turn-2', 'tts-first-sound', 700)),
+        JSON.stringify({ ...span('turn-2', 'tts-synthesis', 640), detail: { index: 0, spawns: 1 } }),
+        reaction('turn-3', 'spoken', 1_020),
+        JSON.stringify(span('turn-3', 'tts-first-sound', 760)),
+      ].join('\n') + '\n',
+    )
+
+    const stdout = execFileSync(process.execPath, [SCRIPT, dir], { encoding: 'utf8' })
+
+    expect(stdout).toMatch(/^read \(spoken\)\s+2\s+940ms\s+1020ms\s+1020ms$/m)
+    expect(stdout).toMatch(/^read\s+1\s+310ms\s+310ms\s+310ms$/m)
+    expect(stdout).toMatch(/^tts-first-sound\s+2\s+700ms\s+760ms\s+760ms$/m)
+  })
+
   it('exits 0 against an empty logs dir', () => {
     const stdout = execFileSync(process.execPath, [SCRIPT, dir], { encoding: 'utf8' })
 

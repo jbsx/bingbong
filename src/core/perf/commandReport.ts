@@ -13,6 +13,7 @@ import { formatMs, nearestRankPercentile } from '../report/stats.ts'
 // files are read at the main seam.
 
 const REACTION_STAGE = 'reaction'
+const FIRST_SOUND_STAGE = 'tts-first-sound'
 
 export interface ReactionStats {
   /** The Command's verb, or `all` for the overall row. */
@@ -26,10 +27,12 @@ export interface ReactionStats {
 export interface ReactionReport {
   /** Every Reaction, one row; null when the log holds none. */
   overall: ReactionStats | null
-  /** One row per verb: count-descending, then name. */
+  /** One row per verb: count-descending, then name. A read that was spoken is its own row, `read (spoken)` (#327). */
   byVerb: ReactionStats[]
   /** The Reaction of Commands fired on a partial (`early`) and at the Endpoint (`endpoint`); a row is null when none was. */
   byFire: { early: ReactionStats | null; endpoint: ReactionStats | null }
+  /** The `tts-first-sound` spans (#327): speak call to the first sample handed to the player; null when none. */
+  firstSound: ReactionStats | null
 }
 
 export interface DecisionReport {
@@ -62,18 +65,25 @@ function statsOf(verb: string, durations: readonly number[]): ReactionStats {
   }
 }
 
-/** The verb a `reaction` span recorded; `unknown` for one without. */
+/**
+ * The row a `reaction` span counts in: its verb, `unknown` for one without;
+ * a Reaction closed on the first spoken sample is its verb's own row, so a
+ * spoken `read` stands beside the `display` one it replaced (#327).
+ */
 function verbOf(record: PerfSpanRecord): string {
   const verb = record.detail?.verb
-  return typeof verb === 'string' && verb !== '' ? verb : 'unknown'
+  const named = typeof verb === 'string' && verb !== '' ? verb : 'unknown'
+  return record.detail?.effect === 'spoken' ? `${named} (spoken)` : named
 }
 
 export function buildReactionReport(records: readonly PerfSpanRecord[]): ReactionReport {
   const all: number[] = []
   const early: number[] = []
   const endpoint: number[] = []
+  const firstSound: number[] = []
   const byVerb = new Map<string, number[]>()
   for (const record of records) {
+    if (record.stage === FIRST_SOUND_STAGE) firstSound.push(record.durMs)
     if (record.stage !== REACTION_STAGE) continue
     all.push(record.durMs)
     ;(record.detail?.earlyFire === true ? early : endpoint).push(record.durMs)
@@ -88,6 +98,7 @@ export function buildReactionReport(records: readonly PerfSpanRecord[]): Reactio
       .map(([verb, durations]) => statsOf(verb, durations))
       .sort((a, b) => b.count - a.count || a.verb.localeCompare(b.verb)),
     byFire: { early: early.length === 0 ? null : statsOf('early', early), endpoint: endpoint.length === 0 ? null : statsOf('endpoint', endpoint) },
+    firstSound: firstSound.length === 0 ? null : statsOf(FIRST_SOUND_STAGE, firstSound),
   }
 }
 
@@ -162,10 +173,11 @@ function percent(part: number, whole: number): string {
  */
 export function formatCommandReport(reaction: ReactionReport, decisions: DecisionReport): string[] {
   const lines: string[] = []
-  if (reaction.overall !== null) {
+  if (reaction.overall !== null || reaction.firstSound !== null) {
     lines.push('reaction (Endpoint to first effect), by verb:')
-    const rows = [reaction.overall, ...reaction.byVerb].map(rowOf)
-    lines.push(...table(['verb', 'count', 'p50', 'p95', 'max'], rows))
+    // The speech rows beside it (#327): the speak call to the first spoken sample.
+    const stats = [...(reaction.overall ? [reaction.overall] : []), ...reaction.byVerb, ...(reaction.firstSound ? [reaction.firstSound] : [])]
+    lines.push(...table(['verb', 'count', 'p50', 'p95', 'max'], stats.map(rowOf)))
     const fired = [reaction.byFire.early, reaction.byFire.endpoint].filter((row): row is ReactionStats => row !== null)
     if (reaction.byFire.early !== null) {
       lines.push('', 'reaction by Early Fire:')

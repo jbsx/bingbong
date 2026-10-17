@@ -8,6 +8,8 @@ export interface PiperConfig {
   voicesDir: string
   /** Base voice; the settings page's ttsVoice overrides this at speak time. */
   voiceId: string
+  /** The player spoken text streams into (#327); default aplay on PATH. The TTS e2e scripts it. */
+  playerBin: string
 }
 
 export function resolvePiperConfig(env: Record<string, string | undefined>, userDataDir: string): PiperConfig {
@@ -15,5 +17,6 @@ export function resolvePiperConfig(env: Record<string, string | undefined>, user
     bin: env.BINGBONG_PIPER_BIN?.trim() || 'piper',
     voicesDir: env.BINGBONG_PIPER_VOICE_DIR?.trim() || join(userDataDir, 'voices'),
     voiceId: env.BINGBONG_PIPER_VOICE?.trim() || DEFAULT_PIPER_VOICE,
+    playerBin: env.BINGBONG_APLAY_BIN?.trim() || 'aplay',
   }
 }

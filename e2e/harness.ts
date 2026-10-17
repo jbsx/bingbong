@@ -156,10 +156,14 @@ function elementCenterScript(selector: string): string {
  * override. The env-file pointer (#76) aims the app's .env loader at a
  * path that doesn't exist, so e2e never picks up the developer's real
  * .env next to the repo — tests that want file config pass their own
- * BINGBONG_ENV_FILE and override this.
+ * BINGBONG_ENV_FILE and override this. Speech (#327) runs through the
+ * scripted piper and aplay in e2e/bin: `read` and a failure speak, and no
+ * launch may load a real voice or reach the sound card.
  */
 export function hermeticEnvTemplate(fixture: FixtureServer, userDataDir: string): Record<string, string | undefined> {
   return {
+    BINGBONG_PIPER_BIN: join(repoRoot, 'e2e/bin/fake-piper.mjs'),
+    BINGBONG_APLAY_BIN: join(repoRoot, 'e2e/bin/fake-aplay.mjs'),
     BINGBONG_WAKE_ENGINE: 'off',
     BINGBONG_ADBLOCK_LISTS: fixture.url('/adblock-list'),
     BINGBONG_ADBLOCK_RESOURCES: '',

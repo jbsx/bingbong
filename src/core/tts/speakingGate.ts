@@ -28,9 +28,9 @@ export function createSpeakingGate(inner: TtsSpeaker): SpeakingGate {
   }
 
   const tts: TtsSpeaker = {
-    speak: (text, turnId) => {
+    speak: (text, options) => {
       outstanding += 1
-      return inner.speak(stripMarkdownForSpeech(text), turnId).then(
+      return inner.speak(stripMarkdownForSpeech(text), options).then(
         (outcome) => {
           settled()
           return outcome

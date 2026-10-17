@@ -272,13 +272,15 @@ async function createWindow(): Promise<BrowserWindow> {
 
   const downloadsDir = resolveDownloadsDir(process.env, app.getPath('downloads'))
   // Spoken output (T8), wrapped in a speaking gate (T9): download
-  // announcements and whatever speaks next share it.
+  // announcements and the runner's Page Reads and failure lines (#327)
+  // share it. Piper starts now, so the first line pays no model load.
   const speakingGate = createSpeakingGate(
     createMainTts({
       config: piperConfig,
       pane: pane.view.webContents,
       getVoiceId: () => settingsStore.get().ttsVoice.trim() || piperConfig.voiceId,
       tracer: perfTracer,
+      prefetch: true,
     }),
   )
   attachDownloadRouter(pane.session, {
@@ -308,6 +310,8 @@ async function createWindow(): Promise<BrowserWindow> {
       effectListeners.add(listener)
       return () => effectListeners.delete(listener)
     },
+    // `read` speaks the page and a failure its one line (#327).
+    speech: speakingGate.tts,
     screenshotDir: () => downloadsDir,
     saveScreenshot: saveScreenshotFile,
     // The Learned Terms (ADR 0077): read for the Name Match, grown by it.

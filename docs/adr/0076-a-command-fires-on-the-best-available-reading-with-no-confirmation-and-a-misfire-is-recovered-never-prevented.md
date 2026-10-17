@@ -238,3 +238,71 @@ The readings it took:
   and an Early Fired Command that speaks would mute its own Utterance and
   lose its lead — nothing speaks a Command's output until increment 3
   (#327), which should close that Utterance at the mute.
+Increment 3 (#327) built speech for `read` and for failures on 2026-10-17.
+The route and the readings it took:
+
+- **The persistent Piper runs in `--output-dir` mode.** One WAV per stdin
+  line, the line delimited by the path piper reports as it finishes: the
+  Python piper on the development box (piper1-gpl) logs `Wrote <path>` on
+  stderr, the C++ piper prints the bare path on stdout, and either is read.
+  `--output-raw` was not taken: the Python piper reports no per-line sample
+  count, so its raw stream cannot be cut. On the box, one process answered
+  a second line 48 ms after the first, against ~1.2 s for a cold spawn. The
+  WAVs land in a temp dir and are removed once read.
+- **The process starts at app start**, prefetched like the Moonshine
+  models, and exits with the app (its stdin closes). A changed voice
+  Setting kills it and starts the new voice's at the next line.
+- **A process that dies before answering its first line could not start**
+  (no piper, or one without `--output-dir`): every line from then on goes
+  to the per-line spawn, with no error surfaced. One that dies after
+  serving is restarted at the next line, and a line it died under is
+  retried once on the new one. A line unanswered in 20 s kills the process.
+- **Sentences are cut after the markdown is stripped**: each line of the
+  text is a block, a block without a sentence end is a sentence, and a
+  sentence ends at `.`, `!`, `?` or `…` before whitespace — not after an
+  initial, a dotted abbreviation (`e.g.`) or a short list of common ones.
+- **Synthesis runs ahead of playback.** The first sentence goes to the
+  player as soon as it is rendered and the next is synthesized at once;
+  every sentence's samples are written into one `aplay -t raw` reading the
+  voice's format, so playback never waits once it starts unless piper is
+  slower than speech. A stop discards the sentence being rendered, and the
+  ones after it are never sent to piper. A sentence in another format (the
+  voice changed mid-text) plays through a second aplay once the first has
+  drained.
+- **What `read` speaks is the Page Read's text**, after its `page text:`
+  heading and before its part line — never the head, the refs or the
+  reports. A read with no text speaks "This page shows no text." The Card
+  is shown first, as in increment 1; the Feed hides the `speak` entry of a
+  turn whose Card rendered.
+- **A spoken `read` stays the Command in flight until its text ends**, with
+  status `speaking`: the Abort Head (gated on the run state) and the next
+  Command reach it, and either stops the speaker, which kills the stream.
+  The voice is one queue, so a stop also cuts a download announcement.
+- **The Reaction of a spoken `read` closes on `effect: 'spoken'`**, when the
+  first sample is written to the player, and a page mutation during the
+  read does not close it. When nothing was spoken — the voice failed, or
+  was cut first — it closes on `display` at the moment the Card was shown.
+- **A failure's line is not waited on.** The turn ends `failed` (or `done`
+  for a landing) at once and the line plays after; the runner counts it as
+  its own speech, so the run state stays `running` while it sounds, and
+  the Abort Head or the next Command silences it. Its Reaction stays the
+  action's.
+- **The failure table** (`src/core/command/spokenFailure.ts`): an action
+  that threw; a Blocked Action (its target Covered or Not Shown); a consent
+  wall, a Blocked Action whose outcome carries a dismissal that left the
+  target covered or was not retried; a Blocker (challenge, network block,
+  login wall); a Not-found, Unavailable or Empty Landing. The page classes
+  read the landing line's address and title (the tab's for a click that
+  arrived) with no response status, which this branch does not collect, so
+  a not-found or unavailable page is recognised by its title. An inert
+  click stays silent: it is no Blocked Action.
+- **`tts-synthesis` carries `{ index, spawns }`**: the sentence's index and
+  the synthesizer processes started so far, the per-line process count
+  AC7 asks for. `tts-first-sound` runs from the speak call, queue wait
+  included, to the first sample written. `pnpm perf:report` prints a spoken
+  read as `read (spoken)` beside `read`, and `tts-first-sound` as a row
+  under the Reaction table.
+- **Every hermetic e2e launch speaks through the scripted piper and aplay**
+  in `e2e/bin` (`BINGBONG_PIPER_BIN`, and `BINGBONG_APLAY_BIN`, new), so no
+  e2e run loads a voice or reaches the sound card; `e2e/tts.e2e.test.ts`
+  reads what they were given.

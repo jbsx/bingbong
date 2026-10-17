@@ -12,6 +12,9 @@ import { isAddressShaped, openAddress } from '../../core/command/openAddress'
 import { nameMatch, soundsAlike } from '../../core/command/nameMatch'
 import { jevDetailOf, misfireSignal, type CommandLogRecord, type CommandReading, type CommandSource, type DecisionRecord, type NameSource } from '../../core/command/decisionRecord'
 import { pageTermsOf } from '../../core/voice/pageTerms'
+import { pageReadText } from '../../core/browser/pageText'
+import { SPOKEN_FAILURES, spokenFailureOf, type SpokenFailure } from '../../core/command/spokenFailure'
+import type { SpeakOutcome, TtsSpeaker } from '../../core/ports/tts'
 import { reportFault } from '../../core/trace/fault'
 import type { ActionEffect } from '../browser/createCdpBrowserController'
 
@@ -33,6 +36,13 @@ import type { ActionEffect } from '../browser/createCdpBrowserController'
 // stays on the decision record. A name the page witnessed is learned at
 // once; a chain of retries that ends with the user moving on proposes its
 // last Slot, admitted when it recurs.
+//
+// Speech (#327): `read` speaks the Page Read's text, sentence by sentence,
+// after its Card is shown, and stays the Command in flight until the text
+// ends, the Abort Head, or the next Command silences it; its Reaction
+// closes on the first spoken sample. A Command that fails, or lands on an
+// Action Outcome class, speaks one fixed line (spokenFailure.ts). Every
+// other action stays silent.
 
 export type { CommandRunState }
 
@@ -113,6 +123,8 @@ export interface CommandRunnerDeps {
   saveScreenshot(path: string, bytes: Uint8Array): Promise<void>
   /** The Learned Terms (ADR 0077); absent reads names off the page alone and learns nothing. */
   terms?: CommandTerms
+  /** The voice (#327): a Page Read and a failure's line are spoken through it; absent keeps every Command silent. */
+  speech?: Pick<TtsSpeaker, 'speak' | 'stop'>
 }
 
 /** How much of a Page Read the Feed card shows. */
@@ -233,6 +245,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   let prepared: PreparedPage | null = null
   /** The Command that last fired, for the Misfire signal. */
   let previous: { turnId: string; verb: Command['verb']; key?: Command['key']; at: number } | null = null
+  /** The runner's texts still sounding (a Page Read, a failure's line): the next Command or an abort silences them. */
+  let voiced = 0
 
   const at = (): number => deps.now()
   const monotonic = (): number => tracer?.now() ?? at()
@@ -272,6 +286,34 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     inFlight = null
     publish({ type: 'status', turnId, status: 'cancelled', at: at() })
     publish({ type: 'done', turnId, outcome: 'cancelled', at: at() })
+    return true
+  }
+
+  /** Speak a Command's text (#327): one `speak` event carries it, and it counts as the runner's until it ends. */
+  function say(speech: Pick<TtsSpeaker, 'speak'>, turnId: string, text: string, onFirstSound?: () => void): Promise<SpeakOutcome> {
+    publish({ type: 'speak', turnId, text, at: at() })
+    voiced += 1
+    return speech
+      .speak(text, { turnId, ...(onFirstSound ? { onFirstSound } : {}) })
+      .catch((error: unknown): SpeakOutcome => {
+        reportFault('run.commandRunner.speak', error, { turnId })
+        return { ok: false, error: String(error) }
+      })
+      .finally(() => {
+        voiced -= 1
+      })
+  }
+
+  /** A failure's one line, not waited on: the turn ends now, and the next Command silences it. */
+  function sayFailure(turnId: string, failure: SpokenFailure | null): void {
+    if (deps.speech === undefined || failure === null) return
+    void say(deps.speech, turnId, SPOKEN_FAILURES[failure])
+  }
+
+  /** Silence the runner's speech, if any is sounding; whether any was. */
+  function silence(): boolean {
+    if (voiced === 0) return false
+    deps.speech?.stop()
     return true
   }
 
@@ -442,8 +484,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
 
   /** How a fired Command's Reaction is measured and its turn closed. */
   interface Reacting {
-    /** The action's first observable effect (or its end), as the span's detail: the Reaction closes on it. */
-    react(detail: Record<string, unknown>): void
+    /** The action's first observable effect (or its end, or its first spoken sample), at the tracer's `endedAt`, as the span's detail: the Reaction closes on it. */
+    react(detail: Record<string, unknown>, endedAt: number): void
     /** The action settled: the turn closes, once its Reaction is in. */
     settled(): void
   }
@@ -462,8 +504,9 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     previous = { turnId, verb: command.verb, key: command.key, at: firedAt }
     if (source === 'spoken') learnFrom(command, matched, firedAt)
 
-    // A later Command supersedes the one in flight; `stop` is only that.
+    // A later Command supersedes the one in flight, and silences what it was saying; `stop` is only that.
     cancelInFlight()
+    silence()
     generation += 1
     const mine = generation
     inFlight = { turnId, generation: mine }
@@ -480,23 +523,38 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     const { name, args } = toolOf(command)
     publish({ type: 'tool_call', turnId, callId, name, args, at: at() })
 
-    // The Reaction (CONTEXT.md): Endpoint to the action's first observable effect.
+    // The Reaction (CONTEXT.md): Endpoint to the action's first observable
+    // effect — or, for a read that is spoken (#327), to its first spoken sample.
+    const speech = command.verb === 'read' ? deps.speech : undefined
     let reacted = false
-    const react = (effect: string): void => {
+    const react = (effect: string, endedAt = monotonic()): void => {
       if (reacted) return
       reacted = true
-      reacting.react({ verb: command.verb, effect, reading: readingKind, source })
+      reacting.react({ verb: command.verb, effect, reading: readingKind, source }, endedAt)
     }
     const release = deps.onEffect?.((effect) => {
-      if (current()) react(effect)
+      if (current() && speech === undefined) react(effect)
     })
     try {
       const result = await perform(command)
       if (!current()) return
       const card = cardOf(command, result)
-      react(card !== null && command.verb === 'read' ? 'display' : 'settled')
+      if (speech === undefined) react(card !== null && command.verb === 'read' ? 'display' : 'settled')
       publish({ type: 'tool_result', turnId, callId, name, ok: true, result, at: at() })
       if (card !== null) publish({ type: 'display', turnId, text: card, at: at() })
+      if (speech !== undefined) {
+        const shownAt = monotonic()
+        publish({ type: 'status', turnId, status: 'speaking', at: at() })
+        await say(speech, turnId, pageReadText(result) || SPOKEN_FAILURES.empty, () => {
+          if (current()) react('spoken')
+        })
+        if (!current()) return
+        // Nothing was spoken (the voice failed, or was cut first): the Card was the effect.
+        react('display', shownAt)
+      } else {
+        const state = browser.state()
+        sayFailure(turnId, spokenFailureOf({ tool: name, outcome: { ok: true, result }, ...(state.url ? { url: state.url } : {}), ...(state.title ? { title: state.title } : {}) }))
+      }
       inFlight = null
       publish({ type: 'done', turnId, outcome: 'done', at: at() })
     } catch (error) {
@@ -504,6 +562,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       react('failed')
       const message = error instanceof Error ? error.message : String(error)
       publish({ type: 'tool_result', turnId, callId, name, ok: false, error: message, at: at() })
+      sayFailure(turnId, 'failed')
       inFlight = null
       publish({ type: 'done', turnId, outcome: 'failed', at: at() })
     } finally {
@@ -562,8 +621,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
 
   function reactingEarly(fired: EarlyFired): Reacting {
     return {
-      react(detail) {
-        const now = monotonic()
+      react(detail, now) {
         if (fired.endpointAt === null) {
           fired.effect = { detail, at: now }
           return
@@ -658,14 +716,15 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   }
 
   return {
-    getState: () => (inFlight === null && reading === null ? 'idle' : 'running'),
+    getState: () => (inFlight === null && reading === null && voiced === 0 ? 'idle' : 'running'),
 
     abort() {
-      const had = reading !== null || inFlight !== null
+      const had = reading !== null || inFlight !== null || voiced > 0
       // A reading under way is stale from here: when its answer comes, it fires nothing.
       submitted += 1
       reading = null
       cancelInFlight()
+      silence()
       return had
     },
 
@@ -770,7 +829,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       }
 
       await fire(turnId, trimmed, source, command, heard.page, heard.reading, matched, firedAt, {
-        react: (detail) => span(turnId, monotonic() - endpointAt, detail),
+        react: (detail, endedAt) => span(turnId, endedAt - endpointAt, detail),
         settled: () => summarize(turnId),
       })
       return true

@@ -1283,6 +1283,11 @@ export async function startFixtureServer(): Promise<FixtureServer> {
       res.end(interactivePage())
       return
     }
+    // #327: a page of plain prose whose sentences the TTS e2e hears spoken, in order.
+    if (req.url === '/story') {
+      res.end(page('<title>story fixture</title><main style="color:#fff"><h1>The lighthouse</h1><p>The keeper climbed the stairs. The lamp was cold.</p><p>He lit it before dark.</p></main>'))
+      return
+    }
     if (req.url === '/risky') {
       res.end(riskyPage())
       return

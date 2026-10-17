@@ -1,59 +1,68 @@
-import type { AudioDucker, AudioPlayer, AudioPlayback, SpeakOutcome, SpeechSynthesizer, TtsSpeaker } from '../ports/tts'
+import type { AudioDucker, AudioStream, AudioStreamPlayer, SpeakOptions, SpeakOutcome, SpeechSynthesizer, TtsSpeaker } from '../ports/tts'
 import type { PerfTracer } from '../perf/perfTracer'
 import { reportFault } from '../trace/fault'
+import { splitSentences } from './sentences'
 
 export interface SpeechCoordinatorDeps {
   synth: SpeechSynthesizer
-  player: AudioPlayer
+  player: AudioStreamPlayer
   ducker?: AudioDucker
   /**
-   * Optional perf tracer (#31): each spoken line keyed to a turn id records
-   * a `tts-synthesis` span (piper rendering) and a `tts-playback` span
-   * (aplay speaking) — the split that makes a streaming-TTS change's value
-   * measurable. Lines without a turn id (download announcements, subagent
-   * lines) pass through unlogged.
+   * Optional perf tracer (#31, #327): each spoken text keyed to a turn id
+   * records a `tts-synthesis` span per sentence (piper rendering, with the
+   * sentence's index), a `tts-first-sound` span from the speak call to the
+   * first sample handed to the player, and a `tts-playback` span (aplay
+   * speaking). Texts without a turn id (download announcements) pass
+   * through unlogged.
    */
   tracer?: PerfTracer
 }
 
 interface QueuedSpeak {
   text: string
-  turnId?: string
+  options: SpeakOptions
+  /** Monotonic ms of the speak call, when traced: where `tts-first-sound` opens. */
+  calledAt?: number
   resolve: (outcome: SpeakOutcome) => void
 }
 
 /**
- * The TtsSpeaker the pipeline and download announcements share: lines queue
- * so speech never overlaps, page audio ducks for the duration of each line,
- * and stop() (barge-in) kills the current line and drops the queue. A line
- * stopped mid-flight resolves `{ ok: true }` — being interrupted is normal,
- * not an error.
+ * The TtsSpeaker the runner and download announcements share: texts queue
+ * so speech never overlaps, and each is spoken sentence by sentence (#327)
+ * — the first sentence is handed to playback as soon as it is synthesized,
+ * the next is synthesized while it plays, and all of them play through one
+ * playback stream, so there is no start gap between them. Page audio ducks
+ * for the whole text. stop() (barge-in, a later Command) kills the stream
+ * and drops the queue; a sentence still being synthesized is discarded and
+ * the ones after it are never synthesized. A text stopped mid-flight
+ * resolves `{ ok: true }` — being interrupted is normal, not an error.
  */
 export function createSpeechCoordinator(deps: SpeechCoordinatorDeps): TtsSpeaker {
   const { synth, player, ducker, tracer } = deps
   const queue: QueuedSpeak[] = []
   let pumping = false
-  // Barge-in epoch: lines from before the latest stop() never reach playback.
+  // Barge-in epoch: sentences from before the latest stop() never reach playback.
   let stopEpoch = 0
-  let current: AudioPlayback | null = null
+  let current: AudioStream | null = null
 
   /**
    * Advisory bookkeeping (#31), same stance as every perf call site: a
    * throwing tracer or sink is swallowed — the log never breaks speech.
    */
-  function recordSpan(turnId: string, stage: 'tts-synthesis' | 'tts-playback', durMs: number): void {
-    if (!tracer) return
+  function recordSpan(turnId: string | undefined, stage: string, durMs: number, detail?: Record<string, unknown>): void {
+    if (!tracer || turnId === undefined) return
     try {
-      tracer.span(turnId, stage, durMs)
+      tracer.span(turnId, stage, durMs, detail)
     } catch (error) {
       reportFault('tts.speechCoordinator.recordSpan', error, { turnId })
       // swallowed — see above
     }
   }
 
-  function speak(text: string, turnId?: string): Promise<SpeakOutcome> {
+  function speak(text: string, options: SpeakOptions = {}): Promise<SpeakOutcome> {
     return new Promise((resolve) => {
-      queue.push({ text, ...(turnId !== undefined ? { turnId } : {}), resolve })
+      const calledAt = tracer?.now()
+      queue.push({ text, options, ...(calledAt !== undefined ? { calledAt } : {}), resolve })
       void pump()
     })
   }
@@ -72,48 +81,69 @@ export function createSpeechCoordinator(deps: SpeechCoordinatorDeps): TtsSpeaker
     pumping = true
     try {
       for (let item = queue.shift(); item !== undefined; item = queue.shift()) {
-        item.resolve(await speakNow(item.text, stopEpoch, item.turnId))
+        item.resolve(await speakNow(item, stopEpoch))
       }
     } finally {
       pumping = false
     }
   }
 
-  async function speakNow(text: string, epoch: number, turnId?: string): Promise<SpeakOutcome> {
-    // The exact text piper is given (#186) — recorded before synthesis, so
-    // a line that never comes back still leaves the ask behind.
-    ducker?.duck()
+  /** The first sample went to the player: the Reaction hook, and the first-sound span. */
+  function firstSound(item: QueuedSpeak): void {
+    if (tracer && item.calledAt !== undefined) recordSpan(item.options.turnId, 'tts-first-sound', tracer.now() - item.calledAt)
     try {
-      const synthStart = tracer?.now()
-      let wav: Uint8Array
-      try {
-        wav = await synth.synthesize(text)
-      } finally {
-        // Recorded even when piper fails — the render time was spent either way.
-        if (tracer && turnId !== undefined && synthStart !== undefined) {
-          recordSpan(turnId, 'tts-synthesis', tracer.now() - synthStart)
+      item.options.onFirstSound?.()
+    } catch (error) {
+      reportFault('tts.speechCoordinator.onFirstSound', error)
+    }
+  }
+
+  async function speakNow(item: QueuedSpeak, epoch: number): Promise<SpeakOutcome> {
+    const sentences = splitSentences(item.text)
+    if (sentences.length === 0) return { ok: true }
+    const { turnId } = item.options
+    ducker?.duck()
+    let stream: AudioStream | null = null
+    let playStart: number | undefined
+    let failure: string | null = null
+    try {
+      for (let index = 0; index < sentences.length; index++) {
+        const synthStart = tracer?.now()
+        let wav: Uint8Array
+        try {
+          wav = await synth.synthesize(sentences[index]!)
+        } catch (err) {
+          failure = err instanceof Error ? err.message : String(err)
+          break
+        } finally {
+          // Recorded even when piper fails — the render time was spent either way.
+          if (tracer && synthStart !== undefined) {
+            recordSpan(turnId, 'tts-synthesis', tracer.now() - synthStart, { index, spawns: synth.spawnCount?.() ?? null })
+          }
         }
+        // Stopped while piper rendered — never let a stale sentence reach playback.
+        if (epoch !== stopEpoch) return { ok: true }
+        if (stream === null) {
+          stream = player.open({ onFirstSample: () => firstSound(item) })
+          current = stream
+          playStart = tracer?.now()
+        }
+        stream.write(wav)
       }
-      // Stopped while piper rendered — never let the stale line reach playback.
-      if (epoch !== stopEpoch) {
-        return { ok: true }
-      }
-      const playback = player.play(wav)
-      current = playback
-      const playStart = tracer?.now()
+      if (stream === null) return failure === null ? { ok: true } : { ok: false, error: failure }
+      // A sentence that failed to render ends the text: what was rendered still plays.
+      stream.end()
       try {
-        await playback.done
+        await stream.done
       } finally {
         // Natural end, barge-in, or failure — the speaking time was spent.
-        if (tracer && turnId !== undefined && playStart !== undefined) {
-          recordSpan(turnId, 'tts-playback', tracer.now() - playStart)
-        }
+        if (tracer && playStart !== undefined) recordSpan(turnId, 'tts-playback', tracer.now() - playStart)
       }
-      return { ok: true }
+      return failure === null ? { ok: true } : { ok: false, error: failure }
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) }
     } finally {
-      current = null
+      if (current === stream) current = null
       ducker?.restore()
     }
   }

@@ -59,7 +59,7 @@ describe('buildReactionReport', () => {
   })
 
   it('is empty, not a crash, with no reaction spans; a span without a verb counts as unknown', () => {
-    expect(buildReactionReport([{ turnId: 't1', stage: 'stt', durMs: 100, at: AT, t: 0 }])).toEqual({ overall: null, byVerb: [], byFire: { early: null, endpoint: null } })
+    expect(buildReactionReport([{ turnId: 't1', stage: 'stt', durMs: 100, at: AT, t: 0 }])).toEqual({ overall: null, byVerb: [], byFire: { early: null, endpoint: null }, firstSound: null })
     const report = buildReactionReport([{ turnId: 't1', stage: 'reaction', durMs: 100, at: AT, t: 0 }])
     expect(report.byVerb).toEqual([{ verb: 'unknown', count: 1, p50: 100, p95: 100, max: 100 }])
   })
@@ -161,6 +161,29 @@ describe('formatCommandReport', () => {
       '',
       'decisions: 4 commands | jev asked 1 (25%), answered 1, latency p50 220ms p95 220ms | local match 3, jev 1, best guess 0 | misfires 0 | names matched 0',
       'early fire: 2 of 4 spoken (50%), lead p50 300ms p95 500ms | jev calls per spoken utterance 1.00 (3 on partials)',
+    ])
+  })
+
+  it('prints a spoken read as its own row and tts-first-sound p50/p95 beside the Reaction rows (#327, AC5)', () => {
+    const spoken = (turnId: string, durMs: number): PerfSpanRecord => ({ ...reaction(turnId, 'read', durMs), detail: { verb: 'read', effect: 'spoken', reading: 'local_match', source: 'spoken' } })
+    const firstSound = (turnId: string, durMs: number): PerfSpanRecord => ({ turnId, stage: 'tts-first-sound', durMs, at: AT, t: 0 })
+    const report = buildReactionReport([
+      { ...reaction('t1', 'read', 300), detail: { verb: 'read', effect: 'display', reading: 'local_match', source: 'spoken' } },
+      spoken('t2', 900),
+      spoken('t3', 1_100),
+      firstSound('t2', 650),
+      firstSound('t3', 800),
+      firstSound('t4', 1_200),
+    ])
+    expect(report.firstSound).toEqual({ verb: 'tts-first-sound', count: 3, p50: 800, p95: 1_200, max: 1_200 })
+
+    expect(formatCommandReport(report, buildDecisionReport([]))).toEqual([
+      'reaction (Endpoint to first effect), by verb:',
+      'verb             count    p50     p95     max',
+      'all                  3  900ms  1100ms  1100ms',
+      'read (spoken)        2  900ms  1100ms  1100ms',
+      'read                 1  300ms   300ms   300ms',
+      'tts-first-sound      3  800ms  1200ms  1200ms',
     ])
   })
 

@@ -8,6 +8,7 @@ describe('resolvePiperConfig', () => {
       bin: 'piper',
       voicesDir: join('/data', 'voices'),
       voiceId: 'en_US-ryan',
+      playerBin: 'aplay',
     })
   })
 
@@ -18,10 +19,11 @@ describe('resolvePiperConfig', () => {
           BINGBONG_PIPER_BIN: '/opt/piper/piper',
           BINGBONG_PIPER_VOICE_DIR: '/opt/piper/voices',
           BINGBONG_PIPER_VOICE: 'en_GB-alan-low',
+          BINGBONG_APLAY_BIN: '/opt/bin/fake-aplay',
         },
         '/data',
       ),
-    ).toEqual({ bin: '/opt/piper/piper', voicesDir: '/opt/piper/voices', voiceId: 'en_GB-alan-low' })
+    ).toEqual({ bin: '/opt/piper/piper', voicesDir: '/opt/piper/voices', voiceId: 'en_GB-alan-low', playerBin: '/opt/bin/fake-aplay' })
   })
 
   it('ignores blank env values', () => {

@@ -222,7 +222,24 @@ export function isPageTextFactLine(line: string): boolean {
   return FACT_LINE.test(line)
 }
 
-const PART_PAST_THE_END = /\bread_page: part \d+ is past the end\b/
+/**
+ * The page's own text a Page Read carries (#327): what follows its
+ * `page text:` heading, up to the part line — never the head, the refs or
+ * the reports riding after it. What `read` speaks; empty when it carries none.
+ */
+export function pageReadText(result: string): string {
+  const lines = result.split('\n')
+  const heading = lines.indexOf('page text:')
+  if (heading === -1) return ''
+  const text: string[] = []
+  for (const line of lines.slice(heading + 1)) {
+    if (isPageTextFactLine(line)) break
+    text.push(line)
+  }
+  return text.join('\n').trim()
+}
+
+const PART_PAST_THE_END =/\bread_page: part \d+ is past the end\b/
 
 /** Whether a result is that refusal, wherever in the text it sits: what the Round Audit counts (#290). */
 export function isPartPastTheEnd(text: string): boolean {

@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest'
-import type { SpeakOutcome, TtsSpeaker } from '../ports/tts'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { AudioStream, AudioStreamPlayer, SpeakOutcome, SpeechSynthesizer, TtsSpeaker } from '../ports/tts'
 import { createSpeakingGate } from './speakingGate'
+import { createSpeechCoordinator } from './speechCoordinator'
 
 // The confirmation voice window must not open while the prompt itself is
 // still being spoken into the mic. This gate watches the shared TtsSpeaker
@@ -143,5 +144,106 @@ describe('isSpeaking (#326)', () => {
     finish('two')
     await second
     expect(gate.isSpeaking()).toBe(false)
+  })
+})
+
+// Barge-in and the mic (#327, AC6): a Page Read spoken sentence by sentence
+// is one text in flight from its first sentence to its last, so #326's Hot
+// Listen takes no Utterance while piper plays; the wake word and the Abort
+// Head reach the playback stream at once.
+describe('speaking gate over a streamed text (#327)', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  /** A synthesizer that renders each sentence after `ms` of the fake clock. */
+  function timedSynth(ms: number): SpeechSynthesizer & { texts: string[] } {
+    const texts: string[] = []
+    return {
+      texts,
+      synthesize: (text) => {
+        texts.push(text)
+        return new Promise((resolve) => setTimeout(() => resolve(new Uint8Array([1])), ms))
+      },
+    }
+  }
+
+  /** A stream that plays `ms` per sentence written once it is ended, and is cut at once by stop(). */
+  function timedPlayer(ms: number): AudioStreamPlayer & { streams: { stopped: boolean }[] } {
+    const streams: { stopped: boolean }[] = []
+    return {
+      streams,
+      open(): AudioStream {
+        let written = 0
+        let resolveDone!: () => void
+        const state = { stopped: false }
+        streams.push(state)
+        const done = new Promise<void>((resolve) => (resolveDone = resolve))
+        return {
+          done,
+          write: () => {
+            written += 1
+          },
+          end: () => {
+            setTimeout(resolveDone, written * ms)
+          },
+          stop: () => {
+            state.stopped = true
+            resolveDone()
+          },
+        }
+      },
+    }
+  }
+
+  it('reports speech in flight from the first sentence to the last', async () => {
+    vi.useFakeTimers()
+    const synth = timedSynth(100)
+    const gate = createSpeakingGate(createSpeechCoordinator({ synth, player: timedPlayer(1_000) }))
+
+    const outcome = gate.tts.speak('One. Two. Three.')
+    expect(gate.isSpeaking()).toBe(true)
+    await vi.advanceTimersByTimeAsync(150)
+    // The first sentence plays, the second renders.
+    expect(synth.texts).toEqual(['One.', 'Two.'])
+    expect(gate.isSpeaking()).toBe(true)
+    await vi.advanceTimersByTimeAsync(200)
+    expect(synth.texts).toEqual(['One.', 'Two.', 'Three.'])
+    expect(gate.isSpeaking()).toBe(true)
+    await vi.advanceTimersByTimeAsync(2_900)
+    expect(gate.isSpeaking()).toBe(true)
+    await vi.advanceTimersByTimeAsync(100)
+    expect(await outcome).toEqual({ ok: true })
+    expect(gate.isSpeaking()).toBe(false)
+  })
+
+  it('stop() reaches the playback stream at once and the text ends', async () => {
+    vi.useFakeTimers()
+    const player = timedPlayer(1_000)
+    const gate = createSpeakingGate(createSpeechCoordinator({ synth: timedSynth(100), player }))
+
+    const outcome = gate.tts.speak('One. Two. Three.')
+    await vi.advanceTimersByTimeAsync(150)
+    gate.tts.stop()
+    // Synchronously: no tick of the clock passes between the stop and the cut.
+    expect(player.streams[0]!.stopped).toBe(true)
+    await vi.advanceTimersByTimeAsync(100)
+    expect(await outcome).toEqual({ ok: true })
+    expect(gate.isSpeaking()).toBe(false)
+  })
+
+  it('passes the speak options through to the inner speaker', async () => {
+    const seen: unknown[] = []
+    const gate = createSpeakingGate({
+      speak: async (_text, options) => {
+        seen.push(options)
+        return { ok: true }
+      },
+      stop: () => {},
+    })
+    const onFirstSound = (): void => {}
+
+    await gate.tts.speak('line', { turnId: 't1', onFirstSound })
+    expect(seen).toEqual([{ turnId: 't1', onFirstSound }])
   })
 })

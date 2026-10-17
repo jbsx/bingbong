@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createSpeechCoordinator } from './speechCoordinator'
-import type { AudioPlayback, AudioPlayer, SpeechSynthesizer } from '../ports/tts'
+import type { AudioStream, AudioStreamPlayer, SpeechSynthesizer } from '../ports/tts'
 import { createPerfTracer } from '../perf/perfTracer'
 import { fakePerfHarness } from '../testing/doubles'
 
@@ -23,12 +23,15 @@ class FakeSynth implements SpeechSynthesizer {
     this.pending.shift()?.reject(new Error(error))
   }
 
-  get inFlight(): number {
-    return this.pending.length
+  spawnCount(): number {
+    return 1
   }
 }
 
-class FakePlayback implements AudioPlayback {
+/** A stream double: records what was written, reports its first sample on the first write. */
+class FakeStream implements AudioStream {
+  readonly writes: Uint8Array[] = []
+  ended = false
   stopped = false
   private resolveDone!: () => void
   private rejectDone!: (err: Error) => void
@@ -37,6 +40,19 @@ class FakePlayback implements AudioPlayback {
     this.rejectDone = reject
   })
 
+  constructor(private readonly onFirstSample?: () => void) {}
+
+  write(wav: Uint8Array): void {
+    if (this.stopped) return
+    this.writes.push(wav)
+    if (this.writes.length === 1) this.onFirstSample?.()
+  }
+
+  end(): void {
+    this.ended = true
+  }
+
+  /** The last sentence written has played. */
   finish(): void {
     this.resolveDone()
   }
@@ -51,13 +67,13 @@ class FakePlayback implements AudioPlayback {
   }
 }
 
-class FakePlayer implements AudioPlayer {
-  readonly playbacks: FakePlayback[] = []
+class FakePlayer implements AudioStreamPlayer {
+  readonly streams: FakeStream[] = []
 
-  play(): AudioPlayback {
-    const playback = new FakePlayback()
-    this.playbacks.push(playback)
-    return playback
+  open(options?: { onFirstSample?: () => void }): AudioStream {
+    const stream = new FakeStream(options?.onFirstSample)
+    this.streams.push(stream)
+    return stream
   }
 }
 
@@ -87,14 +103,105 @@ describe('speech coordinator', () => {
 
     synth.finishNext()
     await flush()
-    expect(player.playbacks).toHaveLength(1)
+    expect(player.streams).toHaveLength(1)
+    expect(player.streams[0]!.ended).toBe(true)
 
-    player.playbacks[0]!.finish()
+    player.streams[0]!.finish()
     expect(await outcome).toEqual({ ok: true })
     expect(events).toEqual(['duck', 'restore'])
   })
 
-  it('serializes concurrent speaks so lines never overlap', async () => {
+  it('hands the first sentence to playback before the second has been synthesized, through one stream (AC2)', async () => {
+    const events: string[] = []
+    const synth = new FakeSynth()
+    const player = new FakePlayer()
+    const tts = createSpeechCoordinator({ synth, player, ducker: recordingDucker(events) })
+    const first = new Uint8Array([1])
+    const second = new Uint8Array([2])
+    const third = new Uint8Array([3])
+
+    const outcome = tts.speak('One here. Two here. Three here.')
+    await flush()
+    expect(synth.texts).toEqual(['One here.'])
+
+    synth.finishNext(first)
+    await flush()
+    // The first sentence plays while the second is still being synthesized.
+    expect(player.streams).toHaveLength(1)
+    expect(player.streams[0]!.writes).toEqual([first])
+    expect(synth.texts).toEqual(['One here.', 'Two here.'])
+
+    synth.finishNext(second)
+    await flush()
+    synth.finishNext(third)
+    await flush()
+    expect(player.streams).toHaveLength(1)
+    expect(player.streams[0]!.writes).toEqual([first, second, third])
+    expect(player.streams[0]!.ended).toBe(true)
+
+    player.streams[0]!.finish()
+    expect(await outcome).toEqual({ ok: true })
+    // Page audio ducks once for the whole text, not per sentence.
+    expect(events).toEqual(['duck', 'restore'])
+  })
+
+  it('stop() during the second sentence ends playback and discards the third (AC2)', async () => {
+    const synth = new FakeSynth()
+    const player = new FakePlayer()
+    const tts = createSpeechCoordinator({ synth, player })
+
+    const outcome = tts.speak('One here. Two here. Three here.')
+    synth.finishNext()
+    await flush()
+    synth.finishNext()
+    await flush()
+    // The second sentence is playing; the third is being synthesized.
+    expect(synth.texts).toEqual(['One here.', 'Two here.', 'Three here.'])
+
+    tts.stop()
+    expect(player.streams[0]!.stopped).toBe(true)
+    synth.finishNext()
+    expect(await outcome).toEqual({ ok: true })
+    expect(player.streams[0]!.writes).toHaveLength(2)
+  })
+
+  it('never synthesizes the sentences after the one in flight when stopped (AC3)', async () => {
+    const synth = new FakeSynth()
+    const player = new FakePlayer()
+    const tts = createSpeechCoordinator({ synth, player })
+
+    const outcome = tts.speak('One. Two. Three. Four.')
+    synth.finishNext()
+    await flush()
+    expect(synth.texts).toEqual(['One.', 'Two.'])
+
+    tts.stop()
+    synth.finishNext()
+    expect(await outcome).toEqual({ ok: true })
+    await flush()
+    expect(synth.texts).toEqual(['One.', 'Two.'])
+  })
+
+  it('calls onFirstSound once, when the first sample is handed to the player', async () => {
+    const synth = new FakeSynth()
+    const player = new FakePlayer()
+    const tts = createSpeechCoordinator({ synth, player })
+    let sounds = 0
+
+    const outcome = tts.speak('One. Two.', { onFirstSound: () => (sounds += 1) })
+    await flush()
+    expect(sounds).toBe(0)
+    synth.finishNext()
+    await flush()
+    expect(sounds).toBe(1)
+    synth.finishNext()
+    await flush()
+    player.streams[0]!.finish()
+    await outcome
+    expect(sounds).toBe(1)
+  })
+
+  it('serializes concurrent speaks so texts never overlap', async () => {
     const synth = new FakeSynth()
     const player = new FakePlayer()
     const tts = createSpeechCoordinator({ synth, player })
@@ -106,14 +213,14 @@ describe('speech coordinator', () => {
 
     synth.finishNext()
     await flush()
-    player.playbacks[0]!.finish()
+    player.streams[0]!.finish()
     await first
     await flush()
     expect(synth.texts).toEqual(['one', 'two'])
 
     synth.finishNext()
     await flush()
-    player.playbacks[1]!.finish()
+    player.streams[1]!.finish()
     expect(await second).toEqual({ ok: true })
   })
 
@@ -125,14 +232,14 @@ describe('speech coordinator', () => {
     const outcome = tts.speak('hello')
     synth.finishNext()
     await flush()
-    const playback = player.playbacks[0]!
+    const stream = player.streams[0]!
 
     tts.stop()
-    expect(playback.stopped).toBe(true)
+    expect(stream.stopped).toBe(true)
     expect(await outcome).toEqual({ ok: true })
   })
 
-  it('stop() drops queued lines before they reach the synthesizer', async () => {
+  it('stop() drops queued texts before they reach the synthesizer', async () => {
     const synth = new FakeSynth()
     const player = new FakePlayer()
     const tts = createSpeechCoordinator({ synth, player })
@@ -149,7 +256,7 @@ describe('speech coordinator', () => {
     expect(synth.texts).toEqual(['one'])
   })
 
-  it('stop() during synthesis never plays the audio', async () => {
+  it('stop() during synthesis of the first sentence never opens playback', async () => {
     const synth = new FakeSynth()
     const player = new FakePlayer()
     const tts = createSpeechCoordinator({ synth, player })
@@ -159,7 +266,7 @@ describe('speech coordinator', () => {
     synth.finishNext()
     expect(await outcome).toEqual({ ok: true })
     await flush()
-    expect(player.playbacks).toHaveLength(0)
+    expect(player.streams).toHaveLength(0)
   })
 
   it('restores page audio and reports the error when synthesis fails', async () => {
@@ -173,7 +280,24 @@ describe('speech coordinator', () => {
 
     expect(await outcome).toEqual({ ok: false, error: 'piper binary not found' })
     expect(events).toEqual(['duck', 'restore'])
-    expect(player.playbacks).toHaveLength(0)
+    expect(player.streams).toHaveLength(0)
+  })
+
+  it('plays what was synthesized and reports the error when a later sentence fails', async () => {
+    const synth = new FakeSynth()
+    const player = new FakePlayer()
+    const tts = createSpeechCoordinator({ synth, player })
+
+    const outcome = tts.speak('One. Two.')
+    synth.finishNext()
+    await flush()
+    synth.failNext('piper died')
+    await flush()
+    expect(player.streams[0]!.ended).toBe(true)
+    expect(player.streams[0]!.stopped).toBe(false)
+
+    player.streams[0]!.finish()
+    expect(await outcome).toEqual({ ok: false, error: 'piper died' })
   })
 
   it('restores page audio and reports the error when playback fails', async () => {
@@ -185,7 +309,7 @@ describe('speech coordinator', () => {
     const outcome = tts.speak('hello')
     synth.finishNext()
     await flush()
-    player.playbacks[0]!.fail('aplay died')
+    player.streams[0]!.fail('aplay died')
 
     expect(await outcome).toEqual({ ok: false, error: 'aplay died' })
     expect(events).toEqual(['duck', 'restore'])
@@ -209,9 +333,20 @@ describe('speech coordinator', () => {
     // One duck for each speak; the first restore must not un-duck the second.
     expect(events.filter((e) => e === 'restore')).toHaveLength(1)
 
-    player.playbacks[1]!.finish()
+    player.streams[1]!.finish()
     await second
     expect(events).toEqual(['duck', 'restore', 'duck', 'restore'])
+  })
+
+  it('a blank text speaks nothing and resolves ok', async () => {
+    const events: string[] = []
+    const synth = new FakeSynth()
+    const player = new FakePlayer()
+    const tts = createSpeechCoordinator({ synth, player, ducker: recordingDucker(events) })
+
+    expect(await tts.speak('   ')).toEqual({ ok: true })
+    expect(synth.texts).toEqual([])
+    expect(events).toEqual([])
   })
 
   it('stop() with nothing playing is a safe no-op', () => {
@@ -220,58 +355,77 @@ describe('speech coordinator', () => {
   })
 })
 
-// The TTS half of the perf log (#31): every spoken line of a turn records
-// two spans at this seam — one for synthesis (piper rendering), one for
-// playback (aplay speaking) — so the full-clip design's cost is visible as
-// "time to first audio" vs "time speaking". Keyed by the turn id the caller
-// rides on speak(); the coordinator's queue guarantees the pair order.
-describe('speech coordinator — synthesis/playback span split (#31)', () => {
-  it('records a synthesis span then a playback span per spoken line, keyed by the turn id, in queue order', async () => {
+// The TTS half of the perf log (#31, #327): a spoken text keyed to a turn
+// records one `tts-synthesis` span per sentence with its index, one
+// `tts-first-sound` span from the speak call to the first sample handed to
+// the player, and one `tts-playback` span from the stream's opening to its end.
+describe('speech coordinator — perf spans (#31, #327)', () => {
+  const AT = 1_700_000_000_000
+
+  it('records synthesis per sentence with its index, first sound once and playback once (AC5)', async () => {
     const { records, state, tracer } = fakePerfHarness()
     const synth = new FakeSynth()
     const player = new FakePlayer()
     const tts = createSpeechCoordinator({ synth, player, tracer })
 
-    const first = tts.speak('one', 'turn-voice-1')
-    const second = tts.speak('two', 'turn-voice-1')
+    state.monotonicMs = 10
+    const outcome = tts.speak('One. Two.', { turnId: 'turn-1' })
     await flush()
-    state.monotonicMs = 120
+    state.monotonicMs = 130
     synth.finishNext()
     await flush()
-    state.monotonicMs = 500
-    player.playbacks[0]!.finish()
-    await first
-    await flush()
-    state.monotonicMs = 620
+    state.monotonicMs = 180
     synth.finishNext()
     await flush()
-    state.monotonicMs = 1_100
-    player.playbacks[1]!.finish()
-    expect(await second).toEqual({ ok: true })
+    state.monotonicMs = 900
+    player.streams[0]!.finish()
+    expect(await outcome).toEqual({ ok: true })
 
     expect(records).toEqual([
-      { turnId: 'turn-voice-1', stage: 'tts-synthesis', durMs: 120, at: 1_700_000_000_000, t: 120 },
-      { turnId: 'turn-voice-1', stage: 'tts-playback', durMs: 380, at: 1_700_000_000_000, t: 500 },
-      { turnId: 'turn-voice-1', stage: 'tts-synthesis', durMs: 120, at: 1_700_000_000_000, t: 620 },
-      { turnId: 'turn-voice-1', stage: 'tts-playback', durMs: 480, at: 1_700_000_000_000, t: 1_100 },
+      { turnId: 'turn-1', stage: 'tts-synthesis', durMs: 120, at: AT, t: 130, detail: { index: 0, spawns: 1 } },
+      { turnId: 'turn-1', stage: 'tts-first-sound', durMs: 120, at: AT, t: 130 },
+      { turnId: 'turn-1', stage: 'tts-synthesis', durMs: 50, at: AT, t: 180, detail: { index: 1, spawns: 1 } },
+      { turnId: 'turn-1', stage: 'tts-playback', durMs: 770, at: AT, t: 900 },
     ])
   })
 
-  it('records the synthesis span but no playback span when stop() lands during synthesis', async () => {
+  it('measures first sound from the speak call, queue wait included', async () => {
     const { records, state, tracer } = fakePerfHarness()
     const synth = new FakeSynth()
     const player = new FakePlayer()
     const tts = createSpeechCoordinator({ synth, player, tracer })
 
-    const outcome = tts.speak('hello', 'turn-voice-1')
+    const first = tts.speak('one')
+    state.monotonicMs = 100
+    const second = tts.speak('two', { turnId: 'turn-2' })
+    synth.finishNext()
+    await flush()
+    state.monotonicMs = 400
+    player.streams[0]!.finish()
+    await first
+    await flush()
+    state.monotonicMs = 450
+    synth.finishNext()
+    await flush()
+    player.streams[1]!.finish()
+    await second
+
+    expect(records.find((r) => r.stage === 'tts-first-sound')).toMatchObject({ turnId: 'turn-2', durMs: 350 })
+  })
+
+  it('records the synthesis span but no first sound or playback when stop() lands during synthesis', async () => {
+    const { records, state, tracer } = fakePerfHarness()
+    const synth = new FakeSynth()
+    const player = new FakePlayer()
+    const tts = createSpeechCoordinator({ synth, player, tracer })
+
+    const outcome = tts.speak('hello', { turnId: 'turn-1' })
     tts.stop()
     state.monotonicMs = 90
     synth.finishNext()
     expect(await outcome).toEqual({ ok: true })
 
-    expect(records).toEqual([
-      { turnId: 'turn-voice-1', stage: 'tts-synthesis', durMs: 90, at: 1_700_000_000_000, t: 90 },
-    ])
+    expect(records).toEqual([{ turnId: 'turn-1', stage: 'tts-synthesis', durMs: 90, at: AT, t: 90, detail: { index: 0, spawns: 1 } }])
   })
 
   it('records the playback span up to the stop when barge-in lands mid-playback', async () => {
@@ -280,7 +434,7 @@ describe('speech coordinator — synthesis/playback span split (#31)', () => {
     const player = new FakePlayer()
     const tts = createSpeechCoordinator({ synth, player, tracer })
 
-    const outcome = tts.speak('hello', 'turn-voice-1')
+    const outcome = tts.speak('hello', { turnId: 'turn-1' })
     state.monotonicMs = 200
     synth.finishNext()
     await flush()
@@ -288,9 +442,10 @@ describe('speech coordinator — synthesis/playback span split (#31)', () => {
     tts.stop()
     expect(await outcome).toEqual({ ok: true })
 
-    expect(records).toEqual([
-      { turnId: 'turn-voice-1', stage: 'tts-synthesis', durMs: 200, at: 1_700_000_000_000, t: 200 },
-      { turnId: 'turn-voice-1', stage: 'tts-playback', durMs: 150, at: 1_700_000_000_000, t: 350 },
+    expect(records.map((r) => [r.stage, r.durMs])).toEqual([
+      ['tts-synthesis', 200],
+      ['tts-first-sound', 200],
+      ['tts-playback', 150],
     ])
   })
 
@@ -300,17 +455,15 @@ describe('speech coordinator — synthesis/playback span split (#31)', () => {
     const player = new FakePlayer()
     const tts = createSpeechCoordinator({ synth, player, tracer })
 
-    const outcome = tts.speak('hello', 'turn-voice-1')
+    const outcome = tts.speak('hello', { turnId: 'turn-1' })
     state.monotonicMs = 150
     synth.failNext('piper died')
 
     expect(await outcome).toEqual({ ok: false, error: 'piper died' })
-    expect(records).toEqual([
-      { turnId: 'turn-voice-1', stage: 'tts-synthesis', durMs: 150, at: 1_700_000_000_000, t: 150 },
-    ])
+    expect(records).toEqual([{ turnId: 'turn-1', stage: 'tts-synthesis', durMs: 150, at: AT, t: 150, detail: { index: 0, spawns: 1 } }])
   })
 
-  it('logs nothing for lines without a turn id — download and subagent speech', async () => {
+  it('logs nothing for texts without a turn id — download announcements', async () => {
     const { records, state, tracer } = fakePerfHarness()
     const synth = new FakeSynth()
     const player = new FakePlayer()
@@ -320,7 +473,7 @@ describe('speech coordinator — synthesis/playback span split (#31)', () => {
     state.monotonicMs = 40
     synth.finishNext()
     await flush()
-    player.playbacks[0]!.finish()
+    player.streams[0]!.finish()
     expect(await outcome).toEqual({ ok: true })
 
     expect(records).toEqual([])
@@ -339,12 +492,14 @@ describe('speech coordinator — synthesis/playback span split (#31)', () => {
     const synth = new FakeSynth()
     const player = new FakePlayer()
     const tts = createSpeechCoordinator({ synth, player, tracer })
+    let sounds = 0
 
-    const outcome = tts.speak('hello', 'turn-voice-1')
+    const outcome = tts.speak('hello', { turnId: 'turn-1', onFirstSound: () => (sounds += 1) })
     synth.finishNext()
     await flush()
-    player.playbacks[0]!.finish()
+    player.streams[0]!.finish()
 
     expect(await outcome).toEqual({ ok: true })
+    expect(sounds).toBe(1)
   })
 })
