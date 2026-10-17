@@ -16,14 +16,30 @@ here and names what is left to build.
 ### Voice
 
 **Wake Word**:
-The phrase that opens a Listen. Latches until reset — one wake, one activation.
-During a running Run, the Wake Word pauses that Run and opens the Pause Listen.
+The phrase that opens a Listen. On this branch it opens a Hot Listen, and a
+wake heard while one is open changes nothing: one wake, one spoken session.
 _Avoid_: hotword, trigger phrase
 
 **Listen**:
 An open microphone window in which one Utterance is captured and transcribed.
-One utterance per activation — the Pause Listen is the one exception.
+One utterance per activation — the Hot Listen is the one exception.
 _Avoid_: recording session
+
+**Hot Listen**:
+The Listen one Wake Word opens on this branch: it stays open after an
+Utterance is submitted, takes the next Utterance as the next command without
+another wake, and closes only after a stretch of silence. A wake heard while
+it is open changes nothing. It is why one wake, not one per command, is the
+price of a spoken session.
+_Avoid_: conversation mode, follow-up window, always-on listening
+
+**Reaction**:
+The one clock the user feels: the time from an Utterance's Endpoint to the
+first change in the browser pane that the command caused, or to the first
+spoken word when the command's output is speech. The measure of "instant";
+wake-to-chime is a separate clock. Judged by its distribution, never by one
+turn.
+_Avoid_: latency, response time, end-to-end time, speed
 
 **Utterance**:
 A single span of user speech from speech-start to Endpoint, submitted as one
@@ -39,23 +55,44 @@ _Avoid_: silence detection
 Cutting speech in flight by activating (wake word or hotkey), not by arbitrary
 speech. The Abort Head is the one bare-speech exception.
 
-**Pause**:
-A live Run parked mid-flight. Entered by the Wake Word or hotkey during a
-running Run; left by speaking "continue" or "resume", by a Steering Directive,
-or by the Pause Listen's timeout. Paused Runs stay steerable and keep their
-Session.
-_Avoid_: hold, suspend
-
-**Pause Listen**:
-The Listen opened by pausing. Ignores non-directive utterances without closing,
-and auto-resumes the Run after five seconds of mic silence.
-_Avoid_: steering window, hold mode
-
 **Abort Head**:
 The always-on recognizer for "stop now" — the one bare-speech activation path.
-Fires only while a Run is live and aborts it outright. Its false-positive risk
-is accepted until observed in practice.
+Halts whatever the app is doing: speech in flight, or a Command whose action
+has not ended. Its false-positive risk is accepted until observed in practice.
 _Avoid_: cancel word, stop head
+
+**Command**:
+What an Utterance becomes on this branch: one verb, at most one target on the
+page and one Slot, performed at once. There is no plan, no confirmation and
+no second step: a task that needs several is several Commands. A Command
+that is not for the page at all is dropped, not answered.
+_Avoid_: run, task, request, intent
+
+**Slot**:
+The words of an Utterance a Command carries verbatim: the search terms, the
+text to type, the address to open. Chosen from the Utterance's own words,
+never composed.
+_Avoid_: argument, parameter, entity, free text
+
+**Local Match**:
+A Command settled from the Utterance and the page alone, without asking the
+Decision Model: the verb is plain and its target is the one element the words
+can name. It is the fastest reading and the fallback when the Decision Model
+does not answer in time.
+_Avoid_: grammar hit, regex path, offline mode
+
+**Early Fire**:
+Acting on a partial transcript, before the Endpoint, once the words so far
+read as a complete Command. The Endpoint then only closes the Utterance; a
+Command that no partial settled is read at the Endpoint as usual.
+_Avoid_: speculative execution, eager execution, streaming intent
+
+**Misfire**:
+A Command that did what was heard rather than what was meant: a split
+Utterance, a mishear, a wrong target, an Early Fire on half a sentence. It is
+recovered by the next Command and never prevented by asking first. Counted,
+so accuracy can be worked on once Reaction is won.
+_Avoid_: error, wrong action, false positive, hallucination
 
 **Bias Lexicon**:
 The app's own vocabulary that the STT decoder is biased toward while decoding
@@ -100,34 +137,11 @@ _Avoid_: custom word, user dictionary entry
 ### Views
 
 **Prompt Bar**:
-The single typed-input surface, living in the Feed Panel's footer. Carries one
-of two verbs depending on run state: _submit_ starts a Run when none is live;
-_steer_ directs the live Run. The verb is chosen by the same run-live signal,
-never by which surface you typed in. The draft survives verb flips; a
-delivered draft clears on Enter, and a rejected one is restored — never
-silently dropped.
+The single typed-input surface, living in the Feed Panel's footer. A typed
+line is a Command exactly as a spoken one is, read the same way; a delivered
+draft clears on Enter, and a rejected one is restored — never silently
+dropped.
 _Avoid_: command box, steer box, input bar, activity bar
-
-**Steering**:
-Redirecting a live Run mid-flight with one Directive. Paused Runs stay
-steerable; Steering pauses-if-needed and resumes-with-directive as one atomic
-step. The typed path drives the exact seam the spoken Pause flow drives.
-_Avoid_: interrupting, mid-flight correction
-
-**Directive**:
-One instruction aimed at a live Run via Steering. Distinct from a command: a
-command starts a Run; a Directive bends one that already exists.
-_Avoid_: steer command, follow-up prompt
-
-**Standing Directive**:
-The last Directive a Run consumed, in the user's own words, sent on every
-later round of that Run — the original command never leaves the request, so
-without it a correction survives only while the model keeps restating it. It
-takes precedence over the command wherever the two differ, and is never
-cleared by anything the model says: only the Run ending retires it. Distinct
-from the corrected objective, which is the model's restatement of the same
-correction.
-_Avoid_: sticky steering, persistent correction
 
 **Feed**:
 The session-scoped projection of pipeline events. One projection feeds the
