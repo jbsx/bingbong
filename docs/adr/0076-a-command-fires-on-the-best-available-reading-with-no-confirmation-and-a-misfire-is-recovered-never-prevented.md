@@ -68,3 +68,15 @@ machine; the Hardware Floor waits.
   TypeSafe console is the limit to watch, not the bill.
 - Every later lever (Hot Listen, persistent Piper, Early Fire) is measured
   against the plain loop's Reaction distribution before it stays.
+- The Decision Model is pinned to `jev-1.14.0`, not the `jev-1.13.0` the
+  adapter inherited, by the owner's ruling on 2026-10-17: no confidence bar
+  is tuned on this branch, so nothing holds the old pin, and 1.14 is the
+  release whose Box question can locate a target in a screenshot, the one
+  door left open to grounding a Command on the page's pixels later. Both
+  releases accept images behind the `TypeSafe-Danger-Zone-Images` header;
+  nothing on this branch sends one yet.
+- Typed lines in the Prompt Bar and the CLI harness are Commands read the
+  same way as spoken ones; the old CLI grammar survives only as what the
+  Local Match recognises first.
+- Moonshine Small stays the default STT tier until increment 1's replay
+  of the same utterance dumps gives Small and Base a p95 to compare.
