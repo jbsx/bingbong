@@ -148,7 +148,9 @@ The session-scoped projection of pipeline events. One projection feeds the
 dashboard, the overlay panel, and (formerly) the idle digest.
 
 **Feed Entry**:
-One rendered item in the Feed (command, Answer, error, voice-heard).
+One rendered item in the Feed. On this branch a Command is one entry: the
+words heard and the action taken; an Utterance read as no Command is one
+greyed entry of the words alone.
 _Avoid_: message
 
 **Answer**:
@@ -240,35 +242,6 @@ _Avoid_: exhibit validation, tier check
 The activity panel over the browser pane. Three states: Overlay, Docked,
 Collapsed. A View Preference, resizable.
 _Avoid_: activity bar, sidebar, activity sidebar
-
-**Peek Card**:
-The system-pushed surface that reports the live Run and then its Answer
-(or failure) while the Feed Panel is Collapsed. While a Run is live, a
-Pause included, exactly one of the Feed Panel or the Peek Card renders —
-any close of the panel summons the card. The Answer persists until the
-next Run, a panel open, or the Session ends; a cancelled Run hides it
-promptly. Not a state of the Feed Panel; clicking it opens the panel and
-dismisses it. Voice activity may show it; only a human act opens the
-panel. Its live title is the Run Headline. It floats translucently over
-the browsing pane without resizing it, stands in for the Collapsed
-panel's edge tab while visible, and never covers the same page region as
-the panel — switching between card and panel reveals the page beneath
-the other.
-_Avoid_: toast, notification, mini panel, activity card, transient card
-
-**Command Echo**:
-The raw transcript of a Run's first Utterance, shown as the live Peek
-Card's title until the Run Headline arrives — the fallback, never the
-description.
-_Avoid_: transcript line, caption
-
-**Run Headline**:
-The Run's current task description — what the Run is doing now, not what
-was first said. Owned by the orchestrator: set when the Run starts and
-revised whenever understanding changes, Directive or otherwise. The
-command echo stands in until the first one arrives; a missing or invalid
-one never fails the Run.
-_Avoid_: command echo, task title, status line
 
 **Idle Screen**:
 What renders when no Active Session exists: clock and weather only. Never shows
