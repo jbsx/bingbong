@@ -29,8 +29,9 @@ _Avoid_: recording session
 **Hot Listen**:
 The Listen one Wake Word opens on this branch: it stays open after an
 Utterance is submitted, takes the next Utterance as the next command without
-another wake, and closes only after a stretch of silence. A wake heard while
-it is open changes nothing. It is why one wake, not one per command, is the
+another wake, and closes after a stretch of silence, or at once when the user
+closes it (disarm, Escape, the abort head). A wake heard while it is open
+changes nothing. It is why one wake, not one per command, is the
 price of a spoken session.
 _Avoid_: conversation mode, follow-up window, always-on listening
 

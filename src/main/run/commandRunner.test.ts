@@ -770,6 +770,65 @@ describe('Early Fire (#326)', () => {
     expect(decision.requests.map((request) => request.state.split('\n')[0])).toEqual(['The user spoke to a web browser: "open you"', 'The user spoke to a web browser: "open youtu"'])
   })
 
+  /** A decision model whose first ask parks until `answer`. */
+  function parkFirstAsk(decision: CountingDecisionModel): { answer(result: DecisionResult<DecisionQuestions>): void } {
+    let answer: (result: DecisionResult<DecisionQuestions>) => void = () => {}
+    const ask = decision.ask.bind(decision)
+    decision.ask = ((request: DecisionRequest<DecisionQuestions>) => {
+      if (decision.requests.length > 0) return ask(request)
+      decision.requests.push(request)
+      return new Promise<DecisionResult<DecisionQuestions>>((resolve) => (answer = resolve))
+    }) as typeof decision.ask
+    return { answer: (result) => answer(result) }
+  }
+
+  it('fires nothing for a partial still being read when its Utterance is let go (disarm, the abort head)', async () => {
+    const { browser, decision, runner } = harness()
+    void runner.prepare()
+    const parked = parkFirstAsk(decision)
+    const partial = runner.consider('open you')
+    await flushMicrotasks()
+    runner.dropPartials()
+    parked.answer({ status: 'answered', answers: openYoutube(0.95) as never, latencyMs: 1, model: 'jev-1.14.0' })
+    await partial
+    expect(browser.navigations).toEqual([])
+  })
+
+  it('frees the one call in flight once a partial fires: the next Utterance\'s partials are read while the action still runs', async () => {
+    const { browser, decision, runner } = harness()
+    let land: () => void = () => {}
+    browser.navigate = (url) =>
+      new Promise((resolve) => {
+        browser.navigations.push(url)
+        land = () => resolve(`navigated to ${url}`)
+      })
+    void runner.prepare()
+    decision.script.push({ answers: openYoutube(0.95) })
+    const first = runner.consider('open youtube')
+    await flushMicrotasks()
+    expect(browser.navigations).toEqual(['https://youtube.com'])
+    await runner.run('open youtube', { source: 'spoken' })
+    void runner.prepare()
+    await runner.consider('scroll down')
+    expect(browser.scrolls).toEqual(['down'])
+    land()
+    await first
+  })
+
+  it('keeps an Early Fire for its Endpoint across a typed line: the Endpoint still makes no second Command', async () => {
+    const { browser, runner } = harness()
+    let backs = 0
+    browser.back = async () => {
+      backs += 1
+      return 'went back'
+    }
+    void runner.prepare()
+    await runner.consider('go back')
+    await runner.run('scroll down')
+    await runner.run('go back', { source: 'spoken' })
+    expect(backs).toBe(1)
+  })
+
   it('records an Early Fire whose Utterance never reached an Endpoint at the next speech start, without a lead', async () => {
     const { records, runner } = harness()
     void runner.prepare()

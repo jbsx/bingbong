@@ -44,6 +44,8 @@ interface SessionHarness {
   speechStarts: number[]
   /** Every live partial the session forwarded (#324). */
   partials: string[]
+  /** Every Utterance in capture the session let go (#326). */
+  drops: number[]
   /** Span records when perf instrumentation is on (#27). */
   perf: PerfSpanRecord[]
   /** WAV writes when the audio-dump flag is on (#34). */
@@ -110,6 +112,7 @@ async function createSession(overrides?: {
   const submitted: { text: string; turnId?: string; truncated: boolean; endpointAt?: number }[] = []
   const speechStarts: number[] = []
   const partials: string[] = []
+  const drops: number[] = []
   const perf: PerfSpanRecord[] = []
   const dumps: { path: string; bytes: Uint8Array }[] = []
   const aborts: number[] = []
@@ -197,6 +200,7 @@ async function createSession(overrides?: {
     },
     onSpeechStart: () => speechStarts.push(1),
     onPartial: (text) => partials.push(text),
+    onUtteranceDropped: () => drops.push(1),
     getRunState: () => overrides?.runState?.value ?? 'idle',
     onAbort: () => aborts.push(1),
     onStateChange: (state) => states.push(state),
@@ -218,7 +222,7 @@ async function createSession(overrides?: {
     pendingStt.shift()?.resolve(text)
   }
 
-  return { vad, transcriber: baseTranscriber, clock, tts, states, heard, errors, commands, submitted, speechStarts, partials, perf, dumps, aborts, chimes, settleStt, speakUtterance, session }
+  return { vad, transcriber: baseTranscriber, clock, tts, states, heard, errors, commands, submitted, speechStarts, partials, drops, perf, dumps, aborts, chimes, settleStt, speakUtterance, session }
 }
 
 describe('voice session', () => {
@@ -1132,6 +1136,27 @@ describe('voice session — Hot Listen (#326)', () => {
     detector.push('abort', 0.95, 0)
     await monitorFrames(harness, [SPEECH, SPEECH, SPEECH])
     expect(harness.states.at(-1)).toEqual(closed)
+  })
+
+  it('lets the Utterance in capture go when disarm closes the Listen mid-speech', async () => {
+    const { harness } = await hotListen(['scroll down'])
+    await harness.speakUtterance(utteranceProbs().slice(0, 8))
+    expect(harness.drops).toEqual([])
+    harness.session.disarm()
+    expect(harness.drops).toEqual([1])
+  })
+
+  it('drops the wake phrase said inside a Hot Listen: it is no Command, and the next Utterance is', async () => {
+    const { harness, detector } = await hotListen(['scroll down', 'go back'])
+    await harness.speakUtterance()
+    // The wake head fires at the end of the phrase, once speech is under way.
+    detector.push('wake', 0, 0.9, 0)
+    await harness.speakUtterance()
+    expect(harness.drops.length).toBeGreaterThan(0)
+    expect(harness.commands).toEqual(['scroll down'])
+    expect(harness.chimes).toHaveLength(1)
+    await harness.speakUtterance()
+    expect(harness.commands).toEqual(['scroll down', 'go back'])
   })
 
   it('a hotkey Listen stays single-shot', async () => {

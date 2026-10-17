@@ -146,6 +146,11 @@ function table(headers: string[], rows: string[][]): string[] {
   return [line(headers), ...rows.map(line)]
 }
 
+/** One table row of Reaction stats. */
+function rowOf(s: ReactionStats): string[] {
+  return [s.verb, String(s.count), formatMs(s.p50), formatMs(s.p95), formatMs(s.max)]
+}
+
 function percent(part: number, whole: number): string {
   return whole === 0 ? '0%' : `${Math.round((part / whole) * 100)}%`
 }
@@ -159,12 +164,12 @@ export function formatCommandReport(reaction: ReactionReport, decisions: Decisio
   const lines: string[] = []
   if (reaction.overall !== null) {
     lines.push('reaction (Endpoint to first effect), by verb:')
-    const rows = [reaction.overall, ...reaction.byVerb].map((s) => [s.verb, String(s.count), formatMs(s.p50), formatMs(s.p95), formatMs(s.max)])
+    const rows = [reaction.overall, ...reaction.byVerb].map(rowOf)
     lines.push(...table(['verb', 'count', 'p50', 'p95', 'max'], rows))
     const fired = [reaction.byFire.early, reaction.byFire.endpoint].filter((row): row is ReactionStats => row !== null)
     if (reaction.byFire.early !== null) {
       lines.push('', 'reaction by Early Fire:')
-      lines.push(...table(['fired', 'count', 'p50', 'p95', 'max'], fired.map((s) => [s.verb, String(s.count), formatMs(s.p50), formatMs(s.p95), formatMs(s.max)])))
+      lines.push(...table(['fired', 'count', 'p50', 'p95', 'max'], fired.map(rowOf)))
     }
   }
   if (decisions.commands > 0 || decisions.misfires > 0) {

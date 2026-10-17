@@ -85,6 +85,12 @@ export interface VoiceSessionDeps {
    * Status Capsule; '' when the Utterance ends or the listen closes.
    */
   onPartial?(text: string): void
+  /**
+   * The utterance in capture was let go before its Endpoint (#326): a
+   * blip, a line that started under it, the wake phrase inside a Hot
+   * Listen, or the Listen closing under it. The runner drops its partials.
+   */
+  onUtteranceDropped?(): void
   getRunState(): CommandRunState
   onAbort(): void
   onStateChange(state: VoiceState): void
@@ -173,14 +179,26 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
 
   const abortPhrases = new Set(LOCAL_CONTROL_PHRASES.abort)
 
-  // The live partial (#324): the Status Capsule shows it while the user
-  // speaks; a partial from a capture that has ended is dropped here.
   const speaking = (): boolean => deps.speaking?.isSpeaking() ?? false
 
+  // The live partial (#324): the Status Capsule shows it while the user
+  // speaks; a partial from a capture that has ended is dropped here, and
+  // one heard over a line playing is the app's own voice (#326).
   deps.transcriber.onPartial((text) => {
-    // A partial heard over a line playing is the app's own voice (#326): never shown, never considered.
     if (listening && !transcribing && !muted && !speaking()) deps.onPartial?.(text)
   })
+
+  /** Whether an utterance's capture is under way: speech started, its Endpoint not yet come. */
+  function capturing(): boolean {
+    return !endpointer.isIdle() && !muted
+  }
+
+  /** The utterance in capture is let go before its Endpoint: the engine drops it, and the runner its partials (#326). */
+  function letGo(): void {
+    deps.transcriber.cancel()
+    clearPartial()
+    deps.onUtteranceDropped?.()
+  }
 
   function stopSilenceClock(): void {
     silenceEpoch += 1
@@ -270,6 +288,11 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
       // the next wake stay heard.
       deps.tts.stop()
       monitor?.reset()
+      // The wake phrase itself, spoken into the open Listen, is no Command: dropped at its Endpoint.
+      if (capturing()) {
+        letGo()
+        muted = true
+      }
       return
     }
     // A hotkey listen — or an in-flight transcript — owns the mic; nothing to do.
@@ -298,6 +321,8 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
 
   function stopListening(): void {
     if (!listening) return
+    // An utterance cut off in capture, or in its STT window, never reaches the runner (#326).
+    if (capturing() || transcribing) deps.onUtteranceDropped?.()
     listening = false
     transcribing = false
     hot = false
@@ -381,9 +406,8 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
           }
         } else if (!muted && speaking()) {
           // A line started under the speech: the capture so far is let go.
+          letGo()
           muted = true
-          deps.transcriber.cancel()
-          clearPartial()
         }
         // Streaming STT (#40): utterance frames flow to the transcriber as
         // they arrive, so a streaming engine transcribes during speech; a
@@ -392,7 +416,7 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
         if (!muted) deps.transcriber.push(frame)
       } else if (!wasIdle) {
         // The endpointer discarded a blip — drop the in-flight capture too.
-        if (!muted) deps.transcriber.cancel()
+        if (!muted) letGo()
         muted = false
         clearPartial()
         startSilenceClock()

@@ -161,3 +161,80 @@ Not built in increment 1: Early Fire, Hot Listen, the persistent Piper.
 The Reaction distribution this increment measures is their baseline.
 - Moonshine Small stays the default STT tier until increment 1's replay
   of the same utterance dumps gives Small and Base a p95 to compare.
+
+Increment 2 (#326) built Early Fire and the Hot Listen on 2026-10-17.
+The readings it took:
+
+- **A bare verb phrase that heads another is held, with no one asked.**
+  A partial "scroll" Local-Matches as scroll down, but it heads "scroll
+  up": a partial whose words are a whole verb phrase heading a longer one
+  of another kind (`headsAnotherVerb`) waits for more words and makes no
+  Jev call. "read", which heads "read the page", is the same Command and
+  fires. Without this, every "scroll up" would Early Fire as scroll down.
+- **The Local Match fires a partial only when it carries no Slot still
+  being spoken**: never `open`, a search, `type` or `screenshot`. `press
+  <key>`, `click` of a label one ref carries and the Nth result fire.
+  Every other partial is one Jev call — the three Choices and the Noul
+  "Is this a complete command, with nothing still to be said?" — firing
+  when the Noul clears 0.7 and the verb is not `none`. The Name Match
+  reads an Early Fired Slot as it reads an Endpoint one.
+- **One partial call in flight; the newest partial waits.** A partial
+  heard while one is being read replaces any already waiting, and is
+  read when the call returns, unless a partial has fired, the Endpoint
+  has come or another Utterance has started. A partial identical to the
+  last one considered is skipped.
+- **An Early Fire is a submission.** It supersedes the Command in flight
+  and any reading still under way, like a Command read at the Endpoint;
+  its Feed line carries the partial's words. Its turn id is its own,
+  minted when it fires: the Endpoint's turn keeps the `stt` span.
+- **Its decision record is written at the Endpoint**, with the final
+  transcript, `earlyFire: { partial, leadMs, noul? }` and `partialCalls`
+  (the Jev calls this Utterance's partials made, fired or not — the
+  record of an Utterance read at the Endpoint carries them too). An Early
+  Fire whose Utterance never reaches an Endpoint (the Listen closed under
+  it) is recorded at the next speech start, without `leadMs`.
+- **The Reaction of an Early Fire** keeps its meaning — Endpoint to first
+  effect — closed at 0 when the effect came first, written at the
+  Endpoint with `earlyFire: true` and `leadMs` in its detail.
+- **The Hot Listen is the wake's Listen only**; the hotkey's stays
+  single-shot. `hotListenSilenceMs` (default 8 s, 2–60 s, live) of silence
+  after the last Endpoint closes it, counted on the session's clock and
+  stopped by speech. A dropped or empty Utterance restarts it as an
+  Endpoint does.
+- **The monitor hears a Hot Listen on the listen's own VAD scores.** The
+  wake monitor is fed the same frames once the Listen is hot, with the
+  probabilities the listen already scored: Silero carries state, so the
+  one instance is never scored twice. The abort head therefore closes a
+  Hot Listen — whether or not a Command runs, aborting it when one does.
+  A wake inside one stops any speech and lets the monitor's latch go, and
+  changes nothing else: no chime, the Listen is not reset.
+- **Escape closes a Hot Listen** (from the dashboard and the pane, beside
+  aborting the Command); a hotkey Listen is closed by the hotkey.
+- **The mic takes no Utterance while a line plays.** Speech that starts
+  while the speaking gate reports a line in flight, or that a line starts
+  under, is not transcribed — no `begin`, no partials, no speech start,
+  no page prepared — and is dropped at its Endpoint. A Hot Listen's
+  silence clock waits out the playback and restarts when it ends.
+- **`pnpm perf:report`** splits the Reaction table by Early Fire, and
+  prints the Early Fire share of spoken Commands, the lead p50/p95, and
+  the Jev calls per spoken Utterance (the Endpoint's and the partials').
+- **`BINGBONG_STT_SCRIPT` entries may carry `partials`**, emitted one
+  every two pushed frames, for the e2e suite.
+- **An Utterance let go before its Endpoint takes its partials with it.**
+  The voice session tells the runner (`dropPartials`) when a capture under
+  way is dropped — a blip, a line starting under it, the Listen closing
+  under it (disarm, the abort head, Escape) — so a partial still waiting on
+  Jev fires nothing after the user closed the ear.
+- **The wake phrase said inside a Hot Listen is dropped** like speech over
+  a playing line: it is no Command and costs no Jev call.
+- **The one-call guard covers the reading, not the action.** Once a
+  partial fires, its action runs outside the guard, so the next
+  Utterance's partials are read while a slow navigation lands.
+- **A typed line leaves an Early Fire waiting for its Endpoint**: the
+  Endpoint still only closes the Utterance.
+- **Left as they are:** an early `press <key>` fires before a count is
+  said (the spoken reading takes no count today); the monitor hears a Hot
+  Listen one STT window late, since its frames queue behind the listen's;
+  and an Early Fired Command that speaks would mute its own Utterance and
+  lose its lead — nothing speaks a Command's output until increment 3
+  (#327), which should close that Utterance at the mute.

@@ -10,6 +10,7 @@ import { VOICE_IPC, type VoiceState } from '../../core/voice/ipcChannels'
 import { createVoiceSession, type VoiceSession, type VoiceWakeDeps } from '../../core/voice/voiceSession'
 import { runCommand, runnerFor } from '../run/attachCommandRunner'
 import type { WindowEventPublisher } from '../session/windowEventPublisher'
+import { reportFault } from '../../core/trace/fault'
 
 // IPC glue for the ears (T9): the renderer's worklet streams 16 kHz mono PCM
 // here, the voice session (seam-tested in core) endpoints and transcribes it,
@@ -71,8 +72,9 @@ export function attachVoiceToWindow(win: BrowserWindow, deps: AttachVoiceDeps): 
     onPartial: (text) => {
       deps.publisher.publish({ source: 'voice-partial', partial: { text, at: Date.now() } })
       // Early Fire (#326): the words so far may already be the whole Command.
-      if (text !== '') void runnerFor(win)?.consider(text)
+      if (text !== '') void runnerFor(win)?.consider(text).catch((error: unknown) => reportFault('voice.attachVoice.consider', error))
     },
+    onUtteranceDropped: () => runnerFor(win)?.dropPartials(),
     getRunState: () => runnerFor(win)?.getState() ?? 'idle',
     onAbort: () => runnerFor(win)?.abort(),
     onStateChange: (state: VoiceState) => {

@@ -76,6 +76,12 @@ export interface CommandRunner {
    * the Command it fired settles.
    */
   consider(partial: string): Promise<void>
+  /**
+   * The Utterance being spoken was let go before its Endpoint (#326): the
+   * Listen closed under it, or its capture was dropped. A partial still
+   * being read fires nothing, and the rest of its partials are ignored.
+   */
+  dropPartials(): void
 }
 
 /** The Learned Terms as the runner reads and grows them (ADR 0077). */
@@ -169,10 +175,13 @@ function pageFree(command: Command | null): command is Command {
 
 /**
  * Whether a partial's Local Match may fire before the Endpoint (#326): a
- * Command that carries no Slot still being spoken — never an `open`, a
- * search or a `type` ("open you" is a bare word, and the user is still
- * saying "youtube"). A verb phrase that heads a longer one of another kind
- * ("scroll", which may yet be "scroll up") is held before this is asked.
+ * Command that carries no Slot still being spoken — never an `open` (an
+ * address or search terms: "open you" is a bare word, and the user is
+ * still saying "youtube"), a `type` or a `screenshot`'s path, and never
+ * `none`, which fires nothing. Jev may still fire an `open` or a `type`
+ * on a partial, when its Noul says the words are complete. A verb phrase
+ * that heads a longer one of another kind ("scroll", which may yet be
+ * "scroll up") is held before this is asked.
  */
 function firesEarly(command: Command): boolean {
   return command.verb !== 'open' && command.verb !== 'type' && command.verb !== 'screenshot' && command.verb !== 'none'
@@ -433,8 +442,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
 
   /** How a fired Command's Reaction is measured and its turn closed. */
   interface Reacting {
-    /** The action's first observable effect (or its end): the Reaction closes on it. */
-    react(effect: string, detail: Record<string, unknown>): void
+    /** The action's first observable effect (or its end), as the span's detail: the Reaction closes on it. */
+    react(detail: Record<string, unknown>): void
     /** The action settled: the turn closes, once its Reaction is in. */
     settled(): void
   }
@@ -476,7 +485,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     const react = (effect: string): void => {
       if (reacted) return
       reacted = true
-      reacting.react(effect, { verb: command.verb, effect, reading: readingKind, source })
+      reacting.react({ verb: command.verb, effect, reading: readingKind, source })
     }
     const release = deps.onEffect?.((effect) => {
       if (current()) react(effect)
@@ -532,8 +541,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     readonly utterance: number
     readonly turnId: string
     readonly partial: string
-    /** The tracer's monotonic ms when it fired. */
-    readonly firedAt: number
+    /** The tracer's monotonic ms when it fired (the record's `at` is wall-clock). */
+    readonly firedMono: number
     readonly record: DecisionRecord
     readonly noul?: number
     /** The Endpoint's monotonic ms, once it came. */
@@ -544,14 +553,16 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   }
   let early: EarlyFired | null = null
 
+  /** Whether a partial of this Utterance has fired: its other partials are let go. */
+  const firedIn = (of: number): boolean => early !== null && early.utterance === of
+
   function leadOf(fired: EarlyFired): number {
-    return Math.max(0, (fired.endpointAt ?? fired.firedAt) - fired.firedAt)
+    return Math.max(0, (fired.endpointAt ?? fired.firedMono) - fired.firedMono)
   }
 
   function reactingEarly(fired: EarlyFired): Reacting {
     return {
-      react(effect, detail) {
-        void effect
+      react(detail) {
         const now = monotonic()
         if (fired.endpointAt === null) {
           fired.effect = { detail, at: now }
@@ -618,13 +629,14 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     return { command, page, reading: 'jev', jevAsked: true, jev: jevDetailOf(result.answers, result.latencyMs, result.model), noul }
   }
 
-  async function considerOne(words: string): Promise<void> {
+  /** Reads one partial; when it fires, resolves to the action under way (boxed, so it is not awaited here). */
+  async function considerOne(words: string): Promise<{ action: Promise<void> } | null> {
     const mine = utterance
     const since = submitted
     // A later Endpoint, Utterance, submission or abort makes the reading stale; so does a partial of the same Utterance that fired first.
-    const stale = (): boolean => mine !== utterance || since !== submitted || early?.utterance === mine
+    const stale = (): boolean => mine !== utterance || since !== submitted || firedIn(mine)
     const found = await readPartial(words, stale)
-    if (found === null || stale()) return
+    if (found === null || stale()) return null
     // An Early Fire is a submission: a reading still under way for an earlier Command is stale now.
     submitted += 1
     const turnId = tracer?.mintTurnId() ?? `turn-${at().toString(36)}`
@@ -634,7 +646,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       utterance: mine,
       turnId,
       partial: words,
-      firedAt: monotonic(),
+      firedMono: monotonic(),
       record: recordOf(turnId, firedAt, 'spoken', words, found, command, matched, false),
       ...(found.noul !== undefined ? { noul: found.noul } : {}),
       endpointAt: null,
@@ -642,7 +654,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       settled: false,
     }
     early = fired
-    await fire(turnId, words, 'spoken', command, found.page, found.reading, matched, firedAt, reactingEarly(fired))
+    return { action: fire(turnId, words, 'spoken', command, found.page, found.reading, matched, firedAt, reactingEarly(fired)) }
   }
 
   return {
@@ -675,22 +687,31 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       const words = partial.trim()
       if (words === '' || words === lastPartial) return
       lastPartial = words
-      if (early !== null && early.utterance === utterance) return
+      if (firedIn(utterance)) return
       if (considering) {
         waitingPartial = words
         return
       }
+      // The one partial call in flight: held while a partial is read, let go
+      // once one fires — the action runs outside it, so the next Utterance's
+      // partials are read while it does.
       considering = true
+      let fired: { action: Promise<void> } | null = null
       try {
         let next: string | null = words
-        while (next !== null) {
+        while (next !== null && fired === null) {
           waitingPartial = null
-          await considerOne(next)
-          next = early !== null && early.utterance === utterance ? null : waitingPartial
+          fired = await considerOne(next)
+          next = firedIn(utterance) ? null : waitingPartial
         }
       } finally {
         considering = false
       }
+      if (fired !== null) await fired.action
+    },
+
+    dropPartials() {
+      nextUtterance()
     },
 
     async run(text, options) {
@@ -710,7 +731,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         if (options?.turnId !== undefined) summarize(options.turnId)
         return true
       }
-      if (fired !== null) closeEarly(fired, null)
+      // A spoken Endpoint of another Utterance: the Early Fire never reached its own. A typed line leaves it waiting for its Endpoint.
+      if (fired !== null && source === 'spoken') closeEarly(fired, null)
       const calls = source === 'spoken' ? partialCalls : 0
       // An Endpoint (or a typed line) ends the Utterance: a partial still being read fires nothing.
       if (source === 'spoken') nextUtterance()
@@ -748,10 +770,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       }
 
       await fire(turnId, trimmed, source, command, heard.page, heard.reading, matched, firedAt, {
-        react: (effect, detail) => {
-          void effect
-          span(turnId, monotonic() - endpointAt, detail)
-        },
+        react: (detail) => span(turnId, monotonic() - endpointAt, detail),
         settled: () => summarize(turnId),
       })
       return true
