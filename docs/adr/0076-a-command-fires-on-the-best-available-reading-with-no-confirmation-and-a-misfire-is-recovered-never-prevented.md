@@ -91,7 +91,22 @@ Command recovers rather than a question asked:
   are searched. The one exception is a bare word with no dot or space,
   which `open` sends to `https://<word>.com`.
 - **"open <label>" clicks the ref that carries the label** when exactly one
-  does; otherwise it is an address.
+  does. Otherwise the Local Match settles an `open` alone only when its
+  words are shaped like an address (a bare word, a host, "youtube dot com",
+  a URL); words about the page ("open Elon Musk's latest tweet") go to Jev
+  with the refs, and are searched only as the best guess. The first AC8
+  capture (2026-10-17) showed why: "Open the first result" was searched
+  verbatim, with Jev never asked.
+- **"the first result" is the Nth result on a search page.** An ordinal
+  and a noun ("first result", "second link", "top one") after `open` or
+  `click` on a search results page (any engine `parseSearchUrl` reads) is
+  the Nth link whose address leaves the engine's host, or the engine's
+  redirect to one; the engine's own links (home, settings, ads) are not
+  results. Off a search page the ordinal is Jev's. The same capture had
+  Jev read "click on the first link" as ref [1], the engine's home logo.
+- **Jev's `open` with a ref as its target is a click** when the Slot is not
+  address-shaped: the words name an element on the page, and opening it is
+  clicking it, the Local Match's own rule for a label one ref carries.
 - **A `none` reading records a decision record but no `reaction` span.**
   Nothing fired, so there is no Reaction to measure; the Feed shows the
   words greyed and the `command` event carries `dropped`. It does not

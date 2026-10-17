@@ -203,10 +203,10 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     const quick = localMatch(text, [])
     if (pageFree(quick)) return { command: quick, page: blankPage(browser), reading: 'local_match', jevAsked: false }
     const page = await collectPage(pending)
-    const local = localMatch(text, page.refs)
+    const local = localMatch(text, page.refs, page.url)
     if (local !== null) return { command: local, page, reading: 'local_match', jevAsked: false }
     const model = deps.decisionModel()
-    if (model === null) return { command: bestGuess(text, page.refs), page, reading: 'best_guess', jevAsked: false }
+    if (model === null) return { command: bestGuess(text, page.refs, page.url), page, reading: 'best_guess', jevAsked: false }
     const result = await model.ask({ state: commandState(text, page), questions: commandQuestions(text, page) })
     if (result.status === 'answered') {
       return {
@@ -218,7 +218,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       }
     }
     return {
-      command: bestGuess(text, page.refs),
+      command: bestGuess(text, page.refs, page.url),
       page,
       reading: 'best_guess',
       jevAsked: true,

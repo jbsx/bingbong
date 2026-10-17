@@ -124,6 +124,34 @@ describe('a Command the Local Match settles', () => {
     expect(events[2]).toMatchObject({ type: 'tool_call', name: 'click', args: { ref: 2 } })
   })
 
+  it('opens the Nth result on a search page by clicking it, with no Jev call (the AC8 capture\'s Misfire)', async () => {
+    const { browser, events, decision, runner } = harness()
+    browser.snapshot = {
+      ...browser.snapshot,
+      url: 'https://duckduckgo.com/?q=elon+musk+profile',
+      title: 'elon musk profile at DuckDuckGo',
+      refs: [
+        ref(1, 'link', 'DuckDuckGo home', { href: 'https://duckduckgo.com/' }),
+        ref(2, 'input', 'Search', { inputType: 'search' }),
+        ref(3, 'link', 'Elon Musk (@elonmusk) / X', { href: 'https://x.com/elonmusk' }),
+      ],
+    }
+    await runner.run('open the first result', { source: 'spoken' })
+    expect(browser.clicks).toEqual([3])
+    expect(browser.navigations).toEqual([])
+    expect(decision.requests).toEqual([])
+    expect(events[0]).toMatchObject({ type: 'command', action: 'click [3] "Elon Musk (@elonmusk) / X"' })
+  })
+
+  it('asks Jev for an open whose words are about the page rather than an address', async () => {
+    const { browser, decision, runner } = harness()
+    decision.script.push({ answers: { verb: choice('open'), target: choice('ref-1', 0.64), slot: choice('none') } })
+    await runner.run("open elon musk's profile", { source: 'spoken' })
+    expect(decision.requests).toHaveLength(1)
+    expect(browser.clicks).toEqual([1])
+    expect(browser.navigations).toEqual([])
+  })
+
   it('opens a bare word at its .com, search phrasing as a search, and an address as itself', async () => {
     const { browser, runner } = harness()
     await runner.run('open youtube')

@@ -77,8 +77,10 @@ _Avoid_: argument, parameter, entity, free text
 **Local Match**:
 A Command settled from the Utterance and the page alone, without asking the
 Decision Model: the verb is plain and its target is the one element the words
-can name. It is the fastest reading and the fallback when the Decision Model
-does not answer in time.
+can name — the label exactly one element carries, or the Nth result on a
+search page ("the first result"). An `open` settles alone only for words
+shaped like an address. It is the fastest reading and the fallback when the
+Decision Model does not answer in time.
 _Avoid_: grammar hit, regex path, offline mode
 
 **Early Fire**:

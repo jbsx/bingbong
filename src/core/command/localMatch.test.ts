@@ -16,6 +16,38 @@ const REFS: CommandRef[] = [
   { ref: 6, kind: 'link', label: 'Trending', href: 'https://example.com/trending', inputType: null },
 ]
 
+const SEARCH_URL = 'https://duckduckgo.com/?q=elon+musk+profile&t=h_'
+const RESULTS: CommandRef[] = [
+  { ref: 1, kind: 'link', label: 'DuckDuckGo home', href: 'https://duckduckgo.com/', inputType: null },
+  { ref: 2, kind: 'input', label: 'Search', href: null, inputType: 'search' },
+  { ref: 3, kind: 'link', label: 'Elon Musk (@elonmusk) / X', href: 'https://x.com/elonmusk', inputType: null },
+  { ref: 4, kind: 'link', label: 'Ad · Profiles', href: 'https://duckduckgo.com/y.js?ad_provider=bing', inputType: null },
+  { ref: 5, kind: 'link', label: 'Elon Musk - Wikipedia', href: 'https://duckduckgo.com/l/?uddg=https%3A%2F%2Fen.wikipedia.org%2Fwiki%2FElon_Musk', inputType: null },
+  { ref: 6, kind: 'link', label: 'Settings', href: 'https://duckduckgo.com/settings', inputType: null },
+]
+
+describe('the Local Match: the Nth result on a search page', () => {
+  it('reads "the first result" and "second link" as the Nth link that leaves the engine, or its redirect to one', () => {
+    expect(localMatch('open the first result', RESULTS, SEARCH_URL)).toEqual({ verb: 'click', target: 3, slot: null })
+    expect(localMatch('click on the first link', RESULTS, SEARCH_URL)).toEqual({ verb: 'click', target: 3, slot: null })
+    expect(localMatch('open the second one', RESULTS, SEARCH_URL)).toEqual({ verb: 'click', target: 5, slot: null })
+    expect(localMatch('click 2nd result', RESULTS, SEARCH_URL)).toEqual({ verb: 'click', target: 5, slot: null })
+    expect(localMatch('open the top result', RESULTS, SEARCH_URL)).toEqual({ verb: 'click', target: 3, slot: null })
+  })
+
+  it('settles nothing past the last result, or off a search page — Jev reads the page then', () => {
+    expect(localMatch('open the third result', RESULTS, SEARCH_URL)).toBeNull()
+    expect(localMatch('open the first result', REFS, 'https://example.com/')).toBeNull()
+    expect(localMatch('click the first video', REFS, 'https://www.youtube.com/')).toBeNull()
+    // The best guess off a search page: the words as an address, which is a search.
+    expect(bestGuess('open the first result', REFS, 'https://example.com/')).toEqual({ verb: 'open', target: null, slot: 'the first result' })
+  })
+
+  it('does not read a longer phrase as an ordinal', () => {
+    expect(localMatch('open the first video on the left', RESULTS, SEARCH_URL)).toBeNull()
+  })
+})
+
 describe('the Local Match: the CLI grammar', () => {
   it('reads the CLI grammar as Commands, with no page needed', () => {
     expect(localMatch('navigate youtube.com', [])).toEqual({ verb: 'open', target: null, slot: 'youtube.com' })
@@ -73,6 +105,14 @@ describe('the Local Match: plain verbs', () => {
     expect(localMatch('press accept all', REFS)).toEqual({ verb: 'click', target: 5, slot: null })
     // `open` of a label exactly one ref carries is a click on this page, not a navigate.
     expect(localMatch('open trending', REFS)).toEqual({ verb: 'click', target: 6, slot: null })
+  })
+
+  it('settles an open alone only for an address; words about the page that no ref carries are Jev\'s, and the best guess searches them', () => {
+    expect(localMatch("open Elon Musk's latest tweet", REFS)).toBeNull()
+    expect(bestGuess("open Elon Musk's latest tweet", REFS)).toEqual({ verb: 'open', target: null, slot: "Elon Musk's latest tweet" })
+    expect(localMatch('open youtube dot com', REFS)).toEqual({ verb: 'open', target: null, slot: 'youtube dot com' })
+    expect(localMatch('go to https://example.org/a?b=1', REFS)).toEqual({ verb: 'open', target: null, slot: 'https://example.org/a?b=1' })
+    expect(localMatch('open localhost:3000', REFS)).toEqual({ verb: 'open', target: null, slot: 'localhost:3000' })
   })
 
   it('makes no Local Match when the label names no ref, or more than one', () => {

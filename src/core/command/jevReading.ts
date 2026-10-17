@@ -1,6 +1,7 @@
 import type { DecisionChoiceAnswer, DecisionChoiceQuestion } from '../ports/decisionModel'
 import { JEV_VERBS, PRESS_KEYS, pressKeyOf, verbTakesSlot, verbTakesTarget, type Command, type CommandPage, type CommandRef, type CommandVerb } from './command'
 import { wordsAfterVerb } from './localMatch'
+import { isAddressShaped } from './openAddress'
 
 // One Jev call per Command the Local Match cannot settle (#324, ADR 0076).
 // The state is the transcript, the page's address and title and its
@@ -159,6 +160,14 @@ export function readCommandAnswers(answers: CommandAnswers, text: string, page: 
     if (target === null) return none
   }
   const slot = verbTakesSlot(verb) ? slotWords(answers.slot, text) : null
+  if (verb === 'open' && slot !== null && !isAddressShaped(slot)) {
+    // "open <something on the page>": when Jev's target Choice names a ref
+    // outright, the words name that element and opening it is clicking it
+    // — the Local Match's own rule for a label one ref carries. An
+    // address-shaped Slot is navigated whatever the target says.
+    const chosen = refOfLabel(answers.target.choice)
+    if (chosen !== null && page.refs.some((ref) => ref.ref === chosen)) return { verb: 'click', target: chosen, slot: null }
+  }
   if (verb === 'press') {
     const key = slot === null ? null : pressKeyOf(slot)
     return { verb, target: null, slot, key: key ?? PRESS_KEYS.enter, times: 1 }

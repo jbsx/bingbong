@@ -1,9 +1,14 @@
+import { parseSearchUrl } from '../browser/urlInput'
 import { parseCliCommand, type CliCommand } from './cliGrammar'
 import { normalizeWords, pressKeyOf, type Command, type CommandRef, type CommandVerb } from './command'
+import { isAddressShaped } from './openAddress'
 
 // The Local Match (CONTEXT.md, ADR 0076, #324): a Command settled from the
 // Utterance and the page alone, without asking the Decision Model — the
-// CLI grammar, or a plain verb and a label exactly one ref carries. It is
+// CLI grammar, or a plain verb and the one element the words can name: a
+// label exactly one ref carries, or the Nth result on a search page ("the
+// first result"). An `open` settles alone only when its words are shaped
+// like an address; words about the page go to Jev with the refs. It is
 // the fastest reading, and made lenient (`bestGuess`) it is the fallback
 // when the Decision Model does not answer in time. Nothing here asks "did
 // you mean": a reading that is not settled is null, and Jev is asked.
@@ -161,6 +166,75 @@ function theOneTextField(refs: readonly CommandRef[]): number | null {
   return fields.length === 1 ? fields[0]!.ref : null
 }
 
+/** The ordinals a spoken position names: "first result", "2nd link", "top one". */
+const ORDINALS: Readonly<Record<string, number>> = {
+  first: 1,
+  '1st': 1,
+  top: 1,
+  second: 2,
+  '2nd': 2,
+  third: 3,
+  '3rd': 3,
+  fourth: 4,
+  '4th': 4,
+  fifth: 5,
+  '5th': 5,
+  sixth: 6,
+  '6th': 6,
+  seventh: 7,
+  '7th': 7,
+  eighth: 8,
+  '8th': 8,
+  ninth: 9,
+  '9th': 9,
+  tenth: 10,
+  '10th': 10,
+}
+
+/** What an ordinal counts: "the first result", "second link", "the top one". */
+const ORDINAL_NOUNS: ReadonlySet<string> = new Set(['result', 'results', 'link', 'one', 'item', 'entry', 'hit', 'video', 'article', 'page', 'option', 'match'])
+
+/** The position a phrase names and nothing else — "the first result" is 1; "the first video on the left" is null. */
+function ordinalOf(phrase: string): number | null {
+  const words = normalizeWords(phrase)
+    .split(' ')
+    .filter((word) => word !== '' && !ARTICLES.has(word))
+  if (words.length < 1 || words.length > 2) return null
+  const position = ORDINALS[words[0]!]
+  if (position === undefined) return null
+  if (words.length === 2 && !ORDINAL_NOUNS.has(words[1]!)) return null
+  return position
+}
+
+/** The address's host without a leading `www.`; null for text that is no URL. */
+function hostOf(url: string): string | null {
+  if (!URL.canParse(url)) return null
+  return new URL(url).host.replace(/^www\./, '').toLowerCase()
+}
+
+/** Whether a link on a search page is one of its results: its address leaves the engine, or is the engine's redirect to one. */
+function isResultLink(ref: CommandRef, engineHost: string): boolean {
+  if (ref.kind !== 'link' || ref.href === null) return false
+  const host = hostOf(ref.href)
+  if (host === null) return false
+  if (host !== engineHost) return true
+  const params = new URL(ref.href).searchParams
+  return params.has('uddg') || params.has('url')
+}
+
+/**
+ * The Nth result on a search results page: the Nth link whose address
+ * leaves the engine's host (the engine's own links — home, settings,
+ * ads — are not results). Null off a search page, or past the last.
+ */
+function nthResult(position: number, refs: readonly CommandRef[], url: string): number | null {
+  if (url === '' || parseSearchUrl(url) === null) return null
+  const engineHost = hostOf(url)
+  if (engineHost === null) return null
+  const results = refs.filter((ref) => isResultLink(ref, engineHost))
+  return results[position - 1]?.ref ?? null
+}
+
 /** The text to type and the field it names, split at the last "in"/"into"/"on" that leaves words on both sides. */
 function splitTyped(rest: readonly Token[]): { slot: string; field: string | null } {
   for (let at = rest.length - 1; at >= 1; at -= 1) {
@@ -209,7 +283,7 @@ function fromGrammar(parsed: CliCommand): Command | null {
 }
 
 /** The Command a spoken verb and its words settle, exactly (`lenient` false) or by the best reading (`lenient` true). */
-function readSpoken(text: string, refs: readonly CommandRef[], lenient: boolean): Command | null {
+function readSpoken(text: string, refs: readonly CommandRef[], url: string, lenient: boolean): Command | null {
   const tokens = tokenize(text)
   if (tokens.length === 0) return null
   const found = verbOf(tokens)
@@ -221,7 +295,17 @@ function readSpoken(text: string, refs: readonly CommandRef[], lenient: boolean)
   }
   const { kind, rest } = found
   const labelled = (): number | null => exactlyOneLabelled(spokenOf(rest), refs) ?? (lenient ? bestLabelled(spokenOf(rest), refs) : null)
+  /** "the first result": the Nth result on a search page settles it; an ordinal anywhere else is Jev's (`unsettled`). */
+  const ordinal = (): { target: number } | 'unsettled' | null => {
+    const position = ordinalOf(spokenOf(rest))
+    if (position === null) return null
+    const target = nthResult(position, refs, url)
+    return target !== null ? { target } : 'unsettled'
+  }
   const clickOrNone = (): Command | null => {
+    const nth = ordinal()
+    if (nth !== null && nth !== 'unsettled') return command('click', { target: nth.target })
+    if (nth === 'unsettled' && !lenient) return null
     const target = labelled()
     if (target !== null) return command('click', { target })
     return lenient ? command('none') : null
@@ -237,10 +321,14 @@ function readSpoken(text: string, refs: readonly CommandRef[], lenient: boolean)
       return rest.length === 0 ? (lenient ? command('none') : null) : clickOrNone()
     case 'open': {
       if (rest.length === 0) return lenient ? command('none') : null
-      // A label exactly one ref carries is opened by clicking it; anything
-      // else is an address.
+      // A label exactly one ref carries, or the Nth result on a search
+      // page, is opened by clicking it; an address is opened; words about
+      // the page that settle neither are Jev's — the best guess searches them.
       const target = exactlyOneLabelled(spokenOf(rest), refs)
       if (target !== null) return command('click', { target })
+      const nth = ordinal()
+      if (nth !== null && nth !== 'unsettled') return command('click', { target: nth.target })
+      if (!lenient && (nth === 'unsettled' || !isAddressShaped(spokenOf(rest)))) return null
       return command('open', { slot: spokenOf(rest) })
     }
     case 'search':
@@ -272,14 +360,15 @@ export function wordsAfterVerb(text: string): string {
 }
 
 /**
- * The Local Match: the CLI grammar, or a plain verb and the label exactly
- * one ref carries. Null when the words and the page settle no Command —
- * the Decision Model is asked then.
+ * The Local Match: the CLI grammar, or a plain verb and the one element the
+ * words can name — the label exactly one ref carries, or the Nth result on
+ * a search page (`url` is the page's address). Null when the words and the
+ * page settle no Command — the Decision Model is asked then.
  */
-export function localMatch(text: string, refs: readonly CommandRef[]): Command | null {
+export function localMatch(text: string, refs: readonly CommandRef[], url = ''): Command | null {
   const parsed = parseCliCommand(text)
   if (parsed !== null && parsed.ok) return fromGrammar(parsed.command)
-  return readSpoken(text, refs, false)
+  return readSpoken(text, refs, url, false)
 }
 
 /**
@@ -288,6 +377,6 @@ export function localMatch(text: string, refs: readonly CommandRef[]): Command |
  * the words as search terms — what fires when Jev does not answer. Never
  * null: nothing to read is `none`.
  */
-export function bestGuess(text: string, refs: readonly CommandRef[]): Command {
-  return localMatch(text, refs) ?? readSpoken(text, refs, true) ?? command('none')
+export function bestGuess(text: string, refs: readonly CommandRef[], url = ''): Command {
+  return localMatch(text, refs, url) ?? readSpoken(text, refs, url, true) ?? command('none')
 }

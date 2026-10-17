@@ -94,6 +94,13 @@ describe('reading the answers', () => {
     expect(readCommandAnswers({ verb: choice('type'), target: choice('ref-3'), slot: choice('none') }, 'type hello', PAGE)).toEqual({ verb: 'type', target: 3, slot: 'hello' })
   })
 
+  it('opens an element on the page by clicking it when open\'s target names a ref and the words are not an address', () => {
+    expect(readCommandAnswers({ verb: choice('open'), target: choice('ref-1', 0.64), slot: choice('none') }, "open elon musk's profile", PAGE)).toEqual({ verb: 'click', target: 1, slot: null })
+    // An address is navigated whatever the target says; a target of none leaves the words to openAddress.
+    expect(readCommandAnswers({ verb: choice('open'), target: choice('ref-1'), slot: choice('none') }, 'open youtube', PAGE)).toEqual({ verb: 'open', target: null, slot: 'youtube' })
+    expect(readCommandAnswers({ verb: choice('open'), target: choice('none'), slot: choice('none') }, "open elon musk's profile", PAGE)).toEqual({ verb: 'open', target: null, slot: "elon musk's profile" })
+  })
+
   it('drops a click on a page with no refs', () => {
     expect(readCommandAnswers({ verb: choice('click'), target: choice('none'), slot: choice('none') }, 'click it', { ...PAGE, refs: [] })).toEqual({ verb: 'none', target: null, slot: null })
   })
