@@ -163,6 +163,40 @@ describe('persistent piper synthesizer', () => {
     expect(await second).toEqual(new Uint8Array([2]))
   })
 
+  it('fails a line its retry also dies under, and keeps the persistent route for the next line', async () => {
+    const { synth, children, fallbackTexts, answer } = makeSynth()
+
+    const first = synth.synthesize('One.')
+    await flush()
+    answer(children[0]!, '1', new Uint8Array([1]))
+    await first
+
+    const poison = synth.synthesize('Poison.')
+    await flush()
+    children[0]!.emit('close', 139)
+    await flush()
+    children[1]!.emit('close', 139)
+    await expect(poison).rejects.toThrow('piper exited with code 139')
+
+    const next = synth.synthesize('Three.')
+    await flush()
+    expect(children).toHaveLength(3)
+    answer(children[2]!, '3', new Uint8Array([3]))
+    expect(await next).toEqual(new Uint8Array([3]))
+    expect(fallbackTexts).toEqual([])
+  })
+
+  it('falls back without spawning again when the prefetched process could not start', async () => {
+    const { synth, children, fallbackTexts } = makeSynth()
+    ;(synth as SpeechSynthesizer & { prefetch(): void }).prefetch()
+    await flush()
+    children[0]!.emit('error', new Error('spawn piper ENOENT'))
+
+    expect(await synth.synthesize('One.')).toEqual(new Uint8Array([9]))
+    expect(children).toHaveLength(1)
+    expect(fallbackTexts).toEqual(['One.'])
+  })
+
   it('falls back to the per-line spawn with no error when the process cannot start (AC1)', async () => {
     const { synth, children, fallbackTexts } = makeSynth()
 

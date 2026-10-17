@@ -239,6 +239,14 @@ export function pageReadText(result: string): string {
   return text.join('\n').trim()
 }
 
+const PART_LINE = /^page text: part (\d+) of (\d+) — /m
+
+/** Which part of how many a Page Read is, off its part line (#327): what a spoken read continues through; null without one. */
+export function pageReadPart(result: string): { part: number; of: number } | null {
+  const match = PART_LINE.exec(result)
+  return match === null ? null : { part: Number(match[1]), of: Number(match[2]) }
+}
+
 const PART_PAST_THE_END =/\bread_page: part \d+ is past the end\b/
 
 /** Whether a result is that refusal, wherever in the text it sits: what the Round Audit counts (#290). */

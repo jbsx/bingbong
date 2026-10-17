@@ -33,11 +33,12 @@ export interface PersistentPiperSynthesizer extends SpeechSynthesizer {
 
 const LINE_TIMEOUT_MS = 20_000
 
+/** A voice's model and config, as the voices dir resolves it. */
+type PiperVoice = Awaited<ReturnType<typeof resolvePiperVoice>>
+
 interface PiperProcess {
   readonly child: ChildProcess
   readonly modelPath: string
-  /** Lines this process has answered: one that dies before its first cannot start. */
-  served: number
   alive: boolean
   waiting: { resolve(path: string): void; reject(error: Error): void } | null
   /** The end of what it said on stderr, for the error when it dies. */
@@ -62,9 +63,10 @@ function onLines(stream: NodeJS.ReadableStream, onLine: (line: string) => void):
  * on stdout; either is read as the line's delimiter. Lines are written one
  * at a time. A process that dies is restarted at the next line, and a line
  * it died under is retried once on the new one. A process that dies before
- * answering its first line could not start — no piper, or one without
- * `--output-dir` — and every line from then on goes to the per-line spawn,
- * with no error surfaced. The process exits with the app: its stdin closes.
+ * any piper here has answered a line could not start — no piper, or one
+ * without `--output-dir` — and every line from then on goes to the per-line
+ * spawn, with no error surfaced. The process exits with the app: its stdin
+ * closes.
  */
 export function createPersistentPiperSynthesizer(deps: PersistentPiperDeps): PersistentPiperSynthesizer {
   const spawnFn = deps.spawnFn ?? nodeSpawn
@@ -76,6 +78,8 @@ export function createPersistentPiperSynthesizer(deps: PersistentPiperDeps): Per
   let piper: PiperProcess | null = null
   /** The persistent process could not start: the per-line spawn speaks from here on. */
   let fallenBack = false
+  /** Lines any piper here has answered: until the first, a process that dies could not start; after it, one that dies crashed. */
+  let answered = 0
   let spawns = 0
   // Lines run one at a time: piper answers them in order, one path each.
   let chain: Promise<unknown> = Promise.resolve()
@@ -85,17 +89,18 @@ export function createPersistentPiperSynthesizer(deps: PersistentPiperDeps): Per
     return outputDir
   }
 
-  function start(modelPath: string, configPath: string, dir: string): PiperProcess {
+  function start(voice: PiperVoice, dir: string): PiperProcess {
     spawns += 1
-    const child = spawnFn(deps.bin, ['--model', modelPath, '--config', configPath, '--output-dir', dir])
-    const proc: PiperProcess = { child, modelPath, served: 0, alive: true, waiting: null, stderrTail: '' }
+    const child = spawnFn(deps.bin, ['--model', voice.modelPath, '--config', voice.configPath, '--output-dir', dir])
+    const proc: PiperProcess = { child, modelPath: voice.modelPath, alive: true, waiting: null, stderrTail: '' }
     const die = (error: Error): void => {
       proc.alive = false
       const waiting = proc.waiting
       proc.waiting = null
       waiting?.reject(error)
     }
-    const hear = (line: string): void => {
+    /** A line piper printed that names a WAV in the output dir answers the line it was given. */
+    const takeWavPath = (line: string): void => {
       const at = line.indexOf(dir)
       const path = at === -1 ? '' : line.slice(at).trim()
       if (!path.endsWith('.wav')) return
@@ -103,9 +108,9 @@ export function createPersistentPiperSynthesizer(deps: PersistentPiperDeps): Per
       proc.waiting = null
       waiting?.resolve(path)
     }
-    onLines(child.stdout!, hear)
+    onLines(child.stdout!, takeWavPath)
     onLines(child.stderr!, (line) => {
-      hear(line)
+      takeWavPath(line)
       proc.stderrTail = `${proc.stderrTail}\n${line}`.slice(-400)
     })
     child.on('error', (err) => die(new Error(`failed to start piper at '${deps.bin}': ${err.message}`)))
@@ -119,18 +124,18 @@ export function createPersistentPiperSynthesizer(deps: PersistentPiperDeps): Per
   }
 
   /** The live process for this voice: the one running, else a new one, the old voice's killed. */
-  function processFor(modelPath: string, configPath: string, dir: string): PiperProcess {
-    if (piper !== null && piper.alive && piper.modelPath === modelPath) return piper
+  function processFor(voice: PiperVoice, dir: string): PiperProcess {
+    if (piper !== null && piper.alive && piper.modelPath === voice.modelPath) return piper
     if (piper !== null && piper.alive) {
       piper.alive = false
       piper.child.kill()
     }
-    piper = start(modelPath, configPath, dir)
+    piper = start(voice, dir)
     return piper
   }
 
   /** Write one line and wait for the path of its WAV. */
-  function ask(proc: PiperProcess, line: string): Promise<string> {
+  function renderLine(proc: PiperProcess, line: string): Promise<string> {
     return new Promise((resolve, reject) => {
       if (!proc.alive) {
         reject(new Error('piper is not running'))
@@ -156,29 +161,37 @@ export function createPersistentPiperSynthesizer(deps: PersistentPiperDeps): Per
     })
   }
 
-  async function line(text: string): Promise<Uint8Array> {
+  /** The persistent process could not start: this line and every one after it go to the per-line spawn. */
+  function fallBack(text: string, error: unknown): Promise<Uint8Array> {
+    reportFault('tts.createPersistentPiperSynthesizer.start', error)
+    fallenBack = true
+    return deps.fallback.synthesize(text)
+  }
+
+  async function synthesizeLine(text: string): Promise<Uint8Array> {
     if (fallenBack) return deps.fallback.synthesize(text)
     const spoken = text.replace(/\s+/g, ' ').trim()
     // piper skips a blank line and would never answer it.
     if (spoken === '') return wrapRawPcmAsWav(new Uint8Array(0), DEFAULT_PIPER_SAMPLE_RATE)
-    const { modelPath, configPath } = await resolvePiperVoice(deps.voicesDir, deps.getVoiceId(), readDirFn)
+    const voice = await resolvePiperVoice(deps.voicesDir, deps.getVoiceId(), readDirFn)
     const dir = await dirOf()
+    // The prefetched process already died, and no piper has ever answered: it could not start.
+    if (piper !== null && !piper.alive && answered === 0) return fallBack(text, new Error('the prefetched piper exited before its first line'))
     for (let attempt = 0; ; attempt++) {
-      const proc = processFor(modelPath, configPath, dir)
+      const proc = processFor(voice, dir)
       let path: string
       try {
-        path = await ask(proc, spoken)
+        path = await renderLine(proc, spoken)
       } catch (error) {
-        if (proc.served === 0) {
-          reportFault('tts.createPersistentPiperSynthesizer.start', error)
-          fallenBack = true
+        if (answered === 0) {
           if (proc.alive) proc.child.kill()
-          return deps.fallback.synthesize(text)
+          return fallBack(text, error)
         }
+        // A piper that has worked here crashed: restarted for one retry, then the line fails.
         if (attempt >= 1) throw error
         continue
       }
-      proc.served += 1
+      answered += 1
       const bytes = await readBytesFn(path)
       void removeFn(path).catch((error: unknown) => reportFault('tts.createPersistentPiperSynthesizer.remove', error))
       return bytes
@@ -187,7 +200,7 @@ export function createPersistentPiperSynthesizer(deps: PersistentPiperDeps): Per
 
   return {
     synthesize(text) {
-      const run = chain.then(() => line(text))
+      const run = chain.then(() => synthesizeLine(text))
       chain = run.catch(() => {})
       return run
     },
@@ -195,8 +208,7 @@ export function createPersistentPiperSynthesizer(deps: PersistentPiperDeps): Per
     prefetch() {
       const run = chain.then(async () => {
         if (fallenBack) return
-        const { modelPath, configPath } = await resolvePiperVoice(deps.voicesDir, deps.getVoiceId(), readDirFn)
-        processFor(modelPath, configPath, await dirOf())
+        processFor(await resolvePiperVoice(deps.voicesDir, deps.getVoiceId(), readDirFn), await dirOf())
       })
       chain = run.catch((error: unknown) => reportFault('tts.createPersistentPiperSynthesizer.prefetch', error))
     },

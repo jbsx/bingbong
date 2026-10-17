@@ -1,4 +1,5 @@
-export type SpeakOutcome = { ok: true } | { ok: false; error: string }
+/** `stopped`: the text was cut (barge-in, a later Command) or dropped from the queue before it ended (#327). */
+export type SpeakOutcome = { ok: true; stopped?: true } | { ok: false; error: string }
 
 export interface SpeakOptions {
   /**

@@ -10,6 +10,13 @@ export interface AplayPlayerDeps {
 
 type Format = Omit<ParsedWav, 'pcm'>
 
+/** One aplay of a stream, in one format: the child once started, and the samples written before it was. */
+interface Segment {
+  readonly format: Format
+  child: ChildProcess | null
+  readonly pending: Uint8Array[]
+}
+
 const sameFormat = (a: Format, b: Format): boolean =>
   a.sampleRate === b.sampleRate && a.channels === b.channels && a.bitsPerSample === b.bitsPerSample
 
@@ -68,8 +75,8 @@ export function createAplayPlayer(deps: AplayPlayerDeps = {}): AudioPlayer & Aud
       let stopped = false
       let ended = false
       let heardFirst = false
-      /** The aplay taking samples now, its format, and what it is waiting behind. */
-      let segment: { format: Format; child: ChildProcess | null; pending: Uint8Array[] } | null = null
+      /** The aplay taking samples now. */
+      let segment: Segment | null = null
       let segments = 0
       let tail: Promise<void> = Promise.resolve()
       const children: ChildProcess[] = []
@@ -82,7 +89,7 @@ export function createAplayPlayer(deps: AplayPlayerDeps = {}): AudioPlayer & Aud
 
       /** Start a segment's aplay behind the ones before it, and feed it what was written meanwhile. */
       function begin(format: Format, first: Uint8Array): void {
-        const current: { format: Format; child: ChildProcess | null; pending: Uint8Array[] } = { format, child: null, pending: [first] }
+        const current: Segment = { format, child: null, pending: [first] }
         segment = current
         const launch = (): Promise<void> => {
           if (stopped) return Promise.resolve()
@@ -96,6 +103,8 @@ export function createAplayPlayer(deps: AplayPlayerDeps = {}): AudioPlayer & Aud
         segments += 1
         // The first aplay starts at once; a later one waits for the one before it to drain.
         tail = segments === 1 ? launch() : tail.then(launch)
+        // An aplay that fails before end() is reported through done there; until then the failure is held, never unhandled.
+        tail.catch(() => {})
       }
 
       /** The first sample handed to the device: reported once. */

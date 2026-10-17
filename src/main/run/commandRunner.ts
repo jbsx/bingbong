@@ -12,7 +12,7 @@ import { isAddressShaped, openAddress } from '../../core/command/openAddress'
 import { nameMatch, soundsAlike } from '../../core/command/nameMatch'
 import { jevDetailOf, misfireSignal, type CommandLogRecord, type CommandReading, type CommandSource, type DecisionRecord, type NameSource } from '../../core/command/decisionRecord'
 import { pageTermsOf } from '../../core/voice/pageTerms'
-import { pageReadText } from '../../core/browser/pageText'
+import { pageReadPart, pageReadText } from '../../core/browser/pageText'
 import { SPOKEN_FAILURES, spokenFailureOf, type SpokenFailure } from '../../core/command/spokenFailure'
 import type { SpeakOutcome, TtsSpeaker } from '../../core/ports/tts'
 import { reportFault } from '../../core/trace/fault'
@@ -246,7 +246,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   /** The Command that last fired, for the Misfire signal. */
   let previous: { turnId: string; verb: Command['verb']; key?: Command['key']; at: number } | null = null
   /** The runner's texts still sounding (a Page Read, a failure's line): the next Command or an abort silences them. */
-  let voiced = 0
+  let sounding = 0
 
   const at = (): number => deps.now()
   const monotonic = (): number => tracer?.now() ?? at()
@@ -292,7 +292,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   /** Speak a Command's text (#327): one `speak` event carries it, and it counts as the runner's until it ends. */
   function say(speech: Pick<TtsSpeaker, 'speak'>, turnId: string, text: string, onFirstSound?: () => void): Promise<SpeakOutcome> {
     publish({ type: 'speak', turnId, text, at: at() })
-    voiced += 1
+    sounding += 1
     return speech
       .speak(text, { turnId, ...(onFirstSound ? { onFirstSound } : {}) })
       .catch((error: unknown): SpeakOutcome => {
@@ -300,8 +300,39 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         return { ok: false, error: String(error) }
       })
       .finally(() => {
-        voiced -= 1
+        sounding -= 1
       })
+  }
+
+  /**
+   * Speak a Page Read to its end (#327): its first part's text — or that
+   * the page has none — and then each further part, read when the one
+   * before has been spoken to its end. A part that was cut (barge-in, the
+   * Abort Head, a later Command) or failed ends the reading there.
+   */
+  async function speakPageRead(
+    speech: Pick<TtsSpeaker, 'speak'>,
+    turnId: string,
+    firstPart: string,
+    current: () => boolean,
+    onFirstSound: () => void,
+  ): Promise<void> {
+    let page = firstPart
+    for (let first = true; ; first = false) {
+      const words = pageReadText(page)
+      if (first || words !== '') {
+        const outcome = await say(speech, turnId, words || SPOKEN_FAILURES.empty, first ? onFirstSound : undefined)
+        if (!outcome.ok || outcome.stopped === true) return
+      }
+      const at = pageReadPart(page)
+      if (!current() || at === null || at.part >= at.of) return
+      try {
+        page = await browser.readPage(at.part + 1)
+      } catch (error) {
+        reportFault('run.commandRunner.readNextPart', error, { turnId })
+        return
+      }
+    }
   }
 
   /** A failure's one line, not waited on: the turn ends now, and the next Command silences it. */
@@ -312,7 +343,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
 
   /** Silence the runner's speech, if any is sounding; whether any was. */
   function silence(): boolean {
-    if (voiced === 0) return false
+    if (sounding === 0) return false
     deps.speech?.stop()
     return true
   }
@@ -545,7 +576,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       if (speech !== undefined) {
         const shownAt = monotonic()
         publish({ type: 'status', turnId, status: 'speaking', at: at() })
-        await say(speech, turnId, pageReadText(result) || SPOKEN_FAILURES.empty, () => {
+        await speakPageRead(speech, turnId, result, current, () => {
           if (current()) react('spoken')
         })
         if (!current()) return
@@ -716,10 +747,10 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   }
 
   return {
-    getState: () => (inFlight === null && reading === null && voiced === 0 ? 'idle' : 'running'),
+    getState: () => (inFlight === null && reading === null && sounding === 0 ? 'idle' : 'running'),
 
     abort() {
-      const had = reading !== null || inFlight !== null || voiced > 0
+      const had = reading !== null || inFlight !== null || sounding > 0
       // A reading under way is stale from here: when its answer comes, it fires nothing.
       submitted += 1
       reading = null

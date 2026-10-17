@@ -228,7 +228,7 @@ describe('speaking gate over a streamed text (#327)', () => {
     // Synchronously: no tick of the clock passes between the stop and the cut.
     expect(player.streams[0]!.stopped).toBe(true)
     await vi.advanceTimersByTimeAsync(100)
-    expect(await outcome).toEqual({ ok: true })
+    expect(await outcome).toEqual({ ok: true, stopped: true })
     expect(gate.isSpeaking()).toBe(false)
   })
 

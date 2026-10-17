@@ -1,6 +1,7 @@
 import type { ToolResultOutcome } from '../ports/toolOutcome'
 import { blockedOrInertAction } from '../browser/actionOutcome'
 import { classifyBlockerPage } from '../browser/blockerNudge'
+import { consentWallStayed } from '../browser/dialogPolicy'
 import { classifyEmptyLanding, isPageArrival } from '../browser/emptyLanding'
 import { classifyNotFoundPage } from '../browser/notFoundPage'
 import { classifyUnavailablePage } from '../browser/unavailablePage'
@@ -24,9 +25,6 @@ export const SPOKEN_FAILURES: Readonly<Record<SpokenFailure, string>> = {
   unavailable: "That site can't show the page right now.",
   empty: 'This page shows no text.',
 }
-
-/** The heads a dismissal under a Blocked Action leaves (dialogPolicy.ts): the wall stayed. */
-const CONSENT_WALL_RE = /dismissed consent dialog: .*\((?:it covered \[\d+\]; retried, still blocked|not retried)\)/
 
 /** A landing's first line: the verb, the address and the title of the page it carries. */
 const LANDING_LINE_RE = /^(?:navigated|went back|went forward): url=(\S*) title=("(?:[^"\\]|\\.)*")/
@@ -58,7 +56,7 @@ export function spokenFailureOf(input: SpokenFailureInput): SpokenFailure | null
   const result = outcome.result
   const tool = input.tool === 'forward' ? 'go_forward' : input.tool
   const blocked = blockedOrInertAction(result)
-  if (blocked === 'covered' || blocked === 'notShown') return CONSENT_WALL_RE.test(result) ? 'consent' : 'blocked'
+  if (blocked === 'covered' || blocked === 'notShown') return consentWallStayed(result) ? 'consent' : 'blocked'
   if (!isPageArrival(tool, result)) return null
   const landed = landingFacts(result)
   // The landing line names the page the outcome carries; a click's arrival has none, and the tab's state stands in.

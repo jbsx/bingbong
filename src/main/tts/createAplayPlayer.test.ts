@@ -161,6 +161,17 @@ describe('aplay stream', () => {
     await expect(stream.done).resolves.toBeUndefined()
   })
 
+  it('holds an aplay that dies mid-text until end(), then rejects done — never an unhandled rejection', async () => {
+    const { calls, spawnFn } = fakeSpawn()
+    const stream = createAplayPlayer({ spawnFn }).open()
+    stream.write(wrapRawPcmAsWav(new Uint8Array([1, 2]), 22050))
+    calls[0]!.child.emit('close', 1)
+    await flush()
+    stream.write(wrapRawPcmAsWav(new Uint8Array([3, 4]), 22050))
+    stream.end()
+    await expect(stream.done).rejects.toThrow('aplay exited with code 1')
+  })
+
   it('rejects done when aplay exits nonzero', async () => {
     const { calls, spawnFn } = fakeSpawn()
     const stream = createAplayPlayer({ spawnFn }).open()

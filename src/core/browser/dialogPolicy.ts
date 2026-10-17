@@ -67,3 +67,19 @@ export function consentRetryNote(ref: number, retry: 'landed' | 'stillBlocked' |
   if (retry === 'notRetried') return '(not retried)'
   return retry === 'stillBlocked' ? `(it covered [${ref}]; retried, still blocked)` : `(it covered [${ref}]; retried)`
 }
+
+const escape = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+/** A dismissal followed by a note saying the wall stayed, built from the two builders above for any ref. */
+const CONSENT_WALL_STAYED_RE = new RegExp(
+  `${escape(consentDismissalLine(0, '').split('clicked')[0]!)}.*(?:${escape(consentRetryNote(0, 'stillBlocked')).replace('\\[0\\]', '\\[\\d+\\]')}|${escape(consentRetryNote(0, 'notRetried'))})`,
+)
+
+/**
+ * Whether a Blocked Action's outcome says a consent wall stayed over its
+ * target (#327, ADR 0061): a dismissal ran, and the retry was still
+ * blocked or never ran. What the spoken failure line names a consent wall.
+ */
+export function consentWallStayed(text: string): boolean {
+  return CONSENT_WALL_STAYED_RE.test(text)
+}

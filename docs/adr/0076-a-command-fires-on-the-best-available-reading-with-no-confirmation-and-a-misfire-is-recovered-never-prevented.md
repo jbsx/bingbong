@@ -235,9 +235,9 @@ The readings it took:
 - **Left as they are:** an early `press <key>` fires before a count is
   said (the spoken reading takes no count today); the monitor hears a Hot
   Listen one STT window late, since its frames queue behind the listen's;
-  and an Early Fired Command that speaks would mute its own Utterance and
-  lose its lead — nothing speaks a Command's output until increment 3
-  (#327), which should close that Utterance at the mute.
+  and an Early Fired `read`, which speaks since increment 3 (#327), mutes
+  the rest of its own Utterance, so its record is written at the next
+  speech start without `leadMs` and its Reaction is not measured.
 Increment 3 (#327) built speech for `read` and for failures on 2026-10-17.
 The route and the readings it took:
 
@@ -252,11 +252,15 @@ The route and the readings it took:
 - **The process starts at app start**, prefetched like the Moonshine
   models, and exits with the app (its stdin closes). A changed voice
   Setting kills it and starts the new voice's at the next line.
-- **A process that dies before answering its first line could not start**
-  (no piper, or one without `--output-dir`): every line from then on goes
-  to the per-line spawn, with no error surfaced. One that dies after
-  serving is restarted at the next line, and a line it died under is
-  retried once on the new one. A line unanswered in 20 s kills the process.
+- **A process that dies before any piper has answered a line could not
+  start** (no piper, or one without `--output-dir`; a prefetched one that
+  died counts, and is not spawned again): every line from then on goes to
+  the per-line spawn, with no error surfaced. Once a line has been
+  answered, a process that dies crashed: it is restarted at the next line,
+  a line it died under is retried once on the new one, and a line the
+  retry also dies under fails alone — the next line restarts piper again.
+  A line unanswered in 20 s kills the process. The WAVs are removed as
+  they are read; the temp dir itself stays.
 - **Sentences are cut after the markdown is stripped**: each line of the
   text is a block, a block without a sentence end is a sentence, and a
   sentence ends at `.`, `!`, `?` or `…` before whitespace — not after an
@@ -272,15 +276,25 @@ The route and the readings it took:
 - **What `read` speaks is the Page Read's text**, after its `page text:`
   heading and before its part line — never the head, the refs or the
   reports. A read with no text speaks "This page shows no text." The Card
-  is shown first, as in increment 1; the Feed hides the `speak` entry of a
-  turn whose Card rendered.
+  is shown first, as in increment 1, and holds part 1; the Feed hides the
+  `speak` entry of a turn whose Card rendered.
+- **"Until the end" reads on through the parts.** A page longer than one
+  part (12,000 characters) speaks part 1, then reads part 2 once part 1
+  has been spoken to its end, and so on; each further part is its own
+  `speak` event. A part cut short ends the reading: the speaker's outcome
+  now says `stopped`, so a wake-word barge-in, which stops the speaker
+  without the runner, also ends it.
 - **A spoken `read` stays the Command in flight until its text ends**, with
   status `speaking`: the Abort Head (gated on the run state) and the next
   Command reach it, and either stops the speaker, which kills the stream.
   The voice is one queue, so a stop also cuts a download announcement.
+  The speaking gate's `inFlight()` answers true from a text's first
+  sentence to its last; #326's Hot Listen is what will read it.
 - **The Reaction of a spoken `read` closes on `effect: 'spoken'`**, when the
-  first sample is written to the player, and a page mutation during the
-  read does not close it. When nothing was spoken — the voice failed, or
+  first sample is written to aplay's stdin — the "handed to the player" of
+  the issue; aplay's own device open comes after, so this and
+  `tts-first-sound` read low by aplay's start-up — and a page mutation
+  during the read does not close it. When nothing was spoken — the voice failed, or
   was cut first — it closes on `display` at the moment the Card was shown.
 - **A failure's line is not waited on.** The turn ends `failed` (or `done`
   for a landing) at once and the line plays after; the runner counts it as

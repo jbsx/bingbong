@@ -161,7 +161,7 @@ describe('speech coordinator', () => {
     tts.stop()
     expect(player.streams[0]!.stopped).toBe(true)
     synth.finishNext()
-    expect(await outcome).toEqual({ ok: true })
+    expect(await outcome).toEqual({ ok: true, stopped: true })
     expect(player.streams[0]!.writes).toHaveLength(2)
   })
 
@@ -177,7 +177,7 @@ describe('speech coordinator', () => {
 
     tts.stop()
     synth.finishNext()
-    expect(await outcome).toEqual({ ok: true })
+    expect(await outcome).toEqual({ ok: true, stopped: true })
     await flush()
     expect(synth.texts).toEqual(['One.', 'Two.'])
   })
@@ -236,7 +236,7 @@ describe('speech coordinator', () => {
 
     tts.stop()
     expect(stream.stopped).toBe(true)
-    expect(await outcome).toEqual({ ok: true })
+    expect(await outcome).toEqual({ ok: true, stopped: true })
   })
 
   it('stop() drops queued texts before they reach the synthesizer', async () => {
@@ -251,7 +251,7 @@ describe('speech coordinator', () => {
 
     tts.stop()
     await first
-    expect(await second).toEqual({ ok: true })
+    expect(await second).toEqual({ ok: true, stopped: true })
     await flush()
     expect(synth.texts).toEqual(['one'])
   })
@@ -264,7 +264,7 @@ describe('speech coordinator', () => {
     const outcome = tts.speak('hello')
     tts.stop()
     synth.finishNext()
-    expect(await outcome).toEqual({ ok: true })
+    expect(await outcome).toEqual({ ok: true, stopped: true })
     await flush()
     expect(player.streams).toHaveLength(0)
   })
@@ -423,7 +423,7 @@ describe('speech coordinator — perf spans (#31, #327)', () => {
     tts.stop()
     state.monotonicMs = 90
     synth.finishNext()
-    expect(await outcome).toEqual({ ok: true })
+    expect(await outcome).toEqual({ ok: true, stopped: true })
 
     expect(records).toEqual([{ turnId: 'turn-1', stage: 'tts-synthesis', durMs: 90, at: AT, t: 90, detail: { index: 0, spawns: 1 } }])
   })
@@ -440,7 +440,7 @@ describe('speech coordinator — perf spans (#31, #327)', () => {
     await flush()
     state.monotonicMs = 350
     tts.stop()
-    expect(await outcome).toEqual({ ok: true })
+    expect(await outcome).toEqual({ ok: true, stopped: true })
 
     expect(records.map((r) => [r.stage, r.durMs])).toEqual([
       ['tts-synthesis', 200],

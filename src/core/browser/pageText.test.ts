@@ -3,6 +3,7 @@ import {
   MAX_PAGE_READ_TEXT,
   emptyPageReadLine,
   isPageTextFactLine,
+  pageReadPart,
   pageReadText,
   isPartPastTheEnd,
   pageReadPartLine,
@@ -203,6 +204,13 @@ describe('pageReadText (#327)', () => {
   it('is the page\'s own text a Page Read carries: after its heading, up to its part line, nothing of the head, refs or reports', () => {
     const read = ['# Example — https://example.com/', 'signature 1a2b', '[1] link "Home"', 'page text:', 'First block.', 'Second block.', pageReadPartLine(1, 2), 'native alert dialog auto-dismissed: "hi"'].join('\n')
     expect(pageReadText(read)).toBe('First block.\nSecond block.')
+  })
+
+  it('names which part of how many a Page Read is, off its part line', () => {
+    expect(pageReadPart(['page text:', 'words', pageReadPartLine(1, 3)].join('\n'))).toEqual({ part: 1, of: 3 })
+    expect(pageReadPart(['page text:', 'words', pageReadPartLine(3, 3, true)].join('\n'))).toEqual({ part: 3, of: 3 })
+    expect(pageReadPart(emptyPageReadLine())).toEqual({ part: 1, of: 1 })
+    expect(pageReadPart('<page>blank</page>')).toBeNull()
   })
 
   it('is empty for a read that carries no text', () => {

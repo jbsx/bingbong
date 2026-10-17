@@ -71,7 +71,7 @@ export function createSpeechCoordinator(deps: SpeechCoordinatorDeps): TtsSpeaker
     stopEpoch += 1
     for (const item of queue.splice(0)) {
       // Never synthesized: the stop reached it while it waited its turn.
-      item.resolve({ ok: true })
+      item.resolve({ ok: true, stopped: true })
     }
     current?.stop()
   }
@@ -122,7 +122,7 @@ export function createSpeechCoordinator(deps: SpeechCoordinatorDeps): TtsSpeaker
           }
         }
         // Stopped while piper rendered — never let a stale sentence reach playback.
-        if (epoch !== stopEpoch) return { ok: true }
+        if (epoch !== stopEpoch) return { ok: true, stopped: true }
         if (stream === null) {
           stream = player.open({ onFirstSample: () => firstSound(item) })
           current = stream
@@ -139,6 +139,7 @@ export function createSpeechCoordinator(deps: SpeechCoordinatorDeps): TtsSpeaker
         // Natural end, barge-in, or failure — the speaking time was spent.
         if (tracer && playStart !== undefined) recordSpan(turnId, 'tts-playback', tracer.now() - playStart)
       }
+      if (epoch !== stopEpoch) return { ok: true, stopped: true }
       return failure === null ? { ok: true } : { ok: false, error: failure }
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) }

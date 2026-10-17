@@ -916,6 +916,44 @@ describe('a Command whose output is speech', () => {
     expect(runner.getState()).toBe('idle')
   })
 
+  it('reads on to the end of a page longer than one part, each part read once the one before has been spoken', async () => {
+    const speech = new FakeSpeech()
+    const { browser, events, runner } = harness({ speech })
+    const parts = (part: number): string => ['# Long — https://example.com/', 'page text:', `Part ${part} words.`, pageReadPartLine(part, 2)].join('\n')
+    const reads: number[] = []
+    browser.readPage = async (part = 1) => {
+      reads.push(part)
+      return parts(part)
+    }
+    const run = runner.run('read')
+    await flushMicrotasks()
+    expect(reads).toEqual([1])
+    speech.finish()
+    await flushMicrotasks()
+    expect(reads).toEqual([1, 2])
+    expect(speech.spoken.map((line) => line.text)).toEqual(['Part 1 words.', 'Part 2 words.'])
+    speech.finish()
+    await run
+    // One Card, the Page Read's first part, as today.
+    expect(events.filter((event) => event.type === 'display')).toHaveLength(1)
+    expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done' })
+  })
+
+  it('reads no further part once the speech was cut — the wake word stops the speaker without the runner', async () => {
+    const speech = new FakeSpeech()
+    const { browser, runner } = harness({ speech })
+    const reads: number[] = []
+    browser.readPage = async (part = 1) => {
+      reads.push(part)
+      return ['page text:', `Part ${part} words.`, pageReadPartLine(part, 2)].join('\n')
+    }
+    const run = runner.run('read')
+    await flushMicrotasks()
+    speech.finish({ ok: true, stopped: true })
+    await run
+    expect(reads).toEqual([1])
+  })
+
   it('closes the Reaction on the Card when no sample was ever spoken', async () => {
     const speech = new FakeSpeech()
     const { browser, perf, runner } = harness({ speech })
