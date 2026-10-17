@@ -14,15 +14,21 @@
 // default user-data dir's logs.
 
 import { collectPerfRecords, resolvePerfLogsDir } from '../src/main/perf/collectPerfRecords.ts'
+import { collectDecisionRecords } from '../src/main/perf/collectDecisionRecords.ts'
 import { buildPerfReport, formatPerfReport } from '../src/core/perf/perfReport.ts'
 
+// The decision-*.jsonl family beside the perf log (#324): one record per
+// Command and its Misfire signals — the Reaction table by verb and the
+// decisions line come from the two families together.
 const logsDir = resolvePerfLogsDir(process.argv.slice(2), process.env)
 const collected = collectPerfRecords(logsDir)
-const report = buildPerfReport(collected.records)
+const decisions = collectDecisionRecords(logsDir)
+const report = buildPerfReport(collected.records, decisions.records)
 console.log(
   formatPerfReport(report, {
     logsDir,
     fileCount: collected.filePaths.length,
     skippedLines: collected.skippedLines,
+    decisionFileCount: decisions.filePaths.length,
   }),
 )

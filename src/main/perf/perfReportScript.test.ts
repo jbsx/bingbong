@@ -66,6 +66,51 @@ describe.skipIf(!stripsTypes)('perf:report script', () => {
     expect(stdout).toContain('files 2 | turns 3 (2 summarized) | spans 5 | skipped lines 1')
     expect(stdout).toMatch(/^stt\s+3\s+200ms\s+300ms\s+300ms\s+600ms$/m)
     expect(stdout).toContain('summary self-check: 2/2 match')
+    expect(stdout).not.toContain('reaction (Endpoint to first effect)')
+  })
+
+  it('prints the Reaction p50/p95 per verb and the decisions line from the two families (#324)', () => {
+    const reaction = (turnId: string, verb: string, durMs: number): string =>
+      JSON.stringify({ ...span(turnId, 'reaction', durMs), detail: { verb, effect: 'settled', reading: 'local_match', source: 'spoken' } })
+    writeFileSync(
+      join(dir, 'perf-1-1.jsonl'),
+      [reaction('turn-1', 'open', 420), reaction('turn-2', 'open', 610), reaction('turn-3', 'click', 180)].join('\n') + '\n',
+    )
+    const decision = (turnId: string, reading: string, jevAsked: boolean, latencyMs?: number): string =>
+      JSON.stringify({
+        type: 'decision',
+        turnId,
+        at: NOW,
+        source: 'spoken',
+        transcript: 'open youtube',
+        reading,
+        verb: 'open',
+        target: null,
+        slot: 'youtube',
+        jevAsked,
+        ...(latencyMs !== undefined ? { jev: { model: 'jev-1.14.0', latencyMs, confidence: { verb: 0.9, target: 0.4, slot: 0.7 }, probabilities: { verb: {}, target: {}, slot: {} } } } : {}),
+      })
+    writeFileSync(
+      join(dir, 'decision-1-1.jsonl'),
+      [
+        decision('turn-1', 'local_match', false),
+        decision('turn-2', 'jev', true, 230),
+        decision('turn-3', 'local_match', false),
+        JSON.stringify({ type: 'misfire', turnId: 'turn-2', at: NOW, signal: 'back', signalTurnId: 'turn-3', withinMs: 900 }),
+        '{"type":"decision","turnId":"torn"',
+      ].join('\n') + '\n',
+    )
+
+    const stdout = execFileSync(process.execPath, [SCRIPT, dir], { encoding: 'utf8' })
+
+    expect(stdout).toContain('decision files 1')
+    expect(stdout).toContain('reaction (Endpoint to first effect), by verb:')
+    expect(stdout).toMatch(/^all\s+3\s+420ms\s+610ms\s+610ms$/m)
+    expect(stdout).toMatch(/^open\s+2\s+420ms\s+610ms\s+610ms$/m)
+    expect(stdout).toMatch(/^click\s+1\s+180ms\s+180ms\s+180ms$/m)
+    expect(stdout).toContain(
+      'decisions: 3 commands | jev asked 1 (33%), answered 1, latency p50 230ms p95 230ms | local match 2, jev 1, best guess 0 | misfires 1 (back 1)',
+    )
   })
 
   it('exits 0 against an empty logs dir', () => {

@@ -13,13 +13,17 @@ fast as it can, built on top of this shell.
 ## Where things land
 
 - **The command seam** is `src/main/run/commandRunner.ts`. A typed or spoken
-  command enters `CommandRunner.run`; every step it takes is published as a
-  `PipelineEvent` (`src/core/pipeline/events.ts`) that the Feed, the Peek
-  Card, the Status Capsule and the voice session already read. Today's
-  runner executes the CLI grammar directly (`navigate <url>`, `read`,
-  `click <ref>`, `type <ref> <text>`, `scroll up|down`, `press <key> [n]`,
-  `screenshot`, `back`). The Jev-driven agent replaces
-  `createDirectCommandRunner` behind the same interface.
+  line enters `CommandRunner.run` and becomes one Command (ADR 0076,
+  `src/core/command/`): the Local Match first (the CLI grammar —
+  `navigate <url>`, `read`, `click <ref>`, `type <ref> <text>`,
+  `scroll up|down`, `press <key> [n]`, `screenshot`, `back` — or a plain
+  verb and the label exactly one ref carries), else one Jev call, else the
+  Local Match's best guess; it fires with no confirmation. Every step is
+  published as a `PipelineEvent` (`src/core/pipeline/events.ts`) that the
+  Feed, the Status Capsule and the voice session read: one `command` per
+  Command carrying the words and the action, a `reaction` perf span and one
+  record in `decision-*.jsonl` beside the perf log (`pnpm perf:report`
+  reads both).
 - **The browser** is `BrowserController` (`src/core/ports/browser.ts`),
   implemented over CDP in `src/main/browser/createCdpBrowserController.ts`.
   Action Outcome classifiers (blockers, consent walls, empty/not-found/

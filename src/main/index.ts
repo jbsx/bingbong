@@ -4,6 +4,7 @@ import type { BrowserController, VisualGroundingController } from '../core/ports
 import { BROWSER_IPC } from '../core/browser/ipcChannels'
 import { createAgentActivityTracker, withAgentActivity } from '../core/downloads/agentActivity'
 import { PIPELINE_IPC } from '../core/pipeline/ipcChannels'
+import type { PipelineEvent } from '../core/pipeline/events'
 import { attachAdblock } from './browser/attachAdblock'
 import { attachMeasurementAccessGuard } from './browser/attachMeasurementAccessGuard'
 import { attachIdentityHeaders } from './browser/attachIdentityHeaders'
@@ -16,7 +17,7 @@ import { resolveAuthIdentity } from '../core/browser/authIdentity'
 import { attachDownloadRouter } from './browser/attachDownloadRouter'
 import { runCliHarness, saveScreenshotFile } from './cli/runCliHarness'
 import { attachCommandRunnerToWindow, registerCommandRunnerIpc } from './run/attachCommandRunner'
-import { createCommandRunner } from './run/commandRunner'
+import { createCommandRunner, type CommandRunner } from './run/commandRunner'
 import type { ActionEffect, ActionEffects } from './browser/createCdpBrowserController'
 import { createDecisionLogSink } from './run/decisionLogSink'
 import { resolveDownloadsDir } from './downloadsDir'
@@ -167,20 +168,19 @@ function currentEnv(): Record<string, string | undefined> {
 
 let cliHarnessStarted = false
 
-// TODO(#324, next session): drive the harness through the runner so a typed
-// CLI line takes the same road as the Prompt Bar; today it still executes
-// the grammar against the controller directly.
-function startCliHarness(controller: BrowserController, downloadsDir: string): void {
+// The harness drives the window's Command runner (#324, ADR 0076): a typed
+// CLI line takes the same road as the Prompt Bar, and the harness prints
+// what the runner publishes for its turn.
+function startCliHarness(runner: CommandRunner, subscribe: (listener: (event: PipelineEvent) => void) => () => void): void {
   if (cliHarnessStarted) return
   cliHarnessStarted = true
 
   void runCliHarness({
-    controller,
+    run: (line, options) => runner.run(line, options),
+    subscribe,
     input: process.stdin,
     output: process.stdout,
     exit: () => app.quit(),
-    screenshotDir: () => downloadsDir,
-    saveScreenshot: saveScreenshotFile,
   }).catch((err: unknown) => {
     process.stderr.write(`browser cli harness failed: ${err instanceof Error ? err.message : String(err)}\n`)
     app.quit()
@@ -287,10 +287,16 @@ async function createWindow(): Promise<BrowserWindow> {
   // The command seam (#324, ADR 0076): a typed or spoken line becomes one
   // Command — the Local Match, else one Jev call, else the best guess — and
   // acts at once. The CLI harness and the Prompt Bar take the same road.
+  // The CLI harness hears the runner's events beside the window: it prints
+  // what the Command's turn published.
+  const commandListeners = new Set<(event: PipelineEvent) => void>()
   const runner = createCommandRunner({
     browser: controller,
     decisionModel,
-    publish: (event) => eventPublisher.publish({ source: 'run', event }),
+    publish: (event) => {
+      eventPublisher.publish({ source: 'run', event })
+      for (const listener of [...commandListeners]) listener(event)
+    },
     now: systemClock.now,
     tracer: perfTracer,
     decisionLog,
@@ -309,7 +315,12 @@ async function createWindow(): Promise<BrowserWindow> {
   pane.view.webContents.on('before-input-event', onPaneInput)
   win.on('closed', () => pane.view.webContents.removeListener('before-input-event', onPaneInput))
 
-  if (runningCliHarness) startCliHarness(controller, downloadsDir)
+  if (runningCliHarness) {
+    startCliHarness(runner, (listener) => {
+      commandListeners.add(listener)
+      return () => commandListeners.delete(listener)
+    })
+  }
 
   const voice = await createMainVoice(voiceConfig, () => learnedTermsStore.biasPhrases())
   attachVoiceToWindow(win, {

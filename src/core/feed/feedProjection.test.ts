@@ -55,6 +55,19 @@ describe('feed projection', () => {
     ])
   })
 
+  it('a Command entry carries the action taken, and a dropped Utterance is muted (#324)', () => {
+    const feed = project([
+      { type: 'command', turnId: 't1', text: 'click sign in', action: 'click [2] "Sign in"', at: 1 },
+      { type: 'done', turnId: 't1', outcome: 'done', at: 2 },
+      { type: 'command', turnId: 't2', text: 'um never mind', dropped: true, at: 3 },
+      { type: 'done', turnId: 't2', outcome: 'done', at: 4 },
+    ]).entries()
+    expect(feed.map((entry) => [entry.kind, entry.text, entry.action, entry.muted])).toEqual([
+      ['command', 'click sign in', 'click [2] "Sign in"', undefined],
+      ['command', 'um never mind', undefined, true],
+    ])
+  })
+
   it('voice-half lines (heard words, mic errors) ride the feed as outcome entries', () => {
     const projection = createFeedProjection()
     projection.append({ kind: 'voice', text: 'heard "stop" (stopping)', at: 5 })

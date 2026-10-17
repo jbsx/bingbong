@@ -16,14 +16,18 @@ import { reportFault } from '../../core/trace/fault.ts'
 // round-trip test. The perfFiles import carries a .ts extension (#36):
 // under the script's node type stripping, extensionless relative imports
 // are ERR_MODULE_NOT_FOUND. jsonlPerfSink (bundled only) stays extensionless.
+// The decision-*.jsonl family (#324) is read the same way by
+// collectDecisionRecords, over the generic collector below.
 
-export interface PerfLogCollection {
-  records: PerfSpanRecord[]
+export interface JsonlCollection<T> {
+  records: T[]
   /** Files actually read, in order — the report's context line. */
   filePaths: string[]
   /** Lines that failed to parse or failed the record shape. */
   skippedLines: number
 }
+
+export type PerfLogCollection = JsonlCollection<PerfSpanRecord>
 
 /** Accepts a parsed line only when it carries the record contract's core. */
 function parseRecord(line: string): PerfSpanRecord | null {
@@ -42,13 +46,18 @@ function parseRecord(line: string): PerfSpanRecord | null {
   return parsed as PerfSpanRecord
 }
 
-export function collectPerfRecords(logsDir: string): PerfLogCollection {
-  const collection: PerfLogCollection = { records: [], filePaths: [], skippedLines: 0 }
+/**
+ * Every file of one JSONL family under the logs dir, in name order, each
+ * non-blank line read by `parse` — null skips it and counts it. A missing
+ * or unreadable dir is an empty collection; an unreadable file is skipped.
+ */
+export function collectJsonlFamily<T>(logsDir: string, pattern: RegExp, parse: (line: string) => T | null): JsonlCollection<T> {
+  const collection: JsonlCollection<T> = { records: [], filePaths: [], skippedLines: 0 }
   let names: string[]
   try {
-    names = readdirSync(logsDir).filter((name) => PERF_FILE_PATTERN.test(name)).sort()
+    names = readdirSync(logsDir).filter((name) => pattern.test(name)).sort()
   } catch (error) {
-    reportFault('perf.collectPerfRecords.listFiles', error)
+    reportFault('perf.collectJsonlFamily.listFiles', error)
     // Missing or unreadable dir — nothing to aggregate.
     return collection
   }
@@ -58,13 +67,13 @@ export function collectPerfRecords(logsDir: string): PerfLogCollection {
     try {
       content = readFileSync(path, 'utf8')
     } catch (error) {
-      reportFault('perf.collectPerfRecords.readFile', error)
+      reportFault('perf.collectJsonlFamily.readFile', error)
       continue
     }
     collection.filePaths.push(path)
     for (const line of content.split('\n')) {
       if (line.trim() === '') continue
-      const record = parseRecord(line)
+      const record = parse(line)
       if (record === null) {
         collection.skippedLines += 1
         continue
@@ -73,6 +82,10 @@ export function collectPerfRecords(logsDir: string): PerfLogCollection {
     }
   }
   return collection
+}
+
+export function collectPerfRecords(logsDir: string): PerfLogCollection {
+  return collectJsonlFamily(logsDir, PERF_FILE_PATTERN, parseRecord)
 }
 
 function defaultUserDataDir(

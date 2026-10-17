@@ -28,11 +28,14 @@ export function FeedLine({ entry }: { entry: FeedEntry }) {
   if (entry.role === 'user') {
     // Your words (#54): commands and heard transcriptions, right-aligned
     // in muted bubbles — no glyph, no handle (ADR 0013): the orb marks
-    // Bing Bong only; your own words need no attribution.
+    // Bing Bong only; your own words need no attribution. One entry per
+    // Command (#324, ADR 0076): the words heard, and under them the action
+    // taken; an Utterance read as no Command is the words alone, greyed.
     return (
-      <p className={`feed-entry feed-entry--user feed-entry--${entry.kind}`}>
+      <p className={`feed-entry feed-entry--user feed-entry--${entry.kind}${entry.muted ? ' feed-entry--muted' : ''}`}>
         <span className="feed-bubble">
           <span className="feed-text">{entry.text}</span>
+          {entry.action !== undefined ? <span className="feed-action">{entry.action}</span> : null}
         </span>
         {time}
       </p>

@@ -1,10 +1,17 @@
 import { createInterface } from 'node:readline'
 import { mkdir, writeFile } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { dirname } from 'node:path'
 import type { Readable, Writable } from 'node:stream'
-import type { BrowserController } from '../../core/ports/browser'
-import { parseCliCommand } from '../../core/command/cliGrammar'
-import type { CliCommand } from '../../core/command/cliGrammar'
+import type { PipelineEvent } from '../../core/pipeline/events'
+import type { CommandRunOptions } from '../run/commandRunner'
+
+// The terminal harness (#4): a REPL over the window's Command runner. A
+// typed line takes the same road as the Prompt Bar (#324, ADR 0076): the
+// Local Match, else one Jev call, else the best guess — so the CLI grammar
+// still works and plain words work too. The harness owns only the REPL:
+// `help` and `quit` are its own, everything else is one Command, and what
+// it prints is what the runner published for that Command's turn — the
+// action's outcome line, a Page Read, a failure as `error: …`.
 
 /** Writes a captured screenshot to disk, creating parent directories. */
 export async function saveScreenshotFile(path: string, bytes: Uint8Array): Promise<void> {
@@ -13,97 +20,128 @@ export async function saveScreenshotFile(path: string, bytes: Uint8Array): Promi
 }
 
 export interface CliHarnessDeps {
-  controller: BrowserController
+  /** The window's Command runner: one typed line, read and performed (#324). */
+  run(line: string, options: CommandRunOptions): Promise<boolean>
+  /** Hears every event the runner publishes; the returned release stops hearing. */
+  subscribe(listener: (event: PipelineEvent) => void): () => void
   input: Readable
   output: Writable
   exit(): void
-  screenshotDir(): string
-  saveScreenshot(path: string, bytes: Uint8Array): Promise<void>
 }
 
 const HELP_TEXT = [
-  'commands:',
-  '  navigate <url>     open a url (or search terms) in the browser pane',
-  '  read               print a numbered-ref snapshot of visible interactive elements',
-  '  click <ref>        click element <ref> from the last snapshot',
-  '  type <ref> <text>  click <ref> and type text (\\n sends Enter)',
-  '  scroll up|down     scroll the page',
-  '  press <key> [n]    inject a shortcut key n times (k, j, l, up, down, left, right, space, enter, next)',
-  '  screenshot [path]  save a jpeg screenshot (default: screenshot dir)',
-  '  back               go back in history',
-  '  quit               exit the app',
+  'a line is one command — plain words or the grammar:',
+  '  open <site or words>     a bare word opens its .com, a url is opened, other words are searched',
+  '  search for <words>       search the words',
+  '  click <label or ref>     click the element the label names, or ref <n> from the last read',
+  '  type <text> in <field>   type into the field the label names (or: type <ref> <text>)',
+  '  scroll up|down           scroll the page',
+  '  back | forward           move in history',
+  '  press enter|escape|space|up|down|left|right [n]',
+  '  read                     print a numbered-ref snapshot of visible interactive elements',
+  '  clear                    clear the focused field',
+  '  screenshot [path]        save a jpeg screenshot (default: the downloads dir)',
+  '  stop                     interrupt the command in flight',
+  '  help                     this text',
+  '  quit                     exit the app',
 ].join('\n')
 
 const PROMPT = 'bingbong> '
 
+/** The harness's own words: help and quit never reach the runner. */
+function localCommand(line: string): 'help' | 'quit' | null {
+  switch (line.trim()) {
+    case 'help':
+      return 'help'
+    case 'quit':
+    case 'exit':
+      return 'quit'
+    default:
+      return null
+  }
+}
+
 export function runCliHarness(deps: CliHarnessDeps): Promise<void> {
-  const { controller, input, output, exit, screenshotDir, saveScreenshot } = deps
+  const { run, subscribe, input, output, exit } = deps
 
   const write = (text: string): void => {
     if (!output.destroyed) output.write(text)
   }
 
-  let screenshotCount = 0
   let finished = false
   let closeInput: () => void = () => {}
 
-  async function executeCommand(command: CliCommand): Promise<void> {
-    switch (command.type) {
-      case 'navigate':
-        await controller.navigate(command.input)
-        write(`navigated: ${controller.state().url}\n`)
-        return
-      case 'read':
-        write(`${await controller.readPage()}\n`)
-        return
-      case 'click':
-        await controller.click(command.ref)
-        write(`clicked ref ${command.ref}\n`)
-        return
-      case 'type':
-        await controller.type(command.ref, command.text)
-        write(`typed ${command.text.length} chars into ref ${command.ref}\n`)
-        return
-      case 'scroll':
-        await controller.scroll(command.direction)
-        write(`scrolled ${command.direction}\n`)
-        return
-      case 'press':
-        await controller.pressKey(command.press, command.times)
-        write(`pressed ${command.press.key}${command.times > 1 ? ` ×${command.times}` : ''}\n`)
-        return
-      case 'screenshot': {
-        const bytes = await controller.screenshot()
-        const path = command.path ?? join(screenshotDir(), `bingbong-screenshot-${++screenshotCount}.jpg`)
-        await saveScreenshot(path, bytes)
-        write(`saved screenshot to ${path} (${bytes.byteLength} bytes)\n`)
+  /** Runs one line as a Command and prints what its turn published. */
+  async function runCommand(line: string): Promise<void> {
+    // The turn is known from its `command` event; nothing from another
+    // turn (a superseded Command's late done) is printed here.
+    let turnId: string | null = null
+    let printed = false
+    let action: string | null = null
+    const release = subscribe((event) => {
+      if (event.type === 'command' && turnId === null) {
+        turnId = event.turnId
+        if (event.dropped) {
+          write(`not a command: ${JSON.stringify(event.text)}\n`)
+          printed = true
+        } else {
+          action = event.action ?? null
+        }
         return
       }
-      case 'back':
-        await controller.back()
-        write('went back\n')
-        return
-      case 'help':
-        write(`${HELP_TEXT}\n`)
-        return
-      case 'quit':
-        write('bye\n')
-        finished = true
-        exit()
-        closeInput()
-        return
+      if (turnId === null || event.turnId !== turnId) return
+      switch (event.type) {
+        case 'tool_result':
+          if (event.ok) {
+            const result = typeof event.result === 'string' ? event.result : JSON.stringify(event.result)
+            write(`${result}\n`)
+          } else {
+            write(`error: ${event.error ?? 'failed'}\n`)
+          }
+          printed = true
+          return
+        case 'display':
+          // A Page Read and a screenshot print their result line above;
+          // the Card repeats it (shortened) for the Feed.
+          if (!printed) {
+            write(`${event.text}\n`)
+            printed = true
+          }
+          return
+        case 'error':
+          write(`error: ${event.message}\n`)
+          printed = true
+          return
+        default:
+          return
+      }
+    })
+    try {
+      await run(line, { source: 'typed' })
+      // A Command with no tool behind it (stop) prints its action.
+      if (!printed && action !== null) write(`${action}\n`)
+    } finally {
+      release()
     }
   }
 
   async function handleLine(line: string): Promise<void> {
     try {
-      const parsed = parseCliCommand(line)
-      if (parsed === null) return
-      if (parsed.ok === false) {
-        write(`error: ${parsed.error}\n`)
-        return
+      if (line.trim() === '') return
+      switch (localCommand(line)) {
+        case 'help':
+          write(`${HELP_TEXT}\n`)
+          return
+        case 'quit':
+          write('bye\n')
+          finished = true
+          exit()
+          closeInput()
+          return
+        case null:
+          await runCommand(line)
+          return
       }
-      await executeCommand(parsed.command)
     } catch (err) {
       write(`error: ${err instanceof Error ? err.message : String(err)}\n`)
     } finally {

@@ -4,8 +4,9 @@
 
 Accepted on 2026-10-17 for the `kachow` branch, grilled the same day from
 the branch at f4d323b and the measurements in `docs/moonshine-ab.md`, with
-every recommendation taken. Nothing is built: the first increment is the
-plain loop this decision shapes, and no Reaction has been measured.
+every recommendation taken. Increment 1, the plain loop this decision
+shapes, is built (#324, see the implementation notes); its Reaction
+distribution is the baseline the later increments are measured against.
 
 ## Context
 
@@ -78,5 +79,44 @@ machine; the Hardware Floor waits.
 - Typed lines in the Prompt Bar and the CLI harness are Commands read the
   same way as spoken ones; the old CLI grammar survives only as what the
   Local Match recognises first.
+
+## Implementation notes
+
+Increment 1 (#324) built the plain loop on 2026-10-17. Where the issue
+left a reading open, the build took these, each a Misfire the next
+Command recovers rather than a question asked:
+
+- **A verb-less Utterance's best guess is a DuckDuckGo search.** The Local
+  Match settles nothing without a verb; when Jev is unavailable, the words
+  are searched. The one exception is a bare word with no dot or space,
+  which `open` sends to `https://<word>.com`.
+- **"open <label>" clicks the ref that carries the label** when exactly one
+  does; otherwise it is an address.
+- **A `none` reading records a decision record but no `reaction` span.**
+  Nothing fired, so there is no Reaction to measure; the Feed shows the
+  words greyed and the `command` event carries `dropped`.
+- **A truncated Utterance** (the 30 s cap) is recorded on its decision
+  record and never shown as an error.
+- **`screenshot` and `help` stay grammar-only verbs**: Jev is offered the
+  spoken vocabulary without them.
+- **The post-action wait is readiness, capped at 150 ms**, on an injectable
+  clock: a DOM mutation, an input event, a scroll or the document going
+  ends it early. The landing poll after `ERR_ABORTED` keeps one 100 ms
+  clock wait (the `browser-settle` sub-span); everything else is
+  readiness-driven (`browser-ready` sub-spans).
+- **Jev is pinned to `jev-1.14.0`** in the decision adapter, as decided
+  above; one call per unsettled Command, the port's 800 ms timeout, no
+  retry.
+- **The CLI harness prints what the runner publishes** for its line's
+  turn — the action's outcome line, a Page Read, a failure as `error: …`,
+  a dropped Utterance as `not a command: …` — and keeps `help` and `quit`
+  to itself.
+- **`pnpm perf:report`** reads the `decision-*.jsonl` family beside the
+  perf log and prints the Reaction p50/p95/max per verb (from `reaction`
+  spans, overall row first) and one decisions line: Jev's share of
+  Commands and its latency p50/p95, the readings, the Misfires by signal.
+
+Not built in increment 1: Early Fire, Hot Listen, the persistent Piper.
+The Reaction distribution this increment measures is their baseline.
 - Moonshine Small stays the default STT tier until increment 1's replay
   of the same utterance dumps gives Small and Base a p95 to compare.

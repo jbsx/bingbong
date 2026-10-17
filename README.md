@@ -142,7 +142,8 @@ migrate.
 Every turn is perf-logged, zero config: one JSONL span per finished stage
 (STT, each browser action, TTS), keyed by a `turnId` shared with the event
 stream, written to a rotating `logs/` dir under the profile.
-`pnpm perf:report` aggregates per-stage latency percentiles;
+`pnpm perf:report` aggregates per-stage latency percentiles and, on this
+branch, the Reaction p50/p95 per Command verb with the decision log beside it;
 `BINGBONG_BROWSER_SUBSPANS=1` drills into browser actions; see
 `docs/stt-latency.md` and `docs/moonshine-ab.md` for measured results.
 
@@ -197,7 +198,7 @@ pnpm typecheck  # tsc over main/preload/core + renderer + scripts
 pnpm lint       # eslint
 pnpm build      # production build to out/
 pnpm cli        # the browser CLI harness
-pnpm perf:report  # per-stage latency percentiles from the rotating perf log
+pnpm perf:report  # per-stage latency percentiles, Reaction per verb and the decision log
 pnpm stt:replay   # replay utterance dumps through the shipped STT engine
 pnpm shot         # regenerate docs/screenshot.png (launches the app under Xvfb)
 ```

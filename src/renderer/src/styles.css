@@ -511,6 +511,25 @@ body {
   font-size: 1.2rem;
 }
 
+/* One entry per Command (#324, ADR 0076): the action taken reads as a
+   quiet subline under the words heard, in the same bubble. */
+.feed-bubble .feed-action {
+  display: block;
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin-top: 2px;
+}
+
+/* An Utterance read as no Command (#324): the words alone, greyed — the
+   Feed shows it was heard and nothing was done. */
+.feed-entry--muted .feed-bubble {
+  opacity: 0.55;
+}
+
+.feed-entry--muted .feed-bubble .feed-text {
+  color: var(--muted);
+}
+
 .feed-card {
   min-width: 0;
   max-width: 70%;

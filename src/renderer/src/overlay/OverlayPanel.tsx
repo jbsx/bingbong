@@ -97,7 +97,7 @@ export function OverlayPanel() {
 
   const panelFooter = (
     <div className="prompt-row">
-      <PromptBar runActive={runActive} />
+      <PromptBar />
       {runActive ? (
         <button
           type="button"

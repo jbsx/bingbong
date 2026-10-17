@@ -1,111 +1,69 @@
 import { PassThrough } from 'node:stream'
 import { describe, expect, it } from 'vitest'
-import youtubeHome from '../../core/browser/fixtures/youtube-home.json'
-import { buildPageSnapshot, findSnapshotRef, formatPageSnapshot, linkHrefsOf, type CollectedPage, type PageLink, type SnapshotRef } from '../../core/browser/snapshot'
-import { pageLinksOf } from '../../core/testing/doubles'
-import { settledStateFromSnapshot } from '../../core/browser/pageFingerprints'
-import { blockerFactsFromSnapshot } from '../../core/browser/blockerNudge'
-import type { BrowserController, BrowserState, KeyPress, MediaState } from '../../core/ports/browser'
+import type { PipelineEvent } from '../../core/pipeline/events'
+import type { SnapshotRef } from '../../core/browser/snapshot'
+import { FakeBrowser } from '../../core/testing/doubles'
+import { createCommandRunner } from '../run/commandRunner'
 import { runCliHarness, type CliHarnessDeps } from './runCliHarness'
 
-const youtubeFixture = youtubeHome as unknown as CollectedPage
+// The terminal harness over the Command runner (#4, #324): a typed line
+// takes the Prompt Bar's road — the Local Match, else the best guess here,
+// with no Decision Model configured — and the harness prints what the
+// runner published for the Command's turn. Help and quit stay its own.
 
-class FakeController implements BrowserController {
-  url = 'https://www.youtube.com/'
-  readonly clicks: number[] = []
-  readonly typed: { ref: number; text: string }[] = []
-  readonly scrolls: ('up' | 'down')[] = []
-  readonly pressed: { press: KeyPress; times: number }[] = []
-  readonly backs: number[] = []
+function ref(ref: number, kind: SnapshotRef['kind'], label: string, extra?: Partial<SnapshotRef>): SnapshotRef {
+  return {
+    ref,
+    kind,
+    label,
+    inputType: kind === 'input' ? 'text' : null,
+    rect: { x: 0, y: ref * 10, width: 100, height: 10 },
+    src: null,
+    href: kind === 'link' ? `https://example.com/${ref}` : null,
+    downloadsFile: false,
+    submitsForm: false,
+    credentialField: false,
+    paymentField: false,
+    inForm: false,
+    formHasCredential: false,
+    formHasPayment: false,
+    searchField: false,
+    formHasSearch: false,
+    ...extra,
+  }
+}
+
+class HarnessBrowser extends FakeBrowser {
   failRead = false
-  saved: { path: string; bytes: Uint8Array }[] = []
 
-  async navigate(url: string): Promise<string> {
-    this.url = url
-    return `navigated: url=${url} title="YouTube"`
-  }
-
-  async readPage(): Promise<string> {
+  override async readPage(part = 1): Promise<string> {
     if (this.failRead) throw new Error('page evaluation failed: boom')
-    return formatPageSnapshot(buildPageSnapshot(youtubeFixture))
+    return super.readPage(part)
   }
-
-  async pageReadParts(): Promise<number> {
-    return 1
-  }
-
-  async click(ref: number): Promise<string> {
-    this.clicks.push(ref)
-    return `clicked [${ref}]: urlChanged=false dialogOpen=false; no observable change`
-  }
-
-  async type(ref: number, text: string): Promise<string> {
-    this.typed.push({ ref, text })
-    return `typed [${ref}]: value=${JSON.stringify(text)}`
-  }
-
-  async scroll(direction: 'up' | 'down'): Promise<string> {
-    this.scrolls.push(direction)
-    return `scrolled ${direction}: x=0 y=0`
-  }
-
-  async pressKey(press: KeyPress, times = 1): Promise<void> {
-    this.pressed.push({ press, times })
-  }
-
-  async mediaState(): Promise<MediaState | null> {
-    return { paused: true, currentTime: 0, volume: 1 }
-  }
-
-  async screenshot(): Promise<Uint8Array> {
-    return new Uint8Array([1, 2, 3, 4])
-  }
-
-  async back(): Promise<string> {
-    this.backs.push(1)
-    return 'went back: url=https://www.youtube.com/ title="YouTube"'
-  }
-
-  async forward(): Promise<string> {
-    return 'went forward: url=https://www.youtube.com/ title="YouTube"'
-  }
-
-  state(): BrowserState {
-    return { url: this.url, title: 'YouTube' }
-  }
-
-  async pageFacts() {
-    return blockerFactsFromSnapshot(buildPageSnapshot(youtubeFixture))
-  }
-
-  async settledState() {
-    return settledStateFromSnapshot(buildPageSnapshot(youtubeFixture), await this.mediaState())
-  }
-
-  async describeRef(ref: number): Promise<SnapshotRef | undefined> {
-    return findSnapshotRef(buildPageSnapshot(youtubeFixture), ref)
-  }
-
-  async linkHrefs(): Promise<readonly string[] | null> {
-    return linkHrefsOf(buildPageSnapshot(youtubeFixture))
-  }
-
-  async pageLinks(): Promise<readonly PageLink[] | null> {
-    return pageLinksOf(buildPageSnapshot(youtubeFixture))
-  }
-
-  async collectPage() {
-    return buildPageSnapshot(youtubeFixture)
-  }
-
-  async clearFocused(): Promise<string> {
-    return 'cleared input[text]'
-  }
-
 }
 
 function harnessWith(overrides?: Partial<CliHarnessDeps>) {
-  const controller = new FakeController()
+  const browser = new HarnessBrowser()
+  browser.snapshot = {
+    ...browser.snapshot,
+    url: 'https://www.youtube.com/',
+    title: 'YouTube',
+    refs: [ref(1, 'button', 'Guide'), ref(2, 'button', 'Sign in'), ref(3, 'input', 'Search', { inputType: 'search' })],
+  }
+  const listeners = new Set<(event: PipelineEvent) => void>()
+  const saved: { path: string; bytes: Uint8Array }[] = []
+  const runner = createCommandRunner({
+    browser,
+    decisionModel: () => null,
+    publish: (event) => {
+      for (const listener of [...listeners]) listener(event)
+    },
+    now: () => Date.now(),
+    screenshotDir: () => '/tmp/shots',
+    saveScreenshot: async (path, bytes) => {
+      saved.push({ path, bytes })
+    },
+  })
   const input = new PassThrough()
   const output = new PassThrough()
   let out = ''
@@ -114,15 +72,15 @@ function harnessWith(overrides?: Partial<CliHarnessDeps>) {
   })
   let exited = false
   const deps: CliHarnessDeps = {
-    controller,
+    run: (line, options) => runner.run(line, options),
+    subscribe: (listener) => {
+      listeners.add(listener)
+      return () => listeners.delete(listener)
+    },
     input,
     output,
     exit: () => {
       exited = true
-    },
-    screenshotDir: () => '/tmp/shots',
-    saveScreenshot: async (path, bytes) => {
-      controller.saved.push({ path, bytes })
     },
     ...overrides,
   }
@@ -136,101 +94,114 @@ function harnessWith(overrides?: Partial<CliHarnessDeps>) {
     }
   }
 
-  return { controller, input, done, expectOutput, hasExited: () => exited, readOutput: () => out }
+  return { browser, saved, input, done, expectOutput, hasExited: () => exited, readOutput: () => out }
 }
 
 describe('runCliHarness', () => {
-  it('prints a banner and prompt, then echoes command results', async () => {
+  it('prints a banner and prompt, then the Page Read a `read` line produces', async () => {
     const cli = harnessWith()
     await cli.expectOutput("bingbong browser harness — type 'help' for commands")
 
     cli.input.write('read\n')
-    await cli.expectOutput('[1] button "Guide"')
-    await cli.expectOutput('[3] input[search] "Search"')
+    await cli.expectOutput('<page>blank</page>')
 
     cli.input.write('quit\n')
     await cli.done
     expect(cli.hasExited()).toBe(true)
   })
 
-  it('navigates and reports the resulting url', async () => {
+  it('navigates through the runner and prints the outcome line', async () => {
     const cli = harnessWith()
     await cli.expectOutput('bingbong> ')
 
     cli.input.write('navigate youtube.com\n')
-    await cli.expectOutput('navigated: youtube.com')
-    expect(cli.controller.url).toBe('youtube.com')
+    await cli.expectOutput('navigated: url=https://youtube.com title="Fake page: https://youtube.com"')
+    expect(cli.browser.navigations).toEqual(['https://youtube.com'])
 
     cli.input.write('quit\n')
     await cli.done
   })
 
-  it('clicks refs and types text with newline unescaping', async () => {
+  it('reads plain words as a Command: a bare word opens its .com, a label clicks the ref that carries it', async () => {
     const cli = harnessWith()
     await cli.expectOutput('bingbong> ')
 
-    cli.input.write('read\n')
-    await cli.expectOutput('[1] button "Guide"')
+    cli.input.write('open youtube\n')
+    await cli.expectOutput('navigated: url=https://youtube.com')
 
-    cli.input.write('click 3\n')
-    await cli.expectOutput('clicked ref 3')
-    expect(cli.controller.clicks).toEqual([3])
-
-    cli.input.write('type 3 mechanical keyboards\\n\n')
-    await cli.expectOutput('typed 21 chars into ref 3')
-    expect(cli.controller.typed).toEqual([{ ref: 3, text: 'mechanical keyboards\n' }])
-
-    cli.input.write('scroll down\n')
-    await cli.expectOutput('scrolled down')
-
-    cli.input.write('back\n')
-    await cli.expectOutput('went back')
+    cli.input.write('click sign in\n')
+    await cli.expectOutput('clicked [2]:')
+    expect(cli.browser.clicks).toEqual([2])
 
     cli.input.write('quit\n')
     await cli.done
   })
 
-  it('saves screenshots under the screenshot dir with a numbered name', async () => {
+  it('clicks refs and types text with newline unescaping, the grammar way', async () => {
+    const cli = harnessWith()
+    await cli.expectOutput('bingbong> ')
+
+    cli.input.write('click 3\n')
+    await cli.expectOutput('clicked [3]:')
+    expect(cli.browser.clicks).toEqual([3])
+
+    cli.input.write('type 3 mechanical keyboards\\n\n')
+    await cli.expectOutput('typed [3]: value="mechanical keyboards\\n"')
+    expect(cli.browser.typed).toEqual([{ ref: 3, text: 'mechanical keyboards\n' }])
+
+    cli.input.write('scroll down\n')
+    await cli.expectOutput('scrolled down: x=0 y=0')
+
+    cli.input.write('back\n')
+    await cli.expectOutput('went back: url=')
+
+    cli.input.write('quit\n')
+    await cli.done
+  })
+
+  it('saves screenshots under the screenshot dir with a numbered name, printing the path once', async () => {
     const cli = harnessWith()
     await cli.expectOutput('bingbong> ')
 
     cli.input.write('screenshot\n')
-    await cli.expectOutput('saved screenshot to /tmp/shots/bingbong-screenshot-1.jpg (4 bytes)')
-    expect(cli.controller.saved).toEqual([{ path: '/tmp/shots/bingbong-screenshot-1.jpg', bytes: new Uint8Array([1, 2, 3, 4]) }])
+    await cli.expectOutput('screenshot saved: /tmp/shots/screenshot-1.jpg')
+    expect(cli.saved.map((shot) => shot.path)).toEqual(['/tmp/shots/screenshot-1.jpg'])
 
     cli.input.write('screenshot /tmp/other.jpg\n')
-    await cli.expectOutput('saved screenshot to /tmp/other.jpg (4 bytes)')
+    await cli.expectOutput('screenshot saved: /tmp/other.jpg')
+    expect(cli.readOutput().match(/screenshot saved: \/tmp\/other\.jpg/g)).toHaveLength(1)
 
     cli.input.write('quit\n')
     await cli.done
   })
 
-  it('presses shortcut keys on the page', async () => {
+  it('presses keys on the page', async () => {
     const cli = harnessWith()
     await cli.expectOutput('bingbong> ')
 
-    cli.input.write('press k\n')
-    await cli.expectOutput('pressed k')
+    cli.input.write('press enter\n')
+    await cli.expectOutput('pressed Enter')
 
-    cli.input.write('press l 3\n')
-    await cli.expectOutput('pressed l ×3')
-    expect(cli.controller.pressed).toEqual([
-      { press: { key: 'k' }, times: 1 },
-      { press: { key: 'l' }, times: 3 },
+    cli.input.write('press down 3\n')
+    await cli.expectOutput('pressed ArrowDown ×3')
+    expect(cli.browser.pressedKeys).toEqual([
+      { press: { key: 'Enter' }, times: 1 },
+      { press: { key: 'ArrowDown' }, times: 3 },
     ])
 
     cli.input.write('quit\n')
     await cli.done
   })
 
-  it('surfaces parse and controller errors without stopping the loop', async () => {
+  it('fires the best guess for words no grammar knows, and prints a failure as an error without stopping the loop', async () => {
     const cli = harnessWith()
     await cli.expectOutput('bingbong> ')
 
+    // No Decision Model here: a verb-less line is searched (ADR 0076), never refused.
     cli.input.write('frobnicate\n')
-    await cli.expectOutput("error: unknown command: 'frobnicate' — try 'help'")
+    await cli.expectOutput('navigated: url=https://duckduckgo.com/?q=frobnicate')
 
-    cli.controller.failRead = true
+    cli.browser.failRead = true
     cli.input.write('read\n')
     await cli.expectOutput('error: page evaluation failed: boom')
 
@@ -238,24 +209,25 @@ describe('runCliHarness', () => {
     await cli.expectOutput('error: page evaluation failed: boom')
 
     cli.input.write('help\n')
-    await cli.expectOutput('navigate <url>')
+    await cli.expectOutput('open <site or words>')
 
     cli.input.write('quit\n')
     await cli.done
   })
 
-  it('lists commands on help', async () => {
+  it('lists commands on help without asking the runner', async () => {
     const cli = harnessWith()
     await cli.expectOutput('bingbong> ')
 
     cli.input.write('help\n')
     await cli.expectOutput('read')
-    await cli.expectOutput('click <ref>')
-    await cli.expectOutput('type <ref> <text>')
+    await cli.expectOutput('click <label or ref>')
+    await cli.expectOutput('type <text> in <field>')
     await cli.expectOutput('scroll up|down')
     await cli.expectOutput('screenshot [path]')
-    await cli.expectOutput('back')
+    await cli.expectOutput('back | forward')
     await cli.expectOutput('quit')
+    expect(cli.browser.navigations).toEqual([])
 
     cli.input.write('quit\n')
     await cli.done

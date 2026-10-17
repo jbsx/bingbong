@@ -56,22 +56,22 @@ describe('cli browser harness e2e', () => {
     const line = await cli(harness, 'read', refLine('button', 'Say hello'))
     const ref = refOf(line)
 
-    await cli(harness, `click ${ref}`, new RegExp(`^clicked ref ${ref}$`))
+    await cli(harness, `click ${ref}`, new RegExp(`^clicked \\[${ref}\\]`))
     await panePoll(harness, 'document.title', (value) => value === 'clicked:btn-hello')
   })
 
-  it('type focuses the ref and types human-paced text', async () => {
+  it('type focuses the ref and inserts the text whole', async () => {
     const line = await cli(harness, 'read', refLine('input\\[text\\]', 'Type here'))
     const ref = refOf(line)
 
-    await cli(harness, `type ${ref} hello bingbong`, new RegExp(`^typed 14 chars into ref ${ref}$`))
+    await cli(harness, `type ${ref} hello bingbong`, new RegExp(`^typed \\[${ref}\\]: value="hello bingbong"$`))
     await panePoll(harness, `document.getElementById('q').value`, (value) => value === 'hello bingbong')
   })
 
   it('scroll moves the page and reveals below-the-fold elements on the next read', async () => {
     expect(harness.cliOutput()).not.toMatch(refLine('button', 'Below the fold'))
 
-    await cli(harness, 'scroll down', /^scrolled down$/)
+    await cli(harness, 'scroll down', /^scrolled down: /)
     await panePoll(harness, 'window.scrollY', (value) => (value as number) > 0)
 
     // Pane height varies with the window manager and earlier tests change the
@@ -90,7 +90,7 @@ describe('cli browser harness e2e', () => {
         .some((line) => belowFold.test(line.replace(/^bingbong> /, '')))
       if (listed) break
       if (Date.now() > deadline) throw new Error('below-the-fold button never entered the snapshot')
-      await cli(harness, 'scroll down', /^scrolled down$/)
+      await cli(harness, 'scroll down', /^scrolled down: /)
     }
   })
 
@@ -108,7 +108,7 @@ describe('cli browser harness e2e', () => {
     await harness.waitForPaneUrl(overlayUrl)
     const covered = await cli(harness, 'read', refLine('button', 'Under the overlay'))
     const ref = refOf(covered)
-    await cli(harness, `click ${ref}`, new RegExp(`^clicked ref ${ref}$`))
+    await cli(harness, `click ${ref}`, new RegExp(`^clicked \\[${ref}\\]`))
     expect(await harness.paneEval<string>('document.title')).toBe('overlay fixture')
 
     // Later tests assume the pane sits on /interactive.
@@ -117,7 +117,7 @@ describe('cli browser harness e2e', () => {
 
   it('screenshot writes a real jpeg to the requested path', async () => {
     const path = join(screenshotDir, 'probe.jpg')
-    await cli(harness, `screenshot ${path}`, new RegExp(`^saved screenshot to ${path} \\(\\d+ bytes\\)$`))
+    await cli(harness, `screenshot ${path}`, new RegExp(`^screenshot saved: ${path}$`))
 
     const bytes = await readFile(path)
     expect(bytes.byteLength).toBeGreaterThan(1000)
@@ -131,7 +131,7 @@ describe('cli browser harness e2e', () => {
     for (let i = 0; i < 6; i++) {
       const atTop = await harness.paneEval<number>('window.scrollY').then((y) => y === 0).catch(() => true)
       if (atTop) break
-      await cli(harness, 'scroll up', /^scrolled up$/)
+      await cli(harness, 'scroll up', /^scrolled up: /)
     }
 
     const link = await cli(harness, 'read', refLine('link', 'Second page'))
@@ -140,7 +140,7 @@ describe('cli browser harness e2e', () => {
     harness.cliWrite(`click ${ref}`)
     await harness.waitForPaneUrl(harness.fixture.url('/second'))
 
-    await cli(harness, 'back', /^went back$/)
+    await cli(harness, 'back', /^went back: /)
     await harness.waitForPaneUrl(harness.fixture.url('/interactive'))
   })
 

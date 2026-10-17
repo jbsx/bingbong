@@ -35,6 +35,10 @@ export interface FeedEntry {
   /** The conversation role (#54): bubble (user) vs railed card (assistant). */
   role: FeedRole
   text: string
+  /** A Command's action taken (#324), rendered under the words heard. */
+  action?: string
+  /** An Utterance read as no Command (#324): the words alone, greyed. */
+  muted?: boolean
   /** Detail entries are ephemeral: trimmed beyond the cap. */
   detail: boolean
   /**
