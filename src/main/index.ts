@@ -43,6 +43,7 @@ import { createBiasUnion } from '../core/voice/biasUnion'
 import { pageTermsOf } from '../core/voice/pageTerms'
 import { registerLearnedTermsIpc } from './voice/attachLearnedTerms'
 import { attachVoiceToWindow, registerVoiceIpc } from './voice/attachVoice'
+import type { VoiceSession } from '../core/voice/voiceSession'
 import { attachFeedPanelOverlayToWindow, registerFeedPanelIpc } from './panel/createFeedPanelOverlay'
 import { defaultFeedPanelWidth } from '../core/panel/feedPanelState'
 import { audioDumpEnabled, createUtteranceDumper } from '../core/voice/utteranceDump'
@@ -319,10 +320,18 @@ async function createWindow(): Promise<BrowserWindow> {
       observe: (text) => learnedTermsStore.observeTranscript(text),
     },
   })
-  attachCommandRunnerToWindow(runner, win)
+  // Escape aborts the Command and closes a Hot Listen (#326), each at once;
+  // the voice session is attached below, so it is read when the key comes.
+  let voiceSession: VoiceSession | null = null
+  const escape = (): boolean => {
+    const aborted = runner.abort()
+    const closed = voiceSession?.closeHotListen() ?? false
+    return aborted || closed
+  }
+  attachCommandRunnerToWindow(runner, win, escape)
   // Escape aborts from the pane too, where React never sees the key.
   const onPaneInput = (event: Electron.Event, input: Electron.Input): void => {
-    if (input.type === 'keyDown' && input.key === 'Escape' && runner.abort()) event.preventDefault()
+    if (input.type === 'keyDown' && input.key === 'Escape' && escape()) event.preventDefault()
   }
   pane.view.webContents.on('before-input-event', onPaneInput)
   win.on('closed', () => pane.view.webContents.removeListener('before-input-event', onPaneInput))
@@ -338,7 +347,7 @@ async function createWindow(): Promise<BrowserWindow> {
   // the page collected at speech start, set for the one Utterance over it.
   const biasUnion = createBiasUnion({ lexicon: () => learnedTermsStore.biasPhrases() })
   const voice = await createMainVoice(voiceConfig, () => biasUnion.phrases())
-  attachVoiceToWindow(win, {
+  voiceSession = attachVoiceToWindow(win, {
     onPagePrepared: (snapshot) =>
       biasUnion.setPageTerms(snapshot === null ? [] : pageTermsOf({ title: snapshot.title, labels: snapshot.refs.map((ref) => ref.label), text: snapshot.viewportText })),
     vad: voice.vad,
@@ -362,6 +371,10 @@ async function createWindow(): Promise<BrowserWindow> {
       endFrames: silenceFramesForMs(settingsStore.get().endpointDelayMs),
       resumptionMergeMs: settingsStore.get().resumptionMergeMs,
     }),
+    // The Hot Listen (#326): its closing silence, live from its Setting,
+    // and the speaking gate — the mic takes no Utterance while a line plays.
+    getHotListenSilenceMs: () => settingsStore.get().hotListenSilenceMs,
+    speaking: speakingGate,
     publisher: eventPublisher,
     tracer: perfTracer,
     dumper: utteranceDumper,

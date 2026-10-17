@@ -35,17 +35,22 @@ export function registerCommandRunnerIpc(): void {
   })
 }
 
-export function attachCommandRunnerToWindow(runner: CommandRunner, win: BrowserWindow): void {
+/**
+ * `escape` is what Escape does: abort the Command, and whatever else the
+ * window closes with it (a Hot Listen, #326); it answers whether anything
+ * was. Absent aborts the Command alone.
+ */
+export function attachCommandRunnerToWindow(runner: CommandRunner, win: BrowserWindow, escape: () => boolean = () => runner.abort()): void {
   runners.set(win, runner)
-  const detachAbortHotkey = attachAbortHotkey(runner, win.webContents)
+  const detachAbortHotkey = attachAbortHotkey(escape, win.webContents)
   win.on('closed', () => runners.delete(win))
   win.on('closed', detachAbortHotkey)
 }
 
 /** Capture Escape when the embedded browser, rather than React, owns focus. */
-export function attachAbortHotkey(runner: CommandRunner, contents: WebContents): () => void {
+export function attachAbortHotkey(escape: () => boolean, contents: WebContents): () => void {
   const onBeforeInput = (event: Electron.Event, input: Electron.Input) => {
-    if (input.type === 'keyDown' && input.key === 'Escape' && runner.abort()) {
+    if (input.type === 'keyDown' && input.key === 'Escape' && escape()) {
       event.preventDefault()
     }
   }

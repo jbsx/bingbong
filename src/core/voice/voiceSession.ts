@@ -9,6 +9,7 @@ import type { UtteranceDumper } from './utteranceDump'
 import { createWakeMonitor } from './wakeMonitor'
 import type { PerfTracer } from '../perf/perfTracer'
 import { reportFault } from '../trace/fault'
+import { HOT_LISTEN_SILENCE_MS_DEFAULT } from '../settings/settings'
 
 /**
  * The complete local phrase-routing vocabulary — abort alone, the one
@@ -21,12 +22,6 @@ import { reportFault } from '../trace/fault'
 export const LOCAL_CONTROL_PHRASES: Readonly<Record<'abort', readonly string[]>> = {
   abort: ['stop', 'abort', 'cancel', 'never mind'],
 }
-
-/**
- * The silence after the last Endpoint that closes a Hot Listen (#326):
- * the `hotListenSilenceMs` Setting's default.
- */
-export const HOT_LISTEN_SILENCE_MS_DEFAULT = 8_000
 
 /** Wake-word plumbing (T10); absent means the session stays hotkey-only. */
 export interface VoiceWakeDeps {

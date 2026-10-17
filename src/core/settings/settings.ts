@@ -24,6 +24,14 @@ export const RESUMPTION_MERGE_MS_MIN = 0
 export const RESUMPTION_MERGE_MS_MAX = 3_000
 /** 0 on this branch (ADR 0076): no hold after the Endpoint. (`main` holds 1,500 ms.) */
 export const RESUMPTION_MERGE_MS_DEFAULT = 0
+/**
+ * Hot Listen silence bounds (#326): the silence after the last Endpoint
+ * that closes the Listen one wake opened.
+ */
+export const HOT_LISTEN_SILENCE_MS_MIN = 2_000
+export const HOT_LISTEN_SILENCE_MS_MAX = 60_000
+/** 8 s (#326): long enough to read the page between Commands, short enough that a forgotten Listen closes. */
+export const HOT_LISTEN_SILENCE_MS_DEFAULT = 8_000
 /** Web-zoom slider bounds (#53): readable-from-the-couch page zoom. */
 export const WEB_ZOOM_PERCENT_MIN = 75
 export const WEB_ZOOM_PERCENT_MAX = 200
@@ -58,6 +66,8 @@ export interface AppSettings {
    * resuming inside the window rejoins the utterance. 0 disables the hold.
    */
   resumptionMergeMs: number
+  /** Silence (ms) after the last Endpoint that closes a Hot Listen (#326). */
+  hotListenSilenceMs: number
   /** Page zoom for the browser pane, in percent (#53). */
   webZoomPercent: number
   /** Piper voice id; '' follows BINGBONG_PIPER_VOICE / the default voice. */
@@ -77,6 +87,7 @@ export function defaultSettings(): AppSettings {
     wakeWordThreshold: 0.5,
     endpointDelayMs: ENDPOINT_DELAY_MS_DEFAULT,
     resumptionMergeMs: RESUMPTION_MERGE_MS_DEFAULT,
+    hotListenSilenceMs: HOT_LISTEN_SILENCE_MS_DEFAULT,
     webZoomPercent: WEB_ZOOM_PERCENT_DEFAULT,
     ttsVoice: '',
     sttModel: 'small',
@@ -109,6 +120,11 @@ function asResumptionMerge(value: unknown, fallback: number): number {
   return Math.min(RESUMPTION_MERGE_MS_MAX, Math.max(RESUMPTION_MERGE_MS_MIN, Math.round(value)))
 }
 
+function asHotListenSilence(value: unknown, fallback: number): number {
+  if (typeof value !== 'number' || Number.isNaN(value)) return fallback
+  return Math.min(HOT_LISTEN_SILENCE_MS_MAX, Math.max(HOT_LISTEN_SILENCE_MS_MIN, Math.round(value)))
+}
+
 function asWebZoomPercent(value: unknown, fallback: number): number {
   if (typeof value !== 'number' || Number.isNaN(value)) return fallback
   return Math.min(WEB_ZOOM_PERCENT_MAX, Math.max(WEB_ZOOM_PERCENT_MIN, Math.round(value)))
@@ -137,6 +153,7 @@ export function sanitizeSettings(raw: unknown): AppSettings {
     wakeWordThreshold: asThreshold(record.wakeWordThreshold, defaults.wakeWordThreshold),
     endpointDelayMs: asEndpointDelay(record.endpointDelayMs, defaults.endpointDelayMs),
     resumptionMergeMs: asResumptionMerge(record.resumptionMergeMs, defaults.resumptionMergeMs),
+    hotListenSilenceMs: asHotListenSilence(record.hotListenSilenceMs, defaults.hotListenSilenceMs),
     webZoomPercent: asWebZoomPercent(record.webZoomPercent, defaults.webZoomPercent),
     ttsVoice: asString(record.ttsVoice, defaults.ttsVoice),
     sttModel: asSttModel(record.sttModel),

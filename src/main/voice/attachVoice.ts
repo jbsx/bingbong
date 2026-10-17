@@ -1,6 +1,6 @@
 import { BrowserWindow, ipcMain } from 'electron'
 import { systemClock } from '../../core/ports/clock'
-import type { TtsSpeaker } from '../../core/ports/tts'
+import type { TtsIdle, TtsSpeaker } from '../../core/ports/tts'
 import type { Transcriber, VadScorer } from '../../core/ports/stt'
 import type { PerfTracer } from '../../core/perf/perfTracer'
 import type { PageSnapshot } from '../../core/browser/snapshot'
@@ -14,8 +14,10 @@ import type { WindowEventPublisher } from '../session/windowEventPublisher'
 // IPC glue for the ears (T9): the renderer's worklet streams 16 kHz mono PCM
 // here, the voice session (seam-tested in core) endpoints and transcribes it,
 // and transcripts enter the same command runner as the Prompt Bar, with the
-// Endpoint's turn id and clock reading beside them (#324). Arm/disarm state
-// and the live partial flow back so the Status Capsule can show them.
+// Endpoint's turn id and clock reading beside them (#324). Each partial is
+// also offered to the runner, which may fire it before the Endpoint (Early
+// Fire, #326). Arm/disarm state and the live partial flow back so the
+// Status Capsule can show them.
 
 const sessions = new WeakMap<BrowserWindow, VoiceSession>()
 
@@ -52,6 +54,8 @@ export function attachVoiceToWindow(win: BrowserWindow, deps: AttachVoiceDeps): 
     tts: deps.tts,
     wake: deps.wake,
     getEndpointerConfig: deps.getEndpointerConfig,
+    getHotListenSilenceMs: deps.getHotListenSilenceMs,
+    speaking: deps.speaking,
     tracer: deps.tracer,
     dumper: deps.dumper,
     onSubmitCommand: (text, submitted) => {
@@ -66,6 +70,8 @@ export function attachVoiceToWindow(win: BrowserWindow, deps: AttachVoiceDeps): 
     },
     onPartial: (text) => {
       deps.publisher.publish({ source: 'voice-partial', partial: { text, at: Date.now() } })
+      // Early Fire (#326): the words so far may already be the whole Command.
+      if (text !== '') void runnerFor(win)?.consider(text)
     },
     getRunState: () => runnerFor(win)?.getState() ?? 'idle',
     onAbort: () => runnerFor(win)?.abort(),
@@ -98,6 +104,10 @@ export interface AttachVoiceDeps {
   wake?: VoiceWakeDeps
   /** Live endpointer config from the settings slider (#37); absent keeps VAD defaults. */
   getEndpointerConfig?(): Partial<UtteranceEndpointerConfig>
+  /** Live `hotListenSilenceMs` (#326); absent holds the default. */
+  getHotListenSilenceMs?(): number
+  /** The speaking gate (#326): the mic takes no Utterance while a line plays. */
+  speaking?: TtsIdle
   /** Always-on perf tracer (#27); absent keeps the session uninstrumented. */
   tracer?: PerfTracer
   /** Opt-in utterance audio dumps (#34); absent keeps the session dump-free. */

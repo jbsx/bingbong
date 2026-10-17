@@ -54,6 +54,10 @@ describe('settings page e2e', () => {
     const endpointLabels = await harness.dashboardEval<string>(`document.querySelector('.settings-page').textContent`)
     expect(endpointLabels).toContain('Endpoint delay — 300 ms')
     expect(endpointLabels).toContain('Merge window — off')
+    // The Hot Listen's closing silence (#326): 8 s by default.
+    const hotListen = await harness.dashboardEval<number>(`Number(document.querySelector('input[aria-label="Hot Listen silence"]').value)`)
+    expect(hotListen).toBe(8000)
+    expect(endpointLabels).toContain('Hot Listen silence — 8.0 s')
 
     // The city field is addressed by its aria-label.
     const edited = await harness.dashboardEval<string>(setWeatherCityScript('Berlin'))

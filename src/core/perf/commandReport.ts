@@ -6,8 +6,11 @@ import { formatMs, nearestRankPercentile } from '../report/stats.ts'
 // Endpoint to the action's first observable effect, the `reaction` span —
 // as p50/p95 per verb, and the decision log beside it: how many Commands
 // the Local Match settled, how many asked Jev and what Jev's latency was,
-// and how many Misfires the next Command signalled. Pure functions over
-// parsed records; the files are read at the main seam.
+// and how many Misfires the next Command signalled. Early Fire (#326)
+// splits the Reaction by whether the Command fired on a partial, and the
+// decisions gain its share, its lead over the Endpoint, and the Jev calls
+// each spoken Utterance cost. Pure functions over parsed records; the
+// files are read at the main seam.
 
 const REACTION_STAGE = 'reaction'
 
@@ -25,6 +28,8 @@ export interface ReactionReport {
   overall: ReactionStats | null
   /** One row per verb: count-descending, then name. */
   byVerb: ReactionStats[]
+  /** The Reaction of Commands fired on a partial (`early`) and at the Endpoint (`endpoint`); a row is null when none was. */
+  byFire: { early: ReactionStats | null; endpoint: ReactionStats | null }
 }
 
 export interface DecisionReport {
@@ -42,6 +47,8 @@ export interface DecisionReport {
   misfiresBySignal: Partial<Record<MisfireSignal, number>>
   /** Name Matches (ADR 0077): Slots carried as a name the page showed, or one the user taught. */
   names: { page: number; learned: number }
+  /** Early Fire (#326): spoken Commands, how many fired on a partial, the lead over the Endpoint, and the Jev calls made on partials. */
+  earlyFire: { spoken: number; fired: number; lead: { p50: number; p95: number } | null; partialCalls: number; spokenJevAsked: number }
 }
 
 function statsOf(verb: string, durations: readonly number[]): ReactionStats {
@@ -63,10 +70,13 @@ function verbOf(record: PerfSpanRecord): string {
 
 export function buildReactionReport(records: readonly PerfSpanRecord[]): ReactionReport {
   const all: number[] = []
+  const early: number[] = []
+  const endpoint: number[] = []
   const byVerb = new Map<string, number[]>()
   for (const record of records) {
     if (record.stage !== REACTION_STAGE) continue
     all.push(record.durMs)
+    ;(record.detail?.earlyFire === true ? early : endpoint).push(record.durMs)
     const verb = verbOf(record)
     const durations = byVerb.get(verb)
     if (durations === undefined) byVerb.set(verb, [record.durMs])
@@ -77,7 +87,14 @@ export function buildReactionReport(records: readonly PerfSpanRecord[]): Reactio
     byVerb: [...byVerb.entries()]
       .map(([verb, durations]) => statsOf(verb, durations))
       .sort((a, b) => b.count - a.count || a.verb.localeCompare(b.verb)),
+    byFire: { early: early.length === 0 ? null : statsOf('early', early), endpoint: endpoint.length === 0 ? null : statsOf('endpoint', endpoint) },
   }
+}
+
+function percentiles(values: readonly number[]): { p50: number; p95: number } | null {
+  if (values.length === 0) return null
+  const sorted = [...values].sort((a, b) => a - b)
+  return { p50: nearestRankPercentile(sorted, 50), p95: nearestRankPercentile(sorted, 95) }
 }
 
 export function buildDecisionReport(records: readonly CommandLogRecord[]): DecisionReport {
@@ -90,8 +107,10 @@ export function buildDecisionReport(records: readonly CommandLogRecord[]): Decis
     misfires: 0,
     misfiresBySignal: {},
     names: { page: 0, learned: 0 },
+    earlyFire: { spoken: 0, fired: 0, lead: null, partialCalls: 0, spokenJevAsked: 0 },
   }
   const latencies: number[] = []
+  const leads: number[] = []
   for (const record of records) {
     if (record.type === 'misfire') {
       report.misfires += 1
@@ -101,16 +120,23 @@ export function buildDecisionReport(records: readonly CommandLogRecord[]): Decis
     report.commands += 1
     if (record.reading in report.readings) report.readings[record.reading] += 1
     if (record.slotFrom === 'page' || record.slotFrom === 'learned') report.names[record.slotFrom] += 1
+    if (record.source === 'spoken') {
+      report.earlyFire.spoken += 1
+      if (record.jevAsked) report.earlyFire.spokenJevAsked += 1
+      if (typeof record.partialCalls === 'number') report.earlyFire.partialCalls += record.partialCalls
+      if (record.earlyFire !== undefined) {
+        report.earlyFire.fired += 1
+        if (typeof record.earlyFire.leadMs === 'number') leads.push(record.earlyFire.leadMs)
+      }
+    }
     if (record.jevAsked) {
       report.jevAsked += 1
       if (record.reading === 'jev') report.jevAnswered += 1
       if (record.jev !== undefined && Number.isFinite(record.jev.latencyMs)) latencies.push(record.jev.latencyMs)
     }
   }
-  if (latencies.length > 0) {
-    const sorted = latencies.sort((a, b) => a - b)
-    report.jevLatency = { p50: nearestRankPercentile(sorted, 50), p95: nearestRankPercentile(sorted, 95) }
-  }
+  report.jevLatency = percentiles(latencies)
+  report.earlyFire.lead = percentiles(leads)
   return report
 }
 
@@ -135,6 +161,11 @@ export function formatCommandReport(reaction: ReactionReport, decisions: Decisio
     lines.push('reaction (Endpoint to first effect), by verb:')
     const rows = [reaction.overall, ...reaction.byVerb].map((s) => [s.verb, String(s.count), formatMs(s.p50), formatMs(s.p95), formatMs(s.max)])
     lines.push(...table(['verb', 'count', 'p50', 'p95', 'max'], rows))
+    const fired = [reaction.byFire.early, reaction.byFire.endpoint].filter((row): row is ReactionStats => row !== null)
+    if (reaction.byFire.early !== null) {
+      lines.push('', 'reaction by Early Fire:')
+      lines.push(...table(['fired', 'count', 'p50', 'p95', 'max'], fired.map((s) => [s.verb, String(s.count), formatMs(s.p50), formatMs(s.p95), formatMs(s.max)])))
+    }
   }
   if (decisions.commands > 0 || decisions.misfires > 0) {
     if (lines.length > 0) lines.push('')
@@ -155,6 +186,15 @@ export function formatCommandReport(reaction: ReactionReport, decisions: Decisio
         ` | misfires ${decisions.misfires}${signals ? ` (${signals})` : ''}` +
         ` | names matched ${names}${names > 0 ? ` (page ${decisions.names.page}, learned ${decisions.names.learned})` : ''}`,
     )
+    const early = decisions.earlyFire
+    if (early.spoken > 0) {
+      const calls = (early.spokenJevAsked + early.partialCalls) / early.spoken
+      lines.push(
+        `early fire: ${early.fired} of ${early.spoken} spoken (${percent(early.fired, early.spoken)})` +
+          (early.lead ? `, lead p50 ${formatMs(early.lead.p50)} p95 ${formatMs(early.lead.p95)}` : '') +
+          ` | jev calls per spoken utterance ${calls.toFixed(2)} (${early.partialCalls} on partials)`,
+      )
+    }
   }
   return lines
 }

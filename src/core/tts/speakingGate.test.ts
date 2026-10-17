@@ -128,3 +128,20 @@ describe('speaking gate', () => {
     finish('Opened YouTube — see the video.')
   })
 })
+
+describe('isSpeaking (#326)', () => {
+  it('reports a line in flight until it, and every line queued with it, settles', async () => {
+    const { speaker, finish } = deferredSpeaker()
+    const gate = createSpeakingGate(speaker)
+    expect(gate.isSpeaking()).toBe(false)
+    const first = gate.tts.speak('one')
+    const second = gate.tts.speak('two')
+    expect(gate.isSpeaking()).toBe(true)
+    finish('one')
+    await first
+    expect(gate.isSpeaking()).toBe(true)
+    finish('two')
+    await second
+    expect(gate.isSpeaking()).toBe(false)
+  })
+})

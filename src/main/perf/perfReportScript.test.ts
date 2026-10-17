@@ -113,6 +113,25 @@ describe.skipIf(!stripsTypes)('perf:report script', () => {
     )
   })
 
+  it('prints the Early Fire share and lead, and the Reaction split by Early Fire (#326)', () => {
+    const reaction = (turnId: string, durMs: number, leadMs?: number): string =>
+      JSON.stringify({ ...span(turnId, 'reaction', durMs), detail: { verb: 'scroll_down', effect: 'scroll', reading: 'local_match', source: 'spoken', ...(leadMs !== undefined ? { earlyFire: true, leadMs } : {}) } })
+    writeFileSync(join(dir, 'perf-1-1.jsonl'), [reaction('turn-1', 0, 350), reaction('turn-2', 0, 450), reaction('turn-3', 240)].join('\n') + '\n')
+    const decision = (turnId: string, extra: Record<string, unknown>): string =>
+      JSON.stringify({ type: 'decision', turnId, at: NOW, source: 'spoken', transcript: 'scroll down', reading: 'local_match', verb: 'scroll_down', target: null, slot: null, jevAsked: false, ...extra })
+    writeFileSync(
+      join(dir, 'decision-1-1.jsonl'),
+      [decision('turn-1', { earlyFire: { partial: 'scroll down', leadMs: 350 } }), decision('turn-2', { earlyFire: { partial: 'scroll down', leadMs: 450 } }), decision('turn-3', { partialCalls: 1 })].join('\n') + '\n',
+    )
+
+    const stdout = execFileSync(process.execPath, [SCRIPT, dir], { encoding: 'utf8' })
+
+    expect(stdout).toContain('reaction by Early Fire:')
+    expect(stdout).toMatch(/^early\s+2\s+0ms\s+0ms\s+0ms$/m)
+    expect(stdout).toMatch(/^endpoint\s+1\s+240ms\s+240ms\s+240ms$/m)
+    expect(stdout).toContain('early fire: 2 of 3 spoken (67%), lead p50 350ms p95 450ms | jev calls per spoken utterance 0.33 (1 on partials)')
+  })
+
   it('exits 0 against an empty logs dir', () => {
     const stdout = execFileSync(process.execPath, [SCRIPT, dir], { encoding: 'utf8' })
 

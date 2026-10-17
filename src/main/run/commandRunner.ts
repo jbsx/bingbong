@@ -171,12 +171,11 @@ function pageFree(command: Command | null): command is Command {
  * Whether a partial's Local Match may fire before the Endpoint (#326): a
  * Command that carries no Slot still being spoken — never an `open`, a
  * search or a `type` ("open you" is a bare word, and the user is still
- * saying "youtube"), and never a verb phrase that heads a longer one of
- * another kind ("scroll" may yet be "scroll up").
+ * saying "youtube"). A verb phrase that heads a longer one of another kind
+ * ("scroll", which may yet be "scroll up") is held before this is asked.
  */
-function firesEarly(words: string, command: Command): boolean {
-  if (command.verb === 'open' || command.verb === 'type' || command.verb === 'screenshot' || command.verb === 'none') return false
-  return !headsAnotherVerb(words)
+function firesEarly(command: Command): boolean {
+  return command.verb !== 'open' && command.verb !== 'type' && command.verb !== 'screenshot' && command.verb !== 'none'
 }
 
 function toolOf(command: Command): { name: string; args: Record<string, unknown> } {
@@ -598,12 +597,14 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
 
   /** A partial's reading, when it settles a Command that may fire before the Endpoint. */
   async function readPartial(words: string, stale: () => boolean): Promise<(Reading & { noul?: number }) | null> {
+    // "scroll" may yet be "scroll up": the words are known to be unfinished, so no one is asked.
+    if (headsAnotherVerb(words)) return null
     const quick = localMatch(words, [])
-    if (pageFree(quick) && firesEarly(words, quick)) return { command: quick, page: blankPage(browser), reading: 'local_match', jevAsked: false }
+    if (pageFree(quick) && firesEarly(quick)) return { command: quick, page: blankPage(browser), reading: 'local_match', jevAsked: false }
     const page = await collectPage(prepared)
     if (stale()) return null
     const local = localMatch(words, page.refs, page.url)
-    if (local !== null && firesEarly(words, local)) return { command: local, page, reading: 'local_match', jevAsked: false }
+    if (local !== null && firesEarly(local)) return { command: local, page, reading: 'local_match', jevAsked: false }
     const model = deps.decisionModel()
     if (model === null) return null
     partialCalls += 1

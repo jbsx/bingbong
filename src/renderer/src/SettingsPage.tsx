@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { AppSettings } from '../../core/settings/settings'
-import { ENDPOINT_DELAY_MS_MAX, ENDPOINT_DELAY_MS_MIN, RESUMPTION_MERGE_MS_MAX, RESUMPTION_MERGE_MS_MIN, WEB_ZOOM_PERCENT_MAX, WEB_ZOOM_PERCENT_MIN, WAKE_WORD_THRESHOLD_MAX, WAKE_WORD_THRESHOLD_MIN, asAppearance, asSttModel } from '../../core/settings/settings'
+import { ENDPOINT_DELAY_MS_MAX, ENDPOINT_DELAY_MS_MIN, HOT_LISTEN_SILENCE_MS_MAX, HOT_LISTEN_SILENCE_MS_MIN, RESUMPTION_MERGE_MS_MAX, RESUMPTION_MERGE_MS_MIN, WEB_ZOOM_PERCENT_MAX, WEB_ZOOM_PERCENT_MIN, WAKE_WORD_THRESHOLD_MAX, WAKE_WORD_THRESHOLD_MIN, asAppearance, asSttModel } from '../../core/settings/settings'
 import { DEFAULT_PIPER_VOICE } from '../../core/tts/piperVoices'
 
 /** Select value for "the saved mic is not plugged in right now". */
@@ -249,6 +249,21 @@ export function SettingsPage({
           <p className="settings-note">
             After that pause, how long speech may resume and still join the same turn — 0 submits
             immediately. Applies to the next utterance, no restart.
+          </p>
+          <Field label={`Hot Listen silence — ${(draft.hotListenSilenceMs / 1000).toFixed(1)} s`}>
+            <input
+              type="range"
+              min={HOT_LISTEN_SILENCE_MS_MIN}
+              max={HOT_LISTEN_SILENCE_MS_MAX}
+              step={500}
+              value={draft.hotListenSilenceMs}
+              aria-label="Hot Listen silence"
+              onChange={(event) => setDraft({ ...draft, hotListenSilenceMs: Number(event.target.value) })}
+            />
+          </Field>
+          <p className="settings-note">
+            After the wake word, the mic stays open for the next command until this much silence
+            follows the last one. Applies at once, no restart.
           </p>
           <Field label="STT model">
             <select

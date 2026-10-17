@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createScriptedTranscriber } from './createScriptedTranscriber'
+import { createScriptedTranscriber, SCRIPTED_PARTIAL_STRIDE_FRAMES } from './createScriptedTranscriber'
 
 // BINGBONG_STT_SCRIPT's double: plain-string entries feed transcripts one per
 // utterance; { text, delayMs } entries additionally hold the promise so e2e
@@ -41,13 +41,41 @@ describe('createScriptedTranscriber', () => {
 
   it('rejects entries without a string text', () => {
     expect(() => createScriptedTranscriber(JSON.stringify([{ delayMs: 100 }]))).toThrow(
-      'BINGBONG_STT_SCRIPT must be a JSON array of strings or { text, delayMs } objects',
+      'BINGBONG_STT_SCRIPT must be a JSON array of strings or { text, delayMs, partials } objects',
     )
   })
 
   it('rejects a non-number delayMs', () => {
     expect(() => createScriptedTranscriber(JSON.stringify([{ text: 'open the fixture page', delayMs: 'fast' }]))).toThrow(
-      'BINGBONG_STT_SCRIPT must be a JSON array of strings or { text, delayMs } objects',
+      'BINGBONG_STT_SCRIPT must be a JSON array of strings or { text, delayMs, partials } objects',
     )
+  })
+
+  it('streams an entry\'s partials while the utterance is spoken, one every stride of frames, and starts over on a cancelled capture (#326)', async () => {
+    const transcriber = createScriptedTranscriber(JSON.stringify([{ text: 'Scroll down.', partials: ['scroll', 'scroll down'] }, 'go back']))
+    const heard: string[] = []
+    transcriber.onPartial((text) => heard.push(text))
+    const frame = new Float32Array(512)
+    const speak = (frames: number): void => {
+      for (let i = 0; i < frames; i += 1) transcriber.push(frame)
+    }
+
+    transcriber.begin()
+    speak(SCRIPTED_PARTIAL_STRIDE_FRAMES - 1)
+    expect(heard).toEqual([])
+    speak(1)
+    expect(heard).toEqual(['scroll'])
+    transcriber.cancel()
+
+    transcriber.begin()
+    speak(SCRIPTED_PARTIAL_STRIDE_FRAMES * 4)
+    expect(heard).toEqual(['scroll', 'scroll', 'scroll down'])
+    expect(await transcriber.finish(frame)).toBe('Scroll down.')
+
+    // The next entry carries no partials.
+    transcriber.begin()
+    speak(SCRIPTED_PARTIAL_STRIDE_FRAMES * 2)
+    expect(heard).toHaveLength(3)
+    expect(await transcriber.finish(frame)).toBe('go back')
   })
 })

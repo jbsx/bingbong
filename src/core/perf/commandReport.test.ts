@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { CommandLogRecord } from '../command/decisionRecord'
+import type { CommandLogRecord, DecisionRecord } from '../command/decisionRecord'
 import type { PerfSpanRecord } from './perfTracer'
 import { buildDecisionReport, buildReactionReport, formatCommandReport } from './commandReport'
 
@@ -13,7 +13,7 @@ function reaction(turnId: string, verb: string, durMs: number): PerfSpanRecord {
   return { turnId, stage: 'reaction', durMs, at: AT, t: 0, detail: { verb, effect: 'settled', reading: 'local_match', source: 'spoken' } }
 }
 
-function decision(turnId: string, reading: 'local_match' | 'jev' | 'best_guess', latencyMs?: number): CommandLogRecord {
+function decision(turnId: string, reading: 'local_match' | 'jev' | 'best_guess', latencyMs?: number): DecisionRecord {
   return {
     type: 'decision',
     turnId,
@@ -59,7 +59,7 @@ describe('buildReactionReport', () => {
   })
 
   it('is empty, not a crash, with no reaction spans; a span without a verb counts as unknown', () => {
-    expect(buildReactionReport([{ turnId: 't1', stage: 'stt', durMs: 100, at: AT, t: 0 }])).toEqual({ overall: null, byVerb: [] })
+    expect(buildReactionReport([{ turnId: 't1', stage: 'stt', durMs: 100, at: AT, t: 0 }])).toEqual({ overall: null, byVerb: [], byFire: { early: null, endpoint: null } })
     const report = buildReactionReport([{ turnId: 't1', stage: 'reaction', durMs: 100, at: AT, t: 0 }])
     expect(report.byVerb).toEqual([{ verb: 'unknown', count: 1, p50: 100, p95: 100, max: 100 }])
   })
@@ -87,6 +87,7 @@ describe('buildDecisionReport', () => {
       misfires: 3,
       misfiresBySignal: { back: 2, opposite_scroll: 1 },
       names: { page: 0, learned: 0 },
+      earlyFire: { spoken: 5, fired: 0, lead: null, partialCalls: 0, spokenJevAsked: 3 },
     })
   })
 
@@ -129,6 +130,37 @@ describe('formatCommandReport', () => {
       'open       1  400ms  400ms  400ms',
       '',
       'decisions: 2 commands | jev asked 1 (50%), answered 1, latency p50 220ms p95 220ms | local match 1, jev 1, best guess 0 | misfires 1 (back 1) | names matched 0',
+      'early fire: 0 of 2 spoken (0%) | jev calls per spoken utterance 0.50 (0 on partials)',
+    ])
+  })
+
+  it('splits the Reaction by Early Fire and prints its share, its lead and the Jev calls per spoken Utterance (#326)', () => {
+    const early = (turnId: string, leadMs: number, partialCalls?: number): CommandLogRecord => ({
+      ...decision(turnId, 'local_match'),
+      earlyFire: { partial: 'scroll down', leadMs },
+      ...(partialCalls !== undefined ? { partialCalls } : {}),
+    })
+    const earlySpan = (turnId: string, leadMs: number): PerfSpanRecord => ({ ...reaction(turnId, 'scroll_down', 0), detail: { verb: 'scroll_down', effect: 'scroll', reading: 'local_match', source: 'spoken', earlyFire: true, leadMs } })
+    const lines = formatCommandReport(
+      buildReactionReport([earlySpan('t1', 300), earlySpan('t2', 500), reaction('t3', 'open', 400), reaction('t4', 'click', 200)]),
+      buildDecisionReport([early('t1', 300), early('t2', 500, 1), decision('t3', 'jev', 220), { ...decision('t4', 'local_match'), partialCalls: 2 } satisfies DecisionRecord]),
+    )
+
+    expect(lines).toEqual([
+      'reaction (Endpoint to first effect), by verb:',
+      'verb         count    p50    p95    max',
+      'all              4    0ms  400ms  400ms',
+      'scroll_down      2    0ms    0ms    0ms',
+      'click            1  200ms  200ms  200ms',
+      'open             1  400ms  400ms  400ms',
+      '',
+      'reaction by Early Fire:',
+      'fired     count    p50    p95    max',
+      'early         2    0ms    0ms    0ms',
+      'endpoint      2  200ms  400ms  400ms',
+      '',
+      'decisions: 4 commands | jev asked 1 (25%), answered 1, latency p50 220ms p95 220ms | local match 3, jev 1, best guess 0 | misfires 0 | names matched 0',
+      'early fire: 2 of 4 spoken (50%), lead p50 300ms p95 500ms | jev calls per spoken utterance 1.00 (3 on partials)',
     ])
   })
 

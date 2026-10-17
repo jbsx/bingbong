@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   defaultSettings,
+  HOT_LISTEN_SILENCE_MS_MAX,
+  HOT_LISTEN_SILENCE_MS_MIN,
   sanitizeSettings,
   settingsToEnv,
   ENDPOINT_DELAY_MS_MAX,
@@ -21,6 +23,7 @@ describe('defaultSettings', () => {
     expect(settings.wakeWordThreshold).toBeLessThanOrEqual(1)
     // ADR 0076 (#324): released 300 ms into silence, with no merge hold.
     expect(settings.endpointDelayMs).toBe(300)
+    expect(settings.hotListenSilenceMs).toBe(8_000)
     expect(settings.resumptionMergeMs).toBe(0)
     expect(settings.webZoomPercent).toBe(130)
     expect(settings.ttsVoice).toBe('')
@@ -153,5 +156,14 @@ describe('sanitizeSettings', () => {
 describe('settingsToEnv', () => {
   it('maps empty settings to no overrides', () => {
     expect(settingsToEnv(defaultSettings())).toEqual({})
+  })
+})
+
+describe('hotListenSilenceMs (#326)', () => {
+  it('keeps a value inside its bounds, clamps one outside, and falls back on garbage', () => {
+    expect(sanitizeSettings({ hotListenSilenceMs: 12_000 }).hotListenSilenceMs).toBe(12_000)
+    expect(sanitizeSettings({ hotListenSilenceMs: 10 }).hotListenSilenceMs).toBe(HOT_LISTEN_SILENCE_MS_MIN)
+    expect(sanitizeSettings({ hotListenSilenceMs: 999_999 }).hotListenSilenceMs).toBe(HOT_LISTEN_SILENCE_MS_MAX)
+    expect(sanitizeSettings({ hotListenSilenceMs: 'soon' }).hotListenSilenceMs).toBe(8_000)
   })
 })
