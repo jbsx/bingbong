@@ -14,7 +14,7 @@ import {
   type Fetch,
   type Questions,
 } from '@typesafe-ai/sdk'
-import type { ModelEndpointConfig } from '../../core/agent/modelRouting.ts'
+import type { ModelEndpointConfig } from '../../core/decision/decisionRouting.ts'
 import {
   readDecisionAnswers,
   type DecisionModel,

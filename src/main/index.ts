@@ -1,4 +1,4 @@
-import { app, BrowserWindow, crashReporter, ipcMain, session } from 'electron'
+import { app, BrowserWindow, crashReporter, session } from 'electron'
 import { join } from 'node:path'
 import type { BrowserController, VisualGroundingController } from '../core/ports/browser'
 import { BROWSER_IPC } from '../core/browser/ipcChannels'
@@ -13,34 +13,18 @@ import { createPaneBrowserController } from './browser/createPaneBrowserControll
 import { holdBrowserCustody } from '../core/browser/unsettledAction'
 import { createAuthPopupDirector } from './browser/authPopupDirector'
 import { resolveAuthIdentity } from '../core/browser/authIdentity'
-import { resetBrowserState } from './browser/resetBrowserState'
 import { attachDownloadRouter } from './browser/attachDownloadRouter'
 import { runCliHarness, saveScreenshotFile } from './cli/runCliHarness'
-import { abortActiveRun, attachAssistantAbortHotkey, attachAssistantToWindow, pipelineFor, registerAssistantIpc } from './agent/attachAssistant'
-import { createAssistantPipeline } from './agent/createAssistantPipeline'
-import { createAssistantCommandRunner } from './agent/createAssistantCommandRunner'
-import { createSubagentRuntime, type SubagentRuntime } from './agent/createSubagentRuntime'
-import { registerSubagentIpc } from './browser/subagentPanePool'
+import { attachCommandRunnerToWindow, registerCommandRunnerIpc } from './run/attachCommandRunner'
+import { createDirectCommandRunner } from './run/commandRunner'
 import { resolveDownloadsDir } from './downloadsDir'
 import { resolvePreloadPath } from './preloadPath'
 import { createSettingsStore } from './settings/settingsStore'
 import { registerSettingsIpc } from './settings/attachSettings'
 import { settingsToEnv } from '../core/settings/settings'
 import { layerEnv } from '../core/settings/dotEnv'
-import { resolveRoutingStatus } from '../core/agent/modelRouting'
 import { loadEnvFile } from './envFile'
-import { createUsageStore } from './settings/usageStore'
-import { USAGE_IPC } from '../core/settings/usageIpcChannels'
 import { systemClock } from '../core/ports/clock'
-import {
-  createSessionRuntime,
-  parseSessionContinuityBudgets,
-  type EndedSession,
-  type SessionRuntime,
-} from '../core/session/sessionRuntime'
-import { createSessionIdentitySource } from './session/sessionIdentitySource'
-import { removeRecordedHistory } from './removeRecordedHistory'
-import { DEFAULT_DAILY_SPEND_WARN_USD } from '../core/agent/spendEstimate'
 import { resolvePiperConfig } from './tts/piperConfig'
 import { createMainTts } from './tts/createMainTts'
 import { registerTtsIpc } from './tts/attachTts'
@@ -48,24 +32,6 @@ import { createSpeakingGate } from '../core/tts/speakingGate'
 import { createPerfTracer } from '../core/perf/perfTracer'
 import { browserSubspansEnabled, createBrowserSubspans } from '../core/perf/browserSubspans'
 import { createJsonlPerfSink } from './perf/jsonlPerfSink'
-import { createJsonlRunTraceSink } from './trace/jsonlRunTraceSink'
-import { createFailureScreenshotCapture } from './trace/failureScreenshotFile'
-import { resolveRoleModels } from './agent/roleModels'
-import { createJsonlHostTraceSink } from './trace/jsonlHostTraceSink'
-import { registerDiagnosticsIpc } from './trace/registerDiagnosticsIpc'
-import { purgeLegacyTraceFiles } from './trace/purgeLegacyTraceFiles'
-import {
-  evidenceAcceptedEntry,
-  evidenceBroadcastEntry,
-  sessionEvidenceEndEntry,
-} from '../core/trace/evidenceStoreTrace'
-import { createSessionTraceWriter, type EvidenceRequester } from '../core/trace/runTrace'
-import { createPipelineEventTraceWriter } from '../core/trace/pipelineEventTrace'
-import { createHostTraceWriter } from '../core/trace/hostTrace'
-import { setFaultSink } from '../core/trace/fault'
-import { createFaultRouter } from '../core/trace/faultRouter'
-import { createVisionTraceRouter } from '../core/trace/visionTrace'
-import { hostTraceEnabled, runTraceEnabled } from '../core/trace/traceFlags'
 import { resolveVoiceConfig } from './voice/voiceConfig'
 import { createMainVoice } from './voice/createMainVoice'
 import { createLearnedTermsStore, seedLexiconSet } from './voice/learnedTermsStore'
@@ -85,9 +51,13 @@ import { attachGpuStability, gpuCrashRecordPath } from './attachGpuStability'
 import { attachAppearance } from './attachAppearance'
 import { VOICE_IPC } from '../core/voice/ipcChannels'
 import { createWindowEventPublisher } from './session/windowEventPublisher'
-import { createPipelineAcceptanceGate } from './session/pipelineAcceptance'
-import { attachSessionToWindow, registerSessionIpc } from './session/attachSession'
-import { EVIDENCE_IPC } from '../core/session/evidenceIpcChannels'
+import { createDecisionModelSource } from './decision/createDecisionModel'
+
+// kachow: the browser, the interaction surface the agent drives (the
+// numbered-ref snapshot over CDP), the dashboard and the local voice
+// pipeline — and nothing that generates text. The one model this branch
+// knows is Jev, the Decision Model (`decisionModel()` below); the command
+// seam it will drive is `createDirectCommandRunner`.
 
 // Appliance mode (T11): --kiosk goes fullscreen; the idle timeout reaches the
 // renderer through the preload's launch-config snapshot.
@@ -100,11 +70,11 @@ if (process.env.BINGBONG_USER_DATA_DIR) {
 
 // GPU crash-loop recovery: a crash-looping GPU process ends in a
 // browser-process FATAL ("GPU process isn't usable. Goodbye.") that takes
-// the whole app — window, live Session, in-flight Run — with it, with no
-// close handler left running. Boot with the GPU disabled when asked
-// (BINGBONG_DISABLE_GPU=1 / --disable-gpu) or when the previous run's
-// persisted deaths say it looped; relaunch with the switch when a loop
-// shows up live. Must precede app ready like every appendSwitch.
+// the whole app with it, with no close handler left running. Boot with the
+// GPU disabled when asked (BINGBONG_DISABLE_GPU=1 / --disable-gpu) or when
+// the previous run's persisted deaths say it looped; relaunch with the
+// switch when a loop shows up live. Must precede app ready like every
+// appendSwitch.
 attachGpuStability({
   app,
   argv: process.argv,
@@ -113,29 +83,23 @@ attachGpuStability({
   now: systemClock.now,
 })
 
-// Middle-click autoscroll (the appliance input pass, with ADR 0020 and ADR 0021): Chromium ships autoscroll
-// off by default on Linux — one blink feature switch turns it on for
-// every webContents. It coexists with the pane's middle-click-on-link
-// rule: links still route through the window-open handler (current-pane
-// navigation), autoscroll owns the page area. Must precede app ready.
+// Middle-click autoscroll (ADR 0020, ADR 0021): Chromium ships autoscroll
+// off by default on Linux — one blink feature switch turns it on for every
+// webContents. Must precede app ready.
 app.commandLine.appendSwitch('enable-blink-features', 'MiddleClickAutoscroll')
 
 // Crash evidence (ADR 0017): renderer death leaves a dump instead of
-// vanishing silently; reports stay local — nothing uploads anywhere. The
-// dump directory is resolved at start(), so this must follow the profile
-// switch above — evidence lands beside the profile in use, still before
-// any renderer process exists.
+// vanishing silently; reports stay local — nothing uploads anywhere.
 crashReporter.start({ uploadToServer: false })
 
-// Terminal harness for browser control before voice exists (issue #4): a REPL
-// over the same CDP controller the orchestrator will use, so browser actions
-// are provable without the dashboard's UI.
+// Terminal harness for browser control (issue #4): a REPL over the same CDP
+// controller the runner uses, so browser actions are provable without the
+// dashboard's UI.
 const CLI_HARNESS_FLAG = '--browser-cli'
 const runningCliHarness = process.argv.includes(CLI_HARNESS_FLAG) || process.env.BINGBONG_CLI === '1'
 
-// Dashboard-editable settings (keys, routing, mic, …) live beside the profile.
-// They layer over process.env, so a settings-page save re-routes the LLM on
-// the next command without a restart.
+// Dashboard-editable settings (mic, wake word, voice, zoom, …) live beside
+// the profile.
 const settingsStore = createSettingsStore(join(app.getPath('userData'), 'settings.json'))
 
 // The `.env` next to the app (#76): read once at boot and layered under
@@ -145,130 +109,30 @@ const settingsStore = createSettingsStore(join(app.getPath('userData'), 'setting
 // must never disagree with main's.
 const envFileValues = loadEnvFile(process.env, app.getAppPath())
 
-// Daily spend estimate (warn-only): every orchestrator/subagent turn with
-// reported usage lands here and surfaces on the settings page.
-const usageStore = createUsageStore(join(app.getPath('userData'), 'usage.json'))
-
-// Recorded History is retired (#188, ADR 0031): nothing rendered it, and
-// everything it held the Run Trace holds with more fidelity. The store it
-// leaves behind is Session text nothing can read, so an earlier build's
-// `history.db` is deleted here rather than left in the profile.
-removeRecordedHistory(app.getPath('userData'))
-// The window owns the Session runtime; module-level handle for the paths
-// that need the live Session identity outside a window — the Host Trace
-// stamps it on every record it writes (#184).
-let activeSessionRuntime: SessionRuntime | null = null
-
 // Always-on perf logging (#27): one JSONL span per finished stage under the
 // profile's logs dir — zero configuration, no timers; rolling and the 7-day
 // purge ride startup and writes.
 const logsDir = join(app.getPath('userData'), 'logs')
 const perfTracer = createPerfTracer({ sink: createJsonlPerfSink(logsDir) })
-// The two diagnostic traces (#184, ADR 0031), each behind the flag named
-// for it: diagnosis lives beside the perf logs, and only when a developer
-// asked for it. With a flag unset its sink is never created, so nothing —
-// not a file, not a purge — happens on that family's behalf, and a
-// deployed Kiosk writes neither. The Run Trace holds everything written
-// where a Run identity is in hand (#180–#183); the Host Trace holds
-// everything else.
-// The retired `trace-*.jsonl` family (#184): written unconditionally by
-// the #180–#183 builds and matched by no family's purge since the rename,
-// so it is deleted here rather than left to sit past its window.
-purgeLegacyTraceFiles(logsDir)
-const runTraceSink = runTraceEnabled(currentEnv()) ? createJsonlRunTraceSink(logsDir) : null
-const hostTraceSink = hostTraceEnabled(currentEnv()) ? createJsonlHostTraceSink(logsDir) : null
-// The store and view records (#181): written outside any Run — the
-// store's own acceptance, the answer to each view, the broadcast, and the
-// Session's end — so they are bound to the sink, not to a Run identity.
-// They stay in the Run Trace all the same: each one is about what a Run's
-// accepted checkpoint became, which is the file it has to be read beside.
-const traceSession =
-  runTraceSink === null ? () => {} : createSessionTraceWriter({ sink: runTraceSink, now: systemClock.now })
-// The published stream (#185): one record per PipelineEvent the window
-// publisher lets through, bound to the sink rather than to a Run — the
-// publisher sees Session boundaries and download announcements as well as
-// a Run's own stream, and each record names only what its event carried.
-const tracePipelineEvent =
-  runTraceSink === null
-    ? null
-    : createPipelineEventTraceWriter({
-        sink: runTraceSink,
-        now: systemClock.now,
-        // Which model each role runs under (#191), read as each Run Plan
-        // is published so a routing change between Runs shows in the file.
-        models: () => resolveRoleModels(currentEnv()),
-      })
-// The Host Trace writer (#184): stamps the Active Session on each record,
-// read at the moment of writing — there is no Session to bind up front.
-const traceHost =
-  hostTraceSink === null
-    ? null
-    : createHostTraceWriter({
-        sink: hostTraceSink,
-        now: systemClock.now,
-        activeSessionId: () => activeSessionRuntime?.state().sessionId ?? null,
-      })
-// The fault seam (#184): the one global in core, installed here, at the
-// app edge, once both families are known. Turn id in hand → the Run
-// Trace; otherwise the Host Trace. With both flags off no sink is
-// installed at all — `reportFault` then does not even describe the error
-// it was handed, which is what lets #186 route every swallowed failure in
-// the app through it without a deployed Kiosk paying for one.
-if (runTraceSink !== null || traceHost !== null) {
-  setFaultSink(createFaultRouter({ runTrace: runTraceSink, hostTrace: traceHost, now: systemClock.now }))
-}
-// The vision records (#186): the fault route again, for the seam that is
-// not a family of its own — a Look inside a Run joins that Run's
-// decisions, a vision call outside one lands in the Host Trace. Threaded
-// as a dependency rather than installed globally: every vision call site
-// is a tool with a ToolContext already in hand.
-const traceVision =
-  runTraceSink === null && traceHost === null
-    ? null
-    : createVisionTraceRouter({ runTrace: runTraceSink, hostTrace: traceHost, now: systemClock.now })
 
 // Learned Terms ledger (ADR 0022): the Bias Lexicon's runtime-grown half —
-// one app-global lexicon.json beside the settings file. The pipeline's
-// Mishear proposals grow it autonomously (recurrence-gated); the settings
-// page is its one human surface. Fails closed to seed-only on corruption.
-// Created after the traces so a change to the lexicon can be recorded
-// (#186) instead of printed — the two `console.log` lines it used to
-// leave were the only account anyone had of the lexicon growing.
-const learnedTermsStore = createLearnedTermsStore(join(app.getPath('userData'), 'lexicon.json'), seedLexiconSet(), {
-  ...(traceHost !== null ? { hostTrace: traceHost } : {}),
-})
+// one app-global lexicon.json beside the settings file. The settings page
+// is its human surface. Fails closed to seed-only on corruption.
+const learnedTermsStore = createLearnedTermsStore(join(app.getPath('userData'), 'lexicon.json'), seedLexiconSet())
 registerLearnedTermsIpc(learnedTermsStore)
 
 // Verbose browser sub-spans (#32), opt-in behind the established env-flag
-// pattern: one shared channel between the pipeline's tool gate (which opens
-// the turn scope) and the main pane's controller (which emits). Flag off —
-// the channel stays wired but writes nothing, so the default log keeps
-// whole browser actions as plain tool spans, byte-identical.
+// pattern. Flag off — the channel stays wired but writes nothing.
 const browserSubspans = createBrowserSubspans({ tracer: perfTracer, enabled: browserSubspansEnabled(currentEnv()) })
 
 // Opt-in utterance audio dumps (#34): BINGBONG_AUDIO_DUMP=1 writes each
 // detected utterance under <userData>/audio-dumps as a 16 kHz mono WAV —
-// exactly the artifact shape the offline STT benchmark replays. Off by
-// default (a benchmarking tap, not a recorder); the dumper stays wired but
-// touches nothing until an utterance arrives with the flag on.
+// exactly the artifact shape the offline STT benchmark replays.
 const utteranceDumper = createUtteranceDumper({
   dir: join(app.getPath('userData'), 'audio-dumps'),
   writer: fsUtteranceDumpWriter,
   enabled: audioDumpEnabled(currentEnv()),
 })
-
-// Subagent runtime (T12) is per-window: panes attach to the window's content
-// view. The IPC layer resolves the window from the event sender.
-const subagentRuntimes = new WeakMap<BrowserWindow, SubagentRuntime>()
-
-function dailySpendWarnUsd(): number {
-  const raw = Number(currentEnv().BINGBONG_DAILY_SPEND_WARN_USD)
-  return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_DAILY_SPEND_WARN_USD
-}
-
-// Session Window (default 30 min, ADR 0014): resolved once with the launch
-// config — BINGBONG_SESSION_WINDOW_MS is the one e2e knob (the lapse flows
-// can't wait out real minutes), driving only live runtime state.
 
 // Piper TTS: binary, voices dir, and base voice come from env (defaults
 // suffice for a standard install); the settings page's voice wins per line.
@@ -276,18 +140,21 @@ const piperConfig = resolvePiperConfig(process.env, app.getPath('userData'))
 
 // Ears (T9): Silero VAD + streaming Moonshine, shared by every window so
 // the models load once. Scripted doubles ride the same seam for e2e. The
-// STT tier is the settings snapshot at startup (#63) — switching the
-// Setting applies at the next start.
+// STT tier is the settings snapshot at startup (#63).
 const voiceConfig = resolveVoiceConfig(process.env, app.getPath('userData'), settingsStore.get().sttModel)
 
 // Wake word: "bing bong" plus the "abort" interrupt head via the
-// openWakeWord ONNX stack ("hold on" is scored but unwired, ADR 0024); the
-// Python sidecar is the config-only fallback
+// openWakeWord ONNX stack; the Python sidecar is the config-only fallback
 // (BINGBONG_WAKE_ENGINE=python, wake head only).
 const wakeConfig = resolveWakeConfig(process.env, app.getPath('userData'), app.getAppPath())
 const wakeDetector = createMainWake(wakeConfig)
 const chimeWav = createChimeWav()
 const chimePlayer = createAplayPlayer()
+
+// The Decision Model (Jev, ADR 0068): resolved from the live env on each
+// read, kept while its config is unchanged. Null when no key is configured.
+// Nothing asks it yet on this branch; the runner that will is the next step.
+export const decisionModel = createDecisionModelSource(currentEnv)
 
 function currentEnv(): Record<string, string | undefined> {
   return { ...layerEnv(envFileValues, process.env), ...settingsToEnv(settingsStore.get()) }
@@ -337,16 +204,13 @@ async function createWindow(): Promise<BrowserWindow> {
 
   // A pane per window; the persistent `persist:browse` session partition is what
   // keeps logins alive across windows and restarts. One CDP controller is
-  // shared by everything that drives the pane (CLI harness, assistant) —
+  // shared by everything that drives the pane (CLI harness, runner) —
   // webContents.debugger allows a single attachment. The activity tracker
   // marks its download-capable verbs, so only agent-initiated downloads get
   // routed; manual ones keep the OS save dialog.
   const pane = createBrowserPane({ getZoomPercent: () => settingsStore.get().webZoomPercent })
   // The feed panel overlay (#45) stacks above the browser pane — attached
-  // above it before the first frame. Main's state
-  // fold rides the same pipeline events the dashboard receives; the fold's
-  // width default matches the launch mode (#65) until the dashboard pushes
-  // the persisted preference.
+  // above it before the first frame.
   const feedPanel = attachFeedPanelOverlayToWindow(win, {
     preloadDir: join(__dirname, '../preload'),
     defaultWidth: defaultFeedPanelWidth(),
@@ -357,63 +221,44 @@ async function createWindow(): Promise<BrowserWindow> {
   const sendToRenderer = (channel: string, payload: unknown): void => {
     if (!win.isDestroyed() && !win.webContents.isDestroyed()) win.webContents.send(channel, payload)
   }
-  let sessionRuntime: SessionRuntime | null = null
-  let lastEndedSession: EndedSession | null = null
-  // The one acceptance predicate every pipeline-level consumer shares (#97):
-  // late subagent, browser, or Feed work from an ended or foreign Session
-  // is rejected before it can render, record, or speak.
-  const acceptPipelineEvent = createPipelineAcceptanceGate({
-    liveSession: () => sessionRuntime?.state(),
-    lastEndedSession: () => lastEndedSession,
-  })
   const eventPublisher = createWindowEventPublisher({
-    acceptPipelineEvent,
-    ...(tracePipelineEvent !== null ? { tracePipelineEvent } : {}),
     sendPipelineEvent: (event) => sendToRenderer(PIPELINE_IPC.event, event),
     sendVoiceState: (state) => sendToRenderer(VOICE_IPC.stateChanged, state),
     sendVoiceHeard: (heard) => sendToRenderer(VOICE_IPC.heard, heard),
     sendVoiceError: (error) => sendToRenderer(VOICE_IPC.error, error),
     sendBrowserState: (state) => sendToRenderer(BROWSER_IPC.stateChanged, state),
-    sendSubmissionFeedback: (feedback) => sendToRenderer(PIPELINE_IPC.submissionFeedback, feedback),
     observeVoicePipelineEvent: (event) => voiceSession.handlePipelineEvent(event),
     overlayPipelineEvent: (event) => feedPanel.handlePipelineEvent(event),
     overlayVoiceHeard: (heard) => feedPanel.forwardHeard(heard),
     overlayVoiceError: (error) => feedPanel.forwardVoiceError(error),
-    overlaySubmissionFeedback: (feedback) => feedPanel.forwardSubmissionFeedback(feedback),
   })
   attachBrowserPaneToWindow(pane, win, eventPublisher)
   feedPanel.bringToTop()
   const agentActivity = createAgentActivityTracker()
   // Auth popups (ADR 0018): while a sign-in popup window is open, browser
-  // tools route to it — the flow is voice-interactable. The CLI harness and
-  // the assistant share this routed controller.
+  // actions route to it. The CLI harness and the runner share this routed
+  // controller.
   const authPopups = createAuthPopupDirector(pane, {
     createController: (webContents) => createPaneBrowserController({ view: { webContents } }),
   })
-  // The shared browsing resource, in custody (#205, ADR 0038). Held here,
-  // at the resource itself, because everything that reaches the pane must
-  // reach it through the same handle: the assistant, the CLI harness, and
-  // the failure screenshot alike. `controller` below is the guarded one —
-  // the raw controller is never named again, so an action abandoned by
-  // Stop cannot be worked around by a caller that kept its own reference.
+  // The shared browsing resource, in custody (#205, ADR 0038): everything
+  // that reaches the pane reaches it through the same handle — the runner,
+  // the CLI harness — so an action abandoned by Stop cannot be worked
+  // around by a caller that kept its own reference.
   const paneCustody = holdBrowserCustody(
     withAgentActivity(authPopups.route(createPaneBrowserController(pane, { subspans: browserSubspans })), agentActivity),
   )
   const controller: BrowserController & VisualGroundingController = paneCustody.controller
 
   const downloadsDir = resolveDownloadsDir(process.env, app.getPath('downloads'))
-  // Spoken output (T8), wrapped in a speaking gate (T9): the pipeline,
-  // download announcements and the confirmation window share it, so the
-  // 12 s voice window opens only after the prompt finishes speaking.
+  // Spoken output (T8), wrapped in a speaking gate (T9): download
+  // announcements and whatever speaks next share it.
   const speakingGate = createSpeakingGate(
     createMainTts({
       config: piperConfig,
       pane: pane.view.webContents,
       getVoiceId: () => settingsStore.get().ttsVoice.trim() || piperConfig.voiceId,
       tracer: perfTracer,
-      // The spoken-line records (#186): the exact text piper is given, and
-      // every line a barge-in dropped.
-      ...(traceHost !== null ? { hostTrace: traceHost } : {}),
     }),
   )
   attachDownloadRouter(pane.session, {
@@ -425,60 +270,11 @@ async function createWindow(): Promise<BrowserWindow> {
 
   if (runningCliHarness) startCliHarness(controller, downloadsDir)
 
-  // Subagents (T12): tab machine + pane pool + workhorse manager behind the
-  // orchestrator's spawn/cancel/results tools. Events (live cards, spoken
-  // announcements) ride the same pipeline channel as everything else. The
-  // surface is Session-owned (#97): spawns stamp the live Session on the
-  // agent, and every event — TTS lines included — passes the window's
-  // acceptance gate, so an ended Session's late work neither renders nor
-  // speaks, whatever Session is live by then.
-  const subagentRuntime = createSubagentRuntime({
-    win,
-    session: pane.session,
-    downloadsDir,
-    getEnv: currentEnv,
-    tts: speakingGate.tts,
-    emit: (event) => eventPublisher.publish({ source: 'subagent', event }),
-    owner: () => {
-      const state = sessionRuntime?.state()
-      return state?.sessionId != null
-        ? { sessionId: state.sessionId, generation: state.generation }
-        : null
-    },
-    canPublish: acceptPipelineEvent,
-    onUsage: (record) => usageStore.record(record.role, record.model, record.usage),
-    tracer: perfTracer,
-    onEscape: () => {
-      const activePipeline = pipelineFor(win)
-      return activePipeline ? abortActiveRun(activePipeline) : false
-    },
-    // A subagent pane reopened into the main browsing area rises above the
-    // main pane — the feed overlay re-tops itself so the panel stays
-    // reachable above it. Parked thumbnail views are exempt (ADR 0004).
-    onViewAdded: () => feedPanel.bringToTop(),
-    // Subagent panes inherit the web-zoom setting (#53).
-    getZoomPercent: () => settingsStore.get().webZoomPercent,
-    // The cards' Reopen control moves a subagent pane into the main
-    // browsing area (#57) — it mirrors the main pane's rect from then on.
-    mainPane: pane,
-    // The Held Page Notice (#240, ADR 0051): a browsing Subagent reads the
-    // same live Session Evidence store the orchestrator does, per call.
-    heldObservations: (url) => sessionRuntime?.evidenceStore()?.heldObservations(url) ?? [],
-  })
-  subagentRuntimes.set(win, subagentRuntime)
-  win.on('closed', () => {
-    subagentRuntime.dispose()
-    subagentRuntimes.delete(win)
-  })
-
   const voice = await createMainVoice(voiceConfig, () => learnedTermsStore.biasPhrases())
-  // Voice before assistant: the pipeline's event tap feeds the session's
-  // confirmation window, so the session must exist when events start.
   const voiceSession = attachVoiceToWindow(win, {
     vad: voice.vad,
     transcriber: voice.transcriber,
     tts: speakingGate.tts,
-    ttsIdle: speakingGate,
     wake: wakeDetector
       ? {
           detector: wakeDetector,
@@ -500,215 +296,26 @@ async function createWindow(): Promise<BrowserWindow> {
     publisher: eventPublisher,
     tracer: perfTracer,
     dumper: utteranceDumper,
-    // The ear's records (#186): wake detections, utterance endpoints and
-    // transcripts, with the live bias set the decode was given so a
-    // mishearing can be read against it.
-    ...(traceHost !== null ? { hostTrace: traceHost } : {}),
-    biasPhrases: () => learnedTermsStore.biasPhrases(),
-    onExtendSession: (sessionId, generation) => {
-      sessionRuntime?.extend({ sessionId, generation })
-    },
-    onDeclineSession: (sessionId, generation) => {
-      sessionRuntime?.decline({ sessionId, generation })
-    },
   })
-  // Model-invoked Session Reset (#99): the pipeline consumes the resetting
-  // run at the new_session boundary; this seam ends the live Session —
-  // the Session evidence end record, Browser State, Subagents, Feed
-  // cleanup — before the command runner admits the original command as
-  // fresh work.
-  const pipeline = createAssistantPipeline({
-    browser: paneCustody,
-    env: currentEnv(),
-    getEnv: currentEnv,
-    tts: speakingGate.tts,
-    subagentTools: subagentRuntime.tools,
-    subagentControl: subagentRuntime,
-    // Worker observations (#123): completed reports' hidden provenance —
-    // what kind "subagent" Evidence Checkpoints ground against.
-    subagentObservations: (agentId) => subagentRuntime.observationsFor(agentId),
-    // The addresses their findings reference (#301), for the Run Trace.
-    subagentFindingUrls: (agentId) => subagentRuntime.findingUrlsFor(agentId),
-    // Delegated Pages (#273, ADR 0065): the pages a Run's Browse Subagents
-    // were sent to or landed on, for the Notice on a call there.
-    delegatedPages: (url, turnId) => subagentRuntime.delegatedPages(url, turnId),
-    // Panel voice tools (#64): the same overlay seam the dashboard buttons
-    // and the shortcut drive.
-    panel: feedPanel,
-    // Settings voice tool (#67): the same store the settings page drives,
-    // so a voice change persists and broadcasts exactly like a typed one.
-    settings: settingsStore,
-    // App voice tool (#67): quit/reload behind the confirmation gate, acks
-    // spoken through the same speaking gate as every other line.
-    app: {
-      quit: () => {
-        app.quit()
-        return 'quitting'
-      },
-      reload: () => {
-        if (win.isDestroyed()) return 'unavailable'
-        win.webContents.reload()
-        return 'reloading'
-      },
-      speakAck: async (text, turnId) => {
-        // A dead speaker never blocks a confirmed action.
-        await speakingGate.tts.speak(text, turnId).catch(() => {})
-      },
-    },
-    // Learned Terms (ADR 0022): the run's transcript feeds the LRU order;
-    // done runs' Mishear proposals land in the ledger at the commit tail.
-    learnedTerms: {
-      applyProposals: (proposals) => learnedTermsStore.applyProposals(proposals),
-      observeTranscript: (text) => learnedTermsStore.observeTranscript(text),
-    },
-    // The prompt's learned-vocabulary block reads the live ledger, so the
-    // model never re-proposes a term it can already hear.
-    getLearnedTerms: () => learnedTermsStore.list(),
-    onLlmUsage: (record) => usageStore.record(record.role, record.model, record.usage),
-    tracer: perfTracer,
-    // The vision records (#186): a Look, an auto-vision Describe or a
-    // ground_visual Locate, routed by the ids the tool had in hand.
-    ...(traceVision !== null ? { traceVision } : {}),
-    browserSubspans,
-    // Progress detail (#43): mid-await signals ride the same channel; the
-    // transcript projection maps them to no Feed entry.
-    emitDetail: (event) => eventPublisher.publish({ source: 'detail', event }),
+
+  // The command seam: typed and spoken commands land here. Direct browser
+  // commands for now; the Jev-driven agent replaces this behind the same
+  // interface.
+  const runner = createDirectCommandRunner({
+    browser: controller,
+    publish: (event) => eventPublisher.publish({ source: 'run', event }),
+    now: systemClock.now,
+    mintTurnId: () => perfTracer.mintTurnId(),
+    screenshotDir: () => downloadsDir,
+    saveScreenshot: saveScreenshotFile,
   })
-  sessionRuntime = createSessionRuntime({
-    clock: systemClock,
-    identities: createSessionIdentitySource(),
-    continuityModel: () => currentEnv().BINGBONG_LLM_SCRIPT ? 'scripted' : currentEnv().BINGBONG_ORCHESTRATOR_MODEL ?? 'unconfigured',
-    continuityBudgets: parseSessionContinuityBudgets(currentEnv().BINGBONG_CONTINUITY_BUDGETS),
-    sessionWindowMs: launchConfig.sessionWindowMs,
-    warningLeadMs: launchConfig.sessionWarningMs,
-    onExpiring: (expiring) => {
-      void speakingGate.tts.speak(
-        'Your session is about to expire. Say yes to keep it, or no to end it now.',
-      ).catch(() => {})
-      eventPublisher.publish({
-        source: 'lifecycle',
-        event: {
-          type: 'session_expiring',
-          expiresAt: expiring.expiresAt,
-          at: expiring.at,
-          sessionId: expiring.sessionId,
-          sessionGeneration: expiring.generation,
-        },
-      })
-    },
-    onExtended: (extended) => {
-      eventPublisher.publish({
-        source: 'lifecycle',
-        event: {
-          type: 'session_extended',
-          expiresAt: extended.expiresAt,
-          at: extended.at,
-          sessionId: extended.sessionId,
-          sessionGeneration: extended.generation,
-        },
-      })
-    },
-    onEnded: (ended) => {
-      lastEndedSession = ended
-      // What Session Evidence held when it ended, and why (#181): the
-      // store is already cleared, so the ended Session's own counts are
-      // the last place the answer exists.
-      traceSession(() => sessionEvidenceEndEntry(ended))
-      // Every end reason discards Browser State through the same reusable
-      // cleanup (#96); the runtime fires onEnded exactly once per Session.
-      resetBrowserState(pane, subagentRuntime)
-      eventPublisher.publish({
-        source: 'lifecycle',
-        event: {
-          type: 'session_ended',
-          reason: ended.reason,
-          at: ended.endedAt,
-          sessionId: ended.sessionId,
-          sessionGeneration: ended.generation,
-        },
-      })
-    },
-    // The Evidence Browser's change signal (#139): an accepted Observation
-    // notifies both Session-bearing renderers — dashboard and feed panel
-    // overlay — with identity only; each responds by reading the complete
-    // authoritative snapshot, so notifications can never diverge from it.
-    onEvidenceChanged: (change) => {
-      // Which renderers were alive to receive it (#181): a store that
-      // changed and a view that never heard about it is the failure this
-      // record exists to name, so the list is built from the same checks
-      // that decide whether to send — and a signal into a dead window is
-      // recorded as the empty list it was, not left out of the file.
-      const reached: EvidenceRequester[] = []
-      if (!win.isDestroyed()) {
-        if (!win.webContents.isDestroyed()) {
-          win.webContents.send(EVIDENCE_IPC.changed, change)
-          reached.push('dashboard')
-        }
-        const overlayContents = feedPanel.contents()
-        if (overlayContents !== null && !overlayContents.isDestroyed()) {
-          overlayContents.send(EVIDENCE_IPC.changed, change)
-          reached.push('feed_panel')
-        }
-      }
-      traceSession(() => evidenceBroadcastEntry({ change, renderers: reached }))
-    },
-    // What actually reached the store (#181): counts and the merge — the
-    // detail the change signal deliberately withholds from the views, kept
-    // for diagnosis only.
-    onEvidenceAccepted: (acceptance) => traceSession(() => evidenceAcceptedEntry(acceptance)),
-  })
-  // Renderer session re-adoption (ADR 0017): both session-bearing pages —
-  // dashboard and feed panel overlay — re-adopt the live Session on any
-  // finished load, and a gone render process reloads into recovery.
-  attachSessionToWindow(win, sessionRuntime, { overlayContents: feedPanel.contents })
-  activeSessionRuntime = sessionRuntime
-  const commandRunner = createAssistantCommandRunner({
-    pipeline,
-    runtime: sessionRuntime,
-    clock: systemClock,
-    onSessionReset: () => {
-      // The resetting run has fully unwound; end its Session so the
-      // replacement admission mints a fresh identity (generation advances).
-      sessionRuntime?.end('reset')
-    },
-    onSessionStarted: (admission) => {
-      lastEndedSession = null
-      eventPublisher.publish({
-        source: 'lifecycle',
-        event: {
-          type: 'session_started',
-          at: admission.acceptedAt,
-          sessionId: admission.sessionId,
-          sessionGeneration: admission.generation,
-        },
-      })
-    },
-    createRunPublisher: (ownership) => eventPublisher.run(ownership),
-    publishFeedback: (feedback) => eventPublisher.publish({ source: 'submission-feedback', feedback }),
-    canPublish: () => !win.isDestroyed(),
-    tracer: perfTracer,
-    ...(runTraceSink !== null
-      ? {
-          runTrace: runTraceSink,
-          // The failure screenshot (#191): the visible tab, beside the
-          // trace, only where there is a trace for the record to join.
-          captureFailureScreenshot: createFailureScreenshotCapture({
-            logsDir,
-            screenshot: () => controller.screenshot(),
-          }),
-        }
-      : {}),
-  })
-  attachAssistantToWindow(pipeline, win, commandRunner)
-  win.on('close', () => sessionRuntime?.end('app_closed'))
-  const detachPaneAbort = attachAssistantAbortHotkey(pipeline, pane.view.webContents)
-  win.on('closed', detachPaneAbort)
-  // The session store dies with its window (#73): a pending Lapse boundary
-  // must never fire into the channels a closed window left behind.
-  win.on('closed', () => {
-    sessionRuntime?.dispose()
-    if (activeSessionRuntime === sessionRuntime) activeSessionRuntime = null
-  })
+  attachCommandRunnerToWindow(runner, win)
+  // Escape aborts from the pane too, where React never sees the key.
+  const onPaneInput = (event: Electron.Event, input: Electron.Input): void => {
+    if (input.type === 'keyDown' && input.key === 'Escape' && runner.abort()) event.preventDefault()
+  }
+  pane.view.webContents.on('before-input-event', onPaneInput)
+  win.on('closed', () => pane.view.webContents.removeListener('before-input-event', onPaneInput))
 
   if (process.env.ELECTRON_RENDERER_URL) {
     void win.loadURL(process.env.ELECTRON_RENDERER_URL)
@@ -721,22 +328,11 @@ async function createWindow(): Promise<BrowserWindow> {
 
 app.whenReady().then(async () => {
   registerBrowserIpc()
-  registerAssistantIpc()
-  registerSubagentIpc((event) => {
-    const win = BrowserWindow.fromWebContents(event.sender)
-    return win ? subagentRuntimes.get(win) : undefined
-  })
-  registerSettingsIpc(settingsStore, () => resolveRoutingStatus(currentEnv()))
+  registerCommandRunnerIpc()
+  registerSettingsIpc(settingsStore)
   registerFeedPanelIpc()
-  ipcMain.handle(USAGE_IPC.getToday, () => usageStore.summary(dailySpendWarnUsd()))
   registerTtsIpc({ voicesDir: () => piperConfig.voicesDir })
   registerVoiceIpc()
-  // The renderer's own signals (#187): registered whatever the flag says,
-  // because the preload always exposes the call — with the Host Trace off
-  // the handler drops every report instead of the page discovering there
-  // is nothing at the other end.
-  registerDiagnosticsIpc({ hostTrace: traceHost })
-  registerSessionIpc({ trace: traceSession })
 
   // Auth-host identity rewrite (ADR 0018): before the adblocker so both own
   // webRequest listeners from the first request. Disabling the adblocker
@@ -747,11 +343,9 @@ app.whenReady().then(async () => {
   )
 
   // Embedder-level adblocker (issue #21): enabled before the first window so
-  // every view on the persistent browse partition (main pane + subagent
-  // tabs) is covered from its first navigation. The await is a deliberate
-  // tradeoff — a cold cache delays the first window by one list download
-  // (bounded fetches; failures degrade to no blocking) so "on at startup"
-  // is never "racing the first navigation".
+  // the pane is covered from its first navigation. The await is a
+  // deliberate tradeoff — a cold cache delays the first window by one list
+  // download (bounded fetches; failures degrade to no blocking).
   const adblock = attachAdblock({
     session: session.fromPartition(BROWSER_PARTITION, { cache: true }),
     settingsStore,
@@ -761,17 +355,14 @@ app.whenReady().then(async () => {
   })
 
   // The measurement access guard (#224): file: loads refused on the
-  // browse partition, only when a measured capture asked for it. Boot
-  // scoped like the adblocker — process env, not the env file.
+  // browse partition, only when a measured capture asked for it.
   const accessGuard = attachMeasurementAccessGuard({
     session: session.fromPartition(BROWSER_PARTITION, { cache: true }),
     env: process.env,
   })
 
   // Appearance (ADR 0020): resolve the tri-state Setting through
-  // nativeTheme before the first window — renderers and pages read the
-  // resolved prefers-color-scheme from their first paint, and the native
-  // pane backgrounds repaint on every change.
+  // nativeTheme before the first window.
   const detachAppearance = attachAppearance(settingsStore)
   app.on('will-quit', () => {
     adblock.dispose()
@@ -793,5 +384,3 @@ app.whenReady().then(async () => {
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
-
-export {}

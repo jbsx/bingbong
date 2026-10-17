@@ -1,7 +1,5 @@
-// One place that renders a tool call as a compact human-readable line — the
-// dashboard transcript and the subagent cards' progress both use it.
-
-import { scanPartialJsonString } from '../agent/answerContract'
+// One place that renders a browser action as a compact human-readable line
+// for the Feed.
 
 export function describeToolAction(name: string, args: Record<string, unknown>): string {
   switch (name) {
@@ -13,158 +11,17 @@ export function describeToolAction(name: string, args: Record<string, unknown>):
       return `type "${String(args.text ?? '')}" into [${String(args.ref ?? '?')}]`
     case 'scroll':
       return `scroll ${String(args.direction ?? '')}`
-    case 'media_control':
-      return `media ${String(args.action ?? '')}${args.offset !== undefined ? ` ${String(args.offset)}s` : ''}`
+    case 'press':
+      return `press ${String(args.key ?? '')}${typeof args.times === 'number' && args.times > 1 ? ` ×${args.times}` : ''}`
     case 'read_page':
-      return 'read page'
+      return args.part !== undefined ? `read page (part ${String(args.part)})` : 'read page'
     case 'screenshot':
       return 'screenshot'
-    case 'ground_visual':
-      return `visually locate "${String(args.target ?? '')}"`
-    case 'look':
-      return 'look at page'
     case 'back':
       return 'go back'
-    case 'go_forward':
+    case 'forward':
       return 'go forward'
-    case 'spawn_agent': {
-      const kind = typeof args.kind === 'string' && args.kind !== '' ? `${args.kind} ` : ''
-      return `spawn ${kind}agent: ${String(args.task ?? '')}`
-    }
-    case 'cancel_agent':
-      return `cancel ${String(args.agent_id ?? args.agentId ?? '')}`.trim()
-    case 'agent_results':
-      return `collect results${args.wait === true ? ' (waiting)' : ''}`
-    case 'ask_user':
-      return `ask you: ${String(args.question ?? '')}`
-    case 'report_run_plan':
-      return `plan ${String(args.effort_tier ?? '')}: ${String(args.headline ?? args.objective ?? '')}`.trim()
-    case 'record_evidence':
-      return `record evidence: ${String(args.observation ?? '')}`.trim()
-    case 'toggle_panel':
-      return 'toggle panel'
-    case 'set_panel_mode':
-      return `panel mode ${String(args.mode ?? '')}`.trim()
-    case 'set_panel_width': {
-      // Relative grammar only (#71): the line names the move, never a pixel
-      // count — mirrors what the tool accepts.
-      const steps = typeof args.steps === 'number' && args.steps > 1 ? ` ×${args.steps}` : ''
-      const move =
-        args.direction !== undefined ? String(args.direction) : String(args.preset ?? '').replaceAll('_', ' ')
-      return `panel width ${move}${steps}`.trim()
-    }
-    case 'set_setting': {
-      const setting = String(args.setting ?? '')
-      const role = args.role !== undefined ? ` (${String(args.role)})` : ''
-      const value = args.number_value ?? args.string_value ?? args.boolean_value
-      return `set ${setting}${role} to ${String(value ?? '')}`.trim()
-    }
-    case 'app_control':
-      return `app ${String(args.action ?? '')}`.trim()
     default:
-      return `${name} ${JSON.stringify(args)}`
+      return Object.keys(args).length > 0 ? `${name} ${JSON.stringify(args)}` : name
   }
-}
-
-/**
- * Tool-call intent (#48): what the model is about to do, read from the
- * partial arguments JSON while they are still streaming — before the tool
- * executes. Names the action and its target argument value ("clicking
- * 'Search'…"); a still-open value shows everything received so far, so the
- * phrase grows as the arguments arrive. Verbs are tool-specific, never
- * provider-specific.
- */
-export function describeToolIntent(name: string, args: string): string {
-  switch (name) {
-    case 'navigate':
-      return withTarget('opening', args, 'url')
-    case 'click':
-      return withTarget('clicking', args, 'ref')
-    case 'type':
-      return withTarget('typing', args, 'text')
-    case 'scroll':
-      return withTarget('scrolling', args, 'direction')
-    case 'media_control':
-      return withTarget('media', args, 'action')
-    case 'ground_visual':
-      return withTarget('visually locating', args, 'target')
-    case 'ask_user':
-      return withTarget('asking you', args, 'question')
-    case 'report_run_plan':
-      return withTarget('planning', args, 'headline', 'objective')
-    case 'record_evidence':
-      return withTarget('recording evidence', args, 'observation')
-    case 'spawn_agent': {
-      const kind = partialTargetValue(args, 'kind')
-      const verb = `spawning${kind && kind.value !== '' && kind.closed ? ` ${kind.value}` : ''} agent:`
-      return withTarget(verb, args, 'task')
-    }
-    case 'cancel_agent':
-      return withTarget('cancelling agent', args, 'agent_id', 'agentId')
-    case 'read_page':
-      return 'reading the page…'
-    case 'screenshot':
-      return 'taking a screenshot…'
-    case 'look':
-      return 'looking at the page…'
-    case 'back':
-      return 'going back…'
-    case 'go_forward':
-      return 'going forward…'
-    case 'agent_results':
-      return 'collecting results…'
-    case 'new_session':
-      return 'starting a new session…'
-    case 'toggle_panel':
-      return 'toggling the panel…'
-    case 'set_panel_mode':
-      return withTarget('setting panel mode', args, 'mode')
-    case 'set_panel_width':
-      return withTarget('setting panel width', args, 'direction', 'preset')
-    case 'set_setting':
-      return withTarget('setting', args, 'setting')
-    case 'app_control':
-      return withTarget('app', args, 'action')
-    default:
-      return `calling ${name}…`
-  }
-}
-
-interface StreamedTarget {
-  value: string
-  /** Whether the value's terminator arrived — an open value keeps growing. */
-  closed: boolean
-}
-
-/**
- * The value streamed so far for `key` in a partial tool-arguments JSON
- * string. String values unescape as their escapes close (the shared
- * scanner); numbers and booleans read raw until `,`/`}` ends them. Null
- * when the key has not arrived; empty when it has but its value has not
- * started.
- */
-function partialTargetValue(args: string, key: string): StreamedTarget | null {
-  const match = new RegExp(`"${escapeRegExp(key)}"\\s*:\\s*`).exec(args)
-  if (!match) return null
-  const openQuote = match.index + match[0].length
-  const rest = args.slice(openQuote)
-  if (rest.startsWith('"')) return scanPartialJsonString(args, openQuote)
-  if (rest.startsWith('{') || rest.startsWith('[')) return { value: '', closed: false }
-  const bare = /^[^,}\s]+/.exec(rest)
-  if (!bare) return { value: '', closed: false }
-  const after = rest.slice(bare[0]!.length)
-  return { value: bare[0]!, closed: after.startsWith(',') || after.startsWith('}') }
-}
-
-function withTarget(verb: string, args: string, ...keys: string[]): string {
-  for (const key of keys) {
-    const target = partialTargetValue(args, key)
-    if (!target || target.value === '') continue
-    return target.closed ? `${verb} '${target.value}'…` : `${verb} '${target.value}…'`
-  }
-  return `${verb}…`
-}
-
-function escapeRegExp(text: string): string {
-  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }

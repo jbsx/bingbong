@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { CollectedTextBlock } from '../src/core/browser/pageText.ts'
 import { COLLECT_PAGE_SCRIPT } from '../src/main/browser/collectPageScript.ts'
-import { canDriveChrome, serveFixtures, type FixtureChrome } from './live/headlessChrome.ts'
+import { canDriveChrome, serveFixtures, type FixtureChrome } from './headlessChrome.ts'
 
 // The collect script itself, run in a real headless Chrome over pages shaped
 // like the captures, for the rules that need what only a browser supplies —

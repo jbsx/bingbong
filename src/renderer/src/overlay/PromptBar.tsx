@@ -1,30 +1,22 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 
 /**
  * The Prompt Bar: the one typed-input surface, living in the feed panel's
- * footer. The verb follows the run-live signal at submit time — "run"
- * starts a command when none is live, "steer" directs the live run through
- * the same seam as spoken steering (#46). Never disabled, and Enter clears
- * the field at once — the submit IPC resolves only when the whole Run
- * finishes, so waiting on it left the text sitting there for the Run's
- * duration. A false return from main (busy-rejected, an aborting run)
- * restores the draft instead of silently dropping it (ADR 0011) — unless
- * new typing landed meanwhile, which is never clobbered. The draft
- * survives verb flips mid-typing.
+ * footer. Enter clears the field at once — the submit IPC resolves only
+ * when the whole run finishes, so waiting on it would leave the text
+ * sitting there for the run's duration. A false return from main (a run
+ * is already active, or the text was blank) restores the draft instead of
+ * silently dropping it (ADR 0011) — unless new typing landed meanwhile,
+ * which is never clobbered.
  *
- * The form reports an outstanding initial submit as `aria-busy` (#224):
- * the submit IPC settles only after the whole Run unwinds — later than
- * the Run's `done` event in some cases — and that settlement is the one
- * signal a typed follow-up's readiness has to read. Steering rides the
- * same input but never touches the flag: a steer settles per directive,
- * not per Run, and must not clear or set what the initial submit owns.
+ * The form reports an outstanding submit as `aria-busy`: the submit IPC
+ * settles only after the whole run unwinds, and that settlement is the
+ * one signal a typed follow-up's readiness has to read.
  */
 export function PromptBar({ runActive }: { runActive: boolean }) {
   const [draft, setDraft] = useState('')
   const [feedback, setFeedback] = useState('')
   const [pendingSubmits, setPendingSubmits] = useState(0)
-
-  useEffect(() => window.bingbong.assistant.onSubmissionFeedback((item) => setFeedback(item.message)), [])
 
   const submitCommand = async (text: string): Promise<boolean> => {
     setPendingSubmits((count) => count + 1)
@@ -40,8 +32,9 @@ export function PromptBar({ runActive }: { runActive: boolean }) {
     if (text === '') return
     setDraft('')
     setFeedback('')
-    const taken = runActive ? await window.bingbong.assistant.steer(text) : await submitCommand(text)
+    const taken = await submitCommand(text)
     if (!taken) {
+      setFeedback('Busy — a command is still running. Stop it or wait.')
       setDraft((current) => (current === '' ? text : current))
     }
   }
@@ -59,9 +52,7 @@ export function PromptBar({ runActive }: { runActive: boolean }) {
         <input
           className="prompt-input"
           type="text"
-          placeholder={
-            runActive ? 'steer — "use Paris instead"' : 'Type a command — "open youtube and play the first MKBHD result"'
-          }
+          placeholder={runActive ? 'a command is running — Stop to interrupt' : 'Type a command — "navigate youtube.com", "read", "click 7"'}
           aria-label="Prompt bar"
           aria-describedby={feedback ? 'submission-feedback' : undefined}
           autoComplete="off"
@@ -70,7 +61,7 @@ export function PromptBar({ runActive }: { runActive: boolean }) {
           onChange={(event) => setDraft(event.target.value)}
         />
         <button type="submit" className="prompt-verb" disabled={draft.trim() === ''}>
-          {runActive ? 'steer' : 'run'}
+          run
         </button>
       </div>
       <p id="submission-feedback" className="submission-feedback" aria-live="polite">

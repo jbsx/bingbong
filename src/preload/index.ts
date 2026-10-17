@@ -5,29 +5,13 @@ import { SETTINGS_IPC } from '../core/settings/ipcChannels'
 import { TTS_IPC } from '../core/tts/ipcChannels'
 import { VOICE_IPC } from '../core/voice/ipcChannels'
 import { LEARNED_TERMS_IPC } from '../core/voice/learnedTermsIpcChannels'
-import { SUBAGENT_IPC } from '../core/agent/subagentIpcChannels'
-import { USAGE_IPC } from '../core/settings/usageIpcChannels'
-import { DIAGNOSTICS_IPC } from '../core/trace/diagnosticsIpcChannels'
-import type { RendererReport } from '../core/trace/rendererTrace'
 import { PANEL_IPC } from '../core/panel/ipcChannels'
 import type { FeedPanelMode, FeedPanelState } from '../core/panel/feedPanelState'
 import { resolveLaunchConfig } from '../core/app/launchConfig'
 import type { BrowserPaneState, PaneRect } from '../core/browser/paneState'
 import type { PipelineEvent } from '../core/pipeline/events'
 import type { AppSettings } from '../core/settings/settings'
-import type { RoutingStatus } from '../core/agent/modelRouting'
-import type { UsageSummary } from '../core/agent/spendEstimate'
 import type { VoiceErrorEvent, VoiceHeardEvent, VoiceState } from '../core/voice/ipcChannels'
-import type { SubmissionFeedback } from '../core/session/submissionFeedback'
-import { SESSION_IPC, type SessionAdoptionPayload, type SessionDecisionRequest } from '../core/session/ipcChannels'
-import {
-  EVIDENCE_IPC,
-  EVIDENCE_VIEW_IPC,
-  type EvidenceBrowserViewPayload,
-  type SessionEvidenceChangePayload,
-  type SessionEvidencePayload,
-} from '../core/session/evidenceIpcChannels'
-import type { EvidenceBrowserView } from '../core/session/evidenceBrowserView'
 
 // Launch config is a snapshot: the flags and env can't change after start.
 const launch = resolveLaunchConfig(process.argv, process.env)
@@ -51,55 +35,11 @@ contextBridge.exposeInMainWorld('bingbong', {
   },
   assistant: {
     submit: (text: string): Promise<boolean> => ipcRenderer.invoke(PIPELINE_IPC.submit, text),
-    resolveConfirmation: (confirmationId: string, approved: boolean): Promise<void> =>
-      ipcRenderer.invoke(PIPELINE_IPC.resolveConfirmation, confirmationId, approved),
-    resolveAsk: (askId: string, answer: string): Promise<void> =>
-      ipcRenderer.invoke(PIPELINE_IPC.resolveAsk, askId, answer),
     abort: (): Promise<boolean> => ipcRenderer.invoke(PIPELINE_IPC.abort),
-    steer: (directive: string): Promise<boolean> => ipcRenderer.invoke(PIPELINE_IPC.steer, directive),
     onEvent: (listener: (event: PipelineEvent) => void): (() => void) => {
       const wrapped = (_event: unknown, event: PipelineEvent): void => listener(event)
       ipcRenderer.on(PIPELINE_IPC.event, wrapped)
       return () => ipcRenderer.removeListener(PIPELINE_IPC.event, wrapped)
-    },
-    onSubmissionFeedback: (listener: (feedback: SubmissionFeedback) => void): (() => void) => {
-      const wrapped = (_event: unknown, feedback: SubmissionFeedback): void => listener(feedback)
-      ipcRenderer.on(PIPELINE_IPC.submissionFeedback, wrapped)
-      return () => ipcRenderer.removeListener(PIPELINE_IPC.submissionFeedback, wrapped)
-    },
-  },
-  session: {
-    extend: (request: SessionDecisionRequest): Promise<boolean> => ipcRenderer.invoke(SESSION_IPC.extend, request),
-    decline: (request: SessionDecisionRequest): Promise<boolean> => ipcRenderer.invoke(SESSION_IPC.decline, request),
-    /** The live Session's identity, or null — a reloaded page re-adopts from it (ADR 0017). */
-    current: (): Promise<SessionAdoptionPayload | null> => ipcRenderer.invoke(SESSION_IPC.current),
-    /** Main's re-send of the live Session identity on a late page load (ADR 0017). */
-    onReadopt: (listener: (identity: SessionAdoptionPayload) => void): (() => void) => {
-      const wrapped = (_event: unknown, identity: SessionAdoptionPayload): void => listener(identity)
-      ipcRenderer.on(SESSION_IPC.readopt, wrapped)
-      return () => ipcRenderer.removeListener(SESSION_IPC.readopt, wrapped)
-    },
-  },
-  evidence: {
-    /** The live Session's complete Evidence snapshot with identity and generation, or null (#139). */
-    get: (): Promise<SessionEvidencePayload | null> => ipcRenderer.invoke(EVIDENCE_IPC.get),
-    /** An accepted Observation changed the evidence — re-read the snapshot (#139). */
-    onChanged: (listener: (change: SessionEvidenceChangePayload) => void): (() => void) => {
-      const wrapped = (_event: unknown, change: SessionEvidenceChangePayload): void => listener(change)
-      ipcRenderer.on(EVIDENCE_IPC.changed, wrapped)
-      return () => ipcRenderer.removeListener(EVIDENCE_IPC.changed, wrapped)
-    },
-    /** The Session-owned selected Activity/Evidence view (#145). */
-    getView: (): Promise<EvidenceBrowserView | null> => ipcRenderer.invoke(EVIDENCE_VIEW_IPC.get),
-    /** Select the Activity/Evidence view (#145) — Session-ephemeral, never persisted. */
-    setView: (view: EvidenceBrowserView): void => {
-      ipcRenderer.send(EVIDENCE_VIEW_IPC.set, { view })
-    },
-    /** The selected view changed — Session boundaries return it to Activity (#145). */
-    onViewChanged: (listener: (payload: EvidenceBrowserViewPayload) => void): (() => void) => {
-      const wrapped = (_event: unknown, payload: EvidenceBrowserViewPayload): void => listener(payload)
-      ipcRenderer.on(EVIDENCE_VIEW_IPC.changed, wrapped)
-      return () => ipcRenderer.removeListener(EVIDENCE_VIEW_IPC.changed, wrapped)
     },
   },
   settings: {
@@ -109,28 +49,6 @@ contextBridge.exposeInMainWorld('bingbong', {
       const wrapped = (_event: unknown, settings: AppSettings): void => listener(settings)
       ipcRenderer.on(SETTINGS_IPC.changed, wrapped)
       return () => ipcRenderer.removeListener(SETTINGS_IPC.changed, wrapped)
-    },
-    routingStatus: (): Promise<RoutingStatus> => ipcRenderer.invoke(SETTINGS_IPC.routingStatus),
-    onRoutingStatusChanged: (listener: (status: RoutingStatus) => void): (() => void) => {
-      const wrapped = (_event: unknown, status: RoutingStatus): void => listener(status)
-      ipcRenderer.on(SETTINGS_IPC.routingStatusChanged, wrapped)
-      return () => ipcRenderer.removeListener(SETTINGS_IPC.routingStatusChanged, wrapped)
-    },
-  },
-  subagents: {
-    reportTabRect: (agentId: string, rect: PaneRect): void => {
-      ipcRenderer.send(SUBAGENT_IPC.tabRect, agentId, rect)
-    },
-    reopenTab: (agentId: string): Promise<boolean> => ipcRenderer.invoke(SUBAGENT_IPC.reopenTab, agentId),
-    cancel: (agentId: string): Promise<boolean> => ipcRenderer.invoke(SUBAGENT_IPC.cancel, agentId),
-  },
-  usage: {
-    getToday: (): Promise<UsageSummary> => ipcRenderer.invoke(USAGE_IPC.getToday),
-  },
-  diagnostics: {
-    /** One renderer record for the Host Trace (#187) — dropped unless a developer opted in. */
-    report: (event: RendererReport): void => {
-      ipcRenderer.send(DIAGNOSTICS_IPC.report, event)
     },
   },
   feedPanel: {

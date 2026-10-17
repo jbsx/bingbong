@@ -3,13 +3,11 @@ import type { PipelineEvent } from '../../../core/pipeline/events'
 import type { VoiceErrorEvent, VoiceHeardEvent } from '../../../core/voice/ipcChannels'
 import { defaultFeedPanelWidth, type FeedPanelState } from '../../../core/panel/feedPanelState'
 import { useFeedProjection } from '../useFeedProjection'
-import { useSessionAdoption } from '../useSessionAdoption'
-import { reportFeedPanelView, reportFirstFeedPanelView } from '../diagnostics'
 
 // The overlay half of the feed panel (#45): the shared feed projection
 // (same as the dashboard's) fed from the panel's own webContents
-// subscriptions — hydration, pipeline events, and voice lines all arrive
-// over the same channels the dashboard subscribes to.
+// subscriptions — pipeline events and voice lines all arrive over the same
+// channels the dashboard subscribes to.
 
 export function useOverlayFeed(): Pick<ReturnType<typeof useFeedProjection>, 'feed' | 'liveRunId'> {
   const projection = useFeedProjection()
@@ -33,10 +31,6 @@ export function useOverlayFeed(): Pick<ReturnType<typeof useFeedProjection>, 'fe
     // close over one ref-backed projection — subscribing once is correct.
   }, [])
 
-  // Re-adoption (ADR 0017): a reloaded overlay's fresh projection accepts
-  // the still-live Run's next Feed Entries.
-  useSessionAdoption((identity) => projection.adoptSession(identity))
-
   return { feed: projection.feed, liveRunId: projection.liveRunId }
 }
 
@@ -52,18 +46,9 @@ export function usePanelState(): FeedPanelState {
   useEffect(() => {
     let cancelled = false
     void window.bingbong.feedPanel.getState().then((pulled) => {
-      if (!cancelled && pulled) {
-        setState(pulled)
-        reportFirstFeedPanelView(pulled)
-      }
+      if (!cancelled && pulled) setState(pulled)
     })
-    // The panel page records what it saw of its own open state (#187):
-    // the two pages hear the same fold, and a panel that is open to main
-    // while its page believes otherwise is the bug this separates.
-    const unsubscribe = window.bingbong.feedPanel.onState((next) => {
-      setState(next)
-      reportFeedPanelView(next)
-    })
+    const unsubscribe = window.bingbong.feedPanel.onState((next) => setState(next))
     return () => {
       cancelled = true
       unsubscribe()

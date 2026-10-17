@@ -16,7 +16,6 @@ import {
 describe('defaultSettings', () => {
   it('has sensible defaults and no secrets', () => {
     const settings = defaultSettings()
-    expect(settings.apiKeys).toEqual({})
     expect(settings.micId).toBe('default')
     expect(settings.wakeWordThreshold).toBeGreaterThan(0)
     expect(settings.wakeWordThreshold).toBeLessThanOrEqual(1)
@@ -28,9 +27,6 @@ describe('defaultSettings', () => {
     expect(settings.weather).toEqual({ city: '', units: 'metric' })
     expect(settings.adblockEnabled).toBe(true)
     expect(settings.appearance).toBe('system')
-    for (const role of ['orchestrator', 'subagent', 'vision'] as const) {
-      expect(settings.modelRouting[role]).toEqual({ baseUrl: '', model: '', apiKey: '' })
-    }
   })
 })
 
@@ -50,7 +46,6 @@ describe('sanitizeSettings', () => {
 
   it('keeps valid values', () => {
     const settings = sanitizeSettings({
-      apiKeys: { zai: 'k1', deepseek: 'k2' } as { zai: string },
       micId: 'abc',
       wakeWordThreshold: 0.8,
       endpointDelayMs: 650,
@@ -59,19 +54,12 @@ describe('sanitizeSettings', () => {
       ttsVoice: 'en_US-lessac-high',
       appearance: 'dark',
       weather: { city: 'Berlin', units: 'imperial' },
-      modelRouting: {
-        orchestrator: { baseUrl: 'https://x.test/v1', model: 'glm-4.6', apiKey: 'sk-1' },
-      },
     })
-    // A key saved for a provider the app no longer names is dropped.
-    expect(settings.apiKeys).toEqual({ zai: 'k1' })
     expect(settings.wakeWordThreshold).toBe(0.8)
     expect(settings.endpointDelayMs).toBe(650)
     expect(settings.webZoomPercent).toBe(100)
     expect(settings.appearance).toBe('dark')
     expect(settings.weather).toEqual({ city: 'Berlin', units: 'imperial' })
-    expect(settings.modelRouting.orchestrator).toEqual({ baseUrl: 'https://x.test/v1', model: 'glm-4.6', apiKey: 'sk-1' })
-    expect(settings.modelRouting.subagent).toEqual(defaultSettings().modelRouting.subagent)
   })
 
   it('clamps the wake-word threshold into range', () => {
@@ -154,35 +142,15 @@ describe('sanitizeSettings', () => {
       weather: { city: 5, units: 'kelvin' },
       micId: {},
       ttsVoice: null,
-      apiKeys: { zai: 123 },
     })
     expect(settings.weather).toEqual(defaultSettings().weather)
     expect(settings.micId).toBe('default')
     expect(settings.ttsVoice).toBe('')
-    expect(settings.apiKeys).toEqual({})
   })
 })
 
 describe('settingsToEnv', () => {
   it('maps empty settings to no overrides', () => {
     expect(settingsToEnv(defaultSettings())).toEqual({})
-  })
-
-  it('maps provider keys to their env names', () => {
-    const env = settingsToEnv({ ...defaultSettings(), apiKeys: { zai: 'z' } })
-    expect(env).toEqual({ ZAI_API_KEY: 'z' })
-  })
-
-  it('maps model routing to the per-role env vars, skipping blanks', () => {
-    const settings = defaultSettings()
-    settings.modelRouting.orchestrator = { baseUrl: 'https://x.test/v1', model: 'glm-4.6', apiKey: 'sk-1' }
-    settings.modelRouting.subagent = { baseUrl: '', model: 'glm-5.3-flash', apiKey: '' }
-    const env = settingsToEnv(settings)
-    expect(env).toEqual({
-      BINGBONG_ORCHESTRATOR_BASE_URL: 'https://x.test/v1',
-      BINGBONG_ORCHESTRATOR_MODEL: 'glm-4.6',
-      BINGBONG_ORCHESTRATOR_API_KEY: 'sk-1',
-      BINGBONG_SUBAGENT_MODEL: 'glm-5.3-flash',
-    })
   })
 })

@@ -13,7 +13,7 @@
 // Consent dialogs are deliberately absent: they are the auto-clear class
 // (dialogPolicy.ts), never Blockers.
 
-import type { ToolResultOutcome } from '../ports/llm'
+import type { ToolResultOutcome } from '../ports/toolOutcome'
 import type { PageSnapshot, RefKind } from './snapshot'
 import { reportFault } from '../trace/fault.ts'
 

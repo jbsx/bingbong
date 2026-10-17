@@ -1,5 +1,4 @@
 import type { Clock } from '../ports/clock'
-import type { AssistantTurn, LlmClient, LlmRequest, LlmStreamDelta } from '../ports/llm'
 import type { TtsSpeaker } from '../ports/tts'
 import type { Transcriber, VadScorer } from '../ports/stt'
 import { WAKE_HEADS, type WakeScores, type WakeWordDetector } from '../ports/wake'
@@ -12,32 +11,12 @@ import type {
   ViewportPoint,
   VisualGroundingController,
 } from '../ports/browser'
-import { settledStateFromSnapshot } from '../pipeline/progressFingerprints'
+import { settledStateFromSnapshot } from '../browser/pageFingerprints'
 import { blockerFactsFromSnapshot } from '../browser/blockerNudge'
 import { linkHrefsOf, type PageLink, type PageSnapshot, type SnapshotRef } from '../browser/snapshot'
 import { blockedActionHead, clickFlagsHead, NO_OBSERVABLE_CHANGE, type BlockedAction } from '../browser/actionOutcome'
-import type {
-  VisionDescribeRequest,
-  VisionLocateRequest,
-  VisionLocation,
-  VisionModel,
-  VisionAttemptObservation,
-  VisionAttemptObserver,
-} from '../ports/vision'
-import type { PipelineEvent } from '../pipeline/events'
-import type { SubagentManager, SubagentRecord, SubagentStatus } from '../agent/subagentManager'
-import type { MemoryEntry } from '../session/workingMemory'
-import type { PanelControls } from '../pipeline/panelTools'
-import type { AppControls, SettingsControls } from '../pipeline/settingsTools'
-import { FEED_PANEL_WIDTH_DEFAULT, clampFeedPanelWidth, type FeedPanelMode, type FeedPanelState } from '../panel/feedPanelState'
-import { defaultSettings, sanitizeSettings, type AppSettings } from '../settings/settings'
 import { createPerfTracer, type PerfSpanRecord, type PerfTracer } from '../perf/perfTracer'
 
-/**
- * Drops the #28 turn-id stamp — behavior tests written before turn
- * correlation keep asserting the exact pre-#28 event shape; stamping itself
- * is covered by the turn-correlation tests.
- */
 /**
  * A snapshot's link refs as the links of its page (#303): a double's page,
  * whose every link is in view. The live tab's refs are the links in view
@@ -45,12 +24,6 @@ import { createPerfTracer, type PerfSpanRecord, type PerfTracer } from '../perf/
  */
 export function pageLinksOf(snapshot: PageSnapshot): PageLink[] {
   return snapshot.refs.flatMap((ref) => (ref.kind === 'link' && ref.href !== null && ref.layer !== 'dialog' ? [{ label: ref.label, href: ref.href }] : []))
-}
-
-export function withoutTurnId(event: PipelineEvent): PipelineEvent {
-  const rest = { ...event } as { turnId?: string }
-  delete rest.turnId
-  return rest as PipelineEvent
 }
 
 export class FakeClock implements Clock {
@@ -125,119 +98,6 @@ export function fakePerfHarness(): {
     clock: { monotonic: () => state.monotonicMs, wall: () => state.wallMs },
   })
   return { records, state, tracer }
-}
-
-/**
- * A scripted turn may opt into streaming (#56 e2e): `streamChunks` are
- * emitted through the round's onDelta before the final turn resolves.
- * Answer turns stream text chunks; any turn — tool rounds included — may
- * stream reasoning chunks, which is how e2e produces thinking blocks.
- */
-export type ScriptedStreamChunk = string | { kind: 'reasoning'; text: string }
-
-export type ScriptedTurn = AssistantTurn & {
-  streamChunks?: ScriptedStreamChunk[]
-}
-
-/**
- * Inter-chunk pause (#56): longer than the delta batcher's flush window
- * (120ms), so e2e observes mid-stream renders — formatting appears while
- * the run is still live, before the final display entry replaces it.
- */
-export const SCRIPTED_STREAM_CHUNK_DELAY_MS = 150
-
-/** The turn's streamed chunks when it opted in (and they parse as a list). */
-function scriptedChunks(turn: AssistantTurn): ScriptedStreamChunk[] | undefined {
-  const chunks = (turn as ScriptedTurn).streamChunks
-  return Array.isArray(chunks) ? chunks : undefined
-}
-
-async function streamScriptedChunks(
-  turn: AssistantTurn,
-  onDelta: ((delta: LlmStreamDelta) => void) | undefined,
-  signal?: AbortSignal,
-): Promise<void> {
-  if (!onDelta) return
-  const chunks = scriptedChunks(turn)
-  if (!chunks) return
-  for (const chunk of chunks) {
-    // The scripted client honors the round's abort signal (#135) the way
-    // the production client does — its fetch rejects — so deadline and
-    // Stop cancellations reach the pipeline as rejections, never as a
-    // turn that resolves after the round was cancelled.
-    if (signal?.aborted) throw new Error('scripted round aborted')
-    if (typeof chunk === 'string') {
-      if (chunk !== '') onDelta({ kind: 'text', text: chunk })
-    } else {
-      onDelta({ kind: 'reasoning', text: chunk.text })
-    }
-    await new Promise((resolve) => setTimeout(resolve, SCRIPTED_STREAM_CHUNK_DELAY_MS))
-  }
-}
-
-export class ScriptedLlm implements LlmClient {
-  private readonly script: AssistantTurn[]
-  readonly requests: LlmRequest[] = []
-
-  constructor(script: AssistantTurn[]) {
-    this.script = [...script]
-  }
-
-  async complete(request: LlmRequest): Promise<AssistantTurn> {
-    this.requests.push(request)
-    const next = this.script.shift()
-    if (!next) throw new Error('ScriptedLlm ran out of scripted turns')
-    // An already-aborted round never begins (#135): the production client
-    // would have cancelled the request before dispatch.
-    if (request.signal?.aborted) throw new Error('scripted round aborted')
-    // Attempt identity (#191): the double reports itself the way the usage
-    // ledger already names it, so a scripted Run's `llm_round` records say
-    // which "model" served them.
-    request.onAttempt?.({
-      model: 'scripted',
-      ...(request.reasoningEffort !== undefined ? { reasoningEffort: request.reasoningEffort } : {}),
-    })
-    await streamScriptedChunks(next, request.onDelta, request.signal)
-    // Renders continuity fields into scripted text so E2E can prove what the
-    // current Run received without exposing private request objects.
-    const substitutions: [string, string][] = [
-      ['$journal', (request.journal ?? []).map((entry) => `[${entry.runId}] ${entry.text}`).join('\n')],
-      ['$steering', request.steering ?? ''],
-    ]
-    if (next.kind !== 'tool_calls') {
-      const lastError = [...request.toolResults]
-        .reverse()
-        .find((result) => !result.outcome.ok)?.outcome
-      const lastErrorText = lastError && !lastError.ok ? lastError.error : null
-      const apply = (text: string): string =>
-        [...substitutions, ['$last_tool_error', lastErrorText ?? '$last_tool_error']]
-          .reduce((rendered, [token, value]) => rendered.replaceAll(token, value), text)
-      return {
-        ...next,
-        speak: apply(next.speak),
-        display: apply(next.display),
-        ...(next.runNote !== undefined ? { runNote: apply(next.runNote) } : {}),
-      }
-    }
-    const groundedRef = [...request.toolResults]
-      .reverse()
-      .find((result) => result.outcome.ok && typeof result.outcome.result === 'string' && /\buse ref \d+\b/.test(result.outcome.result))
-    const ref = groundedRef?.outcome.ok && typeof groundedRef.outcome.result === 'string'
-      ? Number(/\buse ref (\d+)\b/.exec(groundedRef.outcome.result)?.[1])
-      : undefined
-    return {
-      ...next,
-      calls: next.calls.map((call) => ({
-        ...call,
-        args: Object.fromEntries(
-          Object.entries(call.args).map(([name, value]) => [
-            name,
-            name === 'ref' && value === '$grounded_ref' && ref !== undefined ? ref : value,
-          ]),
-        ),
-      })),
-    }
-  }
 }
 
 export class RecordingTts implements TtsSpeaker {
@@ -492,42 +352,6 @@ export class StallingBrowser extends FakeBrowser {
   }
 }
 
-export class FakeVision implements VisionModel {
-  readonly locateRequests: Omit<VisionLocateRequest, 'observe'>[] = []
-  readonly describeRequests: Omit<VisionDescribeRequest, 'observe'>[] = []
-  location: VisionLocation = { x: 0, y: 0 }
-  description = 'A cookie popup covers the page.'
-  descriptions: string[] = []
-  failWith: Error | null = null
-  /**
-   * What this fake reports observing, if anything (#204). A real adapter
-   * reports at settlement; setting this makes the fake do the same, so a
-   * caller's record can be asserted end to end. The observer itself is kept
-   * out of the recorded requests: it is plumbing, not an ask.
-   */
-  observation: VisionAttemptObservation | null = null
-
-  private report(observe: VisionAttemptObserver | undefined): void {
-    if (observe !== undefined && this.observation !== null) observe(this.observation)
-  }
-
-  async locate(request: VisionLocateRequest): Promise<VisionLocation> {
-    const { observe, ...asked } = request
-    this.locateRequests.push(asked)
-    this.report(observe)
-    return this.location
-  }
-
-  async describe(request: VisionDescribeRequest): Promise<string> {
-    const { observe, ...asked } = request
-    this.describeRequests.push(asked)
-    this.report(observe)
-    if (this.failWith) throw this.failWith
-    return this.descriptions.shift() ?? this.description
-  }
-}
-
-/** Queue-driven VAD: one probability per frame, last value repeats. */
 export class FakeVad implements VadScorer {
   queue: number[]
   private last = 0.01
@@ -646,171 +470,9 @@ export class FakeWakeDetector implements WakeWordDetector {
   }
 }
 
-/**
- * Recording stand-in for the window's feed panel overlay (#64/#71): folds
- * toggle/setMode/setWidth exactly like the real panel-state fold — widths
- * clamp against the configured window just as the overlay clamps against
- * the live one — remembering every call so tests can assert what the
- * model-invoked tools drove.
- */
-export class FakePanel implements PanelControls {
-  readonly toggles: boolean[] = []
-  readonly modes: FeedPanelMode[] = []
-  readonly widths: number[] = []
-  private current: FeedPanelState
-
-  constructor(
-    initial: FeedPanelState = { mode: 'overlay', open: false, width: FEED_PANEL_WIDTH_DEFAULT },
-    private readonly windowWidthValue = 1280,
-  ) {
-    this.current = initial
-  }
-
-  toggle(): void {
-    this.toggles.push(true)
-    this.current = { ...this.current, open: !this.current.open }
-  }
-
-  setMode(mode: FeedPanelMode): void {
-    this.modes.push(mode)
-    this.current = { ...this.current, mode }
-  }
-
-  setWidth(width: number): void {
-    this.widths.push(width)
-    this.current = { ...this.current, width: clampFeedPanelWidth(width, this.windowWidthValue) }
-  }
-
-  windowWidth(): number {
-    return this.windowWidthValue
-  }
-
-  state(): FeedPanelState {
-    return this.current
-  }
-}
-
-/**
- * Recording stand-in for the settings store (#67): update() sanitizes with
- * the real fold, so clamped read-backs (zoom bounds, threshold bounds) are
- * assertable at the tool seam; every raw payload is remembered.
- */
-export class FakeSettings implements SettingsControls {
-  readonly updates: unknown[] = []
-  private current: AppSettings
-
-  constructor(initial: AppSettings = defaultSettings()) {
-    this.current = initial
-  }
-
-  get(): AppSettings {
-    return this.current
-  }
-
-  update(raw: unknown): AppSettings {
-    this.updates.push(raw)
-    this.current = sanitizeSettings(raw)
-    return this.current
-  }
-}
-
-/**
- * Recording stand-in for the app controls (#67): quit/reload/speakAck calls
- * land in order, so tests can assert the destructive-op policy — ack spoken
- * before the action, never after.
- */
-export class FakeAppControls implements AppControls {
-  /** Ordered ops — 'ack:<line>' entries prove the ack preceded the action. */
-  readonly calls: string[] = []
-
-  quit(): 'quitting' {
-    this.calls.push('quit')
-    return 'quitting'
-  }
-
-  reload(): 'reloading' {
-    this.calls.push('reload')
-    return 'reloading'
-  }
-
-  async speakAck(text: string): Promise<void> {
-    this.calls.push(`ack:${text}`)
-  }
-}
-
-// Production stand-ins used below the seam until real adapters land:
-
-/** No-speaker stand-in; speak events still flow to the dashboard. */
 export const silentTts: TtsSpeaker = {
   async speak() {
     return { ok: true as const }
   },
   stop() {},
-}
-
-/** An LLM that always fails — keeps the app usable when config is missing or invalid. */
-export class UnavailableLlm implements LlmClient {
-  constructor(private readonly reason: string) {}
-
-  async complete(): Promise<AssistantTurn> {
-    throw new Error(this.reason)
-  }
-}
-
-/** One subagent record in the given lifecycle state. */
-export function subagentRecord(id: string, status: SubagentStatus = 'running'): SubagentRecord {
-  return {
-    id,
-    kind: 'background',
-    task: 't',
-    status,
-    startedAt: 0,
-    finishedAt: status === 'running' ? null : 0,
-    steps: 0,
-    lastAction: null,
-    result: null,
-    error: null,
-  }
-}
-
-/** One Session Working Memory entry (#94): valid by default; override per test. */
-export function memoryEntry(id: string, overrides: Partial<MemoryEntry> = {}): MemoryEntry {
-  return {
-    id: id as never,
-    sessionId: 'session-1' as never,
-    kind: 'constraint',
-    subject: 'Budget',
-    detail: 'Stay under $30.',
-    references: [],
-    provenance: [],
-    ...overrides,
-  }
-}
-
-/**
- * A subagent manager double: spawns succeed, results merge to a fixed
- * string, and `list()` returns the given records — the seam the delegation
- * tools and the progress-detail tests drive.
- */
-export function fakeSubagentManager(
-  records: SubagentRecord[] = [],
-  overrides: Partial<SubagentManager> = {},
-): SubagentManager {
-  return {
-    spawn: (kind, task) => ({ ok: true as const, agent: { ...subagentRecord('a-1'), kind, task } }),
-    cancel: () => ({ ok: true as const }),
-    cancelAll: () => 0,
-    tellParentFinalizing: () => 0,
-    settledAll: async () => {},
-    endReportGrace: () => 0,
-    retire: () => 0,
-    pauseAll: () => {},
-    resumeAll: () => {},
-    list: () => records.map((record) => ({ ...record })),
-    isRunning: (agentId) => records.some((record) => record.id === agentId && record.status === 'running'),
-    results: async () => 'merged results',
-    collectCompleted: () => [],
-    delegatedHolders: () => [],
-    ...overrides,
-  }
 }

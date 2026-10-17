@@ -15,7 +15,7 @@
 // same and is right. Pure and import-light, so the Round Audit's replay
 // loads it too.
 
-import type { ToolResultOutcome } from '../ports/llm'
+import type { ToolResultOutcome } from '../ports/toolOutcome'
 import { reportFault } from '../trace/fault.ts'
 import { arrivedAtAnotherDocument } from './actionOutcome.ts'
 

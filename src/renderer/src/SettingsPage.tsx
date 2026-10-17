@@ -1,16 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import type { AppSettings, RoleRoutingSettings } from '../../core/settings/settings'
-import type { AgentRole } from '../../core/agent/modelRouting'
+import type { AppSettings } from '../../core/settings/settings'
 import { ENDPOINT_DELAY_MS_MAX, ENDPOINT_DELAY_MS_MIN, RESUMPTION_MERGE_MS_MAX, RESUMPTION_MERGE_MS_MIN, WEB_ZOOM_PERCENT_MAX, WEB_ZOOM_PERCENT_MIN, WAKE_WORD_THRESHOLD_MAX, WAKE_WORD_THRESHOLD_MIN, asAppearance, asSttModel } from '../../core/settings/settings'
-import type { UsageSummary } from '../../core/agent/spendEstimate'
 import { DEFAULT_PIPER_VOICE } from '../../core/tts/piperVoices'
-import { useRoutingStatus } from './useSettings'
-
-const ROLES: { role: AgentRole; label: string }[] = [
-  { role: 'orchestrator', label: 'Orchestrator' },
-  { role: 'subagent', label: 'Subagent' },
-  { role: 'vision', label: 'Vision' },
-]
 
 /** Select value for "the saved mic is not plugged in right now". */
 const STALE_MIC_VALUE = '__stale__'
@@ -70,58 +61,6 @@ function useTtsVoices(): string[] {
   }, [])
 
   return voices
-}
-
-function useTodayUsage(): UsageSummary | null {
-  const [usage, setUsage] = useState<UsageSummary | null>(null)
-
-  useEffect(() => {
-    let cancelled = false
-    // Refreshed on open and every minute — the estimate grows while agents run.
-    const load = () => {
-      void window.bingbong.usage
-        .getToday()
-        .then((summary) => {
-          if (!cancelled) setUsage(summary)
-        })
-        .catch(() => undefined)
-    }
-    load()
-    const timer = setInterval(load, 60_000)
-    return () => {
-      cancelled = true
-      clearInterval(timer)
-    }
-  }, [])
-
-  return usage
-}
-
-function UsageSection() {
-  const usage = useTodayUsage()
-  if (!usage) return null
-
-  const roles = (['orchestrator', 'subagent', 'vision'] as const).filter((role) => usage.byRole[role])
-  return (
-    <section className="settings-section" aria-label="usage">
-      <h2>Usage today</h2>
-      <p className={`settings-usage${usage.overWarn ? ' settings-usage--warn' : ''}`} role="status">
-        Estimated spend: ${usage.estimateUsd.toFixed(2)} across {usage.requests} model request
-        {usage.requests === 1 ? '' : 's'} — warn-only, never blocking.
-        {usage.overWarn ? ` Above your $${usage.warnUsd} daily estimate.` : ''}
-      </p>
-      {roles.length > 0 ? (
-        <p className="settings-usage-detail">
-          {roles
-            .map((role) => {
-              const entry = usage.byRole[role]!
-              return `${role}: ${entry.requests} requests`
-            })
-            .join(' · ')}
-        </p>
-      ) : null}
-    </section>
-  )
 }
 
 /**
@@ -210,59 +149,6 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   )
 }
 
-function RoleRoutingFields({
-  label,
-  value,
-  configured,
-  onChange,
-}: {
-  label: string
-  value: RoleRoutingSettings
-  /** Null while the routing status loads; the main process resolves it (#76). */
-  configured: boolean | null
-  onChange: (next: RoleRoutingSettings) => void
-}) {
-  return (
-    <fieldset className="settings-role">
-      <legend>{label}</legend>
-      {configured === null ? null : (
-        <p className={`settings-role-status${configured ? '' : ' settings-role-status--off'}`}>
-          {configured
-            ? 'Configured — this role resolves and will serve requests.'
-            : 'Not configured — set a base URL, model and API key here, or in .env / the environment.'}
-        </p>
-      )}
-      <Field label="Base URL">
-        <input
-          type="text"
-          value={value.baseUrl}
-          placeholder="https://…/v1"
-          spellCheck={false}
-          onChange={(event) => onChange({ ...value, baseUrl: event.target.value })}
-        />
-      </Field>
-      <Field label="Model">
-        <input
-          type="text"
-          value={value.model}
-          placeholder="model id"
-          spellCheck={false}
-          onChange={(event) => onChange({ ...value, model: event.target.value })}
-        />
-      </Field>
-      <Field label="API key override">
-        <input
-          type="password"
-          value={value.apiKey}
-          placeholder="falls back to the provider key"
-          autoComplete="off"
-          onChange={(event) => onChange({ ...value, apiKey: event.target.value })}
-        />
-      </Field>
-    </fieldset>
-  )
-}
-
 export function SettingsPage({
   settings,
   onSave,
@@ -276,7 +162,6 @@ export function SettingsPage({
   const [savedAt, setSavedAt] = useState<number | null>(null)
   const mics = useMicrophones()
   const voices = useTtsVoices()
-  const routingStatus = useRoutingStatus()
   const lastSynced = useRef<AppSettings>(settings)
 
   // Follow external changes (another window's save, or our own sanitized
@@ -301,21 +186,6 @@ export function SettingsPage({
   return (
     <section className="settings-page" aria-label="settings">
       <div className="settings-scroll">
-        <section className="settings-section">
-          <h2>API keys</h2>
-          <Field label="Z.AI API key">
-            <input
-              type="password"
-              value={draft.apiKeys.zai ?? ''}
-              autoComplete="off"
-              aria-label="Z.AI API key"
-              onChange={(event) =>
-                setDraft({ ...draft, apiKeys: { ...draft.apiKeys, zai: event.target.value } })
-              }
-            />
-          </Field>
-        </section>
-
         <section className="settings-section">
           <h2>Voice</h2>
           <Field label="Microphone">
@@ -460,8 +330,7 @@ export function SettingsPage({
             />
           </Field>
           <p className="settings-note">
-            How large webpages render in the browser pane and subagent tabs — applied on every page
-            load. Manual zoom resets on the next navigation.
+            How large webpages render in the browser pane — applied on every page load. Manual zoom resets on the next navigation.
           </p>
         </section>
 
@@ -492,23 +361,6 @@ export function SettingsPage({
             </select>
           </Field>
         </section>
-
-        <section className="settings-section">
-          <h2>Model routing</h2>
-          {ROLES.map(({ role, label }) => (
-            <RoleRoutingFields
-              key={role}
-              label={label}
-              value={draft.modelRouting[role]}
-              configured={routingStatus ? routingStatus[role] : null}
-              onChange={(next) =>
-                setDraft({ ...draft, modelRouting: { ...draft.modelRouting, [role]: next } })
-              }
-            />
-          ))}
-        </section>
-
-        <UsageSection />
 
         <LearnedTermsSection />
       </div>

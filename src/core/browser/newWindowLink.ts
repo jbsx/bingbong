@@ -1,4 +1,4 @@
-import { urlFingerprint } from '../pipeline/progressFingerprints'
+import { urlFingerprint } from './pageFingerprints'
 
 // #299, ADR 0073: the New-window Link. A page's attempt to open a window is
 // always denied — a native window created inside an in-flight click wedges

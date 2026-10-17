@@ -6,26 +6,14 @@ graphify-out/
 .DS_Store
 *.tsbuildinfo
 .env
-# Latest scratch real-model eval run (#109); the release pools under
-# e2e/eval/pools/ are the committed comparison artifacts (#132), never this file.
-e2e/eval/report.json
-
-# Latest scratch delegation probe run (#163); named pass artifacts under
-# e2e/eval/delegation/pass-*.json are the committed evidence, never this file.
-e2e/eval/delegation/probe.json
-
-# Run Traces kept by every eval capture (#280), mirroring the report's path:
-# raw diagnostics, never committed. The Shadow Replay's report over them is.
-e2e/eval/traces/
-
 # Kiosk deployment runtime state + secrets (ADR 0023).
 config/
 data/
 
-# Live-web captures (#224): raw diagnostics of a hunt — traces, event
-# tapes, screenshots — and the evaluator-only inputs (grading keys, source
-# targets) the measured assistant must never see. Compact reports live
-# outside these roots and are committed.
+# Scratch artifacts of main's evaluation harnesses (removed on kachow) that
+# may still sit on disk from a main checkout: never committed here either.
+e2e/eval/report.json
+e2e/eval/delegation/probe.json
+e2e/eval/traces/
 e2e/live/artifacts/
 e2e/live/private/
-

@@ -1,4 +1,4 @@
-import type { ToolResultOutcome } from '../ports/llm'
+import type { ToolResultOutcome } from '../ports/toolOutcome'
 
 // #261 (note on ADR 0058): the browser port's click and type outcomes open
 // with fixed heads, and some say the call consumed nothing — a Blocked

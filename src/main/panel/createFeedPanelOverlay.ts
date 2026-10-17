@@ -9,17 +9,10 @@ import {
   type FeedPanelMode,
   type FeedPanelState,
 } from '../../core/panel/feedPanelState'
-import {
-  EVIDENCE_VIEW_IPC,
-  isEvidenceBrowserViewPayload,
-  type EvidenceBrowserViewPayload,
-} from '../../core/session/evidenceIpcChannels'
-import { createEvidenceBrowserViewFold, type EvidenceBrowserView } from '../../core/session/evidenceBrowserView'
 import { isPaneRect } from '../../core/browser/paneState'
 import { toPaneBounds } from '../../core/browser/paneGeometry'
 import { PIPELINE_IPC } from '../../core/pipeline/ipcChannels'
 import type { PipelineEvent } from '../../core/pipeline/events'
-import type { SubmissionFeedback } from '../../core/session/submissionFeedback'
 import { VOICE_IPC, type VoiceErrorEvent, type VoiceHeardEvent } from '../../core/voice/ipcChannels'
 import { resolvePreloadPath } from '../preloadPath'
 
@@ -60,14 +53,6 @@ export function registerFeedPanelIpc(): void {
     overlayFor(event.sender)?.toggle()
   })
   ipcMain.handle(PANEL_IPC.get, (event) => overlayFor(event.sender)?.state())
-  // The Session-owned Activity/Evidence view (#145): the same per-window
-  // fold-and-broadcast deal as the panel layout, minus persistence — a
-  // selection survives docking, reload, and renderer crash within the
-  // Session, and Session boundaries return it to Activity.
-  ipcMain.handle(EVIDENCE_VIEW_IPC.get, (event) => overlayFor(event.sender)?.evidenceView() ?? null)
-  ipcMain.on(EVIDENCE_VIEW_IPC.set, (event, payload: unknown) => {
-    if (isEvidenceBrowserViewPayload(payload)) overlayFor(event.sender)?.setEvidenceView(payload.view)
-  })
 }
 
 export interface FeedPanelOverlay {
@@ -76,9 +61,7 @@ export interface FeedPanelOverlay {
   /** Voice-half feed lines (heard words, mic errors) — same payloads the dashboard gets. */
   forwardHeard(heard: VoiceHeardEvent): void
   forwardVoiceError(error: VoiceErrorEvent): void
-  /** Busy feedback is visible but never folded into Run or Feed state. */
-  forwardSubmissionFeedback(feedback: SubmissionFeedback): void
-  /** Re-adds the view last so dynamically spawned subagent views stay below it. */
+  /** Re-adds the view last so any view added after it stays below it. */
   bringToTop(): void
   setRect(rect: { x: number; y: number; width: number; height: number }): void
   setMode(mode: FeedPanelMode): void
@@ -93,18 +76,13 @@ export interface FeedPanelOverlay {
   toggle(): void
   state(): FeedPanelState
   /**
-   * Registers Ctrl/Cmd+Shift+F on an input surface's webContents (the pane,
-   * subagent tabs) so the panel shortcut works wherever focus sits — the
-   * dashboard and the overlay itself are always registered. Escape's
-   * before-input-event handling (attachAssistant) is the prior art.
+   * Registers Ctrl/Cmd+Shift+F on an input surface's webContents (the pane)
+   * so the panel shortcut works wherever focus sits — the dashboard and the
+   * overlay itself are always registered.
    */
   registerShortcut(contents: Electron.WebContents): void
-  /** The overlay page's webContents — session re-adoption targets it (ADR 0017). */
+  /** The overlay page's webContents, or null once destroyed. */
   contents(): Electron.WebContents | null
-  /** The Session-owned selected Activity/Evidence view (#145). */
-  evidenceView(): EvidenceBrowserView
-  /** Select the Activity/Evidence view (#145) — the panel's tab controls. */
-  setEvidenceView(view: EvidenceBrowserView): void
   dispose(): void
 }
 
@@ -120,8 +98,8 @@ function isPanelShortcut(input: Electron.Input): boolean {
 
 /**
  * Reload chords (Ctrl/Cmd+R, F5 — shift variants included) never reload
- * the overlay (ADR 0017): a mid-Session reload is a page loss the panel
- * must not invite. Recovery is main's job; the input is simply dropped.
+ * the overlay: a mid-run reload would throw the feed away. The input is
+ * simply dropped.
  */
 function isReloadChord(input: Electron.Input): boolean {
   if (input.type !== 'keyDown') return false
@@ -156,11 +134,6 @@ export function attachFeedPanelOverlayToWindow(
   }
 
   const fold = createFeedPanelStateFold({ defaultWidth: deps.defaultWidth })
-  // The Session-owned Activity/Evidence view (#145): folded from the same
-  // lifecycle events as the panel state, but Session-ephemeral — a
-  // selection lives in main, so docking, reload, and renderer crash within
-  // the Session cannot lose it, and no Session boundary lets it survive.
-  const viewFold = createEvidenceBrowserViewFold()
 
   // Width drag (#65): widening moves the pointer LEFT, out of the view —
   // and input lands on whichever view sits under the cursor, so a drag
@@ -181,18 +154,9 @@ export function attachFeedPanelOverlayToWindow(
     if (!wc.isDestroyed()) wc.send(PANEL_IPC.state, state)
   }
 
-  // The selected view's audience is the overlay page alone (#145) — only
-  // it renders the Activity/Evidence tabs. The pull stays open to every
-  // page, but nothing else consumes the broadcast, so none else gets it.
-  function broadcastEvidenceView(): void {
-    if (win.isDestroyed()) return
-    const payload: EvidenceBrowserViewPayload = { view: viewFold.state() }
-    if (!wc.isDestroyed()) wc.send(EVIDENCE_VIEW_IPC.changed, payload)
-  }
-
-  // The shortcut works from every input surface (dashboard, overlay, pane,
-  // subagent tabs): the keydown a renderer sees depends on which webContents
-  // owns focus, and the pane's keydowns never reach the dashboard's DOM.
+  // The shortcut works from every input surface (dashboard, overlay, pane):
+  // the keydown a renderer sees depends on which webContents owns focus, and
+  // the pane's keydowns never reach the dashboard's DOM.
   const registerShortcut = (contents: Electron.WebContents): void => {
     const onBeforeInput = (event: Electron.Event, input: Electron.Input): void => {
       if (isPanelShortcut(input)) {
@@ -206,10 +170,9 @@ export function attachFeedPanelOverlayToWindow(
   registerShortcut(win.webContents)
   registerShortcut(wc)
 
-  // The overlay's reload chords are blocked (ADR 0017): the panel's page
-  // is session-bearing state — an accidental Ctrl+R/F5 must not throw it
-  // away. Only the overlay: the pane is a real browser page (F5 is its
-  // user's to use) and the dashboard self-heals by re-adoption.
+  // The overlay's reload chords are blocked: the panel's page holds the
+  // feed — an accidental Ctrl+R/F5 must not throw it away. Only the
+  // overlay: the pane is a real browser page (F5 is its user's to use).
   const onOverlayInput = (event: Electron.Event, input: Electron.Input): void => {
     if (isReloadChord(input)) event.preventDefault()
   }
@@ -219,34 +182,24 @@ export function attachFeedPanelOverlayToWindow(
   // A late-loading overlay missed earlier broadcasts — re-push the fold to
   // it on load. The dashboard is deliberately excluded: it pulls getState
   // on mount and pushes its stored mode, and a stale pre-push echo here
-  // could race that push and flip the mode back to the default. The
-  // Session-owned view rides along (#145): unlike the mode there is
-  // nothing persisted to race, so the push is pure restoration.
+  // could race that push and flip the mode back to the default.
   wc.on('did-finish-load', () => {
     if (wc.isDestroyed() || win.isDestroyed()) return
     wc.send(PANEL_IPC.state, fold.state())
-    const viewPayload: EvidenceBrowserViewPayload = { view: viewFold.state() }
-    wc.send(EVIDENCE_VIEW_IPC.changed, viewPayload)
   })
 
   const overlay: FeedPanelOverlay = {
     handlePipelineEvent(event) {
       const before = fold.state()
       fold.onEvent(event)
-      const viewBefore = viewFold.state()
-      viewFold.onEvent(event)
       if (!wc.isDestroyed()) wc.send(PIPELINE_IPC.event, event)
       if (fold.state() !== before) broadcast()
-      if (viewFold.state() !== viewBefore) broadcastEvidenceView()
     },
     forwardHeard(heard) {
       if (!wc.isDestroyed()) wc.send(VOICE_IPC.heard, heard)
     },
     forwardVoiceError(error) {
       if (!wc.isDestroyed()) wc.send(VOICE_IPC.error, error)
-    },
-    forwardSubmissionFeedback(feedback) {
-      if (!wc.isDestroyed()) wc.send(PIPELINE_IPC.submissionFeedback, feedback)
     },
     bringToTop() {
       if (win.isDestroyed()) return
@@ -294,12 +247,6 @@ export function attachFeedPanelOverlayToWindow(
     state: () => fold.state(),
     registerShortcut,
     contents: () => (wc.isDestroyed() ? null : wc),
-    evidenceView: () => viewFold.state(),
-    setEvidenceView(next) {
-      const before = viewFold.state()
-      viewFold.setView(next)
-      if (viewFold.state() !== before) broadcastEvidenceView()
-    },
     dispose() {
       if (!win.isDestroyed()) win.contentView.removeChildView(view)
       if (!wc.isDestroyed()) wc.close()

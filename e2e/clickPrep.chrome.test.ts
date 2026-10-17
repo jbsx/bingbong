@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { COLLECT_PAGE_SCRIPT, clickPrepScript, markShownRefsScript, type ClickPrep } from '../src/main/browser/collectPageScript.ts'
-import { canDriveChrome, serveFixtures, type FixtureChrome } from './live/headlessChrome.ts'
+import { canDriveChrome, serveFixtures, type FixtureChrome } from './headlessChrome.ts'
 
 // A Blocked Action names its Cover, and a target absent from the hit test is
 // Not Shown (#264, ADR 0062). jsdom has no hit test and no inert, so the

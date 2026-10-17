@@ -2,13 +2,11 @@ import type { VoiceHeardEvent } from './ipcChannels'
 
 /** Transcript annotation per heard-but-not-command routing. */
 const HEARD_SUFFIX: Record<Exclude<VoiceHeardEvent['routed'], 'command'>, string> = {
-  confirmation: ' (answered)',
-  ask: ' (your answer)',
   abort: ' (stopping)',
   pause: ' (paused)',
   resume: ' (resumed)',
   steering: ' (steering)',
-  ignored: ' — not a yes or no',
+  ignored: ' — not a command',
 }
 
 /** How a heard-but-not-command transcript reads in the dashboard transcript. */

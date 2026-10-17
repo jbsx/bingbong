@@ -34,10 +34,7 @@ function runAnswer(
 }
 
 function liveStep(progress: RunProgress | null): string {
-  if (!progress) return 'working'
-  if (progress.waitingOnAgents) return `waiting on ${progress.waitingOnAgents.running} agents`
-  if (progress.retry) return `${progress.stage} — retrying`
-  return progress.stage
+  return progress ? progress.stage : 'working'
 }
 
 export function PeekCard({
@@ -70,9 +67,7 @@ export function PeekCard({
       <span className="peek-orb" aria-hidden="true" />
       {state.phase === 'live' ? (
         <div className="peek-body">
-          {/* The Run Headline once the orchestrator reports one; the command
-              echo until then (ADR 0025). */}
-          <p className="peek-command">{state.headline ?? state.commandText}</p>
+          <p className="peek-command">{state.commandText}</p>
           <p className="peek-step" role="status">
             {liveStep(progress)}
           </p>

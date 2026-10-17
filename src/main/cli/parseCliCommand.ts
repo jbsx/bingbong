@@ -1,5 +1,5 @@
 import type { KeyPress } from '../../core/ports/browser'
-import { NEXT_TRACK_KEY } from '../../core/pipeline/mediaTools'
+import { NEXT_TRACK_KEY } from '../../core/browser/mediaKeys'
 
 export type CliCommand =
   | { type: 'navigate'; input: string }
@@ -17,7 +17,7 @@ export type ParsedCliCommand = { ok: true; command: CliCommand } | { ok: false; 
 
 // Shortcut keys the CLI can inject — enough to drive media players
 // (k play/pause, j/l seek, arrows volume) without a full keyboard grammar.
-// The next-track mapping is shared with the media tools (core/pipeline).
+// The next-track mapping is shared with core/browser/mediaKeys.
 const PRESS_KEYS: Record<string, KeyPress> = {
   k: { key: 'k' },
   j: { key: 'j' },

@@ -17,15 +17,9 @@ export interface PeekCardState {
   runId: string | null
   /** The command echo shown while live. */
   commandText: string | null
-  /**
-   * The Run Headline (ADR 0025): once the orchestrator reports one, it is
-   * the live title and the echo stands down. Null until then and across
-   * runs — each run starts on its own echo.
-   */
-  headline: string | null
 }
 
-const HIDDEN: PeekCardState = { phase: 'hidden', runId: null, commandText: null, headline: null }
+const HIDDEN: PeekCardState = { phase: 'hidden', runId: null, commandText: null }
 
 /**
  * Folds pipeline events into the card's phase: `command` shows it live,
@@ -57,7 +51,7 @@ export function createPeekCardFold(): {
     sawError = false
   }
   const fromReportedRun = (event: { runId?: string; turnId?: string }): boolean =>
-    state.phase !== 'hidden' && (event.runId ?? event.turnId) === state.runId
+    state.phase !== 'hidden' && event.turnId === state.runId
 
   return {
     onEvent(event) {
@@ -65,9 +59,8 @@ export function createPeekCardFold(): {
         case 'command':
           state = {
             phase: 'live',
-            runId: event.runId ?? event.turnId,
+            runId: event.turnId,
             commandText: event.text,
-            headline: null,
           }
           lastStatus = null
           sawError = false
@@ -80,28 +73,16 @@ export function createPeekCardFold(): {
           // out-of-turn error from unrelated activity never fails it.
           if (fromReportedRun(event)) sawError = true
           return
-        // The Run Headline (ADR 0025) revises the live title — corrections
-        // reach the eye without opening the panel. Only the run the card
-        // reports can retitle it, and outside the live run nothing changes:
-        // the answer is what shows then.
-        case 'run_headline':
-          if (state.phase === 'live' && (event.runId ?? event.turnId) === state.runId) {
-            state = { ...state, headline: event.text }
-          }
-          return
         case 'done': {
           if (state.phase === 'hidden') return
           // The outcome fork (ADR 0026): done and failed persist as the
           // card's answer; cancelled and interrupted hide it — an abort is
           // the user's last word, and the screen goes quiet.
           const outcome = inferRunOutcome(event.outcome, lastStatus, sawError)
-          if (outcome === 'cancelled' || outcome === 'interrupted') hide()
+          if (outcome === 'cancelled') hide()
           else state = { ...state, phase: 'answer' }
           return
         }
-        case 'session_ended':
-          if (state.phase !== 'hidden') hide()
-          return
         default:
           return
       }

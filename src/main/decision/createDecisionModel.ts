@@ -1,27 +1,19 @@
-// Which Decision Model serves a Run (#275, ADR 0068): the scripted
-// stand-in when `BINGBONG_DECISION_SCRIPT` is set (the pattern of the
-// other `*_SCRIPT` hooks, so the seams' tests and the e2e suites run
-// without spend), else Jev when the decision role resolves, else none —
-// and none means every seam is off and the Run behaves as it always has.
+// Which Decision Model serves: the scripted stand-in when
+// `BINGBONG_DECISION_SCRIPT` is set (the pattern of the other `*_SCRIPT`
+// hooks, so tests and the e2e suites run without spend), else Jev when the
+// decision role resolves, else none.
 
 import { createHash } from 'node:crypto'
-import {
-  DECISION_SCRIPT_ENV_KEY,
-  resolveDecisionRouting,
-  resolveDecisionSeams,
-} from '../../core/agent/modelRouting.ts'
+import { DECISION_SCRIPT_ENV_KEY, resolveDecisionRouting } from '../../core/decision/decisionRouting.ts'
 import {
   DECISION_UNAVAILABLE_REASONS,
   readDecisionAnswers,
-  type ConfiguredDecisionModel,
   type DecisionModel,
   type DecisionQuestions,
   type DecisionResult,
   type DecisionUnavailableReason,
 } from '../../core/ports/decisionModel.ts'
 import { createJevDecisionModel } from './createJevDecisionModel.ts'
-
-
 
 /** One scripted ask: the raw answers (read against the questions like a vendor's), or an unavailable reason. */
 type ScriptEntry = { readonly answers: unknown } | { readonly unavailable: DecisionUnavailableReason }
@@ -70,29 +62,28 @@ export function createScriptedDecisionModel(raw: string): DecisionModel {
   }
 }
 
-export function createDecisionModel(env: Record<string, string | undefined>): ConfiguredDecisionModel | null {
-  const seams = resolveDecisionSeams(env)
+export function createDecisionModel(env: Record<string, string | undefined>): DecisionModel | null {
   const script = env[DECISION_SCRIPT_ENV_KEY]?.trim()
-  if (script) return { model: createScriptedDecisionModel(script), seams }
+  if (script) return createScriptedDecisionModel(script)
   const routing = resolveDecisionRouting(env)
   if (!routing.configured) return null
-  return { model: createJevDecisionModel(routing.endpoint), seams }
+  return createJevDecisionModel(routing.endpoint)
 }
 
 /**
- * The per-Run lookup the pipeline takes: the env is read on every call, as
- * the LLM's routing is, but one model is kept while the decision config is
- * unchanged — a scripted stand-in is consumed in order across Runs, and a
- * settings change that touches the role builds a new one.
+ * The per-run lookup: the env is read on every call, but one model is kept
+ * while the decision config is unchanged — a scripted stand-in is consumed
+ * in order across runs, and a settings change that touches the role builds
+ * a new one.
  */
-export function createDecisionModelSource(getEnv: () => Record<string, string | undefined>): () => ConfiguredDecisionModel | null {
+export function createDecisionModelSource(getEnv: () => Record<string, string | undefined>): () => DecisionModel | null {
   let signature: string | undefined
-  let current: ConfiguredDecisionModel | null = null
+  let current: DecisionModel | null = null
   return () => {
     const env = getEnv()
     // Hashed, so the key is not kept in a plain string beside the client that holds it.
     const next = createHash('sha256')
-      .update(JSON.stringify([env[DECISION_SCRIPT_ENV_KEY]?.trim() ?? null, resolveDecisionRouting(env), [...resolveDecisionSeams(env)]]))
+      .update(JSON.stringify([env[DECISION_SCRIPT_ENV_KEY]?.trim() ?? null, resolveDecisionRouting(env)]))
       .digest('hex')
     if (next !== signature) {
       signature = next

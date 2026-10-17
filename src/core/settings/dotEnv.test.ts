@@ -1,7 +1,5 @@
 import { describe, expect, it } from 'vitest'
 import { layerEnv, parseDotEnv } from './dotEnv'
-import { defaultSettings, settingsToEnv } from './settings'
-import { resolveModelEndpoint } from '../agent/modelRouting'
 
 describe('parseDotEnv', () => {
   it('parses plain, quoted and export-prefixed assignments', () => {
@@ -65,29 +63,11 @@ describe('layerEnv', () => {
       ].join('\n'),
     )
     const env = layerEnv(envFile, {})
-    expect(resolveModelEndpoint(env, 'orchestrator')).toMatchObject({ model: 'GLM-4.6', apiKey: 'zai-secret' })
-    expect(resolveModelEndpoint(env, 'vision')).toMatchObject({ model: 'GLM-4.6V', apiKey: 'zai-secret' })
-  })
-
-  it('layers .env under process.env under settings values', () => {
-    const envFile = parseDotEnv(
-      ['BINGBONG_VISION_BASE_URL=https://file.test/v1', 'BINGBONG_VISION_MODEL=from-file', 'ZAI_API_KEY=file-key'].join(
-        '\n',
-      ),
-    )
-    const processEnv = { BINGBONG_VISION_MODEL: 'from-process' }
-    const settings = defaultSettings()
-    settings.modelRouting.vision = { baseUrl: 'https://x.test/v1', model: 'from-settings', apiKey: '' }
-
-    const fromFile = resolveModelEndpoint(layerEnv(envFile, processEnv), 'vision')
-    expect(fromFile.model).toBe('from-process')
-
-    const withSettings = resolveModelEndpoint(
-      { ...layerEnv(envFile, processEnv), ...settingsToEnv(settings) },
-      'vision',
-    )
-    expect(withSettings.model).toBe('from-settings')
-    // Keys not overridden by any layer still come from .env.
-    expect(withSettings.apiKey).toBe('file-key')
+    expect(env).toMatchObject({
+      BINGBONG_ORCHESTRATOR_BASE_URL: 'https://api.z.ai/api/coding/paas/v4',
+      BINGBONG_ORCHESTRATOR_MODEL: 'GLM-4.6',
+      BINGBONG_VISION_MODEL: 'GLM-4.6V',
+      ZAI_API_KEY: 'zai-secret',
+    })
   })
 })

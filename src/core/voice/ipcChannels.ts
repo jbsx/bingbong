@@ -1,5 +1,5 @@
 export const VOICE_IPC = {
-  /** Renderer → main: start listening (hotkey or confirmation window). */
+  /** Renderer → main: start listening (hotkey). */
   arm: 'voice:arm',
   /** Renderer → main: stop listening. */
   disarm: 'voice:disarm',
@@ -15,7 +15,7 @@ export const VOICE_IPC = {
   error: 'voice:error',
 } as const
 
-export type VoiceListenReason = 'hotkey' | 'confirmation' | 'ask' | 'wake' | 'pause' | 'session-expiry'
+export type VoiceListenReason = 'hotkey' | 'wake' | 'pause'
 
 export interface VoiceState {
   listening: boolean
@@ -32,13 +32,12 @@ export interface VoiceState {
 
 export interface VoiceHeardEvent {
   text: string
-  routed: 'command' | 'confirmation' | 'ask' | 'abort' | 'pause' | 'resume' | 'steering' | 'ignored'
-  /** Main stamps this before persistence + IPC; core session tests may omit it. */
+  routed: 'command' | 'abort' | 'pause' | 'resume' | 'steering' | 'ignored'
+  /** Main stamps this before IPC; core session tests may omit it. */
   at?: number
 }
 
 export interface VoiceErrorEvent {
   message: string
-  /** Shared by persistence and renderer hydration deduplication. */
   at: number
 }

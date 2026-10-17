@@ -1,13 +1,9 @@
 import { useEffect, useRef } from 'react'
 import { ActivityFeed } from '../ActivityFeed'
-import { evidenceTotal } from '../../../core/session/evidenceBrowser'
 import { overlaySlotContent } from '../../../core/panel/peekCardState'
 import { PeekCard } from '../PeekCard'
 import { reportRendererFault } from '../diagnostics'
-import { useEvidenceBrowserView } from '../useEvidenceBrowserView'
 import { usePeekCard } from '../usePeekCard'
-import { useSessionEvidence } from '../useSessionEvidence'
-import { EvidenceView } from './EvidenceView'
 import { PromptBar } from './PromptBar'
 import { useOverlayFeed, usePanelState } from './useOverlayFeed'
 import { useRunProgress } from './useRunProgress'
@@ -17,47 +13,30 @@ import { useRunProgress } from './useRunProgress'
  * WebContentsView above the browser pane. The view's bounds come from the
  * dashboard's slot rect; open/collapsed and overlay/docked styling come
  * from main's folded panel state. The prompt bar rides the panel's
- * footer — one typed-input surface whose verb follows the run-live signal,
- * with the stop button beside it while a run is live.
+ * footer — the one typed-input surface — with the stop button beside it
+ * while a run is live.
  *
  * The feed stays mounted when collapsed (CSS hides it): the panel is a
  * visibility toggle, not an unmount — entries keep accumulating behind the
- * edge tab, exactly as the transcript always lived in the dashboard's DOM.
- *
- * The Evidence Browser (#139) is the panel's second view: the header's
- * `Evidence N` control swaps Activity for the Session's live Observations
- * — a renderer-local view switch that never touches browser or Run state.
+ * edge tab.
  *
  * The left-edge handle drag-resizes (#65): main cloaks the view across the
  * window for the drag's duration (widening moves the pointer left, out of
  * a view-sized view), so every move still lands in this page. Moves are
- * tracked at the window, not on the handle — capture retargeting is not
- * something every input path honors — and the width (the surface's fixed
- * right edge minus the cursor) streams to the fold, which clamps it. The
- * surface itself paints right-anchored at the folded width, so the cloak
- * never shifts it a pixel.
+ * tracked at the window, not on the handle, and the width (the surface's
+ * fixed right edge minus the cursor) streams to the fold, which clamps it.
  */
 export function OverlayPanel() {
   const { feed, liveRunId } = useOverlayFeed()
   const { mode, open, width } = usePanelState()
   const progress = useRunProgress()
   const runActive = progress !== null
-  // The Peek Card (ADR 0029): now rendered from this overlay page — the
-  // one surface that floats above the native pane — instead of the
-  // dashboard's in-flow footer band. The slot rule decides which single
-  // element shows (panel, card, or edge tab); the dashboard sizes the
-  // slot rect from the same rule.
+  // The Peek Card (ADR 0029): rendered from this overlay page — the one
+  // surface that floats above the native pane. The slot rule decides which
+  // single element shows (panel, card, or edge tab); the dashboard sizes
+  // the slot rect from the same rule.
   const peek = usePeekCard(open)
   const slotContent = overlaySlotContent(open, peek.state)
-  const evidence = useSessionEvidence()
-  // The `Evidence N` total (#142): every current Observation and
-  // Candidate, independently of the browser's active filters.
-  const evidenceCount = evidenceTotal(evidence.observations, evidence.candidates)
-  // The Activity/Evidence view switch (#139, #145): Session-owned state
-  // folded in main — the selection survives docking, reload, and renderer
-  // crash within the Session, and every Session boundary returns it to
-  // Activity. Still a pure view swap: no browser or Run state involved.
-  const { view, setView } = useEvidenceBrowserView()
   const surfaceRef = useRef<HTMLDivElement>(null)
   // Drag bookkeeping: the surface's fixed right edge (the panel hugs it
   // for the whole drag). Null when no drag is live.
@@ -116,8 +95,6 @@ export function OverlayPanel() {
     window.bingbong.feedPanel.beginResize()
   }
 
-  // The panel's shared chrome: the prompt footer (one typed-input surface,
-  // whichever view is shown) and the layout controls (dock, collapse).
   const panelFooter = (
     <div className="prompt-row">
       <PromptBar runActive={runActive} />
@@ -176,58 +153,7 @@ export function OverlayPanel() {
           aria-label="Resize the feed panel"
           onPointerDown={onHandlePointerDown}
         />
-        {/* The footer is the panel's one typed-input surface — it rides
-            below whichever view is shown. */}
-        {view === 'evidence' ? (
-          <EvidenceView
-            observations={evidence.observations}
-            candidates={evidence.candidates}
-            objectiveId={evidence.objectiveId}
-            footer={panelFooter}
-            headerActions={
-              <>
-                <button
-                  type="button"
-                  className="feed-tab"
-                  aria-label="Back to activity"
-                  onClick={() => setView('activity')}
-                >
-                  activity
-                </button>
-                {panelControls}
-              </>
-            }
-          />
-        ) : (
-          <ActivityFeed
-            entries={feed}
-            liveRunId={liveRunId}
-            observations={evidence.observations}
-            footer={panelFooter}
-            headerActions={
-              <>
-                <button
-                  type="button"
-                  className={`feed-tab feed-tab--evidence${evidenceCount > 0 ? ' feed-tab--stocked' : ''}`}
-                  aria-label={
-                    evidenceCount > 0
-                      ? `Open the evidence browser (${evidence.observations.length} observations, ${evidence.candidates.length} candidates)`
-                      : 'Open the evidence browser (no evidence yet)'
-                  }
-                  onClick={() => setView('evidence')}
-                >
-                  Evidence
-                  {evidenceCount > 0 ? (
-                    <span className="feed-tab-count" aria-hidden="true">
-                      {evidenceCount}
-                    </span>
-                  ) : null}
-                </button>
-                {panelControls}
-              </>
-            }
-          />
-        )}
+        <ActivityFeed entries={feed} liveRunId={liveRunId} footer={panelFooter} headerActions={panelControls} />
       </div>
       {/* Exactly one collapsed affordance renders (ADR 0029): the Peek
           Card replaces the edge tab while it is visible — both are the

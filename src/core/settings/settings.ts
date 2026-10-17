@@ -1,9 +1,7 @@
 // Dashboard-editable settings. Everything here mirrors config that otherwise
-// comes from the environment (model routing, provider keys) or from later
-// pipeline pieces (mic, wake word, TTS voice, weather). The settings file
-// overrides env only where a value is set, so env stays the base layer.
-
-import { AGENT_ROLES, routingEnvPrefix, type AgentRole } from '../agent/modelRouting.ts'
+// comes from the environment or from the voice pipeline (mic, wake word, TTS
+// voice, weather). The settings file overrides env only where a value is
+// set, so env stays the base layer.
 
 export const WAKE_WORD_THRESHOLD_MIN = 0
 export const WAKE_WORD_THRESHOLD_MAX = 1
@@ -43,15 +41,7 @@ export type Appearance = 'system' | 'light' | 'dark'
  */
 export type SttModel = 'base' | 'small' | 'medium'
 
-export interface RoleRoutingSettings {
-  baseUrl: string
-  model: string
-  apiKey: string
-}
-
 export interface AppSettings {
-  /** Provider keys used as the fallback key for roles without their own. */
-  apiKeys: { zai?: string }
   /** Microphone device id from enumerateDevices; 'default' follows the OS. */
   micId: string
   wakeWordThreshold: number
@@ -62,7 +52,7 @@ export interface AppSettings {
    * resuming inside the window rejoins the utterance. 0 disables the hold.
    */
   resumptionMergeMs: number
-  /** Page zoom for the main pane and subagent panes, in percent (#53). */
+  /** Page zoom for the browser pane, in percent (#53). */
   webZoomPercent: number
   /** Piper voice id; '' follows BINGBONG_PIPER_VOICE / the default voice. */
   ttsVoice: string
@@ -73,12 +63,10 @@ export interface AppSettings {
   /** Theme resolution (ADR 0020) — system follows the OS, manual wins. */
   appearance: Appearance
   weather: { city: string; units: WeatherUnits }
-  modelRouting: Record<AgentRole, RoleRoutingSettings>
 }
 
 export function defaultSettings(): AppSettings {
   return {
-    apiKeys: {},
     micId: 'default',
     wakeWordThreshold: 0.5,
     endpointDelayMs: ENDPOINT_DELAY_MS_DEFAULT,
@@ -89,11 +77,6 @@ export function defaultSettings(): AppSettings {
     adblockEnabled: true,
     appearance: 'system',
     weather: { city: '', units: 'metric' },
-    modelRouting: {
-      orchestrator: { baseUrl: '', model: '', apiKey: '' },
-      subagent: { baseUrl: '', model: '', apiKey: '' },
-      vision: { baseUrl: '', model: '', apiKey: '' },
-    },
   }
 }
 
@@ -135,29 +118,15 @@ export function asAppearance(value: unknown): Appearance {
   return value === 'light' || value === 'dark' || value === 'system' ? value : 'system'
 }
 
-function sanitizeRouting(value: unknown): RoleRoutingSettings {
-  const record = asRecord(value)
-  return {
-    baseUrl: asString(record?.baseUrl, ''),
-    model: asString(record?.model, ''),
-    apiKey: asString(record?.apiKey, ''),
-  }
-}
-
 /** Parse anything (disk, IPC) into valid settings; unknown bits fall back to defaults. */
 export function sanitizeSettings(raw: unknown): AppSettings {
   const defaults = defaultSettings()
   const record = asRecord(raw)
   if (!record) return defaults
 
-  const keys = asRecord(record.apiKeys)
   const weather = asRecord(record.weather)
-  const routing = asRecord(record.modelRouting)
 
   return {
-    apiKeys: {
-      ...(typeof keys?.zai === 'string' ? { zai: keys.zai } : {}),
-    },
     micId: asString(record.micId, defaults.micId),
     wakeWordThreshold: asThreshold(record.wakeWordThreshold, defaults.wakeWordThreshold),
     endpointDelayMs: asEndpointDelay(record.endpointDelayMs, defaults.endpointDelayMs),
@@ -172,37 +141,14 @@ export function sanitizeSettings(raw: unknown): AppSettings {
       city: asString(weather?.city, defaults.weather.city),
       units: weather?.units === 'imperial' ? 'imperial' : defaults.weather.units,
     },
-    modelRouting: {
-      orchestrator: sanitizeRouting(routing?.orchestrator),
-      subagent: sanitizeRouting(routing?.subagent),
-      vision: sanitizeRouting(routing?.vision),
-    },
   }
-}
-
-const ROLE_ENV_PREFIX: Record<AgentRole, string> = {
-  orchestrator: routingEnvPrefix('orchestrator'),
-  subagent: routingEnvPrefix('subagent'),
-  vision: routingEnvPrefix('vision'),
-}
-
-function setIfPresent(env: Record<string, string>, name: string, value: string | undefined): void {
-  if (typeof value === 'string' && value.trim() !== '') env[name] = value.trim()
 }
 
 /**
  * The env-var view of settings, layered over process.env by the caller. Only
- * set values appear, so an untouched field keeps its env config.
+ * set values appear, so an untouched field keeps its env config. Nothing in
+ * the settings file routes a model today; the decision role is env-only.
  */
-export function settingsToEnv(settings: AppSettings): Record<string, string> {
-  const env: Record<string, string> = {}
-  setIfPresent(env, 'ZAI_API_KEY', settings.apiKeys.zai)
-  for (const role of AGENT_ROLES) {
-    const prefix = ROLE_ENV_PREFIX[role]
-    const routing = settings.modelRouting[role]
-    setIfPresent(env, `${prefix}_BASE_URL`, routing.baseUrl)
-    setIfPresent(env, `${prefix}_MODEL`, routing.model)
-    setIfPresent(env, `${prefix}_API_KEY`, routing.apiKey)
-  }
-  return env
+export function settingsToEnv(_settings: AppSettings): Record<string, string> {
+  return {}
 }

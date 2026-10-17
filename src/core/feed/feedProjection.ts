@@ -1,54 +1,28 @@
 import type { PipelineEvent } from '../pipeline/events'
-import { describeToolIntent } from '../pipeline/toolCallDisplay'
-import { formatRetryLine } from '../pipeline/runProgress'
-import type { SessionId } from '../session/sessionIdentity'
-import type { MemoryEntryId } from '../session/workingMemory'
-import type { SessionAdoptionPayload } from '../session/ipcChannels'
-import type { AskedItemStanding } from '../agent/askedItems'
 import { projectPipelineEvent, type TranscriptEvent } from './transcriptProjection'
 
 // Feed projection (#44): the right-edge activity feed as a pure function —
 // pipeline events in, ordered feed entries out. Outcome lines reuse the
 // shared transcript projection word-for-word, so the dashboard and the
-// panel overlay show the same outcome line; retry lines are ephemeral
-// detail (never a Feed entry, trimmed beyond the cap). Streamed
-// deltas (#47) grow live answer/reasoning runs — also ephemeral detail —
-// with the answer's display entry replacing its partial at round end.
-// Tool-intent lines (#48) grow the same way while call arguments stream,
-// superseded by the tool's outcome line at execution. Explicitly
-// Session-scoped (ADR 0014): an identity-bearing session_started opens the
-// view's live Session and a matching session_ended wipes it — events of an
-// ended or foreign Session never render, and nothing renders before the
-// first accepted Session exists.
-// Production launches always create this projection empty. Conversation
-// structure (#54): every entry carries its role in the chat — your words
-// (user) vs Bing Bong's answers (assistant) vs system detail — and a
-// turn's Spoken Rendering is suppressed from the view once its Card
-// renders, keyed on the shared turn id (the spoken text still reaches
-// TTS: the pipeline speaks it regardless of the feed). Run grouping
-// (#55): run noise — tool lines, failed tool results, intents, reasoning
-// runs, stage markers, retries, steer echoes — carries the run's id so
+// panel overlay show the same outcome line. Conversation structure (#54):
+// every entry carries its role in the chat — your words (user) vs Bing
+// Bong's answers (assistant) vs system detail — and a turn's spoken line is
+// suppressed from the view once its Card renders, keyed on the shared turn
+// id (the spoken text still reaches TTS). Run grouping (#55): run noise —
+// tool lines, failed tool results, stage markers — carries the run's id so
 // the renderer folds it under one per-run details expander (collapsed by
-// default, auto-open while the run is live via `liveRunId`); content is
-// unchanged, only grouped.
+// default, auto-open while the run is live via `liveRunId`).
 
 /** Which voice an entry speaks with — the conversation's turn structure (#54). */
 export type FeedRole = 'user' | 'assistant' | 'system'
 
 /** The entry kinds the feed renders: transcript kinds plus detail lines. */
-export type FeedEntryKind =
-  | TranscriptEvent['kind']
-  | 'retry'
-  | 'steer'
-  | 'stage'
-  | 'answer_stream'
-  | 'reasoning'
-  | 'intent'
+export type FeedEntryKind = TranscriptEvent['kind'] | 'stage'
 
-/** Commands and heard words are yours; answers (display/speak/stream) are Bing Bong's. */
+/** Commands and heard words are yours; answers (display/speak) are Bing Bong's. */
 export function feedRoleForKind(kind: FeedEntryKind): FeedRole {
   if (kind === 'command' || kind === 'voice') return 'user'
-  if (kind === 'display' || kind === 'speak' || kind === 'answer_stream') return 'assistant'
+  if (kind === 'display' || kind === 'speak') return 'assistant'
   return 'system'
 }
 
@@ -61,114 +35,43 @@ export interface FeedEntry {
   /** The conversation role (#54): bubble (user) vs railed card (assistant). */
   role: FeedRole
   text: string
-  /** Detail entries are ephemeral: never recorded, trimmed beyond the cap. */
+  /** Detail entries are ephemeral: trimmed beyond the cap. */
   detail: boolean
   /**
    * The run this entry groups under (#55): set on run noise only — tool
-   * lines, failed tool results, intents, reasoning runs, stage markers,
-   * retries, steer echoes — so the renderer folds them into one per-run
-   * details expander. Absent on every conversation line (bubbles, cards,
-   * pipeline errors) and on unstamped announcements.
+   * lines, failed tool results, stage markers — so the renderer folds them
+   * into one per-run details expander. Absent on every conversation line
+   * (bubbles, cards, pipeline errors) and on unstamped announcements.
    */
   runId?: string
-  /**
-   * The Session Evidence identities a displayed Answer declared (#141):
-   * Session-only metadata the renderer resolves against the current
-   * authoritative snapshot to render the collapsed Answer Evidence
-   * Summary. Never recorded, and wiped with the feed at the Session
-   * boundary — it lives exactly as long as the entry does.
-   */
-  evidenceIds?: readonly MemoryEntryId[]
-  /**
-   * The Asked Item standings a displayed Answer carries (#250, ADR 0052):
-   * the Card renders them as a list under the text, one line per item
-   * the Run Plan declared. Present exactly when the display event carried
-   * them; like the evidence identities, never recorded.
-   */
-  askedItems?: readonly AskedItemStanding[]
 }
 
 /** Detail entries are trimmed beyond this (~500, spec #42). */
 export const MAX_DETAIL_ENTRIES = 500
 
-export function createFeedProjection(deps?: {
-  /**
-   * Called with how many entries a wipe dropped (#187). "Something
-   * cleared the activity feed" is a bug report no file could answer, and
-   * the wipe is invisible from outside the projection — only it knows a
-   * matching session_ended landed and how much went with it. Counts
-   * only: the entries themselves are already in the published stream's
-   * record (#185), and this is a diagnostic, not a second copy.
-   */
-  onCleared?(entries: number): void
-}): {
+export function createFeedProjection(): {
   onEvent(event: PipelineEvent): void
-  /**
-   * Re-adopts the live Session by identity (ADR 0017): a page that lost
-   * its state mid-Session re-opens the gate from main's truth. Adds no
-   * entries — recovery is forward-only; a matching session_ended still
-   * wipes exactly like an event-opened Session. Guarded exactly like a
-   * session_started: stale generations and foreign Sessions can never
-   * seize a gate the page already opened.
-   */
-  adopt(identity: SessionAdoptionPayload): void
   /** Voice-half lines (heard words, mic errors) ride the same feed. */
   append(entry: TranscriptEvent): void
   entries(): FeedEntry[]
   /**
    * The run currently in flight (#55): opened by its command, closed by
-   * its done or a session boundary — the run whose expander auto-opens.
+   * its done — the run whose expander auto-opens.
    */
   liveRunId(): string | null
+  /** Drops every entry — the dashboard's own clear control. */
+  clear(): void
 } {
   let feed: FeedEntry[] = []
   let nextId = 0
-  // Open streamed runs (#47): the feed entry a live delta grows, if any —
-  // one per kind, closed (frozen in place) by any other event so each run
-  // reads as one growing line. Null after close/boundary/replacement.
-  // The answer stream's entry is the typing indicator (ADR 0013): when
-  // anything else happens it resolves — dropped, never frozen — so no
-  // indicator outlives the moment it stood for.
-  let openTextId: number | null = null
-  let openReasoningId: number | null = null
-  // Open intent lines (#48), keyed by the provider's call index — the
-  // entry a growing snapshot replaces in place until another event closes
-  // it (the tool's outcome line follows).
-  let openIntentIds = new Map<number, number>()
   // Speak-entry suppression (#54), keyed on the shared turn id: turns
-  // whose Card rendered (their Spoken Rendering stays TTS-only), and
-  // the rendered speak entry per turn (dropped if the display lands after
-  // it). Unstamped announcements — downloads, subagent cards — are not
-  // turn-scoped and never suppress.
+  // whose Card rendered (their spoken line stays TTS-only), and the
+  // rendered speak entry per turn (dropped if the display lands after it).
+  // Unstamped announcements — downloads — are not turn-scoped and never
+  // suppress.
   const displayedTurns = new Set<string>()
   const renderedSpeakIds = new Map<string, number>()
-  // The entry of each turn's final Answer (#288, ADR 0072): what the
-  // evidence an Answer gains after its Card is added to.
-  const answerEntryIds = new Map<string, number>()
-  // The live run (#55): opened by its command, closed by its done or a
-  // session boundary — the run whose expander auto-opens while it runs.
   let liveRunId: string | null = null
-  // The live Session (ADR 0014): opened only by an identity-bearing
-  // session_started, closed by its matching session_ended. Events of an
-  // ended or foreign Session — and everything before the first start — are
-  // ignored, so no launch ever renders work that is not current.
-  let activeSessionId: SessionId | null = null
-  let activeSessionGeneration: number | null = null
-
-  const closeStreaming = (): void => {
-    // The typing indicator resolves here: any other event means the
-    // answer is no longer forming (ADR 0013) — drop it, never freeze it.
-    dropOpenText()
-    openReasoningId = null
-    openIntentIds = new Map()
-  }
-
-  /** Drops the open streamed-answer run — its final entry replaces it. */
-  const dropOpenText = (): void => {
-    if (openTextId === null) return
-    feed = feed.filter((entry) => entry.id !== openTextId)
-    openTextId = null
-  }
 
   /** Drops a turn's rendered speak entry — its display card replaces it (#54). */
   const dropRenderedSpeak = (turnId: string): void => {
@@ -178,43 +81,20 @@ export function createFeedProjection(deps?: {
     feed = feed.filter((entry) => entry.id !== id)
   }
 
-  const appendOutcome = (
-    entry: TranscriptEvent,
-    runId?: string,
-    evidenceIds?: readonly MemoryEntryId[],
-    askedItems?: readonly AskedItemStanding[],
-  ): number => {
-    closeStreaming()
+  const appendOutcome = (entry: TranscriptEvent, runId?: string): number => {
     const id = nextId++
-    feed = [
-      ...feed,
-      {
-        ...entry,
-        id,
-        role: feedRoleForKind(entry.kind),
-        detail: false,
-        runId,
-        ...(evidenceIds !== undefined ? { evidenceIds } : {}),
-        ...(askedItems !== undefined ? { askedItems } : {}),
-      },
-    ]
+    feed = [...feed, { ...entry, id, role: feedRoleForKind(entry.kind), detail: false, runId }]
     return id
   }
 
-  const appendDetail = (
-    at: number,
-    text: string,
-    kind: 'retry' | 'steer' | 'stage' = 'retry',
-    runId?: string,
-  ): void => {
-    closeStreaming()
+  const appendDetail = (at: number, text: string, kind: 'stage', runId?: string): void => {
     feed = [...feed, { id: nextId++, at, kind, role: 'system', text, detail: true, runId }]
     trimDetail()
   }
 
   function trimDetail(): void {
     // Ephemeral lines are trimmed beyond the cap, oldest first; outcome
-    // entries are session-scoped and unbounded, exactly like the transcript.
+    // entries are unbounded, exactly like the transcript.
     let detailCount = 0
     for (let i = feed.length - 1; i >= 0; i -= 1) {
       if (!feed[i]!.detail) continue
@@ -223,106 +103,14 @@ export function createFeedProjection(deps?: {
     }
   }
 
-  /** One streamed fragment (#47): grows the open run of its kind, or opens one. */
-  const appendDelta = (kind: 'answer_stream' | 'reasoning', fragment: string, at: number, runId?: string): void => {
-    if (fragment === '') return
-    const openId = kind === 'answer_stream' ? openTextId : openReasoningId
-    if (openId !== null) {
-      const index = feed.findIndex((entry) => entry.id === openId)
-      if (index !== -1) {
-        // Same id — React re-renders the growing line, never re-keys it.
-        const grown = { ...feed[index]!, text: feed[index]!.text + fragment }
-        feed = [...feed.slice(0, index), grown, ...feed.slice(index + 1)]
-        return
-      }
-    }
-    const id = nextId++
-    // Reasoning is run noise (#55) — it groups under the run's expander;
-    // the answer stream is a conversation card (#54) and never groups.
-    feed = [...feed, { id, at, kind, role: feedRoleForKind(kind), text: fragment, detail: true, runId: kind === 'reasoning' ? runId : undefined }]
-    if (kind === 'answer_stream') openTextId = id
-    else openReasoningId = id
-    trimDetail()
-  }
-
-  /** One intent snapshot (#48): replaces the open line for its call index. */
-  const appendIntent = (index: number, name: string, args: string, at: number, runId?: string): void => {
-    const text = describeToolIntent(name, args)
-    const openId = openIntentIds.get(index)
-    if (openId !== undefined) {
-      const open = feed.findIndex((entry) => entry.id === openId)
-      if (open !== -1) {
-        // Same id, replaced text — the phrase grows as arguments arrive.
-        const grown = { ...feed[open]!, text }
-        feed = [...feed.slice(0, open), grown, ...feed.slice(open + 1)]
-        return
-      }
-    }
-    const id = nextId++
-    feed = [...feed, { id, at, kind: 'intent', role: 'system', text, detail: true, runId }]
-    openIntentIds.set(index, id)
-    trimDetail()
-  }
-
-  const clearSession = (): void => {
-    deps?.onCleared?.(feed.length)
-    feed = []
-    liveRunId = null
-    displayedTurns.clear()
-    renderedSpeakIds.clear()
-    answerEntryIds.clear()
-    closeStreaming()
-  }
-
   return {
     onEvent(event) {
-      if (event.type === 'session_started') {
-        // Stale generations and foreign Sessions never open the view; a
-        // start never wipes anything — only a matching end clears.
-        if (activeSessionGeneration !== null && event.sessionGeneration < activeSessionGeneration) return
-        if (activeSessionId !== null && event.sessionId !== activeSessionId) return
-        activeSessionId = event.sessionId
-        activeSessionGeneration = event.sessionGeneration
-        return
-      }
-      if (event.type === 'session_ended') {
-        if (event.sessionId !== activeSessionId || event.sessionGeneration !== activeSessionGeneration) return
-        clearSession()
-        activeSessionId = null
-        activeSessionGeneration = event.sessionGeneration
-        return
-      }
-      // Only the live Session's work renders.
-      if (
-        activeSessionId === null ||
-        event.sessionId !== activeSessionId ||
-        event.sessionGeneration !== activeSessionGeneration
-      ) return
-
       // The live run's bookkeeping (#55): a command opens its run, its
-      // done (or a session boundary) closes it. Unstamped announcements
-      // and stragglers from other turns leave the current run alone.
+      // done closes it. Unstamped announcements and stragglers from other
+      // turns leave the current run alone.
       if (event.type === 'command') liveRunId = event.turnId
-      else if (event.type === 'done' && liveRunId === event.turnId) {
-        liveRunId = null
-        // The run ended without its display (cancelled or failed): the
-        // open streamed answer — the typing indicator (ADR 0013) — dies
-        // with the run; the turn's trace is whatever else it rendered.
-        dropOpenText()
-      }
+      else if (event.type === 'done' && liveRunId === event.turnId) liveRunId = null
       switch (event.type) {
-        case 'llm_delta':
-          // A restart replaces the streamed text (#312): what streamed was
-          // the preamble of an Answer object, never part of the Answer.
-          if (event.kind === 'text' && event.restart === true) dropOpenText()
-          appendDelta(event.kind === 'text' ? 'answer_stream' : 'reasoning', event.text, event.at, event.turnId)
-          return
-        case 'llm_tool_intent':
-          // Tool intent means the model is acting, not still forming an
-          // Answer: resolve the typing indicator before the intent grows.
-          dropOpenText()
-          appendIntent(event.index, event.name, event.args, event.at, event.turnId)
-          return
         case 'tool_call': {
           // Tool lines are run noise (#55) — they group under the run's
           // expander, unlike the conversation lines around them.
@@ -330,94 +118,50 @@ export function createFeedProjection(deps?: {
           return
         }
         case 'tool_result': {
-          // Successful results render nothing (and still close the open
-          // streams); a failure renders as run noise (#55), grouped —
-          // unlike a pipeline error, which stays a top-level line.
+          // Successful results render nothing; a failure renders as run
+          // noise (#55), grouped — unlike a pipeline error, which stays a
+          // top-level line.
           const projected = projectPipelineEvent(event)
           if (projected) appendOutcome(projected, event.turnId)
-          else closeStreaming()
           return
         }
         case 'display': {
-          // The answer's final display entry supersedes its streamed
-          // partial — never both on screen. Its declared evidence
-          // identities ride along as Session-only metadata (#141): the
-          // renderer resolves them into the collapsed Answer Evidence
-          // Summary against the authoritative snapshot; nothing here is
-          // ever recorded.
-          dropOpenText()
-          const id = appendOutcome(projectPipelineEvent(event)!, undefined, event.evidenceIds, event.askedItems)
-          if (event.turnId !== undefined && event.finalAnswer === true) answerEntryIds.set(event.turnId, id)
+          appendOutcome(projectPipelineEvent(event)!)
           if (event.turnId !== undefined) {
-            // And its Spoken Rendering (#54): the Card renders, so the
-            // turn's speak entry stays out of the view — the pipeline
-            // still speaks it. A speak that rendered first is dropped.
+            // Its spoken line (#54): the Card renders, so the turn's speak
+            // entry stays out of the view — main still speaks it. A speak
+            // that rendered first is dropped.
             displayedTurns.add(event.turnId)
             dropRenderedSpeak(event.turnId)
           }
           return
         }
-        case 'answer_evidence': {
-          // The evidence an Answer gained after its Card (#288, ADR
-          // 0072): its Answer Checkpoints, recorded once the Card was
-          // published and so absent from the display event. Added to that
-          // Answer's entry, each identity once; no entry of its own, and
-          // no stream is disturbed.
-          const id = event.turnId === undefined ? undefined : answerEntryIds.get(event.turnId)
-          if (id === undefined) return
-          feed = feed.map((entry) =>
-            entry.id === id ? { ...entry, evidenceIds: [...new Set([...(entry.evidenceIds ?? []), ...event.evidenceIds])] } : entry,
-          )
-          return
-        }
         case 'speak': {
-          // The Spoken Rendering appears only when its turn has no Card
-          // (#54); TTS is unaffected — it happens in main,
-          // upstream of the feed.
           if (event.turnId !== undefined && displayedTurns.has(event.turnId)) return
           const id = appendOutcome(projectPipelineEvent(event)!)
           if (event.turnId !== undefined) renderedSpeakIds.set(event.turnId, id)
           return
         }
-        case 'llm_retry':
-          appendDetail(event.at, formatRetryLine(event.attempt, event.maxAttempts, event.reason), 'retry', event.turnId)
-          return
         case 'status':
           // Stage entries (#42 story 17): every stage transition lands as a
           // timestamped detail line, so consecutive lines reconstruct how
-          // long each phase took. Exits are implicit — the next line's
-          // timestamp closes the previous stage. Ephemeral like all detail.
+          // long each phase took. Ephemeral like all detail.
           appendDetail(event.at, event.status, 'stage', event.turnId)
-          return
-        case 'steer':
-          appendDetail(event.at, `steer: ${event.text}`, 'steer', event.turnId)
-          return
-        // The Run Headline (ADR 0025) is the Peek Card's alone — a detail
-        // event by design: no Feed Entry, and no stream is disturbed. The
-        // Run Plan (#116) rides the same discipline: policy, telemetry,
-        // and the Run Trace see it; the Feed does not.
-        case 'run_headline':
-          return
-        case 'run_plan':
           return
         default: {
           const projected = projectPipelineEvent(event)
           if (projected) appendOutcome(projected)
-          else closeStreaming()
         }
       }
     },
     append: appendOutcome,
-    adopt(identity) {
-      // Stale generations and foreign Sessions never re-own the view —
-      // the same rule a session_start follows. Entries are untouched
-      // (a fresh page has none, and a wipe is session_ended's alone).
-      if (activeSessionGeneration !== null && identity.generation < activeSessionGeneration) return
-      if (activeSessionId !== null && identity.sessionId !== activeSessionId) return
-      activeSessionId = identity.sessionId
-      activeSessionGeneration = identity.generation
-    },
     entries: () => feed,
     liveRunId: () => liveRunId,
+    clear() {
+      feed = []
+      liveRunId = null
+      displayedTurns.clear()
+      renderedSpeakIds.clear()
+    },
   }
 }

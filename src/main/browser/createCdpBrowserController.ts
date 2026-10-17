@@ -7,7 +7,7 @@ import type {
   ViewportPoint,
   VisualGroundingController,
 } from '../../core/ports/browser'
-import { settledStateFromSnapshot, type SettledPageState } from '../../core/pipeline/progressFingerprints'
+import { settledStateFromSnapshot, type SettledPageState } from '../../core/browser/pageFingerprints'
 import { blockerFactsFromSnapshot } from '../../core/browser/blockerNudge'
 import type { BrowserSubspans } from '../../core/perf/browserSubspans'
 import { normalizeUrlInput } from '../../core/browser/urlInput'

@@ -13,7 +13,7 @@
 // Composed Address rail does not: an outage is no evidence about the
 // address. Pure and import-light, so the Round Audit's replay loads it too.
 
-import type { ToolResultOutcome } from '../ports/llm'
+import type { ToolResultOutcome } from '../ports/toolOutcome'
 import { reportFault } from '../trace/fault.ts'
 import { isNotFoundTitle, NOT_FOUND_STATUSES, type NotFoundPageFacts } from './notFoundPage.ts'
 import { parseSearchUrl } from './urlInput.ts'

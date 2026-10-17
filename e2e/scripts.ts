@@ -12,8 +12,8 @@ export function urlBarNavigationScript(url: string): string {
   })()`
 }
 
-// Drives the Prompt Bar (#46 consolidated) in the feed panel's footer —
-// the one typed-input surface, submit or steer by run state.
+// Drives the Prompt Bar in the feed panel's footer — the one typed-input
+// surface.
 export function promptBarScript(text: string): string {
   return `(async () => {
     const input = document.querySelector('.prompt-input')
@@ -25,42 +25,5 @@ export function promptBarScript(text: string): string {
     await new Promise((r) => setTimeout(r, 200))
     document.querySelector('.prompt-form').requestSubmit()
     return 'submitted'
-  })()`
-}
-
-// Clicks the first action button (Approve) of the confirmation dialog, if shown.
-export function approveConfirmationScript(): string {
-  return `(() => {
-    const card = document.querySelector('.confirmation-card')
-    if (!card) return 'no-confirmation'
-    const approve = card.querySelector('.confirmation-actions button')
-    if (!approve) return 'no-approve-button'
-    approve.click()
-    return 'approved'
-  })()`
-}
-
-// Clicks the Deny button of the confirmation dialog, if shown.
-export function denyConfirmationScript(): string {
-  return `(() => {
-    const card = document.querySelector('.confirmation-card')
-    if (!card) return 'no-confirmation'
-    const deny = [...card.querySelectorAll('.confirmation-actions button')].find((b) => b.textContent?.trim() === 'Deny')
-    if (!deny) return 'no-deny-button'
-    deny.click()
-    return 'denied'
-  })()`
-}
-
-export function answerAskScript(answer: string): string {
-  return `(async () => {
-    const input = document.querySelector('.ask-input')
-    if (!input) return 'no-ask-input'
-    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
-    setter.call(input, ${JSON.stringify(answer)})
-    input.dispatchEvent(new Event('input', { bubbles: true }))
-    await new Promise((r) => setTimeout(r, 200))
-    document.querySelector('.ask-card').requestSubmit()
-    return 'answered'
   })()`
 }

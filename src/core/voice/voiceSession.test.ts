@@ -1,18 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import type { PipelineEvent } from '../pipeline/events'
 import { FakeClock, FakeTranscriber, FakeVad, FakeWakeDetector, RecordingTts } from '../testing/doubles'
 import type { VoiceHeardEvent, VoiceState } from './ipcChannels'
 import { createVoiceSession, PAUSE_LISTEN_TIMEOUT_MS } from './voiceSession'
 import { mergeFramesFor, vadDefaults, type UtteranceEndpointerConfig } from './vadEndpointing'
-import type { CommandRunState } from '../pipeline/createCommandPipeline'
+import type { CommandRunState } from '../pipeline/runState'
 import { createPerfTracer, type PerfSpanRecord } from '../perf/perfTracer'
 import { audioDumpEnabled, createUtteranceDumper, type UtteranceDumpWriter } from './utteranceDump'
-import type { SessionId } from '../session/sessionIdentity'
-import type { HostTraceEvent } from '../trace/hostTrace'
 
 // The voice session is T9's coordinator: mic audio in (through the VadScorer
-// and utterance endpointing), transcripts out to the same command pipeline as
-// the text box, and confirmation prompts get their 12 s spoken yes/no window.
+// and utterance endpointing), transcripts out to the same command runner as
+// the prompt bar.
 // Everything here runs on fakes; the main-process adapters only supply VAD
 // probabilities and transcripts.
 
@@ -31,27 +28,11 @@ function utteranceProbs(speechFrames = 8): number[] {
   return [...Array.from({ length: speechFrames }, () => SPEECH), ...Array.from({ length: SUBMIT_SILENCE + 5 }, () => SILENCE)]
 }
 
-class DeferredIdle {
-  private waiting: (() => void)[] = []
-  busy = false
-
-  waitIdle(): Promise<void> {
-    if (!this.busy) return Promise.resolve()
-    return new Promise((resolve) => this.waiting.push(resolve))
-  }
-
-  becomeIdle(): void {
-    this.busy = false
-    for (const resolve of this.waiting.splice(0)) resolve()
-  }
-}
-
 interface SessionHarness {
   vad: FakeVad
   transcriber: FakeTranscriber
   clock: FakeClock
   tts: RecordingTts
-  idle: DeferredIdle
   states: VoiceState[]
   heard: VoiceHeardEvent[]
   errors: string[]
@@ -62,11 +43,6 @@ interface SessionHarness {
   perf: PerfSpanRecord[]
   /** WAV writes when the audio-dump flag is on (#34). */
   dumps: { path: string; bytes: Uint8Array }[]
-  /** The Host Trace records the ear wrote (#186). */
-  traced: HostTraceEvent[]
-  resolutions: { confirmationId: string; approved: boolean }[]
-  askResolutions: { askId: string; answer: string }[]
-  sessionDecisions: ('extend' | 'decline')[]
   aborts: number[]
   pauses: number[]
   resumes: (string | undefined)[]
@@ -84,7 +60,6 @@ async function flush(microtasks = 5): Promise<void> {
 async function createSession(overrides?: {
   transcriber?: FakeTranscriber
   vad?: FakeVad
-  confirmWindowMs?: number
   wake?: { detector: FakeWakeDetector; threshold?: number }
   runState?: { value: CommandRunState }
   /** Turns on perf instrumentation; sttMs is the scripted STT duration. */
@@ -97,14 +72,11 @@ async function createSession(overrides?: {
   endpointerConfig?: Partial<UtteranceEndpointerConfig>
   /** Parks every finish() until settleStt — the STT-window seam (ADR 0024). */
   deferStt?: boolean
-  /** The live bias set a transcript's hits are read against (#186). */
-  biasPhrases?: string[]
 }): Promise<SessionHarness> {
   const vad = overrides?.vad ?? new FakeVad()
   const baseTranscriber = overrides?.transcriber ?? new FakeTranscriber()
   const clock = new FakeClock()
   const tts = new RecordingTts()
-  const idle = new DeferredIdle()
   const states: VoiceState[] = []
   const heard: VoiceHeardEvent[] = []
   const errors: string[] = []
@@ -112,14 +84,10 @@ async function createSession(overrides?: {
   const submitted: { text: string; turnId?: string; truncated: boolean }[] = []
   const perf: PerfSpanRecord[] = []
   const dumps: { path: string; bytes: Uint8Array }[] = []
-  const resolutions: { confirmationId: string; approved: boolean }[] = []
-  const askResolutions: { askId: string; answer: string }[] = []
-  const sessionDecisions: ('extend' | 'decline')[] = []
   const aborts: number[] = []
   const pauses: number[] = []
   const resumes: (string | undefined)[] = []
   const chimes: number[] = []
-  const traced: HostTraceEvent[] = []
   const threshold = overrides?.wake?.threshold ?? 0.5
 
   // The real tracer over an in-memory sink, on the same FakeClock the session
@@ -184,16 +152,10 @@ async function createSession(overrides?: {
     transcriber,
     clock,
     tts,
-    ttsIdle: idle,
-    confirmWindowMs: overrides?.confirmWindowMs,
     endpointerConfig: overrides?.endpointerConfig,
     getEndpointerConfig: overrides?.getEndpointerConfig,
     tracer,
     dumper,
-    // The Host Trace writer as main wires it (#186): the ear's records,
-    // built lazily inside the writer's own guard.
-    hostTrace: (event) => traced.push(event()),
-    ...(overrides?.biasPhrases ? { biasPhrases: () => overrides.biasPhrases ?? [] } : {}),
     wake: overrides?.wake
       ? {
           detector: overrides.wake.detector,
@@ -205,10 +167,6 @@ async function createSession(overrides?: {
       commands.push(text)
       submitted.push({ text, turnId, truncated: truncated ?? false })
     },
-    onResolveConfirmation: (confirmationId, approved) => resolutions.push({ confirmationId, approved }),
-    onResolveAsk: (askId, answer) => askResolutions.push({ askId, answer }),
-    onExtendSession: () => sessionDecisions.push('extend'),
-    onDeclineSession: () => sessionDecisions.push('decline'),
     getRunState: () => overrides?.runState?.value ?? 'idle',
     onAbort: () => aborts.push(1),
     onPause: () => {
@@ -238,94 +196,19 @@ async function createSession(overrides?: {
     pendingStt.shift()?.resolve(text)
   }
 
-  return { vad, transcriber: baseTranscriber, clock, tts, idle, states, heard, errors, commands, submitted, perf, dumps, resolutions, askResolutions, sessionDecisions, aborts, pauses, resumes, chimes, traced, settleStt, speakUtterance, session }
-}
-
-function confirmationRequested(id = 'confirm-1'): PipelineEvent {
-  return {
-    type: 'confirmation_requested',
-    turnId: 'turn-fixture',
-    confirmationId: id,
-    callId: 'c1',
-    toolName: 'click',
-    prompt: 'Run click?',
-    expiresAt: 60_000,
-    at: 0,
-  }
-}
-
-function askRequested(id = 'ask-1'): PipelineEvent {
-  return {
-    type: 'ask_requested',
-    turnId: 'turn-fixture',
-    askId: id,
-    callId: 'c1',
-    question: 'Which city do you mean?',
-    expiresAt: 45_000,
-    at: 0,
-  }
-}
-
-function sessionExpiring(): PipelineEvent {
-  return {
-    type: 'session_expiring',
-    sessionId: 'session-1' as SessionId,
-    sessionGeneration: 2,
-    expiresAt: 60_000,
-    at: 0,
-  }
+  return { vad, transcriber: baseTranscriber, clock, tts, states, heard, errors, commands, submitted, perf, dumps, aborts, pauses, resumes, chimes, settleStt, speakUtterance, session }
 }
 
 describe('voice session', () => {
-  it.each([
-    ['yes', 'extend'],
-    ['no', 'decline'],
-  ] as const)('routes an expiry answer "%s" without creating a command or heard entry', async (answer, decision) => {
-    const harness = await createSession({ transcriber: new FakeTranscriber([answer]) })
-    harness.session.handlePipelineEvent(sessionExpiring())
-    await flush()
-
-    expect(harness.session.getState().reason).toBe('session-expiry')
-    await harness.speakUtterance()
-
-    expect(harness.sessionDecisions).toEqual([decision])
-    expect(harness.commands).toEqual([])
-    expect(harness.heard).toEqual([])
-  })
-
-  it('waits for the warning speech, keeps silence unresolved, and clears on visual extension', async () => {
-    const harness = await createSession()
-    harness.idle.busy = true
-    harness.session.handlePipelineEvent(sessionExpiring())
-    await flush()
-    expect(harness.states).toEqual([])
-
-    harness.idle.becomeIdle()
-    await flush()
-    expect(harness.session.getState().reason).toBe('session-expiry')
-    harness.clock.advance(12_000)
-    expect(harness.sessionDecisions).toEqual([])
-
-    harness.session.handlePipelineEvent({
-      type: 'session_extended',
-      sessionId: 'session-1' as SessionId,
-      sessionGeneration: 2,
-      expiresAt: 90_000,
-      at: 12_000,
-    })
-    expect(harness.session.getState().reason).toBeNull()
-  })
-
-  it.each(['stop', 'abort', 'cancel', 'never mind'])('routes active "%s" to abort before confirmation handling', async (phrase) => {
+  it.each(['stop', 'abort', 'cancel', 'never mind'])('routes active "%s" to abort, never to the runner as a command', async (phrase) => {
     const runState = { value: 'running' as CommandRunState }
     const harness = await createSession({ transcriber: new FakeTranscriber([phrase]), runState })
-    harness.session.handlePipelineEvent(confirmationRequested())
+    harness.session.arm()
     await flush()
 
     await harness.speakUtterance()
 
     expect(harness.aborts).toEqual([1])
-    expect(harness.resolutions).toEqual([])
     expect(harness.commands).toEqual([])
     expect(harness.heard).toEqual([{ text: phrase, routed: 'abort' }])
   })
@@ -545,24 +428,26 @@ describe('voice session', () => {
     expect(harness.commands).toEqual(['first', 'second'])
   })
 
-  it('applies a changed endpoint delay inside a window that stays open (#37)', async () => {
+  it('applies a changed endpoint delay inside a listen that stays open (#37)', async () => {
     let endFrames = 25
+    const runState = { value: 'paused' as CommandRunState }
     const harness = await createSession({
-      transcriber: new FakeTranscriber(['hmm', 'yes']),
+      transcriber: new FakeTranscriber(['hold on', 'use paris']),
       getEndpointerConfig: () => ({ endFrames, resumptionMergeMs: 0 }),
+      runState,
     })
 
-    // A confirmation window survives an undecided utterance — the slider must
-    // still reach the very next utterance, not just the next listen start.
-    harness.session.handlePipelineEvent(confirmationRequested())
+    // A Pause Listen survives a "hold on" — the slider must still reach the
+    // very next utterance, not just the next listen start.
+    harness.session.arm()
     await flush()
     await harness.speakUtterance([...Array.from({ length: 8 }, () => SPEECH), ...Array.from({ length: 25 }, () => SILENCE)])
-    expect(harness.resolutions).toEqual([]) // 'hmm' is undecided — window open
+    expect(harness.resumes).toEqual([]) // 'hold on' keeps the run paused — listen open
 
     endFrames = 5
     await harness.speakUtterance()
     expect(harness.transcriber.audio[1].length).toBe((8 + 5 - 2) * 512)
-    expect(harness.resolutions).toEqual([{ confirmationId: 'confirm-1', approved: true }])
+    expect(harness.resumes).toEqual(['use paris'])
   })
 
   it('splits pushed chunks into 512-sample frames for the VAD', async () => {
@@ -615,113 +500,6 @@ describe('voice session', () => {
     expect(harness.transcriber.audio).toHaveLength(0)
   })
 
-  it('auto-arms for a confirmation once the spoken prompt finishes', async () => {
-    const harness = await createSession()
-
-    harness.idle.busy = true
-    harness.session.handlePipelineEvent(confirmationRequested())
-    await flush()
-    // The prompt is still speaking — not listening yet.
-    expect(harness.states).toEqual([])
-
-    harness.idle.becomeIdle()
-    await flush()
-
-    expect(harness.states).toEqual([{ listening: true, reason: 'confirmation', monitoring: false, transcribing: false }])
-  })
-
-  it('answers a confirmation with a spoken yes and disarms', async () => {
-    const harness = await createSession({ transcriber: new FakeTranscriber(['um, yeah sure']) })
-
-    harness.session.handlePipelineEvent(confirmationRequested('confirm-7'))
-    await flush()
-    await harness.speakUtterance()
-
-    expect(harness.resolutions).toEqual([{ confirmationId: 'confirm-7', approved: true }])
-    expect(harness.heard).toEqual([{ text: 'um, yeah sure', routed: 'confirmation' }])
-    expect(harness.commands).toEqual([])
-    expect(harness.states.at(-1)).toEqual({ listening: false, reason: null, monitoring: false, transcribing: false })
-  })
-
-  it('answers a confirmation with a spoken no', async () => {
-    const harness = await createSession({ transcriber: new FakeTranscriber(['nope']) })
-
-    harness.session.handlePipelineEvent(confirmationRequested('confirm-2'))
-    await flush()
-    await harness.speakUtterance()
-
-    expect(harness.resolutions).toEqual([{ confirmationId: 'confirm-2', approved: false }])
-  })
-
-  it('keeps the window open through undecided answers, without submitting them as commands', async () => {
-    const harness = await createSession({ transcriber: new FakeTranscriber(['maybe', 'yes']) })
-
-    harness.session.handlePipelineEvent(confirmationRequested('confirm-3'))
-    await flush()
-    await harness.speakUtterance()
-
-    expect(harness.resolutions).toEqual([])
-    expect(harness.commands).toEqual([])
-    expect(harness.heard).toEqual([{ text: 'maybe', routed: 'ignored' }])
-    expect(harness.states.at(-1)).toEqual({ listening: true, reason: 'confirmation', monitoring: false, transcribing: false })
-
-    await harness.speakUtterance()
-    expect(harness.resolutions).toEqual([{ confirmationId: 'confirm-3', approved: true }])
-  })
-
-  it('closes the window after 12 s without resolving — tap buttons and the 60 s auto-deny stay in charge', async () => {
-    const harness = await createSession()
-
-    harness.session.handlePipelineEvent(confirmationRequested())
-    await flush()
-
-    harness.clock.advance(12_000)
-
-    expect(harness.states.at(-1)).toEqual({ listening: false, reason: null, monitoring: false, transcribing: false })
-    expect(harness.resolutions).toEqual([])
-  })
-
-  it('disarms when the confirmation is resolved by tap mid-window', async () => {
-    const harness = await createSession()
-
-    harness.session.handlePipelineEvent(confirmationRequested('confirm-4'))
-    await flush()
-    expect(harness.states.at(-1)).toEqual({ listening: true, reason: 'confirmation', monitoring: false, transcribing: false })
-
-    harness.session.handlePipelineEvent({
-      type: 'confirmation_resolved',
-      turnId: 'turn-fixture',
-      confirmationId: 'confirm-4',
-      approved: true,
-      reason: 'user',
-      at: 1_000,
-    })
-
-    expect(harness.states.at(-1)).toEqual({ listening: false, reason: null, monitoring: false, transcribing: false })
-    // The 12 s window timer is gone too — no late disarm state event.
-    harness.clock.advance(12_000)
-    expect(harness.states).toHaveLength(2)
-  })
-
-  it('never arms a window for a confirmation already resolved while the prompt was still speaking', async () => {
-    const harness = await createSession()
-
-    harness.idle.busy = true
-    harness.session.handlePipelineEvent(confirmationRequested('confirm-5'))
-    harness.session.handlePipelineEvent({
-      type: 'confirmation_resolved',
-      turnId: 'turn-fixture',
-      confirmationId: 'confirm-5',
-      approved: false,
-      reason: 'user',
-      at: 500,
-    })
-    harness.idle.becomeIdle()
-    await flush()
-
-    expect(harness.states).toEqual([])
-  })
-
   it('surfaces a failed transcriber as an error and disarms', async () => {
     const transcriber = new FakeTranscriber(['x'])
     transcriber.rejectWith = new Error('stt model missing')
@@ -765,19 +543,6 @@ describe('voice session', () => {
     expect(harness.vad.resets).toBe(2)
   })
 
-  it('hotkey arm during an open confirmation window keeps serving that confirmation', async () => {
-    const harness = await createSession({ transcriber: new FakeTranscriber(['yeah']) })
-
-    harness.session.handlePipelineEvent(confirmationRequested('confirm-9'))
-    await flush()
-    // User presses the hotkey while the window is open.
-    harness.session.arm()
-    await harness.speakUtterance()
-
-    // Still routed to the open confirmation, not submitted as a command.
-    expect(harness.resolutions).toEqual([{ confirmationId: 'confirm-9', approved: true }])
-    expect(harness.commands).toEqual([])
-  })
 })
 
 describe('voice session — resumption merge (#60)', () => {
@@ -883,92 +648,6 @@ describe('voice session — resumption merge (#60)', () => {
   })
 })
 
-describe('voice session — ask_user window (issue #18)', () => {
-  it('opens a free-text listen window once the spoken question finishes', async () => {
-    const harness = await createSession()
-
-    harness.idle.busy = true
-    harness.session.handlePipelineEvent(askRequested('ask-1'))
-    await flush()
-    // Still speaking — the window has not opened yet.
-    expect(harness.states).toEqual([])
-
-    harness.idle.becomeIdle()
-    await flush()
-
-    expect(harness.states).toEqual([{ listening: true, reason: 'ask', monitoring: false, transcribing: false }])
-  })
-
-  it('returns the spoken transcript as the free-text answer', async () => {
-    const harness = await createSession({ transcriber: new FakeTranscriber(['the one in Paris, France']) })
-
-    harness.session.handlePipelineEvent(askRequested('ask-4'))
-    await flush()
-    await harness.speakUtterance()
-
-    expect(harness.askResolutions).toEqual([{ askId: 'ask-4', answer: 'the one in Paris, France' }])
-    expect(harness.heard).toEqual([{ text: 'the one in Paris, France', routed: 'ask' }])
-    expect(harness.commands).toEqual([])
-    expect(harness.states.at(-1)).toEqual({ listening: false, reason: null, monitoring: false, transcribing: false })
-  })
-
-  it('keeps the window open when speech transcribes to nothing', async () => {
-    const harness = await createSession({ transcriber: new FakeTranscriber(['']) })
-
-    harness.session.handlePipelineEvent(askRequested('ask-2'))
-    await flush()
-    await harness.speakUtterance()
-
-    expect(harness.askResolutions).toEqual([])
-    expect(harness.states.at(-1)).toEqual({ listening: true, reason: 'ask', monitoring: false, transcribing: false })
-  })
-
-  it('closes the window after 45 s without resolving — typed answers stay possible', async () => {
-    const harness = await createSession()
-
-    harness.session.handlePipelineEvent(askRequested('ask-3'))
-    await flush()
-
-    harness.clock.advance(45_000)
-
-    expect(harness.states.at(-1)).toEqual({ listening: false, reason: null, monitoring: false, transcribing: false })
-    expect(harness.askResolutions).toEqual([])
-  })
-
-  it('stops listening when the ask is answered by typing', async () => {
-    const harness = await createSession()
-
-    harness.session.handlePipelineEvent(askRequested('ask-5'))
-    await flush()
-    expect(harness.states.at(-1)).toEqual({ listening: true, reason: 'ask', monitoring: false, transcribing: false })
-
-    harness.session.handlePipelineEvent({
-      type: 'ask_resolved',
-      turnId: 'turn-fixture',
-      askId: 'ask-5',
-      answer: 'typed answer',
-      reason: 'user',
-      at: 900,
-    })
-
-    expect(harness.states.at(-1)).toEqual({ listening: false, reason: null, monitoring: false, transcribing: false })
-    // The window timer is gone too — no late disarm state event.
-    harness.clock.advance(45_000)
-    expect(harness.states).toHaveLength(2)
-  })
-
-  it('serves a hotkey-armed mic to the open ask, not as a command', async () => {
-    const harness = await createSession({ transcriber: new FakeTranscriber(['paris']) })
-
-    harness.session.handlePipelineEvent(askRequested('ask-6'))
-    await flush()
-    harness.session.arm()
-    await harness.speakUtterance()
-
-    expect(harness.askResolutions).toEqual([{ askId: 'ask-6', answer: 'paris' }])
-    expect(harness.commands).toEqual([])
-  })
-})
 
 describe('voice session — wake word (T10)', () => {
   /** Push `frames` monitoring frames (512 samples each) with the given VAD probs. */
@@ -1100,23 +779,6 @@ describe('voice session — wake word (T10)', () => {
     expect(detector.chunks.length).toBeGreaterThan(0)
   })
 
-  it('a confirmation window while monitoring returns to monitoring after the spoken yes', async () => {
-    const detector = new FakeWakeDetector()
-    const harness = await createSession({
-      transcriber: new FakeTranscriber(['yes']),
-      wake: { detector },
-    })
-    harness.session.enableWakeMonitoring()
-
-    harness.session.handlePipelineEvent(confirmationRequested('confirm-w'))
-    await flush()
-    expect(harness.states.at(-1)).toEqual({ listening: true, reason: 'confirmation', monitoring: true, transcribing: false })
-
-    await harness.speakUtterance()
-    expect(harness.resolutions).toEqual([{ confirmationId: 'confirm-w', approved: true }])
-    expect(harness.states.at(-1)).toEqual({ listening: false, reason: null, monitoring: true, transcribing: false })
-  })
-
   it('the abort head cancels an active run from the always-on ear', async () => {
     const runState = { value: 'running' as CommandRunState }
     const detector = new FakeWakeDetector({ abort: [0.95] })
@@ -1188,24 +850,6 @@ describe('voice session — wake word (T10)', () => {
     expect(harness.states.at(-1)).toEqual({ listening: true, reason: 'pause', monitoring: false, transcribing: false })
   })
 
-  it('the hotkey during a confirmation listen keeps serving the prompt — no pause', async () => {
-    const runState = { value: 'running' as CommandRunState }
-    const harness = await createSession({
-      transcriber: new FakeTranscriber(['yes']),
-      runState,
-    })
-    harness.session.handlePipelineEvent(confirmationRequested('confirm-h'))
-    await flush()
-    expect(harness.session.getState().reason).toBe('confirmation')
-
-    harness.session.arm()
-
-    expect(harness.pauses).toHaveLength(0)
-    expect(harness.session.getState().reason).toBe('confirmation')
-    await harness.speakUtterance()
-    expect(harness.resolutions).toEqual([{ confirmationId: 'confirm-h', approved: true }])
-  })
-
   it('the wake word while paused (no listen open) opens a wake listen and steers without resuming first', async () => {
     const runState = { value: 'paused' as CommandRunState }
     const detector = new FakeWakeDetector([0.95])
@@ -1272,17 +916,6 @@ describe('voice session — perf spans (#27)', () => {
 
     const stt = harness.perf.find((record) => record.stage === 'stt')
     expect(stt!.detail).toEqual({ speechMs: 8 * 32, totalMs: (8 + SUBMIT_SILENCE - 2) * 32, truncated: false })
-  })
-
-  it('logs the stt span for confirmation answers but no wake-to-transcript span', async () => {
-    const harness = await createSession({ transcriber: new FakeTranscriber(['yes']), perf: {} })
-
-    harness.session.handlePipelineEvent(confirmationRequested('confirm-p'))
-    await flush()
-    await harness.speakUtterance()
-
-    expect(harness.perf.map((record) => record.stage)).toEqual(['stt'])
-    expect(harness.submitted).toEqual([])
   })
 
   it('still logs the stt span with the error when transcription fails', async () => {
@@ -1427,35 +1060,6 @@ describe('voice session — transcribing state (#38)', () => {
     await flush()
 
     expect(harness.commands).toEqual(['open youtube'])
-  })
-
-  it('an undecided confirmation answer exits transcribing back to the open window', async () => {
-    const transcriber = new DeferredTranscriber()
-    const harness = await createSession({ transcriber })
-
-    harness.session.handlePipelineEvent(confirmationRequested('confirm-t'))
-    await flush()
-    const { stt } = await endpointUtterance(harness)
-
-    expect(harness.states.at(-1)).toEqual({
-      listening: false,
-      reason: 'confirmation',
-      monitoring: false,
-      transcribing: true,
-    })
-
-    transcriber.resolve('maybe')
-    await stt
-    await flush()
-
-    expect(harness.resolutions).toEqual([])
-    expect(harness.heard).toEqual([{ text: 'maybe', routed: 'ignored' }])
-    expect(harness.states.at(-1)).toEqual({
-      listening: true,
-      reason: 'confirmation',
-      monitoring: false,
-      transcribing: false,
-    })
   })
 
   it('a spoken "hold on" into the Pause Listen keeps the run paused (ADR 0024)', async () => {
@@ -1635,67 +1239,3 @@ describe('voice session — utterance audio dumps (#34)', () => {
 // The ear's Host Trace records (#186, ADR 0031). Host-scoped by the
 // boundary rule: a listen runs outside every Run — it is what starts one —
 // so nothing here names a turn.
-describe('voice records', () => {
-  it('records the wake detection that fired, with the scores it cleared', async () => {
-    const detector = new FakeWakeDetector([0.9])
-    const harness = await createSession({ transcriber: new FakeTranscriber(['open youtube']), wake: { detector } })
-    harness.session.enableWakeMonitoring()
-    // Two and a half 512-sample frames complete the first 1280-sample wake chunk.
-    for (const prob of [SPEECH, SPEECH, SPEECH]) {
-      harness.vad.queue.push(prob)
-      await harness.session.pushAudio(new Float32Array(512))
-    }
-    expect(harness.traced.filter((event) => event.kind === 'voice_wake')).toEqual([
-      { kind: 'voice_wake', head: 'wake', score: 0.9, threshold: 0.5, gateMax: SPEECH, gate: 0.5 },
-    ])
-  })
-
-  it('records the utterance endpoint with the listen reason that was open', async () => {
-    const harness = await createSession({ transcriber: new FakeTranscriber(['open youtube']) })
-    harness.session.arm()
-    await harness.speakUtterance()
-    expect(harness.traced.find((event) => event.kind === 'voice_endpoint')).toMatchObject({
-      kind: 'voice_endpoint',
-      truncated: false,
-      reason: 'hotkey',
-    })
-  })
-
-  it('records the transcript with the bias phrases it actually contains', async () => {
-    const harness = await createSession({
-      transcriber: new FakeTranscriber(['open sonarr please']),
-      biasPhrases: ['sonarr', 'radarr'],
-    })
-    harness.session.arm()
-    await harness.speakUtterance()
-    expect(harness.traced.find((event) => event.kind === 'voice_stt')).toMatchObject({
-      kind: 'voice_stt',
-      text: 'open sonarr please',
-      chars: 18,
-      biasCount: 2,
-      biasHits: ['sonarr'],
-    })
-  })
-
-  it('records a failed STT pass with the engine error and no transcript', async () => {
-    const transcriber = new FakeTranscriber()
-    transcriber.rejectWith = new Error('decoder crashed')
-    const harness = await createSession({ transcriber })
-    harness.session.arm()
-    await harness.speakUtterance()
-    expect(harness.traced.find((event) => event.kind === 'voice_stt')).toMatchObject({
-      kind: 'voice_stt',
-      text: '',
-      chars: 0,
-      error: 'decoder crashed',
-    })
-  })
-
-  it('names no turn on any of them — the ear runs outside every Run', async () => {
-    const harness = await createSession({ transcriber: new FakeTranscriber(['open youtube']) })
-    harness.session.arm()
-    await harness.speakUtterance()
-    expect(harness.traced.length).toBeGreaterThan(0)
-    for (const event of harness.traced) expect(event).not.toHaveProperty('turnId')
-  })
-})

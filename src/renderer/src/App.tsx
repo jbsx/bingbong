@@ -1,19 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { BrowserNav, BrowserPane } from './BrowserPane'
-import { AssistantPanel, RunHint, SessionExpiryControls, StatusOrb, StatusPill } from './AssistantPanel'
+import { RunHint, StatusOrb, StatusPill } from './AssistantPanel'
 import { IdleScreen } from './IdleScreen'
 import { SettingsPage } from './SettingsPage'
-import { SubagentCards } from './SubagentCards'
-import { evidenceTotal } from '../../core/session/evidenceBrowser'
-import { useActiveSession } from './useActiveSession'
 import { useAssistant } from './useAssistant'
 import { overlaySlotContent } from '../../core/panel/peekCardState'
 import { useFeedPanel, useFeedSlotRect } from './useFeedPanel'
 import { useIdle } from './useIdle'
 import { usePeekCard } from './usePeekCard'
-import { useSessionEvidence } from './useSessionEvidence'
 import { useSettings } from './useSettings'
-import { useSessionExpiry } from './useSessionExpiry'
 import { useVoice } from './useVoice'
 import { useWeather } from './useWeather'
 
@@ -22,27 +17,16 @@ export function App() {
   const { settings, save } = useSettings()
   const [view, setView] = useState<'dashboard' | 'settings'>('dashboard')
   const idle = useIdle()
-  const sessionExpiry = useSessionExpiry()
   // Feed panel layout state (#45): the panel renders in its own overlay
   // webContents above the browser pane; this slot is the rect its bounds
   // follow (overlay floats out-of-flow; docked takes real layout space).
   const panel = useFeedPanel()
   const feedSlotRef = useRef<HTMLDivElement>(null)
-  // The Evidence Browser's dashboard half (#139): the second Session-bearing
-  // renderer answers the same change notifications with the same
-  // authoritative read — the slot carries the live count so the read is
-  // observable, exactly like the slot carries the folded layout. The count
-  // is the filter-independent total: Observations and Candidates together
-  // (#142).
-  const evidence = useSessionEvidence()
-  const evidenceCount = evidenceTotal(evidence.observations, evidence.candidates)
   // The Peek Card (ADR 0021, 0026, 0029): voice's report surface while
   // the panel is Collapsed — shown by activity, retired by opening the
   // panel, revived by closing it mid-run. It renders in the panel's
-  // overlay view now (ADR 0029); the dashboard folds the same events only
-  // to size the slot rect the card floats in — bottom-center, away from
-  // the panel's right edge, so switching card ↔ panel reveals the page
-  // beneath the other.
+  // overlay view (ADR 0029); the dashboard folds the same events only
+  // to size the slot rect the card floats in.
   const peek = usePeekCard(panel.open)
   const slotContent = overlaySlotContent(panel.open, peek.state)
   useFeedSlotRect(feedSlotRef, `${panel.mode}-${slotContent}`)
@@ -58,12 +42,9 @@ export function App() {
   // counts as "not idle" alongside input, so the idle screen never covers a
   // working assistant. (Wake-monitoring on/off transitions are not activity;
   // pinging on those would cancel the boot-into-idle state.)
-  const { ping, idleNow } = idle
+  const { ping } = idle
   useEffect(() => {
-    const unsubEvent = window.bingbong.assistant.onEvent((event) => {
-      if (event.type === 'session_ended') idleNow()
-      else if (!event.type.startsWith('session_')) ping()
-    })
+    const unsubEvent = window.bingbong.assistant.onEvent(() => ping())
     const unsubVoice = window.bingbong.voice.onState((state) => {
       if (state.listening) ping()
     })
@@ -73,7 +54,7 @@ export function App() {
       unsubVoice()
       unsubHeard()
     }
-  }, [idleNow, ping])
+  }, [ping])
 
   // The hotkey arms the ears: Ctrl/Cmd+Space toggles listening. (The feed
   // panel's Ctrl/Cmd+Shift+F lives in main — before-input-event on every
@@ -92,20 +73,9 @@ export function App() {
   // Transcribing outranks listening (#38): the endpoint fired, STT is
   // thinking — never claim the ear is open while it works.
   const status = voice.transcribing ? 'transcribing' : voice.listening ? 'listening' : assistant.status
-  // The Active Session gate (#70, ADR 0014): while an explicit Session is
-  // live — lifecycle events, never Run timestamps — the idle timeout never
-  // swaps the dashboard for the idle screen. Only a lapsed (or
-  // never-started) Session idles.
-  const activeSession = useActiveSession()
   // Never idle over a running command, an open mic, the STT window, or the
   // settings page — the timer must not unmount a form mid-edit.
-  const showIdle =
-    idle.idle &&
-    status === 'idle' &&
-    !voice.listening &&
-    !voice.transcribing &&
-    view === 'dashboard' &&
-    !activeSession
+  const showIdle = idle.idle && status === 'idle' && !voice.listening && !voice.transcribing && view === 'dashboard'
   const weather = useWeather(settings?.weather ?? null, showIdle)
 
   if (showIdle) {
@@ -116,8 +86,8 @@ export function App() {
     <div className={window.bingbong.app.kiosk ? 'dashboard dashboard--kiosk' : 'dashboard'}>
       {/* The Toolbar (ADR 0012): the one reserved band above the pane —
           never overlapping it — and the window's only drag region. Status
-          Capsule left, address field center, controls right; the app title
-          is gone. Interactive controls opt out of the drag region in CSS. */}
+          Capsule left, address field center, controls right. Interactive
+          controls opt out of the drag region in CSS. */}
       <header className="toolbar">
         {/* The Status Capsule (ADR 0012): orb + pill + the live run/voice
             hints collapsed into one control. The class hooks inside
@@ -130,28 +100,13 @@ export function App() {
               mid-run — the climbing timer must never disappear behind a
               listening hint, or a long round reads as frozen again. */}
           {assistant.progress ? <RunHint progress={assistant.progress} /> : null}
-          {sessionExpiry.expiry ? (
-            <SessionExpiryControls
-              expiry={sessionExpiry.expiry}
-              onExtend={sessionExpiry.extend}
-              onDecline={sessionExpiry.decline}
-            />
-          ) : null}
           {voice.transcribing ? (
             <span className="voice-hint voice-hint--transcribing" role="status">
               transcribing…
             </span>
           ) : voice.listening ? (
             <span className="voice-hint" role="status">
-              {voice.reason === 'confirmation'
-                ? 'listening — yes or no?'
-                : voice.reason === 'session-expiry'
-                  ? 'listening — keep this session?'
-                : voice.reason === 'ask'
-                  ? 'listening — your answer'
-                  : voice.reason === 'pause'
-                    ? 'paused — say resume or steer me'
-                    : 'listening — say a command'}
+              {voice.reason === 'pause' ? 'paused — say resume or steer me' : 'listening — say a command'}
             </span>
           ) : voice.monitoring ? (
             <span className="voice-hint voice-hint--monitoring" role="status">
@@ -204,35 +159,20 @@ export function App() {
             )
           ) : (
             <div className="dashboard-browsing">
-              <SubagentCards agents={assistant.agents} />
               <BrowserPane />
             </div>
           )}
           {/* The slot always carries the mode — collapsed or not — so the
-              persisted layout is observable (and assertable) at boot. The
-              data attribute mirrors the dashboard's authoritative evidence
-              read (#139) the same way. */}
+              persisted layout is observable (and assertable) at boot. */}
           <div
             ref={feedSlotRef}
             className={`feed-slot feed-slot--${panel.mode}${
               slotContent === 'card' ? ' feed-slot--peek' : slotContent === 'tab' ? ' feed-slot--collapsed' : ''
             }`}
-            data-evidence-count={evidenceCount}
             aria-hidden="true"
           />
         </div>
       </main>
-
-      {/* Transient cards only — typed input lives in the feed panel's
-          prompt bar (ADR 0011), and the band renders only while a card is
-          pending. The card floats centered on canvas (ADR 0012); it cannot
-          overlay the native pane, so it keeps this in-flow band. The Peek
-          Card left this band for the panel's overlay view (ADR 0029). */}
-      {assistant.pendingConfirmation || assistant.pendingAsk ? (
-        <footer className="dashboard-footer">
-          <AssistantPanel assistant={assistant} />
-        </footer>
-      ) : null}
     </div>
   )
 }

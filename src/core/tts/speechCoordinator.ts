@@ -1,7 +1,5 @@
 import type { AudioDucker, AudioPlayer, AudioPlayback, SpeakOutcome, SpeechSynthesizer, TtsSpeaker } from '../ports/tts'
 import type { PerfTracer } from '../perf/perfTracer'
-import type { HostTraceWriter } from '../trace/hostTrace'
-import { tracedText, TRACE_SPOKEN_LINE_MAX_CHARS } from '../trace/voiceTrace'
 import { reportFault } from '../trace/fault'
 
 export interface SpeechCoordinatorDeps {
@@ -16,14 +14,6 @@ export interface SpeechCoordinatorDeps {
    * lines) pass through unlogged.
    */
   tracer?: PerfTracer
-  /**
-   * The Host Trace writer (#186, ADR 0031): records the exact text handed
-   * to the synthesizer, and every line barge-in dropped. Speech is the
-   * last transformation in a long chain — a line that reads wrong aloud
-   * is diagnosed by what piper was actually given, not by the answer it
-   * came from. Absent unless the developer set `BINGBONG_HOST_TRACE`.
-   */
-  hostTrace?: HostTraceWriter
 }
 
 interface QueuedSpeak {
@@ -40,15 +30,12 @@ interface QueuedSpeak {
  * not an error.
  */
 export function createSpeechCoordinator(deps: SpeechCoordinatorDeps): TtsSpeaker {
-  const { synth, player, ducker, tracer, hostTrace } = deps
+  const { synth, player, ducker, tracer } = deps
   const queue: QueuedSpeak[] = []
   let pumping = false
   // Barge-in epoch: lines from before the latest stop() never reach playback.
   let stopEpoch = 0
   let current: AudioPlayback | null = null
-  // The line playback owns right now (#186), so a barge-in can say what
-  // it cut off rather than only that it cut something.
-  let speaking: { text: string; turnId?: string } | null = null
 
   /**
    * Advisory bookkeeping (#31), same stance as every perf call site: a
@@ -64,16 +51,6 @@ export function createSpeechCoordinator(deps: SpeechCoordinatorDeps): TtsSpeaker
     }
   }
 
-  /** One line the barge-in dropped, and where it was when the stop reached it. */
-  function traceDropped(text: string, stage: 'queued' | 'synthesized' | 'speaking', turnId?: string): void {
-    hostTrace?.(() => ({
-      kind: 'tts_dropped',
-      ...tracedText(text, TRACE_SPOKEN_LINE_MAX_CHARS),
-      stage,
-      ...(turnId !== undefined ? { turnId } : {}),
-    }))
-  }
-
   function speak(text: string, turnId?: string): Promise<SpeakOutcome> {
     return new Promise((resolve) => {
       queue.push({ text, ...(turnId !== undefined ? { turnId } : {}), resolve })
@@ -85,10 +62,8 @@ export function createSpeechCoordinator(deps: SpeechCoordinatorDeps): TtsSpeaker
     stopEpoch += 1
     for (const item of queue.splice(0)) {
       // Never synthesized: the stop reached it while it waited its turn.
-      traceDropped(item.text, 'queued', item.turnId)
       item.resolve({ ok: true })
     }
-    if (speaking !== null) traceDropped(speaking.text, 'speaking', speaking.turnId)
     current?.stop()
   }
 
@@ -107,11 +82,6 @@ export function createSpeechCoordinator(deps: SpeechCoordinatorDeps): TtsSpeaker
   async function speakNow(text: string, epoch: number, turnId?: string): Promise<SpeakOutcome> {
     // The exact text piper is given (#186) — recorded before synthesis, so
     // a line that never comes back still leaves the ask behind.
-    hostTrace?.(() => ({
-      kind: 'tts_line',
-      ...tracedText(text, TRACE_SPOKEN_LINE_MAX_CHARS),
-      ...(turnId !== undefined ? { turnId } : {}),
-    }))
     ducker?.duck()
     try {
       const synthStart = tracer?.now()
@@ -126,12 +96,10 @@ export function createSpeechCoordinator(deps: SpeechCoordinatorDeps): TtsSpeaker
       }
       // Stopped while piper rendered — never let the stale line reach playback.
       if (epoch !== stopEpoch) {
-        traceDropped(text, 'synthesized', turnId)
         return { ok: true }
       }
       const playback = player.play(wav)
       current = playback
-      speaking = { text, ...(turnId !== undefined ? { turnId } : {}) }
       const playStart = tracer?.now()
       try {
         await playback.done
@@ -146,7 +114,6 @@ export function createSpeechCoordinator(deps: SpeechCoordinatorDeps): TtsSpeaker
       return { ok: false, error: err instanceof Error ? err.message : String(err) }
     } finally {
       current = null
-      speaking = null
       ducker?.restore()
     }
   }

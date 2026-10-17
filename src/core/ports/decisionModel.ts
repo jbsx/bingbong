@@ -5,8 +5,6 @@
 // never end a Run: every failure is an `unavailable` result, never a throw,
 // and an unavailable answer means the round proceeds exactly as before.
 
-import type { DecisionSeam } from '../agent/modelRouting.ts'
-
 /** A Choice among named options; the labels are what the answer points at. */
 export interface DecisionChoiceQuestion {
   readonly type: 'choice'
@@ -89,15 +87,6 @@ export interface DecisionModel {
 }
 
 /**
- * The Decision Model a Run may ask, and the seams that act on its answers
- * (`BINGBONG_DECISION_SEAMS`). A seam not listed may still ask in shadow.
- */
-export interface ConfiguredDecisionModel {
-  readonly model: DecisionModel
-  readonly seams: ReadonlySet<DecisionSeam>
-}
-
-/**
  * The bar each primitive's answer must clear before a seam acts. The numbers
  * of one primitive do not carry to another, so a Choice and a Noul each have
  * their own (ADR 0068).
@@ -110,35 +99,18 @@ export interface DecisionThresholds {
 }
 
 /**
- * The bars each seam acts at, per `jev-1.13.0`. The passage seam was removed
- * (#283, ADR 0069); its bars stay as the ones its traces were written under,
- * which is what the Shadow Replay reads them against. They started at 0.7/0.7 and
- * the shadow replay's decile table moves them (#275,
- * e2e/eval/jev/shadow-2026-09-26.json): a bar is the lowest decile whose
- * acts agree with the model's pick at least 0.8 over at least ten scored
- * acts, or failing that the highest decile that still has ten. For the
- * passage seam that is Choice 0.7 (0.86 over 22) and, no Noul bar reaching
- * 0.8, Noul 0.9 (0.70 over 40); together they act 22 times in 148 reads,
- * 14 agreeing, 3 not, 5 on reads the model recorded nothing from. Result
- * and tier stay at the starting bars by the owner's call — result met it,
- * and tier only ever records in shadow.
- *
- * The passage bars were then re-read (#281,
- * e2e/eval/jev/shadow-2026-09-27.json): that 0.9 was read from one Noul over
- * every item while the seam asks one per item, and the seam acted once live.
- * Asked the seam's own questions, the Objective named, Choice 0.7 with Noul
- * 0.7 is the lowest bar agreeing at least 0.8 over ten scored pairs under both
- * the repaired truth (21 of 24) and the unrepaired (15 of 16); no bar reaches
- * 0.9 over ten, and Noul 0.5 and 0.6 pass only under the repaired truth.
+ * The bars jev-1.13.0's answers were tuned to act at (ADR 0068): a Choice
+ * confidence and a Noul probability of 0.7, each read against its own
+ * primitive. Set from the shadow replays on main; a new seam starts here
+ * and moves its bars from its own traces.
  */
-export const DECISION_THRESHOLDS: Readonly<Record<DecisionSeam, DecisionThresholds>> = {
-  passage: { choice: 0.7, noul: 0.7 },
-  result: { choice: 0.7, noul: 0.7 },
-  tier: { choice: 0.7, noul: 0.7 },
-}
+export const DEFAULT_DECISION_THRESHOLDS: DecisionThresholds = { choice: 0.7, noul: 0.7 }
 
 /** Whether every answer clears its own primitive's threshold — the one condition under which a seam acts. */
-export function clearsDecisionThresholds(answers: Readonly<Record<string, DecisionAnswer>>, thresholds: DecisionThresholds): boolean {
+export function clearsDecisionThresholds(
+  answers: Readonly<Record<string, DecisionAnswer>>,
+  thresholds: DecisionThresholds = DEFAULT_DECISION_THRESHOLDS,
+): boolean {
   return Object.values(answers).every((answer) =>
     answer.type === 'choice' ? answer.confidence >= thresholds.choice : answer.noul >= thresholds.noul,
   )

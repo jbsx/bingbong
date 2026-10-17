@@ -9,7 +9,7 @@ import {
   readStoredFeedWidth,
   type FeedPanelState,
 } from '../../core/panel/feedPanelState'
-import { reportFeedPanelView, reportFirstFeedPanelView, reportRendererFault } from './diagnostics'
+import { reportRendererFault } from './diagnostics'
 
 // The dashboard half of the feed panel (#45): the panel itself renders in
 // its own overlay webContents; the dashboard owns the layout slot its rect
@@ -42,7 +42,6 @@ export function useFeedPanel(): FeedPanelState {
     void window.bingbong.feedPanel.getState().then((pulled) => {
       if (!cancelled && pulled) {
         setState(pulled)
-        reportFirstFeedPanelView(pulled)
       }
     })
     const unsubscribe = window.bingbong.feedPanel.onState((next) => {
@@ -50,7 +49,6 @@ export function useFeedPanel(): FeedPanelState {
       // Open/close and mode changes are recorded (#187); the width is
       // not — a drag broadcasts per frame, and the record is about the
       // panel being there, not about a pointer.
-      reportFeedPanelView(next)
       // Mirror every layout change back to storage, whoever made it
       // (header button, shortcut, drag handle, or a set_panel tool).
       try {

@@ -10,7 +10,7 @@
 // Address rail, the no-progress rail, the Search Loop rail and the Run Trace
 // consume. Pure and import-light, so the Round Audit's replay loads it too.
 
-import type { ToolResultOutcome } from '../ports/llm'
+import type { ToolResultOutcome } from '../ports/toolOutcome'
 import { reportFault } from '../trace/fault.ts'
 import { parseSearchUrl } from './urlInput.ts'
 

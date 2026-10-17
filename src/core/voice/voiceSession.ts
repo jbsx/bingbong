@@ -1,30 +1,23 @@
 import type { PipelineEvent } from '../pipeline/events'
+import type { CommandRunState } from '../pipeline/runState'
 import type { Clock } from '../ports/clock'
-import type { TtsIdle, TtsSpeaker } from '../ports/tts'
+import type { TtsSpeaker } from '../ports/tts'
 import type { Transcriber, VadScorer } from '../ports/stt'
 import type { WakeWordDetector } from '../ports/wake'
 import type { VoiceHeardEvent, VoiceListenReason, VoiceState } from './ipcChannels'
 import { createUtteranceEndpointer, VAD_FRAME_SAMPLES, vadDefaults, type UtteranceEnd, type UtteranceEndpointerConfig } from './vadEndpointing'
 import type { UtteranceDumper } from './utteranceDump'
-import { createWakeMonitor, type WakeDetection } from './wakeMonitor'
-import { parseYesNo } from './yesNo'
-import type { CommandRunState } from '../pipeline/createCommandPipeline'
+import { createWakeMonitor } from './wakeMonitor'
 import type { PerfTracer } from '../perf/perfTracer'
-import type { SessionGeneration, SessionId } from '../session/sessionIdentity'
-import type { HostTraceWriter } from '../trace/hostTrace'
-import { biasHits, tracedText, TRACE_TRANSCRIPT_MAX_CHARS } from '../trace/voiceTrace'
 import { reportFault } from '../trace/fault'
 
-export const CONFIRM_VOICE_WINDOW_MS = 12_000
-/** Free-text ask window: as long as the ask_user timeout, for spoken answers. */
-export const ASK_VOICE_WINDOW_MS = 45_000
 /** Pause Listen mic-silence cap (ADR 0024): a false pause costs seconds, not a wedged kiosk. */
 export const PAUSE_LISTEN_TIMEOUT_MS = 5_000
 
 /**
  * The complete local phrase-routing vocabulary — run control only (abort,
  * pause, resume), the sanctioned exceptions (ADR 0006). Everything else a
- * user says rides to the model as a command; tests pin that UI vocabulary
+ * user says rides to the runner as a command; tests pin that UI vocabulary
  * (panel, dock, overlay…) never joins this list.
  */
 export const LOCAL_CONTROL_PHRASES: Readonly<Record<'abort' | 'pause' | 'resume', readonly string[]>> = {
@@ -50,11 +43,7 @@ export interface VoiceSessionDeps {
   clock: Clock
   /** Stopped when the hotkey arms or the wake word fires — the barge-in hook. */
   tts: TtsSpeaker
-  /** Delays a confirmation window until the spoken prompt has finished. */
-  ttsIdle: TtsIdle
   wake?: VoiceWakeDeps
-  confirmWindowMs?: number
-  askWindowMs?: number
   endpointerConfig?: Partial<UtteranceEndpointerConfig>
   /**
    * Live from settings (#37): supersedes endpointerConfig when present, and a
@@ -67,32 +56,11 @@ export interface VoiceSessionDeps {
   /** Opt-in utterance audio dumps (#34); absent keeps the session dump-free. */
   dumper?: UtteranceDumper
   /**
-   * The Host Trace writer (#186, ADR 0031): where the ear's records go.
-   * Host-scoped by the boundary rule — a listen runs outside any Run, it
-   * is what starts one — so each record names the Active Session and no
-   * turn. Absent unless the developer set `BINGBONG_HOST_TRACE`, and with
-   * it absent the pipeline records nothing at all.
-   */
-  hostTrace?: HostTraceWriter
-  /**
-   * The Learned Terms the decode was biased toward (#186), read at the
-   * moment a transcript lands so the record names the live set. Only the
-   * `voice_stt` record reads it; absent, the record says the bias set was
-   * empty rather than guessing.
-   */
-  biasPhrases?(): readonly string[]
-  /**
-   * Where recognized commands go — the exact path the text box takes. The
+   * Where recognized commands go — the exact path the prompt bar takes. The
    * truncation flag (#61) is true when the utterance hit the hard cap: the
-   * command still submits, but the orchestrator is told it may be cut off
-   * mid-sentence so it asks the user to finish instead of guessing.
+   * command still submits, flagged as possibly cut off mid-sentence.
    */
   onSubmitCommand(text: string, turnId?: string, truncated?: boolean): void
-  onResolveConfirmation(confirmationId: string, approved: boolean): void
-  /** A spoken ask_user answer — free text, returned to the model verbatim. */
-  onResolveAsk(askId: string, answer: string): void
-  onExtendSession(sessionId: SessionId, generation: SessionGeneration): void
-  onDeclineSession(sessionId: SessionId, generation: SessionGeneration): void
   getRunState(): CommandRunState
   onAbort(): void
   onPause(): void
@@ -112,26 +80,21 @@ export interface VoiceSession {
   getState(): VoiceState
   /** One mono 16 kHz PCM chunk from the worklet; frames are 512 samples. */
   pushAudio(chunk: Float32Array): Promise<void>
-  /** Pipeline events drive the confirmation window. */
+  /** Pipeline events close a Pause Listen whose run ended elsewhere. */
   handlePipelineEvent(event: PipelineEvent): void
   /** Handler surface for the dedicated abort wake head (#22), the keyword interception (#20), and the wake/hotkey pause seam (ADR 0024). */
   interrupt(kind: 'abort' | 'pause'): boolean
 }
 
 /**
- * Ears: mic audio in, command-pipeline callbacks out. The hotkey arms
+ * Ears: mic audio in, command-runner callbacks out. The hotkey arms
  * single-shot listening; with a wake detector wired (T10) the session can
  * also monitor continuously — the wake word chimes, barges in on any speech
  * in flight, and opens the same single-shot listen. One utterance is
- * transcribed and submitted through the same surface as the text box, then
- * listening ends (monitoring resumes if it was on). Confirmation prompts open
- * a 12 s voice window after the spoken prompt finishes; spoken yes/no
- * resolves it, everything else (including the tap fallback) stays in charge
- * of the 60 s auto-deny.
+ * transcribed and submitted through the same surface as the prompt bar,
+ * then listening ends (monitoring resumes if it was on).
  */
 export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
-  const confirmWindowMs = deps.confirmWindowMs ?? CONFIRM_VOICE_WINDOW_MS
-  const askWindowMs = deps.askWindowMs ?? ASK_VOICE_WINDOW_MS
   let appliedEndpointerConfig: Partial<UtteranceEndpointerConfig> | undefined = deps.endpointerConfig
   let endpointer = createUtteranceEndpointer(appliedEndpointerConfig)
 
@@ -159,14 +122,9 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
   let monitoring = false
   // The STT window (#38): true from endpoint fire until the utterance's fate
   // is decided. Implies the emitted `listening` is false while the internal
-  // listen stays open (its reason/window survive a discarded utterance).
+  // listen stays open (its reason survives a discarded utterance).
   let transcribing = false
   let reason: VoiceListenReason | null = null
-  let activeConfirmation: string | null = null
-  let activeAsk: string | null = null
-  let activeSessionExpiry: { sessionId: SessionId; generation: SessionGeneration } | null = null
-  let cancelWindowTimer: (() => void) | null = null
-  let cancelAskTimer: (() => void) | null = null
   let cancelPauseTimer: (() => void) | null = null
   // Chunks are processed strictly in arrival order; scoring is async.
   let audioChain: Promise<void> = Promise.resolve()
@@ -199,9 +157,9 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
   }
 
   /**
-   * The utterance's fate didn't end the listen (a blip, an undecided
-   * answer): leave the STT window and reopen the emitted ear. A listen that
-   * already closed underneath stopListening emitted its own terminal state.
+   * The utterance's fate didn't end the listen (a blip, an undecided word):
+   * leave the STT window and reopen the emitted ear. A listen that already
+   * closed underneath stopListening emitted its own terminal state.
    */
   function backToListening(): void {
     if (!transcribing) return
@@ -215,15 +173,11 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
         detector: deps.wake.detector,
         getThreshold: deps.wake.getThreshold,
         vadGate: deps.wake.vadGate,
-        onWake: (detection) => {
-          traceWake('wake', detection)
-          activateFromWake()
-        },
+        onWake: () => activateFromWake(),
         // The dedicated abort head (#22) feeds the #20 interrupt surface;
         // interrupt() gates on the run state, so idle detections are no-ops.
         // The "hold on" head is unwired — wake-pauses-run replaced it (ADR 0024).
-        onAbort: (detection) => {
-          traceWake('abort', detection)
+        onAbort: () => {
           interrupt('abort')
         },
         onError: (message) => {
@@ -237,16 +191,6 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
     : null
 
   /**
-   * One wake detection as the Host Trace keeps it (#186). Written for the
-   * detection that fired and never for the chunks that did not: the ear
-   * scores every 80 ms, and a record per chunk would be a file about
-   * nothing.
-   */
-  function traceWake(head: 'wake' | 'abort', detection: WakeDetection): void {
-    deps.hostTrace?.(() => ({ kind: 'voice_wake', head, ...detection }))
-  }
-
-  /**
    * The shared activation-to-pause seam (ADR 0024): barge in, then park the
    * run. Wake and hotkey both land here — the only intended difference is
    * the wake path's chime.
@@ -257,8 +201,7 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
   }
 
   function activateFromWake(): void {
-    // A hotkey/confirmation listen — or an in-flight transcript — owns the
-    // mic; nothing to do.
+    // A hotkey listen — or an in-flight transcript — owns the mic; nothing to do.
     if (listening || transcribing) return
     // Wake during a running Run pauses it and opens the Pause Listen — the
     // bare "hold on" head's replacement (ADR 0024). Barge-in first: speech
@@ -278,8 +221,7 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
   function startListening(nextReason: 'hotkey' | 'wake'): void {
     // Barge-in: activating cuts any speech in flight.
     deps.tts.stop()
-    // Arming while already listening never overrides the open reason: a
-    // hotkey press during a confirmation window keeps serving the prompt. A
+    // Arming while already listening never overrides the open reason. A
     // press during the STT window is equally a no-op — the transcript in
     // flight decides that listen.
     if (listening || transcribing) return
@@ -292,10 +234,6 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
   }
 
   function stopListening(): void {
-    cancelWindowTimer?.()
-    cancelWindowTimer = null
-    cancelAskTimer?.()
-    cancelAskTimer = null
     cancelPauseTimer?.()
     cancelPauseTimer = null
     if (!listening) return
@@ -330,17 +268,13 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
         armPauseTimeout()
         return
       }
-      // A run resumed by other means (typed Steering) needs no second resume.
+      // A run resumed by other means needs no second resume.
       if (deps.getRunState() === 'paused') deps.onResume()
       stopListening()
     })
   }
 
   function enterPauseListening(): void {
-    cancelWindowTimer?.()
-    cancelWindowTimer = null
-    cancelAskTimer?.()
-    cancelAskTimer = null
     listening = true
     transcribing = false
     reason = 'pause'
@@ -374,9 +308,8 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
 
   async function handleChunk(chunk: Float32Array): Promise<void> {
     // Live endpoint delay (#37): swap in a changed config as audio arrives,
-    // but only between utterances — never mid-flight. Windows that survive an
-    // utterance (an undecided confirmation, a pause listen) get the new value
-    // on their very next utterance.
+    // but only between utterances — never mid-flight. A pause listen that
+    // survives an utterance gets the new value on its very next utterance.
     if (endpointer.isIdle()) syncEndpointer()
     for (let offset = 0; offset + VAD_FRAME_SAMPLES <= chunk.length; offset += VAD_FRAME_SAMPLES) {
       if (!listening) return
@@ -417,17 +350,6 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
     transcribing = true
     emitState()
 
-    // The endpoint record (#186): the durations the perf span already
-    // carries, kept here so a truncated command and the endpoint that cut
-    // it read as one line of the same file as its transcript.
-    deps.hostTrace?.(() => ({
-      kind: 'voice_endpoint',
-      speechMs: utterance.speechMs,
-      totalMs: utterance.totalMs,
-      truncated: utterance.truncated,
-      reason,
-    }))
-
     // The dump rides detection, not transcription (#34): the WAV exists for
     // A/B-ing STT offline, so it must survive — and precede — any STT outcome.
     // The dumper itself never throws and writes nothing with the flag off.
@@ -455,47 +377,24 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
       }
     }
 
-    // The STT record's own clock (#186): the perf tracer is advisory and
-    // may be absent, and a transcript with no duration beside it answers
-    // half the question it was written for.
-    const sttWallStart = deps.clock.now()
-    const traceStt = (result: { text: string; error?: string }): void => {
-      // Read before the writer's thunk: the duration is how long the pass
-      // took, not how long until the record happened to be assembled.
-      const durationMs = deps.clock.now() - sttWallStart
-      deps.hostTrace?.(() => {
-        const phrases = deps.biasPhrases?.() ?? []
-        return {
-          kind: 'voice_stt',
-          ...tracedText(result.text, TRACE_TRANSCRIPT_MAX_CHARS),
-          durationMs,
-          biasCount: phrases.length,
-          biasHits: biasHits(result.text, phrases),
-          ...(result.error !== undefined ? { error: result.error } : {}),
-        }
-      })
-    }
-
     let text: string
     try {
       text = (await deps.transcriber.finish(utterance.pcm)).trim()
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       recordStt({ error: message })
-      traceStt({ text: '', error: message })
       fail(message)
       return
     }
     recordStt()
-    traceStt({ text })
     if (!listening) {
-      // The listen closed under the STT window (disarm, window timeout) —
+      // The listen closed under the STT window (disarm, pause timeout) —
       // stopListening emitted the terminal state; drop the transcript.
       transcribing = false
       return
     }
     if (text === '') {
-      // A blip, not a command: back to the open ear, reason and window intact.
+      // A blip, not a command: back to the open ear, reason intact.
       backToListening()
       return
     }
@@ -543,46 +442,6 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
       return
     }
 
-    if (activeConfirmation !== null) {
-      const decision = parseYesNo(text)
-      if (decision === null) {
-        // Undecided — the window stays open for another try or a tap.
-        deps.onHeard({ text, routed: 'ignored' })
-        backToListening()
-        return
-      }
-      const confirmationId = activeConfirmation
-      activeConfirmation = null
-      deps.onResolveConfirmation(confirmationId, decision === 'yes')
-      deps.onHeard({ text, routed: 'confirmation' })
-      stopListening()
-      return
-    }
-
-    if (activeSessionExpiry !== null) {
-      const decision = parseYesNo(text)
-      if (decision === null) {
-        backToListening()
-        return
-      }
-      const expiry = activeSessionExpiry
-      activeSessionExpiry = null
-      if (decision === 'yes') deps.onExtendSession(expiry.sessionId, expiry.generation)
-      else deps.onDeclineSession(expiry.sessionId, expiry.generation)
-      stopListening()
-      return
-    }
-
-    if (activeAsk !== null) {
-      // Free text: the whole transcript is the answer.
-      const askId = activeAsk
-      activeAsk = null
-      deps.onResolveAsk(askId, text)
-      deps.onHeard({ text, routed: 'ask' })
-      stopListening()
-      return
-    }
-
     if (reason !== 'hotkey' && reason !== 'wake') {
       deps.onHeard({ text, routed: 'ignored' })
       backToListening()
@@ -593,76 +452,12 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
     stopListening()
   }
 
-  async function armForConfirmation(confirmationId: string): Promise<void> {
-    activeConfirmation = confirmationId
-    // The 12 s window starts when the user could first answer, not while the
-    // prompt itself is still being spoken into the mic.
-    await deps.ttsIdle.waitIdle()
-    if (activeConfirmation !== confirmationId) return // resolved while asking
-    if (listening) return // the hotkey got there first
-
-    listening = true
-    reason = 'confirmation'
-    resetEndpointer()
-    emitState()
-    cancelWindowTimer = deps.clock.setTimer(confirmWindowMs, () => {
-      cancelWindowTimer = null
-      if (listening && reason === 'confirmation' && activeConfirmation === confirmationId) {
-        // Window over — the on-screen buttons and the 60 s auto-deny remain.
-        stopListening()
-      }
-    })
-  }
-
-  async function armForAsk(askId: string): Promise<void> {
-    activeAsk = askId
-    // The window starts when the user could first answer, not while the
-    // question itself is still being spoken into the mic.
-    await deps.ttsIdle.waitIdle()
-    if (activeAsk !== askId) return // answered by typing while asking
-    if (listening) return // the hotkey got there first
-
-    listening = true
-    reason = 'ask'
-    resetEndpointer()
-    emitState()
-    cancelAskTimer = deps.clock.setTimer(askWindowMs, () => {
-      cancelAskTimer = null
-      if (listening && reason === 'ask' && activeAsk === askId) {
-        // Voice window over — the typed card and the pipeline timeout remain.
-        stopListening()
-      }
-    })
-  }
-
-  async function armForSessionExpiry(expiry: { sessionId: SessionId; generation: SessionGeneration }): Promise<void> {
-    activeSessionExpiry = expiry
-    await deps.ttsIdle.waitIdle()
-    if (activeSessionExpiry !== expiry || listening) return
-
-    listening = true
-    reason = 'session-expiry'
-    resetEndpointer()
-    emitState()
-    cancelWindowTimer = deps.clock.setTimer(confirmWindowMs, () => {
-      cancelWindowTimer = null
-      if (listening && reason === 'session-expiry' && activeSessionExpiry === expiry) stopListening()
-    })
-  }
-
-  function clearSessionExpiry(event: PipelineEvent): void {
-    const expiry = activeSessionExpiry
-    if (!expiry || event.sessionId !== expiry.sessionId || event.sessionGeneration !== expiry.generation) return
-    activeSessionExpiry = null
-    if (listening && reason === 'session-expiry') stopListening()
-  }
-
   return {
     arm() {
       // The hotkey shares the wake word's pause seam (ADR 0024): pressing it
       // during a running Run pauses that Run instead of opening a listen.
       // An open listen still owns the mic — the press falls through to
-      // startListening's no-op (a confirmation keeps serving its prompt).
+      // startListening's no-op.
       if (!listening && !transcribing && deps.getRunState() === 'running') {
         pauseRunningRun()
         return
@@ -706,30 +501,6 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
     },
 
     handlePipelineEvent(event) {
-      if (event.type === 'session_expiring') {
-        void armForSessionExpiry({ sessionId: event.sessionId, generation: event.sessionGeneration })
-        return
-      }
-      if (event.type === 'session_extended' || event.type === 'session_ended' || event.type === 'command') {
-        clearSessionExpiry(event)
-      }
-      if (event.type === 'confirmation_requested') {
-        void armForConfirmation(event.confirmationId)
-        return
-      }
-      if (event.type === 'confirmation_resolved') {
-        activeConfirmation = null
-        if (listening && reason === 'confirmation') stopListening()
-        return
-      }
-      if (event.type === 'ask_requested') {
-        void armForAsk(event.askId)
-        return
-      }
-      if (event.type === 'ask_resolved') {
-        activeAsk = null
-        if (listening && reason === 'ask') stopListening()
-      }
       if (event.type === 'done') {
         // The run ended outside the voice session (Escape, UI stop). The
         // Pause Listen's silence timeout would linger otherwise — and under

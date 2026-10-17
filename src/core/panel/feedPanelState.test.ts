@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
 import type { PipelineEvent } from '../pipeline/events'
-import type { SessionId } from '../session/sessionIdentity'
 import {
   FEED_MODE_STORAGE_KEY,
   FEED_PANEL_WIDTH_DEFAULT,
@@ -68,24 +67,10 @@ describe('createFeedPanelStateFold', () => {
     fold.toggleOpen()
     const before = fold.state()
     for (const event of events(
-      { type: 'llm_retry', turnId: 't1', attempt: 2, maxAttempts: 3 },
+      { type: 'status', turnId: 't1', status: 'acting' },
       { type: 'tool_call', turnId: 't1', callId: 'c1', name: 'navigate', args: {} },
-      {
-        type: 'agent_update',
-        agent: {
-          id: 'a1',
-          kind: 'browse',
-          task: 'check the news',
-          status: 'running',
-          startedAt: 0,
-          finishedAt: null,
-          steps: 0,
-          lastAction: null,
-          result: null,
-          error: null,
-        },
-      },
-      { type: 'session_started', sessionId: 'session-1' as SessionId, sessionGeneration: 0 },
+      { type: 'tool_result', turnId: 't1', callId: 'c1', name: 'navigate', ok: true },
+      { type: 'display', text: 'Saved a file', at: 9 },
     )) {
       fold.onEvent(event)
     }
