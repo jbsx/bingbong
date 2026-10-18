@@ -32,4 +32,8 @@ describe('openAddress', () => {
     expect(openAddress('rust', true)).toBe('https://duckduckgo.com/?q=rust')
     expect(openAddress('youtube.com', true)).toBe('https://duckduckgo.com/?q=youtube.com')
   })
+
+  it('scopes a search to its Site Scope with site: ahead of the words (#340)', () => {
+    expect(openAddress('donald trumps profile', true, 'x.com')).toBe('https://duckduckgo.com/?q=site%3Ax.com%20donald%20trumps%20profile')
+  })
 })

@@ -18,6 +18,10 @@ describe('commandAnswer (#333)', () => {
     expect(answer(command('open', { slot: 'lovely weather', search: true }))).toBe('Searched the web for “lovely weather”.')
   })
 
+  it('says which site a scoped search searched (#340)', () => {
+    expect(answer(command('open', { slot: 'donald trumps profile', search: true, site: 'x.com' }))).toBe('Searched x.com for “donald trumps profile”.')
+  })
+
   it('scrolls, clicks and types in plain words, naming the ref by its label', () => {
     expect(answer(command('scroll_down'))).toBe('Scrolled down.')
     expect(answer(command('scroll_up'))).toBe('Scrolled up.')

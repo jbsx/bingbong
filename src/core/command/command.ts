@@ -67,6 +67,8 @@ export interface Command {
   readonly times?: number
   /** For `open`: the Slot is search terms however it reads ("search for rust"). */
   readonly search?: boolean
+  /** For an `open` search: the Site Scope (#340) — the host it searches on (`x.com`); absent for a search of the whole web. */
+  readonly site?: string
   /** The click or the Escape closes an open dialog (#336): its Answer is "Closed the pop-up.", and a dialog still open after it is a failure. */
   readonly dismiss?: true
 }
@@ -177,7 +179,7 @@ export function describeCommand(command: Command, page?: CommandPage): string {
   }
   switch (command.verb) {
     case 'open':
-      return `open ${command.slot ?? ''}`.trim()
+      return `open ${command.slot ?? ''}${command.site !== undefined ? ` on ${command.site}` : ''}`.trim()
     case 'click':
       return `click${label(command.target)}`
     case 'type':

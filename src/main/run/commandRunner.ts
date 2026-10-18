@@ -260,7 +260,7 @@ function firesEarly(command: Command): boolean {
 function toolOf(command: Command): { name: string; args: Record<string, unknown> } {
   switch (command.verb) {
     case 'open':
-      return { name: 'navigate', args: { url: openAddress(command.slot ?? '', command.search === true) } }
+      return { name: 'navigate', args: { url: openAddress(command.slot ?? '', command.search === true, command.site) } }
     case 'click':
       return { name: 'click', args: { ref: command.target } }
     case 'type':
@@ -615,7 +615,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       case 'resume':
         return (resume ?? resumePlan()).perform()
       case 'open':
-        return browser.navigate(openAddress(command.slot ?? '', command.search === true))
+        return browser.navigate(openAddress(command.slot ?? '', command.search === true, command.site))
       case 'click': {
         const result = await browser.click(command.target ?? 0)
         flash(command.target ?? 0)

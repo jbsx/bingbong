@@ -303,7 +303,7 @@ describe('a Command the Local Match settles', () => {
 })
 
 describe('a Command the Local Match cannot settle', () => {
-  it('makes one Jev call with the three questions over the transcript, the page and its refs — and its Task one more per hop', async () => {
+  it('makes one Jev call with the questions over the transcript, the page and its refs — where among them on a site (#340) — and its Task one more per hop', async () => {
     const { browser, decision, runner, events } = harness()
     decision.script.push({ answers: { verb: choice('click'), target: choice('ref-1'), slot: choice('none') } }, { answers: { verb: choice('done'), target: choice('none'), slot: choice('none') } })
 
@@ -311,7 +311,7 @@ describe('a Command the Local Match cannot settle', () => {
 
     expect(decision.requests).toHaveLength(2)
     const request = decision.requests[0]!
-    expect(Object.keys(request.questions)).toEqual(['verb', 'target', 'slot'])
+    expect(Object.keys(request.questions)).toEqual(['verb', 'target', 'slot', 'where'])
     expect(request.state).toContain('"take me home"')
     expect(request.state).toContain('Page: https://example.com/ — "Example"')
     expect(request.state).toContain('[1] link "Home" https://example.com/1')
@@ -903,7 +903,8 @@ describe('Early Fire (#326)', () => {
     expect(browser.navigations).toEqual([])
     expect(decision.requests).toHaveLength(1)
     const questions = decision.requests[0]!.questions
-    expect(Object.keys(questions).sort()).toEqual(['complete', 'slot', 'target', 'verb'])
+    // example.com is a site, so the partial asks where too (#340).
+    expect(Object.keys(questions).sort()).toEqual(['complete', 'slot', 'target', 'verb', 'where'])
     expect(questions.complete).toEqual({ type: 'noul', instructions: 'Is this a complete command, with nothing still to be said?' })
     expect([questions.verb, questions.target, questions.slot].map((question) => question.type)).toEqual(['choice', 'choice', 'choice'])
 
@@ -1534,6 +1535,91 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
     expect(browser.navigations).toEqual(['https://youtube.com'])
     expect(browser.typed).toEqual([{ ref: 1, text: 'linus tech tips' }])
     expect(decisions(records)[1]).toMatchObject({ verb: 'type', slot: 'linus tech tips', slotHeard: 'line stack tips', slotFrom: 'page', task: { hop: 1 } })
+  })
+})
+
+describe('the Site Scope at hop 0 (#340)', () => {
+  const HOME = 'https://x.com/home'
+  const SCOPED = 'https://duckduckgo.com/?q=site%3Ax.com%20donald%20trumps%20profile'
+  const WEB = 'https://duckduckgo.com/?q=donald%20trumps%20profile'
+  const PROFILE = 'https://x.com/realDonaldTrump'
+  const TEXT = 'go to donald trumps profile'
+  const HOME_REFS: SnapshotRef[] = [ref(1, 'link', 'Home', { href: HOME }), ref(2, 'link', 'Elon Musk', { href: 'https://x.com/elonmusk' })]
+  const RESULT_REFS: SnapshotRef[] = [ref(1, 'input', 'Search', { inputType: 'search' })]
+  const RESULT_LINKS = [{ label: 'Donald J. Trump (@realDonaldTrump) / X', href: PROFILE }]
+
+  const read = (verb: string, target = 'none', slot = 'none', where?: string): { answers: Record<string, DecisionAnswer> } => ({
+    answers: { verb: choice(verb), target: choice(target), slot: choice(slot), ...(where !== undefined ? { where: choice(where, 0.6, { page: 0.1, site: 0.6, web: 0.3 }) } : {}) },
+  })
+  const decisions = (records: CommandLogRecord[]) => records.flatMap((record) => (record.type === 'decision' ? [record] : []))
+  const commands = (events: PipelineEvent[]) => events.flatMap((event) => (event.type === 'command' ? [event] : []))
+  const asked = (request: DecisionRequest<DecisionQuestions>): string[] => Object.keys(request.questions)
+
+  /** A browser on a page whose landings follow: a results page carries its result below the fold. */
+  function siteHarness(start = HOME, options?: { decision?: null }) {
+    const h = harness(options)
+    h.browser.snapshot = { ...h.browser.snapshot, url: start, title: 'Home / X', refs: HOME_REFS }
+    const navigate = h.browser.navigate.bind(h.browser)
+    h.browser.navigate = async (url) => {
+      const line = await navigate(url)
+      h.browser.snapshot = { ...h.browser.snapshot, refs: url.startsWith('https://duckduckgo.com/') ? RESULT_REFS : [] }
+      return line
+    }
+    h.browser.pageLinks = async () => (h.browser.snapshot.url.startsWith('https://duckduckgo.com/?') ? RESULT_LINKS : [])
+    return h
+  }
+
+  it('AC1: an open read as on this site searches the site, names it in the Feed and the Answer, and the Task goes on to the results', async () => {
+    const { browser, events, records, asks, decision, runner } = siteHarness()
+    decision.script.push(read('open', 'none', 's2-4', 'site'), read('click', 'link-1'), read('done'))
+    await runner.run(TEXT, { source: 'spoken' })
+
+    expect(browser.navigations).toEqual([SCOPED, PROFILE])
+    expect(commands(events).map((event) => event.action)).toEqual(['open donald trumps profile on x.com', `open ${PROFILE}`, 'done'])
+    expect(events).toContainEqual(expect.objectContaining({ type: 'display', text: 'Searched x.com for “donald trumps profile”.' }))
+    // Hop 1 is offered the results and asked no where.
+    expect(asked(decision.requests[0]!)).toEqual(['verb', 'target', 'slot', 'where'])
+    expect(asked(decision.requests[1]!)).toEqual(['verb', 'target', 'slot'])
+    expect(Object.values((decision.requests[1]!.questions as { target: DecisionChoiceQuestion }).target.options)).toContainEqual(expect.stringContaining(PROFILE))
+    // The record keeps where for the scoped read, and the ask sidecar the fourth question.
+    const [hop0, hop1] = decisions(records)
+    expect(hop0).toMatchObject({ verb: 'open', slot: 'donald trumps profile', jev: { confidence: { where: 0.6 }, probabilities: { where: { page: 0.1, site: 0.6, web: 0.3 } } } })
+    expect(hop1!.jev).not.toHaveProperty('confidence.where')
+    expect(Object.keys(asks[0]!.questions)).toEqual(['verb', 'target', 'slot', 'where'])
+  })
+
+  it('AC2: where = web or page searches the whole web as before', async () => {
+    for (const where of ['web', 'page']) {
+      const { browser, decision, runner } = siteHarness()
+      decision.script.push(read('open', 'none', 's2-4', where), read('none'))
+      await runner.run(TEXT, { source: 'spoken' })
+      expect(browser.navigations).toEqual([WEB])
+    }
+  })
+
+  it('AC2: on a blank page, a DuckDuckGo results page and an engine’s front page the ask carries no where', async () => {
+    for (const start of ['about:blank', 'https://duckduckgo.com/?q=trump', 'https://www.google.com/']) {
+      const { decision, runner } = siteHarness(start)
+      decision.script.push(read('open', 'none', 's2-4'), read('none'))
+      await runner.run(TEXT, { source: 'spoken' })
+      expect(asked(decision.requests[0]!), start).toEqual(['verb', 'target', 'slot'])
+    }
+  })
+
+  it('AC3: "search for donald trump" and "open youtube" on x.com are Local-Matched and unscoped with no Jev call', async () => {
+    const { browser, decision, runner } = siteHarness()
+    await runner.run('search for donald trump', { source: 'spoken' })
+    await runner.run('open youtube', { source: 'spoken' })
+    expect(decision.requests).toEqual([])
+    expect(browser.navigations).toEqual(['https://duckduckgo.com/?q=donald%20trump', 'https://youtube.com'])
+  })
+
+  it('AC3: the best guess when Jev is unavailable is unscoped', async () => {
+    const { browser, decision, runner } = siteHarness()
+    decision.script.push({ unavailable: 'timeout' })
+    await runner.run(TEXT, { source: 'spoken' })
+    expect(browser.navigations).toHaveLength(1)
+    expect(browser.navigations[0]).not.toContain('site%3A')
   })
 })
 

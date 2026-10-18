@@ -708,3 +708,47 @@ through the replay corpus (#338).
   by a rule for the one case (the owner rejected a "Pinned is not latest"
   label rule). A change to the state text or question wording is accepted
   only when it passes its own case and no other case gets worse.
+
+## Amendment 2026-10-18 — an `open` spoken on a site is looked for on that site (#340)
+
+On x.com, "go to donald trumps profile" read as `open` with the Slot
+"donald trumps profile": no address, no ref, so hop 0 searched the whole web
+and the later hops picked among Wikipedia, Truth Social, Instagram and X.
+The page the words were spoken on is the context the earlier Command left
+behind, and nothing read it.
+
+- **The reading stays one Jev call read as a tree.** Its layers are asked in
+  parallel and read together; the tree lacked one node, "on this site but not
+  on this page". A sequential tree (ask `where`, then the rest) was rejected:
+  answered calls run p50 218 ms, p90 292 ms in the decision logs, and a second
+  round doubles that for every Command.
+- **The `where` Choice** — `page` (a ref), `site` (a page, a person, a post,
+  a section of it), `web` (another website, or the whole web) — is asked
+  beside the verb, the target and the Slot at hop 0 only, and only when the
+  Utterance was spoken on a site: a real `http(s)` page whose host has a dot
+  and is no Web Engine's (`src/core/command/siteScope.ts`, which keeps the
+  glossary's engine list since the orchestrator's copy left the branch). It
+  is never asked at a later hop, which never searches (#332). An Early Fire
+  partial is a hop-0 reading and asks it too. The question set is a union —
+  three, or three and `where` — never an optional key, so it stays the port's
+  `DecisionQuestions` record.
+- **The reading.** `open` + a ref chosen is a click, as before; `open` +
+  search-term Slot + no ref + `where` = `site` is a Command with a Site Scope
+  (`site: 'x.com'`, `search: true`), the Slot kept as the user's words;
+  `page`, `web` or no `where` reads as before. A Local-Matched `open` (an
+  address, "search for …", "look up …", "google …") and the best guess are
+  never scoped: the words, or the lack of a reading, say web.
+- **A Site Scope is a DuckDuckGo `site:<host>` search**, not the site's own
+  search box: one navigation, the same hop-1 picking among results as any
+  search, no per-site knowledge (owner's choice). The site is the host
+  without `www.`, not the registrable domain.
+- **A wrong `where` is a Misfire** like any other reading: no confidence
+  bar, no word list, recovered by the next Command and counted. A misread
+  `where` is promoted as a Jev case (#338), never answered with a rule.
+- **Surfaces.** The Feed's action line names the site (`open donald trumps
+  profile on x.com`); the Answer is `Searched x.com for “donald trumps
+  profile”.`; the decision record's Jev detail carries `where`'s confidence
+  and probabilities beside the other three, and omits them when it was not
+  asked; the ask sidecar carries the fourth question as it does the others.
+- **Not in scope**: a later hop searching the site (#341); the site's own
+  search form; scoping a `type` Slot.

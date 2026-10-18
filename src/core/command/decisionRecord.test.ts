@@ -46,4 +46,16 @@ describe('jevDetailOf', () => {
       },
     })
   })
+
+  it('carries where beside the three when it was asked (#340), and omits it when it was not', () => {
+    const one = (label: string, confidence: number): DecisionChoiceAnswer => ({ type: 'choice', choice: label, confidence, probabilities: { [label]: confidence } })
+    const three = { verb: one('open', 0.9), target: one('none', 0.8), slot: one('s2-4', 0.7) }
+    const where: DecisionChoiceAnswer = { type: 'choice', choice: 'site', confidence: 0.6, probabilities: { page: 0.1, site: 0.6, web: 0.3 } }
+    const scoped = jevDetailOf({ ...three, where }, 212, 'jev-1.14.0')
+    expect(scoped.confidence).toEqual({ verb: 0.9, target: 0.8, slot: 0.7, where: 0.6 })
+    expect(scoped.probabilities.where).toEqual({ page: 0.1, site: 0.6, web: 0.3 })
+    const unscoped = jevDetailOf(three, 212, 'jev-1.14.0')
+    expect('where' in unscoped.confidence).toBe(false)
+    expect('where' in unscoped.probabilities).toBe(false)
+  })
 })

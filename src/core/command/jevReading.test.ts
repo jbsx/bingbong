@@ -49,7 +49,7 @@ describe('the state Jev reads with a dialog open (#336)', () => {
 
 describe('the three questions', () => {
   it('asks the verb among the spoken vocabulary, the target among the refs plus none, the Slot among the word spans', () => {
-    const questions = commandQuestions('type hello in search', PAGE)
+    const questions = commandQuestions('type hello in search', { ...PAGE, url: 'about:blank' })
     expect(Object.keys(questions)).toEqual(['verb', 'target', 'slot'])
     expect(questions.verb.type).toBe('choice')
     expect(Object.keys(questions.verb.options)).toEqual(['open', 'click', 'type', 'scroll_up', 'scroll_down', 'back', 'forward', 'reload', 'press', 'read', 'clear', 'stop', 'done', 'none'])
@@ -210,5 +210,43 @@ describe('open past the first hop (#332)', () => {
     const answers = { verb: choice('open'), target: target({ none: 0.63, 'ref-3': 0.17 }), slot: choice('s1-4') }
     expect(readCommandAnswers(answers, TEXT, SEARCH)).toEqual({ verb: 'open', target: null, slot: "elon musk's latest tweet" })
     expect(readCommandAnswers({ ...answers, slot: choice('s1-1') }, 'open x.com/elonmusk', SEARCH, hop)).toEqual({ verb: 'open', target: null, slot: 'x.com/elonmusk' })
+  })
+})
+
+describe('the Site Scope (#340): where the words point, asked at hop 0 on a site', () => {
+  const X: CommandPage = {
+    url: 'https://x.com/home',
+    title: 'Home / X',
+    refs: [
+      { ref: 1, kind: 'link', label: 'Home', href: 'https://x.com/home', inputType: null },
+      { ref: 2, kind: 'link', label: 'Elon Musk', href: 'https://x.com/elonmusk', inputType: null },
+    ],
+  }
+  const TEXT = 'go to donald trumps profile'
+  const read = (where: string, target = 'none') => ({ verb: choice('open'), target: choice(target), slot: choice('s2-4'), where: choice(where) })
+
+  it('asks a fourth Choice on a site: on this page, on this site, or elsewhere on the web', () => {
+    const questions = commandQuestions(TEXT, X)
+    expect(Object.keys(questions)).toEqual(['verb', 'target', 'slot', 'where'])
+    expect('where' in questions && Object.keys(questions.where.options)).toEqual(['page', 'site', 'web'])
+    expect('where' in questions && questions.where.options.site).toContain('x.com')
+  })
+
+  it('asks no where on a blank page, on a Web Engine’s results or front page, or at a hop past the first', () => {
+    for (const url of ['about:blank', 'https://duckduckgo.com/?q=trump', 'https://www.google.com/']) expect(Object.keys(commandQuestions(TEXT, { ...X, url }))).toEqual(['verb', 'target', 'slot'])
+    expect(Object.keys(commandQuestions(TEXT, X, { hop: 1, visited: [X.url], actions: [], links: [] }))).toEqual(['verb', 'target', 'slot'])
+  })
+
+  it('reads open, search terms, no ref and where = site as a search scoped to the site, the Slot kept as the words', () => {
+    expect(readCommandAnswers(read('site'), TEXT, X)).toEqual({ verb: 'open', target: null, slot: 'donald trumps profile', search: true, site: 'x.com' })
+  })
+
+  it('reads where = page or web as before: the whole web searched', () => {
+    for (const where of ['page', 'web']) expect(readCommandAnswers(read(where), TEXT, X)).toEqual({ verb: 'open', target: null, slot: 'donald trumps profile' })
+  })
+
+  it('keeps a ref chosen a click, and an address-shaped Slot an address, whatever where says', () => {
+    expect(readCommandAnswers(read('site', 'ref-2'), 'go to elon musk', X)).toEqual({ verb: 'click', target: 2, slot: null })
+    expect(readCommandAnswers({ ...read('site'), slot: choice('s2-2') }, 'go to youtube', X)).toEqual({ verb: 'open', target: null, slot: 'youtube' })
   })
 })

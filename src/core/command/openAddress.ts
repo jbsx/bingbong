@@ -26,10 +26,14 @@ export function isAddressShaped(slot: string): boolean {
   return /^[a-z0-9-]+$/i.test(spoken) || looksLikeDomain(spoken) || /^(?:https?|file|about):/i.test(spoken) || /^localhost(?::\d+)?$/i.test(spoken)
 }
 
-/** The address an `open` Slot names, or the search it runs when it names none. */
-export function openAddress(slot: string, search = false): string {
+/**
+ * The address an `open` Slot names, or the search it runs when it names
+ * none; a search with a Site Scope (#340) runs as `site:<host>` ahead of
+ * the words.
+ */
+export function openAddress(slot: string, search = false, site?: string): string {
   const spoken = spokenPunctuation(slot)
-  if (search) return searchUrl(spoken)
+  if (search) return searchUrl(site === undefined ? spoken : `site:${site} ${spoken}`)
   if (/^[a-z0-9-]+$/i.test(spoken)) return `https://${spoken.toLowerCase()}.com`
   return normalizeUrlInput(spoken) ?? searchUrl(spoken)
 }

@@ -19,15 +19,16 @@ export type NameSource = 'page' | 'learned'
 /** Who settled the reading: the Local Match, Jev's top Choices, or the best guess that fires when Jev does not answer. */
 export type CommandReading = 'local_match' | 'jev' | 'best_guess'
 
-/** Jev's answer, as the record keeps it: the confidence of each Choice and the probabilities that mattered. */
+/** Jev's answer, as the record keeps it: the confidence of each Choice and the probabilities that mattered; `where` only when it was asked (#340). */
 export interface JevDetail {
   readonly model: string
   readonly latencyMs: number
-  readonly confidence: { readonly verb: number; readonly target: number; readonly slot: number }
+  readonly confidence: { readonly verb: number; readonly target: number; readonly slot: number; readonly where?: number }
   readonly probabilities: {
     readonly verb: Readonly<Record<string, number>>
     readonly target: Readonly<Record<string, number>>
     readonly slot: Readonly<Record<string, number>>
+    readonly where?: Readonly<Record<string, number>>
   }
 }
 
@@ -165,14 +166,16 @@ function topProbabilities(probabilities: Readonly<Record<string, number>>, keep:
 
 /** Jev's answers as the record keeps them. */
 export function jevDetailOf(answers: CommandAnswers, latencyMs: number, model: string): JevDetail {
+  const where = 'where' in answers ? answers.where : undefined
   return {
     model,
     latencyMs,
-    confidence: { verb: answers.verb.confidence, target: answers.target.confidence, slot: answers.slot.confidence },
+    confidence: { verb: answers.verb.confidence, target: answers.target.confidence, slot: answers.slot.confidence, ...(where !== undefined ? { where: where.confidence } : {}) },
     probabilities: {
       verb: { ...answers.verb.probabilities },
       target: topProbabilities(answers.target.probabilities, KEPT_PROBABILITIES),
       slot: topProbabilities(answers.slot.probabilities, KEPT_PROBABILITIES),
+      ...(where !== undefined ? { where: { ...where.probabilities } } : {}),
     },
   }
 }

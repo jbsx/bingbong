@@ -116,6 +116,18 @@ never composed — a Name Match may carry them in the page's spelling, and
 that is the one amendment.
 _Avoid_: argument, parameter, entity, free text
 
+**Site Scope**:
+The site an `open` spoken on a page is looked for on, when the Decision Model
+reads its words as pointing on that site but not on that page ("go to donald
+trumps profile" on x.com). The site is the page's host without `www.`
+(`x.com`, `en.wikipedia.org`), on a real page that is no Web Engine's; a
+site's own search page is still the site. A scoped `open` is a DuckDuckGo
+search with `site:<host>` ahead of the Slot's words, never the site's own
+search box, and its Answer names the site ("Searched x.com for …"). Asked at
+hop 0 only, in the same call as the other Choices; a Local-Matched `open`
+and the best guess are never scoped. A wrong one is a Misfire.
+_Avoid_: site search (a Search URL on a site), domain filter
+
 **Page Terms**:
 The names the page shows at the moment speech starts — link titles, channel
 names, the suggestions under a search box, the page's title — read off the

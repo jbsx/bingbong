@@ -3,12 +3,14 @@ import type { PageLink } from '../browser/snapshot'
 import { JEV_VERBS, PRESS_KEYS, describeCommand, pressKeyOf, targetLabel, verbTakesSlot, verbTakesTarget, type Command, type CommandPage, type CommandRef, type CommandVerb } from './command'
 import { pageAddressOf, resultLinksOf, wordsAfterVerb } from './localMatch'
 import { isAddressShaped } from './openAddress'
+import { siteOf } from './siteScope'
 
 // One Jev call per Command the Local Match cannot settle (#324, ADR 0076).
 // The state is the transcript, the page's address and title and its
 // numbered refs — label, kind, href, no page text. Three Choices are asked
 // in parallel: the verb, the target among the refs plus `none`, and the
-// Slot among the transcript's contiguous word spans. Unneeded answers are
+// Slot among the transcript's contiguous word spans; at hop 0 on a site, a
+// fourth beside them — where the words point (#340). Unneeded answers are
 // ignored; the top Choice is acted on at any confidence; only `none` as
 // the verb drops the Utterance. Speed over accuracy: nothing here asks
 // "did you mean".
@@ -186,14 +188,44 @@ export function commandState(text: string, page: CommandPage, hop?: HopContext):
 }
 
 /** A type, not an interface, so it reads as the port's `DecisionQuestions` record. */
-export type CommandQuestions = {
+type ThreeQuestions = {
   readonly verb: DecisionChoiceQuestion
   readonly target: DecisionChoiceQuestion
   readonly slot: DecisionChoiceQuestion
 }
 
-/** The three questions: the verb, the target, the Slot; at a hop past the first, the targets are what the hop offers. */
+/**
+ * The reading's questions (#340): the three, or the three and `where` —
+ * a union, never an optional key, so each still reads as the port's
+ * `DecisionQuestions` record.
+ */
+export type CommandQuestions = ThreeQuestions | (ThreeQuestions & { readonly where: DecisionChoiceQuestion })
+
+/** The `where` Choice (#340): on this page, on this site, or elsewhere on the web. */
+function whereQuestion(site: string): DecisionChoiceQuestion {
+  return {
+    type: 'choice',
+    instructions: `Where do the words point: at something on this page, at something on ${site} that is not on this page, or somewhere else on the web?`,
+    options: {
+      page: 'on this page: one of the numbered refs',
+      site: `on ${site} but not on this page: a page, a person, a post, a section of it`,
+      web: 'elsewhere: another website, or a search of the whole web',
+    },
+  }
+}
+
+/**
+ * The questions: the verb, the target, the Slot; at a hop past the first,
+ * the targets are what the hop offers. At hop 0 on a site (#340) — a real
+ * page no Web Engine's — `where` is asked beside them in the same call.
+ */
 export function commandQuestions(text: string, pageRead: CommandPage, hop?: HopContext): CommandQuestions {
+  const three = threeQuestions(text, pageRead, hop)
+  const site = hop === undefined ? siteOf(pageRead.url) : null
+  return site === null ? three : { ...three, where: whereQuestion(site) }
+}
+
+function threeQuestions(text: string, pageRead: CommandPage, hop: HopContext | undefined): ThreeQuestions {
   const { page, links } = offered(pageRead, hop)
   return {
     verb: {
@@ -232,11 +264,14 @@ export function partialQuestions(text: string, page: CommandPage): PartialQuesti
   }
 }
 
-export type CommandAnswers = {
+type ThreeAnswers = {
   readonly verb: DecisionChoiceAnswer
   readonly target: DecisionChoiceAnswer
   readonly slot: DecisionChoiceAnswer
 }
+
+/** The answers to {@link CommandQuestions}: the three, or the three and `where`. */
+export type CommandAnswers = ThreeAnswers | (ThreeAnswers & { readonly where: DecisionChoiceAnswer })
 
 function refOfLabel(label: string): number | null {
   const match = /^ref-(\d+)$/.exec(label)
@@ -325,6 +360,10 @@ export function readCommandAnswers(answers: CommandAnswers, text: string, pageRe
     // opens the most probable target the hop offers, never searches again;
     // with none to open the hop has no next step.
     if (hop !== undefined) return mostProbableOpening(answers.target, page, links) ?? none
+    // Words that point on this site but not on this page (#340) are looked
+    // for on the site: a search scoped to it, the Slot kept as the words.
+    const site = 'where' in answers && answers.where.choice === 'site' ? siteOf(page.url) : null
+    if (site !== null) return { verb, target: null, slot, search: true, site }
   }
   if (verb === 'press') {
     const key = slot === null ? null : pressKeyOf(slot)

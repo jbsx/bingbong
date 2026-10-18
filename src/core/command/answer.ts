@@ -18,9 +18,9 @@ export function pageName(page: { url: string; title: string }): string {
   return lastPageLabel(page).title
 }
 
-/** An `open` whose Slot is search terms: what it searched for. */
+/** An `open` whose Slot is search terms: what it searched for, and on which site when it was scoped to one (#340). */
 function searchAnswer(command: Command): string {
-  return `Searched the web for “${command.slot ?? ''}”.`
+  return `Searched ${command.site ?? 'the web'} for “${command.slot ?? ''}”.`
 }
 
 /** What an Answer is written from: the page the action left, and the target ref's label (click, type). */
