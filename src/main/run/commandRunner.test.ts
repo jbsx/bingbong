@@ -1695,6 +1695,26 @@ describe('the Site Scope at a later hop (#341): one Utterance chains a site and 
     expect(browser.navigations).toEqual([TWITTER, SCOPED, PROFILE])
   })
 
+  it('#342: on the profile, off a search landing, an open with no target named ends the Task none there — the ref Jev barely offered is not clicked', async () => {
+    const { browser, events, records, decision, runner } = chainHarness()
+    const navigate = browser.navigate.bind(browser)
+    browser.navigate = async (url) => {
+      const line = await navigate(url)
+      if (url === PROFILE) browser.snapshot = { ...browser.snapshot, refs: [ref(1, 'link', 'Search', { href: 'https://twitter.com/explore' })] }
+      return line
+    }
+    // The live #341 AC5 run's hop 3: open 0.60 over done 0.35, target none 0.97, "Search" at 0.02.
+    const onProfile = { answers: { verb: choice('open', 0.6, { open: 0.6, done: 0.35 }), target: choice('none', 0.97, { none: 0.97, 'ref-1': 0.02 }), slot: choice('s5-7') } }
+    decision.script.push(read('open', 'none', 's5-7', 'site'), read('click', 'link-1'), onProfile)
+    await runner.run(TEXT, { source: 'spoken' })
+    expect(browser.navigations).toEqual([TWITTER, SCOPED, PROFILE])
+    expect(browser.clicks).toEqual([])
+    expect(browser.snapshot.url).toBe(PROFILE)
+    expect(decision.requests).toHaveLength(3)
+    expect(decisions(records).at(-1)).toMatchObject({ verb: 'none', ended: 'none', task: { hop: 3 } })
+    expect(events.filter((event) => event.type === 'command').at(-1)).toMatchObject({ action: 'no next step', dropped: true })
+  })
+
   it('AC4: hop 0\'s own Site Scope search (#340) is a site the Task has searched: a later hop back on it is asked no where', async () => {
     const { browser, decision, runner } = chainHarness(TWITTER)
     decision.script.push(read('open', 'none', 's2-4', 'site'), read('click', 'link-1'), read('open', 'none', 's2-4'))

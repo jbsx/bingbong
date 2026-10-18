@@ -492,6 +492,8 @@ The readings it took:
   the most probability, `none` set aside: a ref is clicked, a `link-N`
   opened at its address. With no offered target in the answer, the hop
   is `none` (`no next step`). An address-shaped Slot still navigates.
+  Since #342 this fallback fires only on a search landing; off one the
+  hop is `none` (the 2026-10-18 #342 amendment below).
   One exception since #341: on a site the Task has not searched, a hop
   asks `where`, and `open` + `where` = `site` searches that site once
   (the 2026-10-18 #341 amendment below); `page`, `web` and a site
@@ -773,7 +775,8 @@ even once twitter.com had landed, a later hop's `open` never searched
   `site` is a Site Scope search of that site, performed as hop 0's is. On a
   Web Engine's page, on a site the Task has searched, and for `where` =
   `page` or `web`, #332 stands: the most probable offered target is opened
-  and the words are never searched again. The Task records the sites it
+  (since #342, only on a search landing) and the words are never searched
+  again. The Task records the sites it
   has searched (`searched`, carried to each hop's reading), hop 0's scoped
   search among them, so a second search of the same site in one Task is
   never offered; a different site it lands on may still be searched once.
@@ -798,3 +801,32 @@ even once twitter.com had landed, a later hop's `open` never searched
   the set-aside rule and the two-unchanged-hops rule apply unchanged.
 - **Not in scope**: two unrelated Commands in one Utterance ("scroll down
   and read"); a route table; remembering earlier Utterances.
+
+## Amendment 2026-10-18 — off a search landing, a hop with no target named ends the Task (#342)
+
+#332's fallback made a Task overrun the page the user asked for. In two
+live runs on 9167c0a (real Jev, logged out) the Task reached
+x.com/realDonaldTrump, and the next hop read `open` over `done`
+(0.77/0.22 and 0.60/0.35) with target `none` at 0.99 and 0.97. The
+fallback then clicked "DonaldJTrump.com" (p 0.01) and "Search" (p 0.02),
+and both Tasks ended on a wall.
+
+- **The fallback fires only on a search landing.** That is a page that
+  `parseSearchUrl` reads as a search, the same test `resultLinksOf` uses
+  to offer result links. It includes a site's own search page
+  (`x.com/search?q=…`). There, Jev often tops `none` over the right
+  result (none 0.63, the result 0.17), and opening the best result is
+  still right.
+- **Off one, the Task ends where it stands.** At a hop past 0, an `open`
+  with search-term words and no target named (top target `none`, or a
+  label that resolves to nothing offered) is `none`: a dead end, "no next
+  step" in the Feed. It is not `done`, because Jev did not say `done`.
+- **A named target is unchanged.** A ref or result link that Jev gives as
+  its top target is clicked or opened on any page, as before. So is the
+  Site Scope search of #341, and so is an address-shaped Slot.
+- **Still no probability floor.** A bar tuned to these two cases (0.17
+  against 0.01–0.02) would contradict "the top Choice acts at any
+  confidence". The page decides, not a number.
+- **Not in scope:** promoting the two profile asks to the Jev corpus as
+  `verb=done` cases (the owner's call); rewording the questions so Jev
+  says `done`; a search landing read before its results render.

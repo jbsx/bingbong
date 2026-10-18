@@ -213,6 +213,45 @@ describe('open past the first hop (#332)', () => {
   })
 })
 
+describe('open past the first hop off a search landing (#342): with no target named, the Task ends where it stands', () => {
+  // The logged hop 2 of #340's live run: the Task had reached the profile
+  // the user asked for, Jev read open over done and named no target.
+  const PROFILE: CommandPage = {
+    url: 'https://x.com/realDonaldTrump',
+    title: 'Donald J. Trump (@realDonaldTrump) / X',
+    refs: [
+      { ref: 1, kind: 'link', label: 'DonaldJTrump.com', href: 'https://www.donaldjtrump.com/', inputType: null },
+      { ref: 2, kind: 'link', label: 'Search', href: 'https://x.com/explore', inputType: null },
+    ],
+  }
+  const TEXT = 'go to donald trumps profile'
+  const hop = { hop: 2, visited: ['https://x.com/home', 'https://x.com/realDonaldTrump'], actions: [], links: [], searched: ['x.com'] }
+  const target = (probabilities: Record<string, number>, top = 'none'): DecisionChoiceAnswer => ({ type: 'choice', choice: top, confidence: probabilities[top] ?? 0, probabilities })
+
+  it('reads open, search terms and target none as no next step, though a ref has some probability', () => {
+    expect(readCommandAnswers({ verb: choice('open'), target: target({ none: 0.99, 'ref-1': 0.01 }), slot: choice('s2-4') }, TEXT, PROFILE, hop)).toEqual({ verb: 'none', target: null, slot: null })
+  })
+
+  it('reads a top target that names nothing offered as no next step too', () => {
+    expect(readCommandAnswers({ verb: choice('open'), target: target({ 'ref-9': 0.6, 'ref-2': 0.3 }, 'ref-9'), slot: choice('s2-4') }, TEXT, PROFILE, hop)).toEqual({ verb: 'none', target: null, slot: null })
+  })
+
+  it('still clicks a ref Jev names as its top target, off a search landing as on one', () => {
+    expect(readCommandAnswers({ verb: choice('open'), target: target({ 'ref-2': 0.7, none: 0.3 }, 'ref-2'), slot: choice('s2-4') }, TEXT, PROFILE, hop)).toEqual({ verb: 'click', target: 2, slot: null })
+  })
+
+  it('counts a site’s own search page as a search landing: the most probable offered result is opened there', () => {
+    const SITE_SEARCH: CommandPage = { ...PROFILE, url: 'https://x.com/search?q=donald+trump', title: 'donald trump - Search / X' }
+    expect(readCommandAnswers({ verb: choice('open'), target: target({ none: 0.8, 'ref-1': 0.15 }), slot: choice('s2-4') }, TEXT, SITE_SEARCH, hop)).toEqual({ verb: 'click', target: 1, slot: null })
+    const links = [{ label: 'donaldjtrump.com', href: 'https://www.donaldjtrump.com/news' }]
+    expect(readCommandAnswers({ verb: choice('open'), target: target({ none: 0.7, 'link-1': 0.2, 'ref-1': 0.1 }), slot: choice('s2-4') }, TEXT, SITE_SEARCH, { ...hop, links })).toEqual({
+      verb: 'open',
+      target: null,
+      slot: 'https://www.donaldjtrump.com/news',
+    })
+  })
+})
+
 describe('the Site Scope (#340): where the words point, asked at hop 0 on a site', () => {
   const X: CommandPage = {
     url: 'https://x.com/home',
@@ -284,14 +323,16 @@ describe('the Site Scope at a later hop (#341): a hop may search once, on a site
     expect(readCommandAnswers(read('site'), TEXT, X, hop)).toEqual({ verb: 'open', target: null, slot: 'donald trumps profile', search: true, site: 'x.com' })
   })
 
-  it('reads where = page or web at a later hop as #332 has it: the most probable offered target, never a search', () => {
+  it('reads where = page or web at a later hop as #332 has it: never a search — the most probable offered result on a landing, no next step off one (#342)', () => {
     for (const where of ['page', 'web']) {
-      expect(readCommandAnswers(read(where, target({ none: 0.7, 'ref-2': 0.2 })), TEXT, X, hop)).toEqual({ verb: 'click', target: 2, slot: null })
+      expect(readCommandAnswers(read(where, target({ none: 0.7, 'ref-3': 0.2 })), TEXT, RESULTS, { ...hop, hop: 2 })).toEqual({ verb: 'click', target: 3, slot: null })
+      expect(readCommandAnswers(read(where, target({ none: 0.7, 'ref-2': 0.2 })), TEXT, X, hop)).toEqual({ verb: 'none', target: null, slot: null })
       expect(readCommandAnswers(read(where), TEXT, X, hop)).toEqual({ verb: 'none', target: null, slot: null })
     }
   })
 
   it('never searches a site twice in one Task, whatever where says', () => {
-    expect(readCommandAnswers(read('site', target({ none: 0.7, 'ref-2': 0.2 })), TEXT, X, { ...hop, searched: ['x.com'] })).toEqual({ verb: 'click', target: 2, slot: null })
+    expect(readCommandAnswers(read('site', target({ none: 0.7, 'ref-2': 0.2 })), TEXT, X, { ...hop, searched: ['x.com'] })).toEqual({ verb: 'none', target: null, slot: null })
+    expect(readCommandAnswers(read('site', choice('ref-2')), TEXT, X, { ...hop, searched: ['x.com'] })).toEqual({ verb: 'click', target: 2, slot: null })
   })
 })
