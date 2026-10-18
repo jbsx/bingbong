@@ -162,7 +162,9 @@ function elementCenterScript(selector: string): string {
  * .env next to the repo — tests that want file config pass their own
  * BINGBONG_ENV_FILE and override this. Speech (#327) runs through the
  * scripted piper and aplay in e2e/bin: `read` and a failure speak, and no
- * launch may load a real voice or reach the sound card.
+ * launch may load a real voice or reach the sound card. Downloads and
+ * `screenshot` files (#330) land in the launch's own profile, never in
+ * the developer's ~/bingbong_downloads.
  */
 export function hermeticEnvTemplate(fixture: FixtureServer, userDataDir: string): Record<string, string | undefined> {
   return {
@@ -172,6 +174,7 @@ export function hermeticEnvTemplate(fixture: FixtureServer, userDataDir: string)
     BINGBONG_ADBLOCK_LISTS: fixture.url('/adblock-list'),
     BINGBONG_ADBLOCK_RESOURCES: '',
     BINGBONG_ENV_FILE: join(userDataDir, 'env-file-not-set'),
+    BINGBONG_DOWNLOADS_DIR: join(userDataDir, 'downloads'),
     ...ROUTING_ENV_UNSET,
   }
 }

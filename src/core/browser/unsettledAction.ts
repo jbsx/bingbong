@@ -155,6 +155,13 @@ interface Outstanding {
  */
 const SYNCHRONOUS_READERS = ['state'] as const
 
+/**
+ * Stop (#330) passes custody even while it withholds: it acts on no page,
+ * it only ends the load an abandoned action left running — the very end
+ * custody is waiting to observe.
+ */
+const ALWAYS_ALLOWED: readonly string[] = ['stop']
+
 /** The members of a port that answer something other than a promise. */
 type NotPromising<T> = { [K in keyof T]-?: T[K] extends (...args: never[]) => Promise<unknown> ? never : K }[keyof T]
 
@@ -233,6 +240,7 @@ export function holdBrowserCustody<T extends BrowserController>(controller: T): 
           // through, the state an abandoned action left behind.
           withheld() ? { url: null, title: null } : method.apply(target, args)
       }
+      if (ALWAYS_ALLOWED.includes(action)) return (...args: unknown[]): unknown => method.apply(target, args)
       return (...args: unknown[]): unknown => {
         if (withheld()) return Promise.reject(new WithheldResourceError(action))
         let call: Promise<unknown>

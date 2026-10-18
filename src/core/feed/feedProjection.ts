@@ -94,10 +94,24 @@ export function createFeedProjection(): {
     feed = feed.filter((entry) => entry.id !== id)
   }
 
-  const appendOutcome = (entry: TranscriptEvent, runId?: string, turnId?: string): number => {
+  /** Files an outcome entry at `at` (the end by default); answers its id. */
+  const fileOutcome = (entry: TranscriptEvent, runId?: string, turnId?: string, at = feed.length): number => {
     const id = nextId++
-    feed = [...feed, { ...entry, id, role: feedRoleForKind(entry.kind), detail: false, runId, ...(turnId !== undefined ? { turnId } : {}) }]
+    feed = [...feed.slice(0, at), { ...entry, id, role: feedRoleForKind(entry.kind), detail: false, runId, ...(turnId !== undefined ? { turnId } : {}) }, ...feed.slice(at)]
     return id
+  }
+  const appendOutcome = (entry: TranscriptEvent, runId?: string, turnId?: string): number => fileOutcome(entry, runId, turnId)
+
+  /**
+   * A Command's words (#330), filed where the Command was given: one whose
+   * reading ended after a later Command's words were shown — abandoned
+   * while a page loaded — goes before them, not after. Answers whether it
+   * was filed back.
+   */
+  const fileCommand = (entry: TranscriptEvent, turnId: string): boolean => {
+    const later = feed.findIndex((shown) => shown.kind === 'command' && shown.at > entry.at)
+    fileOutcome(entry, undefined, turnId, later === -1 ? feed.length : later)
+    return later !== -1
   }
 
   const appendDetail = (at: number, text: string, kind: 'stage', runId: string): void => {
@@ -121,9 +135,13 @@ export function createFeedProjection(): {
       // The live run's bookkeeping (#55): a command opens its run, its
       // done closes it. Unstamped announcements and stragglers from other
       // turns leave the current run alone.
-      if (event.type === 'command') liveRunId = event.turnId
-      else if (event.type === 'done' && liveRunId === event.turnId) liveRunId = null
+      if (event.type === 'done' && liveRunId === event.turnId) liveRunId = null
       switch (event.type) {
+        case 'command': {
+          // A Command filed back before a later one opens no run: the later one's stays live.
+          if (!fileCommand(projectPipelineEvent(event)!, event.turnId)) liveRunId = event.turnId
+          return
+        }
         case 'tool_call': {
           // Tool lines are run noise (#55) — they group under the run's
           // expander, unlike the conversation lines around them.

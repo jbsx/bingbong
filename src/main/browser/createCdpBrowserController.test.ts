@@ -10,7 +10,7 @@ import { createBrowserSubspans } from '../../core/perf/browserSubspans'
 import type { PerfSpanRecord } from '../../core/perf/perfTracer'
 import { fakePerfHarness } from '../../core/testing/doubles'
 import type { Clock } from '../../core/ports/clock'
-import { FakeClock } from '../../core/testing/doubles'
+import { FakeClock, flushMicrotasks } from '../../core/testing/doubles'
 import type { ActionEffect, ActionEffects, ArrivalWatch, CdpDebugger, CdpPageDriver, PageArrival } from './createCdpBrowserController'
 import { createCdpBrowserController, READINESS_CAP_MS } from './createCdpBrowserController'
 import type { ClickPrep } from './collectPageScript'
@@ -550,6 +550,85 @@ async function showRefs(controller: { navigate(url: string): Promise<string> }):
 function settledBlock(collected: CollectedPage): string {
   return formatPageSnapshot(buildPageSnapshot(collected))
 }
+
+describe('a page still loading (#330)', () => {
+  /** A driver whose navigation is under way, from each `start` until the test lands or fails it. */
+  function loadingPage(): { page: FakePage; land: () => void; fail: (error: Error) => void; stops: () => number; start: () => void } {
+    const page = new FakePage()
+    let pending: Promise<void> | null = null
+    let land: () => void = () => {}
+    let fail: (error: Error) => void = () => {}
+    let stops = 0
+    const start = (): void => {
+      pending = new Promise<void>((resolve, reject) => {
+        land = () => {
+          pending = null
+          resolve()
+        }
+        fail = reject
+      })
+    }
+    start()
+    Object.assign(page, {
+      untilLanded: () => pending ?? Promise.resolve(),
+      stop: () => {
+        stops += 1
+      },
+    })
+    return { page, land: () => land(), fail: (error) => fail(error), stops: () => stops, start }
+  }
+
+  it('aims a click given during a navigation at the page it lands on: nothing reaches the page before', async () => {
+    const { page, land, start } = loadingPage()
+    const { cdp, controller } = makeController({ page })
+    land()
+    await showRefs(controller)
+    start()
+    const sent = cdp.calls.length
+    const clicked = controller.click(3)
+    await flushMicrotasks()
+    expect(cdp.calls.slice(sent).some((call) => call.method === 'Runtime.evaluate')).toBe(false)
+    land()
+    await expect(clicked).resolves.toMatch(/^clicked \[3\]/)
+  })
+
+  it('reads the page once its navigation has landed, and touches nothing before', async () => {
+    const { page, land } = loadingPage()
+    const { cdp, controller } = makeController({ page })
+    let read: string | undefined
+    void controller.readPage().then((text) => (read = text))
+    await flushMicrotasks()
+    expect(cdp.calls.some((call) => call.method === 'Runtime.evaluate')).toBe(false)
+    land()
+    await flushMicrotasks()
+    expect(read).toContain('# YouTube — https://www.youtube.com/')
+  })
+
+  it('collects the page a Command is read against the same way', async () => {
+    const { page, land } = loadingPage()
+    const { cdp, controller } = makeController({ page })
+    const collected = controller.collectPage()
+    await flushMicrotasks()
+    expect(cdp.calls.some((call) => call.method === 'Runtime.evaluate')).toBe(false)
+    land()
+    await expect(collected).resolves.toMatchObject({ url: 'https://www.youtube.com/' })
+  })
+
+  it('fails a read with the reason when the navigation never commits', async () => {
+    const { page, fail } = loadingPage()
+    const { controller } = makeController({ page })
+    const read = controller.readPage()
+    fail(new Error('the page is still loading: it has not answered in 30 s'))
+    await expect(read).rejects.toThrow('the page is still loading')
+  })
+
+  it('stops the tab loading', async () => {
+    const { page, stops } = loadingPage()
+    const { controller } = makeController({ page })
+    await controller.stop()
+    expect(stops()).toBe(1)
+  })
+})
 
 describe('createCdpBrowserController readPage', () => {
   it('returns a numbered-ref snapshot built from the collected page', async () => {

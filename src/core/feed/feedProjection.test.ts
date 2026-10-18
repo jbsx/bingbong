@@ -34,6 +34,29 @@ describe('feed projection', () => {
     ])
   })
 
+  it('files a Command abandoned while it was read where it was given, before the Command that came after it (#330)', () => {
+    const projection = project([
+      ...run('t1', 'navigate slow', 1_000).slice(0, 3),
+      { type: 'status', turnId: 't1', status: 'cancelled', at: 1_200 },
+      // `read` is still running: its done has not come.
+      ...run('t3', 'read', 1_300).slice(0, 5),
+      // Given at 1 100, before `read`; its reading ended only after `read` had run.
+      { type: 'command', turnId: 't2', text: 'click 999', action: 'abandoned: a later Command came first', dropped: true, at: 1_100 },
+      { type: 'done', turnId: 't2', outcome: 'cancelled', at: 9_000 },
+    ])
+    const commands = projection.entries().filter((entry) => entry.kind === 'command')
+    expect(commands.map((entry) => [entry.text, entry.action, entry.muted ?? false])).toEqual([
+      ['navigate slow', undefined, false],
+      ['click 999', 'abandoned: a later Command came first', true],
+      ['read', undefined, false],
+    ])
+    // Its words sit right before the later Command's, and the later run's lines stay with it.
+    const kinds = projection.entries().map((entry) => entry.text)
+    expect(kinds.indexOf('click 999')).toBe(kinds.indexOf('read') - 1)
+    // A filed-back entry opens no run of its own: the live run stays the later Command's.
+    expect(projection.liveRunId()).toBe('t3')
+  })
+
   it('stamps entries with the event time and unique rising ids', () => {
     const feed = project(run('t1', 'open x', 1_000)).entries()
     expect(feed.map((entry) => entry.at)).toEqual([1_000, 1_001, 1_002, 1_004])

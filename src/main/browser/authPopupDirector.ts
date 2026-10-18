@@ -74,6 +74,7 @@ export function createAuthPopupDirector(
         back: () => base.back(),
         forward: () => base.forward(),
         reload: () => base.reload(),
+        stop: () => base.stop(),
         state: () => base.state(),
         // Everything the agent does to "the current page" routes to the
         // popup while one is open.

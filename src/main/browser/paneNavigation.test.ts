@@ -40,6 +40,8 @@ function fakeWebContents(overrides: Partial<PaneNavigationTarget> = {}) {
       navigated = listener
     },
     reload: () => {},
+    stop: () => {},
+    isLoading: () => true,
     getURL: () => 'https://example.com/',
     getTitle: () => 'Example',
     isDestroyed: () => false,
@@ -421,6 +423,62 @@ describe('an action’s page arrival (#309, ADR 0027)', () => {
     wc.stopLoading()
     await flushMicrotasks()
     expect(arrival).toBe('loaded')
+  })
+})
+
+describe('a page still loading (#330)', () => {
+  function loadingPage(overrides: Partial<PaneNavigationTarget> = {}) {
+    const wc = fakeWebContents(overrides)
+    const clock = new FakeClock()
+    const page = createPaneNavigation(wc.target, clock, { domQuiet: () => new Promise<void>(() => {}) })
+    return { wc, clock, page }
+  }
+
+  it('is landed at once when no navigation is under way', async () => {
+    const { page } = loadingPage()
+    await expect(page.untilLanded!()).resolves.toBeUndefined()
+  })
+
+  it('waits for a navigation to another document still under way: its commit, then its landing', async () => {
+    const { wc, page } = loadingPage()
+    wc.start({ isMainFrame: true, isSameDocument: false })
+    let landed = false
+    void page.untilLanded!().then(() => (landed = true))
+    await flushMicrotasks()
+    expect(landed).toBe(false)
+    wc.commit('https://example.com/next', 200)
+    await flushMicrotasks()
+    expect(landed).toBe(false)
+    wc.finishLoad()
+    await flushMicrotasks()
+    expect(landed).toBe(true)
+  })
+
+  it('is landed when the tab stops loading without a commit: Stop, a download, a failed load', async () => {
+    const { wc, page } = loadingPage()
+    wc.start({ isMainFrame: true, isSameDocument: false })
+    const landed = page.untilLanded!()
+    wc.stopLoading()
+    await expect(landed).resolves.toBeUndefined()
+  })
+
+  it('gives up with a reason when the navigation never commits', async () => {
+    const { wc, clock, page } = loadingPage()
+    wc.start({ isMainFrame: true, isSameDocument: false })
+    const landed = page.untilLanded!()
+    clock.advance(LOAD_TIMEOUT_MS)
+    await expect(landed).rejects.toThrow(/still loading/)
+  })
+
+  it('stops a tab still loading, and leaves a landed one alone', () => {
+    let stopped = 0
+    let isLoading = true
+    const { page } = loadingPage({ stop: () => (stopped += 1), isLoading: () => isLoading })
+    page.stop!()
+    expect(stopped).toBe(1)
+    isLoading = false
+    page.stop!()
+    expect(stopped).toBe(1)
   })
 })
 

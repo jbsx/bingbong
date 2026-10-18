@@ -382,6 +382,35 @@ describe('a Command the Local Match cannot settle', () => {
   })
 })
 
+describe('Stop during a page load (#330)', () => {
+  /** A browser whose navigate never answers: the page is still loading. */
+  function loading() {
+    const h = harness()
+    h.browser.navigate = () => new Promise<string>(() => {})
+    return h
+  }
+
+  it.each([
+    ['Escape, the Stop button or the Abort Head', (runner: CommandRunner) => void runner.abort()],
+    ['the spoken or typed "stop"', (runner: CommandRunner) => void runner.run('stop')],
+  ])('ends the page load too, on %s', async (_name, stop) => {
+    const { browser, runner } = loading()
+    void runner.run('navigate https://slow.example')
+    await flushMicrotasks()
+    expect(browser.stops).toBe(0)
+    stop(runner)
+    await flushMicrotasks()
+    expect(browser.stops).toBe(1)
+    expect(runner.getState()).toBe('idle')
+  })
+
+  it('leaves the page alone when nothing is in flight', async () => {
+    const { browser, runner } = harness()
+    expect(runner.abort()).toBe(false)
+    expect(browser.stops).toBe(0)
+  })
+})
+
 describe('a Command still being read', () => {
   /** A Jev that answers only when released. */
   function slowJev(decision: CountingDecisionModel): () => void {
@@ -410,7 +439,7 @@ describe('a Command still being read', () => {
     expect(events.filter((event) => 'turnId' in event && event.turnId === scrollTurn).at(-1)).toMatchObject({ type: 'done', outcome: 'done' })
     const abandoned = events.filter((event) => event.type === 'command' && event.text === 'take me home')
     expect(abandoned).toHaveLength(1)
-    expect(abandoned[0]).toMatchObject({ dropped: true, action: 'abandoned' })
+    expect(abandoned[0]).toMatchObject({ dropped: true, action: 'abandoned: a later Command came first' })
     const abandonedTurn = (abandoned[0] as { turnId: string }).turnId
     expect(types(events.filter((event) => 'turnId' in event && event.turnId === abandonedTurn))).toEqual(['command', 'done'])
     expect(events.filter((event) => 'turnId' in event && event.turnId === abandonedTurn).at(-1)).toMatchObject({ outcome: 'cancelled' })
@@ -432,8 +461,48 @@ describe('a Command still being read', () => {
     await run
     expect(browser.clicks).toEqual([])
     expect(types(events)).toEqual(['command', 'done'])
-    expect(events[0]).toMatchObject({ dropped: true, action: 'abandoned' })
+    expect(events[0]).toMatchObject({ dropped: true, action: 'abandoned: stopped' })
     expect(events[1]).toMatchObject({ outcome: 'cancelled' })
+  })
+
+  it.each([
+    ['Escape, then a new Command before its answer comes', async (runner: CommandRunner) => {
+      runner.abort()
+      await runner.run('scroll down')
+    }],
+    ['a spoken or typed "stop"', async (runner: CommandRunner) => {
+      await runner.run('stop')
+    }],
+  ])('says it was stopped when %s ended it (#330)', async (_name, stop) => {
+    const { browser, events, decision, runner } = harness()
+    const release = slowJev(decision)
+    decision.script.push({ answers: { verb: choice('click'), target: choice('ref-1'), slot: choice('none') } })
+    const first = runner.run('take me home', { source: 'spoken' })
+    await flushMicrotasks()
+    await stop(runner)
+    release()
+    await first
+    expect(events.find((event) => event.type === 'command' && event.text === 'take me home')).toMatchObject({ dropped: true, action: 'abandoned: stopped' })
+    // Whatever the reading waited on — a page still loading among it — the load ends with it.
+    expect(browser.stops).toBeGreaterThanOrEqual(1)
+  })
+
+  it('is filed where it was given, and says a later Command came first (#330)', async () => {
+    const { events, decision, runner } = harness()
+    const release = slowJev(decision)
+    decision.script.push({ answers: { verb: choice('click'), target: choice('ref-1'), slot: choice('none') } })
+    const first = runner.run('take me home', { source: 'spoken' })
+    await flushMicrotasks()
+    await runner.run('scroll down', { source: 'spoken' })
+    release()
+    await first
+    const commands = events.filter((event) => event.type === 'command')
+    const abandoned = commands.find((event) => event.text === 'take me home')!
+    const later = commands.find((event) => event.text === 'scroll down')!
+    // Published after the later Command, but stamped when it was given — before it.
+    expect(commands.indexOf(abandoned)).toBeGreaterThan(commands.indexOf(later))
+    expect(abandoned.at).toBeLessThan(later.at)
+    expect(abandoned).toMatchObject({ dropped: true, action: 'abandoned: a later Command came first' })
   })
 
   it('reads against the page prepared at speech start once, and a page-free Command lets a prepared page go', async () => {
@@ -594,7 +663,7 @@ describe('what every Command records', () => {
     expect(records[0]).toEqual({
       type: 'decision',
       turnId: 'voice-1',
-      at: 1_700_000_000_000,
+      at: 1_700_000_000_001,
       source: 'spoken',
       transcript: 'hello there into search',
       reading: 'jev',
@@ -631,8 +700,9 @@ describe('what every Command records', () => {
 
     const misfires = records.filter((record) => record.type === 'misfire')
     expect(misfires).toEqual([
-      { type: 'misfire', turnId: 't1', at: 11_000, signal: 'opposite_scroll', signalTurnId: 't2', withinMs: 1_000 },
-      { type: 'misfire', turnId: 't3', at: 21_000, signal: 'back', signalTurnId: 't4', withinMs: 1_000 },
+      // Each Command reads the clock once when given (#330), then when it fires.
+      { type: 'misfire', turnId: 't1', at: 11_001, signal: 'opposite_scroll', signalTurnId: 't2', withinMs: 1_000 },
+      { type: 'misfire', turnId: 't3', at: 21_001, signal: 'back', signalTurnId: 't4', withinMs: 1_000 },
     ])
   })
 
@@ -1310,9 +1380,9 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
   })
 
   it.each([
-    ['a new Utterance', (runner: CommandRunner) => runner.run('scroll down', { source: 'spoken' })],
-    ['Escape or the Abort Head', (runner: CommandRunner) => runner.abort()],
-  ])('AC5: %s during hop 1\'s read abandons it: its record is written, nothing fires', async (_name, supersede) => {
+    ['a new Utterance', (runner: CommandRunner) => runner.run('scroll down', { source: 'spoken' }), 'abandoned: a later Command came first'],
+    ['Escape or the Abort Head', (runner: CommandRunner) => runner.abort(), 'abandoned: stopped'],
+  ])('AC5: %s during hop 1\'s read abandons it: its record is written, nothing fires', async (_name, supersede, action) => {
     const { browser, events, records, decision, runner } = taskHarness()
     decision.script.push(answer('open', 'none', 's3-6'), answer('click', 'ref-3'))
     const release = decision.hold(1)
@@ -1326,7 +1396,7 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
     expect(browser.clicks).toEqual([])
     const hop1 = decisions(records).find((record) => record.task?.hop === 1)
     expect(hop1).toMatchObject({ verb: 'click', ended: 'superseded' })
-    expect(commands(events).find((event) => event.task?.hop === 1)).toMatchObject({ action: 'abandoned', dropped: true })
+    expect(commands(events).find((event) => event.task?.hop === 1)).toMatchObject({ action, dropped: true })
   })
 
   it('AC5: an Escape within 3 s of hop 1 firing is the Misfire signal overrun against hop 1; one later is not', async () => {

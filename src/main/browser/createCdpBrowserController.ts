@@ -85,6 +85,15 @@ export interface CdpPageDriver {
   /** Load the page again (#328), resolved at its commit. */
   reload(): Promise<void>
   /**
+   * Resolves once the page may be touched (#330): at once when no
+   * navigation is under way, else at its landing or the tab stopping;
+   * rejects with the reason when it never commits. Optional: a driver
+   * that cannot see navigations touches the page as it stands.
+   */
+  untilLanded?(): Promise<void>
+  /** Stops the tab's load where it stands (#330). Optional: a driver without one leaves the load running. */
+  stop?(): void
+  /**
    * Starts watching for a main-frame navigation to another document (#309).
    * Optional: a driver that cannot see navigations start leaves every
    * action to its fixed settle.
@@ -383,7 +392,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
   /** What the armed watch saw: an effect, the cap, or no watch at all — the document went. */
   async function readinessOutcome(): Promise<ActionEffect | 'timeout'> {
     try {
-      const outcome = await evaluateInPage<unknown>(readinessWaitScript(READINESS_CAP_MS), { awaitPromise: true })
+      const outcome = await evaluateInPage<unknown>(readinessWaitScript(READINESS_CAP_MS), { awaitPromise: true, duringAction: true })
       if (outcome === 'mutation' || outcome === 'input' || outcome === 'scroll' || outcome === 'timeout') return outcome
       return 'navigation'
     } catch (error) {
@@ -540,7 +549,15 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     return snapshot
   }
 
-  async function evaluateInPage<T>(expression: string, options?: { awaitPromise?: boolean }): Promise<T> {
+  /**
+   * One evaluation in the page. A navigation under way is waited for first
+   * (#330): sent now, the evaluation would be held until its commit and then
+   * run on a document not yet parsed. `duringAction` is the readiness watch
+   * an action itself started, which hears the navigation it caused and must
+   * not wait on it.
+   */
+  async function evaluateInPage<T>(expression: string, options?: { awaitPromise?: boolean; duringAction?: boolean }): Promise<T> {
+    if (options?.duringAction !== true) await page.untilLanded?.()
     const response = await cdp.send<EvaluateResponse>('Runtime.evaluate', {
       expression,
       returnByValue: true,
@@ -1690,6 +1707,9 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     back,
     forward,
     reload,
+    async stop() {
+      page.stop?.()
+    },
     pressKey: (press, times) => holdingWindowOpens(() => pressKey(press, times)),
     mediaState,
     state,

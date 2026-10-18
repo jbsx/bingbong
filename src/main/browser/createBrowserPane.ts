@@ -24,6 +24,9 @@ const AUTH_POPUP_WINDOW_OPTIONS = {
  * drain before opening on its own (the manual-click path). */
 const AUTH_POPUP_FALLBACK_MS = 1_500
 
+/** Chromium's net error for a load cancelled before it finished: Stop, or a later navigation. */
+const ERR_ABORTED = -3
+
 export interface BrowserPane {
   view: WebContentsView
   /** The pane's persistent session — download routing attaches here. */
@@ -215,6 +218,13 @@ export function createBrowserPane(deps?: {
   })
   wc.on('did-navigate-in-page', (_event, url) => syncNavigationState(url))
   wc.on('page-title-updated', (_event, title) => update({ title: title || state.url }))
+  // A failed navigation (#330) blanks the pane on the address that failed,
+  // so the address field shows that one, not the page before. An aborted
+  // load — Stop, or a later navigation replacing it — leaves the page it
+  // was on standing, and the address with it.
+  wc.on('did-fail-load', (_event, errorCode, _description, validatedURL, isMainFrame) => {
+    if (isMainFrame && errorCode !== ERR_ABORTED && validatedURL !== '') syncNavigationState(validatedURL)
+  })
   wc.on('did-start-loading', () => update({ loading: true }))
   wc.on('did-stop-loading', () => update({ loading: false }))
   wc.on('render-process-gone', () => update({ title: 'Renderer process crashed' }))

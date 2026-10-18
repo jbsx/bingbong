@@ -114,6 +114,8 @@ export interface BrowserController {
   forward(): Promise<string>
   /** Load the page again (#328): a landing like a navigate's, its line opening `reloaded:`. */
   reload(): Promise<string>
+  /** Stop the tab's load where it stands (#330): Stop ends the page's loading, not only the Command's wait on it. */
+  stop(): Promise<void>
   /** Inject a shortcut key (times consecutive presses) on the focused page. */
   pressKey(press: KeyPress, times?: number): Promise<void>
   /** Read actual state from the page's active media element after controls settle. */

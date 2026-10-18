@@ -247,6 +247,13 @@ export class FakeBrowser implements BrowserController, VisualGroundingController
     return `reloaded: url=${this.snapshot.url} title=${JSON.stringify(this.snapshot.title)}`
   }
 
+  /** Every stop of the tab's load (#330). */
+  stops = 0
+
+  async stop(): Promise<void> {
+    this.stops += 1
+  }
+
   state(): BrowserState {
     return this.pageState
   }

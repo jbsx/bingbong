@@ -293,6 +293,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
    * later submission (or an abort) is stale, and fires nothing.
    */
   let submitted = 0
+  /** The submissions an abort made (#330): a reading the next of which went stale on was stopped, not superseded. */
+  const stoppedAt = new Set<number>()
   /** The Command being read, if one is — so abort reaches it and the state says running. */
   let reading: { turnId: string; submission: number } | null = null
   let screenshotCount = 0
@@ -345,6 +347,18 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     publish({ type: 'done', turnId, outcome: 'cancelled', at: at() })
     return true
   }
+
+  /** Stop ends the page's load too (#330), not only the Command's wait on it: the pane stops where it stands. */
+  function stopLoading(): void {
+    void browser.stop().catch((error: unknown) => reportFault('run.commandRunner.stopLoading', error))
+  }
+
+  /**
+   * What a reading abandoned past its submission says it came to (#330):
+   * the bump right after its own decides — Escape, the Abort Head or a
+   * `stop` stopped it; anything else was a later Command coming first.
+   */
+  const abandonedAction = (submission: number): string => (stoppedAt.has(submission + 1) ? 'abandoned: stopped' : 'abandoned: a later Command came first')
 
   /** Speak a Command's text (#327): one `speak` event carries it — marked when it tells a failure (#329) — and it counts as the runner's until it ends. */
   function say(speech: Pick<TtsSpeaker, 'speak'>, turnId: string, text: string, options: { onFirstSound?: () => void; failure?: boolean } = {}): Promise<SpeakOutcome> {
@@ -640,6 +654,9 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
 
     publish({ type: 'command', turnId, text, action: describeCommand(command, page), task, at: firedAt })
     if (command.verb === 'stop') {
+      // `stop` is an abort said in words: a reading it went past was stopped, and the page's load ends with it.
+      stoppedAt.add(submitted)
+      stopLoading()
       inFlight = null
       publish({ type: 'done', turnId, outcome: 'done', at: at() })
       return { outcome: 'landed' }
@@ -839,7 +856,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         const jev = result === null ? undefined : { model: result.model, latencyMs: result.latencyMs, reason: result.reason }
         const ended: TaskEnded = superseded(task) ? 'superseded' : 'unavailable'
         log({ ...base, ...none, jevAsked: result !== null, ...(jev !== undefined ? { jev } : {}), ended })
-        dropHop(turnId, task, hop, ended === 'superseded' ? 'abandoned' : 'not read', ended === 'superseded' ? 'cancelled' : 'done', firedAt)
+        dropHop(turnId, task, hop, ended === 'superseded' ? abandonedAction(task.submission) : 'not read', ended === 'superseded' ? 'cancelled' : 'done', firedAt)
         return endTask(task, ended, hop + 1)
       }
 
@@ -849,7 +866,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       if (superseded(task)) {
         // A later Command, Escape or the Abort Head came while this hop was read: the reading is data, nothing fires.
         log({ ...record, ended: 'superseded' })
-        dropHop(turnId, task, hop, 'abandoned', 'cancelled', firedAt)
+        dropHop(turnId, task, hop, abandonedAction(task.submission), 'cancelled', firedAt)
         return endTask(task, 'superseded', hop + 1)
       }
       const ending = endedByReading('jev', command.verb, hop)
@@ -1025,14 +1042,18 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     getState: () => (inFlight === null && reading === null && sounding === 0 ? 'idle' : 'running'),
 
     abort() {
-      const had = reading !== null || inFlight !== null || sounding > 0
+      const acting = reading !== null || inFlight !== null
+      const had = acting || sounding > 0
       // Escape, "stop" or the Abort Head soon after a Jev-read hop fired: the Task overran (#328).
       overrun()
       // A reading under way is stale from here: when its answer comes, it fires nothing.
       submitted += 1
+      stoppedAt.add(submitted)
       reading = null
       cancelInFlight()
       silence()
+      // A Command in flight or being read may be waiting on a page still loading: the load ends with it.
+      if (acting) stopLoading()
       return had
     },
 
@@ -1114,6 +1135,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       if (source === 'spoken') nextUtterance()
 
       const turnId = options?.turnId ?? tracer?.mintTurnId() ?? `turn-${at().toString(36)}`
+      // When it was given (#330): an abandoned reading is filed here, however late its reading ends.
+      const givenAt = at()
       // A new Utterance soon after a Jev-read hop fired: the Task overran (#328).
       overrun(turnId)
       // This submission: a reading still under way for an earlier one is stale now.
@@ -1140,7 +1163,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         // A later Command (or an abort) arrived while this one was being
         // read: the later one stands. The reading is data; nothing fires.
         log({ ...record, ended: 'superseded' })
-        publish({ type: 'command', turnId, text: trimmed, action: 'abandoned', dropped: true, task: hop0, at: firedAt })
+        publish({ type: 'command', turnId, text: trimmed, action: abandonedAction(submission), dropped: true, task: hop0, at: givenAt })
         publish({ type: 'done', turnId, outcome: 'cancelled', at: at() })
         endTask(task, 'superseded', 1)
         return true

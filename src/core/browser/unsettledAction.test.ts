@@ -92,6 +92,17 @@ describe('holdBrowserCustody', () => {
     expect(browser.clicks).toEqual([])
   })
 
+  it('lets Stop reach a withheld page: stopping its load is how the abandoned action ends (#330)', async () => {
+    const browser = new StallingBrowser(['navigate'])
+    const custody = holdBrowserCustody(browser)
+    void custody.controller.navigate('https://slow.example').catch(() => {})
+    custody.abandon()
+    expect(custody.state()).toBe('withheld')
+
+    await expect(custody.controller.stop()).resolves.toBeUndefined()
+    expect(browser.stops).toBe(1)
+  })
+
   it('reports no page at all while withheld, rather than the stale one', async () => {
     const browser = new StallingBrowser(['readPage'])
     const custody = holdBrowserCustody(browser)

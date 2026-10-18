@@ -58,6 +58,8 @@ export interface PaneNavigationTarget {
   on(event: 'did-stop-loading' | 'dom-ready' | 'did-finish-load', listener: () => void): void
   once(event: 'did-navigate', listener: () => void): void
   reload(): void
+  stop(): void
+  isLoading(): boolean
   getURL(): string
   getTitle(): string
   isDestroyed(): boolean
@@ -134,10 +136,14 @@ export function createPaneNavigation(wc: PaneNavigationTarget, clock: Clock = sy
   // loads nothing, so it is no arrival.
   let starts = 0
   let stopAfterLatestStart = true
+  // The commits counted when the latest navigation started (#330): one
+  // still under way has neither committed nor stopped since.
+  let commitsAtLatestStart = 0
   wc.on('did-start-navigation', (details) => {
     if (!details.isMainFrame || details.isSameDocument) return
     starts += 1
     stopAfterLatestStart = false
+    commitsAtLatestStart = commits
   })
   wc.on('did-stop-loading', () => {
     stopAfterLatestStart = true
@@ -175,6 +181,15 @@ export function createPaneNavigation(wc: PaneNavigationTarget, clock: Clock = sy
    * cap from its commit, after which the page is taken as it stands.
    */
   async function land(): Promise<PageLanding> {
+    const landing = await landingOf(commits)
+    options.onLanding?.(landing)
+    return landing
+  }
+
+  /** The commit whose landing was last seen (#330): a page asked after it has landed waits for nothing. */
+  let landedCommit = -1
+
+  async function landingOf(commit: number): Promise<PageLanding> {
     const loaded = until(() => loadEnded)
     const ready = until(() => domReady)
     const quiet = ready.reached.then(() => quietWindow())
@@ -187,8 +202,32 @@ export function createPaneNavigation(wc: PaneNavigationTarget, clock: Clock = sy
       )) ?? 'capped'
     loaded.forget()
     ready.forget()
-    options.onLanding?.(landing)
+    if (commits === commit) landedCommit = commit
     return landing
+  }
+
+  /**
+   * The page as a Command may touch it (#330): at once when no navigation
+   * is under way or its landing has been seen; else, a navigation that has
+   * not committed is waited for to commit — Chromium holds every page
+   * evaluation until it does, and then runs it on a document not yet
+   * parsed — and the one that did, to its landing. A tab that stops
+   * loading without a commit (Stop, a download, a failed load) leaves the
+   * page it was on. A navigation that never commits is the one failure,
+   * and it says so.
+   */
+  async function untilLanded(): Promise<void> {
+    if (stopAfterLatestStart) return
+    if (commits === commitsAtLatestStart) {
+      const { next, forget } = commitOrStop()
+      const reached = await withDeadline(next, clock, LOAD_TIMEOUT_MS)
+      forget()
+      if (reached === null) throw new Error(`the page is still loading: it has not answered in ${LOAD_TIMEOUT_MS / 1000} s`)
+      if (reached === 'stopped') return
+    }
+    if (commits === landedCommit) return
+    // Only the action that made the navigation reports its landing.
+    await landingOf(commits)
   }
 
   /** Resolves at the next commit, or when the tab stops loading with none; `forget` lets go of it. */
@@ -266,6 +305,11 @@ export function createPaneNavigation(wc: PaneNavigationTarget, clock: Clock = sy
     // A reload commits like a step through history does (#328), and is waited for the same way.
     reload: () => historyStep(true, () => wc.reload(), 'again'),
     watchArrival,
+    untilLanded,
+    // Only a tab still loading is stopped: a landed page's own fetches are left alone.
+    stop: () => {
+      if (!wc.isDestroyed() && wc.isLoading()) wc.stop()
+    },
     onNavigationCommitted(listener) {
       commitListeners.add(listener)
       return () => commitListeners.delete(listener)

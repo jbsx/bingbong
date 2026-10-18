@@ -238,7 +238,9 @@ Command recovers rather than a question asked:
   still waiting on Jev when a later Command arrives — or when Escape is
   pressed — is abandoned when its answer comes: its decision record is
   written (the reading is data), the Feed shows its words greyed with
-  `abandoned`, and nothing fires. Otherwise a slow Jev read would fire
+  why it was abandoned — `abandoned: stopped` (Escape, the Abort Head,
+  `stop`) or `abandoned: a later Command came first` — filed where it was
+  given, before the Commands given after it (#330), and nothing fires. Otherwise a slow Jev read would fire
   after, and cancel, the faster Command that came later.
 - **The ref flashes after the action lands, never in parallel with it.**
   The flash is a DOM change of the app's own making; started alongside the
@@ -468,7 +470,8 @@ The readings it took:
 - **The Feed's hop lines:** a hop that fires nothing is published
   `dropped`, its action naming what it came to: `already here` (`done` at
   hop 0), `done`, `no next step`, `not read` (Jev unavailable), or
-  `abandoned` (superseded). Only hop 0 has a `reaction` span. The `task`
+  `abandoned: stopped` / `abandoned: a later Command came first`
+  (superseded, #330). Only hop 0 has a `reaction` span. The `task`
   span sits on hop 0's turn, carrying `{ ended, hops, actions, source }`.
 - **Result links are offered as `link-N` targets**, after the refs and
   only on a search landing (`parseSearchUrl`). They come from the whole
@@ -554,3 +557,12 @@ The readings it took:
   ruling; a Task's hops are read with no Early Fire of their own; and a
   hop's typed Slot comes only from the transcript, so a task that needs
   unsaid words ends at `none`.
+- **A page still loading (#330).** Chromium holds every page evaluation
+  until a navigation under way commits, then runs it on a document not yet
+  parsed; so the controller waits for that navigation's Landing (or the tab
+  stopping) before it evaluates anything, and a navigation that never
+  commits fails with that reason. Stop — Escape, the Stop button, the
+  Abort Head, `stop` — ends the pane's load too (only while it is loading),
+  and custody lets it through while an abandoned action withholds the page.
+  An in-flight Command a later one supersedes keeps its entry and its
+  `cancelled` stage; it carries no reason of its own.

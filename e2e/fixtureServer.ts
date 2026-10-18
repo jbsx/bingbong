@@ -79,6 +79,9 @@ export interface FixtureServer {
 // persistent browse partition; /cookie-echo is a page of that origin that
 // sets nothing — reading the cookie from it proves the partition kept it.
 
+/** How long /held-response keeps its headers back (#330): the slow navigation a Command meets mid-load. */
+export const HELD_RESPONSE_MS = 12_000
+
 function page(body: string): string {
   return `<html><body style="background:#222">${body}</body></html>`
 }
@@ -1252,6 +1255,18 @@ export async function startFixtureServer(): Promise<FixtureServer> {
         res.writeHead(200, { 'Content-Type': 'text/html' })
         res.end(page('<h1 style="color:#fff">slow fixture page</h1>'))
       }, 3_000)
+      return
+    }
+    // #330: a page whose response is held — no headers — for 12 s, the
+    // slow navigation Stop, `read` and the Feed's order are driven against.
+    if (req.url === '/held-response') {
+      held.add(res)
+      setTimeout(() => {
+        held.delete(res)
+        if (res.destroyed) return
+        res.writeHead(200, { 'Content-Type': 'text/html' })
+        res.end(page('<title>held response</title><h1 style="color:#fff">held response fixture page</h1>'))
+      }, HELD_RESPONSE_MS)
       return
     }
     // #309: a page whose document commits at once and whose body is held for

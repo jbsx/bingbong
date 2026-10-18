@@ -401,6 +401,8 @@ a short window with no DOM mutation, or the load event if that comes first,
 capped at a few seconds. Never the load event alone, which on a slow
 connection waits on every tracker after the refs are long in place. It is
 what the landing classifiers judge and what the next Hop is read against.
+A Command given while a navigation is still under way touches the page only
+at its Landing (#330); Stop ends the load itself, leaving the page it was on.
 _Avoid_: page load, load complete, network idle
 
 **Unsettled Action**:
