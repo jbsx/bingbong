@@ -28,7 +28,7 @@ describe('feed projection', () => {
     const feed = project(run('t1', 'open x', 1_000)).entries()
     expect(feed.map((entry) => [entry.kind, entry.text])).toEqual([
       ['command', 'open x'],
-      ['stage', 'acting'],
+      ['stage', 'Working on the page'],
       ['tool', '→ https://x.test'],
       ['display', 'Here it is.'],
     ])
@@ -65,31 +65,35 @@ describe('feed projection', () => {
     expect([...ids].sort((a, b) => a - b)).toEqual(ids)
   })
 
-  it('renders a failed tool result as a grouped error line and a successful one as nothing', () => {
+  it('shows a failure once, as the Answer: a failed tool result renders nothing of its own (#333)', () => {
     const feed = project([
       { type: 'command', turnId: 't1', text: 'click 3', at: 1 },
       { type: 'tool_call', turnId: 't1', callId: 'c1', name: 'click', args: { ref: 3 }, at: 2 },
       { type: 'tool_result', turnId: 't1', callId: 'c1', name: 'click', ok: false, error: 'ref 3 refused: it no longer names the element you were shown. Continue from the page below', at: 3 },
+      { type: 'display', turnId: 't1', text: "There's no item 3 on this page.", failure: true, at: 4 },
+      { type: 'speak', turnId: 't1', text: "There's no item 3 on this page.", failure: true, at: 5 },
     ]).entries()
-    expect(feed.map((entry) => [entry.kind, entry.text, entry.runId])).toEqual([
-      ['command', 'click 3', undefined],
-      ['tool', 'click [3]', 't1'],
-      ['error', "There's no item 3 on this page.", 't1'],
+    expect(feed.map((entry) => [entry.kind, entry.text, entry.runId, entry.failure])).toEqual([
+      ['command', 'click 3', undefined, undefined],
+      ['tool', 'click [3]', 't1', undefined],
+      ['display', "There's no item 3 on this page.", undefined, true],
     ])
   })
 
-  it('tells a failed tool result in plain words, never the raw error (#329)', () => {
+  it('names a run’s steps in plain words, never the internal stage names (#333)', () => {
     const feed = project([
-      { type: 'command', turnId: 't1', text: 'navigate 127.0.0.1:1', at: 1 },
-      { type: 'tool_result', turnId: 't1', callId: 'c1', name: 'navigate', ok: false, error: "ERR_UNSAFE_PORT (-312) loading 'http://127.0.0.1:1/'", at: 2 },
+      { type: 'command', turnId: 't1', text: 'read', at: 1 },
+      { type: 'status', turnId: 't1', status: 'thinking', at: 2 },
+      { type: 'status', turnId: 't1', status: 'acting', at: 3 },
+      { type: 'status', turnId: 't1', status: 'speaking', at: 4 },
+      { type: 'status', turnId: 't1', status: 'cancelled', at: 5 },
     ]).entries()
-    expect(feed.at(-1)).toMatchObject({ kind: 'error', text: "That address can't be opened." })
+    expect(feed.filter((entry) => entry.kind === 'stage').map((entry) => entry.text)).toEqual(['Understanding', 'Working on the page', 'Reading aloud', 'Stopped'])
   })
 
   it('stamps every entry with the turn it came from, conversation lines included, and marks a failure line (#329)', () => {
     const feed = project([
       { type: 'command', turnId: 't1', text: 'read', at: 1 },
-      { type: 'tool_result', turnId: 't1', callId: 'c1', name: 'read_page', ok: false, error: 'page evaluation failed', at: 2 },
       { type: 'speak', turnId: 't1', text: "This page can't be read right now.", failure: true, at: 3 },
       { type: 'done', turnId: 't1', outcome: 'failed', at: 4 },
       { type: 'command', turnId: 't2', text: 'screenshot', at: 5 },
@@ -98,7 +102,6 @@ describe('feed projection', () => {
     ]).entries()
     expect(feed.map((entry) => [entry.kind, entry.turnId, entry.failure])).toEqual([
       ['command', 't1', undefined],
-      ['error', 't1', true],
       ['speak', 't1', true],
       ['command', 't2', undefined],
       ['display', 't2', undefined],

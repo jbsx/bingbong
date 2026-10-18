@@ -161,6 +161,7 @@ describe('peekCardAnswer', () => {
   const failedRead: PipelineEvent[] = [
     { type: 'command', turnId: 't1', text: 'read', at: 1 },
     { type: 'tool_result', turnId: 't1', callId: 't1-1', name: 'read_page', ok: false, error: 'page evaluation failed', at: 2 },
+    { type: 'display', turnId: 't1', text: "This page can't be read right now.", failure: true, at: 3 },
     { type: 'speak', turnId: 't1', text: "This page can't be read right now.", failure: true, at: 3 },
     { type: 'done', turnId: 't1', outcome: 'failed', at: 4 },
   ]
@@ -213,7 +214,7 @@ describe('peekCardAnswer', () => {
   })
 
   it('a failed Command answers with its plain failure line, marked as a failure', () => {
-    expect(peekCardAnswer(feedOf(failedRead), 't1')).toEqual({ kind: 'error', text: "This page can't be read right now.", failure: true })
+    expect(peekCardAnswer(feedOf(failedRead), 't1')).toEqual({ kind: 'display', text: "This page can't be read right now.", failure: true })
   })
 
   it('a wall the action met answers with its spoken line, marked as a failure; a plain spoken line is not', () => {

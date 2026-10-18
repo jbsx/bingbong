@@ -176,7 +176,7 @@ describe('a Command the Local Match settles', () => {
     expect(await runner.run('navigate youtube.com')).toBe(true)
     expect(browser.navigations).toEqual(['https://youtube.com'])
     expect(decision.requests).toEqual([])
-    expect(types(events)).toEqual(['command', 'status', 'tool_call', 'tool_result', 'done'])
+    expect(types(events)).toEqual(['command', 'status', 'tool_call', 'tool_result', 'display', 'done'])
     expect(events[0]).toMatchObject({ type: 'command', text: 'navigate youtube.com', action: 'open youtube.com' })
     expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done' })
     expect(events.some((event) => event.type === 'speak')).toBe(false)
@@ -268,13 +268,12 @@ describe('a Command the Local Match settles', () => {
     expect(Object.keys(verbs.options)).toContain('reload')
   })
 
-  it('shows a read as a Card and nothing else as one — actions stay silent', async () => {
+  it('shows a read as a Card and an action as its one-line Answer (#333) — actions stay silent', async () => {
     const { events, runner } = harness()
     await runner.run('read')
     await runner.run('scroll down')
     const displays = events.filter((event) => event.type === 'display')
-    expect(displays).toHaveLength(1)
-    expect(displays[0]).toMatchObject({ text: '<page>blank</page>' })
+    expect(displays.map((display) => display.text)).toEqual([SPOKEN_FAILURES.empty, 'Scrolled down.'])
     expect(events.filter((event) => event.type === 'speak')).toEqual([])
   })
 
@@ -354,7 +353,7 @@ describe('a Command the Local Match cannot settle', () => {
       throw new Error("ERR_INTERNET_DISCONNECTED (-106) loading 'https://duckduckgo.com/'")
     }
     await runner.run('lovely weather in lisbon')
-    expect(events.some((event) => event.type === 'display')).toBe(false)
+    expect(events.filter((event) => event.type === 'display')).toEqual([expect.objectContaining({ text: "There's no internet connection.", failure: true })])
     expect(speech.spoken.map((line) => line.text)).toEqual(["There's no internet connection."])
   })
 
@@ -597,9 +596,9 @@ describe('a Command in flight', () => {
       throw new Error('ref 9 refused')
     }
     await runner.run('click 9')
-    expect(types(events)).toEqual(['command', 'status', 'tool_call', 'tool_result', 'done'])
+    expect(types(events)).toEqual(['command', 'status', 'tool_call', 'tool_result', 'display', 'done'])
     expect(events[3]).toMatchObject({ type: 'tool_result', ok: false, error: 'ref 9 refused' })
-    expect(events[4]).toMatchObject({ type: 'done', outcome: 'failed' })
+    expect(events[5]).toMatchObject({ type: 'done', outcome: 'failed' })
   })
 
   it('refuses a blank line and publishes nothing', async () => {
@@ -1027,7 +1026,7 @@ describe('Early Fire (#326)', () => {
 // The Reaction of a Command whose output is speech closes on its first
 // spoken sample.
 describe('a Command whose output is speech', () => {
-  it('reads the page aloud: the Card as today, one speak of the page text, the Reaction on the first spoken sample (AC3)', async () => {
+  it('reads the page aloud: the Card of its title and words, one speak of the page text, the Reaction on the first spoken sample (AC3)', async () => {
     const speech = new FakeSpeech()
     const { browser, events, perf, runner } = harness({ speech })
     browser.readPage = async () => PAGE_READ
@@ -1036,7 +1035,7 @@ describe('a Command whose output is speech', () => {
     await flushMicrotasks()
 
     // The Card is shown when the text is in hand, before a word is spoken.
-    expect(events.find((event) => event.type === 'display')).toMatchObject({ text: PAGE_READ })
+    expect(events.find((event) => event.type === 'display')).toMatchObject({ text: '## Example\n\nWelcome to the example. It has two sentences.\n\nA second block.' })
     expect(speech.spoken).toEqual([{ text: 'Welcome to the example. It has two sentences.\nA second block.', turnId: 'voice-1' }])
     expect(events.filter((event) => event.type === 'speak')).toEqual([
       { type: 'speak', turnId: 'voice-1', text: 'Welcome to the example. It has two sentences.\nA second block.', at: expect.any(Number) },
@@ -1458,5 +1457,64 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
     expect(browser.navigations).toEqual(['https://youtube.com'])
     expect(browser.typed).toEqual([{ ref: 1, text: 'linus tech tips' }])
     expect(decisions(records)[1]).toMatchObject({ verb: 'type', slot: 'linus tech tips', slotHeard: 'line stack tips', slotFrom: 'page', task: { hop: 1 } })
+  })
+})
+
+describe('the one Answer every Command leaves (#333)', () => {
+  const displays = (events: PipelineEvent[]) => events.filter((event): event is Extract<PipelineEvent, { type: 'display' }> => event.type === 'display')
+
+  it('a navigate, a click, a type, a scroll, a press and a Stop each end with their verb’s sentence, no model asked', async () => {
+    const { decision, events, runner } = harness()
+    await runner.run('navigate example.com')
+    await runner.run('click 2')
+    await runner.run('type 3 hello')
+    await runner.run('scroll down')
+    await runner.run('press enter')
+    await runner.run('stop')
+    expect(decision.requests).toEqual([])
+    expect(displays(events).map((event) => event.text)).toEqual([
+      'Opened Fake page: https://example.com.',
+      'Clicked “Sign in”.',
+      'Typed into “Search”.',
+      'Scrolled down.',
+      'Pressed Enter.',
+      'Stopped.',
+    ])
+    // Exactly one Answer per Command, before its turn closes.
+    for (const display of displays(events)) {
+      const done = events.findIndex((event) => event.type === 'done' && event.turnId === display.turnId)
+      expect(events.indexOf(display)).toBeLessThan(done)
+    }
+  })
+
+  it('a `read` shows a Card of the page title and its words alone — what is spoken', async () => {
+    const speech = new FakeSpeech()
+    const { browser, events, runner } = harness({ speech })
+    browser.readPage = async () => PAGE_READ
+    const run = runner.run('read')
+    await flushMicrotasks()
+    speech.finish()
+    await run
+    expect(displays(events).map((event) => event.text)).toEqual(['## Example\n\nWelcome to the example. It has two sentences.\n\nA second block.'])
+    expect(speech.spoken.map((spoken) => spoken.text)).toEqual(['Welcome to the example. It has two sentences.\nA second block.'])
+  })
+
+  it('a thrown failure’s line is the Answer, marked a failure, with or without a voice', async () => {
+    for (const speech of [undefined, new FakeSpeech()]) {
+      const { browser, events, runner } = harness(speech ? { speech } : {})
+      browser.click = async () => {
+        throw new Error('ref 9 refused')
+      }
+      await runner.run('click 9')
+      expect(displays(events)).toEqual([expect.objectContaining({ text: "There's no item 9 on this page.", failure: true })])
+      expect(speech?.spoken.map((spoken) => spoken.text) ?? []).toEqual(speech ? ["There's no item 9 on this page."] : [])
+    }
+  })
+
+  it('a wall’s line is the Answer, marked a failure, in place of the verb’s sentence', async () => {
+    const { browser, events, runner } = harness()
+    browser.click = async () => blockedActionHead('click', 2, { fact: 'notShown' })
+    await runner.run('click 2')
+    expect(displays(events)).toEqual([expect.objectContaining({ text: SPOKEN_FAILURES.blocked, failure: true })])
   })
 })

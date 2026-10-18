@@ -26,6 +26,7 @@ import { parseSearchUrl } from '../../core/browser/urlInput'
 import { pageTermsOf } from '../../core/voice/pageTerms'
 import { pageReadPart, pageReadText } from '../../core/browser/pageText'
 import { SPOKEN_FAILURES, failureLineOf, spokenFailureOf } from '../../core/command/spokenFailure'
+import { commandAnswer, pageReadCard } from '../../core/command/answer'
 import type { SpeakOutcome, TtsSpeaker } from '../../core/ports/tts'
 import { reportFault } from '../../core/trace/fault'
 import { isRealPage, type LastPage } from '../../core/browser/lastPage'
@@ -407,10 +408,14 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     }
   }
 
-  /** A failure's one line, marked a failure (#329), not waited on: the turn ends now, and the next Command silences it. */
-  function sayFailure(turnId: string, line: string | null): void {
-    if (deps.speech === undefined || line === null) return
-    void say(deps.speech, turnId, line, { failure: true })
+  /**
+   * A failure's one line (#329) is the Command's Answer (#333), marked a
+   * failure and shown whether or not there is a voice; spoken too, not
+   * waited on: the turn ends now, and the next Command silences it.
+   */
+  function answerFailure(turnId: string, line: string): void {
+    publish({ type: 'display', turnId, text: line, failure: true, at: at() })
+    if (deps.speech !== undefined) void say(deps.speech, turnId, line, { failure: true })
   }
 
   /** Silence the runner's speech, if any is sounding; whether any was. */
@@ -569,10 +574,11 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     }
   }
 
-  /** What the Feed shows of a result: a Page Read, a screenshot's path, the help — never an action's outcome line. */
+  /** What the Feed shows of a result as a Card: a Page Read's title and words (#333), a screenshot's path, the help — never an action's outcome line. */
   function cardOf(command: Command, result: string): string | null {
     if (command.verb !== 'read' && command.verb !== 'screenshot' && command.verb !== 'help') return null
-    const shown = result.length > DISPLAY_LIMIT ? `${result.slice(0, DISPLAY_LIMIT)}\n…` : result
+    const card = command.verb === 'read' ? pageReadCard(result) : result
+    const shown = card.length > DISPLAY_LIMIT ? `${card.slice(0, DISPLAY_LIMIT)}\n…` : card
     return shown === '' ? 'done' : shown
   }
 
@@ -658,6 +664,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       stoppedAt.add(submitted)
       stopLoading()
       inFlight = null
+      publish({ type: 'display', turnId, text: commandAnswer(command, { page: { url: '', title: '' }, result: '' })!, at: at() })
       publish({ type: 'done', turnId, outcome: 'done', at: at() })
       return { outcome: 'landed' }
     }
@@ -706,10 +713,16 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       } else {
         const state = browser.state()
         const failure = spokenFailureOf({ tool: name, outcome: { ok: true, result }, ...(state.url ? { url: state.url } : {}), ...(state.title ? { title: state.title } : {}) })
-        sayFailure(turnId, failure !== null ? SPOKEN_FAILURES[failure] : null)
-        if (failure !== null) outcome = 'wall'
-        // A best guess that landed (#329): the Answer names what it fired, so an unread line never reads as nothing done — or as a failure.
-        else if (readingKind === 'best_guess' && card === null) publish({ type: 'display', turnId, text: bestGuessAnswer(command, page), at: at() })
+        if (failure !== null) {
+          answerFailure(turnId, SPOKEN_FAILURES[failure])
+          outcome = 'wall'
+        } else if (card === null) {
+          // One Answer per Command (#333), from its verb's sentence — a best guess's names what it fired (#329), so an unread line never reads as nothing done.
+          const label = command.target === null ? undefined : page.refs.find((candidate) => candidate.ref === command.target)?.label
+          const text =
+            readingKind === 'best_guess' ? bestGuessAnswer(command, page) : commandAnswer(command, { page: { url: state.url ?? '', title: state.title ?? '' }, result, ...(label !== undefined ? { label } : {}) })
+          if (text !== null) publish({ type: 'display', turnId, text, at: at() })
+        }
       }
       inFlight = null
       publish({ type: 'done', turnId, outcome: 'done', at: at() })
@@ -719,7 +732,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       react('failed')
       const message = error instanceof Error ? error.message : String(error)
       publish({ type: 'tool_result', turnId, callId, name, ok: false, error: message, at: at() })
-      sayFailure(turnId, failureLineOf(name, message))
+      answerFailure(turnId, failureLineOf(name, message))
       inFlight = null
       publish({ type: 'done', turnId, outcome: 'failed', at: at() })
       return ended('wall')

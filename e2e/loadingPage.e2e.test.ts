@@ -17,10 +17,10 @@ describe('a page still loading e2e', () => {
 
   const loading = (): Promise<boolean> => harness.dashboardEval<boolean>(`!!document.querySelector('.chrome-loading')`)
   const address = (): Promise<string> => harness.dashboardEval<string>(`document.querySelector('.url-input').value`)
-  /** The Feed's Command entries, in the order shown: their words and whether they are greyed. */
+  /** The Feed's Command entries, in the order shown: their bubble's words (the time beside it left out) and whether they are greyed. */
   const commandEntries = (): Promise<{ text: string; muted: boolean }[]> =>
     harness.overlayEval(
-      `Array.from(document.querySelectorAll('.feed-entry--command')).map((el) => ({ text: el.textContent, muted: el.classList.contains('feed-entry--muted') }))`,
+      `Array.from(document.querySelectorAll('.feed-entry--command')).map((el) => ({ text: el.querySelector('.feed-bubble').textContent, muted: el.classList.contains('feed-entry--muted') }))`,
     )
 
   /** Submit a navigate to the held page and wait until the pane is loading it. */
@@ -78,7 +78,7 @@ describe('a page still loading e2e', () => {
     expect(await harness.submitCommand('read')).toBe('submitted')
     await waitFor(async () => ((await commandEntries()).length - before >= 3 ? true : undefined), { timeoutMs: HELD_RESPONSE_MS + 5_000, intervalMs: 250 })
     const entries = (await commandEntries()).slice(before)
-    expect(entries.map((entry) => entry.text.split(/\d\d:\d\d/)[0])).toEqual([
+    expect(entries.map((entry) => entry.text)).toEqual([
       expect.stringMatching(/^navigate .*\/held-response/),
       expect.stringMatching(/^click 999abandoned: a later Command came first$/),
       expect.stringMatching(/^read/),

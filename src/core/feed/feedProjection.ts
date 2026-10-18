@@ -1,4 +1,4 @@
-import type { PipelineEvent } from '../pipeline/events'
+import type { PipelineEvent, PipelineStatus } from '../pipeline/events'
 import { projectPipelineEvent, type TranscriptEvent } from './transcriptProjection'
 
 // Feed projection (#44): the right-edge activity feed as a pure function —
@@ -9,9 +9,9 @@ import { projectPipelineEvent, type TranscriptEvent } from './transcriptProjecti
 // Bong's answers (assistant) vs system detail — and a turn's spoken line is
 // suppressed from the view once its Card renders, keyed on the shared turn
 // id (the spoken text still reaches TTS). Run grouping (#55): run noise —
-// tool lines, failed tool results, stage markers — carries the run's id so
-// the renderer folds it under one per-run details expander (collapsed by
-// default, auto-open while the run is live via `liveRunId`).
+// tool lines, stage markers — carries the run's id so
+// the renderer folds it under one per-run details expander (collapsed,
+// #333; titled as activity while the run is live via `liveRunId`).
 
 /** Which voice an entry speaks with — the conversation's turn structure (#54). */
 export type FeedRole = 'user' | 'assistant' | 'system'
@@ -59,6 +59,14 @@ export interface FeedEntry {
   turnId?: string
 }
 
+/** A run's steps as the Run Detail names them (#333). */
+const STEP_NAMES: Readonly<Record<PipelineStatus, string>> = {
+  thinking: 'Understanding',
+  acting: 'Working on the page',
+  speaking: 'Reading aloud',
+  cancelled: 'Stopped',
+}
+
 /** Detail entries are trimmed beyond this (~500, spec #42). */
 export const MAX_DETAIL_ENTRIES = 500
 
@@ -69,7 +77,7 @@ export function createFeedProjection(): {
   entries(): FeedEntry[]
   /**
    * The run currently in flight (#55): opened by its command, closed by
-   * its done — the run whose expander auto-opens.
+   * its done — the run whose expander is titled as activity.
    */
   liveRunId(): string | null
   /** Drops every entry — the dashboard's own clear control. */
@@ -148,14 +156,10 @@ export function createFeedProjection(): {
           appendOutcome(projectPipelineEvent(event)!, event.turnId, event.turnId)
           return
         }
-        case 'tool_result': {
-          // Successful results render nothing; a failure renders as run
-          // noise (#55), grouped — unlike a pipeline error, which stays a
-          // top-level line.
-          const projected = projectPipelineEvent(event)
-          if (projected) appendOutcome(projected, event.turnId, event.turnId)
+        case 'tool_result':
+          // A result renders nothing (#333): a failure's line is the
+          // Command's Answer, shown once — never again in the run detail.
           return
-        }
         case 'display': {
           appendOutcome(projectPipelineEvent(event)!, undefined, event.turnId)
           if (event.turnId !== undefined) {
@@ -176,8 +180,9 @@ export function createFeedProjection(): {
         case 'status':
           // Stage entries (#42 story 17): every stage transition lands as a
           // timestamped detail line, so consecutive lines reconstruct how
-          // long each phase took. Ephemeral like all detail.
-          appendDetail(event.at, event.status, 'stage', event.turnId)
+          // long each phase took. Ephemeral like all detail; named in plain
+          // words, never the internal stage name (#333).
+          appendDetail(event.at, STEP_NAMES[event.status], 'stage', event.turnId)
           return
         default: {
           const projected = projectPipelineEvent(event)

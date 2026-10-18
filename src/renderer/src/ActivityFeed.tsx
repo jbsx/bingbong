@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import type { FeedEntry } from '../../core/feed/feedProjection'
 import { FeedMarkdown } from './FeedMarkdown'
 
@@ -11,8 +11,8 @@ import { FeedMarkdown } from './FeedMarkdown'
  * (ADR 0013): one device — the Status Capsule orb beside every assistant
  * entry; no text handles, the name living in screen-reader text only.
  * Run grouping (#55): run noise — tool lines, tool results, stage markers
- * — folds under one per-run details expander, collapsed by default and
- * auto-open while its run is live, so the conversation reads as just you
+ * — folds under one per-run details expander, collapsed (#333), its title
+ * reading as activity while its run is live, so the conversation reads as just you
  * and Bing Bong. Markdown (#56): the Answer's Card renders as structure
  * (FeedMarkdown) — code blocks, lists, headings, links that navigate the
  * pane — while a display-less Answer renders its spoken line (italic
@@ -23,7 +23,27 @@ export function formatFeedTime(at: number): string {
   return new Date(at).toLocaleTimeString([], { hour: '2-digit', hour12: false, minute: '2-digit', second: '2-digit' })
 }
 
+/**
+ * Text that may carry a long address (#333): a line break may fall after
+ * any slash, so the address wraps inside its bubble at its slashes rather
+ * than mid-word or past the bubble's edge.
+ */
+function BreaksAtSlashes({ text }: { text: string }) {
+  const parts = text.split(/(?<=\/)/)
+  return (
+    <>
+      {parts.map((part, index) => (
+        <Fragment key={index}>
+          {part}
+          {index < parts.length - 1 ? <wbr /> : null}
+        </Fragment>
+      ))}
+    </>
+  )
+}
+
 export function FeedLine({ entry }: { entry: FeedEntry }) {
+  // One time per entry, always first (#333): every entry's time sits in the same left column.
   const time = <time className="feed-time">{formatFeedTime(entry.at)}</time>
   if (entry.role === 'user') {
     // Your words (#54): commands and heard transcriptions, right-aligned
@@ -33,11 +53,17 @@ export function FeedLine({ entry }: { entry: FeedEntry }) {
     // taken; an Utterance read as no Command is the words alone, greyed.
     return (
       <p className={`feed-entry feed-entry--user feed-entry--${entry.kind}${entry.muted ? ' feed-entry--muted' : ''}`}>
-        <span className="feed-bubble">
-          <span className="feed-text">{entry.text}</span>
-          {entry.action !== undefined ? <span className="feed-action">{entry.action}</span> : null}
-        </span>
         {time}
+        <span className="feed-bubble">
+          <span className="feed-text">
+            <BreaksAtSlashes text={entry.text} />
+          </span>
+          {entry.action !== undefined ? (
+            <span className="feed-action">
+              <BreaksAtSlashes text={entry.action} />
+            </span>
+          ) : null}
+        </span>
       </p>
     )
   }
@@ -131,14 +157,12 @@ function foldRuns(entries: FeedEntry[]): FeedItem[] {
 
 /**
  * One run's collapsible noise (#55): a native details/summary — keyboard
- * accessible by construction — collapsed by default, auto-open while its
- * run is live. The user's own toggles win over the live default: a
- * collapsed live run stays collapsed; a finished run collapses when it
- * ends (the toggle React applies fires onToggle, recording the choice).
+ * accessible by construction — collapsed, live or not (#333): the Answer
+ * tells what happened, and the steps open on a click. The user's toggle
+ * holds from then on.
  */
 function RunDetails({ runId, entries, live }: { runId: string; entries: FeedEntry[]; live: boolean }) {
-  const [userOpen, setUserOpen] = useState<boolean | null>(null)
-  const open = userOpen ?? live
+  const [open, setOpen] = useState(false)
   // The noise pane is height-capped, so it scrolls itself: while open, new
   // entries keep the newest line in view — same contract as the feed list,
   // one nesting level down.
@@ -156,7 +180,7 @@ function RunDetails({ runId, entries, live }: { runId: string; entries: FeedEntr
         // Nested error expanders toggle too — only this element's own
         // state is the user's choice about this run.
         if (event.target !== event.currentTarget) return
-        setUserOpen((event.currentTarget as HTMLDetailsElement).open)
+        setOpen((event.currentTarget as HTMLDetailsElement).open)
       }}
     >
       <summary className="feed-run-summary">

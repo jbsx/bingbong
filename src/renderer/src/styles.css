@@ -400,6 +400,7 @@ body {
 }
 
 .feed-list {
+  --feed-time-width: 4.4rem;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -438,8 +439,11 @@ body {
   cursor: pointer;
 }
 
+/* One time column (#333): every entry's time comes first, at one width,
+   so the times line up down the Feed's left edge whoever spoke. */
 .feed-time {
   flex: none;
+  width: var(--feed-time-width);
   color: var(--muted);
   opacity: 0.7;
   font-size: 0.85rem;
@@ -539,16 +543,18 @@ body {
 /* Conversation separation: the feed reads as a chat between two voices —
    your words right-aligned in gray fills, Bing Bong's answers as
    left-aligned white cards with the speaking-green rail. System detail
-   keeps the plain tier below. Bubbles and cards stop short of the panel's
-   full width — the negative space frames each voice and keeps the chat
-   scannable even in the widened panel. */
-.feed-entry--user {
-  justify-content: flex-end;
-}
+   keeps the plain tier below. Your bubbles stop short of the panel's
+   width, so the negative space frames your voice; an Answer's Card takes
+   the content width (#333). */
 
+/* The bubble sits right, after the time column (#333). A long address in
+   it wraps at its slashes (the renderer marks a break after each), and
+   breaks mid-word only when one part alone is wider than the bubble. */
 .feed-bubble {
   min-width: 0;
-  max-width: 70%;
+  max-width: 80%;
+  margin-left: auto;
+  overflow-wrap: break-word;
   background: var(--bubble);
   border-radius: 18px 18px 5px 18px;
   padding: 6px 16px;
@@ -564,6 +570,11 @@ body {
 
 /* One entry per Command (#324, ADR 0076): the action taken reads as a
    quiet subline under the words heard, in the same bubble. */
+.feed-bubble .feed-text,
+.feed-bubble .feed-action {
+  overflow-wrap: break-word;
+}
+
 .feed-bubble .feed-action {
   display: block;
   color: var(--muted);
@@ -581,9 +592,11 @@ body {
   color: var(--muted);
 }
 
+/* An Answer's Card takes the content width beside the time column and
+   the orb (#333), however short its words. */
 .feed-card {
+  flex: 1;
   min-width: 0;
-  max-width: 70%;
   background: var(--panel);
   border: 1px solid var(--edge);
   border-left: 4px solid var(--status-green);
@@ -809,14 +822,16 @@ body {
    under one quiet section per run, collapsed by default and auto-open
    while the run is live. The grouped lines keep their plain tiers above;
    the expander adds only the fold, never restyles its contents. */
+/* No inset on the left (#333): the run's own times stay in the Feed's one
+   time column; its summary starts where the content does. */
 .feed-run {
-  border-left: 3px solid var(--edge);
   border-radius: 4px;
   background: color-mix(in srgb, var(--panel) 60%, transparent);
-  padding: 4px 10px;
+  padding: 4px 10px 4px 0;
 }
 
 .feed-run-summary {
+  padding-left: calc(var(--feed-time-width) + 12px);
   display: flex;
   align-items: baseline;
   gap: 10px;
@@ -863,7 +878,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 4px 0 2px 4px;
+  padding: 4px 0 2px;
   /* A long run's noise must not take the panel hostage: the block grows
      to at most ~40% of the viewport and scrolls itself past that, so the
      conversation lines around it stay readable. Scroll containment keeps

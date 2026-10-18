@@ -11,7 +11,7 @@ import { createFeedProjection, type FeedEntry } from '../../core/feed/feedProjec
 
 export interface FeedProjection {
   feed: FeedEntry[]
-  /** The run currently in flight (#55) — its expander auto-opens. */
+  /** The run currently in flight (#55) — its expander is titled as activity. */
   liveRunId: string | null
   /** Fold one pipeline event into the feed. */
   handleEvent(event: PipelineEvent): void

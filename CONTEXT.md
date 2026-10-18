@@ -208,6 +208,11 @@ for the ear and a Card one for the view. An Answer renders as at most one
 Feed Entry — the Card when it exists, otherwise the Spoken rendering. Both
 renderings are written in English, the product's one language, whatever
 language the command or the pages read were in.
+Every Command leaves exactly one Answer (#333), and no model writes it: a
+Page Read's Card is the page title over the page's own words (what `read`
+speaks); a failure's plain line, shown once in the failure colour; else the
+verb's fixed sentence filled from facts the Command and the page hold
+("Opened Lighthouse page.", "Clicked “Say hello”.", "Scrolled down.").
 _Avoid_: message, reply, response
 
 **Spoken Rendering**:

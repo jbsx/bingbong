@@ -1,6 +1,5 @@
 import type { PipelineEvent } from '../pipeline/events'
 import { describeToolAction } from '../pipeline/toolCallDisplay'
-import { failureLineOf } from '../command/spokenFailure'
 
 // The projection every transcript-shaped view shares: one published
 // PipelineEvent in, at most one displayable line out. It was written so
@@ -38,12 +37,10 @@ export function projectPipelineEvent(event: PipelineEvent): TranscriptEvent | nu
     case 'tool_call':
       return { kind: 'tool', text: describeToolAction(event.name, event.args), at: event.at }
     case 'tool_result':
-      return event.ok
-        ? null
-        : // Told in plain words (#329): the raw error is the record's, not the user's.
-          { kind: 'error', text: failureLineOf(event.name, event.error ?? ''), failure: true, at: event.at }
+      // A failure shows once (#333): its plain-words line is the Command's Answer, never a second line here.
+      return null
     case 'display':
-      return { kind: 'display', text: event.text, at: event.at }
+      return { kind: 'display', text: event.text, ...(event.failure ? { failure: true } : {}), at: event.at }
     case 'speak':
       return { kind: 'speak', text: event.text, ...(event.failure ? { failure: true } : {}), at: event.at }
     case 'error':

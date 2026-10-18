@@ -122,7 +122,7 @@ export function peekCardAnswer(entries: readonly FeedEntry[], turnId: string | n
   let spoken: FeedEntry | null = null
   for (const entry of entries) {
     if (entry.turnId !== turnId) continue
-    if (entry.role === 'assistant' && entry.kind === 'display') return { kind: 'display', text: entry.text, failure: false }
+    if (entry.role === 'assistant' && entry.kind === 'display') return { kind: 'display', text: entry.text, failure: entry.failure === true }
     if (entry.role === 'system' && entry.kind === 'error') error ??= entry
     if (entry.role === 'assistant' && entry.kind === 'speak') spoken ??= entry
   }
