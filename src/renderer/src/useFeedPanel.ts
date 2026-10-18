@@ -76,12 +76,19 @@ export function useFeedPanel(): FeedPanelState {
  * overlay — a key change must NEVER route the bounds through 0×0, or the
  * overlay page reflows against an empty viewport mid-transition and
  * synthesized (and real) clicks land on stale element positions.
+ * `hidden` is the one deliberate exception: the slot holds a view that must
+ * not show (the Peek Card over the settings page, #329), so the overlay
+ * gets no bounds until it may show again.
  */
-export function useFeedSlotRect(slotRef: RefObject<HTMLDivElement | null>, layoutKey: string): void {
+export function useFeedSlotRect(slotRef: RefObject<HTMLDivElement | null>, layoutKey: string, hidden = false): void {
   useEffect(() => {
     const el = slotRef.current
     if (!el) return
     const report = (): void => {
+      if (hidden) {
+        window.bingbong.feedPanel.reportRect(HIDDEN_PANE_RECT)
+        return
+      }
       const rect = el.getBoundingClientRect()
       const pane: PaneRect = { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
       window.bingbong.feedPanel.reportRect(pane)
@@ -94,7 +101,7 @@ export function useFeedSlotRect(slotRef: RefObject<HTMLDivElement | null>, layou
     }
     // The slot element itself is stable; `layoutKey` (mode/open) re-reports
     // the position-only moves a ResizeObserver cannot see.
-  }, [layoutKey])
+  }, [layoutKey, hidden])
 
   // Unmount-only: the overlay view must not outlive its slot.
   useEffect(

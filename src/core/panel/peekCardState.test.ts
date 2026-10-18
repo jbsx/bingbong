@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { PipelineEvent } from '../pipeline/events'
-import { createPeekCardFold, overlaySlotContent, peekCardVisible } from './peekCardState'
+import { createFeedProjection } from '../feed/feedProjection'
+import { createPeekCardFold, overlaySlotContent, peekCardAnswer, peekCardVisible } from './peekCardState'
 
 // The Peek Card fold (ADR 0021, amended by ADR 0026): a command shows the
 // Peek Card — never the panel — and the card's life is a pure fold over
@@ -145,5 +146,61 @@ describe('overlaySlotContent', () => {
 
   it('collapsed with no card shows the edge tab', () => {
     expect(overlaySlotContent(false, hidden)).toBe('tab')
+  })
+})
+
+// The card's Answer (#329): only the reported Command's own — its Card, else
+// its failure, else its Spoken Rendering — never a neighbour's, and a
+// failure says so for the card's mark.
+describe('peekCardAnswer', () => {
+  const feedOf = (events: PipelineEvent[]) => {
+    const feed = createFeedProjection()
+    for (const event of events) feed.onEvent(event)
+    return feed.entries()
+  }
+  const failedRead: PipelineEvent[] = [
+    { type: 'command', turnId: 't1', text: 'read', at: 1 },
+    { type: 'tool_result', turnId: 't1', callId: 't1-1', name: 'read_page', ok: false, error: 'page evaluation failed', at: 2 },
+    { type: 'speak', turnId: 't1', text: "This page can't be read right now.", failure: true, at: 3 },
+    { type: 'done', turnId: 't1', outcome: 'failed', at: 4 },
+  ]
+
+  it("never shows an earlier Command's failure on a later successful one", () => {
+    const entries = feedOf([
+      ...failedRead,
+      { type: 'command', turnId: 't2', text: 'navigate example.com', at: 5 },
+      { type: 'tool_result', turnId: 't2', callId: 't2-1', name: 'navigate', ok: true, result: 'navigated', at: 6 },
+      { type: 'done', turnId: 't2', outcome: 'done', at: 7 },
+    ])
+    expect(peekCardAnswer(entries, 't2')).toBeNull()
+  })
+
+  it("never shows an earlier Command's Answer on a later one that has none", () => {
+    const entries = feedOf([
+      { type: 'command', turnId: 't1', text: 'screenshot', at: 1 },
+      { type: 'display', turnId: 't1', text: 'screenshot saved: /shots/1.jpg', at: 2 },
+      { type: 'done', turnId: 't1', outcome: 'done', at: 3 },
+      { type: 'command', turnId: 't2', text: 'scroll down', at: 4 },
+      { type: 'done', turnId: 't2', outcome: 'done', at: 5 },
+    ])
+    expect(peekCardAnswer(entries, 't1')).toEqual({ kind: 'display', text: 'screenshot saved: /shots/1.jpg', failure: false })
+    expect(peekCardAnswer(entries, 't2')).toBeNull()
+  })
+
+  it('a failed Command answers with its plain failure line, marked as a failure', () => {
+    expect(peekCardAnswer(feedOf(failedRead), 't1')).toEqual({ kind: 'error', text: "This page can't be read right now.", failure: true })
+  })
+
+  it('a wall the action met answers with its spoken line, marked as a failure; a plain spoken line is not', () => {
+    const entries = feedOf([
+      { type: 'command', turnId: 't1', text: 'open example.com/missing', at: 1 },
+      { type: 'speak', turnId: 't1', text: "That page doesn't exist.", failure: true, at: 2 },
+      { type: 'done', turnId: 't1', outcome: 'done', at: 3 },
+      { type: 'command', turnId: 't2', text: 'read', at: 4 },
+      { type: 'speak', turnId: 't2', text: 'Welcome to the example.', at: 5 },
+      { type: 'done', turnId: 't2', outcome: 'done', at: 6 },
+    ])
+    expect(peekCardAnswer(entries, 't1')).toEqual({ kind: 'spoken', text: "That page doesn't exist.", failure: true })
+    expect(peekCardAnswer(entries, 't2')).toEqual({ kind: 'spoken', text: 'Welcome to the example.', failure: false })
   })
 })

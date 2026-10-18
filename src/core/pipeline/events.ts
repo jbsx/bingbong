@@ -30,7 +30,8 @@ export type PipelineEvent =
       error?: string
       at: number
     }
-  | { type: 'speak'; turnId?: string; text: string; at: number }
+  /** `failure`: the line tells what went wrong (#329) — a thrown action, a wall — and takes the failure colour. */
+  | { type: 'speak'; turnId?: string; text: string; failure?: boolean; at: number }
   | { type: 'display'; turnId?: string; text: string; at: number }
   | { type: 'error'; turnId?: string; message: string; at: number }
   | { type: 'done'; turnId: string; outcome?: 'done' | 'failed' | 'cancelled'; at: number }

@@ -326,7 +326,10 @@ _Avoid_: header, dashboard header, browser chrome, title bar
 **Status Capsule**:
 The single control naming the assistant's state — orb, pill, and the live
 run/voice hints collapsed into one pill-shaped surface. Its orb is the feed's
-assistant mark: one visual identity for "this is Bing Bong".
+assistant mark: one visual identity for "this is Bing Bong" — save that a
+failed Command's mark (the Peek Card's dot, the Feed Answer's mark and rail)
+takes the failure colour, so a failure never reads as a success (owner
+ruling 2026-10-18, #329).
 _Avoid_: status bar, status row, status line
 
 **View Preference**:

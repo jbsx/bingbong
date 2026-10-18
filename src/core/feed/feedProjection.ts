@@ -39,6 +39,8 @@ export interface FeedEntry {
   action?: string
   /** An Utterance read as no Command (#324): the words alone, greyed. */
   muted?: boolean
+  /** A line telling what went wrong (#329): its mark takes the failure colour. */
+  failure?: boolean
   /** Detail entries are ephemeral: trimmed beyond the cap. */
   detail: boolean
   /**
@@ -48,6 +50,13 @@ export interface FeedEntry {
    * (bubbles, cards, pipeline errors) and on unstamped announcements.
    */
   runId?: string
+  /**
+   * The turn the entry came from (#329), on every line its event stamps —
+   * conversation lines included, unlike `runId` — so a view can pick one
+   * Command's Answer without reaching a neighbour's. Absent on unstamped
+   * announcements and voice-half lines.
+   */
+  turnId?: string
 }
 
 /** Detail entries are trimmed beyond this (~500, spec #42). */
@@ -85,14 +94,14 @@ export function createFeedProjection(): {
     feed = feed.filter((entry) => entry.id !== id)
   }
 
-  const appendOutcome = (entry: TranscriptEvent, runId?: string): number => {
+  const appendOutcome = (entry: TranscriptEvent, runId?: string, turnId?: string): number => {
     const id = nextId++
-    feed = [...feed, { ...entry, id, role: feedRoleForKind(entry.kind), detail: false, runId }]
+    feed = [...feed, { ...entry, id, role: feedRoleForKind(entry.kind), detail: false, runId, ...(turnId !== undefined ? { turnId } : {}) }]
     return id
   }
 
-  const appendDetail = (at: number, text: string, kind: 'stage', runId?: string): void => {
-    feed = [...feed, { id: nextId++, at, kind, role: 'system', text, detail: true, runId }]
+  const appendDetail = (at: number, text: string, kind: 'stage', runId: string): void => {
+    feed = [...feed, { id: nextId++, at, kind, role: 'system', text, detail: true, runId, turnId: runId }]
     trimDetail()
   }
 
@@ -118,7 +127,7 @@ export function createFeedProjection(): {
         case 'tool_call': {
           // Tool lines are run noise (#55) — they group under the run's
           // expander, unlike the conversation lines around them.
-          appendOutcome(projectPipelineEvent(event)!, event.turnId)
+          appendOutcome(projectPipelineEvent(event)!, event.turnId, event.turnId)
           return
         }
         case 'tool_result': {
@@ -126,11 +135,11 @@ export function createFeedProjection(): {
           // noise (#55), grouped — unlike a pipeline error, which stays a
           // top-level line.
           const projected = projectPipelineEvent(event)
-          if (projected) appendOutcome(projected, event.turnId)
+          if (projected) appendOutcome(projected, event.turnId, event.turnId)
           return
         }
         case 'display': {
-          appendOutcome(projectPipelineEvent(event)!)
+          appendOutcome(projectPipelineEvent(event)!, undefined, event.turnId)
           if (event.turnId !== undefined) {
             // Its spoken line (#54): the Card renders, so the turn's speak
             // entry stays out of the view — main still speaks it. A speak
@@ -142,7 +151,7 @@ export function createFeedProjection(): {
         }
         case 'speak': {
           if (event.turnId !== undefined && displayedTurns.has(event.turnId)) return
-          const id = appendOutcome(projectPipelineEvent(event)!)
+          const id = appendOutcome(projectPipelineEvent(event)!, undefined, event.turnId)
           if (event.turnId !== undefined) renderedSpeakIds.set(event.turnId, id)
           return
         }
@@ -154,11 +163,11 @@ export function createFeedProjection(): {
           return
         default: {
           const projected = projectPipelineEvent(event)
-          if (projected) appendOutcome(projected)
+          if (projected) appendOutcome(projected, undefined, 'turnId' in event ? event.turnId : undefined)
         }
       }
     },
-    append: appendOutcome,
+    append: (entry) => appendOutcome(entry),
     entries: () => feed,
     liveRunId: () => liveRunId,
     clear() {

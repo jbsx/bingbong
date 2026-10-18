@@ -11,7 +11,9 @@ import { classifyUnavailablePage } from '../browser/unavailablePage'
 // empty, not-found or unavailable page (the Action Outcome classifiers in
 // core/browser), speaks one short line naming what happened. The lines are
 // a fixed table in the Feed's plain-language style and never carry the raw
-// error, an address or a status code. Successful actions stay silent.
+// error, an address or a status code. Successful actions stay silent. A
+// thrown failure is told by failureLineOf (#329), the same words on the
+// Feed, the Peek Card and the spoken line.
 
 /** What went wrong, as the spoken line names it. */
 export type SpokenFailure = 'failed' | 'blocked' | 'consent' | 'blocker' | 'notFound' | 'unavailable' | 'empty'
@@ -24,6 +26,36 @@ export const SPOKEN_FAILURES: Readonly<Record<SpokenFailure, string>> = {
   notFound: "That page doesn't exist.",
   unavailable: "That site can't show the page right now.",
   empty: 'This page shows no text.',
+}
+
+/** A ref the controller refused (ADR 0033) or could not reach: the number, whatever the protocol wording around it. */
+const MISSING_REF_RE = /^ref (\d+) (?:refused|no longer resolves)\b/
+
+/** A Chromium net error on a load, by its name; the plain sentence for the common ones. */
+const NET_ERROR_RE = /\bERR_([A-Z_]+)/
+const NET_FAILURES: Readonly<Record<string, string>> = {
+  NAME_NOT_RESOLVED: "That site can't be found.",
+  INTERNET_DISCONNECTED: "There's no internet connection.",
+  CONNECTION_REFUSED: "That site isn't answering.",
+  CONNECTION_TIMED_OUT: "That site isn't answering.",
+  TIMED_OUT: "That site isn't answering.",
+}
+
+/**
+ * The plain sentence a thrown failure is told in (#329) — on the Feed, the
+ * Peek Card and the spoken line alike. The raw error stays on the event and
+ * the decision record; the user is never shown the ref-protocol wording
+ * written for a model, nor a Chromium code.
+ */
+export function failureLineOf(tool: string, error: string): string {
+  const ref = MISSING_REF_RE.exec(error)
+  if (ref !== null) return `There's no item ${ref[1]} on this page.`
+  if (tool === 'navigate') {
+    const net = NET_ERROR_RE.exec(error)?.[1]
+    return (net !== undefined ? NET_FAILURES[net] : undefined) ?? "That address can't be opened."
+  }
+  if (tool === 'read_page') return "This page can't be read right now."
+  return SPOKEN_FAILURES.failed
 }
 
 /** A landing's first line: the verb, the address and the title of the page it carries. */

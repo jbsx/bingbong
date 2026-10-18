@@ -4,7 +4,7 @@ import type { PipelineEvent } from '../../core/pipeline/events'
 import type { CommandRunState } from '../../core/pipeline/runState'
 import type { PageLink, PageSnapshot } from '../../core/browser/snapshot'
 import type { PerfTracer } from '../../core/perf/perfTracer'
-import { commandRefOf, describeCommand, type Command, type CommandPage } from '../../core/command/command'
+import { bestGuessAnswer, commandRefOf, describeCommand, type Command, type CommandPage } from '../../core/command/command'
 import { COMMAND_HELP } from '../../core/command/help'
 import { bestGuess, headsAnotherVerb, localMatch } from '../../core/command/localMatch'
 import { commandQuestions, commandState, partialQuestions, readCommandAnswers, type HopContext } from '../../core/command/jevReading'
@@ -25,7 +25,7 @@ import {
 import { parseSearchUrl } from '../../core/browser/urlInput'
 import { pageTermsOf } from '../../core/voice/pageTerms'
 import { pageReadPart, pageReadText } from '../../core/browser/pageText'
-import { SPOKEN_FAILURES, spokenFailureOf, type SpokenFailure } from '../../core/command/spokenFailure'
+import { SPOKEN_FAILURES, failureLineOf, spokenFailureOf } from '../../core/command/spokenFailure'
 import type { SpeakOutcome, TtsSpeaker } from '../../core/ports/tts'
 import { reportFault } from '../../core/trace/fault'
 import { isRealPage, type LastPage } from '../../core/browser/lastPage'
@@ -54,8 +54,9 @@ import type { ActionEffect } from '../browser/createCdpBrowserController'
 // after its Card is shown, and stays the Command in flight until the text
 // ends, the Abort Head, or the next Command silences it; its Reaction
 // closes on the first spoken sample. A Command that fails, or lands on an
-// Action Outcome class, speaks one fixed line (spokenFailure.ts). Every
-// other action stays silent.
+// Action Outcome class, speaks one plain line (spokenFailure.ts), marked a
+// failure. Every other action stays silent; a best guess that landed shows
+// an Answer naming what it fired (#329).
 //
 // A Task (#328, ADR 0076 amendment): an Utterance is one or more Commands.
 // Hop 0 is read as above. A Task goes on after a Command Jev read and ends
@@ -346,8 +347,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   }
 
   /** Speak a Command's text (#327): one `speak` event carries it, and it counts as the runner's until it ends. */
-  function say(speech: Pick<TtsSpeaker, 'speak'>, turnId: string, text: string, onFirstSound?: () => void): Promise<SpeakOutcome> {
-    publish({ type: 'speak', turnId, text, at: at() })
+  function say(speech: Pick<TtsSpeaker, 'speak'>, turnId: string, text: string, onFirstSound?: () => void, failure = false): Promise<SpeakOutcome> {
+    publish({ type: 'speak', turnId, text, ...(failure ? { failure: true } : {}), at: at() })
     sounding += 1
     return speech
       .speak(text, { turnId, ...(onFirstSound ? { onFirstSound } : {}) })
@@ -391,10 +392,10 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     }
   }
 
-  /** A failure's one line, not waited on: the turn ends now, and the next Command silences it. */
-  function sayFailure(turnId: string, failure: SpokenFailure | null): void {
-    if (deps.speech === undefined || failure === null) return
-    void say(deps.speech, turnId, SPOKEN_FAILURES[failure])
+  /** A failure's one line, marked a failure (#329), not waited on: the turn ends now, and the next Command silences it. */
+  function sayFailure(turnId: string, line: string | null): void {
+    if (deps.speech === undefined || line === null) return
+    void say(deps.speech, turnId, line, undefined, true)
   }
 
   /** Silence the runner's speech, if any is sounding; whether any was. */
@@ -687,8 +688,10 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       } else {
         const state = browser.state()
         const failure = spokenFailureOf({ tool: name, outcome: { ok: true, result }, ...(state.url ? { url: state.url } : {}), ...(state.title ? { title: state.title } : {}) })
-        sayFailure(turnId, failure)
+        sayFailure(turnId, failure !== null ? SPOKEN_FAILURES[failure] : null)
         if (failure !== null) outcome = 'wall'
+        // A best guess that landed (#329): the Answer names what it fired, so an unread line never reads as nothing done — or as a failure.
+        else if (readingKind === 'best_guess' && card === null) publish({ type: 'display', turnId, text: bestGuessAnswer(command, page), at: at() })
       }
       inFlight = null
       publish({ type: 'done', turnId, outcome: 'done', at: at() })
@@ -698,7 +701,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       react('failed')
       const message = error instanceof Error ? error.message : String(error)
       publish({ type: 'tool_result', turnId, callId, name, ok: false, error: message, at: at() })
-      sayFailure(turnId, 'failed')
+      sayFailure(turnId, failureLineOf(name, message))
       inFlight = null
       publish({ type: 'done', turnId, outcome: 'failed', at: at() })
       return ended('wall')

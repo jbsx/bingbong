@@ -1,6 +1,6 @@
 import type { FeedEntry } from '../../core/feed/feedProjection'
 import type { RunProgress } from '../../core/pipeline/runProgress'
-import type { PeekCardState } from '../../core/panel/peekCardState'
+import { peekCardAnswer, type PeekCardState } from '../../core/panel/peekCardState'
 import { FeedMarkdown } from './FeedMarkdown'
 
 // The Peek Card (ADR 0021, 0026, 0029; glossary): the system-pushed
@@ -10,28 +10,6 @@ import { FeedMarkdown } from './FeedMarkdown'
 // (ADR 0029) — the one surface that floats above the native pane —
 // translucent over the page, bottom-center, replacing the collapsed edge
 // tab; it is not a state of the panel.
-
-/**
- * The run's Answer — its Card when it has one, else its Spoken Rendering.
- * Answer entries are conversation lines (top-level, run-less) so the scan
- * is newest-first over those; a failure surfaces as the run's own scoped
- * error line, never an out-of-turn error from unrelated activity.
- */
-function runAnswer(
-  entries: FeedEntry[],
-  runId: string | null,
-): { kind: 'display' | 'spoken' | 'error'; text: string } | null {
-  let spoken: FeedEntry | null = null
-  for (let i = entries.length - 1; i >= 0; i--) {
-    const entry = entries[i]!
-    if (entry.role === 'assistant' && entry.kind === 'display') return { kind: 'display', text: entry.text }
-    if (entry.role === 'assistant' && entry.kind === 'speak') spoken ??= entry
-    if (entry.role === 'system' && entry.kind === 'error' && (runId === null || entry.runId === runId)) {
-      return { kind: 'error', text: entry.text }
-    }
-  }
-  return spoken ? { kind: 'spoken', text: spoken.text } : null
-}
 
 function liveStep(progress: RunProgress | null): string {
   return progress ? progress.stage : 'working'
@@ -48,11 +26,12 @@ export function PeekCard({
   progress: RunProgress | null
   onOpen(): void
 }) {
-  const answer = state.phase === 'answer' ? runAnswer(entries, state.runId) : null
+  // Only the reported Command's own Answer (#329); a failure's mark takes the failure colour.
+  const answer = state.phase === 'answer' ? peekCardAnswer(entries, state.runId) : null
 
   return (
     <div
-      className={`peek-card peek-card--${state.phase}`}
+      className={`peek-card peek-card--${state.phase}${answer?.failure ? ' peek-card--failed' : ''}`}
       role="button"
       tabIndex={0}
       aria-label="Open the activity feed"
@@ -81,7 +60,7 @@ export function PeekCard({
           ) : answer.kind === 'spoken' ? (
             <p className="peek-text peek-text--spoken">{answer.text}</p>
           ) : (
-            <p className="peek-text peek-text--error">{answer.text.split('\n', 1)[0]}</p>
+            <p className="peek-text peek-text--error">{answer.text}</p>
           )}
         </div>
       ) : (

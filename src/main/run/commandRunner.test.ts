@@ -335,6 +335,29 @@ describe('a Command the Local Match cannot settle', () => {
     expect(records[0]).toMatchObject({ type: 'decision', reading: 'best_guess', jevAsked: true, jev: { reason: 'timeout', latencyMs: 212 } })
   })
 
+  it('names the web search the best guess fired, as its Answer, when Jev is unavailable (#329)', async () => {
+    const speech = new FakeSpeech()
+    const { browser, decision, events, runner } = harness({ speech })
+    decision.script.push({ unavailable: 'failed' })
+    await runner.run('lovely weather in lisbon', { source: 'spoken' })
+    expect(browser.navigations).toHaveLength(1)
+    expect(events.filter((event) => event.type === 'display')).toEqual([expect.objectContaining({ type: 'display', text: 'Searched the web for “lovely weather in lisbon”.' })])
+    expect(events.some((event) => event.type === 'speak' || event.type === 'error')).toBe(false)
+    expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done' })
+    expect(speech.spoken).toEqual([])
+  })
+
+  it('a best guess that meets a wall answers with the wall, not the guess (#329)', async () => {
+    const speech = new FakeSpeech()
+    const { browser, events, runner } = harness({ decision: null, speech })
+    browser.navigate = async () => {
+      throw new Error("ERR_INTERNET_DISCONNECTED (-106) loading 'https://duckduckgo.com/'")
+    }
+    await runner.run('lovely weather in lisbon')
+    expect(events.some((event) => event.type === 'display')).toBe(false)
+    expect(speech.spoken.map((line) => line.text)).toEqual(["There's no internet connection."])
+  })
+
   it('fires the best guess with no Jev configured', async () => {
     const { browser, runner, records } = harness({ decision: null })
     await runner.run('tap on the sign thing')
@@ -1082,8 +1105,10 @@ describe('a Command whose output is speech', () => {
       throw new Error('net::ERR_NAME_NOT_RESOLVED at https://nope.example/')
     }
     await runner.run('open nope.example')
-    expect(speech.spoken.map((line) => line.text)).toEqual([SPOKEN_FAILURES.failed])
-    expect(events.find((event) => event.type === 'speak')).toMatchObject({ text: SPOKEN_FAILURES.failed })
+    // Told in plain words (#329), marked a failure for the Feed and the Peek Card; the raw error stays on the tool result.
+    expect(speech.spoken.map((line) => line.text)).toEqual(["That site can't be found."])
+    expect(events.find((event) => event.type === 'speak')).toMatchObject({ text: "That site can't be found.", failure: true })
+    expect(events.find((event) => event.type === 'tool_result')).toMatchObject({ ok: false, error: 'net::ERR_NAME_NOT_RESOLVED at https://nope.example/' })
     expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'failed' })
     // The line still sounding counts as the runner's: the Abort Head reaches it, and the next Command silences it.
     expect(runner.getState()).toBe('running')

@@ -46,12 +46,40 @@ describe('feed projection', () => {
     const feed = project([
       { type: 'command', turnId: 't1', text: 'click 3', at: 1 },
       { type: 'tool_call', turnId: 't1', callId: 'c1', name: 'click', args: { ref: 3 }, at: 2 },
-      { type: 'tool_result', turnId: 't1', callId: 'c1', name: 'click', ok: false, error: 'no such ref', at: 3 },
+      { type: 'tool_result', turnId: 't1', callId: 'c1', name: 'click', ok: false, error: 'ref 3 refused: it no longer names the element you were shown. Continue from the page below', at: 3 },
     ]).entries()
     expect(feed.map((entry) => [entry.kind, entry.text, entry.runId])).toEqual([
       ['command', 'click 3', undefined],
       ['tool', 'click [3]', 't1'],
-      ['error', 'click failed: no such ref', 't1'],
+      ['error', "There's no item 3 on this page.", 't1'],
+    ])
+  })
+
+  it('tells a failed tool result in plain words, never the raw error (#329)', () => {
+    const feed = project([
+      { type: 'command', turnId: 't1', text: 'navigate 127.0.0.1:1', at: 1 },
+      { type: 'tool_result', turnId: 't1', callId: 'c1', name: 'navigate', ok: false, error: "ERR_UNSAFE_PORT (-312) loading 'http://127.0.0.1:1/'", at: 2 },
+    ]).entries()
+    expect(feed.at(-1)).toMatchObject({ kind: 'error', text: "That address can't be opened." })
+  })
+
+  it('stamps every entry with the turn it came from, conversation lines included, and marks a failure line (#329)', () => {
+    const feed = project([
+      { type: 'command', turnId: 't1', text: 'read', at: 1 },
+      { type: 'tool_result', turnId: 't1', callId: 'c1', name: 'read_page', ok: false, error: 'page evaluation failed', at: 2 },
+      { type: 'speak', turnId: 't1', text: "This page can't be read right now.", failure: true, at: 3 },
+      { type: 'done', turnId: 't1', outcome: 'failed', at: 4 },
+      { type: 'command', turnId: 't2', text: 'screenshot', at: 5 },
+      { type: 'display', turnId: 't2', text: 'screenshot saved: /shots/1.jpg', at: 6 },
+      { type: 'speak', text: 'Your download finished.', at: 7 },
+    ]).entries()
+    expect(feed.map((entry) => [entry.kind, entry.turnId, entry.failure])).toEqual([
+      ['command', 't1', undefined],
+      ['error', 't1', true],
+      ['speak', 't1', true],
+      ['command', 't2', undefined],
+      ['display', 't2', undefined],
+      ['speak', undefined, undefined],
     ])
   })
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { SPOKEN_FAILURES, spokenFailureOf } from './spokenFailure'
+import { SPOKEN_FAILURES, failureLineOf, spokenFailureOf } from './spokenFailure'
 import { blockedActionHead } from '../browser/actionOutcome'
 import { consentDismissalLine, consentRetryNote } from '../browser/dialogPolicy'
 
@@ -63,6 +63,46 @@ describe('spokenFailureOf', () => {
     for (const line of Object.values(SPOKEN_FAILURES)) {
       expect(line).not.toMatch(/\d{3}|https?:|www\.|\.com|error|ERR_/i)
       expect(line.length).toBeLessThan(60)
+    }
+  })
+})
+
+// The words a thrown failure is told in (#329): on the Feed, the Peek Card
+// and the spoken line, a plain sentence for the user — never the
+// ref-protocol wording meant for a model, nor a raw Chromium code.
+describe('failureLineOf', () => {
+  it('says a missing ref is no item on this page, whether it never existed or the page moved on', () => {
+    expect(failureLineOf('click', 'ref 999 refused: it no longer names the element you were shown. Continue from the page below\n# Page — https://example.com/')).toBe("There's no item 999 on this page.")
+    expect(failureLineOf('type', 'ref 4 refused: it no longer names the element you were shown; the page could not be re-read')).toBe("There's no item 4 on this page.")
+    expect(failureLineOf('click', 'ref 7 no longer resolves at the visually grounded point')).toBe("There's no item 7 on this page.")
+  })
+
+  it('says a refused navigation cannot be opened, and names the common network failures plainly', () => {
+    expect(failureLineOf('navigate', "ERR_UNSAFE_PORT (-312) loading 'http://127.0.0.1:1/'")).toBe("That address can't be opened.")
+    expect(failureLineOf('navigate', 'cannot navigate to: ""')).toBe("That address can't be opened.")
+    expect(failureLineOf('navigate', 'net::ERR_NAME_NOT_RESOLVED at https://nope.example/')).toBe("That site can't be found.")
+    expect(failureLineOf('navigate', "ERR_INTERNET_DISCONNECTED (-106) loading 'https://example.com/'")).toBe("There's no internet connection.")
+    expect(failureLineOf('navigate', "ERR_CONNECTION_REFUSED (-102) loading 'http://localhost:9/'")).toBe("That site isn't answering.")
+  })
+
+  it('says a failed Page Read could not read the page', () => {
+    expect(failureLineOf('read_page', 'page evaluation failed: TypeError: Cannot read properties of null')).toBe("This page can't be read right now.")
+  })
+
+  it('falls back to the plain failure line for anything else', () => {
+    expect(failureLineOf('scroll', 'something odd happened')).toBe(SPOKEN_FAILURES.failed)
+  })
+
+  it('never carries an error code, a ref protocol phrase or an address', () => {
+    const errors: [string, string][] = [
+      ['click', 'ref 3 refused: it no longer names the element you were shown. Continue from the page below'],
+      ['navigate', "ERR_SSL_PROTOCOL_ERROR (-107) loading 'https://bad.example/'"],
+      ['read_page', 'page element collector is unavailable'],
+      ['press', "pressKey: unsupported key 'Hyper'"],
+      ['screenshot', 'EACCES: permission denied, open /shots/screenshot-1.jpg'],
+    ]
+    for (const [tool, error] of errors) {
+      expect(failureLineOf(tool, error)).not.toMatch(/ERR_|refused|you were shown|Continue from|https?:|\/shots|EACCES|-\d{3}/)
     }
   })
 })

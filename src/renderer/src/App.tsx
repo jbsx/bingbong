@@ -30,7 +30,10 @@ export function App() {
   // to size the slot rect the card floats in.
   const peek = usePeekCard(panel.open)
   const slotContent = overlaySlotContent(panel.open, peek.state)
-  useFeedSlotRect(feedSlotRef, `${panel.mode}-${slotContent}`)
+  // The card never covers the settings page (#329): while it is open, the
+  // card's slot reports no bounds; leaving settings brings the card back.
+  // An opened panel or the edge tab still shows there.
+  useFeedSlotRect(feedSlotRef, `${panel.mode}-${slotContent}`, view === 'settings' && slotContent === 'card')
 
   const getMicId = useCallback(() => settings?.micId ?? 'default', [settings])
   const voice = useVoice({

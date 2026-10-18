@@ -356,9 +356,14 @@ body {
    slot floats bottom-center over the pane — away from the panel's
    right-edge footprint, so switching card <-> panel reveals the page
    beneath the other. The native view's bounds shrink-wrap this rect and
-   intercept input across all of it, so the card fills it exactly. */
+   intercept input across all of it, so the card fills it exactly. The
+   overlay slot's top and right anchors are let go (#329), or the top one
+   would outrank the bottom and pin the card under the Toolbar: the card
+   sits in the same place in every mode. */
 .feed-slot--peek {
   position: absolute;
+  top: auto;
+  right: auto;
   bottom: 20px;
   left: 50%;
   transform: translateX(-50%);
@@ -450,6 +455,13 @@ body {
   margin-top: 10px;
   border-radius: 50%;
   background: var(--status-green);
+}
+
+/* A failure reads as a failure (#329, owner ruling 2026-10-18): the mark
+   and the rail of an Answer that tells what went wrong take the failure
+   colour; every other Answer keeps the assistant's. */
+.feed-entry--failed .feed-orb {
+  background: var(--status-red);
 }
 
 /* The spoken half of an Answer with no Card (ADR 0013): italic speech in
@@ -568,6 +580,10 @@ body {
   border-radius: 5px 16px 16px 5px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
   padding: 10px 16px;
+}
+
+.feed-entry--failed .feed-card {
+  border-left-color: var(--status-red);
 }
 
 /* Conversation tier: your words and Bing Bong's read at 1.2rem (~20px). */
@@ -1080,6 +1096,15 @@ body {
 
 .peek-card--answer .peek-orb {
   background: var(--status-green);
+}
+
+/* A failed Command's card (#329): the mark and the line take the failure colour. */
+.peek-card--failed .peek-orb {
+  background: var(--status-red);
+}
+
+.peek-card--failed .peek-text {
+  color: var(--status-red);
 }
 
 .peek-body {

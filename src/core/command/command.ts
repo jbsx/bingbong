@@ -177,3 +177,13 @@ export function describeCommand(command: Command, page?: CommandPage): string {
       return command.verb
   }
 }
+
+/**
+ * The Answer of a best guess that landed (#329): the line was not read — Jev
+ * unavailable, or none configured — so the Answer says what was done with
+ * it: the web search its words became, or the action guessed.
+ */
+export function bestGuessAnswer(command: Command, page?: CommandPage): string {
+  if (command.verb === 'open' && command.search === true) return `Searched the web for “${command.slot ?? ''}”.`
+  return `Took a guess: ${describeCommand(command, page)}.`
+}

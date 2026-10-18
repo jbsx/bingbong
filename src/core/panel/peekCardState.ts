@@ -1,3 +1,4 @@
+import type { FeedEntry } from '../feed/feedProjection'
 import { inferRunOutcome, type PipelineEvent } from '../pipeline/events'
 
 // The Peek Card state fold (ADR 0021, amended by ADR 0026): voice never
@@ -92,6 +93,34 @@ export function createPeekCardFold(): {
     },
     state: () => state,
   }
+}
+
+/** What the card shows as its Answer, and whether it tells a failure (#329): the mark then takes the failure colour. */
+export interface PeekCardAnswer {
+  kind: 'display' | 'spoken' | 'error'
+  text: string
+  failure: boolean
+}
+
+/**
+ * The reported Command's Answer (#329) — its Card when it has one, else its
+ * failure line, else its Spoken Rendering — read only from the entries its
+ * own turn stamped, so a Command with no Answer of its own shows none
+ * rather than a neighbour's. Null when it has none: the view says it is
+ * done.
+ */
+export function peekCardAnswer(entries: readonly FeedEntry[], runId: string | null): PeekCardAnswer | null {
+  if (runId === null) return null
+  let error: FeedEntry | null = null
+  let spoken: FeedEntry | null = null
+  for (const entry of entries) {
+    if (entry.turnId !== runId) continue
+    if (entry.role === 'assistant' && entry.kind === 'display') return { kind: 'display', text: entry.text, failure: false }
+    if (entry.role === 'system' && entry.kind === 'error') error ??= entry
+    if (entry.role === 'assistant' && entry.kind === 'speak') spoken ??= entry
+  }
+  if (error !== null) return { kind: 'error', text: error.text.split('\n', 1)[0]!, failure: true }
+  return spoken !== null ? { kind: 'spoken', text: spoken.text, failure: spoken.failure === true } : null
 }
 
 /**
