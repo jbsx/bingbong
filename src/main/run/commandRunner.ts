@@ -4,7 +4,7 @@ import type { PipelineEvent } from '../../core/pipeline/events'
 import type { CommandRunState } from '../../core/pipeline/runState'
 import type { PageLink, PageSnapshot } from '../../core/browser/snapshot'
 import type { PerfTracer } from '../../core/perf/perfTracer'
-import { bestGuessAnswer, commandRefOf, describeCommand, type Command, type CommandPage } from '../../core/command/command'
+import { commandRefOf, describeCommand, targetLabel, type Command, type CommandPage } from '../../core/command/command'
 import { COMMAND_HELP } from '../../core/command/help'
 import { bestGuess, headsAnotherVerb, localMatch } from '../../core/command/localMatch'
 import { commandQuestions, commandState, partialQuestions, readCommandAnswers, type HopContext } from '../../core/command/jevReading'
@@ -26,7 +26,7 @@ import { parseSearchUrl } from '../../core/browser/urlInput'
 import { pageTermsOf } from '../../core/voice/pageTerms'
 import { pageReadPart, pageReadText } from '../../core/browser/pageText'
 import { SPOKEN_FAILURES, failureLineOf, spokenFailureOf } from '../../core/command/spokenFailure'
-import { commandAnswer, pageReadCard } from '../../core/command/answer'
+import { STOPPED_ANSWERS, bestGuessAnswer, commandAnswer, pageReadCard } from '../../core/command/answer'
 import type { SpeakOutcome, TtsSpeaker } from '../../core/ports/tts'
 import { reportFault } from '../../core/trace/fault'
 import { isRealPage, type LastPage } from '../../core/browser/lastPage'
@@ -339,12 +339,27 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     return snapshot === null ? blankPage(browser) : pageOf(snapshot)
   }
 
-  /** End the Command in flight: its turn ends cancelled now, and whatever its action answers later reaches nothing. */
-  function cancelInFlight(): boolean {
+  /** The turn that last published its Answer: a Command leaves one (#333), so a second for the same turn is not shown. */
+  let answeredTurn: string | null = null
+
+  /** A Command's one Answer (#333), unless its turn already has one. */
+  function answer(turnId: string, text: string, failure = false): void {
+    if (answeredTurn === turnId) return
+    answeredTurn = turnId
+    publish({ type: 'display', turnId, text, ...(failure ? { failure: true } : {}), at: at() })
+  }
+
+  /**
+   * End the Command in flight: its turn ends cancelled now, answered as a
+   * Stop ended it or as a later Command did (#333) unless it already has
+   * its Answer, and whatever its action answers later reaches nothing.
+   */
+  function cancelInFlight(by: keyof typeof STOPPED_ANSWERS): boolean {
     if (inFlight === null) return false
     const { turnId } = inFlight
     inFlight = null
     publish({ type: 'status', turnId, status: 'cancelled', at: at() })
+    answer(turnId, STOPPED_ANSWERS[by])
     publish({ type: 'done', turnId, outcome: 'cancelled', at: at() })
     return true
   }
@@ -414,7 +429,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
    * waited on: the turn ends now, and the next Command silences it.
    */
   function answerFailure(turnId: string, line: string): void {
-    publish({ type: 'display', turnId, text: line, failure: true, at: at() })
+    answer(turnId, line, true)
     if (deps.speech !== undefined) void say(deps.speech, turnId, line, { failure: true })
   }
 
@@ -574,12 +589,16 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     }
   }
 
-  /** What the Feed shows of a result as a Card: a Page Read's title and words (#333), a screenshot's path, the help — never an action's outcome line. */
-  function cardOf(command: Command, result: string): string | null {
-    if (command.verb !== 'read' && command.verb !== 'screenshot' && command.verb !== 'help') return null
-    const card = command.verb === 'read' ? pageReadCard(result) : result
-    const shown = card.length > DISPLAY_LIMIT ? `${card.slice(0, DISPLAY_LIMIT)}\n…` : card
-    return shown === '' ? 'done' : shown
+  /**
+   * What the Feed shows of a result as a Card: a Page Read's title and
+   * words, its whole part — what is spoken (#333) — a screenshot's path,
+   * the help; never an action's outcome line.
+   */
+  function cardOf(command: Command, result: string): { text: string; failure: boolean } | null {
+    if (command.verb === 'read') return pageReadCard(result)
+    if (command.verb !== 'screenshot' && command.verb !== 'help') return null
+    const shown = result.length > DISPLAY_LIMIT ? `${result.slice(0, DISPLAY_LIMIT)}\n…` : result
+    return { text: shown === '' ? 'done' : shown, failure: false }
   }
 
   /** The Name Match (ADR 0077): a spoken Slot that sounds like a name on the page, or one the user taught, is carried as that name. */
@@ -595,7 +614,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   }
 
   function recordOf(turnId: string, firedAt: number, source: CommandSource, transcript: string, read: Reading, command: Command, matched: NameMatched | null, truncated: boolean): DecisionRecord {
-    const targetLabel = command.target === null ? undefined : read.page.refs.find((ref) => ref.ref === command.target)?.label
+    const label = targetLabel(command, read.page)
     return {
       type: 'decision',
       turnId,
@@ -605,7 +624,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       reading: read.reading,
       verb: command.verb,
       target: command.target,
-      ...(targetLabel !== undefined ? { targetLabel } : {}),
+      ...(label !== undefined ? { targetLabel: label } : {}),
       slot: command.slot,
       ...(matched !== null ? { slotHeard: matched.heard, slotFrom: matched.from } : {}),
       jevAsked: read.jevAsked,
@@ -651,7 +670,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     if (source === 'spoken') learnFrom(command, matched, firedAt)
 
     // A later Command supersedes the one in flight, and silences what it was saying; `stop` is only that.
-    cancelInFlight()
+    cancelInFlight(command.verb === 'stop' ? 'stopped' : 'superseded')
     silence()
     generation += 1
     const mine = generation
@@ -664,7 +683,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       stoppedAt.add(submitted)
       stopLoading()
       inFlight = null
-      publish({ type: 'display', turnId, text: commandAnswer(command, { page: { url: '', title: '' }, result: '' })!, at: at() })
+      answer(turnId, STOPPED_ANSWERS.stopped)
       publish({ type: 'done', turnId, outcome: 'done', at: at() })
       return { outcome: 'landed' }
     }
@@ -700,7 +719,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       const card = cardOf(command, result)
       if (speech === undefined) react(card !== null && command.verb === 'read' ? 'display' : 'settled')
       publish({ type: 'tool_result', turnId, callId, name, ok: true, result, at: at() })
-      if (card !== null) publish({ type: 'display', turnId, text: card, at: at() })
+      if (card !== null) answer(turnId, card.text, card.failure)
       if (speech !== undefined) {
         const shownAt = monotonic()
         publish({ type: 'status', turnId, status: 'speaking', at: at() })
@@ -718,10 +737,10 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
           outcome = 'wall'
         } else if (card === null) {
           // One Answer per Command (#333), from its verb's sentence — a best guess's names what it fired (#329), so an unread line never reads as nothing done.
-          const label = command.target === null ? undefined : page.refs.find((candidate) => candidate.ref === command.target)?.label
+          const label = targetLabel(command, page)
           const text =
-            readingKind === 'best_guess' ? bestGuessAnswer(command, page) : commandAnswer(command, { page: { url: state.url ?? '', title: state.title ?? '' }, result, ...(label !== undefined ? { label } : {}) })
-          if (text !== null) publish({ type: 'display', turnId, text, at: at() })
+            readingKind === 'best_guess' ? bestGuessAnswer(command, page) : commandAnswer(command, { page: { url: state.url ?? '', title: state.title ?? '' }, ...(label !== undefined ? { label } : {}) })
+          if (text !== null) answer(turnId, text)
         }
       }
       inFlight = null
@@ -1063,7 +1082,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       submitted += 1
       stoppedAt.add(submitted)
       reading = null
-      cancelInFlight()
+      cancelInFlight('stopped')
       silence()
       // A Command in flight or being read may be waiting on a page still loading: the load ends with it.
       if (acting) stopLoading()

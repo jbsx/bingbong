@@ -817,13 +817,12 @@ body {
   color: var(--status-green);
 }
 
-/* Per-run details expander: run noise — tool lines, tool results,
-   intents, reasoning runs, stage markers, retries, steer echoes — folds
-   under one quiet section per run, collapsed by default and auto-open
-   while the run is live. The grouped lines keep their plain tiers above;
-   the expander adds only the fold, never restyles its contents. */
-/* No inset on the left (#333): the run's own times stay in the Feed's one
-   time column; its summary starts where the content does. */
+/* Per-run details expander (the Run Detail): run noise — tool lines and
+   stage markers — folds under one quiet section per run, collapsed until
+   clicked (#333). The grouped lines keep their plain tiers above; the
+   expander adds only the fold, never restyles its contents. No inset on
+   the left: the run's own times stay in the Feed's one time column, and
+   its summary starts where the content does. */
 .feed-run {
   border-radius: 4px;
   background: color-mix(in srgb, var(--panel) 60%, transparent);

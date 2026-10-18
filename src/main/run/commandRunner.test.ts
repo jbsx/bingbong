@@ -555,7 +555,7 @@ describe('a Command in flight', () => {
 
     const firstTurn = (events[0] as { turnId: string }).turnId
     const firstTurnEvents = events.filter((event) => 'turnId' in event && event.turnId === firstTurn)
-    expect(types(firstTurnEvents)).toEqual(['command', 'status', 'tool_call', 'status', 'done'])
+    expect(types(firstTurnEvents)).toEqual(['command', 'status', 'tool_call', 'status', 'display', 'done'])
     expect(firstTurnEvents.at(-1)).toMatchObject({ type: 'done', outcome: 'cancelled' })
     expect(events.filter((event) => event.type === 'tool_result')).toHaveLength(1)
     expect(events.filter((event) => event.type === 'tool_result')[0]).toMatchObject({ name: 'back' })
@@ -572,7 +572,7 @@ describe('a Command in flight', () => {
     expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'cancelled' })
     release()
     await run
-    expect(types(events)).toEqual(['command', 'status', 'tool_call', 'status', 'done'])
+    expect(types(events)).toEqual(['command', 'status', 'tool_call', 'status', 'display', 'done'])
     expect(runner.abort()).toBe(false)
   })
 
@@ -1509,6 +1509,51 @@ describe('the one Answer every Command leaves (#333)', () => {
       expect(displays(events)).toEqual([expect.objectContaining({ text: "There's no item 9 on this page.", failure: true })])
       expect(speech?.spoken.map((spoken) => spoken.text) ?? []).toEqual(speech ? ["There's no item 9 on this page."] : [])
     }
+  })
+
+  it('a Command the Stop button, Escape or the Abort Head ends is answered "Stopped."; one a later Command ends says so', async () => {
+    const { browser, events, runner } = harness()
+    browser.navigate = () => new Promise<string>(() => {})
+    void runner.run('navigate slow.example')
+    await flushMicrotasks()
+    const stopped = events.find((event) => event.type === 'command')!.turnId
+    runner.abort()
+    void runner.run('navigate slower.example')
+    await flushMicrotasks()
+    const superseded = events.filter((event) => event.type === 'command')[1]!.turnId
+    await runner.run('scroll down')
+    const answers = displays(events).map((event) => [event.turnId, event.text])
+    expect(answers).toEqual([
+      [stopped, 'Stopped.'],
+      [superseded, 'Stopped: a later Command came first.'],
+      [expect.any(String), 'Scrolled down.'],
+    ])
+  })
+
+  it('a `read` stopped while it is spoken keeps its Card as its one Answer', async () => {
+    const speech = new FakeSpeech()
+    const { browser, events, runner } = harness({ speech })
+    browser.readPage = async () => PAGE_READ
+    const run = runner.run('read')
+    await flushMicrotasks()
+    runner.abort()
+    await run
+    expect(displays(events)).toHaveLength(1)
+    expect(displays(events)[0]!.text).toMatch(/^## Example/)
+  })
+
+  it('an empty Page Read’s Card is marked a failure, as its spoken line is', async () => {
+    const { events, runner } = harness()
+    await runner.run('read')
+    expect(displays(events)).toEqual([expect.objectContaining({ text: SPOKEN_FAILURES.empty, failure: true })])
+  })
+
+  it('a Page Read’s Card carries its whole part, uncut', async () => {
+    const { browser, events, runner } = harness()
+    const long = Array.from({ length: 300 }, (_, index) => `Sentence number ${index} of the page.`)
+    browser.readPage = async () => ['# Long — https://example.com/', 'page text:', ...long, pageReadPartLine(1, 1)].join('\n')
+    await runner.run('read')
+    expect(displays(events)[0]!.text).toContain('Sentence number 299 of the page.')
   })
 
   it('a wall’s line is the Answer, marked a failure, in place of the verb’s sentence', async () => {

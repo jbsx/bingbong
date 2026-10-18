@@ -10,7 +10,7 @@ import { FeedMarkdown } from './FeedMarkdown'
  * railed cards; everything else stays a plain system line. Attribution
  * (ADR 0013): one device — the Status Capsule orb beside every assistant
  * entry; no text handles, the name living in screen-reader text only.
- * Run grouping (#55): run noise — tool lines, tool results, stage markers
+ * Run grouping (#55): run noise — tool lines and stage markers
  * — folds under one per-run details expander, collapsed (#333), its title
  * reading as activity while its run is live, so the conversation reads as just you
  * and Bing Bong. Markdown (#56): the Answer's Card renders as structure
@@ -203,7 +203,7 @@ export function ActivityFeed({
   footer,
 }: {
   entries: FeedEntry[]
-  /** The run currently in flight (#55) — its expander auto-opens. */
+  /** The run currently in flight (#55) — its expander is titled as activity. */
   liveRunId?: string | null
   headerActions?: React.ReactNode
   /** Below the list — the panel's prompt bar. */

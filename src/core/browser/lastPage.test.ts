@@ -39,7 +39,7 @@ describe('the Last Page', () => {
   })
 
   it('labels a page by its title, or its host without www', () => {
-    expect(lastPageLabel({ url: 'https://www.youtube.com/watch?v=1', title: 'A video', at: 0 })).toEqual({ title: 'A video', host: 'youtube.com' })
-    expect(lastPageLabel({ url: 'https://www.youtube.com/', title: '', at: 0 })).toEqual({ title: 'youtube.com', host: 'youtube.com' })
+    expect(lastPageLabel({ url: 'https://www.youtube.com/watch?v=1', title: 'A video' })).toEqual({ title: 'A video', host: 'youtube.com' })
+    expect(lastPageLabel({ url: 'https://www.youtube.com/', title: '' })).toEqual({ title: 'youtube.com', host: 'youtube.com' })
   })
 })

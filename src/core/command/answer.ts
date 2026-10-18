@@ -1,22 +1,32 @@
-import { lastPageLabel } from '../browser/lastPage'
-import { pageReadText } from '../browser/pageText'
-import type { Command } from './command'
+import { isRealPage, lastPageLabel } from '../browser/lastPage'
+import { pageReadPart, pageReadText } from '../browser/pageText'
+import { describeCommand, type Command, type CommandPage } from './command'
 import { SPOKEN_FAILURES } from './spokenFailure'
 
 // The Answer a Command leaves in the Feed (#333): exactly one per Command,
 // written from facts the Command and the page already hold — never by a
 // model. Jev only picks the Command.
 
+/** The Answer of a Command a Stop ended (the Stop button, Escape, the Abort Head, `stop`), and of one a later Command ended. */
+export const STOPPED_ANSWERS = {
+  stopped: 'Stopped.',
+  superseded: 'Stopped: a later Command came first.',
+} as const
+
 /** What a page is called in an Answer: its title, or its site's name when it has none. */
 export function pageName(page: { url: string; title: string }): string {
-  return lastPageLabel({ ...page, at: 0 }).title
+  return lastPageLabel(page).title
 }
 
-/** What an Answer is written from: the page the action left, the target ref's label (click, type), and the action's result line. */
+/** An `open` whose Slot is search terms: what it searched for. */
+function searchAnswer(command: Command): string {
+  return `Searched the web for “${command.slot ?? ''}”.`
+}
+
+/** What an Answer is written from: the page the action left, and the target ref's label (click, type). */
 export interface AnswerFacts {
   readonly page: { url: string; title: string }
   readonly label?: string
-  readonly result: string
 }
 
 /**
@@ -28,7 +38,7 @@ export function commandAnswer(command: Command, facts: AnswerFacts): string | nu
   const ref = (): string => (facts.label !== undefined && facts.label !== '' ? `“${facts.label}”` : `item ${command.target ?? '?'}`)
   switch (command.verb) {
     case 'open':
-      return command.search === true ? `Searched the web for “${command.slot ?? ''}”.` : `Opened ${pageName(facts.page)}.`
+      return command.search === true ? searchAnswer(command) : `Opened ${pageName(facts.page)}.`
     case 'click':
       return `Clicked ${ref()}.`
     case 'type':
@@ -51,9 +61,10 @@ export function commandAnswer(command: Command, facts: AnswerFacts): string | nu
     case 'clear':
       return 'Cleared the field.'
     case 'stop':
-      return 'Stopped.'
+      return STOPPED_ANSWERS.stopped
     case 'resume':
-      return facts.result.startsWith('nothing to resume') ? 'There is no page to resume yet.' : `Back on ${pageName(facts.page)}.`
+      // Nothing to resume leaves the pane where it was: on no page.
+      return isRealPage(facts.page.url) ? `Back on ${pageName(facts.page)}.` : 'There is no page to resume yet.'
     case 'read':
     case 'screenshot':
     case 'help':
@@ -61,6 +72,16 @@ export function commandAnswer(command: Command, facts: AnswerFacts): string | nu
     case 'done':
       return null
   }
+}
+
+/**
+ * The Answer of a best guess that landed (#329): the line was not read — Jev
+ * unavailable, or none configured — so the Answer says what was done with
+ * it: the web search its words became, or the action guessed.
+ */
+export function bestGuessAnswer(command: Command, page?: CommandPage): string {
+  if (command.verb === 'open' && command.search === true) return searchAnswer(command)
+  return `Took a guess: ${describeCommand(command, page)}.`
 }
 
 /** The page a Page Read is of, off its `# title — address` head (a consent dismissal may ride above it). */
@@ -73,17 +94,21 @@ function pageReadHead(result: string): { url: string; title: string } {
 /**
  * A Page Read's Card (#333): the page title as its heading and the page's
  * own words under it — the words `read` speaks, one paragraph a line, a
- * table's rows kept together — never the controller's viewport, scroll,
- * signature, refs or part lines.
+ * table's rows kept together, ending "…" when further parts follow —
+ * never the controller's viewport, scroll, signature, refs or part lines.
+ * `failure` when the page has no words: the Card then says so, as the
+ * spoken line does, in the failure colour.
  */
-export function pageReadCard(result: string): string {
+export function pageReadCard(result: string): { text: string; failure: boolean } {
   const words = pageReadText(result)
   const lines = words === '' ? [SPOKEN_FAILURES.empty] : words.split('\n')
+  const part = pageReadPart(result)
+  if (part !== null && part.part < part.of) lines.push('…')
   const body = lines.reduce((text, line, index) => {
     if (index === 0) return line
     const tableRow = line.startsWith('|') && lines[index - 1]!.startsWith('|')
     return `${text}${tableRow ? '\n' : '\n\n'}${line}`
   }, '')
   const name = pageName(pageReadHead(result))
-  return name === '' ? body : `## ${name}\n\n${body}`
+  return { text: name === '' ? body : `## ${name}\n\n${body}`, failure: words === '' }
 }

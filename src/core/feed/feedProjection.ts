@@ -45,7 +45,7 @@ export interface FeedEntry {
   detail: boolean
   /**
    * The run this entry groups under (#55): set on run noise only — tool
-   * lines, failed tool results, stage markers — so the renderer folds them
+   * lines and stage markers — so the renderer folds them
    * into one per-run details expander. Absent on every conversation line
    * (bubbles, cards, pipeline errors) and on unstamped announcements.
    */

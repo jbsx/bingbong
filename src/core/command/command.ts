@@ -178,12 +178,7 @@ export function describeCommand(command: Command, page?: CommandPage): string {
   }
 }
 
-/**
- * The Answer of a best guess that landed (#329): the line was not read — Jev
- * unavailable, or none configured — so the Answer says what was done with
- * it: the web search its words became, or the action guessed.
- */
-export function bestGuessAnswer(command: Command, page?: CommandPage): string {
-  if (command.verb === 'open' && command.search === true) return `Searched the web for “${command.slot ?? ''}”.`
-  return `Took a guess: ${describeCommand(command, page)}.`
+/** The label the page shows on the ref a Command acts on (click, type); undefined when it acts on none, or the page has no such ref. */
+export function targetLabel(command: Command, page: CommandPage): string | undefined {
+  return command.target === null ? undefined : page.refs.find((ref) => ref.ref === command.target)?.label
 }

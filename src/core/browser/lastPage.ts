@@ -42,7 +42,7 @@ export function sanitizeLastPage(raw: unknown): LastPage | null {
 }
 
 /** What the Idle Screen shows of a Last Page: its title, or its host when it has none. */
-export function lastPageLabel(page: LastPage): { title: string; host: string } {
+export function lastPageLabel(page: Pick<LastPage, 'url' | 'title'>): { title: string; host: string } {
   // A persisted address that no longer parses: the address itself stands in.
   const host = URL.canParse(page.url) ? new URL(page.url).host.replace(/^www\./, '') : page.url
   return { title: page.title !== '' ? page.title : host, host }
