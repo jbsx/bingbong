@@ -1,0 +1,133 @@
+import type { DecisionChoiceAnswer, DecisionQuestions, DecisionResult } from '../ports/decisionModel'
+
+// A Jev case (#338): one recorded ask and the answer each question should
+// get — a Choice label, or a label it must not be — promoted by the owner
+// from a real misread into the corpus folder. `pnpm jev:replay` asks Jev
+// each case again and reports, per expectation, what it chose against the
+// expected label, so a change to the state text or the question wording
+// is accepted only when it passes its own case and leaves no other worse.
+// Zero runtime imports: the jev:* scripts run this under node's type
+// stripping.
+
+/** What one question's answer must be: `target=ref-27` (that label), or `target!=ref-21` (anything but it). */
+export type JevExpectation = { readonly question: string; readonly label: string } | { readonly question: string; readonly not: string }
+
+/** The ask as the case keeps it: what Jev is sent again. */
+export interface JevAsk {
+  readonly state: string
+  readonly questions: DecisionQuestions
+}
+
+export interface JevCase {
+  /** The turn the ask was recorded for, when the case came from the log. */
+  readonly turnId?: string
+  /** The words the Command was read from, for the human reading the case. */
+  readonly transcript?: string
+  /** The model that first answered it, and when it was asked. */
+  readonly model?: string
+  readonly recordedAt?: number
+  readonly expect: readonly JevExpectation[]
+  readonly ask: JevAsk
+}
+
+/** `target=ref-27` or `target!=ref-21`, as the CLI takes it; a string is why it cannot be read. */
+export function parseExpectation(text: string): JevExpectation | string {
+  const match = /^([^=!]+)(!?=)(.+)$/.exec(text.trim())
+  if (match === null) return `"${text}" is not <question>=<label> or <question>!=<label>`
+  const [, question, op, label] = match as unknown as [string, string, string, string]
+  return op === '=' ? { question: question.trim(), label: label.trim() } : { question: question.trim(), not: label.trim() }
+}
+
+export function expectationText(expectation: JevExpectation): string {
+  return 'label' in expectation ? `${expectation.question}=${expectation.label}` : `${expectation.question}!=${expectation.not}`
+}
+
+/** Why an expectation cannot be asked of these questions: no such question, not a Choice, or no such label; null when it can. */
+export function expectationProblem(questions: DecisionQuestions, expectation: JevExpectation): string | null {
+  const question = questions[expectation.question]
+  if (question === undefined) return `no question "${expectation.question}" (asked: ${Object.keys(questions).join(', ')})`
+  if (question.type !== 'choice') return `"${expectation.question}" is not a Choice`
+  const label = 'label' in expectation ? expectation.label : expectation.not
+  return label in question.options ? null : `"${expectation.question}" offers no label "${label}"`
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)
+
+function readExpectation(raw: unknown): JevExpectation | null {
+  if (!isRecord(raw) || typeof raw.question !== 'string') return null
+  if (typeof raw.label === 'string') return { question: raw.question, label: raw.label }
+  if (typeof raw.not === 'string') return { question: raw.question, not: raw.not }
+  return null
+}
+
+/** A parsed case file read as a case; a string is why it is not one. */
+export function readJevCase(raw: unknown): JevCase | string {
+  if (!isRecord(raw)) return 'not a JSON object'
+  const ask = raw.ask
+  if (!isRecord(ask) || typeof ask.state !== 'string' || !isRecord(ask.questions)) return 'no ask with a state and questions'
+  if (!Array.isArray(raw.expect) || raw.expect.length === 0) return 'no expectations'
+  const expectations = raw.expect.map(readExpectation)
+  if (expectations.some((expectation) => expectation === null)) return 'an expectation is not {question, label} or {question, not}'
+  const questions = ask.questions as unknown as DecisionQuestions
+  for (const expectation of expectations as JevExpectation[]) {
+    const problem = expectationProblem(questions, expectation)
+    if (problem !== null) return problem
+  }
+  return { ...(raw as unknown as JevCase), expect: expectations as JevExpectation[] }
+}
+
+/** How one expectation came out against Jev's answer. */
+export interface ExpectationOutcome {
+  readonly expectation: JevExpectation
+  readonly pass: boolean
+  readonly chosen: string
+  readonly chosenProbability: number
+  /** The expected (or excluded) label's probability. */
+  readonly labelProbability: number
+}
+
+export type CaseVerdict =
+  | { readonly name: string; readonly pass: boolean; readonly outcomes: readonly ExpectationOutcome[] }
+  | { readonly name: string; readonly pass: false; readonly problem: string }
+
+/** Judge a case against Jev's fresh answer: it passes when every expectation holds. */
+export function judgeJevCase(name: string, jevCase: JevCase, result: DecisionResult<DecisionQuestions>): CaseVerdict {
+  if (result.status !== 'answered') return { name, pass: false, problem: `Jev did not answer: ${result.reason} (${result.message})` }
+  const outcomes = jevCase.expect.map((expectation): ExpectationOutcome => {
+    // readJevCase let only Choice expectations in.
+    const answer = result.answers[expectation.question] as DecisionChoiceAnswer
+    const label = 'label' in expectation ? expectation.label : expectation.not
+    return {
+      expectation,
+      pass: 'label' in expectation ? answer.choice === label : answer.choice !== label,
+      chosen: answer.choice,
+      chosenProbability: answer.probabilities[answer.choice] ?? answer.confidence,
+      labelProbability: answer.probabilities[label] ?? 0,
+    }
+  })
+  return { name, pass: outcomes.every((outcome) => outcome.pass), outcomes }
+}
+
+const p = (probability: number): string => probability.toFixed(2)
+
+function outcomeLine(outcome: ExpectationOutcome): string {
+  const label = 'label' in outcome.expectation ? outcome.expectation.label : outcome.expectation.not
+  const chose = `chose ${outcome.chosen} ${p(outcome.chosenProbability)}`
+  return `  ${expectationText(outcome.expectation)}  ${outcome.chosen === label ? chose : `${chose} · ${label} ${p(outcome.labelProbability)}`}`
+}
+
+/** The replay's report: PASS or FAIL per case, a line per expectation, then the tally. */
+export function formatJevReplay(verdicts: readonly CaseVerdict[], model: string): string {
+  const lines: string[] = []
+  for (const verdict of verdicts) {
+    const head = `${verdict.pass ? 'PASS' : 'FAIL'}  ${verdict.name}`
+    if ('problem' in verdict) {
+      lines.push(`${head}  ${verdict.problem}`)
+      continue
+    }
+    lines.push(head, ...verdict.outcomes.map(outcomeLine))
+  }
+  const passed = verdicts.filter((verdict) => verdict.pass).length
+  lines.push(`${verdicts.length} case${verdicts.length === 1 ? '' : 's'}: ${passed} passed, ${verdicts.length - passed} failed (${model})`)
+  return lines.join('\n')
+}

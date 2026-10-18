@@ -58,6 +58,8 @@ export interface DecisionRecord {
   readonly jevAsked: boolean
   /** Jev's answer, or why it gave none; absent when it was not asked. */
   readonly jev?: JevDetail | JevUnavailable
+  /** The id of the ask this reading came from, in asks-*.jsonl (#338); absent when Jev was not asked. */
+  readonly ask?: string
   /** The Utterance spoken over the page hit the 30 s cap. */
   readonly truncated?: boolean
   /** The Command fired on a partial transcript, before the Endpoint (#326); absent for one read at the Endpoint. */

@@ -23,6 +23,7 @@ import { attachCommandRunnerToWindow, registerCommandRunnerIpc } from './run/att
 import { createCommandRunner, type CommandRunner } from './run/commandRunner'
 import type { ActionEffect, ActionEffects } from './browser/createCdpBrowserController'
 import { createDecisionLogSink } from './run/decisionLogSink'
+import { createAskLogSink } from './run/askLogSink'
 import { resolveDownloadsDir } from './downloadsDir'
 import { resolvePreloadPath } from './preloadPath'
 import { holdFullscreenFit } from './kiosk/holdFullscreenFit'
@@ -123,9 +124,11 @@ const envFileValues = loadEnvFile(process.env, app.getAppPath())
 // profile's logs dir — zero configuration, no timers; rolling and the 7-day
 // purge ride startup and writes. The decision log (#324) sits beside it:
 // one record per Command and its Misfire signals, `pnpm perf:report` reads both.
+// Each Jev call's whole ask goes to the asks sidecar the records name (#338).
 const logsDir = join(app.getPath('userData'), 'logs')
 const perfTracer = createPerfTracer({ sink: createJsonlPerfSink(logsDir) })
 const decisionLog = createDecisionLogSink(logsDir)
+const askLog = createAskLogSink(logsDir)
 
 // Learned Terms ledger (ADR 0022): the Bias Lexicon's runtime-grown half —
 // one app-global lexicon.json beside the settings file. The settings page
@@ -323,6 +326,7 @@ async function createWindow(): Promise<BrowserWindow> {
     now: systemClock.now,
     tracer: perfTracer,
     decisionLog,
+    askLog,
     onEffect: (listener) => {
       effectListeners.add(listener)
       return () => effectListeners.delete(listener)

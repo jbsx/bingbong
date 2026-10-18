@@ -1,5 +1,6 @@
 import type { BrowserController, PageLanding, VisualGroundingController } from '../../core/ports/browser'
-import { DEFAULT_DECISION_THRESHOLDS, type DecisionModel } from '../../core/ports/decisionModel'
+import { DEFAULT_DECISION_THRESHOLDS, type DecisionModel, type DecisionQuestions, type DecisionResult } from '../../core/ports/decisionModel'
+import type { AskKind, AskRecord } from '../../core/decision/askRecord'
 import type { PipelineEvent } from '../../core/pipeline/events'
 import type { CommandRunState } from '../../core/pipeline/runState'
 import type { PageLink, PageSnapshot } from '../../core/browser/snapshot'
@@ -144,6 +145,8 @@ export interface CommandRunnerDeps {
   tracer?: PerfTracer
   /** The decision log beside the perf log; absent writes nothing. */
   decisionLog?: { write(record: CommandLogRecord): void }
+  /** The asks sidecar beside it (#338): every Jev call's whole ask; absent writes nothing. */
+  askLog?: { write(record: AskRecord): void }
   /** Hears the browser's first observable effect of an action (#324); the returned release stops hearing. */
   onEffect?(listener: (effect: ActionEffect) => void): () => void
   /** Hears how a navigation landed (#328), for the hop's decision record; the returned release stops hearing. */
@@ -318,6 +321,30 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     }
   }
 
+  /** Partial asks made so far: a partial is asked before its turn exists, so its ask id is its own. */
+  let partialAsks = 0
+
+  /**
+   * One Jev call (#338): its whole ask is written to the sidecar before it
+   * is sent, so a misread can be replayed; resolves to the result, with the
+   * ask's id the reading's decision record names.
+   */
+  async function askJev<const Q extends DecisionQuestions>(
+    model: DecisionModel,
+    kind: AskKind,
+    turnId: string | null,
+    state: string,
+    questions: Q,
+  ): Promise<DecisionResult<Q> & { readonly askId: string }> {
+    const askId = turnId ?? `partial-${at().toString(36)}-${(partialAsks += 1)}`
+    try {
+      deps.askLog?.write({ type: 'ask', id: askId, ...(turnId !== null ? { turnId } : {}), at: at(), kind, model: model.model, state, questions })
+    } catch (error) {
+      reportFault('run.commandRunner.askLog', error, turnId !== null ? { turnId } : {})
+    }
+    return { ...(await model.ask({ state, questions })), askId }
+  }
+
   function span(turnId: string, durMs: number, detail: Record<string, unknown>): void {
     try {
       tracer?.span(turnId, 'reaction', durMs, detail)
@@ -445,6 +472,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     reading: CommandReading
     jevAsked: boolean
     jev?: DecisionRecord['jev']
+    /** The ask Jev was given (#338), when it was asked. */
+    ask?: string
   }
 
   /**
@@ -476,7 +505,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
    * Slot that could carry a name waits for the page, so the Name Match can
    * read it against the Page Terms.
    */
-  async function read(text: string, pending: PreparedPage | null, spoken: boolean): Promise<Reading> {
+  async function read(turnId: string, text: string, pending: PreparedPage | null, spoken: boolean): Promise<Reading> {
     const quick = localMatch(text, [])
     const { dismissal, page: dismissPage } = await readDismissal(text, quick, pending)
     if (dismissal !== null) return dismissal
@@ -487,7 +516,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     if (local !== null) return { command: local, page, reading: 'local_match', jevAsked: false }
     const model = deps.decisionModel()
     if (model === null) return { command: bestGuess(text, page.refs, page.url), page, reading: 'best_guess', jevAsked: false }
-    const result = await model.ask({ state: commandState(text, page), questions: commandQuestions(text, page) })
+    const result = await askJev(model, 'command', turnId, commandState(text, page), commandQuestions(text, page))
     if (result.status === 'answered') {
       return {
         command: readCommandAnswers(result.answers, text, page),
@@ -495,6 +524,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         reading: 'jev',
         jevAsked: true,
         jev: jevDetailOf(result.answers, result.latencyMs, result.model),
+        ask: result.askId,
       }
     }
     return {
@@ -503,6 +533,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       reading: 'best_guess',
       jevAsked: true,
       jev: { model: result.model, latencyMs: result.latencyMs, reason: result.reason },
+      ask: result.askId,
     }
   }
 
@@ -668,6 +699,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       ...(matched !== null ? { slotHeard: matched.heard, slotFrom: matched.from } : {}),
       jevAsked: read.jevAsked,
       ...(read.jev !== undefined ? { jev: read.jev } : {}),
+      ...(read.ask !== undefined ? { ask: read.ask } : {}),
       ...(truncated ? { truncated: true } : {}),
     }
   }
@@ -943,21 +975,28 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       const links = !superseded(task) && parseSearchUrl(page.url) !== null ? await resultPageLinks(turnId) : []
       const context: HopContext = { hop, visited: [...task.visited], actions: [...task.actions], links, setAside: [...task.setAside] }
       const model = deps.decisionModel()
-      const result = superseded(task) || model === null ? null : await model.ask({ state: commandState(task.text, page, context), questions: commandQuestions(task.text, page, context) })
+      const result = superseded(task) || model === null ? null : await askJev(model, 'hop', turnId, commandState(task.text, page, context), commandQuestions(task.text, page, context))
       if (reading?.turnId === turnId) reading = null
       const firedAt = at()
       const base = { type: 'decision' as const, turnId, at: firedAt, source: task.source, transcript: task.text, reading: 'jev' as const, task: { id: task.id, hop } }
       const none = { verb: 'none' as const, target: null, slot: null }
 
       if (result === null || result.status !== 'answered') {
-        const jev = result === null ? undefined : { model: result.model, latencyMs: result.latencyMs, reason: result.reason }
+        const jev = result === null ? {} : { jev: { model: result.model, latencyMs: result.latencyMs, reason: result.reason }, ask: result.askId }
         const ended: TaskEnded = superseded(task) ? 'superseded' : 'unavailable'
-        log({ ...base, ...none, jevAsked: result !== null, ...(jev !== undefined ? { jev } : {}), ended })
+        log({ ...base, ...none, jevAsked: result !== null, ...jev, ended })
         dropHop(turnId, task, hop, ended === 'superseded' ? abandonedAction(task.submission) : 'not read', ended === 'superseded' ? 'cancelled' : 'done', firedAt)
         return endTask(task, ended, hop + 1)
       }
 
-      const read: Reading = { command: readCommandAnswers(result.answers, task.text, page, context), page, reading: 'jev', jevAsked: true, jev: jevDetailOf(result.answers, result.latencyMs, result.model) }
+      const read: Reading = {
+        command: readCommandAnswers(result.answers, task.text, page, context),
+        page,
+        reading: 'jev',
+        jevAsked: true,
+        jev: jevDetailOf(result.answers, result.latencyMs, result.model),
+        ask: result.askId,
+      }
       const { command, matched } = matchName(read.command, page, spoken)
       const record = { ...recordOf(turnId, firedAt, task.source, task.text, read, command, matched, false), task: { id: task.id, hop } }
       if (superseded(task)) {
@@ -1092,14 +1131,14 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     const model = deps.decisionModel()
     if (model === null) return null
     partialCalls += 1
-    const result = await model.ask({ state: commandState(words, page), questions: partialQuestions(words, page) })
+    const result = await askJev(model, 'partial', null, commandState(words, page), partialQuestions(words, page))
     // Jev unavailable on a partial: nothing fires, and the Endpoint reads as before.
     if (stale() || result.status !== 'answered') return null
     const noul = result.answers.complete.noul
     if (noul < DEFAULT_DECISION_THRESHOLDS.noul) return null
     const command = readCommandAnswers(result.answers, words, page)
     if (command.verb === 'none') return null
-    return { command, page, reading: 'jev', jevAsked: true, jev: jevDetailOf(result.answers, result.latencyMs, result.model), noul }
+    return { command, page, reading: 'jev', jevAsked: true, jev: jevDetailOf(result.answers, result.latencyMs, result.model), ask: result.askId, noul }
   }
 
   /** Reads one partial; when it fires, resolves to the action under way (boxed, so it is not awaited here). */
@@ -1247,7 +1286,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       const pending = prepared
       prepared = null
 
-      const heard = await read(trimmed, pending, source === 'spoken')
+      const heard = await read(turnId, trimmed, pending, source === 'spoken')
       if (reading !== null && reading.submission === submission) reading = null
       const firedAt = at()
       if (source === 'spoken') observeTerms(trimmed)

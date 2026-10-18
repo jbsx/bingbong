@@ -686,3 +686,23 @@ through the replay corpus (#338).
   "Close ✕" (aria-label plus text), which the normalized label match
   takes.
 
+
+## Amendment 2026-10-18 — what Jev was asked is recorded and replayable (#338)
+
+- **Every Jev call writes its whole ask** (the state text and the questions
+  with their options) to `asks-*.jsonl` beside the decision log, before it is
+  sent: hop 0 (`command`), a later hop (`hop`), an Early Fire partial
+  (`partial`). A hop's ask id is its turn id; a partial is asked before its
+  turn exists, so its id is its own. Each decision record names its ask
+  (`ask`), so the decision log stays small.
+- **The Jev corpus** (`fixtures/jev-cases/`) holds recorded asks with the
+  answer each question should get, a label (`target=ref-27`) or an exclusion
+  (`target!=ref-21`). `pnpm jev:candidates` lists the asks a misfire or
+  overrun pointed at; `pnpm jev:case` promotes one; `pnpm jev:replay` asks
+  the real Jev every case again and exits non-zero on any failure (it needs
+  the key and is not part of `pnpm test`). Nothing is committed to the corpus
+  automatically: asks carry page text from real browsing.
+- **A misread is fixed by wording, checked against the whole corpus**, never
+  by a rule for the one case (the owner rejected a "Pinned is not latest"
+  label rule). A change to the state text or question wording is accepted
+  only when it passes its own case and no other case gets worse.

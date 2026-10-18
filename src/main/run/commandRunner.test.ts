@@ -3,6 +3,7 @@ import type { PipelineEvent } from '../../core/pipeline/events'
 import type { SnapshotRef } from '../../core/browser/snapshot'
 import type { PageLanding } from '../../core/ports/browser'
 import type { CommandLogRecord } from '../../core/command/decisionRecord'
+import type { AskRecord } from '../../core/decision/askRecord'
 import type { DecisionAnswer, DecisionChoiceQuestion, DecisionModel, DecisionQuestions, DecisionRequest, DecisionResult, DecisionUnavailableReason } from '../../core/ports/decisionModel'
 import { FakeBrowser, fakePerfHarness, flushMicrotasks } from '../../core/testing/doubles'
 import type { ActionEffect } from '../browser/createCdpBrowserController'
@@ -118,6 +119,7 @@ function harness(options?: { decision?: null; learned?: string[]; speech?: Pick<
   browser.snapshot = { ...browser.snapshot, url: 'https://example.com/', title: 'Example', refs: PAGE_REFS }
   const events: PipelineEvent[] = []
   const records: CommandLogRecord[] = []
+  const asks: AskRecord[] = []
   const screenshots: string[] = []
   const admitted: string[] = []
   const proposed: string[] = []
@@ -136,6 +138,7 @@ function harness(options?: { decision?: null; learned?: string[]; speech?: Pick<
     now: () => wall++,
     tracer: perf.tracer,
     decisionLog: { write: (record) => records.push(record) },
+    askLog: { write: (record) => asks.push(record) },
     onLanding: (listener) => {
       landingListeners.add(listener)
       return () => landingListeners.delete(listener)
@@ -165,7 +168,7 @@ function harness(options?: { decision?: null; learned?: string[]; speech?: Pick<
   const land = (landing: PageLanding): void => {
     for (const listener of landingListeners) listener(landing)
   }
-  return { browser, events, records, screenshots, perf, decision, runner, observe, land, admitted, proposed, observed, setWall: (at: number) => (wall = at) }
+  return { browser, events, records, asks, screenshots, perf, decision, runner, observe, land, admitted, proposed, observed, setWall: (at: number) => (wall = at) }
 }
 
 const types = (events: PipelineEvent[]): string[] => events.map((event) => event.type)
@@ -662,7 +665,8 @@ describe('what every Command records', () => {
     expect(records[0]).toEqual({
       type: 'decision',
       turnId: 'voice-1',
-      at: 1_700_000_000_001,
+      // The ask's own stamp takes a tick of the counting clock first (#338).
+      at: 1_700_000_000_002,
       source: 'spoken',
       transcript: 'hello there into search',
       reading: 'jev',
@@ -677,6 +681,7 @@ describe('what every Command records', () => {
         confidence: { verb: 0.6, target: 0.5, slot: 0.8 },
         probabilities: { verb: { type: 0.6 }, target: { 'ref-3': 0.5, none: 0.3, 'ref-1': 0.2 }, slot: { 's0-1': 0.8 } },
       },
+      ask: 'voice-1',
       task: { id: 'voice-1', hop: 0 },
     })
     expect(records[1]).toMatchObject({ turnId: 'voice-2', verb: 'none', reading: 'jev', ended: 'terminal' })
@@ -710,6 +715,41 @@ describe('what every Command records', () => {
     await runner.run('screenshot')
     expect(screenshots).toEqual(['/shots/screenshot-1.jpg'])
     expect(events.find((event) => event.type === 'display')).toMatchObject({ text: 'screenshot saved: /shots/screenshot-1.jpg' })
+  })
+})
+
+describe('what Jev was asked (#338)', () => {
+  it('writes every Jev call\'s whole ask — the state and the questions — and each decision record names its ask', async () => {
+    const { decision, runner, records, asks } = harness()
+    decision.script.push({ answers: { verb: choice('click'), target: choice('ref-1'), slot: choice('none') } }, { answers: { verb: choice('done'), target: choice('none'), slot: choice('none') } })
+
+    await runner.run('take me home', { source: 'spoken', turnId: 'voice-1' })
+
+    expect(asks.map((ask) => ask.kind)).toEqual(['command', 'hop'])
+    for (const [i, ask] of asks.entries()) {
+      expect(ask).toMatchObject({ type: 'ask', model: 'jev-1.14.0' })
+      expect(ask.state).toBe(decision.requests[i]!.state)
+      expect(ask.questions).toEqual(decision.requests[i]!.questions)
+    }
+    expect(asks[0]).toMatchObject({ id: 'voice-1', turnId: 'voice-1' })
+    const decisions = records.flatMap((record) => (record.type === 'decision' ? [record] : []))
+    expect(decisions.map((record) => record.ask)).toEqual(asks.map((ask) => ask.id))
+    expect(decisions[1]!.turnId).toBe(asks[1]!.turnId)
+  })
+
+  it('records the ask of a call Jev did not answer, and the best guess\'s record names it', async () => {
+    const { decision, runner, records, asks } = harness()
+    decision.script.push({ unavailable: 'timeout' })
+    await runner.run('take me home', { turnId: 't1' })
+    expect(asks).toEqual([expect.objectContaining({ id: 't1', kind: 'command' })])
+    expect(records[0]).toMatchObject({ reading: 'best_guess', ask: 't1' })
+  })
+
+  it('writes no ask and names none for a Command the Local Match settles', async () => {
+    const { runner, records, asks } = harness()
+    await runner.run('scroll down', { turnId: 't1' })
+    expect(asks).toEqual([])
+    expect(records[0]).not.toHaveProperty('ask')
   })
 })
 

@@ -31,6 +31,8 @@ export interface JevDecisionModelDeps {
   /** A fetch in place of the global one — tests only. */
   readonly fetch?: Fetch
   readonly now?: () => number
+  /** The timeout in place of the round's — `pnpm jev:replay` (#338), which costs no round. */
+  readonly timeoutMs?: number
 }
 
 /** The port's questions in the SDK's shape: a Choice's options are its criteria. */
@@ -60,7 +62,7 @@ export function createJevDecisionModel(endpoint: ModelEndpointConfig, deps: JevD
     apiKey: endpoint.apiKey,
     baseURL: endpoint.baseUrl,
     defaultModel: endpoint.model,
-    timeout: DECISION_TIMEOUT_MS,
+    timeout: deps.timeoutMs ?? DECISION_TIMEOUT_MS,
     retry: { maxRetries: 0 },
     // An unavailable answer is recorded in the Decision Record; the SDK's
     // console warnings would only duplicate it into stderr.

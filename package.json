@@ -17,6 +17,9 @@
     "cli": "pnpm build && electron . --browser-cli",
     "perf:report": "node scripts/perf-report.ts",
     "stt:replay": "node scripts/replay-stt.ts",
+    "jev:replay": "node scripts/jev-replay.ts",
+    "jev:candidates": "node scripts/jev-candidates.ts",
+    "jev:case": "node scripts/jev-case.ts",
     "shot": "pnpm build && xvfb-run -a -s '-screen 0 1280x800x24' node scripts/screenshot.ts"
   },
   "dependencies": {

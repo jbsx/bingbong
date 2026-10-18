@@ -30,7 +30,9 @@ fast as it can, built on top of this shell.
   Feed, the Status Capsule and the voice session read: one `command` per
   Command carrying the words and the action, a `reaction` perf span and one
   record in `decision-*.jsonl` beside the perf log (`pnpm perf:report`
-  reads both).
+  reads both). Each Jev call's whole ask goes to `asks-*.jsonl`, which the
+  record names. `pnpm jev:candidates`, `jev:case` and `jev:replay` grow
+  and replay the Jev corpus in `fixtures/jev-cases/` (#338).
 - **The browser** is `BrowserController` (`src/core/ports/browser.ts`),
   implemented over CDP in `src/main/browser/createCdpBrowserController.ts`.
   Action Outcome classifiers (blockers, consent walls, empty/not-found/

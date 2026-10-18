@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { PipelineEvent } from '../../core/pipeline/events'
 import type { CommandLogRecord } from '../../core/command/decisionRecord'
+import type { AskRecord } from '../../core/decision/askRecord'
 import type { DecisionAnswer, DecisionModel, DecisionQuestions, DecisionRequest, DecisionResult } from '../../core/ports/decisionModel'
 import { FakeBrowser, FakeClock, FakeVad, RecordingTts, fakePerfHarness, flushMicrotasks } from '../../core/testing/doubles'
 import { createVoiceSession } from '../../core/voice/voiceSession'
@@ -74,6 +75,7 @@ describe('a Task whose hop 0 Early Fired (#328, AC6)', () => {
   function wired(script: Record<string, DecisionAnswer>[]) {
     const browser = new FakeBrowser()
     const records: CommandLogRecord[] = []
+    const asks: AskRecord[] = []
     const perf = fakePerfHarness()
     const decision = new ScriptedDecisionModel(script)
     const runner = createCommandRunner({
@@ -83,11 +85,26 @@ describe('a Task whose hop 0 Early Fired (#328, AC6)', () => {
       now: () => 1_700_000_000_000,
       tracer: perf.tracer,
       decisionLog: { write: (record) => records.push(record) },
+      askLog: { write: (record) => asks.push(record) },
       screenshotDir: () => '/shots',
       saveScreenshot: async () => {},
     })
-    return { browser, records, perf, decision, runner }
+    return { browser, records, asks, perf, decision, runner }
   }
+
+  it('writes each partial\'s ask under its own id, and the Early Fire\'s record names the partial it fired on (#338)', async () => {
+    const { records, asks, decision, perf, runner } = wired([
+      { verb: choice('open'), target: choice('none'), slot: choice('s2-3'), complete: { type: 'noul', noul: 0.9 } },
+      { verb: choice('done'), target: choice('none'), slot: choice('none') },
+    ])
+    await speak(runner, { text: 'Pull up some lofi music.', partials: ['pull up some lofi'] }, perf)
+
+    expect(asks.map((ask) => ask.kind)).toEqual(['partial', 'hop'])
+    expect(asks[0]).not.toHaveProperty('turnId')
+    expect(asks[0]!.questions).toEqual(decision.requests[0]!.questions)
+    expect(Object.keys(asks[0]!.questions)).toContain('complete')
+    expect(decisions(records).map((record) => record.ask)).toEqual(asks.map((ask) => ask.id))
+  })
   const decisions = (records: CommandLogRecord[]) => records.flatMap((record) => (record.type === 'decision' ? [record] : []))
 
   it('goes on only after the Endpoint, and hop 1 reads the final transcript', async () => {
