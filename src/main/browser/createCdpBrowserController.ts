@@ -1103,7 +1103,8 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
       // and say so in the outcome.
       await evaluateInPage(`(() => {
         const el = (window.__bingbongRefs || [])[${index}]
-        if (typeof el.focus === 'function') el.focus()
+        // No scroll of ours here, or it would be the click's effect (#335).
+        if (typeof el.focus === 'function') el.focus({ preventScroll: true })
         el.click()
       })()`)
     }

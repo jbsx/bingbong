@@ -11,8 +11,9 @@ import { normalizeLearnedTerm } from '../../core/voice/learnedTerms'
 
 export const BIAS_LEXICON: readonly string[] = [
     // The CLI grammar's verbs (ADR 0076). Everyday words, kept against the
-    // rule above on evidence: "scroll" was heard as "Screw that." and
-    // "Crawled" in one session, and both came to nothing (#335).
+    // rule above: every spoken Command opens on one, and "scroll" was
+    // heard as "Screw that." and "Crawled" in one session, both coming to
+    // nothing (#335).
     'scroll',
     'scroll up',
     'scroll down',

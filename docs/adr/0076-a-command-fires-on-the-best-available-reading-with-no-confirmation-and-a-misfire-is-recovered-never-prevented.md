@@ -263,8 +263,11 @@ Command recovers rather than a question asked:
   clock: a DOM mutation, an input event, a scroll or the document going
   ends it early. A click's own scroll-into-view is none of these: the
   click preparation scrolls instantly and tells the armed watch where it
-  left each scroller, and a scroll event that finds its scroller still
-  there is ours, so a click closes only on what it did to the page (#335). The landing poll after `ERR_ABORTED` keeps one 100 ms
+  moved each scroller to, and the first scroll event that finds its
+  scroller still there is ours, so a click closes on what it did to the
+  page (#335). What a page does in answer to that scroll (a virtualized
+  list swapping rows, a sticky header restyled) is still a mutation and
+  still closes it. The landing poll after `ERR_ABORTED` keeps one 100 ms
   clock wait (the `browser-settle` sub-span); everything else is
   readiness-driven (`browser-ready` sub-spans).
 - **Jev is pinned to `jev-1.14.0`** in the decision adapter, as decided

@@ -555,10 +555,16 @@ export interface CoverNaming {
   shownOnly: boolean
 }
 
+/** The scroller a scroll event on the document is about. */
+const ROOT_SCROLLER = '(document.scrollingElement || document.documentElement)'
+
+/** Where a scroller stands, as the click prep and the readiness watch compare it (#335). */
+const SCROLL_SPOT = "(node) => node.scrollLeft + ',' + node.scrollTop"
+
 /**
- * Scroll the registry node at this index into view — instantly, and told to
- * an armed readiness watch so the scroll is never the click's effect (#335)
- * — and hit-test its centre
+ * Scroll the registry node at this index into view (instantly, and told to
+ * an armed readiness watch so the scroll is never the click's effect —
+ * #335) and hit-test its centre
  * with `elementsFromPoint`, which returns the whole paint-order stack (ADR
  * 0062). The target on top (or under its own descendant) is clickable; the
  * target in the stack under something else is Covered, and the entries
@@ -572,16 +578,22 @@ export function clickPrepScript(index: number, naming: CoverNaming): string {
   return `(() => {
     const el = (window.__bingbongRefs || [])[${index}]
     if (!el || !el.isConnected) return { ok: false }
+    const scrollers = [${ROOT_SCROLLER}]
+    for (let n = el.parentElement; n !== null && n !== scrollers[0]; n = n.parentElement) scrollers.push(n)
+    const spotOf = ${SCROLL_SPOT}
+    const before = scrollers.map(spotOf)
     // Instant, whatever the page's scroll-behavior: the hit test below reads
     // where the scroll ends, not a frame of a smooth one (#335).
     el.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' })
-    // Where this scroll left each scroller, told to an armed readiness watch:
-    // the scroll events it fires are ours, never the click's effect (#335).
+    // Where this scroll moved a scroller to, told to an armed readiness
+    // watch: the scroll event it fires there is ours, never the click's
+    // effect (#335).
     const ready = window.__bingbongReady
     if (ready && ready.ownScroll instanceof Map) {
-      const scrollers = [document.scrollingElement || document.documentElement]
-      for (let n = el.parentElement; n !== null; n = n.parentElement) scrollers.push(n)
-      for (const node of scrollers) ready.ownScroll.set(node, node.scrollLeft + ',' + node.scrollTop)
+      scrollers.forEach((node, i) => {
+        const spot = spotOf(node)
+        if (spot !== before[i]) ready.ownScroll.set(node, spot)
+      })
     }
     const vw = window.innerWidth
     const vh = window.innerHeight
@@ -660,9 +672,9 @@ export function readinessArmScript(): string {
     /* READY_ARM */
     const previous = window.__bingbongReady
     if (previous && typeof previous.stop === 'function') previous.stop()
-    // ownScroll: where a click's own scroll-into-view left each scroller
-    // (clickPrepScript); a scroll event that finds its scroller still there
-    // is that scroll's, not the page's (#335).
+    // ownScroll: where a click's own scroll-into-view moved each scroller
+    // (clickPrepScript); the first scroll event that finds its scroller
+    // still there is that scroll's, not the page's, and spends it (#335).
     const state = { fired: null, waiters: [], stop: () => {}, wait: null, ownScroll: new Map() }
     const fire = (kind) => {
       if (state.fired !== null) return
@@ -673,11 +685,12 @@ export function readinessArmScript(): string {
     const observer = new MutationObserver(() => fire('mutation'))
     observer.observe(document.documentElement || document, { subtree: true, childList: true, attributes: true, characterData: true })
     const onInput = () => fire('input')
+    const spotOf = ${SCROLL_SPOT}
     const onScroll = (event) => {
-      const target = event.target
-      const node = target === document ? (document.scrollingElement || document.documentElement) : target
+      const node = event.target === document ? ${ROOT_SCROLLER} : event.target
       const own = state.ownScroll.get(node)
-      if (own !== undefined && node && own === node.scrollLeft + ',' + node.scrollTop) return
+      state.ownScroll.delete(node)
+      if (own !== undefined && own === spotOf(node)) return
       fire('scroll')
     }
     window.addEventListener('input', onInput, { capture: true, passive: true })
