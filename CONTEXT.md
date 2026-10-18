@@ -289,7 +289,8 @@ _Avoid_: exhibit validation, tier check
 
 **Feed Panel**:
 The activity panel over the browser pane. Three states: Overlay, Docked,
-Collapsed. A View Preference, resizable.
+Collapsed. A View Preference, resizable. Opened only by a human act, and it
+stays open through a Command's end and a Stop (2026-10-18 ruling).
 _Avoid_: activity bar, sidebar, activity sidebar
 
 **Idle Screen**:
@@ -325,11 +326,13 @@ _Avoid_: header, dashboard header, browser chrome, title bar
 
 **Status Capsule**:
 The single control naming the assistant's state — orb, pill, and the live
-run/voice hints collapsed into one pill-shaped surface. Its orb is the feed's
-assistant mark: one visual identity for "this is Bing Bong" — save that a
-failed Command's mark (the Peek Card's dot, the Feed Answer's mark and rail)
-takes the failure colour, so a failure never reads as a success (owner
-ruling 2026-10-18, #329).
+run/voice hints collapsed into one pill-shaped surface. It names each state
+once — the pill says the state, the hint carries only instruction, the live
+words or the elapsed time — and never grows past its third of the Toolbar:
+long text ellipsizes. Its orb is the feed's assistant mark: one visual
+identity for "this is Bing Bong" — save that a failed Command's mark (the
+Peek Card's dot, the Feed Answer's mark and rail) takes the failure colour,
+so a failure never reads as a success (owner ruling 2026-10-18, #329).
 _Avoid_: status bar, status row, status line
 
 **View Preference**:

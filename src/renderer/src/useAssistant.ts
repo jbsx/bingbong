@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { PipelineEvent, PipelineStatus } from '../../core/pipeline/events'
+import type { PipelineEvent } from '../../core/pipeline/events'
 import type { VoiceHeardEvent } from '../../core/voice/ipcChannels'
 import type { FeedEntry } from '../../core/feed/feedProjection'
 import { useFeedProjection } from './useFeedProjection'
-import { createRunProgressTracker, type RunProgress } from '../../core/pipeline/runProgress'
+import { createRunProgressTracker, type CapsuleStatus, type RunProgress } from '../../core/pipeline/runProgress'
 
-export type OrbStatus = 'idle' | 'listening' | 'transcribing' | PipelineStatus
+export type OrbStatus = CapsuleStatus
 
 export interface Assistant {
   status: OrbStatus

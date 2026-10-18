@@ -4,6 +4,11 @@
 
 Accepted — amended by ADR 0020: the "no dark mode, no toggle" stance is
 lifted; the palette below is the light-mode half of one token sheet.
+Amended by #331: on Linux a fullscreen frameless window kept its client
+frame insets and came up 8 px wider than the screen (x −4), so kiosk sat
+~4 px off windowed; main now holds a fullscreen window's content on its display
+(`holdFullscreenFit`), and the Toolbar pins capsule, address cluster and
+controls to their columns, so the settings page keeps the controls right.
 
 ## Context
 

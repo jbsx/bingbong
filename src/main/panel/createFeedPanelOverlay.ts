@@ -56,7 +56,7 @@ export function registerFeedPanelIpc(): void {
 }
 
 export interface FeedPanelOverlay {
-  /** A pipeline event: folds panel state, forwards feed content. */
+  /** A pipeline event: forwards feed content (no event moves the panel, #331). */
   handlePipelineEvent(event: PipelineEvent): void
   /** Voice-half feed lines (heard words, mic errors) — same payloads the dashboard gets. */
   forwardHeard(heard: VoiceHeardEvent): void
@@ -190,10 +190,7 @@ export function attachFeedPanelOverlayToWindow(
 
   const overlay: FeedPanelOverlay = {
     handlePipelineEvent(event) {
-      const before = fold.state()
-      fold.onEvent(event)
       if (!wc.isDestroyed()) wc.send(PIPELINE_IPC.event, event)
-      if (fold.state() !== before) broadcast()
     },
     forwardHeard(heard) {
       if (!wc.isDestroyed()) wc.send(VOICE_IPC.heard, heard)

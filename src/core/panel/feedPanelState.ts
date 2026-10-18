@@ -1,17 +1,15 @@
-import type { PipelineEvent } from '../pipeline/events'
-
 // Feed panel layout state (#45): overlay-vs-docked mode plus the open
-// state, as a pure fold over the pipeline event seam — the same shape
-// as the run-progress tracker. Main owns one fold per window and broadcasts
-// changes; the dashboard renders layout from it, the overlay renders chrome.
+// state, as a pure fold over the manual controls. Main owns one fold per
+// window and broadcasts changes; the dashboard renders layout from it, the overlay renders chrome.
 // ADR 0021: voice never opens the panel — a command shows the Peek Card
-// (its own fold in peekCardState.ts); only human acts set `open` here.
+// (its own fold in peekCardState.ts); only human acts open it, and an open
+// panel stays open through a Command's `done` (#331).
 
 export type FeedPanelMode = 'overlay' | 'docked'
 
 export interface FeedPanelState {
   mode: FeedPanelMode
-  /** Open by human act; run ends and Session ends collapse it. */
+  /** Open by human act only, and held through a Command's `done` (#331). */
   open: boolean
   /** Panel width in px (#65) — one folded value both renderers apply. */
   width: number
@@ -136,16 +134,16 @@ export function readStoredFeedWidth(
 }
 
 /**
- * Folds pipeline events into the panel state (ADR 0021): commands never
- * open the panel — voice shows the Peek Card — while the run's done and
- * Session end collapse it, so a manual open always yields to the run
- * boundary. Busy rejections bypass this fold entirely. Everything else
- * (detail lines, statuses, out-of-turn announcements) leaves the state
- * untouched. `toggleOpen`/`setMode` are the manual controls (header
- * button, keyboard shortcut, dock toggle).
+ * Folds the manual controls into the panel state (ADR 0021): commands never
+ * open the panel — voice shows the Peek Card — and no event collapses it:
+ * a panel the human opened stays open through a Command's `done`, a Stop's
+ * included, because collapsing it took the panel away while it was being
+ * read or typed in (the owner's 2026-10-18 ruling, #331; ADR 0004 and 0026
+ * amended). The auto-collapse was kept for a panel the system peeked open,
+ * and nothing on this branch opens one. `toggleOpen`/`setMode` are the
+ * manual controls (Toolbar button, keyboard shortcut, dock toggle).
  */
 export function createFeedPanelStateFold(options?: { defaultWidth?: number }): {
-  onEvent(event: PipelineEvent): void
   setMode(mode: FeedPanelMode): void
   setWidth(width: number): void
   toggleOpen(): void
@@ -158,15 +156,6 @@ export function createFeedPanelStateFold(options?: { defaultWidth?: number }): {
   }
 
   return {
-    onEvent(event) {
-      switch (event.type) {
-        case 'done':
-          if (state.open) state = { ...state, open: false }
-          return
-        default:
-          return
-      }
-    },
     setMode(mode) {
       if (mode !== state.mode) state = { ...state, mode }
     },

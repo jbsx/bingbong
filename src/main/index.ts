@@ -25,6 +25,7 @@ import type { ActionEffect, ActionEffects } from './browser/createCdpBrowserCont
 import { createDecisionLogSink } from './run/decisionLogSink'
 import { resolveDownloadsDir } from './downloadsDir'
 import { resolvePreloadPath } from './preloadPath'
+import { holdFullscreenFit } from './kiosk/holdFullscreenFit'
 import { createSettingsStore } from './settings/settingsStore'
 import { registerSettingsIpc } from './settings/attachSettings'
 import { settingsToEnv } from '../core/settings/settings'
@@ -218,6 +219,9 @@ async function createWindow(): Promise<BrowserWindow> {
       additionalArguments: launchConfig.kiosk ? [KIOSK_FLAG] : [],
     },
   })
+
+  // Fullscreen must sit where windowed does (#331, see fullscreenFit).
+  if (launchConfig.kiosk) holdFullscreenFit(win)
 
   // A pane per window; the persistent `persist:browse` session partition is what
   // keeps logins alive across windows and restarts. One CDP controller is

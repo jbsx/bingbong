@@ -3,7 +3,8 @@
 ## Status
 
 Accepted — amends ADR 0004's auto-peek fold (#45): the `command → open`
-branch of the panel-state fold is deliberately gone.
+branch of the panel-state fold is deliberately gone. Amended by #331: `done`
+no longer collapses a panel the human opened (see ADR 0004's status).
 
 ## Context
 

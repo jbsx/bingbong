@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { BrowserNav, BrowserPane } from './BrowserPane'
 import { RunHint, StatusOrb, StatusPill } from './AssistantPanel'
 import { IdleScreen } from './IdleScreen'
@@ -12,6 +12,7 @@ import { usePeekCard } from './usePeekCard'
 import { useSettings } from './useSettings'
 import { useVoice } from './useVoice'
 import { useWeather } from './useWeather'
+import { voiceHint } from '../../core/voice/voiceHint'
 
 export function App() {
   const assistant = useAssistant()
@@ -22,7 +23,6 @@ export function App() {
   // webContents above the browser pane; this slot is the rect its bounds
   // follow (overlay floats out-of-flow; docked takes real layout space).
   const panel = useFeedPanel()
-  const feedSlotRef = useRef<HTMLDivElement>(null)
   // The Peek Card (ADR 0021, 0026, 0029): voice's report surface while
   // the panel is Collapsed — shown by activity, retired by opening the
   // panel, revived by closing it mid-run. It renders in the panel's
@@ -33,7 +33,7 @@ export function App() {
   // The card never covers the settings page (#329): while it is open, the
   // card's slot reports no bounds; leaving settings brings the card back.
   // An opened panel or the edge tab still shows there.
-  useFeedSlotRect(feedSlotRef, `${panel.mode}-${slotContent}`, view === 'settings' && slotContent === 'card')
+  const feedSlotRef = useFeedSlotRect(`${panel.mode}-${slotContent}`, view === 'settings' && slotContent === 'card')
 
   const getMicId = useCallback(() => settings?.micId ?? 'default', [settings])
   const voice = useVoice({
@@ -80,6 +80,7 @@ export function App() {
   // Never idle over a running command, an open mic, the STT window, or the
   // settings page — the timer must not unmount a form mid-edit.
   const showIdle = idle.idle && status === 'idle' && !voice.listening && !voice.transcribing && view === 'dashboard'
+  const hint = voiceHint(voice)
   const weather = useWeather(settings?.weather ?? null, showIdle)
   const lastPage = useLastPage(showIdle)
 
@@ -104,19 +105,12 @@ export function App() {
           {/* Run progress (#43) keeps its place even when the mic opens
               mid-run — the climbing timer must never disappear behind a
               listening hint, or a long round reads as frozen again. */}
-          {assistant.progress ? <RunHint progress={assistant.progress} /> : null}
-          {voice.transcribing ? (
-            <span className="voice-hint voice-hint--transcribing" role="status">
-              transcribing…
-            </span>
-          ) : voice.listening ? (
-            // The live partial transcript shows while the user speaks (#324).
-            <span className="voice-hint" role="status">
-              {voice.partial !== '' ? `“${voice.partial}…”` : 'listening — say a command'}
-            </span>
-          ) : voice.monitoring ? (
-            <span className="voice-hint voice-hint--monitoring" role="status">
-              say “bing bong” or press Ctrl+Space
+          {assistant.progress ? <RunHint progress={assistant.progress} status={status} /> : null}
+          {/* The voice hint carries instruction or the live partial
+              transcript (#324) — never the pill's state word again (#331). */}
+          {hint ? (
+            <span className={`voice-hint voice-hint--${hint.kind}`} role="status">
+              {hint.text}
             </span>
           ) : null}
         </div>

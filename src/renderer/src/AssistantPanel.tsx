@@ -30,12 +30,13 @@ export function StatusPill({ status }: { status: OrbStatus }) {
 }
 
 /**
- * The header's live progress line (#43): stage + climbing elapsed counter,
+ * The Toolbar's live progress line (#43): climbing elapsed counter (the
+ * stage too when the pill shows another state, #331),
  * rendered from event timestamps with a renderer-side tick — no heartbeat
  * IPC. A genuine hang reads as an honestly climbing number; Stop stays the
  * only escape.
  */
-export function RunHint({ progress }: { progress: RunProgress }) {
+export function RunHint({ progress, status }: { progress: RunProgress; status: OrbStatus }) {
   const [now, setNow] = useState(() => Date.now())
 
   useEffect(() => {
@@ -45,7 +46,7 @@ export function RunHint({ progress }: { progress: RunProgress }) {
 
   return (
     <span className="run-hint" role="status">
-      {describeRunProgress(progress, now)}
+      {describeRunProgress(progress, now, status)}
     </span>
   )
 }

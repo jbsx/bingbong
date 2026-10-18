@@ -46,11 +46,16 @@ export function createRunProgressTracker(): {
   }
 }
 
+/** The state the Status Capsule's pill names: the voice states outrank the Command's stage. */
+export type CapsuleStatus = 'idle' | 'listening' | 'transcribing' | PipelineStatus
+
 /**
- * The hint line for an active run: stage and a climbing elapsed counter —
- * the honest-hang signal; Stop stays the only escape.
+ * The hint line for an active Command: a climbing elapsed counter — the
+ * honest-hang signal; Stop stays the only escape. The Status Capsule names
+ * each state once (#331): the stage is spelled out only when the pill
+ * beside it shows another state (the mic opened while the Command acts).
  */
-export function describeRunProgress(progress: RunProgress, now: number): string {
+export function describeRunProgress(progress: RunProgress, now: number, pillStatus: CapsuleStatus): string {
   const seconds = Math.max(0, Math.floor((now - progress.startedAt) / 1000))
-  return `${progress.stage} — ${seconds}s`
+  return pillStatus === progress.stage ? `${seconds}s` : `${progress.stage} — ${seconds}s`
 }

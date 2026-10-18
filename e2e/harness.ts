@@ -45,8 +45,12 @@ export interface Harness {
    */
   crashRenderer(target: TargetKind): Promise<void>
   clickDashboardElement(selector: string): Promise<void>
-  /** Click an element in the feed panel's overlay webContents (#45). */
-  clickOverlayElement(selector: string): Promise<void>
+  /**
+   * Click an element in the feed panel's overlay webContents (#45). The
+   * click waits for the view to settle at `minViewportWidth` (default
+   * 100 px, the open panel); the 36 px edge tab passes its own (#331).
+   */
+  clickOverlayElement(selector: string, options?: { minViewportWidth?: number }): Promise<void>
   /**
    * One real (input-pipeline) mouse event in the overlay view — the
    * press/move/release primitives a drag-resize (#65) needs, dispatched
@@ -511,7 +515,8 @@ async function buildHarness(
       await dispatchClick(sid, center.x, center.y)
     },
 
-    async clickOverlayElement(selector) {
+    async clickOverlayElement(selector, options) {
+      const minViewportWidth = options?.minViewportWidth ?? 100
       const sid = overlaySid()
       if (!sid) throw new Error('overlay target not found')
       // The overlay view resizes asynchronously after every panel state
@@ -521,7 +526,7 @@ async function buildHarness(
       await waitFor(
         async () => {
           const viewportWidth = await evaluate<number>(cdp, sid, 'innerWidth')
-          if (viewportWidth < 100) return undefined
+          if (viewportWidth < minViewportWidth) return undefined
           return (await evaluate<{ x: number; y: number } | null>(cdp, sid, elementCenterScript(selector))) ?? undefined
         },
         { timeoutMs: 5000, intervalMs: 100 },

@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest'
-import type { PipelineEvent } from '../pipeline/events'
 import {
   FEED_MODE_STORAGE_KEY,
   FEED_PANEL_WIDTH_DEFAULT,
@@ -20,27 +19,10 @@ import {
 import { isFeedPanelStatePayload } from './ipcChannels'
 
 // Feed panel layout life (#45, ADR 0021): overlay/docked mode plus the
-// open state, as one pure fold over the same pipeline event seam every
-// observer rides. Voice never opens the panel — a command shows the Peek
-// Card instead — so only human acts and run ends move `open`. Table-driven
-// like the projections it sits beside. The width axis (#65) rides the same
-// fold: defaults, bounds, storage.
-
-function events(...parts: Array<Partial<PipelineEvent> & { type: PipelineEvent['type'] }>): PipelineEvent[] {
-  return parts.map((part, index) => ({ at: index, ...part }) as PipelineEvent)
-}
-
-function feedEvents(...types: Array<'command' | 'done' | 'status' | 'error' | 'speak'>): PipelineEvent[] {
-  return events(
-    ...types.map((type) => {
-      if (type === 'command') return { type, turnId: 't1', text: 'find a pizza place' }
-      if (type === 'done') return { type, turnId: 't1', outcome: 'done' as const }
-      if (type === 'error') return { type, message: 'boom' }
-      if (type === 'speak') return { type, text: 'hello' }
-      return { type, turnId: 't1', status: 'thinking' as const }
-    }),
-  )
-}
+// open state, as one pure fold over the manual controls. Voice never opens
+// the panel — a command shows the Peek Card instead — and no Command's end
+// collapses it (#331): only human acts move `open`. The width axis (#65)
+// rides the same fold: defaults, bounds, storage.
 
 describe('createFeedPanelStateFold', () => {
   it('boots collapsed in overlay mode at the default width', () => {
@@ -48,49 +30,11 @@ describe('createFeedPanelStateFold', () => {
     expect(fold.state()).toEqual({ mode: 'overlay', open: false, width: FEED_PANEL_WIDTH_DEFAULT })
   })
 
-  it('a command never opens the panel — voice shows the Peek Card, not the slab (ADR 0021)', () => {
-    const fold = createFeedPanelStateFold()
-    for (const event of feedEvents('command', 'status', 'speak')) fold.onEvent(event)
-    expect(fold.state().open).toBe(false)
-  })
-
-  it('done collapses a manually opened panel, and a failed run stays balanced', () => {
-    const fold = createFeedPanelStateFold()
-    fold.toggleOpen()
-    fold.onEvent(feedEvents('command')[0]!)
-    fold.onEvent(feedEvents('done')[0]!)
-    expect(fold.state().open).toBe(false)
-  })
-
-  it('ignores detail, status, and out-of-turn events', () => {
-    const fold = createFeedPanelStateFold()
-    fold.toggleOpen()
-    const before = fold.state()
-    for (const event of events(
-      { type: 'status', turnId: 't1', status: 'acting' },
-      { type: 'tool_call', turnId: 't1', callId: 'c1', name: 'navigate', args: {} },
-      { type: 'tool_result', turnId: 't1', callId: 'c1', name: 'navigate', ok: true },
-      { type: 'display', text: 'Saved a file', at: 9 },
-    )) {
-      fold.onEvent(event)
-    }
-    expect(fold.state()).toEqual(before)
-  })
-
   it('toggleOpen flips the manual state without waiting for a run', () => {
     const fold = createFeedPanelStateFold()
     fold.toggleOpen()
     expect(fold.state().open).toBe(true)
     fold.toggleOpen()
-    expect(fold.state().open).toBe(false)
-  })
-
-  it('a manual open survives until the next run boundary, not forever', () => {
-    const fold = createFeedPanelStateFold()
-    fold.toggleOpen()
-    // Even a manual open yields to the run's end, so the idle panel is
-    // always collapsed.
-    fold.onEvent(feedEvents('done')[0]!)
     expect(fold.state().open).toBe(false)
   })
 

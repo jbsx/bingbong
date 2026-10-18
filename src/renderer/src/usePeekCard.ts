@@ -25,14 +25,16 @@ export function usePeekCard(panelOpen: boolean): PeekCardView {
     return unsubscribe
   }, [])
 
-  // Opening the panel retires the answer — the user saw it up close. The
-  // live Run survives (ADR 0026); closing the panel again revives it.
+  // An open panel retires the answer — the user saw it up close: opening
+  // it over a persisting answer, and a Command ending while the human holds
+  // it open (#331). The live report survives (ADR 0026); closing the panel
+  // while the Command acts revives it.
   useEffect(() => {
-    if (panelOpen) {
+    if (panelOpen && state.phase === 'answer') {
       foldRef.current.retireAnswer()
       setState(foldRef.current.state())
     }
-  }, [panelOpen])
+  }, [panelOpen, state.phase])
 
   const visible = !panelOpen && peekCardVisible(state)
   return { visible, state }

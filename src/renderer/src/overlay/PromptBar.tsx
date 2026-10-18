@@ -54,7 +54,8 @@ export function PromptBar() {
         <input
           className="prompt-input"
           type="text"
-          placeholder='Type a command — "open youtube", "click sign in", "scroll down", "read"'
+          // Whole at the default 380 px panel with Stop beside it (#331).
+          placeholder="Type a command"
           aria-label="Prompt bar"
           aria-describedby={feedback ? 'submission-feedback' : undefined}
           autoComplete="off"

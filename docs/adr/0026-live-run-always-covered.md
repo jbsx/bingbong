@@ -3,7 +3,12 @@
 ## Status
 
 Accepted — amends ADR 0021's Peek Card lifecycle: the 8s answer linger is
-gone, replaced by run-scoped coverage and a persistent answer.
+gone, replaced by run-scoped coverage and a persistent answer. Amended by
+#331 (the owner's ruling, 2026-10-18): at `done` a panel the human opened
+stays open — the Answer lands in the panel, the surface already in front
+of the reader, and the card's answer is retired as if the panel had just
+opened over it. The auto-collapse was kept for a panel the system peeked
+open; nothing on this branch opens one.
 
 ## Context
 
@@ -28,7 +33,9 @@ that window.
   Run hides the card promptly.
 - **Every run end lands its outcome on exactly one visible surface.** At
   `done` with the panel open, the panel still auto-collapses and the card
-  takes over the Answer. After `done`, opening then closing the panel does
+  takes over the Answer. *(Amended by #331: a panel the human opened stays
+  open at `done` and is the surface the outcome lands on; only a panel the
+  system peeked open would collapse, and nothing opens one today.)* After `done`, opening then closing the panel does
   not revive the card — the obligation is Run-scoped, not Session-scoped.
 
 ## Consequences

@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import type { RefObject } from 'react'
 import { HIDDEN_PANE_RECT, type PaneRect } from '../../core/browser/paneState'
 import {
   FEED_MODE_STORAGE_KEY,
@@ -70,9 +69,13 @@ export function useFeedPanel(): FeedPanelState {
 
 /**
  * Reports the slot element's rect to main, which sizes the overlay view.
- * ResizeObserver covers size changes (window, kiosk); the keyed re-report
- * covers position-only changes (mode swaps move the slot without resizing
- * it). Only a real unmount (idle screen, settings-only views) hides the
+ * The returned callback ref tracks the slot element itself: the app boots
+ * into the Idle Screen, so the slot mounts after this hook's first run, and
+ * a slot that comes and goes with the Idle Screen must be reported each
+ * time it reappears — or the overlay keeps a 0×0 view and the edge tab is
+ * invisible (#331). ResizeObserver covers size changes (window, kiosk);
+ * the keyed re-report covers position-only changes (mode swaps move the
+ * slot without resizing it). Only a real unmount (idle screen) hides the
  * overlay — a key change must NEVER route the bounds through 0×0, or the
  * overlay page reflows against an empty viewport mid-transition and
  * synthesized (and real) clicks land on stale element positions.
@@ -80,10 +83,15 @@ export function useFeedPanel(): FeedPanelState {
  * not show (the Peek Card over the settings page, #329), so the overlay
  * gets no bounds until it may show again.
  */
-export function useFeedSlotRect(slotRef: RefObject<HTMLDivElement | null>, layoutKey: string, hidden = false): void {
+export function useFeedSlotRect(layoutKey: string, hidden = false): (el: HTMLDivElement | null) => void {
+  const [el, setEl] = useState<HTMLDivElement | null>(null)
+
   useEffect(() => {
-    const el = slotRef.current
-    if (!el) return
+    if (!el) {
+      // The slot is gone (the Idle Screen took the window): so is the view.
+      window.bingbong.feedPanel.reportRect(HIDDEN_PANE_RECT)
+      return
+    }
     const report = (): void => {
       if (hidden) {
         window.bingbong.feedPanel.reportRect(HIDDEN_PANE_RECT)
@@ -99,9 +107,9 @@ export function useFeedSlotRect(slotRef: RefObject<HTMLDivElement | null>, layou
     return () => {
       observer.disconnect()
     }
-    // The slot element itself is stable; `layoutKey` (mode/open) re-reports
-    // the position-only moves a ResizeObserver cannot see.
-  }, [layoutKey, hidden])
+    // `layoutKey` (mode/open) re-reports the position-only moves a
+    // ResizeObserver cannot see.
+  }, [el, layoutKey, hidden])
 
   // Unmount-only: the overlay view must not outlive its slot.
   useEffect(
@@ -110,4 +118,6 @@ export function useFeedSlotRect(slotRef: RefObject<HTMLDivElement | null>, layou
     },
     [],
   )
+
+  return setEl
 }

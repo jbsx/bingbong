@@ -162,6 +162,10 @@ body {
 }
 
 .toolbar-actions {
+  /* Pinned to the right column: on the settings page the address cluster
+     is absent, and an unpinned grid would pull the controls to the centre
+     (#331). */
+  grid-column: 3;
   justify-self: end;
   display: flex;
   gap: 8px;
@@ -172,11 +176,17 @@ body {
    (.status-orb--*, .status-pill, .voice-hint, .run-hint) are e2e
    observation points and must survive any restyle. */
 .status-capsule {
+  /* Bounded by its column (#331): the capsule never grows into the back
+     control — a long hint or partial transcript ellipsizes instead. */
+  grid-column: 1;
   justify-self: start;
   display: flex;
   align-items: center;
   gap: 10px;
   min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
   padding: 7px 16px;
   border: 1px solid var(--edge);
   border-radius: 999px;
@@ -187,6 +197,7 @@ body {
 /* Voice hints are quiet detail inside the capsule: muted, still — the
    capsule and orb carry the state color, the hint carries instruction. */
 .voice-hint {
+  min-width: 0;
   font-size: 0.9rem;
   color: var(--muted);
   white-space: nowrap;
@@ -194,13 +205,12 @@ body {
   text-overflow: ellipsis;
 }
 
-.voice-hint--transcribing {
-  color: var(--muted);
-}
-
 /* The header's live run line (#43): stage + climbing elapsed. The climbing
    number is the honest "still alive" signal — no pulse needed. */
 .run-hint {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-size: 0.9rem;
   color: var(--accent);
   font-variant-numeric: tabular-nums;
@@ -937,6 +947,7 @@ body {
    address field, centered. The .chrome-button/.url-input/.chrome-loading
    hooks predate the restyle and stay as e2e observation points. */
 .browser-nav {
+  grid-column: 2;
   justify-self: center;
   display: flex;
   align-items: center;
