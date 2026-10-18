@@ -120,7 +120,8 @@ _Avoid_: argument, parameter, entity, free text
 The site an `open` spoken on a page is looked for on, when the Decision Model
 reads its words as pointing on that site but not on that page ("go to donald
 trumps profile" on x.com). The site is the page's host without `www.`
-(`x.com`, `en.wikipedia.org`), on a real page that is no Web Engine's; a
+(`x.com`, `en.wikipedia.org`), on a real page that is no Web Engine's web
+search (its front page or results; its maps or finance pages are a site); a
 site's own search page is still the site. A scoped `open` is a DuckDuckGo
 search with `site:<host>` ahead of the Slot's words, never the site's own
 search box, and its Answer names the site ("Searched x.com for …"). Asked at

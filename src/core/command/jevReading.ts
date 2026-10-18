@@ -217,7 +217,8 @@ function whereQuestion(site: string): DecisionChoiceQuestion {
 /**
  * The questions: the verb, the target, the Slot; at a hop past the first,
  * the targets are what the hop offers. At hop 0 on a site (#340) — a real
- * page no Web Engine's — `where` is asked beside them in the same call.
+ * page that is no Web Engine's web search — `where` is asked beside them in
+ * the same call; an Early Fire partial is a hop-0 reading and asks it too.
  */
 export function commandQuestions(text: string, pageRead: CommandPage, hop?: HopContext): CommandQuestions {
   const three = threeQuestions(text, pageRead, hop)

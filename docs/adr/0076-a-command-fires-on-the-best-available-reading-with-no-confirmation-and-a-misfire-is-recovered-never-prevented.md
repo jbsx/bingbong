@@ -726,8 +726,10 @@ behind, and nothing read it.
   a section of it), `web` (another website, or the whole web) — is asked
   beside the verb, the target and the Slot at hop 0 only, and only when the
   Utterance was spoken on a site: a real `http(s)` page whose host has a dot
-  and is no Web Engine's (`src/core/command/siteScope.ts`, which keeps the
-  glossary's engine list since the orchestrator's copy left the branch). It
+  and that is no Web Engine's web search — its front page or results, on its
+  own host; its maps, finance or docs pages are a site (`src/core/command/siteScope.ts`,
+  which keeps the glossary's engine list since the orchestrator's copy left
+  the branch). It
   is never asked at a later hop, which never searches (#332). An Early Fire
   partial is a hop-0 reading and asks it too. The question set is a union —
   three, or three and `where` — never an optional key, so it stays the port's

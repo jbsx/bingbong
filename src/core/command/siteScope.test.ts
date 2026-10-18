@@ -44,6 +44,13 @@ describe('siteOf', () => {
       expect(siteOf(url), url).toBeNull()
   })
 
+  it('reads an engine’s pages that are no web search — its maps, finance, docs — as a site', () => {
+    expect(siteOf('https://finance.yahoo.com/quote/AAPL')).toBe('finance.yahoo.com')
+    expect(siteOf('https://maps.google.com/')).toBe('maps.google.com')
+    expect(siteOf('https://docs.google.com/document/d/1')).toBe('docs.google.com')
+    expect(siteOf('https://www.google.com/maps/place/Berlin')).toBe('google.com')
+  })
+
   it('reads Brave Search on search.brave.com only, and a name like an engine’s as a site', () => {
     expect(siteOf('https://brave.com/download/')).toBe('brave.com')
     expect(siteOf('https://googleblog.example.com/')).toBe('googleblog.example.com')
