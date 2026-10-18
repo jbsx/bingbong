@@ -1529,8 +1529,8 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
       browser.snapshot = { ...browser.snapshot, title: 'YouTube', refs: [ref(1, 'input', 'Search', { inputType: 'search' }), ref(2, 'link', 'Linus Tech Tips')] }
       return line
     }
-    // "open youtube and search for line stack tips": Jev reads hop 0 as open youtube, hop 1 as a type.
-    decision.script.push(answer('open', 'none', 's1-1'), answer('type', 'ref-1', 's5-7'), answer('done'))
+    // "open youtube and search for line stack tips": the Local Match opens youtube (#341), Jev reads hop 1 as a type.
+    decision.script.push(answer('type', 'ref-1', 's5-7'), answer('done'))
     await runner.run('open youtube and search for line stack tips', { source: 'spoken' })
     expect(browser.navigations).toEqual(['https://youtube.com'])
     expect(browser.typed).toEqual([{ ref: 1, text: 'linus tech tips' }])
@@ -1620,6 +1620,90 @@ describe('the Site Scope at hop 0 (#340)', () => {
     await runner.run(TEXT, { source: 'spoken' })
     expect(browser.navigations).toHaveLength(1)
     expect(browser.navigations[0]).not.toContain('site%3A')
+  })
+})
+
+describe('the Site Scope at a later hop (#341): one Utterance chains a site and a thing on it', () => {
+  const TEXT = 'go to twitter and open donald trumps profile'
+  const TWITTER = 'https://twitter.com'
+  const SCOPED = 'https://duckduckgo.com/?q=site%3Atwitter.com%20donald%20trumps%20profile'
+  const PROFILE = 'https://twitter.com/realDonaldTrump'
+  const TWITTER_REFS: SnapshotRef[] = [ref(1, 'link', 'Sign in', { href: 'https://twitter.com/login' }), ref(2, 'link', 'Elon Musk', { href: 'https://twitter.com/elonmusk' })]
+  const RESULT_REFS: SnapshotRef[] = [ref(1, 'input', 'Search', { inputType: 'search' })]
+  const RESULT_LINKS = [{ label: 'Donald J. Trump (@realDonaldTrump) / X', href: PROFILE }]
+
+  const read = (verb: string, target = 'none', slot = 'none', where?: string): { answers: Record<string, DecisionAnswer> } => ({
+    answers: { verb: choice(verb), target: choice(target), slot: choice(slot), ...(where !== undefined ? { where: choice(where) } : {}) },
+  })
+  const decisions = (records: CommandLogRecord[]) => records.flatMap((record) => (record.type === 'decision' ? [record] : []))
+  const asked = (request: DecisionRequest<DecisionQuestions>): string[] => Object.keys(request.questions)
+
+  /** A browser on a blank page: twitter.com is a site, a results page carries its result below the fold. */
+  function chainHarness() {
+    const h = harness()
+    h.browser.snapshot = { ...h.browser.snapshot, url: 'about:blank', title: '', refs: [] }
+    const navigate = h.browser.navigate.bind(h.browser)
+    h.browser.navigate = async (url) => {
+      const line = await navigate(url)
+      h.browser.snapshot = { ...h.browser.snapshot, refs: url.startsWith('https://duckduckgo.com/') ? RESULT_REFS : url === TWITTER ? TWITTER_REFS : [] }
+      return line
+    }
+    h.browser.pageLinks = async () => (h.browser.snapshot.url.startsWith('https://duckduckgo.com/?') ? RESULT_LINKS : [])
+    return h
+  }
+
+  it('AC1: opens the address, asks where on its landing, searches the site, opens the result and ends done', async () => {
+    const { browser, records, decision, perf, runner } = chainHarness()
+    decision.script.push(read('open', 'none', 's5-7', 'site'), read('click', 'link-1'), read('done'))
+    await runner.run(TEXT, { source: 'spoken' })
+
+    expect(browser.navigations).toEqual([TWITTER, SCOPED, PROFILE])
+    // Hop 0 is the Local Match's; hop 1 on the site is asked where; hop 2 on the results is not; hop 3 on the searched site is not.
+    expect(decision.requests).toHaveLength(3)
+    expect(decision.requests[0]!.state).toContain(`"${TEXT}"`)
+    expect(asked(decision.requests[0]!)).toEqual(['verb', 'target', 'slot', 'where'])
+    expect(asked(decision.requests[1]!)).toEqual(['verb', 'target', 'slot'])
+    expect(asked(decision.requests[2]!)).toEqual(['verb', 'target', 'slot'])
+    expect(decisions(records).map((record) => [record.reading, record.verb, record.ended])).toEqual([
+      ['local_match', 'open', undefined],
+      ['jev', 'open', undefined],
+      ['jev', 'open', undefined],
+      ['jev', 'done', 'done'],
+    ])
+    expect(decisions(records)[1]).toMatchObject({ slot: 'donald trumps profile', task: { hop: 1 } })
+    // The search counts as an action.
+    expect(perf.records.filter((record) => record.stage === 'task')).toEqual([expect.objectContaining({ detail: expect.objectContaining({ ended: 'done', hops: 4, actions: 3 }) })])
+  })
+
+  it('AC2: an address alone ends the Task local_match after hop 0 with no continuation call', async () => {
+    const { decision, records, runner } = chainHarness()
+    for (const line of ['go to twitter', 'open youtube']) await runner.run(line, { source: 'spoken' })
+    expect(decision.requests).toEqual([])
+    expect(decisions(records).map((record) => record.ended)).toEqual(['local_match', 'local_match'])
+  })
+
+  it('AC3: on a site the Task has already searched, where is not asked and open opens the most probable offered target', async () => {
+    const { browser, decision, runner } = chainHarness()
+    decision.script.push(
+      read('open', 'none', 's5-7', 'site'),
+      read('click', 'link-1'),
+      // On the profile, an open of the same words: no where, no search — #332's dead end with nothing offered.
+      read('open', 'none', 's5-7'),
+    )
+    await runner.run(TEXT, { source: 'spoken' })
+    expect(asked(decision.requests[2]!)).toEqual(['verb', 'target', 'slot'])
+    expect(browser.navigations).toEqual([TWITTER, SCOPED, PROFILE])
+  })
+
+  it('AC4: the Task records the sites it searched, and the cap counts the search as an action', async () => {
+    const { browser, records, decision, runner } = chainHarness()
+    decision.script.push(read('open', 'none', 's5-7', 'site'))
+    for (let hop = 2; hop < 6; hop += 1) decision.script.push(read('scroll_down'))
+    await runner.run(TEXT, { source: 'spoken' })
+    // Hop 0's open, hop 1's search and three scrolls: the fifth action ends it.
+    expect(browser.navigations).toEqual([TWITTER, SCOPED])
+    expect(browser.scrolls).toHaveLength(3)
+    expect(decisions(records).at(-1)).toMatchObject({ ended: 'cap' })
   })
 })
 

@@ -492,6 +492,10 @@ The readings it took:
   the most probability, `none` set aside: a ref is clicked, a `link-N`
   opened at its address. With no offered target in the answer, the hop
   is `none` (`no next step`). An address-shaped Slot still navigates.
+  One exception since #341: on a site the Task has not searched, a hop
+  asks `where`, and `open` + `where` = `site` searches that site once
+  (the 2026-10-18 #341 amendment below); `page`, `web` and a site
+  already searched keep this rule.
   There is no probability floor: a wrong pick costs a `back`. Seen
   2026-10-18: "Open elon musk's latest tweet" read `open` + the words +
   target `none` on all five hops and ran the same DuckDuckGo search five
@@ -730,7 +734,8 @@ behind, and nothing read it.
   own host; its maps, finance or docs pages are a site (`src/core/command/siteScope.ts`,
   which keeps the glossary's engine list since the orchestrator's copy left
   the branch). It
-  is never asked at a later hop, which never searches (#332). An Early Fire
+  was not asked at a later hop, which never searched (#332), until #341
+  (below): a later hop asks it on a site the Task has not searched. An Early Fire
   partial is a hop-0 reading and asks it too. The question set is a union —
   three, or three and `where` — never an optional key, so it stays the port's
   `DecisionQuestions` record.
@@ -754,3 +759,39 @@ behind, and nothing read it.
   asked; the ask sidecar carries the fourth question as it does the others.
 - **Not in scope**: a later hop searching the site (#341); the site's own
   search form; scoping a `type` Slot.
+
+## Amendment 2026-10-18 — a site and a thing on it in one Utterance (#341)
+
+"Go to twitter and open donald trumps profile" could not be one Utterance.
+The words past "go to" are not an address whole, so hop 0 went to Jev; and
+even once twitter.com had landed, a later hop's `open` never searched
+(#332), so the profile could only be found among the landing's own refs.
+
+- **A later hop may search once, on a new site.** At hop 1 and after,
+  `where` is asked when the hop's page is a site (as #340 has it) that the
+  Task has not searched. An `open` + search-term Slot + no ref + `where` =
+  `site` is a Site Scope search of that site, performed as hop 0's is. On a
+  Web Engine's page, on a site the Task has searched, and for `where` =
+  `page` or `web`, #332 stands: the most probable offered target is opened
+  and the words are never searched again. The Task records the sites it
+  has searched (`searched`, carried to each hop's reading), hop 0's scoped
+  search among them, so a second search of the same site in one Task is
+  never offered; a different site it lands on may still be searched once.
+- **An address with words past it goes on.** The Local Match reads an
+  `open` whose words start with an address followed by a joiner ("and",
+  "then", "and then") and another of its own verb phrases as the address
+  alone: "go to twitter and open donald trumps profile" opens twitter.com,
+  "open youtube and search for lofi" youtube.com. Such a Local-Matched
+  `open` goes on to hop 1 instead of ending `local_match`; the address
+  alone ("go to twitter") still ends the Task. The hop reads the whole
+  transcript on the landing, as every hop does. The second clause is not
+  parsed: the joiner and verb phrase only mark where the address ends.
+  The guard exists because a bare word is address-shaped — "open the
+  menu" and "open settings menu" would otherwise open the.com and
+  settings.com — and anything it lets through goes to Jev as before, whose
+  hop 0 goes on anyway; it costs speed, never the Task. An Early Fire never
+  fires an `open` on the Local Match, so only the Endpoint reads this.
+- **The guards stay**: the five-action cap counts the search as an action;
+  the set-aside rule and the two-unchanged-hops rule apply unchanged.
+- **Not in scope**: two unrelated Commands in one Utterance ("scroll down
+  and read"); a route table; remembering earlier Utterances.

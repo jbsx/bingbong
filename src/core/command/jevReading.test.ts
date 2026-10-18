@@ -232,9 +232,8 @@ describe('the Site Scope (#340): where the words point, asked at hop 0 on a site
     expect('where' in questions && questions.where.options.site).toContain('x.com')
   })
 
-  it('asks no where on a blank page, on a Web Engine’s results or front page, or at a hop past the first', () => {
+  it('asks no where on a blank page, or on a Web Engine’s results or front page', () => {
     for (const url of ['about:blank', 'https://duckduckgo.com/?q=trump', 'https://www.google.com/']) expect(Object.keys(commandQuestions(TEXT, { ...X, url }))).toEqual(['verb', 'target', 'slot'])
-    expect(Object.keys(commandQuestions(TEXT, X, { hop: 1, visited: [X.url], actions: [], links: [] }))).toEqual(['verb', 'target', 'slot'])
   })
 
   it('reads open, search terms, no ref and where = site as a search scoped to the site, the Slot kept as the words', () => {
@@ -248,5 +247,51 @@ describe('the Site Scope (#340): where the words point, asked at hop 0 on a site
   it('keeps a ref chosen a click, and an address-shaped Slot an address, whatever where says', () => {
     expect(readCommandAnswers(read('site', 'ref-2'), 'go to elon musk', X)).toEqual({ verb: 'click', target: 2, slot: null })
     expect(readCommandAnswers({ ...read('site'), slot: choice('s2-2') }, 'go to youtube', X)).toEqual({ verb: 'open', target: null, slot: 'youtube' })
+  })
+})
+
+describe('the Site Scope at a later hop (#341): a hop may search once, on a site the Task has not searched', () => {
+  const X: CommandPage = {
+    url: 'https://x.com/',
+    title: 'X. It’s what’s happening / X',
+    refs: [
+      { ref: 1, kind: 'link', label: 'Sign in', href: 'https://x.com/login', inputType: null },
+      { ref: 2, kind: 'link', label: 'Elon Musk', href: 'https://x.com/elonmusk', inputType: null },
+    ],
+  }
+  const RESULTS: CommandPage = {
+    url: 'https://duckduckgo.com/?q=site%3Ax.com+donald+trumps+profile',
+    title: 'site:x.com donald trumps profile at DuckDuckGo',
+    refs: [{ ref: 3, kind: 'link', label: 'Donald J. Trump (@realDonaldTrump) / X', href: 'https://x.com/realDonaldTrump', inputType: null }],
+  }
+  const TEXT = 'go to twitter and open donald trumps profile'
+  const hop = { hop: 1, visited: ['https://x.com/'], actions: ['open twitter (opened x.com)'], links: [] }
+  const read = (where: string, target: DecisionChoiceAnswer = choice('none')) => ({ verb: choice('open'), target, slot: choice('s5-7'), where: choice(where) })
+  const target = (probabilities: Record<string, number>): DecisionChoiceAnswer => ({ type: 'choice', choice: 'none', confidence: probabilities.none ?? 0, probabilities })
+
+  it('asks where at a later hop on a site the Task has not searched', () => {
+    const questions = commandQuestions(TEXT, X, hop)
+    expect(Object.keys(questions)).toEqual(['verb', 'target', 'slot', 'where'])
+    expect('where' in questions && questions.where.options.site).toContain('x.com')
+  })
+
+  it('asks no where on a results landing, or on a site the Task has already searched', () => {
+    expect(Object.keys(commandQuestions(TEXT, RESULTS, { ...hop, hop: 2 }))).toEqual(['verb', 'target', 'slot'])
+    expect(Object.keys(commandQuestions(TEXT, { ...X, url: 'https://x.com/realDonaldTrump' }, { ...hop, hop: 3, searched: ['x.com'] }))).toEqual(['verb', 'target', 'slot'])
+  })
+
+  it('reads open, search terms, no ref and where = site at a later hop as a search scoped to the site', () => {
+    expect(readCommandAnswers(read('site'), TEXT, X, hop)).toEqual({ verb: 'open', target: null, slot: 'donald trumps profile', search: true, site: 'x.com' })
+  })
+
+  it('reads where = page or web at a later hop as #332 has it: the most probable offered target, never a search', () => {
+    for (const where of ['page', 'web']) {
+      expect(readCommandAnswers(read(where, target({ none: 0.7, 'ref-2': 0.2 })), TEXT, X, hop)).toEqual({ verb: 'click', target: 2, slot: null })
+      expect(readCommandAnswers(read(where), TEXT, X, hop)).toEqual({ verb: 'none', target: null, slot: null })
+    }
+  })
+
+  it('never searches a site twice in one Task, whatever where says', () => {
+    expect(readCommandAnswers(read('site', target({ none: 0.7, 'ref-2': 0.2 })), TEXT, X, { ...hop, searched: ['x.com'] })).toEqual({ verb: 'click', target: 2, slot: null })
   })
 })

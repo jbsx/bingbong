@@ -70,7 +70,9 @@ Decision Model reads the page as what was asked for. The first Command is
 read as any Command is; a Task goes on after a Command the Decision Model
 read and ends after one the Local Match settled, since the grammar and exact
 labels are whole by construction and plain English is where "and then"
-lives. Capped at five actions; ended by the next Utterance, Escape or the
+lives — save a Local-Matched `open` of an address with words past it ("go
+to twitter and open donald trumps profile"), which goes on to read the rest
+on the landing. It may search a site once per site. Capped at five actions; ended by the next Utterance, Escape or the
 Abort Head like any Command; never confirmed.
 _Avoid_: plan, goal, intent, errand, run, session
 
@@ -83,7 +85,9 @@ Hops are numbered from the first Command, hop 0; a reading that ends the
 Task without firing (`done`, a dead end) is a hop of its own on the record.
 The state a Hop is read on tells what each earlier action did ("nothing
 changed", "opened x.com/elonmusk"). A Hop that changed nothing sets its
-target aside, and two such Hops in a row end the Task.
+target aside, and two such Hops in a row end the Task. A Hop never searches
+the words again, except that on a site the Task has not searched it may
+search that site once (a **Site Scope**).
 _Avoid_: step, round, turn, continuation
 
 **Set Aside**:
@@ -124,8 +128,9 @@ trumps profile" on x.com). The site is the page's host without `www.`
 search (its front page or results; its maps or finance pages are a site); a
 site's own search page is still the site. A scoped `open` is a DuckDuckGo
 search with `site:<host>` ahead of the Slot's words, never the site's own
-search box, and its Answer names the site ("Searched x.com for …"). Asked at
-hop 0 only, in the same call as the other Choices; a Local-Matched `open`
+search box, and its Answer names the site ("Searched x.com for …"). Asked in
+the same call as the other Choices, at hop 0 and at any later Hop on a site
+the Task has not yet searched; a Local-Matched `open`
 and the best guess are never scoped. A wrong one is a Misfire.
 _Avoid_: site search (a Search URL on a site), domain filter
 

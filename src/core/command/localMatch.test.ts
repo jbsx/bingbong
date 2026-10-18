@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { CommandRef } from './command'
-import { bestGuess, localMatch } from './localMatch'
+import { bestGuess, carriesWordsPastAddress, localMatch } from './localMatch'
 
 // The Local Match (CONTEXT.md, ADR 0076): a Command settled from the
 // Utterance and the page alone — the CLI grammar, or a plain verb and a
@@ -131,6 +131,26 @@ describe('the Local Match: plain verbs', () => {
     expect(localMatch('open youtube dot com', REFS)).toEqual({ verb: 'open', target: null, slot: 'youtube dot com' })
     expect(localMatch('go to https://example.org/a?b=1', REFS)).toEqual({ verb: 'open', target: null, slot: 'https://example.org/a?b=1' })
     expect(localMatch('open localhost:3000', REFS)).toEqual({ verb: 'open', target: null, slot: 'localhost:3000' })
+  })
+
+  it('settles an open of an address with words past it (#341): the address alone, the words left for the Task', () => {
+    expect(localMatch('go to twitter and open donald trumps profile', REFS)).toEqual({ verb: 'open', target: null, slot: 'twitter' })
+    expect(localMatch('open youtube and search for lofi', REFS)).toEqual({ verb: 'open', target: null, slot: 'youtube' })
+    expect(localMatch('go to youtube dot com then search for lofi', REFS)).toEqual({ verb: 'open', target: null, slot: 'youtube dot com' })
+    expect(carriesWordsPastAddress('go to twitter and open donald trumps profile')).toBe(true)
+    expect(carriesWordsPastAddress('open youtube and search for lofi')).toBe(true)
+    // The address alone carries nothing past it.
+    expect(carriesWordsPastAddress('go to twitter')).toBe(false)
+    expect(carriesWordsPastAddress('open youtube dot com')).toBe(false)
+  })
+
+  it('reads words past a bare word as an address only when another verb phrase follows it', () => {
+    // "the" is address-shaped, "settings" too: neither starts a Task on its own words.
+    expect(localMatch('open the menu', REFS)).toBeNull()
+    expect(localMatch('open settings menu', REFS)).toBeNull()
+    expect(localMatch('open the read me', REFS)).toBeNull()
+    expect(carriesWordsPastAddress('open settings menu')).toBe(false)
+    expect(carriesWordsPastAddress('scroll down and read')).toBe(false)
   })
 
   it('makes no Local Match when the label names no ref, or more than one', () => {

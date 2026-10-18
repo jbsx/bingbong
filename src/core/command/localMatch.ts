@@ -94,6 +94,9 @@ const VERB_PHRASES: readonly (readonly [string, VerbKind])[] = [
 /** Whole-Utterance words that are a verb with nothing after it: "down" scrolls, "enter" presses. */
 const BARE_WORDS: Readonly<Record<string, VerbKind>> = { down: 'scroll_down', up: 'scroll_up', enter: 'press', escape: 'press', esc: 'press', return: 'press' }
 
+/** The words that join an address to the verb phrase after it: "go to twitter and open …". */
+const JOINERS: readonly string[] = ['and then', 'and', 'then']
+
 /** The words between the text to type and the field it goes in. */
 const TYPE_SEPARATORS: readonly string[] = ['into the', 'into', 'in the', 'in', 'on the', 'on', 'to the', 'to']
 
@@ -326,6 +329,35 @@ function fromGrammar(parsed: CliCommand): Command | null {
   }
 }
 
+/**
+ * The address an `open`'s words start with when words past it go on (#341):
+ * the longest leading span that is address-shaped and is followed by a
+ * joiner and another verb phrase — "twitter" in "twitter and open donald
+ * trumps profile". Null when the words are an address whole, or no such
+ * span starts them: "the menu" names no address with more to do.
+ */
+function addressBeforeMore(rest: readonly Token[]): string | null {
+  if (isAddressShaped(spokenOf(rest))) return null
+  for (let end = rest.length - 1; end >= 1; end -= 1) {
+    const address = spokenOf(rest.slice(0, end))
+    if (!isAddressShaped(address)) continue
+    const after = rest.slice(end)
+    const joiner = JOINERS.find((words) => cleanOf(after).startsWith(`${words} `))
+    if (joiner !== undefined && verbOf(after.slice(joiner.split(' ').length)) !== null) return address
+  }
+  return null
+}
+
+/**
+ * Whether an Utterance opens an address and carries words past it (#341):
+ * "go to twitter and open donald trumps profile" — a Local-Matched `open`
+ * of it goes on to hop 1 rather than ending the Task.
+ */
+export function carriesWordsPastAddress(text: string): boolean {
+  const found = verbOf(tokenize(text))
+  return found?.kind === 'open' && addressBeforeMore(found.rest) !== null
+}
+
 /** The Command a spoken verb and its words settle, exactly (`lenient` false) or by the best reading (`lenient` true). */
 function readSpoken(text: string, refs: readonly CommandRef[], url: string, lenient: boolean): Command | null {
   const tokens = tokenize(text)
@@ -372,6 +404,9 @@ function readSpoken(text: string, refs: readonly CommandRef[], url: string, leni
       if (target !== null) return command('click', { target })
       const nth = ordinal()
       if (nth !== null && nth !== 'unsettled') return command('click', { target: nth.target })
+      // An address with words past it (#341) opens the address; the Task reads the rest on its landing.
+      const address = nth === 'unsettled' ? null : addressBeforeMore(rest)
+      if (address !== null) return command('open', { slot: address })
       if (!lenient && (nth === 'unsettled' || !isAddressShaped(spokenOf(rest)))) return null
       return command('open', { slot: spokenOf(rest) })
     }

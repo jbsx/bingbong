@@ -8,7 +8,7 @@ import type { PerfTracer } from '../../core/perf/perfTracer'
 import { commandPageOf, describeCommand, targetLabel, type Command, type CommandPage } from '../../core/command/command'
 import { dismissCommand, isDismissPhrase } from '../../core/command/dismissDialog'
 import { COMMAND_HELP } from '../../core/command/help'
-import { bestGuess, headsAnotherVerb, localMatch } from '../../core/command/localMatch'
+import { bestGuess, carriesWordsPastAddress, headsAnotherVerb, localMatch } from '../../core/command/localMatch'
 import { commandQuestions, commandState, doneLine, partialQuestions, readCommandAnswers, setAsideOf, type DoneResult, type HopContext, type SetAside } from '../../core/command/jevReading'
 import { blockedOrInertAction } from '../../core/browser/actionOutcome'
 import { isAddressShaped, openAddress } from '../../core/command/openAddress'
@@ -187,10 +187,11 @@ const CONTINUING: ReadonlySet<Command['verb']> = new Set(['open', 'click', 'type
 /**
  * How a Task ends on this hop's reading alone (#328), before anything
  * fires; null when it goes on after the action — a Jev-read continuing
- * verb, whose own landing decides.
+ * verb, whose own landing decides, or a Local-Matched open of an address
+ * whose Utterance carries words past it (`wordsPast`, #341).
  */
-function endedByReading(reading: CommandReading, verb: Command['verb'], hop: number): TaskEnded | null {
-  if (reading === 'local_match') return 'local_match'
+function endedByReading(reading: CommandReading, verb: Command['verb'], hop: number, wordsPast = false): TaskEnded | null {
+  if (reading === 'local_match') return wordsPast ? null : 'local_match'
   if (reading === 'best_guess') return 'unavailable'
   if (verb === 'done') return 'done'
   if (verb === 'none') return hop === 0 ? 'terminal' : 'none'
@@ -877,6 +878,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     readonly setAside: SetAside[]
     /** How many hops in a row have changed nothing (#336). */
     unchanged: number
+    /** The sites it has searched (#341): one Site Scope search per site per Task. */
+    readonly searched: string[]
   }
 
   function visit(task: Task, url: string): void {
@@ -915,6 +918,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       return ending
     }
     task.actions.push(doneLine(command, page, doneResult(page, fired)))
+    if (command.site !== undefined) task.searched.push(command.site)
     if (fired.unchanged === true) {
       // A hop that changed nothing (#336): its target is not offered again, and a second in a row ends the Task.
       task.unchanged += 1
@@ -976,7 +980,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       const page = superseded(task) ? blankPage(browser) : await collectPage(null)
       visit(task, page.url)
       const links = !superseded(task) && parseSearchUrl(page.url) !== null ? await resultPageLinks(turnId) : []
-      const context: HopContext = { hop, visited: [...task.visited], actions: [...task.actions], links, setAside: [...task.setAside] }
+      const context: HopContext = { hop, visited: [...task.visited], actions: [...task.actions], links, setAside: [...task.setAside], searched: [...task.searched] }
       const model = deps.decisionModel()
       const result = superseded(task) || model === null ? null : await askJev(model, 'hop', turnId, commandState(task.text, page, context), commandQuestions(task.text, page, context))
       if (reading?.turnId === turnId) reading = null
@@ -1270,7 +1274,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         const record = closeEarly(fired, { transcript: trimmed, at: endpointAt, truncated }, lands ? 'deferred' : ending)
         nextUtterance()
         if (options?.turnId !== undefined) summarize(options.turnId)
-        const task: Task = { id: fired.turnId, submission: fired.submission, text: trimmed, source, endpointAt, visited: [], actions: [], setAside: [], unchanged: 0 }
+        const task: Task = { id: fired.turnId, submission: fired.submission, text: trimmed, source, endpointAt, visited: [], actions: [], setAside: [], unchanged: 0, searched: [] }
         visit(task, fired.page.url)
         const ended = lands ? settleHop(task, record, ending, fired.command, fired.page, await fired.outcome) : ending
         if (ended !== null) endTask(task, ended, 1)
@@ -1303,7 +1307,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       if (source === 'spoken') observeTerms(trimmed)
 
       // This Utterance is a Task (#328); hop 0 is the Command read above.
-      const task: Task = { id: turnId, submission, text: trimmed, source, endpointAt, visited: [], actions: [], setAside: [], unchanged: 0 }
+      const task: Task = { id: turnId, submission, text: trimmed, source, endpointAt, visited: [], actions: [], setAside: [], unchanged: 0, searched: [] }
       const hop0: TaskHop = { id: turnId, hop: 0 }
       visit(task, heard.page.url || (browser.state().url ?? ''))
       const { command, matched } = matchName(heard.command, heard.page, source === 'spoken')
@@ -1320,7 +1324,9 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       }
 
       // A reading that ends the Task before it fires is recorded so now; a hop that goes on, once its action has landed.
-      const ending = endedByReading(heard.reading, command.verb, 0)
+      // An address with words past it goes on to hop 1 (#341); an Early Fire never fires an open on the Local Match, so only this path sees one.
+      const wordsPast = command.verb === 'open' && command.search !== true && carriesWordsPastAddress(trimmed)
+      const ending = endedByReading(heard.reading, command.verb, 0, wordsPast)
       recordBeforeFiring(record, ending, command)
       if (command.verb === 'none' || command.verb === 'done') {
         // An Utterance read as no Command, or as the page already being what was asked: one greyed entry of the words, nothing else.

@@ -95,6 +95,19 @@ export interface HopContext {
   readonly links: readonly PageLink[]
   /** The targets a hop that changed nothing set aside (#336): never offered again in this Task. */
   readonly setAside?: readonly SetAside[]
+  /** The sites the Task has searched (#341): a hop on one is never offered its Site Scope again. */
+  readonly searched?: readonly string[]
+}
+
+/**
+ * The site a reading may scope a search to (#340, #341): the page's, on a
+ * real page that is no Web Engine's web search, and at a hop past the
+ * first only while the Task has not searched it — one search per site per
+ * Task. Null when there is none.
+ */
+function scopableSite(url: string, hop: HopContext | undefined): string | null {
+  const site = siteOf(url)
+  return site !== null && hop?.searched?.includes(site) === true ? null : site
 }
 
 /**
@@ -216,13 +229,14 @@ function whereQuestion(site: string): DecisionChoiceQuestion {
 
 /**
  * The questions: the verb, the target, the Slot; at a hop past the first,
- * the targets are what the hop offers. At hop 0 on a site (#340) — a real
- * page that is no Web Engine's web search — `where` is asked beside them in
- * the same call; an Early Fire partial is a hop-0 reading and asks it too.
+ * the targets are what the hop offers. On a site (#340) — a real page that
+ * is no Web Engine's web search — `where` is asked beside them in the same
+ * call; an Early Fire partial is a hop-0 reading and asks it too; a later
+ * hop asks it on a site the Task has not searched (#341).
  */
 export function commandQuestions(text: string, pageRead: CommandPage, hop?: HopContext): CommandQuestions {
   const three = threeQuestions(text, pageRead, hop)
-  const site = hop === undefined ? siteOf(pageRead.url) : null
+  const site = scopableSite(pageRead.url, hop)
   return site === null ? three : { ...three, where: whereQuestion(site) }
 }
 
@@ -357,14 +371,15 @@ export function readCommandAnswers(answers: CommandAnswers, text: string, pageRe
     // address-shaped Slot is navigated whatever the target says.
     const chosen = offeredRef(answers.target.choice, page)
     if (chosen !== null) return { verb: 'click', target: chosen, slot: null }
+    // Words that point on this site but not on this page (#340) are looked
+    // for on the site: a search scoped to it, the Slot kept as the words —
+    // at a later hop too, on a site the Task has not searched (#341).
+    const site = 'where' in answers && answers.where.choice === 'site' ? scopableSite(page.url, hop) : null
+    if (site !== null) return { verb, target: null, slot, search: true, site }
     // Past the first hop the words were already acted on (#332): `open`
     // opens the most probable target the hop offers, never searches again;
     // with none to open the hop has no next step.
     if (hop !== undefined) return mostProbableOpening(answers.target, page, links) ?? none
-    // Words that point on this site but not on this page (#340) are looked
-    // for on the site: a search scoped to it, the Slot kept as the words.
-    const site = 'where' in answers && answers.where.choice === 'site' ? siteOf(page.url) : null
-    if (site !== null) return { verb, target: null, slot, search: true, site }
   }
   if (verb === 'press') {
     const key = slot === null ? null : pressKeyOf(slot)
