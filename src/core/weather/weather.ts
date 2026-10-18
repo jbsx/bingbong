@@ -8,11 +8,20 @@ import type { WeatherUnits } from '../settings/settings'
 
 export type FetchJson = (url: string) => Promise<unknown>
 
+/**
+ * The sky, as the idle screen draws it (one icon each): the WMO code
+ * families, so the icon and the words always agree.
+ */
+export type WeatherSky = 'clear' | 'partly-cloudy' | 'cloudy' | 'fog' | 'drizzle' | 'rain' | 'freezing' | 'snow' | 'showers' | 'thunder' | 'unknown'
+
 /** One of the coming hours: its local wall-clock time (`YYYY-MM-DDTHH:MM`), temperature and sky. */
 export interface WeatherHour {
   time: string
   temperature: number
   description: string
+  sky: WeatherSky
+  /** Whether the sun is up that hour; a clear night draws a moon. Null when the API gave none. */
+  isDay: boolean | null
   /** Chance of precipitation that hour, 0–100; null when the API gave none. */
   precipitationChance: number | null
 }
@@ -35,6 +44,10 @@ export interface WeatherReport {
   temperature: number
   units: WeatherUnits
   description: string
+  /** The sky the description names, for the icon; absent for a report built before icons. */
+  sky?: WeatherSky
+  /** Whether the sun is up now; null when the API gave none. */
+  isDay?: boolean | null
   /** Today's high, low, rain chance and sun times; null when the response carried no daily block. */
   today?: WeatherDay | null
   /** The next {@link UPCOMING_HOURS} hours after the current one; empty when the response carried no hourly block. */
@@ -84,6 +97,58 @@ export function weatherDescription(code: number): string {
   return WMO_DESCRIPTIONS[code] ?? 'unknown conditions'
 }
 
+/** The sky a WMO code belongs to — the icon's family. */
+export function skyOf(code: number): WeatherSky {
+  if (code === 0) return 'clear'
+  if (code === 1 || code === 2) return 'partly-cloudy'
+  if (code === 3) return 'cloudy'
+  if (code === 45 || code === 48) return 'fog'
+  if (code >= 51 && code <= 55) return 'drizzle'
+  if (code === 56 || code === 57 || code === 66 || code === 67) return 'freezing'
+  if (code >= 61 && code <= 65) return 'rain'
+  if ((code >= 71 && code <= 77) || code === 85 || code === 86) return 'snow'
+  if (code >= 80 && code <= 82) return 'showers'
+  if (code >= 95 && code <= 99) return 'thunder'
+  return 'unknown'
+}
+
+/**
+ * The hue scale's stops, in °C: the temperature palette weather displays
+ * share — blue below freezing, cyan and teal through the single digits,
+ * green in the mid-teens, yellow at twenty, orange in the high twenties,
+ * red past thirty-five. Piecewise, so a mild day's hours still differ.
+ */
+const HUE_STOPS: readonly (readonly [number, number])[] = [
+  [-10, 230],
+  [0, 215],
+  [5, 195],
+  [10, 165],
+  [15, 120],
+  [20, 60],
+  [25, 38],
+  [30, 18],
+  [35, 0],
+]
+
+/**
+ * A temperature's hue, for reading warmth from across the room (see
+ * {@link HUE_STOPS}). Imperial readings are converted first, so the scale
+ * is the same in both units.
+ */
+export function temperatureHue(temperature: number, units: WeatherUnits): number {
+  const celsius = units === 'imperial' ? ((temperature - 32) * 5) / 9 : temperature
+  const first = HUE_STOPS[0]!
+  const last = HUE_STOPS[HUE_STOPS.length - 1]!
+  if (celsius <= first[0]) return first[1]
+  if (celsius >= last[0]) return last[1]
+  for (let index = 1; index < HUE_STOPS.length; index += 1) {
+    const [fromC, fromHue] = HUE_STOPS[index - 1]!
+    const [toC, toHue] = HUE_STOPS[index]!
+    if (celsius <= toC) return Math.round(fromHue + ((celsius - fromC) / (toC - fromC)) * (toHue - fromHue))
+  }
+  return last[1]
+}
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   return typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : null
 }
@@ -118,8 +183,8 @@ export async function fetchWeather(
   const temperatureUnit = units === 'imperial' ? 'fahrenheit' : 'celsius'
   const url =
     `${FORECAST_URL}?latitude=${place.latitude}&longitude=${place.longitude}` +
-    `&current=temperature_2m,weather_code` +
-    `&hourly=temperature_2m,weather_code,precipitation_probability` +
+    `&current=temperature_2m,weather_code,is_day` +
+    `&hourly=temperature_2m,weather_code,precipitation_probability,is_day` +
     `&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset` +
     `&forecast_days=2&timezone=auto&temperature_unit=${temperatureUnit}`
   const body = asRecord(await fetchJson(url))
@@ -132,6 +197,8 @@ export async function fetchWeather(
     temperature: current.temperature_2m,
     units,
     description: weatherDescription(current.weather_code),
+    sky: skyOf(current.weather_code),
+    isDay: dayFlag(current.is_day),
     today: todayOf(body?.daily),
     hours: upcomingHours(typeof current.time === 'string' ? current.time : '', body?.hourly),
   }
@@ -140,6 +207,11 @@ export async function fetchWeather(
 function numberAt(list: unknown, index: number): number | null {
   const value = Array.isArray(list) ? list[index] : undefined
   return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
+/** Open-Meteo's `is_day`: 1 by day, 0 by night. */
+function dayFlag(value: unknown): boolean | null {
+  return value === 1 || value === 0 ? value === 1 : null
 }
 
 function stringAt(list: unknown, index: number): string | null {
@@ -178,7 +250,14 @@ export function upcomingHours(now: string, hourly: unknown, count = UPCOMING_HOU
     const temperature = numberAt(block?.temperature_2m, index)
     const code = numberAt(block?.weather_code, index)
     if (temperature === null || code === null) continue
-    hours.push({ time, temperature, description: weatherDescription(code), precipitationChance: numberAt(block?.precipitation_probability, index) })
+    hours.push({
+      time,
+      temperature,
+      description: weatherDescription(code),
+      sky: skyOf(code),
+      isDay: dayFlag(Array.isArray(block?.is_day) ? block.is_day[index] : undefined),
+      precipitationChance: numberAt(block?.precipitation_probability, index),
+    })
   }
   return hours
 }

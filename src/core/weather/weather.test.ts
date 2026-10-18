@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import {
   fetchWeather,
   formatWeather,
+  skyOf,
+  temperatureHue,
   todayOf,
   upcomingHours,
   weatherDescription,
@@ -34,7 +36,7 @@ const berlinForecast = { current: { temperature_2m: 12.4, weather_code: 3 } }
 // A fuller forecast: the current block with its local time, the day, and an
 // hourly block spanning the day's end — what the deepened idle screen reads.
 const berlinDay = {
-  current: { time: '2026-10-18T21:20', temperature_2m: 12.4, weather_code: 3 },
+  current: { time: '2026-10-18T21:20', temperature_2m: 12.4, weather_code: 3, is_day: 0 },
   daily: {
     time: ['2026-10-18', '2026-10-19'],
     temperature_2m_max: [17.8, 15.1],
@@ -48,6 +50,7 @@ const berlinDay = {
     temperature_2m: [13.1, 12.6, 12.0, 11.4, 10.9, 10.3, 9.8, 9.5, 9.1],
     weather_code: [3, 3, 2, 2, 1, 0, 0, 45, 45],
     precipitation_probability: [10, 5, 0, 0, 0, 0, 0, 3, 3],
+    is_day: [0, 0, 0, 0, 0, 0, 0, 0, 0],
   },
 }
 
@@ -57,7 +60,7 @@ describe('fetchWeather', () => {
 
     const report = await fetchWeather(fetchJson, 'Berlin', 'metric')
 
-    expect(report).toEqual({ city: 'Berlin', temperature: 12.4, units: 'metric', description: 'overcast', today: null, hours: [] })
+    expect(report).toEqual({ city: 'Berlin', temperature: 12.4, units: 'metric', description: 'overcast', sky: 'cloudy', isDay: null, today: null, hours: [] })
     const geocodeUrl = fetchJson.urls.find((url) => url.startsWith(`${GEOCODE}?`))
     const forecastUrl = fetchJson.urls.find((url) => url.startsWith(`${FORECAST}?`))
     expect(geocodeUrl).toContain('name=Berlin')
@@ -79,7 +82,8 @@ describe('fetchWeather', () => {
     expect(report.today).toEqual({ high: 17.8, low: 8.6, precipitationChance: 35, sunrise: '2026-10-18T07:38', sunset: '2026-10-18T18:04' })
     // The hour under way (21:00) is the current reading's; the strip starts at the next one and crosses midnight.
     expect(report.hours?.map((hour) => hour.time)).toEqual(['2026-10-18T22:00', '2026-10-18T23:00', '2026-10-19T00:00', '2026-10-19T01:00', '2026-10-19T02:00', '2026-10-19T03:00'])
-    expect(report.hours?.[0]).toEqual({ time: '2026-10-18T22:00', temperature: 12.0, description: 'partly cloudy', precipitationChance: 0 })
+    expect(report.hours?.[0]).toEqual({ time: '2026-10-18T22:00', temperature: 12.0, description: 'partly cloudy', sky: 'partly-cloudy', isDay: false, precipitationChance: 0 })
+    expect(report.isDay).toBe(false)
   })
 
   it('asks the API for fahrenheit when imperial units are configured', async () => {
@@ -153,11 +157,48 @@ describe('upcomingHours', () => {
     }
     expect(upcomingHours('2026-10-18T09:30', hourly, 2).map((hour) => hour.time)).toEqual(['2026-10-18T10:00', '2026-10-18T12:00'])
     expect(upcomingHours('2026-10-18T09:30', hourly, 2)[0]?.precipitationChance).toBeNull()
+    expect(upcomingHours('2026-10-18T09:30', hourly, 2)[0]?.isDay).toBeNull()
   })
 
   it('is empty for a missing block or when every hour has passed', () => {
     expect(upcomingHours('2026-10-18T09:30', undefined)).toEqual([])
     expect(upcomingHours('2026-10-18T23:30', { time: ['2026-10-18T10:00'], temperature_2m: [10], weather_code: [0] })).toEqual([])
+  })
+})
+
+describe('skyOf', () => {
+  it('groups the WMO codes into the icon families', () => {
+    expect(skyOf(0)).toBe('clear')
+    expect(skyOf(2)).toBe('partly-cloudy')
+    expect(skyOf(3)).toBe('cloudy')
+    expect(skyOf(48)).toBe('fog')
+    expect(skyOf(53)).toBe('drizzle')
+    expect(skyOf(57)).toBe('freezing')
+    expect(skyOf(63)).toBe('rain')
+    expect(skyOf(66)).toBe('freezing')
+    expect(skyOf(75)).toBe('snow')
+    expect(skyOf(86)).toBe('snow')
+    expect(skyOf(81)).toBe('showers')
+    expect(skyOf(96)).toBe('thunder')
+    expect(skyOf(999)).toBe('unknown')
+  })
+})
+
+describe('temperatureHue', () => {
+  it('runs from blue in the cold through teal, green and yellow to red in the heat, the same in both units', () => {
+    expect(temperatureHue(-15, 'metric')).toBe(230)
+    expect(temperatureHue(-10, 'metric')).toBe(230)
+    expect(temperatureHue(0, 'metric')).toBe(215)
+    expect(temperatureHue(10, 'metric')).toBe(165)
+    expect(temperatureHue(12.5, 'metric')).toBe(143)
+    expect(temperatureHue(20, 'metric')).toBe(60)
+    expect(temperatureHue(35, 'metric')).toBe(0)
+    expect(temperatureHue(40, 'metric')).toBe(0)
+    // A mild day's hours still differ: 9°, 14° and 18° are three hues apart.
+    expect(temperatureHue(9, 'metric')).toBeGreaterThan(temperatureHue(14, 'metric') + 25)
+    expect(temperatureHue(14, 'metric')).toBeGreaterThan(temperatureHue(18, 'metric') + 25)
+    expect(temperatureHue(95, 'imperial')).toBe(temperatureHue(35, 'metric'))
+    expect(temperatureHue(50, 'imperial')).toBe(temperatureHue(10, 'metric'))
   })
 })
 

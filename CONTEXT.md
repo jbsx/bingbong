@@ -295,8 +295,10 @@ _Avoid_: activity bar, sidebar, activity sidebar
 **Idle Screen**:
 What renders while nothing is happening: the clock and date, the weather
 (the current conditions, today's high, low, rain chance and sun times, and
-the six coming hours, all in the city's own clock), and the Last Page with
-its way back. Never shows Feed Entries (#70); never renders over a running
+the six coming hours, all in the city's own clock — the sky as a colored
+glyph, every temperature in its hue from blue through green to red, rain in
+blue, so the day reads from across the room), and the Last Page with its
+way back. Never shows Feed Entries (#70); never renders over a running
 Command, an open mic or the settings page. Any input, pipeline or voice event
 unmounts it; the browser pane is only hidden beneath it, never reset. The
 2026-10-18 ruling put the Last Page on it — the one piece of history the

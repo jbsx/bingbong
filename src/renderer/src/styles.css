@@ -45,6 +45,22 @@
   --status-yellow: #ff9500;
   --status-green: #34c759;
   --status-red: #ff3b30;
+  /* The idle screen's weather glyphs (Apple system colors, light): sun
+     yellow, cloud grey, rain blue, snow cyan, lightning orange; and how
+     a temperature's hue is mixed on this canvas. */
+  --wx-sun: #ffb800;
+  --wx-sun-fill: rgba(255, 204, 0, 0.35);
+  --wx-moon: #8e8e93;
+  --wx-moon-fill: rgba(142, 142, 147, 0.25);
+  --wx-cloud: #8e8e93;
+  --wx-cloud-fill: #e9e9ee;
+  --wx-rain: #007aff;
+  --wx-snow: #32ade6;
+  --wx-bolt: #ff9500;
+  --wx-bolt-fill: rgba(255, 149, 0, 0.35);
+  --wx-sunset: #ff6a3d;
+  --wx-sat: 72%;
+  --wx-light: 44%;
   /* Markdown code surfaces: the one deliberately dark element on the
      light dashboard — ink surface, canvas text — so fenced blocks read
      as blocks at a glance. */
@@ -78,6 +94,19 @@
     --status-yellow: #ff9f0a;
     --status-green: #30d158;
     --status-red: #ff453a;
+    --wx-sun: #ffd60a;
+    --wx-sun-fill: rgba(255, 214, 10, 0.3);
+    --wx-moon: #d1d1d6;
+    --wx-moon-fill: rgba(209, 209, 214, 0.2);
+    --wx-cloud: #aeaeb2;
+    --wx-cloud-fill: #3a3a3c;
+    --wx-rain: #0a84ff;
+    --wx-snow: #64d2ff;
+    --wx-bolt: #ff9f0a;
+    --wx-bolt-fill: rgba(255, 159, 10, 0.3);
+    --wx-sunset: #ff7a4d;
+    --wx-sat: 80%;
+    --wx-light: 66%;
     --code-bg: #111113;
     --code-text: #f5f5f7;
   }
@@ -1394,15 +1423,17 @@ body {
 }
 
 /* The idle screen: the smart-display half of the appliance. The top drag
-   strip keeps the window movable while the Toolbar is unmounted. */
+   strip keeps the window movable while the Toolbar is unmounted. Three
+   bands — clock, weather, Last Page — on the canvas, the two cards in the
+   sheet's hairline-and-panel language (ADR 0012). */
 .idle-screen {
   position: relative;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
   height: 100%;
-  padding: 64px;
-  gap: 48px;
+  padding: 56px 48px 48px;
+  gap: 32px;
 }
 
 .idle-drag-strip {
@@ -1418,102 +1449,224 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
-  margin-top: 8vh;
+  gap: 8px;
+  margin-top: 2vh;
 }
 
 .idle-clock {
   margin: 0;
-  font-size: clamp(4rem, 15vw, 8.5rem);
+  font-size: clamp(4rem, 14vw, 8rem);
   font-weight: 200;
+  letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
   line-height: 1;
 }
 
 .idle-date {
   margin: 0;
-  font-size: 1.2rem;
+  font-size: 1.25rem;
   color: var(--muted);
 }
 
-.idle-weather {
-  margin: 16px 0 0;
-  font-size: 1.2rem;
-  color: var(--text);
-}
-
-/* Today's range under the headline, and the coming hours as a quiet strip:
-   one column per hour, the sky in words — no icons, no chart. */
-.idle-weather-day {
-  margin: 0;
-  font-size: 1.05rem;
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-}
-
-.idle-hours {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 8px 28px;
-  margin: 20px 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.idle-hour {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  min-width: 72px;
-  font-variant-numeric: tabular-nums;
-}
-
-.idle-hour-time {
-  font-size: 0.85rem;
-  color: var(--muted);
-}
-
-.idle-hour-temp {
-  font-size: 1.3rem;
-  font-weight: 300;
-  color: var(--text);
-}
-
-.idle-hour-sky {
-  font-size: 0.8rem;
-  color: var(--muted);
-  text-align: center;
-}
-
-.idle-hour-rain {
-  font-size: 0.8rem;
-  color: var(--accent);
-}
-
-/* The bottom slot: the Last Page and its way back. A button, so the tap is
-   real activity (the pointer wakes the dashboard) and a screen reader names
-   it; styled as a quiet card, never as chrome. */
+.idle-screen-middle,
 .idle-screen-bottom {
   display: flex;
   justify-content: center;
 }
 
-.idle-last-page {
+.idle-weather {
+  margin: 0;
+  font-size: 1.2rem;
+  color: var(--muted);
+}
+
+/* A card: the panel skin, a hairline, the restyle's large radius. */
+.idle-card {
+  border: 1px solid var(--edge);
+  border-radius: 22px;
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 12px 40px rgba(0, 0, 0, 0.06);
+}
+
+/* ---- the weather card ---- */
+
+.wx-card {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  width: min(760px, 100%);
+  padding: 24px 32px 20px;
+  -webkit-app-region: no-drag;
+}
+
+/* The sky, the temperature and the words in one row, the glyph large. */
+.wx-now {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+}
+
+.wx-now-temp {
+  font-size: 4.75rem;
+  font-weight: 200;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.wx-now-words {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-left: 6px;
+}
+
+.wx-now-city {
+  font-size: 1.35rem;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+.wx-now-sky {
+  font-size: 1.05rem;
+  color: var(--muted);
+  text-transform: capitalize;
+}
+
+/* A temperature reads in its hue: deep blue when cold, red when hot (core
+   temperatureHue), mixed to the mode's saturation and lightness so it sits
+   on either canvas. */
+.wx-temp {
+  color: hsl(var(--hue) var(--wx-sat) var(--wx-light));
+  font-variant-numeric: tabular-nums;
+}
+
+/* Today's row: low → bar → high, the rain chance, the sun's times. */
+.wx-day {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 24px;
+  font-size: 1rem;
+}
+
+.wx-day-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+}
+
+.wx-day-item .wx-temp {
+  font-weight: 500;
+}
+
+.wx-day-rain {
+  color: var(--wx-rain);
+  font-weight: 500;
+}
+
+.wx-day-sun {
+  gap: 8px;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.wx-icon .wx-sunrise,
+.wx-icon .wx-sunset {
+  stroke-width: 2;
+}
+
+.wx-range {
+  position: relative;
+  display: inline-block;
+  width: 140px;
+  height: 6px;
+  margin: 0 6px;
+  border-radius: 3px;
+  background: var(--bubble);
+  overflow: hidden;
+}
+
+.wx-range-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 3px;
+  background: linear-gradient(90deg, hsl(var(--hue-from) var(--wx-sat) var(--wx-light)), hsl(var(--hue-to) var(--wx-sat) var(--wx-light)));
+}
+
+/* The coming hours behind a hairline: time, glyph, rain, temperature. */
+.wx-hours {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 4px;
+  margin: 0;
+  padding: 16px 0 0;
+  border-top: 1px solid var(--edge);
+  list-style: none;
+}
+
+.wx-hour {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
-  max-width: min(640px, 100%);
-  padding: 16px 28px;
-  border: 1px solid var(--edge);
-  border-radius: 16px;
-  background: var(--panel);
-  color: var(--text);
+  gap: 6px;
+}
+
+.wx-hour-time {
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.wx-hour-rain {
+  min-height: 1em;
+  font-size: 0.8rem;
+  font-weight: 500;
+  line-height: 1;
+  color: var(--wx-rain);
+}
+
+.wx-hour-temp {
+  font-size: 1.3rem;
+  font-weight: 400;
+}
+
+/* The glyph's parts, each in its system color. */
+.wx-icon {
+  display: block;
+  flex: none;
+}
+
+.wx-icon .wx-sun { stroke: var(--wx-sun); fill: var(--wx-sun-fill); }
+.wx-icon .wx-moon { stroke: var(--wx-moon); fill: var(--wx-moon-fill); }
+.wx-icon .wx-cloud { stroke: var(--wx-cloud); fill: var(--wx-cloud-fill); }
+.wx-icon .wx-rain { stroke: var(--wx-rain); }
+.wx-icon .wx-snow { stroke: var(--wx-snow); stroke-width: 2.4; }
+.wx-icon .wx-bolt { stroke: var(--wx-bolt); fill: var(--wx-bolt-fill); }
+.wx-icon .wx-sunrise { stroke: var(--wx-sun); }
+.wx-icon .wx-sunset { stroke: var(--wx-sunset); }
+.wx-icon .wx-ink { stroke: currentColor; }
+
+/* The cloud sits over the sun or moon: a filled cloud hides the part behind it. */
+.wx-icon circle.wx-sun { fill: var(--wx-sun); }
+
+/* ---- the Last Page card ---- */
+
+.idle-last-page {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  width: min(560px, 100%);
+  padding: 14px 18px 14px 16px;
   font: inherit;
+  text-align: left;
   cursor: pointer;
   -webkit-app-region: no-drag;
+  transition: border-color 120ms ease, transform 120ms ease;
 }
 
 .idle-last-page:hover,
@@ -1522,23 +1675,61 @@ body {
   outline: none;
 }
 
-.idle-last-page-kicker {
-  font-size: 0.75rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+.idle-last-page:active {
+  transform: scale(0.99);
+}
+
+.idle-last-page-mark {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: var(--bubble);
   color: var(--muted);
 }
 
+.idle-last-page-mark img {
+  display: block;
+  border-radius: 5px;
+}
+
+.idle-last-page-words {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.idle-last-page-kicker {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
 .idle-last-page-title {
-  max-width: 100%;
   overflow: hidden;
-  font-size: 1.15rem;
+  font-size: 1.1rem;
+  font-weight: 500;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
 
 .idle-last-page-host {
+  overflow: hidden;
   font-size: 0.9rem;
+  color: var(--muted);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.idle-last-page-chevron {
+  display: flex;
+  flex: none;
   color: var(--muted);
 }
 
