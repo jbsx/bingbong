@@ -153,6 +153,13 @@ describe('the Local Match: plain verbs', () => {
     expect(carriesWordsPastAddress('scroll down and read')).toBe(false)
   })
 
+  it('leaves a span a ref on the page carries to Jev: the page\'s word, not an address', () => {
+    const settings = [...REFS, { ref: 7, kind: 'link' as const, label: 'Account settings', href: 'https://example.com/settings', inputType: null }]
+    expect(localMatch('open settings and click save', settings)).toBeNull()
+    expect(localMatch('go to trending and scroll down', REFS)).toBeNull()
+    expect(localMatch('go to twitter and scroll down', REFS)).toEqual({ verb: 'open', target: null, slot: 'twitter' })
+  })
+
   it('makes no Local Match when the label names no ref, or more than one', () => {
     expect(localMatch('click sign', REFS)).toBeNull()
     expect(localMatch('click the first video', REFS)).toBeNull()

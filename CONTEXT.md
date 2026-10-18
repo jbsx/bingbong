@@ -72,8 +72,9 @@ read and ends after one the Local Match settled, since the grammar and exact
 labels are whole by construction and plain English is where "and then"
 lives — save a Local-Matched `open` of an address with words past it ("go
 to twitter and open donald trumps profile"), which goes on to read the rest
-on the landing. It may search a site once per site. Capped at five actions; ended by the next Utterance, Escape or the
-Abort Head like any Command; never confirmed.
+on the landing. It searches each site at most once. Capped at five
+actions; ended by the next Utterance, Escape or the Abort Head like any
+Command; never confirmed.
 _Avoid_: plan, goal, intent, errand, run, session
 
 **Hop**:

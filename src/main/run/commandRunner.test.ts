@@ -1639,9 +1639,9 @@ describe('the Site Scope at a later hop (#341): one Utterance chains a site and 
   const asked = (request: DecisionRequest<DecisionQuestions>): string[] => Object.keys(request.questions)
 
   /** A browser on a blank page: twitter.com is a site, a results page carries its result below the fold. */
-  function chainHarness() {
+  function chainHarness(start = 'about:blank') {
     const h = harness()
-    h.browser.snapshot = { ...h.browser.snapshot, url: 'about:blank', title: '', refs: [] }
+    h.browser.snapshot = { ...h.browser.snapshot, url: start, title: '', refs: start === TWITTER ? TWITTER_REFS : [] }
     const navigate = h.browser.navigate.bind(h.browser)
     h.browser.navigate = async (url) => {
       const line = await navigate(url)
@@ -1693,6 +1693,18 @@ describe('the Site Scope at a later hop (#341): one Utterance chains a site and 
     await runner.run(TEXT, { source: 'spoken' })
     expect(asked(decision.requests[2]!)).toEqual(['verb', 'target', 'slot'])
     expect(browser.navigations).toEqual([TWITTER, SCOPED, PROFILE])
+  })
+
+  it('AC4: hop 0\'s own Site Scope search (#340) is a site the Task has searched: a later hop back on it is asked no where', async () => {
+    const { browser, decision, runner } = chainHarness(TWITTER)
+    decision.script.push(read('open', 'none', 's2-4', 'site'), read('click', 'link-1'), read('open', 'none', 's2-4'))
+    await runner.run('go to donald trumps profile', { source: 'spoken' })
+    expect(browser.navigations).toEqual([SCOPED, PROFILE])
+    expect(decision.requests.map(asked)).toEqual([
+      ['verb', 'target', 'slot', 'where'],
+      ['verb', 'target', 'slot'],
+      ['verb', 'target', 'slot'],
+    ])
   })
 
   it('AC4: the Task records the sites it searched, and the cap counts the search as an action', async () => {

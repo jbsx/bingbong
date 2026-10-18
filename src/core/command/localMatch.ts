@@ -334,13 +334,16 @@ function fromGrammar(parsed: CliCommand): Command | null {
  * the longest leading span that is address-shaped and is followed by a
  * joiner and another verb phrase — "twitter" in "twitter and open donald
  * trumps profile". Null when the words are an address whole, or no such
- * span starts them: "the menu" names no address with more to do.
+ * span starts them: "the menu" names no address with more to do. A span
+ * that shares a word with a ref's label is the page's word, not an
+ * address ("settings and click save" beside an Account settings link):
+ * Jev reads it.
  */
-function addressBeforeMore(rest: readonly Token[]): string | null {
+function addressBeforeMore(rest: readonly Token[], refs: readonly CommandRef[]): string | null {
   if (isAddressShaped(spokenOf(rest))) return null
   for (let end = rest.length - 1; end >= 1; end -= 1) {
     const address = spokenOf(rest.slice(0, end))
-    if (!isAddressShaped(address)) continue
+    if (!isAddressShaped(address) || bestLabelled(address, refs) !== null) continue
     const after = rest.slice(end)
     const joiner = JOINERS.find((words) => cleanOf(after).startsWith(`${words} `))
     if (joiner !== undefined && verbOf(after.slice(joiner.split(' ').length)) !== null) return address
@@ -351,11 +354,12 @@ function addressBeforeMore(rest: readonly Token[]): string | null {
 /**
  * Whether an Utterance opens an address and carries words past it (#341):
  * "go to twitter and open donald trumps profile" — a Local-Matched `open`
- * of it goes on to hop 1 rather than ending the Task.
+ * of it goes on to hop 1 rather than ending the Task. Read off the words
+ * alone: the Local Match already checked the span against the page.
  */
 export function carriesWordsPastAddress(text: string): boolean {
   const found = verbOf(tokenize(text))
-  return found?.kind === 'open' && addressBeforeMore(found.rest) !== null
+  return found?.kind === 'open' && addressBeforeMore(found.rest, []) !== null
 }
 
 /** The Command a spoken verb and its words settle, exactly (`lenient` false) or by the best reading (`lenient` true). */
@@ -405,7 +409,7 @@ function readSpoken(text: string, refs: readonly CommandRef[], url: string, leni
       const nth = ordinal()
       if (nth !== null && nth !== 'unsettled') return command('click', { target: nth.target })
       // An address with words past it (#341) opens the address; the Task reads the rest on its landing.
-      const address = nth === 'unsettled' ? null : addressBeforeMore(rest)
+      const address = nth === 'unsettled' ? null : addressBeforeMore(rest, refs)
       if (address !== null) return command('open', { slot: address })
       if (!lenient && (nth === 'unsettled' || !isAddressShaped(spokenOf(rest)))) return null
       return command('open', { slot: spokenOf(rest) })

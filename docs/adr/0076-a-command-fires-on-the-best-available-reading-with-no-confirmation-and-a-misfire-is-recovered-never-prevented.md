@@ -789,7 +789,10 @@ even once twitter.com had landed, a later hop's `open` never searched
   The guard exists because a bare word is address-shaped — "open the
   menu" and "open settings menu" would otherwise open the.com and
   settings.com — and anything it lets through goes to Jev as before, whose
-  hop 0 goes on anyway; it costs speed, never the Task. An Early Fire never
+  hop 0 goes on anyway; it costs speed, never the Task. For the same
+  reason a span that shares a word with a ref's label on the page is the
+  page's word, not an address ("open settings and click save" beside an
+  Account settings link goes to Jev). An Early Fire never
   fires an `open` on the Local Match, so only the Endpoint reads this.
 - **The guards stay**: the five-action cap counts the search as an action;
   the set-aside rule and the two-unchanged-hops rule apply unchanged.

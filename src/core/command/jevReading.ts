@@ -9,8 +9,9 @@ import { siteOf } from './siteScope'
 // The state is the transcript, the page's address and title and its
 // numbered refs — label, kind, href, no page text. Three Choices are asked
 // in parallel: the verb, the target among the refs plus `none`, and the
-// Slot among the transcript's contiguous word spans; at hop 0 on a site, a
-// fourth beside them — where the words point (#340). Unneeded answers are
+// Slot among the transcript's contiguous word spans; on a site, a fourth
+// beside them — where the words point (#340), at a later hop only on a site
+// the Task has not searched (#341). Unneeded answers are
 // ignored; the top Choice is acted on at any confidence; only `none` as
 // the verb drops the Utterance. Speed over accuracy: nothing here asks
 // "did you mean".
