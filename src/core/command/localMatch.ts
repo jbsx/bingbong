@@ -66,6 +66,10 @@ const VERB_PHRASES: readonly (readonly [string, VerbKind])[] = [
   ['previous page', 'back'],
   ['go forward', 'forward'],
   ['forward', 'forward'],
+  ['reload the page', 'reload'],
+  ['reload', 'reload'],
+  ['refresh the page', 'reload'],
+  ['refresh', 'reload'],
   ['read the page', 'read'],
   ['read page', 'read'],
   ['read it', 'read'],
@@ -212,14 +216,44 @@ function hostOf(url: string): string | null {
   return new URL(url).host.replace(/^www\./, '').toLowerCase()
 }
 
-/** Whether a link on a search page is one of its results: its address leaves the engine, or is the engine's redirect to one. */
-function isResultLink(ref: CommandRef, engineHost: string): boolean {
-  if (ref.kind !== 'link' || ref.href === null) return false
-  const host = hostOf(ref.href)
+/** Whether an address on a search page is one of its results: it leaves the engine, or is the engine's redirect to one. */
+function isResultAddress(href: string, engineHost: string): boolean {
+  const host = hostOf(href)
   if (host === null) return false
   if (host !== engineHost) return true
-  const params = new URL(ref.href).searchParams
+  const params = new URL(href).searchParams
   return params.has('uddg') || params.has('url')
+}
+
+function isResultLink(ref: CommandRef, engineHost: string): boolean {
+  return ref.kind === 'link' && ref.href !== null && isResultAddress(ref.href, engineHost)
+}
+
+/**
+ * The results among a search page's links (#328): the same rule as the
+ * Nth result — the links whose address leaves the engine, or is its
+ * redirect to one. Empty off a search page.
+ */
+export function resultLinksOf<L extends { readonly href: string }>(links: readonly L[], url: string): L[] {
+  if (url === '' || parseSearchUrl(url) === null) return []
+  const engineHost = hostOf(url)
+  if (engineHost === null) return []
+  return links.filter((link) => isResultAddress(link.href, engineHost))
+}
+
+/**
+ * The page an address leads to, for telling whether a Task has been there
+ * (#328): an engine's redirect is its target, and the fragment, a trailing
+ * slash, `www.` and the host's case make no other page.
+ */
+export function pageAddressOf(href: string): string {
+  if (!URL.canParse(href)) return href
+  const url = new URL(href)
+  const target = url.searchParams.get('uddg') ?? url.searchParams.get('url')
+  if (target !== null && URL.canParse(target) && target !== href) return pageAddressOf(target)
+  const host = url.host.replace(/^www\./, '').toLowerCase()
+  const path = url.pathname.replace(/\/+$/, '')
+  return `${url.protocol}//${host}${path}${url.search}`
 }
 
 /**
@@ -275,6 +309,8 @@ function fromGrammar(parsed: CliCommand): Command | null {
       return command('screenshot', { slot: parsed.path ?? null })
     case 'back':
       return command('back')
+    case 'reload':
+      return command('reload')
     case 'help':
       return command('help')
     case 'quit':

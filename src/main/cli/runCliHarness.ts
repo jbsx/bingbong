@@ -58,12 +58,16 @@ export function runCliHarness(deps: CliHarnessDeps): Promise<void> {
     const turnId = `cli-${lineCount}-${Date.now().toString(36)}`
     let printed = false
     let action: string | null = null
+    // The line's Task (#328): its hops past the first publish under turns of their own, named by their `task`.
+    const turns = new Set([turnId])
     const release = subscribe((event) => {
-      if (!('turnId' in event) || event.turnId !== turnId) return
+      if (event.type === 'command' && event.task?.id === turnId) turns.add(event.turnId)
+      if (!('turnId' in event) || event.turnId === undefined || !turns.has(event.turnId)) return
       switch (event.type) {
         case 'command':
           if (event.dropped) {
-            write(`not a command: ${JSON.stringify(event.text)}\n`)
+            // A hop that fired nothing prints what it came to: done, no next step, abandoned, already here.
+            write(event.action !== undefined ? `${event.action}: ${JSON.stringify(event.text)}\n` : `not a command: ${JSON.stringify(event.text)}\n`)
             printed = true
           } else {
             action = event.action ?? null

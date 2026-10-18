@@ -3,6 +3,7 @@ import type {
   BrowserState,
   KeyPress,
   MediaState,
+  PageLanding,
   ScreenshotOptions,
   ViewportPoint,
   VisualGroundingController,
@@ -77,9 +78,12 @@ export interface ArrivalWatch {
 
 // Page-level operations the pane already knows how to do (load, history, url).
 export interface CdpPageDriver {
-  loadUrl(url: string): Promise<void>
+  /** Sends the tab to the address; resolves at its landing (#328), or at the load's end for a driver that cannot see one. */
+  loadUrl(url: string): Promise<PageLanding | void>
   goBack(): Promise<void>
   goForward(): Promise<void>
+  /** Load the page again (#328), resolved at its commit. */
+  reload(): Promise<void>
   /**
    * Starts watching for a main-frame navigation to another document (#309).
    * Optional: a driver that cannot see navigations start leaves every
@@ -115,6 +119,8 @@ export type ActionEffect = 'mutation' | 'input' | 'scroll' | 'navigation'
 /** Where the controller reports an action's first observable effect, the moment it sees it. */
 export interface ActionEffects {
   observed(effect: ActionEffect): void
+  /** A navigation's landing ended (#328): quiet, at its load, or at the cap. */
+  landed?(landing: PageLanding): void
 }
 
 /**
@@ -126,6 +132,18 @@ export interface ActionEffects {
  * keystroke, 70 ms per scroll tick) is gone, and text is inserted whole.
  */
 export const READINESS_CAP_MS = 150
+
+/**
+ * A landing (#328, ADR 0076 amendment) is the page gone DOM-quiet, not the
+ * load event: from a navigation's commit, `dom-ready` and then this long
+ * with no mutation in the main document — or the load event, if it comes
+ * first. One wait for navigate, back, forward, reload and a click that
+ * leaves the page; in-page actions keep {@link READINESS_CAP_MS}.
+ */
+export const LANDING_QUIET_MS = 250
+
+/** The most a landing waits from its commit (#328): the page is taken as it stands then, and the landing is `capped`. */
+export const LANDING_CAP_MS = 3_000
 
 /** The poll between reads of a tab still landing after an aborted load (#308) — a wait on the tab, not pacing. */
 const STILL_POLL_MS = 100
@@ -305,7 +323,7 @@ const ABORT_ERROR_CODE = 'ERR_ABORTED'
 const ABORT_SETTLE_POLLS = 50
 
 /** The verb a landing's outcome line opens with: a navigate, or a step through history. */
-type LandingVerb = 'navigated' | 'went back' | 'went forward'
+type LandingVerb = 'navigated' | 'went back' | 'went forward' | 'reloaded'
 
 function isAbortedLoad(error: unknown): boolean {
   if ((error as { code?: unknown } | null)?.code === ABORT_ERROR_CODE) return true
@@ -859,7 +877,9 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
       await settleUntilStill('navigate-abort')
       return
     }
-    // The load's own end is the wait (#324); nothing is slept after it.
+    // The landing is the wait (#328): the driver resolves once the page has
+    // gone DOM-quiet after dom-ready, its load came first, or the 3 s cap
+    // from the commit took it as it stood. Nothing is slept after it.
     lastSnapshot = undefined
   }
 
@@ -920,6 +940,8 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
 
   const back = (): Promise<string> => historyStep('went back', () => page.goBack())
   const forward = (): Promise<string> => historyStep('went forward', () => page.goForward())
+  // A reload lands where it stands (#328): waited for and written as a step through history is.
+  const reload = (): Promise<string> => historyStep('reloaded', () => page.reload())
 
   /** A Page Read (ADR 0047): the refs and one part of the page's whole text. */
   async function readPage(part = 1): Promise<string> {
@@ -1667,6 +1689,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     screenshot,
     back,
     forward,
+    reload,
     pressKey: (press, times) => holdingWindowOpens(() => pressKey(press, times)),
     mediaState,
     state,

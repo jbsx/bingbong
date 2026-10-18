@@ -10,6 +10,7 @@ export type CliCommand =
   | { type: 'press'; press: KeyPress; times: number }
   | { type: 'screenshot'; path: string | undefined }
   | { type: 'back' }
+  | { type: 'reload' }
   | { type: 'help' }
   | { type: 'quit' }
 
@@ -86,6 +87,8 @@ export function parseCliCommand(line: string): ParsedCliCommand {
       return { ok: true, command: { type: 'screenshot', path: rest || undefined } }
     case 'back':
       return { ok: true, command: { type: 'back' } }
+    case 'reload':
+      return { ok: true, command: { type: 'reload' } }
     case 'help':
       return { ok: true, command: { type: 'help' } }
     case 'quit':

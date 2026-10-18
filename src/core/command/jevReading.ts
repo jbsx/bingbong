@@ -1,6 +1,7 @@
 import type { DecisionChoiceAnswer, DecisionChoiceQuestion, DecisionNoulQuestion } from '../ports/decisionModel'
+import type { PageLink } from '../browser/snapshot'
 import { JEV_VERBS, PRESS_KEYS, pressKeyOf, verbTakesSlot, verbTakesTarget, type Command, type CommandPage, type CommandRef, type CommandVerb } from './command'
-import { wordsAfterVerb } from './localMatch'
+import { pageAddressOf, resultLinksOf, wordsAfterVerb } from './localMatch'
 import { isAddressShaped } from './openAddress'
 
 // One Jev call per Command the Local Match cannot settle (#324, ADR 0076).
@@ -23,10 +24,12 @@ const VERB_DESCRIPTIONS: Readonly<Record<(typeof JEV_VERBS)[number], string>> = 
   scroll_down: 'scroll the page down',
   back: 'go back to the previous page',
   forward: 'go forward',
+  reload: 'reload the page',
   press: 'press a key: enter, escape, space or an arrow key',
   read: 'read the page aloud or show its contents',
   clear: 'clear the text in the focused field',
   stop: 'stop what the browser is doing',
+  done: 'this page is what the user asked for: nothing more to do',
   none: 'not a command for this page: a remark, a question, a name, noise',
 }
 
@@ -75,13 +78,62 @@ function describeRef(ref: CommandRef): string {
   return `${kind} ${JSON.stringify(ref.label)}${ref.href !== null ? ` ${ref.href}` : ''}`
 }
 
-/** The state the three questions are asked over. */
-export function commandState(text: string, page: CommandPage): string {
+/**
+ * Where a Task stands at a hop past the first (#328, ADR 0076 amendment):
+ * which hop this is, the addresses it has been to, the actions it took,
+ * and the whole page's links — the result links among them are offered as
+ * targets on a search landing, since results start below the fold.
+ */
+export interface HopContext {
+  /** 1 for the first Command after hop 0. */
+  readonly hop: number
+  readonly visited: readonly string[]
+  /** Each action taken so far, as the Feed describes it. */
+  readonly actions: readonly string[]
+  readonly links: readonly PageLink[]
+}
+
+/** A result link a hop may open, numbered as its `link-N` option. */
+interface OfferedLink extends PageLink {
+  readonly n: number
+}
+
+/** What a hop offers of a page: its refs and result links, none of them an address the Task has visited, no link twice or already a ref. */
+function offered(page: CommandPage, hop: HopContext | undefined): { page: CommandPage; links: OfferedLink[] } {
+  if (hop === undefined) return { page, links: [] }
+  const seen = new Set(hop.visited.map(pageAddressOf))
+  const fresh = (href: string | null): boolean => href === null || !seen.has(pageAddressOf(href))
+  const refs = page.refs.filter((ref) => fresh(ref.href))
+  const taken = new Set(page.refs.flatMap((ref) => (ref.href === null ? [] : [pageAddressOf(ref.href)])))
+  const links: OfferedLink[] = []
+  // A Choice holds at most 255 options: `none`, the refs, then the links.
+  const room = MAX_SPANS - refs.length
+  for (const link of resultLinksOf(hop.links, page.url)) {
+    if (links.length >= room) break
+    const address = pageAddressOf(link.href)
+    if (seen.has(address) || taken.has(address)) continue
+    taken.add(address)
+    links.push({ label: link.label, href: link.href, n: links.length + 1 })
+  }
+  return { page: { ...page, refs }, links }
+}
+
+function describeLink(link: PageLink): string {
+  return `link ${JSON.stringify(link.label)} ${link.href}`
+}
+
+/** The state the three questions are asked over; at a hop past the first, where the Task stands. */
+export function commandState(text: string, page: CommandPage, hop?: HopContext): string {
+  const shown = offered(page, hop)
   return [
     `The user spoke to a web browser: ${JSON.stringify(text)}`,
+    ...(hop !== undefined
+      ? [`This is step ${hop.hop + 1} of the task. Done so far: ${hop.actions.join('; ') || 'nothing'}`, `Pages visited: ${hop.visited.join(' ') || 'none'}`]
+      : []),
     `Page: ${page.url} — ${JSON.stringify(page.title)}`,
     'Refs (number, kind, label, address):',
-    ...page.refs.map((ref) => `[${ref.ref}] ${describeRef(ref)}`),
+    ...shown.page.refs.map((ref) => `[${ref.ref}] ${describeRef(ref)}`),
+    ...(shown.links.length > 0 ? ['Result links further down the page (name, address):', ...shown.links.map((link) => `[link-${link.n}] ${describeLink(link)}`)] : []),
   ].join('\n')
 }
 
@@ -92,8 +144,9 @@ export type CommandQuestions = {
   readonly slot: DecisionChoiceQuestion
 }
 
-/** The three questions: the verb, the target, the Slot. */
-export function commandQuestions(text: string, page: CommandPage): CommandQuestions {
+/** The three questions: the verb, the target, the Slot; at a hop past the first, the targets are what the hop offers. */
+export function commandQuestions(text: string, pageRead: CommandPage, hop?: HopContext): CommandQuestions {
+  const { page, links } = offered(pageRead, hop)
   return {
     verb: {
       type: 'choice',
@@ -103,7 +156,11 @@ export function commandQuestions(text: string, page: CommandPage): CommandQuesti
     target: {
       type: 'choice',
       instructions: 'Which numbered ref on the page do the words name as the thing to click or type into? Choose none when the command needs no ref, or names none of them.',
-      options: { none: 'no ref: the command does not act on one element', ...Object.fromEntries(page.refs.map((ref) => [`ref-${ref.ref}`, describeRef(ref)])) },
+      options: {
+        none: 'no ref: the command does not act on one element',
+        ...Object.fromEntries(page.refs.map((ref) => [`ref-${ref.ref}`, describeRef(ref)])),
+        ...Object.fromEntries(links.map((link) => [`link-${link.n}`, describeLink(link)])),
+      },
     },
     slot: {
       type: 'choice',
@@ -163,10 +220,18 @@ function slotWords(answer: DecisionChoiceAnswer, text: string): string {
 }
 
 /** The Command Jev's answers make: the top Choice of each, read as the verb needs them. */
-export function readCommandAnswers(answers: CommandAnswers, text: string, page: CommandPage): Command {
+export function readCommandAnswers(answers: CommandAnswers, text: string, pageRead: CommandPage, hop?: HopContext): Command {
   const verb = answers.verb.choice as CommandVerb
   const none: Command = { verb: 'none', target: null, slot: null }
   if (!JEV_VERBS.includes(verb as (typeof JEV_VERBS)[number]) || verb === 'none') return none
+  if (verb === 'done') return { verb, target: null, slot: null }
+  const { page, links } = offered(pageRead, hop)
+  if (verb === 'click' || verb === 'open') {
+    // A result link further down the page has no ref to click: it is opened at its address.
+    const link = /^link-(\d+)$/.exec(answers.target.choice)
+    const chosen = link === null ? undefined : links.find((candidate) => candidate.n === Number(link[1]))
+    if (chosen !== undefined) return { verb: 'open', target: null, slot: chosen.href }
+  }
   let target: number | null = null
   if (verbTakesTarget(verb)) {
     target = mostProbableRef(answers.target, page)

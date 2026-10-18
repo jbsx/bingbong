@@ -442,3 +442,102 @@ The route and the readings it took:
   in `e2e/bin` (`BINGBONG_PIPER_BIN`, and `BINGBONG_APLAY_BIN`, new), so no
   e2e run loads a voice or reaches the sound card; `e2e/tts.e2e.test.ts`
   reads what they were given.
+
+Increment 4 (#328) built the Task and the DOM-quiet landing on 2026-10-18.
+The readings it took:
+
+- **A hop is one reading.** Each hop mints its own turn id and publishes
+  its own `command` event, and writes its own decision record. The Task's
+  id is hop 0's turn id. A reading that fires nothing is a hop too: a
+  `done`, a dead-end `none`, a read Jev did not answer, and a read
+  superseded in flight. So the issue's example, a search, a result, a ref
+  on the landing and then `done`, writes four records. AC1 counted three,
+  the actions; AC3 and AC5 number a reading that fires nothing as its own
+  hop, and the build follows them.
+- **A record is written once nothing can change it.** A hop that ends the
+  Task on a verb that leaves no page (read, stop, clear, none, done) is
+  recorded before it fires, as before. A hop whose verb lands is recorded
+  once its action settles, carrying `landing` and, when the Task ends
+  there, `ended`. That includes a Local-Matched `open`.
+- **`ended` readings:** a best guess at hop 0, and a Task with no Decision
+  Model configured, end `unavailable`; `none` at hop 0 ends `terminal`
+  (`none` is `none` only past hop 0); an action that throws ends `wall`
+  beside the Action Outcome classes, since it speaks its failure line as
+  a wall does. The cap counts actions that fired, scrolls included: the
+  fifth ends the Task `cap` once it lands, unless it met a wall.
+- **The Feed's hop lines:** a hop that fires nothing is published
+  `dropped`, its action naming what it came to: `already here` (`done` at
+  hop 0), `done`, `no next step`, `not read` (Jev unavailable), or
+  `abandoned` (superseded). Only hop 0 has a `reaction` span. The `task`
+  span sits on hop 0's turn, carrying `{ ended, hops, actions, source }`.
+- **Result links are offered as `link-N` targets**, after the refs and
+  only on a search landing (`parseSearchUrl`). They come from the whole
+  page's links (`pageLinks`), filtered by the Local Match's own result
+  rule (`resultLinksOf`). A link is never offered twice, nor when a ref in
+  view already carries its address. A `link-N` has no ref to click, so a
+  `click` or `open` of one opens its address.
+- **What counts as visited:** the page the Task started on (never
+  `about:blank`) and each hop's landing. Two addresses are the same page
+  when they agree after the engine's redirect is followed to its target
+  (`uddg`, `url`) and the fragment, a trailing slash, `www.` and the
+  host's case are set aside (`pageAddressOf`). A visited ref or link is
+  absent from the hop's targets. The state Jev reads adds two lines: "This
+  is step N of the task. Done so far: …" and "Pages visited: …".
+- **Each hop collects the landing afresh**; the page prepared at speech
+  start stays hop 0's.
+- **An overrun counts only against a Jev-read hop whose verb goes on, and
+  only while its Task is still under way.** A Task that ends on its own
+  overran nothing, so a next Utterance three seconds after a `done` is no
+  overrun, nor is "stop" over a spoken `read`. The overrun is checked at
+  a new Command (spoken or typed), at an Early Fire, and at an abort
+  (Escape, a "stop" heard while running, the Abort Head). An abort's
+  record carries no `signalTurnId`; every overrun carries `hop`. Hop 0
+  counts too, and the report keeps it apart by its hop number.
+- **Hops past hop 0 raise no back, clear, escape or opposite-scroll
+  Misfire against the hop before.** They are the Task's own steps, not
+  the user's recovery. The user's next Command is read against the last
+  hop that fired, as before.
+- **Early Fire:** the Endpoint of an Utterance whose hop 0 fired on a
+  partial waits for that action to land, then goes on with the final
+  transcript. An Utterance that never reaches its Endpoint is recorded
+  at the next speech start. It ends `superseded` when Jev read a hop
+  that would have gone on, and otherwise as its reading ends.
+- **The Hot Listen's clock restarts when the Task ends.** The runner's
+  `run` resolves at the Task's end, and the voice session restarts the
+  clock then if the Listen is still open and no Utterance is being
+  captured. The clock still runs from the Endpoint, so a Task longer than
+  `hotListenSilenceMs` closes the Listen under it; the Abort Head still
+  hears.
+- **The landing wait lives in the pane's navigation surface**
+  (`paneNavigation.ts`), on its injectable clock, beside the commit and
+  stop watchers it builds on. The quiet window runs in the page over CDP
+  (`Runtime.evaluate` of `domQuietScript`), because Electron's
+  `executeJavaScript` waits for the very load it replaces. The constants,
+  `LANDING_QUIET_MS` and `LANDING_CAP_MS`, sit beside `READINESS_CAP_MS`.
+  AC10's "controller's unit tests on a fake clock" are that surface's
+  tests; `e2e/landing.e2e.test.ts` covers the real page.
+- **`did-stop-loading` ends a landing as the load event does.** A navigate
+  resolves at its landing. A history step and a reload resolve at their
+  commit, and the controller's arrival watch that follows is the
+  landing. A click's arrival waits up to the 10 s bound for a commit,
+  then lands; the cap counts from the commit, so the action's own
+  readiness wait is not counted twice. A `capped` landing rides the
+  outcome line as an Unfinished Load and reaches the runner through
+  `ActionEffects.landed`. An `ERR_ABORTED` after the commit is the site
+  moving the tab on, and the landing goes on; before the commit it keeps
+  the settle poll it had.
+- **`reload`:** the CLI grammar's `reload`, and spoken "reload",
+  "refresh", "reload the page" or "refresh the page". It lands like a
+  history step, its line opening `reloaded:`, and its landing is read
+  for walls as a navigate's is.
+- **The CLI harness prints every hop of its line's Task**, following the
+  turns whose `command` event names the line's turn as `task.id`; a hop
+  that fired nothing prints `<what it came to>: "<words>"`.
+- **`pnpm perf:report`** prints one Task line under the decisions:
+  `tasks: N | ended <how> <count>, … | hops p50 P, max M | overruns by
+  hop: hop H <count>, …`. A Task is the decision records sharing an id,
+  and its hops are its highest hop plus one.
+- **Left as they are:** AC13's capture, deferred under the standing
+  ruling; a Task's hops are read with no Early Fire of their own; and a
+  hop's typed Slot comes only from the transcript, so a task that needs
+  unsaid words ends at `none`.

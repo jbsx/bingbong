@@ -1,6 +1,6 @@
 import { app, BrowserWindow, crashReporter, session } from 'electron'
 import { join } from 'node:path'
-import type { BrowserController, VisualGroundingController } from '../core/ports/browser'
+import type { BrowserController, PageLanding, VisualGroundingController } from '../core/ports/browser'
 import { BROWSER_IPC } from '../core/browser/ipcChannels'
 import { createAgentActivityTracker, withAgentActivity } from '../core/downloads/agentActivity'
 import { PIPELINE_IPC } from '../core/pipeline/ipcChannels'
@@ -260,9 +260,14 @@ async function createWindow(): Promise<BrowserWindow> {
   // An action's first observable effect (#324): the controller reports it,
   // the runner hears it and closes the Reaction span on it.
   const effectListeners = new Set<(effect: ActionEffect) => void>()
+  // How each navigation landed (#328): the runner keeps it on the hop's decision record.
+  const landingListeners = new Set<(landing: PageLanding) => void>()
   const effects: ActionEffects = {
     observed: (effect) => {
       for (const listener of [...effectListeners]) listener(effect)
+    },
+    landed: (landing) => {
+      for (const listener of [...landingListeners]) listener(landing)
     },
   }
   const paneCustody = holdBrowserCustody(
@@ -309,6 +314,10 @@ async function createWindow(): Promise<BrowserWindow> {
     onEffect: (listener) => {
       effectListeners.add(listener)
       return () => effectListeners.delete(listener)
+    },
+    onLanding: (listener) => {
+      landingListeners.add(listener)
+      return () => landingListeners.delete(listener)
     },
     // `read` speaks the page and a failure its one line (#327).
     speech: speakingGate.tts,

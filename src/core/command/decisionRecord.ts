@@ -1,4 +1,4 @@
-import type { KeyPress } from '../ports/browser'
+import type { KeyPress, PageLanding } from '../ports/browser'
 import type { DecisionUnavailableReason } from '../ports/decisionModel'
 import type { CommandVerb } from './command'
 import type { CommandAnswers } from './jevReading'
@@ -64,7 +64,28 @@ export interface DecisionRecord {
   readonly earlyFire?: EarlyFireDetail
   /** Jev calls made on this Utterance's partials (#326), whether one fired or not; absent when none was. */
   readonly partialCalls?: number
+  /** The Task this reading is a hop of (#328): hop 0's turn id, and which hop. */
+  readonly task?: TaskHop
+  /** How the Task ended, on its last hop's record (#328); absent on a hop it went on from. */
+  readonly ended?: TaskEnded
+  /** How the hop's navigation landed (#328): DOM-quiet, at its load, or `capped` at 3 s; absent for an action that left no page. */
+  readonly landing?: PageLanding
 }
+
+/** Where a Command stands in its Task (#328, ADR 0076 amendment): the Task's id is hop 0's turn id. */
+export interface TaskHop {
+  readonly id: string
+  readonly hop: number
+}
+
+/**
+ * Why a Task ended: Jev said `done`; a dead end (`none` past hop 0); the
+ * cap of five actions; a wall (a failure, a Blocked Action, a Blocker,
+ * consent, not-found, unavailable or empty landing); Jev unavailable (hop
+ * 0's best guess included); superseded; a Local-Matched hop 0; a terminal
+ * verb (read, stop, clear, or `none` at hop 0).
+ */
+export type TaskEnded = 'done' | 'none' | 'cap' | 'wall' | 'unavailable' | 'superseded' | 'local_match' | 'terminal'
 
 /** An Early Fire as the record keeps it. */
 export interface EarlyFireDetail {
@@ -76,7 +97,11 @@ export interface EarlyFireDetail {
   readonly noul?: number
 }
 
-export type MisfireSignal = 'back' | 'clear' | 'escape' | 'opposite_scroll'
+/**
+ * `overrun` (#328): Escape, "stop" or a new Utterance soon after a Jev-read
+ * hop fired — the Task went on past what the user wanted.
+ */
+export type MisfireSignal = 'back' | 'clear' | 'escape' | 'opposite_scroll' | 'overrun'
 
 export interface MisfireRecord {
   readonly type: 'misfire'
@@ -84,9 +109,11 @@ export interface MisfireRecord {
   readonly turnId: string
   readonly at: number
   readonly signal: MisfireSignal
-  /** The Command that carried the signal. */
-  readonly signalTurnId: string
+  /** The Command that carried the signal; absent for an overrun Escape or the Abort Head carried, which is no Command. */
+  readonly signalTurnId?: string
   readonly withinMs: number
+  /** For an overrun: the hop of its Task the signal counts against. */
+  readonly hop?: number
 }
 
 export type CommandLogRecord = DecisionRecord | MisfireRecord

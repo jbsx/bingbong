@@ -689,6 +689,33 @@ export function readinessWaitScript(ms: number): string {
   })()`
 }
 
+/**
+ * A landing's quiet window (#328): resolves `true` once the main document
+ * has gone this many ms with no mutation, the readiness watch's observer
+ * re-armed on every change. It lets go of itself at the cap (`false`), so
+ * a page that never goes quiet keeps no observer.
+ */
+export function domQuietScript(quietMs: number, capMs: number): string {
+  return `new Promise((resolve) => {
+    /* DOM_QUIET */
+    let timer = null
+    let cap = null
+    const end = (quiet) => {
+      observer.disconnect()
+      clearTimeout(timer)
+      clearTimeout(cap)
+      resolve(quiet)
+    }
+    const observer = new MutationObserver(() => {
+      clearTimeout(timer)
+      timer = setTimeout(() => end(true), ${quietMs})
+    })
+    observer.observe(document.documentElement || document, { subtree: true, childList: true, attributes: true, characterData: true })
+    timer = setTimeout(() => end(true), ${quietMs})
+    cap = setTimeout(() => end(false), ${capMs})
+  })`
+}
+
 /** Light the element at this zero-based registry position for a moment (#324): the Command's chosen ref, as the click lands. */
 export function flashRefScript(index: number): string {
   return `(() => {

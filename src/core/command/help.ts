@@ -10,6 +10,7 @@ export const COMMAND_HELP_LINES: readonly string[] = [
   '  type <text> in <field>   type into the field the label names (or: type <ref> <text>)',
   '  scroll up|down           scroll the page',
   '  back | forward           move in history',
+  '  reload                   load the page again',
   '  press enter|escape|space|up|down|left|right [n]',
   '  read                     print a numbered-ref snapshot of visible interactive elements',
   '  clear                    clear the focused field',

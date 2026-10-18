@@ -27,7 +27,7 @@ export const SPOKEN_FAILURES: Readonly<Record<SpokenFailure, string>> = {
 }
 
 /** A landing's first line: the verb, the address and the title of the page it carries. */
-const LANDING_LINE_RE = /^(?:navigated|went back|went forward): url=(\S*) title=("(?:[^"\\]|\\.)*")/
+const LANDING_LINE_RE = /^(?:navigated|went back|went forward|reloaded): url=(\S*) title=("(?:[^"\\]|\\.)*")/
 
 function landingFacts(result: string): { url: string; title: string } | null {
   const match = LANDING_LINE_RE.exec(result.split('\n', 1)[0] ?? '')

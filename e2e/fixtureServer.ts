@@ -1191,6 +1191,8 @@ export async function startFixtureServer(): Promise<FixtureServer> {
   let visionEndpointHits = 0
   let lastAuthorization: string | undefined
   let statusBoardValue = 'north'
+  /** Responses the landing fixtures never finish (#328), destroyed at close. */
+  const held = new Set<ServerResponse>()
   // Late-bound (the alt listener exists only after listenOn below); the
   // no-review stand-in keeps the closure out of the alt const's TDZ.
   let altUrlOf: (path: string) => string = () => 'http://127.0.0.2/alt-not-yet-listening'
@@ -1264,6 +1266,12 @@ export async function startFixtureServer(): Promise<FixtureServer> {
       }, 3_000)
       return
     }
+    // The landing fixtures' image (#328): headers, and never a body, so the page's load event never comes.
+    if (req.url === '/landing/held-image') {
+      res.writeHead(200, { 'Content-Type': 'image/png' })
+      held.add(res)
+      return
+    }
     res.writeHead(200, { 'Content-Type': 'text/html' })
     if (req.url === '/cookie-echo') {
       res.end(page('<h1 style="color:#fff">cookie echo fixture page</h1>'))
@@ -1284,6 +1292,15 @@ export async function startFixtureServer(): Promise<FixtureServer> {
       return
     }
     // #327: a page of plain prose whose sentences the TTS e2e hears spoken, in order.
+    // The landing wait (#328): pages whose load event never comes — an image
+    // answered with headers and never a body — one that goes DOM-quiet, one
+    // that never does, and a not-found page the wall must still be read on.
+    if (req.url === '/landing/held' || req.url === '/landing/busy' || req.url === '/landing/missing') {
+      const title = req.url === '/landing/held' ? 'held landing' : req.url === '/landing/busy' ? 'busy landing' : 'Page not found'
+      const busy = req.url === '/landing/busy' ? '<script>setInterval(() => { document.body.dataset.tick = String(Date.now()) }, 50)</script>' : ''
+      res.end(page(`<title>${title}</title><main style="color:#fff"><h1>${title}</h1><p>The page is here; one image never finishes.</p><img src="/landing/held-image" alt=""></main>${busy}`))
+      return
+    }
     if (req.url === '/story') {
       res.end(page('<title>story fixture</title><main style="color:#fff"><h1>The lighthouse</h1><p>The keeper climbed the stairs. The lamp was cold.</p><p>He lit it before dark.</p></main>'))
       return
@@ -1592,10 +1609,12 @@ export async function startFixtureServer(): Promise<FixtureServer> {
   const [primary, alt] = await Promise.all([listenOn('127.0.0.1'), listenOn('127.0.0.2')])
   altUrlOf = alt.url
   urlOf = primary.url
-  const close = (server: Server): Promise<void> =>
-    new Promise((resolve, reject) =>
-      server.close((error) => (error ? reject(error) : resolve())),
-    )
+  const close = (server: Server): Promise<void> => {
+    // A response held open (#328) would hold the close open with it.
+    for (const response of held) response.destroy()
+    held.clear()
+    return new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())))
+  }
 
   return {
     url: primary.url,

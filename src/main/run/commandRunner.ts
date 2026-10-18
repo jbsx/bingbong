@@ -1,4 +1,4 @@
-import type { BrowserController, VisualGroundingController } from '../../core/ports/browser'
+import type { BrowserController, PageLanding, VisualGroundingController } from '../../core/ports/browser'
 import { DEFAULT_DECISION_THRESHOLDS, type DecisionModel } from '../../core/ports/decisionModel'
 import type { PipelineEvent } from '../../core/pipeline/events'
 import type { CommandRunState } from '../../core/pipeline/runState'
@@ -7,10 +7,22 @@ import type { PerfTracer } from '../../core/perf/perfTracer'
 import { commandRefOf, describeCommand, type Command, type CommandPage } from '../../core/command/command'
 import { COMMAND_HELP } from '../../core/command/help'
 import { bestGuess, headsAnotherVerb, localMatch } from '../../core/command/localMatch'
-import { commandQuestions, commandState, partialQuestions, readCommandAnswers } from '../../core/command/jevReading'
+import { commandQuestions, commandState, partialQuestions, readCommandAnswers, type HopContext } from '../../core/command/jevReading'
 import { isAddressShaped, openAddress } from '../../core/command/openAddress'
 import { nameMatch, soundsAlike } from '../../core/command/nameMatch'
-import { jevDetailOf, misfireSignal, type CommandLogRecord, type CommandReading, type CommandSource, type DecisionRecord, type NameSource } from '../../core/command/decisionRecord'
+import {
+  MISFIRE_WINDOW_MS,
+  jevDetailOf,
+  misfireSignal,
+  type CommandLogRecord,
+  type CommandReading,
+  type CommandSource,
+  type DecisionRecord,
+  type NameSource,
+  type TaskEnded,
+  type TaskHop,
+} from '../../core/command/decisionRecord'
+import { parseSearchUrl } from '../../core/browser/urlInput'
 import { pageTermsOf } from '../../core/voice/pageTerms'
 import { pageReadPart, pageReadText } from '../../core/browser/pageText'
 import { SPOKEN_FAILURES, spokenFailureOf, type SpokenFailure } from '../../core/command/spokenFailure'
@@ -43,6 +55,15 @@ import type { ActionEffect } from '../browser/createCdpBrowserController'
 // closes on the first spoken sample. A Command that fails, or lands on an
 // Action Outcome class, speaks one fixed line (spokenFailure.ts). Every
 // other action stays silent.
+//
+// A Task (#328, ADR 0076 amendment): an Utterance is one or more Commands.
+// Hop 0 is read as above. A Task goes on after a Command Jev read and ends
+// after one the Local Match settled: each further hop collects the landing
+// and asks Jev alone — the same three Choices plus `done`, against the whole
+// transcript, the addresses visited and the actions taken — until it says
+// `done` or `none`, an action meets a wall, five actions have fired, Jev
+// does not answer, or a later Utterance, Escape or the Abort Head
+// supersedes it. One `command` event and one decision record per hop.
 
 export type { CommandRunState }
 
@@ -119,6 +140,8 @@ export interface CommandRunnerDeps {
   decisionLog?: { write(record: CommandLogRecord): void }
   /** Hears the browser's first observable effect of an action (#324); the returned release stops hearing. */
   onEffect?(listener: (effect: ActionEffect) => void): () => void
+  /** Hears how a navigation landed (#328), for the hop's decision record; the returned release stops hearing. */
+  onLanding?(listener: (landing: PageLanding) => void): () => void
   screenshotDir(): string
   saveScreenshot(path: string, bytes: Uint8Array): Promise<void>
   /** The Learned Terms (ADR 0077); absent reads names off the page alone and learns nothing. */
@@ -143,6 +166,34 @@ const PREPARED_MAX_AGE_MS = 30_000
  * that moves on inside this window settles the chain on its last Slot.
  */
 const RETRY_CHAIN_WINDOW_MS = 60_000
+
+/** How many actions a Task may fire, hop 0's and scrolls included (#328): the fifth ends it where it stands. */
+const MAX_TASK_ACTIONS = 5
+
+/** The verbs a Jev-read Task goes on after (#328); every other verb ends it. */
+const CONTINUING: ReadonlySet<Command['verb']> = new Set(['open', 'click', 'type', 'press', 'scroll_up', 'scroll_down', 'back', 'forward', 'reload'])
+
+/**
+ * How a Task ends on this hop's reading alone (#328), before anything
+ * fires; null when it goes on after the action — a Jev-read continuing
+ * verb, whose own landing decides.
+ */
+function endedByReading(reading: CommandReading, verb: Command['verb'], hop: number): TaskEnded | null {
+  if (reading === 'local_match') return 'local_match'
+  if (reading === 'best_guess') return 'unavailable'
+  if (verb === 'done') return 'done'
+  if (verb === 'none') return hop === 0 ? 'terminal' : 'none'
+  return CONTINUING.has(verb) ? null : 'terminal'
+}
+
+/** What a fired action came to: it landed, it met a wall (it failed, or speaks a failure's line), or a later Command superseded it. */
+type FireOutcome = 'landed' | 'wall' | 'superseded'
+
+/** A fired action's outcome, and how its navigation landed when it made one (#328). */
+interface FireResult {
+  readonly outcome: FireOutcome
+  readonly landing?: PageLanding
+}
 
 /** The verbs that say the user moved on from a Slot: the retry chain settles on them. */
 const MOVES_ON: ReadonlySet<Command['verb']> = new Set(['click', 'scroll_up', 'scroll_down', 'read', 'forward'])
@@ -245,6 +296,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   let prepared: PreparedPage | null = null
   /** The Command that last fired, for the Misfire signal. */
   let previous: { turnId: string; verb: Command['verb']; key?: Command['key']; at: number } | null = null
+  /** The Jev-read hop that last fired a continuing verb (#328), for the overrun signal, while its Task is under way; null once it ends on its own, another Command fires, or one is counted. */
+  let jevHop: { taskId: string; turnId: string; hop: number; at: number } | null = null
   /** The runner's texts still sounding (a Page Read, a failure's line): the next Command or an abort silences them. */
   let sounding = 0
 
@@ -449,6 +502,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         return browser.back()
       case 'forward':
         return browser.forward()
+      case 'reload':
+        return browser.reload()
       case 'press': {
         const key = command.key ?? { key: 'Enter' }
         await browser.pressKey(key, command.times ?? 1)
@@ -470,6 +525,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       case 'stop':
         return 'stopped'
       case 'none':
+      case 'done':
         return ''
     }
   }
@@ -526,13 +582,27 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
    * learning, superseding the Command in flight, and the action — its
    * events, its Reaction, its result. Resolves when the action settles.
    */
-  async function fire(turnId: string, text: string, source: CommandSource, command: Command, page: CommandPage, readingKind: CommandReading, matched: NameMatched | null, firedAt: number, reacting: Reacting): Promise<void> {
-    // The Misfire signal (ADR 0076): this Command as the recovery of the one that fired before it.
-    if (previous !== null) {
+  async function fire(
+    turnId: string,
+    text: string,
+    source: CommandSource,
+    command: Command,
+    page: CommandPage,
+    readingKind: CommandReading,
+    matched: NameMatched | null,
+    firedAt: number,
+    reacting: Reacting,
+    task: TaskHop,
+  ): Promise<FireResult> {
+    // The Misfire signal (ADR 0076): this Command as the recovery of the one
+    // that fired before it. A hop past the first is the Task's own step, never the user's recovery.
+    if (previous !== null && task.hop === 0) {
       const signal = misfireSignal(previous, { verb: command.verb, key: command.key, at: firedAt })
       if (signal !== null) log({ type: 'misfire', turnId: previous.turnId, at: firedAt, signal, signalTurnId: turnId, withinMs: firedAt - previous.at })
     }
     previous = { turnId, verb: command.verb, key: command.key, at: firedAt }
+    // A Jev-read hop: what an overrun is read against, until the next one fires.
+    jevHop = readingKind === 'jev' && CONTINUING.has(command.verb) ? { taskId: task.id, turnId, hop: task.hop, at: firedAt } : null
     if (source === 'spoken') learnFrom(command, matched, firedAt)
 
     // A later Command supersedes the one in flight, and silences what it was saying; `stop` is only that.
@@ -543,11 +613,11 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     inFlight = { turnId, generation: mine }
     const current = (): boolean => inFlight !== null && inFlight.generation === mine
 
-    publish({ type: 'command', turnId, text, action: describeCommand(command, page), at: firedAt })
+    publish({ type: 'command', turnId, text, action: describeCommand(command, page), task, at: firedAt })
     if (command.verb === 'stop') {
       inFlight = null
       publish({ type: 'done', turnId, outcome: 'done', at: at() })
-      return
+      return { outcome: 'landed' }
     }
     publish({ type: 'status', turnId, status: 'acting', at: at() })
     const callId = `${turnId}-1`
@@ -566,9 +636,16 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     const release = deps.onEffect?.((effect) => {
       if (current() && speech === undefined) react(effect)
     })
+    // How its navigation landed (#328), heard while it is the Command in flight.
+    let landing: PageLanding | undefined
+    const releaseLanding = deps.onLanding?.((landed) => {
+      if (current()) landing = landed
+    })
+    const ended = (outcome: FireOutcome): FireResult => ({ outcome, ...(landing !== undefined ? { landing } : {}) })
     try {
       const result = await perform(command)
-      if (!current()) return
+      if (!current()) return ended('superseded')
+      let outcome: FireOutcome = 'landed'
       const card = cardOf(command, result)
       if (speech === undefined) react(card !== null && command.verb === 'read' ? 'display' : 'settled')
       publish({ type: 'tool_result', turnId, callId, name, ok: true, result, at: at() })
@@ -579,25 +656,30 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         await speakPageRead(speech, turnId, result, current, () => {
           if (current()) react('spoken')
         })
-        if (!current()) return
+        if (!current()) return ended('superseded')
         // Nothing was spoken (the voice failed, or was cut first): the Card was the effect.
         react('display', shownAt)
       } else {
         const state = browser.state()
-        sayFailure(turnId, spokenFailureOf({ tool: name, outcome: { ok: true, result }, ...(state.url ? { url: state.url } : {}), ...(state.title ? { title: state.title } : {}) }))
+        const failure = spokenFailureOf({ tool: name, outcome: { ok: true, result }, ...(state.url ? { url: state.url } : {}), ...(state.title ? { title: state.title } : {}) })
+        sayFailure(turnId, failure)
+        if (failure !== null) outcome = 'wall'
       }
       inFlight = null
       publish({ type: 'done', turnId, outcome: 'done', at: at() })
+      return ended(outcome)
     } catch (error) {
-      if (!current()) return
+      if (!current()) return ended('superseded')
       react('failed')
       const message = error instanceof Error ? error.message : String(error)
       publish({ type: 'tool_result', turnId, callId, name, ok: false, error: message, at: at() })
       sayFailure(turnId, 'failed')
       inFlight = null
       publish({ type: 'done', turnId, outcome: 'failed', at: at() })
+      return ended('wall')
     } finally {
       release?.()
+      releaseLanding?.()
       reacting.settled()
     }
   }
@@ -607,6 +689,142 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       tracer?.summarize(turnId)
     } catch (error) {
       reportFault('run.commandRunner.summarize', error, { turnId })
+    }
+  }
+
+  /**
+   * The overrun signal (#328): Escape, "stop", the Abort Head or a new
+   * Utterance this soon after a Jev-read hop fired says the Task went on
+   * past what the user wanted; it counts against that hop, once.
+   */
+  function overrun(signalTurnId?: string): void {
+    if (jevHop === null) return
+    const now = at()
+    const withinMs = now - jevHop.at
+    if (withinMs <= MISFIRE_WINDOW_MS) log({ type: 'misfire', turnId: jevHop.turnId, at: now, signal: 'overrun', ...(signalTurnId !== undefined ? { signalTurnId } : {}), withinMs, hop: jevHop.hop })
+    jevHop = null
+  }
+
+  /** A Task under way (#328): its id (hop 0's turn id), the submission that started it, its words, and where it has been. */
+  interface Task {
+    readonly id: string
+    readonly submission: number
+    readonly text: string
+    readonly source: CommandSource
+    /** The tracer's monotonic ms at the Endpoint: where the `task` span opens. */
+    readonly endpointAt: number
+    readonly visited: string[]
+    readonly actions: string[]
+  }
+
+  function visit(task: Task, url: string): void {
+    if (url !== '' && url !== 'about:blank' && task.visited.at(-1) !== url) task.visited.push(url)
+  }
+
+  /** Whether a later submission (a Command, an Early Fire) or an abort has superseded the Task. */
+  const superseded = (task: Task): boolean => task.submission !== submitted
+
+  /** How a continuing hop's action came out, for the Task (#328): its end, or null when it goes on. */
+  function endedByAction(task: Task, outcome: FireOutcome): TaskEnded | null {
+    if (outcome === 'superseded' || superseded(task)) return 'superseded'
+    if (outcome === 'wall') return 'wall'
+    return task.actions.length >= MAX_TASK_ACTIONS ? 'cap' : null
+  }
+
+  /**
+   * A hop's record before it fires (#328): written now when nothing it does
+   * can change it — a Task that ends on a verb that leaves no page. A hop
+   * whose verb lands is written by {@link settleHop}, with its landing.
+   */
+  function recordBeforeFiring(record: DecisionRecord, ending: TaskEnded | null, command: Command): void {
+    if (ending !== null && !CONTINUING.has(command.verb)) log({ ...record, ended: ending })
+  }
+
+  /**
+   * A hop has fired (#328): its record is written with how its navigation
+   * landed and, when the Task ends here, how. A Task goes on from a
+   * Jev-read hop that landed, under the cap; resolves to its end, or null.
+   */
+  function settleHop(task: Task, record: DecisionRecord, ending: TaskEnded | null, command: Command, page: CommandPage, fired: FireResult): TaskEnded | null {
+    const landed = fired.landing !== undefined ? { landing: fired.landing } : {}
+    if (ending !== null) {
+      if (CONTINUING.has(command.verb)) log({ ...record, ...landed, ended: ending })
+      return ending
+    }
+    task.actions.push(describeCommand(command, page))
+    const ended = endedByAction(task, fired.outcome)
+    log({ ...record, ...landed, ...(ended !== null ? { ended } : {}) })
+    return ended
+  }
+
+  /** A Task's end (#328): the `task` span, from its Endpoint, on hop 0's turn. */
+  function endTask(task: Task, ended: TaskEnded, hops: number): TaskEnded {
+    // A Task that ended on its own did not overrun; a superseded one was read for an overrun as it was superseded.
+    if (jevHop?.taskId === task.id) jevHop = null
+    try {
+      tracer?.span(task.id, 'task', Math.max(0, monotonic() - task.endpointAt), { ended, hops, actions: task.actions.length, source: task.source })
+    } catch (error) {
+      reportFault('run.commandRunner.taskSpan', error, { turnId: task.id })
+    }
+    summarize(task.id)
+    return ended
+  }
+
+  /** A hop that fires nothing: its words greyed in the Feed with what it came to, and its turn closed. */
+  function dropHop(turnId: string, task: Task, hop: number, action: string, outcome: 'done' | 'cancelled', at_: number): void {
+    publish({ type: 'command', turnId, text: task.text, action, dropped: true, task: { id: task.id, hop }, at: at_ })
+    publish({ type: 'done', turnId, outcome, at: at() })
+  }
+
+  /**
+   * The hops past the first (#328): each collects the landing the last
+   * action left, asks Jev alone what comes next, and fires it — until the
+   * Task ends. Resolves to how it ended.
+   */
+  async function continueTask(task: Task, from: number): Promise<TaskEnded> {
+    for (let hop = from; ; hop += 1) {
+      const turnId = tracer?.mintTurnId() ?? `${task.id}-hop${hop}`
+      const spoken = task.source === 'spoken'
+      // The hop is being read: the Task is running, and abort reaches it.
+      reading = { turnId, submission: task.submission }
+      const page = superseded(task) ? blankPage(browser) : await collectPage(null)
+      visit(task, page.url)
+      const links = !superseded(task) && parseSearchUrl(page.url) !== null ? ((await browser.pageLinks().catch(() => null)) ?? []) : []
+      const context: HopContext = { hop, visited: [...task.visited], actions: [...task.actions], links }
+      const model = deps.decisionModel()
+      const result = superseded(task) || model === null ? null : await model.ask({ state: commandState(task.text, page, context), questions: commandQuestions(task.text, page, context) })
+      if (reading?.turnId === turnId) reading = null
+      const firedAt = at()
+      const base = { type: 'decision' as const, turnId, at: firedAt, source: task.source, transcript: task.text, reading: 'jev' as const, task: { id: task.id, hop } }
+      const none = { verb: 'none' as const, target: null, slot: null }
+
+      if (result === null || result.status !== 'answered') {
+        const jev = result === null ? undefined : { model: result.model, latencyMs: result.latencyMs, reason: result.reason }
+        const ended: TaskEnded = superseded(task) ? 'superseded' : 'unavailable'
+        log({ ...base, ...none, jevAsked: result !== null, ...(jev !== undefined ? { jev } : {}), ended })
+        dropHop(turnId, task, hop, ended === 'superseded' ? 'abandoned' : 'not read', ended === 'superseded' ? 'cancelled' : 'done', firedAt)
+        return endTask(task, ended, hop + 1)
+      }
+
+      const read: Reading = { command: readCommandAnswers(result.answers, task.text, page, context), page, reading: 'jev', jevAsked: true, jev: jevDetailOf(result.answers, result.latencyMs, result.model) }
+      const { command, matched } = matchName(read.command, page, spoken)
+      const record = { ...recordOf(turnId, firedAt, task.source, task.text, read, command, matched, false), task: { id: task.id, hop } }
+      if (superseded(task)) {
+        // A later Command, Escape or the Abort Head came while this hop was read: the reading is data, nothing fires.
+        log({ ...record, ended: 'superseded' })
+        dropHop(turnId, task, hop, 'abandoned', 'cancelled', firedAt)
+        return endTask(task, 'superseded', hop + 1)
+      }
+      const ending = endedByReading('jev', command.verb, hop)
+      if (command.verb === 'done' || command.verb === 'none') {
+        log({ ...record, ended: ending! })
+        dropHop(turnId, task, hop, command.verb === 'done' ? 'done' : 'no next step', 'done', firedAt)
+        return endTask(task, ending!, hop + 1)
+      }
+      recordBeforeFiring(record, ending, command)
+      const fired = await fire(turnId, task.text, task.source, command, page, 'jev', matched, firedAt, { react: () => {}, settled: () => summarize(turnId) }, { id: task.id, hop })
+      const ended = settleHop(task, record, ending, command, page, fired)
+      if (ended !== null) return endTask(task, ended, hop + 1)
     }
   }
 
@@ -635,6 +853,12 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     readonly firedMono: number
     readonly record: DecisionRecord
     readonly noul?: number
+    /** The submission it made, which its Task is superseded past (#328). */
+    readonly submission: number
+    readonly command: Command
+    readonly page: CommandPage
+    /** What its action came to, once it settles: hop 0's, which the Endpoint's Task goes on from (#328). */
+    outcome: Promise<FireResult>
     /** The Endpoint's monotonic ms, once it came. */
     endpointAt: number | null
     /** The first effect seen before the Endpoint: the Reaction closes on it, at 0, once the Endpoint comes. */
@@ -670,21 +894,27 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
    * An Early Fire's Utterance is over: its decision record is written —
    * with the Endpoint's transcript and the lead, when the Endpoint is what
    * closed it — and a Reaction whose effect came first is closed at 0.
+   * The record carries how its Task ended (#328); `deferred` leaves the
+   * writing to the caller, for a hop 0 its Task goes on from once its
+   * action lands. An Utterance that never reached its Endpoint ends after
+   * hop 0: superseded, when Jev read a hop that would have gone on.
    */
-  function closeEarly(fired: EarlyFired, endpoint: { transcript: string; at: number; truncated: boolean } | null): void {
+  function closeEarly(fired: EarlyFired, endpoint: { transcript: string; at: number; truncated: boolean } | null, ended: TaskEnded | 'deferred' = endedByReading(fired.record.reading, fired.record.verb, 0) ?? 'superseded'): DecisionRecord {
     early = null
     if (endpoint !== null) fired.endpointAt = endpoint.at
-    log({
+    const record: DecisionRecord = {
       ...fired.record,
       ...(endpoint !== null ? { transcript: endpoint.transcript } : {}),
       ...(endpoint?.truncated ? { truncated: true } : {}),
       earlyFire: { partial: fired.partial, ...(endpoint !== null ? { leadMs: leadOf(fired) } : {}), ...(fired.noul !== undefined ? { noul: fired.noul } : {}) },
       ...(partialCalls > 0 ? { partialCalls } : {}),
-    })
+    }
+    if (ended !== 'deferred') log({ ...record, ended })
     if (endpoint !== null && fired.effect !== null) {
       span(fired.turnId, Math.max(0, fired.effect.at - endpoint.at), { ...fired.effect.detail, earlyFire: true, leadMs: leadOf(fired) })
     }
     if (fired.settled) summarize(fired.turnId)
+    return record
   }
 
   /** A new Utterance (speech start) or the end of one (its Endpoint): what the last one's partials left is let go. */
@@ -726,24 +956,32 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     const stale = (): boolean => mine !== utterance || since !== submitted || firedIn(mine)
     const found = await readPartial(words, stale)
     if (found === null || stale()) return null
+    const turnId = tracer?.mintTurnId() ?? `turn-${at().toString(36)}`
+    // A new Utterance firing soon after a Jev-read hop: the Task overran (#328).
+    overrun(turnId)
     // An Early Fire is a submission: a reading still under way for an earlier Command is stale now.
     submitted += 1
-    const turnId = tracer?.mintTurnId() ?? `turn-${at().toString(36)}`
     const firedAt = at()
     const { command, matched } = matchName(found.command, found.page, true)
+    const hop0: TaskHop = { id: turnId, hop: 0 }
     const fired: EarlyFired = {
       utterance: mine,
       turnId,
       partial: words,
       firedMono: monotonic(),
-      record: recordOf(turnId, firedAt, 'spoken', words, found, command, matched, false),
+      record: { ...recordOf(turnId, firedAt, 'spoken', words, found, command, matched, false), task: hop0 },
       ...(found.noul !== undefined ? { noul: found.noul } : {}),
+      submission: submitted,
+      command,
+      page: found.page,
+      outcome: Promise.resolve({ outcome: 'landed' }),
       endpointAt: null,
       effect: null,
       settled: false,
     }
     early = fired
-    return { action: fire(turnId, words, 'spoken', command, found.page, found.reading, matched, firedAt, reactingEarly(fired)) }
+    fired.outcome = fire(turnId, words, 'spoken', command, found.page, found.reading, matched, firedAt, reactingEarly(fired), hop0)
+    return { action: fired.outcome.then(() => {}) }
   }
 
   return {
@@ -751,6 +989,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
 
     abort() {
       const had = reading !== null || inFlight !== null || sounding > 0
+      // Escape, "stop" or the Abort Head soon after a Jev-read hop fired: the Task overran (#328).
+      overrun()
       // A reading under way is stale from here: when its answer comes, it fires nothing.
       submitted += 1
       reading = null
@@ -811,14 +1051,23 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       const endpointAt = options?.endpointAt ?? monotonic()
       const truncated = options?.truncated === true
 
-      // The Endpoint of an Utterance a partial already fired on only closes it (#326): the final transcript is not read.
+      // The Endpoint of an Utterance a partial already fired on closes it (#326): the final transcript is not read again for hop 0.
+      // A Task hop 0 goes on from waits for this Endpoint, and its hops read the final transcript (#328).
       const fired = early
       if (fired !== null && source === 'spoken' && fired.utterance === utterance) {
         observeTerms(trimmed)
         prepared = null
-        closeEarly(fired, { transcript: trimmed, at: endpointAt, truncated })
+        const ending = endedByReading(fired.record.reading, fired.record.verb, 0)
+        // A hop 0 whose verb lands is recorded once it has, with its landing.
+        const lands = ending === null || CONTINUING.has(fired.command.verb)
+        const record = closeEarly(fired, { transcript: trimmed, at: endpointAt, truncated }, lands ? 'deferred' : ending)
         nextUtterance()
         if (options?.turnId !== undefined) summarize(options.turnId)
+        const task: Task = { id: fired.turnId, submission: fired.submission, text: trimmed, source, endpointAt, visited: [], actions: [] }
+        visit(task, fired.page.url)
+        const ended = lands ? settleHop(task, record, ending, fired.command, fired.page, await fired.outcome) : ending
+        if (ended !== null) endTask(task, ended, 1)
+        else await continueTask(task, 1)
         return true
       }
       // A spoken Endpoint of another Utterance: the Early Fire never reached its own. A typed line leaves it waiting for its Endpoint.
@@ -828,6 +1077,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       if (source === 'spoken') nextUtterance()
 
       const turnId = options?.turnId ?? tracer?.mintTurnId() ?? `turn-${at().toString(36)}`
+      // A new Utterance soon after a Jev-read hop fired: the Task overran (#328).
+      overrun(turnId)
       // This submission: a reading still under way for an earlier one is stale now.
       submitted += 1
       const submission = submitted
@@ -841,28 +1092,52 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       const firedAt = at()
       if (source === 'spoken') observeTerms(trimmed)
 
+      // This Utterance is a Task (#328); hop 0 is the Command read above.
+      const task: Task = { id: turnId, submission, text: trimmed, source, endpointAt, visited: [], actions: [] }
+      const hop0: TaskHop = { id: turnId, hop: 0 }
+      visit(task, heard.page.url || (browser.state().url ?? ''))
       const { command, matched } = matchName(heard.command, heard.page, source === 'spoken')
-      log({ ...recordOf(turnId, firedAt, source, trimmed, heard, command, matched, truncated), ...(calls > 0 ? { partialCalls: calls } : {}) })
+      const record: DecisionRecord = { ...recordOf(turnId, firedAt, source, trimmed, heard, command, matched, truncated), ...(calls > 0 ? { partialCalls: calls } : {}), task: hop0 }
 
       if (submission !== submitted) {
         // A later Command (or an abort) arrived while this one was being
         // read: the later one stands. The reading is data; nothing fires.
-        publish({ type: 'command', turnId, text: trimmed, action: 'abandoned', dropped: true, at: firedAt })
+        log({ ...record, ended: 'superseded' })
+        publish({ type: 'command', turnId, text: trimmed, action: 'abandoned', dropped: true, task: hop0, at: firedAt })
         publish({ type: 'done', turnId, outcome: 'cancelled', at: at() })
+        endTask(task, 'superseded', 1)
         return true
       }
 
-      if (command.verb === 'none') {
-        // An Utterance read as no Command: one greyed entry of the words, nothing else.
-        publish({ type: 'command', turnId, text: trimmed, dropped: true, at: firedAt })
+      // A reading that ends the Task before it fires is recorded so now; a hop that goes on, once its action has landed.
+      const ending = endedByReading(heard.reading, command.verb, 0)
+      recordBeforeFiring(record, ending, command)
+      if (command.verb === 'none' || command.verb === 'done') {
+        // An Utterance read as no Command, or as the page already being what was asked: one greyed entry of the words, nothing else.
+        publish({ type: 'command', turnId, text: trimmed, ...(command.verb === 'done' ? { action: 'already here' } : {}), dropped: true, task: hop0, at: firedAt })
         publish({ type: 'done', turnId, outcome: 'done', at: at() })
+        endTask(task, ending!, 1)
         return true
       }
 
-      await fire(turnId, trimmed, source, command, heard.page, heard.reading, matched, firedAt, {
-        react: (detail, endedAt) => span(turnId, endedAt - endpointAt, detail),
-        settled: () => summarize(turnId),
-      })
+      const result = await fire(
+        turnId,
+        trimmed,
+        source,
+        command,
+        heard.page,
+        heard.reading,
+        matched,
+        firedAt,
+        {
+          react: (detail, endedAt) => span(turnId, endedAt - endpointAt, detail),
+          settled: () => summarize(turnId),
+        },
+        hop0,
+      )
+      const ended = settleHop(task, record, ending, command, heard.page, result)
+      if (ended !== null) endTask(task, ended, 1)
+      else await continueTask(task, 1)
       return true
     },
   }

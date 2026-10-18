@@ -1,6 +1,13 @@
 import type { BlockerPageFacts } from '../browser/blockerNudge'
 import type { PageLink, PageSnapshot, SnapshotRef } from '../browser/snapshot'
 
+/**
+ * How a navigation's landing ended (#328, ADR 0076 amendment): the page
+ * went DOM-quiet after `dom-ready`, its load event came first, or the 3 s
+ * cap from the commit took it as it stood.
+ */
+export type PageLanding = 'quiet' | 'loaded' | 'capped'
+
 export interface BrowserState {
   url: string | null
   title: string | null
@@ -105,6 +112,8 @@ export interface BrowserController {
   screenshot(options?: ScreenshotOptions): Promise<Uint8Array>
   back(): Promise<string>
   forward(): Promise<string>
+  /** Load the page again (#328): a landing like a navigate's, its line opening `reloaded:`. */
+  reload(): Promise<string>
   /** Inject a shortcut key (times consecutive presses) on the focused page. */
   pressKey(press: KeyPress, times?: number): Promise<void>
   /** Read actual state from the page's active media element after controls settle. */

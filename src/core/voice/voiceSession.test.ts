@@ -100,6 +100,8 @@ async function createSession(overrides?: {
   speaking?: FakeSpeaking
   /** Live `hotListenSilenceMs` (#326). */
   hotListenSilenceMs?: () => number
+  /** What the runner answers a submitted Command with: its Task, settling when the Task ends (#328). */
+  submitResult?: () => Promise<unknown>
 }): Promise<SessionHarness> {
   const vad = overrides?.vad ?? new FakeVad()
   const baseTranscriber = overrides?.transcriber ?? new FakeTranscriber()
@@ -197,6 +199,7 @@ async function createSession(overrides?: {
     onSubmitCommand: (text, sent: SubmittedCommand) => {
       commands.push(text)
       submitted.push({ text, ...sent })
+      return overrides?.submitResult?.()
     },
     onSpeechStart: () => speechStarts.push(1),
     onPartial: (text) => partials.push(text),
@@ -1103,6 +1106,23 @@ describe('voice session — Hot Listen (#326)', () => {
     // The monitor is reset so the next wake is heard.
     expect(detector.resets).toBe(resets + 1)
     expect(harness.commands).toEqual(['scroll down', 'go back'])
+  })
+
+  it('restarts its silence clock when the Task ends: the full hotListenSilenceMs after the final page (#328 AC8)', async () => {
+    let endTask: () => void = () => {}
+    const { harness } = await hotListen(['pull up the latest elon musk tweet'], {
+      hotListenSilenceMs: () => 8_000,
+      submitResult: () => new Promise<void>((resolve) => (endTask = resolve)),
+    })
+    await harness.speakUtterance()
+    // Five seconds of hops, then the Task ends.
+    harness.clock.advance(5_000)
+    endTask()
+    await flush()
+    harness.clock.advance(7_000)
+    expect(harness.states.at(-1)).toEqual(open)
+    harness.clock.advance(1_000)
+    expect(harness.states.at(-1)).toEqual(closed)
   })
 
   it('defaults to 8 s of silence', async () => {

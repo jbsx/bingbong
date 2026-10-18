@@ -87,7 +87,7 @@ export function parseEmptyMarker(text: string): EmptyLanding | null {
 }
 
 /** The navigation verbs: each settles on a page, whatever it was before. */
-export const NAVIGATION_VERBS: ReadonlySet<string> = new Set(['navigate', 'back', 'go_forward'])
+export const NAVIGATION_VERBS: ReadonlySet<string> = new Set(['navigate', 'back', 'go_forward', 'reload'])
 
 /** The verbs that arrive at another document when their outcome's first line says so (#309). */
 const ARRIVING_INPUT_VERBS: ReadonlySet<string> = new Set(['click', 'type'])

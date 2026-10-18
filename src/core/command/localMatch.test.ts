@@ -26,6 +26,14 @@ const RESULTS: CommandRef[] = [
   { ref: 6, kind: 'link', label: 'Settings', href: 'https://duckduckgo.com/settings', inputType: null },
 ]
 
+describe('the Local Match: reload (#328)', () => {
+  it('reads the grammar and the spoken verb as a reload', () => {
+    expect(localMatch('reload', REFS)).toEqual({ verb: 'reload', target: null, slot: null })
+    expect(localMatch('refresh the page', REFS)).toEqual({ verb: 'reload', target: null, slot: null })
+    expect(localMatch('reload page', REFS)).toEqual({ verb: 'reload', target: null, slot: null })
+  })
+})
+
 describe('the Local Match: the Nth result on a search page', () => {
   it('reads "the first result" and "second link" as the Nth link that leaves the engine, or its redirect to one', () => {
     expect(localMatch('open the first result', RESULTS, SEARCH_URL)).toEqual({ verb: 'click', target: 3, slot: null })

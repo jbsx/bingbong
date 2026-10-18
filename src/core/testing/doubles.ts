@@ -239,6 +239,14 @@ export class FakeBrowser implements BrowserController, VisualGroundingController
     return 'went forward: url= title=""'
   }
 
+  /** Every reload (#328). */
+  reloads = 0
+
+  async reload(): Promise<string> {
+    this.reloads += 1
+    return `reloaded: url=${this.snapshot.url} title=${JSON.stringify(this.snapshot.title)}`
+  }
+
   state(): BrowserState {
     return this.pageState
   }

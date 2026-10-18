@@ -1,4 +1,4 @@
-import type { CommandLogRecord, CommandReading, MisfireSignal } from '../command/decisionRecord'
+import type { CommandLogRecord, CommandReading, MisfireSignal, TaskEnded } from '../command/decisionRecord'
 import type { PerfSpanRecord } from './perfTracer'
 import { formatMs, nearestRankPercentile } from '../report/stats.ts'
 
@@ -52,6 +52,12 @@ export interface DecisionReport {
   names: { page: number; learned: number }
   /** Early Fire (#326): spoken Commands, how many fired on a partial, the lead over the Endpoint, and the Jev calls made on partials. */
   earlyFire: { spoken: number; fired: number; lead: { p50: number; p95: number } | null; partialCalls: number; spokenJevAsked: number }
+  /**
+   * Tasks (#328): one per Utterance, its hops' records sharing its id —
+   * how each ended, how many hops it took, and the overruns counted
+   * against each hop number.
+   */
+  tasks: { count: number; ended: Partial<Record<TaskEnded, number>>; hops: { p50: number; max: number } | null; overrunsByHop: Record<number, number> }
 }
 
 function statsOf(verb: string, durations: readonly number[]): ReactionStats {
@@ -119,16 +125,22 @@ export function buildDecisionReport(records: readonly CommandLogRecord[]): Decis
     misfiresBySignal: {},
     names: { page: 0, learned: 0 },
     earlyFire: { spoken: 0, fired: 0, lead: null, partialCalls: 0, spokenJevAsked: 0 },
+    tasks: { count: 0, ended: {}, hops: null, overrunsByHop: {} },
   }
   const latencies: number[] = []
   const leads: number[] = []
+  /** Each Task's hop count, by its id. */
+  const taskHops = new Map<string, number>()
   for (const record of records) {
     if (record.type === 'misfire') {
       report.misfires += 1
       report.misfiresBySignal[record.signal] = (report.misfiresBySignal[record.signal] ?? 0) + 1
+      if (record.signal === 'overrun' && typeof record.hop === 'number') report.tasks.overrunsByHop[record.hop] = (report.tasks.overrunsByHop[record.hop] ?? 0) + 1
       continue
     }
     report.commands += 1
+    if (record.task !== undefined) taskHops.set(record.task.id, Math.max(taskHops.get(record.task.id) ?? 0, record.task.hop + 1))
+    if (record.ended !== undefined) report.tasks.ended[record.ended] = (report.tasks.ended[record.ended] ?? 0) + 1
     if (record.reading in report.readings) report.readings[record.reading] += 1
     if (record.slotFrom === 'page' || record.slotFrom === 'learned') report.names[record.slotFrom] += 1
     if (record.source === 'spoken') {
@@ -148,6 +160,9 @@ export function buildDecisionReport(records: readonly CommandLogRecord[]): Decis
   }
   report.jevLatency = percentiles(latencies)
   report.earlyFire.lead = percentiles(leads)
+  report.tasks.count = taskHops.size
+  const hops = [...taskHops.values()].sort((a, b) => a - b)
+  report.tasks.hops = hops.length === 0 ? null : { p50: nearestRankPercentile(hops, 50), max: hops[hops.length - 1]! }
   return report
 }
 
@@ -210,6 +225,22 @@ export function formatCommandReport(reaction: ReactionReport, decisions: Decisio
         `early fire: ${early.fired} of ${early.spoken} spoken (${percent(early.fired, early.spoken)})` +
           (early.lead ? `, lead p50 ${formatMs(early.lead.p50)} p95 ${formatMs(early.lead.p95)}` : '') +
           ` | jev calls per spoken utterance ${calls.toFixed(2)} (${early.partialCalls} on partials)`,
+      )
+    }
+    const { tasks } = decisions
+    if (tasks.count > 0) {
+      const ended = Object.entries(tasks.ended)
+        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+        .map(([how, count]) => `${how} ${count}`)
+        .join(', ')
+      const overruns = Object.entries(tasks.overrunsByHop)
+        .sort((a, b) => Number(a[0]) - Number(b[0]))
+        .map(([hop, count]) => `hop ${hop} ${count}`)
+        .join(', ')
+      lines.push(
+        `tasks: ${tasks.count} | ended ${ended || 'none recorded'}` +
+          (tasks.hops ? ` | hops p50 ${tasks.hops.p50}, max ${tasks.hops.max}` : '') +
+          ` | overruns by hop: ${overruns || 'none'}`,
       )
     }
   }

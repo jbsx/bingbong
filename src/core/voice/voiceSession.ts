@@ -73,8 +73,11 @@ export interface VoiceSessionDeps {
   /**
    * Where recognized Commands go — the exact path the Prompt Bar takes,
    * with the Endpoint's turn id and clock reading beside the words (#324).
+   * It may answer with the Command's Task (#328), settling when the Task
+   * ends: a Hot Listen's silence clock restarts then, so the user has the
+   * whole of it after the final page.
    */
-  onSubmitCommand(text: string, submitted: SubmittedCommand): void
+  onSubmitCommand(text: string, submitted: SubmittedCommand): void | Promise<unknown>
   /**
    * Speech started inside a listen (#324): the runner collects the page's
    * refs now, in parallel with the speech, so they are in hand at the Endpoint.
@@ -228,6 +231,11 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
       if (speaking()) startSilenceClock()
       else stopListening()
     })
+  }
+
+  /** A submitted Command's Task ended (#328): the open Hot Listen's silence clock starts again from here. */
+  function restartAfterTask(): void {
+    if (hot && !capturing() && !transcribing) startSilenceClock()
   }
 
   function clearPartial(): void {
@@ -515,15 +523,21 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
       backToListening()
       return
     }
-    deps.onSubmitCommand(text, {
+    const task = deps.onSubmitCommand(text, {
       ...(turnId !== null ? { turnId } : {}),
       truncated: utterance.truncated,
       ...(endpointAt !== null ? { endpointAt } : {}),
     })
     deps.onHeard({ text, routed: 'command' })
     // One wake, one spoken session (#326): a wake listen stays open; the hotkey's is single-shot.
-    if (reason === 'wake') stayHot()
-    else stopListening()
+    if (reason === 'wake') {
+      stayHot()
+      // The Task's end restarts the clock (#328) — unless the Listen closed, or the next Utterance is under way.
+      void task?.then(
+        () => restartAfterTask(),
+        () => restartAfterTask(),
+      )
+    } else stopListening()
   }
 
   return {

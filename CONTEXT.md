@@ -79,6 +79,8 @@ One Command of a Task after the first, fired on the reading of the page the
 previous Command landed on: the same three Choices, with `done` among the
 verbs and the pages already visited never offered. A Hop types only words
 the user said and never guesses when the Decision Model does not answer.
+Hops are numbered from the first Command, hop 0; a reading that ends the
+Task without firing (`done`, a dead end) is a hop of its own on the record.
 _Avoid_: step, round, turn, continuation
 
 **Command**:

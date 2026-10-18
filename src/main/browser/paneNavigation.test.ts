@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { UnsettledActionError } from '../../core/browser/unsettledAction'
 import { FakeClock, flushMicrotasks } from '../../core/testing/doubles'
+import { LANDING_CAP_MS, LANDING_QUIET_MS } from './createCdpBrowserController'
 import {
   ARRIVAL_LOAD_TIMEOUT_MS,
   HISTORY_STEP_TIMEOUT_MS,
@@ -38,6 +39,7 @@ function fakeWebContents(overrides: Partial<PaneNavigationTarget> = {}) {
     once: (_event, listener) => {
       navigated = listener
     },
+    reload: () => {},
     getURL: () => 'https://example.com/',
     getTitle: () => 'Example',
     isDestroyed: () => false,
@@ -59,8 +61,115 @@ function fakeWebContents(overrides: Partial<PaneNavigationTarget> = {}) {
       fire('did-start-navigation', { url: 'https://example.com/next', ...details }),
     /** The tab stops loading: the load it was on finished, failed or was cancelled. */
     stopLoading: () => fire('did-stop-loading'),
+    /** The main document's DOMContentLoaded. */
+    domReady: () => fire('dom-ready'),
+    /** The main document's load event. */
+    finishLoad: () => fire('did-finish-load'),
   }
 }
+
+describe('a landing is the page gone DOM-quiet (#328, ADR 0076 amendment)', () => {
+  /** A page whose DOM goes quiet the quiet window after it is asked, or never. */
+  function landingPage(quiet: 'quiet' | 'never') {
+    const wc = fakeWebContents()
+    const clock = new FakeClock()
+    const landings: string[] = []
+    const asked: number[] = []
+    const page = createPaneNavigation(wc.target, clock, {
+      domQuiet: (ms) => {
+        asked.push(ms)
+        return quiet === 'quiet' ? new Promise<void>((resolve) => clock.setTimer(ms, resolve)) : new Promise<void>(() => {})
+      },
+      onLanding: (landing) => landings.push(landing),
+    })
+    return { wc, clock, landings, asked, page }
+  }
+
+  it('resolves a navigate at dom-ready and the quiet window, before a load event held open', async () => {
+    const { wc, clock, landings, asked, page } = landingPage('quiet')
+    let landed: unknown
+    void page.loadUrl('https://slow.example').then((value) => (landed = value))
+    wc.commit('https://slow.example/', 200)
+    await flushMicrotasks()
+    expect(landed).toBeUndefined()
+    wc.domReady()
+    await flushMicrotasks()
+    clock.advance(LANDING_QUIET_MS - 1)
+    await flushMicrotasks()
+    expect(landed).toBeUndefined()
+    clock.advance(1)
+    await flushMicrotasks()
+    expect(landed).toBe('quiet')
+    expect(landings).toEqual(['quiet'])
+    expect(asked).toEqual([250])
+  })
+
+  it('takes the load event when it comes first', async () => {
+    const { wc, page } = landingPage('never')
+    const landed = page.loadUrl('https://example.com')
+    wc.commit('https://example.com/', 200)
+    wc.finishLoad()
+    await expect(landed).resolves.toBe('loaded')
+  })
+
+  it('takes the page as it stands 3 s after the commit on a page that never goes quiet, and says so', async () => {
+    const { wc, clock, landings, page } = landingPage('never')
+    let landed: unknown
+    void page.loadUrl('https://busy.example').then((value) => (landed = value))
+    wc.commit('https://busy.example/', 200)
+    wc.domReady()
+    await flushMicrotasks()
+    clock.advance(LANDING_CAP_MS - 1)
+    await flushMicrotasks()
+    expect(landed).toBeUndefined()
+    clock.advance(1)
+    await flushMicrotasks()
+    expect(landed).toBe('capped')
+    expect(landings).toEqual(['capped'])
+    expect(LANDING_CAP_MS).toBe(3_000)
+    expect(LANDING_QUIET_MS).toBe(250)
+  })
+
+  it('reads an abort after the commit as the site moving on, not as a failed navigate', async () => {
+    const { wc, page } = landingPage('never')
+    const landed = page.loadUrl('https://consent.example')
+    wc.commit('https://consent.example/', 200)
+    wc.failLate(Object.assign(new Error('net::ERR_ABORTED'), { code: 'ERR_ABORTED' }))
+    wc.commit('https://consent.example/after', 200)
+    wc.finishLoad()
+    await expect(landed).resolves.toBe('loaded')
+  })
+
+  it('lands a click that left the page the same way, the cap counted from its commit', async () => {
+    const { wc, clock, page } = landingPage('never')
+    const watch = page.watchArrival!()
+    wc.start({ isMainFrame: true, isSameDocument: false })
+    wc.commit('https://example.com/next', 200)
+    wc.domReady()
+    // The action's own readiness wait ran a second before the arrival was asked.
+    clock.advance(1_000)
+    let arrival: string | undefined
+    void watch.arrival().then((value) => (arrival = value))
+    clock.advance(LANDING_CAP_MS - 1_000 - 1)
+    await flushMicrotasks()
+    expect(arrival).toBeUndefined()
+    clock.advance(1)
+    await flushMicrotasks()
+    expect(arrival).toBe('unfinished')
+  })
+
+  it('lands a click on a quiet page as loaded', async () => {
+    const { wc, clock, page } = landingPage('quiet')
+    const watch = page.watchArrival!()
+    wc.start({ isMainFrame: true, isSameDocument: false })
+    const arrival = watch.arrival()
+    wc.commit('https://example.com/next', 200)
+    wc.domReady()
+    await flushMicrotasks()
+    clock.advance(LANDING_QUIET_MS)
+    await expect(arrival).resolves.toBe('loaded')
+  })
+})
 
 describe('the top-level response status (#239, ADR 0050)', () => {
   it('carries the code of the last main-frame navigation, and knows none before one', () => {
@@ -121,7 +230,7 @@ describe('createPaneNavigation', () => {
 
     const load = page.loadUrl('https://example.com')
     wc.landLate()
-    await expect(load).resolves.toBeUndefined()
+    await expect(load).resolves.toBe('loaded')
 
     // The wait is over; advancing past it must not raise a late rejection.
     clock.advance(LOAD_TIMEOUT_MS * 2)

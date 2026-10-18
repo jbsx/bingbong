@@ -1,8 +1,9 @@
 import type { BrowserController, VisualGroundingController } from '../../core/ports/browser'
 import type { BrowserSubspans } from '../../core/perf/browserSubspans'
 import { authIdentityScript, resolveAuthIdentity, type AuthIdentity } from '../../core/browser/authIdentity'
-import { COLLECT_PAGE_SCRIPT } from './collectPageScript'
-import { createCdpBrowserController, type ActionEffects, type CdpDebugger } from './createCdpBrowserController'
+import { COLLECT_PAGE_SCRIPT, domQuietScript } from './collectPageScript'
+import { systemClock } from '../../core/ports/clock'
+import { LANDING_CAP_MS, createCdpBrowserController, type ActionEffects, type CdpDebugger } from './createCdpBrowserController'
 import { createPaneNavigation } from './paneNavigation'
 
 // Electron glue: adapts webContents.debugger + the pane's navigation surface
@@ -80,7 +81,18 @@ export function createPaneBrowserController(
     void cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: authIdentityScript(authIdentity) }).catch(() => {})
   }
 
-  const page = createPaneNavigation(wc)
+  // The landing wait (#328): the quiet window runs in the page over CDP —
+  // Electron's executeJavaScript would wait for the very load it replaces.
+  const page = createPaneNavigation(wc, systemClock, {
+    async domQuiet(quietMs) {
+      const response = (await cdp.send('Runtime.evaluate', { expression: domQuietScript(quietMs, LANDING_CAP_MS), awaitPromise: true, returnByValue: true })) as {
+        result?: { value?: unknown }
+      }
+      // The page let go of the watch at the cap without going quiet: the landing's own cap ends it.
+      if (response.result?.value !== true) await new Promise<void>(() => {})
+    },
+    ...(deps?.effects?.landed ? { onLanding: (landing) => deps.effects?.landed?.(landing) } : {}),
+  })
 
   return createCdpBrowserController({
     cdp,

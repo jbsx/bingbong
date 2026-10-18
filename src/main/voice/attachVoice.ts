@@ -59,9 +59,8 @@ export function attachVoiceToWindow(win: BrowserWindow, deps: AttachVoiceDeps): 
     speaking: deps.speaking,
     tracer: deps.tracer,
     dumper: deps.dumper,
-    onSubmitCommand: (text, submitted) => {
-      void runCommand(win, text, { ...submitted, source: 'spoken' })
-    },
+    // The Command's Task (#328): the Hot Listen's silence clock restarts when it ends.
+    onSubmitCommand: (text, submitted) => runCommand(win, text, { ...submitted, source: 'spoken' }),
     // Speech started (#324): the page's refs are collected while the user
     // speaks — and the page, once collected, names the Page Terms the same
     // speech is decoded under (ADR 0077).

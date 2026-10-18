@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { CommandLogRecord, DecisionRecord } from '../command/decisionRecord'
+import type { CommandLogRecord, DecisionRecord, TaskEnded } from '../command/decisionRecord'
 import type { PerfSpanRecord } from './perfTracer'
 import { buildDecisionReport, buildReactionReport, formatCommandReport } from './commandReport'
 
@@ -88,6 +88,8 @@ describe('buildDecisionReport', () => {
       misfiresBySignal: { back: 2, opposite_scroll: 1 },
       names: { page: 0, learned: 0 },
       earlyFire: { spoken: 5, fired: 0, lead: null, partialCalls: 0, spokenJevAsked: 3 },
+      // Records from before #328 carry no Task.
+      tasks: { count: 0, ended: {}, hops: null, overrunsByHop: {} },
     })
   })
 
@@ -185,6 +187,31 @@ describe('formatCommandReport', () => {
       'read                 1  300ms   300ms   300ms',
       'tts-first-sound      3  800ms  1200ms  1200ms',
     ])
+  })
+
+  it('prints one Task line: counts by how they ended, hops p50, overruns per hop number (#328, AC11)', () => {
+    const hop = (taskId: string, n: number, ended?: TaskEnded): CommandLogRecord => ({
+      ...decision(`${taskId}-${n}`, n === 0 && ended === 'local_match' ? 'local_match' : 'jev'),
+      task: { id: taskId, hop: n },
+      ...(ended !== undefined ? { ended } : {}),
+    })
+    const overrun = (taskId: string, n: number): CommandLogRecord => ({ type: 'misfire', turnId: `${taskId}-${n}`, at: AT, signal: 'overrun', withinMs: 900, hop: n })
+    const log: CommandLogRecord[] = [
+      hop('a', 0),
+      hop('a', 1),
+      overrun('a', 1),
+      hop('a', 2),
+      hop('a', 3, 'done'),
+      hop('b', 0, 'local_match'),
+      hop('c', 0),
+      hop('c', 1, 'none'),
+      overrun('c', 1),
+      overrun('c', 2),
+      hop('d', 0, 'local_match'),
+    ]
+    const lines = formatCommandReport(buildReactionReport([]), buildDecisionReport(log))
+    expect(lines.at(-1)).toBe('tasks: 4 | ended local_match 2, done 1, none 1 | hops p50 1, max 4 | overruns by hop: hop 1 2, hop 2 1')
+    expect(buildDecisionReport(log).tasks).toEqual({ count: 4, ended: { local_match: 2, done: 1, none: 1 }, hops: { p50: 1, max: 4 }, overrunsByHop: { 1: 2, 2: 1 } })
   })
 
   it('prints nothing when neither family has a record', () => {

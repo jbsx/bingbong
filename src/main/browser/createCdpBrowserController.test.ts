@@ -418,6 +418,12 @@ class FakePage implements CdpPageDriver {
     if (this.failForward) throw new Error('cannot go forward: no history')
   }
 
+  reloaded = 0
+
+  async reload(): Promise<void> {
+    this.reloaded += 1
+  }
+
   url(): string {
     if (this.hops && this.hops.length > 1) this.hops.shift()
     return this.hops ? this.hops[0].url : 'https://www.youtube.com/'

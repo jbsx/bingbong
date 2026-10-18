@@ -94,8 +94,38 @@ function harnessWith(overrides?: Partial<CliHarnessDeps>) {
     }
   }
 
-  return { browser, saved, input, done, expectOutput, hasExited: () => exited, readOutput: () => out }
+  const publish = (event: PipelineEvent): void => {
+    for (const listener of [...listeners]) listener(event)
+  }
+  return { browser, saved, input, done, expectOutput, publish, hasExited: () => exited, readOutput: () => out }
 }
+
+describe('runCliHarness: a Task (#328)', () => {
+  it("prints every hop of its line's Task, and a hop that fired nothing as what it came to", async () => {
+    let publish: (event: PipelineEvent) => void = () => {}
+    const cli = harnessWith({
+      run: async (line, options) => {
+        const id = options!.turnId!
+        publish({ type: 'command', turnId: id, text: line, action: 'open lofi', task: { id, hop: 0 }, at: 1 })
+        publish({ type: 'tool_result', turnId: id, callId: `${id}-1`, name: 'navigate', ok: true, result: 'navigated: url=https://duckduckgo.com/?q=lofi title="lofi"', at: 2 })
+        publish({ type: 'command', turnId: 'hop-1', text: line, action: 'click [3]', task: { id, hop: 1 }, at: 3 })
+        publish({ type: 'tool_result', turnId: 'hop-1', callId: 'hop-1-1', name: 'click', ok: true, result: 'clicked [3]: navigated', at: 4 })
+        publish({ type: 'command', turnId: 'hop-2', text: line, action: 'done', dropped: true, task: { id, hop: 2 }, at: 5 })
+        // Another line's Task is not this one's.
+        publish({ type: 'tool_result', turnId: 'elsewhere', callId: 'x', name: 'scroll', ok: true, result: 'scrolled elsewhere', at: 6 })
+        return true
+      },
+    })
+    publish = cli.publish
+    cli.input.write('play some lofi\n')
+    await cli.expectOutput('done: "play some lofi"')
+    expect(cli.readOutput()).toContain('navigated: url=https://duckduckgo.com/?q=lofi')
+    expect(cli.readOutput()).toContain('clicked [3]: navigated')
+    expect(cli.readOutput()).not.toContain('scrolled elsewhere')
+    cli.input.write('quit\n')
+    await cli.done
+  })
+})
 
 describe('runCliHarness', () => {
   it('prints a banner and prompt, then the Page Read a `read` line produces', async () => {
