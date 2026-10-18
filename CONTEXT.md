@@ -89,8 +89,8 @@ changed", "opened x.com/elonmusk"). A Hop that changed nothing sets its
 target aside, and two such Hops in a row end the Task. A Hop never searches
 the words again, except that on a site the Task has not searched it may
 search that site once (a **Site Scope**). A Hop that names no target opens
-the likeliest result only on a search landing; anywhere else the Task ends
-on the page where it stands.
+the likeliest result only on a page whose address is a Search URL; anywhere
+else the Task ends on the page where it stands.
 _Avoid_: step, round, turn, continuation
 
 **Set Aside**:

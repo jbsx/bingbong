@@ -1,8 +1,7 @@
 import type { DecisionChoiceAnswer, DecisionChoiceQuestion, DecisionNoulQuestion } from '../ports/decisionModel'
 import type { PageLink } from '../browser/snapshot'
-import { parseSearchUrl } from '../browser/urlInput'
 import { JEV_VERBS, PRESS_KEYS, describeCommand, pressKeyOf, targetLabel, verbTakesSlot, verbTakesTarget, type Command, type CommandPage, type CommandRef, type CommandVerb } from './command'
-import { pageAddressOf, resultLinksOf, wordsAfterVerb } from './localMatch'
+import { isSearchLanding, pageAddressOf, resultLinksOf, wordsAfterVerb } from './localMatch'
 import { isAddressShaped } from './openAddress'
 import { siteOf } from './siteScope'
 
@@ -336,11 +335,6 @@ function mostProbableOpening(answer: DecisionChoiceAnswer, page: CommandPage, li
   })
 }
 
-/** A page the Search URL test reads as a search (#342): the same test that offers result links. */
-function isSearchLanding(url: string): boolean {
-  return url !== '' && parseSearchUrl(url) !== null
-}
-
 /** The words the Slot answer names; the words after the verb when it names none. */
 function slotWords(answer: DecisionChoiceAnswer, text: string): string {
   const match = /^s(\d+)-(\d+)$/.exec(answer.choice)
@@ -389,7 +383,8 @@ export function readCommandAnswers(answers: CommandAnswers, text: string, pageRe
     // off one the Task has reached a page and a target Jev barely offered
     // would overrun it (#342), so the hop has no next step — nor on a
     // landing with nothing to open.
-    if (hop !== undefined) return (isSearchLanding(page.url) ? mostProbableOpening(answers.target, page, links) : null) ?? none
+    if (hop !== undefined && !isSearchLanding(page.url)) return none
+    if (hop !== undefined) return mostProbableOpening(answers.target, page, links) ?? none
   }
   if (verb === 'press') {
     const key = slot === null ? null : pressKeyOf(slot)

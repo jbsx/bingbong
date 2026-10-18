@@ -238,13 +238,18 @@ function isResultLink(ref: CommandRef, engineHost: string): boolean {
   return ref.kind === 'link' && ref.href !== null && isResultAddress(ref.href, engineHost)
 }
 
+/** A page the Search URL test reads as a search: where result links are offered, and where a later hop may open one Jev barely named (#342). */
+export function isSearchLanding(url: string): boolean {
+  return url !== '' && parseSearchUrl(url) !== null
+}
+
 /**
  * The results among a search page's links (#328): the same rule as the
  * Nth result — the links whose address leaves the engine, or is its
  * redirect to one. Empty off a search page.
  */
 export function resultLinksOf<L extends { readonly href: string }>(links: readonly L[], url: string): L[] {
-  if (url === '' || parseSearchUrl(url) === null) return []
+  if (!isSearchLanding(url)) return []
   const engineHost = hostOf(url)
   if (engineHost === null) return []
   return links.filter((link) => isResultAddress(link.href, engineHost))
@@ -271,7 +276,7 @@ export function pageAddressOf(href: string): string {
  * ads — are not results). Null off a search page, or past the last.
  */
 function nthResult(position: number, refs: readonly CommandRef[], url: string): number | null {
-  if (url === '' || parseSearchUrl(url) === null) return null
+  if (!isSearchLanding(url)) return null
   const engineHost = hostOf(url)
   if (engineHost === null) return null
   const results = refs.filter((ref) => isResultLink(ref, engineHost))

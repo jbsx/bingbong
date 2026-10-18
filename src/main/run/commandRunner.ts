@@ -8,7 +8,7 @@ import type { PerfTracer } from '../../core/perf/perfTracer'
 import { commandPageOf, describeCommand, targetLabel, type Command, type CommandPage } from '../../core/command/command'
 import { dismissCommand, isDismissPhrase } from '../../core/command/dismissDialog'
 import { COMMAND_HELP } from '../../core/command/help'
-import { bestGuess, carriesWordsPastAddress, headsAnotherVerb, localMatch } from '../../core/command/localMatch'
+import { bestGuess, carriesWordsPastAddress, headsAnotherVerb, isSearchLanding, localMatch } from '../../core/command/localMatch'
 import { commandQuestions, commandState, doneLine, partialQuestions, readCommandAnswers, setAsideOf, type DoneResult, type HopContext, type SetAside } from '../../core/command/jevReading'
 import { blockedOrInertAction } from '../../core/browser/actionOutcome'
 import { isAddressShaped, openAddress } from '../../core/command/openAddress'
@@ -25,7 +25,6 @@ import {
   type TaskEnded,
   type TaskHop,
 } from '../../core/command/decisionRecord'
-import { parseSearchUrl } from '../../core/browser/urlInput'
 import { pageReadPart, pageReadText } from '../../core/browser/pageText'
 import { SPOKEN_FAILURES, failureLineOf, spokenFailureOf } from '../../core/command/spokenFailure'
 import { STOPPED_ANSWERS, bestGuessAnswer, commandAnswer, pageReadCard } from '../../core/command/answer'
@@ -979,7 +978,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       reading = { turnId, submission: task.submission }
       const page = superseded(task) ? blankPage(browser) : await collectPage(null)
       visit(task, page.url)
-      const links = !superseded(task) && parseSearchUrl(page.url) !== null ? await resultPageLinks(turnId) : []
+      const links = !superseded(task) && isSearchLanding(page.url) ? await resultPageLinks(turnId) : []
       const context: HopContext = { hop, visited: [...task.visited], actions: [...task.actions], links, setAside: [...task.setAside], searched: [...task.searched] }
       const model = deps.decisionModel()
       const result = superseded(task) || model === null ? null : await askJev(model, 'hop', turnId, commandState(task.text, page, context), commandQuestions(task.text, page, context))

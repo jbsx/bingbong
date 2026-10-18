@@ -493,7 +493,7 @@ The readings it took:
   opened at its address. With no offered target in the answer, the hop
   is `none` (`no next step`). An address-shaped Slot still navigates.
   Since #342 this fallback fires only on a search landing; off one the
-  hop is `none` (the 2026-10-18 #342 amendment below).
+  hop is `none` (the 2026-10-19 #342 amendment below).
   One exception since #341: on a site the Task has not searched, a hop
   asks `where`, and `open` + `where` = `site` searches that site once
   (the 2026-10-18 #341 amendment below); `page`, `web` and a site
@@ -802,7 +802,7 @@ even once twitter.com had landed, a later hop's `open` never searched
 - **Not in scope**: two unrelated Commands in one Utterance ("scroll down
   and read"); a route table; remembering earlier Utterances.
 
-## Amendment 2026-10-18 — off a search landing, a hop with no target named ends the Task (#342)
+## Amendment 2026-10-19 — off a search landing, a hop with no target named ends the Task (#342)
 
 #332's fallback made a Task overrun the page the user asked for. In two
 live runs on 9167c0a (real Jev, logged out) the Task reached
@@ -821,8 +821,9 @@ and both Tasks ended on a wall.
   with search-term words and no target named (top target `none`, or a
   label that resolves to nothing offered) is `none`: a dead end, "no next
   step" in the Feed. It is not `done`, because Jev did not say `done`.
-- **A named target is unchanged.** A ref or result link that Jev gives as
-  its top target is clicked or opened on any page, as before. So is the
+- **A named target is unchanged.** A ref that Jev gives as its top target
+  is clicked on any page, as before. A result link is opened as before; it
+  is offered only on a search landing, so off one there is none to name. So is the
   Site Scope search of #341, and so is an address-shaped Slot.
 - **Still no probability floor.** A bar tuned to these two cases (0.17
   against 0.01–0.02) would contradict "the top Choice acts at any
