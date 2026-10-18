@@ -1,5 +1,6 @@
 import { memo } from 'react'
 import Markdown, { type Components } from 'react-markdown'
+import { rehypeBreakAfterSlashes } from './breakAfterSlashes'
 
 /**
  * Markdown rendering in the answer cards (#56): assistant display entries
@@ -33,15 +34,17 @@ const components: Components = {
   ),
 }
 
+const rehypePlugins = [rehypeBreakAfterSlashes]
+
 /**
  * One markdown answer. The Card's text (ADR 0013): the live stream shows
  * a typing indicator while the Answer forms, so this renders only final
- * display text.
+ * display text. A long address or path in it wraps at its slashes.
  */
 export const FeedMarkdown = memo(function FeedMarkdown({ text }: { text: string }) {
   return (
     <div className="feed-markdown">
-      <Markdown components={components}>{text}</Markdown>
+      <Markdown components={components} rehypePlugins={rehypePlugins}>{text}</Markdown>
     </div>
   )
 })
