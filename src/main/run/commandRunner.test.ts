@@ -1342,6 +1342,21 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
     expect(decisions(records).map((record) => record.ended)).toEqual([undefined, 'none'])
   })
 
+  it('#332: a later hop reading open on the same words opens the most probable result instead of searching again', async () => {
+    const { browser, records, decision, runner } = taskHarness()
+    // The logged Task's shape: every hop read open with the words, target none on top; on hop 1 a result close behind.
+    // The result here is below the fold (a link-N), so the hop opens it; jevReading.test.ts covers a ref clicked.
+    const again = (probabilities: Record<string, number>) => ({ answers: { verb: choice('open'), target: choice('none', probabilities.none, probabilities), slot: choice('s3-6') } })
+    decision.script.push(again({ none: 1 }), again({ none: 0.63, 'link-1': 0.17, 'ref-1': 0.16 }), again({ none: 0.93 }))
+    await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
+    expect(browser.navigations).toEqual([SEARCH, POST])
+    expect(decisions(records).map((record) => [record.verb, record.ended])).toEqual([
+      ['open', undefined],
+      ['open', undefined],
+      ['none', 'none'],
+    ])
+  })
+
   it('AC4: the fifth action ends the Task as cap', async () => {
     const { browser, records, decision, runner } = harness()
     for (let hop = 0; hop < 6; hop += 1) decision.script.push(answer('scroll_down'))

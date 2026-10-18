@@ -195,17 +195,45 @@ function refOfLabel(label: string): number | null {
   return match ? Number(match[1]) : null
 }
 
+/** The ref a `ref-N` label names, when the page offers it. */
+function offeredRef(label: string, page: CommandPage): number | null {
+  const ref = refOfLabel(label)
+  return ref !== null && page.refs.some((candidate) => candidate.ref === ref) ? ref : null
+}
+
+/** The offered result link a `link-N` label names. */
+function linkOfLabel(label: string, links: readonly OfferedLink[]): OfferedLink | undefined {
+  const match = /^link-(\d+)$/.exec(label)
+  return match === null ? undefined : links.find((candidate) => candidate.n === Number(match[1]))
+}
+
+/** What the most probable label the answer gives any probability resolves to; null when none resolves. */
+function mostProbable<T>(answer: DecisionChoiceAnswer, resolve: (label: string) => T | null): T | null {
+  let best: { value: T; probability: number } | null = null
+  for (const [label, probability] of Object.entries(answer.probabilities)) {
+    const value = probability > 0 ? resolve(label) : null
+    if (value !== null && (best === null || probability > best.probability)) best = { value, probability }
+  }
+  return best?.value ?? null
+}
+
 /** The most probable ref the target answer holds; null when the page has none. */
 function mostProbableRef(answer: DecisionChoiceAnswer, page: CommandPage): number | null {
-  const direct = refOfLabel(answer.choice)
-  if (direct !== null && page.refs.some((ref) => ref.ref === direct)) return direct
-  let best: { ref: number; probability: number } | null = null
-  for (const [label, probability] of Object.entries(answer.probabilities)) {
-    const ref = refOfLabel(label)
-    if (ref === null || !page.refs.some((candidate) => candidate.ref === ref)) continue
-    if (best === null || probability > best.probability) best = { ref, probability }
-  }
-  return best?.ref ?? page.refs[0]?.ref ?? null
+  return offeredRef(answer.choice, page) ?? mostProbable(answer, (label) => offeredRef(label, page)) ?? page.refs[0]?.ref ?? null
+}
+
+/**
+ * The opening of the offered target the target answer gives the most
+ * probability, `none` set aside (#332): a ref is clicked, a result link
+ * opened at its address; null when the answer gives no offered target any.
+ */
+function mostProbableOpening(answer: DecisionChoiceAnswer, page: CommandPage, links: readonly OfferedLink[]): Command | null {
+  return mostProbable<Command>(answer, (label) => {
+    const ref = offeredRef(label, page)
+    if (ref !== null) return { verb: 'click', target: ref, slot: null }
+    const link = linkOfLabel(label, links)
+    return link === undefined ? null : { verb: 'open', target: null, slot: link.href }
+  })
 }
 
 /** The words the Slot answer names; the words after the verb when it names none. */
@@ -228,8 +256,7 @@ export function readCommandAnswers(answers: CommandAnswers, text: string, pageRe
   const { page, links } = offered(pageRead, hop)
   if (verb === 'click' || verb === 'open') {
     // A result link further down the page has no ref to click: it is opened at its address.
-    const link = /^link-(\d+)$/.exec(answers.target.choice)
-    const chosen = link === null ? undefined : links.find((candidate) => candidate.n === Number(link[1]))
+    const chosen = linkOfLabel(answers.target.choice, links)
     if (chosen !== undefined) return { verb: 'open', target: null, slot: chosen.href }
   }
   let target: number | null = null
@@ -244,8 +271,12 @@ export function readCommandAnswers(answers: CommandAnswers, text: string, pageRe
     // outright, the words name that element and opening it is clicking it
     // — the Local Match's own rule for a label one ref carries. An
     // address-shaped Slot is navigated whatever the target says.
-    const chosen = refOfLabel(answers.target.choice)
-    if (chosen !== null && page.refs.some((ref) => ref.ref === chosen)) return { verb: 'click', target: chosen, slot: null }
+    const chosen = offeredRef(answers.target.choice, page)
+    if (chosen !== null) return { verb: 'click', target: chosen, slot: null }
+    // Past the first hop the words were already acted on (#332): `open`
+    // opens the most probable target the hop offers, never searches again;
+    // with none to open the hop has no next step.
+    if (hop !== undefined) return mostProbableOpening(answers.target, page, links) ?? none
   }
   if (verb === 'press') {
     const key = slot === null ? null : pressKeyOf(slot)

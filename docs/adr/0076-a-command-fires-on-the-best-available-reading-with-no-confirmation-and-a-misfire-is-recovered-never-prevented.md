@@ -479,6 +479,16 @@ The readings it took:
   rule (`resultLinksOf`). A link is never offered twice, nor when a ref in
   view already carries its address. A `link-N` has no ref to click, so a
   `click` or `open` of one opens its address.
+- **A hop past hop 0 never searches the words again (#332).** Hop 0 has
+  acted on the transcript, so an `open` whose Slot is words, not an
+  address, opens the offered target to which Jev's target answer gives
+  the most probability, `none` set aside: a ref is clicked, a `link-N`
+  opened at its address. With no offered target in the answer, the hop
+  is `none` (`no next step`). An address-shaped Slot still navigates.
+  There is no probability floor: a wrong pick costs a `back`. Seen
+  2026-10-18: "Open elon musk's latest tweet" read `open` + the words +
+  target `none` on all five hops and ran the same DuckDuckGo search five
+  times to `cap`, with the x.com result at 0.17 on hop 1.
 - **What counts as visited:** the page the Task started on (never
   `about:blank`) and each hop's landing. Two addresses are the same page
   when they agree after the engine's redirect is followed to its target

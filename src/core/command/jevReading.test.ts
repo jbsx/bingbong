@@ -164,3 +164,44 @@ describe('the hop reading (#328, ADR 0076 amendment)', () => {
     expect(state).toContain('[link-2] link "Elon Musk news" https://www.reuters.com/elon')
   })
 })
+
+describe('open past the first hop (#332)', () => {
+  const SEARCH: CommandPage = {
+    url: "https://duckduckgo.com/?q=elon+musk's+latest+tweet",
+    title: "elon musk's latest tweet at DuckDuckGo",
+    refs: [
+      { ref: 1, kind: 'link', label: 'DuckDuckGo home', href: 'https://duckduckgo.com/', inputType: null },
+      { ref: 2, kind: 'input', label: 'Search', href: null, inputType: 'search' },
+      { ref: 3, kind: 'link', label: 'Elon Musk (@elonmusk) / X', href: 'https://x.com/elonmusk', inputType: null },
+    ],
+  }
+  const TEXT = "Open elon musk's latest tweet"
+  const hop = { hop: 1, visited: [SEARCH.url], actions: ["Searched the web for “elon musk's latest tweet”"], links: [] }
+  // The target answer the logged hop 1 gave: none on top, two results close behind.
+  const target = (probabilities: Record<string, number>): DecisionChoiceAnswer => ({ type: 'choice', choice: 'none', confidence: probabilities.none ?? 0, probabilities })
+
+  it('opens the most probable offered ref, never searching the words again', () => {
+    expect(readCommandAnswers({ verb: choice('open'), target: target({ none: 0.63, 'ref-3': 0.17, 'ref-1': 0.16 }), slot: choice('s1-4') }, TEXT, SEARCH, hop)).toEqual({ verb: 'click', target: 3, slot: null })
+  })
+
+  it('opens a result link further down at its address when it ranks above every ref', () => {
+    const links = [{ label: 'Elon Musk news', href: 'https://www.reuters.com/elon' }]
+    expect(
+      readCommandAnswers({ verb: choice('open'), target: target({ none: 0.6, 'link-1': 0.3, 'ref-3': 0.1 }), slot: choice('s1-4') }, TEXT, SEARCH, { ...hop, links }),
+    ).toEqual({ verb: 'open', target: null, slot: 'https://www.reuters.com/elon' })
+  })
+
+  it('has no next step when the answer gives no offered target any probability', () => {
+    expect(readCommandAnswers({ verb: choice('open'), target: target({ none: 1 }), slot: choice('s1-4') }, TEXT, SEARCH, hop)).toEqual({ verb: 'none', target: null, slot: null })
+    expect(readCommandAnswers({ verb: choice('open'), target: target({ none: 1, 'ref-3': 0 }), slot: choice('s1-4') }, TEXT, SEARCH, hop)).toEqual({ verb: 'none', target: null, slot: null })
+    // A visited address is not offered, so its probability counts for nothing.
+    const visited = { ...hop, visited: [SEARCH.url, 'https://x.com/elonmusk'] }
+    expect(readCommandAnswers({ verb: choice('open'), target: target({ none: 0.8, 'ref-3': 0.2 }), slot: choice('s1-4') }, TEXT, SEARCH, visited)).toEqual({ verb: 'none', target: null, slot: null })
+  })
+
+  it('leaves hop 0 searching the words and an address navigated at any hop', () => {
+    const answers = { verb: choice('open'), target: target({ none: 0.63, 'ref-3': 0.17 }), slot: choice('s1-4') }
+    expect(readCommandAnswers(answers, TEXT, SEARCH)).toEqual({ verb: 'open', target: null, slot: "elon musk's latest tweet" })
+    expect(readCommandAnswers({ ...answers, slot: choice('s1-1') }, 'open x.com/elonmusk', SEARCH, hop)).toEqual({ verb: 'open', target: null, slot: 'x.com/elonmusk' })
+  })
+})
