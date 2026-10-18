@@ -187,6 +187,31 @@ describe('peekCardAnswer', () => {
     expect(peekCardAnswer(entries, 't2')).toBeNull()
   })
 
+  it("a Task's closing hop that fires nothing leaves the card on the hop that answered", () => {
+    const events: PipelineEvent[] = [
+      { type: 'command', turnId: 'h0', text: 'open the example page and read it', action: 'open example.com', task: { id: 'h0', hop: 0 }, at: 1 },
+      { type: 'done', turnId: 'h0', outcome: 'done', at: 2 },
+      { type: 'command', turnId: 'h1', text: 'open the example page and read it', action: 'read the page', task: { id: 'h0', hop: 1 }, at: 3 },
+      { type: 'display', turnId: 'h1', text: 'Welcome to the example.', at: 4 },
+      { type: 'done', turnId: 'h1', outcome: 'done', at: 5 },
+      { type: 'command', turnId: 'h2', text: 'open the example page and read it', action: 'done', dropped: true, task: { id: 'h0', hop: 2 }, at: 6 },
+      { type: 'done', turnId: 'h2', outcome: 'done', at: 7 },
+    ]
+    const fold = createPeekCardFold()
+    for (const event of events) fold.onEvent(event)
+    expect(fold.state()).toMatchObject({ phase: 'answer', runId: 'h1' })
+    expect(peekCardAnswer(feedOf(events), fold.state().runId)).toEqual({ kind: 'display', text: 'Welcome to the example.', failure: false })
+  })
+
+  it('an Utterance read as no Command still shows its own card, not the last Answer', () => {
+    const fold = createPeekCardFold()
+    fold.onEvent({ type: 'command', turnId: 't1', text: 'screenshot', task: { id: 't1', hop: 0 }, at: 1 })
+    fold.onEvent({ type: 'done', turnId: 't1', outcome: 'done', at: 2 })
+    fold.onEvent({ type: 'command', turnId: 't2', text: 'what a lovely day', dropped: true, task: { id: 't2', hop: 0 }, at: 3 })
+    fold.onEvent({ type: 'done', turnId: 't2', outcome: 'done', at: 4 })
+    expect(fold.state()).toMatchObject({ phase: 'answer', runId: 't2' })
+  })
+
   it('a failed Command answers with its plain failure line, marked as a failure', () => {
     expect(peekCardAnswer(feedOf(failedRead), 't1')).toEqual({ kind: 'error', text: "This page can't be read right now.", failure: true })
   })

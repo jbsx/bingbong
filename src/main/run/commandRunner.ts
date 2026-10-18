@@ -346,8 +346,9 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     return true
   }
 
-  /** Speak a Command's text (#327): one `speak` event carries it, and it counts as the runner's until it ends. */
-  function say(speech: Pick<TtsSpeaker, 'speak'>, turnId: string, text: string, onFirstSound?: () => void, failure = false): Promise<SpeakOutcome> {
+  /** Speak a Command's text (#327): one `speak` event carries it — marked when it tells a failure (#329) — and it counts as the runner's until it ends. */
+  function say(speech: Pick<TtsSpeaker, 'speak'>, turnId: string, text: string, options: { onFirstSound?: () => void; failure?: boolean } = {}): Promise<SpeakOutcome> {
+    const { onFirstSound, failure } = options
     publish({ type: 'speak', turnId, text, ...(failure ? { failure: true } : {}), at: at() })
     sounding += 1
     return speech
@@ -378,7 +379,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     for (let first = true; ; first = false) {
       const words = pageReadText(page)
       if (first || words !== '') {
-        const outcome = await say(speech, turnId, words || SPOKEN_FAILURES.empty, first ? onFirstSound : undefined)
+        const outcome = await say(speech, turnId, words || SPOKEN_FAILURES.empty, { ...(first ? { onFirstSound } : {}), failure: words === '' })
         if (!outcome.ok || outcome.stopped === true) return
       }
       const at = pageReadPart(page)
@@ -395,7 +396,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   /** A failure's one line, marked a failure (#329), not waited on: the turn ends now, and the next Command silences it. */
   function sayFailure(turnId: string, line: string | null): void {
     if (deps.speech === undefined || line === null) return
-    void say(deps.speech, turnId, line, undefined, true)
+    void say(deps.speech, turnId, line, { failure: true })
   }
 
   /** Silence the runner's speech, if any is sounding; whether any was. */

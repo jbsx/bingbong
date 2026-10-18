@@ -41,3 +41,12 @@ not.
 - Confirmation prompts and other display-less Answers remain visible as
   Spoken Renderings.
 - The Feed no longer exposes raw model-response JSON while an Answer streams.
+
+## Note (2026-10-18, #329)
+
+By owner ruling, the one device takes a failure colour: an Answer that tells
+what went wrong — a thrown action told in plain words, or a wall the action
+met — marks its orb and rail red in the Feed, and the Peek Card's orb follows.
+Every other Answer keeps the assistant's green. Every Feed Entry now carries
+the turn it came from, conversation lines included, so the Peek Card reads
+the reported Command's own Answer and never a neighbour's.
