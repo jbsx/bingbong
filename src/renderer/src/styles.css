@@ -274,8 +274,9 @@ body {
 }
 
 /* One color table per state, shared by the orb and the pill: blue thinks
-   and transcribes, purple listens and pauses, orange acts, green speaks,
-   red stops — idle stays muted. */
+   and transcribes, purple listens and pauses, orange acts, green speaks.
+   Ready stays muted, and Stopped is neutral too: a Stop is the user's own
+   act, and red is the failure colour (#329, #334). */
 .status-orb--thinking,
 .status-pill--thinking,
 .status-orb--transcribing,
@@ -300,7 +301,7 @@ body {
 
 .status-orb--cancelled,
 .status-pill--cancelled {
-  --status-color: var(--status-red);
+  --status-color: var(--text);
 }
 
 .dashboard-main {
@@ -360,6 +361,12 @@ body {
   transform: translateY(-50%);
   width: 36px;
   height: 180px;
+}
+
+/* The settings page shows (#334): the panel is hidden, its slot takes no
+   room, and the folded panel state is untouched for the way back. */
+.feed-slot--hidden {
+  display: none;
 }
 
 /* The Peek Card's slot (ADR 0029): while the card shows, the collapsed
@@ -970,6 +977,9 @@ body {
 }
 
 .chrome-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 34px;
   height: 34px;
   padding: 0;
@@ -1019,13 +1029,19 @@ body {
 }
 
 /* The loading indicator: a quiet text spinner in the toolbar — calm
-   braille frames, no sliding bar. */
-.chrome-loading {
+   braille frames, no sliding bar. Its slot holds the same room loading or
+   not, so the centred cluster never shifts (#334). */
+.chrome-loading-slot {
   flex: none;
+  display: inline-flex;
+  justify-content: center;
+  width: 18px;
+}
+
+.chrome-loading {
   color: var(--accent);
   font-size: 0.9rem;
   line-height: 1;
-  padding: 0 4px;
 }
 
 /* The browsing pane (ADR 0012): full bleed — edge to edge, no card. The
@@ -1174,6 +1190,9 @@ body {
 }
 
 .peek-open-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
   align-self: center;
   color: var(--muted);
   font-size: 0.85rem;

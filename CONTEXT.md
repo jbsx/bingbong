@@ -295,7 +295,11 @@ _Avoid_: exhibit validation, tier check
 **Feed Panel**:
 The activity panel over the browser pane. Three states: Overlay, Docked,
 Collapsed. A View Preference, resizable. Opened only by a human act, and it
-stays open through a Command's end and a Stop (2026-10-18 ruling).
+stays open through a Command's end and a Stop (2026-10-18 ruling). Hidden
+while the settings page shows — edge tab and Peek Card too — and back
+exactly as it was on leaving: open or collapsed, Overlay or Docked, same
+width. Hiding is not a change of its state, so it is not the system opening
+or closing it (owner ruling 2026-10-18, #334).
 _Avoid_: activity bar, sidebar, activity sidebar
 
 **Idle Screen**:
@@ -338,6 +342,9 @@ long text ellipsizes. Its orb is the feed's assistant mark: one visual
 identity for "this is Bing Bong" — save that a failed Command's mark (the
 Peek Card's dot, the Feed Answer's mark and rail) takes the failure colour,
 so a failure never reads as a success (owner ruling 2026-10-18, #329).
+Awake and waiting it says "Ready" (never "Idle": the Idle Screen is another
+state); after a Stop it says "Stopped" in a neutral colour — a Stop is the
+user's own act, not a failure (#334).
 _Avoid_: status bar, status row, status line
 
 **View Preference**:

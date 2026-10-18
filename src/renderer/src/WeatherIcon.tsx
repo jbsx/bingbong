@@ -6,7 +6,8 @@ import type { WeatherSky } from '../../core/weather/weather'
 // Path data from Lucide (https://lucide.dev), ISC License, Copyright (c)
 // 2022 Lucide Contributors; the colouring per part is ours.
 
-type Part = { d: string; tone: Tone } | { circle: [number, number, number]; tone: Tone }
+// A part with no tone draws in the glyph's own colour (the shell's chrome icons, #334).
+export type Part = { d: string; tone?: Tone } | { circle: [number, number, number]; tone?: Tone }
 type Tone = 'sun' | 'moon' | 'cloud' | 'rain' | 'snow' | 'bolt' | 'sunrise' | 'sunset' | 'ink'
 
 const SUN_RAYS = ['M12 2v2', 'M12 20v2', 'm4.93 4.93 1.41 1.41', 'm17.66 17.66 1.41 1.41', 'M2 12h2', 'M20 12h2', 'm6.34 17.66-1.41 1.41', 'm19.07 4.93-1.41 1.41']
@@ -60,10 +61,22 @@ function partsOf(sky: WeatherSky, isDay: boolean | null): Part[] {
   }
 }
 
-function Glyph({ parts, size, label, strokeWidth = 1.75 }: { parts: Part[]; size: number; label?: string; strokeWidth?: number }) {
+export function Glyph({
+  parts,
+  size,
+  label,
+  strokeWidth = 1.75,
+  className = 'wx-icon',
+}: {
+  parts: Part[]
+  size: number
+  label?: string
+  strokeWidth?: number
+  className?: string
+}) {
   return (
     <svg
-      className="wx-icon"
+      className={className}
       width={size}
       height={size}
       viewBox="0 0 24 24"
@@ -78,9 +91,9 @@ function Glyph({ parts, size, label, strokeWidth = 1.75 }: { parts: Part[]; size
     >
       {parts.map((part, index) =>
         'circle' in part ? (
-          <circle key={index} className={`wx-${part.tone}`} cx={part.circle[0]} cy={part.circle[1]} r={part.circle[2]} />
+          <circle key={index} className={part.tone && `wx-${part.tone}`} cx={part.circle[0]} cy={part.circle[1]} r={part.circle[2]} />
         ) : (
-          <path key={index} className={`wx-${part.tone}`} d={part.d} />
+          <path key={index} className={part.tone && `wx-${part.tone}`} d={part.d} />
         ),
       )}
     </svg>
@@ -101,7 +114,7 @@ const DROPLETS: Part[] = [
 const ARROW_UP: Part[] = [{ d: 'M12 19V5', tone: 'ink' }, { d: 'm5 12 7-7 7 7', tone: 'ink' }]
 const ARROW_DOWN: Part[] = [{ d: 'M12 5v14', tone: 'ink' }, { d: 'm19 12-7 7-7-7', tone: 'ink' }]
 const GLOBE: Part[] = [{ circle: [12, 12, 10], tone: 'ink' }, { d: 'M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20', tone: 'ink' }, { d: 'M2 12h20', tone: 'ink' }]
-const CHEVRON: Part[] = [{ d: 'm9 18 6-6-6-6', tone: 'ink' }]
+export const CHEVRON: Part[] = [{ d: 'm9 18 6-6-6-6', tone: 'ink' }]
 
 export function SunriseIcon({ size }: { size: number }) {
   return <Glyph parts={SUNRISE} size={size} label="sunrise" />

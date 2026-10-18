@@ -2,6 +2,7 @@ import type { FeedEntry } from '../../core/feed/feedProjection'
 import type { RunProgress } from '../../core/pipeline/runProgress'
 import { peekCardAnswer, type PeekCardState } from '../../core/panel/peekCardState'
 import { FeedMarkdown } from './FeedMarkdown'
+import { ChevronIcon } from './WeatherIcon'
 
 // The Peek Card (ADR 0021, 0026, 0029; glossary): the system-pushed
 // report of the live Run and its persisting Answer while the Feed Panel
@@ -69,7 +70,7 @@ export function PeekCard({
         </div>
       )}
       <span className="peek-open-hint" aria-hidden="true">
-        open ▸
+        open <ChevronIcon size={14} />
       </span>
     </div>
   )

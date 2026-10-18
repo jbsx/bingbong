@@ -6,13 +6,17 @@ export function StatusOrb({ status }: { status: OrbStatus }) {
   return <div className={`status-orb status-orb--${status}`} aria-label={`assistant ${status}`} />
 }
 
-/** The state names the pill can show (#50) — calm text beside the dot. */
+/**
+ * The state names the pill can show (#50) — calm text beside the dot.
+ * Awake and waiting is "Ready", never "Idle" — the Idle Screen is another
+ * state — and a Stop, the user's own act, is "Stopped" (#334).
+ */
 const PILL_LABELS: Record<OrbStatus, string> = {
-  idle: 'Idle',
+  idle: 'Ready',
   thinking: 'Thinking…',
   acting: 'Acting…',
   speaking: 'Speaking…',
-  cancelled: 'Cancelled',
+  cancelled: 'Stopped',
   listening: 'Listening…',
   transcribing: 'Transcribing…',
 }

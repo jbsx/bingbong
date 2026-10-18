@@ -64,7 +64,7 @@ export function PromptBar() {
           onChange={(event) => setDraft(event.target.value)}
         />
         <button type="submit" className="prompt-verb" disabled={draft.trim() === ''}>
-          run
+          Run
         </button>
       </div>
       <p id="submission-feedback" className="submission-feedback" aria-live="polite">

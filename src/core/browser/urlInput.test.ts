@@ -1,5 +1,17 @@
 import { describe, expect, it } from 'vitest'
-import { normalizeUrlInput, parseSearchUrl } from './urlInput'
+import { addressFieldText, normalizeUrlInput, parseSearchUrl } from './urlInput'
+
+describe('addressFieldText', () => {
+  it('leaves the field empty on a blank pane, so its hint shows (#334)', () => {
+    expect(addressFieldText('about:blank')).toBe('')
+    expect(addressFieldText('')).toBe('')
+  })
+
+  it('shows any other address as it is', () => {
+    expect(addressFieldText('https://example.com/a?b=1')).toBe('https://example.com/a?b=1')
+    expect(addressFieldText('about:settings')).toBe('about:settings')
+  })
+})
 
 describe('normalizeUrlInput', () => {
   it('keeps http and https URLs as-is', () => {

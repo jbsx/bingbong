@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { BrowserNav, BrowserPane } from './BrowserPane'
+import { ChromeIcon } from './ChromeIcon'
 import { RunHint, StatusOrb, StatusPill } from './AssistantPanel'
 import { IdleScreen } from './IdleScreen'
 import { SettingsPage } from './SettingsPage'
@@ -30,10 +31,13 @@ export function App() {
   // to size the slot rect the card floats in.
   const peek = usePeekCard(panel.open)
   const slotContent = overlaySlotContent(panel.open, peek.state)
-  // The card never covers the settings page (#329): while it is open, the
-  // card's slot reports no bounds; leaving settings brings the card back.
-  // An opened panel or the edge tab still shows there.
-  const feedSlotRef = useFeedSlotRect(`${panel.mode}-${slotContent}`, view === 'settings' && slotContent === 'card')
+  // Nothing of the panel's ever covers the settings page (#329, #334):
+  // while it is open the slot reports no bounds and takes no room, and
+  // leaving settings brings back whatever showed before — open or
+  // collapsed, Overlay or Docked, same width. Hiding never touches the
+  // panel's state, so it is not the system opening or closing it.
+  const settingsShown = view === 'settings'
+  const feedSlotRef = useFeedSlotRect(`${panel.mode}-${slotContent}`, settingsShown)
 
   const getMicId = useCallback(() => settings?.micId ?? 'default', [settings])
   const voice = useVoice({
@@ -126,7 +130,7 @@ export function App() {
             title="Activity feed (Ctrl+Shift+F)"
             onClick={() => window.bingbong.feedPanel.toggle()}
           >
-            ▤
+            <ChromeIcon name="panel" />
           </button>
           <button
             type="button"
@@ -135,7 +139,7 @@ export function App() {
             aria-pressed={view === 'settings'}
             onClick={() => setView(view === 'settings' ? 'dashboard' : 'settings')}
           >
-            ⚙
+            <ChromeIcon name="settings" />
           </button>
         </div>
       </header>
@@ -168,7 +172,7 @@ export function App() {
             ref={feedSlotRef}
             className={`feed-slot feed-slot--${panel.mode}${
               slotContent === 'card' ? ' feed-slot--peek' : slotContent === 'tab' ? ' feed-slot--collapsed' : ''
-            }`}
+            }${settingsShown ? ' feed-slot--hidden' : ''}`}
             aria-hidden="true"
           />
         </div>

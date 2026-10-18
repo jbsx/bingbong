@@ -77,3 +77,17 @@ DOM compositing would reintroduce the live-page reflow it exists to prevent.
   as a single centered floating card on canvas.
 - `theme.e2e` now pins the neutral palette and the 17px scale; the h1
   label probe moved to `.status-pill`.
+
+## Note (2026-10-18, #334)
+
+The Status Capsule's resting word is "Ready", not "Idle" — the Idle Screen
+is another state — and a Stop reads "Stopped" in the neutral text colour,
+not the red this ADR's palette gave `cancelled`: a Stop is the user's own
+act, and red is the failure colour (owner ruling, #329). The status key and
+the `.status-*--cancelled` hooks keep their names. The Toolbar's and the
+Feed Panel's controls draw the Idle Screen's Lucide line icons instead of
+text glyphs; the loading spinner keeps its slot whether or not a page
+loads, so the address cluster never shifts; a blank pane shows an empty
+address field with its hint. While the settings page shows, the Feed Panel
+(edge tab and Peek Card too) is hidden, its slot takes no room, and leaving
+settings brings it back as it was — hiding never changes the panel's state.

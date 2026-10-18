@@ -18,6 +18,11 @@ export function looksLikeDomain(text: string): boolean {
   return DOMAIN_PATTERN.test(text)
 }
 
+/** What the address field shows for the pane's address: nothing on a blank pane, so the field's hint shows instead (#334). */
+export function addressFieldText(url: string): string {
+  return url === 'about:blank' ? '' : url
+}
+
 export function normalizeUrlInput(raw: string): string | null {
   const input = raw.trim()
   if (!input) return null

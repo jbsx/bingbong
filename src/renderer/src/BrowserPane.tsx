@@ -5,6 +5,8 @@ import {
   type BrowserPaneState,
   type PaneRect,
 } from '../../core/browser/paneState'
+import { addressFieldText } from '../../core/browser/urlInput'
+import { ChromeIcon } from './ChromeIcon'
 
 function paneRectFrom(rect: DOMRect): PaneRect {
   return { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
@@ -59,7 +61,7 @@ export function BrowserNav() {
         disabled={!state.canGoBack}
         onClick={() => void window.bingbong.browser.goBack()}
       >
-        ←
+        <ChromeIcon name="back" />
       </button>
       <button
         type="button"
@@ -68,7 +70,7 @@ export function BrowserNav() {
         disabled={!state.canGoForward}
         onClick={() => void window.bingbong.browser.goForward()}
       >
-        →
+        <ChromeIcon name="forward" />
       </button>
       <form
         className="url-form"
@@ -87,23 +89,28 @@ export function BrowserNav() {
           placeholder="Enter address or search"
           aria-label="Address and search bar"
           spellCheck={false}
-          value={editing ? draft : state.url}
+          // A blank pane shows the hint, never "about:blank" (#334).
+          value={editing ? draft : addressFieldText(state.url)}
           onChange={(event) => setDraft(event.target.value)}
           onFocus={(event) => {
             setEditing(true)
-            setDraft(state.url)
+            setDraft(addressFieldText(state.url))
             event.target.select()
           }}
           onBlur={() => setEditing(false)}
         />
       </form>
       {/* The loading indicator (#50): a quiet text spinner — calm frames
-          in the toolbar, not a sliding bar. */}
-      {state.loading ? (
-        <span className="chrome-loading" role="status" aria-label="loading">
-          {spinnerFrame}
-        </span>
-      ) : null}
+          in the toolbar, not a sliding bar. Its slot keeps its room whether
+          or not a page loads, so the field and the controls never shift
+          when loading starts or ends (#334). */}
+      <span className="chrome-loading-slot">
+        {state.loading ? (
+          <span className="chrome-loading" role="status" aria-label="loading">
+            {spinnerFrame}
+          </span>
+        ) : null}
+      </span>
     </div>
   )
 }

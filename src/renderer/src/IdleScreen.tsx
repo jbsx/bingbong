@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { lastPageLabel, type LastPage } from '../../core/browser/lastPage'
+import { hourLabel } from '../../core/weather/hourLabel'
 import { temperatureHue, type WeatherDay, type WeatherHour, type WeatherReport } from '../../core/weather/weather'
 import type { WeatherUnits } from '../../core/settings/settings'
 import type { WeatherState } from './useWeather'
@@ -11,19 +12,6 @@ function formatClock(now: Date): string {
 
 function formatDate(now: Date): string {
   return now.toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'long' })
-}
-
-/**
- * A forecast's local wall-clock time (`YYYY-MM-DDTHH:MM`, the city's own) as
- * the device's locale writes an hour. Built from its parts, never parsed as
- * an instant: the city's clock is what the screen shows, whatever zone the
- * device is in.
- */
-function formatHour(local: string, withMinutes = false): string {
-  const match = /T(\d{2}):(\d{2})/.exec(local)
-  if (match === null) return local
-  const date = new Date(2000, 0, 1, Number(match[1]), Number(match[2]))
-  return date.toLocaleTimeString([], withMinutes ? { hour: 'numeric', minute: '2-digit' } : { hour: 'numeric' })
 }
 
 function degrees(temperature: number): string {
@@ -97,13 +85,13 @@ function DayRow({ today, units }: { today: WeatherDay; units: WeatherUnits }) {
       {today.sunrise !== null ? (
         <span className="wx-day-item wx-day-sun">
           <SunriseIcon size={20} />
-          <span>{formatHour(today.sunrise, true)}</span>
+          <span>{hourLabel(today.sunrise, { withMinutes: true })}</span>
         </span>
       ) : null}
       {today.sunset !== null ? (
         <span className="wx-day-item wx-day-sun">
           <SunsetIcon size={20} />
-          <span>{formatHour(today.sunset, true)}</span>
+          <span>{hourLabel(today.sunset, { withMinutes: true })}</span>
         </span>
       ) : null}
     </div>
@@ -114,8 +102,8 @@ function HourStrip({ hours, units }: { hours: readonly WeatherHour[]; units: Wea
   return (
     <ul className="wx-hours" aria-label="coming hours">
       {hours.map((hour) => (
-        <li key={hour.time} className="wx-hour" aria-label={`${formatHour(hour.time)}: ${degrees(hour.temperature)}, ${hour.description}`}>
-          <span className="wx-hour-time">{formatHour(hour.time)}</span>
+        <li key={hour.time} className="wx-hour" aria-label={`${hourLabel(hour.time)}: ${degrees(hour.temperature)}, ${hour.description}`}>
+          <span className="wx-hour-time">{hourLabel(hour.time)}</span>
           <WeatherIcon sky={hour.sky} isDay={hour.isDay} size={30} />
           <span className="wx-hour-rain">
             {hour.precipitationChance !== null && hour.precipitationChance >= 20 ? `${Math.round(hour.precipitationChance)}%` : ''}

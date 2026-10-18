@@ -73,15 +73,17 @@ export function useFeedPanel(): FeedPanelState {
  * into the Idle Screen, so the slot mounts after this hook's first run, and
  * a slot that comes and goes with the Idle Screen must be reported each
  * time it reappears — or the overlay keeps a 0×0 view and the edge tab is
- * invisible (#331). ResizeObserver covers size changes (window, kiosk);
- * the keyed re-report covers position-only changes (mode swaps move the
- * slot without resizing it). Only a real unmount (idle screen) hides the
- * overlay — a key change must NEVER route the bounds through 0×0, or the
+ * invisible (#331). ResizeObserver covers size changes; the window's own
+ * resize covers the moves it cannot see — the collapsed tab and the Peek
+ * Card keep their size and only move when the window (kiosk and
+ * fullscreen switches included) changes size (#334); the keyed re-report
+ * covers mode swaps, which move the slot without resizing it. Only a real
+ * unmount (idle screen) hides the overlay — a key change must NEVER route the bounds through 0×0, or the
  * overlay page reflows against an empty viewport mid-transition and
  * synthesized (and real) clicks land on stale element positions.
  * `hidden` is the one deliberate exception: the slot holds a view that must
- * not show (the Peek Card over the settings page, #329), so the overlay
- * gets no bounds until it may show again.
+ * not show (anything of the panel's over the settings page, #329, #334),
+ * so the overlay gets no bounds until it may show again.
  */
 export function useFeedSlotRect(layoutKey: string, hidden = false): (el: HTMLDivElement | null) => void {
   const [el, setEl] = useState<HTMLDivElement | null>(null)
@@ -104,8 +106,10 @@ export function useFeedSlotRect(layoutKey: string, hidden = false): (el: HTMLDiv
     report()
     const observer = new ResizeObserver(report)
     observer.observe(el)
+    window.addEventListener('resize', report)
     return () => {
       observer.disconnect()
+      window.removeEventListener('resize', report)
     }
     // `layoutKey` (mode/open) re-reports the position-only moves a
     // ResizeObserver cannot see.

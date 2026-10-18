@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { ActivityFeed } from '../ActivityFeed'
+import { ChromeIcon } from '../ChromeIcon'
 import { overlaySlotContent } from '../../../core/panel/peekCardState'
 import { PeekCard } from '../PeekCard'
 import { reportRendererFault } from '../diagnostics'
@@ -119,7 +120,7 @@ export function OverlayPanel() {
         title={mode === 'overlay' ? 'Dock the feed panel' : 'Undock the feed panel'}
         onClick={() => window.bingbong.feedPanel.setMode(mode === 'overlay' ? 'docked' : 'overlay')}
       >
-        {mode === 'overlay' ? '⇥' : '⇤'}
+        <ChromeIcon name={mode === 'overlay' ? 'dock' : 'undock'} size={16} />
       </button>
       <button
         type="button"
@@ -128,7 +129,7 @@ export function OverlayPanel() {
         title="Collapse the feed panel"
         onClick={() => window.bingbong.feedPanel.toggle()}
       >
-        ›
+        <ChromeIcon name="collapse" size={16} />
       </button>
     </>
   )

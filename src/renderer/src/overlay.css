@@ -153,6 +153,9 @@ body,
 
 .feed-header-button {
   flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 30px;
   height: 30px;
   padding: 0;
@@ -610,25 +613,30 @@ body,
   box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.15);
 }
 
+/* Run reads as a live button whenever there is text to send (#334):
+   filled in the accent and as bold as Stop beside it; empty, it fades. */
 .prompt-verb {
   flex: none;
   padding: 8px 16px;
-  border: 1px solid var(--edge);
+  border: 1px solid var(--accent);
   border-radius: 999px;
-  background: transparent;
-  color: var(--muted);
+  background: var(--accent);
+  color: #fff;
   font-size: 0.9rem;
+  font-weight: 600;
   cursor: pointer;
-  transition: background 120ms ease, color 120ms ease;
+  transition: background 120ms ease, color 120ms ease, opacity 120ms ease;
 }
 
 .prompt-verb:not(:disabled):hover {
-  color: var(--text);
-  background: color-mix(in srgb, var(--text) 6%, transparent);
+  background: color-mix(in srgb, var(--accent) 85%, #000);
 }
 
 .prompt-verb:disabled {
-  opacity: 0.5;
+  border-color: var(--edge);
+  background: transparent;
+  color: var(--muted);
+  opacity: 0.6;
   cursor: default;
 }
 
