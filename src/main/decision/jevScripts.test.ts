@@ -75,4 +75,16 @@ describe.skipIf(!stripsTypes)('the jev:* scripts', () => {
     expect(made.code).toBe(1)
     expect(made.stderr).toContain('"target" offers no label "ref-99"')
   })
+
+  it('jev:case takes the turn id after the expectations, and refuses an option it does not know', () => {
+    const corpus = join(dir, 'cases')
+    const made = run('jev-case.ts', ['--expect', 'target=ref-27', 't1', '--logs', dir, '--corpus', corpus])
+    expect(made.stderr).toBe('')
+    expect(made.stdout).toContain(`wrote ${join(corpus, 't1.json')}`)
+    expect(run('jev-case.ts', ['t1', '--expect', 'target=ref-27', '--logs', dir, '--corpus', corpus]).stdout).toContain(`replaced ${join(corpus, 't1.json')}`)
+
+    const unknown = run('jev-case.ts', ['t1', '--force', '--expect', 'target=ref-27'])
+    expect(unknown.code).toBe(2)
+    expect(unknown.stderr).toContain('unknown option --force')
+  })
 })

@@ -92,6 +92,22 @@ describe('pnpm jev:replay over a corpus folder', () => {
     expect(replay.report).toMatch(/FAIL {2}broken {2}not a case: /)
   })
 
+  it('fails a case whose question Jev left without a Choice, and still reports the rest', async () => {
+    saveCase('a-silent', 'state-a', [{ question: 'target', label: 'ref-27' }])
+    saveCase('b-latest', 'state-b', [{ question: 'target', label: 'ref-27' }])
+    const silent: DecisionModel = {
+      model: 'jev-fake',
+      async ask(request) {
+        const target = request.state === 'state-a' ? {} : { target: { type: 'choice', choice: 'ref-27', confidence: 0.9, probabilities: { 'ref-27': 0.9 } } }
+        return { status: 'answered', answers: target as never, latencyMs: 1, model: 'jev-fake' }
+      },
+    }
+    const replay = await replayCorpus(dir, { env: {}, model: silent })
+    expect(replay.code).toBe(1)
+    expect(replay.report).toContain('FAIL  a-silent  Jev gave no Choice for "target"')
+    expect(replay.report).toContain('PASS  b-latest')
+  })
+
   it('says plainly that it needs TYPESAFE_API_KEY when no key is set, and asks nothing', async () => {
     saveCase('latest', 'state-a', [{ question: 'target', label: 'ref-27' }])
     const replay = await replayCorpus(dir, { env: {} })
@@ -148,8 +164,10 @@ describe('growing the corpus from the logs', () => {
         { type: 'misfire', turnId: 't1', at: 2, signal: 'overrun', withinMs: 900, hop: 0 },
         decision('t3', { reading: 'local_match', jevAsked: false, ask: undefined }),
         { type: 'misfire', turnId: 't3', at: 3, signal: 'back', signalTurnId: 't4', withinMs: 1200 },
-        decision('t5', { ask: 't5' }),
+        decision('t5', { ask: 't5', partialAsks: ['partial-a-1'] }),
         { type: 'misfire', turnId: 't5', at: 4, signal: 'escape', withinMs: 400 },
+        // A signal whose decision record rolled off before it.
+        { type: 'misfire', turnId: 't0', at: 5, signal: 'clear', withinMs: 700 },
       ]),
     )
     writeFileSync(join(logs, 'asks-1-1.jsonl'), jsonl([ask('t1', 'state-t1'), ask('t2', 'state-t2')]))
@@ -162,18 +180,21 @@ describe('growing the corpus from the logs', () => {
       ['t1', ['overrun'], 'recorded'],
       ['t3', ['back'], 'none'],
       ['t5', ['escape'], 'missing'],
+      ['t0', ['clear'], 'no_decision'],
     ])
     const text = formatCandidates(candidates, logs)
     expect(text).toContain('t1  overrun  "open elon musk\'s latest tweet" → click "Pinned post"  ask t1')
     expect(text).toContain('t3  back  "words of t3" → click "Pinned post"  no ask (Jev was not asked)')
-    expect(text).toContain('t5  escape  "words of t5" → click "Pinned post"  ask t5 is not in the sidecar')
+    expect(text).toContain('t5  escape  "words of t5" → click "Pinned post"  ask t5 is not in the sidecar  partials partial-a-1')
+    expect(text).toContain('t0  clear  no decision record (rolled off or purged)')
     expect(text).toContain('pnpm jev:case <turnId> --expect <question>=<label>')
   })
 
   it('jev:case turns a logged ask into a case file that jev:replay reads back', async () => {
     writeLogs()
     const made = caseFromLog(logs, 't1', ['target=ref-27', 'target!=ref-21'], corpus)
-    expect(made).toEqual({ path: join(corpus, 't1.json') })
+    expect(made).toEqual({ path: join(corpus, 't1.json'), replaced: false })
+    expect(caseFromLog(logs, 't1', ['target=ref-27', 'target!=ref-21'], corpus)).toEqual({ path: join(corpus, 't1.json'), replaced: true })
     expect(JSON.parse(readFileSync(join(corpus, 't1.json'), 'utf8'))).toMatchObject({
       turnId: 't1',
       transcript: "open elon musk's latest tweet",

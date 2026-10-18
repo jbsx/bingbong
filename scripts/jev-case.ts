@@ -26,21 +26,26 @@ let corpus: string | undefined
 let flag: string | null = null
 for (const arg of process.argv.slice(2)) {
   if (arg.startsWith('--')) {
+    if (arg !== '--expect' && arg !== '--logs' && arg !== '--corpus') {
+      console.error(`jev:case: unknown option ${arg}`)
+      console.error(USAGE)
+      process.exit(2)
+    }
     flag = arg
     continue
   }
   if (flag === '--logs') logs = arg
   else if (flag === '--corpus') corpus = arg
-  else if (flag === '--expect') {
+  // --expect takes every <question>=<label> after it; the first word that is none is the turn id.
+  else if (flag === '--expect' && arg.includes('=')) {
     expectations.push(arg)
     continue
   } else positional.push(arg)
-  // --logs and --corpus take one value; --expect takes every one up to the next flag.
   flag = null
 }
 
 const id = positional[0]
-if (id === undefined) {
+if (id === undefined || positional.length > 1) {
   console.error(USAGE)
   process.exit(2)
 }
@@ -50,4 +55,4 @@ if ('error' in made) {
   console.error(USAGE)
   process.exit(1)
 }
-console.log(`wrote ${made.path}`)
+console.log(`${made.replaced ? 'replaced' : 'wrote'} ${made.path}`)

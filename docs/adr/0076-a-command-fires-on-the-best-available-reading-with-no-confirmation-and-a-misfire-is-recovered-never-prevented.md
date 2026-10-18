@@ -690,11 +690,13 @@ through the replay corpus (#338).
 ## Amendment 2026-10-18 — what Jev was asked is recorded and replayable (#338)
 
 - **Every Jev call writes its whole ask** (the state text and the questions
-  with their options) to `asks-*.jsonl` beside the decision log, before it is
-  sent: hop 0 (`command`), a later hop (`hop`), an Early Fire partial
-  (`partial`). A hop's ask id is its turn id; a partial is asked before its
-  turn exists, so its id is its own. Each decision record names its ask
-  (`ask`), so the decision log stays small.
+  with their options) to `asks-*.jsonl` beside the decision log, once the
+  answer is in, so the write never costs the round: hop 0 (`command`), a
+  later hop (`hop`), an Early Fire partial (`partial`). A hop's ask id is its
+  turn id; a partial is asked before its turn exists, so its id is its own.
+  Each decision record names its ask (`ask`), and the Utterance's partial
+  asks (`partialAsks`), whether one fired or not, so the decision log stays
+  small and no ask is out of reach.
 - **The Jev corpus** (`fixtures/jev-cases/`) holds recorded asks with the
   answer each question should get, a label (`target=ref-27`) or an exclusion
   (`target!=ref-21`). `pnpm jev:candidates` lists the asks a misfire or

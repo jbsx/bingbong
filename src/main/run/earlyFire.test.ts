@@ -104,6 +104,18 @@ describe('a Task whose hop 0 Early Fired (#328, AC6)', () => {
     expect(asks[0]!.questions).toEqual(decision.requests[0]!.questions)
     expect(Object.keys(asks[0]!.questions)).toContain('complete')
     expect(decisions(records).map((record) => record.ask)).toEqual(asks.map((ask) => ask.id))
+    expect(decisions(records)[0]!.partialAsks).toEqual([asks[0]!.id])
+  })
+
+  it('names the ask of a partial that fired nothing on the record its Endpoint writes (#338)', async () => {
+    const { records, asks, perf, runner } = wired([
+      { verb: choice('open'), target: choice('none'), slot: choice('s2-3'), complete: { type: 'noul', noul: 0.2 } },
+      { verb: choice('none'), target: choice('none'), slot: choice('none') },
+    ])
+    await speak(runner, { text: 'Pull up some lofi music.', partials: ['pull up some lofi'] }, perf)
+
+    expect(asks.map((ask) => ask.kind)).toEqual(['partial', 'command'])
+    expect(decisions(records)).toEqual([expect.objectContaining({ ask: asks[1]!.id, partialCalls: 1, partialAsks: [asks[0]!.id] })])
   })
   const decisions = (records: CommandLogRecord[]) => records.flatMap((record) => (record.type === 'decision' ? [record] : []))
 

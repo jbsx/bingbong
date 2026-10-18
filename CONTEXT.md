@@ -158,6 +158,22 @@ by the next Command and never prevented by asking first. Counted, so
 accuracy can be worked on once Reaction is won.
 _Avoid_: error, wrong action, false positive, hallucination
 
+**Ask**:
+What one Jev call was sent: the state text and the questions with their
+options, exactly as asked. Every Ask is kept beside the decision log, and
+the record of the Command it was read for names it, so a misread can be
+asked again.
+_Avoid_: prompt, request log
+
+**Jev Case**:
+An Ask the owner promoted from a real misread, with the answer each
+question should get: a label, or a label it must not be. The Jev Corpus is
+the folder of them that every change to Jev's state text or question
+wording is replayed against. A change is accepted only if it passes its own
+case and leaves no other case worse. Misreads are fixed through the corpus,
+never by a rule for the one case.
+_Avoid_: test prompt, golden, eval
+
 **Bias Lexicon**:
 The app's own vocabulary that the STT decoder is biased toward while decoding
 — the CLI grammar's verbs, settings, dashboard and navigation terms, plus

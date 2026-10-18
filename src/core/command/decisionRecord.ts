@@ -66,6 +66,8 @@ export interface DecisionRecord {
   readonly earlyFire?: EarlyFireDetail
   /** Jev calls made on this Utterance's partials (#326), whether one fired or not; absent when none was. */
   readonly partialCalls?: number
+  /** Those calls' ask ids in asks-*.jsonl (#338), whether one fired or not; absent when none was made. */
+  readonly partialAsks?: readonly string[]
   /** The Task this reading is a hop of (#328): hop 0's turn id, and which hop. */
   readonly task?: TaskHop
   /** How the Task ended, on its last hop's record (#328); absent on a hop it went on from. */

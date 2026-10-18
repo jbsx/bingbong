@@ -325,9 +325,10 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   let partialAsks = 0
 
   /**
-   * One Jev call (#338): its whole ask is written to the sidecar before it
-   * is sent, so a misread can be replayed; resolves to the result, with the
-   * ask's id the reading's decision record names.
+   * One Jev call (#338): its whole ask is written to the sidecar once the
+   * answer is in — never ahead of the call, where a page's state text would
+   * cost the round its write — so a misread can be replayed; resolves to
+   * the result, with the ask's id the reading's decision record names.
    */
   async function askJev<const Q extends DecisionQuestions>(
     model: DecisionModel,
@@ -336,13 +337,15 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     state: string,
     questions: Q,
   ): Promise<DecisionResult<Q> & { readonly askId: string }> {
-    const askId = turnId ?? `partial-${at().toString(36)}-${(partialAsks += 1)}`
+    const askedAt = at()
+    const askId = turnId ?? `partial-${askedAt.toString(36)}-${(partialAsks += 1)}`
+    const result = await model.ask({ state, questions })
     try {
-      deps.askLog?.write({ type: 'ask', id: askId, ...(turnId !== null ? { turnId } : {}), at: at(), kind, model: model.model, state, questions })
+      deps.askLog?.write({ type: 'ask', id: askId, ...(turnId !== null ? { turnId } : {}), at: askedAt, kind, model: model.model, state, questions })
     } catch (error) {
       reportFault('run.commandRunner.askLog', error, turnId !== null ? { turnId } : {})
     }
-    return { ...(await model.ask({ state, questions })), askId }
+    return { ...result, askId }
   }
 
   function span(turnId: string, durMs: number, detail: Record<string, unknown>): void {
@@ -1033,6 +1036,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   let considering = false
   /** Jev calls made on this Utterance's partials, for the record its Endpoint writes. */
   let partialCalls = 0
+  /** Their asks' ids (#338), so a partial that fired nothing is still reached from the record its Endpoint writes. */
+  let partialAskIds: string[] = []
 
   /** A Command fired on a partial, waiting for its Utterance's Endpoint to write its record and close its Reaction. */
   interface EarlyFired {
@@ -1098,6 +1103,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       ...(endpoint?.truncated ? { truncated: true } : {}),
       earlyFire: { partial: fired.partial, ...(endpoint !== null ? { leadMs: leadOf(fired) } : {}), ...(fired.noul !== undefined ? { noul: fired.noul } : {}) },
       ...(partialCalls > 0 ? { partialCalls } : {}),
+      ...(partialAskIds.length > 0 ? { partialAsks: [...partialAskIds] } : {}),
     }
     if (ended !== 'deferred') log({ ...record, ended })
     if (endpoint !== null && fired.effect !== null) {
@@ -1113,6 +1119,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     lastPartial = null
     waitingPartial = null
     partialCalls = 0
+    partialAskIds = []
   }
 
   /** A partial's reading, when it settles a Command that may fire before the Endpoint. */
@@ -1131,7 +1138,10 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     const model = deps.decisionModel()
     if (model === null) return null
     partialCalls += 1
+    const askedIn = utterance
     const result = await askJev(model, 'partial', null, commandState(words, page), partialQuestions(words, page))
+    // Kept for its own Utterance's record: one whose Endpoint came while it was read has written its record already.
+    if (askedIn === utterance) partialAskIds.push(result.askId)
     // Jev unavailable on a partial: nothing fires, and the Endpoint reads as before.
     if (stale() || result.status !== 'answered') return null
     const noul = result.answers.complete.noul
@@ -1270,6 +1280,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       // A spoken Endpoint of another Utterance: the Early Fire never reached its own. A typed line leaves it waiting for its Endpoint.
       if (fired !== null && source === 'spoken') closeEarly(fired, null)
       const calls = source === 'spoken' ? partialCalls : 0
+      const callAsks = source === 'spoken' ? partialAskIds : []
       // An Endpoint (or a typed line) ends the Utterance: a partial still being read fires nothing.
       if (source === 'spoken') nextUtterance()
 
@@ -1296,7 +1307,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       const hop0: TaskHop = { id: turnId, hop: 0 }
       visit(task, heard.page.url || (browser.state().url ?? ''))
       const { command, matched } = matchName(heard.command, heard.page, source === 'spoken')
-      const record: DecisionRecord = { ...recordOf(turnId, firedAt, source, trimmed, heard, command, matched, truncated), ...(calls > 0 ? { partialCalls: calls } : {}), task: hop0 }
+      const record: DecisionRecord = { ...recordOf(turnId, firedAt, source, trimmed, heard, command, matched, truncated), ...(calls > 0 ? { partialCalls: calls } : {}), ...(callAsks.length > 0 ? { partialAsks: callAsks } : {}), task: hop0 }
 
       if (submission !== submitted) {
         // A later Command (or an abort) arrived while this one was being

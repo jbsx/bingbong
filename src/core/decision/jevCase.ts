@@ -38,8 +38,11 @@ export function parseExpectation(text: string): JevExpectation | string {
   return op === '=' ? { question: question.trim(), label: label.trim() } : { question: question.trim(), not: label.trim() }
 }
 
+/** The label an expectation names, whether it must be the answer or must not. */
+const labelOf = (expectation: JevExpectation): string => ('label' in expectation ? expectation.label : expectation.not)
+
 export function expectationText(expectation: JevExpectation): string {
-  return 'label' in expectation ? `${expectation.question}=${expectation.label}` : `${expectation.question}!=${expectation.not}`
+  return `${expectation.question}${'label' in expectation ? '=' : '!='}${labelOf(expectation)}`
 }
 
 /** Why an expectation cannot be asked of these questions: no such question, not a Choice, or no such label; null when it can. */
@@ -47,7 +50,7 @@ export function expectationProblem(questions: DecisionQuestions, expectation: Je
   const question = questions[expectation.question]
   if (question === undefined) return `no question "${expectation.question}" (asked: ${Object.keys(questions).join(', ')})`
   if (question.type !== 'choice') return `"${expectation.question}" is not a Choice`
-  const label = 'label' in expectation ? expectation.label : expectation.not
+  const label = labelOf(expectation)
   return label in question.options ? null : `"${expectation.question}" offers no label "${label}"`
 }
 
@@ -93,10 +96,11 @@ export type CaseVerdict =
 /** Judge a case against Jev's fresh answer: it passes when every expectation holds. */
 export function judgeJevCase(name: string, jevCase: JevCase, result: DecisionResult<DecisionQuestions>): CaseVerdict {
   if (result.status !== 'answered') return { name, pass: false, problem: `Jev did not answer: ${result.reason} (${result.message})` }
+  const unanswered = jevCase.expect.find((expectation) => result.answers[expectation.question]?.type !== 'choice')
+  if (unanswered !== undefined) return { name, pass: false, problem: `Jev gave no Choice for "${unanswered.question}"` }
   const outcomes = jevCase.expect.map((expectation): ExpectationOutcome => {
-    // readJevCase let only Choice expectations in.
     const answer = result.answers[expectation.question] as DecisionChoiceAnswer
-    const label = 'label' in expectation ? expectation.label : expectation.not
+    const label = labelOf(expectation)
     return {
       expectation,
       pass: 'label' in expectation ? answer.choice === label : answer.choice !== label,
@@ -111,7 +115,7 @@ export function judgeJevCase(name: string, jevCase: JevCase, result: DecisionRes
 const p = (probability: number): string => probability.toFixed(2)
 
 function outcomeLine(outcome: ExpectationOutcome): string {
-  const label = 'label' in outcome.expectation ? outcome.expectation.label : outcome.expectation.not
+  const label = labelOf(outcome.expectation)
   const chose = `chose ${outcome.chosen} ${p(outcome.chosenProbability)}`
   return `  ${expectationText(outcome.expectation)}  ${outcome.chosen === label ? chose : `${chose} · ${label} ${p(outcome.labelProbability)}`}`
 }

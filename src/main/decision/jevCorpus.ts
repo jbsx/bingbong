@@ -15,6 +15,7 @@ import {
   type JevExpectation,
 } from '../../core/decision/jevCase.ts'
 import type { DecisionModel } from '../../core/ports/decisionModel'
+import { toErrorMessage } from '../../core/errors.ts'
 import { reportFault } from '../../core/trace/fault.ts'
 import { collectDecisionRecords } from '../perf/collectDecisionRecords.ts'
 import { collectJsonlFamily } from '../perf/collectPerfRecords.ts'
@@ -51,7 +52,7 @@ export function readCorpus(dir: string): CorpusEntry[] {
       try {
         raw = JSON.parse(readFileSync(join(dir, file), 'utf8'))
       } catch (error) {
-        return { name, case: `not a case: ${error instanceof Error ? error.message : String(error)}` }
+        return { name, case: `not a case: ${toErrorMessage(error)}` }
       }
       const read = readJevCase(raw)
       return { name, case: typeof read === 'string' ? `not a case: ${read}` : read }
@@ -108,23 +109,27 @@ function parseAsk(line: string): AskRecord | null {
 }
 
 /** Every ask in the sidecar under the logs dir, by id. */
-export function collectAsks(logsDir: string): Map<string, AskRecord> {
+function collectAsks(logsDir: string): Map<string, AskRecord> {
   return new Map(collectJsonlFamily(logsDir, ASK_FILE_PATTERN, parseAsk).records.map((ask) => [ask.id, ask]))
 }
 
 /**
- * A Command a misfire or overrun signal pointed at (#338): its words, what
- * it fired, and its ask — `recorded` in the sidecar, `missing` from it (named
- * but rolled off or purged), or `none` (Jev was not asked).
+ * Where a candidate's ask stands: `recorded` in the sidecar, `missing` from
+ * it (named, but rolled off or purged), `none` (Jev was not asked), or
+ * `no_decision` (the signal's decision record itself is gone).
  */
+export type CandidateAsk = 'recorded' | 'missing' | 'none' | 'no_decision'
+
+/** A Command a misfire or overrun signal pointed at (#338): its words and what it fired, when its record is still logged, and its ask. */
 export interface Candidate {
   readonly turnId: string
   readonly signals: readonly MisfireSignal[]
   readonly withinMs: number
-  readonly transcript: string
-  readonly fired: string
+  readonly read?: { readonly transcript: string; readonly fired: string }
   readonly askId?: string
-  readonly ask: 'recorded' | 'missing' | 'none'
+  /** The asks of the Utterance's partials, which a misread partial is promoted from by its own id. */
+  readonly partialAsks?: readonly string[]
+  readonly ask: CandidateAsk
 }
 
 function firedOf(record: DecisionRecord): string {
@@ -132,7 +137,7 @@ function firedOf(record: DecisionRecord): string {
   return what === '' ? record.verb : `${record.verb} ${what}`
 }
 
-/** `pnpm jev:candidates`: the Commands the decision log's misfire and overrun signals point at, in the order they fired. */
+/** `pnpm jev:candidates`: the Commands the decision log's misfire and overrun signals point at, in the order the signals came. */
 export function listCandidates(logsDir: string): Candidate[] {
   const records = collectDecisionRecords(logsDir).records
   const decisions = new Map<string, DecisionRecord>()
@@ -142,30 +147,34 @@ export function listCandidates(logsDir: string): Candidate[] {
     else signals.set(record.turnId, [...(signals.get(record.turnId) ?? []), record])
   }
   const asks = collectAsks(logsDir)
-  const candidates: Candidate[] = []
-  for (const [turnId, decision] of decisions) {
-    const misfires = signals.get(turnId)
-    if (misfires === undefined) continue
-    const askId = decision.ask
-    candidates.push({
+  return [...signals].map(([turnId, misfires]): Candidate => {
+    const decision = decisions.get(turnId)
+    const askId = decision?.ask
+    return {
       turnId,
       signals: misfires.map((misfire) => misfire.signal),
       withinMs: Math.min(...misfires.map((misfire) => misfire.withinMs)),
-      transcript: decision.transcript,
-      fired: firedOf(decision),
+      ...(decision !== undefined ? { read: { transcript: decision.transcript, fired: firedOf(decision) } } : {}),
       ...(askId !== undefined ? { askId } : {}),
-      ask: askId === undefined ? 'none' : asks.has(askId) ? 'recorded' : 'missing',
-    })
-  }
-  return candidates
+      ...(decision?.partialAsks !== undefined ? { partialAsks: decision.partialAsks } : {}),
+      ask: decision === undefined ? 'no_decision' : askId === undefined ? 'none' : asks.has(askId) ? 'recorded' : 'missing',
+    }
+  })
+}
+
+const ASK_STANDING: Readonly<Record<CandidateAsk, (askId: string | undefined) => string>> = {
+  recorded: (askId) => `ask ${askId}`,
+  missing: (askId) => `ask ${askId} is not in the sidecar`,
+  none: () => 'no ask (Jev was not asked)',
+  no_decision: () => 'no decision record (rolled off or purged)',
 }
 
 export function formatCandidates(candidates: readonly Candidate[], logsDir: string): string {
   if (candidates.length === 0) return `no misfire or overrun signals in ${logsDir}`
   const lines = candidates.map((candidate) => {
-    const ask =
-      candidate.ask === 'recorded' ? `ask ${candidate.askId}` : candidate.ask === 'missing' ? `ask ${candidate.askId} is not in the sidecar` : 'no ask (Jev was not asked)'
-    return `${candidate.turnId}  ${candidate.signals.join(',')}  "${candidate.transcript}" → ${candidate.fired}  ${ask}`
+    const read = candidate.read !== undefined ? `  "${candidate.read.transcript}" → ${candidate.read.fired}` : ''
+    const partials = candidate.partialAsks !== undefined ? `  partials ${candidate.partialAsks.join(',')}` : ''
+    return `${candidate.turnId}  ${candidate.signals.join(',')}${read}  ${ASK_STANDING[candidate.ask](candidate.askId)}${partials}`
   })
   return [...lines, '', 'promote one: pnpm jev:case <turnId> --expect <question>=<label> [<question>!=<label> …]'].join('\n')
 }
@@ -177,7 +186,7 @@ export function formatCandidates(candidates: readonly Candidate[], logsDir: stri
  * checked against the ask's own questions first: nothing is written for
  * one the replay could not judge.
  */
-export function caseFromLog(logsDir: string, id: string, expectations: readonly string[], corpusDir: string): { path: string } | { error: string } {
+export function caseFromLog(logsDir: string, id: string, expectations: readonly string[], corpusDir: string): { path: string; replaced: boolean } | { error: string } {
   if (expectations.length === 0) return { error: 'no --expect given' }
   const parsed: JevExpectation[] = []
   for (const text of expectations) {
@@ -203,6 +212,8 @@ export function caseFromLog(logsDir: string, id: string, expectations: readonly 
   }
   mkdirSync(corpusDir, { recursive: true })
   const path = join(corpusDir, `${id}.json`)
+  // Promoting a case again with other expectations replaces it, and says so.
+  const replaced = existsSync(path)
   writeFileSync(path, `${JSON.stringify(jevCase, null, 2)}\n`)
-  return { path }
+  return { path, replaced }
 }
