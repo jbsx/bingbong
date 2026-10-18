@@ -221,6 +221,21 @@ describe('peekCardAnswer', () => {
     expect(peekCardAnswer(feedOf(events), fold.state().runId)).toEqual({ kind: 'display', text: 'Clicked “Latest”.', failure: false })
   })
 
+  it("#336: an older Task's hop abandoned after a later Command's words never takes the card from that Command", () => {
+    const events: PipelineEvent[] = [
+      { type: 'command', turnId: 'h0', text: 'open elon musks latest tweet', action: 'open x.com/elonmusk', task: { id: 'h0', hop: 0 }, at: 1 },
+      { type: 'done', turnId: 'h0', outcome: 'done', at: 2 },
+      { type: 'command', turnId: 'n0', text: 'scroll down', action: 'scroll down', task: { id: 'n0', hop: 0 }, at: 3 },
+      { type: 'command', turnId: 'h1', text: 'open elon musks latest tweet', action: 'abandoned: a later Command came first', dropped: true, task: { id: 'h0', hop: 1 }, at: 4 },
+      { type: 'done', turnId: 'h1', outcome: 'cancelled', at: 5 },
+      { type: 'display', turnId: 'n0', text: 'Scrolled down.', at: 6 },
+      { type: 'done', turnId: 'n0', outcome: 'done', at: 7 },
+    ]
+    const fold = createPeekCardFold()
+    for (const event of events) fold.onEvent(event)
+    expect(fold.state()).toMatchObject({ phase: 'answer', runId: 'n0' })
+  })
+
   it('an Utterance read as no Command still shows its own card, not the last Answer', () => {
     const fold = createPeekCardFold()
     fold.onEvent({ type: 'command', turnId: 't1', text: 'screenshot', task: { id: 't1', hop: 0 }, at: 1 })

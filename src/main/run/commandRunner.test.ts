@@ -1572,6 +1572,22 @@ describe('a pop-up covering the page (#336)', () => {
     expect(displays(events)).toEqual([expect.objectContaining({ text: "There's no page to go back to.", failure: true })])
   })
 
+  it('"cancel" is a `stop` that never waits on the page: with a page still loading it stops at once', async () => {
+    const { browser, events, runner } = harness()
+    browser.collectPage = () => new Promise(() => {})
+    await runner.run('cancel', { source: 'spoken' })
+    expect(events[0]).toMatchObject({ type: 'command', action: 'stop' })
+    expect(displays(events)).toEqual([expect.objectContaining({ text: 'Stopped.' })])
+  })
+
+  it('"cancel" closes a dialog the page collected at speech start already shows', async () => {
+    const { browser, events, runner } = sheetHarness()
+    await runner.prepare()
+    await runner.run('cancel', { source: 'spoken' })
+    expect(browser.clicks).toEqual([9])
+    expect(displays(events)).toEqual([expect.objectContaining({ text: 'Closed the pop-up.' })])
+  })
+
   it('Jev reads the dialog when one is open and the words are not a dismiss phrase', async () => {
     const { decision, runner } = sheetHarness()
     decision.script.push({ answers: { verb: choice('none'), target: choice('none'), slot: choice('none') } })

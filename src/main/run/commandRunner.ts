@@ -8,7 +8,7 @@ import { commandPageOf, describeCommand, targetLabel, type Command, type Command
 import { dismissCommand, isDismissPhrase } from '../../core/command/dismissDialog'
 import { COMMAND_HELP } from '../../core/command/help'
 import { bestGuess, headsAnotherVerb, localMatch } from '../../core/command/localMatch'
-import { commandQuestions, commandState, doneLine, partialQuestions, readCommandAnswers, setAsideOf, type HopContext, type SetAside } from '../../core/command/jevReading'
+import { commandQuestions, commandState, doneLine, partialQuestions, readCommandAnswers, setAsideOf, type DoneResult, type HopContext, type SetAside } from '../../core/command/jevReading'
 import { blockedOrInertAction } from '../../core/browser/actionOutcome'
 import { isAddressShaped, openAddress } from '../../core/command/openAddress'
 import { nameMatch, soundsAlike } from '../../core/command/nameMatch'
@@ -448,18 +448,40 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   }
 
   /**
-   * The Local Match first; else one Jev call; else the best guess. A spoken
+   * The dismiss rule (#336): a dismiss phrase over an open dialog closes it
+   * before anything else reads the words, so the phrase waits for the page.
+   * One the Local Match reads as `stop` ("cancel") never waits — a `stop`
+   * is what ends a page still loading (#330) — and closes a dialog only
+   * when the page collected at speech start is already in hand. Resolves to
+   * the dismissal, or null, and the page it read when it collected one.
+   */
+  async function readDismissal(text: string, quick: Command | null, pending: PreparedPage | null): Promise<{ dismissal: Reading | null; page: CommandPage | null }> {
+    if (!isDismissPhrase(text)) return { dismissal: null, page: null }
+    const page = quick?.verb === 'stop' ? await pageInHand(pending) : await collectPage(pending)
+    const dismiss = page === null ? null : dismissCommand(text, page)
+    return { dismissal: dismiss === null ? null : { command: dismiss, page: page!, reading: 'local_match', jevAsked: false }, page }
+  }
+
+  /** The page collected at speech start, when it is fresh and already collected; null rather than wait for it. */
+  async function pageInHand(pending: PreparedPage | null): Promise<CommandPage | null> {
+    if (pending === null || monotonic() - pending.at > PREPARED_MAX_AGE_MS) return null
+    // An already-settled snapshot wins the race; one still being collected loses to the settled `undefined`.
+    const snapshot = await Promise.race([pending.snapshot, Promise.resolve(undefined)])
+    return snapshot === undefined || snapshot === null ? null : commandPageOf(snapshot)
+  }
+
+  /**
+   * The Local Match first; else one Jev call; else the best guess. A dismiss
+   * phrase over an open dialog comes before all of them (#336). A spoken
    * Slot that could carry a name waits for the page, so the Name Match can
-   * read it against the Page Terms; so does a dismiss phrase, which closes
-   * a dialog open over it before anything else reads it (#336).
+   * read it against the Page Terms.
    */
   async function read(text: string, pending: PreparedPage | null, spoken: boolean): Promise<Reading> {
     const quick = localMatch(text, [])
-    const dismissing = isDismissPhrase(text)
-    if (pageFree(quick) && !dismissing && !(spoken && slotIsNameable(quick))) return { command: quick, page: blankPage(browser), reading: 'local_match', jevAsked: false }
-    const page = await collectPage(pending)
-    const dismiss = dismissCommand(text, page)
-    if (dismiss !== null) return { command: dismiss, page, reading: 'local_match', jevAsked: false }
+    const { dismissal, page: dismissPage } = await readDismissal(text, quick, pending)
+    if (dismissal !== null) return dismissal
+    if (pageFree(quick) && !(spoken && slotIsNameable(quick))) return { command: quick, page: dismissPage ?? blankPage(browser), reading: 'local_match', jevAsked: false }
+    const page = dismissPage ?? (await collectPage(pending))
     if (pageFree(quick)) return { command: quick, page, reading: 'local_match', jevAsked: false }
     const local = localMatch(text, page.refs, page.url)
     if (local !== null) return { command: local, page, reading: 'local_match', jevAsked: false }
@@ -872,7 +894,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   }
 
   /** What a fired hop did, for "Done so far" (#336): nothing, or the page it left the tab on when that is another one. */
-  function doneResult(page: CommandPage, fired: FireResult): Parameters<typeof doneLine>[2] {
+  function doneResult(page: CommandPage, fired: FireResult): DoneResult {
     if (fired.unchanged === true) return { changed: false }
     const after = browser.state().url ?? ''
     return isRealPage(after) && after !== page.url ? { changed: true, opened: after } : { changed: true }
@@ -1059,11 +1081,12 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     // "scroll" may yet be "scroll up": the words are known to be unfinished, so no one is asked.
     if (headsAnotherVerb(words)) return null
     const quick = localMatch(words, [])
-    if (pageFree(quick) && firesEarly(quick) && !isDismissPhrase(words)) return { command: quick, page: blankPage(browser), reading: 'local_match', jevAsked: false }
-    const page = await collectPage(prepared)
+    const { dismissal, page: dismissPage } = await readDismissal(words, quick, prepared)
     if (stale()) return null
-    const dismiss = dismissCommand(words, page)
-    if (dismiss !== null) return { command: dismiss, page, reading: 'local_match', jevAsked: false }
+    if (dismissal !== null) return dismissal
+    if (pageFree(quick) && firesEarly(quick)) return { command: quick, page: blankPage(browser), reading: 'local_match', jevAsked: false }
+    const page = dismissPage ?? (await collectPage(prepared))
+    if (stale()) return null
     const local = localMatch(words, page.refs, page.url)
     if (local !== null && firesEarly(local)) return { command: local, page, reading: 'local_match', jevAsked: false }
     const model = deps.decisionModel()

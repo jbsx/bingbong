@@ -45,16 +45,11 @@ export function createPeekCardFold(): {
   // status/error trail of the reported run is the fallback.
   let lastStatus: string | null = null
   let sawError = false
-  // The Task the reported run belongs to (#328): its closing hop that fires
-  // nothing (done, no next step, not read) is not a Command of its own, so
-  // the card stays on the hop that answered (#329).
-  let taskId: string | null = null
 
   const hide = (): void => {
     state = HIDDEN
     lastStatus = null
     sawError = false
-    taskId = null
   }
   const fromReportedRun = (event: { runId?: string; turnId?: string }): boolean =>
     state.phase !== 'hidden' && event.turnId === state.runId
@@ -63,8 +58,9 @@ export function createPeekCardFold(): {
     onEvent(event) {
       switch (event.type) {
         case 'command':
-          if (event.dropped && event.task !== undefined && event.task.hop > 0 && event.task.id === taskId && state.phase !== 'hidden') return
-          taskId = event.task?.id ?? null
+          // A hop past the first that fires nothing (done, no next step, not read, abandoned) is no Command of its own (#336):
+          // it never takes the card — not from its own Task's hop that answered, nor from a later Command's, whichever Task it is of.
+          if (event.dropped && event.task !== undefined && event.task.hop > 0) return
           state = {
             phase: 'live',
             runId: event.turnId,
@@ -83,7 +79,7 @@ export function createPeekCardFold(): {
           return
         case 'done': {
           // Only the reported run's own end moves the card (#336): a Task's closing hop — abandoned, done or no next step — ends a turn the card never reported.
-          if (state.phase === 'hidden' || event.turnId !== state.runId) return
+          if (!fromReportedRun(event)) return
           // The outcome fork (ADR 0026): done and failed persist as the
           // card's answer; cancelled and interrupted hide it — an abort is
           // the user's last word, and the screen goes quiet.

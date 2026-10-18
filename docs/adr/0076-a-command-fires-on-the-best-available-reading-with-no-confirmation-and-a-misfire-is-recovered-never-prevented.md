@@ -643,8 +643,10 @@ not a consent wall.
   colour, and its failure line is the Answer. Hop 0's `already here`
   keeps its greyed bubble, and a one-hop Command looks as it did.
 - **The Peek Card keeps the last hop that fired.** Only the reported
-  run's own `done` moves the card, so a superseded closing hop no longer
-  hides it.
+  run's own `done` moves the card, and a hop past 0 that fires nothing
+  never takes the card. That holds whichever Task the hop belongs to, so
+  an older Task's hop abandoned after a later Command's words leaves that
+  Command's card alone.
 
 ### Not in scope
 
@@ -661,9 +663,15 @@ through the replay corpus (#338).
 - `commandPageOf` (core/command/command.ts) builds the page off a
   snapshot, dialog included. `dismissDialog.ts` holds the phrase grammar
   and the close-control rule. The runner checks a dismiss phrase before
-  the page-free Local Match shortcut, so a phrase collects the page even
-  when no dialog turns out to be open. An Early Fire's partial reads the
-  same rule. Whether the dialog closed is read off a fresh collect.
+  the page-free Local Match shortcut (`readDismissal`), so a phrase
+  collects the page even when no dialog turns out to be open. The one
+  exception is a phrase the Local Match reads as `stop` ("cancel"): a
+  `stop` never waits on a page collect, since it is what ends a page
+  still loading (#330). It closes a dialog only when the page collected at
+  speech start has already arrived, and otherwise stops at once. An Early
+  Fire's partial reads the same rule. Whether the dialog closed is read
+  off a fresh collect. A close control drawn as a link is never clicked,
+  and the dialog then takes Escape.
 - The back guard is in `paneNavigation.goBack`, reading
   `navigationHistory.getActiveIndex`/`getEntryAtIndex`. The Toolbar's own
   back button is untouched. `failureLineOf('back', …)` tells any

@@ -1,6 +1,6 @@
 import type { DecisionChoiceAnswer, DecisionChoiceQuestion, DecisionNoulQuestion } from '../ports/decisionModel'
 import type { PageLink } from '../browser/snapshot'
-import { JEV_VERBS, PRESS_KEYS, describeCommand, pressKeyOf, verbTakesSlot, verbTakesTarget, type Command, type CommandPage, type CommandRef, type CommandVerb } from './command'
+import { JEV_VERBS, PRESS_KEYS, describeCommand, pressKeyOf, targetLabel, verbTakesSlot, verbTakesTarget, type Command, type CommandPage, type CommandRef, type CommandVerb } from './command'
 import { pageAddressOf, resultLinksOf, wordsAfterVerb } from './localMatch'
 import { isAddressShaped } from './openAddress'
 
@@ -124,7 +124,7 @@ function shortAddress(url: string): string {
  * `click "Pinned…" (nothing changed)`, `click "Elon Musk" (opened x.com/elonmusk)`.
  */
 export function doneLine(command: Command, page: CommandPage, result: DoneResult): string {
-  const label = command.target === null ? undefined : page.refs.find((ref) => ref.ref === command.target)?.label
+  const label = targetLabel(command, page)
   const action =
     label === undefined
       ? describeCommand(command)
