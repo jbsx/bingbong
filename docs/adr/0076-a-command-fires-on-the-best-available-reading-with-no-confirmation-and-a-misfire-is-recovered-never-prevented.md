@@ -485,14 +485,14 @@ The readings it took:
   is step N of the task. Done so far: …" and "Pages visited: …".
 - **Each hop collects the landing afresh**; the page prepared at speech
   start stays hop 0's.
-- **An overrun counts only against a Jev-read hop whose verb goes on, and
-  only while its Task is still under way.** A Task that ends on its own
-  overran nothing, so a next Utterance three seconds after a `done` is no
-  overrun, nor is "stop" over a spoken `read`. The overrun is checked at
-  a new Command (spoken or typed), at an Early Fire, and at an abort
-  (Escape, a "stop" heard while running, the Abort Head). An abort's
-  record carries no `signalTurnId`; every overrun carries `hop`. Hop 0
-  counts too, and the report keeps it apart by its hop number.
+- **An overrun counts against the last Jev-read hop that fired**, at any
+  hop number, verb or Task state. That includes an Escape a second after
+  the Task's `done`: the Task did more than the user wanted. Each hop
+  counts at most once, and a Command read otherwise lets it go. It is
+  checked at a new Command (spoken or typed), at an Early Fire, and at an
+  abort (Escape, a "stop" heard while running, the Abort Head). An
+  abort's record carries no `signalTurnId`; every overrun carries `hop`,
+  so the report keeps hop 0 apart.
 - **Hops past hop 0 raise no back, clear, escape or opposite-scroll
   Misfire against the hop before.** They are the Task's own steps, not
   the user's recovery. The user's next Command is read against the last
@@ -502,12 +502,13 @@ The readings it took:
   transcript. An Utterance that never reaches its Endpoint is recorded
   at the next speech start. It ends `superseded` when Jev read a hop
   that would have gone on, and otherwise as its reading ends.
-- **The Hot Listen's clock restarts when the Task ends.** The runner's
-  `run` resolves at the Task's end, and the voice session restarts the
-  clock then if the Listen is still open and no Utterance is being
-  captured. The clock still runs from the Endpoint, so a Task longer than
-  `hotListenSilenceMs` closes the Listen under it; the Abort Head still
-  hears.
+- **A Task holds the Hot Listen's clock, and its end restarts it.** The
+  runner's `run` resolves when the Task ends. The voice session keeps the
+  clock stopped while any submitted Task is under way, as it does through
+  playback, and starts it at the Task's end, unless an Utterance is being
+  captured. So a Task longer than `hotListenSilenceMs` never closes the
+  Listen under it. The runner's waits are all bounded, so a Task always
+  ends.
 - **The landing wait lives in the pane's navigation surface**
   (`paneNavigation.ts`), on its injectable clock, beside the commit and
   stop watchers it builds on. The quiet window runs in the page over CDP

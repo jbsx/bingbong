@@ -1,3 +1,4 @@
+import { reportFault } from '../../core/trace/fault'
 import { systemClock, withDeadline, type Clock } from '../../core/ports/clock'
 import type { PageLanding } from '../../core/ports/browser'
 import { boundedWait } from '../../core/browser/unsettledAction'
@@ -159,6 +160,15 @@ export function createPaneNavigation(wc: PaneNavigationTarget, clock: Clock = sy
     return { reached, forget: () => stageWaiters.delete(wake) }
   }
 
+  /** The main document gone quiet; never, when no watch can be run or the page moved on under it — the landing ends at its load or its cap then. */
+  function quietWindow(): Promise<void> {
+    if (options.domQuiet === undefined) return never<void>()
+    return options.domQuiet(LANDING_QUIET_MS).catch((error: unknown) => {
+      reportFault('browser.paneNavigation.domQuiet', error)
+      return never<void>()
+    })
+  }
+
   /**
    * The landing of the document the tab committed to last (#328): its load
    * ending, or its DOM ready and then quiet — whichever is first — or the
@@ -167,7 +177,7 @@ export function createPaneNavigation(wc: PaneNavigationTarget, clock: Clock = sy
   async function land(): Promise<PageLanding> {
     const loaded = until(() => loadEnded)
     const ready = until(() => domReady)
-    const quiet = ready.reached.then(() => (options.domQuiet === undefined ? never<void>() : options.domQuiet(LANDING_QUIET_MS).catch(() => never<void>())))
+    const quiet = ready.reached.then(() => quietWindow())
     const remaining = Math.max(0, LANDING_CAP_MS - (clock.now() - committedAt))
     const landing =
       (await withDeadline(
@@ -243,7 +253,7 @@ export function createPaneNavigation(wc: PaneNavigationTarget, clock: Clock = sy
     } finally {
       committed.forget()
     }
-    load.catch(() => {})
+    load.catch((error: unknown) => reportFault('browser.paneNavigation.loadUrl.afterCommit', error))
     if (!ended) return land()
     options.onLanding?.('loaded')
     return 'loaded'

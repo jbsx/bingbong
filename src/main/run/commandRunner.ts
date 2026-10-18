@@ -2,7 +2,7 @@ import type { BrowserController, PageLanding, VisualGroundingController } from '
 import { DEFAULT_DECISION_THRESHOLDS, type DecisionModel } from '../../core/ports/decisionModel'
 import type { PipelineEvent } from '../../core/pipeline/events'
 import type { CommandRunState } from '../../core/pipeline/runState'
-import type { PageSnapshot } from '../../core/browser/snapshot'
+import type { PageLink, PageSnapshot } from '../../core/browser/snapshot'
 import type { PerfTracer } from '../../core/perf/perfTracer'
 import { commandRefOf, describeCommand, type Command, type CommandPage } from '../../core/command/command'
 import { COMMAND_HELP } from '../../core/command/help'
@@ -296,8 +296,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   let prepared: PreparedPage | null = null
   /** The Command that last fired, for the Misfire signal. */
   let previous: { turnId: string; verb: Command['verb']; key?: Command['key']; at: number } | null = null
-  /** The Jev-read hop that last fired a continuing verb (#328), for the overrun signal, while its Task is under way; null once it ends on its own, another Command fires, or one is counted. */
-  let jevHop: { taskId: string; turnId: string; hop: number; at: number } | null = null
+  /** The Jev-read hop that last fired (#328), for the overrun signal; null once a Command read otherwise fires, or one is counted. */
+  let jevHop: { turnId: string; hop: number; at: number } | null = null
   /** The runner's texts still sounding (a Page Read, a failure's line): the next Command or an abort silences them. */
   let sounding = 0
 
@@ -595,14 +595,14 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     task: TaskHop,
   ): Promise<FireResult> {
     // The Misfire signal (ADR 0076): this Command as the recovery of the one
-    // that fired before it. A hop past the first is the Task's own step, never the user's recovery.
+    // that fired before it. A hop past the first is the Task's own move, never the user's recovery.
     if (previous !== null && task.hop === 0) {
       const signal = misfireSignal(previous, { verb: command.verb, key: command.key, at: firedAt })
       if (signal !== null) log({ type: 'misfire', turnId: previous.turnId, at: firedAt, signal, signalTurnId: turnId, withinMs: firedAt - previous.at })
     }
     previous = { turnId, verb: command.verb, key: command.key, at: firedAt }
     // A Jev-read hop: what an overrun is read against, until the next one fires.
-    jevHop = readingKind === 'jev' && CONTINUING.has(command.verb) ? { taskId: task.id, turnId, hop: task.hop, at: firedAt } : null
+    jevHop = readingKind === 'jev' ? { turnId, hop: task.hop, at: firedAt } : null
     if (source === 'spoken') learnFrom(command, matched, firedAt)
 
     // A later Command supersedes the one in flight, and silences what it was saying; `stop` is only that.
@@ -759,8 +759,6 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
 
   /** A Task's end (#328): the `task` span, from its Endpoint, on hop 0's turn. */
   function endTask(task: Task, ended: TaskEnded, hops: number): TaskEnded {
-    // A Task that ended on its own did not overrun; a superseded one was read for an overrun as it was superseded.
-    if (jevHop?.taskId === task.id) jevHop = null
     try {
       tracer?.span(task.id, 'task', Math.max(0, monotonic() - task.endpointAt), { ended, hops, actions: task.actions.length, source: task.source })
     } catch (error) {
@@ -771,9 +769,19 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   }
 
   /** A hop that fires nothing: its words greyed in the Feed with what it came to, and its turn closed. */
-  function dropHop(turnId: string, task: Task, hop: number, action: string, outcome: 'done' | 'cancelled', at_: number): void {
-    publish({ type: 'command', turnId, text: task.text, action, dropped: true, task: { id: task.id, hop }, at: at_ })
+  function dropHop(turnId: string, task: Task, hop: number, action: string, outcome: 'done' | 'cancelled', firedAt: number): void {
+    publish({ type: 'command', turnId, text: task.text, action, dropped: true, task: { id: task.id, hop }, at: firedAt })
     publish({ type: 'done', turnId, outcome, at: at() })
+  }
+
+  /** A search landing's whole-page links (#328), where its results below the fold are; none when they cannot be read. */
+  async function resultPageLinks(turnId: string): Promise<readonly PageLink[]> {
+    try {
+      return (await browser.pageLinks()) ?? []
+    } catch (error) {
+      reportFault('run.commandRunner.pageLinks', error, { turnId })
+      return []
+    }
   }
 
   /**
@@ -789,7 +797,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       reading = { turnId, submission: task.submission }
       const page = superseded(task) ? blankPage(browser) : await collectPage(null)
       visit(task, page.url)
-      const links = !superseded(task) && parseSearchUrl(page.url) !== null ? ((await browser.pageLinks().catch(() => null)) ?? []) : []
+      const links = !superseded(task) && parseSearchUrl(page.url) !== null ? await resultPageLinks(turnId) : []
       const context: HopContext = { hop, visited: [...task.visited], actions: [...task.actions], links }
       const model = deps.decisionModel()
       const result = superseded(task) || model === null ? null : await model.ask({ state: commandState(task.text, page, context), questions: commandQuestions(task.text, page, context) })

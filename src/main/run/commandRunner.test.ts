@@ -563,9 +563,11 @@ describe('what every Command records', () => {
     await runner.run('nothing at all', { source: 'spoken', turnId: 'voice-2' })
     await runner.run('scroll down', { turnId: 'typed-1' })
 
-    expect(records.map((record) => record.type)).toEqual(['decision', 'decision', 'decision', 'decision'])
+    // A new Utterance within 3 s of a Jev-read hop is an overrun of it (#328).
+    expect(records.map((record) => record.type)).toEqual(['decision', 'decision', 'misfire', 'decision', 'decision'])
     expect(records[1]).toMatchObject({ verb: 'done', ended: 'done', task: { id: 'voice-1', hop: 1 } })
-    records.splice(1, 1)
+    expect(records[2]).toMatchObject({ signal: 'overrun', turnId: 'voice-1', signalTurnId: 'voice-2', hop: 0 })
+    records.splice(1, 2)
     expect(records[0]).toEqual({
       type: 'decision',
       turnId: 'voice-1',
@@ -1319,6 +1321,17 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
       const overruns = records.filter((record) => record.type === 'misfire' && record.signal === 'overrun')
       expect(overruns).toEqual(counted ? [expect.objectContaining({ turnId: hop1.turnId, hop: 1, withinMs: after })] : [])
     }
+  })
+
+  it('AC5: an overrun counts against the hop that fired even after the Task ended done: the user wanted less than it did', async () => {
+    const { records, decision, runner, setWall } = taskHarness()
+    decision.script.push(answer('open', 'none', 's3-6'), answer('click', 'ref-3'), answer('done'))
+    setWall(10_000)
+    await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
+    const hop1 = decisions(records).find((record) => record.task?.hop === 1)!
+    setWall(hop1.at + 2_000)
+    runner.abort()
+    expect(records.filter((record) => record.type === 'misfire')).toEqual([expect.objectContaining({ signal: 'overrun', turnId: hop1.turnId, hop: 1, withinMs: 2_000 })])
   })
 
   it('AC7: a type hop\'s Slot is read against the landing\'s Page Terms, and what was heard stays on the record', async () => {

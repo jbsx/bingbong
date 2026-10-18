@@ -1125,6 +1125,23 @@ describe('voice session — Hot Listen (#326)', () => {
     expect(harness.states.at(-1)).toEqual(closed)
   })
 
+  it('stays open through a Task longer than hotListenSilenceMs: the clock waits for the Task to end (#328 AC8)', async () => {
+    let endTask: () => void = () => {}
+    const { harness } = await hotListen(['pull up the latest elon musk tweet'], {
+      hotListenSilenceMs: () => 8_000,
+      submitResult: () => new Promise<void>((resolve) => (endTask = resolve)),
+    })
+    await harness.speakUtterance()
+    harness.clock.advance(12_000)
+    expect(harness.states.at(-1)).toEqual(open)
+    endTask()
+    await flush()
+    harness.clock.advance(7_999)
+    expect(harness.states.at(-1)).toEqual(open)
+    harness.clock.advance(1)
+    expect(harness.states.at(-1)).toEqual(closed)
+  })
+
   it('defaults to 8 s of silence', async () => {
     const { harness } = await hotListen(['scroll down'])
     await harness.speakUtterance()

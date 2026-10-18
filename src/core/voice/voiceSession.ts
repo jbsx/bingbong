@@ -176,6 +176,8 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
   // Bumped whenever the silence clock is stopped, so a playback wait that
   // ends after it re-arms nothing.
   let silenceEpoch = 0
+  // Submitted Commands whose Tasks have not ended (#328): while any runs, the silence clock waits.
+  let tasksUnderWay = 0
   // The utterance in capture is the app's own voice (#326): a line was
   // playing when it started, or started under it. Dropped at its Endpoint.
   let muted = false
@@ -216,7 +218,8 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
    */
   function startSilenceClock(): void {
     stopSilenceClock()
-    if (!hot) return
+    // A Task under way holds the clock (#328): it starts when the Task ends.
+    if (!hot || tasksUnderWay > 0) return
     const epoch = silenceEpoch
     if (speaking()) {
       void deps.speaking?.waitIdle().then(() => {
@@ -233,8 +236,9 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
     })
   }
 
-  /** A submitted Command's Task ended (#328): the open Hot Listen's silence clock starts again from here. */
+  /** A submitted Command's Task ended (#328): the open Hot Listen's silence clock starts again from here, once no Task is under way. */
   function restartAfterTask(): void {
+    tasksUnderWay -= 1
     if (hot && !capturing() && !transcribing) startSilenceClock()
   }
 
@@ -531,12 +535,15 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
     deps.onHeard({ text, routed: 'command' })
     // One wake, one spoken session (#326): a wake listen stays open; the hotkey's is single-shot.
     if (reason === 'wake') {
+      // The Task holds the clock while it runs, and its end restarts it (#328) — unless the Listen closed, or the next Utterance is under way.
+      if (task !== undefined) {
+        tasksUnderWay += 1
+        void task.then(
+          () => restartAfterTask(),
+          () => restartAfterTask(),
+        )
+      }
       stayHot()
-      // The Task's end restarts the clock (#328) — unless the Listen closed, or the next Utterance is under way.
-      void task?.then(
-        () => restartAfterTask(),
-        () => restartAfterTask(),
-      )
     } else stopListening()
   }
 
