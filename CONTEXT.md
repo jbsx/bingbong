@@ -503,8 +503,11 @@ _Avoid_: selector, element id, index
 What a click or type finds over its target's centre: the element the page's
 own hit test answers with in the target's place. The Action Outcome names it
 as a page read names refs, and it is what must be acted on before that target
-can be reached.
-_Avoid_: overlay, blocker, obstruction, dialog covering the target
+can be reached. Covers that paint nothing at that point — no background,
+border, shadow, image or text of their own there — are a **Blank Cover**: a
+person sees the target, so it is activated directly, as a Vimium hint is, and
+the outcome says so. A modal dialog is never blank.
+_Avoid_: overlay, blocker, obstruction, dialog covering the target, invisible overlay
 
 **Not Shown**:
 A listed target the page's own hit test does not find at its centre at all —

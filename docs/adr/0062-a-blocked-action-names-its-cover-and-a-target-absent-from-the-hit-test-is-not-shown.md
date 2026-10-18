@@ -197,3 +197,24 @@ the two heads are fixture-tested in core.
   readiness watch is re-armed so the popup closing is never the click's
   effect. When nothing was blurred, or the cover outlasts 500 ms, the
   Covered verdict stands as before.
+
+## Amendment 2026-10-18 (later) — a Blank Cover is clicked through
+
+- **A cover that paints nothing is no cover.** When no part of the target
+  shows and every entry over its centre paints nothing there — no
+  background or image, no border, shadow or outline, no pseudo-element, no
+  text of its own at the point — the target is what a person sees, and
+  the click activates it directly with a DOM click, as a Vimium hint does,
+  instead of refusing. The outcome says `activated directly (what covers
+  it paints nothing)`. What an entry's descendants draw is theirs: they are
+  in the stack on their own. A modal dialog, a replaced element or a form
+  control is never blank, and a colour the probe cannot read is taken as
+  painted, so a consent wall's tinted underlay keeps the Covered verdict.
+- **Why.** DuckDuckGo's header aside (absolute, z-index 199, empty and
+  transparent) sits over its Search button's centre; at the pane's zoomed
+  CSS width (703 px at a 985 px pane zoomed 140 %) it covers the whole
+  button, so the sampling grid above found no point and every Task on a
+  DuckDuckGo results page ended "Something on the page is in the way"
+  while the screen showed nothing in the way. The collector's visibility
+  rule was always Vimium's; the click now matches it where the cover is
+  invisible.

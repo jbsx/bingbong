@@ -42,6 +42,16 @@ const PAGES: Record<string, string> = {
   // Search button's centre and right, its left third still showing.
   '/centre-covered': `<body style="margin:0"><button style="position:absolute;top:100px;left:100px;width:120px;height:40px">Search</button>
     <div style="position:absolute;top:90px;left:140px;width:200px;height:60px"><div style="height:100%"></div></div></body>`,
+  // DuckDuckGo's header at the zoomed pane (703 CSS px, 2026-10-18): the same empty, transparent aside
+  // laid over the whole Search button, so no point of it shows — and nothing is painted there either.
+  '/blank-cover': `<body style="margin:0"><button style="position:absolute;top:100px;left:100px;width:120px;height:40px">Search</button>
+    <div style="position:absolute;top:90px;left:60px;width:300px;height:60px;z-index:199"><div style="height:100%"></div></div></body>`,
+  // The same cover with its own text drawn over the button's centre: a real cover.
+  '/blank-cover-text': `<body style="margin:0"><button style="position:absolute;top:100px;left:100px;width:120px;height:40px">Search</button>
+    <div style="position:absolute;top:90px;left:60px;width:300px;height:60px;z-index:199;font-size:48px;line-height:60px">XXXXXXXXXX</div></body>`,
+  // The same cover with a transparent background but a visible border: painted, so a real cover.
+  '/blank-cover-border': `<body style="margin:0"><button style="position:absolute;top:100px;left:100px;width:120px;height:40px">Search</button>
+    <div style="position:absolute;top:90px;left:60px;width:300px;height:60px;z-index:199;border:1px solid #ccc"></div></body>`,
   // A search box whose suggestions open on focus over the result below and close 150 ms after it blurs.
   '/suggestions': `<body style="margin:0"><input aria-label="Search privately" style="position:absolute;top:10px;left:10px;width:300px;height:30px">
     <div id="list" style="display:none;position:absolute;top:42px;left:10px;width:300px;height:200px;background:#fff;z-index:1"><button>elon musk last tweet</button></div>
@@ -146,6 +156,21 @@ describe.skipIf(!canDriveChrome)('the Cover and Not Shown rule in a real Chrome 
       expect(prepared.y).toBeLessThan(140)
       const top = await fixtures.chrome.evaluate<string>(`document.elementFromPoint(${prepared.x}, ${prepared.y}).tagName`)
       expect(top).toBe('BUTTON')
+    })
+
+    it('reads a target wholly under covers that paint nothing as a Blank Cover, to be activated directly', async () => {
+      const page = await collect('/blank-cover')
+      const prepared = await prep(page, 'Search')
+      expect(prepared).toMatchObject({ ok: true, clickable: false, blankCover: true, coveredCentre: { x: 160, y: 120 } })
+      expect(prepared.blocked).toBeUndefined()
+      // The cover really is on top: a mouse pressed there would not reach the button.
+      expect(await fixtures.chrome.evaluate<string>(`document.elementFromPoint(160, 120).tagName`)).toBe('DIV')
+    })
+
+    it('keeps the Covered verdict for a transparent cover that draws text or a border over the target', async () => {
+      expect(await prep(await collect('/blank-cover-text'), 'Search')).toMatchObject({ clickable: false, blocked: { fact: 'covered', cover: { tag: 'div' } } })
+      expect(await prep(await collect('/blank-cover-border'), 'Search')).toMatchObject({ clickable: false, blocked: { fact: 'covered', cover: { tag: 'div' } } })
+      expect(await prep(await collect('/underlay'), 'Search the collection')).toMatchObject({ clickable: false, blocked: { fact: 'covered' } })
     })
 
     it('lets a focused field\'s popup go: blurred, the target its suggestions covered shows again', async () => {

@@ -104,6 +104,8 @@ class FakeCdp implements CdpDebugger {
   dialogLabelsException: string | null = null
   /** When set, click-prep reports the element as offscreen (no coordinates). */
   prepOffscreen = false
+  /** When set, click-prep reports the element wholly under covers that paint nothing (ADR 0062's Blank Cover). */
+  prepBlankCover = false
   /** When set, the next click-prep reports a stale registry once (re-collect path). */
   prepStaleOnce = false
   actionProbe: unknown = undefined
@@ -320,6 +322,10 @@ class FakeCdp implements CdpDebugger {
         // Offscreen: scrollIntoView could not bring the element into the
         // viewport at all — no coordinates, no hit-test.
         if (this.prepOffscreen) return { result: { value: { ok: true, clickable: false } } } as T
+        if (this.prepBlankCover) {
+          const centre = clickPoint(target, snapshot.viewport)
+          return { result: { value: { ok: true, clickable: false, blankCover: true, coveredCentre: centre, ...centre } } } as T
+        }
         // Mirror the in-page prep math: fresh clickPoint, hit-test result set by the test.
         const covered = this.prepCovered || this.prepCoveredTimes > 0
         if (this.prepCoveredTimes > 0) this.prepCoveredTimes -= 1
@@ -1141,6 +1147,25 @@ describe('createCdpBrowserController click', () => {
       (call) => call.method === 'Runtime.evaluate' && typeof call.params?.expression === 'string' && call.params.expression.includes('.click()'),
     )
     expect(domClick?.params?.expression).toContain('__bingbongRefs')
+  })
+
+  it('activates directly, no mouse pressed, when what covers the whole target paints nothing (a Blank Cover)', async () => {
+    const cdp = new FakeCdp()
+    cdp.prepBlankCover = true
+    const { controller } = makeController({ cdp })
+    await controller.readPage()
+
+    const outcome = await controller.click(3)
+
+    expect(outcome).toBe(
+      'clicked [3]: urlChanged=false dialogOpen=false; no observable change; activated directly (what covers it paints nothing)',
+    )
+    expect(outcome).not.toContain('not clicked')
+    const domClick = cdp.calls.find(
+      (call) => call.method === 'Runtime.evaluate' && typeof call.params?.expression === 'string' && call.params.expression.includes('.click()'),
+    )
+    expect(domClick?.params?.expression).toContain('__bingbongRefs')
+    expect(cdp.calls.some((call) => call.method === 'Input.dispatchMouseEvent')).toBe(false)
   })
 
   it('refuses instead of re-collecting and retrying when the registry died with the page', async () => {

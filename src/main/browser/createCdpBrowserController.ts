@@ -1034,7 +1034,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
    * target was then retried once, a Not Shown one never.
    */
   type ClickAttempt =
-    | { kind: 'acted'; direct: boolean; index: number; label: string; href: string | null; before: ElementState; signature: PageSignature; dismissal: string | null }
+    | { kind: 'acted'; direct: DirectActivation | null; index: number; label: string; href: string | null; before: ElementState; signature: PageSignature; dismissal: string | null }
     | { kind: 'blocked'; blocked: BlockedAction; signature: PageSignature; snapshot: PageSnapshot; dismissal: string | null; retried: boolean }
 
   /** The element a click aims at: the ref the model named, the registry index that holds it now, and what it looked like when shown. */
@@ -1062,7 +1062,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
       await dispatchPointClick(visualPoint)
       visualPoints.delete(ref)
       lastSnapshot = undefined
-      return { kind: 'acted', direct: false, index, label: target.label, href: target.href, before: elementState(target), signature: signatureOf(snapshot), dismissal: null }
+      return { kind: 'acted', direct: null, index, label: target.label, href: target.href, before: elementState(target), signature: signatureOf(snapshot), dismissal: null }
     }
     const aim: ClickTarget = { ref, index: target.ref - 1, label: target.label, href: target.href, before: elementState(target) }
     const attempt = await clickAtIndex(aim, snapshot, null)
@@ -1071,10 +1071,17 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
   }
 
   /**
+   * Why a click activated its target directly instead of pressing a mouse on
+   * it: the target could not be brought into the viewport, or what covers it
+   * paints nothing (a Blank Cover, ADR 0062), so a person sees the target.
+   */
+  type DirectActivation = 'offscreen' | 'blankCover'
+
+  /**
    * Click the registry node at this index: a real click where a click can
-   * land on it, a direct activation where it cannot be brought into view,
-   * and nothing where a cover sits over it. `snapshot` is the page the
-   * attempt is measured against.
+   * land on it, a direct activation where it cannot be brought into view or
+   * where its cover paints nothing, and nothing where a cover sits over it.
+   * `snapshot` is the page the attempt is measured against.
    */
   async function clickAtIndex(aim: ClickTarget, snapshot: PageSnapshot, dismissal: string | null, blurred = false): Promise<ClickAttempt> {
     const { ref, index, label, href, before } = aim
@@ -1099,8 +1106,15 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
       await armReadiness()
       return clickAtIndex(aim, snapshot, dismissal, true)
     }
+    let direct: DirectActivation | null = null
     if (prep.clickable && typeof prep.x === 'number' && typeof prep.y === 'number') {
       await dispatchPointClick({ x: prep.x, y: prep.y })
+    } else if (prep.blankCover === true) {
+      // No part of the target shows, but nothing over it paints anything
+      // there (DuckDuckGo's empty header aside over its Search button at the
+      // zoomed pane, 2026-10-18): a person sees the target, so it is
+      // activated directly, as a Vimium hint is, and the outcome says so.
+      direct = 'blankCover'
     } else if (typeof prep.x === 'number' && typeof prep.y === 'number') {
       // The click point does not reach the target: something covers it, or
       // the target is not shown there at all (ADR 0062). Reported to the
@@ -1111,16 +1125,22 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
       // The element cannot be brought into the viewport at all (clipped
       // away inside its own scroller); activate it directly, Vimium-style,
       // and say so in the outcome.
-      await evaluateInPage(`(() => {
-        const el = (window.__bingbongRefs || [])[${index}]
-        // No scroll of ours here, or it would be the click's effect (#335).
-        if (typeof el.focus === 'function') el.focus({ preventScroll: true })
-        el.click()
-      })()`)
+      direct = 'offscreen'
     }
+    if (direct !== null) await activateDirectly(index)
     // A click can navigate (link) or mutate the page; never trust old refs.
     lastSnapshot = undefined
-    return { kind: 'acted', direct: !(prep.clickable), index, label, href, before, signature: signatureOf(snapshot), dismissal }
+    return { kind: 'acted', direct, index, label, href, before, signature: signatureOf(snapshot), dismissal }
+  }
+
+  /** Activate the registry node at this index with a DOM click, no mouse pressed: what a Vimium hint does. */
+  async function activateDirectly(index: number): Promise<void> {
+    await evaluateInPage(`(() => {
+      const el = (window.__bingbongRefs || [])[${index}]
+      // No scroll of ours here, or it would be the click's effect (#335).
+      if (typeof el.focus === 'function') el.focus({ preventScroll: true })
+      el.click()
+    })()`)
   }
 
   /** The address the link at this index carries now — the node itself or
@@ -1302,7 +1322,8 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     if (arrival === 'unfinished') extras.push(UNFINISHED_LOAD_CLAUSE)
     const cleared = consentNote(attempt, ref)
     if (cleared !== null) extras.push(cleared)
-    if (attempt.direct) extras.push('activated directly (outside viewport)')
+    if (attempt.direct === 'offscreen') extras.push('activated directly (outside viewport)')
+    if (attempt.direct === 'blankCover') extras.push('activated directly (what covers it paints nothing)')
     if (openedHere) extras.push(NEW_WINDOW_FOLLOWED_CLAUSE)
     /** The snapshot whose state rides the outcome (post-dismissal when a
      * consent wall was cleared, the post-action collect otherwise). */

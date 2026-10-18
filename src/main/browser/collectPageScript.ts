@@ -35,8 +35,9 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
   ].join(',')
   // Vimium-style visibility: rect intersection only. Overlays do NOT hide an
   // element from detection — a covered "background" button is still a real
-  // target (the click path activates elements directly when coordinates
-  // can't reach them).
+  // target. The click prep then decides (ADR 0062): a real click where any
+  // part of it shows, a direct activation under a cover that paints nothing,
+  // and a Covered verdict naming the cover otherwise.
   const hasSize = (el) => {
     const rect = el.getBoundingClientRect()
     return rect.width >= 1 && rect.height >= 1
@@ -545,6 +546,14 @@ export interface ClickPrep {
   blocked?: { fact: 'covered'; cover: CoverProbe } | { fact: 'notShown' }
   /** The target's centre, when something covers it there: the click is then at a part that shows (x, y), or blocked. */
   coveredCentre?: { x: number; y: number }
+  /**
+   * No part of the target shows, but everything over it at (x, y) is a Blank
+   * Cover — paints nothing there: no background, border, shadow, image or
+   * text of its own — so a person sees the target and the click activates it
+   * directly, as a Vimium hint does (DuckDuckGo's empty header aside over
+   * its whole Search button at the zoomed pane, 2026-10-18).
+   */
+  blankCover?: true
 }
 
 /**
@@ -584,9 +593,13 @@ const SCROLL_SPOT = "(node) => node.scrollLeft + ',' + node.scrollTop"
  * target in the stack under something else is Covered, and the entries
  * above it are the covers; the target absent from the stack is Not Shown —
  * inert, clipped, hidden or `pointer-events: none`, which no dismissal
- * reaches. A cover is the first entry above that is a nameable ref or lies
- * inside one; else the first with an accessible name, by role and name;
- * else the top entry's tag — the last two with up to three refs inside.
+ * reaches. Covers that all paint nothing at the centre — no background,
+ * border, shadow, image, pseudo-element or text of their own there — are a
+ * Blank Cover: the target is what a person sees, and the click activates
+ * it directly (`blankCover`), as a Vimium hint does; a modal dialog is
+ * never blank. A cover is the first entry above that is a nameable ref or
+ * lies inside one; else the first with an accessible name, by role and
+ * name; else the top entry's tag — the last two with up to three refs inside.
  */
 export function clickPrepScript(index: number, naming: CoverNaming): string {
   return `(() => {
@@ -653,6 +666,55 @@ export function clickPrepScript(index: number, naming: CoverNaming): string {
     if (at < 0 && !underModal) return { ok: true, x, y, clickable: false, blocked: { fact: 'notShown' } }
     const covered = (cover) => ({ ok: true, x, y, clickable: false, blocked: { fact: 'covered', cover }, coveredCentre: { x, y } })
     const above = underModal ? [modal] : stack.slice(0, at).filter((entry) => !el.contains(entry) && !entry.contains(el))
+    // A Blank Cover: every entry over the target paints nothing at the
+    // point, so a person sees the target there and the click activates it
+    // directly. Anything an entry draws itself at the point — a background
+    // or image, a border or shadow, a pseudo-element, text of its own — makes
+    // it a real cover; what its descendants draw is theirs, and they are in
+    // the stack on their own. A modal dialog is never blank. Any doubt reads
+    // as painted.
+    const alphaOf = (color) => {
+      if (!color || color === 'transparent') return 0
+      const legacy = /^rgba?\\(\\s*[\\d.]+\\s*,\\s*[\\d.]+\\s*,\\s*[\\d.]+\\s*(?:,\\s*([\\d.]+%?))?\\s*\\)$/.exec(color)
+      const modern = legacy ? null : /\\/\\s*([\\d.]+%?)\\s*\\)$/.exec(color)
+      const alpha = legacy ? legacy[1] : modern ? modern[1] : undefined
+      // A colour in a syntax not read here is taken as painted.
+      if (alpha === undefined) return 1
+      return alpha.endsWith('%') ? Number(alpha.slice(0, -1)) / 100 : Number(alpha)
+    }
+    const PAINTED_TAGS = ['IMG', 'SVG', 'VIDEO', 'AUDIO', 'CANVAS', 'IFRAME', 'OBJECT', 'EMBED', 'PICTURE', 'INPUT', 'SELECT', 'TEXTAREA', 'BUTTON', 'DIALOG', 'HR', 'PROGRESS', 'METER']
+    const SIDES = ['Top', 'Right', 'Bottom', 'Left']
+    const drawsBox = (style) =>
+      alphaOf(style.backgroundColor) > 0 ||
+      style.backgroundImage !== 'none' ||
+      style.boxShadow !== 'none' ||
+      SIDES.some((side) => parseFloat(style['border' + side + 'Width']) > 0 && style['border' + side + 'Style'] !== 'none' && alphaOf(style['border' + side + 'Color']) > 0) ||
+      (style.outlineStyle !== 'none' && parseFloat(style.outlineWidth) > 0)
+    const paintsNothingAt = (entry, px, py) => {
+      if (!(entry instanceof Element) || PAINTED_TAGS.includes(entry.tagName.toUpperCase())) return false
+      const role = entry.getAttribute('role')
+      if (role === 'dialog' || role === 'alertdialog') return false
+      const style = getComputedStyle(entry)
+      if (style.opacity === '0') return true
+      if (drawsBox(style)) return false
+      for (const pseudo of ['::before', '::after']) {
+        const drawn = getComputedStyle(entry, pseudo)
+        const content = drawn.content
+        if (content && content !== 'none' && content !== 'normal' && (content !== '""' || drawsBox(drawn))) return false
+      }
+      for (const node of entry.childNodes) {
+        if (node.nodeType !== 3 || node.textContent.trim() === '') continue
+        const range = document.createRange()
+        range.selectNodeContents(node)
+        for (const r of range.getClientRects()) {
+          if (px >= r.left && px < r.right && py >= r.top && py < r.bottom) return false
+        }
+      }
+      return true
+    }
+    if (!underModal && above.length > 0 && above.every((entry) => paintsNothingAt(entry, x, y))) {
+      return { ok: true, x, y, clickable: false, blankCover: true, coveredCentre: { x, y } }
+    }
     const refs = window.__bingbongRefs || []
     const shown = window.__bingbongShownRefs || []
     const nameable = (i) => i >= 0 && i < ${naming.listed} && (${!naming.shownOnly} || shown[i] === refs[i]) && !refs[i].contains(el)
