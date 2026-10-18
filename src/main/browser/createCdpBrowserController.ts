@@ -43,6 +43,7 @@ import { SCROLL_END_OF_PAGE, formatNewInView } from '../../core/browser/scrollDe
 import { authPopupOpenedLine, formatOpenAddress, judgeWindowOpens, LINK_SELECTOR, NEW_WINDOW_FOLLOWED_CLAUSE, popupBlockedLine } from '../../core/browser/newWindowLink'
 import {
   clearFocusedScript,
+  blurFocusedFieldScript,
   clickPrepScript,
   flashRefScript,
   markShownRefsScript,
@@ -1075,7 +1076,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
    * and nothing where a cover sits over it. `snapshot` is the page the
    * attempt is measured against.
    */
-  async function clickAtIndex(aim: ClickTarget, snapshot: PageSnapshot, dismissal: string | null): Promise<ClickAttempt> {
+  async function clickAtIndex(aim: ClickTarget, snapshot: PageSnapshot, dismissal: string | null, blurred = false): Promise<ClickAttempt> {
     const { ref, index, label, href, before } = aim
     // A Cover is named by a ref the model holds: any number of the listing
     // this outcome carries after a dismissal, else only a number still shown.
@@ -1089,6 +1090,15 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
       throw await staleRef(ref, true)
     }
 
+    if (prep.coveredCentre !== undefined && !blurred && (await blurFocusedField(index, prep.coveredCentre.x, prep.coveredCentre.y))) {
+      // Covered at its centre by the popup of a field an earlier click focused
+      // (DuckDuckGo's suggestions, 2026-10-18): blurred first, as a person's
+      // click elsewhere would blur it, so no point of the target is chosen
+      // while the popup is still open. The watch is armed anew, so the popup
+      // closing is never the click's effect.
+      await armReadiness()
+      return clickAtIndex(aim, snapshot, dismissal, true)
+    }
     if (prep.clickable && typeof prep.x === 'number' && typeof prep.y === 'number') {
       await dispatchPointClick({ x: prep.x, y: prep.y })
     } else if (typeof prep.x === 'number' && typeof prep.y === 'number') {
@@ -1345,6 +1355,16 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
   /** Scroll the ref's element into view, then report fresh click coordinates,
    * whether a coordinate click would land on it, and — when it would not —
    * whether it is Covered or Not Shown (ADR 0062). */
+  /** Blur another text field holding the focus, for a target its popup covers at (x, y); whether the target shows there again. */
+  async function blurFocusedField(index: number, x: number, y: number): Promise<boolean> {
+    try {
+      return (await evaluateInPage<boolean>(blurFocusedFieldScript(index, x, y), { awaitPromise: true })) === true
+    } catch (error) {
+      reportFault('browser.createCdpBrowserController.blurFocusedField', error)
+      return false
+    }
+  }
+
   async function prepClick(index: number, naming: CoverNaming): Promise<ClickPrep> {
     return evaluateInPage<ClickPrep>(clickPrepScript(index, naming))
   }

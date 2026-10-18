@@ -543,6 +543,8 @@ export interface ClickPrep {
   y?: number
   clickable?: boolean
   blocked?: { fact: 'covered'; cover: CoverProbe } | { fact: 'notShown' }
+  /** The target's centre, when something covers it there: the click is then at a part that shows (x, y), or blocked. */
+  coveredCentre?: { x: number; y: number }
 }
 
 /**
@@ -558,6 +560,14 @@ export interface CoverNaming {
 /** The scroller a scroll event on the document is about. */
 const ROOT_SCROLLER = '(document.scrollingElement || document.documentElement)'
 
+/**
+ * The grid a click prep samples over a target whose centre is covered: a
+ * point every fifth of its width and every half of its height, so a button
+ * that shows only its left third still has a column of points in it.
+ */
+const SAMPLE_COLUMNS = 6
+const SAMPLE_ROWS = 3
+
 /** Where a scroller stands, as the click prep and the readiness watch compare it (#335). */
 const SCROLL_SPOT = "(node) => node.scrollLeft + ',' + node.scrollTop"
 
@@ -566,7 +576,11 @@ const SCROLL_SPOT = "(node) => node.scrollLeft + ',' + node.scrollTop"
  * an armed readiness watch so the scroll is never the click's effect —
  * #335) and hit-test its centre
  * with `elementsFromPoint`, which returns the whole paint-order stack (ADR
- * 0062). The target on top (or under its own descendant) is clickable; the
+ * 0062). The target on top (or under its own descendant) is clickable, at
+ * its centre or, when that is covered, at the point of it nearest the
+ * centre that shows (DuckDuckGo's header aside over its Search button's
+ * centre at a 985 px pane, 2026-10-18); a target no part of which shows is
+ * judged at its centre: the
  * target in the stack under something else is Covered, and the entries
  * above it are the covers; the target absent from the stack is Not Shown —
  * inert, clipped, hidden or `pointer-events: none`, which no dismissal
@@ -608,7 +622,28 @@ export function clickPrepScript(index: number, naming: CoverNaming): string {
     if (x < 0 || y < 0 || x >= vw || y >= vh) return { ok: true, clickable: false }
     const stack = document.elementsFromPoint(x, y)
     const top = stack.length > 0 ? stack[0] : null
-    if (top === el || (top !== null && el.contains(top))) return { ok: true, x, y, clickable: true }
+    const reaches = (hit) => hit === el || (hit !== null && el.contains(hit))
+    if (reaches(top)) return { ok: true, x, y, clickable: true }
+    // The centre is covered, but a person clicks the part that shows: any
+    // point of the visible rect where the target is on top, the one nearest
+    // the centre first. Covered only when no part of it shows.
+    const inset = 2
+    const left = visibleLeft + inset
+    const right = visibleRight - 1 - inset
+    const upper = visibleTop + inset
+    const lower = visibleBottom - 1 - inset
+    if (right > left && lower > upper) {
+      const points = []
+      for (let i = 0; i <= ${SAMPLE_COLUMNS - 1}; i++) {
+        for (let j = 0; j <= ${SAMPLE_ROWS - 1}; j++) {
+          points.push([Math.round(left + ((right - left) * i) / ${SAMPLE_COLUMNS - 1}), Math.round(upper + ((lower - upper) * j) / ${SAMPLE_ROWS - 1})])
+        }
+      }
+      points.sort((a, b) => Math.hypot(a[0] - x, a[1] - y) - Math.hypot(b[0] - x, b[1] - y))
+      for (const [px, py] of points) {
+        if (reaches(document.elementFromPoint(px, py))) return { ok: true, x: px, y: py, clickable: true, coveredCentre: { x, y } }
+      }
+    }
     const at = stack.indexOf(el)
     // A modal <dialog> makes everything outside it inert without an inert
     // attribute, so the hit test skips a target it merely covers: that
@@ -616,7 +651,7 @@ export function clickPrepScript(index: number, naming: CoverNaming): string {
     const modal = document.querySelector('dialog:modal')
     const underModal = at < 0 && modal !== null && !modal.contains(el)
     if (at < 0 && !underModal) return { ok: true, x, y, clickable: false, blocked: { fact: 'notShown' } }
-    const covered = (cover) => ({ ok: true, x, y, clickable: false, blocked: { fact: 'covered', cover } })
+    const covered = (cover) => ({ ok: true, x, y, clickable: false, blocked: { fact: 'covered', cover }, coveredCentre: { x, y } })
     const above = underModal ? [modal] : stack.slice(0, at).filter((entry) => !el.contains(entry) && !entry.contains(el))
     const refs = window.__bingbongRefs || []
     const shown = window.__bingbongShownRefs || []
@@ -660,6 +695,40 @@ export function clickPrepScript(index: number, naming: CoverNaming): string {
   })()`
 }
 
+
+/** How long a blurred field's popup is given to close (#336's search box, 2026-10-18): autocompletes close a beat after the blur, so a pick can land first. */
+const POPUP_CLOSE_MS = 500
+
+/**
+ * A click Covered while another text field holds the focus: the field's own
+ * popup — suggestions an earlier click into it opened — is what a person's
+ * click elsewhere would close, so the field is blurred, as that click
+ * would blur it. Resolves true once the target shows at (x, y) again, false
+ * when no other field held the focus, or when the cover outlasts the wait
+ * (it was no popup of the field's): the block then stands.
+ */
+export function blurFocusedFieldScript(index: number, x: number, y: number): string {
+  return `(() => {
+    /* BLUR_FOCUSED_FIELD */
+    const el = (window.__bingbongRefs || [])[${index}]
+    const field = document.activeElement
+    if (!el || !field || field === document.body || field === el || field.contains(el) || el.contains(field)) return false
+    const TEXT_TYPES = ['', 'text', 'search', 'email', 'url', 'tel', 'password', 'number']
+    const textual = field.isContentEditable || field.tagName === 'TEXTAREA' || (field.tagName === 'INPUT' && TEXT_TYPES.includes((field.getAttribute('type') || '').toLowerCase()))
+    if (!textual) return false
+    field.blur()
+    const reaches = () => { const hit = document.elementFromPoint(${x}, ${y}); return hit === el || (hit !== null && el.contains(hit)) }
+    const started = performance.now()
+    return new Promise((resolve) => {
+      const check = () => {
+        if (reaches()) return resolve(true)
+        if (performance.now() - started > ${POPUP_CLOSE_MS}) return resolve(false)
+        setTimeout(check, 25)
+      }
+      check()
+    })
+  })()`
+}
 
 /**
  * Arm the page's readiness watch (#324, ADR 0076): from here the page

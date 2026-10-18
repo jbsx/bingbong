@@ -182,3 +182,18 @@ the two heads are fixture-tested in core.
     round is counted once per round, from the round of the block to two
     rounds after it; recovery is counted per block, and a block nothing
     followed is `never`.
+
+## Amendment 2026-10-18 — a target that partly shows, and a focused field's popup
+
+- **Covered means no part of the target shows.** When something covers the
+  centre, the click prep samples a grid over the target's visible rect and
+  clicks the point nearest the centre where the target is on top. A person
+  clicks the part that shows. At a 985 px pane, DuckDuckGo's transparent
+  header aside sat over its Search button's centre and read as a cover.
+- **A focused field's popup is let go first.** When the centre is covered
+  while another text field holds the focus, as when an earlier click into a
+  search box opened its suggestions, the field is blurred, as a person's
+  click elsewhere would blur it. The prep then runs again once, after the
+  readiness watch is re-armed so the popup closing is never the click's
+  effect. When nothing was blurred, or the cover outlasts 500 ms, the
+  Covered verdict stands as before.

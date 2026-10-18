@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { COLLECT_PAGE_SCRIPT, clickPrepScript, markShownRefsScript, type ClickPrep } from '../src/main/browser/collectPageScript.ts'
+import { COLLECT_PAGE_SCRIPT, blurFocusedFieldScript, clickPrepScript, markShownRefsScript, type ClickPrep } from '../src/main/browser/collectPageScript.ts'
 import { canDriveChrome, serveFixtures, type FixtureChrome } from './headlessChrome.ts'
 
 // A Blocked Action names its Cover, and a target absent from the hit test is
@@ -38,6 +38,19 @@ const PAGES: Record<string, string> = {
   // A listed button laid over the input's centre.
   '/button-over': `<body style="margin:0"><input aria-label="Name" style="position:absolute;top:100px;left:100px;width:200px;height:40px">
     <button style="position:absolute;top:90px;left:90px;width:240px;height:60px"><span>Open chat</span></button></body>`,
+  // DuckDuckGo's header at a 985 px pane (2026-10-18): an empty, transparent aside laid over the
+  // Search button's centre and right, its left third still showing.
+  '/centre-covered': `<body style="margin:0"><button style="position:absolute;top:100px;left:100px;width:120px;height:40px">Search</button>
+    <div style="position:absolute;top:90px;left:140px;width:200px;height:60px"><div style="height:100%"></div></div></body>`,
+  // A search box whose suggestions open on focus over the result below and close 150 ms after it blurs.
+  '/suggestions': `<body style="margin:0"><input aria-label="Search privately" style="position:absolute;top:10px;left:10px;width:300px;height:30px">
+    <div id="list" style="display:none;position:absolute;top:42px;left:10px;width:300px;height:200px;background:#fff;z-index:1"><button>elon musk last tweet</button></div>
+    <a href="/x" style="position:absolute;top:100px;left:20px">Elon Musk (@elonmusk) / X</a>
+    <script>
+      const input = document.querySelector('input'), list = document.getElementById('list')
+      input.addEventListener('focus', () => { list.style.display = 'block' })
+      input.addEventListener('blur', () => setTimeout(() => { list.style.display = 'none' }, 150))
+    </script></body>`,
   '/clipped': `<body><div style="overflow:hidden;height:0"><input aria-label="Clipped field"></div>${COLLECTION_SEARCH}</body>`,
   '/no-pointer': `<body><input aria-label="Pointerless field" style="pointer-events:none">${COLLECTION_SEARCH}</body>`,
   // The custom-checkbox pattern: the real input at opacity 0 with nothing over it.
@@ -120,6 +133,40 @@ describe.skipIf(!canDriveChrome)('the Cover and Not Shown rule in a real Chrome 
       const index = labels(page).indexOf('Name')
       const prepared = await fixtures.chrome.evaluate<ClickPrep>(clickPrepScript(index, { listed: page.elements.length, shownOnly: true }))
       expect(prepared.blocked).toEqual({ fact: 'covered', cover: { tag: 'span', contains: [] } })
+    })
+
+    it('clicks a target whose centre is covered at a point of it that shows', async () => {
+      const page = await collect('/centre-covered')
+      const prepared = await prep(page, 'Search')
+      expect(prepared).toMatchObject({ ok: true, clickable: true })
+      // The button spans x 100–220, y 100–140; the aside covers from x 140.
+      expect(prepared.x).toBeGreaterThanOrEqual(100)
+      expect(prepared.x).toBeLessThan(140)
+      expect(prepared.y).toBeGreaterThanOrEqual(100)
+      expect(prepared.y).toBeLessThan(140)
+      const top = await fixtures.chrome.evaluate<string>(`document.elementFromPoint(${prepared.x}, ${prepared.y}).tagName`)
+      expect(top).toBe('BUTTON')
+    })
+
+    it('lets a focused field\'s popup go: blurred, the target its suggestions covered shows again', async () => {
+      const page = await collect('/suggestions')
+      // A headless page is not the focused window: without this, focus fires no event and the list never opens.
+      await fixtures.chrome.cdp.send('Emulation.setFocusEmulationEnabled', { enabled: true })
+      await fixtures.chrome.evaluate(`document.querySelector('input').focus()`)
+      const covered = await prep(page, 'Elon Musk (@elonmusk) / X')
+      expect(covered).toMatchObject({ clickable: false, blocked: { fact: 'covered' } })
+      const index = labels(page).indexOf('Elon Musk (@elonmusk) / X')
+      expect(await fixtures.chrome.evaluate(blurFocusedFieldScript(index, covered.x!, covered.y!))).toBe(true)
+      expect(await prep(page, 'Elon Musk (@elonmusk) / X')).toMatchObject({ clickable: true })
+    })
+
+    it('blurs nothing when no other field holds the focus, or the target is the field itself', async () => {
+      const page = await collect('/suggestions')
+      const link = labels(page).indexOf('Elon Musk (@elonmusk) / X')
+      expect(await fixtures.chrome.evaluate(blurFocusedFieldScript(link, 20, 100))).toBe(false)
+      await fixtures.chrome.evaluate(`document.querySelector('input').focus()`)
+      expect(await fixtures.chrome.evaluate(blurFocusedFieldScript(labels(page).indexOf('Search privately'), 20, 20))).toBe(false)
+      expect(await fixtures.chrome.evaluate(`document.activeElement.tagName`)).toBe('INPUT')
     })
 
     it('reads a target inside a zero-height overflow-hidden container as Not Shown', async () => {

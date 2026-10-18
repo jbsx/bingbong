@@ -92,6 +92,10 @@ class FakeCdp implements CdpDebugger {
   prepCoveredTimes = 0
   /** What a blocked click-prep says blocked it (ADR 0062): a Cover probe, or Not Shown. */
   prepBlocked: ClickPrep['blocked'] = { fact: 'covered', cover: { tag: 'div', contains: [] } }
+  /** When set, another text field holds the focus and its popup is the cover: the blur takes the cover away. */
+  focusedFieldPopup = false
+  /** The blur probes the controller sent, by registry index. */
+  readonly blurs: number[] = []
   /** Runs on every DOM `.click()` the controller evaluates — a dismissal taking the wall away. */
   onDomClick: (() => void) | null = null
   /** The node the controller kept across a consent dismissal (ADR 0061). */
@@ -240,6 +244,14 @@ class FakeCdp implements CdpDebugger {
         const labels = page.dialogOpen ? page.elements.filter((element) => element.layer === 'dialog').map((element) => element.label) : null
         return { result: { value: labels } } as T
       }
+      // Before the grounding probe below: the blur's own hit test reads the same way.
+      if (expression.includes('/* BLUR_FOCUSED_FIELD */')) {
+        this.blurs.push(registryIndexOf(expression))
+        if (!this.focusedFieldPopup) return { result: { value: false } } as T
+        this.focusedFieldPopup = false
+        this.prepCovered = false
+        return { result: { value: true } } as T
+      }
       if (expression.includes('const hit = document.elementFromPoint')) {
         this.collectedElements[20] = this.collectedElements[20] ?? { groundedNode: true }
         return {
@@ -311,7 +323,8 @@ class FakeCdp implements CdpDebugger {
         // Mirror the in-page prep math: fresh clickPoint, hit-test result set by the test.
         const covered = this.prepCovered || this.prepCoveredTimes > 0
         if (this.prepCoveredTimes > 0) this.prepCoveredTimes -= 1
-        return { result: { value: { ok: true, clickable: !covered, ...(covered ? { blocked: this.prepBlocked } : {}), ...clickPoint(target, snapshot.viewport) } } } as T
+        const point = clickPoint(target, snapshot.viewport)
+        return { result: { value: { ok: true, clickable: !covered, ...(covered ? { blocked: this.prepBlocked, coveredCentre: point } : {}), ...point } } } as T
       }
       return { result: { value: this.evaluateValue } } as T
     }
@@ -1062,6 +1075,38 @@ describe('createCdpBrowserController click', () => {
         (call) => call.method === 'Runtime.evaluate' && typeof call.params?.expression === 'string' && call.params.expression.includes('.click()'),
       ),
     ).toBe(false)
+  })
+
+  it('blurs a focused field whose popup covers the target, re-arms the watch, and clicks it (DuckDuckGo\'s suggestions, 2026-10-18)', async () => {
+    const cdp = new FakeCdp()
+    cdp.prepCovered = true
+    cdp.focusedFieldPopup = true
+    const { controller } = makeController({ cdp })
+    await controller.readPage()
+    const evaluates = (marker: string): number[] =>
+      cdp.calls.flatMap((call, i) => (call.method === 'Runtime.evaluate' && String(call.params?.expression ?? '').includes(marker) ? [i] : []))
+    const armsBefore = evaluates('/* READY_ARM */').length
+
+    const outcome = await controller.click(3)
+
+    expect(outcome).toMatch(/^clicked \[3\]/)
+    expect(outcome).not.toContain('covered')
+    expect(cdp.blurs).toEqual([2])
+    expect(cdp.inputCalls().length).toBeGreaterThan(0)
+    // Armed again after the blur, so the popup closing is never read as the click's effect.
+    const blurAt = evaluates('/* BLUR_FOCUSED_FIELD */')[0]!
+    expect(evaluates('/* READY_ARM */').slice(armsBefore).some((at) => at > blurAt)).toBe(true)
+  })
+
+  it('reports the Covered click as before when no field\'s popup was the cover', async () => {
+    const cdp = new FakeCdp()
+    cdp.prepCovered = true
+    const { controller } = makeController({ cdp })
+    await controller.readPage()
+
+    expect(await controller.click(3)).toBe('clicked [3]: not clicked — covered by an unlabelled <div>')
+    expect(cdp.blurs).toEqual([2])
+    expect(cdp.inputCalls()).toHaveLength(0)
   })
 
   it('reports the open dialog alongside a Covered click', async () => {
