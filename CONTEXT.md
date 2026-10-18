@@ -63,12 +63,30 @@ Halts whatever the app is doing: speech in flight, or a Command whose action
 has not ended. Its false-positive risk is accepted until observed in practice.
 _Avoid_: cancel word, stop head
 
+**Task**:
+What an Utterance becomes on this branch: one or more Commands the shell
+fires on its own reading, without the user speaking between them, until the
+Decision Model reads the page as what was asked for. The first Command is
+read as any Command is; a Task goes on after a Command the Decision Model
+read and ends after one the Local Match settled, since the grammar and exact
+labels are whole by construction and plain English is where "and then"
+lives. Capped at five actions; ended by the next Utterance, Escape or the
+Abort Head like any Command; never confirmed.
+_Avoid_: plan, goal, intent, errand, run, session
+
+**Hop**:
+One Command of a Task after the first, fired on the reading of the page the
+previous Command landed on: the same three Choices, with `done` among the
+verbs and the pages already visited never offered. A Hop types only words
+the user said and never guesses when the Decision Model does not answer.
+_Avoid_: step, round, turn, continuation
+
 **Command**:
-What an Utterance becomes on this branch: one verb, at most one target on the
-page and one Slot, performed at once. There is no plan, no confirmation and
-no second step: a task that needs several is several Commands. A Command
-that is not for the page at all is dropped, not answered.
-_Avoid_: run, task, request, intent
+One verb, at most one target on the page and one Slot, performed at once.
+There is no plan and no confirmation: a Command is the unit a Task is made
+of, and an Utterance is a Task of one or more. A Command that is not for
+the page at all is dropped, not answered.
+_Avoid_: run, request, intent
 
 **Slot**:
 The words of an Utterance a Command carries verbatim: the search terms, the
@@ -113,9 +131,10 @@ _Avoid_: speculative execution, eager execution, streaming intent
 
 **Misfire**:
 A Command that did what was heard rather than what was meant: a split
-Utterance, a mishear, a wrong target, an Early Fire on half a sentence. It is
-recovered by the next Command and never prevented by asking first. Counted,
-so accuracy can be worked on once Reaction is won.
+Utterance, a mishear, a wrong target, an Early Fire on half a sentence, a
+Hop that went on when the user wanted to stop (an overrun). It is recovered
+by the next Command and never prevented by asking first. Counted, so
+accuracy can be worked on once Reaction is won.
 _Avoid_: error, wrong action, false positive, hallucination
 
 **Bias Lexicon**:
@@ -345,6 +364,15 @@ confirmation that a call ran. The address and title it names are those of the
 page it carries, never a separate reading of the tab; one that carries no page
 says the page could not be read.
 _Avoid_: tool result, success flag
+
+**Landing**:
+The page an action that left the previous one arrived at, taken when its
+document has gone quiet: the navigation committed, `dom-ready` passed, then
+a short window with no DOM mutation, or the load event if that comes first,
+capped at a few seconds. Never the load event alone, which on a slow
+connection waits on every tracker after the refs are long in place. It is
+what the landing classifiers judge and what the next Hop is read against.
+_Avoid_: page load, load complete, network idle
 
 **Unsettled Action**:
 A started browser action whose underlying operation has not been observed to

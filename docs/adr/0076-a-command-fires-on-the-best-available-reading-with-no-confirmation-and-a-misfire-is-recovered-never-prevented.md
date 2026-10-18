@@ -2,6 +2,10 @@
 
 ## Status
 
+Amended on 2026-10-18 (see "Amendment: one Utterance is one Task" below):
+an Utterance is a Task of one or more Commands, and a landing is the page
+gone DOM-quiet, not the load event.
+
 Accepted on 2026-10-17 for the `kachow` branch, grilled the same day from
 the branch at f4d323b and the measurements in `docs/moonshine-ab.md`, with
 every recommendation taken. Increment 1, the plain loop this decision
@@ -79,6 +83,124 @@ machine; the Hardware Floor waits.
 - Typed lines in the Prompt Bar and the CLI harness are Commands read the
   same way as spoken ones; the old CLI grammar survives only as what the
   Local Match recognises first.
+
+## Amendment: one Utterance is one Task (2026-10-18)
+
+Grilled on 2026-10-18 from the question "how does the shell take 'pull up
+the latest Elon Musk tweet'", which increment 1 answers with one DuckDuckGo
+search and then waits for the user to say "open the first result" and
+"read". Jev is a Decision Model — Choice, Noul and Score, nothing
+generated — so it cannot compose a plan or a URL; it can choose the next
+step on the page it is shown. The amendment lets the shell keep showing
+it the page until it says the task is done.
+
+### Decision
+
+**One Utterance is one Task of one or more Commands**, each fired on the
+best available reading, none confirmed. The first Command (hop 0) is read
+exactly as before. A Task **continues after a Command Jev read and ends
+after one the Local Match settled**: the Local Match settles only the
+grammar and exact labels ("scroll down", "click 3", "open youtube"), which
+are whole by construction; plain English, which is where "and then" lives,
+went to Jev. No verb, no scenario and no Route table decides this. "Open
+youtube and search for lofi" is not address-shaped and "click settings and
+turn on dark mode" matches no one label, so both go to Jev and continue.
+
+Every hop after the first is read by Jev alone, against the full
+transcript, with the same three Choices as hop 0 and one more option:
+
+- the verb Choice gains **`done`**, "this page is what the user asked for,
+  nothing more to do"; it is offered at hop 0 too, where it fires nothing
+  and the Feed shows the words greyed as `already here`;
+- the target Choice offers the refs in view and, on a search landing, the
+  whole page's result links (the links whose host leaves the engine, the
+  Local Match's own Nth-result rule), since results start below the fold;
+  links out of view on other pages are reached by a `scroll_down` hop;
+- the Slot Choice stays over the transcript's word spans: a hop types only
+  words the user said, and a hop that would need unsaid words is `none`;
+- the state carries the hop number, the addresses visited and the actions
+  taken so far; a page already visited in this Task is never offered.
+
+A hop's typed or search Slot passes the Name Match against the landing's
+Page Terms as hop 0's does.
+
+**Continuing verbs** are open, click, type, press, scroll_up, scroll_down,
+back, forward and `reload` (new to the vocabulary and the CLI grammar).
+**Terminal verbs** are read (it holds the floor while it speaks), stop,
+clear, none and done.
+
+**A Task ends** on `done`, on `none` at hop 1 or later (a dead end: the
+page stays as it stands, nothing is spoken, the Feed shows `no next step`
+greyed), on the **cap of five actions** including hop 0 with scrolls
+counted (it stops where it stands, as `done` would), on a wall (a Blocker,
+consent wall, not-found, unavailable or empty landing speaks its failure
+line as today), when a hop's Jev call is unavailable (hop 0's best guess is
+hop 0's alone; a hop never guesses), and when it is superseded: the next
+Utterance, Escape and the Abort Head end a Task as they end a Command,
+abandoning a hop whose read is in flight. There is no retry-with-exclusion
+of a candidate on this increment.
+
+**Early Fire**: a hop 0 that fired on a partial does not continue until the
+Endpoint; the hops read against the final transcript. An Utterance that
+never reaches an Endpoint ends after hop 0.
+
+**The Hot Listen's silence clock restarts when the Task ends**, so the user
+has the full `hotListenSilenceMs` after the final page, not what was left
+after the hops.
+
+**A landing is the page gone DOM-quiet, not the load event.** One landing
+wait serves navigate, back, forward and a click that leaves the page: from
+the navigation's commit, `dom-ready`, then 250 ms with no DOM mutation in
+the main document, or the load event if it comes first, whichever is
+earlier; capped at 3 s from the commit, after which the page is taken as it
+stands and the record says the landing was `capped`. The 30 s bound stays
+only as the hard error for a navigation that never commits. The landing
+classifiers run on that same collect. In-page actions keep the 150 ms
+readiness wait. This replaces increment 1's "the load's own end is the
+wait", and speeds hop 0 of every Command, since on a slow connection the
+refs are there long before the last tracker has loaded.
+
+### Considered and rejected
+
+- **The shell decides what is a Task by verb** (an `open` whose Slot is
+  not address-shaped opens a Goal). One rule, but a guess about where
+  multi-step tasks start; it misses "open youtube and search for lofi".
+- **Every Command continues, Local-Matched ones included.** Rule-free, but
+  it adds a page collect and a Jev call after every "scroll down" and a
+  new Misfire class on the half of Commands the Local Match settles (19 of
+  35 in the first logs). Following the reading instead keeps the
+  continuation to the Commands that were plain English.
+- **Jev asked up front whether the words need more than one step.** A
+  reading that can misfire before anything has happened.
+- **A Route table** (tweets by a person, videos by a channel). Fast and
+  deterministic, but every site needs a recipe. Not taken; a Task reaches
+  the same pages through the search engine.
+- **A generating planner.** Still rejected on compute.
+
+### Consequences
+
+- Every `command` event carries `task: { id, hop }`; a one-Command
+  Utterance is a Task of one hop. One decision record per hop; the last
+  carries `ended: done | none | cap | wall | unavailable | superseded |
+  local_match | terminal`. A `task` span runs from the Endpoint to the
+  Task's end. The Reaction stays hop 0's.
+- A new Misfire signal, **`overrun`**: Escape, "stop" or any new Utterance
+  within 3 s of a Jev-read hop firing, counted against that hop's reading.
+  "back" within 3 s of a hop counts as today. Overruns per hop number are
+  the figure that decides whether a filter in front of the continuation
+  ever comes back.
+- `pnpm perf:report` prints one Task line: counts by `ended`, hops p50,
+  overruns per hop.
+- Jev calls per Utterance rise by one per hop. Still cents a day; the
+  TypeSafe rate cap remains the limit to watch.
+- X hides timelines from logged-out visitors, so the example this was
+  grilled on will end on a wall until the pane's profile holds a session.
+  That is a site problem the Task surfaces cleanly, not a reading problem.
+- The hop reading is written fresh in `src/core/command/`, borrowing the
+  result-link rule the Local Match already has; the orchestrator's Result
+  Pick (deleted at f4d323b) is not ported.
+- The glossary gains **Task** and **Hop**; **Command** no longer says a
+  task that needs several steps is several Commands.
 
 ## Implementation notes
 
