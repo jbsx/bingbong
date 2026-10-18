@@ -11,6 +11,7 @@ export type CliCommand =
   | { type: 'screenshot'; path: string | undefined }
   | { type: 'back' }
   | { type: 'reload' }
+  | { type: 'resume' }
   | { type: 'help' }
   | { type: 'quit' }
 
@@ -89,6 +90,8 @@ export function parseCliCommand(line: string): ParsedCliCommand {
       return { ok: true, command: { type: 'back' } }
     case 'reload':
       return { ok: true, command: { type: 'reload' } }
+    case 'resume':
+      return { ok: true, command: { type: 'resume' } }
     case 'help':
       return { ok: true, command: { type: 'help' } }
     case 'quit':

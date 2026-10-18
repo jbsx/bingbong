@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import {
   fetchWeather,
   formatWeather,
+  todayOf,
+  upcomingHours,
   weatherDescription,
   type FetchJson,
 } from './weather'
@@ -29,19 +31,55 @@ const FORECAST = 'https://api.open-meteo.com/v1/forecast'
 const berlinGeocode = { results: [{ name: 'Berlin', latitude: 52.52, longitude: 13.41 }] }
 const berlinForecast = { current: { temperature_2m: 12.4, weather_code: 3 } }
 
+// A fuller forecast: the current block with its local time, the day, and an
+// hourly block spanning the day's end — what the deepened idle screen reads.
+const berlinDay = {
+  current: { time: '2026-10-18T21:20', temperature_2m: 12.4, weather_code: 3 },
+  daily: {
+    time: ['2026-10-18', '2026-10-19'],
+    temperature_2m_max: [17.8, 15.1],
+    temperature_2m_min: [8.6, 7.2],
+    precipitation_probability_max: [35, 60],
+    sunrise: ['2026-10-18T07:38', '2026-10-19T07:40'],
+    sunset: ['2026-10-18T18:04', '2026-10-19T18:02'],
+  },
+  hourly: {
+    time: ['2026-10-18T20:00', '2026-10-18T21:00', '2026-10-18T22:00', '2026-10-18T23:00', '2026-10-19T00:00', '2026-10-19T01:00', '2026-10-19T02:00', '2026-10-19T03:00', '2026-10-19T04:00'],
+    temperature_2m: [13.1, 12.6, 12.0, 11.4, 10.9, 10.3, 9.8, 9.5, 9.1],
+    weather_code: [3, 3, 2, 2, 1, 0, 0, 45, 45],
+    precipitation_probability: [10, 5, 0, 0, 0, 0, 0, 3, 3],
+  },
+}
+
 describe('fetchWeather', () => {
   it('resolves the city, then fetches current weather in metric by default', async () => {
     const fetchJson = scriptedFetch({ [GEOCODE]: berlinGeocode, [FORECAST]: berlinForecast })
 
     const report = await fetchWeather(fetchJson, 'Berlin', 'metric')
 
-    expect(report).toEqual({ city: 'Berlin', temperature: 12.4, units: 'metric', description: 'overcast' })
+    expect(report).toEqual({ city: 'Berlin', temperature: 12.4, units: 'metric', description: 'overcast', today: null, hours: [] })
     const geocodeUrl = fetchJson.urls.find((url) => url.startsWith(`${GEOCODE}?`))
     const forecastUrl = fetchJson.urls.find((url) => url.startsWith(`${FORECAST}?`))
     expect(geocodeUrl).toContain('name=Berlin')
     expect(forecastUrl).toContain('latitude=52.52')
     expect(forecastUrl).toContain('longitude=13.41')
     expect(forecastUrl).toContain('temperature_unit=celsius')
+  })
+
+  it("asks for the day and the hours in the city's own time, and carries today's range and the six hours after the current one", async () => {
+    const fetchJson = scriptedFetch({ [GEOCODE]: berlinGeocode, [FORECAST]: berlinDay })
+
+    const report = await fetchWeather(fetchJson, 'Berlin', 'metric')
+
+    const forecastUrl = fetchJson.urls.find((url) => url.startsWith(`${FORECAST}?`)) ?? ''
+    expect(forecastUrl).toContain('daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset')
+    expect(forecastUrl).toContain('hourly=temperature_2m,weather_code,precipitation_probability')
+    expect(forecastUrl).toContain('timezone=auto')
+    expect(forecastUrl).toContain('forecast_days=2')
+    expect(report.today).toEqual({ high: 17.8, low: 8.6, precipitationChance: 35, sunrise: '2026-10-18T07:38', sunset: '2026-10-18T18:04' })
+    // The hour under way (21:00) is the current reading's; the strip starts at the next one and crosses midnight.
+    expect(report.hours?.map((hour) => hour.time)).toEqual(['2026-10-18T22:00', '2026-10-18T23:00', '2026-10-19T00:00', '2026-10-19T01:00', '2026-10-19T02:00', '2026-10-19T03:00'])
+    expect(report.hours?.[0]).toEqual({ time: '2026-10-18T22:00', temperature: 12.0, description: 'partly cloudy', precipitationChance: 0 })
   })
 
   it('asks the API for fahrenheit when imperial units are configured', async () => {
@@ -92,6 +130,34 @@ describe('fetchWeather', () => {
     }
 
     await expect(fetchWeather(fetchJson, 'Berlin', 'metric')).rejects.toThrow('network down')
+  })
+})
+
+describe('todayOf', () => {
+  it('reads the first day of the daily block, the optional fields null when absent', () => {
+    expect(todayOf({ temperature_2m_max: [20], temperature_2m_min: [9] })).toEqual({ high: 20, low: 9, precipitationChance: null, sunrise: null, sunset: null })
+  })
+
+  it('is null for a missing or malformed block — the headline stands alone', () => {
+    expect(todayOf(undefined)).toBeNull()
+    expect(todayOf({ temperature_2m_max: ['warm'], temperature_2m_min: [9] })).toBeNull()
+  })
+})
+
+describe('upcomingHours', () => {
+  it('skips an hour whose readings are malformed and stops at the count', () => {
+    const hourly = {
+      time: ['2026-10-18T10:00', '2026-10-18T11:00', '2026-10-18T12:00', '2026-10-18T13:00'],
+      temperature_2m: [10, null, 12, 13],
+      weather_code: [0, 0, 1, 2],
+    }
+    expect(upcomingHours('2026-10-18T09:30', hourly, 2).map((hour) => hour.time)).toEqual(['2026-10-18T10:00', '2026-10-18T12:00'])
+    expect(upcomingHours('2026-10-18T09:30', hourly, 2)[0]?.precipitationChance).toBeNull()
+  })
+
+  it('is empty for a missing block or when every hour has passed', () => {
+    expect(upcomingHours('2026-10-18T09:30', undefined)).toEqual([])
+    expect(upcomingHours('2026-10-18T23:30', { time: ['2026-10-18T10:00'], temperature_2m: [10], weather_code: [0] })).toEqual([])
   })
 })
 

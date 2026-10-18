@@ -20,7 +20,8 @@ as fast as it can, built on this shell.
   a numbered snapshot of its interactive elements (Vimium-style: visible
   rect, label, kind, risk facts) plus its text; actions are `navigate`,
   `read`, `click <ref>`, `type <ref> <text>`, `scroll`, `press`,
-  `screenshot`, `back`. Every action's outcome names what happened on the
+  `screenshot`, `back`, `reload`, `resume` (the last page, reopened after a
+  restart). Every action's outcome names what happened on the
   page — a blocker, a consent wall, a covered click, an empty or not-found
   landing — in one line.
 - **A direct command runner, for now.** Commands in the CLI grammar above

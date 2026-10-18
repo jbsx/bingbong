@@ -18,7 +18,8 @@ fast as it can, built on top of this shell.
   line enters `CommandRunner.run` and becomes one Command (ADR 0076,
   `src/core/command/`): the Local Match first (the CLI grammar —
   `navigate <url>`, `read`, `click <ref>`, `type <ref> <text>`,
-  `scroll up|down`, `press <key> [n]`, `screenshot`, `back` — or a plain
+  `scroll up|down`, `press <key> [n]`, `screenshot`, `back`, `reload`,
+  `resume` — or a plain
   verb and the label exactly one ref carries), else one Jev call, else the
   Local Match's best guess; it fires with no confirmation. A spoken Slot
   that is search terms or text to type passes the Name Match (ADR 0077,

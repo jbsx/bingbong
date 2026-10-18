@@ -28,6 +28,7 @@ import { pageReadPart, pageReadText } from '../../core/browser/pageText'
 import { SPOKEN_FAILURES, spokenFailureOf, type SpokenFailure } from '../../core/command/spokenFailure'
 import type { SpeakOutcome, TtsSpeaker } from '../../core/ports/tts'
 import { reportFault } from '../../core/trace/fault'
+import { isRealPage, type LastPage } from '../../core/browser/lastPage'
 import type { ActionEffect } from '../browser/createCdpBrowserController'
 
 // The command seam (kachow, #324, ADR 0076): where a typed or spoken line
@@ -148,6 +149,8 @@ export interface CommandRunnerDeps {
   terms?: CommandTerms
   /** The voice (#327): a Page Read and a failure's line are spoken through it; absent keeps every Command silent. */
   speech?: Pick<TtsSpeaker, 'speak' | 'stop'>
+  /** The Last Page (CONTEXT.md), for `resume`; absent, or null, leaves `resume` nothing to reopen. */
+  lastPage?(): LastPage | null
 }
 
 /** How much of a Page Read the Feed card shows. */
@@ -475,13 +478,33 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     }
   }
 
+  /**
+   * What `resume` does (CONTEXT.md, Last Page): the pane still on a page —
+   * the Idle Screen only ever hid it — needs nothing reopened, so the
+   * Command names the page and fires no action; a pane that boots blank
+   * after a restart navigates to the Last Page, and that is a navigate in
+   * every respect (its landing read for walls, its line the navigate's).
+   */
+  function resumePlan(): { tool: { name: string; args: Record<string, unknown> }; perform: () => Promise<string> } {
+    const state = browser.state()
+    const last = deps.lastPage?.() ?? null
+    if (isRealPage(state.url)) {
+      const title = state.title ?? ''
+      return { tool: { name: 'resume', args: {} }, perform: async () => `resumed: url=${state.url} title=${JSON.stringify(title)}` }
+    }
+    if (last === null) return { tool: { name: 'resume', args: {} }, perform: async () => 'nothing to resume: no page has been visited yet' }
+    return { tool: { name: 'navigate', args: { url: last.url } }, perform: () => browser.navigate(last.url) }
+  }
+
   /** The chosen ref lights as the action lands — after it, never before: the flash is a DOM change of our own making, and must not be the effect the Reaction closes on. */
   function flash(ref: number): void {
     void browser.showRef(ref).catch((error: unknown) => reportFault('run.commandRunner.showRef', error))
   }
 
-  async function perform(command: Command): Promise<string> {
+  async function perform(command: Command, resume: ReturnType<typeof resumePlan> | null): Promise<string> {
     switch (command.verb) {
+      case 'resume':
+        return (resume ?? resumePlan()).perform()
       case 'open':
         return browser.navigate(openAddress(command.slot ?? '', command.search === true))
       case 'click': {
@@ -621,7 +644,9 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     }
     publish({ type: 'status', turnId, status: 'acting', at: at() })
     const callId = `${turnId}-1`
-    const { name, args } = toolOf(command)
+    // `resume` decides once, here, whether it is a navigate: the tool the Feed names and the action performed agree.
+    const resume = command.verb === 'resume' ? resumePlan() : null
+    const { name, args } = resume !== null ? resume.tool : toolOf(command)
     publish({ type: 'tool_call', turnId, callId, name, args, at: at() })
 
     // The Reaction (CONTEXT.md): Endpoint to the action's first observable
@@ -643,7 +668,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     })
     const ended = (outcome: FireOutcome): FireResult => ({ outcome, ...(landing !== undefined ? { landing } : {}) })
     try {
-      const result = await perform(command)
+      const result = await perform(command, resume)
       if (!current()) return ended('superseded')
       let outcome: FireOutcome = 'landed'
       const card = cardOf(command, result)

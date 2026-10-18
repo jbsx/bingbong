@@ -7,6 +7,7 @@ import { useAssistant } from './useAssistant'
 import { overlaySlotContent } from '../../core/panel/peekCardState'
 import { useFeedPanel, useFeedSlotRect } from './useFeedPanel'
 import { useIdle } from './useIdle'
+import { useLastPage } from './useLastPage'
 import { usePeekCard } from './usePeekCard'
 import { useSettings } from './useSettings'
 import { useVoice } from './useVoice'
@@ -77,9 +78,10 @@ export function App() {
   // settings page — the timer must not unmount a form mid-edit.
   const showIdle = idle.idle && status === 'idle' && !voice.listening && !voice.transcribing && view === 'dashboard'
   const weather = useWeather(settings?.weather ?? null, showIdle)
+  const lastPage = useLastPage(showIdle)
 
   if (showIdle) {
-    return <IdleScreen weather={weather} />
+    return <IdleScreen weather={weather} lastPage={lastPage} />
   }
 
   return (

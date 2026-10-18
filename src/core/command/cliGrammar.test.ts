@@ -96,6 +96,10 @@ describe('parseCliCommand', () => {
     expect(parseCliCommand('press k 0')).toEqual({ ok: false, error: 'press: times must be a positive integer' })
   })
 
+  it('parses resume — the Last Page reopened', () => {
+    expect(parseCliCommand('resume')).toEqual({ ok: true, command: { type: 'resume' } })
+  })
+
   it('parses reload (#328)', () => {
     expect(parseCliCommand('reload')).toEqual({ ok: true, command: { type: 'reload' } })
   })

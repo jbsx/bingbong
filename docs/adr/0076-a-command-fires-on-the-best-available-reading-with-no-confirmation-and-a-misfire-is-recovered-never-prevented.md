@@ -255,8 +255,8 @@ Command recovers rather than a question asked:
   path; a Page Read's first observable effect is its `display`.
 - **A truncated Utterance** (the 30 s cap) is recorded on its decision
   record and never shown as an error.
-- **`screenshot` and `help` stay grammar-only verbs**: Jev is offered the
-  spoken vocabulary without them.
+- **`screenshot`, `help` and `resume` stay grammar-only verbs**: Jev is
+  offered the spoken vocabulary without them (`GRAMMAR_ONLY_VERBS`).
 - **The post-action wait is readiness, capped at 150 ms**, on an injectable
   clock: a DOM mutation, an input event, a scroll or the document going
   ends it early. The landing poll after `ERR_ABORTED` keeps one 100 ms
@@ -531,6 +531,18 @@ The readings it took:
   "refresh", "reload the page" or "refresh the page". It lands like a
   history step, its line opening `reloaded:`, and its landing is read
   for walls as a navigate's is.
+- **`resume` (2026-10-18, the Last Page):** the CLI grammar's `resume`, and
+  spoken "resume", "continue", "where was I", "last page" or "pick up where
+  I left off". The Idle Screen names the Last Page — the page the pane last
+  showed, persisted in userData's `last-page.json` across restarts — and
+  this is the way back to it. The runner decides once, before the
+  `tool_call`: a pane still on a real page (the Idle Screen only ever hid
+  it) performs nothing and its line opens `resumed:`; a pane that boots
+  blank after a restart navigates to the Last Page, and the Feed names that
+  tool `navigate` with the address, so its landing is read for walls as any
+  navigate's is. A tap on the Idle Screen's card submits the same `resume`
+  line. It is a Local Match, so it ends its Task at once, and it is never
+  offered to Jev: it reads nothing off the page.
 - **The CLI harness prints every hop of its line's Task**, following the
   turns whose `command` event names the line's turn as `task.id`; a hop
   that fired nothing prints `<what it came to>: "<words>"`.

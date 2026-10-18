@@ -10,6 +10,8 @@ import { attachMeasurementAccessGuard } from './browser/attachMeasurementAccessG
 import { attachIdentityHeaders } from './browser/attachIdentityHeaders'
 import { createBrowserPane, BROWSER_PARTITION } from './browser/createBrowserPane'
 import { attachBrowserPaneToWindow, registerBrowserIpc } from './browser/attachBrowserPane'
+import { registerLastPageIpc } from './browser/attachLastPage'
+import { createLastPageStore } from './browser/lastPageStore'
 import { createPaneBrowserController } from './browser/createPaneBrowserController'
 import { holdBrowserCustody } from '../core/browser/unsettledAction'
 import { createAuthPopupDirector } from './browser/authPopupDirector'
@@ -128,6 +130,9 @@ const decisionLog = createDecisionLogSink(logsDir)
 // one app-global lexicon.json beside the settings file. The settings page
 // is its human surface. Fails closed to seed-only on corruption.
 const learnedTermsStore = createLearnedTermsStore(join(app.getPath('userData'), 'lexicon.json'), seedLexiconSet())
+// The Last Page (CONTEXT.md): the page the pane last showed, kept across
+// restarts for the Idle Screen and `resume`.
+const lastPageStore = createLastPageStore(join(app.getPath('userData'), 'last-page.json'))
 registerLearnedTermsIpc(learnedTermsStore)
 
 // Verbose browser sub-spans (#32), opt-in behind the established env-flag
@@ -245,6 +250,9 @@ async function createWindow(): Promise<BrowserWindow> {
     overlayVoiceError: (error) => feedPanel.forwardVoiceError(error),
   })
   attachBrowserPaneToWindow(pane, win, eventPublisher)
+  // Every page the pane shows moves the Last Page.
+  const unsubscribeLastPage = pane.onState((state) => lastPageStore.record(state))
+  win.on('closed', unsubscribeLastPage)
   feedPanel.bringToTop()
   const agentActivity = createAgentActivityTracker()
   // Auth popups (ADR 0018): while a sign-in popup window is open, browser
@@ -321,6 +329,8 @@ async function createWindow(): Promise<BrowserWindow> {
     },
     // `read` speaks the page and a failure its one line (#327).
     speech: speakingGate.tts,
+    // `resume` reopens the Last Page when a restart lost it.
+    lastPage: () => lastPageStore.get(),
     screenshotDir: () => downloadsDir,
     saveScreenshot: saveScreenshotFile,
     // The Learned Terms (ADR 0077): read for the Name Match, grown by it.
@@ -404,6 +414,7 @@ async function createWindow(): Promise<BrowserWindow> {
 
 app.whenReady().then(async () => {
   registerBrowserIpc()
+  registerLastPageIpc(lastPageStore)
   registerCommandRunnerIpc()
   registerSettingsIpc(settingsStore)
   registerFeedPanelIpc()

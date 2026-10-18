@@ -11,6 +11,7 @@ export const COMMAND_HELP_LINES: readonly string[] = [
   '  scroll up|down           scroll the page',
   '  back | forward           move in history',
   '  reload                   load the page again',
+  '  resume                   return to the last page — after a restart, it is reopened',
   '  press enter|escape|space|up|down|left|right [n]',
   '  read                     print a numbered-ref snapshot of visible interactive elements',
   '  clear                    clear the focused field',

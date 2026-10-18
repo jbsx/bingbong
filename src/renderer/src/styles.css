@@ -1442,6 +1442,106 @@ body {
   color: var(--text);
 }
 
+/* Today's range under the headline, and the coming hours as a quiet strip:
+   one column per hour, the sky in words — no icons, no chart. */
+.idle-weather-day {
+  margin: 0;
+  font-size: 1.05rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.idle-hours {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px 28px;
+  margin: 20px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.idle-hour {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 72px;
+  font-variant-numeric: tabular-nums;
+}
+
+.idle-hour-time {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.idle-hour-temp {
+  font-size: 1.3rem;
+  font-weight: 300;
+  color: var(--text);
+}
+
+.idle-hour-sky {
+  font-size: 0.8rem;
+  color: var(--muted);
+  text-align: center;
+}
+
+.idle-hour-rain {
+  font-size: 0.8rem;
+  color: var(--accent);
+}
+
+/* The bottom slot: the Last Page and its way back. A button, so the tap is
+   real activity (the pointer wakes the dashboard) and a screen reader names
+   it; styled as a quiet card, never as chrome. */
+.idle-screen-bottom {
+  display: flex;
+  justify-content: center;
+}
+
+.idle-last-page {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  max-width: min(640px, 100%);
+  padding: 16px 28px;
+  border: 1px solid var(--edge);
+  border-radius: 16px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+
+.idle-last-page:hover,
+.idle-last-page:focus-visible {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.idle-last-page-kicker {
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.idle-last-page-title {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 1.15rem;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.idle-last-page-host {
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
 /* Subagents: live cards above the browser pane — one per agent, with tab
    viewports whose rects drive the window's WebContentsViews. */
 .dashboard-browsing {

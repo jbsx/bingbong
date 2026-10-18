@@ -9,8 +9,8 @@ import type { RefKind, SnapshotRef } from '../browser/snapshot'
 
 /**
  * The verbs a Command can carry. The Decision Model is offered
- * {@link JEV_VERBS}; `screenshot` and `help` are the CLI grammar's alone,
- * reached only through the Local Match.
+ * {@link JEV_VERBS}; `screenshot`, `help` and `resume` are the CLI
+ * grammar's alone, reached only through the Local Match.
  */
 export const COMMAND_VERBS = [
   'open',
@@ -29,11 +29,15 @@ export const COMMAND_VERBS = [
   'none',
   'screenshot',
   'help',
+  'resume',
 ] as const
 export type CommandVerb = (typeof COMMAND_VERBS)[number]
 
+/** The verbs the CLI grammar alone reaches: Jev is never offered them. */
+export const GRAMMAR_ONLY_VERBS: ReadonlySet<CommandVerb> = new Set<CommandVerb>(['screenshot', 'help', 'resume'])
+
 /** The verbs the Decision Model chooses among (#324): the spoken vocabulary, `none` included. */
-export const JEV_VERBS = COMMAND_VERBS.filter((verb) => verb !== 'screenshot' && verb !== 'help') as readonly Exclude<CommandVerb, 'screenshot' | 'help'>[]
+export const JEV_VERBS = COMMAND_VERBS.filter((verb) => !GRAMMAR_ONLY_VERBS.has(verb)) as readonly Exclude<CommandVerb, 'screenshot' | 'help' | 'resume'>[]
 
 /** The keys `press` speaks: enter, escape, space and the arrows. */
 export const PRESS_KEYS: Readonly<Record<string, KeyPress>> = {
@@ -165,6 +169,8 @@ export function describeCommand(command: Command, page?: CommandPage): string {
     }
     case 'read':
       return 'read the page'
+    case 'resume':
+      return 'resume the last page'
     case 'none':
       return 'not a command'
     default:

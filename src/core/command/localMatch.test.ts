@@ -34,6 +34,16 @@ describe('the Local Match: reload (#328)', () => {
   })
 })
 
+describe('the Local Match: resume (the Last Page)', () => {
+  it('reads the grammar and the spoken phrases as a resume, without asking the page', () => {
+    expect(localMatch('resume', [])).toEqual({ verb: 'resume', target: null, slot: null })
+    expect(localMatch('continue', REFS)).toEqual({ verb: 'resume', target: null, slot: null })
+    expect(localMatch('where was I', REFS)).toEqual({ verb: 'resume', target: null, slot: null })
+    expect(localMatch('pick up where I left off', REFS)).toEqual({ verb: 'resume', target: null, slot: null })
+    expect(localMatch('the last page', REFS)).toEqual({ verb: 'resume', target: null, slot: null })
+  })
+})
+
 describe('the Local Match: the Nth result on a search page', () => {
   it('reads "the first result" and "second link" as the Nth link that leaves the engine, or its redirect to one', () => {
     expect(localMatch('open the first result', RESULTS, SEARCH_URL)).toEqual({ verb: 'click', target: 3, slot: null })

@@ -1,11 +1,32 @@
 // Open-Meteo weather for the idle screen. The city comes from settings — the
 // spec is explicit: no geolocation. Two calls: geocoding resolves the city to
 // coordinates, then the forecast endpoint returns current conditions in the
-// configured units.
+// configured units, with today's range and the coming hours riding the same
+// request (`timezone=auto`: every time is the city's own wall clock).
 
 import type { WeatherUnits } from '../settings/settings'
 
 export type FetchJson = (url: string) => Promise<unknown>
+
+/** One of the coming hours: its local wall-clock time (`YYYY-MM-DDTHH:MM`), temperature and sky. */
+export interface WeatherHour {
+  time: string
+  temperature: number
+  description: string
+  /** Chance of precipitation that hour, 0–100; null when the API gave none. */
+  precipitationChance: number | null
+}
+
+/** Today's range, as the daily forecast gives it. */
+export interface WeatherDay {
+  high: number
+  low: number
+  /** The day's highest chance of precipitation, 0–100; null when the API gave none. */
+  precipitationChance: number | null
+  /** Local wall-clock times (`YYYY-MM-DDTHH:MM`); null when the API gave none. */
+  sunrise: string | null
+  sunset: string | null
+}
 
 export interface WeatherReport {
   /** Resolved place name from the geocoder. */
@@ -14,7 +35,14 @@ export interface WeatherReport {
   temperature: number
   units: WeatherUnits
   description: string
+  /** Today's high, low, rain chance and sun times; null when the response carried no daily block. */
+  today?: WeatherDay | null
+  /** The next {@link UPCOMING_HOURS} hours after the current one; empty when the response carried no hourly block. */
+  hours?: WeatherHour[]
 }
+
+/** How many coming hours the report carries. */
+export const UPCOMING_HOURS = 6
 
 const GEOCODE_URL = 'https://geocoding-api.open-meteo.com/v1/search'
 const FORECAST_URL = 'https://api.open-meteo.com/v1/forecast'
@@ -90,7 +118,10 @@ export async function fetchWeather(
   const temperatureUnit = units === 'imperial' ? 'fahrenheit' : 'celsius'
   const url =
     `${FORECAST_URL}?latitude=${place.latitude}&longitude=${place.longitude}` +
-    `&current=temperature_2m,weather_code&temperature_unit=${temperatureUnit}`
+    `&current=temperature_2m,weather_code` +
+    `&hourly=temperature_2m,weather_code,precipitation_probability` +
+    `&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset` +
+    `&forecast_days=2&timezone=auto&temperature_unit=${temperatureUnit}`
   const body = asRecord(await fetchJson(url))
   const current = asRecord(body?.current)
   if (typeof current?.temperature_2m !== 'number' || typeof current?.weather_code !== 'number') {
@@ -101,7 +132,55 @@ export async function fetchWeather(
     temperature: current.temperature_2m,
     units,
     description: weatherDescription(current.weather_code),
+    today: todayOf(body?.daily),
+    hours: upcomingHours(typeof current.time === 'string' ? current.time : '', body?.hourly),
   }
+}
+
+function numberAt(list: unknown, index: number): number | null {
+  const value = Array.isArray(list) ? list[index] : undefined
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
+function stringAt(list: unknown, index: number): string | null {
+  const value = Array.isArray(list) ? list[index] : undefined
+  return typeof value === 'string' ? value : null
+}
+
+/** Today's range off the daily block's first day; null when the block is missing or malformed — the headline stands alone then. */
+export function todayOf(daily: unknown): WeatherDay | null {
+  const block = asRecord(daily)
+  const high = numberAt(block?.temperature_2m_max, 0)
+  const low = numberAt(block?.temperature_2m_min, 0)
+  if (high === null || low === null) return null
+  return {
+    high,
+    low,
+    precipitationChance: numberAt(block?.precipitation_probability_max, 0),
+    sunrise: stringAt(block?.sunrise, 0),
+    sunset: stringAt(block?.sunset, 0),
+  }
+}
+
+/**
+ * The next {@link UPCOMING_HOURS} hours after `now` (a local wall-clock
+ * `YYYY-MM-DDTHH:MM`, the forecast's `current.time`) off the hourly block,
+ * which spans two days so the strip never runs out at midnight. Open-Meteo's
+ * local times sort as strings. Empty when the block is missing or malformed.
+ */
+export function upcomingHours(now: string, hourly: unknown, count = UPCOMING_HOURS): WeatherHour[] {
+  const block = asRecord(hourly)
+  const times = Array.isArray(block?.time) ? block.time : []
+  const hours: WeatherHour[] = []
+  for (let index = 0; index < times.length && hours.length < count; index += 1) {
+    const time = times[index]
+    if (typeof time !== 'string' || time <= now) continue
+    const temperature = numberAt(block?.temperature_2m, index)
+    const code = numberAt(block?.weather_code, index)
+    if (temperature === null || code === null) continue
+    hours.push({ time, temperature, description: weatherDescription(code), precipitationChance: numberAt(block?.precipitation_probability, index) })
+  }
+  return hours
 }
 
 export function formatWeather(report: WeatherReport): string {

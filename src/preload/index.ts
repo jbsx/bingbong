@@ -9,6 +9,7 @@ import { PANEL_IPC } from '../core/panel/ipcChannels'
 import type { FeedPanelMode, FeedPanelState } from '../core/panel/feedPanelState'
 import { resolveLaunchConfig } from '../core/app/launchConfig'
 import type { BrowserPaneState, PaneRect } from '../core/browser/paneState'
+import type { LastPage } from '../core/browser/lastPage'
 import type { PipelineEvent } from '../core/pipeline/events'
 import type { AppSettings } from '../core/settings/settings'
 import type { VoiceErrorEvent, VoiceHeardEvent, VoicePartialEvent, VoiceState } from '../core/voice/ipcChannels'
@@ -31,6 +32,12 @@ contextBridge.exposeInMainWorld('bingbong', {
       const wrapped = (_event: unknown, state: BrowserPaneState): void => listener(state)
       ipcRenderer.on(BROWSER_IPC.stateChanged, wrapped)
       return () => ipcRenderer.removeListener(BROWSER_IPC.stateChanged, wrapped)
+    },
+    getLastPage: (): Promise<LastPage | null> => ipcRenderer.invoke(BROWSER_IPC.getLastPage),
+    onLastPage: (listener: (page: LastPage | null) => void): (() => void) => {
+      const wrapped = (_event: unknown, page: LastPage | null): void => listener(page)
+      ipcRenderer.on(BROWSER_IPC.lastPageChanged, wrapped)
+      return () => ipcRenderer.removeListener(BROWSER_IPC.lastPageChanged, wrapped)
     },
   },
   assistant: {

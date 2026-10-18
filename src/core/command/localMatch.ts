@@ -75,6 +75,12 @@ const VERB_PHRASES: readonly (readonly [string, VerbKind])[] = [
   ['read it', 'read'],
   ['read this', 'read'],
   ['read', 'read'],
+  ['resume', 'resume'],
+  ['continue', 'resume'],
+  ['where was i', 'resume'],
+  ['last page', 'resume'],
+  ['the last page', 'resume'],
+  ['pick up where i left off', 'resume'],
   ['clear the field', 'clear'],
   ['clear it', 'clear'],
   ['clear', 'clear'],
@@ -311,6 +317,8 @@ function fromGrammar(parsed: CliCommand): Command | null {
       return command('back')
     case 'reload':
       return command('reload')
+    case 'resume':
+      return command('resume')
     case 'help':
       return command('help')
     case 'quit':

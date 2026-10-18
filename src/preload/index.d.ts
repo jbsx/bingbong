@@ -1,4 +1,5 @@
 import type { BrowserPaneState, PaneRect } from '../core/browser/paneState'
+import type { LastPage } from '../core/browser/lastPage'
 import type { PipelineEvent } from '../core/pipeline/events'
 import type { AppSettings } from '../core/settings/settings'
 import type { VoiceErrorEvent, VoiceHeardEvent, VoicePartialEvent, VoiceState } from '../core/voice/ipcChannels'
@@ -6,6 +7,7 @@ import type { LaunchConfig } from '../core/app/launchConfig'
 import type { FeedPanelMode, FeedPanelState } from '../core/panel/feedPanelState'
 
 export type { BrowserPaneState, PaneRect }
+export type { LastPage }
 export type { PipelineEvent }
 export type { AppSettings }
 export type { VoiceErrorEvent, VoiceHeardEvent, VoicePartialEvent, VoiceState }
@@ -18,6 +20,9 @@ export interface BingbongBrowserApi {
   getState(): Promise<BrowserPaneState>
   reportPaneRect(rect: PaneRect): void
   onState(listener: (state: BrowserPaneState) => void): () => void
+  /** The Last Page (CONTEXT.md): the page the pane last showed, kept across restarts; null before any. */
+  getLastPage(): Promise<LastPage | null>
+  onLastPage(listener: (page: LastPage | null) => void): () => void
 }
 
 export interface BingbongAssistantApi {

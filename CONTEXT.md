@@ -293,11 +293,27 @@ Collapsed. A View Preference, resizable.
 _Avoid_: activity bar, sidebar, activity sidebar
 
 **Idle Screen**:
-What renders when no Active Session exists: clock and weather only. Never shows
-Feed Entries; never renders while a Session is active. `session_ended` renders
-it immediately, clears the Feed, hides the feed overlay, and resets Browser
-State. Lifecycle events never count as user activity or delay that transition.
+What renders while nothing is happening: the clock and date, the weather
+(the current conditions, today's high, low, rain chance and sun times, and
+the six coming hours, all in the city's own clock), and the Last Page with
+its way back. Never shows Feed Entries (#70); never renders over a running
+Command, an open mic or the settings page. Any input, pipeline or voice event
+unmounts it; the browser pane is only hidden beneath it, never reset. The
+2026-10-18 ruling put the Last Page on it — the one piece of history the
+screen carries, and the owner's reversal of #70's "clock and weather only".
 _Avoid_: screensaver
+
+**Last Page**:
+The page the browser pane last showed — its address and title — kept in
+userData across restarts. While the app runs it is the live page; after a
+restart it is what the pane boots without. The Idle Screen names it, and
+`resume` (spoken "resume", "continue", "where was I", "last page", or the
+grammar's `resume`) comes back to it: a pane still on a page needs nothing
+reopened, so the Command names the page and fires no action; a pane that
+boots blank navigates to it. Tapping the Idle Screen's card runs the same
+Command. `resume` is the grammar's alone, like `screenshot` and `help`: Jev
+is never offered it.
+_Avoid_: history, recent page, session restore, bookmark
 
 **Toolbar**:
 The one reserved band at the window's top: Status Capsule left, address
@@ -354,8 +370,11 @@ whole.
 _Avoid_: popup (for the link), new tab, blank link
 
 **Browser State**:
-The visible page, navigation state, media state, and transient tabs used during
-a Session. It is discarded when the Session ends; the Browser Profile remains.
+The visible page, navigation state, media state, and transient tabs. On this
+branch nothing discards it: there is no Session to end, and the Idle Screen
+hides the pane rather than resetting it, so the page is there when the
+dashboard returns. A restart loses it; the Last Page is what survives. The
+Browser Profile (logins, storage) remains across both.
 _Avoid_: browser context, browser workspace
 
 **Action Outcome**:
