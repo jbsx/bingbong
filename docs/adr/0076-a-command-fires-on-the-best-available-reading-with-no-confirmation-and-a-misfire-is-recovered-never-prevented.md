@@ -261,7 +261,10 @@ Command recovers rather than a question asked:
   offered the spoken vocabulary without them (`GRAMMAR_ONLY_VERBS`).
 - **The post-action wait is readiness, capped at 150 ms**, on an injectable
   clock: a DOM mutation, an input event, a scroll or the document going
-  ends it early. The landing poll after `ERR_ABORTED` keeps one 100 ms
+  ends it early. A click's own scroll-into-view is none of these: the
+  click preparation scrolls instantly and tells the armed watch where it
+  left each scroller, and a scroll event that finds its scroller still
+  there is ours, so a click closes only on what it did to the page (#335). The landing poll after `ERR_ABORTED` keeps one 100 ms
   clock wait (the `browser-settle` sub-span); everything else is
   readiness-driven (`browser-ready` sub-spans).
 - **Jev is pinned to `jev-1.14.0`** in the decision adapter, as decided

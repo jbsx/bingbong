@@ -8,23 +8,53 @@ import { BIAS_LEXICON } from './biasLexicon'
 // them but rotting an entry does.
 
 describe('BIAS_LEXICON', () => {
-  it('seeds the app vocabulary: panel, dock, overlay, Settings names, navigation words', () => {
+  it("seeds this branch's vocabulary: the CLI grammar's verbs, Settings names, navigation words (#335)", () => {
     for (const term of [
-      'panel',
-      'feed panel',
-      'dock',
-      'overlay',
-      'wider',
+      'scroll',
+      'scroll up',
+      'scroll down',
+      'click',
+      'read',
+      'press',
+      'screenshot',
+      'navigate',
+      'back',
       'forward',
+      'reload',
+      'resume',
       'wake word',
       'endpoint delay',
       'web zoom',
       'web',
       'adblock',
-      'model routing',
-      'pop up',
+      'dashboard',
     ]) {
       expect(BIAS_LEXICON).toContain(term)
+    }
+  })
+
+  it('lifts no orchestrator-era or Feed Panel sizing word, each a near-tie no Command uses (#335)', () => {
+    for (const term of [
+      'orchestrator',
+      'subagent',
+      'tool rounds',
+      'model routing',
+      'panel',
+      'feed panel',
+      'dock',
+      'docked',
+      'dock mode',
+      'overlay',
+      'overlay mode',
+      'collapsed',
+      'wider',
+      'narrower',
+      'half screen',
+      'panel mode',
+      'panel width',
+      'pop up',
+    ]) {
+      expect(BIAS_LEXICON).not.toContain(term)
     }
   })
 

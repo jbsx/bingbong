@@ -10,21 +10,18 @@
 import { normalizeLearnedTerm } from '../../core/voice/learnedTerms'
 
 export const BIAS_LEXICON: readonly string[] = [
-    // Feed Panel states and sizing (View Preferences, ADR 0006)
-    'panel',
-    'feed panel',
-    'dock',
-    'docked',
-    'dock mode',
-    'overlay',
-    'overlay mode',
-    'collapsed',
-    'wider',
-    'narrower',
-    'half screen',
-    'panel mode',
-    'panel width',
-    'pop up',
+    // The CLI grammar's verbs (ADR 0076). Everyday words, kept against the
+    // rule above on evidence: "scroll" was heard as "Screw that." and
+    // "Crawled" in one session, and both came to nothing (#335).
+    'scroll',
+    'scroll up',
+    'scroll down',
+    'click',
+    'read',
+    'press',
+    'screenshot',
+    'navigate',
+    'back',
 
     // Navigation and app control
     'forward',
@@ -41,7 +38,6 @@ export const BIAS_LEXICON: readonly string[] = [
     'wake word',
     'wake threshold',
     'endpoint delay',
-    'tool rounds',
     'web zoom',
     'web',
     'zoom',
@@ -53,9 +49,6 @@ export const BIAS_LEXICON: readonly string[] = [
     'fahrenheit',
     'metric',
     'imperial',
-    'model routing',
-    'orchestrator',
-    'subagent',
 
     // Dashboard vocabulary
     'dashboard',

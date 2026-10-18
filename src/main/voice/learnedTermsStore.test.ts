@@ -58,7 +58,7 @@ describe('learned terms store', () => {
     // A page name the user deleted stays deleted; the seed is not the ledger's business.
     store.manualRemove('elon musk')
     expect(store.admit('Elon Musk')).toBe(false)
-    expect(store.admit('feed panel')).toBe(false)
+    expect(store.admit('Scroll Down')).toBe(false)
     expect(store.list()).toEqual(['linus tech tips'])
     // Admitting again is a touch, not a duplicate.
     now = 2_000
@@ -133,7 +133,7 @@ describe('learned terms store', () => {
     const store = createLearnedTermsStore(join(dir, 'lexicon.json'), SEED, { now: () => 0 })
     const first = store.biasPhrases()
     expect(store.biasPhrases()).toBe(first) // memoized identity
-    expect(first).toContain('panel') // seed vocabulary rides along
+    expect(first).toContain('scroll') // seed vocabulary rides along
 
     store.applyProposals([{ op: 'add', suspect: 'g', repair: 'nguyen' }])
     store.applyProposals([{ op: 'add', suspect: 'g', repair: 'nguyen' }])

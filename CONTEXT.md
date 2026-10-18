@@ -141,8 +141,8 @@ _Avoid_: error, wrong action, false positive, hallucination
 
 **Bias Lexicon**:
 The app's own vocabulary that the STT decoder is biased toward while decoding
-— panel, view, settings, and navigation terms, plus mishears discovered in
-use ("pop up"). Two parts: the Seed Lexicon and Learned Terms. Extending it
+— the CLI grammar's verbs, settings, dashboard and navigation terms, plus
+mishears discovered in use ("scroll" heard as "Screw that."). Two parts: the Seed Lexicon and Learned Terms. Extending it
 is the first response to a misheard domain word.
 It preferences what is heard; it never restricts what can be said.
 _Avoid_: hotword list, dictionary, custom vocabulary

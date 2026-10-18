@@ -160,7 +160,7 @@ function buildRestTrie(rests: readonly string[]): RestNode {
 
 /**
  * The word-start boost, ADR 0022's word-start index: the static rests
- * (' panel', ' dock mode', …) share prefixes, so they are merged into one
+ * (' scroll', ' scroll down', …) share prefixes, so they are merged into one
  * trie walked in lockstep with the piece trie — shared prefixes are
  * walked once, not once per phrase. Every piece id along the walk is
  * exactly the set the per-rest walks would have collected.
