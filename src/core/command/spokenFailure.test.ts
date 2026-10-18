@@ -71,6 +71,11 @@ describe('spokenFailureOf', () => {
 // and the spoken line, a plain sentence for the user — never the
 // ref-protocol wording meant for a model, nor a raw Chromium code.
 describe('failureLineOf', () => {
+  it('#336: says there is no page to go back to when `back` is refused — the blank start page before, or no history', () => {
+    expect(failureLineOf('back', 'cannot go back: the page before is the blank start page')).toBe("There's no page to go back to.")
+    expect(failureLineOf('back', 'cannot go back: no history')).toBe("There's no page to go back to.")
+  })
+
   it('says a missing ref is no item on this page, whether it never existed or the page moved on', () => {
     expect(failureLineOf('click', 'ref 999 refused: it no longer names the element you were shown. Continue from the page below\n# Page — https://example.com/')).toBe("There's no item 999 on this page.")
     expect(failureLineOf('type', 'ref 4 refused: it no longer names the element you were shown; the page could not be re-read')).toBe("There's no item 4 on this page.")

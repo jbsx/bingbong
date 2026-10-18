@@ -81,7 +81,26 @@ verbs and the pages already visited never offered. A Hop types only words
 the user said and never guesses when the Decision Model does not answer.
 Hops are numbered from the first Command, hop 0; a reading that ends the
 Task without firing (`done`, a dead end) is a hop of its own on the record.
+The state a Hop is read on tells what each earlier action did ("nothing
+changed", "opened x.com/elonmusk"). A Hop that changed nothing sets its
+target aside, and two such Hops in a row end the Task.
 _Avoid_: step, round, turn, continuation
+
+**Set Aside**:
+A target a Hop acted on that changed nothing: no navigation, and the click's
+own verdict "no observable change". It is known by its label and its address
+(the link's own, or the page's for a control with none), never by its ref
+number, which changes between Hops, and it is not offered again in that Task.
+_Avoid_: excluded, blacklisted, retried
+
+**Dismiss Phrase**:
+Words that close the pop-up covering the page: exit, close, dismiss, get rid
+of, go away, cancel, x or no thanks, alone or with "this", "that", "it", "out
+of this", "the pop-up" or "the dialog". With a dialog open they are settled
+before the Decision Model is asked: the dialog's own close control is clicked
+(never a link), else Escape is pressed, and the Answer is "Closed the
+pop-up.". With no dialog open the same words read as they always did.
+_Avoid_: close command, escape phrase
 
 **Command**:
 One verb, at most one target on the page and one Slot, performed at once.
@@ -200,7 +219,11 @@ dashboard, the overlay panel, and (formerly) the idle digest.
 **Feed Entry**:
 One rendered item in the Feed. On this branch a Command is one entry: the
 words heard and the action taken; an Utterance read as no Command is one
-greyed entry of the words alone.
+greyed entry of the words alone. A Task is one entry too: its words once,
+one line beneath them for each Hop that fired (an abandoned last Hop greyed,
+a Hop that met a wall in the failure colour), every Hop's steps in one Run
+Detail, and one Answer, the last Hop's. A closing Hop that fires nothing
+(`done`, `no next step`, `not read`) adds nothing.
 _Avoid_: message
 
 **Answer**:

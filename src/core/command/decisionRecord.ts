@@ -83,9 +83,10 @@ export interface TaskHop {
  * cap of five actions; a wall (a failure, a Blocked Action, a Blocker,
  * consent, not-found, unavailable or empty landing); Jev unavailable (hop
  * 0's best guess included); superseded; a Local-Matched hop 0; a terminal
- * verb (read, stop, clear, or `none` at hop 0).
+ * verb (read, stop, clear, or `none` at hop 0); two hops in a row that
+ * changed nothing (#336).
  */
-export type TaskEnded = 'done' | 'none' | 'cap' | 'wall' | 'unavailable' | 'superseded' | 'local_match' | 'terminal'
+export type TaskEnded = 'done' | 'none' | 'cap' | 'wall' | 'unavailable' | 'superseded' | 'local_match' | 'terminal' | 'unchanged'
 
 /** An Early Fire as the record keeps it. */
 export interface EarlyFireDetail {

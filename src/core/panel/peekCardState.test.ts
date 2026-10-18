@@ -204,6 +204,23 @@ describe('peekCardAnswer', () => {
     expect(peekCardAnswer(feedOf(events), fold.state().runId)).toEqual({ kind: 'display', text: 'Welcome to the example.', failure: false })
   })
 
+  it("#336: a Task's superseded closing hop, after a hop that fired, leaves the card on the hop that fired", () => {
+    const events: PipelineEvent[] = [
+      { type: 'command', turnId: 'h0', text: 'open elon musks latest tweet', action: 'open x.com/elonmusk', task: { id: 'h0', hop: 0 }, at: 1 },
+      { type: 'display', turnId: 'h0', text: 'Opened X.', at: 2 },
+      { type: 'done', turnId: 'h0', outcome: 'done', at: 3 },
+      { type: 'command', turnId: 'h1', text: 'open elon musks latest tweet', action: 'click [3] "Latest"', task: { id: 'h0', hop: 1 }, at: 4 },
+      { type: 'display', turnId: 'h1', text: 'Clicked “Latest”.', at: 5 },
+      { type: 'done', turnId: 'h1', outcome: 'done', at: 6 },
+      { type: 'command', turnId: 'h2', text: 'open elon musks latest tweet', action: 'abandoned: stopped', dropped: true, task: { id: 'h0', hop: 2 }, at: 7 },
+      { type: 'done', turnId: 'h2', outcome: 'cancelled', at: 8 },
+    ]
+    const fold = createPeekCardFold()
+    for (const event of events) fold.onEvent(event)
+    expect(fold.state()).toMatchObject({ phase: 'answer', runId: 'h1' })
+    expect(peekCardAnswer(feedOf(events), fold.state().runId)).toEqual({ kind: 'display', text: 'Clicked “Latest”.', failure: false })
+  })
+
   it('an Utterance read as no Command still shows its own card, not the last Answer', () => {
     const fold = createPeekCardFold()
     fold.onEvent({ type: 'command', turnId: 't1', text: 'screenshot', task: { id: 't1', hop: 0 }, at: 1 })

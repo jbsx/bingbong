@@ -1,6 +1,7 @@
 import { reportFault } from '../../core/trace/fault'
 import { systemClock, withDeadline, type Clock } from '../../core/ports/clock'
 import type { PageLanding } from '../../core/ports/browser'
+import { isRealPage } from '../../core/browser/lastPage'
 import { boundedWait } from '../../core/browser/unsettledAction'
 import { ARRIVAL_LOAD_BOUND_MS } from '../../core/browser/actionOutcome'
 import { LANDING_CAP_MS, LANDING_QUIET_MS, type ArrivalWatch, type CdpPageDriver } from './createCdpBrowserController'
@@ -51,6 +52,9 @@ export interface PaneNavigationTarget {
     canGoForward(): boolean
     goBack(): void
     goForward(): void
+    /** The entry the tab is on, and any entry by index (#336): what the back guard reads. Optional: a surface without them steps back unguarded. */
+    getActiveIndex?(): number
+    getEntryAtIndex?(index: number): { url: string; title: string }
   }
   on(event: 'did-navigate', listener: DidNavigateListener): void
   on(event: 'did-navigate-in-page', listener: DidNavigateInPageListener): void
@@ -298,9 +302,24 @@ export function createPaneNavigation(wc: PaneNavigationTarget, clock: Clock = sy
     return 'loaded'
   }
 
+  /**
+   * The back guard (#336): `back` never leaves a real page for the blank
+   * start page the Idle Screen or `resume` opened it from — there is no
+   * page to go back to, and the tab stays put.
+   */
+  function goBack(): Promise<void> {
+    const history = wc.navigationHistory
+    const index = history.getActiveIndex?.()
+    const before = index !== undefined && index > 0 ? history.getEntryAtIndex?.(index - 1) : undefined
+    if (before !== undefined && isRealPage(wc.getURL()) && !isRealPage(before.url)) {
+      return Promise.reject(new Error('cannot go back: the page before is the blank start page'))
+    }
+    return historyStep(history.canGoBack(), () => history.goBack(), 'back')
+  }
+
   return {
     loadUrl,
-    goBack: () => historyStep(wc.navigationHistory.canGoBack(), () => wc.navigationHistory.goBack(), 'back'),
+    goBack,
     goForward: () => historyStep(wc.navigationHistory.canGoForward(), () => wc.navigationHistory.goForward(), 'forward'),
     // A reload commits like a step through history does (#328), and is waited for the same way.
     reload: () => historyStep(true, () => wc.reload(), 'again'),

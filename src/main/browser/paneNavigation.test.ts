@@ -284,6 +284,46 @@ describe('createPaneNavigation', () => {
     await flushMicrotasks()
   })
 
+  it('#336: refuses a step back from a real page to the blank start page, the tab staying put', async () => {
+    let wentBack = 0
+    const entries = ['about:blank', 'https://x.com/elonmusk']
+    const wc = fakeWebContents({
+      getURL: () => 'https://x.com/elonmusk',
+      navigationHistory: {
+        canGoBack: () => true,
+        canGoForward: () => false,
+        goBack: () => (wentBack += 1),
+        goForward: () => {},
+        getActiveIndex: () => 1,
+        getEntryAtIndex: (index) => ({ url: entries[index]!, title: '' }),
+      },
+    })
+    const page = createPaneNavigation(wc.target, new FakeClock())
+    await expect(page.goBack()).rejects.toThrow('cannot go back: the page before is the blank start page')
+    expect(wentBack).toBe(0)
+  })
+
+  it('#336: steps back to a real page before it as ever', async () => {
+    let wentBack = 0
+    const entries = ['about:blank', 'https://x.com/', 'https://x.com/elonmusk']
+    const wc = fakeWebContents({
+      getURL: () => 'https://x.com/elonmusk',
+      navigationHistory: {
+        canGoBack: () => true,
+        canGoForward: () => false,
+        goBack: () => (wentBack += 1),
+        goForward: () => {},
+        getActiveIndex: () => 2,
+        getEntryAtIndex: (index) => ({ url: entries[index]!, title: '' }),
+      },
+    })
+    const page = createPaneNavigation(wc.target, new FakeClock())
+    const back = page.goBack()
+    wc.fireDidNavigate()
+    await back
+    expect(wentBack).toBe(1)
+  })
+
   it('reads url and title straight from the surface and never focuses a destroyed one', () => {
     let focused = 0
     const wc = fakeWebContents({ isDestroyed: () => true, focus: () => (focused += 1) })

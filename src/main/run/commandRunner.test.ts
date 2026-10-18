@@ -1443,6 +1443,43 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
     expect(records.filter((record) => record.type === 'misfire')).toEqual([expect.objectContaining({ signal: 'overrun', turnId: hop1.turnId, hop: 1, withinMs: 2_000 })])
   })
 
+  it('#336 pinned-post replay: a click that changed nothing sets its target aside by label and address across renumbered refs; two such hops in a row end the Task unchanged', async () => {
+    const { browser, records, decision, runner } = taskHarness('https://x.com/elonmusk')
+    const PINNED = 'Pinned Elon Musk: the pinned post'
+    const pinned = (n: number) => ref(n, 'link', PINNED, { href: 'https://x.com/elonmusk/status/1' })
+    const latest = (n: number) => ref(n, 'link', 'Elon Musk: the latest post', { href: 'https://x.com/elonmusk/status/2' })
+    browser.snapshot = { ...browser.snapshot, title: 'Elon Musk (@elonmusk) / X', refs: [ref(1, 'button', 'Posts'), pinned(21), latest(22)] }
+    // The Posts tab moves the page; every other click comes back "no observable change". The refs renumber after each.
+    const renumbered = [
+      [ref(1, 'button', 'Posts'), pinned(20), latest(23)],
+      [ref(1, 'button', 'Posts'), pinned(21), latest(22)],
+    ]
+    const click = browser.click.bind(browser)
+    browser.click = async (n) => {
+      const line = n === 1 ? (browser.clicks.push(1), 'clicked [1]: urlChanged=false dialogOpen=false; page signature changed') : await click(n)
+      browser.snapshot = { ...browser.snapshot, refs: renumbered.shift() ?? browser.snapshot.refs }
+      return line
+    }
+    decision.script.push(answer('click', 'ref-1'), answer('click', 'ref-20'), answer('click', 'ref-22'), answer('click', 'ref-21'))
+    await runner.run('open elon musks latest tweet', { source: 'spoken' })
+
+    expect(browser.clicks).toEqual([1, 20, 22])
+    // Hop 2: the pinned post, now ref 21, is not offered again.
+    const hop2 = (decision.requests[2]!.questions as { target: DecisionChoiceQuestion }).target
+    expect(Object.values(hop2.options).some((option) => String(option).includes(PINNED))).toBe(false)
+    expect(Object.keys(hop2.options)).toEqual(['none', 'ref-1', 'ref-22'])
+    // Jev is told what each action did.
+    expect(decision.requests[2]!.state).toContain(`Done so far: click "Posts" (the page changed); click "${PINNED}" (nothing changed)`)
+    expect(decisions(records).map((record) => record.ended)).toEqual([undefined, undefined, 'unchanged'])
+  })
+
+  it('#336: a hop that opened a page says where on the next hop\'s "Done so far"', async () => {
+    const { decision, runner } = taskHarness()
+    decision.script.push(answer('open', 'none', 's3-6'), answer('click', 'ref-3'), answer('done'))
+    await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
+    expect(decision.requests[1]!.state).toContain('Done so far: open latest elon musk tweet (opened duckduckgo.com/?q=latest%20elon%20musk%20tweet)')
+  })
+
   it('AC7: a type hop\'s Slot is read against the landing\'s Page Terms, and what was heard stays on the record', async () => {
     const { browser, records, decision, runner } = taskHarness()
     const navigate = browser.navigate.bind(browser)
@@ -1457,6 +1494,89 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
     expect(browser.navigations).toEqual(['https://youtube.com'])
     expect(browser.typed).toEqual([{ ref: 1, text: 'linus tech tips' }])
     expect(decisions(records)[1]).toMatchObject({ verb: 'type', slot: 'linus tech tips', slotHeard: 'line stack tips', slotFrom: 'page', task: { hop: 1 } })
+  })
+})
+
+describe('a pop-up covering the page (#336)', () => {
+  const SHEET_REFS: SnapshotRef[] = [
+    ref(1, 'link', 'Elon Musk', { href: 'https://x.com/elonmusk' }),
+    ref(7, 'link', 'Cancel', { href: 'https://x.com/home', layer: 'dialog' }),
+    ref(8, 'button', 'Sign in', { layer: 'dialog' }),
+    ref(9, 'button', 'Close', { layer: 'dialog' }),
+  ]
+  const displays = (events: PipelineEvent[]) => events.filter((event): event is Extract<PipelineEvent, { type: 'display' }> => event.type === 'display')
+
+  /** A page under X's logged-out sheet; the sheet closes on its close control or Escape unless it is told to stay. */
+  function sheetHarness(refs = SHEET_REFS, stays = false) {
+    const h = harness()
+    h.browser.snapshot = { ...h.browser.snapshot, url: 'https://x.com/elonmusk', title: 'X', refs, dialogOpen: true, dialogText: 'Sign in to X' }
+    const closed = (): void => {
+      if (!stays) h.browser.snapshot = { ...h.browser.snapshot, refs: refs.filter((one) => one.layer !== 'dialog'), dialogOpen: false, dialogText: '' }
+    }
+    const click = h.browser.click.bind(h.browser)
+    h.browser.click = async (n) => {
+      const line = await click(n)
+      if (n === 9) closed()
+      return line
+    }
+    const press = h.browser.pressKey.bind(h.browser)
+    h.browser.pressKey = async (key, times) => {
+      await press(key, times)
+      if (key.key === 'Escape') closed()
+    }
+    return h
+  }
+
+  it('"exit out of this" clicks the dialog\'s close control, says "Closed the pop-up." and never navigates — no Jev call', async () => {
+    const { browser, events, records, decision, runner } = sheetHarness()
+    await runner.run('exit out of this', { source: 'spoken' })
+    expect(decision.requests).toEqual([])
+    expect(browser.clicks).toEqual([9])
+    expect(browser.navigations).toEqual([])
+    expect(displays(events)).toEqual([expect.objectContaining({ text: 'Closed the pop-up.' })])
+    expect(records).toEqual([expect.objectContaining({ reading: 'local_match', verb: 'click', target: 9, ended: 'local_match' })])
+  })
+
+  it('presses Escape when the dialog has no close control', async () => {
+    const { browser, events, runner } = sheetHarness(SHEET_REFS.filter((one) => one.ref !== 9))
+    await runner.run('close the pop-up', { source: 'spoken' })
+    expect(browser.clicks).toEqual([])
+    expect(browser.pressedKeys).toEqual([{ press: { key: 'Escape' }, times: 1 }])
+    expect(browser.navigations).toEqual([])
+    expect(displays(events)).toEqual([expect.objectContaining({ text: 'Closed the pop-up.' })])
+  })
+
+  it('says so, as a failure, when the dialog is still open afterwards', async () => {
+    const { events, runner } = sheetHarness(SHEET_REFS, true)
+    await runner.run('get rid of this', { source: 'spoken' })
+    expect(displays(events)).toEqual([expect.objectContaining({ text: SPOKEN_FAILURES.dialogStayed, failure: true })])
+  })
+
+  it('with no dialog open, the same words read as before: "cancel" is stop, "exit out of this" goes to Jev', async () => {
+    const { browser, decision, records, runner } = harness()
+    await runner.run('cancel', { source: 'spoken' })
+    decision.script.push({ answers: { verb: choice('back'), target: choice('none'), slot: choice('none') } })
+    await runner.run('exit out of this', { source: 'spoken' })
+    expect(records.flatMap((record) => (record.type === 'decision' && record.task?.hop === 0 ? [record.verb] : []))).toEqual(['stop', 'back'])
+    expect(decision.requests[0]!.state).not.toContain('A dialog is open')
+    expect(browser.clicks).toEqual([])
+  })
+
+  it('`back` toward the blank start page is refused with "There\'s no page to go back to." and the tab stays put', async () => {
+    const { browser, events, runner } = sheetHarness()
+    browser.back = async () => {
+      throw new Error('cannot go back: the page before is the blank start page')
+    }
+    await runner.run('back', { source: 'spoken' })
+    expect(browser.snapshot.url).toBe('https://x.com/elonmusk')
+    expect(displays(events)).toEqual([expect.objectContaining({ text: "There's no page to go back to.", failure: true })])
+  })
+
+  it('Jev reads the dialog when one is open and the words are not a dismiss phrase', async () => {
+    const { decision, runner } = sheetHarness()
+    decision.script.push({ answers: { verb: choice('none'), target: choice('none'), slot: choice('none') } })
+    await runner.run('what is this thing', { source: 'spoken' })
+    expect(decision.requests[0]!.state).toContain('A dialog is open: "Sign in to X"')
   })
 })
 

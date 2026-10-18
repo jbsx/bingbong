@@ -40,6 +40,13 @@ describe('the state Jev reads', () => {
   })
 })
 
+describe('the state Jev reads with a dialog open (#336)', () => {
+  it('gains one line naming the dialog and its text', () => {
+    const state = commandState('exit out of this', { ...PAGE, dialog: { text: 'Sign in to X', refs: [2] } })
+    expect(state.split('\n')[2]).toBe('A dialog is open: "Sign in to X"')
+  })
+})
+
 describe('the three questions', () => {
   it('asks the verb among the spoken vocabulary, the target among the refs plus none, the Slot among the word spans', () => {
     const questions = commandQuestions('type hello in search', PAGE)

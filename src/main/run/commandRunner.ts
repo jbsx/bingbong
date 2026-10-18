@@ -4,10 +4,12 @@ import type { PipelineEvent } from '../../core/pipeline/events'
 import type { CommandRunState } from '../../core/pipeline/runState'
 import type { PageLink, PageSnapshot } from '../../core/browser/snapshot'
 import type { PerfTracer } from '../../core/perf/perfTracer'
-import { commandRefOf, describeCommand, targetLabel, type Command, type CommandPage } from '../../core/command/command'
+import { commandPageOf, describeCommand, targetLabel, type Command, type CommandPage } from '../../core/command/command'
+import { dismissCommand, isDismissPhrase } from '../../core/command/dismissDialog'
 import { COMMAND_HELP } from '../../core/command/help'
 import { bestGuess, headsAnotherVerb, localMatch } from '../../core/command/localMatch'
-import { commandQuestions, commandState, partialQuestions, readCommandAnswers, type HopContext } from '../../core/command/jevReading'
+import { commandQuestions, commandState, doneLine, partialQuestions, readCommandAnswers, setAsideOf, type HopContext, type SetAside } from '../../core/command/jevReading'
+import { blockedOrInertAction } from '../../core/browser/actionOutcome'
 import { isAddressShaped, openAddress } from '../../core/command/openAddress'
 import { nameMatch, soundsAlike } from '../../core/command/nameMatch'
 import {
@@ -23,7 +25,6 @@ import {
   type TaskHop,
 } from '../../core/command/decisionRecord'
 import { parseSearchUrl } from '../../core/browser/urlInput'
-import { pageTermsOf } from '../../core/voice/pageTerms'
 import { pageReadPart, pageReadText } from '../../core/browser/pageText'
 import { SPOKEN_FAILURES, failureLineOf, spokenFailureOf } from '../../core/command/spokenFailure'
 import { STOPPED_ANSWERS, bestGuessAnswer, commandAnswer, pageReadCard } from '../../core/command/answer'
@@ -64,9 +65,11 @@ import type { ActionEffect } from '../browser/createCdpBrowserController'
 // after one the Local Match settled: each further hop collects the landing
 // and asks Jev alone — the same three Choices plus `done`, against the whole
 // transcript, the addresses visited and the actions taken — until it says
-// `done` or `none`, an action meets a wall, five actions have fired, Jev
-// does not answer, or a later Utterance, Escape or the Abort Head
-// supersedes it. One `command` event and one decision record per hop.
+// `done` or `none`, an action meets a wall, five actions have fired, two
+// hops in a row change nothing (#336: each such hop's target is set aside),
+// Jev does not answer, or a later Utterance, Escape or the Abort Head
+// supersedes it. One `command` event and one decision record per hop. A
+// dismiss phrase over an open dialog closes it before Jev is asked (#336).
 
 export type { CommandRunState }
 
@@ -194,11 +197,16 @@ function endedByReading(reading: CommandReading, verb: Command['verb'], hop: num
 /** What a fired action came to: it landed, it met a wall (it failed, or speaks a failure's line), or a later Command superseded it. */
 type FireOutcome = 'landed' | 'wall' | 'superseded'
 
-/** A fired action's outcome, and how its navigation landed when it made one (#328). */
+/** A fired action's outcome, how its navigation landed when it made one (#328), and whether it changed nothing (#336). */
 interface FireResult {
   readonly outcome: FireOutcome
   readonly landing?: PageLanding
+  /** The action landed and moved nothing: no navigation, and the click's own verdict "no observable change". */
+  readonly unchanged?: true
 }
+
+/** How many hops in a row that change nothing end a Task (#336). */
+const MAX_UNCHANGED_HOPS = 2
 
 /** The verbs that say the user moved on from a Slot: the retry chain settles on them. */
 const MOVES_ON: ReadonlySet<Command['verb']> = new Set(['click', 'scroll_up', 'scroll_down', 'read', 'forward'])
@@ -214,15 +222,6 @@ interface NameMatched {
 function blankPage(browser: BrowserController): CommandPage {
   const state = browser.state()
   return { url: state.url ?? '', title: state.title ?? '', refs: [] }
-}
-
-function pageOf(snapshot: PageSnapshot): CommandPage {
-  return {
-    url: snapshot.url,
-    title: snapshot.title,
-    refs: snapshot.refs.map(commandRefOf),
-    terms: pageTermsOf({ title: snapshot.title, labels: snapshot.refs.map((ref) => ref.label), text: snapshot.viewportText }),
-  }
 }
 
 /** Whether a Command's Slot is words a name could be misheard in: search terms, or text to type — never an address or a key. */
@@ -336,7 +335,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
           reportFault('run.commandRunner.collectPage', error)
           return null
         })
-    return snapshot === null ? blankPage(browser) : pageOf(snapshot)
+    return snapshot === null ? blankPage(browser) : commandPageOf(snapshot)
   }
 
   /** The turn that last published its Answer: a Command leaves one (#333), so a second for the same turn is not shown. */
@@ -448,11 +447,19 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     jev?: DecisionRecord['jev']
   }
 
-  /** The Local Match first; else one Jev call; else the best guess. A spoken Slot that could carry a name waits for the page, so the Name Match can read it against the Page Terms. */
+  /**
+   * The Local Match first; else one Jev call; else the best guess. A spoken
+   * Slot that could carry a name waits for the page, so the Name Match can
+   * read it against the Page Terms; so does a dismiss phrase, which closes
+   * a dialog open over it before anything else reads it (#336).
+   */
   async function read(text: string, pending: PreparedPage | null, spoken: boolean): Promise<Reading> {
     const quick = localMatch(text, [])
-    if (pageFree(quick) && !(spoken && slotIsNameable(quick))) return { command: quick, page: blankPage(browser), reading: 'local_match', jevAsked: false }
+    const dismissing = isDismissPhrase(text)
+    if (pageFree(quick) && !dismissing && !(spoken && slotIsNameable(quick))) return { command: quick, page: blankPage(browser), reading: 'local_match', jevAsked: false }
     const page = await collectPage(pending)
+    const dismiss = dismissCommand(text, page)
+    if (dismiss !== null) return { command: dismiss, page, reading: 'local_match', jevAsked: false }
     if (pageFree(quick)) return { command: quick, page, reading: 'local_match', jevAsked: false }
     const local = localMatch(text, page.refs, page.url)
     if (local !== null) return { command: local, page, reading: 'local_match', jevAsked: false }
@@ -530,6 +537,16 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     }
     if (last === null) return { tool: { name: 'resume', args: {} }, perform: async () => 'nothing to resume: no page has been visited yet' }
     return { tool: { name: 'navigate', args: { url: last.url } }, perform: () => browser.navigate(last.url) }
+  }
+
+  /** Whether a dialog is still open over the page after a dismissal (#336); a page that cannot be read is taken as closed. */
+  async function dialogStillOpen(): Promise<boolean> {
+    try {
+      return (await browser.collectPage()).dialogOpen
+    } catch (error) {
+      reportFault('run.commandRunner.dialogStillOpen', error)
+      return false
+    }
   }
 
   /** The chosen ref lights as the action lands — after it, never before: the flash is a DOM change of our own making, and must not be the effect the Reaction closes on. */
@@ -711,11 +728,13 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     const releaseLanding = deps.onLanding?.((landed) => {
       if (current()) landing = landed
     })
-    const ended = (outcome: FireOutcome): FireResult => ({ outcome, ...(landing !== undefined ? { landing } : {}) })
+    let unchanged = false
+    const ended = (outcome: FireOutcome): FireResult => ({ outcome, ...(landing !== undefined ? { landing } : {}), ...(unchanged && landing === undefined ? { unchanged: true } : {}) })
     try {
       const result = await perform(command, resume)
       if (!current()) return ended('superseded')
       let outcome: FireOutcome = 'landed'
+      unchanged = blockedOrInertAction(result) === 'inert'
       const card = cardOf(command, result)
       if (speech === undefined) react(card !== null && command.verb === 'read' ? 'display' : 'settled')
       publish({ type: 'tool_result', turnId, callId, name, ok: true, result, at: at() })
@@ -731,7 +750,10 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         react('display', shownAt)
       } else {
         const state = browser.state()
-        const failure = spokenFailureOf({ tool: name, outcome: { ok: true, result }, ...(state.url ? { url: state.url } : {}), ...(state.title ? { title: state.title } : {}) })
+        const failure =
+          spokenFailureOf({ tool: name, outcome: { ok: true, result }, ...(state.url ? { url: state.url } : {}), ...(state.title ? { title: state.title } : {}) }) ??
+          (command.dismiss === true && (await dialogStillOpen()) ? 'dialogStayed' : null)
+        if (!current()) return ended('superseded')
         if (failure !== null) {
           answerFailure(turnId, SPOKEN_FAILURES[failure])
           outcome = 'wall'
@@ -792,7 +814,12 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     /** The tracer's monotonic ms at the Endpoint: where the `task` span opens. */
     readonly endpointAt: number
     readonly visited: string[]
+    /** Each action fired and what it did, as "Done so far" tells it (#336). */
     readonly actions: string[]
+    /** The targets of hops that changed nothing (#336): not offered again. */
+    readonly setAside: SetAside[]
+    /** How many hops in a row have changed nothing (#336). */
+    unchanged: number
   }
 
   function visit(task: Task, url: string): void {
@@ -806,6 +833,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   function endedByAction(task: Task, outcome: FireOutcome): TaskEnded | null {
     if (outcome === 'superseded' || superseded(task)) return 'superseded'
     if (outcome === 'wall') return 'wall'
+    if (task.unchanged >= MAX_UNCHANGED_HOPS) return 'unchanged'
     return task.actions.length >= MAX_TASK_ACTIONS ? 'cap' : null
   }
 
@@ -829,10 +857,25 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       if (CONTINUING.has(command.verb)) log({ ...record, ...landed, ended: ending })
       return ending
     }
-    task.actions.push(describeCommand(command, page))
+    task.actions.push(doneLine(command, page, doneResult(page, fired)))
+    if (fired.unchanged === true) {
+      // A hop that changed nothing (#336): its target is not offered again, and a second in a row ends the Task.
+      task.unchanged += 1
+      const target = page.refs.find((ref) => ref.ref === command.target)
+      if (target !== undefined) task.setAside.push(setAsideOf(target, page))
+    } else {
+      task.unchanged = 0
+    }
     const ended = endedByAction(task, fired.outcome)
     log({ ...record, ...landed, ...(ended !== null ? { ended } : {}) })
     return ended
+  }
+
+  /** What a fired hop did, for "Done so far" (#336): nothing, or the page it left the tab on when that is another one. */
+  function doneResult(page: CommandPage, fired: FireResult): Parameters<typeof doneLine>[2] {
+    if (fired.unchanged === true) return { changed: false }
+    const after = browser.state().url ?? ''
+    return isRealPage(after) && after !== page.url ? { changed: true, opened: after } : { changed: true }
   }
 
   /** A Task's end (#328): the `task` span, from its Endpoint, on hop 0's turn. */
@@ -876,7 +919,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       const page = superseded(task) ? blankPage(browser) : await collectPage(null)
       visit(task, page.url)
       const links = !superseded(task) && parseSearchUrl(page.url) !== null ? await resultPageLinks(turnId) : []
-      const context: HopContext = { hop, visited: [...task.visited], actions: [...task.actions], links }
+      const context: HopContext = { hop, visited: [...task.visited], actions: [...task.actions], links, setAside: [...task.setAside] }
       const model = deps.decisionModel()
       const result = superseded(task) || model === null ? null : await model.ask({ state: commandState(task.text, page, context), questions: commandQuestions(task.text, page, context) })
       if (reading?.turnId === turnId) reading = null
@@ -1016,9 +1059,11 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     // "scroll" may yet be "scroll up": the words are known to be unfinished, so no one is asked.
     if (headsAnotherVerb(words)) return null
     const quick = localMatch(words, [])
-    if (pageFree(quick) && firesEarly(quick)) return { command: quick, page: blankPage(browser), reading: 'local_match', jevAsked: false }
+    if (pageFree(quick) && firesEarly(quick) && !isDismissPhrase(words)) return { command: quick, page: blankPage(browser), reading: 'local_match', jevAsked: false }
     const page = await collectPage(prepared)
     if (stale()) return null
+    const dismiss = dismissCommand(words, page)
+    if (dismiss !== null) return { command: dismiss, page, reading: 'local_match', jevAsked: false }
     const local = localMatch(words, page.refs, page.url)
     if (local !== null && firesEarly(local)) return { command: local, page, reading: 'local_match', jevAsked: false }
     const model = deps.decisionModel()
@@ -1153,7 +1198,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         const record = closeEarly(fired, { transcript: trimmed, at: endpointAt, truncated }, lands ? 'deferred' : ending)
         nextUtterance()
         if (options?.turnId !== undefined) summarize(options.turnId)
-        const task: Task = { id: fired.turnId, submission: fired.submission, text: trimmed, source, endpointAt, visited: [], actions: [] }
+        const task: Task = { id: fired.turnId, submission: fired.submission, text: trimmed, source, endpointAt, visited: [], actions: [], setAside: [], unchanged: 0 }
         visit(task, fired.page.url)
         const ended = lands ? settleHop(task, record, ending, fired.command, fired.page, await fired.outcome) : ending
         if (ended !== null) endTask(task, ended, 1)
@@ -1185,7 +1230,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       if (source === 'spoken') observeTerms(trimmed)
 
       // This Utterance is a Task (#328); hop 0 is the Command read above.
-      const task: Task = { id: turnId, submission, text: trimmed, source, endpointAt, visited: [], actions: [] }
+      const task: Task = { id: turnId, submission, text: trimmed, source, endpointAt, visited: [], actions: [], setAside: [], unchanged: 0 }
       const hop0: TaskHop = { id: turnId, hop: 0 }
       visit(task, heard.page.url || (browser.state().url ?? ''))
       const { command, matched } = matchName(heard.command, heard.page, source === 'spoken')

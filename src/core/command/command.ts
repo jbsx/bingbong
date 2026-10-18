@@ -1,5 +1,6 @@
 import type { KeyPress } from '../ports/browser'
-import type { RefKind, SnapshotRef } from '../browser/snapshot'
+import type { PageSnapshot, RefKind, SnapshotRef } from '../browser/snapshot'
+import { pageTermsOf } from '../voice/pageTerms'
 
 // A Command (CONTEXT.md, ADR 0076): what an Utterance becomes on this
 // branch — one verb, at most one target on the page and one Slot, performed
@@ -66,6 +67,8 @@ export interface Command {
   readonly times?: number
   /** For `open`: the Slot is search terms however it reads ("search for rust"). */
   readonly search?: boolean
+  /** The click or the Escape closes an open dialog (#336): its Answer is "Closed the pop-up.", and a dialog still open after it is a failure. */
+  readonly dismiss?: true
 }
 
 /** What the reading sees of one ref: the number, its kind, its label and, for a link, its address. */
@@ -85,10 +88,30 @@ export interface CommandPage {
   readonly refs: readonly CommandRef[]
   /** The Page Terms (ADR 0077): the names the page shows, ranked, for the Name Match; absent for a page read without them. */
   readonly terms?: readonly string[]
+  /** The dialog open over the page (#336): its text and the refs in its layer; absent when none is open. */
+  readonly dialog?: PageDialog
+}
+
+/** A dialog open over the page (#336). */
+export interface PageDialog {
+  readonly text: string
+  /** The refs of the dialog's layer, by number. */
+  readonly refs: readonly number[]
 }
 
 export function commandRefOf(ref: SnapshotRef): CommandRef {
   return { ref: ref.ref, kind: ref.kind, label: ref.label, href: ref.href, inputType: ref.inputType }
+}
+
+/** The page a Command is read against, off a collected snapshot: its refs, its Page Terms and the dialog open over it. */
+export function commandPageOf(snapshot: PageSnapshot): CommandPage {
+  return {
+    url: snapshot.url,
+    title: snapshot.title,
+    refs: snapshot.refs.map(commandRefOf),
+    terms: pageTermsOf({ title: snapshot.title, labels: snapshot.refs.map((ref) => ref.label), text: snapshot.viewportText }),
+    ...(snapshot.dialogOpen ? { dialog: { text: snapshot.dialogText, refs: snapshot.refs.filter((ref) => ref.layer === 'dialog').map((ref) => ref.ref) } } : {}),
+  }
 }
 
 /** The verbs that act on one ref. */

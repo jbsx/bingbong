@@ -50,7 +50,8 @@ export function FeedLine({ entry }: { entry: FeedEntry }) {
     // in muted bubbles — no glyph, no handle (ADR 0013): the orb marks
     // Bing Bong only; your own words need no attribution. One entry per
     // Command (#324, ADR 0076): the words heard, and under them the action
-    // taken; an Utterance read as no Command is the words alone, greyed.
+    // taken; an Utterance read as no Command is the words alone, greyed. A
+    // Task (#336) adds one line per later hop that fired.
     return (
       <p className={`feed-entry feed-entry--user feed-entry--${entry.kind}${entry.muted ? ' feed-entry--muted' : ''}`}>
         {time}
@@ -63,6 +64,11 @@ export function FeedLine({ entry }: { entry: FeedEntry }) {
               <BreaksAtSlashes text={entry.action} />
             </span>
           ) : null}
+          {(entry.hopLines ?? []).map((hop, index) => (
+            <span key={index} className={`feed-action feed-action--hop${hop.muted ? ' feed-action--muted' : ''}${hop.failure ? ' feed-action--failed' : ''}`}>
+              <BreaksAtSlashes text={hop.text} />
+            </span>
+          ))}
         </span>
       </p>
     )

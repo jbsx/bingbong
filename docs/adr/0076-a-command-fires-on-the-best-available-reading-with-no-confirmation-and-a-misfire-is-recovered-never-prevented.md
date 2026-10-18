@@ -138,7 +138,8 @@ line as today), when a hop's Jev call is unavailable (hop 0's best guess is
 hop 0's alone; a hop never guesses), and when it is superseded: the next
 Utterance, Escape and the Abort Head end a Task as they end a Command,
 abandoning a hop whose read is in flight. There is no retry-with-exclusion
-of a candidate on this increment.
+of a candidate on this increment. (Amended by #336: a hop that changed
+nothing sets its target aside, and two in a row end the Task; see below.)
 
 **Early Fire**: a hop 0 that fired on a partial does not continue until the
 Endpoint; the hops read against the final transcript. An Utterance that
@@ -182,7 +183,7 @@ refs are there long before the last tracker has loaded.
 - Every `command` event carries `task: { id, hop }`; a one-Command
   Utterance is a Task of one hop. One decision record per hop; the last
   carries `ended: done | none | cap | wall | unavailable | superseded |
-  local_match | terminal`. A `task` span runs from the Endpoint to the
+  local_match | terminal | unchanged` (`unchanged` from #336). A `task` span runs from the Endpoint to the
   Task's end. The Reaction stays hop 0's.
 - A new Misfire signal, **`overrun`**: Escape, "stop" or any new Utterance
   within 3 s of a Jev-read hop firing, counted against that hop's reading.
@@ -582,3 +583,98 @@ The readings it took:
   and custody lets it through while an abandoned action withholds the page.
   An in-flight Command a later one supersedes keeps its entry and its
   `cancelled` stage; it carries no reason of its own.
+
+## Amendment: a Task copes with an unmoved or covered page, and is one Feed Entry (2026-10-18, #336)
+
+Grilled on 2026-10-18 from two live sessions. In "Open Elon Musk's latest
+tweet", hops 2–4 clicked X's pinned post three times (ref 21, 20, 20) under
+the logged-out sheet. Each click came back "no observable change", which
+counted as landed, so the same target was offered again until `cap`, and
+the Feed showed six bubbles repeating the words. In "Exit out of this",
+said of the login pop-up, Jev read `back` and the tab left x.com for the
+blank start page Resume had opened it from. The snapshot knew a dialog was
+open, but `CommandPage` dropped it, and nothing dismissed a dialog that was
+not a consent wall.
+
+### Decision
+
+- **A hop that changed nothing sets its target aside.** It made no
+  landing, and the click's own outcome is "no observable change" (an
+  inert click, `blockedOrInertAction`). Its target is never offered again
+  in that Task. It is matched by label and address (the link's own, or
+  the page's for a control that has none), never by ref number, since
+  refs renumber between hops. This replaces "there is no
+  retry-with-exclusion".
+- **Two hops in a row that change nothing end the Task**, with the new
+  end reason `unchanged` on the last hop's record.
+- **"Done so far" carries each action's result**, with the target named
+  by its label: `click "Pinned Elon Musk…" (nothing changed)`, `open
+  latest elon musk tweet (opened duckduckgo.com/?q=…)`, or `(the page
+  changed)` when the page moved but the tab stayed on the same address.
+- **No click special case.** Continuation still follows the reading; the
+  results line is what brings "click on this tweet" to `done` on hop 1.
+- **`CommandPage` carries the dialog**: its text and the refs in its
+  layer, absent when none is open. When one is open, Jev's state gains
+  `A dialog is open: "<its text>"`.
+- **The dismiss rule is decided before Jev and settled like the Local
+  Match.** With a dialog open, a dismiss phrase (exit, close, dismiss, get
+  rid of, go away, cancel, x, no thanks; alone or with "this", "that",
+  "it", "out of this", "the pop-up", "the popup" or "the dialog") clicks
+  the dialog-layer control labelled close, ×, ✕, dismiss, not now, cancel
+  or no thanks. It never clicks a link, so it never navigates, and with no
+  such control it presses Escape. The Answer is "Closed the pop-up.". If
+  the dialog is still open afterwards, the failure line is "The pop-up is
+  still open.". With no dialog open, the same words read exactly as
+  before ("cancel" is still `stop`).
+- **`back` never leaves a real page for the blank start page.** When the
+  history entry before is not a real page (the one the Idle Screen or
+  `resume` opened from), the step is refused, the tab stays put, and the
+  Answer is "There's no page to go back to.". A step back with no history
+  says the same.
+- **No verb/target override.** A target-free verb still ignores the
+  target answer.
+- **A Task is one Feed Entry.** Its words appear once. Hop 0's action is
+  the first line, and each later hop that fired adds one line beneath it.
+  Every hop's tool lines and stages fold into one Run Detail, keyed by
+  the Task's id. The Task has one Answer, the latest hop's, which replaces
+  the one before. A closing hop past 0 that fires nothing (`done`, `no
+  next step`, `not read`) adds nothing. An abandoned one adds a greyed
+  last line. A hop that met a wall is the last line, in the failure
+  colour, and its failure line is the Answer. Hop 0's `already here`
+  keeps its greyed bubble, and a one-hop Command looks as it did.
+- **The Peek Card keeps the last hop that fired.** Only the reported
+  run's own `done` moves the card, so a superseded closing hop no longer
+  hides it.
+
+### Not in scope
+
+"Pinned" is not "latest", and no label rule says so. Jev misreads go
+through the replay corpus (#338).
+
+### Implementation notes
+
+- The set-aside list and the unchanged run live on the runner's `Task`.
+  The offered refs filter them in `jevReading.ts` (`offered`, through
+  `HopContext.setAside`), so the targets offered and the reading's
+  fallbacks agree. `doneLine` writes each "Done so far" entry. A hop's
+  `FireResult` carries `unchanged`, set only when no landing came.
+- `commandPageOf` (core/command/command.ts) builds the page off a
+  snapshot, dialog included. `dismissDialog.ts` holds the phrase grammar
+  and the close-control rule. The runner checks a dismiss phrase before
+  the page-free Local Match shortcut, so a phrase collects the page even
+  when no dialog turns out to be open. An Early Fire's partial reads the
+  same rule. Whether the dialog closed is read off a fresh collect.
+- The back guard is in `paneNavigation.goBack`, reading
+  `navigationHistory.getActiveIndex`/`getEntryAtIndex`. The Toolbar's own
+  back button is untouched. `failureLineOf('back', …)` tells any
+  "cannot go back" refusal as "There's no page to go back to.".
+- The Feed projection maps each hop's turn to its Task. A `command` past
+  hop 0 folds into the Task's entry as `hopLines`, and `tool_call` and
+  stage lines take the Task's id as their `runId`. Entries keep their own
+  turn's `turnId`, so the Peek Card still reads one turn's Answer.
+- `e2e/collectPageScript.chrome.test.ts` serves an X-like modal sheet.
+  Its controls arrive in the dialog layer, and "exit out of this" reads
+  its close control. In a real Chrome the close button's label is
+  "Close ✕" (aria-label plus text), which the normalized label match
+  takes.
+

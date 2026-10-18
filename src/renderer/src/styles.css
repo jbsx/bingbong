@@ -589,6 +589,16 @@ body {
   margin-top: 2px;
 }
 
+/* A Task's later hops (#336): one quiet line each under the words, greyed
+   where the Task was abandoned, in the failure colour where a hop met a wall. */
+.feed-bubble .feed-action--muted {
+  opacity: 0.55;
+}
+
+.feed-bubble .feed-action--failed {
+  color: var(--status-red);
+}
+
 /* An Utterance read as no Command (#324): the words alone, greyed — the
    Feed shows it was heard and nothing was done. */
 .feed-entry--muted .feed-bubble {

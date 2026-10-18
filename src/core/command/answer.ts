@@ -36,6 +36,7 @@ export interface AnswerFacts {
  */
 export function commandAnswer(command: Command, facts: AnswerFacts): string | null {
   const ref = (): string => (facts.label !== undefined && facts.label !== '' ? `“${facts.label}”` : `item ${command.target ?? '?'}`)
+  if (command.dismiss === true) return 'Closed the pop-up.'
   switch (command.verb) {
     case 'open':
       return command.search === true ? searchAnswer(command) : `Opened ${pageName(facts.page)}.`

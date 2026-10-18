@@ -1,6 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { CollectedTextBlock } from '../src/core/browser/pageText.ts'
 import { COLLECT_PAGE_SCRIPT } from '../src/main/browser/collectPageScript.ts'
+import { buildPageSnapshot, parseCollectedPage } from '../src/core/browser/snapshot.ts'
+import { commandPageOf } from '../src/core/command/command.ts'
+import { dismissCommand } from '../src/core/command/dismissDialog.ts'
 import { canDriveChrome, serveFixtures, type FixtureChrome } from './headlessChrome.ts'
 
 // The collect script itself, run in a real headless Chrome over pages shaped
@@ -50,6 +53,13 @@ const PAGES: Record<string, string> = {
     <div style="position:fixed;bottom:0;left:0;right:0;background:#fff"><p>Cookies</p><button>Accept all cookies</button></div></body>`,
   // Out of scope (ADR 0061): an absolute-only wall has no fixed ancestor.
   '/absolute': `<body style="position:relative">${SEARCH_BOX}${BODY_TEXT}<div style="position:absolute;top:0;left:0;right:0;background:#fff"><p>Cookies</p><button>Accept all cookies</button></div></body>`,
+  // X's logged-out sheet (#336): a modal over the profile, its close control an icon button named by aria-label.
+  '/modal-sheet': `<body>${SEARCH_BOX}${BODY_TEXT}<a href="/elonmusk/status/1">Pinned post</a>
+    <div role="dialog" aria-modal="true" style="position:fixed;inset:10% 20%;background:#fff">
+      <button aria-label="Close" style="position:absolute;top:8px;left:8px">✕</button>
+      <h2>Don’t miss what’s happening</h2><p>People on X are the first to know.</p>
+      <a href="/login">Log in</a><a href="/signup">Sign up</a>
+    </div></body>`,
   // A fixed wall scrolled wholly out of the viewport is no wall.
   '/offscreen': `<body>${SEARCH_BOX}${BODY_TEXT}<div style="position:fixed;top:-500px;left:0;right:0;height:100px;background:#fff"><button>Accept all cookies</button></div></body>`,
 }
@@ -111,6 +121,18 @@ describe.skipIf(!canDriveChrome)('the collector finds a consent wall by the rule
 
     expect(page.dialogText).toContain('Sign in to continue')
     expect(dialogLabels(page)).toEqual(['Sign in'])
+  })
+
+  it('#336: a modal sheet\'s controls arrive in the dialog layer, and a dismiss phrase reads its close control', async () => {
+    const collected = await collect('/modal-sheet')
+    expect(collected.dialogOpen).toBe(true)
+    expect(collected.dialogText).toContain('People on X are the first to know.')
+    expect(dialogLabels(collected)).toEqual(['Close ✕', 'Log in', 'Sign up'])
+    const page = commandPageOf(buildPageSnapshot(parseCollectedPage(collected)))
+    const close = page.refs.find((ref) => ref.label === 'Close ✕')!
+    expect(page.dialog?.refs).toContain(close.ref)
+    expect(page.dialog?.refs).not.toContain(page.refs.find((ref) => ref.label === 'Pinned post')?.ref)
+    expect(dismissCommand('exit out of this', page)).toMatchObject({ verb: 'click', target: close.ref, dismiss: true })
   })
 
   it('leaves out an absolute-only wall and a fixed one outside the viewport', async () => {

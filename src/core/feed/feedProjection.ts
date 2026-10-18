@@ -12,6 +12,9 @@ import { projectPipelineEvent, type TranscriptEvent } from './transcriptProjecti
 // tool lines, stage markers — carries the run's id so
 // the renderer folds it under one per-run details expander (collapsed,
 // #333; titled as activity while the run is live via `liveRunId`).
+// A Task is one entry (#336): its words once, a line beneath them for each
+// hop past the first that fired, every hop's run noise in one Run Detail
+// keyed on the Task's id, and one Answer — the latest hop's.
 
 /** Which voice an entry speaks with — the conversation's turn structure (#54). */
 export type FeedRole = 'user' | 'assistant' | 'system'
@@ -51,6 +54,12 @@ export interface FeedEntry {
    */
   runId?: string
   /**
+   * A Task's hops past the first that fired (#336), each one line under the
+   * words and hop 0's action: greyed when the Task was abandoned there, in
+   * the failure colour when the hop met a wall. Absent on a one-hop Command.
+   */
+  hopLines?: readonly HopLine[]
+  /**
    * The turn the entry came from (#329), on every line its event stamps —
    * conversation lines included, unlike `runId` — so a view can pick one
    * Command's Answer without reaching a neighbour's. Absent on unstamped
@@ -58,6 +67,16 @@ export interface FeedEntry {
    */
   turnId?: string
 }
+
+/** One hop's line under a Task's words (#336): its action, greyed or in the failure colour. */
+export interface HopLine {
+  readonly text: string
+  readonly muted?: true
+  readonly failure?: true
+}
+
+/** The closing hops that fire nothing and add nothing to their Task's entry (#336); an abandoned one shows greyed. */
+const SILENT_CLOSES: ReadonlySet<string> = new Set(['done', 'no next step', 'not read'])
 
 /** A run's steps as the Run Detail names them (#333). */
 const STEP_NAMES: Readonly<Record<PipelineStatus, string>> = {
@@ -93,6 +112,54 @@ export function createFeedProjection(): {
   const displayedTurns = new Set<string>()
   const renderedSpeakIds = new Map<string, number>()
   let liveRunId: string | null = null
+  // One entry per Task (#336): which Task each hop's turn belongs to, the
+  // Task's entry, its one Answer, and the line each fired hop added.
+  const taskOfTurn = new Map<string, string>()
+  const taskEntryIds = new Map<string, number>()
+  const taskAnswerIds = new Map<string, number>()
+  const hopLineOfTurn = new Map<string, { taskId: string; index: number }>()
+  /** The run a turn's noise groups under: its Task's, which is hop 0's turn. */
+  const runOf = (turnId: string): string => taskOfTurn.get(turnId) ?? turnId
+
+  const updateEntry = (id: number, change: (entry: FeedEntry) => FeedEntry): void => {
+    feed = feed.map((entry) => (entry.id === id ? change(entry) : entry))
+  }
+
+  /**
+   * A hop past the first (#336): folded into its Task's entry when that
+   * entry is still shown. A hop that fired adds its line; an abandoned one
+   * its greyed line; a closing hop that fires nothing adds nothing.
+   * Answers whether the hop was folded.
+   */
+  const foldHop = (event: Extract<PipelineEvent, { type: 'command' }>): boolean => {
+    const taskId = event.task?.id
+    if (taskId === undefined || event.task!.hop === 0) return false
+    const entryId = taskEntryIds.get(taskId)
+    const entry = entryId === undefined ? undefined : feed.find((shown) => shown.id === entryId)
+    if (entry === undefined) return false
+    taskOfTurn.set(event.turnId, taskId)
+    const action = event.action ?? ''
+    if (event.dropped && SILENT_CLOSES.has(action)) return true
+    const line: HopLine = event.dropped ? { text: action, muted: true } : { text: action }
+    const lines = entry.hopLines ?? []
+    hopLineOfTurn.set(event.turnId, { taskId, index: lines.length })
+    updateEntry(entry.id, (shown) => ({ ...shown, hopLines: [...lines, line] }))
+    if (!event.dropped) liveRunId = taskId
+    return true
+  }
+
+  /** A Task's Answer (#336): the latest hop's replaces the one before, so the Task keeps one; a wall's marks its hop's line. */
+  const answerTask = (turnId: string, id: number, failure: boolean): void => {
+    const taskId = taskOfTurn.get(turnId)
+    if (taskId === undefined) return
+    const previous = taskAnswerIds.get(taskId)
+    if (previous !== undefined && previous !== id) feed = feed.filter((entry) => entry.id !== previous)
+    taskAnswerIds.set(taskId, id)
+    const line = hopLineOfTurn.get(turnId)
+    const entryId = taskEntryIds.get(taskId)
+    if (!failure || line === undefined || entryId === undefined) return
+    updateEntry(entryId, (entry) => ({ ...entry, hopLines: (entry.hopLines ?? []).map((hop, index) => (index === line.index ? { ...hop, failure: true } : hop)) }))
+  }
 
   /** Drops a turn's rendered speak entry — its display card replaces it (#54). */
   const dropRenderedSpeak = (turnId: string): void => {
@@ -116,14 +183,14 @@ export function createFeedProjection(): {
    * while a page loaded — goes before them, not after. Answers whether it
    * was filed back.
    */
-  const fileCommand = (entry: TranscriptEvent, turnId: string): boolean => {
+  const fileCommand = (entry: TranscriptEvent, turnId: string): { id: number; filedBack: boolean } => {
     const later = feed.findIndex((shown) => shown.kind === 'command' && shown.at > entry.at)
-    fileOutcome(entry, undefined, turnId, later === -1 ? feed.length : later)
-    return later !== -1
+    const id = fileOutcome(entry, undefined, turnId, later === -1 ? feed.length : later)
+    return { id, filedBack: later !== -1 }
   }
 
-  const appendDetail = (at: number, text: string, kind: 'stage', runId: string): void => {
-    feed = [...feed, { id: nextId++, at, kind, role: 'system', text, detail: true, runId, turnId: runId }]
+  const appendDetail = (at: number, text: string, kind: 'stage', turnId: string): void => {
+    feed = [...feed, { id: nextId++, at, kind, role: 'system', text, detail: true, runId: runOf(turnId), turnId }]
     trimDetail()
   }
 
@@ -143,17 +210,23 @@ export function createFeedProjection(): {
       // The live run's bookkeeping (#55): a command opens its run, its
       // done closes it. Unstamped announcements and stragglers from other
       // turns leave the current run alone.
-      if (event.type === 'done' && liveRunId === event.turnId) liveRunId = null
+      if (event.type === 'done' && liveRunId === runOf(event.turnId)) liveRunId = null
       switch (event.type) {
         case 'command': {
+          if (foldHop(event)) return
+          const filed = fileCommand(projectPipelineEvent(event)!, event.turnId)
+          if (event.task !== undefined) {
+            taskOfTurn.set(event.turnId, event.task.id)
+            taskEntryIds.set(event.task.id, filed.id)
+          }
           // A Command filed back before a later one opens no run: the later one's stays live.
-          if (!fileCommand(projectPipelineEvent(event)!, event.turnId)) liveRunId = event.turnId
+          if (!filed.filedBack) liveRunId = runOf(event.turnId)
           return
         }
         case 'tool_call': {
           // Tool lines are run noise (#55) — they group under the run's
-          // expander, unlike the conversation lines around them.
-          appendOutcome(projectPipelineEvent(event)!, event.turnId, event.turnId)
+          // expander, unlike the conversation lines around them; a Task's under its one (#336).
+          appendOutcome(projectPipelineEvent(event)!, runOf(event.turnId), event.turnId)
           return
         }
         case 'tool_result':
@@ -161,8 +234,9 @@ export function createFeedProjection(): {
           // Command's Answer, shown once — never again in the run detail.
           return
         case 'display': {
-          appendOutcome(projectPipelineEvent(event)!, undefined, event.turnId)
+          const id = appendOutcome(projectPipelineEvent(event)!, undefined, event.turnId)
           if (event.turnId !== undefined) {
+            answerTask(event.turnId, id, event.failure === true)
             // Its spoken line (#54): the Card renders, so the turn's speak
             // entry stays out of the view — main still speaks it. A speak
             // that rendered first is dropped.
@@ -174,7 +248,10 @@ export function createFeedProjection(): {
         case 'speak': {
           if (event.turnId !== undefined && displayedTurns.has(event.turnId)) return
           const id = appendOutcome(projectPipelineEvent(event)!, undefined, event.turnId)
-          if (event.turnId !== undefined) renderedSpeakIds.set(event.turnId, id)
+          if (event.turnId !== undefined) {
+            renderedSpeakIds.set(event.turnId, id)
+            answerTask(event.turnId, id, event.failure === true)
+          }
           return
         }
         case 'status':
@@ -198,6 +275,10 @@ export function createFeedProjection(): {
       liveRunId = null
       displayedTurns.clear()
       renderedSpeakIds.clear()
+      taskOfTurn.clear()
+      taskEntryIds.clear()
+      taskAnswerIds.clear()
+      hopLineOfTurn.clear()
     },
   }
 }

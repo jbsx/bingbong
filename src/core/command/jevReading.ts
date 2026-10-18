@@ -1,6 +1,6 @@
 import type { DecisionChoiceAnswer, DecisionChoiceQuestion, DecisionNoulQuestion } from '../ports/decisionModel'
 import type { PageLink } from '../browser/snapshot'
-import { JEV_VERBS, PRESS_KEYS, pressKeyOf, verbTakesSlot, verbTakesTarget, type Command, type CommandPage, type CommandRef, type CommandVerb } from './command'
+import { JEV_VERBS, PRESS_KEYS, describeCommand, pressKeyOf, verbTakesSlot, verbTakesTarget, type Command, type CommandPage, type CommandRef, type CommandVerb } from './command'
 import { pageAddressOf, resultLinksOf, wordsAfterVerb } from './localMatch'
 import { isAddressShaped } from './openAddress'
 
@@ -88,9 +88,51 @@ export interface HopContext {
   /** 1 for the first Command after hop 0. */
   readonly hop: number
   readonly visited: readonly string[]
-  /** Each action taken so far, as the Feed describes it. */
+  /** Each action taken so far and what it did ({@link doneLine}). */
   readonly actions: readonly string[]
   readonly links: readonly PageLink[]
+  /** The targets a hop that changed nothing set aside (#336): never offered again in this Task. */
+  readonly setAside?: readonly SetAside[]
+}
+
+/**
+ * A target set aside (#336): known by its label and its address — the
+ * link's own, or the page's for a control that has none — since a ref's
+ * number changes from one hop to the next.
+ */
+export interface SetAside {
+  readonly label: string
+  readonly address: string
+}
+
+/** The set-aside identity of a ref on a page. */
+export function setAsideOf(ref: CommandRef, page: CommandPage): SetAside {
+  return { label: ref.label, address: pageAddressOf(ref.href ?? page.url) }
+}
+
+/** How an action came out, for the next hop's "Done so far" (#336). */
+export type DoneResult = { readonly changed: false } | { readonly changed: true; readonly opened?: string }
+
+/** An address as "Done so far" names it: no scheme, no www, no trailing slash. */
+function shortAddress(url: string): string {
+  return url.replace(/^https?:\/\/(?:www\.)?/i, '').replace(/\/$/, '')
+}
+
+/**
+ * One action in a hop's "Done so far" (#336): the verb and its target by
+ * label (a ref's number changes between hops), and what it did —
+ * `click "Pinned…" (nothing changed)`, `click "Elon Musk" (opened x.com/elonmusk)`.
+ */
+export function doneLine(command: Command, page: CommandPage, result: DoneResult): string {
+  const label = command.target === null ? undefined : page.refs.find((ref) => ref.ref === command.target)?.label
+  const action =
+    label === undefined
+      ? describeCommand(command)
+      : command.verb === 'type'
+        ? `type ${JSON.stringify(command.slot ?? '')} into ${JSON.stringify(label)}`
+        : `${command.verb} ${JSON.stringify(label)}`
+  const outcome = !result.changed ? 'nothing changed' : result.opened !== undefined ? `opened ${shortAddress(result.opened)}` : 'the page changed'
+  return `${action} (${outcome})`
 }
 
 /** A result link a hop may open, numbered as its `link-N` option. */
@@ -103,7 +145,12 @@ function offered(page: CommandPage, hop: HopContext | undefined): { page: Comman
   if (hop === undefined) return { page, links: [] }
   const seen = new Set(hop.visited.map(pageAddressOf))
   const fresh = (href: string | null): boolean => href === null || !seen.has(pageAddressOf(href))
-  const refs = page.refs.filter((ref) => fresh(ref.href))
+  const setAside = hop.setAside ?? []
+  const kept = (ref: CommandRef): boolean => {
+    const own = setAsideOf(ref, page)
+    return !setAside.some((aside) => aside.label === own.label && aside.address === own.address)
+  }
+  const refs = page.refs.filter((ref) => fresh(ref.href) && kept(ref))
   const taken = new Set(page.refs.flatMap((ref) => (ref.href === null ? [] : [pageAddressOf(ref.href)])))
   const links: OfferedLink[] = []
   // A Choice holds at most 255 options: `none`, the refs, then the links.
@@ -131,6 +178,7 @@ export function commandState(text: string, page: CommandPage, hop?: HopContext):
       ? [`This is step ${hop.hop + 1} of the task. Done so far: ${hop.actions.join('; ') || 'nothing'}`, `Pages visited: ${hop.visited.join(' ') || 'none'}`]
       : []),
     `Page: ${page.url} — ${JSON.stringify(page.title)}`,
+    ...(page.dialog !== undefined ? [`A dialog is open: ${JSON.stringify(page.dialog.text)}`] : []),
     'Refs (number, kind, label, address):',
     ...shown.page.refs.map((ref) => `[${ref.ref}] ${describeRef(ref)}`),
     ...(shown.links.length > 0 ? ['Result links further down the page (name, address):', ...shown.links.map((link) => `[link-${link.n}] ${describeLink(link)}`)] : []),

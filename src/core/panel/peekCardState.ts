@@ -82,7 +82,8 @@ export function createPeekCardFold(): {
           if (fromReportedRun(event)) sawError = true
           return
         case 'done': {
-          if (state.phase === 'hidden') return
+          // Only the reported run's own end moves the card (#336): a Task's closing hop — abandoned, done or no next step — ends a turn the card never reported.
+          if (state.phase === 'hidden' || event.turnId !== state.runId) return
           // The outcome fork (ADR 0026): done and failed persist as the
           // card's answer; cancelled and interrupted hide it — an abort is
           // the user's last word, and the screen goes quiet.

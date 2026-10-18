@@ -23,6 +23,74 @@ function project(events: PipelineEvent[]) {
   return projection
 }
 
+describe('a Task is one Feed Entry (#336)', () => {
+  const WORDS = 'open elon musks latest tweet'
+  /** One hop of the Task: its words, its action and its tool line; `answer` its Answer, `failure` marking it a wall's line. */
+  function hop(n: number, action: string, answer: string, at: number, failure = false): PipelineEvent[] {
+    const turnId = `h${n}`
+    return [
+      { type: 'command', turnId, text: WORDS, action, task: { id: 'h0', hop: n }, at },
+      { type: 'status', turnId, status: 'acting', at: at + 1 },
+      { type: 'tool_call', turnId, callId: `${turnId}-1`, name: 'click', args: { ref: n }, at: at + 2 },
+      { type: 'tool_result', turnId, callId: `${turnId}-1`, name: 'click', ok: true, result: 'clicked', at: at + 3 },
+      { type: 'display', turnId, text: answer, ...(failure ? { failure: true } : {}), at: at + 4 },
+      { type: 'done', turnId, outcome: 'done', at: at + 5 },
+    ]
+  }
+  function closing(n: number, action: string, outcome: 'done' | 'cancelled', at: number): PipelineEvent[] {
+    return [
+      { type: 'command', turnId: `h${n}`, text: WORDS, action, dropped: true, task: { id: 'h0', hop: n }, at },
+      { type: 'done', turnId: `h${n}`, outcome, at: at + 1 },
+    ]
+  }
+  const FIVE_HOPS = [
+    ...hop(0, 'open x.com/elonmusk', 'Opened X.', 100),
+    ...hop(1, 'click [1] "Posts"', 'Clicked “Posts”.', 200),
+    ...hop(2, 'click [21] "Pinned"', 'Clicked “Pinned”.', 300),
+    ...hop(3, 'scroll down', 'Scrolled down.', 400),
+    ...hop(4, 'click [22] "Latest"', 'Clicked “Latest”.', 500),
+  ]
+  const conversation = (projection: ReturnType<typeof project>) => projection.entries().filter((entry) => entry.runId === undefined)
+
+  it('a five-hop Task is one entry: its words once, a line for each fired hop, every tool line in one Run Detail, one Answer', () => {
+    for (const close of ['done', 'no next step', 'not read']) {
+      const projection = project([...FIVE_HOPS, ...closing(5, close, 'done', 600)])
+      expect(conversation(projection).map((entry) => [entry.kind, entry.text, entry.action, entry.hopLines])).toEqual([
+        ['command', WORDS, 'open x.com/elonmusk', [{ text: 'click [1] "Posts"' }, { text: 'click [21] "Pinned"' }, { text: 'scroll down' }, { text: 'click [22] "Latest"' }]],
+        ['display', 'Clicked “Latest”.', undefined, undefined],
+      ])
+      const runs = new Set(projection.entries().flatMap((entry) => (entry.runId === undefined ? [] : [entry.runId])))
+      expect(runs).toEqual(new Set(['h0']))
+      expect(projection.entries().filter((entry) => entry.kind === 'tool')).toHaveLength(5)
+      expect(projection.liveRunId()).toBeNull()
+    }
+  })
+
+  it('the Task\'s Run Detail is live while any of its hops runs', () => {
+    const projection = project([...hop(0, 'open x.com/elonmusk', 'Opened X.', 100), ...hop(1, 'click [1] "Posts"', 'Clicked “Posts”.', 200).slice(0, 3)])
+    expect(projection.liveRunId()).toBe('h0')
+  })
+
+  it('an abandoned closing hop shows greyed as the entry\'s last line', () => {
+    const projection = project([...FIVE_HOPS.slice(0, 12), ...closing(2, 'abandoned: stopped', 'cancelled', 300)])
+    expect(conversation(projection)[0]!.hopLines).toEqual([{ text: 'click [1] "Posts"' }, { text: 'abandoned: stopped', muted: true }])
+  })
+
+  it('a hop that hit a wall is the last line, in the failure colour, and its failure line is the one Answer', () => {
+    const projection = project([...FIVE_HOPS.slice(0, 12), ...hop(2, 'click [5] "Show more"', 'Something on the page is in the way.', 300, true)])
+    expect(conversation(projection).map((entry) => [entry.kind, entry.text, entry.hopLines, entry.failure])).toEqual([
+      ['command', WORDS, [{ text: 'click [1] "Posts"' }, { text: 'click [5] "Show more"', failure: true }], undefined],
+      ['display', 'Something on the page is in the way.', undefined, true],
+    ])
+  })
+
+  it('a one-hop Command looks exactly as it did', () => {
+    const projection = project([...hop(0, 'open x.com/elonmusk', 'Opened X.', 100)])
+    expect(conversation(projection)[0]).not.toHaveProperty('hopLines')
+    expect(conversation(projection).map((entry) => entry.text)).toEqual([WORDS, 'Opened X.'])
+  })
+})
+
 describe('feed projection', () => {
   it('keeps the event order and renders one line per visible event', () => {
     const feed = project(run('t1', 'open x', 1_000)).entries()

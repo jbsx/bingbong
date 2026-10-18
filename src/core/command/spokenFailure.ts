@@ -16,7 +16,7 @@ import { classifyUnavailablePage } from '../browser/unavailablePage'
 // Feed, the Peek Card and the spoken line.
 
 /** What went wrong, as the spoken line names it. */
-export type SpokenFailure = 'failed' | 'blocked' | 'consent' | 'blocker' | 'notFound' | 'unavailable' | 'empty'
+export type SpokenFailure = 'failed' | 'blocked' | 'consent' | 'blocker' | 'notFound' | 'unavailable' | 'empty' | 'dialogStayed' | 'noBack'
 
 export const SPOKEN_FAILURES: Readonly<Record<SpokenFailure, string>> = {
   failed: "That didn't work.",
@@ -26,6 +26,8 @@ export const SPOKEN_FAILURES: Readonly<Record<SpokenFailure, string>> = {
   notFound: "That page doesn't exist.",
   unavailable: "That site can't show the page right now.",
   empty: 'This page shows no text.',
+  dialogStayed: 'The pop-up is still open.',
+  noBack: "There's no page to go back to.",
 }
 
 /** A ref the controller refused (ADR 0033) or could not reach: the number, whatever the protocol wording around it. */
@@ -55,6 +57,8 @@ export function failureLineOf(tool: string, error: string): string {
     return (net !== undefined ? NET_FAILURES[net] : undefined) ?? "That address can't be opened."
   }
   if (tool === 'read_page') return "This page can't be read right now."
+  // A refused step back (#336): no history, or only the blank start page behind.
+  if (tool === 'back' && /^cannot go back\b/.test(error)) return SPOKEN_FAILURES.noBack
   return SPOKEN_FAILURES.failed
 }
 
