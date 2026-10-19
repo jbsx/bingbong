@@ -160,17 +160,17 @@ describe('idle screen e2e: the Last Page and resume', () => {
     await harness.pressKey('pane', IDLE_SHORTCUT)
     const rows = await waitFor(
       async () => {
-        const found = await harness.dashboardEval<{ name: string; line: string; stars: string; foot: string }[]>(
-          `[...document.querySelectorAll('.idle-slot[data-card="news"] .idle-repo')].filter((row) => !row.closest('li').hidden).map((row) => ({ name: row.querySelector('.idle-repo-name').textContent, line: row.querySelector('.idle-repo-line')?.textContent ?? '', stars: row.querySelector('.idle-repo-stars').textContent, foot: row.querySelector('.idle-repo-foot').textContent }))`,
+        const found = await harness.dashboardEval<{ name: string; line: string; stars: string; gain: string; language: string }[]>(
+          `[...document.querySelectorAll('.idle-slot[data-card="news"] .idle-repo')].filter((row) => !row.closest('li').hidden).map((row) => ({ name: row.querySelector('.idle-repo-name').textContent, line: row.querySelector('.idle-repo-line')?.textContent ?? '', stars: row.querySelector('.idle-repo-stars').textContent, gain: row.querySelector('.idle-repo-gain').textContent, language: row.querySelector('.idle-repo-language')?.textContent ?? '' }))`,
         )
         return found.length > 0 ? found : undefined
       },
       { timeoutMs: 10000, intervalMs: 250 },
     )
     expect(rows).toEqual([
-      { name: 'acme/voice', line: 'Fully local voice cloning, dubbing and transcription.', stars: '★ 77,289', foot: 'TypeScript · +42,036 this month' },
-      { name: 'acme/memory', line: 'Agent memory that learns', stars: '★ 51,625', foot: 'TypeScript · +27,550 this month' },
-      { name: 'acme/paperclip', line: 'Runs teams of AI agents toward business goals.', stars: '★ 104,655', foot: 'TypeScript · +23,340 this month' },
+      { name: 'acme/voice', line: 'Fully local voice cloning, dubbing and transcription.', stars: '★ 77.3k', gain: '+42kthis month', language: 'TypeScript' },
+      { name: 'acme/memory', line: 'Agent memory that learns', stars: '★ 51.6k', gain: '+27.6kthis month', language: 'TypeScript' },
+      { name: 'acme/paperclip', line: 'Runs teams of AI agents toward business goals.', stars: '★ 104.7k', gain: '+23.3kthis month', language: 'TypeScript' },
     ])
     expect(await harness.dashboardEval<string>(`document.querySelector('.idle-repos .idle-kicker').textContent`)).toBe('Top repos this month')
 

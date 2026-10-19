@@ -249,7 +249,7 @@ describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review'
           expect(box.items, `${size} ${scheme}`).toBeGreaterThanOrEqual(size === '1x2' ? 3 : 1)
           expect(box.smallestText, `${size} ${scheme}`).toBeGreaterThanOrEqual(16)
           expect(box.text).toContain('VoiceStudio')
-          expect(box.text).toContain('★ 77,298')
+          expect(box.text).toContain('★ 77.3k')
         }
       }
     } finally {
