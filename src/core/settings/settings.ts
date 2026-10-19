@@ -79,7 +79,12 @@ export interface AppSettings {
   /** Theme resolution (ADR 0020) — system follows the OS, manual wins. */
   appearance: Appearance
   weather: { city: string; units: WeatherUnits }
+  /** The AI usage dashboard the Idle Screen reads Codex's and Claude's gauges from; '' hides the card. */
+  usageDashboard: { url: string }
 }
+
+/** The owner's dashboard on the LAN, so the Idle Screen shows it out of the box. */
+export const USAGE_DASHBOARD_URL_DEFAULT = 'http://192.168.1.73:4321'
 
 export function defaultSettings(): AppSettings {
   return {
@@ -94,6 +99,7 @@ export function defaultSettings(): AppSettings {
     adblockEnabled: true,
     appearance: 'system',
     weather: { city: '', units: 'metric' },
+    usageDashboard: { url: USAGE_DASHBOARD_URL_DEFAULT },
   }
 }
 
@@ -147,6 +153,7 @@ export function sanitizeSettings(raw: unknown): AppSettings {
   if (!record) return defaults
 
   const weather = asRecord(record.weather)
+  const usageDashboard = asRecord(record.usageDashboard)
 
   return {
     micId: asString(record.micId, defaults.micId),
@@ -164,6 +171,7 @@ export function sanitizeSettings(raw: unknown): AppSettings {
       city: asString(weather?.city, defaults.weather.city),
       units: weather?.units === 'imperial' ? 'imperial' : defaults.weather.units,
     },
+    usageDashboard: { url: asString(usageDashboard?.url, defaults.usageDashboard.url) },
   }
 }
 

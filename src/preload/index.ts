@@ -13,6 +13,8 @@ import type { LastPage } from '../core/browser/lastPage'
 import { TIMER_IPC } from '../core/timer/ipcChannels'
 import { IDLE_IPC } from '../core/idle/ipcChannels'
 import type { TimerState } from '../core/timer/timer'
+import { USAGE_IPC } from '../core/usage/ipcChannels'
+import type { UsageSnapshot } from '../core/usage/usage'
 import type { PipelineEvent } from '../core/pipeline/events'
 import type { AppSettings } from '../core/settings/settings'
 import type { VoiceErrorEvent, VoiceHeardEvent, VoicePartialEvent, VoiceState } from '../core/voice/ipcChannels'
@@ -65,6 +67,9 @@ contextBridge.exposeInMainWorld('bingbong', {
       ipcRenderer.on(TIMER_IPC.changed, wrapped)
       return () => ipcRenderer.removeListener(TIMER_IPC.changed, wrapped)
     },
+  },
+  usage: {
+    get: (): Promise<UsageSnapshot | null> => ipcRenderer.invoke(USAGE_IPC.get),
   },
   assistant: {
     submit: (text: string): Promise<boolean> => ipcRenderer.invoke(PIPELINE_IPC.submit, text),

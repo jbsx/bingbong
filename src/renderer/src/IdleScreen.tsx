@@ -7,6 +7,8 @@ import { countdownLabel, describeDuration } from '../../core/timer/duration'
 import type { TimerState } from '../../core/timer/timer'
 import type { VoiceHint } from '../../core/voice/voiceHint'
 import type { WeatherState } from './useWeather'
+import type { UsageState } from './useUsage'
+import { UsageCard } from './UsageCard'
 import { StatusOrb, StatusPill } from './AssistantPanel'
 import type { OrbStatus } from './useAssistant'
 import { ChevronIcon, GlobeIcon, HighIcon, LowIcon, RainChanceIcon, SunriseIcon, SunsetIcon, TimerIcon, WeatherIcon } from './WeatherIcon'
@@ -315,12 +317,14 @@ function IdleStatus({ status, hint }: { status: OrbStatus; hint: VoiceHint | nul
 
 export function IdleScreen({
   weather,
+  usage,
   lastPage,
   timer,
   status,
   hint,
 }: {
   weather: WeatherState
+  usage: UsageState
   lastPage: LastPage | null
   timer: TimerState
   status: OrbStatus
@@ -353,6 +357,13 @@ export function IdleScreen({
             {weatherLine(weather)}
           </p>
         )}
+        {usage.status === 'ready' && usage.snapshot.providers.length > 0 ? (
+          <UsageCard providers={usage.snapshot.providers} now={now.getTime()} />
+        ) : usage.status === 'error' ? (
+          <p className="idle-weather" aria-label="AI usage">
+            Usage dashboard unreachable
+          </p>
+        ) : null}
       </div>
       <div className="idle-screen-bottom">
         {timer.status !== 'off' ? <TimerCard timer={timer} /> : null}

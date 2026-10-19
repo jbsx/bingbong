@@ -59,6 +59,7 @@ import { createChimeWav } from '../core/tts/chime'
 import { createAlarmWav } from '../core/timer/alarm'
 import { createTimer } from '../core/timer/timer'
 import { registerTimerIpc } from './timer/attachTimer'
+import { registerUsageIpc } from './usage/attachUsage'
 import { attachTimerAlarm } from './timer/timerAlarm'
 import { attachIdleShortcut } from './idleShortcut'
 import { attachIdleTyping } from './idleTyping'
@@ -464,6 +465,7 @@ app.whenReady().then(async () => {
   registerTimerIpc(timer)
   registerCommandRunnerIpc()
   registerSettingsIpc(settingsStore)
+  registerUsageIpc(() => settingsStore.get().usageDashboard.url)
   registerFeedPanelIpc()
   registerTtsIpc({ voicesDir: () => piperConfig.voicesDir })
   registerVoiceIpc()

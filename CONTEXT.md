@@ -368,8 +368,8 @@ What renders while nothing is happening: the clock and date, the weather
 (the current conditions, today's high, low, rain chance and sun times, and
 the six coming hours, all in the city's own clock — the sky as a colored
 glyph, every temperature in its hue from blue through green to red, rain in
-blue, so the day reads from across the room), the Timer when one is set,
-and the Last Page with its way back. Never shows Feed Entries (#70); never comes up over a running
+blue, so the day reads from across the room), the AI Usage card beside
+the weather, the Timer when one is set, and the Last Page with its way back. Never shows Feed Entries (#70); never comes up over a running
 Command, an open mic or the settings page. Once up it stays up through the
 voice half and the pipeline — the ear opening, a heard line, a reading —
 with the Status Capsule shown on it while they run, so a Command that never
@@ -381,6 +381,21 @@ opens if collapsed and the key is the draft's first character. The
 2026-10-18 ruling put the Last Page on it — the one piece of history the
 screen carries, and the owner's reversal of #70's "clock and weather only".
 _Avoid_: screensaver
+
+**AI Usage**:
+The Idle Screen's card of Codex's and Claude's limits, read from the
+owner's usage dashboard on the LAN (an HTTP server outside this repo,
+`http://192.168.1.73:4321` by default, set in settings; empty hides it;
+2026-10-19 ask: "the line chart and the gauges for codex and claude").
+Each provider gets the gauge the dashboard's card leads with — the 5-hour
+window, else the 7-day — drawn as that dashboard draws it: the dots fill as
+the window runs to its reset, the number is the share of the limit used;
+its other windows sit under it as bars. Beside them, the last twelve hours
+of both gauged windows as lines, a 5-hour one solid, a 7-day one dashed.
+Main fetches it (the dashboard sends no CORS headers), polled once a
+minute while the Idle Screen shows. Read-only: a tap only wakes the
+dashboard.
+_Avoid_: quota, billing
 
 **Last Page**:
 The page the browser pane last showed — its address and title — kept in

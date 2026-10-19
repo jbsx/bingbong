@@ -377,6 +377,22 @@ export function SettingsPage({
           </Field>
         </section>
 
+        <section className="settings-section">
+          <h2>AI usage</h2>
+          <Field label="Dashboard">
+            <input
+              type="text"
+              value={draft.usageDashboard.url}
+              placeholder="e.g. http://192.168.1.73:4321"
+              aria-label="Usage dashboard URL"
+              onChange={(event) => setDraft({ ...draft, usageDashboard: { url: event.target.value } })}
+            />
+          </Field>
+          <p className="settings-note">
+            The usage dashboard whose Codex and Claude gauges and history the idle screen shows. Leave empty to hide the card.
+          </p>
+        </section>
+
         <LearnedTermsSection />
       </div>
 

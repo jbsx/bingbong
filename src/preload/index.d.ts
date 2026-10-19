@@ -1,6 +1,7 @@
 import type { BrowserPaneState, PaneRect } from '../core/browser/paneState'
 import type { LastPage } from '../core/browser/lastPage'
 import type { TimerState } from '../core/timer/timer'
+import type { UsageSnapshot } from '../core/usage/usage'
 import type { PipelineEvent } from '../core/pipeline/events'
 import type { AppSettings } from '../core/settings/settings'
 import type { VoiceErrorEvent, VoiceHeardEvent, VoicePartialEvent, VoiceState } from '../core/voice/ipcChannels'
@@ -10,6 +11,7 @@ import type { FeedPanelMode, FeedPanelState } from '../core/panel/feedPanelState
 export type { BrowserPaneState, PaneRect }
 export type { LastPage }
 export type { TimerState }
+export type { UsageSnapshot }
 export type { PipelineEvent }
 export type { AppSettings }
 export type { VoiceErrorEvent, VoiceHeardEvent, VoicePartialEvent, VoiceState }
@@ -40,6 +42,11 @@ export interface BingbongTimerApi {
   /** The Timer (CONTEXT.md): off, running to `endsAt`, or ringing. */
   get(): Promise<TimerState>
   onChange(listener: (state: TimerState) => void): () => void
+}
+
+export interface BingbongUsageApi {
+  /** The AI usage dashboard's Codex and Claude gauges and history; null when no dashboard URL is set. Rejects when it is unreachable. */
+  get(): Promise<UsageSnapshot | null>
 }
 
 export interface BingbongAssistantApi {
@@ -113,6 +120,7 @@ export interface BingbongApi {
   browser: BingbongBrowserApi
   idle: BingbongIdleApi
   timer: BingbongTimerApi
+  usage: BingbongUsageApi
   assistant: BingbongAssistantApi
   settings: BingbongSettingsApi
   tts: BingbongTtsApi
