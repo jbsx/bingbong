@@ -42,21 +42,35 @@ export function useFitText(ref: RefObject<HTMLElement | null>, key: unknown, sta
   }, [ref, key, order])
 }
 
-/** A list that shows whole items only: the first item the box's bottom edge would cut, and every one after it, is hidden rather than shown half. */
-export function useWholeItems(ref: RefObject<HTMLElement | null>, key: unknown): void {
+/**
+ * A list that shows whole items only: the first item the box's bottom edge
+ * would cut, and every one after it, is hidden rather than shown half.
+ * Where even the first would be cut and a `lean` stage is given, the box is
+ * marked `data-fit="<lean>"` — for the stylesheet to set its items shorter —
+ * and measured again, so a small box shows a story rather than none.
+ */
+export function useWholeItems(ref: RefObject<HTMLElement | null>, key: unknown, lean?: string): void {
   useLayoutEffect(() => {
     const box = ref.current
     if (box === null) return
     const fit = (): void => {
       const items = [...box.children] as HTMLElement[]
-      for (const item of items) item.hidden = false
-      const bottom = box.getBoundingClientRect().bottom
-      const cut = items.findIndex((item) => item.getBoundingClientRect().bottom > bottom + 1)
+      const firstCut = (): number => {
+        for (const item of items) item.hidden = false
+        const bottom = box.getBoundingClientRect().bottom
+        return items.findIndex((item) => item.getBoundingClientRect().bottom > bottom + 1)
+      }
+      box.removeAttribute('data-fit')
+      let cut = firstCut()
+      if (cut === 0 && lean !== undefined) {
+        box.setAttribute('data-fit', lean)
+        cut = firstCut()
+      }
       if (cut !== -1) for (const item of items.slice(cut)) item.hidden = true
     }
     fit()
     const observer = new ResizeObserver(fit)
     observer.observe(box)
     return () => observer.disconnect()
-  }, [ref, key])
+  }, [ref, key, lean])
 }

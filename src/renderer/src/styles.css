@@ -2367,7 +2367,9 @@ body {
    line is cut, by design — and the number in a pill; a row the box would
    cut is left off whole (useWholeItems). Where a story's Story Brief is
    written, its two lines — what it is, why it matters — replace the tail,
-   each a block of its own. Every story is a button: the tap opens it. */
+   each a block of its own; a box too small for even one row so is marked
+   lean and sets every row without its brief, the lead and the tail.
+   Every story is a button: the tap opens it. */
 
 .idle-news-today,
 .idle-news-item {
@@ -2682,6 +2684,26 @@ body {
   overflow: hidden;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
+}
+
+/* A briefed row's tail is its brief's to replace — shown only in a lean box. */
+.idle-news-item-tail[data-briefed] {
+  display: none;
+}
+
+/* A box too small for even one briefed row (useWholeItems' lean stage): every row set as one without its brief — the lead whole, the tail on one line — so a story shows rather than none. */
+.idle-news-big ol[data-fit='lean'] .idle-news-item-tail[data-briefed] {
+  display: block;
+}
+
+.idle-news-big ol[data-fit='lean'] .idle-news-item-what,
+.idle-news-big ol[data-fit='lean'] .idle-news-item-why {
+  display: none;
+}
+
+.idle-news-big ol[data-fit='lean'] .idle-news-item-lead[data-briefed] {
+  display: inline;
+  -webkit-line-clamp: none;
 }
 
 /* A row's Story Brief: what it is, then why it matters in the accent, each on up to two lines — the reason is the point of the row, so it wraps rather than trails off. */

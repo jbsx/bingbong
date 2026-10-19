@@ -60,11 +60,13 @@ function spoken(item: { title: string; brief: StoryBrief | null; magnitude: numb
  * lines of their own, what it is and why it matters (where none is written
  * yet, the headline's tail on one quiet line, an ellipsis where it runs
  * on), its number in a pill (none for a feed's post) — each a tap that
- * opens it; a story the box would cut is left off whole.
+ * opens it; a story the box would cut is left off whole. A box too small
+ * for even the first story with its brief sets every story as one without
+ * (`data-fit="lean"`): the lead and the tail, so a story still shows.
  */
 function BigNews({ items, rows }: { items: NewsHorizons['bigNews']; rows: number }) {
   const list = useRef<HTMLOListElement>(null)
-  useWholeItems(list, items)
+  useWholeItems(list, items, 'lean')
   return (
     <section className="idle-card idle-news-big" aria-label="Big news" style={{ gridRow: `span ${rows}` }}>
       <h3 className="idle-kicker">Big news</h3>
@@ -81,15 +83,18 @@ function BigNews({ items, rows }: { items: NewsHorizons['bigNews']; rows: number
                   <span className="idle-news-item-lead" data-briefed={item.brief !== null ? '' : undefined}>
                     {lead}
                   </span>
+                  {tail !== null ? (
+                    <>
+                      {' '}
+                      <span className="idle-news-item-tail" data-briefed={item.brief !== null ? '' : undefined}>
+                        {tail}
+                      </span>
+                    </>
+                  ) : null}
                   {item.brief !== null ? (
                     <>
                       <span className="idle-news-item-what">{item.brief.what}</span>
                       <span className="idle-news-item-why">{item.brief.why}</span>
-                    </>
-                  ) : tail !== null ? (
-                    <>
-                      {' '}
-                      <span className="idle-news-item-tail">{tail}</span>
                     </>
                   ) : null}
                 </span>
