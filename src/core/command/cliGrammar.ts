@@ -34,16 +34,49 @@ const PRESS_KEYS: Record<string, KeyPress> = {
   right: { key: 'ArrowRight' },
   space: { key: 'Space' },
   enter: { key: 'Enter' },
+  tab: { key: 'Tab' },
+  escape: { key: 'Escape' },
+  esc: { key: 'Escape' },
   next: NEXT_TRACK_KEY,
 }
 
 const PRESS_KEY_NAMES = Object.keys(PRESS_KEYS).join(', ')
 const PRESS_USAGE = `press: expected 'press <key> [times]' with key one of ${PRESS_KEY_NAMES}`
 
-/** The grammar's own error for a line that starts with a verb it knows but goes wrong past it; null for any other line. */
+/** The keys an Answer names when `press` is refused: the plain ones, not the player's letters or the `esc` alias. */
+const PRESS_KEYS_SAID = 'up, down, left, right, space, enter, tab, escape'
+
+/**
+ * The grammar's error for a line that starts with a verb it knows but goes
+ * wrong past it, in the plain words an Answer is written in (the CLI keeps
+ * the usage line); null for any other line.
+ */
 export function grammarErrorOf(line: string): string | null {
   const parsed = parseCliCommand(line)
-  return parsed !== null && !parsed.ok && !parsed.error.startsWith('unknown command') ? parsed.error : null
+  if (parsed === null || parsed.ok || parsed.error.startsWith('unknown command')) return null
+  const trimmed = line.trim()
+  const head = trimmed.split(/\s+/)[0] ?? ''
+  const rest = trimmed.slice(head.length).trim()
+  switch (head) {
+    case 'navigate':
+      return 'Navigate needs an address or something to search for.'
+    case 'click':
+      return 'Click needs the number of an item, like “click 7”.'
+    case 'type':
+      return 'Type needs the number of a field and the words, like “type 3 hello”.'
+    case 'scroll':
+      return 'I can scroll up or down.'
+    case 'press': {
+      const key = rest.split(/\s+/)[0] ?? ''
+      if (key !== '' && PRESS_KEYS[key.toLowerCase()] !== undefined) return 'Press takes a whole number of times, like “press down 3”.'
+      return key === '' ? `Press needs a key. Keys I know: ${PRESS_KEYS_SAID}.` : `I can't press ${key}. Keys I know: ${PRESS_KEYS_SAID}.`
+    }
+    case 'timer':
+      return 'I couldn\'t read that length. Try “timer 10 minutes”, “timer 1h30m” or “timer off”.'
+    default:
+      // The Player's volume line (#343) is the one left.
+      return 'Volume takes a number from 0 to 100, like “volume 40”.'
+  }
 }
 
 function unescape(text: string): string {
@@ -89,7 +122,7 @@ export function parseCliCommand(line: string): ParsedCliCommand {
       return { ok: true, command: { type: 'scroll', direction: rest } }
     case 'press': {
       const parts = rest.split(/\s+/).filter(Boolean)
-      const press = parts[0] !== undefined ? PRESS_KEYS[parts[0]] : undefined
+      const press = parts[0] !== undefined ? PRESS_KEYS[parts[0].toLowerCase()] : undefined
       if (parts.length < 1 || parts.length > 2 || !press) {
         return { ok: false, error: PRESS_USAGE }
       }

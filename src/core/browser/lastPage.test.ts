@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isRealPage, lastPageFrom, lastPageLabel, sanitizeLastPage } from './lastPage'
+import { backLeadsToBlank, isRealPage, lastPageFrom, lastPageLabel, sanitizeLastPage } from './lastPage'
 
 describe('the Last Page', () => {
   it('ignores the blank boot page and error pages', () => {
@@ -7,6 +7,13 @@ describe('the Last Page', () => {
     expect(isRealPage('')).toBe(false)
     expect(isRealPage('chrome-error://chromewebdata/')).toBe(false)
     expect(isRealPage('https://youtube.com/')).toBe(true)
+  })
+
+  it('#336: a step back from a real page to the blank start page leads nowhere', () => {
+    expect(backLeadsToBlank('https://example.com/', 'about:blank')).toBe(true)
+    expect(backLeadsToBlank('https://example.com/b', 'https://example.com/a')).toBe(false)
+    expect(backLeadsToBlank('https://example.com/', undefined)).toBe(false)
+    expect(backLeadsToBlank('about:blank', 'about:blank')).toBe(false)
   })
 
   it('follows a navigation and lets the title arrive after the address', () => {

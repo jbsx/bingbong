@@ -3,11 +3,13 @@ import type { BrowserPaneState, PaneRect } from '../../core/browser/paneState'
 import { HIDDEN_PANE_RECT, idleBrowserPaneState } from '../../core/browser/paneState'
 import { toPaneBounds } from '../../core/browser/paneGeometry'
 import { normalizeUrlInput } from '../../core/browser/urlInput'
+import { backLeadsToBlank } from '../../core/browser/lastPage'
 import { browserUserAgent } from '../../core/browser/userAgent'
 import { isAuthUrl, resolveAuthIdentity } from '../../core/browser/authIdentity'
 import { attachPageContextMenu } from './attachPageContextMenu'
 import { trackPaneBackground, trackWindowBackground } from './paneBackgrounds'
 import { applyPaneZoom } from './paneZoom'
+import { urlOneStepBack } from './paneNavigation'
 import { attachWindowOpenLedger } from './windowOpenLedger'
 
 export const BROWSER_PARTITION = 'persist:browse'
@@ -204,10 +206,17 @@ export function createBrowserPane(deps?: {
     for (const listener of listeners) listener(state)
   }
 
+  // The toolbar's ← keeps the back guard (#336) `back` keeps: never lit
+  // when the only step back is the blank start page.
+  function canStepBack(): boolean {
+    const history = wc.navigationHistory
+    return history.canGoBack() && !backLeadsToBlank(wc.getURL(), urlOneStepBack(history))
+  }
+
   function syncNavigationState(url: string): void {
     update({
       url,
-      canGoBack: wc.navigationHistory.canGoBack(),
+      canGoBack: canStepBack(),
       canGoForward: wc.navigationHistory.canGoForward(),
     })
   }
@@ -238,7 +247,7 @@ export function createBrowserPane(deps?: {
     },
     goBack() {
       whenLive(() => {
-        if (wc.navigationHistory.canGoBack()) wc.navigationHistory.goBack()
+        if (canStepBack()) wc.navigationHistory.goBack()
       })
     },
     goForward() {

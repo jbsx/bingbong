@@ -47,10 +47,11 @@ export const GRAMMAR_ONLY_VERBS: ReadonlySet<CommandVerb> = new Set<CommandVerb>
 /** The verbs the Decision Model chooses among (#324): the spoken vocabulary, `none` included. */
 export const JEV_VERBS = COMMAND_VERBS.filter((verb) => !GRAMMAR_ONLY_VERBS.has(verb)) as readonly Exclude<CommandVerb, 'screenshot' | 'help' | 'resume' | 'timer' | 'play'>[]
 
-/** The keys `press` speaks: enter, escape, space and the arrows. */
+/** The keys `press` speaks: enter, escape, tab, space and the arrows. */
 export const PRESS_KEYS: Readonly<Record<string, KeyPress>> = {
   enter: { key: 'Enter' },
   escape: { key: 'Escape' },
+  tab: { key: 'Tab' },
   space: { key: 'Space' },
   up: { key: 'ArrowUp' },
   down: { key: 'ArrowDown' },
@@ -181,6 +182,8 @@ export function pressKeyOf(words: string): KeyPress | null {
     case 'escape':
     case 'esc':
       return PRESS_KEYS.escape
+    case 'tab':
+      return PRESS_KEYS.tab
     case 'space':
     case 'spacebar':
     case 'space bar':

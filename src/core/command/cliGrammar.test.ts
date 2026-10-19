@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseCliCommand } from './cliGrammar'
+import { grammarErrorOf, parseCliCommand } from './cliGrammar'
 
 describe('parseCliCommand', () => {
   it('parses navigate with its url input', () => {
@@ -80,14 +80,31 @@ describe('parseCliCommand', () => {
     })
   })
 
+  it('presses Tab and Escape, whatever their case', () => {
+    expect(parseCliCommand('press Tab 3')).toEqual({ ok: true, command: { type: 'press', press: { key: 'Tab' }, times: 3 } })
+    expect(parseCliCommand('press escape')).toEqual({ ok: true, command: { type: 'press', press: { key: 'Escape' }, times: 1 } })
+    expect(parseCliCommand('press esc')).toEqual({ ok: true, command: { type: 'press', press: { key: 'Escape' }, times: 1 } })
+  })
+
+  it('says what went wrong in plain words for an Answer', () => {
+    expect(grammarErrorOf('press F5')).toBe("I can't press F5. Keys I know: up, down, left, right, space, enter, tab, escape.")
+    expect(grammarErrorOf('press')).toBe('Press needs a key. Keys I know: up, down, left, right, space, enter, tab, escape.')
+    expect(grammarErrorOf('press down zero')).toBe('Press takes a whole number of times, like “press down 3”.')
+    expect(grammarErrorOf('scroll sideways')).toBe('I can scroll up or down.')
+    expect(grammarErrorOf('click seven')).toBe('Click needs the number of an item, like “click 7”.')
+    expect(grammarErrorOf('volume 140')).toBe('Volume takes a number from 0 to 100, like “volume 40”.')
+    expect(grammarErrorOf('dance now')).toBeNull()
+    expect(grammarErrorOf('scroll down')).toBeNull()
+  })
+
   it('rejects press with an unknown key or bad count', () => {
     expect(parseCliCommand('press')).toEqual({
       ok: false,
-      error: "press: expected 'press <key> [times]' with key one of k, j, l, up, down, left, right, space, enter, next",
+      error: "press: expected 'press <key> [times]' with key one of k, j, l, up, down, left, right, space, enter, tab, escape, esc, next",
     })
     expect(parseCliCommand('press qwerty')).toEqual({
       ok: false,
-      error: "press: expected 'press <key> [times]' with key one of k, j, l, up, down, left, right, space, enter, next",
+      error: "press: expected 'press <key> [times]' with key one of k, j, l, up, down, left, right, space, enter, tab, escape, esc, next",
     })
     expect(parseCliCommand('press k zero')).toEqual({
       ok: false,

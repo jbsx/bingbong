@@ -42,6 +42,7 @@ import {
   type TaskHop,
 } from '../../core/command/decisionRecord'
 import { pageReadPart, pageReadText } from '../../core/browser/pageText'
+import { SCROLL_END_OF_PAGE } from '../../core/browser/scrollDelta'
 import { SPOKEN_FAILURES, failureLineOf, spokenFailureOf } from '../../core/command/spokenFailure'
 import { STOPPED_ANSWERS, commandAnswer, noResponseAnswer, pageReadCard } from '../../core/command/answer'
 import { grammarErrorOf } from '../../core/command/cliGrammar'
@@ -948,7 +949,11 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         } else if (card === null) {
           // One Answer per Command (#333), from its verb's sentence.
           const label = targetLabel(command, page)
-          const text = commandAnswer(command, { page: { url: state.url ?? '', title: state.title ?? '' }, ...(label !== undefined ? { label } : {}) })
+          const text = commandAnswer(command, {
+            page: { url: state.url ?? '', title: state.title ?? '' },
+            ...(label !== undefined ? { label } : {}),
+            ...(result.endsWith(`\n${SCROLL_END_OF_PAGE}`) ? { scrollEnded: true } : {}),
+          })
           if (text !== null) answer(turnId, text)
         }
       }

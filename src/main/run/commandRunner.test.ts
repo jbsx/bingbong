@@ -609,11 +609,11 @@ describe('a Command the Local Match cannot settle', () => {
 describe('an Utterance read as no Command answers "No response." and why (owner ruling 2026-10-19)', () => {
   const answers = (events: PipelineEvent[]): string[] => events.flatMap((event) => (event.type === 'display' ? [event.text] : []))
 
-  it("a verb the grammar knows, gone wrong past it, shows the grammar's own error", async () => {
+  it("a verb the grammar knows, gone wrong past it, says what went wrong in plain words", async () => {
     const { decision, events, runner } = harness()
     decision.script.push({ answers: { verb: choice('none'), target: choice('none'), slot: choice('none') } })
-    await runner.run('press Tab 3')
-    expect(answers(events)).toEqual([expect.stringMatching(/^No response\.\n\n`press: expected 'press <key> \[times\]' with key one of /)])
+    await runner.run('press F5 3')
+    expect(answers(events)).toEqual(["No response.\n\nI can't press F5. Keys I know: up, down, left, right, space, enter, tab, escape."])
   })
 
   it('says Jev is off when no Jev is configured', async () => {

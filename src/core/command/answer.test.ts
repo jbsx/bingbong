@@ -25,6 +25,8 @@ describe('commandAnswer (#333)', () => {
   it('scrolls, clicks and types in plain words, naming the ref by its label', () => {
     expect(answer(command('scroll_down'))).toBe('Scrolled down.')
     expect(answer(command('scroll_up'))).toBe('Scrolled up.')
+    expect(answer(command('scroll_down'), { scrollEnded: true })).toBe('Already at the bottom.')
+    expect(answer(command('scroll_up'), { scrollEnded: true })).toBe('Already at the top.')
     expect(answer(command('click', { target: 3 }), { label: 'Say hello' })).toBe('Clicked “Say hello”.')
     expect(answer(command('click', { target: 3 }))).toBe('Clicked item 3.')
     expect(answer(command('type', { target: 2, slot: 'lisbon' }), { label: 'Search' })).toBe('Typed into “Search”.')
@@ -105,7 +107,7 @@ describe('noResponseAnswer', () => {
   })
 
   it("puts the grammar's error first, and says when the page already is what was asked", () => {
-    expect(noResponseAnswer({ verb: 'none', grammarError: "scroll: expected 'scroll up' or 'scroll down'", jevAsked: false })).toBe("No response.\n\n`scroll: expected 'scroll up' or 'scroll down'`")
+    expect(noResponseAnswer({ verb: 'none', grammarError: 'I can scroll up or down.', jevAsked: false })).toBe('No response.\n\nI can scroll up or down.')
     expect(noResponseAnswer({ verb: 'done', grammarError: null, jevAsked: true, jev: jev({ done: 1 }) })).toBe('No response.\n\nThe page already shows what was asked.')
   })
 })

@@ -1,7 +1,7 @@
 import { reportFault } from '../../core/trace/fault'
 import { systemClock, withDeadline, type Clock } from '../../core/ports/clock'
 import type { PageLanding } from '../../core/ports/browser'
-import { isRealPage } from '../../core/browser/lastPage'
+import { backLeadsToBlank } from '../../core/browser/lastPage'
 import { boundedWait } from '../../core/browser/unsettledAction'
 import { ARRIVAL_LOAD_BOUND_MS } from '../../core/browser/actionOutcome'
 import { LANDING_CAP_MS, LANDING_QUIET_MS, type ArrivalWatch, type CdpPageDriver } from './createCdpBrowserController'
@@ -303,15 +303,13 @@ export function createPaneNavigation(wc: PaneNavigationTarget, clock: Clock = sy
   }
 
   /**
-   * The back guard (#336): `back` never leaves a real page for the blank
+   * The back guard (#336, `backLeadsToBlank`): `back` never leaves a real page for the blank
    * start page the Idle Screen or `resume` opened it from — there is no
    * page to go back to, and the tab stays put.
    */
   function goBack(): Promise<void> {
     const history = wc.navigationHistory
-    const index = history.getActiveIndex?.()
-    const before = index !== undefined && index > 0 ? history.getEntryAtIndex?.(index - 1) : undefined
-    if (before !== undefined && isRealPage(wc.getURL()) && !isRealPage(before.url)) {
+    if (backLeadsToBlank(wc.getURL(), urlOneStepBack(history))) {
       return Promise.reject(new Error('cannot go back: the page before is the blank start page'))
     }
     return historyStep(history.canGoBack(), () => history.goBack(), 'back')
@@ -340,4 +338,10 @@ export function createPaneNavigation(wc: PaneNavigationTarget, clock: Clock = sy
       if (!wc.isDestroyed()) wc.focus()
     },
   }
+}
+
+/** The address one step back in a tab's history, if the history says. */
+export function urlOneStepBack(history: Pick<PaneNavigationTarget['navigationHistory'], 'getActiveIndex' | 'getEntryAtIndex'>): string | undefined {
+  const index = history.getActiveIndex?.()
+  return index !== undefined && index > 0 ? history.getEntryAtIndex?.(index - 1)?.url : undefined
 }

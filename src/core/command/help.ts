@@ -21,7 +21,7 @@ export const COMMAND_HELP_LINES: readonly string[] = [
   '  loop | loop off          repeat this song, or stop repeating it',
   '  restart                  play this song from the beginning',
   '  louder | quieter | volume <0-100> | mute | unmute',
-  '  press enter|escape|space|up|down|left|right [n]',
+  '  press enter|escape|tab|space|up|down|left|right [n]',
   '  read                     print a numbered-ref snapshot of visible interactive elements',
   '  clear                    clear the focused field',
   '  screenshot [path]        save a jpeg screenshot (default: the downloads dir)',

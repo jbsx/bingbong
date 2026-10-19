@@ -33,7 +33,7 @@ const JEV_UNAVAILABLE: Record<DecisionUnavailableReason, string> = {
 /** What a reading that settled no Command was made of: its verb, the grammar's own error, and Jev's part in it. */
 export interface NoResponseFacts {
   readonly verb: 'none' | 'done'
-  /** The grammar's error for a line that starts with a verb it knows (`grammarErrorOf`). */
+  /** The grammar's error, in plain words, for a line that starts with a verb it knows (`grammarErrorOf`). */
   readonly grammarError: string | null
   readonly jevAsked: boolean
   readonly jev?: JevDetail | JevUnavailable
@@ -42,8 +42,7 @@ export interface NoResponseFacts {
 /** Why nothing was done: the most specific of the grammar's error, Jev being off or not answering, and Jev's reading. */
 function noResponseReason(facts: NoResponseFacts): string {
   if (facts.verb === 'done') return 'The page already shows what was asked.'
-  // A code span: the grammar's usage lines carry <angle brackets> the Card's markdown would eat.
-  if (facts.grammarError !== null) return `\`${facts.grammarError}\``
+  if (facts.grammarError !== null) return facts.grammarError
   if (!facts.jevAsked) return "Jev is off, and the words aren't a command the grammar knows — try “help”."
   const jev = facts.jev
   if (jev !== undefined && 'reason' in jev) return JEV_UNAVAILABLE[jev.reason]
@@ -74,6 +73,8 @@ function searchAnswer(command: Command): string {
 export interface AnswerFacts {
   readonly page: { url: string; title: string }
   readonly label?: string
+  /** A scroll that brought nothing new into view (`SCROLL_END_OF_PAGE`): the page was already at its end. */
+  readonly scrollEnded?: boolean
 }
 
 /**
@@ -94,9 +95,9 @@ export function commandAnswer(command: Command, facts: AnswerFacts): string | nu
     case 'type':
       return `Typed into ${ref()}.`
     case 'scroll_up':
-      return 'Scrolled up.'
+      return facts.scrollEnded === true ? 'Already at the top.' : 'Scrolled up.'
     case 'scroll_down':
-      return 'Scrolled down.'
+      return facts.scrollEnded === true ? 'Already at the bottom.' : 'Scrolled down.'
     case 'back':
       return `Went back to ${pageName(facts.page)}.`
     case 'forward':

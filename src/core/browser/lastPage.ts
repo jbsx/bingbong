@@ -18,6 +18,15 @@ export function isRealPage(url: unknown): url is string {
 }
 
 /**
+ * The back guard (#336): a step back from a real page to the blank start
+ * page the Idle Screen or `resume` opened it from leads nowhere — there is
+ * no page to go back to. `before` is the address one step back, if any.
+ */
+export function backLeadsToBlank(current: string, before: string | undefined): boolean {
+  return before !== undefined && isRealPage(current) && !isRealPage(before)
+}
+
+/**
  * The Last Page after one pane state: the state's page when it is a real one
  * (the title following along as it arrives), else what it was. The pane
  * names an untitled page by its address; that is no title.
