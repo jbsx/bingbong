@@ -1,7 +1,7 @@
 import { gatherStories, type NewsSource, type NewsStory } from './news'
 import type { InterestProfile } from './interestProfile'
 import { recordStories, thisMonth, thisWeek, type NewsListItem, type StoryHistory } from './horizons'
-import { BASELINE_DAYS, rankStories, recordMagnitudes, todaysHighlight, type MagnitudeHistory } from './score'
+import { BASELINE_DAYS, DAY_MS, HIGHLIGHT_WINDOW_MS, rankStories, recordMagnitudes, todaysHighlight, type MagnitudeHistory } from './score'
 
 // The News Desk: main's side of the News card (the card is in CONTEXT.md). The Idle Screen
 // asks for the card's stories whenever it shows and every few minutes after;
@@ -31,14 +31,14 @@ export interface TodaysHighlight {
 }
 
 /** What the News card shows: Today's Highlight, This Week and This Month (CONTEXT.md). */
-export interface NewsDigest {
+export interface NewsHorizons {
   highlight: TodaysHighlight
   week: NewsListItem[]
   month: NewsListItem[]
 }
 
 /** How far back a poll asks the sources: a story still on a front page days after it was published is still polled, so it can last. */
-const POLL_SINCE_MS = BASELINE_DAYS * 24 * 60 * 60 * 1000
+const POLL_SINCE_MS = BASELINE_DAYS * DAY_MS
 
 /** What the desk keeps in userData, so "unseen", the last highlight and the story history survive a restart. */
 export interface NewsState {
@@ -117,7 +117,7 @@ function sanitizeStories(raw: unknown): StoryHistory {
 
 export interface NewsDesk {
   /** The card's stories, polling first when the last poll is an hour old; null when there has never been a highlight or the profile is empty. */
-  digest(): Promise<NewsDigest | null>
+  horizons(): Promise<NewsHorizons | null>
 }
 
 export function createNewsDesk(deps: {
@@ -137,7 +137,8 @@ export function createNewsDesk(deps: {
       polledAt = at - NEWS_POLL_MS + NEWS_RETRY_MS
       return
     }
-    const history = recordMagnitudes(state.history, stories, at)
+    // The baseline records the last 24 hours' stories only, as it did before the poll looked back further: a story days old still gathering points would raise its day's bar.
+    const history = recordMagnitudes(state.history, stories.filter((story) => at - story.publishedAt <= HIGHLIGHT_WINDOW_MS), at)
     const shown = state.shown.filter((entry) => at - entry.at <= SHOWN_KEEP_MS)
     const recorded = recordStories(state.stories, rankStories(stories, history, profile), at)
     const pick = todaysHighlight(stories, history, profile, new Set(shown.map((entry) => entry.key)), at)
@@ -149,7 +150,7 @@ export function createNewsDesk(deps: {
   }
 
   return {
-    async digest() {
+    async horizons() {
       const profile = deps.profile()
       if (profile.length === 0) return null
       const at = now()

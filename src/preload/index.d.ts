@@ -4,7 +4,7 @@ import type { TimerState } from '../core/timer/timer'
 import type { NowPlaying } from '../core/music/nowPlaying'
 import type { UsageSnapshot } from '../core/usage/usage'
 import type { CalendarEvent, CalendarRange } from '../core/calendar/calendar'
-import type { NewsDigest } from '../core/news/newsDesk'
+import type { NewsHorizons } from '../core/news/newsDesk'
 import type { PipelineEvent } from '../core/pipeline/events'
 import type { AppSettings } from '../core/settings/settings'
 import type { VoiceErrorEvent, VoiceHeardEvent, VoicePartialEvent, VoiceState } from '../core/voice/ipcChannels'
@@ -67,7 +67,7 @@ export interface BingbongCalendarApi {
 
 export interface BingbongNewsApi {
   /** The News card's Today's Highlight, This Week and This Month (CONTEXT.md); null when there has never been a highlight or the Interest Profile is empty. Main fetches at most hourly. */
-  digest(): Promise<NewsDigest | null>
+  horizons(): Promise<NewsHorizons | null>
 }
 
 export interface BingbongAssistantApi {

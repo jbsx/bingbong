@@ -35,6 +35,18 @@ describe('idle screen e2e: the Last Page and resume', () => {
       response.end(JSON.stringify({ hits }))
     })
     await new Promise<void>((resolve) => hackerNews.listen(0, '127.0.0.1', resolve))
+    // A story history a previous run left behind: one story that lasted, top five on three days of last week and the one before.
+    const dayBack = (back: number): string => {
+      const now = new Date()
+      const at = new Date(now.getFullYear(), now.getMonth(), now.getDate() - back, 12)
+      return `${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, '0')}-${String(at.getDate()).padStart(2, '0')}`
+    }
+    const lasting = { title: 'An interactive story that lasted', link: fixture.url('/interactive'), source: 'Hacker News', unit: 'points', topical: true, cluster: 'Hacker News:lasted' }
+    await writeFile(
+      join(userDataDir, 'news.json'),
+      `${JSON.stringify({ shown: [], history: {}, highlight: null, stories: { 'Hacker News:lasted': { ...lasting, days: Object.fromEntries([8, 9, 10].map((back) => [dayBack(back), { score: 0.9, magnitude: 2400 }])) } } })}\n`,
+      'utf8',
+    )
     // The Last Page a previous run left behind.
     await writeFile(
       join(userDataDir, 'last-page.json'),
@@ -172,6 +184,23 @@ describe('idle screen e2e: the Last Page and resume', () => {
     await harness.clickDashboardElement('.idle-news-list[aria-label="This week"] li:nth-child(2) .idle-news-item')
 
     expect(await harness.waitForPaneUrl(fixture.url('/'))).toBe(fixture.url('/'))
+  })
+
+  it('lists This Month beside This Week from the kept history, and a tap on a story opens it in the pane', async () => {
+    const IDLE_SHORTCUT = { key: 'L', code: 'KeyL', windowsVirtualKeyCode: 76, modifiers: 2 /* Ctrl */ | 8 /* Shift */ }
+    await harness.pressKey('pane', IDLE_SHORTCUT)
+    const month = await waitFor(
+      async () => {
+        const titles = await harness.dashboardEval<string[]>(`[...document.querySelectorAll('.idle-news-list[aria-label="This month"] .idle-news-item-title')].map((item) => item.textContent)`)
+        return titles.length > 0 ? titles : undefined
+      },
+      { timeoutMs: 10000, intervalMs: 250 },
+    )
+    expect(month).toEqual(['An interactive story that lasted'])
+
+    await harness.clickDashboardElement('.idle-news-list[aria-label="This month"] .idle-news-item')
+
+    expect(await harness.waitForPaneUrl(fixture.url('/interactive'))).toBe(fixture.url('/interactive'))
   })
 
   it('Ctrl+Shift+L shows the idle screen at once, from the pane or the dashboard', async () => {

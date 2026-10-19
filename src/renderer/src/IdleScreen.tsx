@@ -651,7 +651,7 @@ export function IdleScreen({
         return <NowPlayingCard nowPlaying={nowPlaying} timer={timer} />
       case 'news':
         return news.status === 'ready' ? (
-          <NewsCard digest={news.digest} />
+          <NewsCard horizons={news.horizons} />
         ) : (
           <NoteCard label="news">{news.status === 'unset' ? 'Add a topic to News in settings' : 'No news yet'}</NoteCard>
         )

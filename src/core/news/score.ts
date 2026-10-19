@@ -13,8 +13,10 @@ export type MagnitudeHistory = Record<string, Record<string, Record<string, numb
 /** How many days, the story's own included, make the baseline it is scored against. */
 export const BASELINE_DAYS = 7
 
+export const DAY_MS = 24 * 60 * 60 * 1000
+
 /** How long Today's Highlight looks back. */
-export const HIGHLIGHT_WINDOW_MS = 24 * 60 * 60 * 1000
+export const HIGHLIGHT_WINDOW_MS = DAY_MS
 
 export interface ScoredStory {
   story: NewsStory
@@ -30,10 +32,20 @@ export function dayKey(at: number): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 }
 
+/** The local days ending with `at`'s, `count` of them, latest first. */
+export function daysBack(at: number, count: number): string[] {
+  const date = new Date(at)
+  return Array.from({ length: count }, (_, back) => dayKey(new Date(date.getFullYear(), date.getMonth(), date.getDate() - back, 12).getTime()))
+}
+
 /** The local days a story published at `at` is scored against: its own and the six before. */
 function baselineDays(at: number): string[] {
-  const date = new Date(at)
-  return Array.from({ length: BASELINE_DAYS }, (_, back) => dayKey(new Date(date.getFullYear(), date.getMonth(), date.getDate() - back, 12).getTime()))
+  return daysBack(at, BASELINE_DAYS)
+}
+
+/** The order the News ranks in, best first: a story matching a topic over one matching none, then by score, then by magnitude. */
+export function rankOrder(a: { topical: boolean; score: number; magnitude: number }, b: { topical: boolean; score: number; magnitude: number }): number {
+  return Number(b.topical) - Number(a.topical) || b.score - a.score || b.magnitude - a.magnitude
 }
 
 /**
@@ -70,9 +82,8 @@ export function rankStories(stories: readonly NewsStory[], history: MagnitudeHis
     const rank = percentile(story.magnitude, baseline(story, history, stories))
     return { story, topics, percentile: rank, score: rank * (1 + (Math.max(1, topics.length) - 1) / 2) }
   })
-  return scored.sort(
-    (a, b) => Number(b.topics.length > 0) - Number(a.topics.length > 0) || b.score - a.score || b.story.magnitude - a.story.magnitude,
-  )
+  const order = (each: ScoredStory) => ({ topical: each.topics.length > 0, score: each.score, magnitude: each.story.magnitude })
+  return scored.sort((a, b) => rankOrder(order(a), order(b)))
 }
 
 /** Today's Highlight (CONTEXT.md): the top-scoring story of the last 24 hours whose key has not been shown; none when every one has. */

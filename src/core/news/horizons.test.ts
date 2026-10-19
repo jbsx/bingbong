@@ -98,4 +98,11 @@ describe('recordStories', () => {
     expect(Object.keys(recordStories(history, [], day(1 + HISTORY_DAYS - 1)))).toEqual(['hn:a'])
     expect(Object.keys(recordStories(history, [], day(1 + HISTORY_DAYS)))).toEqual([])
   })
+
+  it('reads a story’s topics afresh at every poll, so a profile changed since counts', () => {
+    const plain = { ...scored('a', 'Zed ships agents', 0.5), topics: [] }
+    const history = recordStories(recordStories({}, [plain], day(1)), [scored('a', 'Zed ships agents', 0.5)], day(2))
+
+    expect(history['hn:a'].topical).toBe(true)
+  })
 })

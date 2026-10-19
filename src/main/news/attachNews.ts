@@ -34,5 +34,5 @@ export function registerNewsIpc(deps: { storePath: string; profile: () => Intere
     store: createNewsStore(deps.storePath),
     profile: deps.profile,
   })
-  ipcMain.handle(NEWS_IPC.digest, () => desk.digest())
+  ipcMain.handle(NEWS_IPC.horizons, () => desk.horizons())
 }

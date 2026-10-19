@@ -1,5 +1,5 @@
-import type { ScoredStory } from './score'
-import { dayKey } from './score'
+import { hostOf } from './news'
+import { dayKey, daysBack, rankOrder, type ScoredStory } from './score'
 
 // This Week and This Month (CONTEXT.md): the News card's two longer
 // horizons, read from the story history — every polled story's best score
@@ -55,12 +55,6 @@ export interface NewsListItem {
   unit: string
 }
 
-/** The local days ending with `at`'s, `count` of them. */
-function daysBack(at: number, count: number): string[] {
-  const date = new Date(at)
-  return Array.from({ length: count }, (_, back) => dayKey(new Date(date.getFullYear(), date.getMonth(), date.getDate() - back, 12).getTime()))
-}
-
 /** The address with what does not change the page dropped: scheme, www, a trailing slash, the fragment and tracking parameters. */
 function linkKey(link: string): string {
   if (!URL.canParse(link)) return link
@@ -68,10 +62,6 @@ function linkKey(link: string): string {
   for (const name of [...url.searchParams.keys()]) if (name.startsWith('utm_') || name === 'ref') url.searchParams.delete(name)
   const query = url.searchParams.toString()
   return `${url.hostname.replace(/^www\./, '')}${url.pathname.replace(/\/+$/, '')}${query === '' ? '' : `?${query}`}`
-}
-
-function hostOf(link: string): string {
-  return URL.canParse(link) ? new URL(link).hostname.replace(/^www\./, '') : ''
 }
 
 function titleWords(title: string): Set<string> {
@@ -156,6 +146,8 @@ export function recordStories(history: StoryHistory, ranked: readonly ScoredStor
     next[story.key] = {
       ...known,
       title: story.title,
+      link: story.link,
+      topical: topics.length > 0,
       days: { ...known.days, [today]: { score: Math.max(held?.score ?? 0, score), magnitude: Math.max(held?.magnitude ?? 0, story.magnitude) } },
     }
   }
@@ -169,9 +161,8 @@ interface Peak {
   magnitude: number
 }
 
-/** Topical over not, then score, then magnitude: the order Today's Highlight ranks in. */
 function better(a: Peak, b: Peak): number {
-  return Number(b.record.topical) - Number(a.record.topical) || b.score - a.score || b.magnitude - a.magnitude
+  return rankOrder({ ...a, topical: a.record.topical }, { ...b, topical: b.record.topical })
 }
 
 /** Each cluster's peak over the given days, best first, the first `limit`. */
@@ -205,6 +196,28 @@ function weekOf(day: string): string {
   return dayKey(new Date(year, month - 1, date - ((at.getDay() + 6) % 7), 12).getTime())
 }
 
+/** How many of the given lists — each a span of days — a cluster is in the top five of. */
+function listings(history: StoryHistory, lists: Iterable<readonly string[]>): Map<string, number> {
+  const counts = new Map<string, number>()
+  for (const list of lists) for (const peak of topClusters(history, list, LIST_LENGTH)) counts.set(peak.record.cluster, (counts.get(peak.record.cluster) ?? 0) + 1)
+  return counts
+}
+
+/** The clusters that lasted over the given days: in the top five of at least two of their calendar weeks, or of at least three separate days. */
+function lastingClusters(history: StoryHistory, days: readonly string[]): Set<string> {
+  const weeks = new Map<string, string[]>()
+  for (const day of days) {
+    const week = weekOf(day)
+    weeks.set(week, [...(weeks.get(week) ?? []), day])
+  }
+  const inWeeks = listings(history, weeks.values())
+  const onDays = listings(history, days.map((day) => [day]))
+  const lasted = new Set<string>()
+  for (const [cluster, count] of inWeeks) if (count >= LASTING_WEEKS) lasted.add(cluster)
+  for (const [cluster, count] of onDays) if (count >= LASTING_DAYS) lasted.add(cluster)
+  return lasted
+}
+
 /**
  * This Month (CONTEXT.md): the top five stories of the last thirty days that
  * lasted — in the top five of at least two calendar weeks (Monday to
@@ -212,18 +225,9 @@ function weekOf(day: string): string {
  */
 export function thisMonth(history: StoryHistory, now: number): NewsListItem[] {
   const days = daysBack(now, MONTH_DAYS)
-  const weeks = new Map<string, string[]>()
-  for (const day of days) weeks.set(weekOf(day), [...(weeks.get(weekOf(day)) ?? []), day])
-  const count = (lists: Iterable<readonly string[]>): Map<string, number> => {
-    const counts = new Map<string, number>()
-    for (const list of lists) for (const peak of topClusters(history, list, LIST_LENGTH)) counts.set(peak.record.cluster, (counts.get(peak.record.cluster) ?? 0) + 1)
-    return counts
-  }
-  const inWeeks = count(weeks.values())
-  const onDays = count(days.map((day) => [day]))
-  const lasted = (cluster: string): boolean => (inWeeks.get(cluster) ?? 0) >= LASTING_WEEKS || (onDays.get(cluster) ?? 0) >= LASTING_DAYS
+  const lasted = lastingClusters(history, days)
   return topClusters(history, days, Number.POSITIVE_INFINITY)
-    .filter((peak) => lasted(peak.record.cluster))
+    .filter((peak) => lasted.has(peak.record.cluster))
     .slice(0, LIST_LENGTH)
     .map(itemOf)
 }

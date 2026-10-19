@@ -1,10 +1,6 @@
 import type { NewsListItem } from '../../core/news/horizons'
-import { magnitudeLabel, magnitudeParts } from '../../core/news/news'
-import type { NewsDigest } from '../../core/news/newsDesk'
-
-function hostOf(link: string): string {
-  return URL.canParse(link) ? new URL(link).hostname.replace(/^www\./, '') : ''
-}
+import { hostOf, magnitudeLabel, magnitudeParts } from '../../core/news/news'
+import type { NewsHorizons } from '../../core/news/newsDesk'
 
 /**
  * Opens a story through the same `navigate` Command the words are, on the
@@ -56,8 +52,8 @@ function NewsList({ area, heading, items, empty }: { area: 'week' | 'month'; hea
  * highlight draws to its own box the same way. Every story on the card
  * opens in the pane at a tap.
  */
-export function NewsCard({ digest }: { digest: NewsDigest }) {
-  const { story, topics } = digest.highlight
+export function NewsCard({ horizons }: { horizons: NewsHorizons }) {
+  const { story, topics } = horizons.highlight
   const { count, unit } = magnitudeParts(story)
   const host = hostOf(story.link)
   return (
@@ -79,8 +75,8 @@ export function NewsCard({ digest }: { digest: NewsDigest }) {
           {story.comments !== null ? <span className="idle-news-comments">{story.comments.toLocaleString('en-GB')} comments</span> : null}
         </span>
       </button>
-      <NewsList area="week" heading="This week" items={digest.week} empty="Nothing this week yet" />
-      <NewsList area="month" heading="This month" items={digest.month} empty="Nothing has lasted yet" />
+      <NewsList area="week" heading="This week" items={horizons.week} empty="Nothing this week yet" />
+      <NewsList area="month" heading="This month" items={horizons.month} empty="Nothing has lasted yet" />
     </div>
   )
 }

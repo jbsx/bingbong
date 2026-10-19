@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react'
-import type { NewsDigest } from '../../core/news/newsDesk'
+import type { NewsHorizons } from '../../core/news/newsDesk'
 import { reportRendererFault } from './diagnostics'
 
 export type NewsCardState =
   | { status: 'loading' }
   | { status: 'unset' }
   | { status: 'none' }
-  | { status: 'ready'; digest: NewsDigest }
+  | { status: 'ready'; horizons: NewsHorizons }
 
 /** How often the card's stories are asked for again while the Idle Screen shows; main fetches the sources at most hourly whatever this is. */
 const REFRESH_MS = 5 * 60 * 1000
@@ -28,13 +28,13 @@ export function useNews(topicCount: number, active: boolean): NewsCardState {
     }
     let cancelled = false
     const ask = (): void => {
-      window.bingbong.news.digest().then(
-        (digest) => {
-          if (!cancelled) setState(digest === null ? { status: 'none' } : { status: 'ready', digest })
+      window.bingbong.news.horizons().then(
+        (horizons) => {
+          if (!cancelled) setState(horizons === null ? { status: 'none' } : { status: 'ready', horizons })
         },
         (error: unknown) => {
           // The card keeps what it shows; a desk never reached reads as no news yet.
-          reportRendererFault('news.digest', error)
+          reportRendererFault('news.horizons', error)
           if (!cancelled) setState((prev) => (prev.status === 'loading' ? { status: 'none' } : prev))
         },
       )

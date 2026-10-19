@@ -50,6 +50,11 @@ export async function gatherStories(sources: readonly NewsSource[], since: numbe
   return { stories, answered }
 }
 
+/** The story's site, as the card names it: "example.com"; empty when the link is not an address. */
+export function hostOf(link: string): string {
+  return URL.canParse(link) ? new URL(link).hostname.replace(/^www\./, '') : ''
+}
+
 /** The number that made it a story in its two parts, as the card sets them: "1,840" and "points". */
 export function magnitudeParts(story: Pick<NewsStory, 'magnitude' | 'unit'>): { count: string; unit: string } {
   const count = Math.round(story.magnitude)
