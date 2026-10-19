@@ -1548,8 +1548,8 @@ body {
   --glass: color-mix(in srgb, var(--panel) 72%, transparent);
   position: relative;
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  grid-template-rows: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(var(--columns), minmax(0, 1fr));
+  grid-template-rows: repeat(var(--rows), minmax(0, 1fr));
   gap: var(--cell-gap);
   height: 100%;
   padding: 40px;
@@ -1557,7 +1557,7 @@ body {
 }
 
 .idle-screen--docked {
-  grid-template-rows: repeat(4, minmax(0, 1fr)) var(--dock-height);
+  grid-template-rows: repeat(var(--rows), minmax(0, 1fr)) var(--dock-height);
 }
 
 .idle-screen[data-glow] {
@@ -3216,7 +3216,7 @@ body {
   place-content: center;
   grid-auto-flow: column;
   align-items: baseline;
-  font-size: calc(min(100cqw, 100cqh) * 0.3 * var(--ring-scale, 1));
+  font-size: max(16px, calc(min(100cqw, 100cqh) * 0.3 * var(--ring-scale, 1)));
   font-weight: 650;
   line-height: 1;
   letter-spacing: -0.02em;

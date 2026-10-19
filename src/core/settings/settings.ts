@@ -4,7 +4,7 @@
 // set, so env stays the base layer.
 
 import { defaultUsagePrefs, sanitizeUsagePrefs, type UsagePrefs } from '../usage/usage'
-import { IDLE_CARD_IDS, OLD_DEFAULT_IDLE_CARDS, sanitizeIdleCards, type IdleCardId } from '../idle/slots'
+import { IDLE_CARD_IDS, sanitizeIdleCards, type IdleCardId } from '../idle/slots'
 import { defaultNewsFeeds, sanitizeNewsFeeds, type NewsFeed } from '../news/feeds'
 import { defaultInterestProfile, sanitizeInterestProfile, type InterestProfile } from '../news/interestProfile'
 
@@ -173,6 +173,9 @@ export function asAppearance(value: unknown): Appearance {
  * read as today's default, which adds the Last Page and orders the cards
  * for the new grid; any other order is the owner's and stays.
  */
+/** The default Pinned Cards before the grid became three by four (#352). */
+const OLD_DEFAULT_IDLE_CARDS: readonly IdleCardId[] = ['weather', 'usage', 'calendar', 'music', 'news']
+
 function pinnedCards(record: Record<string, unknown>): IdleCardId[] {
   const saved = sanitizeIdleCards(record.idleCards)
   const cards = record.news === undefined && !saved.includes('news') ? [...saved, 'news' as const] : saved

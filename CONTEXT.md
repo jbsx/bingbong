@@ -455,7 +455,21 @@ with something to show first. A tile holds to its box: its words fit or
 step down, never sizing a row (the overlap the 2026-10-19 screenshot
 found). Not yet built: a rotating Card Slot for
 cards past what fits (deferred until pinned cards no longer fit).
-_Avoid_: widget, tile
+_Avoid_: widget
+
+**Tile**:
+One piece of a card on the Idle Screen, one Card Slot cell or more: glass —
+the panel let through and the canvas blurred behind it, a large radius, no
+hairline, no shadow — or bare, its words straight on the glow (the clock,
+the weather now). A card is drawn as tiles with the grid's gap between
+them, so the screen reads as one bento (#352).
+_Avoid_: panel, box
+
+**Dock**:
+The row of chips under the Idle Screen's grid — the Timer, Up Next and Now
+Playing — shown only while one of them is there; the grid's rows shrink to
+make its room (#352). A ringing Timer takes Now Playing's place.
+_Avoid_: strip, tray
 
 **Pinned Cards**:
 The Idle Screen's cards the owner chose in settings, in the order they fill

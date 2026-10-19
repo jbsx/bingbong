@@ -14,7 +14,7 @@ import type { NewsCardState } from './useNews'
 import type { CalendarEvent } from '../../core/calendar/calendar'
 import { monthGrid, upNext, weekStartOf, type UpNext } from '../../core/calendar/month'
 import { nextHoliday, ukBankHolidays } from '../../core/calendar/ukBankHolidays'
-import { CLOCK_CELL, IDLE_CARD_IDS, layoutSlots, type IdleCardId, type SlotPlacement, type SlotRequest, type SlotSize } from '../../core/idle/slots'
+import { CLOCK_CELL, IDLE_CARD_IDS, layoutSlots, SLOT_COLUMNS, SLOT_ROWS, type IdleCardId, type SlotPlacement, type SlotRequest, type SlotSize } from '../../core/idle/slots'
 import { useCalendarEvents } from './useCalendar'
 import type { VoiceHint } from '../../core/voice/voiceHint'
 import type { WeatherState } from './useWeather'
@@ -727,7 +727,7 @@ export function IdleScreen({
   }
 
   return (
-    <div className={docked ? 'idle-screen idle-screen--docked' : 'idle-screen'} aria-label="idle screen" data-glow={glow ?? undefined} style={fit}>
+    <div className={docked ? 'idle-screen idle-screen--docked' : 'idle-screen'} aria-label="idle screen" data-glow={glow ?? undefined} style={{ ...fit, '--columns': String(SLOT_COLUMNS), '--rows': String(SLOT_ROWS) } as React.CSSProperties}>
       {/* The window's drag region while the Toolbar is unmounted (ADR
           0012) — invisible, top strip only, never covers the clock. */}
       <div className="idle-drag-strip" aria-hidden="true" />

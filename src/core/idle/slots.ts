@@ -32,9 +32,6 @@ export const IDLE_CARD_IDS = ['weather', 'calendar', 'lastPage', 'news', 'usage'
 
 export type IdleCardId = (typeof IDLE_CARD_IDS)[number]
 
-/** The default order before the grid became three by four (#352): a saved list equal to it is read as the new default. */
-export const OLD_DEFAULT_IDLE_CARDS: readonly IdleCardId[] = ['weather', 'usage', 'calendar', 'music', 'news']
-
 /** A pinned card as the screen offers it to the grid: the sizes it can draw at and whether it has anything to show right now. */
 export interface SlotRequest<Id extends string = string> {
   id: Id
@@ -92,8 +89,9 @@ function pack<Id extends string>(requests: readonly SlotRequest<Id>[], sizes: Re
   const placed: SlotPlacement<Id>[] = []
   for (const request of requests) {
     const size = sizes.get(request.id)
-    const spot = size === undefined ? null : firstFit(grid, size)
-    if (size === undefined || spot === null) continue
+    if (size === undefined) continue
+    const spot = firstFit(grid, size)
+    if (spot === null) continue
     take(grid, size, spot.column, spot.row)
     placed.push({ id: request.id, ...spot, size })
   }

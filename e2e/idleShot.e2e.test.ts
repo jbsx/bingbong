@@ -390,6 +390,10 @@ describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review'
         const ring = words.querySelector('.usage-ring').getBoundingClientRect()
         if (Math.min(ring.width, ring.height) < 72) overflowing.push('ring squeezed ' + words.getAttribute('aria-label'))
       }
+      // The chart's plot fills the room under its head: a collapsed plot draws its lines nowhere.
+      for (const plot of document.querySelectorAll('.usage-chart-area')) {
+        if (plot.getBoundingClientRect().height < 60) overflowing.push('usage chart plot collapsed ' + plot.getBoundingClientRect().height)
+      }
       const texts = [...document.querySelectorAll('.idle-screen *')].filter((el) => el.checkVisibility() && [...el.childNodes].some((node) => node.nodeType === 3 && node.textContent.trim() !== ''))
       const clock = document.querySelector('.idle-clock-tile')
       const clockStyle = getComputedStyle(clock)
