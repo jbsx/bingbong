@@ -62,7 +62,7 @@ export function vadDefaults(): UtteranceEndpointerConfig {
   return {
     speechThreshold: 0.5,
     startFrames: 3, // ~96 ms of speech before an utterance counts
-    endFrames: silenceFramesForMs(ENDPOINT_DELAY_MS_DEFAULT), // ~300 ms of silence ends it (#37/#60, ADR 0076)
+    endFrames: silenceFramesForMs(ENDPOINT_DELAY_MS_DEFAULT), // ~700 ms of silence ends it (#37/#60, ADR 0076 amendment 2026-10-20)
     resumptionMergeMs: RESUMPTION_MERGE_MS_DEFAULT, // no hold on this branch (ADR 0076); #60's merge is tunable, off by default
     startPaddingMs: 192, // ~6 frames of pre-roll
     endPaddingMs: 64, // ~2 frames of tail

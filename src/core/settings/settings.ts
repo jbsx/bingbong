@@ -15,12 +15,13 @@ export const WAKE_WORD_THRESHOLD_MAX = 1
 export const ENDPOINT_DELAY_MS_MIN = 200
 export const ENDPOINT_DELAY_MS_MAX = 1500
 /**
- * 300 ms on this branch (ADR 0076, #324): the Reaction is the one clock the
- * user feels, so an Utterance is released 300 ms into silence. A pause
- * mid-sentence makes two Commands; a Misfire is recovered, never prevented.
- * (`main` holds 900 ms, raised from 500 in #60.)
+ * 700 ms (ADR 0076 amendment 2026-10-20): 300 ms (#324) cut a spoken
+ * sentence at every breath — "Open Donald Trump's … Truth Social profile"
+ * fired as two Commands, each half misheard. An Early Fire still fires a
+ * complete Command before the Endpoint, so the wait lands only on the
+ * Commands that read nothing until the words stop.
  */
-export const ENDPOINT_DELAY_MS_DEFAULT = 300
+export const ENDPOINT_DELAY_MS_DEFAULT = 700
 /**
  * Resumption-merge window bounds (#60/#59): silence held after the endpoint
  * before the utterance submits. 0 disables the hold — the endpoint submits

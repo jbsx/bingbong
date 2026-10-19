@@ -1057,3 +1057,23 @@ cases from hand lists.
   dismisses a Tier-1 consent wall first and collects the page behind it,
   as a landing and a Page Read already did. A cookie sheet that draws
   late is gone before Jev sees the page, costing no hop and no call.
+
+## Amendment 2026-10-20 — the Endpoint waits 700 ms, not 300
+
+The Decision's "released 300 ms into silence … so a pause mid-sentence
+makes two Commands" is reversed in its number. In use, 300 ms is shorter
+than a breath: every logged Utterance on 2026-10-19 ended exactly 320 ms
+into silence, and "Open Donald Trump's truth social profile" came as
+"Opened onal cramps" and "Good social profile", 0.5 s apart, two
+Commands, both misheard — a half sentence decodes worse than a whole one,
+so the split costs the words as well as the Command. The recovery the
+Decision counts on ("recovered in one word") was the whole sentence again.
+
+- **The endpoint delay defaults to 700 ms**; the slider keeps its
+  200–1,500 ms range and the merge hold stays off (a hold is the same
+  wait spelled twice).
+- **The Reaction pays it only where nothing fired early.** An Early Fire
+  still fires a complete Command on its partial before the Endpoint; the
+  extra 400 ms lands on the Commands that wait for the words to stop.
+- A stored `endpointDelayMs` keeps its value; a profile that holds the old
+  300 is changed by hand.

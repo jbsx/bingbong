@@ -23,8 +23,8 @@ describe('defaultSettings', () => {
     expect(settings.micId).toBe('default')
     expect(settings.wakeWordThreshold).toBeGreaterThan(0)
     expect(settings.wakeWordThreshold).toBeLessThanOrEqual(1)
-    // ADR 0076 (#324): released 300 ms into silence, with no merge hold.
-    expect(settings.endpointDelayMs).toBe(300)
+    // ADR 0076 amendment 2026-10-20: released 700 ms into silence, with no merge hold.
+    expect(settings.endpointDelayMs).toBe(700)
     expect(settings.hotListenSilenceMs).toBe(8_000)
     expect(settings.resumptionMergeMs).toBe(0)
     expect(settings.webZoomPercent).toBe(130)
@@ -83,7 +83,7 @@ describe('sanitizeSettings', () => {
     expect(sanitizeSettings({}).resumptionMergeMs).toBe(defaultSettings().resumptionMergeMs)
     expect(sanitizeSettings({ resumptionMergeMs: 'soon' }).resumptionMergeMs).toBe(defaultSettings().resumptionMergeMs)
     expect(sanitizeSettings({ resumptionMergeMs: null }).resumptionMergeMs).toBe(defaultSettings().resumptionMergeMs)
-    // Missing and garbage values fall back to the 300 ms default (#37/#60, ADR 0076).
+    // Missing and garbage values fall back to the 700 ms default (#37/#60, ADR 0076).
     expect(sanitizeSettings({}).endpointDelayMs).toBe(defaultSettings().endpointDelayMs)
     expect(sanitizeSettings({ endpointDelayMs: 'soon' }).endpointDelayMs).toBe(defaultSettings().endpointDelayMs)
     expect(sanitizeSettings({ endpointDelayMs: null }).endpointDelayMs).toBe(defaultSettings().endpointDelayMs)

@@ -49,10 +49,10 @@ function endpointerWith(overrides?: Partial<ReturnType<typeof vadDefaults>>): Ha
 }
 
 describe('utterance endpointing', () => {
-  it('defaults to ~300 ms of trailing silence before the endpoint fires (ADR 0076)', () => {
+  it('defaults to ~700 ms of trailing silence before the endpoint fires (ADR 0076 amendment 2026-10-20)', () => {
     const defaults = vadDefaults()
-    expect(defaults.endFrames * 32).toBeGreaterThanOrEqual(300 - 32)
-    expect(defaults.endFrames * 32).toBeLessThan(300 + 32)
+    expect(defaults.endFrames * 32).toBeGreaterThanOrEqual(700 - 32)
+    expect(defaults.endFrames * 32).toBeLessThan(700 + 32)
   })
 
   it('defaults to no resumption-merge hold (ADR 0076); #60 left the window tunable', () => {
