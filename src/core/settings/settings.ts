@@ -4,6 +4,7 @@
 // set, so env stays the base layer.
 
 import { defaultUsagePrefs, sanitizeUsagePrefs, type UsagePrefs } from '../usage/usage'
+import { IDLE_CARD_IDS, sanitizeIdleCards, type IdleCardId } from '../idle/slots'
 
 export const WAKE_WORD_THRESHOLD_MIN = 0
 export const WAKE_WORD_THRESHOLD_MAX = 1
@@ -86,6 +87,8 @@ export interface AppSettings {
    * ('' hides the card), and which providers and windows it shows.
    */
   usageDashboard: { url: string } & UsagePrefs
+  /** The Idle Screen's pinned cards (core/idle/slots), in the order they read; one left out is not shown. */
+  idleCards: IdleCardId[]
 }
 
 /** The owner's dashboard on the LAN, so the Idle Screen shows it out of the box. */
@@ -105,6 +108,7 @@ export function defaultSettings(): AppSettings {
     appearance: 'system',
     weather: { city: '', units: 'metric' },
     usageDashboard: { url: USAGE_DASHBOARD_URL_DEFAULT, ...defaultUsagePrefs() },
+    idleCards: [...IDLE_CARD_IDS],
   }
 }
 
@@ -177,6 +181,7 @@ export function sanitizeSettings(raw: unknown): AppSettings {
       units: weather?.units === 'imperial' ? 'imperial' : defaults.weather.units,
     },
     usageDashboard: { url: asString(usageDashboard?.url, defaults.usageDashboard.url), ...sanitizeUsagePrefs(usageDashboard) },
+    idleCards: sanitizeIdleCards(record.idleCards),
   }
 }
 

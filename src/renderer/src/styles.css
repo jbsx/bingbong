@@ -1475,6 +1475,12 @@ body {
   font-size: 0.9rem;
 }
 
+.settings-card-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .settings-button {
   height: 36px;
   padding: 0 20px;
@@ -1518,16 +1524,22 @@ body {
    size here is set for that distance — nothing below 16 px, the figures
    that matter (temperatures, the gauges, the countdown, today's date) far
    larger. The top drag strip keeps the window movable while the Toolbar is
-   unmounted. Three bands — clock, the three cards, the Timer / Up Next /
-   Last Page — on the canvas; the cards in the sheet's hairline-and-panel
-   language (ADR 0012), stretched to fill the height between the bands. */
+   unmounted. Three bands on the canvas: the clock as a slim header, the
+   Card Slots (core/idle/slots — a fixed grid of cells, every card handed a box
+   of whole cells it draws itself inside, never sizing the row by its
+   content), and a fixed-height strip of chips — the Timer, Up Next, the
+   Last Page. The cards in the sheet's hairline-and-panel language (ADR
+   0012). */
 .idle-screen {
+  --slot-width: 445px;
+  --slot-gap: 20px;
+  --strip-height: 104px;
   position: relative;
   display: flex;
   flex-direction: column;
   height: 100%;
-  padding: 24px 40px 28px;
-  gap: 22px;
+  padding: 22px 40px 26px;
+  gap: 20px;
 }
 
 .idle-drag-strip {
@@ -1549,17 +1561,21 @@ body {
   max-width: min(560px, calc(100% - 32px));
 }
 
+/* The clock as a header: the time on the left, the date on its baseline. */
 .idle-screen-top {
   display: flex;
   flex: none;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
+  align-items: baseline;
+  gap: 28px;
+  width: calc(4 * var(--slot-width) + 3 * var(--slot-gap));
+  max-width: 100%;
+  margin: 0 auto;
+  padding: 0 8px;
 }
 
 .idle-clock {
   margin: 0;
-  font-size: 9rem;
+  font-size: 7rem;
   font-weight: 200;
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
@@ -1568,31 +1584,49 @@ body {
 
 .idle-date {
   margin: 0;
-  font-size: 1.9rem;
+  font-size: 2.2rem;
   color: var(--muted);
 }
 
-.idle-screen-middle,
-.idle-screen-bottom {
-  display: flex;
-  justify-content: center;
-}
-
-/* The weather, the AI usage and the Calendar side by side, each stretched to
-   the band's height; on a window too narrow for three the Calendar wraps
-   under the other two. */
+/* The Card Slots: four columns of fixed width by two rows sharing the band's
+   height. The screen sets how many columns the placed cards reach, so a
+   screen with fewer cards centres them rather than leaving a hole at the
+   right. A card fills its box and clips at it — it lays itself out for
+   the box it was given, and nothing it holds can push the band. */
 .idle-screen-middle {
-  flex: 1 1 auto;
-  flex-wrap: wrap;
-  align-items: stretch;
+  display: grid;
+  flex: 1 1 0;
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  justify-content: center;
+  gap: var(--slot-gap);
   min-height: 0;
-  gap: 24px;
 }
 
-.idle-weather {
+.idle-slot {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+}
+
+.idle-slot > .idle-card {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* A card with only a line to say: the words centred in its small Card Slot. */
+.idle-note {
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.idle-note-words {
   margin: 0;
-  align-self: center;
   font-size: 1.6rem;
+  line-height: 1.3;
+  text-align: center;
   color: var(--muted);
 }
 
@@ -1610,20 +1644,18 @@ body {
 .wx-card {
   display: flex;
   flex-direction: column;
-  /* Stretched to the row the Calendar sets, the weather sits mid-card. */
-  justify-content: center;
-  gap: 34px;
-  flex: 1 1 460px;
-  max-width: 640px;
-  padding: 26px 30px 22px;
+  gap: 26px;
+  padding: 26px 28px 22px;
   -webkit-app-region: no-drag;
 }
 
-/* The sky, the temperature and the words in one row, the glyph large. */
+/* The sky and the temperature in one row, the glyph large; the city and the words under them. */
 .wx-now {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto 1fr;
   align-items: center;
-  gap: 20px;
+  column-gap: 18px;
+  row-gap: 10px;
 }
 
 .wx-now-temp {
@@ -1636,10 +1668,10 @@ body {
 
 .wx-now-words {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  grid-column: 1 / -1;
+  align-items: baseline;
+  gap: 14px;
   min-width: 0;
-  margin-left: 4px;
 }
 
 .wx-now-city {
@@ -1746,8 +1778,9 @@ body {
 }
 
 .wx-hour-time {
-  font-size: 1.3rem;
+  font-size: 1.1rem;
   color: var(--muted);
+  font-variant-numeric: tabular-nums;
 }
 
 .wx-hour-rain {
@@ -1761,6 +1794,41 @@ body {
 .wx-hour-temp {
   font-size: 1.9rem;
   font-weight: 400;
+}
+
+/* The coming days behind a hairline, a line each: weekday, sky, rain, low and high. */
+.wx-outlook {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 18px 0 0;
+  border-top: 1px solid var(--edge);
+  list-style: none;
+}
+
+.wx-outlook-day {
+  display: grid;
+  grid-template-columns: 4.2em 44px 1fr auto auto;
+  align-items: center;
+  column-gap: 14px;
+  font-size: 1.45rem;
+}
+
+.wx-outlook-name {
+  font-weight: 500;
+}
+
+.wx-outlook-rain {
+  font-size: 1.15rem;
+  font-weight: 500;
+  color: var(--wx-rain);
+}
+
+.wx-outlook-temp {
+  min-width: 2.2em;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 /* The glyph's parts, each in its system color. */
@@ -1789,7 +1857,7 @@ body {
   align-items: center;
   gap: 18px;
   width: min(760px, 100%);
-  padding: 14px 24px 14px 20px;
+  padding: 0 24px 0 20px;
   font: inherit;
   text-align: left;
   cursor: pointer;
@@ -1869,10 +1937,21 @@ body {
    system orange a timer wears; ringing, it turns red and breathes so it
    reads as done from across the room. */
 
+/* The strip: chips at one fixed height, side by side and centred. It never
+   grows — a chip that does not fit wraps out of sight, and the Card Slots above
+   always keep the same room. */
 .idle-screen-bottom {
+  display: flex;
   flex: none;
   flex-wrap: wrap;
+  justify-content: center;
   gap: 20px;
+  height: var(--strip-height);
+  overflow: hidden;
+}
+
+.idle-screen-bottom > .idle-card {
+  height: var(--strip-height);
 }
 
 .idle-timer {
@@ -1881,7 +1960,7 @@ body {
   align-items: center;
   gap: 18px;
   min-width: 400px;
-  padding: 14px 28px 14px 18px;
+  padding: 0 28px 0 18px;
   font: inherit;
   text-align: left;
   -webkit-app-region: no-drag;
@@ -2129,6 +2208,81 @@ body {
   content: '· ';
 }
 
+/* In its Card Slot (2×1): the thumbnail large beside the words, the next
+   three a line each. In a small one (1×1) the thumbnail goes over the words. */
+.idle-slot {
+  container-type: size;
+}
+
+.idle-slot > .idle-music {
+  gap: 28px;
+  width: auto;
+  padding: 24px 32px 24px 24px;
+}
+
+.idle-slot > .idle-music .idle-music-thumb {
+  width: 400px;
+  height: 225px;
+  border-radius: 18px;
+}
+
+.idle-slot > .idle-music .idle-music-words {
+  gap: 8px;
+}
+
+.idle-slot > .idle-music .idle-music-kicker {
+  font-size: 1.15rem;
+}
+
+.idle-slot > .idle-music .idle-music-title {
+  font-size: 2.1rem;
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.idle-slot > .idle-music .idle-music-channel {
+  font-size: 1.4rem;
+}
+
+.idle-slot > .idle-music .idle-music-time {
+  font-size: 1.2rem;
+}
+
+.idle-slot > .idle-music .idle-music-next {
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 6px;
+  font-size: 1.15rem;
+}
+
+.idle-slot > .idle-music .idle-music-next-title + .idle-music-next-title::before {
+  content: none;
+}
+
+@container (max-width: 600px) {
+  .idle-slot > .idle-music {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 16px;
+    padding: 20px;
+  }
+
+  .idle-slot > .idle-music .idle-music-thumb {
+    width: 100%;
+    height: 150px;
+  }
+
+  .idle-slot > .idle-music .idle-music-title {
+    font-size: 1.6rem;
+  }
+
+  .idle-slot > .idle-music .idle-music-next {
+    display: none;
+  }
+}
+
 /* ---- the Calendar ----
    A card beside the weather and the AI Usage, a month view whose days are
    boxes that hold their entries: the bank holiday's name on green, an
@@ -2141,13 +2295,10 @@ body {
    it wraps under the other two. */
 
 .idle-cal {
-  --cal-row: 86px;
   --cal-holiday: color-mix(in srgb, var(--status-green) 30%, transparent);
   display: flex;
-  flex: 1 1 800px;
   flex-direction: column;
   gap: 10px;
-  max-width: 1100px;
   padding: 20px 22px 16px;
   -webkit-app-region: no-drag;
 }
@@ -2221,7 +2372,7 @@ body {
 
 .idle-cal-week {
   flex: 1;
-  min-height: var(--cal-row);
+  min-height: 0;
   border-top: 1px solid var(--edge);
 }
 
@@ -2308,6 +2459,58 @@ body {
   color: var(--muted);
 }
 
+/* A month with no events: no hairlines between the days, the numbers a
+   little larger — the grid reads as a calendar, not an empty table. */
+.idle-cal--quiet .idle-cal-week,
+.idle-cal--quiet .idle-cal-day + .idle-cal-day {
+  border: 0;
+}
+
+.idle-cal--quiet .idle-cal-num {
+  font-size: 1.6rem;
+  min-width: 40px;
+  height: 40px;
+  border-radius: 20px;
+}
+
+/* The small Card Slot: the month's numbers alone, centred, a dot under a day
+   with an entry. */
+.idle-cal--mini {
+  padding: 18px 18px 12px;
+}
+
+.idle-cal--mini .idle-cal-weekday {
+  padding: 0 0 6px;
+  text-align: center;
+}
+
+.idle-cal--mini .idle-cal-week {
+  border: 0;
+}
+
+.idle-cal--mini .idle-cal-day,
+.idle-cal--mini .idle-cal-day + .idle-cal-day {
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 0;
+  border: 0;
+}
+
+.idle-cal--mini .idle-cal-num {
+  align-self: center;
+  min-width: 34px;
+  height: 34px;
+  font-size: 1.3rem;
+}
+
+.idle-cal-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
 /* ---- the Up Next card ----
    Beside the Timer and the Last Page: today's next event from the
    Calendar, a date tile for its mark, the time in the red the month wears. */
@@ -2318,7 +2521,7 @@ body {
   gap: 18px;
   min-width: 400px;
   max-width: 560px;
-  padding: 14px 28px 14px 18px;
+  padding: 0 28px 0 18px;
   -webkit-app-region: no-drag;
 }
 
@@ -2580,9 +2783,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 20px;
-  flex: 1 1 480px;
-  max-width: 720px;
-  padding: 24px 26px 20px;
+  padding: 24px 24px 20px;
   -webkit-app-region: no-drag;
 }
 
@@ -2623,7 +2824,7 @@ body {
   flex-direction: column;
   align-items: center;
   gap: 8px;
-  width: 200px;
+  width: 180px;
 }
 
 .usage-gauge-head {
@@ -2647,8 +2848,8 @@ body {
   position: relative;
   display: grid;
   place-items: center;
-  width: 170px;
-  height: 170px;
+  width: 160px;
+  height: 160px;
 }
 
 .usage-dots > svg {
@@ -2666,17 +2867,18 @@ body {
   fill: color-mix(in srgb, var(--text) 45%, var(--bubble));
 }
 
-/* The number over the dots, outlined in the panel so it reads on lit and
-   unlit dots alike. */
+/* The number over the dots, on a plate of the panel so it reads as one
+   shape from across the room — the dots show round it. */
 .usage-dots-pct {
   position: relative;
-  font-size: 5.75rem;
-  font-weight: 800;
+  padding: 0.04em 0.12em;
+  border-radius: 0.28em;
+  background: var(--panel);
+  font-size: 5.25rem;
+  font-weight: 700;
   line-height: 1;
   color: var(--usage-tone);
   font-variant-numeric: tabular-nums;
-  paint-order: stroke fill;
-  -webkit-text-stroke: 8px var(--panel);
 }
 
 .usage-dots-pct--over {
@@ -2785,55 +2987,74 @@ body {
   font-weight: 600;
 }
 
-/* Past two providers: smaller gauges in a wrapping row, the chart still
-   under them. */
-.usage-card--many .usage-gauges {
-  flex-wrap: wrap;
-  justify-content: space-between;
+/* Past two providers: one provider a row — the gauge on the left, its name,
+   its reset and its other windows beside it — the rows sharing the card's
+   height, and when the dashboard refreshed at the foot instead of a chart. */
+.usage-card--many {
   gap: 12px;
 }
 
-.usage-card--many .usage-gauge {
-  width: 150px;
-  gap: 6px;
+.usage-card--many .usage-gauges {
+  flex: 1 1 0;
+  flex-direction: column;
+  justify-content: space-evenly;
+  gap: 10px;
+  min-height: 0;
+  container-type: size;
 }
 
-.usage-card--many .usage-gauge-plan {
-  display: none;
+/* Each row's gauge as large as the rows' share of the card allows, 150 px at most. */
+.usage-card--many .usage-gauge {
+  --dot: min(150px, calc(100cqh / var(--rows) - 14px));
+  display: grid;
+  grid-template-columns: var(--dot) minmax(0, 1fr);
+  grid-template-rows: auto auto 1fr;
+  align-items: start;
+  column-gap: 18px;
+  row-gap: 4px;
+  width: auto;
 }
 
 .usage-card--many .usage-dots {
-  width: 120px;
-  height: 120px;
+  grid-column: 1;
+  grid-row: 1 / span 3;
+  width: var(--dot);
+  height: var(--dot);
 }
 
 .usage-card--many .usage-dots-pct {
-  font-size: 3.75rem;
-  -webkit-text-stroke-width: 6px;
+  font-size: calc(var(--dot) * 0.4);
 }
 
-.usage-card--many .usage-bar {
-  grid-template-columns: auto 1fr;
+.usage-card--many .usage-gauge-head {
+  align-self: end;
 }
 
-/* No room beside the track: the percentage drops under it, left of the reset. */
-.usage-card--many .usage-bar-pct {
-  grid-row: 2;
-  grid-column: 1;
-  margin-top: -2px;
-}
-
-.usage-card--many .usage-bar-reset {
+.usage-card--many .usage-gauge-head,
+.usage-card--many .usage-gauge-reset,
+.usage-card--many .usage-bars {
   grid-column: 2;
 }
 
+
+.usage-card--many .usage-gauge-plan {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 .usage-card--many .usage-gauge-reset {
-  font-size: 1rem;
   white-space: nowrap;
 }
 
-.usage-card--many .usage-chart-plot {
-  min-height: 140px;
+.usage-card--many .usage-bars {
+  gap: 2px;
+}
+
+.usage-foot {
+  display: flex;
+  flex: none;
+  justify-content: flex-end;
 }
 
 /* ---- the AI usage settings: the dashboard's ⚙ Metrics panel ---- */

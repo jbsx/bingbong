@@ -5,6 +5,7 @@ import {
   skyOf,
   temperatureHue,
   todayOf,
+  outlookOf,
   upcomingHours,
   weatherDescription,
   type FetchJson,
@@ -38,12 +39,13 @@ const berlinForecast = { current: { temperature_2m: 12.4, weather_code: 3 } }
 const berlinDay = {
   current: { time: '2026-10-18T21:20', temperature_2m: 12.4, weather_code: 3, is_day: 0 },
   daily: {
-    time: ['2026-10-18', '2026-10-19'],
-    temperature_2m_max: [17.8, 15.1],
-    temperature_2m_min: [8.6, 7.2],
-    precipitation_probability_max: [35, 60],
-    sunrise: ['2026-10-18T07:38', '2026-10-19T07:40'],
-    sunset: ['2026-10-18T18:04', '2026-10-19T18:02'],
+    time: ['2026-10-18', '2026-10-19', '2026-10-20', '2026-10-21'],
+    temperature_2m_max: [17.8, 15.1, 13.4, 14.0],
+    temperature_2m_min: [8.6, 7.2, 6.1, 5.5],
+    precipitation_probability_max: [35, 60, 80, 10],
+    sunrise: ['2026-10-18T07:38', '2026-10-19T07:40', '2026-10-20T07:41', '2026-10-21T07:43'],
+    sunset: ['2026-10-18T18:04', '2026-10-19T18:02', '2026-10-20T18:00', '2026-10-21T17:58'],
+    weather_code: [3, 61, 63, 1],
   },
   hourly: {
     time: ['2026-10-18T20:00', '2026-10-18T21:00', '2026-10-18T22:00', '2026-10-18T23:00', '2026-10-19T00:00', '2026-10-19T01:00', '2026-10-19T02:00', '2026-10-19T03:00', '2026-10-19T04:00'],
@@ -60,7 +62,7 @@ describe('fetchWeather', () => {
 
     const report = await fetchWeather(fetchJson, 'Berlin', 'metric')
 
-    expect(report).toEqual({ city: 'Berlin', temperature: 12.4, units: 'metric', description: 'overcast', sky: 'cloudy', isDay: null, today: null, hours: [] })
+    expect(report).toEqual({ city: 'Berlin', temperature: 12.4, units: 'metric', description: 'overcast', sky: 'cloudy', isDay: null, today: null, hours: [], days: [] })
     const geocodeUrl = fetchJson.urls.find((url) => url.startsWith(`${GEOCODE}?`))
     const forecastUrl = fetchJson.urls.find((url) => url.startsWith(`${FORECAST}?`))
     expect(geocodeUrl).toContain('name=Berlin')
@@ -75,15 +77,21 @@ describe('fetchWeather', () => {
     const report = await fetchWeather(fetchJson, 'Berlin', 'metric')
 
     const forecastUrl = fetchJson.urls.find((url) => url.startsWith(`${FORECAST}?`)) ?? ''
-    expect(forecastUrl).toContain('daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset')
+    expect(forecastUrl).toContain('daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset,weather_code')
     expect(forecastUrl).toContain('hourly=temperature_2m,weather_code,precipitation_probability')
     expect(forecastUrl).toContain('timezone=auto')
-    expect(forecastUrl).toContain('forecast_days=2')
+    expect(forecastUrl).toContain('forecast_days=4')
     expect(report.today).toEqual({ high: 17.8, low: 8.6, precipitationChance: 35, sunrise: '2026-10-18T07:38', sunset: '2026-10-18T18:04' })
     // The hour under way (21:00) is the current reading's; the strip starts at the next one and crosses midnight.
     expect(report.hours?.map((hour) => hour.time)).toEqual(['2026-10-18T22:00', '2026-10-18T23:00', '2026-10-19T00:00', '2026-10-19T01:00', '2026-10-19T02:00', '2026-10-19T03:00'])
     expect(report.hours?.[0]).toEqual({ time: '2026-10-18T22:00', temperature: 12.0, description: 'partly cloudy', sky: 'partly-cloudy', isDay: false, precipitationChance: 0 })
     expect(report.isDay).toBe(false)
+    // The outlook: the three days after today, each with its sky.
+    expect(report.days?.map((day) => `${day.date} ${day.low}–${day.high} ${day.sky} ${day.precipitationChance}`)).toEqual([
+      '2026-10-19 7.2–15.1 rain 60',
+      '2026-10-20 6.1–13.4 rain 80',
+      '2026-10-21 5.5–14 partly-cloudy 10',
+    ])
   })
 
   it('asks the API for fahrenheit when imperial units are configured', async () => {
@@ -134,6 +142,14 @@ describe('fetchWeather', () => {
     }
 
     await expect(fetchWeather(fetchJson, 'Berlin', 'metric')).rejects.toThrow('network down')
+  })
+})
+
+describe('outlookOf', () => {
+  it('skips a day missing its date, range or code, and reads nothing from a missing block', () => {
+    const daily = { time: ['a', 'b', 'c'], temperature_2m_max: [1, 2, 3], temperature_2m_min: [0, 1, 2], weather_code: [0, null, 3] }
+    expect(outlookOf(daily).map((day) => day.date)).toEqual(['c'])
+    expect(outlookOf(undefined)).toEqual([])
   })
 })
 

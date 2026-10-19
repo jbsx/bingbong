@@ -375,20 +375,21 @@ or closing it (owner ruling 2026-10-18, #334).
 _Avoid_: activity bar, sidebar, activity sidebar
 
 **Idle Screen**:
-What renders while nothing is happening: the clock and date, the weather
-(the current conditions, today's high, low, rain chance and sun times, and
-the six coming hours, all in the city's own clock — the sky as a colored
-glyph, every temperature in its hue from blue through green to red, rain in
-blue, so the day reads from across the room), the AI Usage card and the
-Calendar beside the weather, the Timer when one is set, today's next event when the
-Calendar has one, Now Playing while the Player holds a song, and the Last
-Page with its way back. It is laid out for
-the appliance's 21-inch 1920×1080 display (owner, 2026-10-19), to be read
-from a couple of metres away (owner, 2026-10-19: "the components are too
-small"): the three cards fill the height between the clock and the bottom
-band, nothing is set below 16 px, and the figures that matter — the
-temperatures, the gauges, the countdown, today's date — are far larger. A
-smaller window shows the same layout scaled down to fit. Never shows Feed Entries (#70); never comes up over a running
+What renders while nothing is happening: the clock and date as a slim
+header, the owner's Pinned Cards in Card Slots — the weather (the current
+conditions, today's high, low, rain chance and sun times, the six coming
+hours and the three coming days, all in the city's own clock — the sky as a
+colored glyph, every temperature in its hue from blue through green to red,
+rain in blue, so the day reads from across the room; the hours' temperature
+row is left off when every hour reads the same), the AI Usage card and the
+Calendar, and Now Playing while the Player holds a song — and under them a
+strip of chips: the Timer when one is set, today's next event when the
+Calendar has one, and the Last Page with its way back. It is laid out for the appliance's 21-inch 1920×1080 display
+(owner, 2026-10-19), to be read from a couple of metres away (owner,
+2026-10-19: "the components are too small"): nothing is set below 16 px,
+and the figures that matter — the temperatures, the gauges, the countdown,
+today's date — are far larger. A smaller window shows the same layout
+scaled down to fit. Never shows Feed Entries (#70); never comes up over a running
 Command, an open mic or the settings page. Once up it stays up through the
 voice half and the pipeline — the ear opening, a heard line, a reading —
 with the Status Capsule shown on it while they run, so a Command that never
@@ -405,8 +406,10 @@ screen carries, and the owner's reversal of #70's "clock and weather only".
 _Avoid_: screensaver
 
 **Now Playing**:
-The Idle Screen's card of the song the Player holds (#344), beside the
-Timer and the Last Page: its thumbnail, title and channel, a progress bar
+The Idle Screen's card of the song the Player holds (#344), a 2×1 Card
+Slot while it holds one — the Calendar with no events steps down to this
+week and next to make the room (moved out of the chips strip on
+2026-10-19, which it was too tall for): its thumbnail, title and channel, a progress bar
 with the time played and the length, a loop glyph while it loops, a pause
 glyph while paused, and the next three queued titles. It follows the
 Player's once-a-second read, so nothing new crosses CDP for it. A song that
@@ -416,17 +419,44 @@ like the other idle controls, and unlike them leaves the Idle Screen up. A
 ringing Timer takes its place.
 _Avoid_: mini player, media card
 
+**Card Slot**:
+A box of whole cells on the Idle Screen's grid — four columns of 445 px by
+two rows sharing the height between the header and the strip, on the
+1920×1080 canvas — that a card is handed and draws itself inside (owner,
+2026-10-19: "i plan on having more widgets and cards"; the recommended
+layout taken the same day). A card offers the sizes it can draw at (1×1,
+2×1, 1×2, 2×2), largest first; each Pinned Card gets the largest that still
+fits, the cards with something to show sized first, so an empty one — the
+Calendar with no events this month — yields its room, and a card that fits
+nowhere is left off. The boxes are then laid down in pinned order; fewer
+cards than columns are centred. A card clips at its box: its content never
+sizes the row, so nothing it holds can push the strip (the overlap the
+2026-10-19 screenshot found). The chips strip has one fixed height; a chip
+that does not fit wraps out of sight. Not yet built: a rotating Card Slot for
+cards past what fits (deferred until pinned cards no longer fit).
+_Avoid_: widget, tile
+
+**Pinned Cards**:
+The Idle Screen's cards the owner chose in settings, in the order they
+read (weather, AI Usage, Calendar, Now Playing untouched); one left out is
+not shown.
+A card that has nothing to say — the weather unset or loading, the usage
+dashboard unreachable — keeps a small Card Slot with its line.
+
 **AI Usage**:
 The Idle Screen's card of AI providers' limits, read from the owner's
 usage dashboard on the LAN (an HTTP server outside this repo,
 `http://192.168.1.73:4321` by default, set in settings; empty hides it;
 2026-10-19 ask: "the line chart and the gauges for codex and claude").
-Each shown provider gets a dot gauge drawn as that dashboard draws it: the
-dots fill as the window runs to its reset, the number is the share of the
-limit used; its other shown windows sit under it as bars. Beside them (under
-them past two providers), the last twelve hours of the charted windows as
-lines, a 5-hour one solid, a longer one dashed, and when the dashboard last
-refreshed, amber once that is over five minutes old. What it shows is
+A tall Card Slot. Each shown provider gets a dot gauge drawn as that dashboard
+draws it: the dots fill as the window runs to its reset, the number is the
+share of the limit used, on a plate of the card so it reads as one shape;
+its other shown windows sit under it as bars. Up to two providers sit side
+by side over the last twelve hours of the charted windows as lines, a
+5-hour one solid, a longer one dashed; past two each provider is a row —
+gauge, name, reset, bars — sized to the card's share and the chart is left
+off. Either way the card says when the dashboard last refreshed, amber once
+that is over five minutes old. What it shows is
 chosen in settings the way the dashboard's ⚙ Metrics panel chooses it
 (2026-10-19 ruling: kept in Bing Bong, any of the dashboard's providers):
 which providers (Codex and Claude untouched), and per provider which
@@ -447,9 +477,11 @@ itself"): the locale's weeks, each day a box holding its entries — its
 bank holiday by name on green ("bank holidays in the UK marked", England
 and Wales's), then its events, an all-day one as a red bar and a timed one
 as a dot and its title, "+N more" past two — today's date in a red disc,
-the next bank holiday named in the header. Made for the appliance's
-21-inch 1920×1080 display, where all three cards sit in one row; a window
-too narrow for three wraps the Calendar under them. Bank holidays are computed, not
+the next bank holiday named in the header when it falls this month or
+next. A 2×2 Card Slot; a month with no events is drawn quiet (no hairlines
+between the days) and yields its Card Slot to cards with something to show —
+given a 2×1 it draws this week and next, given a 1×1 the month's numbers
+alone with a dot under a day with an entry. Bank holidays are computed, not
 fetched — the rules plus the proclaimed one-offs, matching
 gov.uk/bank-holidays.json 2019–2028; a new proclamation is added by hand.
 Events come from Calendar Sources — one per provider, each

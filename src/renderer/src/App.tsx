@@ -113,7 +113,7 @@ export function App() {
   useEffect(() => window.bingbong.idle.reportShown(showIdle), [showIdle])
 
   if (showIdle) {
-    return <IdleScreen weather={weather} usage={usage} usagePrefs={settings?.usageDashboard ?? defaultUsagePrefs()} lastPage={lastPage} timer={timer} nowPlaying={nowPlaying} status={status} hint={hint} />
+    return <IdleScreen weather={weather} usage={usage} usagePrefs={settings?.usageDashboard ?? defaultUsagePrefs()} cards={settings?.idleCards} lastPage={lastPage} timer={timer} nowPlaying={nowPlaying} status={status} hint={hint} />
   }
 
   return (

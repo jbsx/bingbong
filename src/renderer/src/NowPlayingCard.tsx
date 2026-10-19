@@ -19,8 +19,8 @@ function Thumbnail({ id, paused }: { id: string; paused: boolean }) {
 }
 
 /**
- * Now Playing (#344, CONTEXT.md), beside the Timer and the Last Page while
- * the Player holds a song: its thumbnail, title and channel, how far in,
+ * Now Playing (#344, CONTEXT.md), a 2×1 Card Slot while the Player holds a
+ * song (a 1×1 when that is all that is left, the thumbnail over the words): its thumbnail, title and channel, how far in,
  * a loop glyph when it loops and a pause glyph when paused, and the next
  * three queued titles. A song that ran out with nothing queued stays,
  * shown ended. The tap pauses or plays it through the same Command the

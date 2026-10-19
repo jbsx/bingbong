@@ -119,8 +119,6 @@ function UsageChart({ providers, updatedAt, now }: { providers: readonly UsageVi
   const peak = Math.max(0, ...lines.flatMap(({ window }) => window.history.filter(([time]) => time >= start).map(([, pct]) => pct)))
   const ceiling = chartCeiling(peak)
   const rows = [1, 0.75, 0.5, 0.25, 0].map((share) => Math.round(ceiling * share))
-  const stale = now - updatedAt > USAGE_STALE_MS
-  const updated = new Date(updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   return (
     <div className="usage-chart" aria-label="usage over the last twelve hours">
       <div className="usage-chart-head">
@@ -134,7 +132,7 @@ function UsageChart({ providers, updatedAt, now }: { providers: readonly UsageVi
             </span>
           ))}
         </span>
-        <span className={stale ? 'usage-updated usage-updated--stale' : 'usage-updated'}>Updated {updated}</span>
+        <Updated updatedAt={updatedAt} now={now} />
       </div>
       <div className="usage-chart-plot">
         <span className="usage-chart-y" aria-hidden="true">
@@ -165,23 +163,45 @@ function UsageChart({ providers, updatedAt, now }: { providers: readonly UsageVi
   )
 }
 
+/** When the dashboard last refreshed, amber once that is past USAGE_STALE_MS (a failed poll keeps the last numbers on screen). */
+function Updated({ updatedAt, now }: { updatedAt: number; now: number }) {
+  const stale = now - updatedAt > USAGE_STALE_MS
+  const updated = new Date(updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  return <span className={stale ? 'usage-updated usage-updated--stale' : 'usage-updated'}>Updated {updated}</span>
+}
+
+/** Past this many providers the gauges become a list, one provider a row, and the chart gives way to them. */
+const CHARTED_PROVIDERS = 2
+
 /**
- * The AI Usage card (CONTEXT.md): the chosen providers' gauges as the
- * owner's usage dashboard draws them, beside that dashboard's history as
- * lines and when it last refreshed. Read-only — a tap wakes the dashboard
- * like anywhere else on the Idle Screen; the choices live in settings.
- * The gauges sit in a row across the top and the chart fills the card
- * under them; past two providers the gauges shrink to make the row.
+ * The AI Usage card (CONTEXT.md), a tall Card Slot: the chosen providers' gauges
+ * as the owner's usage dashboard draws them, beside that dashboard's
+ * history as lines and when it last refreshed. Read-only — a tap wakes the
+ * dashboard like anywhere else on the Idle Screen; the choices live in
+ * settings. Up to two providers sit side by side over the chart; past that
+ * each provider is a row — its gauge, its name, its reset and its other
+ * windows — and the chart is left off, so the card still fits its Card Slot.
  */
 export function UsageCard({ providers, updatedAt, now }: { providers: readonly UsageView[]; updatedAt: number; now: number }) {
+  const many = providers.length > CHARTED_PROVIDERS
   return (
-    <section className={providers.length > 2 ? 'idle-card usage-card usage-card--many' : 'idle-card usage-card'} aria-label="AI usage">
+    <section
+      className={many ? 'idle-card usage-card usage-card--many' : 'idle-card usage-card'}
+      style={{ '--rows': String(providers.length) } as React.CSSProperties}
+      aria-label="AI usage"
+    >
       <div className="usage-gauges">
         {providers.map((provider) => (
           <Gauge key={provider.name} provider={provider} now={now} />
         ))}
       </div>
-      <UsageChart providers={providers} updatedAt={updatedAt} now={now} />
+      {many ? (
+        <div className="usage-foot">
+          <Updated updatedAt={updatedAt} now={now} />
+        </div>
+      ) : (
+        <UsageChart providers={providers} updatedAt={updatedAt} now={now} />
+      )}
     </section>
   )
 }

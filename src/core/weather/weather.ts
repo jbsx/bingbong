@@ -37,6 +37,17 @@ export interface WeatherDay {
   sunset: string | null
 }
 
+/** One of the days after today, for the outlook: its local date (`YYYY-MM-DD`), range, sky and rain chance. */
+export interface WeatherOutlookDay {
+  date: string
+  high: number
+  low: number
+  description: string
+  sky: WeatherSky
+  /** The day's highest chance of precipitation, 0–100; null when the API gave none. */
+  precipitationChance: number | null
+}
+
 export interface WeatherReport {
   /** Resolved place name from the geocoder. */
   city: string
@@ -52,10 +63,15 @@ export interface WeatherReport {
   today?: WeatherDay | null
   /** The next {@link UPCOMING_HOURS} hours after the current one; empty when the response carried no hourly block. */
   hours?: WeatherHour[]
+  /** The {@link OUTLOOK_DAYS} days after today; empty when the daily block carried none. */
+  days?: WeatherOutlookDay[]
 }
 
 /** How many coming hours the report carries. */
 export const UPCOMING_HOURS = 6
+
+/** How many days after today the outlook carries. */
+export const OUTLOOK_DAYS = 3
 
 const GEOCODE_URL = 'https://geocoding-api.open-meteo.com/v1/search'
 const FORECAST_URL = 'https://api.open-meteo.com/v1/forecast'
@@ -185,8 +201,8 @@ export async function fetchWeather(
     `${FORECAST_URL}?latitude=${place.latitude}&longitude=${place.longitude}` +
     `&current=temperature_2m,weather_code,is_day` +
     `&hourly=temperature_2m,weather_code,precipitation_probability,is_day` +
-    `&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset` +
-    `&forecast_days=2&timezone=auto&temperature_unit=${temperatureUnit}`
+    `&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset,weather_code` +
+    `&forecast_days=${OUTLOOK_DAYS + 1}&timezone=auto&temperature_unit=${temperatureUnit}`
   const body = asRecord(await fetchJson(url))
   const current = asRecord(body?.current)
   if (typeof current?.temperature_2m !== 'number' || typeof current?.weather_code !== 'number') {
@@ -201,6 +217,7 @@ export async function fetchWeather(
     isDay: dayFlag(current.is_day),
     today: todayOf(body?.daily),
     hours: upcomingHours(typeof current.time === 'string' ? current.time : '', body?.hourly),
+    days: outlookOf(body?.daily),
   }
 }
 
@@ -232,6 +249,28 @@ export function todayOf(daily: unknown): WeatherDay | null {
     sunrise: stringAt(block?.sunrise, 0),
     sunset: stringAt(block?.sunset, 0),
   }
+}
+
+/** The days after the daily block's first, as far as {@link OUTLOOK_DAYS}; a day missing its date, range or code is skipped. */
+export function outlookOf(daily: unknown, count = OUTLOOK_DAYS): WeatherOutlookDay[] {
+  const block = asRecord(daily)
+  const days: WeatherOutlookDay[] = []
+  for (let index = 1; index <= count; index += 1) {
+    const date = stringAt(block?.time, index)
+    const high = numberAt(block?.temperature_2m_max, index)
+    const low = numberAt(block?.temperature_2m_min, index)
+    const code = numberAt(block?.weather_code, index)
+    if (date === null || high === null || low === null || code === null) continue
+    days.push({
+      date,
+      high,
+      low,
+      description: weatherDescription(code),
+      sky: skyOf(code),
+      precipitationChance: numberAt(block?.precipitation_probability_max, index),
+    })
+  }
+  return days
 }
 
 /**

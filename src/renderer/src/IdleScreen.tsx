@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { lastPageLabel, type LastPage } from '../../core/browser/lastPage'
 import { hourLabel } from '../../core/weather/hourLabel'
-import { temperatureHue, type WeatherDay, type WeatherHour, type WeatherReport } from '../../core/weather/weather'
+import { temperatureHue, type WeatherDay, type WeatherHour, type WeatherOutlookDay, type WeatherReport } from '../../core/weather/weather'
 import type { WeatherUnits } from '../../core/settings/settings'
 import { countdownLabel, describeDuration } from '../../core/timer/duration'
 import type { TimerState } from '../../core/timer/timer'
@@ -10,6 +10,7 @@ import { NowPlayingCard } from './NowPlayingCard'
 import type { CalendarEvent } from '../../core/calendar/calendar'
 import { monthGrid, upNext, weekStartOf, type UpNext } from '../../core/calendar/month'
 import { nextHoliday, ukBankHolidays } from '../../core/calendar/ukBankHolidays'
+import { IDLE_CARD_IDS, layoutSlots, type IdleCardId, type SlotPlacement, type SlotRequest, type SlotSize } from '../../core/idle/slots'
 import { useCalendarEvents } from './useCalendar'
 import type { VoiceHint } from '../../core/voice/voiceHint'
 import type { WeatherState } from './useWeather'
@@ -112,7 +113,13 @@ function DayRow({ today, units }: { today: WeatherDay; units: WeatherUnits }) {
   )
 }
 
+/**
+ * The coming hours: time, glyph, rain, temperature. When every hour rounds
+ * to the same temperature the row would only repeat the headline, so it is
+ * left off and the strip reads as the sky alone.
+ */
 function HourStrip({ hours, units }: { hours: readonly WeatherHour[]; units: WeatherUnits }) {
+  const flat = new Set(hours.map((hour) => Math.round(hour.temperature))).size === 1
   return (
     <ul className="wx-hours" aria-label="coming hours">
       {hours.map((hour) => (
@@ -122,8 +129,36 @@ function HourStrip({ hours, units }: { hours: readonly WeatherHour[]; units: Wea
           <span className="wx-hour-rain">
             {hour.precipitationChance !== null && hour.precipitationChance >= 20 ? `${Math.round(hour.precipitationChance)}%` : ''}
           </span>
-          <span className="wx-temp wx-hour-temp" style={hueStyle(hour.temperature, units)}>
-            {degrees(hour.temperature)}
+          {flat ? null : (
+            <span className="wx-temp wx-hour-temp" style={hueStyle(hour.temperature, units)}>
+              {degrees(hour.temperature)}
+            </span>
+          )}
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+function outlookWeekday(date: string): string {
+  const [year, month, day] = date.split('-').map(Number)
+  return new Date(year, month - 1, day).toLocaleDateString([], { weekday: 'short' })
+}
+
+/** The days after today, one line each: the weekday, the sky, the rain chance and the range in its hues. */
+function Outlook({ days, units }: { days: readonly WeatherOutlookDay[]; units: WeatherUnits }) {
+  return (
+    <ul className="wx-outlook" aria-label="coming days">
+      {days.map((day) => (
+        <li key={day.date} className="wx-outlook-day" aria-label={`${outlookWeekday(day.date)}: ${day.description}, ${degrees(day.low)} to ${degrees(day.high)}`}>
+          <span className="wx-outlook-name">{outlookWeekday(day.date)}</span>
+          <WeatherIcon sky={day.sky} isDay={true} size={44} />
+          <span className="wx-outlook-rain">{day.precipitationChance !== null && day.precipitationChance >= 20 ? `${Math.round(day.precipitationChance)}%` : ''}</span>
+          <span className="wx-temp wx-outlook-temp" style={hueStyle(day.low, units)}>
+            {degrees(day.low)}
+          </span>
+          <span className="wx-temp wx-outlook-temp" style={hueStyle(day.high, units)}>
+            {degrees(day.high)}
           </span>
         </li>
       ))}
@@ -132,13 +167,15 @@ function HourStrip({ hours, units }: { hours: readonly WeatherHour[]; units: Wea
 }
 
 /**
- * The weather card: the sky as one large glyph beside the temperature, the
- * city and the words under it; today's row; the coming hours behind a
- * hairline. Temperatures carry their hue, so warmth reads from across the
- * room; everything else keeps the sheet's ink and system colors.
+ * The weather card, a tall Card Slot: the sky as one large glyph beside the
+ * temperature, the city and the words under them; today's row; then the
+ * coming hours and the coming days behind hairlines, from the top down.
+ * Temperatures carry their hue, so warmth reads from across the room;
+ * everything else keeps the sheet's ink and system colors.
  */
 function WeatherCard({ report }: { report: WeatherReport }) {
   const hours = report.hours ?? []
+  const days = report.days ?? []
   return (
     <section className="idle-card wx-card" aria-label="weather">
       <div className="wx-now">
@@ -153,6 +190,16 @@ function WeatherCard({ report }: { report: WeatherReport }) {
       </div>
       {report.today ? <DayRow today={report.today} units={report.units} /> : null}
       {hours.length > 0 ? <HourStrip hours={hours} units={report.units} /> : null}
+      {days.length > 0 ? <Outlook days={days} units={report.units} /> : null}
+    </section>
+  )
+}
+
+/** A card with only a line to say (the weather unset or loading, the usage dashboard unreachable): a small Card Slot, the words centred. */
+function NoteCard({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <section className="idle-card idle-note" aria-label={label}>
+      <p className="idle-note-words">{children}</p>
     </section>
   )
 }
@@ -193,22 +240,46 @@ function eventTime(event: CalendarEvent, now: Date): string {
   return new Date(event.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 }
 
+/** The Calendar's three drawings, by the Card Slot it is given: the month (2×2), this week and next (2×1), the month's numbers alone (1×1). */
+type CalendarShape = 'month' | 'weeks' | 'mini'
+
+function calendarShape(size: SlotSize): CalendarShape {
+  if (size.w >= 2 && size.h >= 2) return 'month'
+  if (size.w >= 2) return 'weeks'
+  return 'mini'
+}
+
+/** Whether a holiday is worth the header: this month's or next month's, not one a season away. */
+function holidaySoon(date: string, now: Date): boolean {
+  const [year, month] = date.split('-').map(Number)
+  return (year - now.getFullYear()) * 12 + (month - 1 - now.getMonth()) <= 1
+}
+
 /**
  * The Calendar (CONTEXT.md), a card beside the weather and the AI Usage: a
  * month view in the locale's weeks whose days are boxes big enough to hold
  * their entries — England and Wales's bank holiday by name in green, then
- * the day's events (none until a source is wired), "+N more" past two.
- * Today's date in a red disc, weekends quieter, the next bank holiday named
- * in the header.
+ * the day's events, "+N more" past two. Today's date in a red disc,
+ * weekends quieter, the next bank holiday named in the header when it falls
+ * this month or next. A month with no events is drawn quiet — no hairlines
+ * between the days — and yields its Card Slot to cards with something to show:
+ * given a wide Card Slot it draws this week and next, given a small one the
+ * month's numbers alone, a dot under any day with an entry.
  */
-function MonthCalendar({ now, weekStart, events }: { now: Date; weekStart: number; events: readonly CalendarEvent[] }) {
+function MonthCalendar({ now, weekStart, events, size }: { now: Date; weekStart: number; events: readonly CalendarEvent[]; size: SlotSize }) {
   // This year's and next, so December's trailing days and its "next" reach into January.
   const holidays = [...ukBankHolidays(now.getFullYear()), ...ukBankHolidays(now.getFullYear() + 1)]
   const grid = monthGrid(now, weekStart, events, holidays)
   const monthName = new Date(grid.month).toLocaleDateString([], { month: 'long' })
-  const coming = nextHoliday(now, holidays)
+  const next = nextHoliday(now, holidays)
+  const shape = calendarShape(size)
+  const coming = next !== null && shape !== 'mini' && holidaySoon(next.date, now) ? next : null
+  const today = Math.max(0, grid.weeks.findIndex((week) => week.some((day) => day.isToday)))
+  const from = Math.max(0, Math.min(today, grid.weeks.length - 2))
+  const weeks = shape === 'weeks' ? grid.weeks.slice(from, from + 2) : grid.weeks
+  const cardClass = ['idle-card', 'idle-cal', `idle-cal--${shape}`, events.length === 0 ? 'idle-cal--quiet' : ''].filter(Boolean).join(' ')
   return (
-    <section className="idle-card idle-cal" aria-label={`calendar: ${monthName} ${now.getFullYear()}`}>
+    <section className={cardClass} aria-label={`calendar: ${monthName} ${now.getFullYear()}`}>
       <header className="idle-cal-head">
         <span className="idle-cal-month">{monthName}</span>
         <span className="idle-cal-year">{now.getFullYear()}</span>
@@ -228,7 +299,7 @@ function MonthCalendar({ now, weekStart, events }: { now: Date; weekStart: numbe
             </span>
           ))}
         </div>
-        {grid.weeks.map((week) => (
+        {weeks.map((week) => (
           <div key={week[0].start} className="idle-cal-week" role="row">
             {week.map((day, column) => {
               const className = [
@@ -243,6 +314,14 @@ function MonthCalendar({ now, weekStart, events }: { now: Date; weekStart: numbe
               const entries = day.holiday !== null ? DAY_ENTRIES - 1 : DAY_ENTRIES
               const more = day.events.length - entries
               const label = [String(day.day), day.holiday, ...day.events.map((event) => event.title)].filter(Boolean).join(', ')
+              if (shape === 'mini') {
+                return (
+                  <div key={day.start} role="gridcell" className={className} aria-current={day.isToday ? 'date' : undefined} aria-label={label}>
+                    <span className="idle-cal-num">{day.day}</span>
+                    {day.holiday !== null || day.events.length > 0 ? <span className="idle-cal-dot" aria-hidden="true" /> : null}
+                  </div>
+                )
+              }
               return (
                 <div key={day.start} role="gridcell" className={className} aria-current={day.isToday ? 'date' : undefined} aria-label={label}>
                   <span className="idle-cal-num">{day.day}</span>
@@ -454,6 +533,12 @@ function TimerCard({ timer }: { timer: Exclude<TimerState, { status: 'off' }> })
 const DESIGN_WIDTH = 1920
 const DESIGN_HEIGHT = 1080
 
+/** The Card Slot sizes the cards ask for (core/idle/slots). */
+const SMALL: SlotSize = { w: 1, h: 1 }
+const TALL: SlotSize = { w: 1, h: 2 }
+const WIDE: SlotSize = { w: 2, h: 1 }
+const BIG: SlotSize = { w: 2, h: 2 }
+
 function fitZoom(): number {
   return Math.min(1, window.innerWidth / DESIGN_WIDTH, window.innerHeight / DESIGN_HEIGHT)
 }
@@ -493,6 +578,7 @@ export function IdleScreen({
   weather,
   usage,
   usagePrefs,
+  cards = IDLE_CARD_IDS,
   lastPage,
   timer,
   nowPlaying,
@@ -502,6 +588,8 @@ export function IdleScreen({
   weather: WeatherState
   usage: UsageState
   usagePrefs: UsagePrefs
+  /** The pinned cards, in the order they read (settings' idleCards). */
+  cards?: readonly IdleCardId[]
   lastPage: LastPage | null
   timer: TimerState
   nowPlaying: NowPlaying | null
@@ -523,6 +611,39 @@ export function IdleScreen({
   // Zoomed, the screen is laid out at the size it would have unzoomed, so it still fills the window.
   const fit = zoom < 1 ? { zoom, width: `${window.innerWidth / zoom}px`, height: `${window.innerHeight / zoom}px` } : undefined
 
+  // Each pinned card's ask of the grid: the sizes it draws at and whether it has anything to show now.
+  const requests: SlotRequest<IdleCardId>[] = cards.map((id) => {
+    switch (id) {
+      case 'weather':
+        return { id, sizes: weather.status === 'ready' ? [TALL] : [SMALL], hasContent: weather.status === 'ready' }
+      case 'usage':
+        if (usage.status === 'ready' && usageViews.length > 0) return { id, sizes: [TALL], hasContent: true }
+        return { id, sizes: usage.status === 'error' ? [SMALL] : [], hasContent: false }
+      case 'calendar':
+        return { id, sizes: [BIG, WIDE, SMALL], hasContent: events.length > 0 }
+      case 'music':
+        // A ringing Timer takes its place: the alarm is what the room should see.
+        return nowPlaying !== null && timer.status !== 'ringing' ? { id, sizes: [WIDE, SMALL], hasContent: true } : { id, sizes: [], hasContent: false }
+    }
+  })
+  const layout = layoutSlots(requests)
+  const card = (placement: SlotPlacement<IdleCardId>): React.ReactNode => {
+    switch (placement.id) {
+      case 'weather':
+        return weather.status === 'ready' ? <WeatherCard report={weather.report} /> : <NoteCard label="weather">{weatherLine(weather)}</NoteCard>
+      case 'usage':
+        return usage.status === 'ready' && usageViews.length > 0 ? (
+          <UsageCard providers={usageViews} updatedAt={usage.snapshot.updatedAt} now={now.getTime()} />
+        ) : (
+          <NoteCard label="AI usage">Usage dashboard unreachable</NoteCard>
+        )
+      case 'calendar':
+        return <MonthCalendar now={now} weekStart={weekStart} events={events} size={placement.size} />
+      case 'music':
+        return <NowPlayingCard nowPlaying={nowPlaying} timer={timer} />
+    }
+  }
+
   return (
     <div className="idle-screen" aria-label="idle screen" style={fit}>
       {/* The window's drag region while the Toolbar is unmounted (ADR
@@ -535,26 +656,23 @@ export function IdleScreen({
         </p>
         <p className="idle-date">{formatDate(now)}</p>
       </div>
-      <div className="idle-screen-middle">
-        {weather.status === 'ready' ? (
-          <WeatherCard report={weather.report} />
-        ) : (
-          <p className="idle-weather" aria-label="weather">
-            {weatherLine(weather)}
-          </p>
-        )}
-        {usageViews.length > 0 && usage.status === 'ready' ? (
-          <UsageCard providers={usageViews} updatedAt={usage.snapshot.updatedAt} now={now.getTime()} />
-        ) : usage.status === 'error' ? (
-          <p className="idle-weather" aria-label="AI usage">
-            Usage dashboard unreachable
-          </p>
-        ) : null}
-        <MonthCalendar now={now} weekStart={weekStart} events={events} />
+      <div className="idle-screen-middle" style={{ gridTemplateColumns: `repeat(${layout.columns}, var(--slot-width))` }}>
+        {layout.placements.map((placement) => (
+          <div
+            key={placement.id}
+            className="idle-slot"
+            data-card={placement.id}
+            style={{
+              gridColumn: `${placement.column + 1} / span ${placement.size.w}`,
+              gridRow: `${placement.row + 1} / span ${placement.size.h}`,
+            }}
+          >
+            {card(placement)}
+          </div>
+        ))}
       </div>
       <div className="idle-screen-bottom">
         {timer.status !== 'off' ? <TimerCard timer={timer} /> : null}
-        <NowPlayingCard nowPlaying={nowPlaying} timer={timer} />
         {next !== null ? <UpNextCard next={next} now={now} /> : null}
         {lastPage !== null ? <LastPageCard page={lastPage} /> : null}
       </div>

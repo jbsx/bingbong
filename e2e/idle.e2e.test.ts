@@ -53,6 +53,25 @@ describe('idle screen e2e: the Last Page and resume', () => {
     ).toBe(0)
   })
 
+  it('lays the pinned cards out in Card Slots that hold them, above the strip', async () => {
+    const geometry = await harness.dashboardEval<{ cards: string[]; overflowing: string[]; middleBottom: number; stripTop: number }>(`(() => {
+      const slots = [...document.querySelectorAll('.idle-slot')]
+      return {
+        cards: slots.map((slot) => slot.dataset.card),
+        overflowing: slots
+          .map((slot) => slot.firstElementChild)
+          .filter((card) => card.scrollHeight > card.clientHeight + 1 || card.scrollWidth > card.clientWidth + 1)
+          .map((card) => card.closest('.idle-slot').dataset.card),
+        middleBottom: document.querySelector('.idle-screen-middle').getBoundingClientRect().bottom,
+        stripTop: document.querySelector('.idle-screen-bottom').getBoundingClientRect().top,
+      }
+    })()`)
+    // The default pins, in order; the usage card is there only when the dashboard answers or fails.
+    expect(geometry.cards.filter((card) => card !== 'usage')).toEqual(['weather', 'calendar'])
+    expect(geometry.overflowing).toEqual([])
+    expect(geometry.middleBottom).toBeLessThanOrEqual(geometry.stripTop)
+  })
+
   it('names the Last Page on the idle screen, and a tap reopens it in the blank pane', async () => {
     const title = await waitFor(
       async () => {
