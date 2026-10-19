@@ -42,7 +42,8 @@ import {
 } from '../../core/command/decisionRecord'
 import { pageReadPart, pageReadText } from '../../core/browser/pageText'
 import { SPOKEN_FAILURES, failureLineOf, spokenFailureOf } from '../../core/command/spokenFailure'
-import { STOPPED_ANSWERS, commandAnswer, pageReadCard } from '../../core/command/answer'
+import { STOPPED_ANSWERS, commandAnswer, noResponseAnswer, pageReadCard } from '../../core/command/answer'
+import { grammarErrorOf } from '../../core/command/cliGrammar'
 import { describeDuration } from '../../core/timer/duration'
 import type { Timer } from '../../core/timer/timer'
 import type { SpeakOutcome, TtsSpeaker } from '../../core/ports/tts'
@@ -1507,8 +1508,10 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       const ending = endedByReading(heard.reading, command.verb, wordsPast)
       recordBeforeFiring(record, ending, command)
       if (command.verb === 'none' || command.verb === 'done') {
-        // An Utterance read as no Command, or as the page already being what was asked: one greyed entry of the words, nothing else.
+        // An Utterance read as no Command, or as the page already being what was asked: a greyed entry of the words,
+        // and "No response." with the reason under it — never a silent fade (owner ruling 2026-10-19).
         publish({ type: 'command', turnId, text: trimmed, ...(command.verb === 'done' ? { action: 'already here' } : {}), dropped: true, task: hop0, at: firedAt })
+        answer(turnId, noResponseAnswer({ verb: command.verb, grammarError: grammarErrorOf(trimmed), jevAsked: heard.jevAsked, jev: heard.jev }), 'muted')
         publish({ type: 'done', turnId, outcome: 'done', at: at() })
         endTask(task, ending!, 1)
         return true

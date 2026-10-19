@@ -40,6 +40,12 @@ const PRESS_KEYS: Record<string, KeyPress> = {
 const PRESS_KEY_NAMES = Object.keys(PRESS_KEYS).join(', ')
 const PRESS_USAGE = `press: expected 'press <key> [times]' with key one of ${PRESS_KEY_NAMES}`
 
+/** The grammar's own error for a line that starts with a verb it knows but goes wrong past it; null for any other line. */
+export function grammarErrorOf(line: string): string | null {
+  const parsed = parseCliCommand(line)
+  return parsed !== null && !parsed.ok && !parsed.error.startsWith('unknown command') ? parsed.error : null
+}
+
 function unescape(text: string): string {
   return text.replace(/\\n/g, '\n').replace(/\\t/g, '\t')
 }

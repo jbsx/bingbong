@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { emptyPageReadLine, pageReadPartLine, pageReadText } from '../browser/pageText'
-import { commandAnswer, pageReadCard } from './answer'
+import { commandAnswer, noResponseAnswer, pageReadCard } from './answer'
 import type { Command } from './command'
 
 describe('commandAnswer (#333)', () => {
@@ -93,5 +93,19 @@ describe('pageReadCard (#333)', () => {
   it('says the page shows no text when it has none, as the spoken line does', () => {
     expect(pageReadCard(['# Blank — https://example.com/', 'signature 0000', emptyPageReadLine()].join('\n'))).toEqual({ text: '## Blank\n\nThis page shows no text.', failure: true })
     expect(pageReadCard(read(['# Lighthouse — https://example.com/'], ['Hi.'])).failure).toBe(false)
+  })
+})
+
+describe('noResponseAnswer', () => {
+  const jev = (verb: Record<string, number>) => ({ model: 'jev', latencyMs: 1, confidence: { verb: 0.9, target: 0.9, slot: 0.9 }, probabilities: { verb, target: {}, slot: {} } })
+
+  it('says what Jev read when nothing on the page fits it, and that it read nothing otherwise', () => {
+    expect(noResponseAnswer({ verb: 'none', grammarError: null, jevAsked: true, jev: jev({ click: 0.8, none: 0.2 }) })).toBe('No response.\n\nJev read “click”, but nothing on this page fits it.')
+    expect(noResponseAnswer({ verb: 'none', grammarError: null, jevAsked: true, jev: jev({ none: 0.9 }) })).toBe('No response.\n\nJev read no command in the words.')
+  })
+
+  it("puts the grammar's error first, and says when the page already is what was asked", () => {
+    expect(noResponseAnswer({ verb: 'none', grammarError: "scroll: expected 'scroll up' or 'scroll down'", jevAsked: false })).toBe("No response.\n\n`scroll: expected 'scroll up' or 'scroll down'`")
+    expect(noResponseAnswer({ verb: 'done', grammarError: null, jevAsked: true, jev: jev({ done: 1 }) })).toBe('No response.\n\nThe page already shows what was asked.')
   })
 })

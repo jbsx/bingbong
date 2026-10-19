@@ -568,7 +568,7 @@ describe('a Command the Local Match cannot settle', () => {
     decision.script.push({ unavailable: 'failed' })
     await runner.run('lovely weather in lisbon', { source: 'spoken' })
     expect(browser.navigations).toEqual([])
-    expect(events.filter((event) => event.type === 'display')).toEqual([])
+    expect(events.filter((event) => event.type === 'display')).toEqual([expect.objectContaining({ text: "No response.\n\nJev's call failed.", muted: true })])
     expect(events.some((event) => event.type === 'speak' || event.type === 'error')).toBe(false)
     expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done' })
     expect(speech.spoken).toEqual([])
@@ -590,13 +590,38 @@ describe('a Command the Local Match cannot settle', () => {
 
     expect(await runner.run('what a lovely day', { source: 'spoken' })).toBe(true)
 
-    expect(types(events)).toEqual(['command', 'done'])
+    expect(types(events)).toEqual(['command', 'display', 'done'])
     expect(events[0]).toMatchObject({ type: 'command', text: 'what a lovely day', dropped: true })
+    expect(events[1]).toMatchObject({ type: 'display', text: 'No response.\n\nJev read no command in the words.', muted: true })
     expect(events[0]).not.toHaveProperty('action')
     expect(browser.clicks).toEqual([])
     expect(browser.navigations).toEqual([])
     expect(records[0]).toMatchObject({ type: 'decision', verb: 'none', reading: 'jev', jev: { confidence: { verb: 0.7 } } })
     expect(runner.getState()).toBe('idle')
+  })
+})
+
+describe('an Utterance read as no Command answers "No response." and why (owner ruling 2026-10-19)', () => {
+  const answers = (events: PipelineEvent[]): string[] => events.flatMap((event) => (event.type === 'display' ? [event.text] : []))
+
+  it("a verb the grammar knows, gone wrong past it, shows the grammar's own error", async () => {
+    const { decision, events, runner } = harness()
+    decision.script.push({ answers: { verb: choice('none'), target: choice('none'), slot: choice('none') } })
+    await runner.run('press Tab 3')
+    expect(answers(events)).toEqual([expect.stringMatching(/^No response\.\n\n`press: expected 'press <key> \[times\]' with key one of /)])
+  })
+
+  it('says Jev is off when no Jev is configured', async () => {
+    const { events, runner } = harness({ decision: null })
+    await runner.run('zorblax the quux thing')
+    expect(answers(events)).toEqual(["No response.\n\nJev is off, and the words aren't a command the grammar knows — try “help”."])
+  })
+
+  it('says why Jev gave no reading', async () => {
+    const { decision, events, runner } = harness()
+    decision.script.push({ unavailable: 'timeout' })
+    await runner.run('zorblax the quux thing')
+    expect(answers(events)).toEqual(["No response.\n\nJev didn't answer in time."])
   })
 })
 

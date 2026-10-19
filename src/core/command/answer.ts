@@ -1,7 +1,9 @@
 import { isRealPage, lastPageLabel } from '../browser/lastPage'
 import { pageReadPart, pageReadText } from '../browser/pageText'
 import type { Command } from './command'
+import type { JevDetail, JevUnavailable } from './decisionRecord'
 import { SPOKEN_FAILURES } from './spokenFailure'
+import type { DecisionUnavailableReason } from '../ports/decisionModel'
 import { describeDuration } from '../timer/duration'
 
 // The Answer a Command leaves in the Feed (#333): exactly one per Command,
@@ -17,6 +19,46 @@ export const STOPPED_ANSWERS = {
   /** A `stop` that found nothing in flight, being read, sounding or ringing, and no music playing. */
   nothing: 'Nothing to stop.',
 } as const
+
+/** Why Jev gave no reading, in the words "No response." is followed by. */
+const JEV_UNAVAILABLE: Record<DecisionUnavailableReason, string> = {
+  timeout: "Jev didn't answer in time.",
+  transport: "Jev couldn't be reached.",
+  http: "Jev's service answered with an error.",
+  malformed: "Jev's answer couldn't be read.",
+  cancelled: "Jev's call was cancelled.",
+  failed: "Jev's call failed.",
+}
+
+/** What a reading that settled no Command was made of: its verb, the grammar's own error, and Jev's part in it. */
+export interface NoResponseFacts {
+  readonly verb: 'none' | 'done'
+  /** The grammar's error for a line that starts with a verb it knows (`grammarErrorOf`). */
+  readonly grammarError: string | null
+  readonly jevAsked: boolean
+  readonly jev?: JevDetail | JevUnavailable
+}
+
+/** Why nothing was done: the most specific of the grammar's error, Jev being off or not answering, and Jev's reading. */
+function noResponseReason(facts: NoResponseFacts): string {
+  if (facts.verb === 'done') return 'The page already shows what was asked.'
+  // A code span: the grammar's usage lines carry <angle brackets> the Card's markdown would eat.
+  if (facts.grammarError !== null) return `\`${facts.grammarError}\``
+  if (!facts.jevAsked) return "Jev is off, and the words aren't a command the grammar knows — try “help”."
+  const jev = facts.jev
+  if (jev !== undefined && 'reason' in jev) return JEV_UNAVAILABLE[jev.reason]
+  const verbs = Object.entries(jev?.probabilities.verb ?? {})
+  const top = verbs.length > 0 ? verbs.reduce((best, entry) => (entry[1] > best[1] ? entry : best))[0] : 'none'
+  return top === 'none' || top === 'done' ? 'Jev read no command in the words.' : `Jev read “${top}”, but nothing on this page fits it.`
+}
+
+/**
+ * The Answer of an Utterance read as no Command (owner ruling 2026-10-19):
+ * never a silent fade — "No response." and, under it, the real reason.
+ */
+export function noResponseAnswer(facts: NoResponseFacts): string {
+  return `No response.\n\n${noResponseReason(facts)}`
+}
 
 /** What a page is called in an Answer: its title, or its site's name when it has none. */
 export function pageName(page: { url: string; title: string }): string {
