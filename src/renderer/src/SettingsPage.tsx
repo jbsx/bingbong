@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { AppSettings } from '../../core/settings/settings'
 import { ENDPOINT_DELAY_MS_MAX, ENDPOINT_DELAY_MS_MIN, HOT_LISTEN_SILENCE_MS_MAX, HOT_LISTEN_SILENCE_MS_MIN, RESUMPTION_MERGE_MS_MAX, RESUMPTION_MERGE_MS_MIN, WEB_ZOOM_PERCENT_MAX, WEB_ZOOM_PERCENT_MIN, WAKE_WORD_THRESHOLD_MAX, WAKE_WORD_THRESHOLD_MIN, asAppearance, asSttModel } from '../../core/settings/settings'
 import { DEFAULT_PIPER_VOICE } from '../../core/tts/piperVoices'
+import { UsageMetricsSettings } from './UsageSettings'
 
 /** Select value for "the saved mic is not plugged in right now". */
 const STALE_MIC_VALUE = '__stale__'
@@ -385,12 +386,17 @@ export function SettingsPage({
               value={draft.usageDashboard.url}
               placeholder="e.g. http://192.168.1.73:4321"
               aria-label="Usage dashboard URL"
-              onChange={(event) => setDraft({ ...draft, usageDashboard: { url: event.target.value } })}
+              onChange={(event) => setDraft({ ...draft, usageDashboard: { ...draft.usageDashboard, url: event.target.value } })}
             />
           </Field>
           <p className="settings-note">
-            The usage dashboard whose Codex and Claude gauges and history the idle screen shows. Leave empty to hide the card.
+            The usage dashboard whose gauges and history the idle screen shows. Leave empty to hide the card; save a new address to list its metrics.
           </p>
+          <UsageMetricsSettings
+            savedUrl={settings.usageDashboard.url}
+            value={draft.usageDashboard}
+            onChange={(prefs) => setDraft({ ...draft, usageDashboard: { ...draft.usageDashboard, ...prefs } })}
+          />
         </section>
 
         <LearnedTermsSection />

@@ -10,6 +10,7 @@ import { monthGrid, upNext, weekStartOf, type UpNext } from '../../core/calendar
 import { useCalendarEvents } from './useCalendar'
 import type { VoiceHint } from '../../core/voice/voiceHint'
 import type { WeatherState } from './useWeather'
+import { viewUsage, type UsagePrefs } from '../../core/usage/usage'
 import type { UsageState } from './useUsage'
 import { UsageCard } from './UsageCard'
 import { StatusOrb, StatusPill } from './AssistantPanel'
@@ -415,6 +416,7 @@ function IdleStatus({ status, hint }: { status: OrbStatus; hint: VoiceHint | nul
 export function IdleScreen({
   weather,
   usage,
+  usagePrefs,
   lastPage,
   timer,
   status,
@@ -422,12 +424,14 @@ export function IdleScreen({
 }: {
   weather: WeatherState
   usage: UsageState
+  usagePrefs: UsagePrefs
   lastPage: LastPage | null
   timer: TimerState
   status: OrbStatus
   hint: VoiceHint | null
 }) {
   const [now, setNow] = useState(() => new Date())
+  const usageViews = usage.status === 'ready' ? viewUsage(usage.snapshot, usagePrefs) : []
 
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 1000)
@@ -461,8 +465,8 @@ export function IdleScreen({
             {weatherLine(weather)}
           </p>
         )}
-        {usage.status === 'ready' && usage.snapshot.providers.length > 0 ? (
-          <UsageCard providers={usage.snapshot.providers} now={now.getTime()} />
+        {usageViews.length > 0 && usage.status === 'ready' ? (
+          <UsageCard providers={usageViews} updatedAt={usage.snapshot.updatedAt} now={now.getTime()} />
         ) : usage.status === 'error' ? (
           <p className="idle-weather" aria-label="AI usage">
             Usage dashboard unreachable

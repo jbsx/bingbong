@@ -1,5 +1,18 @@
 import { describe, expect, it } from 'vitest'
-import { chartCeiling, elapsedPct, fetchUsage, resetLabel, readUsage, usageBaseUrl, windowCaption, type UsageWindow } from './usage'
+import {
+  chartCeiling,
+  defaultUsagePrefs,
+  elapsedPct,
+  fetchUsage,
+  readUsage,
+  resetLabel,
+  sanitizeUsagePrefs,
+  usageBaseUrl,
+  viewUsage,
+  windowCaption,
+  type UsagePrefs,
+  type UsageWindow,
+} from './usage'
 
 // Trimmed from the dashboard's live payloads on 2026-10-19.
 const usage = {
@@ -37,34 +50,71 @@ const sample = (sampledAt: number, codex: number, claude5h: number) => ({
 const history = { samples: [sample(2_000, 14, 3), sample(1_000, 13, 2), { sampledAt: 3_000, providers: [] }] }
 
 describe('readUsage', () => {
-  it('keeps Codex then Claude, drops the other providers', () => {
-    expect(readUsage(usage, history).providers.map((p) => p.name)).toEqual(['Codex', 'Claude'])
+  it('keeps every provider the dashboard reports, in its order', () => {
+    expect(readUsage(usage, history).providers.map((p) => p.name)).toEqual(['GLM', 'Codex', 'Claude'])
   })
 
-  it('gauges the 5h window first, else 7d, and bars the rest', () => {
-    const [codex, claude] = readUsage(usage, history).providers
-    expect(codex.gauge?.key).toBe('7d')
-    expect(codex.bars).toEqual([])
-    expect(claude.gauge).toMatchObject({ key: '5h', caption: '5h', usedPct: 2, durationMs: 5 * 3_600_000 })
-    expect(claude.bars.map((w) => w.caption)).toEqual(['7d', '7d-fab'])
-  })
-
-  it("reads the gauged window's history, oldest first, skipping samples without it", () => {
-    const [codex, claude] = readUsage(usage, history).providers
-    expect(codex.history).toEqual([
-      [1_000, 13],
-      [2_000, 14],
-    ])
-    expect(claude.history).toEqual([
+  it("gives each window its caption, length and history, oldest first", () => {
+    const claude = readUsage(usage, history).providers[2]
+    expect(claude.windows.map((w) => w.caption)).toEqual(['7d', '5h', '7d-fab'])
+    expect(claude.windows[1]).toMatchObject({ key: '5h', label: '5-Hour', usedPct: 2, durationMs: 5 * 3_600_000 })
+    expect(claude.windows[1].history).toEqual([
       [1_000, 2],
       [2_000, 3],
     ])
+    expect(claude.windows[2].history).toEqual([])
   })
 
-  it('leaves out a disconnected provider and survives garbage', () => {
+  it('marks a disconnected provider and survives garbage', () => {
     const offline = { providers: [{ ...usage.providers[1], connected: false }] }
-    expect(readUsage(offline, null).providers).toEqual([])
+    expect(readUsage(offline, null).providers[0].connected).toBe(false)
     expect(readUsage('nope', 5).providers).toEqual([])
+  })
+})
+
+describe('viewUsage', () => {
+  const snapshot = readUsage(usage, history)
+  const view = (prefs: Partial<UsagePrefs>) => viewUsage(snapshot, { ...defaultUsagePrefs(), ...prefs })
+
+  it('shows Codex and Claude by default, gauging 5h else 7d and charting the gauge', () => {
+    const [codex, claude] = view({})
+    expect(view({}).map((p) => p.name)).toEqual(['Codex', 'Claude'])
+    expect(codex.gauge?.key).toBe('7d')
+    expect(codex.lines.map((w) => w.key)).toEqual(['7d'])
+    expect(claude.gauge?.key).toBe('5h')
+    expect(claude.bars.map((w) => w.key)).toEqual(['7d', '7d-fable'])
+    expect(claude.lines.map((w) => w.key)).toEqual(['5h'])
+  })
+
+  it("shows the chosen providers in the dashboard's order and drops a disconnected one", () => {
+    expect(view({ providers: ['Claude', 'GLM'] }).map((p) => p.name)).toEqual(['GLM', 'Claude'])
+    const offline = readUsage({ providers: [{ ...usage.providers[1], connected: false }] }, null)
+    expect(viewUsage(offline, defaultUsagePrefs())).toEqual([])
+  })
+
+  it('hides windows, takes the chosen gauge while it is shown, and charts the chosen lines', () => {
+    const [claude] = view({ providers: ['Claude'], metrics: { Claude: { hidden: ['7d-fable'], gauge: '7d', chart: ['5h', '7d-fable'] } } })
+    expect(claude.gauge?.key).toBe('7d')
+    expect(claude.bars.map((w) => w.key)).toEqual(['5h'])
+    expect(claude.lines.map((w) => w.key)).toEqual(['5h', '7d-fable'])
+    const [fallback] = view({ providers: ['Claude'], metrics: { Claude: { hidden: ['5h'], gauge: '5h', chart: [] } } })
+    expect(fallback.gauge?.key).toBe('7d')
+    expect(fallback.lines).toEqual([])
+  })
+})
+
+describe('sanitizeUsagePrefs', () => {
+  it('keeps valid choices and drops the rest', () => {
+    expect(sanitizeUsagePrefs({ providers: ['GLM', 3, 'GLM'], metrics: { GLM: { hidden: ['5h', 1], gauge: 2, chart: ['5h'] }, Bad: 'x' } })).toEqual({
+      providers: ['GLM'],
+      metrics: { GLM: { hidden: ['5h'], gauge: null, chart: ['5h'] } },
+    })
+  })
+
+  it('falls back to Codex and Claude, an empty list staying empty', () => {
+    expect(sanitizeUsagePrefs(undefined)).toEqual(defaultUsagePrefs())
+    expect(sanitizeUsagePrefs({ url: 'x' }).providers).toEqual(['Codex', 'Claude'])
+    expect(sanitizeUsagePrefs({ providers: [] }).providers).toEqual([])
   })
 })
 
@@ -81,7 +131,9 @@ describe('elapsedPct', () => {
   const window = (resetAt: number | null, durationMs: number | null): UsageWindow => ({
     key: '5h',
     caption: '5h',
+    label: '5-Hour',
     usedPct: 40,
+    history: [],
     resetAt,
     durationMs,
   })
@@ -109,7 +161,7 @@ describe('fetchUsage', () => {
       'http://192.168.1.73:4321/api/usage',
       `http://192.168.1.73:4321/api/history?from=${now - 12 * 3_600_000}&to=${now}`,
     ])
-    expect(snapshot.providers).toHaveLength(2)
+    expect(snapshot.providers).toHaveLength(3)
   })
 
   it('trims the base URL', () => {

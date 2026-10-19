@@ -65,6 +65,9 @@
      deepened on this light canvas so the lime still reads. */
   --usage-codex: #5f9900;
   --usage-claude: #e0244a;
+  --usage-glm: #6a2ce8;
+  --usage-grok: #0b9e86;
+  --usage-kaggle: #c27a00;
   /* Markdown code surfaces: the one deliberately dark element on the
      light dashboard — ink surface, canvas text — so fenced blocks read
      as blocks at a glance. */
@@ -113,6 +116,9 @@
     --wx-light: 66%;
     --usage-codex: #bffd3a;
     --usage-claude: #fd3a5e;
+    --usage-glm: #8f5bff;
+    --usage-grok: #3afdda;
+    --usage-kaggle: #fdb93a;
     --code-bg: #111113;
     --code-text: #f5f5f7;
   }
@@ -2333,6 +2339,23 @@ body {
   --usage-tone: var(--usage-claude);
 }
 
+.usage-tone--glm {
+  --usage-tone: var(--usage-glm);
+}
+
+.usage-tone--grok {
+  --usage-tone: var(--usage-grok);
+}
+
+.usage-tone--kaggle {
+  --usage-tone: var(--usage-kaggle);
+}
+
+/* A provider the dashboard has no color for takes the accent, as it does there. */
+:where(.usage-gauge, .usage-legend, .usage-line) {
+  --usage-tone: var(--accent);
+}
+
 .usage-gauges {
   display: flex;
   gap: 18px;
@@ -2478,15 +2501,148 @@ body {
   gap: 6px;
 }
 
-.usage-legend > i {
-  width: 16px;
-  height: 0;
-  border-top: 3px solid var(--usage-tone);
-  border-radius: 2px;
+.usage-legend > svg {
+  stroke: var(--usage-tone);
+  stroke-width: 3;
+  stroke-linecap: round;
 }
 
-.usage-legend > i.usage-legend--dashed {
-  border-top-style: dashed;
+/* The legend on the left, when the dashboard last refreshed on the right;
+   amber once that is old enough that the numbers may be stale. */
+.usage-chart-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.usage-updated {
+  flex: none;
+  font-size: 0.75rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.usage-updated--stale {
+  color: var(--status-yellow);
+  font-weight: 600;
+}
+
+/* Past two providers: smaller gauges in a wrapping row, the chart under
+   them at the card's full width. */
+.usage-card--many {
+  flex-direction: column;
+  gap: 16px;
+}
+
+.usage-card--many .usage-gauges {
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.usage-card--many .usage-gauge {
+  width: 96px;
+  gap: 6px;
+}
+
+.usage-card--many .usage-gauge-plan {
+  display: none;
+}
+
+.usage-card--many .usage-dots {
+  width: 80px;
+  height: 80px;
+}
+
+.usage-card--many .usage-dots-pct {
+  font-size: 2.5rem;
+  -webkit-text-stroke-width: 4px;
+}
+
+.usage-card--many .usage-bar {
+  grid-template-columns: auto 1fr;
+}
+
+/* No room beside the track: the percentage drops under it, left of the reset. */
+.usage-card--many .usage-bar-pct {
+  grid-row: 2;
+  grid-column: 1;
+  margin-top: -2px;
+}
+
+.usage-card--many .usage-bar-reset {
+  grid-column: 2;
+}
+
+.usage-card--many .usage-gauge-reset {
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+.usage-card--many .usage-chart-plot {
+  min-height: 110px;
+}
+
+/* ---- the AI usage settings: the dashboard's ⚙ Metrics panel ---- */
+
+.usage-set {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+}
+
+.usage-set-card {
+  border: 1px solid var(--edge);
+  border-radius: 12px;
+  padding: 12px 14px;
+  background: var(--bg);
+}
+
+.usage-set-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.usage-set-plan,
+.usage-set-hint {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.usage-set-table {
+  display: grid;
+  grid-template-columns: 1fr repeat(3, 52px);
+  align-items: center;
+  row-gap: 6px;
+  margin-top: 10px;
+}
+
+.usage-set-row {
+  display: contents;
+}
+
+.usage-set-col {
+  color: var(--muted);
+  font-size: 0.75rem;
+  text-align: center;
+}
+
+.usage-set-label {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 0.9rem;
+}
+
+.usage-set-table input,
+.usage-set-head input {
+  justify-self: center;
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
 }
 
 .usage-chart-plot {

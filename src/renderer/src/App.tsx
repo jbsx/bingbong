@@ -11,6 +11,7 @@ import { useIdle } from './useIdle'
 import { useLastPage } from './useLastPage'
 import { useTimer } from './useTimer'
 import { useUsage } from './useUsage'
+import { defaultUsagePrefs } from '../../core/usage/usage'
 import { usePeekCard } from './usePeekCard'
 import { useSettings } from './useSettings'
 import { useVoice } from './useVoice'
@@ -110,7 +111,7 @@ export function App() {
   useEffect(() => window.bingbong.idle.reportShown(showIdle), [showIdle])
 
   if (showIdle) {
-    return <IdleScreen weather={weather} usage={usage} lastPage={lastPage} timer={timer} status={status} hint={hint} />
+    return <IdleScreen weather={weather} usage={usage} usagePrefs={settings?.usageDashboard ?? defaultUsagePrefs()} lastPage={lastPage} timer={timer} status={status} hint={hint} />
   }
 
   return (

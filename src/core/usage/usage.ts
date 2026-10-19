@@ -1,43 +1,80 @@
 // The AI usage dashboard on the LAN (an external HTTP server the owner runs):
 // `/api/usage` carries each provider's limit windows now, `/api/history`
-// the samples it took about once a minute. The Idle Screen shows two of its
-// providers — the gauge each card leads with and its history as lines — so
-// this reads both payloads into that one shape and drops everything else.
+// the samples it took about once a minute. This reads both payloads into
+// one snapshot of every provider and window it reports, and `viewUsage`
+// cuts that down to what the owner chose to show on the Idle Screen — the
+// same choices the dashboard's own ⚙ Metrics panel offers, kept here
+// because the dashboard keeps its own in that browser's storage.
 
 export type FetchJson = (url: string) => Promise<unknown>
 
-/** The providers the Idle Screen shows, in the order it shows them. */
-export const USAGE_PROVIDERS = ['Codex', 'Claude'] as const
-
 /** How much history the chart spans: the dashboard's own default view. */
 export const USAGE_HISTORY_MS = 12 * 60 * 60 * 1000
+
+/** Past this age the card's "Updated" time reads as stale: the dashboard samples once a minute. */
+export const USAGE_STALE_MS = 5 * 60 * 1000
 
 export interface UsageWindow {
   /** The dashboard's window id: `5h`, `7d`, `7d-fable`, `monthly`… */
   key: string
   /** Its short caption: `5h`, `7d`, `7d-fab`, `mo`. */
   caption: string
+  /** The dashboard's own name for it: `5-Hour`, `7-Day (Fable)`. */
+  label: string
   usedPct: number
   /** When the window resets (epoch ms); null while it is unarmed. */
   resetAt: number | null
   /** The window's whole length, when its key names one. */
   durationMs: number | null
-}
-
-export interface UsageProvider {
-  name: string
-  plan: string | null
-  /** The window the dashboard's card gauges: 5h first, else 7d, else the first. */
-  gauge: UsageWindow | null
-  /** Every other window, as the card's bars. */
-  bars: UsageWindow[]
-  /** The gauged window's history, oldest first, as [sampledAt, usedPct]. */
+  /** The window's samples over the chart's span, oldest first, as [sampledAt, usedPct]. */
   history: Array<[number, number]>
 }
 
+export interface UsageProviderReport {
+  name: string
+  plan: string | null
+  connected: boolean
+  windows: UsageWindow[]
+}
+
 export interface UsageSnapshot {
+  /** When the dashboard last refreshed its numbers (epoch ms). */
   updatedAt: number
-  providers: UsageProvider[]
+  /** Every provider the dashboard reports, in its order. */
+  providers: UsageProviderReport[]
+}
+
+/** One provider's choices: the dashboard's per-card show, gauge and chart controls. */
+export interface UsageProviderPrefs {
+  /** Window keys left off the card. */
+  hidden: string[]
+  /** The window the dot gauge shows; null takes the default pick (5h, else 7d, else the first). */
+  gauge: string | null
+  /** Window keys drawn on the chart; null draws the gauged window alone. */
+  chart: string[] | null
+}
+
+export interface UsagePrefs {
+  /** The providers the card shows, by name; it shows them in the dashboard's order. */
+  providers: string[]
+  metrics: Record<string, UsageProviderPrefs>
+}
+
+/** What the card shows for one provider. */
+export interface UsageView {
+  name: string
+  plan: string | null
+  gauge: UsageWindow | null
+  bars: UsageWindow[]
+  lines: UsageWindow[]
+}
+
+export function defaultUsagePrefs(): UsagePrefs {
+  return { providers: ['Codex', 'Claude'], metrics: {} }
+}
+
+export function defaultProviderPrefs(): UsageProviderPrefs {
+  return { hidden: [], gauge: null, chart: null }
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -48,8 +85,32 @@ function asArray(value: unknown): unknown[] {
   return Array.isArray(value) ? value : []
 }
 
+function asStrings(value: unknown): string[] {
+  return [...new Set(asArray(value).filter((item): item is string => typeof item === 'string'))]
+}
+
 function finite(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
+/** Parse anything (disk, IPC) into usage prefs; unknown bits fall back to the defaults. */
+export function sanitizeUsagePrefs(raw: unknown): UsagePrefs {
+  const record = asRecord(raw)
+  if (!record) return defaultUsagePrefs()
+  const metrics: Record<string, UsageProviderPrefs> = {}
+  for (const [name, value] of Object.entries(asRecord(record.metrics) ?? {})) {
+    const prefs = asRecord(value)
+    if (!prefs) continue
+    metrics[name] = {
+      hidden: asStrings(prefs.hidden),
+      gauge: typeof prefs.gauge === 'string' ? prefs.gauge : null,
+      chart: Array.isArray(prefs.chart) ? asStrings(prefs.chart) : null,
+    }
+  }
+  return {
+    providers: Array.isArray(record.providers) ? asStrings(record.providers) : defaultUsagePrefs().providers,
+    metrics,
+  }
 }
 
 function windowKey(window: Record<string, unknown>): string {
@@ -86,67 +147,86 @@ export function elapsedPct(window: UsageWindow, now: number): number {
   return Math.min(100, Math.max(0, Math.round(100 - left * 100)))
 }
 
-function readWindow(raw: unknown): UsageWindow | null {
-  const window = asRecord(raw)
-  if (!window) return null
-  const usedPct = finite(window.usedPct)
-  const key = windowKey(window)
-  if (usedPct === null || key === '') return null
-  return {
-    key,
-    caption: windowCaption(key),
-    usedPct,
-    resetAt: finite(window.resetAt),
-    durationMs: windowDurationMs(key),
-  }
-}
-
-function pickGauge(windows: UsageWindow[]): UsageWindow | null {
-  const starts = (prefix: string) => windows.find((w) => w.key.toLowerCase().startsWith(prefix))
-  return starts('5h') ?? starts('7d') ?? windows[0] ?? null
-}
-
-/** The gauged window's samples for one provider, out of the history payload. */
-function readHistory(history: unknown, provider: string, key: string): Array<[number, number]> {
-  const points: Array<[number, number]> = []
+/** Every provider's every window's samples, keyed `provider\u0000window`, oldest first. */
+function readHistory(history: unknown): Map<string, Array<[number, number]>> {
+  const series = new Map<string, Array<[number, number]>>()
   for (const rawSample of asArray(asRecord(history)?.samples)) {
     const sample = asRecord(rawSample)
     const sampledAt = finite(sample?.sampledAt)
     if (sampledAt === null) continue
-    const entry = asArray(sample?.providers).map(asRecord).find((p) => p?.name === provider)
-    const window = asArray(entry?.windows).map(asRecord).find((w) => w !== null && windowKey(w) === key)
-    const usedPct = finite(window?.usedPct)
-    if (usedPct !== null) points.push([sampledAt, usedPct])
+    for (const rawProvider of asArray(sample?.providers)) {
+      const provider = asRecord(rawProvider)
+      if (typeof provider?.name !== 'string') continue
+      for (const rawWindow of asArray(provider.windows)) {
+        const window = asRecord(rawWindow)
+        const usedPct = finite(window?.usedPct)
+        if (!window || usedPct === null) continue
+        const id = `${provider.name}\u0000${windowKey(window)}`
+        const points = series.get(id) ?? []
+        points.push([sampledAt, usedPct])
+        series.set(id, points)
+      }
+    }
   }
-  return points.sort((a, b) => a[0] - b[0])
+  for (const points of series.values()) points.sort((a, b) => a[0] - b[0])
+  return series
+}
+
+/** The dashboard's two payloads as one snapshot: every provider it reports, each window with its history. */
+export function readUsage(usage: unknown, history: unknown): UsageSnapshot {
+  const record = asRecord(usage)
+  const series = readHistory(history)
+  const providers: UsageProviderReport[] = []
+  for (const rawProvider of asArray(record?.providers)) {
+    const entry = asRecord(rawProvider)
+    if (typeof entry?.name !== 'string') continue
+    const name = entry.name
+    const windows: UsageWindow[] = []
+    for (const rawWindow of asArray(entry.windows)) {
+      const window = asRecord(rawWindow)
+      const usedPct = finite(window?.usedPct)
+      const key = window ? windowKey(window) : ''
+      if (!window || usedPct === null || key === '') continue
+      windows.push({
+        key,
+        caption: windowCaption(key),
+        label: typeof window.label === 'string' ? window.label : key,
+        usedPct,
+        resetAt: finite(window.resetAt),
+        durationMs: windowDurationMs(key),
+        history: series.get(`${name}\u0000${key}`) ?? [],
+      })
+    }
+    providers.push({ name, plan: typeof entry.plan === 'string' ? entry.plan : null, connected: entry.connected !== false, windows })
+  }
+  return { updatedAt: finite(record?.updatedAt) ?? Date.now(), providers }
+}
+
+/** The dashboard's default gauge: the 5-hour window, else the 7-day, else the first. */
+export function defaultGauge(windows: readonly UsageWindow[]): UsageWindow | null {
+  const starts = (prefix: string) => windows.find((w) => w.key.toLowerCase().startsWith(prefix))
+  return starts('5h') ?? starts('7d') ?? windows[0] ?? null
 }
 
 /**
- * The dashboard's two payloads as the Idle Screen's snapshot: the shown
- * providers in USAGE_PROVIDERS order, each with its gauge, its bars and the
- * gauge's history. A provider the dashboard does not report, or reports
- * disconnected, is left out.
+ * The snapshot as the owner chose to see it: the chosen providers, in the
+ * dashboard's order, that are connected; each card's shown windows, its
+ * gauge the chosen one while it is shown (else the default pick), the rest
+ * as bars; the chart's lines the chosen windows, or the gauge alone. A
+ * chart line need not be shown on the card, as on the dashboard.
  */
-export function readUsage(usage: unknown, history: unknown): UsageSnapshot {
-  const record = asRecord(usage)
-  const reported = asArray(record?.providers).map(asRecord)
-  const providers: UsageProvider[] = []
-  for (const name of USAGE_PROVIDERS) {
-    const entry = reported.find((p) => p?.name === name)
-    if (!entry || entry.connected === false) continue
-    const windows = asArray(entry.windows)
-      .map(readWindow)
-      .filter((w): w is UsageWindow => w !== null)
-    const gauge = pickGauge(windows)
-    providers.push({
-      name,
-      plan: typeof entry.plan === 'string' ? entry.plan : null,
-      gauge,
-      bars: windows.filter((w) => w !== gauge),
-      history: gauge ? readHistory(history, name, gauge.key) : [],
+export function viewUsage(snapshot: UsageSnapshot, prefs: UsagePrefs): UsageView[] {
+  const chosen = new Set(prefs.providers)
+  return snapshot.providers
+    .filter((provider) => provider.connected && chosen.has(provider.name))
+    .map((provider) => {
+      const metric = prefs.metrics[provider.name] ?? defaultProviderPrefs()
+      const shown = provider.windows.filter((w) => !metric.hidden.includes(w.key))
+      const gauge = shown.find((w) => w.key === metric.gauge) ?? defaultGauge(shown)
+      const lines =
+        metric.chart === null ? (gauge ? [gauge] : []) : provider.windows.filter((w) => metric.chart?.includes(w.key))
+      return { name: provider.name, plan: provider.plan, gauge, bars: shown.filter((w) => w !== gauge), lines }
     })
-  }
-  return { updatedAt: finite(record?.updatedAt) ?? Date.now(), providers }
 }
 
 /** The dashboard's base URL, trimmed of trailing slashes; '' when unset. */

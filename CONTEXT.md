@@ -385,18 +385,25 @@ screen carries, and the owner's reversal of #70's "clock and weather only".
 _Avoid_: screensaver
 
 **AI Usage**:
-The Idle Screen's card of Codex's and Claude's limits, read from the
-owner's usage dashboard on the LAN (an HTTP server outside this repo,
+The Idle Screen's card of AI providers' limits, read from the owner's
+usage dashboard on the LAN (an HTTP server outside this repo,
 `http://192.168.1.73:4321` by default, set in settings; empty hides it;
 2026-10-19 ask: "the line chart and the gauges for codex and claude").
-Each provider gets the gauge the dashboard's card leads with — the 5-hour
-window, else the 7-day — drawn as that dashboard draws it: the dots fill as
-the window runs to its reset, the number is the share of the limit used;
-its other windows sit under it as bars. Beside them, the last twelve hours
-of both gauged windows as lines, a 5-hour one solid, a 7-day one dashed.
-Main fetches it (the dashboard sends no CORS headers), polled once a
-minute while the Idle Screen shows. Read-only: a tap only wakes the
-dashboard.
+Each shown provider gets a dot gauge drawn as that dashboard draws it: the
+dots fill as the window runs to its reset, the number is the share of the
+limit used; its other shown windows sit under it as bars. Beside them (under
+them past two providers), the last twelve hours of the charted windows as
+lines, a 5-hour one solid, a longer one dashed, and when the dashboard last
+refreshed, amber once that is over five minutes old. What it shows is
+chosen in settings the way the dashboard's ⚙ Metrics panel chooses it
+(2026-10-19 ruling: kept in Bing Bong, any of the dashboard's providers):
+which providers (Codex and Claude untouched), and per provider which
+windows show, which one is the gauge (untouched, the 5-hour, else the
+7-day) and which are charted (untouched, the gauge alone). The dashboard
+keeps its own choices in that browser's storage, so the two never share
+them. Main fetches it (the dashboard sends no CORS headers), polled once a
+minute while the Idle Screen shows; a failed poll keeps the last numbers.
+Read-only: a tap only wakes the dashboard.
 _Avoid_: quota, billing
 
 **Calendar**:

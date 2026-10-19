@@ -3,6 +3,8 @@
 // voice, weather). The settings file overrides env only where a value is
 // set, so env stays the base layer.
 
+import { defaultUsagePrefs, sanitizeUsagePrefs, type UsagePrefs } from '../usage/usage'
+
 export const WAKE_WORD_THRESHOLD_MIN = 0
 export const WAKE_WORD_THRESHOLD_MAX = 1
 /** Endpoint-delay slider bounds (#37): silence that ends an utterance. */
@@ -79,8 +81,11 @@ export interface AppSettings {
   /** Theme resolution (ADR 0020) — system follows the OS, manual wins. */
   appearance: Appearance
   weather: { city: string; units: WeatherUnits }
-  /** The AI usage dashboard the Idle Screen reads Codex's and Claude's gauges from; '' hides the card. */
-  usageDashboard: { url: string }
+  /**
+   * The AI usage dashboard the Idle Screen reads gauges and history from
+   * ('' hides the card), and which providers and windows it shows.
+   */
+  usageDashboard: { url: string } & UsagePrefs
 }
 
 /** The owner's dashboard on the LAN, so the Idle Screen shows it out of the box. */
@@ -99,7 +104,7 @@ export function defaultSettings(): AppSettings {
     adblockEnabled: true,
     appearance: 'system',
     weather: { city: '', units: 'metric' },
-    usageDashboard: { url: USAGE_DASHBOARD_URL_DEFAULT },
+    usageDashboard: { url: USAGE_DASHBOARD_URL_DEFAULT, ...defaultUsagePrefs() },
   }
 }
 
@@ -171,7 +176,7 @@ export function sanitizeSettings(raw: unknown): AppSettings {
       city: asString(weather?.city, defaults.weather.city),
       units: weather?.units === 'imperial' ? 'imperial' : defaults.weather.units,
     },
-    usageDashboard: { url: asString(usageDashboard?.url, defaults.usageDashboard.url) },
+    usageDashboard: { url: asString(usageDashboard?.url, defaults.usageDashboard.url), ...sanitizeUsagePrefs(usageDashboard) },
   }
 }
 
