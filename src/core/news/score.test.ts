@@ -12,7 +12,7 @@ const PROFILE: InterestProfile = [
 ]
 
 function story(id: string, title: string, magnitude: number | null, publishedAt = AT, source = 'Hacker News'): NewsStory {
-  return { key: `${source}:${id}`, title, link: `https://example.com/${id}`, source, publishedAt, magnitude, unit: 'points', comments: null }
+  return { key: `${source}:${id}`, title, link: `https://example.com/${id}`, source, publishedAt, magnitude, unit: 'points', comments: null, image: null }
 }
 
 describe('rankStories', () => {
@@ -56,7 +56,7 @@ describe('rankStories', () => {
 
 describe('rankStories across sources', () => {
   function on(source: string, id: string, title: string, magnitude: number | null, link = `https://example.com/${id}`): NewsStory {
-    return { key: `${source}:${id}`, title, link, source, publishedAt: AT, magnitude, unit: magnitude === null ? '' : 'points', comments: null }
+    return { key: `${source}:${id}`, title, link, source, publishedAt: AT, magnitude, unit: magnitude === null ? '' : 'points', comments: null, image: null }
   }
 
   it('counts a story on Hacker News and GitHub trending once, at its peak, over an otherwise-equal single-source story', () => {
@@ -123,7 +123,7 @@ describe('rankStories across sources', () => {
 
 describe('recordMagnitudes', () => {
   it('records no history for a feed, which counts nothing', () => {
-    const post: NewsStory = { key: 'OpenAI:p1', title: 'A post', link: 'https://openai.com/p1', source: 'OpenAI', publishedAt: AT, magnitude: null, unit: '', comments: null }
+    const post: NewsStory = { key: 'OpenAI:p1', title: 'A post', link: 'https://openai.com/p1', source: 'OpenAI', publishedAt: AT, magnitude: null, unit: '', comments: null, image: null }
     expect(recordMagnitudes({}, [post, story('a', 'Codex', 10)], AT)).toEqual({ 'Hacker News': { [dayOf(AT)]: { 'Hacker News:a': 10 } } })
   })
 })

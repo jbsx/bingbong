@@ -63,7 +63,26 @@ function storyOf(block: string, atom: boolean, name: string): NewsStory | null {
   const published = Date.parse(textOf(element(block, atom ? 'published' : 'pubDate') ?? element(block, atom ? 'updated' : 'dc:date') ?? ''))
   if (title === '' || link === null || !/^https?:\/\//.test(link) || Number.isNaN(published)) return null
   const id = textOf(element(block, atom ? 'id' : 'guid') ?? '') || link
-  return { key: `${name}:${id}`, title, link, source: name, publishedAt: published, magnitude: null, unit: '', comments: null }
+  return { key: `${name}:${id}`, title, link, source: name, publishedAt: published, magnitude: null, unit: '', comments: null, image: mediaImage(block) }
+}
+
+/** The tags named `name` in `block`, each as its attributes. */
+function tags(block: string, name: string): Record<string, string>[] {
+  return [...block.matchAll(new RegExp(`<${name}\\b([^>]*)>`, 'g'))].map(([, attributes]) =>
+    Object.fromEntries([...attributes.matchAll(/([\w:-]+)="([^"]*)"/g)].map(([, key, value]) => [key, decodeEntities(value)])),
+  )
+}
+
+const IMAGE_FILE = /\.(jpe?g|png|gif|webp)(\?|$)/i
+
+/** A post's own picture: its image media content, else an image enclosure, else its media thumbnail; none when it carries no image. */
+function mediaImage(block: string): string | null {
+  const isImage = (tag: Record<string, string>): boolean =>
+    tag.medium === 'image' || (tag.type ?? '').startsWith('image/') || (tag.medium === undefined && tag.type === undefined && IMAGE_FILE.test(tag.url ?? ''))
+  const found =
+    tags(block, 'media:content').find(isImage) ?? tags(block, 'enclosure').find((tag) => (tag.type ?? '').startsWith('image/')) ?? tags(block, 'media:thumbnail')[0]
+  const url = found?.url
+  return url !== undefined && /^https?:\/\//.test(url) ? url : null
 }
 
 /** One RSS 2.0 or Atom feed as a NewsSource. `fetchText` is main's. */

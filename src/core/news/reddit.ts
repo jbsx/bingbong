@@ -26,6 +26,8 @@ interface Post {
   num_comments?: unknown
   created_utc?: unknown
   stickied?: unknown
+  thumbnail?: unknown
+  preview?: { images?: { source?: { url?: unknown } }[] } | null
 }
 
 function storyOf(post: Post | null | undefined, name: string): NewsStory | null {
@@ -44,7 +46,15 @@ function storyOf(post: Post | null | undefined, name: string): NewsStory | null 
     magnitude: score,
     unit: 'upvotes',
     comments: typeof post.num_comments === 'number' ? post.num_comments : null,
+    image: imageOf(post),
   }
+}
+
+/** A post's picture: its preview at full size, else its thumbnail; a self post's "self" or "default" placeholder is none. */
+function imageOf(post: Post): string | null {
+  const preview = post.preview?.images?.[0]?.source?.url
+  if (typeof preview === 'string' && /^https?:\/\//.test(preview)) return decodeEntities(preview)
+  return typeof post.thumbnail === 'string' && /^https?:\/\//.test(post.thumbnail) ? post.thumbnail : null
 }
 
 /**

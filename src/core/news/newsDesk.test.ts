@@ -1,16 +1,20 @@
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { setFaultSink } from '../trace/fault'
 import { NewsRefusal, type NewsSource, type NewsStory } from './news'
 import type { InterestProfile } from './interestProfile'
 import { DAY_MS as DAY } from './score'
+import { NEWS_IMAGE_SCHEME } from './ipcChannels'
 import { createNewsDesk, emptyNewsState, NEWS_POLL_MS, NEWS_RETRY_MS, sanitizeNewsState, type NewsState, type NewsStore } from './newsDesk'
 
 const AT = new Date(2026, 9, 19, 12).getTime()
 const PROFILE: InterestProfile = [{ name: 'AI coding agents', words: ['codex', 'claude code'], subreddits: [] }]
 
 function story(id: string, title: string, magnitude: number): NewsStory {
-  return { key: `hn:${id}`, title, link: `https://example.com/${id}`, source: 'hn', publishedAt: AT - 60_000, magnitude, unit: 'points', comments: 3 }
+  return { key: `hn:${id}`, title, link: `https://example.com/${id}`, source: 'hn', publishedAt: AT - 60_000, magnitude, unit: 'points', comments: 3, image: null }
 }
+
+const PHOTO = new Uint8Array(readFileSync(new URL('./fixtures/images/photo.jpg', import.meta.url)))
 
 const FRONT_PAGE = [story('a', 'Codex gets a terminal', 900), story('b', 'Claude Code hooks', 600), story('c', 'Bread', 4000)]
 
@@ -102,26 +106,55 @@ describe('createNewsDesk', () => {
     expect((await desk.horizons())?.highlight.story.title).toBe('Codex gets a terminal')
   })
 
-  it('answers This Week and This Month from the kept history after a restart, the source down', async () => {
+  it('answers Big News from the kept history after a restart, the source down, the highlight never in it', async () => {
     const store = memoryStore()
     let up = true
+    // A front page of thirty small stories under the three, so Codex is at the very top of its source.
+    const filler = Array.from({ length: 30 }, (_, n) => story(`f${n}`, `Filler ${n}`, 10 + n))
     const hn = source(async () => {
       if (!up) throw new Error('offline')
-      return FRONT_PAGE
+      return [...FRONT_PAGE, ...filler]
     })
-    // Polled on three days running, so Codex is top five on three separate days.
-    for (const back of [2, 1, 0]) {
-      const desk = createNewsDesk({ sources: () => [hn], store, profile: () => PROFILE, now: () => AT - back * DAY })
-      await desk.horizons()
-    }
+    // Codex is the highlight two days ago, Claude Code yesterday; today the highlight is another story and Codex is Big News.
+    for (const back of [2, 1]) await createNewsDesk({ sources: () => [hn], store, profile: () => PROFILE, now: () => AT - back * DAY }).horizons()
     const before = await createNewsDesk({ sources: () => [hn], store, profile: () => PROFILE, now: () => AT }).horizons()
-    expect(before?.week.map((item) => item.title)).toEqual(['Codex gets a terminal', 'Claude Code hooks', 'Bread'])
-    expect(before?.month.map((item) => item.title)).toEqual(['Codex gets a terminal', 'Claude Code hooks', 'Bread'])
+    expect(before?.highlight.story.title).toBe('Bread')
+    expect(before?.bigNews.map((item) => item.title)).toEqual(['Codex gets a terminal'])
 
     up = false
     const restarted = await createNewsDesk({ sources: () => [hn], store, profile: () => PROFILE, now: () => AT + 1000 }).horizons()
-    expect(restarted?.week).toEqual(before?.week)
-    expect(restarted?.month).toEqual(before?.month)
+    expect(restarted?.bigNews).toEqual(before?.bigNews)
+  })
+
+  it('gives every shown story a cached picture, the renderer’s address for it, and none for a story with only the tile', async () => {
+    const store = memoryStore()
+    const filler = Array.from({ length: 30 }, (_, n) => story(`f${n}`, `Filler ${n}`, 10 + n))
+    const front = [{ ...story('a', 'Codex gets a terminal', 900), image: 'https://cdn.example.com/codex.jpg' }, story('b', 'Claude Code hooks', 600), story('c', 'Bread', 4000), ...filler]
+    const saved: string[] = []
+    const asked: string[] = []
+    const images = {
+      async fetchPage(url: string) {
+        asked.push(url)
+        return ''
+      },
+      async fetchImage(url: string) {
+        asked.push(url)
+        return PHOTO
+      },
+      save: (_bytes: Uint8Array, format: string) => {
+        saved.push(`${saved.length + 1}.${format}`)
+        return saved[saved.length - 1]
+      },
+      remove: () => {},
+    }
+    const desk = (back: number) => createNewsDesk({ sources: () => [source(async () => front)], store, profile: () => PROFILE, now: () => AT - back * DAY, images })
+    expect((await desk(1).horizons())?.highlight).toMatchObject({ story: { title: 'Codex gets a terminal' }, image: `${NEWS_IMAGE_SCHEME}://image/1.jpg` })
+    const today = await desk(0).horizons()
+
+    expect(today?.highlight).toMatchObject({ story: { title: 'Claude Code hooks' }, image: null })
+    expect(today?.bigNews).toMatchObject([{ title: 'Codex gets a terminal', image: `${NEWS_IMAGE_SCHEME}://image/1.jpg` }])
+    expect(asked).toEqual(['https://cdn.example.com/codex.jpg', 'https://example.com/b'])
+    expect(store.state.images.stories['hn:a'].file).toBe('1.jpg')
   })
 
   it('measures the baseline on the last 24 hours’ stories only, though it polls a week back for the story history', async () => {
@@ -168,7 +201,7 @@ describe('createNewsDesk', () => {
     }
   })
 
-  it('shows a story on Hacker News and GitHub trending once — in Today’s Highlight and in This Week — and marks it shown under both keys', async () => {
+  it('shows a story on Hacker News and GitHub trending once — in Today’s Highlight and never again in Big News — and marks it shown under both keys', async () => {
     const store = memoryStore()
     const onGitHub = { ...story('g', 'acme/codex: Codex, open', 500), key: 'GitHub trending:acme/codex', source: 'GitHub trending', link: 'https://github.com/acme/codex' }
     const onHackerNews = { ...story('h', 'Codex, open', 900), link: 'https://github.com/acme/codex' }
@@ -180,7 +213,7 @@ describe('createNewsDesk', () => {
     })
     const horizons = await desk.horizons()
     expect(horizons?.highlight.story.link).toBe('https://github.com/acme/codex')
-    expect(horizons?.week.filter((item) => item.link === 'https://github.com/acme/codex')).toHaveLength(1)
+    expect(horizons?.bigNews.filter((item) => item.link === 'https://github.com/acme/codex')).toEqual([])
     expect(store.state.shown.map((entry) => entry.key).sort()).toEqual(['GitHub trending:acme/codex', 'hn:h'])
   })
 
@@ -225,12 +258,20 @@ describe('sanitizeNewsState', () => {
           'hn:a': { title: 'Codex gets a terminal', link: 'https://example.com/a', source: 'hn', unit: 'points', topical: true, cluster: 'hn:a', days: { '2026-10-19': { score: 0.9, magnitude: 900 }, '2026-10-18': { score: 'high' } } },
           'hn:b': { title: 'No link' },
         },
+        images: {
+          stories: { 'hn:a': { file: '1.jpg', url: 'https://cdn.example.com/a.jpg', at: AT, site: 'example.com', cluster: 'hn:a' }, 'hn:b': { file: '../../etc/passwd', url: null, at: AT, site: '', cluster: 'hn:b' } },
+          served: { 'example.com': { 'https://cdn.example.com/a.jpg': ['hn:a', 7] }, other: null },
+        },
       }),
     ).toEqual({
       shown: [{ key: 'hn:a', at: AT }],
       history: { hn: { '2026-10-19': { 'hn:a': 900 } } },
       highlight,
-      stories: { 'hn:a': { title: 'Codex gets a terminal', link: 'https://example.com/a', source: 'hn', unit: 'points', topical: true, cluster: 'hn:a', days: { '2026-10-19': { score: 0.9, magnitude: 900 } } } },
+      stories: { 'hn:a': { title: 'Codex gets a terminal', link: 'https://example.com/a', source: 'hn', unit: 'points', topical: true, cluster: 'hn:a', image: null, days: { '2026-10-19': { score: 0.9, magnitude: 900 } } } },
+      images: {
+        stories: { 'hn:a': { file: '1.jpg', url: 'https://cdn.example.com/a.jpg', at: AT, site: 'example.com', cluster: 'hn:a' } },
+        served: { 'example.com': { 'https://cdn.example.com/a.jpg': ['hn:a'] } },
+      },
     })
   })
 

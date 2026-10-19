@@ -504,13 +504,18 @@ The Idle Screen's card of what is going on in the owner's world (2026-10-19
 ask: "i want to be in the know about what is going on in the world.
 specifically the world i interact with mostly"): a story belongs on it when
 something in one of the owner's circles jumped far above that circle's
-normal day and the owner has not been shown it yet, and what has stayed
-big over the week and the month. A Pinned Card offering 2×2, 2×1 and 1×1
-Card Slots, the box deciding the horizons: at 2×2 Today's Highlight over
-This Week and This Month side by side, at 2×1 This Week beside it, at 1×1
-the highlight alone. A list line is a story's title and its number, the
-card clipping at its box, and a tap on any story opens it in the pane.
-An empty Interest Profile or a source with nothing yet keeps a small note.
+normal day and the owner has not been shown it yet, and what is still
+big. A Pinned Card offering 2×2, 2×1 and 1×1 Card Slots, the box deciding
+what shows: at 2×2 Today's Highlight with its Story Image large over Big
+News, at 2×1 Big News beside it, at 1×1 the highlight alone; with nothing
+in Big News the highlight takes the card, with no filler line. A Big News
+line is a story's Story Image as a thumbnail, its title and its number.
+Words show whole, never cut off midway: the highlight's step down to a
+floor, then its picture shrinks and goes behind them under a dark scrim;
+a Big News line the box cannot hold whole is left off. A tap on any
+story, or its picture, opens it in the pane. An empty Interest Profile
+or a source with nothing yet keeps a small note. Kept deliberately short
+(2026-10-19: the owner felt overwhelmed by eleven headlines).
 _Avoid_: news feed, headlines, widget
 
 **Interest Profile**:
@@ -528,12 +533,12 @@ _Avoid_: interests, keywords, filter
 
 **Today's Highlight**:
 The one story of the last 24 hours that scored highest against the
-Interest Profile and has not been shown before: its title, its source, and
-the number that made it a story ("1,840 points"). A story's score is its
+Interest Profile and has not been shown before: its Story Image, its
+title, its source, and the number that made it a story ("1,840 points"). A story's score is its
 magnitude's percentile against its own source's recent days (its day and
 the six before), so sources compare on one scale, boosted by the topics it
 matches; one matching no topic ranks under every one that matches one. The
-same story on several sources (the clustering This Week uses) counts once,
+same story on several sources (the clustering Big News uses) counts once,
 at its peak percentile, boosted half again for each source past the first,
 and is marked shown under every source's key; a feed's post, counting
 nothing, shows no number.
@@ -544,26 +549,45 @@ highlight. A tap opens the story in the pane through `navigate <link>`, on
 the pointer going down like the Last Page's tap, leaving the Idle Screen.
 _Avoid_: top story, headline, pick of the day
 
-**This Week**:
-The News card's top five stories of the last seven days, today's
-included, read from the story history main keeps in news.json (every
-polled story's best score by the day it was polled, and its cluster, kept
-31 days). Stories are clustered as they are recorded — the same link, the
-same site with a near-identical title, or the same proper name (a model
-named with letters and digits like "GPT-6", a repo or model "owner/repo"
-in the title or a GitHub or Hugging Face link) is one
-story — and a cluster ranks at its peak score, topical over not as in
-Today's Highlight. A day's highlight is a candidate, not an entry: a quiet
-day's winner can drop out.
-_Avoid_: weekly digest, top stories
+**Big News**:
+The News card's one rolling list of what is still big: at most three
+stories, may be fewer or none, read from the story history main keeps in
+news.json (every polled story's best score by the day it was polled, and
+its cluster, kept 31 days). Stories are clustered as they are recorded —
+the same link, the same site with a near-identical title, or the same
+proper name (a model named with letters and digits like "GPT-6", a repo
+or model "owner/repo" in the title or a GitHub or Hugging Face link) is
+one story. A cluster stands at its best score faded by the time since
+that day, halving every 20 days, and is listed while it clears a bar
+(0.93), best first: a story at the top of its source, on a topic and on
+two sources stays about fourteen days; at the top of one source about
+two days; one on no topic is never listed. A bar, not a count — a quiet
+stretch lists fewer and is never filled up, a busy one keeps its three
+biggest. The cluster that is Today's Highlight is never in it. Replaced
+This Week and This Month (#349), whose fixed lists showed filler in a
+quiet week and repeated one story three times.
+_Avoid_: This Week, This Month, digest, top stories, trending
 
-**This Month**:
-The News card's top five stories of the last thirty days that lasted, by
-peak score. The lasting rule: a story lasted when it was in the top five
-of at least two calendar weeks (Monday to Sunday), or of at least three
-separate days. It separates a one-day stunt from what the owner's circles
-are still talking about.
-_Avoid_: monthly digest, trending
+**Story Image**:
+The one picture each story the News card shows carries — Today's
+Highlight and each Big News line, a handful a poll. In order: the
+source's own image for the story (a feed post's media content, image
+enclosure or media thumbnail; a GitHub repo's social preview; a Reddit
+post's preview or thumbnail), else the article page's preview image
+(og:image, then twitter:image, read from the page's head only), else the
+source's tile — a box in the source's colour with its name, or its
+initial on a thumbnail — never an empty box or a broken image. An SVG, a
+favicon, anything under 300 px wide, and the image a site has served for
+another story (its logo or default banner) are passed over. Main
+downloads each picture once into userData's news-images, drops it with
+its story when the history prunes it, and serves it to the dashboard on
+its own scheme: the renderer never fetches one. An animated picture
+plays through once and holds its last frame, the screen being always
+on; animations are shown only when a source supplies them. A story left
+with its tile is asked about again a day later, not every poll. No
+generated images, no paid APIs.
+_Avoid_: thumbnail (for the picture itself; a thumbnail is its small
+form in Big News), hero image, og image
 
 **NewsSource**:
 Where News stories come from: one site's public listing, answering the

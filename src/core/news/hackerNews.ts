@@ -30,6 +30,8 @@ function storyOf(hit: Hit | null): NewsStory | null {
     magnitude: points,
     unit: 'points',
     comments: typeof hit.num_comments === 'number' ? hit.num_comments : null,
+    // The article's own page names its picture: Hacker News gives none.
+    image: null,
   }
 }
 

@@ -34,6 +34,7 @@ describe('createGitHubTrendingSource', () => {
       magnitude: 2232,
       unit: 'stars today',
       comments: null,
+      image: 'https://opengraph.githubassets.com/1/MadsLorentzen/ai-job-search',
     })
   })
 

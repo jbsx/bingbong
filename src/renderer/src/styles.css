@@ -2289,47 +2289,78 @@ body {
 }
 
 /* ---- the News card ----
-   Today's Highlight in its Card Slot, and the longer horizons where the box
-   leaves room, by container query on the slot: at 2×2 (the base) the
-   highlight over This Week and This Month side by side, at 2×1 This Week
-   beside it, at 1×1 the highlight alone. The
-   highlight — the topic as a kicker, the title large, a GitHub repo's
-   one-sentence description under it, the number that made it a story
-   larger still, the source and the site at the foot — draws to its own box
-   by container query, and useFitText steps its sizes down by --fit until
-   it shows whole; past that floor the description goes, then the title is
-   clamped. The lists are a story a row, its whole headline (four lines at
-   most), and a row the box would cut is left off whole (useWholeItems). Every story is a
-   button: the tap opens it. */
+   Today's Highlight in its Card Slot, and Big News where the box leaves
+   room, by container query on the slot: at 2×2 (the base) the highlight
+   over Big News, at 2×1 Big News beside it, at 1×1 the highlight alone;
+   with no Big News the highlight takes the card. The highlight is its
+   Story Image large and its words — the topic as a kicker, the title
+   large, a GitHub repo's one-sentence description under it, the number
+   that made it a story larger still, the source and the site at the foot.
+   In a wide, short box the picture sits beside the words, in any other
+   above them; the words draw to their own box by container query, and
+   useFitText steps their sizes down by --fit until they show whole, the
+   picture taking the room they leave; past that floor the picture
+   shrinks, then goes behind the words under a dark scrim, then the
+   description goes and the title is clamped — only the longest titles in
+   the smallest boxes get that far. Big News is a story a row — its
+   picture as a thumbnail, its whole headline, its number — and a row the
+   box would cut is left off whole (useWholeItems).
+   A story with no picture shows its source's tile. Every story is a
+   button: the tap, on the picture or the words, opens it. The highlight's
+   flow is set with the card's size, since a container query cannot style
+   its own container: beside (--flow: row) in a wide, short box — 2×2 over
+   Big News, 2×1 alone — above (column) in any other. */
 .idle-news {
+  --flow: row;
   display: grid;
   grid-template:
-    "today today" minmax(0, 1fr)
-    "week month" minmax(0, 1fr) / minmax(0, 1fr) minmax(0, 1fr);
-  gap: 22px 40px;
+    "today" minmax(0, 1fr)
+    "big" minmax(0, auto) / minmax(0, 1fr);
+  gap: 24px;
   padding: 32px 40px;
+}
+
+.idle-news[data-big='none'] {
+  --flow: column;
+  grid-template: "today" minmax(0, 1fr) / minmax(0, 1fr);
 }
 
 @container (max-height: 500px) {
   .idle-news {
-    grid-template: "today week" minmax(0, 1fr) / minmax(0, 1fr) minmax(0, 1fr);
+    --flow: column;
+    grid-template: "today big" minmax(0, 1fr) / minmax(0, 1fr) minmax(0, 1fr);
+    gap: 22px 36px;
     padding: 28px 36px;
   }
 
-  .idle-news > .idle-news-month {
-    display: none;
+  .idle-news[data-big='none'] {
+    --flow: row;
   }
 }
 
 @container (max-width: 600px) {
-  .idle-news {
+  .idle-news,
+  .idle-news[data-big] {
+    --flow: column;
     grid-template: "today" minmax(0, 1fr) / minmax(0, 1fr);
     padding: 24px 26px;
   }
 
-  .idle-news > .idle-news-week,
-  .idle-news > .idle-news-month {
+  .idle-news > .idle-news-big {
     display: none;
+  }
+}
+
+/* Big News in a half-width box (beside the highlight at 2×1): a smaller thumbnail, so a headline keeps the width to show whole. */
+@container (max-height: 500px) {
+  .idle-news-big .idle-news-thumb {
+    width: 4.6rem;
+  }
+
+  .idle-news-big .idle-news-item {
+    gap: 14px;
+    padding: 8px 0;
+    font-size: 1.15rem;
   }
 }
 
@@ -2354,8 +2385,8 @@ body {
   container: news-today / size;
   grid-area: today;
   display: flex;
-  flex-direction: column;
-  gap: 10px;
+  flex-direction: var(--flow);
+  gap: 16px 28px;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
@@ -2365,6 +2396,68 @@ body {
 
 .idle-news-today:active {
   transform: scale(0.99);
+}
+
+/* A Story Image, large or as a thumbnail: the picture cropped to its box, or the source's tile. */
+.idle-news-picture,
+.idle-news-thumb {
+  display: block;
+  overflow: hidden;
+  border-radius: 14px;
+  background: var(--edge);
+}
+
+.idle-news-picture img,
+.idle-news-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Above the words the picture takes the room they leave, never under a third of the box; beside them, a share of the width. */
+.idle-news-picture {
+  flex: 1 1 0;
+  min-height: 34cqh;
+}
+
+@container style(--flow: row) {
+  .idle-news-picture {
+    flex: 0 0 44%;
+    min-height: 0;
+  }
+
+  .idle-news-words {
+    flex: 1 1 0;
+  }
+}
+
+.idle-news-tile {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 16px;
+  background: var(--tile);
+  color: var(--tile-ink);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.idle-news-picture.idle-news-tile {
+  font-size: 2.2rem;
+  line-height: 1.1;
+}
+
+.idle-news-words {
+  display: flex;
+  flex: 0 1 auto;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .idle-news-kicker {
@@ -2393,11 +2486,43 @@ body {
   color: var(--muted);
 }
 
-.idle-news-today[data-fit='over'] .idle-news-dek {
+.idle-news-today:has(> .idle-news-words[data-fit='snug']) > .idle-news-picture {
+  min-height: 18cqh;
+}
+
+.idle-news-today:has(> .idle-news-words:is([data-fit='behind'], [data-fit='over'])) {
+  position: relative;
+}
+
+.idle-news-today:has(> .idle-news-words:is([data-fit='behind'], [data-fit='over'])) > .idle-news-picture {
+  position: absolute;
+  inset: 0;
+  min-height: 0;
+  color: transparent;
+}
+
+.idle-news-today:has(> .idle-news-words:is([data-fit='behind'], [data-fit='over'])) > .idle-news-picture::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to bottom, rgb(0 0 0 / 0.62), rgb(0 0 0 / 0.86));
+}
+
+.idle-news-words:is([data-fit='behind'], [data-fit='over']) {
+  --text: #fff;
+  --muted: rgb(255 255 255 / 0.78);
+  position: relative;
+  flex: 1 1 auto;
+  gap: 5px;
+  padding: 8px 14px;
+  color: var(--text);
+}
+
+.idle-news-words[data-fit='over'] .idle-news-dek {
   display: none;
 }
 
-.idle-news-today[data-fit='over'] .idle-news-title {
+.idle-news-words[data-fit='over'] .idle-news-title {
   display: -webkit-box;
   overflow: hidden;
   -webkit-box-orient: vertical;
@@ -2441,7 +2566,7 @@ body {
   color: var(--text);
 }
 
-/* The highlight in a half-width box (1×1, or beside This Week at 2×1): a smaller title, the comments left to the wider boxes. */
+/* The highlight in a half-width box (1×1, or beside Big News at 2×1): a smaller title, the comments left to the wider boxes. */
 @container news-today (max-width: 600px) {
   .idle-news-title {
     --title-size: 1.85rem;
@@ -2456,21 +2581,14 @@ body {
   }
 }
 
-.idle-news-list {
+.idle-news-big {
+  grid-area: big;
   display: flex;
   flex-direction: column;
   gap: 8px;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-}
-
-.idle-news-week {
-  grid-area: week;
-}
-
-.idle-news-month {
-  grid-area: month;
 }
 
 .idle-news-list-head {
@@ -2481,7 +2599,7 @@ body {
   color: var(--muted);
 }
 
-.idle-news-list ol {
+.idle-news-big ol {
   display: flex;
   flex: 1;
   flex-direction: column;
@@ -2492,28 +2610,36 @@ body {
   list-style: none;
 }
 
-.idle-news-list li + li {
+.idle-news-big li + li {
   border-top: 1px solid var(--edge);
 }
 
 .idle-news-item {
   display: flex;
-  align-items: baseline;
-  gap: 16px;
+  align-items: center;
+  gap: 18px;
   width: 100%;
-  padding: 9px 0;
+  padding: 10px 0;
   font-size: 1.35rem;
   line-height: 1.3;
 }
 
+.idle-news-thumb {
+  flex: none;
+  width: 8.5rem;
+  aspect-ratio: 16 / 9;
+  border-radius: 10px;
+}
+
+.idle-news-thumb.idle-news-tile {
+  padding: 0;
+  font-size: 1.6rem;
+}
+
 .idle-news-item-title {
-  display: -webkit-box;
   flex: 1;
   min-width: 0;
-  overflow: hidden;
   overflow-wrap: anywhere;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 4;
 }
 
 .idle-news-item-count {
@@ -2529,12 +2655,6 @@ body {
 
 .idle-news-item:focus-visible {
   outline: none;
-}
-
-.idle-news-list-empty {
-  margin: 0;
-  font-size: 1.35rem;
-  color: var(--muted);
 }
 
 /* ---- the Calendar ----

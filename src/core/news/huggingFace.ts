@@ -37,6 +37,7 @@ function modelStory(model: Model | null, at: number): NewsStory | null {
     magnitude: likes,
     unit: 'likes',
     comments: null,
+    image: null,
   }
 }
 
@@ -56,6 +57,7 @@ function paperStory(item: DailyPaper | null): NewsStory | null {
     magnitude: upvotes,
     unit: 'upvotes',
     comments: typeof item.numComments === 'number' ? item.numComments : null,
+    image: null,
   }
 }
 

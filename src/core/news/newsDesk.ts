@@ -1,17 +1,19 @@
 import { gatherStories, type NewsSource, type NewsStory } from './news'
 import type { InterestProfile } from './interestProfile'
-import { recordStories, thisMonth, thisWeek, type NewsListItem, type StoryHistory } from './horizons'
+import { bigNews, recordStories, type NewsListItem, type StoryHistory } from './horizons'
 import { BASELINE_DAYS, DAY_MS, HIGHLIGHT_WINDOW_MS, rankStories, recordMagnitudes, todaysHighlight, type MagnitudeHistory } from './score'
+import { emptyStoryImages, gatherStoryImages, pruneStoryImages, sanitizeStoryImages, storyImageUrl, type StoryImagePorts, type StoryImages } from './storyImage'
 
 // The News Desk: main's side of the News card (the card is in CONTEXT.md). The Idle Screen
 // asks for the card's stories whenever it shows and every few minutes after;
 // the desk fetches at most once an hour — the first ask after a start polls
 // at once — and answers from what it holds in between. Each poll records
 // the sources' magnitudes (the baseline scores read against) and every
-// story's score in the story history (This Week and This Month are read
-// from it) and, when an unseen story of the last 24 hours tops the ranking,
-// makes it the highlight and marks it shown. A poll no source answered
-// keeps the last highlight and is tried again in a few minutes.
+// story's score in the story history (Big News is read from it) and, when an unseen story of the last 24 hours tops the ranking,
+// makes it the highlight and marks it shown. Then every story the card
+// will show — the highlight and Big News — gets its Story Image, fetched
+// once into the cache and dropped with the story history. A poll no source
+// answered keeps the last highlight and is tried again in a few minutes.
 
 /** How often the sources are fetched while the Idle Screen asks. */
 export const NEWS_POLL_MS = 60 * 60 * 1000
@@ -30,14 +32,16 @@ export interface TodaysHighlight {
   shownAt: number
 }
 
-/** What the News card shows: Today's Highlight, This Week and This Month (CONTEXT.md). */
+/** A story's Story Image as the card loads it: the cached picture's address, or null for the source's tile. */
+export type ShownImage = { image: string | null }
+
+/** What the News card shows: Today's Highlight and Big News (CONTEXT.md), each with its Story Image. */
 export interface NewsHorizons {
-  highlight: TodaysHighlight
-  week: NewsListItem[]
-  month: NewsListItem[]
+  highlight: TodaysHighlight & ShownImage
+  bigNews: (NewsListItem & ShownImage)[]
 }
 
-/** How far back a poll asks the sources: a story still on a front page days after it was published is still polled, so it can last. */
+/** How far back a poll asks the sources: a story still on a front page days after it was published is still polled, so its standing in Big News is renewed. */
 const POLL_SINCE_MS = BASELINE_DAYS * DAY_MS
 
 /** What the desk keeps in userData, so "unseen", the last highlight and the story history survive a restart. */
@@ -46,6 +50,8 @@ export interface NewsState {
   history: MagnitudeHistory
   highlight: TodaysHighlight | null
   stories: StoryHistory
+  /** The Story Images' cache index. */
+  images: StoryImages
 }
 
 export interface NewsStore {
@@ -54,7 +60,7 @@ export interface NewsStore {
 }
 
 export function emptyNewsState(): NewsState {
-  return { shown: [], history: {}, highlight: null, stories: {} }
+  return { shown: [], history: {}, highlight: null, stories: {}, images: emptyStoryImages() }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -63,8 +69,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isStory(value: unknown): value is NewsStory {
   if (!isRecord(value)) return false
-  const { key, title, link, source, publishedAt, magnitude, unit, comments } = value
+  const { key, title, link, source, publishedAt, magnitude, unit, comments, image } = value
   return (
+    // A highlight saved before Story Images has no image: it reads as none.
+    (image === undefined || image === null || typeof image === 'string') &&
     typeof key === 'string' &&
     typeof title === 'string' &&
     typeof link === 'string' &&
@@ -94,9 +102,9 @@ export function sanitizeNewsState(raw: unknown): NewsState {
   const held = raw.highlight
   const highlight =
     isRecord(held) && isStory(held.story) && typeof held.shownAt === 'number' && Array.isArray(held.topics)
-      ? { story: held.story, topics: held.topics.filter((topic): topic is string => typeof topic === 'string'), shownAt: held.shownAt }
+      ? { story: { ...held.story, image: held.story.image ?? null }, topics: held.topics.filter((topic): topic is string => typeof topic === 'string'), shownAt: held.shownAt }
       : null
-  return { shown, history, highlight, stories: sanitizeStories(raw.stories) }
+  return { shown, history, highlight, stories: sanitizeStories(raw.stories), images: sanitizeStoryImages(raw.images) }
 }
 
 function sanitizeStories(raw: unknown): StoryHistory {
@@ -104,6 +112,7 @@ function sanitizeStories(raw: unknown): StoryHistory {
   for (const [key, record] of Object.entries(isRecord(raw) ? raw : {})) {
     if (!isRecord(record)) continue
     const { title, link, source, unit, topical, cluster } = record
+    const image = typeof record.image === 'string' ? record.image : null
     if (typeof title !== 'string' || typeof link !== 'string' || typeof source !== 'string' || typeof unit !== 'string') continue
     if (typeof topical !== 'boolean' || typeof cluster !== 'string') continue
     const days = Object.entries(isRecord(record.days) ? record.days : {}).filter(
@@ -111,7 +120,7 @@ function sanitizeStories(raw: unknown): StoryHistory {
         isRecord(entry[1]) && typeof entry[1].score === 'number' && (entry[1].magnitude === null || typeof entry[1].magnitude === 'number'),
     )
     if (days.length === 0) continue
-    stories[key] = { title, link, source, unit, topical, cluster, days: Object.fromEntries(days.map(([day, { score, magnitude }]) => [day, { score, magnitude }])) }
+    stories[key] = { title, link, source, unit, topical, cluster, image, days: Object.fromEntries(days.map(([day, { score, magnitude }]) => [day, { score, magnitude }])) }
   }
   return stories
 }
@@ -127,11 +136,26 @@ function nextDay(at: number): number {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1).getTime()
 }
 
+/** The cache with a Story Image for every story the card shows at `at` — the highlight and Big News — and only the stories the history keeps. */
+async function pictured(state: NewsState, ports: StoryImagePorts, at: number): Promise<StoryImages> {
+  const { stories, highlight } = state
+  const shown = [
+    ...(highlight === null ? [] : [{ key: highlight.story.key, cluster: stories[highlight.story.key]?.cluster ?? highlight.story.key, link: highlight.story.link, image: highlight.story.image }]),
+    ...bigNews(stories, at, highlight?.story.key ?? null).map((item) => ({ key: item.key, cluster: stories[item.key].cluster, link: item.link, image: stories[item.key].image })),
+  ]
+  const gathered = await gatherStoryImages(state.images, shown, ports, at)
+  const keep = new Map(Object.entries(stories).map(([key, record]) => [key, record.cluster]))
+  if (highlight !== null && !keep.has(highlight.story.key)) keep.set(highlight.story.key, highlight.story.key)
+  return pruneStoryImages(gathered, keep, ports)
+}
+
 export function createNewsDesk(deps: {
   /** The sources, read at every poll: the subreddits and feeds follow settings. */
   sources: () => readonly NewsSource[]
   store: NewsStore
   profile: () => InterestProfile
+  /** The network and cache Story Images are fetched into; none, and every story shows its tile. */
+  images?: StoryImagePorts
   now?: () => number
 }): NewsDesk {
   const now = deps.now ?? Date.now
@@ -158,11 +182,13 @@ export function createNewsDesk(deps: {
       pick === null
         ? { ...state, history, shown, stories: recorded }
         : {
+            ...state,
             history,
             shown: [...shown, ...pick.keys.map((key) => ({ key, at }))],
             highlight: { story: pick.story, topics: pick.topics, shownAt: at },
             stories: recorded,
           }
+    if (deps.images !== undefined) state = { ...state, images: await pictured(state, deps.images, at) }
     deps.store.save(state)
   }
 
@@ -179,7 +205,15 @@ export function createNewsDesk(deps: {
       }
       if (polling !== null) await polling
       if (state.highlight === null) return null
-      return { highlight: state.highlight, week: thisWeek(state.stories, at), month: thisMonth(state.stories, at) }
+      const { stories, images } = state
+      const imageOf = (key: string): ShownImage => {
+        const file = images.stories[key]?.file
+        return { image: file === undefined || file === null ? null : storyImageUrl(file) }
+      }
+      return {
+        highlight: { ...state.highlight, ...imageOf(state.highlight.story.key) },
+        bigNews: bigNews(stories, at, state.highlight.story.key).map((item) => ({ ...item, ...imageOf(item.key) })),
+      }
     },
   }
 }

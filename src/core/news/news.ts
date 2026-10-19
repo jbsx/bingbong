@@ -19,6 +19,8 @@ export interface NewsStory {
   readonly unit: string
   /** How many comments it drew, where the source counts them. */
   readonly comments: number | null
+  /** The picture the source itself gives the story — a feed post's media, a repo's social preview — where it gives one: the first Story Image candidate. */
+  readonly image: string | null
 }
 
 /**

@@ -33,6 +33,7 @@ describe('createFeedSource', () => {
       magnitude: null,
       unit: '',
       comments: null,
+      image: 'https://cdn.arstechnica.net/wp-content/uploads/2026/09/claudebyanthropic-1024x648.jpg',
     })
   })
 
@@ -49,6 +50,18 @@ describe('createFeedSource', () => {
       ['Mister Organ is one of the most unsettling documentaries I’ve ever seen', 'https://www.theverge.com/entertainment/1013545/mister-organ-horror-documentary-review', Date.UTC(2026, 9, 18, 19, 30)],
     ])
     expect(stories[0].key).toBe('The Verge:https://www.theverge.com/?p=1013049')
+  })
+
+  it('takes a post’s own image: its media content, else an image enclosure, else its media thumbnail; none for a post without one', async () => {
+    const post = (media: string, n: number) => `<item><title>Post ${n}</title><link>https://example.com/${n}</link><pubDate>Mon, 19 Oct 2026 10:00:00 GMT</pubDate>${media}</item>`
+    const rss = `<rss><channel>${[
+      post('<enclosure url="https://example.com/a.mp3" type="audio/mpeg"/><enclosure url="https://example.com/a.jpg" type="image/jpeg" length="1"/>', 1),
+      post('<media:thumbnail url="https://example.com/t.png"/>', 2),
+      post('<media:content url="https://example.com/v.mp4" medium="video"/><media:content url="https://example.com/c.webp" type="image/webp"/>', 3),
+      post('', 4),
+    ].join('')}</channel></rss>`
+    const stories = await createFeedSource(async () => rss, { name: 'Example', url: 'https://example.com/rss' }).stories(0)
+    expect(stories.map((story) => story.image)).toEqual(['https://example.com/a.jpg', 'https://example.com/t.png', 'https://example.com/c.webp', null])
   })
 
   it('answers only the posts published since the time asked', async () => {

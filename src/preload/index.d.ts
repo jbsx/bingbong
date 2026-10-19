@@ -66,7 +66,7 @@ export interface BingbongCalendarApi {
 }
 
 export interface BingbongNewsApi {
-  /** The News card's Today's Highlight, This Week and This Month (CONTEXT.md); null when there has never been a highlight or the Interest Profile is empty. Main fetches at most hourly. */
+  /** The News card's Today's Highlight and Big News, each with its Story Image (CONTEXT.md); null when there has never been a highlight or the Interest Profile is empty. Main fetches at most hourly. */
   horizons(): Promise<NewsHorizons | null>
 }
 

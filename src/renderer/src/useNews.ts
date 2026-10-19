@@ -12,7 +12,7 @@ export type NewsCardState =
 const REFRESH_MS = 5 * 60 * 1000
 
 /**
- * The News card's Today's Highlight, This Week and This Month (CONTEXT.md),
+ * The News card's Today's Highlight and Big News (CONTEXT.md),
  * asked of main when the Idle Screen shows and every few minutes after. An empty Interest Profile
  * reads as unset; a desk that has never had a story as none. Main keeps the
  * last highlight through a failed poll, so a later ask never blanks it.

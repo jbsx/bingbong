@@ -22,6 +22,7 @@ describe('createRedditSource', () => {
         magnitude: 1873,
         unit: 'upvotes',
         comments: 214,
+        image: null,
       },
       {
         key: 'r/neovim:1o9xk2c',
@@ -32,8 +33,26 @@ describe('createRedditSource', () => {
         magnitude: 342,
         unit: 'upvotes',
         comments: 158,
+        image: null,
       },
     ])
+  })
+
+  it('takes a post’s preview image, else its thumbnail; none for a self post’s placeholder', async () => {
+    const post = (id: string, more: object) => ({ data: { id, title: `Post ${id}`, url: `https://example.com/${id}`, score: 10, created_utc: 1792386000, ...more } })
+    const source = createRedditSource(
+      async () => ({
+        data: {
+          children: [
+            post('a', { preview: { images: [{ source: { url: 'https://preview.redd.it/a.jpg?width=1200&amp;s=x' } }] }, thumbnail: 'https://b.thumbs.redditmedia.com/a.jpg' }),
+            post('b', { thumbnail: 'https://b.thumbs.redditmedia.com/b.jpg' }),
+            post('c', { thumbnail: 'self' }),
+          ],
+        },
+      }),
+      'neovim',
+    )
+    expect((await source.stories(0)).map((story) => story.image)).toEqual(['https://preview.redd.it/a.jpg?width=1200&s=x', 'https://b.thumbs.redditmedia.com/b.jpg', null])
   })
 
   it('names the source by its subreddit however it was typed', () => {

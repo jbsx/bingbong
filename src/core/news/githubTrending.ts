@@ -25,6 +25,8 @@ function storyOf(article: string, at: number): NewsStory | null {
     magnitude: Number(stars.replace(/,/g, '')),
     unit: 'stars today',
     comments: null,
+    // The repository's social preview: its own image where it set one, else GitHub's card of its name and numbers.
+    image: `https://opengraph.githubassets.com/1/${name}`,
   }
 }
 

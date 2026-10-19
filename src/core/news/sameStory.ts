@@ -7,8 +7,8 @@ import { hostOf, type NewsStory } from './news'
 // near-identical title, or name the same thing: a model or product named
 // with letters and digits, or a repository or model by its owner/name — in
 // the title, or in a GitHub or Hugging Face link. Today's Highlight counts
-// such a story once at its peak (score.ts); This Week and This Month
-// cluster by it (horizons.ts).
+// such a story once at its peak (score.ts); Big News clusters by it
+// (horizons.ts).
 
 /** How alike two titles on one site must be (shared words over all words) to be one story. */
 const SAME_TITLE = 0.75

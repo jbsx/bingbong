@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { NewsStory } from './news'
 import type { ScoredStory } from './score'
-import { HISTORY_DAYS, recordStories, thisMonth, thisWeek, type StoryHistory } from './horizons'
+import { bigNews, HISTORY_DAYS, recordStories, type StoryHistory } from './horizons'
 
 /** Noon on a local day of October 2026; the 19th is a Monday. */
 const day = (date: number): number => new Date(2026, 9, date, 12).getTime()
@@ -16,6 +16,7 @@ function scored(id: string, title: string, score: number, more: Partial<NewsStor
     magnitude: Math.round(score * 1000),
     unit: 'points',
     comments: null,
+    image: null,
     ...more,
   }
   return { story, topics: ['AI coding agents'], percentile: score, score, keys: [story.key], sources: [story.source] }
@@ -28,66 +29,73 @@ function polled(days: [number, ScoredStory[]][]): StoryHistory {
 
 const titles = (items: { title: string }[]): string[] => items.map((item) => item.title)
 
-describe('thisWeek', () => {
-  it('holds five stories at their peak, the same story on two sources once, a quiet day’s winner absent', () => {
-    const history = polled([
-      [13, [scored('a', 'Rust 2.0 is out', 0.9)]],
-      [14, [scored('a', 'Rust 2.0 is out', 0.95), scored('b', 'A new terminal emulator', 0.85)]],
-      // Two sources, one link: the same story.
-      [15, [scored('c', 'Sandboxing coding agents', 0.8), scored('c2', 'Sandboxing agents, a write-up', 0.97, { source: 'lobsters', link: 'https://example.com/c' })]],
-      [16, [scored('d', 'The case for SQLite', 0.75), scored('e', 'Bread knives, a history', 0.7)]],
-      // A quiet Tuesday: its winner peaks under every other story.
-      [17, [scored('q', 'Quiet day winner', 0.3)]],
-      [18, [scored('f', 'Fonts for terminals', 0.72)]],
-    ])
+describe('bigNews', () => {
+  /** A topical story at the top of its source on one source (score 1), or on two (score 1.5, the source boost). */
+  const top = (id: string, title: string, sources = 1): ScoredStory => scored(id, title, sources === 1 ? 1 : 1.5)
+  const HOUR = 60 * 60 * 1000
 
-    const week = thisWeek(history, day(19))
+  it('holds a topical story at the top of two sources for about fourteen days', () => {
+    const history = polled([[1, [top('a', 'Frontier lab opens its weights', 2)]]])
 
-    expect(titles(week)).toEqual(['Sandboxing agents, a write-up', 'Rust 2.0 is out', 'A new terminal emulator', 'The case for SQLite', 'Fonts for terminals'])
-    expect(week[1].magnitude).toBe(950)
+    expect(titles(bigNews(history, day(1) + 13.5 * 24 * HOUR, null))).toEqual(['Frontier lab opens its weights'])
+    expect(bigNews(history, day(1) + 14.5 * 24 * HOUR, null)).toEqual([])
   })
 
-  it('counts a near-identical title on the same site, and the same model name, as one story', () => {
-    const history = polled([
-      [16, [scored('a', 'GPT-6 released today', 0.6), scored('b', 'Show HN: a tiny database', 0.5, { link: 'https://github.com/x/tinydb' })]],
-      [17, [scored('c', 'OpenAI ships GPT-6', 0.9), scored('d', 'Show HN: A tiny database!', 0.55, { link: 'https://github.com/x/tinydb/' + 'README' })]],
-    ])
+  it('holds a topical story at the top of one source for about two days', () => {
+    const history = polled([[1, [top('a', 'Codex gets a terminal')]]])
 
-    expect(titles(thisWeek(history, day(18)))).toEqual(['OpenAI ships GPT-6', 'Show HN: A tiny database!'])
+    expect(titles(bigNews(history, day(1) + 36 * HOUR, null))).toEqual(['Codex gets a terminal'])
+    expect(bigNews(history, day(1) + 60 * HOUR, null)).toEqual([])
   })
 
-  it('looks back seven days, the day it is asked included', () => {
-    const history = polled([
-      [12, [scored('old', 'Eight days ago', 0.99)]],
-      [13, [scored('new', 'Six days ago', 0.5)]],
-    ])
+  it('never holds an off-topic story, however big', () => {
+    const history = polled([[1, [{ ...scored('a', 'A history of the bread knife', 1.5), topics: [] }]]])
 
-    expect(titles(thisWeek(history, day(19)))).toEqual(['Six days ago'])
+    expect(bigNews(history, day(1) + HOUR, null)).toEqual([])
   })
-})
 
-describe('thisMonth', () => {
-  it('holds what lasted — two weekly lists, or top five on three days — and not a one-day spike', () => {
-    // Every day five fillers outscore the middle of the field, so a top-five day is earned.
-    const filler = (date: number): ScoredStory[] => [1, 2, 3, 4].map((n) => scored(`f${date}-${n}`, `Filler ${n} of the ${date}th`, 0.5 + n / 100))
+  it('counts from the last day a story held its peak, each cluster once', () => {
     const history = polled([
-      // In two weekly lists: the week of the 5th and the week of the 12th, a top-five day in each.
-      [9, [...filler(9), scored('w', 'Two weeks running', 0.7)]],
-      [12, [...filler(12)]],
-      [13, [...filler(13), scored('w', 'Two weeks running', 0.72)]],
-      // Top five on three days of one week.
-      [14, [...filler(14), scored('t', 'Three days running', 0.6)]],
-      [15, [...filler(15), scored('t', 'Three days running', 0.62)]],
-      [16, [...filler(16), scored('t', 'Three days running', 0.61)]],
-      // A one-day spike: the month's highest score, never seen again.
-      [17, [...filler(17), scored('s', 'One-day spike', 0.99)]],
+      [1, [top('a', 'Codex gets a terminal')]],
+      [3, [top('a', 'Codex gets a terminal'), { ...top('b', 'Codex gets a terminal, a write-up'), story: { ...top('b', '').story, title: 'Codex gets a terminal, a write-up', link: 'https://example.com/a' } }]],
     ])
 
-    const month = titles(thisMonth(history, day(19)))
+    expect(titles(bigNews(history, day(4), null))).toHaveLength(1)
+  })
 
-    expect(month).toContain('Two weeks running')
-    expect(month).toContain('Three days running')
-    expect(month).not.toContain('One-day spike')
+  it('holds fewer than three when few clear the bar, best first', () => {
+    const history = polled([[18, [scored('low', 'Ordinary day', 0.8), top('one', 'One source'), top('two', 'Two sources', 2)]]])
+
+    expect(titles(bigNews(history, day(19), null))).toEqual(['Two sources', 'One source'])
+  })
+
+  it('holds nothing in a quiet stretch rather than filling up', () => {
+    const history = polled([
+      [15, [scored('a', 'Quiet one', 0.7), scored('b', 'Quiet two', 0.6)]],
+      [17, [scored('c', 'Quiet three', 0.9)]],
+    ])
+
+    expect(bigNews(history, day(19), null)).toEqual([])
+  })
+
+  it('holds three in a busy week, the most faded dropped', () => {
+    const history = polled([
+      [12, [top('a', 'Old but huge', 2)]],
+      [16, [top('b', 'Big on two sources', 2)]],
+      [18, [top('c', 'Big yesterday', 2), top('d', 'One source yesterday')]],
+      [19, [top('e', 'Big today', 2)]],
+    ])
+
+    expect(titles(bigNews(history, day(19) + HOUR, null))).toEqual(['Big today', 'Big yesterday', 'Big on two sources'])
+  })
+
+  it('leaves out the cluster that is Today’s Highlight', () => {
+    const history = polled([
+      [19, [top('a', 'Big today', 2), top('b', 'Also big', 2)]],
+      [19, [{ ...top('a2', ''), story: { ...top('a2', '').story, title: 'Big today, again', link: 'https://example.com/a' } }]],
+    ])
+
+    expect(titles(bigNews(history, day(19) + HOUR, 'hn:a'))).toEqual(['Also big'])
   })
 })
 

@@ -3,7 +3,7 @@ import type { NewsStory } from './news'
 import { groupSameStories, sameStory } from './sameStory'
 
 function on(source: string, id: string, title: string, link: string): NewsStory {
-  return { key: `${source}:${id}`, title, link, source, publishedAt: 0, magnitude: 1, unit: 'points', comments: null }
+  return { key: `${source}:${id}`, title, link, source, publishedAt: 0, magnitude: 1, unit: 'points', comments: null, image: null }
 }
 
 describe('sameStory', () => {

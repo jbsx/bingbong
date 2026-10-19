@@ -66,7 +66,7 @@ import { createDucking } from '../core/music/ducking'
 import { createRememberedSongsStore } from './music/rememberedSongsStore'
 import { registerUsageIpc } from './usage/attachUsage'
 import { registerCalendarIpc } from './calendar/attachCalendar'
-import { registerNewsIpc } from './news/attachNews'
+import { registerNewsImageScheme, registerNewsIpc } from './news/attachNews'
 import { attachTimerAlarm } from './timer/timerAlarm'
 import { attachIdleShortcut } from './idleShortcut'
 import { attachIdleTyping } from './idleTyping'
@@ -113,6 +113,10 @@ attachGpuStability({
 // off by default on Linux — one blink feature switch turns it on for every
 // webContents. Must precede app ready.
 app.commandLine.appendSwitch('enable-blink-features', 'MiddleClickAutoscroll')
+
+// The News card's Story Images (CONTEXT.md) load from their own scheme,
+// which must be privileged before app ready.
+registerNewsImageScheme()
 
 // Crash evidence (ADR 0017): renderer death leaves a dump instead of
 // vanishing silently; reports stay local — nothing uploads anywhere.
@@ -499,7 +503,7 @@ app.whenReady().then(async () => {
   registerCommandRunnerIpc()
   registerSettingsIpc(settingsStore)
   registerUsageIpc(() => settingsStore.get().usageDashboard.url)
-  registerNewsIpc({ storePath: join(app.getPath('userData'), 'news.json'), news: () => settingsStore.get().news })
+  registerNewsIpc({ storePath: join(app.getPath('userData'), 'news.json'), imageDir: join(app.getPath('userData'), 'news-images'), news: () => settingsStore.get().news })
   registerFeedPanelIpc()
   registerTtsIpc({ voicesDir: () => piperConfig.voicesDir })
   registerVoiceIpc()

@@ -33,6 +33,7 @@ describe('createHuggingFaceModelsSource', () => {
       magnitude: 1529,
       unit: 'likes',
       comments: null,
+      image: null,
     })
   })
 
@@ -57,6 +58,7 @@ describe('createHuggingFacePapersSource', () => {
       magnitude: 13,
       unit: 'upvotes',
       comments: 1,
+      image: null,
     })
   })
 

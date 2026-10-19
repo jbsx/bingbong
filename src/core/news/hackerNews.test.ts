@@ -31,6 +31,7 @@ describe('createHackerNewsSource', () => {
         magnitude: 450,
         unit: 'points',
         comments: 167,
+        image: null,
       },
       {
         key: 'Hacker News:50142600',
@@ -41,6 +42,7 @@ describe('createHackerNewsSource', () => {
         magnitude: 88,
         unit: 'points',
         comments: 301,
+        image: null,
       },
     ])
   })

@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
@@ -13,7 +13,8 @@ import { waitFor } from './waitFor'
 // the pane boots blank after a restart, so the Command navigates there.
 // The page the pane then shows is recorded for the next restart. The News
 // card reads a stand-in Hacker News front page (#346), a tap on the
-// highlight or on a This Week story (#347) opening it in the pane.
+// highlight or on a Big News story (#349), its picture from main's cache,
+// opening it in the pane.
 
 describe('idle screen e2e: the Last Page and resume', () => {
   let harness: Harness
@@ -24,8 +25,14 @@ describe('idle screen e2e: the Last Page and resume', () => {
   beforeAll(async () => {
     userDataDir = await mkdtemp(join(tmpdir(), 'bingbong-e2e-idle-'))
     fixture = await startFixtureServer()
-    // Hacker News's stand-in: two stories that match the default Interest Profile, each linking to a fixture page.
+    // Hacker News's stand-in: two stories that match the default Interest Profile, each linking to a fixture page; it also serves the picture of the story in the history.
+    const picture = await readFile(new URL('../src/core/news/fixtures/images/photo.jpg', import.meta.url))
     hackerNews = createServer((request, response) => {
+      if (request.url === '/big-story.jpg') {
+        response.writeHead(200, { 'content-type': 'image/jpeg' })
+        response.end(picture)
+        return
+      }
       const at = Math.floor(Date.now() / 1000) - 3600
       const hits = [
         { objectID: '1', title: 'Claude Code ships a new agent harness', url: fixture.url('/second'), points: 1840, num_comments: 312, created_at_i: at },
@@ -35,16 +42,16 @@ describe('idle screen e2e: the Last Page and resume', () => {
       response.end(JSON.stringify({ hits }))
     })
     await new Promise<void>((resolve) => hackerNews.listen(0, '127.0.0.1', resolve))
-    // A story history a previous run left behind: one story that lasted, top five on three days of last week and the one before.
+    // A story history a previous run left behind: one story at the top of two sources yesterday, with a picture of its own.
     const dayBack = (back: number): string => {
       const now = new Date()
       const at = new Date(now.getFullYear(), now.getMonth(), now.getDate() - back, 12)
       return `${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, '0')}-${String(at.getDate()).padStart(2, '0')}`
     }
-    const lasting = { title: 'An interactive story that lasted', link: fixture.url('/interactive'), source: 'Hacker News', unit: 'points', topical: true, cluster: 'Hacker News:lasted' }
+    const big = { title: 'A big story from yesterday', link: fixture.url('/interactive'), source: 'Hacker News', unit: 'points', topical: true, cluster: 'Hacker News:big', image: 'https://example.com/big-story.jpg' }
     await writeFile(
       join(userDataDir, 'news.json'),
-      `${JSON.stringify({ shown: [], history: {}, highlight: null, stories: { 'Hacker News:lasted': { ...lasting, days: Object.fromEntries([8, 9, 10].map((back) => [dayBack(back), { score: 0.9, magnitude: 2400 }])) } } })}\n`,
+      `${JSON.stringify({ shown: [], history: {}, highlight: null, stories: { 'Hacker News:big': { ...big, days: { [dayBack(1)]: { score: 1.5, magnitude: 2400 } } } } })}\n`,
       'utf8',
     )
     // The Last Page a previous run left behind.
@@ -169,36 +176,24 @@ describe('idle screen e2e: the Last Page and resume', () => {
     )
   })
 
-  it('lists This Week under the highlight, and a tap on a story opens it in the pane', async () => {
+  it('lists Big News under the highlight with its picture from main’s cache, and a tap on the story opens it in the pane', async () => {
     const IDLE_SHORTCUT = { key: 'L', code: 'KeyL', windowsVirtualKeyCode: 76, modifiers: 2 /* Ctrl */ | 8 /* Shift */ }
     await harness.pressKey('pane', IDLE_SHORTCUT)
-    const week = await waitFor(
+    const big = await waitFor(
       async () => {
-        const titles = await harness.dashboardEval<string[]>(`[...document.querySelectorAll('.idle-news-list[aria-label="This week"] .idle-news-item-title')].map((item) => item.textContent)`)
-        return titles.length > 0 ? titles : undefined
+        const rows = await harness.dashboardEval<{ title: string; picture: string; loaded: boolean }[]>(
+          `[...document.querySelectorAll('.idle-news-big .idle-news-item')].map((item) => ({ title: item.querySelector('.idle-news-item-title').textContent, picture: item.querySelector('.idle-news-thumb img')?.src ?? '', loaded: (item.querySelector('.idle-news-thumb img')?.naturalWidth ?? 0) > 0 }))`,
+        )
+        return rows.length > 0 && rows.every((row) => row.loaded) ? rows : undefined
       },
       { timeoutMs: 10000, intervalMs: 250 },
     )
-    expect(week).toEqual(['Claude Code ships a new agent harness', 'Codex sandboxes every coding agent'])
+    // The Codex story is no bigger than an ordinary day's on a two-story front page: it clears no bar.
+    expect(big.map((row) => row.title)).toEqual(['A big story from yesterday'])
+    expect(big[0].picture).toMatch(/^bingbong-news:\/\/image\/[0-9a-f]+\.jpg$/)
+    expect(await readdir(join(userDataDir, 'news-images'))).toHaveLength(1)
 
-    await harness.clickDashboardElement('.idle-news-list[aria-label="This week"] li:nth-child(2) .idle-news-item')
-
-    expect(await harness.waitForPaneUrl(fixture.url('/'))).toBe(fixture.url('/'))
-  })
-
-  it('lists This Month beside This Week from the kept history, and a tap on a story opens it in the pane', async () => {
-    const IDLE_SHORTCUT = { key: 'L', code: 'KeyL', windowsVirtualKeyCode: 76, modifiers: 2 /* Ctrl */ | 8 /* Shift */ }
-    await harness.pressKey('pane', IDLE_SHORTCUT)
-    const month = await waitFor(
-      async () => {
-        const titles = await harness.dashboardEval<string[]>(`[...document.querySelectorAll('.idle-news-list[aria-label="This month"] .idle-news-item-title')].map((item) => item.textContent)`)
-        return titles.length > 0 ? titles : undefined
-      },
-      { timeoutMs: 10000, intervalMs: 250 },
-    )
-    expect(month).toEqual(['An interactive story that lasted'])
-
-    await harness.clickDashboardElement('.idle-news-list[aria-label="This month"] .idle-news-item')
+    await harness.clickDashboardElement('.idle-news-big .idle-news-item')
 
     expect(await harness.waitForPaneUrl(fixture.url('/interactive'))).toBe(fixture.url('/interactive'))
   })

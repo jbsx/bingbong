@@ -1,29 +1,31 @@
 import { sameStory } from './sameStory'
-import { dayKey, daysBack, rankOrder, type ScoredStory } from './score'
+import { DAY_MS, dayKey, daysBack, type ScoredStory } from './score'
 
-// This Week and This Month (CONTEXT.md): the News card's two longer
-// horizons, read from the story history — every polled story's best score
+// Big News (CONTEXT.md): the News card's one rolling list beside Today's
+// Highlight, read from the story history — every polled story's best score
 // by the day it was polled, and the cluster it belongs to. Stories are
 // clustered as they are recorded: the same link, the same site with a
 // near-identical title, or the same proper name (a repo, a model) is one
-// story, and a cluster ranks at its peak. This Week is the top five of the
-// last seven days. This Month is the top five of the last thirty that
-// lasted — in two weekly lists, or top five on three separate days — so a
-// one-day stunt never makes it.
+// story. A cluster stands at its peak score faded by the time since that
+// peak, halving every HALF_LIFE_DAYS, and is listed while it clears the
+// bar: a story big for its own source, on the owner's topics and on two
+// sources stays about a fortnight; one on a single source about two days.
+// A quiet stretch lists fewer, or none — the list is never filled up.
 
-/** How many days a story is kept after it was last polled: the month's thirty and today. */
+/** How many days a story is kept after it was last polled: past Big News's longest stay. */
 export const HISTORY_DAYS = 31
 
-/** How many stories each list holds. */
-export const LIST_LENGTH = 5
+/** How many stories Big News holds at most. */
+export const BIG_NEWS_LENGTH = 3
 
-const WEEK_DAYS = 7
-const MONTH_DAYS = 30
-
-/** What lasting takes: in this many weekly lists… */
-const LASTING_WEEKS = 2
-/** …or top five on this many separate days. */
-const LASTING_DAYS = 3
+/**
+ * How fast a story fades, and what it must still score to be listed. Tuned
+ * together: a topical story at the top of its source (score 1) clears the
+ * bar for about two days, the same on two sources (1.5, the source boost)
+ * for about fourteen.
+ */
+export const HALF_LIFE_DAYS = 20
+export const BIG_NEWS_BAR = 0.93
 
 /** One polled story as the history keeps it. */
 export interface StoryRecord {
@@ -35,6 +37,8 @@ export interface StoryRecord {
   topical: boolean
   /** The key of the cluster's first story: every story the same story shares it. */
   cluster: string
+  /** The source's own image for it, the first Story Image candidate: none when the source gives none. */
+  image: string | null
   /** By local day polled ('YYYY-MM-DD'): its best score and magnitude that day. */
   days: Record<string, { score: number; magnitude: number | null }>
 }
@@ -42,7 +46,7 @@ export interface StoryRecord {
 /** Every polled story by key. */
 export type StoryHistory = Record<string, StoryRecord>
 
-/** One line of This Week or This Month: the cluster's story at its peak. */
+/** One line of Big News: the cluster's story at its standing day. */
 export interface NewsListItem {
   key: string
   title: string
@@ -79,6 +83,7 @@ export function recordStories(history: StoryHistory, ranked: readonly ScoredStor
         unit: story.unit,
         topical: topics.length > 0,
         cluster: kin?.cluster ?? story.key,
+        image: story.image,
         days: { [today]: { score, magnitude: story.magnitude } },
       }
       continue
@@ -89,86 +94,48 @@ export function recordStories(history: StoryHistory, ranked: readonly ScoredStor
       title: story.title,
       link: story.link,
       topical: topics.length > 0,
+      image: story.image ?? known.image,
       days: { ...known.days, [today]: { score: Math.max(held?.score ?? 0, score), magnitude: story.magnitude === null ? (held?.magnitude ?? null) : Math.max(held?.magnitude ?? 0, story.magnitude) } },
     }
   }
   return next
 }
 
-interface Peak {
-  key: string
-  record: StoryRecord
-  score: number
-  magnitude: number | null
-}
-
-function better(a: Peak, b: Peak): number {
-  return rankOrder({ ...a, topical: a.record.topical }, { ...b, topical: b.record.topical })
-}
-
-/** Each cluster's peak over the given days, best first, the first `limit`. */
-function topClusters(history: StoryHistory, days: readonly string[], limit: number): Peak[] {
-  const peaks = new Map<string, Peak>()
-  for (const [key, record] of Object.entries(history)) {
-    for (const day of days) {
-      const held = record.days[day]
-      if (held === undefined) continue
-      const peak = { key, record, score: held.score, magnitude: held.magnitude }
-      const best = peaks.get(record.cluster)
-      if (best === undefined || better(peak, best) < 0) peaks.set(record.cluster, peak)
-    }
-  }
-  return [...peaks.values()].sort(better).slice(0, limit)
-}
-
-function itemOf({ key, record, magnitude }: Peak): NewsListItem {
-  return { key, title: record.title, link: record.link, source: record.source, magnitude, unit: record.unit }
-}
-
-/** This Week (CONTEXT.md): the top five stories of the last seven days, today's included, each cluster at its peak. */
-export function thisWeek(history: StoryHistory, now: number): NewsListItem[] {
-  return topClusters(history, daysBack(now, WEEK_DAYS), LIST_LENGTH).map(itemOf)
-}
-
-/** The Monday of a day's week, as its day key. */
-function weekOf(day: string): string {
+/** A day key's noon, epoch ms: where a day's score is aged from. */
+function noonOf(day: string): number {
   const [year, month, date] = day.split('-').map(Number)
-  const at = new Date(year, month - 1, date, 12)
-  return dayKey(new Date(year, month - 1, date - ((at.getDay() + 6) % 7), 12).getTime())
+  return new Date(year, month - 1, date, 12).getTime()
 }
 
-/** How many of the given lists — each a span of days — a cluster is in the top five of. */
-function listings(history: StoryHistory, lists: Iterable<readonly string[]>): Map<string, number> {
-  const counts = new Map<string, number>()
-  for (const list of lists) for (const peak of topClusters(history, list, LIST_LENGTH)) counts.set(peak.record.cluster, (counts.get(peak.record.cluster) ?? 0) + 1)
-  return counts
-}
-
-/** The clusters that lasted over the given days: in the top five of at least two of their calendar weeks, or of at least three separate days. */
-function lastingClusters(history: StoryHistory, days: readonly string[]): Set<string> {
-  const weeks = new Map<string, string[]>()
-  for (const day of days) {
-    const week = weekOf(day)
-    weeks.set(week, [...(weeks.get(week) ?? []), day])
-  }
-  const inWeeks = listings(history, weeks.values())
-  const onDays = listings(history, days.map((day) => [day]))
-  const lasted = new Set<string>()
-  for (const [cluster, count] of inWeeks) if (count >= LASTING_WEEKS) lasted.add(cluster)
-  for (const [cluster, count] of onDays) if (count >= LASTING_DAYS) lasted.add(cluster)
-  return lasted
+/** A score `age` ms old, faded by the half-life. */
+function faded(score: number, age: number): number {
+  return score * 0.5 ** (Math.max(0, age) / (HALF_LIFE_DAYS * DAY_MS))
 }
 
 /**
- * This Month (CONTEXT.md): the top five stories of the last thirty days that
- * lasted — in the top five of at least two calendar weeks (Monday to
- * Sunday), or of at least three separate days — each cluster at its peak.
+ * Big News (CONTEXT.md): up to three clusters, best first by standing — a
+ * cluster's best score on any day it was polled, faded by the time since
+ * that day — each clearing the bar. Only stories on the owner's topics are
+ * listed, as a topical story ranks over any other in Today's Highlight;
+ * the cluster of `highlight` (Today's Highlight's key) is left out, so no
+ * story is on the card twice. Each line is the cluster's story at its
+ * standing day.
  */
-export function thisMonth(history: StoryHistory, now: number): NewsListItem[] {
-  const days = daysBack(now, MONTH_DAYS)
-  const lasted = lastingClusters(history, days)
-  return topClusters(history, days, Number.POSITIVE_INFINITY)
-    .filter((peak) => lasted.has(peak.record.cluster))
-    .slice(0, LIST_LENGTH)
-    .map(itemOf)
+export function bigNews(history: StoryHistory, now: number, highlight: string | null): NewsListItem[] {
+  const skip = highlight === null ? undefined : history[highlight]?.cluster
+  const best = new Map<string, { standing: number; item: NewsListItem }>()
+  for (const [key, record] of Object.entries(history)) {
+    if (!record.topical || record.cluster === skip) continue
+    for (const [day, { score, magnitude }] of Object.entries(record.days)) {
+      const standing = faded(score, now - noonOf(day))
+      if (standing < BIG_NEWS_BAR) continue
+      const held = best.get(record.cluster)
+      if (held !== undefined && held.standing >= standing) continue
+      best.set(record.cluster, { standing, item: { key, title: record.title, link: record.link, source: record.source, magnitude, unit: record.unit } })
+    }
+  }
+  return [...best.values()]
+    .sort((a, b) => b.standing - a.standing)
+    .slice(0, BIG_NEWS_LENGTH)
+    .map(({ item }) => item)
 }
