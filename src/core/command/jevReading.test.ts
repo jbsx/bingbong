@@ -397,7 +397,7 @@ describe('the Site Scope at a later hop (#341): a hop may search once, on a site
   })
 })
 
-describe('the Verdict: a hop is asked whether the page is what was asked for', () => {
+describe('the Verdict: a hop is asked whether what was asked for is done', () => {
   const PROFILE: CommandPage = {
     url: 'https://x.com/elonmusk',
     title: 'Elon Musk (@elonmusk) / X',
@@ -427,7 +427,8 @@ describe('the Verdict: a hop is asked whether the page is what was asked for', (
     const questions = hopQuestions('open elon musks latest tweet', PROFILE, hop)
     expect(Object.keys(questions)).toEqual(['verb', 'target', 'slot', 'where', 'outcome'])
     expect(Object.keys(questions.outcome.options)).toEqual(['yes', 'in_the_way', 'not_yet'])
-    expect(questions.outcome.instructions).toContain('a sign-in prompt, a pop-up, a cookie notice, a challenge')
+    expect(questions.outcome.instructions).toContain('if a pop-up, sign-in prompt, cookie notice or challenge covers the page now, choose in_the_way')
+    expect(questions.outcome.instructions).toContain('the action they asked for has happened')
   })
 
   it('asks no outcome at hop 0: a Command is read before anything was done', () => {
@@ -465,6 +466,10 @@ describe('the Verdict: a hop is asked whether the page is what was asked for', (
       const more: CommandPage = { ...PROFILE, refs: [...PROFILE.refs, { ref: 4, kind: 'button', label: 'Show more', href: null, inputType: null }] }
       expect(doneLine(click, PROFILE, doneFacts(PROFILE, more, { changed: true }))).toBe(`${CLICKED} (the address did not change; "Show more" appeared)`)
       expect(doneLine(click, PROFILE, doneFacts(PROFILE, PROFILE, { changed: true }))).toBe(`${CLICKED} (the page changed)`)
+    })
+
+    it('says the pop-up closed when the page it covered is clear again', () => {
+      expect(doneLine(click, COVERED, doneFacts(COVERED, PROFILE, { changed: true }))).toBe('click "Close" (the pop-up closed)')
     })
 
     it('keeps nothing changed as it was, whatever the page shows', () => {

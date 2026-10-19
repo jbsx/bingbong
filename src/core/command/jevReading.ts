@@ -141,7 +141,7 @@ export function setAsideOf(ref: CommandRef, page: CommandPage): SetAside {
  */
 export type DoneResult =
   | { readonly changed: false }
-  | { readonly changed: true; readonly opened?: string; readonly appeared?: readonly string[]; readonly covered?: boolean }
+  | { readonly changed: true; readonly opened?: string; readonly appeared?: readonly string[]; readonly covered?: boolean; readonly closed?: boolean }
 
 /** How many controls that appeared "Done so far" names. */
 const NAMED_APPEARANCES = 3
@@ -149,7 +149,8 @@ const NAMED_APPEARANCES = 3
 /**
  * The facts of what an action changed, off the page it was read on and the
  * page it left: the labels of the controls that were not there before (a
- * pop-up's first), and whether a pop-up covers the page that was clear.
+ * pop-up's first), whether a pop-up covers the page that was clear, and
+ * whether the pop-up that covered it closed.
  */
 export function doneFacts(before: CommandPage, after: CommandPage, result: DoneResult): DoneResult {
   if (!result.changed) return result
@@ -158,7 +159,8 @@ export function doneFacts(before: CommandPage, after: CommandPage, result: DoneR
   const inDialog = new Set(after.dialog?.refs ?? [])
   const appeared = [...fresh.filter((ref) => inDialog.has(ref.ref)), ...fresh.filter((ref) => !inDialog.has(ref.ref))].slice(0, NAMED_APPEARANCES).map((ref) => ref.label)
   const covered = after.dialog !== undefined && before.dialog === undefined
-  return { ...result, ...(appeared.length > 0 ? { appeared } : {}), ...(covered ? { covered: true } : {}) }
+  const closed = before.dialog !== undefined && after.dialog === undefined
+  return { ...result, ...(appeared.length > 0 ? { appeared } : {}), ...(covered ? { covered: true } : {}), ...(closed ? { closed: true } : {}) }
 }
 
 /** An address as "Done so far" names it: no scheme, no www, no trailing slash. */
@@ -184,6 +186,7 @@ function changedFacts(result: Extract<DoneResult, { changed: true }>): string {
     const opened = `opened ${shortAddress(result.opened)}`
     return result.covered === true ? `${opened}; a pop-up covers it${appeared.length > 0 ? `: ${listOf(appeared)}` : ''}` : opened
   }
+  if (result.closed === true) return 'the pop-up closed'
   if (result.covered === true) return `the address did not change; a pop-up appeared over the page${appeared.length > 0 ? `: ${listOf(appeared)}` : ''}`
   if (appeared.length > 0) return `the address did not change; ${listOf(appeared)} appeared`
   return 'the page changed'
@@ -322,7 +325,7 @@ function threeQuestions(text: string, pageRead: CommandPage, hop: HopContext | u
   }
 }
 
-/** The Verdict's answers: the page is what was asked for; something is in the way of it; or there is more to do. */
+/** The Verdict's answers: what was asked for is done; a pop-up covers the page; or there is more to do. */
 export const OUTCOMES = ['yes', 'in_the_way', 'not_yet'] as const
 export type Outcome = (typeof OUTCOMES)[number]
 
@@ -333,20 +336,24 @@ export interface Verdict {
 }
 
 /**
- * The outcome Choice (the Verdict): is this page what the user asked for?
- * Asked at every hop past the first beside the verb, so an end is a
- * verdict and never a verb's plurality: a Task ends on a sure `yes`, meets
- * a wall on a sure `in_the_way`, and says it is not sure otherwise.
+ * The outcome Choice (the Verdict): is what the user asked for done? Read
+ * off their words and "Done so far", not the page alone, so an action the
+ * user asked for ("close the pop-up") can be done on a page that is no
+ * one's goal. A pop-up covering the page is asked first, so a wall stays a
+ * sure `in_the_way` whatever the words. Asked at every hop past the first
+ * beside the verb, so an end is a verdict and never a verb's plurality: a
+ * Task ends on a sure `yes`, meets a wall on a sure `in_the_way`, and says
+ * it is not sure otherwise.
  */
 function outcomeQuestion(): DecisionChoiceQuestion {
   return {
     type: 'choice',
     instructions:
-      'Is this page what the user asked for? Choose yes when it shows it; in_the_way when something covers or blocks it: a sign-in prompt, a pop-up, a cookie notice, a challenge; not_yet when the task is unfinished and the page is clear.',
+      'Is what the user asked for done? First: if a pop-up, sign-in prompt, cookie notice or challenge covers the page now, choose in_the_way. Otherwise judge by their words and Done so far, not by the page alone: choose yes when the page shows what they asked to see, or the action they asked for has happened; not_yet when more steps are needed.',
     options: {
-      yes: 'this page is what the user asked for',
-      in_the_way: 'something is in the way of it on this page',
-      not_yet: 'not yet: more to do, nothing in the way',
+      yes: 'done: the page shows it, or the action they asked for has happened',
+      in_the_way: 'a pop-up or prompt covers the page now',
+      not_yet: 'not done: more to do, nothing covering the page',
     },
   }
 }
