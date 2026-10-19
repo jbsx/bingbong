@@ -2293,11 +2293,14 @@ body {
    leaves room, by container query on the slot: at 2×2 (the base) the
    highlight over This Week and This Month side by side, at 2×1 This Week
    beside it, at 1×1 the highlight alone. The
-   highlight — the topic as a kicker, the title large, the number that made
-   it a story larger still, the source and the site at the foot — draws to
-   its own box by container query, the title clamped so it never pushes the
-   figure out. The lists are one line a story, clipped at the box. Every
-   story is a button: the tap opens it. */
+   highlight — the topic as a kicker, the title large, a GitHub repo's
+   one-sentence description under it, the number that made it a story
+   larger still, the source and the site at the foot — draws to its own box
+   by container query, and useFitText steps its sizes down by --fit until
+   it shows whole; past that floor the description goes, then the title is
+   clamped. The lists are a story a row, its whole headline (four lines at
+   most), and a row the box would cut is left off whole (useWholeItems). Every story is a
+   button: the tap opens it. */
 .idle-news {
   display: grid;
   grid-template:
@@ -2365,34 +2368,52 @@ body {
 }
 
 .idle-news-kicker {
-  overflow: hidden;
+  flex: none;
   font-size: 1.2rem;
   font-weight: 600;
+  line-height: 1.3;
   letter-spacing: 0.02em;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   color: var(--accent);
 }
 
 .idle-news-title {
-  display: -webkit-box;
-  overflow: hidden;
-  font-size: 2.5rem;
+  --title-size: 2.5rem;
+  flex: none;
+  font-size: max(24px, calc(var(--title-size) * var(--fit, 1)));
   font-weight: 600;
   line-height: 1.12;
   letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+
+.idle-news-dek {
+  flex: none;
+  font-size: max(18px, calc(1.55rem * var(--fit, 1)));
+  line-height: 1.3;
+  color: var(--muted);
+}
+
+.idle-news-today[data-fit='over'] .idle-news-dek {
+  display: none;
+}
+
+.idle-news-today[data-fit='over'] .idle-news-title {
+  display: -webkit-box;
+  overflow: hidden;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
 }
 
 .idle-news-figure {
+  flex: none;
   margin-top: auto;
   line-height: 1;
   white-space: nowrap;
 }
 
 .idle-news-count {
-  font-size: 4.4rem;
+  --count-size: 4.4rem;
+  font-size: max(40px, calc(var(--count-size) * var(--fit, 1)));
   font-weight: 200;
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
@@ -2404,6 +2425,7 @@ body {
 }
 
 .idle-news-foot {
+  flex: none;
   display: flex;
   flex-wrap: wrap;
   gap: 4px 20px;
@@ -2419,15 +2441,14 @@ body {
   color: var(--text);
 }
 
-/* The highlight in a half-width box (1×1, or beside This Week at 2×1): three lines of a smaller title, the comments left to the wider boxes. */
+/* The highlight in a half-width box (1×1, or beside This Week at 2×1): a smaller title, the comments left to the wider boxes. */
 @container news-today (max-width: 600px) {
   .idle-news-title {
-    font-size: 1.85rem;
-    -webkit-line-clamp: 3;
+    --title-size: 1.85rem;
   }
 
   .idle-news-count {
-    font-size: 3.6rem;
+    --count-size: 3.6rem;
   }
 
   .idle-news-comments {
@@ -2462,7 +2483,10 @@ body {
 
 .idle-news-list ol {
   display: flex;
+  flex: 1;
   flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -2483,11 +2507,13 @@ body {
 }
 
 .idle-news-item-title {
+  display: -webkit-box;
   flex: 1;
   min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
 }
 
 .idle-news-item-count {

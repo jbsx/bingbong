@@ -427,10 +427,13 @@ two rows sharing the height between the header and the strip, on the
 1920×1080 canvas — that a card is handed and draws itself inside (owner,
 2026-10-19: "i plan on having more widgets and cards"; the recommended
 layout taken the same day). A card offers the sizes it can draw at (1×1,
-2×1, 1×2, 2×2), largest first; each Pinned Card gets the largest that still
-fits, the cards with something to show sized first, so an empty one — the
-Calendar with no events this month — yields its room, and a card that fits
-nowhere is left off. The boxes are then laid down in pinned order; fewer
+2×1, 1×2, 2×2), largest first. As many Pinned Cards are shown as the grid
+holds before any of them takes a larger box (owner, 2026-10-19: "why is the
+calendar hidden now?" — the News card's 2×2 had pushed the event-less
+Calendar off); then each gets the largest that still fits, the cards with
+something to show sized first, so an empty one — the Calendar with no
+events this month — yields its room down to its smallest size, and a card
+that fits nowhere is left off. The boxes are then laid down in pinned order; fewer
 cards than columns are centred. A card clips at its box: its content never
 sizes the row, so nothing it holds can push the strip (the overlap the
 2026-10-19 screenshot found). The chips strip has one fixed height; a chip

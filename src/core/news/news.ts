@@ -83,3 +83,26 @@ export function magnitudeLabel(story: { magnitude: number | null; unit: string; 
   const parts = magnitudeParts(story)
   return parts === null ? `on ${story.source}` : `${parts.count} ${parts.unit} on ${story.source}`
 }
+
+/**
+ * A story's title as the card sets it: the name it goes by, and the line
+ * that says what it is where the title carries one. GitHub trending's
+ * "owner/repo: description" becomes the repo's name over the description's
+ * first sentence, so the card never shows a description cut off midway;
+ * any other title is its own headline with no line under it.
+ */
+export function headline(title: string): { title: string; dek: string | null } {
+  const repo = /^([\w.-]+\/[\w.-]+): (.+)$/s.exec(title)
+  if (repo === null) return { title, dek: null }
+  return { title: repo[1], dek: firstSentence(repo[2]) }
+}
+
+/** Up to the first full stop, question or exclamation mark that ends a sentence: one followed by a capital or a digit, not closing an abbreviation such as "e.g." or a single letter. */
+function firstSentence(text: string): string {
+  for (const end of text.matchAll(/[.!?](?=\s+[A-Z0-9])/g)) {
+    const word = text.slice(0, end.index + 1).split(/\s/).pop() ?? ''
+    if (/^\(?[A-Za-z]\.$/.test(word) || /\w\.\w/.test(word)) continue
+    return text.slice(0, end.index + 1)
+  }
+  return text
+}

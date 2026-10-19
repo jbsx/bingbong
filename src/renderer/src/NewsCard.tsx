@@ -1,6 +1,8 @@
+import { useRef } from 'react'
 import type { NewsListItem } from '../../core/news/horizons'
-import { hostOf, magnitudeLabel, magnitudeParts } from '../../core/news/news'
+import { headline, hostOf, magnitudeLabel, magnitudeParts } from '../../core/news/news'
 import type { NewsHorizons } from '../../core/news/newsDesk'
+import { useFitText, useWholeItems } from './useFit'
 
 /**
  * Opens a story through the same `navigate` Command the words are, on the
@@ -19,19 +21,21 @@ function opener(link: string): { onPointerDown: () => void; onKeyDown: (event: R
   }
 }
 
-/** This Week or This Month: one line a story, its title and its number (none for a feed's post), each a tap that opens it. */
+/** This Week or This Month: a story a row, its whole headline and its number (none for a feed's post), each a tap that opens it; a story the box would cut is left off whole. */
 function NewsList({ area, heading, items, empty }: { area: 'week' | 'month'; heading: string; items: readonly NewsListItem[]; empty: string }) {
+  const list = useRef<HTMLOListElement>(null)
+  useWholeItems(list, items)
   return (
     <section className={`idle-news-list idle-news-${area}`} aria-label={heading}>
       <h3 className="idle-news-list-head">{heading}</h3>
       {items.length === 0 ? (
         <p className="idle-news-list-empty">{empty}</p>
       ) : (
-        <ol>
+        <ol ref={list}>
           {items.map((item) => (
             <li key={item.key}>
               <button type="button" className="idle-news-item" aria-label={`${item.title}, ${magnitudeLabel(item)}. Open it`} {...opener(item.link)}>
-                <span className="idle-news-item-title">{item.title}</span>
+                <span className="idle-news-item-title">{headline(item.title).title}</span>
                 <span className="idle-news-item-count">{magnitudeParts(item)?.count ?? ''}</span>
               </button>
             </li>
@@ -50,17 +54,23 @@ function NewsList({ area, heading, items, empty }: { area: 'week' | 'month'; hea
  * decides what shows, by container query on the slot (styles.css): at 2×2
  * This Week and This Month side by side under the highlight, at 2×1 This
  * Week beside it, at 1×1 the highlight alone; the highlight draws to its
- * own box the same way. Every story on the card opens in the pane at a tap.
+ * own box the same way, its words stepped down until they show whole
+ * (useFitText) rather than cut off midway. Every story on the card opens in
+ * the pane at a tap.
  */
 export function NewsCard({ horizons }: { horizons: NewsHorizons }) {
   const { story, topics } = horizons.highlight
   const figure = magnitudeParts(story)
   const host = hostOf(story.link)
+  const { title, dek } = headline(story.title)
+  const today = useRef<HTMLButtonElement>(null)
+  useFitText(today, story.key)
   return (
     <div className="idle-card idle-news">
-      <button type="button" className="idle-news-today" aria-label={`Today's highlight: ${story.title}, ${magnitudeLabel(story)}. Open it`} {...opener(story.link)}>
+      <button ref={today} type="button" className="idle-news-today" aria-label={`Today's highlight: ${story.title}, ${magnitudeLabel(story)}. Open it`} {...opener(story.link)}>
         <span className="idle-news-kicker">Today’s highlight{topics.length > 0 ? ` · ${topics[0]}` : ''}</span>
-        <span className="idle-news-title">{story.title}</span>
+        <span className="idle-news-title">{title}</span>
+        {dek !== null ? <span className="idle-news-dek">{dek}</span> : null}
         {figure !== null ? (
           <span className="idle-news-figure">
             <span className="idle-news-count">{figure.count}</span> <span className="idle-news-unit">{figure.unit}</span>

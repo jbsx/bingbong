@@ -36,6 +36,21 @@ describe('layoutSlots', () => {
     expect(boxes(layout)).toEqual(['weather 0,0 1x2', 'calendar 1,0 2x1', 'usage 3,0 1x2', 'news 1,1 2x1'])
   })
 
+  it('shrinks the cards so every pinned one shows before any of them takes a larger box', () => {
+    const layout = layoutSlots([
+      request('weather', [TALL]),
+      request('usage', [TALL]),
+      request('calendar', [BIG, WIDE, SMALL], false),
+      request('news', [BIG, WIDE, SMALL]),
+    ])
+    expect(boxes(layout)).toEqual(['weather 0,0 1x2', 'usage 1,0 1x2', 'calendar 2,0 2x1', 'news 2,1 2x1'])
+  })
+
+  it('keeps the larger box for the card that comes first when two cannot both have it', () => {
+    const layout = layoutSlots([request('a', [TALL]), request('b', [TALL]), request('c', [WIDE, SMALL]), request('d', [WIDE, SMALL]), request('e', [WIDE, SMALL], false)])
+    expect(boxes(layout)).toEqual(['a 0,0 1x2', 'b 1,0 1x2', 'c 2,0 2x1', 'd 2,1 1x1', 'e 3,1 1x1'])
+  })
+
   it('leaves out a card that fits nowhere', () => {
     const layout = layoutSlots([request('a', [BIG]), request('b', [BIG]), request('c', [SMALL])])
     expect(boxes(layout)).toEqual(['a 0,0 2x2', 'b 2,0 2x2'])

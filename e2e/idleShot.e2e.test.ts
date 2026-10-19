@@ -25,12 +25,12 @@ import { waitFor } from './waitFor'
 
 const PROVIDERS = ['Codex', 'Claude', 'Kaggle', 'GLM', 'Grok']
 
-/** Hacker News's stand-in front page: a long title that matches the default Interest Profile over shorter ones, some that do not. */
+/** Hacker News's stand-in front page: a long title — as long as a GitHub repo's with its description — that matches the default Interest Profile over shorter ones, some that do not. */
 function frontPage(now: number) {
   const at = Math.floor(now / 1000) - 3 * 3600
   return {
     hits: [
-      { objectID: '1', title: 'Claude Code’s new harness lets a coding agent run your whole test suite in parallel across machines', url: 'https://example.com/harness', points: 1840, num_comments: 612, created_at_i: at },
+      { objectID: '1', title: 'Claude Code’s new harness lets a coding agent run your whole test suite in parallel across machines, and the agents now review each other’s pull requests before a human sees them', url: 'https://example.com/harness', points: 1840, num_comments: 612, created_at_i: at },
       { objectID: '2', title: 'A history of the bread knife', url: 'https://example.com/bread', points: 2950, num_comments: 210, created_at_i: at },
       { objectID: '3', title: 'Codex now reviews every pull request before a human sees it', url: 'https://example.com/codex-review', points: 1210, num_comments: 380, created_at_i: at },
       { objectID: '4', title: 'Show HN: A terminal that remembers every command you ran', url: 'https://example.com/terminal', points: 760, num_comments: 140, created_at_i: at },
@@ -202,8 +202,8 @@ describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review'
     await rm(userDataDir, { recursive: true, force: true }).catch(() => {})
   })
 
-  it('holds every card inside its Card Slot and the Card Slots above the strip at 1920×1080', async () => {
-    const geometry = await harness.dashboardEval<{ overflowing: string[]; middleBottom: number; stripTop: number }>(`(() => {
+  it('holds every card inside its Card Slot and the Card Slots above the strip at 1920×1080, the event-less Calendar beside the News card', async () => {
+    const geometry = await harness.dashboardEval<{ overflowing: string[]; middleBottom: number; stripTop: number; cards: string[] }>(`(() => {
       const overflowing = [...document.querySelectorAll('.idle-slot > .idle-card')]
         .filter((card) => card.scrollHeight > card.clientHeight + 1 || card.scrollWidth > card.clientWidth + 1)
         .map((card) => card.closest('.idle-slot').dataset.card + ' ' + card.scrollHeight + '>' + card.clientHeight)
@@ -211,15 +211,16 @@ describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review'
         overflowing,
         middleBottom: document.querySelector('.idle-screen-middle').getBoundingClientRect().bottom,
         stripTop: document.querySelector('.idle-screen-bottom').getBoundingClientRect().top,
+        cards: [...document.querySelectorAll('.idle-slot')].map((slot) => slot.dataset.card),
       }
     })()`)
     expect(geometry.overflowing).toEqual([])
+    expect(geometry.cards).toEqual(expect.arrayContaining(['weather', 'usage', 'calendar', 'news']))
     expect(geometry.middleBottom).toBeLessThanOrEqual(geometry.stripTop)
   })
 
   it('holds the News card to its box at 2×2, 2×1 and 1×1', async () => {
     await mkdir(outDir, { recursive: true })
-    // The grid gives News the box its sizes allow; each size is forced on its slot in turn, the card drawing itself by container query.
     // The grid gives News the box its sizes allow; each size is forced on its slot in turn, the card choosing its horizons by container query.
     const sizes: [number, number, string[]][] = [
       [2, 2, ['This week', 'This month']],
@@ -229,13 +230,18 @@ describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review'
     for (const scheme of ['dark', 'light']) {
       await harness.cdp.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, session)
       for (const [w, h, lists] of sizes) {
-        const box = await harness.dashboardEval<{ overflowing: string[]; lists: string[]; items: number; width: number; height: number; x: number; y: number; title: string }>(`(() => {
+        // A 2-row box starts on the top row wherever the grid put the card, the cards it lands on hidden; the card refits its words a frame after the resize.
+        await harness.dashboardEval(`(() => {
+              for (const other of document.querySelectorAll('.idle-slot:not([data-card="news"])')) other.style.visibility = 'hidden'
               const slot = document.querySelector('.idle-slot[data-card="news"]')
-              slot.dataset.start ??= slot.style.gridColumn.split(' / ')[0] + '|' + slot.style.gridRow.split(' / ')[0]
-              const [column, row] = slot.dataset.start.split('|')
+              slot.dataset.origin ??= slot.style.gridColumn + '|' + slot.style.gridRow
+              const [column, row] = slot.dataset.origin.split('|').map((span) => span.split(' / ')[0])
               slot.style.gridColumn = column + ' / span ${w}'
-              slot.style.gridRow = row + ' / span ${h}'
-              const card = slot.querySelector('.idle-news')
+              slot.style.gridRow = (${h} === 2 ? '1' : row) + ' / span ${h}'
+            })()`)
+        await new Promise((resolve) => setTimeout(resolve, 300))
+        const box = await harness.dashboardEval<{ overflowing: string[]; lists: string[]; items: number; width: number; height: number; x: number; y: number; title: string }>(`(() => {
+              const card = document.querySelector('.idle-slot[data-card="news"] .idle-news')
               const rect = card.getBoundingClientRect()
               const today = card.querySelector('.idle-news-today').getBoundingClientRect()
               const title = card.querySelector('.idle-news-title').getBoundingClientRect()
@@ -243,24 +249,27 @@ describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review'
               const overflowing = []
               if (card.scrollHeight > card.clientHeight + 1 || card.scrollWidth > card.clientWidth + 1) overflowing.push('card')
               if (figure.bottom > today.bottom + 1 || title.bottom > figure.top + 1) overflowing.push('highlight')
+              if (card.querySelector('.idle-news-today').dataset.fit === 'over') overflowing.push('highlight clamped')
               const shown = [...card.querySelectorAll('.idle-news-list')].filter((list) => list.checkVisibility())
               for (const list of shown) {
                 const box = list.getBoundingClientRect()
                 if (box.bottom > rect.bottom + 1 || box.right > rect.right + 1) overflowing.push(list.getAttribute('aria-label'))
+                const rows = list.querySelector('ol')
+                const cut = [...rows.children].filter((row) => !row.hidden && row.getBoundingClientRect().bottom > rows.getBoundingClientRect().bottom + 1)
+                if (cut.length > 0) overflowing.push(list.getAttribute('aria-label') + ' row cut')
               }
               return {
                 overflowing,
                 lists: shown.map((list) => list.getAttribute('aria-label')),
-                items: shown.reduce((sum, list) => sum + list.querySelectorAll('.idle-news-item').length, 0),
+                items: shown.reduce((sum, list) => sum + [...list.querySelectorAll('li')].filter((row) => !row.hidden).length, 0),
                 width: rect.width, height: rect.height, x: rect.x, y: rect.y,
                 title: card.querySelector('.idle-news-title').textContent,
               }
             })()`)
         expect(box.overflowing, `${w}×${h} ${scheme}`).toEqual([])
         expect(box.lists, `${w}×${h}`).toEqual(lists)
-        if (lists.length > 0) expect(box.items).toBeGreaterThan(lists.length * 2)
+        if (lists.length > 0) expect(box.items).toBeGreaterThanOrEqual(lists.length * 2 - 1)
         expect(box.title).toContain('Claude Code')
-        await new Promise((resolve) => setTimeout(resolve, 300))
         const { data } = await harness.cdp.send<{ data: string }>(
           'Page.captureScreenshot',
           { format: 'png', clip: { x: box.x, y: box.y, width: box.width, height: box.height, scale: 1 } },
@@ -271,9 +280,10 @@ describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review'
     }
     await harness.dashboardEval(`(() => {
       const slot = document.querySelector('.idle-slot[data-card="news"]')
-      const [column, row] = slot.dataset.start.split('|')
-      slot.style.gridColumn = column + ' / span 2'
-      slot.style.gridRow = row + ' / span 2'
+      const [column, row] = slot.dataset.origin.split('|')
+      slot.style.gridColumn = column
+      slot.style.gridRow = row
+      for (const other of document.querySelectorAll('.idle-slot')) other.style.visibility = ''
     })()`)
   })
 

@@ -1,10 +1,11 @@
 // The Idle Screen's Card Slots (CONTEXT.md): the middle of the 1920×1080 canvas
 // is a fixed grid of cells, and every card is handed a box of whole cells
 // rather than sizing the row by its own content. A card offers the sizes it
-// can draw itself at, largest first; the screen gives each card in the
-// owner's pinned order the largest of them that still fits — the cards with
-// something to show first, so an empty one yields its room — and a card that
-// fits nowhere is left off.
+// can draw itself at, largest first; the screen shows as many pinned cards
+// as the grid can hold before it gives any of them a larger size, then gives
+// each the largest that still fits — the cards with something to show
+// first, so an empty one yields its room down to its smallest size — and a
+// card that fits nowhere is left off.
 
 /** The grid's columns and rows of cells. */
 export const SLOT_COLUMNS = 4
@@ -89,6 +90,39 @@ function pack<Id extends string>(requests: readonly SlotRequest<Id>[]): SlotPlac
 }
 
 /**
+ * The size each card is given: of every choice of one size per card, the
+ * one that places the most cards with something to show, then the most
+ * cards — so an empty card shrinks rather than vanishing while a smaller
+ * box would keep it — and of those the first, trying each card's sizes
+ * largest first in the given order, so the earlier card keeps the larger
+ * box. A handful of cards of up to four sizes each: a few hundred tries.
+ */
+function size<Id extends string>(priority: readonly SlotRequest<Id>[]): SlotPlacement<Id>[] {
+  const asking = priority.filter((request) => request.sizes.length > 0)
+  const content = new Set(asking.filter((request) => request.hasContent).map((request) => request.id))
+  let best: SlotPlacement<Id>[] = []
+  let bestScore = [-1, -1]
+  const choice: SlotSize[] = []
+  const tryFrom = (index: number): void => {
+    if (index === asking.length) {
+      const placed = pack(asking.map((request, n) => ({ ...request, sizes: [choice[n]] })))
+      const score = [placed.filter((placement) => content.has(placement.id)).length, placed.length]
+      if (score[0] > bestScore[0] || (score[0] === bestScore[0] && score[1] > bestScore[1])) {
+        best = placed
+        bestScore = score
+      }
+      return
+    }
+    for (const option of asking[index].sizes) {
+      choice[index] = option
+      tryFrom(index + 1)
+    }
+  }
+  tryFrom(0)
+  return best
+}
+
+/**
  * Lay the pinned cards out on the grid. Sizes are settled with the cards
  * that have something to show going first, so an empty card takes what is
  * left; the boxes are then laid down again in pinned order, so the owner's
@@ -99,7 +133,7 @@ export function layoutSlots<Id extends string>(requests: readonly SlotRequest<Id
   const pinned = new Map(requests.map((request, index) => [request.id, index]))
   const byPin = (a: { id: Id }, b: { id: Id }): number => (pinned.get(a.id) ?? 0) - (pinned.get(b.id) ?? 0)
   const priority = [...requests.filter((request) => request.hasContent), ...requests.filter((request) => !request.hasContent)]
-  const sized = pack(priority)
+  const sized = size(priority)
   const settled = sized.map((placement) => ({ id: placement.id, sizes: [placement.size], hasContent: true }))
   const reordered = pack([...settled].sort(byPin))
   const placements = (reordered.length === sized.length ? reordered : sized).sort(byPin)
