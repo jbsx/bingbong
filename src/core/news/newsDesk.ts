@@ -1,15 +1,17 @@
 import { gatherStories, type NewsSource, type NewsStory } from './news'
 import type { InterestProfile } from './interestProfile'
-import { HIGHLIGHT_WINDOW_MS, recordMagnitudes, todaysHighlight, type MagnitudeHistory } from './score'
+import { recordStories, thisMonth, thisWeek, type NewsListItem, type StoryHistory } from './horizons'
+import { BASELINE_DAYS, rankStories, recordMagnitudes, todaysHighlight, type MagnitudeHistory } from './score'
 
 // The News Desk: main's side of the News card (the card is in CONTEXT.md). The Idle Screen
-// asks for Today's Highlight whenever it shows and every few minutes after;
+// asks for the card's stories whenever it shows and every few minutes after;
 // the desk fetches at most once an hour — the first ask after a start polls
-// at once — and answers the highlight it holds in between. Each poll records
-// the sources' magnitudes (the baseline scores read against) and, when an
-// unseen story tops the ranking, makes it the highlight and marks it shown.
-// A poll no source answered keeps the last highlight and is tried again in
-// a few minutes.
+// at once — and answers from what it holds in between. Each poll records
+// the sources' magnitudes (the baseline scores read against) and every
+// story's score in the story history (This Week and This Month are read
+// from it) and, when an unseen story of the last 24 hours tops the ranking,
+// makes it the highlight and marks it shown. A poll no source answered
+// keeps the last highlight and is tried again in a few minutes.
 
 /** How often the sources are fetched while the Idle Screen asks. */
 export const NEWS_POLL_MS = 60 * 60 * 1000
@@ -28,11 +30,22 @@ export interface TodaysHighlight {
   shownAt: number
 }
 
-/** What the desk keeps in userData, so "unseen" and the last highlight survive a restart. */
+/** What the News card shows: Today's Highlight, This Week and This Month (CONTEXT.md). */
+export interface NewsDigest {
+  highlight: TodaysHighlight
+  week: NewsListItem[]
+  month: NewsListItem[]
+}
+
+/** How far back a poll asks the sources: a story still on a front page days after it was published is still polled, so it can last. */
+const POLL_SINCE_MS = BASELINE_DAYS * 24 * 60 * 60 * 1000
+
+/** What the desk keeps in userData, so "unseen", the last highlight and the story history survive a restart. */
 export interface NewsState {
   shown: { key: string; at: number }[]
   history: MagnitudeHistory
   highlight: TodaysHighlight | null
+  stories: StoryHistory
 }
 
 export interface NewsStore {
@@ -41,7 +54,7 @@ export interface NewsStore {
 }
 
 export function emptyNewsState(): NewsState {
-  return { shown: [], history: {}, highlight: null }
+  return { shown: [], history: {}, highlight: null, stories: {} }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -83,12 +96,28 @@ export function sanitizeNewsState(raw: unknown): NewsState {
     isRecord(held) && isStory(held.story) && typeof held.shownAt === 'number' && Array.isArray(held.topics)
       ? { story: held.story, topics: held.topics.filter((topic): topic is string => typeof topic === 'string'), shownAt: held.shownAt }
       : null
-  return { shown, history, highlight }
+  return { shown, history, highlight, stories: sanitizeStories(raw.stories) }
+}
+
+function sanitizeStories(raw: unknown): StoryHistory {
+  const stories: StoryHistory = {}
+  for (const [key, record] of Object.entries(isRecord(raw) ? raw : {})) {
+    if (!isRecord(record)) continue
+    const { title, link, source, unit, topical, cluster } = record
+    if (typeof title !== 'string' || typeof link !== 'string' || typeof source !== 'string' || typeof unit !== 'string') continue
+    if (typeof topical !== 'boolean' || typeof cluster !== 'string') continue
+    const days = Object.entries(isRecord(record.days) ? record.days : {}).filter(
+      (entry): entry is [string, { score: number; magnitude: number }] => isRecord(entry[1]) && typeof entry[1].score === 'number' && typeof entry[1].magnitude === 'number',
+    )
+    if (days.length === 0) continue
+    stories[key] = { title, link, source, unit, topical, cluster, days: Object.fromEntries(days.map(([day, { score, magnitude }]) => [day, { score, magnitude }])) }
+  }
+  return stories
 }
 
 export interface NewsDesk {
-  /** Today's Highlight, polling first when the last poll is an hour old; null when there has never been one or the profile is empty. */
-  highlight(): Promise<TodaysHighlight | null>
+  /** The card's stories, polling first when the last poll is an hour old; null when there has never been a highlight or the profile is empty. */
+  digest(): Promise<NewsDigest | null>
 }
 
 export function createNewsDesk(deps: {
@@ -103,23 +132,24 @@ export function createNewsDesk(deps: {
   let polling: Promise<void> | null = null
 
   async function poll(at: number, profile: InterestProfile): Promise<void> {
-    const { stories, answered } = await gatherStories(deps.sources, at - HIGHLIGHT_WINDOW_MS)
+    const { stories, answered } = await gatherStories(deps.sources, at - POLL_SINCE_MS)
     if (!answered) {
       polledAt = at - NEWS_POLL_MS + NEWS_RETRY_MS
       return
     }
     const history = recordMagnitudes(state.history, stories, at)
     const shown = state.shown.filter((entry) => at - entry.at <= SHOWN_KEEP_MS)
+    const recorded = recordStories(state.stories, rankStories(stories, history, profile), at)
     const pick = todaysHighlight(stories, history, profile, new Set(shown.map((entry) => entry.key)), at)
     state =
       pick === null
-        ? { ...state, history, shown }
-        : { history, shown: [...shown, { key: pick.story.key, at }], highlight: { story: pick.story, topics: pick.topics, shownAt: at } }
+        ? { ...state, history, shown, stories: recorded }
+        : { history, shown: [...shown, { key: pick.story.key, at }], highlight: { story: pick.story, topics: pick.topics, shownAt: at }, stories: recorded }
     deps.store.save(state)
   }
 
   return {
-    async highlight() {
+    async digest() {
       const profile = deps.profile()
       if (profile.length === 0) return null
       const at = now()
@@ -130,7 +160,8 @@ export function createNewsDesk(deps: {
         })
       }
       if (polling !== null) await polling
-      return state.highlight
+      if (state.highlight === null) return null
+      return { highlight: state.highlight, week: thisWeek(state.stories, at), month: thisMonth(state.stories, at) }
     },
   }
 }

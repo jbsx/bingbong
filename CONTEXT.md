@@ -501,9 +501,12 @@ The Idle Screen's card of what is going on in the owner's world (2026-10-19
 ask: "i want to be in the know about what is going on in the world.
 specifically the world i interact with mostly"): a story belongs on it when
 something in one of the owner's circles jumped far above that circle's
-normal day and the owner has not been shown it yet. A Pinned Card offering
-2×2, 2×1 and 1×1 Card Slots; today every size holds Today's Highlight
-alone, the larger boxes leaving room for This Week and This Month (#347).
+normal day and the owner has not been shown it yet, and what has stayed
+big over the week and the month. A Pinned Card offering 2×2, 2×1 and 1×1
+Card Slots, the box deciding the horizons: at 2×2 Today's Highlight over
+This Week and This Month side by side, at 2×1 This Week beside it, at 1×1
+the highlight alone. A list line is a story's title and its number, the
+card clipping at its box, and a tap on any story opens it in the pane.
 An empty Interest Profile or a source with nothing yet keeps a small note.
 _Avoid_: news feed, headlines, widget
 
@@ -531,6 +534,26 @@ holds across a restart; a poll no source answered keeps the last
 highlight. A tap opens the story in the pane through `navigate <link>`, on
 the pointer going down like the Last Page's tap, leaving the Idle Screen.
 _Avoid_: top story, headline, pick of the day
+
+**This Week**:
+The News card's top five stories of the last seven days, today's
+included, read from the story history main keeps in news.json (every
+polled story's best score by the day it was polled, and its cluster, kept
+31 days). Stories are clustered as they are recorded — the same link, the
+same site with a near-identical title, or the same proper name (a model
+named with letters and digits like "GPT-6", a repo "owner/repo") is one
+story — and a cluster ranks at its peak score, topical over not as in
+Today's Highlight. A day's highlight is a candidate, not an entry: a quiet
+day's winner can drop out.
+_Avoid_: weekly digest, top stories
+
+**This Month**:
+The News card's top five stories of the last thirty days that lasted, by
+peak score. The lasting rule: a story lasted when it was in the top five
+of at least two calendar weeks (Monday to Sunday), or of at least three
+separate days. It separates a one-day stunt from what the owner's circles
+are still talking about.
+_Avoid_: monthly digest, trending
 
 **NewsSource**:
 Where News stories come from: one site's public listing, answering the

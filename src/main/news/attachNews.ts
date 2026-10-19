@@ -23,7 +23,7 @@ const fetchJson = async (url: string): Promise<unknown> => {
 
 /**
  * The News card's IPC (CONTEXT.md): the Idle Screen asks for Today's
- * Highlight and main's News Desk answers it, fetching the sources at most
+ * Highlight, This Week and This Month and main's News Desk answers them, fetching the sources at most
  * hourly. The sources live here, where the network belongs; a new one
  * joins the list.
  */
@@ -34,5 +34,5 @@ export function registerNewsIpc(deps: { storePath: string; profile: () => Intere
     store: createNewsStore(deps.storePath),
     profile: deps.profile,
   })
-  ipcMain.handle(NEWS_IPC.highlight, () => desk.highlight())
+  ipcMain.handle(NEWS_IPC.digest, () => desk.digest())
 }

@@ -12,8 +12,8 @@ import { waitFor } from './waitFor'
 // boots into the idle screen naming it, and the card's tap runs `resume` —
 // the pane boots blank after a restart, so the Command navigates there.
 // The page the pane then shows is recorded for the next restart. The News
-// card reads a stand-in Hacker News front page (#346), its tap opening the
-// story in the pane.
+// card reads a stand-in Hacker News front page (#346), a tap on the
+// highlight or on a This Week story (#347) opening it in the pane.
 
 describe('idle screen e2e: the Last Page and resume', () => {
   let harness: Harness
@@ -24,9 +24,13 @@ describe('idle screen e2e: the Last Page and resume', () => {
   beforeAll(async () => {
     userDataDir = await mkdtemp(join(tmpdir(), 'bingbong-e2e-idle-'))
     fixture = await startFixtureServer()
-    // Hacker News's stand-in: one story that matches the default Interest Profile, linking to a fixture page.
+    // Hacker News's stand-in: two stories that match the default Interest Profile, each linking to a fixture page.
     hackerNews = createServer((request, response) => {
-      const hits = [{ objectID: '1', title: 'Claude Code ships a new agent harness', url: fixture.url('/second'), points: 1840, num_comments: 312, created_at_i: Math.floor(Date.now() / 1000) - 3600 }]
+      const at = Math.floor(Date.now() / 1000) - 3600
+      const hits = [
+        { objectID: '1', title: 'Claude Code ships a new agent harness', url: fixture.url('/second'), points: 1840, num_comments: 312, created_at_i: at },
+        { objectID: '2', title: 'Codex sandboxes every coding agent', url: fixture.url('/'), points: 600, num_comments: 40, created_at_i: at },
+      ]
       response.writeHead(request.url?.startsWith('/api/v1/search') ? 200 : 404, { 'content-type': 'application/json' })
       response.end(JSON.stringify({ hits }))
     })
@@ -144,13 +148,30 @@ describe('idle screen e2e: the Last Page and resume', () => {
     const state = JSON.parse(await readFile(join(userDataDir, 'news.json'), 'utf8')) as { shown: { key: string }[] }
     expect(state.shown.map((entry) => entry.key)).toEqual(['Hacker News:1'])
 
-    await harness.clickDashboardElement('.idle-news')
+    await harness.clickDashboardElement('.idle-news-today')
 
     expect(await harness.waitForPaneUrl(fixture.url('/second'))).toBe(fixture.url('/second'))
     await waitFor(
       async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('.url-input') && !document.querySelector('.idle-screen')`)) ? true : undefined),
       { timeoutMs: 10000, intervalMs: 250 },
     )
+  })
+
+  it('lists This Week under the highlight, and a tap on a story opens it in the pane', async () => {
+    const IDLE_SHORTCUT = { key: 'L', code: 'KeyL', windowsVirtualKeyCode: 76, modifiers: 2 /* Ctrl */ | 8 /* Shift */ }
+    await harness.pressKey('pane', IDLE_SHORTCUT)
+    const week = await waitFor(
+      async () => {
+        const titles = await harness.dashboardEval<string[]>(`[...document.querySelectorAll('.idle-news-list[aria-label="This week"] .idle-news-item-title')].map((item) => item.textContent)`)
+        return titles.length > 0 ? titles : undefined
+      },
+      { timeoutMs: 10000, intervalMs: 250 },
+    )
+    expect(week).toEqual(['Claude Code ships a new agent harness', 'Codex sandboxes every coding agent'])
+
+    await harness.clickDashboardElement('.idle-news-list[aria-label="This week"] li:nth-child(2) .idle-news-item')
+
+    expect(await harness.waitForPaneUrl(fixture.url('/'))).toBe(fixture.url('/'))
   })
 
   it('Ctrl+Shift+L shows the idle screen at once, from the pane or the dashboard', async () => {
