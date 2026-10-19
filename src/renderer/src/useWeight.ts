@@ -44,7 +44,7 @@ export function useWeighInPopup(): WeighInPopupState {
   return state
 }
 
-/** The Scale Listener's state for the settings Body section; null until main answers. */
+/** The Scale Listener's state for the settings Weight section; null until main answers. */
 export function useScaleStatus(): ScaleStatus | null {
   const [status, setStatus] = useState<ScaleStatus | null>(null)
   useEffect(() => {

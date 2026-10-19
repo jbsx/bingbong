@@ -1,5 +1,6 @@
 import type { SettledWeighIn } from './people'
 import { MIN_WEIGH_IN_KG, type ScaleReading } from './scaleSession'
+import { POPUP_LINGER_MS_DEFAULT } from './weightSettings'
 
 /**
  * The Weigh-in pop-up (CONTEXT.md): hidden, the live weight while it
@@ -36,7 +37,7 @@ const HIDDEN: WeighInPopupState = { phase: 'hidden' }
  * and a weight coming back inside it shows live again. Off in the Weight
  * section, it shows nothing. Never spoken.
  */
-export function createWeighInPopup(onChange: (state: WeighInPopupState) => void, options: () => WeighInPopupOptions = () => ({ on: true, lingerMs: 8_000 })): WeighInPopup {
+export function createWeighInPopup(onChange: (state: WeighInPopupState) => void, options: () => WeighInPopupOptions = () => ({ on: true, lingerMs: POPUP_LINGER_MS_DEFAULT })): WeighInPopup {
   let state: WeighInPopupState = HIDDEN
   let linger: ReturnType<typeof setTimeout> | null = null
 
@@ -59,7 +60,12 @@ export function createWeighInPopup(onChange: (state: WeighInPopupState) => void,
 
   return {
     reading({ kg }) {
-      if (!options().on) return
+      // Turned off in the Weight section while up: gone at once.
+      if (!options().on) {
+        stay()
+        set(HIDDEN)
+        return
+      }
       if (kg < MIN_WEIGH_IN_KG) {
         leaveSoon()
         return

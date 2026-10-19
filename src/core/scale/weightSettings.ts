@@ -22,7 +22,8 @@ export interface WeightSettings {
   popup: { on: boolean; lingerMs: number }
 }
 
-const EMPTY_BODY: BodyProfile = { heightCm: null, birthDate: null, sex: null }
+/** A Body Profile with nothing set: a new Person's. */
+export const EMPTY_BODY: BodyProfile = { heightCm: null, birthDate: null, sex: null }
 
 export function defaultWeightSettings(): WeightSettings {
   return {
@@ -57,18 +58,30 @@ export function sanitizeBodyProfile(raw: unknown): BodyProfile {
   return { heightCm: asHeight(body?.heightCm), birthDate: asBirthDate(body?.birthDate), sex: body?.sex === 'male' || body?.sex === 'female' ? body.sex : null }
 }
 
-/** The People as saved: each with an id and a name, one per id, and Jaish first however the list came. */
+/**
+ * The People as saved: each with an id, one per id, and Jaish first however
+ * the list came. A name cleared in the field never drops a Person (that is
+ * Remove's, with its confirm): they keep their default name, or "Unnamed".
+ */
 function sanitizePeople(raw: unknown[]): Person[] {
+  const defaults = defaultWeightSettings().people
   const people: Person[] = []
   for (const item of raw) {
     const record = asRecord(item)
     const id = typeof record?.id === 'string' ? record.id.trim() : ''
-    const name = typeof record?.name === 'string' ? record.name.trim() : ''
-    if (id === '' || name === '' || people.some((person) => person.id === id)) continue
+    if (id === '' || people.some((person) => person.id === id)) continue
+    const typed = typeof record?.name === 'string' ? record.name.trim() : ''
+    const name = typed !== '' ? typed : (defaults.find((person) => person.id === id)?.name ?? 'Unnamed')
     people.push({ id, name, body: sanitizeBodyProfile(record?.body), guess: record?.guess !== false })
   }
   const jaish = people.find((person) => person.id === JAISH) ?? defaultWeightSettings().people[0]
   return [jaish, ...people.filter((person) => person.id !== JAISH)]
+}
+
+/** The Weight section without a Person being removed: gone from the People and from the card's hidden list. Jaish is never removed. */
+export function withoutPerson(weight: WeightSettings, id: string): WeightSettings {
+  if (id === JAISH) return weight
+  return { ...weight, people: weight.people.filter((person) => person.id !== id), card: { ...weight.card, hidden: weight.card.hidden.filter((hidden) => hidden !== id) } }
 }
 
 /** Settings' `weight` as read from disk or IPC; with none (settings from #350 or before), today's default with `legacyBody` as Jaish's. */

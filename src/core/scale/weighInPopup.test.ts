@@ -59,11 +59,16 @@ describe('the Weigh-in pop-up', () => {
     expect(popup.state()).toEqual({ phase: 'hidden' })
   })
 
-  it('shows nothing while it is off in the Weight section', () => {
+  it('shows nothing while it is off in the Weight section, and goes at the next reading when turned off while up', () => {
     options.on = false
     popup.reading({ kg: 81.1, stable: false })
     popup.weighIn(settled(81.25, null))
     expect(shown).toEqual([])
+    options.on = true
+    popup.reading({ kg: 81.1, stable: false })
+    options.on = false
+    popup.reading({ kg: 81.2, stable: false })
+    expect(popup.state()).toEqual({ phase: 'hidden' })
   })
 
   it('follows a move at once — the new name, their change and the chips — and lingers its full time from the tap', () => {

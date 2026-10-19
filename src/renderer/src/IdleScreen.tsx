@@ -743,7 +743,7 @@ export function IdleScreen({
         return weightRows.length > 0 ? (
           <WeightCard rows={weightRows} weight={weight} size={placement.size} now={now.getTime()} onOpen={onOpenWeight} />
         ) : (
-          <NoteCard label="weight">Step on the scale</NoteCard>
+          <NoteCard label="weight">{weighIns !== null && weighIns.length > 0 ? 'Nobody shown — pick People in Settings' : 'Step on the scale'}</NoteCard>
         )
     }
   }

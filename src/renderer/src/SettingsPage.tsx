@@ -9,7 +9,7 @@ import { defaultInterestProfile, type InterestProfile, type NewsTopic } from '..
 import type { ScaleStatus } from '../../core/scale/ipcChannels'
 import type { BodyProfile } from '../../core/scale/bodyComposition'
 import { JAISH, weighInsOf, type Person } from '../../core/scale/people'
-import { POPUP_LINGER_MS_MAX, POPUP_LINGER_MS_MIN, WEIGHT_CARD_RANGES, type WeightSettings } from '../../core/scale/weightSettings'
+import { defaultWeightSettings, EMPTY_BODY, POPUP_LINGER_MS_MAX, POPUP_LINGER_MS_MIN, WEIGHT_CARD_RANGES, withoutPerson, type WeightSettings } from '../../core/scale/weightSettings'
 import { reportRendererFault } from './diagnostics'
 import { useScaleStatus, useWeighIns } from './useWeight'
 
@@ -428,7 +428,7 @@ function WeightSection({
   const add = (): void => {
     const name = newName.trim()
     if (name === '') return
-    onChange({ ...weight, people: [...people, { id: `p-${Date.now().toString(36)}`, name, body: { heightCm: null, birthDate: null, sex: null }, guess: true }] })
+    onChange({ ...weight, people: [...people, { id: `p-${Date.now().toString(36)}`, name, body: EMPTY_BODY, guess: true }] })
     setNewName('')
   }
   return (
@@ -446,7 +446,7 @@ function WeightSection({
       </span>
       <p className="settings-note">
         A Weigh-in goes to whoever’s last Weigh-in is nearest — never someone with “guess me” off or with no Weigh-in yet, and Jaish when nobody fits — and a tap on the pop-up or on the Weight page moves it. The scale
-        measures weight and impedance; body fat, water, muscle, bone, lean mass and BMR are worked out from them with each Person’s profile. BMI needs the height; the rest need all three. Changing a profile recomputes
+        measures weight and impedance; body fat, water, muscle, bone, lean mass and BMR are worked out from them with each Person’s Body Profile. BMI needs the height; the rest need all three. Changing a Body Profile recomputes
         their every Weigh-in.
       </p>
 
@@ -486,7 +486,7 @@ function WeightSection({
         <input type="checkbox" checked={card.line} aria-label="Show the line" onChange={(event) => setCard({ line: event.target.checked })} />
       </Field>
       <Field label="Line’s range">
-        <select value={card.rangeDays} aria-label="Line range" onChange={(event) => setCard({ rangeDays: WEIGHT_CARD_RANGES.find((days) => days === Number(event.target.value)) ?? 30 })}>
+        <select value={card.rangeDays} aria-label="Line range" onChange={(event) => setCard({ rangeDays: WEIGHT_CARD_RANGES.find((days) => days === Number(event.target.value)) ?? defaultWeightSettings().card.rangeDays })}>
           {WEIGHT_CARD_RANGES.map((days) => (
             <option key={days} value={days}>
               {days} days
@@ -736,7 +736,7 @@ export function SettingsPage({
           onForget={() => void onSave({ ...settings, scale: { address: '' } })}
           onRemovePerson={(person) => {
             // Main removes them from the saved settings with their Weigh-ins; the draft drops them too, keeping any other edit.
-            setDraft({ ...draft, weight: { ...draft.weight, people: draft.weight.people.filter((known) => known.id !== person) } })
+            setDraft({ ...draft, weight: withoutPerson(draft.weight, person) })
             window.bingbong.weight.removePerson(person).catch((error: unknown) => reportRendererFault('weight.removePerson', error))
           }}
         />

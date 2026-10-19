@@ -1,6 +1,7 @@
 import { ipcMain } from 'electron'
 import { WEIGHT_IPC, type ScaleStatus } from '../../core/scale/ipcChannels'
 import { guessPerson, JAISH, settledWeighIn } from '../../core/scale/people'
+import { withoutPerson } from '../../core/scale/weightSettings'
 import { createScaleSession, type ScaleSession } from '../../core/scale/scaleSession'
 import { createWeighInPopup } from '../../core/scale/weighInPopup'
 import { reportFault } from '../../core/trace/fault'
@@ -108,13 +109,17 @@ export function attachScaleListener(deps: { transport: ScaleTransport; store: We
     if (typeof person !== 'string' || person === JAISH) return deps.store.list()
     const weighIns = deps.store.removePerson(person)
     const settings = deps.settings.get()
-    const { weight } = settings
-    deps.settings.update({
-      ...settings,
-      weight: { ...weight, people: weight.people.filter((known) => known.id !== person), card: { ...weight.card, hidden: weight.card.hidden.filter((id) => id !== person) } },
-    })
+    deps.settings.update({ ...settings, weight: withoutPerson(settings.weight, person) })
     send(WEIGHT_IPC.changed, weighIns)
     return weighIns
+  })
+  // A Person renamed, added or removed while the pop-up is up: its name and chips follow.
+  const unsubscribe = deps.settings.subscribe(({ weight }) => {
+    const state = popup.state()
+    if (state.phase !== 'settled') return
+    const weighIns = deps.store.list()
+    const shown = weighIns.find((weighIn) => weighIn.at === state.at)
+    if (shown !== undefined) popup.moved(settledWeighIn(shown, weighIns, weight.people))
   })
   ipcMain.handle(WEIGHT_IPC.popup, () => popup.state())
   ipcMain.handle(WEIGHT_IPC.status, () => status)
@@ -126,6 +131,7 @@ export function attachScaleListener(deps: { transport: ScaleTransport; store: We
     },
     stop() {
       if (quiet !== null) clearTimeout(quiet)
+      unsubscribe()
       stop()
     },
   }

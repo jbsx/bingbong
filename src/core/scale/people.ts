@@ -24,13 +24,13 @@ export interface PersonName {
 }
 
 /** Whose a Weigh-in is: its Person, or Jaish's when that Person is no longer in settings. */
-export function ownerOf(weighIn: WeighIn, people: readonly Person[]): string {
+export function personOf(weighIn: WeighIn, people: readonly Person[]): string {
   return people.some((person) => person.id === weighIn.person) ? weighIn.person : JAISH
 }
 
 /** One Person's Weigh-ins, oldest first. */
 export function weighInsOf(weighIns: readonly WeighIn[], people: readonly Person[], id: string): WeighIn[] {
-  return weighIns.filter((weighIn) => ownerOf(weighIn, people) === id)
+  return weighIns.filter((weighIn) => personOf(weighIn, people) === id)
 }
 
 /**
@@ -60,16 +60,16 @@ export interface SettledWeighIn {
 }
 
 export function settledWeighIn(weighIn: WeighIn, weighIns: readonly WeighIn[], people: readonly Person[]): SettledWeighIn {
-  const id = ownerOf(weighIn, people)
+  const id = personOf(weighIn, people)
   const previous = weighInsOf(weighIns, people, id)
     .filter((other) => other.at < weighIn.at)
     .at(-1)
   const name = (person: Person): PersonName => ({ id: person.id, name: person.name })
-  const owner = people.find((person) => person.id === id)
+  const known = people.find((person) => person.id === id)
   return {
     at: weighIn.at,
     kg: weighIn.kg,
-    person: owner === undefined ? { id, name: 'Jaish' } : name(owner),
+    person: known === undefined ? { id, name: 'Jaish' } : name(known),
     changeKg: previous === undefined ? null : Math.round((weighIn.kg - previous.kg) * 100) / 100,
     others: people.filter((person) => person.id !== id).map(name),
   }

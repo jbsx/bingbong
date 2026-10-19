@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { withoutPerson } from '../scale/weightSettings'
 import { profileSubreddits } from '../news/interestProfile'
 import {
   defaultSettings,
@@ -276,7 +277,6 @@ describe('the Weight card and the Weight section (#350, #351)', () => {
           { id: 'p-1', name: '  Guest ', guess: false },
           { id: 'jaish', name: 'Jai' },
           { id: 'p-1', name: 'Twin' },
-          { id: 'p-2', name: '   ' },
           { name: 'No id' },
         ],
       },
@@ -286,6 +286,32 @@ describe('the Weight card and the Weight section (#350, #351)', () => {
       { id: 'p-1', name: 'Guest', body: EMPTY, guess: false },
     ])
     expect(sanitizeSettings({ weight: { people: [] } }).weight.people).toEqual([{ id: 'jaish', name: 'Jaish', body: EMPTY, guess: true }])
+  })
+
+  it('never drops a Person, nor their profile, for a name cleared in the field: they keep a name to be fixed', () => {
+    const people = sanitizeSettings({
+      weight: {
+        people: [
+          { id: 'jaish', name: ' ', body: { heightCm: 180, birthDate: null, sex: null } },
+          { id: 'barun', name: '' },
+          { id: 'p-2', name: '   ' },
+        ],
+      },
+    }).weight.people
+    expect(people.map((person) => [person.id, person.name])).toEqual([
+      ['jaish', 'Jaish'],
+      ['barun', 'Barun'],
+      ['p-2', 'Unnamed'],
+    ])
+    expect(people[0].body.heightCm).toBe(180)
+  })
+
+  it('takes a removed Person out of the People and out of the card’s hidden list', () => {
+    const weight = sanitizeSettings({ weight: { card: { hidden: ['barun'] } } }).weight
+    const without = withoutPerson(weight, 'barun')
+    expect(without.people.map((person) => person.id)).toEqual(['jaish'])
+    expect(without.card.hidden).toEqual([])
+    expect(withoutPerson(weight, 'jaish')).toEqual(weight)
   })
 
   it('keeps the card’s choices and the pop-up’s, within bounds', () => {
