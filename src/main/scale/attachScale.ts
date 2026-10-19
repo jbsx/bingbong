@@ -5,13 +5,12 @@ import { createWeighInPopup } from '../../core/scale/weighInPopup'
 import { reportFault } from '../../core/trace/fault'
 import type { SettingsStore } from '../settings/settingsStore'
 import type { ScaleConnection, ScaleTransport } from './bluezScale'
+import { STAND_IN_ADDRESS } from './standInScale'
 import type { WeighInStore } from './weighInStore'
 
 /** A connected scale that sends nothing for this long has been left: the link is dropped so the next stepping-on connects afresh. */
 const QUIET_MS = 15_000
 
-/** The address the e2e stand-in connects as: never remembered. */
-const STAND_IN_ADDRESS = '00:00:00:00:00:00'
 
 export interface ScaleListener {
   /** A renderer (the dashboard, the overlay) that hears the Weigh-ins, the pop-up and the status. */

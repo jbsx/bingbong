@@ -50,8 +50,8 @@ export function App() {
   // takes no room, and leaving it brings back whatever showed before —
   // open or collapsed, Overlay or Docked, same width. Hiding never touches
   // the panel's state, so it is not the system opening or closing it.
-  const settingsShown = view !== 'dashboard'
-  const feedSlotRef = useFeedSlotRect(`${panel.mode}-${slotContent}`, settingsShown)
+  const fullViewShown = view !== 'dashboard'
+  const feedSlotRef = useFeedSlotRect(`${panel.mode}-${slotContent}`, fullViewShown)
 
   const getMicId = useCallback(() => settings?.micId ?? 'default', [settings])
   const voice = useVoice({
@@ -227,7 +227,7 @@ export function App() {
             ref={feedSlotRef}
             className={`feed-slot feed-slot--${panel.mode}${
               slotContent === 'card' || slotContent === 'weighin' ? ' feed-slot--peek' : slotContent === 'tab' ? ' feed-slot--collapsed' : ''
-            }${settingsShown ? ' feed-slot--hidden' : ''}`}
+            }${fullViewShown ? ' feed-slot--hidden' : ''}`}
             aria-hidden="true"
           />
         </div>

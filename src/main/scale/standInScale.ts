@@ -13,6 +13,9 @@ import type { ScaleTransport } from './bluezScale'
  */
 export const SCALE_FIXTURE_ENV = 'BINGBONG_SCALE_FIXTURE'
 
+/** The address the stand-in connects as: the Scale Listener never remembers it. */
+export const STAND_IN_ADDRESS = '00:00:00:00:00:00'
+
 const FRAME_GAP_MS = 200
 const POLL_MS = 250
 
@@ -26,7 +29,7 @@ export function createStandInScaleTransport(path: string): ScaleTransport {
     const play = async (script: string): Promise<void> => {
       playing = true
       events.status({ state: 'connected', detail: 'stand-in' })
-      events.connected('00:00:00:00:00:00', { write: async () => undefined, disconnect: async () => undefined })
+      events.connected(STAND_IN_ADDRESS, { write: async () => undefined, disconnect: async () => undefined })
       for (const line of script.split('\n').map((text) => text.trim())) {
         if (stopped) break
         if (line === '') continue

@@ -78,6 +78,10 @@ export function createBluezScaleTransport(): ScaleTransport {
     let adapterPath: string | null = null
     let adapter: dbus.ClientInterface | null = null
     let busy = false
+    /** Ends the session under way, if any: the link dropped, the bus failed, or the listener stopped. */
+    let endSession: () => void = () => undefined
+    let starting = false
+    let connected: ScaleConnection | null = null
     let lastAttempt = 0
     let lastFault = ''
     let retry: ReturnType<typeof setTimeout> | null = null
@@ -132,12 +136,14 @@ export function createBluezScaleTransport(): ScaleTransport {
       const cleanups: (() => void)[] = []
       let device: dbus.ClientInterface | null = null
       try {
-        await adapter?.StopDiscovery().catch(() => undefined)
+        // Discovery may already be off; the connection goes ahead either way.
+        await adapter?.StopDiscovery().catch((error: unknown) => reportFault('scale.bluez.stopDiscovery', error))
         const proxy = await bus!.getProxyObject(BLUEZ, path)
         device = proxy.getInterface(DEVICE)
         const deviceProps = proxy.getInterface(PROPERTIES)
         let ended: () => void = () => undefined
         const over = new Promise<void>((resolve) => (ended = resolve))
+        endSession = ended
         const onDevice = (iface: string, changed: Props): void => {
           if (iface === DEVICE && value<boolean>(changed, 'Connected') === false) ended()
         }
@@ -161,6 +167,18 @@ export function createBluezScaleTransport(): ScaleTransport {
           return (await bus!.getProxyObject(BLUEZ, charPath)).getInterface(CHARACTERISTIC)
         }
         const writers = { ffe3: await writer('ffe3'), ffe4: await writer('ffe4') }
+        const connection: ScaleConnection = {
+          write: async (characteristic, bytes) => {
+            await writers[characteristic].WriteValue(Buffer.from(bytes), { type: new dbus.Variant('s', 'request') })
+          },
+          disconnect: async () => {
+            await device?.Disconnect().catch((error: unknown) => reportFault('scale.bluez.disconnect', error))
+          },
+        }
+        // The session exists before notifications start: the scale sends its info frame at once, and it must be answered.
+        connected = connection
+        status({ state: 'connected', detail: address })
+        events.connected(address, connection)
         for (const notifyUuid of NOTIFY) {
           const charPath = characteristics.get(notifyUuid)
           if (charPath === undefined) continue
@@ -178,23 +196,15 @@ export function createBluezScaleTransport(): ScaleTransport {
             .StartNotify()
             .catch((error: unknown) => reportFault('scale.bluez.startNotify', error))
         }
-        const connection: ScaleConnection = {
-          write: async (characteristic, bytes) => {
-            await writers[characteristic].WriteValue(Buffer.from(bytes), { type: new dbus.Variant('s', 'request') })
-          },
-          disconnect: async () => {
-            await device?.Disconnect().catch((error: unknown) => reportFault('scale.bluez.disconnect', error))
-          },
-        }
-        status({ state: 'connected', detail: address })
-        events.connected(address, connection)
         await over
       } catch (error) {
         reportFault('scale.bluez.session', error)
-        await device?.Disconnect().catch(() => undefined)
+        await device?.Disconnect().catch((error: unknown) => reportFault('scale.bluez.disconnect', error))
       } finally {
         for (const cleanup of cleanups) cleanup()
         busy = false
+        connected = null
+        endSession = () => undefined
         events.disconnected()
         if (!stopped && adapter !== null) {
           status({ state: 'searching', detail: '' })
@@ -244,6 +254,7 @@ export function createBluezScaleTransport(): ScaleTransport {
 
     /** Forget a bus that failed: the devices it followed go with it, and the next start connects afresh. */
     const dropBus = (): void => {
+      endSession()
       for (const unwatch of watched.values()) unwatch()
       watched.clear()
       following = false
@@ -277,7 +288,9 @@ export function createBluezScaleTransport(): ScaleTransport {
     }
 
     const start = async (): Promise<void> => {
-      if (stopped) return
+      // BlueZ appearing and an adapter appearing can both ask at once: one start at a time.
+      if (stopped || starting) return
+      starting = true
       try {
         const connected = await connectBus()
         const all = await objects()
@@ -295,6 +308,8 @@ export function createBluezScaleTransport(): ScaleTransport {
         }
       } catch (error) {
         fail(error)
+      } finally {
+        starting = false
       }
     }
     void start()
@@ -302,11 +317,13 @@ export function createBluezScaleTransport(): ScaleTransport {
     return () => {
       stopped = true
       if (retry !== null) clearTimeout(retry)
-      for (const unwatch of watched.values()) unwatch()
-      void adapter?.StopDiscovery()
-        .catch(() => undefined)
-        .finally(dropBus)
-      if (adapter === null) dropBus()
+      const scale = connected
+      const discovery = adapter
+      // A scale still connected is let go before the bus closes, so BlueZ does not hold the link.
+      void Promise.all([
+        scale?.disconnect(),
+        discovery?.StopDiscovery().catch((error: unknown) => reportFault('scale.bluez.stopDiscovery', error)),
+      ]).finally(dropBus)
     }
   }
 }
