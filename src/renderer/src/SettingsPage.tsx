@@ -144,7 +144,7 @@ function LearnedTermsSection() {
   )
 }
 
-const IDLE_CARD_NAMES: Record<IdleCardId, string> = { weather: 'Weather', usage: 'AI usage', calendar: 'Calendar', music: 'Now Playing', news: 'News' }
+const IDLE_CARD_NAMES: Record<IdleCardId, string> = { weather: 'Weather', usage: 'AI usage', calendar: 'Calendar', lastPage: 'Last Page', music: 'Now Playing', news: 'News' }
 
 /**
  * The Idle Screen's pinned cards (core/idle/slots): a checkbox shows a card,
@@ -191,7 +191,7 @@ function IdleCardsSection({ cards, onChange }: { cards: readonly IdleCardId[]; o
         )
       })}
       <p className="settings-note">
-        The cards the idle screen shows, in the order they read. A card with nothing to show right now — the calendar with no events this month — yields its room to the others.
+        The cards the idle screen shows, in the order they fill its columns. A card with nothing to show right now — the calendar with no events this month — yields its room to the others. Now Playing shows in the dock under the cards.
       </p>
     </section>
   )

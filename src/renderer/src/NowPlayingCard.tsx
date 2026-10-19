@@ -19,11 +19,11 @@ function Thumbnail({ id, paused }: { id: string; paused: boolean }) {
 }
 
 /**
- * Now Playing (#344, CONTEXT.md), a 2×1 Card Slot while the Player holds a
- * song (a 1×1 when that is all that is left, the thumbnail over the words): its thumbnail, title and channel, how far in,
- * a loop glyph when it loops and a pause glyph when paused, and the next
- * three queued titles. A song that ran out with nothing queued stays,
- * shown ended. The tap pauses or plays it through the same Command the
+ * Now Playing (#344, CONTEXT.md), a chip in the Idle Screen's dock while
+ * the Player holds a song: its thumbnail, title · channel, how far in, a
+ * loop glyph when it loops and a pause glyph when paused, and the next
+ * three queued titles on one line. A song that ran out with nothing queued
+ * stays, shown ended. The tap pauses or plays it through the same Command the
  * words are, on the pointer going down as the other idle controls do —
  * and, unlike them, keeps the Idle Screen up: the music verbs need no
  * pane (the pointer-down is stopped before useIdle hears it). A ringing
@@ -52,12 +52,11 @@ export function NowPlayingCard({ nowPlaying, timer }: { nowPlaying: NowPlaying |
     >
       <Thumbnail id={id} paused={paused} />
       <span className="idle-music-words">
-        <span className="idle-music-kicker">
-          {ended ? 'Ended · say “play” or tap' : 'Now playing'}
+        <span className="idle-music-head">
+          <span className="idle-music-title">{title}</span>
+          {channel !== '' ? <span className="idle-music-channel">{channel}</span> : null}
           {loop ? <LoopIcon size={22} /> : null}
         </span>
-        <span className="idle-music-title">{title}</span>
-        {channel !== '' ? <span className="idle-music-channel">{channel}</span> : null}
         <span className="idle-music-progress">
           <span className="idle-music-bar">
             <span className="idle-music-fill" style={{ width: `${fraction * 100}%` }} />
@@ -67,7 +66,9 @@ export function NowPlayingCard({ nowPlaying, timer }: { nowPlaying: NowPlaying |
             {durationS !== null ? ` / ${clockTime(durationS)}` : ''}
           </span>
         </span>
-        {queued.length > 0 ? (
+        {ended ? (
+          <span className="idle-music-next">Ended · say “play” or tap</span>
+        ) : queued.length > 0 ? (
           <span className="idle-music-next">
             <span className="idle-music-next-label">Next</span>
             {queued.map((next, index) => (

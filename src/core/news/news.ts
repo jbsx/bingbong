@@ -99,6 +99,37 @@ export function headline(title: string): { title: string; dek: string | null } {
   return { title: repo[1], dek: firstSentence(repo[2]) }
 }
 
+/** Where a headline breaks into its lead and tail, strongest first, and how much of the mark the tail drops: "and" and "with" start the tail. */
+const BREAKS: readonly { mark: string; skip: number }[] = [
+  { mark: ': ', skip: 2 },
+  { mark: ', and ', skip: 2 },
+  { mark: ', with ', skip: 2 },
+  { mark: ' — ', skip: 3 },
+  { mark: ', ', skip: 2 },
+]
+
+/** A lead shorter than this is no lead: "Show HN: …" stays whole. */
+const LEAD_MIN = 15
+
+/**
+ * A headline as the Idle Screen reads it in two beats: the lead, bold and
+ * never cut, and the tail after it, quiet. It breaks at the first of
+ * BREAKS, in their order, found at least LEAD_MIN characters in; a GitHub
+ * repo is its name over its description (headline); a title with no break
+ * is all lead.
+ */
+export function leadAndTail(title: string): { lead: string; tail: string | null } {
+  const set = headline(title)
+  if (set.dek !== null) return { lead: set.title, tail: set.dek }
+  for (const { mark, skip } of BREAKS) {
+    const at = title.indexOf(mark, LEAD_MIN)
+    if (at === -1) continue
+    const tail = title.slice(at + skip).trim()
+    if (tail !== '') return { lead: title.slice(0, at), tail }
+  }
+  return { lead: title, tail: null }
+}
+
 /** Up to the first full stop, question or exclamation mark that ends a sentence: one followed by a capital or a digit, not closing an abbreviation such as "e.g." or a single letter. */
 function firstSentence(text: string): string {
   for (const end of text.matchAll(/[.!?](?=\s+[A-Z0-9])/g)) {

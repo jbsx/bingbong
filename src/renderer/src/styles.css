@@ -61,6 +61,12 @@
   --wx-sunset: #ff6a3d;
   --wx-sat: 72%;
   --wx-light: 44%;
+  /* The Idle Screen's glow (core/weather/glow), one per weather: mixed
+     into the canvas, so the same colours sit on either mode's. */
+  --glow-rain: #3d7fd9;
+  --glow-cloud: #8a94a3;
+  --glow-sun: #f0a830;
+  --glow-night: #5a5fc0;
   /* The AI usage card's provider tones: the usage dashboard's own colors,
      deepened on this light canvas so the lime still reads. */
   --usage-codex: #5f9900;
@@ -1527,25 +1533,41 @@ body {
 /* The idle screen: the smart-display half of the appliance, read from a
    couple of metres off the appliance's 21-inch 1920×1080 display, so every
    size here is set for that distance — nothing below 16 px, the figures
-   that matter (temperatures, the gauges, the countdown, today's date) far
-   larger. The top drag strip keeps the window movable while the Toolbar is
-   unmounted. Three bands on the canvas: the clock as a slim header, the
-   Card Slots (core/idle/slots — a fixed grid of cells, every card handed a box
-   of whole cells it draws itself inside, never sizing the row by its
-   content), and a fixed-height strip of chips — the Timer, Up Next, the
-   Last Page. The cards in the sheet's hairline-and-panel language (ADR
-   0012). */
+   that matter (the clock, the temperature, the rings, the countdown) far
+   larger. A bento of glass tiles on the Card Slot grid (core/idle/slots):
+   three columns by four rows of cells, the clock bare in the top-left one,
+   every card handed a box of whole cells it draws its tiles inside, never
+   sizing a row by its content — and under them, only while any is there, a
+   dock of chips: the Timer, Up Next, Now Playing. The canvas is the sheet's
+   own with one quiet glow from above the top edge, tinted by the weather
+   (core/weather/glow); nothing on it moves. The top drag strip keeps the
+   window movable while the Toolbar is unmounted. */
 .idle-screen {
-  --slot-width: 445px;
-  --slot-gap: 20px;
-  --strip-height: 104px;
+  --cell-gap: 20px;
+  --dock-height: 104px;
+  --glass: color-mix(in srgb, var(--panel) 72%, transparent);
   position: relative;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-rows: repeat(4, minmax(0, 1fr));
+  gap: var(--cell-gap);
   height: 100%;
-  padding: 22px 40px 26px;
-  gap: 20px;
+  padding: 40px;
+  background: var(--bg);
 }
+
+.idle-screen--docked {
+  grid-template-rows: repeat(4, minmax(0, 1fr)) var(--dock-height);
+}
+
+.idle-screen[data-glow] {
+  background: radial-gradient(1500px 820px at 50% -18%, color-mix(in srgb, var(--glow) 26%, transparent), transparent 72%), var(--bg);
+}
+
+.idle-screen[data-glow='rain'] { --glow: var(--glow-rain); }
+.idle-screen[data-glow='cloud'] { --glow: var(--glow-cloud); }
+.idle-screen[data-glow='sun'] { --glow: var(--glow-sun); }
+.idle-screen[data-glow='night'] { --glow: var(--glow-night); }
 
 .idle-drag-strip {
   position: absolute;
@@ -1557,70 +1579,117 @@ body {
 }
 
 /* The capsule over the Idle Screen: floats at the top, out of the layout,
-   so the clock never shifts when the ear opens. */
+   so nothing shifts when the ear opens. */
 .idle-status {
   position: absolute;
   top: 16px;
   left: 50%;
+  z-index: 1;
   transform: translateX(-50%);
   max-width: min(560px, calc(100% - 32px));
 }
 
-/* The clock as a header: the time on the left, the date on its baseline. */
-.idle-screen-top {
-  display: flex;
+/* A tile: glass over the glow — the panel let through, the canvas blurred
+   behind it, the restyle's large radius, no hairline and no shadow. A bare
+   tile has no fill: its words sit straight on the glow. */
+.idle-card {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 26px;
+  background: var(--glass);
+  backdrop-filter: blur(26px);
+  color: var(--text);
+}
+
+.idle-tile--bare {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  padding-left: 8px;
+}
+
+/* A Card Slot: its box on the grid, no fill of its own; the card fills it. */
+.idle-slot {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  container-type: size;
+}
+
+.idle-slot > * {
+  min-width: 0;
+  min-height: 0;
+}
+
+/* A card drawn as tiles: the box's cells again, with the screen's gap, so
+   each tile lines up with the cells around it. */
+.idle-tiles {
+  display: grid;
+  grid-template-columns: repeat(var(--w), minmax(0, 1fr));
+  grid-template-rows: repeat(var(--h), minmax(0, 1fr));
+  gap: var(--cell-gap);
+  min-width: 0;
+  min-height: 0;
+}
+
+/* A kicker over a tile: small capitals in the quiet ink. */
+.idle-kicker {
   flex: none;
-  align-items: baseline;
-  gap: 28px;
-  width: calc(4 * var(--slot-width) + 3 * var(--slot-gap));
-  max-width: 100%;
-  margin: 0 auto;
-  padding: 0 8px;
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* A chip: a word on a pill. */
+.idle-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  color: var(--muted);
+  font-size: 1rem;
+  font-weight: 500;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+
+.idle-chip--accent {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+}
+
+/* ---- the clock ---- */
+
+.idle-clock-tile {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
 }
 
 .idle-clock {
   margin: 0;
-  font-size: 7rem;
+  font-size: 150px;
   font-weight: 200;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.03em;
   font-variant-numeric: tabular-nums;
-  line-height: 0.95;
+  line-height: 0.9;
 }
 
 .idle-date {
   margin: 0;
-  font-size: 2.2rem;
+  font-size: 1.65rem;
   color: var(--muted);
 }
 
-/* The Card Slots: four columns of fixed width by two rows sharing the band's
-   height. The screen sets how many columns the placed cards reach, so a
-   screen with fewer cards centres them rather than leaving a hole at the
-   right. A card fills its box and clips at it — it lays itself out for
-   the box it was given, and nothing it holds can push the band. */
-.idle-screen-middle {
-  display: grid;
-  flex: 1 1 0;
-  grid-template-rows: repeat(2, minmax(0, 1fr));
-  justify-content: center;
-  gap: var(--slot-gap);
-  min-height: 0;
-}
-
-.idle-slot {
-  display: flex;
-  min-width: 0;
-  min-height: 0;
-}
-
-.idle-slot > .idle-card {
-  flex: 1;
-  min-width: 0;
-  min-height: 0;
-  overflow: hidden;
-}
-
-/* A card with only a line to say: the words centred in its small Card Slot. */
+/* A card with only a line to say: one glass tile, the words centred. */
 .idle-note {
   display: grid;
   place-items: center;
@@ -1635,61 +1704,82 @@ body {
   color: var(--muted);
 }
 
-/* A card: the panel skin, a hairline, the restyle's large radius. */
-.idle-card {
-  border: 1px solid var(--edge);
-  border-radius: 24px;
-  background: var(--panel);
-  color: var(--text);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 12px 40px rgba(0, 0, 0, 0.06);
-}
-
 /* ---- the weather card ---- */
 
 .wx-card {
-  display: flex;
-  flex-direction: column;
-  gap: 26px;
-  padding: 26px 28px 22px;
   -webkit-app-region: no-drag;
 }
 
-/* The sky and the temperature in one row, the glyph large; the city and the words under them. */
+/* The weather now, bare: the glyph, the temperature and the city with its
+   sky in a row, today's rain and sun times stacked at the right, today's
+   range across the foot. */
 .wx-now {
   display: grid;
-  grid-template-columns: auto 1fr;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  grid-template-rows: minmax(0, 1fr) auto;
   align-items: center;
-  column-gap: 18px;
-  row-gap: 10px;
+  column-gap: 16px;
+  row-gap: 12px;
+  padding-bottom: 4px;
 }
 
 .wx-now-temp {
-  font-size: 6.5rem;
+  font-size: 100px;
   font-weight: 200;
   letter-spacing: -0.03em;
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
+  line-height: 0.9;
 }
 
 .wx-now-words {
   display: flex;
-  grid-column: 1 / -1;
-  align-items: baseline;
-  gap: 14px;
+  flex-direction: column;
+  gap: 2px;
   min-width: 0;
 }
 
 .wx-now-city {
-  font-size: 1.85rem;
-  font-weight: 500;
-  letter-spacing: -0.01em;
+  font-size: 1.65rem;
+  font-weight: 600;
+  line-height: 1.2;
 }
 
 .wx-now-sky {
-  font-size: 1.4rem;
+  font-size: 1.3rem;
   line-height: 1.2;
   color: var(--muted);
   text-transform: capitalize;
+}
+
+.wx-now-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 1.25rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.wx-now-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.wx-now-rain {
+  color: var(--wx-rain);
+  font-weight: 500;
+}
+
+.wx-today {
+  display: flex;
+  grid-column: 1 / -1;
+  align-items: center;
+  gap: 8px;
+  font-size: 1.3rem;
+  color: var(--muted);
+}
+
+.wx-today .wx-temp {
+  font-weight: 500;
 }
 
 /* A temperature reads in its hue: deep blue when cold, red when hot (core
@@ -1697,45 +1787,6 @@ body {
    on either canvas. */
 .wx-temp {
   color: hsl(var(--hue) var(--wx-sat) var(--wx-light));
-  font-variant-numeric: tabular-nums;
-}
-
-/* Today's facts in two lines: the range, its bar stretched across the card
-   between the low and the high; under it the rain chance and the sun's
-   times, spread along the line. */
-.wx-day {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px 20px;
-  font-size: 1.4rem;
-}
-
-.wx-day-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--muted);
-}
-
-.wx-day-range {
-  display: flex;
-  flex: 1 0 100%;
-}
-
-.wx-day-item .wx-temp {
-  font-weight: 500;
-}
-
-.wx-day-rain {
-  color: var(--wx-rain);
-  font-weight: 500;
-}
-
-.wx-day-sun {
-  gap: 10px;
-  color: var(--text);
   font-variant-numeric: tabular-nums;
 }
 
@@ -1751,8 +1802,7 @@ body {
   height: 8px;
   margin: 0 6px;
   border-radius: 4px;
-  background: var(--bubble);
-  overflow: hidden;
+  background: color-mix(in srgb, var(--text) 12%, transparent);
 }
 
 .wx-range-fill {
@@ -1763,15 +1813,36 @@ body {
   background: linear-gradient(90deg, hsl(var(--hue-from) var(--wx-sat) var(--wx-light)), hsl(var(--hue-to) var(--wx-sat) var(--wx-light)));
 }
 
-/* The coming hours behind a hairline: time, glyph, rain, temperature. */
+/* Where the temperature stands now on today's range. */
+.wx-range-now {
+  position: absolute;
+  top: -4px;
+  bottom: -4px;
+  width: 12px;
+  margin-left: -6px;
+  border: 2px solid var(--bg);
+  border-radius: 6px;
+  background: var(--text);
+}
+
+/* The coming hours and the coming days: a glass tile each, a kicker over them. */
+.wx-hours-tile,
+.wx-days-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px 24px;
+}
+
 .wx-hours {
   display: grid;
+  flex: 1;
   grid-auto-flow: column;
   grid-auto-columns: 1fr;
+  align-content: center;
   gap: 4px;
   margin: 0;
-  padding: 22px 0 0;
-  border-top: 1px solid var(--edge);
+  padding: 0;
   list-style: none;
 }
 
@@ -1779,7 +1850,7 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
+  gap: 4px;
 }
 
 .wx-hour-time {
@@ -1790,34 +1861,33 @@ body {
 
 .wx-hour-rain {
   min-height: 1em;
-  font-size: 1.1rem;
+  font-size: 1rem;
   font-weight: 500;
   line-height: 1;
   color: var(--wx-rain);
 }
 
 .wx-hour-temp {
-  font-size: 1.9rem;
-  font-weight: 400;
+  font-size: 1.4rem;
+  font-weight: 500;
 }
 
-/* The coming days behind a hairline, a line each: weekday, sky, rain, low and high. */
 .wx-outlook {
   display: flex;
+  flex: 1;
   flex-direction: column;
-  gap: 8px;
+  justify-content: space-evenly;
   margin: 0;
-  padding: 18px 0 0;
-  border-top: 1px solid var(--edge);
+  padding: 0;
   list-style: none;
 }
 
 .wx-outlook-day {
   display: grid;
-  grid-template-columns: 4.2em 44px 1fr auto auto;
+  grid-template-columns: 3.4em 40px 3em 2.2em minmax(0, 1fr) 2.2em;
   align-items: center;
-  column-gap: 14px;
-  font-size: 1.45rem;
+  column-gap: 12px;
+  font-size: 1.25rem;
 }
 
 .wx-outlook-name {
@@ -1825,15 +1895,17 @@ body {
 }
 
 .wx-outlook-rain {
-  font-size: 1.15rem;
+  font-size: 1.05rem;
   font-weight: 500;
   color: var(--wx-rain);
 }
 
 .wx-outlook-temp {
-  min-width: 2.2em;
   text-align: right;
-  font-variant-numeric: tabular-nums;
+}
+
+.wx-outlook-day .wx-range {
+  margin: 0;
 }
 
 /* The glyph's parts, each in its system color. */
@@ -1855,25 +1927,23 @@ body {
 /* The cloud sits over the sun or moon: a filled cloud hides the part behind it. */
 .wx-icon circle.wx-sun { fill: var(--wx-sun); }
 
-/* ---- the Last Page card ---- */
+/* ---- the Last Page tile ---- */
 
 .idle-last-page {
   display: flex;
   align-items: center;
-  gap: 18px;
-  width: min(760px, 100%);
-  padding: 0 24px 0 20px;
+  gap: 20px;
+  padding: 20px 22px;
   font: inherit;
   text-align: left;
   cursor: pointer;
   -webkit-app-region: no-drag;
-  transition: border-color 120ms ease, transform 120ms ease;
+  transition: transform 120ms ease;
 }
 
-.idle-last-page:hover,
 .idle-last-page:focus-visible {
-  border-color: var(--accent);
-  outline: none;
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 
 .idle-last-page:active {
@@ -1884,10 +1954,10 @@ body {
   display: grid;
   place-items: center;
   flex: none;
-  width: 64px;
-  height: 64px;
-  border-radius: 16px;
-  background: var(--bubble);
+  width: 72px;
+  height: 72px;
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--text) 8%, transparent);
   color: var(--muted);
 }
 
@@ -1899,9 +1969,13 @@ body {
 .idle-last-page-words {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  justify-content: center;
+  gap: 4px;
+  align-self: stretch;
   min-width: 0;
+  min-height: 0;
   flex: 1;
+  overflow: hidden;
 }
 
 .idle-last-page-kicker {
@@ -1914,17 +1988,22 @@ body {
 }
 
 .idle-last-page-title {
-  overflow: hidden;
-  font-size: 1.65rem;
+  font-size: max(20px, calc(1.65rem * var(--fit, 1)));
   line-height: 1.2;
   font-weight: 500;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
+}
+
+.idle-last-page-words[data-fit='over'] .idle-last-page-title {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .idle-last-page-host {
   overflow: hidden;
-  font-size: 1.2rem;
+  font-size: max(17px, calc(1.2rem * var(--fit, 1)));
   line-height: 1.25;
   color: var(--muted);
   white-space: nowrap;
@@ -1937,35 +2016,33 @@ body {
   color: var(--muted);
 }
 
-/* ---- the Timer card ----
-   Beside the Last Page in the bottom band: the countdown large, in the
-   system orange a timer wears; ringing, it turns red and breathes so it
-   reads as done from across the room. */
-
-/* The strip: chips at one fixed height, side by side and centred. It never
-   grows — a chip that does not fit wraps out of sight, and the Card Slots above
-   always keep the same room. */
-.idle-screen-bottom {
+/* ---- the dock ----
+   Under the grid while the Timer runs or rings, today has a next event, or
+   a song is held: chips side by side at the dock's height, the room shared
+   between them. */
+.idle-dock {
   display: flex;
-  flex: none;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 20px;
-  height: var(--strip-height);
-  overflow: hidden;
+  grid-column: 1 / -1;
+  gap: var(--cell-gap);
+  min-width: 0;
+  min-height: 0;
 }
 
-.idle-screen-bottom > .idle-card {
-  height: var(--strip-height);
+.idle-dock > .idle-card {
+  flex: 1 1 0;
+  height: var(--dock-height);
 }
+
+/* ---- the Timer chip ----
+   The countdown large, in the system orange a timer wears; ringing, it
+   turns red and breathes so it reads as done from across the room. */
 
 .idle-timer {
   --timer-tone: var(--status-yellow);
   display: flex;
   align-items: center;
   gap: 18px;
-  min-width: 400px;
-  padding: 0 28px 0 18px;
+  padding: 0 28px 0 14px;
   font: inherit;
   text-align: left;
   -webkit-app-region: no-drag;
@@ -1973,14 +2050,10 @@ body {
 
 .idle-timer--ringing {
   --timer-tone: var(--status-red);
-  border-color: var(--timer-tone);
+  outline: 2px solid var(--timer-tone);
+  outline-offset: -2px;
   cursor: pointer;
   animation: idle-timer-ring 1.2s ease-in-out infinite;
-}
-
-.idle-timer--ringing:focus-visible {
-  outline: 2px solid var(--timer-tone);
-  outline-offset: 2px;
 }
 
 @keyframes idle-timer-ring {
@@ -2004,13 +2077,15 @@ body {
   display: grid;
   place-items: center;
   flex: none;
-  width: 84px;
-  height: 84px;
+  width: 80px;
+  height: 80px;
 }
 
 .idle-timer-ring > svg {
   position: absolute;
   inset: 0;
+  width: 100%;
+  height: 100%;
 }
 
 .idle-timer-track,
@@ -2020,7 +2095,7 @@ body {
 }
 
 .idle-timer-track {
-  stroke: var(--bubble);
+  stroke: color-mix(in srgb, var(--text) 12%, transparent);
 }
 
 .idle-timer-arc {
@@ -2048,33 +2123,33 @@ body {
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--timer-tone);
+  white-space: nowrap;
 }
 
 .idle-timer-left {
-  font-size: 3rem;
+  font-size: 2.6rem;
   font-weight: 300;
   letter-spacing: -0.01em;
   line-height: 1.05;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .idle-timer-sub {
-  font-size: 1.2rem;
+  font-size: 1.05rem;
   line-height: 1.25;
   color: var(--muted);
 }
 
-/* ---- Now Playing (#344) ----
-   Beside the Timer and the Last Page while the Player holds a song: the
-   thumbnail, the title and channel, the progress, the next three. The tap
-   pauses or plays it. */
+/* ---- the Now Playing chip (#344) ----
+   The thumbnail, the title · channel, the progress, the next three on a
+   line. The tap pauses or plays it. */
 
 .idle-music {
   display: flex;
   align-items: center;
-  gap: 20px;
-  width: min(640px, 100%);
-  padding: 14px 24px 14px 14px;
+  gap: 18px;
+  padding: 0 24px 0 14px;
   font: inherit;
   text-align: left;
   cursor: pointer;
@@ -2083,7 +2158,7 @@ body {
 
 .idle-music:focus-visible {
   outline: 2px solid var(--accent);
-  outline-offset: 2px;
+  outline-offset: -2px;
 }
 
 .idle-music-thumb {
@@ -2091,11 +2166,11 @@ body {
   display: grid;
   place-items: center;
   flex: none;
-  width: 192px;
-  height: 108px;
+  width: 136px;
+  height: 76px;
   overflow: hidden;
-  border-radius: 14px;
-  background: var(--bubble);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--text) 8%, transparent);
   color: var(--muted);
 }
 
@@ -2126,41 +2201,46 @@ body {
   flex: 1 1 auto;
 }
 
-.idle-music-kicker {
+.idle-music-head {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: 8px;
-  font-size: 1rem;
-  line-height: 1.2;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.idle-music-head > svg {
+  align-self: center;
+  flex: none;
   color: var(--status-purple);
 }
 
 .idle-music-title {
   overflow: hidden;
-  font-size: 1.6rem;
+  flex: 0 1 auto;
+  font-size: 1.35rem;
   font-weight: 600;
   line-height: 1.2;
-  white-space: nowrap;
   text-overflow: ellipsis;
 }
 
 .idle-music-channel {
   overflow: hidden;
+  flex: 0 1 auto;
   font-size: 1.2rem;
-  line-height: 1.25;
-  white-space: nowrap;
+  line-height: 1.2;
   text-overflow: ellipsis;
   color: var(--muted);
+}
+
+.idle-music-channel::before {
+  content: '· ';
 }
 
 .idle-music-progress {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-top: 4px;
 }
 
 .idle-music-bar {
@@ -2168,7 +2248,7 @@ body {
   height: 6px;
   overflow: hidden;
   border-radius: 3px;
-  background: var(--bubble);
+  background: color-mix(in srgb, var(--text) 12%, transparent);
 }
 
 .idle-music-fill {
@@ -2181,7 +2261,7 @@ body {
 
 .idle-music-time {
   flex: none;
-  font-size: 1.05rem;
+  font-size: 1rem;
   font-variant-numeric: tabular-nums;
   color: var(--muted);
 }
@@ -2191,7 +2271,7 @@ body {
   gap: 10px;
   overflow: hidden;
   font-size: 1rem;
-  line-height: 1.3;
+  line-height: 1.25;
   white-space: nowrap;
   color: var(--muted);
 }
@@ -2213,167 +2293,25 @@ body {
   content: '· ';
 }
 
-/* In its Card Slot (2×1): the thumbnail large beside the words, the next
-   three a line each. In a small one (1×1) the thumbnail goes over the words. */
-.idle-slot {
-  container-type: size;
-}
-
-.idle-slot > .idle-music {
-  gap: 28px;
-  width: auto;
-  padding: 24px 32px 24px 24px;
-}
-
-.idle-slot > .idle-music .idle-music-thumb {
-  width: 400px;
-  height: 225px;
-  border-radius: 18px;
-}
-
-.idle-slot > .idle-music .idle-music-words {
-  gap: 8px;
-}
-
-.idle-slot > .idle-music .idle-music-kicker {
-  font-size: 1.15rem;
-}
-
-.idle-slot > .idle-music .idle-music-title {
-  font-size: 2.1rem;
-  white-space: normal;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-
-.idle-slot > .idle-music .idle-music-channel {
-  font-size: 1.4rem;
-}
-
-.idle-slot > .idle-music .idle-music-time {
-  font-size: 1.2rem;
-}
-
-.idle-slot > .idle-music .idle-music-next {
-  flex-direction: column;
-  gap: 2px;
-  margin-top: 6px;
-  font-size: 1.15rem;
-}
-
-.idle-slot > .idle-music .idle-music-next-title + .idle-music-next-title::before {
-  content: none;
-}
-
-@container (max-width: 600px) {
-  .idle-slot > .idle-music {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 16px;
-    padding: 20px;
-  }
-
-  .idle-slot > .idle-music .idle-music-thumb {
-    width: 100%;
-    height: 150px;
-  }
-
-  .idle-slot > .idle-music .idle-music-title {
-    font-size: 1.6rem;
-  }
-
-  .idle-slot > .idle-music .idle-music-next {
-    display: none;
-  }
-}
-
 /* ---- the News card ----
-   Today's Highlight in its Card Slot, and Big News where the box leaves
-   room, by container query on the slot: at 2×2 (the base) the highlight
-   over Big News, at 2×1 Big News beside it, at 1×1 the highlight alone;
-   with no Big News the highlight takes the card. The highlight is its
-   Story Image large and its words — the topic as a kicker, the title
-   large, a GitHub repo's one-sentence description under it, the number
-   that made it a story larger still, the source and the site at the foot.
-   In a wide, short box the picture sits beside the words, in any other
-   above them; the words draw to their own box by container query, and
-   useFitText steps their sizes down by --fit until they show whole, the
-   picture taking the room they leave; past that floor the picture
-   shrinks, then goes behind the words under a dark scrim, then the
-   description goes and the title is clamped — only the longest titles in
-   the smallest boxes get that far. Big News is a story a row — its
-   picture as a thumbnail, its whole headline, its number — and a row the
-   box would cut is left off whole (useWholeItems).
-   A story with no picture shows its source's tile. Every story is a
-   button: the tap, on the picture or the words, opens it. The highlight's
-   flow is set with the card's size, since a container query cannot style
-   its own container: beside (--flow: row) in a wide, short box — 2×2 over
-   Big News, 2×1 alone — above (column) in any other. */
-.idle-news {
-  --flow: row;
-  display: grid;
-  grid-template:
-    "today" minmax(0, 1fr)
-    "big" minmax(0, auto) / minmax(0, 1fr);
-  gap: 24px;
-  padding: 32px 40px;
-}
-
-.idle-news[data-big='none'] {
-  --flow: column;
-  grid-template: "today" minmax(0, 1fr) / minmax(0, 1fr);
-}
-
-@container (max-height: 500px) {
-  .idle-news {
-    --flow: column;
-    grid-template: "today big" minmax(0, 1fr) / minmax(0, 1fr) minmax(0, 1fr);
-    gap: 22px 36px;
-    padding: 28px 36px;
-  }
-
-  .idle-news[data-big='none'] {
-    --flow: row;
-  }
-}
-
-@container (max-width: 600px) {
-  .idle-news,
-  .idle-news[data-big] {
-    --flow: column;
-    grid-template: "today" minmax(0, 1fr) / minmax(0, 1fr);
-    padding: 24px 26px;
-  }
-
-  .idle-news > .idle-news-big {
-    display: none;
-  }
-}
-
-/* Big News in a half-width box (beside the highlight at 2×1): a smaller thumbnail, so a headline keeps the width to show whole. */
-@container (max-height: 500px) {
-  .idle-news-big .idle-news-thumb {
-    width: 4.6rem;
-  }
-
-  .idle-news-big .idle-news-item {
-    gap: 14px;
-    padding: 8px 0;
-    font-size: 1.15rem;
-  }
-}
-
-.idle-news:has(.idle-news-today:hover),
-.idle-news:has(.idle-news-today:focus-visible) {
-  border-color: var(--accent);
-}
+   Today's Highlight and Big News as tiles (NewsCard). The highlight is its
+   Story Image and its words — two chips, the headline's lead bold and its
+   tail quiet, then the number that made it a story large and light, the
+   comments, the source and the site. In a box wider than tall the picture
+   sits beside the words, in any other above them, taking the room they
+   leave; useFitText steps the words' sizes down by --fit until they show
+   whole, and past that floor the picture shrinks, then goes behind the
+   words under a dark scrim, then the tail is set on one line.
+   Big News is a story a numbered row: its thumbnail, the lead whole, the
+   tail on one line with an ellipsis — the one place on the Idle Screen a
+   line is cut, by design — and the number in a pill; a row the box would
+   cut is left off whole (useWholeItems). Every story is a button: the tap
+   opens it. */
 
 .idle-news-today,
 .idle-news-item {
   padding: 0;
   border: 0;
-  background: none;
   color: inherit;
   font: inherit;
   text-align: left;
@@ -2381,17 +2319,27 @@ body {
   -webkit-app-region: no-drag;
 }
 
+.idle-news-item {
+  background: none;
+}
+
 .idle-news-today {
   container: news-today / size;
-  grid-area: today;
   display: flex;
-  flex-direction: var(--flow);
-  gap: 16px 28px;
-  min-width: 0;
-  min-height: 0;
-  overflow: hidden;
+  flex-direction: column;
+  gap: 16px 26px;
+  padding: 22px 26px;
   outline: none;
   transition: transform 120ms ease;
+}
+
+.idle-news-today[data-flow='row'] {
+  flex-direction: row;
+}
+
+.idle-news-today:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 
 .idle-news-today:active {
@@ -2404,7 +2352,7 @@ body {
   display: block;
   overflow: hidden;
   border-radius: 14px;
-  background: var(--edge);
+  background: color-mix(in srgb, var(--text) 10%, transparent);
 }
 
 .idle-news-picture img,
@@ -2421,15 +2369,13 @@ body {
   min-height: 34cqh;
 }
 
-@container style(--flow: row) {
-  .idle-news-picture {
-    flex: 0 0 44%;
-    min-height: 0;
-  }
+.idle-news-today[data-flow='row'] > .idle-news-picture {
+  flex: 0 0 44%;
+  min-height: 0;
+}
 
-  .idle-news-words {
-    flex: 1 1 0;
-  }
+.idle-news-today[data-flow='row'] > .idle-news-words {
+  flex: 1 1 0;
 }
 
 .idle-news-tile {
@@ -2454,36 +2400,74 @@ body {
   display: flex;
   flex: 0 1 auto;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
 }
 
-.idle-news-kicker {
+.idle-news-chips {
+  display: flex;
   flex: none;
-  font-size: 1.2rem;
-  font-weight: 600;
-  line-height: 1.3;
-  letter-spacing: 0.02em;
-  color: var(--accent);
+  flex-wrap: wrap;
+  gap: 8px;
+  max-height: calc(1.25em + 8px);
+  overflow: hidden;
 }
 
 .idle-news-title {
-  --title-size: 2.5rem;
   flex: none;
-  font-size: max(24px, calc(var(--title-size) * var(--fit, 1)));
-  font-weight: 600;
-  line-height: 1.12;
-  letter-spacing: -0.01em;
+  line-height: 1.22;
   overflow-wrap: anywhere;
 }
 
-.idle-news-dek {
+.idle-news-lead {
+  font-size: max(22px, calc(1.75rem * var(--fit, 1)));
+  font-weight: 650;
+  letter-spacing: -0.005em;
+}
+
+.idle-news-tail {
+  font-size: max(18px, calc(1.4rem * var(--fit, 1)));
+  color: var(--muted);
+}
+
+.idle-news-stats {
+  display: flex;
   flex: none;
-  font-size: max(18px, calc(1.55rem * var(--fit, 1)));
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 20px;
+  margin-top: auto;
+  font-size: 1.1rem;
   line-height: 1.3;
   color: var(--muted);
+}
+
+.idle-news-figure {
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.idle-news-count {
+  font-size: max(36px, calc(2.7rem * var(--fit, 1)));
+  font-weight: 200;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.idle-news-unit {
+  font-size: 1.1rem;
+}
+
+.idle-news-foot {
+  white-space: nowrap;
+}
+
+.idle-news-source {
+  font-weight: 600;
+  color: var(--text);
 }
 
 .idle-news-today:has(> .idle-news-words[data-fit='snug']) > .idle-news-picture {
@@ -2498,6 +2482,7 @@ body {
   position: absolute;
   inset: 0;
   min-height: 0;
+  border-radius: 0;
   color: transparent;
 }
 
@@ -2513,96 +2498,53 @@ body {
   --muted: rgb(255 255 255 / 0.78);
   position: relative;
   flex: 1 1 auto;
-  gap: 5px;
-  padding: 8px 14px;
+  gap: 6px;
   color: var(--text);
 }
 
-.idle-news-words[data-fit='over'] .idle-news-dek {
-  display: none;
+.idle-news-words:is([data-fit='behind'], [data-fit='over']) .idle-chip {
+  background: rgb(255 255 255 / 0.18);
 }
 
-.idle-news-words[data-fit='over'] .idle-news-title {
-  display: -webkit-box;
+.idle-news-words:is([data-fit='behind'], [data-fit='over']) .idle-chip--accent {
+  background: color-mix(in srgb, var(--accent) 70%, transparent);
+  color: #fff;
+}
+
+/* The last stage: the tail on one line, an ellipsis where it runs on, as
+   Big News sets its tails, the number smaller beside the rest of its line
+   and the tile's edge narrower; the lead stays whole. */
+.idle-news-today:has(> .idle-news-words[data-fit='over']) {
+  padding: 14px 20px;
+}
+
+.idle-news-words[data-fit='over'] .idle-news-stats {
+  gap: 2px 14px;
+}
+
+.idle-news-words[data-fit='over'] .idle-news-count {
+  font-size: 28px;
+}
+
+.idle-news-words[data-fit='over'] .idle-news-tail {
+  display: block;
   overflow: hidden;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
-}
-
-.idle-news-figure {
-  flex: none;
-  margin-top: auto;
-  line-height: 1;
   white-space: nowrap;
-}
-
-.idle-news-count {
-  --count-size: 4.4rem;
-  font-size: max(40px, calc(var(--count-size) * var(--fit, 1)));
-  font-weight: 200;
-  letter-spacing: -0.02em;
-  font-variant-numeric: tabular-nums;
-}
-
-.idle-news-unit {
-  font-size: 1.6rem;
-  color: var(--muted);
-}
-
-.idle-news-foot {
-  flex: none;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 20px;
-  overflow: hidden;
-  max-height: 1.4em;
-  font-size: 1.2rem;
-  line-height: 1.4;
-  color: var(--muted);
-}
-
-.idle-news-source {
-  font-weight: 600;
-  color: var(--text);
-}
-
-/* The highlight in a half-width box (1×1, or beside Big News at 2×1): a smaller title, the comments left to the wider boxes. */
-@container news-today (max-width: 600px) {
-  .idle-news-title {
-    --title-size: 1.85rem;
-  }
-
-  .idle-news-count {
-    --count-size: 3.6rem;
-  }
-
-  .idle-news-comments {
-    display: none;
-  }
+  text-overflow: ellipsis;
 }
 
 .idle-news-big {
-  grid-area: big;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  min-width: 0;
-  min-height: 0;
-  overflow: hidden;
-}
-
-.idle-news-list-head {
-  margin: 0;
-  font-size: 1.2rem;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  color: var(--muted);
+  gap: 10px;
+  padding: 22px 26px;
 }
 
 .idle-news-big ol {
   display: flex;
   flex: 1;
   flex-direction: column;
+  gap: 14px;
   min-height: 0;
   overflow: hidden;
   margin: 0;
@@ -2610,46 +2552,64 @@ body {
   list-style: none;
 }
 
-.idle-news-big li + li {
-  border-top: 1px solid var(--edge);
+.idle-news-item {
+  display: grid;
+  grid-template-columns: 1.4em 96px minmax(0, 1fr) auto;
+  align-items: start;
+  column-gap: 14px;
+  width: 100%;
+  font-size: 1.2rem;
+  line-height: 1.28;
 }
 
-.idle-news-item {
-  display: flex;
-  align-items: center;
-  gap: 18px;
-  width: 100%;
-  padding: 10px 0;
-  font-size: 1.35rem;
-  line-height: 1.3;
+.idle-news-rank {
+  font-weight: 600;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
 }
 
 .idle-news-thumb {
-  flex: none;
-  width: 8.5rem;
+  width: 96px;
   aspect-ratio: 16 / 9;
   border-radius: 10px;
 }
 
 .idle-news-thumb.idle-news-tile {
   padding: 0;
-  font-size: 1.6rem;
+  font-size: 1.4rem;
 }
 
 .idle-news-item-title {
-  flex: 1;
   min-width: 0;
+}
+
+.idle-news-item-lead {
+  font-weight: 650;
   overflow-wrap: anywhere;
 }
 
-.idle-news-item-count {
-  font-weight: 300;
+.idle-news-item-tail {
+  display: block;
+  overflow: hidden;
+  margin-top: 2px;
+  font-size: 1.05rem;
   color: var(--muted);
-  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
-.idle-news-item:hover .idle-news-item-title,
-.idle-news-item:focus-visible .idle-news-item-title {
+.idle-news-pill {
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  font-size: 1rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.idle-news-item:hover .idle-news-item-lead,
+.idle-news-item:focus-visible .idle-news-item-lead {
   color: var(--accent);
 }
 
@@ -2658,31 +2618,30 @@ body {
 }
 
 /* ---- the Calendar ----
-   A card beside the weather and the AI Usage, a month view whose days are
-   boxes that hold their entries: the bank holiday's name on green, an
-   all-day event as a red bar, a timed one as its start and title, then
-   "+N more". Today's date in a red disc, weekends and the neighbouring
-   months' days in the quiet ink, hairlines between the days. The weeks
-   share the card's height, so a five-week month gets taller boxes than a
-   six-week one — on the 1920×1080 display a six-week month still holds the
-   number and an entry in every box. On a window too narrow for three cards
-   it wraps under the other two. */
+   A glass tile: the month's name in the red the day wears, the year
+   quiet, then the next bank holiday or "No events"; weekday heads; this
+   week and next in one cell, the whole month with its entries in two.
+   Today's date in a red disc, weekends and the neighbouring months' days in
+   the quiet ink. A bank holiday's name on green, an all-day event as a red
+   bar, a timed one as a dot and its title, "+N" beside the date past one. */
 
 .idle-cal {
   --cal-holiday: color-mix(in srgb, var(--status-green) 30%, transparent);
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 20px 22px 16px;
+  gap: 8px;
+  padding: 18px 22px;
   -webkit-app-region: no-drag;
 }
 
 .idle-cal-head {
   display: flex;
+  flex: none;
   align-items: baseline;
   gap: 10px;
   padding: 0 4px;
-  font-size: 1.6rem;
+  font-size: 1.45rem;
+  line-height: 1.2;
 }
 
 .idle-cal-month {
@@ -2694,13 +2653,19 @@ body {
   color: var(--muted);
 }
 
+.idle-cal-none {
+  margin-left: auto;
+  font-size: 1.1rem;
+  color: var(--muted);
+}
+
 .idle-cal-holiday {
   display: flex;
   align-items: center;
   gap: 8px;
   min-width: 0;
   margin-left: auto;
-  font-size: 1.15rem;
+  font-size: 1.1rem;
 }
 
 .idle-cal-swatch {
@@ -2737,40 +2702,38 @@ body {
 }
 
 .idle-cal-weekday {
-  padding: 0 6px 8px;
+  padding: 0 0 4px;
   font-size: 1rem;
   font-weight: 600;
   letter-spacing: 0.06em;
+  text-align: center;
   text-transform: uppercase;
+  color: var(--muted);
 }
 
 .idle-cal-week {
   flex: 1;
   min-height: 0;
-  border-top: 1px solid var(--edge);
 }
 
 .idle-cal-day {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
   min-width: 0;
-  padding: 5px 5px 4px;
+  min-height: 0;
   overflow: hidden;
-}
-
-.idle-cal-day + .idle-cal-day {
-  border-left: 1px solid var(--edge);
 }
 
 .idle-cal-num {
   display: grid;
   place-items: center;
-  align-self: flex-start;
-  min-width: 32px;
-  height: 32px;
-  padding: 0 6px;
-  border-radius: 16px;
+  min-width: 40px;
+  height: 40px;
+  padding: 0 4px;
+  border-radius: 20px;
   font-size: 1.35rem;
   font-variant-numeric: tabular-nums;
 }
@@ -2790,11 +2753,45 @@ body {
   font-weight: 600;
 }
 
+.idle-cal-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+/* The month: hairlines between the weeks, a day's date at its top left
+   with "+N" beside it, its first entry under. */
+.idle-cal--month .idle-cal-week + .idle-cal-week {
+  border-top: 1px solid color-mix(in srgb, var(--text) 10%, transparent);
+}
+
+.idle-cal--month .idle-cal-day {
+  align-items: stretch;
+  justify-content: flex-start;
+  padding: 3px 2px;
+}
+
+.idle-cal--month .idle-cal-num {
+  min-width: 30px;
+  height: 30px;
+  border-radius: 15px;
+  font-size: 1.15rem;
+}
+
+.idle-cal-num-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2px;
+}
+
 .idle-cal-entry {
   overflow: hidden;
-  padding: 1px 4px;
-  border-radius: 6px;
-  font-size: 1.2rem;
+  padding: 0 3px;
+  border-radius: 5px;
+  font-size: 1rem;
   line-height: 1.25;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -2803,9 +2800,9 @@ body {
 .idle-cal-entry--timed::before {
   content: '';
   display: inline-block;
-  width: 10px;
-  height: 10px;
-  margin-right: 6px;
+  width: 8px;
+  height: 8px;
+  margin-right: 4px;
   border-radius: 50%;
   background: var(--status-red);
   vertical-align: 1px;
@@ -2816,86 +2813,29 @@ body {
   font-weight: 500;
 }
 
-/* A holiday's name is the day's own, so it may take two lines. */
 .idle-cal-entry--holiday {
-  display: -webkit-box;
-  flex: none;
   background: var(--cal-holiday);
   font-weight: 500;
-  white-space: normal;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
 }
 
 .idle-cal-more {
-  padding: 0 7px;
   font-size: 1rem;
   color: var(--muted);
 }
 
-/* A month with no events: no hairlines between the days, the numbers a
-   little larger — the grid reads as a calendar, not an empty table. */
-.idle-cal--quiet .idle-cal-week,
-.idle-cal--quiet .idle-cal-day + .idle-cal-day {
+.idle-cal--quiet.idle-cal--month .idle-cal-week + .idle-cal-week {
   border: 0;
 }
 
-.idle-cal--quiet .idle-cal-num {
-  font-size: 1.6rem;
-  min-width: 40px;
-  height: 40px;
-  border-radius: 20px;
-}
-
-/* The small Card Slot: the month's numbers alone, centred, a dot under a day
-   with an entry. */
-.idle-cal--mini {
-  padding: 18px 18px 12px;
-}
-
-.idle-cal--mini .idle-cal-weekday {
-  padding: 0 0 6px;
-  text-align: center;
-}
-
-.idle-cal--mini .idle-cal-week {
-  border: 0;
-}
-
-.idle-cal--mini .idle-cal-day,
-.idle-cal--mini .idle-cal-day + .idle-cal-day {
-  align-items: center;
-  justify-content: center;
-  gap: 2px;
-  padding: 0;
-  border: 0;
-}
-
-.idle-cal--mini .idle-cal-num {
-  align-self: center;
-  min-width: 34px;
-  height: 34px;
-  font-size: 1.3rem;
-}
-
-.idle-cal-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--muted);
-}
-
-/* ---- the Up Next card ----
-   Beside the Timer and the Last Page: today's next event from the
-   Calendar, a date tile for its mark, the time in the red the month wears. */
+/* ---- the Up Next chip ----
+   Today's next event from the Calendar, a date tile for its mark, the time
+   in the red the month wears. */
 
 .idle-upnext {
   display: flex;
   align-items: center;
   gap: 18px;
-  min-width: 400px;
-  max-width: 560px;
-  padding: 0 28px 0 18px;
+  padding: 0 24px 0 18px;
   -webkit-app-region: no-drag;
 }
 
@@ -2907,7 +2847,7 @@ body {
   width: 64px;
   overflow: hidden;
   border-radius: 16px;
-  background: var(--bubble);
+  background: color-mix(in srgb, var(--text) 8%, transparent);
 }
 
 .idle-upnext-tile-weekday {
@@ -2915,7 +2855,7 @@ body {
   padding: 3px 0 2px;
   background: var(--status-red);
   color: #fff;
-  font-size: 0.85rem;
+  font-size: 1rem;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-align: center;
@@ -2925,7 +2865,7 @@ body {
 .idle-upnext-tile-day {
   font-size: 1.8rem;
   font-weight: 500;
-  line-height: 1.5;
+  line-height: 1.4;
   font-variant-numeric: tabular-nums;
 }
 
@@ -2947,7 +2887,7 @@ body {
 
 .idle-upnext-title {
   overflow: hidden;
-  font-size: 1.65rem;
+  font-size: 1.5rem;
   line-height: 1.2;
   font-weight: 500;
   white-space: nowrap;
@@ -2955,7 +2895,7 @@ body {
 }
 
 .idle-upnext-sub {
-  font-size: 1.2rem;
+  font-size: 1.1rem;
   line-height: 1.25;
   color: var(--muted);
 }
@@ -3148,16 +3088,12 @@ body {
 }
 
 /* ---- the AI usage card ----
-   Beside the weather: the chosen providers' gauges as the usage dashboard
-   draws them — dots that fill as the window runs, the number the share of
-   the limit used, in the provider's color — in a row across the top, and
-   the last twelve hours as lines filling the card under them. */
+   Tiles down the right of the Idle Screen: the chosen providers' windows
+   as rings in a row — the outer arc the share of the limit used in the
+   provider's tone, the number in the middle, a thin inner arc how much of
+   the window has run — and under them the last twelve hours as lines. */
 
 .usage-card {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-  padding: 24px 24px 20px;
   -webkit-app-region: no-drag;
 }
 
@@ -3182,116 +3118,194 @@ body {
 }
 
 /* A provider the dashboard has no color for takes the accent, as it does there. */
-:where(.usage-gauge, .usage-legend, .usage-line) {
+:where(.usage-ring-item, .usage-legend, .usage-line, .usage-fill, .usage-end) {
   --usage-tone: var(--accent);
 }
 
-.usage-gauges {
-  display: flex;
-  justify-content: space-evenly;
-  gap: 20px;
-  flex: none;
+/* The rings share the row; each column is the ring over its words, the
+   ring as large as the room the words leave, 150 px at most. */
+.usage-rings {
+  display: grid;
+  grid-template-columns: repeat(var(--rings), minmax(0, 1fr));
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 4px 12px;
+  padding: 16px 18px;
 }
 
-.usage-gauge {
+/* Each column spans the tile's two rows (subgrid), so every ring shares the
+   room the tallest words leave and the rings line up at one size. */
+.usage-ring-item {
+  display: grid;
+  grid-row: span 2;
+  grid-template-rows: subgrid;
+  justify-items: center;
+  min-width: 0;
+  min-height: 0;
+  text-align: center;
+}
+
+/* The words are the narrow-column query's container: a container on the
+   column itself would contain its layout and turn the subgrid off. */
+.usage-ring-words {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
-  width: 180px;
+  gap: 2px;
+  justify-self: stretch;
+  min-width: 0;
+  container-type: inline-size;
 }
 
-.usage-gauge-head {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  align-self: stretch;
-}
-
-.usage-gauge-name {
-  font-size: 1.5rem;
-  font-weight: 600;
-}
-
-.usage-gauge-plan {
-  font-size: 1.05rem;
-  color: var(--muted);
-}
-
-.usage-dots {
+.usage-ring {
   position: relative;
-  display: grid;
-  place-items: center;
-  width: 160px;
-  height: 160px;
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-height: 150px;
+  align-self: center;
+  container-type: size;
 }
 
-.usage-dots > svg {
+.usage-ring-item--extra .usage-ring {
+  --ring-scale: 0.78;
+}
+
+.usage-ring > svg {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
+  transform: scale(var(--ring-scale, 1));
 }
 
-.usage-dot {
-  fill: var(--bubble);
+.usage-ring-track,
+.usage-ring-arc {
+  fill: none;
+  stroke-width: 9;
 }
 
-.usage-dot--on {
-  fill: color-mix(in srgb, var(--text) 45%, var(--bubble));
+.usage-ring-track {
+  stroke: color-mix(in srgb, var(--text) 12%, transparent);
 }
 
-/* The number over the dots, on a plate of the panel so it reads as one
-   shape from across the room — the dots show round it. */
-.usage-dots-pct {
-  position: relative;
-  padding: 0.04em 0.12em;
-  border-radius: 0.28em;
-  background: var(--panel);
-  font-size: 5.25rem;
-  font-weight: 700;
+.usage-ring-arc {
+  stroke: var(--usage-tone);
+  stroke-linecap: round;
+}
+
+.usage-ring-time-track,
+.usage-ring-time {
+  fill: none;
+  stroke-width: 2.5;
+}
+
+.usage-ring-time-track {
+  stroke: color-mix(in srgb, var(--text) 10%, transparent);
+}
+
+.usage-ring-time {
+  stroke: var(--muted);
+  stroke-linecap: round;
+}
+
+/* The number in the middle, about a third of the ring; the % small and quiet. */
+.usage-ring-pct {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  grid-auto-flow: column;
+  align-items: baseline;
+  font-size: calc(min(100cqw, 100cqh) * 0.3 * var(--ring-scale, 1));
+  font-weight: 650;
   line-height: 1;
-  color: var(--usage-tone);
+  letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
 }
 
-.usage-dots-pct--over {
+.usage-ring-pct small {
+  font-size: max(16px, 0.42em);
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.usage-ring--over .usage-ring-arc {
+  stroke: var(--status-red);
+}
+
+.usage-ring--over .usage-ring-pct {
   color: var(--status-red);
 }
 
-.usage-gauge-reset {
-  font-size: 1.1rem;
+.usage-ring-name {
+  flex: none;
+  max-width: 100%;
+  font-size: 1.15rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.usage-ring-plan {
+  font-size: 1rem;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.usage-ring-reset {
+  flex: none;
+  font-size: 1rem;
+  line-height: 1.2;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
 
-.usage-gauge-reset b {
-  color: var(--text);
+.usage-ring-reset b {
   font-weight: 500;
+  color: var(--text);
 }
 
+/* A narrow column (four or five providers): the plan under the name, "resets" left out. */
+@container (max-width: 150px) {
+  .usage-ring-plan {
+    display: block;
+  }
+
+  .usage-ring-resets {
+    display: none;
+  }
+}
+
+/* A provider's other windows as compact bars under it, when the row has no room for their rings. */
 .usage-bars {
   display: flex;
+  flex: none;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
   align-self: stretch;
 }
 
 .usage-bar {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  white-space: nowrap;
-  align-items: center;
-  column-gap: 10px;
-  font-size: 1.05rem;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.usage-bar-words {
+  font-size: 1rem;
+  line-height: 1.2;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
 
+.usage-bar-words b {
+  font-weight: 500;
+  color: var(--text);
+}
+
 .usage-bar-track {
-  height: 10px;
-  border-radius: 5px;
-  background: var(--bubble);
+  height: 6px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--text) 12%, transparent);
   overflow: hidden;
 }
 
@@ -3301,30 +3315,44 @@ body {
   background: var(--usage-tone);
 }
 
-.usage-bar-pct {
-  color: var(--text);
-}
-
-.usage-bar-reset {
-  grid-column: 2 / -1;
-  justify-self: end;
-  margin-top: -2px;
-}
-
+/* The last twelve hours: the kicker and when the dashboard refreshed, the
+   legend, then the plot with its scale at the left and the hours under it. */
 .usage-chart {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  flex: 1 1 auto;
-  min-width: 0;
-  min-height: 0;
+  gap: 6px;
+  padding: 18px 22px 14px;
+}
+
+.usage-chart-head {
+  display: flex;
+  flex: none;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.usage-updated {
+  flex: none;
+  font-size: 1rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.usage-updated--stale {
+  color: var(--status-yellow);
+  font-weight: 600;
 }
 
 .usage-chart-legend {
   display: flex;
+  flex: none;
   flex-wrap: wrap;
-  gap: 4px 20px;
-  font-size: 1.05rem;
+  gap: 2px 18px;
+  max-height: 2.6em;
+  overflow: hidden;
+  font-size: 1rem;
+  line-height: 1.3;
   color: var(--muted);
 }
 
@@ -3340,95 +3368,79 @@ body {
   stroke-linecap: round;
 }
 
-/* The legend on the left, when the dashboard last refreshed on the right;
-   amber once that is old enough that the numbers may be stale. */
-.usage-chart-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
+.usage-chart-plot {
+  display: grid;
+  flex: 1 1 auto;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
+  column-gap: 10px;
+  min-height: 0;
 }
 
-.usage-updated {
-  flex: none;
-  font-size: 1.05rem;
+.usage-chart-y {
+  grid-area: 1 / 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  margin: -0.6em 0;
+  font-size: 1rem;
+  line-height: 1.2;
+  text-align: right;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
 
-.usage-updated--stale {
-  color: var(--status-yellow);
-  font-weight: 600;
-}
-
-/* Past two providers: one provider a row — the gauge on the left, its name,
-   its reset and its other windows beside it — the rows sharing the card's
-   height, and when the dashboard refreshed at the foot instead of a chart. */
-.usage-card--many {
-  gap: 12px;
-}
-
-.usage-card--many .usage-gauges {
-  flex: 1 1 0;
-  flex-direction: column;
-  justify-content: space-evenly;
-  gap: 10px;
+.usage-chart-area {
+  grid-area: 1 / 2;
+  position: relative;
   min-height: 0;
-  container-type: size;
 }
 
-/* Each row's gauge as large as the rows' share of the card allows, 150 px at most. */
-.usage-card--many .usage-gauge {
-  --dot: min(150px, calc(100cqh / var(--rows) - 14px));
-  display: grid;
-  grid-template-columns: var(--dot) minmax(0, 1fr);
-  grid-template-rows: auto auto 1fr;
-  align-items: start;
-  column-gap: 18px;
-  row-gap: 4px;
-  width: auto;
+.usage-chart-area > svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
 }
 
-.usage-card--many .usage-dots {
-  grid-column: 1;
-  grid-row: 1 / span 3;
-  width: var(--dot);
-  height: var(--dot);
+.usage-chart-grid {
+  stroke: color-mix(in srgb, var(--text) 12%, transparent);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
 }
 
-.usage-card--many .usage-dots-pct {
-  font-size: calc(var(--dot) * 0.4);
+.usage-fill {
+  fill: var(--usage-tone);
+  opacity: 0.12;
 }
 
-.usage-card--many .usage-gauge-head {
-  align-self: end;
+.usage-line {
+  fill: none;
+  stroke: var(--usage-tone);
+  stroke-width: 3;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
 }
 
-.usage-card--many .usage-gauge-head,
-.usage-card--many .usage-gauge-reset,
-.usage-card--many .usage-bars {
-  grid-column: 2;
+/* Where each line ends: a dot in its tone. */
+.usage-end {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  border-radius: 50%;
+  background: var(--usage-tone);
 }
 
-
-.usage-card--many .usage-gauge-plan {
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.usage-card--many .usage-gauge-reset {
-  white-space: nowrap;
-}
-
-.usage-card--many .usage-bars {
-  gap: 2px;
-}
-
-.usage-foot {
+.usage-chart-x {
+  grid-area: 2 / 2;
   display: flex;
-  flex: none;
-  justify-content: flex-end;
+  justify-content: space-between;
+  padding-top: 4px;
+  font-size: 1rem;
+  color: var(--muted);
 }
 
 /* ---- the AI usage settings: the dashboard's ⚙ Metrics panel ---- */
@@ -3490,53 +3502,4 @@ body {
   width: 18px;
   height: 18px;
   accent-color: var(--accent);
-}
-
-.usage-chart-plot {
-  position: relative;
-  display: flex;
-  gap: 10px;
-  flex: 1 1 auto;
-  min-height: 120px;
-}
-
-.usage-chart-y {
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  margin: -0.45em 0;
-  font-size: 1rem;
-  color: var(--muted);
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-
-.usage-chart-plot > svg {
-  flex: 1 1 auto;
-  min-width: 0;
-  height: auto;
-  overflow: visible;
-}
-
-.usage-chart-grid {
-  stroke: var(--edge);
-  stroke-width: 1;
-  vector-effect: non-scaling-stroke;
-}
-
-.usage-line {
-  fill: none;
-  stroke: var(--usage-tone);
-  stroke-width: 3.5;
-  stroke-linejoin: round;
-  stroke-linecap: round;
-  vector-effect: non-scaling-stroke;
-}
-
-.usage-chart-x {
-  display: flex;
-  justify-content: space-between;
-  padding-left: 40px;
-  font-size: 1rem;
-  color: var(--muted);
 }

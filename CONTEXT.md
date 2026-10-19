@@ -376,17 +376,27 @@ or closing it (owner ruling 2026-10-18, #334).
 _Avoid_: activity bar, sidebar, activity sidebar
 
 **Idle Screen**:
-What renders while nothing is happening: the clock and date as a slim
-header, the owner's Pinned Cards in Card Slots — the weather (the current
+What renders while nothing is happening: a bento of glass tiles on the Card
+Slot grid over a quiet glow (#352) — the clock and date bare in the
+top-left cell, the owner's Pinned Cards in the rest — the weather (the current
 conditions, today's high, low, rain chance and sun times, the six coming
 hours and the three coming days, all in the city's own clock — the sky as a
 colored glyph, every temperature in its hue from blue through green to red,
 rain in blue, so the day reads from across the room; the hours' temperature
 row is left off when every hour reads the same), the AI Usage card, the
-Calendar, the News card with Today's Highlight, and Now Playing while the
-Player holds a song — and under them a
-strip of chips: the Timer when one is set, today's next event when the
-Calendar has one, and the Last Page with its way back. It is laid out for the appliance's 21-inch 1920×1080 display
+Calendar, the News card with Today's Highlight and Big News, and the Last
+Page with its way back — and under them, only while any of them is there,
+a dock of chips: the Timer when one is set, today's next event when the
+Calendar has one, and Now Playing while the Player holds a song; the grid's
+rows shrink to make its room. The canvas is the sheet's own with one
+radial glow from above the top edge, tinted by the weather — rain blue for
+anything falling, cloud grey for overcast and fog, sun amber for a clear or
+partly cloudy sky while the sun is up, night violet from today's sunset to
+its sunrise, none with the weather unset — and nothing on it moves but the
+clock and the progress bars (owner, 2026-10-19: "i like e but without the
+distracting background"). Every redesign keeps every field the screen
+shows and changes only placement, order and styling (owner, 2026-10-19: "i
+dont want to collapse the information"). It is laid out for the appliance's 21-inch 1920×1080 display
 (owner, 2026-10-19), to be read from a couple of metres away (owner,
 2026-10-19: "the components are too small"): nothing is set below 16 px,
 and the figures that matter — the temperatures, the gauges, the countdown,
@@ -408,12 +418,12 @@ screen carries, and the owner's reversal of #70's "clock and weather only".
 _Avoid_: screensaver
 
 **Now Playing**:
-The Idle Screen's card of the song the Player holds (#344), a 2×1 Card
-Slot while it holds one — the Calendar with no events steps down to this
-week and next to make the room (moved out of the chips strip on
-2026-10-19, which it was too tall for): its thumbnail, title and channel, a progress bar
+The Idle Screen's chip of the song the Player holds (#344), in the dock
+under the grid while it holds one (in a Card Slot for a day on 2026-10-19,
+back in the dock with #352; pinning `music` still decides whether it
+shows): its thumbnail, title · channel, a progress bar
 with the time played and the length, a loop glyph while it loops, a pause
-glyph while paused, and the next three queued titles. It follows the
+glyph while paused, and the next three queued titles on one line. It follows the
 Player's once-a-second read, so nothing new crosses CDP for it. A song that
 ran out with nothing queued stays on it, shown ended, and `play` plays it
 again from the start. A tap pauses or plays it, on the pointer going down
@@ -422,30 +432,40 @@ ringing Timer takes its place.
 _Avoid_: mini player, media card
 
 **Card Slot**:
-A box of whole cells on the Idle Screen's grid — four columns of 445 px by
-two rows sharing the height between the header and the strip, on the
-1920×1080 canvas — that a card is handed and draws itself inside (owner,
-2026-10-19: "i plan on having more widgets and cards"; the recommended
-layout taken the same day). A card offers the sizes it can draw at (1×1,
-2×1, 1×2, 2×2), largest first. As many Pinned Cards are shown as the grid
+A box of whole cells on the Idle Screen's grid — three columns of 600 px by
+four rows sharing the canvas's height, the dock's row taken off while it
+shows, on the 1920×1080 canvas (#352) — that a card is handed and draws its
+pieces inside as glass tiles, one a cell, with the grid's gap between them,
+so the screen reads as one bento (owner, 2026-10-19: "i plan on having more
+widgets and cards"; the bento picked from the prototype's variants the same
+day). The top-left cell is the clock's, never a card's. The box itself has
+no fill. A card offers the sizes it can draw at, largest first: the weather
+1×3 (now, the hours, the days), 1×2, 1×1; the AI Usage 1×2 (rings, chart),
+1×1; the Calendar 1×2 (the month with entries) only while it has events,
+else 1×1 (this week and next); News 2×2 (the highlight beside Big News),
+1×2 (one over the other), 1×1; the Last Page 1×1; a note 1×1. As many Pinned Cards are shown as the grid
 holds before any of them takes a larger box (owner, 2026-10-19: "why is the
 calendar hidden now?" — the News card's 2×2 had pushed the event-less
 Calendar off); then each gets the largest that still fits, the cards with
 something to show sized first, so an empty one — the Calendar with no
 events this month — yields its room down to its smallest size, and a card
-that fits nowhere is left off. The boxes are then laid down in pinned order; fewer
-cards than columns are centred. A card clips at its box: its content never
-sizes the row, so nothing it holds can push the strip (the overlap the
-2026-10-19 screenshot found). The chips strip has one fixed height; a chip
-that does not fit wraps out of sight. Not yet built: a rotating Card Slot for
+that fits nowhere is left off. The boxes are laid down in pinned order a
+column at a time — or, when that order cannot hold every box, the cards
+with something to show first. A tile holds to its box: its words fit or
+step down, never sizing a row (the overlap the 2026-10-19 screenshot
+found). Not yet built: a rotating Card Slot for
 cards past what fits (deferred until pinned cards no longer fit).
 _Avoid_: widget, tile
 
 **Pinned Cards**:
-The Idle Screen's cards the owner chose in settings, in the order they
-read (weather, AI Usage, Calendar, Now Playing and News untouched); one
-left out is not shown. A card added after the list was saved (News, #346)
-joins its end once; unpinned after that, it stays off.
+The Idle Screen's cards the owner chose in settings, in the order they fill
+the grid's columns (untouched: weather, Calendar, Last Page, News, AI
+Usage, Now Playing — the order that puts the weather down the left, the
+Calendar and the Last Page over News in the middle and the AI Usage down
+the right, #352); one left out is not shown. A card added after the list
+was saved (News, #346) joins its end once; unpinned after that, it stays
+off. A list saved as the default from before the three-by-four grid is
+read as today's default.
 A card that has nothing to say — the weather unset or loading, the usage
 dashboard unreachable, no news yet — keeps a small Card Slot with its line.
 
@@ -454,15 +474,17 @@ The Idle Screen's card of AI providers' limits, read from the owner's
 usage dashboard on the LAN (an HTTP server outside this repo,
 `http://192.168.1.73:4321` by default, set in settings; empty hides it;
 2026-10-19 ask: "the line chart and the gauges for codex and claude").
-A tall Card Slot. Each shown provider gets a dot gauge drawn as that dashboard
-draws it: the dots fill as the window runs to its reset, the number is the
-share of the limit used, on a plate of the card so it reads as one shape;
-its other shown windows sit under it as bars. Up to two providers sit side
-by side over the last twelve hours of the charted windows as lines, a
-5-hour one solid, a longer one dashed; past two each provider is a row —
-gauge, name, reset, bars — sized to the card's share and the chart is left
-off. Either way the card says when the dashboard last refreshed, amber once
-that is over five minutes old. What it shows is
+Two tiles down the right of the grid (#352). Each shown provider is a
+ring in its tone (owner, 2026-10-19: "i like the ring progress bars"): the
+outer arc the share of the limit used, the number in the middle, a thin
+inner arc how much of the window has run to its reset — the two clocks the
+dashboard's dot gauge showed — then its name and plan and "7d · resets 1d
+1h". Its other shown windows are smaller rings beside it while the row
+holds three or fewer, else bars under it; four or five providers shrink
+their rings to stay in one row. Under them, the last twelve hours of the
+charted windows as lines over a faint fill, a dot where each ends, a
+5-hour one solid, a longer one dashed, and when the dashboard last
+refreshed, amber once that is over five minutes old. What it shows is
 chosen in settings the way the dashboard's ⚙ Metrics panel chooses it
 (2026-10-19 ruling: kept in Bing Bong, any of the dashboard's providers):
 which providers (Codex and Claude untouched), and per provider which
@@ -482,12 +504,13 @@ sized calender so that the events on the days can go within the date
 itself"): the locale's weeks, each day a box holding its entries — its
 bank holiday by name on green ("bank holidays in the UK marked", England
 and Wales's), then its events, an all-day one as a red bar and a timed one
-as a dot and its title, "+N more" past two — today's date in a red disc,
-the next bank holiday named in the header when it falls this month or
-next. A 2×2 Card Slot; a month with no events is drawn quiet (no hairlines
-between the days) and yields its Card Slot to cards with something to show —
-given a 2×1 it draws this week and next, given a 1×1 the month's numbers
-alone with a dot under a day with an entry. Bank holidays are computed, not
+as a dot and its title, "+N" beside the date past one — today's date in a
+red disc, the next bank holiday named in the header when it falls this
+month or next, else "No events" when there are none. A glass tile (#352):
+a 1×2 Card Slot while the month has events, the whole month with its
+entries; a month with no events asks for one cell and yields the rest to
+cards with something to show — in one cell it draws this week and next, a
+dot under a day with an entry. Bank holidays are computed, not
 fetched — the rules plus the proclaimed one-offs, matching
 gov.uk/bank-holidays.json 2019–2028; a new proclamation is added by hand.
 Events come from Calendar Sources — one per provider, each
@@ -505,14 +528,24 @@ ask: "i want to be in the know about what is going on in the world.
 specifically the world i interact with mostly"): a story belongs on it when
 something in one of the owner's circles jumped far above that circle's
 normal day and the owner has not been shown it yet, and what is still
-big. A Pinned Card offering 2×2, 2×1 and 1×1 Card Slots, the box deciding
-what shows: at 2×2 Today's Highlight with its Story Image large over Big
-News, at 2×1 Big News beside it, at 1×1 the highlight alone; with nothing
-in Big News the highlight takes the card, with no filler line. A Big News
-line is a story's Story Image as a thumbnail, its title and its number.
-Words show whole, never cut off midway: the highlight's step down to a
-floor, then its picture shrinks and goes behind them under a dark scrim;
-a Big News line the box cannot hold whole is left off. A tap on any
+big. A Pinned Card offering 2×2, 1×2 and 1×1 Card Slots, drawn as glass
+tiles (#352): at 2×2 Today's Highlight beside Big News, at 1×2 the
+highlight over Big News, at 1×1 the highlight alone; with nothing in Big
+News the highlight takes the whole box, with no filler line. The
+highlight is its Story Image, two chips — "Today's highlight" and the
+topic — its headline in two beats, then its number large, its comments,
+its source and site. A headline breaks into its lead, bold and never cut,
+and its tail, quiet (`leadAndTail`: at the first of ": ", ", and ",
+", with ", " — ", ", " at least fifteen characters in, the "and" or "with"
+kept; a GitHub repo's name over its description; else all lead) — so a
+long one reads in two beats rather than as a wall (owner, 2026-10-19: "the
+news currently looks like a big text wall"). A Big News line is a number,
+its Story Image as a thumbnail, its lead whole, its tail on one line with
+an ellipsis where it runs on — the one place a line is cut, by design —
+and its number in a pill. The highlight's words step down to a floor,
+then its picture shrinks and goes behind them under a dark scrim, then its
+tail goes to one line; a Big News line the box cannot hold whole is left
+off. A tap on any
 story, or its picture, opens it in the pane. An empty Interest Profile
 or a source with nothing yet keeps a small note. Kept deliberately short
 (2026-10-19: the owner felt overwhelmed by eleven headlines).
@@ -617,7 +650,8 @@ provider (a provider is a Calendar or AI Usage term)
 **Last Page**:
 The page the browser pane last showed — its address and title — kept in
 userData across restarts. While the app runs it is the live page; after a
-restart it is what the pane boots without. The Idle Screen names it, and
+restart it is what the pane boots without. The Idle Screen names it in a
+one-cell tile of its grid, the `lastPage` Pinned Card (#352), and
 `resume` (spoken "resume", "continue", "where was I", "last page", or the
 grammar's `resume`) comes back to it: a pane still on a page needs nothing
 reopened, so the Command names the page and fires no action; a pane that

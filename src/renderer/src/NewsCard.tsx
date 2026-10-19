@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { headline, hostOf, magnitudeLabel, magnitudeParts } from '../../core/news/news'
+import type { SlotSize } from '../../core/idle/slots'
+import { hostOf, leadAndTail, magnitudeLabel, magnitudeParts } from '../../core/news/news'
 import type { NewsHorizons } from '../../core/news/newsDesk'
 import { sourceTile } from '../../core/news/storyImage'
 import { useFitText, useWholeItems } from './useFit'
@@ -46,23 +47,42 @@ function StoryPicture({ picture, source, size }: { picture: string | null; sourc
   )
 }
 
-/** Big News: a story a row, its picture, its whole headline and its number (none for a feed's post), each a tap that opens it; a story the box would cut is left off whole. */
-function BigNews({ items }: { items: NewsHorizons['bigNews'] }) {
+/**
+ * Big News, a tile of its own: a story a numbered row — its picture as a
+ * thumbnail, the lead of its headline in full, the tail on one quiet line
+ * under it (an ellipsis where it runs on), its number in a pill (none for a
+ * feed's post) — each a tap that opens it; a story the box would cut is
+ * left off whole.
+ */
+function BigNews({ items, rows }: { items: NewsHorizons['bigNews']; rows: number }) {
   const list = useRef<HTMLOListElement>(null)
   useWholeItems(list, items)
   return (
-    <section className="idle-news-big" aria-label="Big news">
-      <h3 className="idle-news-list-head">Big news</h3>
+    <section className="idle-card idle-news-big" aria-label="Big news" style={{ gridRow: `span ${rows}` }}>
+      <h3 className="idle-kicker">Big news</h3>
       <ol ref={list}>
-        {items.map((item) => (
-          <li key={item.key}>
-            <button type="button" className="idle-news-item" aria-label={`${item.title}, ${magnitudeLabel(item)}. Open it`} {...opener(item.link)}>
-              <StoryPicture picture={item.picture} source={item.source} size="thumb" />
-              <span className="idle-news-item-title">{headline(item.title).title}</span>
-              <span className="idle-news-item-count">{magnitudeParts(item)?.count ?? ''}</span>
-            </button>
-          </li>
-        ))}
+        {items.map((item, index) => {
+          const { lead, tail } = leadAndTail(item.title)
+          const count = magnitudeParts(item)?.count
+          return (
+            <li key={item.key}>
+              <button type="button" className="idle-news-item" aria-label={`${item.title}, ${magnitudeLabel(item)}. Open it`} {...opener(item.link)}>
+                <span className="idle-news-rank">{index + 1}</span>
+                <StoryPicture picture={item.picture} source={item.source} size="thumb" />
+                <span className="idle-news-item-title">
+                  <span className="idle-news-item-lead">{lead}</span>
+                  {tail !== null ? (
+                    <>
+                      {' '}
+                      <span className="idle-news-item-tail">{tail}</span>
+                    </>
+                  ) : null}
+                </span>
+                {count !== undefined ? <span className="idle-news-pill">{count}</span> : null}
+              </button>
+            </li>
+          )
+        })}
       </ol>
     </section>
   )
@@ -71,47 +91,80 @@ function BigNews({ items }: { items: NewsHorizons['bigNews'] }) {
 const FIT_STAGES = ['snug', 'behind', 'over'] as const
 
 /**
- * The News card (CONTEXT.md), a Card Slot of the Idle Screen. Today's
- * Highlight with its picture large — the topic it matched, its title, and
- * the number that made it a story (a feed's post, counting nothing, has
- * none), with its source and site under them — then Big News, when
- * anything is big enough to be in it. The box decides what shows, by
- * container query on the slot (styles.css): at 2×2 Big News under the
- * highlight, at 2×1 beside it, at 1×1 the highlight alone; with no Big News
- * the highlight takes the whole card. The highlight's words draw to their
- * own box, stepped down until they show whole (useFitText) rather than cut
- * off midway, the picture taking the room they leave. Every story on the
- * card, its picture too, opens in the pane at a tap.
+ * Today's Highlight, a tile: its Story Image, then two chips — "Today's
+ * highlight" and the topic it matched — its headline in two beats, the
+ * lead bold and the tail quiet (leadAndTail), never cut; then the number
+ * that made it a story, large and light (a feed's post, counting nothing,
+ * has none), the comments, and the source and site. In a box wider than it
+ * is tall the picture sits beside the words, in any other above them. The
+ * words step their sizes down until they show whole (useFitText), the
+ * picture taking the room they leave; past that floor the picture shrinks,
+ * then goes behind the words under a dark scrim, then the tail is set on
+ * one line with an ellipsis, the lead still whole — only the longest
+ * headlines in a one-cell tile get that far.
  */
-export function NewsCard({ horizons }: { horizons: NewsHorizons }) {
+function Highlight({ horizons, span }: { horizons: NewsHorizons; span: SlotSize }) {
   const { story, topics, picture } = horizons.highlight
   const figure = magnitudeParts(story)
   const host = hostOf(story.link)
-  const { title, dek } = headline(story.title)
+  const { lead, tail } = leadAndTail(story.title)
   const words = useRef<HTMLSpanElement>(null)
-  // Past the words' floor the picture shrinks, then goes behind the words, before the description goes and the title is clamped: the words are what the card is read for.
-  useFitText(words, `${story.key} ${horizons.bigNews.length}`, FIT_STAGES)
+  useFitText(words, `${story.key} ${span.w}x${span.h}`, FIT_STAGES)
   return (
-    <div className="idle-card idle-news" data-big={horizons.bigNews.length > 0 ? 'some' : 'none'}>
-      <button type="button" className="idle-news-today" aria-label={`Today's highlight: ${story.title}, ${magnitudeLabel(story)}. Open it`} {...opener(story.link)}>
-        <StoryPicture picture={picture} source={story.source} size="large" />
-        <span ref={words} className="idle-news-words">
-          <span className="idle-news-kicker">Today’s highlight{topics.length > 0 ? ` · ${topics[0]}` : ''}</span>
-          <span className="idle-news-title">{title}</span>
-          {dek !== null ? <span className="idle-news-dek">{dek}</span> : null}
+    <button
+      type="button"
+      className="idle-card idle-news-today"
+      data-flow={span.w > span.h ? 'row' : 'column'}
+      style={{ gridColumn: `span ${span.w}`, gridRow: `span ${span.h}` }}
+      aria-label={`Today's highlight: ${story.title}, ${magnitudeLabel(story)}. Open it`}
+      {...opener(story.link)}
+    >
+      <StoryPicture picture={picture} source={story.source} size="large" />
+      <span ref={words} className="idle-news-words">
+        <span className="idle-news-chips">
+          <span className="idle-chip idle-chip--accent">Today’s highlight</span>
+          {topics.length > 0 ? <span className="idle-chip">{topics[0]}</span> : null}
+        </span>
+        <span className="idle-news-title">
+          <span className="idle-news-lead">{lead}</span>
+          {tail !== null ? (
+            <>
+              {' '}
+              <span className="idle-news-tail">{tail}</span>
+            </>
+          ) : null}
+        </span>
+        <span className="idle-news-stats">
           {figure !== null ? (
             <span className="idle-news-figure">
               <span className="idle-news-count">{figure.count}</span> <span className="idle-news-unit">{figure.unit}</span>
             </span>
           ) : null}
+          {story.comments !== null ? <span className="idle-news-comments">{story.comments.toLocaleString('en-GB')} comments</span> : null}
           <span className="idle-news-foot">
             <span className="idle-news-source">{story.source}</span>
-            {host !== '' ? <span className="idle-news-host">{host}</span> : null}
-            {story.comments !== null ? <span className="idle-news-comments">{story.comments.toLocaleString('en-GB')} comments</span> : null}
+            {host !== '' ? <span className="idle-news-host"> · {host}</span> : null}
           </span>
         </span>
-      </button>
-      {horizons.bigNews.length > 0 ? <BigNews items={horizons.bigNews} /> : null}
-    </div>
+      </span>
+    </button>
+  )
+}
+
+/**
+ * The News card (CONTEXT.md), tiles in its Card Slot: Today's Highlight
+ * and, when anything is big enough to be in it, Big News — side by side
+ * at 2×2, the highlight over Big News at 1×2, the highlight alone at 1×1.
+ * With no Big News the highlight takes the whole box. Every story on the
+ * card, its picture too, opens in the pane at a tap.
+ */
+export function NewsCard({ horizons, size }: { horizons: NewsHorizons; size: SlotSize }) {
+  const big = horizons.bigNews.length > 0 && size.w * size.h > 1
+  const span = !big ? size : size.w >= 2 ? { w: 1, h: size.h } : { w: 1, h: 1 }
+  return (
+    <section className="idle-tiles idle-news" aria-label="news" style={{ '--w': String(size.w), '--h': String(size.h) } as React.CSSProperties}>
+      <Highlight horizons={horizons} span={span} />
+      {big ? <BigNews items={horizons.bigNews} rows={span.h} /> : null}
+    </section>
   )
 }

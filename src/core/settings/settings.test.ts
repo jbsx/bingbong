@@ -221,4 +221,11 @@ describe('news sources (#348)', () => {
     expect(sanitizeSettings({ idleCards: ['calendar', 'weather'] }).idleCards).toEqual(['calendar', 'weather', 'news'])
     expect(sanitizeSettings({ idleCards: ['calendar', 'weather'], news: { topics: [] } }).idleCards).toEqual(['calendar', 'weather'])
   })
+
+  it('reads the default list from before the three-by-four grid as today’s default, the Last Page with it, and keeps any other order', () => {
+    const today = ['weather', 'calendar', 'lastPage', 'news', 'usage', 'music']
+    expect(sanitizeSettings({ idleCards: ['weather', 'usage', 'calendar', 'music', 'news'], news: { topics: [] } }).idleCards).toEqual(today)
+    expect(sanitizeSettings({ idleCards: ['weather', 'usage', 'calendar', 'music'] }).idleCards).toEqual(today)
+    expect(sanitizeSettings({ idleCards: ['usage', 'weather', 'calendar', 'music', 'news'], news: { topics: [] } }).idleCards).toEqual(['usage', 'weather', 'calendar', 'music', 'news'])
+  })
 })

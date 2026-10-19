@@ -94,23 +94,27 @@ describe('idle screen e2e: the Last Page and resume', () => {
     ).toBe(0)
   })
 
-  it('lays the pinned cards out in Card Slots that hold them, above the strip', async () => {
-    const geometry = await harness.dashboardEval<{ cards: string[]; overflowing: string[]; middleBottom: number; stripTop: number }>(`(() => {
-      const slots = [...document.querySelectorAll('.idle-slot')]
+  it('lays the pinned cards out in Card Slots, every tile holding its words inside the window', async () => {
+    await waitFor(async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('.idle-slot[data-card="news"] .idle-news')`)) ? true : undefined), {
+      timeoutMs: 10000,
+      intervalMs: 250,
+    })
+    const geometry = await harness.dashboardEval<{ cards: string[]; overflowing: string[] }>(`(() => {
+      const screen = document.querySelector('.idle-screen').getBoundingClientRect()
+      const tiles = [...document.querySelectorAll('.idle-screen .idle-card, .idle-screen .idle-tile--bare')]
       return {
-        cards: slots.map((slot) => slot.dataset.card),
-        overflowing: slots
-          .map((slot) => slot.firstElementChild)
-          .filter((card) => card.scrollHeight > card.clientHeight + 1 || card.scrollWidth > card.clientWidth + 1)
-          .map((card) => card.closest('.idle-slot').dataset.card),
-        middleBottom: document.querySelector('.idle-screen-middle').getBoundingClientRect().bottom,
-        stripTop: document.querySelector('.idle-screen-bottom').getBoundingClientRect().top,
+        cards: [...document.querySelectorAll('.idle-slot')].map((slot) => slot.dataset.card),
+        overflowing: tiles
+          .filter((tile) => {
+            const rect = tile.getBoundingClientRect()
+            return tile.scrollHeight > tile.clientHeight + 1 || tile.scrollWidth > tile.clientWidth + 1 || rect.right > screen.right + 1 || rect.bottom > screen.bottom + 1
+          })
+          .map((tile) => (tile.closest('.idle-slot')?.dataset.card ?? 'dock') + ' ' + tile.className),
       }
     })()`)
-    // The default pins, in order; the usage card is there only when the dashboard answers or fails.
-    expect(geometry.cards.filter((card) => card !== 'usage')).toEqual(['weather', 'calendar', 'news'])
+    // The default pins, in order; the usage card is there only when the dashboard answers or fails, the weather only once its city is set.
+    expect(geometry.cards.filter((card) => card !== 'usage')).toEqual(['weather', 'calendar', 'lastPage', 'news'])
     expect(geometry.overflowing).toEqual([])
-    expect(geometry.middleBottom).toBeLessThanOrEqual(geometry.stripTop)
   })
 
   it('names the Last Page on the idle screen, and a tap reopens it in the blank pane', async () => {

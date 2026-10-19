@@ -14,16 +14,18 @@ import { waitFor } from './waitFor'
 // weather fulfilled over CDP (the renderer fetches Open-Meteo itself), a
 // stand-in usage dashboard with BINGBONG_IDLE_SHOT_PROVIDERS providers
 // (default 3), and with BINGBONG_IDLE_SHOT_MUSIC=1 a song playing from the
-// YouTube stand-in so Now Playing takes its Card Slot — shot in dark and
-// light into BINGBONG_IDLE_SHOT_DIR (default a temp folder, printed). The
+// YouTube stand-in so Now Playing takes the dock, then a Timer beside it —
+// shot in dark and light into BINGBONG_IDLE_SHOT_DIR (default a temp
+// folder, printed). The
 // stand-in usage server also answers as Hacker News's front page, so the
 // News card holds Today's Highlight (#346), and news.json is seeded with a
 // fortnight's story history so Big News (#349) is full. The same server
 // stands in for the stories' pages and pictures (e2e/fixtures/news), so
 // every Story Image comes from a local file, one story left with its tile.
-// It also holds every Card Slot to its box at that size, and the News card
-// at 2×2, 2×1 and 1×1 in dark and light, with pictures and then with every
-// picture failed to its tile, and with no Big News.
+// It also checks the bento (#352) — the clock's cell and each card's box,
+// every tile holding its words, nothing under 16 px — and the News card at
+// 2×2 and 1×2 in dark and light, with pictures and then with every picture
+// failed to its tile, and with no Big News.
 // Gated: BINGBONG_IDLE_SHOT=1, so the plain e2e run skips it.
 
 const PROVIDERS = ['Codex', 'Claude', 'Kaggle', 'GLM', 'Grok']
@@ -215,7 +217,7 @@ describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review'
     )
     if (music) {
       await cli(harness, 'play fixture song', /^(playing: id=|No videos|.*can't be played|YouTube didn't|error:)/)
-      await waitFor(async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('.idle-slot .idle-music')`)) ? true : undefined), {
+      await waitFor(async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('.idle-dock .idle-music')`)) ? true : undefined), {
         timeoutMs: 15000,
         intervalMs: 250,
       })
@@ -229,21 +231,24 @@ describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review'
     await rm(userDataDir, { recursive: true, force: true }).catch(() => {})
   })
 
-  it('holds every card inside its Card Slot and the Card Slots above the strip at 1920×1080, the event-less Calendar beside the News card', async () => {
-    const geometry = await harness.dashboardEval<{ overflowing: string[]; middleBottom: number; stripTop: number; cards: string[] }>(`(() => {
-      const overflowing = [...document.querySelectorAll('.idle-slot > .idle-card')]
-        .filter((card) => card.scrollHeight > card.clientHeight + 1 || card.scrollWidth > card.clientWidth + 1)
-        .map((card) => card.closest('.idle-slot').dataset.card + ' ' + card.scrollHeight + '>' + card.clientHeight)
-      return {
-        overflowing,
-        middleBottom: document.querySelector('.idle-screen-middle').getBoundingClientRect().bottom,
-        stripTop: document.querySelector('.idle-screen-bottom').getBoundingClientRect().top,
-        cards: [...document.querySelectorAll('.idle-slot')].map((slot) => slot.dataset.card),
-      }
-    })()`)
+  it('lays the cards out as the bento at 1920×1080, every tile holding its words, nothing under 16 px', async () => {
+    const geometry = await screenGeometry()
     expect(geometry.overflowing).toEqual([])
-    expect(geometry.cards).toEqual(expect.arrayContaining(['weather', 'usage', 'calendar', 'news']))
-    expect(geometry.middleBottom).toBeLessThanOrEqual(geometry.stripTop)
+    expect(geometry.smallestText).toBeGreaterThanOrEqual(16)
+    // The clock bare in the top-left cell; weather down the left, the Calendar and the Last Page over News in the middle, usage down the right (#352).
+    expect(geometry.clock).toBe('1|1')
+    expect(geometry.slots).toEqual({
+      weather: '1 / span 1|2 / span 3',
+      calendar: '2 / span 1|1 / span 1',
+      lastPage: '2 / span 1|2 / span 1',
+      news: '2 / span 2|3 / span 2',
+      usage: '3 / span 1|1 / span 2',
+    })
+    expect(geometry.dock).toBe(music)
+    // Every provider's gauge a ring, and with two providers Claude's other window one too; with more, it is a bar under Claude.
+    expect(geometry.rings).toBe(count <= 2 ? count + 1 : count)
+    expect(geometry.bars).toBe(count <= 2 ? 0 : 1)
+    expect(geometry.glow).toBe('rain')
   })
 
   it('shoots the screen in dark and light', async () => {
@@ -251,17 +256,30 @@ describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review'
     for (const scheme of ['dark', 'light']) {
       await harness.cdp.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, session)
       await new Promise((resolve) => setTimeout(resolve, 600))
-      const { data } = await harness.cdp.send<{ data: string }>(
-        'Page.captureScreenshot',
-        { format: 'png', clip: { x: 0, y: 0, width: 1920, height: 1080, scale: 1 } },
-        session,
-      )
-      await writeFile(join(outDir, `idle-${count}${music ? '-music' : ''}-${scheme}.png`), Buffer.from(data, 'base64'))
+      await shoot(`idle-${count}${music ? '-music' : ''}-${scheme}.png`)
     }
     process.stdout.write(`idle screen shots in ${outDir}\n`)
   })
 
-  it('holds the News card to its box at 2×2, 2×1 and 1×1, with pictures and with every picture its tile', async () => {
+  it.runIf(music)('docks a running Timer beside Now Playing, the grid rows giving it room', async () => {
+    await harness.dashboardEval(`window.bingbong.assistant.submit('timer 25 minutes')`)
+    await harness.pressKey('pane', { key: 'L', code: 'KeyL', windowsVirtualKeyCode: 76, modifiers: 2 /* Ctrl */ | 8 /* Shift */ })
+    await waitFor(async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('.idle-dock .idle-timer') && !!document.querySelector('.idle-dock .idle-music')`)) ? true : undefined), {
+      timeoutMs: 10000,
+      intervalMs: 250,
+    })
+    await new Promise((resolve) => setTimeout(resolve, 600))
+    const geometry = await screenGeometry()
+    expect(geometry.overflowing).toEqual([])
+    expect(geometry.smallestText).toBeGreaterThanOrEqual(16)
+    for (const scheme of ['dark', 'light']) {
+      await harness.cdp.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, session)
+      await new Promise((resolve) => setTimeout(resolve, 600))
+      await shoot(`idle-${count}-music-timer-${scheme}.png`)
+    }
+  })
+
+  it('holds the News card to its box at 2×2 and 1×2, with pictures and with every picture its tile', async () => {
     await mkdir(outDir, { recursive: true })
     // Every shown story's picture is in main's cache before the card is looked at: a poll gathers them before it answers.
     await waitFor(
@@ -273,87 +291,125 @@ describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review'
           : undefined,
       { timeoutMs: 20000, intervalMs: 250 },
     )
-    // The grid gives News the box its sizes allow; each size is forced on its slot in turn, the card choosing what shows by container query.
-    const sizes: [number, number, string[]][] = [
-      [2, 2, ['Big news']],
-      [2, 1, ['Big news']],
-      [1, 1, []],
+    const defaults = await harness.dashboardEval<string[]>(`window.bingbong.settings.get().then((s) => s.idleCards)`)
+    // News pinned after the usage card finds only the right column's two cells left: it is drawn at 1×2, the highlight over Big News.
+    const orders: [string, string[]][] = [
+      ['2x2', defaults],
+      ['1x2', ['weather', 'calendar', 'lastPage', 'usage', 'news', 'music']],
     ]
-    for (const pictures of ['images', 'tiles']) {
-      if (pictures === 'tiles') {
-        // A picture that fails to load falls back to its source's tile: every one is made to fail.
-        await harness.dashboardEval(`(() => { for (const img of document.querySelectorAll('.idle-news img')) img.src = 'bingbong-news://image/missing.jpg' })()`)
-        await waitFor(async () => ((await harness.dashboardEval<number>(`document.querySelectorAll('.idle-news img').length`)) === 0 ? true : undefined), { timeoutMs: 5000, intervalMs: 100 })
-      }
-      for (const scheme of ['dark', 'light']) {
-        await harness.cdp.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, session)
-        for (const [w, h, lists] of sizes) {
-          await forceNewsSize(w, h)
-          const box = await newsBox()
-          const { data } = await harness.cdp.send<{ data: string }>(
-            'Page.captureScreenshot',
-            { format: 'png', clip: { x: box.x, y: box.y, width: box.width, height: box.height, scale: 1 } },
-            session,
-          )
-          await writeFile(join(outDir, `news-${w}x${h}-${scheme}-${pictures}.png`), Buffer.from(data, 'base64'))
-          expect(box.overflowing, `${w}×${h} ${scheme} ${pictures}`).toEqual([])
-          expect(box.lists, `${w}×${h}`).toEqual(lists)
-          if (lists.length > 0) expect(box.items).toBeGreaterThanOrEqual(2)
-          expect(box.smallestText, `${w}×${h} ${scheme} ${pictures}`).toBeGreaterThanOrEqual(16)
-          expect(box.title).toContain('Claude Code')
-          expect(box.highlightPicture).toBe(pictures === 'images' ? 'image' : 'tile')
+    try {
+      for (const pictures of ['images', 'tiles']) {
+        for (const [size, order] of orders) {
+          await pin(order)
+          await waitFor(async () => ((await harness.dashboardEval<string>(`(() => { const s = document.querySelector('.idle-slot[data-card="news"]').style; return s.gridColumn.split(' / ')[1].replace('span ', '') + 'x' + s.gridRow.split(' / ')[1].replace('span ', '') })()`)) === size ? true : undefined), {
+            timeoutMs: 5000,
+            intervalMs: 100,
+          })
+          if (pictures === 'tiles') {
+            // A picture that fails to load falls back to its source's tile: every one is made to fail.
+            await harness.dashboardEval(`(() => { for (const img of document.querySelectorAll('.idle-news img')) img.src = 'bingbong-news://image/missing.jpg' })()`)
+            await waitFor(async () => ((await harness.dashboardEval<number>(`document.querySelectorAll('.idle-news img').length`)) === 0 ? true : undefined), { timeoutMs: 5000, intervalMs: 100 })
+          }
+          for (const scheme of ['dark', 'light']) {
+            await harness.cdp.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, session)
+            await new Promise((resolve) => setTimeout(resolve, 400))
+            const box = await newsBox()
+            const { data } = await harness.cdp.send<{ data: string }>(
+              'Page.captureScreenshot',
+              { format: 'png', clip: { x: box.x, y: box.y, width: box.width, height: box.height, scale: 1 } },
+              session,
+            )
+            await writeFile(join(outDir, `news-${size}-${scheme}-${pictures}.png`), Buffer.from(data, 'base64'))
+            expect(box.overflowing, `${size} ${scheme} ${pictures}`).toEqual([])
+            expect(box.items, `${size} ${scheme} ${pictures}`).toBeGreaterThanOrEqual(size === '2x2' ? 3 : 1)
+            expect(box.smallestText, `${size} ${scheme} ${pictures}`).toBeGreaterThanOrEqual(16)
+            expect(box.lead).toContain('Claude Code')
+            expect(box.highlightPicture).toBe(pictures === 'images' ? 'image' : 'tile')
+          }
         }
       }
+    } finally {
+      await pin(defaults)
     }
-    await restoreNewsSize()
   })
 
   it('gives the highlight the whole card when Big News is empty', async () => {
     await harness.cdp.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'dark' }] }, session)
-    // What the card is with nothing in Big News: the list gone and the card marked so, as React renders it.
-    await harness.dashboardEval(`(() => { document.querySelector('.idle-news-big')?.remove(); document.querySelector('.idle-news').dataset.big = 'none' })()`)
-    for (const [w, h] of [
-      [2, 2],
-      [2, 1],
-    ]) {
-      await forceNewsSize(w, h)
-      const box = await newsBox()
-      const { data } = await harness.cdp.send<{ data: string }>('Page.captureScreenshot', { format: 'png', clip: { x: box.x, y: box.y, width: box.width, height: box.height, scale: 1 } }, session)
-      await writeFile(join(outDir, `news-${w}x${h}-dark-no-big-news.png`), Buffer.from(data, 'base64'))
-      expect(box.overflowing, `${w}×${h}`).toEqual([])
-      expect(box.highlightShare, `${w}×${h}`).toBeGreaterThan(0.95)
-    }
-    await restoreNewsSize()
+    // What the card is with nothing in Big News: the list gone and the highlight across the box beside its picture, as React renders it.
+    await harness.dashboardEval(`(() => {
+      document.querySelector('.idle-news-big')?.remove()
+      const today = document.querySelector('.idle-news-today')
+      today.style.gridColumn = 'span 2'
+      today.dataset.flow = 'row'
+    })()`)
+    await new Promise((resolve) => setTimeout(resolve, 400))
+    const box = await newsBox()
+    const { data } = await harness.cdp.send<{ data: string }>('Page.captureScreenshot', { format: 'png', clip: { x: box.x, y: box.y, width: box.width, height: box.height, scale: 1 } }, session)
+    await writeFile(join(outDir, `news-2x2-dark-no-big-news.png`), Buffer.from(data, 'base64'))
+    expect(box.overflowing).toEqual([])
+    expect(box.highlightShare).toBeGreaterThan(0.95)
   })
 
-  /** The News card's slot forced to a size: a 2-row box starts on the top row wherever the grid put the card, the cards it lands on hidden; the card refits its words a frame after the resize. */
-  async function forceNewsSize(w: number, h: number): Promise<void> {
-    await harness.dashboardEval(`(() => {
-      for (const other of document.querySelectorAll('.idle-slot:not([data-card="news"])')) other.style.visibility = 'hidden'
-      const slot = document.querySelector('.idle-slot[data-card="news"]')
-      slot.dataset.origin ??= slot.style.gridColumn + '|' + slot.style.gridRow
-      const [column, row] = slot.dataset.origin.split('|').map((span) => span.split(' / ')[0])
-      slot.style.gridColumn = column + ' / span ${w}'
-      slot.style.gridRow = (${h} === 2 ? '1' : row) + ' / span ${h}'
-    })()`)
-    await new Promise((resolve) => setTimeout(resolve, 300))
+  async function shoot(name: string): Promise<void> {
+    const { data } = await harness.cdp.send<{ data: string }>('Page.captureScreenshot', { format: 'png', clip: { x: 0, y: 0, width: 1920, height: 1080, scale: 1 } }, session)
+    await writeFile(join(outDir, name), Buffer.from(data, 'base64'))
   }
 
-  async function restoreNewsSize(): Promise<void> {
-    await harness.dashboardEval(`(() => {
-      const slot = document.querySelector('.idle-slot[data-card="news"]')
-      const [column, row] = slot.dataset.origin.split('|')
-      slot.style.gridColumn = column
-      slot.style.gridRow = row
-      for (const other of document.querySelectorAll('.idle-slot')) other.style.visibility = ''
+  /** The owner's pinned cards set as the settings page would, the screen re-laid out from them. */
+  async function pin(cards: string[]): Promise<void> {
+    await harness.dashboardEval(`window.bingbong.settings.get().then((s) => window.bingbong.settings.update({ ...s, idleCards: ${JSON.stringify(cards)} }))`)
+  }
+
+  /** The whole screen: where each card landed, every tile that cuts what it holds or leaves the canvas, the smallest text, the rings and bars, the glow. */
+  function screenGeometry() {
+    return harness.dashboardEval<{
+      overflowing: string[]
+      smallestText: number
+      clock: string
+      slots: Record<string, string>
+      dock: boolean
+      rings: number
+      bars: number
+      glow: string | null
+    }>(`(() => {
+      const screen = document.querySelector('.idle-screen').getBoundingClientRect()
+      const tiles = [...document.querySelectorAll('.idle-screen .idle-card, .idle-screen .idle-tile--bare')]
+      const overflowing = []
+      for (const tile of tiles) {
+        const name = (tile.closest('.idle-slot')?.dataset.card ?? 'dock') + ' ' + tile.className
+        const rect = tile.getBoundingClientRect()
+        if (tile.scrollHeight > tile.clientHeight + 1 || tile.scrollWidth > tile.clientWidth + 1) overflowing.push(name + ' ' + tile.scrollHeight + '>' + tile.clientHeight)
+        if (rect.right > screen.right + 1 || rect.bottom > screen.bottom + 1) overflowing.push(name + ' off the canvas')
+        const slot = tile.closest('.idle-slot')?.getBoundingClientRect()
+        if (slot && (rect.bottom > slot.bottom + 1 || rect.right > slot.right + 1)) overflowing.push(name + ' out of its slot')
+      }
+      for (const words of document.querySelectorAll('.usage-ring-item')) {
+        const tile = words.closest('.idle-card').getBoundingClientRect()
+        const rect = words.getBoundingClientRect()
+        if (rect.bottom > tile.bottom + 1 || rect.right > tile.right + 1) overflowing.push('ring ' + words.getAttribute('aria-label'))
+        const ring = words.querySelector('.usage-ring').getBoundingClientRect()
+        if (Math.min(ring.width, ring.height) < 72) overflowing.push('ring squeezed ' + words.getAttribute('aria-label'))
+      }
+      const texts = [...document.querySelectorAll('.idle-screen *')].filter((el) => el.checkVisibility() && [...el.childNodes].some((node) => node.nodeType === 3 && node.textContent.trim() !== ''))
+      const clock = document.querySelector('.idle-clock-tile')
+      const clockStyle = getComputedStyle(clock)
+      return {
+        overflowing,
+        smallestText: Math.min(...texts.map((el) => parseFloat(getComputedStyle(el).fontSize))),
+        clock: clockStyle.gridColumn + '|' + clockStyle.gridRow,
+        slots: Object.fromEntries([...document.querySelectorAll('.idle-slot')].map((slot) => [slot.dataset.card, slot.style.gridColumn + '|' + slot.style.gridRow])),
+        dock: !!document.querySelector('.idle-dock'),
+        rings: document.querySelectorAll('.usage-ring-item').length,
+        bars: document.querySelectorAll('.usage-bar').length,
+        glow: document.querySelector('.idle-screen').dataset.glow ?? null,
+      }
     })()`)
   }
 
-  /** The News card's box: what overflows or is cut, what shows, the smallest text on it, and the highlight's picture. */
+  /** The News card's box: what overflows or is cut, the Big News rows shown, the smallest text on it, and the highlight's picture. */
   function newsBox() {
     return harness.dashboardEval<{
       overflowing: string[]
-      lists: string[]
       items: number
       smallestText: number
       highlightPicture: 'image' | 'tile' | 'none'
@@ -362,41 +418,40 @@ describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review'
       height: number
       x: number
       y: number
-      title: string
+      lead: string
     }>(`(() => {
       const card = document.querySelector('.idle-slot[data-card="news"] .idle-news')
       const rect = card.getBoundingClientRect()
-      const today = card.querySelector('.idle-news-today').getBoundingClientRect()
+      const today = card.querySelector('.idle-news-today')
       const words = card.querySelector('.idle-news-words')
       const title = card.querySelector('.idle-news-title').getBoundingClientRect()
-      const figure = card.querySelector('.idle-news-figure').getBoundingClientRect()
+      const stats = card.querySelector('.idle-news-stats').getBoundingClientRect()
       const picture = card.querySelector('.idle-news-picture')
       const overflowing = []
-      if (card.scrollHeight > card.clientHeight + 1 || card.scrollWidth > card.clientWidth + 1) overflowing.push('card')
-      if (figure.bottom > words.getBoundingClientRect().bottom + 1 || title.bottom > figure.top + 1) overflowing.push('highlight')
-      if (words.dataset.fit === 'over') overflowing.push('highlight clamped')
+      for (const tile of card.querySelectorAll('.idle-card')) {
+        if (tile.scrollHeight > tile.clientHeight + 1 || tile.scrollWidth > tile.clientWidth + 1) overflowing.push(tile.className)
+      }
+      if (stats.bottom > words.getBoundingClientRect().bottom + 1 || title.bottom > stats.top + 1) overflowing.push('highlight')
+      const lead = card.querySelector('.idle-news-lead').getBoundingClientRect()
+      if (lead.bottom > stats.top + 1) overflowing.push('highlight lead cut')
       if (picture.checkVisibility() && picture.getBoundingClientRect().height < 40) overflowing.push('highlight picture squeezed')
-      const shown = [...card.querySelectorAll('.idle-news-big')].filter((list) => list.checkVisibility())
-      for (const list of shown) {
-        const box = list.getBoundingClientRect()
-        if (box.bottom > rect.bottom + 1 || box.right > rect.right + 1) overflowing.push(list.getAttribute('aria-label'))
-        const rows = list.querySelector('ol')
-        const cut = [...rows.children].filter((row) => !row.hidden && row.getBoundingClientRect().bottom > rows.getBoundingClientRect().bottom + 1)
-        if (cut.length > 0) overflowing.push(list.getAttribute('aria-label') + ' row cut')
+      const rows = card.querySelector('.idle-news-big ol')
+      const shown = rows ? [...rows.children].filter((row) => !row.hidden) : []
+      for (const row of shown) {
+        if (row.getBoundingClientRect().bottom > rows.getBoundingClientRect().bottom + 1) overflowing.push('big news row cut')
+        const lead = row.querySelector('.idle-news-item-lead')
+        if (lead.scrollWidth > lead.clientWidth + 1) overflowing.push('big news lead cut')
       }
       const texts = [...card.querySelectorAll('*')].filter((el) => el.checkVisibility() && [...el.childNodes].some((node) => node.nodeType === 3 && node.textContent.trim() !== ''))
-      const style = getComputedStyle(card)
       return {
         overflowing,
-        lists: shown.map((list) => list.getAttribute('aria-label')),
-        items: shown.reduce((sum, list) => sum + [...list.querySelectorAll('li')].filter((row) => !row.hidden).length, 0),
+        items: shown.length,
         smallestText: Math.min(...texts.map((el) => parseFloat(getComputedStyle(el).fontSize))),
         highlightPicture: !picture.checkVisibility() ? 'none' : picture.querySelector('img') ? 'image' : picture.dataset.tile !== undefined ? 'tile' : 'none',
-        highlightShare: today.height / (rect.height - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom)),
+        highlightShare: today.getBoundingClientRect().width / rect.width,
         width: rect.width, height: rect.height, x: rect.x, y: rect.y,
-        title: card.querySelector('.idle-news-title').textContent,
+        lead: card.querySelector('.idle-news-lead').textContent,
       }
     })()`)
   }
-
 })

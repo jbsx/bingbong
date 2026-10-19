@@ -4,7 +4,7 @@
 // set, so env stays the base layer.
 
 import { defaultUsagePrefs, sanitizeUsagePrefs, type UsagePrefs } from '../usage/usage'
-import { IDLE_CARD_IDS, sanitizeIdleCards, type IdleCardId } from '../idle/slots'
+import { IDLE_CARD_IDS, OLD_DEFAULT_IDLE_CARDS, sanitizeIdleCards, type IdleCardId } from '../idle/slots'
 import { defaultNewsFeeds, sanitizeNewsFeeds, type NewsFeed } from '../news/feeds'
 import { defaultInterestProfile, sanitizeInterestProfile, type InterestProfile } from '../news/interestProfile'
 
@@ -169,10 +169,15 @@ export function asAppearance(value: unknown): Appearance {
  * settings were saved before it existed — they have no `news` section — so
  * it is on by default for an owner who already ordered the others. Once
  * saved with the News section, a list without it means it was unpinned.
+ * A list that is the default from before the three-by-four grid (#352) is
+ * read as today's default, which adds the Last Page and orders the cards
+ * for the new grid; any other order is the owner's and stays.
  */
 function pinnedCards(record: Record<string, unknown>): IdleCardId[] {
-  const cards = sanitizeIdleCards(record.idleCards)
-  return record.news === undefined && !cards.includes('news') ? [...cards, 'news'] : cards
+  const saved = sanitizeIdleCards(record.idleCards)
+  const cards = record.news === undefined && !saved.includes('news') ? [...saved, 'news' as const] : saved
+  const oldDefault = cards.length === OLD_DEFAULT_IDLE_CARDS.length && cards.every((id, index) => id === OLD_DEFAULT_IDLE_CARDS[index])
+  return oldDefault ? [...IDLE_CARD_IDS] : cards
 }
 
 /** Parse anything (disk, IPC) into valid settings; unknown bits fall back to defaults. */
