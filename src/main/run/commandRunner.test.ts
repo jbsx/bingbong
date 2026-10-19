@@ -839,8 +839,8 @@ describe('a Command in flight', () => {
     expect(events.filter((event) => event.type === 'done').map((event) => (event as { outcome?: string }).outcome)).toEqual(['cancelled', 'done'])
   })
 
-  it('reports a browser failure as a failed tool result and a failed turn, with no error event', async () => {
-    const { browser, events, runner } = harness()
+  it('reports a browser failure as a failed tool result and a failed turn, with no error event, and its record says what threw', async () => {
+    const { browser, events, records, runner } = harness()
     browser.click = async () => {
       throw new Error('ref 9 refused')
     }
@@ -848,6 +848,8 @@ describe('a Command in flight', () => {
     expect(types(events)).toEqual(['command', 'status', 'tool_call', 'tool_result', 'display', 'done'])
     expect(events[3]).toMatchObject({ type: 'tool_result', ok: false, error: 'ref 9 refused' })
     expect(events[5]).toMatchObject({ type: 'done', outcome: 'failed' })
+    // The Feed is not kept: the decision record carries the message (post mortem 2026-10-19).
+    expect(records).toEqual([expect.objectContaining({ type: 'decision', verb: 'click', target: 9, error: 'ref 9 refused', ended: 'local_match' })])
   })
 
   it('refuses a blank line and publishes nothing', async () => {
@@ -1710,6 +1712,29 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
           return line
         }
       }
+
+      it('a pop-up the re-read finds gone is told as closed, so the next hop is not read as walled on the page asked for (post mortem 2026-10-19)', async () => {
+        const h = taskHarness()
+        const { browser, events, records, decision, runner } = h
+        coveredOnLanding(h)
+        let collects = 0
+        const collectPage = browser.collectPage.bind(browser)
+        browser.collectPage = async () => {
+          collects += 1
+          // The consent sheet goes with an animation: hop 1's collect still carries it, the re-read's does not.
+          if (collects === 3) uncovered(h, SEARCH_REFS)
+          return collectPage()
+        }
+        decision.script.push(answer('search', 'none', 's3-6'), withOutcome(answer('none'), 'in_the_way', 1), withOutcome(answer('none'), 'yes'))
+        await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
+        expect(commands(events).map((event) => event.action)).toEqual(['search latest elon musk tweet', 'the page moved: read again', 'done'])
+        // Hop 1 was read over the sheet; hop 2 is told it covered the landing and closed, and reads no dialog.
+        expect(decision.requests[1]!.state).toContain('a pop-up covers it: "Close", "Log in" and "Elon Musk"')
+        expect(decision.requests[2]!.state).toContain('; a pop-up covered it, and closed)')
+        expect(decision.requests[2]!.state).not.toContain('A dialog is open')
+        expect(failures(events)).toEqual([])
+        expect(decisions(records).map((record) => record.ended)).toEqual([undefined, undefined, 'done'])
+      })
 
       it('AC1: the hop clicks the sheet\'s Close instead of ending, its record says so, and the next hop is told the pop-up closed', async () => {
         const h = taskHarness()

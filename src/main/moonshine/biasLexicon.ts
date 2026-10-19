@@ -29,6 +29,14 @@ export const BIAS_LEXICON: readonly string[] = [
     'go forward',
     'backward',
     'reload',
+    // The dismiss phrases (#336): "close" was heard as "Closer." and
+    // "Clothes" over Truth Social's pop-up on 2026-10-19, and the first
+    // scrolled a Task to the cap.
+    'close',
+    'close it',
+    'close the pop-up',
+    'dismiss',
+    'pop-up',
     'quit',
     'restart',
     'pause',

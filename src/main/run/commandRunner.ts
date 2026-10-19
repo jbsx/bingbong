@@ -277,6 +277,8 @@ interface FireResult {
   readonly video?: string
   /** For a `play` search (#345): where its video came from. */
   readonly pick?: PickSource
+  /** The action threw: its message, for the record (post mortem 2026-10-19). */
+  readonly error?: string
 }
 
 /** How many hops in a row that change nothing end a Task (#336). */
@@ -978,7 +980,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       answerFailure(turnId, failureLineOf(name, message))
       inFlight = null
       publish({ type: 'done', turnId, outcome: 'failed', at: at() })
-      return ended('wall')
+      return { ...ended('wall'), error: message }
     } finally {
       release?.()
       releaseLanding?.()
@@ -1024,8 +1026,10 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     unchanged: number
     /** The sites it has searched (#341): one Site Scope search per site per Task. */
     readonly searched: string[]
-    /** The last hop fired, whose "Done so far" line waits for the page it left to be read, so it can tell the facts. */
-    pending?: { readonly command: Command; readonly page: CommandPage; readonly fired: FireResult }
+    /** The last hop fired, whose "Done so far" line waits for the page it left to be read, so it can tell the facts; `told` is the page it was told against before, when a re-read tells it again. */
+    pending?: { readonly command: Command; readonly page: CommandPage; readonly fired: FireResult; readonly told?: CommandPage }
+    /** The last action told in "Done so far", kept so a re-read (the page moved under the reading) tells it again against the page as it is then. */
+    last?: { readonly command: Command; readonly page: CommandPage; readonly fired: FireResult }
     /** Whether a reading was already read again because the page had moved under it: once per Task. */
     rechecked: boolean
     /** The Obstacles the Task stepped aside from (#354): each dialog closed once; the same one raised again is the wall. */
@@ -1109,6 +1113,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       ...(fired.landing !== undefined ? { landing: fired.landing } : {}),
       ...(fired.video !== undefined ? { video: fired.video } : {}),
       ...(fired.pick !== undefined ? { pick: fired.pick } : {}),
+      ...(fired.error !== undefined ? { error: fired.error } : {}),
     }
     if (ending !== null) {
       if (recordedAfterFiring(command.verb)) log({ ...record, ...landed, ended: ending })
@@ -1197,10 +1202,14 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       visit(task, page.url)
       if (task.pending !== undefined) {
         // The last action's "Done so far" line, in the facts of the page it left: what appeared, and whether a pop-up covers it.
-        const { command: last, page: before, fired } = task.pending
-        const facts = doneFacts(before, page, doneResult(before, fired))
+        const { command: last, page: before, fired, told } = task.pending
+        const found = doneFacts(before, page, doneResult(before, fired))
+        // Told again after a re-read (post mortem 2026-10-19): the pop-up the line named over a clear page is gone — closed by the collect's consent dismissal or by the page — and the line says so, or Jev reads a wall over a page with nothing in the way.
+        const retold = told?.dialog !== undefined && before.dialog === undefined && page.dialog === undefined && found.changed
+        const facts: DoneResult = retold ? { ...found, covered: true, closed: true } : found
         task.actions[task.actions.length - 1] = doneLine(last, before, facts)
         task.pending = undefined
+        task.last = { command: last, page: before, fired }
         // The action that raised a pop-up over a clear page (#354): set aside if the Task steps past it.
         task.raised = facts.changed && facts.covered === true ? { command: last, page: before } : undefined
       }
@@ -1252,6 +1261,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
           return endTask(task, 'superseded', hop + 1)
         }
         task.rechecked = true
+        // The last action's line is told again against the page the re-read collects.
+        if (task.last !== undefined) task.pending = { ...task.last, told: page }
         log(record)
         dropHop(turnId, task, hop, 'the page moved: read again', 'done', firedAt)
         continue

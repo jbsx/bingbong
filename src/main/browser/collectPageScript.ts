@@ -433,6 +433,9 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
     }
   }
   window.__bingbongDescribeElement = (el) => describeElement(el, currentDialogRoot())
+  // Whether a dialog root is open now, read in place — no collect — for a
+  // consent dismissal to wait until its sheet has left the page.
+  window.__bingbongDialogOpen = () => currentDialogRoot() !== null
   // The labels of the open dialog root's controls, read in place — no
   // collect, so the numbers the model holds stay put — for a blocked action
   // to ask whether a consent wall is what covers it (ADR 0061). Null when no

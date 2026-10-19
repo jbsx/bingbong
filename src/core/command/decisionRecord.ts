@@ -85,6 +85,8 @@ export interface DecisionRecord {
   readonly pick?: PickSource
   /** The hop stepped aside (#354): Jev read the pop-up as in the way, and the runner closed it instead of ending; `verb` and `target` are the dismissal's. */
   readonly stepAside?: true
+  /** The action threw: its message, so a failed Command explains itself here and not only in the Feed (post mortem 2026-10-19). */
+  readonly error?: string
 }
 
 /** Where a `play` search's video came from (#345): the Remembered Songs, or YouTube's results. */

@@ -151,7 +151,9 @@ const NAMED_APPEARANCES = 3
  * The facts of what an action changed, off the page it was read on and the
  * page it left: the labels of the controls that were not there before (a
  * pop-up's first), whether a pop-up covers the page that was clear, and
- * whether the pop-up that covered it closed.
+ * whether the pop-up that covered it closed. Both `covered` and `closed`
+ * at once is a line told again: the pop-up the action raised closed before
+ * the next action, by the page or a collect's consent dismissal.
  */
 export function doneFacts(before: CommandPage, after: CommandPage, result: DoneResult): DoneResult {
   if (!result.changed) return result
@@ -185,9 +187,11 @@ function changedFacts(result: Extract<DoneResult, { changed: true }>): string {
   const appeared = result.appeared ?? []
   if (result.opened !== undefined) {
     const opened = `opened ${shortAddress(result.opened)}`
-    return result.covered === true ? `${opened}; a pop-up covers it${appeared.length > 0 ? `: ${listOf(appeared)}` : ''}` : opened
+    if (result.covered !== true) return opened
+    return result.closed === true ? `${opened}; a pop-up covered it, and closed` : `${opened}; a pop-up covers it${appeared.length > 0 ? `: ${listOf(appeared)}` : ''}`
   }
-  if (result.closed === true) return 'the pop-up closed'
+  // Covered and closed at once: told again after a re-read found the pop-up the line named gone (post mortem 2026-10-19).
+  if (result.closed === true) return result.covered === true ? 'the address did not change; a pop-up appeared over the page, and closed' : 'the pop-up closed'
   if (result.covered === true) return `the address did not change; a pop-up appeared over the page${appeared.length > 0 ? `: ${listOf(appeared)}` : ''}`
   if (appeared.length > 0) return `the address did not change; ${listOf(appeared)} appeared`
   return 'the page changed'

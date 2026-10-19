@@ -119,7 +119,9 @@ Command acts on the pop-up itself, which fires; a reading with no next step
 and no sure yes ends `unsure` and says so ("I'm not sure this is it."). Sure
 is the Choice bar, 0.7. Either end is read against the page as it is now: a
 page that moved under the reading (another address or title, a pop-up
-opened or closed, a different count of refs) is read again, once per Task.
+opened or closed, a different count of refs) is read again, once per Task,
+and the last action's "Done so far" line is told again against that page:
+a pop-up it named that is gone "covered it, and closed".
 The same Jev call as the Command's reading: no round trip is added.
 _Avoid_: check, verification, judge, confirmation
 

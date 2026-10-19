@@ -553,6 +553,13 @@ describe('the Verdict: a hop is asked whether what was asked for is done', () =>
       expect(doneLine(click, COVERED, doneFacts(COVERED, PROFILE, { changed: true }))).toBe('click "Close" (the pop-up closed)')
     })
 
+    it('told again after a re-read found the pop-up gone: it covered the page, and closed (post mortem 2026-10-19)', () => {
+      expect(doneLine(click, PROFILE, { changed: true, opened: 'https://x.com/elonmusk/status/1', covered: true, closed: true })).toBe(
+        `${CLICKED} (opened x.com/elonmusk/status/1; a pop-up covered it, and closed)`,
+      )
+      expect(doneLine(click, PROFILE, { changed: true, covered: true, closed: true })).toBe(`${CLICKED} (the address did not change; a pop-up appeared over the page, and closed)`)
+    })
+
     it('keeps nothing changed as it was, whatever the page shows', () => {
       expect(doneLine(click, PROFILE, doneFacts(PROFILE, COVERED, { changed: false }))).toBe(`${CLICKED} (nothing changed)`)
     })

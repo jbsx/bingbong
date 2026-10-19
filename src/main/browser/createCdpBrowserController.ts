@@ -158,6 +158,15 @@ export const LANDING_CAP_MS = 3_000
 /** The poll between reads of a tab still landing after an aborted load (#308) — a wait on the tab, not pacing. */
 const STILL_POLL_MS = 100
 
+/**
+ * The most a consent dismissal waits, after its click, for the sheet to
+ * leave the page (post mortem 2026-10-19): Truth Social's TCF sheet closed
+ * with an animation that outlasted the readiness wait's first mutation, so
+ * the recollection still carried it and a Task was read over a wall that
+ * was already going. Polled in place at {@link STILL_POLL_MS}.
+ */
+export const DISMISSAL_GONE_MS = 1_000
+
 export interface CdpBrowserControllerDeps {
   cdp: CdpDebugger
   page: CdpPageDriver
@@ -516,7 +525,26 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     })()`)
     lastSnapshot = undefined
     await awaitReadiness('consent-dismiss')
+    if (clicked) await awaitDialogGone()
     return clicked ? consentDismissalLine(target.ref, truncateOutcomeText(target.label, 60)) : null
+  }
+
+  /** Wait, bounded by {@link DISMISSAL_GONE_MS}, until no dialog root is open: the dismissed sheet has left, and a recollection reads the page behind it. */
+  async function awaitDialogGone(): Promise<void> {
+    for (let waited = 0; waited < DISMISSAL_GONE_MS; waited += STILL_POLL_MS) {
+      if (!(await dialogOpenInPlace())) return
+      await settle('consent-gone', STILL_POLL_MS)
+    }
+  }
+
+  /** Whether a dialog root is open, read in place; a page that cannot be asked is taken as clear. */
+  async function dialogOpenInPlace(): Promise<boolean> {
+    try {
+      return (await evaluateInPage<unknown>(`(() => typeof window.__bingbongDialogOpen === 'function' ? window.__bingbongDialogOpen() : false)()`)) === true
+    } catch (error) {
+      reportFault('browser.createCdpBrowserController.dialogOpenInPlace', error)
+      return false
+    }
   }
 
   function dialogDetail(snapshot: PageSnapshot): string | null {

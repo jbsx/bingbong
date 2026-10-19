@@ -115,6 +115,8 @@ class FakeCdp implements CdpDebugger {
   /** What the in-place links helper answers (#303); null is a page that holds no helper. */
   pageLinks: unknown = null
   collectValues: unknown[] = []
+  /** What the in-place dialog-open probe answers, in turn; empty answers false (no dialog). */
+  dialogOpenValues: boolean[] = []
   /**
    * The page's two registries (ADR 0033), modelled by object identity over
    * the fixture's elements: what the last collect left in the page, and the
@@ -175,6 +177,7 @@ class FakeCdp implements CdpDebugger {
         return { result: { value: this.readyOutcome } } as T
       }
       if (expression.includes('/* FLASH_REF */')) return { result: { value: true } } as T
+      if (expression.includes('__bingbongDialogOpen')) return { result: { value: this.dialogOpenValues.length > 0 ? this.dialogOpenValues.shift() : false } } as T
       if (expression.includes('/* CLEAR_FOCUSED */')) return { result: { value: 'input[text]' } } as T
       if (this.evaluateException) return { exceptionDetails: { text: this.evaluateException } } as T
       if (expression === COLLECT_EXPRESSION && this.collectException) {
@@ -2614,6 +2617,35 @@ describe('createCdpBrowserController verbose sub-spans (#32)', () => {
     expect(records).toContainEqual(
       expect.objectContaining({ stage: 'browser-ready', detail: { action: 'consent-dismiss', outcome: 'mutation' } }),
     )
+  })
+
+  it('a consent dismissal waits for its sheet to leave before the post-dismissal recollection (post mortem 2026-10-19)', async () => {
+    const { records, subspans } = subspanHarness(true)
+    const wall = consentWallPage()
+    const cleared = { ...wall, dialogOpen: false, dialogText: '', elements: wall.elements.slice(2) }
+    const cdp = new FakeCdp(cleared)
+    cdp.collectValues = [wall, cleared]
+    // The sheet closes with an animation: still there on two polls, gone on the third.
+    cdp.dialogOpenValues = [true, true, false]
+    const { controller } = makeController({ cdp, subspans })
+
+    await subspans.runInTurn('turn-1', () => controller.readPage())
+
+    const stages = records.filter((record) => record.stage === 'browser-settle' || record.stage === 'browser-recollection').map((record) => record.detail)
+    expect(stages).toEqual([{ action: 'consent-gone', ms: 100 }, { action: 'consent-gone', ms: 100 }, { reason: 'post-dismissal' }])
+  })
+
+  it('a consent dismissal gives up waiting at its bound when the sheet stays', async () => {
+    const { records, subspans } = subspanHarness(true)
+    const wall = consentWallPage()
+    const cdp = new FakeCdp(wall)
+    cdp.dialogOpenValues = Array.from({ length: 40 }, () => true)
+    const { controller } = makeController({ cdp, subspans })
+
+    await subspans.runInTurn('turn-1', () => controller.readPage())
+
+    expect(records.filter((record) => record.stage === 'browser-settle')).toHaveLength(10)
+    expect(cdp.dialogOpenValues).toHaveLength(30)
   })
 
   it('emits nothing when the flag is off — the default log stays byte-identical', async () => {
