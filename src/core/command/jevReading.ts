@@ -1,9 +1,9 @@
 import type { DecisionChoiceAnswer, DecisionChoiceQuestion, DecisionNoulQuestion } from '../ports/decisionModel'
 import type { PageLink } from '../browser/snapshot'
 import { JEV_VERBS, PRESS_KEYS, describeCommand, pressKeyOf, targetLabel, verbTakesSlot, verbTakesTarget, type Command, type CommandPage, type CommandRef, type CommandVerb } from './command'
-import { isSearchLanding, pageAddressOf, resultLinksOf, wordsAfterVerb } from './localMatch'
+import { isSearchLanding, pageAddressOf, resultLinksOf, resultRefsOf, wordsAfterVerb } from './localMatch'
 import { isAddressShaped } from './openAddress'
-import { siteOf } from './siteScope'
+import { isWebEngineSearch, siteOf } from './siteScope'
 
 // One Jev call per Command the Local Match cannot settle (#324, ADR 0076).
 // The state is the transcript, the page's address and title and its
@@ -444,6 +444,43 @@ function mostProbableOpening(answer: DecisionChoiceAnswer, page: CommandPage, li
   })
 }
 
+/**
+ * The results a Web Engine's landing offers a hop to fall back on: the refs
+ * that are result links, and the result links further down — none at all
+ * when no result is among the refs. An engine's page read before its
+ * script drew the results shows its chrome alone — the Search button and
+ * box, the tabs, the footer's links off its host — and a hop that opened
+ * the most probable of those clicked Search, which re-submitted the words
+ * and reset the page, hop after hop to the cap (2026-10-19). On such a
+ * landing a hop opens a result or nothing. Off an engine every offered
+ * target stands, as before.
+ */
+function fallbackTargets(page: CommandPage, links: readonly OfferedLink[]): { refs: ReadonlySet<number> | null; links: readonly OfferedLink[] } {
+  if (!isWebEngineSearch(page.url)) return { refs: null, links }
+  const refs = new Set(resultRefsOf(page.refs, page.url).map((ref) => ref.ref))
+  return { refs, links: refs.size === 0 ? [] : links }
+}
+
+/** The most probable ref a later hop may fall back on: on a Web Engine's landing a result alone ({@link fallbackTargets}). */
+function mostProbableFallbackRef(answer: DecisionChoiceAnswer, page: CommandPage): number | null {
+  const { refs } = fallbackTargets(page, [])
+  return mostProbable(answer, (label) => {
+    const ref = offeredRef(label, page)
+    return ref !== null && (refs === null || refs.has(ref)) ? ref : null
+  })
+}
+
+/** {@link mostProbableOpening} for a later hop on a search landing: on a Web Engine's, a result or nothing ({@link fallbackTargets}). */
+function mostProbableFallbackOpening(answer: DecisionChoiceAnswer, page: CommandPage, links: readonly OfferedLink[]): Command | null {
+  const targets = fallbackTargets(page, links)
+  return mostProbable<Command>(answer, (label) => {
+    const ref = offeredRef(label, page)
+    if (ref !== null) return targets.refs === null || targets.refs.has(ref) ? { verb: 'click', target: ref, slot: null } : null
+    const link = linkOfLabel(label, targets.links)
+    return link === undefined ? null : { verb: 'navigate', target: null, slot: link.href }
+  })
+}
+
 /** The words the Slot answer names; the words after the verb when it names none. */
 function slotWords(answer: DecisionChoiceAnswer, text: string): string {
   const match = /^s(\d+)-(\d+)$/.exec(answer.choice)
@@ -472,8 +509,11 @@ export function readCommandAnswers(answers: CommandAnswers | HopAnswers, text: s
     // Past the first hop, off a search landing, a ref Jev barely offered
     // under a top `none` would walk the Task off the page it reached (as
     // #342 for an open): a click or a type acts only on the ref Jev names.
-    const offPage = hop !== undefined && hop.hop > 0 && !isSearchLanding(page.url)
-    target = offPage ? offeredRef(answers.target.choice, page) : mostProbableRef(answers.target, page)
+    // On a landing the most probable ref stands in for a top `none` — on a
+    // Web Engine's, a result alone, never its chrome (2026-10-19).
+    const later = hop !== undefined && hop.hop > 0
+    if (!later) target = mostProbableRef(answers.target, page)
+    else target = offeredRef(answers.target.choice, page) ?? (isSearchLanding(page.url) ? mostProbableFallbackRef(answers.target, page) : null)
     // A click or a type on a page with nothing to act on is no Command.
     if (target === null) return none
   }
@@ -503,12 +543,13 @@ export function readCommandAnswers(answers: CommandAnswers | HopAnswers, text: s
     }
     // Past the first hop the words were already acted on (#332): a hop
     // never searches again. On a search landing it opens the most probable
-    // target the hop offers, Jev often topping `none` over the right result;
+    // target the hop offers, Jev often topping `none` over the right result
+    // — on a Web Engine's landing a result, never the engine's own chrome;
     // off one the Task has reached a page and a target Jev barely offered
     // would overrun it (#342), so the hop has no next step — nor on a
     // landing with nothing to open.
     if (!isSearchLanding(page.url)) return none
-    return mostProbableOpening(answers.target, page, links) ?? none
+    return mostProbableFallbackOpening(answers.target, page, links) ?? none
   }
   if (verb === 'press') {
     const key = slot === null ? null : pressKeyOf(slot)

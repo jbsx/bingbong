@@ -14,7 +14,7 @@ import { pageReadPartLine } from '../../core/browser/pageText'
 import { NO_OBSERVABLE_CHANGE, PAGE_SIGNATURE_CHANGED, blockedActionHead } from '../../core/browser/actionOutcome'
 import { SPOKEN_FAILURES } from '../../core/command/spokenFailure'
 import { createSpeechCoordinator } from '../../core/tts/speechCoordinator'
-import { createCommandRunner, type CommandRunner, type CommandRunnerDeps } from './commandRunner'
+import { RESULTS_POLL_MS, RESULTS_WAIT_MS, createCommandRunner, type CommandRunner, type CommandRunnerDeps } from './commandRunner'
 import { createPlayer, type SongMemory } from '../music/player'
 import { ScriptedYouTube, videoItem } from '../music/scriptedYouTube'
 
@@ -132,6 +132,8 @@ function harness(options?: { decision?: null; learned?: string[]; speech?: Pick<
   const records: CommandLogRecord[] = []
   const asks: AskRecord[] = []
   const screenshots: string[] = []
+  /** Each wait on the clock the runner asked for, in ms: none passes. */
+  const sleeps: number[] = []
   const admitted: string[] = []
   const proposed: string[] = []
   const observed: string[] = []
@@ -165,6 +167,9 @@ function harness(options?: { decision?: null; learned?: string[]; speech?: Pick<
     saveScreenshot: async (path) => {
       screenshots.push(path)
     },
+    sleep: async (ms) => {
+      sleeps.push(ms)
+    },
     terms: {
       learned: () => learned,
       admit: (term) => {
@@ -181,7 +186,7 @@ function harness(options?: { decision?: null; learned?: string[]; speech?: Pick<
   const land = (landing: PageLanding): void => {
     for (const listener of landingListeners) listener(landing)
   }
-  return { browser, events, records, asks, screenshots, perf, decision, runner, observe, land, admitted, proposed, observed, setWall: (at: number) => (wall = at) }
+  return { browser, events, records, asks, screenshots, sleeps, perf, decision, runner, observe, land, admitted, proposed, observed, setWall: (at: number) => (wall = at) }
 }
 
 const types = (events: PipelineEvent[]): string[] => events.map((event) => event.type)
@@ -1770,6 +1775,62 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
       ['navigate', undefined],
       ['none', 'unsure'],
     ])
+  })
+
+  describe("the 2026-10-19 run: an engine's landing read before its script drew the results", () => {
+    // Three spoken "Open Elon Musk's latest tweet" in a row: hop 0 searched,
+    // the landing went quiet some 700 ms later with DuckDuckGo's chrome
+    // alone in view, Jev read search with none on top and the Search button
+    // at 0.03, and the hop clicked Search — which re-submitted the words
+    // and reset the page, so the next hop read chrome again, to the cap.
+    const CHROME: SnapshotRef[] = [
+      ref(1, 'link', 'DuckDuckGo home DuckDuckGo', { href: 'https://duckduckgo.com/' }),
+      ref(2, 'input', 'Search privately', { inputType: 'text' }),
+      ref(3, 'button', 'Search'),
+    ]
+    const jev = (probabilities: Record<string, number>) => ({ answers: { verb: choice('search', 0.46), target: choice('none', probabilities.none, probabilities), slot: choice('s3-6') } })
+
+    /** The landing's refs by how many polls the hop has waited: chrome until the results draw. */
+    function landingHarness(drawnAfterPolls: number) {
+      const h = taskHarness()
+      const collectPage = h.browser.collectPage.bind(h.browser)
+      h.browser.collectPage = async () => {
+        if (h.browser.snapshot.url === SEARCH) h.browser.snapshot = { ...h.browser.snapshot, refs: h.sleeps.length >= drawnAfterPolls ? SEARCH_REFS : CHROME }
+        return collectPage()
+      }
+      return h
+    }
+
+    it("a hop waits for a result to show among the landing's refs, polling, and reads the landing with its results", async () => {
+      const { browser, sleeps, decision, runner } = landingHarness(2)
+      decision.script.push(answer('search', 'none', 's3-6'), jev({ none: 0.93, 'ref-3': 0.03 }), answer('done'))
+      await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
+      // Two polls after the first empty read; the third read had the results, and ref 3 is the result, not the Search button.
+      expect(sleeps).toEqual([RESULTS_POLL_MS, RESULTS_POLL_MS])
+      expect(decision.requests[1]!.state).toContain('[3] link "Elon Musk (@elonmusk) / X" https://x.com/elonmusk')
+      expect(browser.clicks).toEqual([3])
+    })
+
+    it('a landing that shows no result within the wait is read as it stands: search over none opens nothing — not the Search button, not a footer link — and the Task ends unsure', async () => {
+      const { browser, events, sleeps, records, decision, runner } = landingHarness(Number.POSITIVE_INFINITY)
+      decision.script.push(answer('search', 'none', 's3-6'), jev({ none: 0.9, 'link-1': 0.07, 'ref-3': 0.03 }))
+      await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
+      expect(sleeps).toHaveLength(RESULTS_WAIT_MS / RESULTS_POLL_MS)
+      expect(browser.clicks).toEqual([])
+      expect(browser.navigations).toEqual([SEARCH])
+      expect(decisions(records).map((record) => [record.verb, record.ended])).toEqual([
+        ['search', undefined],
+        ['none', 'unsure'],
+      ])
+      expect(failures(events)).toEqual([expect.objectContaining({ text: "I'm not sure this is it." })])
+    })
+
+    it("a landing with its results in view, and a site's own page, are read as they stand: no wait", async () => {
+      const { sleeps, decision, runner } = taskHarness()
+      decision.script.push(answer('search', 'none', 's3-6'), answer('click', 'link-1'), answer('done'))
+      await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
+      expect(sleeps).toEqual([])
+    })
   })
 
   it('AC4: the fifth action ends the Task as cap', async () => {

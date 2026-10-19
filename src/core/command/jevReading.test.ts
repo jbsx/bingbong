@@ -265,6 +265,61 @@ describe('open past the first hop off a search landing (#342): with no target na
   })
 })
 
+describe("a Web Engine's landing read before its results drew (2026-10-19): a hop opens a result or nothing, never the engine's chrome", () => {
+  // The logged hop 1 of "Open Elon Musk's latest tweet": DuckDuckGo's page
+  // some 700 ms after the search, its script yet to draw a result. Jev read
+  // search with none on top and the Search button at 0.03 — and the hop
+  // clicked Search, which re-submitted the words, hop after hop to the cap.
+  const EMPTY: CommandPage = {
+    url: "https://duckduckgo.com/?q=Elon+Musk%27s+latest+tweet",
+    title: "Elon Musk's latest tweet at DuckDuckGo",
+    refs: [
+      { ref: 1, kind: 'link', label: 'DuckDuckGo home DuckDuckGo', href: 'https://duckduckgo.com/', inputType: null },
+      { ref: 2, kind: 'input', label: 'Search privately', href: null, inputType: 'text' },
+      { ref: 3, kind: 'button', label: 'Search', href: null, inputType: null },
+      { ref: 5, kind: 'link', label: 'All', href: "https://duckduckgo.com/?q=Elon+Musk%27s+latest+tweet&ia=web", inputType: null },
+    ],
+  }
+  const DRAWN: CommandPage = { ...EMPTY, refs: [...EMPTY.refs, { ref: 7, kind: 'link', label: 'Elon Musk (@elonmusk) / X', href: 'https://x.com/elonmusk', inputType: null }] }
+  const TEXT = "Open Elon Musk's latest tweet"
+  // The footer's links leave the engine's host, so the whole page offers them as results.
+  const footer = [{ label: 'iOS Browser', href: 'https://apps.apple.com/app/duckduckgo-private-browser/id663592361' }]
+  const hop = { hop: 1, visited: [EMPTY.url], actions: ["search Elon Musk's latest tweet (opened duckduckgo.com/?q=Elon+Musk%27s+latest+tweet)"], links: footer }
+  const target = (probabilities: Record<string, number>, top = 'none'): DecisionChoiceAnswer => ({ type: 'choice', choice: top, confidence: probabilities[top] ?? 0, probabilities })
+  const none = { verb: 'none', target: null, slot: null }
+
+  it('reads search with none on top and the Search button barely offered as no next step', () => {
+    expect(readCommandAnswers({ verb: choice('search', 0.46), target: target({ none: 0.93, 'ref-3': 0.03, 'ref-2': 0.02 }), slot: choice('s1-4') }, TEXT, EMPTY, hop)).toEqual(none)
+  })
+
+  it('opens no footer link either: with no result in view, nothing further down is one', () => {
+    expect(readCommandAnswers({ verb: choice('search'), target: target({ none: 0.6, 'link-1': 0.3, 'ref-3': 0.1 }), slot: choice('s1-4') }, TEXT, EMPTY, hop)).toEqual(none)
+  })
+
+  it('reads click or type with none on top the same way', () => {
+    expect(readCommandAnswers({ verb: choice('click'), target: target({ none: 0.8, 'ref-3': 0.15 }), slot: choice('none') }, TEXT, EMPTY, hop)).toEqual(none)
+    expect(readCommandAnswers({ verb: choice('type'), target: target({ none: 0.8, 'ref-2': 0.15 }), slot: choice('s1-4') }, TEXT, EMPTY, hop)).toEqual(none)
+  })
+
+  it('still acts on a ref Jev names as its top target, chrome or not', () => {
+    expect(readCommandAnswers({ verb: choice('search'), target: target({ 'ref-3': 0.7, none: 0.3 }, 'ref-3'), slot: choice('s1-4') }, TEXT, EMPTY, hop)).toEqual({ verb: 'click', target: 3, slot: null })
+  })
+
+  it('opens the most probable result once the results are drawn, never the chrome ranked above it', () => {
+    expect(readCommandAnswers({ verb: choice('search'), target: target({ none: 0.6, 'ref-3': 0.3, 'ref-7': 0.1 }), slot: choice('s1-4') }, TEXT, DRAWN, hop)).toEqual({ verb: 'click', target: 7, slot: null })
+    expect(readCommandAnswers({ verb: choice('click'), target: target({ none: 0.6, 'ref-1': 0.3, 'ref-7': 0.1 }), slot: choice('none') }, TEXT, DRAWN, hop)).toEqual({ verb: 'click', target: 7, slot: null })
+  })
+
+  it("leaves a site's own search page as it was: the most probable offered ref, whatever it is", () => {
+    const SITE_SEARCH: CommandPage = { url: 'https://x.com/search?q=elon', title: 'elon - Search / X', refs: [{ ref: 2, kind: 'link', label: 'Elon Musk', href: 'https://x.com/elonmusk', inputType: null }] }
+    expect(readCommandAnswers({ verb: choice('search'), target: target({ none: 0.9, 'ref-2': 0.1 }), slot: choice('s1-4') }, TEXT, SITE_SEARCH, { ...hop, visited: [SITE_SEARCH.url], links: [] })).toEqual({ verb: 'click', target: 2, slot: null })
+  })
+
+  it('leaves hop 0 as it was: the words are searched', () => {
+    expect(readCommandAnswers({ verb: choice('search'), target: target({ none: 0.93, 'ref-3': 0.03 }), slot: choice('s1-4') }, TEXT, EMPTY)).toEqual({ verb: 'search', target: null, slot: "Elon Musk's latest tweet" })
+  })
+})
+
 describe('click past the first hop off a search landing: with no target named, the Task ends where it stands', () => {
   // The logged hop 3 of "cross out the pop-up": hop 0 closed X's login
   // dialog, then each hop read click over a target of none and clicked the

@@ -91,6 +91,8 @@ describe('a Task whose hop 0 Early Fired (#328, AC6)', () => {
       askLog: { write: (record) => asks.push(record) },
       screenshotDir: () => '/shots',
       saveScreenshot: async () => {},
+      // The fake's landing shows no result: a hop's wait for one passes at once.
+      sleep: async () => {},
     })
     return { browser, records, asks, perf, decision, runner }
   }
@@ -169,6 +171,8 @@ describe('Early Fire through the voice session', () => {
       decisionLog: { write: (record) => records.push(record) },
       screenshotDir: () => '/shots',
       saveScreenshot: async () => {},
+      // The fake's landing shows no result: a hop's wait for one passes at once.
+      sleep: async () => {},
     })
     const vad = new FakeVad()
     const transcriber = createScriptedTranscriber(JSON.stringify([{ text: 'Scroll down.', partials: ['scroll', 'scroll down'] }]))

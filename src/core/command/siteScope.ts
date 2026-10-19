@@ -43,6 +43,17 @@ function isWebSearchPage(url: URL): boolean {
   return engine && WEB_SEARCH_PATH.test(url.pathname)
 }
 
+/**
+ * Whether an address is a Web Engine's web search: where a landing's
+ * results are the engine's script's to draw after the page is quiet, and
+ * where a hop opens a result or nothing (#342, 2026-10-19). False for an
+ * address that is none, or no address.
+ */
+export function isWebEngineSearch(url: string): boolean {
+  if (!URL.canParse(url)) return false
+  return isWebSearchPage(new URL(url))
+}
+
 /** The site a page is on, for a Site Scope; null for a blank page, a host with no dot and a Web Engine's web search. */
 export function siteOf(url: string): string | null {
   if (!isRealPage(url)) return null

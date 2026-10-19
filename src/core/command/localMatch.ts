@@ -285,11 +285,20 @@ export function pageAddressOf(href: string): string {
  * ads — are not results). Null off a search page, or past the last.
  */
 function nthResult(position: number, refs: readonly CommandRef[], url: string): number | null {
-  if (!isSearchLanding(url)) return null
+  return resultRefsOf(refs, url)[position - 1]?.ref ?? null
+}
+
+/**
+ * The results among a search page's refs (#328): the same rule as the
+ * Nth result and {@link resultLinksOf}. Empty off a search page — and on
+ * a Web Engine's landing read before its script drew the results, when
+ * the refs are the engine's chrome alone (2026-10-19).
+ */
+export function resultRefsOf(refs: readonly CommandRef[], url: string): CommandRef[] {
+  if (!isSearchLanding(url)) return []
   const engineHost = hostOf(url)
-  if (engineHost === null) return null
-  const results = refs.filter((ref) => isResultLink(ref, engineHost))
-  return results[position - 1]?.ref ?? null
+  if (engineHost === null) return []
+  return refs.filter((ref) => isResultLink(ref, engineHost))
 }
 
 /** The text to type and the field it names, split at the last "in"/"into"/"on" that leaves words on both sides. */

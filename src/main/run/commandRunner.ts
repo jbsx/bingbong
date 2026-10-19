@@ -8,7 +8,8 @@ import type { PerfTracer } from '../../core/perf/perfTracer'
 import { PRESS_KEYS, commandPageOf, describeCommand, targetLabel, commandKeepsIdle, type Command, type CommandPage } from '../../core/command/command'
 import { dismissCommand, isDismissPhrase } from '../../core/command/dismissDialog'
 import { COMMAND_HELP } from '../../core/command/help'
-import { carriesWordsPastAddress, headsAnotherVerb, isSearchLanding, localMatch } from '../../core/command/localMatch'
+import { carriesWordsPastAddress, headsAnotherVerb, isSearchLanding, localMatch, resultRefsOf } from '../../core/command/localMatch'
+import { isWebEngineSearch } from '../../core/command/siteScope'
 import {
   commandQuestions,
   commandState,
@@ -181,7 +182,20 @@ export interface CommandRunnerDeps {
   timer?: Pick<Timer, 'set' | 'cancel' | 'silence'>
   /** The Player (#343, CONTEXT.md), for `play` — and `stop` with nothing in flight, which pauses it; absent leaves `play` a failure. */
   player?: Pick<Player, 'perform' | 'pauseIfPlaying'>
+  /** A wait on the clock, for the results of a Web Engine's landing ({@link RESULTS_WAIT_MS}); tests make it immediate. */
+  sleep?(ms: number): Promise<void>
 }
+
+/**
+ * The most a hop waits for a Web Engine's landing to show a result among
+ * its refs (2026-10-19): the engine's script draws the results after the
+ * landing goes quiet — DuckDuckGo's about a second after — and a hop that
+ * read the page before then saw the engine's chrome alone, clicked its
+ * Search button, which re-submitted the words and reset the page, and
+ * read chrome again next hop, to the cap. Polled at {@link RESULTS_POLL_MS}.
+ */
+export const RESULTS_WAIT_MS = 3_000
+export const RESULTS_POLL_MS = 250
 
 /** How much of a Page Read the Feed card shows. */
 const DISPLAY_LIMIT = 4_000
@@ -383,6 +397,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
 
   const at = (): number => deps.now()
   const monotonic = (): number => tracer?.now() ?? at()
+  const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)))
 
   function log(record: CommandLogRecord): void {
     try {
@@ -1096,6 +1111,23 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     publish({ type: 'done', turnId, outcome, at: at() })
   }
 
+  /**
+   * A Web Engine's landing once it shows a result among its refs
+   * ({@link RESULTS_WAIT_MS}): read again each poll until one does, the
+   * wait runs out, or the Task is superseded. Any other page — a site's
+   * own, a landing with a dialog over it — is taken as it stands.
+   */
+  async function withResults(task: Task, page: CommandPage): Promise<CommandPage> {
+    let current = page
+    for (let polls = Math.floor(RESULTS_WAIT_MS / RESULTS_POLL_MS); polls > 0; polls -= 1) {
+      if (!isWebEngineSearch(current.url) || !isSearchLanding(current.url) || current.dialog !== undefined || resultRefsOf(current.refs, current.url).length > 0) break
+      await sleep(RESULTS_POLL_MS)
+      if (superseded(task)) break
+      current = await collectPage(null)
+    }
+    return current
+  }
+
   /** A search landing's whole-page links (#328), where its results below the fold are; none when they cannot be read. */
   async function resultPageLinks(turnId: string): Promise<readonly PageLink[]> {
     try {
@@ -1117,7 +1149,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       const spoken = task.source === 'spoken'
       // The hop is being read: the Task is running, and abort reaches it.
       reading = { turnId, submission: task.submission }
-      const page = superseded(task) ? blankPage(browser) : await collectPage(null)
+      const page = superseded(task) ? blankPage(browser) : await withResults(task, await collectPage(null))
       visit(task, page.url)
       if (task.pending !== undefined) {
         // The last action's "Done so far" line, in the facts of the page it left: what appeared, and whether a pop-up covers it.
