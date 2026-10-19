@@ -155,12 +155,30 @@ function WeatherCard({ report }: { report: WeatherReport }) {
   )
 }
 
-/** A Sunday, for naming the weekday columns in the locale's own narrow letters. */
+/** A Sunday, for naming the weekday columns in the locale's own short names. */
 const A_SUNDAY = new Date(2026, 0, 4)
 
-function weekdayLetter(weekday: number): string {
+function weekdayName(weekday: number): string {
   const date = new Date(A_SUNDAY.getFullYear(), A_SUNDAY.getMonth(), A_SUNDAY.getDate() + weekday)
-  return date.toLocaleDateString([], { weekday: 'narrow' })
+  return date.toLocaleDateString([], { weekday: 'short' })
+}
+
+/** How many entries a day's cell shows — its holiday counted — before "+N more". */
+const DAY_ENTRIES = 2
+
+/**
+ * One entry in a day's cell: an all-day event as a filled bar, a timed one
+ * as a dot and its title — the cell is too narrow to spend on the hour,
+ * which the label carries and Up Next shows for today.
+ */
+function DayEntry({ event }: { event: CalendarEvent }) {
+  if (event.allDay) return <span className="idle-cal-entry idle-cal-entry--allday">{event.title}</span>
+  const start = new Date(event.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  return (
+    <span className="idle-cal-entry idle-cal-entry--timed" title={`${start} ${event.title}`}>
+      {event.title}
+    </span>
+  )
 }
 
 function isWeekend(weekday: number): boolean {
@@ -174,10 +192,12 @@ function eventTime(event: CalendarEvent, now: Date): string {
 }
 
 /**
- * The Calendar (CONTEXT.md), beside the clock: this month in the locale's
- * weeks, today in a red disc, weekends quieter, England and Wales's bank
- * holidays tinted with the next one named under the month, and a dot under
- * any day a source has events on — none is wired yet.
+ * The Calendar (CONTEXT.md), a card beside the weather and the AI Usage: a
+ * month view in the locale's weeks whose days are boxes big enough to hold
+ * their entries — England and Wales's bank holiday by name in green, then
+ * the day's events (none until a source is wired), "+N more" past two.
+ * Today's date in a red disc, weekends quieter, the next bank holiday named
+ * in the header.
  */
 function MonthCalendar({ now, weekStart, events }: { now: Date; weekStart: number; events: readonly CalendarEvent[] }) {
   // This year's and next, so December's trailing days and its "next" reach into January.
@@ -186,55 +206,55 @@ function MonthCalendar({ now, weekStart, events }: { now: Date; weekStart: numbe
   const monthName = new Date(grid.month).toLocaleDateString([], { month: 'long' })
   const coming = nextHoliday(now, holidays)
   return (
-    <section className="idle-cal" aria-label={`calendar: ${monthName} ${now.getFullYear()}`}>
+    <section className="idle-card idle-cal" aria-label={`calendar: ${monthName} ${now.getFullYear()}`}>
       <header className="idle-cal-head">
         <span className="idle-cal-month">{monthName}</span>
         <span className="idle-cal-year">{now.getFullYear()}</span>
+        {coming !== null ? (
+          <span className="idle-cal-holiday" aria-label={`next bank holiday: ${coming.title}, ${holidayDate(coming.date, now)}`}>
+            <span className="idle-cal-swatch" aria-hidden="true" />
+            <span className="idle-cal-holiday-title">{coming.title}</span>
+            <span className="idle-cal-holiday-date">{holidayDate(coming.date, now)}</span>
+          </span>
+        ) : null}
       </header>
       <div className="idle-cal-grid" role="grid">
-        <div className="idle-cal-row" role="row">
+        <div className="idle-cal-weekdays" role="row">
           {grid.weekdays.map((weekday) => (
             <span key={weekday} role="columnheader" className={isWeekend(weekday) ? 'idle-cal-weekday idle-cal-weekend' : 'idle-cal-weekday'}>
-              {weekdayLetter(weekday)}
+              {weekdayName(weekday)}
             </span>
           ))}
         </div>
         {grid.weeks.map((week) => (
-          <div key={week[0].start} className="idle-cal-row" role="row">
+          <div key={week[0].start} className="idle-cal-week" role="row">
             {week.map((day, column) => {
               const className = [
                 'idle-cal-day',
                 isWeekend(grid.weekdays[column]) ? 'idle-cal-weekend' : '',
+                day.inMonth ? '' : 'idle-cal-day--outside',
                 day.isToday ? 'idle-cal-day--today' : '',
-                day.inMonth && day.holiday !== null ? 'idle-cal-day--holiday' : '',
+                day.holiday !== null ? 'idle-cal-day--holiday' : '',
               ]
                 .filter(Boolean)
                 .join(' ')
-              const label = [String(day.day), day.holiday, day.events > 0 ? `${day.events} events` : null].filter(Boolean).join(', ')
+              const entries = day.holiday !== null ? DAY_ENTRIES - 1 : DAY_ENTRIES
+              const more = day.events.length - entries
+              const label = [String(day.day), day.holiday, ...day.events.map((event) => event.title)].filter(Boolean).join(', ')
               return (
-                <span
-                  key={day.start}
-                  role="gridcell"
-                  className={className}
-                  aria-current={day.isToday ? 'date' : undefined}
-                  aria-label={day.inMonth ? label : undefined}
-                  title={day.inMonth && day.holiday !== null ? day.holiday : undefined}
-                >
-                  {day.inMonth ? day.day : null}
-                  {day.inMonth && day.events > 0 ? <span className="idle-cal-dot" aria-hidden="true" /> : null}
-                </span>
+                <div key={day.start} role="gridcell" className={className} aria-current={day.isToday ? 'date' : undefined} aria-label={label}>
+                  <span className="idle-cal-num">{day.day}</span>
+                  {day.holiday !== null ? <span className="idle-cal-entry idle-cal-entry--holiday">{day.holiday}</span> : null}
+                  {day.events.slice(0, more > 0 ? entries - 1 : entries).map((event) => (
+                    <DayEntry key={`${event.source}:${event.id}`} event={event} />
+                  ))}
+                  {more > 0 ? <span className="idle-cal-more">+{more + 1} more</span> : null}
+                </div>
               )
             })}
           </div>
         ))}
       </div>
-      {coming !== null ? (
-        <p className="idle-cal-holiday" aria-label={`next bank holiday: ${coming.title}, ${holidayDate(coming.date, now)}`}>
-          <span className="idle-cal-swatch" aria-hidden="true" />
-          <span className="idle-cal-holiday-title">{coming.title}</span>
-          <span className="idle-cal-holiday-date">{holidayDate(coming.date, now)}</span>
-        </p>
-      ) : null}
     </section>
   )
 }
@@ -411,8 +431,8 @@ function TimerCard({ timer }: { timer: Exclude<TimerState, { status: 'off' }> })
 
 /**
  * The at-rest screen (T11): the smart-display half of the appliance. Clock
- * and date beside the Calendar's month, the weather with today's range and
- * the coming hours, the Timer and the next event
+ * and date, the weather with today's range and the coming hours beside the
+ * AI Usage and the Calendar's month, the Timer and the next event
  * when one is set, and the Last Page with its way back — never a Feed
  * Entry (#70). Mounts in place
  * of the whole dashboard while nothing is happening — App's gate keeps it
@@ -424,6 +444,30 @@ function TimerCard({ timer }: { timer: Exclude<TimerState, { status: 'off' }> })
  * Command that never needs the pane is heard and performed (the Timer, a
  * Stop), so the ear and the reading show here — nothing at rest.
  */
+/** The display the Idle Screen is laid out for: the appliance's 21-inch 16:9 monitor. */
+const DESIGN_WIDTH = 1920
+const DESIGN_HEIGHT = 1080
+
+function fitZoom(): number {
+  return Math.min(1, window.innerWidth / DESIGN_WIDTH, window.innerHeight / DESIGN_HEIGHT)
+}
+
+/**
+ * The Idle Screen's scale on a window smaller than the display it is laid
+ * out for: the same layout, shrunk to fit, so a 1280×800 window shows the
+ * appliance's screen rather than its cards wrapping off the bottom. 1 on
+ * the display itself and anything larger.
+ */
+function useFitZoom(): number {
+  const [zoom, setZoom] = useState(fitZoom)
+  useEffect(() => {
+    const refit = (): void => setZoom(fitZoom())
+    window.addEventListener('resize', refit)
+    return () => window.removeEventListener('resize', refit)
+  }, [])
+  return zoom
+}
+
 function IdleStatus({ status, hint }: { status: OrbStatus; hint: VoiceHint | null }) {
   if (status === 'idle') return null
   return (
@@ -467,21 +511,21 @@ export function IdleScreen({
   const weekStart = weekStartOf(navigator.language)
   const events = useCalendarEvents(new Date(now.getFullYear(), now.getMonth(), 1).getTime(), weekStart)
   const next = upNext(now, events)
+  const zoom = useFitZoom()
+  // Zoomed, the screen is laid out at the size it would have unzoomed, so it still fills the window.
+  const fit = zoom < 1 ? { zoom, width: `${window.innerWidth / zoom}px`, height: `${window.innerHeight / zoom}px` } : undefined
 
   return (
-    <div className="idle-screen" aria-label="idle screen">
+    <div className="idle-screen" aria-label="idle screen" style={fit}>
       {/* The window's drag region while the Toolbar is unmounted (ADR
           0012) — invisible, top strip only, never covers the clock. */}
       <div className="idle-drag-strip" aria-hidden="true" />
       <IdleStatus status={status} hint={hint} />
       <div className="idle-screen-top">
-        <div className="idle-time">
-          <p className="idle-clock" aria-label="clock">
-            {formatClock(now)}
-          </p>
-          <p className="idle-date">{formatDate(now)}</p>
-        </div>
-        <MonthCalendar now={now} weekStart={weekStart} events={events} />
+        <p className="idle-clock" aria-label="clock">
+          {formatClock(now)}
+        </p>
+        <p className="idle-date">{formatDate(now)}</p>
       </div>
       <div className="idle-screen-middle">
         {weather.status === 'ready' ? (
@@ -498,6 +542,7 @@ export function IdleScreen({
             Usage dashboard unreachable
           </p>
         ) : null}
+        <MonthCalendar now={now} weekStart={weekStart} events={events} />
       </div>
       <div className="idle-screen-bottom">
         {timer.status !== 'off' ? <TimerCard timer={timer} /> : null}

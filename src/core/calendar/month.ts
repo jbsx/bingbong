@@ -11,8 +11,8 @@ export interface CalendarDay {
   /** False for the leading and trailing days of the neighbouring months. */
   readonly inMonth: boolean
   readonly isToday: boolean
-  /** How many events touch this day. */
-  readonly events: number
+  /** The events touching this day, in the order given. */
+  readonly events: readonly CalendarEvent[]
   /** The public holiday this day is, by name; null on an ordinary day. */
   readonly holiday: string | null
 }
@@ -42,7 +42,7 @@ export function monthRange(now: Date, weekStart: number): CalendarRange {
 
 /**
  * The month `now` falls in as whole weeks starting on `weekStart`, today
- * marked, each day's events counted and its holiday named. Days are built
+ * marked, each day given its events and its holiday named. Days are built
  * from the local calendar, never by adding 24 hours, so a daylight-saving
  * change cannot shift a cell.
  */
@@ -70,7 +70,7 @@ export function monthGrid(
       day: date.getDate(),
       inMonth: date.getMonth() === month,
       isToday: start === today,
-      events: events.filter((event) => event.start < end && event.end > start).length,
+      events: events.filter((event) => event.start < end && event.end > start),
       holiday: holidayOn.get(localDateKey(start)) ?? null,
     })
   }

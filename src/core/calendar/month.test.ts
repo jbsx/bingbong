@@ -50,7 +50,7 @@ describe('monthGrid', () => {
       event('trip', new Date(2026, 9, 20), new Date(2026, 9, 22), true),
       event('late', new Date(2026, 9, 19, 23), new Date(2026, 9, 20, 1)),
     ]
-    const days = new Map(monthGrid(now, 1, events).weeks.flat().map((day) => [day.start, day.events]))
+    const days = new Map(monthGrid(now, 1, events).weeks.flat().map((day) => [day.start, day.events.length]))
     expect(days.get(new Date(2026, 9, 18).getTime())).toBe(0)
     expect(days.get(new Date(2026, 9, 19).getTime())).toBe(2)
     expect(days.get(new Date(2026, 9, 20).getTime())).toBe(2)

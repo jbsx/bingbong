@@ -364,14 +364,15 @@ or closing it (owner ruling 2026-10-18, #334).
 _Avoid_: activity bar, sidebar, activity sidebar
 
 **Idle Screen**:
-What renders while nothing is happening: the clock and date with the
-Calendar's month beside them, the weather
+What renders while nothing is happening: the clock and date, the weather
 (the current conditions, today's high, low, rain chance and sun times, and
 the six coming hours, all in the city's own clock — the sky as a colored
 glyph, every temperature in its hue from blue through green to red, rain in
-blue, so the day reads from across the room), the AI Usage card beside
-the weather, the Timer when one is set, today's next event when the
-Calendar has one, and the Last Page with its way back. Never shows Feed Entries (#70); never comes up over a running
+blue, so the day reads from across the room), the AI Usage card and the
+Calendar beside the weather, the Timer when one is set, today's next event when the
+Calendar has one, and the Last Page with its way back. It is laid out for
+the appliance's 21-inch 1920×1080 display (owner, 2026-10-19); a smaller
+window shows the same layout scaled down to fit. Never shows Feed Entries (#70); never comes up over a running
 Command, an open mic or the settings page. Once up it stays up through the
 voice half and the pipeline — the ear opening, a heard line, a reading —
 with the Status Capsule shown on it while they run, so a Command that never
@@ -407,13 +408,17 @@ Read-only: a tap only wakes the dashboard.
 _Avoid_: quota, billing
 
 **Calendar**:
-The month on the Idle Screen, right of the clock (2026-10-19 ask: "have a
-calendar in the idle screen"): the locale's weeks, today in a red disc,
-England and Wales's bank holidays in a green disc with the next one named
-under the month ("bank holidays in the UK marked"), a dot under any day
-with events. It is sized for the appliance's 21-inch 1920×1080 display,
-growing with the screen's height and still fitting 1280×800, and hidden
-on a window too narrow to clear the clock. Bank holidays are computed, not
+A month view on the Idle Screen, a card in the row with the weather and
+the AI Usage (2026-10-19 asks: "have a calendar in the idle screen", then
+"in a card by the ai usage dashboard and the weather widget", "a proper
+sized calender so that the events on the days can go within the date
+itself"): the locale's weeks, each day a box holding its entries — its
+bank holiday by name on green ("bank holidays in the UK marked", England
+and Wales's), then its events, an all-day one as a red bar and a timed one
+as a dot and its title, "+N more" past two — today's date in a red disc,
+the next bank holiday named in the header. Made for the appliance's
+21-inch 1920×1080 display, where all three cards sit in one row; a window
+too narrow for three wraps the Calendar under them. Bank holidays are computed, not
 fetched — the rules plus the proclaimed one-offs, matching
 gov.uk/bank-holidays.json 2019–2028; a new proclamation is added by hand.
 Events come from Calendar Sources — one per provider, each

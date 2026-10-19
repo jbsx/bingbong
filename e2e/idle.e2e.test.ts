@@ -46,8 +46,11 @@ describe('idle screen e2e: the Last Page and resume', () => {
       `({ month: new Date().toLocaleDateString([], { month: 'long' }), day: String(new Date().getDate()) })`,
     )
     expect(month).toBe(expected.month)
-    expect(await harness.dashboardEval<string>(`document.querySelector('.idle-cal [aria-current="date"]')?.textContent ?? ''`)).toBe(expected.day)
-    expect(await harness.dashboardEval<number>(`document.querySelectorAll('.idle-cal-dot, .idle-upnext').length`)).toBe(0)
+    expect(await harness.dashboardEval<string>(`document.querySelector('.idle-cal [aria-current="date"] .idle-cal-num')?.textContent ?? ''`)).toBe(expected.day)
+    // Bank holidays are the only entries a day can hold with no source wired.
+    expect(
+      await harness.dashboardEval<number>(`document.querySelectorAll('.idle-cal-entry:not(.idle-cal-entry--holiday), .idle-cal-more, .idle-upnext').length`),
+    ).toBe(0)
   })
 
   it('names the Last Page on the idle screen, and a tap reopens it in the blank pane', async () => {
