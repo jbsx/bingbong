@@ -1,8 +1,10 @@
 import type { BrowserController } from '../../core/ports/browser'
 import type { MusicAction } from '../../core/music/musicWords'
-import { EMPTY_QUEUE, advance, dropCurrent, enqueue, ordinal, pause, playNow, previous, replay, setLoop, unpause, type Queue, type Song } from '../../core/music/queue'
+import type { PickSource } from '../../core/command/decisionRecord'
+import { EMPTY_QUEUE, advance, dropCurrent, enqueue, ordinal, pause, playNow, previous, replaceCurrent, replay, setLoop, unpause, type Queue, type Song } from '../../core/music/queue'
 import { QUEUED_SHOWN, type NowPlaying } from '../../core/music/nowPlaying'
-import { initialDataOf, pickVideo, resultsUrl, watchUrl } from '../../core/music/youtubeSearch'
+import { initialDataOf, plainVideos, resultsUrl, watchUrl } from '../../core/music/youtubeSearch'
+import { songTerms, stayed } from '../../core/music/rememberedSongs'
 import { SPOKEN_FAILURES, spokenFailureOf } from '../../core/command/spokenFailure'
 import { reportFault } from '../../core/trace/fault'
 import { STOPPED_ANSWERS } from '../../core/command/answer'
@@ -26,6 +28,12 @@ import { CONTINUE_SCRIPT, RESULTS_SCRIPT, WATCH_SCRIPT, controlScript, type Elem
 // Ducking (#344) drops the element's volume to a floor while the ear is
 // open or a line plays, YouTube's remembered volume left alone, and puts
 // back the volume it had — or the one a `volume` verb set meanwhile.
+//
+// Correction and remembering (#345): the Player keeps the plain videos
+// the last `play <words>` read, and `not that one` moves along them. A
+// pick the poll hears play past 30 s with no correction, `skip` or
+// `forget` is remembered against its words, and its trimmed title joins
+// the Learned Terms; the next `play` of those words opens it at once.
 
 /** What a Player verb came to: the tool result line, its Answer, and the video it opened or queued. */
 export interface PlayerOutcome {
@@ -36,6 +44,18 @@ export interface PlayerOutcome {
   readonly video?: string
   /** A later Command came while it ran: nothing more was opened, and it answers nothing. */
   readonly superseded?: true
+  /** For a search (#345): the video came from the Remembered Songs, or from YouTube's results. */
+  readonly pick?: PickSource
+}
+
+/** The Remembered Songs (#345) as the Player reads and grows them: a store beside the Learned Terms. */
+export interface SongMemory {
+  /** The video these words were remembered against; null for none. */
+  recall(words: string): Song | null
+  remember(words: string, song: Song): void
+  forgetWords(words: string): void
+  /** Whether any words pointed at this video. */
+  forgetVideo(id: string): boolean
 }
 
 export interface Player {
@@ -62,6 +82,24 @@ export interface PlayerDeps {
   fetchResults(url: string): Promise<string>
   /** Waits between reads of a page still building; real time when absent. */
   sleep?(ms: number): Promise<void>
+  /** The Remembered Songs (#345); absent remembers nothing, and every `play` searches. */
+  songs?: SongMemory
+  /** A Learned Term a song that stayed teaches (#345): admitted at once. */
+  learn?(term: string): void
+}
+
+/**
+ * The last `play <words>` (#345): its words, the plain videos its search
+ * read (none for a remembered pick, until a correction searches), which of
+ * them plays, and whether it is still waiting to stay.
+ */
+interface SearchPick {
+  readonly words: string
+  readonly results: readonly Song[]
+  readonly index: number
+  readonly song: Song
+  readonly remembered: boolean
+  staying: boolean
 }
 
 /** How long a watch page may take to build its player before the landing is taken as failed. */
@@ -79,6 +117,8 @@ const floorOf = (volume: number): number => Math.round(volume * DUCK_SHARE)
 const clampVolume = (volume: number): number => Math.max(0, Math.min(100, Math.round(volume)))
 
 const quoted = (title: string): string => `“${title}”`
+
+const isSongs = (read: readonly Song[] | PlayerOutcome): read is readonly Song[] => Array.isArray(read)
 
 export function createPlayer(deps: PlayerDeps): Player {
   const { browser } = deps
@@ -127,6 +167,7 @@ export function createPlayer(deps: PlayerDeps): Player {
     published = json
     for (const listener of [...listeners]) listener(now)
   }
+  let pick: SearchPick | null = null
 
   const superseded: PlayerOutcome = { result: 'superseded', answer: '', superseded: true }
 
@@ -209,12 +250,13 @@ export function createPlayer(deps: PlayerDeps): Player {
     return { result: `playing: id=${song.id} title=${JSON.stringify(song.title)}`, answer, video: song.id }
   }
 
-  /** `play <words>`: the results page in the pane, its first plain video. */
-  async function searchNow(words: string, current: () => boolean): Promise<PlayerOutcome> {
+  /** The results page for these words in the pane, and its plain videos; an outcome when it shows none. */
+  async function readResults(words: string, current: () => boolean): Promise<readonly Song[] | PlayerOutcome> {
     const line = await browser.navigate(resultsUrl(words))
     if (!current()) return superseded
     const wall = spokenFailureOf({ tool: 'navigate', outcome: { ok: true, result: line } })
-    if (wall !== null) return { result: line, answer: SPOKEN_FAILURES[wall], failure: true }
+    // A results page often lands before its cards are drawn, and reads as empty; its data, not its text, says whether it holds results.
+    if (wall !== null && wall !== 'empty') return { result: line, answer: SPOKEN_FAILURES[wall], failure: true }
     let data: unknown = null
     for (let read = 0; read < RESULTS_READS && data === null; read += 1) {
       if (read > 0) await sleep(RESULTS_READ_MS)
@@ -223,9 +265,95 @@ export function createPlayer(deps: PlayerDeps): Player {
     }
     if (!current()) return superseded
     if (data === null) return noResults(words)
-    const song = pickVideo(data)
-    if (song === null) return noVideos(words)
-    return playSong(song, current, `Playing ${quoted(song.title)}.`)
+    const songs = plainVideos(data)
+    return songs.length === 0 ? noVideos(words) : songs
+  }
+
+  /**
+   * Open a pick (#345): it is the pick at once — a correction may follow
+   * before it lands — but waits to stay only once its watch page opened,
+   * so a poll heard while it opens, the song before still current, cannot
+   * let it go. The outcome says where its video came from.
+   */
+  async function openPick(next: Omit<SearchPick, 'staying'>, current: () => boolean, answer: string, then?: () => Queue): Promise<PlayerOutcome> {
+    const opening: SearchPick = { ...next, staying: false }
+    pick = opening
+    const outcome = await playSong(next.song, current, answer, then)
+    if (outcome.superseded === true) return outcome
+    if (outcome.failure !== true && pick === opening) opening.staying = true
+    return { ...outcome, pick: next.remembered ? 'remembered' : 'searched' }
+  }
+
+  /**
+   * `play <words>`: the video remembered for the words (#345), else the
+   * results page in the pane and its first plain video. A remembered video
+   * that no longer opens is forgotten, so the next `play` searches.
+   */
+  async function searchNow(words: string, current: () => boolean): Promise<PlayerOutcome> {
+    pick = null
+    const known = deps.songs?.recall(words) ?? null
+    if (known !== null) {
+      const outcome = await openPick({ words, results: [], index: -1, song: known, remembered: true }, current, `Playing ${quoted(known.title)}.`)
+      if (outcome.failure === true) deps.songs?.forgetWords(words)
+      return outcome
+    }
+    const songs = await readResults(words, current)
+    if (!isSongs(songs)) return songs
+    const song = songs[0]!
+    return openPick({ words, results: songs, index: 0, song, remembered: false }, current, `Playing ${quoted(song.title)}.`)
+  }
+
+  /**
+   * `not that one` (`step` 1) and `the one before` (-1), #345: the pick's
+   * neighbour in its kept results plays in its place, and its words are
+   * forgotten. A remembered pick kept no results: they are searched now,
+   * the wrong video passed by. Past either end nothing changes, and the
+   * song playing may still stay.
+   */
+  async function correct(step: 1 | -1, current: () => boolean): Promise<PlayerOutcome> {
+    const wrong = pick
+    if (wrong === null || (state.current !== null && state.current.id !== wrong.song.id)) return { result: 'nothing to correct', answer: 'Nothing to correct.' }
+    const noMore: PlayerOutcome = { result: 'no more results', answer: 'No more results.' }
+    const first: PlayerOutcome = { result: 'nothing before', answer: 'That was the first result.' }
+    if (wrong.remembered ? step < 0 : wrong.results[wrong.index + step] === undefined) return step > 0 ? noMore : first
+    wrong.staying = false
+    deps.songs?.forgetWords(wrong.words)
+    let from: Omit<SearchPick, 'staying'> = wrong
+    if (wrong.remembered) {
+      const songs = await readResults(wrong.words, current)
+      if (!isSongs(songs)) return songs
+      from = { ...wrong, results: songs.filter((song) => song.id !== wrong.song.id), index: -1, remembered: false }
+    }
+    const index = from.index + step
+    const song = from.results[index]
+    if (song === undefined) {
+      pick = { ...from, staying: false }
+      return noMore
+    }
+    return openPick({ ...from, index, song }, current, `Playing ${quoted(song.title)} instead.`, () => replaceCurrent(state, song))
+  }
+
+  /** `forget this song` (#345): no words point at the song playing, and it does not stay. */
+  function forget(): PlayerOutcome {
+    const song = state.current
+    if (song === null) return { result: 'nothing playing', answer: 'Nothing is playing.' }
+    if (pick?.song.id === song.id) pick.staying = false
+    if (deps.songs?.forgetVideo(song.id) === true) return { result: `forgot: id=${song.id}`, answer: `Forgot ${quoted(song.title)}.` }
+    return { result: `not remembered: id=${song.id}`, answer: `${quoted(song.title)} wasn't remembered.` }
+  }
+
+  /** The poll's read of the watch page (#345): the pick playing past the threshold has stayed — remembered, and its title learned. */
+  function hearStay(status: WatchStatus): void {
+    const staying = pick
+    if (staying === null || !staying.staying) return
+    if (state.current?.id !== staying.song.id) {
+      staying.staying = false
+      return
+    }
+    if (status.ad || status.id !== staying.song.id || !stayed(status.elapsed)) return
+    staying.staying = false
+    deps.songs?.remember(staying.words, staying.song)
+    for (const term of songTerms(staying.song.title)) deps.learn?.(term)
   }
 
   /** The results script's JSON, parsed; null for none, or JSON that does not parse. */
@@ -245,6 +373,15 @@ export function createPlayer(deps: PlayerDeps): Player {
 
   /** `queue <words>` and `play <words> next`: the results fetched, never shown — the song playing plays on. */
   async function searchQueued(words: string, place: 'front' | 'end', current: () => boolean): Promise<PlayerOutcome> {
+    const known = deps.songs?.recall(words) ?? null
+    const found = known ?? (await fetchPick(words, current))
+    if (!('id' in found)) return found
+    const outcome = await queueSong(found, place, current)
+    return outcome.superseded === true ? outcome : { ...outcome, pick: known !== null ? 'remembered' : 'searched' }
+  }
+
+  /** The first plain video of the results, fetched with the pane's session; an outcome when there is none. */
+  async function fetchPick(words: string, current: () => boolean): Promise<Song | PlayerOutcome> {
     let html: string
     try {
       html = await deps.fetchResults(resultsUrl(words))
@@ -255,8 +392,11 @@ export function createPlayer(deps: PlayerDeps): Player {
     if (!current()) return superseded
     const data = initialDataOf(html)
     if (data === null) return noResults(words)
-    const song = pickVideo(data)
-    if (song === null) return noVideos(words)
+    return plainVideos(data)[0] ?? noVideos(words)
+  }
+
+  /** A queued search's song joins the queue — or plays now, when nothing is. */
+  async function queueSong(song: Song, place: 'front' | 'end', current: () => boolean): Promise<PlayerOutcome> {
     const queued = enqueue(state, song, place)
     if (queued.playsNow) return playSong(song, current, `Playing ${quoted(song.title)}.`)
     state = queued.queue
@@ -315,7 +455,12 @@ export function createPlayer(deps: PlayerDeps): Player {
     switch (music.kind) {
       case 'search':
         return music.place === 'now' ? searchNow(words ?? '', current) : searchQueued(words ?? '', music.place, current)
+      case 'correct':
+        return correct(music.step, current)
+      case 'forget':
+        return forget()
       case 'skip': {
+        if (pick !== null) pick.staying = false
         const { queue, next } = advance(state)
         if (next === null) {
           await control({ op: 'pause' })
@@ -326,6 +471,7 @@ export function createPlayer(deps: PlayerDeps): Player {
         return playSong(next, current, `Skipped to ${quoted(next.title)}.`, () => advance(state).queue)
       }
       case 'previous': {
+        if (pick !== null) pick.staying = false
         const back = previous(state)
         if (back.song === null) return { result: 'nothing before', answer: 'Nothing before this.' }
         return playSong(back.song, current, `Back to ${quoted(back.song.title)}.`, () => previous(state).queue)
@@ -384,6 +530,7 @@ export function createPlayer(deps: PlayerDeps): Player {
       checking = true
       try {
         const status = await evaluate<WatchStatus>(WATCH_SCRIPT)
+        if (status !== null) hearStay(status)
         const end = status?.ended ?? null
         // An ad plays in the same element: its end is not the song's.
         if (end === null || end.ad || end.id !== state.current?.id) {

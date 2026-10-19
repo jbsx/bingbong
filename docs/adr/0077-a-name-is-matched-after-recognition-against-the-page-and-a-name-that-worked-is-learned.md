@@ -105,3 +105,42 @@ Three things, each a Misfire-reducer that asks the user nothing:
 - Glossary: Page Terms, Name Match; Mishear and Learned Term reworded for
   the new proposer. ADR 0022's "the model proposes" is now "the page or a
   settled retry proposes" on this branch.
+
+## Amendment 2026-10-19 — a song that stayed is a name that worked (#345)
+
+`play <words>` takes the first plain video of YouTube's results, and a
+wrong pick is a Misfire (ADR 0076, #343). This amendment makes the
+recovery one line and lets the next `play` of the same song skip the
+search.
+
+- **A correction is a Command.** The Player keeps the plain videos its
+  last `play <words>` read. `not that one` (`next result`, `the other one`,
+  `wrong one`) opens the next in the wrong pick's place, never counted as
+  played; `the one before` goes back one. It is grammar-only, as every
+  Player line is. Picking among the results with Jev was left out.
+- **A song that stayed is a name that worked.** A Name Match learns the
+  spelling the page witnessed; a pick that plays past 30 s with no
+  correction, `skip`, `previous` or `forget` is the same proof for a song. Its Slot,
+  normalized as the Name Match normalizes, is remembered against its video
+  ID, one video per Slot, the latest stay winning. The next `play` of
+  those words opens the watch URL with no results page. Nothing fuzzier
+  than normalizing: a Slot that differs reaches the song through the Name
+  Match, not this memory. 30 s is one number in core beside the rule
+  (`STAY_S`), not a setting; it is the element's own time, an ad's not
+  counted.
+- **Its title joins the Learned Terms,** admitted at once like a page's
+  name. It is trimmed of bracket noise, a pipe's tail and `ft.`/`prod.`
+  credits first. A title of "artist - song" is learned whole and as each
+  side, every one that fits a Learned Term's four words. The next `play
+  <title>` decodes against it, and the Name Match prefers it as it does a
+  page's names.
+- **A correction forgets.** It forgets the words, so the next `play`
+  searches; a remembered pick kept no results, so they are searched then,
+  the wrong video passed by. `forget this song` forgets every Slot
+  pointing at the song playing, and is the memory's only surface. The
+  Learned Term a song taught stays until Settings removes it.
+
+Consequences: the remembered songs live in `songs.json` beside
+`lexicon.json` and survive a restart; the Queue still does not. The
+decision record marks a search's pick `remembered` or `searched`, and
+`pnpm perf:report` prints how often the search was skipped.

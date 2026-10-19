@@ -63,6 +63,7 @@ import { attachPlayer } from './music/attachPlayer'
 import { attachNowPlayingToWindow, registerNowPlayingIpc } from './music/nowPlayingIpc'
 import { YOUTUBE_FIXTURE_ENV, routeYouTubeToFixture } from './music/youtubeFixture'
 import { createDucking } from '../core/music/ducking'
+import { createRememberedSongsStore } from './music/rememberedSongsStore'
 import { registerUsageIpc } from './usage/attachUsage'
 import { registerCalendarIpc } from './calendar/attachCalendar'
 import { attachTimerAlarm } from './timer/timerAlarm'
@@ -147,6 +148,8 @@ const askLog = createAskLogSink(logsDir)
 // one app-global lexicon.json beside the settings file. The settings page
 // is its human surface. Fails closed to seed-only on corruption.
 const learnedTermsStore = createLearnedTermsStore(join(app.getPath('userData'), 'lexicon.json'), seedLexiconSet())
+// Remembered Songs (#345): the words of a `play` whose pick stayed, against its video — songs.json beside it.
+const rememberedSongs = createRememberedSongsStore(join(app.getPath('userData'), 'songs.json'))
 // The Last Page (CONTEXT.md): the page the pane last showed, kept across
 // restarts for the Idle Screen and `resume`.
 const lastPageStore = createLastPageStore(join(app.getPath('userData'), 'last-page.json'))
@@ -334,7 +337,13 @@ async function createWindow(): Promise<BrowserWindow> {
   // The Player (#343): YouTube in the pane is the player, the queue and the verbs live here.
   const youtubeFixture = process.env[YOUTUBE_FIXTURE_ENV]
   if (youtubeFixture) routeYouTubeToFixture(pane.session, youtubeFixture)
-  const music = attachPlayer(controller, pane.session)
+  // A song that stayed (#345) is remembered in songs.json beside lexicon.json, and its title learned.
+  const music = attachPlayer(controller, pane.session, {
+    songs: rememberedSongs,
+    learn: (term) => {
+      learnedTermsStore.admit(term)
+    },
+  })
   win.on('closed', music.stop)
   // Now Playing (#344): the Idle Screen's card follows the Player.
   win.on('closed', attachNowPlayingToWindow(win, music.player))

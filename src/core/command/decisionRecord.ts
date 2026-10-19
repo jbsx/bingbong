@@ -77,7 +77,12 @@ export interface DecisionRecord {
   readonly landing?: PageLanding
   /** For `play` (#343): the YouTube video the Player opened or queued; absent for a verb on the element. */
   readonly video?: string
+  /** For a `play` search (#345): its video was remembered for its words, or searched for; absent for a verb on the element. */
+  readonly pick?: PickSource
 }
+
+/** Where a `play` search's video came from (#345): the Remembered Songs, or YouTube's results. */
+export type PickSource = 'remembered' | 'searched'
 
 /** Where a Command stands in its Task (#328, ADR 0076 amendment): the Task's id is hop 0's turn id. */
 export interface TaskHop {

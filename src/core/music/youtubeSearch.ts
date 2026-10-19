@@ -74,13 +74,16 @@ function plainVideoOf(item: unknown): Song | null {
   return null
 }
 
+/** The plain videos of a results page's data, in order: what a correction moves along (#345). Empty for none, or no results page. */
+export function plainVideos(data: unknown): Song[] {
+  return resultItems(data)
+    .map(plainVideoOf)
+    .filter((song): song is Song => song !== null)
+}
+
 /** The first plain video of a results page's data; null when it has none, or is no results page. */
 export function pickVideo(data: unknown): Song | null {
-  for (const item of resultItems(data)) {
-    const song = plainVideoOf(item)
-    if (song !== null) return song
-  }
-  return null
+  return plainVideos(data)[0] ?? null
 }
 
 const INITIAL_DATA_HEAD = /(?:var |window\[["'])ytInitialData(?:["']\])?\s*=\s*/

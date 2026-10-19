@@ -22,6 +22,10 @@ export type MusicAction =
   | { readonly kind: 'mute'; readonly on: boolean }
   /** Wake the dashboard on the watch page (#344): the one music line that does not keep the Idle Screen up. */
   | { readonly kind: 'show' }
+  /** The last `play <words>` picked wrong (#345): the next result of its search (1), or the one before (-1). */
+  | { readonly kind: 'correct'; readonly step: 1 | -1 }
+  /** The song playing is forgotten: the next `play` of its words searches again (#345). */
+  | { readonly kind: 'forget' }
 
 /** A music line: the action, and a search's words as spoken (edge punctuation off). */
 export interface MusicLine {
@@ -71,6 +75,14 @@ const WHOLE_LINES: Readonly<Record<string, MusicAction>> = {
   'show the video': { kind: 'show' },
   'show me the video': { kind: 'show' },
   'show it': { kind: 'show' },
+  'not that one': { kind: 'correct', step: 1 },
+  'not this one': { kind: 'correct', step: 1 },
+  'next result': { kind: 'correct', step: 1 },
+  'the other one': { kind: 'correct', step: 1 },
+  'wrong one': { kind: 'correct', step: 1 },
+  'wrong song': { kind: 'correct', step: 1 },
+  'the one before': { kind: 'correct', step: -1 },
+  'forget this song': { kind: 'forget' },
 }
 
 /**

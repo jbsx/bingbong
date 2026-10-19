@@ -15,6 +15,8 @@ export const COMMAND_HELP_LINES: readonly string[] = [
   '  timer <length> | off     count down on the idle screen and ring (5m, 1h30m, 2:30, ten minutes)',
   '  play <words> [next]      play the first youtube video for the words now (or next in the queue)',
   '  queue <words>            add the first youtube video for the words to the queue',
+  '  not that one             play the next result of the last search instead (or: the one before)',
+  '  forget this song         the next play of its words searches again',
   '  play | pause             unpause and pause the music',
   '  skip | previous          the next queued song, or the one before',
   '  loop | loop off          repeat this song, or stop repeating it',

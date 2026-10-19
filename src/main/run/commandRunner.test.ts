@@ -15,7 +15,7 @@ import { blockedActionHead } from '../../core/browser/actionOutcome'
 import { SPOKEN_FAILURES } from '../../core/command/spokenFailure'
 import { createSpeechCoordinator } from '../../core/tts/speechCoordinator'
 import { createCommandRunner, type CommandRunner, type CommandRunnerDeps } from './commandRunner'
-import { createPlayer } from '../music/player'
+import { createPlayer, type SongMemory } from '../music/player'
 import { ScriptedYouTube, videoItem } from '../music/scriptedYouTube'
 
 // The Command runner (#324, ADR 0076): a typed or spoken line becomes one
@@ -250,13 +250,14 @@ describe('the Player (#343)', () => {
   const QUEEN = 'Queen – Bohemian Rhapsody (Official Video Remastered)'
 
   /** A runner wired to a real Player over a scripted YouTube. */
-  function music(options?: { speech?: Pick<TtsSpeaker, 'speak' | 'stop'>; learned?: string[] }) {
+  function music(options?: { speech?: Pick<TtsSpeaker, 'speak' | 'stop'>; learned?: string[]; songs?: SongMemory }) {
     let youtube!: ScriptedYouTube
+    const { songs, ...rest } = options ?? {}
     const wired = harness({
-      ...options,
+      ...rest,
       player: (browser) => {
         youtube = new ScriptedYouTube(browser)
-        return createPlayer({ browser, fetchResults: youtube.fetchResults, sleep: async () => {} })
+        return createPlayer({ browser, fetchResults: youtube.fetchResults, sleep: async () => {}, ...(songs !== undefined ? { songs } : {}) })
       },
     })
     youtube.search(
@@ -278,7 +279,28 @@ describe('the Player (#343)', () => {
     expect(events.filter((event) => event.type === 'command')).toEqual([expect.objectContaining({ action: 'play bohemian rhapsody' })])
     expect(displays(events)).toEqual([`Playing “${QUEEN}”.`])
     expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done' })
-    expect(records.filter((record) => record.type === 'decision')).toEqual([expect.objectContaining({ verb: 'play', slot: 'bohemian rhapsody', video: 'fJ9rUzIMcZQ', reading: 'local_match', ended: 'local_match' })])
+    expect(records.filter((record) => record.type === 'decision')).toEqual([expect.objectContaining({ verb: 'play', slot: 'bohemian rhapsody', video: 'fJ9rUzIMcZQ', pick: 'searched', reading: 'local_match', ended: 'local_match' })])
+  })
+
+  it('a remembered song (#345) opens with no results page, answers as before, and is recorded `remembered`', async () => {
+    const remembered = { id: 'rememberedQ', title: 'Bohemian Rhapsody' }
+    const songs: SongMemory = { recall: (words) => (words === 'bohemian rhapsody' ? remembered : null), remember: () => {}, forgetWords: () => {}, forgetVideo: () => false }
+    const { browser, events, records, youtube, runner } = music({ songs })
+    youtube.watches.set(remembered.id, { title: remembered.title })
+    await runner.run('play bohemian rhapsody')
+    expect(browser.navigations).toEqual(['https://www.youtube.com/watch?v=rememberedQ'])
+    expect(displays(events)).toEqual(['Playing “Bohemian Rhapsody”.'])
+    expect(records.filter((record) => record.type === 'decision')).toEqual([expect.objectContaining({ verb: 'play', video: 'rememberedQ', pick: 'remembered' })])
+  })
+
+  it('`not that one` (#345) is a Command of its own that answers what plays instead', async () => {
+    const { events, youtube, runner } = music()
+    youtube.search('bohemian rhapsody', videoItem('fJ9rUzIMcZQ', QUEEN), videoItem('secondvideo', 'Panic! – Bohemian Rhapsody'))
+    youtube.watches.set('secondvideo', { title: 'Panic! – Bohemian Rhapsody' })
+    await runner.run('play bohemian rhapsody')
+    await runner.run('not that one')
+    expect(events.filter((event) => event.type === 'command').map((event) => (event.type === 'command' ? event.action : ''))).toEqual(['play bohemian rhapsody', 'not that one'])
+    expect(displays(events).at(-1)).toBe('Playing “Panic! – Bohemian Rhapsody” instead.')
   })
 
   it('a spoken search passes the Name Match\'s Learned Terms, and Jev is never asked', async () => {

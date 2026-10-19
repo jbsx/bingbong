@@ -58,6 +58,8 @@ export interface DecisionReport {
    * against each hop number.
    */
   tasks: { count: number; ended: Partial<Record<TaskEnded, number>>; hops: { p50: number; max: number } | null; overrunsByHop: Record<number, number> }
+  /** `play` searches (#345): how many opened a remembered video, the results page skipped, and how many searched. */
+  picks: { remembered: number; searched: number }
 }
 
 function statsOf(verb: string, durations: readonly number[]): ReactionStats {
@@ -126,6 +128,7 @@ export function buildDecisionReport(records: readonly CommandLogRecord[]): Decis
     names: { page: 0, learned: 0 },
     earlyFire: { spoken: 0, fired: 0, lead: null, partialCalls: 0, spokenJevAsked: 0 },
     tasks: { count: 0, ended: {}, hops: null, overrunsByHop: {} },
+    picks: { remembered: 0, searched: 0 },
   }
   const latencies: number[] = []
   const leads: number[] = []
@@ -143,6 +146,7 @@ export function buildDecisionReport(records: readonly CommandLogRecord[]): Decis
     if (record.ended !== undefined) report.tasks.ended[record.ended] = (report.tasks.ended[record.ended] ?? 0) + 1
     if (record.reading in report.readings) report.readings[record.reading] += 1
     if (record.slotFrom === 'page' || record.slotFrom === 'learned') report.names[record.slotFrom] += 1
+    if (record.pick === 'remembered' || record.pick === 'searched') report.picks[record.pick] += 1
     if (record.source === 'spoken') {
       report.earlyFire.spoken += 1
       if (record.jevAsked) report.earlyFire.spokenJevAsked += 1
@@ -243,6 +247,9 @@ export function formatCommandReport(reaction: ReactionReport, decisions: Decisio
           ` | overruns by hop: ${overruns || 'none'}`,
       )
     }
+    const { picks } = decisions
+    const picked = picks.remembered + picks.searched
+    if (picked > 0) lines.push(`songs: ${picked} picks | remembered ${picks.remembered} (${percent(picks.remembered, picked)}), searched ${picks.searched}`)
   }
   return lines
 }

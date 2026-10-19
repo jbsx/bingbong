@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { initialDataOf, pickVideo, resultsUrl, videoIdOf, watchUrl } from './youtubeSearch'
+import { initialDataOf, pickVideo, plainVideos, resultsUrl, videoIdOf, watchUrl } from './youtubeSearch'
 
 // The search pick (#343): the first plain video of YouTube's results —
 // read off the `ytInitialData` the results page carries, past ads, Shorts,
@@ -31,6 +31,12 @@ describe('the search pick', () => {
       video('second00000', 'Second'),
     )
     expect(pickVideo(data)).toEqual({ id: 'dQw4w9WgXcQ', title: 'Rick Astley - Never Gonna Give You Up' })
+  })
+
+  it('keeps every plain video in order, for a correction to move along (#345)', () => {
+    const data = resultsData(video('first000000', 'First'), { channelRenderer: {} }, video('second00000', 'Second'), { adSlotRenderer: {} }, video('third000000', 'Third'))
+    expect(plainVideos(data).map((song) => song.id)).toEqual(['first000000', 'second00000', 'third000000'])
+    expect(plainVideos(null)).toEqual([])
   })
 
   it('skips a video renderer that opens as a Short', () => {

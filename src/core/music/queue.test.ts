@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { EMPTY_QUEUE, advance, enqueue, pause, playNow, previous, setLoop, unpause, type Song } from './queue'
+import { EMPTY_QUEUE, advance, enqueue, pause, playNow, previous, replaceCurrent, setLoop, unpause, type Song } from './queue'
 
 // The Queue (CONTEXT.md, #343): the song playing, the songs after it and
 // the songs before it — pure state the Player in main keeps in step with
@@ -86,5 +86,12 @@ describe('the Queue', () => {
     expect(replaced.upNext).toEqual([b])
     expect(replaced.played).toEqual([a])
     expect(replaced).toMatchObject({ loop: false, paused: false })
+  })
+
+  it('a correction (#345) puts the next result in the wrong pick\'s place: never played, so `previous` passes it by', () => {
+    const corrected = replaceCurrent(setLoop(playNow(playNow(EMPTY_QUEUE, a), b), true), c)
+    expect(corrected.current).toEqual(c)
+    expect(corrected.played).toEqual([a])
+    expect(corrected.loop).toBe(false)
   })
 })

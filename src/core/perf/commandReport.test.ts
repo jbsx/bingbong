@@ -90,6 +90,7 @@ describe('buildDecisionReport', () => {
       earlyFire: { spoken: 5, fired: 0, lead: null, partialCalls: 0, spokenJevAsked: 3 },
       // Records from before #328 carry no Task.
       tasks: { count: 0, ended: {}, hops: null, overrunsByHop: {} },
+      picks: { remembered: 0, searched: 0 },
     })
   })
 
@@ -108,6 +109,14 @@ describe('buildDecisionReport', () => {
     ])
     expect(report.names).toEqual({ page: 2, learned: 1 })
     expect(formatCommandReport(buildReactionReport([]), report)[0]).toContain('| names matched 3 (page 2, learned 1)')
+  })
+
+  it('counts how often a song\'s search was skipped for a remembered pick (#345)', () => {
+    const played = (turnId: string, pick: 'remembered' | 'searched'): CommandLogRecord => ({ ...decision(turnId, 'local_match'), verb: 'play', video: 'aaaaaaaaaaa', pick })
+    const report = buildDecisionReport([played('t1', 'searched'), played('t2', 'remembered'), played('t3', 'searched'), played('t4', 'searched'), decision('t5', 'local_match')])
+    expect(report.picks).toEqual({ remembered: 1, searched: 3 })
+    expect(formatCommandReport(buildReactionReport([]), report)).toContain('songs: 4 picks | remembered 1 (25%), searched 3')
+    expect(formatCommandReport(buildReactionReport([]), buildDecisionReport([decision('t1', 'local_match')])).some((line) => line.startsWith('songs:'))).toBe(false)
   })
 
   it('reports no latency when Jev was never asked', () => {

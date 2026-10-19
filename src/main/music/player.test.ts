@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { FakeBrowser } from '../../core/testing/doubles'
 import type { MusicAction } from '../../core/music/musicWords'
-import { createPlayer } from './player'
+import { EMPTY_REMEMBERED_SONGS, forgetVideo, forgetWords, recallSong, rememberSong } from '../../core/music/rememberedSongs'
+import { createPlayer, type SongMemory } from './player'
 import { ScriptedYouTube, videoItem } from './scriptedYouTube'
 
 // The Player (#343, CONTEXT.md): one queue in main, driving the watch
@@ -34,6 +35,14 @@ describe('the Player', () => {
     expect(played).toMatchObject({ answer: 'Playing “Song A”.', video: 'aaaaaaaaaaa' })
     expect(played.failure).toBeUndefined()
     expect(player.queue().current).toEqual({ id: 'aaaaaaaaaaa', title: 'Song A' })
+  })
+
+  it('a results page whose cards are not drawn yet (an empty landing) is no wall: its data decides', async () => {
+    const { browser, player, perform } = wired()
+    const navigate = browser.navigate.bind(browser)
+    browser.navigate = async (url) => `${await navigate(url)}\n#  — ${url}\nviewport 985x575 scroll 0/575\nsignature 2347a05e\n[1] button "Guide"`
+    expect(await perform({ kind: 'search', place: 'now' }, 'song a')).toMatchObject({ answer: 'Playing “Song A”.', video: 'aaaaaaaaaaa' })
+    expect(player.queue().current?.id).toBe('aaaaaaaaaaa')
   })
 
   it('`queue <words>` searches without leaving the song playing, and says where it sits', async () => {
@@ -300,5 +309,183 @@ describe('YouTube\'s own idle prompt (#344)', () => {
     await player.check()
     expect(youtube.continued).toBe(0)
     expect(youtube.element.paused).toBe(true)
+  })
+})
+
+/** Remembered Songs in memory, as the store keeps them on disk. */
+function songMemory(): SongMemory & { all(): readonly string[] } {
+  let songs = EMPTY_REMEMBERED_SONGS
+  return {
+    recall: (words) => recallSong(songs, words),
+    remember: (words, song) => {
+      songs = rememberSong(songs, words, song, 0)
+    },
+    forgetWords: (words) => {
+      songs = forgetWords(songs, words)
+    },
+    forgetVideo: (id) => {
+      const forgot = forgetVideo(songs, id)
+      songs = forgot.songs
+      return forgot.forgot
+    },
+    all: () => songs.songs.map((song) => `${song.words} → ${song.id}`),
+  }
+}
+
+/** A search with three plain videos, and a Player that remembers and learns. */
+function remembering() {
+  const browser = new FakeBrowser()
+  const youtube = new ScriptedYouTube(browser)
+  youtube.search('midnight drive', videoItem('first000000', 'Lumen - Midnight Drive (Official Video)'), { channelRenderer: {} }, videoItem('second00000', 'Second'), videoItem('third000000', 'Third'))
+  youtube.search('song b', videoItem('bbbbbbbbbbb', 'Song B'))
+  for (const [id, title] of [['first000000', 'Lumen - Midnight Drive'], ['second00000', 'Second'], ['third000000', 'Third'], ['bbbbbbbbbbb', 'Song B']] as const) youtube.watches.set(id, { title })
+  const songs = songMemory()
+  const learned: string[] = []
+  const player = createPlayer({ browser, fetchResults: youtube.fetchResults, sleep: async () => {}, songs, learn: (term) => learned.push(term) })
+  const perform = (music: MusicAction, words: string | null = null) => player.perform(music, words, () => true)
+  const play = () => perform({ kind: 'search', place: 'now' }, 'midnight drive')
+  /** The song plays on this long, and the poll hears it. */
+  const playFor = async (seconds: number) => {
+    youtube.element.currentTime = seconds
+    await player.check()
+  }
+  return { browser, youtube, player, perform, play, playFor, songs, learned }
+}
+
+describe('correcting the pick (#345)', () => {
+  it('`not that one` opens the next plain video of the kept results, then the one after, then says none are left', async () => {
+    const { browser, player, perform, play } = remembering()
+    expect(await play()).toMatchObject({ video: 'first000000', pick: 'searched' })
+    const opened = browser.navigations.length
+    expect(await perform({ kind: 'correct', step: 1 })).toMatchObject({ answer: 'Playing “Second” instead.', video: 'second00000' })
+    // No second search: the kept list is moved along.
+    expect(browser.navigations.slice(opened)).toEqual([`${WATCH}second00000`])
+    expect(await perform({ kind: 'correct', step: 1 })).toMatchObject({ answer: 'Playing “Third” instead.', video: 'third000000' })
+    expect(await perform({ kind: 'correct', step: 1 })).toMatchObject({ answer: 'No more results.' })
+    expect(player.queue().current?.id).toBe('third000000')
+    expect(await perform({ kind: 'correct', step: -1 })).toMatchObject({ answer: 'Playing “Second” instead.', video: 'second00000' })
+    // The wrong picks were never played: `previous` has nothing to go back to.
+    expect(player.queue().played).toEqual([])
+  })
+
+  it('with nothing searched there is nothing to correct', async () => {
+    const { perform } = remembering()
+    expect(await perform({ kind: 'correct', step: 1 })).toMatchObject({ answer: 'Nothing to correct.' })
+  })
+})
+
+describe('a pick that stayed (#345)', () => {
+  it('is remembered past 30 s, and the next `play` of its words opens it with no results page', async () => {
+    const { browser, perform, playFor, songs } = remembering()
+    await perform({ kind: 'search', place: 'now' }, 'midnight drive')
+    await playFor(29)
+    expect(songs.all()).toEqual([])
+    await playFor(31)
+    expect(songs.all()).toEqual(['midnight drive → first000000'])
+    const opened = browser.navigations.length
+    expect(await perform({ kind: 'search', place: 'now' }, 'Midnight  Drive.')).toMatchObject({ answer: 'Playing “Lumen - Midnight Drive (Official Video)”.', pick: 'remembered' })
+    expect(browser.navigations.slice(opened)).toEqual([`${WATCH}first000000`])
+  })
+
+  it('a poll that comes while the pick is still opening, another song current, does not lose its stay', async () => {
+    const { browser, player, perform, play, playFor, songs } = remembering()
+    await perform({ kind: 'search', place: 'now' }, 'song b')
+    const page = browser.evaluator!
+    let polled = false
+    browser.evaluator = (expression) => {
+      if (!polled && expression.includes('/* YT_WATCH */') && (browser.state().url ?? '').includes('first000000')) {
+        polled = true
+        void player.check()
+      }
+      return page(expression)
+    }
+    await play()
+    expect(polled).toBe(true)
+    await playFor(31)
+    expect(songs.all()).toEqual(['midnight drive → first000000'])
+  })
+
+  it('a correction past either end changes nothing: the song playing may still stay', async () => {
+    const { perform, play, playFor, songs } = remembering()
+    await play()
+    expect(await perform({ kind: 'correct', step: -1 })).toMatchObject({ answer: 'That was the first result.' })
+    await playFor(31)
+    expect(songs.all()).toEqual(['midnight drive → first000000'])
+  })
+
+  it('`the one before` on a remembered pick has nothing before it, and searches nothing', async () => {
+    const { browser, perform, play, playFor, songs } = remembering()
+    await play()
+    await playFor(31)
+    await play()
+    const opened = browser.navigations.length
+    expect(await perform({ kind: 'correct', step: -1 })).toMatchObject({ answer: 'That was the first result.' })
+    expect(browser.navigations).toHaveLength(opened)
+    expect(songs.all()).toEqual(['midnight drive → first000000'])
+  })
+
+  it('its trimmed title joins the Learned Terms', async () => {
+    const { play, playFor, learned } = remembering()
+    await play()
+    await playFor(31)
+    expect(learned).toEqual(['Lumen Midnight Drive', 'Lumen', 'Midnight Drive'])
+  })
+
+  it('a correction on a remembered song forgets it, searches again and passes the wrong one by', async () => {
+    const { browser, perform, play, playFor, songs } = remembering()
+    await play()
+    await playFor(31)
+    await play()
+    const opened = browser.navigations.length
+    expect(await perform({ kind: 'correct', step: 1 })).toMatchObject({ answer: 'Playing “Second” instead.', video: 'second00000' })
+    expect(browser.navigations.slice(opened)).toEqual([`${RESULTS}midnight+drive`, `${WATCH}second00000`])
+    expect(songs.all()).toEqual([])
+  })
+
+  it('a correction inside 30 s leaves the wrong pick unremembered, and the next `play` searches', async () => {
+    const { browser, perform, play, playFor, songs } = remembering()
+    await play()
+    await playFor(10)
+    await perform({ kind: 'correct', step: 1 })
+    await playFor(31)
+    // The corrected pick stayed: it is the one remembered.
+    expect(songs.all()).toEqual(['midnight drive → second00000'])
+    await perform({ kind: 'forget' })
+    const opened = browser.navigations.length
+    expect(await play()).toMatchObject({ pick: 'searched' })
+    expect(browser.navigations[opened]).toBe(`${RESULTS}midnight+drive`)
+  })
+
+  it('`forget this song` forgets the song playing, and says when it was not remembered', async () => {
+    const { perform, play, playFor, songs } = remembering()
+    expect(await perform({ kind: 'forget' })).toMatchObject({ answer: 'Nothing is playing.' })
+    await play()
+    expect(await perform({ kind: 'forget' })).toMatchObject({ answer: '“Lumen - Midnight Drive (Official Video)” wasn\'t remembered.' })
+    // Forgotten before it stayed: it is not remembered at 30 s either.
+    await playFor(31)
+    expect(songs.all()).toEqual([])
+    await play()
+    await playFor(31)
+    expect(await perform({ kind: 'forget' })).toMatchObject({ answer: 'Forgot “Lumen - Midnight Drive (Official Video)”.' })
+    expect(songs.all()).toEqual([])
+  })
+
+  it('a `skip` inside 30 s remembers nothing, and a queued song is no pick', async () => {
+    const { perform, play, playFor, songs, learned } = remembering()
+    await play()
+    await perform({ kind: 'search', place: 'end' }, 'song b')
+    await playFor(10)
+    await perform({ kind: 'skip' })
+    await playFor(45)
+    expect(songs.all()).toEqual([])
+    expect(learned).toEqual([])
+  })
+
+  it('an ad\'s time is not the song\'s', async () => {
+    const { youtube, play, playFor, songs } = remembering()
+    await play()
+    youtube.adShowing = true
+    await playFor(31)
+    expect(songs.all()).toEqual([])
   })
 })

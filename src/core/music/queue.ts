@@ -70,6 +70,11 @@ export function replay(queue: Queue, song: Song): Queue {
   return { current: song, upNext: queue.upNext, played, loop: false, paused: false }
 }
 
+/** A correction (#345): the song plays in the wrong pick's place, which is not counted as played. */
+export function replaceCurrent(queue: Queue, song: Song): Queue {
+  return { ...queue, current: song, loop: false, paused: false }
+}
+
 export function pause(queue: Queue): Queue {
   return { ...queue, paused: true }
 }

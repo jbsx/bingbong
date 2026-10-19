@@ -247,6 +247,10 @@ function describeMusic(music: MusicAction | undefined, words: string | null): st
       return music.on ? 'mute' : 'unmute'
     case 'show':
       return 'show the video'
+    case 'correct':
+      return music.step > 0 ? 'not that one' : 'the one before'
+    case 'forget':
+      return 'forget this song'
     default:
       return music.kind
   }

@@ -22,6 +22,7 @@ import {
   type CommandSource,
   type DecisionRecord,
   type NameSource,
+  type PickSource,
   type TaskEnded,
   type TaskHop,
 } from '../../core/command/decisionRecord'
@@ -220,6 +221,8 @@ interface FireResult {
   readonly unchanged?: true
   /** For `play` (#343): the video the Player opened or queued. */
   readonly video?: string
+  /** For a `play` search (#345): where its video came from. */
+  readonly pick?: PickSource
 }
 
 /** How many hops in a row that change nothing end a Task (#336). */
@@ -844,6 +847,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       ...(landing !== undefined ? { landing } : {}),
       ...(unchanged && landing === undefined ? { unchanged: true } : {}),
       ...(played?.video !== undefined ? { video: played.video } : {}),
+      ...(played?.pick !== undefined ? { pick: played.pick } : {}),
     })
     try {
       const result = await perform(command, resume, current, (outcome) => (played = outcome))
@@ -978,7 +982,11 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
    * Jev-read hop that landed, under the cap; resolves to its end, or null.
    */
   function settleHop(task: Task, record: DecisionRecord, ending: TaskEnded | null, command: Command, page: CommandPage, fired: FireResult): TaskEnded | null {
-    const landed = { ...(fired.landing !== undefined ? { landing: fired.landing } : {}), ...(fired.video !== undefined ? { video: fired.video } : {}) }
+    const landed = {
+      ...(fired.landing !== undefined ? { landing: fired.landing } : {}),
+      ...(fired.video !== undefined ? { video: fired.video } : {}),
+      ...(fired.pick !== undefined ? { pick: fired.pick } : {}),
+    }
     if (ending !== null) {
       if (recordedAfterFiring(command.verb)) log({ ...record, ...landed, ended: ending })
       return ending

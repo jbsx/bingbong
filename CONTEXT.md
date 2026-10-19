@@ -244,7 +244,8 @@ _Avoid_: exact match, transcript accuracy
 **Learned Term**:
 A Bias Lexicon entry admitted at runtime: a name the page witnessed a Name
 Match on is admitted at once; a name a retry chain settled on is admitted
-when it recurs. Same decode effect as the Seed Lexicon, and the second
+when it recurs; the title of a song that stayed (Player, #345) is admitted
+at once. Same decode effect as the Seed Lexicon, and the second
 candidate list a Name Match reads; capped (default 500, least-recently-used
 evicted, every spoken transcript touching the terms it carries), survives
 Sessions and restarts, and is inspected or edited only in Settings — never
@@ -525,8 +526,9 @@ The appliance's music, with YouTube in the browser pane as the player and
 the Queue and the verbs in main (2026-10-19 consultation, #343). `play
 <words>` opens YouTube's results in the pane, takes the first plain video
 (no ad, Short, channel, playlist or "People also watched" shelf), and opens
-its watch page. It reads the results' `ytInitialData`, not the cards, and
-no Jev call is made. A wrong pick is a Misfire. The words are a Slot and
+its watch page. It reads the results' `ytInitialData`, not the cards (a
+results page that lands before its cards are drawn is no Empty Landing for
+it), and no Jev call is made. A wrong pick is a Misfire. The words are a Slot and
 pass the Name Match. `queue <words>` or `add <words>` puts a song at the
 end of the Queue, and `play <words> next` at its front. These search
 without leaving the song playing: main fetches the results with the
@@ -556,7 +558,27 @@ the dashboard up over the watch page (#344).
 `play` is the grammar's alone, as `timer` is: Jev is never offered it, and
 no partial fires it early. "click play" and "press play" stay the page's
 button. `back` stays history and `resume` the Task's.
-_Avoid_: music app, media player (for the page's own controls), playlist (for the Queue)
+
+A wrong pick is corrected in one line (#345). The Player keeps the plain
+videos the last `play <words>` read. `not that one`, `next result`, `the
+other one` or `wrong one` opens the next of them in the wrong pick's
+place, answering `Playing “<title>” instead.`; `the one before` goes back
+one; past the last, `No more results.` A pick that plays past 30 s (the
+element's own time, an ad's not counted) with no correction, `skip`,
+`previous` or `forget` has stayed: its words, normalized as the Name Match
+normalizes them, are remembered against its video in `songs.json` beside
+the Learned Terms, and survive a restart (the Queue does not). The next
+`play` of the same words opens the watch page at once, no results page;
+`queue` uses it too. One video per Slot, the latest stay winning; no
+match beyond normalizing. A correction forgets the words (a remembered
+pick's results are searched then, the wrong video passed by), and
+`forget this song` forgets every Slot pointing at the song playing. The
+title of a song that stayed joins the Learned Terms, trimmed of bracket
+noise (`(Official Video)`, `[unreleased]`), a pipe's tail (`| prod. x`)
+and `ft.`/`prod.` credits; a title of "artist - song" teaches each side
+too, every one that fits a Learned Term's four words. The decision record
+marks a search's pick `remembered` or `searched`.
+_Avoid_: music app, media player (for the page's own controls), playlist (for the Queue), liked songs (for the remembered ones)
 
 **Queue**:
 The Player's one queue. It holds the song playing (or paused), the songs

@@ -1,3 +1,5 @@
+import { readFile, readdir } from 'node:fs/promises'
+import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { startHarness, type Harness } from './harness'
 import { cli } from './cliSupport'
@@ -67,6 +69,14 @@ describe.skipIf(!process.env.BINGBONG_YOUTUBE_E2E)('the Player against live YouT
     await harness?.quit()
   })
 
+  /** The decision records the app has written so far, in order. */
+  async function decisions(): Promise<{ type: string; verb?: string; slot?: string; video?: string; pick?: string }[]> {
+    const dir = join(harness.userDataDir, 'logs')
+    const files = (await readdir(dir)).filter((name) => name.startsWith('decision-')).sort()
+    const lines = (await Promise.all(files.map((name) => readFile(join(dir, name), 'utf8')))).join('').split('\n')
+    return lines.filter((line) => line.trim() !== '').map((line) => JSON.parse(line) as { type: string })
+  }
+
   it('`play <a known song>` lands on its watch page with the video playing', async () => {
     const line = await cli(harness, 'play rick astley never gonna give you up', /^(playing: id=|No videos|.*can't be played|error:)/)
     expect(line).toMatch(/^playing: id=/)
@@ -124,6 +134,31 @@ describe.skipIf(!process.env.BINGBONG_YOUTUBE_E2E)('the Player against live YouT
     const after = await facts(harness)
     expect(after).toMatchObject({ path: '/watch', id: secondSong, paused: true, ad: false })
   }, 90_000)
+
+  it('`not that one` plays the second result, and once it stayed a second `play` opens it with no results page (#345, AC5)', async () => {
+    const SONG = 'daft punk one more time'
+    const first = await cli(harness, `play ${SONG}`, /^(playing: id=|No videos|.*can't be played|error:)/)
+    expect(first).toMatch(/^playing: id=/)
+    const pickedId = /id=(\S+)/.exec(first)![1]!
+    const corrected = await cli(harness, 'not that one', /^(playing: id=|no more results|nothing to correct|not a watch page|error:)/)
+    expect(corrected).toMatch(/^playing: id=/)
+    const secondId = /id=(\S+)/.exec(corrected)![1]!
+    expect(secondId).not.toBe(pickedId)
+    await until(harness, (video) => video.id === secondId && video.found && !video.paused && !video.ad && video.duration > 40, 60_000)
+    // The stay is the element's own time: seeked past 30 s, the once-a-second poll hears it.
+    await harness.paneEval(`(() => { document.querySelector('#movie_player video').currentTime = 31 })()`)
+    await until(harness, (video) => video.currentTime >= 31)
+    await waitFor(async () => ((await readFile(join(harness.userDataDir, 'songs.json'), 'utf8').catch(() => '')).includes(secondId) ? true : undefined), { timeoutMs: 10_000, intervalMs: 250 })
+    const again = await cli(harness, `play ${SONG}`, /^(playing: id=|No videos|.*can't be played|error:)/)
+    expect(again).toMatch(new RegExp(`^playing: id=${secondId}`))
+    const plays = (await decisions()).filter((record) => record.type === 'decision' && record.verb === 'play')
+    expect(plays.slice(-3).map((record) => [record.video, record.pick])).toEqual([
+      [pickedId, 'searched'],
+      [secondId, 'searched'],
+      [secondId, 'remembered'],
+    ])
+    await until(harness, (video) => video.id === secondId && video.found && video.path === '/watch')
+  }, 180_000)
 })
 
 let secondSong = ''

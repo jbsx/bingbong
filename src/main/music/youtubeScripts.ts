@@ -27,7 +27,7 @@ export interface WatchStatus {
   readonly ended: { readonly id: string | null; readonly ad: boolean } | null
   /** The channel, as the player names it; '' when it does not (#344). */
   readonly channel: string
-  /** The element's playing time and length (s); the length null while unknown. */
+  /** The element's playing time and length (s); the length null while unknown. The time is how long a pick has stayed (#345). */
   readonly elapsed: number
   readonly duration: number | null
   readonly paused: boolean

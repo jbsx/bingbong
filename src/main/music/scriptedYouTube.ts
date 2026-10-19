@@ -81,7 +81,7 @@ export class ScriptedYouTube {
     const url = this.browser.state().url ?? ''
     if (url !== this.shownUrl) {
       this.shownUrl = url
-      this.element = { ...this.element, paused: false, loop: false, volume: this.playerVolume }
+      this.element = { ...this.element, paused: false, loop: false, currentTime: 0, volume: this.playerVolume }
     }
     if (expression.includes('/* YT_RESULTS */')) {
       const data = URL.canParse(url) ? this.results.get(new URL(url).searchParams.get('search_query') ?? '') : undefined
