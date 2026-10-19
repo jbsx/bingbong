@@ -260,9 +260,8 @@ export function resetLabel(resetAt: number | null, now: number): string {
   return parts.slice(0, 2).join(' ')
 }
 
-/** The chart's top: the first of 10, 20, 25, 50, 100 that clears the peak with headroom; past 100, the next 25. */
+/** The chart's top: the first of 10, 20, 25, 50 that clears the peak with headroom, else 100 — a percentage never scales past it. */
 export function chartCeiling(peak: number): number {
   const target = peak * 1.1
-  const step = [10, 20, 25, 50, 100].find((top) => top >= target)
-  return step ?? Math.ceil(target / 25) * 25
+  return [10, 20, 25, 50].find((top) => top >= target) ?? 100
 }

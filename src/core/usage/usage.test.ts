@@ -188,6 +188,10 @@ describe('chartCeiling', () => {
     expect(chartCeiling(16)).toBe(20)
     expect(chartCeiling(19)).toBe(25)
     expect(chartCeiling(83)).toBe(100)
-    expect(chartCeiling(120)).toBe(150)
+  })
+
+  it('never runs past 100, however near or past full the peak is', () => {
+    expect(chartCeiling(95)).toBe(100)
+    expect(chartCeiling(120)).toBe(100)
   })
 })
