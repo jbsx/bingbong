@@ -4,6 +4,7 @@ import { ENDPOINT_DELAY_MS_MAX, ENDPOINT_DELAY_MS_MIN, HOT_LISTEN_SILENCE_MS_MAX
 import { DEFAULT_PIPER_VOICE } from '../../core/tts/piperVoices'
 import { UsageMetricsSettings } from './UsageSettings'
 import { IDLE_CARD_IDS, type IdleCardId } from '../../core/idle/slots'
+import { defaultInterestProfile, type InterestProfile, type NewsTopic } from '../../core/news/interestProfile'
 
 /** Select value for "the saved mic is not plugged in right now". */
 const STALE_MIC_VALUE = '__stale__'
@@ -142,7 +143,7 @@ function LearnedTermsSection() {
   )
 }
 
-const IDLE_CARD_NAMES: Record<IdleCardId, string> = { weather: 'Weather', usage: 'AI usage', calendar: 'Calendar', music: 'Now Playing' }
+const IDLE_CARD_NAMES: Record<IdleCardId, string> = { weather: 'Weather', usage: 'AI usage', calendar: 'Calendar', music: 'Now Playing', news: 'News' }
 
 /**
  * The Idle Screen's pinned cards (core/idle/slots): a checkbox shows a card,
@@ -190,6 +191,74 @@ function IdleCardsSection({ cards, onChange }: { cards: readonly IdleCardId[]; o
       })}
       <p className="settings-note">
         The cards the idle screen shows, in the order they read. A card with nothing to show right now — the calendar with no events this month — yields its room to the others.
+      </p>
+    </section>
+  )
+}
+
+function wordsText(words: readonly string[]): string {
+  return words.join(', ')
+}
+
+/**
+ * One Interest Profile topic: its name and the words that match it, comma
+ * separated. The words are kept as typed while the field has focus and
+ * split when it loses it, so a comma being typed is not swallowed.
+ */
+function TopicRow({ topic, onChange, onRemove }: { topic: NewsTopic; onChange: (topic: NewsTopic) => void; onRemove: () => void }) {
+  const [words, setWords] = useState(() => wordsText(topic.words))
+  useEffect(() => setWords(wordsText(topic.words)), [topic.words])
+  return (
+    <div className="settings-field settings-topic">
+      <input type="text" value={topic.name} aria-label="Topic name" onChange={(event) => onChange({ ...topic, name: event.target.value })} />
+      <span className="settings-card-row">
+        <input
+          type="text"
+          className="settings-topic-words"
+          value={words}
+          aria-label={`Words for ${topic.name}`}
+          onChange={(event) => setWords(event.target.value)}
+          onBlur={() =>
+            onChange({
+              ...topic,
+              words: words
+                .split(',')
+                .map((word) => word.trim())
+                .filter(Boolean),
+            })
+          }
+        />
+        <button type="button" className="settings-button" aria-label={`Remove ${topic.name}`} onClick={onRemove}>
+          Remove
+        </button>
+      </span>
+    </div>
+  )
+}
+
+/** The News card's Interest Profile (core/news/interestProfile): the topics a story is ranked against, editable. */
+function NewsSection({ topics, onChange }: { topics: InterestProfile; onChange: (topics: InterestProfile) => void }) {
+  return (
+    <section className="settings-section" aria-label="news">
+      <h2>News</h2>
+      {topics.map((topic, index) => (
+        <TopicRow
+          key={index}
+          topic={topic}
+          onChange={(next) => onChange(topics.map((each, at) => (at === index ? next : each)))}
+          onRemove={() => onChange(topics.filter((_, at) => at !== index))}
+        />
+      ))}
+      <span className="settings-card-row">
+        <button type="button" className="settings-button" onClick={() => onChange([...topics, { name: 'New topic', words: [] }])}>
+          Add topic
+        </button>
+        <button type="button" className="settings-button" onClick={() => onChange(defaultInterestProfile())}>
+          Restore defaults
+        </button>
+      </span>
+      <p className="settings-note">
+        The Interest Profile: Today’s Highlight is the story from Hacker News that jumped furthest above its normal day among those matching a topic. A story matches a topic when its title holds one of the topic’s words.
       </p>
     </section>
   )
@@ -405,6 +474,8 @@ export function SettingsPage({
         </section>
 
         <IdleCardsSection cards={draft.idleCards} onChange={(idleCards) => setDraft({ ...draft, idleCards })} />
+
+        <NewsSection topics={draft.news.topics} onChange={(topics) => setDraft({ ...draft, news: { ...draft.news, topics } })} />
 
         <section className="settings-section">
           <h2>Weather</h2>

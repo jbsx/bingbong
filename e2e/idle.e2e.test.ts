@@ -1,4 +1,6 @@
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { createServer, type Server } from 'node:http'
+import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -9,28 +11,44 @@ import { waitFor } from './waitFor'
 // The Idle Screen's Last Page (CONTEXT.md): a profile that remembers a page
 // boots into the idle screen naming it, and the card's tap runs `resume` —
 // the pane boots blank after a restart, so the Command navigates there.
-// The page the pane then shows is recorded for the next restart.
+// The page the pane then shows is recorded for the next restart. The News
+// card reads a stand-in Hacker News front page (#346), its tap opening the
+// story in the pane.
 
 describe('idle screen e2e: the Last Page and resume', () => {
   let harness: Harness
   let fixture: FixtureServer
   let userDataDir: string
+  let hackerNews: Server
 
   beforeAll(async () => {
     userDataDir = await mkdtemp(join(tmpdir(), 'bingbong-e2e-idle-'))
     fixture = await startFixtureServer()
+    // Hacker News's stand-in: one story that matches the default Interest Profile, linking to a fixture page.
+    hackerNews = createServer((request, response) => {
+      const hits = [{ objectID: '1', title: 'Claude Code ships a new agent harness', url: fixture.url('/second'), points: 1840, num_comments: 312, created_at_i: Math.floor(Date.now() / 1000) - 3600 }]
+      response.writeHead(request.url?.startsWith('/api/v1/search') ? 200 : 404, { 'content-type': 'application/json' })
+      response.end(JSON.stringify({ hits }))
+    })
+    await new Promise<void>((resolve) => hackerNews.listen(0, '127.0.0.1', resolve))
     // The Last Page a previous run left behind.
     await writeFile(
       join(userDataDir, 'last-page.json'),
       `${JSON.stringify({ url: fixture.url('/second'), title: 'Second fixture page', at: 1 })}\n`,
       'utf8',
     )
-    harness = await startHarness({ userDataDir, fixture, wakeFromBootIdle: false })
+    harness = await startHarness({
+      userDataDir,
+      fixture,
+      wakeFromBootIdle: false,
+      env: { BINGBONG_NEWS_FIXTURE: `http://127.0.0.1:${(hackerNews.address() as AddressInfo).port}` },
+    })
   })
 
   afterAll(async () => {
     await harness?.quit()
     await fixture?.close().catch(() => {})
+    await new Promise((resolve) => hackerNews?.close(resolve))
     await rm(userDataDir, { recursive: true, force: true }).catch(() => {})
   })
 
@@ -67,7 +85,7 @@ describe('idle screen e2e: the Last Page and resume', () => {
       }
     })()`)
     // The default pins, in order; the usage card is there only when the dashboard answers or fails.
-    expect(geometry.cards.filter((card) => card !== 'usage')).toEqual(['weather', 'calendar'])
+    expect(geometry.cards.filter((card) => card !== 'usage')).toEqual(['weather', 'calendar', 'news'])
     expect(geometry.overflowing).toEqual([])
     expect(geometry.middleBottom).toBeLessThanOrEqual(geometry.stripTop)
   })
@@ -107,6 +125,32 @@ describe('idle screen e2e: the Last Page and resume', () => {
       { timeoutMs: 10000, intervalMs: 250 },
     )
     expect(recorded.url).toBe(fixture.url('/'))
+  })
+
+  it('shows Today’s Highlight from Hacker News, and a tap opens the story in the pane', async () => {
+    const IDLE_SHORTCUT = { key: 'L', code: 'KeyL', windowsVirtualKeyCode: 76, modifiers: 2 /* Ctrl */ | 8 /* Shift */ }
+    await harness.pressKey('pane', IDLE_SHORTCUT)
+    const card = await waitFor(
+      async () => {
+        const text = await harness.dashboardEval<string>(`document.querySelector('.idle-slot[data-card="news"] .idle-news')?.textContent ?? ''`)
+        return text !== '' ? text : undefined
+      },
+      { timeoutMs: 10000, intervalMs: 250 },
+    )
+    expect(card).toContain('Claude Code ships a new agent harness')
+    expect(card).toContain('Hacker News')
+    expect(card).toContain('1,840 points')
+    // Shown once, it is marked so in the profile for the next restart.
+    const state = JSON.parse(await readFile(join(userDataDir, 'news.json'), 'utf8')) as { shown: { key: string }[] }
+    expect(state.shown.map((entry) => entry.key)).toEqual(['Hacker News:1'])
+
+    await harness.clickDashboardElement('.idle-news')
+
+    expect(await harness.waitForPaneUrl(fixture.url('/second'))).toBe(fixture.url('/second'))
+    await waitFor(
+      async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('.url-input') && !document.querySelector('.idle-screen')`)) ? true : undefined),
+      { timeoutMs: 10000, intervalMs: 250 },
+    )
   })
 
   it('Ctrl+Shift+L shows the idle screen at once, from the pane or the dashboard', async () => {

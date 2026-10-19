@@ -7,6 +7,8 @@ import { countdownLabel, describeDuration } from '../../core/timer/duration'
 import type { TimerState } from '../../core/timer/timer'
 import type { NowPlaying } from '../../core/music/nowPlaying'
 import { NowPlayingCard } from './NowPlayingCard'
+import { NewsCard } from './NewsCard'
+import type { NewsState } from './useNews'
 import type { CalendarEvent } from '../../core/calendar/calendar'
 import { monthGrid, upNext, weekStartOf, type UpNext } from '../../core/calendar/month'
 import { nextHoliday, ukBankHolidays } from '../../core/calendar/ukBankHolidays'
@@ -195,7 +197,7 @@ function WeatherCard({ report }: { report: WeatherReport }) {
   )
 }
 
-/** A card with only a line to say (the weather unset or loading, the usage dashboard unreachable): a small Card Slot, the words centred. */
+/** A card with only a line to say (the weather unset or loading, the usage dashboard unreachable, no news yet): a small Card Slot, the words centred. */
 function NoteCard({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <section className="idle-card idle-note" aria-label={label}>
@@ -513,7 +515,7 @@ function TimerCard({ timer }: { timer: Exclude<TimerState, { status: 'off' }> })
 /**
  * The at-rest screen (T11): the smart-display half of the appliance. Clock
  * and date, the weather with today's range and the coming hours beside the
- * AI Usage and the Calendar's month, the Timer, the next event and
+ * AI Usage, the Calendar's month and the News card's Today's Highlight, the Timer, the next event and
  * Now Playing when there is one, and the Last Page with its way back — never a Feed
  * Entry (#70). Mounts in place
  * of the whole dashboard while nothing is happening — App's gate keeps it
@@ -579,6 +581,7 @@ export function IdleScreen({
   usage,
   usagePrefs,
   cards = IDLE_CARD_IDS,
+  news = { status: 'loading' },
   lastPage,
   timer,
   nowPlaying,
@@ -590,6 +593,8 @@ export function IdleScreen({
   usagePrefs: UsagePrefs
   /** The pinned cards, in the order they read (settings' idleCards). */
   cards?: readonly IdleCardId[]
+  /** Today's Highlight for the News card (useNews). */
+  news?: NewsState
   lastPage: LastPage | null
   timer: TimerState
   nowPlaying: NowPlaying | null
@@ -624,6 +629,9 @@ export function IdleScreen({
       case 'music':
         // A ringing Timer takes its place: the alarm is what the room should see.
         return nowPlaying !== null && timer.status !== 'ringing' ? { id, sizes: [WIDE, SMALL], hasContent: true } : { id, sizes: [], hasContent: false }
+      case 'news':
+        if (news.status === 'ready') return { id, sizes: [BIG, WIDE, SMALL], hasContent: true }
+        return { id, sizes: news.status === 'loading' ? [] : [SMALL], hasContent: false }
     }
   })
   const layout = layoutSlots(requests)
@@ -641,6 +649,12 @@ export function IdleScreen({
         return <MonthCalendar now={now} weekStart={weekStart} events={events} size={placement.size} />
       case 'music':
         return <NowPlayingCard nowPlaying={nowPlaying} timer={timer} />
+      case 'news':
+        return news.status === 'ready' ? (
+          <NewsCard highlight={news.highlight} />
+        ) : (
+          <NoteCard label="news">{news.status === 'unset' ? 'Add a topic to News in settings' : 'No news yet'}</NoteCard>
+        )
     }
   }
 

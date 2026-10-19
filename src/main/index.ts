@@ -66,6 +66,7 @@ import { createDucking } from '../core/music/ducking'
 import { createRememberedSongsStore } from './music/rememberedSongsStore'
 import { registerUsageIpc } from './usage/attachUsage'
 import { registerCalendarIpc } from './calendar/attachCalendar'
+import { registerNewsIpc } from './news/attachNews'
 import { attachTimerAlarm } from './timer/timerAlarm'
 import { attachIdleShortcut } from './idleShortcut'
 import { attachIdleTyping } from './idleTyping'
@@ -498,6 +499,7 @@ app.whenReady().then(async () => {
   registerCommandRunnerIpc()
   registerSettingsIpc(settingsStore)
   registerUsageIpc(() => settingsStore.get().usageDashboard.url)
+  registerNewsIpc({ storePath: join(app.getPath('userData'), 'news.json'), profile: () => settingsStore.get().news.topics })
   registerFeedPanelIpc()
   registerTtsIpc({ voicesDir: () => piperConfig.voicesDir })
   registerVoiceIpc()

@@ -1481,6 +1481,11 @@ body {
   gap: 8px;
 }
 
+.settings-topic-words {
+  flex: 1;
+  min-width: 0;
+}
+
 .settings-button {
   height: 36px;
   padding: 0 20px;
@@ -2279,6 +2284,138 @@ body {
   }
 
   .idle-slot > .idle-music .idle-music-next {
+    display: none;
+  }
+}
+
+/* ---- the News card ----
+   Today's Highlight in its Card Slot: the topic as a kicker, the title
+   large, the number that made it a story larger still, the source and the
+   site at the foot. Drawn for the box it is given — a 2×2 (the base), a
+   2×1 and a 1×1 — by container query on the slot, the title clamped so it
+   never pushes the figure out. A button: the tap opens the story. */
+.idle-news {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 40px 44px;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+  transition: border-color 120ms ease, transform 120ms ease;
+}
+
+.idle-news:hover,
+.idle-news:focus-visible {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.idle-news:active {
+  transform: scale(0.99);
+}
+
+.idle-news-kicker {
+  overflow: hidden;
+  font-size: 1.4rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--accent);
+}
+
+.idle-news-title {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: 3.6rem;
+  font-weight: 600;
+  line-height: 1.12;
+  letter-spacing: -0.01em;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 5;
+}
+
+.idle-news-figure {
+  margin-top: auto;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.idle-news-count {
+  font-size: 7rem;
+  font-weight: 200;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.idle-news-unit {
+  font-size: 2rem;
+  color: var(--muted);
+}
+
+.idle-news-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 20px;
+  overflow: hidden;
+  max-height: 1.4em;
+  font-size: 1.4rem;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.idle-news-source {
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* 2×1: the title over two lines, the figure beside the foot's height. */
+@container (max-height: 500px) {
+  .idle-news {
+    gap: 10px;
+    padding: 28px 36px;
+  }
+
+  .idle-news-kicker {
+    font-size: 1.2rem;
+  }
+
+  .idle-news-title {
+    font-size: 2.5rem;
+    -webkit-line-clamp: 2;
+  }
+
+  .idle-news-count {
+    font-size: 4.4rem;
+  }
+
+  .idle-news-unit {
+    font-size: 1.6rem;
+  }
+
+  .idle-news-foot {
+    font-size: 1.2rem;
+  }
+}
+
+/* 1×1: three lines of a smaller title, the comments left to the larger boxes. */
+@container (max-width: 600px) {
+  .idle-news {
+    padding: 24px 26px;
+  }
+
+  .idle-news-title {
+    font-size: 1.85rem;
+    -webkit-line-clamp: 3;
+  }
+
+  .idle-news-count {
+    font-size: 3.6rem;
+  }
+
+  .idle-news-comments {
     display: none;
   }
 }

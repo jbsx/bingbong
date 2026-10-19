@@ -167,3 +167,29 @@ describe('hotListenSilenceMs (#326)', () => {
     expect(sanitizeSettings({ hotListenSilenceMs: 'soon' }).hotListenSilenceMs).toBe(8_000)
   })
 })
+
+describe('news (#346)', () => {
+  it('defaults to the seven Interest Profile topics and pins the News card', () => {
+    const settings = defaultSettings()
+    expect(settings.news.topics.map((topic) => topic.name)).toEqual([
+      'AI coding agents and harnesses',
+      'Frontier AI research',
+      'Developer tooling and terminal culture',
+      'Startups, product and business',
+      'Markets and finance',
+      'The Musk orbit',
+      'One-offs',
+    ])
+    expect(settings.idleCards).toContain('news')
+  })
+
+  it('keeps an edited profile, an empty one included', () => {
+    expect(sanitizeSettings({ news: { topics: [{ name: ' Chess ', words: [' chess ', '', 7] }] } }).news.topics).toEqual([{ name: 'Chess', words: ['chess'] }])
+    expect(sanitizeSettings({ news: { topics: [] } }).news.topics).toEqual([])
+  })
+
+  it('adds the News card to Pinned Cards saved before it existed, but keeps it off once unpinned', () => {
+    expect(sanitizeSettings({ idleCards: ['calendar', 'weather'] }).idleCards).toEqual(['calendar', 'weather', 'news'])
+    expect(sanitizeSettings({ idleCards: ['calendar', 'weather'], news: { topics: [] } }).idleCards).toEqual(['calendar', 'weather'])
+  })
+})

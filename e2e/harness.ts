@@ -164,7 +164,9 @@ function elementCenterScript(selector: string): string {
  * scripted piper and aplay in e2e/bin: `read` and a failure speak, and no
  * launch may load a real voice or reach the sound card. Downloads and
  * `screenshot` files (#330) land in the launch's own profile, never in
- * the developer's ~/bingbong_downloads.
+ * the developer's ~/bingbong_downloads. The News card's Hacker News
+ * (#346) asks the fixture server, which has no front page to answer, so no
+ * launch reaches the real API; a test that wants stories brings its own.
  */
 export function hermeticEnvTemplate(fixture: FixtureServer, userDataDir: string): Record<string, string | undefined> {
   return {
@@ -175,6 +177,7 @@ export function hermeticEnvTemplate(fixture: FixtureServer, userDataDir: string)
     BINGBONG_ADBLOCK_RESOURCES: '',
     BINGBONG_ENV_FILE: join(userDataDir, 'env-file-not-set'),
     BINGBONG_DOWNLOADS_DIR: join(userDataDir, 'downloads'),
+    BINGBONG_NEWS_FIXTURE: fixture.url('/no-news'),
     ...ROUTING_ENV_UNSET,
   }
 }

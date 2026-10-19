@@ -17,7 +17,7 @@ export interface SlotSize {
 }
 
 /** The cards an owner can pin to the Idle Screen, in their default order. */
-export const IDLE_CARD_IDS = ['weather', 'usage', 'calendar', 'music'] as const
+export const IDLE_CARD_IDS = ['weather', 'usage', 'calendar', 'music', 'news'] as const
 
 export type IdleCardId = (typeof IDLE_CARD_IDS)[number]
 

@@ -15,11 +15,24 @@ import { waitFor } from './waitFor'
 // stand-in usage dashboard with BINGBONG_IDLE_SHOT_PROVIDERS providers
 // (default 3), and with BINGBONG_IDLE_SHOT_MUSIC=1 a song playing from the
 // YouTube stand-in so Now Playing takes its Card Slot — shot in dark and
-// light into BINGBONG_IDLE_SHOT_DIR (default a temp folder, printed). It
-// also holds every Card Slot to its box at that size.
+// light into BINGBONG_IDLE_SHOT_DIR (default a temp folder, printed). The
+// stand-in usage server also answers as Hacker News's front page, so the
+// News card holds Today's Highlight (#346). It also holds every Card Slot
+// to its box at that size, and the News card at 2×2, 2×1 and 1×1.
 // Gated: BINGBONG_IDLE_SHOT=1, so the plain e2e run skips it.
 
 const PROVIDERS = ['Codex', 'Claude', 'Kaggle', 'GLM', 'Grok']
+
+/** Hacker News's stand-in front page: a long title that matches the default Interest Profile over a shorter one that does not. */
+function frontPage(now: number) {
+  const at = Math.floor(now / 1000) - 3 * 3600
+  return {
+    hits: [
+      { objectID: '1', title: 'Claude Code’s new harness lets a coding agent run your whole test suite in parallel across machines', url: 'https://example.com/harness', points: 1840, num_comments: 612, created_at_i: at },
+      { objectID: '2', title: 'A history of the bread knife', url: 'https://example.com/bread', points: 2950, num_comments: 210, created_at_i: at },
+    ],
+  }
+}
 const HOUR = 3_600_000
 
 function usagePayload(count: number, now: number) {
@@ -83,7 +96,13 @@ describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review'
   beforeAll(async () => {
     server = createServer((request, response) => {
       const payload = usagePayload(count, Date.now())
-      const body = request.url?.startsWith('/api/history') ? payload.history : request.url?.startsWith('/api/usage') ? payload.usage : null
+      const body = request.url?.startsWith('/api/history')
+        ? payload.history
+        : request.url?.startsWith('/api/usage')
+          ? payload.usage
+          : request.url?.startsWith('/api/v1/search')
+            ? frontPage(Date.now())
+            : null
       response.writeHead(body === null ? 404 : 200, { 'content-type': 'application/json' })
       response.end(JSON.stringify(body ?? {}))
     })
@@ -104,11 +123,11 @@ describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review'
         wakeFromBootIdle: false,
         launchArgs: ['--browser-cli', '--mute-audio'],
         pipeStdio: true,
-        env: { BINGBONG_YOUTUBE_FIXTURE: new URL(fixture.url('/')).origin },
+        env: { BINGBONG_YOUTUBE_FIXTURE: new URL(fixture.url('/')).origin, BINGBONG_NEWS_FIXTURE: `http://127.0.0.1:${port}` },
       })
       await harness.waitForCliOutput(/bingbong browser harness/)
     } else {
-      harness = await startHarness({ userDataDir, wakeFromBootIdle: false })
+      harness = await startHarness({ userDataDir, wakeFromBootIdle: false, env: { BINGBONG_NEWS_FIXTURE: `http://127.0.0.1:${port}` } })
     }
 
     const { sessionId } = await harness.cdp.send<{ sessionId: string }>('Target.attachToTarget', { targetId: harness.dashboardTargetId(), flatten: true })
@@ -134,7 +153,7 @@ describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review'
     await harness.cdp.send('Emulation.setDeviceMetricsOverride', { width: 1920, height: 1080, deviceScaleFactor: 1, mobile: false }, session)
     await harness.cdp.send('Page.reload', {}, session)
     await waitFor(
-      async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('.wx-card') && !!document.querySelector('.usage-card')`)) ? true : undefined),
+      async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('.wx-card') && !!document.querySelector('.usage-card') && !!document.querySelector('.idle-news')`)) ? true : undefined),
       { timeoutMs: 20000, intervalMs: 250 },
     )
     if (music) {
@@ -166,6 +185,47 @@ describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review'
     })()`)
     expect(geometry.overflowing).toEqual([])
     expect(geometry.middleBottom).toBeLessThanOrEqual(geometry.stripTop)
+  })
+
+  it('holds the News card to its box at 2×2, 2×1 and 1×1', async () => {
+    await mkdir(outDir, { recursive: true })
+    // The grid gives News the box its sizes allow; each size is forced on its slot in turn, the card drawing itself by container query.
+    for (const [w, h] of [
+      [2, 2],
+      [2, 1],
+      [1, 1],
+    ]) {
+      const box = await harness.dashboardEval<{ overflowing: boolean; width: number; height: number; x: number; y: number; title: string }>(`(() => {
+        const slot = document.querySelector('.idle-slot[data-card="news"]')
+        slot.dataset.start ??= slot.style.gridColumn.split(' / ')[0] + '|' + slot.style.gridRow.split(' / ')[0]
+        const [column, row] = slot.dataset.start.split('|')
+        slot.style.gridColumn = column + ' / span ${w}'
+        slot.style.gridRow = row + ' / span ${h}'
+        const card = slot.querySelector('.idle-news')
+        const rect = card.getBoundingClientRect()
+        const title = card.querySelector('.idle-news-title').getBoundingClientRect()
+        const figure = card.querySelector('.idle-news-figure').getBoundingClientRect()
+        return {
+          overflowing: card.scrollHeight > card.clientHeight + 1 || card.scrollWidth > card.clientWidth + 1 || figure.bottom > rect.bottom || title.bottom > figure.top,
+          width: rect.width, height: rect.height, x: rect.x, y: rect.y,
+          title: card.querySelector('.idle-news-title').textContent,
+        }
+      })()`)
+      expect(box.overflowing, `${w}×${h}`).toBe(false)
+      expect(box.title).toContain('Claude Code')
+      const { data } = await harness.cdp.send<{ data: string }>(
+        'Page.captureScreenshot',
+        { format: 'png', clip: { x: box.x, y: box.y, width: box.width, height: box.height, scale: 1 } },
+        session,
+      )
+      await writeFile(join(outDir, `news-${w}x${h}.png`), Buffer.from(data, 'base64'))
+    }
+    await harness.dashboardEval(`(() => {
+      const slot = document.querySelector('.idle-slot[data-card="news"]')
+      const [column, row] = slot.dataset.start.split('|')
+      slot.style.gridColumn = column + ' / span 2'
+      slot.style.gridRow = row + ' / span 2'
+    })()`)
   })
 
   it('shoots the screen in dark and light', async () => {

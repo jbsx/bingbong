@@ -4,6 +4,7 @@ import type { TimerState } from '../core/timer/timer'
 import type { NowPlaying } from '../core/music/nowPlaying'
 import type { UsageSnapshot } from '../core/usage/usage'
 import type { CalendarEvent, CalendarRange } from '../core/calendar/calendar'
+import type { TodaysHighlight } from '../core/news/newsDesk'
 import type { PipelineEvent } from '../core/pipeline/events'
 import type { AppSettings } from '../core/settings/settings'
 import type { VoiceErrorEvent, VoiceHeardEvent, VoicePartialEvent, VoiceState } from '../core/voice/ipcChannels'
@@ -62,6 +63,11 @@ export interface BingbongUsageApi {
 export interface BingbongCalendarApi {
   /** The Calendar (CONTEXT.md): every source's events overlapping `range`, by start. */
   events(range: CalendarRange): Promise<CalendarEvent[]>
+}
+
+export interface BingbongNewsApi {
+  /** The News card's Today's Highlight (CONTEXT.md); null when there has never been one or the Interest Profile is empty. Main fetches at most hourly. */
+  highlight(): Promise<TodaysHighlight | null>
 }
 
 export interface BingbongAssistantApi {
@@ -138,6 +144,7 @@ export interface BingbongApi {
   music: BingbongMusicApi
   usage: BingbongUsageApi
   calendar: BingbongCalendarApi
+  news: BingbongNewsApi
   assistant: BingbongAssistantApi
   settings: BingbongSettingsApi
   tts: BingbongTtsApi

@@ -5,6 +5,7 @@
 
 import { defaultUsagePrefs, sanitizeUsagePrefs, type UsagePrefs } from '../usage/usage'
 import { IDLE_CARD_IDS, sanitizeIdleCards, type IdleCardId } from '../idle/slots'
+import { defaultInterestProfile, sanitizeInterestProfile, type InterestProfile } from '../news/interestProfile'
 
 export const WAKE_WORD_THRESHOLD_MIN = 0
 export const WAKE_WORD_THRESHOLD_MAX = 1
@@ -89,6 +90,8 @@ export interface AppSettings {
   usageDashboard: { url: string } & UsagePrefs
   /** The Idle Screen's pinned cards (core/idle/slots), in the order they read; one left out is not shown. */
   idleCards: IdleCardId[]
+  /** The News card's Interest Profile (core/news/interestProfile): the topics a story is ranked against. */
+  news: { topics: InterestProfile }
 }
 
 /** The owner's dashboard on the LAN, so the Idle Screen shows it out of the box. */
@@ -109,6 +112,7 @@ export function defaultSettings(): AppSettings {
     weather: { city: '', units: 'metric' },
     usageDashboard: { url: USAGE_DASHBOARD_URL_DEFAULT, ...defaultUsagePrefs() },
     idleCards: [...IDLE_CARD_IDS],
+    news: { topics: defaultInterestProfile() },
   }
 }
 
@@ -155,6 +159,17 @@ export function asAppearance(value: unknown): Appearance {
   return value === 'light' || value === 'dark' || value === 'system' ? value : 'system'
 }
 
+/**
+ * The Pinned Cards as saved, and the News card added at the end when the
+ * settings were saved before it existed — they have no `news` section — so
+ * it is on by default for an owner who already ordered the others. Once
+ * saved with the News section, a list without it means it was unpinned.
+ */
+function pinnedCards(record: Record<string, unknown>): IdleCardId[] {
+  const cards = sanitizeIdleCards(record.idleCards)
+  return record.news === undefined && !cards.includes('news') ? [...cards, 'news'] : cards
+}
+
 /** Parse anything (disk, IPC) into valid settings; unknown bits fall back to defaults. */
 export function sanitizeSettings(raw: unknown): AppSettings {
   const defaults = defaultSettings()
@@ -163,6 +178,7 @@ export function sanitizeSettings(raw: unknown): AppSettings {
 
   const weather = asRecord(record.weather)
   const usageDashboard = asRecord(record.usageDashboard)
+  const news = asRecord(record.news)
 
   return {
     micId: asString(record.micId, defaults.micId),
@@ -181,7 +197,8 @@ export function sanitizeSettings(raw: unknown): AppSettings {
       units: weather?.units === 'imperial' ? 'imperial' : defaults.weather.units,
     },
     usageDashboard: { url: asString(usageDashboard?.url, defaults.usageDashboard.url), ...sanitizeUsagePrefs(usageDashboard) },
-    idleCards: sanitizeIdleCards(record.idleCards),
+    idleCards: pinnedCards(record),
+    news: { topics: news === null ? defaultInterestProfile() : sanitizeInterestProfile(news.topics) },
   }
 }
 

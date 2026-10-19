@@ -382,8 +382,9 @@ conditions, today's high, low, rain chance and sun times, the six coming
 hours and the three coming days, all in the city's own clock — the sky as a
 colored glyph, every temperature in its hue from blue through green to red,
 rain in blue, so the day reads from across the room; the hours' temperature
-row is left off when every hour reads the same), the AI Usage card and the
-Calendar, and Now Playing while the Player holds a song — and under them a
+row is left off when every hour reads the same), the AI Usage card, the
+Calendar, the News card with Today's Highlight, and Now Playing while the
+Player holds a song — and under them a
 strip of chips: the Timer when one is set, today's next event when the
 Calendar has one, and the Last Page with its way back. It is laid out for the appliance's 21-inch 1920×1080 display
 (owner, 2026-10-19), to be read from a couple of metres away (owner,
@@ -439,10 +440,11 @@ _Avoid_: widget, tile
 
 **Pinned Cards**:
 The Idle Screen's cards the owner chose in settings, in the order they
-read (weather, AI Usage, Calendar, Now Playing untouched); one left out is
-not shown.
+read (weather, AI Usage, Calendar, Now Playing and News untouched); one
+left out is not shown. A card added after the list was saved (News, #346)
+joins its end once; unpinned after that, it stays off.
 A card that has nothing to say — the weather unset or loading, the usage
-dashboard unreachable — keeps a small Card Slot with its line.
+dashboard unreachable, no news yet — keeps a small Card Slot with its line.
 
 **AI Usage**:
 The Idle Screen's card of AI providers' limits, read from the owner's
@@ -493,6 +495,51 @@ is left) and how many more today. No source is wired yet: the owner named
 Google Calendar and Outlook as the ones to come, so today the Calendar is
 the month alone and Up Next never shows. Read-only.
 _Avoid_: agenda (for the month), schedule
+
+**News**:
+The Idle Screen's card of what is going on in the owner's world (2026-10-19
+ask: "i want to be in the know about what is going on in the world.
+specifically the world i interact with mostly"): a story belongs on it when
+something in one of the owner's circles jumped far above that circle's
+normal day and the owner has not been shown it yet. A Pinned Card offering
+2×2, 2×1 and 1×1 Card Slots; today every size holds Today's Highlight
+alone, the larger boxes leaving room for This Week and This Month (#347).
+An empty Interest Profile or a source with nothing yet keeps a small note.
+_Avoid_: news feed, headlines, widget
+
+**Interest Profile**:
+The owner's circles as a topic list in settings' News section, each topic
+carrying the words that match it; by default the seven read from the
+owner's X follows on 2026-10-19 (AI coding agents and harnesses, frontier
+AI research, developer tooling and terminal culture, startups and
+business, markets and finance as the big event, the Musk orbit, one-offs).
+A story matches a topic when its title holds one of the topic's words as a
+whole word; the match counts topics, not words, so the AI topics — half the
+follows — weigh no more for having many words.
+_Avoid_: interests, keywords, filter
+
+**Today's Highlight**:
+The one story of the last 24 hours that scored highest against the
+Interest Profile and has not been shown before: its title, its source, and
+the number that made it a story ("1,840 points"). A story's score is its
+magnitude's percentile against its own source's recent days (its day and
+the six before), so sources compare on one scale, boosted by the topics it
+matches; one matching no topic ranks under every one that matches one.
+Main polls hourly while the Idle Screen asks, and once on its first show; a
+story is shown once, the shown keys kept in userData (news.json) so that
+holds across a restart; a poll no source answered keeps the last
+highlight. A tap opens the story in the pane through `navigate <link>`, on
+the pointer going down like the Last Page's tap, leaving the Idle Screen.
+_Avoid_: top story, headline, pick of the day
+
+**NewsSource**:
+Where News stories come from: one site's public listing, answering the
+stories published since a time, each with title, link, source, published
+time and the source's own magnitude (points, stars, likes). Main asks them
+together; a failing one is reported and left out, as a failing Calendar
+Source is. Hacker News (its keyless Algolia API, the front page's points and
+comments) is the one wired; more follow in #348.
+_Avoid_: feed, provider (a provider is a Calendar or AI Usage term)
 
 **Last Page**:
 The page the browser pane last showed — its address and title — kept in

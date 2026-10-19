@@ -14,6 +14,8 @@ import { TIMER_IPC } from '../core/timer/ipcChannels'
 import { MUSIC_IPC } from '../core/music/ipcChannels'
 import type { NowPlaying } from '../core/music/nowPlaying'
 import { CALENDAR_IPC } from '../core/calendar/ipcChannels'
+import { NEWS_IPC } from '../core/news/ipcChannels'
+import type { TodaysHighlight } from '../core/news/newsDesk'
 import type { CalendarEvent, CalendarRange } from '../core/calendar/calendar'
 import { IDLE_IPC } from '../core/idle/ipcChannels'
 import type { TimerState } from '../core/timer/timer'
@@ -85,6 +87,9 @@ contextBridge.exposeInMainWorld('bingbong', {
   },
   calendar: {
     events: (range: CalendarRange): Promise<CalendarEvent[]> => ipcRenderer.invoke(CALENDAR_IPC.events, range),
+  },
+  news: {
+    highlight: (): Promise<TodaysHighlight | null> => ipcRenderer.invoke(NEWS_IPC.highlight),
   },
   assistant: {
     submit: (text: string): Promise<boolean> => ipcRenderer.invoke(PIPELINE_IPC.submit, text),
