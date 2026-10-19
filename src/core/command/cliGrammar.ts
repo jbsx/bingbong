@@ -1,5 +1,6 @@
 import type { KeyPress } from '../ports/browser'
 import { NEXT_TRACK_KEY } from '../browser/mediaKeys'
+import { parseDuration } from '../timer/duration'
 
 export type CliCommand =
   | { type: 'navigate'; input: string }
@@ -12,6 +13,7 @@ export type CliCommand =
   | { type: 'back' }
   | { type: 'reload' }
   | { type: 'resume' }
+  | { type: 'timer'; durationMs: number | null }
   | { type: 'help' }
   | { type: 'quit' }
 
@@ -92,6 +94,12 @@ export function parseCliCommand(line: string): ParsedCliCommand {
       return { ok: true, command: { type: 'reload' } }
     case 'resume':
       return { ok: true, command: { type: 'resume' } }
+    case 'timer': {
+      if (rest === 'off' || rest === 'cancel' || rest === 'stop') return { ok: true, command: { type: 'timer', durationMs: null } }
+      const durationMs = parseDuration(rest)
+      if (durationMs === null) return { ok: false, error: "timer: expected 'timer <length>' (5m, 1h30m, 2:30, 10 minutes) or 'timer off'" }
+      return { ok: true, command: { type: 'timer', durationMs } }
+    }
     case 'help':
       return { ok: true, command: { type: 'help' } }
     case 'quit':

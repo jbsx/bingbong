@@ -2,6 +2,7 @@ import { parseSearchUrl } from '../browser/urlInput'
 import { parseCliCommand, type CliCommand } from './cliGrammar'
 import { normalizeWords, pressKeyOf, type Command, type CommandRef, type CommandVerb } from './command'
 import { isAddressShaped } from './openAddress'
+import { readTimerWords } from '../timer/timerWords'
 
 // The Local Match (CONTEXT.md, ADR 0076, #324): a Command settled from the
 // Utterance and the page alone, without asking the Decision Model — the
@@ -327,6 +328,8 @@ function fromGrammar(parsed: CliCommand): Command | null {
       return command('reload')
     case 'resume':
       return command('resume')
+    case 'timer':
+      return parsed.durationMs === null ? command('timer') : command('timer', { durationMs: parsed.durationMs })
     case 'help':
       return command('help')
     case 'quit':
@@ -371,6 +374,9 @@ export function carriesWordsPastAddress(text: string): boolean {
 function readSpoken(text: string, refs: readonly CommandRef[], url: string, lenient: boolean): Command | null {
   const tokens = tokenize(text)
   if (tokens.length === 0) return null
+  // The Timer's lines first: "cancel the timer" is not the stop verb, and "set" heads no verb phrase.
+  const timer = readTimerWords(text)
+  if (timer !== null) return timer.kind === 'set' ? command('timer', { durationMs: timer.durationMs }) : command('timer')
   const found = verbOf(tokens)
   if (found === null) {
     // No plain verb (ADR 0076): the best guess reads the words as search

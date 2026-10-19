@@ -41,6 +41,11 @@ describe('commandAnswer (#333)', () => {
     expect(answer(command('press', { key: { key: 'Tab', shift: true }, times: 3 }))).toBe('Pressed Shift+Tab 3 times.')
   })
 
+  it('says how long a Timer was set for, and that it is off', () => {
+    expect(answer(command('timer', { durationMs: 90 * 60_000 }))).toBe('Timer set for 1 hour 30 minutes.')
+    expect(answer(command('timer'))).toBe('Timer off.')
+  })
+
   it('answers a Stop, a clear and a resume', () => {
     expect(answer(command('stop'))).toBe('Stopped.')
     expect(answer(command('clear'))).toBe('Cleared the field.')

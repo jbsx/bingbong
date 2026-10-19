@@ -100,6 +100,15 @@ describe('parseCliCommand', () => {
     expect(parseCliCommand('resume')).toEqual({ ok: true, command: { type: 'resume' } })
   })
 
+  it('parses timer — a length, or off', () => {
+    expect(parseCliCommand('timer 5m')).toEqual({ ok: true, command: { type: 'timer', durationMs: 300_000 } })
+    expect(parseCliCommand('timer 2:30')).toEqual({ ok: true, command: { type: 'timer', durationMs: 150_000 } })
+    expect(parseCliCommand('timer ten minutes')).toEqual({ ok: true, command: { type: 'timer', durationMs: 600_000 } })
+    expect(parseCliCommand('timer off')).toEqual({ ok: true, command: { type: 'timer', durationMs: null } })
+    expect(parseCliCommand('timer pasta')).toMatchObject({ ok: false })
+    expect(parseCliCommand('timer')).toMatchObject({ ok: false })
+  })
+
   it('parses reload (#328)', () => {
     expect(parseCliCommand('reload')).toEqual({ ok: true, command: { type: 'reload' } })
   })

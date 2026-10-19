@@ -1812,6 +1812,119 @@ body {
   color: var(--muted);
 }
 
+/* ---- the Timer card ----
+   Beside the Last Page in the bottom band: the countdown large, in the
+   system orange a timer wears; ringing, it turns red and breathes so it
+   reads as done from across the room. */
+
+.idle-screen-bottom {
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.idle-timer {
+  --timer-tone: var(--status-yellow);
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 300px;
+  padding: 14px 24px 14px 16px;
+  font: inherit;
+  text-align: left;
+  -webkit-app-region: no-drag;
+}
+
+.idle-timer--ringing {
+  --timer-tone: var(--status-red);
+  border-color: var(--timer-tone);
+  cursor: pointer;
+  animation: idle-timer-ring 1.2s ease-in-out infinite;
+}
+
+.idle-timer--ringing:focus-visible {
+  outline: 2px solid var(--timer-tone);
+  outline-offset: 2px;
+}
+
+@keyframes idle-timer-ring {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--timer-tone) 45%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 10px color-mix(in srgb, var(--timer-tone) 0%, transparent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .idle-timer--ringing {
+    animation: none;
+  }
+}
+
+.idle-timer-ring {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 60px;
+  height: 60px;
+}
+
+.idle-timer-ring > svg {
+  position: absolute;
+  inset: 0;
+}
+
+.idle-timer-track,
+.idle-timer-arc {
+  fill: none;
+  stroke-width: 4;
+}
+
+.idle-timer-track {
+  stroke: var(--bubble);
+}
+
+.idle-timer-arc {
+  stroke: var(--timer-tone);
+  stroke-linecap: round;
+  transition: stroke-dashoffset 250ms linear;
+}
+
+.idle-timer-glyph {
+  display: flex;
+  color: var(--timer-tone);
+}
+
+.idle-timer-words {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.idle-timer-kicker {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--timer-tone);
+}
+
+.idle-timer-left {
+  font-size: 2rem;
+  font-weight: 300;
+  letter-spacing: -0.01em;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.idle-timer-sub {
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
 /* Subagents: live cards above the browser pane — one per agent, with tab
    viewports whose rects drive the window's WebContentsViews. */
 .dashboard-browsing {

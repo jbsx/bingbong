@@ -12,6 +12,7 @@ export const COMMAND_HELP_LINES: readonly string[] = [
   '  back | forward           move in history',
   '  reload                   load the page again',
   '  resume                   return to the last page — after a restart, it is reopened',
+  '  timer <length> | off     count down on the idle screen and ring (5m, 1h30m, 2:30, ten minutes)',
   '  press enter|escape|space|up|down|left|right [n]',
   '  read                     print a numbered-ref snapshot of visible interactive elements',
   '  clear                    clear the focused field',

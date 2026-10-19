@@ -2,6 +2,7 @@ import { isRealPage, lastPageLabel } from '../browser/lastPage'
 import { pageReadPart, pageReadText } from '../browser/pageText'
 import { describeCommand, type Command, type CommandPage } from './command'
 import { SPOKEN_FAILURES } from './spokenFailure'
+import { describeDuration } from '../timer/duration'
 
 // The Answer a Command leaves in the Feed (#333): exactly one per Command,
 // written from facts the Command and the page already hold — never by a
@@ -66,6 +67,8 @@ export function commandAnswer(command: Command, facts: AnswerFacts): string | nu
     case 'resume':
       // Nothing to resume leaves the pane where it was: on no page.
       return isRealPage(facts.page.url) ? `Back on ${pageName(facts.page)}.` : 'There is no page to resume yet.'
+    case 'timer':
+      return command.durationMs !== undefined ? `Timer set for ${describeDuration(command.durationMs)}.` : 'Timer off.'
     case 'read':
     case 'screenshot':
     case 'help':

@@ -3,8 +3,10 @@ import { lastPageLabel, type LastPage } from '../../core/browser/lastPage'
 import { hourLabel } from '../../core/weather/hourLabel'
 import { temperatureHue, type WeatherDay, type WeatherHour, type WeatherReport } from '../../core/weather/weather'
 import type { WeatherUnits } from '../../core/settings/settings'
+import { countdownLabel, describeDuration } from '../../core/timer/duration'
+import type { TimerState } from '../../core/timer/timer'
 import type { WeatherState } from './useWeather'
-import { ChevronIcon, GlobeIcon, HighIcon, LowIcon, RainChanceIcon, SunriseIcon, SunsetIcon, WeatherIcon } from './WeatherIcon'
+import { ChevronIcon, GlobeIcon, HighIcon, LowIcon, RainChanceIcon, SunriseIcon, SunsetIcon, TimerIcon, WeatherIcon } from './WeatherIcon'
 
 function formatClock(now: Date): string {
   return now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -198,15 +200,97 @@ function LastPageCard({ page }: { page: LastPage }) {
   )
 }
 
+/** The ring around the Timer's glyph: the part still to run, drawn as an arc that empties clockwise. */
+function TimerRing({ fraction }: { fraction: number }) {
+  const radius = 26
+  const circumference = 2 * Math.PI * radius
+  return (
+    <span className="idle-timer-ring" aria-hidden="true">
+      <svg width={60} height={60} viewBox="0 0 60 60">
+        <circle className="idle-timer-track" cx={30} cy={30} r={radius} />
+        <circle
+          className="idle-timer-arc"
+          cx={30}
+          cy={30}
+          r={radius}
+          strokeDasharray={circumference}
+          strokeDashoffset={circumference * (1 - Math.min(1, Math.max(0, fraction)))}
+          transform="rotate(-90 30 30)"
+        />
+      </svg>
+      <span className="idle-timer-glyph">
+        <TimerIcon size={24} />
+      </span>
+    </span>
+  )
+}
+
+/**
+ * The Timer (CONTEXT.md), beside the Last Page: the countdown while it
+ * runs, ticking four times a second so a second never lingers, and "Time's
+ * up" while it rings. A ringing Timer is a control — the tap turns it off
+ * through the same `timer off` Command the words are, on the pointer going
+ * down, as the Last Page's card does (useIdle unmounts this screen before a
+ * click could land). A running one is not: a tap there only wakes the
+ * dashboard.
+ */
+function TimerCard({ timer }: { timer: Exclude<TimerState, { status: 'off' }> }) {
+  const [now, setNow] = useState(() => Date.now())
+
+  useEffect(() => {
+    if (timer.status !== 'running') return
+    const tick = setInterval(() => setNow(Date.now()), 250)
+    return () => clearInterval(tick)
+  }, [timer.status])
+
+  const length = describeDuration(timer.durationMs)
+  if (timer.status === 'running') {
+    const left = timer.endsAt - now
+    const ends = new Date(timer.endsAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    return (
+      <section className="idle-card idle-timer" aria-label={`timer: ${countdownLabel(left)} left of ${length}`}>
+        <TimerRing fraction={left / timer.durationMs} />
+        <span className="idle-timer-words">
+          <span className="idle-timer-kicker">Timer · {length}</span>
+          <span className="idle-timer-left">{countdownLabel(left)}</span>
+          <span className="idle-timer-sub">ends {ends}</span>
+        </span>
+      </section>
+    )
+  }
+  const dismiss = (): void => {
+    void window.bingbong.assistant.submit('timer off')
+  }
+  return (
+    <button
+      type="button"
+      className="idle-card idle-timer idle-timer--ringing"
+      aria-label={`Time's up: ${length} timer. Turn it off`}
+      onPointerDown={dismiss}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') dismiss()
+      }}
+    >
+      <TimerRing fraction={1} />
+      <span className="idle-timer-words">
+        <span className="idle-timer-kicker">Timer · {length}</span>
+        <span className="idle-timer-left">Time’s up</span>
+        <span className="idle-timer-sub">say “stop” or tap</span>
+      </span>
+    </button>
+  )
+}
+
 /**
  * The at-rest screen (T11): the smart-display half of the appliance. Clock
- * and date, the weather with today's range and the coming hours, and the
- * Last Page with its way back — never a Feed Entry (#70). Mounts in place
+ * and date, the weather with today's range and the coming hours, the Timer
+ * when one is set, and the Last Page with its way back — never a Feed
+ * Entry (#70). Mounts in place
  * of the whole dashboard while nothing is happening — App's gate keeps it
  * off the screen over a running Command, an open mic or the settings page
  * — and any activity (input, pipeline or voice event) unmounts it.
  */
-export function IdleScreen({ weather, lastPage }: { weather: WeatherState; lastPage: LastPage | null }) {
+export function IdleScreen({ weather, lastPage, timer }: { weather: WeatherState; lastPage: LastPage | null; timer: TimerState }) {
   const [now, setNow] = useState(() => new Date())
 
   useEffect(() => {
@@ -234,7 +318,10 @@ export function IdleScreen({ weather, lastPage }: { weather: WeatherState; lastP
           </p>
         )}
       </div>
-      <div className="idle-screen-bottom">{lastPage !== null ? <LastPageCard page={lastPage} /> : null}</div>
+      <div className="idle-screen-bottom">
+        {timer.status !== 'off' ? <TimerCard timer={timer} /> : null}
+        {lastPage !== null ? <LastPageCard page={lastPage} /> : null}
+      </div>
     </div>
   )
 }

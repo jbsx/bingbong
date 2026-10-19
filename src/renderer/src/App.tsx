@@ -9,6 +9,7 @@ import { overlaySlotContent } from '../../core/panel/peekCardState'
 import { useFeedPanel, useFeedSlotRect } from './useFeedPanel'
 import { useIdle } from './useIdle'
 import { useLastPage } from './useLastPage'
+import { useTimer } from './useTimer'
 import { usePeekCard } from './usePeekCard'
 import { useSettings } from './useSettings'
 import { useVoice } from './useVoice'
@@ -87,9 +88,10 @@ export function App() {
   const hint = voiceHint(voice)
   const weather = useWeather(settings?.weather ?? null, showIdle)
   const lastPage = useLastPage(showIdle)
+  const timer = useTimer(showIdle)
 
   if (showIdle) {
-    return <IdleScreen weather={weather} lastPage={lastPage} />
+    return <IdleScreen weather={weather} lastPage={lastPage} timer={timer} />
   }
 
   return (

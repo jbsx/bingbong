@@ -1,5 +1,6 @@
 import type { BrowserPaneState, PaneRect } from '../core/browser/paneState'
 import type { LastPage } from '../core/browser/lastPage'
+import type { TimerState } from '../core/timer/timer'
 import type { PipelineEvent } from '../core/pipeline/events'
 import type { AppSettings } from '../core/settings/settings'
 import type { VoiceErrorEvent, VoiceHeardEvent, VoicePartialEvent, VoiceState } from '../core/voice/ipcChannels'
@@ -8,6 +9,7 @@ import type { FeedPanelMode, FeedPanelState } from '../core/panel/feedPanelState
 
 export type { BrowserPaneState, PaneRect }
 export type { LastPage }
+export type { TimerState }
 export type { PipelineEvent }
 export type { AppSettings }
 export type { VoiceErrorEvent, VoiceHeardEvent, VoicePartialEvent, VoiceState }
@@ -23,6 +25,12 @@ export interface BingbongBrowserApi {
   /** The Last Page (CONTEXT.md): the page the pane last showed, kept across restarts; null before any. */
   getLastPage(): Promise<LastPage | null>
   onLastPage(listener: (page: LastPage | null) => void): () => void
+}
+
+export interface BingbongTimerApi {
+  /** The Timer (CONTEXT.md): off, running to `endsAt`, or ringing. */
+  get(): Promise<TimerState>
+  onChange(listener: (state: TimerState) => void): () => void
 }
 
 export interface BingbongAssistantApi {
@@ -92,6 +100,7 @@ export interface BingbongApi {
   /** Launch flags/env snapshot (kiosk mode, idle timeout). */
   app: LaunchConfig
   browser: BingbongBrowserApi
+  timer: BingbongTimerApi
   assistant: BingbongAssistantApi
   settings: BingbongSettingsApi
   tts: BingbongTtsApi

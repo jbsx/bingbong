@@ -44,6 +44,21 @@ describe('the Local Match: resume (the Last Page)', () => {
   })
 })
 
+describe('the Local Match: the Timer', () => {
+  it('reads the grammar and the spoken lines as a timer, without asking the page', () => {
+    expect(localMatch('timer 5m', [])).toEqual({ verb: 'timer', target: null, slot: null, durationMs: 300_000 })
+    expect(localMatch('set a timer for ten minutes', REFS)).toEqual({ verb: 'timer', target: null, slot: null, durationMs: 600_000 })
+    expect(localMatch('a 2 minute timer', REFS)).toEqual({ verb: 'timer', target: null, slot: null, durationMs: 120_000 })
+    expect(localMatch('timer off', REFS)).toEqual({ verb: 'timer', target: null, slot: null })
+  })
+
+  it('"cancel the timer" turns it off, while "cancel" alone is still the stop verb', () => {
+    expect(localMatch('cancel the timer', REFS)).toEqual({ verb: 'timer', target: null, slot: null })
+    expect(localMatch('cancel', REFS)).toEqual({ verb: 'stop', target: null, slot: null })
+    expect(localMatch('stop', REFS)).toEqual({ verb: 'stop', target: null, slot: null })
+  })
+})
+
 describe('the Local Match: the Nth result on a search page', () => {
   it('reads "the first result" and "second link" as the Nth link that leaves the engine, or its redirect to one', () => {
     expect(localMatch('open the first result', RESULTS, SEARCH_URL)).toEqual({ verb: 'click', target: 3, slot: null })

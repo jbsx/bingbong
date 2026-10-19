@@ -368,8 +368,8 @@ What renders while nothing is happening: the clock and date, the weather
 (the current conditions, today's high, low, rain chance and sun times, and
 the six coming hours, all in the city's own clock — the sky as a colored
 glyph, every temperature in its hue from blue through green to red, rain in
-blue, so the day reads from across the room), and the Last Page with its
-way back. Never shows Feed Entries (#70); never renders over a running
+blue, so the day reads from across the room), the Timer when one is set,
+and the Last Page with its way back. Never shows Feed Entries (#70); never renders over a running
 Command, an open mic or the settings page. Any input, pipeline or voice event
 unmounts it; the browser pane is only hidden beneath it, never reset. The
 2026-10-18 ruling put the Last Page on it — the one piece of history the
@@ -387,6 +387,21 @@ boots blank navigates to it. Tapping the Idle Screen's card runs the same
 Command. `resume` is the grammar's alone, like `screenshot` and `help`: Jev
 is never offered it.
 _Avoid_: history, recent page, session restore, bookmark
+
+**Timer**:
+One countdown the appliance runs itself, with no website and no model
+(2026-10-19 ruling: "an in house timer widget that runs on the idle
+screen"). Set by the grammar's `timer <length>` (`5m`, `1h30m`, `2:30`,
+`ten minutes`) or spoken ("set a timer for five minutes", "ten minute
+timer"); a new one replaces the one running. `timer off`, "cancel the
+timer" or "stop the timer" turns it off; "cancel" and "stop" alone are
+still the stop verb, and a stop also silences a Timer that is ringing.
+The Idle Screen shows it beside the Last Page: the countdown while it
+runs, "Time's up" while it rings, and a tap on the ringing card turns it
+off. At zero it rings: a synthesized alarm, played back to back through
+its own player for at most a minute. It lives in main and does not
+survive a restart. `timer` is the grammar's alone: Jev is never offered it.
+_Avoid_: alarm (for the countdown), stopwatch, reminder
 
 **Toolbar**:
 The one reserved band at the window's top: Status Capsule left, address

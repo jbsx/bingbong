@@ -1,6 +1,7 @@
 import type { KeyPress } from '../ports/browser'
 import type { PageSnapshot, RefKind, SnapshotRef } from '../browser/snapshot'
 import { pageTermsOf } from '../voice/pageTerms'
+import { describeDuration } from '../timer/duration'
 
 // A Command (CONTEXT.md, ADR 0076): what an Utterance becomes on this
 // branch — one verb, at most one target on the page and one Slot, performed
@@ -10,8 +11,8 @@ import { pageTermsOf } from '../voice/pageTerms'
 
 /**
  * The verbs a Command can carry. The Decision Model is offered
- * {@link JEV_VERBS}; `screenshot`, `help` and `resume` are the CLI
- * grammar's alone, reached only through the Local Match.
+ * {@link JEV_VERBS}; `screenshot`, `help`, `resume` and `timer` are the
+ * CLI grammar's alone, reached only through the Local Match.
  */
 export const COMMAND_VERBS = [
   'open',
@@ -31,14 +32,15 @@ export const COMMAND_VERBS = [
   'screenshot',
   'help',
   'resume',
+  'timer',
 ] as const
 export type CommandVerb = (typeof COMMAND_VERBS)[number]
 
 /** The verbs the CLI grammar alone reaches: Jev is never offered them. */
-export const GRAMMAR_ONLY_VERBS: ReadonlySet<CommandVerb> = new Set<CommandVerb>(['screenshot', 'help', 'resume'])
+export const GRAMMAR_ONLY_VERBS: ReadonlySet<CommandVerb> = new Set<CommandVerb>(['screenshot', 'help', 'resume', 'timer'])
 
 /** The verbs the Decision Model chooses among (#324): the spoken vocabulary, `none` included. */
-export const JEV_VERBS = COMMAND_VERBS.filter((verb) => !GRAMMAR_ONLY_VERBS.has(verb)) as readonly Exclude<CommandVerb, 'screenshot' | 'help' | 'resume'>[]
+export const JEV_VERBS = COMMAND_VERBS.filter((verb) => !GRAMMAR_ONLY_VERBS.has(verb)) as readonly Exclude<CommandVerb, 'screenshot' | 'help' | 'resume' | 'timer'>[]
 
 /** The keys `press` speaks: enter, escape, space and the arrows. */
 export const PRESS_KEYS: Readonly<Record<string, KeyPress>> = {
@@ -69,6 +71,8 @@ export interface Command {
   readonly search?: boolean
   /** For an `open` search: the Site Scope (#340) — the host it searches on (`x.com`); absent for a search of the whole web. */
   readonly site?: string
+  /** For `timer`: the length to count down; absent turns the Timer off. */
+  readonly durationMs?: number
   /** The click or the Escape closes an open dialog (#336): its Answer is "Closed the pop-up.", and a dialog still open after it is a failure. */
   readonly dismiss?: true
 }
@@ -196,6 +200,8 @@ export function describeCommand(command: Command, page?: CommandPage): string {
       return 'read the page'
     case 'resume':
       return 'resume the last page'
+    case 'timer':
+      return command.durationMs !== undefined ? `timer ${describeDuration(command.durationMs)}` : 'timer off'
     case 'none':
       return 'not a command'
     default:

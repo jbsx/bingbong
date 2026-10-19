@@ -56,6 +56,10 @@ import { fsUtteranceDumpWriter } from './voice/utteranceDumpWriter'
 import { resolveWakeConfig } from './wake/wakeConfig'
 import { createMainWake } from './wake/createMainWake'
 import { createChimeWav } from '../core/tts/chime'
+import { createAlarmWav } from '../core/timer/alarm'
+import { createTimer } from '../core/timer/timer'
+import { registerTimerIpc } from './timer/attachTimer'
+import { attachTimerAlarm } from './timer/timerAlarm'
 import { createAplayPlayer } from './tts/createAplayPlayer'
 import { KIOSK_FLAG, resolveLaunchConfig } from '../core/app/launchConfig'
 import { attachGpuStability, gpuCrashRecordPath } from './attachGpuStability'
@@ -168,6 +172,11 @@ const wakeConfig = resolveWakeConfig(process.env, app.getPath('userData'), app.g
 const wakeDetector = createMainWake(wakeConfig)
 const chimeWav = createChimeWav()
 const chimePlayer = createAplayPlayer()
+// The Timer (CONTEXT.md): one app-global countdown, shown on the Idle
+// Screen; its alarm plays through its own aplay, so the chime and speech
+// never cut it.
+const timer = createTimer({ clock: systemClock })
+attachTimerAlarm(timer, createAplayPlayer(), createAlarmWav())
 
 // The Decision Model (Jev, ADR 0068, pinned to jev-1.14.0 by ADR 0076):
 // resolved from the live env on each read, kept while its config is
@@ -339,6 +348,8 @@ async function createWindow(): Promise<BrowserWindow> {
     speech: speakingGate.tts,
     // `resume` reopens the Last Page when a restart lost it.
     lastPage: () => lastPageStore.get(),
+    // `timer` sets and cancels it; `stop` silences it ringing.
+    timer,
     screenshotDir: () => downloadsDir,
     saveScreenshot: saveScreenshotFile,
     // The Learned Terms (ADR 0077): read for the Name Match, grown by it.
@@ -423,6 +434,7 @@ async function createWindow(): Promise<BrowserWindow> {
 app.whenReady().then(async () => {
   registerBrowserIpc()
   registerLastPageIpc(lastPageStore)
+  registerTimerIpc(timer)
   registerCommandRunnerIpc()
   registerSettingsIpc(settingsStore)
   registerFeedPanelIpc()

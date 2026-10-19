@@ -13,7 +13,7 @@ import { pageReadPartLine } from '../../core/browser/pageText'
 import { blockedActionHead } from '../../core/browser/actionOutcome'
 import { SPOKEN_FAILURES } from '../../core/command/spokenFailure'
 import { createSpeechCoordinator } from '../../core/tts/speechCoordinator'
-import { createCommandRunner, type CommandRunner } from './commandRunner'
+import { createCommandRunner, type CommandRunner, type CommandRunnerDeps } from './commandRunner'
 
 // The Command runner (#324, ADR 0076): a typed or spoken line becomes one
 // Command — the Local Match first, else one Jev call, else the best guess
@@ -114,7 +114,7 @@ const PAGE_READ = [
   pageReadPartLine(1, 1),
 ].join('\n')
 
-function harness(options?: { decision?: null; learned?: string[]; speech?: Pick<TtsSpeaker, 'speak' | 'stop'> }) {
+function harness(options?: { decision?: null; learned?: string[]; speech?: Pick<TtsSpeaker, 'speak' | 'stop'>; timer?: CommandRunnerDeps['timer'] }) {
   const browser = new FakeBrowser()
   browser.snapshot = { ...browser.snapshot, url: 'https://example.com/', title: 'Example', refs: PAGE_REFS }
   const events: PipelineEvent[] = []
@@ -148,6 +148,7 @@ function harness(options?: { decision?: null; learned?: string[]; speech?: Pick<
       return () => effectListeners.delete(listener)
     },
     ...(options?.speech ? { speech: options.speech } : {}),
+    ...(options?.timer ? { timer: options.timer } : {}),
     screenshotDir: () => '/shots',
     saveScreenshot: async (path) => {
       screenshots.push(path)
@@ -172,6 +173,71 @@ function harness(options?: { decision?: null; learned?: string[]; speech?: Pick<
 }
 
 const types = (events: PipelineEvent[]): string[] => events.map((event) => event.type)
+
+describe('the Timer (CONTEXT.md)', () => {
+  function fakeTimer(status: 'off' | 'running' | 'ringing' = 'off') {
+    const calls: string[] = []
+    let state = status
+    return {
+      calls,
+      timer: {
+        set: (durationMs: number) => {
+          calls.push(`set ${durationMs}`)
+          state = 'running'
+        },
+        cancel: () => {
+          calls.push('cancel')
+          const had = state !== 'off'
+          state = 'off'
+          return had
+        },
+        silence: () => {
+          calls.push('silence')
+          const had = state === 'ringing'
+          if (had) state = 'off'
+          return had
+        },
+      },
+    }
+  }
+  const displays = (events: PipelineEvent[]): string[] => events.flatMap((event) => (event.type === 'display' ? [event.text] : []))
+
+  it('a spoken "set a timer for five minutes" sets it with no Jev call and no browser action, and says so', async () => {
+    const { timer, calls } = fakeTimer()
+    const { browser, events, decision, runner } = harness({ timer })
+    await runner.run('set a timer for five minutes', { source: 'spoken' })
+    expect(calls).toEqual(['set 300000'])
+    expect(decision.requests).toEqual([])
+    expect(browser.navigations).toEqual([])
+    expect(events[0]).toMatchObject({ type: 'command', action: 'timer 5 minutes' })
+    expect(events.find((event) => event.type === 'tool_call')).toMatchObject({ name: 'timer', args: {} })
+    expect(displays(events)).toEqual(['Timer set for 5 minutes.'])
+  })
+
+  it('the grammar\'s `timer off` and a spoken "cancel the timer" turn it off — never the stop verb', async () => {
+    const { timer, calls } = fakeTimer('running')
+    const { events, runner } = harness({ timer })
+    await runner.run('timer off')
+    await runner.run('cancel the timer', { source: 'spoken' })
+    expect(calls).toEqual(['cancel', 'cancel'])
+    expect(events.filter((event) => event.type === 'command').map((event) => (event as { action: string }).action)).toEqual(['timer off', 'timer off'])
+    expect(displays(events)).toEqual(['Timer off.', 'Timer off.'])
+  })
+
+  it('"stop" silences a ringing Timer as it stops everything else', async () => {
+    const { timer, calls } = fakeTimer('ringing')
+    const { events, runner } = harness({ timer })
+    await runner.run('stop', { source: 'spoken' })
+    expect(calls).toEqual(['silence'])
+    expect(displays(events)).toEqual(['Stopped.'])
+  })
+
+  it('a surface with no Timer fails the Command in words', async () => {
+    const { events, runner } = harness()
+    await runner.run('timer 5m')
+    expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'failed' })
+  })
+})
 
 describe('a Command the Local Match settles', () => {
   it('fires at once with no Jev call: the CLI grammar', async () => {

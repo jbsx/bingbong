@@ -28,6 +28,8 @@ import {
 import { pageReadPart, pageReadText } from '../../core/browser/pageText'
 import { SPOKEN_FAILURES, failureLineOf, spokenFailureOf } from '../../core/command/spokenFailure'
 import { STOPPED_ANSWERS, bestGuessAnswer, commandAnswer, pageReadCard } from '../../core/command/answer'
+import { describeDuration } from '../../core/timer/duration'
+import type { Timer } from '../../core/timer/timer'
 import type { SpeakOutcome, TtsSpeaker } from '../../core/ports/tts'
 import { reportFault } from '../../core/trace/fault'
 import { isRealPage, type LastPage } from '../../core/browser/lastPage'
@@ -158,6 +160,8 @@ export interface CommandRunnerDeps {
   speech?: Pick<TtsSpeaker, 'speak' | 'stop'>
   /** The Last Page (CONTEXT.md), for `resume`; absent, or null, leaves `resume` nothing to reopen. */
   lastPage?(): LastPage | null
+  /** The Timer (CONTEXT.md), for `timer` — and `stop`, which silences it ringing; absent leaves `timer` a failure. */
+  timer?: Pick<Timer, 'set' | 'cancel' | 'silence'>
 }
 
 /** How much of a Page Read the Feed card shows. */
@@ -247,14 +251,15 @@ function pageFree(command: Command | null): command is Command {
  * Whether a partial's Local Match may fire before the Endpoint (#326): a
  * Command that carries no Slot still being spoken — never an `open` (an
  * address or search terms: "open you" is a bare word, and the user is
- * still saying "youtube"), a `type` or a `screenshot`'s path, and never
+ * still saying "youtube"), a `type`, a `screenshot`'s path or a `timer`'s
+ * length ("set a timer for five" may yet be "… minutes"), and never
  * `none`, which fires nothing. Jev may still fire an `open` or a `type`
  * on a partial, when its Noul says the words are complete. A verb phrase
  * that heads a longer one of another kind ("scroll", which may yet be
  * "scroll up") is held before this is asked.
  */
 function firesEarly(command: Command): boolean {
-  return command.verb !== 'open' && command.verb !== 'type' && command.verb !== 'screenshot' && command.verb !== 'none'
+  return command.verb !== 'open' && command.verb !== 'type' && command.verb !== 'screenshot' && command.verb !== 'timer' && command.verb !== 'none'
 }
 
 function toolOf(command: Command): { name: string; args: Record<string, unknown> } {
@@ -654,6 +659,12 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       }
       case 'help':
         return COMMAND_HELP
+      case 'timer': {
+        if (deps.timer === undefined) throw new Error('no timer on this surface')
+        if (command.durationMs === undefined) return deps.timer.cancel() ? 'timer off' : 'timer off: none was running'
+        deps.timer.set(command.durationMs)
+        return `timer set: ${describeDuration(command.durationMs)}`
+      }
       case 'stop':
         return 'stopped'
       case 'none':
@@ -756,6 +767,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       // `stop` is an abort said in words: a reading it went past was stopped, and the page's load ends with it.
       stoppedAt.add(submitted)
       stopLoading()
+      // A ringing Timer is what "stop" most often means; a running one is left to run.
+      deps.timer?.silence()
       inFlight = null
       answer(turnId, STOPPED_ANSWERS.stopped)
       publish({ type: 'done', turnId, outcome: 'done', at: at() })

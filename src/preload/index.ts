@@ -10,6 +10,8 @@ import type { FeedPanelMode, FeedPanelState } from '../core/panel/feedPanelState
 import { resolveLaunchConfig } from '../core/app/launchConfig'
 import type { BrowserPaneState, PaneRect } from '../core/browser/paneState'
 import type { LastPage } from '../core/browser/lastPage'
+import { TIMER_IPC } from '../core/timer/ipcChannels'
+import type { TimerState } from '../core/timer/timer'
 import type { PipelineEvent } from '../core/pipeline/events'
 import type { AppSettings } from '../core/settings/settings'
 import type { VoiceErrorEvent, VoiceHeardEvent, VoicePartialEvent, VoiceState } from '../core/voice/ipcChannels'
@@ -38,6 +40,14 @@ contextBridge.exposeInMainWorld('bingbong', {
       const wrapped = (_event: unknown, page: LastPage | null): void => listener(page)
       ipcRenderer.on(BROWSER_IPC.lastPageChanged, wrapped)
       return () => ipcRenderer.removeListener(BROWSER_IPC.lastPageChanged, wrapped)
+    },
+  },
+  timer: {
+    get: (): Promise<TimerState> => ipcRenderer.invoke(TIMER_IPC.get),
+    onChange: (listener: (state: TimerState) => void): (() => void) => {
+      const wrapped = (_event: unknown, state: TimerState): void => listener(state)
+      ipcRenderer.on(TIMER_IPC.changed, wrapped)
+      return () => ipcRenderer.removeListener(TIMER_IPC.changed, wrapped)
     },
   },
   assistant: {
