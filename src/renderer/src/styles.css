@@ -1383,10 +1383,76 @@ body {
   padding: 20px 24px;
 }
 
+.settings-section--fold {
+  padding: 0;
+}
+
+/* A section folds shut under its heading (owner ruling 2026-10-19): the
+   whole heading row is the toggle, a chevron turning as it opens, and a
+   quiet line of what the section holds beside the title. */
+.settings-summary {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  padding: 18px 24px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.settings-summary::-webkit-details-marker {
+  display: none;
+}
+
+.settings-summary::before {
+  content: '›';
+  display: inline-block;
+  width: 0.8em;
+  color: var(--muted);
+  font-weight: 600;
+  transition: transform 120ms ease;
+}
+
+details[open] > .settings-summary::before {
+  transform: rotate(90deg);
+}
+
+.settings-summary:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: -3px;
+  border-radius: 16px;
+}
+
 .settings-section h2 {
-  margin: 0 0 12px;
+  margin: 0;
   font-size: 0.95rem;
   font-weight: 650;
+}
+
+.settings-hint {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.85rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-section-body {
+  padding: 0 24px 20px;
+}
+
+/* The page's two groups: settings for the app, then everything the idle screen shows. */
+.settings-group {
+  margin: 8px 0 -12px;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.settings-group:first-child {
+  margin-top: 0;
 }
 
 /* A part of a long section (the Weight section's People, Scale, card and pop-up). */

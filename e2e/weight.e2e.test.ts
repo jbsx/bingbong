@@ -198,6 +198,10 @@ describe('weight e2e: the stand-in scale, the pop-up, the card and the page', ()
 
   it('has the Weight section in settings: Jaish with #350’s profile, Barun, the scale and its status line; removing Barun asks, then takes his Weigh-ins with him', async () => {
     await harness.clickDashboardElement('.settings-toggle')
+    // The section starts shut under its heading (owner ruling 2026-10-19): it is opened as the owner would.
+    await waitFor(async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('section[aria-label="weight"] summary')`)) ? true : undefined), { timeoutMs: 5000, intervalMs: 100 })
+    await harness.dashboardEval(`document.querySelector('section[aria-label="weight"] summary').scrollIntoView({ block: 'center' })`)
+    await harness.clickDashboardElement('section[aria-label="weight"] summary')
     const section = await waitFor(
       async () =>
         (await harness.dashboardEval<{ people: { id: string; name: string; height: string; birth: string; sex: string; guess: boolean }[]; scale: string; status: string } | null>(`(() => {

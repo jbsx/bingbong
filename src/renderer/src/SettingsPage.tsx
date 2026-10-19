@@ -79,6 +79,56 @@ function useTtsVoices(): string[] {
  * and the occasional manual fix — removing a word keeps it out (the ledger
  * remembers the rejection), adding one puts it straight in.
  */
+/** The sections this viewer left open, kept across visits; storage that cannot be read keeps every one shut. */
+const OPEN_SECTIONS_KEY = 'bingbong.settings.openSections'
+
+function openSections(): Set<string> {
+  try {
+    const saved: unknown = JSON.parse(localStorage.getItem(OPEN_SECTIONS_KEY) ?? '[]')
+    return new Set(Array.isArray(saved) ? saved.filter((id): id is string => typeof id === 'string') : [])
+  } catch {
+    return new Set()
+  }
+}
+
+function rememberOpen(id: string, open: boolean): void {
+  try {
+    const ids = openSections()
+    if (open) ids.add(id)
+    else ids.delete(id)
+    localStorage.setItem(OPEN_SECTIONS_KEY, JSON.stringify([...ids]))
+  } catch {
+    // A per-viewer convenience: without storage the section still opens, only not remembered.
+  }
+}
+
+/**
+ * One settings section that folds shut under its heading (owner ruling
+ * 2026-10-19): shut, it shows its title and a line of what it holds; which
+ * ones are open is remembered for the next visit.
+ */
+function Section({ id, title, hint, children }: { id: string; title: string; hint: string; children: React.ReactNode }) {
+  const [open, setOpen] = useState(() => openSections().has(id))
+  return (
+    <section className="settings-section settings-section--fold" aria-label={id}>
+      <details
+        open={open}
+        onToggle={(event) => {
+          const now = event.currentTarget.open
+          setOpen(now)
+          rememberOpen(id, now)
+        }}
+      >
+        <summary className="settings-summary">
+          <h2>{title}</h2>
+          <span className="settings-hint">{hint}</span>
+        </summary>
+        <div className="settings-section-body">{children}</div>
+      </details>
+    </section>
+  )
+}
+
 function LearnedTermsSection() {
   const [terms, setTerms] = useState<readonly string[]>([])
   const [draft, setDraft] = useState('')
@@ -109,8 +159,7 @@ function LearnedTermsSection() {
   }
 
   return (
-    <section className="settings-section" aria-label="learned terms">
-      <h2>Speech vocabulary</h2>
+    <Section id="learned terms" title="Speech vocabulary" hint={terms.length === 0 ? 'Nothing learned yet' : `${terms.length} learned ${terms.length === 1 ? 'word' : 'words'}`}>
       <p className="settings-note">
         Words the assistant learned to hear better — added automatically when the same corrected
         mishear shows up twice. Removing one keeps it out.
@@ -146,7 +195,7 @@ function LearnedTermsSection() {
           }}
         />
       </Field>
-    </section>
+    </Section>
   )
 }
 
@@ -155,22 +204,25 @@ const IDLE_CARD_NAMES: Record<IdleCardId, string> = { weather: 'Weather', usage:
 /**
  * The Idle Screen's pinned cards (core/idle/slots): a checkbox shows a card,
  * the arrows move a shown one earlier or later in the order the screen
- * reads. The cards not shown follow, in the default order.
+ * reads. The cards not shown follow, in the default order. Now Playing is
+ * a chip in the dock, under every card: it is shown or not, never moved.
  */
 function IdleCardsSection({ cards, onChange }: { cards: readonly IdleCardId[]; onChange: (cards: IdleCardId[]) => void }) {
-  const rows = [...cards, ...IDLE_CARD_IDS.filter((id) => !cards.includes(id))]
+  const docked = (id: IdleCardId): boolean => id === 'music'
+  const ordered = cards.filter((id) => !docked(id))
+  const rows = [...ordered, ...IDLE_CARD_IDS.filter((id) => !cards.includes(id) && !docked(id)), ...IDLE_CARD_IDS.filter(docked)]
   const move = (index: number, by: number): void => {
-    const next = [...cards]
+    const next = [...ordered]
     const [id] = next.splice(index, 1)
     next.splice(index + by, 0, id)
-    onChange(next)
+    onChange([...next, ...cards.filter(docked)])
   }
+  const shownCount = cards.filter((id) => !docked(id)).length
   return (
-    <section className="settings-section" aria-label="idle screen cards">
-      <h2>Idle screen</h2>
+    <Section id="idle screen cards" title="Cards" hint={`${shownCount} of ${IDLE_CARD_IDS.filter((id) => !docked(id)).length} shown${cards.includes('music') ? ', and Now Playing' : ''}`}>
       {rows.map((id) => {
-        const index = cards.indexOf(id)
-        const shown = index >= 0
+        const index = ordered.indexOf(id)
+        const shown = cards.includes(id)
         return (
           <Field key={id} label={IDLE_CARD_NAMES[id]}>
             <span className="settings-card-row">
@@ -180,18 +232,24 @@ function IdleCardsSection({ cards, onChange }: { cards: readonly IdleCardId[]; o
                 aria-label={`Show ${IDLE_CARD_NAMES[id]}`}
                 onChange={(event) => onChange(event.target.checked ? [...cards, id] : cards.filter((card) => card !== id))}
               />
-              <button type="button" className="settings-button" aria-label={`Move ${IDLE_CARD_NAMES[id]} earlier`} disabled={!shown || index === 0} onClick={() => move(index, -1)}>
-                ↑
-              </button>
-              <button
-                type="button"
-                className="settings-button"
-                aria-label={`Move ${IDLE_CARD_NAMES[id]} later`}
-                disabled={!shown || index === cards.length - 1}
-                onClick={() => move(index, 1)}
-              >
-                ↓
-              </button>
+              {docked(id) ? (
+                <span className="settings-hint">in the dock, under the cards</span>
+              ) : (
+                <>
+                  <button type="button" className="settings-button" aria-label={`Move ${IDLE_CARD_NAMES[id]} earlier`} disabled={!shown || index === 0} onClick={() => move(index, -1)}>
+                    ↑
+                  </button>
+                  <button
+                    type="button"
+                    className="settings-button"
+                    aria-label={`Move ${IDLE_CARD_NAMES[id]} later`}
+                    disabled={!shown || index === ordered.length - 1}
+                    onClick={() => move(index, 1)}
+                  >
+                    ↓
+                  </button>
+                </>
+              )}
             </span>
           </Field>
         )
@@ -199,7 +257,7 @@ function IdleCardsSection({ cards, onChange }: { cards: readonly IdleCardId[]; o
       <p className="settings-note">
         The cards the idle screen shows, in the order they fill its columns. A card with nothing to show right now — the calendar with no events this month — yields its room to the others. Now Playing shows in the dock under the cards.
       </p>
-    </section>
+    </Section>
   )
 }
 
@@ -284,8 +342,7 @@ function NewsSection({ news, onChange }: { news: AppSettings['news']; onChange: 
   const setTopics = (next: InterestProfile): void => onChange({ ...news, topics: next })
   const setFeeds = (next: NewsFeed[]): void => onChange({ ...news, feeds: next })
   return (
-    <section className="settings-section" aria-label="news">
-      <h2>News</h2>
+    <Section id="news" title="News" hint={`${topics.length} ${topics.length === 1 ? 'topic' : 'topics'}, ${feeds.length} ${feeds.length === 1 ? 'feed' : 'feeds'}`}>
       {topics.map((topic, index) => (
         <TopicRow
           key={index}
@@ -321,7 +378,7 @@ function NewsSection({ news, onChange }: { news: AppSettings['news']; onChange: 
         topic. A story matches a topic when its title holds one of the topic’s words, or when it came from one of the topic’s subreddits. A feed counts nothing, so its posts stand at an ordinary day’s score; the same
         story on several sources counts once, higher.
       </p>
-    </section>
+    </Section>
   )
 }
 
@@ -436,8 +493,7 @@ function WeightSection({
     setNewName('')
   }
   return (
-    <section className="settings-section" aria-label="weight">
-      <h2>Weight</h2>
+    <Section id="weight" title="Weight" hint={`${people.map((person) => person.name).join(', ') || 'Nobody yet'} · ${scale.address === '' ? 'no scale yet' : 'scale remembered'}`}>
       <h3 className="settings-subhead">People</h3>
       {people.map((person) => (
         <PersonFields key={person.id} person={person} weighIns={weighInsOf(weighIns, people, person.id).length} onChange={setPerson} onRemove={() => onRemovePerson(person.id)} />
@@ -480,7 +536,7 @@ function WeightSection({
           />
         </Field>
       ))}
-      <Field label="Change against a week ago">
+      <Field label="Change since the last Weigh-in">
         <input type="checkbox" checked={card.change} aria-label="Show the change" onChange={(event) => setCard({ change: event.target.checked })} />
       </Field>
       <Field label="Body fat">
@@ -515,7 +571,7 @@ function WeightSection({
         />
       </Field>
       <p className="settings-note">Kilograms only.</p>
-    </section>
+    </Section>
   )
 }
 
@@ -566,8 +622,8 @@ export function SettingsPage({
   return (
     <section className="settings-page" aria-label="settings">
       <div className="settings-scroll">
-        <section className="settings-section">
-          <h2>Voice</h2>
+        <h2 className="settings-group">General</h2>
+        <Section id="voice" title="Voice" hint="Microphone, wake word, pauses, speech model and voice">
           <Field label="Microphone">
             <select
               value={micKnown ? draft.micId : STALE_MIC_VALUE}
@@ -680,10 +736,11 @@ export function SettingsPage({
               )}
             </select>
           </Field>
-        </section>
+        </Section>
 
-        <section className="settings-section">
-          <h2>Appearance</h2>
+        <LearnedTermsSection />
+
+        <Section id="appearance" title="Appearance" hint={draft.appearance === 'system' ? 'Matches this computer' : draft.appearance === 'light' ? 'Light' : 'Dark'}>
           <Field label="Theme">
             <select
               value={draft.appearance}
@@ -700,10 +757,9 @@ export function SettingsPage({
           <p className="settings-note">
             Applies to the app and its panels immediately; websites follow their own dark-mode support.
           </p>
-        </section>
+        </Section>
 
-        <section className="settings-section">
-          <h2>Browsing</h2>
+        <Section id="browsing" title="Browsing" hint={`Ad blocking ${draft.adblockEnabled ? 'on' : 'off'} · web zoom ${draft.webZoomPercent}%`}>
           <Field label="Block ads, trackers and malware domains">
             <input
               type="checkbox"
@@ -727,26 +783,12 @@ export function SettingsPage({
           <p className="settings-note">
             How large webpages render in the browser pane — applied on every page load. Manual zoom resets on the next navigation.
           </p>
-        </section>
+        </Section>
 
+        <h2 className="settings-group">Idle screen</h2>
         <IdleCardsSection cards={draft.idleCards} onChange={(idleCards) => setDraft({ ...draft, idleCards })} />
 
-        <NewsSection news={draft.news} onChange={(news) => setDraft({ ...draft, news })} />
-
-        <WeightSection
-          weight={draft.weight}
-          scale={settings.scale}
-          onChange={(weight) => setDraft({ ...draft, weight })}
-          onForget={() => void onSave({ ...settings, scale: { address: '' } })}
-          onRemovePerson={(person) => {
-            // Main removes them from the saved settings with their Weigh-ins; the draft drops them too, keeping any other edit.
-            setDraft({ ...draft, weight: withoutPerson(draft.weight, person) })
-            window.bingbong.weight.removePerson(person).catch((error: unknown) => reportRendererFault('weight.removePerson', error))
-          }}
-        />
-
-        <section className="settings-section">
-          <h2>Weather</h2>
+        <Section id="weather" title="Weather" hint={draft.weather.city.trim() === '' ? 'No city set' : `${draft.weather.city.trim()} · ${draft.weather.units === 'imperial' ? '°F' : '°C'}`}>
           <Field label="City">
             <input
               type="text"
@@ -771,10 +813,21 @@ export function SettingsPage({
               <option value="imperial">Imperial (°F)</option>
             </select>
           </Field>
-        </section>
+        </Section>
 
-        <section className="settings-section">
-          <h2>AI usage</h2>
+        <WeightSection
+          weight={draft.weight}
+          scale={settings.scale}
+          onChange={(weight) => setDraft({ ...draft, weight })}
+          onForget={() => void onSave({ ...settings, scale: { address: '' } })}
+          onRemovePerson={(person) => {
+            // Main removes them from the saved settings with their Weigh-ins; the draft drops them too, keeping any other edit.
+            setDraft({ ...draft, weight: withoutPerson(draft.weight, person) })
+            window.bingbong.weight.removePerson(person).catch((error: unknown) => reportRendererFault('weight.removePerson', error))
+          }}
+        />
+
+        <Section id="ai usage" title="AI usage" hint={draft.usageDashboard.url.trim() === '' ? 'No dashboard — the card is hidden' : draft.usageDashboard.url.trim()}>
           <Field label="Dashboard">
             <input
               type="text"
@@ -792,9 +845,9 @@ export function SettingsPage({
             value={draft.usageDashboard}
             onChange={(prefs) => setDraft({ ...draft, usageDashboard: { ...draft.usageDashboard, ...prefs } })}
           />
-        </section>
+        </Section>
 
-        <LearnedTermsSection />
+        <NewsSection news={draft.news} onChange={(news) => setDraft({ ...draft, news })} />
       </div>
 
       <div className="settings-actions">

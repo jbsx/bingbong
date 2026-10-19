@@ -74,6 +74,14 @@ describe('settings page e2e', () => {
     expect(hotListen).toBe(8000)
     expect(endpointLabels).toContain('Hot Listen silence — 8.0 s')
 
+    // Every section starts shut under its heading (owner ruling 2026-10-19); a click on the heading opens it, as the owner would.
+    expect(await harness.dashboardEval<boolean>(`[...document.querySelectorAll('.settings-page details')].every((details) => !details.open)`)).toBe(true)
+    for (const id of ['weather', 'news']) {
+      await harness.dashboardEval(`document.querySelector('section[aria-label="${id}"] summary').scrollIntoView({ block: 'center' })`)
+      await harness.clickDashboardElement(`section[aria-label="${id}"] summary`)
+      await waitFor(async () => ((await harness.dashboardEval<boolean>(`document.querySelector('section[aria-label="${id}"] details').open`)) ? true : undefined), { timeoutMs: 2000, intervalMs: 50 })
+    }
+
     // The city field is addressed by its aria-label.
     const edited = await harness.dashboardEval<string>(setWeatherCityScript('Berlin'))
     expect(edited).toBe('edited')
