@@ -15,7 +15,7 @@ import { MUSIC_IPC } from '../core/music/ipcChannels'
 import type { NowPlaying } from '../core/music/nowPlaying'
 import { CALENDAR_IPC } from '../core/calendar/ipcChannels'
 import { NEWS_IPC } from '../core/news/ipcChannels'
-import type { NewsHorizons } from '../core/news/newsDesk'
+import type { TopRepo } from '../core/news/topRepos'
 import { WEIGHT_IPC, type ScaleStatus } from '../core/scale/ipcChannels'
 import type { WeighIn } from '../core/scale/weighIns'
 import type { WeighInPopupState } from '../core/scale/weighInPopup'
@@ -92,7 +92,7 @@ contextBridge.exposeInMainWorld('bingbong', {
     events: (range: CalendarRange): Promise<CalendarEvent[]> => ipcRenderer.invoke(CALENDAR_IPC.events, range),
   },
   news: {
-    horizons: (): Promise<NewsHorizons | null> => ipcRenderer.invoke(NEWS_IPC.horizons),
+    repos: (): Promise<TopRepo[] | null> => ipcRenderer.invoke(NEWS_IPC.repos),
   },
   weight: {
     list: (): Promise<WeighIn[]> => ipcRenderer.invoke(WEIGHT_IPC.list),

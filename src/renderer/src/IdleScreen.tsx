@@ -583,7 +583,6 @@ const DESIGN_HEIGHT = 1080
 const SMALL: SlotSize = { w: 1, h: 1 }
 const TALL: SlotSize = { w: 1, h: 2 }
 const COLUMN: SlotSize = { w: 1, h: 3 }
-const BIG: SlotSize = { w: 2, h: 2 }
 
 function fitZoom(): number {
   return Math.min(1, window.innerWidth / DESIGN_WIDTH, window.innerHeight / DESIGN_HEIGHT)
@@ -706,7 +705,7 @@ export function IdleScreen({
         // A chip in the dock, not a Card Slot.
         return { id, sizes: [], hasContent: false }
       case 'news':
-        if (news.status === 'ready') return { id, sizes: [BIG, TALL, SMALL], hasContent: true }
+        if (news.status === 'ready') return { id, sizes: [TALL, SMALL], hasContent: true }
         return { id, sizes: news.status === 'loading' ? [] : [SMALL], hasContent: false }
       case 'weight':
         if (weightRows.length > 0) return { id, sizes: [TALL, SMALL], hasContent: true }
@@ -732,9 +731,9 @@ export function IdleScreen({
         return null
       case 'news':
         return news.status === 'ready' ? (
-          <NewsCard horizons={news.horizons} size={placement.size} />
+          <NewsCard repos={news.repos} />
         ) : (
-          <NoteCard label="news">{news.status === 'unset' ? 'Add a topic to News in settings' : 'No news yet'}</NoteCard>
+          <NoteCard label="news">No repos yet</NoteCard>
         )
       case 'weight':
         return weightRows.length > 0 ? (

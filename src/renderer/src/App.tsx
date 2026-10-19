@@ -125,7 +125,7 @@ export function App() {
   const timer = useTimer(showIdle)
   const nowPlaying = useNowPlaying(showIdle)
   const usage = useUsage(settings?.usageDashboard.url ?? null, showIdle)
-  const news = useNews(settings?.news.topics.length ?? 0, showIdle && settings !== null)
+  const news = useNews(showIdle)
 
   // Main sends a key typed on the Idle Screen to the Prompt Bar, so it has to know the screen is up.
   useEffect(() => window.bingbong.idle.reportShown(showIdle), [showIdle])

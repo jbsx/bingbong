@@ -4,7 +4,7 @@ import type { TimerState } from '../core/timer/timer'
 import type { NowPlaying } from '../core/music/nowPlaying'
 import type { UsageSnapshot } from '../core/usage/usage'
 import type { CalendarEvent, CalendarRange } from '../core/calendar/calendar'
-import type { NewsHorizons } from '../core/news/newsDesk'
+import type { TopRepo } from '../core/news/topRepos'
 import type { ScaleStatus } from '../core/scale/ipcChannels'
 import type { WeighIn } from '../core/scale/weighIns'
 import type { WeighInPopupState } from '../core/scale/weighInPopup'
@@ -69,8 +69,8 @@ export interface BingbongCalendarApi {
 }
 
 export interface BingbongNewsApi {
-  /** The News card's Today's Highlight and Big News, each with its Story Image (CONTEXT.md); null when there has never been a highlight or the Interest Profile is empty. Main fetches at most hourly. */
-  horizons(): Promise<NewsHorizons | null>
+  /** The News card's Top Repos (CONTEXT.md): the month's three most-starred trending repositories, each with GLM's one-line summary where written; null when GitHub has never been read. Main reads it at most hourly. */
+  repos(): Promise<TopRepo[] | null>
 }
 
 export interface BingbongAssistantApi {

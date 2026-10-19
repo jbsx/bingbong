@@ -1,6 +1,4 @@
-import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
-import { createServer, type Server } from 'node:http'
-import type { AddressInfo } from 'node:net'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -13,46 +11,30 @@ import { OWNER_BODY, standInWeighIns, weighInsFile } from './weighIns'
 // boots into the idle screen naming it, and the card's tap runs `resume` —
 // the pane boots blank after a restart, so the Command navigates there.
 // The page the pane then shows is recorded for the next restart. The News
-// card reads a stand-in Hacker News front page (#346), a tap on the
-// highlight or on a Big News story (#349), its picture from main's cache,
-// opening it in the pane.
+// card shows the Top Repos a previous run read (repos.json, read this hour
+// so GitHub is not asked), and a tap on one opens it in the pane.
 
 describe('idle screen e2e: the Last Page and resume', () => {
   let harness: Harness
   let fixture: FixtureServer
   let userDataDir: string
-  let hackerNews: Server
 
   beforeAll(async () => {
     userDataDir = await mkdtemp(join(tmpdir(), 'bingbong-e2e-idle-'))
     fixture = await startFixtureServer()
-    // Hacker News's stand-in: two stories that match the default Interest Profile, each linking to a fixture page; it also serves the picture of the story in the history.
-    const picture = await readFile(new URL('../src/core/news/fixtures/images/photo.jpg', import.meta.url))
-    hackerNews = createServer((request, response) => {
-      if (request.url === '/big-story.jpg') {
-        response.writeHead(200, { 'content-type': 'image/jpeg' })
-        response.end(picture)
-        return
-      }
-      const at = Math.floor(Date.now() / 1000) - 3600
-      const hits = [
-        { objectID: '1', title: 'Claude Code ships a new agent harness', url: fixture.url('/second'), points: 1840, num_comments: 312, created_at_i: at },
-        { objectID: '2', title: 'Codex sandboxes every coding agent', url: fixture.url('/'), points: 600, num_comments: 40, created_at_i: at },
-      ]
-      response.writeHead(request.url?.startsWith('/api/v1/search') ? 200 : 404, { 'content-type': 'application/json' })
-      response.end(JSON.stringify({ hits }))
-    })
-    await new Promise<void>((resolve) => hackerNews.listen(0, '127.0.0.1', resolve))
-    // A story history a previous run left behind: one story at the top of two sources yesterday, with a picture of its own.
-    const dayBack = (back: number): string => {
-      const now = new Date()
-      const at = new Date(now.getFullYear(), now.getMonth(), now.getDate() - back, 12)
-      return `${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, '0')}-${String(at.getDate()).padStart(2, '0')}`
-    }
-    const big = { title: 'A big story from yesterday', link: fixture.url('/interactive'), source: 'Hacker News', unit: 'points', topical: true, cluster: 'Hacker News:big', image: 'https://example.com/big-story.jpg' }
+    // The Top Repos a previous run read, each linking to a fixture page; the second has no summary yet, so it shows its description.
+    const repo = (name: string, link: string, stars: number, starsThisMonth: number, description: string) => ({ name, link, description, language: 'TypeScript', stars, starsThisMonth })
     await writeFile(
-      join(userDataDir, 'news.json'),
-      `${JSON.stringify({ shown: [], history: {}, highlight: null, stories: { 'Hacker News:big': { ...big, days: { [dayBack(1)]: { score: 1.5, magnitude: 2400 } } } } })}\n`,
+      join(userDataDir, 'repos.json'),
+      `${JSON.stringify({
+        fetchedAt: Date.now(),
+        repos: [
+          repo('acme/voice', fixture.url('/second'), 77289, 42036, 'A voice studio.'),
+          repo('acme/memory', fixture.url('/interactive'), 51625, 27550, 'Agent memory that learns'),
+          repo('acme/paperclip', fixture.url('/'), 104655, 23340, 'Manage agents at work'),
+        ],
+        summaries: { 'acme/voice': 'Fully local voice cloning, dubbing and transcription.', 'acme/paperclip': 'Runs teams of AI agents toward business goals.' },
+      })}\n`,
       'utf8',
     )
     // The Last Page a previous run left behind.
@@ -68,14 +50,12 @@ describe('idle screen e2e: the Last Page and resume', () => {
       userDataDir,
       fixture,
       wakeFromBootIdle: false,
-      env: { BINGBONG_NEWS_FIXTURE: `http://127.0.0.1:${(hackerNews.address() as AddressInfo).port}` },
     })
   })
 
   afterAll(async () => {
     await harness?.quit()
     await fixture?.close().catch(() => {})
-    await new Promise((resolve) => hackerNews?.close(resolve))
     await rm(userDataDir, { recursive: true, force: true }).catch(() => {})
   })
 
@@ -175,52 +155,45 @@ describe('idle screen e2e: the Last Page and resume', () => {
     expect(recorded.url).toBe(fixture.url('/'))
   })
 
-  it('shows Today’s Highlight from Hacker News, and a tap opens the story in the pane', async () => {
+  it('shows the Top Repos — name, summary or description, stars in all — and a tap opens one in the pane', async () => {
     const IDLE_SHORTCUT = { key: 'L', code: 'KeyL', windowsVirtualKeyCode: 76, modifiers: 2 /* Ctrl */ | 8 /* Shift */ }
     await harness.pressKey('pane', IDLE_SHORTCUT)
-    const card = await waitFor(
+    const rows = await waitFor(
       async () => {
-        const text = await harness.dashboardEval<string>(`document.querySelector('.idle-slot[data-card="news"] .idle-news')?.textContent ?? ''`)
-        return text !== '' ? text : undefined
+        const found = await harness.dashboardEval<{ name: string; line: string; stars: string; foot: string }[]>(
+          `[...document.querySelectorAll('.idle-slot[data-card="news"] .idle-repo')].filter((row) => !row.closest('li').hidden).map((row) => ({ name: row.querySelector('.idle-repo-name').textContent, line: row.querySelector('.idle-repo-line')?.textContent ?? '', stars: row.querySelector('.idle-repo-stars').textContent, foot: row.querySelector('.idle-repo-foot').textContent }))`,
+        )
+        return found.length > 0 ? found : undefined
       },
       { timeoutMs: 10000, intervalMs: 250 },
     )
-    expect(card).toContain('Claude Code ships a new agent harness')
-    expect(card).toContain('Hacker News')
-    expect(card).toContain('1,840 points')
-    // Shown once, it is marked so in the profile for the next restart.
-    const state = JSON.parse(await readFile(join(userDataDir, 'news.json'), 'utf8')) as { shown: { key: string }[] }
-    expect(state.shown.map((entry) => entry.key)).toEqual(['Hacker News:1'])
+    expect(rows).toEqual([
+      { name: 'acme/voice', line: 'Fully local voice cloning, dubbing and transcription.', stars: '★ 77,289', foot: 'TypeScript · +42,036 this month' },
+      { name: 'acme/memory', line: 'Agent memory that learns', stars: '★ 51,625', foot: 'TypeScript · +27,550 this month' },
+      { name: 'acme/paperclip', line: 'Runs teams of AI agents toward business goals.', stars: '★ 104,655', foot: 'TypeScript · +23,340 this month' },
+    ])
+    expect(await harness.dashboardEval<string>(`document.querySelector('.idle-repos .idle-kicker').textContent`)).toBe('Top repos this month')
 
-    await harness.clickDashboardElement('.idle-news-today')
+    // The usage card lands after the first layout and moves the cards: the row is tapped once it has landed and the row holds still.
+    await waitFor(async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('.idle-slot[data-card="usage"]')`)) ? true : undefined), { timeoutMs: 15000, intervalMs: 250 })
+    const rowAt = (): Promise<string> => harness.dashboardEval<string>(`(() => { const r = document.querySelector('.idle-repos li:nth-child(2) .idle-repo').getBoundingClientRect(); return r.x + ',' + r.y })()`)
+    let last = ''
+    await waitFor(
+      async () => {
+        const at = await rowAt()
+        const still = at === last
+        last = at
+        return still ? true : undefined
+      },
+      { timeoutMs: 10000, intervalMs: 500 },
+    )
+    await harness.clickDashboardElement('.idle-repos li:nth-child(2) .idle-repo')
 
-    expect(await harness.waitForPaneUrl(fixture.url('/second'))).toBe(fixture.url('/second'))
+    expect(await harness.waitForPaneUrl(fixture.url('/interactive'))).toBe(fixture.url('/interactive'))
     await waitFor(
       async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('.url-input') && !document.querySelector('.idle-screen')`)) ? true : undefined),
       { timeoutMs: 10000, intervalMs: 250 },
     )
-  })
-
-  it('lists Big News under the highlight with its picture from main’s cache, and a tap on the story opens it in the pane', async () => {
-    const IDLE_SHORTCUT = { key: 'L', code: 'KeyL', windowsVirtualKeyCode: 76, modifiers: 2 /* Ctrl */ | 8 /* Shift */ }
-    await harness.pressKey('pane', IDLE_SHORTCUT)
-    const big = await waitFor(
-      async () => {
-        const rows = await harness.dashboardEval<{ title: string; picture: string; loaded: boolean }[]>(
-          `[...document.querySelectorAll('.idle-news-big .idle-news-item')].map((item) => ({ title: item.querySelector('.idle-news-item-title').textContent, picture: item.querySelector('.idle-news-thumb img')?.src ?? '', loaded: (item.querySelector('.idle-news-thumb img')?.naturalWidth ?? 0) > 0 }))`,
-        )
-        return rows.length > 0 && rows.every((row) => row.loaded) ? rows : undefined
-      },
-      { timeoutMs: 10000, intervalMs: 250 },
-    )
-    // The Codex story is no bigger than an ordinary day's on a two-story front page: it clears no bar.
-    expect(big.map((row) => row.title)).toEqual(['A big story from yesterday'])
-    expect(big[0].picture).toMatch(/^bingbong-news:\/\/image\/[0-9a-f]+\.jpg$/)
-    expect(await readdir(join(userDataDir, 'news-images'))).toHaveLength(1)
-
-    await harness.clickDashboardElement('.idle-news-big .idle-news-item')
-
-    expect(await harness.waitForPaneUrl(fixture.url('/interactive'))).toBe(fixture.url('/interactive'))
   })
 
   it('Ctrl+Shift+L shows the idle screen at once, from the pane or the dashboard', async () => {

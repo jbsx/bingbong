@@ -1,7 +1,7 @@
-/** The News card (CONTEXT.md): the Idle Screen asks main for Today's Highlight and Big News while it shows. */
+/** The News card (CONTEXT.md): the Idle Screen asks main for the Top Repos while it shows. */
 export const NEWS_IPC = {
-  horizons: 'news:horizons',
+  repos: 'news:repos',
 } as const
 
-/** The scheme main serves the cached Story Images on: the renderer loads a story's picture from it, never from the network. */
+/** The scheme the old News Desk's cached Story Images were named on; nothing serves it since the card became the Top Repos. */
 export const NEWS_IMAGE_SCHEME = 'bingbong-news'

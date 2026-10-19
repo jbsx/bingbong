@@ -1,40 +1,32 @@
 import { useEffect, useState } from 'react'
-import type { NewsHorizons } from '../../core/news/newsDesk'
+import type { TopRepo } from '../../core/news/topRepos'
 import { reportRendererFault } from './diagnostics'
 
-export type NewsCardState =
-  | { status: 'loading' }
-  | { status: 'unset' }
-  | { status: 'none' }
-  | { status: 'ready'; horizons: NewsHorizons }
+export type NewsCardState = { status: 'loading' } | { status: 'none' } | { status: 'ready'; repos: TopRepo[] }
 
-/** How often the card's stories are asked for again while the Idle Screen shows; main fetches the sources at most hourly whatever this is. */
+/** How often the card's repositories are asked for again while the Idle Screen shows; main reads GitHub at most hourly whatever this is. */
 const REFRESH_MS = 5 * 60 * 1000
 
 /**
- * The News card's Today's Highlight and Big News (CONTEXT.md),
- * asked of main when the Idle Screen shows and every few minutes after. An empty Interest Profile
- * reads as unset; a desk that has never had a story as none. Main keeps the
- * last highlight through a failed poll, so a later ask never blanks it.
+ * The News card's Top Repos (CONTEXT.md), asked of main when the Idle
+ * Screen shows and every few minutes after. A GitHub never read reads as
+ * none; main keeps the last list through a failed read, so a later ask
+ * never blanks it.
  */
-export function useNews(topicCount: number, active: boolean): NewsCardState {
+export function useNews(active: boolean): NewsCardState {
   const [state, setState] = useState<NewsCardState>({ status: 'loading' })
 
   useEffect(() => {
     if (!active) return
-    if (topicCount === 0) {
-      setState({ status: 'unset' })
-      return
-    }
     let cancelled = false
     const ask = (): void => {
-      window.bingbong.news.horizons().then(
-        (horizons) => {
-          if (!cancelled) setState(horizons === null ? { status: 'none' } : { status: 'ready', horizons })
+      window.bingbong.news.repos().then(
+        (repos) => {
+          if (!cancelled) setState(repos === null ? { status: 'none' } : { status: 'ready', repos })
         },
         (error: unknown) => {
-          // The card keeps what it shows; a desk never reached reads as no news yet.
-          reportRendererFault('news.horizons', error)
+          // The card keeps what it shows; a desk never reached reads as none yet.
+          reportRendererFault('news.repos', error)
           if (!cancelled) setState((prev) => (prev.status === 'loading' ? { status: 'none' } : prev))
         },
       )
@@ -45,7 +37,7 @@ export function useNews(topicCount: number, active: boolean): NewsCardState {
       cancelled = true
       clearInterval(refresh)
     }
-  }, [topicCount, active])
+  }, [active])
 
   return state
 }

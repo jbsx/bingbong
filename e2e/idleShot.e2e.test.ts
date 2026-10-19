@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
@@ -18,80 +18,34 @@ import { brotherWeighIns, standInWeighIns, TWO_PEOPLE, weighInsFile } from './we
 // YouTube stand-in so Now Playing takes the dock, then a Timer beside it —
 // shot in dark and light into BINGBONG_IDLE_SHOT_DIR (default a temp
 // folder, printed). The
-// stand-in usage server also answers as Hacker News's front page, so the
-// News card holds Today's Highlight (#346), and news.json is seeded with a
-// fortnight's story history so Big News (#349) is full. The same server
-// stands in for the stories' pages and pictures (e2e/fixtures/news), so
-// every Story Image comes from a local file, one story left with its tile.
-// It also checks the bento (#352) — the clock's cell and each card's box,
-// every tile holding its words, nothing under 16 px — and the News card at
-// 2×2 and 1×2 in dark and light, with pictures and then with every picture
-// failed to its tile, and with no Big News. The Weight card (#350) reads
-// two months of stand-in Weigh-ins seeded as weighins.json, held to its
-// box at 1×2 and 1×1.
+// News card's Top Repos are seeded as repos.json, read this hour so GitHub
+// is not asked — GitHub's month as it stood on 2026-10-19, GLM's summaries
+// as it wrote them that day, the third left with its description. It also
+// checks the bento (#352) — the clock's cell and each card's box, every
+// tile holding its words, nothing under 16 px — and the News card at 1×2
+// and 1×1 in dark and light. The Weight card (#350) reads two months of
+// stand-in Weigh-ins seeded as weighins.json, held to its box at 1×2.
 // Gated: BINGBONG_IDLE_SHOT=1, so the plain e2e run skips it.
 
 const PROVIDERS = ['Codex', 'Claude', 'Kaggle', 'GLM', 'Grok']
 
-/** Hacker News's stand-in front page: a long title — as long as a GitHub repo's with its description — that matches the default Interest Profile over shorter ones, some that do not. */
-function frontPage(now: number) {
-  const at = Math.floor(now / 1000) - 3 * 3600
+/** The Top Repos a previous run read: the longest name and summary of the month's list among them. */
+function topRepos() {
+  const repo = (name: string, stars: number, starsThisMonth: number, language: string, description: string) => ({ name, link: `https://github.com/${name}`, description, language, stars, starsThisMonth })
   return {
-    hits: [
-      { objectID: '1', title: 'Claude Code’s new harness lets a coding agent run your whole test suite in parallel across machines, and the agents now review each other’s pull requests before a human sees them', url: 'https://example.com/harness', points: 1840, num_comments: 612, created_at_i: at },
-      { objectID: '2', title: 'A history of the bread knife', url: 'https://example.com/bread', points: 2950, num_comments: 210, created_at_i: at },
-      { objectID: '3', title: 'Codex now reviews every pull request before a human sees it', url: 'https://example.com/codex-review', points: 1210, num_comments: 380, created_at_i: at },
-      { objectID: '4', title: 'Show HN: A terminal that remembers every command you ran', url: 'https://example.com/terminal', points: 760, num_comments: 140, created_at_i: at },
+    fetchedAt: Date.now(),
+    repos: [
+      repo('debpalash/VoiceStudio', 77298, 42036, 'Python', 'VoiceStudio is the open-source, fully-local ElevenLabs alternative — voice cloning, voice design, video dubbing, dictation, transcription & audiobook creation in 646 languages.'),
+      repo('vectorize-io/hindsight', 51625, 27550, 'Python', 'Hindsight: Agent Memory That Learns'),
+      repo('paperclipai/paperclip', 104657, 23340, 'TypeScript', 'The open-source app everyone uses to manage agents at work'),
     ],
+    summaries: {
+      'debpalash/VoiceStudio': 'Fully local, open-source voice suite for cloning, dubbing, transcription and audiobooks in 646 languages.',
+      'vectorize-io/hindsight': 'Agent memory system that makes agents learn over time, outperforming RAG and knowledge graphs on LongMemEval.',
+    },
   }
 }
 
-/** The local day key a day back from now, as the News Desk writes it. */
-function dayBack(back: number): string {
-  const now = new Date()
-  const at = new Date(now.getFullYear(), now.getMonth(), now.getDate() - back, 12)
-  return `${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, '0')}-${String(at.getDate()).padStart(2, '0')}`
-}
-
-/**
- * A fortnight of story history: two stories at the top of two sources this
- * week — one whose page names its picture, one whose source gave its own —
- * one at the top of a single source today with no picture anywhere (its
- * tile), one big story faded past the three, and an ordinary one.
- */
-function storyHistory() {
-  const seeded: [string, string, string | null, number, number, number][] = [
-    ['Frontier lab publishes the weights of its largest open model yet, with a 400-page report', 'https://example.com/weights', null, 3120, 1.5, 1],
-    ['GPT-6 benchmarks: what the new evals do and do not measure', 'https://example.com/gpt6', 'https://cdn.example.com/images/gpt6.jpg', 2440, 1.5, 2],
-    ['The agent harness wars: who owns the loop', 'https://example.com/harness-wars', null, 1980, 1, 0],
-    ['Markets slide as chip export rules tighten again', 'https://example.com/chips', 'https://cdn.example.com/images/chips.jpg', 1660, 1.5, 13],
-    ['Rust in the Linux kernel, five years on', 'https://example.com/rust-kernel', null, 1400, 0.8, 1],
-  ]
-  return Object.fromEntries(
-    seeded.map(([title, link, image, points, score, back], index) => [
-      `Hacker News:seed-${index}`,
-      { title, link, source: 'Hacker News', unit: 'points', topical: true, cluster: `Hacker News:seed-${index}`, image, days: { [dayBack(back)]: { score, magnitude: points } } },
-    ]),
-  )
-}
-
-/**
- * Story Briefs as GLM writes them, for the highlight and two of Big News:
- * the third Big News line keeps its headline's tail, so both forms are
- * shot. No writer runs in e2e (its key is unset), so these stay as seeded.
- */
-function storyBriefs() {
-  return {
-    'Hacker News:1': { what: 'Claude Code can now split a test run across machines and cross-review PRs.', why: 'Claude Code, your daily tool; 1,840 points, top of HN today.' },
-    'Hacker News:seed-0': { what: 'A frontier lab released its biggest open-weights model with a full report.', why: 'Frontier open weights; top of HN and on GitHub trending.' },
-    'Hacker News:seed-1': { what: 'A look at what the GPT-6 benchmark results actually show.', why: 'GPT-6 evals, 2,440 points, on two sources this week.' },
-  }
-}
-
-/** A story's page as the stand-in serves it: its head naming its preview image. */
-function articlePage(image: string): string {
-  return `<!doctype html><html><head><title>A story</title><meta property="og:image" content="${image}"></head><body>…</body></html>`
-}
 const HOUR = 3_600_000
 
 function usagePayload(count: number, now: number) {
@@ -153,30 +107,9 @@ describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review'
   const count = Math.min(PROVIDERS.length, Math.max(1, Number(process.env.BINGBONG_IDLE_SHOT_PROVIDERS ?? 3)))
 
   beforeAll(async () => {
-    const pictures = Object.fromEntries(
-      await Promise.all(['weights', 'gpt6', 'harness', 'chips'].map(async (name) => [`/images/${name}.jpg`, await readFile(new URL(`./fixtures/news/${name}.jpg`, import.meta.url))] as const)),
-    )
-    const pages: Record<string, string> = { '/harness': articlePage('/images/harness.jpg'), '/weights': articlePage('https://example.com/images/weights.jpg') }
     server = createServer((request, response) => {
-      const path = request.url ?? ''
-      if (path in pictures) {
-        response.writeHead(200, { 'content-type': 'image/jpeg' })
-        response.end(pictures[path])
-        return
-      }
-      if (path in pages) {
-        response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
-        response.end(pages[path])
-        return
-      }
       const payload = usagePayload(count, Date.now())
-      const body = request.url?.startsWith('/api/history')
-        ? payload.history
-        : request.url?.startsWith('/api/usage')
-          ? payload.usage
-          : request.url?.startsWith('/api/v1/search')
-            ? frontPage(Date.now())
-            : null
+      const body = request.url?.startsWith('/api/history') ? payload.history : request.url?.startsWith('/api/usage') ? payload.usage : null
       response.writeHead(body === null ? 404 : 200, { 'content-type': 'application/json' })
       response.end(JSON.stringify(body ?? {}))
     })
@@ -188,7 +121,7 @@ describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review'
       JSON.stringify({ weather: { city: 'London', units: 'metric' }, usageDashboard: { url: `http://127.0.0.1:${port}`, providers: PROVIDERS.slice(0, count) }, weight: TWO_PEOPLE }),
       'utf8',
     )
-    await writeFile(join(userDataDir, 'news.json'), `${JSON.stringify({ shown: [], history: {}, highlight: null, stories: storyHistory(), briefs: storyBriefs() })}\n`, 'utf8')
+    await writeFile(join(userDataDir, 'repos.json'), `${JSON.stringify(topRepos())}\n`, 'utf8')
     await writeFile(join(userDataDir, 'weighins.json'), weighInsFile([...standInWeighIns(), ...brotherWeighIns()]), 'utf8')
     await writeFile(join(userDataDir, 'last-page.json'), `${JSON.stringify({ url: 'https://duckduckgo.com/?q=weather+in+london', title: 'weather in London at DuckDuckGo', at: 1 })}\n`, 'utf8')
     if (music) {
@@ -199,11 +132,11 @@ describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review'
         wakeFromBootIdle: false,
         launchArgs: ['--browser-cli', '--mute-audio'],
         pipeStdio: true,
-        env: { BINGBONG_YOUTUBE_FIXTURE: new URL(fixture.url('/')).origin, BINGBONG_NEWS_FIXTURE: `http://127.0.0.1:${port}` },
+        env: { BINGBONG_YOUTUBE_FIXTURE: new URL(fixture.url('/')).origin },
       })
       await harness.waitForCliOutput(/bingbong browser harness/)
     } else {
-      harness = await startHarness({ userDataDir, wakeFromBootIdle: false, env: { BINGBONG_NEWS_FIXTURE: `http://127.0.0.1:${port}` } })
+      harness = await startHarness({ userDataDir, wakeFromBootIdle: false })
     }
 
     const { sessionId } = await harness.cdp.send<{ sessionId: string }>('Target.attachToTarget', { targetId: harness.dashboardTargetId(), flatten: true })
@@ -297,68 +230,41 @@ describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review'
     }
   })
 
-  it('holds the News card to its box at 2×2 and 1×2, with pictures and with every picture its tile', async () => {
+  it('holds the News card’s Top Repos to its box at 1×2 and 1×1, in dark and light', async () => {
     await mkdir(outDir, { recursive: true })
-    // Every shown story's picture is in main's cache before the card is looked at: a poll gathers them before it answers.
-    await waitFor(
-      async () =>
-        (await harness.dashboardEval<boolean>(
-          `(() => { const imgs = [...document.querySelectorAll('.idle-news img')]; return imgs.length === 3 && imgs.every((img) => img.complete && img.naturalWidth > 0) })()`,
-        ))
-          ? true
-          : undefined,
-      { timeoutMs: 20000, intervalMs: 250 },
-    )
     const defaults = await harness.dashboardEval<string[]>(`window.bingbong.settings.get().then((s) => s.idleCards)`)
-    // Without the Weight card News takes the middle's 2×2; with it (the default) the right column's two cells, the highlight over Big News.
-    const orders: [string, string[]][] = [
-      ['2x2', ['weather', 'calendar', 'lastPage', 'news', 'usage', 'music']],
-      ['1x2', defaults],
-    ]
+    // The default gives News the right column's two cells. Every card fits at its largest with the stand-in data, so the one-cell box —
+    // which an owner's Calendar with events would leave it — is made by shrinking its slot: the card draws from its box alone (CSS and useWholeItems), not from the size it was handed.
+    expect(await harness.dashboardEval<string>(`document.querySelector('.idle-slot[data-card="news"]').style.gridRow.split(' / ')[1]`)).toBe('span 2')
     try {
-      for (const pictures of ['images', 'tiles']) {
-        for (const [size, order] of orders) {
-          await pin(order)
-          await waitFor(async () => ((await harness.dashboardEval<string>(`(() => { const s = document.querySelector('.idle-slot[data-card="news"]').style; return s.gridColumn.split(' / ')[1].replace('span ', '') + 'x' + s.gridRow.split(' / ')[1].replace('span ', '') })()`)) === size ? true : undefined), {
-            timeoutMs: 5000,
-            intervalMs: 100,
-          })
-          if (pictures === 'tiles') {
-            // A picture that fails to load falls back to its source's tile: every one is made to fail.
-            await harness.dashboardEval(`(() => { for (const img of document.querySelectorAll('.idle-news img')) img.src = 'bingbong-news://image/missing.jpg' })()`)
-            await waitFor(async () => ((await harness.dashboardEval<number>(`document.querySelectorAll('.idle-news img').length`)) === 0 ? true : undefined), { timeoutMs: 5000, intervalMs: 100 })
-          }
-          for (const scheme of ['dark', 'light']) {
-            await harness.cdp.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, session)
-            await new Promise((resolve) => setTimeout(resolve, 400))
-            const box = await newsBox()
-            const { data } = await harness.cdp.send<{ data: string }>(
-              'Page.captureScreenshot',
-              { format: 'png', clip: { x: box.x, y: box.y, width: box.width, height: box.height, scale: 1 } },
-              session,
-            )
-            await writeFile(join(outDir, `news-${size}-${scheme}-${pictures}.png`), Buffer.from(data, 'base64'))
-            expect(box.overflowing, `${size} ${scheme} ${pictures}`).toEqual([])
-            expect(box.items, `${size} ${scheme} ${pictures}`).toBeGreaterThanOrEqual(size === '2x2' ? 3 : 1)
-            expect(box.smallestText, `${size} ${scheme} ${pictures}`).toBeGreaterThanOrEqual(16)
-            expect(box.lead).toContain('Claude Code')
-            expect(box.highlightPicture).toBe(pictures === 'images' ? 'image' : 'tile')
-          }
+      for (const size of ['1x2', '1x1']) {
+        if (size === '1x1') await harness.dashboardEval(`(() => { const s = document.querySelector('.idle-slot[data-card="news"]').style; s.gridRow = s.gridRow.split(' / ')[0] + ' / span 1' })()`)
+        for (const scheme of ['dark', 'light']) {
+          await harness.cdp.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, session)
+          await new Promise((resolve) => setTimeout(resolve, 400))
+          const box = await newsBox()
+          const { data } = await harness.cdp.send<{ data: string }>('Page.captureScreenshot', { format: 'png', clip: { x: box.x, y: box.y, width: box.width, height: box.height, scale: 1 } }, session)
+          await writeFile(join(outDir, `news-${size}-${scheme}.png`), Buffer.from(data, 'base64'))
+          expect(box.overflowing, `${size} ${scheme}`).toEqual([])
+          expect(box.items, `${size} ${scheme}`).toBeGreaterThanOrEqual(size === '1x2' ? 3 : 1)
+          expect(box.smallestText, `${size} ${scheme}`).toBeGreaterThanOrEqual(16)
+          expect(box.text).toContain('VoiceStudio')
+          expect(box.text).toContain('★ 77,298')
         }
       }
     } finally {
+      // React rewrites the slot's box only when its own value changes: News is unpinned and pinned again.
+      await pin(defaults.filter((id) => id !== 'news'))
+      await waitFor(async () => ((await harness.dashboardEval<boolean>(`!document.querySelector('.idle-slot[data-card="news"]')`)) ? true : undefined), { timeoutMs: 5000, intervalMs: 100 })
       await pin(defaults)
     }
   })
 
-  it('holds the Weight card, a row per Person, to its box at 1×2 and 1×1, in dark and light (#350, #351)', async () => {
+  it('holds the Weight card, a row per Person, to its box at 1×2, in dark and light (#350, #351)', async () => {
     await mkdir(outDir, { recursive: true })
     const defaults = await harness.dashboardEval<string[]>(`window.bingbong.settings.get().then((s) => s.idleCards)`)
-    // Pinned after News and the usage card, the Weight card finds one cell left.
-    const orders: [string, string[]][] = [
-      ['1x2', defaults],
-      ['1x1', ['weather', 'calendar', 'lastPage', 'news', 'usage', 'weight', 'music']],
-    ]
+    // Its one-cell size was reached when News took a 2×2 before it; News asks two cells at most now, and with an empty Calendar every card fits at its largest.
+    const orders: [string, string[]][] = [['1x2', defaults]]
     try {
       for (const [size, order] of orders) {
         await pin(order)
@@ -400,23 +306,6 @@ describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review'
     } finally {
       await pin(defaults)
     }
-  })
-
-  it('gives the highlight the whole card when Big News is empty', async () => {
-    await harness.cdp.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'dark' }] }, session)
-    // What the card is with nothing in Big News: the list gone and the highlight across the box beside its picture, as React renders it.
-    await harness.dashboardEval(`(() => {
-      document.querySelector('.idle-news-big')?.remove()
-      const today = document.querySelector('.idle-news-today')
-      today.style.gridColumn = 'span 2'
-      today.dataset.flow = 'row'
-    })()`)
-    await new Promise((resolve) => setTimeout(resolve, 400))
-    const box = await newsBox()
-    const { data } = await harness.cdp.send<{ data: string }>('Page.captureScreenshot', { format: 'png', clip: { x: box.x, y: box.y, width: box.width, height: box.height, scale: 1 } }, session)
-    await writeFile(join(outDir, `news-2x2-dark-no-big-news.png`), Buffer.from(data, 'base64'))
-    expect(box.overflowing).toEqual([])
-    expect(box.highlightShare).toBeGreaterThan(0.95)
   })
 
   async function shoot(name: string): Promise<void> {
@@ -479,51 +368,28 @@ describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review'
     })()`)
   }
 
-  /** The News card's box: what overflows or is cut, the Big News rows shown, the smallest text on it, and the highlight's picture. */
+  /** The News card's box: what overflows or is cut, the rows shown, the smallest text on it, and its words. */
   function newsBox() {
-    return harness.dashboardEval<{
-      overflowing: string[]
-      items: number
-      smallestText: number
-      highlightPicture: 'image' | 'tile' | 'none'
-      highlightShare: number
-      width: number
-      height: number
-      x: number
-      y: number
-      lead: string
-    }>(`(() => {
+    return harness.dashboardEval<{ overflowing: string[]; items: number; smallestText: number; text: string; width: number; height: number; x: number; y: number }>(`(() => {
       const card = document.querySelector('.idle-slot[data-card="news"] .idle-news')
       const rect = card.getBoundingClientRect()
-      const today = card.querySelector('.idle-news-today')
-      const words = card.querySelector('.idle-news-words')
-      const title = card.querySelector('.idle-news-title').getBoundingClientRect()
-      const stats = card.querySelector('.idle-news-stats').getBoundingClientRect()
-      const picture = card.querySelector('.idle-news-picture')
       const overflowing = []
-      for (const tile of card.querySelectorAll('.idle-card')) {
-        if (tile.scrollHeight > tile.clientHeight + 1 || tile.scrollWidth > tile.clientWidth + 1) overflowing.push(tile.className)
-      }
-      if (stats.bottom > words.getBoundingClientRect().bottom + 1 || title.bottom > stats.top + 1) overflowing.push('highlight')
-      const lead = card.querySelector('.idle-news-lead').getBoundingClientRect()
-      if (lead.bottom > stats.top + 1) overflowing.push('highlight lead cut')
-      if (picture.checkVisibility() && picture.getBoundingClientRect().height < 40) overflowing.push('highlight picture squeezed')
-      const rows = card.querySelector('.idle-news-big ol')
-      const shown = rows ? [...rows.children].filter((row) => !row.hidden) : []
+      if (card.scrollHeight > card.clientHeight + 1 || card.scrollWidth > card.clientWidth + 1) overflowing.push(card.className)
+      const rows = card.querySelector('ol')
+      const shown = [...rows.children].filter((row) => !row.hidden)
       for (const row of shown) {
-        if (row.getBoundingClientRect().bottom > rows.getBoundingClientRect().bottom + 1) overflowing.push('big news row cut')
-        const lead = row.querySelector('.idle-news-item-lead')
-        if (lead.scrollWidth > lead.clientWidth + 1) overflowing.push('big news lead cut')
+        if (row.getBoundingClientRect().bottom > rows.getBoundingClientRect().bottom + 1) overflowing.push('repo row cut')
+        const name = row.querySelector('.idle-repo-name')
+        if (name.scrollWidth > name.clientWidth + 1) overflowing.push('repo name cut')
+        if (row.querySelector('.idle-repo-stars').getBoundingClientRect().right > rect.right + 1) overflowing.push('stars off the card')
       }
       const texts = [...card.querySelectorAll('*')].filter((el) => el.checkVisibility() && [...el.childNodes].some((node) => node.nodeType === 3 && node.textContent.trim() !== ''))
       return {
         overflowing,
         items: shown.length,
         smallestText: Math.min(...texts.map((el) => parseFloat(getComputedStyle(el).fontSize))),
-        highlightPicture: !picture.checkVisibility() ? 'none' : picture.querySelector('img') ? 'image' : picture.dataset.tile !== undefined ? 'tile' : 'none',
-        highlightShare: today.getBoundingClientRect().width / rect.width,
+        text: shown.map((row) => row.textContent).join(' '),
         width: rect.width, height: rect.height, x: rect.x, y: rect.y,
-        lead: card.querySelector('.idle-news-lead').textContent,
       }
     })()`)
   }

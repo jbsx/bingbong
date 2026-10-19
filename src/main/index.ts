@@ -67,7 +67,7 @@ import { createDucking } from '../core/music/ducking'
 import { createRememberedSongsStore } from './music/rememberedSongsStore'
 import { registerUsageIpc } from './usage/attachUsage'
 import { registerCalendarIpc } from './calendar/attachCalendar'
-import { registerNewsImageScheme, registerNewsIpc } from './news/attachNews'
+import { registerNewsIpc } from './news/attachNews'
 import { attachScaleListener, type ScaleListener } from './scale/attachScale'
 import { createBluezScaleTransport } from './scale/bluezScale'
 import { createStandInScaleTransport, SCALE_FIXTURE_ENV } from './scale/standInScale'
@@ -118,10 +118,6 @@ attachGpuStability({
 // off by default on Linux — one blink feature switch turns it on for every
 // webContents. Must precede app ready.
 app.commandLine.appendSwitch('enable-blink-features', 'MiddleClickAutoscroll')
-
-// The News card's Story Images (CONTEXT.md) load from their own scheme,
-// which must be privileged before app ready.
-registerNewsImageScheme()
 
 // Crash evidence (ADR 0017): renderer death leaves a dump instead of
 // vanishing silently; reports stay local — nothing uploads anywhere.
@@ -516,7 +512,7 @@ app.whenReady().then(async () => {
   registerCommandRunnerIpc()
   registerSettingsIpc(settingsStore)
   registerUsageIpc(() => settingsStore.get().usageDashboard.url)
-  registerNewsIpc({ storePath: join(app.getPath('userData'), 'news.json'), imageDir: join(app.getPath('userData'), 'news-images'), news: () => settingsStore.get().news, currentEnv })
+  registerNewsIpc({ storePath: join(app.getPath('userData'), 'repos.json'), currentEnv })
   // The e2e's stand-in replaces Bluetooth whenever its env names a script, so no test reaches the real scale.
   const scaleFixture = process.env[SCALE_FIXTURE_ENV]
   scaleListener = attachScaleListener({

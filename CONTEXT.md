@@ -574,38 +574,35 @@ the month alone and Up Next never shows. Read-only.
 _Avoid_: agenda (for the month), schedule
 
 **News**:
-The Idle Screen's card of what is going on in the owner's world (2026-10-19
-ask: "i want to be in the know about what is going on in the world.
-specifically the world i interact with mostly"): a story belongs on it when
-something in one of the owner's circles jumped far above that circle's
-normal day and the owner has not been shown it yet, and what is still
-big. A Pinned Card offering 2×2, 1×2 and 1×1 Card Slots, drawn as glass
-tiles (#352): at 2×2 Today's Highlight beside Big News, at 1×2 the
-highlight over Big News, at 1×1 the highlight alone; with nothing in Big
-News the highlight takes the whole box, with no filler line. The
-highlight is its Story Image, two chips — "Today's highlight" and the
-topic — its headline in two beats, then its number large, its comments,
-its source and site. Where its Story Brief is written, the headline's
-lead stands alone and the brief's two lines follow it, each a line of its
-own (owner, 2026-10-19: "the list of github repo names say nothing about
-them and why theyre worth my attention. the daily news is a big blob of
-text that requires careful parsing"). A headline breaks into its lead, bold and never cut,
-and its tail, quiet (`leadAndTail`: at the first of ": ", ", and ",
-", with ", " — ", ", " at least fifteen characters in, the "and" or "with"
-kept; a GitHub repo's name over its description; else all lead) — so a
-long one reads in two beats rather than as a wall (owner, 2026-10-19: "the
-news currently looks like a big text wall"). A Big News line is a number,
-its Story Image as a thumbnail, its lead whole, its tail on one line with
-an ellipsis where it runs on — the one place a line is cut, by design —
-and its number in a pill; with its Story Brief, the lead on two lines at
-most, then what it is and why it matters, each on two lines at most. The highlight's words step down to a floor,
-then its picture shrinks and goes behind them under a dark scrim, then its
-tail goes to one line; a Big News line the box cannot hold whole is left
-off. A tap on any
-story, or its picture, opens it in the pane. An empty Interest Profile
-or a source with nothing yet keeps a small note. Kept deliberately short
-(2026-10-19: the owner felt overwhelmed by eleven headlines).
+The Idle Screen's card of what is going on in the owner's world, one
+glass tile since 2026-10-19: the Top Repos. A Pinned Card offering 1×2
+and 1×1 Card Slots; it draws from its box alone, every row it can hold
+whole. Until then it held two tiles, Today's Highlight and Big News, from
+the News Desk; the owner retired them ("the news cards are kinda useless
+right now. collapse the two cards into one and have the top 3 starred
+repos of the month in the card instead"). With GitHub never read it keeps
+a small note.
 _Avoid_: news feed, headlines, widget
+
+**Top Repos**:
+The three repositories that gained the most stars on GitHub this month —
+GitHub's monthly trending page, read since no API answers it, sorted by
+the month's stars since the page is not — each a numbered row: its owner
+quiet and its name bold, its stars in all in a pill, one short sentence of
+what it is, then its language and the stars it gained this month. GLM
+writes the sentence (as it wrote Story Briefs, armed by `ZAI_API_KEY`)
+from the repository's description and the opening of its README, once per
+repository, kept in repos.json with the list; with none written — no key,
+the writer down — the row shows the description, quieter. Main reads the
+page at most hourly while the Idle Screen asks, keeps the last list
+through a failed read, and asks a failing writer at most once an hour. A
+tap opens the repository in the pane through `navigate <link>`.
+_Avoid_: trending, GitHub card, starred repos (they are not the owner's
+stars)
+
+The terms from Interest Profile to NewsSource below name the News Desk
+the card showed until 2026-10-19; its code is still in core/news, but
+nothing shows it or polls its sources.
 
 **Interest Profile**:
 The owner's circles as a topic list in settings' News section, each topic
