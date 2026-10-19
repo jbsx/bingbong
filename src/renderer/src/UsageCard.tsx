@@ -127,8 +127,8 @@ function UsageChart({ providers, updatedAt, now }: { providers: readonly UsageVi
         <span className="usage-chart-legend">
           {lines.map(({ provider, window, dash }) => (
             <span key={`${provider}:${window.key}`} className={`usage-legend ${toneClass(provider)}`}>
-              <svg width={18} height={4} aria-hidden="true">
-                <line x1={1} y1={2} x2={17} y2={2} strokeDasharray={dash === undefined ? undefined : dash === '9 5' ? '5 3' : '2 3'} />
+              <svg width={26} height={6} aria-hidden="true">
+                <line x1={2} y1={3} x2={24} y2={3} strokeDasharray={dash === undefined ? undefined : dash === '9 5' ? '5 3' : '2 3'} />
               </svg>
               {provider} · {window.caption}
             </span>
@@ -170,7 +170,8 @@ function UsageChart({ providers, updatedAt, now }: { providers: readonly UsageVi
  * owner's usage dashboard draws them, beside that dashboard's history as
  * lines and when it last refreshed. Read-only — a tap wakes the dashboard
  * like anywhere else on the Idle Screen; the choices live in settings.
- * Past two providers the gauges shrink and the chart drops under them.
+ * The gauges sit in a row across the top and the chart fills the card
+ * under them; past two providers the gauges shrink to make the row.
  */
 export function UsageCard({ providers, updatedAt, now }: { providers: readonly UsageView[]; updatedAt: number; now: number }) {
   return (

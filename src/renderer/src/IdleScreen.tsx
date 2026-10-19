@@ -78,31 +78,31 @@ function DayRow({ today, units }: { today: WeatherDay; units: WeatherUnits }) {
   return (
     <div className="wx-day">
       <span className="wx-day-item wx-day-range" aria-label={`low ${degrees(today.low)}, high ${degrees(today.high)}`}>
-        <LowIcon size={14} />
+        <LowIcon size={20} />
         <span className="wx-temp" style={hueStyle(today.low, units)}>
           {degrees(today.low)}
         </span>
         <RangeBar today={today} units={units} />
-        <HighIcon size={14} />
+        <HighIcon size={20} />
         <span className="wx-temp" style={hueStyle(today.high, units)}>
           {degrees(today.high)}
         </span>
       </span>
       {today.precipitationChance !== null && today.precipitationChance > 0 ? (
         <span className="wx-day-item wx-day-rain">
-          <RainChanceIcon size={18} />
+          <RainChanceIcon size={24} />
           <span>{Math.round(today.precipitationChance)}%</span>
         </span>
       ) : null}
       {today.sunrise !== null ? (
         <span className="wx-day-item wx-day-sun">
-          <SunriseIcon size={20} />
+          <SunriseIcon size={26} />
           <span>{hourLabel(today.sunrise, { withMinutes: true })}</span>
         </span>
       ) : null}
       {today.sunset !== null ? (
         <span className="wx-day-item wx-day-sun">
-          <SunsetIcon size={20} />
+          <SunsetIcon size={26} />
           <span>{hourLabel(today.sunset, { withMinutes: true })}</span>
         </span>
       ) : null}
@@ -116,7 +116,7 @@ function HourStrip({ hours, units }: { hours: readonly WeatherHour[]; units: Wea
       {hours.map((hour) => (
         <li key={hour.time} className="wx-hour" aria-label={`${hourLabel(hour.time)}: ${degrees(hour.temperature)}, ${hour.description}`}>
           <span className="wx-hour-time">{hourLabel(hour.time)}</span>
-          <WeatherIcon sky={hour.sky} isDay={hour.isDay} size={30} />
+          <WeatherIcon sky={hour.sky} isDay={hour.isDay} size={48} />
           <span className="wx-hour-rain">
             {hour.precipitationChance !== null && hour.precipitationChance >= 20 ? `${Math.round(hour.precipitationChance)}%` : ''}
           </span>
@@ -140,7 +140,7 @@ function WeatherCard({ report }: { report: WeatherReport }) {
   return (
     <section className="idle-card wx-card" aria-label="weather">
       <div className="wx-now">
-        <WeatherIcon sky={report.sky ?? 'unknown'} isDay={report.isDay ?? null} size={84} label={report.description} />
+        <WeatherIcon sky={report.sky ?? 'unknown'} isDay={report.isDay ?? null} size={100} label={report.description} />
         <span className="wx-temp wx-now-temp" style={hueStyle(report.temperature, report.units)}>
           {degrees(report.temperature)}
         </span>
@@ -293,20 +293,20 @@ function UpNextCard({ next, now }: { next: UpNext; now: Date }) {
   )
 }
 
-/** The site's own mark, 28 px in a rounded tile; the globe stands in when it has none. */
+/** The site's own mark, 32 px in a 64 px rounded tile; the globe stands in when it has none. */
 function SiteMark({ url }: { url: string }) {
   const [failed, setFailed] = useState(false)
   const origin = URL.canParse(url) ? new URL(url).origin : null
   if (failed || origin === null) {
     return (
       <span className="idle-last-page-mark idle-last-page-mark--globe">
-        <GlobeIcon size={22} />
+        <GlobeIcon size={32} />
       </span>
     )
   }
   return (
     <span className="idle-last-page-mark">
-      <img src={`${origin}/favicon.ico`} alt="" width={22} height={22} onError={() => setFailed(true)} />
+      <img src={`${origin}/favicon.ico`} alt="" width={32} height={32} onError={() => setFailed(true)} />
     </span>
   )
 }
@@ -342,7 +342,7 @@ function LastPageCard({ page }: { page: LastPage }) {
         <span className="idle-last-page-host">{title === host ? '' : `${host} · `}say “resume” or tap</span>
       </span>
       <span className="idle-last-page-chevron">
-        <ChevronIcon size={20} />
+        <ChevronIcon size={28} />
       </span>
     </button>
   )
@@ -350,24 +350,24 @@ function LastPageCard({ page }: { page: LastPage }) {
 
 /** The ring around the Timer's glyph: the part still to run, drawn as an arc that empties clockwise. */
 function TimerRing({ fraction }: { fraction: number }) {
-  const radius = 26
+  const radius = 36
   const circumference = 2 * Math.PI * radius
   return (
     <span className="idle-timer-ring" aria-hidden="true">
-      <svg width={60} height={60} viewBox="0 0 60 60">
-        <circle className="idle-timer-track" cx={30} cy={30} r={radius} />
+      <svg width={84} height={84} viewBox="0 0 84 84">
+        <circle className="idle-timer-track" cx={42} cy={42} r={radius} />
         <circle
           className="idle-timer-arc"
-          cx={30}
-          cy={30}
+          cx={42}
+          cy={42}
           r={radius}
           strokeDasharray={circumference}
           strokeDashoffset={circumference * (1 - Math.min(1, Math.max(0, fraction)))}
-          transform="rotate(-90 30 30)"
+          transform="rotate(-90 42 42)"
         />
       </svg>
       <span className="idle-timer-glyph">
-        <TimerIcon size={24} />
+        <TimerIcon size={34} />
       </span>
     </span>
   )
@@ -444,7 +444,11 @@ function TimerCard({ timer }: { timer: Exclude<TimerState, { status: 'off' }> })
  * Command that never needs the pane is heard and performed (the Timer, a
  * Stop), so the ear and the reading show here — nothing at rest.
  */
-/** The display the Idle Screen is laid out for: the appliance's 21-inch 16:9 monitor. */
+/**
+ * The display the Idle Screen is laid out for: the appliance's 21-inch 16:9
+ * monitor, read from a couple of metres away — the stylesheet's sizes are
+ * set for that distance, and this is the canvas they fill.
+ */
 const DESIGN_WIDTH = 1920
 const DESIGN_HEIGHT = 1080
 

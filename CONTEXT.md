@@ -371,8 +371,12 @@ glyph, every temperature in its hue from blue through green to red, rain in
 blue, so the day reads from across the room), the AI Usage card and the
 Calendar beside the weather, the Timer when one is set, today's next event when the
 Calendar has one, and the Last Page with its way back. It is laid out for
-the appliance's 21-inch 1920×1080 display (owner, 2026-10-19); a smaller
-window shows the same layout scaled down to fit. Never shows Feed Entries (#70); never comes up over a running
+the appliance's 21-inch 1920×1080 display (owner, 2026-10-19), to be read
+from a couple of metres away (owner, 2026-10-19: "the components are too
+small"): the three cards fill the height between the clock and the bottom
+band, nothing is set below 16 px, and the figures that matter — the
+temperatures, the gauges, the countdown, today's date — are far larger. A
+smaller window shows the same layout scaled down to fit. Never shows Feed Entries (#70); never comes up over a running
 Command, an open mic or the settings page. Once up it stays up through the
 voice half and the pipeline — the ear opening, a heard line, a reading —
 with the Status Capsule shown on it while they run, so a Command that never

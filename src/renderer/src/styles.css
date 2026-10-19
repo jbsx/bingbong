@@ -1513,18 +1513,21 @@ body {
   padding: 28px 36px;
 }
 
-/* The idle screen: the smart-display half of the appliance. The top drag
-   strip keeps the window movable while the Toolbar is unmounted. Three
-   bands — clock, weather, Last Page — on the canvas, the two cards in the
-   sheet's hairline-and-panel language (ADR 0012). */
+/* The idle screen: the smart-display half of the appliance, read from a
+   couple of metres off the appliance's 21-inch 1920×1080 display, so every
+   size here is set for that distance — nothing below 16 px, the figures
+   that matter (temperatures, the gauges, the countdown, today's date) far
+   larger. The top drag strip keeps the window movable while the Toolbar is
+   unmounted. Three bands — clock, the three cards, the Timer / Up Next /
+   Last Page — on the canvas; the cards in the sheet's hairline-and-panel
+   language (ADR 0012), stretched to fill the height between the bands. */
 .idle-screen {
   position: relative;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
   height: 100%;
-  padding: 56px 48px 48px;
-  gap: 32px;
+  padding: 24px 40px 28px;
+  gap: 22px;
 }
 
 .idle-drag-strip {
@@ -1548,24 +1551,24 @@ body {
 
 .idle-screen-top {
   display: flex;
+  flex: none;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
-  margin-top: 2vh;
+  gap: 2px;
 }
 
 .idle-clock {
   margin: 0;
-  font-size: clamp(4rem, 14vw, 8rem);
+  font-size: 9rem;
   font-weight: 200;
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
-  line-height: 1;
+  line-height: 0.95;
 }
 
 .idle-date {
   margin: 0;
-  font-size: 1.25rem;
+  font-size: 1.9rem;
   color: var(--muted);
 }
 
@@ -1575,24 +1578,28 @@ body {
   justify-content: center;
 }
 
-/* The weather and the AI usage side by side; on a narrow window the usage
-   wraps under the weather. */
+/* The weather, the AI usage and the Calendar side by side, each stretched to
+   the band's height; on a window too narrow for three the Calendar wraps
+   under the other two. */
 .idle-screen-middle {
+  flex: 1 1 auto;
   flex-wrap: wrap;
   align-items: stretch;
-  gap: 20px;
+  min-height: 0;
+  gap: 24px;
 }
 
 .idle-weather {
   margin: 0;
-  font-size: 1.2rem;
+  align-self: center;
+  font-size: 1.6rem;
   color: var(--muted);
 }
 
 /* A card: the panel skin, a hairline, the restyle's large radius. */
 .idle-card {
   border: 1px solid var(--edge);
-  border-radius: 22px;
+  border-radius: 24px;
   background: var(--panel);
   color: var(--text);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 12px 40px rgba(0, 0, 0, 0.06);
@@ -1605,10 +1612,10 @@ body {
   flex-direction: column;
   /* Stretched to the row the Calendar sets, the weather sits mid-card. */
   justify-content: center;
-  gap: 18px;
-  flex: 1 1 440px;
-  max-width: 760px;
-  padding: 24px 32px 20px;
+  gap: 34px;
+  flex: 1 1 460px;
+  max-width: 640px;
+  padding: 26px 30px 22px;
   -webkit-app-region: no-drag;
 }
 
@@ -1616,11 +1623,11 @@ body {
 .wx-now {
   display: flex;
   align-items: center;
-  gap: 22px;
+  gap: 20px;
 }
 
 .wx-now-temp {
-  font-size: 4.75rem;
+  font-size: 6.5rem;
   font-weight: 200;
   letter-spacing: -0.03em;
   line-height: 1;
@@ -1631,17 +1638,19 @@ body {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  margin-left: 6px;
+  min-width: 0;
+  margin-left: 4px;
 }
 
 .wx-now-city {
-  font-size: 1.35rem;
+  font-size: 1.85rem;
   font-weight: 500;
   letter-spacing: -0.01em;
 }
 
 .wx-now-sky {
-  font-size: 1.05rem;
+  font-size: 1.4rem;
+  line-height: 1.2;
   color: var(--muted);
   text-transform: capitalize;
 }
@@ -1654,21 +1663,28 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-/* Today's row: low → bar → high, the rain chance, the sun's times. */
+/* Today's facts in two lines: the range, its bar stretched across the card
+   between the low and the high; under it the rain chance and the sun's
+   times, spread along the line. */
 .wx-day {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 10px 24px;
-  font-size: 1rem;
+  gap: 12px 20px;
+  font-size: 1.4rem;
 }
 
 .wx-day-item {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   color: var(--muted);
+}
+
+.wx-day-range {
+  display: flex;
+  flex: 1 0 100%;
 }
 
 .wx-day-item .wx-temp {
@@ -1681,7 +1697,7 @@ body {
 }
 
 .wx-day-sun {
-  gap: 8px;
+  gap: 10px;
   color: var(--text);
   font-variant-numeric: tabular-nums;
 }
@@ -1694,10 +1710,10 @@ body {
 .wx-range {
   position: relative;
   display: inline-block;
-  width: 140px;
-  height: 6px;
+  flex: 1 1 auto;
+  height: 8px;
   margin: 0 6px;
-  border-radius: 3px;
+  border-radius: 4px;
   background: var(--bubble);
   overflow: hidden;
 }
@@ -1706,7 +1722,7 @@ body {
   position: absolute;
   top: 0;
   bottom: 0;
-  border-radius: 3px;
+  border-radius: 4px;
   background: linear-gradient(90deg, hsl(var(--hue-from) var(--wx-sat) var(--wx-light)), hsl(var(--hue-to) var(--wx-sat) var(--wx-light)));
 }
 
@@ -1717,7 +1733,7 @@ body {
   grid-auto-columns: 1fr;
   gap: 4px;
   margin: 0;
-  padding: 16px 0 0;
+  padding: 22px 0 0;
   border-top: 1px solid var(--edge);
   list-style: none;
 }
@@ -1726,24 +1742,24 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
+  gap: 10px;
 }
 
 .wx-hour-time {
-  font-size: 0.9rem;
+  font-size: 1.3rem;
   color: var(--muted);
 }
 
 .wx-hour-rain {
   min-height: 1em;
-  font-size: 0.8rem;
+  font-size: 1.1rem;
   font-weight: 500;
   line-height: 1;
   color: var(--wx-rain);
 }
 
 .wx-hour-temp {
-  font-size: 1.3rem;
+  font-size: 1.9rem;
   font-weight: 400;
 }
 
@@ -1771,9 +1787,9 @@ body {
 .idle-last-page {
   display: flex;
   align-items: center;
-  gap: 16px;
-  width: min(560px, 100%);
-  padding: 14px 18px 14px 16px;
+  gap: 18px;
+  width: min(760px, 100%);
+  padding: 14px 24px 14px 20px;
   font: inherit;
   text-align: left;
   cursor: pointer;
@@ -1795,28 +1811,29 @@ body {
   display: grid;
   place-items: center;
   flex: none;
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
+  width: 64px;
+  height: 64px;
+  border-radius: 16px;
   background: var(--bubble);
   color: var(--muted);
 }
 
 .idle-last-page-mark img {
   display: block;
-  border-radius: 5px;
+  border-radius: 6px;
 }
 
 .idle-last-page-words {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
   min-width: 0;
   flex: 1;
 }
 
 .idle-last-page-kicker {
-  font-size: 0.72rem;
+  font-size: 1rem;
+  line-height: 1.2;
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -1825,7 +1842,8 @@ body {
 
 .idle-last-page-title {
   overflow: hidden;
-  font-size: 1.1rem;
+  font-size: 1.65rem;
+  line-height: 1.2;
   font-weight: 500;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -1833,7 +1851,8 @@ body {
 
 .idle-last-page-host {
   overflow: hidden;
-  font-size: 0.9rem;
+  font-size: 1.2rem;
+  line-height: 1.25;
   color: var(--muted);
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -1851,17 +1870,18 @@ body {
    reads as done from across the room. */
 
 .idle-screen-bottom {
+  flex: none;
   flex-wrap: wrap;
-  gap: 16px;
+  gap: 20px;
 }
 
 .idle-timer {
   --timer-tone: var(--status-yellow);
   display: flex;
   align-items: center;
-  gap: 16px;
-  min-width: 300px;
-  padding: 14px 24px 14px 16px;
+  gap: 18px;
+  min-width: 400px;
+  padding: 14px 28px 14px 18px;
   font: inherit;
   text-align: left;
   -webkit-app-region: no-drag;
@@ -1885,7 +1905,7 @@ body {
     box-shadow: 0 0 0 0 color-mix(in srgb, var(--timer-tone) 45%, transparent);
   }
   50% {
-    box-shadow: 0 0 0 10px color-mix(in srgb, var(--timer-tone) 0%, transparent);
+    box-shadow: 0 0 0 14px color-mix(in srgb, var(--timer-tone) 0%, transparent);
   }
 }
 
@@ -1900,8 +1920,8 @@ body {
   display: grid;
   place-items: center;
   flex: none;
-  width: 60px;
-  height: 60px;
+  width: 84px;
+  height: 84px;
 }
 
 .idle-timer-ring > svg {
@@ -1912,7 +1932,7 @@ body {
 .idle-timer-track,
 .idle-timer-arc {
   fill: none;
-  stroke-width: 4;
+  stroke-width: 5;
 }
 
 .idle-timer-track {
@@ -1938,7 +1958,8 @@ body {
 }
 
 .idle-timer-kicker {
-  font-size: 0.72rem;
+  font-size: 1rem;
+  line-height: 1.2;
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -1946,15 +1967,16 @@ body {
 }
 
 .idle-timer-left {
-  font-size: 2rem;
+  font-size: 3rem;
   font-weight: 300;
   letter-spacing: -0.01em;
-  line-height: 1.1;
+  line-height: 1.05;
   font-variant-numeric: tabular-nums;
 }
 
 .idle-timer-sub {
-  font-size: 0.9rem;
+  font-size: 1.2rem;
+  line-height: 1.25;
   color: var(--muted);
 }
 
@@ -1963,28 +1985,30 @@ body {
    boxes that hold their entries: the bank holiday's name on green, an
    all-day event as a red bar, a timed one as its start and title, then
    "+N more". Today's date in a red disc, weekends and the neighbouring
-   months' days in the quiet ink, hairlines between the days. Made for the
-   21-inch 1920×1080 display, where it sits in a row with the other two;
-   on a window too narrow for three it wraps under them. */
+   months' days in the quiet ink, hairlines between the days. The weeks
+   share the card's height, so a five-week month gets taller boxes than a
+   six-week one — on the 1920×1080 display a six-week month still holds the
+   number and an entry in every box. On a window too narrow for three cards
+   it wraps under the other two. */
 
 .idle-cal {
-  --cal-row: clamp(72px, 7.5vh, 96px);
+  --cal-row: 86px;
   --cal-holiday: color-mix(in srgb, var(--status-green) 30%, transparent);
   display: flex;
-  flex: 1 1 700px;
+  flex: 1 1 800px;
   flex-direction: column;
   gap: 10px;
-  max-width: 1000px;
-  padding: 20px 22px 18px;
+  max-width: 1100px;
+  padding: 20px 22px 16px;
   -webkit-app-region: no-drag;
 }
 
 .idle-cal-head {
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: 10px;
   padding: 0 4px;
-  font-size: 1.15rem;
+  font-size: 1.6rem;
 }
 
 .idle-cal-month {
@@ -1999,17 +2023,17 @@ body {
 .idle-cal-holiday {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   min-width: 0;
   margin-left: auto;
-  font-size: 0.85rem;
+  font-size: 1.15rem;
 }
 
 .idle-cal-swatch {
   flex: none;
-  width: 10px;
-  height: 10px;
-  border-radius: 3px;
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
   background: var(--cal-holiday);
 }
 
@@ -2029,6 +2053,7 @@ body {
   display: flex;
   flex: 1;
   flex-direction: column;
+  min-height: 0;
 }
 
 .idle-cal-weekdays,
@@ -2038,8 +2063,8 @@ body {
 }
 
 .idle-cal-weekday {
-  padding: 0 6px 6px;
-  font-size: 0.72rem;
+  padding: 0 6px 8px;
+  font-size: 1rem;
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -2054,9 +2079,9 @@ body {
 .idle-cal-day {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
   min-width: 0;
-  padding: 4px 4px 3px;
+  padding: 5px 5px 4px;
   overflow: hidden;
 }
 
@@ -2068,11 +2093,11 @@ body {
   display: grid;
   place-items: center;
   align-self: flex-start;
-  min-width: 24px;
-  height: 24px;
-  padding: 0 4px;
-  border-radius: 12px;
-  font-size: 1rem;
+  min-width: 32px;
+  height: 32px;
+  padding: 0 6px;
+  border-radius: 16px;
+  font-size: 1.35rem;
   font-variant-numeric: tabular-nums;
 }
 
@@ -2093,10 +2118,10 @@ body {
 
 .idle-cal-entry {
   overflow: hidden;
-  padding: 1px 5px;
-  border-radius: 4px;
-  font-size: 0.82rem;
-  line-height: 1.35;
+  padding: 1px 4px;
+  border-radius: 6px;
+  font-size: 1.2rem;
+  line-height: 1.25;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
@@ -2104,9 +2129,9 @@ body {
 .idle-cal-entry--timed::before {
   content: '';
   display: inline-block;
-  width: 7px;
-  height: 7px;
-  margin-right: 5px;
+  width: 10px;
+  height: 10px;
+  margin-right: 6px;
   border-radius: 50%;
   background: var(--status-red);
   vertical-align: 1px;
@@ -2129,8 +2154,8 @@ body {
 }
 
 .idle-cal-more {
-  padding: 0 5px;
-  font-size: 0.68rem;
+  padding: 0 7px;
+  font-size: 1rem;
   color: var(--muted);
 }
 
@@ -2141,10 +2166,10 @@ body {
 .idle-upnext {
   display: flex;
   align-items: center;
-  gap: 16px;
-  min-width: 300px;
-  max-width: 420px;
-  padding: 14px 24px 14px 16px;
+  gap: 18px;
+  min-width: 400px;
+  max-width: 560px;
+  padding: 14px 28px 14px 18px;
   -webkit-app-region: no-drag;
 }
 
@@ -2153,18 +2178,18 @@ body {
   flex: none;
   flex-direction: column;
   align-items: center;
-  width: 44px;
+  width: 64px;
   overflow: hidden;
-  border-radius: 12px;
+  border-radius: 16px;
   background: var(--bubble);
 }
 
 .idle-upnext-tile-weekday {
   align-self: stretch;
-  padding: 2px 0 1px;
+  padding: 3px 0 2px;
   background: var(--status-red);
   color: #fff;
-  font-size: 0.62rem;
+  font-size: 0.85rem;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-align: center;
@@ -2172,7 +2197,7 @@ body {
 }
 
 .idle-upnext-tile-day {
-  font-size: 1.25rem;
+  font-size: 1.8rem;
   font-weight: 500;
   line-height: 1.5;
   font-variant-numeric: tabular-nums;
@@ -2181,12 +2206,13 @@ body {
 .idle-upnext-words {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
   min-width: 0;
 }
 
 .idle-upnext-kicker {
-  font-size: 0.72rem;
+  font-size: 1rem;
+  line-height: 1.2;
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -2195,14 +2221,16 @@ body {
 
 .idle-upnext-title {
   overflow: hidden;
-  font-size: 1.1rem;
+  font-size: 1.65rem;
+  line-height: 1.2;
   font-weight: 500;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
 
 .idle-upnext-sub {
-  font-size: 0.9rem;
+  font-size: 1.2rem;
+  line-height: 1.25;
   color: var(--muted);
 }
 
@@ -2394,17 +2422,18 @@ body {
 }
 
 /* ---- the AI usage card ----
-   Beside the weather: Codex's and Claude's gauges as the usage dashboard
+   Beside the weather: the chosen providers' gauges as the usage dashboard
    draws them — dots that fill as the window runs, the number the share of
-   the limit used, in the provider's color — and the last twelve hours as
-   lines. */
+   the limit used, in the provider's color — in a row across the top, and
+   the last twelve hours as lines filling the card under them. */
 
 .usage-card {
   display: flex;
-  gap: 24px;
-  flex: 1 1 600px;
-  max-width: 900px;
-  padding: 22px 24px 18px;
+  flex-direction: column;
+  gap: 20px;
+  flex: 1 1 480px;
+  max-width: 720px;
+  padding: 24px 26px 20px;
   -webkit-app-region: no-drag;
 }
 
@@ -2435,7 +2464,8 @@ body {
 
 .usage-gauges {
   display: flex;
-  gap: 18px;
+  justify-content: space-evenly;
+  gap: 20px;
   flex: none;
 }
 
@@ -2444,23 +2474,23 @@ body {
   flex-direction: column;
   align-items: center;
   gap: 8px;
-  width: 140px;
+  width: 200px;
 }
 
 .usage-gauge-head {
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: 10px;
   align-self: stretch;
 }
 
 .usage-gauge-name {
-  font-size: 1.05rem;
+  font-size: 1.5rem;
   font-weight: 600;
 }
 
 .usage-gauge-plan {
-  font-size: 0.75rem;
+  font-size: 1.05rem;
   color: var(--muted);
 }
 
@@ -2468,8 +2498,8 @@ body {
   position: relative;
   display: grid;
   place-items: center;
-  width: 128px;
-  height: 128px;
+  width: 170px;
+  height: 170px;
 }
 
 .usage-dots > svg {
@@ -2491,13 +2521,13 @@ body {
    unlit dots alike. */
 .usage-dots-pct {
   position: relative;
-  font-size: 4.2rem;
+  font-size: 5.75rem;
   font-weight: 800;
   line-height: 1;
   color: var(--usage-tone);
   font-variant-numeric: tabular-nums;
   paint-order: stroke fill;
-  -webkit-text-stroke: 6px var(--panel);
+  -webkit-text-stroke: 8px var(--panel);
 }
 
 .usage-dots-pct--over {
@@ -2505,7 +2535,7 @@ body {
 }
 
 .usage-gauge-reset {
-  font-size: 0.8rem;
+  font-size: 1.1rem;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
@@ -2518,7 +2548,7 @@ body {
 .usage-bars {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
   align-self: stretch;
 }
 
@@ -2527,15 +2557,15 @@ body {
   grid-template-columns: auto 1fr auto;
   white-space: nowrap;
   align-items: center;
-  column-gap: 8px;
-  font-size: 0.75rem;
+  column-gap: 10px;
+  font-size: 1.05rem;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
 
 .usage-bar-track {
-  height: 8px;
-  border-radius: 4px;
+  height: 10px;
+  border-radius: 5px;
   background: var(--bubble);
   overflow: hidden;
 }
@@ -2559,28 +2589,29 @@ body {
 .usage-chart {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
   flex: 1 1 auto;
   min-width: 0;
+  min-height: 0;
 }
 
 .usage-chart-legend {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 16px;
-  font-size: 0.8rem;
+  gap: 4px 20px;
+  font-size: 1.05rem;
   color: var(--muted);
 }
 
 .usage-legend {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 
 .usage-legend > svg {
   stroke: var(--usage-tone);
-  stroke-width: 3;
+  stroke-width: 4;
   stroke-linecap: round;
 }
 
@@ -2595,7 +2626,7 @@ body {
 
 .usage-updated {
   flex: none;
-  font-size: 0.75rem;
+  font-size: 1.05rem;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
@@ -2605,13 +2636,8 @@ body {
   font-weight: 600;
 }
 
-/* Past two providers: smaller gauges in a wrapping row, the chart under
-   them at the card's full width. */
-.usage-card--many {
-  flex-direction: column;
-  gap: 16px;
-}
-
+/* Past two providers: smaller gauges in a wrapping row, the chart still
+   under them. */
 .usage-card--many .usage-gauges {
   flex-wrap: wrap;
   justify-content: space-between;
@@ -2619,7 +2645,7 @@ body {
 }
 
 .usage-card--many .usage-gauge {
-  width: 96px;
+  width: 150px;
   gap: 6px;
 }
 
@@ -2628,13 +2654,13 @@ body {
 }
 
 .usage-card--many .usage-dots {
-  width: 80px;
-  height: 80px;
+  width: 120px;
+  height: 120px;
 }
 
 .usage-card--many .usage-dots-pct {
-  font-size: 2.5rem;
-  -webkit-text-stroke-width: 4px;
+  font-size: 3.75rem;
+  -webkit-text-stroke-width: 6px;
 }
 
 .usage-card--many .usage-bar {
@@ -2653,12 +2679,12 @@ body {
 }
 
 .usage-card--many .usage-gauge-reset {
-  font-size: 0.72rem;
+  font-size: 1rem;
   white-space: nowrap;
 }
 
 .usage-card--many .usage-chart-plot {
-  min-height: 110px;
+  min-height: 140px;
 }
 
 /* ---- the AI usage settings: the dashboard's ⚙ Metrics panel ---- */
@@ -2725,9 +2751,9 @@ body {
 .usage-chart-plot {
   position: relative;
   display: flex;
-  gap: 8px;
+  gap: 10px;
   flex: 1 1 auto;
-  min-height: 150px;
+  min-height: 120px;
 }
 
 .usage-chart-y {
@@ -2735,7 +2761,7 @@ body {
   flex-direction: column;
   justify-content: space-between;
   margin: -0.45em 0;
-  font-size: 0.7rem;
+  font-size: 1rem;
   color: var(--muted);
   text-align: right;
   font-variant-numeric: tabular-nums;
@@ -2757,7 +2783,7 @@ body {
 .usage-line {
   fill: none;
   stroke: var(--usage-tone);
-  stroke-width: 2.5;
+  stroke-width: 3.5;
   stroke-linejoin: round;
   stroke-linecap: round;
   vector-effect: non-scaling-stroke;
@@ -2766,7 +2792,7 @@ body {
 .usage-chart-x {
   display: flex;
   justify-content: space-between;
-  padding-left: 30px;
-  font-size: 0.7rem;
+  padding-left: 40px;
+  font-size: 1rem;
   color: var(--muted);
 }
