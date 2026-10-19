@@ -126,6 +126,19 @@ export function commandPageOf(snapshot: PageSnapshot): CommandPage {
   }
 }
 
+/**
+ * Whether the page is still mounting (post mortem 2026-10-19 23:26): at
+ * most one ref, or a dialog open with no text and no controls. A script-
+ * drawn site's load event fires on its empty shell — Truth Social's
+ * profile was read with an empty dialog and no refs, then with "Home"
+ * alone, and its sign-up sheet drew seconds later — so such a page is a
+ * loading signal, not a page to read, nor an Obstacle to step aside from.
+ */
+export function isMounting(page: CommandPage): boolean {
+  if (page.dialog !== undefined && page.dialog.text.trim() === '' && page.dialog.refs.length === 0) return true
+  return page.refs.length <= 1
+}
+
 /** The verbs that act on one ref. */
 export function verbTakesTarget(verb: CommandVerb): boolean {
   return verb === 'click' || verb === 'type'

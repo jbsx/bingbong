@@ -14,7 +14,7 @@ import { pageReadPartLine } from '../../core/browser/pageText'
 import { NO_OBSERVABLE_CHANGE, PAGE_SIGNATURE_CHANGED, blockedActionHead } from '../../core/browser/actionOutcome'
 import { SPOKEN_FAILURES } from '../../core/command/spokenFailure'
 import { createSpeechCoordinator } from '../../core/tts/speechCoordinator'
-import { RESULTS_POLL_MS, RESULTS_WAIT_MS, createCommandRunner, type CommandRunner, type CommandRunnerDeps } from './commandRunner'
+import { MOUNTING_WAIT_MS, RESULTS_POLL_MS, RESULTS_WAIT_MS, createCommandRunner, type CommandRunner, type CommandRunnerDeps } from './commandRunner'
 import { createPlayer, type SongMemory } from '../music/player'
 import { ScriptedYouTube, videoItem } from '../music/scriptedYouTube'
 
@@ -1734,6 +1734,51 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
         expect(decision.requests[2]!.state).not.toContain('A dialog is open')
         expect(failures(events)).toEqual([])
         expect(decisions(records).map((record) => record.ended)).toEqual([undefined, undefined, 'done'])
+      })
+
+      describe('the 23:26 run on 2026-10-19: a script-drawn page read before it drew', () => {
+        // Truth Social's load event fired on its empty shell: hop 2 read a
+        // dialog with no text and no refs, the re-read read "Home" alone,
+        // and the Task ended unsure; the sign-up sheet drew seconds later.
+        /** The landing by how many polls the hop has waited: an empty dialog, then "Home" alone, then the sheet over the page. */
+        function mountingHarness(drawnAfterPolls: number) {
+          const h = taskHarness()
+          let drew = false
+          const collectPage = h.browser.collectPage.bind(h.browser)
+          h.browser.collectPage = async () => {
+            if (h.browser.snapshot.url === SEARCH && !drew) {
+              const polls = h.sleeps.length
+              if (polls >= drawnAfterPolls) {
+                drew = true
+                covered(h)
+              } else if (polls === 0) h.browser.snapshot = { ...h.browser.snapshot, refs: [], dialogOpen: true, dialogText: '' }
+              else h.browser.snapshot = { ...h.browser.snapshot, refs: [ref(1, 'link', 'Home', { href: 'https://truthsocial.com/' })], dialogOpen: false, dialogText: '' }
+            }
+            return collectPage()
+          }
+          return h
+        }
+
+        it('a hop waits for the page to draw, polling, and steps aside from the sheet it drew', async () => {
+          const h = mountingHarness(2)
+          const { browser, sleeps, records, decision, events, runner } = h
+          closing(h, SEARCH_REFS)
+          decision.script.push(answer('search', 'none', 's3-6'), withOutcome(answer('click', 'ref-3'), 'in_the_way', 0.85), withOutcome(answer('done'), 'yes'))
+          await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
+          expect(sleeps).toEqual([RESULTS_POLL_MS, RESULTS_POLL_MS])
+          expect(decision.requests[1]!.state).toContain('A dialog is open: "Don’t miss what’s happening"')
+          expect(browser.clicks).toEqual([1])
+          expect(failures(events)).toEqual([])
+          expect(decisions(records).map((record) => record.ended)).toEqual([undefined, undefined, 'done'])
+        })
+
+        it('a page that never draws within the wait is read as it stands', async () => {
+          const { sleeps, decision, runner } = mountingHarness(Number.POSITIVE_INFINITY)
+          decision.script.push(answer('search', 'none', 's3-6'), answer('none'))
+          await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
+          expect(sleeps).toHaveLength(MOUNTING_WAIT_MS / RESULTS_POLL_MS)
+          expect(decision.requests[1]!.state).toContain('[1] link "Home" https://truthsocial.com/')
+        })
       })
 
       it('AC1: the hop clicks the sheet\'s Close instead of ending, its record says so, and the next hop is told the pop-up closed', async () => {

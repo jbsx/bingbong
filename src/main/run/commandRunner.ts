@@ -5,7 +5,7 @@ import type { PipelineEvent } from '../../core/pipeline/events'
 import type { CommandRunState } from '../../core/pipeline/runState'
 import type { PageLink, PageSnapshot } from '../../core/browser/snapshot'
 import type { PerfTracer } from '../../core/perf/perfTracer'
-import { PRESS_KEYS, commandPageOf, describeCommand, targetLabel, commandKeepsIdle, type Command, type CommandPage } from '../../core/command/command'
+import { PRESS_KEYS, commandPageOf, describeCommand, isMounting, targetLabel, commandKeepsIdle, type Command, type CommandPage } from '../../core/command/command'
 import { dismissCommand, dismissalLadder, isDismissPhrase, obstacleOf, type DismissChoice } from '../../core/command/dismissDialog'
 import { COMMAND_HELP } from '../../core/command/help'
 import { carriesWordsPastAddress, headsAnotherVerb, isSearchLanding, localMatch, resultRefsOf } from '../../core/command/localMatch'
@@ -202,6 +202,14 @@ export interface CommandRunnerDeps {
  */
 export const RESULTS_WAIT_MS = 3_000
 export const RESULTS_POLL_MS = 250
+
+/**
+ * The most a hop waits for a page still mounting to draw (post mortem
+ * 2026-10-19 23:26, {@link isMounting}): the landing ends at the load
+ * event, which a script-drawn site fires on its empty shell. Polled at
+ * {@link RESULTS_POLL_MS}.
+ */
+export const MOUNTING_WAIT_MS = 3_000
 
 /** How much of a Page Read the Feed card shows. */
 const DISPLAY_LIMIT = 4_000
@@ -1177,6 +1185,21 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     return current
   }
 
+  /**
+   * A page once it has drawn ({@link MOUNTING_WAIT_MS}): read again each
+   * poll while it is still mounting, until it is not, the wait runs out or
+   * the Task is superseded. A page that has drawn is taken as it stands.
+   */
+  async function drawn(task: Task, page: CommandPage): Promise<CommandPage> {
+    let current = page
+    for (let polls = Math.floor(MOUNTING_WAIT_MS / RESULTS_POLL_MS); polls > 0 && isMounting(current); polls -= 1) {
+      await sleep(RESULTS_POLL_MS)
+      if (superseded(task)) break
+      current = await collectPage(null)
+    }
+    return current
+  }
+
   /** A search landing's whole-page links (#328), where its results below the fold are; none when they cannot be read. */
   async function resultPageLinks(turnId: string): Promise<readonly PageLink[]> {
     try {
@@ -1198,7 +1221,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       const spoken = task.source === 'spoken'
       // The hop is being read: the Task is running, and abort reaches it.
       reading = { turnId, submission: task.submission }
-      const page = superseded(task) ? blankPage(browser) : await withResults(task, await collectPage(null))
+      // A re-read (the page moved under the reading) comes back here too, so it waits for the page to draw as the hop did.
+      const page = superseded(task) ? blankPage(browser) : await drawn(task, await withResults(task, await collectPage(null)))
       visit(task, page.url)
       if (task.pending !== undefined) {
         // The last action's "Done so far" line, in the facts of the page it left: what appeared, and whether a pop-up covers it.
