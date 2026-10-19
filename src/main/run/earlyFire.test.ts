@@ -34,7 +34,10 @@ class ScriptedDecisionModel implements DecisionModel {
     this.requests.push(request as DecisionRequest<DecisionQuestions>)
     const answers = this.script.shift()
     if (answers === undefined) return { status: 'unavailable', reason: 'failed', message: 'scripted', latencyMs: 1, model: this.model }
-    return { status: 'answered', answers: answers as never, latencyMs: 1, model: this.model }
+    // A hop asked a Verdict the script does not answer gets a sure one: yes after `done`, else not yet.
+    const verb = answers.verb
+    const verdict = 'outcome' in request.questions && !('outcome' in answers) ? { outcome: choice(verb?.type === 'choice' && verb.choice === 'done' ? 'yes' : 'not_yet') } : {}
+    return { status: 'answered', answers: { ...answers, ...verdict } as never, latencyMs: 1, model: this.model }
   }
 }
 

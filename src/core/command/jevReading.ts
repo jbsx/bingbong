@@ -13,7 +13,9 @@ import { siteOf } from './siteScope'
 // search or a navigation — the target among the refs plus `none`, and the
 // Slot among the transcript's contiguous word spans; on a site, a fourth
 // beside them — where the words point (#340), at a later hop only on a site
-// the Task has not searched (#341). Unneeded answers are
+// the Task has not searched (#341); at every hop past the first, the
+// Verdict beside them — is this page what was asked for — so a Task's end
+// is a sure answer and never a verb's plurality. Unneeded answers are
 // ignored; the top Choice is acted on at any confidence; only `none` as
 // the verb drops the Utterance. Speed over accuracy: nothing here asks
 // "did you mean".
@@ -129,18 +131,69 @@ export function setAsideOf(ref: CommandRef, page: CommandPage): SetAside {
   return { label: ref.label, address: pageAddressOf(ref.href ?? page.url) }
 }
 
-/** How an action came out, for the next hop's "Done so far" (#336). */
-export type DoneResult = { readonly changed: false } | { readonly changed: true; readonly opened?: string }
+/**
+ * How an action came out, for the next hop's "Done so far" (#336): nothing
+ * changed; or the page changed — it opened another address, or stayed on
+ * its own — told in facts: the controls that appeared, and whether a
+ * pop-up now covers the page. The facts are what the Verdict reads: over
+ * the refs alone, a sign-in sheet over a profile and a sign-in bar at the
+ * foot of the post itself look the same.
+ */
+export type DoneResult =
+  | { readonly changed: false }
+  | { readonly changed: true; readonly opened?: string; readonly appeared?: readonly string[]; readonly covered?: boolean }
+
+/** How many controls that appeared "Done so far" names. */
+const NAMED_APPEARANCES = 3
+
+/**
+ * The facts of what an action changed, off the page it was read on and the
+ * page it left: the labels of the controls that were not there before (a
+ * pop-up's first), and whether a pop-up covers the page that was clear.
+ */
+export function doneFacts(before: CommandPage, after: CommandPage, result: DoneResult): DoneResult {
+  if (!result.changed) return result
+  const known = new Set(before.refs.map((ref) => ref.label))
+  const fresh = after.refs.filter((ref) => ref.label !== '' && !known.has(ref.label))
+  const inDialog = new Set(after.dialog?.refs ?? [])
+  const appeared = [...fresh.filter((ref) => inDialog.has(ref.ref)), ...fresh.filter((ref) => !inDialog.has(ref.ref))].slice(0, NAMED_APPEARANCES).map((ref) => ref.label)
+  const covered = after.dialog !== undefined && before.dialog === undefined
+  return { ...result, ...(appeared.length > 0 ? { appeared } : {}), ...(covered ? { covered: true } : {}) }
+}
 
 /** An address as "Done so far" names it: no scheme, no www, no trailing slash. */
 function shortAddress(url: string): string {
   return url.replace(/^https?:\/\/(?:www\.)?/i, '').replace(/\/$/, '')
 }
 
+/** A label as "Done so far" names it: quoted, cut at 40 characters. */
+function shortLabel(label: string): string {
+  return JSON.stringify(label.length <= 40 ? label : `${label.slice(0, 39).trimEnd()}…`)
+}
+
+/** Labels as a list: `"a"`, `"a" and "b"`, `"a", "b" and "c"`. */
+function listOf(labels: readonly string[]): string {
+  const named = labels.map(shortLabel)
+  return named.length <= 1 ? (named[0] ?? '') : `${named.slice(0, -1).join(', ')} and ${named.at(-1)}`
+}
+
+/** What a changed page came to, in facts. */
+function changedFacts(result: Extract<DoneResult, { changed: true }>): string {
+  const appeared = result.appeared ?? []
+  if (result.opened !== undefined) {
+    const opened = `opened ${shortAddress(result.opened)}`
+    return result.covered === true ? `${opened}; a pop-up covers it${appeared.length > 0 ? `: ${listOf(appeared)}` : ''}` : opened
+  }
+  if (result.covered === true) return `the address did not change; a pop-up appeared over the page${appeared.length > 0 ? `: ${listOf(appeared)}` : ''}`
+  if (appeared.length > 0) return `the address did not change; ${listOf(appeared)} appeared`
+  return 'the page changed'
+}
+
 /**
  * One action in a hop's "Done so far" (#336): the verb and its target by
  * label (a ref's number changes between hops), and what it did —
- * `click "Pinned…" (nothing changed)`, `click "Elon Musk" (opened x.com/elonmusk)`.
+ * `click "Pinned…" (nothing changed)`, `click "Elon Musk" (opened x.com/elonmusk)`,
+ * `click "Elon Musk @elonmusk 2h…" (the address did not change; a pop-up appeared over the page: "Close", "Log in" and "Sign up")`.
  */
 export function doneLine(command: Command, page: CommandPage, result: DoneResult): string {
   const label = targetLabel(command, page)
@@ -150,7 +203,7 @@ export function doneLine(command: Command, page: CommandPage, result: DoneResult
       : command.verb === 'type'
         ? `type ${JSON.stringify(command.slot ?? '')} into ${JSON.stringify(label)}`
         : `${command.verb} ${JSON.stringify(label)}`
-  const outcome = !result.changed ? 'nothing changed' : result.opened !== undefined ? `opened ${shortAddress(result.opened)}` : 'the page changed'
+  const outcome = !result.changed ? 'nothing changed' : changedFacts(result)
   return `${action} (${outcome})`
 }
 
@@ -269,6 +322,52 @@ function threeQuestions(text: string, pageRead: CommandPage, hop: HopContext | u
   }
 }
 
+/** The Verdict's answers: the page is what was asked for; something is in the way of it; or there is more to do. */
+export const OUTCOMES = ['yes', 'in_the_way', 'not_yet'] as const
+export type Outcome = (typeof OUTCOMES)[number]
+
+/** The Verdict a hop's reading carries: where the Task stands on this page, and how sure Jev is. */
+export interface Verdict {
+  readonly outcome: Outcome
+  readonly confidence: number
+}
+
+/**
+ * The outcome Choice (the Verdict): is this page what the user asked for?
+ * Asked at every hop past the first beside the verb, so an end is a
+ * verdict and never a verb's plurality: a Task ends on a sure `yes`, meets
+ * a wall on a sure `in_the_way`, and says it is not sure otherwise.
+ */
+function outcomeQuestion(): DecisionChoiceQuestion {
+  return {
+    type: 'choice',
+    instructions:
+      'Is this page what the user asked for? Choose yes when it shows it; in_the_way when something covers or blocks it: a sign-in prompt, a pop-up, a cookie notice, a challenge; not_yet when the task is unfinished and the page is clear.',
+    options: {
+      yes: 'this page is what the user asked for',
+      in_the_way: 'something is in the way of it on this page',
+      not_yet: 'not yet: more to do, nothing in the way',
+    },
+  }
+}
+
+/** A hop's questions: the Command's, and the Verdict. */
+export type HopQuestions = CommandQuestions & { readonly outcome: DecisionChoiceQuestion }
+
+export function hopQuestions(text: string, pageRead: CommandPage, hop: HopContext): HopQuestions {
+  return { ...commandQuestions(text, pageRead, hop), outcome: outcomeQuestion() }
+}
+
+/** The answers to {@link HopQuestions}: the Command's, and the Verdict's. */
+export type HopAnswers = CommandAnswers & { readonly outcome: DecisionChoiceAnswer }
+
+/** The Verdict a hop's answers carry; null when none was asked, or the answer names no outcome. */
+export function readVerdict(answers: CommandAnswers | HopAnswers): Verdict | null {
+  if (!('outcome' in answers)) return null
+  const { choice, confidence } = answers.outcome
+  return OUTCOMES.some((outcome) => outcome === choice) ? { outcome: choice as Outcome, confidence } : null
+}
+
 /**
  * A partial transcript's questions (Early Fire, #326): the three Choices
  * and one Noul — whether the words so far are the whole Command. The Noul
@@ -350,7 +449,7 @@ function slotWords(answer: DecisionChoiceAnswer, text: string): string {
 }
 
 /** The Command Jev's answers make: the top Choice of each, read as the verb needs them. */
-export function readCommandAnswers(answers: CommandAnswers, text: string, pageRead: CommandPage, hop?: HopContext): Command {
+export function readCommandAnswers(answers: CommandAnswers | HopAnswers, text: string, pageRead: CommandPage, hop?: HopContext): Command {
   const verb = answers.verb.choice as CommandVerb
   const none: Command = { verb: 'none', target: null, slot: null }
   if (!JEV_VERBS.includes(verb as (typeof JEV_VERBS)[number]) || verb === 'none') return none

@@ -179,13 +179,50 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
     }
     return last
   }
+  // A pop-up that declares no dialog role and offers no consent choice
+  // (X's logged-out sign-in sheet: three plain divs) is found by what it
+  // does, not what it says: a fixed layer that is on top at most of the
+  // viewport's sample points, spans at least half the viewport, and holds
+  // few of the page's controls. A layout shell that is fixed over the whole
+  // page holds the page's own controls, so it is the page, not a cover.
+  const COVER_SAMPLE_POINTS = [
+    [vw / 2, vh / 2],
+    [vw / 4, vh / 4],
+    [(vw * 3) / 4, vh / 4],
+    [vw / 4, (vh * 3) / 4],
+    [(vw * 3) / 4, (vh * 3) / 4]
+  ]
+  const coverRoot = () => {
+    const onTop = new Map()
+    for (const [x, y] of COVER_SAMPLE_POINTS) {
+      let layer = null
+      for (let node = document.elementFromPoint(x, y); node !== null && node !== document.body && node !== document.documentElement; node = node.parentElement) {
+        if (window.getComputedStyle(node).position === 'fixed') layer = node
+      }
+      if (layer !== null) onTop.set(layer, (onTop.get(layer) || 0) + 1)
+    }
+    let cover = null
+    let controls = null
+    for (const [layer, points] of onTop) {
+      if (points < 3 || insideInert(layer)) continue
+      const rect = layer.getBoundingClientRect()
+      if (rect.width * rect.height < (vw * vh) / 2) continue
+      if (controls === null) controls = Array.from(document.querySelectorAll(SELECTOR)).filter((el) => hasSize(el) && !insideInert(el))
+      const held = controls.filter((el) => layer.contains(el)).length
+      if (held * 2 > controls.length) continue
+      if (cover === null || points > onTop.get(cover)) cover = layer
+    }
+    return cover
+  }
   const currentDialogRoot = () => {
     const dialogs = Array.from(document.querySelectorAll(DIALOG_SELECTOR)).filter((dialog) => {
       const style = window.getComputedStyle(dialog)
       return dialog.getAttribute('aria-hidden') !== 'true' && style.display !== 'none' && style.visibility !== 'hidden' && hasSize(dialog) && !insideInert(dialog)
     })
-    // A role-bearing root always wins over the rule.
-    return dialogs.length > 0 ? dialogs[dialogs.length - 1] : consentWallRoot()
+    // A role-bearing root always wins over the rules; the consent rule over the cover rule.
+    if (dialogs.length > 0) return dialogs[dialogs.length - 1]
+    const consent = consentWallRoot()
+    return consent !== null ? consent : coverRoot()
   }
   // Challenge widgets (Turnstile, reCAPTCHA) live in cross-origin iframes
   // whose content the top frame cannot read. Listing them (ADR 0007) with

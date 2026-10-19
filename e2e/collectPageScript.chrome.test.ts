@@ -62,6 +62,19 @@ const PAGES: Record<string, string> = {
     </div></body>`,
   // A fixed wall scrolled wholly out of the viewport is no wall.
   '/offscreen': `<body>${SEARCH_BOX}${BODY_TEXT}<div style="position:fixed;top:-500px;left:0;right:0;height:100px;background:#fff"><button>Accept all cookies</button></div></body>`,
+  // X's logged-out sign-in sheet as it is served: three plain divs — a fixed scrim over the viewport, the box, a fixed close button — no role, no aria-modal.
+  '/cover-sheet': `<body>${SEARCH_BOX}${BODY_TEXT}<a href="/elonmusk/status/1">Pinned post</a><a href="/elonmusk/status/2">Latest post</a><button>Follow</button>
+    <div style="position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:50">
+      <div style="position:relative;margin:15% auto;width:600px;height:372px;background:#fff">
+        <button aria-label="Close" style="position:fixed;top:20%;left:30%">✕</button>
+        <h2>Don’t miss what’s happening</h2><p>People on X are the first to know.</p>
+        <a href="/login">Log in</a><a href="/signup">Sign up</a>
+      </div>
+    </div></body>`,
+  // An app whose fixed shell holds the whole page: the page itself, never a pop-up over it.
+  '/app-shell': `<body><div style="position:fixed;inset:0;overflow:auto">${SEARCH_BOX}${BODY_TEXT}<a href="/one">One</a><a href="/two">Two</a><button>Three</button></div></body>`,
+  // A fixed bar at the foot: on top at no sample point, far under half the viewport.
+  '/foot-bar': `<body>${SEARCH_BOX}${BODY_TEXT}<a href="/one">One</a><div style="position:fixed;bottom:0;left:0;right:0;height:60px;background:#fff"><a href="/login">Log in</a><a href="/signup">Sign up</a></div></body>`,
 }
 
 describe.skipIf(!canDriveChrome)('the collector finds a consent wall by the rule (#263, ADR 0061)', () => {
@@ -138,6 +151,23 @@ describe.skipIf(!canDriveChrome)('the collector finds a consent wall by the rule
   it('leaves out an absolute-only wall and a fixed one outside the viewport', async () => {
     expect((await collect('/absolute')).dialogOpen).toBe(false)
     expect((await collect('/offscreen')).dialogOpen).toBe(false)
+  })
+
+  it('finds a role-less sheet by the cover rule: a fixed layer on top over most of the viewport holding few of the page\'s controls, and a dismiss phrase reads its close control', async () => {
+    const collected = await collect('/cover-sheet')
+    expect(collected.dialogOpen).toBe(true)
+    expect(collected.dialogText).toContain('People on X are the first to know.')
+    expect(dialogLabels(collected)).toEqual(['Close ✕', 'Log in', 'Sign up'])
+    const page = commandPageOf(buildPageSnapshot(parseCollectedPage(collected)))
+    const close = page.refs.find((ref) => ref.label === 'Close ✕')!
+    expect(page.dialog?.refs).toContain(close.ref)
+    expect(page.dialog?.refs).not.toContain(page.refs.find((ref) => ref.label === 'Latest post')?.ref)
+    expect(dismissCommand('exit out of this', page)).toMatchObject({ verb: 'click', target: close.ref, dismiss: true })
+  })
+
+  it('leaves a fixed app shell that holds the page\'s own controls, and a fixed bar at the foot, on the page layer', async () => {
+    expect((await collect('/app-shell')).dialogOpen).toBe(false)
+    expect((await collect('/foot-bar')).dialogOpen).toBe(false)
   })
 })
 

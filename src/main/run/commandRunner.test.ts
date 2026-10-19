@@ -11,7 +11,7 @@ import { JEV_VERBS, verbKeepsIdle } from '../../core/command/command'
 import { wakesIdleScreen } from '../../core/idle/idleWake'
 import type { AudioStream, SpeakOptions, SpeakOutcome, TtsSpeaker } from '../../core/ports/tts'
 import { pageReadPartLine } from '../../core/browser/pageText'
-import { blockedActionHead } from '../../core/browser/actionOutcome'
+import { NO_OBSERVABLE_CHANGE, PAGE_SIGNATURE_CHANGED, blockedActionHead } from '../../core/browser/actionOutcome'
 import { SPOKEN_FAILURES } from '../../core/command/spokenFailure'
 import { createSpeechCoordinator } from '../../core/tts/speechCoordinator'
 import { createCommandRunner, type CommandRunner, type CommandRunnerDeps } from './commandRunner'
@@ -71,8 +71,15 @@ class CountingDecisionModel implements DecisionModel {
     if (next === undefined || 'unavailable' in next) {
       return { status: 'unavailable', reason: next?.unavailable ?? 'failed', message: 'scripted', latencyMs: this.latencyMs, model: this.model }
     }
-    return { status: 'answered', answers: next.answers as never, latencyMs: this.latencyMs, model: this.model }
+    return { status: 'answered', answers: withVerdict(request.questions, next.answers) as never, latencyMs: this.latencyMs, model: this.model }
   }
+}
+
+/** A script that answers no Verdict where one is asked gets a sure one, as a plain hop would: yes after `done`, else not yet. */
+function withVerdict(questions: DecisionQuestions, answers: Record<string, DecisionAnswer>): Record<string, DecisionAnswer> {
+  if (!('outcome' in questions) || 'outcome' in answers) return answers
+  const verb = answers.verb
+  return { ...answers, outcome: choice(verb?.type === 'choice' && verb.choice === 'done' ? 'yes' : 'not_yet') }
 }
 
 function choice(label: string, confidence = 0.9, probabilities: Record<string, number> = { [label]: confidence }): DecisionAnswer {
@@ -1511,6 +1518,8 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
   const answer = (verb: string, target = 'none', slot = 'none'): { answers: Record<string, DecisionAnswer> } => ({ answers: { verb: choice(verb), target: choice(target), slot: choice(slot) } })
   const decisions = (records: CommandLogRecord[]) => records.flatMap((record) => (record.type === 'decision' ? [record] : []))
   const commands = (events: PipelineEvent[]) => events.flatMap((event) => (event.type === 'command' ? [event] : []))
+  /** The failure lines shown (#329): a wall's, or the Verdict's. */
+  const failures = (events: PipelineEvent[]) => events.filter((event) => event.type === 'display' && event.failure === true)
 
   /** A browser whose landings change the page: each address has its refs, and a results page its whole links. */
   function taskHarness(start = 'about:blank') {
@@ -1599,14 +1608,127 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
     expect(perf.records.filter((record) => record.stage === 'reaction')).toEqual([])
   })
 
-  it('AC3: none at hop 1 is a dead end — the page stays, nothing is spoken, the Feed says no next step', async () => {
+  it('AC3: none at hop 1 with no sure yes ends unsure — the page stays, the line says so, the Feed says not sure', async () => {
     const { browser, events, records, decision, runner } = taskHarness()
     decision.script.push(answer('search', 'none', 's3-6'), answer('none'))
     await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
     expect(browser.navigations).toEqual([SEARCH])
-    expect(events.filter((event) => event.type === 'speak')).toEqual([])
-    expect(commands(events)[1]).toMatchObject({ action: 'no next step', dropped: true, task: { hop: 1 } })
-    expect(decisions(records).map((record) => record.ended)).toEqual([undefined, 'none'])
+    expect(failures(events)).toEqual([expect.objectContaining({ text: "I'm not sure this is it." })])
+    expect(commands(events)[1]).toMatchObject({ action: 'not sure this is it', dropped: true, task: { hop: 1 } })
+    expect(decisions(records).map((record) => record.ended)).toEqual([undefined, 'unsure'])
+  })
+
+  describe('the Verdict: an end is a sure answer, never a verb\'s plurality', () => {
+    const verdict = (outcome: string, confidence = 0.9) => choice(outcome, confidence, { [outcome]: confidence })
+    const withOutcome = (scripted: { answers: Record<string, DecisionAnswer> }, outcome: string, confidence?: number) => ({ answers: { ...scripted.answers, outcome: verdict(outcome, confidence) } })
+    /** The post page as a sign-in sheet covers it: its controls first, on the dialog layer. */
+    const SHEET_REFS: SnapshotRef[] = [
+      ref(1, 'button', 'Close', { layer: 'dialog' }),
+      ref(2, 'link', 'Log in', { href: 'https://x.com/login', layer: 'dialog' }),
+      ref(3, 'link', 'Elon Musk', { href: 'https://x.com/elonmusk', layer: 'page' }),
+    ]
+    const covered = (h: ReturnType<typeof taskHarness>) => {
+      h.browser.snapshot = { ...h.browser.snapshot, refs: SHEET_REFS, dialogOpen: true, dialogText: 'Don’t miss what’s happening' }
+    }
+
+    it('none with a sure yes ends done, silent: the Verdict decides, not the verb', async () => {
+      const { events, records, decision, runner } = taskHarness()
+      decision.script.push(answer('search', 'none', 's3-6'), withOutcome(answer('none'), 'yes'))
+      await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
+      expect(failures(events)).toEqual([])
+      expect(commands(events)[1]).toMatchObject({ action: 'done', dropped: true })
+      expect(decisions(records).map((record) => record.ended)).toEqual([undefined, 'done'])
+      expect(decisions(records)[1]!.jev).toMatchObject({ confidence: { outcome: 0.9 }, probabilities: { outcome: { yes: 0.9 } } })
+    })
+
+    it('done with a yes below the bar ends unsure and says so', async () => {
+      const { events, records, decision, runner } = taskHarness()
+      decision.script.push(answer('search', 'none', 's3-6'), withOutcome(answer('done'), 'yes', 0.4))
+      await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
+      expect(failures(events)).toEqual([expect.objectContaining({ text: "I'm not sure this is it." })])
+      expect(decisions(records).map((record) => record.ended)).toEqual([undefined, 'unsure'])
+    })
+
+    it('a sure in-the-way over a pop-up is a wall: nothing fires, the line names the pop-up, the page stays', async () => {
+      const h = taskHarness()
+      const { browser, events, records, decision, runner } = h
+      const navigate = browser.navigate.bind(browser)
+      browser.navigate = async (url) => {
+        const line = await navigate(url)
+        covered(h)
+        return line
+      }
+      // Jev would click the post under the sheet: the Verdict says the sheet is in the way.
+      decision.script.push(answer('search', 'none', 's3-6'), withOutcome(answer('click', 'ref-3'), 'in_the_way', 0.85))
+      await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
+      expect(browser.clicks).toEqual([])
+      expect(failures(events)).toEqual([expect.objectContaining({ text: 'A pop-up is in the way.' })])
+      expect(commands(events)[1]).toMatchObject({ action: 'in the way', dropped: true })
+      expect(decisions(records).map((record) => record.ended)).toEqual([undefined, 'wall'])
+    })
+
+    it('a sure in-the-way with no pop-up read speaks the blocked line', async () => {
+      const { browser, events, decision, runner } = taskHarness()
+      decision.script.push(answer('search', 'none', 's3-6'), withOutcome(answer('click', 'ref-3'), 'in_the_way', 0.8))
+      await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
+      expect(browser.clicks).toEqual([])
+      expect(failures(events)).toEqual([expect.objectContaining({ text: 'Something on the page is in the way.' })])
+    })
+
+    it('an action on the pop-up itself fires through a sure in-the-way: Jev clearing the obstacle is the next step', async () => {
+      const h = taskHarness()
+      const { browser, decision, runner, records } = h
+      const navigate = browser.navigate.bind(browser)
+      browser.navigate = async (url) => {
+        const line = await navigate(url)
+        covered(h)
+        return line
+      }
+      decision.script.push(answer('search', 'none', 's3-6'), withOutcome(answer('click', 'ref-1'), 'in_the_way', 0.85), withOutcome(answer('done'), 'yes'))
+      await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
+      expect(browser.clicks).toEqual([1])
+      expect(decisions(records).map((record) => record.ended)).toEqual([undefined, undefined, 'done'])
+    })
+
+    it('an in-the-way below the bar is no wall: the action fires', async () => {
+      const { browser, decision, runner } = taskHarness()
+      decision.script.push(answer('search', 'none', 's3-6'), withOutcome(answer('click', 'ref-3'), 'in_the_way', 0.5), withOutcome(answer('done'), 'yes'))
+      await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
+      expect(browser.clicks).toEqual([3])
+    })
+
+    it('an end is read against the page as it is now: a page that moved under the reading is read again, once', async () => {
+      const h = taskHarness()
+      const { browser, events, records, decision, runner } = h
+      let collects = 0
+      const collectPage = browser.collectPage.bind(browser)
+      browser.collectPage = async () => {
+        collects += 1
+        // The sheet opens after hop 1's snapshot was taken, before its reading ends.
+        if (collects === 3) covered(h)
+        return collectPage()
+      }
+      decision.script.push(answer('search', 'none', 's3-6'), withOutcome(answer('done'), 'yes'), withOutcome(answer('click', 'ref-1'), 'in_the_way', 0.9), withOutcome(answer('done'), 'yes'))
+      await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
+      expect(commands(events).map((event) => event.action)).toEqual(['search latest elon musk tweet', 'the page moved: read again', 'click [1] "Close"', 'done'])
+      expect(decision.requests[2]!.state).toContain('A dialog is open')
+      expect(decisions(records).map((record) => record.ended)).toEqual([undefined, undefined, undefined, 'done'])
+    })
+
+    it('tells the next hop what the last action did in facts: the address stayed, a pop-up appeared and what it carries', async () => {
+      const h = taskHarness()
+      const { browser, decision, runner } = h
+      const click = browser.click.bind(browser)
+      browser.click = async (target) => {
+        const line = await click(target)
+        covered(h)
+        return line.replace(NO_OBSERVABLE_CHANGE, PAGE_SIGNATURE_CHANGED)
+      }
+      decision.script.push(answer('search', 'none', 's3-6'), answer('click', 'ref-3'), withOutcome(answer('click', 'ref-1'), 'in_the_way', 0.85), withOutcome(answer('done'), 'yes'))
+      await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
+      // The sheet's controls first, then the page's; what was there before is not named.
+      expect(decision.requests[2]!.state).toContain('click "Elon Musk (@elonmusk) / X" (the address did not change; a pop-up appeared over the page: "Close", "Log in" and "Elon Musk")')
+    })
   })
 
   it('#332: a later hop reading open on the same words opens the most probable result instead of searching again', async () => {
@@ -1620,7 +1742,7 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
     expect(decisions(records).map((record) => [record.verb, record.ended])).toEqual([
       ['search', undefined],
       ['navigate', undefined],
-      ['none', 'none'],
+      ['none', 'unsure'],
     ])
   })
 
@@ -1806,7 +1928,7 @@ describe('the Site Scope at hop 0 (#340)', () => {
     expect(events).toContainEqual(expect.objectContaining({ type: 'display', text: 'Searched x.com for “donald trumps profile”.' }))
     // Hop 1 is offered the results and asked no where.
     expect(asked(decision.requests[0]!)).toEqual(['verb', 'target', 'slot', 'where'])
-    expect(asked(decision.requests[1]!)).toEqual(['verb', 'target', 'slot'])
+    expect(asked(decision.requests[1]!)).toEqual(['verb', 'target', 'slot', 'outcome'])
     expect(Object.values((decision.requests[1]!.questions as { target: DecisionChoiceQuestion }).target.options)).toContainEqual(expect.stringContaining(PROFILE))
     // The record keeps where for the scoped read, and the ask sidecar the fourth question.
     const [hop0, hop1] = decisions(records)
@@ -1906,9 +2028,9 @@ describe('the Site Scope at a later hop (#341): one Utterance chains a site and 
     // Hop 0 is the Local Match's; hop 1 on the site is asked where; hop 2 on the results is not; hop 3 on the searched site is not.
     expect(decision.requests).toHaveLength(3)
     expect(decision.requests[0]!.state).toContain(`"${TEXT}"`)
-    expect(asked(decision.requests[0]!)).toEqual(['verb', 'target', 'slot', 'where'])
-    expect(asked(decision.requests[1]!)).toEqual(['verb', 'target', 'slot'])
-    expect(asked(decision.requests[2]!)).toEqual(['verb', 'target', 'slot'])
+    expect(asked(decision.requests[0]!)).toEqual(['verb', 'target', 'slot', 'where', 'outcome'])
+    expect(asked(decision.requests[1]!)).toEqual(['verb', 'target', 'slot', 'outcome'])
+    expect(asked(decision.requests[2]!)).toEqual(['verb', 'target', 'slot', 'outcome'])
     expect(decisions(records).map((record) => [record.reading, record.verb, record.ended])).toEqual([
       ['local_match', 'navigate', undefined],
       ['jev', 'search', undefined],
@@ -1936,7 +2058,7 @@ describe('the Site Scope at a later hop (#341): one Utterance chains a site and 
       read('search', 'none', 's5-7'),
     )
     await runner.run(TEXT, { source: 'spoken' })
-    expect(asked(decision.requests[2]!)).toEqual(['verb', 'target', 'slot'])
+    expect(asked(decision.requests[2]!)).toEqual(['verb', 'target', 'slot', 'outcome'])
     expect(browser.navigations).toEqual([TWITTER, SCOPED, PROFILE])
   })
 
@@ -1956,8 +2078,8 @@ describe('the Site Scope at a later hop (#341): one Utterance chains a site and 
     expect(browser.clicks).toEqual([])
     expect(browser.snapshot.url).toBe(PROFILE)
     expect(decision.requests).toHaveLength(3)
-    expect(decisions(records).at(-1)).toMatchObject({ verb: 'none', ended: 'none', task: { hop: 3 } })
-    expect(events.filter((event) => event.type === 'command').at(-1)).toMatchObject({ action: 'no next step', dropped: true })
+    expect(decisions(records).at(-1)).toMatchObject({ verb: 'none', ended: 'unsure', task: { hop: 3 } })
+    expect(events.filter((event) => event.type === 'command').at(-1)).toMatchObject({ action: 'not sure this is it', dropped: true })
   })
 
   it('AC4: hop 0\'s own Site Scope search (#340) is a site the Task has searched: a later hop back on it is asked no where', async () => {
@@ -1967,8 +2089,8 @@ describe('the Site Scope at a later hop (#341): one Utterance chains a site and 
     expect(browser.navigations).toEqual([SCOPED, PROFILE])
     expect(decision.requests.map(asked)).toEqual([
       ['verb', 'target', 'slot', 'where'],
-      ['verb', 'target', 'slot'],
-      ['verb', 'target', 'slot'],
+      ['verb', 'target', 'slot', 'outcome'],
+      ['verb', 'target', 'slot', 'outcome'],
     ])
   })
 

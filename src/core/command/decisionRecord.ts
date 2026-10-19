@@ -1,7 +1,7 @@
 import type { KeyPress, PageLanding } from '../ports/browser'
 import type { DecisionUnavailableReason } from '../ports/decisionModel'
 import type { CommandVerb } from './command'
-import type { CommandAnswers } from './jevReading'
+import type { CommandAnswers, HopAnswers } from './jevReading'
 
 // The per-Command decision record (#324, ADR 0076): one JSON line per
 // Command beside the perf log — what was heard, what was read and by whom,
@@ -23,12 +23,14 @@ export type CommandReading = 'local_match' | 'jev' | 'best_guess'
 export interface JevDetail {
   readonly model: string
   readonly latencyMs: number
-  readonly confidence: { readonly verb: number; readonly target: number; readonly slot: number; readonly where?: number }
+  readonly confidence: { readonly verb: number; readonly target: number; readonly slot: number; readonly where?: number; readonly outcome?: number }
   readonly probabilities: {
     readonly verb: Readonly<Record<string, number>>
     readonly target: Readonly<Record<string, number>>
     readonly slot: Readonly<Record<string, number>>
     readonly where?: Readonly<Record<string, number>>
+    /** The Verdict's, at a hop past the first. */
+    readonly outcome?: Readonly<Record<string, number>>
   }
 }
 
@@ -91,14 +93,16 @@ export interface TaskHop {
 }
 
 /**
- * Why a Task ended: Jev said `done`; a dead end (`none` past hop 0); the
- * cap of five actions; a wall (a failure, a Blocked Action, a Blocker,
- * consent, not-found, unavailable or empty landing); Jev unavailable (hop
- * 0's best guess included); superseded; a Local-Matched hop 0; a terminal
- * verb (read, stop, clear, or `none` at hop 0); two hops in a row that
- * changed nothing (#336).
+ * Why a Task ended: a sure Verdict that the page is what was asked for
+ * (`done`); a reading with no next step and a sure yes is `done` too, and
+ * with no sure Verdict it is `unsure`, said so; the cap of five actions; a wall (a failure,
+ * a Blocked Action, a Blocker, consent, not-found, unavailable or empty
+ * landing, or a sure Verdict that something is in the way); Jev
+ * unavailable (hop 0's best guess included); superseded; a Local-Matched
+ * hop 0; a terminal verb (read, stop, clear, or `none` at hop 0); two hops
+ * in a row that changed nothing (#336).
  */
-export type TaskEnded = 'done' | 'none' | 'cap' | 'wall' | 'unavailable' | 'superseded' | 'local_match' | 'terminal' | 'unchanged'
+export type TaskEnded = 'done' | 'unsure' | 'cap' | 'wall' | 'unavailable' | 'superseded' | 'local_match' | 'terminal' | 'unchanged'
 
 /** An Early Fire as the record keeps it. */
 export interface EarlyFireDetail {
@@ -172,17 +176,25 @@ function topProbabilities(probabilities: Readonly<Record<string, number>>, keep:
 }
 
 /** Jev's answers as the record keeps them. */
-export function jevDetailOf(answers: CommandAnswers, latencyMs: number, model: string): JevDetail {
+export function jevDetailOf(answers: CommandAnswers | HopAnswers, latencyMs: number, model: string): JevDetail {
   const where = 'where' in answers ? answers.where : undefined
+  const outcome = 'outcome' in answers ? answers.outcome : undefined
   return {
     model,
     latencyMs,
-    confidence: { verb: answers.verb.confidence, target: answers.target.confidence, slot: answers.slot.confidence, ...(where !== undefined ? { where: where.confidence } : {}) },
+    confidence: {
+      verb: answers.verb.confidence,
+      target: answers.target.confidence,
+      slot: answers.slot.confidence,
+      ...(where !== undefined ? { where: where.confidence } : {}),
+      ...(outcome !== undefined ? { outcome: outcome.confidence } : {}),
+    },
     probabilities: {
       verb: { ...answers.verb.probabilities },
       target: topProbabilities(answers.target.probabilities, KEPT_PROBABILITIES),
       slot: topProbabilities(answers.slot.probabilities, KEPT_PROBABILITIES),
       ...(where !== undefined ? { where: { ...where.probabilities } } : {}),
+      ...(outcome !== undefined ? { outcome: { ...outcome.probabilities } } : {}),
     },
   }
 }

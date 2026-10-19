@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { DecisionChoiceAnswer } from '../ports/decisionModel'
 import type { CommandPage } from './command'
-import { commandQuestions, commandState, readCommandAnswers, slotSpans } from './jevReading'
+import { commandQuestions, commandState, doneFacts, doneLine, hopQuestions, readCommandAnswers, readVerdict, slotSpans } from './jevReading'
 
 // One Jev call per Command the Local Match cannot settle (#324, ADR
 // 0076): the state is the transcript, the page's address and title and
@@ -360,5 +360,86 @@ describe('the Site Scope at a later hop (#341): a hop may search once, on a site
   it('never searches a site twice in one Task, whatever where says', () => {
     expect(readCommandAnswers(read('site', target({ none: 0.7, 'ref-2': 0.2 })), TEXT, X, { ...hop, searched: ['x.com'] })).toEqual({ verb: 'none', target: null, slot: null })
     expect(readCommandAnswers(read('site', choice('ref-2')), TEXT, X, { ...hop, searched: ['x.com'] })).toEqual({ verb: 'click', target: 2, slot: null })
+  })
+})
+
+describe('the Verdict: a hop is asked whether the page is what was asked for', () => {
+  const PROFILE: CommandPage = {
+    url: 'https://x.com/elonmusk',
+    title: 'Elon Musk (@elonmusk) / X',
+    refs: [
+      { ref: 1, kind: 'link', label: 'Elon Musk @elonmusk 2h Grok might turn out to be your favorite employee', href: null, inputType: null },
+      { ref: 2, kind: 'link', label: '2h', href: 'https://x.com/elonmusk/status/1', inputType: null },
+      { ref: 3, kind: 'link', label: 'Log in with username or email', href: 'https://x.com/login', inputType: null },
+    ],
+  }
+  /** The profile with the sign-in sheet over it: its controls first, on the dialog layer. */
+  const COVERED: CommandPage = {
+    ...PROFILE,
+    refs: [
+      { ref: 1, kind: 'button', label: 'Close', href: null, inputType: null },
+      { ref: 2, kind: 'link', label: 'Log in', href: 'https://x.com/login', inputType: null },
+      { ref: 3, kind: 'link', label: 'Sign up', href: 'https://x.com/signup', inputType: null },
+      { ref: 4, kind: 'link', label: 'Elon Musk @elonmusk 2h Grok might turn out to be your favorite employee', href: null, inputType: null },
+      { ref: 5, kind: 'link', label: 'Log in with username or email', href: 'https://x.com/login', inputType: null },
+    ],
+    dialog: { text: 'Don’t miss what’s happening', refs: [1, 2, 3] },
+  }
+  const hop = { hop: 1, visited: [PROFILE.url], actions: ['search Elon Musk (opened x.com/elonmusk)'], links: [] }
+  const answer = (choice: string, confidence = 0.9): DecisionChoiceAnswer => ({ type: 'choice', choice, confidence, probabilities: { [choice]: confidence } })
+  const three = { verb: answer('click'), target: answer('ref-1'), slot: answer('none') }
+
+  it('asks the outcome at a hop, among yes, in the way and not yet, beside the three and where', () => {
+    const questions = hopQuestions('open elon musks latest tweet', PROFILE, hop)
+    expect(Object.keys(questions)).toEqual(['verb', 'target', 'slot', 'where', 'outcome'])
+    expect(Object.keys(questions.outcome.options)).toEqual(['yes', 'in_the_way', 'not_yet'])
+    expect(questions.outcome.instructions).toContain('a sign-in prompt, a pop-up, a cookie notice, a challenge')
+  })
+
+  it('asks no outcome at hop 0: a Command is read before anything was done', () => {
+    expect(Object.keys(commandQuestions('open elon musks latest tweet', PROFILE))).toEqual(['verb', 'target', 'slot', 'where'])
+  })
+
+  it('reads the Verdict with its confidence, null when none was asked or the answer names no outcome', () => {
+    expect(readVerdict({ ...three, outcome: answer('in_the_way', 0.85) })).toEqual({ outcome: 'in_the_way', confidence: 0.85 })
+    expect(readVerdict(three)).toBeNull()
+    expect(readVerdict({ ...three, outcome: answer('maybe') })).toBeNull()
+  })
+
+  it('leaves the Command reading as it was: the Verdict is beside the verb, not in it', () => {
+    expect(readCommandAnswers({ ...three, outcome: answer('yes') }, 'open elon musks latest tweet', PROFILE, hop)).toEqual({ verb: 'click', target: 1, slot: null })
+  })
+
+  describe('"Done so far" in facts', () => {
+    const click = { verb: 'click' as const, target: 1, slot: null }
+    const CLICKED = 'click "Elon Musk @elonmusk 2h Grok might turn out to be your favorite employee"'
+
+    it('names the address a click opened, as before, and the pop-up that covers it', () => {
+      expect(doneLine(click, PROFILE, doneFacts(PROFILE, COVERED, { changed: true, opened: 'https://x.com/elonmusk/status/1' }))).toBe(
+        `${CLICKED} (opened x.com/elonmusk/status/1; a pop-up covers it: "Close", "Log in" and "Sign up")`,
+      )
+      expect(doneLine(click, PROFILE, doneFacts(PROFILE, PROFILE, { changed: true, opened: 'https://x.com/elonmusk/status/1' }))).toBe(`${CLICKED} (opened x.com/elonmusk/status/1)`)
+    })
+
+    it('tells a click that stayed on its address by what appeared: a pop-up over the page, its controls first', () => {
+      expect(doneLine(click, PROFILE, doneFacts(PROFILE, COVERED, { changed: true }))).toBe(
+        `${CLICKED} (the address did not change; a pop-up appeared over the page: "Close", "Log in" and "Sign up")`,
+      )
+    })
+
+    it('names what appeared with no pop-up, and says only that the page changed when nothing new is there', () => {
+      const more: CommandPage = { ...PROFILE, refs: [...PROFILE.refs, { ref: 4, kind: 'button', label: 'Show more', href: null, inputType: null }] }
+      expect(doneLine(click, PROFILE, doneFacts(PROFILE, more, { changed: true }))).toBe(`${CLICKED} (the address did not change; "Show more" appeared)`)
+      expect(doneLine(click, PROFILE, doneFacts(PROFILE, PROFILE, { changed: true }))).toBe(`${CLICKED} (the page changed)`)
+    })
+
+    it('keeps nothing changed as it was, whatever the page shows', () => {
+      expect(doneLine(click, PROFILE, doneFacts(PROFILE, COVERED, { changed: false }))).toBe(`${CLICKED} (nothing changed)`)
+    })
+
+    it('names at most three controls, cut at 40 characters, and no pop-up that was already open', () => {
+      const wide: CommandPage = { ...COVERED, refs: [...COVERED.refs, { ref: 6, kind: 'button', label: 'A control whose label runs on far past forty characters', href: null, inputType: null }] }
+      expect(doneLine(click, COVERED, doneFacts(COVERED, wide, { changed: true }))).toBe('click "Close" (the address did not change; "A control whose label runs on far past…" appeared)')
+    })
   })
 })

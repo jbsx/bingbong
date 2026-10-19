@@ -94,15 +94,33 @@ previous Command landed on: the same three Choices, with `done` among the
 verbs and the pages already visited never offered. A Hop types only words
 the user said and never guesses when the Decision Model does not answer.
 Hops are numbered from the first Command, hop 0; a reading that ends the
-Task without firing (`done`, a dead end) is a hop of its own on the record.
-The state a Hop is read on tells what each earlier action did ("nothing
-changed", "opened x.com/elonmusk"). A Hop that changed nothing sets its
-target aside, and two such Hops in a row end the Task. A Hop never searches
+Task without firing (a Verdict) is a hop of its own on the record.
+The state a Hop is read on tells what each earlier action did, in facts
+("nothing changed", "opened x.com/elonmusk", "the address did not change; a
+pop-up appeared over the page: "Close", "Log in" and "Sign up""): what the
+Verdict reads, since over the refs alone a sheet over a profile and a
+sign-in bar at the foot of the post itself look the same. A Hop that
+changed nothing sets its target aside, and two such Hops in a row end the
+Task. A Hop never searches
 the words again, except that on a site the Task has not searched it may
 search that site once (a **Site Scope**). A Hop that names no target opens
 the likeliest result only on a page whose address is a Search URL; anywhere
 else the Task ends on the page where it stands.
 _Avoid_: step, round, turn, continuation
+
+**Verdict**:
+The fourth answer every Hop carries beside its Command: is this page what
+the user asked for — yes, something is in the way of it (a sign-in prompt, a
+pop-up, a cookie notice, a challenge), or not yet. An end is a Verdict,
+never a verb's plurality: a Task ends `done` only on a sure yes; a sure "in
+the way" is a wall, its line spoken ("A pop-up is in the way."), unless the
+Command acts on the pop-up itself, which fires; a reading with no next step
+and no sure yes ends `unsure` and says so ("I'm not sure this is it."). Sure
+is the Choice bar, 0.7. Either end is read against the page as it is now: a
+page that moved under the reading (another address or title, a pop-up
+opened or closed, a different count of refs) is read again, once per Task.
+The same Jev call as the Command's reading: no round trip is added.
+_Avoid_: check, verification, judge, confirmation
 
 **Set Aside**:
 A target a Hop acted on that changed nothing: no navigation, and the click's
@@ -1119,6 +1137,18 @@ Auto-dismissed wherever it is met — at navigation, at read, and when it
 blocks an action — privacy-preferring control first. A consent strip that
 covers nothing is not a Consent Dialog and is left to the model.
 _Avoid_: cookie banner, consent banner, GDPR popup, cookie wall
+
+**Cover Rule**:
+How a pop-up that declares no dialog role and offers no consent choice is
+found (X's logged-out sign-in sheet: three plain divs): by what it does,
+not what it says. A fixed layer that is on top at three or more of the
+viewport's five sample points, spans at least half the viewport, and holds
+fewer than half of the page's controls is the dialog root — its controls on
+the dialog layer, its text the dialog's, a Dismiss Phrase settled against
+it. A fixed app shell that holds the page's own controls is the page; a
+fixed bar at the foot is on top nowhere that is sampled. A role-bearing
+root wins over the consent rule, and the consent rule over this one.
+_Avoid_: overlay heuristic, scrim detection, modal guess
 
 **Not-found Page**:
 A page whose server or title says the address names nothing — a 404 or 410

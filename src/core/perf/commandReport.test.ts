@@ -213,14 +213,14 @@ describe('formatCommandReport', () => {
       hop('a', 3, 'done'),
       hop('b', 0, 'local_match'),
       hop('c', 0),
-      hop('c', 1, 'none'),
+      hop('c', 1, 'unsure'),
       overrun('c', 1),
       overrun('c', 2),
       hop('d', 0, 'local_match'),
     ]
     const lines = formatCommandReport(buildReactionReport([]), buildDecisionReport(log))
-    expect(lines.at(-1)).toBe('tasks: 4 | ended local_match 2, done 1, none 1 | hops p50 1, max 4 | overruns by hop: hop 1 2, hop 2 1')
-    expect(buildDecisionReport(log).tasks).toEqual({ count: 4, ended: { local_match: 2, done: 1, none: 1 }, hops: { p50: 1, max: 4 }, overrunsByHop: { 1: 2, 2: 1 } })
+    expect(lines.at(-1)).toBe('tasks: 4 | ended local_match 2, done 1, unsure 1 | hops p50 1, max 4 | overruns by hop: hop 1 2, hop 2 1')
+    expect(buildDecisionReport(log).tasks).toEqual({ count: 4, ended: { local_match: 2, done: 1, unsure: 1 }, hops: { p50: 1, max: 4 }, overrunsByHop: { 1: 2, 2: 1 } })
   })
 
   it('prints nothing when neither family has a record', () => {
