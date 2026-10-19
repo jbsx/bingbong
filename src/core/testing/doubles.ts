@@ -221,6 +221,16 @@ export class FakeBrowser implements BrowserController, VisualGroundingController
     return this.media
   }
 
+  /** Every script evaluated in the page (#343), in order. */
+  readonly evaluations: string[] = []
+  /** What an evaluation answers: the test scripts the page; undefined by default. */
+  evaluator: (expression: string) => unknown = () => undefined
+
+  async evaluate<T>(expression: string): Promise<T> {
+    this.evaluations.push(expression)
+    return this.evaluator(expression) as T
+  }
+
   async screenshot(options?: ScreenshotOptions): Promise<Uint8Array> {
     this.screenshotCalls += 1
     this.screenshotRequests.push(options)

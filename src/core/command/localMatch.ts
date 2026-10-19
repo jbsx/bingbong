@@ -3,6 +3,7 @@ import { parseCliCommand, type CliCommand } from './cliGrammar'
 import { normalizeWords, pressKeyOf, type Command, type CommandRef, type CommandVerb } from './command'
 import { isAddressShaped } from './openAddress'
 import { readTimerWords } from '../timer/timerWords'
+import { MUSIC_PHRASES } from '../music/musicWords'
 
 // The Local Match (CONTEXT.md, ADR 0076, #324): a Command settled from the
 // Utterance and the page alone, without asking the Decision Model — the
@@ -332,6 +333,8 @@ function fromGrammar(parsed: CliCommand): Command | null {
       return parsed.durationMs === null ? command('timer') : command('timer', { durationMs: parsed.durationMs })
     case 'help':
       return command('help')
+    case 'play':
+      return command('play', { slot: parsed.words, music: parsed.music })
     case 'quit':
       return null
   }
@@ -464,6 +467,8 @@ export function headsAnotherVerb(text: string): boolean {
   const clean = cleanOf(tokenize(text))
   const kind = BARE_WORDS[clean] ?? VERB_PHRASES.find(([phrase]) => phrase === clean)?.[1]
   if (kind === undefined) return false
+  // A music line (#343) is the Player's: "stop" may yet be "stop looping", "go back" "go back a song".
+  if (MUSIC_PHRASES.some((line) => line.startsWith(`${clean} `))) return true
   return VERB_PHRASES.some(([phrase, other]) => other !== kind && phrase.startsWith(`${clean} `))
 }
 

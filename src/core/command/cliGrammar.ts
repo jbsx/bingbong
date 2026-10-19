@@ -1,6 +1,7 @@
 import type { KeyPress } from '../ports/browser'
 import { NEXT_TRACK_KEY } from '../browser/mediaKeys'
 import { parseDuration } from '../timer/duration'
+import { readMusicLine, type MusicAction } from '../music/musicWords'
 
 export type CliCommand =
   | { type: 'navigate'; input: string }
@@ -14,6 +15,7 @@ export type CliCommand =
   | { type: 'reload' }
   | { type: 'resume' }
   | { type: 'timer'; durationMs: number | null }
+  | { type: 'play'; music: MusicAction; words: string | null }
   | { type: 'help' }
   | { type: 'quit' }
 
@@ -45,6 +47,11 @@ function unescape(text: string): string {
 export function parseCliCommand(line: string): ParsedCliCommand {
   const trimmed = line.trim()
   if (!trimmed) return null
+
+  // The Player's lines (#343) first: "go back a song" is not `back`, and they read as typed or spoken.
+  const music = readMusicLine(trimmed)
+  if (music === 'invalid') return { ok: false, error: "volume: expected 'volume <0-100>'" }
+  if (music !== null) return { ok: true, command: { type: 'play', music: music.music, words: music.words } }
 
   const space = trimmed.indexOf(' ')
   const head = space === -1 ? trimmed : trimmed.slice(0, space)

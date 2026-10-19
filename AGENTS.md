@@ -37,6 +37,10 @@ fast as it can, built on top of this shell.
   implemented over CDP in `src/main/browser/createCdpBrowserController.ts`.
   Action Outcome classifiers (blockers, consent walls, empty/not-found/
   unavailable landings, covered clicks) live in `src/core/browser/`.
+- **Music** is the Player (`src/main/music/`, the Queue and the lines in
+  `src/core/music/`, #343): `play <words>` opens YouTube in the pane and
+  every music verb is one evaluate on the watch page's video. `play` is a
+  grammar-only verb the runner hands to it.
 - **The CLI harness** (`pnpm cli`, `--browser-cli`) drives the same
   controller from a terminal.
 

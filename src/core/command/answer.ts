@@ -72,6 +72,8 @@ export function commandAnswer(command: Command, facts: AnswerFacts): string | nu
     case 'read':
     case 'screenshot':
     case 'help':
+    // The Player writes its own Answer (#343): what it played or queued is known only once it has.
+    case 'play':
     case 'none':
     case 'done':
       return null

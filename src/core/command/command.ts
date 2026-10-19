@@ -2,6 +2,7 @@ import type { KeyPress } from '../ports/browser'
 import type { PageSnapshot, RefKind, SnapshotRef } from '../browser/snapshot'
 import { pageTermsOf } from '../voice/pageTerms'
 import { describeDuration } from '../timer/duration'
+import type { MusicAction } from '../music/musicWords'
 
 // A Command (CONTEXT.md, ADR 0076): what an Utterance becomes on this
 // branch — one verb, at most one target on the page and one Slot, performed
@@ -33,14 +34,15 @@ export const COMMAND_VERBS = [
   'help',
   'resume',
   'timer',
+  'play',
 ] as const
 export type CommandVerb = (typeof COMMAND_VERBS)[number]
 
-/** The verbs the CLI grammar alone reaches: Jev is never offered them. */
-export const GRAMMAR_ONLY_VERBS: ReadonlySet<CommandVerb> = new Set<CommandVerb>(['screenshot', 'help', 'resume', 'timer'])
+/** The verbs the CLI grammar alone reaches: Jev is never offered them. `play` is the Player's (#343, owner's ruling 1). */
+export const GRAMMAR_ONLY_VERBS: ReadonlySet<CommandVerb> = new Set<CommandVerb>(['screenshot', 'help', 'resume', 'timer', 'play'])
 
 /** The verbs the Decision Model chooses among (#324): the spoken vocabulary, `none` included. */
-export const JEV_VERBS = COMMAND_VERBS.filter((verb) => !GRAMMAR_ONLY_VERBS.has(verb)) as readonly Exclude<CommandVerb, 'screenshot' | 'help' | 'resume' | 'timer'>[]
+export const JEV_VERBS = COMMAND_VERBS.filter((verb) => !GRAMMAR_ONLY_VERBS.has(verb)) as readonly Exclude<CommandVerb, 'screenshot' | 'help' | 'resume' | 'timer' | 'play'>[]
 
 /** The keys `press` speaks: enter, escape, space and the arrows. */
 export const PRESS_KEYS: Readonly<Record<string, KeyPress>> = {
@@ -73,6 +75,8 @@ export interface Command {
   readonly site?: string
   /** For `timer`: the length to count down; absent turns the Timer off. */
   readonly durationMs?: number
+  /** For `play` (#343): what the line asks of the Player; a search's words are the Slot. */
+  readonly music?: MusicAction
   /** The click or the Escape closes an open dialog (#336): its Answer is "Closed the pop-up.", and a dialog still open after it is a failure. */
   readonly dismiss?: true
 }
@@ -210,10 +214,31 @@ export function describeCommand(command: Command, page?: CommandPage): string {
       return 'resume the last page'
     case 'timer':
       return command.durationMs !== undefined ? `timer ${describeDuration(command.durationMs)}` : 'timer off'
+    case 'play':
+      return describeMusic(command.music, command.slot)
     case 'none':
       return 'not a command'
     default:
       return command.verb
+  }
+}
+
+/** A music line as the Feed names it (#343): `play <words>`, `queue <words>`, `play <words> next`, `skip`, `loop off`, `volume 40`. */
+function describeMusic(music: MusicAction | undefined, words: string | null): string {
+  if (music === undefined) return 'play'
+  switch (music.kind) {
+    case 'search':
+      return music.place === 'end' ? `queue ${words ?? ''}` : `play ${words ?? ''}${music.place === 'front' ? ' next' : ''}`
+    case 'unpause':
+      return 'play'
+    case 'loop':
+      return music.on ? 'loop' : 'loop off'
+    case 'volume':
+      return `volume ${music.to}`
+    case 'mute':
+      return music.on ? 'mute' : 'unmute'
+    default:
+      return music.kind
   }
 }
 

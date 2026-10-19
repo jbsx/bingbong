@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { CommandRef } from './command'
-import { bestGuess, carriesWordsPastAddress, localMatch } from './localMatch'
+import { GRAMMAR_ONLY_VERBS, JEV_VERBS, describeCommand, type CommandRef } from './command'
+import { bestGuess, carriesWordsPastAddress, headsAnotherVerb, localMatch } from './localMatch'
 
 // The Local Match (CONTEXT.md, ADR 0076): a Command settled from the
 // Utterance and the page alone — the CLI grammar, or a plain verb and a
@@ -56,6 +56,43 @@ describe('the Local Match: the Timer', () => {
     expect(localMatch('cancel the timer', REFS)).toEqual({ verb: 'timer', target: null, slot: null })
     expect(localMatch('cancel', REFS)).toEqual({ verb: 'stop', target: null, slot: null })
     expect(localMatch('stop', REFS)).toEqual({ verb: 'stop', target: null, slot: null })
+  })
+})
+
+describe('the Local Match: the Player (#343)', () => {
+  it('reads a music line as the grammar-only `play` verb, a search\'s words its Slot, without asking the page', () => {
+    expect(localMatch('play bohemian rhapsody', [])).toEqual({ verb: 'play', target: null, slot: 'bohemian rhapsody', music: { kind: 'search', place: 'now' } })
+    expect(localMatch('Queue daft punk.', REFS)).toEqual({ verb: 'play', target: null, slot: 'daft punk', music: { kind: 'search', place: 'end' } })
+    expect(localMatch('play', REFS)).toEqual({ verb: 'play', target: null, slot: null, music: { kind: 'unpause' } })
+    expect(localMatch('go back a song', REFS)).toEqual({ verb: 'play', target: null, slot: null, music: { kind: 'previous' } })
+    expect(localMatch('stop looping', REFS)).toEqual({ verb: 'play', target: null, slot: null, music: { kind: 'loop', on: false } })
+    expect(GRAMMAR_ONLY_VERBS.has('play')).toBe(true)
+    expect(JEV_VERBS).not.toContain('play')
+  })
+
+  it('leaves "click play" and "press play" to the page\'s button, `back` to history and "stop" the stop verb', () => {
+    const refs: CommandRef[] = [{ ref: 7, kind: 'button', label: 'Play', href: null, inputType: null }]
+    expect(localMatch('click play', refs)).toEqual({ verb: 'click', target: 7, slot: null })
+    expect(localMatch('press play', refs)).toEqual({ verb: 'click', target: 7, slot: null })
+    expect(localMatch('go back', REFS)).toEqual({ verb: 'back', target: null, slot: null })
+    expect(localMatch('stop', REFS)).toEqual({ verb: 'stop', target: null, slot: null })
+  })
+
+  it('holds a partial that heads a music line of another kind: "stop" may be "stop looping", "go back" "go back a song" (#326)', () => {
+    expect(headsAnotherVerb('stop')).toBe(true)
+    expect(headsAnotherVerb('go back')).toBe(true)
+    expect(headsAnotherVerb('read')).toBe(false)
+  })
+
+  it('the Feed\'s action line names the music line', () => {
+    expect(describeCommand(localMatch('play bohemian rhapsody', [])!)).toBe('play bohemian rhapsody')
+    expect(describeCommand(localMatch('play daft punk next', [])!)).toBe('play daft punk next')
+    expect(describeCommand(localMatch('add daft punk', [])!)).toBe('queue daft punk')
+    expect(describeCommand(localMatch('next song', [])!)).toBe('skip')
+    expect(describeCommand(localMatch('play', [])!)).toBe('play')
+    expect(describeCommand(localMatch('volume 40', [])!)).toBe('volume 40')
+    expect(describeCommand(localMatch('repeat this song', [])!)).toBe('loop')
+    expect(describeCommand(localMatch('stop looping', [])!)).toBe('loop off')
   })
 })
 

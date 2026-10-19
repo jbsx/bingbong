@@ -120,6 +120,12 @@ export interface BrowserController {
   pressKey(press: KeyPress, times?: number): Promise<void>
   /** Read actual state from the page's active media element after controls settle. */
   mediaState(): Promise<MediaState | null>
+  /**
+   * One script evaluated in the page, its value returned (#343): the Player
+   * reads YouTube's results and drives the watch page's video through it.
+   * A navigation under way is waited for first, as every page read is.
+   */
+  evaluate<T>(expression: string): Promise<T>
   state(): BrowserState
   /**
    * Facts for the mechanical Blocker classifier (ADR 0010): URL, title,

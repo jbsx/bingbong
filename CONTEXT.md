@@ -461,6 +461,48 @@ its own player for at most a minute. It lives in main and does not
 survive a restart. `timer` is the grammar's alone: Jev is never offered it.
 _Avoid_: alarm (for the countdown), stopwatch, reminder
 
+**Player**:
+The appliance's music, with YouTube in the browser pane as the player and
+the Queue and the verbs in main (2026-10-19 consultation, #343). `play
+<words>` opens YouTube's results in the pane, takes the first plain video
+(no ad, Short, channel, playlist or "People also watched" shelf), and opens
+its watch page. It reads the results' `ytInitialData`, not the cards, and
+no Jev call is made. A wrong pick is a Misfire. The words are a Slot and
+pass the Name Match. `queue <words>` or `add <words>` puts a song at the
+end of the Queue, and `play <words> next` at its front. These search
+without leaving the song playing: main fetches the results with the
+pane's session. The other verbs are one evaluate each on `#movie_player`'s
+video:
+- `pause`, and `play` alone to unpause.
+- `skip` / `next`, and `previous` / "go back a song".
+- `loop` / `repeat`, and `loop off` / "stop looping". These set the
+  element's `loop` flag.
+- `restart` / "start over" / "from the top".
+- `louder`, `quieter`, `volume <0–100>`, `mute`, `unmute`. These set the
+  element's volume, not the system's.
+
+Main hears the song end through a once-a-second read and opens the next
+queued song. An ad plays in the same element, and its end (while
+`ad-showing`) is not the song's. The song's end is held from YouTube's own
+handlers, so YouTube's Autoplay never wanders on. With nothing queued, the
+song ends and the Player stops. A landing that is not a watch page fails
+the Command, and the Player moves to the next queued song. `stop` with
+nothing in flight pauses the music, as it silences a ringing Timer. With a
+Command in flight, `stop` is still the abort and the music plays on.
+`play` is the grammar's alone, as `timer` is: Jev is never offered it, and
+no partial fires it early. "click play" and "press play" stay the page's
+button. `back` stays history and `resume` the Task's.
+_Avoid_: music app, media player (for the page's own controls), playlist (for the Queue)
+
+**Queue**:
+The Player's one queue. It holds the song playing (or paused), the songs
+queued after it, the songs played before it (what `previous` returns to),
+and whether the song loops. `play <words>` replaces the current song and
+keeps the Queue. A song queued with nothing playing plays at once. `skip`
+clears the loop, and a pause keeps it. It lives in main and does not
+survive a restart, as the Timer does not.
+_Avoid_: playlist, up next (for the whole queue)
+
 **Toolbar**:
 The one reserved band at the window's top: Status Capsule left, address
 field center, feed and settings controls right. The window's only drag

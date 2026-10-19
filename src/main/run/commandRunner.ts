@@ -34,6 +34,7 @@ import type { SpeakOutcome, TtsSpeaker } from '../../core/ports/tts'
 import { reportFault } from '../../core/trace/fault'
 import { isRealPage, type LastPage } from '../../core/browser/lastPage'
 import type { ActionEffect } from '../browser/createCdpBrowserController'
+import type { Player, PlayerOutcome } from '../music/player'
 
 // The command seam (kachow, #324, ADR 0076): where a typed or spoken line
 // lands and becomes one Command. The Local Match first — the CLI grammar,
@@ -162,6 +163,8 @@ export interface CommandRunnerDeps {
   lastPage?(): LastPage | null
   /** The Timer (CONTEXT.md), for `timer` — and `stop`, which silences it ringing; absent leaves `timer` a failure. */
   timer?: Pick<Timer, 'set' | 'cancel' | 'silence'>
+  /** The Player (#343, CONTEXT.md), for `play` — and `stop` with nothing in flight, which pauses it; absent leaves `play` a failure. */
+  player?: Pick<Player, 'perform' | 'pauseIfPlaying'>
 }
 
 /** How much of a Page Read the Feed card shows. */
@@ -201,6 +204,11 @@ function endedByReading(reading: CommandReading, verb: Command['verb'], hop: num
   return CONTINUING.has(verb) ? null : 'terminal'
 }
 
+/** The verbs whose record waits for the action (#328): a continuing verb's landing, and the video `play` opened or queued (#343). */
+function recordedAfterFiring(verb: Command['verb']): boolean {
+  return CONTINUING.has(verb) || verb === 'play'
+}
+
 /** What a fired action came to: it landed, it met a wall (it failed, or speaks a failure's line), or a later Command superseded it. */
 type FireOutcome = 'landed' | 'wall' | 'superseded'
 
@@ -210,6 +218,8 @@ interface FireResult {
   readonly landing?: PageLanding
   /** The action landed and moved nothing: no navigation, and the click's own verdict "no observable change". */
   readonly unchanged?: true
+  /** For `play` (#343): the video the Player opened or queued. */
+  readonly video?: string
 }
 
 /** How many hops in a row that change nothing end a Task (#336). */
@@ -234,7 +244,8 @@ function blankPage(browser: BrowserController): CommandPage {
 /** Whether a Command's Slot is words a name could be misheard in: search terms, or text to type — never an address or a key. */
 function slotIsNameable(command: Command): command is Command & { slot: string } {
   if (command.slot === null || command.slot === '') return false
-  if (command.verb === 'type') return true
+  // A music search's words (#343) are search terms like any other.
+  if (command.verb === 'type' || command.verb === 'play') return true
   return command.verb === 'open' && (command.search === true || !isAddressShaped(command.slot))
 }
 
@@ -256,10 +267,11 @@ function pageFree(command: Command | null): command is Command {
  * `none`, which fires nothing. Jev may still fire an `open` or a `type`
  * on a partial, when its Noul says the words are complete. A verb phrase
  * that heads a longer one of another kind ("scroll", which may yet be
- * "scroll up") is held before this is asked.
+ * "scroll up") is held before this is asked. A Player verb (#343) never
+ * fires early, as `timer`: "play" may yet be "play bohemian rhapsody".
  */
 function firesEarly(command: Command): boolean {
-  return command.verb !== 'open' && command.verb !== 'type' && command.verb !== 'screenshot' && command.verb !== 'timer' && command.verb !== 'none'
+  return command.verb !== 'open' && command.verb !== 'type' && command.verb !== 'screenshot' && command.verb !== 'timer' && command.verb !== 'play' && command.verb !== 'none'
 }
 
 function toolOf(command: Command): { name: string; args: Record<string, unknown> } {
@@ -280,6 +292,8 @@ function toolOf(command: Command): { name: string; args: Record<string, unknown>
       return { name: 'read_page', args: {} }
     case 'screenshot':
       return { name: 'screenshot', args: command.slot ? { path: command.slot } : {} }
+    case 'play':
+      return { name: 'play', args: { ...command.music, ...(command.slot !== null ? { words: command.slot } : {}) } }
     default:
       return { name: command.verb, args: {} }
   }
@@ -314,6 +328,18 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   let jevHop: { turnId: string; hop: number; at: number } | null = null
   /** The runner's texts still sounding (a Page Read, a failure's line): the next Command or an abort silences them. */
   let sounding = 0
+  /** The last submission made with nothing in flight, being read or sounding (#343): a `stop` it carries pauses the music. */
+  let idleAt = -1
+
+  /** The music paused for a `stop` (#343); whether a video was playing. A failure to reach it is no pause. */
+  async function pauseMusic(): Promise<boolean> {
+    try {
+      return (await deps.player?.pauseIfPlaying()) ?? false
+    } catch (error) {
+      reportFault('run.commandRunner.pauseMusic', error)
+      return false
+    }
+  }
 
   const at = (): number => deps.now()
   const monotonic = (): number => tracer?.now() ?? at()
@@ -615,8 +641,14 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     void browser.showRef(ref).catch((error: unknown) => reportFault('run.commandRunner.showRef', error))
   }
 
-  async function perform(command: Command, resume: ReturnType<typeof resumePlan> | null): Promise<string> {
+  async function perform(command: Command, resume: ReturnType<typeof resumePlan> | null, current: () => boolean, onPlayed: (outcome: PlayerOutcome) => void): Promise<string> {
     switch (command.verb) {
+      case 'play': {
+        if (deps.player === undefined) throw new Error('no player on this surface')
+        const outcome = await deps.player.perform(command.music ?? { kind: 'unpause' }, command.slot, current)
+        onPlayed(outcome)
+        return outcome.result
+      }
       case 'resume':
         return (resume ?? resumePlan()).perform()
       case 'open':
@@ -754,6 +786,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     jevHop = readingKind === 'jev' ? { turnId, hop: task.hop, at: firedAt } : null
     if (source === 'spoken') learnFrom(command, matched, firedAt)
 
+    // Whether a `stop` finds anything to stop: nothing in flight, being read or sounding pauses the music instead (#343, owner's ruling 2).
+    const nothingInFlight = idleAt === submitted && inFlight === null && sounding === 0
     // A later Command supersedes the one in flight, and silences what it was saying; `stop` is only that.
     cancelInFlight(command.verb === 'stop' ? 'stopped' : 'superseded')
     silence()
@@ -768,9 +802,11 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       stoppedAt.add(submitted)
       stopLoading()
       // A ringing Timer is what "stop" most often means; a running one is left to run.
-      deps.timer?.silence()
+      const silenced = deps.timer?.silence() ?? false
+      // With nothing else to stop, the music is what "stop" means; it pauses, as YouTube's own button would.
+      const paused = nothingInFlight && !silenced && deps.player !== undefined && (await pauseMusic())
       inFlight = null
-      answer(turnId, STOPPED_ANSWERS.stopped)
+      answer(turnId, paused ? 'Paused.' : STOPPED_ANSWERS.stopped)
       publish({ type: 'done', turnId, outcome: 'done', at: at() })
       return { outcome: 'landed' }
     }
@@ -799,9 +835,16 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       if (current()) landing = landed
     })
     let unchanged = false
-    const ended = (outcome: FireOutcome): FireResult => ({ outcome, ...(landing !== undefined ? { landing } : {}), ...(unchanged && landing === undefined ? { unchanged: true } : {}) })
+    /** What the Player made of a `play` (#343): its Answer, and the video it opened. */
+    let played: PlayerOutcome | null = null
+    const ended = (outcome: FireOutcome): FireResult => ({
+      outcome,
+      ...(landing !== undefined ? { landing } : {}),
+      ...(unchanged && landing === undefined ? { unchanged: true } : {}),
+      ...(played?.video !== undefined ? { video: played.video } : {}),
+    })
     try {
-      const result = await perform(command, resume)
+      const result = await perform(command, resume, current, (outcome) => (played = outcome))
       if (!current()) return ended('superseded')
       let outcome: FireOutcome = 'landed'
       unchanged = blockedOrInertAction(result) === 'inert'
@@ -818,6 +861,15 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         if (!current()) return ended('superseded')
         // Nothing was spoken (the voice failed, or was cut first): the Card was the effect.
         react('display', shownAt)
+      } else if (played !== null) {
+        // The Player's own Answer (#343): what it played, queued or did to the element — or, marked a failure, why it could not.
+        const outcomeOfPlay: PlayerOutcome = played
+        if (outcomeOfPlay.failure === true) {
+          answerFailure(turnId, outcomeOfPlay.answer)
+          outcome = 'wall'
+        } else {
+          answer(turnId, outcomeOfPlay.answer)
+        }
       } else {
         const state = browser.state()
         const failure =
@@ -915,7 +967,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
    * whose verb lands is written by {@link settleHop}, with its landing.
    */
   function recordBeforeFiring(record: DecisionRecord, ending: TaskEnded | null, command: Command): void {
-    if (ending !== null && !CONTINUING.has(command.verb)) log({ ...record, ended: ending })
+    if (ending !== null && !recordedAfterFiring(command.verb)) log({ ...record, ended: ending })
   }
 
   /**
@@ -924,9 +976,9 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
    * Jev-read hop that landed, under the cap; resolves to its end, or null.
    */
   function settleHop(task: Task, record: DecisionRecord, ending: TaskEnded | null, command: Command, page: CommandPage, fired: FireResult): TaskEnded | null {
-    const landed = fired.landing !== undefined ? { landing: fired.landing } : {}
+    const landed = { ...(fired.landing !== undefined ? { landing: fired.landing } : {}), ...(fired.video !== undefined ? { video: fired.video } : {}) }
     if (ending !== null) {
-      if (CONTINUING.has(command.verb)) log({ ...record, ...landed, ended: ending })
+      if (recordedAfterFiring(command.verb)) log({ ...record, ...landed, ended: ending })
       return ending
     }
     task.actions.push(doneLine(command, page, doneResult(page, fired)))
@@ -1140,9 +1192,13 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
 
   /** A partial's reading, when it settles a Command that may fire before the Endpoint. */
   async function readPartial(words: string, stale: () => boolean): Promise<(Reading & { noul?: number }) | null> {
-    // "scroll" may yet be "scroll up": the words are known to be unfinished, so no one is asked.
-    if (headsAnotherVerb(words)) return null
     const quick = localMatch(words, [])
+    // "scroll" may yet be "scroll up": the words are known to be unfinished, so no one is asked.
+    // A "stop" that may be "stop looping" (#343) still fires at once when there is something to stop: it is only an abort then.
+    const stopsSomething = quick?.verb === 'stop' && (inFlight !== null || reading !== null || sounding > 0)
+    if (headsAnotherVerb(words) && !stopsSomething) return null
+    // A Player line (#343) is the grammar's alone: it waits for its Endpoint, and Jev is never asked about it.
+    if (quick?.verb === 'play') return null
     const { dismissal, page: dismissPage } = await readDismissal(words, quick, prepared)
     if (stale()) return null
     if (dismissal !== null) return dismissal
@@ -1306,8 +1362,10 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       // A new Utterance soon after a Jev-read hop fired: the Task overran (#328).
       overrun(turnId)
       // This submission: a reading still under way for an earlier one is stale now.
+      const idle = inFlight === null && reading === null && sounding === 0
       submitted += 1
       const submission = submitted
+      if (idle) idleAt = submission
       reading = { turnId, submission }
       // The prepared page is this Command's, whether it needs it or not.
       const pending = prepared

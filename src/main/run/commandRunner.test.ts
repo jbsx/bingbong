@@ -14,6 +14,8 @@ import { blockedActionHead } from '../../core/browser/actionOutcome'
 import { SPOKEN_FAILURES } from '../../core/command/spokenFailure'
 import { createSpeechCoordinator } from '../../core/tts/speechCoordinator'
 import { createCommandRunner, type CommandRunner, type CommandRunnerDeps } from './commandRunner'
+import { createPlayer } from '../music/player'
+import { ScriptedYouTube, videoItem } from '../music/scriptedYouTube'
 
 // The Command runner (#324, ADR 0076): a typed or spoken line becomes one
 // Command — the Local Match first, else one Jev call, else the best guess
@@ -114,8 +116,9 @@ const PAGE_READ = [
   pageReadPartLine(1, 1),
 ].join('\n')
 
-function harness(options?: { decision?: null; learned?: string[]; speech?: Pick<TtsSpeaker, 'speak' | 'stop'>; timer?: CommandRunnerDeps['timer'] }) {
+function harness(options?: { decision?: null; learned?: string[]; speech?: Pick<TtsSpeaker, 'speak' | 'stop'>; timer?: CommandRunnerDeps['timer']; player?: (browser: FakeBrowser) => CommandRunnerDeps['player'] }) {
   const browser = new FakeBrowser()
+  const player = options?.player?.(browser)
   browser.snapshot = { ...browser.snapshot, url: 'https://example.com/', title: 'Example', refs: PAGE_REFS }
   const events: PipelineEvent[] = []
   const records: CommandLogRecord[] = []
@@ -149,6 +152,7 @@ function harness(options?: { decision?: null; learned?: string[]; speech?: Pick<
     },
     ...(options?.speech ? { speech: options.speech } : {}),
     ...(options?.timer ? { timer: options.timer } : {}),
+    ...(player ? { player } : {}),
     screenshotDir: () => '/shots',
     saveScreenshot: async (path) => {
       screenshots.push(path)
@@ -237,6 +241,108 @@ describe('the Timer (CONTEXT.md)', () => {
     const { events, runner } = harness()
     await runner.run('timer 5m')
     expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'failed' })
+  })
+})
+
+describe('the Player (#343)', () => {
+  const displays = (events: PipelineEvent[]): string[] => events.flatMap((event) => (event.type === 'display' ? [event.text] : []))
+  const QUEEN = 'Queen – Bohemian Rhapsody (Official Video Remastered)'
+
+  /** A runner wired to a real Player over a scripted YouTube. */
+  function music(options?: { speech?: Pick<TtsSpeaker, 'speak' | 'stop'>; learned?: string[] }) {
+    let youtube!: ScriptedYouTube
+    const wired = harness({
+      ...options,
+      player: (browser) => {
+        youtube = new ScriptedYouTube(browser)
+        return createPlayer({ browser, fetchResults: youtube.fetchResults, sleep: async () => {} })
+      },
+    })
+    youtube.search(
+      'bohemian rhapsody',
+      { reelShelfRenderer: { items: [] } },
+      { channelRenderer: { channelId: 'UCqueen' } },
+      { playlistRenderer: { playlistId: 'PLqueen' } },
+      videoItem('fJ9rUzIMcZQ', QUEEN),
+    )
+    youtube.watches.set('fJ9rUzIMcZQ', { title: QUEEN })
+    return { ...wired, youtube }
+  }
+
+  it('`play <words>` opens the results, picks the first plain video past a Short, a channel and a playlist, and plays its watch page', async () => {
+    const { browser, events, records, decision, runner } = music()
+    await runner.run('play bohemian rhapsody')
+    expect(browser.navigations).toEqual(['https://www.youtube.com/results?search_query=bohemian+rhapsody', 'https://www.youtube.com/watch?v=fJ9rUzIMcZQ'])
+    expect(decision.requests).toEqual([])
+    expect(events.filter((event) => event.type === 'command')).toEqual([expect.objectContaining({ action: 'play bohemian rhapsody' })])
+    expect(displays(events)).toEqual([`Playing “${QUEEN}”.`])
+    expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done' })
+    expect(records.filter((record) => record.type === 'decision')).toEqual([expect.objectContaining({ verb: 'play', slot: 'bohemian rhapsody', video: 'fJ9rUzIMcZQ', reading: 'local_match', ended: 'local_match' })])
+  })
+
+  it('a spoken search passes the Name Match\'s Learned Terms, and Jev is never asked', async () => {
+    const { browser, decision, runner } = music({ learned: ['Bohemian Rhapsody'] })
+    await runner.run('Play bohemian rapsody.', { source: 'spoken' })
+    expect(decision.requests).toEqual([])
+    expect(browser.navigations[0]).toBe('https://www.youtube.com/results?search_query=Bohemian+Rhapsody')
+  })
+
+  it('a song that cannot be played fails the Command in words', async () => {
+    const { events, youtube, runner } = music()
+    youtube.watches.set('fJ9rUzIMcZQ', { title: QUEEN, fails: 'error' })
+    await runner.run('play bohemian rhapsody')
+    expect(events.find((event) => event.type === 'display')).toMatchObject({ text: `“${QUEEN}” can't be played.`, failure: true })
+  })
+
+  it('the element verbs answer from the element', async () => {
+    const { events, runner } = music()
+    await runner.run('play bohemian rhapsody')
+    await runner.run('pause')
+    await runner.run('loop')
+    await runner.run('play')
+    expect(displays(events)).toEqual([`Playing “${QUEEN}”.`, 'Paused.', `Looping “${QUEEN}”.`, `Playing “${QUEEN}”.`])
+  })
+
+  it('`stop` with nothing in flight pauses the music (owner\'s ruling 2)', async () => {
+    const { events, youtube, runner } = music()
+    await runner.run('play bohemian rhapsody')
+    await runner.run('stop', { source: 'spoken' })
+    expect(youtube.element.paused).toBe(true)
+    expect(displays(events).at(-1)).toBe('Paused.')
+  })
+
+  it('`stop` with a Command in flight aborts it and leaves the music playing', async () => {
+    const speech = new FakeSpeech()
+    const { events, youtube, runner } = music({ speech })
+    await runner.run('play bohemian rhapsody')
+    const reading = runner.run('read')
+    await flushMicrotasks()
+    expect(runner.getState()).toBe('running')
+    await runner.run('stop', { source: 'spoken' })
+    await reading
+    expect(youtube.element.paused).toBe(false)
+    expect(youtube.controls.map((control) => control.op)).not.toContain('pauseIfPlaying')
+    expect(displays(events).at(-1)).toBe('Stopped.')
+  })
+
+  it('a partial "stop" still fires at once while there is something to stop — it is only an abort then', async () => {
+    const speech = new FakeSpeech()
+    const { youtube, runner } = music({ speech })
+    await runner.run('play bohemian rhapsody')
+    const reading = runner.run('read')
+    await flushMicrotasks()
+    await runner.consider('stop')
+    await reading
+    expect(runner.getState()).toBe('idle')
+    expect(youtube.element.paused).toBe(false)
+  })
+
+  it('no partial fires a Player verb early, and Jev is not asked about one (#326)', async () => {
+    const { browser, decision, runner } = music()
+    for (const partial of ['play', 'play bohemian', 'skip', 'pause', 'stop', 'go back']) await runner.consider(partial)
+    expect(browser.navigations).toEqual([])
+    expect(browser.evaluations).toEqual([])
+    expect(decision.requests).toEqual([])
   })
 })
 
@@ -1124,9 +1230,9 @@ describe('Early Fire (#326)', () => {
   it('records an Early Fire whose Utterance never reached an Endpoint at the next speech start, without a lead', async () => {
     const { records, runner } = harness()
     void runner.prepare()
-    await runner.consider('go back')
+    await runner.consider('scroll down')
     void runner.prepare()
-    expect(records.filter((record) => record.type === 'decision')).toEqual([expect.objectContaining({ verb: 'back', earlyFire: { partial: 'go back' } })])
+    expect(records.filter((record) => record.type === 'decision')).toEqual([expect.objectContaining({ verb: 'scroll_down', earlyFire: { partial: 'scroll down' } })])
   })
 })
 

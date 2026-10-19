@@ -75,6 +75,8 @@ export interface DecisionRecord {
   readonly ended?: TaskEnded
   /** How the hop's navigation landed (#328): DOM-quiet, at its load, or `capped` at 3 s; absent for an action that left no page. */
   readonly landing?: PageLanding
+  /** For `play` (#343): the YouTube video the Player opened or queued; absent for a verb on the element. */
+  readonly video?: string
 }
 
 /** Where a Command stands in its Task (#328, ADR 0076 amendment): the Task's id is hop 0's turn id. */

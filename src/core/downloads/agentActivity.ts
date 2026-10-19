@@ -61,6 +61,7 @@ export function withAgentActivity(
     stop: () => controller.stop(),
     pressKey: (press, times) => controller.pressKey(press, times),
     mediaState: () => controller.mediaState(),
+    evaluate: (expression) => controller.evaluate(expression),
     state: () => controller.state(),
     pageFacts: () => controller.pageFacts(),
     settledState: () => controller.settledState(),

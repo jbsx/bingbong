@@ -76,6 +76,8 @@ export function createAuthPopupDirector(
         reload: () => base.reload(),
         stop: () => base.stop(),
         state: () => base.state(),
+        // The Player drives the pane's own video (#343), never a sign-in popup.
+        evaluate: (expression) => base.evaluate(expression),
         // Everything the agent does to "the current page" routes to the
         // popup while one is open.
         readPage: async (part) => {

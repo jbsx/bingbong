@@ -831,3 +831,71 @@ and both Tasks ended on a wall.
 - **Not in scope:** promoting the two profile asks to the Jev corpus as
   `verb=done` cases (the owner's call); rewording the questions so Jev
   says `done`; a search landing read before its results render.
+
+## Amendment 2026-10-19 — music is YouTube in the pane, the Queue and the verbs in main (#343)
+
+The owner listens to unreleased songs on YouTube and asked for voice
+control: "play …", "loop", "skip", "play from the beginning". The
+consultation on 2026-10-19 settled the shape, and the owner ruled "all
+recommended" on its five decisions.
+
+- **The player is YouTube's watch page in the pane.** A Player in main
+  owns the one Queue and drives `#movie_player`'s `<video>` with one CDP
+  evaluate per verb (play, pause, `loop`, `currentTime`, volume, muted).
+  YouTube's own queue, its Autoplay toggle and its Loop menu are never
+  touched. Rejected:
+  - The IFrame embed: unreleased uploads are the ones that disable
+    embedding.
+  - Audio extraction (yt-dlp style): it breaks monthly and needs cookies.
+  - Clicking YouTube's chrome: the controls are revealed on hover, and
+    each verb would cost a read and a click.
+
+  The pane already has the adblocker (uBlock's hourly quick-fixes list
+  among its lists) and the consent handling every navigation gets.
+- **A music line is one Command like any other.** It is Local-Matched,
+  fires with no confirmation, and leaves one `command` event, one Answer
+  and one decision record (verb `play`, and the `video` it opened or
+  queued). The search pick is the first plain video, with no Jev call. A
+  wrong pick is a Misfire that the next line recovers, never prevented.
+  Correction lines and remembered picks are #345.
+- **Ruling 1: `play` is a Player verb, grammar-only like `timer`.** Jev is
+  never offered it. No partial fires it, and none is asked of Jev. "click
+  play" and "press play" stay the page's button. A partial that heads a
+  music line of another kind waits for its Endpoint: "go back" may be "go
+  back a song", "stop" may be "stop looping". A partial "stop" still fires
+  at once while something is in flight, because it is only an abort then.
+- **Ruling 2: `stop` with nothing in flight pauses the music,** as it
+  silences a ringing Timer. With a Command in flight, being read or
+  sounding, `stop` stays the abort and the music plays on.
+- **Ruling 3: `back` and `resume` are untouched.** Music goes back with
+  `previous` ("last song", "go back a song") and on with a bare `play`.
+- **Ruling 4: with an empty Queue the song ends and the Player stops.**
+  YouTube's Autoplay never runs: it wanders into reaction videos. The
+  song's end is heard by a capture-phase `ended` listener on the window,
+  which also holds the event from YouTube's own handlers. An end while
+  `#movie_player` carries `ad-showing` is the ad's: it passes through and
+  advances nothing.
+- **Ruling 5: three tickets.** #343 is the Player, its verbs and the
+  Queue. #344 is the Now Playing card, keepsIdle and ear ducking. #345 is
+  "not that one" and remembering songs.
+
+### Implementation notes (#343)
+
+- `core/music/`: `musicWords` (the lines, read by `parseCliCommand` before
+  its verbs), `queue` (pure state), `youtubeSearch` (the pick off
+  `ytInitialData`, the addresses). `main/music/`: `player`, its page
+  scripts, and `attachPlayer` (the 1 s poll, and results fetched with
+  `pane.session.fetch`). The browser port gains `evaluate`.
+- `play <words>` navigates to the results and reads `window.ytInitialData`
+  rather than the rendered cards. It is there at the landing, and it names
+  each item by its renderer. `queue <words>` fetches the same page with
+  the pane's session and parses the same data, so the song playing is
+  never navigated away from. A song queued with nothing playing plays at
+  once.
+- A landing counts only as the requested watch page with its player's
+  video, showing no `.ytp-error`. Anything else is a failed Command
+  ("“…” can't be played.") and opens the next queued song in the
+  background.
+- AC6 ran live on 2026-10-19 (`BINGBONG_YOUTUBE_E2E=1`,
+  `e2e/music.e2e.test.ts`, muted). `play` took 4.7 s from line to video
+  playing, including both page loads.

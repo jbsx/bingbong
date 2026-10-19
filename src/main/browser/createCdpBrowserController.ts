@@ -1754,6 +1754,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     },
     pressKey: (press, times) => holdingWindowOpens(() => pressKey(press, times)),
     mediaState,
+    evaluate: (expression) => evaluateInPage(expression),
     state,
     pageFacts,
     settledState,

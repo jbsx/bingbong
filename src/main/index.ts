@@ -59,6 +59,7 @@ import { createChimeWav } from '../core/tts/chime'
 import { createAlarmWav } from '../core/timer/alarm'
 import { createTimer } from '../core/timer/timer'
 import { registerTimerIpc } from './timer/attachTimer'
+import { attachPlayer } from './music/attachPlayer'
 import { registerUsageIpc } from './usage/attachUsage'
 import { registerCalendarIpc } from './calendar/attachCalendar'
 import { attachTimerAlarm } from './timer/timerAlarm'
@@ -327,6 +328,9 @@ async function createWindow(): Promise<BrowserWindow> {
     withAgentActivity(authPopups.route(createPaneBrowserController(pane, { subspans: browserSubspans, effects })), agentActivity),
   )
   const controller: BrowserController & VisualGroundingController = paneCustody.controller
+  // The Player (#343): YouTube in the pane is the player, the queue and the verbs live here.
+  const music = attachPlayer(controller, pane.session)
+  win.on('closed', music.stop)
 
   const downloadsDir = resolveDownloadsDir(process.env, app.getPath('downloads'))
   // Spoken output (T8), wrapped in a speaking gate (T9): download
@@ -379,6 +383,8 @@ async function createWindow(): Promise<BrowserWindow> {
     lastPage: () => lastPageStore.get(),
     // `timer` sets and cancels it; `stop` silences it ringing.
     timer,
+    // `play` and the music verbs drive it; `stop` with nothing in flight pauses it.
+    player: music.player,
     screenshotDir: () => downloadsDir,
     saveScreenshot: saveScreenshotFile,
     // The Learned Terms (ADR 0077): read for the Name Match, grown by it.
