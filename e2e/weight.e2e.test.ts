@@ -132,7 +132,7 @@ describe('weight e2e: the stand-in scale, the pop-up, the card and the page', ()
       title: document.querySelector('.weight-page h1')?.textContent,
       backLeft: Math.round(document.querySelector('.weight-back').getBoundingClientRect().left),
       contentLeft: Math.round(document.querySelector('.weight-latest').getBoundingClientRect().left),
-      sameLabels: [...document.querySelectorAll('.weight-chart-figure')].filter((el) => { const [top, bottom] = [...el.querySelectorAll('.weight-chart-y span')].map((s) => s.textContent); return top === bottom }).map((el) => el.dataset.figure),
+      sameLabels: [...document.querySelectorAll('.weight-chart-figure')].filter((el) => { const [top, bottom] = [...el.querySelectorAll('.weight-chart-y-label')].map((s) => s.textContent); return top === bottom }).map((el) => el.dataset.figure),
       weights: [...document.querySelectorAll('.weight-table tbody tr td:nth-child(2)')].map((el) => el.textContent),
     }))()`)
     expect(polish.title).toBe('Weight')

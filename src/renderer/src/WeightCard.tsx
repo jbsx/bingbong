@@ -5,6 +5,7 @@ import { formatChange, formatFigure, formatKg, SINCE_LAST } from '../../core/sca
 import { changeSinceLast, since, type WeighIn } from '../../core/scale/weighIns'
 import type { WeightSettings } from '../../core/scale/weightSettings'
 import { WeightChart } from './WeightChart'
+import { NoBreakHyphens } from './NoBreakHyphens'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
@@ -35,11 +36,18 @@ function whenLabel(at: number, now: number): string {
 /** The change since the last Weigh-in as a line: "−0.45 kg since the last Weigh-in", or a quiet note on the first. */
 function LastChange({ weighIns }: { weighIns: readonly WeighIn[] }) {
   const change = changeSinceLast(weighIns)
-  if (change === null) return <span className="weight-card-change weight-card-change--none">first Weigh-in</span>
+  if (change === null)
+    return (
+      <span className="weight-card-change weight-card-change--none">
+        <NoBreakHyphens text="first Weigh-in" />
+      </span>
+    )
   const direction = Math.abs(change) < 0.05 ? 'flat' : change < 0 ? 'down' : 'up'
   return (
     <span className={`weight-card-change weight-card-change--${direction}`}>
-      {formatChange(change, 2)} kg <span className="weight-card-change-span">{SINCE_LAST}</span>
+      {formatChange(change, 2)} kg <span className="weight-card-change-span">
+        <NoBreakHyphens text={SINCE_LAST} />
+      </span>
     </span>
   )
 }

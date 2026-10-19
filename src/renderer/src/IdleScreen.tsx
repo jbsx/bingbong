@@ -45,14 +45,16 @@ function hueStyle(temperature: number, units: WeatherUnits): React.CSSProperties
   return { '--hue': String(temperatureHue(temperature, units)) } as React.CSSProperties
 }
 
-/** The range bar's fixed scale, the one Apple's uses: −10 °C to 35 °C, so a mild day sits in the middle. */
-const SCALE_LOW_C = -10
-const SCALE_HIGH_C = 35
-
-function scalePercent(temperature: number, units: WeatherUnits): number {
-  const celsius = units === 'imperial' ? ((temperature - 32) * 5) / 9 : temperature
-  const fraction = (celsius - SCALE_LOW_C) / (SCALE_HIGH_C - SCALE_LOW_C)
-  return Math.round(Math.min(1, Math.max(0, fraction)) * 100)
+/**
+ * The one scale every range bar is drawn on: the span of today and the
+ * days after it (and the temperature now), so today's bar and the Next
+ * Days' bars read against each other the same way.
+ */
+function weekScale(report: WeatherReport): (temperature: number) => number {
+  const ranges = [...(report.today ? [report.today] : []), ...(report.days ?? [])]
+  const floor = Math.min(report.temperature, ...ranges.map((range) => range.low))
+  const span = Math.max(1, Math.max(report.temperature, ...ranges.map((range) => range.high)) - floor)
+  return (temperature) => Math.round(Math.min(1, Math.max(0, (temperature - floor) / span)) * 100)
 }
 
 function weatherLine(weather: Exclude<WeatherState, { status: 'ready' }>): string {
@@ -128,20 +130,20 @@ function WeatherNow({ report }: { report: WeatherReport }) {
           ) : null}
         </span>
       ) : null}
-      {today ? <TodayRange today={today} now={report.temperature} units={units} /> : null}
+      {today ? <TodayRange today={today} now={report.temperature} units={units} percent={weekScale(report)} /> : null}
     </section>
   )
 }
 
-/** Today's low and high on the fixed scale, with where the temperature stands now. */
-function TodayRange({ today, now, units }: { today: WeatherDay; now: number; units: WeatherUnits }) {
+/** Today's low and high on the week's scale, with where the temperature stands now. */
+function TodayRange({ today, now, units, percent }: { today: WeatherDay; now: number; units: WeatherUnits; percent: (temperature: number) => number }) {
   return (
     <span className="wx-today" aria-label={`low ${degrees(today.low)}, high ${degrees(today.high)}`}>
       <LowIcon size={20} />
       <span className="wx-temp" style={hueStyle(today.low, units)}>
         {degrees(today.low)}
       </span>
-      <RangeBar low={today.low} high={today.high} now={now} units={units} percent={(t) => scalePercent(t, units)} />
+      <RangeBar low={today.low} high={today.high} now={now} units={units} percent={percent} />
       <HighIcon size={20} />
       <span className="wx-temp" style={hueStyle(today.high, units)}>
         {degrees(today.high)}
@@ -181,13 +183,10 @@ function outlookWeekday(date: string): string {
 
 /**
  * The days after today, one line each: the weekday, the sky, the rain
- * chance, and the range in its hues as a bar on the outlook's own span, so
- * the days read against each other.
+ * chance, and the range in its hues as a bar on the week's scale, so the
+ * days read against each other and against today.
  */
-function Outlook({ days, units }: { days: readonly WeatherOutlookDay[]; units: WeatherUnits }) {
-  const floor = Math.min(...days.map((day) => day.low))
-  const span = Math.max(1, Math.max(...days.map((day) => day.high)) - floor)
-  const percent = (temperature: number): number => Math.round(((temperature - floor) / span) * 100)
+function Outlook({ days, units, percent }: { days: readonly WeatherOutlookDay[]; units: WeatherUnits; percent: (temperature: number) => number }) {
   return (
     <ul className="wx-outlook" aria-label="coming days">
       {days.map((day) => (
@@ -244,7 +243,7 @@ function WeatherCard({ report, size }: { report: WeatherReport; size: SlotSize }
       {size.h >= 3 ? (
         <section className="idle-card wx-days-tile" aria-label="next days">
           <h3 className="idle-kicker">Next days</h3>
-          {days.length > 0 ? <Outlook days={days} units={report.units} /> : null}
+          {days.length > 0 ? <Outlook days={days} units={report.units} percent={weekScale(report)} /> : null}
         </section>
       ) : null}
     </Tiles>

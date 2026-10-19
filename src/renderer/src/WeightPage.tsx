@@ -5,6 +5,7 @@ import { since, type WeighIn } from '../../core/scale/weighIns'
 import { JAISH, weighInsOf, type Person } from '../../core/scale/people'
 import { reportRendererFault } from './diagnostics'
 import { WeightChart } from './WeightChart'
+import { NoBreakHyphens } from './NoBreakHyphens'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
@@ -147,7 +148,9 @@ export function WeightPage({ weighIns, people, initialPerson = JAISH, onClose }:
                     <li key={key} className="weight-figure" data-figure={key}>
                       <span className="weight-figure-label">{label}</span>
                       <span className="weight-figure-value">{value === 'unavailable' ? '–' : withUnit(key === 'weightKg' ? formatKg(value) : formatFigure(value, digits), unit)}</span>
-                      <span className="weight-figure-change">{value === 'unavailable' ? missingWhy(key, latest, profile) : change === null ? 'first Weigh-in' : `${change} ${SINCE_LAST}`}</span>
+                      <span className="weight-figure-change">
+                        <NoBreakHyphens text={value === 'unavailable' ? missingWhy(key, latest, profile) : change === null ? 'first Weigh-in' : `${change} ${SINCE_LAST}`} />
+                      </span>
                     </li>
                   )
                 })}

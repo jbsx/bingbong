@@ -25,6 +25,8 @@ export function WeightChart({ points, start, end, digits, label, compact = false
     digits,
   )
   const width = Math.max(1, end - start)
+  // Each label at its value's height, so "72.4" sits level with the 72.40 it names, not at the box's edge.
+  const heightOf = (label: string): number => 100 - ((Number(label) - floor) / span) * 100
   const at = (point: ChartPoint): [number, number] => [Math.min(1000, Math.max(0, ((point.at - start) / width) * 1000)), 100 - ((point.value - floor) / span) * 100]
   const drawn = points.map(at)
   const line = drawn.map(([x, y], index) => `${index === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(2)}`).join('')
@@ -32,8 +34,18 @@ export function WeightChart({ points, start, end, digits, label, compact = false
   return (
     <div className={compact ? 'weight-chart weight-chart--compact' : 'weight-chart'} role="img" aria-label={label}>
       <span className="weight-chart-y" aria-hidden="true">
-        <span>{points.length > 0 ? top : ''}</span>
-        <span>{points.length > 0 ? bottom : ''}</span>
+        {/* The column's width: the longer label, unseen; the labels themselves sit at their heights. */}
+        <span className="weight-chart-y-size">{points.length > 0 ? (top.length >= bottom.length ? top : bottom) : ''}</span>
+        {points.length > 0 ? (
+          <>
+            <span className="weight-chart-y-label" style={{ top: `${heightOf(top)}%` }}>
+              {top}
+            </span>
+            <span className="weight-chart-y-label" style={{ top: `${heightOf(bottom)}%` }}>
+              {bottom}
+            </span>
+          </>
+        ) : null}
       </span>
       <span className="weight-chart-area">
         {points.length === 0 ? (

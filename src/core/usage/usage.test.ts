@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   chartCeiling,
+  defaultGauge,
   defaultUsagePrefs,
   elapsedPct,
   fetchUsage,
@@ -76,14 +77,25 @@ describe('viewUsage', () => {
   const snapshot = readUsage(usage, history)
   const view = (prefs: Partial<UsagePrefs>) => viewUsage(snapshot, { ...defaultUsagePrefs(), ...prefs })
 
-  it('shows Codex and Claude by default, gauging 5h else 7d and charting the gauge', () => {
+  it('shows Codex and Claude by default, gauging the window closest to its limit and charting the gauge', () => {
     const [codex, claude] = view({})
     expect(view({}).map((p) => p.name)).toEqual(['Codex', 'Claude'])
     expect(codex.gauge?.key).toBe('7d')
     expect(codex.lines.map((w) => w.key)).toEqual(['7d'])
-    expect(claude.gauge?.key).toBe('5h')
-    expect(claude.bars.map((w) => w.key)).toEqual(['7d', '7d-fable'])
-    expect(claude.lines.map((w) => w.key)).toEqual(['5h'])
+    // 7d at 83 % is the one that will stop you, not 5h at 2 %.
+    expect(claude.gauge?.key).toBe('7d')
+    expect(claude.bars.map((w) => w.key)).toEqual(['5h', '7d-fable'])
+    expect(claude.lines.map((w) => w.key)).toEqual(['7d'])
+  })
+
+  it('breaks a tie the dashboard\'s way: 5h, else 7d, else the first', () => {
+    const tied = (keys: string[]): string | undefined =>
+      defaultGauge(keys.map((key) => ({ key, caption: key, label: key, usedPct: 40, resetAt: null, durationMs: null, history: [] }))
+      )?.key
+    expect(tied(['7d', '5h'])).toBe('5h')
+    expect(tied(['monthly', '7d'])).toBe('7d')
+    expect(tied(['monthly', 'weekly'])).toBe('monthly')
+    expect(defaultGauge([])).toBeNull()
   })
 
   it("shows the chosen providers in the dashboard's order and drops a disconnected one", () => {

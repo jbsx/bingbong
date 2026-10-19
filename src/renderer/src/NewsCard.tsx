@@ -90,7 +90,7 @@ export function NewsCard({ repos }: { repos: TopRepo[] }) {
                     {name}
                   </span>
                   {line !== '' ? (
-                    <span className="idle-repo-line" data-summary={repo.summary !== null ? '' : undefined}>
+                    <span className="idle-repo-line">
                       {line}
                     </span>
                   ) : null}

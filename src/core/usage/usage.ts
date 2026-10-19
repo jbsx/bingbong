@@ -48,7 +48,7 @@ export interface UsageSnapshot {
 export interface UsageProviderPrefs {
   /** Window keys left off the card. */
   hidden: string[]
-  /** The window the dot gauge shows; null takes the default pick (5h, else 7d, else the first). */
+  /** The window the dot gauge shows; null takes the default pick (the window closest to its limit). */
   gauge: string | null
   /** Window keys drawn on the chart; null draws the gauged window alone. */
   chart: string[] | null
@@ -202,10 +202,18 @@ export function readUsage(usage: unknown, history: unknown): UsageSnapshot {
   return { updatedAt: finite(record?.updatedAt) ?? Date.now(), providers }
 }
 
-/** The dashboard's default gauge: the 5-hour window, else the 7-day, else the first. */
+/**
+ * The default gauge: the window closest to its limit — the one that will
+ * stop you — so a 10 % 5-hour window never rings while the 7-day sits at
+ * 96 %. A tie goes the dashboard's way: the 5-hour, else the 7-day, else
+ * the first.
+ */
 export function defaultGauge(windows: readonly UsageWindow[]): UsageWindow | null {
-  const starts = (prefix: string) => windows.find((w) => w.key.toLowerCase().startsWith(prefix))
-  return starts('5h') ?? starts('7d') ?? windows[0] ?? null
+  const rank = (w: UsageWindow): number => {
+    const key = w.key.toLowerCase()
+    return key.startsWith('5h') ? 0 : key.startsWith('7d') ? 1 : 2
+  }
+  return windows.reduce<UsageWindow | null>((best, w) => (best === null || w.usedPct > best.usedPct || (w.usedPct === best.usedPct && rank(w) < rank(best)) ? w : best), null)
 }
 
 /**
