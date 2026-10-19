@@ -409,8 +409,14 @@ _Avoid_: quota, billing
 **Calendar**:
 The month on the Idle Screen, right of the clock (2026-10-19 ask: "have a
 calendar in the idle screen"): the locale's weeks, today in a red disc,
-a dot under any day with events, hidden on a window too narrow to clear
-the clock. Events come from Calendar Sources — one per provider, each
+England and Wales's bank holidays in a green disc with the next one named
+under the month ("bank holidays in the UK marked"), a dot under any day
+with events. It is sized for the appliance's 21-inch 1920×1080 display,
+growing with the screen's height and still fitting 1280×800, and hidden
+on a window too narrow to clear the clock. Bank holidays are computed, not
+fetched — the rules plus the proclaimed one-offs, matching
+gov.uk/bank-holidays.json 2019–2028; a new proclamation is added by hand.
+Events come from Calendar Sources — one per provider, each
 answering the events in a range — that main asks together, a failing one
 left out; the Idle Screen leads its bottom band with Up Next, today's
 timed event under way or coming (an all-day one only when nothing timed

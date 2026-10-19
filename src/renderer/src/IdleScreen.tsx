@@ -7,6 +7,7 @@ import { countdownLabel, describeDuration } from '../../core/timer/duration'
 import type { TimerState } from '../../core/timer/timer'
 import type { CalendarEvent } from '../../core/calendar/calendar'
 import { monthGrid, upNext, weekStartOf, type UpNext } from '../../core/calendar/month'
+import { nextHoliday, ukBankHolidays } from '../../core/calendar/ukBankHolidays'
 import { useCalendarEvents } from './useCalendar'
 import type { VoiceHint } from '../../core/voice/voiceHint'
 import type { WeatherState } from './useWeather'
@@ -174,12 +175,16 @@ function eventTime(event: CalendarEvent, now: Date): string {
 
 /**
  * The Calendar (CONTEXT.md), beside the clock: this month in the locale's
- * weeks, today in a red disc, weekends quieter, and a dot under any day a
- * source has events on — none is wired yet, so today it is the month alone.
+ * weeks, today in a red disc, weekends quieter, England and Wales's bank
+ * holidays tinted with the next one named under the month, and a dot under
+ * any day a source has events on — none is wired yet.
  */
 function MonthCalendar({ now, weekStart, events }: { now: Date; weekStart: number; events: readonly CalendarEvent[] }) {
-  const grid = monthGrid(now, weekStart, events)
+  // This year's and next, so December's trailing days and its "next" reach into January.
+  const holidays = [...ukBankHolidays(now.getFullYear()), ...ukBankHolidays(now.getFullYear() + 1)]
+  const grid = monthGrid(now, weekStart, events, holidays)
   const monthName = new Date(grid.month).toLocaleDateString([], { month: 'long' })
+  const coming = nextHoliday(now, holidays)
   return (
     <section className="idle-cal" aria-label={`calendar: ${monthName} ${now.getFullYear()}`}>
       <header className="idle-cal-head">
@@ -201,16 +206,19 @@ function MonthCalendar({ now, weekStart, events }: { now: Date; weekStart: numbe
                 'idle-cal-day',
                 isWeekend(grid.weekdays[column]) ? 'idle-cal-weekend' : '',
                 day.isToday ? 'idle-cal-day--today' : '',
+                day.inMonth && day.holiday !== null ? 'idle-cal-day--holiday' : '',
               ]
                 .filter(Boolean)
                 .join(' ')
+              const label = [String(day.day), day.holiday, day.events > 0 ? `${day.events} events` : null].filter(Boolean).join(', ')
               return (
                 <span
                   key={day.start}
                   role="gridcell"
                   className={className}
                   aria-current={day.isToday ? 'date' : undefined}
-                  aria-label={day.inMonth ? `${day.day}${day.events > 0 ? `, ${day.events} events` : ''}` : undefined}
+                  aria-label={day.inMonth ? label : undefined}
+                  title={day.inMonth && day.holiday !== null ? day.holiday : undefined}
                 >
                   {day.inMonth ? day.day : null}
                   {day.inMonth && day.events > 0 ? <span className="idle-cal-dot" aria-hidden="true" /> : null}
@@ -220,8 +228,26 @@ function MonthCalendar({ now, weekStart, events }: { now: Date; weekStart: numbe
           </div>
         ))}
       </div>
+      {coming !== null ? (
+        <p className="idle-cal-holiday" aria-label={`next bank holiday: ${coming.title}, ${holidayDate(coming.date, now)}`}>
+          <span className="idle-cal-swatch" aria-hidden="true" />
+          <span className="idle-cal-holiday-title">{coming.title}</span>
+          <span className="idle-cal-holiday-date">{holidayDate(coming.date, now)}</span>
+        </p>
+      ) : null}
     </section>
   )
+}
+
+/** A holiday's day as the footer names it: "today", "tomorrow", else "Fri 25 Dec". */
+function holidayDate(date: string, now: Date): string {
+  const [year, month, day] = date.split('-').map(Number)
+  const at = new Date(year, month - 1, day)
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const days = Math.round((at.getTime() - today.getTime()) / (24 * 60 * 60 * 1000))
+  if (days === 0) return 'today'
+  if (days === 1) return 'tomorrow'
+  return at.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' })
 }
 
 /**

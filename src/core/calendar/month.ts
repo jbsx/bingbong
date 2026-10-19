@@ -1,5 +1,6 @@
 import { reportFault } from '../trace/fault'
 import type { CalendarEvent, CalendarRange } from './calendar'
+import { localDateKey, type Holiday } from './ukBankHolidays'
 
 /** One cell of the month grid, a local calendar day. */
 export interface CalendarDay {
@@ -12,6 +13,8 @@ export interface CalendarDay {
   readonly isToday: boolean
   /** How many events touch this day. */
   readonly events: number
+  /** The public holiday this day is, by name; null on an ordinary day. */
+  readonly holiday: string | null
 }
 
 export interface MonthGrid {
@@ -39,11 +42,17 @@ export function monthRange(now: Date, weekStart: number): CalendarRange {
 
 /**
  * The month `now` falls in as whole weeks starting on `weekStart`, today
- * marked and each day's events counted. Days are built from the local
- * calendar, never by adding 24 hours, so a daylight-saving change cannot
- * shift a cell.
+ * marked, each day's events counted and its holiday named. Days are built
+ * from the local calendar, never by adding 24 hours, so a daylight-saving
+ * change cannot shift a cell.
  */
-export function monthGrid(now: Date, weekStart: number, events: readonly CalendarEvent[] = []): MonthGrid {
+export function monthGrid(
+  now: Date,
+  weekStart: number,
+  events: readonly CalendarEvent[] = [],
+  holidays: readonly Holiday[] = [],
+): MonthGrid {
+  const holidayOn = new Map(holidays.map((holiday) => [holiday.date, holiday.title]))
   const year = now.getFullYear()
   const month = now.getMonth()
   const today = midnight(year, month, now.getDate())
@@ -62,6 +71,7 @@ export function monthGrid(now: Date, weekStart: number, events: readonly Calenda
       inMonth: date.getMonth() === month,
       isToday: start === today,
       events: events.filter((event) => event.start < end && event.end > start).length,
+      holiday: holidayOn.get(localDateKey(start)) ?? null,
     })
   }
   return {

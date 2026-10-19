@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { CalendarEvent } from './calendar'
 import { eventsLeftToday, monthGrid, monthRange, upNext, weekStartOf } from './month'
+import { ukBankHolidays } from './ukBankHolidays'
 
 function event(title: string, start: Date, end: Date, allDay = false): CalendarEvent {
   return { id: title, source: 'test', title, start: start.getTime(), end: end.getTime(), allDay }
@@ -55,6 +56,18 @@ describe('monthGrid', () => {
     expect(days.get(new Date(2026, 9, 20).getTime())).toBe(2)
     expect(days.get(new Date(2026, 9, 21).getTime())).toBe(1)
     expect(days.get(new Date(2026, 9, 22).getTime())).toBe(0)
+  })
+})
+
+describe('monthGrid holidays', () => {
+  it('names the holidays on their days, the neighbouring months included', () => {
+    const days = monthGrid(new Date(2026, 11, 10), 1, [], [...ukBankHolidays(2026), ...ukBankHolidays(2027)]).weeks.flat()
+    const named = days.filter((day) => day.holiday !== null).map((day) => [day.day, day.inMonth, day.holiday])
+    expect(named).toEqual([
+      [25, true, 'Christmas Day'],
+      [28, true, 'Boxing Day'],
+      [1, false, 'New Year’s Day'],
+    ])
   })
 })
 
