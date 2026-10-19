@@ -218,14 +218,40 @@ describe('news sources (#348)', () => {
   })
 
   it('adds the News card to Pinned Cards saved before it existed, but keeps it off once unpinned', () => {
-    expect(sanitizeSettings({ idleCards: ['calendar', 'weather'] }).idleCards).toEqual(['calendar', 'weather', 'news'])
-    expect(sanitizeSettings({ idleCards: ['calendar', 'weather'], news: { topics: [] } }).idleCards).toEqual(['calendar', 'weather'])
+    expect(sanitizeSettings({ idleCards: ['calendar', 'weather'], body: {} }).idleCards).toEqual(['calendar', 'weather', 'news'])
+    expect(sanitizeSettings({ idleCards: ['calendar', 'weather'], news: { topics: [] }, body: {} }).idleCards).toEqual(['calendar', 'weather'])
   })
 
   it('reads the default list from before the three-by-four grid as today’s default, the Last Page with it, and keeps any other order', () => {
-    const today = ['weather', 'calendar', 'lastPage', 'news', 'usage', 'music']
+    const today = ['weather', 'calendar', 'lastPage', 'weight', 'usage', 'news', 'music']
     expect(sanitizeSettings({ idleCards: ['weather', 'usage', 'calendar', 'music', 'news'], news: { topics: [] } }).idleCards).toEqual(today)
     expect(sanitizeSettings({ idleCards: ['weather', 'usage', 'calendar', 'music'] }).idleCards).toEqual(today)
-    expect(sanitizeSettings({ idleCards: ['usage', 'weather', 'calendar', 'music', 'news'], news: { topics: [] } }).idleCards).toEqual(['usage', 'weather', 'calendar', 'music', 'news'])
+    expect(sanitizeSettings({ idleCards: ['usage', 'weather', 'calendar', 'music', 'news'], news: { topics: [] }, body: {} }).idleCards).toEqual(['usage', 'weather', 'calendar', 'music', 'news'])
+  })
+})
+
+describe('the Weight card and the Body Profile (#350)', () => {
+  it('pins the Weight card and starts with no Body Profile and no remembered scale', () => {
+    const settings = defaultSettings()
+    expect(settings.idleCards).toContain('weight')
+    expect(settings.body).toEqual({ heightCm: null, birthDate: null, sex: null })
+    expect(settings.scale).toEqual({ address: '' })
+  })
+
+  it('reads the default list from before the Weight card as today’s default, and adds the card to any other list saved before it', () => {
+    expect(sanitizeSettings({ idleCards: ['weather', 'calendar', 'lastPage', 'news', 'usage', 'music'], news: { topics: [] } }).idleCards).toEqual(['weather', 'calendar', 'lastPage', 'weight', 'usage', 'news', 'music'])
+    expect(sanitizeSettings({ idleCards: ['news', 'weather'], news: { topics: [] } }).idleCards).toEqual(['news', 'weather', 'weight'])
+    expect(sanitizeSettings({ idleCards: ['news', 'weather'], news: { topics: [] }, body: {} }).idleCards).toEqual(['news', 'weather'])
+  })
+
+  it('keeps a sensible profile and drops what is not one', () => {
+    expect(sanitizeSettings({ body: { heightCm: 180, birthDate: '1991-03-01', sex: 'male' } }).body).toEqual({ heightCm: 180, birthDate: '1991-03-01', sex: 'male' })
+    expect(sanitizeSettings({ body: { heightCm: 18, birthDate: '1991-02-31', sex: 'm' } }).body).toEqual({ heightCm: null, birthDate: null, sex: null })
+    expect(sanitizeSettings({ body: { heightCm: '180', birthDate: 19910301, sex: 'female' } }).body).toEqual({ heightCm: null, birthDate: null, sex: 'female' })
+  })
+
+  it('keeps a scale address as Bluetooth writes it, and nothing else', () => {
+    expect(sanitizeSettings({ scale: { address: 'a4:c1:38:f7:c6:58' } }).scale).toEqual({ address: 'A4:C1:38:F7:C6:58' })
+    expect(sanitizeSettings({ scale: { address: 'the bathroom' } }).scale).toEqual({ address: '' })
   })
 })

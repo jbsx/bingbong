@@ -5,6 +5,9 @@ import type { NowPlaying } from '../core/music/nowPlaying'
 import type { UsageSnapshot } from '../core/usage/usage'
 import type { CalendarEvent, CalendarRange } from '../core/calendar/calendar'
 import type { NewsHorizons } from '../core/news/newsDesk'
+import type { ScaleStatus } from '../core/scale/ipcChannels'
+import type { WeighIn } from '../core/scale/weighIns'
+import type { WeighInPopupState } from '../core/scale/weighInPopup'
 import type { PipelineEvent } from '../core/pipeline/events'
 import type { AppSettings } from '../core/settings/settings'
 import type { VoiceErrorEvent, VoiceHeardEvent, VoicePartialEvent, VoiceState } from '../core/voice/ipcChannels'
@@ -134,6 +137,20 @@ export interface BingbongFeedPanelApi {
   onTyped(listener: (text: string) => void): () => void
 }
 
+export interface BingbongWeightApi {
+  /** Every Weigh-in (CONTEXT.md), oldest first. */
+  list(): Promise<WeighIn[]>
+  /** Deletes the Weigh-in at that time (a mis-weigh, a guest); answers the rest. */
+  remove(at: number): Promise<WeighIn[]>
+  onChange(listener: (weighIns: WeighIn[]) => void): () => void
+  /** The Weigh-in pop-up's state, which main folds from the scale's readings. */
+  popup(): Promise<WeighInPopupState>
+  onPopup(listener: (state: WeighInPopupState) => void): () => void
+  /** The Scale Listener's state, for the settings Body section. */
+  status(): Promise<ScaleStatus>
+  onStatus(listener: (status: ScaleStatus) => void): () => void
+}
+
 export interface BingbongApi {
   version: string
   /** Launch flags/env snapshot (kiosk mode, idle timeout). */
@@ -145,6 +162,7 @@ export interface BingbongApi {
   usage: BingbongUsageApi
   calendar: BingbongCalendarApi
   news: BingbongNewsApi
+  weight: BingbongWeightApi
   assistant: BingbongAssistantApi
   settings: BingbongSettingsApi
   tts: BingbongTtsApi

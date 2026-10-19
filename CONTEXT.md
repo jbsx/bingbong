@@ -384,8 +384,9 @@ hours and the three coming days, all in the city's own clock — the sky as a
 colored glyph, every temperature in its hue from blue through green to red,
 rain in blue, so the day reads from across the room; the hours' temperature
 row is left off when every hour reads the same), the AI Usage card, the
-Calendar, the News card with Today's Highlight and Big News, and the Last
-Page with its way back — and under them, only while any of them is there,
+Calendar, the News card with Today's Highlight and Big News, the Weight
+card with the latest Weigh-in and its trend, and the Last Page with its way
+back — and under them, only while any of them is there,
 a dock of chips: the Timer when one is set, today's next event when the
 Calendar has one, and Now Playing while the Player holds a song; the grid's
 rows shrink to make its room. The canvas is the sheet's own with one
@@ -443,7 +444,10 @@ no fill. A card offers the sizes it can draw at, largest first: the weather
 1×3 (now, the hours, the days), 1×2, 1×1; the AI Usage 1×2 (rings, chart),
 1×1; the Calendar 1×2 (the month with entries) only while it has events,
 else 1×1 (this week and next); News 2×2 (the highlight beside Big News),
-1×2 (one over the other), 1×1; the Last Page 1×1; a note 1×1. As many Pinned Cards are shown as the grid
+1×2 (one over the other), 1×1; the Weight card 1×2 (the weight, the change
+against a week ago and the body fat over the 30 days' trend), 1×1 (the
+weight and the change) while there is a Weigh-in, else a 1×1 note; the
+Last Page 1×1; a note 1×1. As many Pinned Cards are shown as the grid
 holds before any of them takes a larger box (owner, 2026-10-19: "why is the
 calendar hidden now?" — the News card's 2×2 had pushed the event-less
 Calendar off); then each gets the largest that still fits, the cards with
@@ -473,13 +477,16 @@ _Avoid_: strip, tray
 
 **Pinned Cards**:
 The Idle Screen's cards the owner chose in settings, in the order they fill
-the grid's columns (untouched: weather, Calendar, Last Page, News, AI
-Usage, Now Playing — the order that puts the weather down the left, the
-Calendar and the Last Page over News in the middle and the AI Usage down
-the right, #352); one left out is not shown. A card added after the list
-was saved (News, #346) joins its end once; unpinned after that, it stays
-off. A list saved as the default from before the three-by-four grid is
-read as today's default.
+the grid's columns (untouched: weather, Calendar, Last Page, Weight, AI
+Usage, News, Now Playing — the order that puts the weather down the left,
+the Calendar and the Last Page over the Weight card in the middle and the
+AI Usage over News down the right, #352, #350; the Weight card ahead of
+the AI Usage and News so its two cells come from News's 2×2, not the usage
+chart); one left out is not shown. A card added after the list was saved
+(News, #346; Weight, #350) joins its end once; unpinned after that, it
+stays off. A list saved as an earlier default — from before the
+three-by-four grid, or from before the Weight card — is read as today's
+default.
 A card that has nothing to say — the weather unset or loading, the usage
 dashboard unreachable, no news yet — keeps a small Card Slot with its line.
 
@@ -688,6 +695,82 @@ off. At zero it rings: a synthesized alarm, played back to back through
 its own player for at most a minute. It lives in main and does not
 survive a restart. `timer` is the grammar's alone: Jev is never offered it.
 _Avoid_: alarm (for the countdown), stopwatch, reminder
+
+**Weigh-in**:
+One stepping-on of the owner's bathroom scale, recorded (#350; owner,
+2026-10-19: "keeps track of my weight, along with other metrics the scale
+can measure"): the time the reading settled, the weight in kg and the
+scale's two resistances — nothing worked out from them, so a Body Profile
+edit or a formula fix recomputes the whole history. Kept in
+`weighins.json` in userData. Its figures are worked out on every read:
+BMI from the height; body fat, water, muscle, bone and lean mass from the
+weight, the first resistance and the whole Body Profile (openScale's Trisa
+formulas, fed as its QNHandler feeds them); BMR (Mifflin–St Jeor) from the
+weight and the profile. A figure the profile cannot support is
+unavailable, never a made-up number; one stepping-on with no resistance
+measured has no impedance figures. No visceral fat or metabolic age: no
+published formula. Deleted from the Weight page for a mis-weigh or a guest.
+Bing Bong is the scale's only reader (owner: "ill stop using the renpho
+app"), so there is no history import and no cloud.
+_Avoid_: measurement, reading (for the record), entry
+
+**Scale Listener**:
+The part of main that reads the scale over Bluetooth while Bing Bong runs
+(#350): BlueZ over the system D-Bus with a pure-JS client (dbus-next — no
+native module, no root, no Python), discovery filtered to LE adverts of
+the QN service. The scale (a QN-Scale, RENPHO's OEM) only advertises when
+stepped on, and its advert carries no weight, so the listener connects:
+answers its handshake (the unit set to kg on every connection), reads the
+weight frames and records the first stable one of at least 5 kg as the
+Weigh-in — its repeats and later stable frames ignored until the owner
+steps off. The first QN-family scale it connects to is remembered by
+address in settings and others are ignored after that; Forget in the Body
+section clears it. A scale quiet for 15 s is let go. With Bluetooth
+missing, off or without LE, it says so once to the log and in the Body
+section, and tries again when an adapter or BlueZ appears; nothing else is
+disturbed. The e2e replaces it with a stand-in scale that plays captured
+frames from a file, so no test reaches the real scale.
+_Avoid_: scale driver, BLE service
+
+**Body Profile**:
+The owner's height, date of birth and sex, in settings' Body section
+(#350), that a Weigh-in's figures are worked out from — the age is taken
+on each Weigh-in's own day. Any field may be unset: weight is still
+recorded and shown, BMI needs the height, and the rest need all three; a
+missing figure says "set your body profile in Settings". One person for
+now, the owner (several people follow in their own ticket, #351).
+_Avoid_: user profile, account
+
+**Weight card**:
+The Idle Screen's Pinned Card of the latest Weigh-in (#350): in a 1×2 Card
+Slot the weight large, its change against the last Weigh-in a week or more
+before it, the body fat, and in the tile under them the last 30 days as a
+line; in one cell the weight and the change. With no Weigh-in yet it is a
+note, "Step on the scale". A tap opens the Weight page, on the pointer
+going down like the other idle controls.
+_Avoid_: weight widget, scale card
+
+**Weight page**:
+A full-window view beside Settings, with its own Back (#350; owner:
+"idle screen which being clicked on navigates to a full screen page with
+all the details and longer historic data"): the latest Weigh-in with every
+figure and its change since the one before, a chart per figure over 30
+days, 90 days, a year or all of it, and every Weigh-in newest first, each
+with a Delete. It says the impedance figures are estimates. Charts are SVG,
+drawn like the AI Usage chart; no chart library.
+_Avoid_: weight dashboard, history screen
+
+**Weigh-in pop-up**:
+While the owner stands on the scale, the weight settling, shown over
+whatever is on screen (#350): the live weight while it moves, then the
+settled weight with a stable mark and the change since the previous
+Weigh-in; it goes about 8 s after the owner steps off. Bottom-centre in
+the Peek Card's place and size — drawn by the dashboard over the Idle
+Screen, Settings and the Weight page, and in the overlay over the browsing
+pane, where it outranks the Peek Card and rides an open panel's top. Never
+spoken (owner: "never spoken"), never focused, and never activity: it does
+not wake the Idle Screen away or hold it off.
+_Avoid_: toast, notification, scale overlay
 
 **Player**:
 The appliance's music, with YouTube in the browser pane as the player and

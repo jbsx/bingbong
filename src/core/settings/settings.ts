@@ -7,6 +7,7 @@ import { defaultUsagePrefs, sanitizeUsagePrefs, type UsagePrefs } from '../usage
 import { IDLE_CARD_IDS, sanitizeIdleCards, type IdleCardId } from '../idle/slots'
 import { defaultNewsFeeds, sanitizeNewsFeeds, type NewsFeed } from '../news/feeds'
 import { defaultInterestProfile, sanitizeInterestProfile, type InterestProfile } from '../news/interestProfile'
+import type { BodyProfile } from '../scale/bodyComposition'
 
 export const WAKE_WORD_THRESHOLD_MIN = 0
 export const WAKE_WORD_THRESHOLD_MAX = 1
@@ -97,6 +98,10 @@ export interface AppSettings {
    * it — and the feeds it reads (core/news/feeds).
    */
   news: { topics: InterestProfile; feeds: NewsFeed[] }
+  /** The Body Profile (core/scale/bodyComposition) the Weigh-ins' figures are worked out from; any field may be unset. */
+  body: BodyProfile
+  /** The scale the Scale Listener remembered by its Bluetooth address ('' until one is seen, or once forgotten). */
+  scale: { address: string }
 }
 
 /** The owner's dashboard on the LAN, so the Idle Screen shows it out of the box. */
@@ -118,6 +123,8 @@ export function defaultSettings(): AppSettings {
     usageDashboard: { url: USAGE_DASHBOARD_URL_DEFAULT, ...defaultUsagePrefs() },
     idleCards: [...IDLE_CARD_IDS],
     news: { topics: defaultInterestProfile(), feeds: defaultNewsFeeds() },
+    body: { heightCm: null, birthDate: null, sex: null },
+    scale: { address: '' },
   }
 }
 
@@ -164,23 +171,50 @@ export function asAppearance(value: unknown): Appearance {
   return value === 'light' || value === 'dark' || value === 'system' ? value : 'system'
 }
 
-/**
- * The Pinned Cards as saved, and the News card added at the end when the
- * settings were saved before it existed — they have no `news` section — so
- * it is on by default for an owner who already ordered the others. Once
- * saved with the News section, a list without it means it was unpinned.
- * A list that is the default from before the three-by-four grid (#352) is
- * read as today's default, which adds the Last Page and orders the cards
- * for the new grid; any other order is the owner's and stays.
- */
 /** The default Pinned Cards before the grid became three by four (#352). */
 const OLD_DEFAULT_IDLE_CARDS: readonly IdleCardId[] = ['weather', 'usage', 'calendar', 'music', 'news']
 
+/** The default Pinned Cards on the three-by-four grid before the Weight card (#350). */
+const GRID_DEFAULT_IDLE_CARDS: readonly IdleCardId[] = ['weather', 'calendar', 'lastPage', 'news', 'usage', 'music']
+
+function sameCards(a: readonly IdleCardId[], b: readonly IdleCardId[]): boolean {
+  return a.length === b.length && a.every((id, index) => id === b[index])
+}
+
+/**
+ * The Pinned Cards as saved, and a card added at the end when the
+ * settings were saved before it existed — the News card when they have no
+ * `news` section, the Weight card when they have no `body` — so it is on by
+ * default for an owner who already ordered the others. Once saved with its
+ * section, a list without the card means it was unpinned. A list that is
+ * an earlier default — from before the three-by-four grid (#352), or from
+ * before the Weight card — is read as today's default; any other order is
+ * the owner's and stays.
+ */
 function pinnedCards(record: Record<string, unknown>): IdleCardId[] {
   const saved = sanitizeIdleCards(record.idleCards)
   const cards = record.news === undefined && !saved.includes('news') ? [...saved, 'news' as const] : saved
-  const oldDefault = cards.length === OLD_DEFAULT_IDLE_CARDS.length && cards.every((id, index) => id === OLD_DEFAULT_IDLE_CARDS[index])
-  return oldDefault ? [...IDLE_CARD_IDS] : cards
+  const beforeWeight = record.body === undefined
+  if (sameCards(cards, OLD_DEFAULT_IDLE_CARDS) || (beforeWeight && sameCards(cards, GRID_DEFAULT_IDLE_CARDS))) return [...IDLE_CARD_IDS]
+  return beforeWeight && !cards.includes('weight') ? [...cards, 'weight'] : cards
+}
+
+/** A height in cm a person could have; anything else unset. */
+function asHeight(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 50 && value <= 250 ? value : null
+}
+
+/** A real calendar date, YYYY-MM-DD; anything else unset. */
+function asBirthDate(value: unknown): string | null {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null
+  const [year, month, day] = value.split('-').map(Number)
+  const date = new Date(year, month - 1, day)
+  return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day ? value : null
+}
+
+/** A Bluetooth address as BlueZ writes it (upper case); anything else none. */
+function asScaleAddress(value: unknown): string {
+  return typeof value === 'string' && /^[0-9a-f]{2}(:[0-9a-f]{2}){5}$/i.test(value.trim()) ? value.trim().toUpperCase() : ''
 }
 
 /** Parse anything (disk, IPC) into valid settings; unknown bits fall back to defaults. */
@@ -192,6 +226,7 @@ export function sanitizeSettings(raw: unknown): AppSettings {
   const weather = asRecord(record.weather)
   const usageDashboard = asRecord(record.usageDashboard)
   const news = asRecord(record.news)
+  const body = asRecord(record.body)
 
   return {
     micId: asString(record.micId, defaults.micId),
@@ -212,6 +247,8 @@ export function sanitizeSettings(raw: unknown): AppSettings {
     usageDashboard: { url: asString(usageDashboard?.url, defaults.usageDashboard.url), ...sanitizeUsagePrefs(usageDashboard) },
     idleCards: pinnedCards(record),
     news: { topics: news === null ? defaultInterestProfile() : sanitizeInterestProfile(news.topics), feeds: sanitizeNewsFeeds(news?.feeds) },
+    body: { heightCm: asHeight(body?.heightCm), birthDate: asBirthDate(body?.birthDate), sex: body?.sex === 'male' || body?.sex === 'female' ? body.sex : null },
+    scale: { address: asScaleAddress(asRecord(record.scale)?.address) },
   }
 }
 

@@ -5,6 +5,8 @@ import { overlaySlotContent } from '../../../core/panel/peekCardState'
 import { PeekCard } from '../PeekCard'
 import { reportRendererFault } from '../diagnostics'
 import { usePeekCard } from '../usePeekCard'
+import { WeighInPopup } from '../WeighInPopup'
+import { useWeighInPopup } from '../useWeight'
 import { PromptBar } from './PromptBar'
 import { useOverlayFeed, usePanelState } from './useOverlayFeed'
 import { useRunProgress } from './useRunProgress'
@@ -37,7 +39,9 @@ export function OverlayPanel() {
   // single element shows (panel, card, or edge tab); the dashboard sizes
   // the slot rect from the same rule.
   const peek = usePeekCard(open)
-  const slotContent = overlaySlotContent(open, peek.state)
+  // The Weigh-in pop-up (#350) over the browsing pane: in the card's place, or riding the open panel's top.
+  const weighIn = useWeighInPopup()
+  const slotContent = overlaySlotContent(open, peek.state, weighIn.phase !== 'hidden')
   const surfaceRef = useRef<HTMLDivElement>(null)
   // Drag bookkeeping: the surface's fixed right edge (the panel hugs it
   // for the whole drag). Null when no drag is live.
@@ -137,7 +141,7 @@ export function OverlayPanel() {
   return (
     <div
       className={`overlay-chrome overlay-chrome--${open ? 'open' : 'collapsed'}${
-        slotContent === 'card' ? ' overlay-chrome--peek' : ''
+        slotContent === 'card' ? ' overlay-chrome--peek' : slotContent === 'weighin' ? ' overlay-chrome--weighin' : ''
       }`}
     >
       <div
@@ -160,6 +164,7 @@ export function OverlayPanel() {
           Card replaces the edge tab while it is visible — both are the
           same human act (clicking opens the panel), and the native view's
           bounds shrink-wrap whichever one shows. */}
+      {slotContent === 'weighin' || (slotContent === 'panel' && weighIn.phase !== 'hidden') ? <WeighInPopup state={weighIn} /> : null}
       {slotContent === 'card' ? (
         <PeekCard
           state={peek.state}

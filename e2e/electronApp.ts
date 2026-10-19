@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process'
 import type { Writable } from 'node:stream'
 import { createServer } from 'node:net'
+import { join } from 'node:path'
 import { connectCdp, type CdpClient } from './cdpClient'
 import { sleep, waitFor } from './waitFor'
 
@@ -86,6 +87,8 @@ export async function launchApp({
     stdio: pipeStdio ? ['pipe', 'pipe', 'pipe'] : ['ignore', 'ignore', 'pipe'],
     env: buildEnv(process.env, {
       BINGBONG_USER_DATA_DIR: userDataDir,
+      // Every launch weighs on the stand-in scale, never the machine's Bluetooth: a test steps on by writing this file.
+      BINGBONG_SCALE_FIXTURE: join(userDataDir, 'scale-frames.txt'),
       ELECTRON_OZONE_PLATFORM_HINT: 'x11',
       WAYLAND_DISPLAY: undefined,
       XDG_SESSION_TYPE: 'x11',

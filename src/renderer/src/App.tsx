@@ -4,6 +4,9 @@ import { ChromeIcon } from './ChromeIcon'
 import { RunHint, StatusOrb, StatusPill } from './AssistantPanel'
 import { IdleScreen } from './IdleScreen'
 import { SettingsPage } from './SettingsPage'
+import { WeightPage } from './WeightPage'
+import { WeighInPopup } from './WeighInPopup'
+import { useWeighInPopup, useWeighIns } from './useWeight'
 import { useAssistant } from './useAssistant'
 import { overlaySlotContent } from '../../core/panel/peekCardState'
 import { useFeedPanel, useFeedSlotRect } from './useFeedPanel'
@@ -24,7 +27,8 @@ import { wakesIdleScreen } from '../../core/idle/idleWake'
 export function App() {
   const assistant = useAssistant()
   const { settings, save } = useSettings()
-  const [view, setView] = useState<'dashboard' | 'settings'>('dashboard')
+  // Settings and the Weight page (#350) are full-window views beside the browsing dashboard, each with its own Back.
+  const [view, setView] = useState<'dashboard' | 'settings' | 'weight'>('dashboard')
   const idle = useIdle()
   // Feed panel layout state (#45): the panel renders in its own overlay
   // webContents above the browser pane; this slot is the rect its bounds
@@ -36,13 +40,17 @@ export function App() {
   // overlay view (ADR 0029); the dashboard folds the same events only
   // to size the slot rect the card floats in.
   const peek = usePeekCard(panel.open)
-  const slotContent = overlaySlotContent(panel.open, peek.state)
-  // Nothing of the panel's ever covers the settings page (#329, #334):
-  // while it is open the slot reports no bounds and takes no room, and
-  // leaving settings brings back whatever showed before — open or
-  // collapsed, Overlay or Docked, same width. Hiding never touches the
-  // panel's state, so it is not the system opening or closing it.
-  const settingsShown = view === 'settings'
+  // The Weigh-in pop-up (#350): over the browsing pane it takes the Peek
+  // Card's place in the overlay; over every other view the dashboard draws it.
+  const weighInPopup = useWeighInPopup()
+  const weighIns = useWeighIns()
+  const slotContent = overlaySlotContent(panel.open, peek.state, weighInPopup.phase !== 'hidden')
+  // Nothing of the panel's ever covers the settings page or the Weight
+  // page (#329, #334): while one is open the slot reports no bounds and
+  // takes no room, and leaving it brings back whatever showed before —
+  // open or collapsed, Overlay or Docked, same width. Hiding never touches
+  // the panel's state, so it is not the system opening or closing it.
+  const settingsShown = view !== 'dashboard'
   const feedSlotRef = useFeedSlotRect(`${panel.mode}-${slotContent}`, settingsShown)
 
   const getMicId = useCallback(() => settings?.micId ?? 'default', [settings])
@@ -115,7 +123,26 @@ export function App() {
   useEffect(() => window.bingbong.idle.reportShown(showIdle), [showIdle])
 
   if (showIdle) {
-    return <IdleScreen weather={weather} usage={usage} usagePrefs={settings?.usageDashboard ?? defaultUsagePrefs()} cards={settings?.idleCards} news={news} lastPage={lastPage} timer={timer} nowPlaying={nowPlaying} status={status} hint={hint} />
+    return (
+      <>
+        <IdleScreen
+          weather={weather}
+          usage={usage}
+          usagePrefs={settings?.usageDashboard ?? defaultUsagePrefs()}
+          cards={settings?.idleCards}
+          news={news}
+          lastPage={lastPage}
+          timer={timer}
+          nowPlaying={nowPlaying}
+          weighIns={weighIns}
+          body={settings?.body}
+          onOpenWeight={() => setView('weight')}
+          status={status}
+          hint={hint}
+        />
+        <WeighInPopup state={weighInPopup} />
+      </>
+    )
   }
 
   return (
@@ -187,6 +214,8 @@ export function App() {
             ) : (
               <p className="settings-loading">Loading settings…</p>
             )
+          ) : view === 'weight' ? (
+            <WeightPage weighIns={weighIns} profile={settings?.body ?? { heightCm: null, birthDate: null, sex: null }} onClose={() => setView('dashboard')} />
           ) : (
             <div className="dashboard-browsing">
               <BrowserPane />
@@ -197,12 +226,14 @@ export function App() {
           <div
             ref={feedSlotRef}
             className={`feed-slot feed-slot--${panel.mode}${
-              slotContent === 'card' ? ' feed-slot--peek' : slotContent === 'tab' ? ' feed-slot--collapsed' : ''
+              slotContent === 'card' || slotContent === 'weighin' ? ' feed-slot--peek' : slotContent === 'tab' ? ' feed-slot--collapsed' : ''
             }${settingsShown ? ' feed-slot--hidden' : ''}`}
             aria-hidden="true"
           />
         </div>
       </main>
+      {/* Over Settings and the Weight page no native view covers the dashboard, so the pop-up is drawn here. */}
+      {view !== 'dashboard' ? <WeighInPopup state={weighInPopup} /> : null}
     </div>
   )
 }

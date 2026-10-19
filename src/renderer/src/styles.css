@@ -1368,6 +1368,8 @@ body {
 }
 
 .settings-field input[type='text'],
+.settings-field input[type='number'],
+.settings-field input[type='date'],
 .settings-field input[type='password'],
 .settings-field select {
   height: 36px;
@@ -3502,4 +3504,375 @@ body {
   width: 18px;
   height: 18px;
   accent-color: var(--accent);
+}
+
+/* ---- the Weight card (#350) ----
+   A Pinned Card of glass tiles: the latest weight large over its change
+   against a week ago and the body fat, the 30 days' trend in the tile
+   under it; given one cell, the weight and the change. The weight is sized
+   to the slot (container query units), so one cell still holds all three
+   lines. The whole card is the tap that opens the Weight page. */
+.weight-card {
+  -webkit-app-region: no-drag;
+  cursor: pointer;
+}
+
+.weight-card:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 4px;
+  border-radius: 26px;
+}
+
+.weight-card-now {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  padding: 18px 28px;
+}
+
+.weight-card-kg {
+  font-size: min(96px, 36cqh);
+  font-weight: 250;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.weight-card-kg small {
+  font-size: 0.32em;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--muted);
+}
+
+.weight-card-change {
+  font-size: 1.5rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.weight-card-change--flat,
+.weight-card-change--none,
+.weight-card-change-span {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.weight-card-fat {
+  font-size: 1.3rem;
+  color: var(--muted);
+}
+
+.weight-card-fat b {
+  color: var(--text);
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.weight-card-note {
+  font-size: 1rem;
+}
+
+.weight-card-trend {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 20px 24px 24px;
+}
+
+/* ---- the weight charts: the card's trend and the Weight page's figures ----
+   Drawn like the usage chart: the plot stretches to its room, the stroke
+   keeps its width, the dots and labels sit in HTML. */
+.weight-chart {
+  flex: 1 1 auto;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
+  column-gap: 10px;
+  row-gap: 4px;
+  min-height: 0;
+}
+
+.weight-chart-y {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  font-size: 0.85rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.weight-chart--compact .weight-chart-y {
+  font-size: 1rem;
+}
+
+.weight-chart-area {
+  position: relative;
+  min-height: 0;
+  border-bottom: 1px solid var(--edge);
+}
+
+.weight-chart-area > svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.weight-chart-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 3;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.weight-chart-fill {
+  fill: color-mix(in srgb, var(--accent) 12%, transparent);
+  stroke: none;
+}
+
+.weight-chart-dot {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  transform: translate(-50%, -50%);
+}
+
+.weight-chart-dot--last {
+  width: 13px;
+  height: 13px;
+  box-shadow: 0 0 0 3px var(--panel);
+}
+
+.weight-chart-none {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.weight-chart-x {
+  grid-column: 2;
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+/* ---- the Weight page (#350): Settings' sheet, wider for the charts ---- */
+.weight-scroll {
+  max-width: 1280px;
+}
+
+.weight-figures {
+  list-style: none;
+  margin: 0 0 16px;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 12px;
+}
+
+.weight-figure {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 16px;
+  border: 1px solid var(--edge);
+  border-radius: 12px;
+}
+
+.weight-figure-label {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.weight-figure-value {
+  font-size: 1.6rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.weight-figure-change {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.weight-history-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.weight-history-head h2 {
+  margin: 0;
+}
+
+.weight-ranges {
+  display: inline-flex;
+  gap: 4px;
+  padding: 3px;
+  border: 1px solid var(--edge);
+  border-radius: 999px;
+}
+
+.weight-range {
+  height: 30px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text);
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.weight-range--on {
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+
+.weight-charts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  gap: 16px;
+}
+
+.weight-chart-figure {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  height: 200px;
+  margin: 0;
+  padding: 12px 16px;
+  border: 1px solid var(--edge);
+  border-radius: 12px;
+}
+
+.weight-chart-figure figcaption {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.weight-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.weight-table th {
+  text-align: left;
+  color: var(--muted);
+  font-weight: 500;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--edge);
+}
+
+.weight-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--edge);
+}
+
+.weight-table td:last-child {
+  text-align: right;
+}
+
+.settings-scale-address {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- the Weigh-in pop-up (#350) ----
+   The weight settling while the owner stands on the scale, bottom-centre
+   in the Peek Card's place and size: over the Idle Screen, Settings and
+   the Weight page in the dashboard, over the browsing pane in the overlay
+   (overlay.css). It takes no pointer and no focus. */
+.weighin-popup {
+  position: fixed;
+  left: 50%;
+  bottom: 20px;
+  z-index: 20;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  width: min(560px, 80%);
+  height: 116px;
+  padding: 14px 26px;
+  border: 1px solid var(--edge);
+  border-radius: 22px;
+  background: var(--panel-peek);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  pointer-events: none;
+  animation: card-in 200ms ease;
+}
+
+.weighin-popup-mark {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 3px solid color-mix(in srgb, var(--muted) 40%, transparent);
+  color: #fff;
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.weighin-popup--live .weighin-popup-mark {
+  border-top-color: var(--accent);
+  animation: weighin-spin 900ms linear infinite;
+}
+
+.weighin-popup--settled .weighin-popup-mark {
+  border-color: var(--status-green);
+  background: var(--status-green);
+}
+
+@keyframes weighin-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.weighin-popup-words {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.weighin-popup-kg {
+  font-size: 48px;
+  font-weight: 300;
+  line-height: 1.05;
+  font-variant-numeric: tabular-nums;
+}
+
+.weighin-popup--live .weighin-popup-kg {
+  color: var(--muted);
+}
+
+.weighin-popup-kg small {
+  font-size: 0.4em;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.weighin-popup-sub {
+  font-size: 1.05rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
 }

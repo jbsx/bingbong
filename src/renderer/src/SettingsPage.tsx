@@ -6,6 +6,8 @@ import { UsageMetricsSettings } from './UsageSettings'
 import { IDLE_CARD_IDS, type IdleCardId } from '../../core/idle/slots'
 import { defaultNewsFeeds, type NewsFeed } from '../../core/news/feeds'
 import { defaultInterestProfile, type InterestProfile, type NewsTopic } from '../../core/news/interestProfile'
+import type { ScaleStatus } from '../../core/scale/ipcChannels'
+import { useScaleStatus } from './useWeight'
 
 /** Select value for "the saved mic is not plugged in right now". */
 const STALE_MIC_VALUE = '__stale__'
@@ -144,7 +146,7 @@ function LearnedTermsSection() {
   )
 }
 
-const IDLE_CARD_NAMES: Record<IdleCardId, string> = { weather: 'Weather', usage: 'AI usage', calendar: 'Calendar', lastPage: 'Last Page', music: 'Now Playing', news: 'News' }
+const IDLE_CARD_NAMES: Record<IdleCardId, string> = { weather: 'Weather', usage: 'AI usage', calendar: 'Calendar', lastPage: 'Last Page', music: 'Now Playing', news: 'News', weight: 'Weight' }
 
 /**
  * The Idle Screen's pinned cards (core/idle/slots): a checkbox shows a card,
@@ -315,6 +317,79 @@ function NewsSection({ news, onChange }: { news: AppSettings['news']; onChange: 
   )
 }
 
+/** The Scale Listener's state in words, for the Body section's status line. */
+function scaleStatusLine(status: ScaleStatus | null): string {
+  if (status === null) return 'Bluetooth: checking…'
+  switch (status.state) {
+    case 'searching':
+      return 'Bluetooth: listening for the scale — step on it to wake it'
+    case 'connected':
+      return `Bluetooth: connected to the scale (${status.detail})`
+    case 'unavailable':
+      return status.detail
+    case 'stand-in':
+      return 'Bluetooth: replaced by the test stand-in scale'
+  }
+}
+
+/**
+ * The Body Profile (CONTEXT.md) the Weigh-ins' figures are worked out from
+ * — height, date of birth (age is taken on each Weigh-in's day) and sex —
+ * with the scale the Scale Listener remembered and the Bluetooth status.
+ * Forget clears the remembered scale at once, so the next QN scale seen
+ * is taken; the address shown is the saved one, which the Scale Listener
+ * writes when it first connects.
+ */
+function BodySection({ body, scale, onChange, onForget }: { body: AppSettings['body']; scale: AppSettings['scale']; onChange: (body: AppSettings['body']) => void; onForget: () => void }) {
+  const status = useScaleStatus()
+  return (
+    <section className="settings-section" aria-label="body">
+      <h2>Body</h2>
+      <Field label="Height (cm)">
+        <input
+          type="number"
+          min={50}
+          max={250}
+          value={body.heightCm ?? ''}
+          placeholder="e.g. 180"
+          aria-label="Height in cm"
+          onChange={(event) => onChange({ ...body, heightCm: event.target.value === '' ? null : Number(event.target.value) })}
+        />
+      </Field>
+      <Field label="Date of birth">
+        <input type="date" value={body.birthDate ?? ''} aria-label="Date of birth" onChange={(event) => onChange({ ...body, birthDate: event.target.value === '' ? null : event.target.value })} />
+      </Field>
+      <Field label="Sex">
+        <select
+          value={body.sex ?? ''}
+          aria-label="Sex"
+          onChange={(event) => onChange({ ...body, sex: event.target.value === 'male' || event.target.value === 'female' ? event.target.value : null })}
+        >
+          <option value="">Not set</option>
+          <option value="male">Male</option>
+          <option value="female">Female</option>
+        </select>
+      </Field>
+      <p className="settings-note">
+        The scale measures weight and impedance; body fat, water, muscle, bone, lean mass and BMR are worked out from them with this profile. BMI needs the height; the rest need all three. Changing it recomputes every Weigh-in.
+      </p>
+      <Field label="Scale">
+        <span className="settings-card-row">
+          <span className="settings-scale-address">{scale.address === '' ? 'None yet — the first QN scale seen is remembered' : scale.address}</span>
+          {scale.address === '' ? null : (
+            <button type="button" className="settings-button" aria-label="Forget the scale" onClick={onForget}>
+              Forget
+            </button>
+          )}
+        </span>
+      </Field>
+      <p className={status?.state === 'unavailable' ? 'settings-role-status settings-role-status--off settings-scale-status' : 'settings-role-status settings-scale-status'} role="status">
+        {scaleStatusLine(status)}
+      </p>
+    </section>
+  )
+}
+
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="settings-field">
@@ -349,12 +424,13 @@ export function SettingsPage({
     })
   }, [settings])
 
-  const dirty = !sameSettings(draft, settings)
+  const dirty = !sameSettings({ ...draft, scale: settings.scale }, settings)
   const micKnown = draft.micId === 'default' || mics.some((mic) => mic.deviceId === draft.micId)
   const voiceKnown = draft.ttsVoice === '' || voices.includes(draft.ttsVoice)
 
   const submit = async () => {
-    await onSave(draft)
+    // The remembered scale is main's to write (Forget saves at once): a draft never carries an older one back.
+    await onSave({ ...draft, scale: settings.scale })
     setSavedAt(Date.now())
   }
 
@@ -527,6 +603,13 @@ export function SettingsPage({
         <IdleCardsSection cards={draft.idleCards} onChange={(idleCards) => setDraft({ ...draft, idleCards })} />
 
         <NewsSection news={draft.news} onChange={(news) => setDraft({ ...draft, news })} />
+
+        <BodySection
+          body={draft.body}
+          scale={settings.scale}
+          onChange={(body) => setDraft({ ...draft, body })}
+          onForget={() => void onSave({ ...settings, scale: { address: '' } })}
+        />
 
         <section className="settings-section">
           <h2>Weather</h2>

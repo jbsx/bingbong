@@ -23,10 +23,15 @@ const ASKS: Record<string, (hasContent?: boolean) => SlotRequest> = {
   music: () => request('music', [], false),
   news: () => request('news', [BIG, TALL, SMALL]),
   lastPage: () => request('lastPage', [SMALL]),
+  weight: (weighIns = true) => request('weight', weighIns ? [TALL, SMALL] : [SMALL], weighIns),
 }
 
-/** The ticket's target table (#352): clock and weather down the left, Calendar and Last Page over News in the middle, usage down the right. */
-const TARGET = ['weather 0,1 1x3', 'calendar 1,0 1x1', 'lastPage 1,1 1x1', 'news 1,2 2x2', 'usage 2,0 1x2']
+/**
+ * The target table with the Weight card (#350, after #352): clock and weather down the left, the Calendar and the Last
+ * Page over the Weight card in the middle, usage over News down the right — the Weight card's 1×2 taken from News's 2×2,
+ * so the usage chart stays.
+ */
+const TARGET = ['weather 0,1 1x3', 'calendar 1,0 1x1', 'lastPage 1,1 1x1', 'weight 1,2 1x2', 'usage 2,0 1x2', 'news 2,2 1x2']
 
 describe('layoutSlots', () => {
   it('is three columns by four rows, the clock’s cell at the top left', () => {
@@ -44,14 +49,24 @@ describe('layoutSlots', () => {
     expect(boxes(layout)).toEqual(TARGET)
   })
 
-  it('lays the owner’s current settings — the old default list, with the Last Page — out the same', () => {
-    const { idleCards } = sanitizeSettings({ idleCards: ['weather', 'usage', 'calendar', 'music', 'news'], news: { topics: [] } })
-    expect(boxes(layoutSlots(idleCards.map((id) => ASKS[id]())))).toEqual(TARGET)
+  it('lays the owner’s current settings — the default list from before the grid or from before the Weight card — out the same', () => {
+    for (const saved of [
+      { idleCards: ['weather', 'usage', 'calendar', 'music', 'news'], news: { topics: [] } },
+      { idleCards: ['weather', 'calendar', 'lastPage', 'news', 'usage', 'music'], news: { topics: [] } },
+    ]) {
+      const { idleCards } = sanitizeSettings(saved)
+      expect(boxes(layoutSlots(idleCards.map((id) => ASKS[id]())))).toEqual(TARGET)
+    }
+  })
+
+  it('gives the Weight card one cell while there is no Weigh-in, News and usage keeping theirs and the cell it frees going to the Calendar', () => {
+    const layout = layoutSlots(IDLE_CARD_IDS.map((id) => ASKS[id](id === 'weight' ? false : undefined)))
+    expect(boxes(layout)).toEqual(['weather 0,1 1x3', 'calendar 1,0 1x2', 'lastPage 1,2 1x1', 'weight 1,3 1x1', 'usage 2,0 1x2', 'news 2,2 1x2'])
   })
 
   it('gives every card a box before any grows: a Calendar with events takes its month, the others shrink to make room', () => {
     const layout = layoutSlots(IDLE_CARD_IDS.map((id) => ASKS[id](id === 'calendar' ? true : undefined)))
-    expect(layout.placements.map((p) => p.id).sort()).toEqual(['calendar', 'lastPage', 'news', 'usage', 'weather'])
+    expect(layout.placements.map((p) => p.id).sort()).toEqual(['calendar', 'lastPage', 'news', 'usage', 'weather', 'weight'])
     expect(boxes(layout)).toContain('calendar 1,0 1x2')
   })
 

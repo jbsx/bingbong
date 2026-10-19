@@ -16,6 +16,9 @@ import type { NowPlaying } from '../core/music/nowPlaying'
 import { CALENDAR_IPC } from '../core/calendar/ipcChannels'
 import { NEWS_IPC } from '../core/news/ipcChannels'
 import type { NewsHorizons } from '../core/news/newsDesk'
+import { WEIGHT_IPC, type ScaleStatus } from '../core/scale/ipcChannels'
+import type { WeighIn } from '../core/scale/weighIns'
+import type { WeighInPopupState } from '../core/scale/weighInPopup'
 import type { CalendarEvent, CalendarRange } from '../core/calendar/calendar'
 import { IDLE_IPC } from '../core/idle/ipcChannels'
 import type { TimerState } from '../core/timer/timer'
@@ -90,6 +93,27 @@ contextBridge.exposeInMainWorld('bingbong', {
   },
   news: {
     horizons: (): Promise<NewsHorizons | null> => ipcRenderer.invoke(NEWS_IPC.horizons),
+  },
+  weight: {
+    list: (): Promise<WeighIn[]> => ipcRenderer.invoke(WEIGHT_IPC.list),
+    remove: (at: number): Promise<WeighIn[]> => ipcRenderer.invoke(WEIGHT_IPC.remove, at),
+    onChange: (listener: (weighIns: WeighIn[]) => void): (() => void) => {
+      const wrapped = (_event: unknown, weighIns: WeighIn[]): void => listener(weighIns)
+      ipcRenderer.on(WEIGHT_IPC.changed, wrapped)
+      return () => ipcRenderer.removeListener(WEIGHT_IPC.changed, wrapped)
+    },
+    popup: (): Promise<WeighInPopupState> => ipcRenderer.invoke(WEIGHT_IPC.popup),
+    onPopup: (listener: (state: WeighInPopupState) => void): (() => void) => {
+      const wrapped = (_event: unknown, state: WeighInPopupState): void => listener(state)
+      ipcRenderer.on(WEIGHT_IPC.popupChanged, wrapped)
+      return () => ipcRenderer.removeListener(WEIGHT_IPC.popupChanged, wrapped)
+    },
+    status: (): Promise<ScaleStatus> => ipcRenderer.invoke(WEIGHT_IPC.status),
+    onStatus: (listener: (status: ScaleStatus) => void): (() => void) => {
+      const wrapped = (_event: unknown, status: ScaleStatus): void => listener(status)
+      ipcRenderer.on(WEIGHT_IPC.statusChanged, wrapped)
+      return () => ipcRenderer.removeListener(WEIGHT_IPC.statusChanged, wrapped)
+    },
   },
   assistant: {
     submit: (text: string): Promise<boolean> => ipcRenderer.invoke(PIPELINE_IPC.submit, text),

@@ -140,14 +140,18 @@ export function peekCardVisible(state: PeekCardState): boolean {
 /**
  * The overlay slot's one element (ADR 0029): a native view intercepts
  * input across its whole bounds, so the overlay shows exactly one of the
- * expanded panel, the Peek Card, or the collapsed edge tab — the card
- * replaces the tab while visible, and an open panel outranks both. Both
- * renderers derive from this one rule: the dashboard sizes the slot by
- * it, the overlay renders by it, so geometry and content cannot diverge.
+ * expanded panel, the Weigh-in pop-up, the Peek Card, or the collapsed edge
+ * tab — the pop-up (#350) takes the card's place over the browsing pane
+ * while the owner stands on the scale, the card replaces the tab while
+ * visible, and an open panel outranks them all (the pop-up then rides the
+ * panel's top). Both renderers derive from this one rule: the dashboard
+ * sizes the slot by it, the overlay renders by it, so geometry and content
+ * cannot diverge.
  */
-export type OverlaySlotContent = 'panel' | 'card' | 'tab'
+export type OverlaySlotContent = 'panel' | 'weighin' | 'card' | 'tab'
 
-export function overlaySlotContent(panelOpen: boolean, peek: PeekCardState): OverlaySlotContent {
+export function overlaySlotContent(panelOpen: boolean, peek: PeekCardState, weighIn = false): OverlaySlotContent {
   if (panelOpen) return 'panel'
+  if (weighIn) return 'weighin'
   return peekCardVisible(peek) ? 'card' : 'tab'
 }

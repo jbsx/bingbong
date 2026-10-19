@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { startFixtureServer, type FixtureServer } from './fixtureServer'
 import { startHarness, type Harness } from './harness'
 import { waitFor } from './waitFor'
+import { OWNER_BODY, standInWeighIns, weighInsFile } from './weighIns'
 
 // The Idle Screen's Last Page (CONTEXT.md): a profile that remembers a page
 // boots into the idle screen naming it, and the card's tap runs `resume` —
@@ -60,6 +61,9 @@ describe('idle screen e2e: the Last Page and resume', () => {
       `${JSON.stringify({ url: fixture.url('/second'), title: 'Second fixture page', at: 1 })}\n`,
       'utf8',
     )
+    // Stand-in Weigh-ins (#350) and the owner's Body Profile, for the Weight card.
+    await writeFile(join(userDataDir, 'weighins.json'), weighInsFile(standInWeighIns()), 'utf8')
+    await writeFile(join(userDataDir, 'settings.json'), `${JSON.stringify({ body: OWNER_BODY })}\n`, 'utf8')
     harness = await startHarness({
       userDataDir,
       fixture,
@@ -113,8 +117,25 @@ describe('idle screen e2e: the Last Page and resume', () => {
       }
     })()`)
     // The default pins, in order; the usage card is there only when the dashboard answers or fails, the weather only once its city is set.
-    expect(geometry.cards.filter((card) => card !== 'usage')).toEqual(['weather', 'calendar', 'lastPage', 'news'])
+    expect(geometry.cards.filter((card) => card !== 'usage')).toEqual(['weather', 'calendar', 'lastPage', 'weight', 'news'])
     expect(geometry.overflowing).toEqual([])
+  })
+
+  it('shows the Weight card from the stand-in Weigh-ins: the weight, its week’s change, the body fat and the 30-day trend (#350)', async () => {
+    const card = await harness.dashboardEval<{ text: string; box: string; trendDots: number }>(`(() => {
+      const slot = document.querySelector('.idle-slot[data-card="weight"]')
+      return {
+        text: slot.querySelector('.weight-card').textContent,
+        box: slot.style.gridColumn + '|' + slot.style.gridRow,
+        trendDots: slot.querySelectorAll('.weight-chart-dot').length,
+      }
+    })()`)
+    // A 1×2 Card Slot: where it lands depends on the cards around it (the weather is unset here).
+    expect(card.box).toMatch(/span 1\|\d+ \/ span 2$/)
+    expect(card.text).toContain('81.25')
+    expect(card.text).toMatch(/[−+]\d+(\.\d+)? kg · 7 days/)
+    expect(card.text).toMatch(/Body fat \d+\.\d%/)
+    expect(card.trendDots).toBe(30)
   })
 
   it('names the Last Page on the idle screen, and a tap reopens it in the blank pane', async () => {

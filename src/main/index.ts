@@ -67,6 +67,10 @@ import { createRememberedSongsStore } from './music/rememberedSongsStore'
 import { registerUsageIpc } from './usage/attachUsage'
 import { registerCalendarIpc } from './calendar/attachCalendar'
 import { registerNewsImageScheme, registerNewsIpc } from './news/attachNews'
+import { attachScaleListener, type ScaleListener } from './scale/attachScale'
+import { createBluezScaleTransport } from './scale/bluezScale'
+import { createStandInScaleTransport, SCALE_FIXTURE_ENV } from './scale/standInScale'
+import { createWeighInStore } from './scale/weighInStore'
 import { attachTimerAlarm } from './timer/timerAlarm'
 import { attachIdleShortcut } from './idleShortcut'
 import { attachIdleTyping } from './idleTyping'
@@ -159,6 +163,9 @@ const rememberedSongs = createRememberedSongsStore(join(app.getPath('userData'),
 // restarts for the Idle Screen and `resume`.
 const lastPageStore = createLastPageStore(join(app.getPath('userData'), 'last-page.json'))
 registerLearnedTermsIpc(learnedTermsStore)
+// The Scale Listener (CONTEXT.md): started once the app is ready and kept
+// for its life; every window's dashboard and overlay hear it.
+let scaleListener: ScaleListener | null = null
 
 // Verbose browser sub-spans (#32), opt-in behind the established env-flag
 // pattern. Flag off — the channel stays wired but writes nothing.
@@ -267,6 +274,8 @@ async function createWindow(): Promise<BrowserWindow> {
   })
   // The panel shortcut also fires while the pane owns focus.
   feedPanel.registerShortcut(pane.view.webContents)
+  // The Weigh-ins and the Weigh-in pop-up reach both surfaces the pop-up shows on.
+  for (const contents of [win.webContents, feedPanel.contents()]) if (contents !== null) scaleListener?.addReceiver(contents)
   // The idle shortcut (Ctrl/Cmd+Shift+L) shows the Idle Screen now, from whichever surface owns focus.
   const enterIdle = (): void => {
     if (!win.isDestroyed() && !win.webContents.isDestroyed()) win.webContents.send(IDLE_IPC.enter)
@@ -504,6 +513,14 @@ app.whenReady().then(async () => {
   registerSettingsIpc(settingsStore)
   registerUsageIpc(() => settingsStore.get().usageDashboard.url)
   registerNewsIpc({ storePath: join(app.getPath('userData'), 'news.json'), imageDir: join(app.getPath('userData'), 'news-images'), news: () => settingsStore.get().news })
+  // The e2e's stand-in replaces Bluetooth whenever its env names a script, so no test reaches the real scale.
+  const scaleFixture = process.env[SCALE_FIXTURE_ENV]
+  scaleListener = attachScaleListener({
+    transport: scaleFixture ? createStandInScaleTransport(scaleFixture) : createBluezScaleTransport(),
+    store: createWeighInStore(join(app.getPath('userData'), 'weighins.json')),
+    settings: settingsStore,
+  })
+  app.on('will-quit', () => scaleListener?.stop())
   registerFeedPanelIpc()
   registerTtsIpc({ voicesDir: () => piperConfig.voicesDir })
   registerVoiceIpc()

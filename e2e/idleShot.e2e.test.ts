@@ -8,6 +8,7 @@ import { startFixtureServer, type FixtureServer } from './fixtureServer'
 import { startHarness, type Harness } from './harness'
 import { cli } from './cliSupport'
 import { waitFor } from './waitFor'
+import { OWNER_BODY, standInWeighIns, weighInsFile } from './weighIns'
 
 // The Idle Screen's screenshot review (`pnpm shot:idle`): the screen at the
 // appliance's 1920×1080 with every card holding sample data — London's
@@ -25,7 +26,9 @@ import { waitFor } from './waitFor'
 // It also checks the bento (#352) — the clock's cell and each card's box,
 // every tile holding its words, nothing under 16 px — and the News card at
 // 2×2 and 1×2 in dark and light, with pictures and then with every picture
-// failed to its tile, and with no Big News.
+// failed to its tile, and with no Big News. The Weight card (#350) reads
+// two months of stand-in Weigh-ins seeded as weighins.json, held to its
+// box at 1×2 and 1×1.
 // Gated: BINGBONG_IDLE_SHOT=1, so the plain e2e run skips it.
 
 const PROVIDERS = ['Codex', 'Claude', 'Kaggle', 'GLM', 'Grok']
@@ -169,10 +172,11 @@ describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review'
     userDataDir = await mkdtemp(join(tmpdir(), 'bingbong-e2e-idle-shot-'))
     await writeFile(
       join(userDataDir, 'settings.json'),
-      JSON.stringify({ weather: { city: 'London', units: 'metric' }, usageDashboard: { url: `http://127.0.0.1:${port}`, providers: PROVIDERS.slice(0, count) } }),
+      JSON.stringify({ weather: { city: 'London', units: 'metric' }, usageDashboard: { url: `http://127.0.0.1:${port}`, providers: PROVIDERS.slice(0, count) }, body: OWNER_BODY }),
       'utf8',
     )
     await writeFile(join(userDataDir, 'news.json'), `${JSON.stringify({ shown: [], history: {}, highlight: null, stories: storyHistory() })}\n`, 'utf8')
+    await writeFile(join(userDataDir, 'weighins.json'), weighInsFile(standInWeighIns()), 'utf8')
     await writeFile(join(userDataDir, 'last-page.json'), `${JSON.stringify({ url: 'https://duckduckgo.com/?q=weather+in+london', title: 'weather in London at DuckDuckGo', at: 1 })}\n`, 'utf8')
     if (music) {
       fixture = await startFixtureServer()
@@ -212,7 +216,7 @@ describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review'
     await harness.cdp.send('Emulation.setDeviceMetricsOverride', { width: 1920, height: 1080, deviceScaleFactor: 1, mobile: false }, session)
     await harness.cdp.send('Page.reload', {}, session)
     await waitFor(
-      async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('.wx-card') && !!document.querySelector('.usage-card') && !!document.querySelector('.idle-news')`)) ? true : undefined),
+      async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('.wx-card') && !!document.querySelector('.usage-card') && !!document.querySelector('.idle-news') && !!document.querySelector('.weight-card')`)) ? true : undefined),
       { timeoutMs: 20000, intervalMs: 250 },
     )
     if (music) {
@@ -235,14 +239,15 @@ describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review'
     const geometry = await screenGeometry()
     expect(geometry.overflowing).toEqual([])
     expect(geometry.smallestText).toBeGreaterThanOrEqual(16)
-    // The clock bare in the top-left cell; weather down the left, the Calendar and the Last Page over News in the middle, usage down the right (#352).
+    // The clock bare in the top-left cell; weather down the left, the Calendar and the Last Page over the Weight card in the middle, usage over News down the right (#352, #350).
     expect(geometry.clock).toBe('1|1')
     expect(geometry.slots).toEqual({
       weather: '1 / span 1|2 / span 3',
       calendar: '2 / span 1|1 / span 1',
       lastPage: '2 / span 1|2 / span 1',
-      news: '2 / span 2|3 / span 2',
+      weight: '2 / span 1|3 / span 2',
       usage: '3 / span 1|1 / span 2',
+      news: '3 / span 1|3 / span 2',
     })
     expect(geometry.dock).toBe(music)
     // Every provider's gauge a ring, and with two providers Claude's other window one too; with more, it is a bar under Claude.
@@ -292,10 +297,10 @@ describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review'
       { timeoutMs: 20000, intervalMs: 250 },
     )
     const defaults = await harness.dashboardEval<string[]>(`window.bingbong.settings.get().then((s) => s.idleCards)`)
-    // News pinned after the usage card finds only the right column's two cells left: it is drawn at 1×2, the highlight over Big News.
+    // Without the Weight card News takes the middle's 2×2; with it (the default) the right column's two cells, the highlight over Big News.
     const orders: [string, string[]][] = [
-      ['2x2', defaults],
-      ['1x2', ['weather', 'calendar', 'lastPage', 'usage', 'news', 'music']],
+      ['2x2', ['weather', 'calendar', 'lastPage', 'news', 'usage', 'music']],
+      ['1x2', defaults],
     ]
     try {
       for (const pictures of ['images', 'tiles']) {
@@ -326,6 +331,56 @@ describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review'
             expect(box.lead).toContain('Claude Code')
             expect(box.highlightPicture).toBe(pictures === 'images' ? 'image' : 'tile')
           }
+        }
+      }
+    } finally {
+      await pin(defaults)
+    }
+  })
+
+  it('holds the Weight card to its box at 1×2 and 1×1, in dark and light (#350)', async () => {
+    await mkdir(outDir, { recursive: true })
+    const defaults = await harness.dashboardEval<string[]>(`window.bingbong.settings.get().then((s) => s.idleCards)`)
+    // Pinned after News and the usage card, the Weight card finds one cell left.
+    const orders: [string, string[]][] = [
+      ['1x2', defaults],
+      ['1x1', ['weather', 'calendar', 'lastPage', 'news', 'usage', 'weight', 'music']],
+    ]
+    try {
+      for (const [size, order] of orders) {
+        await pin(order)
+        await waitFor(async () => ((await harness.dashboardEval<string>(`(() => { const s = document.querySelector('.idle-slot[data-card="weight"]').style; return s.gridColumn.split(' / ')[1].replace('span ', '') + 'x' + s.gridRow.split(' / ')[1].replace('span ', '') })()`)) === size ? true : undefined), {
+          timeoutMs: 5000,
+          intervalMs: 100,
+        })
+        for (const scheme of ['dark', 'light']) {
+          await harness.cdp.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, session)
+          await new Promise((resolve) => setTimeout(resolve, 400))
+          const box = await harness.dashboardEval<{ overflowing: string[]; smallestText: number; text: string; x: number; y: number; width: number; height: number }>(`(() => {
+            const card = document.querySelector('.idle-slot[data-card="weight"] .weight-card')
+            const slot = card.closest('.idle-slot').getBoundingClientRect()
+            const overflowing = []
+            for (const tile of card.querySelectorAll('.idle-card')) {
+              const rect = tile.getBoundingClientRect()
+              if (tile.scrollHeight > tile.clientHeight + 1 || tile.scrollWidth > tile.clientWidth + 1) overflowing.push(tile.className + ' ' + tile.scrollHeight + '>' + tile.clientHeight)
+              if (rect.bottom > slot.bottom + 1 || rect.right > slot.right + 1) overflowing.push(tile.className + ' out of its slot')
+              for (const child of tile.children) {
+                const inner = child.getBoundingClientRect()
+                if (inner.bottom > rect.bottom + 1 || inner.right > rect.right + 1) overflowing.push(child.className + ' cut')
+              }
+            }
+            const plot = card.querySelector('.weight-chart-area')
+            if (plot && plot.getBoundingClientRect().height < 60) overflowing.push('trend collapsed')
+            const texts = [...card.querySelectorAll('*')].filter((el) => el.checkVisibility() && [...el.childNodes].some((node) => node.nodeType === 3 && node.textContent.trim() !== ''))
+            return { overflowing, smallestText: Math.min(...texts.map((el) => parseFloat(getComputedStyle(el).fontSize))), text: card.textContent, x: slot.x, y: slot.y, width: slot.width, height: slot.height }
+          })()`)
+          const { data } = await harness.cdp.send<{ data: string }>('Page.captureScreenshot', { format: 'png', clip: { x: box.x, y: box.y, width: box.width, height: box.height, scale: 1 } }, session)
+          await writeFile(join(outDir, `weight-${size}-${scheme}.png`), Buffer.from(data, 'base64'))
+          expect(box.overflowing, `${size} ${scheme}`).toEqual([])
+          expect(box.smallestText, `${size} ${scheme}`).toBeGreaterThanOrEqual(16)
+          expect(box.text).toContain('81.25')
+          expect(box.text).toMatch(/kg · 7 days/)
+          if (size === '1x2') expect(box.text).toMatch(/Body fat \d+\.\d%/)
         }
       }
     } finally {

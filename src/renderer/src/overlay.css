@@ -685,3 +685,20 @@ body,
   text-transform: uppercase;
   letter-spacing: 0.08em;
 }
+
+/* The Weigh-in pop-up in the overlay (#350): in the card's place it fills
+   the bottom-centre slot the dashboard reports; over an open panel it
+   rides the panel's top. */
+.overlay-chrome--weighin .weighin-popup {
+  position: static;
+  transform: none;
+  width: 100%;
+  height: 100%;
+  box-shadow: none;
+}
+
+.overlay-chrome--open .weighin-popup {
+  top: 64px;
+  bottom: auto;
+  width: calc(100% - 32px);
+}

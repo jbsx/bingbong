@@ -21,6 +21,9 @@ import type { WeatherState } from './useWeather'
 import { viewUsage, type UsagePrefs } from '../../core/usage/usage'
 import type { UsageState } from './useUsage'
 import { UsageCard } from './UsageCard'
+import { WeightCard } from './WeightCard'
+import type { WeighIn } from '../../core/scale/weighIns'
+import type { BodyProfile } from '../../core/scale/bodyComposition'
 import { StatusOrb, StatusPill } from './AssistantPanel'
 import type { OrbStatus } from './useAssistant'
 import { ChevronIcon, GlobeIcon, HighIcon, LowIcon, RainChanceIcon, SunriseIcon, SunsetIcon, TimerIcon, WeatherIcon } from './WeatherIcon'
@@ -645,6 +648,9 @@ export function IdleScreen({
   lastPage,
   timer,
   nowPlaying,
+  weighIns = null,
+  body = { heightCm: null, birthDate: null, sex: null },
+  onOpenWeight = () => undefined,
   status,
   hint,
 }: {
@@ -658,6 +664,12 @@ export function IdleScreen({
   lastPage: LastPage | null
   timer: TimerState
   nowPlaying: NowPlaying | null
+  /** Every Weigh-in for the Weight card (useWeighIns); null until main answers. */
+  weighIns?: readonly WeighIn[] | null
+  /** The Body Profile the card's body fat is worked out from (settings' body). */
+  body?: BodyProfile
+  /** The Weight card was tapped: show the Weight page. */
+  onOpenWeight?: () => void
   status: OrbStatus
   hint: VoiceHint | null
 }) {
@@ -698,6 +710,9 @@ export function IdleScreen({
       case 'news':
         if (news.status === 'ready') return { id, sizes: [BIG, TALL, SMALL], hasContent: true }
         return { id, sizes: news.status === 'loading' ? [] : [SMALL], hasContent: false }
+      case 'weight':
+        if (weighIns !== null && weighIns.length > 0) return { id, sizes: [TALL, SMALL], hasContent: true }
+        return { id, sizes: weighIns === null ? [] : [SMALL], hasContent: false }
     }
   })
   const layout = layoutSlots(requests)
@@ -722,6 +737,12 @@ export function IdleScreen({
           <NewsCard horizons={news.horizons} size={placement.size} />
         ) : (
           <NoteCard label="news">{news.status === 'unset' ? 'Add a topic to News in settings' : 'No news yet'}</NoteCard>
+        )
+      case 'weight':
+        return weighIns !== null && weighIns.length > 0 ? (
+          <WeightCard weighIns={weighIns} profile={body} size={placement.size} now={now.getTime()} onOpen={onOpenWeight} />
+        ) : (
+          <NoteCard label="weight">Step on the scale</NoteCard>
         )
     }
   }
