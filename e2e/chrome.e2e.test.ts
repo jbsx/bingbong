@@ -130,6 +130,29 @@ describe('shell chrome e2e', () => {
     expect(geometry.capsule!.right).toBeLessThan(geometry.back!.left)
   })
 
+  it('shows a running Timer beside the Status Capsule, clear of the back control, and a click on it ringing turns it off (owner ruling 2026-10-19)', async () => {
+    const timerStatus = (): Promise<string> => harness.dashboardEval<string>(`window.bingbong.timer.get().then((state) => state.status)`)
+    await harness.dashboardEval(`window.bingbong.assistant.submit('timer 3s')`)
+    const left = await waitFor(async () => {
+      const text = await harness.dashboardEval<string>(`document.querySelector('.toolbar-start .toolbar-timer:not(.toolbar-timer--ringing)')?.textContent ?? ''`)
+      return /^0:0[1-3]$/.test(text) ? text : undefined
+    }, { timeoutMs: 5_000, intervalMs: 100 })
+    expect(left).toMatch(/^0:0[1-3]$/)
+    const geometry = await harness.dashboardEval<{ widgets: { right: number } | null; back: { left: number } | null }>(`(() => {
+      const widgets = document.querySelector('.toolbar-widgets')?.getBoundingClientRect()
+      const back = document.querySelector('.chrome-button[aria-label="Go back"]')?.getBoundingClientRect()
+      return { widgets: widgets ? { right: widgets.right } : null, back: back ? { left: back.left } : null }
+    })()`)
+    expect(geometry.widgets!.right).toBeLessThan(geometry.back!.left)
+
+    await waitFor(async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('.toolbar-timer--ringing')`)) ? true : undefined), { timeoutMs: 10_000, intervalMs: 100 })
+    expect(await harness.dashboardEval<string>(`document.querySelector('.toolbar-timer--ringing').textContent`)).toBe('Time’s up')
+    await harness.clickDashboardElement('.toolbar-timer--ringing')
+    expect(await waitFor(async () => ((await timerStatus()) === 'off' ? 'off' : undefined), { timeoutMs: 5_000, intervalMs: 100 })).toBe('off')
+    await waitFor(async () => ((await harness.dashboardEval<boolean>(`!document.querySelector('.toolbar-widgets')`)) ? true : undefined), { timeoutMs: 5_000, intervalMs: 100 })
+    await promptIdle()
+  })
+
   it('keeps the feed and settings controls at the right edge on the dashboard and on the settings page', async () => {
     const dashboard = await harness.dashboardEval<ToolbarGeometry>(toolbarGeometry)
     await harness.clickDashboardElement('.settings-toggle')

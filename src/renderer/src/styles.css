@@ -197,11 +197,21 @@ body {
    collapsed into one white pill on canvas. The hooks inside
    (.status-orb--*, .status-pill, .voice-hint, .run-hint) are e2e
    observation points and must survive any restyle. */
+/* The Toolbar's first column: the Status Capsule, and beside it the widgets. */
+.toolbar-start {
+  grid-column: 1;
+  justify-self: start;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+}
+
 .status-capsule {
   /* Bounded by its column (#331): the capsule never grows into the back
      control — a long hint or partial transcript ellipsizes instead. */
-  grid-column: 1;
-  justify-self: start;
+  flex: 0 1 auto;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -214,6 +224,73 @@ body {
   border-radius: 999px;
   background: var(--panel);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+
+/* The Toolbar's widgets (owner ruling 2026-10-19): the running Timer and
+   the song Now Playing, each a small pill the capsule's height, beside it.
+   On a narrow window they give way before the capsule does: the song's
+   title ellipsizes, the countdown keeps its digits. */
+.toolbar-widgets {
+  flex: 0 100 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.toolbar-widget {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  box-sizing: border-box;
+  height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--edge);
+  border-radius: 999px;
+  background: var(--panel);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+
+.toolbar-widget .chrome-icon {
+  flex: none;
+  color: var(--muted);
+}
+
+.toolbar-widget-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
+}
+
+.toolbar-timer {
+  flex: none;
+}
+
+.toolbar-timer--ringing {
+  border-color: var(--status-red);
+  color: var(--status-red);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.toolbar-timer--ringing .chrome-icon {
+  color: var(--status-red);
+}
+
+.toolbar-song-title {
+  max-width: 16rem;
+}
+
+.toolbar-song-state,
+.toolbar-song--quiet .toolbar-song-title {
+  color: var(--muted);
 }
 
 /* Voice hints are quiet detail inside the capsule: muted, still — the

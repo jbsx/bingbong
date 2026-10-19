@@ -14,6 +14,7 @@ import { useFeedPanel, useFeedSlotRect, useWeighInSlotRect } from './useFeedPane
 import { useIdle } from './useIdle'
 import { useLastPage } from './useLastPage'
 import { useTimer } from './useTimer'
+import { ToolbarWidgets } from './ToolbarWidgets'
 import { useNowPlaying } from './useNowPlaying'
 import { useUsage } from './useUsage'
 import { useNews } from './useNews'
@@ -122,8 +123,9 @@ export function App() {
   const hint = voiceHint(voice)
   const weather = useWeather(settings?.weather ?? null, showIdle)
   const lastPage = useLastPage(showIdle)
-  const timer = useTimer(showIdle)
-  const nowPlaying = useNowPlaying(showIdle)
+  // Followed always: the Idle Screen's dock shows them, and so do the Toolbar's widgets while the app is in use.
+  const timer = useTimer()
+  const nowPlaying = useNowPlaying()
   const usage = useUsage(settings?.usageDashboard.url ?? null, showIdle)
   const news = useNews(showIdle)
 
@@ -167,20 +169,24 @@ export function App() {
             hints collapsed into one control. The class hooks inside
             (.status-orb--*, .status-pill, .voice-hint, .run-hint) are
             load-bearing e2e observation points. */}
-        <div className="status-capsule">
-          <StatusOrb status={status} />
-          <StatusPill status={status} />
-          {/* Run progress (#43) keeps its place even when the mic opens
-              mid-run — the climbing timer must never disappear behind a
-              listening hint, or a long round reads as frozen again. */}
-          {assistant.progress ? <RunHint progress={assistant.progress} status={status} /> : null}
-          {/* The voice hint carries instruction or the live partial
-              transcript (#324) — never the pill's state word again (#331). */}
-          {hint ? (
-            <span className={`voice-hint voice-hint--${hint.kind}`} role="status">
-              {hint.text}
-            </span>
-          ) : null}
+        <div className="toolbar-start">
+          <div className="status-capsule">
+            <StatusOrb status={status} />
+            <StatusPill status={status} />
+            {/* Run progress (#43) keeps its place even when the mic opens
+                mid-run — the climbing timer must never disappear behind a
+                listening hint, or a long round reads as frozen again. */}
+            {assistant.progress ? <RunHint progress={assistant.progress} status={status} /> : null}
+            {/* The voice hint carries instruction or the live partial
+                transcript (#324) — never the pill's state word again (#331). */}
+            {hint ? (
+              <span className={`voice-hint voice-hint--${hint.kind}`} role="status">
+                {hint.text}
+              </span>
+            ) : null}
+          </div>
+          {/* The running Timer and the song Now Playing (owner ruling 2026-10-19), in sight while the app is in use. */}
+          <ToolbarWidgets timer={timer} nowPlaying={nowPlaying} />
         </div>
         {/* The address field lives in the Toolbar only while browsing
             (ADR 0012); settings keeps capsule + controls. */}
