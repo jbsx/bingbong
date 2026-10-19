@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 /**
  * The Prompt Bar: the one typed-input surface, living in the feed panel's
@@ -14,11 +14,24 @@ import { useState } from 'react'
  * The form reports an outstanding submit as `aria-busy`: the submit IPC
  * settles only after the Command unwinds, and that settlement is the one
  * signal a typed follow-up's readiness has to read.
+ *
+ * A key typed on the Idle Screen lands here: main opens the panel, focuses
+ * this view and hands over the key, which joins the draft.
  */
 export function PromptBar() {
   const [draft, setDraft] = useState('')
   const [feedback, setFeedback] = useState('')
   const [pendingSubmits, setPendingSubmits] = useState(0)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(
+    () =>
+      window.bingbong.feedPanel.onTyped((text) => {
+        setDraft((current) => current + text)
+        inputRef.current?.focus()
+      }),
+    [],
+  )
 
   const submitCommand = async (text: string): Promise<boolean> => {
     setPendingSubmits((count) => count + 1)
@@ -52,6 +65,7 @@ export function PromptBar() {
     >
       <div className="prompt-controls">
         <input
+          ref={inputRef}
           className="prompt-input"
           type="text"
           // Whole at the default 380 px panel with Stop beside it (#331).

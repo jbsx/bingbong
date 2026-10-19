@@ -88,4 +88,32 @@ describe('idle screen e2e: the Last Page and resume', () => {
     await harness.pressKey('dashboard', IDLE_SHORTCUT)
     expect(await idleShown()).toBe(true)
   })
+
+  it('typing on the idle screen wakes it into the Prompt Bar, the panel opened, from the pane or the dashboard', async () => {
+    const IDLE_SHORTCUT = { key: 'L', code: 'KeyL', windowsVirtualKeyCode: 76, modifiers: 2 /* Ctrl */ | 8 /* Shift */ }
+    const idleShown = (): Promise<true> =>
+      waitFor(async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('.idle-screen')`)) ? true : undefined), { timeoutMs: 5000, intervalMs: 100 })
+    const draftIs = (text: string): Promise<true> =>
+      waitFor(
+        async () => ((await harness.overlayEval<string>(`document.querySelector('.prompt-input')?.value ?? ''`)) === text ? true : undefined),
+        { timeoutMs: 5000, intervalMs: 100 },
+      )
+    const panelOpen = (): Promise<boolean> => harness.overlayEval<boolean>(`!!document.querySelector('.overlay-chrome--open')`)
+
+    for (const target of ['pane', 'dashboard'] as const) {
+      if (await panelOpen()) await harness.clickOverlayElement('[aria-label="Collapse the feed panel"]')
+      // Clear the last round's draft through the native setter, so React hears the change.
+      await harness.overlayEval(
+        `(() => { const input = document.querySelector('.prompt-input'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, ''); input.dispatchEvent(new Event('input', { bubbles: true })) })()`,
+      )
+      await harness.pressKey(target, IDLE_SHORTCUT)
+      expect(await idleShown()).toBe(true)
+
+      await harness.pressKey(target, { key: 'g', code: 'KeyG', windowsVirtualKeyCode: 71 })
+
+      expect(await draftIs('g')).toBe(true)
+      expect(await panelOpen()).toBe(true)
+      expect(await harness.dashboardEval<boolean>(`!!document.querySelector('.idle-screen')`)).toBe(false)
+    }
+  })
 })

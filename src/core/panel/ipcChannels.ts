@@ -23,6 +23,8 @@ export const PANEL_IPC = {
   state: 'feed-panel:state',
   /** Either renderer → main: the current folded state (boot-time pull). */
   get: 'feed-panel:get',
+  /** Main → overlay: text typed on the Idle Screen — append it to the Prompt Bar. */
+  typed: 'feed-panel:typed',
 } as const
 
 export interface FeedPanelSetModePayload {

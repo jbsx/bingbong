@@ -30,6 +30,10 @@ export interface BingbongBrowserApi {
 export interface BingbongIdleApi {
   /** The idle shortcut (Ctrl/Cmd+Shift+L) was pressed: enter the Idle Screen now. */
   onEnter(listener: () => void): () => void
+  /** Tell main whether the Idle Screen is up — while it is, a typed key goes to the Prompt Bar. */
+  reportShown(shown: boolean): void
+  /** A key typed on the Idle Screen went to the Prompt Bar: wake the dashboard. */
+  onWake(listener: () => void): () => void
 }
 
 export interface BingbongTimerApi {
@@ -98,6 +102,8 @@ export interface BingbongFeedPanelApi {
   /** Report the panel slot's rect — drives the native overlay view's bounds. */
   reportRect(rect: PaneRect): void
   onState(listener: (state: FeedPanelState) => void): () => void
+  /** Text typed on the Idle Screen, for the Prompt Bar (overlay only). */
+  onTyped(listener: (text: string) => void): () => void
 }
 
 export interface BingbongApi {

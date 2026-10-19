@@ -375,7 +375,9 @@ voice half and the pipeline — the ear opening, a heard line, a reading —
 with the Status Capsule shown on it while they run, so a Command that never
 needs the pane (the Timer, a Stop, `done`, a line read as no Command) is
 heard and performed over it. Input, or a Command that acts on the pane,
-unmounts it; the browser pane is only hidden beneath it, never reset. The
+unmounts it; the browser pane is only hidden beneath it, never reset. A
+printable key typed on it starts a line in the Prompt Bar: the Feed panel
+opens if collapsed and the key is the draft's first character. The
 2026-10-18 ruling put the Last Page on it — the one piece of history the
 screen carries, and the owner's reversal of #70's "clock and weather only".
 _Avoid_: screensaver

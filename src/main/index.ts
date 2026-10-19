@@ -1,4 +1,4 @@
-import { app, BrowserWindow, crashReporter, session } from 'electron'
+import { app, BrowserWindow, crashReporter, ipcMain, session } from 'electron'
 import { join } from 'node:path'
 import type { BrowserController, PageLanding, VisualGroundingController } from '../core/ports/browser'
 import { BROWSER_IPC } from '../core/browser/ipcChannels'
@@ -61,6 +61,7 @@ import { createTimer } from '../core/timer/timer'
 import { registerTimerIpc } from './timer/attachTimer'
 import { attachTimerAlarm } from './timer/timerAlarm'
 import { attachIdleShortcut } from './idleShortcut'
+import { attachIdleTyping } from './idleTyping'
 import { IDLE_IPC } from '../core/idle/ipcChannels'
 import { createAplayPlayer } from './tts/createAplayPlayer'
 import { KIOSK_FLAG, resolveLaunchConfig } from '../core/app/launchConfig'
@@ -258,6 +259,23 @@ async function createWindow(): Promise<BrowserWindow> {
   }
   for (const contents of [win.webContents, pane.view.webContents, feedPanel.contents()]) {
     if (contents !== null) win.on('closed', attachIdleShortcut(contents, enterIdle))
+  }
+  // Typing on the Idle Screen goes to the Prompt Bar, from whichever surface owns focus.
+  let idleShown = false
+  const onIdleShown = (event: Electron.IpcMainEvent, shown: unknown): void => {
+    if (event.sender === win.webContents) idleShown = shown === true
+  }
+  ipcMain.on(IDLE_IPC.shown, onIdleShown)
+  win.on('closed', () => ipcMain.removeListener(IDLE_IPC.shown, onIdleShown))
+  const typeFromIdle = (text: string): void => {
+    // The first key wakes the dashboard; the keys after it reach the overlay
+    // directly, so the screen counts as down from here.
+    idleShown = false
+    if (!win.isDestroyed() && !win.webContents.isDestroyed()) win.webContents.send(IDLE_IPC.wake)
+    feedPanel.typeIntoPrompt(text)
+  }
+  for (const contents of [win.webContents, pane.view.webContents]) {
+    win.on('closed', attachIdleTyping(contents, { shown: () => idleShown, onType: typeFromIdle }))
   }
 
   const sendToRenderer = (channel: string, payload: unknown): void => {

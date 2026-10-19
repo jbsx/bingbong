@@ -16,7 +16,8 @@ export interface IdleApi {
  * command) wakes the dashboard, and the countdown only runs from there.
  * Pointer/keyboard input is tracked here; callers ping for non-input
  * activity. The timeout comes from the launch config snapshot. The idle
- * shortcut (Ctrl/Cmd+Shift+L, heard in main) enters idle at once.
+ * shortcut (Ctrl/Cmd+Shift+L, heard in main) enters idle at once, and a
+ * key typed on the Idle Screen (also heard in main) wakes it.
  */
 export function useIdle(): IdleApi {
   const [idle, setIdle] = useState(true)
@@ -36,8 +37,12 @@ export function useIdle(): IdleApi {
     window.addEventListener('pointerdown', onInput)
     window.addEventListener('keydown', onInput)
     const unsubscribeShortcut = window.bingbong.idle.onEnter(() => timer.idle())
+    // A key typed on the Idle Screen is swallowed in main and sent to the
+    // Prompt Bar — this keydown never fires, so main says to wake.
+    const unsubscribeWake = window.bingbong.idle.onWake(() => timer.ping())
     return () => {
       unsubscribeShortcut()
+      unsubscribeWake()
       window.removeEventListener('pointerdown', onInput)
       window.removeEventListener('keydown', onInput)
       pingRef.current = () => {}

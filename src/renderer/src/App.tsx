@@ -104,6 +104,9 @@ export function App() {
   const lastPage = useLastPage(showIdle)
   const timer = useTimer(showIdle)
 
+  // Main sends a key typed on the Idle Screen to the Prompt Bar, so it has to know the screen is up.
+  useEffect(() => window.bingbong.idle.reportShown(showIdle), [showIdle])
+
   if (showIdle) {
     return <IdleScreen weather={weather} lastPage={lastPage} timer={timer} status={status} hint={hint} />
   }

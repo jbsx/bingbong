@@ -74,6 +74,8 @@ export interface FeedPanelOverlay {
   /** The width drag ended: restore the view bounds from the reported slot (#65). */
   endResize(): void
   toggle(): void
+  /** Text typed on the Idle Screen: opens the panel if collapsed, focuses it, and appends the text to the Prompt Bar. */
+  typeIntoPrompt(text: string): void
   state(): FeedPanelState
   /**
    * Registers Ctrl/Cmd+Shift+F on an input surface's webContents (the pane)
@@ -240,6 +242,13 @@ export function attachFeedPanelOverlayToWindow(
     toggle() {
       fold.toggleOpen()
       broadcast()
+    },
+    typeIntoPrompt(text) {
+      // Typing is a human act, so it may open the panel (ADR 0021).
+      if (!fold.state().open) overlay.toggle()
+      if (wc.isDestroyed()) return
+      wc.focus()
+      wc.send(PANEL_IPC.typed, text)
     },
     state: () => fold.state(),
     registerShortcut,

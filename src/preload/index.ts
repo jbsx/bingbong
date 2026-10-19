@@ -49,6 +49,14 @@ contextBridge.exposeInMainWorld('bingbong', {
       ipcRenderer.on(IDLE_IPC.enter, wrapped)
       return () => ipcRenderer.removeListener(IDLE_IPC.enter, wrapped)
     },
+    reportShown: (shown: boolean): void => {
+      ipcRenderer.send(IDLE_IPC.shown, shown)
+    },
+    onWake: (listener: () => void): (() => void) => {
+      const wrapped = (): void => listener()
+      ipcRenderer.on(IDLE_IPC.wake, wrapped)
+      return () => ipcRenderer.removeListener(IDLE_IPC.wake, wrapped)
+    },
   },
   timer: {
     get: (): Promise<TimerState> => ipcRenderer.invoke(TIMER_IPC.get),
@@ -100,6 +108,11 @@ contextBridge.exposeInMainWorld('bingbong', {
       const wrapped = (_event: unknown, state: FeedPanelState): void => listener(state)
       ipcRenderer.on(PANEL_IPC.state, wrapped)
       return () => ipcRenderer.removeListener(PANEL_IPC.state, wrapped)
+    },
+    onTyped: (listener: (text: string) => void): (() => void) => {
+      const wrapped = (_event: unknown, text: string): void => listener(text)
+      ipcRenderer.on(PANEL_IPC.typed, wrapped)
+      return () => ipcRenderer.removeListener(PANEL_IPC.typed, wrapped)
     },
   },
   tts: {
