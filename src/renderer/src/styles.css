@@ -164,12 +164,13 @@ body {
    window's only drag region — the OS title bar is hidden. Capsule left,
    address cluster center, controls right. Interactive controls opt out
    of dragging below. On a narrow window the address cluster gives way
-   first: the capsule column keeps room for its widest state word
-   ("Transcribing…" beside the orb) and the controls keep theirs, so
-   "Ready" is never cut to "Rea". */
+   first: the capsule column keeps room for its state word beside the orb
+   (up to "Listening…"; only the passing "Transcribing…" may clip below
+   ~520 px) and the controls keep theirs, so "Ready" is never cut to
+   "Rea". */
 .toolbar {
   display: grid;
-  grid-template-columns: minmax(9.5rem, 1fr) minmax(0, auto) minmax(min-content, 1fr);
+  grid-template-columns: minmax(8rem, 1fr) minmax(0, auto) minmax(min-content, 1fr);
   align-items: center;
   gap: 12px;
   padding: 8px 14px;
@@ -1005,6 +1006,9 @@ body {
   align-items: center;
   gap: 8px;
   min-width: 0;
+  /* Held to its column on a narrow window, so the address field shrinks
+     rather than running under the controls. */
+  max-width: 100%;
 }
 
 .chrome-button {
