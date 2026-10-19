@@ -1,4 +1,4 @@
-import { magnitudeLabel } from '../../core/news/news'
+import { magnitudeLabel, magnitudeParts } from '../../core/news/news'
 import type { TodaysHighlight } from '../../core/news/newsDesk'
 
 function hostOf(link: string): string {
@@ -18,7 +18,7 @@ function hostOf(link: string): string {
 export function NewsCard({ highlight }: { highlight: TodaysHighlight }) {
   const { story, topics } = highlight
   const points = magnitudeLabel(story)
-  const [count, ...unit] = points.split(' ')
+  const { count, unit } = magnitudeParts(story)
   const host = hostOf(story.link)
   const open = (): void => {
     void window.bingbong.assistant.submit(`navigate ${story.link}`)
@@ -36,7 +36,7 @@ export function NewsCard({ highlight }: { highlight: TodaysHighlight }) {
       <span className="idle-news-kicker">Today’s highlight{topics.length > 0 ? ` · ${topics[0]}` : ''}</span>
       <span className="idle-news-title">{story.title}</span>
       <span className="idle-news-figure">
-        <span className="idle-news-count">{count}</span> <span className="idle-news-unit">{unit.join(' ')}</span>
+        <span className="idle-news-count">{count}</span> <span className="idle-news-unit">{unit}</span>
       </span>
       <span className="idle-news-foot">
         <span className="idle-news-source">{story.source}</span>

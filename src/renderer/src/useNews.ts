@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import type { TodaysHighlight } from '../../core/news/newsDesk'
+import { reportRendererFault } from './diagnostics'
 
-export type NewsState =
+export type NewsCardState =
   | { status: 'loading' }
   | { status: 'unset' }
   | { status: 'none' }
@@ -16,8 +17,8 @@ const REFRESH_MS = 5 * 60 * 1000
  * reads as unset; a desk that has never had a story as none. Main keeps the
  * last highlight through a failed poll, so a later ask never blanks it.
  */
-export function useNews(topicCount: number, active: boolean): NewsState {
-  const [state, setState] = useState<NewsState>({ status: 'loading' })
+export function useNews(topicCount: number, active: boolean): NewsCardState {
+  const [state, setState] = useState<NewsCardState>({ status: 'loading' })
 
   useEffect(() => {
     if (!active) return
@@ -27,9 +28,16 @@ export function useNews(topicCount: number, active: boolean): NewsState {
     }
     let cancelled = false
     const ask = (): void => {
-      void window.bingbong.news.highlight().then((highlight) => {
-        if (!cancelled) setState(highlight === null ? { status: 'none' } : { status: 'ready', highlight })
-      })
+      window.bingbong.news.highlight().then(
+        (highlight) => {
+          if (!cancelled) setState(highlight === null ? { status: 'none' } : { status: 'ready', highlight })
+        },
+        (error: unknown) => {
+          // The card keeps what it shows; a desk never reached reads as no news yet.
+          reportRendererFault('news.highlight', error)
+          if (!cancelled) setState((prev) => (prev.status === 'loading' ? { status: 'none' } : prev))
+        },
+      )
     }
     ask()
     const refresh = setInterval(ask, REFRESH_MS)

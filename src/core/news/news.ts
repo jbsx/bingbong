@@ -50,9 +50,14 @@ export async function gatherStories(sources: readonly NewsSource[], since: numbe
   return { stories, answered }
 }
 
-/** The number that made it a story, as the card reads it: "1,840 points". */
-export function magnitudeLabel(story: Pick<NewsStory, 'magnitude' | 'unit'>): string {
+/** The number that made it a story in its two parts, as the card sets them: "1,840" and "points". */
+export function magnitudeParts(story: Pick<NewsStory, 'magnitude' | 'unit'>): { count: string; unit: string } {
   const count = Math.round(story.magnitude)
-  const unit = count === 1 && story.unit.endsWith('s') ? story.unit.slice(0, -1) : story.unit
-  return `${count.toLocaleString('en-GB')} ${unit}`
+  return { count: count.toLocaleString('en-GB'), unit: count === 1 && story.unit.endsWith('s') ? story.unit.slice(0, -1) : story.unit }
+}
+
+/** The number that made it a story, as one line: "1,840 points". */
+export function magnitudeLabel(story: Pick<NewsStory, 'magnitude' | 'unit'>): string {
+  const { count, unit } = magnitudeParts(story)
+  return `${count} ${unit}`
 }

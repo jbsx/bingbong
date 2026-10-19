@@ -7,6 +7,7 @@ const PAYLOAD = {
     { objectID: '50142600', title: 'Ask HN: What are you working on?', url: null, points: 88, num_comments: 301, created_at_i: 1792341200 },
     { objectID: '50142601', title: '', url: 'https://example.com', points: 10, num_comments: 0, created_at_i: 1792341200 },
     { objectID: '50142602', title: 'No points', url: 'https://example.com/b', created_at_i: 1792341200 },
+    null,
   ],
 }
 

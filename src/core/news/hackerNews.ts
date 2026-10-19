@@ -15,7 +15,8 @@ interface Hit {
   created_at_i?: unknown
 }
 
-function storyOf(hit: Hit): NewsStory | null {
+function storyOf(hit: Hit | null): NewsStory | null {
+  if (typeof hit !== 'object' || hit === null) return null
   const { objectID: id, title, points, created_at_i: created } = hit
   if (typeof id !== 'string' || typeof title !== 'string' || title.trim() === '') return null
   if (typeof points !== 'number' || typeof created !== 'number') return null
@@ -43,7 +44,7 @@ export function createHackerNewsSource(fetchJson: (url: string) => Promise<unkno
     async stories(since) {
       const payload = (await fetchJson(`${baseUrl.replace(/\/+$/, '')}/api/v1/search?tags=front_page&hitsPerPage=50`)) as { hits?: unknown } | null
       if (!Array.isArray(payload?.hits)) throw new Error('Hacker News answered no front page')
-      return (payload.hits as Hit[]).map(storyOf).filter((story): story is NewsStory => story !== null && story.publishedAt >= since)
+      return (payload.hits as (Hit | null)[]).map(storyOf).filter((story): story is NewsStory => story !== null && story.publishedAt >= since)
     },
   }
 }

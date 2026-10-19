@@ -8,7 +8,7 @@ import type { TimerState } from '../../core/timer/timer'
 import type { NowPlaying } from '../../core/music/nowPlaying'
 import { NowPlayingCard } from './NowPlayingCard'
 import { NewsCard } from './NewsCard'
-import type { NewsState } from './useNews'
+import type { NewsCardState } from './useNews'
 import type { CalendarEvent } from '../../core/calendar/calendar'
 import { monthGrid, upNext, weekStartOf, type UpNext } from '../../core/calendar/month'
 import { nextHoliday, ukBankHolidays } from '../../core/calendar/ukBankHolidays'
@@ -594,7 +594,7 @@ export function IdleScreen({
   /** The pinned cards, in the order they read (settings' idleCards). */
   cards?: readonly IdleCardId[]
   /** Today's Highlight for the News card (useNews). */
-  news?: NewsState
+  news?: NewsCardState
   lastPage: LastPage | null
   timer: TimerState
   nowPlaying: NowPlaying | null
