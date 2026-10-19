@@ -410,6 +410,19 @@ body {
   height: 116px;
 }
 
+/* The Weigh-in pop-up's slot over the browsing pane: the Peek Card's
+   place, for a view of its own above the feed overlay, so the edge tab
+   keeps the overlay's slot while the pop-up shows. */
+.weighin-slot {
+  position: absolute;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(560px, 80%);
+  height: 116px;
+  pointer-events: none;
+}
+
 .feed {
   display: flex;
   flex-direction: column;

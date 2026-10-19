@@ -86,22 +86,43 @@ export function useFeedPanel(): FeedPanelState {
  * so the overlay gets no bounds until it may show again.
  */
 export function useFeedSlotRect(layoutKey: string, hidden = false): (el: HTMLDivElement | null) => void {
+  return useSlotRect('feedPanel', layoutKey, hidden)
+}
+
+/**
+ * Reports the Weigh-in pop-up's slot to main, which sizes the pop-up's own
+ * view over the browsing pane by it — the same bookkeeping as the feed
+ * panel's slot, hidden whenever the pop-up is not drawn there.
+ */
+export function useWeighInSlotRect(hidden: boolean): (el: HTMLDivElement | null) => void {
+  return useSlotRect('weighIn', '', hidden)
+}
+
+/** The view a slot sizes; a name, not the function, so the effects never re-run on it. */
+type SlotView = 'feedPanel' | 'weighIn'
+
+function reportRect(slot: SlotView, rect: PaneRect): void {
+  if (slot === 'feedPanel') window.bingbong.feedPanel.reportRect(rect)
+  else window.bingbong.weight.reportPopupRect(rect)
+}
+
+function useSlotRect(slot: SlotView, layoutKey: string, hidden: boolean): (el: HTMLDivElement | null) => void {
   const [el, setEl] = useState<HTMLDivElement | null>(null)
 
   useEffect(() => {
     if (!el) {
       // The slot is gone (the Idle Screen took the window): so is the view.
-      window.bingbong.feedPanel.reportRect(HIDDEN_PANE_RECT)
+      reportRect(slot, HIDDEN_PANE_RECT)
       return
     }
     const report = (): void => {
       if (hidden) {
-        window.bingbong.feedPanel.reportRect(HIDDEN_PANE_RECT)
+        reportRect(slot, HIDDEN_PANE_RECT)
         return
       }
       const rect = el.getBoundingClientRect()
       const pane: PaneRect = { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
-      window.bingbong.feedPanel.reportRect(pane)
+      reportRect(slot, pane)
     }
     report()
     const observer = new ResizeObserver(report)
@@ -113,14 +134,14 @@ export function useFeedSlotRect(layoutKey: string, hidden = false): (el: HTMLDiv
     }
     // `layoutKey` (mode/open) re-reports the position-only moves a
     // ResizeObserver cannot see.
-  }, [el, layoutKey, hidden])
+  }, [el, layoutKey, hidden, slot])
 
   // Unmount-only: the overlay view must not outlive its slot.
   useEffect(
     () => () => {
-      window.bingbong.feedPanel.reportRect(HIDDEN_PANE_RECT)
+      reportRect(slot, HIDDEN_PANE_RECT)
     },
-    [],
+    [slot],
   )
 
   return setEl

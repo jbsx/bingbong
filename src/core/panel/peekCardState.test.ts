@@ -133,12 +133,6 @@ describe('overlaySlotContent', () => {
   const live = { phase: 'live', runId: 't1', commandText: 'find a mug' } as const
   const answer = { phase: 'answer', runId: 't1', commandText: 'find a mug' } as const
 
-  it('collapsed with the Weigh-in pop-up up shows the pop-up in the card’s place, over the card (#350); an open panel still outranks it', () => {
-    expect(overlaySlotContent(false, live, true)).toBe('weighin')
-    expect(overlaySlotContent(false, hidden, true)).toBe('weighin')
-    expect(overlaySlotContent(true, hidden, true)).toBe('panel')
-  })
-
   it('an open panel shows the panel, whatever the card phase says', () => {
     expect(overlaySlotContent(true, hidden)).toBe('panel')
     expect(overlaySlotContent(true, live)).toBe('panel')

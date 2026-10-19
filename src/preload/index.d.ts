@@ -150,6 +150,8 @@ export interface BingbongWeightApi {
   /** The Weigh-in pop-up's state, which main folds from the scale's readings. */
   popup(): Promise<WeighInPopupState>
   onPopup(listener: (state: WeighInPopupState) => void): () => void
+  /** Sizes the pop-up's own view over the browsing pane (0×0 hides it). */
+  reportPopupRect(rect: PaneRect): void
   /** The Scale Listener's state, for the settings Weight section. */
   status(): Promise<ScaleStatus>
   onStatus(listener: (status: ScaleStatus) => void): () => void

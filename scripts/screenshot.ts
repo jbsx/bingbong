@@ -360,7 +360,7 @@ async function main(): Promise<void> {
     const find = (kind: 'dashboard' | 'overlay' | 'pane'): string | undefined =>
       [...sessions.values()].find((info) => {
         if (kind === 'overlay') return info.url.includes('out/renderer/overlay.html')
-        if (kind === 'dashboard') return info.url.includes('out/renderer') && !info.url.includes('overlay.html')
+        if (kind === 'dashboard') return info.url.includes('out/renderer/index.html')
         return info.type === 'page' && !info.url.includes('out/renderer')
       })?.sessionId
 

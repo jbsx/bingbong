@@ -27,6 +27,21 @@ export interface WeighInPopup {
   state(): WeighInPopupState
 }
 
+/**
+ * Which surface draws the pop-up: the dashboard's own DOM wherever no
+ * native view covers it (the Idle Screen, Settings, the Weight page); over
+ * the browsing pane, the feed overlay on the open panel's top, else the
+ * pop-up's own view in the Peek Card's place — never the feed overlay's
+ * slot, which is the edge tab's while the panel is collapsed.
+ */
+export type WeighInPopupSurface = 'none' | 'dashboard' | 'panel' | 'view'
+
+export function weighInPopupSurface(state: WeighInPopupState, overPane: boolean, panelOpen: boolean): WeighInPopupSurface {
+  if (state.phase === 'hidden') return 'none'
+  if (!overPane) return 'dashboard'
+  return panelOpen ? 'panel' : 'view'
+}
+
 const HIDDEN: WeighInPopupState = { phase: 'hidden' }
 
 /**

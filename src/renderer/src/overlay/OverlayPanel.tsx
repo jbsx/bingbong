@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import { ActivityFeed } from '../ActivityFeed'
 import { ChromeIcon } from '../ChromeIcon'
 import { overlaySlotContent } from '../../../core/panel/peekCardState'
+import { weighInPopupSurface } from '../../../core/scale/weighInPopup'
 import { PeekCard } from '../PeekCard'
 import { reportRendererFault } from '../diagnostics'
 import { usePeekCard } from '../usePeekCard'
@@ -39,9 +40,9 @@ export function OverlayPanel() {
   // single element shows (panel, card, or edge tab); the dashboard sizes
   // the slot rect from the same rule.
   const peek = usePeekCard(open)
-  // The Weigh-in pop-up (#350) over the browsing pane: in the card's place, or riding the open panel's top.
+  // The Weigh-in pop-up (#350) rides the open panel's top here; collapsed, it has a view of its own (attachWeighInView).
   const weighIn = useWeighInPopup()
-  const slotContent = overlaySlotContent(open, peek.state, weighIn.phase !== 'hidden')
+  const slotContent = overlaySlotContent(open, peek.state)
   const surfaceRef = useRef<HTMLDivElement>(null)
   // Drag bookkeeping: the surface's fixed right edge (the panel hugs it
   // for the whole drag). Null when no drag is live.
@@ -141,7 +142,7 @@ export function OverlayPanel() {
   return (
     <div
       className={`overlay-chrome overlay-chrome--${open ? 'open' : 'collapsed'}${
-        slotContent === 'card' ? ' overlay-chrome--peek' : slotContent === 'weighin' ? ' overlay-chrome--weighin' : ''
+        slotContent === 'card' ? ' overlay-chrome--peek' : ''
       }`}
     >
       <div
@@ -164,7 +165,7 @@ export function OverlayPanel() {
           Card replaces the edge tab while it is visible — both are the
           same human act (clicking opens the panel), and the native view's
           bounds shrink-wrap whichever one shows. */}
-      {slotContent === 'weighin' || (slotContent === 'panel' && weighIn.phase !== 'hidden') ? <WeighInPopup state={weighIn} /> : null}
+      {weighInPopupSurface(weighIn, true, open) === 'panel' ? <WeighInPopup state={weighIn} /> : null}
       {slotContent === 'card' ? (
         <PeekCard
           state={peek.state}

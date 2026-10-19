@@ -9,7 +9,8 @@ import { WeighInPopup } from './WeighInPopup'
 import { useWeighInPopup, useWeighIns } from './useWeight'
 import { useAssistant } from './useAssistant'
 import { overlaySlotContent } from '../../core/panel/peekCardState'
-import { useFeedPanel, useFeedSlotRect } from './useFeedPanel'
+import { weighInPopupSurface } from '../../core/scale/weighInPopup'
+import { useFeedPanel, useFeedSlotRect, useWeighInSlotRect } from './useFeedPanel'
 import { useIdle } from './useIdle'
 import { useLastPage } from './useLastPage'
 import { useTimer } from './useTimer'
@@ -44,11 +45,12 @@ export function App() {
   // overlay view (ADR 0029); the dashboard folds the same events only
   // to size the slot rect the card floats in.
   const peek = usePeekCard(panel.open)
-  // The Weigh-in pop-up (#350): over the browsing pane it takes the Peek
-  // Card's place in the overlay; over every other view the dashboard draws it.
+  // The Weigh-in pop-up (#350): over the browsing pane it has a view of its
+  // own in the Peek Card's place (or rides the open panel's top), so the
+  // edge tab stays; over every other view the dashboard draws it.
   const weighInPopup = useWeighInPopup()
   const weighIns = useWeighIns()
-  const slotContent = overlaySlotContent(panel.open, peek.state, weighInPopup.phase !== 'hidden')
+  const slotContent = overlaySlotContent(panel.open, peek.state)
   // Nothing of the panel's ever covers the settings page or the Weight
   // page (#329, #334): while one is open the slot reports no bounds and
   // takes no room, and leaving it brings back whatever showed before —
@@ -56,6 +58,8 @@ export function App() {
   // the panel's state, so it is not the system opening or closing it.
   const fullViewShown = view !== 'dashboard'
   const feedSlotRef = useFeedSlotRect(`${panel.mode}-${slotContent}`, fullViewShown)
+  const weighInSurface = weighInPopupSurface(weighInPopup, !fullViewShown, panel.open)
+  const weighInSlotRef = useWeighInSlotRect(weighInSurface !== 'view')
 
   const getMicId = useCallback(() => settings?.micId ?? 'default', [settings])
   const voice = useVoice({
@@ -233,14 +237,16 @@ export function App() {
           <div
             ref={feedSlotRef}
             className={`feed-slot feed-slot--${panel.mode}${
-              slotContent === 'card' || slotContent === 'weighin' ? ' feed-slot--peek' : slotContent === 'tab' ? ' feed-slot--collapsed' : ''
+              slotContent === 'card' ? ' feed-slot--peek' : slotContent === 'tab' ? ' feed-slot--collapsed' : ''
             }${fullViewShown ? ' feed-slot--hidden' : ''}`}
             aria-hidden="true"
           />
+          {/* The Weigh-in pop-up's own view over the pane follows this rect. */}
+          <div ref={weighInSlotRef} className="weighin-slot" aria-hidden="true" />
         </div>
       </main>
       {/* Over Settings and the Weight page no native view covers the dashboard, so the pop-up is drawn here. */}
-      {view !== 'dashboard' ? <WeighInPopup state={weighInPopup} /> : null}
+      {weighInSurface === 'dashboard' ? <WeighInPopup state={weighInPopup} /> : null}
     </div>
   )
 }

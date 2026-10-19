@@ -163,23 +163,25 @@ describe('weight e2e: the stand-in scale, the pop-up, the card and the page', ()
     await waitFor(async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('.dashboard-browsing') && !document.querySelector('.weight-page')`)) ? true : undefined), { timeoutMs: 5000, intervalMs: 100 })
   })
 
-  it('shows the pop-up over the browsing pane in the overlay, in the Peek Card’s place, and its chip moves the Weigh-in there too', async () => {
+  it('shows the pop-up over the browsing pane in a view of its own, in the Peek Card’s place, the edge tab staying, and its chip moves the Weigh-in there too', async () => {
     await writeFile(join(userDataDir, 'scale-frames.txt'), `${STEPPING_ON}\n`, 'utf8')
     const shown = await waitFor(
       async () => {
-        const popup = await harness.overlayEval<{ text: string; width: number } | null>(`(() => { const el = document.querySelector('.overlay-chrome--weighin .weighin-popup--settled'); return el ? { text: el.textContent, width: window.innerWidth } : null })()`)
+        const popup = await harness.weighInEval<{ text: string; width: number } | null>(`(() => { const el = document.querySelector('.weighin-popup--settled'); return el ? { text: el.textContent, width: window.innerWidth } : null })()`)
         return popup !== null && popup.width > 300 ? popup : undefined
       },
       { timeoutMs: 15000, intervalMs: 100 },
     )
     expect(shown.text).toContain('Jaish')
     expect(shown.width).toBeLessThanOrEqual(600)
-    // The dashboard does not draw its own under the pane.
+    // The dashboard does not draw its own under the pane, and the feed
+    // overlay keeps the collapsed edge tab, its view still the tab's size.
     expect(await harness.dashboardEval<boolean>(`!!document.querySelector('.weighin-popup')`)).toBe(false)
-    await harness.clickOverlayElement('.weighin-popup-chip[data-person="barun"]', { minViewportWidth: 300 })
-    await waitFor(async () => ((await harness.overlayEval<string>(`document.querySelector('.weighin-popup--settled')?.textContent ?? ''`)).includes('Barun · first Weigh-in') ? true : undefined), { timeoutMs: 5000, intervalMs: 50 })
+    expect(await harness.overlayEval<{ tab: boolean; popup: boolean; width: number }>(`({ tab: !!document.querySelector('.feed-edge-tab'), popup: !!document.querySelector('.weighin-popup'), width: window.innerWidth })`)).toEqual({ tab: true, popup: false, width: 36 })
+    await harness.clickWeighInElement('.weighin-popup-chip[data-person="barun"]')
+    await waitFor(async () => ((await harness.weighInEval<string>(`document.querySelector('.weighin-popup--settled')?.textContent ?? ''`)).includes('Barun · first Weigh-in') ? true : undefined), { timeoutMs: 5000, intervalMs: 50 })
     expect((await weighInsOnDisk(userDataDir)).at(-1)).toMatchObject({ kg: 80.8, person: 'barun' })
-    await waitFor(async () => ((await harness.overlayEval<boolean>(`!document.querySelector('.weighin-popup')`)) ? true : undefined), { timeoutMs: 20000, intervalMs: 250 })
+    await waitFor(async () => ((await harness.weighInEval<boolean>(`!document.querySelector('.weighin-popup')`)) ? true : undefined), { timeoutMs: 20000, intervalMs: 250 })
   })
 
   it('has the Weight section in settings: Jaish with #350’s profile, Barun, the scale and its status line; removing Barun asks, then takes his Weigh-ins with him', async () => {

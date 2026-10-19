@@ -25,6 +25,8 @@ export interface Harness {
   dashboardEval<T = unknown>(expression: string): Promise<T>
   /** Evaluate in the feed panel's overlay webContents (#45). */
   overlayEval<T = unknown>(expression: string): Promise<T>
+  /** Evaluate in the Weigh-in pop-up's own view over the browsing pane. */
+  weighInEval<T = unknown>(expression: string): Promise<T>
   /**
    * Submit one typed command through the Prompt Bar (ADR 0011): open the
    * panel if the boot state collapsed it, then drive the bar in the
@@ -52,6 +54,8 @@ export interface Harness {
    * 100 px, the open panel); the 36 px edge tab passes its own (#331).
    */
   clickOverlayElement(selector: string, options?: { minViewportWidth?: number }): Promise<void>
+  /** Click an element in the Weigh-in pop-up's own view, once the view has its slot's width. */
+  clickWeighInElement(selector: string): Promise<void>
   /**
    * One real (input-pipeline) mouse event in the overlay view — the
    * press/move/release primitives a drag-resize (#65) needs, dispatched
@@ -89,7 +93,7 @@ interface TargetInfo {
   url: string
 }
 
-type TargetKind = 'dashboard' | 'overlay' | 'pane'
+type TargetKind = 'dashboard' | 'overlay' | 'weighin' | 'pane'
 
 // The floor a crashed renderer gets before the harness touches anything
 // again — process death (and its crash report) must land first.
@@ -106,11 +110,13 @@ const ROUTING_ENV_UNSET: Record<string, undefined> = Object.fromEntries([...deci
 
 // targetInfo.url goes stale after navigations; the predicates only rely on
 // values that never change for a given target (kind of page, initial URL).
-// The feed panel overlay (#45) is a second out/renderer page — the
-// dashboard predicate must exclude it, the pane predicate already does.
+// The feed panel overlay (#45) and the Weigh-in pop-up's view are more
+// out/renderer pages — the dashboard predicate names its own page, the pane
+// predicate excludes them all.
 const targetPredicates: Record<TargetKind, (info: TargetInfo) => boolean> = {
-  dashboard: (info) => info.url.includes('out/renderer') && !info.url.includes('overlay.html'),
+  dashboard: (info) => info.url.includes('out/renderer/index.html'),
   overlay: (info) => info.url.includes('out/renderer/overlay.html'),
+  weighin: (info) => info.url.includes('out/renderer/weighin.html'),
   pane: (info) => info.type === 'page' && !info.url.includes('out/renderer'),
 }
 
@@ -442,6 +448,11 @@ async function buildHarness(
       return evaluate<T>(cdp, sid, expression)
     },
 
+    async weighInEval<T = unknown>(expression: string): Promise<T> {
+      const sid = await waitFor(async () => sidOf('weighin'), { timeoutMs: 15000, intervalMs: 250 })
+      return evaluate<T>(cdp, sid, expression)
+    },
+
     async ensurePanelOpen() {
       const collapsed = await harness.overlayEval<boolean>(`!!document.querySelector('.overlay-chrome--collapsed')`)
       if (!collapsed) return
@@ -550,6 +561,17 @@ async function buildHarness(
       if (!settled) throw new Error(`element not found: ${selector}`)
       // The overlay is its own target: input coordinates are view-local,
       // same as pane clicks.
+      await dispatchClick(sid, settled.x, settled.y)
+    },
+
+    async clickWeighInElement(selector) {
+      const sid = sidOf('weighin')
+      if (!sid) throw new Error('weighin target not found')
+      // The view is 0×0 until the dashboard reports the pop-up's slot.
+      await waitFor(async () => ((await evaluate<number>(cdp, sid, 'innerWidth')) >= 300 ? ((await evaluate<{ x: number; y: number } | null>(cdp, sid, elementCenterScript(selector))) ?? undefined) : undefined), { timeoutMs: 5000, intervalMs: 100 })
+      await activateFor('weighin')
+      const settled = await evaluate<{ x: number; y: number } | null>(cdp, sid, elementCenterScript(selector))
+      if (!settled) throw new Error(`element not found: ${selector}`)
       await dispatchClick(sid, settled.x, settled.y)
     },
 

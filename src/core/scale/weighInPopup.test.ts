@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SettledWeighIn } from './people'
-import { createWeighInPopup, type WeighInPopupState } from './weighInPopup'
+import { createWeighInPopup, weighInPopupSurface, type WeighInPopupState } from './weighInPopup'
 
 const JAISH = { id: 'jaish', name: 'Jaish' }
 const BARUN = { id: 'barun', name: 'Barun' }
@@ -114,5 +114,28 @@ describe('the Weigh-in pop-up', () => {
     popup.reading({ kg: 81.1, stable: false })
     popup.reading({ kg: 81.1, stable: false })
     expect(shown).toEqual([{ phase: 'live', kg: 81.1 }])
+  })
+})
+
+describe('where the Weigh-in pop-up draws', () => {
+  const live: WeighInPopupState = { phase: 'live', kg: 81.1 }
+
+  it('hidden, nowhere', () => {
+    expect(weighInPopupSurface({ phase: 'hidden' }, true, false)).toBe('none')
+    expect(weighInPopupSurface({ phase: 'hidden' }, false, true)).toBe('none')
+  })
+
+  it('off the browsing pane, in the dashboard’s own DOM, open panel or not', () => {
+    expect(weighInPopupSurface(live, false, false)).toBe('dashboard')
+    expect(weighInPopupSurface(live, false, true)).toBe('dashboard')
+  })
+
+  it('over the pane with the panel collapsed, in its own view, so the edge tab keeps the feed overlay', () => {
+    expect(weighInPopupSurface(live, true, false)).toBe('view')
+    expect(weighInPopupSurface({ phase: 'settled', ...settled(80.8, -0.45) }, true, false)).toBe('view')
+  })
+
+  it('over the pane with the panel open, on the panel’s top', () => {
+    expect(weighInPopupSurface(live, true, true)).toBe('panel')
   })
 })

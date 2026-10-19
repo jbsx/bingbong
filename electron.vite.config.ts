@@ -12,12 +12,13 @@ export default defineConfig({
     plugins: [react()],
     build: {
       rollupOptions: {
-        // Two renderer entries (#45): the dashboard and the feed panel's
-        // overlay page — the panel composites above the browser pane's
-        // WebContentsView, which dashboard DOM cannot do.
+        // Three renderer entries (#45): the dashboard, the feed panel's
+        // overlay page and the Weigh-in pop-up's — both composite above the
+        // browser pane's WebContentsView, which dashboard DOM cannot do.
         input: {
           index: 'src/renderer/index.html',
           overlay: 'src/renderer/overlay.html',
+          weighin: 'src/renderer/weighin.html',
         },
       },
     },

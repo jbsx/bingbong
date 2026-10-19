@@ -9,7 +9,8 @@
 
 html,
 body,
-#overlay-root {
+#overlay-root,
+#weighin-root {
   height: 100%;
   margin: 0;
   background: transparent;
@@ -690,10 +691,11 @@ body,
   letter-spacing: 0.08em;
 }
 
-/* The Weigh-in pop-up in the overlay (#350): in the card's place it fills
-   the bottom-centre slot the dashboard reports; over an open panel it
-   rides the panel's top. */
-.overlay-chrome--weighin .weighin-popup {
+/* The Weigh-in pop-up over the browsing pane: in its own view
+   (weighin.html) it fills the bottom-centre slot the dashboard reports, so
+   the edge tab keeps its own; over an open panel the overlay draws it on
+   the panel's top. */
+#weighin-root .weighin-popup {
   position: static;
   transform: none;
   width: 100%;

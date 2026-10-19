@@ -49,6 +49,7 @@ import { registerLearnedTermsIpc } from './voice/attachLearnedTerms'
 import { attachVoiceToWindow, registerVoiceIpc } from './voice/attachVoice'
 import type { VoiceSession } from '../core/voice/voiceSession'
 import { attachFeedPanelOverlayToWindow, registerFeedPanelIpc } from './panel/createFeedPanelOverlay'
+import { attachWeighInViewToWindow } from './scale/attachWeighInView'
 import { defaultFeedPanelWidth } from '../core/panel/feedPanelState'
 import { audioDumpEnabled, createUtteranceDumper } from '../core/voice/utteranceDump'
 import { silenceFramesForMs } from '../core/voice/vadEndpointing'
@@ -274,8 +275,10 @@ async function createWindow(): Promise<BrowserWindow> {
   })
   // The panel shortcut also fires while the pane owns focus.
   feedPanel.registerShortcut(pane.view.webContents)
-  // The Weigh-ins and the Weigh-in pop-up reach both surfaces the pop-up shows on.
-  for (const contents of [win.webContents, feedPanel.contents()]) if (contents !== null) scaleListener?.addReceiver(contents)
+  // The Weigh-in pop-up's own view over the browsing pane, above the feed overlay.
+  const weighInView = attachWeighInViewToWindow(win, { preloadDir: join(__dirname, '../preload') })
+  // The Weigh-ins and the Weigh-in pop-up reach every surface the pop-up shows on.
+  for (const contents of [win.webContents, feedPanel.contents(), weighInView.contents()]) if (contents !== null) scaleListener?.addReceiver(contents)
   // The idle shortcut (Ctrl/Cmd+Shift+L) shows the Idle Screen now, from whichever surface owns focus.
   const enterIdle = (): void => {
     if (!win.isDestroyed() && !win.webContents.isDestroyed()) win.webContents.send(IDLE_IPC.enter)
@@ -320,6 +323,7 @@ async function createWindow(): Promise<BrowserWindow> {
   const unsubscribeLastPage = pane.onState((state) => lastPageStore.record(state))
   win.on('closed', unsubscribeLastPage)
   feedPanel.bringToTop()
+  weighInView.bringToTop()
   const agentActivity = createAgentActivityTracker()
   // Auth popups (ADR 0018): while a sign-in popup window is open, browser
   // actions route to it. The CLI harness and the runner share this routed

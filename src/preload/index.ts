@@ -110,6 +110,9 @@ contextBridge.exposeInMainWorld('bingbong', {
       ipcRenderer.on(WEIGHT_IPC.popupChanged, wrapped)
       return () => ipcRenderer.removeListener(WEIGHT_IPC.popupChanged, wrapped)
     },
+    reportPopupRect: (rect: PaneRect): void => {
+      ipcRenderer.send(WEIGHT_IPC.popupRect, { rect })
+    },
     status: (): Promise<ScaleStatus> => ipcRenderer.invoke(WEIGHT_IPC.status),
     onStatus: (listener: (status: ScaleStatus) => void): (() => void) => {
       const wrapped = (_event: unknown, status: ScaleStatus): void => listener(status)

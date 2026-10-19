@@ -14,6 +14,8 @@ export const WEIGHT_IPC = {
   popup: 'weight:popup',
   /** main → renderers: WeighInPopupState. */
   popupChanged: 'weight:popup-changed',
+  /** dashboard → main: the rect of the pop-up's own view over the browsing pane, 0×0 when it is not there. */
+  popupRect: 'weight:popup-rect',
   /** invoke → ScaleStatus. */
   status: 'weight:status',
   /** main → renderers: ScaleStatus. */
