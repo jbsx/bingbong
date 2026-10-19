@@ -185,6 +185,20 @@ export interface CommandRunnerDeps {
 /** How much of a Page Read the Feed card shows. */
 const DISPLAY_LIMIT = 4_000
 
+/** A screenshot's result line: the path it was saved at. */
+const SCREENSHOT_SAVED_RE = /^screenshot saved: (.*)$/
+
+/**
+ * A screenshot's Card, in the Feed's plain style: the folder it went to by
+ * name, never the path. The result line keeps the path for the CLI.
+ */
+function screenshotCardOf(result: string): string {
+  const path = SCREENSHOT_SAVED_RE.exec(result)?.[1]
+  if (path === undefined) return result
+  const folder = path.split(/[\\/]/).slice(0, -1).filter((part) => part !== '').pop()
+  return folder === undefined ? 'Saved a screenshot.' : `Saved a screenshot to ${folder}.`
+}
+
 /**
  * How long a page collected at speech start stays good for: an Utterance
  * can be at most this long, so a prepared page older than this belongs to
@@ -735,12 +749,13 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
 
   /**
    * What the Feed shows of a result as a Card: a Page Read's title and
-   * words, its whole part — what is spoken (#333) — a screenshot's path,
-   * the help; never an action's outcome line.
+   * words, its whole part — what is spoken (#333) — where a screenshot
+   * went, the help; never an action's outcome line.
    */
   function cardOf(command: Command, result: string): { text: string; failure: boolean } | null {
     if (command.verb === 'read') return pageReadCard(result)
-    if (command.verb !== 'screenshot' && command.verb !== 'help') return null
+    if (command.verb === 'screenshot') return { text: screenshotCardOf(result), failure: false }
+    if (command.verb !== 'help') return null
     const shown = result.length > DISPLAY_LIMIT ? `${result.slice(0, DISPLAY_LIMIT)}\n…` : result
     return { text: shown === '' ? 'done' : shown, failure: false }
   }

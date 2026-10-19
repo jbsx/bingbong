@@ -204,7 +204,7 @@ export function describeCommand(command: Command, page?: CommandPage): string {
   }
   switch (command.verb) {
     case 'navigate':
-      return `open ${command.slot ?? ''}`.trim()
+      return `navigate ${command.slot ?? ''}`.trim()
     case 'search':
       return `search ${command.slot ?? ''}${command.site !== undefined ? ` on ${command.site}` : ''}`.trim()
     case 'click':

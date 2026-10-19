@@ -399,7 +399,7 @@ describe('a Command the Local Match settles', () => {
     expect(browser.navigations).toEqual(['https://youtube.com'])
     expect(decision.requests).toEqual([])
     expect(types(events)).toEqual(['command', 'status', 'tool_call', 'tool_result', 'display', 'done'])
-    expect(events[0]).toMatchObject({ type: 'command', text: 'navigate youtube.com', action: 'open youtube.com' })
+    expect(events[0]).toMatchObject({ type: 'command', text: 'navigate youtube.com', action: 'navigate youtube.com' })
     expect(events[0]).not.toHaveProperty('keepsIdle')
     expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done' })
     expect(events.some((event) => event.type === 'speak')).toBe(false)
@@ -926,11 +926,12 @@ describe('what every Command records', () => {
     ])
   })
 
-  it('saves a screenshot under the screenshot dir and names the file in the Card', async () => {
+  it('saves a screenshot under the screenshot dir and names the folder, not the path, in the Card', async () => {
     const { events, screenshots, runner } = harness()
     await runner.run('screenshot')
     expect(screenshots).toEqual(['/shots/screenshot-1.jpg'])
-    expect(events.find((event) => event.type === 'display')).toMatchObject({ text: 'screenshot saved: /shots/screenshot-1.jpg' })
+    expect(events.find((event) => event.type === 'tool_result')).toMatchObject({ result: 'screenshot saved: /shots/screenshot-1.jpg' })
+    expect(events.find((event) => event.type === 'display')).toMatchObject({ text: 'Saved a screenshot to shots.' })
   })
 })
 
@@ -1554,7 +1555,7 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
     const fired = commands(events)
     const taskId = fired[0]!.task!.id
     expect(fired.map((event) => event.task)).toEqual([0, 1, 2, 3].map((hop) => ({ id: taskId, hop })))
-    expect(fired.map((event) => event.action)).toEqual([`search latest elon musk tweet`, `open ${POST}`, 'click [2] "Show the post"', 'done'])
+    expect(fired.map((event) => event.action)).toEqual([`search latest elon musk tweet`, `navigate ${POST}`, 'click [2] "Show the post"', 'done'])
     expect(fired[3]).toMatchObject({ dropped: true })
 
     const read = decisions(records)
@@ -1924,7 +1925,7 @@ describe('the Site Scope at hop 0 (#340)', () => {
     await runner.run(TEXT, { source: 'spoken' })
 
     expect(browser.navigations).toEqual([SCOPED, PROFILE])
-    expect(commands(events).map((event) => event.action)).toEqual(['search donald trumps profile on x.com', `open ${PROFILE}`, 'done'])
+    expect(commands(events).map((event) => event.action)).toEqual(['search donald trumps profile on x.com', `navigate ${PROFILE}`, 'done'])
     expect(events).toContainEqual(expect.objectContaining({ type: 'display', text: 'Searched x.com for “donald trumps profile”.' }))
     // Hop 1 is offered the results and asked no where.
     expect(asked(decision.requests[0]!)).toEqual(['verb', 'target', 'slot', 'where'])
