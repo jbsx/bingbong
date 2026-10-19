@@ -2198,6 +2198,40 @@ describe('a pop-up covering the page (#336)', () => {
     expect(displays(events)).toEqual([expect.objectContaining({ text: 'Closed the pop-up.' })])
   })
 
+  it('a close Jev read ends where it closed: the next hop is told the pop-up closed, and an unsure Verdict fires no `back` (live run 2026-10-19)', async () => {
+    // "close the pop-up" heard as "Close the buffer": no dismiss phrase, so Jev reads it and clicks Close.
+    const { browser, decision, records, runner } = sheetHarness()
+    // A real close reports the page moved: the sheet left the signature.
+    const click = browser.click.bind(browser)
+    browser.click = async (n) => (await click(n)).replace(NO_OBSERVABLE_CHANGE, PAGE_SIGNATURE_CHANGED)
+    const backs: string[] = []
+    browser.back = async () => {
+      backs.push(browser.snapshot.url)
+      return 'went back'
+    }
+    decision.script.push(
+      { answers: { verb: choice('click'), target: choice('ref-9'), slot: choice('none') } },
+      // Hop 1 as the real Jev read it once told: none over back, a yes under the bar.
+      {
+        answers: {
+          verb: choice('none', 0.38, { none: 0.38, back: 0.31, click: 0.14 }),
+          target: choice('none'),
+          slot: choice('none'),
+          outcome: choice('yes', 0.6, { yes: 0.6, not_yet: 0.22, in_the_way: 0.18 }),
+        },
+      },
+    )
+    await runner.run('Close the buffer', { source: 'spoken' })
+    expect(browser.clicks).toEqual([9])
+    const hop1 = decision.requests[1]!
+    expect(hop1.state).toContain('Done so far: click "Close" (the pop-up closed)')
+    expect((hop1.questions as { outcome: DecisionChoiceQuestion }).outcome.instructions).toMatch(/^Is what the user asked for done\? First: if a pop-up/)
+    expect(backs).toEqual([])
+    expect(browser.navigations).toEqual([])
+    expect(browser.snapshot.url).toBe('https://x.com/elonmusk')
+    expect(records.flatMap((record) => (record.type === 'decision' ? [record.ended] : []))).toEqual([undefined, 'unsure'])
+  })
+
   it('Jev reads the dialog when one is open and the words are not a dismiss phrase', async () => {
     const { decision, runner } = sheetHarness()
     decision.script.push({ answers: { verb: choice('none'), target: choice('none'), slot: choice('none') } })
