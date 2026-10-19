@@ -97,7 +97,7 @@ describe('weight e2e: the stand-in scale, the pop-up, the card and the page', ()
     }, { timeoutMs: 5000, intervalMs: 100 })
     expect(rows).toEqual([
       { person: 'jaish', kg: '81.25 kg' },
-      { person: 'barun', kg: '80.8 kg' },
+      { person: 'barun', kg: '80.80 kg' },
     ])
 
     // Stepped off: gone about 8 s after the tap.
@@ -127,6 +127,18 @@ describe('weight e2e: the stand-in scale, the pop-up, the card and the page', ()
     expect(page.ranges).toEqual(['30 d', '90 d', '1 y', 'All'])
     expect(page.rows).toBe(60)
     expect(page.weightDots).toBe(30)
+    // The page's name; Back in the content's column; every chart's two labels apart, a flat one too; the table's weights at two decimals.
+    const polish = await harness.dashboardEval<{ title: string; backLeft: number; contentLeft: number; sameLabels: string[]; weights: string[] }>(`(() => ({
+      title: document.querySelector('.weight-page h1')?.textContent,
+      backLeft: Math.round(document.querySelector('.weight-back').getBoundingClientRect().left),
+      contentLeft: Math.round(document.querySelector('.weight-latest').getBoundingClientRect().left),
+      sameLabels: [...document.querySelectorAll('.weight-chart-figure')].filter((el) => { const [top, bottom] = [...el.querySelectorAll('.weight-chart-y span')].map((s) => s.textContent); return top === bottom }).map((el) => el.dataset.figure),
+      weights: [...document.querySelectorAll('.weight-table tbody tr td:nth-child(2)')].map((el) => el.textContent),
+    }))()`)
+    expect(polish.title).toBe('Weight')
+    expect(polish.backLeft).toBe(polish.contentLeft)
+    expect(polish.sameLabels).toEqual([])
+    for (const weight of polish.weights) expect(weight).toMatch(/^\d+\.\d\d kg$/)
 
     await harness.clickDashboardElement('.weight-history .weight-range:nth-child(4)')
     // All reaches back to the first of the 60: past 40 points only the latest keeps its dot.
@@ -139,7 +151,7 @@ describe('weight e2e: the stand-in scale, the pop-up, the card and the page', ()
       return found.on === 'barun' ? found : undefined
     }, { timeoutMs: 5000, intervalMs: 100 })
     expect(barun.rows).toBe(1)
-    expect(barun.figures.weightKg).toBe('80.8 kg')
+    expect(barun.figures.weightKg).toBe('80.80 kg')
     expect(barun.figures.fatPercent).toBe('–')
 
     // A wrong move fixed from the page: the row's chip gives it back to Jaish, figures and all.
@@ -149,7 +161,7 @@ describe('weight e2e: the stand-in scale, the pop-up, the card and the page', ()
     expect((await weighInsOnDisk(userDataDir)).at(-1)).toMatchObject({ kg: 80.8, person: 'jaish' })
     await harness.clickDashboardElement('.weight-people [data-person="jaish"]')
     await waitFor(async () => ((await harness.dashboardEval<number>(`document.querySelectorAll('.weight-table tbody tr').length`)) === 61 ? true : undefined), { timeoutMs: 5000, intervalMs: 100 })
-    expect(await harness.dashboardEval<string>(`document.querySelector('.weight-figure[data-figure="weightKg"] .weight-figure-value').textContent`)).toBe('80.8 kg')
+    expect(await harness.dashboardEval<string>(`document.querySelector('.weight-figure[data-figure="weightKg"] .weight-figure-value').textContent`)).toBe('80.80 kg')
 
     // The newest row is the Weigh-in the stand-in just recorded: a mis-weigh, deleted.
     // The table is at the foot of the page: brought into view, as the owner scrolls to it.

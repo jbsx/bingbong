@@ -3868,8 +3868,25 @@ body {
 }
 
 /* ---- the Weight page (#350): Settings' sheet, wider for the charts ---- */
-.weight-scroll {
+/* Back sits in the same column as the sheet, so its left edge is the content's. */
+.weight-scroll,
+.weight-actions {
   max-width: 1280px;
+}
+
+/* The page's name, with the switch between People beside it. */
+.weight-page-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+}
+
+.weight-page-title {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
 }
 
 .weight-figures {
@@ -3988,10 +4005,6 @@ body {
 .weight-table td:last-child {
   text-align: right;
   white-space: nowrap;
-}
-
-.weight-people {
-  margin-bottom: 16px;
 }
 
 .weight-move {

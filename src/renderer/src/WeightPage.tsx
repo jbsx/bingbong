@@ -116,15 +116,18 @@ export function WeightPage({ weighIns, people, initialPerson = JAISH, onClose }:
   return (
     <section className="settings-page weight-page" aria-label="weight">
       <div className="settings-scroll weight-scroll">
-        {people.length > 1 ? (
-          <span className="weight-ranges weight-people" role="group" aria-label="person">
-            {people.map((known) => (
-              <button key={known.id} type="button" data-person={known.id} className={known.id === person.id ? 'weight-range weight-range--on' : 'weight-range'} aria-pressed={known.id === person.id} onClick={() => setChosen(known.id)}>
-                {known.name}
-              </button>
-            ))}
-          </span>
-        ) : null}
+        <header className="weight-page-head">
+          <h1 className="weight-page-title">Weight</h1>
+          {people.length > 1 ? (
+            <span className="weight-ranges weight-people" role="group" aria-label="person">
+              {people.map((known) => (
+                <button key={known.id} type="button" data-person={known.id} className={known.id === person.id ? 'weight-range weight-range--on' : 'weight-range'} aria-pressed={known.id === person.id} onClick={() => setChosen(known.id)}>
+                  {known.name}
+                </button>
+              ))}
+            </span>
+          ) : null}
+        </header>
         {latest === undefined || figures === null ? (
           <section className="settings-section">
             <h2>{person.name}</h2>
@@ -220,7 +223,7 @@ export function WeightPage({ weighIns, people, initialPerson = JAISH, onClose }:
         ) : null}
       </div>
 
-      <div className="settings-actions">
+      <div className="settings-actions weight-actions">
         <button type="button" className="settings-button weight-back" onClick={onClose}>
           Back
         </button>

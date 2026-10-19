@@ -1,3 +1,5 @@
+import { chartScale } from '../../core/scale/weightFormat'
+
 /** One figure's value at a Weigh-in. */
 export interface ChartPoint {
   at: number
@@ -13,16 +15,15 @@ function dayLabel(at: number): string {
  * a 0–1000 × 0–100 box stretched to its room, the stroke keeping its width
  * (non-scaling), a faint fill under it and a dot on the latest value in
  * HTML so nothing stretches with the plot. The value axis spans the
- * figure's own range in the span, padded, so a half-kilo week still reads
- * as a slope. `compact` leaves the date axis off (the Weight card's trend).
+ * figure's own range in the span (chartScale), so a half-kilo week still
+ * reads as a slope. `compact` leaves the date axis off (the Weight card's
+ * trend).
  */
 export function WeightChart({ points, start, end, digits, label, compact = false }: { points: readonly ChartPoint[]; start: number; end: number; digits: number; label: string; compact?: boolean }) {
-  const values = points.map((point) => point.value)
-  const low = Math.min(...values)
-  const high = Math.max(...values)
-  const pad = Math.max((high - low) * 0.15, 10 ** -digits * 5)
-  const floor = low - pad
-  const span = high + pad - floor
+  const { top, bottom, floor, span } = chartScale(
+    points.map((point) => point.value),
+    digits,
+  )
   const width = Math.max(1, end - start)
   const at = (point: ChartPoint): [number, number] => [Math.min(1000, Math.max(0, ((point.at - start) / width) * 1000)), 100 - ((point.value - floor) / span) * 100]
   const drawn = points.map(at)
@@ -31,8 +32,8 @@ export function WeightChart({ points, start, end, digits, label, compact = false
   return (
     <div className={compact ? 'weight-chart weight-chart--compact' : 'weight-chart'} role="img" aria-label={label}>
       <span className="weight-chart-y" aria-hidden="true">
-        <span>{points.length > 0 ? high.toFixed(digits) : ''}</span>
-        <span>{points.length > 0 ? low.toFixed(digits) : ''}</span>
+        <span>{points.length > 0 ? top : ''}</span>
+        <span>{points.length > 0 ? bottom : ''}</span>
       </span>
       <span className="weight-chart-area">
         {points.length === 0 ? (
