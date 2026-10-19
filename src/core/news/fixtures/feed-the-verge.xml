@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?><feed
+	xmlns="http://www.w3.org/2005/Atom"
+	xmlns:thr="http://purl.org/syndication/thread/1.0"
+	xml:lang="en-US"
+	>
+	<title type="text">The Verge</title>
+	<subtitle type="text">The Verge is about technology and how it makes us feel. Founded in 2011, we offer our audience everything from breaking news to reviews to award-winning features and investigations, on our site, in video, and in podcasts.</subtitle>
+
+	<updated>2026-10-18T22:20:53+00:00</updated>
+
+	<link rel="alternate" type="text/html" href="https://www.theverge.com" />
+	<id>https://www.theverge.com/rss/index.xml</id>
+	<link rel="self" type="application/atom+xml" href="https://www.theverge.com/rss/index.xml" />
+
+	<icon>https://platform.theverge.com/wp-content/uploads/sites/2/2025/01/verge-rss-large_80b47e.png?w=150&amp;h=150&amp;crop=1</icon>
+		<entry>
+			
+			<author>
+				<name>Tim Stevens</name>
+			</author>
+			
+			<title type="html"><![CDATA[The Maeving RM2 is high-style electric riding with a few compromises]]></title>
+			<link rel="alternate" type="text/html" href="https://www.theverge.com/transportation/1013049/maeving-rm2-electric-motorcycle-review-specs" />
+			<id>https://www.theverge.com/?p=1013049</id>
+			<updated>2026-10-16T14:44:35-04:00</updated>
+			<published>2026-10-19T07:00:00-04:00</published>
+			<category scheme="https://www.theverge.com" term="Electric Bikes" /><category scheme="https://www.theverge.com" term="Reviews" /><category scheme="https://www.theverge.com" term="Rideables" /><category scheme="https://www.theverge.com" term="Tech" /><category scheme="https://www.theverge.com" term="Transportation" />
+							<summary type="html"><![CDATA[There's a fast-growing category of two-wheeled electric vehicles splitting the difference between high-end scooters and entry-level motorcycles, fresh bikes with avant-garde style but approachable performance. I'm talking about offerings like the Infinite Machine P1 and BMW CE 02, similar concepts but with wildly different attitudes. Among this class, the Maeving RM2 stands out. It has [&#8230;]]]></summary>
+			
+							
+			
+					</entry>
+<entry>
+			
+			<author>
+				<name>Terrence O’Brien</name>
+			</author>
+			
+			<title type="html"><![CDATA[A Savannah police officer gave her Flock login to her ICE agent husband]]></title>
+			<link rel="alternate" type="text/html" href="https://www.theverge.com/policy/1013573/spd-officer-fired-flock-ice-husband" />
+			<id>https://www.theverge.com/?p=1013573</id>
+			<updated>2026-10-18T18:20:53-04:00</updated>
+			<published>2026-10-18T18:20:53-04:00</published>
+			<category scheme="https://www.theverge.com" term="Law" /><category scheme="https://www.theverge.com" term="News" /><category scheme="https://www.theverge.com" term="Policy" />
+							<summary type="html"><![CDATA[Now, former Savannah police officer Amber Harpe was fired in August following a department investigation that found she had shared her Flock login information with her husband, Tyler Harpe, an ICE agent. SPD does not share its Flock data with ICE and said sharing access to the system violated the department's security protocols. While he [&#8230;]]]></summary>
+			
+							
+			
+					</entry>
+<entry>
+			
+			<author>
+				<name>Terrence O’Brien</name>
+			</author>
+			
+			<title type="html"><![CDATA[Mister Organ is one of the most unsettling documentaries I’ve ever seen]]></title>
+			<link rel="alternate" type="text/html" href="https://www.theverge.com/entertainment/1013545/mister-organ-horror-documentary-review" />
+			<id>https://www.theverge.com/?p=1013545</id>
+			<updated>2026-10-18T15:21:56-04:00</updated>
+			<published>2026-10-18T15:30:00-04:00</published>
+			<category scheme="https://www.theverge.com" term="Column" /><category scheme="https://www.theverge.com" term="Entertainment" /><category scheme="https://www.theverge.com" term="Film" /><category scheme="https://www.theverge.com" term="Movie Review" />
+							<summary type="html"><![CDATA[Mister Organ doesn't reach the level of societal horror of The Act of Killing or the creepypasta-meets-true-crime gruesomeness of Beware the Slenderman, but there's something deeply unsettling about Michael Organ and his intimate campaign of terror against everyone who enters his life. Mister Organ is a documentary by David Farrier, an Auckland, New Zealand journalist. [&#8230;]]]></summary>
+			
+							
+			
+					</entry>
+	</feed>

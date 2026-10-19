@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { profileSubreddits } from '../news/interestProfile'
 import {
   defaultSettings,
   HOT_LISTEN_SILENCE_MS_MAX,
@@ -184,8 +185,36 @@ describe('news (#346)', () => {
   })
 
   it('keeps an edited profile, an empty one included', () => {
-    expect(sanitizeSettings({ news: { topics: [{ name: ' Chess ', words: [' chess ', '', 7] }] } }).news.topics).toEqual([{ name: 'Chess', words: ['chess'] }])
+    expect(sanitizeSettings({ news: { topics: [{ name: ' Chess ', words: [' chess ', '', 7], subreddits: [' chess ', 3] }] } }).news.topics).toEqual([
+      { name: 'Chess', words: ['chess'], subreddits: ['chess'] },
+    ])
     expect(sanitizeSettings({ news: { topics: [] } }).news.topics).toEqual([])
+  })
+})
+
+describe('news sources (#348)', () => {
+  it('defaults to a subreddit or two per topic and the labs’ and press feeds', () => {
+    const { news } = defaultSettings()
+    expect(news.topics.find((topic) => topic.name === 'The Musk orbit')?.subreddits).toEqual(['teslamotors', 'SpaceX'])
+    expect(news.feeds.map((feed) => feed.name)).toEqual(['OpenAI', 'Anthropic', 'Google DeepMind', 'Ars Technica', 'The Verge', 'Electrek'])
+  })
+
+  it('gives a topic saved before subreddits existed its default topic’s, and keeps one emptied as none', () => {
+    const topics = sanitizeSettings({ news: { topics: [{ name: 'One-offs', words: ['chess'] }, { name: 'Mine', words: ['x'] }, { name: 'The Musk orbit', words: [], subreddits: [] }] } }).news.topics
+    expect(topics.map((topic) => topic.subreddits)).toEqual([['chess'], [], []])
+  })
+
+  it('polls each subreddit once however it was typed, and none that names no subreddit', () => {
+    const topics = sanitizeSettings({ news: { topics: [{ name: 'A', words: [], subreddits: ['r/NeoVim', 'r/', '/'] }, { name: 'B', words: [], subreddits: ['neovim', 'rust'] }] } }).news.topics
+    expect(profileSubreddits(topics)).toEqual(['r/NeoVim', 'rust'])
+  })
+
+  it('keeps an edited feed list, an empty one included, and defaults one saved before feeds existed', () => {
+    expect(sanitizeSettings({ news: { topics: [], feeds: [{ name: ' Electrek ', url: ' https://electrek.co/feed/ ' }, { name: 3 }] } }).news.feeds).toEqual([
+      { name: 'Electrek', url: 'https://electrek.co/feed/' },
+    ])
+    expect(sanitizeSettings({ news: { topics: [], feeds: [] } }).news.feeds).toEqual([])
+    expect(sanitizeSettings({ news: { topics: [] } }).news.feeds).toHaveLength(6)
   })
 
   it('adds the News card to Pinned Cards saved before it existed, but keeps it off once unpinned', () => {

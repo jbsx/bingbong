@@ -5,6 +5,7 @@
 
 import { defaultUsagePrefs, sanitizeUsagePrefs, type UsagePrefs } from '../usage/usage'
 import { IDLE_CARD_IDS, sanitizeIdleCards, type IdleCardId } from '../idle/slots'
+import { defaultNewsFeeds, sanitizeNewsFeeds, type NewsFeed } from '../news/feeds'
 import { defaultInterestProfile, sanitizeInterestProfile, type InterestProfile } from '../news/interestProfile'
 
 export const WAKE_WORD_THRESHOLD_MIN = 0
@@ -90,8 +91,12 @@ export interface AppSettings {
   usageDashboard: { url: string } & UsagePrefs
   /** The Idle Screen's pinned cards (core/idle/slots), in the order they read; one left out is not shown. */
   idleCards: IdleCardId[]
-  /** The News card's Interest Profile (core/news/interestProfile): the topics a story is ranked against. */
-  news: { topics: InterestProfile }
+  /**
+   * The News card's Interest Profile (core/news/interestProfile) — the
+   * topics a story is ranked against, each with the subreddits polled for
+   * it — and the feeds it reads (core/news/feeds).
+   */
+  news: { topics: InterestProfile; feeds: NewsFeed[] }
 }
 
 /** The owner's dashboard on the LAN, so the Idle Screen shows it out of the box. */
@@ -112,7 +117,7 @@ export function defaultSettings(): AppSettings {
     weather: { city: '', units: 'metric' },
     usageDashboard: { url: USAGE_DASHBOARD_URL_DEFAULT, ...defaultUsagePrefs() },
     idleCards: [...IDLE_CARD_IDS],
-    news: { topics: defaultInterestProfile() },
+    news: { topics: defaultInterestProfile(), feeds: defaultNewsFeeds() },
   }
 }
 
@@ -198,7 +203,7 @@ export function sanitizeSettings(raw: unknown): AppSettings {
     },
     usageDashboard: { url: asString(usageDashboard?.url, defaults.usageDashboard.url), ...sanitizeUsagePrefs(usageDashboard) },
     idleCards: pinnedCards(record),
-    news: { topics: news === null ? defaultInterestProfile() : sanitizeInterestProfile(news.topics) },
+    news: { topics: news === null ? defaultInterestProfile() : sanitizeInterestProfile(news.topics), feeds: sanitizeNewsFeeds(news?.feeds) },
   }
 }
 

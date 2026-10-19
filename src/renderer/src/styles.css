@@ -1481,7 +1481,7 @@ body {
   gap: 8px;
 }
 
-.settings-topic-words {
+.settings-list-input {
   flex: 1;
   min-width: 0;
 }

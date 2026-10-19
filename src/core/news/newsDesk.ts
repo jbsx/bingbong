@@ -70,7 +70,7 @@ function isStory(value: unknown): value is NewsStory {
     typeof link === 'string' &&
     typeof source === 'string' &&
     typeof publishedAt === 'number' &&
-    typeof magnitude === 'number' &&
+    (magnitude === null || typeof magnitude === 'number') &&
     typeof unit === 'string' &&
     (comments === null || typeof comments === 'number')
   )
@@ -107,7 +107,8 @@ function sanitizeStories(raw: unknown): StoryHistory {
     if (typeof title !== 'string' || typeof link !== 'string' || typeof source !== 'string' || typeof unit !== 'string') continue
     if (typeof topical !== 'boolean' || typeof cluster !== 'string') continue
     const days = Object.entries(isRecord(record.days) ? record.days : {}).filter(
-      (entry): entry is [string, { score: number; magnitude: number }] => isRecord(entry[1]) && typeof entry[1].score === 'number' && typeof entry[1].magnitude === 'number',
+      (entry): entry is [string, { score: number; magnitude: number | null }] =>
+        isRecord(entry[1]) && typeof entry[1].score === 'number' && (entry[1].magnitude === null || typeof entry[1].magnitude === 'number'),
     )
     if (days.length === 0) continue
     stories[key] = { title, link, source, unit, topical, cluster, days: Object.fromEntries(days.map(([day, { score, magnitude }]) => [day, { score, magnitude }])) }
@@ -120,8 +121,15 @@ export interface NewsDesk {
   horizons(): Promise<NewsHorizons | null>
 }
 
+/** The start of the local day after `at`: when a source that refused the appliance is asked again. */
+function nextDay(at: number): number {
+  const date = new Date(at)
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1).getTime()
+}
+
 export function createNewsDesk(deps: {
-  sources: readonly NewsSource[]
+  /** The sources, read at every poll: the subreddits and feeds follow settings. */
+  sources: () => readonly NewsSource[]
   store: NewsStore
   profile: () => InterestProfile
   now?: () => number
@@ -130,9 +138,13 @@ export function createNewsDesk(deps: {
   let state = deps.store.load()
   let polledAt: number | null = null
   let polling: Promise<void> | null = null
+  /** The sources resting after a refusal, by name, until when. Not kept across a restart: a restart asks once more. */
+  const resting = new Map<string, number>()
 
   async function poll(at: number, profile: InterestProfile): Promise<void> {
-    const { stories, answered } = await gatherStories(deps.sources, at - POLL_SINCE_MS)
+    const awake = deps.sources().filter((source) => (resting.get(source.name) ?? 0) <= at)
+    const { stories, answered, refused } = await gatherStories(awake, at - POLL_SINCE_MS)
+    for (const name of refused) resting.set(name, nextDay(at))
     if (!answered) {
       polledAt = at - NEWS_POLL_MS + NEWS_RETRY_MS
       return
@@ -145,7 +157,12 @@ export function createNewsDesk(deps: {
     state =
       pick === null
         ? { ...state, history, shown, stories: recorded }
-        : { history, shown: [...shown, { key: pick.story.key, at }], highlight: { story: pick.story, topics: pick.topics, shownAt: at }, stories: recorded }
+        : {
+            history,
+            shown: [...shown, ...pick.keys.map((key) => ({ key, at }))],
+            highlight: { story: pick.story, topics: pick.topics, shownAt: at },
+            stories: recorded,
+          }
     deps.store.save(state)
   }
 

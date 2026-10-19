@@ -18,7 +18,7 @@ function scored(id: string, title: string, score: number, more: Partial<NewsStor
     comments: null,
     ...more,
   }
-  return { story, topics: ['AI coding agents'], percentile: score, score }
+  return { story, topics: ['AI coding agents'], percentile: score, score, keys: [story.key], sources: [story.source] }
 }
 
 /** The history after one poll per listed day, each poll answering that day's stories. */

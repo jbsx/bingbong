@@ -512,13 +512,15 @@ _Avoid_: news feed, headlines, widget
 
 **Interest Profile**:
 The owner's circles as a topic list in settings' News section, each topic
-carrying the words that match it; by default the seven read from the
+carrying the words that match it and the subreddits polled for it (one or
+two by default; none polls none); by default the seven read from the
 owner's X follows on 2026-10-19 (AI coding agents and harnesses, frontier
 AI research, developer tooling and terminal culture, startups and
 business, markets and finance as the big event, the Musk orbit, one-offs).
 A story matches a topic when its title holds one of the topic's words as a
-whole word; the match counts topics, not words, so the AI topics — half the
-follows — weigh no more for having many words.
+whole word, or when it came from one of the topic's subreddits; the match
+counts topics, not words, so the AI topics — half the follows — weigh no
+more for having many words.
 _Avoid_: interests, keywords, filter
 
 **Today's Highlight**:
@@ -527,7 +529,11 @@ Interest Profile and has not been shown before: its title, its source, and
 the number that made it a story ("1,840 points"). A story's score is its
 magnitude's percentile against its own source's recent days (its day and
 the six before), so sources compare on one scale, boosted by the topics it
-matches; one matching no topic ranks under every one that matches one.
+matches; one matching no topic ranks under every one that matches one. The
+same story on several sources (the clustering This Week uses) counts once,
+at its peak percentile, boosted half again for each source past the first,
+and is marked shown under every source's key; a feed's post, counting
+nothing, shows no number.
 Main polls hourly while the Idle Screen asks, and once on its first show; a
 story is shown once, the shown keys kept in userData (news.json) so that
 holds across a restart; a poll no source answered keeps the last
@@ -541,7 +547,8 @@ included, read from the story history main keeps in news.json (every
 polled story's best score by the day it was polled, and its cluster, kept
 31 days). Stories are clustered as they are recorded — the same link, the
 same site with a near-identical title, or the same proper name (a model
-named with letters and digits like "GPT-6", a repo "owner/repo") is one
+named with letters and digits like "GPT-6", a repo or model "owner/repo"
+in the title or a GitHub or Hugging Face link) is one
 story — and a cluster ranks at its peak score, topical over not as in
 Today's Highlight. A day's highlight is a candidate, not an entry: a quiet
 day's winner can drop out.
@@ -558,11 +565,25 @@ _Avoid_: monthly digest, trending
 **NewsSource**:
 Where News stories come from: one site's public listing, answering the
 stories published since a time, each with title, link, source, published
-time and the source's own magnitude (points, stars, likes). Main asks them
-together; a failing one is reported and left out, as a failing Calendar
-Source is. Hacker News (its keyless Algolia API, the front page's points and
-comments) is the one wired; more follow in #348.
-_Avoid_: feed, provider (a provider is a Calendar or AI Usage term)
+time and the source's own magnitude (points, stars, likes). The sources
+(#346, #348): Hacker News (its keyless Algolia API, the front page's
+points and comments); GitHub trending (the day's trending page, the stars
+gained today); Hugging Face, as two sources since their numbers are two
+scales — trending models by likes and the daily papers by upvotes; one
+source per subreddit an Interest Profile topic names (r/neovim, its top
+posts of the day by upvotes); and one source per feed — an RSS or Atom
+feed in settings' News section, by default OpenAI, Anthropic (a community
+mirror: it publishes none), Google DeepMind, Ars Technica, The Verge and
+Electrek (Meta AI and xAI publish none). A feed counts nothing, so its
+posts carry no magnitude and score at the feed floor — an ordinary day's
+story, the 50th percentile — lifted only by the topics they match and by
+the same story on a source that counts. Main asks them together each hour,
+each request with its own timeout; a failing one is reported and left
+out, never blanking the others, as a failing Calendar Source is; one that
+refuses the appliance (403, 429, a challenge page where data was asked
+for) rests until local midnight.
+_Avoid_: feed for a NewsSource in general (a feed is the RSS or Atom kind),
+provider (a provider is a Calendar or AI Usage term)
 
 **Last Page**:
 The page the browser pane last showed — its address and title — kept in

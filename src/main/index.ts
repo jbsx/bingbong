@@ -499,7 +499,7 @@ app.whenReady().then(async () => {
   registerCommandRunnerIpc()
   registerSettingsIpc(settingsStore)
   registerUsageIpc(() => settingsStore.get().usageDashboard.url)
-  registerNewsIpc({ storePath: join(app.getPath('userData'), 'news.json'), profile: () => settingsStore.get().news.topics })
+  registerNewsIpc({ storePath: join(app.getPath('userData'), 'news.json'), news: () => settingsStore.get().news })
   registerFeedPanelIpc()
   registerTtsIpc({ voicesDir: () => piperConfig.voicesDir })
   registerVoiceIpc()

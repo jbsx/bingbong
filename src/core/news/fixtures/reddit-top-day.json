@@ -1,0 +1,59 @@
+{
+  "_note": "Hand-built in the shape of reddit.com/r/<sub>/top.json?t=day (a Listing of t3 children): reddit.com answers this appliance's network 403 'blocked by network security', so no answer could be recorded on 2026-10-19.",
+  "kind": "Listing",
+  "data": {
+    "after": "t3_1o9xk2c",
+    "dist": 3,
+    "children": [
+      {
+        "kind": "t3",
+        "data": {
+          "id": "1o9w3fa",
+          "name": "t3_1o9w3fa",
+          "subreddit": "neovim",
+          "title": "Neovim 0.12 is out: built-in package manager, LSP progress UI and more",
+          "url": "https://neovim.io/news/2026/10",
+          "permalink": "/r/neovim/comments/1o9w3fa/neovim_012_is_out/",
+          "is_self": false,
+          "score": 1873,
+          "ups": 1873,
+          "num_comments": 214,
+          "created_utc": 1792386000.0,
+          "stickied": false
+        }
+      },
+      {
+        "kind": "t3",
+        "data": {
+          "id": "1o9xk2c",
+          "name": "t3_1o9xk2c",
+          "subreddit": "neovim",
+          "title": "What&#39;s your favourite plugin you found this year?",
+          "url": "https://www.reddit.com/r/neovim/comments/1o9xk2c/whats_your_favourite_plugin/",
+          "permalink": "/r/neovim/comments/1o9xk2c/whats_your_favourite_plugin/",
+          "is_self": true,
+          "score": 342,
+          "ups": 342,
+          "num_comments": 158,
+          "created_utc": 1792393200.0,
+          "stickied": false
+        }
+      },
+      {
+        "kind": "t3",
+        "data": {
+          "id": "1o9y001",
+          "subreddit": "neovim",
+          "title": "Weekly 101 Questions Thread",
+          "url": "https://www.reddit.com/r/neovim/comments/1o9y001/weekly_101_questions_thread/",
+          "permalink": "/r/neovim/comments/1o9y001/weekly_101_questions_thread/",
+          "is_self": true,
+          "score": 12,
+          "num_comments": 40,
+          "created_utc": 1792396800.0,
+          "stickied": true
+        }
+      }
+    ]
+  }
+}

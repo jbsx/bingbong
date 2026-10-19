@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?><rss xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:media="http://search.yahoo.com/mrss/" xmlns:slash="http://purl.org/rss/1.0/modules/slash/" xmlns:sy="http://purl.org/rss/1.0/modules/syndication/" version="2.0">
+    <channel>
+        <title>Ars Technica - All content</title>
+        <atom:link href="https://arstechnica.com/feed/" rel="self" type="application/rss+xml"/>
+        <link>https://arstechnica.com</link>
+        <description>All Ars Technica stories</description>
+        <lastBuildDate>Sun, 18 Oct 2026 16:25:19 +0000</lastBuildDate>
+        <language>en-US</language>
+        <sy:updatePeriod>
+            hourly        </sy:updatePeriod>
+        <sy:updateFrequency>
+            1        </sy:updateFrequency>
+        
+<image>
+	<url>https://cdn.arstechnica.net/wp-content/uploads/2016/10/cropped-ars-logo-512_480-60x60.png</url>
+	<title>Ars Technica</title>
+	<link>https://arstechnica.com</link>
+	<width>32</width>
+	<height>32</height>
+</image> 
+            <item>
+                <title>Anthropic gives outside AI watchdog “employee-like” access</title>
+                <link>https://arstechnica.com/ai/2026/10/anthropic-gives-outside-ai-watchdog-employee-like-access/</link>
+                                    <comments>https://arstechnica.com/ai/2026/10/anthropic-gives-outside-ai-watchdog-employee-like-access/#comments</comments>
+                
+                <dc:creator>
+                    <![CDATA[Cristina Criddle, Financial Times]]>
+                </dc:creator>
+                <pubDate>Sun, 18 Oct 2026 16:25:19 +0000</pubDate>
+                		<category><![CDATA[AI]]></category>
+		<category><![CDATA[AI agents]]></category>
+		<category><![CDATA[AI oversight]]></category>
+		<category><![CDATA[Anthropic]]></category>
+		<category><![CDATA[safety]]></category>
+                <guid isPermaLink="true">https://arstechnica.com/ai/2026/10/anthropic-gives-outside-ai-watchdog-employee-like-access/</guid>
+
+                                    <description>
+                        <![CDATA[The outside watchdog can publish its findings without Anthropic's approval.]]>
+                    </description>
+                                                                
+                                    
+                                    <slash:comments>1</slash:comments>
+                
+                
+                <media:content height="648" medium="image" type="image/jpeg" url="https://cdn.arstechnica.net/wp-content/uploads/2026/09/claudebyanthropic-1024x648.jpg" width="1024">
+<media:thumbnail height="500" url="https://cdn.arstechnica.net/wp-content/uploads/2026/09/claudebyanthropic-500x500.jpg" width="500"/>
+<media:credit>SOPA Images/Getty</media:credit></media:content>
+            </item>
+<item>
+                <title>Science says your boss should talk less in meetings</title>
+                <link>https://arstechnica.com/science/2026/10/science-says-your-boss-should-talk-less-in-meetings/</link>
+                                    <comments>https://arstechnica.com/science/2026/10/science-says-your-boss-should-talk-less-in-meetings/#comments</comments>
+                
+                <dc:creator>
+                    <![CDATA[Lesley Evans Ogden, Knowable Magazine]]>
+                </dc:creator>
+                <pubDate>Sat, 17 Oct 2026 11:15:11 +0000</pubDate>
+                		<category><![CDATA[Science]]></category>
+		<category><![CDATA[meetings]]></category>
+		<category><![CDATA[productivity]]></category>
+		<category><![CDATA[Social science]]></category>
+		<category><![CDATA[syndication]]></category>
+                <guid isPermaLink="true">https://arstechnica.com/science/2026/10/science-says-your-boss-should-talk-less-in-meetings/</guid>
+
+                                    <description>
+                        <![CDATA[Research suggests listening more while talking less. Killing aimless meetings can help, too.]]>
+                    </description>
+                                                                
+                                    
+                                    <slash:comments>83</slash:comments>
+                
+                
+                <media:content height="648" medium="image" type="image/jpeg" url="https://cdn.arstechnica.net/wp-content/uploads/2026/10/meetingboredom-1152x648.jpg" width="1152">
+<media:thumbnail height="500" url="https://cdn.arstechnica.net/wp-content/uploads/2026/10/meetingboredom-500x500.jpg" width="500"/>
+<media:credit>https://www.gettyimages.com/detail/photo/hangover-at-the-office-royalty-free-image/1770771124</media:credit></media:content>
+            </item>
+<item>
+                <title>Why BioWare's Neverwinter Nights still has thousands of active players</title>
+                <link>https://arstechnica.com/gaming/2026/10/why-biowares-neverwinter-nights-still-has-thousands-of-active-players/</link>
+                                    <comments>https://arstechnica.com/gaming/2026/10/why-biowares-neverwinter-nights-still-has-thousands-of-active-players/#comments</comments>
+                
+                <dc:creator>
+                    <![CDATA[Samuel Axon]]>
+                </dc:creator>
+                <pubDate>Sat, 17 Oct 2026 11:00:21 +0000</pubDate>
+                		<category><![CDATA[Gaming]]></category>
+		<category><![CDATA[Shopping]]></category>
+		<category><![CDATA[Bioware]]></category>
+		<category><![CDATA[C:\ArsGames]]></category>
+		<category><![CDATA[CRPGs]]></category>
+		<category><![CDATA[gog]]></category>
+		<category><![CDATA[MMOs]]></category>
+		<category><![CDATA[Neverwinter Nights]]></category>
+		<category><![CDATA[RPGs]]></category>
+		<category><![CDATA[tiktok]]></category>
+                <guid isPermaLink="true">https://arstechnica.com/gaming/2026/10/why-biowares-neverwinter-nights-still-has-thousands-of-active-players/</guid>
+
+                                    <description>
+                        <![CDATA[The single-player is just OK, but according to the players, that doesn't matter.]]>
+                    </description>
+                                                                
+                                    
+                                    <slash:comments>55</slash:comments>
+                
+                
+                <media:content height="648" medium="image" type="image/jpeg" url="https://cdn.arstechnica.net/wp-content/uploads/2026/10/NWN-header-1152x648.jpg" width="1152">
+<media:thumbnail height="500" url="https://cdn.arstechnica.net/wp-content/uploads/2026/10/NWN-header-500x500.jpg" width="500"/>
+<media:credit>GOG</media:credit><media:text>&lt;em&gt;Neverwinter Nights&lt;/em&gt; is deeply nostalgic for me. There's something about this era of PC game graphics.</media:text></media:content>
+            </item>
+            </channel>
+</rss>

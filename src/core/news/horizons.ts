@@ -1,4 +1,4 @@
-import { hostOf } from './news'
+import { sameStory } from './sameStory'
 import { dayKey, daysBack, rankOrder, type ScoredStory } from './score'
 
 // This Week and This Month (CONTEXT.md): the News card's two longer
@@ -25,9 +25,6 @@ const LASTING_WEEKS = 2
 /** …or top five on this many separate days. */
 const LASTING_DAYS = 3
 
-/** How alike two titles on one site must be (shared words over all words) to be one story. */
-const SAME_TITLE = 0.75
-
 /** One polled story as the history keeps it. */
 export interface StoryRecord {
   title: string
@@ -39,7 +36,7 @@ export interface StoryRecord {
   /** The key of the cluster's first story: every story the same story shares it. */
   cluster: string
   /** By local day polled ('YYYY-MM-DD'): its best score and magnitude that day. */
-  days: Record<string, { score: number; magnitude: number }>
+  days: Record<string, { score: number; magnitude: number | null }>
 }
 
 /** Every polled story by key. */
@@ -51,65 +48,9 @@ export interface NewsListItem {
   title: string
   link: string
   source: string
-  magnitude: number
+  /** Null for a feed's post, which counts nothing. */
+  magnitude: number | null
   unit: string
-}
-
-/** The address with what does not change the page dropped: scheme, www, a trailing slash, the fragment and tracking parameters. */
-function linkKey(link: string): string {
-  if (!URL.canParse(link)) return link
-  const url = new URL(link)
-  for (const name of [...url.searchParams.keys()]) if (name.startsWith('utm_') || name === 'ref') url.searchParams.delete(name)
-  const query = url.searchParams.toString()
-  return `${url.hostname.replace(/^www\./, '')}${url.pathname.replace(/\/+$/, '')}${query === '' ? '' : `?${query}`}`
-}
-
-function titleWords(title: string): Set<string> {
-  return new Set(
-    title
-      .toLowerCase()
-      .split(/[^\p{L}\p{N}]+/u)
-      .filter((word) => word !== ''),
-  )
-}
-
-function likeness(a: Set<string>, b: Set<string>): number {
-  let shared = 0
-  for (const word of a) if (b.has(word)) shared += 1
-  const all = a.size + b.size - shared
-  return all === 0 ? 0 : shared / all
-}
-
-/** Letters-and-digits words that name a thing in general, not one product: formats, architectures, ordinals, sizes. */
-const COMMON_NAMES = new Set(['ipv4', 'ipv6', 'x86', 'x64', 'arm64', 'aarch64', 'mp3', 'mp4', 'h264', 'h265', 'utf8', 'utf-8', 'base64', 'covid-19', '2fa', 'b2b', 'p2p', 'y2k', 'web3', 'html5', 'css3', 'i18n', 'a11y', 'k8s', 's3', 'ec2', 'wasm32'])
-
-/**
- * The proper names in a title that pick out one thing: a model or product
- * named with letters and digits ("GPT-6", "Qwen3") and a repo ("owner/repo").
- * Capitalised words alone are left out — "Google" or "GitHub" lead too many
- * unrelated titles to make them one story.
- */
-function properNames(title: string): string[] {
-  const names: string[] = []
-  for (const raw of title.split(/\s+/)) {
-    const word = raw.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '').toLowerCase()
-    if (/^[a-z0-9][\w.-]*\/[\w.-]*[a-z][\w.-]*$/.test(word) && /[a-z]/.test(word.split('/')[0])) {
-      names.push(word)
-      continue
-    }
-    if (word.length < 3 || !/\p{L}.*\p{L}/u.test(word) || !/\p{N}/u.test(word) || COMMON_NAMES.has(word)) continue
-    // A number with its unit or ordinal: "1990s", "10x", "100GB", "12th".
-    if (/^\d[\d.,]*(s|x|k|m|b|th|st|nd|rd|d|gb|mb|tb|kb|ms|hz|ghz|mhz|fps|px|bit|nm|mm|cm|km|kg|am|pm)$/.test(word)) continue
-    names.push(word)
-  }
-  return names
-}
-
-function sameStory(a: Pick<StoryRecord, 'title' | 'link'>, b: Pick<StoryRecord, 'title' | 'link'>): boolean {
-  if (linkKey(a.link) === linkKey(b.link)) return true
-  if (hostOf(a.link) !== '' && hostOf(a.link) === hostOf(b.link) && likeness(titleWords(a.title), titleWords(b.title)) >= SAME_TITLE) return true
-  const names = new Set(properNames(a.title))
-  return properNames(b.title).some((name) => names.has(name))
 }
 
 /**
@@ -148,7 +89,7 @@ export function recordStories(history: StoryHistory, ranked: readonly ScoredStor
       title: story.title,
       link: story.link,
       topical: topics.length > 0,
-      days: { ...known.days, [today]: { score: Math.max(held?.score ?? 0, score), magnitude: Math.max(held?.magnitude ?? 0, story.magnitude) } },
+      days: { ...known.days, [today]: { score: Math.max(held?.score ?? 0, score), magnitude: story.magnitude === null ? (held?.magnitude ?? null) : Math.max(held?.magnitude ?? 0, story.magnitude) } },
     }
   }
   return next
@@ -158,7 +99,7 @@ interface Peak {
   key: string
   record: StoryRecord
   score: number
-  magnitude: number
+  magnitude: number | null
 }
 
 function better(a: Peak, b: Peak): number {

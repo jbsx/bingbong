@@ -164,9 +164,11 @@ function elementCenterScript(selector: string): string {
  * scripted piper and aplay in e2e/bin: `read` and a failure speak, and no
  * launch may load a real voice or reach the sound card. Downloads and
  * `screenshot` files (#330) land in the launch's own profile, never in
- * the developer's ~/bingbong_downloads. The News card's Hacker News
- * (#346) asks the fixture server, which has no front page to answer, so no
- * launch reaches the real API; a test that wants stories brings its own.
+ * the developer's ~/bingbong_downloads. Every NewsSource of the News card
+ * (#346, #348) — Hacker News, GitHub trending, Hugging Face, the
+ * subreddits and the feeds — asks the fixture server for its path instead,
+ * which has none of them to answer, so no launch reaches a real site; a
+ * test that wants stories brings its own.
  */
 export function hermeticEnvTemplate(fixture: FixtureServer, userDataDir: string): Record<string, string | undefined> {
   return {

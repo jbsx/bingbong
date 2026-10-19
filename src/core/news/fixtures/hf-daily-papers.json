@@ -1,0 +1,189 @@
+[
+ {
+  "paper": {
+   "id": "2610.21482",
+   "publishedAt": "2026-10-15T00:00:00.000Z",
+   "submittedOnDailyAt": "2026-10-19T00:00:00.000Z",
+   "title": "AI-Driven Disaster Response and Displacement Monitoring",
+   "submittedOnDailyBy": {
+    "_id": "67866daa69178ec776c38d63",
+    "avatarUrl": "https://cdn-avatars.huggingface.co/v1/production/uploads/no-auth/Syye7boyh43c6clx4Q0Ec.png",
+    "isPro": false,
+    "fullname": "Noora Al-Emadi",
+    "user": "nalemadi",
+    "type": "user",
+    "name": "nalemadi"
+   },
+   "summary": "ARTIFICIAL INTELLIGENCE (AI) has demonstrated its potential across a wide range of humanitarian tasks, offering scalable",
+   "upvotes": 1,
+   "discussionId": "6ad5e02e60556d9547d95158",
+   "projectPage": "https://qcai.qcri.org/publications/ai-driven-disaster-response-and-displacement-monitoring",
+   "organization": {
+    "_id": "6ac54ed170696b2326d7e488",
+    "name": "HumAI-DisplacementMonitoring",
+    "fullname": "Humanitarian AI, Displacement Monitoring",
+    "avatar": "https://cdn-avatars.huggingface.co/v1/production/uploads/67866daa69178ec776c38d63/5wqJMI8laPtOFs8bvHcRV.png"
+   }
+  },
+  "publishedAt": "2026-10-14T20:00:00.000Z",
+  "title": "AI-Driven Disaster Response and Displacement Monitoring",
+  "summary": "ARTIFICIAL INTELLIGENCE (AI) has demonstrated its potential across a wide range of humanitarian tasks, offering scalable",
+  "thumbnail": "https://cdn-thumbnails.huggingface.co/social-thumbnails/papers/2610.21482.png",
+  "numComments": 1,
+  "submittedBy": {
+   "_id": "67866daa69178ec776c38d63",
+   "avatarUrl": "https://cdn-avatars.huggingface.co/v1/production/uploads/no-auth/Syye7boyh43c6clx4Q0Ec.png",
+   "fullname": "Noora Al-Emadi",
+   "name": "nalemadi",
+   "type": "user",
+   "isPro": false,
+   "isHf": false,
+   "isHfAdmin": false,
+   "isMod": false,
+   "followerCount": 1,
+   "isUserFollowing": false
+  },
+  "organization": {
+   "_id": "6ac54ed170696b2326d7e488",
+   "name": "HumAI-DisplacementMonitoring",
+   "fullname": "Humanitarian AI, Displacement Monitoring",
+   "avatar": "https://cdn-avatars.huggingface.co/v1/production/uploads/67866daa69178ec776c38d63/5wqJMI8laPtOFs8bvHcRV.png"
+  },
+  "isAuthorParticipating": false
+ },
+ {
+  "paper": {
+   "id": "2610.23279",
+   "mediaUrls": [
+    "https://cdn-uploads.huggingface.co/production/uploads/664c4c2d37978db71bb2d7b5/EobBGeghQkyegPE1RRPpe.mp4"
+   ],
+   "publishedAt": "2026-10-16T00:00:00.000Z",
+   "submittedOnDailyAt": "2026-10-19T00:00:00.000Z",
+   "title": "Xiaomi-Lens-0 Technical Report",
+   "submittedOnDailyBy": {
+    "_id": "664c4c2d37978db71bb2d7b5",
+    "avatarUrl": "https://cdn-avatars.huggingface.co/v1/production/uploads/664c4c2d37978db71bb2d7b5/4o60GexD_Dp81EquoKph0.jpeg",
+    "isPro": false,
+    "fullname": "Shaojie Zhang",
+    "user": "zhshj0110",
+    "type": "user",
+    "name": "zhshj0110"
+   },
+   "summary": "Multimodal large language models (MLLMs) answer questions about whole images well, yet they still struggle with fine-gra",
+   "upvotes": 13,
+   "discussionId": "6ad5797660556d9547d94e33",
+   "projectPage": "https://seerray-lab.github.io/Xiaomi-Lens-0",
+   "githubRepo": "https://github.com/SeerRay-Lab/Xiaomi-Lens-0",
+   "githubRepoAddedBy": "user",
+   "ai_summary": "Xiaomi-Lens-0 is a 4B multimodal model that predicts masks from internal visual representations to improve fine-grained region reasoning and referring comprehension.",
+   "ai_keywords": [
+    "multimodal large language models",
+    "vision-encoder patch features",
+    "visual latents",
+    "mask-token states",
+    "segmentation encoder",
+    "chain-of-thought",
+    "referring comprehension",
+    "segmentation cIoU"
+   ],
+   "ai_summary_model": "thinkingmachines/Inkling-Small",
+   "githubStars": 10,
+   "organization": {
+    "_id": "69fedb8505683e056b9e15b0",
+    "name": "SeerRay-Lab",
+    "fullname": "SeerRay-Lab",
+    "avatar": "https://cdn-avatars.huggingface.co/v1/production/uploads/664c4c2d37978db71bb2d7b5/F5pL5bu_t6Hg6X2x_ihgb.png"
+   }
+  },
+  "publishedAt": "2026-10-15T20:00:00.000Z",
+  "title": "Xiaomi-Lens-0 Technical Report",
+  "summary": "Multimodal large language models (MLLMs) answer questions about whole images well, yet they still struggle with fine-gra",
+  "mediaUrls": [
+   "https://cdn-uploads.huggingface.co/production/uploads/664c4c2d37978db71bb2d7b5/EobBGeghQkyegPE1RRPpe.mp4"
+  ],
+  "thumbnail": "https://cdn-thumbnails.huggingface.co/social-thumbnails/papers/2610.23279.png",
+  "numComments": 1,
+  "submittedBy": {
+   "_id": "664c4c2d37978db71bb2d7b5",
+   "avatarUrl": "https://cdn-avatars.huggingface.co/v1/production/uploads/664c4c2d37978db71bb2d7b5/4o60GexD_Dp81EquoKph0.jpeg",
+   "fullname": "Shaojie Zhang",
+   "name": "zhshj0110",
+   "type": "user",
+   "isPro": false,
+   "isHf": false,
+   "isHfAdmin": false,
+   "isMod": false,
+   "followerCount": 1,
+   "isUserFollowing": false
+  },
+  "organization": {
+   "_id": "69fedb8505683e056b9e15b0",
+   "name": "SeerRay-Lab",
+   "fullname": "SeerRay-Lab",
+   "avatar": "https://cdn-avatars.huggingface.co/v1/production/uploads/664c4c2d37978db71bb2d7b5/F5pL5bu_t6Hg6X2x_ihgb.png"
+  },
+  "isAuthorParticipating": true
+ },
+ {
+  "paper": {
+   "id": "2610.23751",
+   "publishedAt": "2026-10-16T00:00:00.000Z",
+   "submittedOnDailyAt": "2026-10-19T00:00:00.000Z",
+   "title": "MTEdit: Packed Trajectories Beat Rollouts for Multi-Turn Image Editing",
+   "submittedOnDailyBy": {
+    "_id": "66877d72bec843c681fb4169",
+    "avatarUrl": "/avatars/02165c97f8d97cf04a268d9ea74e6188.svg",
+    "isPro": false,
+    "fullname": "chen houyuan",
+    "user": "houyuanchen",
+    "type": "user",
+    "name": "houyuanchen"
+   },
+   "summary": "Multi-turn image editing aims to modify an image according to a sequence of instructions, making it better aligned with ",
+   "upvotes": 1,
+   "discussionId": "6ad5d7fe60556d9547d95122",
+   "ai_summary": "MTEdit is a large-scale multi-turn image editing dataset using packed trajectory canvas generation to reduce visual drift, enabling improved multi-turn editing models evaluated on MTEdit-Bench.",
+   "ai_keywords": [
+    "multi-turn image editing",
+    "packed trajectory canvas",
+    "visual-quality drift",
+    "MTEdit",
+    "MTEdit-Bench",
+    "Qwen-Image-Edit-Causal",
+    "Qwen-Image-MTEdit"
+   ],
+   "ai_summary_model": "thinkingmachines/Inkling-Small",
+   "organization": {
+    "_id": "64f0405f8a4cf3e5e6b38f9c",
+    "name": "sensenova",
+    "fullname": "SenseNova",
+    "avatar": "https://cdn-avatars.huggingface.co/v1/production/uploads/652d06833b5997ed71ce5c46/k66xcOMf4NVbMSFulUjHY.png"
+   }
+  },
+  "publishedAt": "2026-10-15T20:00:00.000Z",
+  "title": "MTEdit: Packed Trajectories Beat Rollouts for Multi-Turn Image Editing",
+  "summary": "Multi-turn image editing aims to modify an image according to a sequence of instructions, making it better aligned with ",
+  "thumbnail": "https://cdn-thumbnails.huggingface.co/social-thumbnails/papers/2610.23751.png",
+  "numComments": 1,
+  "submittedBy": {
+   "_id": "66877d72bec843c681fb4169",
+   "avatarUrl": "/avatars/02165c97f8d97cf04a268d9ea74e6188.svg",
+   "fullname": "chen houyuan",
+   "name": "houyuanchen",
+   "type": "user",
+   "isPro": false,
+   "isHf": false,
+   "isHfAdmin": false,
+   "isMod": false,
+   "followerCount": 10,
+   "isUserFollowing": false
+  },
+  "organization": {
+   "_id": "64f0405f8a4cf3e5e6b38f9c",
+   "name": "sensenova",
+   "fullname": "SenseNova",
+   "avatar": "https://cdn-avatars.huggingface.co/v1/production/uploads/652d06833b5997ed71ce5c46/k66xcOMf4NVbMSFulUjHY.png"
+  },
+  "isAuthorParticipating": true
+ }
+]
