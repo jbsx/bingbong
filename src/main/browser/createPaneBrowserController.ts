@@ -1,5 +1,6 @@
 import type { BrowserController, VisualGroundingController } from '../../core/ports/browser'
 import type { BrowserSubspans } from '../../core/perf/browserSubspans'
+import type { ConsentChooser } from '../../core/browser/dialogPolicy'
 import { authIdentityScript, resolveAuthIdentity, type AuthIdentity } from '../../core/browser/authIdentity'
 import { COLLECT_PAGE_SCRIPT, domQuietScript } from './collectPageScript'
 import { systemClock } from '../../core/ports/clock'
@@ -31,6 +32,8 @@ export function createPaneBrowserController(
     effects?: ActionEffects
     /** Auth-host identity (ADR 0018); defaults to the env-resolved policy. */
     authIdentity?: AuthIdentity
+    /** Finds a consent wall's reject the rule cannot read (owner's rule 2026-10-19); absent — the policy accepts as before. */
+    chooseConsent?: ConsentChooser
   },
 ): BrowserController & VisualGroundingController {
   const wc = pane.view.webContents
@@ -103,5 +106,6 @@ export function createPaneBrowserController(
     ...(pane.consumeAuthPopupOpens ? { consumeAuthPopupOpens: pane.consumeAuthPopupOpens } : {}),
     ...(deps?.subspans ? { subspans: deps.subspans } : {}),
     ...(deps?.effects ? { effects: deps.effects } : {}),
+    ...(deps?.chooseConsent ? { chooseConsent: deps.chooseConsent } : {}),
   })
 }

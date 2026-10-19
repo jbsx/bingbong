@@ -24,7 +24,7 @@ import {
   UNFINISHED_LOAD_CLAUSE,
   type BlockedAction,
 } from '../../core/browser/actionOutcome'
-import { chooseConsentDismissal, consentDismissalLine, consentRetryNote, isConsentDialog } from '../../core/browser/dialogPolicy'
+import { chooseConsentDismissal, consentAcceptOf, consentDismissalLine, consentRejectOf, consentRetryNote, isConsentDialog, type ConsentChooser } from '../../core/browser/dialogPolicy'
 import {
   buildPageSnapshot,
   coverOf,
@@ -199,6 +199,12 @@ export interface CdpBrowserControllerDeps {
    * Absent — no sub-spans, actions behave identically.
    */
   subspans?: BrowserSubspans
+  /**
+   * Finds a consent wall's reject when the rule reads none as declining
+   * (owner's rule 2026-10-19): Jev, over the wall's controls. Absent, or
+   * answering null, the privacy-first policy accepts as before.
+   */
+  chooseConsent?: ConsentChooser
 }
 
 interface EvaluateResponse {
@@ -512,7 +518,8 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     const controls = snapshot.refs.filter((ref) => ref.layer === 'dialog')
     const labels = controls.map((ref) => ref.label)
     if (!isConsentDialog(snapshot.dialogText, labels)) return null
-    const choice = chooseConsentDismissal(labels)
+    // Privacy first (ADR 0061): the rule's reject, else the one Jev finds declining, else the accept.
+    const choice = consentRejectOf(labels) ?? (await chosenConsent(snapshot.dialogText, labels)) ?? consentAcceptOf(labels)
     if (choice === null) return null
     const target = controls[choice]
     await armReadiness()
@@ -527,6 +534,17 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     await awaitReadiness('consent-dismiss')
     if (clicked) await awaitDialogGone()
     return clicked ? consentDismissalLine(target.ref, truncateOutcomeText(target.label, 60)) : null
+  }
+
+  /** The control Jev finds declining the wall's optional cookies; null when it finds none, or none is wired. */
+  async function chosenConsent(dialogText: string, labels: readonly string[]): Promise<number | null> {
+    if (deps.chooseConsent === undefined) return null
+    try {
+      return await deps.chooseConsent(dialogText, labels)
+    } catch (error) {
+      reportFault('browser.createCdpBrowserController.chooseConsent', error)
+      return null
+    }
   }
 
   /** Wait, bounded by {@link DISMISSAL_GONE_MS}, until no dialog root is open: the dismissed sheet has left, and a recollection reads the page behind it. */

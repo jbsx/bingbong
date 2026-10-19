@@ -6,7 +6,7 @@ import type { CommandRunState } from '../../core/pipeline/runState'
 import type { PageLink, PageSnapshot } from '../../core/browser/snapshot'
 import type { PerfTracer } from '../../core/perf/perfTracer'
 import { PRESS_KEYS, commandPageOf, describeCommand, isMounting, targetLabel, commandKeepsIdle, type Command, type CommandPage } from '../../core/command/command'
-import { dismissCommand, dismissalLadder, isDismissPhrase, obstacleOf, type DismissChoice } from '../../core/command/dismissDialog'
+import { dismissalLadder, isDismissPhrase, obstacleOf, ruledDismissal, type DismissChoice } from '../../core/command/dismissDialog'
 import { COMMAND_HELP } from '../../core/command/help'
 import { carriesWordsPastAddress, headsAnotherVerb, isSearchLanding, localMatch, resultRefsOf } from '../../core/command/localMatch'
 import { isWebEngineSearch } from '../../core/command/siteScope'
@@ -19,6 +19,7 @@ import {
   partialQuestions,
   readCommandAnswers,
   readDismissChoice,
+  dismissPhraseQuestions,
   readVerdict,
   setAsideOf,
   type DoneResult,
@@ -580,6 +581,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     jev?: DecisionRecord['jev']
     /** The ask Jev was given (#338), when it was asked. */
     ask?: string
+    /** A dismiss phrase's Dismissal Ladder past its first rung (owner's rule 2026-10-19): fired in turn while the pop-up stays. */
+    ladder?: readonly Command[]
   }
 
   /**
@@ -590,11 +593,43 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
    * when the page collected at speech start is already in hand. Resolves to
    * the dismissal, or null, and the page it read when it collected one.
    */
-  async function readDismissal(text: string, quick: Command | null, pending: PreparedPage | null): Promise<{ dismissal: Reading | null; page: CommandPage | null }> {
-    if (!isDismissPhrase(text)) return { dismissal: null, page: null }
-    const page = quick?.verb === 'stop' ? await pageInHand(pending) : await collectPage(pending)
-    const dismiss = page === null ? null : dismissCommand(text, page)
-    return { dismissal: dismiss === null ? null : { command: dismiss, page: page!, reading: 'local_match', jevAsked: false }, page }
+  async function readDismissal(turnId: string, text: string, quick: Command | null, pending: PreparedPage | null): Promise<{ dismissal: Reading | null; page: CommandPage | null }> {
+    const page = await dismissPage(text, quick, pending)
+    if (page === null || page.dialog === undefined) return { dismissal: null, page }
+    return { dismissal: await dismissalOf(turnId, text, page), page }
+  }
+
+  /** The page a dismiss phrase is read over; null for words that are none, or a `stop` with no page in hand. */
+  async function dismissPage(text: string, quick: Command | null, pending: PreparedPage | null): Promise<CommandPage | null> {
+    if (!isDismissPhrase(text)) return null
+    return quick?.verb === 'stop' ? await pageInHand(pending) : await collectPage(pending)
+  }
+
+  /**
+   * The Dismissal Ladder a dismiss phrase walks over the pop-up (owner's
+   * rule 2026-10-19: the widest net). A consent wall's reject is the
+   * policy's, clicked with no one asked; otherwise Jev is asked which of
+   * the pop-up's controls closes it, beside the Command's own questions,
+   * and its choice goes on the ladder as a Step Aside's does. Jev
+   * unavailable, the ladder stands without it. Null when nothing on the
+   * pop-up can be tried.
+   */
+  async function dismissalOf(turnId: string, text: string, page: CommandPage): Promise<Reading | null> {
+    const ruled = ruledDismissal(page)
+    const model = ruled === null ? deps.decisionModel() : null
+    const questions = model === null ? null : dismissPhraseQuestions(text, page)
+    const result = model === null || questions === null ? null : await askJev(model, 'command', turnId, commandState(text, page), questions)
+    const chosen = result?.status === 'answered' ? readDismissChoice(result.answers, page) : null
+    const ladder = dismissalLadder(page, chosen, DEFAULT_DECISION_THRESHOLDS.choice)
+    const [first, ...rest] = ladder
+    if (first === undefined) return null
+    const asked =
+      result === null
+        ? {}
+        : result.status === 'answered'
+          ? { jev: jevDetailOf(result.answers, result.latencyMs, result.model), ask: result.askId }
+          : { jev: { model: result.model, latencyMs: result.latencyMs, reason: result.reason }, ask: result.askId }
+    return { command: first, page, reading: 'local_match', jevAsked: result !== null, ...asked, ...(rest.length > 0 ? { ladder: rest } : {}) }
   }
 
   /** The page collected at speech start, when it is fresh and already collected; null rather than wait for it. */
@@ -614,10 +649,10 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
    */
   async function read(turnId: string, text: string, pending: PreparedPage | null, spoken: boolean): Promise<Reading> {
     const quick = localMatch(text, [])
-    const { dismissal, page: dismissPage } = await readDismissal(text, quick, pending)
+    const { dismissal, page: dismissed } = await readDismissal(turnId, text, quick, pending)
     if (dismissal !== null) return dismissal
-    if (pageFree(quick) && !(spoken && slotIsNameable(quick))) return { command: quick, page: dismissPage ?? blankPage(browser), reading: 'local_match', jevAsked: false }
-    const page = dismissPage ?? (await collectPage(pending))
+    if (pageFree(quick) && !(spoken && slotIsNameable(quick))) return { command: quick, page: dismissed ?? blankPage(browser), reading: 'local_match', jevAsked: false }
+    const page = dismissed ?? (await collectPage(pending))
     if (pageFree(quick)) return { command: quick, page, reading: 'local_match', jevAsked: false }
     const local = localMatch(text, page.refs, page.url)
     if (local !== null) return { command: local, page, reading: 'local_match', jevAsked: false }
@@ -834,6 +869,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     settled(): void
     /** A dismissal with a rung of the Dismissal Ladder still to try (#354): a dialog still open is `stayed`, not yet the failure. */
     readonly deferStay?: true
+    /** A later rung of a dismiss phrase's Dismissal Ladder: the runner's own move, never the user's recovery from the rung before. */
+    readonly ownMove?: true
   }
 
   /**
@@ -855,14 +892,14 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   ): Promise<FireResult> {
     // The Misfire signal (ADR 0076): this Command as the recovery of the one
     // that fired before it. A hop past the first is the Task's own move, never the user's recovery.
-    if (previous !== null && task.hop === 0) {
+    if (previous !== null && task.hop === 0 && reacting.ownMove !== true) {
       const signal = misfireSignal(previous, { verb: command.verb, key: command.key, at: firedAt })
       if (signal !== null) log({ type: 'misfire', turnId: previous.turnId, at: firedAt, signal, signalTurnId: turnId, withinMs: firedAt - previous.at })
     }
     previous = { turnId, verb: command.verb, key: command.key, at: firedAt }
     // A Jev-read hop: what an overrun is read against, until the next one fires.
     jevHop = readingKind === 'jev' ? { turnId, hop: task.hop, at: firedAt } : null
-    if (source === 'spoken') learnFrom(command, matched, firedAt)
+    if (source === 'spoken' && reacting.ownMove !== true) learnFrom(command, matched, firedAt)
 
     // Whether a `stop` finds anything to stop: nothing in flight, being read or sounding pauses the music instead (#343, owner's ruling 2).
     const nothingInFlight = idleAt === submitted && idle()
@@ -1034,6 +1071,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     unchanged: number
     /** The sites it has searched (#341): one Site Scope search per site per Task. */
     readonly searched: string[]
+    /** The words it has searched for or typed (owner's rule 2026-10-19): a page whose address carries them is their results. */
+    readonly terms: string[]
     /** The last hop fired, whose "Done so far" line waits for the page it left to be read, so it can tell the facts; `told` is the page it was told against before, when a re-read tells it again. */
     pending?: { readonly command: Command; readonly page: CommandPage; readonly fired: FireResult; readonly told?: CommandPage }
     /** The last action told in "Done so far", kept so a re-read (the page moved under the reading) tells it again against the page as it is then. */
@@ -1131,6 +1170,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     task.actions.push(doneLine(command, page, doneResult(page, fired)))
     task.pending = { command, page, fired }
     if (command.site !== undefined) task.searched.push(command.site)
+    if ((command.verb === 'search' || command.verb === 'type') && command.slot !== null && command.slot !== '') task.terms.push(command.slot)
     if (fired.unchanged === true) {
       // A hop that changed nothing (#336): its target is not offered again, and a second in a row ends the Task.
       task.unchanged += 1
@@ -1200,8 +1240,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     return current
   }
 
-  /** A search landing's whole-page links (#328), where its results below the fold are; none when they cannot be read. */
-  async function resultPageLinks(turnId: string): Promise<readonly PageLink[]> {
+  /** A page's whole-page links (#328), where what is below the fold is (owner's rule 2026-10-19: on every page); none when they cannot be read. */
+  async function wholePageLinks(turnId: string): Promise<readonly PageLink[]> {
     try {
       return (await browser.pageLinks()) ?? []
     } catch (error) {
@@ -1237,8 +1277,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         // The action that raised a pop-up over a clear page (#354): set aside if the Task steps past it.
         task.raised = facts.changed && facts.covered === true ? { command: last, page: before } : undefined
       }
-      const links = !superseded(task) && isSearchLanding(page.url) ? await resultPageLinks(turnId) : []
-      const context: HopContext = { hop, visited: [...task.visited], actions: [...task.actions], links, setAside: [...task.setAside], searched: [...task.searched] }
+      const links = !superseded(task) ? await wholePageLinks(turnId) : []
+      const context: HopContext = { hop, visited: [...task.visited], actions: [...task.actions], links, setAside: [...task.setAside], searched: [...task.searched], terms: [...task.terms] }
       const model = deps.decisionModel()
       const result = superseded(task) || model === null ? null : await askJev(model, 'hop', turnId, commandState(task.text, page, context), hopQuestions(task.text, page, context))
       if (reading?.turnId === turnId) reading = null
@@ -1448,11 +1488,12 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     if (headsAnotherVerb(words) && !stopsSomething) return null
     // A Player line (#343) is the grammar's alone: it waits for its Endpoint, and Jev is never asked about it.
     if (quick?.verb === 'play') return null
-    const { dismissal, page: dismissPage } = await readDismissal(words, quick, prepared)
+    const dismissed = await dismissPage(words, quick, prepared)
     if (stale()) return null
-    if (dismissal !== null) return dismissal
+    // A dismiss phrase over a pop-up waits for its Endpoint, where the Dismissal Ladder is read with Jev's choice on it and walked rung by rung.
+    if (dismissed?.dialog !== undefined) return null
     if (pageFree(quick) && firesEarly(quick)) return { command: quick, page: blankPage(browser), reading: 'local_match', jevAsked: false }
-    const page = dismissPage ?? (await collectPage(prepared))
+    const page = dismissed ?? (await collectPage(prepared))
     if (stale()) return null
     const local = localMatch(words, page.refs, page.url)
     if (local !== null && firesEarly(local)) return { command: local, page, reading: 'local_match', jevAsked: false }
@@ -1591,7 +1632,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         const record = closeEarly(fired, { transcript: trimmed, at: endpointAt, truncated }, lands ? 'deferred' : ending)
         nextUtterance()
         if (options?.turnId !== undefined) summarize(options.turnId)
-        const task: Task = { id: fired.turnId, submission: fired.submission, text: trimmed, source, endpointAt, visited: [], actions: [], setAside: [], unchanged: 0, searched: [], rechecked: false, obstacles: [] }
+        const task: Task = { id: fired.turnId, submission: fired.submission, text: trimmed, source, endpointAt, visited: [], actions: [], setAside: [], unchanged: 0, searched: [], terms: [], rechecked: false, obstacles: [] }
         visit(task, fired.page.url)
         const ended = lands ? settleHop(task, record, ending, fired.command, fired.page, await fired.outcome) : ending
         if (ended !== null) endTask(task, ended, 1)
@@ -1626,7 +1667,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       if (source === 'spoken') observeTerms(trimmed)
 
       // This Utterance is a Task (#328); hop 0 is the Command read above.
-      const task: Task = { id: turnId, submission, text: trimmed, source, endpointAt, visited: [], actions: [], setAside: [], unchanged: 0, searched: [], rechecked: false, obstacles: [] }
+      const task: Task = { id: turnId, submission, text: trimmed, source, endpointAt, visited: [], actions: [], setAside: [], unchanged: 0, searched: [], terms: [], rechecked: false, obstacles: [] }
       const hop0: TaskHop = { id: turnId, hop: 0 }
       visit(task, heard.page.url || (browser.state().url ?? ''))
       const { command, matched } = matchName(heard.command, heard.page, source === 'spoken')
@@ -1657,7 +1698,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         return true
       }
 
-      const result = await fire(
+      const ladder = heard.ladder ?? []
+      let result = await fire(
         turnId,
         trimmed,
         source,
@@ -1669,9 +1711,23 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         {
           react: (detail, endedAt) => span(turnId, endedAt - endpointAt, detail),
           settled: () => summarize(turnId),
+          ...(ladder.length > 0 ? { deferStay: true as const } : {}),
         },
         hop0,
       )
+      // A dismiss phrase's Dismissal Ladder (owner's rule 2026-10-19): while the pop-up stays, the next rung fires, each its own turn; the last says the failure.
+      for (let rung = 0; rung < ladder.length && result.outcome === 'stayed'; rung += 1) {
+        const next = ladder[rung]!
+        const rungTurnId = tracer?.mintTurnId() ?? `${turnId}-rung${rung + 1}`
+        const rungAt = at()
+        log({ ...recordOf(rungTurnId, rungAt, source, trimmed, heard, next, null, truncated), task: hop0, ended: 'local_match' })
+        result = await fire(rungTurnId, trimmed, source, next, heard.page, heard.reading, null, rungAt, {
+          react: () => {},
+          settled: () => summarize(rungTurnId),
+          ownMove: true,
+          ...(rung + 1 < ladder.length ? { deferStay: true as const } : {}),
+        }, hop0)
+      }
       const ended = settleHop(task, record, ending, command, heard.page, result)
       if (ended !== null) endTask(task, ended, 1)
       else await continueTask(task, 1)

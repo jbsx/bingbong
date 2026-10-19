@@ -1,3 +1,4 @@
+import type { ConsentChooser } from '../../core/browser/dialogPolicy'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import challengeIframe from '../../core/browser/fixtures/challenge-iframe.json'
 import youtubeHome from '../../core/browser/fixtures/youtube-home.json'
@@ -518,6 +519,7 @@ function makeController(options?: {
   subspans?: BrowserSubspans
   clock?: Clock
   effects?: ActionEffects
+  chooseConsent?: ConsentChooser
 }) {
   const cdp = options?.cdp ?? new FakeCdp()
   const page = options?.page ?? new FakePage()
@@ -542,6 +544,7 @@ function makeController(options?: {
       }
     },
     ...(options?.subspans ? { subspans: options.subspans } : {}),
+    ...(options?.chooseConsent ? { chooseConsent: options.chooseConsent } : {}),
   })
   return { cdp, page, controller, popupQueue, holds }
 }
@@ -1618,6 +1621,54 @@ describe('createCdpBrowserController mediaState', () => {
 })
 
 describe('createCdpBrowserController dialog tiers', () => {
+  /** A wall whose reject the rule cannot read: Accept all beside Continue without accepting. */
+  function unreadRejectWall(): CollectedPage {
+    const wall = consentWallPage()
+    return { ...wall, elements: [wall.elements[0]!, { ...dialogButton('Continue without accepting') } as CollectedElement, wall.elements[2]!] }
+  }
+
+  it('asks Jev for the reject when the rule reads none as declining, and clicks the one it finds (owner\'s rule 2026-10-19)', async () => {
+    const wall = unreadRejectWall()
+    const cleared = { ...wall, dialogOpen: false, dialogText: '', elements: wall.elements.slice(2) }
+    const cdp = new FakeCdp(cleared)
+    cdp.collectValues = [wall, cleared]
+    const asked: (readonly string[])[] = []
+    const { controller } = makeController({
+      cdp,
+      chooseConsent: async (_text, labels) => {
+        asked.push(labels)
+        return 1
+      },
+    })
+    const text = await controller.readPage()
+    expect(asked).toEqual([['Accept all', 'Continue without accepting']])
+    expect(text.startsWith('dismissed consent dialog: clicked [2] "Continue without accepting"')).toBe(true)
+  })
+
+  it('accepts as before when Jev finds no reject, and never asks when the rule reads one', async () => {
+    const wall = unreadRejectWall()
+    const cleared = { ...wall, dialogOpen: false, dialogText: '', elements: wall.elements.slice(2) }
+    const cdp = new FakeCdp(cleared)
+    cdp.collectValues = [wall, cleared]
+    const { controller } = makeController({ cdp, chooseConsent: async () => null })
+    expect((await controller.readPage()).startsWith('dismissed consent dialog: clicked [1] "Accept all"')).toBe(true)
+
+    const ruled = consentWallPage()
+    const ruledCleared = { ...ruled, dialogOpen: false, dialogText: '', elements: ruled.elements.slice(2) }
+    const ruledCdp = new FakeCdp(ruledCleared)
+    ruledCdp.collectValues = [ruled, ruledCleared]
+    let asks = 0
+    const { controller: ruledController } = makeController({
+      cdp: ruledCdp,
+      chooseConsent: async () => {
+        asks += 1
+        return null
+      },
+    })
+    expect((await ruledController.readPage()).startsWith('dismissed consent dialog: clicked [2] "Reject all"')).toBe(true)
+    expect(asks).toBe(0)
+  })
+
   it('auto-dismisses a consent dialog on read_page and reports it in one line', async () => {
     const wall = consentWallPage()
     const cleared = { ...wall, dialogOpen: false, dialogText: '', elements: wall.elements.slice(2) }

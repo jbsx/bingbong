@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { DecisionChoiceAnswer } from '../ports/decisionModel'
 import type { CommandPage } from './command'
-import { commandQuestions, commandState, doneFacts, doneLine, hopQuestions, readCommandAnswers, readDismissChoice, readVerdict, slotSpans } from './jevReading'
+import { commandQuestions, commandState, dismissPhraseQuestions, doneFacts, doneLine, hopQuestions, onResults, readCommandAnswers, readDismissChoice, readVerdict, slotSpans } from './jevReading'
 
 // One Jev call per Command the Local Match cannot settle (#324, ADR
 // 0076): the state is the transcript, the page's address and title and
@@ -163,9 +163,12 @@ describe('the hop reading (#328, ADR 0076 amendment)', () => {
     })
   })
 
-  it('offers no page links off a search landing', () => {
+  it('offers every page link further down off a search landing, so a link below the fold costs no scroll (owner\'s rule 2026-10-19)', () => {
     const hop = { hop: 1, visited: [], actions: [], links: LINKS }
-    expect(Object.keys(commandQuestions('click it', PAGE, hop).target.options)).toEqual(['none', 'ref-1', 'ref-2', 'ref-3'])
+    const options = commandQuestions('click it', PAGE, hop).target.options
+    expect(Object.keys(options).slice(0, 4)).toEqual(['none', 'ref-1', 'ref-2', 'ref-3'])
+    expect(Object.keys(options).length).toBeGreaterThan(4)
+    expect(commandState('click it', PAGE, hop)).toContain('Links further down the page (name, address):')
   })
 
   it('never offers an address already visited in the Task, a redirect to one included', () => {
@@ -345,6 +348,18 @@ describe('click past the first hop off a search landing: with no target named, t
 
   it('still clicks a ref Jev names as its top target', () => {
     expect(readCommandAnswers({ verb: choice('click'), target: target({ 'ref-2': 0.7, none: 0.3 }, 'ref-2'), slot: choice('none') }, TEXT, PROFILE, hop)).toEqual({ verb: 'click', target: 2, slot: null })
+  })
+
+  it('hop 0 clicks no ref Jev gave no probability: never the page\'s first ref (owner\'s rule 2026-10-19)', () => {
+    const answers = { verb: choice('click'), target: target({ none: 1 }), slot: choice('none') }
+    expect(readCommandAnswers(answers, TEXT, PROFILE)).toEqual({ verb: 'none', target: null, slot: null })
+  })
+
+  it('a site\'s results the Task\'s own words led to are a landing whatever the parameter is called: the most probable ref stands in for none', () => {
+    const answers = { verb: choice('click'), target: target({ none: 0.6, 'ref-11': 0.3 }), slot: choice('none') }
+    const results = { ...PROFILE, url: 'https://www.youtube.com/results?search_query=lofi+beats' }
+    expect(readCommandAnswers(answers, TEXT, results, { ...hop, terms: ['lofi beats'] })).toEqual({ verb: 'click', target: 11, slot: null })
+    expect(readCommandAnswers(answers, TEXT, results, hop)).toEqual({ verb: 'none', target: null, slot: null })
   })
 
   it('leaves hop 0 and a search landing clicking the most probable ref', () => {
@@ -568,5 +583,49 @@ describe('the Verdict: a hop is asked whether what was asked for is done', () =>
       const wide: CommandPage = { ...COVERED, refs: [...COVERED.refs, { ref: 6, kind: 'button', label: 'A control whose label runs on far past forty characters', href: null, inputType: null }] }
       expect(doneLine(click, COVERED, doneFacts(COVERED, wide, { changed: true }))).toBe('click "Close" (the address did not change; "A control whose label runs on far past…" appeared)')
     })
+  })
+})
+
+describe('a results page known by the Task\'s words (owner\'s rule 2026-10-19)', () => {
+  const hop = (terms: string[]) => ({ hop: 1, visited: [], actions: [], links: [], terms })
+
+  it('an address the Search URL test reads is one, words or none', () => {
+    expect(onResults('https://duckduckgo.com/?q=lofi', undefined)).toBe(true)
+  })
+
+  it.each([
+    ['https://www.youtube.com/results?search_query=lofi+beats', 'lofi beats'],
+    ['https://www.amazon.co.uk/s?k=usb+c+cable&ref=nb', 'USB-C cable'],
+    ['https://www.ebay.co.uk/sch/i.html?_nkw=film+camera', 'film camera'],
+    ['https://example.com/find/garden%20chairs', 'garden chairs'],
+  ])('%s carries "%s"', (url, term) => {
+    expect(onResults(url, hop([term]))).toBe(true)
+    expect(onResults(url, hop([]))).toBe(false)
+  })
+
+  it('a page that carries none of the words is no results page', () => {
+    expect(onResults('https://www.youtube.com/watch?v=abc', hop(['lofi beats']))).toBe(false)
+    expect(onResults('https://www.youtube.com/results?search_query=lofi+beats', hop(['jazz']))).toBe(false)
+  })
+})
+
+describe('a dismiss phrase over a pop-up (owner\'s rule 2026-10-19)', () => {
+  const SHEET: CommandPage = {
+    url: 'https://x.com/elonmusk',
+    title: 'X',
+    refs: [
+      { ref: 8, kind: 'button', label: 'Sign in', href: null, inputType: null },
+      { ref: 9, kind: 'button', label: 'Close', href: null, inputType: null },
+    ],
+    dialog: { text: 'Sign in to X', refs: [8, 9] },
+  }
+
+  it('asks the Command\'s questions and the dismiss Choice in one call; none with no control to choose', () => {
+    expect(Object.keys(dismissPhraseQuestions('close', SHEET)!)).toEqual(['verb', 'target', 'slot', 'where', 'dismiss'])
+    expect(dismissPhraseQuestions('close', { ...SHEET, dialog: { text: 'Sign in', refs: [8] } })).toBeNull()
+  })
+
+  it('tells Jev to decline a cookie notice\'s optional cookies', () => {
+    expect(dismissPhraseQuestions('close', SHEET)!.dismiss.instructions).toContain('continue without accepting')
   })
 })

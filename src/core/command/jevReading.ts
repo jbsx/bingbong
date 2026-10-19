@@ -1,6 +1,6 @@
 import type { DecisionChoiceAnswer, DecisionChoiceQuestion, DecisionNoulQuestion } from '../ports/decisionModel'
 import type { PageLink } from '../browser/snapshot'
-import { JEV_VERBS, PRESS_KEYS, describeCommand, pressKeyOf, targetLabel, verbTakesSlot, verbTakesTarget, type Command, type CommandPage, type CommandRef, type CommandVerb } from './command'
+import { JEV_VERBS, PRESS_KEYS, describeCommand, normalizeWords, pressKeyOf, targetLabel, verbTakesSlot, verbTakesTarget, type Command, type CommandPage, type CommandRef, type CommandVerb } from './command'
 import { dialogControls, type DismissChoice } from './dismissDialog'
 import { isSearchLanding, pageAddressOf, resultLinksOf, resultRefsOf, wordsAfterVerb } from './localMatch'
 import { isAddressShaped } from './openAddress'
@@ -104,6 +104,33 @@ export interface HopContext {
   readonly setAside?: readonly SetAside[]
   /** The sites the Task has searched (#341): a hop on one is never offered its Site Scope again. */
   readonly searched?: readonly string[]
+  /**
+   * The words the Task has searched for or typed (owner's rule
+   * 2026-10-19): a page whose address carries them is the results they
+   * led to, on any site, whatever its parameter is called.
+   */
+  readonly terms?: readonly string[]
+}
+
+/**
+ * Whether a hop stands on a search's results (#342, owner's rule
+ * 2026-10-19): an address the Search URL test reads as a search, or one
+ * that carries words the Task searched for or typed — YouTube's
+ * `search_query`, Amazon's `k`, eBay's `_nkw`, a path — with no list of
+ * the names a site gives them.
+ */
+export function onResults(url: string, hop: HopContext | undefined): boolean {
+  if (isSearchLanding(url)) return true
+  const terms = (hop?.terms ?? []).map(normalizeWords).filter((term) => term.length >= 2)
+  if (terms.length === 0 || !URL.canParse(url)) return false
+  const parsed = new URL(url)
+  const carried = [...[...parsed.searchParams.values()], ...parsed.pathname.split('/').map(decodedSegment)].map(normalizeWords).filter((value) => value !== '')
+  return carried.some((value) => terms.some((term) => value === term || ` ${value} `.includes(` ${term} `)))
+}
+
+/** A path segment decoded the lenient way form values are: a stray `%` stays itself, `+` is a space. */
+function decodedSegment(segment: string): string {
+  return new URLSearchParams(`t=${segment.replace(/&/g, '%26')}`).get('t') ?? segment
 }
 
 /**
@@ -220,7 +247,13 @@ interface OfferedLink extends PageLink {
   readonly n: number
 }
 
-/** What a hop offers of a page: its refs and result links, none of them an address the Task has visited, no link twice or already a ref. */
+/**
+ * What a hop offers of a page: its refs and the page's links further down
+ * — on a Web Engine's search its results alone, its own chrome left out;
+ * on any other page every link (owner's rule 2026-10-19: the widest net,
+ * so a link below the fold costs no scroll) — none of them an address the
+ * Task has visited, no link twice or already a ref.
+ */
 function offered(page: CommandPage, hop: HopContext | undefined): { page: CommandPage; links: OfferedLink[] } {
   if (hop === undefined) return { page, links: [] }
   const seen = new Set(hop.visited.map(pageAddressOf))
@@ -235,7 +268,7 @@ function offered(page: CommandPage, hop: HopContext | undefined): { page: Comman
   const links: OfferedLink[] = []
   // A Choice holds at most 255 options: `none`, the refs, then the links.
   const room = MAX_SPANS - refs.length
-  for (const link of resultLinksOf(hop.links, page.url)) {
+  for (const link of isWebEngineSearch(page.url) ? resultLinksOf(hop.links, page.url) : hop.links) {
     if (links.length >= room) break
     const address = pageAddressOf(link.href)
     if (seen.has(address) || taken.has(address)) continue
@@ -261,7 +294,7 @@ export function commandState(text: string, page: CommandPage, hop?: HopContext):
     ...(page.dialog !== undefined ? [`A dialog is open: ${JSON.stringify(page.dialog.text)}`] : []),
     'Refs (number, kind, label, address):',
     ...shown.page.refs.map((ref) => `[${ref.ref}] ${describeRef(ref)}`),
-    ...(shown.links.length > 0 ? ['Result links further down the page (name, address):', ...shown.links.map((link) => `[link-${link.n}] ${describeLink(link)}`)] : []),
+    ...(shown.links.length > 0 ? [`${isWebEngineSearch(page.url) ? 'Result links' : 'Links'} further down the page (name, address):`, ...shown.links.map((link) => `[link-${link.n}] ${describeLink(link)}`)] : []),
   ].join('\n')
 }
 
@@ -379,12 +412,23 @@ function dismissQuestion(page: CommandPage): DecisionChoiceQuestion | null {
   return {
     type: 'choice',
     instructions:
-      'A pop-up covers the page. Which control closes it and leaves the page behind as it was: a close, dismiss, not now, skip, reject or decline control, or an X? Never one that goes through it: sign in, sign up, subscribe, accept, agree, allow, install. Choose escape when no control closes it and the Escape key should be tried.',
+      'A pop-up covers the page. Which control closes it and leaves the page behind as it was: a close, dismiss, not now, skip, reject or decline control, or an X? On a cookie notice, the one that declines the optional cookies: reject, decline, continue without accepting, necessary only. Never one that goes through it: sign in, sign up, subscribe, accept, agree, allow, install. Choose escape when no control closes it and the Escape key should be tried.',
     options: {
       escape: 'no control closes it: press the Escape key',
       ...Object.fromEntries(controls.map((ref) => [`ref-${ref.ref}`, describeRef(ref)])),
     },
   }
+}
+
+/**
+ * The questions a dismiss phrase over a pop-up asks (owner's rule
+ * 2026-10-19): the Command's and the dismiss Choice in one call, so a
+ * spoken "close" walks the Dismissal Ladder with Jev's choice on it as a
+ * Step Aside does. Null when the pop-up offers no control to choose.
+ */
+export function dismissPhraseQuestions(text: string, page: CommandPage): (CommandQuestions & { readonly dismiss: DecisionChoiceQuestion }) | null {
+  const dismiss = dismissQuestion(page)
+  return dismiss === null ? null : { ...commandQuestions(text, page), dismiss }
 }
 
 /** A hop's questions: the Command's, the Verdict and, with a pop-up open, the dismiss Choice. */
@@ -465,9 +509,9 @@ function mostProbable<T>(answer: DecisionChoiceAnswer, resolve: (label: string) 
   return best?.value ?? null
 }
 
-/** The most probable ref the target answer holds; null when the page has none. */
+/** The most probable ref the target answer holds; null when it gives no offered ref any probability — never a ref Jev did not name (owner's rule 2026-10-19). */
 function mostProbableRef(answer: DecisionChoiceAnswer, page: CommandPage): number | null {
-  return offeredRef(answer.choice, page) ?? mostProbable(answer, (label) => offeredRef(label, page)) ?? page.refs[0]?.ref ?? null
+  return offeredRef(answer.choice, page) ?? mostProbable(answer, (label) => offeredRef(label, page))
 }
 
 /**
@@ -553,7 +597,7 @@ export function readCommandAnswers(answers: CommandAnswers | HopAnswers, text: s
     // Web Engine's, a result alone, never its chrome (2026-10-19).
     const later = hop !== undefined && hop.hop > 0
     if (!later) target = mostProbableRef(answers.target, page)
-    else target = offeredRef(answers.target.choice, page) ?? (isSearchLanding(page.url) ? mostProbableFallbackRef(answers.target, page) : null)
+    else target = offeredRef(answers.target.choice, page) ?? (onResults(page.url, hop) ? mostProbableFallbackRef(answers.target, page) : null)
     // A click or a type on a page with nothing to act on is no Command.
     if (target === null) return none
   }
@@ -588,7 +632,7 @@ export function readCommandAnswers(answers: CommandAnswers | HopAnswers, text: s
     // off one the Task has reached a page and a target Jev barely offered
     // would overrun it (#342), so the hop has no next step — nor on a
     // landing with nothing to open.
-    if (!isSearchLanding(page.url)) return none
+    if (!onResults(page.url, hop)) return none
     return mostProbableFallbackOpening(answers.target, page, links) ?? none
   }
   if (verb === 'press') {

@@ -2488,7 +2488,7 @@ describe('a pop-up covering the page (#336)', () => {
   const displays = (events: PipelineEvent[]) => events.filter((event): event is Extract<PipelineEvent, { type: 'display' }> => event.type === 'display')
 
   /** A page under X's logged-out sheet; the sheet closes on its close control or Escape unless it is told to stay. */
-  function sheetHarness(refs = SHEET_REFS, stays = false) {
+  function sheetHarness(refs = SHEET_REFS, stays = false, closers: readonly number[] = [9], escapeCloses = true) {
     const h = harness()
     h.browser.snapshot = { ...h.browser.snapshot, url: 'https://x.com/elonmusk', title: 'X', refs, dialogOpen: true, dialogText: 'Sign in to X' }
     const closed = (): void => {
@@ -2497,25 +2497,60 @@ describe('a pop-up covering the page (#336)', () => {
     const click = h.browser.click.bind(h.browser)
     h.browser.click = async (n) => {
       const line = await click(n)
-      if (n === 9) closed()
+      if (closers.includes(n)) closed()
       return line
     }
     const press = h.browser.pressKey.bind(h.browser)
     h.browser.pressKey = async (key, times) => {
       await press(key, times)
-      if (key.key === 'Escape') closed()
+      if (key.key === 'Escape' && escapeCloses) closed()
     }
     return h
   }
 
-  it('"exit out of this" clicks the dialog\'s close control, says "Closed the pop-up." and never navigates — no Jev call', async () => {
+  it('"exit out of this" clicks the dialog\'s close control, says "Closed the pop-up." and never navigates — Jev unavailable, the label rung stands', async () => {
     const { browser, events, records, decision, runner } = sheetHarness()
     await runner.run('exit out of this', { source: 'spoken' })
-    expect(decision.requests).toEqual([])
+    // Jev is asked which control closes it (owner's rule 2026-10-19); with no answer the ladder stands without its choice.
+    expect(decision.requests.map((request) => Object.keys(request.questions))).toEqual([['verb', 'target', 'slot', 'where', 'dismiss']])
     expect(browser.clicks).toEqual([9])
     expect(browser.navigations).toEqual([])
     expect(displays(events)).toEqual([expect.objectContaining({ text: 'Closed the pop-up.' })])
     expect(records).toEqual([expect.objectContaining({ reading: 'local_match', verb: 'click', target: 9, ended: 'local_match' })])
+  })
+
+  it('a dismiss phrase clicks the control Jev is sure closes the pop-up, one no label list reads as a close', async () => {
+    const refs = [...SHEET_REFS, ref(10, 'button', 'Browse as a guest', { layer: 'dialog' })]
+    const { browser, events, decision, records, runner } = sheetHarness(refs, false, [10])
+    decision.script.push({ answers: { verb: choice('click'), target: choice('none'), slot: choice('none'), where: choice('page'), dismiss: choice('ref-10') } })
+    await runner.run('close this', { source: 'spoken' })
+    const asked = decision.requests[0]!.questions as { dismiss?: DecisionChoiceQuestion }
+    // The widest net: every dialog control that is no link and no way through, Escape beside them.
+    expect(Object.keys(asked.dismiss!.options)).toEqual(['escape', 'ref-9', 'ref-10'])
+    expect(browser.clicks).toEqual([10])
+    expect(displays(events)).toEqual([expect.objectContaining({ text: 'Closed the pop-up.' })])
+    expect(records).toEqual([expect.objectContaining({ verb: 'click', target: 10, jev: expect.objectContaining({ confidence: expect.objectContaining({ dismiss: 0.9 }) }) })])
+  })
+
+  it('a dismiss phrase walks the whole Dismissal Ladder while the pop-up stays: Jev\'s choice, the close label, then Escape — the failure said once, at the end', async () => {
+    const refs = [...SHEET_REFS, ref(10, 'button', 'Maybe', { layer: 'dialog' })]
+    const { browser, events, decision, records, runner } = sheetHarness(refs, false, [], true)
+    decision.script.push({ answers: { verb: choice('click'), target: choice('none'), slot: choice('none'), where: choice('page'), dismiss: choice('ref-10') } })
+    await runner.run('close this', { source: 'spoken' })
+    expect(browser.clicks).toEqual([10, 9])
+    expect(browser.pressedKeys).toEqual([{ press: { key: 'Escape' }, times: 1 }])
+    expect(displays(events)).toEqual([expect.objectContaining({ text: 'Closed the pop-up.' })])
+    expect(records.filter((record) => record.type === 'decision')).toHaveLength(3)
+    // A later rung is the runner's own move: never read as the user's recovery from the one before.
+    expect(records.filter((record) => record.type === 'misfire')).toEqual([])
+  })
+
+  it('a consent wall\'s reject is the policy\'s: clicked with no Jev call', async () => {
+    const refs = [ref(1, 'link', 'Home', { href: 'https://x.com/home' }), ref(5, 'button', 'Accept all', { layer: 'dialog' }), ref(6, 'button', 'Reject all', { layer: 'dialog' })]
+    const { browser, decision, runner } = sheetHarness(refs, false, [6])
+    await runner.run('close this', { source: 'spoken' })
+    expect(decision.requests).toEqual([])
+    expect(browser.clicks).toEqual([6])
   })
 
   it('presses Escape when the dialog has no close control', async () => {

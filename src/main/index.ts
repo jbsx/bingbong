@@ -83,6 +83,8 @@ import { attachAppearance } from './attachAppearance'
 import { VOICE_IPC } from '../core/voice/ipcChannels'
 import { createWindowEventPublisher } from './session/windowEventPublisher'
 import { createDecisionModelSource } from './decision/createDecisionModel'
+import { createConsentChooser } from '../core/browser/consentChooser'
+import { DEFAULT_DECISION_THRESHOLDS } from '../core/ports/decisionModel'
 
 // kachow: the browser, the interaction surface the agent drives (the
 // numbered-ref snapshot over CDP), the dashboard and the local voice
@@ -345,7 +347,7 @@ async function createWindow(): Promise<BrowserWindow> {
     },
   }
   const paneCustody = holdBrowserCustody(
-    withAgentActivity(authPopups.route(createPaneBrowserController(pane, { subspans: browserSubspans, effects })), agentActivity),
+    withAgentActivity(authPopups.route(createPaneBrowserController(pane, { subspans: browserSubspans, effects, chooseConsent: createConsentChooser(decisionModel, DEFAULT_DECISION_THRESHOLDS.choice) })), agentActivity),
   )
   const controller: BrowserController & VisualGroundingController = paneCustody.controller
   // The Player (#343): YouTube in the pane is the player, the queue and the verbs live here.

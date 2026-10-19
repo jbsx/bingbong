@@ -31,22 +31,45 @@ const NECESSARY_ONLY_RE = /\b(necessary|essential)\b.*\bonly\b|\bonly\b.*\b(nece
 const WITHOUT_OPTIONAL_RE = /\b(without|no|none of)\s+(the\s+)?optional\b/i
 const ACCEPT_STYLE_RE = /\b(accept|allow|agree|ok|okay|got it)\b/i
 
-function isRejectStyle(label: string): boolean {
+/** Whether a consent control's label declines the optional cookies, by the rule. */
+export function isRejectStyle(label: string): boolean {
   return REJECT_VERB_RE.test(label) || NECESSARY_ONLY_RE.test(label) || WITHOUT_OPTIONAL_RE.test(label)
+}
+
+/** Whether a consent control's label accepts and does not decline: never a choice that declines. */
+export function isAcceptStyle(label: string): boolean {
+  return ACCEPT_STYLE_RE.test(label) && !isRejectStyle(label)
+}
+
+/** The control the rule reads as declining, first of them; null when none does. */
+export function consentRejectOf(controlLabels: readonly string[]): number | null {
+  const reject = controlLabels.findIndex(isRejectStyle)
+  return reject === -1 ? null : reject
+}
+
+/** The control the rule reads as accepting, first of them; null when none does. */
+export function consentAcceptOf(controlLabels: readonly string[]): number | null {
+  const accept = controlLabels.findIndex((label) => ACCEPT_STYLE_RE.test(label))
+  return accept === -1 ? null : accept
 }
 
 /**
  * Pick the control a Tier-1 dismissal clicks: a reject-style control when one
  * exists, else an accept-style one. Null when no known consent choice exists.
+ * A reject the rule cannot read ("Continue without accepting") is Jev's to
+ * find before the accept ({@link ConsentChooser}, owner's rule 2026-10-19).
  */
 export function chooseConsentDismissal(controlLabels: string[]): number | null {
-  if (controlLabels.length === 0) return null
-  const reject = controlLabels.findIndex(isRejectStyle)
-  if (reject !== -1) return reject
-  const accept = controlLabels.findIndex((label) => ACCEPT_STYLE_RE.test(label))
-  if (accept !== -1) return accept
-  return null
+  return consentRejectOf(controlLabels) ?? consentAcceptOf(controlLabels)
 }
+
+/**
+ * Finds the control that declines a consent wall's optional cookies when
+ * the rule reads none as declining (owner's rule 2026-10-19: the widest net,
+ * Jev chooses): the index of a control among the labels, or null when none
+ * declines, or no one could be asked. Never an accept-style control.
+ */
+export type ConsentChooser = (dialogText: string, controlLabels: readonly string[]) => Promise<number | null>
 
 /**
  * The one line a Tier-1 dismissal reports, wherever it ran — read, navigate,

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { CommandPage } from './command'
-import { dialogControls, dialogDismissal, dismissCommand, dismissalLadder, isDismissPhrase, obstacleOf } from './dismissDialog'
+import { dialogControls, dialogDismissal, dismissCommand, dismissalLadder, isDismissPhrase, obstacleOf, ruledDismissal } from './dismissDialog'
 
 // The dismiss rule (#336, ADR 0076): with a dialog open, a dismiss phrase
 // closes it — its close control clicked, else Escape pressed — decided
@@ -145,6 +145,38 @@ describe('the Dismissal Ladder (owner\'s rule 2026-10-19: the widest net)', () =
     expect(dismissalLadder(SHEET, { choice: { ref: 7 }, confidence: 0.95 })).toEqual([click(9), ESCAPE])
     expect(dismissalLadder(SHEET, { choice: { ref: 1 }, confidence: 0.95 })).toEqual([click(9), ESCAPE])
     expect(dismissalLadder(BANNER, { choice: { ref: 10 }, confidence: 0.95 })).toEqual([click(11), click(1), ESCAPE])
+  })
+
+  it('a way through the label refuses is a way out: "Don\'t allow" and "Do not install" are offered, "No account? Sign up" is not', () => {
+    const sheet: CommandPage = {
+      ...SHEET,
+      refs: [
+        ...SHEET.refs,
+        { ref: 20, kind: 'button', label: 'Don’t allow', href: null, inputType: null },
+        { ref: 21, kind: 'button', label: 'Do not install', href: null, inputType: null },
+        { ref: 22, kind: 'button', label: 'No account? Sign up', href: null, inputType: null },
+        { ref: 23, kind: 'button', label: 'Allow', href: null, inputType: null },
+      ],
+      dialog: { text: 'Notifications', refs: [20, 21, 22, 23] },
+    }
+    expect(dialogControls(sheet).map((ref) => ref.ref)).toEqual([20, 21])
+  })
+
+  it('a consent wall whose reject the rule cannot read: a reject Jev is sure of goes before the accept, privacy first', () => {
+    const wall: CommandPage = {
+      ...BANNER,
+      refs: [
+        { ref: 20, kind: 'button', label: 'Accept all', href: null, inputType: null },
+        { ref: 21, kind: 'button', label: 'I’d rather not', href: null, inputType: null },
+      ],
+      dialog: { text: 'We use cookies', refs: [20, 21] },
+    }
+    expect(dismissalLadder(wall)).toEqual([click(20), ESCAPE])
+    expect(dismissalLadder(wall, { choice: { ref: 21 }, confidence: 0.9 })).toEqual([click(21), click(20), ESCAPE])
+    // The policy settles only a reject it reads; anything else is Jev's to choose.
+    expect(ruledDismissal(wall)).toBeNull()
+    expect(ruledDismissal(BANNER)).toEqual(click(11))
+    expect(ruledDismissal(SHEET)).toBeNull()
   })
 
   it('each rung once: Jev choosing the labelled close leaves one click of it', () => {

@@ -1,4 +1,4 @@
-import { chooseConsentDismissal, isConsentDialog } from '../browser/dialogPolicy'
+import { consentAcceptOf, consentRejectOf, isConsentDialog } from '../browser/dialogPolicy'
 import { PRESS_KEYS, normalizeWords, type Command, type CommandPage, type CommandRef } from './command'
 
 // The dismiss rule (#336, ADR 0076): a pop-up covering the page is closed
@@ -11,11 +11,13 @@ import { PRESS_KEYS, normalizeWords, type Command, type CommandPage, type Comman
 //
 // The Dismissal Ladder (owner's rule 2026-10-19: the widest net, no hand
 // list of labels deciding alone):
-//   1. a consent wall's reject-style control, else its accept-style one —
-//      the controller's own privacy-first policy (ADR 0061);
+//   1. a consent wall's reject-style control — the controller's own
+//      privacy-first policy (ADR 0061);
 //   2. the control Jev chose when asked which one closes the pop-up, when
 //      it was sure — any button in the dialog's layer that is not a way
-//      through (sign in, subscribe, accept…) and not a link;
+//      through (sign in, subscribe, accept…) and not a link; then a
+//      consent wall's accept-style control, which a reject Jev found the
+//      rule could not read goes before (privacy first);
 //   3. a button whose label reads as a close (close, dismiss, not now,
 //      skip, no thanks, ×…), wherever the label goes on from there;
 //   4. Jev's choice when it was unsure, under the same guards;
@@ -31,9 +33,19 @@ const CLOSE_LABEL_RE =
 /** The close glyphs a control may carry as its whole label, which normalized words lose. */
 const CLOSE_GLYPHS: ReadonlySet<string> = new Set(['×', '✕', 'x', 'X', '✖', '⨯'])
 
+/** The words of a way through the pop-up rather than out of it. */
+const THROUGH_WORDS = String.raw`(?:sign ?in|sign ?up|log ?in|log ?on|register|create (?:an? )?account|subscribe|accept|agree|allow|enable|install|download|get the app|open (?:in )?(?:the )?app|buy|pay|checkout|upgrade|join|start (?:free )?trial|continue with)`
+
 /** A control that is a way through the pop-up rather than out of it: never a dismissal, whoever chose it. */
-const THROUGH_LABEL_RE =
-  /\b(?:sign ?in|sign ?up|log ?in|log ?on|register|create (?:an? )?account|subscribe|accept|agree|allow|enable|install|download|get the app|open (?:in )?(?:the )?app|buy|pay|checkout|upgrade|join|start (?:free )?trial|continue with)\b/
+const THROUGH_LABEL_RE = new RegExp(String.raw`\b${THROUGH_WORDS}\b`)
+
+/** A way through the label refuses — "Don't allow", "No, don't subscribe", "Do not install": a way out, not through; "No account? Sign up" still goes through. */
+const REFUSED_THROUGH_RE = new RegExp(String.raw`\b(?:dont|do not|never|not)(?: \w+)? ${THROUGH_WORDS}\b`, 'g')
+
+/** Whether a control's label goes through the pop-up: a way through it does not refuse. */
+function isWayThrough(label: string): boolean {
+  return THROUGH_LABEL_RE.test(normalizeWords(label).replace(REFUSED_THROUGH_RE, ' '))
+}
 
 /** How Jev answered the dismiss Choice (the `dismiss` question): a dialog control by ref, or Escape, with how sure it was. */
 export interface DismissChoice {
@@ -74,16 +86,13 @@ export function dismissalLadder(page: CommandPage, chosen: DismissChoice | null 
   if (page.dialog === undefined) return []
   const controls = dialogControls(page)
   const rungs: (Command | null)[] = []
-  // 1. The consent policy: reject first, accept second, as the controller's Tier 1 does — judged over every clickable control of the layer, Accept All included, since that is what names a consent wall.
-  const clickable = clickableControls(page)
-  const labels = clickable.map((control) => control.label)
-  if (isConsentDialog(page.dialog.text, labels)) {
-    const choice = chooseConsentDismissal(labels)
-    if (choice !== null) rungs.push(click(clickable[choice]!))
-  }
-  // 2. Jev's sure choice.
+  // 1. The consent policy's reject, as the controller's Tier 1 — judged over every clickable control of the layer, Accept All included, since that is what names a consent wall.
+  const rule = ruledConsent(page)
+  if (rule?.style === 'reject') rungs.push(rule.command)
+  // 2. Jev's sure choice; then the consent policy's accept, which a reject Jev found goes before (privacy first).
   const jev = chosen === null ? null : chosenCommand(chosen, controls)
   if (jev !== null && chosen!.confidence >= sureAbove) rungs.push(jev)
+  if (rule?.style === 'accept') rungs.push(rule.command)
   // 3. A close by its label.
   const byLabel = controls.find((control) => CLOSE_GLYPHS.has(control.label.trim()) || CLOSE_LABEL_RE.test(normalizeWords(control.label)))
   if (byLabel !== undefined) rungs.push(click(byLabel))
@@ -94,9 +103,31 @@ export function dismissalLadder(page: CommandPage, chosen: DismissChoice | null 
   return dedupe(rungs.filter((rung): rung is Command => rung !== null))
 }
 
+/** The consent policy's control on a consent wall over the page, and whether it declines or accepts; null off one. */
+function ruledConsent(page: CommandPage): { command: Command; style: 'reject' | 'accept' } | null {
+  if (page.dialog === undefined) return null
+  const clickable = clickableControls(page)
+  const labels = clickable.map((control) => control.label)
+  if (!isConsentDialog(page.dialog.text, labels)) return null
+  const reject = consentRejectOf(labels)
+  if (reject !== null) return { command: click(clickable[reject]!), style: 'reject' }
+  const accept = consentAcceptOf(labels)
+  return accept === null ? null : { command: click(clickable[accept]!), style: 'accept' }
+}
+
+/**
+ * The dismissal the policy settles with no one asked: a consent wall's
+ * reject-style control (ADR 0061). Null otherwise — which control closes
+ * the pop-up is Jev's to choose (owner's rule 2026-10-19).
+ */
+export function ruledDismissal(page: CommandPage): Command | null {
+  const rule = ruledConsent(page)
+  return rule?.style === 'reject' ? rule.command : null
+}
+
 /** The dialog layer's controls a dismissal may click: no link (it would navigate), no field, no way through. */
 export function dialogControls(page: CommandPage): CommandRef[] {
-  return clickableControls(page).filter((ref) => !THROUGH_LABEL_RE.test(normalizeWords(ref.label)))
+  return clickableControls(page).filter((ref) => !isWayThrough(ref.label))
 }
 
 /** The dialog layer's clickable controls: no link, no field — the ways through still among them, for the consent policy to judge. */
