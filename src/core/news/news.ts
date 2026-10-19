@@ -21,6 +21,8 @@ export interface NewsStory {
   readonly comments: number | null
   /** The picture the source itself gives the story — a feed post's media, a repo's social preview — where it gives one: the first Story Image candidate. */
   readonly image: string | null
+  /** What the source itself says the story is, beyond its title — a repo's language and stars, a model's task and tags, a paper's abstract — for its Story Brief; none where the title is all there is. */
+  readonly about?: string | null
 }
 
 /**

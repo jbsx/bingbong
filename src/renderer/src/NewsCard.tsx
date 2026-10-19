@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { SlotSize } from '../../core/idle/slots'
 import { hostOf, leadAndTail, magnitudeLabel, magnitudeParts } from '../../core/news/news'
 import type { NewsHorizons } from '../../core/news/newsDesk'
+import type { StoryBrief } from '../../core/news/storyBrief'
 import { sourceTile } from '../../core/news/storyImage'
 import { useFitText, useWholeItems } from './useFit'
 
@@ -47,12 +48,19 @@ function StoryPicture({ picture, source, size }: { picture: string | null; sourc
   )
 }
 
+/** What a screen reader hears of a story: its title, its Story Brief where written, its number, and that a tap opens it. */
+function spoken(item: { title: string; brief: StoryBrief | null; magnitude: number | null; unit: string; source: string }, prefix = ''): string {
+  const brief = item.brief === null ? '' : ` — ${item.brief.what} ${item.brief.why}`
+  return `${prefix}${item.title}${brief}, ${magnitudeLabel(item)}. Open it`
+}
+
 /**
  * Big News, a tile of its own: a story a numbered row — its picture as a
- * thumbnail, the lead of its headline in full, the tail on one quiet line
- * under it (an ellipsis where it runs on), its number in a pill (none for a
- * feed's post) — each a tap that opens it; a story the box would cut is
- * left off whole.
+ * thumbnail, the lead of its headline in full, then its Story Brief on two
+ * lines of their own, what it is and why it matters (where none is written
+ * yet, the headline's tail on one quiet line, an ellipsis where it runs
+ * on), its number in a pill (none for a feed's post) — each a tap that
+ * opens it; a story the box would cut is left off whole.
  */
 function BigNews({ items, rows }: { items: NewsHorizons['bigNews']; rows: number }) {
   const list = useRef<HTMLOListElement>(null)
@@ -66,12 +74,19 @@ function BigNews({ items, rows }: { items: NewsHorizons['bigNews']; rows: number
           const count = magnitudeParts(item)?.count
           return (
             <li key={item.key}>
-              <button type="button" className="idle-news-item" aria-label={`${item.title}, ${magnitudeLabel(item)}. Open it`} {...opener(item.link)}>
+              <button type="button" className="idle-news-item" aria-label={spoken(item)} {...opener(item.link)}>
                 <span className="idle-news-rank">{index + 1}</span>
                 <StoryPicture picture={item.picture} source={item.source} size="thumb" />
                 <span className="idle-news-item-title">
-                  <span className="idle-news-item-lead">{lead}</span>
-                  {tail !== null ? (
+                  <span className="idle-news-item-lead" data-briefed={item.brief !== null ? '' : undefined}>
+                    {lead}
+                  </span>
+                  {item.brief !== null ? (
+                    <>
+                      <span className="idle-news-item-what">{item.brief.what}</span>
+                      <span className="idle-news-item-why">{item.brief.why}</span>
+                    </>
+                  ) : tail !== null ? (
                     <>
                       {' '}
                       <span className="idle-news-item-tail">{tail}</span>
@@ -92,8 +107,10 @@ const FIT_STAGES = ['snug', 'behind', 'over'] as const
 
 /**
  * Today's Highlight, a tile: its Story Image, then two chips — "Today's
- * highlight" and the topic it matched — its headline in two beats, the
- * lead bold and the tail quiet (leadAndTail), never cut; then the number
+ * highlight" and the topic it matched — its headline's lead bold, then its
+ * Story Brief, what it is and why it matters, each a line of its own (where
+ * none is written yet, the headline's tail quiet after the lead, as
+ * leadAndTail splits it), never cut; then the number
  * that made it a story, large and light (a feed's post, counting nothing,
  * has none), the comments, and the source and site. In a box wider than it
  * is tall the picture sits beside the words, in any other above them. The
@@ -104,19 +121,19 @@ const FIT_STAGES = ['snug', 'behind', 'over'] as const
  * headlines in a one-cell tile get that far.
  */
 function Highlight({ horizons, span }: { horizons: NewsHorizons; span: SlotSize }) {
-  const { story, topics, picture } = horizons.highlight
+  const { story, topics, picture, brief } = horizons.highlight
   const figure = magnitudeParts(story)
   const host = hostOf(story.link)
   const { lead, tail } = leadAndTail(story.title)
   const words = useRef<HTMLSpanElement>(null)
-  useFitText(words, `${story.key} ${span.w}x${span.h}`, FIT_STAGES)
+  useFitText(words, `${story.key} ${brief?.what ?? ''} ${span.w}x${span.h}`, FIT_STAGES)
   return (
     <button
       type="button"
       className="idle-card idle-news-today"
       data-flow={span.w > span.h ? 'row' : 'column'}
       style={{ gridColumn: `span ${span.w}`, gridRow: `span ${span.h}` }}
-      aria-label={`Today's highlight: ${story.title}, ${magnitudeLabel(story)}. Open it`}
+      aria-label={spoken({ ...story, brief }, "Today's highlight: ")}
       {...opener(story.link)}
     >
       <StoryPicture picture={picture} source={story.source} size="large" />
@@ -127,13 +144,19 @@ function Highlight({ horizons, span }: { horizons: NewsHorizons; span: SlotSize 
         </span>
         <span className="idle-news-title">
           <span className="idle-news-lead">{lead}</span>
-          {tail !== null ? (
+          {brief === null && tail !== null ? (
             <>
               {' '}
               <span className="idle-news-tail">{tail}</span>
             </>
           ) : null}
         </span>
+        {brief !== null ? (
+          <>
+            <span className="idle-news-what">{brief.what}</span>
+            <span className="idle-news-why">{brief.why}</span>
+          </>
+        ) : null}
         <span className="idle-news-stats">
           {figure !== null ? (
             <span className="idle-news-figure">

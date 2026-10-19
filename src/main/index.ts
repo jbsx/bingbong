@@ -512,7 +512,7 @@ app.whenReady().then(async () => {
   registerCommandRunnerIpc()
   registerSettingsIpc(settingsStore)
   registerUsageIpc(() => settingsStore.get().usageDashboard.url)
-  registerNewsIpc({ storePath: join(app.getPath('userData'), 'news.json'), imageDir: join(app.getPath('userData'), 'news-images'), news: () => settingsStore.get().news })
+  registerNewsIpc({ storePath: join(app.getPath('userData'), 'news.json'), imageDir: join(app.getPath('userData'), 'news-images'), news: () => settingsStore.get().news, currentEnv })
   // The e2e's stand-in replaces Bluetooth whenever its env names a script, so no test reaches the real scale.
   const scaleFixture = process.env[SCALE_FIXTURE_ENV]
   scaleListener = attachScaleListener({

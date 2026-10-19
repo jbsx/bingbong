@@ -75,6 +75,19 @@ function storyHistory() {
   )
 }
 
+/**
+ * Story Briefs as GLM writes them, for the highlight and two of Big News:
+ * the third Big News line keeps its headline's tail, so both forms are
+ * shot. No writer runs in e2e (its key is unset), so these stay as seeded.
+ */
+function storyBriefs() {
+  return {
+    'Hacker News:1': { what: 'Claude Code can now split a test run across machines and cross-review PRs.', why: 'Claude Code, your daily tool; 1,840 points, top of HN today.' },
+    'Hacker News:seed-0': { what: 'A frontier lab released its biggest open-weights model with a full report.', why: 'Frontier open weights; top of HN and on GitHub trending.' },
+    'Hacker News:seed-1': { what: 'A look at what the GPT-6 benchmark results actually show.', why: 'GPT-6 evals, 2,440 points, on two sources this week.' },
+  }
+}
+
 /** A story's page as the stand-in serves it: its head naming its preview image. */
 function articlePage(image: string): string {
   return `<!doctype html><html><head><title>A story</title><meta property="og:image" content="${image}"></head><body>…</body></html>`
@@ -175,7 +188,7 @@ describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review'
       JSON.stringify({ weather: { city: 'London', units: 'metric' }, usageDashboard: { url: `http://127.0.0.1:${port}`, providers: PROVIDERS.slice(0, count) }, weight: TWO_PEOPLE }),
       'utf8',
     )
-    await writeFile(join(userDataDir, 'news.json'), `${JSON.stringify({ shown: [], history: {}, highlight: null, stories: storyHistory() })}\n`, 'utf8')
+    await writeFile(join(userDataDir, 'news.json'), `${JSON.stringify({ shown: [], history: {}, highlight: null, stories: storyHistory(), briefs: storyBriefs() })}\n`, 'utf8')
     await writeFile(join(userDataDir, 'weighins.json'), weighInsFile([...standInWeighIns(), ...brotherWeighIns()]), 'utf8')
     await writeFile(join(userDataDir, 'last-page.json'), `${JSON.stringify({ url: 'https://duckduckgo.com/?q=weather+in+london', title: 'weather in London at DuckDuckGo', at: 1 })}\n`, 'utf8')
     if (music) {

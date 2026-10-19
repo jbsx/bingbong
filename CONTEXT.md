@@ -556,7 +556,11 @@ highlight over Big News, at 1×1 the highlight alone; with nothing in Big
 News the highlight takes the whole box, with no filler line. The
 highlight is its Story Image, two chips — "Today's highlight" and the
 topic — its headline in two beats, then its number large, its comments,
-its source and site. A headline breaks into its lead, bold and never cut,
+its source and site. Where its Story Brief is written, the headline's
+lead stands alone and the brief's two lines follow it, each a line of its
+own (owner, 2026-10-19: "the list of github repo names say nothing about
+them and why theyre worth my attention. the daily news is a big blob of
+text that requires careful parsing"). A headline breaks into its lead, bold and never cut,
 and its tail, quiet (`leadAndTail`: at the first of ": ", ", and ",
 ", with ", " — ", ", " at least fifteen characters in, the "and" or "with"
 kept; a GitHub repo's name over its description; else all lead) — so a
@@ -564,7 +568,8 @@ long one reads in two beats rather than as a wall (owner, 2026-10-19: "the
 news currently looks like a big text wall"). A Big News line is a number,
 its Story Image as a thumbnail, its lead whole, its tail on one line with
 an ellipsis where it runs on — the one place a line is cut, by design —
-and its number in a pill. The highlight's words step down to a floor,
+and its number in a pill; with its Story Brief, the lead on two lines at
+most, then what it is and why it matters, each on two lines at most. The highlight's words step down to a floor,
 then its picture shrinks and goes behind them under a dark scrim, then its
 tail goes to one line; a Big News line the box cannot hold whole is left
 off. A tap on any
@@ -624,6 +629,24 @@ biggest. The cluster that is Today's Highlight is never in it. Replaced
 This Week and This Month (#349), whose fixed lists showed filler in a
 quiet week and repeated one story three times.
 _Avoid_: This Week, This Month, digest, top stories, trending
+
+**Story Brief**:
+The two short lines a generating model writes for each story the News
+card shows — what it is, in plain words, and why it is worth the owner's
+attention (the thing in it the owner follows, how big it is on its
+source, the other sources carrying it) — from the facts the sources give
+(a repo's description, language and stars; a model's task, licence and
+tags; a paper's abstract) and nothing else. GLM on Z.ai writes them, by
+the owner's ruling (2026-10-19: "i am restricting ourselves to using only
+jev is because i want it to be snappy. since its async, i am fine with
+using glm for this"): the Command path stays Jev-only; the card is
+asynchronous. Written once per story after a poll, in one request, kept
+in news.json and dropped with the story history; a story with none — no
+key, the writer down, a reply not read — shows its headline as before,
+and is asked about again at the next poll. Armed by `ZAI_API_KEY` (or
+`BINGBONG_NEWS_WRITER_API_KEY`).
+_Avoid_: summary, blurb, description (a repo's description is one of its
+facts)
 
 **Story Image**:
 The one picture each story the News card shows carries — Today's

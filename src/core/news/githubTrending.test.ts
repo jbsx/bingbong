@@ -35,7 +35,11 @@ describe('createGitHubTrendingSource', () => {
       unit: 'stars today',
       comments: null,
       image: 'https://opengraph.githubassets.com/1/MadsLorentzen/ai-job-search',
+      about:
+        'The job search that runs on your machine. AI job application framework built on Claude Code: evaluate postings, tailor CVs, write cover letters, prep interviews. Fork it and own it. Written in Python. 55,088 stars in all.',
     })
+    // A description with no full stop of its own gets one before the facts after it.
+    expect(stories[2].about).toMatch(/vendors\. Written in Rust\. 10,826 stars in all\.$/)
   })
 
   it('rejects a page with no trending repositories on it', async () => {

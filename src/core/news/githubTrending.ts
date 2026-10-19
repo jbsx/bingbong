@@ -14,6 +14,8 @@ function storyOf(article: string, at: number): NewsStory | null {
   if (repo === undefined || stars === undefined) return null
   const name = decodeURIComponent(repo)
   const description = textOf(/<p(?:\s[^>]*)?>([\s\S]*?)<\/p>/.exec(article)?.[1] ?? '')
+  const language = /itemprop="programmingLanguage">([^<]+)</.exec(article)?.[1]?.trim()
+  const total = /href="\/[^"]+\/stargazers"[^>]*>[\s\S]*?<\/svg>\s*([\d,]+)/.exec(article)?.[1]
   return {
     key: `${GITHUB_TRENDING}:${name}`,
     // The description carries the words a topic matches; the name alone rarely does.
@@ -27,6 +29,7 @@ function storyOf(article: string, at: number): NewsStory | null {
     comments: null,
     // The repository's social preview: its own image where it set one, else GitHub's card of its name and numbers.
     image: `https://opengraph.githubassets.com/1/${name}`,
+    about: [description === '' || /[.!?]$/.test(description) ? description : `${description}.`, language === undefined ? '' : `Written in ${language}.`, total === undefined ? '' : `${total} stars in all.`].filter(Boolean).join(' ') || null,
   }
 }
 

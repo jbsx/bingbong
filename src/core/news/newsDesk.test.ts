@@ -5,6 +5,7 @@ import { NewsRefusal, type NewsSource, type NewsStory } from './news'
 import type { InterestProfile } from './interestProfile'
 import { DAY_MS as DAY } from './score'
 import { NEWS_IMAGE_SCHEME } from './ipcChannels'
+import type { BriefStory, StoryBriefWriter } from './storyBrief'
 import { createNewsDesk, emptyNewsState, NEWS_POLL_MS, NEWS_RETRY_MS, sanitizeNewsState, type NewsState, type NewsStore } from './newsDesk'
 
 const AT = new Date(2026, 9, 19, 12).getTime()
@@ -246,6 +247,69 @@ describe('createNewsDesk', () => {
   })
 })
 
+/** A writer that briefs every story it is asked about by its title, and keeps what it was told. */
+function recordingWriter(fail = false): StoryBriefWriter & { asked: BriefStory[][] } {
+  const writer = {
+    asked: [] as BriefStory[][],
+    async write(stories: readonly BriefStory[]) {
+      writer.asked.push([...stories])
+      if (fail) throw new Error('writer down')
+      return Object.fromEntries(stories.map((told) => [told.key, { what: `What ${told.title}`, why: `Why ${told.title}` }]))
+    },
+  }
+  return writer
+}
+
+describe('Story Briefs', () => {
+  it('briefs every story the card shows once, telling the writer what it matched and where else it is', async () => {
+    let now = AT
+    const writer = recordingWriter()
+    const github = named('GitHub trending', async () => [
+      {
+        ...story('g', 'acme/codex-tui: Codex in a terminal UI', 500),
+        key: 'GitHub trending:acme/codex-tui',
+        source: 'GitHub trending',
+        link: 'https://github.com/acme/codex-tui',
+        about: 'Codex in a terminal UI. Written in Rust.',
+      },
+    ])
+    const hn = source(async () => [{ ...story('t', 'Show HN: acme/codex-tui puts Codex in your terminal', 900), link: 'https://github.com/acme/codex-tui' }, story('b', 'Claude Code hooks', 600)])
+    const desk = createNewsDesk({ sources: () => [hn, github], store: memoryStore(), profile: () => PROFILE, writer: () => writer, now: () => now })
+    const first = await desk.horizons()
+    expect(first?.highlight.brief).toEqual({ what: `What ${first?.highlight.story.title}`, why: `Why ${first?.highlight.story.title}` })
+    const told = writer.asked[0].find((entry) => entry.key === first?.highlight.story.key)
+    expect(told).toMatchObject({ topics: ['AI coding agents'], words: ['codex'] })
+    expect(told?.sources).toEqual(expect.arrayContaining(['GitHub trending', 'hn']))
+    now += NEWS_POLL_MS
+    const second = await desk.horizons()
+    // Only the new highlight is asked about: a written brief is kept.
+    expect(writer.asked[1]?.map((entry) => entry.key)).toEqual([second?.highlight.story.key])
+    expect(second?.highlight.brief?.what).toBe(`What ${second?.highlight.story.title}`)
+  })
+
+  it('shows the headline alone while the writer fails, reports it, and asks again at the next poll', async () => {
+    const faults: string[] = []
+    setFaultSink((report) => faults.push(report.site))
+    try {
+      let now = AT
+      const writer = recordingWriter(true)
+      const desk = createNewsDesk({ sources: () => [source(async () => FRONT_PAGE)], store: memoryStore(), profile: () => PROFILE, writer: () => writer, now: () => now })
+      expect((await desk.horizons())?.highlight.brief).toBeNull()
+      expect(faults).toEqual(['news.storyBriefs.write'])
+      now += NEWS_POLL_MS
+      await desk.horizons()
+      expect(writer.asked).toHaveLength(2)
+    } finally {
+      setFaultSink(null)
+    }
+  })
+
+  it('writes nothing with no writer', async () => {
+    const desk = createNewsDesk({ sources: () => [source(async () => FRONT_PAGE)], store: memoryStore(), profile: () => PROFILE, writer: () => null, now: () => AT })
+    expect((await desk.horizons())?.highlight.brief).toBeNull()
+  })
+})
+
 describe('sanitizeNewsState', () => {
   it('keeps what is well formed and drops the rest', () => {
     const highlight = { story: FRONT_PAGE[0], topics: ['AI coding agents'], shownAt: AT }
@@ -262,16 +326,18 @@ describe('sanitizeNewsState', () => {
           stories: { 'hn:a': { file: '1.jpg', url: 'https://cdn.example.com/a.jpg', at: AT, site: 'example.com', cluster: 'hn:a' }, 'hn:b': { file: '../../etc/passwd', url: null, at: AT, site: '', cluster: 'hn:b' } },
           served: { 'example.com': { 'https://cdn.example.com/a.jpg': ['hn:a', 7] }, other: null },
         },
+        briefs: { 'hn:a': { what: 'A terminal for Codex.', why: 'Codex, on your topics.' }, 'hn:b': { what: 'No why' }, 'hn:c': null },
       }),
     ).toEqual({
       shown: [{ key: 'hn:a', at: AT }],
       history: { hn: { '2026-10-19': { 'hn:a': 900 } } },
       highlight,
-      stories: { 'hn:a': { title: 'Codex gets a terminal', link: 'https://example.com/a', source: 'hn', unit: 'points', topical: true, cluster: 'hn:a', image: null, days: { '2026-10-19': { score: 0.9, magnitude: 900 } } } },
+      stories: { 'hn:a': { title: 'Codex gets a terminal', link: 'https://example.com/a', source: 'hn', unit: 'points', topical: true, cluster: 'hn:a', image: null, about: null, sources: ['hn'], days: { '2026-10-19': { score: 0.9, magnitude: 900 } } } },
       images: {
         stories: { 'hn:a': { file: '1.jpg', url: 'https://cdn.example.com/a.jpg', at: AT, site: 'example.com', cluster: 'hn:a' } },
         served: { 'example.com': { 'https://cdn.example.com/a.jpg': ['hn:a'] } },
       },
+      briefs: { 'hn:a': { what: 'A terminal for Codex.', why: 'Codex, on your topics.' } },
     })
   })
 

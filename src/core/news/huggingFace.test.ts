@@ -34,6 +34,8 @@ describe('createHuggingFaceModelsSource', () => {
       unit: 'likes',
       comments: null,
       image: null,
+      // The hub's bookkeeping tags (region, safetensors, endpoints) say nothing of what it is and are left out.
+      about: 'Task: image-text-to-text. Library: transformers. Licence: mit. Tags: deepseek_v41, text-generation, 8-bit, fp8. 17,924 downloads. Published 2026-10-17.',
     })
   })
 
@@ -59,6 +61,7 @@ describe('createHuggingFacePapersSource', () => {
       unit: 'upvotes',
       comments: 1,
       image: null,
+      about: expect.stringMatching(/^Multimodal large language models \(MLLMs\) answer questions about whole images well/),
     })
   })
 

@@ -14,13 +14,38 @@ const ORIGIN = 'https://huggingface.co'
 interface Model {
   id?: unknown
   likes?: unknown
+  pipeline_tag?: unknown
+  library_name?: unknown
+  tags?: unknown
+  downloads?: unknown
+  createdAt?: unknown
+}
+
+/** The tags that say nothing of what a model is: the hub's own bookkeeping. */
+const PLAIN_TAGS = /^(region:|endpoints_compatible$|safetensors$|transformers$|autotrain_compatible$|text-generation-inference$|deploy:|base_model:|dataset:|arxiv:|doi:)/
+
+/** What the listing says a model is, as one line of facts: its task, library, licence, other tags, downloads and when it was made. */
+function modelAbout(model: Model): string | null {
+  const tags = Array.isArray(model.tags) ? model.tags.filter((tag): tag is string => typeof tag === 'string') : []
+  const licence = tags.find((tag) => tag.startsWith('license:'))?.slice('license:'.length)
+  const task = typeof model.pipeline_tag === 'string' ? model.pipeline_tag : null
+  const rest = tags.filter((tag) => !PLAIN_TAGS.test(tag) && !tag.startsWith('license:') && tag !== task && tag !== model.library_name).slice(0, 8)
+  const facts = [
+    task === null ? '' : `Task: ${task}.`,
+    typeof model.library_name === 'string' ? `Library: ${model.library_name}.` : '',
+    licence === undefined ? '' : `Licence: ${licence}.`,
+    rest.length === 0 ? '' : `Tags: ${rest.join(', ')}.`,
+    typeof model.downloads === 'number' ? `${model.downloads.toLocaleString('en-GB')} downloads.` : '',
+    typeof model.createdAt === 'string' ? `Published ${model.createdAt.slice(0, 10)}.` : '',
+  ].filter(Boolean)
+  return facts.length === 0 ? null : facts.join(' ')
 }
 
 interface DailyPaper {
   title?: unknown
   numComments?: unknown
   publishedAt?: unknown
-  paper?: { id?: unknown; title?: unknown; upvotes?: unknown; submittedOnDailyAt?: unknown } | null
+  paper?: { id?: unknown; title?: unknown; upvotes?: unknown; submittedOnDailyAt?: unknown; summary?: unknown } | null
 }
 
 function modelStory(model: Model | null, at: number): NewsStory | null {
@@ -38,6 +63,7 @@ function modelStory(model: Model | null, at: number): NewsStory | null {
     unit: 'likes',
     comments: null,
     image: null,
+    about: modelAbout(model),
   }
 }
 
@@ -58,6 +84,8 @@ function paperStory(item: DailyPaper | null): NewsStory | null {
     unit: 'upvotes',
     comments: typeof item.numComments === 'number' ? item.numComments : null,
     image: null,
+    // The abstract: what the paper is, which its title rarely says plainly.
+    about: typeof item.paper.summary === 'string' && item.paper.summary.trim() !== '' ? item.paper.summary.replace(/\s+/g, ' ').trim() : null,
   }
 }
 

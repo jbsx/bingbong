@@ -40,6 +40,10 @@ export interface StoryRecord {
   cluster: string
   /** The source's own image for it, the first Story Image candidate: none when the source gives none. */
   image: string | null
+  /** What the source says it is beyond its title (NewsStory's `about`), for its Story Brief. */
+  about?: string | null
+  /** Every source that has carried it, its own first (ScoredStory's `sources`), for its Story Brief. */
+  sources?: string[]
   /**
    * By local day polled ('YYYY-MM-DD'): its best score that day as Big News
    * measures it — its percentile boosted per source past the first, not per
@@ -91,6 +95,8 @@ export function recordStories(history: StoryHistory, ranked: readonly ScoredStor
         topical: topics.length > 0,
         cluster: kin?.cluster ?? story.key,
         image: story.image,
+        about: story.about ?? null,
+        sources,
         days: { [today]: { score, magnitude: story.magnitude } },
       }
       continue
@@ -102,6 +108,8 @@ export function recordStories(history: StoryHistory, ranked: readonly ScoredStor
       link: story.link,
       topical: topics.length > 0,
       image: story.image ?? known.image,
+      about: story.about ?? known.about ?? null,
+      sources: [...new Set([...(known.sources ?? [known.source]), ...sources])],
       days: { ...known.days, [today]: { score: Math.max(held?.score ?? 0, score), magnitude: story.magnitude === null ? (held?.magnitude ?? null) : Math.max(held?.magnitude ?? 0, story.magnitude) } },
     }
   }

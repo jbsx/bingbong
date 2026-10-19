@@ -2326,8 +2326,9 @@ body {
    Big News is a story a numbered row: its thumbnail, the lead whole, the
    tail on one line with an ellipsis — the one place on the Idle Screen a
    line is cut, by design — and the number in a pill; a row the box would
-   cut is left off whole (useWholeItems). Every story is a button: the tap
-   opens it. */
+   cut is left off whole (useWholeItems). Where a story's Story Brief is
+   written, its two lines — what it is, why it matters — replace the tail,
+   each a block of its own. Every story is a button: the tap opens it. */
 
 .idle-news-today,
 .idle-news-item {
@@ -2453,6 +2454,22 @@ body {
   color: var(--muted);
 }
 
+/* The Story Brief: what it is, plain, then why it matters in the accent — each its own line under the lead, never run on after it. */
+.idle-news-what {
+  flex: none;
+  font-size: max(18px, calc(1.4rem * var(--fit, 1)));
+  line-height: 1.25;
+}
+
+.idle-news-why {
+  flex: none;
+  margin-top: -4px;
+  font-size: max(17px, calc(1.2rem * var(--fit, 1)));
+  font-weight: 550;
+  line-height: 1.25;
+  color: color-mix(in srgb, var(--accent) 75%, var(--text));
+}
+
 .idle-news-stats {
   display: flex;
   flex: none;
@@ -2547,7 +2564,8 @@ body {
   font-size: 28px;
 }
 
-.idle-news-words[data-fit='over'] .idle-news-tail {
+.idle-news-words[data-fit='over'] .idle-news-tail,
+.idle-news-words[data-fit='over'] .idle-news-what {
   display: block;
   overflow: hidden;
   white-space: nowrap;
@@ -2617,6 +2635,34 @@ body {
   color: var(--muted);
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+/* Over a Story Brief the lead holds two lines at most: the brief says what it is, so a long headline gives up its end rather than the row its reason. */
+.idle-news-item-lead[data-briefed] {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+/* A row's Story Brief: what it is, then why it matters in the accent, each on up to two lines — the reason is the point of the row, so it wraps rather than trails off. */
+.idle-news-item-what,
+.idle-news-item-why {
+  display: -webkit-box;
+  overflow: hidden;
+  margin-top: 2px;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.idle-news-item-what {
+  font-size: 1.05rem;
+}
+
+.idle-news-item-why {
+  font-size: 1rem;
+  font-weight: 550;
+  color: color-mix(in srgb, var(--accent) 75%, var(--text));
 }
 
 .idle-news-pill {

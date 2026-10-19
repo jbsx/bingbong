@@ -76,6 +76,12 @@ export function storyTopics(story: Pick<NewsStory, 'title' | 'source'>, profile:
     .map((topic) => topic.name)
 }
 
+/** The words of the profile a story's title holds, in the profile's order, each once: what a Story Brief says it matched on. */
+export function storyWords(story: Pick<NewsStory, 'title'>, profile: InterestProfile): string[] {
+  const words = profile.flatMap((topic) => topic.words.filter((word) => contains(story.title, word)))
+  return [...new Set(words.map((word) => word.trim().toLowerCase()))]
+}
+
 /** Every distinct subreddit the profile polls, as typed first; one typed as no name ("r/") polls none. */
 export function profileSubreddits(profile: InterestProfile): string[] {
   const seen = new Map<string, string>()

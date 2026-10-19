@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { CdpClient } from './cdpClient'
 import { decisionEnvKeys } from '../src/core/decision/decisionRouting'
+import { briefWriterEnvKeys } from '../src/core/news/briefWriterRouting'
 import { launchApp, pickFreeDebugPort, type LaunchedApp } from './electronApp'
 import { startFixtureServer, type FixtureServer } from './fixtureServer'
 import { promptBarScript, urlBarNavigationScript } from './scripts'
@@ -97,10 +98,11 @@ const RENDERER_DEATH_GRACE_MS = 1500
 const repoRoot = fileURLToPath(new URL('..', import.meta.url))
 
 // E2e must never inherit the developer's real model routing (a sourced
-// shell, an exported key): the decision role's env vars are unset by
-// default — its only required piece is a key, so an exported
-// TYPESAFE_API_KEY alone would otherwise switch it on.
-const ROUTING_ENV_UNSET: Record<string, undefined> = Object.fromEntries(decisionEnvKeys().map((key) => [key, undefined]))
+// shell, an exported key): the decision role's and the Story Brief
+// writer's env vars are unset by default — each one's only required piece
+// is a key, so an exported TYPESAFE_API_KEY or ZAI_API_KEY alone would
+// otherwise switch it on.
+const ROUTING_ENV_UNSET: Record<string, undefined> = Object.fromEntries([...decisionEnvKeys(), ...briefWriterEnvKeys()].map((key) => [key, undefined]))
 
 // targetInfo.url goes stale after navigations; the predicates only rely on
 // values that never change for a given target (kind of page, initial URL).

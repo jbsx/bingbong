@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { ipcMain, protocol } from 'electron'
+import { resolveBriefWriterRouting } from '../../core/news/briefWriterRouting'
 import { createFeedSource } from '../../core/news/feeds'
 import { createGitHubTrendingSource } from '../../core/news/githubTrending'
 import { createHackerNewsSource, HACKER_NEWS_API } from '../../core/news/hackerNews'
@@ -11,9 +12,11 @@ import { NEWS_IMAGE_SCHEME, NEWS_IPC } from '../../core/news/ipcChannels'
 import { NewsRefusal, type NewsSource } from '../../core/news/news'
 import { createNewsDesk } from '../../core/news/newsDesk'
 import { createRedditSource } from '../../core/news/reddit'
+import type { StoryBriefWriter } from '../../core/news/storyBrief'
 import { CACHED_FILE, type StoryImagePorts } from '../../core/news/storyImage'
 import type { AppSettings } from '../../core/settings/settings'
 import { reportFault } from '../../core/trace/fault'
+import { createBriefWriter } from './briefWriter'
 import { createNewsStore } from './newsStore'
 
 /**
@@ -129,6 +132,18 @@ function storyImagePorts(dir: string, rebase: (url: string) => string): StoryIma
   }
 }
 
+/** The Story Brief writer for the env as it stands, one kept while its endpoint is unchanged; none without a key. */
+function briefWriterSource(currentEnv: () => Record<string, string | undefined>): () => StoryBriefWriter | null {
+  let held: { signature: string; writer: StoryBriefWriter } | null = null
+  return () => {
+    const endpoint = resolveBriefWriterRouting(currentEnv())
+    if (endpoint === null) return null
+    const signature = `${endpoint.baseUrl} ${endpoint.model} ${endpoint.apiKey}`
+    if (held?.signature !== signature) held = { signature, writer: createBriefWriter(endpoint) }
+    return held.writer
+  }
+}
+
 /** Before the app is ready: the Story Images' scheme, standard and secure, so the dashboard loads a cached picture from it as from any origin. */
 export function registerNewsImageScheme(): void {
   protocol.registerSchemesAsPrivileged([{ scheme: NEWS_IMAGE_SCHEME, privileges: { standard: true, secure: true } }])
@@ -143,8 +158,17 @@ export function registerNewsImageScheme(): void {
  * per feed — the last two read from settings at every poll. Each shown
  * story's Story Image is cached in `imageDir` and served to the dashboard
  * on the bingbong-news scheme: the renderer never fetches one itself.
+ * Each shown story's Story Brief is written by GLM when `currentEnv`
+ * carries its key (briefWriterRouting).
  */
-export function registerNewsIpc(deps: { storePath: string; imageDir: string; news: () => AppSettings['news']; env?: NodeJS.ProcessEnv }): void {
+export function registerNewsIpc(deps: {
+  storePath: string
+  imageDir: string
+  news: () => AppSettings['news']
+  /** The live env (.env, process, settings), read at every poll for the brief writer's key. */
+  currentEnv: () => Record<string, string | undefined>
+  env?: NodeJS.ProcessEnv
+}): void {
   const fixture = (deps.env ?? process.env)[NEWS_FIXTURE_ENV]?.trim().replace(/\/+$/, '')
   const rebase = (url: string): string => {
     if (!fixture) return url
@@ -176,6 +200,7 @@ export function registerNewsIpc(deps: { storePath: string; imageDir: string; new
     store: createNewsStore(deps.storePath),
     profile: () => deps.news().topics,
     images: storyImagePorts(deps.imageDir, rebase),
+    writer: briefWriterSource(deps.currentEnv),
   })
   ipcMain.handle(NEWS_IPC.horizons, () => desk.horizons())
   protocol.handle(NEWS_IMAGE_SCHEME, (request) => {
