@@ -967,3 +967,48 @@ and addresses; Jev's median latency was 218 ms.
 - **Not in scope:** tagging posts so the Local Match can see "the tweet"
   or "the post" without Jev; a Jev case for the logged turn (the owner's
   call); the typed grammar gaining a `search` line.
+
+## Amendment 2026-10-19 — a Task steps aside from the pop-up in its way, once per Obstacle (#354)
+
+"Open Elon Musk's latest tweet" (2026-10-19, decision-1792444477389)
+searched, opened the profile and clicked the top post; logged-out X raised
+its "Don't miss what's happening" sheet instead of the post, and hop 3's
+Verdict read `in_the_way` 0.93. The Task ended `wall` with "A pop-up is in
+the way." over a sheet whose `Close` button was ref 1. Jev's own next
+step on that hop was the same post again, under the sheet: left to the
+reading, the Task would loop as the #336 grill saw it loop.
+
+- **Step Aside.** A hop whose Verdict is a sure `in_the_way` over an open
+  dialog does not end: the runner fires the #336 dismissal as that hop —
+  the dialog-layer close control, never a link, else Escape — and the
+  Task goes on from the page it leaves. No Jev call decides to close; Jev
+  was asked once, read the wall, and the runner steps past it. The hop's
+  record keeps Jev's reading (`jev`, `ask`) with the dismissal's verb and
+  target and `stepAside: true`; the Feed line is the dismissal's (`click
+  [1] "Close"`); "Done so far" tells the next hop `click "Close" (the
+  pop-up closed)`.
+- **Once per Obstacle.** An Obstacle is a dialog known by its text and
+  the labels of its controls, however its refs are numbered. The Task
+  notes each it steps past; the same one raised again is the wall, ended
+  as before with "A pop-up is in the way.". A cookie bar and a sign-in
+  sheet are two Obstacles, each passed once.
+- **The door is set aside.** When the action before raised the pop-up
+  over a clear page ("the address did not change; a pop-up appeared"),
+  its target joins the #336 set-aside list as the Task steps past, so
+  the next reading is not offered it by ref or by result link.
+- **The close must work.** A dialog still open after the dismissal is a
+  wall: "The pop-up is still open." (#336's line), `ended: wall`.
+- **Close only, never through.** No sign-in, sign-up or accept control is
+  ever clicked, and a close control drawn as a link is never clicked.
+  Consent walls are the controller's to dismiss, reject first, as before.
+- **Every other guard stands.** The dismissal counts toward the five
+  actions; two inert hops still end `unchanged`; a later Utterance,
+  Escape or the Abort Head still supersedes; a sure `in_the_way` with no
+  dialog open still ends `wall` with "Something on the page is in the
+  way."; Blockers, not-found, unavailable and empty landings are walls as
+  before.
+- **What it buys on logged-out X** is one more hop: after the close the
+  profile shows with the post set aside. A hop that takes the post's
+  timestamp link (its status address) may reach it; one that clicks
+  another post raises the sheet again and ends a hop later than today.
+  X stays partly walled until the pane holds a session.

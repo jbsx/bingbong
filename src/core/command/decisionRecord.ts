@@ -81,6 +81,8 @@ export interface DecisionRecord {
   readonly video?: string
   /** For a `play` search (#345): its video was remembered for its words, or searched for; absent for a verb on the element. */
   readonly pick?: PickSource
+  /** The hop stepped aside (#354): Jev read the pop-up as in the way, and the runner closed it instead of ending; `verb` and `target` are the dismissal's. */
+  readonly stepAside?: true
 }
 
 /** Where a `play` search's video came from (#345): the Remembered Songs, or YouTube's results. */

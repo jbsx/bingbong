@@ -6,7 +6,7 @@ import type { CommandRunState } from '../../core/pipeline/runState'
 import type { PageLink, PageSnapshot } from '../../core/browser/snapshot'
 import type { PerfTracer } from '../../core/perf/perfTracer'
 import { PRESS_KEYS, commandPageOf, describeCommand, targetLabel, commandKeepsIdle, type Command, type CommandPage } from '../../core/command/command'
-import { dismissCommand, isDismissPhrase } from '../../core/command/dismissDialog'
+import { dialogDismissal, dismissCommand, isDismissPhrase, obstacleOf } from '../../core/command/dismissDialog'
 import { COMMAND_HELP } from '../../core/command/help'
 import { carriesWordsPastAddress, headsAnotherVerb, isSearchLanding, localMatch, resultRefsOf } from '../../core/command/localMatch'
 import { isWebEngineSearch } from '../../core/command/siteScope'
@@ -90,6 +90,10 @@ import type { Player, PlayerOutcome } from '../music/player'
 // Jev does not answer, or a later Utterance, Escape or the Abort Head
 // supersedes it. One `command` event and one decision record per hop. A
 // dismiss phrase over an open dialog closes it before Jev is asked (#336).
+// A hop whose Verdict is a sure "in the way" over a dialog steps aside
+// (#354): the runner fires the dialog's dismissal as that hop and the Task
+// goes on, once per Obstacle — the same dialog raised again is the wall —
+// with the target that raised it set aside.
 
 export type { CommandRunState }
 
@@ -1009,6 +1013,10 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     pending?: { readonly command: Command; readonly page: CommandPage; readonly fired: FireResult }
     /** Whether a reading was already read again because the page had moved under it: once per Task. */
     rechecked: boolean
+    /** The Obstacles the Task stepped aside from (#354): each dialog closed once; the same one raised again is the wall. */
+    readonly obstacles: string[]
+    /** The last action, when it raised a pop-up over a clear page (#354): its target is set aside when the Task steps past that pop-up. */
+    raised?: { readonly command: Command; readonly page: CommandPage }
   }
 
   /** Whether the Verdict is sure: its confidence clears the Choice bar. */
@@ -1019,6 +1027,26 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     if (page.dialog === undefined) return false
     if (command.verb === 'press' && command.key === PRESS_KEYS.escape) return true
     return command.target !== null && page.dialog.refs.includes(command.target)
+  }
+
+  /**
+   * Step Aside (#354): the dismissal of the pop-up a sure "in the way" was
+   * read over, when the Task has not stepped past this Obstacle before —
+   * null otherwise, and the wall stands. Stepping past it notes the
+   * Obstacle and sets aside the target that raised it, so the next reading
+   * is not offered the same door.
+   */
+  function stepAside(task: Task, page: CommandPage): Command | null {
+    const obstacle = obstacleOf(page)
+    const dismissal = dialogDismissal(page)
+    if (obstacle === null || dismissal === null || task.obstacles.includes(obstacle)) return null
+    task.obstacles.push(obstacle)
+    const raised = task.raised
+    if (raised !== undefined) {
+      const target = raised.page.refs.find((ref) => ref.ref === raised.command.target)
+      if (target !== undefined) task.setAside.push(setAsideOf(target, raised.page))
+    }
+    return dismissal
   }
 
   /**
@@ -1154,8 +1182,11 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       if (task.pending !== undefined) {
         // The last action's "Done so far" line, in the facts of the page it left: what appeared, and whether a pop-up covers it.
         const { command: last, page: before, fired } = task.pending
-        task.actions[task.actions.length - 1] = doneLine(last, before, doneFacts(before, page, doneResult(before, fired)))
+        const facts = doneFacts(before, page, doneResult(before, fired))
+        task.actions[task.actions.length - 1] = doneLine(last, before, facts)
         task.pending = undefined
+        // The action that raised a pop-up over a clear page (#354): set aside if the Task steps past it.
+        task.raised = facts.changed && facts.covered === true ? { command: last, page: before } : undefined
       }
       const links = !superseded(task) && isSearchLanding(page.url) ? await resultPageLinks(turnId) : []
       const context: HopContext = { hop, visited: [...task.visited], actions: [...task.actions], links, setAside: [...task.setAside], searched: [...task.searched] }
@@ -1210,6 +1241,15 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         continue
       }
       if (inTheWay) {
+        const aside = stepAside(task, page)
+        if (aside !== null) {
+          // Step Aside (#354): the runner closes the pop-up as this hop, and the Task goes on from the page it leaves.
+          const stepped: DecisionRecord = { ...recordOf(turnId, firedAt, task.source, task.text, read, aside, null, false), task: { id: task.id, hop }, stepAside: true }
+          const fired = await fire(turnId, task.text, task.source, aside, page, 'jev', null, firedAt, { react: () => {}, settled: () => summarize(turnId) }, { id: task.id, hop })
+          const ended = settleHop(task, stepped, null, aside, page, fired)
+          if (ended !== null) return endTask(task, ended, hop + 1)
+          continue
+        }
         log({ ...record, ended: 'wall' })
         answerFailure(turnId, SPOKEN_FAILURES[page.dialog !== undefined ? 'popup' : 'blocked'])
         dropHop(turnId, task, hop, 'in the way', 'done', firedAt)
@@ -1483,7 +1523,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         const record = closeEarly(fired, { transcript: trimmed, at: endpointAt, truncated }, lands ? 'deferred' : ending)
         nextUtterance()
         if (options?.turnId !== undefined) summarize(options.turnId)
-        const task: Task = { id: fired.turnId, submission: fired.submission, text: trimmed, source, endpointAt, visited: [], actions: [], setAside: [], unchanged: 0, searched: [], rechecked: false }
+        const task: Task = { id: fired.turnId, submission: fired.submission, text: trimmed, source, endpointAt, visited: [], actions: [], setAside: [], unchanged: 0, searched: [], rechecked: false, obstacles: [] }
         visit(task, fired.page.url)
         const ended = lands ? settleHop(task, record, ending, fired.command, fired.page, await fired.outcome) : ending
         if (ended !== null) endTask(task, ended, 1)
@@ -1518,7 +1558,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       if (source === 'spoken') observeTerms(trimmed)
 
       // This Utterance is a Task (#328); hop 0 is the Command read above.
-      const task: Task = { id: turnId, submission, text: trimmed, source, endpointAt, visited: [], actions: [], setAside: [], unchanged: 0, searched: [], rechecked: false }
+      const task: Task = { id: turnId, submission, text: trimmed, source, endpointAt, visited: [], actions: [], setAside: [], unchanged: 0, searched: [], rechecked: false, obstacles: [] }
       const hop0: TaskHop = { id: turnId, hop: 0 }
       visit(task, heard.page.url || (browser.state().url ?? ''))
       const { command, matched } = matchName(heard.command, heard.page, source === 'spoken')

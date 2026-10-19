@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { CommandPage } from './command'
-import { dismissCommand, isDismissPhrase } from './dismissDialog'
+import { dialogDismissal, dismissCommand, isDismissPhrase, obstacleOf } from './dismissDialog'
 
 // The dismiss rule (#336, ADR 0076): with a dialog open, a dismiss phrase
 // closes it — its close control clicked, else Escape pressed — decided
@@ -18,6 +18,9 @@ const SHEET: CommandPage = {
   ],
   dialog: { text: 'Don’t miss what’s happening. People on X are the first to know.', refs: [7, 8, 9] },
 }
+
+/** The same page with no dialog open. */
+const CLOSED: CommandPage = { url: SHEET.url, title: SHEET.title, refs: SHEET.refs }
 
 describe('a dismiss phrase', () => {
   it.each(['exit', 'exit out of this', 'close', 'close the pop-up', 'Close the popup.', 'dismiss it', 'get rid of this', 'go away', 'cancel', 'x', 'no thanks', 'close the dialog', 'close that'])(
@@ -48,8 +51,33 @@ describe('closing an open dialog', () => {
   })
 
   it('reads nothing when no dialog is open, or the words are no dismiss phrase', () => {
-    const { dialog: _dialog, ...closed } = SHEET
-    expect(dismissCommand('exit out of this', closed)).toBeNull()
+    expect(dismissCommand('exit out of this', CLOSED)).toBeNull()
     expect(dismissCommand('click sign in', SHEET)).toBeNull()
+  })
+})
+
+describe('a Task stepping aside (#354)', () => {
+  it('the dismissal is the dismiss phrase\'s Command, whatever the words: the close control, else Escape, null with no dialog', () => {
+    expect(dialogDismissal(SHEET)).toEqual(dismissCommand('close', SHEET))
+    const noClose: CommandPage = { ...SHEET, dialog: { text: 'Sign in', refs: [7, 8] } }
+    expect(dialogDismissal(noClose)).toEqual({ verb: 'press', target: null, slot: null, key: { key: 'Escape' }, times: 1, dismiss: true })
+    expect(dialogDismissal(CLOSED)).toBeNull()
+  })
+
+  it('an Obstacle is the dialog\'s text and its controls, the same however its refs are numbered, and another dialog is another Obstacle', () => {
+    const renumbered: CommandPage = {
+      ...SHEET,
+      refs: [
+        { ref: 4, kind: 'link', label: 'Cancel', href: 'https://x.com/home', inputType: null },
+        { ref: 5, kind: 'button', label: 'Sign in', href: null, inputType: null },
+        { ref: 6, kind: 'button', label: 'Close', href: null, inputType: null },
+        { ref: 7, kind: 'link', label: 'Elon Musk', href: 'https://x.com/elonmusk', inputType: null },
+      ],
+      dialog: { text: 'Don’t miss what’s happening. People on X are the first to know.', refs: [4, 5, 6] },
+    }
+    expect(obstacleOf(renumbered)).toBe(obstacleOf(SHEET))
+    const cookies: CommandPage = { ...SHEET, dialog: { text: 'We use cookies', refs: [8, 9] } }
+    expect(obstacleOf(cookies)).not.toBe(obstacleOf(SHEET))
+    expect(obstacleOf(CLOSED)).toBeNull()
   })
 })

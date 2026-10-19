@@ -113,7 +113,8 @@ The fourth answer every Hop carries beside its Command: is this page what
 the user asked for — yes, something is in the way of it (a sign-in prompt, a
 pop-up, a cookie notice, a challenge), or not yet. An end is a Verdict,
 never a verb's plurality: a Task ends `done` only on a sure yes; a sure "in
-the way" is a wall, its line spoken ("A pop-up is in the way."), unless the
+the way" over a pop-up the Task has not met is a Step Aside, and otherwise a
+wall, its line spoken ("A pop-up is in the way."), unless the
 Command acts on the pop-up itself, which fires; a reading with no next step
 and no sure yes ends `unsure` and says so ("I'm not sure this is it."). Sure
 is the Choice bar, 0.7. Either end is read against the page as it is now: a
@@ -127,7 +128,25 @@ A target a Hop acted on that changed nothing: no navigation, and the click's
 own verdict "no observable change". It is known by its label and its address
 (the link's own, or the page's for a control with none), never by its ref
 number, which changes between Hops, and it is not offered again in that Task.
+The target whose action raised a pop-up over a clear page is set aside too,
+as the Task steps past that pop-up.
 _Avoid_: excluded, blacklisted, retried
+
+**Step Aside**:
+A Hop whose Verdict is a sure "in the way" over a pop-up the Task has not
+met: instead of ending, the runner fires the Dismiss Phrase's Command as
+that Hop (the pop-up's close control, never a link, else Escape) and the
+Task goes on from the page it leaves. No Jev call decides to close. The
+close counts toward the cap; a pop-up still open afterwards is a wall ("The
+pop-up is still open."). The same Obstacle met again is the wall.
+_Avoid_: retry, workaround, auto-dismiss, bypass
+
+**Obstacle**:
+A pop-up a Task stepped past, known by its text and the labels of its
+controls, however its refs are numbered. Each is passed once per Task: a
+cookie bar and a sign-in sheet are two, met again either is the wall.
+_Avoid_: blocker (a Blocker is a challenge, network block or login wall the
+page itself is), wall
 
 **Dismiss Phrase**:
 Words that close the pop-up covering the page: exit, close, dismiss, get rid

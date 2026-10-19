@@ -1680,22 +1680,154 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
       expect(decisions(records).map((record) => record.ended)).toEqual([undefined, 'unsure'])
     })
 
-    it('a sure in-the-way over a pop-up is a wall: nothing fires, the line names the pop-up, the page stays', async () => {
-      const h = taskHarness()
-      const { browser, events, records, decision, runner } = h
-      const navigate = browser.navigate.bind(browser)
-      browser.navigate = async (url) => {
-        const line = await navigate(url)
-        covered(h)
-        return line
+    describe('Step Aside (#354): a sure in-the-way over a pop-up closes it and goes on, once per Obstacle', () => {
+      type H = ReturnType<typeof taskHarness>
+      /** The sheet gone: the page's own refs again, as a real close leaves them. */
+      const uncovered = (h: H, refs: SnapshotRef[]) => {
+        h.browser.snapshot = { ...h.browser.snapshot, refs, dialogOpen: false, dialogText: '' }
       }
-      // Jev would click the post under the sheet: the Verdict says the sheet is in the way.
-      decision.script.push(answer('search', 'none', 's3-6'), withOutcome(answer('click', 'ref-3'), 'in_the_way', 0.85))
-      await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
-      expect(browser.clicks).toEqual([])
-      expect(failures(events)).toEqual([expect.objectContaining({ text: 'A pop-up is in the way.' })])
-      expect(commands(events)[1]).toMatchObject({ action: 'in the way', dropped: true })
-      expect(decisions(records).map((record) => record.ended)).toEqual([undefined, 'wall'])
+      /** The sheet closes on its Close control or Escape (unless told to stay), and the close reports the page moved, as a real one does. */
+      const closing = (h: H, refs: SnapshotRef[], stays = false) => {
+        const click = h.browser.click.bind(h.browser)
+        h.browser.click = async (n) => {
+          const line = await click(n)
+          if (n !== 1 || stays) return line
+          uncovered(h, refs)
+          return line.replace(NO_OBSERVABLE_CHANGE, PAGE_SIGNATURE_CHANGED)
+        }
+        const press = h.browser.pressKey.bind(h.browser)
+        h.browser.pressKey = async (key, times) => {
+          await press(key, times)
+          if (key.key === 'Escape' && !stays) uncovered(h, refs)
+        }
+      }
+      /** The search landing opens under the sheet. */
+      const coveredOnLanding = (h: H) => {
+        const navigate = h.browser.navigate.bind(h.browser)
+        h.browser.navigate = async (url) => {
+          const line = await navigate(url)
+          covered(h)
+          return line
+        }
+      }
+
+      it('AC1: the hop clicks the sheet\'s Close instead of ending, its record says so, and the next hop is told the pop-up closed', async () => {
+        const h = taskHarness()
+        const { browser, events, records, decision, runner } = h
+        coveredOnLanding(h)
+        closing(h, SEARCH_REFS)
+        // Jev would click the post under the sheet: the Verdict says the sheet is in the way.
+        decision.script.push(answer('search', 'none', 's3-6'), withOutcome(answer('click', 'ref-3'), 'in_the_way', 0.85), withOutcome(answer('done'), 'yes'))
+        await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
+        expect(browser.clicks).toEqual([1])
+        expect(browser.navigations).toEqual([SEARCH])
+        expect(failures(events)).toEqual([])
+        expect(commands(events).map((event) => event.action)).toEqual(['search latest elon musk tweet', 'click [1] "Close"', 'done'])
+        expect(decisions(records)[1]).toMatchObject({ reading: 'jev', jevAsked: true, verb: 'click', target: 1, targetLabel: 'Close', stepAside: true, task: { hop: 1 } })
+        expect(decisions(records)[1]!.jev).toMatchObject({ probabilities: { outcome: { in_the_way: 0.85 } } })
+        expect(decisions(records).map((record) => record.ended)).toEqual([undefined, undefined, 'done'])
+        expect(decision.requests[2]!.state).toContain('click "Close" (the pop-up closed)')
+        expect(decision.requests[2]!.state).not.toContain('A dialog is open')
+      })
+
+      it('AC2: with no close control the hop presses Escape', async () => {
+        const h = taskHarness()
+        const { browser, decision, records, runner } = h
+        const noClose = SHEET_REFS.filter((one) => one.ref !== 1)
+        const navigate = browser.navigate.bind(browser)
+        browser.navigate = async (url) => {
+          const line = await navigate(url)
+          covered(h)
+          browser.snapshot = { ...browser.snapshot, refs: noClose }
+          return line
+        }
+        closing(h, SEARCH_REFS)
+        decision.script.push(answer('search', 'none', 's3-6'), withOutcome(answer('click', 'ref-3'), 'in_the_way', 0.85), withOutcome(answer('done'), 'yes'))
+        await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
+        expect(browser.clicks).toEqual([])
+        expect(browser.pressedKeys).toEqual([{ press: { key: 'Escape' }, times: 1 }])
+        expect(decisions(records)[1]).toMatchObject({ verb: 'press', target: null, stepAside: true })
+        expect(decisions(records).map((record) => record.ended)).toEqual([undefined, undefined, 'done'])
+      })
+
+      it('AC3: the same sheet raised again in one Task is the wall: nothing fires, the line names the pop-up', async () => {
+        const h = taskHarness()
+        const { browser, events, records, decision, runner } = h
+        coveredOnLanding(h)
+        closing(h, SEARCH_REFS)
+        // The result's click raises the sheet again, over the same page.
+        const click = browser.click.bind(browser)
+        browser.click = async (n) => {
+          const line = await click(n)
+          if (n !== 3) return line
+          covered(h)
+          return line.replace(NO_OBSERVABLE_CHANGE, PAGE_SIGNATURE_CHANGED)
+        }
+        decision.script.push(
+          answer('search', 'none', 's3-6'),
+          withOutcome(answer('click', 'ref-3'), 'in_the_way', 0.85),
+          answer('click', 'ref-3'),
+          withOutcome(answer('click', 'ref-3'), 'in_the_way', 0.9),
+        )
+        await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
+        expect(browser.clicks).toEqual([1, 3])
+        expect(failures(events)).toEqual([expect.objectContaining({ text: 'A pop-up is in the way.' })])
+        expect(commands(events).at(-1)).toMatchObject({ action: 'in the way', dropped: true })
+        expect(decisions(records).map((record) => record.ended)).toEqual([undefined, undefined, undefined, 'wall'])
+      })
+
+      it('AC4: the target that raised the sheet is set aside: the next reading is not offered it, by ref or by result link', async () => {
+        const h = taskHarness()
+        const { browser, decision, records, runner } = h
+        closing(h, SEARCH_REFS)
+        const click = browser.click.bind(browser)
+        browser.click = async (n) => {
+          const line = await click(n)
+          if (n !== 3) return line
+          covered(h)
+          return line.replace(NO_OBSERVABLE_CHANGE, PAGE_SIGNATURE_CHANGED)
+        }
+        decision.script.push(answer('search', 'none', 's3-6'), answer('click', 'ref-3'), withOutcome(answer('click', 'ref-3'), 'in_the_way', 0.85), withOutcome(answer('done'), 'yes'))
+        await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
+        expect(browser.clicks).toEqual([3, 1])
+        const hop3 = (decision.requests[3]!.questions as { target: DecisionChoiceQuestion }).target
+        expect(Object.keys(hop3.options)).toEqual(['none', 'ref-1', 'ref-2', 'link-1'])
+        expect(hop3.options['link-1']).toContain(POST)
+        expect(decision.requests[3]!.state).toContain('click "Elon Musk (@elonmusk) / X" (the address did not change; a pop-up appeared over the page: "Close", "Log in" and "Elon Musk"); click "Close" (the pop-up closed)')
+        expect(decisions(records).map((record) => record.ended)).toEqual([undefined, undefined, undefined, 'done'])
+      })
+
+      it('AC5: a sheet still open after the close ends the Task as a wall, saying the pop-up is still open', async () => {
+        const h = taskHarness()
+        const { browser, events, records, decision, runner } = h
+        coveredOnLanding(h)
+        closing(h, SEARCH_REFS, true)
+        decision.script.push(answer('search', 'none', 's3-6'), withOutcome(answer('click', 'ref-3'), 'in_the_way', 0.85), withOutcome(answer('done'), 'yes'))
+        await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
+        expect(browser.clicks).toEqual([1])
+        expect(failures(events)).toEqual([expect.objectContaining({ text: SPOKEN_FAILURES.dialogStayed })])
+        expect(decisions(records).map((record) => record.ended)).toEqual([undefined, 'wall'])
+        expect(decision.requests).toHaveLength(2)
+      })
+
+      it('AC7: the close counts toward the cap of five actions', async () => {
+        const h = taskHarness()
+        const { browser, decision, records, runner } = h
+        coveredOnLanding(h)
+        closing(h, SEARCH_REFS)
+        decision.script.push(
+          answer('search', 'none', 's3-6'),
+          withOutcome(answer('click', 'ref-3'), 'in_the_way', 0.85),
+          answer('scroll_down'),
+          answer('scroll_down'),
+          answer('scroll_down'),
+          withOutcome(answer('done'), 'yes'),
+        )
+        await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
+        expect(browser.clicks).toEqual([1])
+        expect(decision.requests).toHaveLength(5)
+        expect(decisions(records).map((record) => record.ended)).toEqual([undefined, undefined, undefined, undefined, 'cap'])
+      })
     })
 
     it('a sure in-the-way with no pop-up read speaks the blocked line', async () => {
