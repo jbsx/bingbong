@@ -5,6 +5,9 @@ import { temperatureHue, type WeatherDay, type WeatherHour, type WeatherReport }
 import type { WeatherUnits } from '../../core/settings/settings'
 import { countdownLabel, describeDuration } from '../../core/timer/duration'
 import type { TimerState } from '../../core/timer/timer'
+import type { CalendarEvent } from '../../core/calendar/calendar'
+import { monthGrid, upNext, weekStartOf, type UpNext } from '../../core/calendar/month'
+import { useCalendarEvents } from './useCalendar'
 import type { VoiceHint } from '../../core/voice/voiceHint'
 import type { WeatherState } from './useWeather'
 import type { UsageState } from './useUsage'
@@ -150,6 +153,99 @@ function WeatherCard({ report }: { report: WeatherReport }) {
   )
 }
 
+/** A Sunday, for naming the weekday columns in the locale's own narrow letters. */
+const A_SUNDAY = new Date(2026, 0, 4)
+
+function weekdayLetter(weekday: number): string {
+  const date = new Date(A_SUNDAY.getFullYear(), A_SUNDAY.getMonth(), A_SUNDAY.getDate() + weekday)
+  return date.toLocaleDateString([], { weekday: 'narrow' })
+}
+
+function isWeekend(weekday: number): boolean {
+  return weekday === 0 || weekday === 6
+}
+
+function eventTime(event: CalendarEvent, now: Date): string {
+  if (event.allDay) return 'All day'
+  if (event.start <= now.getTime()) return 'Now'
+  return new Date(event.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+}
+
+/**
+ * The Calendar (CONTEXT.md), beside the clock: this month in the locale's
+ * weeks, today in a red disc, weekends quieter, and a dot under any day a
+ * source has events on — none is wired yet, so today it is the month alone.
+ */
+function MonthCalendar({ now, weekStart, events }: { now: Date; weekStart: number; events: readonly CalendarEvent[] }) {
+  const grid = monthGrid(now, weekStart, events)
+  const monthName = new Date(grid.month).toLocaleDateString([], { month: 'long' })
+  return (
+    <section className="idle-cal" aria-label={`calendar: ${monthName} ${now.getFullYear()}`}>
+      <header className="idle-cal-head">
+        <span className="idle-cal-month">{monthName}</span>
+        <span className="idle-cal-year">{now.getFullYear()}</span>
+      </header>
+      <div className="idle-cal-grid" role="grid">
+        <div className="idle-cal-row" role="row">
+          {grid.weekdays.map((weekday) => (
+            <span key={weekday} role="columnheader" className={isWeekend(weekday) ? 'idle-cal-weekday idle-cal-weekend' : 'idle-cal-weekday'}>
+              {weekdayLetter(weekday)}
+            </span>
+          ))}
+        </div>
+        {grid.weeks.map((week) => (
+          <div key={week[0].start} className="idle-cal-row" role="row">
+            {week.map((day, column) => {
+              const className = [
+                'idle-cal-day',
+                isWeekend(grid.weekdays[column]) ? 'idle-cal-weekend' : '',
+                day.isToday ? 'idle-cal-day--today' : '',
+              ]
+                .filter(Boolean)
+                .join(' ')
+              return (
+                <span
+                  key={day.start}
+                  role="gridcell"
+                  className={className}
+                  aria-current={day.isToday ? 'date' : undefined}
+                  aria-label={day.inMonth ? `${day.day}${day.events > 0 ? `, ${day.events} events` : ''}` : undefined}
+                >
+                  {day.inMonth ? day.day : null}
+                  {day.inMonth && day.events > 0 ? <span className="idle-cal-dot" aria-hidden="true" /> : null}
+                </span>
+              )
+            })}
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+/**
+ * Up Next, beside the Timer and the Last Page: today's next event from the
+ * Calendar — under way or coming, an all-day one only when nothing timed
+ * is left — with how many more today. Shown only when a source has one.
+ */
+function UpNextCard({ next, now }: { next: UpNext; now: Date }) {
+  const { event, more } = next
+  const when = eventTime(event, now)
+  return (
+    <section className="idle-card idle-upnext" aria-label={`up next: ${event.title}, ${when}`}>
+      <span className="idle-upnext-tile" aria-hidden="true">
+        <span className="idle-upnext-tile-weekday">{now.toLocaleDateString([], { weekday: 'short' })}</span>
+        <span className="idle-upnext-tile-day">{now.getDate()}</span>
+      </span>
+      <span className="idle-upnext-words">
+        <span className="idle-upnext-kicker">Up next · {when}</span>
+        <span className="idle-upnext-title">{event.title}</span>
+        <span className="idle-upnext-sub">{more > 0 ? `${more} more today` : 'nothing else today'}</span>
+      </span>
+    </section>
+  )
+}
+
 /** The site's own mark, 28 px in a rounded tile; the globe stands in when it has none. */
 function SiteMark({ url }: { url: string }) {
   const [failed, setFailed] = useState(false)
@@ -288,7 +384,8 @@ function TimerCard({ timer }: { timer: Exclude<TimerState, { status: 'off' }> })
 
 /**
  * The at-rest screen (T11): the smart-display half of the appliance. Clock
- * and date, the weather with today's range and the coming hours, the Timer
+ * and date beside the Calendar's month, the weather with today's range and
+ * the coming hours, the Timer and the next event
  * when one is set, and the Last Page with its way back — never a Feed
  * Entry (#70). Mounts in place
  * of the whole dashboard while nothing is happening — App's gate keeps it
@@ -337,6 +434,10 @@ export function IdleScreen({
     return () => clearInterval(timer)
   }, [])
 
+  const weekStart = weekStartOf(navigator.language)
+  const events = useCalendarEvents(new Date(now.getFullYear(), now.getMonth(), 1).getTime(), weekStart)
+  const next = upNext(now, events)
+
   return (
     <div className="idle-screen" aria-label="idle screen">
       {/* The window's drag region while the Toolbar is unmounted (ADR
@@ -344,10 +445,13 @@ export function IdleScreen({
       <div className="idle-drag-strip" aria-hidden="true" />
       <IdleStatus status={status} hint={hint} />
       <div className="idle-screen-top">
-        <p className="idle-clock" aria-label="clock">
-          {formatClock(now)}
-        </p>
-        <p className="idle-date">{formatDate(now)}</p>
+        <div className="idle-time">
+          <p className="idle-clock" aria-label="clock">
+            {formatClock(now)}
+          </p>
+          <p className="idle-date">{formatDate(now)}</p>
+        </div>
+        <MonthCalendar now={now} weekStart={weekStart} events={events} />
       </div>
       <div className="idle-screen-middle">
         {weather.status === 'ready' ? (
@@ -367,6 +471,7 @@ export function IdleScreen({
       </div>
       <div className="idle-screen-bottom">
         {timer.status !== 'off' ? <TimerCard timer={timer} /> : null}
+        {next !== null ? <UpNextCard next={next} now={now} /> : null}
         {lastPage !== null ? <LastPageCard page={lastPage} /> : null}
       </div>
     </div>

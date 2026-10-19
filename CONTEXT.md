@@ -364,12 +364,14 @@ or closing it (owner ruling 2026-10-18, #334).
 _Avoid_: activity bar, sidebar, activity sidebar
 
 **Idle Screen**:
-What renders while nothing is happening: the clock and date, the weather
+What renders while nothing is happening: the clock and date with the
+Calendar's month beside them, the weather
 (the current conditions, today's high, low, rain chance and sun times, and
 the six coming hours, all in the city's own clock — the sky as a colored
 glyph, every temperature in its hue from blue through green to red, rain in
 blue, so the day reads from across the room), the AI Usage card beside
-the weather, the Timer when one is set, and the Last Page with its way back. Never shows Feed Entries (#70); never comes up over a running
+the weather, the Timer when one is set, today's next event when the
+Calendar has one, and the Last Page with its way back. Never shows Feed Entries (#70); never comes up over a running
 Command, an open mic or the settings page. Once up it stays up through the
 voice half and the pipeline — the ear opening, a heard line, a reading —
 with the Status Capsule shown on it while they run, so a Command that never
@@ -396,6 +398,19 @@ Main fetches it (the dashboard sends no CORS headers), polled once a
 minute while the Idle Screen shows. Read-only: a tap only wakes the
 dashboard.
 _Avoid_: quota, billing
+
+**Calendar**:
+The month on the Idle Screen, right of the clock (2026-10-19 ask: "have a
+calendar in the idle screen"): the locale's weeks, today in a red disc,
+a dot under any day with events, hidden on a window too narrow to clear
+the clock. Events come from Calendar Sources — one per provider, each
+answering the events in a range — that main asks together, a failing one
+left out; the Idle Screen leads its bottom band with Up Next, today's
+timed event under way or coming (an all-day one only when nothing timed
+is left) and how many more today. No source is wired yet: the owner named
+Google Calendar and Outlook as the ones to come, so today the Calendar is
+the month alone and Up Next never shows. Read-only.
+_Avoid_: agenda (for the month), schedule
 
 **Last Page**:
 The page the browser pane last showed — its address and title — kept in

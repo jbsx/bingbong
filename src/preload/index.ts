@@ -11,6 +11,8 @@ import { resolveLaunchConfig } from '../core/app/launchConfig'
 import type { BrowserPaneState, PaneRect } from '../core/browser/paneState'
 import type { LastPage } from '../core/browser/lastPage'
 import { TIMER_IPC } from '../core/timer/ipcChannels'
+import { CALENDAR_IPC } from '../core/calendar/ipcChannels'
+import type { CalendarEvent, CalendarRange } from '../core/calendar/calendar'
 import { IDLE_IPC } from '../core/idle/ipcChannels'
 import type { TimerState } from '../core/timer/timer'
 import { USAGE_IPC } from '../core/usage/ipcChannels'
@@ -70,6 +72,9 @@ contextBridge.exposeInMainWorld('bingbong', {
   },
   usage: {
     get: (): Promise<UsageSnapshot | null> => ipcRenderer.invoke(USAGE_IPC.get),
+  },
+  calendar: {
+    events: (range: CalendarRange): Promise<CalendarEvent[]> => ipcRenderer.invoke(CALENDAR_IPC.events, range),
   },
   assistant: {
     submit: (text: string): Promise<boolean> => ipcRenderer.invoke(PIPELINE_IPC.submit, text),

@@ -34,6 +34,22 @@ describe('idle screen e2e: the Last Page and resume', () => {
     await rm(userDataDir, { recursive: true, force: true }).catch(() => {})
   })
 
+  it('shows this month on the idle screen with today marked, and no events with no source wired', async () => {
+    const month = await waitFor(
+      async () => {
+        const text = await harness.dashboardEval<string>(`document.querySelector('.idle-cal-month')?.textContent ?? ''`)
+        return text !== '' ? text : undefined
+      },
+      { timeoutMs: 10000, intervalMs: 250 },
+    )
+    const expected = await harness.dashboardEval<{ month: string; day: string }>(
+      `({ month: new Date().toLocaleDateString([], { month: 'long' }), day: String(new Date().getDate()) })`,
+    )
+    expect(month).toBe(expected.month)
+    expect(await harness.dashboardEval<string>(`document.querySelector('.idle-cal [aria-current="date"]')?.textContent ?? ''`)).toBe(expected.day)
+    expect(await harness.dashboardEval<number>(`document.querySelectorAll('.idle-cal-dot, .idle-upnext').length`)).toBe(0)
+  })
+
   it('names the Last Page on the idle screen, and a tap reopens it in the blank pane', async () => {
     const title = await waitFor(
       async () => {

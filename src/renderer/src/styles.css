@@ -1540,12 +1540,21 @@ body {
   max-width: min(560px, calc(100% - 32px));
 }
 
+/* The clock and date centered; the Calendar's month in the right column,
+   inside the height the clock already takes. */
 .idle-screen-top {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  margin-top: 2vh;
+}
+
+.idle-time {
   display: flex;
   flex-direction: column;
+  grid-column: 2;
   align-items: center;
   gap: 8px;
-  margin-top: 2vh;
 }
 
 .idle-clock {
@@ -1946,6 +1955,170 @@ body {
 }
 
 .idle-timer-sub {
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+/* ---- the Calendar ----
+   The month on the canvas beside the clock, no card: the month's name in
+   red, today a red disc as Apple's calendar draws it, weekends in the
+   quiet ink, a dot under a day with events. Hidden where the window is
+   too narrow for it to clear the clock. */
+
+.idle-cal {
+  display: flex;
+  flex-direction: column;
+  grid-column: 3;
+  justify-self: end;
+  gap: 6px;
+  -webkit-app-region: no-drag;
+}
+
+@media (max-width: 900px) {
+  .idle-cal {
+    display: none;
+  }
+}
+
+.idle-cal-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding-left: 7px;
+  font-size: 1rem;
+}
+
+.idle-cal-month {
+  font-weight: 600;
+  color: var(--status-red);
+}
+
+.idle-cal-year {
+  color: var(--muted);
+}
+
+.idle-cal-grid {
+  display: flex;
+  flex-direction: column;
+}
+
+.idle-cal-row {
+  display: grid;
+  grid-template-columns: repeat(7, 32px);
+  justify-items: center;
+}
+
+.idle-cal-weekday {
+  padding-bottom: 2px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.idle-cal-day {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.idle-cal-weekend {
+  color: var(--muted);
+}
+
+.idle-cal-day--today {
+  border-radius: 50%;
+  background: var(--status-red);
+  color: #fff;
+  font-weight: 600;
+}
+
+.idle-cal-dot {
+  position: absolute;
+  bottom: 0;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--status-red);
+}
+
+.idle-cal-day--today .idle-cal-dot {
+  bottom: 2px;
+  background: #fff;
+}
+
+/* ---- the Up Next card ----
+   Beside the Timer and the Last Page: today's next event from the
+   Calendar, a date tile for its mark, the time in the red the month wears. */
+
+.idle-upnext {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 300px;
+  max-width: 420px;
+  padding: 14px 24px 14px 16px;
+  -webkit-app-region: no-drag;
+}
+
+.idle-upnext-tile {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: center;
+  width: 44px;
+  overflow: hidden;
+  border-radius: 12px;
+  background: var(--bubble);
+}
+
+.idle-upnext-tile-weekday {
+  align-self: stretch;
+  padding: 2px 0 1px;
+  background: var(--status-red);
+  color: #fff;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.idle-upnext-tile-day {
+  font-size: 1.25rem;
+  font-weight: 500;
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+}
+
+.idle-upnext-words {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.idle-upnext-kicker {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--status-red);
+}
+
+.idle-upnext-title {
+  overflow: hidden;
+  font-size: 1.1rem;
+  font-weight: 500;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.idle-upnext-sub {
   font-size: 0.9rem;
   color: var(--muted);
 }

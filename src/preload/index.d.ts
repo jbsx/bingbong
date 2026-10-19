@@ -2,6 +2,7 @@ import type { BrowserPaneState, PaneRect } from '../core/browser/paneState'
 import type { LastPage } from '../core/browser/lastPage'
 import type { TimerState } from '../core/timer/timer'
 import type { UsageSnapshot } from '../core/usage/usage'
+import type { CalendarEvent, CalendarRange } from '../core/calendar/calendar'
 import type { PipelineEvent } from '../core/pipeline/events'
 import type { AppSettings } from '../core/settings/settings'
 import type { VoiceErrorEvent, VoiceHeardEvent, VoicePartialEvent, VoiceState } from '../core/voice/ipcChannels'
@@ -12,6 +13,7 @@ export type { BrowserPaneState, PaneRect }
 export type { LastPage }
 export type { TimerState }
 export type { UsageSnapshot }
+export type { CalendarEvent, CalendarRange }
 export type { PipelineEvent }
 export type { AppSettings }
 export type { VoiceErrorEvent, VoiceHeardEvent, VoicePartialEvent, VoiceState }
@@ -47,6 +49,11 @@ export interface BingbongTimerApi {
 export interface BingbongUsageApi {
   /** The AI usage dashboard's Codex and Claude gauges and history; null when no dashboard URL is set. Rejects when it is unreachable. */
   get(): Promise<UsageSnapshot | null>
+}
+
+export interface BingbongCalendarApi {
+  /** The Calendar (CONTEXT.md): every source's events overlapping `range`, by start. */
+  events(range: CalendarRange): Promise<CalendarEvent[]>
 }
 
 export interface BingbongAssistantApi {
@@ -121,6 +128,7 @@ export interface BingbongApi {
   idle: BingbongIdleApi
   timer: BingbongTimerApi
   usage: BingbongUsageApi
+  calendar: BingbongCalendarApi
   assistant: BingbongAssistantApi
   settings: BingbongSettingsApi
   tts: BingbongTtsApi

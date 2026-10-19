@@ -60,6 +60,7 @@ import { createAlarmWav } from '../core/timer/alarm'
 import { createTimer } from '../core/timer/timer'
 import { registerTimerIpc } from './timer/attachTimer'
 import { registerUsageIpc } from './usage/attachUsage'
+import { registerCalendarIpc } from './calendar/attachCalendar'
 import { attachTimerAlarm } from './timer/timerAlarm'
 import { attachIdleShortcut } from './idleShortcut'
 import { attachIdleTyping } from './idleTyping'
@@ -463,6 +464,9 @@ app.whenReady().then(async () => {
   registerBrowserIpc()
   registerLastPageIpc(lastPageStore)
   registerTimerIpc(timer)
+  // The Calendar (CONTEXT.md): no provider is wired yet, so it shows the
+  // month alone; a Google or Outlook source joins this list.
+  registerCalendarIpc([])
   registerCommandRunnerIpc()
   registerSettingsIpc(settingsStore)
   registerUsageIpc(() => settingsStore.get().usageDashboard.url)
