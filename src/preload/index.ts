@@ -11,6 +11,7 @@ import { resolveLaunchConfig } from '../core/app/launchConfig'
 import type { BrowserPaneState, PaneRect } from '../core/browser/paneState'
 import type { LastPage } from '../core/browser/lastPage'
 import { TIMER_IPC } from '../core/timer/ipcChannels'
+import { IDLE_IPC } from '../core/idle/ipcChannels'
 import type { TimerState } from '../core/timer/timer'
 import type { PipelineEvent } from '../core/pipeline/events'
 import type { AppSettings } from '../core/settings/settings'
@@ -40,6 +41,13 @@ contextBridge.exposeInMainWorld('bingbong', {
       const wrapped = (_event: unknown, page: LastPage | null): void => listener(page)
       ipcRenderer.on(BROWSER_IPC.lastPageChanged, wrapped)
       return () => ipcRenderer.removeListener(BROWSER_IPC.lastPageChanged, wrapped)
+    },
+  },
+  idle: {
+    onEnter: (listener: () => void): (() => void) => {
+      const wrapped = (): void => listener()
+      ipcRenderer.on(IDLE_IPC.enter, wrapped)
+      return () => ipcRenderer.removeListener(IDLE_IPC.enter, wrapped)
     },
   },
   timer: {

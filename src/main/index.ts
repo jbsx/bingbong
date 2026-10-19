@@ -60,6 +60,8 @@ import { createAlarmWav } from '../core/timer/alarm'
 import { createTimer } from '../core/timer/timer'
 import { registerTimerIpc } from './timer/attachTimer'
 import { attachTimerAlarm } from './timer/timerAlarm'
+import { attachIdleShortcut } from './idleShortcut'
+import { IDLE_IPC } from '../core/idle/ipcChannels'
 import { createAplayPlayer } from './tts/createAplayPlayer'
 import { KIOSK_FLAG, resolveLaunchConfig } from '../core/app/launchConfig'
 import { attachGpuStability, gpuCrashRecordPath } from './attachGpuStability'
@@ -250,6 +252,13 @@ async function createWindow(): Promise<BrowserWindow> {
   })
   // The panel shortcut also fires while the pane owns focus.
   feedPanel.registerShortcut(pane.view.webContents)
+  // The idle shortcut (Ctrl/Cmd+Shift+L) shows the Idle Screen now, from whichever surface owns focus.
+  const enterIdle = (): void => {
+    if (!win.isDestroyed() && !win.webContents.isDestroyed()) win.webContents.send(IDLE_IPC.enter)
+  }
+  for (const contents of [win.webContents, pane.view.webContents, feedPanel.contents()]) {
+    if (contents !== null) win.on('closed', attachIdleShortcut(contents, enterIdle))
+  }
 
   const sendToRenderer = (channel: string, payload: unknown): void => {
     if (!win.isDestroyed() && !win.webContents.isDestroyed()) win.webContents.send(channel, payload)

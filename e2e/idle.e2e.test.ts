@@ -70,4 +70,22 @@ describe('idle screen e2e: the Last Page and resume', () => {
     )
     expect(recorded.url).toBe(fixture.url('/'))
   })
+
+  it('Ctrl+Shift+L shows the idle screen at once, from the pane or the dashboard', async () => {
+    const IDLE_SHORTCUT = { key: 'L', code: 'KeyL', windowsVirtualKeyCode: 76, modifiers: 2 /* Ctrl */ | 8 /* Shift */ }
+    const idleShown = (): Promise<true> =>
+      waitFor(async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('.idle-screen')`)) ? true : undefined), { timeoutMs: 5000, intervalMs: 100 })
+    const dashboardShown = (): Promise<true> =>
+      waitFor(async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('.url-input')`)) ? true : undefined), { timeoutMs: 10000, intervalMs: 100 })
+
+    // Awake, with the idle timeout minutes away: only the shortcut can bring the idle screen now.
+    await dashboardShown()
+    await harness.pressKey('pane', IDLE_SHORTCUT)
+    expect(await idleShown()).toBe(true)
+
+    await harness.clickDashboardElement('.idle-screen')
+    await dashboardShown()
+    await harness.pressKey('dashboard', IDLE_SHORTCUT)
+    expect(await idleShown()).toBe(true)
+  })
 })

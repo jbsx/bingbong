@@ -27,6 +27,11 @@ export interface BingbongBrowserApi {
   onLastPage(listener: (page: LastPage | null) => void): () => void
 }
 
+export interface BingbongIdleApi {
+  /** The idle shortcut (Ctrl/Cmd+Shift+L) was pressed: enter the Idle Screen now. */
+  onEnter(listener: () => void): () => void
+}
+
 export interface BingbongTimerApi {
   /** The Timer (CONTEXT.md): off, running to `endsAt`, or ringing. */
   get(): Promise<TimerState>
@@ -100,6 +105,7 @@ export interface BingbongApi {
   /** Launch flags/env snapshot (kiosk mode, idle timeout). */
   app: LaunchConfig
   browser: BingbongBrowserApi
+  idle: BingbongIdleApi
   timer: BingbongTimerApi
   assistant: BingbongAssistantApi
   settings: BingbongSettingsApi
