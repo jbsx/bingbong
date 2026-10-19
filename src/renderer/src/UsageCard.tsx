@@ -7,6 +7,9 @@ const GAP_MS = 5 * 60 * 1000
 /** How many rings draw at full size in one row; past that a provider's other windows are bars under it. */
 const FULL_RINGS = 3
 
+/** The share of the row a provider's column takes when its other windows are bars under it, against 1 for one without. */
+const BARRED_SHARE = 1.3
+
 /** Each provider's tone, as a class the stylesheet maps to its light and dark color. */
 function toneClass(provider: string): string {
   return `usage-tone--${provider.toLowerCase()}`
@@ -59,7 +62,10 @@ function Bar({ window, now }: { window: UsageWindow; now: number }) {
   return (
     <span className="usage-bar" aria-label={`${window.caption} ${Math.round(window.usedPct)}%, resets ${resetLabel(window.resetAt, now)}`}>
       <span className="usage-bar-words">
-        {window.caption} <b>{Math.round(window.usedPct)}%</b> · {resetLabel(window.resetAt, now)}
+        <span className="usage-bar-used">
+          {window.caption} <b>{Math.round(window.usedPct)}%</b>
+        </span>{' '}
+        <span className="usage-bar-reset">· {resetLabel(window.resetAt, now)}</span>
       </span>
       <span className="usage-bar-track">
         <span className="usage-bar-fill" style={{ width: `${Math.min(100, Math.max(0, window.usedPct))}%` }} />
@@ -116,15 +122,19 @@ function WindowRing({ provider, window, now }: { provider: UsageView; window: Us
 /**
  * The providers' rings in one row: each provider's gauge, and its other
  * windows as smaller rings while the row holds three or fewer, else as
- * bars under their provider. Past three providers the rings shrink to stay
- * in the row.
+ * bars under their provider — that provider's column a little wider, so its
+ * bars' lines hold one line each. Past three providers the rings shrink to
+ * stay in the row.
  */
 function Rings({ providers, now }: { providers: readonly UsageView[]; now: number }) {
   const windows = providers.reduce((sum, provider) => sum + 1 + provider.bars.length, 0)
   const ringed = windows <= FULL_RINGS
-  const count = ringed ? windows : providers.length
+  // A provider with bars under it takes a wider column, so its other window's line holds one line and leaves its ring the room.
+  const columns = ringed
+    ? `repeat(${windows}, minmax(0, 1fr))`
+    : providers.map((provider) => `minmax(0, ${provider.bars.length > 0 ? BARRED_SHARE : 1}fr)`).join(' ')
   return (
-    <section className="idle-card usage-rings" style={{ '--rings': String(count) } as React.CSSProperties} aria-label="AI usage">
+    <section className="idle-card usage-rings" style={{ '--ring-columns': columns } as React.CSSProperties} aria-label="AI usage">
       {providers.map((provider) => [
         <ProviderRing key={provider.name} provider={provider} bars={!ringed} now={now} />,
         ...(ringed ? provider.bars.map((bar) => <WindowRing key={`${provider.name}:${bar.key}`} provider={provider} window={bar} now={now} />) : []),

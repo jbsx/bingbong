@@ -3250,11 +3250,12 @@ body {
   --usage-tone: var(--accent);
 }
 
-/* The rings share the row; each column is the ring over its words, the
+/* The rings share the row (Rings sets the columns, a provider with bars
+   under it a little wider); each column is the ring over its words, the
    ring as large as the room the words leave, 150 px at most. */
 .usage-rings {
   display: grid;
-  grid-template-columns: repeat(var(--rings), minmax(0, 1fr));
+  grid-template-columns: var(--ring-columns);
   grid-template-rows: minmax(0, 1fr) auto;
   gap: 4px 12px;
   padding: 16px 18px;
@@ -3423,6 +3424,13 @@ body {
   line-height: 1.2;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
+}
+
+/* A window's figures and its reset never break inside themselves: "20h 59m" stays one value. */
+.usage-bar-used,
+.usage-bar-reset,
+.usage-ring-reset b {
+  white-space: nowrap;
 }
 
 .usage-bar-words b {
