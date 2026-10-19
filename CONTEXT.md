@@ -697,7 +697,7 @@ survive a restart. `timer` is the grammar's alone: Jev is never offered it.
 _Avoid_: alarm (for the countdown), stopwatch, reminder
 
 **Weigh-in**:
-One stepping-on of the owner's bathroom scale, recorded (#350; owner,
+One stepping-on of the household's bathroom scale, recorded (#350; owner,
 2026-10-19: "keeps track of my weight, along with other metrics the scale
 can measure"): the time the reading settled, the weight in kg and the
 scale's two resistances — nothing worked out from them, so a Body Profile
@@ -710,6 +710,11 @@ weight and the profile. A figure the profile cannot support is
 unavailable, never a made-up number; one stepping-on with no resistance
 measured has no impedance figures. No visceral fat or metabolic age: no
 published formula. Deleted from the Weight page for a mis-weigh or a guest.
+Each belongs to one Person (#351): the one whose latest Weigh-in is
+nearest, with no asking (owner, 2026-10-19: "rather than confirmation, go
+with the closest guess"); a wrong guess is moved with one tap, on the
+Weigh-in pop-up or on the Weight page. Those recorded before #351 are
+Jaish's.
 Bing Bong is the scale's only reader (owner: "ill stop using the renpho
 app"), so there is no history import and no cloud.
 _Avoid_: measurement, reading (for the record), entry
@@ -724,51 +729,78 @@ answers its handshake (the unit set to kg on every connection), reads the
 weight frames and records the first stable one of at least 5 kg as the
 Weigh-in — its repeats and later stable frames ignored until the owner
 steps off. The first QN-family scale it connects to is remembered by
-address in settings and others are ignored after that; Forget in the Body
+address in settings and others are ignored after that; Forget in the Weight
 section clears it. A scale quiet for 15 s is let go. With Bluetooth
-missing, off or without LE, it says so once to the log and in the Body
+missing, off or without LE, it says so once to the log and in the Weight
 section, and tries again when an adapter or BlueZ appears; nothing else is
 disturbed. The e2e replaces it with a stand-in scale that plays captured
 frames from a file, so no test reaches the real scale.
 _Avoid_: scale driver, BLE service
 
+**Person**:
+Someone the scale serves, with a name and a Body Profile (#351; owner,
+2026-10-19: "i live with my brother"): Jaish, the owner, always there and
+never removed, and Barun, Jaish's brother; more are added by name in the
+Weight section. A Person with no Weigh-in yet is never guessed — the first
+one lands on the nearest Person and is moved by a tap — and one whose
+"guess me" is off is left out of the guess. Removing a Person, after a
+confirm, deletes their Weigh-ins with them. No privacy between People:
+everyone at the screen sees every Person.
+_Avoid_: user, account, member, profile
+
 **Body Profile**:
-The owner's height, date of birth and sex, in settings' Body section
-(#350), that a Weigh-in's figures are worked out from — the age is taken
-on each Weigh-in's own day. Any field may be unset: weight is still
-recorded and shown, BMI needs the height, and the rest need all three; a
-missing figure says "set your body profile in Settings". One person for
-now, the owner (several people follow in their own ticket, #351).
+A Person's height, date of birth and sex, in settings' Weight section
+(#350, #351), that their Weigh-ins' figures are worked out from — the age
+is taken on each Weigh-in's own day. Any field may be unset: weight is
+still recorded and shown, BMI needs the height, and the rest need all
+three; a missing figure says "set your body profile in Settings".
 _Avoid_: user profile, account
 
+**Weight section**:
+The Settings section for the scale and its People (#351, replacing #350's
+Body section; owner: "a new settings ui for in depth customizations for
+weigh ins"): the People, each with a Body Profile and "guess me"; the
+scale's status, the remembered scale and Forget; the Weight card's People,
+the figures each row carries and its line's range (7, 30 or 90 days); and
+the Weigh-in pop-up on or off and how long it lingers. Kilograms only.
+_Avoid_: body settings, scale settings
+
 **Weight card**:
-The Idle Screen's Pinned Card of the latest Weigh-in (#350): in a 1×2 Card
-Slot the weight large, its change against the last Weigh-in a week or more
-before it, the body fat, and in the tile under them the last 30 days as a
-line; in one cell the weight and the change. With no Weigh-in yet it is a
-note, "Step on the scale". A tap opens the Weight page, on the pointer
-going down like the other idle controls.
+The Idle Screen's Pinned Card of each Person's latest Weigh-in (#350,
+#351; owner: "idle screen should show the weights for both me and my
+brother including the line chart"): in a 1×2 Card Slot one row per Person
+with a Weigh-in — the name, the weight, its change against their last
+Weigh-in a week or more before it, the body fat and their own line of the
+last 30 days, each line on its own axis; in one cell each name with the
+weight and the change. The People, figures and range are chosen in the
+Weight section. With no Weigh-in yet it is a note, "Step on the scale". A
+tap on a row opens the Weight page on that Person, on the pointer going
+down like the other idle controls.
 _Avoid_: weight widget, scale card
 
 **Weight page**:
 A full-window view beside Settings, with its own Back (#350; owner:
 "idle screen which being clicked on navigates to a full screen page with
-all the details and longer historic data"): the latest Weigh-in with every
+all the details and longer historic data"), one Person at a time with a
+switch between them (#351): their latest Weigh-in with every
 figure and its change since the one before, a chart per figure over 30
 days, 90 days, a year or all of it, and every Weigh-in newest first, each
-with a Delete. It says the impedance figures are estimates. Charts are SVG,
+with a Delete and a name chip that moves it to another Person. It says the impedance figures are estimates. Charts are SVG,
 drawn like the AI Usage chart; no chart library.
 _Avoid_: weight dashboard, history screen
 
 **Weigh-in pop-up**:
 While the owner stands on the scale, the weight settling, shown over
 whatever is on screen (#350): the live weight while it moves, then the
-settled weight with a stable mark and the change since the previous
-Weigh-in; it goes about 8 s after the owner steps off. Bottom-centre in
+settled weight with a stable mark, the guessed Person's name and the change
+since their previous Weigh-in, and a chip per other Person that moves the
+Weigh-in with one tap (#351) — tappable over the browsing pane too; it goes
+about 8 s after stepping off (the linger set in the Weight section). Bottom-centre in
 the Peek Card's place and size — drawn by the dashboard over the Idle
 Screen, Settings and the Weight page, and in the overlay over the browsing
 pane, where it outranks the Peek Card and rides an open panel's top. Never
-spoken (owner: "never spoken"), never focused, and never activity: it does
+spoken (owner: "never spoken"; nor asked by voice, #351), never focused,
+and never activity: it does
 not wake the Idle Screen away or hold it off.
 _Avoid_: toast, notification, scale overlay
 
