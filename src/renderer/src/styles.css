@@ -314,6 +314,22 @@ body {
   }
 }
 
+/* A very narrow window: the Timer's glyph alone, so the address field keeps
+   enough room to show where it is; the song stays on the Idle Screen. */
+@media (max-width: 560px) {
+  .toolbar:has(.toolbar-widgets) {
+    grid-template-columns: minmax(8rem, 1fr) minmax(0, auto) minmax(min-content, 1fr);
+  }
+
+  .toolbar:has(.toolbar-timer) {
+    grid-template-columns: minmax(calc(8rem + 44px), 1fr) minmax(0, auto) minmax(min-content, 1fr);
+  }
+
+  .toolbar-song {
+    display: none;
+  }
+}
+
 /* Voice hints are quiet detail inside the capsule: muted, still — the
    capsule and orb carry the state color, the hint carries instruction. */
 .voice-hint {
