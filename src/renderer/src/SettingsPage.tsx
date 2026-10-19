@@ -86,7 +86,8 @@ function openSections(): Set<string> {
   try {
     const saved: unknown = JSON.parse(localStorage.getItem(OPEN_SECTIONS_KEY) ?? '[]')
     return new Set(Array.isArray(saved) ? saved.filter((id): id is string => typeof id === 'string') : [])
-  } catch {
+  } catch (error) {
+    reportRendererFault('settings.openSections', error)
     return new Set()
   }
 }
@@ -97,8 +98,9 @@ function rememberOpen(id: string, open: boolean): void {
     if (open) ids.add(id)
     else ids.delete(id)
     localStorage.setItem(OPEN_SECTIONS_KEY, JSON.stringify([...ids]))
-  } catch {
+  } catch (error) {
     // A per-viewer convenience: without storage the section still opens, only not remembered.
+    reportRendererFault('settings.rememberOpen', error)
   }
 }
 
