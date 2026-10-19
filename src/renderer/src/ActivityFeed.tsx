@@ -82,9 +82,9 @@ export function FeedLine({ entry }: { entry: FeedEntry }) {
     // The entry's own event stamp rides the card as nonvisual metadata:
     // an observer correlating a rendered Answer with the published
     // `display` event reads the same `at` here. A line telling what went
-    // wrong takes the failure colour on its mark and rail (#329).
+    // wrong takes the failure colour on its mark and rail (#329); a Stop's is grey.
     return (
-      <div className={`feed-entry feed-entry--assistant feed-entry--${entry.kind}${entry.failure ? ' feed-entry--failed' : ''}`} data-event-at={entry.at}>
+      <div className={`feed-entry feed-entry--assistant feed-entry--${entry.kind}${entry.failure ? ' feed-entry--failed' : ''}${entry.muted ? ' feed-entry--muted' : ''}`} data-event-at={entry.at}>
         {time}
         <span className="feed-orb" aria-hidden="true" />
         <div className="feed-card">

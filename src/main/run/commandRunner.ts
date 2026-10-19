@@ -441,11 +441,11 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   /** The turn that last published its Answer: a Command leaves one (#333), so a second for the same turn is not shown. */
   let answeredTurn: string | null = null
 
-  /** A Command's one Answer (#333), unless its turn already has one. */
-  function answer(turnId: string, text: string, failure = false): void {
+  /** A Command's one Answer (#333), unless its turn already has one; `tone` marks a failure, or a Stop's grey. */
+  function answer(turnId: string, text: string, tone?: 'failure' | 'muted'): void {
     if (answeredTurn === turnId) return
     answeredTurn = turnId
-    publish({ type: 'display', turnId, text, ...(failure ? { failure: true } : {}), at: at() })
+    publish({ type: 'display', turnId, text, ...(tone === 'failure' ? { failure: true } : tone === 'muted' ? { muted: true } : {}), at: at() })
   }
 
   /**
@@ -458,7 +458,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     const { turnId } = inFlight
     inFlight = null
     publish({ type: 'status', turnId, status: 'cancelled', at: at() })
-    answer(turnId, STOPPED_ANSWERS[by])
+    answer(turnId, STOPPED_ANSWERS[by], 'muted')
     publish({ type: 'done', turnId, outcome: 'cancelled', at: at() })
     return true
   }
@@ -528,7 +528,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
    * waited on: the turn ends now, and the next Command silences it.
    */
   function answerFailure(turnId: string, line: string): void {
-    answer(turnId, line, true)
+    answer(turnId, line, 'failure')
     if (deps.speech !== undefined) void say(deps.speech, turnId, line, { failure: true })
   }
 
@@ -849,7 +849,9 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       // With nothing else to stop, the music is what "stop" means; it pauses, as YouTube's own button would.
       const paused = nothingInFlight && !silenced && deps.player !== undefined && (await pauseMusic())
       inFlight = null
-      answer(turnId, paused ? STOPPED_ANSWERS.paused : STOPPED_ANSWERS.stopped)
+      // Pausing the music is an action done; a Stop is grey, and one that found nothing says so.
+      if (paused) answer(turnId, STOPPED_ANSWERS.paused)
+      else answer(turnId, nothingInFlight && !silenced ? STOPPED_ANSWERS.nothing : STOPPED_ANSWERS.stopped, 'muted')
       publish({ type: 'done', turnId, outcome: 'done', at: at() })
       return { outcome: 'landed' }
     }
@@ -895,7 +897,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       const card = cardOf(command, result)
       if (speech === undefined) react(card !== null && command.verb === 'read' ? 'display' : 'settled')
       publish({ type: 'tool_result', turnId, callId, name, ok: true, result, at: at() })
-      if (card !== null) answer(turnId, card.text, card.failure)
+      if (card !== null) answer(turnId, card.text, card.failure ? 'failure' : undefined)
       if (speech !== undefined) {
         const shownAt = monotonic()
         publish({ type: 'status', turnId, status: 'speaking', at: at() })

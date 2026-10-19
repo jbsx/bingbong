@@ -245,6 +245,15 @@ describe('peekCardAnswer', () => {
     expect(fold.state()).toMatchObject({ phase: 'answer', runId: 't2' })
   })
 
+  it("a Stop's Answer is marked muted, for the card's grey mark", () => {
+    const entries = feedOf([
+      { type: 'command', turnId: 't1', text: 'stop', at: 1 },
+      { type: 'display', turnId: 't1', text: 'Nothing to stop.', muted: true, at: 2 },
+      { type: 'done', turnId: 't1', outcome: 'done', at: 3 },
+    ])
+    expect(peekCardAnswer(entries, 't1')).toEqual({ kind: 'display', text: 'Nothing to stop.', failure: false, muted: true })
+  })
+
   it('a failed Command answers with its plain failure line, marked as a failure', () => {
     expect(peekCardAnswer(feedOf(failedRead), 't1')).toEqual({ kind: 'display', text: "This page can't be read right now.", failure: true })
   })

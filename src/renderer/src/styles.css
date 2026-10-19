@@ -520,6 +520,12 @@ body {
   background: var(--status-red);
 }
 
+/* A cancelled Command is grey (owner ruling 2026-10-19): a Stop's Answer is
+   neither a success nor a failure. */
+.feed-entry--assistant.feed-entry--muted .feed-orb {
+  background: var(--muted);
+}
+
 /* The spoken half of an Answer with no Card (ADR 0013): italic speech in
    the card frame — "this was said", not written. */
 .feed-text--spoken {
@@ -659,6 +665,10 @@ body {
 
 .feed-entry--failed .feed-card {
   border-left-color: var(--status-red);
+}
+
+.feed-entry--assistant.feed-entry--muted .feed-card {
+  border-left-color: var(--muted);
 }
 
 /* Conversation tier: your words and Bing Bong's read at 1.2rem (~20px). */
@@ -1194,6 +1204,11 @@ body {
 
 .peek-card--failed .peek-text {
   color: var(--status-red);
+}
+
+/* A Stop's card: grey, as in the Feed. */
+.peek-card--muted .peek-orb {
+  background: var(--muted);
 }
 
 .peek-body {

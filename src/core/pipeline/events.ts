@@ -34,8 +34,11 @@ export type PipelineEvent =
     }
   /** `failure`: the line tells what went wrong (#329) — a thrown action, a wall — and takes the failure colour. */
   | { type: 'speak'; turnId?: string; text: string; failure?: boolean; at: number }
-  /** A Command's Answer (#333), one per Command; `failure` as on `speak` — a failure's line is its Answer, shown once. */
-  | { type: 'display'; turnId?: string; text: string; failure?: boolean; at: number }
+  /**
+   * A Command's Answer (#333), one per Command; `failure` as on `speak` — a failure's line is its Answer, shown once.
+   * `muted`: a Stop's Answer — the Command was cancelled, neither done nor failed, and reads grey.
+   */
+  | { type: 'display'; turnId?: string; text: string; failure?: boolean; muted?: boolean; at: number }
   | { type: 'error'; turnId?: string; message: string; at: number }
   | { type: 'done'; turnId: string; outcome?: 'done' | 'failed' | 'cancelled'; at: number }
 

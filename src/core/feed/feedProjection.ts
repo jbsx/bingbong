@@ -40,7 +40,7 @@ export interface FeedEntry {
   text: string
   /** A Command's action taken (#324), rendered under the words heard. */
   action?: string
-  /** An Utterance read as no Command (#324): the words alone, greyed. */
+  /** An Utterance read as no Command (#324): the words alone, greyed — and a Stop's Answer, a cancelled Command's grey mark. */
   muted?: boolean
   /** A line telling what went wrong (#329): its mark takes the failure colour. */
   failure?: boolean

@@ -2187,7 +2187,7 @@ describe('a pop-up covering the page (#336)', () => {
     browser.collectPage = () => new Promise(() => {})
     await runner.run('cancel', { source: 'spoken' })
     expect(events[0]).toMatchObject({ type: 'command', action: 'stop' })
-    expect(displays(events)).toEqual([expect.objectContaining({ text: 'Stopped.' })])
+    expect(displays(events)).toEqual([expect.objectContaining({ text: 'Nothing to stop.', muted: true })])
   })
 
   it('"cancel" closes a dialog the page collected at speech start already shows', async () => {
@@ -2258,7 +2258,7 @@ describe('the one Answer every Command leaves (#333)', () => {
       'Typed into “Search”.',
       'Scrolled down.',
       'Pressed Enter.',
-      'Stopped.',
+      'Nothing to stop.',
     ])
     // Exactly one Answer per Command, before its turn closes.
     for (const display of displays(events)) {
@@ -2307,6 +2307,22 @@ describe('the one Answer every Command leaves (#333)', () => {
       [stopped, 'Stopped.'],
       [superseded, 'Stopped: a later Command came first.'],
       [expect.any(String), 'Scrolled down.'],
+    ])
+    // A cancelled Command is grey (owner ruling 2026-10-19): neither done nor failed.
+    expect(displays(events).map((event) => event.muted === true)).toEqual([true, true, false])
+  })
+
+  it('a `stop` that stops something says "Stopped." in grey; one that finds nothing says "Nothing to stop."', async () => {
+    const { browser, events, runner } = harness()
+    browser.navigate = () => new Promise<string>(() => {})
+    void runner.run('navigate slow.example')
+    await flushMicrotasks()
+    await runner.run('stop')
+    await runner.run('stop')
+    expect(displays(events).map((event) => [event.text, event.muted, event.failure])).toEqual([
+      ['Stopped.', true, undefined],
+      ['Stopped.', true, undefined],
+      ['Nothing to stop.', true, undefined],
     ])
   })
 

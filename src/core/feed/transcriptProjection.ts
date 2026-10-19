@@ -17,7 +17,7 @@ export interface TranscriptEvent {
   at: number
   /** A Command's action taken (#324), shown under the words heard. */
   action?: string
-  /** An Utterance read as no Command (#324): the words alone, greyed. */
+  /** An Utterance read as no Command (#324): the words alone, greyed — and a Stop's Answer, a cancelled Command's grey line. */
   muted?: boolean
   /** A line telling what went wrong (#329): it takes the failure colour. */
   failure?: boolean
@@ -40,7 +40,7 @@ export function projectPipelineEvent(event: PipelineEvent): TranscriptEvent | nu
       // A failure shows once (#333): its plain-words line is the Command's Answer, never a second line here.
       return null
     case 'display':
-      return { kind: 'display', text: event.text, ...(event.failure ? { failure: true } : {}), at: event.at }
+      return { kind: 'display', text: event.text, ...(event.failure ? { failure: true } : {}), ...(event.muted ? { muted: true } : {}), at: event.at }
     case 'speak':
       return { kind: 'speak', text: event.text, ...(event.failure ? { failure: true } : {}), at: event.at }
     case 'error':

@@ -32,7 +32,7 @@ export function PeekCard({
 
   return (
     <div
-      className={`peek-card peek-card--${state.phase}${answer?.failure ? ' peek-card--failed' : ''}`}
+      className={`peek-card peek-card--${state.phase}${answer?.failure ? ' peek-card--failed' : ''}${answer?.muted ? ' peek-card--muted' : ''}`}
       role="button"
       tabIndex={0}
       aria-label="Open the activity feed"

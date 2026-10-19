@@ -177,6 +177,15 @@ describe('feed projection', () => {
     ])
   })
 
+  it("a Stop's Answer is muted — a cancelled Command reads grey, neither done nor failed", () => {
+    const feed = project([
+      { type: 'command', turnId: 't1', text: 'stop', action: 'stop', at: 1 },
+      { type: 'display', turnId: 't1', text: 'Stopped.', muted: true, at: 2 },
+      { type: 'done', turnId: 't1', outcome: 'done', at: 3 },
+    ]).entries()
+    expect(feed.filter((entry) => entry.kind === 'display').map((entry) => [entry.text, entry.muted, entry.failure])).toEqual([['Stopped.', true, undefined]])
+  })
+
   it('a Command entry carries the action taken, and a dropped Utterance is muted (#324)', () => {
     const feed = project([
       { type: 'command', turnId: 't1', text: 'click sign in', action: 'click [2] "Sign in"', at: 1 },

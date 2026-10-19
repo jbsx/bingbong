@@ -104,6 +104,8 @@ export interface PeekCardAnswer {
   kind: 'display' | 'spoken' | 'error'
   text: string
   failure: boolean
+  /** A Stop's Answer: the mark is grey, neither done nor failed. */
+  muted?: true
 }
 
 /**
@@ -119,7 +121,7 @@ export function peekCardAnswer(entries: readonly FeedEntry[], turnId: string | n
   let spoken: FeedEntry | null = null
   for (const entry of entries) {
     if (entry.turnId !== turnId) continue
-    if (entry.role === 'assistant' && entry.kind === 'display') return { kind: 'display', text: entry.text, failure: entry.failure === true }
+    if (entry.role === 'assistant' && entry.kind === 'display') return { kind: 'display', text: entry.text, failure: entry.failure === true, ...(entry.muted ? { muted: true as const } : {}) }
     if (entry.role === 'system' && entry.kind === 'error') error ??= entry
     if (entry.role === 'assistant' && entry.kind === 'speak') spoken ??= entry
   }
