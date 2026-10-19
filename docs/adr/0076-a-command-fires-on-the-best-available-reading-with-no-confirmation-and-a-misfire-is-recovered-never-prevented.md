@@ -870,9 +870,14 @@ recommended" on its five decisions.
 - **Ruling 3: `back` and `resume` are untouched.** Music goes back with
   `previous` ("last song", "go back a song") and on with a bare `play`.
 - **Ruling 4: with an empty Queue the song ends and the Player stops.**
-  YouTube's Autoplay never runs: it wanders into reaction videos. The
-  song's end is heard by a capture-phase `ended` listener on the window,
-  which also holds the event from YouTube's own handlers. An end while
+  YouTube's Autoplay never runs: it wanders into reaction videos. Holding
+  the `ended` event from YouTube's handlers was not enough. Live, at a
+  song's real end, YouTube loaded an ad into the element and then
+  Autoplayed another video either way, because its player state moves on,
+  not the element. So a capture-phase `timeupdate` listener pauses a song
+  that is not looping in its last second, through the player's own
+  `pauseVideo()` and the element's `pause()`, and notes that as the song's
+  end. A capture-phase `ended` listener remains as the fallback. An end while
   `#movie_player` carries `ad-showing` is the ad's: it passes through and
   advances nothing.
 - **Ruling 5: three tickets.** #343 is the Player, its verbs and the
@@ -897,5 +902,9 @@ recommended" on its five decisions.
   ("“…” can't be played.") and opens the next queued song in the
   background.
 - AC6 ran live on 2026-10-19 (`BINGBONG_YOUTUBE_E2E=1`,
-  `e2e/music.e2e.test.ts`, muted). `play` took 4.7 s from line to video
-  playing, including both page loads.
+  `e2e/music.e2e.test.ts`, muted). `play` took 4.5–5.6 s from line to
+  video playing, including both page loads. The suite also checks that a
+  song's end opens the queued one, and that with nothing queued it stays
+  paused at the end, with no ad and no other video, 12 s on.
+- The control script acts on `#movie_player`'s video alone. A `stop` or
+  a `skip` never pauses another site's video.

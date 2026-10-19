@@ -483,8 +483,9 @@ video:
 
 Main hears the song end through a once-a-second read and opens the next
 queued song. An ad plays in the same element, and its end (while
-`ad-showing`) is not the song's. The song's end is held from YouTube's own
-handlers, so YouTube's Autoplay never wanders on. With nothing queued, the
+`ad-showing`) is not the song's. A song that is not looping is paused in its
+last second, through YouTube's own pause, before YouTube can load an ad and
+Autoplay another video. That is its end. With nothing queued, the
 song ends and the Player stops. A landing that is not a watch page fails
 the Command, and the Player moves to the next queued song. `stop` with
 nothing in flight pauses the music, as it silences a ringing Timer. With a

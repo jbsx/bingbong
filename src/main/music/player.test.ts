@@ -96,8 +96,27 @@ describe('the Player', () => {
   })
 
   it('a search with no plain video fails in words', async () => {
-    const { perform } = wired()
+    const { youtube, perform } = wired()
+    youtube.search('nothing here', { channelRenderer: {} })
     expect(await perform({ kind: 'search', place: 'now' }, 'nothing here')).toMatchObject({ failure: true, answer: 'No videos found for “nothing here”.' })
+  })
+
+  it('a results page with no results data in it (consent, sign-in) fails as that, played or queued', async () => {
+    const { perform } = wired()
+    expect(await perform({ kind: 'search', place: 'now' }, 'walled')).toMatchObject({ failure: true, answer: "YouTube didn't show its results." })
+    await perform({ kind: 'search', place: 'now' }, 'song a')
+    expect(await perform({ kind: 'search', place: 'end' }, 'walled')).toMatchObject({ failure: true, answer: "YouTube didn't show its results." })
+  })
+
+  it('a `skip` a later Command overtakes leaves the queue as it was', async () => {
+    const { browser, player, perform } = wired()
+    await perform({ kind: 'search', place: 'now' }, 'song a')
+    await perform({ kind: 'search', place: 'end' }, 'song b')
+    const opened = browser.navigations.length
+    const skipped = await player.perform({ kind: 'skip' }, null, () => browser.navigations.length === opened)
+    expect(skipped).toMatchObject({ superseded: true })
+    expect(player.queue().current?.id).toBe('aaaaaaaaaaa')
+    expect(player.queue().upNext.map((song) => song.id)).toEqual(['bbbbbbbbbbb'])
   })
 
   it('drives the element: pause, play, loop, restart, volume, mute', async () => {

@@ -76,6 +76,13 @@ export function setLoop(queue: Queue, loop: boolean): Queue {
   return { ...queue, loop }
 }
 
+/** Where a queued song sits, as its Answer says it: "1st", "2nd", "3rd", "11th", "22nd". */
+export function ordinal(position: number): string {
+  const tens = position % 100
+  const suffix = tens >= 11 && tens <= 13 ? 'th' : (['th', 'st', 'nd', 'rd'][position % 10] ?? 'th')
+  return `${position}${suffix}`
+}
+
 /** The current song failed to open: it is dropped, never played, and never returned to. */
 export function dropCurrent(queue: Queue): Queue {
   return { ...queue, current: null, loop: false, paused: false }

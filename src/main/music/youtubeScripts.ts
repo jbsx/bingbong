@@ -27,14 +27,19 @@ export interface WatchStatus {
   readonly ended: { readonly id: string | null; readonly ad: boolean } | null
 }
 
+/** How long before a song's end it is paused (s): `timeupdate` comes about every quarter second. */
+const END_LEAD_S = 1
+
 /**
- * Reads the watch page, and hears its video's end: a listener on the
- * window, in the capture phase, notes each `ended` and whether
- * `#movie_player` carried `ad-showing` then — an ad plays in the same
- * element. A song's end (not an ad's) is held from YouTube's own handlers,
- * so its Autoplay never wanders on: the Player opens the next queued song,
- * or leaves the page paused at the end (owner's ruling 4). Installed once
- * per document; each read takes the end it heard.
+ * Reads the watch page, and hears its video's end. Listeners on the
+ * window, in the capture phase, note each end and whether `#movie_player`
+ * carried `ad-showing` then — an ad plays in the same element, and its end
+ * is not the song's. A song that is not looping is paused in its last half
+ * second: at its real end YouTube loads an ad into the element and then
+ * Autoplays another video (seen live, 2026-10-19), and holding the `ended`
+ * event alone does not stop it. The Player opens the next queued song, or
+ * leaves the page paused there (owner's ruling 4). Installed once per
+ * document; each song's end is noted once, and each read takes it.
  */
 export const WATCH_SCRIPT = `(() => {
   /* YT_WATCH */
@@ -42,15 +47,32 @@ export const WATCH_SCRIPT = `(() => {
   const video = player ? player.querySelector('video') : null
   const videoId = () => new URLSearchParams(location.search).get('v')
   if (!window.__bingbongPlayer) {
-    window.__bingbongPlayer = { ended: null }
-    window.addEventListener('ended', (event) => {
+    const state = { ended: null, endedId: null }
+    window.__bingbongPlayer = state
+    const hear = (event, nearEnd) => {
       const target = event.target
       if (!(target instanceof HTMLMediaElement)) return
       const owner = target.closest('#movie_player')
       if (!owner) return
       const ad = owner.classList.contains('ad-showing')
-      window.__bingbongPlayer.ended = { id: videoId(), ad }
-      if (!ad) event.stopImmediatePropagation()
+      if (nearEnd) {
+        // The song's last half second, unlooped: paused here, before YouTube's own end — it would load an ad and Autoplay another video.
+        if (ad || target.loop || !isFinite(target.duration) || target.currentTime < target.duration - ${END_LEAD_S}) return
+        // Through the player's own pause as well: its state, not the element's, is what moves on at the end.
+        if (typeof owner.pauseVideo === 'function') owner.pauseVideo()
+        target.pause()
+      }
+      const id = videoId()
+      if (!ad && state.endedId === id) return
+      state.ended = { id, ad }
+      if (!ad) state.endedId = id
+      if (!ad && !nearEnd) event.stopImmediatePropagation()
+    }
+    window.addEventListener('timeupdate', (event) => hear(event, true), true)
+    window.addEventListener('ended', (event) => hear(event, false), true)
+    // A song opened again (restart, previous) can end again.
+    window.addEventListener('seeked', (event) => {
+      if (event.target instanceof HTMLMediaElement && event.target.currentTime < event.target.duration - ${END_LEAD_S}) state.endedId = null
     }, true)
   }
   const ended = window.__bingbongPlayer.ended
@@ -96,15 +118,15 @@ export interface ElementState {
 }
 
 /**
- * One control on `#movie_player video` (falling back to the page's one
- * video). Volume and mute are set on the element and told to the player
+ * One control on `#movie_player video` — YouTube's player alone: a `stop`
+ * or a `pause` never reaches another site's video. Volume and mute are set on the element and told to the player
  * too, so YouTube's own slider and its remembered volume agree.
  */
 export function controlScript(op: ElementOp): string {
   return `((op) => {
   /* YT_CONTROL */
   const player = document.querySelector('#movie_player')
-  const video = (player && player.querySelector('video')) || document.querySelector('video')
+  const video = player ? player.querySelector('video') : null
   if (!video) return { found: false, changed: false, title: '', paused: true, loop: false, volume: 0, muted: false }
   let changed = true
   const setVolume = (to) => {

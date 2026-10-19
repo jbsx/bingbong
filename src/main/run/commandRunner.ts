@@ -330,6 +330,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   let sounding = 0
   /** The last submission made with nothing in flight, being read or sounding (#343): a `stop` it carries pauses the music. */
   let idleAt = -1
+  /** Nothing in flight, being read or sounding: what the run state calls idle. */
+  const idle = (): boolean => inFlight === null && reading === null && sounding === 0
 
   /** The music paused for a `stop` (#343); whether a video was playing. A failure to reach it is no pause. */
   async function pauseMusic(): Promise<boolean> {
@@ -787,7 +789,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     if (source === 'spoken') learnFrom(command, matched, firedAt)
 
     // Whether a `stop` finds anything to stop: nothing in flight, being read or sounding pauses the music instead (#343, owner's ruling 2).
-    const nothingInFlight = idleAt === submitted && inFlight === null && sounding === 0
+    const nothingInFlight = idleAt === submitted && idle()
     // A later Command supersedes the one in flight, and silences what it was saying; `stop` is only that.
     cancelInFlight(command.verb === 'stop' ? 'stopped' : 'superseded')
     silence()
@@ -806,7 +808,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       // With nothing else to stop, the music is what "stop" means; it pauses, as YouTube's own button would.
       const paused = nothingInFlight && !silenced && deps.player !== undefined && (await pauseMusic())
       inFlight = null
-      answer(turnId, paused ? 'Paused.' : STOPPED_ANSWERS.stopped)
+      answer(turnId, paused ? STOPPED_ANSWERS.paused : STOPPED_ANSWERS.stopped)
       publish({ type: 'done', turnId, outcome: 'done', at: at() })
       return { outcome: 'landed' }
     }
@@ -1195,7 +1197,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     const quick = localMatch(words, [])
     // "scroll" may yet be "scroll up": the words are known to be unfinished, so no one is asked.
     // A "stop" that may be "stop looping" (#343) still fires at once when there is something to stop: it is only an abort then.
-    const stopsSomething = quick?.verb === 'stop' && (inFlight !== null || reading !== null || sounding > 0)
+    const stopsSomething = quick?.verb === 'stop' && !idle()
     if (headsAnotherVerb(words) && !stopsSomething) return null
     // A Player line (#343) is the grammar's alone: it waits for its Endpoint, and Jev is never asked about it.
     if (quick?.verb === 'play') return null
@@ -1260,7 +1262,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   }
 
   return {
-    getState: () => (inFlight === null && reading === null && sounding === 0 ? 'idle' : 'running'),
+    getState: () => (idle() ? 'idle' : 'running'),
 
     abort() {
       const acting = reading !== null || inFlight !== null
@@ -1362,10 +1364,10 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       // A new Utterance soon after a Jev-read hop fired: the Task overran (#328).
       overrun(turnId)
       // This submission: a reading still under way for an earlier one is stale now.
-      const idle = inFlight === null && reading === null && sounding === 0
+      const wasIdle = idle()
       submitted += 1
       const submission = submitted
-      if (idle) idleAt = submission
+      if (wasIdle) idleAt = submission
       reading = { turnId, submission }
       // The prepared page is this Command's, whether it needs it or not.
       const pending = prepared

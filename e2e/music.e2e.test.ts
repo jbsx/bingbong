@@ -103,4 +103,27 @@ describe.skipIf(!process.env.BINGBONG_YOUTUBE_E2E)('the Player against live YouT
     const second = await until(harness, (video) => video.id === secondId && video.found && !video.paused && video.currentTime > 0.5)
     expect(second.path).toBe('/watch')
   }, 90_000)
+
+  it('a song\'s end opens the next queued song', async () => {
+    const queued = await cli(harness, 'queue queen bohemian rhapsody', /^(queued: id=|No videos|YouTube didn't|error:)/)
+    expect(queued).toMatch(/^queued: id=\S+ position=1$/)
+    const thirdId = /id=(\S+)/.exec(queued)![1]!
+    await until(harness, (video) => !video.ad && video.duration > 10, 60_000)
+    await harness.paneEval(`(() => { const v = document.querySelector('#movie_player video'); v.currentTime = v.duration - 3 })()`)
+    await until(harness, (video) => video.id === thirdId && video.found, 30_000)
+    secondSong = thirdId
+  }, 90_000)
+
+  it('with nothing queued the song ends and stays ended: YouTube\'s Autoplay never opens another (owner\'s ruling 4)', async () => {
+    await until(harness, (video) => !video.ad && video.duration > 10, 60_000)
+    await harness.paneEval(`(() => { const v = document.querySelector('#movie_player video'); v.currentTime = v.duration - 2 })()`)
+    // Paused in its last second, before YouTube's own end would load an ad and Autoplay another video.
+    await until(harness, (video) => video.paused && video.currentTime >= video.duration - 1, 20_000)
+    // Longer than YouTube's Autoplay countdown.
+    await new Promise((resolve) => setTimeout(resolve, 12_000))
+    const after = await facts(harness)
+    expect(after).toMatchObject({ path: '/watch', id: secondSong, paused: true, ad: false })
+  }, 90_000)
 })
+
+let secondSong = ''

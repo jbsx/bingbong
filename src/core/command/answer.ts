@@ -12,6 +12,8 @@ import { describeDuration } from '../timer/duration'
 export const STOPPED_ANSWERS = {
   stopped: 'Stopped.',
   superseded: 'Stopped: a later Command came first.',
+  /** A `stop` with nothing in flight paused the music (#343). */
+  paused: 'Paused.',
 } as const
 
 /** What a page is called in an Answer: its title, or its site's name when it has none. */

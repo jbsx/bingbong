@@ -1,9 +1,10 @@
 import type { BrowserController } from '../../core/ports/browser'
 import type { MusicAction } from '../../core/music/musicWords'
-import { EMPTY_QUEUE, advance, dropCurrent, enqueue, pause, playNow, previous, setLoop, unpause, type Queue, type Song } from '../../core/music/queue'
+import { EMPTY_QUEUE, advance, dropCurrent, enqueue, ordinal, pause, playNow, previous, setLoop, unpause, type Queue, type Song } from '../../core/music/queue'
 import { initialDataOf, pickVideo, resultsUrl, watchUrl } from '../../core/music/youtubeSearch'
 import { SPOKEN_FAILURES, spokenFailureOf } from '../../core/command/spokenFailure'
 import { reportFault } from '../../core/trace/fault'
+import { STOPPED_ANSWERS } from '../../core/command/answer'
 import { RESULTS_SCRIPT, WATCH_SCRIPT, controlScript, type ElementOp, type ElementState, type WatchStatus } from './youtubeScripts'
 
 // The Player (#343, CONTEXT.md): YouTube in the pane is the player; the
@@ -12,9 +13,10 @@ import { RESULTS_SCRIPT, WATCH_SCRIPT, controlScript, type ElementOp, type Eleme
 // watch page; `queue <words>` fetches the same results with the pane's
 // session, so the song playing is never interrupted. Every other verb is
 // one evaluate on `#movie_player`'s video. The poll (`check`, once a
-// second) hears the song's end — an ad's end in the same element is not
-// one — and opens the next queued song; with none queued the Player stops,
-// and YouTube's Autoplay never wanders on (owner's ruling 4).
+// second) hears the song's end — the page pauses it in its last second, so
+// YouTube's Autoplay never wanders on, and an ad's end in the same element
+// is not one — and opens the next queued song; with none queued the Player
+// stops there (owner's ruling 4).
 
 /** What a Player verb came to: the tool result line, its Answer, and the video it opened or queued. */
 export interface PlayerOutcome {
@@ -52,15 +54,9 @@ const WATCH_READS = 20
 const WATCH_READ_MS = 250
 /** How long the results page may take to carry its data. */
 const RESULTS_READS = 8
+const RESULTS_READ_MS = 250
 /** How much `louder` and `quieter` move the volume. */
 const VOLUME_STEP = 10
-
-/** "1st", "2nd", "3rd", "11th", "22nd". */
-export function ordinal(position: number): string {
-  const tens = position % 100
-  const suffix = tens >= 11 && tens <= 13 ? 'th' : (['th', 'st', 'nd', 'rd'][position % 10] ?? 'th')
-  return `${position}${suffix}`
-}
 
 const quoted = (title: string): string => `“${title}”`
 
@@ -135,11 +131,15 @@ export function createPlayer(deps: PlayerDeps): Player {
     return { result: `not a watch page: ${watchUrl(song.id)}`, answer: `${quoted(song.title)} can't be played.`, failure: true, video: song.id }
   }
 
-  /** Play this song now, in place of the current one. */
-  async function playSong(song: Song, current: () => boolean, answer: string): Promise<PlayerOutcome> {
+  /**
+   * Play this song now — in place of the current one, unless `then` says
+   * otherwise (`skip`, `previous`). The Queue moves to `then` once the page
+   * opened or failed; one a later Command overtook leaves it as it was.
+   */
+  async function playSong(song: Song, current: () => boolean, answer: string, then: () => Queue = () => playNow(state, song)): Promise<PlayerOutcome> {
     const opened = await open(song, current)
     if (opened === 'superseded') return superseded
-    state = playNow(state, song)
+    state = then()
     if (opened === 'failed') return failedToOpen(song)
     return { result: `playing: id=${song.id} title=${JSON.stringify(song.title)}`, answer, video: song.id }
   }
@@ -150,20 +150,33 @@ export function createPlayer(deps: PlayerDeps): Player {
     if (!current()) return superseded
     const wall = spokenFailureOf({ tool: 'navigate', outcome: { ok: true, result: line } })
     if (wall !== null) return { result: line, answer: SPOKEN_FAILURES[wall], failure: true }
-    let song: Song | null = null
-    for (let read = 0; read < RESULTS_READS && song === null; read += 1) {
-      if (read > 0) await sleep(WATCH_READ_MS)
+    let data: unknown = null
+    for (let read = 0; read < RESULTS_READS && data === null; read += 1) {
+      if (read > 0) await sleep(RESULTS_READ_MS)
       if (!current()) return superseded
-      const json = await evaluate<string>(RESULTS_SCRIPT)
-      song = json === null ? null : pickVideo(JSON.parse(json) as unknown)
-      if (json !== null) break
+      data = parsed(await evaluate<string>(RESULTS_SCRIPT))
     }
     if (!current()) return superseded
+    if (data === null) return noResults(words)
+    const song = pickVideo(data)
     if (song === null) return noVideos(words)
     return playSong(song, current, `Playing ${quoted(song.title)}.`)
   }
 
+  /** The results script's JSON, parsed; null for none, or JSON that does not parse. */
+  function parsed(json: string | null): unknown {
+    if (json === null) return null
+    try {
+      return JSON.parse(json) as unknown
+    } catch (error) {
+      reportFault('music.player.parseResults', error)
+      return null
+    }
+  }
+
   const noVideos = (words: string): PlayerOutcome => ({ result: `no videos: ${words}`, answer: `No videos found for ${quoted(words)}.`, failure: true })
+  /** A results page that carried no results: a consent or sign-in page in its place. */
+  const noResults = (words: string): PlayerOutcome => ({ result: `no results data: ${words}`, answer: "YouTube didn't show its results.", failure: true })
 
   /** `queue <words>` and `play <words> next`: the results fetched, never shown — the song playing plays on. */
   async function searchQueued(words: string, place: 'front' | 'end', current: () => boolean): Promise<PlayerOutcome> {
@@ -175,7 +188,9 @@ export function createPlayer(deps: PlayerDeps): Player {
       return { result: `search failed: ${String(error)}`, answer: "Couldn't search YouTube.", failure: true }
     }
     if (!current()) return superseded
-    const song = pickVideo(initialDataOf(html))
+    const data = initialDataOf(html)
+    if (data === null) return noResults(words)
+    const song = pickVideo(data)
     if (song === null) return noVideos(words)
     const queued = enqueue(state, song, place)
     if (queued.playsNow) return playSong(song, current, `Playing ${quoted(song.title)}.`)
@@ -206,21 +221,15 @@ export function createPlayer(deps: PlayerDeps): Player {
             state = queue
             return { result: 'queue empty', answer: 'Nothing queued.' }
           }
-          // Taken off the queue now; playSong makes it current once its page opens.
-          state = { ...state, upNext: state.upNext.slice(1) }
-          return playSong(next, current, `Skipped to ${quoted(next.title)}.`)
+          return playSong(next, current, `Skipped to ${quoted(next.title)}.`, () => advance(state).queue)
         }
         case 'previous': {
           const back = previous(state)
           if (back.song === null) return { result: 'nothing before', answer: 'Nothing before this.' }
-          const opened = await open(back.song, current)
-          if (opened === 'superseded') return superseded
-          state = back.queue
-          if (opened === 'failed') return failedToOpen(back.song)
-          return { result: `playing: id=${back.song.id}`, answer: `Back to ${quoted(back.song.title)}.`, video: back.song.id }
+          return playSong(back.song, current, `Back to ${quoted(back.song.title)}.`, () => previous(state).queue)
         }
         case 'pause':
-          return onElement({ op: 'pause' }, () => 'Paused.', pause)
+          return onElement({ op: 'pause' }, () => STOPPED_ANSWERS.paused, pause)
         case 'unpause':
           return onElement({ op: 'play' }, (element) => (element.title === '' ? 'Playing.' : `Playing ${quoted(element.title)}.`), unpause)
         case 'loop':
