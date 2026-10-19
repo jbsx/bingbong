@@ -64,6 +64,12 @@ export function previous(queue: Queue): { queue: Queue; song: Song | null } {
   return { queue: { current: song, upNext, played: queue.played.slice(0, -1), loop: false, paused: false }, song }
 }
 
+/** `play` once the queue ran out (#344): the song that ended plays again from the start, taken back off the songs played. */
+export function replay(queue: Queue, song: Song): Queue {
+  const played = queue.played.at(-1)?.id === song.id ? queue.played.slice(0, -1) : queue.played
+  return { current: song, upNext: queue.upNext, played, loop: false, paused: false }
+}
+
 export function pause(queue: Queue): Queue {
   return { ...queue, paused: true }
 }

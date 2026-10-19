@@ -10,6 +10,7 @@ import { useFeedPanel, useFeedSlotRect } from './useFeedPanel'
 import { useIdle } from './useIdle'
 import { useLastPage } from './useLastPage'
 import { useTimer } from './useTimer'
+import { useNowPlaying } from './useNowPlaying'
 import { useUsage } from './useUsage'
 import { defaultUsagePrefs } from '../../core/usage/usage'
 import { usePeekCard } from './usePeekCard'
@@ -105,13 +106,14 @@ export function App() {
   const weather = useWeather(settings?.weather ?? null, showIdle)
   const lastPage = useLastPage(showIdle)
   const timer = useTimer(showIdle)
+  const nowPlaying = useNowPlaying(showIdle)
   const usage = useUsage(settings?.usageDashboard.url ?? null, showIdle)
 
   // Main sends a key typed on the Idle Screen to the Prompt Bar, so it has to know the screen is up.
   useEffect(() => window.bingbong.idle.reportShown(showIdle), [showIdle])
 
   if (showIdle) {
-    return <IdleScreen weather={weather} usage={usage} usagePrefs={settings?.usageDashboard ?? defaultUsagePrefs()} lastPage={lastPage} timer={timer} status={status} hint={hint} />
+    return <IdleScreen weather={weather} usage={usage} usagePrefs={settings?.usageDashboard ?? defaultUsagePrefs()} lastPage={lastPage} timer={timer} nowPlaying={nowPlaying} status={status} hint={hint} />
   }
 
   return (

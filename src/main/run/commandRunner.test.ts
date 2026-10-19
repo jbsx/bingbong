@@ -7,7 +7,8 @@ import type { AskRecord } from '../../core/decision/askRecord'
 import type { DecisionAnswer, DecisionChoiceQuestion, DecisionModel, DecisionQuestions, DecisionRequest, DecisionResult, DecisionUnavailableReason } from '../../core/ports/decisionModel'
 import { FakeBrowser, fakePerfHarness, flushMicrotasks } from '../../core/testing/doubles'
 import type { ActionEffect } from '../browser/createCdpBrowserController'
-import { JEV_VERBS } from '../../core/command/command'
+import { JEV_VERBS, verbKeepsIdle } from '../../core/command/command'
+import { wakesIdleScreen } from '../../core/idle/idleWake'
 import type { AudioStream, SpeakOptions, SpeakOutcome, TtsSpeaker } from '../../core/ports/tts'
 import { pageReadPartLine } from '../../core/browser/pageText'
 import { blockedActionHead } from '../../core/browser/actionOutcome'
@@ -335,6 +336,22 @@ describe('the Player (#343)', () => {
     await reading
     expect(runner.getState()).toBe('idle')
     expect(youtube.element.paused).toBe(false)
+  })
+
+  it('every Player verb keeps the Idle Screen up, `play <words>` included; "show the video" wakes it (#344)', async () => {
+    const { events, runner } = music()
+    expect(verbKeepsIdle('play')).toBe(true)
+    for (const line of ['play bohemian rhapsody', 'queue bohemian rhapsody', 'pause', 'play', 'skip', 'previous', 'loop', 'restart', 'volume 40', 'louder']) await runner.run(line)
+    const commands = events.filter((event) => event.type === 'command')
+    expect(commands).toHaveLength(10)
+    expect(commands.filter(wakesIdleScreen)).toEqual([])
+    for (const line of ['show the video', 'show it']) {
+      await runner.run(line)
+      const shown = events.filter((event) => event.type === 'command').at(-1)!
+      expect(shown).toMatchObject({ action: 'show the video' })
+      expect(wakesIdleScreen(shown)).toBe(true)
+    }
+    expect(displays(events).slice(-2)).toEqual([`Showing “${QUEEN}”.`, `Showing “${QUEEN}”.`])
   })
 
   it('no partial fires a Player verb early, and Jev is not asked about one (#326)', async () => {

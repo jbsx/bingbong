@@ -130,11 +130,19 @@ export function verbTakesTarget(verb: CommandVerb): boolean {
 }
 
 /**
- * The verbs that never touch the pane — the Timer, a Stop, `done` and
- * `none`: a Command carrying one leaves the Idle Screen up (CONTEXT.md).
+ * The verbs that need no pane on the screen — the Timer, a Stop, `done`,
+ * `none` and the Player's (#344: the search and the watch page happen in
+ * the hidden pane, and the music plays on there). A Command carrying one
+ * leaves the Idle Screen up (CONTEXT.md), save "show the video": see
+ * {@link commandKeepsIdle}.
  */
 export function verbKeepsIdle(verb: CommandVerb): boolean {
-  return verb === 'timer' || verb === 'stop' || verb === 'done' || verb === 'none'
+  return verb === 'timer' || verb === 'stop' || verb === 'done' || verb === 'none' || verb === 'play'
+}
+
+/** Whether this Command leaves the Idle Screen up: its verb does, unless it is "show the video", which wakes the dashboard on the watch page (#344). */
+export function commandKeepsIdle(command: Command): boolean {
+  return verbKeepsIdle(command.verb) && command.music?.kind !== 'show'
 }
 
 /** The verbs that carry a Slot. */
@@ -237,6 +245,8 @@ function describeMusic(music: MusicAction | undefined, words: string | null): st
       return `volume ${music.to}`
     case 'mute':
       return music.on ? 'mute' : 'unmute'
+    case 'show':
+      return 'show the video'
     default:
       return music.kind
   }

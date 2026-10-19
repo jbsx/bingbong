@@ -1980,6 +1980,155 @@ body {
   color: var(--muted);
 }
 
+/* ---- Now Playing (#344) ----
+   Beside the Timer and the Last Page while the Player holds a song: the
+   thumbnail, the title and channel, the progress, the next three. The tap
+   pauses or plays it. */
+
+.idle-music {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  width: min(640px, 100%);
+  padding: 14px 24px 14px 14px;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+
+.idle-music:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.idle-music-thumb {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 192px;
+  height: 108px;
+  overflow: hidden;
+  border-radius: 14px;
+  background: var(--bubble);
+  color: var(--muted);
+}
+
+.idle-music-thumb > img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.idle-music-paused {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+}
+
+.idle-music--ended .idle-music-thumb > img {
+  opacity: 0.55;
+}
+
+.idle-music-words {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.idle-music-kicker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 1rem;
+  line-height: 1.2;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--status-purple);
+}
+
+.idle-music-title {
+  overflow: hidden;
+  font-size: 1.6rem;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.idle-music-channel {
+  overflow: hidden;
+  font-size: 1.2rem;
+  line-height: 1.25;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--muted);
+}
+
+.idle-music-progress {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.idle-music-bar {
+  flex: 1 1 auto;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--bubble);
+}
+
+.idle-music-fill {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--status-purple);
+  transition: width 1s linear;
+}
+
+.idle-music-time {
+  flex: none;
+  font-size: 1.05rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.idle-music-next {
+  display: flex;
+  gap: 10px;
+  overflow: hidden;
+  font-size: 1rem;
+  line-height: 1.3;
+  white-space: nowrap;
+  color: var(--muted);
+}
+
+.idle-music-next-label {
+  flex: none;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.idle-music-next-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.idle-music-next-title + .idle-music-next-title::before {
+  content: '· ';
+}
+
 /* ---- the Calendar ----
    A card beside the weather and the AI Usage, a month view whose days are
    boxes that hold their entries: the bank holiday's name on green, an

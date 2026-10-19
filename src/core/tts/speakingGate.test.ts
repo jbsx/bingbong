@@ -145,6 +145,21 @@ describe('isSpeaking (#326)', () => {
     await second
     expect(gate.isSpeaking()).toBe(false)
   })
+
+  it('tells its listeners when speaking starts and when the last line settles (#344, the duck)', async () => {
+    const { speaker, finish } = deferredSpeaker()
+    const gate = createSpeakingGate(speaker)
+    const heard: boolean[] = []
+    gate.onSpeakingChange((speaking) => heard.push(speaking))
+    const first = gate.tts.speak('one')
+    const second = gate.tts.speak('two')
+    finish('one')
+    await first
+    expect(heard).toEqual([true])
+    finish('two')
+    await second
+    expect(heard).toEqual([true, false])
+  })
 })
 
 // Barge-in and the mic (#327, AC6): a Page Read spoken sentence by sentence

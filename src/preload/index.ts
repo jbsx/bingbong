@@ -11,6 +11,8 @@ import { resolveLaunchConfig } from '../core/app/launchConfig'
 import type { BrowserPaneState, PaneRect } from '../core/browser/paneState'
 import type { LastPage } from '../core/browser/lastPage'
 import { TIMER_IPC } from '../core/timer/ipcChannels'
+import { MUSIC_IPC } from '../core/music/ipcChannels'
+import type { NowPlaying } from '../core/music/nowPlaying'
 import { CALENDAR_IPC } from '../core/calendar/ipcChannels'
 import type { CalendarEvent, CalendarRange } from '../core/calendar/calendar'
 import { IDLE_IPC } from '../core/idle/ipcChannels'
@@ -68,6 +70,14 @@ contextBridge.exposeInMainWorld('bingbong', {
       const wrapped = (_event: unknown, state: TimerState): void => listener(state)
       ipcRenderer.on(TIMER_IPC.changed, wrapped)
       return () => ipcRenderer.removeListener(TIMER_IPC.changed, wrapped)
+    },
+  },
+  music: {
+    get: (): Promise<NowPlaying | null> => ipcRenderer.invoke(MUSIC_IPC.get),
+    onChange: (listener: (nowPlaying: NowPlaying | null) => void): (() => void) => {
+      const wrapped = (_event: unknown, nowPlaying: NowPlaying | null): void => listener(nowPlaying)
+      ipcRenderer.on(MUSIC_IPC.changed, wrapped)
+      return () => ipcRenderer.removeListener(MUSIC_IPC.changed, wrapped)
     },
   },
   usage: {

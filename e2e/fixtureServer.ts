@@ -51,6 +51,66 @@ function adblockPage(): string {
 </html>`
 }
 
+// YouTube's stand-in (#344, e2e/idleMusic.e2e.test.ts): the app routes the
+// pane's www.youtube.com here (BINGBONG_YOUTUBE_FIXTURE), so `play <words>`
+// runs the Player's real road — the results page's `ytInitialData`, then a
+// watch page whose `#movie_player` holds a playing video — offline.
+export const YOUTUBE_FIXTURE_SONG = { id: 'fixtureSng1', title: 'Fixture Song', channel: 'Fixture Band' }
+
+/** A minute of silence as 8 kHz mono 8-bit WAV: something the element really plays, its time really moving. */
+function silentWav(seconds: number): Buffer {
+  const rate = 8_000
+  const samples = rate * seconds
+  const header = Buffer.alloc(44)
+  header.write('RIFF', 0)
+  header.writeUInt32LE(36 + samples, 4)
+  header.write('WAVE', 8)
+  header.write('fmt ', 12)
+  header.writeUInt32LE(16, 16)
+  header.writeUInt16LE(1, 20)
+  header.writeUInt16LE(1, 22)
+  header.writeUInt32LE(rate, 24)
+  header.writeUInt32LE(rate, 28)
+  header.writeUInt16LE(1, 32)
+  header.writeUInt16LE(8, 34)
+  header.write('data', 36)
+  header.writeUInt32LE(samples, 40)
+  return Buffer.concat([header, Buffer.alloc(samples, 0x80)])
+}
+
+function youtubeResultsPage(): string {
+  const { id, title } = YOUTUBE_FIXTURE_SONG
+  const data = {
+    contents: {
+      twoColumnSearchResultsRenderer: {
+        primaryContents: {
+          sectionListRenderer: {
+            contents: [{ itemSectionRenderer: { contents: [{ videoRenderer: { videoId: id, title: { runs: [{ text: title }] }, navigationEndpoint: { watchEndpoint: { videoId: id } } } }] } }],
+          },
+        },
+      },
+    },
+  }
+  return `<!doctype html><html><head><title>results - YouTube</title><script>window.ytInitialData = ${JSON.stringify(data)}</script></head><body style="background:#222;color:#fff"><h1>results</h1></body></html>`
+}
+
+function youtubeWatchPage(): string {
+  const { title, channel } = YOUTUBE_FIXTURE_SONG
+  return `<!doctype html><html><head><title>${title} - YouTube</title></head>
+<body style="background:#222;color:#fff">
+  <div id="movie_player"><video src="/youtube-fixture/song.wav" autoplay></video></div>
+  <script>
+    const player = document.getElementById('movie_player')
+    const video = player.querySelector('video')
+    player.getVideoData = () => ({ title: ${JSON.stringify(title)}, author: ${JSON.stringify(channel)} })
+    player.pauseVideo = () => video.pause()
+    player.setVolume = () => {}
+    player.mute = () => {}
+    player.unMute = () => {}
+  </script>
+</body></html>`
+}
+
 export interface FixtureServer {
   url(path: string): string
   /**
@@ -1285,6 +1345,31 @@ export async function startFixtureServer(): Promise<FixtureServer> {
     if (req.url === '/landing/held-image') {
       res.writeHead(200, { 'Content-Type': 'image/png' })
       held.add(res)
+      return
+    }
+    if (req.url === '/youtube-fixture/song.wav') {
+      // Served in ranges, as a real host does: without them Chromium takes the file for a stream of no known length.
+      const wav = silentWav(60)
+      const range = /^bytes=(\d+)-(\d*)$/.exec(req.headers.range ?? '')
+      if (range === null) {
+        res.writeHead(200, { 'Content-Type': 'audio/wav', 'Content-Length': wav.length, 'Accept-Ranges': 'bytes' })
+        res.end(wav)
+        return
+      }
+      const start = Number(range[1])
+      const end = range[2] ? Math.min(Number(range[2]), wav.length - 1) : wav.length - 1
+      res.writeHead(206, { 'Content-Type': 'audio/wav', 'Content-Length': end - start + 1, 'Content-Range': `bytes ${start}-${end}/${wav.length}`, 'Accept-Ranges': 'bytes' })
+      res.end(wav.subarray(start, end + 1))
+      return
+    }
+    if (req.url?.startsWith('/results?search_query=')) {
+      res.writeHead(200, { 'Content-Type': 'text/html' })
+      res.end(youtubeResultsPage())
+      return
+    }
+    if (req.url?.startsWith('/watch?v=')) {
+      res.writeHead(200, { 'Content-Type': 'text/html' })
+      res.end(youtubeWatchPage())
       return
     }
     res.writeHead(200, { 'Content-Type': 'text/html' })

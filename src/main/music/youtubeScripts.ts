@@ -25,7 +25,21 @@ export interface WatchStatus {
   readonly ad: boolean
   /** An end heard since the last read: whose, and whether it was an ad's. */
   readonly ended: { readonly id: string | null; readonly ad: boolean } | null
+  /** The channel, as the player names it; '' when it does not (#344). */
+  readonly channel: string
+  /** The element's playing time and length (s); the length null while unknown. */
+  readonly elapsed: number
+  readonly duration: number | null
+  readonly paused: boolean
+  readonly loop: boolean
+  /** 0–100. */
+  readonly volume: number
+  /** YouTube's own idle prompt, "Video paused. Continue watching?", is up (#344). */
+  readonly prompt: boolean
 }
+
+/** Finds YouTube's "Continue watching?" dialog on the screen: `continuePrompt()`, null when it is not up. */
+const PROMPT_FINDER = `const continuePrompt = () => Array.from(document.querySelectorAll('yt-confirm-dialog-renderer')).find((dialog) => dialog.getClientRects().length > 0 && /continue watching/i.test(dialog.textContent || '')) || null`
 
 /** How long before a song's end it is paused (s): `timeupdate` comes about every quarter second. */
 const END_LEAD_S = 1
@@ -79,6 +93,7 @@ export const WATCH_SCRIPT = `(() => {
   window.__bingbongPlayer.ended = null
   const data = player && typeof player.getVideoData === 'function' ? player.getVideoData() : null
   const errorNode = player ? player.querySelector('.ytp-error') : null
+  ${PROMPT_FINDER}
   return {
     watch: location.pathname === '/watch',
     id: videoId(),
@@ -87,7 +102,32 @@ export const WATCH_SCRIPT = `(() => {
     error: errorNode !== null && errorNode.getClientRects().length > 0,
     ad: player ? player.classList.contains('ad-showing') : false,
     ended,
+    channel: (data && data.author) || '',
+    elapsed: video ? video.currentTime : 0,
+    duration: video && isFinite(video.duration) ? video.duration : null,
+    paused: video ? video.paused : true,
+    loop: video ? video.loop : false,
+    volume: video ? Math.round(video.volume * 100) : 0,
+    prompt: continuePrompt() !== null,
   }
+})()`
+
+/**
+ * Answers YouTube's own idle prompt (#344): after hours of play it pauses
+ * the video with "Video paused. Continue watching?" — its Yes is clicked,
+ * and the video played in case the click alone does not. Whether the
+ * prompt was there to answer.
+ */
+export const CONTINUE_SCRIPT = `(() => {
+  /* YT_CONTINUE */
+  ${PROMPT_FINDER}
+  const prompt = continuePrompt()
+  if (prompt === null) return false
+  const yes = prompt.querySelector('#confirm-button button, #confirm-button')
+  if (yes) yes.click()
+  const video = document.querySelector('#movie_player video')
+  if (video && video.paused) video.play().catch(() => {})
+  return true
 })()`
 
 /** What a control does to the element. */
@@ -98,8 +138,10 @@ export type ElementOp =
   | { readonly op: 'pauseIfPlaying' }
   | { readonly op: 'loop'; readonly on: boolean }
   | { readonly op: 'restart' }
-  /** Volume to this, 0–100. */
-  | { readonly op: 'volume'; readonly to: number }
+  /** Volume to this, 0–100 — the element heard at `heard` instead while ducked (#344). */
+  | { readonly op: 'volume'; readonly to: number; readonly heard?: number }
+  /** The element's volume alone, 0–100, YouTube's remembered volume left as it is: the duck and its restore (#344). */
+  | { readonly op: 'level'; readonly to: number }
   /** Volume by this much, -100–100. */
   | { readonly op: 'nudge'; readonly by: number }
   | { readonly op: 'mute'; readonly on: boolean }
@@ -140,7 +182,11 @@ export function controlScript(op: ElementOp): string {
     case 'pauseIfPlaying': changed = !video.paused; if (changed) video.pause(); break
     case 'loop': video.loop = op.on; break
     case 'restart': video.currentTime = 0; video.play().catch(() => {}); break
-    case 'volume': setVolume(op.to); break
+    case 'volume':
+      setVolume(op.to)
+      if (op.heard !== undefined) video.volume = op.heard / 100
+      break
+    case 'level': video.volume = Math.max(0, Math.min(100, op.to)) / 100; break
     case 'nudge': setVolume(video.volume * 100 + op.by); break
     case 'mute':
       video.muted = op.on

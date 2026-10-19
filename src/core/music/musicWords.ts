@@ -20,6 +20,8 @@ export type MusicAction =
   | { readonly kind: 'louder' }
   | { readonly kind: 'quieter' }
   | { readonly kind: 'mute'; readonly on: boolean }
+  /** Wake the dashboard on the watch page (#344): the one music line that does not keep the Idle Screen up. */
+  | { readonly kind: 'show' }
 
 /** A music line: the action, and a search's words as spoken (edge punctuation off). */
 export interface MusicLine {
@@ -66,6 +68,9 @@ const WHOLE_LINES: Readonly<Record<string, MusicAction>> = {
   'volume down': { kind: 'quieter' },
   mute: { kind: 'mute', on: true },
   unmute: { kind: 'mute', on: false },
+  'show the video': { kind: 'show' },
+  'show me the video': { kind: 'show' },
+  'show it': { kind: 'show' },
 }
 
 /**

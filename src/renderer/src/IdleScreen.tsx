@@ -5,6 +5,8 @@ import { temperatureHue, type WeatherDay, type WeatherHour, type WeatherReport }
 import type { WeatherUnits } from '../../core/settings/settings'
 import { countdownLabel, describeDuration } from '../../core/timer/duration'
 import type { TimerState } from '../../core/timer/timer'
+import type { NowPlaying } from '../../core/music/nowPlaying'
+import { NowPlayingCard } from './NowPlayingCard'
 import type { CalendarEvent } from '../../core/calendar/calendar'
 import { monthGrid, upNext, weekStartOf, type UpNext } from '../../core/calendar/month'
 import { nextHoliday, ukBankHolidays } from '../../core/calendar/ukBankHolidays'
@@ -432,8 +434,8 @@ function TimerCard({ timer }: { timer: Exclude<TimerState, { status: 'off' }> })
 /**
  * The at-rest screen (T11): the smart-display half of the appliance. Clock
  * and date, the weather with today's range and the coming hours beside the
- * AI Usage and the Calendar's month, the Timer and the next event
- * when one is set, and the Last Page with its way back — never a Feed
+ * AI Usage and the Calendar's month, the Timer, the next event and
+ * Now Playing when there is one, and the Last Page with its way back — never a Feed
  * Entry (#70). Mounts in place
  * of the whole dashboard while nothing is happening — App's gate keeps it
  * off the screen over a running Command, an open mic or the settings page
@@ -493,6 +495,7 @@ export function IdleScreen({
   usagePrefs,
   lastPage,
   timer,
+  nowPlaying,
   status,
   hint,
 }: {
@@ -501,6 +504,7 @@ export function IdleScreen({
   usagePrefs: UsagePrefs
   lastPage: LastPage | null
   timer: TimerState
+  nowPlaying: NowPlaying | null
   status: OrbStatus
   hint: VoiceHint | null
 }) {
@@ -550,6 +554,7 @@ export function IdleScreen({
       </div>
       <div className="idle-screen-bottom">
         {timer.status !== 'off' ? <TimerCard timer={timer} /> : null}
+        <NowPlayingCard nowPlaying={nowPlaying} timer={timer} />
         {next !== null ? <UpNextCard next={next} now={now} /> : null}
         {lastPage !== null ? <LastPageCard page={lastPage} /> : null}
       </div>

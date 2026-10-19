@@ -60,6 +60,9 @@ import { createAlarmWav } from '../core/timer/alarm'
 import { createTimer } from '../core/timer/timer'
 import { registerTimerIpc } from './timer/attachTimer'
 import { attachPlayer } from './music/attachPlayer'
+import { attachNowPlayingToWindow, registerNowPlayingIpc } from './music/nowPlayingIpc'
+import { YOUTUBE_FIXTURE_ENV, routeYouTubeToFixture } from './music/youtubeFixture'
+import { createDucking } from '../core/music/ducking'
 import { registerUsageIpc } from './usage/attachUsage'
 import { registerCalendarIpc } from './calendar/attachCalendar'
 import { attachTimerAlarm } from './timer/timerAlarm'
@@ -329,8 +332,12 @@ async function createWindow(): Promise<BrowserWindow> {
   )
   const controller: BrowserController & VisualGroundingController = paneCustody.controller
   // The Player (#343): YouTube in the pane is the player, the queue and the verbs live here.
+  const youtubeFixture = process.env[YOUTUBE_FIXTURE_ENV]
+  if (youtubeFixture) routeYouTubeToFixture(pane.session, youtubeFixture)
   const music = attachPlayer(controller, pane.session)
   win.on('closed', music.stop)
+  // Now Playing (#344): the Idle Screen's card follows the Player.
+  win.on('closed', attachNowPlayingToWindow(win, music.player))
 
   const downloadsDir = resolveDownloadsDir(process.env, app.getPath('downloads'))
   // Spoken output (T8), wrapped in a speaking gate (T9): download
@@ -345,6 +352,10 @@ async function createWindow(): Promise<BrowserWindow> {
       prefetch: true,
     }),
   )
+  // Ducking (#344): the music drops under the ear, a spoken line and a ringing Timer.
+  const ducking = createDucking((on) => void music.player.duck(on))
+  win.on('closed', speakingGate.onSpeakingChange((speaking) => ducking.hold('speech', speaking)))
+  win.on('closed', timer.onChange((state) => ducking.hold('ring', state.status === 'ringing')))
   attachDownloadRouter(pane.session, {
     dir: downloadsDir,
     tts: speakingGate.tts,
@@ -452,6 +463,7 @@ async function createWindow(): Promise<BrowserWindow> {
     // and the speaking gate — the mic takes no Utterance while a line plays.
     getHotListenSilenceMs: () => settingsStore.get().hotListenSilenceMs,
     speaking: speakingGate,
+    ducking,
     publisher: eventPublisher,
     tracer: perfTracer,
     dumper: utteranceDumper,
@@ -470,6 +482,7 @@ app.whenReady().then(async () => {
   registerBrowserIpc()
   registerLastPageIpc(lastPageStore)
   registerTimerIpc(timer)
+  registerNowPlayingIpc()
   // The Calendar (CONTEXT.md): no provider is wired yet, so it shows the
   // month alone; a Google or Outlook source joins this list.
   registerCalendarIpc([])

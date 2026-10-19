@@ -1,6 +1,7 @@
 import type { BrowserPaneState, PaneRect } from '../core/browser/paneState'
 import type { LastPage } from '../core/browser/lastPage'
 import type { TimerState } from '../core/timer/timer'
+import type { NowPlaying } from '../core/music/nowPlaying'
 import type { UsageSnapshot } from '../core/usage/usage'
 import type { CalendarEvent, CalendarRange } from '../core/calendar/calendar'
 import type { PipelineEvent } from '../core/pipeline/events'
@@ -12,6 +13,7 @@ import type { FeedPanelMode, FeedPanelState } from '../core/panel/feedPanelState
 export type { BrowserPaneState, PaneRect }
 export type { LastPage }
 export type { TimerState }
+export type { NowPlaying }
 export type { UsageSnapshot }
 export type { CalendarEvent, CalendarRange }
 export type { PipelineEvent }
@@ -44,6 +46,12 @@ export interface BingbongTimerApi {
   /** The Timer (CONTEXT.md): off, running to `endsAt`, or ringing. */
   get(): Promise<TimerState>
   onChange(listener: (state: TimerState) => void): () => void
+}
+
+export interface BingbongMusicApi {
+  /** The Player's Now Playing (#344); null when it holds no song. */
+  get(): Promise<NowPlaying | null>
+  onChange(listener: (nowPlaying: NowPlaying | null) => void): () => void
 }
 
 export interface BingbongUsageApi {
@@ -127,6 +135,7 @@ export interface BingbongApi {
   browser: BingbongBrowserApi
   idle: BingbongIdleApi
   timer: BingbongTimerApi
+  music: BingbongMusicApi
   usage: BingbongUsageApi
   calendar: BingbongCalendarApi
   assistant: BingbongAssistantApi

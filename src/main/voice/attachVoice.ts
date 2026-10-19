@@ -11,6 +11,7 @@ import { createVoiceSession, type VoiceSession, type VoiceWakeDeps } from '../..
 import { runCommand, runnerFor } from '../run/attachCommandRunner'
 import type { WindowEventPublisher } from '../session/windowEventPublisher'
 import { reportFault } from '../../core/trace/fault'
+import type { Ducking } from '../../core/music/ducking'
 
 // IPC glue for the ears (T9): the renderer's worklet streams 16 kHz mono PCM
 // here, the voice session (seam-tested in core) endpoints and transcribes it,
@@ -60,11 +61,16 @@ export function attachVoiceToWindow(win: BrowserWindow, deps: AttachVoiceDeps): 
     tracer: deps.tracer,
     dumper: deps.dumper,
     // The Command's Task (#328): the Hot Listen's silence clock restarts when it ends.
-    onSubmitCommand: (text, submitted) => runCommand(win, text, { ...submitted, source: 'spoken' }),
+    onSubmitCommand: (text, submitted) => {
+      // The Utterance ended: the music comes back before its Command runs (#344).
+      deps.ducking?.utteranceEnded()
+      return runCommand(win, text, { ...submitted, source: 'spoken' })
+    },
     // Speech started (#324): the page's refs are collected while the user
     // speaks — and the page, once collected, names the Page Terms the same
     // speech is decoded under (ADR 0077).
     onSpeechStart: () => {
+      deps.ducking?.speechStarted()
       const page = runnerFor(win)?.prepare()
       if (page !== undefined && deps.onPagePrepared !== undefined) void page.then((snapshot) => deps.onPagePrepared?.(snapshot))
     },
@@ -73,10 +79,14 @@ export function attachVoiceToWindow(win: BrowserWindow, deps: AttachVoiceDeps): 
       // Early Fire (#326): the words so far may already be the whole Command.
       if (text !== '') void runnerFor(win)?.consider(text).catch((error: unknown) => reportFault('voice.attachVoice.consider', error))
     },
-    onUtteranceDropped: () => runnerFor(win)?.dropPartials(),
+    onUtteranceDropped: () => {
+      deps.ducking?.utteranceEnded()
+      runnerFor(win)?.dropPartials()
+    },
     getRunState: () => runnerFor(win)?.getState() ?? 'idle',
     onAbort: () => runnerFor(win)?.abort(),
     onStateChange: (state: VoiceState) => {
+      deps.ducking?.voiceState(state)
       deps.publisher.publish({ source: 'voice-state', state })
     },
     onHeard: (heard) => {
@@ -109,6 +119,8 @@ export interface AttachVoiceDeps {
   getHotListenSilenceMs?(): number
   /** The speaking gate (#326): the mic takes no Utterance while a line plays. */
   speaking?: TtsIdle
+  /** Ducking (#344): told when the ear opens, speech starts and the Utterance ends; absent leaves the music be. */
+  ducking?: Ducking
   /** Always-on perf tracer (#27); absent keeps the session uninstrumented. */
   tracer?: PerfTracer
   /** Opt-in utterance audio dumps (#34); absent keeps the session dump-free. */

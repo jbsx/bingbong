@@ -26,6 +26,7 @@ export function videoItem(id: string, title: string): unknown {
 /** A watch page: the song it plays, or how it fails — the player's error, or no watch page at all (a sign-in wall). */
 export interface ScriptedWatch {
   readonly title: string
+  readonly channel?: string
   readonly fails?: 'error' | 'notWatch'
 }
 
@@ -37,8 +38,14 @@ export class ScriptedYouTube {
   /** Every control the element took, in order. */
   readonly controls: ElementOp[] = []
   readonly fetched: string[] = []
-  element = { paused: false, loop: false, volume: 100, muted: false }
+  element = { paused: false, loop: false, volume: 100, muted: false, currentTime: 0, duration: 180 }
+  /** The volume YouTube's player remembers: what `setVolume` told it, never the duck's floor. */
+  playerVolume = 100
   adShowing = false
+  /** YouTube's "Continue watching?" prompt is up. */
+  continuePrompt = false
+  /** How often the prompt was answered Yes. */
+  continued = 0
   private ended: { id: string | null; ad: boolean } | null = null
 
   constructor(private readonly browser: FakeBrowser) {
@@ -74,13 +81,14 @@ export class ScriptedYouTube {
     const url = this.browser.state().url ?? ''
     if (url !== this.shownUrl) {
       this.shownUrl = url
-      this.element = { ...this.element, paused: false, loop: false }
+      this.element = { ...this.element, paused: false, loop: false, volume: this.playerVolume }
     }
     if (expression.includes('/* YT_RESULTS */')) {
       const data = URL.canParse(url) ? this.results.get(new URL(url).searchParams.get('search_query') ?? '') : undefined
       return data === undefined ? null : JSON.stringify(data)
     }
     if (expression.includes('/* YT_WATCH */')) return this.watchStatus()
+    if (expression.includes('/* YT_CONTINUE */')) return this.answerPrompt()
     if (expression.includes('/* YT_CONTROL */')) return this.control(JSON.parse(/\}\)\((.*)\)$/s.exec(expression)![1]!) as ElementOp)
     return undefined
   }
@@ -90,8 +98,18 @@ export class ScriptedYouTube {
     const watch = id === null ? undefined : this.watches.get(id)
     const ended = this.ended
     this.ended = null
-    if (watch?.fails === 'notWatch' || id === null) return { watch: false, id: null, title: 'Sign in', hasVideo: false, error: false, ad: false, ended: null }
-    return { watch: true, id, title: watch?.title ?? '', hasVideo: watch !== undefined, error: watch?.fails === 'error', ad: this.adShowing, ended }
+    const element = this.element
+    const playing = { elapsed: element.currentTime, duration: element.duration, paused: element.paused, loop: element.loop, volume: element.volume, prompt: this.continuePrompt }
+    if (watch?.fails === 'notWatch' || id === null) return { watch: false, id: null, title: 'Sign in', hasVideo: false, error: false, ad: false, ended: null, channel: '', ...playing }
+    return { watch: true, id, title: watch?.title ?? '', hasVideo: watch !== undefined, error: watch?.fails === 'error', ad: this.adShowing, ended, channel: watch?.channel ?? '', ...playing }
+  }
+
+  private answerPrompt(): boolean {
+    if (!this.continuePrompt) return false
+    this.continuePrompt = false
+    this.continued += 1
+    this.element = { ...this.element, paused: false }
+    return true
   }
 
   private control(op: ElementOp): ElementState {
@@ -117,15 +135,21 @@ export class ScriptedYouTube {
         this.element = { ...element, loop: op.on }
         break
       case 'volume':
+        this.playerVolume = op.to
+        this.element = { ...element, volume: op.heard ?? op.to }
+        break
+      case 'level':
         this.element = { ...element, volume: op.to }
         break
       case 'nudge':
-        this.element = { ...element, volume: Math.max(0, Math.min(100, element.volume + op.by)) }
+        this.playerVolume = Math.max(0, Math.min(100, element.volume + op.by))
+        this.element = { ...element, volume: this.playerVolume }
         break
       case 'mute':
         this.element = { ...element, muted: op.on }
         break
     }
-    return { found: true, changed, title: watch.title, ...this.element }
+    const { paused, loop, volume, muted } = this.element
+    return { found: true, changed, title: watch.title, paused, loop, volume, muted }
   }
 }

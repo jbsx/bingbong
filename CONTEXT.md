@@ -57,6 +57,17 @@ _Avoid_: silence detection
 Cutting speech in flight by activating (wake word or hotkey), not by arbitrary
 speech. The Abort Head is the one bare-speech exception.
 
+**Ducking**:
+The music dropping under the voice (#344): while the ear is open — from a
+wake, a push-to-talk or a Hot Listen's next speech until that Utterance
+ends, its Command fired or the line dropped — while a line is spoken and
+while the Timer rings, main sets the playing video's volume to 15 % of
+what it was, low but never silent, and puts it back when the last of them
+lets go. YouTube's own remembered volume is never told the floor, and a
+`volume` verb spoken meanwhile sets the volume put back. The system's
+volume is never touched, and the music is never paused for it.
+_Avoid_: muting, auto-pause
+
 **Abort Head**:
 The always-on recognizer for "stop now" — the one bare-speech activation path.
 Halts whatever the app is doing: speech in flight, or a Command whose action
@@ -370,7 +381,8 @@ the six coming hours, all in the city's own clock — the sky as a colored
 glyph, every temperature in its hue from blue through green to red, rain in
 blue, so the day reads from across the room), the AI Usage card and the
 Calendar beside the weather, the Timer when one is set, today's next event when the
-Calendar has one, and the Last Page with its way back. It is laid out for
+Calendar has one, Now Playing while the Player holds a song, and the Last
+Page with its way back. It is laid out for
 the appliance's 21-inch 1920×1080 display (owner, 2026-10-19), to be read
 from a couple of metres away (owner, 2026-10-19: "the components are too
 small"): the three cards fill the height between the clock and the bottom
@@ -380,14 +392,29 @@ smaller window shows the same layout scaled down to fit. Never shows Feed Entrie
 Command, an open mic or the settings page. Once up it stays up through the
 voice half and the pipeline — the ear opening, a heard line, a reading —
 with the Status Capsule shown on it while they run, so a Command that never
-needs the pane (the Timer, a Stop, `done`, a line read as no Command) is
-heard and performed over it. Input, or a Command that acts on the pane,
+needs the pane (the Timer, a Stop, `done`, a line read as no Command, and
+every Player verb, `play <words>` included — #344) is heard and performed
+over it: a song is searched for and played in the hidden pane, and the
+music plays on there. Input, a Command that acts on the pane, or "show the
+video" / "show it" (the one music line that wakes it, onto the watch page)
 unmounts it; the browser pane is only hidden beneath it, never reset. A
 printable key typed on it starts a line in the Prompt Bar: the Feed panel
 opens if collapsed and the key is the draft's first character. The
 2026-10-18 ruling put the Last Page on it — the one piece of history the
 screen carries, and the owner's reversal of #70's "clock and weather only".
 _Avoid_: screensaver
+
+**Now Playing**:
+The Idle Screen's card of the song the Player holds (#344), beside the
+Timer and the Last Page: its thumbnail, title and channel, a progress bar
+with the time played and the length, a loop glyph while it loops, a pause
+glyph while paused, and the next three queued titles. It follows the
+Player's once-a-second read, so nothing new crosses CDP for it. A song that
+ran out with nothing queued stays on it, shown ended, and `play` plays it
+again from the start. A tap pauses or plays it, on the pointer going down
+like the other idle controls, and unlike them leaves the Idle Screen up. A
+ringing Timer takes its place.
+_Avoid_: mini player, media card
 
 **AI Usage**:
 The Idle Screen's card of AI providers' limits, read from the owner's
@@ -490,6 +517,10 @@ song ends and the Player stops. A landing that is not a watch page fails
 the Command, and the Player moves to the next queued song. `stop` with
 nothing in flight pauses the music, as it silences a ringing Timer. With a
 Command in flight, `stop` is still the abort and the music plays on.
+YouTube's own "Video paused. Continue watching?" after hours of play is a
+pause the Player did not make: the read sees the prompt and clicks Yes,
+and Now Playing never shows it paused. "show the video" / "show it" brings
+the dashboard up over the watch page (#344).
 `play` is the grammar's alone, as `timer` is: Jev is never offered it, and
 no partial fires it early. "click play" and "press play" stay the page's
 button. `back` stays history and `resume` the Task's.

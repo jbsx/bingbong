@@ -4,6 +4,8 @@ import { stripMarkdownForSpeech } from './stripMarkdownForSpeech'
 export interface SpeakingGate extends TtsIdle {
   /** The wrapped speaker — hand this to the pipeline instead of the raw one. */
   tts: TtsSpeaker
+  /** Hears speaking start (the first line) and stop (the last one settled): the music ducks under it (#344). */
+  onSpeakingChange(listener: (speaking: boolean) => void): () => void
 }
 
 /**
@@ -18,10 +20,16 @@ export interface SpeakingGate extends TtsIdle {
 export function createSpeakingGate(inner: TtsSpeaker): SpeakingGate {
   let outstanding = 0
   let idleListeners: (() => void)[] = []
+  const changeListeners = new Set<(speaking: boolean) => void>()
+
+  function changed(speaking: boolean): void {
+    for (const listener of [...changeListeners]) listener(speaking)
+  }
 
   function settled(): void {
     outstanding -= 1
     if (outstanding > 0) return
+    changed(false)
     const listeners = idleListeners
     idleListeners = []
     for (const listener of listeners) listener()
@@ -30,6 +38,7 @@ export function createSpeakingGate(inner: TtsSpeaker): SpeakingGate {
   const tts: TtsSpeaker = {
     speak: (text, options) => {
       outstanding += 1
+      if (outstanding === 1) changed(true)
       return inner.speak(stripMarkdownForSpeech(text), options).then(
         (outcome) => {
           settled()
@@ -47,6 +56,10 @@ export function createSpeakingGate(inner: TtsSpeaker): SpeakingGate {
   return {
     tts,
     isSpeaking: () => outstanding > 0,
+    onSpeakingChange(listener) {
+      changeListeners.add(listener)
+      return () => changeListeners.delete(listener)
+    },
     waitIdle: () =>
       outstanding === 0
         ? Promise.resolve()
