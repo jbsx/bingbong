@@ -161,7 +161,9 @@ export interface BrowserController {
   /**
    * The page's refs as data, those numbers shown (ADR 0033): what a
    * Command is read against (#324). Collected at speech start so the list
-   * is in hand at the Endpoint; the click that follows is not refused.
+   * is in hand at the Endpoint; the click that follows is not refused. A
+   * Tier-1 consent wall open over the page is dismissed first, as on a
+   * landing (ADR 0061), so no reading is asked over one.
    */
   collectPage(): Promise<PageSnapshot>
   /** Clear the focused editable element (#324): the `clear` verb. Answers what was cleared. */

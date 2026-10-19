@@ -1,6 +1,7 @@
 import type { DecisionChoiceAnswer, DecisionChoiceQuestion, DecisionNoulQuestion } from '../ports/decisionModel'
 import type { PageLink } from '../browser/snapshot'
 import { JEV_VERBS, PRESS_KEYS, describeCommand, pressKeyOf, targetLabel, verbTakesSlot, verbTakesTarget, type Command, type CommandPage, type CommandRef, type CommandVerb } from './command'
+import { dialogControls, type DismissChoice } from './dismissDialog'
 import { isSearchLanding, pageAddressOf, resultLinksOf, resultRefsOf, wordsAfterVerb } from './localMatch'
 import { isAddressShaped } from './openAddress'
 import { isWebEngineSearch, siteOf } from './siteScope'
@@ -358,15 +359,50 @@ function outcomeQuestion(): DecisionChoiceQuestion {
   }
 }
 
-/** A hop's questions: the Command's, and the Verdict. */
-export type HopQuestions = CommandQuestions & { readonly outcome: DecisionChoiceQuestion }
-
-export function hopQuestions(text: string, pageRead: CommandPage, hop: HopContext): HopQuestions {
-  return { ...commandQuestions(text, pageRead, hop), outcome: outcomeQuestion() }
+/**
+ * The dismiss Choice (#354, owner's rule 2026-10-19): with a pop-up open,
+ * which of its controls closes it. Every control of the dialog's layer that
+ * a dismissal may click is offered — the widest net, no label list deciding
+ * — beside `escape`, with the instructions saying what a close is and what
+ * is a way through instead. Asked beside the Verdict in the same call, so
+ * a Step Aside costs no second ask; the runner's Dismissal Ladder puts the
+ * answer after the consent policy and before the label rung.
+ */
+function dismissQuestion(page: CommandPage): DecisionChoiceQuestion | null {
+  if (page.dialog === undefined) return null
+  const controls = dialogControls(page)
+  if (controls.length === 0) return null
+  return {
+    type: 'choice',
+    instructions:
+      'A pop-up covers the page. Which control closes it and leaves the page behind as it was: a close, dismiss, not now, skip, reject or decline control, or an X? Never one that goes through it: sign in, sign up, subscribe, accept, agree, allow, install. Choose escape when no control closes it and the Escape key should be tried.',
+    options: {
+      escape: 'no control closes it: press the Escape key',
+      ...Object.fromEntries(controls.map((ref) => [`ref-${ref.ref}`, describeRef(ref)])),
+    },
+  }
 }
 
-/** The answers to {@link HopQuestions}: the Command's, and the Verdict's. */
-export type HopAnswers = CommandAnswers & { readonly outcome: DecisionChoiceAnswer }
+/** A hop's questions: the Command's, the Verdict and, with a pop-up open, the dismiss Choice. */
+export type HopQuestions = CommandQuestions & { readonly outcome: DecisionChoiceQuestion; readonly dismiss?: DecisionChoiceQuestion }
+
+export function hopQuestions(text: string, pageRead: CommandPage, hop: HopContext): HopQuestions {
+  const dismiss = dismissQuestion(pageRead)
+  return { ...commandQuestions(text, pageRead, hop), outcome: outcomeQuestion(), ...(dismiss !== null ? { dismiss } : {}) }
+}
+
+/** The answers to {@link HopQuestions}: the Command's, the Verdict's and, when asked, the dismiss Choice's. */
+export type HopAnswers = CommandAnswers & { readonly outcome: DecisionChoiceAnswer; readonly dismiss?: DecisionChoiceAnswer }
+
+/** How Jev answered the dismiss Choice: a dialog control by ref, or Escape, with its confidence. Null when it was not asked, or names nothing offered. */
+export function readDismissChoice(answers: CommandAnswers | HopAnswers, page: CommandPage): DismissChoice | null {
+  if (!('dismiss' in answers) || answers.dismiss === undefined) return null
+  const { choice, confidence } = answers.dismiss
+  if (choice === 'escape') return { choice: 'escape', confidence }
+  const match = /^ref-(\d+)$/.exec(choice)
+  const ref = match === null ? NaN : Number(match[1])
+  return dialogControls(page).some((control) => control.ref === ref) ? { choice: { ref }, confidence } : null
+}
 
 /** The Verdict a hop's answers carry; null when none was asked, or the answer names no outcome. */
 export function readVerdict(answers: CommandAnswers | HopAnswers): Verdict | null {

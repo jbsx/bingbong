@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { DecisionChoiceAnswer } from '../ports/decisionModel'
 import type { CommandPage } from './command'
-import { commandQuestions, commandState, doneFacts, doneLine, hopQuestions, readCommandAnswers, readVerdict, slotSpans } from './jevReading'
+import { commandQuestions, commandState, doneFacts, doneLine, hopQuestions, readCommandAnswers, readDismissChoice, readVerdict, slotSpans } from './jevReading'
 
 // One Jev call per Command the Local Match cannot settle (#324, ADR
 // 0076): the state is the transcript, the page's address and title and
@@ -484,6 +484,32 @@ describe('the Verdict: a hop is asked whether what was asked for is done', () =>
     expect(Object.keys(questions.outcome.options)).toEqual(['yes', 'in_the_way', 'not_yet'])
     expect(questions.outcome.instructions).toContain('if a pop-up, sign-in prompt, cookie notice or challenge covers the page now, choose in_the_way')
     expect(questions.outcome.instructions).toContain('the action they asked for has happened')
+  })
+
+  it('asks the dismiss Choice over a pop-up (#354): escape and every dialog control a dismissal may click, with what a close is and what is a way through', () => {
+    const covered = {
+      ...PROFILE,
+      refs: [
+        ...PROFILE.refs,
+        { ref: 7, kind: 'link' as const, label: 'Log in', href: 'https://x.com/login', inputType: null },
+        { ref: 8, kind: 'button' as const, label: 'Sign in', href: null, inputType: null },
+        { ref: 9, kind: 'button' as const, label: 'Close', href: null, inputType: null },
+        { ref: 10, kind: 'button' as const, label: 'Not now', href: null, inputType: null },
+      ],
+      dialog: { text: 'Don’t miss what’s happening', refs: [7, 8, 9, 10] },
+    }
+    const questions = hopQuestions('open elon musks latest tweet', covered, hop)
+    expect(Object.keys(questions)).toEqual(['verb', 'target', 'slot', 'where', 'outcome', 'dismiss'])
+    expect(Object.keys(questions.dismiss!.options)).toEqual(['escape', 'ref-9', 'ref-10'])
+    expect(questions.dismiss!.instructions).toContain('Which control closes it and leaves the page behind as it was')
+    expect(questions.dismiss!.instructions).toContain('Never one that goes through it: sign in, sign up, subscribe, accept, agree, allow, install')
+    expect(hopQuestions('open elon musks latest tweet', PROFILE, hop).dismiss).toBeUndefined()
+    // Only a way through, or links: nothing to offer beside Escape, so nothing is asked.
+    expect(hopQuestions('open elon musks latest tweet', { ...covered, dialog: { text: 'Join', refs: [7, 8] } }, hop).dismiss).toBeUndefined()
+    expect(readDismissChoice({ ...three, outcome: answer('in_the_way'), dismiss: answer('ref-10', 0.8) }, covered)).toEqual({ choice: { ref: 10 }, confidence: 0.8 })
+    expect(readDismissChoice({ ...three, outcome: answer('in_the_way'), dismiss: answer('escape', 0.6) }, covered)).toEqual({ choice: 'escape', confidence: 0.6 })
+    expect(readDismissChoice({ ...three, outcome: answer('in_the_way'), dismiss: answer('ref-8', 0.9) }, covered)).toBeNull()
+    expect(readDismissChoice({ ...three, outcome: answer('in_the_way') }, covered)).toBeNull()
   })
 
   it('asks no outcome at hop 0: a Command is read before anything was done', () => {

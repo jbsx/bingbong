@@ -1012,3 +1012,48 @@ reading, the Task would loop as the #336 grill saw it loop.
   timestamp link (its status address) may reach it; one that clicks
   another post raises the sheet again and ends a hop later than today.
   X stays partly walled until the pane holds a session.
+
+## Amendment 2026-10-19 — the Step Aside walks a Dismissal Ladder, Jev choosing the rung (#354 follow-up)
+
+"Open Donald Trump's truth social profile" (2026-10-19,
+decision-1792446164303) landed on the profile under Truth Social's TCF
+cookie sheet, which drew after the landing had settled. Hop 2's Verdict
+read `in_the_way` 1.0; the Step Aside pressed Escape, because its close
+control was labelled "Close this consent banner Close this consent banner"
+and the dismissal matched a close only by a whole label of close, dismiss,
+not now, cancel or no thanks. The sheet ignores Escape; the Task ended
+`wall` with "The pop-up is still open." — over a dialog whose Reject
+Non-Essential and Close buttons were both on the page. The owner's ruling:
+always cast the widest net for Jev to pick the best option; no more edge
+cases from hand lists.
+
+- **The dismiss Choice.** A hop read over an open dialog asks Jev one
+  question more, in the same call as the verb and the Verdict: which
+  control closes the pop-up and leaves the page as it was. Every control
+  of the dialog's layer a dismissal may click is offered — a button that
+  is no link, no field and no way through (sign in, sign up, subscribe,
+  accept, agree, allow, install…) — beside `escape`. The record keeps
+  the answer (`jev.confidence.dismiss`, `jev.probabilities.dismiss`).
+- **The Dismissal Ladder.** The Step Aside no longer fires one dismissal:
+  it fires the rungs of a ladder in turn until the dialog closes. The
+  rungs, best first, each once: the consent policy's control (reject
+  first, accept second — the controller's own Tier-1 rule, ADR 0061, now
+  judged in core over the dialog's labels); Jev's choice when sure; a
+  control whose label *begins* as a close does (close, dismiss, cancel,
+  skip, not now, maybe later, no thanks, not interested, continue
+  without, got it, ok, ×…), wherever the label goes on from there; Jev's
+  choice when unsure; Escape. A rung that leaves the dialog open is an
+  action taken ("Done so far" says `click "Close" (nothing changed)`),
+  nothing is said of it, and the next fires. The dismiss phrase (#336)
+  fires the first rung.
+- **The close must still work, and the guards hold.** A dialog still
+  open after the last rung is the wall as before: "The pop-up is still
+  open.", `ended: wall`, said once. Each rung counts toward the five
+  actions, so the ladder stops where the cap would; once per Obstacle
+  stands (the ladder is one Step Aside); no link, field or way-through
+  control is ever a rung, whoever chose it.
+- **A consent wall is cleared where the page is read.** The controller's
+  `collectPage` — what every hop and every Command is read against —
+  dismisses a Tier-1 consent wall first and collects the page behind it,
+  as a landing and a Page Read already did. A cookie sheet that draws
+  late is gone before Jev sees the page, costing no hop and no call.

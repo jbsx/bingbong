@@ -134,12 +134,31 @@ _Avoid_: excluded, blacklisted, retried
 
 **Step Aside**:
 A Hop whose Verdict is a sure "in the way" over a pop-up the Task has not
-met: instead of ending, the runner fires the Dismiss Phrase's Command as
-that Hop (the pop-up's close control, never a link, else Escape) and the
-Task goes on from the page it leaves. No Jev call decides to close. The
-close counts toward the cap; a pop-up still open afterwards is a wall ("The
-pop-up is still open."). The same Obstacle met again is the wall.
+met: instead of ending, the runner fires the Dismissal Ladder's rungs as
+that Hop, one after another until the pop-up closes, and the Task goes on
+from the page it leaves. No second Jev call decides to close: the hop's own
+ask carried the dismiss Choice. Each rung counts toward the cap; a pop-up
+still open after the last rung is a wall ("The pop-up is still open."). The
+same Obstacle met again is the wall.
 _Avoid_: retry, workaround, auto-dismiss, bypass
+
+**Dismissal Ladder**:
+The Commands that may close the pop-up over the page, best first, each
+once, Escape last: the consent policy's control (reject first, accept
+second), the control Jev chose when sure, a control whose label begins as a
+close does (close, dismiss, not now, skip, no thanks, ×…), Jev's choice when
+unsure, Escape. Never a link, a field or a way through (sign in, subscribe,
+accept, agree, install…), whoever chose it. A Dismiss Phrase fires the first
+rung; a Step Aside walks the ladder.
+_Avoid_: close heuristic, fallback chain, label list
+
+**dismiss Choice**:
+The question a Hop read over a pop-up asks Jev beside the verb and the
+Verdict: which control closes the pop-up and leaves the page as it was.
+Every control of the dialog's layer a dismissal may click is offered,
+beside `escape`. Its answer is a rung of the Dismissal Ladder, placed by how
+sure Jev was; the record keeps it.
+_Avoid_: close question, dismissal target
 
 **Obstacle**:
 A pop-up a Task stepped past, known by its text and the labels of its
@@ -152,9 +171,10 @@ page itself is), wall
 Words that close the pop-up covering the page: exit, close, dismiss, get rid
 of, go away, cancel, x or no thanks, alone or with "this", "that", "it", "out
 of this", "the pop-up" or "the dialog". With a dialog open they are settled
-before the Decision Model is asked: the dialog's own close control is clicked
-(never a link), else Escape is pressed, and the Answer is "Closed the
-pop-up.". With no dialog open the same words read as they always did.
+before the Decision Model is asked: the Dismissal Ladder's first rung fires
+(the dialog's own close control, never a link, else Escape), and the Answer
+is "Closed the pop-up.". With no dialog open the same words read as they
+always did.
 _Avoid_: close command, escape phrase
 
 **Command**:

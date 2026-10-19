@@ -1,21 +1,45 @@
-import { PRESS_KEYS, normalizeWords, type Command, type CommandPage } from './command'
+import { chooseConsentDismissal, isConsentDialog } from '../browser/dialogPolicy'
+import { PRESS_KEYS, normalizeWords, type Command, type CommandPage, type CommandRef } from './command'
 
 // The dismiss rule (#336, ADR 0076): a pop-up covering the page is closed
-// by the words that say so. With a dialog open, a dismiss phrase clicks the
-// dialog's own close control, or presses Escape when it has none. It is
-// decided before Jev and settled like the Local Match, and it never
-// navigates: a link is never the close control. With no dialog open the
-// same words read exactly as they always did. A Task that meets a wall
-// over a dialog steps aside with the same dismissal (#354).
+// by the words that say so. With a dialog open, a dismiss phrase fires the
+// first rung of the Dismissal Ladder below; it is decided before Jev and
+// settled like the Local Match, and it never navigates: a link is never
+// the close control. With no dialog open the same words read exactly as
+// they always did. A Task that meets a wall over a dialog steps aside down
+// the same ladder (#354), rung after rung until the dialog closes.
+//
+// The Dismissal Ladder (owner's rule 2026-10-19: the widest net, no hand
+// list of labels deciding alone):
+//   1. a consent wall's reject-style control, else its accept-style one —
+//      the controller's own privacy-first policy (ADR 0061);
+//   2. the control Jev chose when asked which one closes the pop-up, when
+//      it was sure — any button in the dialog's layer that is not a way
+//      through (sign in, subscribe, accept…) and not a link;
+//   3. a button whose label reads as a close (close, dismiss, not now,
+//      skip, no thanks, ×…), wherever the label goes on from there;
+//   4. Jev's choice when it was unsure, under the same guards;
+//   5. Escape.
 
 /** A dismiss phrase: the verb alone, or with what it dismisses. */
 const DISMISS_PHRASE_RE = /^(?:exit|close|dismiss|get rid of|go away|cancel|x|no thanks)(?: (?:this|that|it|out of this|the pop up|the popup|the dialog))?$/
 
-/** The labels a dialog's close control carries, as normalized words. */
-const CLOSE_LABELS: ReadonlySet<string> = new Set(['close', 'dismiss', 'not now', 'cancel', 'no thanks'])
+/** A label that reads as a close, by how it begins: "Close", "Close this consent banner", "Not now", "No, thanks", "Skip for now", "Continue without an account"… */
+const CLOSE_LABEL_RE =
+  /^(?:close|dismiss|cancel|skip|not now|maybe later|later|remind me later|no,? thanks?|no thank you|not interested|not today|continue without|stay (?:logged|signed) out|keep (?:browsing|reading)|got it|ok(?:ay)?|i understand|understood|done)\b/
 
 /** The close glyphs a control may carry as its whole label, which normalized words lose. */
-const CLOSE_GLYPHS: ReadonlySet<string> = new Set(['×', '✕'])
+const CLOSE_GLYPHS: ReadonlySet<string> = new Set(['×', '✕', 'x', 'X', '✖', '⨯'])
+
+/** A control that is a way through the pop-up rather than out of it: never a dismissal, whoever chose it. */
+const THROUGH_LABEL_RE =
+  /\b(?:sign ?in|sign ?up|log ?in|log ?on|register|create (?:an? )?account|subscribe|accept|agree|allow|enable|install|download|get the app|open (?:in )?(?:the )?app|buy|pay|checkout|upgrade|join|start (?:free )?trial|continue with)\b/
+
+/** How Jev answered the dismiss Choice (the `dismiss` question): a dialog control by ref, or Escape, with how sure it was. */
+export interface DismissChoice {
+  readonly choice: { readonly ref: number } | 'escape'
+  readonly confidence: number
+}
 
 /** Whether the words are a dismiss phrase. */
 export function isDismissPhrase(text: string): boolean {
@@ -23,9 +47,9 @@ export function isDismissPhrase(text: string): boolean {
 }
 
 /**
- * The Command that closes the open dialog the words dismiss: a click on
- * the dialog layer's close control — never a link — else Escape. Null
- * when no dialog is open, or the words are no dismiss phrase.
+ * The Command that closes the open dialog the words dismiss: the first
+ * rung of the Dismissal Ladder. Null when no dialog is open, or the words
+ * are no dismiss phrase.
  */
 export function dismissCommand(text: string, page: CommandPage): Command | null {
   return isDismissPhrase(text) ? dialogDismissal(page) : null
@@ -33,18 +57,76 @@ export function dismissCommand(text: string, page: CommandPage): Command | null 
 
 /**
  * The Command that closes the dialog open over the page, whatever the
- * words: its close control clicked — never a link — else Escape. Null
- * when no dialog is open. A Task steps aside with it (#354) as a dismiss
- * phrase does.
+ * words: the first rung of the Dismissal Ladder. Null when no dialog is
+ * open.
  */
-export function dialogDismissal(page: CommandPage): Command | null {
-  if (page.dialog === undefined) return null
+export function dialogDismissal(page: CommandPage, chosen: DismissChoice | null = null): Command | null {
+  return dismissalLadder(page, chosen)[0] ?? null
+}
+
+/**
+ * The Dismissal Ladder for the dialog open over the page: every Command
+ * that may close it, best first, each once, Escape last. Empty when no
+ * dialog is open. A Step Aside (#354) fires them in turn until the dialog
+ * closes; a dismiss phrase (#336) fires the first.
+ */
+export function dismissalLadder(page: CommandPage, chosen: DismissChoice | null = null, sureAbove = 0.7): Command[] {
+  if (page.dialog === undefined) return []
+  const controls = dialogControls(page)
+  const rungs: (Command | null)[] = []
+  // 1. The consent policy: reject first, accept second, as the controller's Tier 1 does — judged over every clickable control of the layer, Accept All included, since that is what names a consent wall.
+  const clickable = clickableControls(page)
+  const labels = clickable.map((control) => control.label)
+  if (isConsentDialog(page.dialog.text, labels)) {
+    const choice = chooseConsentDismissal(labels)
+    if (choice !== null) rungs.push(click(clickable[choice]!))
+  }
+  // 2. Jev's sure choice.
+  const jev = chosen === null ? null : chosenCommand(chosen, controls)
+  if (jev !== null && chosen!.confidence >= sureAbove) rungs.push(jev)
+  // 3. A close by its label.
+  const byLabel = controls.find((control) => CLOSE_GLYPHS.has(control.label.trim()) || CLOSE_LABEL_RE.test(normalizeWords(control.label)))
+  if (byLabel !== undefined) rungs.push(click(byLabel))
+  // 4. Jev's unsure choice.
+  if (jev !== null && chosen!.confidence < sureAbove) rungs.push(jev)
+  // 5. Escape.
+  rungs.push(ESCAPE)
+  return dedupe(rungs.filter((rung): rung is Command => rung !== null))
+}
+
+/** The dialog layer's controls a dismissal may click: no link (it would navigate), no field, no way through. */
+export function dialogControls(page: CommandPage): CommandRef[] {
+  return clickableControls(page).filter((ref) => !THROUGH_LABEL_RE.test(normalizeWords(ref.label)))
+}
+
+/** The dialog layer's clickable controls: no link, no field — the ways through still among them, for the consent policy to judge. */
+function clickableControls(page: CommandPage): CommandRef[] {
+  if (page.dialog === undefined) return []
   const inDialog = new Set(page.dialog.refs)
-  const close = page.refs.find(
-    (ref) => inDialog.has(ref.ref) && ref.href === null && (CLOSE_GLYPHS.has(ref.label.trim()) || CLOSE_LABELS.has(normalizeWords(ref.label))),
-  )
-  if (close !== undefined) return { verb: 'click', target: close.ref, slot: null, dismiss: true }
-  return { verb: 'press', target: null, slot: null, key: PRESS_KEYS.escape!, times: 1, dismiss: true }
+  return page.refs.filter((ref) => inDialog.has(ref.ref) && ref.href === null && ref.kind !== 'input')
+}
+
+function chosenCommand(chosen: DismissChoice, controls: readonly CommandRef[]): Command | null {
+  if (chosen.choice === 'escape') return ESCAPE
+  const ref = chosen.choice.ref
+  const control = controls.find((one) => one.ref === ref)
+  return control === undefined ? null : click(control)
+}
+
+const ESCAPE: Command = { verb: 'press', target: null, slot: null, key: PRESS_KEYS.escape!, times: 1, dismiss: true }
+
+function click(control: CommandRef): Command {
+  return { verb: 'click', target: control.ref, slot: null, dismiss: true }
+}
+
+function dedupe(commands: readonly Command[]): Command[] {
+  const seen = new Set<string>()
+  return commands.filter((command) => {
+    const key = `${command.verb}:${command.target ?? ''}:${command.key?.key ?? ''}`
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
 }
 
 /**

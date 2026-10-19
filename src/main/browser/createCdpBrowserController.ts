@@ -1684,9 +1684,20 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
    * The page's refs as data, those numbers shown (ADR 0033): what a Command
    * is read against (#324) — collected at speech start so the list is in
    * hand at the Endpoint, and the click that follows is not refused.
+   *
+   * A Tier-1 consent wall open over the page is dismissed first, as a
+   * landing's is (ADR 0061): a cookie banner that drew after the landing
+   * settled — Truth Social's TCF sheet, 2026-10-19 — is cleared before any
+   * reading sees it, instead of costing a Task a hop and a Jev call (#354).
    */
   async function collectPage(): Promise<PageSnapshot> {
-    const snapshot = await collectSnapshot()
+    let snapshot = await collectSnapshot()
+    try {
+      const dismissal = await dismissConsentIfOpen(snapshot)
+      if (dismissal !== null) snapshot = await recollection('post-dismissal', () => collectSnapshot())
+    } catch (error) {
+      reportFault('browser.createCdpBrowserController.collectPage', error)
+    }
     await markShown(snapshot.refs.length)
     return snapshot
   }

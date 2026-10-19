@@ -6,7 +6,7 @@ import type { CommandRunState } from '../../core/pipeline/runState'
 import type { PageLink, PageSnapshot } from '../../core/browser/snapshot'
 import type { PerfTracer } from '../../core/perf/perfTracer'
 import { PRESS_KEYS, commandPageOf, describeCommand, targetLabel, commandKeepsIdle, type Command, type CommandPage } from '../../core/command/command'
-import { dialogDismissal, dismissCommand, isDismissPhrase, obstacleOf } from '../../core/command/dismissDialog'
+import { dismissCommand, dismissalLadder, isDismissPhrase, obstacleOf, type DismissChoice } from '../../core/command/dismissDialog'
 import { COMMAND_HELP } from '../../core/command/help'
 import { carriesWordsPastAddress, headsAnotherVerb, isSearchLanding, localMatch, resultRefsOf } from '../../core/command/localMatch'
 import { isWebEngineSearch } from '../../core/command/siteScope'
@@ -18,6 +18,7 @@ import {
   hopQuestions,
   partialQuestions,
   readCommandAnswers,
+  readDismissChoice,
   readVerdict,
   setAsideOf,
   type DoneResult,
@@ -263,7 +264,8 @@ function recordedAfterFiring(verb: Command['verb']): boolean {
 }
 
 /** What a fired action came to: it landed, it met a wall (it failed, or speaks a failure's line), or a later Command superseded it. */
-type FireOutcome = 'landed' | 'wall' | 'superseded'
+/** `stayed`: a dismissal whose dialog is still open, with another rung of the Dismissal Ladder to try (#354) — no failure said yet. */
+type FireOutcome = 'landed' | 'wall' | 'superseded' | 'stayed'
 
 /** A fired action's outcome, how its navigation landed when it made one (#328), and whether it changed nothing (#336). */
 interface FireResult {
@@ -820,6 +822,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     react(detail: Record<string, unknown>, endedAt: number): void
     /** The action settled: the turn closes, once its Reaction is in. */
     settled(): void
+    /** A dismissal with a rung of the Dismissal Ladder still to try (#354): a dialog still open is `stayed`, not yet the failure. */
+    readonly deferStay?: true
   }
 
   /**
@@ -939,10 +943,16 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         }
       } else {
         const state = browser.state()
-        const failure =
-          spokenFailureOf({ tool: name, outcome: { ok: true, result }, ...(state.url ? { url: state.url } : {}), ...(state.title ? { title: state.title } : {}) }) ??
-          (command.dismiss === true && (await dialogStillOpen()) ? 'dialogStayed' : null)
+        const landedFailure = spokenFailureOf({ tool: name, outcome: { ok: true, result }, ...(state.url ? { url: state.url } : {}), ...(state.title ? { title: state.title } : {}) })
+        const stayed = landedFailure === null && command.dismiss === true && (await dialogStillOpen())
+        const failure = landedFailure ?? (stayed ? 'dialogStayed' : null)
         if (!current()) return ended('superseded')
+        if (stayed && reacting.deferStay === true) {
+          // The next rung of the Dismissal Ladder is the runner's to fire (#354): nothing is said of this one.
+          inFlight = null
+          publish({ type: 'done', turnId, outcome: 'done', at: at() })
+          return ended('stayed')
+        }
         if (failure !== null) {
           answerFailure(turnId, SPOKEN_FAILURES[failure])
           outcome = 'wall'
@@ -1035,23 +1045,24 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   }
 
   /**
-   * Step Aside (#354): the dismissal of the pop-up a sure "in the way" was
-   * read over, when the Task has not stepped past this Obstacle before —
-   * null otherwise, and the wall stands. Stepping past it notes the
-   * Obstacle and sets aside the target that raised it, so the next reading
-   * is not offered the same door.
+   * Step Aside (#354): the Dismissal Ladder for the pop-up a sure "in the
+   * way" was read over — the consent policy's control, the one Jev chose,
+   * one labelled as a close, Escape — when the Task has not stepped past
+   * this Obstacle before; null otherwise, and the wall stands. Stepping
+   * past it notes the Obstacle and sets aside the target that raised it,
+   * so the next reading is not offered the same door.
    */
-  function stepAside(task: Task, page: CommandPage): Command | null {
+  function stepAside(task: Task, page: CommandPage, chosen: DismissChoice | null): Command[] | null {
     const obstacle = obstacleOf(page)
-    const dismissal = dialogDismissal(page)
-    if (obstacle === null || dismissal === null || task.obstacles.includes(obstacle)) return null
+    const ladder = dismissalLadder(page, chosen, DEFAULT_DECISION_THRESHOLDS.choice)
+    if (obstacle === null || ladder.length === 0 || task.obstacles.includes(obstacle)) return null
     task.obstacles.push(obstacle)
     const raised = task.raised
     if (raised !== undefined) {
       const target = raised.page.refs.find((ref) => ref.ref === raised.command.target)
       if (target !== undefined) task.setAside.push(setAsideOf(target, raised.page))
     }
-    return dismissal
+    return ladder
   }
 
   /**
@@ -1074,7 +1085,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   /** How a continuing hop's action came out, for the Task (#328): its end, or null when it goes on. */
   function endedByAction(task: Task, outcome: FireOutcome): TaskEnded | null {
     if (outcome === 'superseded' || superseded(task)) return 'superseded'
-    if (outcome === 'wall') return 'wall'
+    if (outcome === 'wall' || outcome === 'stayed') return 'wall'
     if (task.unchanged >= MAX_UNCHANGED_HOPS) return 'unchanged'
     return task.actions.length >= MAX_TASK_ACTIONS ? 'cap' : null
   }
@@ -1246,12 +1257,29 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         continue
       }
       if (inTheWay) {
-        const aside = stepAside(task, page)
-        if (aside !== null) {
-          // Step Aside (#354): the runner closes the pop-up as this hop, and the Task goes on from the page it leaves.
-          const stepped: DecisionRecord = { ...recordOf(turnId, firedAt, task.source, task.text, read, aside, null, false), task: { id: task.id, hop }, stepAside: true }
-          const fired = await fire(turnId, task.text, task.source, aside, page, 'jev', null, firedAt, { react: () => {}, settled: () => summarize(turnId) }, { id: task.id, hop })
-          const ended = settleHop(task, stepped, null, aside, page, fired)
+        const ladder = stepAside(task, page, readDismissChoice(result.answers, page))
+        if (ladder !== null) {
+          // Step Aside (#354): the runner closes the pop-up as this hop, rung by rung down the Dismissal Ladder until it closes, and the Task goes on from the page it leaves.
+          let ended: TaskEnded | null = null
+          for (let rung = 0; rung < ladder.length; rung += 1) {
+            const aside = ladder[rung]!
+            const rungTurnId = rung === 0 ? turnId : (tracer?.mintTurnId() ?? `${task.id}-hop${hop}`)
+            const rungAt = rung === 0 ? firedAt : at()
+            const stepped: DecisionRecord = { ...recordOf(rungTurnId, rungAt, task.source, task.text, read, aside, null, false), task: { id: task.id, hop }, stepAside: true }
+            // Another rung follows while the cap leaves room for it: a dialog still open after this one is not yet the failure.
+            const more = rung + 1 < ladder.length && task.actions.length + 1 < MAX_TASK_ACTIONS
+            const reacting: Reacting = { react: () => {}, settled: () => summarize(rungTurnId), ...(more ? { deferStay: true as const } : {}) }
+            const fired = await fire(rungTurnId, task.text, task.source, aside, page, 'jev', null, rungAt, reacting, { id: task.id, hop })
+            if (fired.outcome === 'stayed') {
+              // The pop-up stayed: this rung is an action taken, said so in "Done so far", and the next fires.
+              task.actions.push(doneLine(aside, page, { changed: false }))
+              log(stepped)
+              hop += 1
+              continue
+            }
+            ended = settleHop(task, stepped, null, aside, page, fired)
+            break
+          }
           if (ended !== null) return endTask(task, ended, hop + 1)
           continue
         }

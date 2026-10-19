@@ -1797,7 +1797,7 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
         expect(decisions(records).map((record) => record.ended)).toEqual([undefined, undefined, undefined, 'done'])
       })
 
-      it('AC5: a sheet still open after the close ends the Task as a wall, saying the pop-up is still open', async () => {
+      it('AC5: a sheet still open after every rung of the Dismissal Ladder ends the Task as a wall, saying the pop-up is still open — said once, at the last rung', async () => {
         const h = taskHarness()
         const { browser, events, records, decision, runner } = h
         coveredOnLanding(h)
@@ -1805,9 +1805,92 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
         decision.script.push(answer('search', 'none', 's3-6'), withOutcome(answer('click', 'ref-3'), 'in_the_way', 0.85), withOutcome(answer('done'), 'yes'))
         await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
         expect(browser.clicks).toEqual([1])
+        expect(browser.pressedKeys).toEqual([{ press: { key: 'Escape' }, times: 1 }])
         expect(failures(events)).toEqual([expect.objectContaining({ text: SPOKEN_FAILURES.dialogStayed })])
-        expect(decisions(records).map((record) => record.ended)).toEqual([undefined, 'wall'])
+        expect(decisions(records).map((record) => [record.verb, record.stepAside, record.ended])).toEqual([['search', undefined, undefined], ['click', true, undefined], ['press', true, 'wall']])
         expect(decision.requests).toHaveLength(2)
+      })
+
+      it('AC8: the close that leaves the sheet open is not the end — the next rung fires, nothing is said of the first, and the Task goes on once the sheet closes', async () => {
+        const h = taskHarness()
+        const { browser, events, records, decision, runner } = h
+        coveredOnLanding(h)
+        // The Close button is inert; Escape closes the sheet.
+        const press = browser.pressKey.bind(browser)
+        browser.pressKey = async (key, times) => {
+          await press(key, times)
+          if (key.key === 'Escape') uncovered(h, SEARCH_REFS)
+        }
+        decision.script.push(answer('search', 'none', 's3-6'), withOutcome(answer('click', 'ref-3'), 'in_the_way', 0.85), withOutcome(answer('done'), 'yes'))
+        await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
+        expect(browser.clicks).toEqual([1])
+        expect(browser.pressedKeys).toEqual([{ press: { key: 'Escape' }, times: 1 }])
+        expect(failures(events)).toEqual([])
+        expect(decisions(records).map((record) => [record.verb, record.stepAside, record.ended])).toEqual([['search', undefined, undefined], ['click', true, undefined], ['press', true, undefined], ['done', undefined, 'done']])
+        expect(decision.requests).toHaveLength(3)
+        expect(decision.requests[2]!.state).toContain('click "Close" (nothing changed); press Escape (the pop-up closed)')
+      })
+
+      it('AC9: a cookie wall is stepped past by its reject control first, as the controller\'s policy has it — never Accept All, whatever its close is called', async () => {
+        const h = taskHarness()
+        const { browser, events, records, decision, runner } = h
+        const BANNER_REFS: SnapshotRef[] = [
+          ref(1, 'button', 'Close this consent banner Close this consent banner', { layer: 'dialog' }),
+          ref(2, 'link', 'Privacy Policy', { href: 'https://help.truthsocial.com/legal/privacy-policy', layer: 'dialog' }),
+          ref(10, 'button', 'Accept All', { layer: 'dialog' }),
+          ref(11, 'button', 'Reject Non-Essential', { layer: 'dialog' }),
+          ref(3, 'link', 'Elon Musk', { href: 'https://x.com/elonmusk', layer: 'page' }),
+        ]
+        const navigate = browser.navigate.bind(browser)
+        browser.navigate = async (url) => {
+          const line = await navigate(url)
+          browser.snapshot = { ...browser.snapshot, refs: BANNER_REFS, dialogOpen: true, dialogText: 'We and our 1 IAB TCF partners store and access information on your device' }
+          return line
+        }
+        const click = browser.click.bind(browser)
+        browser.click = async (n) => {
+          const line = await click(n)
+          if (n !== 11) return line
+          uncovered(h, SEARCH_REFS)
+          return line.replace(NO_OBSERVABLE_CHANGE, PAGE_SIGNATURE_CHANGED)
+        }
+        decision.script.push(answer('search', 'none', 's3-6'), withOutcome(answer('none'), 'in_the_way', 1), withOutcome(answer('done'), 'yes'))
+        await runner.run('open donald trumps truth social profile', { source: 'spoken' })
+        expect(browser.clicks).toEqual([11])
+        expect(browser.pressedKeys).toEqual([])
+        expect(failures(events)).toEqual([])
+        expect(commands(events).map((event) => event.action)).toEqual(['search truth social profile', 'click [11] "Reject Non-Essential"', 'done'])
+        expect(decisions(records).map((record) => record.ended)).toEqual([undefined, undefined, 'done'])
+      })
+
+      it('AC10: Jev is asked which control closes the pop-up, and its sure choice is the rung before any label — the hop\'s record keeps the answer', async () => {
+        const h = taskHarness()
+        const { browser, events, records, decision, runner } = h
+        const ODD_REFS: SnapshotRef[] = [
+          ref(1, 'button', 'Nah', { layer: 'dialog' }),
+          ref(2, 'button', 'Sign in', { layer: 'dialog' }),
+          ref(3, 'link', 'Elon Musk', { href: 'https://x.com/elonmusk', layer: 'page' }),
+        ]
+        const navigate = browser.navigate.bind(browser)
+        browser.navigate = async (url) => {
+          const line = await navigate(url)
+          browser.snapshot = { ...browser.snapshot, refs: ODD_REFS, dialogOpen: true, dialogText: 'Join X today' }
+          return line
+        }
+        closing(h, SEARCH_REFS)
+        decision.script.push(
+          answer('search', 'none', 's3-6'),
+          { answers: { ...withOutcome(answer('click', 'ref-3'), 'in_the_way', 0.85).answers, dismiss: choice('ref-1', 0.88) } },
+          withOutcome(answer('done'), 'yes'),
+        )
+        await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
+        const asked = decision.requests[1]!.questions as { dismiss?: DecisionChoiceQuestion }
+        expect(Object.keys(asked.dismiss!.options)).toEqual(['escape', 'ref-1'])
+        expect(browser.clicks).toEqual([1])
+        expect(failures(events)).toEqual([])
+        expect(decisions(records)[1]).toMatchObject({ verb: 'click', target: 1, targetLabel: 'Nah', stepAside: true })
+        expect(decisions(records)[1]!.jev).toMatchObject({ confidence: { dismiss: 0.88 }, probabilities: { dismiss: { 'ref-1': 0.88 } } })
+        expect(decisions(records).map((record) => record.ended)).toEqual([undefined, undefined, 'done'])
       })
 
       it('AC7: the close counts toward the cap of five actions', async () => {

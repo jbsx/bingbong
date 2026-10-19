@@ -23,7 +23,7 @@ export type CommandReading = 'local_match' | 'jev' | 'best_guess'
 export interface JevDetail {
   readonly model: string
   readonly latencyMs: number
-  readonly confidence: { readonly verb: number; readonly target: number; readonly slot: number; readonly where?: number; readonly outcome?: number }
+  readonly confidence: { readonly verb: number; readonly target: number; readonly slot: number; readonly where?: number; readonly outcome?: number; readonly dismiss?: number }
   readonly probabilities: {
     readonly verb: Readonly<Record<string, number>>
     readonly target: Readonly<Record<string, number>>
@@ -31,6 +31,8 @@ export interface JevDetail {
     readonly where?: Readonly<Record<string, number>>
     /** The Verdict's, at a hop past the first. */
     readonly outcome?: Readonly<Record<string, number>>
+    /** The dismiss Choice's (#354), at a hop read over a pop-up. */
+    readonly dismiss?: Readonly<Record<string, number>>
   }
 }
 
@@ -181,6 +183,7 @@ function topProbabilities(probabilities: Readonly<Record<string, number>>, keep:
 export function jevDetailOf(answers: CommandAnswers | HopAnswers, latencyMs: number, model: string): JevDetail {
   const where = 'where' in answers ? answers.where : undefined
   const outcome = 'outcome' in answers ? answers.outcome : undefined
+  const dismiss = 'dismiss' in answers ? answers.dismiss : undefined
   return {
     model,
     latencyMs,
@@ -190,6 +193,7 @@ export function jevDetailOf(answers: CommandAnswers | HopAnswers, latencyMs: num
       slot: answers.slot.confidence,
       ...(where !== undefined ? { where: where.confidence } : {}),
       ...(outcome !== undefined ? { outcome: outcome.confidence } : {}),
+      ...(dismiss !== undefined ? { dismiss: dismiss.confidence } : {}),
     },
     probabilities: {
       verb: { ...answers.verb.probabilities },
@@ -197,6 +201,7 @@ export function jevDetailOf(answers: CommandAnswers | HopAnswers, latencyMs: num
       slot: topProbabilities(answers.slot.probabilities, KEPT_PROBABILITIES),
       ...(where !== undefined ? { where: { ...where.probabilities } } : {}),
       ...(outcome !== undefined ? { outcome: { ...outcome.probabilities } } : {}),
+      ...(dismiss !== undefined ? { dismiss: topProbabilities(dismiss.probabilities, KEPT_PROBABILITIES) } : {}),
     },
   }
 }
