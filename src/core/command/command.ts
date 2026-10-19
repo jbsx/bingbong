@@ -6,9 +6,11 @@ import type { MusicAction } from '../music/musicWords'
 
 // A Command (CONTEXT.md, ADR 0076): what an Utterance becomes on this
 // branch — one verb, at most one target on the page and one Slot, performed
-// at once. No plan, no confirmation, no second step. The reading that makes
-// one (the Local Match, Jev's Choices, the best guess) lives beside this
-// file; the runner that performs it lives in main.
+// at once. No plan, no confirmation, no second step. A verb is an action
+// the browser can take, never a word the user said (#353): "open" is
+// words, `navigate` and `search` are verbs. The reading that makes one
+// (the Local Match, Jev's Choices) lives beside this file; the runner
+// that performs it lives in main.
 
 /**
  * The verbs a Command can carry. The Decision Model is offered
@@ -16,7 +18,8 @@ import type { MusicAction } from '../music/musicWords'
  * CLI grammar's alone, reached only through the Local Match.
  */
 export const COMMAND_VERBS = [
-  'open',
+  'navigate',
+  'search',
   'click',
   'type',
   'scroll_up',
@@ -61,17 +64,15 @@ export interface Command {
   readonly target: number | null
   /**
    * The Slot: the Utterance's own words the Command carries verbatim — the
-   * address to open, the text to type, the key to press. Null when the
-   * verb takes none.
+   * address to navigate to, the search terms, the text to type, the key to
+   * press. Null when the verb takes none.
    */
   readonly slot: string | null
   /** For `press`: the key the Slot named (the CLI grammar names it directly). */
   readonly key?: KeyPress
   /** For `press`: how many times; 1 when absent. */
   readonly times?: number
-  /** For `open`: the Slot is search terms however it reads ("search for rust"). */
-  readonly search?: boolean
-  /** For an `open` search: the Site Scope (#340) — the host it searches on (`x.com`); absent for a search of the whole web. */
+  /** For `search`: the Site Scope (#340) — the host it searches on (`x.com`); absent for a search of the whole web. */
   readonly site?: string
   /** For `timer`: the length to count down; absent turns the Timer off. */
   readonly durationMs?: number
@@ -147,7 +148,7 @@ export function commandKeepsIdle(command: Command): boolean {
 
 /** The verbs that carry a Slot. */
 export function verbTakesSlot(verb: CommandVerb): boolean {
-  return verb === 'open' || verb === 'type' || verb === 'press'
+  return verb === 'navigate' || verb === 'search' || verb === 'type' || verb === 'press'
 }
 
 /**
@@ -202,8 +203,10 @@ export function describeCommand(command: Command, page?: CommandPage): string {
     return found && found.label !== '' ? ` [${ref}] ${JSON.stringify(found.label)}` : ` [${ref}]`
   }
   switch (command.verb) {
-    case 'open':
-      return `open ${command.slot ?? ''}${command.site !== undefined ? ` on ${command.site}` : ''}`.trim()
+    case 'navigate':
+      return `open ${command.slot ?? ''}`.trim()
+    case 'search':
+      return `search ${command.slot ?? ''}${command.site !== undefined ? ` on ${command.site}` : ''}`.trim()
     case 'click':
       return `click${label(command.target)}`
     case 'type':

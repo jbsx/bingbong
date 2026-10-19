@@ -94,7 +94,7 @@ describe('a Task whose hop 0 Early Fired (#328, AC6)', () => {
 
   it('writes each partial\'s ask under its own id, and the Early Fire\'s record names the partial it fired on (#338)', async () => {
     const { records, asks, decision, perf, runner } = wired([
-      { verb: choice('open'), target: choice('none'), slot: choice('s2-3'), complete: { type: 'noul', noul: 0.9 } },
+      { verb: choice('search'), target: choice('none'), slot: choice('s2-3'), complete: { type: 'noul', noul: 0.9 } },
       { verb: choice('done'), target: choice('none'), slot: choice('none') },
     ])
     await speak(runner, { text: 'Pull up some lofi music.', partials: ['pull up some lofi'] }, perf)
@@ -109,7 +109,7 @@ describe('a Task whose hop 0 Early Fired (#328, AC6)', () => {
 
   it('names the ask of a partial that fired nothing on the record its Endpoint writes (#338)', async () => {
     const { records, asks, perf, runner } = wired([
-      { verb: choice('open'), target: choice('none'), slot: choice('s2-3'), complete: { type: 'noul', noul: 0.2 } },
+      { verb: choice('search'), target: choice('none'), slot: choice('s2-3'), complete: { type: 'noul', noul: 0.2 } },
       { verb: choice('none'), target: choice('none'), slot: choice('none') },
     ])
     await speak(runner, { text: 'Pull up some lofi music.', partials: ['pull up some lofi'] }, perf)
@@ -121,7 +121,7 @@ describe('a Task whose hop 0 Early Fired (#328, AC6)', () => {
 
   it('goes on only after the Endpoint, and hop 1 reads the final transcript', async () => {
     const { browser, records, perf, decision, runner } = wired([
-      { verb: choice('open'), target: choice('none'), slot: choice('s2-3'), complete: { type: 'noul', noul: 0.9 } },
+      { verb: choice('search'), target: choice('none'), slot: choice('s2-3'), complete: { type: 'noul', noul: 0.9 } },
       { verb: choice('done'), target: choice('none'), slot: choice('none') },
     ])
     await speak(runner, { text: 'Pull up some lofi music.', partials: ['pull up some lofi'] }, perf)
@@ -130,14 +130,14 @@ describe('a Task whose hop 0 Early Fired (#328, AC6)', () => {
     expect(decision.requests).toHaveLength(2)
     expect(decision.requests[1]!.state).toContain('"Pull up some lofi music."')
     expect(decisions(records)).toEqual([
-      expect.objectContaining({ verb: 'open', earlyFire: expect.objectContaining({ partial: 'pull up some lofi' }), task: expect.objectContaining({ hop: 0 }) }),
+      expect.objectContaining({ verb: 'search', earlyFire: expect.objectContaining({ partial: 'pull up some lofi' }), task: expect.objectContaining({ hop: 0 }) }),
       expect.objectContaining({ verb: 'done', transcript: 'Pull up some lofi music.', ended: 'done', task: expect.objectContaining({ hop: 1 }) }),
     ])
     expect(decisions(records)[0]!.ended).toBeUndefined()
   })
 
   it('ends after hop 0 when its partials are let go before an Endpoint', async () => {
-    const { browser, records, decision, runner } = wired([{ verb: choice('open'), target: choice('none'), slot: choice('s2-3'), complete: { type: 'noul', noul: 0.9 } }])
+    const { browser, records, decision, runner } = wired([{ verb: choice('search'), target: choice('none'), slot: choice('s2-3'), complete: { type: 'noul', noul: 0.9 } }])
     void runner.prepare()
     await runner.consider('pull up some lofi')
     expect(browser.navigations).toHaveLength(1)
@@ -146,7 +146,7 @@ describe('a Task whose hop 0 Early Fired (#328, AC6)', () => {
     void runner.prepare()
     await flushMicrotasks()
     expect(decision.requests).toHaveLength(1)
-    expect(decisions(records)).toEqual([expect.objectContaining({ verb: 'open', ended: 'superseded', earlyFire: { partial: 'pull up some lofi', noul: 0.9 } })])
+    expect(decisions(records)).toEqual([expect.objectContaining({ verb: 'search', ended: 'superseded', earlyFire: { partial: 'pull up some lofi', noul: 0.9 } })])
   })
 })
 

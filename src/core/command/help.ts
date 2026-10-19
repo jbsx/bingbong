@@ -4,8 +4,7 @@
 
 export const COMMAND_HELP_LINES: readonly string[] = [
   'a line is one command — plain words or the grammar:',
-  '  open <site or words>     a bare word opens its .com, a url is opened, other words are searched',
-  '  search for <words>       search the words',
+  '  open <site or words>     a bare word opens its .com, a url is opened; other words are read against the page, its site and the web',
   '  click <label or ref>     click the element the label names, or ref <n> from the last read',
   '  type <text> in <field>   type into the field the label names (or: type <ref> <text>)',
   '  scroll up|down           scroll the page',

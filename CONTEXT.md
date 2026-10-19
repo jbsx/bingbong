@@ -81,9 +81,9 @@ Decision Model reads the page as what was asked for. The first Command is
 read as any Command is; a Task goes on after a Command the Decision Model
 read and ends after one the Local Match settled, since the grammar and exact
 labels are whole by construction and plain English is where "and then"
-lives — save a Local-Matched `open` of an address with words past it ("go
-to twitter and open donald trumps profile"), which goes on to read the rest
-on the landing. It searches each site at most once. Capped at five
+lives — save a Local-Matched `navigate` of an address with words past it
+("go to twitter and open donald trumps profile"), which goes on to read the
+rest on the landing. It searches each site at most once. Capped at five
 actions; ended by the next Utterance, Escape or the Abort Head like any
 Command; never confirmed.
 _Avoid_: plan, goal, intent, errand, run, session
@@ -122,30 +122,35 @@ _Avoid_: close command, escape phrase
 
 **Command**:
 One verb, at most one target on the page and one Slot, performed at once.
-There is no plan and no confirmation: a Command is the unit a Task is made
-of, and an Utterance is a Task of one or more. A Command that is not for
-the page at all is dropped, not answered.
-_Avoid_: run, request, intent
+A verb is an action the browser can take — `navigate` to an address,
+`search` for words, `click`, `type`, scroll, back, press, read, clear, stop
+— never a word the user said: "open" is words, and whether it means a
+navigate, a search or a click is the reading's to settle. There is no plan
+and no confirmation: a Command is the unit a Task is made of, and an
+Utterance is a Task of one or more. A Command that is not for the page at
+all is dropped, not answered.
+_Avoid_: run, request, intent; `open` as a verb
 
 **Slot**:
 The words of an Utterance a Command carries verbatim: the search terms, the
-text to type, the address to open. Chosen from the Utterance's own words,
+text to type, the address to navigate to. Chosen from the Utterance's own words,
 never composed — a Name Match may carry them in the page's spelling, and
 that is the one amendment.
 _Avoid_: argument, parameter, entity, free text
 
 **Site Scope**:
-The site an `open` spoken on a page is looked for on, when the Decision Model
+The site a `search` spoken on a page is looked for on, when the Decision Model
 reads its words as pointing on that site but not on that page ("go to donald
 trumps profile" on x.com). The site is the page's host without `www.`
 (`x.com`, `en.wikipedia.org`), on a real page that is no Web Engine's web
 search (its front page or results; its maps or finance pages are a site); a
-site's own search page is still the site. A scoped `open` is a DuckDuckGo
+site's own search page is still the site. A scoped `search` is a DuckDuckGo
 search with `site:<host>` ahead of the Slot's words, never the site's own
 search box, and its Answer names the site ("Searched x.com for …"). Asked in
 the same call as the other Choices, at hop 0 and at any later Hop on a site
-the Task has not yet searched; a Local-Matched `open`
-and the best guess are never scoped. A wrong one is a Misfire.
+the Task has not yet searched. Words the Decision Model reads as pointing at
+this page are never searched: the likeliest element it offered is opened,
+or nothing is. A wrong `where` is a Misfire.
 _Avoid_: site search (a Search URL on a site), domain filter
 
 **Page Terms**:
@@ -169,12 +174,18 @@ _Avoid_: fuzzy match, autocorrect, spell check, entity resolution
 
 **Local Match**:
 A Command settled from the Utterance and the page alone, without asking the
-Decision Model: the verb is plain and its target is the one element the words
-can name — the label exactly one element carries, or the Nth result on a
-search page ("the first result"). An `open` settles alone only for words
-shaped like an address. It is the fastest reading and the fallback when the
-Decision Model does not answer in time.
-_Avoid_: grammar hit, regex path, offline mode
+Decision Model — fixed phrases only: the CLI grammar, the control words
+(scroll, back, reload, read, clear, stop, resume, a key), the Timer's and
+the Player's lines, an opening phrase with an address-shaped Slot ("open
+youtube", "go to x.com"), and a plain verb with the one element the words
+name exactly — the label exactly one element carries, or the Nth result on a
+search page ("the first result"). Search terms ("search for …", "look up
+…") and words about the page are never its: they go to the Decision Model.
+It is the fastest reading, and the only one that fires when the Decision
+Model does not answer — a line it does not settle is then no Command. It
+never guesses: there is no lenient reading, no nearest label, no words
+turned into a search.
+_Avoid_: grammar hit, regex path, offline mode, best guess
 
 **Early Fire**:
 Acting on a partial transcript, before the Endpoint, once the words so far

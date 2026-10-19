@@ -908,3 +908,62 @@ recommended" on its five decisions.
   paused at the end, with no ad and no other video, 12 s on.
 - The control script acts on `#movie_player`'s video alone. A `stop` or
   a `skip` never pauses another site's video.
+
+## Amendment 2026-10-19 — verbs are actions, not words: `open` is gone, the Local Match keeps fixed phrases, nothing guesses (#353)
+
+On x.com/ElonMusk, "Open the tweet." went to DuckDuckGo. The Local Match
+passed it (no address, no ref labelled "the tweet"). Jev answered verb
+`open` 0.76, target `none` 0.67 over the top post at 0.17, and `where` =
+`page` 0.64 — "it is on this page" — and the reading's `open` fall-through
+searched the web for "the tweet" anyway, then hop 1 opened the X account
+named "@tweet". The verb word carried no information and let Jev echo it:
+the transcript said "Open", so Jev chose the option called `open`, whose
+definition ("go to a website or address, or search the web for the words")
+then forced a search against Jev's own `where` answer. In the logs, 59 of
+146 Commands were Local-Matched, nearly all control words, Music, Timer
+and addresses; Jev's median latency was 218 ms.
+
+- **A verb is an action the browser can take, never a word the user
+  said.** `open` leaves the Command verbs and Jev's verb Choice. In its
+  place: `navigate` (an address — a site's name, a host, a url) and
+  `search` (words, on the web or scoped to the site by `where`); the
+  `search` flag and `open`'s dual reading are gone, and `site` belongs to
+  `search`. The transcript is just words; Jev decides whether "open the
+  tweet" is a click, a search or a navigation, with nothing to echo. The
+  call is unchanged: one parallel call, verb, target, Slot and `where`.
+- **Words that point at this page are never searched.** A `search`, or a
+  `navigate` whose Slot is no address, with no ref named and `where` =
+  `page` opens at hop 0 the most probable ref Jev gave any probability,
+  `none` set aside (#332's rule), and is no Command when it gave none any.
+  `where` = `site` is the Site Scope search as before; `web` or no `where`
+  searches the web at hop 0; later hops keep #332 and #342 as they are. A
+  bare word Jev reads as a `navigate` is an address whatever `where` says:
+  Jev said so.
+- **The Local Match keeps fixed phrases only.** The CLI grammar; the
+  control words; the Timer's and the Player's lines; the dismiss phrases;
+  the `open`/`go to`/`visit` family for an address-shaped Slot, or an
+  address with words past it (#341); and the exact-label click and type,
+  which never guess. The search phrases ("search for", "look up", "google",
+  "find") leave it: search terms always go to Jev, whose `where` scopes
+  them — one call (~220 ms) per search line, accepted. They stay in the
+  list of clause heads #341 uses to find where an address ends, so "open
+  youtube and search for lofi" still opens youtube.
+- **The lenient best guess is gone.** No ref by shared words, no first
+  text field, no words-with-no-verb-as-a-search. When Jev is unavailable or
+  does not answer, what fires is the Local Match — which already settled
+  nothing, or Jev would not have been asked — so the line is no Command:
+  one greyed Feed Entry, `ended: unavailable` on its record. A Misfire that
+  leaves the site is costlier than a Command that does nothing. The
+  `best_guess` reading kind stays on the record to name a Jev that could
+  not be asked.
+- **Surfaces.** The Feed's action line reads `open youtube` for a
+  `navigate` and `search donald trumps profile on x.com` for a scoped
+  `search`; the Answers are unchanged ("Opened YouTube.", "Searched x.com
+  for …"). The help text drops `search for <words>` as a grammar line. The
+  CLI grammar's `navigate <input>` is a `navigate` of an address and a
+  `search` of anything else. The corpus case's recorded questions still
+  carry `open`; the replay sends them unchanged, and its expectations
+  (target, `where`) do not name the verb.
+- **Not in scope:** tagging posts so the Local Match can see "the tweet"
+  or "the post" without Jev; a Jev case for the logged turn (the owner's
+  call); the typed grammar gaining a `search` line.

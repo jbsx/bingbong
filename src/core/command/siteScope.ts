@@ -1,7 +1,7 @@
 import { isRealPage } from '../browser/lastPage'
 import { reportFault } from '../trace/fault'
 
-// The Site Scope (#340, ADR 0076 amendment): an `open` spoken on a site,
+// The Site Scope (#340, ADR 0076 amendment): a `search` spoken on a site,
 // whose words Jev reads as pointing on that site but not on this page, is
 // a DuckDuckGo `site:<host>` search. The site is the page's host without
 // `www.` — not its registrable domain — on a real page that is no Web

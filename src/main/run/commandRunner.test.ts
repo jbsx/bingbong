@@ -436,9 +436,9 @@ describe('a Command the Local Match settles', () => {
     expect(events[0]).toMatchObject({ type: 'command', action: 'click [3] "Elon Musk (@elonmusk) / X"' })
   })
 
-  it('asks Jev for an open whose words are about the page rather than an address', async () => {
+  it('asks Jev for an open whose words are about the page rather than an address; a search Jev gives a ref is a click', async () => {
     const { browser, decision, runner } = harness()
-    decision.script.push({ answers: { verb: choice('open'), target: choice('ref-1', 0.64), slot: choice('none') } }, { answers: { verb: choice('done'), target: choice('none'), slot: choice('none') } })
+    decision.script.push({ answers: { verb: choice('search'), target: choice('ref-1', 0.64), slot: choice('none') } }, { answers: { verb: choice('done'), target: choice('none'), slot: choice('none') } })
     await runner.run("open elon musk's profile", { source: 'spoken' })
     // The Command's call, and its Task's next hop saying done (#328).
     expect(decision.requests).toHaveLength(2)
@@ -446,19 +446,23 @@ describe('a Command the Local Match settles', () => {
     expect(browser.navigations).toEqual([])
   })
 
-  it('opens a bare word at its .com, search phrasing as a search, and an address as itself', async () => {
-    const { browser, runner } = harness()
+  it('opens a bare word at its .com and an address as itself with no Jev call; search phrasing is Jev\'s, whose search is run (#353)', async () => {
+    const { browser, decision, runner } = harness()
     await runner.run('open youtube')
-    await runner.run('search for rust async book')
     await runner.run('go to news.ycombinator.com')
-    expect(browser.navigations).toEqual(['https://youtube.com', 'https://duckduckgo.com/?q=rust%20async%20book', 'https://news.ycombinator.com'])
+    expect(decision.requests).toEqual([])
+    decision.script.push({ answers: { verb: choice('search'), target: choice('none'), slot: choice('s2-4') } }, { answers: { verb: choice('done'), target: choice('none'), slot: choice('none') } })
+    await runner.run('search for rust async book')
+    expect(decision.requests).toHaveLength(2)
+    expect(browser.navigations).toEqual(['https://youtube.com', 'https://news.ycombinator.com', 'https://duckduckgo.com/?q=rust%20async%20book'])
   })
 
   it('reads the seven spoken commands of AC1 into their browser actions', async () => {
-    const { browser, runner } = harness()
+    const { browser, decision, runner } = harness()
     await runner.run('open youtube', { source: 'spoken' })
     await runner.run('click sign in', { source: 'spoken' })
     await runner.run('scroll down', { source: 'spoken' })
+    decision.script.push({ answers: { verb: choice('search'), target: choice('none'), slot: choice('s2-4') } }, { answers: { verb: choice('done'), target: choice('none'), slot: choice('none') } })
     await runner.run('search for rust async book', { source: 'spoken' })
     await runner.run('type hello in the search box', { source: 'spoken' })
     await runner.run('back', { source: 'spoken' })
@@ -537,48 +541,40 @@ describe('a Command the Local Match cannot settle', () => {
     expect(events[0]).toMatchObject({ type: 'command', text: 'take me home', action: 'click [1] "Home"' })
   })
 
-  it('fires the best guess and publishes no error when Jev is unavailable', async () => {
+  it('fires nothing and publishes no error when Jev is unavailable: no ref by shared words, one greyed Feed Entry (#353)', async () => {
     const { browser, decision, runner, events, records } = harness()
     decision.script.push({ unavailable: 'timeout' })
 
     await runner.run('tap on the sign thing', { source: 'spoken' })
 
     expect(decision.requests).toHaveLength(1)
-    expect(browser.clicks).toEqual([2])
-    expect(events.some((event) => event.type === 'error')).toBe(false)
+    expect(browser.clicks).toEqual([])
+    expect(events.some((event) => event.type === 'error' || event.type === 'tool_call')).toBe(false)
+    expect(events.filter((event) => event.type === 'command')).toEqual([expect.objectContaining({ text: 'tap on the sign thing', dropped: true })])
     expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done' })
-    expect(records[0]).toMatchObject({ type: 'decision', reading: 'best_guess', jevAsked: true, jev: { reason: 'timeout', latencyMs: 212 } })
+    expect(records[0]).toMatchObject({ type: 'decision', verb: 'none', reading: 'best_guess', jevAsked: true, ended: 'unavailable', jev: { reason: 'timeout', latencyMs: 212 } })
   })
 
-  it('names the web search the best guess fired, as its Answer, when Jev is unavailable (#329)', async () => {
+  it('never searches the words of an unread line when Jev is unavailable (#353): nothing fires, nothing is spoken', async () => {
     const speech = new FakeSpeech()
     const { browser, decision, events, runner } = harness({ speech })
     decision.script.push({ unavailable: 'failed' })
     await runner.run('lovely weather in lisbon', { source: 'spoken' })
-    expect(browser.navigations).toHaveLength(1)
-    expect(events.filter((event) => event.type === 'display')).toEqual([expect.objectContaining({ type: 'display', text: 'Searched the web for “lovely weather in lisbon”.' })])
+    expect(browser.navigations).toEqual([])
+    expect(events.filter((event) => event.type === 'display')).toEqual([])
     expect(events.some((event) => event.type === 'speak' || event.type === 'error')).toBe(false)
     expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done' })
     expect(speech.spoken).toEqual([])
   })
 
-  it('a best guess that meets a wall answers with the wall, not the guess (#329)', async () => {
-    const speech = new FakeSpeech()
-    const { browser, events, runner } = harness({ decision: null, speech })
-    browser.navigate = async () => {
-      throw new Error("ERR_INTERNET_DISCONNECTED (-106) loading 'https://duckduckgo.com/'")
-    }
-    await runner.run('lovely weather in lisbon')
-    expect(events.filter((event) => event.type === 'display')).toEqual([expect.objectContaining({ text: "There's no internet connection.", failure: true })])
-    expect(speech.spoken.map((line) => line.text)).toEqual(["There's no internet connection."])
-  })
-
-  it('fires the best guess with no Jev configured', async () => {
+  it('fires nothing with no Jev configured, and still fires the Local Match', async () => {
     const { browser, runner, records } = harness({ decision: null })
     await runner.run('tap on the sign thing')
-    expect(browser.clicks).toEqual([2])
-    expect(records[0]).toMatchObject({ reading: 'best_guess', jevAsked: false })
+    expect(browser.clicks).toEqual([])
+    expect(records[0]).toMatchObject({ verb: 'none', reading: 'best_guess', jevAsked: false })
     expect(records[0]).not.toHaveProperty('jev')
+    await runner.run('click sign in')
+    expect(browser.clicks).toEqual([2])
   })
 
   it('a none verb publishes one greyed Feed Entry and no speak, error or tool_call', async () => {
@@ -950,7 +946,7 @@ describe('what Jev was asked (#338)', () => {
     expect(decisions[1]!.turnId).toBe(asks[1]!.turnId)
   })
 
-  it('records the ask of a call Jev did not answer, and the best guess\'s record names it', async () => {
+  it('records the ask of a call Jev did not answer, and the unread line\'s record names it', async () => {
     const { decision, runner, records, asks } = harness()
     decision.script.push({ unavailable: 'timeout' })
     await runner.run('take me home', { turnId: 't1' })
@@ -978,15 +974,21 @@ describe('the Name Match (ADR 0077)', () => {
     if (record.type !== 'decision') throw new Error('not a decision record')
     return record
   }
+  /** A search line is Jev's (#353): its reading, and the hop after it saying done. */
+  const searched = (slot: string): { answers: Record<string, DecisionAnswer> }[] => [
+    { answers: { verb: choice('search'), target: choice('none'), slot: choice(slot) } },
+    { answers: { verb: choice('done'), target: choice('none'), slot: choice('none') } },
+  ]
 
   it('carries a spoken search whose words sound like a name on the page as that name, records what was heard, and admits the name', async () => {
-    const { browser, events, records, admitted, runner } = harness()
+    const { browser, events, records, admitted, decision: jev, runner } = harness()
     browser.snapshot = { ...browser.snapshot, title: 'Linus Tech Tips - YouTube', refs: NAMED_REFS }
+    jev.script.push(...searched('s1-3'))
     expect(await runner.run('search line stack tips', { source: 'spoken' })).toBe(true)
     expect(browser.navigations[0]).toContain('linus')
     expect(browser.navigations[0]).not.toContain('stack')
-    expect(events[0]).toMatchObject({ type: 'command', text: 'search line stack tips', action: 'open linus tech tips' })
-    expect(decision(records[0])).toMatchObject({ slot: 'linus tech tips', slotHeard: 'line stack tips', slotFrom: 'page', reading: 'local_match' })
+    expect(events[0]).toMatchObject({ type: 'command', text: 'search line stack tips', action: 'search linus tech tips' })
+    expect(decision(records[0])).toMatchObject({ slot: 'linus tech tips', slotHeard: 'line stack tips', slotFrom: 'page', reading: 'jev' })
     expect(admitted).toEqual(['linus tech tips'])
   })
 
@@ -999,8 +1001,9 @@ describe('the Name Match (ADR 0077)', () => {
   })
 
   it('reads a typed line as typed: a name is matched only in speech', async () => {
-    const { browser, records, admitted, runner } = harness()
+    const { browser, records, admitted, decision: jev, runner } = harness()
     browser.snapshot = { ...browser.snapshot, refs: NAMED_REFS }
+    jev.script.push(...searched('s1-3'))
     await runner.run('search line stack tips')
     expect(browser.navigations[0]).toContain('stack')
     expect(decision(records[0]).slotHeard).toBeUndefined()
@@ -1008,11 +1011,12 @@ describe('the Name Match (ADR 0077)', () => {
   })
 
   it('leaves a Slot alone that already carries the name, and one that sounds like no name', async () => {
-    const { browser, records, admitted, runner } = harness()
+    const { browser, records, admitted, decision: jev, runner } = harness()
     browser.snapshot = { ...browser.snapshot, refs: NAMED_REFS }
+    jev.script.push(...searched('s1-3'), ...searched('s1-3'))
     await runner.run('search linus tech tips', { source: 'spoken' })
     await runner.run('search rust async book', { source: 'spoken' })
-    expect(records.filter((record) => record.type === 'decision').map((record) => decision(record).slotHeard)).toEqual([undefined, undefined])
+    expect(records.filter((record) => record.type === 'decision' && record.task?.hop === 0).map((record) => decision(record).slotHeard)).toEqual([undefined, undefined])
     expect(browser.navigations[1]).toContain('rust')
     expect(admitted).toEqual([])
   })
@@ -1033,11 +1037,12 @@ describe('the Name Match (ADR 0077)', () => {
   })
 
   it('waits for the page collected at speech start before reading a spoken search, so the Page Terms are in hand', async () => {
-    const { browser, records, runner } = harness()
+    const { browser, records, decision: jev, runner } = harness()
     browser.snapshot = { ...browser.snapshot, refs: NAMED_REFS }
     void runner.prepare()
     // The page moves on after speech start; the Command reads against the page spoken over.
     browser.snapshot = { ...browser.snapshot, refs: PAGE_REFS }
+    jev.script.push(...searched('s1-3'))
     await runner.run('search liner stack tips', { source: 'spoken' })
     expect(decision(records[0])).toMatchObject({ slot: 'linus tech tips', slotFrom: 'page' })
   })
@@ -1051,8 +1056,15 @@ describe('the Name Match (ADR 0077)', () => {
 })
 
 describe('learning from a retry chain (ADR 0077)', () => {
+  /** A search line is Jev's (#353): its reading, and the hop after it saying done. */
+  const searched = (slot: string): { answers: Record<string, DecisionAnswer> }[] => [
+    { answers: { verb: choice('search'), target: choice('none'), slot: choice(slot) } },
+    { answers: { verb: choice('done'), target: choice('none'), slot: choice('none') } },
+  ]
+
   it('proposes the last Slot of a chain of similar-sounding Slots once the user moves on', async () => {
-    const { proposed, runner } = harness()
+    const { proposed, decision, runner } = harness()
+    decision.script.push(...searched('s1-3'), ...searched('s1-3'))
     await runner.run('search line of factors', { source: 'spoken' })
     await runner.run('back', { source: 'spoken' })
     await runner.run('search line of tactics', { source: 'spoken' })
@@ -1065,7 +1077,8 @@ describe('learning from a retry chain (ADR 0077)', () => {
   })
 
   it('proposes nothing for a single search, or for two that sound nothing alike', async () => {
-    const { proposed, runner } = harness()
+    const { proposed, decision, runner } = harness()
+    decision.script.push(...searched('s1-1'), ...searched('s1-3'), ...searched('s1-3'))
     await runner.run('search cats', { source: 'spoken' })
     await runner.run('click sign in', { source: 'spoken' })
     await runner.run('search rust async book', { source: 'spoken' })
@@ -1075,7 +1088,8 @@ describe('learning from a retry chain (ADR 0077)', () => {
   })
 
   it('lets a chain lapse after a minute', async () => {
-    const { proposed, runner, setWall } = harness()
+    const { proposed, decision, runner, setWall } = harness()
+    decision.script.push(...searched('s1-3'), ...searched('s1-3'))
     await runner.run('search line of factors', { source: 'spoken' })
     setWall(1_700_000_000_000 + 120_000)
     await runner.run('search line of tactics', { source: 'spoken' })
@@ -1106,7 +1120,7 @@ describe('Early Fire (#326)', () => {
   })
 
   const noul = (value: number): DecisionAnswer => ({ type: 'noul', noul: value })
-  const openYoutube = (complete: number): Record<string, DecisionAnswer> => ({ verb: choice('open'), target: choice('none'), slot: choice('s1-1'), complete: noul(complete) })
+  const openYoutube = (complete: number): Record<string, DecisionAnswer> => ({ verb: choice('navigate'), target: choice('none'), slot: choice('s1-1'), complete: noul(complete) })
 
   it('never fires a Slot-carrying partial on the Local Match; asks Jev the three Choices and one Noul, and fires only when the Noul clears 0.7', async () => {
     const { browser, events, records, decision, runner } = harness()
@@ -1135,7 +1149,7 @@ describe('Early Fire (#326)', () => {
     expect(events.filter((event) => event.type === 'command')).toHaveLength(2)
     const decisions = records.filter((record) => record.type === 'decision')
     expect(decisions).toHaveLength(2)
-    expect(decisions[0]).toMatchObject({ verb: 'open', slot: 'youtube', reading: 'jev', jevAsked: true, partialCalls: 2, earlyFire: { partial: 'open youtube', noul: 0.9 } })
+    expect(decisions[0]).toMatchObject({ verb: 'navigate', slot: 'youtube', reading: 'jev', jevAsked: true, partialCalls: 2, earlyFire: { partial: 'open youtube', noul: 0.9 } })
   })
 
   it('holds a bare verb that may still become another Command: "scroll" waits for "scroll up"', async () => {
@@ -1169,7 +1183,7 @@ describe('Early Fire (#326)', () => {
     }) as typeof decision.ask
     const partial = runner.consider('open you')
     await flushMicrotasks()
-    decision.script.push({ answers: { verb: choice('open'), target: choice('none'), slot: choice('s1-1') } })
+    decision.script.push({ answers: { verb: choice('navigate'), target: choice('none'), slot: choice('s1-1') } })
     const endpoint = runner.run('open youtube', { source: 'spoken' })
     await flushMicrotasks()
     answer({ status: 'answered', answers: openYoutube(0.95) as never, latencyMs: 1, model: 'jev-1.14.0' })
@@ -1187,7 +1201,7 @@ describe('Early Fire (#326)', () => {
     await runner.consider('open you')
     expect(browser.navigations).toEqual([])
     expect(events).toEqual([])
-    decision.script.push({ answers: { verb: choice('open'), target: choice('none'), slot: choice('s1-1') } })
+    decision.script.push({ answers: { verb: choice('navigate'), target: choice('none'), slot: choice('s1-1') } })
     await runner.run('open youtube', { source: 'spoken' })
     expect(browser.navigations).toEqual(['https://youtube.com'])
     expect(events.some((event) => event.type === 'error')).toBe(false)
@@ -1515,7 +1529,7 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
 
   it('AC1: searches, opens a result from the whole page, clicks a ref on the landing and ends done — silent, one event and one record per hop', async () => {
     const { browser, events, records, decision, perf, runner } = taskHarness()
-    decision.script.push(answer('open', 'none', 's3-6'), answer('click', 'link-1'), answer('click', 'ref-2'), answer('done'))
+    decision.script.push(answer('search', 'none', 's3-6'), answer('click', 'link-1'), answer('click', 'ref-2'), answer('done'))
     await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
 
     expect(browser.navigations).toEqual([SEARCH, POST])
@@ -1531,7 +1545,7 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
     const fired = commands(events)
     const taskId = fired[0]!.task!.id
     expect(fired.map((event) => event.task)).toEqual([0, 1, 2, 3].map((hop) => ({ id: taskId, hop })))
-    expect(fired.map((event) => event.action)).toEqual([`open latest elon musk tweet`, `open ${POST}`, 'click [2] "Show the post"', 'done'])
+    expect(fired.map((event) => event.action)).toEqual([`search latest elon musk tweet`, `open ${POST}`, 'click [2] "Show the post"', 'done'])
     expect(fired[3]).toMatchObject({ dropped: true })
 
     const read = decisions(records)
@@ -1552,7 +1566,7 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
     }
     await runner.run('open youtube', { source: 'spoken' })
     await runner.run('scroll down', { source: 'spoken' })
-    expect(decisions(records)).toEqual([expect.objectContaining({ verb: 'open', landing: 'capped', ended: 'local_match' }), expect.objectContaining({ verb: 'scroll_down' })])
+    expect(decisions(records)).toEqual([expect.objectContaining({ verb: 'navigate', landing: 'capped', ended: 'local_match' }), expect.objectContaining({ verb: 'scroll_down' })])
     expect(decisions(records)[1]!.landing).toBeUndefined()
   })
 
@@ -1587,7 +1601,7 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
 
   it('AC3: none at hop 1 is a dead end — the page stays, nothing is spoken, the Feed says no next step', async () => {
     const { browser, events, records, decision, runner } = taskHarness()
-    decision.script.push(answer('open', 'none', 's3-6'), answer('none'))
+    decision.script.push(answer('search', 'none', 's3-6'), answer('none'))
     await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
     expect(browser.navigations).toEqual([SEARCH])
     expect(events.filter((event) => event.type === 'speak')).toEqual([])
@@ -1599,13 +1613,13 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
     const { browser, records, decision, runner } = taskHarness()
     // The logged Task's shape: every hop read open with the words, target none on top; on hop 1 a result close behind.
     // The result here is below the fold (a link-N), so the hop opens it; jevReading.test.ts covers a ref clicked.
-    const again = (probabilities: Record<string, number>) => ({ answers: { verb: choice('open'), target: choice('none', probabilities.none, probabilities), slot: choice('s3-6') } })
+    const again = (probabilities: Record<string, number>) => ({ answers: { verb: choice('search'), target: choice('none', probabilities.none, probabilities), slot: choice('s3-6') } })
     decision.script.push(again({ none: 1 }), again({ none: 0.63, 'link-1': 0.17, 'ref-1': 0.16 }), again({ none: 0.93 }))
     await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
     expect(browser.navigations).toEqual([SEARCH, POST])
     expect(decisions(records).map((record) => [record.verb, record.ended])).toEqual([
-      ['open', undefined],
-      ['open', undefined],
+      ['search', undefined],
+      ['navigate', undefined],
       ['none', 'none'],
     ])
   })
@@ -1621,7 +1635,7 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
 
   it('AC4: an address the Task has visited is not among the next hop\'s targets', async () => {
     const { decision, runner } = taskHarness('https://x.com/elonmusk')
-    decision.script.push(answer('open', 'none', 's3-6'), answer('done'))
+    decision.script.push(answer('search', 'none', 's3-6'), answer('done'))
     await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
     const hop1 = (decision.requests[1]!.questions as { target: DecisionChoiceQuestion }).target
     // ref 3 links back to where the Task started.
@@ -1631,20 +1645,20 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
 
   it('AC4: a Jev call unavailable at hop 1 ends the Task unavailable, with no best guess fired', async () => {
     const { browser, records, decision, runner } = taskHarness()
-    decision.script.push(answer('open', 'none', 's3-6'), { unavailable: 'timeout' })
+    decision.script.push(answer('search', 'none', 's3-6'), { unavailable: 'timeout' })
     await runner.run('pull up the latest elon musk tweet and open the first result', { source: 'spoken' })
     expect(browser.navigations).toEqual([SEARCH])
     expect(browser.clicks).toEqual([])
     expect(decisions(records).map((record) => record.ended)).toEqual([undefined, 'unavailable'])
   })
 
-  it('AC4: a best guess at hop 0 ends the Task: a hop never guesses', async () => {
+  it('AC4: Jev unavailable at hop 0 ends the Task unavailable with nothing fired: no reading guesses (#353)', async () => {
     const { browser, records, decision, runner } = taskHarness()
     decision.script.push({ unavailable: 'timeout' })
     await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
     expect(decision.requests).toHaveLength(1)
-    expect(browser.navigations).toHaveLength(1)
-    expect(decisions(records).map((record) => record.ended)).toEqual(['unavailable'])
+    expect(browser.navigations).toEqual([])
+    expect(decisions(records).map((record) => [record.verb, record.ended])).toEqual([['none', 'unavailable']])
   })
 
   it.each([
@@ -1652,7 +1666,7 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
     ['Escape or the Abort Head', (runner: CommandRunner) => runner.abort(), 'abandoned: stopped'],
   ])('AC5: %s during hop 1\'s read abandons it: its record is written, nothing fires', async (_name, supersede, action) => {
     const { browser, events, records, decision, runner } = taskHarness()
-    decision.script.push(answer('open', 'none', 's3-6'), answer('click', 'ref-3'))
+    decision.script.push(answer('search', 'none', 's3-6'), answer('click', 'ref-3'))
     const release = decision.hold(1)
     const task = runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
     await flushMicrotasks()
@@ -1670,7 +1684,7 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
   it('AC5: an Escape within 3 s of hop 1 firing is the Misfire signal overrun against hop 1; one later is not', async () => {
     for (const [after, counted] of [[1_000, true], [5_000, false]] as const) {
       const { records, decision, runner, setWall } = taskHarness()
-      decision.script.push(answer('open', 'none', 's3-6'), answer('click', 'ref-3'), answer('done'))
+      decision.script.push(answer('search', 'none', 's3-6'), answer('click', 'ref-3'), answer('done'))
       const release = decision.hold(2)
       setWall(10_000)
       const task = runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
@@ -1688,7 +1702,7 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
 
   it('AC5: an overrun counts against the hop that fired even after the Task ended done: the user wanted less than it did', async () => {
     const { records, decision, runner, setWall } = taskHarness()
-    decision.script.push(answer('open', 'none', 's3-6'), answer('click', 'ref-3'), answer('done'))
+    decision.script.push(answer('search', 'none', 's3-6'), answer('click', 'ref-3'), answer('done'))
     setWall(10_000)
     await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
     const hop1 = decisions(records).find((record) => record.task?.hop === 1)!
@@ -1729,9 +1743,9 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
 
   it('#336: a hop that opened a page says where on the next hop\'s "Done so far"', async () => {
     const { decision, runner } = taskHarness()
-    decision.script.push(answer('open', 'none', 's3-6'), answer('click', 'ref-3'), answer('done'))
+    decision.script.push(answer('search', 'none', 's3-6'), answer('click', 'ref-3'), answer('done'))
     await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
-    expect(decision.requests[1]!.state).toContain('Done so far: open latest elon musk tweet (opened duckduckgo.com/?q=latest%20elon%20musk%20tweet)')
+    expect(decision.requests[1]!.state).toContain('Done so far: search latest elon musk tweet (opened duckduckgo.com/?q=latest%20elon%20musk%20tweet)')
   })
 
   it('AC7: a type hop\'s Slot is read against the landing\'s Page Terms, and what was heard stays on the record', async () => {
@@ -1784,11 +1798,11 @@ describe('the Site Scope at hop 0 (#340)', () => {
 
   it('AC1: an open read as on this site searches the site, names it in the Feed and the Answer, and the Task goes on to the results', async () => {
     const { browser, events, records, asks, decision, runner } = siteHarness()
-    decision.script.push(read('open', 'none', 's2-4', 'site'), read('click', 'link-1'), read('done'))
+    decision.script.push(read('search', 'none', 's2-4', 'site'), read('click', 'link-1'), read('done'))
     await runner.run(TEXT, { source: 'spoken' })
 
     expect(browser.navigations).toEqual([SCOPED, PROFILE])
-    expect(commands(events).map((event) => event.action)).toEqual(['open donald trumps profile on x.com', `open ${PROFILE}`, 'done'])
+    expect(commands(events).map((event) => event.action)).toEqual(['search donald trumps profile on x.com', `open ${PROFILE}`, 'done'])
     expect(events).toContainEqual(expect.objectContaining({ type: 'display', text: 'Searched x.com for “donald trumps profile”.' }))
     // Hop 1 is offered the results and asked no where.
     expect(asked(decision.requests[0]!)).toEqual(['verb', 'target', 'slot', 'where'])
@@ -1796,43 +1810,61 @@ describe('the Site Scope at hop 0 (#340)', () => {
     expect(Object.values((decision.requests[1]!.questions as { target: DecisionChoiceQuestion }).target.options)).toContainEqual(expect.stringContaining(PROFILE))
     // The record keeps where for the scoped read, and the ask sidecar the fourth question.
     const [hop0, hop1] = decisions(records)
-    expect(hop0).toMatchObject({ verb: 'open', slot: 'donald trumps profile', jev: { confidence: { where: 0.6 }, probabilities: { where: { page: 0.1, site: 0.6, web: 0.3 } } } })
+    expect(hop0).toMatchObject({ verb: 'search', slot: 'donald trumps profile', jev: { confidence: { where: 0.6 }, probabilities: { where: { page: 0.1, site: 0.6, web: 0.3 } } } })
     expect(hop1!.jev).not.toHaveProperty('confidence.where')
     expect(Object.keys(asks[0]!.questions)).toEqual(['verb', 'target', 'slot', 'where'])
   })
 
-  it('AC2: where = web or page searches the whole web as before', async () => {
-    for (const where of ['web', 'page']) {
-      const { browser, decision, runner } = siteHarness()
-      decision.script.push(read('open', 'none', 's2-4', where), read('none'))
-      await runner.run(TEXT, { source: 'spoken' })
-      expect(browser.navigations).toEqual([WEB])
-    }
+  it('AC2: where = web searches the whole web as before', async () => {
+    const { browser, decision, runner } = siteHarness()
+    decision.script.push(read('search', 'none', 's2-4', 'web'), read('none'))
+    await runner.run(TEXT, { source: 'spoken' })
+    expect(browser.navigations).toEqual([WEB])
+  })
+
+  it('#353: where = page never searches — the most probable ref Jev gave any probability is clicked, or nothing is', async () => {
+    const pointed = siteHarness()
+    pointed.decision.script.push(
+      { answers: { verb: choice('search'), target: choice('none', 0.67, { none: 0.67, 'ref-2': 0.17, 'ref-1': 0.09 }), slot: choice('s1-2'), where: choice('page', 0.64) } },
+      read('done'),
+    )
+    await pointed.runner.run('open the tweet', { source: 'spoken' })
+    expect(pointed.browser.navigations).toEqual([])
+    expect(pointed.browser.clicks).toEqual([2])
+    expect(commands(pointed.events)[0]).toMatchObject({ action: 'click [2] "Elon Musk"' })
+
+    const unpointed = siteHarness()
+    unpointed.decision.script.push(read('search', 'none', 's1-2', 'page'))
+    await unpointed.runner.run('open the tweet', { source: 'spoken' })
+    expect(unpointed.browser.navigations).toEqual([])
+    expect(unpointed.browser.clicks).toEqual([])
+    expect(commands(unpointed.events)).toEqual([expect.objectContaining({ text: 'open the tweet', dropped: true })])
   })
 
   it('AC2: on a blank page, a DuckDuckGo results page and an engine’s front page the ask carries no where', async () => {
     for (const start of ['about:blank', 'https://duckduckgo.com/?q=trump', 'https://www.google.com/']) {
       const { decision, runner } = siteHarness(start)
-      decision.script.push(read('open', 'none', 's2-4'), read('none'))
+      decision.script.push(read('search', 'none', 's2-4'), read('none'))
       await runner.run(TEXT, { source: 'spoken' })
       expect(asked(decision.requests[0]!), start).toEqual(['verb', 'target', 'slot'])
     }
   })
 
-  it('AC3: "search for donald trump" and "open youtube" on x.com are Local-Matched and unscoped with no Jev call', async () => {
+  it('AC3: "open youtube" on x.com is Local-Matched with no Jev call; "search for donald trump" is Jev\'s, and where scopes it (#353)', async () => {
     const { browser, decision, runner } = siteHarness()
+    decision.script.push(read('search', 'none', 's2-3', 'site'), read('none'))
     await runner.run('search for donald trump', { source: 'spoken' })
+    expect(asked(decision.requests[0]!)).toEqual(['verb', 'target', 'slot', 'where'])
     await runner.run('open youtube', { source: 'spoken' })
-    expect(decision.requests).toEqual([])
-    expect(browser.navigations).toEqual(['https://duckduckgo.com/?q=donald%20trump', 'https://youtube.com'])
+    expect(decision.requests).toHaveLength(2)
+    expect(browser.navigations).toEqual(['https://duckduckgo.com/?q=site%3Ax.com%20donald%20trump', 'https://youtube.com'])
   })
 
-  it('AC3: the best guess when Jev is unavailable is unscoped', async () => {
+  it('AC3: nothing fires when Jev is unavailable — no unscoped search of the words (#353)', async () => {
     const { browser, decision, runner } = siteHarness()
     decision.script.push({ unavailable: 'timeout' })
     await runner.run(TEXT, { source: 'spoken' })
-    expect(browser.navigations).toHaveLength(1)
-    expect(browser.navigations[0]).not.toContain('site%3A')
+    expect(browser.navigations).toEqual([])
   })
 })
 
@@ -1867,7 +1899,7 @@ describe('the Site Scope at a later hop (#341): one Utterance chains a site and 
 
   it('AC1: opens the address, asks where on its landing, searches the site, opens the result and ends done', async () => {
     const { browser, records, decision, perf, runner } = chainHarness()
-    decision.script.push(read('open', 'none', 's5-7', 'site'), read('click', 'link-1'), read('done'))
+    decision.script.push(read('search', 'none', 's5-7', 'site'), read('click', 'link-1'), read('done'))
     await runner.run(TEXT, { source: 'spoken' })
 
     expect(browser.navigations).toEqual([TWITTER, SCOPED, PROFILE])
@@ -1878,9 +1910,9 @@ describe('the Site Scope at a later hop (#341): one Utterance chains a site and 
     expect(asked(decision.requests[1]!)).toEqual(['verb', 'target', 'slot'])
     expect(asked(decision.requests[2]!)).toEqual(['verb', 'target', 'slot'])
     expect(decisions(records).map((record) => [record.reading, record.verb, record.ended])).toEqual([
-      ['local_match', 'open', undefined],
-      ['jev', 'open', undefined],
-      ['jev', 'open', undefined],
+      ['local_match', 'navigate', undefined],
+      ['jev', 'search', undefined],
+      ['jev', 'navigate', undefined],
       ['jev', 'done', 'done'],
     ])
     expect(decisions(records)[1]).toMatchObject({ slot: 'donald trumps profile', task: { hop: 1 } })
@@ -1898,10 +1930,10 @@ describe('the Site Scope at a later hop (#341): one Utterance chains a site and 
   it('AC3: on a site the Task has already searched, where is not asked and open opens the most probable offered target', async () => {
     const { browser, decision, runner } = chainHarness()
     decision.script.push(
-      read('open', 'none', 's5-7', 'site'),
+      read('search', 'none', 's5-7', 'site'),
       read('click', 'link-1'),
-      // On the profile, an open of the same words: no where, no search — #332's dead end with nothing offered.
-      read('open', 'none', 's5-7'),
+      // On the profile, a search of the same words: no where, no search — #332's dead end with nothing offered.
+      read('search', 'none', 's5-7'),
     )
     await runner.run(TEXT, { source: 'spoken' })
     expect(asked(decision.requests[2]!)).toEqual(['verb', 'target', 'slot'])
@@ -1917,8 +1949,8 @@ describe('the Site Scope at a later hop (#341): one Utterance chains a site and 
       return line
     }
     // The live #341 AC5 run's hop 3: open 0.60 over done 0.35, target none 0.97, "Search" at 0.02.
-    const onProfile = { answers: { verb: choice('open', 0.6, { open: 0.6, done: 0.35 }), target: choice('none', 0.97, { none: 0.97, 'ref-1': 0.02 }), slot: choice('s5-7') } }
-    decision.script.push(read('open', 'none', 's5-7', 'site'), read('click', 'link-1'), onProfile)
+    const onProfile = { answers: { verb: choice('search', 0.6, { search: 0.6, done: 0.35 }), target: choice('none', 0.97, { none: 0.97, 'ref-1': 0.02 }), slot: choice('s5-7') } }
+    decision.script.push(read('search', 'none', 's5-7', 'site'), read('click', 'link-1'), onProfile)
     await runner.run(TEXT, { source: 'spoken' })
     expect(browser.navigations).toEqual([TWITTER, SCOPED, PROFILE])
     expect(browser.clicks).toEqual([])
@@ -1930,7 +1962,7 @@ describe('the Site Scope at a later hop (#341): one Utterance chains a site and 
 
   it('AC4: hop 0\'s own Site Scope search (#340) is a site the Task has searched: a later hop back on it is asked no where', async () => {
     const { browser, decision, runner } = chainHarness(TWITTER)
-    decision.script.push(read('open', 'none', 's2-4', 'site'), read('click', 'link-1'), read('open', 'none', 's2-4'))
+    decision.script.push(read('search', 'none', 's2-4', 'site'), read('click', 'link-1'), read('search', 'none', 's2-4'))
     await runner.run('go to donald trumps profile', { source: 'spoken' })
     expect(browser.navigations).toEqual([SCOPED, PROFILE])
     expect(decision.requests.map(asked)).toEqual([
@@ -1942,7 +1974,7 @@ describe('the Site Scope at a later hop (#341): one Utterance chains a site and 
 
   it('AC4: the Task records the sites it searched, and the cap counts the search as an action', async () => {
     const { browser, records, decision, runner } = chainHarness()
-    decision.script.push(read('open', 'none', 's5-7', 'site'))
+    decision.script.push(read('search', 'none', 's5-7', 'site'))
     for (let hop = 2; hop < 6; hop += 1) decision.script.push(read('scroll_down'))
     await runner.run(TEXT, { source: 'spoken' })
     // Hop 0's open, hop 1's search and three scrolls: the fifth action ends it.

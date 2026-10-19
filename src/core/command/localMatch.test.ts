@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { GRAMMAR_ONLY_VERBS, JEV_VERBS, describeCommand, type CommandRef } from './command'
-import { bestGuess, carriesWordsPastAddress, headsAnotherVerb, localMatch } from './localMatch'
+import { carriesWordsPastAddress, headsAnotherVerb, localMatch } from './localMatch'
 
-// The Local Match (CONTEXT.md, ADR 0076): a Command settled from the
-// Utterance and the page alone — the CLI grammar, or a plain verb and a
-// label exactly one ref carries. The best guess is the same reading made
-// lenient: what fires when Jev does not answer in time.
+// The Local Match (CONTEXT.md, ADR 0076, #353): a Command settled from the
+// Utterance and the page alone — fixed phrases only: the CLI grammar, the
+// control words, an address after an opening phrase, or a plain verb and
+// a label exactly one ref carries. Nothing guesses: what it does not
+// settle is Jev's, and nothing fires when Jev does not answer.
 
 const REFS: CommandRef[] = [
   { ref: 1, kind: 'link', label: 'Home', href: 'https://example.com/', inputType: null },
@@ -109,8 +110,6 @@ describe('the Local Match: the Nth result on a search page', () => {
     expect(localMatch('open the third result', RESULTS, SEARCH_URL)).toBeNull()
     expect(localMatch('open the first result', REFS, 'https://example.com/')).toBeNull()
     expect(localMatch('click the first video', REFS, 'https://www.youtube.com/')).toBeNull()
-    // The best guess off a search page: the words as an address, which is a search.
-    expect(bestGuess('open the first result', REFS, 'https://example.com/')).toEqual({ verb: 'open', target: null, slot: 'the first result' })
   })
 
   it('does not read a longer phrase as an ordinal', () => {
@@ -120,7 +119,7 @@ describe('the Local Match: the Nth result on a search page', () => {
 
 describe('the Local Match: the CLI grammar', () => {
   it('reads the CLI grammar as Commands, with no page needed', () => {
-    expect(localMatch('navigate youtube.com', [])).toEqual({ verb: 'open', target: null, slot: 'youtube.com' })
+    expect(localMatch('navigate youtube.com', [])).toEqual({ verb: 'navigate', target: null, slot: 'youtube.com' })
     expect(localMatch('read', [])).toEqual({ verb: 'read', target: null, slot: null })
     expect(localMatch('click 7', [])).toEqual({ verb: 'click', target: 7, slot: null })
     expect(localMatch('type 3 hello world', [])).toEqual({ verb: 'type', target: 3, slot: 'hello world' })
@@ -161,11 +160,13 @@ describe('the Local Match: plain verbs', () => {
     expect(localMatch('enter', REFS)).toMatchObject({ verb: 'press', key: { key: 'Enter' } })
   })
 
-  it('reads open with the Slot verbatim, and search phrasing as search terms', () => {
-    expect(localMatch('open youtube', REFS)).toEqual({ verb: 'open', target: null, slot: 'youtube' })
-    expect(localMatch('go to news.ycombinator.com', REFS)).toEqual({ verb: 'open', target: null, slot: 'news.ycombinator.com' })
-    expect(localMatch('search for rust async book', REFS)).toEqual({ verb: 'open', target: null, slot: 'rust async book', search: true })
-    expect(localMatch('look up weather in berlin', REFS)).toMatchObject({ verb: 'open', slot: 'weather in berlin', search: true })
+  it('navigates an address after an opening phrase, and leaves search phrasing to Jev (#353)', () => {
+    expect(localMatch('open youtube', REFS)).toEqual({ verb: 'navigate', target: null, slot: 'youtube' })
+    expect(localMatch('go to news.ycombinator.com', REFS)).toEqual({ verb: 'navigate', target: null, slot: 'news.ycombinator.com' })
+    // Search terms are Jev's, whose `where` scopes them: no search phrase is a fixed phrase.
+    expect(localMatch('search for rust async book', REFS)).toBeNull()
+    expect(localMatch('look up weather in berlin', REFS)).toBeNull()
+    expect(localMatch('google rust', REFS)).toBeNull()
   })
 
   it('clicks the one ref whose label the words name — articles and kind words aside', () => {
@@ -177,18 +178,18 @@ describe('the Local Match: plain verbs', () => {
     expect(localMatch('open trending', REFS)).toEqual({ verb: 'click', target: 6, slot: null })
   })
 
-  it('settles an open alone only for an address; words about the page that no ref carries are Jev\'s, and the best guess searches them', () => {
+  it("settles an open alone only for an address; words about the page that no ref carries are Jev's", () => {
     expect(localMatch("open Elon Musk's latest tweet", REFS)).toBeNull()
-    expect(bestGuess("open Elon Musk's latest tweet", REFS)).toEqual({ verb: 'open', target: null, slot: "Elon Musk's latest tweet" })
-    expect(localMatch('open youtube dot com', REFS)).toEqual({ verb: 'open', target: null, slot: 'youtube dot com' })
-    expect(localMatch('go to https://example.org/a?b=1', REFS)).toEqual({ verb: 'open', target: null, slot: 'https://example.org/a?b=1' })
-    expect(localMatch('open localhost:3000', REFS)).toEqual({ verb: 'open', target: null, slot: 'localhost:3000' })
+    expect(localMatch('open the tweet', REFS)).toBeNull()
+    expect(localMatch('open youtube dot com', REFS)).toEqual({ verb: 'navigate', target: null, slot: 'youtube dot com' })
+    expect(localMatch('go to https://example.org/a?b=1', REFS)).toEqual({ verb: 'navigate', target: null, slot: 'https://example.org/a?b=1' })
+    expect(localMatch('open localhost:3000', REFS)).toEqual({ verb: 'navigate', target: null, slot: 'localhost:3000' })
   })
 
   it('settles an open of an address with words past it (#341): the address alone, the words left for the Task', () => {
-    expect(localMatch('go to twitter and open donald trumps profile', REFS)).toEqual({ verb: 'open', target: null, slot: 'twitter' })
-    expect(localMatch('open youtube and search for lofi', REFS)).toEqual({ verb: 'open', target: null, slot: 'youtube' })
-    expect(localMatch('go to youtube dot com then search for lofi', REFS)).toEqual({ verb: 'open', target: null, slot: 'youtube dot com' })
+    expect(localMatch('go to twitter and open donald trumps profile', REFS)).toEqual({ verb: 'navigate', target: null, slot: 'twitter' })
+    expect(localMatch('open youtube and search for lofi', REFS)).toEqual({ verb: 'navigate', target: null, slot: 'youtube' })
+    expect(localMatch('go to youtube dot com then search for lofi', REFS)).toEqual({ verb: 'navigate', target: null, slot: 'youtube dot com' })
     expect(carriesWordsPastAddress('go to twitter and open donald trumps profile')).toBe(true)
     expect(carriesWordsPastAddress('open youtube and search for lofi')).toBe(true)
     // The address alone carries nothing past it.
@@ -205,16 +206,18 @@ describe('the Local Match: plain verbs', () => {
     expect(carriesWordsPastAddress('scroll down and read')).toBe(false)
   })
 
-  it('leaves a span a ref on the page carries to Jev: the page\'s word, not an address', () => {
+  it("leaves a span a ref on the page carries to Jev: the page's word, not an address", () => {
     const settings = [...REFS, { ref: 7, kind: 'link' as const, label: 'Account settings', href: 'https://example.com/settings', inputType: null }]
     expect(localMatch('open settings and click save', settings)).toBeNull()
     expect(localMatch('go to trending and scroll down', REFS)).toBeNull()
-    expect(localMatch('go to twitter and scroll down', REFS)).toEqual({ verb: 'open', target: null, slot: 'twitter' })
+    expect(localMatch('go to twitter and scroll down', REFS)).toEqual({ verb: 'navigate', target: null, slot: 'twitter' })
   })
 
-  it('makes no Local Match when the label names no ref, or more than one', () => {
+  it('makes no Local Match when the label names no ref, or more than one — never the ref sharing the most words', () => {
     expect(localMatch('click sign', REFS)).toBeNull()
     expect(localMatch('click the first video', REFS)).toBeNull()
+    expect(localMatch('tap on the sign thing', REFS)).toBeNull()
+    expect(localMatch('click the google sign in thing', REFS)).toBeNull()
     const twoSearches = [...REFS, { ref: 7, kind: 'button' as const, label: 'Search', href: null, inputType: null }]
     expect(localMatch('click search', twoSearches)).toBeNull()
   })
@@ -223,47 +226,23 @@ describe('the Local Match: plain verbs', () => {
     expect(localMatch('type hello in the search box', REFS)).toEqual({ verb: 'type', target: 3, slot: 'hello' })
     expect(localMatch('type rust async book into search', REFS)).toEqual({ verb: 'type', target: 3, slot: 'rust async book' })
     expect(localMatch('type hello', REFS)).toEqual({ verb: 'type', target: 3, slot: 'hello' })
-    // A page with two text fields leaves a target-less type to Jev.
-    const twoFields = [...REFS, { ref: 7, kind: 'input' as const, label: 'Email', href: null, inputType: 'email' }]
+    // A page with two text fields leaves a target-less type to Jev, as does a field no ref's label is exactly.
+    const twoFields = [...REFS, { ref: 7, kind: 'input' as const, label: 'Email address', href: null, inputType: 'email' }]
     expect(localMatch('type hello', twoFields)).toBeNull()
-    expect(localMatch('type hello in the email field', twoFields)).toEqual({ verb: 'type', target: 7, slot: 'hello' })
+    expect(localMatch('type hello in the email address field', twoFields)).toEqual({ verb: 'type', target: 7, slot: 'hello' })
+    expect(localMatch('type hello in the email', twoFields)).toBeNull()
+    expect(localMatch('type hello', [])).toBeNull()
   })
 
-  it('makes no Local Match of words with no plain verb', () => {
+  it('makes no Local Match of words with no fixed phrase: they are Jev\'s, never a search (#353)', () => {
     expect(localMatch('what is the weather like', REFS)).toBeNull()
     expect(localMatch('the first video please', REFS)).toBeNull()
+    expect(localMatch('rust async book', REFS)).toBeNull()
     expect(localMatch('', REFS)).toBeNull()
   })
-})
 
-describe('the best guess: the Local Match made lenient', () => {
-  it('is the Local Match where one exists', () => {
-    expect(bestGuess('click sign in', REFS)).toEqual(localMatch('click sign in', REFS))
-    expect(bestGuess('scroll down', REFS)).toEqual(localMatch('scroll down', REFS))
-  })
-
-  it('clicks the ref whose label shares the most words, the first on a tie', () => {
-    expect(bestGuess('click sign', REFS)).toEqual({ verb: 'click', target: 2, slot: null })
-    expect(bestGuess('click the google sign in thing', REFS)).toEqual({ verb: 'click', target: 4, slot: null })
-    expect(bestGuess('tap on trending videos', REFS)).toEqual({ verb: 'click', target: 6, slot: null })
-  })
-
-  it('drops a click whose words name nothing on the page', () => {
-    expect(bestGuess('click the first video', REFS)).toEqual({ verb: 'none', target: null, slot: null })
-  })
-
-  it('types into the nearest field by words, else the first text field', () => {
-    const twoFields = [...REFS, { ref: 7, kind: 'input' as const, label: 'Email address', href: null, inputType: 'email' }]
-    expect(bestGuess('type bob at example dot com in the email', twoFields)).toEqual({ verb: 'type', target: 7, slot: 'bob at example dot com' })
-    expect(bestGuess('type hello', twoFields)).toEqual({ verb: 'type', target: 3, slot: 'hello' })
-    expect(bestGuess('type hello', [])).toEqual({ verb: 'none', target: null, slot: null })
-  })
-
-  it('reads words with no plain verb as a search — the Misfire the next Command recovers (ADR 0076)', () => {
-    expect(bestGuess('rust async book', REFS)).toEqual({ verb: 'open', target: null, slot: 'rust async book', search: true })
-  })
-
-  it('reads nothing as nothing', () => {
-    expect(bestGuess('', REFS)).toEqual({ verb: 'none', target: null, slot: null })
+  it('reads the typed grammar\'s navigate as a navigate of an address, or a search of words that are none', () => {
+    expect(localMatch('navigate youtube.com', REFS)).toEqual({ verb: 'navigate', target: null, slot: 'youtube.com' })
+    expect(localMatch('navigate rust async book', REFS)).toEqual({ verb: 'search', target: null, slot: 'rust async book' })
   })
 })

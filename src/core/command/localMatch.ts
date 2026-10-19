@@ -5,25 +5,29 @@ import { isAddressShaped } from './openAddress'
 import { readTimerWords } from '../timer/timerWords'
 import { MUSIC_PHRASES } from '../music/musicWords'
 
-// The Local Match (CONTEXT.md, ADR 0076, #324): a Command settled from the
-// Utterance and the page alone, without asking the Decision Model — the
-// CLI grammar, or a plain verb and the one element the words can name: a
-// label exactly one ref carries, or the Nth result on a search page ("the
-// first result"). An `open` settles alone only when its words are shaped
-// like an address; words about the page go to Jev with the refs. It is
-// the fastest reading, and made lenient (`bestGuess`) it is the fallback
-// when the Decision Model does not answer in time. Nothing here asks "did
-// you mean": a reading that is not settled is null, and Jev is asked.
+// The Local Match (CONTEXT.md, ADR 0076, #324, #353): a Command settled
+// from the Utterance and the page alone, without asking the Decision Model
+// — fixed phrases only. The CLI grammar; the control words (scroll, back,
+// reload, read, clear, stop, resume, a key); the Timer's and the Player's
+// lines; and a plain verb with the one element the words name exactly: a
+// label exactly one ref carries, the Nth result on a search page ("the
+// first result"), or an address-shaped Slot after an opening phrase ("open
+// youtube"). Search terms and words about the page always go to Jev, whose
+// verbs are actions, with the refs. Nothing here guesses: a reading that is
+// not settled is null, Jev is asked, and when Jev does not answer the line
+// is no Command.
 
 /** Words a spoken label wears that the ref's label does not: leading articles and trailing kind words. */
 const ARTICLES: ReadonlySet<string> = new Set(['the', 'a', 'an', 'that', 'this', 'on'])
 const KIND_WORDS: ReadonlySet<string> = new Set(['button', 'link', 'field', 'box', 'tab', 'input', 'option', 'item', 'icon', 'menu', 'thing', 'bar'])
 
-type VerbKind = 'open' | 'search' | 'click' | 'press' | 'type' | CommandVerb
+type VerbKind = 'open' | 'click' | 'press' | 'type' | CommandVerb
 
 /**
  * The spoken verb phrases, each the words that open a Command of that kind.
- * Matched longest first, as the whole Utterance or as its head.
+ * Matched longest first, as the whole Utterance or as its head. No search
+ * phrase is among them (#353): "search for …", "look up …", "google …" are
+ * Jev's, whose `where` scopes them.
  */
 const VERB_PHRASES: readonly (readonly [string, VerbKind])[] = [
   ['navigate to', 'open'],
@@ -35,12 +39,6 @@ const VERB_PHRASES: readonly (readonly [string, VerbKind])[] = [
   ['open', 'open'],
   ['visit', 'open'],
   ['load', 'open'],
-  ['search for', 'search'],
-  ['search', 'search'],
-  ['look up', 'search'],
-  ['look for', 'search'],
-  ['google', 'search'],
-  ['find', 'search'],
   ['click on', 'click'],
   ['click', 'click'],
   ['tap on', 'click'],
@@ -98,6 +96,20 @@ const BARE_WORDS: Readonly<Record<string, VerbKind>> = { down: 'scroll_down', up
 
 /** The words that join an address to the verb phrase after it: "go to twitter and open …". */
 const JOINERS: readonly string[] = ['and then', 'and', 'then']
+
+/**
+ * The phrases that may head the words past an address (#341): the verb
+ * phrases, and the search phrases that are Jev's to read (#353) — "open
+ * youtube and search for lofi" still opens youtube. They mark where the
+ * address ends, and settle nothing themselves.
+ */
+const CLAUSE_HEADS: readonly string[] = [...VERB_PHRASES.map(([phrase]) => phrase), 'search for', 'search', 'look up', 'look for', 'google', 'find']
+
+/** Whether a clause heads with a phrase a Task could act on. */
+function headsAClause(tokens: readonly Token[]): boolean {
+  const clean = cleanOf(tokens)
+  return BARE_WORDS[clean] !== undefined || CLAUSE_HEADS.some((phrase) => clean === phrase || clean.startsWith(`${phrase} `))
+}
 
 /** The words between the text to type and the field it goes in. */
 const TYPE_SEPARATORS: readonly string[] = ['into the', 'into', 'in the', 'in', 'on the', 'on', 'to the', 'to']
@@ -157,18 +169,13 @@ function exactlyOneLabelled(phrase: string, refs: readonly CommandRef[]): number
   return matches.length === 1 ? matches[0]!.ref : null
 }
 
-/** The ref whose label shares the most words with the phrase — at least one — the first on a tie. */
-function bestLabelled(phrase: string, refs: readonly CommandRef[]): number | null {
-  const wanted = new Set(labelWords(phrase))
-  if (wanted.size === 0) return null
-  let best: { ref: number; shared: number } | null = null
-  for (const ref of refs) {
+/** Whether any ref's label carries a word of the phrase: the page's word, not an address (#341). */
+function sharesALabelWord(phrase: string, refs: readonly CommandRef[]): boolean {
+  const wanted = labelWords(phrase)
+  return refs.some((ref) => {
     const words = new Set(normalizeWords(ref.label).split(' '))
-    let shared = 0
-    for (const word of wanted) if (words.has(word)) shared += 1
-    if (shared > 0 && (best === null || shared > best.shared)) best = { ref: ref.ref, shared }
-  }
-  return best?.ref ?? null
+    return wanted.some((word) => words.has(word))
+  })
 }
 
 function isTextField(ref: CommandRef): boolean {
@@ -309,7 +316,8 @@ function command(verb: CommandVerb, extra?: Partial<Command>): Command {
 function fromGrammar(parsed: CliCommand): Command | null {
   switch (parsed.type) {
     case 'navigate':
-      return command('open', { slot: parsed.input })
+      // The typed line's address, or the search its words run when they are no address.
+      return isAddressShaped(parsed.input) ? command('navigate', { slot: parsed.input }) : command('search', { slot: parsed.input })
     case 'read':
       return command('read')
     case 'click':
@@ -341,7 +349,7 @@ function fromGrammar(parsed: CliCommand): Command | null {
 }
 
 /**
- * The address an `open`'s words start with when words past it go on (#341):
+ * The address an opening phrase's words start with when words past it go on (#341):
  * the longest leading span that is address-shaped and is followed by a
  * joiner and another verb phrase — "twitter" in "twitter and open donald
  * trumps profile". Null when the words are an address whole, or no such
@@ -354,17 +362,17 @@ function addressBeforeMore(rest: readonly Token[], refs: readonly CommandRef[]):
   if (isAddressShaped(spokenOf(rest))) return null
   for (let end = rest.length - 1; end >= 1; end -= 1) {
     const address = spokenOf(rest.slice(0, end))
-    if (!isAddressShaped(address) || bestLabelled(address, refs) !== null) continue
+    if (!isAddressShaped(address) || sharesALabelWord(address, refs)) continue
     const after = rest.slice(end)
     const joiner = JOINERS.find((words) => cleanOf(after).startsWith(`${words} `))
-    if (joiner !== undefined && verbOf(after.slice(joiner.split(' ').length)) !== null) return address
+    if (joiner !== undefined && headsAClause(after.slice(joiner.split(' ').length))) return address
   }
   return null
 }
 
 /**
  * Whether an Utterance opens an address and carries words past it (#341):
- * "go to twitter and open donald trumps profile" — a Local-Matched `open`
+ * "go to twitter and open donald trumps profile" — a Local-Matched `navigate`
  * of it goes on to hop 1 rather than ending the Task. Read off the words
  * alone: the Local Match already checked the span against the page.
  */
@@ -373,22 +381,17 @@ export function carriesWordsPastAddress(text: string): boolean {
   return found?.kind === 'open' && addressBeforeMore(found.rest, []) !== null
 }
 
-/** The Command a spoken verb and its words settle, exactly (`lenient` false) or by the best reading (`lenient` true). */
-function readSpoken(text: string, refs: readonly CommandRef[], url: string, lenient: boolean): Command | null {
+/** The Command a spoken verb and its words settle exactly; null when they settle none. */
+function readSpoken(text: string, refs: readonly CommandRef[], url: string): Command | null {
   const tokens = tokenize(text)
   if (tokens.length === 0) return null
   // The Timer's lines first: "cancel the timer" is not the stop verb, and "set" heads no verb phrase.
   const timer = readTimerWords(text)
   if (timer !== null) return timer.kind === 'set' ? command('timer', { durationMs: timer.durationMs }) : command('timer')
   const found = verbOf(tokens)
-  if (found === null) {
-    // No plain verb (ADR 0076): the best guess reads the words as search
-    // terms — a Misfire the next Command recovers — and the Local Match
-    // settles nothing.
-    return lenient ? command('open', { slot: spokenOf(tokens), search: true }) : null
-  }
+  // No fixed phrase heads the words (ADR 0076, #353): Jev reads them.
+  if (found === null) return null
   const { kind, rest } = found
-  const labelled = (): number | null => exactlyOneLabelled(spokenOf(rest), refs) ?? (lenient ? bestLabelled(spokenOf(rest), refs) : null)
   /** "the first result": the Nth result on a search page settles it; an ordinal anywhere else is Jev's (`unsettled`). */
   const ordinal = (): { target: number } | 'unsettled' | null => {
     const position = ordinalOf(spokenOf(rest))
@@ -396,49 +399,41 @@ function readSpoken(text: string, refs: readonly CommandRef[], url: string, leni
     const target = nthResult(position, refs, url)
     return target !== null ? { target } : 'unsettled'
   }
-  const clickOrNone = (): Command | null => {
+  /** The one element the words name — the Nth result, or the label exactly one ref carries — clicked; null otherwise. */
+  const clickNamed = (): Command | null => {
     const nth = ordinal()
     if (nth !== null && nth !== 'unsettled') return command('click', { target: nth.target })
-    if (nth === 'unsettled' && !lenient) return null
-    const target = labelled()
-    if (target !== null) return command('click', { target })
-    return lenient ? command('none') : null
+    if (nth === 'unsettled') return null
+    const target = exactlyOneLabelled(spokenOf(rest), refs)
+    return target !== null ? command('click', { target }) : null
   }
   switch (kind) {
     case 'press': {
       // The bare key words: "enter" alone, "press enter".
       const key = pressKeyOf(cleanOf(rest.length === 0 ? tokens : rest))
       if (key !== null) return command('press', { slot: cleanOf(rest.length === 0 ? tokens : rest), key, times: 1 })
-      return clickOrNone()
+      return clickNamed()
     }
     case 'click':
-      return rest.length === 0 ? (lenient ? command('none') : null) : clickOrNone()
+      return rest.length === 0 ? null : clickNamed()
     case 'open': {
-      if (rest.length === 0) return lenient ? command('none') : null
+      if (rest.length === 0) return null
       // A label exactly one ref carries, or the Nth result on a search
-      // page, is opened by clicking it; an address is opened; words about
-      // the page that settle neither are Jev's — the best guess searches them.
-      const target = exactlyOneLabelled(spokenOf(rest), refs)
-      if (target !== null) return command('click', { target })
-      const nth = ordinal()
-      if (nth !== null && nth !== 'unsettled') return command('click', { target: nth.target })
+      // page, is opened by clicking it; an address is navigated to; words
+      // about anything else are Jev's.
+      const named = clickNamed()
+      if (named !== null) return named
+      if (ordinal() === 'unsettled') return null
       // An address with words past it (#341) opens the address; the Task reads the rest on its landing.
-      const address = nth === 'unsettled' ? null : addressBeforeMore(rest, refs)
-      if (address !== null) return command('open', { slot: address })
-      if (!lenient && (nth === 'unsettled' || !isAddressShaped(spokenOf(rest)))) return null
-      return command('open', { slot: spokenOf(rest) })
+      const address = addressBeforeMore(rest, refs)
+      if (address !== null) return command('navigate', { slot: address })
+      return isAddressShaped(spokenOf(rest)) ? command('navigate', { slot: spokenOf(rest) }) : null
     }
-    case 'search':
-      return rest.length === 0 ? (lenient ? command('none') : null) : command('open', { slot: spokenOf(rest), search: true })
     case 'type': {
-      if (rest.length === 0) return lenient ? command('none') : null
+      if (rest.length === 0) return null
       const { slot, field } = splitTyped(rest)
-      let target: number | null = null
-      if (field !== null) target = exactlyOneLabelled(field, refs) ?? (lenient ? bestLabelled(field, refs) : null)
-      if (target === null && field === null) target = theOneTextField(refs)
-      if (target === null && lenient) target = refs.find(isTextField)?.ref ?? null
-      if (target === null) return lenient ? command('none') : null
-      return command('type', { target, slot })
+      const target = field !== null ? exactlyOneLabelled(field, refs) : theOneTextField(refs)
+      return target === null ? null : command('type', { target, slot })
     }
     default:
       return command(kind)
@@ -481,15 +476,5 @@ export function headsAnotherVerb(text: string): boolean {
 export function localMatch(text: string, refs: readonly CommandRef[], url = ''): Command | null {
   const parsed = parseCliCommand(text)
   if (parsed !== null && parsed.ok) return fromGrammar(parsed.command)
-  return readSpoken(text, refs, url, false)
-}
-
-/**
- * The best guess: the Local Match where one exists, else the same reading
- * made lenient — the ref sharing the most words, the first text field,
- * the words as search terms — what fires when Jev does not answer. Never
- * null: nothing to read is `none`.
- */
-export function bestGuess(text: string, refs: readonly CommandRef[], url = ''): Command {
-  return localMatch(text, refs, url) ?? readSpoken(text, refs, url, true) ?? command('none')
+  return readSpoken(text, refs, url)
 }

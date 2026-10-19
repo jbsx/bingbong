@@ -69,7 +69,7 @@ describe('the landing wait e2e', () => {
     const { line, ms } = await timedNavigate('/landing/held')
     // The load never ends; before #328 this waited out the 30 s bound.
     expect(ms).toBeLessThan(2_500)
-    expect(await recordOf(line)).toMatchObject({ verb: 'open', landing: 'quiet' })
+    expect(await recordOf(line)).toMatchObject({ verb: 'navigate', landing: 'quiet' })
     expect(await harness.paneEval('document.readyState')).not.toBe('complete')
   })
 
@@ -77,7 +77,7 @@ describe('the landing wait e2e', () => {
     const { line, ms } = await timedNavigate('/landing/busy')
     expect(ms).toBeGreaterThanOrEqual(2_900)
     expect(ms).toBeLessThan(6_000)
-    expect(await recordOf(line)).toMatchObject({ verb: 'open', landing: 'capped' })
+    expect(await recordOf(line)).toMatchObject({ verb: 'navigate', landing: 'capped' })
   })
 
   it('still reads a not-found landing as the wall it is, and speaks its line', async () => {

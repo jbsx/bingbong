@@ -223,13 +223,14 @@ describe('runCliHarness', () => {
     await cli.done
   })
 
-  it('fires the best guess for words no grammar knows, and prints a failure as an error without stopping the loop', async () => {
+  it('fires nothing for words no grammar knows with no Decision Model, and prints a failure as an error without stopping the loop', async () => {
     const cli = harnessWith()
     await cli.expectOutput('bingbong> ')
 
-    // No Decision Model here: a verb-less line is searched (ADR 0076), never refused.
+    // No Decision Model here: a line no fixed phrase settles is no Command (#353), never a search.
     cli.input.write('frobnicate\n')
-    await cli.expectOutput('navigated: url=https://duckduckgo.com/?q=frobnicate')
+    await cli.expectOutput('not a command: "frobnicate"')
+    expect(cli.browser.navigations ?? []).toEqual([])
 
     cli.browser.failRead = true
     cli.input.write('read\n')

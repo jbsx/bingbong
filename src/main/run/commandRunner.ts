@@ -8,10 +8,10 @@ import type { PerfTracer } from '../../core/perf/perfTracer'
 import { commandPageOf, describeCommand, targetLabel, commandKeepsIdle, type Command, type CommandPage } from '../../core/command/command'
 import { dismissCommand, isDismissPhrase } from '../../core/command/dismissDialog'
 import { COMMAND_HELP } from '../../core/command/help'
-import { bestGuess, carriesWordsPastAddress, headsAnotherVerb, isSearchLanding, localMatch } from '../../core/command/localMatch'
+import { carriesWordsPastAddress, headsAnotherVerb, isSearchLanding, localMatch } from '../../core/command/localMatch'
 import { commandQuestions, commandState, doneLine, partialQuestions, readCommandAnswers, setAsideOf, type DoneResult, type HopContext, type SetAside } from '../../core/command/jevReading'
 import { blockedOrInertAction } from '../../core/browser/actionOutcome'
-import { isAddressShaped, openAddress } from '../../core/command/openAddress'
+import { navigateAddress, searchAddress } from '../../core/command/openAddress'
 import { nameMatch, soundsAlike } from '../../core/command/nameMatch'
 import {
   MISFIRE_WINDOW_MS,
@@ -28,7 +28,7 @@ import {
 } from '../../core/command/decisionRecord'
 import { pageReadPart, pageReadText } from '../../core/browser/pageText'
 import { SPOKEN_FAILURES, failureLineOf, spokenFailureOf } from '../../core/command/spokenFailure'
-import { STOPPED_ANSWERS, bestGuessAnswer, commandAnswer, pageReadCard } from '../../core/command/answer'
+import { STOPPED_ANSWERS, commandAnswer, pageReadCard } from '../../core/command/answer'
 import { describeDuration } from '../../core/timer/duration'
 import type { Timer } from '../../core/timer/timer'
 import type { SpeakOutcome, TtsSpeaker } from '../../core/ports/tts'
@@ -189,7 +189,7 @@ const RETRY_CHAIN_WINDOW_MS = 60_000
 const MAX_TASK_ACTIONS = 5
 
 /** The verbs a Jev-read Task goes on after (#328); every other verb ends it. */
-const CONTINUING: ReadonlySet<Command['verb']> = new Set(['open', 'click', 'type', 'press', 'scroll_up', 'scroll_down', 'back', 'forward', 'reload'])
+const CONTINUING: ReadonlySet<Command['verb']> = new Set(['navigate', 'search', 'click', 'type', 'press', 'scroll_up', 'scroll_down', 'back', 'forward', 'reload'])
 
 /**
  * How a Task ends on this hop's reading alone (#328), before anything
@@ -204,6 +204,9 @@ function endedByReading(reading: CommandReading, verb: Command['verb'], hop: num
   if (verb === 'none') return hop === 0 ? 'terminal' : 'none'
   return CONTINUING.has(verb) ? null : 'terminal'
 }
+
+/** The Command a line Jev could not read becomes (#353): the Local Match already settled none, and nothing guesses. */
+const UNREAD: Command = { verb: 'none', target: null, slot: null }
 
 /** The verbs whose record waits for the action (#328): a continuing verb's landing, and the video `play` opened or queued (#343). */
 function recordedAfterFiring(verb: Command['verb']): boolean {
@@ -247,40 +250,42 @@ function blankPage(browser: BrowserController): CommandPage {
 /** Whether a Command's Slot is words a name could be misheard in: search terms, or text to type — never an address or a key. */
 function slotIsNameable(command: Command): command is Command & { slot: string } {
   if (command.slot === null || command.slot === '') return false
-  // A music search's words (#343) are search terms like any other.
-  if (command.verb === 'type' || command.verb === 'play') return true
-  return command.verb === 'open' && (command.search === true || !isAddressShaped(command.slot))
+  // A music search's words (#343) are search terms like any other; a `navigate`'s Slot is an address.
+  return command.verb === 'type' || command.verb === 'play' || command.verb === 'search'
 }
 
 /** Whether the Local Match's page-free reading settles the line without the page's refs. */
 function pageFree(command: Command | null): command is Command {
   if (command === null) return false
   if (command.verb === 'click' || command.verb === 'type') return false
-  // "open <label>" clicks the ref that carries the label (localMatch): the page decides.
-  if (command.verb === 'open' && !command.search) return false
+  // "open <label>" clicks the ref that carries the label (localMatch): the page decides before a navigate does.
+  if (command.verb === 'navigate') return false
   return true
 }
 
 /**
  * Whether a partial's Local Match may fire before the Endpoint (#326): a
- * Command that carries no Slot still being spoken — never an `open` (an
- * address or search terms: "open you" is a bare word, and the user is
- * still saying "youtube"), a `type`, a `screenshot`'s path or a `timer`'s
- * length ("set a timer for five" may yet be "… minutes"), and never
- * `none`, which fires nothing. Jev may still fire an `open` or a `type`
- * on a partial, when its Noul says the words are complete. A verb phrase
+ * Command that carries no Slot still being spoken — never a `navigate`
+ * or a `search` (an address or search terms: "open you" is a bare word,
+ * and the user is still saying "youtube"), a `type`, a `screenshot`'s
+ * path or a `timer`'s length ("set a timer for five" may yet be "…
+ * minutes"), and never `none`, which fires nothing. Jev may still fire a
+ * `navigate`, a `search` or a `type` on a partial, when its Noul says the
+ * words are complete. A verb phrase
  * that heads a longer one of another kind ("scroll", which may yet be
  * "scroll up") is held before this is asked. A Player verb (#343) never
  * fires early, as `timer`: "play" may yet be "play bohemian rhapsody".
  */
 function firesEarly(command: Command): boolean {
-  return command.verb !== 'open' && command.verb !== 'type' && command.verb !== 'screenshot' && command.verb !== 'timer' && command.verb !== 'play' && command.verb !== 'none'
+  return command.verb !== 'navigate' && command.verb !== 'search' && command.verb !== 'type' && command.verb !== 'screenshot' && command.verb !== 'timer' && command.verb !== 'play' && command.verb !== 'none'
 }
 
 function toolOf(command: Command): { name: string; args: Record<string, unknown> } {
   switch (command.verb) {
-    case 'open':
-      return { name: 'navigate', args: { url: openAddress(command.slot ?? '', command.search === true, command.site) } }
+    case 'navigate':
+      return { name: 'navigate', args: { url: navigateAddress(command.slot ?? '') } }
+    case 'search':
+      return { name: 'navigate', args: { url: searchAddress(command.slot ?? '', command.site) } }
     case 'click':
       return { name: 'click', args: { ref: command.target } }
     case 'type':
@@ -539,10 +544,11 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   }
 
   /**
-   * The Local Match first; else one Jev call; else the best guess. A dismiss
-   * phrase over an open dialog comes before all of them (#336). A spoken
-   * Slot that could carry a name waits for the page, so the Name Match can
-   * read it against the Page Terms.
+   * The Local Match first; else one Jev call; else nothing (#353): the
+   * Local Match already settled no Command, and no reading guesses. A
+   * dismiss phrase over an open dialog comes before all of them (#336). A
+   * spoken Slot that could carry a name waits for the page, so the Name
+   * Match can read it against the Page Terms.
    */
   async function read(turnId: string, text: string, pending: PreparedPage | null, spoken: boolean): Promise<Reading> {
     const quick = localMatch(text, [])
@@ -554,7 +560,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     const local = localMatch(text, page.refs, page.url)
     if (local !== null) return { command: local, page, reading: 'local_match', jevAsked: false }
     const model = deps.decisionModel()
-    if (model === null) return { command: bestGuess(text, page.refs, page.url), page, reading: 'best_guess', jevAsked: false }
+    if (model === null) return { command: UNREAD, page, reading: 'best_guess', jevAsked: false }
     const result = await askJev(model, 'command', turnId, commandState(text, page), commandQuestions(text, page))
     if (result.status === 'answered') {
       return {
@@ -567,7 +573,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       }
     }
     return {
-      command: bestGuess(text, page.refs, page.url),
+      command: UNREAD,
       page,
       reading: 'best_guess',
       jevAsked: true,
@@ -656,8 +662,10 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       }
       case 'resume':
         return (resume ?? resumePlan()).perform()
-      case 'open':
-        return browser.navigate(openAddress(command.slot ?? '', command.search === true, command.site))
+      case 'navigate':
+        return browser.navigate(navigateAddress(command.slot ?? ''))
+      case 'search':
+        return browser.navigate(searchAddress(command.slot ?? '', command.site))
       case 'click': {
         const result = await browser.click(command.target ?? 0)
         flash(command.target ?? 0)
@@ -886,10 +894,9 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
           answerFailure(turnId, SPOKEN_FAILURES[failure])
           outcome = 'wall'
         } else if (card === null) {
-          // One Answer per Command (#333), from its verb's sentence — a best guess's names what it fired (#329), so an unread line never reads as nothing done.
+          // One Answer per Command (#333), from its verb's sentence.
           const label = targetLabel(command, page)
-          const text =
-            readingKind === 'best_guess' ? bestGuessAnswer(command, page) : commandAnswer(command, { page: { url: state.url ?? '', title: state.title ?? '' }, ...(label !== undefined ? { label } : {}) })
+          const text = commandAnswer(command, { page: { url: state.url ?? '', title: state.title ?? '' }, ...(label !== undefined ? { label } : {}) })
           if (text !== null) answer(turnId, text)
         }
       }
@@ -1405,7 +1412,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
 
       // A reading that ends the Task before it fires is recorded so now; a hop that goes on, once its action has landed.
       // An address with words past it goes on to hop 1 (#341); an Early Fire never fires an open on the Local Match, so only this path sees one.
-      const wordsPast = command.verb === 'open' && command.search !== true && carriesWordsPastAddress(trimmed)
+      const wordsPast = command.verb === 'navigate' && carriesWordsPastAddress(trimmed)
       const ending = endedByReading(heard.reading, command.verb, 0, wordsPast)
       recordBeforeFiring(record, ending, command)
       if (command.verb === 'none' || command.verb === 'done') {

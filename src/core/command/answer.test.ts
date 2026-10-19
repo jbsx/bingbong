@@ -10,16 +10,16 @@ describe('commandAnswer (#333)', () => {
     commandAnswer(of, { page: lighthouse, ...facts })
 
   it('names the page a navigate opened, by its title or else its site', () => {
-    expect(answer(command('open', { slot: 'http://127.0.0.1:4100/interactive' }))).toBe('Opened Lighthouse page.')
-    expect(answer(command('open', { slot: 'example.com' }), { page: { url: 'https://www.example.com/', title: '' } })).toBe('Opened example.com.')
+    expect(answer(command('navigate', { slot: 'http://127.0.0.1:4100/interactive' }))).toBe('Opened Lighthouse page.')
+    expect(answer(command('navigate', { slot: 'example.com' }), { page: { url: 'https://www.example.com/', title: '' } })).toBe('Opened example.com.')
   })
 
   it('says what a search searched for', () => {
-    expect(answer(command('open', { slot: 'lovely weather', search: true }))).toBe('Searched the web for “lovely weather”.')
+    expect(answer(command('search', { slot: 'lovely weather' }))).toBe('Searched the web for “lovely weather”.')
   })
 
   it('says which site a scoped search searched (#340)', () => {
-    expect(answer(command('open', { slot: 'donald trumps profile', search: true, site: 'x.com' }))).toBe('Searched x.com for “donald trumps profile”.')
+    expect(answer(command('search', { slot: 'donald trumps profile', site: 'x.com' }))).toBe('Searched x.com for “donald trumps profile”.')
   })
 
   it('scrolls, clicks and types in plain words, naming the ref by its label', () => {

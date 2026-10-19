@@ -8,7 +8,9 @@ import { siteOf } from './siteScope'
 // One Jev call per Command the Local Match cannot settle (#324, ADR 0076).
 // The state is the transcript, the page's address and title and its
 // numbered refs — label, kind, href, no page text. Three Choices are asked
-// in parallel: the verb, the target among the refs plus `none`, and the
+// in parallel: the verb — an action the browser can take, never a word the
+// user said (#353), so "open the tweet" is Jev's to read as a click, a
+// search or a navigation — the target among the refs plus `none`, and the
 // Slot among the transcript's contiguous word spans; on a site, a fourth
 // beside them — where the words point (#340), at a later hop only on a site
 // the Task has not searched (#341). Unneeded answers are
@@ -20,7 +22,8 @@ import { siteOf } from './siteScope'
 const MAX_SPANS = 254
 
 const VERB_DESCRIPTIONS: Readonly<Record<(typeof JEV_VERBS)[number], string>> = {
-  open: 'go to a website or address, or search the web for the words',
+  navigate: 'go to a web address the words name: a website, a host or a url',
+  search: 'search for the words: on the web, or on this site when they point at something on it',
   click: 'click one of the numbered refs on the page',
   type: 'type words into one of the numbered refs (a text field)',
   scroll_up: 'scroll the page up',
@@ -331,7 +334,7 @@ function mostProbableOpening(answer: DecisionChoiceAnswer, page: CommandPage, li
     const ref = offeredRef(label, page)
     if (ref !== null) return { verb: 'click', target: ref, slot: null }
     const link = linkOfLabel(label, links)
-    return link === undefined ? null : { verb: 'open', target: null, slot: link.href }
+    return link === undefined ? null : { verb: 'navigate', target: null, slot: link.href }
   })
 }
 
@@ -353,10 +356,10 @@ export function readCommandAnswers(answers: CommandAnswers, text: string, pageRe
   if (!JEV_VERBS.includes(verb as (typeof JEV_VERBS)[number]) || verb === 'none') return none
   if (verb === 'done') return { verb, target: null, slot: null }
   const { page, links } = offered(pageRead, hop)
-  if (verb === 'click' || verb === 'open') {
+  if (verb === 'click' || verb === 'navigate' || verb === 'search') {
     // A result link further down the page has no ref to click: it is opened at its address.
     const chosen = linkOfLabel(answers.target.choice, links)
-    if (chosen !== undefined) return { verb: 'open', target: null, slot: chosen.href }
+    if (chosen !== undefined) return { verb: 'navigate', target: null, slot: chosen.href }
   }
   let target: number | null = null
   if (verbTakesTarget(verb)) {
@@ -365,26 +368,37 @@ export function readCommandAnswers(answers: CommandAnswers, text: string, pageRe
     if (target === null) return none
   }
   const slot = verbTakesSlot(verb) ? slotWords(answers.slot, text) : null
-  if (verb === 'open' && slot !== null && !isAddressShaped(slot)) {
-    // "open <something on the page>": when Jev's target Choice names a ref
-    // outright, the words name that element and opening it is clicking it
-    // — the Local Match's own rule for a label one ref carries. An
-    // address-shaped Slot is navigated whatever the target says.
+  if ((verb === 'navigate' || verb === 'search') && slot !== null) {
+    // An address-shaped Slot Jev reads as a navigation is navigated to, whatever the target says.
+    if (verb === 'navigate' && isAddressShaped(slot)) return { verb, target: null, slot }
+    // Words about something, not an address (#353): the page, the site or
+    // the web decides, and the verb word never does. A target Choice that
+    // names a ref outright is the thing the words name, and opening it is
+    // clicking it — the Local Match's own rule for a label one ref carries.
     const chosen = offeredRef(answers.target.choice, page)
     if (chosen !== null) return { verb: 'click', target: chosen, slot: null }
+    const where = 'where' in answers ? answers.where.choice : null
     // Words that point on this site but not on this page (#340) are looked
     // for on the site: a search scoped to it, the Slot kept as the words —
     // at a later hop too, on a site the Task has not searched (#341).
-    const site = 'where' in answers && answers.where.choice === 'site' ? scopableSite(page.url, hop) : null
-    if (site !== null) return { verb, target: null, slot, search: true, site }
-    // Past the first hop the words were already acted on (#332): `open`
+    const site = where === 'site' ? scopableSite(page.url, hop) : null
+    if (site !== null) return { verb: 'search', target: null, slot, site }
+    if (hop === undefined) {
+      // Words that point at this page (#353) never search: the most
+      // probable ref Jev gave any probability is opened, `none` set aside;
+      // when it gave none any, the line is no Command. Elsewhere the words
+      // are searched for on the web.
+      if (where === 'page') return mostProbableOpening(answers.target, page, links) ?? none
+      return { verb: 'search', target: null, slot }
+    }
+    // Past the first hop the words were already acted on (#332): a hop
     // never searches again. On a search landing it opens the most probable
     // target the hop offers, Jev often topping `none` over the right result;
     // off one the Task has reached a page and a target Jev barely offered
     // would overrun it (#342), so the hop has no next step — nor on a
     // landing with nothing to open.
-    if (hop !== undefined && !isSearchLanding(page.url)) return none
-    if (hop !== undefined) return mostProbableOpening(answers.target, page, links) ?? none
+    if (!isSearchLanding(page.url)) return none
+    return mostProbableOpening(answers.target, page, links) ?? none
   }
   if (verb === 'press') {
     const key = slot === null ? null : pressKeyOf(slot)

@@ -1,6 +1,6 @@
 import { isRealPage, lastPageLabel } from '../browser/lastPage'
 import { pageReadPart, pageReadText } from '../browser/pageText'
-import { describeCommand, type Command, type CommandPage } from './command'
+import type { Command } from './command'
 import { SPOKEN_FAILURES } from './spokenFailure'
 import { describeDuration } from '../timer/duration'
 
@@ -21,7 +21,7 @@ export function pageName(page: { url: string; title: string }): string {
   return lastPageLabel(page).title
 }
 
-/** An `open` whose Slot is search terms: what it searched for, and on which site when it was scoped to one (#340). */
+/** A `search`: what it searched for, and on which site when it was scoped to one (#340). */
 function searchAnswer(command: Command): string {
   return `Searched ${command.site ?? 'the web'} for “${command.slot ?? ''}”.`
 }
@@ -41,8 +41,10 @@ export function commandAnswer(command: Command, facts: AnswerFacts): string | nu
   const ref = (): string => (facts.label !== undefined && facts.label !== '' ? `“${facts.label}”` : `item ${command.target ?? '?'}`)
   if (command.dismiss === true) return 'Closed the pop-up.'
   switch (command.verb) {
-    case 'open':
-      return command.search === true ? searchAnswer(command) : `Opened ${pageName(facts.page)}.`
+    case 'navigate':
+      return `Opened ${pageName(facts.page)}.`
+    case 'search':
+      return searchAnswer(command)
     case 'click':
       return `Clicked ${ref()}.`
     case 'type':
@@ -80,16 +82,6 @@ export function commandAnswer(command: Command, facts: AnswerFacts): string | nu
     case 'done':
       return null
   }
-}
-
-/**
- * The Answer of a best guess that landed (#329): the line was not read — Jev
- * unavailable, or none configured — so the Answer says what was done with
- * it: the web search its words became, or the action guessed.
- */
-export function bestGuessAnswer(command: Command, page?: CommandPage): string {
-  if (command.verb === 'open' && command.search === true) return searchAnswer(command)
-  return `Took a guess: ${describeCommand(command, page)}.`
 }
 
 /** The page a Page Read is of, off its `# title — address` head (a consent dismissal may ride above it). */
