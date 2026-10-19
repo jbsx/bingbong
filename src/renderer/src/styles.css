@@ -163,10 +163,13 @@ body {
 /* The Toolbar (ADR 0012): the one reserved band above the pane, and the
    window's only drag region — the OS title bar is hidden. Capsule left,
    address cluster center, controls right. Interactive controls opt out
-   of dragging below. */
+   of dragging below. On a narrow window the address cluster gives way
+   first: the capsule column keeps room for its widest state word
+   ("Transcribing…" beside the orb) and the controls keep theirs, so
+   "Ready" is never cut to "Rea". */
 .toolbar {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  grid-template-columns: minmax(9.5rem, 1fr) minmax(0, auto) minmax(min-content, 1fr);
   align-items: center;
   gap: 12px;
   padding: 8px 14px;
@@ -1511,6 +1514,42 @@ body {
 .settings-list-input {
   flex: 1;
   min-width: 0;
+}
+
+/* One News topic or feed, framed like a Person: a label column, then the
+   field across the section's width, Remove beside the name. The lists run
+   long ("claude code, codex, opencode, …"), so their fields take the whole
+   row rather than a cell of the 240 px settings grid. */
+.settings-news-item {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px 12px;
+  margin-bottom: 10px;
+  padding: 10px 14px;
+  border: 1px solid var(--edge);
+  border-radius: 12px;
+}
+
+.settings-news-item input {
+  height: 36px;
+  min-width: 0;
+  padding: 0 12px;
+  border: 1px solid var(--edge);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.9rem;
+}
+
+.settings-news-item input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* The lists and the address run under the name and past Remove's column. */
+.settings-news-item .settings-list-input {
+  grid-column: 2 / -1;
 }
 
 .settings-button {

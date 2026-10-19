@@ -235,30 +235,37 @@ function ListInput({ items, label, placeholder, onChange }: { items: readonly st
   )
 }
 
-/** One Interest Profile topic: its name, the words that match it, and the subreddits polled for it (none polls none). */
+/**
+ * One Interest Profile topic: its name, the words that match it, and the
+ * subreddits polled for it (none polls none) — each on a labelled row of
+ * its own, wide enough to read the list it holds.
+ */
 function TopicRow({ topic, onChange, onRemove }: { topic: NewsTopic; onChange: (topic: NewsTopic) => void; onRemove: () => void }) {
   return (
-    <div className="settings-field settings-topic">
+    <div className="settings-news-item settings-topic">
+      <span className="settings-label">Topic</span>
       <input type="text" value={topic.name} aria-label="Topic name" onChange={(event) => onChange({ ...topic, name: event.target.value })} />
-      <span className="settings-card-row">
-        <ListInput items={topic.words} label={`Words for ${topic.name}`} onChange={(words) => onChange({ ...topic, words })} />
-        <button type="button" className="settings-button" aria-label={`Remove ${topic.name}`} onClick={onRemove}>
-          Remove
-        </button>
-      </span>
-      <span className="settings-card-row">
-        <span className="settings-label">Subreddits</span>
-        <ListInput items={topic.subreddits} label={`Subreddits for ${topic.name}`} placeholder="none" onChange={(subreddits) => onChange({ ...topic, subreddits })} />
-      </span>
+      <button type="button" className="settings-button" aria-label={`Remove ${topic.name}`} onClick={onRemove}>
+        Remove
+      </button>
+      <span className="settings-label">Words</span>
+      <ListInput items={topic.words} label={`Words for ${topic.name}`} onChange={(words) => onChange({ ...topic, words })} />
+      <span className="settings-label">Subreddits</span>
+      <ListInput items={topic.subreddits} label={`Subreddits for ${topic.name}`} placeholder="none" onChange={(subreddits) => onChange({ ...topic, subreddits })} />
     </div>
   )
 }
 
-/** One feed the News card reads: the name the card shows and its RSS or Atom address. */
+/** One feed the News card reads: the name the card shows and its RSS or Atom address, labelled like a topic. */
 function FeedRow({ feed, onChange, onRemove }: { feed: NewsFeed; onChange: (feed: NewsFeed) => void; onRemove: () => void }) {
   return (
-    <span className="settings-card-row settings-feed">
+    <div className="settings-news-item settings-feed">
+      <span className="settings-label">Feed</span>
       <input type="text" value={feed.name} aria-label="Feed name" onChange={(event) => onChange({ ...feed, name: event.target.value })} />
+      <button type="button" className="settings-button" aria-label={`Remove ${feed.name}`} onClick={onRemove}>
+        Remove
+      </button>
+      <span className="settings-label">Address</span>
       <input
         type="url"
         className="settings-list-input"
@@ -267,10 +274,7 @@ function FeedRow({ feed, onChange, onRemove }: { feed: NewsFeed; onChange: (feed
         placeholder="https://…/feed.xml"
         onChange={(event) => onChange({ ...feed, url: event.target.value })}
       />
-      <button type="button" className="settings-button" aria-label={`Remove ${feed.name}`} onClick={onRemove}>
-        Remove
-      </button>
-    </span>
+    </div>
   )
 }
 
