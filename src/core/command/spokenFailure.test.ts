@@ -36,6 +36,13 @@ describe('spokenFailureOf', () => {
     expect(land('https://example.com/', 'Home', EMPTY_PAGE('https://example.com/'))).toBe('empty')
   })
 
+  it('names an outage told in the page text under a title that names only the site, not an empty page', () => {
+    const url = 'http://127.0.0.1:4100/empty-main'
+    const notice = PAGE(url, '| Fixture Museums', 'The search service is currently unavailable. Please try again later.')
+    expect(spokenFailureOf({ tool: 'navigate', outcome: { ok: true, result: notice }, url, title: '| Fixture Museums' })).toBe('unavailable')
+    expect(spokenFailureOf({ tool: 'navigate', outcome: { ok: true, result: PAGE(url, '| Fixture Museums') } })).toBeNull()
+  })
+
   it('reads the landing line when the address and title are not passed, and a step back lands as a navigation', () => {
     const result = PAGE('https://example.com/missing', 'Page Not Found').replace('navigated:', 'went back:')
     expect(spokenFailureOf({ tool: 'back', outcome: { ok: true, result } })).toBe('notFound')

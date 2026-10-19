@@ -193,6 +193,9 @@ const PROSE_PAGES: Record<string, string> = {
   '/card': '<body><main><h1>Cards</h1><a href="/one"><h3>One</h3><p>The first card summary, wrapped in its link with its heading.</p></a><a href="/two">A link whose text is long enough to be a run on its own, with no block inside.</a></main></body>',
   '/long-heading': '<body><main><h1>A heading long enough that a run of its text would pass the threshold</h1><p>Body.</p></main></body>',
   '/linked-heading': '<body><a href="/"><h1>A heading long enough that a run of its text would pass the threshold</h1></a><p>Body.</p></body>',
+  '/empty-main':
+    '<body><header><a href="/">Fixture Museums</a></header><main></main><div class="notice">The search service is currently unavailable. Please try again later.</div><footer><a href="/contact">Contact us</a></footer></body>',
+  '/outside-main': '<body><main><p>Inside the landmark.</p></main><div class="notice">A sentence outside the main landmark, long enough to be a run.</div></body>',
 }
 
 describe.skipIf(!canDriveChrome)("the collector reads a container's own prose as a run (#265)", () => {
@@ -253,6 +256,11 @@ describe.skipIf(!canDriveChrome)("the collector reads a container's own prose as
     const heading = 'A heading long enough that a run of its text would pass the threshold'
     expect(texts(await collect('/long-heading'))).toEqual([heading, 'Body.'])
     expect(texts(await collect('/linked-heading'))).toEqual([heading, 'Body.'])
+  })
+
+  it("reads the body when the main landmark holds no text, and only the landmark when it does", async () => {
+    expect(texts(await collect('/empty-main'))).toEqual(['The search service is currently unavailable. Please try again later.'])
+    expect(texts(await collect('/outside-main'))).toEqual(['Inside the landmark.'])
   })
 
   it('is in view by its own nodes, not its container: at the foot of a tall page only after a scroll', async () => {

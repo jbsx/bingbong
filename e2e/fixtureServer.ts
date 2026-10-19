@@ -148,7 +148,9 @@ function page(body: string): string {
 
 // #304: a site's template around nothing, as rmg.co.uk answers an object id
 // it cannot resolve — a 200, a title that names only the site, an empty
-// <main>, and its one sentence outside it, where the collector does not read.
+// <main>, and its one sentence outside it. The collector reads the body
+// when <main> holds no text, so that sentence is the page's text, and it
+// says the site is down: an Unavailable Page, not an Empty Landing.
 function emptyMainPage(): string {
   return `<!doctype html>
 <html>

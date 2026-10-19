@@ -90,6 +90,30 @@ export function classifyUnavailablePage(facts: NotFoundPageFacts): UnavailableCl
   return basis === null ? null : { basis, host, marker: `UNAVAILABLE:${basis} ${host}` }
 }
 
+// A template served with 200 whose title names only the site and whose one
+// sentence says the outage — "The search service is currently unavailable.
+// Please try again later." (rmg.co.uk, #304's fixture). The title list's
+// phrases count here too, and "currently" or "temporarily" before
+// unavailable, offline or down.
+const UNAVAILABLE_TEXT_RE = /\b(?:currently|temporarily) (?:unavailable|offline|down)\b/i
+
+/**
+ * The longest page text that is still a notice: a sentence or two. A longer
+ * page holds content, and an article that mentions an outage is not one.
+ */
+export const MAX_NOTICE_TEXT = 300
+
+/**
+ * Whether a page's whole text is an Unavailable Page's notice (ADR 0060's
+ * third test, for the one spoken line): short enough to be a notice, and
+ * saying the site could not serve the page. The caller rules out a
+ * Not-found Page and a Blocker first, as for the title.
+ */
+export function isUnavailableNotice(pageText: string): boolean {
+  const text = pageText.replace(/\s+/g, ' ').trim()
+  return text !== '' && text.length <= MAX_NOTICE_TEXT && (UNAVAILABLE_TEXT_RE.test(text) || UNAVAILABLE_TITLE_RE.test(text))
+}
+
 // The bases a marker can name: the actual status number, or the title.
 const BASIS_PATTERN = '5\\d\\d|title'
 const MARKER_LINE_RE = new RegExp(`^UNAVAILABLE:(${BASIS_PATTERN}) (\\S+)$`, 'gm')

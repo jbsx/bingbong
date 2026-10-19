@@ -273,7 +273,12 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
   const renderedText = (el) => el.innerText || el.textContent || ''
   const textOf = (el) => renderedText(el).replace(/\\s+/g, ' ').trim()
   const heading = document.querySelector('h1, [role="heading"][aria-level="1"]')
-  const textRoot = document.querySelector('main, article') || document.body
+  // The page's text is its main landmark's, and the body's when it has
+  // none — or one that holds no text at all: a site's template around an
+  // empty <main> puts its one sentence outside it ("The search service is
+  // currently unavailable"), and that sentence is the page, not nothing.
+  const landmark = document.querySelector('main, article')
+  const textRoot = landmark && /\\S/.test(landmark.textContent || '') ? landmark : document.body
   // The page's text (ADR 0047): each block raw, in document order, for core
   // to render and cut (core/browser/pageText.ts). A table row, a pre block
   // and a definition list are blocks beside paragraphs, list items and

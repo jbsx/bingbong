@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { classifyNotFoundPage } from './notFoundPage'
-import { classifyUnavailablePage, isUnavailableTitle, landedOnUnavailablePage, parseUnavailableMarker } from './unavailablePage'
+import { classifyUnavailablePage, isUnavailableNotice, isUnavailableTitle, landedOnUnavailablePage, MAX_NOTICE_TEXT, parseUnavailableMarker } from './unavailablePage'
 
 // ADR 0060: an Unavailable Page is recognised by a 5xx status first and by
 // its title second. The titles below are the corpus's four Unavailable Pages and
@@ -114,5 +114,22 @@ describe('parseUnavailableMarker', () => {
     expect(landedOnUnavailablePage({ ok: true, result: 'navigated\nUNAVAILABLE:title web.archive.org\nadvice' })).toBe(true)
     expect(landedOnUnavailablePage({ ok: true, result: 'navigated\nNOT-FOUND:404 a.example' })).toBe(false)
     expect(landedOnUnavailablePage({ ok: false, error: 'UNAVAILABLE:503 a.example' })).toBe(false)
+  })
+})
+
+describe('isUnavailableNotice', () => {
+  it("reads a page whose whole text is the outage's sentence: rmg.co.uk's template around an empty <main>", () => {
+    expect(isUnavailableNotice('The search service is currently unavailable. Please try again later.')).toBe(true)
+    expect(isUnavailableNotice('Fixture Museums\nThis site is temporarily down for maintenance.')).toBe(true)
+    expect(isUnavailableNotice('502 Bad Gateway')).toBe(true)
+  })
+
+  it('reads no page that holds content, however it mentions an outage, and no page with no text', () => {
+    const article = `The search service is currently unavailable, the operator said on Monday. ${'The outage followed a week of upgrades to the catalogue. '.repeat(6)}`
+    expect(article.length).toBeGreaterThan(MAX_NOTICE_TEXT)
+    expect(isUnavailableNotice(article)).toBe(false)
+    expect(isUnavailableNotice('Objects from the collection.')).toBe(false)
+    expect(isUnavailableNotice('This item is unavailable in your size.')).toBe(false)
+    expect(isUnavailableNotice('')).toBe(false)
   })
 })

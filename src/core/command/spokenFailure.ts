@@ -4,7 +4,8 @@ import { classifyBlockerPage } from '../browser/blockerNudge'
 import { consentWallStayed } from '../browser/dialogPolicy'
 import { classifyEmptyLanding, isPageArrival } from '../browser/emptyLanding'
 import { classifyNotFoundPage } from '../browser/notFoundPage'
-import { classifyUnavailablePage } from '../browser/unavailablePage'
+import { classifyUnavailablePage, isUnavailableNotice } from '../browser/unavailablePage'
+import { pageReadText } from '../browser/pageText'
 
 // A failure speaks one line (#327, ADR 0076): a Command whose action fails,
 // or whose action lands on a Blocked Action, a consent wall, a Blocker, or an
@@ -104,7 +105,9 @@ export function spokenFailureOf(input: SpokenFailureInput): SpokenFailure | null
   if (url === undefined) return null
   if (classifyBlockerPage({ url, title }) !== null) return 'blocker'
   if (classifyNotFoundPage({ url, title }) !== null) return 'notFound'
-  if (classifyUnavailablePage({ url, title }) !== null) return 'unavailable'
+  // An outage served with 200 under a title naming only the site says so in
+  // its one sentence: the page's text, read before it can count as empty.
+  if (classifyUnavailablePage({ url, title }) !== null || isUnavailableNotice(pageReadText(result))) return 'unavailable'
   if (classifyEmptyLanding({ url, outcome: result }) !== null) return 'empty'
   return null
 }
