@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { BrowserNav, BrowserPane } from './BrowserPane'
 import { ChromeIcon } from './ChromeIcon'
 import { RunHint, StatusOrb, StatusPill } from './AssistantPanel'
@@ -15,6 +15,7 @@ import { useSettings } from './useSettings'
 import { useVoice } from './useVoice'
 import { useWeather } from './useWeather'
 import { voiceHint } from '../../core/voice/voiceHint'
+import { wakesIdleScreen } from '../../core/idle/idleWake'
 
 export function App() {
   const assistant = useAssistant()
@@ -47,17 +48,27 @@ export function App() {
     onError: assistant.appendVoiceError,
   })
 
+  // Whether the Idle Screen is up, as of the last render: once up it is
+  // sticky, and only input or a Command that acts on the pane wakes it.
+  const idleUp = useRef(false)
+
   // Real activity — a command running, speech heard, a listen starting —
   // counts as "not idle" alongside input, so the idle screen never covers a
-  // working assistant. (Wake-monitoring on/off transitions are not activity;
-  // pinging on those would cancel the boot-into-idle state.)
+  // working assistant. Over the Idle Screen itself only a Command that acts
+  // on the pane is that: the Timer and a Stop are heard and performed with
+  // the rest state left up. (Wake-monitoring on/off transitions are not
+  // activity; pinging on those would cancel the boot-into-idle state.)
   const { ping } = idle
   useEffect(() => {
-    const unsubEvent = window.bingbong.assistant.onEvent(() => ping())
-    const unsubVoice = window.bingbong.voice.onState((state) => {
-      if (state.listening) ping()
+    const unsubEvent = window.bingbong.assistant.onEvent((event) => {
+      if (!idleUp.current || wakesIdleScreen(event)) ping()
     })
-    const unsubHeard = window.bingbong.voice.onHeard(() => ping())
+    const unsubVoice = window.bingbong.voice.onState((state) => {
+      if (state.listening && !idleUp.current) ping()
+    })
+    const unsubHeard = window.bingbong.voice.onHeard(() => {
+      if (!idleUp.current) ping()
+    })
     return () => {
       unsubEvent()
       unsubVoice()
@@ -82,16 +93,19 @@ export function App() {
   // Transcribing outranks listening (#38): the endpoint fired, STT is
   // thinking — never claim the ear is open while it works.
   const status = voice.transcribing ? 'transcribing' : voice.listening ? 'listening' : assistant.status
-  // Never idle over a running command, an open mic, the STT window, or the
-  // settings page — the timer must not unmount a form mid-edit.
-  const showIdle = idle.idle && status === 'idle' && !voice.listening && !voice.transcribing && view === 'dashboard'
+  // Never go idle over a running command, an open mic, the STT window, or
+  // the settings page — the timer must not unmount a form mid-edit. Once
+  // up, the Idle Screen stays up through them until something wakes it.
+  const quiet = status === 'idle' && !voice.listening && !voice.transcribing
+  const showIdle = idle.idle && view === 'dashboard' && (quiet || idleUp.current)
+  idleUp.current = showIdle
   const hint = voiceHint(voice)
   const weather = useWeather(settings?.weather ?? null, showIdle)
   const lastPage = useLastPage(showIdle)
   const timer = useTimer(showIdle)
 
   if (showIdle) {
-    return <IdleScreen weather={weather} lastPage={lastPage} timer={timer} />
+    return <IdleScreen weather={weather} lastPage={lastPage} timer={timer} status={status} hint={hint} />
   }
 
   return (

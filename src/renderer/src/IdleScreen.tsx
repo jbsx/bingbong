@@ -5,7 +5,10 @@ import { temperatureHue, type WeatherDay, type WeatherHour, type WeatherReport }
 import type { WeatherUnits } from '../../core/settings/settings'
 import { countdownLabel, describeDuration } from '../../core/timer/duration'
 import type { TimerState } from '../../core/timer/timer'
+import type { VoiceHint } from '../../core/voice/voiceHint'
 import type { WeatherState } from './useWeather'
+import { StatusOrb, StatusPill } from './AssistantPanel'
+import type { OrbStatus } from './useAssistant'
 import { ChevronIcon, GlobeIcon, HighIcon, LowIcon, RainChanceIcon, SunriseIcon, SunsetIcon, TimerIcon, WeatherIcon } from './WeatherIcon'
 
 function formatClock(now: Date): string {
@@ -290,7 +293,39 @@ function TimerCard({ timer }: { timer: Exclude<TimerState, { status: 'off' }> })
  * off the screen over a running Command, an open mic or the settings page
  * — and any activity (input, pipeline or voice event) unmounts it.
  */
-export function IdleScreen({ weather, lastPage, timer }: { weather: WeatherState; lastPage: LastPage | null; timer: TimerState }) {
+/**
+ * The Status Capsule over the Idle Screen: the screen stays up while a
+ * Command that never needs the pane is heard and performed (the Timer, a
+ * Stop), so the ear and the reading show here — nothing at rest.
+ */
+function IdleStatus({ status, hint }: { status: OrbStatus; hint: VoiceHint | null }) {
+  if (status === 'idle') return null
+  return (
+    <div className="status-capsule idle-status">
+      <StatusOrb status={status} />
+      <StatusPill status={status} />
+      {hint?.kind === 'listening' ? (
+        <span className="voice-hint voice-hint--listening" role="status">
+          {hint.text}
+        </span>
+      ) : null}
+    </div>
+  )
+}
+
+export function IdleScreen({
+  weather,
+  lastPage,
+  timer,
+  status,
+  hint,
+}: {
+  weather: WeatherState
+  lastPage: LastPage | null
+  timer: TimerState
+  status: OrbStatus
+  hint: VoiceHint | null
+}) {
   const [now, setNow] = useState(() => new Date())
 
   useEffect(() => {
@@ -303,6 +338,7 @@ export function IdleScreen({ weather, lastPage, timer }: { weather: WeatherState
       {/* The window's drag region while the Toolbar is unmounted (ADR
           0012) — invisible, top strip only, never covers the clock. */}
       <div className="idle-drag-strip" aria-hidden="true" />
+      <IdleStatus status={status} hint={hint} />
       <div className="idle-screen-top">
         <p className="idle-clock" aria-label="clock">
           {formatClock(now)}

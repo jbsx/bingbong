@@ -125,6 +125,14 @@ export function verbTakesTarget(verb: CommandVerb): boolean {
   return verb === 'click' || verb === 'type'
 }
 
+/**
+ * The verbs that never touch the pane — the Timer, a Stop, `done` and
+ * `none`: a Command carrying one leaves the Idle Screen up (CONTEXT.md).
+ */
+export function verbKeepsIdle(verb: CommandVerb): boolean {
+  return verb === 'timer' || verb === 'stop' || verb === 'done' || verb === 'none'
+}
+
 /** The verbs that carry a Slot. */
 export function verbTakesSlot(verb: CommandVerb): boolean {
   return verb === 'open' || verb === 'type' || verb === 'press'

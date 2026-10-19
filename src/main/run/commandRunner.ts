@@ -5,7 +5,7 @@ import type { PipelineEvent } from '../../core/pipeline/events'
 import type { CommandRunState } from '../../core/pipeline/runState'
 import type { PageLink, PageSnapshot } from '../../core/browser/snapshot'
 import type { PerfTracer } from '../../core/perf/perfTracer'
-import { commandPageOf, describeCommand, targetLabel, type Command, type CommandPage } from '../../core/command/command'
+import { commandPageOf, describeCommand, targetLabel, verbKeepsIdle, type Command, type CommandPage } from '../../core/command/command'
 import { dismissCommand, isDismissPhrase } from '../../core/command/dismissDialog'
 import { COMMAND_HELP } from '../../core/command/help'
 import { bestGuess, carriesWordsPastAddress, headsAnotherVerb, isSearchLanding, localMatch } from '../../core/command/localMatch'
@@ -762,7 +762,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     inFlight = { turnId, generation: mine }
     const current = (): boolean => inFlight !== null && inFlight.generation === mine
 
-    publish({ type: 'command', turnId, text, action: describeCommand(command, page), task, at: firedAt })
+    publish({ type: 'command', turnId, text, action: describeCommand(command, page), ...(verbKeepsIdle(command.verb) ? { keepsIdle: true } : {}), task, at: firedAt })
     if (command.verb === 'stop') {
       // `stop` is an abort said in words: a reading it went past was stopped, and the page's load ends with it.
       stoppedAt.add(submitted)

@@ -1524,6 +1524,16 @@ body {
   -webkit-app-region: drag;
 }
 
+/* The capsule over the Idle Screen: floats at the top, out of the layout,
+   so the clock never shifts when the ear opens. */
+.idle-status {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: min(560px, calc(100% - 32px));
+}
+
 .idle-screen-top {
   display: flex;
   flex-direction: column;

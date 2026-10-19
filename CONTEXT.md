@@ -369,8 +369,12 @@ What renders while nothing is happening: the clock and date, the weather
 the six coming hours, all in the city's own clock — the sky as a colored
 glyph, every temperature in its hue from blue through green to red, rain in
 blue, so the day reads from across the room), the Timer when one is set,
-and the Last Page with its way back. Never shows Feed Entries (#70); never renders over a running
-Command, an open mic or the settings page. Any input, pipeline or voice event
+and the Last Page with its way back. Never shows Feed Entries (#70); never comes up over a running
+Command, an open mic or the settings page. Once up it stays up through the
+voice half and the pipeline — the ear opening, a heard line, a reading —
+with the Status Capsule shown on it while they run, so a Command that never
+needs the pane (the Timer, a Stop, `done`, a line read as no Command) is
+heard and performed over it. Input, or a Command that acts on the pane,
 unmounts it; the browser pane is only hidden beneath it, never reset. The
 2026-10-18 ruling put the Last Page on it — the one piece of history the
 screen carries, and the owner's reversal of #70's "clock and weather only".
