@@ -7,7 +7,11 @@ import { IDLE_CARD_IDS, type IdleCardId } from '../../core/idle/slots'
 import { defaultNewsFeeds, type NewsFeed } from '../../core/news/feeds'
 import { defaultInterestProfile, type InterestProfile, type NewsTopic } from '../../core/news/interestProfile'
 import type { ScaleStatus } from '../../core/scale/ipcChannels'
-import { useScaleStatus } from './useWeight'
+import type { BodyProfile } from '../../core/scale/bodyComposition'
+import { JAISH, weighInsOf, type Person } from '../../core/scale/people'
+import { POPUP_LINGER_MS_MAX, POPUP_LINGER_MS_MIN, WEIGHT_CARD_RANGES, type WeightSettings } from '../../core/scale/weightSettings'
+import { reportRendererFault } from './diagnostics'
+import { useScaleStatus, useWeighIns } from './useWeight'
 
 /** Select value for "the saved mic is not plugged in right now". */
 const STALE_MIC_VALUE = '__stale__'
@@ -317,7 +321,7 @@ function NewsSection({ news, onChange }: { news: AppSettings['news']; onChange: 
   )
 }
 
-/** The Scale Listener's state in words, for the Body section's status line. */
+/** The Scale Listener's state in words, for the Weight section's status line. */
 function scaleStatusLine(status: ScaleStatus | null): string {
   if (status === null) return 'Bluetooth: checking…'
   switch (status.state) {
@@ -333,18 +337,19 @@ function scaleStatusLine(status: ScaleStatus | null): string {
 }
 
 /**
- * The Body Profile (CONTEXT.md) the Weigh-ins' figures are worked out from
- * — height, date of birth (age is taken on each Weigh-in's day) and sex —
- * with the scale the Scale Listener remembered and the Bluetooth status.
- * Forget clears the remembered scale at once, so the next QN scale seen
- * is taken; the address shown is the saved one, which the Scale Listener
- * writes when it first connects.
+ * One Person in the Weight section: their name, Body Profile and "guess
+ * me", and — for anyone but Jaish — a Remove that asks first, since it
+ * deletes their Weigh-ins with them, and then acts at once.
  */
-function BodySection({ body, scale, onChange, onForget }: { body: AppSettings['body']; scale: AppSettings['scale']; onChange: (body: AppSettings['body']) => void; onForget: () => void }) {
-  const status = useScaleStatus()
+function PersonFields({ person, weighIns, onChange, onRemove }: { person: Person; weighIns: number; onChange: (person: Person) => void; onRemove: () => void }) {
+  const [confirming, setConfirming] = useState(false)
+  const { body } = person
+  const setBody = (next: Partial<BodyProfile>): void => onChange({ ...person, body: { ...body, ...next } })
   return (
-    <section className="settings-section" aria-label="body">
-      <h2>Body</h2>
+    <div className="settings-person" data-person={person.id} role="group" aria-label={person.name}>
+      <Field label="Name">
+        <input type="text" value={person.name} aria-label="Name" onChange={(event) => onChange({ ...person, name: event.target.value })} />
+      </Field>
       <Field label="Height (cm)">
         <input
           type="number"
@@ -353,26 +358,99 @@ function BodySection({ body, scale, onChange, onForget }: { body: AppSettings['b
           value={body.heightCm ?? ''}
           placeholder="e.g. 180"
           aria-label="Height in cm"
-          onChange={(event) => onChange({ ...body, heightCm: event.target.value === '' ? null : Number(event.target.value) })}
+          onChange={(event) => setBody({ heightCm: event.target.value === '' ? null : Number(event.target.value) })}
         />
       </Field>
       <Field label="Date of birth">
-        <input type="date" value={body.birthDate ?? ''} aria-label="Date of birth" onChange={(event) => onChange({ ...body, birthDate: event.target.value === '' ? null : event.target.value })} />
+        <input type="date" value={body.birthDate ?? ''} aria-label="Date of birth" onChange={(event) => setBody({ birthDate: event.target.value === '' ? null : event.target.value })} />
       </Field>
       <Field label="Sex">
-        <select
-          value={body.sex ?? ''}
-          aria-label="Sex"
-          onChange={(event) => onChange({ ...body, sex: event.target.value === 'male' || event.target.value === 'female' ? event.target.value : null })}
-        >
+        <select value={body.sex ?? ''} aria-label="Sex" onChange={(event) => setBody({ sex: event.target.value === 'male' || event.target.value === 'female' ? event.target.value : null })}>
           <option value="">Not set</option>
           <option value="male">Male</option>
           <option value="female">Female</option>
         </select>
       </Field>
+      <Field label="Guess me">
+        <input type="checkbox" checked={person.guess} aria-label="Guess me" onChange={(event) => onChange({ ...person, guess: event.target.checked })} />
+      </Field>
+      {person.id === JAISH ? null : confirming ? (
+        <span className="settings-card-row settings-person-confirm" role="alertdialog" aria-label={`Remove ${person.name}?`}>
+          <span>
+            Remove {person.name} and {weighIns === 1 ? 'their one Weigh-in' : `their ${weighIns} Weigh-ins`}?
+          </span>
+          <button type="button" className="settings-button settings-person-remove-yes" onClick={onRemove}>
+            Remove
+          </button>
+          <button type="button" className="settings-button" onClick={() => setConfirming(false)}>
+            Cancel
+          </button>
+        </span>
+      ) : (
+        <span className="settings-card-row">
+          <button type="button" className="settings-button settings-person-remove" aria-label={`Remove ${person.name}`} onClick={() => setConfirming(true)}>
+            Remove
+          </button>
+        </span>
+      )}
+    </div>
+  )
+}
+
+/**
+ * The Weight section (CONTEXT.md), replacing #350's Body section: the
+ * People — each with a Body Profile and "guess me", added by name,
+ * renamed, removed; the scale the Scale Listener remembered, its Forget
+ * and the Bluetooth status; the Weight card's People, figures and range;
+ * and the Weigh-in pop-up's on/off and linger. Forget and Remove act at
+ * once (main writes both); everything else saves with the page. Kilograms
+ * only.
+ */
+function WeightSection({
+  weight,
+  scale,
+  onChange,
+  onForget,
+  onRemovePerson,
+}: {
+  weight: WeightSettings
+  scale: AppSettings['scale']
+  onChange: (weight: WeightSettings) => void
+  onForget: () => void
+  onRemovePerson: (person: string) => void
+}) {
+  const status = useScaleStatus()
+  const weighIns = useWeighIns() ?? []
+  const [newName, setNewName] = useState('')
+  const { people, card, popup } = weight
+  const setPerson = (next: Person): void => onChange({ ...weight, people: people.map((person) => (person.id === next.id ? next : person)) })
+  const setCard = (next: Partial<WeightSettings['card']>): void => onChange({ ...weight, card: { ...card, ...next } })
+  const add = (): void => {
+    const name = newName.trim()
+    if (name === '') return
+    onChange({ ...weight, people: [...people, { id: `p-${Date.now().toString(36)}`, name, body: { heightCm: null, birthDate: null, sex: null }, guess: true }] })
+    setNewName('')
+  }
+  return (
+    <section className="settings-section" aria-label="weight">
+      <h2>Weight</h2>
+      <h3 className="settings-subhead">People</h3>
+      {people.map((person) => (
+        <PersonFields key={person.id} person={person} weighIns={weighInsOf(weighIns, people, person.id).length} onChange={setPerson} onRemove={() => onRemovePerson(person.id)} />
+      ))}
+      <span className="settings-card-row">
+        <input type="text" value={newName} placeholder="Name" aria-label="New person’s name" onChange={(event) => setNewName(event.target.value)} onKeyDown={(event) => (event.key === 'Enter' ? add() : undefined)} />
+        <button type="button" className="settings-button settings-person-add" disabled={newName.trim() === ''} onClick={add}>
+          Add person
+        </button>
+      </span>
       <p className="settings-note">
-        The scale measures weight and impedance; body fat, water, muscle, bone, lean mass and BMR are worked out from them with this profile. BMI needs the height; the rest need all three. Changing it recomputes every Weigh-in.
+        A Weigh-in goes to whoever’s last Weigh-in is nearest — never someone with “guess me” off or with no Weigh-in yet, and Jaish when nobody fits — and a tap on the pop-up or on the Weight page moves it. The scale
+        measures weight and impedance; body fat, water, muscle, bone, lean mass and BMR are worked out from them with each Person’s profile. BMI needs the height; the rest need all three. Changing a profile recomputes
+        their every Weigh-in.
       </p>
+
+      <h3 className="settings-subhead">Scale</h3>
       <Field label="Scale">
         <span className="settings-card-row">
           <span className="settings-scale-address">{scale.address === '' ? 'None yet — the first QN scale seen is remembered' : scale.address}</span>
@@ -386,6 +464,53 @@ function BodySection({ body, scale, onChange, onForget }: { body: AppSettings['b
       <p className={status?.state === 'unavailable' ? 'settings-role-status settings-role-status--off settings-scale-status' : 'settings-role-status settings-scale-status'} role="status">
         {scaleStatusLine(status)}
       </p>
+
+      <h3 className="settings-subhead">Weight card</h3>
+      {people.map((person) => (
+        <Field key={person.id} label={`Show ${person.name}`}>
+          <input
+            type="checkbox"
+            checked={!card.hidden.includes(person.id)}
+            aria-label={`Show ${person.name} on the Weight card`}
+            onChange={(event) => setCard({ hidden: event.target.checked ? card.hidden.filter((id) => id !== person.id) : [...card.hidden, person.id] })}
+          />
+        </Field>
+      ))}
+      <Field label="Change against a week ago">
+        <input type="checkbox" checked={card.change} aria-label="Show the change" onChange={(event) => setCard({ change: event.target.checked })} />
+      </Field>
+      <Field label="Body fat">
+        <input type="checkbox" checked={card.fat} aria-label="Show the body fat" onChange={(event) => setCard({ fat: event.target.checked })} />
+      </Field>
+      <Field label="Line">
+        <input type="checkbox" checked={card.line} aria-label="Show the line" onChange={(event) => setCard({ line: event.target.checked })} />
+      </Field>
+      <Field label="Line’s range">
+        <select value={card.rangeDays} aria-label="Line range" onChange={(event) => setCard({ rangeDays: WEIGHT_CARD_RANGES.find((days) => days === Number(event.target.value)) ?? 30 })}>
+          {WEIGHT_CARD_RANGES.map((days) => (
+            <option key={days} value={days}>
+              {days} days
+            </option>
+          ))}
+        </select>
+      </Field>
+
+      <h3 className="settings-subhead">Weigh-in pop-up</h3>
+      <Field label="Show the pop-up">
+        <input type="checkbox" checked={popup.on} aria-label="Show the Weigh-in pop-up" onChange={(event) => onChange({ ...weight, popup: { ...popup, on: event.target.checked } })} />
+      </Field>
+      <Field label={`Linger after stepping off (${String(popup.lingerMs / 1000)} s)`}>
+        <input
+          type="range"
+          min={POPUP_LINGER_MS_MIN}
+          max={POPUP_LINGER_MS_MAX}
+          step={1000}
+          value={popup.lingerMs}
+          aria-label="Pop-up linger in ms"
+          onChange={(event) => onChange({ ...weight, popup: { ...popup, lingerMs: Number(event.target.value) } })}
+        />
+      </Field>
+      <p className="settings-note">Kilograms only.</p>
     </section>
   )
 }
@@ -604,11 +729,16 @@ export function SettingsPage({
 
         <NewsSection news={draft.news} onChange={(news) => setDraft({ ...draft, news })} />
 
-        <BodySection
-          body={draft.body}
+        <WeightSection
+          weight={draft.weight}
           scale={settings.scale}
-          onChange={(body) => setDraft({ ...draft, body })}
+          onChange={(weight) => setDraft({ ...draft, weight })}
           onForget={() => void onSave({ ...settings, scale: { address: '' } })}
+          onRemovePerson={(person) => {
+            // Main removes them from the saved settings with their Weigh-ins; the draft drops them too, keeping any other edit.
+            setDraft({ ...draft, weight: { ...draft.weight, people: draft.weight.people.filter((known) => known.id !== person) } })
+            window.bingbong.weight.removePerson(person).catch((error: unknown) => reportRendererFault('weight.removePerson', error))
+          }}
         />
 
         <section className="settings-section">

@@ -97,6 +97,8 @@ contextBridge.exposeInMainWorld('bingbong', {
   weight: {
     list: (): Promise<WeighIn[]> => ipcRenderer.invoke(WEIGHT_IPC.list),
     remove: (at: number): Promise<WeighIn[]> => ipcRenderer.invoke(WEIGHT_IPC.remove, at),
+    move: (at: number, person: string): Promise<WeighIn[]> => ipcRenderer.invoke(WEIGHT_IPC.move, at, person),
+    removePerson: (person: string): Promise<WeighIn[]> => ipcRenderer.invoke(WEIGHT_IPC.removePerson, person),
     onChange: (listener: (weighIns: WeighIn[]) => void): (() => void) => {
       const wrapped = (_event: unknown, weighIns: WeighIn[]): void => listener(weighIns)
       ipcRenderer.on(WEIGHT_IPC.changed, wrapped)

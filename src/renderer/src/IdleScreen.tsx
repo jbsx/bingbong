@@ -21,9 +21,9 @@ import type { WeatherState } from './useWeather'
 import { viewUsage, type UsagePrefs } from '../../core/usage/usage'
 import type { UsageState } from './useUsage'
 import { UsageCard } from './UsageCard'
-import { WeightCard } from './WeightCard'
+import { WeightCard, weightCardRows } from './WeightCard'
 import type { WeighIn } from '../../core/scale/weighIns'
-import type { BodyProfile } from '../../core/scale/bodyComposition'
+import { defaultWeightSettings, type WeightSettings } from '../../core/scale/weightSettings'
 import { StatusOrb, StatusPill } from './AssistantPanel'
 import type { OrbStatus } from './useAssistant'
 import { ChevronIcon, GlobeIcon, HighIcon, LowIcon, RainChanceIcon, SunriseIcon, SunsetIcon, TimerIcon, WeatherIcon } from './WeatherIcon'
@@ -649,7 +649,7 @@ export function IdleScreen({
   timer,
   nowPlaying,
   weighIns = null,
-  body = { heightCm: null, birthDate: null, sex: null },
+  weight = defaultWeightSettings(),
   onOpenWeight = () => undefined,
   status,
   hint,
@@ -666,10 +666,10 @@ export function IdleScreen({
   nowPlaying: NowPlaying | null
   /** Every Weigh-in for the Weight card (useWeighIns); null until main answers. */
   weighIns?: readonly WeighIn[] | null
-  /** The Body Profile the card's body fat is worked out from (settings' body). */
-  body?: BodyProfile
-  /** The Weight card was tapped: show the Weight page. */
-  onOpenWeight?: () => void
+  /** The Weight section (settings' weight): the People, their Body Profiles and the card's choices. */
+  weight?: WeightSettings
+  /** A Person's row on the Weight card was tapped: show the Weight page on them. */
+  onOpenWeight?: (person: string) => void
   status: OrbStatus
   hint: VoiceHint | null
 }) {
@@ -690,6 +690,7 @@ export function IdleScreen({
   // A ringing Timer takes Now Playing's place: the alarm is what the room should see.
   const playing = cards.includes('music') && nowPlaying !== null && timer.status !== 'ringing' ? nowPlaying : null
   const docked = timer.status !== 'off' || next !== null || playing !== null
+  const weightRows = weighIns === null ? [] : weightCardRows(weighIns, weight)
   const glow = weatherGlow(weather.status === 'ready' ? weather.report : null, now)
 
   // Each pinned card's ask of the grid: the sizes it draws at and whether it has anything to show now.
@@ -711,7 +712,7 @@ export function IdleScreen({
         if (news.status === 'ready') return { id, sizes: [BIG, TALL, SMALL], hasContent: true }
         return { id, sizes: news.status === 'loading' ? [] : [SMALL], hasContent: false }
       case 'weight':
-        if (weighIns !== null && weighIns.length > 0) return { id, sizes: [TALL, SMALL], hasContent: true }
+        if (weightRows.length > 0) return { id, sizes: [TALL, SMALL], hasContent: true }
         return { id, sizes: weighIns === null ? [] : [SMALL], hasContent: false }
     }
   })
@@ -739,8 +740,8 @@ export function IdleScreen({
           <NoteCard label="news">{news.status === 'unset' ? 'Add a topic to News in settings' : 'No news yet'}</NoteCard>
         )
       case 'weight':
-        return weighIns !== null && weighIns.length > 0 ? (
-          <WeightCard weighIns={weighIns} profile={body} size={placement.size} now={now.getTime()} onOpen={onOpenWeight} />
+        return weightRows.length > 0 ? (
+          <WeightCard rows={weightRows} weight={weight} size={placement.size} now={now.getTime()} onOpen={onOpenWeight} />
         ) : (
           <NoteCard label="weight">Step on the scale</NoteCard>
         )

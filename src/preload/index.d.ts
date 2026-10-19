@@ -142,11 +142,15 @@ export interface BingbongWeightApi {
   list(): Promise<WeighIn[]>
   /** Deletes the Weigh-in at that time (a mis-weigh, a guest); answers the rest. */
   remove(at: number): Promise<WeighIn[]>
+  /** Gives the Weigh-in at that time to another Person (a wrong guess fixed); answers them all. */
+  move(at: number, person: string): Promise<WeighIn[]>
+  /** Removes a Person from settings with every Weigh-in of theirs (never Jaish); answers the rest. */
+  removePerson(person: string): Promise<WeighIn[]>
   onChange(listener: (weighIns: WeighIn[]) => void): () => void
   /** The Weigh-in pop-up's state, which main folds from the scale's readings. */
   popup(): Promise<WeighInPopupState>
   onPopup(listener: (state: WeighInPopupState) => void): () => void
-  /** The Scale Listener's state, for the settings Body section. */
+  /** The Scale Listener's state, for the settings Weight section. */
   status(): Promise<ScaleStatus>
   onStatus(listener: (status: ScaleStatus) => void): () => void
 }

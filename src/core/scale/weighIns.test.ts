@@ -16,10 +16,22 @@ describe('sanitizeWeighIns', () => {
       ],
     }
     expect(sanitizeWeighIns(raw)).toEqual([
-      { at: DAY, kg: 82, r1: 510, r2: 500 },
-      { at: 3 * DAY, kg: 80, r1: 500, r2: 501 },
-      { at: 4 * DAY, kg: 81, r1: 0, r2: 0 },
+      { at: DAY, kg: 82, r1: 510, r2: 500, person: 'jaish' },
+      { at: 3 * DAY, kg: 80, r1: 500, r2: 501, person: 'jaish' },
+      { at: 4 * DAY, kg: 81, r1: 0, r2: 0, person: 'jaish' },
     ])
+  })
+
+  it('gives every Weigh-in from before #351, and any record without a Person, to Jaish, and keeps the Person of the rest', () => {
+    const raw = {
+      weighIns: [
+        { at: DAY, kg: 82, r1: 510, r2: 500 },
+        { at: 2 * DAY, kg: 71, r1: 0, r2: 0, person: 'barun' },
+        { at: 3 * DAY, kg: 81, r1: 0, r2: 0, person: '' },
+        { at: 4 * DAY, kg: 81, r1: 0, r2: 0, person: 7 },
+      ],
+    }
+    expect(sanitizeWeighIns(raw).map((weighIn) => weighIn.person)).toEqual(['jaish', 'barun', 'jaish', 'jaish'])
   })
 
   it('reads a missing or broken file as no Weigh-ins', () => {
@@ -30,9 +42,9 @@ describe('sanitizeWeighIns', () => {
 
 describe('changeSince', () => {
   const history = [
-    { at: 0, kg: 83, r1: 0, r2: 0 },
-    { at: 3 * DAY, kg: 82.5, r1: 0, r2: 0 },
-    { at: 9 * DAY, kg: 81.25, r1: 0, r2: 0 },
+    { at: 0, kg: 83, r1: 0, r2: 0, person: 'jaish' },
+    { at: 3 * DAY, kg: 82.5, r1: 0, r2: 0, person: 'jaish' },
+    { at: 9 * DAY, kg: 81.25, r1: 0, r2: 0, person: 'jaish' },
   ]
 
   it('compares the latest Weigh-in with the last one a week or more before it', () => {
@@ -47,7 +59,7 @@ describe('changeSince', () => {
 
 describe('since', () => {
   it('keeps the Weigh-ins of the last span, or all of them for no span', () => {
-    const history = [0, 5, 20, 29].map((day) => ({ at: day * DAY, kg: 80, r1: 0, r2: 0 }))
+    const history = [0, 5, 20, 29].map((day) => ({ at: day * DAY, kg: 80, r1: 0, r2: 0, person: 'jaish' }))
     expect(since(history, 10 * DAY, 30 * DAY).map((weighIn) => weighIn.at / DAY)).toEqual([20, 29])
     expect(since(history, null, 30 * DAY)).toHaveLength(4)
   })

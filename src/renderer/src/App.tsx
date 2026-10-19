@@ -17,6 +17,8 @@ import { useNowPlaying } from './useNowPlaying'
 import { useUsage } from './useUsage'
 import { useNews } from './useNews'
 import { defaultUsagePrefs } from '../../core/usage/usage'
+import { JAISH } from '../../core/scale/people'
+import { defaultWeightSettings } from '../../core/scale/weightSettings'
 import { usePeekCard } from './usePeekCard'
 import { useSettings } from './useSettings'
 import { useVoice } from './useVoice'
@@ -29,6 +31,8 @@ export function App() {
   const { settings, save } = useSettings()
   // Settings and the Weight page (#350) are full-window views beside the browsing dashboard, each with its own Back.
   const [view, setView] = useState<'dashboard' | 'settings' | 'weight'>('dashboard')
+  // The Person the Weight page opens on (#351): Jaish, unless a row of the Weight card named another.
+  const [weightPerson, setWeightPerson] = useState(JAISH)
   const idle = useIdle()
   // Feed panel layout state (#45): the panel renders in its own overlay
   // webContents above the browser pane; this slot is the rect its bounds
@@ -135,8 +139,11 @@ export function App() {
           timer={timer}
           nowPlaying={nowPlaying}
           weighIns={weighIns}
-          body={settings?.body}
-          onOpenWeight={() => setView('weight')}
+          weight={settings?.weight}
+          onOpenWeight={(person) => {
+            setWeightPerson(person)
+            setView('weight')
+          }}
           status={status}
           hint={hint}
         />
@@ -215,7 +222,7 @@ export function App() {
               <p className="settings-loading">Loading settings…</p>
             )
           ) : view === 'weight' ? (
-            <WeightPage weighIns={weighIns} profile={settings?.body ?? { heightCm: null, birthDate: null, sex: null }} onClose={() => setView('dashboard')} />
+            <WeightPage weighIns={weighIns} people={settings?.weight.people ?? defaultWeightSettings().people} initialPerson={weightPerson} onClose={() => setView('dashboard')} />
           ) : (
             <div className="dashboard-browsing">
               <BrowserPane />

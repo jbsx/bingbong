@@ -4,6 +4,10 @@ export const WEIGHT_IPC = {
   list: 'weight:list',
   /** invoke(at) → WeighIn[] without the one at that time (a mis-weigh, a guest). */
   remove: 'weight:remove',
+  /** invoke(at, personId) → WeighIn[] with that one given to the Person (a wrong guess fixed). */
+  move: 'weight:move',
+  /** invoke(personId) → WeighIn[] without that Person's, who is gone from settings too; Jaish is never removed. */
+  removePerson: 'weight:remove-person',
   /** main → renderers: WeighIn[] after any change. */
   changed: 'weight:changed',
   /** invoke → WeighInPopupState. */
@@ -17,7 +21,7 @@ export const WEIGHT_IPC = {
 } as const
 
 /**
- * The Scale Listener's state, as the settings Body section shows it:
+ * The Scale Listener's state, as the settings Weight section shows it:
  * looking for the scale, talking to it, unable to (Bluetooth missing, off
  * or without LE — `detail` says which), or replaced by the e2e stand-in.
  */

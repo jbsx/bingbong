@@ -1354,6 +1354,25 @@ body {
   font-weight: 650;
 }
 
+/* A part of a long section (the Weight section's People, Scale, card and pop-up). */
+.settings-subhead {
+  margin: 20px 0 8px;
+  font-size: 0.85rem;
+  font-weight: 650;
+  color: var(--muted);
+}
+
+/* One Person in the Weight section: their fields, framed. */
+.settings-person {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 10px;
+  padding: 10px 14px;
+  border: 1px solid var(--edge);
+  border-radius: 12px;
+}
+
 .settings-field {
   display: grid;
   grid-template-columns: 240px 1fr;
@@ -3506,33 +3525,92 @@ body {
   accent-color: var(--accent);
 }
 
-/* ---- the Weight card (#350) ----
-   A Pinned Card of glass tiles: the latest weight large over its change
-   against a week ago and the body fat, the 30 days' trend in the tile
-   under it; given one cell, the weight and the change. The weight is sized
-   to the slot (container query units), so one cell still holds all three
-   lines. The whole card is the tap that opens the Weight page. */
+/* ---- the Weight card (#350, #351) ----
+   A Pinned Card of glass tiles, one per Person with a Weigh-in: the name,
+   the latest weight large beside its change against a week ago and the
+   body fat, their own line under it; given one cell, a line per Person
+   with the weight and the change. The weight is sized to the tile
+   (container query units). Each row is the tap that opens the Weight page
+   on that Person. */
 .weight-card {
   -webkit-app-region: no-drag;
+}
+
+.weight-card-row,
+.weight-card-line {
   cursor: pointer;
 }
 
-.weight-card:focus-visible {
+.weight-card-row:focus-visible,
+.weight-card-line:focus-visible {
   outline: 3px solid var(--accent);
   outline-offset: 4px;
-  border-radius: 26px;
 }
 
-.weight-card-now {
+.weight-card-row {
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  gap: 6px;
+  padding: 16px 24px 18px;
+  min-height: 0;
+}
+
+.weight-card-name {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.weight-card-figures {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  min-width: 0;
+}
+
+.weight-card-side {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.weight-card-row .weight-chart {
+  min-height: 48px;
+}
+
+.weight-card--list {
+  display: grid;
+  grid-template-rows: auto repeat(var(--rows), minmax(0, 1fr));
   gap: 4px;
-  padding: 18px 28px;
+  padding: 16px 22px;
+}
+
+.weight-card-line {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  column-gap: 12px;
+  min-height: 0;
+}
+
+.weight-card-line .weight-card-name {
+  font-size: 1.3rem;
+}
+
+.weight-card-line .weight-card-kg {
+  font-size: min(48px, 22cqh);
+}
+
+.weight-card-line .weight-card-kg small {
+  font-size: 0.4em;
+}
+
+.weight-card-line .weight-card-change {
+  font-size: 1.1rem;
 }
 
 .weight-card-kg {
-  font-size: min(96px, 36cqh);
+  font-size: min(80px, 30cqh);
   font-weight: 250;
   letter-spacing: -0.02em;
   line-height: 1;
@@ -3568,17 +3646,6 @@ body {
   color: var(--text);
   font-weight: 650;
   font-variant-numeric: tabular-nums;
-}
-
-.weight-card-note {
-  font-size: 1rem;
-}
-
-.weight-card-trend {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 20px 24px 24px;
 }
 
 /* ---- the weight charts: the card's trend and the Weight page's figures ----
@@ -3788,6 +3855,45 @@ body {
 
 .weight-table td:last-child {
   text-align: right;
+  white-space: nowrap;
+}
+
+.weight-people {
+  margin-bottom: 16px;
+}
+
+.weight-move {
+  border: 1px solid var(--edge);
+  background: none;
+  color: var(--text);
+  font-size: 0.8rem;
+  cursor: pointer;
+  padding: 2px 10px;
+  border-radius: 999px;
+  margin-right: 6px;
+}
+
+.weight-move:hover {
+  border-color: var(--accent);
+}
+
+.weight-move-menu {
+  position: relative;
+  display: inline-block;
+}
+
+.weight-move-options {
+  position: absolute;
+  right: 6px;
+  top: calc(100% + 4px);
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  border: 1px solid var(--edge);
+  border-radius: 10px;
+  background: var(--panel);
 }
 
 .settings-scale-address {
@@ -3817,6 +3923,39 @@ body {
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
   pointer-events: none;
   animation: card-in 200ms ease;
+}
+
+.weighin-popup-name {
+  color: var(--text);
+  font-weight: 700;
+}
+
+/* "Not you?": one chip per other Person, the only part that takes a pointer. */
+.weighin-popup-chips {
+  flex: 0 1 auto;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  max-width: 50%;
+  margin-left: auto;
+}
+
+.weighin-popup-chip {
+  pointer-events: auto;
+  height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--edge);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.weighin-popup-chip:hover {
+  border-color: var(--accent);
 }
 
 .weighin-popup-mark {
@@ -3849,6 +3988,7 @@ body {
 }
 
 .weighin-popup-words {
+  flex: 1 1 auto;
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -3875,4 +4015,7 @@ body {
   font-size: 1.05rem;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }

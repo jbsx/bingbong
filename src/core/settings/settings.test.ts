@@ -230,11 +230,20 @@ describe('news sources (#348)', () => {
   })
 })
 
-describe('the Weight card and the Body Profile (#350)', () => {
-  it('pins the Weight card and starts with no Body Profile and no remembered scale', () => {
+describe('the Weight card and the Weight section (#350, #351)', () => {
+  const EMPTY = { heightCm: null, birthDate: null, sex: null }
+
+  it('pins the Weight card and starts with Jaish and Barun, no Body Profile, every figure on the card, a 30-day line, the pop-up on for 8 s and no remembered scale', () => {
     const settings = defaultSettings()
     expect(settings.idleCards).toContain('weight')
-    expect(settings.body).toEqual({ heightCm: null, birthDate: null, sex: null })
+    expect(settings.weight).toEqual({
+      people: [
+        { id: 'jaish', name: 'Jaish', body: EMPTY, guess: true },
+        { id: 'barun', name: 'Barun', body: EMPTY, guess: true },
+      ],
+      card: { hidden: [], change: true, fat: true, line: true, rangeDays: 30 },
+      popup: { on: true, lingerMs: 8000 },
+    })
     expect(settings.scale).toEqual({ address: '' })
   })
 
@@ -242,12 +251,48 @@ describe('the Weight card and the Body Profile (#350)', () => {
     expect(sanitizeSettings({ idleCards: ['weather', 'calendar', 'lastPage', 'news', 'usage', 'music'], news: { topics: [] } }).idleCards).toEqual(['weather', 'calendar', 'lastPage', 'weight', 'usage', 'news', 'music'])
     expect(sanitizeSettings({ idleCards: ['news', 'weather'], news: { topics: [] } }).idleCards).toEqual(['news', 'weather', 'weight'])
     expect(sanitizeSettings({ idleCards: ['news', 'weather'], news: { topics: [] }, body: {} }).idleCards).toEqual(['news', 'weather'])
+    expect(sanitizeSettings({ idleCards: ['news', 'weather'], news: { topics: [] }, weight: {} }).idleCards).toEqual(['news', 'weather'])
+  })
+
+  it('gives #350’s Body Profile to Jaish on upgrade, with Barun added beside him', () => {
+    const { people } = sanitizeSettings({ body: { heightCm: 180, birthDate: '1991-03-01', sex: 'male' } }).weight
+    expect(people).toEqual([
+      { id: 'jaish', name: 'Jaish', body: { heightCm: 180, birthDate: '1991-03-01', sex: 'male' }, guess: true },
+      { id: 'barun', name: 'Barun', body: EMPTY, guess: true },
+    ])
   })
 
   it('keeps a sensible profile and drops what is not one', () => {
-    expect(sanitizeSettings({ body: { heightCm: 180, birthDate: '1991-03-01', sex: 'male' } }).body).toEqual({ heightCm: 180, birthDate: '1991-03-01', sex: 'male' })
-    expect(sanitizeSettings({ body: { heightCm: 18, birthDate: '1991-02-31', sex: 'm' } }).body).toEqual({ heightCm: null, birthDate: null, sex: null })
-    expect(sanitizeSettings({ body: { heightCm: '180', birthDate: 19910301, sex: 'female' } }).body).toEqual({ heightCm: null, birthDate: null, sex: 'female' })
+    const body = (raw: unknown) => sanitizeSettings({ weight: { people: [{ id: 'jaish', name: 'Jaish', body: raw }] } }).weight.people[0].body
+    expect(body({ heightCm: 180, birthDate: '1991-03-01', sex: 'male' })).toEqual({ heightCm: 180, birthDate: '1991-03-01', sex: 'male' })
+    expect(body({ heightCm: 18, birthDate: '1991-02-31', sex: 'm' })).toEqual(EMPTY)
+    expect(body({ heightCm: '180', birthDate: 19910301, sex: 'female' })).toEqual({ ...EMPTY, sex: 'female' })
+  })
+
+  it('keeps the People as saved — renamed, added, removed, "guess me" off — but always Jaish, first, and one Person per id', () => {
+    const people = sanitizeSettings({
+      weight: {
+        people: [
+          { id: 'p-1', name: '  Guest ', guess: false },
+          { id: 'jaish', name: 'Jai' },
+          { id: 'p-1', name: 'Twin' },
+          { id: 'p-2', name: '   ' },
+          { name: 'No id' },
+        ],
+      },
+    }).weight.people
+    expect(people).toEqual([
+      { id: 'jaish', name: 'Jai', body: EMPTY, guess: true },
+      { id: 'p-1', name: 'Guest', body: EMPTY, guess: false },
+    ])
+    expect(sanitizeSettings({ weight: { people: [] } }).weight.people).toEqual([{ id: 'jaish', name: 'Jaish', body: EMPTY, guess: true }])
+  })
+
+  it('keeps the card’s choices and the pop-up’s, within bounds', () => {
+    const weight = sanitizeSettings({ weight: { card: { hidden: ['barun', 3], change: false, fat: 'no', line: false, rangeDays: 90 }, popup: { on: false, lingerMs: 999_999 } } }).weight
+    expect(weight.card).toEqual({ hidden: ['barun'], change: false, fat: true, line: false, rangeDays: 90 })
+    expect(weight.popup).toEqual({ on: false, lingerMs: 30_000 })
+    expect(sanitizeSettings({ weight: { card: { rangeDays: 14 } } }).weight.card.rangeDays).toBe(30)
   })
 
   it('keeps a scale address as Bluetooth writes it, and nothing else', () => {

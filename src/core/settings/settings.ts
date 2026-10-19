@@ -7,7 +7,7 @@ import { defaultUsagePrefs, sanitizeUsagePrefs, type UsagePrefs } from '../usage
 import { IDLE_CARD_IDS, sanitizeIdleCards, type IdleCardId } from '../idle/slots'
 import { defaultNewsFeeds, sanitizeNewsFeeds, type NewsFeed } from '../news/feeds'
 import { defaultInterestProfile, sanitizeInterestProfile, type InterestProfile } from '../news/interestProfile'
-import type { BodyProfile } from '../scale/bodyComposition'
+import { defaultWeightSettings, sanitizeWeightSettings, type WeightSettings } from '../scale/weightSettings'
 
 export const WAKE_WORD_THRESHOLD_MIN = 0
 export const WAKE_WORD_THRESHOLD_MAX = 1
@@ -98,8 +98,8 @@ export interface AppSettings {
    * it — and the feeds it reads (core/news/feeds).
    */
   news: { topics: InterestProfile; feeds: NewsFeed[] }
-  /** The Body Profile (core/scale/bodyComposition) the Weigh-ins' figures are worked out from; any field may be unset. */
-  body: BodyProfile
+  /** The Weight section (core/scale/weightSettings): the People, each with the Body Profile their Weigh-ins' figures are worked out from, the Weight card's choices and the pop-up's. */
+  weight: WeightSettings
   /** The scale the Scale Listener remembered by its Bluetooth address ('' until one is seen, or once forgotten). */
   scale: { address: string }
 }
@@ -123,7 +123,7 @@ export function defaultSettings(): AppSettings {
     usageDashboard: { url: USAGE_DASHBOARD_URL_DEFAULT, ...defaultUsagePrefs() },
     idleCards: [...IDLE_CARD_IDS],
     news: { topics: defaultInterestProfile(), feeds: defaultNewsFeeds() },
-    body: { heightCm: null, birthDate: null, sex: null },
+    weight: defaultWeightSettings(),
     scale: { address: '' },
   }
 }
@@ -184,7 +184,8 @@ function sameCards(a: readonly IdleCardId[], b: readonly IdleCardId[]): boolean 
 /**
  * The Pinned Cards as saved, and a card added at the end when the
  * settings were saved before it existed — the News card when they have no
- * `news` section, the Weight card when they have no `body` — so it is on by
+ * `news` section, the Weight card when they have neither `body` (#350) nor
+ * `weight` (#351) — so it is on by
  * default for an owner who already ordered the others. Once saved with its
  * section, a list without the card means it was unpinned. A list that is
  * an earlier default — from before the three-by-four grid (#352), or from
@@ -194,22 +195,9 @@ function sameCards(a: readonly IdleCardId[], b: readonly IdleCardId[]): boolean 
 function pinnedCards(record: Record<string, unknown>): IdleCardId[] {
   const saved = sanitizeIdleCards(record.idleCards)
   const cards = record.news === undefined && !saved.includes('news') ? [...saved, 'news' as const] : saved
-  const beforeWeight = record.body === undefined
+  const beforeWeight = record.body === undefined && record.weight === undefined
   if (sameCards(cards, OLD_DEFAULT_IDLE_CARDS) || (beforeWeight && sameCards(cards, GRID_DEFAULT_IDLE_CARDS))) return [...IDLE_CARD_IDS]
   return beforeWeight && !cards.includes('weight') ? [...cards, 'weight'] : cards
-}
-
-/** A height in cm a person could have; anything else unset. */
-function asHeight(value: unknown): number | null {
-  return typeof value === 'number' && Number.isFinite(value) && value >= 50 && value <= 250 ? value : null
-}
-
-/** A real calendar date, YYYY-MM-DD; anything else unset. */
-function asBirthDate(value: unknown): string | null {
-  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null
-  const [year, month, day] = value.split('-').map(Number)
-  const date = new Date(year, month - 1, day)
-  return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day ? value : null
 }
 
 /** A Bluetooth address as BlueZ writes it (upper case); anything else none. */
@@ -226,7 +214,6 @@ export function sanitizeSettings(raw: unknown): AppSettings {
   const weather = asRecord(record.weather)
   const usageDashboard = asRecord(record.usageDashboard)
   const news = asRecord(record.news)
-  const body = asRecord(record.body)
 
   return {
     micId: asString(record.micId, defaults.micId),
@@ -247,7 +234,7 @@ export function sanitizeSettings(raw: unknown): AppSettings {
     usageDashboard: { url: asString(usageDashboard?.url, defaults.usageDashboard.url), ...sanitizeUsagePrefs(usageDashboard) },
     idleCards: pinnedCards(record),
     news: { topics: news === null ? defaultInterestProfile() : sanitizeInterestProfile(news.topics), feeds: sanitizeNewsFeeds(news?.feeds) },
-    body: { heightCm: asHeight(body?.heightCm), birthDate: asBirthDate(body?.birthDate), sex: body?.sex === 'male' || body?.sex === 'female' ? body.sex : null },
+    weight: sanitizeWeightSettings(record.weight, record.body),
     scale: { address: asScaleAddress(asRecord(record.scale)?.address) },
   }
 }

@@ -385,7 +385,7 @@ colored glyph, every temperature in its hue from blue through green to red,
 rain in blue, so the day reads from across the room; the hours' temperature
 row is left off when every hour reads the same), the AI Usage card, the
 Calendar, the News card with Today's Highlight and Big News, the Weight
-card with the latest Weigh-in and its trend, and the Last Page with its way
+card with each Person's latest Weigh-in and their line, and the Last Page with its way
 back — and under them, only while any of them is there,
 a dock of chips: the Timer when one is set, today's next event when the
 Calendar has one, and Now Playing while the Player holds a song; the grid's
@@ -444,9 +444,10 @@ no fill. A card offers the sizes it can draw at, largest first: the weather
 1×3 (now, the hours, the days), 1×2, 1×1; the AI Usage 1×2 (rings, chart),
 1×1; the Calendar 1×2 (the month with entries) only while it has events,
 else 1×1 (this week and next); News 2×2 (the highlight beside Big News),
-1×2 (one over the other), 1×1; the Weight card 1×2 (the weight, the change
-against a week ago and the body fat over the 30 days' trend), 1×1 (the
-weight and the change) while there is a Weigh-in, else a 1×1 note; the
+1×2 (one over the other), 1×1; the Weight card 1×2 (a row per Person: the
+weight, the change against a week ago and the body fat over their own
+line), 1×1 (each name, the weight and the change) while there is a
+Weigh-in, else a 1×1 note; the
 Last Page 1×1; a note 1×1. As many Pinned Cards are shown as the grid
 holds before any of them takes a larger box (owner, 2026-10-19: "why is the
 calendar hidden now?" — the News card's 2×2 had pushed the event-less

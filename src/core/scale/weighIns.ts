@@ -1,6 +1,9 @@
 // Weigh-ins (CONTEXT.md): what weighins.json in userData keeps — the time,
-// the weight and the scale's two resistances, nothing worked out from
-// them, so a Body Profile edit or a formula fix recomputes the history.
+// the weight, the scale's two resistances and whose it is, nothing worked
+// out from them, so a Body Profile edit or a formula fix recomputes the
+// history.
+
+import { JAISH } from './people'
 
 export interface WeighIn {
   /** When the reading settled, ms since the Unix epoch; a Weigh-in's key. */
@@ -9,13 +12,15 @@ export interface WeighIn {
   /** The scale's two resistances (raw, as the scale sends them); 0 when it measured none. */
   r1: number
   r2: number
+  /** The Person's id (core/scale/people); Jaish's for a record from before #351. */
+  person: string
 }
 
 function finite(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value)
 }
 
-/** weighins.json as read from disk: the well-formed Weigh-ins, oldest first, the first kept of any two at the same time. */
+/** weighins.json as read from disk: the well-formed Weigh-ins, oldest first, the first kept of any two at the same time; one without a Person is Jaish's. */
 export function sanitizeWeighIns(raw: unknown): WeighIn[] {
   const list = (raw as { weighIns?: unknown } | null | undefined)?.weighIns
   if (!Array.isArray(list)) return []
@@ -24,7 +29,7 @@ export function sanitizeWeighIns(raw: unknown): WeighIn[] {
     const record = item as Partial<Record<keyof WeighIn, unknown>> | null
     if (record === null || typeof record !== 'object' || !finite(record.at) || !finite(record.kg) || record.kg <= 0) continue
     if (byTime.has(record.at)) continue
-    byTime.set(record.at, { at: record.at, kg: record.kg, r1: finite(record.r1) ? record.r1 : 0, r2: finite(record.r2) ? record.r2 : 0 })
+    byTime.set(record.at, { at: record.at, kg: record.kg, r1: finite(record.r1) ? record.r1 : 0, r2: finite(record.r2) ? record.r2 : 0, person: typeof record.person === 'string' && record.person !== '' ? record.person : JAISH })
   }
   return [...byTime.values()].sort((a, b) => a.at - b.at)
 }

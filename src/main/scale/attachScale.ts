@@ -1,5 +1,6 @@
 import { ipcMain } from 'electron'
 import { WEIGHT_IPC, type ScaleStatus } from '../../core/scale/ipcChannels'
+import { guessPerson, JAISH, settledWeighIn } from '../../core/scale/people'
 import { createScaleSession, type ScaleSession } from '../../core/scale/scaleSession'
 import { createWeighInPopup } from '../../core/scale/weighInPopup'
 import { reportFault } from '../../core/trace/fault'
@@ -11,7 +12,6 @@ import type { WeighInStore } from './weighInStore'
 /** A connected scale that sends nothing for this long has been left: the link is dropped so the next stepping-on connects afresh. */
 const QUIET_MS = 15_000
 
-
 export interface ScaleListener {
   /** A renderer (the dashboard, the overlay) that hears the Weigh-ins, the pop-up and the status. */
   addReceiver(contents: Electron.WebContents): void
@@ -22,7 +22,8 @@ export interface ScaleListener {
  * The Scale Listener (CONTEXT.md): runs while Bing Bong does. Each
  * connection the transport makes is a scale session (core/scale) — its
  * replies written back in order, its readings driving the Weigh-in pop-up,
- * its Weigh-in added to weighins.json and sent to the renderers. The first
+ * its Weigh-in given to the nearest Person (no asking), added to
+ * weighins.json and sent to the renderers; a tap moves it. The first
  * scale it connects to is remembered by address in settings; a scale
  * quiet for 15 s is let go. Nothing here speaks.
  */
@@ -32,7 +33,10 @@ export function attachScaleListener(deps: { transport: ScaleTransport; store: We
     for (const contents of receivers) if (!contents.isDestroyed()) contents.send(channel, payload)
   }
   let status: ScaleStatus = { state: 'searching', detail: '' }
-  const popup = createWeighInPopup((state) => send(WEIGHT_IPC.popupChanged, state))
+  const popup = createWeighInPopup(
+    (state) => send(WEIGHT_IPC.popupChanged, state),
+    () => deps.settings.get().weight.popup,
+  )
 
   let connection: ScaleConnection | null = null
   let session: ScaleSession | null = null
@@ -68,9 +72,11 @@ export function attachScaleListener(deps: { transport: ScaleTransport; store: We
       }
       if (step.reading !== null) popup.reading(step.reading)
       if (step.weighIn !== null) {
-        const previous = deps.store.list().at(-1) ?? null
-        send(WEIGHT_IPC.changed, deps.store.add(step.weighIn))
-        popup.weighIn(step.weighIn, previous)
+        const { people } = deps.settings.get().weight
+        const weighIn = { ...step.weighIn, person: guessPerson(step.weighIn.kg, deps.store.list(), people) }
+        const weighIns = deps.store.add(weighIn)
+        send(WEIGHT_IPC.changed, weighIns)
+        popup.weighIn(settledWeighIn(weighIn, weighIns, people))
       }
     },
     disconnected() {
@@ -86,6 +92,27 @@ export function attachScaleListener(deps: { transport: ScaleTransport; store: We
   ipcMain.handle(WEIGHT_IPC.remove, (_event, at: unknown) => {
     if (typeof at !== 'number') return deps.store.list()
     const weighIns = deps.store.remove(at)
+    send(WEIGHT_IPC.changed, weighIns)
+    return weighIns
+  })
+  ipcMain.handle(WEIGHT_IPC.move, (_event, at: unknown, person: unknown) => {
+    const { people } = deps.settings.get().weight
+    if (typeof at !== 'number' || !people.some((known) => known.id === person)) return deps.store.list()
+    const weighIns = deps.store.move(at, person as string)
+    send(WEIGHT_IPC.changed, weighIns)
+    const moved = weighIns.find((weighIn) => weighIn.at === at)
+    if (moved !== undefined) popup.moved(settledWeighIn(moved, weighIns, people))
+    return weighIns
+  })
+  ipcMain.handle(WEIGHT_IPC.removePerson, (_event, person: unknown) => {
+    if (typeof person !== 'string' || person === JAISH) return deps.store.list()
+    const weighIns = deps.store.removePerson(person)
+    const settings = deps.settings.get()
+    const { weight } = settings
+    deps.settings.update({
+      ...settings,
+      weight: { ...weight, people: weight.people.filter((known) => known.id !== person), card: { ...weight.card, hidden: weight.card.hidden.filter((id) => id !== person) } },
+    })
     send(WEIGHT_IPC.changed, weighIns)
     return weighIns
   })

@@ -14,7 +14,8 @@ export interface ScaleReading {
 export interface ScaleStep {
   writes: QnWrite[]
   reading: ScaleReading | null
-  weighIn: WeighIn | null
+  /** Whose it is is the Scale Listener's guess (core/scale/people), not the scale's. */
+  weighIn: Omit<WeighIn, 'person'> | null
 }
 
 export interface ScaleSession {

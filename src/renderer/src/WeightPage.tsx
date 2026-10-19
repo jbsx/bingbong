@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { bodyFigures, type BodyFigures, type BodyProfile, type Figure } from '../../core/scale/bodyComposition'
 import { formatChange, formatFigure, formatKg, WEIGHT_FIGURES } from '../../core/scale/weightFormat'
 import { since, type WeighIn } from '../../core/scale/weighIns'
+import { JAISH, weighInsOf, type Person } from '../../core/scale/people'
 import { reportRendererFault } from './diagnostics'
 import { WeightChart } from './WeightChart'
 
@@ -43,18 +44,62 @@ function stamp(at: number): string {
 }
 
 /**
- * The Weight page (CONTEXT.md): a full-window view beside Settings, opened
- * from the Weight card. The latest Weigh-in with every figure and its
- * change since the one before; a chart per figure over 30 days, 90 days, a
- * year or all of it; and every Weigh-in, newest first, each with a Delete
- * for a mis-weigh or a guest. Every figure is worked out on the spot from
- * the stored reading and the Body Profile — the page says the impedance
- * ones are estimates.
+ * A row's name chip: with one other Person a direct swap to them, with
+ * more a small menu of them; a tap gives the Weigh-in to that Person, and
+ * its figures follow their Body Profile.
  */
-export function WeightPage({ weighIns, profile, onClose }: { weighIns: readonly WeighIn[] | null; profile: BodyProfile; onClose: () => void }) {
+function MoveChip({ weighIn, others }: { weighIn: WeighIn; others: readonly Person[] }) {
+  const [open, setOpen] = useState(false)
+  const move = (person: string): void => {
+    setOpen(false)
+    window.bingbong.weight.move(weighIn.at, person).catch((error: unknown) => reportRendererFault('weight.move', error))
+  }
+  if (others.length === 0) return null
+  if (others.length === 1) {
+    return (
+      <button type="button" className="weight-move" aria-label={`Move the Weigh-in of ${stamp(weighIn.at)} to ${others[0].name}`} onClick={() => move(others[0].id)}>
+        → {others[0].name}
+      </button>
+    )
+  }
+  return (
+    <span className="weight-move-menu">
+      <button type="button" className="weight-move" aria-expanded={open} aria-label={`Move the Weigh-in of ${stamp(weighIn.at)} to…`} onClick={() => setOpen(!open)}>
+        Move ▾
+      </button>
+      {open ? (
+        <span className="weight-move-options" role="menu">
+          {others.map((person) => (
+            <button key={person.id} type="button" role="menuitem" className="weight-move" onClick={() => move(person.id)}>
+              {person.name}
+            </button>
+          ))}
+        </span>
+      ) : null}
+    </span>
+  )
+}
+
+/**
+ * The Weight page (CONTEXT.md): a full-window view beside Settings, opened
+ * from the Weight card on the Person tapped (Jaish by default), one Person
+ * at a time with a switch between them. Their latest Weigh-in with every
+ * figure and its change since the one before; a chart per figure over 30
+ * days, 90 days, a year or all of it; and every Weigh-in of theirs, newest
+ * first, each with a Delete for a mis-weigh and a name chip that moves it
+ * to another Person. Every figure is worked out on the spot from the
+ * stored reading and the Person's Body Profile — the page says the
+ * impedance ones are estimates.
+ */
+export function WeightPage({ weighIns, people, initialPerson = JAISH, onClose }: { weighIns: readonly WeighIn[] | null; people: readonly Person[]; initialPerson?: string; onClose: () => void }) {
   const [range, setRange] = useState<RangeName>('30 d')
   const [now] = useState(() => Date.now())
-  const list = weighIns ?? []
+  const [chosen, setChosen] = useState(initialPerson)
+  // A Person removed while the page is up leaves it on Jaish.
+  const person = people.find((known) => known.id === chosen) ?? people.find((known) => known.id === JAISH) ?? people[0]
+  const profile: BodyProfile = person.body
+  const others = people.filter((known) => known.id !== person.id)
+  const list = weighInsOf(weighIns ?? [], people, person.id)
   const latest = list[list.length - 1]
   const previous = list[list.length - 2]
   const figures = latest === undefined ? null : bodyFigures(latest, profile)
@@ -71,15 +116,26 @@ export function WeightPage({ weighIns, profile, onClose }: { weighIns: readonly 
   return (
     <section className="settings-page weight-page" aria-label="weight">
       <div className="settings-scroll weight-scroll">
+        {people.length > 1 ? (
+          <span className="weight-ranges weight-people" role="group" aria-label="person">
+            {people.map((known) => (
+              <button key={known.id} type="button" data-person={known.id} className={known.id === person.id ? 'weight-range weight-range--on' : 'weight-range'} aria-pressed={known.id === person.id} onClick={() => setChosen(known.id)}>
+                {known.name}
+              </button>
+            ))}
+          </span>
+        ) : null}
         {latest === undefined || figures === null ? (
           <section className="settings-section">
-            <h2>Weight</h2>
-            <p className="settings-note">No Weigh-ins yet. Step on the scale: Bing Bong records the weight once it settles.</p>
+            <h2>{person.name}</h2>
+            <p className="settings-note">No Weigh-ins for {person.name} yet. Step on the scale: Bing Bong records the weight once it settles, and gives it to whoever weighed nearest last — a tap on the pop-up or on a row here moves it.</p>
           </section>
         ) : (
           <>
             <section className="settings-section weight-latest" aria-label="latest weigh-in">
-              <h2>Latest · {stamp(latest.at)}</h2>
+              <h2>
+                {person.name} · {stamp(latest.at)}
+              </h2>
               <ul className="weight-figures">
                 {WEIGHT_FIGURES.map(({ key, label, unit, digits }) => {
                   const value = figures[key]
@@ -151,6 +207,7 @@ export function WeightPage({ weighIns, profile, onClose }: { weighIns: readonly 
                     <td>{row.fatPercent === 'unavailable' ? '–' : `${formatFigure(row.fatPercent, 1)}%`}</td>
                     <td>{row.musclePercent === 'unavailable' ? '–' : `${formatFigure(row.musclePercent, 1)}%`}</td>
                     <td>
+                      <MoveChip weighIn={weighIn} others={others} />
                       <button type="button" className="settings-term-remove" aria-label={`Delete the Weigh-in of ${stamp(weighIn.at)}`} onClick={() => remove(weighIn.at)}>
                         Delete
                       </button>

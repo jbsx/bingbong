@@ -1,20 +1,26 @@
+import type { SettledWeighIn } from './people'
 import { MIN_WEIGH_IN_KG, type ScaleReading } from './scaleSession'
-import type { WeighIn } from './weighIns'
-
-/** How long the pop-up stays after the owner steps off or the scale drops the link. */
-export const POPUP_LINGER_MS = 8_000
 
 /**
  * The Weigh-in pop-up (CONTEXT.md): hidden, the live weight while it
- * moves, or the settled weight with the change since the previous
- * Weigh-in (null with none before it).
+ * moves, or the settled weight with the guessed Person, the change since
+ * their previous Weigh-in (null with none before it) and a chip per other
+ * Person.
  */
-export type WeighInPopupState = { phase: 'hidden' } | { phase: 'live'; kg: number } | { phase: 'settled'; kg: number; changeKg: number | null }
+export type WeighInPopupState = { phase: 'hidden' } | { phase: 'live'; kg: number } | ({ phase: 'settled' } & SettledWeighIn)
+
+/** The Weight section's say: whether the pop-up shows at all, and how long it stays after stepping off. */
+export interface WeighInPopupOptions {
+  on: boolean
+  lingerMs: number
+}
 
 export interface WeighInPopup {
   reading(reading: ScaleReading): void
-  /** The reading settled into a Weigh-in; `previous` is the one before it. */
-  weighIn(weighIn: WeighIn, previous: WeighIn | null): void
+  /** The reading settled into a Weigh-in. */
+  weighIn(settled: SettledWeighIn): void
+  /** A Weigh-in was moved to another Person: shown at once if it is the one up, and its linger starts afresh. */
+  moved(settled: SettledWeighIn): void
   /** The scale dropped the link or went quiet. */
   ended(): void
   state(): WeighInPopupState
@@ -26,10 +32,11 @@ const HIDDEN: WeighInPopupState = { phase: 'hidden' }
  * The pop-up's fold, in main: it follows the scale's readings and hands
  * each change of state to `onChange` (the windows). Once settled it holds
  * the settled weight while the owner stays on; stepping off — a reading
- * under 5 kg — or the link dropping starts an 8 s linger, and a weight
- * coming back inside it shows live again. Never spoken.
+ * under 5 kg — or the link dropping starts the linger (8 s by default),
+ * and a weight coming back inside it shows live again. Off in the Weight
+ * section, it shows nothing. Never spoken.
  */
-export function createWeighInPopup(onChange: (state: WeighInPopupState) => void): WeighInPopup {
+export function createWeighInPopup(onChange: (state: WeighInPopupState) => void, options: () => WeighInPopupOptions = () => ({ on: true, lingerMs: 8_000 })): WeighInPopup {
   let state: WeighInPopupState = HIDDEN
   let linger: ReturnType<typeof setTimeout> | null = null
 
@@ -47,11 +54,12 @@ export function createWeighInPopup(onChange: (state: WeighInPopupState) => void)
     linger = setTimeout(() => {
       linger = null
       set(HIDDEN)
-    }, POPUP_LINGER_MS)
+    }, options().lingerMs)
   }
 
   return {
     reading({ kg }) {
+      if (!options().on) return
       if (kg < MIN_WEIGH_IN_KG) {
         leaveSoon()
         return
@@ -62,9 +70,17 @@ export function createWeighInPopup(onChange: (state: WeighInPopupState) => void)
       if (state.phase === 'settled' && !steppedBackOn) return
       set({ phase: 'live', kg })
     },
-    weighIn(weighIn, previous) {
+    weighIn(settled) {
+      if (!options().on) return
       stay()
-      set({ phase: 'settled', kg: weighIn.kg, changeKg: previous === null ? null : Math.round((weighIn.kg - previous.kg) * 100) / 100 })
+      set({ phase: 'settled', ...settled })
+    },
+    moved(settled) {
+      if (state.phase !== 'settled' || state.at !== settled.at) return
+      set({ phase: 'settled', ...settled })
+      if (linger === null) return
+      stay()
+      leaveSoon()
     },
     ended: leaveSoon,
     state: () => state,
