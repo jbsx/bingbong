@@ -59,9 +59,10 @@ describe('createFeedSource', () => {
       post('<media:thumbnail url="https://example.com/t.png"/>', 2),
       post('<media:content url="https://example.com/v.mp4" medium="video"/><media:content url="https://example.com/c.webp" type="image/webp"/>', 3),
       post('', 4),
+      post("<media:content url='https://example.com/q.jpg' medium='image'/>", 5),
     ].join('')}</channel></rss>`
     const stories = await createFeedSource(async () => rss, { name: 'Example', url: 'https://example.com/rss' }).stories(0)
-    expect(stories.map((story) => story.image)).toEqual(['https://example.com/a.jpg', 'https://example.com/t.png', 'https://example.com/c.webp', null])
+    expect(stories.map((story) => story.image)).toEqual(['https://example.com/a.jpg', 'https://example.com/t.png', 'https://example.com/c.webp', null, 'https://example.com/q.jpg'])
   })
 
   it('answers only the posts published since the time asked', async () => {

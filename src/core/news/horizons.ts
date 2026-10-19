@@ -1,5 +1,5 @@
 import { sameStory } from './sameStory'
-import { DAY_MS, dayKey, daysBack, type ScoredStory } from './score'
+import { boost, DAY_MS, dayKey, daysBack, type ScoredStory } from './score'
 
 // Big News (CONTEXT.md): the News card's one rolling list beside Today's
 // Highlight, read from the story history — every polled story's best score
@@ -18,13 +18,14 @@ export const HISTORY_DAYS = 31
 /** How many stories Big News holds at most. */
 export const BIG_NEWS_LENGTH = 3
 
-/**
- * How fast a story fades, and what it must still score to be listed. Tuned
- * together: a topical story at the top of its source (score 1) clears the
- * bar for about two days, the same on two sources (1.5, the source boost)
- * for about fourteen.
- */
+// The half-life and the bar are tuned together: a topical story at the top
+// of its source (score 1) clears the bar for about two days, the same on
+// two sources (1.5, the source boost) for about fourteen.
+
+/** How many days a story's score takes to fade to half. */
 export const HALF_LIFE_DAYS = 20
+
+/** What a story's faded score must still be for it to be listed. */
 export const BIG_NEWS_BAR = 0.93
 
 /** One polled story as the history keeps it. */
@@ -39,7 +40,12 @@ export interface StoryRecord {
   cluster: string
   /** The source's own image for it, the first Story Image candidate: none when the source gives none. */
   image: string | null
-  /** By local day polled ('YYYY-MM-DD'): its best score and magnitude that day. */
+  /**
+   * By local day polled ('YYYY-MM-DD'): its best score that day as Big News
+   * measures it — its percentile boosted per source past the first, not per
+   * topic, since the topics rank a story and the sources make it big — and
+   * its magnitude.
+   */
   days: Record<string, { score: number; magnitude: number | null }>
 }
 
@@ -71,7 +77,8 @@ export function recordStories(history: StoryHistory, ranked: readonly ScoredStor
     if (Object.keys(days).length > 0) next[key] = { ...record, days }
   }
   const today = dayKey(now)
-  for (const { story, topics, score } of ranked) {
+  for (const { story, topics, percentile, sources } of ranked) {
+    const score = percentile * boost(sources.length)
     const known = next[story.key]
     if (known === undefined) {
       const fresh = { title: story.title, link: story.link }

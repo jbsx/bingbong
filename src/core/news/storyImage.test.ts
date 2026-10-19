@@ -50,8 +50,9 @@ function ports(pages: Record<string, string>, images: Record<string, Uint8Array>
       if (!(url in images)) throw new Error(`404 ${url}`)
       return images[url]
     },
+    // Named by its bytes, as main names a cached file: the same picture is one file.
     save(bytes: Uint8Array, format: string) {
-      const file = `${(saved += 1)}.${format}`
+      const file = [...fake.files].find(([, held]) => held === bytes)?.[0] ?? `${(saved += 1)}.${format}`
       fake.files.set(file, bytes)
       return file
     },
@@ -211,8 +212,22 @@ describe('sourceTile', () => {
 })
 
 describe('pruneStoryImages', () => {
+  it('keeps a file another kept story still shows', async () => {
+    const net = ports({}, { 'https://cdn.example.com/a.jpg': PHOTO, 'https://mirror.example.org/a.jpg': PHOTO })
+    const images = await gatherStoryImages(
+      emptyStoryImages(),
+      [story('a', 'https://example.com/a', 'https://cdn.example.com/a.jpg'), story('b', 'https://example.org/b', 'https://mirror.example.org/a.jpg')],
+      net,
+      AT,
+    )
+    expect(fileOf(images, 'a')).toBe(fileOf(images, 'b'))
+
+    pruneStoryImages(images, new Map([['b', 'b']]), net)
+    expect([...net.files.keys()]).toEqual([fileOf(images, 'b')])
+  })
+
   it('drops a story’s picture, file and all, when the history drops the story', async () => {
-    const net = ports({}, { 'https://cdn.example.com/a.jpg': PHOTO, 'https://cdn.example.com/b.jpg': PHOTO })
+    const net = ports({}, { 'https://cdn.example.com/a.jpg': PHOTO, 'https://cdn.example.com/b.jpg': STILL_WEBP })
     const images = await gatherStoryImages(
       emptyStoryImages(),
       [story('a', 'https://example.com/a', 'https://cdn.example.com/a.jpg'), story('b', 'https://example.com/b', 'https://cdn.example.com/b.jpg')],

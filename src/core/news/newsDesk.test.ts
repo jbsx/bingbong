@@ -148,11 +148,11 @@ describe('createNewsDesk', () => {
       remove: () => {},
     }
     const desk = (back: number) => createNewsDesk({ sources: () => [source(async () => front)], store, profile: () => PROFILE, now: () => AT - back * DAY, images })
-    expect((await desk(1).horizons())?.highlight).toMatchObject({ story: { title: 'Codex gets a terminal' }, image: `${NEWS_IMAGE_SCHEME}://image/1.jpg` })
+    expect((await desk(1).horizons())?.highlight).toMatchObject({ story: { title: 'Codex gets a terminal' }, picture: `${NEWS_IMAGE_SCHEME}://image/1.jpg` })
     const today = await desk(0).horizons()
 
-    expect(today?.highlight).toMatchObject({ story: { title: 'Claude Code hooks' }, image: null })
-    expect(today?.bigNews).toMatchObject([{ title: 'Codex gets a terminal', image: `${NEWS_IMAGE_SCHEME}://image/1.jpg` }])
+    expect(today?.highlight).toMatchObject({ story: { title: 'Claude Code hooks' }, picture: null })
+    expect(today?.bigNews).toMatchObject([{ title: 'Codex gets a terminal', picture: `${NEWS_IMAGE_SCHEME}://image/1.jpg` }])
     expect(asked).toEqual(['https://cdn.example.com/codex.jpg', 'https://example.com/b'])
     expect(store.state.images.stories['hn:a'].file).toBe('1.jpg')
   })

@@ -557,8 +557,10 @@ its cluster, kept 31 days). Stories are clustered as they are recorded —
 the same link, the same site with a near-identical title, or the same
 proper name (a model named with letters and digits like "GPT-6", a repo
 or model "owner/repo" in the title or a GitHub or Hugging Face link) is
-one story. A cluster stands at its best score faded by the time since
-that day, halving every 20 days, and is listed while it clears a bar
+one story. A cluster stands at its best score — its percentile in its
+source boosted per source past the first, not per topic: the topics rank
+a story, the sources make it big — faded by the time since that day,
+halving every 20 days, and is listed while it clears a bar
 (0.93), best first: a story at the top of its source, on a topic and on
 two sources stays about fourteen days; at the top of one source about
 two days; one on no topic is never listed. A bar, not a count — a quiet

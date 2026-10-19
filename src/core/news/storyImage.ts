@@ -2,6 +2,7 @@ import { NEWS_IMAGE_SCHEME } from './ipcChannels'
 import { decodeEntities } from './markup'
 import { hostOf } from './news'
 import { DAY_MS } from './score'
+import { reportFault } from '../trace/fault'
 
 // Story Image (CONTEXT.md): the one picture each story the News card shows
 // carries — Today's Highlight and Big News, a handful a poll. In order: the
@@ -329,7 +330,10 @@ function noteServed(served: StoryImages['served'], site: string, urls: readonly 
 /** The first candidate that is a picture: downloaded, a raster image at least MIN_WIDTH wide, rewritten to play once. */
 async function firstPicture(candidates: readonly string[], ports: StoryImagePorts): Promise<{ url: string; bytes: Uint8Array; format: ImageFormat } | null> {
   for (const url of candidates) {
-    const bytes = await ports.fetchImage(url).catch(() => null)
+    const bytes = await ports.fetchImage(url).catch((error: unknown) => {
+      reportFault('news.storyImage.fetchImage', error)
+      return null
+    })
     const info = bytes === null ? null : imageInfo(bytes)
     if (bytes === null || info === null || info.width < MIN_WIDTH) continue
     return { url, bytes: playOnce(bytes), format: info.format }
@@ -349,7 +353,13 @@ export async function gatherStoryImages(images: StoryImages, stories: readonly I
     return held === undefined || (held.file === null && now - held.at >= IMAGE_RETRY_MS)
   })
   if (due.length === 0) return images
-  const pageImages = async (story: ImageStory): Promise<string[]> => previewImages(await ports.fetchPage(story.link).catch(() => ''), story.link)
+  const pageImages = async (story: ImageStory): Promise<string[]> => {
+    const head = await ports.fetchPage(story.link).catch((error: unknown) => {
+      reportFault('news.storyImage.fetchPage', error)
+      return ''
+    })
+    return previewImages(head, story.link)
+  }
   // Every due story's candidates first, so a logo two of them share is known before either takes it.
   const candidates = await Promise.all(due.map(async (story) => (story.image !== null ? [story.image] : pageImages(story))))
   let served = images.served
@@ -371,12 +381,20 @@ export async function gatherStoryImages(images: StoryImages, stories: readonly I
     records[story.key] = picture === null ? { ...held, file: null, url: null } : { ...held, file: ports.save(picture.bytes, picture.format), url: picture.url }
   })
   // A picture a site has since served for another story is its default: every story holding it falls back to the tile.
+  const dropped = new Set<string>()
   for (const [key, record] of Object.entries(records)) {
     if (record.file === null || record.url === null || !isSiteDefault(served, record.site, record.url, record.cluster)) continue
-    ports.remove(record.file)
+    dropped.add(record.file)
     records[key] = { ...record, file: null, url: null, at: now }
   }
+  removeUnheld(dropped, records, ports)
   return { stories: records, served }
+}
+
+/** The files no record still names removed: a file is named by its bytes, so two stories with one picture share it. */
+function removeUnheld(files: Iterable<string>, records: StoryImages['stories'], ports: Pick<StoryImagePorts, 'remove'>): void {
+  const held = new Set(Object.values(records).map((record) => record.file))
+  for (const file of files) if (!held.has(file)) ports.remove(file)
 }
 
 /**
@@ -386,10 +404,12 @@ export async function gatherStoryImages(images: StoryImages, stories: readonly I
  */
 export function pruneStoryImages(images: StoryImages, keep: ReadonlyMap<string, string>, ports: Pick<StoryImagePorts, 'remove'>): StoryImages {
   const stories: StoryImages['stories'] = {}
+  const dropped: string[] = []
   for (const [key, record] of Object.entries(images.stories)) {
     if (keep.has(key)) stories[key] = record
-    else if (record.file !== null) ports.remove(record.file)
+    else if (record.file !== null) dropped.push(record.file)
   }
+  removeUnheld(dropped, stories, ports)
   const clusters = new Set(keep.values())
   const served: StoryImages['served'] = {}
   for (const [site, urls] of Object.entries(images.served)) {

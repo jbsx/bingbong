@@ -43,7 +43,7 @@ export interface ScoredStory {
 }
 
 /** The boost for matching `count` topics, or appearing on `count` sources: half again for each past the first. */
-function boost(count: number): number {
+export function boost(count: number): number {
   return 1 + (Math.max(1, count) - 1) / 2
 }
 

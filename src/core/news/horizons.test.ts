@@ -30,8 +30,8 @@ function polled(days: [number, ScoredStory[]][]): StoryHistory {
 const titles = (items: { title: string }[]): string[] => items.map((item) => item.title)
 
 describe('bigNews', () => {
-  /** A topical story at the top of its source on one source (score 1), or on two (score 1.5, the source boost). */
-  const top = (id: string, title: string, sources = 1): ScoredStory => scored(id, title, sources === 1 ? 1 : 1.5)
+  /** A topical story at the very top of its source, on one source (score 1) or on two (score 1.5, the source boost). */
+  const top = (id: string, title: string, sources = 1): ScoredStory => ({ ...scored(id, title, sources === 1 ? 1 : 1.5), percentile: 1, sources: sources === 1 ? ['hn'] : ['hn', 'lobsters'] })
   const HOUR = 60 * 60 * 1000
 
   it('holds a topical story at the top of two sources for about fourteen days', () => {
@@ -48,8 +48,15 @@ describe('bigNews', () => {
     expect(bigNews(history, day(1) + 60 * HOUR, null)).toEqual([])
   })
 
+  it('holds a story matching two topics on one source for about two days too: topics rank it, sources make it big', () => {
+    const history = polled([[1, [{ ...top('a', 'Codex runs Claude Code in a terminal'), topics: ['AI coding agents', 'Developer tooling'], score: 1.5 }]]])
+
+    expect(titles(bigNews(history, day(1) + 36 * HOUR, null))).toEqual(['Codex runs Claude Code in a terminal'])
+    expect(bigNews(history, day(1) + 60 * HOUR, null)).toEqual([])
+  })
+
   it('never holds an off-topic story, however big', () => {
-    const history = polled([[1, [{ ...scored('a', 'A history of the bread knife', 1.5), topics: [] }]]])
+    const history = polled([[1, [{ ...top('a', 'A history of the bread knife', 2), topics: [] }]]])
 
     expect(bigNews(history, day(1) + HOUR, null)).toEqual([])
   })
@@ -64,7 +71,7 @@ describe('bigNews', () => {
   })
 
   it('holds fewer than three when few clear the bar, best first', () => {
-    const history = polled([[18, [scored('low', 'Ordinary day', 0.8), top('one', 'One source'), top('two', 'Two sources', 2)]]])
+    const history = polled([[18, [{ ...scored('low', 'Ordinary day', 0.8), percentile: 0.8 }, top('one', 'One source'), top('two', 'Two sources', 2)]]])
 
     expect(titles(bigNews(history, day(19), null))).toEqual(['Two sources', 'One source'])
   })

@@ -9,8 +9,9 @@ import { emptyStoryImages, gatherStoryImages, pruneStoryImages, sanitizeStoryIma
 // the desk fetches at most once an hour — the first ask after a start polls
 // at once — and answers from what it holds in between. Each poll records
 // the sources' magnitudes (the baseline scores read against) and every
-// story's score in the story history (Big News is read from it) and, when an unseen story of the last 24 hours tops the ranking,
-// makes it the highlight and marks it shown. Then every story the card
+// story's score in the story history (Big News is read from it) and, when
+// an unseen story of the last 24 hours tops the ranking, makes it the
+// highlight and marks it shown. Then every story the card
 // will show — the highlight and Big News — gets its Story Image, fetched
 // once into the cache and dropped with the story history. A poll no source
 // answered keeps the last highlight and is tried again in a few minutes.
@@ -32,8 +33,8 @@ export interface TodaysHighlight {
   shownAt: number
 }
 
-/** A story's Story Image as the card loads it: the cached picture's address, or null for the source's tile. */
-export type ShownImage = { image: string | null }
+/** A story's Story Image as the card loads it: the cached picture's address on main's scheme, or null for the source's tile. Not a story's `image`, the source's own address for it. */
+export type ShownImage = { picture: string | null }
 
 /** What the News card shows: Today's Highlight and Big News (CONTEXT.md), each with its Story Image. */
 export interface NewsHorizons {
@@ -208,7 +209,7 @@ export function createNewsDesk(deps: {
       const { stories, images } = state
       const imageOf = (key: string): ShownImage => {
         const file = images.stories[key]?.file
-        return { image: file === undefined || file === null ? null : storyImageUrl(file) }
+        return { picture: file === undefined || file === null ? null : storyImageUrl(file) }
       }
       return {
         highlight: { ...state.highlight, ...imageOf(state.highlight.story.key) },

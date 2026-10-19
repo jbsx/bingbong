@@ -27,11 +27,11 @@ function opener(link: string): { onPointerDown: () => void; onKeyDown: (event: R
  * source's tile in its colour, its name on the large one and its initial on
  * a thumbnail. Never an empty box or a broken image.
  */
-function StoryPicture({ image, source, size }: { image: string | null; source: string; size: 'large' | 'thumb' }) {
+function StoryPicture({ picture, source, size }: { picture: string | null; source: string; size: 'large' | 'thumb' }) {
   const [failed, setFailed] = useState(false)
-  useEffect(() => setFailed(false), [image])
+  useEffect(() => setFailed(false), [picture])
   const className = size === 'large' ? 'idle-news-picture' : 'idle-news-thumb'
-  if (image === null || failed) {
+  if (picture === null || failed) {
     const tile = sourceTile(source)
     return (
       <span className={`${className} idle-news-tile`} style={{ '--tile': tile.colour, '--tile-ink': tile.ink } as React.CSSProperties} data-tile="">
@@ -41,7 +41,7 @@ function StoryPicture({ image, source, size }: { image: string | null; source: s
   }
   return (
     <span className={className}>
-      <img src={image} alt="" draggable={false} onError={() => setFailed(true)} />
+      <img src={picture} alt="" draggable={false} onError={() => setFailed(true)} />
     </span>
   )
 }
@@ -57,7 +57,7 @@ function BigNews({ items }: { items: NewsHorizons['bigNews'] }) {
         {items.map((item) => (
           <li key={item.key}>
             <button type="button" className="idle-news-item" aria-label={`${item.title}, ${magnitudeLabel(item)}. Open it`} {...opener(item.link)}>
-              <StoryPicture image={item.image} source={item.source} size="thumb" />
+              <StoryPicture picture={item.picture} source={item.source} size="thumb" />
               <span className="idle-news-item-title">{headline(item.title).title}</span>
               <span className="idle-news-item-count">{magnitudeParts(item)?.count ?? ''}</span>
             </button>
@@ -84,7 +84,7 @@ const FIT_STAGES = ['snug', 'behind', 'over'] as const
  * card, its picture too, opens in the pane at a tap.
  */
 export function NewsCard({ horizons }: { horizons: NewsHorizons }) {
-  const { story, topics, image } = horizons.highlight
+  const { story, topics, picture } = horizons.highlight
   const figure = magnitudeParts(story)
   const host = hostOf(story.link)
   const { title, dek } = headline(story.title)
@@ -94,7 +94,7 @@ export function NewsCard({ horizons }: { horizons: NewsHorizons }) {
   return (
     <div className="idle-card idle-news" data-big={horizons.bigNews.length > 0 ? 'some' : 'none'}>
       <button type="button" className="idle-news-today" aria-label={`Today's highlight: ${story.title}, ${magnitudeLabel(story)}. Open it`} {...opener(story.link)}>
-        <StoryPicture image={image} source={story.source} size="large" />
+        <StoryPicture picture={picture} source={story.source} size="large" />
         <span ref={words} className="idle-news-words">
           <span className="idle-news-kicker">Today’s highlight{topics.length > 0 ? ` · ${topics[0]}` : ''}</span>
           <span className="idle-news-title">{title}</span>

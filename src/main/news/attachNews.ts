@@ -33,7 +33,7 @@ const PAGE_TIMEOUT_MS = 5_000
 /** How much of a page is read looking for `</head>`: the preview image is named in the head, and the head is never this long. */
 const HEAD_CAP_BYTES = 256 * 1024
 
-/** The largest picture downloaded: a hero image is a few hundred kilobytes; past this it is not one. */
+/** The largest picture downloaded: a story's preview image is a few hundred kilobytes; past this it is not one. */
 const IMAGE_CAP_BYTES = 8 * 1024 * 1024
 
 const CONTENT_TYPES: Record<string, string> = { jpg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp' }
@@ -83,7 +83,7 @@ async function readUpTo(response: Response, cap: number, enough: (text: string) 
       if (enough(text)) break
     }
   } finally {
-    void reader.cancel().catch(() => {})
+    void reader.cancel().catch((error: unknown) => reportFault('news.attachNews.readUpTo', error))
   }
   const bytes = new Uint8Array(length)
   parts.reduce((at, part) => (bytes.set(part, at), at + part.length), 0)

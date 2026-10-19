@@ -69,7 +69,7 @@ function storyOf(block: string, atom: boolean, name: string): NewsStory | null {
 /** The tags named `name` in `block`, each as its attributes. */
 function tags(block: string, name: string): Record<string, string>[] {
   return [...block.matchAll(new RegExp(`<${name}\\b([^>]*)>`, 'g'))].map(([, attributes]) =>
-    Object.fromEntries([...attributes.matchAll(/([\w:-]+)="([^"]*)"/g)].map(([, key, value]) => [key, decodeEntities(value)])),
+    Object.fromEntries([...attributes.matchAll(/([\w:-]+)=(?:"([^"]*)"|'([^']*)')/g)].map(([, key, double, single]) => [key, decodeEntities(double ?? single)])),
   )
 }
 
