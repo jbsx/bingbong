@@ -462,7 +462,11 @@ export function readCommandAnswers(answers: CommandAnswers | HopAnswers, text: s
   }
   let target: number | null = null
   if (verbTakesTarget(verb)) {
-    target = mostProbableRef(answers.target, page)
+    // Past the first hop, off a search landing, a ref Jev barely offered
+    // under a top `none` would walk the Task off the page it reached (as
+    // #342 for an open): a click or a type acts only on the ref Jev names.
+    const offPage = hop !== undefined && hop.hop > 0 && !isSearchLanding(page.url)
+    target = offPage ? offeredRef(answers.target.choice, page) : mostProbableRef(answers.target, page)
     // A click or a type on a page with nothing to act on is no Command.
     if (target === null) return none
   }

@@ -265,6 +265,40 @@ describe('open past the first hop off a search landing (#342): with no target na
   })
 })
 
+describe('click past the first hop off a search landing: with no target named, the Task ends where it stands', () => {
+  // The logged hop 3 of "cross out the pop-up": hop 0 closed X's login
+  // dialog, then each hop read click over a target of none and clicked the
+  // ref Jev barely offered — the login page, Back, then the bio's link.
+  const PROFILE: CommandPage = {
+    url: 'https://x.com/ElonMusk',
+    title: 'Elon Musk (@elonmusk) / X',
+    refs: [
+      { ref: 2, kind: 'button', label: 'Back', href: null, inputType: null },
+      { ref: 11, kind: 'link', label: 'Terafab.AI', href: 'http://terafab.ai/', inputType: null },
+      { ref: 50, kind: 'link', label: 'Continue to X', href: 'https://x.com/i/jf/onboarding/web?mode=login', inputType: null },
+    ],
+  }
+  const TEXT = 'cross out the pop-up'
+  const hop = { hop: 3, visited: ['https://x.com/ElonMusk'], actions: [], links: [] }
+  const target = (probabilities: Record<string, number>, top = 'none'): DecisionChoiceAnswer => ({ type: 'choice', choice: top, confidence: probabilities[top] ?? 0, probabilities })
+
+  it('reads click with target none as no next step, though a ref has some probability', () => {
+    const answers = { verb: choice('click', 0.58), target: target({ none: 0.88, 'ref-11': 0.05, 'ref-50': 0.04, 'ref-2': 0.01 }), slot: choice('none') }
+    expect(readCommandAnswers(answers, TEXT, PROFILE, hop)).toEqual({ verb: 'none', target: null, slot: null })
+    expect(readCommandAnswers({ ...answers, verb: choice('type') }, TEXT, PROFILE, hop)).toEqual({ verb: 'none', target: null, slot: null })
+  })
+
+  it('still clicks a ref Jev names as its top target', () => {
+    expect(readCommandAnswers({ verb: choice('click'), target: target({ 'ref-2': 0.7, none: 0.3 }, 'ref-2'), slot: choice('none') }, TEXT, PROFILE, hop)).toEqual({ verb: 'click', target: 2, slot: null })
+  })
+
+  it('leaves hop 0 and a search landing clicking the most probable ref', () => {
+    const answers = { verb: choice('click'), target: target({ none: 0.6, 'ref-11': 0.3 }), slot: choice('none') }
+    expect(readCommandAnswers(answers, TEXT, PROFILE)).toEqual({ verb: 'click', target: 11, slot: null })
+    expect(readCommandAnswers(answers, TEXT, { ...PROFILE, url: 'https://duckduckgo.com/?q=elon+musk' }, hop)).toEqual({ verb: 'click', target: 11, slot: null })
+  })
+})
+
 describe('the Site Scope (#340): where the words point, asked at hop 0 on a site', () => {
   const X: CommandPage = {
     url: 'https://x.com/home',
