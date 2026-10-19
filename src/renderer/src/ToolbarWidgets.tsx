@@ -57,15 +57,22 @@ function TimerWidget({ timer }: { timer: Exclude<TimerState, { status: 'off' }> 
   )
 }
 
-/** The song Now Playing: its title, quieter while paused or ended. */
+/**
+ * The song Now Playing: its title, quieter while paused or ended. The
+ * state is the glyph — a pause or stop sign in the note's place — so the
+ * title keeps the room a word would take.
+ */
 function SongWidget({ song }: { song: NowPlaying }) {
   const state = song.ended ? 'ended' : song.paused ? 'paused' : null
   const who = song.channel === '' ? '' : ` · ${song.channel}`
   return (
-    <span className={`toolbar-widget toolbar-song${state !== null ? ' toolbar-song--quiet' : ''}`} aria-label={`Now playing: ${song.title}${who}${state !== null ? `, ${state}` : ''}`} title={`${song.title}${who}`}>
-      <ChromeIcon name="music" size={16} />
+    <span
+      className={`toolbar-widget toolbar-song${state !== null ? ' toolbar-song--quiet' : ''}`}
+      aria-label={`Now playing: ${song.title}${who}${state !== null ? `, ${state}` : ''}`}
+      title={`${song.title}${who}${state !== null ? ` · ${state}` : ''}`}
+    >
+      <ChromeIcon name={state === 'ended' ? 'ended' : state === 'paused' ? 'pause' : 'music'} size={16} />
       <span className="toolbar-widget-text toolbar-song-title">{song.title}</span>
-      {state !== null ? <span className="toolbar-song-state">{state}</span> : null}
     </span>
   )
 }

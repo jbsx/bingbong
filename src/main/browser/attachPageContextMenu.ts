@@ -1,5 +1,6 @@
 import { BrowserWindow, clipboard, Menu } from 'electron'
 import { pageContextMenuItems, type PageContextMenuAction, type PageContextMenuParams } from '../../core/browser/contextMenu'
+import { canStepBack } from './paneNavigation'
 
 // Electron glue for the reconstructed page menu: the pure fold in
 // core/browser/contextMenu.ts decides the items — the appliance cut of
@@ -33,7 +34,7 @@ export function attachPageContextMenu(contents: Electron.WebContents): void {
         canCopy: params.editFlags.canCopy,
         canPaste: params.editFlags.canPaste,
       },
-      canGoBack: contents.navigationHistory.canGoBack(),
+      canGoBack: canStepBack(contents),
       canGoForward: contents.navigationHistory.canGoForward(),
     }
     const entries = pageContextMenuItems(menuParams)
@@ -59,7 +60,7 @@ function runMenuAction(contents: Electron.WebContents, action: PageContextMenuAc
   if (contents.isDestroyed()) return
   switch (action) {
     case 'back':
-      if (contents.navigationHistory.canGoBack()) contents.navigationHistory.goBack()
+      if (canStepBack(contents)) contents.navigationHistory.goBack()
       return
     case 'forward':
       if (contents.navigationHistory.canGoForward()) contents.navigationHistory.goForward()

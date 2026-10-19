@@ -102,6 +102,18 @@ describe('feed projection', () => {
     ])
   })
 
+  it("shows a Command's action only when it adds to the words", () => {
+    const projection = project([
+      { type: 'command', turnId: 't1', text: 'scroll down', action: 'scroll down', at: 1_000 },
+      { type: 'command', turnId: 't2', text: 'read', action: 'read the page', at: 2_000 },
+    ])
+    const commands = projection.entries().filter((entry) => entry.kind === 'command')
+    expect(commands.map((entry) => [entry.text, entry.action])).toEqual([
+      ['scroll down', undefined],
+      ['read', 'read the page'],
+    ])
+  })
+
   it('files a Command abandoned while it was read where it was given, before the Command that came after it (#330)', () => {
     const projection = project([
       ...run('t1', 'navigate slow', 1_000).slice(0, 3),

@@ -20,6 +20,8 @@ const ICONS = {
   collapse: CHEVRON,
   timer: [{ d: 'M10 2h4' }, { d: 'm12 14 3-3' }, { circle: [12, 14, 8] }],
   music: [{ d: 'M9 18V5l12-2v13' }, { circle: [6, 18, 3] }, { circle: [18, 16, 3] }],
+  pause: [{ d: 'M6 4h4v16H6z' }, { d: 'M14 4h4v16h-4z' }],
+  ended: [{ d: 'M6 6h12v12H6z' }],
 } satisfies Record<string, Part[]>
 
 export type ChromeIconName = keyof typeof ICONS

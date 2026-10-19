@@ -4,6 +4,8 @@ export interface BrowserPaneState {
   canGoBack: boolean
   canGoForward: boolean
   loading: boolean
+  /** The address a main-frame load is on its way to, until it commits or ends; '' when none is. */
+  pendingUrl: string
 }
 
 export interface PaneRect {
@@ -42,7 +44,7 @@ export function samePaneRect(a: PaneRect, b: PaneRect): boolean {
 }
 
 export function idleBrowserPaneState(): BrowserPaneState {
-  return { url: '', title: '', canGoBack: false, canGoForward: false, loading: false }
+  return { url: '', title: '', canGoBack: false, canGoForward: false, loading: false, pendingUrl: '' }
 }
 
 export function isPaneRect(value: unknown): value is PaneRect {

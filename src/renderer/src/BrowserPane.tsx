@@ -89,8 +89,8 @@ export function BrowserNav() {
           placeholder="Enter address or search"
           aria-label="Address and search bar"
           spellCheck={false}
-          // A blank pane shows the hint, never "about:blank" (#334).
-          value={editing ? draft : addressFieldText(state.url)}
+          // A blank pane shows the hint, never "about:blank" (#334); a load shows the page on its way.
+          value={editing ? draft : addressFieldText(state.loading && state.pendingUrl !== '' ? state.pendingUrl : state.url)}
           onChange={(event) => setDraft(event.target.value)}
           onFocus={(event) => {
             setEditing(true)

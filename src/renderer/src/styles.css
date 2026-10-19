@@ -288,9 +288,30 @@ body {
   max-width: 16rem;
 }
 
-.toolbar-song-state,
 .toolbar-song--quiet .toolbar-song-title {
   color: var(--muted);
+}
+
+/* A narrow window: the widgets shrink to their glyphs (the countdown and
+   title stay in the tooltip and accessible name) and hold that size, and
+   the capsule's column keeps room for them beside the state word, so the
+   back arrow never draws over a clipped chip. */
+@media (max-width: 960px) {
+  .toolbar:has(.toolbar-widgets) {
+    grid-template-columns: minmax(calc(8rem + 88px), 1fr) minmax(0, auto) minmax(min-content, 1fr);
+  }
+
+  .toolbar-widgets {
+    flex: none;
+  }
+
+  .toolbar-widget {
+    padding: 0 10px;
+  }
+
+  .toolbar-widget-text {
+    display: none;
+  }
 }
 
 /* Voice hints are quiet detail inside the capsule: muted, still — the

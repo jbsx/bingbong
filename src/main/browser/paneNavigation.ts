@@ -309,7 +309,7 @@ export function createPaneNavigation(wc: PaneNavigationTarget, clock: Clock = sy
    */
   function goBack(): Promise<void> {
     const history = wc.navigationHistory
-    if (backLeadsToBlank(wc.getURL(), urlOneStepBack(history))) {
+    if (history.canGoBack() && !canStepBack(wc)) {
       return Promise.reject(new Error('cannot go back: the page before is the blank start page'))
     }
     return historyStep(history.canGoBack(), () => history.goBack(), 'back')
@@ -341,7 +341,15 @@ export function createPaneNavigation(wc: PaneNavigationTarget, clock: Clock = sy
 }
 
 /** The address one step back in a tab's history, if the history says. */
-export function urlOneStepBack(history: Pick<PaneNavigationTarget['navigationHistory'], 'getActiveIndex' | 'getEntryAtIndex'>): string | undefined {
+function urlOneStepBack(history: PaneNavigationTarget['navigationHistory']): string | undefined {
   const index = history.getActiveIndex?.()
   return index !== undefined && index > 0 ? history.getEntryAtIndex?.(index - 1)?.url : undefined
+}
+
+/**
+ * Whether a tab has a page to go back to under the back guard (#336) —
+ * what every ← reads: `back`, the toolbar's arrow and the page menu's Back.
+ */
+export function canStepBack(wc: Pick<PaneNavigationTarget, 'navigationHistory' | 'getURL'>): boolean {
+  return wc.navigationHistory.canGoBack() && !backLeadsToBlank(wc.getURL(), urlOneStepBack(wc.navigationHistory))
 }

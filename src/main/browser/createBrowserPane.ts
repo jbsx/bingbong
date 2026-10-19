@@ -3,13 +3,12 @@ import type { BrowserPaneState, PaneRect } from '../../core/browser/paneState'
 import { HIDDEN_PANE_RECT, idleBrowserPaneState } from '../../core/browser/paneState'
 import { toPaneBounds } from '../../core/browser/paneGeometry'
 import { normalizeUrlInput } from '../../core/browser/urlInput'
-import { backLeadsToBlank } from '../../core/browser/lastPage'
 import { browserUserAgent } from '../../core/browser/userAgent'
 import { isAuthUrl, resolveAuthIdentity } from '../../core/browser/authIdentity'
 import { attachPageContextMenu } from './attachPageContextMenu'
 import { trackPaneBackground, trackWindowBackground } from './paneBackgrounds'
 import { applyPaneZoom } from './paneZoom'
-import { urlOneStepBack } from './paneNavigation'
+import { canStepBack } from './paneNavigation'
 import { attachWindowOpenLedger } from './windowOpenLedger'
 
 export const BROWSER_PARTITION = 'persist:browse'
@@ -206,17 +205,12 @@ export function createBrowserPane(deps?: {
     for (const listener of listeners) listener(state)
   }
 
-  // The toolbar's ← keeps the back guard (#336) `back` keeps: never lit
-  // when the only step back is the blank start page.
-  function canStepBack(): boolean {
-    const history = wc.navigationHistory
-    return history.canGoBack() && !backLeadsToBlank(wc.getURL(), urlOneStepBack(history))
-  }
-
   function syncNavigationState(url: string): void {
     update({
       url,
-      canGoBack: canStepBack(),
+      pendingUrl: '',
+      // The toolbar's ← keeps the back guard (#336): never lit when the only step back is the blank start page.
+      canGoBack: canStepBack(wc),
       canGoForward: wc.navigationHistory.canGoForward(),
     })
   }
@@ -234,8 +228,12 @@ export function createBrowserPane(deps?: {
   wc.on('did-fail-load', (_event, errorCode, _description, validatedURL, isMainFrame) => {
     if (isMainFrame && errorCode !== ERR_ABORTED && validatedURL !== '') syncNavigationState(validatedURL)
   })
+  // The address field shows the page on its way while it loads, not only the one it leaves.
+  wc.on('did-start-navigation', (details) => {
+    if (details.isMainFrame && !details.isSameDocument) update({ pendingUrl: details.url })
+  })
   wc.on('did-start-loading', () => update({ loading: true }))
-  wc.on('did-stop-loading', () => update({ loading: false }))
+  wc.on('did-stop-loading', () => update({ loading: false, pendingUrl: '' }))
   wc.on('render-process-gone', () => update({ title: 'Renderer process crashed' }))
   applyPaneZoom(wc, deps?.getZoomPercent)
 
@@ -247,7 +245,7 @@ export function createBrowserPane(deps?: {
     },
     goBack() {
       whenLive(() => {
-        if (canStepBack()) wc.navigationHistory.goBack()
+        if (canStepBack(wc)) wc.navigationHistory.goBack()
       })
     },
     goForward() {

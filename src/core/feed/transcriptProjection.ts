@@ -23,6 +23,11 @@ export interface TranscriptEvent {
   failure?: boolean
 }
 
+function sameWords(a: string, b: string): boolean {
+  const plain = (text: string): string => text.trim().replace(/\s+/g, ' ').toLowerCase()
+  return plain(a) === plain(b)
+}
+
 /** The single projection the dashboard and the Feed panel overlay share. */
 export function projectPipelineEvent(event: PipelineEvent): TranscriptEvent | null {
   switch (event.type) {
@@ -31,7 +36,8 @@ export function projectPipelineEvent(event: PipelineEvent): TranscriptEvent | nu
         kind: 'command',
         text: event.text,
         at: event.at,
-        ...(event.action !== undefined ? { action: event.action } : {}),
+        // The action only when it adds to the words: "read" → "read the page", never "back" → "back".
+        ...(event.action !== undefined && !sameWords(event.action, event.text) ? { action: event.action } : {}),
         ...(event.dropped ? { muted: true } : {}),
       }
     case 'tool_call':
