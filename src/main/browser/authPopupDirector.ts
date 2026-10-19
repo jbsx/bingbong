@@ -98,6 +98,10 @@ export function createAuthPopupDirector(
         linkHrefs: () => target(base).linkHrefs(),
         pageLinks: () => target(base).pageLinks(),
         collectPage: () => target(base).collectPage(),
+        dialogOpen: async () => {
+          const controller = target(base)
+          return controller.dialogOpen !== undefined ? controller.dialogOpen() : (await controller.collectPage()).dialogOpen
+        },
         clearFocused: () => target(base).clearFocused(),
         groundingSnapshot: () => target(base).groundingSnapshot(),
         refAtPoint: (point) => target(base).refAtPoint(point),

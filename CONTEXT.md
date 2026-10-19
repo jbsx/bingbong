@@ -141,7 +141,10 @@ that Hop, one after another until the pop-up closes, and the Task goes on
 from the page it leaves. No second Jev call decides to close: the hop's own
 ask carried the dismiss Choice. Each rung counts toward the cap; a pop-up
 still open after the last rung is a wall ("The pop-up is still open."). The
-same Obstacle met again is the wall.
+same Obstacle met again is the wall. A pop-up a page raises after it was
+read clear is met too: a sure yes watches the page it reached for a few
+seconds, once per Task, before the Task ends done, and a pop-up opening in
+that time is read again as a Hop, so the Step Aside closes it.
 _Avoid_: retry, workaround, auto-dismiss, bypass
 
 **Dismissal Ladder**:

@@ -1819,6 +1819,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     linkHrefs,
     pageLinks,
     collectPage,
+    dialogOpen: dialogOpenInPlace,
     clearFocused,
     groundingSnapshot,
     refAtPoint,

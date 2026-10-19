@@ -166,6 +166,8 @@ export interface BrowserController {
    * landing (ADR 0061), so no reading is asked over one.
    */
   collectPage(): Promise<PageSnapshot>
+  /** Whether a dialog is open over the page, read in place — no collect, no consent dismissal; absent, a collect answers. */
+  dialogOpen?(): Promise<boolean>
   /** Clear the focused editable element (#324): the `clear` verb. Answers what was cleared. */
   clearFocused(): Promise<string>
 }

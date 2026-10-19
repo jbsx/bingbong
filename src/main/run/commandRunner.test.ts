@@ -14,7 +14,7 @@ import { pageReadPartLine } from '../../core/browser/pageText'
 import { NO_OBSERVABLE_CHANGE, PAGE_SIGNATURE_CHANGED, blockedActionHead } from '../../core/browser/actionOutcome'
 import { SPOKEN_FAILURES } from '../../core/command/spokenFailure'
 import { createSpeechCoordinator } from '../../core/tts/speechCoordinator'
-import { MOUNTING_WAIT_MS, RESULTS_POLL_MS, RESULTS_WAIT_MS, createCommandRunner, type CommandRunner, type CommandRunnerDeps } from './commandRunner'
+import { LATE_POPUP_WATCH_MS, MOUNTING_WAIT_MS, RESULTS_POLL_MS, RESULTS_WAIT_MS, createCommandRunner, type CommandRunner, type CommandRunnerDeps } from './commandRunner'
 import { createPlayer, type SongMemory } from '../music/player'
 import { ScriptedYouTube, videoItem } from '../music/scriptedYouTube'
 
@@ -190,6 +190,9 @@ function harness(options?: { decision?: null; learned?: string[]; speech?: Pick<
 }
 
 const types = (events: PipelineEvent[]): string[] => events.map((event) => event.type)
+
+/** The polls a Task's sure yes watches the page for a late pop-up, none opening. */
+const WATCH: number[] = Array.from({ length: LATE_POPUP_WATCH_MS / RESULTS_POLL_MS }, () => RESULTS_POLL_MS)
 
 describe('the Timer (CONTEXT.md)', () => {
   function fakeTimer(status: 'off' | 'running' | 'ringing' = 'off') {
@@ -1765,7 +1768,7 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
           closing(h, SEARCH_REFS)
           decision.script.push(answer('search', 'none', 's3-6'), withOutcome(answer('click', 'ref-3'), 'in_the_way', 0.85), withOutcome(answer('done'), 'yes'))
           await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
-          expect(sleeps).toEqual([RESULTS_POLL_MS, RESULTS_POLL_MS])
+          expect(sleeps).toEqual([RESULTS_POLL_MS, RESULTS_POLL_MS, ...WATCH])
           expect(decision.requests[1]!.state).toContain('A dialog is open: "Don’t miss what’s happening"')
           expect(browser.clicks).toEqual([1])
           expect(failures(events)).toEqual([])
@@ -1778,6 +1781,62 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
           await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
           expect(sleeps).toHaveLength(MOUNTING_WAIT_MS / RESULTS_POLL_MS)
           expect(decision.requests[1]!.state).toContain('[1] link "Home" https://truthsocial.com/')
+        })
+      })
+
+      describe('the 23:42 run on 2026-10-19: a sheet that opens after the page was read clear', () => {
+        // The profile was read clear and Jev was sure it was the page asked
+        // for; Truth Social's sign-up sheet opened some 1.8 s after the
+        // navigation, the Task had ended done, and "Close the pop-up." was
+        // the user's to say.
+        /** The post page raises the sheet once the sure yes has watched it for this many polls. */
+        function lateSheet(h: H, afterPolls: number) {
+          let opened = false
+          const collectPage = h.browser.collectPage.bind(h.browser)
+          h.browser.collectPage = async () => {
+            if (h.browser.snapshot.url === POST && !opened && h.sleeps.length >= afterPolls) {
+              opened = true
+              covered(h)
+            }
+            return collectPage()
+          }
+        }
+
+        it('the sure yes watches the page, and a sheet that opens is read again and stepped past before the Task ends done — once', async () => {
+          const h = taskHarness()
+          const { browser, events, records, sleeps, decision, runner } = h
+          lateSheet(h, 3)
+          closing(h, POST_REFS)
+          decision.script.push(answer('search', 'none', 's3-6'), answer('click', 'link-1'), withOutcome(answer('done'), 'yes'), withOutcome(answer('click', 'ref-3'), 'in_the_way', 0.85), withOutcome(answer('done'), 'yes'))
+          await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
+          expect(browser.clicks).toEqual([1])
+          expect(commands(events).map((event) => event.action)).toEqual([`search latest elon musk tweet`, `navigate ${POST}`, 'a pop-up opened: read again', 'click [1] "Close"', 'done'])
+          // The re-read is told the page it reached is covered now.
+          expect(decision.requests[3]!.state).toContain('a pop-up covers it')
+          expect(decision.requests[3]!.state).toContain('A dialog is open')
+          // Watched once: three polls before the sheet, none after the second yes.
+          expect(sleeps).toHaveLength(3)
+          expect(failures(events)).toEqual([])
+          expect(decisions(records).map((record) => record.ended)).toEqual([undefined, undefined, undefined, undefined, 'done'])
+        })
+
+        it('a later Command while the sure yes watches ends the Task superseded, and no pop-up is read', async () => {
+          const h = taskHarness()
+          const { browser, records, decision, runner } = h
+          let probes = 0
+          // The page is asked in place, no collect: the second probe sees a typed Command arrive.
+          Object.assign(browser, {
+            dialogOpen: async () => {
+              probes += 1
+              if (probes === 2) void runner.run('scroll down', { source: 'typed' })
+              return false
+            },
+          })
+          decision.script.push(answer('search', 'none', 's3-6'), answer('click', 'link-1'), withOutcome(answer('done'), 'yes'))
+          await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
+          await flushMicrotasks()
+          expect(decision.requests).toHaveLength(3)
+          expect(decisions(records).filter((record) => record.task?.hop === 2).map((record) => record.ended)).toEqual(['superseded'])
         })
       })
 
@@ -2091,7 +2150,7 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
       decision.script.push(answer('search', 'none', 's3-6'), jev({ none: 0.93, 'ref-3': 0.03 }), answer('done'))
       await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
       // Two polls after the first empty read; the third read had the results, and ref 3 is the result, not the Search button.
-      expect(sleeps).toEqual([RESULTS_POLL_MS, RESULTS_POLL_MS])
+      expect(sleeps).toEqual([RESULTS_POLL_MS, RESULTS_POLL_MS, ...WATCH])
       expect(decision.requests[1]!.state).toContain('[3] link "Elon Musk (@elonmusk) / X" https://x.com/elonmusk')
       expect(browser.clicks).toEqual([3])
     })
@@ -2114,7 +2173,8 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
       const { sleeps, decision, runner } = taskHarness()
       decision.script.push(answer('search', 'none', 's3-6'), answer('click', 'link-1'), answer('done'))
       await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
-      expect(sleeps).toEqual([])
+      // No wait before a reading: the polls are the sure yes watching for a late pop-up.
+      expect(sleeps).toEqual(WATCH)
     })
   })
 

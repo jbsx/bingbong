@@ -163,7 +163,7 @@ const SYNCHRONOUS_READERS = ['state'] as const
 const ALWAYS_ALLOWED: readonly string[] = ['stop']
 
 /** The members of a port that answer something other than a promise. */
-type NotPromising<T> = { [K in keyof T]-?: T[K] extends (...args: never[]) => Promise<unknown> ? never : K }[keyof T]
+type NotPromising<T> = { [K in keyof T]-?: NonNullable<T[K]> extends (...args: never[]) => Promise<unknown> ? never : K }[keyof T]
 
 /**
  * The hand-written half of the Proxy, pinned. A port method that does not
