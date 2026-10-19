@@ -151,12 +151,11 @@ function TodayRange({ today, now, units }: { today: WeatherDay; now: number; uni
 }
 
 /**
- * The coming hours: time, glyph, rain, temperature. When every hour rounds
- * to the same temperature the row would only repeat the headline, so it is
- * left off and the strip reads as the sky alone.
+ * The coming hours: time, glyph, rain, temperature. The temperature row
+ * stays even when every hour reads the same — a steady evening is worth
+ * reading, and a missing row looks broken.
  */
 function HourStrip({ hours, units }: { hours: readonly WeatherHour[]; units: WeatherUnits }) {
-  const flat = new Set(hours.map((hour) => Math.round(hour.temperature))).size === 1
   return (
     <ul className="wx-hours" aria-label="coming hours">
       {hours.map((hour) => (
@@ -166,11 +165,9 @@ function HourStrip({ hours, units }: { hours: readonly WeatherHour[]; units: Wea
           <span className="wx-hour-rain">
             {hour.precipitationChance !== null && hour.precipitationChance >= 20 ? `${Math.round(hour.precipitationChance)}%` : ''}
           </span>
-          {flat ? null : (
-            <span className="wx-temp wx-hour-temp" style={hueStyle(hour.temperature, units)}>
-              {degrees(hour.temperature)}
-            </span>
-          )}
+          <span className="wx-temp wx-hour-temp" style={hueStyle(hour.temperature, units)}>
+            {degrees(hour.temperature)}
+          </span>
         </li>
       ))}
     </ul>

@@ -412,7 +412,7 @@ conditions, today's high, low, rain chance and sun times, the six coming
 hours and the three coming days, all in the city's own clock — the sky as a
 colored glyph, every temperature in its hue from blue through green to red,
 rain in blue, so the day reads from across the room; the hours' temperature
-row is left off when every hour reads the same), the AI Usage card, the
+row shows even when every hour reads the same), the AI Usage card, the
 Calendar, the News card with Today's Highlight and Big News, the Weight
 card with each Person's latest Weigh-in and their line, and the Last Page with its way
 back — and under them, only while any of them is there,
