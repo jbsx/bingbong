@@ -69,7 +69,7 @@ describe('weight e2e: the stand-in scale, the pop-up, the card and the page', ()
     const settled = await waitFor(async () => (await harness.dashboardEval<string | null>(`document.querySelector('.weighin-popup--settled')?.textContent ?? null`)) ?? undefined, { timeoutMs: 10000, intervalMs: 50 })
     expect(settled).toContain('80.8')
     // Barun has no Weigh-in yet, so he is never guessed: it is Jaish's, with a chip for Barun.
-    expect(settled).toContain('Jaish · −0.45 kg since the last')
+    expect(settled).toContain('Jaish · −0.45 kg since the last Weigh-in')
     expect(await harness.dashboardEval<string[]>(`[...document.querySelectorAll('.weighin-popup-chip')].map((el) => el.textContent)`)).toEqual(['Barun'])
     expect(await harness.dashboardEval<boolean>(`!!document.querySelector('.idle-screen')`)).toBe(true)
 

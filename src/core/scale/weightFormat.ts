@@ -5,6 +5,9 @@ export function formatKg(kg: number): string {
   return kg.toFixed(2)
 }
 
+/** What every change is against (owner ruling 2026-10-19): the card, the pop-up and the Weight page say it alike. */
+export const SINCE_LAST = 'since the last Weigh-in'
+
 /** A change, signed and at the figure's digits: a true minus, a plus, and ±0 for one that rounds to nothing. */
 export function formatChange(change: number, digits: number): string {
   const rounded = Math.round(change * 10 ** digits) / 10 ** digits

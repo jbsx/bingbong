@@ -27,7 +27,9 @@ export interface SlotSize {
  * under the clock, the Calendar and the Last Page over the Weight card in
  * the middle, and the AI usage over the News down the right. The Weight
  * card comes before the usage and the News so its room is taken from the
- * News's 2×2 rather than the usage chart. Now Playing is a chip in the
+ * News's 2×2 rather than the usage chart — and, with two People on it, its
+ * column of three takes the usage chart's room too, the usage and the News
+ * a cell each under it. Now Playing is a chip in the
  * dock and asks for no Card Slot; pinning it decides whether it shows.
  */
 export const IDLE_CARD_IDS = ['weather', 'calendar', 'lastPage', 'weight', 'usage', 'news', 'music'] as const

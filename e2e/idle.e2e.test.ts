@@ -113,7 +113,7 @@ describe('idle screen e2e: the Last Page and resume', () => {
     // A 1×2 Card Slot: where it lands depends on the cards around it (the weather is unset here).
     expect(card.box).toMatch(/span 1\|\d+ \/ span 2$/)
     expect(card.text).toContain('81.25')
-    expect(card.text).toMatch(/[−+]\d+(\.\d+)? kg · 7 days/)
+    expect(card.text).toMatch(/[−+]\d+\.\d\d kg since the last Weigh-in/)
     expect(card.text).toMatch(/Body fat \d+\.\d%/)
     expect(card.trendDots).toBe(30)
   })

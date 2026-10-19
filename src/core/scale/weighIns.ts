@@ -34,12 +34,11 @@ export function sanitizeWeighIns(raw: unknown): WeighIn[] {
   return [...byTime.values()].sort((a, b) => a.at - b.at)
 }
 
-/** The latest Weigh-in's change (kg) against the last one at least `spanMs` before it; null with none that far back. */
-export function changeSince(weighIns: readonly WeighIn[], spanMs: number): number | null {
+/** The latest Weigh-in's change (kg) against the one before it; null with only one. */
+export function changeSinceLast(weighIns: readonly WeighIn[]): number | null {
   const latest = weighIns.at(-1)
-  if (latest === undefined) return null
-  const before = weighIns.filter((weighIn) => weighIn.at <= latest.at - spanMs).at(-1)
-  return before === undefined ? null : latest.kg - before.kg
+  const before = weighIns.at(-2)
+  return latest === undefined || before === undefined ? null : latest.kg - before.kg
 }
 
 /** The Weigh-ins of the last `spanMs` before `now`; every one with no span (the page's All). */

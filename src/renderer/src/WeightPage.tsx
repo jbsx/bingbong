@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { bodyFigures, type BodyFigures, type BodyProfile, type Figure } from '../../core/scale/bodyComposition'
-import { formatChange, formatFigure, formatKg, WEIGHT_FIGURES } from '../../core/scale/weightFormat'
+import { formatChange, formatFigure, formatKg, SINCE_LAST, WEIGHT_FIGURES } from '../../core/scale/weightFormat'
 import { since, type WeighIn } from '../../core/scale/weighIns'
 import { JAISH, weighInsOf, type Person } from '../../core/scale/people'
 import { reportRendererFault } from './diagnostics'
@@ -147,7 +147,7 @@ export function WeightPage({ weighIns, people, initialPerson = JAISH, onClose }:
                     <li key={key} className="weight-figure" data-figure={key}>
                       <span className="weight-figure-label">{label}</span>
                       <span className="weight-figure-value">{value === 'unavailable' ? '–' : withUnit(key === 'weightKg' ? formatKg(value) : formatFigure(value, digits), unit)}</span>
-                      <span className="weight-figure-change">{value === 'unavailable' ? missingWhy(key, latest, profile) : change === null ? 'first Weigh-in' : `${change} since the last`}</span>
+                      <span className="weight-figure-change">{value === 'unavailable' ? missingWhy(key, latest, profile) : change === null ? 'first Weigh-in' : `${change} ${SINCE_LAST}`}</span>
                     </li>
                   )
                 })}

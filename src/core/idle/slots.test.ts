@@ -59,6 +59,11 @@ describe('layoutSlots', () => {
     }
   })
 
+  it('gives a Weight card of two People a column of three, so each chart keeps a readable height; News takes a cell (owner ruling 2026-10-19)', () => {
+    const layout = layoutSlots(IDLE_CARD_IDS.map((id) => (id === 'weight' ? request('weight', [COLUMN, TALL, SMALL]) : ASKS[id]())))
+    expect(boxes(layout)).toEqual(['weather 0,1 1x3', 'calendar 1,0 1x1', 'lastPage 1,1 1x1', 'weight 2,0 1x3', 'usage 1,2 1x2', 'news 2,3 1x1'])
+  })
+
   it('gives the Weight card one cell while there is no Weigh-in, News and usage keeping theirs and the cell it frees going to the Calendar', () => {
     const layout = layoutSlots(IDLE_CARD_IDS.map((id) => ASKS[id](id === 'weight' ? false : undefined)))
     expect(boxes(layout)).toEqual(['weather 0,1 1x3', 'calendar 1,0 1x2', 'lastPage 1,2 1x1', 'weight 1,3 1x1', 'usage 2,0 1x2', 'news 2,2 1x2'])

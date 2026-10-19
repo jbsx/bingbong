@@ -185,15 +185,16 @@ describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review'
     const geometry = await screenGeometry()
     expect(geometry.overflowing).toEqual([])
     expect(geometry.smallestText).toBeGreaterThanOrEqual(16)
-    // The clock bare in the top-left cell; weather down the left, the Calendar and the Last Page over the Weight card in the middle, usage over News down the right (#352, #350).
+    // The clock bare in the top-left cell; weather down the left, the Calendar and the Last Page over the usage in the middle, and the
+    // Weight card of two People down the right over News — its column of three keeps each chart a readable height (owner ruling 2026-10-19).
     expect(geometry.clock).toBe('1|1')
     expect(geometry.slots).toEqual({
       weather: '1 / span 1|2 / span 3',
       calendar: '2 / span 1|1 / span 1',
       lastPage: '2 / span 1|2 / span 1',
-      weight: '2 / span 1|3 / span 2',
-      usage: '3 / span 1|1 / span 2',
-      news: '3 / span 1|3 / span 2',
+      weight: '3 / span 1|1 / span 3',
+      usage: '2 / span 1|3 / span 2',
+      news: '3 / span 1|4 / span 1',
     })
     expect(geometry.dock).toBe(music)
     // Every provider's gauge a ring, and with two providers Claude's other window one too; with more, it is a bar under Claude.
@@ -233,12 +234,18 @@ describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review'
   it('holds the News card’s Top Repos to its box at 1×2 and 1×1, in dark and light', async () => {
     await mkdir(outDir, { recursive: true })
     const defaults = await harness.dashboardEval<string[]>(`window.bingbong.settings.get().then((s) => s.idleCards)`)
-    // The default gives News the right column's two cells. Every card fits at its largest with the stand-in data, so the one-cell box —
-    // which an owner's Calendar with events would leave it — is made by shrinking its slot: the card draws from its box alone (CSS and useWholeItems), not from the size it was handed.
-    expect(await harness.dashboardEval<string>(`document.querySelector('.idle-slot[data-card="news"]').style.gridRow.split(' / ')[1]`)).toBe('span 2')
+    // Without the Weight card News takes two cells; the default, with two People weighed, leaves it the right column's last one.
+    const orders: [string, string[]][] = [
+      ['1x2', defaults.filter((id) => id !== 'weight')],
+      ['1x1', defaults],
+    ]
     try {
-      for (const size of ['1x2', '1x1']) {
-        if (size === '1x1') await harness.dashboardEval(`(() => { const s = document.querySelector('.idle-slot[data-card="news"]').style; s.gridRow = s.gridRow.split(' / ')[0] + ' / span 1' })()`)
+      for (const [size, order] of orders) {
+        await pin(order)
+        await waitFor(async () => ((await harness.dashboardEval<string>(`document.querySelector('.idle-slot[data-card="news"]')?.style.gridRow.split(' / ')[1] ?? ''`)) === `span ${size.slice(-1)}` ? true : undefined), {
+          timeoutMs: 5000,
+          intervalMs: 100,
+        })
         for (const scheme of ['dark', 'light']) {
           await harness.cdp.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, session)
           await new Promise((resolve) => setTimeout(resolve, 400))
@@ -253,18 +260,15 @@ describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review'
         }
       }
     } finally {
-      // React rewrites the slot's box only when its own value changes: News is unpinned and pinned again.
-      await pin(defaults.filter((id) => id !== 'news'))
-      await waitFor(async () => ((await harness.dashboardEval<boolean>(`!document.querySelector('.idle-slot[data-card="news"]')`)) ? true : undefined), { timeoutMs: 5000, intervalMs: 100 })
       await pin(defaults)
     }
   })
 
-  it('holds the Weight card, a row per Person, to its box at 1×2, in dark and light (#350, #351)', async () => {
+  it('holds the Weight card, a row per Person, to its box at 1×3, in dark and light (#350, #351)', async () => {
     await mkdir(outDir, { recursive: true })
     const defaults = await harness.dashboardEval<string[]>(`window.bingbong.settings.get().then((s) => s.idleCards)`)
-    // Its one-cell size was reached when News took a 2×2 before it; News asks two cells at most now, and with an empty Calendar every card fits at its largest.
-    const orders: [string, string[]][] = [['1x2', defaults]]
+    // Two People weighed: the default gives it a column of three, so each one's chart keeps a readable height.
+    const orders: [string, string[]][] = [['1x3', defaults]]
     try {
       for (const [size, order] of orders) {
         await pin(order)
@@ -299,7 +303,7 @@ describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review'
           expect(box.text).toContain('81.25')
           expect(box.text).toContain('Jaish')
           expect(box.text).toContain('Barun')
-          expect(box.text).toMatch(/kg · 7 days/)
+          expect(box.text).toMatch(/kg since the last Weigh-in/)
           if (size === '1x2') expect(box.text).toMatch(/Body fat \d+\.\d%/)
         }
       }

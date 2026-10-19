@@ -1,13 +1,12 @@
 import type { SlotSize } from '../../core/idle/slots'
 import { bodyFigures } from '../../core/scale/bodyComposition'
 import { weighInsOf, type Person } from '../../core/scale/people'
-import { formatChange, formatFigure, formatKg } from '../../core/scale/weightFormat'
-import { changeSince, since, type WeighIn } from '../../core/scale/weighIns'
+import { formatChange, formatFigure, formatKg, SINCE_LAST } from '../../core/scale/weightFormat'
+import { changeSinceLast, since, type WeighIn } from '../../core/scale/weighIns'
 import type { WeightSettings } from '../../core/scale/weightSettings'
 import { WeightChart } from './WeightChart'
 
 const DAY_MS = 24 * 60 * 60 * 1000
-const WEEK_MS = 7 * DAY_MS
 
 /** One row of the card: a Person the Weight section shows, with their Weigh-ins (at least one), oldest first. */
 export interface WeightCardRow {
@@ -33,14 +32,14 @@ function whenLabel(at: number, now: number): string {
   return day.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' })
 }
 
-/** The change against a week ago as a line: "−0.5 kg · 7 days", or a quiet note with nothing that far back. */
-function WeekChange({ weighIns }: { weighIns: readonly WeighIn[] }) {
-  const change = changeSince(weighIns, WEEK_MS)
-  if (change === null) return <span className="weight-card-change weight-card-change--none">no Weigh-in a week back</span>
+/** The change since the last Weigh-in as a line: "−0.45 kg since the last Weigh-in", or a quiet note on the first. */
+function LastChange({ weighIns }: { weighIns: readonly WeighIn[] }) {
+  const change = changeSinceLast(weighIns)
+  if (change === null) return <span className="weight-card-change weight-card-change--none">first Weigh-in</span>
   const direction = Math.abs(change) < 0.05 ? 'flat' : change < 0 ? 'down' : 'up'
   return (
     <span className={`weight-card-change weight-card-change--${direction}`}>
-      {formatChange(change, 2)} kg <span className="weight-card-change-span">· 7 days</span>
+      {formatChange(change, 2)} kg <span className="weight-card-change-span">{SINCE_LAST}</span>
     </span>
   )
 }
@@ -61,9 +60,9 @@ function tapProps(person: Person, latest: WeighIn, onOpen: (person: string) => v
 
 /**
  * The Weight card (CONTEXT.md), a Pinned Card of each Person's latest
- * Weigh-in. Given a 1×2 Card Slot, one tile per Person with a Weigh-in:
- * the name, the weight, its change against their last Weigh-in a week or
- * more before, the body fat and their own line over the Weight section's
+ * Weigh-in. Given a Card Slot two or three cells tall, one tile per Person with a Weigh-in, sharing its height:
+ * the name, the weight, its change since their last Weigh-in,
+ * the body fat and their own line over the Weight section's
  * range, each line on its own axis; given one cell, each name with the
  * weight and the change. The figures shown are the Weight section's
  * choice. A tap on a row opens the Weight page on that Person on the
@@ -87,7 +86,7 @@ export function WeightCard({ rows, weight, size, now, onOpen }: { rows: readonly
                   {formatKg(latest.kg)}
                   <small> kg</small>
                 </span>
-                {card.change ? <WeekChange weighIns={weighIns} /> : null}
+                {card.change ? <LastChange weighIns={weighIns} /> : null}
               </div>
             )
           })}
@@ -113,7 +112,7 @@ export function WeightCard({ rows, weight, size, now, onOpen }: { rows: readonly
                 <small> kg</small>
               </span>
               <span className="weight-card-side">
-                {card.change ? <WeekChange weighIns={weighIns} /> : null}
+                {card.change ? <LastChange weighIns={weighIns} /> : null}
                 {card.fat ? (
                   <span className="weight-card-fat">
                     Body fat <b>{fat === 'unavailable' ? '–' : `${formatFigure(fat, 1)}%`}</b>

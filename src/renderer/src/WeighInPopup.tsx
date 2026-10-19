@@ -1,5 +1,5 @@
 import type { WeighInPopupState } from '../../core/scale/weighInPopup'
-import { formatChange, formatKg } from '../../core/scale/weightFormat'
+import { formatChange, formatKg, SINCE_LAST } from '../../core/scale/weightFormat'
 import { reportRendererFault } from './diagnostics'
 
 /**
@@ -31,7 +31,7 @@ export function WeighInPopup({ state }: { state: WeighInPopupState }) {
             'weighing…'
           ) : (
             <>
-              <b className="weighin-popup-name">{state.person.name}</b> · {state.changeKg === null ? 'first Weigh-in' : `${formatChange(state.changeKg, 2)} kg since the last`}
+              <b className="weighin-popup-name">{state.person.name}</b> · {state.changeKg === null ? 'first Weigh-in' : `${formatChange(state.changeKg, 2)} kg ${SINCE_LAST}`}
             </>
           )}
         </span>

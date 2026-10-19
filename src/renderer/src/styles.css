@@ -3528,6 +3528,8 @@ body {
 }
 
 .weight-card-kg {
+  flex: none;
+  white-space: nowrap;
   font-size: min(80px, 30cqh);
   font-weight: 250;
   letter-spacing: -0.02em;
@@ -3558,6 +3560,13 @@ body {
 .weight-card-fat {
   font-size: 1.3rem;
   color: var(--muted);
+}
+
+/* Beside the weight, what the change is against sits under it, so the
+   figure keeps its unit and the side its three short lines. */
+.weight-card-side .weight-card-change-span {
+  display: block;
+  font-size: 1.3rem;
 }
 
 .weight-card-fat b {

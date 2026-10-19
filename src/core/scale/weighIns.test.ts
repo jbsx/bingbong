@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { changeSince, sanitizeWeighIns, since } from './weighIns'
+import { changeSinceLast, sanitizeWeighIns, since } from './weighIns'
 
 const DAY = 24 * 60 * 60 * 1000
 
@@ -40,20 +40,20 @@ describe('sanitizeWeighIns', () => {
   })
 })
 
-describe('changeSince', () => {
+describe('changeSinceLast', () => {
   const history = [
     { at: 0, kg: 83, r1: 0, r2: 0, person: 'jaish' },
     { at: 3 * DAY, kg: 82.5, r1: 0, r2: 0, person: 'jaish' },
     { at: 9 * DAY, kg: 81.25, r1: 0, r2: 0, person: 'jaish' },
   ]
 
-  it('compares the latest Weigh-in with the last one a week or more before it', () => {
-    expect(changeSince(history, 7 * DAY)).toBeCloseTo(-1.75, 5)
+  it('compares the latest Weigh-in with the one before it, however far back', () => {
+    expect(changeSinceLast(history)).toBeCloseTo(-1.25, 5)
   })
 
-  it('has no change with nothing that far back', () => {
-    expect(changeSince(history.slice(1), 7 * DAY)).toBeNull()
-    expect(changeSince([], 7 * DAY)).toBeNull()
+  it('has no change with only one Weigh-in', () => {
+    expect(changeSinceLast(history.slice(2))).toBeNull()
+    expect(changeSinceLast([])).toBeNull()
   })
 })
 

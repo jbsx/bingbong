@@ -708,6 +708,8 @@ export function IdleScreen({
         if (news.status === 'ready') return { id, sizes: [TALL, SMALL], hasContent: true }
         return { id, sizes: news.status === 'loading' ? [] : [SMALL], hasContent: false }
       case 'weight':
+        // Two People share the box: a column of three cells keeps each one's chart a readable height (owner ruling 2026-10-19).
+        if (weightRows.length > 1 && weight.card.line) return { id, sizes: [COLUMN, TALL, SMALL], hasContent: true }
         if (weightRows.length > 0) return { id, sizes: [TALL, SMALL], hasContent: true }
         return { id, sizes: weighIns === null ? [] : [SMALL], hasContent: false }
     }
