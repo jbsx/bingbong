@@ -465,6 +465,7 @@ async function createWindow(): Promise<BrowserWindow> {
       biasUnion.setPageTerms(snapshot === null ? [] : pageTermsOf({ title: snapshot.title, labels: snapshot.refs.map((ref) => ref.label), text: snapshot.viewportText })),
     vad: voice.vad,
     transcriber: voice.transcriber,
+    turn: voice.turn,
     tts: speakingGate.tts,
     wake: wakeDetector
       ? {
@@ -477,11 +478,11 @@ async function createWindow(): Promise<BrowserWindow> {
           },
         }
       : undefined,
-    // The endpoint-delay slider (#37) applies to the next utterance, live.
-    // Both endpoint timings ride this seam (#60): the silence threshold and
-    // the resumption-merge window, each live from its Setting (#59).
+    // The pause-cap slider (#357, the endpoint delay of #37) applies to the
+    // next utterance, live. Both endpoint timings ride this seam (#60): the
+    // pause cap and the resumption-merge window, each live from its Setting (#59).
     getEndpointerConfig: () => ({
-      endFrames: silenceFramesForMs(settingsStore.get().endpointDelayMs),
+      endFrames: silenceFramesForMs(settingsStore.get().pauseCapMs),
       resumptionMergeMs: settingsStore.get().resumptionMergeMs,
     }),
     // The Hot Listen (#326): its closing silence, live from its Setting,

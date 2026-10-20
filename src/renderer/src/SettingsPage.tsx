@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { AppSettings } from '../../core/settings/settings'
-import { ENDPOINT_DELAY_MS_MAX, ENDPOINT_DELAY_MS_MIN, HOT_LISTEN_SILENCE_MS_MAX, HOT_LISTEN_SILENCE_MS_MIN, RESUMPTION_MERGE_MS_MAX, RESUMPTION_MERGE_MS_MIN, WEB_ZOOM_PERCENT_MAX, WEB_ZOOM_PERCENT_MIN, WAKE_WORD_THRESHOLD_MAX, WAKE_WORD_THRESHOLD_MIN, asAppearance, asSttModel } from '../../core/settings/settings'
+import { PAUSE_CAP_MS_MAX, PAUSE_CAP_MS_MIN, HOT_LISTEN_SILENCE_MS_MAX, HOT_LISTEN_SILENCE_MS_MIN, RESUMPTION_MERGE_MS_MAX, RESUMPTION_MERGE_MS_MIN, WEB_ZOOM_PERCENT_MAX, WEB_ZOOM_PERCENT_MIN, WAKE_WORD_THRESHOLD_MAX, WAKE_WORD_THRESHOLD_MIN, asAppearance, asSttModel } from '../../core/settings/settings'
 import { DEFAULT_PIPER_VOICE } from '../../core/tts/piperVoices'
 import { UsageMetricsSettings } from './UsageSettings'
 import { IDLE_CARD_IDS, type IdleCardId } from '../../core/idle/slots'
@@ -533,20 +533,20 @@ export function SettingsPage({
               onChange={(event) => setDraft({ ...draft, wakeWordThreshold: Number(event.target.value) })}
             />
           </Field>
-          <Field label={`Endpoint delay — ${draft.endpointDelayMs} ms`}>
+          <Field label={`Pause cap — ${(draft.pauseCapMs / 1000).toFixed(1)} s`}>
             <input
               type="range"
-              min={ENDPOINT_DELAY_MS_MIN}
-              max={ENDPOINT_DELAY_MS_MAX}
-              step={50}
-              value={draft.endpointDelayMs}
-              aria-label="Endpoint delay"
-              onChange={(event) => setDraft({ ...draft, endpointDelayMs: Number(event.target.value) })}
+              min={PAUSE_CAP_MS_MIN}
+              max={PAUSE_CAP_MS_MAX}
+              step={100}
+              value={draft.pauseCapMs}
+              aria-label="Pause cap"
+              onChange={(event) => setDraft({ ...draft, pauseCapMs: Number(event.target.value) })}
             />
           </Field>
           <p className="settings-note">
-            How long a pause ends your turn — lower responds sooner, higher avoids cutting you
-            off mid-thought. Applies to the next utterance, no restart.
+            The longest pause before your turn ends. A pause after a finished sentence ends it
+            sooner; one mid-thought waits up to this. Applies to the next utterance, no restart.
           </p>
           <Field
             label={`Merge window — ${draft.resumptionMergeMs === 0 ? 'off' : `${draft.resumptionMergeMs} ms`}`}

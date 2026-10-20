@@ -7,8 +7,8 @@ import {
   HOT_LISTEN_SILENCE_MS_MIN,
   sanitizeSettings,
   settingsToEnv,
-  ENDPOINT_DELAY_MS_MAX,
-  ENDPOINT_DELAY_MS_MIN,
+  PAUSE_CAP_MS_MAX,
+  PAUSE_CAP_MS_MIN,
   RESUMPTION_MERGE_MS_MAX,
   RESUMPTION_MERGE_MS_MIN,
   WEB_ZOOM_PERCENT_MAX,
@@ -23,8 +23,8 @@ describe('defaultSettings', () => {
     expect(settings.micId).toBe('default')
     expect(settings.wakeWordThreshold).toBeGreaterThan(0)
     expect(settings.wakeWordThreshold).toBeLessThanOrEqual(1)
-    // ADR 0076 amendment 2026-10-20: released 700 ms into silence, with no merge hold.
-    expect(settings.endpointDelayMs).toBe(700)
+    // ADR 0076 amendment 2026-10-20 (#357): the turn check decides, a 2 s pause caps it, with no merge hold.
+    expect(settings.pauseCapMs).toBe(2_000)
     expect(settings.hotListenSilenceMs).toBe(8_000)
     expect(settings.resumptionMergeMs).toBe(0)
     expect(settings.webZoomPercent).toBe(130)
@@ -54,7 +54,7 @@ describe('sanitizeSettings', () => {
     const settings = sanitizeSettings({
       micId: 'abc',
       wakeWordThreshold: 0.8,
-      endpointDelayMs: 650,
+      pauseCapMs: 650,
       resumptionMergeMs: 1_200,
       webZoomPercent: 100,
       ttsVoice: 'en_US-lessac-high',
@@ -62,7 +62,7 @@ describe('sanitizeSettings', () => {
       weather: { city: 'Berlin', units: 'imperial' },
     })
     expect(settings.wakeWordThreshold).toBe(0.8)
-    expect(settings.endpointDelayMs).toBe(650)
+    expect(settings.pauseCapMs).toBe(650)
     expect(settings.webZoomPercent).toBe(100)
     expect(settings.appearance).toBe('dark')
     expect(settings.weather).toEqual({ city: 'Berlin', units: 'imperial' })
@@ -74,19 +74,34 @@ describe('sanitizeSettings', () => {
     expect(sanitizeSettings({ wakeWordThreshold: 'loud' }).wakeWordThreshold).toBe(defaultSettings().wakeWordThreshold)
   })
 
-  it('clamps the endpoint delay into its slider range', () => {
-    expect(sanitizeSettings({ endpointDelayMs: 10 }).endpointDelayMs).toBe(ENDPOINT_DELAY_MS_MIN)
-    expect(sanitizeSettings({ endpointDelayMs: 90_000 }).endpointDelayMs).toBe(ENDPOINT_DELAY_MS_MAX)
+  it('clamps the pause cap into its slider range', () => {
+    expect(sanitizeSettings({ pauseCapMs: 10 }).pauseCapMs).toBe(PAUSE_CAP_MS_MIN)
+    expect(sanitizeSettings({ pauseCapMs: 90_000 }).pauseCapMs).toBe(PAUSE_CAP_MS_MAX)
     expect(sanitizeSettings({ resumptionMergeMs: 2_500 }).resumptionMergeMs).toBe(2_500)
     expect(sanitizeSettings({ resumptionMergeMs: -1 }).resumptionMergeMs).toBe(RESUMPTION_MERGE_MS_MIN)
     expect(sanitizeSettings({ resumptionMergeMs: 60_000 }).resumptionMergeMs).toBe(RESUMPTION_MERGE_MS_MAX)
     expect(sanitizeSettings({}).resumptionMergeMs).toBe(defaultSettings().resumptionMergeMs)
     expect(sanitizeSettings({ resumptionMergeMs: 'soon' }).resumptionMergeMs).toBe(defaultSettings().resumptionMergeMs)
     expect(sanitizeSettings({ resumptionMergeMs: null }).resumptionMergeMs).toBe(defaultSettings().resumptionMergeMs)
-    // Missing and garbage values fall back to the 700 ms default (#37/#60, ADR 0076).
-    expect(sanitizeSettings({}).endpointDelayMs).toBe(defaultSettings().endpointDelayMs)
-    expect(sanitizeSettings({ endpointDelayMs: 'soon' }).endpointDelayMs).toBe(defaultSettings().endpointDelayMs)
-    expect(sanitizeSettings({ endpointDelayMs: null }).endpointDelayMs).toBe(defaultSettings().endpointDelayMs)
+    // Missing and garbage values fall back to the 2 s default (#37/#357, ADR 0076).
+    expect(sanitizeSettings({}).pauseCapMs).toBe(defaultSettings().pauseCapMs)
+    expect(sanitizeSettings({ pauseCapMs: 'soon' }).pauseCapMs).toBe(defaultSettings().pauseCapMs)
+    expect(sanitizeSettings({ pauseCapMs: null }).pauseCapMs).toBe(defaultSettings().pauseCapMs)
+  })
+
+  it("reads the endpoint delay saved before the pause cap as the cap, and the plain timer's 700 ms default as the new 2 s default (#357)", () => {
+    // The owner's settings.json holds 700 from 847d039.
+    expect(sanitizeSettings({ endpointDelayMs: 700 }).pauseCapMs).toBe(2_000)
+    expect(sanitizeSettings({ endpointDelayMs: 1_200 }).pauseCapMs).toBe(1_200)
+    expect(sanitizeSettings({ endpointDelayMs: 'soon' }).pauseCapMs).toBe(2_000)
+    expect('endpointDelayMs' in sanitizeSettings({ endpointDelayMs: 1_200 })).toBe(false)
+  })
+
+  it('migrates 700 only once: a 700 saved as the pause cap stays (#357)', () => {
+    const migrated = sanitizeSettings({ endpointDelayMs: 700 })
+    expect(sanitizeSettings({ ...migrated, pauseCapMs: 700 }).pauseCapMs).toBe(700)
+    // The new key wins over a stale old one beside it.
+    expect(sanitizeSettings({ endpointDelayMs: 1_200, pauseCapMs: 700 }).pauseCapMs).toBe(700)
   })
 
   it('drops the retired maximum-round key from a migrated profile — no round limit lives in settings (#129)', () => {
@@ -96,12 +111,12 @@ describe('sanitizeSettings', () => {
     // hard ceiling (effortEpoch.ts) — never a user setting.
     const settings = sanitizeSettings({
       maxToolRounds: 120,
-      endpointDelayMs: 650,
+      pauseCapMs: 650,
       webZoomPercent: 100,
       weather: { city: 'Berlin', units: 'metric' },
     })
     expect('maxToolRounds' in settings).toBe(false)
-    expect(settings.endpointDelayMs).toBe(650)
+    expect(settings.pauseCapMs).toBe(650)
     expect(settings.webZoomPercent).toBe(100)
     expect(settings.weather).toEqual({ city: 'Berlin', units: 'metric' })
     // A clean profile never sees the key at all.

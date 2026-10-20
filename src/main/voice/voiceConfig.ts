@@ -18,6 +18,8 @@ export interface VoiceConfig {
   sttScript?: string
   /** Scripted VAD probabilities (e2e double), one per 512-sample frame. */
   vadScript?: string
+  /** Scripted turn-check probabilities (e2e double, #357), one per check. */
+  turnScript?: string
 }
 
 export function resolveVoiceConfig(
@@ -32,5 +34,6 @@ export function resolveVoiceConfig(
     sttModel,
     sttScript: env.BINGBONG_STT_SCRIPT?.trim() || undefined,
     vadScript: env.BINGBONG_VAD_SCRIPT?.trim() || undefined,
+    turnScript: env.BINGBONG_TURN_SCRIPT?.trim() || undefined,
   }
 }

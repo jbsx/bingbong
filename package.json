@@ -17,6 +17,7 @@
     "cli": "pnpm build && electron . --browser-cli",
     "perf:report": "node scripts/perf-report.ts",
     "stt:replay": "node scripts/replay-stt.ts",
+    "turn:replay": "node scripts/replay-turn.ts",
     "jev:replay": "node scripts/jev-replay.ts",
     "jev:candidates": "node scripts/jev-candidates.ts",
     "jev:case": "node scripts/jev-case.ts",

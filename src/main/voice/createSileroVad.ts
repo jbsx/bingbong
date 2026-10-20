@@ -1,5 +1,5 @@
 import type { VadScorer } from '../../core/ports/stt'
-import { VAD_FRAME_SAMPLES } from '../../core/voice/vadEndpointing'
+import { VAD_FRAME_SAMPLES } from '../../core/voice/vadEndpointing.ts'
 
 /**
  * Silero VAD v5 over onnxruntime-node. The ONNX model is a streaming

@@ -32,6 +32,16 @@ export interface Transcriber {
   cancel(): void
 }
 
+/**
+ * End-of-turn source (Smart Turn in main, #357): asked at a short pause
+ * whether the Utterance so far reads finished. Resolves the probability
+ * that it is; a missing model or native error rejects.
+ */
+export interface TurnDetector {
+  /** Mono 16 kHz PCM of the Utterance so far, pause included. */
+  score(pcm: Float32Array): Promise<number>
+}
+
 /** Per-frame speech probability source (Silero VAD in main). */
 export interface VadScorer {
   /** Scores one 512-sample 16 kHz frame; resolves the speech probability. */

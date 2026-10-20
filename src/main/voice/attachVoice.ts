@@ -1,7 +1,7 @@
 import { BrowserWindow, ipcMain } from 'electron'
 import { systemClock } from '../../core/ports/clock'
 import type { TtsIdle, TtsSpeaker } from '../../core/ports/tts'
-import type { Transcriber, VadScorer } from '../../core/ports/stt'
+import type { Transcriber, TurnDetector, VadScorer } from '../../core/ports/stt'
 import type { PerfTracer } from '../../core/perf/perfTracer'
 import type { PageSnapshot } from '../../core/browser/snapshot'
 import type { UtteranceDumper } from '../../core/voice/utteranceDump'
@@ -55,6 +55,7 @@ export function attachVoiceToWindow(win: BrowserWindow, deps: AttachVoiceDeps): 
     clock: systemClock,
     tts: deps.tts,
     wake: deps.wake,
+    turn: deps.turn,
     getEndpointerConfig: deps.getEndpointerConfig,
     getHotListenSilenceMs: deps.getHotListenSilenceMs,
     speaking: deps.speaking,
@@ -110,6 +111,8 @@ export function attachVoiceToWindow(win: BrowserWindow, deps: AttachVoiceDeps): 
 export interface AttachVoiceDeps {
   vad: VadScorer
   transcriber: Transcriber
+  /** The turn check (#357); absent leaves the pause cap a plain timer. */
+  turn?: TurnDetector
   tts: TtsSpeaker
   /** Wake-word plumbing; absent means hotkey-only. */
   wake?: VoiceWakeDeps

@@ -49,9 +49,21 @@ command.
 _Avoid_: command (a command is what an utterance becomes after routing)
 
 **Endpoint**:
-The decision that an Utterance has ended — silence timeout, hard cap, or
-disarm. The seam where half-commands are born.
+The decision that an Utterance has ended — the Turn Check reading it
+finished at a short pause, the Pause Cap, the hard cap, or disarm. The seam
+where half-commands are born.
 _Avoid_: silence detection
+
+**Turn Check**:
+At a short pause (~200 ms), a local end-of-turn model (Smart Turn) reads
+the Utterance's audio so far: finished fires the Endpoint, unfinished keeps
+listening. One check per pause.
+_Avoid_: smart endpointing, semantic VAD
+
+**Pause Cap**:
+The longest silence an Utterance survives whatever the Turn Check says —
+2 s by default, the Setting that was the endpoint delay.
+_Avoid_: endpoint delay, silence timeout
 
 **Barge-in**:
 Cutting speech in flight by activating (wake word or hotkey), not by arbitrary

@@ -46,13 +46,13 @@ describe('settings page e2e', () => {
     )
 
     // A fresh profile opens on this branch's endpoint defaults (ADR 0076,
-    // #324): released 300 ms into silence, with no merge hold.
-    const endpointDefaults = await harness.dashboardEval<{ delay: number; merge: number }>(
-      `({ delay: Number(document.querySelector('input[aria-label="Endpoint delay"]').value), merge: Number(document.querySelector('input[aria-label="Merge window"]').value) })`,
+    // #357): the turn check decides under a 2 s pause cap, with no merge hold.
+    const endpointDefaults = await harness.dashboardEval<{ cap: number; merge: number }>(
+      `({ cap: Number(document.querySelector('input[aria-label="Pause cap"]').value), merge: Number(document.querySelector('input[aria-label="Merge window"]').value) })`,
     )
-    expect(endpointDefaults).toEqual({ delay: 300, merge: 0 })
+    expect(endpointDefaults).toEqual({ cap: 2000, merge: 0 })
     const endpointLabels = await harness.dashboardEval<string>(`document.querySelector('.settings-page').textContent`)
-    expect(endpointLabels).toContain('Endpoint delay — 300 ms')
+    expect(endpointLabels).toContain('Pause cap — 2.0 s')
     expect(endpointLabels).toContain('Merge window — off')
     // The Hot Listen's closing silence (#326): 8 s by default.
     const hotListen = await harness.dashboardEval<number>(`Number(document.querySelector('input[aria-label="Hot Listen silence"]').value)`)

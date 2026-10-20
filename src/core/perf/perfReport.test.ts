@@ -145,6 +145,21 @@ describe('buildPerfReport', () => {
     ])
   })
 
+  it('counts what fired each Endpoint from the stt spans, and how long the turn checks took (#357)', () => {
+    const stt = (turnId: string, detail: Record<string, unknown>): PerfSpanRecord => ({ ...span(turnId, 'stt', 900), detail })
+    const report = buildPerfReport([
+      stt('t1', { endedBy: 'turn', silenceMs: 192, turnVerdict: 'finished', turnProbability: 0.93, turnScoreMs: 40 }),
+      stt('t2', { endedBy: 'turn', silenceMs: 192, turnVerdict: 'finished', turnProbability: 0.71, turnScoreMs: 60 }),
+      stt('t3', { endedBy: 'cap', silenceMs: 2016, turnVerdict: 'unfinished', turnProbability: 0.2, turnScoreMs: 50 }),
+      stt('t4', { endedBy: 'cap', silenceMs: 2016, turnVerdict: 'failed', turnScoreMs: 3 }),
+      stt('t5', { endedBy: 'max', silenceMs: 0 }),
+      // Spans from before the turn check carry no endedBy: not counted.
+      span('t6', 'stt', 900),
+    ])
+
+    expect(report.endpoints).toEqual({ turn: 2, cap: 2, capUnfinished: 1, capFailed: 1, max: 1, turnCheckP50: 40, turnCheckP95: 60 }) // nearest rank over 3, 40, 50, 60
+  })
+
   it('returns an empty report for an empty log', () => {
     const report = buildPerfReport([])
 
@@ -153,6 +168,7 @@ describe('buildPerfReport', () => {
     expect(report.turnsWithSummary).toBe(0)
     expect(report.turnsWithoutSummary).toBe(0)
     expect(report.mismatches).toEqual([])
+    expect(report.endpoints).toBeNull()
   })
 })
 
@@ -182,6 +198,18 @@ describe('formatPerfReport', () => {
     expect(lines[6]).toBe('')
     expect(lines[7]).toBe('summary self-check: 1/1 match')
     expect(lines).toHaveLength(8)
+  })
+
+  it('prints the Endpoint line under the self-check when the stt spans say what fired them (#357)', () => {
+    const text = formatPerfReport(
+      buildPerfReport([
+        { ...span('t1', 'stt', 900), detail: { endedBy: 'turn', turnVerdict: 'finished', turnScoreMs: 40 } },
+        { ...span('t2', 'stt', 900), detail: { endedBy: 'cap', turnVerdict: 'unfinished', turnScoreMs: 60 } },
+      ]),
+      CONTEXT,
+    )
+
+    expect(text.split('\n')).toContain('endpoints: smart turn 1 | pause cap 1 (1 unfinished, 0 failed) | hard cap 0 | turn check p50 40ms p95 60ms')
   })
 
   it('lists every mismatch problem under the self-check line', () => {

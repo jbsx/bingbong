@@ -1077,3 +1077,50 @@ Decision counts on ("recovered in one word") was the whole sentence again.
   extra 400 ms lands on the Commands that wait for the words to stop.
 - A stored `endpointDelayMs` keeps its value; a profile that holds the old
   300 is changed by hand.
+
+## Amendment 2026-10-20 — a turn check decides the Endpoint, under a 2 s pause cap (#357)
+
+The 700 ms amendment above moved the number and kept the timer. The owner
+still had to pace themselves: a pause to think ended the line, and
+hurrying to avoid pausing hurt the transcript. A person knows from the
+sentence that you haven't finished; a silence timer can't. All audio stays
+local (ADR 0019, owner ruling 2026-10-20), so the check is a local model.
+
+- **The turn check.** At ~200 ms of silence the Endpoint asks Smart Turn
+  (pipecat-ai's open end-of-turn model, v3.2 CPU export, int8, ~8 MB, on
+  the app's onnxruntime-node) whether the Utterance so far reads finished:
+  the last 8 s of its audio, pause included, as Whisper log-mel features
+  computed in core (`src/core/voice/smartTurnFeatures.ts`). A probability
+  of 0.5 or more is finished, a constant and not a Setting. Finished fires
+  the Endpoint there; unfinished keeps listening, and speech resuming
+  continues the same Utterance. One check per pause.
+- **The pause cap: 2 s** (owner ruling 2026-10-20). Silence that reaches
+  it fires the Endpoint whatever the check said. The endpoint-delay
+  Setting becomes the cap (`pauseCapMs`, range 200–4,000 ms); a saved
+  `endpointDelayMs` carries over, except the 700 of 847d039, which reads
+  as 2,000 once. Saved under the new key, any value stays.
+- **A missing or failing model** falls back to the plain silence timer at
+  the cap, with a fault reported (`voice.vadEndpointing.turnCheck`). The
+  model is fetched once on demand into `<userData>/models/smart-turn`, a
+  partial file refetched, like Moonshine's.
+- **The transcriber gets at most 640 ms of trailing silence**, what the
+  700 ms Endpoint left it, so a cap that fires at 2 s does not hand it 2 s
+  of nothing.
+- **The `stt` span says what fired the Endpoint**: `endedBy` (`turn`,
+  `cap`, `max`), `silenceMs`, and the last check's `turnVerdict`,
+  `turnProbability` and `turnScoreMs`. `pnpm perf:report` prints the
+  counts and the check's p50/p95.
+- Unchanged: the 30 s hard cap, the disarm Endpoints, Early Fire (#326)
+  acting on partials before the Endpoint, the merge hold (still 0; a
+  finished turn waits it out like any Endpoint when it is set), and the
+  Hot Listen's silence clock starting at the Endpoint.
+
+Replayed over the 31 dumps in `~/.config/bingbong/audio-dumps`
+(`pnpm turn:replay`): 29 fire on the turn check at the final pause, 192 ms
+after the last speech; none reach the cap; two read finished at an earlier
+pause. One is a real split ("Open your latest tweet." cut after "Open", at
+p 0.77 over a 0.5 s pause); the other is "Go back." ending before trailing
+noise that transcribes empty. A check takes p50 76 ms on the dev machine;
+the first takes ~1 s while the model loads. Speed on the Kiosk
+(i3-7100U) is not measured: ship, and deal with it if it is an issue
+(owner ruling 2026-10-20).

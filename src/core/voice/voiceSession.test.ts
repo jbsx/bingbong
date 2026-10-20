@@ -5,6 +5,7 @@ import { createVoiceSession, type SubmittedCommand } from './voiceSession'
 import { HOT_LISTEN_SILENCE_MS_DEFAULT } from '../settings/settings'
 import { mergeFramesFor, vadDefaults, type UtteranceEndpointerConfig } from './vadEndpointing'
 import type { CommandRunState } from '../pipeline/runState'
+import type { TurnDetector } from '../ports/stt'
 import { createPerfTracer, type PerfSpanRecord } from '../perf/perfTracer'
 import { audioDumpEnabled, createUtteranceDumper, type UtteranceDumpWriter } from './utteranceDump'
 
@@ -102,6 +103,8 @@ async function createSession(overrides?: {
   hotListenSilenceMs?: () => number
   /** What the runner answers a submitted Command with: its Task, settling when the Task ends (#328). */
   submitResult?: () => Promise<unknown>
+  /** The turn check (#357); absent leaves the pause cap a plain timer. */
+  turn?: TurnDetector
 }): Promise<SessionHarness> {
   const vad = overrides?.vad ?? new FakeVad()
   const baseTranscriber = overrides?.transcriber ?? new FakeTranscriber()
@@ -184,6 +187,7 @@ async function createSession(overrides?: {
     clock,
     tts,
     endpointerConfig: overrides?.endpointerConfig,
+    turn: overrides?.turn,
     getEndpointerConfig: overrides?.getEndpointerConfig,
     tracer,
     dumper,
@@ -267,9 +271,9 @@ describe('voice session', () => {
     expect(harness.heard).toEqual([{ text: 'open youtube', routed: 'command' }])
     // The utterance audio handed to STT is the endpointed utterance: the
     // 3-frame ring the trigger fired on (incl. the first speech frames) + 8
-    // speech + the endpoint/merge silence (~900 ms + ~1.5 s, #60),
-    // tail-trimmed by 2.
-    expect(harness.transcriber.audio[0].length).toBe((8 + SUBMIT_SILENCE - 2) * 512)
+    // speech + the pause cap's silence, of which the transcriber gets the
+    // 20 frames the 700 ms Endpoint left it (#357).
+    expect(harness.transcriber.audio[0].length).toBe((8 + 20) * 512)
   })
 
   it('submits an utterance that hit the hard cap with the truncation flag (#61)', async () => {
@@ -310,7 +314,7 @@ describe('voice session', () => {
     // Exactly 8 speech + 25 silence: the utterance emits on the last frame, so
     // the fake VAD's queue holds no leftovers for the next utterance.
     await harness.speakUtterance([...Array.from({ length: 8 }, () => SPEECH), ...Array.from({ length: 25 }, () => SILENCE)])
-    expect(harness.transcriber.audio[0].length).toBe((8 + 25 - 2) * 512)
+    expect(harness.transcriber.audio[0].length).toBe((8 + 20) * 512) // at most 20 frames of the silence (#357)
 
     endFrames = 5 // Slider moved to the snappy end; no restart, no rebuild.
     harness.session.arm()
@@ -483,7 +487,7 @@ describe('voice session — resumption merge (#60)', () => {
     expect(harness.heard).toEqual([{ text: 'open youtube and then play it', routed: 'command' }])
     // One utterance of STT audio: half A + the pause + half B, tail-trimmed.
     expect(harness.transcriber.audio).toHaveLength(1)
-    expect(harness.transcriber.audio[0].length).toBe((8 + DEFAULTS.endFrames + 6 + MERGED_SUBMIT_SILENCE - 2) * 512)
+    expect(harness.transcriber.audio[0].length).toBe((8 + DEFAULTS.endFrames + 6 + 20) * 512)
   })
 
   it('keeps the ear open through the pause — the STT window starts only when the utterance submits', async () => {
@@ -760,10 +764,36 @@ describe('voice session — perf spans (#27)', () => {
     const harness = await createSession({ transcriber: new FakeTranscriber(['go']), perf: {} })
 
     harness.session.arm()
-    await harness.speakUtterance() // 8 speech frames; 8 + 75 − 2 frames handed to STT (#60 defaults)
+    await harness.speakUtterance() // 8 speech frames, then the pause cap; at most 20 frames of it handed to STT (#357)
 
     const stt = harness.perf.find((record) => record.stage === 'stt')
-    expect(stt!.detail).toEqual({ speechMs: 8 * 32, totalMs: (8 + SUBMIT_SILENCE - 2) * 32, truncated: false })
+    expect(stt!.detail).toEqual({ speechMs: 8 * 32, totalMs: (8 + 20) * 32, truncated: false, endedBy: 'cap', silenceMs: SUBMIT_SILENCE * 32 })
+  })
+
+  it('carries the turn check that fired the Endpoint in the stt detail (#357)', async () => {
+    const harness = await createSession({
+      transcriber: new FakeTranscriber(['go']),
+      perf: {},
+      turn: {
+        score: async () => {
+          harness.clock.advance(37)
+          return 0.92
+        },
+      },
+    })
+
+    harness.session.arm()
+    await harness.speakUtterance()
+
+    const stt = harness.perf.find((record) => record.stage === 'stt')
+    expect(stt!.detail).toMatchObject({
+      endedBy: 'turn',
+      silenceMs: DEFAULTS.turnCheckFrames * 32,
+      turnVerdict: 'finished',
+      turnProbability: 0.92,
+      turnScoreMs: 37,
+    })
+    expect(harness.commands).toEqual(['go'])
   })
 
   it('still logs the stt span with the error when transcription fails', async () => {
@@ -932,7 +962,7 @@ describe('voice session — streaming transcriber port (#40)', () => {
     ])
     expect(harness.transcriber.pushedFrames).toHaveLength(6 + SUBMIT_SILENCE - 1)
     expect(harness.transcriber.audio).toHaveLength(1)
-    expect(harness.transcriber.audio[0]).toHaveLength((8 + SUBMIT_SILENCE - 2) * 512) // pre-roll + speech + tail, padding trimmed
+    expect(harness.transcriber.audio[0]).toHaveLength((8 + 20) * 512) // pre-roll + speech + at most 20 frames of tail (#357)
     expect(harness.commands).toEqual(['open youtube'])
   })
 

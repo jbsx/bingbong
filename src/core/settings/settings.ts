@@ -8,29 +8,13 @@ import { IDLE_CARD_IDS, sanitizeIdleCards, type IdleCardId } from '../idle/slots
 import { defaultNewsFeeds, sanitizeNewsFeeds, type NewsFeed } from '../news/feeds'
 import { defaultInterestProfile, sanitizeInterestProfile, type InterestProfile } from '../news/interestProfile'
 import { defaultWeightSettings, sanitizeWeightSettings, type WeightSettings } from '../scale/weightSettings'
+import { PAUSE_CAP_MS_DEFAULT, PAUSE_CAP_MS_MAX, PAUSE_CAP_MS_MIN, RESUMPTION_MERGE_MS_DEFAULT, RESUMPTION_MERGE_MS_MAX, RESUMPTION_MERGE_MS_MIN } from './endpointTimings'
 
 export const WAKE_WORD_THRESHOLD_MIN = 0
 export const WAKE_WORD_THRESHOLD_MAX = 1
-/** Endpoint-delay slider bounds (#37): silence that ends an utterance. */
-export const ENDPOINT_DELAY_MS_MIN = 200
-export const ENDPOINT_DELAY_MS_MAX = 1500
-/**
- * 700 ms (ADR 0076 amendment 2026-10-20): 300 ms (#324) cut a spoken
- * sentence at every breath — "Open Donald Trump's … Truth Social profile"
- * fired as two Commands, each half misheard. An Early Fire still fires a
- * complete Command before the Endpoint, so the wait lands only on the
- * Commands that read nothing until the words stop.
- */
-export const ENDPOINT_DELAY_MS_DEFAULT = 700
-/**
- * Resumption-merge window bounds (#60/#59): silence held after the endpoint
- * before the utterance submits. 0 disables the hold — the endpoint submits
- * directly.
- */
-export const RESUMPTION_MERGE_MS_MIN = 0
-export const RESUMPTION_MERGE_MS_MAX = 3_000
-/** 0 on this branch (ADR 0076): no hold after the Endpoint. (`main` holds 1,500 ms.) */
-export const RESUMPTION_MERGE_MS_DEFAULT = 0
+export { PAUSE_CAP_MS_DEFAULT, PAUSE_CAP_MS_MAX, PAUSE_CAP_MS_MIN, RESUMPTION_MERGE_MS_DEFAULT, RESUMPTION_MERGE_MS_MAX, RESUMPTION_MERGE_MS_MIN } from './endpointTimings'
+/** The plain timer's last default (847d039): a saved value of it is read as the new default once (#357). */
+const PAUSE_CAP_MS_BEFORE_TURN_CHECK = 700
 /**
  * Hot Listen silence bounds (#326): the silence after the last Endpoint
  * that closes the Listen one wake opened.
@@ -66,8 +50,8 @@ export interface AppSettings {
   /** Microphone device id from enumerateDevices; 'default' follows the OS. */
   micId: string
   wakeWordThreshold: number
-  /** Silence (ms) that ends an utterance — the endpoint-delay slider (#37). */
-  endpointDelayMs: number
+  /** Silence (ms) that ends an Utterance whatever the turn check says — the pause cap (#357, the endpoint delay of #37). */
+  pauseCapMs: number
   /**
    * Silence (ms) held after the endpoint before submission (#60): speech
    * resuming inside the window rejoins the utterance. 0 disables the hold.
@@ -112,7 +96,7 @@ export function defaultSettings(): AppSettings {
   return {
     micId: 'default',
     wakeWordThreshold: 0.5,
-    endpointDelayMs: ENDPOINT_DELAY_MS_DEFAULT,
+    pauseCapMs: PAUSE_CAP_MS_DEFAULT,
     resumptionMergeMs: RESUMPTION_MERGE_MS_DEFAULT,
     hotListenSilenceMs: HOT_LISTEN_SILENCE_MS_DEFAULT,
     webZoomPercent: WEB_ZOOM_PERCENT_DEFAULT,
@@ -142,9 +126,21 @@ function asThreshold(value: unknown, fallback: number): number {
   return Math.min(WAKE_WORD_THRESHOLD_MAX, Math.max(WAKE_WORD_THRESHOLD_MIN, value))
 }
 
-function asEndpointDelay(value: unknown, fallback: number): number {
+function asPauseCap(value: unknown, fallback: number): number {
   if (typeof value !== 'number' || Number.isNaN(value)) return fallback
-  return Math.min(ENDPOINT_DELAY_MS_MAX, Math.max(ENDPOINT_DELAY_MS_MIN, value))
+  return Math.min(PAUSE_CAP_MS_MAX, Math.max(PAUSE_CAP_MS_MIN, value))
+}
+
+/**
+ * The pause cap as saved (#357). Settings saved before it hold the
+ * endpoint delay under its old key: that value carries over, except the
+ * plain timer's 700 ms default, which becomes today's default. Saved once
+ * under the new key, any value — 700 too — is the owner's and stays.
+ */
+function pauseCap(record: Record<string, unknown>, fallback: number): number {
+  if (record.pauseCapMs !== undefined) return asPauseCap(record.pauseCapMs, fallback)
+  if (record.endpointDelayMs === PAUSE_CAP_MS_BEFORE_TURN_CHECK) return fallback
+  return asPauseCap(record.endpointDelayMs, fallback)
 }
 
 function asResumptionMerge(value: unknown, fallback: number): number {
@@ -219,7 +215,7 @@ export function sanitizeSettings(raw: unknown): AppSettings {
   return {
     micId: asString(record.micId, defaults.micId),
     wakeWordThreshold: asThreshold(record.wakeWordThreshold, defaults.wakeWordThreshold),
-    endpointDelayMs: asEndpointDelay(record.endpointDelayMs, defaults.endpointDelayMs),
+    pauseCapMs: pauseCap(record, defaults.pauseCapMs),
     resumptionMergeMs: asResumptionMerge(record.resumptionMergeMs, defaults.resumptionMergeMs),
     hotListenSilenceMs: asHotListenSilence(record.hotListenSilenceMs, defaults.hotListenSilenceMs),
     webZoomPercent: asWebZoomPercent(record.webZoomPercent, defaults.webZoomPercent),

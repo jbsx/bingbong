@@ -1,7 +1,7 @@
 import type { CommandRunState } from '../pipeline/runState'
 import type { Clock } from '../ports/clock'
 import type { TtsIdle, TtsSpeaker } from '../ports/tts'
-import type { Transcriber, VadScorer } from '../ports/stt'
+import type { Transcriber, TurnDetector, VadScorer } from '../ports/stt'
 import type { WakeWordDetector } from '../ports/wake'
 import type { VoiceHeardEvent, VoiceListenReason, VoiceState } from './ipcChannels'
 import { createUtteranceEndpointer, VAD_FRAME_SAMPLES, type UtteranceEnd, type UtteranceEndpointerConfig } from './vadEndpointing'
@@ -52,6 +52,11 @@ export interface VoiceSessionDeps {
   tts: TtsSpeaker
   wake?: VoiceWakeDeps
   endpointerConfig?: Partial<UtteranceEndpointerConfig>
+  /**
+   * The turn check (#357): asked at a short pause whether the words read
+   * finished. Absent leaves the pause cap a plain silence timer.
+   */
+  turn?: TurnDetector
   /**
    * Live from settings (#37): supersedes endpointerConfig when present, and a
    * changed value re-creates the endpointer at the next listen start (the
@@ -134,7 +139,8 @@ export interface VoiceSession {
  */
 export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
   let appliedEndpointerConfig: Partial<UtteranceEndpointerConfig> | undefined = deps.endpointerConfig
-  let endpointer = createUtteranceEndpointer(appliedEndpointerConfig)
+  const endpointerDeps = { ...(deps.turn ? { turn: deps.turn } : {}), now: () => deps.clock.now() }
+  let endpointer = createUtteranceEndpointer(appliedEndpointerConfig, endpointerDeps)
 
   /**
    * The endpoint delay slider (#37) applies to the next utterance: the
@@ -147,7 +153,7 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
     const next = deps.getEndpointerConfig ? deps.getEndpointerConfig() : appliedEndpointerConfig
     if (JSON.stringify(next) === JSON.stringify(appliedEndpointerConfig)) return
     appliedEndpointerConfig = next
-    endpointer = createUtteranceEndpointer(next)
+    endpointer = createUtteranceEndpointer(next, endpointerDeps)
   }
 
   /** Listen start: apply any config change, then drop in-flight audio. */
@@ -402,7 +408,9 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
       scored.push(prob)
       if (!listening) return scored
       const wasIdle = endpointer.isIdle()
-      const utterance = endpointer.push(prob, frame)
+      // A short pause awaits the turn check (#357); the listen may close under it.
+      const utterance = await endpointer.push(prob, frame)
+      if (!listening) return scored
       if (utterance) {
         await handleUtterance(utterance)
       } else if (!endpointer.isIdle()) {
@@ -471,6 +479,16 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
           speechMs: utterance.speechMs,
           totalMs: utterance.totalMs,
           truncated: utterance.truncated,
+          // What fired the Endpoint and the turn check behind it (#357): `pnpm perf:report` counts the cap against Smart Turn.
+          endedBy: utterance.endedBy,
+          silenceMs: utterance.silenceMs,
+          ...(utterance.turn
+            ? {
+                turnVerdict: utterance.turn.verdict,
+                ...(utterance.turn.probability !== undefined ? { turnProbability: utterance.turn.probability } : {}),
+                turnScoreMs: utterance.turn.scoreMs,
+              }
+            : {}),
           ...extra,
         })
       } catch (error) {

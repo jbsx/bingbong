@@ -41,6 +41,23 @@ export interface PerfReport {
   reaction: ReactionReport
   /** The decision log's shares (#324): readings, Jev's share and latency, Misfires. */
   decisions: DecisionReport
+  /** What fired each Endpoint (#357), from the stt spans that say; null when none do. */
+  endpoints: EndpointReport | null
+}
+
+/** The turn check against the pause cap (#357): how often each fired the Endpoint. */
+export interface EndpointReport {
+  /** Smart Turn read the Utterance finished at the short pause. */
+  turn: number
+  /** The pause cap fired; of these, how many the check read unfinished, and how many it failed. */
+  cap: number
+  capUnfinished: number
+  capFailed: number
+  /** The 30 s hard cap. */
+  max: number
+  /** Ms the turn checks took; null when none was asked. */
+  turnCheckP50: number | null
+  turnCheckP95: number | null
 }
 
 export interface ReportContext {
@@ -55,6 +72,39 @@ const SUMMARY_STAGE = 'summary'
 /** Stored and recomputed sums are floats summed in the same order; anything
  * beyond this is real data loss, not rounding noise. */
 const DURATION_TOLERANCE_MS = 1
+
+/** Tallies the stt spans' endedBy (#357); spans logged before the turn check carry none. */
+function buildEndpointReport(records: readonly PerfSpanRecord[]): EndpointReport | null {
+  const report: EndpointReport = { turn: 0, cap: 0, capUnfinished: 0, capFailed: 0, max: 0, turnCheckP50: null, turnCheckP95: null }
+  const checkMs: number[] = []
+  let counted = 0
+  for (const record of records) {
+    const detail = record.detail
+    if (record.stage !== 'stt' || detail === undefined) continue
+    const endedBy = detail.endedBy
+    if (endedBy !== 'turn' && endedBy !== 'cap' && endedBy !== 'max') continue
+    counted += 1
+    report[endedBy] += 1
+    if (endedBy === 'cap' && detail.turnVerdict === 'unfinished') report.capUnfinished += 1
+    if (endedBy === 'cap' && detail.turnVerdict === 'failed') report.capFailed += 1
+    if (typeof detail.turnScoreMs === 'number') checkMs.push(detail.turnScoreMs)
+  }
+  if (counted === 0) return null
+  const sorted = checkMs.sort((a, b) => a - b)
+  if (sorted.length > 0) {
+    report.turnCheckP50 = nearestRankPercentile(sorted, 50)
+    report.turnCheckP95 = nearestRankPercentile(sorted, 95)
+  }
+  return report
+}
+
+function formatEndpointLine(endpoints: EndpointReport): string {
+  const checks = endpoints.turnCheckP50 === null || endpoints.turnCheckP95 === null ? 'no turn checks' : `turn check p50 ${formatMs(endpoints.turnCheckP50)} p95 ${formatMs(endpoints.turnCheckP95)}`
+  return (
+    `endpoints: smart turn ${endpoints.turn} | pause cap ${endpoints.cap} (${endpoints.capUnfinished} unfinished, ${endpoints.capFailed} failed)` +
+    ` | hard cap ${endpoints.max} | ${checks}`
+  )
+}
 
 /** Defensively reads a summary record's stage tallies; garbage degrades to {}. */
 function storedStages(record: PerfSpanRecord): Record<string, StageTally> {
@@ -155,6 +205,7 @@ export function buildPerfReport(records: readonly PerfSpanRecord[], decisions: r
     mismatches,
     reaction: buildReactionReport(records),
     decisions: buildDecisionReport(decisions),
+    endpoints: buildEndpointReport(records),
   }
 }
 
@@ -209,6 +260,7 @@ export function formatPerfReport(report: PerfReport, context: ReportContext): st
       for (const problem of mismatch.problems) lines.push(`  ${mismatch.turnId}: ${problem}`)
     }
   }
+  if (report.endpoints !== null) lines.push(formatEndpointLine(report.endpoints))
   appendCommandLines(lines, report, context)
   return lines.join('\n')
 }
