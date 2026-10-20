@@ -5,7 +5,7 @@ import type { PipelineEvent } from '../../core/pipeline/events'
 import type { CommandRunState } from '../../core/pipeline/runState'
 import type { PageLink, PageSnapshot } from '../../core/browser/snapshot'
 import type { PerfTracer } from '../../core/perf/perfTracer'
-import { PRESS_KEYS, commandPageOf, describeCommand, isMounting, targetLabel, commandKeepsIdle, type Command, type CommandPage } from '../../core/command/command'
+import { PRESS_KEYS, commandPageOf, describeCommand, isMounting, targetLabel, commandKeepsIdle, verbNeedsPage, type Command, type CommandPage } from '../../core/command/command'
 import { dismissalLadder, isDismissPhrase, obstacleOf, ruledDismissal, type DismissChoice } from '../../core/command/dismissDialog'
 import { COMMAND_HELP } from '../../core/command/help'
 import { carriesWordsPastAddress, headsAnotherVerb, isSearchLanding, localMatch, resultRefsOf } from '../../core/command/localMatch'
@@ -920,7 +920,15 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     inFlight = { turnId, generation: mine }
     const current = (): boolean => inFlight !== null && inFlight.generation === mine
 
-    publish({ type: 'command', turnId, text, action: describeCommand(command, page), ...(commandKeepsIdle(command) ? { keepsIdle: true } : {}), task, at: firedAt })
+    const paneHasPage = isRealPage(page.url) || isRealPage(browser.state().url)
+    publish({ type: 'command', turnId, text, action: describeCommand(command, page), ...(commandKeepsIdle(command, paneHasPage) ? { keepsIdle: true } : {}), task, at: firedAt })
+    if (!paneHasPage && verbNeedsPage(command.verb)) {
+      // A blank pane has nothing to act on (#361): it is never shown, and an action on it, hidden under the Idle Screen, would never settle.
+      inFlight = null
+      answerFailure(turnId, SPOKEN_FAILURES.noPage)
+      publish({ type: 'done', turnId, outcome: 'failed', at: at() })
+      return { outcome: 'wall' }
+    }
     if (command.verb === 'stop') {
       // `stop` is an abort said in words: a reading it went past was stopped, and the page's load ends with it.
       stoppedAt.add(submitted)

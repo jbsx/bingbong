@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { PageSnapshot, SnapshotRef } from '../browser/snapshot'
-import { commandPageOf, isMounting, type CommandPage } from './command'
+import { commandKeepsIdle, commandPageOf, isMounting, type Command, type CommandPage, type CommandVerb } from './command'
 
 // The page a Command is read against (#324): its address, title and refs —
 // and, with a dialog open, the dialog (#336).
@@ -64,5 +64,19 @@ describe('isMounting (post mortem 2026-10-19 23:26)', () => {
     expect(isMounting(page(5, { text: ' ', refs: [] }))).toBe(true)
     expect(isMounting(page(5, { text: '', refs: [1] }))).toBe(false)
     expect(isMounting(page(5, { text: 'Sign up to see more', refs: [] }))).toBe(false)
+  })
+})
+
+describe('commandKeepsIdle on a blank pane (#361)', () => {
+  const command = (verb: CommandVerb): Command => ({ verb, target: null, slot: null })
+
+  it('keeps the Idle Screen up for every Command but one that opens a page', () => {
+    for (const verb of ['scroll_down', 'read', 'click', 'back', 'reload', 'press', 'screenshot', 'help'] as const) expect(commandKeepsIdle(command(verb), false)).toBe(true)
+    for (const verb of ['navigate', 'search', 'resume'] as const) expect(commandKeepsIdle(command(verb), false)).toBe(false)
+  })
+
+  it('wakes for a pane Command with a page in the pane, as before', () => {
+    expect(commandKeepsIdle(command('scroll_down'), true)).toBe(false)
+    expect(commandKeepsIdle(command('timer'), true)).toBe(true)
   })
 })

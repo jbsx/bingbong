@@ -76,7 +76,7 @@ import { createWeighInStore } from './scale/weighInStore'
 import { attachTimerAlarm } from './timer/timerAlarm'
 import { attachIdleShortcut } from './idleShortcut'
 import { attachIdleTyping } from './idleTyping'
-import { IDLE_IPC } from '../core/idle/ipcChannels'
+import { IDLE_IPC, type IdleShown } from '../core/idle/ipcChannels'
 import { createAplayPlayer } from './tts/createAplayPlayer'
 import { KIOSK_FLAG, resolveLaunchConfig } from '../core/app/launchConfig'
 import { attachGpuStability, gpuCrashRecordPath } from './attachGpuStability'
@@ -268,9 +268,12 @@ async function createWindow(): Promise<BrowserWindow> {
   const pane = createBrowserPane({ getZoomPercent: () => settingsStore.get().webZoomPercent })
   // The feed panel overlay (#45) stacks above the browser pane — attached
   // above it before the first frame.
+  // What the dashboard last said of the Idle Screen (#361): typing opens its Prompt, and the Feed stays shut under it.
+  let idleShown: IdleShown = { up: false, prompting: false }
   const feedPanel = attachFeedPanelOverlayToWindow(win, {
     preloadDir: join(__dirname, '../preload'),
     defaultWidth: defaultFeedPanelWidth(),
+    shortcutHeld: () => idleShown.up,
   })
   // The panel shortcut also fires while the pane owns focus.
   feedPanel.registerShortcut(pane.view.webContents)
@@ -285,22 +288,23 @@ async function createWindow(): Promise<BrowserWindow> {
   for (const contents of [win.webContents, pane.view.webContents, feedPanel.contents()]) {
     if (contents !== null) win.on('closed', attachIdleShortcut(contents, enterIdle))
   }
-  // Typing on the Idle Screen goes to the Prompt Bar, from whichever surface owns focus.
-  let idleShown = false
+  // Typing on the Idle Screen goes to its Prompt, from whichever surface owns focus.
   const onIdleShown = (event: Electron.IpcMainEvent, shown: unknown): void => {
-    if (event.sender === win.webContents) idleShown = shown === true
+    if (event.sender !== win.webContents) return
+    const report = shown as Partial<IdleShown> | null | undefined
+    idleShown = { up: report?.up === true, prompting: report?.prompting === true }
   }
   ipcMain.on(IDLE_IPC.shown, onIdleShown)
   win.on('closed', () => ipcMain.removeListener(IDLE_IPC.shown, onIdleShown))
   const typeFromIdle = (text: string): void => {
-    // The first key wakes the dashboard; the keys after it reach the overlay
-    // directly, so the screen counts as down from here.
-    idleShown = false
-    if (!win.isDestroyed() && !win.webContents.isDestroyed()) win.webContents.send(IDLE_IPC.wake)
-    feedPanel.typeIntoPrompt(text)
+    // Each key goes over IPC until the dashboard says the Prompt's field is
+    // focused; from then the keys reach the field directly and none is lost.
+    if (win.isDestroyed() || win.webContents.isDestroyed()) return
+    win.webContents.focus()
+    win.webContents.send(IDLE_IPC.typed, text)
   }
   for (const contents of [win.webContents, pane.view.webContents]) {
-    win.on('closed', attachIdleTyping(contents, { shown: () => idleShown, onType: typeFromIdle }))
+    win.on('closed', attachIdleTyping(contents, { shown: () => idleShown.up && !idleShown.prompting, onType: typeFromIdle }))
   }
 
   const sendToRenderer = (channel: string, payload: unknown): void => {

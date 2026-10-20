@@ -155,8 +155,25 @@ export function verbKeepsIdle(verb: CommandVerb): boolean {
   return verb === 'timer' || verb === 'stop' || verb === 'done' || verb === 'none' || verb === 'play'
 }
 
-/** Whether this Command leaves the Idle Screen up: its verb does, unless it is "show the video", which wakes the dashboard on the watch page (#344). */
-export function commandKeepsIdle(command: Command): boolean {
+/** The verbs that act on the page in the pane: with none there (#361), they answer so and touch nothing — the hidden pane would never answer them. */
+export function verbNeedsPage(verb: CommandVerb): boolean {
+  return !verbKeepsIdle(verb) && !verbOpensPage(verb) && verb !== 'help'
+}
+
+/** The verbs that bring a page to a blank pane. */
+export function verbOpensPage(verb: CommandVerb): boolean {
+  return verb === 'navigate' || verb === 'search' || verb === 'resume'
+}
+
+/**
+ * Whether this Command leaves the Idle Screen up: its verb does, unless it
+ * is "show the video", which wakes the dashboard on the watch page (#344).
+ * On a blank pane every Command does but one that opens a page (#361): the
+ * blank pane is never worth the screen, so a `scroll down` there answers
+ * over the Idle Screen.
+ */
+export function commandKeepsIdle(command: Command, paneHasPage = true): boolean {
+  if (!paneHasPage && !verbOpensPage(command.verb)) return true
   return verbKeepsIdle(command.verb) && command.music?.kind !== 'show'
 }
 

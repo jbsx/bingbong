@@ -218,31 +218,35 @@ describe('idle screen e2e: the Last Page and resume', () => {
     expect(await idleShown()).toBe(true)
   })
 
-  it('typing on the idle screen wakes it into the Prompt Bar, the panel opened, from the pane or the dashboard', async () => {
+  it('typing on the idle screen opens the Idle Prompt over it, the Feed shut, from the pane or the dashboard (#361)', async () => {
     const IDLE_SHORTCUT = { key: 'L', code: 'KeyL', windowsVirtualKeyCode: 76, modifiers: 2 /* Ctrl */ | 8 /* Shift */ }
     const idleShown = (): Promise<true> =>
       waitFor(async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('.idle-screen')`)) ? true : undefined), { timeoutMs: 5000, intervalMs: 100 })
-    const draftIs = (text: string): Promise<true> =>
+    const promptIs = (text: string | null): Promise<true> =>
       waitFor(
-        async () => ((await harness.overlayEval<string>(`document.querySelector('.prompt-input')?.value ?? ''`)) === text ? true : undefined),
+        async () => ((await harness.dashboardEval<string | null>(`document.querySelector('.idle-prompt-input')?.value ?? null`)) === text ? true : undefined),
         { timeoutMs: 5000, intervalMs: 100 },
       )
     const panelOpen = (): Promise<boolean> => harness.overlayEval<boolean>(`!!document.querySelector('.overlay-chrome--open')`)
 
     for (const target of ['pane', 'dashboard'] as const) {
       if (await panelOpen()) await harness.clickOverlayElement('[aria-label="Collapse the feed panel"]')
-      // Clear the last round's draft through the native setter, so React hears the change.
-      await harness.overlayEval(
-        `(() => { const input = document.querySelector('.prompt-input'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, ''); input.dispatchEvent(new Event('input', { bubbles: true })) })()`,
-      )
       await harness.pressKey(target, IDLE_SHORTCUT)
       expect(await idleShown()).toBe(true)
 
       await harness.pressKey(target, { key: 'g', code: 'KeyG', windowsVirtualKeyCode: 71 })
 
-      expect(await draftIs('g')).toBe(true)
-      expect(await panelOpen()).toBe(true)
-      expect(await harness.dashboardEval<boolean>(`!!document.querySelector('.idle-screen')`)).toBe(false)
+      expect(await promptIs('g')).toBe(true)
+      expect(await panelOpen()).toBe(false)
+      expect(await harness.dashboardEval<boolean>(`!!document.querySelector('.idle-screen')`)).toBe(true)
+
+      // A tap outside the Prompt closes it; the screen stays.
+      await harness.clickDashboardElement('.idle-prompt-backdrop')
+      expect(await promptIs(null)).toBe(true)
+      expect(await harness.dashboardEval<boolean>(`!!document.querySelector('.idle-screen')`)).toBe(true)
+      // With a page in the pane, a tap wakes the dashboard as before.
+      await harness.clickDashboardElement('.idle-screen')
+      await waitFor(async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('.url-input')`)) ? true : undefined), { timeoutMs: 10000, intervalMs: 100 })
     }
   })
 })

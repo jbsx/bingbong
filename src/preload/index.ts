@@ -20,7 +20,7 @@ import { WEIGHT_IPC, type ScaleStatus } from '../core/scale/ipcChannels'
 import type { WeighIn } from '../core/scale/weighIns'
 import type { WeighInPopupState } from '../core/scale/weighInPopup'
 import type { CalendarEvent, CalendarRange } from '../core/calendar/calendar'
-import { IDLE_IPC } from '../core/idle/ipcChannels'
+import { IDLE_IPC, type IdleShown } from '../core/idle/ipcChannels'
 import type { TimerState } from '../core/timer/timer'
 import { USAGE_IPC } from '../core/usage/ipcChannels'
 import type { UsageSnapshot } from '../core/usage/usage'
@@ -60,13 +60,13 @@ contextBridge.exposeInMainWorld('bingbong', {
       ipcRenderer.on(IDLE_IPC.enter, wrapped)
       return () => ipcRenderer.removeListener(IDLE_IPC.enter, wrapped)
     },
-    reportShown: (shown: boolean): void => {
+    reportShown: (shown: IdleShown): void => {
       ipcRenderer.send(IDLE_IPC.shown, shown)
     },
-    onWake: (listener: () => void): (() => void) => {
-      const wrapped = (): void => listener()
-      ipcRenderer.on(IDLE_IPC.wake, wrapped)
-      return () => ipcRenderer.removeListener(IDLE_IPC.wake, wrapped)
+    onTyped: (listener: (text: string) => void): (() => void) => {
+      const wrapped = (_event: unknown, text: string): void => listener(text)
+      ipcRenderer.on(IDLE_IPC.typed, wrapped)
+      return () => ipcRenderer.removeListener(IDLE_IPC.typed, wrapped)
     },
   },
   timer: {
@@ -162,11 +162,6 @@ contextBridge.exposeInMainWorld('bingbong', {
       const wrapped = (_event: unknown, state: FeedPanelState): void => listener(state)
       ipcRenderer.on(PANEL_IPC.state, wrapped)
       return () => ipcRenderer.removeListener(PANEL_IPC.state, wrapped)
-    },
-    onTyped: (listener: (text: string) => void): (() => void) => {
-      const wrapped = (_event: unknown, text: string): void => listener(text)
-      ipcRenderer.on(PANEL_IPC.typed, wrapped)
-      return () => ipcRenderer.removeListener(PANEL_IPC.typed, wrapped)
     },
   },
   tts: {

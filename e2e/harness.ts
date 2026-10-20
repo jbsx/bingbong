@@ -37,6 +37,8 @@ export interface Harness {
   ensurePanelOpen(): Promise<void>
   clickPaneAt(x: number, y: number): Promise<void>
   typeIntoPane(text: string): Promise<void>
+  /** Text into whatever holds focus in the dashboard (Input.insertText): the Idle Prompt's field once a key opened it (#361). */
+  typeIntoDashboard(text: string): Promise<void>
   /** Real (input-pipeline) Ctrl/Cmd+Shift+F — fires before-input-event. */
   pressPanelShortcut(target?: TargetKind): Promise<void>
   /** Real (input-pipeline) keypress in a target's focused element. */
@@ -84,6 +86,8 @@ interface HarnessKey {
   windowsVirtualKeyCode?: number
   /** CDP modifier bitmask (e.g. 2 Ctrl | 8 Shift). */
   modifiers?: number
+  /** The text the key types ('\r' for Enter): sent as a keyDown that types it, so a form's Enter submits. */
+  text?: string
 }
 
 interface TargetInfo {
@@ -476,6 +480,13 @@ async function buildHarness(
       await dispatchClick(sid, x, y)
     },
 
+    async typeIntoDashboard(text) {
+      const sid = sidOf('dashboard')
+      if (!sid) throw new Error('dashboard target not found')
+      await activateFor('dashboard')
+      await cdp.send('Input.insertText', { text }, sid)
+    },
+
     async typeIntoPane(text) {
       const sid = paneSid()
       if (!sid) throw new Error('pane target not found')
@@ -494,8 +505,8 @@ async function buildHarness(
       const sid = sidOf(target)
       if (!sid) throw new Error(`${target} target not found`)
       await activateFor(target)
-      const { key: keyValue, code = keyValue, windowsVirtualKeyCode = 0, modifiers = 0 } = key
-      for (const type of ['rawKeyDown', 'keyUp'] as const) {
+      const { key: keyValue, code = keyValue, windowsVirtualKeyCode = 0, modifiers = 0, text } = key
+      for (const type of [text === undefined ? 'rawKeyDown' : 'keyDown', 'keyUp'] as const) {
         await cdp.send(
           'Input.dispatchKeyEvent',
           {
@@ -505,6 +516,7 @@ async function buildHarness(
             code,
             windowsVirtualKeyCode,
             nativeVirtualKeyCode: windowsVirtualKeyCode,
+            ...(type === 'keyDown' ? { text } : {}),
           },
           sid,
         )

@@ -480,8 +480,9 @@ describe('a Command the Local Match settles', () => {
     decision.script.push({ answers: { verb: choice('search'), target: choice('none'), slot: choice('s2-4') } }, { answers: { verb: choice('done'), target: choice('none'), slot: choice('none') } })
     await runner.run('search for rust async book', { source: 'spoken' })
     await runner.run('type hello in the search box', { source: 'spoken' })
-    await runner.run('back', { source: 'spoken' })
+    // Read before the back: the fake's back lands on a blank pane, where a read has nothing to read (#361).
     await runner.run('read', { source: 'spoken' })
+    await runner.run('back', { source: 'spoken' })
     expect(browser.navigations).toEqual(['https://youtube.com', 'https://duckduckgo.com/?q=rust%20async%20book'])
     expect(browser.clicks).toEqual([2])
     expect(browser.scrolls).toEqual(['down'])
@@ -2823,5 +2824,25 @@ describe('the one Answer every Command leaves (#333)', () => {
     browser.click = async () => blockedActionHead('click', 2, { fact: 'notShown' })
     await runner.run('click 2')
     expect(displays(events)).toEqual([expect.objectContaining({ text: SPOKEN_FAILURES.blocked, failure: true })])
+  })
+})
+
+describe('a Command on a blank pane (#361)', () => {
+  it('answers that no page is open, touches nothing and keeps the Idle Screen up', async () => {
+    const { browser, events, runner } = harness()
+    browser.snapshot = { ...browser.snapshot, url: 'about:blank', title: '', refs: [] }
+    await runner.run('scroll down')
+    expect(browser.scrolls).toEqual([])
+    expect(events[0]).toMatchObject({ type: 'command', action: 'scroll down', keepsIdle: true })
+    expect(events.find((event) => event.type === 'display')).toMatchObject({ text: "There's no page open.", failure: true })
+    expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'failed' })
+  })
+
+  it('opens a page as ever: a navigate wakes the dashboard', async () => {
+    const { browser, events, runner } = harness()
+    browser.snapshot = { ...browser.snapshot, url: 'about:blank', title: '', refs: [] }
+    await runner.run('navigate example.org')
+    expect(browser.navigations).toEqual(['https://example.org'])
+    expect(events[0]).not.toHaveProperty('keepsIdle')
   })
 })

@@ -158,6 +158,8 @@ describe('a Task whose hop 0 Early Fired (#328, AC6)', () => {
 describe('Early Fire through the voice session', () => {
   it('fires "scroll down" from a partial before the Endpoint with no Jev call, and the Endpoint makes no second Command', async () => {
     const browser = new FakeBrowser()
+    // A page in the pane: on a blank one a scroll has nothing to act on (#361).
+    browser.snapshot = { ...browser.snapshot, url: 'https://example.com/', title: 'Example' }
     const events: PipelineEvent[] = []
     const records: CommandLogRecord[] = []
     const perf = fakePerfHarness()

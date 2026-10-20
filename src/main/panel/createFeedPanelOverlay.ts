@@ -77,8 +77,6 @@ export interface FeedPanelOverlay {
   /** The width drag ended: restore the view bounds from the reported slot (#65). */
   endResize(): void
   toggle(): void
-  /** Text typed on the Idle Screen: opens the panel if collapsed, focuses it, and appends the text to the Prompt Bar. */
-  typeIntoPrompt(text: string): void
   state(): FeedPanelState
   /**
    * Registers Ctrl/Cmd+Shift+F on an input surface's webContents (the pane)
@@ -115,7 +113,7 @@ function isReloadChord(input: Electron.Input): boolean {
 
 export function attachFeedPanelOverlayToWindow(
   win: BrowserWindow,
-  deps: { preloadDir: string; defaultWidth?: number },
+  deps: { preloadDir: string; defaultWidth?: number; shortcutHeld?: () => boolean },
 ): FeedPanelOverlay {
   const view = new WebContentsView({
     webPreferences: {
@@ -166,7 +164,8 @@ export function attachFeedPanelOverlayToWindow(
     const onBeforeInput = (event: Electron.Event, input: Electron.Input): void => {
       if (isPanelShortcut(input)) {
         event.preventDefault()
-        overlay.toggle()
+        // The Feed is not reached from the Idle Screen (#361).
+        if (deps.shortcutHeld?.() !== true) overlay.toggle()
       }
     }
     contents.on('before-input-event', onBeforeInput)
@@ -251,13 +250,6 @@ export function attachFeedPanelOverlayToWindow(
     toggle() {
       fold.toggleOpen()
       broadcast()
-    },
-    typeIntoPrompt(text) {
-      // Typing is a human act, so it may open the panel (ADR 0021).
-      if (!fold.state().open) overlay.toggle()
-      if (wc.isDestroyed()) return
-      wc.focus()
-      wc.send(PANEL_IPC.typed, text)
     },
     state: () => fold.state(),
     registerShortcut,

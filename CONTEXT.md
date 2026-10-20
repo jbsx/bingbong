@@ -340,11 +340,19 @@ _Avoid_: custom word, user dictionary entry
 ### Views
 
 **Prompt Bar**:
-The single typed-input surface, living in the Feed Panel's footer. A typed
+The typed-input surface of the dashboard, living in the Feed Panel's footer. A typed
 line is a Command exactly as a spoken one is, read the same way; a delivered
 draft clears on Enter, and a rejected one is restored — never silently
 dropped. Drawn as the Voice Prompt, not a boxed field (ADR 0078).
 _Avoid_: command box, steer box, input bar, activity bar
+
+**Idle Prompt**:
+The Prompt Bar's twin over the Idle Screen (#361), with no Feed beneath it:
+a typed key opens it with that key in it, Space opens it empty, Enter runs
+the line as a Command, and Escape or a tap outside closes it, the screen
+left up. A Command that opens a page wakes the dashboard on it; one that
+leaves the screen up shows its Answer under the line.
+_Avoid_: idle search box
 
 **Voice Prompt**:
 The slim line that is both ear and keyboard (owner, 2026-10-20, F1
@@ -508,11 +516,16 @@ with the Status Capsule shown on it while they run, so a Command that never
 needs the pane (the Timer, a Stop, `done`, a line read as no Command, and
 every Player verb, `play <words>` included — #344) is heard and performed
 over it: a song is searched for and played in the hidden pane, and the
-music plays on there. Input, a Command that acts on the pane, or "show the
+music plays on there. A tap, a Command that acts on the pane, or "show the
 video" / "show it" (the one music line that wakes it, onto the watch page)
-unmounts it; the browser pane is only hidden beneath it, never reset. A
-printable key typed on it starts a line in the Prompt Bar: the Feed panel
-opens if collapsed and the key is the draft's first character. The
+unmounts it; the browser pane is only hidden beneath it, never reset. The
+blank pane is never shown (#361; owner, 2026-10-20: "isnt it always better
+to just have the idle screen displayed instead?"): with no page in the pane
+a tap leaves the screen up, and a Command on the pane that does not open a
+page (`navigate`, `search`, `resume` do) answers "There's no page open." over
+it. A printable key typed on it opens the Idle Prompt with the key in it; a
+key that types nothing (PgUp, Home, an arrow, Enter) does nothing, and a
+chord passes on as the shortcut it is. The Feed is never reached from it. The
 2026-10-18 ruling put the Last Page on it — the one piece of history the
 screen carries, and the owner's reversal of #70's "clock and weather only".
 _Avoid_: screensaver

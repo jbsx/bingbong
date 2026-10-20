@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 
 /**
  * The Prompt Bar: the one typed-input surface, living in the feed panel's
@@ -15,24 +15,13 @@ import { useEffect, useRef, useState } from 'react'
  * settles only after the Command unwinds, and that settlement is the one
  * signal a typed follow-up's readiness has to read.
  *
- * A key typed on the Idle Screen lands here: main opens the panel, focuses
- * this view and hands over the key, which joins the draft. The Voice Prompt
- * around it (#359) names what the empty field is waiting for.
+ * The Voice Prompt around it (#359) names what the empty field is waiting
+ * for. A key typed on the Idle Screen goes to the Idle Prompt instead (#361).
  */
 export function PromptBar({ placeholder }: { placeholder: string }) {
   const [draft, setDraft] = useState('')
   const [feedback, setFeedback] = useState('')
   const [pendingSubmits, setPendingSubmits] = useState(0)
-  const inputRef = useRef<HTMLInputElement>(null)
-
-  useEffect(
-    () =>
-      window.bingbong.feedPanel.onTyped((text) => {
-        setDraft((current) => current + text)
-        inputRef.current?.focus()
-      }),
-    [],
-  )
 
   const submitCommand = async (text: string): Promise<boolean> => {
     setPendingSubmits((count) => count + 1)
@@ -66,7 +55,6 @@ export function PromptBar({ placeholder }: { placeholder: string }) {
     >
       <div className="prompt-controls">
         <input
-          ref={inputRef}
           className="prompt-input"
           type="text"
           // Named by the Voice Prompt (#359); whole at the default panel with Stop beside it (#331).

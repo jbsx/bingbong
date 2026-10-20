@@ -3,6 +3,8 @@ import { BrowserNav, BrowserPane } from './BrowserPane'
 import { ChromeIcon } from './ChromeIcon'
 import { capsuleTone, RunHint, StatusOrb, StatusPill, VoiceWave } from './AssistantPanel'
 import { IdleScreen } from './IdleScreen'
+import { IdlePrompt } from './IdlePrompt'
+import { usePaneHasPage } from './usePaneHasPage'
 import { SettingsPage } from './SettingsPage'
 import { WeightPage } from './WeightPage'
 import { WeighInPopup } from './WeighInPopup'
@@ -35,7 +37,12 @@ export function App() {
   const [view, setView] = useState<'dashboard' | 'settings' | 'weight'>('dashboard')
   // The Person the Weight page opens on (#351): Jaish, unless a row of the Weight card named another.
   const [weightPerson, setWeightPerson] = useState(JAISH)
-  const idle = useIdle()
+  // The Idle Prompt (#361): its draft while open, null while closed; and whether its field holds focus.
+  const [promptDraft, setPromptDraft] = useState<string | null>(null)
+  const [promptFocused, setPromptFocused] = useState(false)
+  // The blank pane is never shown (#361): with no page, a tap leaves the Idle Screen up, as one with the Prompt open does.
+  const paneHasPage = usePaneHasPage()
+  const idle = useIdle({ tapWakes: () => paneHasPage && promptDraft === null })
   // Feed panel layout state (#45): the panel renders in its own overlay
   // webContents above the browser pane; this slot is the rect its bounds
   // follow (overlay floats out-of-flow; docked takes real layout space).
@@ -131,8 +138,14 @@ export function App() {
   const usage = useUsage(settings?.usageDashboard.url ?? null, showIdle)
   const news = useNews(showIdle)
 
-  // Main sends a key typed on the Idle Screen to the Prompt Bar, so it has to know the screen is up.
-  useEffect(() => window.bingbong.idle.reportShown(showIdle), [showIdle])
+  // Main sends a key typed on the Idle Screen to the Idle Prompt, so it has to know the screen is up and the Prompt's field focused.
+  const prompting = showIdle && promptDraft !== null && promptFocused
+  useEffect(() => window.bingbong.idle.reportShown({ up: showIdle, prompting }), [showIdle, prompting])
+  useEffect(() => window.bingbong.idle.onTyped((text) => setPromptDraft((draft) => (draft ?? '') + text)), [])
+  // The Prompt goes with the screen.
+  useEffect(() => {
+    if (!showIdle) setPromptDraft(null)
+  }, [showIdle])
 
   if (showIdle) {
     return (
@@ -156,6 +169,7 @@ export function App() {
           voice={voice}
           popup={weighInPopup.phase === 'hidden' ? null : <WeighInPopup state={weighInPopup} />}
         />
+        {promptDraft !== null ? <IdlePrompt draft={promptDraft} onDraft={setPromptDraft} onClose={() => setPromptDraft(null)} onFocused={setPromptFocused} /> : null}
       </>
     )
   }

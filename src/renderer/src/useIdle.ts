@@ -16,13 +16,20 @@ export interface IdleApi {
  * command) wakes the dashboard, and the countdown only runs from there.
  * Pointer/keyboard input is tracked here; callers ping for non-input
  * activity. The timeout comes from the launch config snapshot. The idle
- * shortcut (Ctrl/Cmd+Shift+L, heard in main) enters idle at once, and a
- * key typed on the Idle Screen (also heard in main) wakes it.
+ * shortcut (Ctrl/Cmd+Shift+L, heard in main) enters idle at once.
+ *
+ * Over the Idle Screen (#361) a key is main's: one that types opens the
+ * Idle Prompt and one that types nothing is swallowed there, so neither
+ * wakes; nor does a chord (a shortcut) or a key typed into the Prompt. A
+ * tap wakes only while `tapWakes` holds — with no page in the pane there
+ * is nothing to wake to.
  */
-export function useIdle(): IdleApi {
+export function useIdle(options: { tapWakes: () => boolean }): IdleApi {
   const [idle, setIdle] = useState(true)
   const pingRef = useRef<() => void>(() => {})
   const idleRef = useRef<() => void>(() => {})
+  const tapWakesRef = useRef(options.tapWakes)
+  tapWakesRef.current = options.tapWakes
 
   useEffect(() => {
     const timer = createIdleTimer({
@@ -33,18 +40,20 @@ export function useIdle(): IdleApi {
     })
     pingRef.current = () => timer.ping()
     idleRef.current = () => timer.idle()
-    const onInput = () => timer.ping()
-    window.addEventListener('pointerdown', onInput)
-    window.addEventListener('keydown', onInput)
+    const onPointer = (): void => {
+      if (!timer.isIdle() || tapWakesRef.current()) timer.ping()
+    }
+    const onKey = (event: KeyboardEvent): void => {
+      if (timer.isIdle() && (event.ctrlKey || event.metaKey || event.altKey || (event.target instanceof Element && event.target.closest('.idle-prompt') !== null))) return
+      timer.ping()
+    }
+    window.addEventListener('pointerdown', onPointer)
+    window.addEventListener('keydown', onKey)
     const unsubscribeShortcut = window.bingbong.idle.onEnter(() => timer.idle())
-    // A key typed on the Idle Screen is swallowed in main and sent to the
-    // Prompt Bar — this keydown never fires, so main says to wake.
-    const unsubscribeWake = window.bingbong.idle.onWake(() => timer.ping())
     return () => {
       unsubscribeShortcut()
-      unsubscribeWake()
-      window.removeEventListener('pointerdown', onInput)
-      window.removeEventListener('keydown', onInput)
+      window.removeEventListener('pointerdown', onPointer)
+      window.removeEventListener('keydown', onKey)
       pingRef.current = () => {}
       idleRef.current = () => {}
       timer.dispose()

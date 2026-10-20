@@ -153,8 +153,19 @@ describe('weight e2e: the stand-in scale, the pop-up, the card and the page', ()
     expect(await weighInsOnDisk(userDataDir)).toHaveLength(60)
     expect(await harness.dashboardEval<string>(`document.querySelector('.weight-figure[data-figure="weightKg"] .weight-figure-value').textContent`)).toBe('81.25 kg')
 
+    // Back leaves the page; with no page in the pane that is the Idle Screen, never the blank pane (#361).
     await harness.clickDashboardElement('.weight-back')
-    await waitFor(async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('.dashboard-browsing') && !document.querySelector('.weight-page')`)) ? true : undefined), { timeoutMs: 5000, intervalMs: 100 })
+    await waitFor(async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('.idle-screen') && !document.querySelector('.weight-page')`)) ? true : undefined), { timeoutMs: 5000, intervalMs: 100 })
+    // With a page in the pane a tap wakes the dashboard over it, for the browsing pane the next case needs — no Command, so no Peek Card.
+    await harness.dashboardEval(`window.bingbong.browser.navigate(${JSON.stringify(harness.fixture.url('/'))})`)
+    await harness.waitForPaneUrl(harness.fixture.url('/'))
+    await waitFor(
+      async () => {
+        await harness.clickDashboardElement('.idle-screen').catch(() => {})
+        return (await harness.dashboardEval<boolean>(`!!document.querySelector('.dashboard-browsing')`)) ? true : undefined
+      },
+      { timeoutMs: 10000, intervalMs: 250 },
+    )
   })
 
   it('shows the pop-up over the browsing pane in a view of its own, in the Peek Card’s place, the edge tab staying, and its chip moves the Weigh-in there too', async () => {

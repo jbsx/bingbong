@@ -1,8 +1,14 @@
+/** What the dashboard tells main of the Idle Screen: whether it is up, and whether its Prompt is open (#361). */
+export interface IdleShown {
+  up: boolean
+  prompting: boolean
+}
+
 /** The Idle Screen on demand: main heard the idle shortcut, the dashboard enters the rest state. */
 export const IDLE_IPC = {
   enter: 'idle:enter',
-  /** Dashboard → main: the Idle Screen is up (true) or down (false); main hands a typed key to the Prompt Bar only while it is up. */
+  /** Dashboard → main: an {@link IdleShown}. Main hands a typed key to the Idle Prompt only while the screen is up with the Prompt closed, and keeps the Feed shut while it is up. */
   shown: 'idle:shown',
-  /** Main → dashboard: a key typed on the Idle Screen went to the Prompt Bar — wake. */
-  wake: 'idle:wake',
+  /** Main → dashboard: a key typed on the Idle Screen — open the Idle Prompt with this text in it ('' for Space). */
+  typed: 'idle:typed',
 } as const

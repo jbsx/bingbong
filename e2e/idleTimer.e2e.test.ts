@@ -62,8 +62,9 @@ describe('idle screen e2e: the Timer', () => {
 
     expect(await waitFor(async () => ((await timerStatus()) === 'off' ? 'off' : undefined), { timeoutMs: 10000, intervalMs: 100 })).toBe('off')
     // Back at rest, the idle screen carries no Timer.
+    // With no page in the pane the tap leaves the screen up (#361); the Timer's off reaches it a moment after main's.
     await waitFor(async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('.idle-screen')`)) ? true : undefined), { timeoutMs: 10000, intervalMs: 100 })
-    expect(await harness.dashboardEval<boolean>(`!!document.querySelector('.idle-timer')`)).toBe(false)
+    expect(await waitFor(async () => ((await harness.dashboardEval<boolean>(`!document.querySelector('.idle-timer')`)) ? true : undefined), { timeoutMs: 5000, intervalMs: 100 })).toBe(true)
   })
 
   it('a Command that acts on the pane wakes the idle screen', async () => {
