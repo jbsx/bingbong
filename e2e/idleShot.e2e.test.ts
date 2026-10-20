@@ -237,6 +237,31 @@ describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review 
     for (const scheme of ['dark', 'light'] as const) await shoot(`idle-${count}${music ? '-music' : ''}`, scheme)
   })
 
+  it('grows to fill a window larger than the appliance’s display, edge to edge rather than framed in empty ground', async () => {
+    const size = { width: 2560, height: 1440 }
+    await harness.cdp.send('Emulation.setDeviceMetricsOverride', { ...size, deviceScaleFactor: 1, mobile: false }, session)
+    try {
+      // Each side's margin over the far edge of the Columns, so the rects' zoom units cancel: about 0.03 filled (48 px of 1872
+      // at 1920×1080), about 0.17 when the screen keeps its 1920×1080 size in the middle of the window.
+      const margins = () => harness.dashboardEval<{ across: number; down: number }>(`(() => {
+        const screen = document.querySelector('.idle-screen').getBoundingClientRect()
+        const left = document.querySelector('.idle-col--left').getBoundingClientRect()
+        const right = document.querySelector('.idle-col--right').getBoundingClientRect()
+        return { across: (left.left - screen.left) / (right.right - screen.left), down: (left.top - screen.top) / (left.bottom - screen.top) }
+      })()`)
+      const filled = (m: { across: number; down: number }) => m.across <= 0.05 && m.down <= 0.05
+      const grown = await waitFor(async () => {
+        const m = await margins()
+        return filled(m) ? m : undefined
+      }, { timeoutMs: 5000, intervalMs: 100 }).catch(margins)
+      expect(grown.across).toBeLessThanOrEqual(0.05)
+      expect(grown.down).toBeLessThanOrEqual(0.05)
+      await shoot('idle-2560x1440', 'dark', size)
+    } finally {
+      await harness.cdp.send('Emulation.setDeviceMetricsOverride', { width: 1920, height: 1080, deviceScaleFactor: 1, mobile: false }, session)
+    }
+  })
+
   it('lists the month’s entries under the weeks while the Calendar has any, a dot under their days', async () => {
     await writeFile(calendarFile(), JSON.stringify(calendarEvents()), 'utf8')
     await reenterIdle()
@@ -341,10 +366,10 @@ describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review 
     expect(geometry.smallestText, `${name} ${scheme}`).toBeGreaterThanOrEqual(16)
   }
 
-  async function shoot(name: string, scheme: 'dark' | 'light' = 'dark'): Promise<void> {
+  async function shoot(name: string, scheme: 'dark' | 'light' = 'dark', size = { width: 1920, height: 1080 }): Promise<void> {
     await harness.cdp.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, session)
     await new Promise((resolve) => setTimeout(resolve, 500))
-    const { data } = await harness.cdp.send<{ data: string }>('Page.captureScreenshot', { format: 'png', clip: { x: 0, y: 0, width: 1920, height: 1080, scale: 1 } }, session)
+    const { data } = await harness.cdp.send<{ data: string }>('Page.captureScreenshot', { format: 'png', clip: { x: 0, y: 0, ...size, scale: 1 } }, session)
     await writeFile(join(outDir, `${name}-${scheme}.png`), Buffer.from(data, 'base64'))
     if (scheme === 'light') await harness.cdp.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'dark' }] }, session)
   }

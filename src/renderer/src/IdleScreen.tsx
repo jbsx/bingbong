@@ -398,14 +398,15 @@ function weatherLine(weather: Exclude<WeatherState, { status: 'ready' }>): strin
 }
 
 function fitZoom(): number {
-  return Math.min(1, window.innerWidth / DESIGN_WIDTH, window.innerHeight / DESIGN_HEIGHT)
+  return Math.min(window.innerWidth / DESIGN_WIDTH, window.innerHeight / DESIGN_HEIGHT)
 }
 
 /**
- * The Idle Screen's scale on a window smaller than the display it is laid
- * out for: the same layout, shrunk to fit, so a 1280×800 window shows the
- * appliance's screen rather than its cards wrapping off the bottom. 1 on
- * the display itself and anything larger.
+ * The Idle Screen's scale on a window other than the display it is laid
+ * out for: the same layout, shrunk or grown to fit, so a 1280×800 window
+ * shows the appliance's screen rather than its cards wrapping off the
+ * bottom, and a 2560×1440 one fills edge to edge rather than framing it in
+ * empty ground. 1 on the display itself.
  */
 function useFitZoom(): number {
   const [zoom, setZoom] = useState(fitZoom)
@@ -495,7 +496,7 @@ export function IdleScreen({
   const next = upNext(now, events)
   const zoom = useFitZoom()
   // Zoomed, the screen is laid out at the size it would have unzoomed, so it still fills the window.
-  const fit = zoom < 1 ? { zoom, width: `${window.innerWidth / zoom}px`, height: `${window.innerHeight / zoom}px` } : undefined
+  const fit = zoom !== 1 ? { zoom, width: `${window.innerWidth / zoom}px`, height: `${window.innerHeight / zoom}px` } : undefined
   const lines = clockLines(cards, { nowPlaying: nowPlaying !== null, upNext: next !== null, lastPage: lastPage !== null })
   const weightRows = weighIns === null ? [] : weightCardRows(weighIns, weight)
   const entries = Math.min(ENTRIES_SHOWN, monthEntries(now, events).length)
