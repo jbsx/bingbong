@@ -69,6 +69,7 @@ describe('createSmartTurn', () => {
     const runtime = fakeRuntime(0.87)
     const { store } = fakeStore({ [PATH]: SMART_TURN_FILE.minBytes })
     const turn = createSmartTurn({ modelsDir: MODELS, store, loadRuntime: runtime.loadRuntime, prefetch: false })
+    await turn.load()
 
     expect(await turn.score(new Float32Array(16_000))).toBeCloseTo(0.87, 5)
     expect(runtime.created).toEqual([PATH])
@@ -78,20 +79,44 @@ describe('createSmartTurn', () => {
   it('fetches the model once when it is missing, and refetches a partial file', async () => {
     const missing = fakeStore({})
     const turn = createSmartTurn({ modelsDir: MODELS, store: missing.store, loadRuntime: fakeRuntime(0.9).loadRuntime, prefetch: false })
+    await turn.load()
     await turn.score(new Float32Array(512))
-    await turn.score(new Float32Array(512))
+    await turn.load()
     expect(missing.fetched).toEqual([{ url: SMART_TURN_FILE.url, dest: PATH }])
 
     const partial = fakeStore({ [PATH]: 1_000 })
-    await createSmartTurn({ modelsDir: MODELS, store: partial.store, loadRuntime: fakeRuntime(0.9).loadRuntime, prefetch: false }).score(new Float32Array(512))
+    await createSmartTurn({ modelsDir: MODELS, store: partial.store, loadRuntime: fakeRuntime(0.9).loadRuntime, prefetch: false }).load()
     expect(partial.fetched).toHaveLength(1)
   })
 
-  it('rejects while the fetch fails, and retries it at the next check', async () => {
+  it('fails a check at once while the model is still loading, so the pause cap stays a bound, and loads meanwhile', async () => {
+    let finishFetch: () => void = () => {}
+    const files: Record<string, number> = {}
+    const store = {
+      exists: (path: string) => (files[path] ?? 0) > 0,
+      size: (path: string) => files[path] ?? 0,
+      fetch: (_url: string, dest: string) =>
+        new Promise<void>((resolve) => {
+          finishFetch = () => {
+            files[dest] = SMART_TURN_FILE.minBytes
+            resolve()
+          }
+        }),
+    }
+    const turn = createSmartTurn({ modelsDir: MODELS, store, loadRuntime: fakeRuntime(0.9).loadRuntime })
+
+    await expect(turn.score(new Float32Array(512))).rejects.toThrow('not loaded yet')
+    finishFetch()
+    await turn.load()
+    expect(await turn.score(new Float32Array(512))).toBeCloseTo(0.9, 5)
+  })
+
+  it('retries a failed fetch at the next load', async () => {
     const { store, fetched } = fakeStore({}, 1)
     const turn = createSmartTurn({ modelsDir: MODELS, store, loadRuntime: fakeRuntime(0.9).loadRuntime, prefetch: false })
 
-    await expect(turn.score(new Float32Array(512))).rejects.toThrow('offline')
+    await expect(turn.load()).rejects.toThrow('offline')
+    await turn.load()
     expect(await turn.score(new Float32Array(512))).toBeCloseTo(0.9, 5)
     expect(fetched).toHaveLength(2)
   })

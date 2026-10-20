@@ -42,6 +42,7 @@ if (files.length === 0) {
 
 const vad = await createSileroVad({ modelPath: join(modelsDir, 'silero_vad.onnx') })
 const smartTurn = createSmartTurn({ modelsDir, prefetch: false })
+await smartTurn.load()
 const config = vadDefaults()
 
 interface Check {
@@ -93,6 +94,7 @@ async function replay(file: string): Promise<Row> {
 const rows: Row[] = []
 for (const file of files) rows.push(await replay(file))
 
+const LEGACY_ENDPOINT_MS = 700
 let byTurn = 0
 let byCap = 0
 let splits = 0
@@ -110,12 +112,12 @@ for (const row of rows) {
   } else if (last?.endedBy === 'turn') {
     byTurn += 1
     // The old Endpoint fired 700 ms after the last speech; this one fired here.
-    const saved = row.lastSpeechMs + 700 - last.atMs
+    const saved = row.lastSpeechMs + LEGACY_ENDPOINT_MS - last.atMs
     savedMs.push(saved)
     verdict = `turn at ${seconds(last.atMs)} (${Math.round(saved)} ms sooner than 700 ms)`
   } else if (last?.endedBy === 'cap') {
     byCap += 1
-    verdict = `cap at ${seconds(last.atMs)} (${Math.round(last.atMs - row.lastSpeechMs - 700)} ms later than 700 ms)`
+    verdict = `cap at ${seconds(last.atMs)} (${Math.round(last.atMs - row.lastSpeechMs - LEGACY_ENDPOINT_MS)} ms later than 700 ms)`
   } else {
     verdict = 'no Endpoint (blip)'
   }

@@ -17,6 +17,9 @@ export const VAD_FRAME_SAMPLES = 512
 /** 512 @ 16 kHz. */
 export const VAD_FRAME_MS = 32
 
+/** Silence before the turn check is asked (#357): a short pause, not yet a thinking one. */
+export const TURN_CHECK_MS = 200
+
 /** At or above this the turn check reads the Utterance as finished (#357); a constant, not a Setting. */
 export const TURN_FINISHED_PROBABILITY = 0.5
 
@@ -84,7 +87,7 @@ export function vadDefaults(): UtteranceEndpointerConfig {
     speechThreshold: 0.5,
     startFrames: 3, // ~96 ms of speech before an utterance counts
     endFrames: silenceFramesForMs(PAUSE_CAP_MS_DEFAULT), // ~2 s of silence ends it whatever the turn check says (#357, ADR 0076 amendment 2026-10-20)
-    turnCheckFrames: silenceFramesForMs(200), // ~200 ms of silence asks the turn check (#357)
+    turnCheckFrames: silenceFramesForMs(TURN_CHECK_MS), // ~200 ms of silence asks the turn check (#357)
     resumptionMergeMs: RESUMPTION_MERGE_MS_DEFAULT, // no hold on this branch (ADR 0076); #60's merge is tunable, off by default
     startPaddingMs: 192, // ~6 frames of pre-roll
     endPaddingMs: 64, // ~2 frames of tail

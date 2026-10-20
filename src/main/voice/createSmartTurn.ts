@@ -48,23 +48,39 @@ async function importOrt(): Promise<OrtModule> {
   return ort as unknown as OrtModule
 }
 
-export function createSmartTurn(deps: CreateSmartTurnDeps): TurnDetector {
+export interface SmartTurn extends TurnDetector {
+  /** Resolves once the model is fetched and loaded; rejects on a failed fetch or load (the next call retries). */
+  load(): Promise<void>
+}
+
+export function createSmartTurn(deps: CreateSmartTurnDeps): SmartTurn {
   const store = deps.store ?? fsMoonshineStore
   const loadRuntime = deps.loadRuntime ?? importOrt
   const path = join(deps.modelsDir, SMART_TURN_DIR, SMART_TURN_FILE.name)
 
+  let loaded: { ort: OrtModule; session: OrtSession } | null = null
   const ready = createRetriable(async () => {
     const size = store.size?.(path)
     if (!store.exists(path) || (size !== undefined && size < SMART_TURN_FILE.minBytes)) await store.fetch(SMART_TURN_FILE.url, path)
     const ort = await loadRuntime()
-    return { ort, session: await ort.InferenceSession.create(path) }
+    loaded = { ort, session: await ort.InferenceSession.create(path) }
+    return loaded
   })
-  // The rejection is observed (and retried) by the first check; this only keeps it from going unhandled.
-  if (deps.prefetch ?? true) void ready().catch(() => {})
+  // The rejection is observed (and retried) by the next check; this only keeps it from going unhandled.
+  const load = (): Promise<void> => ready().then(() => undefined)
+  if (deps.prefetch ?? true) void load().catch(() => {})
 
   return {
+    load,
     async score(pcm) {
-      const { ort, session } = await ready()
+      // A check never waits on the download or the load: the Endpoint is
+      // mid-pause and the pause cap must stay a bound. Until the model is
+      // in, the check fails at once — the cap decides — and loading goes on.
+      if (loaded === null) {
+        void load().catch(() => {})
+        throw new Error('smart-turn model not loaded yet')
+      }
+      const { ort, session } = loaded
       const features = smartTurnFeatures(pcm)
       const outputs = await session.run({ input_features: new ort.Tensor('float32', features, [1, SMART_TURN_MELS, SMART_TURN_FRAMES]) })
       // The export ends in a sigmoid: `logits` is already the finished-probability.

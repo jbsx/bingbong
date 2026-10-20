@@ -1102,7 +1102,9 @@ local (ADR 0019, owner ruling 2026-10-20), so the check is a local model.
 - **A missing or failing model** falls back to the plain silence timer at
   the cap, with a fault reported (`voice.vadEndpointing.turnCheck`). The
   model is fetched once on demand into `<userData>/models/smart-turn`, a
-  partial file refetched, like Moonshine's.
+  partial file refetched, like Moonshine's. A check never waits on the
+  fetch or the load: until the model is in, it fails at once and loading
+  goes on, so the cap stays a bound on a first boot or offline.
 - **The transcriber gets at most 640 ms of trailing silence**, what the
   700 ms Endpoint left it, so a cap that fires at 2 s does not hand it 2 s
   of nothing.
