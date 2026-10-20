@@ -15,7 +15,7 @@ export type CliCommand =
   | { type: 'reload' }
   | { type: 'resume' }
   | { type: 'timer'; durationMs: number | null }
-  | { type: 'play'; music: MusicAction; words: string | null }
+  | { type: 'play'; music: MusicAction }
   | { type: 'help' }
   | { type: 'quit' }
 
@@ -90,7 +90,7 @@ export function parseCliCommand(line: string): ParsedCliCommand {
   // The Player's lines (#343) first: "go back a song" is not `back`, and they read as typed or spoken.
   const music = readMusicLine(trimmed)
   if (music === 'invalid') return { ok: false, error: "volume: expected 'volume <0-100>'" }
-  if (music !== null) return { ok: true, command: { type: 'play', music: music.music, words: music.words } }
+  if (music !== null) return { ok: true, command: { type: 'play', music: music.music } }
 
   const space = trimmed.indexOf(' ')
   const head = space === -1 ? trimmed : trimmed.slice(0, space)

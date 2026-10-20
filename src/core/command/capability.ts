@@ -63,13 +63,14 @@ export function playerCapabilities(songCurrent: boolean): readonly Capability[] 
   return ['play', 'play_next', 'queue', ...(songCurrent ? SONG_CAPABILITIES : [])]
 }
 
+/** Whether a verb Choice's label names a Capability. */
 export function isCapability(verb: string): verb is Capability {
   return Object.hasOwn(CAPABILITY_DESCRIPTIONS, verb)
 }
 
 /** Whether a Capability searches for its Slot's words. */
 export function capabilitySearches(capability: Capability): boolean {
-  return capability === 'play' || capability === 'play_next' || capability === 'queue'
+  return capability !== 'volume' && PLAYER_ACTIONS[capability].kind === 'search'
 }
 
 /** The Player's action a Capability fires; null for a `volume` whose words carry no number from 0 to 100. */

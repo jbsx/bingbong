@@ -28,10 +28,9 @@ export type MusicAction =
   /** The song playing is forgotten: the next `play` of its words searches again (#345). */
   | { readonly kind: 'forget' }
 
-/** A music line: the action, and a search's words as spoken (edge punctuation off). */
+/** An exact music line: the action it asks of the Player. */
 export interface MusicLine {
   readonly music: MusicAction
-  readonly words: string | null
 }
 
 /** The whole lines that are one action, as normalized words. */
@@ -112,11 +111,11 @@ export function readMusicLine(line: string): MusicLine | 'invalid' | null {
   const words = normalize(line)
   if (words === '') return null
   const whole = WHOLE_LINES[words]
-  if (whole !== undefined) return { music: whole, words: null }
+  if (whole !== undefined) return { music: whole }
   const volume = /^(?:set the )?volume(?: to)? (\d+)(?: percent)?$/.exec(words)
   if (volume !== null) {
     const to = Number(volume[1])
-    return to <= 100 ? { music: { kind: 'volume', to }, words: null } : 'invalid'
+    return to <= 100 ? { music: { kind: 'volume', to } } : 'invalid'
   }
   return null
 }

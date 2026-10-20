@@ -297,7 +297,10 @@ export function createBrowserPane(deps?: {
     },
     setHost(win) {
       host = win
-      this.setPaneRect(paneRect)
+      const place = (): void => whenLive(() => view.setBounds(boundsOf(paneRect)))
+      place()
+      // Hidden, the pane keeps to the window's edge as the window resizes: wholly outside it, the view would lay out at 0×0 again.
+      win.on('resize', place)
     },
     rect: () => paneRect,
     onRect(listener) {

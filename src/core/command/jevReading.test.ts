@@ -693,7 +693,7 @@ describe('Capabilities (ADR 0079, #362)', () => {
 
   it('with a song playing, the command, hop and partial asks offer every Player op beside the browser verbs, each described', () => {
     const offered = playerCapabilities(true)
-    for (const questions of [commandQuestions('loop the song', WATCH, undefined, { capabilities: offered }), hopQuestions('loop the song', WATCH, HOP, offered), partialQuestions('loop the song', WATCH, offered)]) {
+    for (const questions of [commandQuestions('loop the song', WATCH, undefined, { capabilities: offered }), hopQuestions('loop the song', WATCH, HOP, { capabilities: offered }), partialQuestions('loop the song', WATCH, { capabilities: offered })]) {
       const verbs = Object.keys(questions.verb.options)
       expect(verbs.slice(0, 15)).toEqual(['navigate', 'search', 'click', 'type', 'scroll_up', 'scroll_down', 'back', 'forward', 'reload', 'press', 'read', 'clear', 'stop', 'done', 'none'])
       expect(verbs).toEqual(expect.arrayContaining([...SONG_OPS, 'play', 'queue']))

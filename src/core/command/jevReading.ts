@@ -510,7 +510,7 @@ function dismissQuestion(page: CommandPage): DecisionChoiceQuestion | null {
  * spoken "close" walks the Dismissal Ladder with Jev's choice on it as a
  * Step Aside does. Null when the pop-up offers no control to choose.
  */
-export function dismissPhraseQuestions(text: string, page: CommandPage, capabilities: readonly Capability[] = []): (CommandQuestions & { readonly dismiss: DecisionChoiceQuestion }) | null {
+export function dismissPhraseQuestions(text: string, page: CommandPage, { capabilities }: { readonly capabilities?: readonly Capability[] } = {}): (CommandQuestions & { readonly dismiss: DecisionChoiceQuestion }) | null {
   const dismiss = dismissQuestion(page)
   return dismiss === null ? null : { ...commandQuestions(text, page, undefined, { steps: false, capabilities }), dismiss }
 }
@@ -518,7 +518,7 @@ export function dismissPhraseQuestions(text: string, page: CommandPage, capabili
 /** A hop's questions: the Command's, the Verdict and, with a pop-up open, the dismiss Choice. */
 export type HopQuestions = CommandQuestions & { readonly outcome: DecisionChoiceQuestion; readonly dismiss?: DecisionChoiceQuestion }
 
-export function hopQuestions(text: string, pageRead: CommandPage, hop: HopContext, capabilities: readonly Capability[] = []): HopQuestions {
+export function hopQuestions(text: string, pageRead: CommandPage, hop: HopContext, { capabilities }: { readonly capabilities?: readonly Capability[] } = {}): HopQuestions {
   const dismiss = dismissQuestion(pageRead)
   return { ...commandQuestions(text, pageRead, hop, { capabilities }), outcome: outcomeQuestion(), ...(dismiss !== null ? { dismiss } : {}) }
 }
@@ -550,7 +550,7 @@ export function readVerdict(answers: CommandAnswers | HopAnswers): Verdict | nul
  */
 export type PartialQuestions = CommandQuestions & { readonly complete: DecisionNoulQuestion }
 
-export function partialQuestions(text: string, page: CommandPage, capabilities: readonly Capability[] = []): PartialQuestions {
+export function partialQuestions(text: string, page: CommandPage, { capabilities }: { readonly capabilities?: readonly Capability[] } = {}): PartialQuestions {
   return {
     ...commandQuestions(text, page, undefined, { steps: false, capabilities }),
     complete: { type: 'noul', instructions: 'Is this a complete command, with nothing still to be said?' },

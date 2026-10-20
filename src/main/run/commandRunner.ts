@@ -650,7 +650,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   async function dismissalOf(turnId: string, text: string, page: CommandPage): Promise<Reading | null> {
     const ruled = ruledDismissal(page)
     const model = ruled === null ? deps.decisionModel() : null
-    const questions = model === null ? null : dismissPhraseQuestions(text, page, capabilities())
+    const questions = model === null ? null : dismissPhraseQuestions(text, page, { capabilities: capabilities() })
     const result = model === null || questions === null ? null : await askJev(model, 'command', turnId, commandState(text, page), questions)
     const chosen = result?.status === 'answered' ? readDismissChoice(result.answers, page) : null
     const ladder = dismissalLadder(page, chosen, DEFAULT_DECISION_THRESHOLDS.choice)
@@ -1358,7 +1358,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       const links = !superseded(task) ? await wholePageLinks(turnId) : []
       const context: HopContext = { hop, visited: [...task.visited], actions: [...task.actions], links, setAside: [...task.setAside], searched: [...task.searched], terms: [...task.terms] }
       const model = deps.decisionModel()
-      const result = superseded(task) || model === null ? null : await askJev(model, 'hop', turnId, commandState(task.text, page, context, task.step), hopQuestions(task.text, page, context, capabilities()))
+      const result = superseded(task) || model === null ? null : await askJev(model, 'hop', turnId, commandState(task.text, page, context, task.step), hopQuestions(task.text, page, context, { capabilities: capabilities() }))
       if (reading?.turnId === turnId) reading = null
       const firedAt = at()
       const base = { type: 'decision' as const, turnId, at: firedAt, source: task.source, transcript: task.text, reading: 'jev' as const, task: hopOf(task, hop) }
@@ -1389,13 +1389,14 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         return endTask(task, 'superseded', hop + 1)
       }
       // The Verdict decides the end (ADR 0076): a sure "in the way" is a
-      // wall unless the action is on the pop-up itself; a reading with no
+      // wall unless the action is on the pop-up itself, or is a Capability,
+      // which never touches the page (ADR 0079); a reading with no
       // next step ends done on a sure yes and unsure otherwise, said so.
       // Either end is read against the page as it is now: a page that moved
       // under the reading is read again, once.
       const verdict = readVerdict(result.answers)
       const noNextStep = command.verb === 'done' || command.verb === 'none'
-      const inTheWay = sure(verdict) && verdict.outcome === 'in_the_way' && !actsOnDialog(command, page)
+      const inTheWay = sure(verdict) && verdict.outcome === 'in_the_way' && !actsOnDialog(command, page) && command.verb !== 'play'
       if ((inTheWay || noNextStep) && !task.rechecked && (await pageMoved(page))) {
         if (superseded(task)) {
           log({ ...record, ended: 'superseded' })
@@ -1594,7 +1595,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     if (model === null) return null
     partialCalls += 1
     const askedIn = utterance
-    const result = await askJev(model, 'partial', null, commandState(words, page), partialQuestions(words, page, capabilities()))
+    const result = await askJev(model, 'partial', null, commandState(words, page), partialQuestions(words, page, { capabilities: capabilities() }))
     // Kept for its own Utterance's record: one whose Endpoint came while it was read has written its record already.
     if (askedIn === utterance) partialAskIds.push(result.askId)
     // Jev unavailable on a partial: nothing fires, and the Endpoint reads as before.

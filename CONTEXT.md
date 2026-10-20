@@ -975,8 +975,8 @@ its watch page. It reads the results' `ytInitialData`, not the cards (a
 results page that lands before its cards are drawn is no Empty Landing for
 it), and no Jev call picks it: Jev only reads the line as `play`. A
 wrong pick is a Misfire. The words are a Slot and
-pass the Name Match. `queue <words>` or `add <words>` puts a song at the
-end of the Queue, and `play <words> next` at its front. These search
+pass the Name Match. `queue <words>` puts a song at the end of the Queue,
+and `play <words> next` at its front. These search
 without leaving the song playing: main fetches the results with the
 pane's session. The other verbs are one evaluate each on `#movie_player`'s
 video:

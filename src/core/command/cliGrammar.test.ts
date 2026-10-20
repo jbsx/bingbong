@@ -120,21 +120,21 @@ describe('parseCliCommand', () => {
   it('reads every exact music line to its Player verb (#343): `play` alone the unpause; a line with free words is Jev\'s (ADR 0079)', () => {
     const play = (line: string) => {
       const parsed = parseCliCommand(line)
-      return parsed?.ok === true && parsed.command.type === 'play' ? { music: parsed.command.music, words: parsed.command.words } : parsed
+      return parsed?.ok === true && parsed.command.type === 'play' ? { music: parsed.command.music } : parsed
     }
     for (const line of ['play bohemian rhapsody', 'Play Bohemian Rhapsody.', 'queue daft punk around the world', 'add daft punk', 'play daft punk next']) expect(parseCliCommand(line)).toMatchObject({ ok: false })
-    expect(play('play')).toEqual({ music: { kind: 'unpause' }, words: null })
-    expect(play('pause')).toEqual({ music: { kind: 'pause' }, words: null })
-    for (const line of ['skip', 'next', 'next song', 'Next song.']) expect(play(line)).toEqual({ music: { kind: 'skip' }, words: null })
-    for (const line of ['previous', 'last song', 'go back a song']) expect(play(line)).toEqual({ music: { kind: 'previous' }, words: null })
-    for (const line of ['loop', 'repeat', 'repeat this song', 'loop this']) expect(play(line)).toEqual({ music: { kind: 'loop', on: true }, words: null })
-    for (const line of ['loop off', 'stop looping']) expect(play(line)).toEqual({ music: { kind: 'loop', on: false }, words: null })
-    for (const line of ['restart', 'play from the beginning', 'start over', 'from the top']) expect(play(line)).toEqual({ music: { kind: 'restart' }, words: null })
-    expect(play('louder')).toEqual({ music: { kind: 'louder' }, words: null })
-    expect(play('quieter')).toEqual({ music: { kind: 'quieter' }, words: null })
-    expect(play('volume 40')).toEqual({ music: { kind: 'volume', to: 40 }, words: null })
-    expect(play('mute')).toEqual({ music: { kind: 'mute', on: true }, words: null })
-    expect(play('unmute')).toEqual({ music: { kind: 'mute', on: false }, words: null })
+    expect(play('play')).toEqual({ music: { kind: 'unpause' } })
+    expect(play('pause')).toEqual({ music: { kind: 'pause' } })
+    for (const line of ['skip', 'next', 'next song', 'Next song.']) expect(play(line)).toEqual({ music: { kind: 'skip' } })
+    for (const line of ['previous', 'last song', 'go back a song']) expect(play(line)).toEqual({ music: { kind: 'previous' } })
+    for (const line of ['loop', 'repeat', 'repeat this song', 'loop this']) expect(play(line)).toEqual({ music: { kind: 'loop', on: true } })
+    for (const line of ['loop off', 'stop looping']) expect(play(line)).toEqual({ music: { kind: 'loop', on: false } })
+    for (const line of ['restart', 'play from the beginning', 'start over', 'from the top']) expect(play(line)).toEqual({ music: { kind: 'restart' } })
+    expect(play('louder')).toEqual({ music: { kind: 'louder' } })
+    expect(play('quieter')).toEqual({ music: { kind: 'quieter' } })
+    expect(play('volume 40')).toEqual({ music: { kind: 'volume', to: 40 } })
+    expect(play('mute')).toEqual({ music: { kind: 'mute', on: true } })
+    expect(play('unmute')).toEqual({ music: { kind: 'mute', on: false } })
     expect(parseCliCommand('volume 140')).toMatchObject({ ok: false })
     // `back` stays history, `resume` the Task's (owner's ruling 3); "add to cart" is the page's.
     expect(parseCliCommand('back')).toEqual({ ok: true, command: { type: 'back' } })
@@ -145,13 +145,13 @@ describe('parseCliCommand', () => {
   it('reads the corrections and `forget this song` to their Player verbs (#345)', () => {
     const play = (line: string) => {
       const parsed = parseCliCommand(line)
-      return parsed?.ok === true && parsed.command.type === 'play' ? { music: parsed.command.music, words: parsed.command.words } : parsed
+      return parsed?.ok === true && parsed.command.type === 'play' ? { music: parsed.command.music } : parsed
     }
     for (const line of ['not that one', 'Not that one.', 'next result', 'the other one', 'wrong one']) {
-      expect(play(line)).toEqual({ music: { kind: 'correct', step: 1 }, words: null })
+      expect(play(line)).toEqual({ music: { kind: 'correct', step: 1 } })
     }
-    expect(play('the one before')).toEqual({ music: { kind: 'correct', step: -1 }, words: null })
-    expect(play('forget this song')).toEqual({ music: { kind: 'forget' }, words: null })
+    expect(play('the one before')).toEqual({ music: { kind: 'correct', step: -1 } })
+    expect(play('forget this song')).toEqual({ music: { kind: 'forget' } })
   })
 
   it('parses timer — a length, or off', () => {

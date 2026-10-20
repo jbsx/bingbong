@@ -331,6 +331,24 @@ describe('the Player (#343)', () => {
     ])
   })
 
+  it('a Capability at a later hop fires over a pop-up a sure `in_the_way` reads: the Player\'s op never touches the page (#362)', async () => {
+    const { browser, decision, records, youtube, runner } = music()
+    await runner.run('play bohemian rhapsody')
+    const click = browser.click.bind(browser)
+    browser.click = async (target) => {
+      const result = await click(target)
+      browser.snapshot = { ...browser.snapshot, dialogOpen: true, dialogText: 'Sign in to keep watching', refs: [ref(1, 'button', 'Sign in', { layer: 'dialog' }), ref(2, 'button', 'Close', { layer: 'dialog' })] }
+      return result
+    }
+    decision.script.push(
+      { answers: { verb: choice('click'), target: choice('ref-1'), slot: choice('none') } },
+      { answers: { verb: choice('loop'), target: choice('none'), slot: choice('none'), outcome: choice('in_the_way') } },
+    )
+    await runner.run('open the home page and loop the song')
+    expect(youtube.controls.map((control) => control.op)).toContain('loop')
+    expect(records.filter((record) => record.type === 'decision').at(-1)).toMatchObject({ verb: 'play', capability: 'loop', ended: 'terminal' })
+  })
+
   it('a Jev `volume` carries the Slot\'s number to the Player (#362)', async () => {
     const { decision, youtube, runner } = music()
     await runner.run('play bohemian rhapsody')

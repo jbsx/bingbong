@@ -351,7 +351,7 @@ function fromGrammar(parsed: CliCommand): Command | null {
     case 'help':
       return command('help')
     case 'play':
-      return command('play', { slot: parsed.words, music: parsed.music })
+      return command('play', { music: parsed.music })
     case 'quit':
       return null
   }
