@@ -242,6 +242,12 @@ async function createWindow(): Promise<BrowserWindow> {
     // buttons — the renderer's Toolbar band is the drag region, Alt+F4
     // closes.
     titleBarStyle: 'hidden',
+    // On Linux Electron frames a title-bar-less window with its own 4 px
+    // resize border on three sides (_GTK_FRAME_EXTENTS 4,4,0,4), painted in
+    // GTK's light ground — a white border around the dark shell. Only a
+    // translucent window drops it (hasShadow does not); the dashboard paints
+    // its own ground, so nothing shows through.
+    transparent: true,
     // Kiosk = fullscreen appliance; the renderer reads the same flag and
     // the layout is pixel-identical to windowed (ADR 0012).
     ...(launchConfig.kiosk ? { fullscreen: true, autoHideMenuBar: true } : {}),
