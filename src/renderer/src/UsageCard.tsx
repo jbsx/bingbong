@@ -63,8 +63,8 @@ function Tick({ radius, share, length, className }: { radius: number; share: num
 
 /**
  * A provider's ring, F2's (round 5): the outer arc the share of its gauge's
- * limit used, in its tone, the part past the share of the window run
- * brighter; a tick where the window has run to; and a thin inner ring for
+ * limit used, in its tone, one weight end to end; a tick where the window
+ * has run to; and a thin inner ring for
  * its next window, with its own tick. The number in the middle, and under
  * it the Pace when the use runs ahead of the window.
  */
@@ -74,21 +74,11 @@ function Ring({ gauge, inner, now }: { gauge: UsageWindow | null; inner: UsageWi
   const ahead = gauge === null ? null : pace(gauge, now)
   const innerUsed = inner === null ? 0 : Math.min(1, Math.max(0, inner.usedPct) / 100)
   const innerRun = inner === null || inner.resetAt === null ? null : elapsedPct(inner, now) / 100
-  const split = used !== null && run !== null && used > run ? run : null
   return (
     <span className={used !== null && used > 1 ? 'usage-ring usage-ring--over' : 'usage-ring'}>
       <svg viewBox="0 0 228 228" aria-hidden="true">
         <circle className="usage-ring-track" cx={114} cy={114} r={100} />
-        {used !== null && used > 0 ? (
-          split === null ? (
-            <path className="usage-ring-arc" d={arc(100, 0, Math.min(1, used))} />
-          ) : (
-            <>
-              {split > 0.004 ? <path className="usage-ring-arc" d={arc(100, 0, split)} /> : null}
-              <path className="usage-ring-ahead" d={arc(100, split, Math.min(1, used))} />
-            </>
-          )
-        ) : null}
+        {used !== null && used > 0 ? <path className="usage-ring-arc" d={arc(100, 0, Math.min(1, used))} /> : null}
         {inner !== null ? (
           <>
             <circle className="usage-ring-inner-track" cx={114} cy={114} r={76} />

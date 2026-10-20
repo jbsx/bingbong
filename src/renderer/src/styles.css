@@ -2845,16 +2845,7 @@ button.idle-line {
   stroke-linecap: round;
 }
 
-/* The use past the share of the window run: brighter and wider — the Pace drawn. */
-.usage-ring-ahead {
-  fill: none;
-  stroke: color-mix(in srgb, var(--usage-tone) 70%, white);
-  stroke-width: 24;
-  stroke-linecap: round;
-}
-
-.usage-ring--over .usage-ring-arc,
-.usage-ring--over .usage-ring-ahead {
+.usage-ring--over .usage-ring-arc {
   stroke: var(--fail);
 }
 
