@@ -1,10 +1,13 @@
-/* Bing Bong dashboard skin (ADR 0012): neutral light — an Apple-product
-   surface language on canvas #f5f5f7, white surfaces, hairline edges,
-   Apple system status colors, bundled Inter (the SF Pro stand-in).
-   Type is calibrated for desk distance: 17px root (conversation ≈20px,
-   labels ≈15px, detail ≈14.5px) — the old 2 m couch calibration was a
-   false premise. Dark mode is a real second palette (ADR 0020), not an
-   inversion: one token sheet per resolved appearance, engine-fed by the
+/* Bing Bong's skin: F1 Headline (ADR 0078) — one flat near-black ground,
+   panels a faint lift of it with hairline edges, no gradients, no blur,
+   at most the barest shadow. Peach is Bing Bong: the accent is spent only
+   on the voice state, the thing it is working on, the primary button,
+   today and the Timer. Colour intensity is importance (E4): status
+   colours only where they mean something, data keeps its own colours,
+   everything else neutral, near-white text never #fff. Two reading
+   distances: in every state one thing is read from three metres, the rest
+   is the quiet layer, and nothing is set under 16 px. Light is a real
+   second set under the same names (ADR 0020), engine-fed by the
    Appearance Setting through nativeTheme — pages are signalled, never
    restyled. Motion boundary: text never travels — containers breathe
    (opacity/scale), indicators may move. */
@@ -25,108 +28,166 @@
   font-display: swap;
 }
 
+/* Times, dates, tables and the calendar (ADR 0078): bundled, never fetched. */
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('./assets/fonts/JetBrainsMonoVariable.woff2') format('woff2');
+  font-weight: 100 800;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* The light set: F1's roles on an off-white ground — a faint dark lift for
+   panels, a darker peach that clears contrast on white, the data colours
+   at their light weights. */
 :root {
   color-scheme: light;
-  /* Neutral light palette (ADR 0012). */
-  --bg: #f5f5f7; /* canvas */
-  --panel: #ffffff; /* raised surfaces */
-  --panel-overlay: rgba(255, 255, 255, 0.97); /* the feed panel's near-opaque skin (ADR 0012) */
-  --panel-peek: rgba(255, 255, 255, 0.92); /* the Peek Card's translucent skin (ADR 0029) — glanceable, so slightly clearer than the panel */
-  --edge: #d2d2d7; /* hairlines on canvas and panels */
-  --bubble: #e9e9ee; /* your words, as fills */
-  --text: #1d1d1f; /* ink */
-  --muted: #6e6e73; /* quiet text */
-  --accent: #0071e3; /* focus, links, thinking */
-  /* Status semantics: Apple system colors. blue = thinking and
-     transcribing, purple = listening and paused, orange = acting and
-     warnings, green = speaking and success, red = errors. */
-  --status-blue: #0071e3;
-  --status-purple: #af52de;
-  --status-yellow: #ff9500;
-  --status-green: #34c759;
-  --status-red: #ff3b30;
-  /* The idle screen's weather glyphs (Apple system colors, light): sun
-     yellow, cloud grey, rain blue, snow cyan, lightning orange; and how
-     a temperature's hue is mixed on this canvas. */
-  --wx-sun: #ffb800;
-  --wx-sun-fill: rgba(255, 204, 0, 0.35);
-  --wx-moon: #8e8e93;
-  --wx-moon-fill: rgba(142, 142, 147, 0.25);
-  --wx-cloud: #8e8e93;
-  --wx-cloud-fill: #e9e9ee;
-  --wx-rain: #007aff;
-  --wx-snow: #32ade6;
-  --wx-bolt: #ff9500;
-  --wx-bolt-fill: rgba(255, 149, 0, 0.35);
-  --wx-sunset: #ff6a3d;
+  --bg: #f4f5f7; /* the ground */
+  --fg: #12151b; /* primary text */
+  --fgh: #1b1f27; /* headings, values */
+  --fg2: rgba(28, 34, 46, 0.7); /* quiet text */
+  --fg3: rgba(36, 44, 60, 0.56); /* labels, the quietest text */
+  --hair: rgba(16, 22, 34, 0.08);
+  --hair2: rgba(16, 22, 34, 0.14);
+  --track: rgba(16, 22, 34, 0.09);
+  --surface: rgba(16, 22, 34, 0.025); /* a panel */
+  --raise: rgba(16, 22, 34, 0.05); /* a bubble, a pressed control */
+  --raise2: rgba(16, 22, 34, 0.08);
+  --surface-solid: #eceef1; /* a panel over a page, where nothing may show through */
+  --accent: #b4521f; /* peach: Bing Bong */
+  --accent-soft: #e08a5c; /* the orb's highlight */
+  --accentq: rgba(180, 82, 31, 0.1); /* a peach wash */
+  --accent-edge: rgba(180, 82, 31, 0.36);
+  --onaccent: #fff8f3; /* text on a peach fill */
+  --scrim: rgba(7, 9, 13, 0.5); /* a pause over a picture */
+  --onscrim: #f2f4f8;
+  --ok: #1d8f53;
+  --fail: #c93a2a;
+  --warn: #a8690f;
+  --idle: rgba(36, 44, 60, 0.45);
+  --fail-text: #8f2216; /* a failure's headline words */
+  /* Data colours: what they measure, not what state the app is in. */
+  --rain: #1f6fc4;
+  --codex: #6a4fd8;
+  --claude: #d4553b;
+  --kaggle: #b07400;
+  --down: #1d8f53;
+  --up: #c0640f;
+  --jaish: #12808f;
+  --barun: #a84a90;
+  /* Radii and shadows. */
+  --radius-sm: 8px;
+  --radius: 12px;
+  --radius-md: 16px;
+  --radius-lg: 20px;
+  --radius-pill: 999px;
+  --shadow: 0 1px 2px rgba(16, 22, 34, 0.06);
+  --shadow-pop: 0 8px 24px rgba(16, 22, 34, 0.12);
+  --focus-ring: 0 0 0 3px rgba(180, 82, 31, 0.22);
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --tb-h: 76px; /* the Toolbar */
+  /* The earlier sheet's names, kept on the F1 roles for the surfaces still
+     drawn with them (the Idle Screen until #360). */
+  --panel: var(--surface-solid);
+  --panel-overlay: var(--surface-solid);
+  --panel-peek: rgba(236, 238, 241, 0.96);
+  --edge: var(--hair2);
+  --bubble: var(--raise);
+  --text: var(--fg);
+  --muted: var(--fg2);
+  --status-blue: var(--accent);
+  --status-purple: var(--accent);
+  --status-yellow: var(--warn);
+  --status-green: var(--ok);
+  --status-red: var(--fail);
+  /* The idle screen's weather glyphs: sun yellow, cloud grey, rain blue,
+     snow cyan, lightning orange; and how a temperature's hue is mixed on
+     this ground. */
+  --wx-sun: #e0a100;
+  --wx-sun-fill: rgba(224, 161, 0, 0.3);
+  --wx-moon: #7d8290;
+  --wx-moon-fill: rgba(125, 130, 144, 0.22);
+  --wx-cloud: #7d8290;
+  --wx-cloud-fill: #e4e6ea;
+  --wx-rain: var(--rain);
+  --wx-snow: #2a9bd0;
+  --wx-bolt: #c97a00;
+  --wx-bolt-fill: rgba(201, 122, 0, 0.3);
+  --wx-sunset: #d9582e;
   --wx-sat: 72%;
-  --wx-light: 44%;
-  /* The Idle Screen's glow (core/weather/glow), one per weather: mixed
-     into the canvas, so the same colours sit on either mode's. */
+  --wx-light: 42%;
+  /* The Idle Screen's glow (core/weather/glow), one per weather. */
   --glow-rain: #3d7fd9;
   --glow-cloud: #8a94a3;
   --glow-sun: #f0a830;
   --glow-night: #5a5fc0;
-  /* The AI usage card's provider tones: the usage dashboard's own colors,
-     deepened on this light canvas so the lime still reads. */
-  --usage-codex: #5f9900;
-  --usage-claude: #e0244a;
-  --usage-glm: #6a2ce8;
-  --usage-grok: #0b9e86;
-  --usage-kaggle: #c27a00;
-  /* Markdown code surfaces: the one deliberately dark element on the
-     light dashboard — ink surface, canvas text — so fenced blocks read
-     as blocks at a glance. */
-  --code-bg: #1d1d1f;
-  --code-text: #f5f5f7;
-  /* The single calibration knob: every rem size derives from it. Root
-     17px; conversation 1.2rem (~20px), labels 0.9rem (~15px), tool
-     detail 0.85rem (~14.5px). Nudge this one variable to re-calibrate. */
+  /* The AI usage card's provider tones. */
+  --usage-codex: var(--codex);
+  --usage-claude: var(--claude);
+  --usage-glm: #5a3fd0;
+  --usage-grok: #0b8f7a;
+  --usage-kaggle: var(--kaggle);
+  /* Fenced code: a block a step off the ground. */
+  --code-bg: rgba(16, 22, 34, 0.06);
+  --code-text: var(--fgh);
+  /* The single calibration knob for the rem sizes still in use. */
   --font-scale: 1;
 }
 
-/* The dark half of the sheet (ADR 0020): engine-selected — main resolves
-   the Appearance Setting through nativeTheme, and every renderer's
-   prefers-color-scheme follows. Real per-mode values (Apple dark system
-   colors), never computed inversions; the code-block treatment keeps its
-   deliberate contrast against the darker panels. */
+/* The dark set — F1 Headline as round 6 drew it (shell-chrome.css). */
 @media (prefers-color-scheme: dark) {
   :root {
     color-scheme: dark;
-    --bg: #1e1e20; /* canvas */
-    --panel: #2a2a2c; /* raised surfaces */
-    --panel-overlay: rgba(29, 29, 31, 0.97);
-    --panel-peek: rgba(42, 42, 44, 0.92);
-    --edge: #3a3a3c;
-    --bubble: #3a3a3f;
-    --text: #f5f5f7;
-    --muted: #a1a1a6;
-    --accent: #0a84ff;
-    --status-blue: #0a84ff;
-    --status-purple: #bf5af2;
-    --status-yellow: #ff9f0a;
-    --status-green: #30d158;
-    --status-red: #ff453a;
+    --bg: #07090d;
+    --fg: #f2f4f8;
+    --fgh: #e8ebf2;
+    --fg2: rgba(214, 220, 232, 0.62);
+    --fg3: rgba(200, 208, 224, 0.4);
+    --hair: rgba(255, 255, 255, 0.06);
+    --hair2: rgba(255, 255, 255, 0.1);
+    --track: rgba(255, 255, 255, 0.07);
+    --surface: rgba(255, 255, 255, 0.018);
+    --raise: rgba(255, 255, 255, 0.04);
+    --raise2: rgba(255, 255, 255, 0.065);
+    --surface-solid: #0b0d11;
+    --accent: #f0a27a;
+    --accent-soft: #ffd2b4;
+    --accentq: rgba(240, 162, 122, 0.14);
+    --accent-edge: rgba(240, 162, 122, 0.35);
+    --onaccent: #1a1210;
+    --ok: #6fdca2;
+    --fail: #ff7a6b;
+    --warn: #e8b25a;
+    --idle: rgba(200, 208, 224, 0.55);
+    --fail-text: #ffd9d3;
+    --scrim: rgba(0, 0, 0, 0.55);
+    --rain: #7cb6f0;
+    --codex: #a593f0;
+    --claude: #ff8f74;
+    --kaggle: #dcb25e;
+    --down: #6fdca2;
+    --up: #f2a560;
+    --jaish: #62c3d2;
+    --barun: #d68bc2;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+    --shadow-pop: 0 12px 32px rgba(0, 0, 0, 0.5);
+    --focus-ring: 0 0 0 3px rgba(240, 162, 122, 0.28);
+    --panel-peek: rgba(11, 13, 17, 0.96);
     --wx-sun: #ffd60a;
     --wx-sun-fill: rgba(255, 214, 10, 0.3);
     --wx-moon: #d1d1d6;
     --wx-moon-fill: rgba(209, 209, 214, 0.2);
-    --wx-cloud: #aeaeb2;
-    --wx-cloud-fill: #3a3a3c;
-    --wx-rain: #0a84ff;
+    --wx-cloud: #aeb3bd;
+    --wx-cloud-fill: #1a1d23;
     --wx-snow: #64d2ff;
     --wx-bolt: #ff9f0a;
     --wx-bolt-fill: rgba(255, 159, 10, 0.3);
     --wx-sunset: #ff7a4d;
     --wx-sat: 80%;
     --wx-light: 66%;
-    --usage-codex: #bffd3a;
-    --usage-claude: #fd3a5e;
     --usage-glm: #8f5bff;
     --usage-grok: #3afdda;
-    --usage-kaggle: #fdb93a;
-    --code-bg: #111113;
-    --code-text: #f5f5f7;
+    --code-bg: rgba(255, 255, 255, 0.05);
   }
 }
 
@@ -151,29 +212,28 @@ body {
   font-family: InterVariable, system-ui, sans-serif;
 }
 
-/* Full bleed (ADR 0012): no window padding, no workspace gap — the pane
-   and the toolbar own every edge. Kiosk is pixel-identical to windowed
-   (the dashboard--kiosk class survives only as an observable flag). */
+/* The shell (ADR 0078): the Toolbar band, the pane in its frame, and the
+   feed panel's slot. Kiosk is pixel-identical to windowed (the
+   dashboard--kiosk class survives only as an observable flag). */
 .dashboard {
   display: grid;
   grid-template-rows: auto 1fr auto;
   height: 100%;
 }
 
-/* The Toolbar (ADR 0012): the one reserved band above the pane, and the
-   window's only drag region — the OS title bar is hidden. Capsule left,
-   address cluster center, controls right. Interactive controls opt out
-   of dragging below. On a narrow window the address cluster gives way
-   first: the capsule column keeps room for its state word beside the orb
-   (up to "Listening…"; only the passing "Transcribing…" may clip below
-   ~520 px) and the controls keep theirs, so "Ready" is never cut to
-   "Rea". */
+/* The Toolbar: the one reserved band above the pane, and the window's only
+   drag region — the OS title bar is hidden. Capsule left, address cluster
+   centre, controls right. Interactive controls opt out of dragging below.
+   On a narrow window the address cluster gives way first: the capsule
+   column keeps room for its state word beside the orb, and the controls
+   keep theirs, so "Ready" is never cut to "Rea". */
 .toolbar {
   display: grid;
   grid-template-columns: minmax(8rem, 1fr) minmax(0, auto) minmax(min-content, 1fr);
   align-items: center;
   gap: 12px;
-  padding: 8px 14px;
+  height: var(--tb-h);
+  padding: 0 16px;
   -webkit-app-region: drag;
 }
 
@@ -190,51 +250,188 @@ body {
   grid-column: 3;
   justify-self: end;
   display: flex;
-  gap: 8px;
+  gap: 10px;
 }
 
-/* The Status Capsule (ADR 0012): orb + pill + the live run/voice hints
-   collapsed into one white pill on canvas. The hooks inside
-   (.status-orb--*, .status-pill, .voice-hint, .run-hint) are e2e
-   observation points and must survive any restyle. */
 /* The Toolbar's first column: the Status Capsule, and beside it the widgets. */
 .toolbar-start {
   grid-column: 1;
   justify-self: start;
   display: flex;
   align-items: center;
-  gap: 8px;
-  min-width: 0;
-  max-width: 100%;
-}
-
-.status-capsule {
-  /* Bounded by its column (#331): the capsule never grows into the back
-     control — a long hint or partial transcript ellipsizes instead. */
-  flex: 0 1 auto;
-  display: flex;
-  align-items: center;
   gap: 10px;
   min-width: 0;
   max-width: 100%;
-  box-sizing: border-box;
+}
+
+/* The Status Capsule: the one thing on the Toolbar read from three metres —
+   the state in 26 px, peach while Bing Bong works or listens. The hooks
+   inside (.status-orb--*, .status-pill, .voice-hint, .run-hint) are e2e
+   observation points and must survive any restyle. Bounded by its column
+   (#331): a long hint or partial transcript ellipsizes instead of growing
+   into the back control. */
+.status-capsule {
+  flex: 0 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  max-width: 100%;
+  height: 52px;
   overflow: hidden;
-  padding: 7px 16px;
-  border: 1px solid var(--edge);
-  border-radius: 999px;
-  background: var(--panel);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  padding: 0 22px 0 18px;
+  border: 1px solid var(--hair);
+  border-radius: 26px;
+  background: var(--surface);
+}
+
+.status-capsule--working,
+.status-capsule--listening {
+  border-color: var(--accent-edge);
+  background: var(--accentq);
+}
+
+/* The orb: state lives in its colour, named by the pill beside it. */
+.status-orb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--status-color, var(--idle));
+  flex: none;
+}
+
+.status-pill {
+  flex: none;
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+  color: var(--status-color, var(--fg2));
+  white-space: nowrap;
+}
+
+/* One colour per state, shared by the orb and the pill. Ready is quiet;
+   everything Bing Bong does — thinking, acting, transcribing, speaking —
+   and listening is peach; a Stop is the user's own act and stays neutral,
+   since coral is the failure colour (#329, #334). */
+.status-orb--thinking,
+.status-pill--thinking,
+.status-orb--acting,
+.status-pill--acting,
+.status-orb--transcribing,
+.status-pill--transcribing,
+.status-orb--speaking,
+.status-pill--speaking,
+.status-orb--listening,
+.status-pill--listening {
+  --status-color: var(--accent);
+}
+
+.status-orb--thinking,
+.status-orb--acting,
+.status-orb--transcribing,
+.status-orb--speaking,
+.status-orb--listening {
+  background: radial-gradient(circle at 35% 30%, var(--accent-soft), var(--accent) 60%);
+  box-shadow: 0 0 0 6px var(--accentq);
+}
+
+.status-orb--cancelled {
+  --status-color: var(--fgh);
+  width: 13px;
+  height: 13px;
+  border-radius: 3px;
+}
+
+.status-pill--cancelled {
+  --status-color: var(--fgh);
+}
+
+/* The live run's climbing seconds (#43): the honest "still alive" signal. */
+.run-hint {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--font-mono);
+  font-size: 22px;
+  font-weight: 500;
+  color: var(--accent);
+  font-feature-settings: 'tnum' 1;
+  white-space: nowrap;
+}
+
+/* The voice hint: instruction or the live words, the quiet layer — shown
+   in the capsule only while no Voice Prompt is on screen (#359). */
+.voice-hint {
+  min-width: 0;
+  font-size: 20px;
+  color: var(--fg2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.voice-hint--listening {
+  color: var(--fgh);
+}
+
+/* The listening waveform: an indicator, so it may move. */
+.voice-wave {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  height: 28px;
+  flex: none;
+}
+
+.voice-wave i {
+  width: 3px;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--accent);
+  transform-origin: center;
+  animation: voice-wave 900ms ease-in-out infinite;
+}
+
+.voice-wave i:nth-child(3n + 1) {
+  animation-delay: -300ms;
+}
+
+.voice-wave i:nth-child(3n + 2) {
+  animation-delay: -600ms;
+}
+
+.voice-wave i:nth-child(4n) {
+  animation-duration: 1200ms;
+}
+
+@keyframes voice-wave {
+  0%,
+  100% {
+    transform: scaleY(0.2);
+  }
+
+  50% {
+    transform: scaleY(0.85);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .voice-wave i {
+    animation: none;
+    transform: scaleY(0.5);
+  }
 }
 
 /* The Toolbar's widgets (owner ruling 2026-10-19): the running Timer and
-   the song Now Playing, each a small pill the capsule's height, beside it.
-   On a narrow window they give way before the capsule does: the song's
-   title ellipsizes, the countdown keeps its digits. */
+   the song Now Playing, each a chip beside the capsule. On a narrow window
+   they give way before the capsule does: the song's title ellipsizes, the
+   countdown keeps its digits. */
 .toolbar-widgets {
   flex: 0 100 auto;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   min-width: 0;
   overflow: hidden;
 }
@@ -242,54 +439,66 @@ body {
 .toolbar-widget {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 10px;
   min-width: 0;
-  box-sizing: border-box;
-  height: 36px;
-  padding: 0 12px;
-  border: 1px solid var(--edge);
-  border-radius: 999px;
-  background: var(--panel);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
-  color: var(--text);
+  height: 48px;
+  padding: 0 18px 0 14px;
+  border: 1px solid var(--hair);
+  border-radius: 24px;
+  background: var(--surface);
+  color: var(--fgh);
   font: inherit;
-  font-size: 0.9rem;
+  font-size: 20px;
+  font-weight: 500;
   white-space: nowrap;
 }
 
 .toolbar-widget .chrome-icon {
   flex: none;
-  color: var(--muted);
+  color: var(--fg2);
 }
 
 .toolbar-widget-text {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-variant-numeric: tabular-nums;
 }
 
+/* The Timer is Bing Bong's own: its glyph is peach, its figures mono. */
 .toolbar-timer {
   flex: none;
 }
 
+.toolbar-timer .chrome-icon {
+  color: var(--accent);
+}
+
+.toolbar-timer .toolbar-widget-text {
+  font-family: var(--font-mono);
+  font-size: 22px;
+  font-feature-settings: 'tnum' 1;
+}
+
 .toolbar-timer--ringing {
-  border-color: var(--status-red);
-  color: var(--status-red);
+  border-color: var(--accent-edge);
+  background: var(--accentq);
+  color: var(--accent);
   font-weight: 600;
   cursor: pointer;
 }
 
-.toolbar-timer--ringing .chrome-icon {
-  color: var(--status-red);
+.toolbar-timer--ringing .toolbar-widget-text {
+  font-family: inherit;
+  font-size: 20px;
 }
 
 .toolbar-song-title {
   max-width: 16rem;
 }
 
+.toolbar-song--quiet,
 .toolbar-song--quiet .toolbar-song-title {
-  color: var(--muted);
+  color: var(--fg2);
 }
 
 /* A narrow window: the widgets shrink to their glyphs (the countdown and
@@ -298,7 +507,7 @@ body {
    back arrow never draws over a clipped chip. */
 @media (max-width: 960px) {
   .toolbar:has(.toolbar-widgets) {
-    grid-template-columns: minmax(calc(8rem + 88px), 1fr) minmax(0, auto) minmax(min-content, 1fr);
+    grid-template-columns: minmax(calc(8rem + 120px), 1fr) minmax(0, auto) minmax(min-content, 1fr);
   }
 
   .toolbar-widgets {
@@ -306,7 +515,7 @@ body {
   }
 
   .toolbar-widget {
-    padding: 0 10px;
+    padding: 0 12px;
   }
 
   .toolbar-widget-text {
@@ -322,7 +531,7 @@ body {
   }
 
   .toolbar:has(.toolbar-timer) {
-    grid-template-columns: minmax(calc(8rem + 44px), 1fr) minmax(0, auto) minmax(min-content, 1fr);
+    grid-template-columns: minmax(calc(8rem + 60px), 1fr) minmax(0, auto) minmax(min-content, 1fr);
   }
 
   .toolbar-song {
@@ -330,114 +539,183 @@ body {
   }
 }
 
-/* Voice hints are quiet detail inside the capsule: muted, still — the
-   capsule and orb carry the state color, the hint carries instruction. */
-.voice-hint {
+/* The Toolbar's browsing cluster: back/forward and the address, centred.
+   The .chrome-button/.url-input/.chrome-loading hooks stay as e2e
+   observation points. */
+.browser-nav {
+  grid-column: 2;
+  justify-self: center;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   min-width: 0;
-  font-size: 0.9rem;
-  color: var(--muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  /* Held to its column on a narrow window, so the address field shrinks
+     rather than running under the controls. */
+  max-width: 100%;
 }
 
-/* The header's live run line (#43): stage + climbing elapsed. The climbing
-   number is the honest "still alive" signal — no pulse needed. */
-.run-hint {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  font-size: 0.9rem;
-  color: var(--accent);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.session-expiry {
+.chrome-button {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  color: var(--status-yellow);
-  white-space: nowrap;
-}
-
-.session-expiry-countdown {
-  font-size: 0.9rem;
-  font-weight: 650;
-  font-variant-numeric: tabular-nums;
-}
-
-.session-expiry button {
-  border: 1px solid var(--edge);
-  border-radius: 999px;
-  background: var(--panel);
-  color: var(--text);
-  padding: 3px 8px;
-  font: inherit;
-  font-size: 0.78rem;
-  cursor: pointer;
-}
-
-.session-expiry-extend {
-  border-color: color-mix(in srgb, var(--status-yellow) 45%, var(--edge)) !important;
-}
-
-.session-expiry-decline {
-  color: var(--muted) !important;
-}
-
-/* A static colored dot: state lives in color, named by the pill. */
-.status-orb {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: var(--status-color, var(--muted));
-  flex: none;
-}
-
-/* The status pill: the state, named in text beside the still orb. Inside
-   the capsule it drops its own chrome — the capsule is the pill now. */
-.status-pill {
-  flex: none;
-  font-size: 0.9rem;
-  font-weight: 600;
-  line-height: 1.4;
-  color: var(--status-color, var(--muted));
-  border: none;
-  background: none;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
   padding: 0;
-  white-space: nowrap;
+  border: 1px solid transparent;
+  border-radius: 14px;
+  background: transparent;
+  color: var(--fg2);
+  line-height: 1;
+  cursor: pointer;
+  flex: none;
+  transition: background 120ms ease;
 }
 
-/* One color table per state, shared by the orb and the pill: blue thinks
-   and transcribes, purple listens and pauses, orange acts, green speaks.
-   Ready stays muted, and Stopped is neutral too: a Stop is the user's own
-   act, and red is the failure colour (#329, #334). */
-.status-orb--thinking,
-.status-pill--thinking,
-.status-orb--transcribing,
-.status-pill--transcribing {
-  --status-color: var(--status-blue);
+.chrome-button:disabled {
+  color: var(--fg3);
+  opacity: 0.5;
+  cursor: default;
 }
 
-.status-orb--listening,
-.status-pill--listening {
-  --status-color: var(--status-purple);
+.chrome-button:not(:disabled):hover {
+  background: var(--raise);
+  color: var(--fgh);
 }
 
-.status-orb--acting,
-.status-pill--acting {
-  --status-color: var(--status-yellow);
+.chrome-button[aria-pressed='true'] {
+  border-color: var(--hair);
+  background: var(--raise);
+  color: var(--fgh);
 }
 
-.status-orb--speaking,
-.status-pill--speaking {
-  --status-color: var(--status-green);
+.chrome-button:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
 }
 
-.status-orb--cancelled,
-.status-pill--cancelled {
-  --status-color: var(--text);
+/* The address: the host in the primary ink, the rest quiet. The input
+   holds the value; while it is not being edited a drawn copy of the same
+   words sits over it, split at the host. */
+.url-form {
+  position: relative;
+  flex: 0 1 auto;
+  width: min(680px, 38vw);
+  min-width: 0;
+  height: 48px;
+}
+
+.url-input {
+  width: 100%;
+  height: 48px;
+  padding: 0 52px 0 22px;
+  border: 1px solid var(--hair);
+  border-radius: 24px;
+  background: var(--surface);
+  color: var(--fgh);
+  font: inherit;
+  font-size: 19px;
+}
+
+.url-input::placeholder {
+  color: var(--fg3);
+}
+
+.url-input:focus {
+  outline: none;
+  border-color: var(--hair2);
+  box-shadow: var(--focus-ring);
+}
+
+.url-form--drawn .url-input {
+  color: transparent;
+}
+
+.url-display {
+  position: absolute;
+  left: 23px;
+  right: 52px;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  font-size: 19px;
+  color: var(--fg2);
+  white-space: pre;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+
+.url-display-host {
+  color: var(--fgh);
+}
+
+/* The loading progress: a peach ring in the field and a bar along its foot.
+   Both sit inside the field, so the centred cluster never shifts (#334). */
+.chrome-loading {
+  position: absolute;
+  right: 18px;
+  top: 14px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2.5px solid var(--accentq);
+  border-top-color: var(--accent);
+  animation: chrome-loading-spin 900ms linear infinite;
+}
+
+.chrome-loading-bar {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: 0;
+  height: 3px;
+  overflow: hidden;
+  border-radius: 2px;
+}
+
+.chrome-loading-bar::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 40%;
+  border-radius: 2px;
+  background: var(--accent);
+  animation: chrome-loading-bar 1.4s ease-in-out infinite;
+}
+
+@keyframes chrome-loading-spin {
+  to {
+    rotate: 360deg;
+  }
+}
+
+@keyframes chrome-loading-bar {
+  from {
+    left: -40%;
+  }
+
+  to {
+    left: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chrome-loading {
+    animation-duration: 2.4s;
+  }
+
+  .chrome-loading-bar::before {
+    left: 0;
+    animation: none;
+  }
+}
+
+.settings-toggle[aria-pressed='true'] {
+  border-color: var(--hair);
+  background: var(--raise);
+  color: var(--fgh);
 }
 
 .dashboard-main {
@@ -445,11 +723,10 @@ body {
 }
 
 /* The workspace: browsing (or settings) beside the feed panel's layout
-   slot, full bleed. The panel itself renders in a native overlay view
-   (ADR 0004); the slot reports its rect — overlay mode floats out-of-flow
-   above the browsing area (no layout reflow beneath), docked mode takes
-   real layout space flush against the pane, and the collapsed state is a
-   slim edge tab. */
+   slot. The panel itself renders in a native overlay view (ADR 0004); the
+   slot reports its rect — overlay mode floats out-of-flow above the
+   browsing area, docked mode takes real layout space beside the pane, and
+   the collapsed state is a slim edge tab. */
 .dashboard-workspace {
   position: relative;
   display: flex;
@@ -464,12 +741,38 @@ body {
   min-width: 0;
 }
 
+/* The pane in its frame (ADR 0078): inset from the window by the gutter,
+   rounded — main rounds the native view to the same radius — on a hairline.
+   The page inside is never restyled. */
+.dashboard-browsing {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  padding: 0 16px 16px;
+}
+
+.browser-pane {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  border: 1px solid var(--hair2);
+  border-radius: var(--radius-lg);
+}
+
+.browser-viewport {
+  flex: 1;
+  min-height: 0;
+  background: var(--surface-solid);
+}
+
 /* A pure rect reporter: the native overlay view fills it; it never takes
    input, and only docked mode lets it take layout space. The width comes
    from the folded panel state as a var; the fold owns the spec's bound
    (min 320 / max 75% of the window) and this live clamp re-bounds the
-   slot against the workspace (the containing block) when the window
-   shrinks, without discarding the persisted width. */
+   slot against the workspace when the window shrinks, without discarding
+   the persisted width. The panel's own gutter is drawn inside it. */
 .feed-slot {
   pointer-events: none;
 }
@@ -495,8 +798,8 @@ body {
   top: 50%;
   right: 0;
   transform: translateY(-50%);
-  width: 36px;
-  height: 180px;
+  width: 44px;
+  height: 200px;
 }
 
 /* The settings page shows (#334): the panel is hidden, its slot takes no
@@ -506,7 +809,7 @@ body {
 }
 
 /* The Peek Card's slot (ADR 0029): while the card shows, the collapsed
-   slot floats bottom-center over the pane — away from the panel's
+   slot floats bottom-centre over the pane — away from the panel's
    right-edge footprint, so switching card <-> panel reveals the page
    beneath the other. The native view's bounds shrink-wrap this rect and
    intercept input across all of it, so the card fills it exactly. The
@@ -517,11 +820,11 @@ body {
   position: absolute;
   top: auto;
   right: auto;
-  bottom: 20px;
+  bottom: 40px;
   left: 50%;
   transform: translateX(-50%);
-  width: min(560px, 80%);
-  height: 116px;
+  width: min(640px, 80%);
+  height: 124px;
 }
 
 /* The Weigh-in pop-up's slot over the browsing pane: the Peek Card's
@@ -529,14 +832,15 @@ body {
    keeps the overlay's slot while the pop-up shows. */
 .weighin-slot {
   position: absolute;
-  bottom: 20px;
+  bottom: 40px;
   left: 50%;
   transform: translateX(-50%);
-  width: min(560px, 80%);
-  height: 116px;
+  width: min(640px, 80%);
+  height: 124px;
   pointer-events: none;
 }
 
+/* ---- the Feed (rendered by the panel's overlay view) ---- */
 .feed {
   display: flex;
   flex-direction: column;
@@ -546,40 +850,50 @@ body {
 
 .feed-header {
   flex: none;
-  padding: 12px 18px;
-  border-bottom: 1px solid var(--edge);
-  font-size: 0.8rem;
-  font-weight: 650;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 64px;
+  padding: 0 12px 0 24px;
+  border-bottom: 1px solid var(--hair);
+  font-size: 16px;
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--muted);
+  letter-spacing: 0.16em;
+  color: var(--fg3);
 }
 
+/* The Feed's columns: the time, the mark, the words. */
 .feed-list {
-  --feed-time-width: 4.4rem;
+  --feed-time-width: 88px;
+  --feed-mark-width: 22px;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 14px 16px;
+  gap: 12px;
+  padding: 18px 26px 22px 20px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--hair2) transparent;
+  -webkit-mask-image: linear-gradient(transparent 0, #000 18px);
 }
 
 .feed-empty {
   margin: 0;
-  color: var(--muted);
-  font-style: italic;
+  padding: 8px 4px;
+  font-size: 22px;
+  color: var(--fg3);
 }
 
-/* Motion boundary (ADR 0012): a new entry fades in where it lands —
-   opacity only, never translation. Text never travels. */
+/* Motion boundary: a new entry fades in where it lands — opacity only,
+   never translation. Text never travels. */
 .feed-entry {
-  display: flex;
-  gap: 12px;
+  display: grid;
+  grid-template-columns: var(--feed-time-width) var(--feed-mark-width) minmax(0, 1fr);
+  align-items: start;
   margin: 0;
-  line-height: 1.45;
-  justify-content: flex-start;
+  line-height: 1.38;
   animation: feed-entry-in 160ms ease;
 }
 
@@ -589,22 +903,40 @@ body {
   }
 }
 
+/* A long error folds under its first line: the fold itself is a block (a
+   details element is not laid out as a grid), its summary takes the
+   Feed's columns. */
+details.feed-entry {
+  display: block;
+}
+
 .feed-entry summary {
-  display: flex;
-  gap: 12px;
+  display: grid;
+  grid-template-columns: var(--feed-time-width) var(--feed-mark-width) minmax(0, 1fr);
+  align-items: start;
   cursor: pointer;
+  list-style: none;
+}
+
+.feed-entry summary::-webkit-details-marker {
+  display: none;
+}
+
+.feed-entry summary > .feed-text {
+  grid-column: 2 / 4;
+  font-size: 18px;
 }
 
 /* One time column (#333): every entry's time comes first, at one width,
    so the times line up down the Feed's left edge whoever spoke. */
 .feed-time {
-  flex: none;
-  width: var(--feed-time-width);
-  color: var(--muted);
-  opacity: 0.7;
-  font-size: 0.85rem;
-  font-variant-numeric: tabular-nums;
-  padding-top: 2px;
+  grid-column: 1;
+  padding-top: 6px;
+  font-family: var(--font-mono);
+  font-size: 16px;
+  color: var(--fg3);
+  font-feature-settings: 'tnum' 1;
+  white-space: nowrap;
 }
 
 .feed-text {
@@ -612,84 +944,14 @@ body {
   overflow-wrap: anywhere;
 }
 
-/* One attribution device (ADR 0013): the Status Capsule's orb beside
-   every assistant entry — the same mark that names the assistant's state
-   in the Toolbar. No text handles; the name lives in screen-reader text.
-   User bubbles carry no glyph: the orb IS "Bing Bong speaking", and your
-   own words need no mark. */
-.feed-orb {
-  flex: none;
-  align-self: flex-start;
-  width: 10px;
-  height: 10px;
-  margin-top: 10px;
-  border-radius: 50%;
-  background: var(--status-green);
+/* A system line's words take the mark's column and the words'. */
+.feed-entry > .feed-text {
+  grid-column: 2 / 4;
+  font-size: 18px;
+  color: var(--fg2);
 }
 
-/* A failure reads as a failure (#329, owner ruling 2026-10-18): the mark
-   and the rail of an Answer that tells what went wrong take the failure
-   colour; every other Answer keeps the assistant's. */
-.feed-entry--failed .feed-orb {
-  background: var(--status-red);
-}
-
-/* A cancelled Command is grey (owner ruling 2026-10-19): a Stop's Answer is
-   neither a success nor a failure. */
-.feed-entry--assistant.feed-entry--muted .feed-orb {
-  background: var(--muted);
-}
-
-/* The spoken half of an Answer with no Card (ADR 0013): italic speech in
-   the card frame — "this was said", not written. */
-.feed-text--spoken {
-  font-style: italic;
-}
-
-/* The typing indicator (ADR 0013): an Answer forming — opacity-only
-   pulses, honoring the motion boundary (ADR 0012: no translation). */
-.feed-typing {
-  display: inline-flex;
-  gap: 5px;
-  padding: 6px 2px;
-}
-
-.feed-typing-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--muted);
-  animation: feed-typing-fade 1.2s ease-in-out infinite;
-}
-
-.feed-typing-dot:nth-child(2) {
-  animation-delay: 0.2s;
-}
-
-.feed-typing-dot:nth-child(3) {
-  animation-delay: 0.4s;
-}
-
-@keyframes feed-typing-fade {
-  0%,
-  60%,
-  100% {
-    opacity: 0.25;
-  }
-
-  30% {
-    opacity: 1;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .feed-typing-dot {
-    animation: none;
-    opacity: 0.6;
-  }
-}
-
-/* Screen-reader-only attribution: the name the visual orb carries. */
+/* Screen-reader-only attribution: the name the visual mark carries. */
 .feed-sr {
   position: absolute;
   width: 1px;
@@ -702,46 +964,38 @@ body {
   border: 0;
 }
 
-/* Conversation separation: the feed reads as a chat between two voices —
-   your words right-aligned in gray fills, Bing Bong's answers as
-   left-aligned white cards with the speaking-green rail. System detail
-   keeps the plain tier below. Your bubbles stop short of the panel's
-   width, so the negative space frames your voice; an Answer's Card takes
-   the content width (#333). */
-
-/* The bubble sits right, after the time column (#333). A long address in
-   it wraps at its slashes (the renderer marks a break after each), and
-   breaks mid-word only when one part alone is wider than the bubble. */
+/* Your words: a bubble at the right, after the time column (#333). A long
+   address in it wraps at its slashes (the renderer marks a break after
+   each), and breaks mid-word only when one part alone is wider than the
+   bubble. */
 .feed-bubble {
+  grid-column: 2 / 4;
+  justify-self: end;
   min-width: 0;
-  max-width: 80%;
-  margin-left: auto;
+  max-width: 100%;
   overflow-wrap: break-word;
-  background: var(--bubble);
-  border-radius: 18px 18px 5px 18px;
-  padding: 6px 16px;
+  padding: 9px 16px 10px;
+  border: 1px solid var(--hair);
+  border-radius: 16px 16px 4px 16px;
+  background: var(--raise);
 }
 
-/* Inside a bubble, every user line — command or heard words — reads as
-   your voice at conversation size. The extra class keeps this rule
-   winning over the later per-kind tiers (e.g. voice's muted detail). */
 .feed-entry--user .feed-bubble .feed-text {
-  color: var(--text);
-  font-size: 1.2rem;
+  display: block;
+  color: var(--fgh);
+  font-size: 21px;
+  line-height: 1.36;
 }
 
 /* One entry per Command (#324, ADR 0076): the action taken reads as a
-   quiet subline under the words heard, in the same bubble. */
-.feed-bubble .feed-text,
-.feed-bubble .feed-action {
-  overflow-wrap: break-word;
-}
-
+   quiet mono subline under the words heard, in the same bubble. */
 .feed-bubble .feed-action {
   display: block;
-  color: var(--muted);
-  font-size: 0.85rem;
-  margin-top: 2px;
+  margin-top: 3px;
+  overflow-wrap: break-word;
+  font-family: var(--font-mono);
+  font-size: 16px;
+  color: var(--fg3);
 }
 
 /* A Task's later hops (#336): one quiet line each under the words, greyed
@@ -751,130 +1005,159 @@ body {
 }
 
 .feed-bubble .feed-action--failed {
-  color: var(--status-red);
+  color: var(--fail);
 }
 
-/* An Utterance read as no Command (#324): the words alone, greyed — the
-   Feed shows it was heard and nothing was done. */
+/* The Command being worked on: the loud bubble, edged in peach. */
+.feed-entry--live .feed-bubble {
+  border: 1.5px solid var(--accent-edge);
+  background: var(--accentq);
+}
+
+.feed-entry--live .feed-bubble .feed-text {
+  font-size: 27px;
+  line-height: 1.28;
+  font-weight: 500;
+  color: var(--fg);
+}
+
+/* An Utterance read as no Command (#324): the words alone, dashed and
+   greyed — the Feed shows it was heard and nothing was done. */
 .feed-entry--muted .feed-bubble {
-  opacity: 0.55;
+  border-style: dashed;
+  border-color: var(--hair2);
+  background: transparent;
 }
 
-.feed-entry--muted .feed-bubble .feed-text {
-  color: var(--muted);
+.feed-entry--user.feed-entry--muted .feed-bubble .feed-text {
+  color: var(--fg3);
 }
 
-/* An Answer's Card takes the content width beside the time column and
-   the orb (#333), however short its words. */
+/* Bing Bong's Answer: a mark and a rail, no box — success green, failure
+   coral (#329), a Stop's or a no-op's neutral; the words in the quiet
+   layer until it is the headline. */
+.feed-orb {
+  grid-column: 2;
+  display: grid;
+  place-items: center;
+  width: 12px;
+  height: 12px;
+  margin-top: 11px;
+  border-radius: 50%;
+  background: var(--ok);
+  color: var(--bg);
+}
+
+.feed-orb .chrome-icon {
+  display: none;
+}
+
 .feed-card {
-  flex: 1;
+  grid-column: 3;
   min-width: 0;
-  background: var(--panel);
-  border: 1px solid var(--edge);
-  border-left: 4px solid var(--status-green);
-  border-radius: 5px 16px 16px 5px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
-  padding: 10px 16px;
+  padding: 4px 0 4px 16px;
+  border-left: 3px solid color-mix(in srgb, var(--ok) 55%, transparent);
+  font-size: 21px;
+  line-height: 1.38;
+  color: var(--fg2);
+}
+
+.feed-card .feed-text {
+  display: block;
+}
+
+.feed-entry--failed .feed-orb {
+  background: var(--fail);
 }
 
 .feed-entry--failed .feed-card {
-  border-left-color: var(--status-red);
+  border-left-color: color-mix(in srgb, var(--fail) 60%, transparent);
+}
+
+.feed-entry--assistant.feed-entry--muted .feed-orb {
+  background: var(--idle);
 }
 
 .feed-entry--assistant.feed-entry--muted .feed-card {
-  border-left-color: var(--muted);
+  border-left-color: color-mix(in srgb, var(--idle) 55%, transparent);
 }
 
-/* Conversation tier: your words and Bing Bong's read at 1.2rem (~20px). */
-.feed-entry--command .feed-text {
-  color: var(--text);
-  font-size: 1.2rem;
+/* The newest Answer is the headline (#359): read from three metres. */
+.feed-entry--headline .feed-orb {
+  width: 22px;
+  height: 22px;
+  margin: 8px 0 0 -5px;
 }
 
-/* Tool detail tier: monospaced quiet lines. */
-.feed-entry--tool .feed-text {
-  color: var(--muted);
-  font-family: ui-monospace, monospace;
-  font-size: 0.85rem;
+.feed-entry--headline .feed-orb .chrome-icon {
+  display: block;
 }
 
-/* The Spoken Rendering reads at conversation size — italic speech in the
-   card frame (ADR 0013). */
-.feed-entry--speak .feed-text {
-  color: var(--text);
-  font-size: 1.2rem;
+.feed-entry--headline .feed-card {
+  padding: 2px 0 4px 18px;
+  border-left-width: 4px;
+  border-left-color: var(--ok);
+  font-size: 28px;
+  line-height: 1.3;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--fg);
 }
 
-.feed-entry--display .feed-text {
-  color: var(--text);
-  font-size: 1.2rem;
+.feed-entry--headline.feed-entry--failed .feed-card {
+  border-left-color: var(--fail);
+  color: var(--fail-text);
 }
 
-.feed-entry--voice .feed-text {
-  color: var(--muted);
-  font-size: 0.9rem;
+.feed-entry--headline.feed-entry--assistant.feed-entry--muted .feed-card {
+  border-left-color: var(--idle);
 }
 
-/* Retry lines: ephemeral detail — quiet, so outcomes read first. */
-.feed-entry--retry .feed-text {
-  color: var(--muted);
-  font-size: 0.85rem;
+.feed-entry--headline .feed-markdown p + p {
+  font-size: 24px;
+  color: var(--fgh);
+}
+
+/* The spoken half of an Answer with no Card: italic speech — "this was
+   said", not written. */
+.feed-text--spoken {
   font-style: italic;
 }
 
-/* Steer echoes: your directive, received and pending — quiet like retry
-   detail, but accented so it never reads as the model's words. */
-.feed-entry--steer .feed-text {
-  color: var(--muted);
-  font-size: 0.85rem;
-  font-style: italic;
-}
-
-.feed-entry--steer .feed-time {
-  color: var(--accent);
-}
-
-/* The streamed answer's placeholder (ADR 0013): the typing indicator
-   carries the entry while the Answer forms — the final Card or Spoken
-   Rendering replaces it when parsing completes. */
-
-/* Reasoning traces: dimmed bonus direction — present only when the
-   provider emits reasoning_content, absent otherwise. */
-.feed-entry--reasoning .feed-text {
-  color: var(--muted);
-  font-size: 0.85rem;
-  font-style: italic;
-  opacity: 0.75;
-}
-
-/* Tool-call intent: what is about to happen, while the arguments still
-   stream — dim like reasoning (pre-execution direction), upright so it
-   reads as an action, not a thought. */
-.feed-entry--intent .feed-text {
-  color: var(--muted);
-  font-size: 0.85rem;
-  opacity: 0.85;
-}
-
-/* Stage entries: the run's phase markers — the quietest lines in the
-   feed, since the capsule hint already narrates the live stage; these
-   lines exist for reconstructing timings afterwards. */
+.feed-entry--voice .feed-text,
+.feed-entry--tool .feed-text,
 .feed-entry--stage .feed-text {
-  color: var(--muted);
-  font-size: 0.85rem;
+  font-size: 16px;
+  color: var(--fg3);
+}
+
+.feed-entry--tool .feed-text {
+  font-family: var(--font-mono);
+}
+
+.feed-entry--stage .feed-text {
   font-style: italic;
-  opacity: 0.6;
 }
 
 .feed-entry--error .feed-text {
-  color: var(--status-red);
+  color: var(--fail);
 }
 
-/* Markdown answers: structured rendering inside the final railed Cards.
-   Prose stays conversation size
-   (inherited from .feed-text); code blocks take the dark treatment (ink
-   surface, canvas text) so they read as blocks; links carry the accent
-   and navigate the main pane. */
+.feed-error-detail {
+  margin: 6px 0 0 calc(var(--feed-time-width) + var(--feed-mark-width));
+  padding: 8px 12px;
+  border-left: 2px solid var(--fail);
+  border-radius: 0 8px 8px 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--font-mono);
+  font-size: 16px;
+  color: var(--fg2);
+}
+
+/* Markdown answers: structured rendering inside the Answer. Prose takes
+   the Answer's size; code is a block a step off the ground; links carry
+   the ink, underlined, and navigate the main pane. */
 .feed-markdown > :first-child {
   margin-top: 0;
 }
@@ -884,7 +1167,7 @@ body {
 }
 
 .feed-markdown p {
-  margin: 0 0 0.6em;
+  margin: 0 0 10px;
 }
 
 .feed-markdown h1,
@@ -893,32 +1176,21 @@ body {
 .feed-markdown h4,
 .feed-markdown h5,
 .feed-markdown h6 {
-  margin: 1em 0 0.4em;
+  margin: 0.6em 0 6px;
+  font-size: 1em;
+  font-weight: 600;
   line-height: 1.25;
-  color: var(--text);
+  color: inherit;
 }
 
-.feed-markdown h1 {
-  font-size: 1.5rem;
-}
-
-.feed-markdown h2 {
-  font-size: 1.35rem;
-}
-
-.feed-markdown h3 {
-  font-size: 1.25rem;
-}
-
-.feed-markdown h4,
-.feed-markdown h5,
-.feed-markdown h6 {
-  font-size: 1.15rem;
+.feed-entry--headline .feed-markdown :is(h1, h2, h3, h4, h5, h6) {
+  font-size: 32px;
+  letter-spacing: -0.015em;
 }
 
 .feed-markdown ul,
 .feed-markdown ol {
-  margin: 0 0 0.6em;
+  margin: 0 0 10px;
   padding-left: 1.4em;
 }
 
@@ -927,44 +1199,41 @@ body {
 }
 
 .feed-markdown blockquote {
-  margin: 0 0 0.6em;
+  margin: 0 0 10px;
   padding: 2px 0 2px 14px;
-  border-left: 4px solid var(--edge);
-  color: var(--muted);
+  border-left: 3px solid var(--hair2);
+  color: var(--fg2);
 }
 
 .feed-markdown hr {
   border: none;
-  border-top: 1px solid var(--edge);
+  border-top: 1px solid var(--hair);
   margin: 0.8em 0;
 }
 
 .feed-markdown strong {
-  font-weight: 750;
+  font-weight: 650;
 }
 
 .feed-markdown em {
   font-style: italic;
 }
 
-/* Inline code: quiet raised chip at near-conversation size. */
 .feed-markdown :not(pre) > code {
-  padding: 0 8px;
-  border-radius: 8px;
-  background: var(--bg);
-  border: 1px solid var(--edge);
-  font-family: ui-monospace, monospace;
-  font-size: 0.9rem;
+  padding: 0 6px;
+  border-radius: 6px;
+  background: var(--code-bg);
+  font-family: var(--font-mono);
+  font-size: 0.85em;
 }
 
-/* Fenced code blocks: the dark surface — ink with canvas text, the one
-   deliberately dark element on the light dashboard, so code reads as a
-   block. Code wraps: a glanceable panel must never hide lines off its
-   right edge, so no horizontal scroll — long tokens break. */
+/* Code wraps: a glanceable panel must never hide lines off its right
+   edge, so no horizontal scroll — long tokens break. */
 .feed-markdown pre {
-  margin: 0 0 0.6em;
+  margin: 0 0 10px;
   padding: 12px 14px;
-  border-radius: 12px;
+  border: 1px solid var(--hair);
+  border-radius: var(--radius);
   background: var(--code-bg);
   color: var(--code-text);
   white-space: pre-wrap;
@@ -972,47 +1241,43 @@ body {
 }
 
 .feed-markdown pre code {
-  font-family: ui-monospace, monospace;
-  font-size: 0.85rem;
+  font-family: var(--font-mono);
+  font-size: 16px;
   line-height: 1.45;
-  background: none;
-  border: none;
-  padding: 0;
 }
 
-/* Links in answers: accent blue, honestly underlined — one click
-   navigates the main pane (the renderer intercepts the click). */
 .feed-markdown .feed-link {
-  color: var(--accent);
+  color: inherit;
   text-decoration: underline;
+  text-decoration-color: var(--fg3);
   text-underline-offset: 3px;
   cursor: pointer;
 }
 
 .feed-markdown .feed-link:hover {
-  color: var(--status-green);
+  text-decoration-color: currentColor;
 }
 
-/* Per-run details expander (the Run Detail): run noise — tool lines and
-   stage markers — folds under one quiet section per run, collapsed until
-   clicked (#333). The grouped lines keep their plain tiers above; the
-   expander adds only the fold, never restyles its contents. No inset on
-   the left: the run's own times stay in the Feed's one time column, and
-   its summary starts where the content does. */
+/* The Run Detail: run noise — tool lines and stage markers — folds under
+   one quiet section per run, collapsed until clicked (#333). Its summary
+   starts where the words do; its lines keep the Feed's time column. */
 .feed-run {
-  border-radius: 4px;
-  background: color-mix(in srgb, var(--panel) 60%, transparent);
-  padding: 4px 10px 4px 0;
+  margin: -4px 0 0;
 }
 
 .feed-run-summary {
-  padding-left: calc(var(--feed-time-width) + 12px);
+  margin-left: calc(var(--feed-time-width) + var(--feed-mark-width));
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 10px;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--hair);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
   cursor: pointer;
-  color: var(--muted);
-  font-size: 0.9rem;
+  color: var(--fg3);
+  font-size: 16px;
   user-select: none;
   list-style: none;
 }
@@ -1023,8 +1288,8 @@ body {
 
 /* The fold marker: a quiet triangle that turns with the section. */
 .feed-run-summary::before {
-  content: '▸';
-  font-size: 0.8rem;
+  content: '▶';
+  font-size: 12px;
   transition: rotate 120ms ease;
 }
 
@@ -1034,235 +1299,76 @@ body {
 
 .feed-run-title {
   text-transform: uppercase;
-  letter-spacing: 0.08em;
-  font-weight: 650;
-}
-
-/* While its run is live, the title reads as activity, not archive. */
-.feed-run--live .feed-run-title {
-  color: var(--status-blue);
+  letter-spacing: 0.12em;
+  font-weight: 600;
 }
 
 .feed-run-count {
-  font-size: 0.85rem;
-  font-variant-numeric: tabular-nums;
-  opacity: 0.7;
+  font-family: var(--font-mono);
+  font-weight: 500;
+}
+
+/* While its run is live, the summary is Bing Bong at work: peach, with a
+   bar that moves. */
+.feed-run--live .feed-run-summary {
+  border-color: var(--accent-edge);
+  background: var(--accentq);
+  color: var(--accent);
+}
+
+.feed-run--live .feed-run-summary::after {
+  content: '';
+  flex: 1;
+  height: 3px;
+  margin-left: 6px;
+  border-radius: 2px;
+  background: linear-gradient(var(--accent), var(--accent)) no-repeat 0 0 / 40% 100%, var(--accentq);
+  animation: feed-run-bar 1.4s ease-in-out infinite alternate;
+}
+
+@keyframes feed-run-bar {
+  to {
+    background-position: 100% 0, 0 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .feed-run--live .feed-run-summary::after {
+    animation: none;
+  }
 }
 
 .feed-run-entries {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 4px 0 2px;
+  padding: 8px 0 2px;
   /* A long run's noise must not take the panel hostage: the block grows
-     to at most ~40% of the viewport and scrolls itself past that, so the
-     conversation lines around it stay readable. Scroll containment keeps
-     the inner wheel from dragging the whole feed list along. */
+     to at most ~40% of the viewport and scrolls itself past that. Scroll
+     containment keeps the inner wheel from dragging the whole list along. */
   max-height: 40vh;
   overflow-y: auto;
   overscroll-behavior: contain;
 }
 
-/* One round's thinking block: its own collapsible section inside the run
-   expander — open only while it trails the run (the model is still
-   thinking), collapsed once the orchestrator acts again. Same visual
-   grammar as the run expander (quiet triangle, uppercase title), one step
-   quieter. */
-.feed-reasoning {
-  border-left: 2px solid var(--edge);
-  border-radius: 4px;
-  padding: 2px 8px;
-}
-
-.feed-reasoning-summary {
+/* The Peek Card (ADR 0021): the transient report of the live Run and its
+   Answer while the Feed Panel is Collapsed — voice shows it, clicking it
+   opens the panel (the only interactive square inch; no buttons ride it).
+   One solid panel over the page, the mark the Feed's. */
+.peek-card {
   display: flex;
-  align-items: baseline;
-  gap: 8px;
-  cursor: pointer;
-  color: var(--muted);
-  font-size: 0.85rem;
-  user-select: none;
-  list-style: none;
-}
-
-.feed-reasoning-summary::-webkit-details-marker {
-  display: none;
-}
-
-.feed-reasoning-summary::before {
-  content: '▸';
-  font-size: 0.75rem;
-  transition: rotate 120ms ease;
-}
-
-.feed-reasoning[open] .feed-reasoning-summary::before {
-  rotate: 90deg;
-}
-
-.feed-reasoning-title {
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  font-weight: 650;
-}
-
-/* The trailing block of a live run reads as activity, not archive. */
-.feed-reasoning--live .feed-reasoning-title {
-  color: var(--status-blue);
-}
-
-.feed-reasoning-text {
-  margin: 4px 0 2px;
-  white-space: pre-wrap;
-  word-break: break-word;
-  font-family: inherit;
-  color: var(--muted);
-  font-size: 0.85rem;
-  font-style: italic;
-  opacity: 0.75;
-}
-
-.feed-error-detail {
-  margin: 6px 0 0;
-  padding: 8px 12px;
-  border-left: 2px solid var(--status-red);
-  border-radius: 0 8px 8px 0;
-  white-space: pre-wrap;
-  word-break: break-word;
-  font-family: ui-monospace, monospace;
-  font-size: 0.85rem;
-  color: var(--muted);
-}
-
-/* The Toolbar's browsing cluster (ADR 0012): back/forward and the pill
-   address field, centered. The .chrome-button/.url-input/.chrome-loading
-   hooks predate the restyle and stay as e2e observation points. */
-.browser-nav {
-  grid-column: 2;
-  justify-self: center;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  /* Held to its column on a narrow window, so the address field shrinks
-     rather than running under the controls. */
-  max-width: 100%;
-}
-
-.chrome-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 34px;
-  height: 34px;
-  padding: 0;
-  border: none;
-  border-radius: 10px;
-  background: transparent;
-  color: var(--text);
-  font-size: 1rem;
-  line-height: 1;
-  cursor: pointer;
-  flex: none;
-  transition: background 120ms ease;
-}
-
-.chrome-button:disabled {
-  color: var(--muted);
-  opacity: 0.4;
-  cursor: default;
-}
-
-.chrome-button:not(:disabled):hover {
-  background: color-mix(in srgb, var(--text) 8%, transparent);
-}
-
-.url-form {
-  flex: 0 1 auto;
-  width: min(480px, 38vw);
-  min-width: 0;
-}
-
-.url-input {
-  width: 100%;
-  height: 34px;
-  padding: 0 18px;
-  border: 1px solid var(--edge);
-  border-radius: 17px;
-  background: var(--panel);
-  color: var(--text);
-  font-size: 0.9rem;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-}
-
-.url-input:focus {
-  outline: none;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.15);
-}
-
-/* The loading indicator: a quiet text spinner in the toolbar — calm
-   braille frames, no sliding bar. Its slot holds the same room loading or
-   not, so the centred cluster never shifts (#334). */
-.chrome-loading-slot {
-  flex: none;
-  display: inline-flex;
-  justify-content: center;
-  width: 18px;
-}
-
-.chrome-loading {
-  color: var(--accent);
-  font-size: 0.9rem;
-  line-height: 1;
-}
-
-/* The browsing pane (ADR 0012): full bleed — edge to edge, no card. The
-   native pane view fills the viewport div; its rect drives the bounds. */
-.browser-pane {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  overflow: hidden;
-}
-
-.browser-viewport {
-  flex: 1;
-  min-height: 0;
-  background: var(--panel);
-}
-
-/* Transient cards (ADR 0012): a single centered floating card on canvas
-   — white, rounded, shadowed. Renderer DOM cannot float above the native
-   pane, so the band keeps its in-flow place below it. Containers breathe
-   in (opacity + scale, never translation). */
-.dashboard-footer {
-  display: flex;
-  justify-content: center;
-  padding: 14px 16px 16px;
-}
-
-.assistant-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  min-height: 0;
-  width: 100%;
-  max-width: 760px;
-}
-
-.confirmation-card,
-.ask-card {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  align-items: flex-start;
   gap: 16px;
   flex: none;
-  padding: 14px 20px;
-  border: 1px solid var(--edge);
-  border-radius: 16px;
-  background: var(--panel);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+  max-width: 640px;
+  width: 100%;
+  padding: 18px 24px;
+  border: 1px solid var(--hair2);
+  border-radius: var(--radius-lg);
+  background: var(--surface-solid);
+  box-shadow: var(--shadow-pop);
   animation: card-in 200ms ease;
+  cursor: pointer;
 }
 
 @keyframes card-in {
@@ -1272,57 +1378,38 @@ body {
   }
 }
 
-/* The Peek Card (ADR 0021): the transient report of the live Run and its
-   Answer while the Feed Panel is Collapsed — voice shows it, clicking it
-   opens the panel (the only interactive square inch; no buttons ride it).
-   Same floating-card language as the confirmation cards, one surface,
-   capped width; the orb repeats the feed's assistant mark. */
-.peek-card {
-  display: flex;
-  align-items: flex-start;
-  gap: 14px;
-  flex: none;
-  max-width: 560px;
-  width: 100%;
-  padding: 14px 20px;
-  border: 1px solid var(--edge);
-  border-radius: 16px;
-  background: var(--panel);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
-  animation: card-in 200ms ease;
-  cursor: pointer;
-}
-
 .peek-card:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+  outline: none;
+  box-shadow: var(--focus-ring), var(--shadow-pop);
 }
 
 .peek-orb {
-  width: 12px;
-  height: 12px;
-  margin-top: 6px;
+  width: 14px;
+  height: 14px;
+  margin-top: 8px;
   border-radius: 50%;
-  background: var(--accent);
+  background: radial-gradient(circle at 35% 30%, var(--accent-soft), var(--accent) 60%);
+  box-shadow: 0 0 0 6px var(--accentq);
   flex: none;
 }
 
 .peek-card--answer .peek-orb {
-  background: var(--status-green);
+  background: var(--ok);
+  box-shadow: none;
 }
 
 /* A failed Command's card (#329): the mark and the line take the failure colour. */
 .peek-card--failed .peek-orb {
-  background: var(--status-red);
+  background: var(--fail);
 }
 
 .peek-card--failed .peek-text {
-  color: var(--status-red);
+  color: var(--fail-text);
 }
 
 /* A Stop's card: grey, as in the Feed. */
 .peek-card--muted .peek-orb {
-  background: var(--muted);
+  background: var(--idle);
 }
 
 .peek-body {
@@ -1335,8 +1422,9 @@ body {
 
 .peek-command {
   margin: 0;
-  color: var(--text);
-  font-size: 1.1rem;
+  color: var(--fg);
+  font-size: 24px;
+  font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1344,18 +1432,25 @@ body {
 
 .peek-step {
   margin: 0;
-  color: var(--muted);
-  font-size: 0.9rem;
+  font-family: var(--font-mono);
+  font-size: 16px;
+  color: var(--accent);
 }
 
 .peek-text {
   margin: 0;
-  color: var(--text);
-  font-size: 1.05rem;
+  color: var(--fg);
+  font-size: 22px;
+  font-weight: 500;
+  line-height: 1.3;
   display: -webkit-box;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
+  -webkit-line-clamp: 2;
   overflow: hidden;
+}
+
+.peek-text .feed-markdown p {
+  margin: 0;
 }
 
 .peek-text--spoken {
@@ -1363,112 +1458,22 @@ body {
 }
 
 .peek-text--error {
-  color: var(--status-red);
+  color: var(--fail-text);
 }
 
 .peek-open-hint {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
   align-self: center;
-  color: var(--muted);
-  font-size: 0.85rem;
+  color: var(--fg3);
+  font-size: 16px;
   flex: none;
 }
 
-.confirmation-card {
-  border-color: color-mix(in srgb, var(--status-yellow) 45%, var(--edge));
-}
-
-.ask-card {
-  border-color: color-mix(in srgb, var(--accent) 40%, var(--edge));
-}
-
-.confirmation-prompt {
-  color: var(--text);
-  font-size: 1.2rem;
-}
-
-.confirmation-countdown {
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-  font-size: 0.9rem;
-  flex: none;
-}
-
-.confirmation-actions {
-  display: flex;
-  gap: 12px;
-  flex: none;
-}
-
-.confirmation-actions button {
-  height: 36px;
-  padding: 0 18px;
-  border: 1px solid var(--edge);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--text);
-  font-size: 0.9rem;
-  cursor: pointer;
-  transition: background 120ms ease;
-}
-
-.confirmation-actions button:hover {
-  background: color-mix(in srgb, var(--text) 6%, transparent);
-}
-
-.ask-question {
-  color: var(--text);
-  flex: 1;
-  font-size: 1.2rem;
-}
-
-.ask-controls {
-  display: flex;
-  gap: 12px;
-  flex: none;
-  align-items: center;
-}
-
-.ask-input {
-  height: 36px;
-  width: 300px;
-  padding: 0 16px;
-  border: 1px solid var(--edge);
-  border-radius: 999px;
-  background: var(--bg);
-  color: var(--text);
-  font-size: 0.9rem;
-}
-
-.ask-controls button {
-  height: 36px;
-  padding: 0 18px;
-  border: 1px solid var(--edge);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--text);
-  font-size: 0.9rem;
-  cursor: pointer;
-  transition: background 120ms ease;
-}
-
-.ask-controls button:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--text) 6%, transparent);
-}
-
-.ask-controls button:disabled {
-  opacity: 0.55;
-  cursor: default;
-}
-
-.settings-toggle[aria-pressed='true'] {
-  background: color-mix(in srgb, var(--text) 8%, transparent);
-}
-
-/* Settings (ADR 0012): full-bleed canvas with white grouped sections —
-   no page card. */
+/* Settings (ADR 0078): the index down the left — numbered, by group — and
+   the sections to its right, each a hairline, a heading and its body; no
+   boxes. The Weight page reuses the sheet's parts in one centred column. */
 .settings-page {
   display: flex;
   flex-direction: column;
@@ -1477,28 +1482,130 @@ body {
   overflow: hidden;
 }
 
+.settings-page--indexed {
+  display: grid;
+  grid-template-columns: 400px minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
+  padding: 0 16px 16px;
+}
+
+/* The index: the page's name, then every section under its group. */
+.settings-index {
+  grid-row: 1 / 3;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 28px 28px 0 4px;
+  border-right: 1px solid var(--hair);
+}
+
+.settings-index h1 {
+  margin: 0 0 30px 16px;
+  font-size: 40px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--fgh);
+}
+
+.settings-index-group {
+  margin: 6px 0 10px 16px;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--fg3);
+}
+
+.settings-index-group ~ .settings-index-group {
+  margin-top: 32px;
+}
+
+.settings-index-link {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  height: 50px;
+  padding: 0 16px;
+  border: none;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--fg2);
+  font: inherit;
+  font-size: 20px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+
+.settings-index-link:hover {
+  color: var(--fgh);
+}
+
+.settings-index-link:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.settings-index-number {
+  width: 22px;
+  font-family: var(--font-mono);
+  font-size: 16px;
+  color: var(--fg3);
+}
+
+.settings-index-link[aria-current='true'] {
+  background: var(--raise);
+  color: var(--fgh);
+}
+
+.settings-index-link[aria-current='true']::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 12px;
+  bottom: 12px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+.settings-index-link[aria-current='true'] .settings-index-number {
+  color: var(--accent);
+}
+
 .settings-scroll {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 28px 36px;
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
-  max-width: 980px;
-  width: 100%;
-  margin: 0 auto;
+  padding: 22px 64px 8px 80px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--hair2) transparent;
+}
+
+.settings-scroll > * {
+  max-width: 1160px;
+}
+
+/* The page's two groups: settings for the app, then everything the idle screen shows. */
+.settings-group {
+  margin: 0;
+  padding: 26px 0 6px;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--fg3);
+}
+
+.settings-group:first-child {
+  padding-top: 6px;
 }
 
 .settings-section {
-  background: var(--panel);
-  border: 1px solid var(--edge);
-  border-radius: 16px;
-  padding: 20px 24px;
-}
-
-.settings-section--fold {
-  padding: 0;
+  border-top: 1px solid var(--hair);
+  scroll-margin-top: 8px;
 }
 
 /* A section folds shut under its heading (owner ruling 2026-10-19): the
@@ -1506,9 +1613,9 @@ body {
    quiet line of what the section holds beside the title. */
 .settings-summary {
   display: flex;
-  align-items: baseline;
-  gap: 14px;
-  padding: 18px 24px;
+  align-items: center;
+  gap: 18px;
+  min-height: 84px;
   cursor: pointer;
   list-style: none;
 }
@@ -1518,153 +1625,170 @@ body {
 }
 
 .settings-summary::before {
-  content: '›';
-  display: inline-block;
-  width: 0.8em;
-  color: var(--muted);
-  font-weight: 600;
-  transition: transform 120ms ease;
+  content: '';
+  flex: none;
+  width: 11px;
+  height: 11px;
+  margin: 0 9px 0 4px;
+  border-top: 2px solid var(--fg3);
+  border-right: 2px solid var(--fg3);
+  rotate: 45deg;
+  transition: rotate 120ms ease;
 }
 
 details[open] > .settings-summary::before {
-  transform: rotate(90deg);
+  rotate: 135deg;
+  border-color: var(--fg2);
 }
 
 .settings-summary:focus-visible {
-  outline: 3px solid var(--accent);
-  outline-offset: -3px;
-  border-radius: 16px;
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-radius: var(--radius);
 }
 
 .settings-section h2 {
   margin: 0;
-  font-size: 0.95rem;
-  font-weight: 650;
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--fgh);
 }
 
 .settings-hint {
   min-width: 0;
   overflow: hidden;
-  color: var(--muted);
-  font-size: 0.85rem;
+  color: var(--fg2);
+  font-size: 18px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .settings-section-body {
-  padding: 0 24px 20px;
-}
-
-/* The page's two groups: settings for the app, then everything the idle screen shows. */
-.settings-group {
-  margin: 8px 0 -12px;
-  color: var(--muted);
-  font-size: 0.8rem;
-  font-weight: 650;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.settings-group:first-child {
-  margin-top: 0;
+  padding: 0 0 34px 46px;
 }
 
 /* A part of a long section (the Weight section's People, Scale, card and pop-up). */
 .settings-subhead {
-  margin: 20px 0 8px;
-  font-size: 0.85rem;
-  font-weight: 650;
-  color: var(--muted);
+  margin: 22px 0 6px;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--fg3);
 }
 
-/* One Person in the Weight section: their fields, framed. */
+/* One Person in the Weight section: their fields on their own colour's rail. */
 .settings-person {
+  --person: var(--hair2);
   display: flex;
   flex-direction: column;
   gap: 4px;
-  margin-bottom: 10px;
-  padding: 10px 14px;
-  border: 1px solid var(--edge);
-  border-radius: 12px;
+  margin-bottom: 18px;
+  padding: 6px 0 6px 24px;
+  border-left: 3px solid var(--person);
+}
+
+.settings-person[data-person='jaish'] {
+  --person: var(--jaish);
+}
+
+.settings-person[data-person='barun'] {
+  --person: var(--barun);
 }
 
 .settings-field {
   display: grid;
-  grid-template-columns: 240px 1fr;
+  grid-template-columns: 300px minmax(0, 560px);
   align-items: center;
-  gap: 16px;
-  margin-bottom: 12px;
+  column-gap: 28px;
+  min-height: 58px;
+  margin-bottom: 4px;
 }
 
 .settings-label {
-  color: var(--muted);
-  font-size: 0.9rem;
+  font-size: 18px;
+  line-height: 1.35;
+  color: var(--fg2);
 }
 
 .settings-field input[type='text'],
 .settings-field input[type='number'],
 .settings-field input[type='date'],
 .settings-field input[type='password'],
+.settings-field select,
+.settings-page input[type='text'] {
+  height: 50px;
+  width: 100%;
+  max-width: 560px;
+  padding: 0 18px;
+  border: 1px solid var(--hair2);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--fgh);
+  font: inherit;
+  font-size: 18px;
+}
+
 .settings-field select {
-  height: 36px;
-  padding: 0 12px;
-  border: 1px solid var(--edge);
-  border-radius: 10px;
-  background: var(--bg);
-  color: var(--text);
-  font-size: 0.9rem;
-  max-width: 520px;
+  appearance: none;
+  padding-right: 48px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%238a92a3' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 16px center;
+}
+
+.settings-field select option {
+  background: var(--surface-solid);
+  color: var(--fgh);
+}
+
+.settings-page input::placeholder {
+  color: var(--fg3);
 }
 
 .settings-field input[type='range'] {
-  max-width: 520px;
+  width: 100%;
+  max-width: 560px;
+  accent-color: var(--accent);
 }
 
-.settings-field input[type='checkbox'] {
-  width: 18px;
-  height: 18px;
+.settings-field input[type='checkbox'],
+.settings-page input[type='checkbox'] {
+  width: 24px;
+  height: 24px;
   accent-color: var(--accent);
 }
 
 .settings-note {
-  margin: 0 0 12px;
-  color: var(--muted);
-  font-size: 0.85rem;
+  max-width: 1000px;
+  margin: 2px 0 14px;
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--fg3);
 }
 
 .settings-field input:focus,
-.settings-field select:focus {
+.settings-field select:focus,
+.settings-page input[type='text']:focus {
   outline: none;
-  border-color: var(--accent);
+  border-color: var(--hair2);
+  box-shadow: var(--focus-ring);
 }
 
-.settings-role {
-  border: 1px solid var(--edge);
-  border-radius: 12px;
-  padding: 14px 20px;
-  margin: 0 0 16px;
-}
-
-.settings-role legend {
-  padding: 0 8px;
-  color: var(--muted);
-  font-size: 0.9rem;
-}
-
-/* Routing status line: green when the role resolves through the same env
-   the pipeline reads; red names the outage a `look` call would hit. */
+/* A status line: green when what it names is working, coral when it is not. */
 .settings-role-status {
   margin: 0 0 12px;
-  font-size: 0.85rem;
-  color: var(--status-green);
+  font-size: 17px;
+  color: var(--ok);
 }
 
 .settings-role-status--off {
-  color: var(--status-red);
+  color: var(--fail);
 }
 
-/* Learned Terms (ADR 0022): chips with a remove control — a vocabulary
-   list, not an editable transcript. */
+/* Learned Terms (ADR 0022): a vocabulary list with a remove control each,
+   not an editable transcript. */
 .settings-terms {
   list-style: none;
   margin: 0 0 12px;
@@ -1672,7 +1796,7 @@ details[open] > .settings-summary::before {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  max-width: 520px;
+  max-width: 560px;
 }
 
 .settings-term {
@@ -1680,85 +1804,107 @@ details[open] > .settings-summary::before {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 6px 12px;
-  border: 1px solid var(--edge);
-  border-radius: 10px;
-  font-size: 0.9rem;
+  min-height: 48px;
+  padding: 0 8px 0 18px;
+  border: 1px solid var(--hair);
+  border-radius: var(--radius);
+  font-size: 18px;
+  color: var(--fgh);
 }
 
 .settings-term-remove {
+  height: 36px;
+  padding: 0 12px;
   border: none;
+  border-radius: var(--radius-sm);
   background: none;
-  color: var(--muted);
-  font-size: 0.8rem;
+  color: var(--fg3);
+  font: inherit;
+  font-size: 16px;
   cursor: pointer;
-  padding: 2px 6px;
-  border-radius: 6px;
 }
 
 .settings-term-remove:hover {
-  color: var(--status-red);
-  background: var(--bg);
+  color: var(--fail);
+  background: var(--raise);
 }
 
+/* The page's foot: Back, what the last save did, Save. */
 .settings-actions {
   display: flex;
   align-items: center;
   gap: 16px;
-  padding: 14px 36px;
-  max-width: 980px;
-  width: 100%;
-  margin: 0 auto;
+  min-height: 88px;
+  border-top: 1px solid var(--hair);
+}
+
+.settings-page--indexed .settings-actions {
+  grid-column: 2;
+  max-width: 1160px;
+  margin-left: 80px;
 }
 
 .settings-status {
   flex: 1;
-  color: var(--status-green);
-  font-size: 0.9rem;
+  color: var(--ok);
+  font-size: 16px;
 }
 
 .settings-card-row {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
 }
 
 .settings-button {
-  height: 36px;
-  padding: 0 20px;
-  border: 1px solid var(--edge);
-  border-radius: 999px;
+  height: 48px;
+  padding: 0 24px;
+  border: 1px solid var(--hair2);
+  border-radius: 24px;
   background: transparent;
-  color: var(--text);
-  font-size: 0.9rem;
+  color: var(--fgh);
+  font: inherit;
+  font-size: 18px;
+  font-weight: 500;
   cursor: pointer;
   transition: background 120ms ease;
 }
 
 .settings-button--primary {
-  background: var(--accent);
+  padding: 0 36px;
   border-color: var(--accent);
-  color: #fff;
+  background: var(--accent);
+  color: var(--onaccent);
   font-weight: 600;
 }
 
 .settings-button:not(:disabled):hover {
-  background: color-mix(in srgb, var(--text) 6%, transparent);
+  background: var(--raise);
 }
 
 .settings-button--primary:not(:disabled):hover {
-  background: color-mix(in srgb, var(--accent) 88%, #000);
+  background: color-mix(in srgb, var(--accent) 88%, var(--fg));
+}
+
+.settings-button:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
 }
 
 .settings-button:disabled {
-  opacity: 0.5;
+  border-color: var(--hair);
+  color: var(--fg3);
   cursor: default;
 }
 
+.settings-button--primary:disabled {
+  background: transparent;
+}
+
 .settings-loading {
-  color: var(--muted);
-  font-style: italic;
   padding: 28px 36px;
+  font-size: 18px;
+  color: var(--fg2);
 }
 
 /* The idle screen: the smart-display half of the appliance, read from a
@@ -2416,8 +2562,8 @@ details[open] > .settings-summary::before {
   inset: 0;
   display: grid;
   place-items: center;
-  background: rgba(0, 0, 0, 0.45);
-  color: #fff;
+  background: var(--scrim);
+  color: var(--onscrim);
 }
 
 .idle-music--ended .idle-music-thumb > img {
@@ -2816,8 +2962,8 @@ details[open] > .settings-summary::before {
 }
 
 .idle-cal-day--today .idle-cal-num {
-  background: var(--status-red);
-  color: #fff;
+  background: var(--accent);
+  color: var(--onaccent);
   font-weight: 600;
 }
 
@@ -2921,8 +3067,8 @@ details[open] > .settings-summary::before {
 .idle-upnext-tile-weekday {
   align-self: stretch;
   padding: 3px 0 2px;
-  background: var(--status-red);
-  color: #fff;
+  background: var(--accent);
+  color: var(--onaccent);
   font-size: 1rem;
   font-weight: 700;
   letter-spacing: 0.06em;
@@ -2965,193 +3111,6 @@ details[open] > .settings-summary::before {
 .idle-upnext-sub {
   font-size: 1.1rem;
   line-height: 1.25;
-  color: var(--muted);
-}
-
-/* Subagents: live cards above the browser pane — one per agent, with tab
-   viewports whose rects drive the window's WebContentsViews. */
-.dashboard-browsing {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  height: 100%;
-  gap: 12px;
-}
-
-.subagent-cards {
-  display: flex;
-  gap: 12px;
-  overflow-x: auto;
-  flex: none;
-  min-height: 0;
-  padding-bottom: 4px;
-}
-
-.subagent-card {
-  flex: 0 0 400px;
-  display: flex;
-  flex-direction: column;
-  border: 1px solid var(--edge);
-  border-radius: 16px;
-  background: var(--panel);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
-  overflow: hidden;
-  animation: card-in 200ms ease;
-}
-
-.subagent-card-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 16px;
-  border-bottom: 1px solid var(--edge);
-  font-size: 0.85rem;
-}
-
-.subagent-card-id {
-  font-weight: 650;
-  color: var(--text);
-  white-space: nowrap;
-}
-
-.subagent-card-status {
-  color: var(--muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  flex: 1;
-  min-width: 0;
-}
-
-.subagent-card-status--running { color: var(--accent); }
-.subagent-card-status--failed { color: var(--status-red); }
-
-.subagent-cancel,
-.subagent-reopen {
-  width: auto;
-  padding: 0 14px;
-  font-size: 0.85rem;
-  height: 30px;
-}
-
-.subagent-card-task {
-  margin: 0;
-  padding: 10px 16px;
-  font-size: 0.9rem;
-  color: var(--text);
-  border-bottom: 1px solid var(--edge);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* The captured page preview: frames arrive at the card's aspect ratio
-   (the desktop viewport they were captured at), so the box reserves its
-   shape before the first frame lands — but capped, so a rail of cards
-   never starves the main browsing area a reopened pane moves into. */
-.subagent-thumbnail-frame {
-  aspect-ratio: 1280 / 800;
-  max-height: 150px;
-  background: var(--bg);
-  overflow: hidden;
-}
-
-.subagent-thumbnail {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.subagent-card-url,
-.subagent-card-error {
-  margin: 0;
-  padding: 10px 16px;
-  font-size: 0.85rem;
-  color: var(--muted);
-  overflow-wrap: anywhere;
-}
-
-.subagent-card-error { color: var(--status-red); }
-
-.subagent-card-result summary {
-  padding: 6px 16px;
-  font-size: 0.85rem;
-  color: var(--accent);
-  cursor: pointer;
-}
-
-.subagent-card-result pre {
-  margin: 0;
-  padding: 0 16px 12px;
-  font-size: 0.85rem;
-  color: var(--text);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  max-height: 160px;
-  overflow-y: auto;
-}
-
-/* Settings: today's warn-only spend estimate. */
-.settings-usage {
-  margin: 0 0 8px;
-  font-size: 0.9rem;
-  color: var(--text);
-}
-
-.settings-usage--warn {
-  color: var(--status-yellow);
-  font-weight: 650;
-}
-
-.settings-usage-detail {
-  margin: 0;
-  font-size: 0.85rem;
-  color: var(--muted);
-}
-
-/* The Asked Items list on the Answer Card (#250, ADR 0052): one line per
-   item the Run Plan declared, its standing as a small label, and the
-   statement or the reason it stands unverified. */
-.asked-items {
-  list-style: none;
-  margin: 10px 0 0;
-  padding: 8px 0 0;
-  border-top: 1px solid var(--edge);
-  display: grid;
-  gap: 6px;
-  font-size: 0.95rem;
-}
-
-.asked-item {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 4px 8px;
-}
-
-.asked-item-name {
-  color: var(--text);
-  font-weight: 600;
-}
-
-.asked-item-standing {
-  font-size: 0.75rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  padding: 1px 6px;
-  border-radius: 999px;
-  border: 1px solid var(--edge);
-  color: var(--muted);
-}
-
-.asked-item--stated .asked-item-standing {
-  border-color: var(--status-green);
-  color: var(--status-green);
-}
-
-.asked-item-statement {
-  flex-basis: 100%;
   color: var(--muted);
 }
 
@@ -3529,33 +3488,37 @@ details[open] > .settings-summary::before {
 
 .usage-set {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 0 28px;
+  border-top: 1px solid var(--hair);
 }
 
 .usage-set-card {
-  border: 1px solid var(--edge);
-  border-radius: 12px;
-  padding: 12px 14px;
-  background: var(--bg);
+  padding: 18px 0;
+  border-bottom: 1px solid var(--hair);
 }
 
 .usage-set-head {
   display: flex;
-  align-items: baseline;
-  gap: 8px;
+  align-items: center;
+  gap: 14px;
+  min-height: 40px;
+  font-size: 21px;
+  font-weight: 600;
+  color: var(--fgh);
   cursor: pointer;
 }
 
 .usage-set-plan,
 .usage-set-hint {
-  color: var(--muted);
-  font-size: 0.8rem;
+  color: var(--fg2);
+  font-size: 17px;
+  font-weight: 400;
 }
 
 .usage-set-table {
   display: grid;
-  grid-template-columns: 1fr repeat(3, 52px);
+  grid-template-columns: 1fr repeat(3, 72px);
   align-items: center;
   row-gap: 6px;
   margin-top: 10px;
@@ -3566,8 +3529,9 @@ details[open] > .settings-summary::before {
 }
 
 .usage-set-col {
-  color: var(--muted);
-  font-size: 0.75rem;
+  font-size: 16px;
+  letter-spacing: 0.08em;
+  color: var(--fg3);
   text-align: center;
 }
 
@@ -3575,14 +3539,15 @@ details[open] > .settings-summary::before {
   display: flex;
   gap: 8px;
   align-items: baseline;
-  font-size: 0.9rem;
+  font-size: 18px;
+  color: var(--fgh);
 }
 
 .usage-set-table input,
 .usage-set-head input {
   justify-self: center;
-  width: 18px;
-  height: 18px;
+  width: 24px;
+  height: 24px;
   accent-color: var(--accent);
 }
 
@@ -3728,7 +3693,8 @@ details[open] > .settings-summary::before {
 
 /* ---- the weight charts: the card's trend and the Weight page's figures ----
    Drawn like the usage chart: the plot stretches to its room, the stroke
-   keeps its width, the dots and labels sit in HTML. */
+   keeps its width, the dots and labels sit in HTML. The line takes the
+   Person's colour where one is set (--person), else the accent. */
 .weight-chart {
   flex: 1 1 auto;
   display: grid;
@@ -3742,9 +3708,10 @@ details[open] > .settings-summary::before {
 .weight-chart-y {
   position: relative;
   min-width: 2.4em;
-  font-size: 0.85rem;
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono);
+  font-size: 16px;
+  color: var(--fg3);
+  font-feature-settings: 'tnum' 1;
   text-align: right;
 }
 
@@ -3770,7 +3737,7 @@ details[open] > .settings-summary::before {
 .weight-chart-area {
   position: relative;
   min-height: 0;
-  border-bottom: 1px solid var(--edge);
+  border-bottom: 1px solid var(--hair);
 }
 
 .weight-chart-area > svg {
@@ -3783,7 +3750,7 @@ details[open] > .settings-summary::before {
 
 .weight-chart-line {
   fill: none;
-  stroke: var(--accent);
+  stroke: var(--person, var(--accent));
   stroke-width: 3;
   stroke-linejoin: round;
   stroke-linecap: round;
@@ -3791,7 +3758,7 @@ details[open] > .settings-summary::before {
 }
 
 .weight-chart-fill {
-  fill: color-mix(in srgb, var(--accent) 12%, transparent);
+  fill: color-mix(in srgb, var(--person, var(--accent)) 12%, transparent);
   stroke: none;
 }
 
@@ -3800,14 +3767,14 @@ details[open] > .settings-summary::before {
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: var(--accent);
+  background: var(--person, var(--accent));
   transform: translate(-50%, -50%);
 }
 
 .weight-chart-dot--last {
   width: 13px;
   height: 13px;
-  box-shadow: 0 0 0 3px var(--panel);
+  box-shadow: 0 0 0 3px var(--surface-solid);
 }
 
 .weight-chart-none {
@@ -3815,23 +3782,72 @@ details[open] > .settings-summary::before {
   inset: 0;
   display: grid;
   place-items: center;
-  color: var(--muted);
-  font-size: 0.9rem;
+  color: var(--fg3);
+  font-size: 16px;
 }
 
 .weight-chart-x {
   grid-column: 2;
   display: flex;
   justify-content: space-between;
-  font-size: 0.8rem;
-  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 16px;
+  color: var(--fg3);
 }
 
-/* ---- the Weight page (#350): Settings' sheet, wider for the charts ---- */
-/* Back sits in the same column as the sheet, so its left edge is the content's. */
-.weight-scroll,
+/* ---- the Weight page (#350): one centred column of panels ---- */
+.weight-page {
+  --person: var(--fg2);
+  padding: 0 16px;
+}
+
+.weight-page[data-person='jaish'] {
+  --person: var(--jaish);
+}
+
+.weight-page[data-person='barun'] {
+  --person: var(--barun);
+}
+
+/* Back sits in the same column as the panels, so its left edge is the content's. */
+.weight-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding: 0 0 24px;
+}
+
+.weight-scroll > * {
+  flex: none;
+}
+
+.weight-scroll > *,
 .weight-actions {
-  max-width: 1280px;
+  width: 100%;
+  max-width: 1480px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.weight-page .settings-section {
+  border: 1px solid var(--hair);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.weight-page .settings-section > h2,
+.weight-history-head {
+  padding: 28px 32px 0;
+}
+
+.weight-page .settings-section > h2 {
+  font-size: 30px;
+}
+
+.weight-page .settings-section > .settings-note {
+  padding: 16px 32px 24px;
+  margin: 0;
 }
 
 /* The page's name, with the switch between People beside it. */
@@ -3840,47 +3856,108 @@ details[open] > .settings-summary::before {
   align-items: center;
   flex-wrap: wrap;
   gap: 12px 24px;
+  padding-top: 24px;
 }
 
 .weight-page-title {
   margin: 0;
-  font-size: 1.5rem;
-  font-weight: 700;
-  letter-spacing: -0.01em;
+  font-size: 40px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--fgh);
+}
+
+/* The latest Weigh-in: the Person in their colour, when in mono; the weight
+   the hero, every other figure a cell beside it. */
+.weight-latest-name {
+  color: var(--person);
+}
+
+.weight-latest-when {
+  font-family: var(--font-mono);
+  font-size: 22px;
+  font-weight: 400;
+  color: var(--fg2);
 }
 
 .weight-figures {
   list-style: none;
-  margin: 0 0 16px;
+  margin: 20px 0 0;
   padding: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
-  gap: 12px;
+  grid-template-columns: minmax(0, 2.4fr) repeat(4, minmax(0, 1fr));
+  border-top: 1px solid var(--hair);
 }
 
 .weight-figure {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 12px 16px;
-  border: 1px solid var(--edge);
-  border-radius: 12px;
+  gap: 4px;
+  padding: 24px 28px;
+  border-left: 1px solid var(--hair);
+  border-bottom: 1px solid var(--hair);
+}
+
+.weight-figure[data-figure='weightKg'] {
+  grid-row: 1 / 3;
+  justify-content: center;
+  border-left: none;
+  padding: 24px 32px;
 }
 
 .weight-figure-label {
-  color: var(--muted);
-  font-size: 0.85rem;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--fg3);
 }
 
 .weight-figure-value {
-  font-size: 1.6rem;
+  font-size: clamp(40px, 2.7vw, 52px);
   font-weight: 600;
-  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  color: var(--fgh);
+  font-feature-settings: 'tnum' 1;
+}
+
+.weight-figure-value {
+  white-space: nowrap;
+}
+
+.weight-figure-unit {
+  margin-left: 2px;
+  font-size: 0.42em;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--fg2);
+}
+
+.weight-figure[data-figure='weightKg'] .weight-figure-value {
+  font-size: clamp(96px, 7.8vw, 150px);
+  line-height: 1;
+  letter-spacing: -0.04em;
+  color: var(--fg);
 }
 
 .weight-figure-change {
-  color: var(--muted);
-  font-size: 0.8rem;
+  font-size: 17px;
+  color: var(--fg2);
+}
+
+.weight-figure[data-figure='weightKg'] .weight-figure-change {
+  margin-top: 8px;
+  font-size: 28px;
+  font-weight: 500;
+}
+
+.weight-figure-change[data-trend='down'] {
+  color: var(--down);
+}
+
+.weight-figure-change[data-trend='up'] {
+  color: var(--up);
 }
 
 .weight-history-head {
@@ -3888,83 +3965,118 @@ details[open] > .settings-summary::before {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 12px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--hair);
 }
 
 .weight-history-head h2 {
   margin: 0;
+  font-size: 30px;
 }
 
+/* A segmented switch: the span of the charts, or which Person the page shows. */
 .weight-ranges {
   display: inline-flex;
   gap: 4px;
-  padding: 3px;
-  border: 1px solid var(--edge);
-  border-radius: 999px;
+  padding: 4px;
+  border: 1px solid var(--hair);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
 }
 
 .weight-range {
-  height: 30px;
-  padding: 0 14px;
+  height: 44px;
+  padding: 0 22px;
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: transparent;
-  color: var(--text);
-  font-size: 0.85rem;
+  color: var(--fg2);
+  font-family: var(--font-mono);
+  font-size: 18px;
+  font-weight: 500;
   cursor: pointer;
 }
 
 .weight-range--on {
   background: var(--accent);
-  color: #fff;
+  color: var(--onaccent);
   font-weight: 600;
+}
+
+.weight-people .weight-range {
+  font-family: inherit;
+  font-size: 20px;
+}
+
+.weight-people .weight-range--on {
+  background: var(--raise2);
+  color: var(--person);
+}
+
+.weight-range:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
 }
 
 .weight-charts {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
 }
 
 .weight-chart-figure {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  height: 200px;
+  gap: 12px;
+  height: 260px;
   margin: 0;
-  padding: 12px 16px;
-  border: 1px solid var(--edge);
-  border-radius: 12px;
+  padding: 22px 26px;
+  border-right: 1px solid var(--hair);
+  border-bottom: 1px solid var(--hair);
 }
 
 .weight-chart-figure figcaption {
-  font-size: 0.85rem;
+  font-size: 22px;
   font-weight: 600;
+  color: var(--fgh);
 }
 
+/* The Weigh-ins: a table in mono, the figures right-aligned under their heads. */
 .weight-table {
   width: 100%;
+  margin-top: 20px;
   border-collapse: collapse;
-  font-size: 0.9rem;
-  font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono);
+  font-size: 19px;
+  font-feature-settings: 'tnum' 1;
+  color: var(--fgh);
 }
 
 .weight-table th {
+  padding: 14px 32px;
+  border-top: 1px solid var(--hair);
+  border-bottom: 1px solid var(--hair);
+  font-family: InterVariable, system-ui, sans-serif;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-align: right;
+  text-transform: uppercase;
+  color: var(--fg3);
+}
+
+.weight-table th:first-child,
+.weight-table td:first-child {
   text-align: left;
-  color: var(--muted);
-  font-weight: 500;
-  padding: 6px 8px;
-  border-bottom: 1px solid var(--edge);
 }
 
 .weight-table td {
-  padding: 6px 8px;
-  border-bottom: 1px solid var(--edge);
+  padding: 6px 32px;
+  border-bottom: 1px solid var(--hair);
+  text-align: right;
 }
 
 .weight-table td:last-child {
   width: 1%;
-  text-align: right;
   white-space: nowrap;
 }
 
@@ -3985,18 +4097,20 @@ details[open] > .settings-summary::before {
 }
 
 .weight-move {
-  border: 1px solid var(--edge);
-  background: none;
-  color: var(--text);
-  font-size: 0.8rem;
-  cursor: pointer;
-  padding: 2px 10px;
-  border-radius: 999px;
+  height: 36px;
   margin-right: 6px;
+  padding: 0 14px;
+  border: 1px solid var(--hair2);
+  border-radius: var(--radius-pill);
+  background: none;
+  color: var(--fgh);
+  font-family: InterVariable, system-ui, sans-serif;
+  font-size: 16px;
+  cursor: pointer;
 }
 
 .weight-move:hover {
-  border-color: var(--accent);
+  background: var(--raise);
 }
 
 .weight-move-menu {
@@ -4013,13 +4127,24 @@ details[open] > .settings-summary::before {
   flex-direction: column;
   gap: 4px;
   padding: 6px;
-  border: 1px solid var(--edge);
-  border-radius: 10px;
-  background: var(--panel);
+  border: 1px solid var(--hair2);
+  border-radius: var(--radius);
+  background: var(--surface-solid);
+  box-shadow: var(--shadow-pop);
+}
+
+.weight-table .settings-term-remove {
+  font-family: InterVariable, system-ui, sans-serif;
+}
+
+.weight-actions {
+  padding: 0;
 }
 
 .settings-scale-address {
-  font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono);
+  font-size: 17px;
+  color: var(--fgh);
 }
 
 /* ---- the Weigh-in pop-up (#350) ----
@@ -4030,26 +4155,26 @@ details[open] > .settings-summary::before {
 .weighin-popup {
   position: fixed;
   left: 50%;
-  bottom: 20px;
+  bottom: 40px;
   z-index: 20;
   transform: translateX(-50%);
   display: flex;
   align-items: center;
-  gap: 18px;
-  width: min(560px, 80%);
-  height: 116px;
-  padding: 14px 26px;
-  border: 1px solid var(--edge);
-  border-radius: 22px;
-  background: var(--panel-peek);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  gap: 20px;
+  width: min(640px, 80%);
+  height: 124px;
+  padding: 16px 28px;
+  border: 1px solid var(--hair2);
+  border-radius: var(--radius-lg);
+  background: var(--surface-solid);
+  box-shadow: var(--shadow-pop);
   pointer-events: none;
   animation: card-in 200ms ease;
 }
 
 .weighin-popup-name {
-  color: var(--text);
-  font-weight: 700;
+  color: var(--fgh);
+  font-weight: 600;
 }
 
 /* "Not you?": one chip per other Person, the only part that takes a pointer. */
@@ -4065,42 +4190,44 @@ details[open] > .settings-summary::before {
 
 .weighin-popup-chip {
   pointer-events: auto;
-  height: 44px;
-  padding: 0 14px;
-  border: 1px solid var(--edge);
-  border-radius: 999px;
-  background: var(--bg);
-  color: var(--text);
-  font-size: 1rem;
+  height: 48px;
+  padding: 0 18px;
+  border: 1px solid var(--hair2);
+  border-radius: var(--radius-pill);
+  background: var(--raise);
+  color: var(--fgh);
+  font: inherit;
+  font-size: 18px;
   font-weight: 600;
   cursor: pointer;
 }
 
 .weighin-popup-chip:hover {
-  border-color: var(--accent);
+  background: var(--raise2);
 }
 
 .weighin-popup-mark {
   flex: none;
   display: grid;
   place-items: center;
-  width: 44px;
-  height: 44px;
+  width: 48px;
+  height: 48px;
   border-radius: 50%;
-  border: 3px solid color-mix(in srgb, var(--muted) 40%, transparent);
-  color: #fff;
+  border: 3px solid var(--track);
+  color: var(--bg);
   font-size: 24px;
   font-weight: 700;
 }
 
+/* Settling is Bing Bong at work: a peach arc that turns. */
 .weighin-popup--live .weighin-popup-mark {
   border-top-color: var(--accent);
   animation: weighin-spin 900ms linear infinite;
 }
 
 .weighin-popup--settled .weighin-popup-mark {
-  border-color: var(--status-green);
-  background: var(--status-green);
+  border-color: var(--ok);
+  background: var(--ok);
 }
 
 @keyframes weighin-spin {
@@ -4117,26 +4244,27 @@ details[open] > .settings-summary::before {
 }
 
 .weighin-popup-kg {
-  font-size: 48px;
-  font-weight: 300;
+  font-size: 52px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
   line-height: 1.05;
-  font-variant-numeric: tabular-nums;
+  color: var(--fg);
+  font-feature-settings: 'tnum' 1;
 }
 
 .weighin-popup--live .weighin-popup-kg {
-  color: var(--muted);
+  color: var(--fg2);
 }
 
 .weighin-popup-kg small {
-  font-size: 0.4em;
+  font-size: 0.42em;
   font-weight: 500;
-  color: var(--muted);
+  color: var(--fg2);
 }
 
 .weighin-popup-sub {
-  font-size: 1.05rem;
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
+  font-size: 18px;
+  color: var(--fg2);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

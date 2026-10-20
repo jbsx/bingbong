@@ -16,9 +16,10 @@ import { useEffect, useRef, useState } from 'react'
  * signal a typed follow-up's readiness has to read.
  *
  * A key typed on the Idle Screen lands here: main opens the panel, focuses
- * this view and hands over the key, which joins the draft.
+ * this view and hands over the key, which joins the draft. The Voice Prompt
+ * around it (#359) names what the empty field is waiting for.
  */
-export function PromptBar() {
+export function PromptBar({ placeholder }: { placeholder: string }) {
   const [draft, setDraft] = useState('')
   const [feedback, setFeedback] = useState('')
   const [pendingSubmits, setPendingSubmits] = useState(0)
@@ -69,7 +70,7 @@ export function PromptBar() {
           className="prompt-input"
           type="text"
           // Whole at the default 380 px panel with Stop beside it (#331).
-          placeholder="Type a command"
+          placeholder={placeholder}
           aria-label="Prompt bar"
           aria-describedby={feedback ? 'submission-feedback' : undefined}
           autoComplete="off"

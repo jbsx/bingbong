@@ -39,7 +39,7 @@ function TimerWidget({ timer }: { timer: Exclude<TimerState, { status: 'off' }> 
     const left = countdownLabel(timer.endsAt - now)
     return (
       <span className="toolbar-widget toolbar-timer" role="timer" aria-label={`timer: ${left} left of ${length}`} title={`Timer · ${length}`}>
-        <ChromeIcon name="timer" size={16} />
+        <ChromeIcon name="timer" size={22} />
         <span className="toolbar-widget-text">{left}</span>
       </span>
     )
@@ -51,7 +51,7 @@ function TimerWidget({ timer }: { timer: Exclude<TimerState, { status: 'off' }> 
       aria-label={`Time's up: ${length} timer. Turn it off`}
       onClick={() => void window.bingbong.assistant.submit('timer off')}
     >
-      <ChromeIcon name="timer" size={16} />
+      <ChromeIcon name="timer" size={22} />
       <span className="toolbar-widget-text">Time’s up</span>
     </button>
   )
@@ -71,7 +71,7 @@ function SongWidget({ song }: { song: NowPlaying }) {
       aria-label={`Now playing: ${song.title}${who}${state !== null ? `, ${state}` : ''}`}
       title={`${song.title}${who}${state !== null ? ` · ${state}` : ''}`}
     >
-      <ChromeIcon name={state === 'ended' ? 'ended' : state === 'paused' ? 'pause' : 'music'} size={16} />
+      <ChromeIcon name={state === 'ended' ? 'ended' : state === 'paused' ? 'pause' : 'music'} size={22} />
       <span className="toolbar-widget-text toolbar-song-title">{song.title}</span>
     </span>
   )

@@ -6,7 +6,8 @@ Accepted on 2026-10-20 by the owner, after six rounds of mockups
 (`/tmp/bingbong-theme-mockups/`, kept on the `issue-assets` branch under
 `f1-theme/`). Supersedes ADR 0012's palette and its blue accent; keeps
 ADR 0020's one token sheet with real light and dark sets. Replaces #352's
-glass bento and Card Slot grid. Not yet built.
+glass bento and Card Slot grid. Built for everything outside the Idle
+Screen's layout in #359 (see the amendment below); the Columns are #360.
 
 ## Context
 
@@ -66,3 +67,33 @@ The page in the pane is never restyled; only its frame is. The pane's
 background colour in main mirrors the token by hand (`paneBackgrounds.ts`)
 and has to move with it. `pnpm shot:states` replays the round-6 state list
 so the look has a guard beyond the Idle Screen.
+
+## Amendment 2026-10-20: the shell as built (#359)
+
+- **Tokens.** `styles.css` carries F1's dark set as `shell-chrome.css` gives
+  it and a light set under the same names (off-white `#f4f5f7` ground, a
+  faint dark lift for panels, peach deepened to `#b4521f` so it clears
+  contrast on white, the data colours at their light weights), with radii,
+  shadows, the focus ring and the pause scrim as tokens too. The earlier
+  sheet's names (`--panel`, `--text`, `--status-*` …) stay as aliases on
+  the F1 roles until #360 redraws the Idle Screen with the new ones.
+- **The pane's frame** is drawn in the dashboard and the native view is
+  rounded to match (`View.setBorderRadius`, `PANE_FRAME_RADIUS`);
+  `paneBackgrounds.ts` paints `--surface-solid`.
+- **The Feed Panel's default width** is 536 px — round 6's 520 px panel
+  plus the 16 px gutter its view now carries. A width already dragged stays
+  as stored.
+- **Peach beyond the short list.** Settings' controls are peach as round 6
+  drew them: the index's marker and number, slider fills, checked boxes,
+  and the Weight page's span switch. They are the control being set, read
+  as Bing Bong's own; everything else follows E4.
+- **The Voice Prompt** in the panel says `Say "Bing Bong" or type a
+  command`, `Type a command` while a Command runs, and `Microphone off —
+  type a command` with the orb grey. Its live words mark the Page Terms
+  carried on each `voice:partial` (`terms`), main sending the ones in force.
+- **The guard.** `pnpm shot:states` replays the round-6 list under Xvfb at
+  1920×1080, dark and light, plus Settings section by section, the Weight
+  page, a Weigh-in over the pane and an Utterance being taken, and fails on
+  text under 16 px, clipped or off-surface text, or `#fff` text — the
+  Capsule's live words, which ellipsize by design (#331), excepted.
+

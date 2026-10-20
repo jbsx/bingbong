@@ -28,4 +28,9 @@ describe('voiceHint', () => {
   it('is empty with the mic closed', () => {
     expect(voiceHint(quiet)).toBeNull()
   })
+
+  it('says nothing while the Voice Prompt is on screen — the Prompt carries the words (#359)', () => {
+    expect(voiceHint({ ...quiet, listening: true, partial: 'open you' }, { promptShown: true })).toBeNull()
+    expect(voiceHint({ ...quiet, monitoring: true }, { promptShown: true })).toBeNull()
+  })
 })

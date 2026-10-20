@@ -12,20 +12,15 @@ function paneRectFrom(rect: DOMRect): PaneRect {
   return { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
 }
 
-/** Braille spinner frames (#50): quiet text, no styled motion. */
-const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'] as const
-const SPINNER_INTERVAL_MS = 120
-
-function useSpinnerFrame(active: boolean): string {
-  const [frame, setFrame] = useState(0)
-
-  useEffect(() => {
-    if (!active) return
-    const timer = setInterval(() => setFrame((current) => (current + 1) % SPINNER_FRAMES.length), SPINNER_INTERVAL_MS)
-    return () => clearInterval(timer)
-  }, [active])
-
-  return active ? SPINNER_FRAMES[frame] : ''
+/**
+ * The address split where its tones change (ADR 0078): the scheme and the
+ * path quiet, the host in the primary ink. Text with no host — a search,
+ * a bare word — is all one quiet run.
+ */
+function addressParts(text: string): { before: string; host: string; after: string } {
+  const match = /^([a-z][a-z0-9+.-]*:\/\/)?([^/\s?#]+\.[^/\s?#]+|localhost(?::\d+)?)(.*)$/i.exec(text)
+  if (match === null) return { before: text, host: '', after: '' }
+  return { before: match[1] ?? '', host: match[2]!, after: match[3]! }
 }
 
 function useBrowserState(): BrowserPaneState {
@@ -50,7 +45,8 @@ export function BrowserNav() {
   const state = useBrowserState()
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
-  const spinnerFrame = useSpinnerFrame(state.loading)
+  const shown = addressFieldText(state.loading && state.pendingUrl !== '' ? state.pendingUrl : state.url)
+  const parts = addressParts(shown)
 
   return (
     <div className="browser-nav">
@@ -73,7 +69,7 @@ export function BrowserNav() {
         <ChromeIcon name="forward" />
       </button>
       <form
-        className="url-form"
+        className={`url-form${!editing && shown !== '' ? ' url-form--drawn' : ''}`}
         onSubmit={(event) => {
           event.preventDefault()
           const input = draft.trim()
@@ -90,7 +86,7 @@ export function BrowserNav() {
           aria-label="Address and search bar"
           spellCheck={false}
           // A blank pane shows the hint, never "about:blank" (#334); a load shows the page on its way.
-          value={editing ? draft : addressFieldText(state.loading && state.pendingUrl !== '' ? state.pendingUrl : state.url)}
+          value={editing ? draft : shown}
           onChange={(event) => setDraft(event.target.value)}
           onFocus={(event) => {
             setEditing(true)
@@ -99,25 +95,31 @@ export function BrowserNav() {
           }}
           onBlur={() => setEditing(false)}
         />
-      </form>
-      {/* The loading indicator (#50): a quiet text spinner — calm frames
-          in the toolbar, not a sliding bar. Its slot keeps its room whether
-          or not a page loads, so the field and the controls never shift
-          when loading starts or ends (#334). */}
-      <span className="chrome-loading-slot">
-        {state.loading ? (
-          <span className="chrome-loading" role="status" aria-label="loading">
-            {spinnerFrame}
+        {!editing && shown !== '' ? (
+          <span className="url-display" aria-hidden="true">
+            {parts.before}
+            <span className="url-display-host">{parts.host}</span>
+            {parts.after}
           </span>
         ) : null}
-      </span>
+        {/* The loading progress (ADR 0078): a peach ring in the field and a
+            bar along its foot — inside the field, so the field and the
+            controls never shift when loading starts or ends (#334). */}
+        {state.loading ? (
+          <>
+            <span className="chrome-loading" role="status" aria-label="loading" />
+            <span className="chrome-loading-bar" aria-hidden="true" />
+          </>
+        ) : null}
+      </form>
     </div>
   )
 }
 
 /**
- * The browsing pane (ADR 0012): full bleed — no chrome bar, no card
- * border; the section is the viewport's rect reporter and nothing else.
+ * The browsing pane (ADR 0078): the page in its frame — inset by the
+ * gutter, rounded, on a hairline; the section is the viewport's rect
+ * reporter and nothing else.
  */
 export function BrowserPane() {
   const viewportRef = useRef<HTMLDivElement>(null)

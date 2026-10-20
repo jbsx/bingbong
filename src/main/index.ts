@@ -315,6 +315,8 @@ async function createWindow(): Promise<BrowserWindow> {
     overlayPipelineEvent: (event) => feedPanel.handlePipelineEvent(event),
     overlayVoiceHeard: (heard) => feedPanel.forwardHeard(heard),
     overlayVoiceError: (error) => feedPanel.forwardVoiceError(error),
+    overlayVoiceState: (state) => feedPanel.forwardVoiceState(state),
+    overlayVoicePartial: (partial) => feedPanel.forwardVoicePartial(partial),
   })
   attachBrowserPaneToWindow(pane, win, eventPublisher)
   // Every page the pane shows moves the Last Page.
@@ -463,6 +465,7 @@ async function createWindow(): Promise<BrowserWindow> {
   voiceSession = attachVoiceToWindow(win, {
     onPagePrepared: (snapshot) =>
       biasUnion.setPageTerms(snapshot === null ? [] : pageTermsOf({ title: snapshot.title, labels: snapshot.refs.map((ref) => ref.label), text: snapshot.viewportText })),
+    pageTerms: () => biasUnion.pageTerms(),
     vad: voice.vad,
     transcriber: voice.transcriber,
     turn: voice.turn,

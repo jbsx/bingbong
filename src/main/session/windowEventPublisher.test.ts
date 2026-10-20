@@ -14,6 +14,8 @@ function harness() {
     overlayPipelineEvent: (event) => calls.push(`overlay:${event.type}`),
     overlayVoiceHeard: () => calls.push('overlay:voice-heard'),
     overlayVoiceError: () => calls.push('overlay:voice-error'),
+    overlayVoiceState: () => calls.push('overlay:voice-state'),
+    overlayVoicePartial: () => calls.push('overlay:voice-partial'),
   }
   return { calls, publisher: createWindowEventPublisher(deps) }
 }
@@ -32,10 +34,10 @@ describe('window event publisher', () => {
     expect(calls).toEqual(['renderer:display', 'overlay:display'])
   })
 
-  it('publishes the live partial to the renderer alone (#324)', () => {
+  it('publishes the live partial to the Status Capsule and the Voice Prompt (#324, #359)', () => {
     const { calls, publisher } = harness()
     publisher.publish({ source: 'voice-partial', partial: { text: 'open you', at: 4 } })
-    expect(calls).toEqual(['renderer:voice-partial'])
+    expect(calls).toEqual(['overlay:voice-partial', 'renderer:voice-partial'])
   })
 
   it('publishes voice events through their source-specific sinks, overlay first', () => {
@@ -44,6 +46,7 @@ describe('window event publisher', () => {
     publisher.publish({ source: 'voice-heard', heard: { text: 'stop', routed: 'abort', at: 2 } })
     publisher.publish({ source: 'voice-error', error: { message: 'mic', at: 3 } })
     expect(calls).toEqual([
+      'overlay:voice-state',
       'renderer:voice-state',
       'overlay:voice-heard',
       'renderer:voice-heard',

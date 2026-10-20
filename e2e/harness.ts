@@ -139,6 +139,8 @@ function elementCenterScript(selector: string): string {
   return `(() => {
     const el = document.querySelector(${JSON.stringify(selector)})
     if (!el) return null
+    // As a person would: scroll it into view first (a no-op when it shows).
+    el.scrollIntoView({ block: 'nearest', inline: 'nearest' })
     const contains = (hit) => hit !== null && (hit === el || el.contains(hit))
     for (const rect of el.getClientRects()) {
       const x = rect.x + rect.width / 2

@@ -15,12 +15,15 @@ export interface WindowEventPublisherDeps {
   sendVoiceState(state: VoiceState): void
   sendVoiceHeard(heard: VoiceHeardEvent): void
   sendVoiceError(error: VoiceErrorEvent): void
-  /** The live partial transcript (#324) reaches the dashboard's Status Capsule alone. */
+  /** The live partial transcript (#324): the dashboard's Status Capsule shows it while the Voice Prompt is not on screen. */
   sendVoicePartial(partial: VoicePartialEvent): void
   sendBrowserState(state: BrowserPaneState): void
   overlayPipelineEvent(event: PipelineEvent): void
   overlayVoiceHeard(heard: VoiceHeardEvent): void
   overlayVoiceError(error: VoiceErrorEvent): void
+  /** The Voice Prompt (#359) rides the panel's footer: it shows the voice state and the live words. */
+  overlayVoiceState(state: VoiceState): void
+  overlayVoicePartial(partial: VoicePartialEvent): void
 }
 
 export interface WindowEventPublisher {
@@ -43,6 +46,7 @@ export function createWindowEventPublisher(deps: WindowEventPublisherDeps): Wind
           deps.overlayPipelineEvent(publication.event)
           return
         case 'voice-state':
+          deps.overlayVoiceState(publication.state)
           deps.sendVoiceState(publication.state)
           return
         case 'voice-heard':
@@ -54,6 +58,7 @@ export function createWindowEventPublisher(deps: WindowEventPublisherDeps): Wind
           deps.sendVoiceError(publication.error)
           return
         case 'voice-partial':
+          deps.overlayVoicePartial(publication.partial)
           deps.sendVoicePartial(publication.partial)
           return
         case 'browser':

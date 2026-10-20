@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
-import type { FeedEntry } from '../../core/feed/feedProjection'
+import { headlineAnswerId, type FeedEntry } from '../../core/feed/feedProjection'
+import { ChromeIcon } from './ChromeIcon'
 import { FeedMarkdown } from './FeedMarkdown'
 
 /**
@@ -42,7 +43,16 @@ function BreaksAtSlashes({ text }: { text: string }) {
   )
 }
 
-export function FeedLine({ entry }: { entry: FeedEntry }) {
+/**
+ * How the Feed draws one line (#359, ADR 0078): the headline is the newest
+ * Answer, drawn at reading size; live is the Command being worked on.
+ */
+export interface FeedLineEmphasis {
+  headline?: boolean
+  live?: boolean
+}
+
+export function FeedLine({ entry, emphasis = {} }: { entry: FeedEntry; emphasis?: FeedLineEmphasis }) {
   // One time per entry, always first (#333): every entry's time sits in the same left column.
   const time = <time className="feed-time">{formatFeedTime(entry.at)}</time>
   if (entry.role === 'user') {
@@ -53,7 +63,7 @@ export function FeedLine({ entry }: { entry: FeedEntry }) {
     // taken; an Utterance read as no Command is the words alone, greyed. A
     // Task (#336) adds one line per later hop that fired.
     return (
-      <p className={`feed-entry feed-entry--user feed-entry--${entry.kind}${entry.muted ? ' feed-entry--muted' : ''}`}>
+      <p className={`feed-entry feed-entry--user feed-entry--${entry.kind}${entry.muted ? ' feed-entry--muted' : ''}${emphasis.live === true ? ' feed-entry--live' : ''}`}>
         {time}
         <span className="feed-bubble">
           <span className="feed-text">
@@ -84,9 +94,14 @@ export function FeedLine({ entry }: { entry: FeedEntry }) {
     // `display` event reads the same `at` here. A line telling what went
     // wrong takes the failure colour on its mark and rail (#329); a Stop's is grey.
     return (
-      <div className={`feed-entry feed-entry--assistant feed-entry--${entry.kind}${entry.failure ? ' feed-entry--failed' : ''}${entry.muted ? ' feed-entry--muted' : ''}`} data-event-at={entry.at}>
+      <div
+        className={`feed-entry feed-entry--assistant feed-entry--${entry.kind}${entry.failure ? ' feed-entry--failed' : ''}${entry.muted ? ' feed-entry--muted' : ''}${emphasis.headline === true ? ' feed-entry--headline' : ''}`}
+        data-event-at={entry.at}
+      >
         {time}
-        <span className="feed-orb" aria-hidden="true" />
+        <span className="feed-orb" aria-hidden="true">
+          <ChromeIcon name={entry.failure ? 'cross' : entry.muted ? 'dash' : 'tick'} size={14} />
+        </span>
         <div className="feed-card">
           <span className="feed-sr">Bing Bong</span>
           {entry.kind === 'display' ? (
@@ -216,6 +231,9 @@ export function ActivityFeed({
   footer?: React.ReactNode
 }) {
   const listRef = useRef<HTMLDivElement>(null)
+  const headline = headlineAnswerId(entries)
+  // The Command being worked on: the newest one, while a run is live.
+  const live = liveRunId == null ? null : (entries.findLast((entry) => entry.role === 'user')?.id ?? null)
 
   useEffect(() => {
     const list = listRef.current
@@ -234,7 +252,7 @@ export function ActivityFeed({
           item.item === 'run' ? (
             <RunDetails key={`run-${item.runId}`} runId={item.runId} entries={item.entries} live={item.runId === liveRunId} />
           ) : (
-            <FeedLine key={item.entry.id} entry={item.entry} />
+            <FeedLine key={item.entry.id} entry={item.entry} emphasis={{ headline: item.entry.id === headline, live: item.entry.id === live }} />
           ),
         )}
       </div>

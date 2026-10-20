@@ -18,6 +18,10 @@ const ICONS = {
   dock: [{ d: 'M17 12H3' }, { d: 'm11 18 6-6-6-6' }, { d: 'M21 5v14' }],
   undock: [{ d: 'M3 19V5' }, { d: 'm13 6-6 6 6 6' }, { d: 'M7 12h14' }],
   collapse: CHEVRON,
+  expand: [{ d: 'm15 18-6-6 6-6' }],
+  tick: [{ d: 'M5 12.5l4.5 4.5L19 7.5' }],
+  cross: [{ d: 'M6 6l12 12' }, { d: 'M18 6L6 18' }],
+  dash: [{ d: 'M6 12h12' }],
   timer: [{ d: 'M10 2h4' }, { d: 'm12 14 3-3' }, { circle: [12, 14, 8] }],
   music: [{ d: 'M9 18V5l12-2v13' }, { circle: [6, 18, 3] }, { circle: [18, 16, 3] }],
   pause: [{ d: 'M6 4h4v16H6z' }, { d: 'M14 4h4v16h-4z' }],
@@ -27,6 +31,6 @@ const ICONS = {
 export type ChromeIconName = keyof typeof ICONS
 
 /** One control glyph, decorative: the button carries the accessible name. */
-export function ChromeIcon({ name, size = 18 }: { name: ChromeIconName; size?: number }) {
+export function ChromeIcon({ name, size = 24 }: { name: ChromeIconName; size?: number }) {
   return <Glyph parts={ICONS[name]} size={size} className="chrome-icon" />
 }

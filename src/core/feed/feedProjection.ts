@@ -86,6 +86,20 @@ const STEP_NAMES: Readonly<Record<PipelineStatus, string>> = {
   cancelled: 'Stopped',
 }
 
+/**
+ * The Answer drawn at reading size (#359, ADR 0078): the newest one, while
+ * nothing has been said after it — once a newer Command is in the Feed,
+ * every Answer before it is the quiet layer.
+ */
+export function headlineAnswerId(entries: readonly FeedEntry[]): number | null {
+  for (let index = entries.length - 1; index >= 0; index--) {
+    const entry = entries[index]!
+    if (entry.role === 'assistant') return entry.id
+    if (entry.role === 'user') return null
+  }
+  return null
+}
+
 /** Detail entries are trimmed beyond this (~500, spec #42). */
 export const MAX_DETAIL_ENTRIES = 500
 

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import type { AppSettings } from '../../core/settings/settings'
 import { PAUSE_CAP_MS_MAX, PAUSE_CAP_MS_MIN, HOT_LISTEN_SILENCE_MS_MAX, HOT_LISTEN_SILENCE_MS_MIN, RESUMPTION_MERGE_MS_MAX, RESUMPTION_MERGE_MS_MIN, WEB_ZOOM_PERCENT_MAX, WEB_ZOOM_PERCENT_MIN, WAKE_WORD_THRESHOLD_MAX, WAKE_WORD_THRESHOLD_MIN, asAppearance, asSttModel } from '../../core/settings/settings'
 import { DEFAULT_PIPER_VOICE } from '../../core/tts/piperVoices'
@@ -100,6 +100,91 @@ function rememberOpen(id: string, open: boolean): void {
     // A per-viewer convenience: without storage the section still opens, only not remembered.
     reportRendererFault('settings.rememberOpen', error)
   }
+}
+
+/** The index down the page's left (ADR 0078): every section under its group, numbered down the page. */
+const SETTINGS_INDEX: readonly { group: string; sections: readonly { id: string; title: string }[] }[] = [
+  {
+    group: 'General',
+    sections: [
+      { id: 'voice', title: 'Voice' },
+      { id: 'learned terms', title: 'Speech vocabulary' },
+      { id: 'appearance', title: 'Appearance' },
+      { id: 'browsing', title: 'Browsing' },
+    ],
+  },
+  {
+    group: 'Idle screen',
+    sections: [
+      { id: 'idle screen cards', title: 'Cards' },
+      { id: 'weather', title: 'Weather' },
+      { id: 'weight', title: 'Weight' },
+      { id: 'ai usage', title: 'AI usage' },
+    ],
+  },
+]
+
+function sectionElement(scroll: HTMLElement | null, id: string): HTMLElement | null {
+  return scroll?.querySelector<HTMLElement>(`section[aria-label="${id}"]`) ?? null
+}
+
+/**
+ * The Settings index: a click opens its section and brings it to the top;
+ * the section at the top of the scroll is the one marked.
+ */
+function SettingsIndex({ scrollRef }: { scrollRef: React.RefObject<HTMLDivElement | null> }) {
+  const [current, setCurrent] = useState(SETTINGS_INDEX[0]!.sections[0]!.id)
+
+  useEffect(() => {
+    const scroll = scrollRef.current
+    if (!scroll) return
+    const follow = (): void => {
+      const top = scroll.getBoundingClientRect().top + 40
+      let at = SETTINGS_INDEX[0]!.sections[0]!.id
+      for (const { sections } of SETTINGS_INDEX) {
+        for (const { id } of sections) {
+          const element = sectionElement(scroll, id)
+          if (element && element.getBoundingClientRect().top <= top) at = id
+        }
+      }
+      setCurrent(at)
+    }
+    scroll.addEventListener('scroll', follow, { passive: true })
+    return () => scroll.removeEventListener('scroll', follow)
+  }, [scrollRef])
+
+  let number = 0
+  return (
+    <nav className="settings-index" aria-label="Settings sections">
+      <h1>Settings</h1>
+      {SETTINGS_INDEX.map(({ group, sections }) => (
+        <Fragment key={group}>
+          <p className="settings-index-group">{group}</p>
+          {sections.map(({ id, title }) => {
+            const shown = String(number++).padStart(2, '0')
+            return (
+              <button
+                key={id}
+                type="button"
+                className="settings-index-link"
+                aria-current={current === id ? 'true' : undefined}
+                onClick={() => {
+                  const element = sectionElement(scrollRef.current, id)
+                  const details = element?.querySelector('details')
+                  if (details && !details.open) details.open = true
+                  element?.scrollIntoView({ block: 'start' })
+                  setCurrent(id)
+                }}
+              >
+                <span className="settings-index-number">{shown}</span>
+                {title}
+              </button>
+            )
+          })}
+        </Fragment>
+      ))}
+    </nav>
+  )
 }
 
 /**
@@ -477,6 +562,7 @@ export function SettingsPage({
   const mics = useMicrophones()
   const voices = useTtsVoices()
   const lastSynced = useRef<AppSettings>(settings)
+  const scrollRef = useRef<HTMLDivElement>(null)
 
   // Follow external changes (another window's save, or our own sanitized
   // result) — but never clobber an in-progress edit.
@@ -499,8 +585,9 @@ export function SettingsPage({
   }
 
   return (
-    <section className="settings-page" aria-label="settings">
-      <div className="settings-scroll">
+    <section className="settings-page settings-page--indexed" aria-label="settings">
+      <SettingsIndex scrollRef={scrollRef} />
+      <div className="settings-scroll" ref={scrollRef}>
         <h2 className="settings-group">General</h2>
         <Section id="voice" title="Voice" hint="Microphone, wake word, pauses, speech model and voice">
           <Field label="Microphone">

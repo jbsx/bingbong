@@ -185,11 +185,12 @@ describe('weight e2e: the stand-in scale, the pop-up, the card and the page', ()
       { timeoutMs: 15000, intervalMs: 100 },
     )
     expect(shown.text).toContain('Jaish')
-    expect(shown.width).toBeLessThanOrEqual(600)
+    // The Peek Card's place: at most 640 px (ADR 0078).
+    expect(shown.width).toBeLessThanOrEqual(640)
     // The dashboard does not draw its own under the pane, and the feed
     // overlay keeps the collapsed edge tab, its view still the tab's size.
     expect(await harness.dashboardEval<boolean>(`!!document.querySelector('.weighin-popup')`)).toBe(false)
-    expect(await harness.overlayEval<{ tab: boolean; popup: boolean; width: number }>(`({ tab: !!document.querySelector('.feed-edge-tab'), popup: !!document.querySelector('.weighin-popup'), width: window.innerWidth })`)).toEqual({ tab: true, popup: false, width: 36 })
+    expect(await harness.overlayEval<{ tab: boolean; popup: boolean; width: number }>(`({ tab: !!document.querySelector('.feed-edge-tab'), popup: !!document.querySelector('.weighin-popup'), width: window.innerWidth })`)).toEqual({ tab: true, popup: false, width: 44 })
     await harness.clickWeighInElement('.weighin-popup-chip[data-person="barun"]')
     await waitFor(async () => ((await harness.weighInEval<string>(`document.querySelector('.weighin-popup--settled')?.textContent ?? ''`)).includes('Barun · first Weigh-in') ? true : undefined), { timeoutMs: 5000, intervalMs: 50 })
     expect((await weighInsOnDisk(userDataDir)).at(-1)).toMatchObject({ kg: 80.8, person: 'barun' })

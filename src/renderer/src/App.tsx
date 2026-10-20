@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { BrowserNav, BrowserPane } from './BrowserPane'
 import { ChromeIcon } from './ChromeIcon'
-import { RunHint, StatusOrb, StatusPill } from './AssistantPanel'
+import { capsuleTone, RunHint, StatusOrb, StatusPill, VoiceWave } from './AssistantPanel'
 import { IdleScreen } from './IdleScreen'
 import { SettingsPage } from './SettingsPage'
 import { WeightPage } from './WeightPage'
@@ -120,7 +120,9 @@ export function App() {
   const quiet = status === 'idle' && !voice.listening && !voice.transcribing
   const showIdle = idle.idle && view === 'dashboard' && (quiet || idleUp.current)
   idleUp.current = showIdle
-  const hint = voiceHint(voice)
+  // The Voice Prompt (#359) rides the open panel's footer over the browsing pane: while it is on screen it carries
+  // the hint and the live words, and the capsule says only the state; collapsed, the capsule keeps them.
+  const hint = voiceHint(voice, { promptShown: panel.open && view === 'dashboard' })
   const weather = useWeather(settings?.weather ?? null, showIdle)
   const lastPage = useLastPage(showIdle)
   // Followed always: the Idle Screen's dock shows them, and so do the Toolbar's widgets while the app is in use.
@@ -170,9 +172,10 @@ export function App() {
             (.status-orb--*, .status-pill, .voice-hint, .run-hint) are
             load-bearing e2e observation points. */}
         <div className="toolbar-start">
-          <div className="status-capsule">
+          <div className={`status-capsule status-capsule--${capsuleTone(status)}`}>
             <StatusOrb status={status} />
             <StatusPill status={status} />
+            {status === 'listening' ? <VoiceWave bars={6} /> : null}
             {/* Run progress (#43) keeps its place even when the mic opens
                 mid-run — the climbing timer must never disappear behind a
                 listening hint, or a long round reads as frozen again. */}

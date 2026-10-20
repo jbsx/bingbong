@@ -7,12 +7,16 @@ import { nativeTheme } from 'electron'
 // paints the current theme's color, and the nativeTheme 'updated'
 // broadcast repaints all. Renderers never need telling — themeSource
 // drives their engine-level prefers-color-scheme; only these native
-// surfaces need the repaint. The colors mirror styles.css's sheet:
-// light #ffffff is --panel, dark #1d1d1f is the ink tier --panel-overlay
-// sits on — keep them in step when the token sheet moves.
+// surfaces need the repaint. The colors mirror styles.css's sheet (ADR
+// 0078): --surface-solid, the panel tone the pane's viewport paints on the
+// ground, light #eceef1 and dark #0b0d11 — keep them in step when the
+// token sheet moves.
 
-const PANE_BACKGROUND_LIGHT = '#ffffff'
-const PANE_BACKGROUND_DARK = '#1d1d1f'
+const PANE_BACKGROUND_LIGHT = '#eceef1'
+const PANE_BACKGROUND_DARK = '#0b0d11'
+
+/** The pane's rounded corners (ADR 0078): styles.css's --radius-lg less the frame's 1 px hairline. */
+export const PANE_FRAME_RADIUS = 19
 
 interface ThemedSurface {
   apply(color: string): void

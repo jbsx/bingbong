@@ -24,9 +24,11 @@ export const FEED_WIDTH_STORAGE_KEY = 'bingbong.feedWidth'
 /**
  * The default width (ADR 0021): sidebar-scale, not document-scale — the
  * panel is a summoned surface, so it opens narrow and users who want more
- * widen it (persisted). Kiosk ships the same default.
+ * widen it (persisted). Kiosk ships the same default. F1 (ADR 0078) draws
+ * the panel 520 px wide on the wall screen, and the view carries the
+ * window's 16 px gutter beside it.
  */
-export const FEED_PANEL_WIDTH_DEFAULT = 380
+export const FEED_PANEL_WIDTH_DEFAULT = 536
 /** No narrower than this, whatever the window says. */
 export const FEED_PANEL_WIDTH_MIN = 320
 /** No wider than this fraction of the window's content width. */

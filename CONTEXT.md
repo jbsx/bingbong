@@ -352,7 +352,11 @@ Headline): the peach orb, `Say "Bing Bong" or start typing`, a waveform and
 the voice state. It says the real state of the ear, the same word the
 Status Capsule uses: waiting for the wake word it is the orb and the hint
 with the waveform still; `LISTENING`, the waveform live, only while an
-Utterance is being taken; with the microphone off it says so. While an
+Utterance is being taken; with the microphone off it says so. In the Feed
+Panel's footer (#359) the hint reads `Say "Bing Bong" or type a command`,
+`Type a command` while a Command runs with Stop beside it, and
+`Microphone off — type a command` with the orb grey; at rest it draws no
+waveform, as round 6 drew it. While an
 Utterance is taken it carries its live words, a Page Term among them in
 peach, and how much quiet ends it. The Prompt Bar is drawn as one; the
 Idle Screen's first Clock Line is one.

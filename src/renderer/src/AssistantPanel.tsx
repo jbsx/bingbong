@@ -22,6 +22,28 @@ const PILL_LABELS: Record<OrbStatus, string> = {
 }
 
 /**
+ * The capsule's tone (ADR 0078): quiet while Ready or Stopped, peach while
+ * Bing Bong works — thinking, acting, transcribing, speaking — or listens.
+ */
+export function capsuleTone(status: OrbStatus): 'ready' | 'working' | 'listening' | 'stopped' {
+  if (status === 'idle') return 'ready'
+  if (status === 'cancelled') return 'stopped'
+  if (status === 'listening') return 'listening'
+  return 'working'
+}
+
+/** The listening waveform: an indicator of an open ear, drawn, not measured. */
+export function VoiceWave({ bars }: { bars: number }) {
+  return (
+    <span className="voice-wave" aria-hidden="true">
+      {Array.from({ length: bars }, (_, index) => (
+        <i key={index} />
+      ))}
+    </span>
+  )
+}
+
+/**
  * The status pill (#50): the state, named in text beside the still orb —
  * readable from across the room without any motion.
  */

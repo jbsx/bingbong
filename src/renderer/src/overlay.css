@@ -3,9 +3,9 @@
    entry loads these rules — the dashboard keeps its own layout in
    styles.css, and the color tokens themselves are shared through it:
    light by default, the dark half of the sheet selected engine-side by
-   the Appearance Setting (ADR 0020). The surface ships near-opaque
-   (0.97) — true frost is impossible across native view boundaries, and
-   readability over the live page won. */
+   the Appearance Setting (ADR 0020). Every surface here is solid: true
+   frost is impossible across native view boundaries, and readability over
+   the live page won. */
 
 html,
 body,
@@ -58,45 +58,39 @@ body,
   margin-top: 0;
 }
 
-/* The panel surface paints at the folded width, right-anchored: in
-   steady state the view bounds equal that width, so min(100%, var)
-   changes nothing — but during a resize drag main cloaks the view wider
-   (window-left to panel-right) so the pointer never leaves it, and the
-   surface must stay exactly where it was. Overlay mode floats above the
-    live page flush against the window's right edge (ADR 0012): near-opaque
-    white with a whisper of depth — visually identical to docked; the
-    difference is what happens to the page beneath (covered vs narrowed),
-    never the skin. Square corners: the panel reads as a full-height slab
-    of the window, not a floating card. */
+/* The panel surface paints at the folded width, right-anchored, with the
+   window's gutter drawn inside its view: in steady state the view bounds
+   equal that width, so min(100%, var) changes nothing — but during a
+   resize drag main cloaks the view wider (window-left to panel-right) so
+   the pointer never leaves it, and the surface must stay exactly where it
+   was. One look in both modes (ADR 0078): a solid panel on a hairline,
+   rounded like the pane's frame; the difference is what happens to the
+   page beneath (covered vs narrowed), never the skin. */
 .feed-surface {
   position: relative;
   display: flex;
   flex-direction: column;
-  height: 100%;
+  height: calc(100% - 16px);
   min-height: 0;
-  width: min(100%, var(--panel-width, 100%));
+  width: calc(min(100%, var(--panel-width, 100%)) - 16px);
+  margin: 0 16px 16px 0;
   align-self: flex-end;
   flex: none;
-  border: 1px solid var(--edge);
-  border-right: none;
+  border: 1px solid var(--hair);
+  border-radius: var(--radius-lg);
+  background: var(--surface-solid);
   overflow: hidden;
 }
 
-/* Re-skinned neutral light (ADR 0012, 0020): the surface ships near-opaque
-   — true frost is impossible across native view boundaries, and
-   readability over the live page won. The token comes from styles.css's
-   shared sheet, so the resolved Appearance re-skins it with everything
-   else. */
 .feed-surface--overlay {
-  background: var(--panel-overlay);
-  box-shadow: -12px 0 32px rgba(0, 0, 0, 0.12);
+  box-shadow: var(--shadow-pop);
 }
 
-/* Docked mode takes real layout space beside the pane — solid white,
-   same flush-right geometry. */
-.feed-surface--docked {
-  background: var(--panel);
-  box-shadow: -12px 0 32px rgba(0, 0, 0, 0.08);
+/* Docked, the Run Detail drops its box: the panel beside the page is
+   already one. */
+.feed-surface--docked .feed-run:not(.feed-run--live) .feed-run-summary {
+  border-color: transparent;
+  background: transparent;
 }
 
 /* The drag-resize grip: a slim col-resize strip on the surface's left
@@ -108,7 +102,6 @@ body,
   top: 0;
   bottom: 0;
   width: 14px;
-  margin-left: -7px;
   z-index: 2;
   display: flex;
   align-items: center;
@@ -129,22 +122,13 @@ body,
   transition: background 120ms ease;
 }
 
-.feed-resize-handle:hover::before {
-  background: var(--edge);
-}
-
+.feed-resize-handle:hover::before,
 .feed-resize-handle:active::before {
-  background: var(--accent);
+  background: var(--hair2);
 }
 
 .feed-surface .feed {
   height: 100%;
-}
-
-.feed-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
 }
 
 .feed-header-actions {
@@ -157,538 +141,291 @@ body,
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
+  width: 44px;
+  height: 44px;
   padding: 0;
-  border: none;
-  border-radius: 999px;
+  border: 1px solid transparent;
+  border-radius: 14px;
   background: transparent;
-  color: var(--muted);
-  font-size: 0.9rem;
+  color: var(--fg2);
   line-height: 1;
   cursor: pointer;
   transition: background 120ms ease;
 }
 
 .feed-header-button:hover {
-  color: var(--text);
-  background: color-mix(in srgb, var(--text) 8%, transparent);
+  color: var(--fgh);
+  background: var(--raise);
 }
 
-/* The view tabs (#139): the header's `Evidence N` control (and the
-   evidence view's back-to-activity twin) — text pills, wider than the
-   icon buttons. The count badge shows only when evidence exists; at zero
-   the control still opens the (empty) browser. */
-.feed-tab {
+.feed-header-button:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+/* ---- the Voice Prompt (#359): the panel's footer, the one typed-input
+   surface — orb, hint and Run at rest; LISTENING, the waveform and the
+   live words while an Utterance is taken. ---- */
+.voice-prompt {
   flex: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 30px;
-  padding: 0 12px;
-  border: none;
-  border-radius: 999px;
-  background: transparent;
-  color: var(--muted);
-  font-size: 0.8rem;
-  font-weight: 600;
-  line-height: 1;
-  cursor: pointer;
-  transition: background 120ms ease, color 120ms ease;
+  padding: 14px 16px 16px 20px;
+  border-top: 1px solid var(--hair);
 }
 
-.feed-tab:hover {
-  color: var(--text);
-  background: color-mix(in srgb, var(--text) 8%, transparent);
+.voice-prompt--listening,
+.voice-prompt--transcribing {
+  border-top-color: var(--accent-edge);
+  background: var(--accentq);
 }
 
-.feed-tab--stocked {
-  color: var(--text);
+.voice-orb {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, var(--accent-soft), var(--accent) 60%);
+  box-shadow: 0 0 0 5px var(--accentq);
 }
 
-.feed-tab-count {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 5px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--accent) 18%, transparent);
-  color: var(--accent);
-  font-size: 0.7rem;
-  font-weight: 700;
+.voice-orb--off {
+  background: var(--idle);
+  box-shadow: none;
 }
 
-/* The Evidence Browser's Observation cards (#139): one grounded fact per
-   card — source kind, time, statement. Newest first. */
-.evidence-card {
-  margin: 0 0 8px;
-  padding: 10px 12px;
-  border: 1px solid var(--edge);
-  border-radius: 10px;
-  background: var(--bg);
-}
-
-.evidence-card-head {
+.voice-prompt-head {
   display: flex;
   align-items: center;
-  gap: 6px;
-  margin-bottom: 6px;
+  gap: 14px;
+  margin: 4px 0 12px;
 }
 
-.evidence-kind {
-  padding: 1px 8px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
-  color: var(--accent);
-  font-size: 0.7rem;
-  font-weight: 700;
+.voice-prompt-state {
+  font-family: var(--font-mono);
+  font-size: 16px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  color: var(--accent);
 }
 
-.evidence-card .feed-time {
+.voice-prompt-hint {
   margin-left: auto;
+  font-size: 16px;
+  color: var(--fg3);
+  white-space: nowrap;
 }
 
-.evidence-text {
+/* The live words: the loudest thing on screen while they come. */
+.voice-prompt-said {
   margin: 0;
-  color: var(--text);
-  font-size: 0.85rem;
-  line-height: 1.45;
+  padding: 2px 0 14px;
+  font-size: 36px;
+  line-height: 1.2;
+  font-weight: 500;
+  letter-spacing: -0.015em;
+  color: var(--fg);
   overflow-wrap: anywhere;
 }
 
-/* The complete Evidence Browser (#142): two distinct newest-first sections
-   — Observations and Candidates — each with its own filter row. Filters
-   are presentation only: they hide cards, never evidence, and the
-   header's `Evidence N` badge counts everything regardless of them. */
-.evidence-section {
-  margin: 0 0 14px;
-}
-
-.evidence-section-head {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  margin: 10px 0 6px;
-}
-
-.evidence-section-title {
-  margin: 0;
-  color: var(--muted);
-  font-size: 0.7rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.evidence-section-count {
-  color: var(--muted);
-  font-size: 0.7rem;
-}
-
-.evidence-filters {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin-bottom: 8px;
-}
-
-.evidence-filter {
-  height: 22px;
-  padding: 0 9px;
-  border: 1px solid transparent;
-  border-radius: 999px;
-  background: transparent;
-  color: var(--muted);
-  font-size: 0.7rem;
-  font-weight: 600;
-  line-height: 1;
-  text-transform: capitalize;
-  cursor: pointer;
-  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
-}
-
-.evidence-filter:hover {
-  color: var(--text);
-  background: color-mix(in srgb, var(--text) 8%, transparent);
-}
-
-.evidence-filter--active {
-  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
+.voice-prompt-said em {
+  font-style: normal;
   color: var(--accent);
 }
 
-.evidence-section-empty {
-  margin: 0 0 8px;
-  color: var(--muted);
-  font-size: 0.8rem;
+.voice-prompt-said--waiting {
+  color: var(--fg3);
 }
 
-/* Card meta rows: uncertainty, source labels, provenance — quiet lines
-   under the statement, never competing with it. */
-.evidence-uncertainty,
-.evidence-source,
-.evidence-decision,
-.evidence-provenance {
-  margin: 4px 0 0;
-  color: var(--muted);
-  font-size: 0.72rem;
-  line-height: 1.4;
-  overflow-wrap: anywhere;
+.voice-prompt-caret {
+  display: inline-block;
+  width: 3px;
+  height: 36px;
+  margin-left: 3px;
+  vertical-align: -6px;
+  border-radius: 1px;
+  background: var(--accent);
+  animation: voice-caret 1s steps(1) infinite;
 }
 
-.evidence-uncertainty {
-  font-style: italic;
+@keyframes voice-caret {
+  50% {
+    opacity: 0;
+  }
 }
 
-/* What stands on a decided Candidate (#208): who decided, for which
-   objective, and why — the one card line that is not the model's
-   description of the Candidate but the record of a decision on it. */
-.evidence-decision {
-  color: var(--text);
+@media (prefers-reduced-motion: reduce) {
+  .voice-prompt-caret {
+    animation: none;
+  }
 }
 
-/* The shared evidence source control (#144): one line per source — the
-   human label (page title, else hostname), the URL as selectable text,
-   and the `Copy source` button with its status beside it. Copying never
-   navigates; a failed copy leaves the URL selectable below it. */
-.evidence-source-control {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 6px;
-}
-
-.evidence-source-label {
-  color: var(--text);
-  font-weight: 600;
-  overflow-wrap: anywhere;
-}
-
-.evidence-source-url {
-  user-select: text;
-  overflow-wrap: anywhere;
-}
-
-.evidence-copy {
-  flex: none;
-  padding: 1px 8px;
-  border: 1px solid color-mix(in srgb, var(--text) 16%, transparent);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--muted);
-  font-size: 0.68rem;
-  font-weight: 600;
-  line-height: 1.4;
-  cursor: pointer;
-  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
-}
-
-.evidence-copy:hover {
-  color: var(--text);
-  background: color-mix(in srgb, var(--text) 8%, transparent);
-}
-
-.evidence-copy-status {
-  flex: none;
-  font-size: 0.68rem;
-  font-weight: 600;
-}
-
-.evidence-copy-status--copied {
-  color: var(--accent);
-}
-
-.evidence-copy-status--failed {
-  color: #9d0006;
-}
-
-/* Presentation chips beside the kind: delegated provenance (#142) and
-   revalidation need — both derived, never new grounding kinds. */
-.evidence-chip {
-  padding: 1px 7px;
-  border-radius: 999px;
-  font-size: 0.65rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.evidence-chip--delegated {
-  background: color-mix(in srgb, var(--text) 10%, transparent);
-  color: var(--muted);
-}
-
-.evidence-chip--volatile {
-  background: color-mix(in srgb, #b57614 14%, transparent);
-  color: #b57614;
-}
-
-/* The support flash: a Candidate's reference lands on the Observation
-   card it cites — focused, briefly highlighted, never copied. */
-.evidence-card--focused {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent);
-  transition: box-shadow 200ms ease, border-color 200ms ease;
-}
-
-/* Candidate cards: status-led, with support references as small chips
-   that focus the cited Observation card. */
-.evidence-status {
-  padding: 1px 8px;
-  border-radius: 999px;
-  font-size: 0.7rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
-  color: var(--accent);
-}
-
-.evidence-status--rejected {
-  background: color-mix(in srgb, #9d0006 10%, transparent);
-  color: #9d0006;
-}
-
-.evidence-status--superseded {
-  background: color-mix(in srgb, var(--text) 10%, transparent);
-  color: var(--muted);
-}
-
-.evidence-detail {
-  margin: 4px 0 0;
-  color: var(--muted);
-  font-size: 0.8rem;
-  line-height: 1.4;
-  overflow-wrap: anywhere;
-}
-
-.evidence-support {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin-top: 6px;
-}
-
-.evidence-support-ref {
-  height: 20px;
-  padding: 0 8px;
-  border: 1px dashed color-mix(in srgb, var(--text) 25%, transparent);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--muted);
-  font-size: 0.65rem;
-  font-weight: 600;
-  line-height: 1;
-  cursor: pointer;
-  transition: color 120ms ease, border-color 120ms ease;
-}
-
-.evidence-support-ref:hover {
-  color: var(--text);
-  border-color: var(--accent);
-}
-
-/* The Answer Evidence Summary (#141): the collapsed record of exactly
-   the Observations a displayed Answer declared, inside its card. Plain
-   native details/summary — collapsed by default, keyboard accessible by
-   construction. The cards reuse the Evidence Browser's own card styles;
-   each source line is the shared #144 copy control, never a link. */
-.answer-evidence {
-  margin-top: 8px;
-  border-top: 1px solid var(--edge);
-  padding-top: 6px;
-}
-
-.answer-evidence-summary {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  cursor: pointer;
-  color: var(--muted);
-  font-size: 0.75rem;
-  font-weight: 600;
-  line-height: 1;
-  list-style: none;
-  user-select: none;
-}
-
-.answer-evidence-summary::-webkit-details-marker {
-  display: none;
-}
-
-.answer-evidence-summary::before {
-  content: '▸';
-  font-size: 0.7rem;
-  transition: transform 120ms ease;
-}
-
-.answer-evidence[open] > .answer-evidence-summary::before {
-  transform: rotate(90deg);
-}
-
-.answer-evidence-summary:hover {
-  color: var(--text);
-}
-
-.answer-evidence-count {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 5px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--accent) 18%, transparent);
-  color: var(--accent);
-  font-size: 0.7rem;
-  font-weight: 700;
-}
-
-.answer-evidence-entries {
-  margin-top: 6px;
-}
-
-.answer-evidence-source {
-  margin: 6px 0 0;
-  color: var(--muted);
-  font-size: 0.75rem;
-  line-height: 1.4;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  align-items: flex-start;
-}
-
-/* The prompt bar: the panel's footer and the one typed-input surface.
-   The verb button names the current action (run / steer); the bar is
-   never disabled — a rejected submit restores the draft. */
 .prompt-row {
-  flex: none;
   display: flex;
-  gap: 8px;
-  padding: 12px 16px;
-  border-top: 1px solid var(--edge);
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.prompt-row > .voice-orb {
+  margin-top: 18px;
 }
 
 .prompt-form {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 4px;
   min-width: 0;
 }
 
 .prompt-controls {
   display: flex;
-  gap: 8px;
+  align-items: center;
+  gap: 14px;
   min-width: 0;
 }
 
 .submission-feedback {
-  min-height: 1em;
-  margin: 0 16px;
-  color: var(--status-red);
-  font-size: 0.75rem;
+  margin: 0;
+  color: var(--fail);
+  font-size: 16px;
   line-height: 1.25;
 }
 
+.submission-feedback:empty {
+  display: none;
+}
+
+/* The field: a line, not a box — the words on a hairline. */
 .prompt-input {
   flex: 1;
   min-width: 0;
-  padding: 8px 16px;
-  border: 1px solid var(--edge);
-  border-radius: 999px;
-  background: var(--bg);
-  color: var(--text);
-  font-size: 0.95rem;
+  height: 52px;
+  padding: 0;
+  border: none;
+  border-bottom: 1px solid var(--hair2);
+  border-radius: 0;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 19px;
+}
+
+.prompt-input::placeholder {
+  color: var(--fg3);
+}
+
+.voice-prompt--listening .prompt-input:placeholder-shown,
+.voice-prompt--transcribing .prompt-input:placeholder-shown {
+  border-bottom-color: transparent;
 }
 
 .prompt-input:focus {
   outline: none;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.15);
+  border-bottom-color: var(--accent);
 }
 
-/* Run reads as a live button whenever there is text to send (#334):
-   filled in the accent and as bold as Stop beside it; empty, it fades. */
+/* Run is the primary button: peach whenever there is text to send (#334);
+   empty, it steps back to an outline. */
 .prompt-verb {
   flex: none;
-  padding: 8px 16px;
+  height: 48px;
+  padding: 0 22px;
   border: 1px solid var(--accent);
-  border-radius: 999px;
+  border-radius: 24px;
   background: var(--accent);
-  color: #fff;
-  font-size: 0.9rem;
+  color: var(--onaccent);
+  font: inherit;
+  font-size: 19px;
   font-weight: 600;
   cursor: pointer;
-  transition: background 120ms ease, color 120ms ease, opacity 120ms ease;
+  transition: background 120ms ease, color 120ms ease;
 }
 
 .prompt-verb:not(:disabled):hover {
-  background: color-mix(in srgb, var(--accent) 85%, #000);
+  background: color-mix(in srgb, var(--accent) 88%, var(--fg));
 }
 
 .prompt-verb:disabled {
-  border-color: var(--edge);
+  border-color: var(--hair2);
   background: transparent;
-  color: var(--muted);
-  opacity: 0.6;
+  color: var(--fg3);
   cursor: default;
 }
 
-/* Stop sits beside Run at Run's size: the row's stretch would grow it over
-   the feedback line below the controls into a tall pill. */
+.prompt-verb:focus-visible,
+.panel-stop:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+/* Stop sits beside Run at Run's size, in the failure colour: it ends what
+   Bing Bong is doing. */
 .panel-stop {
   flex: none;
-  align-self: flex-start;
-  min-width: 64px;
-  padding: 8px 16px;
-  border: 1px solid var(--status-red);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--status-red) 8%, transparent);
-  color: var(--status-red);
-  font-size: 0.9rem;
-  font-weight: 650;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  height: 48px;
+  padding: 0 22px;
+  border: 1px solid color-mix(in srgb, var(--fail) 55%, transparent);
+  border-radius: 24px;
+  background: color-mix(in srgb, var(--fail) 12%, transparent);
+  color: var(--fail);
+  font: inherit;
+  font-size: 19px;
+  font-weight: 600;
   cursor: pointer;
   transition: background 120ms ease;
 }
 
-.panel-stop:hover {
-  background: color-mix(in srgb, var(--status-red) 16%, transparent);
+.panel-stop-mark {
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  background: var(--fail);
 }
 
-/* The collapsed edge tab: idle runs collapse the panel to a slim
-   right-edge tab — the only part of the feed that demands attention. */
+.panel-stop:hover {
+  background: color-mix(in srgb, var(--fail) 18%, transparent);
+}
+
+/* The collapsed edge tab: the panel folded to a slim tab on the right
+   edge — a chevron and the word, the only part of the feed left. */
 .feed-edge-tab {
-  display: block;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
   width: 100%;
   height: 100%;
-  padding: 16px 6px;
-  border: 1px solid var(--edge);
+  padding: 0;
+  border: 1px solid var(--hair2);
   border-right: none;
-  background: var(--panel);
-  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.1);
-  color: var(--muted);
+  border-radius: 14px 0 0 14px;
+  background: var(--surface-solid);
+  color: var(--fg2);
   cursor: pointer;
 }
 
+.feed-edge-tab .chrome-icon {
+  color: var(--fg3);
+}
+
 .feed-edge-tab:hover {
-  color: var(--text);
+  color: var(--fgh);
+}
+
+.feed-edge-tab:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
 }
 
 .feed-edge-tab-label {
   writing-mode: vertical-rl;
-  display: block;
-  margin: 0 auto;
-  font-size: 0.9rem;
-  font-weight: 650;
+  font-size: 16px;
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.18em;
 }
 
 /* The Weigh-in pop-up over the browsing pane: in its own view
@@ -704,7 +441,22 @@ body,
 }
 
 .overlay-chrome--open .weighin-popup {
-  top: 64px;
+  top: 80px;
   bottom: auto;
-  width: calc(100% - 32px);
+  left: calc(50% - 8px);
+  width: calc(100% - 64px);
+  height: auto;
+  min-height: 124px;
+  gap: 16px;
+  padding: 16px 20px;
 }
+
+.overlay-chrome--open .weighin-popup-sub {
+  white-space: normal;
+}
+
+/* On the panel's narrower top, the figure steps down so it holds one line. */
+.overlay-chrome--open .weighin-popup-kg {
+  font-size: 40px;
+}
+

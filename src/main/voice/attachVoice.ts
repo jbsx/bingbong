@@ -76,7 +76,7 @@ export function attachVoiceToWindow(win: BrowserWindow, deps: AttachVoiceDeps): 
       if (page !== undefined && deps.onPagePrepared !== undefined) void page.then((snapshot) => deps.onPagePrepared?.(snapshot))
     },
     onPartial: (text) => {
-      deps.publisher.publish({ source: 'voice-partial', partial: { text, at: Date.now() } })
+      deps.publisher.publish({ source: 'voice-partial', partial: { text, at: Date.now(), terms: deps.pageTerms?.() ?? [] } })
       // Early Fire (#326): the words so far may already be the whole Command.
       if (text !== '') void runnerFor(win)?.consider(text).catch((error: unknown) => reportFault('voice.attachVoice.consider', error))
     },
@@ -131,4 +131,6 @@ export interface AttachVoiceDeps {
   publisher: Pick<WindowEventPublisher, 'publish'>
   /** The page collected at speech start (ADR 0077), null when none could be; absent biases the decode toward the Bias Lexicon alone. */
   onPagePrepared?(snapshot: PageSnapshot | null): void
+  /** The Page Terms in force (ADR 0077): the Voice Prompt marks the ones the live words carry (#359). */
+  pageTerms?(): readonly string[]
 }

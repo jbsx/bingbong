@@ -107,7 +107,8 @@ describe('shell chrome e2e', () => {
         room,
       }
     })()`)
-    expect(fit.panel).toBe(380)
+    // The default view less the window gutter it carries (ADR 0078).
+    expect(fit.panel).toBe(520)
     expect(fit.text).toBeLessThanOrEqual(fit.room)
 
     await harness.clickOverlayElement('.panel-stop')
@@ -163,7 +164,8 @@ describe('shell chrome e2e', () => {
     const settings = await harness.dashboardEval<ToolbarGeometry>(toolbarGeometry)
     await harness.clickDashboardElement('.settings-toggle')
 
-    expect(dashboard.width - dashboard.settings!.right).toBe(14)
+    // The F1 gutter (ADR 0078): 16 px from the right edge.
+    expect(dashboard.width - dashboard.settings!.right).toBe(16)
     expect(settings.settings).toEqual(dashboard.settings)
     expect(settings.capsule!.left).toBe(dashboard.capsule!.left)
   })

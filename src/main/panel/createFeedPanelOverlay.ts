@@ -13,7 +13,7 @@ import { isPaneRect } from '../../core/browser/paneState'
 import { toPaneBounds } from '../../core/browser/paneGeometry'
 import { PIPELINE_IPC } from '../../core/pipeline/ipcChannels'
 import type { PipelineEvent } from '../../core/pipeline/events'
-import { VOICE_IPC, type VoiceErrorEvent, type VoiceHeardEvent } from '../../core/voice/ipcChannels'
+import { VOICE_IPC, type VoiceErrorEvent, type VoiceHeardEvent, type VoicePartialEvent, type VoiceState } from '../../core/voice/ipcChannels'
 import { resolvePreloadPath } from '../preloadPath'
 
 // The feed panel as a native overlay (#45): renderer DOM cannot composite
@@ -61,6 +61,9 @@ export interface FeedPanelOverlay {
   /** Voice-half feed lines (heard words, mic errors) — same payloads the dashboard gets. */
   forwardHeard(heard: VoiceHeardEvent): void
   forwardVoiceError(error: VoiceErrorEvent): void
+  /** The Voice Prompt's (#359) voice state and live words. */
+  forwardVoiceState(state: VoiceState): void
+  forwardVoicePartial(partial: VoicePartialEvent): void
   /** Re-adds the view last so any view added after it stays below it. */
   bringToTop(): void
   setRect(rect: { x: number; y: number; width: number; height: number }): void
@@ -199,6 +202,12 @@ export function attachFeedPanelOverlayToWindow(
     },
     forwardVoiceError(error) {
       if (!wc.isDestroyed()) wc.send(VOICE_IPC.error, error)
+    },
+    forwardVoiceState(state) {
+      if (!wc.isDestroyed()) wc.send(VOICE_IPC.stateChanged, state)
+    },
+    forwardVoicePartial(partial) {
+      if (!wc.isDestroyed()) wc.send(VOICE_IPC.partial, partial)
     },
     bringToTop() {
       if (win.isDestroyed()) return

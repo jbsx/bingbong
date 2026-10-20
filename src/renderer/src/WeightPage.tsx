@@ -29,8 +29,15 @@ function missingWhy(key: keyof BodyFigures, weighIn: WeighIn, profile: BodyProfi
   return 'set your body profile in Settings'
 }
 
-function withUnit(text: string, unit: string): string {
-  return unit === '' ? text : unit === '%' ? `${text}%` : `${text} ${unit}`
+/** A figure with its unit set small beside it (ADR 0078): "81.25 kg", "19.2%", "25.1". */
+function FigureValue({ text, unit }: { text: string; unit: string }) {
+  if (unit === '') return <>{text}</>
+  return (
+    <>
+      {text}
+      <small className="weight-figure-unit">{unit === '%' ? '%' : ` ${unit}`}</small>
+    </>
+  )
 }
 
 function changeText(now: Figure, before: Figure | undefined, digits: number, unit: string): string | null {
@@ -115,7 +122,7 @@ export function WeightPage({ weighIns, people, initialPerson = JAISH, onClose }:
   }
 
   return (
-    <section className="settings-page weight-page" aria-label="weight">
+    <section className="settings-page weight-page" aria-label="weight" data-person={person.id}>
       <div className="settings-scroll weight-scroll">
         <header className="weight-page-head">
           <h1 className="weight-page-title">Weight</h1>
@@ -138,17 +145,20 @@ export function WeightPage({ weighIns, people, initialPerson = JAISH, onClose }:
           <>
             <section className="settings-section weight-latest" aria-label="latest weigh-in">
               <h2>
-                {person.name} · {stamp(latest.at)}
+                <span className="weight-latest-name">{person.name}</span> · <span className="weight-latest-when">{stamp(latest.at)}</span>
               </h2>
               <ul className="weight-figures">
                 {WEIGHT_FIGURES.map(({ key, label, unit, digits }) => {
                   const value = figures[key]
                   const change = changeText(value, before?.[key], digits, unit)
+                  const prior = before?.[key]
+                  // Which way the weight moved, in its own colours (ADR 0078): down green, up amber. The other figures stay neutral.
+                  const trend = key !== 'weightKg' || value === 'unavailable' || prior === undefined || prior === 'unavailable' || value === prior ? undefined : value < prior ? 'down' : 'up'
                   return (
                     <li key={key} className="weight-figure" data-figure={key}>
                       <span className="weight-figure-label">{label}</span>
-                      <span className="weight-figure-value">{value === 'unavailable' ? '–' : withUnit(key === 'weightKg' ? formatKg(value) : formatFigure(value, digits), unit)}</span>
-                      <span className="weight-figure-change">
+                      <span className="weight-figure-value">{value === 'unavailable' ? '–' : <FigureValue text={key === 'weightKg' ? formatKg(value) : formatFigure(value, digits)} unit={unit} />}</span>
+                      <span className="weight-figure-change" data-trend={trend}>
                         <NoBreakHyphens text={value === 'unavailable' ? missingWhy(key, latest, profile) : change === null ? 'first Weigh-in' : `${change} ${SINCE_LAST}`} />
                       </span>
                     </li>

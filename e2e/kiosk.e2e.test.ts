@@ -69,8 +69,8 @@ describe('kiosk mode e2e', () => {
       { timeoutMs: 10000, intervalMs: 250 },
     )
     expect(geometry.width).toBeGreaterThanOrEqual(geometry.screen - 1)
-    // The windowed insets: capsule 14 px from the left edge, controls 14 px from the right.
-    expect(geometry.x + geometry.capsule).toBe(14)
-    expect(geometry.width - geometry.settings).toBe(14)
+    // The windowed insets, F1's gutter (ADR 0078): capsule 16 px from the left edge, controls 16 px from the right.
+    expect(geometry.x + geometry.capsule).toBe(16)
+    expect(geometry.width - geometry.settings).toBe(16)
   })
 })

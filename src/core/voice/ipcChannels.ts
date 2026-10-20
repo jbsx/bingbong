@@ -44,8 +44,10 @@ export interface VoiceErrorEvent {
   at: number
 }
 
-/** The live partial transcript (#324): what the Status Capsule shows while the user speaks. */
+/** The live partial transcript (#324): what the Status Capsule or the Voice Prompt (#359) shows while the user speaks. */
 export interface VoicePartialEvent {
   text: string
   at: number
+  /** The Page Terms in force (ADR 0077), for the Voice Prompt to mark the ones the words carry. */
+  terms?: readonly string[]
 }

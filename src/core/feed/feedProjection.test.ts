@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { PipelineEvent } from '../pipeline/events'
-import { createFeedProjection, feedRoleForKind, MAX_DETAIL_ENTRIES } from './feedProjection'
+import { createFeedProjection, feedRoleForKind, headlineAnswerId, MAX_DETAIL_ENTRIES } from './feedProjection'
 
 // The feed projection (#44): pipeline events in, ordered feed entries out.
 // Conversation structure (#54) and run grouping (#55) are pinned here; the
@@ -306,5 +306,22 @@ describe('feed projection', () => {
     projection.clear()
     expect(projection.entries()).toEqual([])
     expect(projection.liveRunId()).toBeNull()
+  })
+})
+
+describe('the headline Answer (#359)', () => {
+  it('is the newest Answer while nothing has been said after it', () => {
+    const entries = project([...run('t1', 'open x', 1), ...run('t2', 'read', 10)]).entries()
+    const answers = entries.filter((entry) => entry.role === 'assistant')
+    expect(headlineAnswerId(entries)).toBe(answers[1]!.id)
+  })
+
+  it('steps down once a newer Command is in the Feed', () => {
+    const entries = project([...run('t1', 'open x', 1), { type: 'command', turnId: 't2', text: 'read', at: 10 }]).entries()
+    expect(headlineAnswerId(entries)).toBeNull()
+  })
+
+  it('is none in an empty Feed', () => {
+    expect(headlineAnswerId([])).toBeNull()
   })
 })

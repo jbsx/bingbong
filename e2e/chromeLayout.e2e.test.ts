@@ -152,8 +152,9 @@ describe('shell chrome layout e2e', () => {
     const shown = await panelBox()
     const workspace = await workspaceOnScreen()
     expect(shown).not.toBeNull()
-    expect(shown!.right - shown!.left).toBe(500)
-    expect(Math.abs(shown!.right - workspace.right)).toBeLessThanOrEqual(1)
+    // The view is 500 px; the panel in it keeps the window's 16 px gutter on its right (ADR 0078).
+    expect(shown!.right - shown!.left).toBe(484)
+    expect(Math.abs(workspace.right - 16 - shown!.right)).toBeLessThanOrEqual(1)
 
     await harness.clickDashboardElement('.settings-toggle')
     await waitFor(async () => (await harness.dashboardEval<boolean>(`!!document.querySelector('.settings-page')`)) || undefined, {

@@ -8,7 +8,7 @@ import { reportRendererFault } from '../diagnostics'
 import { usePeekCard } from '../usePeekCard'
 import { WeighInPopup } from '../WeighInPopup'
 import { useWeighInPopup } from '../useWeight'
-import { PromptBar } from './PromptBar'
+import { VoicePrompt } from './VoicePrompt'
 import { useOverlayFeed, usePanelState } from './useOverlayFeed'
 import { useRunProgress } from './useRunProgress'
 
@@ -16,7 +16,7 @@ import { useRunProgress } from './useRunProgress'
  * The feed panel surface (#45), rendered inside its own transparent
  * WebContentsView above the browser pane. The view's bounds come from the
  * dashboard's slot rect; open/collapsed and overlay/docked styling come
- * from main's folded panel state. The prompt bar rides the panel's
+ * from main's folded panel state. The Voice Prompt rides the panel's
  * footer — the one typed-input surface — with the stop button beside it
  * while a run is live.
  *
@@ -101,21 +101,8 @@ export function OverlayPanel() {
     window.bingbong.feedPanel.beginResize()
   }
 
-  const panelFooter = (
-    <div className="prompt-row">
-      <PromptBar />
-      {runActive ? (
-        <button
-          type="button"
-          className="panel-stop"
-          onClick={() => void window.bingbong.assistant.abort()}
-          aria-label="Stop active command"
-        >
-          Stop
-        </button>
-      ) : null}
-    </div>
-  )
+  // The Voice Prompt (#359): the Prompt Bar in its F1 form, Stop beside it while a run is live.
+  const panelFooter = <VoicePrompt runActive={runActive} />
   const panelControls = (
     <>
       <button
@@ -125,7 +112,7 @@ export function OverlayPanel() {
         title={mode === 'overlay' ? 'Dock the feed panel' : 'Undock the feed panel'}
         onClick={() => window.bingbong.feedPanel.setMode(mode === 'overlay' ? 'docked' : 'overlay')}
       >
-        <ChromeIcon name={mode === 'overlay' ? 'dock' : 'undock'} size={16} />
+        <ChromeIcon name={mode === 'overlay' ? 'dock' : 'undock'} size={22} />
       </button>
       <button
         type="button"
@@ -134,7 +121,7 @@ export function OverlayPanel() {
         title="Collapse the feed panel"
         onClick={() => window.bingbong.feedPanel.toggle()}
       >
-        <ChromeIcon name="collapse" size={16} />
+        <ChromeIcon name="collapse" size={22} />
       </button>
     </>
   )
@@ -180,6 +167,7 @@ export function OverlayPanel() {
           aria-label="Open activity feed"
           onClick={() => window.bingbong.feedPanel.toggle()}
         >
+          <ChromeIcon name="expand" size={20} />
           <span className="feed-edge-tab-label">activity</span>
         </button>
       ) : null}
