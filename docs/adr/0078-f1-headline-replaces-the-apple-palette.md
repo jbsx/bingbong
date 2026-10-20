@@ -93,9 +93,12 @@ so the look has a guard beyond the Idle Screen.
   command`, `Type a command` while a Command runs, and `Microphone off —
   type a command` with the orb grey. Its live words mark the Page Terms
   carried on each `voice:partial` (`terms`), main sending the ones in force.
-- **The guard.** `pnpm shot:states` replays the round-6 list under Xvfb at
-  1920×1080, dark and light, plus Settings section by section, the Weight
-  page, a Weigh-in over the pane and an Utterance being taken, and fails on
-  text under 16 px, clipped or off-surface text, or `#fff` text — the
-  Capsule's live words, which ellipsize by design (#331), excepted.
+- **The guard.** `e2e/stateShots.e2e.test.ts` replays the round-6 list on
+  an Xvfb screen of its own at 1920×1080, dark and light, plus Settings
+  section by section, the Weight page, a Weigh-in over the pane and an
+  Utterance being taken, and fails on text under 16 px, clipped, squeezed or
+  off-surface text, or `#fff` text — the Capsule's live words, which
+  ellipsize by design (#331), excepted. It runs in every `pnpm test:e2e`:
+  the owner ruled on 2026-10-20 that the e2e is the source of truth and no
+  screenshot is reviewed by hand (`pnpm shot:states` runs it alone).
 

@@ -1,16 +1,16 @@
-import { execSync } from 'node:child_process'
+import { execSync, spawn, type ChildProcess } from 'node:child_process'
 import { mkdirSync } from 'node:fs'
 import { mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { startFixtureServer, type FixtureServer } from './fixtureServer'
 import { startHarness, type Harness } from './harness'
 import { promptBarScript } from './scripts'
 import { sleep, waitFor } from './waitFor'
 import { brotherWeighIns, standInWeighIns, TWO_PEOPLE, weighInsFile } from './weighIns'
 
-// The states' screenshot review (`pnpm shot:states`, #359, ADR 0078): the
+// The states' screenshot review (#359, ADR 0078): the
 // round-6 state list replayed against the fixture server at the
 // appliance's 1920×1080, in dark and light — the same Commands in the same
 // order as the shots the F1 theme was drawn over, then Settings section by
@@ -21,12 +21,33 @@ import { brotherWeighIns, standInWeighIns, TWO_PEOPLE, weighInsFile } from './we
 // round-6 shots, into BINGBONG_STATE_SHOT_DIR (default a temp folder). In
 // every state the app's own surfaces must set no text under 16 px, clip or
 // overflow none of it, and draw none of it in #fff — the page in the pane
-// is not ours and is not read. Gated: BINGBONG_STATE_SHOT=1, so the plain
-// e2e run skips it.
+// is not ours and is not read. It runs in every `pnpm test:e2e` — the owner's
+// ruling (2026-10-20): the e2e is the source of truth, no screenshot is
+// reviewed by hand — on an X screen of its own at the appliance's size, since
+// the suite's is a desk's; `pnpm shot:states` runs it alone.
 
 const OUT = process.env.BINGBONG_STATE_SHOT_DIR ?? join(tmpdir(), 'bingbong-state-shots')
 const WIDTH = 1920
 const HEIGHT = 1080
+
+/** The appliance's screen: an Xvfb of its own, whatever size the suite's display is. */
+let screen: { display: string; xvfb: ChildProcess } | null = null
+
+async function startScreen(): Promise<{ display: string; xvfb: ChildProcess }> {
+  // -displayfd: the server picks a free display and writes its number to stdout.
+  const xvfb = spawn('Xvfb', ['-displayfd', '1', '-screen', '0', `${WIDTH}x${HEIGHT}x24`, '-nolisten', 'tcp'], { stdio: ['ignore', 'pipe', 'ignore'] })
+  const number = await new Promise<string>((resolve, reject) => {
+    xvfb.stdout?.once('data', (chunk: Buffer) => resolve(chunk.toString().trim()))
+    xvfb.once('error', reject)
+    xvfb.once('exit', (code) => reject(new Error(`Xvfb exited with ${String(code)}`)))
+  })
+  return { display: `:${number}`, xvfb }
+}
+
+/** A command run against the appliance's screen. */
+function onScreen(command: string): void {
+  execSync(command, { env: { ...process.env, DISPLAY: screen?.display } })
+}
 
 /** What breaks the theme's floor on the surface it runs in: small, clipped, off-screen or #fff text. */
 const CHECK_SCRIPT = `(() => {
@@ -105,10 +126,10 @@ async function launch(theme: Theme, env: Record<string, string> = {}): Promise<R
     userDataDir,
     launchArgs: ['--mute-audio'],
     // A wake ear that never fires, so the Voice Prompt waits for "Bing Bong" as the appliance does.
-    env: { BINGBONG_YOUTUBE_FIXTURE: new URL(fixture.url('/')).origin, BINGBONG_WAKE_ENGINE: 'node', BINGBONG_WAKE_SCRIPT: '[0.01]', BINGBONG_VAD_SCRIPT: '[0.01]', BINGBONG_STT_SCRIPT: '[]', ...env },
+    env: { DISPLAY: screen?.display, BINGBONG_YOUTUBE_FIXTURE: new URL(fixture.url('/')).origin, BINGBONG_WAKE_ENGINE: 'node', BINGBONG_WAKE_SCRIPT: '[0.01]', BINGBONG_VAD_SCRIPT: '[0.01]', BINGBONG_STT_SCRIPT: '[]', ...env },
   })
   // The window at the appliance's size: Electron has no Browser.setWindowBounds, the X server has.
-  execSync(`xdotool search --onlyvisible --name '.*' windowmove %@ 0 0 windowsize %@ ${WIDTH} ${HEIGHT}`)
+  onScreen(`xdotool search --onlyvisible --name '.*' windowmove %@ 0 0 windowsize %@ ${WIDTH} ${HEIGHT}`)
   const width = await waitFor(async () => {
     const inner = await harness.dashboardEval<number>('innerWidth')
     return inner > WIDTH - 40 ? inner : undefined
@@ -127,7 +148,7 @@ async function close(run: Run): Promise<void> {
 async function shoot(run: Run, state: string): Promise<void> {
   await sleep(500)
   mkdirSync(OUT, { recursive: true })
-  execSync(`xwd -root -silent | ffmpeg -loglevel error -y -f xwd_pipe -i - '${join(OUT, `${run.theme}-${state}.png`)}'`)
+  onScreen(`xwd -root -silent | ffmpeg -loglevel error -y -f xwd_pipe -i - '${join(OUT, `${run.theme}-${state}.png`)}'`)
   const found: string[] = []
   const surfaces: [string, (expression: string) => Promise<string[]>][] = [
     ['dashboard', (expression) => run.harness.dashboardEval<string[]>(expression)],
@@ -285,7 +306,16 @@ function expectClean(run: Run): void {
   for (const [state, issues] of run.issues) expect.soft(issues, `${run.theme} ${state}`).toEqual([])
 }
 
-describe.skipIf(!process.env.BINGBONG_STATE_SHOT)('the states screenshot review (#359)', () => {
+describe('the states screenshot review (#359)', () => {
+  beforeAll(async () => {
+    screen = await startScreen()
+  })
+
+  afterAll(() => {
+    screen?.xvfb.kill()
+    screen = null
+  })
+
   for (const theme of ['dark', 'light'] as const) {
     it(`shoots every awake state, Settings and the Weight page in ${theme}`, async () => {
       const run = await launch(theme)

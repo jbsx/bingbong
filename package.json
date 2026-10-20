@@ -23,7 +23,7 @@
     "jev:case": "node scripts/jev-case.ts",
     "shot": "pnpm build && xvfb-run -a -s '-screen 0 1280x800x24' node scripts/screenshot.ts",
     "shot:idle": "pnpm build && BINGBONG_IDLE_SHOT=1 xvfb-run -a -s '-screen 0 1920x1080x24' vitest run --config vitest.e2e.config.ts e2e/idleShot.e2e.test.ts",
-    "shot:states": "pnpm build && BINGBONG_STATE_SHOT=1 xvfb-run -a -s '-screen 0 1920x1080x24' vitest run --config vitest.e2e.config.ts e2e/stateShots.e2e.test.ts"
+    "shot:states": "pnpm build && xvfb-run -a -s '-screen 0 1280x800x24' vitest run --config vitest.e2e.config.ts e2e/stateShots.e2e.test.ts"
   },
   "dependencies": {
     "@ghostery/adblocker-electron": "^2.18.2",
