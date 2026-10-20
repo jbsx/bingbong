@@ -2,6 +2,11 @@
 
 ## Status
 
+Amended on 2026-10-20 (see "Amendment: a line is Steps" below): Jev is
+asked at hop 0 where a second Command starts, and each Step runs as its
+own Task in order. ADR 0079 moves `play <words>` from the Local Match to
+Jev and offers the appliance's Capabilities beside the page.
+
 Amended on 2026-10-18 (see "Amendment: one Utterance is one Task" below):
 an Utterance is a Task of one or more Commands, and a landing is the page
 gone DOM-quiet, not the load event.
@@ -1126,3 +1131,34 @@ noise that transcribes empty. A check takes p50 76 ms on the dev machine;
 the first takes ~1 s while the model loads. Speed on the Kiosk
 (i3-7100U) is not measured: ship, and deal with it if it is an issue
 (owner ruling 2026-10-20).
+
+## Amendment: a line is Steps (2026-10-20)
+
+Grilled with ADR 0079 from the 19:30 run that day: "start the song from
+the beginning and put it on loop" was one ask, one verb, and the second
+half was lost. The first amendment rejected "Jev asked up front whether
+the words need more than one step" as a reading that can misfire before
+anything has happened; that objection was about *continuing* a navigation
+Task. A split only changes which words each Command reads, and today the
+second half is lost anyway.
+
+### Decision
+
+**At hop 0, a fifth Choice — `steps` — asks where a second Command
+starts.** Its options are the transcript's conjunction boundaries ("and",
+"then", "and then", a comma) and `none`. `none` is one Command, read as
+today. Otherwise the line is Steps: each Step runs as its own Task in
+order, on the page the last one left, with "Done so far" carrying the
+earlier Steps. A line splits only at the Endpoint, never on a partial.
+Step 2 runs only if Step 1 ended `done`; otherwise the Task stops and
+speaks Step 1's failure. A line the grammar settles whole ("scroll down")
+cannot be Steps; a `play <words>` line reaches Jev (ADR 0079), so "play
+highs and lows and loop it" is Jev's to split — or not, when the "and" is
+the title's.
+
+### Consequences
+
+- One Jev call at hop 0 carries the fifth Choice; no extra call.
+- The decision record's `task` names the Step (`step: 1 of 2`); `pnpm
+  perf:report` counts lines that split.
+- The glossary gains **Step**.

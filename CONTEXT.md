@@ -95,10 +95,40 @@ read and ends after one the Local Match settled, since the grammar and exact
 labels are whole by construction and plain English is where "and then"
 lives — save a Local-Matched `navigate` of an address with words past it
 ("go to twitter and open donald trumps profile"), which goes on to read the
-rest on the landing. It searches each site at most once. Capped at five
-actions; ended by the next Utterance, Escape or the Abort Head like any
-Command; never confirmed.
+rest on the landing. A line the Decision Model reads as two Commands is
+Steps, each a Task in order. A Task that opened something and found no
+next step closes it and tries the runner-up once before it gives up, and
+its last line names what it looked for. It searches each site at most
+once. Capped at five actions; ended by the next Utterance, Escape or the
+Abort Head like any Command; never confirmed.
 _Avoid_: plan, goal, intent, errand, run, session
+
+**Step**:
+One Command's words of a line the Decision Model read as two or more,
+split at a conjunction ("and", "then", a comma) it chose; each Step runs
+as its own Task in order, on the page the last one left, and a later Step
+runs only after the earlier ended done. A line the grammar settles whole
+is never Steps; a line is split only once it is whole, never on a partial.
+_Avoid_: sub-task, chain, plan, sequence
+
+**Capability**:
+An action the appliance itself can take, offered to the Decision Model as
+a verb beside the browser's: the Player's loop, restart, pause, skip,
+volume and the rest while a song plays, on any page; the Timer next. A
+Capability Command fires the action, answers its line and ends the Task
+there. The words' own exact phrases ("loop", "pause") are still the
+grammar's first; plain English ("put the song on loop") is the Decision
+Model's, which chooses the Capability as it would a ref.
+_Avoid_: tool, skill, feature, affordance, intent
+
+**Menu**:
+The browser verb that opens a ref's right-click menu to see what it
+offers: `menu <ref>` or "right-click the player" from the user, or the
+Decision Model's own choice when nothing visible fits the words. What the
+menu shows are the next Hop's refs; a Menu that shows nothing is a Hop that
+changed nothing. The appliance's own right-click never pops the system's
+menu.
+_Avoid_: context menu, right-click (as the verb's name), explore
 
 **Hop**:
 One Command of a Task after the first, fired on the reading of the page the
@@ -248,13 +278,15 @@ _Avoid_: fuzzy match, autocorrect, spell check, entity resolution
 
 **Local Match**:
 A Command settled from the Utterance and the page alone, without asking the
-Decision Model — fixed phrases only: the CLI grammar, the control words
-(scroll, back, reload, read, clear, stop, resume, a key), the Timer's and
-the Player's lines, an opening phrase with an address-shaped Slot ("open
-youtube", "go to x.com"), and a plain verb with the one element the words
-name exactly — the label exactly one element carries, or the Nth result on a
-search page ("the first result"). Search terms ("search for …", "look up
-…") and words about the page are never its: they go to the Decision Model.
+Decision Model — exact whole lines and numbered refs only: the CLI grammar,
+the control words (scroll, back, reload, read, clear, stop, resume, a key),
+the Timer's and the Player's exact phrases ("loop", "pause", never `play
+<words>`), an opening phrase with an address-shaped Slot ("open youtube",
+"go to x.com"), and a plain verb with the one element the words name
+exactly — the label exactly one element carries, or the Nth result on a
+search page ("the first result"). A line with free words — search terms,
+a song's words, words about the page — is never its: it goes to the
+Decision Model with every option, Capabilities included.
 It is the fastest reading, and the only one that fires when the Decision
 Model does not answer — a line it does not settle is then no Command. It
 never guesses: there is no lenient reading, no nearest label, no words
@@ -967,9 +999,13 @@ YouTube's own "Video paused. Continue watching?" after hours of play is a
 pause the Player did not make: the read sees the prompt and clicks Yes,
 and Now Playing never shows it paused. "show the video" / "show it" brings
 the dashboard up over the watch page (#344).
-`play` is the grammar's alone, as `timer` is: Jev is never offered it, and
-no partial fires it early. "click play" and "press play" stay the page's
-button. `back` stays history and `resume` the Task's.
+The Player's exact phrases ("loop", "pause", "restart") are the grammar's
+first, and no partial fires them early; `play <words>` and every plain
+music line ("put the song on loop") go to Jev, which is offered the
+Player's ops as Capabilities while a song plays (ADR 0079, amending #343's
+ruling 1). "click play" and "press play" stay the page's button by the
+option's own words, not a rule. `back` stays history and `resume` the
+Task's.
 
 A wrong pick is corrected in one line (#345). The Player keeps the plain
 videos the last `play <words>` read. `not that one`, `next result`, `the
