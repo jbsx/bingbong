@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { guessPerson, JAISH, settledWeighIn, weighInsOf, type Person } from './people'
 import type { WeighIn } from './weighIns'
 
-const EMPTY = { heightCm: null, birthDate: null, sex: null }
+const EMPTY = { heightCm: null, birthDate: null, sex: null, background: null }
 const jaish: Person = { id: JAISH, name: 'Jaish', body: EMPTY, guess: true }
 const barun: Person = { id: 'barun', name: 'Barun', body: EMPTY, guess: true }
 const guest: Person = { id: 'p-guest', name: 'Guest', body: EMPTY, guess: true }

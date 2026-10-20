@@ -2,7 +2,7 @@
 // and the Weigh-in pop-up's. #350's lone Body Profile (settings' `body`)
 // becomes Jaish's on upgrade, with Barun beside him.
 
-import type { BodyProfile } from './bodyComposition'
+import { BACKGROUNDS, type BodyProfile } from './bodyComposition'
 import { JAISH, type Person } from './people'
 
 export const WEIGHT_CARD_RANGES = [7, 30, 90] as const
@@ -23,7 +23,7 @@ export interface WeightSettings {
 }
 
 /** A Body Profile with nothing set: a new Person's. */
-export const EMPTY_BODY: BodyProfile = { heightCm: null, birthDate: null, sex: null }
+export const EMPTY_BODY: BodyProfile = { heightCm: null, birthDate: null, sex: null, background: null }
 
 export function defaultWeightSettings(): WeightSettings {
   return {
@@ -55,7 +55,12 @@ function asBirthDate(value: unknown): string | null {
 
 export function sanitizeBodyProfile(raw: unknown): BodyProfile {
   const body = asRecord(raw)
-  return { heightCm: asHeight(body?.heightCm), birthDate: asBirthDate(body?.birthDate), sex: body?.sex === 'male' || body?.sex === 'female' ? body.sex : null }
+  return {
+    heightCm: asHeight(body?.heightCm),
+    birthDate: asBirthDate(body?.birthDate),
+    sex: body?.sex === 'male' || body?.sex === 'female' ? body.sex : null,
+    background: BACKGROUNDS.find((background) => background === body?.background) ?? null,
+  }
 }
 
 /**

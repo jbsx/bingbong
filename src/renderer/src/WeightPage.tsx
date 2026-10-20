@@ -171,7 +171,7 @@ export function WeightPage({ weighIns, people, initialPerson = JAISH, onClose }:
                 })}
               </ul>
               <p className="settings-note">
-                Body fat, water, muscle, bone and lean mass are estimates from the scale’s impedance (openScale’s Trisa formulas); BMR is Mifflin–St Jeor. They move with hydration and the time of day — compare like with like.
+                Body fat, water, muscle, bone and lean mass are estimates from the scale’s impedance (Sun et al. 2003 and Janssen et al. 2000; bone is openScale’s Trisa formula), with body fat corrected for the Background set in Settings; BMR is Mifflin–St Jeor. They move with hydration and the time of day — compare like with like.
               </p>
             </section>
 

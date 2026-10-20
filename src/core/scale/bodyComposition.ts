@@ -1,20 +1,41 @@
 // A Weigh-in's figures (CONTEXT.md), worked out on every read from the
 // weight, the scale's first resistance and the Body Profile — never stored.
-// The impedance figures are openScale's TrisaBodyAnalyzeLib, fed the way
-// its QNHandler feeds it for this protocol type (a resistance under 410 as
-// 3.0, else 0.3 × (r1 − 400)); BMR is Mifflin–St Jeor. They are estimates,
-// and the page says so. A figure the profile cannot support is
+// The first resistance is taken as ohms and goes in as height²/R, the
+// impedance index the published BIA equations stand on: fat-free mass and
+// total body water from Sun et al. 2003 (NHANES III, a four-compartment
+// reference), skeletal muscle from Janssen et al. 2000 (MRI reference).
+// Both were drawn mostly from people of European, African and Hispanic
+// descent; a Background corrects the body fat for a group they read low
+// (see BACKGROUND_FAT_POINTS). Bone is still openScale's Trisa formula,
+// fed the way its QNHandler feeds it, and BMR is Mifflin–St Jeor. They are
+// estimates, and the page says so. A figure the profile cannot support is
 // 'unavailable', never a made-up number.
 
 import type { WeighIn } from './weighIns'
 
 export type Sex = 'male' | 'female'
 
-/** The owner's height, date of birth (YYYY-MM-DD) and sex, from settings; any of them may be unset. */
+/** A descent the impedance equations are known to misread, so the body fat is corrected for it (CONTEXT.md, Background). */
+export type Background = 'southAsian'
+
+export const BACKGROUNDS: readonly Background[] = ['southAsian']
+
+/**
+ * Points of body fat added for a Background, by sex: what a four-compartment
+ * model measured above a European-derived prediction at the same build.
+ * South Asian is Deurenberg-Yap's 107 Singaporean Indians (thesis,
+ * Wageningen 2000, ch. 5 table 1: men 28.0 vs 22.9, women 38.3 vs 32.9).
+ */
+export const BACKGROUND_FAT_POINTS: Record<Background, Record<Sex, number>> = {
+  southAsian: { male: 5.1, female: 5.4 },
+}
+
+/** The owner's height, date of birth (YYYY-MM-DD), sex and Background, from settings; any of them may be unset (no Background means no correction). */
 export interface BodyProfile {
   heightCm: number | null
   birthDate: string | null
   sex: Sex | null
+  background: Background | null
 }
 
 export type Figure = number | 'unavailable'
@@ -55,14 +76,20 @@ export function bodyFigures(weighIn: WeighIn, profile: BodyProfile): BodyFigures
   const bmrKcal = 10 * kg + 6.25 * heightCm - 5 * age + (male ? 5 : -161)
   // No resistance measured (bare feet off the electrodes): the impedance figures have nothing to stand on.
   if (weighIn.r1 <= 0) return { ...unavailable, bmi, bmrKcal }
-  const z = trisaImpedance(weighIn.r1)
-  const fatPercent = male ? bmi * (1.479 + 4.4e-4 * z) + 0.1 * age - 21.764 : bmi * (1.506 + 3.908e-4 * z) + 0.1 * age - 12.834
+  const r = weighIn.r1
+  const index = (heightCm * heightCm) / r
+  const fatFreeKg = male ? -10.68 + 0.65 * index + 0.26 * kg + 0.02 * r : -9.53 + 0.69 * index + 0.17 * kg + 0.02 * r
+  const correction = profile.background === null ? 0 : BACKGROUND_FAT_POINTS[profile.background][sex]
+  const fatPercent = (1 - fatFreeKg / kg) * 100 + correction
+  const waterKg = male ? 1.2 + 0.45 * index + 0.18 * kg : 3.75 + 0.45 * index + 0.11 * kg
+  const muscleKg = 0.401 * index + (male ? 3.825 : 0) - 0.071 * age + 5.102
+  const z = trisaImpedance(r)
   return {
     weightKg: kg,
     bmi,
     fatPercent,
-    waterPercent: male ? 87.51 + (-1.162 * bmi - 0.00813 * z + 0.07594 * age) : 77.721 + (-1.148 * bmi - 0.00573 * z + 0.06448 * age),
-    musclePercent: male ? 74.627 + (-0.811 * bmi - 0.00565 * z - 0.367 * age) : 57.0 + (-0.694 * bmi - 0.00344 * z - 0.255 * age),
+    waterPercent: (waterKg / kg) * 100,
+    musclePercent: (muscleKg / kg) * 100,
     boneKg: male ? 7.829 + (-0.0855 * bmi - 5.92e-4 * z - 0.0389 * age) : 7.98 + (-0.0973 * bmi - 4.84e-4 * z - 0.036 * age),
     leanKg: kg * (1 - fatPercent / 100),
     bmrKcal,

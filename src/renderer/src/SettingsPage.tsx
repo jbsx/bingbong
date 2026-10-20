@@ -375,6 +375,12 @@ function PersonFields({ person, weighIns, onChange, onRemove }: { person: Person
           <option value="female">Female</option>
         </select>
       </Field>
+      <Field label="Background">
+        <select value={body.background ?? ''} aria-label="Background" onChange={(event) => setBody({ background: event.target.value === 'southAsian' ? 'southAsian' : null })}>
+          <option value="">No correction</option>
+          <option value="southAsian">South Asian (Indian)</option>
+        </select>
+      </Field>
       <Field label="Guess me">
         <input type="checkbox" checked={person.guess} aria-label="Guess me" onChange={(event) => onChange({ ...person, guess: event.target.checked })} />
       </Field>

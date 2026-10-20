@@ -814,10 +814,15 @@ can measure"): the time the reading settled, the weight in kg and the
 scale's two resistances — nothing worked out from them, so a Body Profile
 edit or a formula fix recomputes the whole history. Kept in
 `weighins.json` in userData. Its figures are worked out on every read:
-BMI from the height; body fat, water, muscle, bone and lean mass from the
-weight, the first resistance and the whole Body Profile (openScale's Trisa
-formulas, fed as its QNHandler feeds them); BMR (Mifflin–St Jeor) from the
-weight and the profile. A figure the profile cannot support is
+BMI from the height; body fat, water, muscle and lean mass from the
+weight, the first resistance (taken as ohms, height²/R) and the whole Body
+Profile — fat-free mass and water by Sun et al. 2003, skeletal muscle by
+Janssen et al. 2000, the body fat then corrected for the Background (owner,
+2026-10-20: "the calculation using the impedance value doesnt seem
+correct"; openScale's Trisa formulas, as its QNHandler feeds them, squashed
+the resistance until it moved the fat by a third of a point); bone still
+openScale's Trisa formula; BMR (Mifflin–St Jeor) from the weight and the
+profile. A figure the profile cannot support is
 unavailable, never a made-up number; one stepping-on with no resistance
 measured has no impedance figures. No visceral fat or metabolic age: no
 published formula. Deleted from the Weight page for a mis-weigh or a guest.
@@ -863,12 +868,22 @@ everyone at the screen sees every Person.
 _Avoid_: user, account, member, profile
 
 **Body Profile**:
-A Person's height, date of birth and sex, in settings' Weight section
-(#350, #351), that their Weigh-ins' figures are worked out from — the age
-is taken on each Weigh-in's own day. Any field may be unset: weight is
-still recorded and shown, BMI needs the height, and the rest need all
-three; a missing figure says "set your body profile in Settings".
+A Person's height, date of birth, sex and Background, in settings' Weight
+section (#350, #351), that their Weigh-ins' figures are worked out from —
+the age is taken on each Weigh-in's own day. Any field may be unset: weight
+is still recorded and shown, BMI needs the height, and the rest need the
+first three; a missing figure says "set your body profile in Settings".
 _Avoid_: user profile, account
+
+**Background**:
+A descent the impedance equations are known to read low, set per Person
+in the Body Profile (owner, 2026-10-20: "update calculation for people
+with ethnic background. my brother and i are of indian descent"). Unset
+means no correction. South Asian (Indian) adds the gap a four-compartment
+model measured over a European-derived prediction in Singaporean Indians
+(Deurenberg-Yap, 2000): 5.1 points of body fat for men, 5.4 for women;
+lean mass follows, water and muscle do not move.
+_Avoid_: race, ethnicity (in the UI)
 
 **Weight section**:
 The Settings section for the scale and its People (#351, replacing #350's
