@@ -1,63 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import type { CalendarEvent } from './calendar'
-import { eventsLeftToday, monthEntries, monthGrid, monthRange, twoWeeks, upNext, weekStartOf } from './month'
+import { eventsLeftToday, monthEntries, monthRange, twoWeeks, upNext, weekStartOf } from './month'
 import { ukBankHolidays } from './ukBankHolidays'
 
 function event(title: string, start: Date, end: Date, allDay = false): CalendarEvent {
   return { id: title, source: 'test', title, start: start.getTime(), end: end.getTime(), allDay }
 }
-
-describe('monthGrid', () => {
-  // October 2026 starts on a Thursday and has 31 days.
-  const now = new Date(2026, 9, 19, 14, 30)
-
-  it('lays the month out in whole weeks from a Monday', () => {
-    const grid = monthGrid(now, 1)
-    expect(grid.weekdays).toEqual([1, 2, 3, 4, 5, 6, 0])
-    expect(grid.weeks).toHaveLength(5)
-    expect(grid.weeks.every((week) => week.length === 7)).toBe(true)
-    expect(grid.weeks[0].map((day) => day.day)).toEqual([28, 29, 30, 1, 2, 3, 4])
-    expect(grid.weeks[0].map((day) => day.inMonth)).toEqual([false, false, false, true, true, true, true])
-    expect(grid.weeks[4].map((day) => day.day)).toEqual([26, 27, 28, 29, 30, 31, 1])
-    expect(grid.month).toBe(new Date(2026, 9, 1).getTime())
-  })
-
-  it('starts the weeks on the day asked for', () => {
-    const grid = monthGrid(now, 0)
-    expect(grid.weekdays).toEqual([0, 1, 2, 3, 4, 5, 6])
-    expect(grid.weeks[0].map((day) => day.day)).toEqual([27, 28, 29, 30, 1, 2, 3])
-  })
-
-  it('marks today and only today', () => {
-    const today = monthGrid(now, 1).weeks.flat().filter((day) => day.isToday)
-    expect(today).toHaveLength(1)
-    expect(today[0].day).toBe(19)
-    expect(today[0].start).toBe(new Date(2026, 9, 19).getTime())
-  })
-
-  it('needs six weeks for a month that starts late and runs long', () => {
-    // August 2026 starts on a Saturday: 5 leading days + 31.
-    expect(monthGrid(new Date(2026, 7, 10), 1).weeks).toHaveLength(6)
-  })
-
-  it('fits February 2027 in four weeks from a Monday', () => {
-    expect(monthGrid(new Date(2027, 1, 3), 1).weeks).toHaveLength(4)
-  })
-
-  it('counts the events touching each day, an all-day event on its days only', () => {
-    const events = [
-      event('standup', new Date(2026, 9, 19, 9), new Date(2026, 9, 19, 9, 15)),
-      event('trip', new Date(2026, 9, 20), new Date(2026, 9, 22), true),
-      event('late', new Date(2026, 9, 19, 23), new Date(2026, 9, 20, 1)),
-    ]
-    const days = new Map(monthGrid(now, 1, events).weeks.flat().map((day) => [day.start, day.events.length]))
-    expect(days.get(new Date(2026, 9, 18).getTime())).toBe(0)
-    expect(days.get(new Date(2026, 9, 19).getTime())).toBe(2)
-    expect(days.get(new Date(2026, 9, 20).getTime())).toBe(2)
-    expect(days.get(new Date(2026, 9, 21).getTime())).toBe(1)
-    expect(days.get(new Date(2026, 9, 22).getTime())).toBe(0)
-  })
-})
 
 describe('twoWeeks', () => {
   it('is this week and next from the week’s start, running into the next month, today marked — round 6’s 19 to 1 November', () => {
@@ -88,18 +36,6 @@ describe('monthEntries', () => {
       event('november', new Date(2026, 10, 2, 9), new Date(2026, 10, 2, 10)),
     ]
     expect(monthEntries(now, events).map((e) => e.title)).toEqual(['lunch', 'party'])
-  })
-})
-
-describe('monthGrid holidays', () => {
-  it('names the holidays on their days, the neighbouring months included', () => {
-    const days = monthGrid(new Date(2026, 11, 10), 1, [], [...ukBankHolidays(2026), ...ukBankHolidays(2027)]).weeks.flat()
-    const named = days.filter((day) => day.holiday !== null).map((day) => [day.day, day.inMonth, day.holiday])
-    expect(named).toEqual([
-      [25, true, 'Christmas Day'],
-      [28, true, 'Boxing Day'],
-      [1, false, 'New Year’s Day'],
-    ])
   })
 })
 

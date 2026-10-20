@@ -4,7 +4,7 @@
 // set, so env stays the base layer.
 
 import { defaultUsagePrefs, sanitizeUsagePrefs, type UsagePrefs } from '../usage/usage'
-import { IDLE_CARD_IDS, sanitizeIdleCards, type IdleCardId } from '../idle/columns'
+import { IDLE_CARD_IDS, sanitizeIdleCards, savedIdleCards, type IdleCardId } from '../idle/columns'
 import { defaultNewsFeeds, sanitizeNewsFeeds, type NewsFeed } from '../news/feeds'
 import { defaultInterestProfile, sanitizeInterestProfile, type InterestProfile } from '../news/interestProfile'
 import { defaultWeightSettings, sanitizeWeightSettings, type WeightSettings } from '../scale/weightSettings'
@@ -178,12 +178,6 @@ function sameCards(a: readonly IdleCardId[], b: readonly IdleCardId[]): boolean 
   return a.length === b.length && a.every((id, index) => id === b[index])
 }
 
-/** The saved list as it was written — known cards once each, in the saved order — or null when nothing was saved; the old defaults are recognised by it. */
-function savedCards(value: unknown): IdleCardId[] | null {
-  if (!Array.isArray(value)) return null
-  return value.filter((id, index): id is IdleCardId => (IDLE_CARD_IDS as readonly unknown[]).includes(id) && value.indexOf(id) === index)
-}
-
 /**
  * The Pinned Cards as saved, read as a set (core/idle/columns), and a card
  * added when the settings were saved before it existed — the News card when
@@ -195,7 +189,7 @@ function savedCards(value: unknown): IdleCardId[] | null {
  * the Weight card — is read as today's default.
  */
 function pinnedCards(record: Record<string, unknown>): IdleCardId[] {
-  const saved = savedCards(record.idleCards)
+  const saved = savedIdleCards(record.idleCards)
   if (saved === null) return [...IDLE_CARD_IDS]
   const cards = record.news === undefined && !saved.includes('news') ? [...saved, 'news' as const] : saved
   const beforeWeight = record.body === undefined && record.weight === undefined

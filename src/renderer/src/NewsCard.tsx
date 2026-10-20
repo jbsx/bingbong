@@ -121,7 +121,7 @@ export function NewsCard({ repos, lean = false }: { repos: TopRepo[]; lean?: boo
                   ) : null}
                   <span className="idle-repo-foot">
                     {repo.language !== null ? (
-                      <span className="idle-repo-language" style={{ '--language': LANGUAGE_COLOURS[repo.language] ?? 'var(--muted)' } as React.CSSProperties}>
+                      <span className="idle-repo-language" style={{ '--language': LANGUAGE_COLOURS[repo.language] ?? 'var(--fg2)' } as React.CSSProperties}>
                         {repo.language}
                       </span>
                     ) : null}

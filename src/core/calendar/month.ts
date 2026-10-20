@@ -17,15 +17,6 @@ export interface CalendarDay {
   readonly holiday: string | null
 }
 
-export interface MonthGrid {
-  /** Local midnight of the month's first day. */
-  readonly month: number
-  /** The weekday each column is, 0 = Sunday … 6 = Saturday. */
-  readonly weekdays: readonly number[]
-  /** Whole weeks, four to six, each seven days. */
-  readonly weeks: readonly (readonly CalendarDay[])[]
-}
-
 function midnight(year: number, month: number, day: number): number {
   return new Date(year, month, day).getTime()
 }
@@ -38,47 +29,6 @@ export function monthRange(now: Date, weekStart: number): CalendarRange {
   const days = new Date(year, month + 1, 0).getDate()
   const weeks = Math.ceil((lead + days) / 7)
   return { from: midnight(year, month, 1 - lead), to: midnight(year, month, 1 - lead + weeks * 7) }
-}
-
-/**
- * The month `now` falls in as whole weeks starting on `weekStart`, today
- * marked, each day given its events and its holiday named. Days are built
- * from the local calendar, never by adding 24 hours, so a daylight-saving
- * change cannot shift a cell.
- */
-export function monthGrid(
-  now: Date,
-  weekStart: number,
-  events: readonly CalendarEvent[] = [],
-  holidays: readonly Holiday[] = [],
-): MonthGrid {
-  const holidayOn = new Map(holidays.map((holiday) => [holiday.date, holiday.title]))
-  const year = now.getFullYear()
-  const month = now.getMonth()
-  const today = midnight(year, month, now.getDate())
-  const { from, to } = monthRange(now, weekStart)
-  const first = new Date(from)
-  const weeks: CalendarDay[][] = []
-  for (let offset = 0; ; offset += 1) {
-    const start = midnight(first.getFullYear(), first.getMonth(), first.getDate() + offset)
-    if (start >= to) break
-    const date = new Date(start)
-    const end = midnight(date.getFullYear(), date.getMonth(), date.getDate() + 1)
-    if (offset % 7 === 0) weeks.push([])
-    weeks[weeks.length - 1].push({
-      start,
-      day: date.getDate(),
-      inMonth: date.getMonth() === month,
-      isToday: start === today,
-      events: events.filter((event) => event.start < end && event.end > start),
-      holiday: holidayOn.get(localDateKey(start)) ?? null,
-    })
-  }
-  return {
-    month: midnight(year, month, 1),
-    weekdays: Array.from({ length: 7 }, (_, column) => (weekStart + column) % 7),
-    weeks,
-  }
 }
 
 /**

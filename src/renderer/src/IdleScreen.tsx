@@ -35,6 +35,11 @@ const DESIGN_HEIGHT = 1080
 /** A side Column's height on the canvas (styles.css, .idle-col): the bands its cards share. */
 const COLUMN_HEIGHT = 1000
 
+/** The least height the Weight card's rows with their lines need, for so many People. */
+function weightRowsHeight(people: number): number {
+  return 40 + 120 * people
+}
+
 /** Below this band height the News card sets each of its rows on one line, so all three show. */
 const LEAN_NEWS_PX = 330
 
@@ -502,11 +507,19 @@ export function IdleScreen({
         return { id, full: 340 + (entries > 0 ? 28 + 42 * entries : 0), small: 340, grows: false }
       case 'weight':
         if (weightRows.length === 0) return { id, full: 140, small: 140, grows: false }
-        // Smaller, each row keeps its figures and a shorter line; only a band too short for the lines draws a line per Person.
-        return weight.card.line ? { id, full: 64 + 178 * weightRows.length, small: 40 + 130 * weightRows.length, grows: true } : { id, full: 40 + 100 * weightRows.length, small: 40 + 64 * weightRows.length, grows: false }
+        // Smaller, each row keeps its figures over a shorter line.
+        return weight.card.line ? { id, full: 64 + 178 * weightRows.length, small: weightRowsHeight(weightRows.length), grows: true } : { id, full: 40 + 100 * weightRows.length, small: 40 + 64 * weightRows.length, grows: false }
+      case 'news':
+        return { id, full: 240, small: 150, grows: news.status === 'ready' }
       default:
-        return news.status === 'ready' ? { id, full: 240, small: 150, grows: true } : { id, full: 240, small: 150, grows: false }
+        // Not a right-Column card (columnCards hands this none).
+        return { id, full: 0, small: 0, grows: false }
     }
+  }
+  // The Weight card draws a row per Person with its line while the band holds them, else a line per Person.
+  const drawnForm = (id: IdleCardId, form: 'full' | 'small', height: number): 'full' | 'small' => {
+    if (id !== 'weight' || !weight.card.line || weightRows.length === 0) return form
+    return height >= weightRowsHeight(weightRows.length) ? 'full' : 'small'
   }
   const right = columnBands(columnCards('right', cards).map(ask), COLUMN_HEIGHT)
 
@@ -516,17 +529,21 @@ export function IdleScreen({
         return <CalendarCard now={now} weekStart={weekStart} events={events} form={form} />
       case 'weight':
         return weightRows.length > 0 ? (
-          <WeightCard rows={weightRows} weight={weight} form={height >= 40 + 120 * weightRows.length ? 'full' : 'small'} now={now.getTime()} onOpen={onOpenWeight} />
+          <WeightCard rows={weightRows} weight={weight} form={form} now={now.getTime()} onOpen={onOpenWeight} />
         ) : (
           <NoteCard label="weight">{weighIns !== null && weighIns.length > 0 ? 'Nobody shown — pick People in Settings' : 'Step on the scale'}</NoteCard>
         )
-      default:
+      case 'news':
         return news.status === 'ready' ? <NewsCard repos={news.repos} lean={height < LEAN_NEWS_PX} /> : <NewsEmpty />
+      default:
+        return null
     }
   }
 
   const showWeather = columnCards('left', cards).length > 0
   const showUsage = columnCards('middle', cards).length > 0 && (usage.status === 'error' || usageViews.length > 0)
+  // Under a Timer Clock and four Clock Lines the AI Usage is left too little height for its chart: it steps down to its rings.
+  const usageForm = timer.status !== 'off' && lines.length >= 4 ? 'small' : 'full'
 
   return (
     <div className="idle-screen" aria-label="idle screen" style={fit}>
@@ -566,9 +583,9 @@ export function IdleScreen({
           })}
         </div>
         {showUsage ? (
-          <div className="idle-home" data-card="usage" data-form={usageViews.length > 0 ? 'full' : 'small'}>
+          <div className="idle-home" data-card="usage" data-form={usageViews.length > 0 ? usageForm : 'small'}>
             {usage.status === 'ready' && usageViews.length > 0 ? (
-              <UsageCard providers={usageViews} updatedAt={usage.snapshot.updatedAt} now={now.getTime()} form="full" />
+              <UsageCard providers={usageViews} updatedAt={usage.snapshot.updatedAt} now={now.getTime()} form={usageForm} />
             ) : (
               <NoteCard label="AI usage">Usage dashboard unreachable</NoteCard>
             )}
@@ -579,11 +596,14 @@ export function IdleScreen({
       <div className="idle-col idle-col--right">
         {right.length > 0 ? (
           <div className="idle-col-panel">
-            {right.map((band) => (
-              <div key={band.id} className="idle-home" data-card={band.id} data-form={band.form} style={{ height: `${band.height}px` }}>
-                {rightCard(band.id, band.form, band.height)}
-              </div>
-            ))}
+            {right.map((band) => {
+              const form = drawnForm(band.id, band.form, band.height)
+              return (
+                <div key={band.id} className="idle-home" data-card={band.id} data-form={form} style={{ height: `${band.height}px` }}>
+                  {rightCard(band.id, form, band.height)}
+                </div>
+              )
+            })}
           </div>
         ) : null}
       </div>

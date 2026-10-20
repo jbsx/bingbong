@@ -75,8 +75,9 @@ so the look has a guard beyond the Idle Screen.
   faint dark lift for panels, peach deepened to `#b4521f` so it clears
   contrast on white, the data colours at their light weights), with radii,
   shadows, the focus ring and the pause scrim as tokens too. The earlier
-  sheet's names (`--panel`, `--text`, `--status-*` …) stay as aliases on
-  the F1 roles until #360 redraws the Idle Screen with the new ones.
+  sheet's names (`--panel`, `--text`, `--status-*` …) stayed as aliases on
+  the F1 roles until #360 redrew the Idle Screen with the new ones; they
+  are gone (only `--panel-peek` is kept, the Peek Card's own ground).
 - **The pane's frame** is drawn in the dashboard and the native view is
   rounded to match (`View.setBorderRadius`, `PANE_FRAME_RADIUS`);
   `paneBackgrounds.ts` paints `--surface-solid`.

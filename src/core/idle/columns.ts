@@ -30,8 +30,14 @@ export function columnCards(column: IdleColumn, pinned: readonly IdleCardId[]): 
  * not a list at all means every card.
  */
 export function sanitizeIdleCards(value: unknown): IdleCardId[] {
-  if (!Array.isArray(value)) return [...IDLE_CARD_IDS]
-  return IDLE_CARD_IDS.filter((id) => value.includes(id))
+  const saved = savedIdleCards(value)
+  return saved === null ? [...IDLE_CARD_IDS] : IDLE_CARD_IDS.filter((id) => saved.includes(id))
+}
+
+/** A saved list as it was written — the known cards, each once, in the saved order — or null when it is not a list: how settings recognises an earlier default. */
+export function savedIdleCards(value: unknown): IdleCardId[] | null {
+  if (!Array.isArray(value)) return null
+  return value.filter((id, index): id is IdleCardId => (IDLE_CARD_IDS as readonly unknown[]).includes(id) && value.indexOf(id) === index)
 }
 
 /** The one-line rows under the clock (CONTEXT.md, Clock Lines). */
