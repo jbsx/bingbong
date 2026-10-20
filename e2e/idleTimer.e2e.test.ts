@@ -51,7 +51,7 @@ describe('idle screen e2e: the Timer', () => {
       { timeoutMs: 10000, intervalMs: 100 },
     )
     expect(left).toMatch(/^0:0[1-6]$/)
-    expect(await harness.dashboardEval<string>(`document.querySelector('.idle-timer-kicker')?.textContent ?? ''`)).toBe('Timer · 6 seconds')
+    expect(await harness.dashboardEval<string>(`document.querySelector('.idle-timer-kicker')?.textContent ?? ''`)).toBe('Timer 6 seconds')
 
     await waitFor(async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('.idle-timer--ringing')`)) ? true : undefined), { timeoutMs: 10000, intervalMs: 100 })
     expect(await timerStatus()).toBe('ringing')

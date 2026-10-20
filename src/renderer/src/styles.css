@@ -93,7 +93,7 @@
   --font-mono: 'JetBrains Mono', ui-monospace, monospace;
   --tb-h: 76px; /* the Toolbar */
   /* The earlier sheet's names, kept on the F1 roles for the surfaces still
-     drawn with them (the Idle Screen until #360). */
+     drawn with them. */
   --panel: var(--surface-solid);
   --panel-overlay: var(--surface-solid);
   --panel-peek: rgba(236, 238, 241, 0.96);
@@ -122,11 +122,6 @@
   --wx-sunset: #d9582e;
   --wx-sat: 72%;
   --wx-light: 42%;
-  /* The Idle Screen's glow (core/weather/glow), one per weather. */
-  --glow-rain: #3d7fd9;
-  --glow-cloud: #8a94a3;
-  --glow-sun: #f0a830;
-  --glow-night: #5a5fc0;
   /* The AI usage card's provider tones. */
   --usage-codex: var(--codex);
   --usage-claude: var(--claude);
@@ -1932,44 +1927,33 @@ details[open] > .settings-summary::before {
   color: var(--fg2);
 }
 
-/* The idle screen: the smart-display half of the appliance, read from a
-   couple of metres off the appliance's 21-inch 1920×1080 display, so every
-   size here is set for that distance — nothing below 16 px, the figures
-   that matter (the clock, the temperature, the rings, the countdown) far
-   larger. A bento of glass tiles on the Card Slot grid (core/idle/slots):
-   three columns by four rows of cells, the clock bare in the top-left one,
-   every card handed a box of whole cells it draws its tiles inside, never
-   sizing a row by its content — and under them, only while any is there, a
-   dock of chips: the Timer, Up Next, Now Playing. The canvas is the sheet's
-   own with one quiet glow from above the top edge, tinted by the weather
-   (core/weather/glow); nothing on it moves. The top drag strip keeps the
-   window movable while the Toolbar is unmounted. */
+/* The idle screen (ADR 0078, CONTEXT.md Idle Screen): the smart-display
+   half of the appliance, read from a couple of metres off its 21-inch
+   1920×1080 display, so every size here is set for that distance — nothing
+   below 16 px, the figures that matter (the clock, the temperature, the
+   rings, the countdown, today's date) far larger. F1 Headline's three
+   Columns on the flat ground: the weather down the left, the clock with its
+   Clock Lines over the AI Usage down the middle, the Calendar, the Weight
+   card and the News card down the right — each card in its home
+   (core/idle/columns). A side Column is one flat panel, its cards bands in
+   it parted by hairlines. Nothing moves but the clock, the bars and the
+   waveform while it hears. The top drag strip keeps the window movable
+   while the Toolbar is unmounted. */
 .idle-screen {
-  --cell-gap: 20px;
-  --dock-height: 104px;
-  --glass: color-mix(in srgb, var(--panel) 72%, transparent);
   position: relative;
   display: grid;
-  grid-template-columns: repeat(var(--columns), minmax(0, 1fr));
-  grid-template-rows: repeat(var(--rows), minmax(0, 1fr));
-  gap: var(--cell-gap);
+  grid-template-columns: 512px 720px 512px;
+  column-gap: 40px;
+  justify-content: center;
+  align-content: center;
   height: 100%;
-  padding: 40px;
+  min-height: 1080px;
+  padding: 40px 48px;
   background: var(--bg);
+  color: var(--fg);
+  font-feature-settings: 'tnum' 1, 'cv11' 1;
+  -webkit-font-smoothing: antialiased;
 }
-
-.idle-screen--docked {
-  grid-template-rows: repeat(var(--rows), minmax(0, 1fr)) var(--dock-height);
-}
-
-.idle-screen[data-glow] {
-  background: radial-gradient(1500px 820px at 50% -18%, color-mix(in srgb, var(--glow) 26%, transparent), transparent 72%), var(--bg);
-}
-
-.idle-screen[data-glow='rain'] { --glow: var(--glow-rain); }
-.idle-screen[data-glow='cloud'] { --glow: var(--glow-cloud); }
-.idle-screen[data-glow='sun'] { --glow: var(--glow-sun); }
-.idle-screen[data-glow='night'] { --glow: var(--glow-night); }
 
 .idle-drag-strip {
   position: absolute;
@@ -1980,334 +1964,1315 @@ details[open] > .settings-summary::before {
   -webkit-app-region: drag;
 }
 
-/* The capsule over the Idle Screen: floats at the top, out of the layout,
-   so nothing shifts when the ear opens. */
+/* The capsule over the Idle Screen while Bing Bong works on a Command that
+   needs no pane: floats at the top, out of the layout, so nothing shifts. */
 .idle-status {
   position: absolute;
-  top: 16px;
+  top: 12px;
   left: 50%;
-  z-index: 1;
+  z-index: 3;
   transform: translateX(-50%);
-  max-width: min(560px, calc(100% - 32px));
 }
 
-/* A tile: glass over the glow — the panel let through, the canvas blurred
-   behind it, the restyle's large radius, no hairline and no shadow. A bare
-   tile has no fill: its words sit straight on the glow. */
+.idle-col {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 1000px;
+  min-width: 0;
+}
+
+/* A home: where a card is drawn in its Column. */
+.idle-home {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  -webkit-app-region: no-drag;
+}
+
+/* A side Column's panel: a faint lift over the ground, a hairline edge, the
+   large radius; its cards bands inside, parted by hairlines. */
+.idle-col-panel,
+.idle-col--left > .idle-home,
+.idle-col--middle > .idle-home {
+  overflow: hidden;
+  border: 1px solid var(--hair);
+  border-radius: 24px;
+  background: var(--surface);
+}
+
+.idle-col-panel {
+  height: 1000px;
+}
+
+.idle-col--left > .idle-home[data-form='full'] {
+  height: 1000px;
+}
+
+.idle-col-panel > .idle-home + .idle-home {
+  border-top: 1px solid var(--hair);
+}
+
 .idle-card {
+  height: 100%;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  border: 0;
-  border-radius: 26px;
-  background: var(--glass);
-  backdrop-filter: blur(26px);
-  color: var(--text);
 }
 
-.idle-tile--bare {
-  min-width: 0;
-  min-height: 0;
-  overflow: hidden;
-  padding-left: 8px;
-}
-
-/* A Card Slot: its box on the grid, no fill of its own; the card fills it. */
-.idle-slot {
-  display: grid;
-  min-width: 0;
-  min-height: 0;
-  container-type: size;
-}
-
-.idle-slot > * {
-  min-width: 0;
-  min-height: 0;
-}
-
-/* A card drawn as tiles: the box's cells again, with the screen's gap, so
-   each tile lines up with the cells around it. */
-.idle-tiles {
-  display: grid;
-  grid-template-columns: repeat(var(--w), minmax(0, 1fr));
-  grid-template-rows: repeat(var(--h), minmax(0, 1fr));
-  gap: var(--cell-gap);
-  min-width: 0;
-  min-height: 0;
-}
-
-/* A kicker over a tile: small capitals in the quiet ink. */
-.idle-kicker {
-  flex: none;
+/* Small capitals in the quiet ink: a card's or a line's name. */
+.idle-kicker,
+.idle-line-kicker {
   margin: 0;
-  font-size: 1rem;
-  font-weight: 600;
-  line-height: 1.2;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-
-/* A chip: a word on a pill. */
-.idle-chip {
-  display: inline-flex;
-  align-items: center;
-  padding: 4px 12px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--text) 8%, transparent);
-  color: var(--muted);
-  font-size: 1rem;
+  font-size: 16px;
   font-weight: 500;
-  line-height: 1.25;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--fg3);
   white-space: nowrap;
 }
 
-.idle-chip--accent {
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
-  color: var(--accent);
-}
-
-/* ---- the clock ---- */
-
-.idle-clock-tile {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 8px;
-}
-
-.idle-clock {
-  margin: 0;
-  font-size: 150px;
-  font-weight: 200;
-  letter-spacing: -0.03em;
-  font-variant-numeric: tabular-nums;
-  line-height: 0.9;
-}
-
-.idle-date {
-  margin: 0;
-  font-size: 1.65rem;
-  color: var(--muted);
-}
-
-/* A card with only a line to say: one glass tile, the words centred. */
+/* A card with only a line to say: its home smaller, the words in it. */
 .idle-note {
   display: grid;
   place-items: center;
-  padding: 24px;
+  min-height: 140px;
+  padding: 24px 28px;
 }
 
 .idle-note-words {
   margin: 0;
-  font-size: 1.6rem;
-  line-height: 1.3;
+  font-size: 24px;
+  font-weight: 500;
+  color: var(--fg2);
   text-align: center;
-  color: var(--muted);
 }
 
-/* ---- the weather card ---- */
+/* ---- the clock, the Timer Clock ---- */
 
-.wx-card {
+.idle-clock-row {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  flex: none;
+}
+
+.idle-clock-block {
+  text-align: center;
+}
+
+.idle-clock {
+  margin: 0;
+  font-size: 176px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: -0.045em;
+  color: var(--fg);
+  white-space: nowrap;
+}
+
+.idle-clock-colon {
+  position: relative;
+  top: -0.06em;
+  color: var(--accent);
+}
+
+.idle-date {
+  margin: 4px 0 0;
+  font-size: 26px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  color: var(--fg2);
+  white-space: nowrap;
+}
+
+/* With a Timer set the clock steps down and the Timer Clock sits beside it, a hairline between; the
+   Timer's side a little wider, so "Timer 25 minutes · ends 10:18" holds one line. */
+.idle-clock-row--timer {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) 1px minmax(0, 1.1fr);
+  column-gap: 0;
+  margin-top: -6px;
+}
+
+.idle-clock-block--split .idle-clock,
+.idle-timer-left {
+  font-size: 112px;
+  line-height: 1.02;
+}
+
+.idle-clock-block--split .idle-date,
+.idle-timer-sub {
+  margin-top: 2px;
+  font-size: 22px;
+}
+
+.idle-clock-rule {
+  width: 1px;
+  height: 150px;
+  margin-top: 20px;
+  background: var(--hair);
+}
+
+.idle-timer {
+  display: block;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: center;
   -webkit-app-region: no-drag;
 }
 
-/* The weather now, bare: the glyph, the temperature and the city with its
-   sky in a row, today's rain and sun times stacked at the right, today's
-   range across the foot. */
-.wx-now {
-  display: grid;
-  grid-template-columns: auto auto minmax(0, 1fr) auto;
-  grid-template-rows: minmax(0, 1fr) auto;
+.idle-timer-left {
+  margin: 0;
+  font-weight: 500;
+  letter-spacing: -0.045em;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.idle-timer-sub {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
   align-items: center;
-  column-gap: 16px;
-  row-gap: 12px;
-  padding-bottom: 4px;
+  column-gap: 10px;
+  margin: 2px 0 0;
+  font-weight: 500;
+  line-height: 1.3;
+  color: var(--fg2);
 }
 
-.wx-now-temp {
-  font-size: 100px;
-  font-weight: 200;
+.idle-timer-sub > * {
+  white-space: nowrap;
+}
+
+.idle-timer-kicker b {
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.idle-timer-ends {
+  color: var(--fg3);
+}
+
+.idle-timer-ring {
+  flex: none;
+}
+
+.idle-timer-track {
+  fill: none;
+  stroke: var(--track);
+  stroke-width: 3.5;
+}
+
+.idle-timer-arc {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 3.5;
+  stroke-linecap: round;
+}
+
+/* Ringing, the Timer Clock is the control that turns it off: "Time's up", pulsing. */
+.idle-timer--ringing {
+  cursor: pointer;
+}
+
+.idle-timer--ringing .idle-timer-left {
+  font-size: 84px;
+  line-height: 1.36;
   letter-spacing: -0.03em;
-  line-height: 0.9;
+  animation: idle-timer-pulse 1.2s ease-in-out infinite;
 }
 
-.wx-now-words {
+@keyframes idle-timer-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .idle-timer--ringing .idle-timer-left {
+    animation: none;
+  }
+}
+
+/* ---- the Clock Lines ---- */
+
+.idle-lines {
   display: flex;
   flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  flex: none;
+  margin: 18px 0 22px;
+}
+
+.idle-clock-row--timer + .idle-lines {
+  margin-top: 30px;
+}
+
+.idle-line {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  max-width: 100%;
+  min-height: 36px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 16px;
+  color: var(--fg2);
+  white-space: nowrap;
+  -webkit-app-region: no-drag;
+}
+
+button.idle-line {
+  cursor: pointer;
+}
+
+.idle-line > * {
+  flex: none;
+}
+
+.idle-line-sep {
+  width: 1px;
+  height: 18px;
+  background: var(--hair);
+}
+
+/* The Voice Prompt: the peach orb and the hint; the waveform still at rest,
+   live with LISTENING while an Utterance is taken; grey with the mic off. */
+.idle-voice-orb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, var(--accent-soft), var(--accent) 60%);
+  box-shadow: 0 0 0 5px var(--accentq);
+}
+
+.idle-voice--off .idle-voice-orb {
+  background: var(--fg3);
+  box-shadow: none;
+}
+
+.idle-voice-hint {
+  color: var(--fg3);
+}
+
+.idle-voice-word {
+  color: var(--fg2);
+  font-weight: 500;
+}
+
+.idle-voice-said {
+  flex: 0 1 auto !important;
+  min-width: 0;
+  max-width: 440px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 20px;
+  font-weight: 500;
+  color: var(--fgh);
+}
+
+.idle-voice-said--waiting {
+  color: var(--fg3);
+}
+
+.idle-voice .voice-wave {
+  height: 20px;
+}
+
+.idle-voice--rest .voice-wave i,
+.idle-voice--transcribing .voice-wave i {
+  animation: none;
+  transform: scaleY(0.35);
+}
+
+.idle-voice--rest .voice-wave i:nth-child(3),
+.idle-voice--rest .voice-wave i:nth-child(4) {
+  transform: scaleY(0.7);
+}
+
+.idle-voice-state {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+/* Now Playing: the thumbnail, the song, its bar and time, what is queued. */
+.idle-music-thumb {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 28px;
+  overflow: hidden;
+  border-radius: 6px;
+  background: var(--raise2);
+  color: var(--fg2);
+}
+
+.idle-music-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.idle-music-paused {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: var(--scrim);
+  color: var(--onscrim);
+}
+
+.idle-music-title {
+  flex: 0 1 auto !important;
+  min-width: 0;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--fgh);
+}
+
+.idle-music-channel {
+  flex: 0 1 auto !important;
+  min-width: 0;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--fg3);
+}
+
+.idle-music-channel::before {
+  content: '· ';
+}
+
+.idle-music-bar {
+  position: relative;
+  width: 120px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--track);
+}
+
+.idle-music-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 2px;
+  background: var(--fgh);
+}
+
+.idle-music-time {
+  font-family: var(--font-mono);
+  color: var(--fg2);
+}
+
+.idle-music-next {
+  flex: 0 1 auto !important;
+  min-width: 0;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--fg3);
+}
+
+.idle-music-next-label {
+  color: var(--fg2);
+}
+
+.idle-music--paused .idle-music-fill {
+  background: var(--fg3);
+}
+
+/* Up Next: today's next entry. */
+.idle-upnext-when {
+  font-family: var(--font-mono);
+  color: var(--accent);
+}
+
+.idle-upnext-title {
+  flex: 0 1 auto !important;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--fgh);
+}
+
+.idle-upnext-more {
+  color: var(--fg3);
+}
+
+/* The Last Page: the mark, the title (two lines at most), the host, the resume pill. */
+.idle-last-page-mark {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  color: var(--fg3);
+}
+
+.idle-last-page-mark img {
+  border-radius: 4px;
+}
+
+.idle-last-page-title {
+  flex: 0 1 auto !important;
+  min-width: 0;
+  max-width: 300px;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  white-space: normal;
+  line-height: 1.2;
+  text-align: left;
+  color: var(--fg2);
+}
+
+.idle-last-page-host {
+  flex: 0 1 auto !important;
+  min-width: 0;
+  max-width: 170px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--fg3);
+}
+
+.idle-last-page-say {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 4px 0 12px;
+  border: 1px solid var(--hair);
+  border-radius: 15px;
+  color: var(--fg2);
+}
+
+.idle-last-page-say svg {
+  fill: none;
+  stroke: var(--fg3);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+}
+
+.idle-last-page-go {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--onaccent);
+  font-size: 16px;
+  line-height: 1;
+}
+
+/* ---- the AI Usage card (F2's): the rings over the chart ---- */
+
+.idle-col--middle > .idle-home[data-card='usage'] {
+  flex: 1 1 auto;
+}
+
+.usage-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.usage-tone--codex { --usage-tone: var(--codexq); }
+.usage-tone--claude { --usage-tone: var(--usage-claude); }
+.usage-tone--glm { --usage-tone: var(--usage-glm); }
+.usage-tone--grok { --usage-tone: var(--usage-grok); }
+.usage-tone--kaggle { --usage-tone: var(--usage-kaggle); }
+
+/* A provider the dashboard has no color for takes the accent, as it does there. */
+:where(.usage-ring-item, .usage-legend, .usage-line, .usage-fill, .usage-end, .usage-last) {
+  --usage-tone: var(--accent);
+}
+
+.usage-rings {
+  flex: 1 1 auto;
+  display: grid;
+  grid-template-columns: repeat(var(--ring-columns), minmax(0, 1fr));
+  align-items: start;
+  min-height: 0;
+  padding: 30px 20px 18px;
+}
+
+.usage-ring-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   gap: 2px;
   min-width: 0;
+  text-align: center;
 }
 
-.wx-now-city {
-  font-size: 1.65rem;
-  font-weight: 600;
-  line-height: 1.2;
+.usage-ring {
+  position: relative;
+  width: var(--ring);
+  height: var(--ring);
 }
 
-.wx-now-sky {
-  font-size: 1.3rem;
-  line-height: 1.2;
-  color: var(--muted);
-  text-transform: capitalize;
+.usage-ring svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
 }
 
-.wx-now-stats {
+.usage-ring-track {
+  fill: none;
+  stroke: var(--track);
+  stroke-width: 18;
+}
+
+.usage-ring-arc {
+  fill: none;
+  stroke: var(--usage-tone);
+  stroke-opacity: 0.85;
+  stroke-width: 18;
+  stroke-linecap: round;
+}
+
+/* The use past the share of the window run: brighter and wider — the Pace drawn. */
+.usage-ring-ahead {
+  fill: none;
+  stroke: color-mix(in srgb, var(--usage-tone) 70%, white);
+  stroke-width: 24;
+  stroke-linecap: round;
+}
+
+.usage-ring--over .usage-ring-arc,
+.usage-ring--over .usage-ring-ahead {
+  stroke: var(--fail);
+}
+
+.usage-ring-inner-track {
+  fill: none;
+  stroke: var(--track);
+  stroke-width: 8;
+}
+
+.usage-ring-inner {
+  fill: none;
+  stroke: var(--usage-tone);
+  stroke-opacity: 0.6;
+  stroke-width: 8;
+  stroke-linecap: round;
+}
+
+.usage-ring-tick {
+  stroke: var(--fg);
+  stroke-width: 4;
+  stroke-linecap: round;
+}
+
+.usage-ring-tick--inner {
+  stroke: var(--fg2);
+  stroke-width: 3;
+}
+
+.usage-ring-middle {
+  position: absolute;
+  inset: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  font-size: 1.25rem;
-  font-variant-numeric: tabular-nums;
+  align-items: center;
+  justify-content: center;
 }
 
-.wx-now-stat {
+.usage-ring-pct {
+  font-size: calc(var(--ring) * 0.28);
+  font-weight: 600;
+  line-height: 0.95;
+  letter-spacing: -0.03em;
+  color: var(--fg);
+}
+
+.usage-ring-pct small {
+  margin-left: 2px;
+  font-size: max(16px, 0.36em);
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--fg3);
+}
+
+.usage-ring-pct--ahead {
+  font-size: calc(var(--ring) * 0.35);
+  color: color-mix(in srgb, var(--usage-tone) 88%, white);
+}
+
+.usage-ring--over .usage-ring-pct {
+  color: var(--fail);
+}
+
+.usage-ring-pace {
+  margin-top: 4px;
+  font-size: 18px;
+  font-weight: 600;
+  color: color-mix(in srgb, var(--usage-tone) 75%, white);
+  white-space: nowrap;
+}
+
+.usage-ring-name {
+  margin-top: 12px;
+  font-size: 18px;
+  white-space: nowrap;
+}
+
+.usage-ring-name b {
+  font-weight: 600;
+  color: var(--usage-tone);
+}
+
+.usage-ring-plan,
+.usage-ring-reset {
+  color: var(--fg3);
+}
+
+.usage-ring-reset,
+.usage-figure-reset {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 16px;
+  white-space: nowrap;
+}
+
+.usage-cycle {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.usage-figures {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-top: 4px;
+}
+
+.usage-figure {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 16px;
+  color: var(--fg3);
+  white-space: nowrap;
+}
+
+.usage-figure-caption {
+  color: var(--usage-tone);
+}
+
+.usage-figure-pct {
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--fg2);
+}
+
+.usage-figure--lead .usage-figure-pct {
+  font-size: 40px;
+  line-height: 1.05;
+}
+
+/* Many providers: the figures beside their rings step down, the plan under the name. */
+.usage-rings[data-providers='4'] .usage-figure--lead .usage-figure-pct,
+.usage-rings[data-providers='5'] .usage-figure--lead .usage-figure-pct {
+  font-size: 24px;
+}
+
+.usage-rings[data-providers='4'] .usage-ring-plan,
+.usage-rings[data-providers='5'] .usage-ring-plan {
+  display: block;
+}
+
+.usage-rings[data-providers='5'] .usage-figure-reset .usage-cycle {
+  display: none;
+}
+
+/* The chart: the legend over it, the lines to the right edge, the last values beside it. */
+.usage-chart {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  height: 240px;
+  padding: 14px 28px 12px 28px;
+  border-top: 1px solid var(--hair);
+  font-family: var(--font-mono);
+  font-size: 16px;
+  color: var(--fg3);
+}
+
+.usage-chart-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding-left: 44px;
+  white-space: nowrap;
+}
+
+.usage-chart-legend {
+  display: flex;
+  gap: 24px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.usage-legend {
   display: inline-flex;
   align-items: center;
   gap: 8px;
 }
 
-.wx-now-rain {
-  color: var(--wx-rain);
-  font-weight: 500;
+.usage-legend line {
+  stroke: var(--usage-tone);
+  stroke-width: 3.5;
+  stroke-linecap: round;
 }
 
-.wx-today {
+.usage-chart-plot {
+  flex: 1 1 auto;
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) 72px;
+  grid-template-rows: minmax(0, 1fr) auto;
+  column-gap: 8px;
+  min-height: 0;
+  margin-top: 14px;
+}
+
+.usage-chart-y {
   display: flex;
-  grid-column: 1 / -1;
-  align-items: center;
-  gap: 8px;
-  font-size: 1.3rem;
-  color: var(--muted);
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: flex-end;
+  line-height: 1;
+  transform: translateY(-8px);
 }
 
-.wx-today .wx-temp {
-  font-weight: 500;
+.usage-chart-area {
+  position: relative;
+  min-height: 0;
+}
+
+.usage-chart-area > svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.usage-chart-grid {
+  stroke: var(--hair);
+  stroke-dasharray: 2 7;
+  vector-effect: non-scaling-stroke;
+}
+
+.usage-chart-axis {
+  stroke: var(--hair2);
+  vector-effect: non-scaling-stroke;
+}
+
+.usage-line {
+  fill: none;
+  stroke: var(--usage-tone);
+  stroke-width: 4;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.usage-fill {
+  fill: color-mix(in srgb, var(--usage-tone) 12%, transparent);
+  stroke: none;
+}
+
+.usage-end {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--bg);
+  border-radius: 50%;
+  background: var(--usage-tone);
+  transform: translate(-50%, -50%);
+}
+
+/* Where each line ends, its last value large in its tone at the right edge. */
+.usage-chart-last {
+  position: relative;
+}
+
+.usage-last {
+  position: absolute;
+  left: 4px;
+  font-family: InterVariable, system-ui, sans-serif;
+  font-size: 40px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--usage-tone);
+  transform: translateY(-50%);
+}
+
+.usage-chart[data-lines='3'] .usage-last {
+  font-size: 32px;
+}
+
+.usage-chart[data-lines='4'] .usage-last {
+  font-size: 24px;
+}
+
+.usage-chart[data-lines='4'] .usage-chart-legend {
+  gap: 16px;
+}
+
+.usage-chart-x {
+  grid-column: 2;
+  display: flex;
+  justify-content: space-between;
+  margin-top: 8px;
+  white-space: nowrap;
+}
+
+.usage-updated--stale {
+  color: var(--warn);
+}
+
+.usage-card-foot {
+  padding: 0 28px 16px;
+  font-family: var(--font-mono);
+  font-size: 16px;
+  color: var(--fg3);
+  text-align: right;
+}
+
+/* The Weigh-in pop-up over the Idle Screen: in the AI Usage chart's place, the middle Column's foot;
+   "not you?" chips at its top right, so the line under the weight keeps the width. */
+.idle-popup-place {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2;
+  height: 246px;
+}
+
+.idle-popup-place .weighin-popup {
+  position: absolute;
+  inset: 0;
+  transform: none;
+  width: auto;
+  height: auto;
+  padding: 26px 32px;
+  border-radius: 24px;
+  gap: 26px;
+}
+
+.idle-popup-place .weighin-popup-mark {
+  width: 64px;
+  height: 64px;
+  font-size: 34px;
+}
+
+.idle-popup-place .weighin-popup-kg {
+  font-size: 132px;
+  line-height: 0.9;
+  letter-spacing: -0.04em;
+}
+
+.idle-popup-place .weighin-popup-kg small {
+  font-size: 34px;
+  color: var(--fg3);
+}
+
+.idle-popup-place .weighin-popup-sub {
+  margin-top: 18px;
+  font-size: 24px;
+}
+
+.idle-popup-place .weighin-popup--live .weighin-popup-sub {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.idle-popup-place .weighin-popup-chips {
+  position: absolute;
+  top: 28px;
+  right: 28px;
+  max-width: 40%;
+}
+
+.idle-popup-place .weighin-popup-words {
+  align-self: stretch;
+  justify-content: center;
+}
+
+.idle-popup-place .weighin-popup-chip {
+  font-size: 22px;
+}
+
+/* ---- the weather, down the left: now, the coming hours, the coming days ---- */
+
+.wx-card {
+  display: grid;
+  grid-template-rows: 340px 420px minmax(0, 1fr);
+}
+
+.wx-band {
+  position: relative;
+  margin: 0;
+  padding: 0 28px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.wx-band + .wx-band {
+  border-top: 1px solid var(--hair);
 }
 
 /* A temperature reads in its hue: deep blue when cold, red when hot (core
    temperatureHue), mixed to the mode's saturation and lightness so it sits
-   on either canvas. */
+   on either ground. */
 .wx-temp {
   color: hsl(var(--hue) var(--wx-sat) var(--wx-light));
   font-variant-numeric: tabular-nums;
 }
 
-.wx-icon .wx-sunrise,
-.wx-icon .wx-sunset {
-  stroke-width: 2;
+.wx-now-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 20px;
+  padding-top: 30px;
 }
 
-.wx-range {
+.wx-hero {
+  margin-left: -6px;
+  font-size: 172px;
+  font-weight: 500;
+  line-height: 0.78;
+  letter-spacing: -0.05em;
+  white-space: nowrap;
+}
+
+.wx-cond {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding-top: 4px;
+}
+
+.wx-cond-words {
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.15;
+  color: var(--fgh);
+}
+
+.wx-cond-city {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 16px;
+  color: var(--fg3);
+  white-space: nowrap;
+}
+
+.wx-cond-rain {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--rain);
+}
+
+.wx-drop path {
+  fill: var(--rain);
+}
+
+.wx-lohi {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 34px;
+  font-size: 28px;
+  font-weight: 600;
+}
+
+.wx-lohi-bar {
   position: relative;
-  display: inline-block;
   flex: 1 1 auto;
-  height: 8px;
-  margin: 0 6px;
-  border-radius: 4px;
-  background: color-mix(in srgb, var(--text) 12%, transparent);
+  height: 6px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--from), var(--to));
+  opacity: 0.8;
 }
 
-.wx-range-fill {
+.wx-lohi-now {
+  position: absolute;
+  top: -6px;
+  width: 3px;
+  height: 18px;
+  margin-left: -1.5px;
+  border-radius: 2px;
+  background: var(--fg);
+}
+
+/* The day bar: the 24 hours, sunrise to sunset lit, now marked. */
+.wx-day {
+  position: relative;
+  height: 62px;
+  margin-top: 16px;
+  font-family: var(--font-mono);
+  font-size: 16px;
+  color: var(--fg3);
+}
+
+.wx-day-track {
+  position: absolute;
+  top: 15px;
+  left: 0;
+  right: 0;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--track);
+}
+
+.wx-day-sun {
   position: absolute;
   top: 0;
   bottom: 0;
-  border-radius: 4px;
-  background: linear-gradient(90deg, hsl(var(--hue-from) var(--wx-sat) var(--wx-light)), hsl(var(--hue-to) var(--wx-sat) var(--wx-light)));
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--wx-sun) 35%, transparent);
 }
 
-/* Where the temperature stands now on today's range. */
-.wx-range-now {
+.wx-day-edge,
+.wx-day-now {
   position: absolute;
-  top: -4px;
-  bottom: -4px;
-  width: 12px;
-  margin-left: -6px;
-  border: 2px solid var(--bg);
-  border-radius: 6px;
-  background: var(--text);
+  top: -7px;
+  width: 2px;
+  height: 20px;
+  margin-left: -1px;
+  background: color-mix(in srgb, var(--wx-sun) 70%, var(--fg3));
 }
 
-/* The coming hours and the coming days: a glass tile each, a kicker over them. */
-.wx-hours-tile,
-.wx-days-tile {
+.wx-day-now {
+  top: -6px;
+  width: 3px;
+  height: 18px;
+  margin-left: -1.5px;
+  border-radius: 2px;
+  background: var(--fg);
+}
+
+.wx-day-time {
+  position: absolute;
+  top: 38px;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+/* The rain at its peak, large, over the hours' chart. */
+.wx-peak {
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+  padding-top: 26px;
+}
+
+.wx-peak-figure {
+  font-size: 88px;
+  font-weight: 600;
+  line-height: 0.86;
+  letter-spacing: -0.035em;
+  color: var(--rain);
+  white-space: nowrap;
+}
+
+.wx-peak-figure small {
+  margin-left: 2px;
+  font-size: 0.42em;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+.wx-peak-words {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 18px 24px;
+  gap: 3px;
+  padding-bottom: 4px;
+  font-size: 16px;
+  line-height: 1.25;
+  color: var(--fg3);
 }
 
-.wx-hours {
-  display: grid;
-  flex: 1;
-  grid-auto-flow: column;
-  grid-auto-columns: 1fr;
-  align-content: center;
-  gap: 4px;
-  margin: 0;
-  padding: 0;
+.wx-peak-by {
+  font-size: 20px;
+  font-weight: 500;
+  color: var(--fg2);
+}
+
+.wx-hours-chart {
+  position: relative;
+  margin-top: 4px;
+}
+
+.wx-hours-chart > svg {
+  display: block;
+  overflow: visible;
+}
+
+.wx-hours-skies > span {
+  position: absolute;
+  top: 2px;
+  z-index: 1;
+  transform: translateX(-50%);
+}
+
+.wx-hours-chart text {
+  font-family: var(--font-mono);
+  font-size: 16px;
+  fill: var(--fg3);
+}
+
+.wx-hours-rule {
+  stroke: var(--hair);
+}
+
+.wx-hours-axis {
+  stroke: var(--hair2);
+}
+
+.wx-rain-stop {
+  stop-color: var(--rain);
+}
+
+.wx-rain-area {
+  fill: url(#wx-rain-fill);
+}
+
+.wx-rain-line {
+  fill: none;
+  stroke: var(--rain);
+  stroke-opacity: 0.6;
+  stroke-width: 1.5;
+}
+
+.wx-hours-chart .wx-hours-rain {
+  fill: var(--rainq);
+}
+
+.wx-hours-chart .wx-hours-rain--peak {
+  fill: var(--rain);
+  font-weight: 600;
+}
+
+.wx-temp-line {
+  fill: none;
+  stroke: url(#wx-temp-line);
+  stroke-width: 3.5;
+  stroke-linecap: round;
+}
+
+.wx-temp-dot {
+  stroke: var(--bg);
+  stroke-width: 2;
+}
+
+.wx-hours-chart .wx-temp-label {
+  font-family: InterVariable, system-ui, sans-serif;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+/* The coming days: the weekday, the sky, the rain, the range on one scale. */
+.wx-days {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
   list-style: none;
 }
 
-.wx-hour {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-}
-
-.wx-hour-time {
-  font-size: 1.1rem;
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-}
-
-.wx-hour-rain {
-  min-height: 1em;
-  font-size: 1rem;
-  font-weight: 500;
-  line-height: 1;
-  color: var(--wx-rain);
-}
-
-.wx-hour-temp {
-  font-size: 1.4rem;
-  font-weight: 500;
-}
-
-.wx-outlook {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  justify-content: space-evenly;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.wx-outlook-day {
+.wx-days-day {
   display: grid;
-  grid-template-columns: 3.4em 40px 3em 2.2em minmax(0, 1fr) 2.2em;
+  grid-template-columns: 62px 36px 50px minmax(0, 1fr);
   align-items: center;
   column-gap: 12px;
-  font-size: 1.25rem;
+  height: 66px;
 }
 
-.wx-outlook-name {
-  font-weight: 500;
+.wx-days-name {
+  font-size: 26px;
+  font-weight: 600;
+  color: var(--fgh);
 }
 
-.wx-outlook-rain {
-  font-size: 1.05rem;
-  font-weight: 500;
-  color: var(--wx-rain);
+.wx-days-rain {
+  font-size: 16px;
+  color: var(--rainq);
 }
 
-.wx-outlook-temp {
-  text-align: right;
+.wx-days-rain--high {
+  font-weight: 600;
+  color: var(--rain);
 }
 
-.wx-outlook-day .wx-range {
-  margin: 0;
+.wx-days-track {
+  position: relative;
+  height: 28px;
+}
+
+.wx-days-track::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 13px;
+  height: 2px;
+  background: var(--hair);
+}
+
+.wx-days-range {
+  position: absolute;
+  top: 9px;
+  height: 10px;
+  border-radius: 5px;
+  background: linear-gradient(90deg, var(--from), var(--to));
+}
+
+.wx-days-low,
+.wx-days-high {
+  position: absolute;
+  top: 0;
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 28px;
 }
 
 /* The glyph's parts, each in its system color. */
@@ -2329,370 +3294,350 @@ details[open] > .settings-summary::before {
 /* The cloud sits over the sun or moon: a filled cloud hides the part behind it. */
 .wx-icon circle.wx-sun { fill: var(--wx-sun); }
 
-/* ---- the Last Page tile ---- */
-
-.idle-last-page {
-  display: flex;
-  align-items: center;
-  gap: 20px;
-  padding: 20px 22px;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-  -webkit-app-region: no-drag;
-  transition: transform 120ms ease;
+.wx-icon .wx-sunrise,
+.wx-icon .wx-sunset {
+  stroke-width: 2;
 }
 
-.idle-last-page:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
-}
+/* ---- the Calendar, top right ---- */
 
-.idle-last-page:active {
-  transform: scale(0.99);
-}
-
-.idle-last-page-mark {
-  display: grid;
-  place-items: center;
-  flex: none;
-  width: 72px;
-  height: 72px;
-  border-radius: 18px;
-  background: color-mix(in srgb, var(--text) 8%, transparent);
-  color: var(--muted);
-}
-
-.idle-last-page-mark img {
-  display: block;
-  border-radius: 6px;
-}
-
-.idle-last-page-words {
+.idle-cal {
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  gap: 4px;
-  align-self: stretch;
-  min-width: 0;
-  min-height: 0;
-  flex: 1;
-  overflow: hidden;
+  padding: 28px 28px 0;
 }
 
-.idle-last-page-kicker {
-  font-size: 1rem;
-  line-height: 1.2;
+.idle-cal-head {
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+}
+
+.idle-cal-today {
+  font-size: 88px;
   font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  line-height: 0.86;
+  letter-spacing: -0.035em;
   color: var(--accent);
 }
 
-.idle-last-page-title {
-  font-size: max(20px, calc(1.65rem * var(--fit, 1)));
-  line-height: 1.2;
-  font-weight: 500;
-  overflow-wrap: anywhere;
-}
-
-.idle-last-page-words[data-fit='over'] .idle-last-page-title {
-  display: -webkit-box;
-  overflow: hidden;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-
-.idle-last-page-host {
-  overflow: hidden;
-  font-size: max(17px, calc(1.2rem * var(--fit, 1)));
-  line-height: 1.25;
-  color: var(--muted);
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.idle-last-page-chevron {
+.idle-cal-words {
   display: flex;
-  flex: none;
-  color: var(--muted);
-}
-
-/* ---- the dock ----
-   Under the grid while the Timer runs or rings, today has a next event, or
-   a song is held: chips side by side at the dock's height, the room shared
-   between them. */
-.idle-dock {
-  display: flex;
-  grid-column: 1 / -1;
-  gap: var(--cell-gap);
+  flex-direction: column;
+  gap: 3px;
   min-width: 0;
+  padding-bottom: 4px;
+  font-size: 16px;
+  line-height: 1.25;
+  color: var(--fg3);
+}
+
+.idle-cal-month {
+  font-size: 20px;
+  font-weight: 500;
+  color: var(--fg2);
+  white-space: nowrap;
+}
+
+.idle-cal-holiday {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ok);
+}
+
+.idle-cal-swatch {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  background: var(--ok);
+}
+
+.idle-cal-grid {
+  margin-top: 22px;
+  font-family: var(--font-mono);
+}
+
+.idle-cal-weekdays,
+.idle-cal-week {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  text-align: center;
+}
+
+.idle-cal-weekdays {
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--hair);
+}
+
+.idle-cal-weekday {
+  font-size: 16px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg3);
+}
+
+.idle-cal-weekday--today {
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.idle-cal-week {
+  margin-top: 6px;
+}
+
+.idle-cal-day {
+  position: relative;
+  z-index: 0;
+  height: 50px;
+  line-height: 50px;
+  font-size: 22px;
+  color: var(--fg2);
+}
+
+.idle-cal-day--outside {
+  color: var(--hair2);
+}
+
+.idle-cal-day--today {
+  font-weight: 600;
+  color: var(--onaccent);
+}
+
+.idle-cal-day--today::before {
+  content: '';
+  position: absolute;
+  inset: 4px 12px;
+  z-index: -1;
+  border-radius: 3px;
+  background: var(--accent);
+}
+
+.idle-cal-dot {
+  position: absolute;
+  left: 50%;
+  bottom: 3px;
+  width: 6px;
+  height: 6px;
+  margin-left: -3px;
+  border-radius: 50%;
+  background: var(--fg2);
+}
+
+.idle-cal-day--holiday .idle-cal-dot {
+  background: var(--ok);
+}
+
+.idle-cal-day--today .idle-cal-dot {
+  background: var(--onaccent);
+}
+
+/* The month's entries still to come, under the weeks. */
+.idle-cal-entries {
+  margin: 20px 0 0;
+  padding: 8px 0 0;
+  border-top: 1px solid var(--hair);
+  list-style: none;
+}
+
+.idle-cal-entry {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  height: 42px;
+  line-height: 42px;
+  white-space: nowrap;
+}
+
+.idle-cal-entry-when {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 16px;
+  color: var(--fg3);
+}
+
+.idle-cal-entry-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 20px;
+  font-weight: 500;
+  color: var(--fgh);
+}
+
+/* ---- the Weight card, right, under the Calendar ---- */
+
+.weight-card {
+  display: flex;
+  flex-direction: column;
+  padding: 22px 28px 14px;
+  -webkit-app-region: no-drag;
+}
+
+.weight-card-row,
+.weight-card-line {
+  cursor: pointer;
+}
+
+.weight-card-row:focus-visible,
+.weight-card-line:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 4px;
+}
+
+.weight-card-row[data-person='jaish'] { --person: var(--jaishq); --person-name: var(--jaish); }
+.weight-card-row[data-person='barun'] { --person: var(--barunq); --person-name: var(--barun); }
+
+.weight-card--full .weight-card-row {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
   min-height: 0;
 }
 
-.idle-dock > .idle-card {
-  flex: 1 1 0;
-  height: var(--dock-height);
-}
-
-/* ---- the Timer chip ----
-   The countdown large, in the system orange a timer wears; ringing, it
-   turns red and breathes so it reads as done from across the room. */
-
-.idle-timer {
-  --timer-tone: var(--status-yellow);
+.weight-card-figures {
   display: flex;
-  align-items: center;
-  gap: 18px;
-  padding: 0 28px 0 14px;
-  font: inherit;
-  text-align: left;
-  -webkit-app-region: no-drag;
+  align-items: flex-end;
+  gap: 14px;
 }
 
-.idle-timer--ringing {
-  --timer-tone: var(--status-red);
-  outline: 2px solid var(--timer-tone);
-  outline-offset: -2px;
-  cursor: pointer;
-  animation: idle-timer-ring 1.2s ease-in-out infinite;
+.weight-card-kg {
+  font-size: 68px;
+  font-weight: 600;
+  line-height: 0.95;
+  letter-spacing: -0.03em;
+  color: var(--fgh);
+  white-space: nowrap;
 }
 
-@keyframes idle-timer-ring {
-  0%,
-  100% {
-    box-shadow: 0 0 0 0 color-mix(in srgb, var(--timer-tone) 45%, transparent);
-  }
-  50% {
-    box-shadow: 0 0 0 14px color-mix(in srgb, var(--timer-tone) 0%, transparent);
-  }
+.weight-card-kg small {
+  margin-left: 2px;
+  font-size: 20px;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--fg3);
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .idle-timer--ringing {
-    animation: none;
-  }
+.weight-card-change {
+  padding-bottom: 4px;
+  font-size: 38px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
 }
 
-.idle-timer-ring {
-  position: relative;
-  display: grid;
-  place-items: center;
-  flex: none;
-  width: 80px;
-  height: 80px;
+.weight-card-change--down { color: var(--down); }
+.weight-card-change--up { color: var(--up); }
+.weight-card-change--flat { color: var(--fg2); }
+
+.weight-card-change--none {
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--fg3);
 }
 
-.idle-timer-ring > svg {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-}
-
-.idle-timer-track,
-.idle-timer-arc {
-  fill: none;
-  stroke-width: 5;
-}
-
-.idle-timer-track {
-  stroke: color-mix(in srgb, var(--text) 12%, transparent);
-}
-
-.idle-timer-arc {
-  stroke: var(--timer-tone);
-  stroke-linecap: round;
-  transition: stroke-dashoffset 250ms linear;
-}
-
-.idle-timer-glyph {
-  display: flex;
-  color: var(--timer-tone);
-}
-
-.idle-timer-words {
+.weight-card-who {
   display: flex;
   flex-direction: column;
+  align-items: flex-end;
   gap: 2px;
-  min-width: 0;
+  margin-left: auto;
+  font-size: 16px;
+  color: var(--fg3);
+  white-space: nowrap;
 }
 
-.idle-timer-kicker {
-  font-size: 1rem;
-  line-height: 1.2;
+.weight-card-name {
+  font-size: 18px;
   font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--timer-tone);
-  white-space: nowrap;
+  color: var(--person-name, var(--fgh));
 }
 
-.idle-timer-left {
-  font-size: 2.6rem;
-  font-weight: 300;
-  letter-spacing: -0.01em;
-  line-height: 1.05;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
+.weight-card-row .weight-chart {
+  flex: 1 1 auto;
+  margin-top: 10px;
 }
 
-.idle-timer-sub {
-  font-size: 1.05rem;
-  line-height: 1.25;
-  color: var(--muted);
+/* The card's trend dots its latest Weigh-in only, as round 6 draws it. */
+.weight-card .weight-chart-dot:not(.weight-chart-dot--last) {
+  display: none;
 }
 
-/* ---- the Now Playing chip (#344) ----
-   The thumbnail, the title · channel, the progress, the next three on a
-   line. The tap pauses or plays it. */
-
-.idle-music {
+.weight-card-foot {
   display: flex;
-  align-items: center;
-  gap: 18px;
-  padding: 0 24px 0 14px;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-  -webkit-app-region: no-drag;
+  justify-content: space-between;
+  gap: 12px;
+  padding-left: 52px;
+  font-family: var(--font-mono);
+  font-size: 16px;
+  color: var(--fg3);
+  white-space: nowrap;
 }
 
-.idle-music:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
+/* Smaller: a line per Person — the name, the weight, the change. */
+.weight-card--small {
+  justify-content: center;
+  gap: 8px;
 }
 
-.idle-music-thumb {
-  position: relative;
+.weight-card-line {
   display: grid;
-  place-items: center;
-  flex: none;
-  width: 136px;
-  height: 76px;
-  overflow: hidden;
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--text) 8%, transparent);
-  color: var(--muted);
+  grid-template-columns: minmax(0, 1fr) auto 110px;
+  align-items: baseline;
+  gap: 16px;
 }
 
-.idle-music-thumb > img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
+.weight-card-line .weight-card-kg {
+  font-size: 40px;
 }
 
-.idle-music-paused {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  background: var(--scrim);
-  color: var(--onscrim);
+.weight-card-line .weight-card-change {
+  font-size: 24px;
+  text-align: right;
 }
 
-.idle-music--ended .idle-music-thumb > img {
-  opacity: 0.55;
+/* A hyphenated word (NoBreakHyphens) never breaks at its hyphen, "Weigh-"
+   over "in", and sets proportionally: Inter's tnum widens the hyphen, and
+   "Weigh-in" read "Weigh - in" on a tabular line. */
+.no-break {
+  white-space: nowrap;
+  font-variant-numeric: normal;
 }
 
-.idle-music-words {
+/* ---- the News card, bottom right ---- */
+
+.idle-news {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-  flex: 1 1 auto;
+  padding: 26px 28px 16px;
 }
 
-.idle-music-head {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  min-width: 0;
-  white-space: nowrap;
+.idle-news-span {
+  margin-left: 10px;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--kaggleq);
 }
 
-.idle-music-head > svg {
-  align-self: center;
-  flex: none;
-  color: var(--status-purple);
-}
-
-.idle-music-title {
-  overflow: hidden;
-  flex: 0 1 auto;
-  font-size: 1.35rem;
-  font-weight: 600;
-  line-height: 1.2;
-  text-overflow: ellipsis;
-}
-
-.idle-music-channel {
-  overflow: hidden;
-  flex: 0 1 auto;
-  font-size: 1.2rem;
-  line-height: 1.2;
-  text-overflow: ellipsis;
-  color: var(--muted);
-}
-
-.idle-music-channel::before {
-  content: '· ';
-}
-
-.idle-music-progress {
+.idle-news-none {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 16px;
+  margin: 30px 0 0;
+  font-size: 28px;
+  font-weight: 500;
+  color: var(--fg2);
 }
 
-.idle-music-bar {
-  flex: 1 1 auto;
-  height: 6px;
-  overflow: hidden;
-  border-radius: 3px;
-  background: color-mix(in srgb, var(--text) 12%, transparent);
-}
-
-.idle-music-fill {
-  display: block;
-  height: 100%;
-  border-radius: 3px;
-  background: var(--status-purple);
-  transition: width 1s linear;
-}
-
-.idle-music-time {
-  flex: none;
-  font-size: 1rem;
-  font-variant-numeric: tabular-nums;
-  color: var(--muted);
-}
-
-.idle-music-next {
-  display: flex;
-  gap: 10px;
-  overflow: hidden;
-  font-size: 1rem;
-  line-height: 1.25;
-  white-space: nowrap;
-  color: var(--muted);
-}
-
-.idle-music-next-label {
-  flex: none;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.idle-music-next-title {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  min-width: 0;
-}
-
-.idle-music-next-title + .idle-music-next-title::before {
-  content: '· ';
+.idle-news-none svg {
+  fill: none;
+  stroke: var(--fg3);
+  stroke-width: 1.3;
+  stroke-linejoin: round;
 }
 
 /* ---- the News card ----
@@ -2856,659 +3801,6 @@ details[open] > .settings-summary::before {
   -webkit-line-clamp: 1;
 }
 
-/* ---- the Calendar ----
-   A glass tile: the month's name in the red the day wears, the year
-   quiet, then the next bank holiday or "No events"; weekday heads; this
-   week and next in one cell, the whole month with its entries in two.
-   Today's date in a red disc, weekends and the neighbouring months' days in
-   the quiet ink. A bank holiday's name on green, an all-day event as a red
-   bar, a timed one as a dot and its title, "+N" beside the date past one. */
-
-.idle-cal {
-  --cal-holiday: color-mix(in srgb, var(--status-green) 30%, transparent);
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 18px 22px;
-  -webkit-app-region: no-drag;
-}
-
-.idle-cal-head {
-  display: flex;
-  flex: none;
-  align-items: baseline;
-  gap: 10px;
-  padding: 0 4px;
-  font-size: 1.45rem;
-  line-height: 1.2;
-}
-
-.idle-cal-month {
-  font-weight: 600;
-  color: var(--status-red);
-}
-
-.idle-cal-year {
-  color: var(--muted);
-}
-
-.idle-cal-none {
-  margin-left: auto;
-  font-size: 1.1rem;
-  color: var(--muted);
-}
-
-.idle-cal-holiday {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  margin-left: auto;
-  font-size: 1.1rem;
-}
-
-.idle-cal-swatch {
-  flex: none;
-  width: 14px;
-  height: 14px;
-  border-radius: 4px;
-  background: var(--cal-holiday);
-}
-
-.idle-cal-holiday-title {
-  overflow: hidden;
-  font-weight: 500;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.idle-cal-holiday-date {
-  flex: none;
-  color: var(--muted);
-}
-
-.idle-cal-grid {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  min-height: 0;
-}
-
-.idle-cal-weekdays,
-.idle-cal-week {
-  display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
-}
-
-.idle-cal-weekday {
-  padding: 0 0 4px;
-  font-size: 1rem;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-align: center;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-
-.idle-cal-week {
-  flex: 1;
-  min-height: 0;
-}
-
-.idle-cal-day {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 2px;
-  min-width: 0;
-  min-height: 0;
-  overflow: hidden;
-}
-
-.idle-cal-num {
-  display: grid;
-  place-items: center;
-  min-width: 40px;
-  height: 40px;
-  padding: 0 4px;
-  border-radius: 20px;
-  font-size: 1.35rem;
-  font-variant-numeric: tabular-nums;
-}
-
-.idle-cal-weekend .idle-cal-num {
-  color: var(--muted);
-}
-
-.idle-cal-day--outside .idle-cal-num,
-.idle-cal-day--outside .idle-cal-entry {
-  opacity: 0.4;
-}
-
-.idle-cal-day--today .idle-cal-num {
-  background: var(--accent);
-  color: var(--onaccent);
-  font-weight: 600;
-}
-
-.idle-cal-dot {
-  flex: none;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--muted);
-}
-
-/* The month: hairlines between the weeks, a day's date at its top left
-   with "+N" beside it, its first entry under. */
-.idle-cal--month .idle-cal-week + .idle-cal-week {
-  border-top: 1px solid color-mix(in srgb, var(--text) 10%, transparent);
-}
-
-.idle-cal--month .idle-cal-day {
-  align-items: stretch;
-  justify-content: flex-start;
-  padding: 3px 2px;
-}
-
-.idle-cal--month .idle-cal-num {
-  min-width: 30px;
-  height: 30px;
-  border-radius: 15px;
-  font-size: 1.15rem;
-}
-
-.idle-cal-num-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 2px;
-}
-
-.idle-cal-entry {
-  overflow: hidden;
-  padding: 0 3px;
-  border-radius: 5px;
-  font-size: 1rem;
-  line-height: 1.25;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.idle-cal-entry--timed::before {
-  content: '';
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  margin-right: 4px;
-  border-radius: 50%;
-  background: var(--status-red);
-  vertical-align: 1px;
-}
-
-.idle-cal-entry--allday {
-  background: color-mix(in srgb, var(--status-red) 18%, transparent);
-  font-weight: 500;
-}
-
-.idle-cal-entry--holiday {
-  background: var(--cal-holiday);
-  font-weight: 500;
-}
-
-.idle-cal-more {
-  font-size: 1rem;
-  color: var(--muted);
-}
-
-.idle-cal--quiet.idle-cal--month .idle-cal-week + .idle-cal-week {
-  border: 0;
-}
-
-/* ---- the Up Next chip ----
-   Today's next event from the Calendar, a date tile for its mark, the time
-   in the red the month wears. */
-
-.idle-upnext {
-  display: flex;
-  align-items: center;
-  gap: 18px;
-  padding: 0 24px 0 18px;
-  -webkit-app-region: no-drag;
-}
-
-.idle-upnext-tile {
-  display: flex;
-  flex: none;
-  flex-direction: column;
-  align-items: center;
-  width: 64px;
-  overflow: hidden;
-  border-radius: 16px;
-  background: color-mix(in srgb, var(--text) 8%, transparent);
-}
-
-.idle-upnext-tile-weekday {
-  align-self: stretch;
-  padding: 3px 0 2px;
-  background: var(--accent);
-  color: var(--onaccent);
-  font-size: 1rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-align: center;
-  text-transform: uppercase;
-}
-
-.idle-upnext-tile-day {
-  font-size: 1.8rem;
-  font-weight: 500;
-  line-height: 1.4;
-  font-variant-numeric: tabular-nums;
-}
-
-.idle-upnext-words {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  min-width: 0;
-}
-
-.idle-upnext-kicker {
-  font-size: 1rem;
-  line-height: 1.2;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--status-red);
-}
-
-.idle-upnext-title {
-  overflow: hidden;
-  font-size: 1.5rem;
-  line-height: 1.2;
-  font-weight: 500;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.idle-upnext-sub {
-  font-size: 1.1rem;
-  line-height: 1.25;
-  color: var(--muted);
-}
-
-/* ---- the AI usage card ----
-   Tiles down the right of the Idle Screen: the chosen providers' windows
-   as rings in a row — the outer arc the share of the limit used in the
-   provider's tone, the number in the middle, a thin inner arc how much of
-   the window has run — and under them the last twelve hours as lines. */
-
-.usage-card {
-  -webkit-app-region: no-drag;
-}
-
-.usage-tone--codex {
-  --usage-tone: var(--usage-codex);
-}
-
-.usage-tone--claude {
-  --usage-tone: var(--usage-claude);
-}
-
-.usage-tone--glm {
-  --usage-tone: var(--usage-glm);
-}
-
-.usage-tone--grok {
-  --usage-tone: var(--usage-grok);
-}
-
-.usage-tone--kaggle {
-  --usage-tone: var(--usage-kaggle);
-}
-
-/* A provider the dashboard has no color for takes the accent, as it does there. */
-:where(.usage-ring-item, .usage-legend, .usage-line, .usage-fill, .usage-end) {
-  --usage-tone: var(--accent);
-}
-
-/* The rings share the row (Rings sets the columns, a provider with bars
-   under it a little wider); each column is the ring over its words, the
-   ring as large as the room the words leave, 150 px at most. */
-.usage-rings {
-  display: grid;
-  grid-template-columns: var(--ring-columns);
-  grid-template-rows: minmax(0, 1fr) auto;
-  gap: 4px 12px;
-  padding: 16px 18px;
-}
-
-/* Each column spans the tile's two rows (subgrid), so every ring shares the
-   room the tallest words leave and the rings line up at one size. */
-.usage-ring-item {
-  display: grid;
-  grid-row: span 2;
-  grid-template-rows: subgrid;
-  justify-items: center;
-  min-width: 0;
-  min-height: 0;
-  text-align: center;
-}
-
-/* The words are the narrow-column query's container: a container on the
-   column itself would contain its layout and turn the subgrid off. */
-.usage-ring-words {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  justify-self: stretch;
-  min-width: 0;
-  container-type: inline-size;
-}
-
-.usage-ring {
-  position: relative;
-  display: block;
-  width: 100%;
-  height: 100%;
-  max-height: 150px;
-  align-self: center;
-  container-type: size;
-}
-
-.usage-ring-item--extra .usage-ring {
-  --ring-scale: 0.78;
-}
-
-.usage-ring > svg {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  transform: scale(var(--ring-scale, 1));
-}
-
-.usage-ring-track,
-.usage-ring-arc {
-  fill: none;
-  stroke-width: 9;
-}
-
-.usage-ring-track {
-  stroke: color-mix(in srgb, var(--text) 12%, transparent);
-}
-
-.usage-ring-arc {
-  stroke: var(--usage-tone);
-  stroke-linecap: round;
-}
-
-.usage-ring-time-track,
-.usage-ring-time {
-  fill: none;
-  stroke-width: 2.5;
-}
-
-.usage-ring-time-track {
-  stroke: color-mix(in srgb, var(--text) 10%, transparent);
-}
-
-.usage-ring-time {
-  stroke: var(--muted);
-  stroke-linecap: round;
-}
-
-/* The number in the middle, about a third of the ring; the % small and quiet. */
-.usage-ring-pct {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-content: center;
-  grid-auto-flow: column;
-  align-items: baseline;
-  font-size: max(16px, calc(min(100cqw, 100cqh) * 0.3 * var(--ring-scale, 1)));
-  font-weight: 650;
-  line-height: 1;
-  letter-spacing: -0.02em;
-  font-variant-numeric: tabular-nums;
-}
-
-.usage-ring-pct small {
-  font-size: max(16px, 0.42em);
-  font-weight: 500;
-  color: var(--muted);
-}
-
-.usage-ring--over .usage-ring-arc {
-  stroke: var(--status-red);
-}
-
-.usage-ring--over .usage-ring-pct {
-  color: var(--status-red);
-}
-
-.usage-ring-name {
-  flex: none;
-  max-width: 100%;
-  font-size: 1.15rem;
-  font-weight: 600;
-  line-height: 1.2;
-}
-
-.usage-ring-plan {
-  font-size: 1rem;
-  font-weight: 400;
-  color: var(--muted);
-}
-
-/* Tabular figures sit on the figures alone: Inter's tnum also widens the
-   hyphen, and a window's caption ("7d-fab") read "7d - fab" under it. */
-.usage-ring-reset {
-  flex: none;
-  font-size: 1rem;
-  line-height: 1.2;
-  color: var(--muted);
-}
-
-.usage-ring-reset b {
-  font-weight: 500;
-  color: var(--text);
-  font-variant-numeric: tabular-nums;
-}
-
-/* A narrow column (four or five providers): the plan under the name, "resets" left out. */
-@container (max-width: 150px) {
-  .usage-ring-plan {
-    display: block;
-  }
-
-  .usage-ring-resets {
-    display: none;
-  }
-}
-
-/* A provider's other windows as compact bars under it, when the row has no room for their rings. */
-.usage-bars {
-  display: flex;
-  flex: none;
-  flex-direction: column;
-  gap: 4px;
-  align-self: stretch;
-}
-
-.usage-bar {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.usage-bar-words {
-  font-size: 1rem;
-  line-height: 1.2;
-  color: var(--muted);
-}
-
-.usage-bar-words b,
-.usage-bar-reset {
-  font-variant-numeric: tabular-nums;
-}
-
-/* A window's figures and its reset never break inside themselves: "20h 59m" stays one value. */
-.usage-bar-used,
-.usage-bar-reset,
-.usage-ring-reset b {
-  white-space: nowrap;
-}
-
-.usage-bar-words b {
-  font-weight: 500;
-  color: var(--text);
-}
-
-.usage-bar-track {
-  height: 6px;
-  border-radius: 3px;
-  background: color-mix(in srgb, var(--text) 12%, transparent);
-  overflow: hidden;
-}
-
-.usage-bar-fill {
-  display: block;
-  height: 100%;
-  background: var(--usage-tone);
-}
-
-/* The last twelve hours: the kicker and when the dashboard refreshed, the
-   legend, then the plot with its scale at the left and the hours under it. */
-.usage-chart {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 18px 22px 14px;
-}
-
-.usage-chart-head {
-  display: flex;
-  flex: none;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.usage-updated {
-  flex: none;
-  font-size: 1rem;
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-}
-
-.usage-updated--stale {
-  color: var(--status-yellow);
-  font-weight: 600;
-}
-
-.usage-chart-legend {
-  display: flex;
-  flex: none;
-  flex-wrap: wrap;
-  gap: 2px 18px;
-  max-height: 2.6em;
-  overflow: hidden;
-  font-size: 1rem;
-  line-height: 1.3;
-  color: var(--muted);
-}
-
-.usage-legend {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.usage-legend > svg {
-  stroke: var(--usage-tone);
-  stroke-width: 4;
-  stroke-linecap: round;
-}
-
-.usage-chart-plot {
-  display: grid;
-  flex: 1 1 auto;
-  grid-template-columns: auto minmax(0, 1fr);
-  grid-template-rows: minmax(0, 1fr) auto;
-  column-gap: 10px;
-  min-height: 0;
-}
-
-.usage-chart-y {
-  grid-area: 1 / 1;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  margin: -0.6em 0;
-  font-size: 1rem;
-  line-height: 1.2;
-  text-align: right;
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-}
-
-.usage-chart-area {
-  grid-area: 1 / 2;
-  position: relative;
-  min-height: 0;
-}
-
-.usage-chart-area > svg {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  overflow: visible;
-}
-
-.usage-chart-grid {
-  stroke: color-mix(in srgb, var(--text) 12%, transparent);
-  stroke-width: 1.5;
-  vector-effect: non-scaling-stroke;
-}
-
-.usage-fill {
-  fill: var(--usage-tone);
-  opacity: 0.12;
-}
-
-.usage-line {
-  fill: none;
-  stroke: var(--usage-tone);
-  stroke-width: 3;
-  stroke-linejoin: round;
-  stroke-linecap: round;
-  vector-effect: non-scaling-stroke;
-}
-
-/* Where each line ends: a dot in its tone. */
-.usage-end {
-  position: absolute;
-  width: 10px;
-  height: 10px;
-  margin: -5px 0 0 -5px;
-  border-radius: 50%;
-  background: var(--usage-tone);
-}
-
-.usage-chart-x {
-  grid-area: 2 / 2;
-  display: flex;
-  justify-content: space-between;
-  padding-top: 4px;
-  font-size: 1rem;
-  color: var(--muted);
-}
-
 /* ---- the AI usage settings: the dashboard's ⚙ Metrics panel ---- */
 
 .usage-set {
@@ -3574,146 +3866,6 @@ details[open] > .settings-summary::before {
   width: 24px;
   height: 24px;
   accent-color: var(--accent);
-}
-
-/* ---- the Weight card (#350, #351) ----
-   A Pinned Card of glass tiles, one per Person with a Weigh-in: the name,
-   the latest weight large beside its change against a week ago and the
-   body fat, their own line under it; given one cell, a line per Person
-   with the weight and the change. The weight is sized to the tile
-   (container query units). Each row is the tap that opens the Weight page
-   on that Person. */
-.weight-card {
-  -webkit-app-region: no-drag;
-}
-
-.weight-card-row,
-.weight-card-line {
-  cursor: pointer;
-}
-
-.weight-card-row:focus-visible,
-.weight-card-line:focus-visible {
-  outline: 3px solid var(--accent);
-  outline-offset: 4px;
-}
-
-.weight-card-row {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 16px 24px 18px;
-  min-height: 0;
-}
-
-.weight-card-name {
-  color: var(--text);
-  font-weight: 700;
-}
-
-.weight-card-figures {
-  display: flex;
-  align-items: center;
-  gap: 18px;
-  min-width: 0;
-}
-
-.weight-card-side {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
-.weight-card-row .weight-chart {
-  min-height: 48px;
-}
-
-.weight-card--list {
-  display: grid;
-  grid-template-rows: auto repeat(var(--rows), minmax(0, 1fr));
-  gap: 4px;
-  padding: 16px 22px;
-}
-
-.weight-card-line {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  column-gap: 12px;
-  min-height: 0;
-}
-
-.weight-card-line .weight-card-name {
-  font-size: 1.3rem;
-}
-
-.weight-card-line .weight-card-kg {
-  font-size: min(48px, 22cqh);
-}
-
-.weight-card-line .weight-card-kg small {
-  font-size: 0.4em;
-}
-
-.weight-card-line .weight-card-change {
-  font-size: 1.1rem;
-}
-
-.weight-card-kg {
-  flex: none;
-  white-space: nowrap;
-  font-size: min(80px, 30cqh);
-  font-weight: 250;
-  letter-spacing: -0.02em;
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
-}
-
-.weight-card-kg small {
-  font-size: 0.32em;
-  font-weight: 500;
-  letter-spacing: 0;
-  color: var(--muted);
-}
-
-.weight-card-change {
-  font-size: 1.5rem;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
-
-.weight-card-change--flat,
-.weight-card-change--none,
-.weight-card-change-span {
-  color: var(--muted);
-  font-weight: 500;
-}
-
-/* A hyphenated word (NoBreakHyphens) never breaks at its hyphen, "Weigh-"
-   over "in", and sets proportionally: Inter's tnum widens the hyphen, and
-   "Weigh-in" read "Weigh - in" on a tabular line. */
-.no-break {
-  white-space: nowrap;
-  font-variant-numeric: normal;
-}
-
-.weight-card-fat {
-  font-size: 1.3rem;
-  color: var(--muted);
-}
-
-/* Beside the weight, what the change is against sits under it, so the
-   figure keeps its unit and the side its three short lines. */
-.weight-card-side .weight-card-change-span {
-  display: block;
-  font-size: 1.3rem;
-}
-
-.weight-card-fat b {
-  color: var(--text);
-  font-weight: 650;
-  font-variant-numeric: tabular-nums;
 }
 
 /* ---- the weight charts: the card's trend and the Weight page's figures ----
@@ -4293,4 +4445,34 @@ details[open] > .settings-summary::before {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* The News card in a short band: each row on one line — the month's gain,
+   the name and the stars — so the three rows still show. */
+.idle-repos--lean .idle-repo {
+  grid-template-columns: 5.4rem minmax(0, 1fr);
+  align-items: baseline;
+  padding: 6px 0;
+}
+
+.idle-repos--lean .idle-repo-gain-label,
+.idle-repos--lean .idle-repo-bar,
+.idle-repos--lean .idle-repo-line,
+.idle-repos--lean .idle-repo-language {
+  display: none;
+}
+
+.idle-repos--lean .idle-repo-gain-figure {
+  font-size: 1.6rem;
+}
+
+.idle-repos--lean .idle-repo-words {
+  flex-direction: row;
+  align-items: baseline;
+  gap: 14px;
+}
+
+.idle-repos--lean .idle-repo-name {
+  flex: 1 1 auto;
+  min-width: 0;
 }

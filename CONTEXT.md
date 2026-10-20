@@ -359,7 +359,10 @@ Panel's footer (#359) the hint reads `Say "Bing Bong" or type a command`,
 waveform, as round 6 drew it. While an
 Utterance is taken it carries its live words, a Page Term among them in
 peach, and how much quiet ends it. The Prompt Bar is drawn as one; the
-Idle Screen's first Clock Line is one.
+Idle Screen's first Clock Line is one (#360): `Say "Bing Bong" or start
+typing` beside a still waveform at rest, the live words with `LISTENING`
+while an Utterance is taken and `TRANSCRIBING` while they are read, and
+`Microphone off — start typing` with the orb grey.
 _Avoid_: voice line (that is the Spoken Rendering), input box, omnibar
 
 **Feed**:
@@ -576,17 +579,20 @@ usage dashboard on the LAN (an HTTP server outside this repo,
 2026-10-19 ask: "the line chart and the gauges for codex and claude").
 In the middle Column under the Clock Lines: the rings over the chart.
 Each shown provider is a
-ring in its tone (owner, 2026-10-19: "i like the ring progress bars"): the
-outer arc the share of the limit used, the number in the middle, a thin
-inner arc how much of the window has run to its reset — the two clocks the
-dashboard's dot gauge showed — then its name and plan and "7d · resets 1d
-1h", and its Pace when the share used runs ahead of the window run ("+5
-ahead"). Its other shown windows are smaller rings beside it while the row
-holds three or fewer, else bars under it; four or five providers shrink
-their rings to stay in one row. Under them, the last twelve hours of the
-charted windows as lines over a faint fill, a dot where each ends, a
-5-hour one solid, a longer one dashed, and when the dashboard last
-refreshed, amber once that is over five minutes old. What it shows is
+ring in its tone (owner, 2026-10-19: "i like the ring progress bars"; F2's
+card since 2026-10-20): the outer arc the share of the limit used, the
+number in the middle, a tick across the ring where the window has run to
+its reset — the two clocks the dashboard's dot gauge showed — the use past
+that tick drawn brighter, and under the number its Pace when the share
+used runs ahead of the window run ("+5 ahead"); a thin inner ring for its
+next shown window, with its own tick. Under the ring its name and plan and
+"7d ⟳ 6d 23h", then its other shown windows as figures ("7d 8% ⟳ 6d 15h",
+the first larger). Three to five providers shrink their rings to stay in
+one row. Under them, the last twelve hours of the charted windows as lines
+over a faint fill, a dot where each ends and its last value large in its
+tone at the right edge, a 5-hour one solid, a longer one dashed, and under
+the plot when the dashboard last refreshed ("now · updated 09:52"), amber
+once that is over five minutes old. What it shows is
 chosen in settings the way the dashboard's ⚙ Metrics panel chooses it
 (2026-10-19 ruling: kept in Bing Bong, any of the dashboard's providers):
 which providers (Codex and Claude untouched), and per provider which
@@ -610,9 +616,10 @@ as a dot and its title, "+N" beside the date past one — today's date in a
 red disc, the next bank holiday named in the header when it falls this
 month or next, else "No events" when there are none. At the top of the
 right Column (2026-10-20): today's date large in peach beside the weekday
-and month, then this week and next with today boxed in peach, a dot under a
-day with an entry, and the month's entries listed under them while it has
-any. Bank holidays are computed, not
+and month — under them the next bank holiday when it falls this month or
+next, else "no events" or how many the month has — then this week and
+next with today boxed in peach, a dot under a day with an entry, and the
+month's entries still to come listed under them while it has any. Bank holidays are computed, not
 fetched — the rules plus the proclaimed one-offs, matching
 gov.uk/bank-holidays.json 2019–2028; a new proclamation is added by hand.
 Events come from Calendar Sources — one per provider, each
@@ -627,7 +634,9 @@ _Avoid_: agenda (for the month), schedule
 **News**:
 The Idle Screen's card of what is going on in the owner's world, one
 tile since 2026-10-19: the Top Repos, at the foot of the right Column
-under "TOP REPOS ★ this month", every row it can hold whole. Until then it held two tiles, Today's Highlight and Big News, from
+under "TOP REPOS ★ this month", every row it can hold whole — in a short
+band each row on one line (the month's gain, the name, the stars), so all
+three show; with none read yet, "No repos yet". Until then it held two tiles, Today's Highlight and Big News, from
 the News Desk; the owner retired them ("the news cards are kinda useless
 right now. collapse the two cards into one and have the top 3 starred
 repos of the month in the card instead"). With GitHub never read it keeps

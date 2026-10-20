@@ -67,6 +67,7 @@ import { createDucking } from '../core/music/ducking'
 import { createRememberedSongsStore } from './music/rememberedSongsStore'
 import { registerUsageIpc } from './usage/attachUsage'
 import { registerCalendarIpc } from './calendar/attachCalendar'
+import { CALENDAR_FIXTURE_ENV, createStandInCalendarSource } from './calendar/standInCalendar'
 import { registerNewsIpc } from './news/attachNews'
 import { attachScaleListener, type ScaleListener } from './scale/attachScale'
 import { createBluezScaleTransport } from './scale/bluezScale'
@@ -513,8 +514,10 @@ app.whenReady().then(async () => {
   registerTimerIpc(timer)
   registerNowPlayingIpc()
   // The Calendar (CONTEXT.md): no provider is wired yet, so it shows the
-  // month alone; a Google or Outlook source joins this list.
-  registerCalendarIpc([])
+  // month alone; a Google or Outlook source joins this list. The e2e's
+  // stand-in answers from a file when its env names one.
+  const calendarFixture = process.env[CALENDAR_FIXTURE_ENV]
+  registerCalendarIpc(calendarFixture ? [createStandInCalendarSource(calendarFixture)] : [])
   registerCommandRunnerIpc()
   registerSettingsIpc(settingsStore)
   registerUsageIpc(() => settingsStore.get().usageDashboard.url)

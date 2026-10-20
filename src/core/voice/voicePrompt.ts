@@ -34,6 +34,21 @@ export function partialSpans(text: string, terms: readonly string[]): PartialSpa
   return spans
 }
 
+/** The ear's real state, as the Voice Prompt says it (CONTEXT.md). */
+export type EarPhase = 'rest' | 'listening' | 'transcribing' | 'off'
+
+/**
+ * What the ear is doing: taking an Utterance, reading one it took, waiting
+ * for the wake word (at rest), or nothing at all — the microphone off.
+ * Before main has said, at rest.
+ */
+export function earPhase(voice: { listening: boolean; transcribing: boolean; monitoring: boolean } | null): EarPhase {
+  if (voice === null) return 'rest'
+  if (voice.transcribing) return 'transcribing'
+  if (voice.listening) return 'listening'
+  return voice.monitoring ? 'rest' : 'off'
+}
+
 /** What ends the Utterance being taken (#357): the turn check when the words are done, else the Pause cap of quiet, in seconds. */
 export function quietLine(pauseCapMs: number): string {
   return `ends when you finish — ${Number((pauseCapMs / 1000).toFixed(2))} s at most`

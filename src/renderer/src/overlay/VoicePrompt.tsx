@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { VoicePartialEvent, VoiceState } from '../../../core/voice/ipcChannels'
 import { PAUSE_CAP_MS_DEFAULT } from '../../../core/settings/settings'
-import { partialSpans, quietLine } from '../../../core/voice/voicePrompt'
+import { earPhase, partialSpans, quietLine } from '../../../core/voice/voicePrompt'
 import { VoiceWave } from '../AssistantPanel'
 import { useSettings } from '../useSettings'
 import { PromptBar } from './PromptBar'
@@ -35,10 +35,11 @@ function useVoiceFeed(): { state: VoiceState | null; partial: VoicePartialEvent 
 export function VoicePrompt({ runActive }: { runActive: boolean }) {
   const { state, partial } = useVoiceFeed()
   const { settings } = useSettings()
-  const phase = state?.transcribing === true ? 'transcribing' : state?.listening === true ? 'listening' : 'rest'
-  const words = phase === 'rest' ? '' : (partial?.text ?? '')
   // The ear's real state (CONTEXT.md): waiting for the wake word, or the microphone off — said, not hidden.
-  const earOff = state !== null && !state.monitoring
+  const ear = earPhase(state)
+  const phase = ear === 'off' ? 'rest' : ear
+  const earOff = ear === 'off'
+  const words = phase === 'rest' ? '' : (partial?.text ?? '')
   const placeholder =
     phase !== 'rest' ? quietLine(settings?.pauseCapMs ?? PAUSE_CAP_MS_DEFAULT) : runActive ? 'Type a command' : earOff ? 'Microphone off — type a command' : 'Say “Bing Bong” or type a command'
 

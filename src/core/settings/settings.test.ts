@@ -234,15 +234,15 @@ describe('news sources (#348)', () => {
   })
 
   it('adds the News card to Pinned Cards saved before it existed, but keeps it off once unpinned', () => {
-    expect(sanitizeSettings({ idleCards: ['calendar', 'weather'], body: {} }).idleCards).toEqual(['calendar', 'weather', 'news'])
-    expect(sanitizeSettings({ idleCards: ['calendar', 'weather'], news: { topics: [] }, body: {} }).idleCards).toEqual(['calendar', 'weather'])
+    expect(sanitizeSettings({ idleCards: ['calendar', 'weather'], body: {} }).idleCards).toEqual(['weather', 'calendar', 'news'])
+    expect(sanitizeSettings({ idleCards: ['calendar', 'weather'], news: { topics: [] }, body: {} }).idleCards).toEqual(['weather', 'calendar'])
   })
 
-  it('reads the default list from before the three-by-four grid as today’s default, the Last Page with it, and keeps any other order', () => {
+  it('reads the default list from before the three-by-four grid as today’s default, the Last Page with it, and any other list as the set it pins', () => {
     const today = ['weather', 'calendar', 'lastPage', 'weight', 'usage', 'news', 'music']
     expect(sanitizeSettings({ idleCards: ['weather', 'usage', 'calendar', 'music', 'news'], news: { topics: [] } }).idleCards).toEqual(today)
     expect(sanitizeSettings({ idleCards: ['weather', 'usage', 'calendar', 'music'] }).idleCards).toEqual(today)
-    expect(sanitizeSettings({ idleCards: ['usage', 'weather', 'calendar', 'music', 'news'], news: { topics: [] }, body: {} }).idleCards).toEqual(['usage', 'weather', 'calendar', 'music', 'news'])
+    expect(sanitizeSettings({ idleCards: ['usage', 'weather', 'calendar', 'music', 'news'], news: { topics: [] }, body: {} }).idleCards).toEqual(['weather', 'calendar', 'usage', 'news', 'music'])
   })
 })
 
@@ -265,9 +265,9 @@ describe('the Weight card and the Weight section (#350, #351)', () => {
 
   it('reads the default list from before the Weight card as today’s default, and adds the card to any other list saved before it', () => {
     expect(sanitizeSettings({ idleCards: ['weather', 'calendar', 'lastPage', 'news', 'usage', 'music'], news: { topics: [] } }).idleCards).toEqual(['weather', 'calendar', 'lastPage', 'weight', 'usage', 'news', 'music'])
-    expect(sanitizeSettings({ idleCards: ['news', 'weather'], news: { topics: [] } }).idleCards).toEqual(['news', 'weather', 'weight'])
-    expect(sanitizeSettings({ idleCards: ['news', 'weather'], news: { topics: [] }, body: {} }).idleCards).toEqual(['news', 'weather'])
-    expect(sanitizeSettings({ idleCards: ['news', 'weather'], news: { topics: [] }, weight: {} }).idleCards).toEqual(['news', 'weather'])
+    expect(sanitizeSettings({ idleCards: ['news', 'weather'], news: { topics: [] } }).idleCards).toEqual(['weather', 'weight', 'news'])
+    expect(sanitizeSettings({ idleCards: ['news', 'weather'], news: { topics: [] }, body: {} }).idleCards).toEqual(['weather', 'news'])
+    expect(sanitizeSettings({ idleCards: ['news', 'weather'], news: { topics: [] }, weight: {} }).idleCards).toEqual(['weather', 'news'])
   })
 
   it('gives #350’s Body Profile to Jaish on upgrade, with Barun added beside him', () => {

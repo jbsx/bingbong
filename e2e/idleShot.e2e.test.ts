@@ -8,24 +8,24 @@ import { startFixtureServer, type FixtureServer } from './fixtureServer'
 import { startHarness, type Harness } from './harness'
 import { cli } from './cliSupport'
 import { waitFor } from './waitFor'
-import { brotherWeighIns, standInWeighIns, TWO_PEOPLE, weighInsFile } from './weighIns'
+import { brotherWeighIns, standInWeighIns, STEPPING_ON, TWO_PEOPLE, weighInsFile } from './weighIns'
 
-// The Idle Screen's screenshot review (`pnpm shot:idle`): the screen at the
-// appliance's 1920×1080 with every card holding sample data — London's
-// weather fulfilled over CDP (the renderer fetches Open-Meteo itself), a
-// stand-in usage dashboard with BINGBONG_IDLE_SHOT_PROVIDERS providers
-// (default 3), and with BINGBONG_IDLE_SHOT_MUSIC=1 a song playing from the
-// YouTube stand-in so Now Playing takes the dock, then a Timer beside it —
-// shot in dark and light into BINGBONG_IDLE_SHOT_DIR (default a temp
-// folder, printed). The
-// News card's Top Repos are seeded as repos.json, read this hour so GitHub
-// is not asked — GitHub's month as it stood on 2026-10-19, GLM's summaries
-// as it wrote them that day, the third left with its description. It also
-// checks the bento (#352) — the clock's cell and each card's box, every
-// tile holding its words, nothing under 16 px — and the News card at 1×2
-// and 1×1 in dark and light. The Weight card (#350) reads two months of
-// stand-in Weigh-ins seeded as weighins.json, held to its box at 1×2.
-// Gated: BINGBONG_IDLE_SHOT=1, so the plain e2e run skips it.
+// The Idle Screen's screenshot review (`pnpm shot:idle`, #360): the screen at
+// the appliance's 1920×1080 in F1 Headline's three Columns, every card
+// holding sample data — London's weather fulfilled over CDP (the renderer
+// fetches Open-Meteo itself), a stand-in usage dashboard with
+// BINGBONG_IDLE_SHOT_PROVIDERS providers (default 3), the Top Repos seeded as
+// repos.json, two People's Weigh-ins, a Last Page, and the Calendar's
+// stand-in source (BINGBONG_CALENDAR_FIXTURE) empty until a state fills it.
+// With BINGBONG_IDLE_SHOT_MUSIC=1 a song plays from the YouTube stand-in so
+// Now Playing takes its Clock Line, then a Timer runs beside the clock. Each
+// state is shot into BINGBONG_IDLE_SHOT_DIR (default a temp folder,
+// printed) and held to the screen's rules: nothing overflows, no text under
+// 16 px, each card inside its home and each home inside its Column. The
+// states: the default in dark and light; the Calendar with events; a
+// ringing Timer; the weather unset; the Weigh-in pop-up live and settled;
+// each card hidden in turn; one Person; and no Weigh-ins. Gated:
+// BINGBONG_IDLE_SHOT=1, so the plain e2e run skips it.
 
 const PROVIDERS = ['Codex', 'Claude', 'Kaggle', 'GLM', 'Grok']
 
@@ -47,6 +47,7 @@ function topRepos() {
 }
 
 const HOUR = 3_600_000
+const DAY = 24 * HOUR
 
 function usagePayload(count: number, now: number) {
   const providers = PROVIDERS.slice(0, count).map((name, index) => ({
@@ -54,8 +55,14 @@ function usagePayload(count: number, now: number) {
     connected: true,
     plan: index === 1 ? 'Max 20x' : 'pro',
     windows: [
-      { key: '7d', label: '7-Day', usedPct: [14, 84, 41, 22, 63][index], resetAt: now + (index + 1) * 26 * HOUR },
-      ...(index === 1 ? [{ key: '7d-fable', label: '7-Day (Fable)', usedPct: 80, resetAt: now + 21 * HOUR }] : []),
+      // Claude's gauge runs ahead of its week (+5 ahead, as round 6 drew it); the others behind theirs.
+      { key: '7d', label: '7-Day', usedPct: [14, 10, 41, 22, 63][index], resetAt: now + [130, 159, 60, 100, 40][index] * HOUR },
+      ...(index === 1
+        ? [
+            { key: '7d-fable', label: '7-Day (Fable)', usedPct: 8, resetAt: now + 159 * HOUR },
+            { key: '5h', label: '5-Hour', usedPct: 2, resetAt: now + 107 * 60_000 },
+          ]
+        : []),
     ],
   }))
   const samples = Array.from({ length: 720 }, (_, step) => ({
@@ -68,43 +75,72 @@ function usagePayload(count: number, now: number) {
   return { usage: { updatedAt: now, providers }, history: { samples } }
 }
 
+/** London's forecast as Open-Meteo answers it, the hours from the current one, the city an hour ahead of UTC. */
 function forecast() {
   const day = (offset: number): string => {
-    const at = new Date(Date.now() + offset * 24 * HOUR)
+    const at = new Date(Date.now() + offset * DAY)
     return `${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, '0')}-${String(at.getDate()).padStart(2, '0')}`
   }
   const hours = Array.from({ length: 48 }, (_, hour) => `${day(hour < 24 ? 0 : 1)}T${String(hour % 24).padStart(2, '0')}:00`)
   const nowHour = new Date().getHours()
   return {
-    current: { time: `${day(0)}T${String(nowHour).padStart(2, '0')}:00`, temperature_2m: 11.2, weather_code: 61, is_day: 1 },
+    utc_offset_seconds: -new Date().getTimezoneOffset() * 60,
+    current: { time: `${day(0)}T${String(nowHour).padStart(2, '0')}:00`, temperature_2m: 12.2, weather_code: 55, is_day: 1 },
     daily: {
       time: [day(0), day(1), day(2), day(3)],
-      temperature_2m_max: [14.2, 13.1, 15.6, 12.4],
-      temperature_2m_min: [9.6, 7.8, 8.9, 6.2],
-      precipitation_probability_max: [69, 40, 10, 85],
-      sunrise: [`${day(0)}T07:31`, `${day(1)}T07:33`, `${day(2)}T07:35`, `${day(3)}T07:36`],
-      sunset: [`${day(0)}T17:58`, `${day(1)}T17:56`, `${day(2)}T17:54`, `${day(3)}T17:52`],
-      weather_code: [61, 3, 1, 63],
+      temperature_2m_max: [13.2, 12.1, 14.4, 13.4],
+      temperature_2m_min: [10.6, 7.8, 8.2, 6.9],
+      precipitation_probability_max: [97, 77, 85, 94],
+      sunrise: [`${day(0)}T07:32`, `${day(1)}T07:33`, `${day(2)}T07:35`, `${day(3)}T07:36`],
+      sunset: [`${day(0)}T17:56`, `${day(1)}T17:54`, `${day(2)}T17:52`, `${day(3)}T17:50`],
+      weather_code: [55, 53, 63, 63],
     },
     hourly: {
       time: hours,
-      temperature_2m: hours.map((_, hour) => 9 + Math.round(4 * Math.sin((hour - 9) / 4))),
-      weather_code: hours.map((_, hour) => [61, 61, 3, 3, 2, 1][hour % 6]),
-      precipitation_probability: hours.map((_, hour) => [69, 56, 34, 10, 0, 0][hour % 6]),
+      temperature_2m: hours.map((_, hour) => 11 + Math.round(2 * Math.sin((hour - 9) / 4))),
+      weather_code: hours.map(() => 53),
+      precipitation_probability: hours.map((_, hour) => [73, 80, 88, 94, 97, 97][hour % 6]),
       is_day: hours.map((_, hour) => (hour % 24 >= 8 && hour % 24 < 18 ? 1 : 0)),
     },
   }
 }
 
-describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review', () => {
+/** This month's entries for the Calendar's stand-in source: a dinner tonight, a trip later in the month, a call next week. */
+function calendarEvents() {
+  const at = (days: number, hour: number): number => {
+    const now = new Date()
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate() + days, hour).getTime()
+  }
+  const event = (id: string, title: string, start: number, end: number, allDay = false) => ({ id, source: 'stand-in', title, start, end, allDay })
+  return {
+    events: [
+      event('dinner', 'Dinner with Barun', at(0, 23), at(0, 24)),
+      event('call', 'Call the landlord about the boiler', at(3, 10), at(3, 11)),
+      event('trip', 'Edinburgh', at(5, 0), at(7, 0), true),
+    ],
+  }
+}
+
+/** What the screen is held to in every state. */
+interface Geometry {
+  overflowing: string[]
+  smallestText: number
+  homes: Record<string, string>
+  lines: string[]
+  rings: number
+}
+
+describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review (#360)', () => {
   let harness: Harness
   let server: Server
   let userDataDir: string
   let session: string
   let fixture: FixtureServer | undefined
+  const weatherCity = 'London'
   const music = process.env.BINGBONG_IDLE_SHOT_MUSIC === '1'
   const outDir = process.env.BINGBONG_IDLE_SHOT_DIR ?? join(tmpdir(), 'bingbong-idle-shot')
   const count = Math.min(PROVIDERS.length, Math.max(1, Number(process.env.BINGBONG_IDLE_SHOT_PROVIDERS ?? 3)))
+  const calendarFile = (): string => join(userDataDir, 'calendar.json')
 
   beforeAll(async () => {
     server = createServer((request, response) => {
@@ -118,12 +154,15 @@ describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review'
     userDataDir = await mkdtemp(join(tmpdir(), 'bingbong-e2e-idle-shot-'))
     await writeFile(
       join(userDataDir, 'settings.json'),
-      JSON.stringify({ weather: { city: 'London', units: 'metric' }, usageDashboard: { url: `http://127.0.0.1:${port}`, providers: PROVIDERS.slice(0, count) }, weight: TWO_PEOPLE }),
+      JSON.stringify({ weather: { city: weatherCity, units: 'metric' }, usageDashboard: { url: `http://127.0.0.1:${port}`, providers: PROVIDERS.slice(0, count) }, weight: TWO_PEOPLE }),
       'utf8',
     )
     await writeFile(join(userDataDir, 'repos.json'), `${JSON.stringify(topRepos())}\n`, 'utf8')
     await writeFile(join(userDataDir, 'weighins.json'), weighInsFile([...standInWeighIns(), ...brotherWeighIns()]), 'utf8')
-    await writeFile(join(userDataDir, 'last-page.json'), `${JSON.stringify({ url: 'https://duckduckgo.com/?q=weather+in+london', title: 'weather in London at DuckDuckGo', at: 1 })}\n`, 'utf8')
+    await writeFile(join(userDataDir, 'last-page.json'), `${JSON.stringify({ url: 'http://127.0.0.1:40415/lighthouse', title: 'The lighthouse', at: 1 })}\n`, 'utf8')
+    await writeFile(calendarFile(), JSON.stringify({ events: [] }), 'utf8')
+    // A wake ear that never fires, so the Voice Prompt waits for "Bing Bong" as the appliance does.
+    const ear = { BINGBONG_WAKE_ENGINE: 'node', BINGBONG_WAKE_SCRIPT: '[0.01]', BINGBONG_VAD_SCRIPT: '[0.01]', BINGBONG_STT_SCRIPT: '[]', BINGBONG_CALENDAR_FIXTURE: calendarFile() }
     if (music) {
       fixture = await startFixtureServer()
       harness = await startHarness({
@@ -132,18 +171,18 @@ describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review'
         wakeFromBootIdle: false,
         launchArgs: ['--browser-cli', '--mute-audio'],
         pipeStdio: true,
-        env: { BINGBONG_YOUTUBE_FIXTURE: new URL(fixture.url('/')).origin },
+        env: { ...ear, BINGBONG_YOUTUBE_FIXTURE: new URL(fixture.url('/')).origin },
       })
       await harness.waitForCliOutput(/bingbong browser harness/)
     } else {
-      harness = await startHarness({ userDataDir, wakeFromBootIdle: false })
+      harness = await startHarness({ userDataDir, wakeFromBootIdle: false, launchArgs: ['--mute-audio'], env: ear })
     }
 
     const { sessionId } = await harness.cdp.send<{ sessionId: string }>('Target.attachToTarget', { targetId: harness.dashboardTargetId(), flatten: true })
     session = sessionId
     harness.cdp.on('Fetch.requestPaused', (params) => {
       const { requestId, request } = params as { requestId: string; request: { url: string } }
-      const body = request.url.includes('geocoding') ? { results: [{ name: 'London', latitude: 51.5, longitude: -0.12 }] } : forecast()
+      const body = request.url.includes('geocoding') ? { results: [{ name: weatherCity, latitude: 51.5, longitude: -0.12 }] } : forecast()
       void harness.cdp.send(
         'Fetch.fulfillRequest',
         {
@@ -162,16 +201,17 @@ describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review'
     await harness.cdp.send('Emulation.setDeviceMetricsOverride', { width: 1920, height: 1080, deviceScaleFactor: 1, mobile: false }, session)
     await harness.cdp.send('Page.reload', {}, session)
     await waitFor(
-      async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('.wx-card') && !!document.querySelector('.usage-card') && !!document.querySelector('.idle-news') && !!document.querySelector('.weight-card')`)) ? true : undefined),
+      async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('.wx-card') && !!document.querySelector('.usage-card') && !!document.querySelector('.idle-repo') && !!document.querySelector('.weight-card')`)) ? true : undefined),
       { timeoutMs: 20000, intervalMs: 250 },
     )
     if (music) {
       await cli(harness, 'play fixture song', /^(playing: id=|No videos|.*can't be played|YouTube didn't|error:)/)
-      await waitFor(async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('.idle-dock .idle-music')`)) ? true : undefined), {
+      await waitFor(async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('.idle-lines .idle-music')`)) ? true : undefined), {
         timeoutMs: 15000,
         intervalMs: 250,
       })
     }
+    await mkdir(outDir, { recursive: true })
   })
 
   afterAll(async () => {
@@ -179,221 +219,174 @@ describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review'
     await fixture?.close().catch(() => {})
     await new Promise((resolve) => server?.close(resolve))
     await rm(userDataDir, { recursive: true, force: true }).catch(() => {})
-  })
-
-  it('lays the cards out as the bento at 1920×1080, every tile holding its words, nothing under 16 px', async () => {
-    const geometry = await screenGeometry()
-    expect(geometry.overflowing).toEqual([])
-    expect(geometry.smallestText).toBeGreaterThanOrEqual(16)
-    // The clock bare in the top-left cell; weather down the left, the Calendar and the Last Page over the usage in the middle, and the
-    // Weight card of two People down the right over News — its column of three keeps each chart a readable height (owner ruling 2026-10-19).
-    expect(geometry.clock).toBe('1|1')
-    expect(geometry.slots).toEqual({
-      weather: '1 / span 1|2 / span 3',
-      calendar: '2 / span 1|1 / span 1',
-      lastPage: '2 / span 1|2 / span 1',
-      weight: '3 / span 1|1 / span 3',
-      usage: '2 / span 1|3 / span 2',
-      news: '3 / span 1|4 / span 1',
-    })
-    expect(geometry.dock).toBe(music)
-    // Every provider's gauge a ring, and with two providers Claude's other window one too; with more, it is a bar under Claude.
-    expect(geometry.rings).toBe(count <= 2 ? count + 1 : count)
-    expect(geometry.bars).toBe(count <= 2 ? 0 : 1)
-    expect(geometry.glow).toBe('rain')
-  })
-
-  it('shoots the screen in dark and light', async () => {
-    await mkdir(outDir, { recursive: true })
-    for (const scheme of ['dark', 'light']) {
-      await harness.cdp.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, session)
-      await new Promise((resolve) => setTimeout(resolve, 600))
-      await shoot(`idle-${count}${music ? '-music' : ''}-${scheme}.png`)
-    }
     process.stdout.write(`idle screen shots in ${outDir}\n`)
   })
 
-  it.runIf(music)('docks a running Timer beside Now Playing, the grid rows giving it room', async () => {
-    await harness.dashboardEval(`window.bingbong.assistant.submit('timer 25 minutes')`)
-    await harness.pressKey('pane', { key: 'L', code: 'KeyL', windowsVirtualKeyCode: 76, modifiers: 2 /* Ctrl */ | 8 /* Shift */ })
-    await waitFor(async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('.idle-dock .idle-timer') && !!document.querySelector('.idle-dock .idle-music')`)) ? true : undefined), {
-      timeoutMs: 10000,
-      intervalMs: 250,
-    })
-    await new Promise((resolve) => setTimeout(resolve, 600))
+  it('lays the cards out in their Columns at 1920×1080, every card holding its words, nothing under 16 px, in dark and light', async () => {
     const geometry = await screenGeometry()
     expect(geometry.overflowing).toEqual([])
     expect(geometry.smallestText).toBeGreaterThanOrEqual(16)
-    for (const scheme of ['dark', 'light']) {
-      await harness.cdp.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, session)
-      await new Promise((resolve) => setTimeout(resolve, 600))
-      await shoot(`idle-${count}-music-timer-${scheme}.png`)
-    }
+    // Weather down the left; the AI Usage under the clock; the Calendar, the Weight card and News down the right.
+    expect(geometry.homes).toEqual({ weather: 'left full', usage: 'middle full', calendar: 'right full', weight: 'right full', news: 'right full' })
+    expect(geometry.lines).toEqual(music ? ['voice', 'nowPlaying', 'lastPage'] : ['voice', 'lastPage'])
+    expect(geometry.rings).toBe(count)
+    expect(await text('.idle-voice')).toBe('Say “Bing Bong” or start typing')
+    expect(await text('.wx-peak')).toMatch(/^97%rainby \d\d:\d\d$/)
+    expect(await text('.usage-ring-pace')).toBe('+5 ahead')
+    expect(await text('.idle-news-head')).toBe('Top repos ★ this month')
+    for (const scheme of ['dark', 'light'] as const) await shoot(`idle-${count}${music ? '-music' : ''}`, scheme)
   })
 
-  it('holds the News card’s Top Repos to its box at 1×2 and 1×1, in dark and light', async () => {
-    await mkdir(outDir, { recursive: true })
-    const defaults = await harness.dashboardEval<string[]>(`window.bingbong.settings.get().then((s) => s.idleCards)`)
-    // Without the Weight card News takes two cells; the default, with two People weighed, leaves it the right column's last one.
-    const orders: [string, string[]][] = [
-      ['1x2', defaults.filter((id) => id !== 'weight')],
-      ['1x1', defaults],
-    ]
+  it('lists the month’s entries under the weeks while the Calendar has any, a dot under their days', async () => {
+    await writeFile(calendarFile(), JSON.stringify(calendarEvents()), 'utf8')
+    await reenterIdle()
+    await waitFor(async () => ((await harness.dashboardEval<number>(`document.querySelectorAll('.idle-cal-entry').length`)) === 3 ? true : undefined), { timeoutMs: 10000, intervalMs: 250 })
+    await held('calendar-events')
+    expect(await harness.dashboardEval<number>(`document.querySelectorAll('.idle-cal-dot').length`)).toBeGreaterThanOrEqual(2)
+    expect(await text('.idle-lines')).toContain('Dinner with Barun')
+    await writeFile(calendarFile(), JSON.stringify({ events: [] }), 'utf8')
+    await reenterIdle()
+  })
+
+  it.runIf(music)('runs a Timer beside the clock with Now Playing still in its line', async () => {
+    await harness.dashboardEval(`window.bingbong.assistant.submit('timer 25 minutes')`)
+    await reenterIdle()
+    await waitFor(async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('.idle-timer') && !!document.querySelector('.idle-lines .idle-music')`)) ? true : undefined), { timeoutMs: 10000, intervalMs: 250 })
+    expect(await text('.idle-timer-sub')).toMatch(/^Timer 25 minutes· ends \d\d:\d\d$/)
+    for (const scheme of ['dark', 'light'] as const) await held(`idle-${count}-music-timer`, scheme)
+    await harness.dashboardEval(`window.bingbong.assistant.submit('timer off')`)
+  })
+
+  it('pulses "Time’s up" in the Timer Clock while it rings', async () => {
+    await harness.dashboardEval(`window.bingbong.assistant.submit('timer 1 second')`)
+    await reenterIdle()
+    await waitFor(async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('.idle-timer--ringing')`)) ? true : undefined), { timeoutMs: 10000, intervalMs: 100 })
+    expect(await text('.idle-timer--ringing .idle-timer-left')).toBe('Time’s up')
+    await held('timer-ringing')
+    await harness.dashboardEval(`window.bingbong.assistant.submit('timer off')`)
+    await waitFor(async () => ((await harness.dashboardEval<boolean>(`!document.querySelector('.idle-timer')`)) ? true : undefined), { timeoutMs: 10000, intervalMs: 100 })
+  })
+
+  it('shows the Weigh-in pop-up in the AI Usage chart’s place, live then settled', async () => {
+    await writeFile(join(userDataDir, 'scale-frames.txt'), STEPPING_ON, 'utf8')
+    await waitFor(async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('.idle-popup-place .weighin-popup--live')`)) ? true : undefined), { timeoutMs: 15000, intervalMs: 50 })
+    await shoot('weighin-live')
+    await waitFor(async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('.idle-popup-place .weighin-popup--settled')`)) ? true : undefined), { timeoutMs: 15000, intervalMs: 50 })
+    await held('weighin-settled')
+    const place = await harness.dashboardEval<{ chart: number; popup: number }>(`({ chart: document.querySelector('.usage-chart').getBoundingClientRect().bottom, popup: document.querySelector('.idle-popup-place').getBoundingClientRect().bottom })`)
+    expect(Math.abs(place.popup - place.chart)).toBeLessThanOrEqual(1)
+    await waitFor(async () => ((await harness.dashboardEval<boolean>(`!document.querySelector('.weighin-popup')`)) ? true : undefined), { timeoutMs: 20000, intervalMs: 250 })
+  })
+
+  it('hides each card in turn, its Column-mates taking its room', async () => {
+    const all = await harness.dashboardEval<string[]>(`window.bingbong.settings.get().then((s) => s.idleCards)`)
     try {
-      for (const [size, order] of orders) {
-        await pin(order)
-        await waitFor(async () => ((await harness.dashboardEval<string>(`document.querySelector('.idle-slot[data-card="news"]')?.style.gridRow.split(' / ')[1] ?? ''`)) === `span ${size.slice(-1)}` ? true : undefined), {
+      for (const hidden of ['weather', 'calendar', 'weight', 'usage', 'news', 'lastPage', 'music']) {
+        if (hidden === 'music' && !music) continue
+        await pin(all.filter((id) => id !== hidden))
+        await waitFor(async () => ((await harness.dashboardEval<boolean>(`!document.querySelector('.idle-home[data-card="${hidden}"]') && ${hidden === 'lastPage' ? `!document.querySelector('.idle-last-page')` : hidden === 'music' ? `!document.querySelector('.idle-music')` : 'true'}`)) ? true : undefined), {
           timeoutMs: 5000,
           intervalMs: 100,
         })
-        for (const scheme of ['dark', 'light']) {
-          await harness.cdp.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, session)
-          await new Promise((resolve) => setTimeout(resolve, 400))
-          const box = await newsBox()
-          const { data } = await harness.cdp.send<{ data: string }>('Page.captureScreenshot', { format: 'png', clip: { x: box.x, y: box.y, width: box.width, height: box.height, scale: 1 } }, session)
-          await writeFile(join(outDir, `news-${size}-${scheme}.png`), Buffer.from(data, 'base64'))
-          expect(box.overflowing, `${size} ${scheme}`).toEqual([])
-          expect(box.items, `${size} ${scheme}`).toBeGreaterThanOrEqual(size === '1x2' ? 3 : 1)
-          expect(box.smallestText, `${size} ${scheme}`).toBeGreaterThanOrEqual(16)
-          expect(box.text).toContain('VoiceStudio')
-          expect(box.text).toContain('★ 77.3k')
+        await held(`hidden-${hidden}`)
+        if (['calendar', 'weight', 'news'].includes(hidden)) {
+          // The right Column's cards still fill its height.
+          const filled = await harness.dashboardEval<number>(`[...document.querySelectorAll('.idle-col--right .idle-home')].reduce((sum, home) => sum + home.getBoundingClientRect().height, 0)`)
+          expect(filled, `hidden ${hidden}`).toBeGreaterThan(960)
         }
       }
     } finally {
-      await pin(defaults)
+      await pin(all)
     }
   })
 
-  it('holds the Weight card, a row per Person, to its box at 1×3, in dark and light (#350, #351)', async () => {
-    await mkdir(outDir, { recursive: true })
-    const defaults = await harness.dashboardEval<string[]>(`window.bingbong.settings.get().then((s) => s.idleCards)`)
-    // Two People weighed: the default gives it a column of three, so each one's chart keeps a readable height.
-    const orders: [string, string[]][] = [['1x3', defaults]]
+  it('says what to do with the weather unset', async () => {
+    await harness.dashboardEval(`window.bingbong.settings.get().then((s) => window.bingbong.settings.update({ ...s, weather: { ...s.weather, city: '' } }))`)
     try {
-      for (const [size, order] of orders) {
-        await pin(order)
-        await waitFor(async () => ((await harness.dashboardEval<string>(`(() => { const s = document.querySelector('.idle-slot[data-card="weight"]').style; return s.gridColumn.split(' / ')[1].replace('span ', '') + 'x' + s.gridRow.split(' / ')[1].replace('span ', '') })()`)) === size ? true : undefined), {
-          timeoutMs: 5000,
-          intervalMs: 100,
-        })
-        for (const scheme of ['dark', 'light']) {
-          await harness.cdp.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, session)
-          await new Promise((resolve) => setTimeout(resolve, 400))
-          const box = await harness.dashboardEval<{ overflowing: string[]; smallestText: number; text: string; x: number; y: number; width: number; height: number }>(`(() => {
-            const card = document.querySelector('.idle-slot[data-card="weight"] .weight-card')
-            const slot = card.closest('.idle-slot').getBoundingClientRect()
-            const overflowing = []
-            for (const tile of card.querySelectorAll('.idle-card')) {
-              const rect = tile.getBoundingClientRect()
-              if (tile.scrollHeight > tile.clientHeight + 1 || tile.scrollWidth > tile.clientWidth + 1) overflowing.push(tile.className + ' ' + tile.scrollHeight + '>' + tile.clientHeight)
-              if (rect.bottom > slot.bottom + 1 || rect.right > slot.right + 1) overflowing.push(tile.className + ' out of its slot')
-              for (const child of tile.children) {
-                const inner = child.getBoundingClientRect()
-                if (inner.bottom > rect.bottom + 1 || inner.right > rect.right + 1) overflowing.push(child.className + ' cut')
-              }
-            }
-            for (const plot of card.querySelectorAll('.weight-chart-area')) if (plot.getBoundingClientRect().height < 60) overflowing.push('line collapsed')
-            const texts = [...card.querySelectorAll('*')].filter((el) => el.checkVisibility() && [...el.childNodes].some((node) => node.nodeType === 3 && node.textContent.trim() !== ''))
-            return { overflowing, smallestText: Math.min(...texts.map((el) => parseFloat(getComputedStyle(el).fontSize))), text: card.textContent, x: slot.x, y: slot.y, width: slot.width, height: slot.height }
-          })()`)
-          const { data } = await harness.cdp.send<{ data: string }>('Page.captureScreenshot', { format: 'png', clip: { x: box.x, y: box.y, width: box.width, height: box.height, scale: 1 } }, session)
-          await writeFile(join(outDir, `weight-${size}-${scheme}.png`), Buffer.from(data, 'base64'))
-          expect(box.overflowing, `${size} ${scheme}`).toEqual([])
-          expect(box.smallestText, `${size} ${scheme}`).toBeGreaterThanOrEqual(16)
-          expect(box.text).toContain('81.25')
-          expect(box.text).toContain('Jaish')
-          expect(box.text).toContain('Barun')
-          expect(box.text).toMatch(/kg since the last Weigh-in/)
-          if (size === '1x2') expect(box.text).toMatch(/Body fat \d+\.\d%/)
-        }
-      }
+      await waitFor(async () => ((await text('.idle-home[data-card="weather"]')) === 'Set a weather city in settings' ? true : undefined), { timeoutMs: 5000, intervalMs: 100 })
+      await held('weather-unset')
     } finally {
-      await pin(defaults)
+      await harness.dashboardEval(`window.bingbong.settings.get().then((s) => window.bingbong.settings.update({ ...s, weather: { ...s.weather, city: 'London' } }))`)
+      await waitFor(async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('.wx-card')`)) ? true : undefined), { timeoutMs: 10000, intervalMs: 100 })
     }
   })
 
-  async function shoot(name: string): Promise<void> {
-    const { data } = await harness.cdp.send<{ data: string }>('Page.captureScreenshot', { format: 'png', clip: { x: 0, y: 0, width: 1920, height: 1080, scale: 1 } }, session)
-    await writeFile(join(outDir, name), Buffer.from(data, 'base64'))
+  it('draws one Person larger, then the note with no Weigh-ins', async () => {
+    await harness.dashboardEval(`window.bingbong.settings.get().then((s) => window.bingbong.settings.update({ ...s, weight: { ...s.weight, card: { ...s.weight.card, hidden: ['barun'] } } }))`)
+    await waitFor(async () => ((await harness.dashboardEval<number>(`document.querySelectorAll('.weight-card-row').length`)) === 1 ? true : undefined), { timeoutMs: 5000, intervalMs: 100 })
+    await held('one-person')
+    await harness.dashboardEval(`window.bingbong.weight.list().then(async (all) => { for (const weighIn of all) await window.bingbong.weight.remove(weighIn.at) })`)
+    await waitFor(async () => ((await text('.idle-home[data-card="weight"]')) === 'Step on the scale' ? true : undefined), { timeoutMs: 5000, intervalMs: 100 })
+    await held('no-weighins')
+  })
+
+  async function text(selector: string): Promise<string> {
+    return harness.dashboardEval<string>(`document.querySelector(${JSON.stringify(selector)})?.textContent ?? ''`)
   }
 
-  /** The owner's pinned cards set as the settings page would, the screen re-laid out from them. */
+  /** Wakes the dashboard and brings the Idle Screen back, so it mounts afresh and asks again (the Calendar's events, the Timer). */
+  async function reenterIdle(): Promise<void> {
+    await harness.clickDashboardElement('.idle-date')
+    await waitFor(async () => ((await harness.dashboardEval<boolean>(`!document.querySelector('.idle-screen')`)) ? true : undefined), { timeoutMs: 10000, intervalMs: 100 })
+    await harness.pressKey('pane', { key: 'L', code: 'KeyL', windowsVirtualKeyCode: 76, modifiers: 2 /* Ctrl */ | 8 /* Shift */ })
+    await waitFor(async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('.idle-screen')`)) ? true : undefined), { timeoutMs: 10000, intervalMs: 100 })
+    await new Promise((resolve) => setTimeout(resolve, 600))
+  }
+
+  /** A state shot, held to the screen's rules. */
+  async function held(name: string, scheme: 'dark' | 'light' = 'dark'): Promise<void> {
+    await shoot(name, scheme)
+    const geometry = await screenGeometry()
+    expect(geometry.overflowing, `${name} ${scheme}`).toEqual([])
+    expect(geometry.smallestText, `${name} ${scheme}`).toBeGreaterThanOrEqual(16)
+  }
+
+  async function shoot(name: string, scheme: 'dark' | 'light' = 'dark'): Promise<void> {
+    await harness.cdp.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, session)
+    await new Promise((resolve) => setTimeout(resolve, 500))
+    const { data } = await harness.cdp.send<{ data: string }>('Page.captureScreenshot', { format: 'png', clip: { x: 0, y: 0, width: 1920, height: 1080, scale: 1 } }, session)
+    await writeFile(join(outDir, `${name}-${scheme}.png`), Buffer.from(data, 'base64'))
+    if (scheme === 'light') await harness.cdp.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'dark' }] }, session)
+  }
+
+  /** The owner's Pinned Cards set as the settings page would. */
   async function pin(cards: string[]): Promise<void> {
     await harness.dashboardEval(`window.bingbong.settings.get().then((s) => window.bingbong.settings.update({ ...s, idleCards: ${JSON.stringify(cards)} }))`)
   }
 
-  /** The whole screen: where each card landed, every tile that cuts what it holds or leaves the canvas, the smallest text, the rings and bars, the glow. */
+  /** The whole screen: every card or line that cuts what it holds, any card out of its home or home out of its Column, the smallest text, each home's Column and form, the Clock Lines, the rings. */
   function screenGeometry() {
-    return harness.dashboardEval<{
-      overflowing: string[]
-      smallestText: number
-      clock: string
-      slots: Record<string, string>
-      dock: boolean
-      rings: number
-      bars: number
-      glow: string | null
-    }>(`(() => {
+    return harness.dashboardEval<Geometry>(`(() => {
       const screen = document.querySelector('.idle-screen').getBoundingClientRect()
-      const tiles = [...document.querySelectorAll('.idle-screen .idle-card, .idle-screen .idle-tile--bare')]
       const overflowing = []
-      for (const tile of tiles) {
-        const name = (tile.closest('.idle-slot')?.dataset.card ?? 'dock') + ' ' + tile.className
-        const rect = tile.getBoundingClientRect()
-        if (tile.scrollHeight > tile.clientHeight + 1 || tile.scrollWidth > tile.clientWidth + 1) overflowing.push(name + ' ' + tile.scrollHeight + '>' + tile.clientHeight)
-        if (rect.right > screen.right + 1 || rect.bottom > screen.bottom + 1) overflowing.push(name + ' off the canvas')
-        const slot = tile.closest('.idle-slot')?.getBoundingClientRect()
-        if (slot && (rect.bottom > slot.bottom + 1 || rect.right > slot.right + 1)) overflowing.push(name + ' out of its slot')
+      const within = (inner, outer) => inner.top >= outer.top - 1 && inner.left >= outer.left - 1 && inner.bottom <= outer.bottom + 1 && inner.right <= outer.right + 1
+      for (const box of document.querySelectorAll('.idle-screen .idle-card, .idle-screen .idle-line, .idle-clock-row, .wx-band')) {
+        const name = (box.closest('.idle-home')?.dataset.card ?? 'middle') + ' ' + box.className
+        if (box.scrollHeight > box.clientHeight + 1 || box.scrollWidth > box.clientWidth + 1) overflowing.push(name + ' ' + box.scrollWidth + 'x' + box.scrollHeight + '>' + box.clientWidth + 'x' + box.clientHeight)
+        if (!within(box.getBoundingClientRect(), screen)) overflowing.push(name + ' off the canvas')
+        const home = box.closest('.idle-home')
+        if (home && !within(box.getBoundingClientRect(), home.getBoundingClientRect())) overflowing.push(name + ' out of its home')
       }
-      for (const words of document.querySelectorAll('.usage-ring-item')) {
-        const tile = words.closest('.idle-card').getBoundingClientRect()
-        const rect = words.getBoundingClientRect()
-        if (rect.bottom > tile.bottom + 1 || rect.right > tile.right + 1) overflowing.push('ring ' + words.getAttribute('aria-label'))
-        const ring = words.querySelector('.usage-ring').getBoundingClientRect()
-        if (Math.min(ring.width, ring.height) < 72) overflowing.push('ring squeezed ' + words.getAttribute('aria-label'))
+      for (const home of document.querySelectorAll('.idle-home')) {
+        if (!within(home.getBoundingClientRect(), home.closest('.idle-col').getBoundingClientRect())) overflowing.push(home.dataset.card + ' out of its Column')
       }
-      // The chart's plot fills the room under its head: a collapsed plot draws its lines nowhere.
-      for (const plot of document.querySelectorAll('.usage-chart-area')) {
-        if (plot.getBoundingClientRect().height < 60) overflowing.push('usage chart plot collapsed ' + plot.getBoundingClientRect().height)
+      const lines = document.querySelector('.idle-lines').getBoundingClientRect()
+      const usage = document.querySelector('.idle-home[data-card="usage"]')
+      if (usage && usage.getBoundingClientRect().top < lines.bottom - 1) overflowing.push('usage under the Clock Lines')
+      for (const item of document.querySelectorAll('.usage-ring-item')) {
+        const card = item.closest('.idle-card').getBoundingClientRect()
+        if (!within(item.getBoundingClientRect(), card)) overflowing.push('ring ' + item.getAttribute('aria-label'))
+      }
+      for (const plot of document.querySelectorAll('.usage-chart-area, .weight-chart-area')) {
+        if (plot.getBoundingClientRect().height < 50) overflowing.push(plot.className + ' collapsed ' + plot.getBoundingClientRect().height)
       }
       const texts = [...document.querySelectorAll('.idle-screen *')].filter((el) => el.checkVisibility() && [...el.childNodes].some((node) => node.nodeType === 3 && node.textContent.trim() !== ''))
-      const clock = document.querySelector('.idle-clock-tile')
-      const clockStyle = getComputedStyle(clock)
       return {
         overflowing,
         smallestText: Math.min(...texts.map((el) => parseFloat(getComputedStyle(el).fontSize))),
-        clock: clockStyle.gridColumn + '|' + clockStyle.gridRow,
-        slots: Object.fromEntries([...document.querySelectorAll('.idle-slot')].map((slot) => [slot.dataset.card, slot.style.gridColumn + '|' + slot.style.gridRow])),
-        dock: !!document.querySelector('.idle-dock'),
+        homes: Object.fromEntries([...document.querySelectorAll('.idle-home')].map((home) => [home.dataset.card, home.closest('.idle-col').className.replace(/.*idle-col--/, '') + ' ' + home.dataset.form])),
+        lines: document.querySelector('.idle-lines').dataset.lines.split(' '),
         rings: document.querySelectorAll('.usage-ring-item').length,
-        bars: document.querySelectorAll('.usage-bar').length,
-        glow: document.querySelector('.idle-screen').dataset.glow ?? null,
-      }
-    })()`)
-  }
-
-  /** The News card's box: what overflows or is cut, the rows shown, the smallest text on it, and its words. */
-  function newsBox() {
-    return harness.dashboardEval<{ overflowing: string[]; items: number; smallestText: number; text: string; width: number; height: number; x: number; y: number }>(`(() => {
-      const card = document.querySelector('.idle-slot[data-card="news"] .idle-news')
-      const rect = card.getBoundingClientRect()
-      const overflowing = []
-      if (card.scrollHeight > card.clientHeight + 1 || card.scrollWidth > card.clientWidth + 1) overflowing.push(card.className)
-      const rows = card.querySelector('ol')
-      const shown = [...rows.children].filter((row) => !row.hidden)
-      for (const row of shown) {
-        if (row.getBoundingClientRect().bottom > rows.getBoundingClientRect().bottom + 1) overflowing.push('repo row cut')
-        const name = row.querySelector('.idle-repo-name')
-        if (name.scrollWidth > name.clientWidth + 1) overflowing.push('repo name cut')
-        if (row.querySelector('.idle-repo-stars').getBoundingClientRect().right > rect.right + 1) overflowing.push('stars off the card')
-      }
-      const texts = [...card.querySelectorAll('*')].filter((el) => el.checkVisibility() && [...el.childNodes].some((node) => node.nodeType === 3 && node.textContent.trim() !== ''))
-      return {
-        overflowing,
-        items: shown.length,
-        smallestText: Math.min(...texts.map((el) => parseFloat(getComputedStyle(el).fontSize))),
-        text: shown.map((row) => row.textContent).join(' '),
-        width: rect.width, height: rect.height, x: rect.x, y: rect.y,
       }
     })()`)
   }

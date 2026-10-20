@@ -3,7 +3,7 @@ import type { AppSettings } from '../../core/settings/settings'
 import { PAUSE_CAP_MS_MAX, PAUSE_CAP_MS_MIN, HOT_LISTEN_SILENCE_MS_MAX, HOT_LISTEN_SILENCE_MS_MIN, RESUMPTION_MERGE_MS_MAX, RESUMPTION_MERGE_MS_MIN, WEB_ZOOM_PERCENT_MAX, WEB_ZOOM_PERCENT_MIN, WAKE_WORD_THRESHOLD_MAX, WAKE_WORD_THRESHOLD_MIN, asAppearance, asSttModel } from '../../core/settings/settings'
 import { DEFAULT_PIPER_VOICE } from '../../core/tts/piperVoices'
 import { UsageMetricsSettings } from './UsageSettings'
-import { IDLE_CARD_IDS, type IdleCardId } from '../../core/idle/slots'
+import { IDLE_CARD_IDS, sanitizeIdleCards, type IdleCardId } from '../../core/idle/columns'
 import type { ScaleStatus } from '../../core/scale/ipcChannels'
 import type { BodyProfile } from '../../core/scale/bodyComposition'
 import { JAISH, weighInsOf, type Person } from '../../core/scale/people'
@@ -286,61 +286,40 @@ function LearnedTermsSection() {
 
 const IDLE_CARD_NAMES: Record<IdleCardId, string> = { weather: 'Weather', usage: 'AI usage', calendar: 'Calendar', lastPage: 'Last Page', music: 'Now Playing', news: 'News', weight: 'Weight' }
 
+/** Where each card lives on the Idle Screen, as the Cards section names it. */
+const IDLE_CARD_HOMES: Record<IdleCardId, string> = {
+  weather: 'down the left',
+  calendar: 'top right',
+  lastPage: 'a line under the clock',
+  weight: 'right, under the Calendar',
+  usage: 'middle, under the clock',
+  news: 'bottom right',
+  music: 'a line under the clock',
+}
+
 /**
- * The Idle Screen's pinned cards (core/idle/slots): a checkbox shows a card,
- * the arrows move a shown one earlier or later in the order the screen
- * reads. The cards not shown follow, in the default order. Now Playing is
- * a chip in the dock, under every card: it is shown or not, never moved.
+ * The Idle Screen's Pinned Cards (core/idle/columns): a checkbox shows a
+ * card or hides it. Every card has its home in a Column, so there is no
+ * order to choose; a hidden card's Column-mates take its room.
  */
 function IdleCardsSection({ cards, onChange }: { cards: readonly IdleCardId[]; onChange: (cards: IdleCardId[]) => void }) {
-  const docked = (id: IdleCardId): boolean => id === 'music'
-  const ordered = cards.filter((id) => !docked(id))
-  const rows = [...ordered, ...IDLE_CARD_IDS.filter((id) => !cards.includes(id) && !docked(id)), ...IDLE_CARD_IDS.filter(docked)]
-  const move = (index: number, by: number): void => {
-    const next = [...ordered]
-    const [id] = next.splice(index, 1)
-    next.splice(index + by, 0, id)
-    onChange([...next, ...cards.filter(docked)])
-  }
-  const shownCount = cards.filter((id) => !docked(id)).length
   return (
-    <Section id="idle screen cards" title="Cards" hint={`${shownCount} of ${IDLE_CARD_IDS.filter((id) => !docked(id)).length} shown${cards.includes('music') ? ', and Now Playing' : ''}`}>
-      {rows.map((id) => {
-        const index = ordered.indexOf(id)
-        const shown = cards.includes(id)
-        return (
-          <Field key={id} label={IDLE_CARD_NAMES[id]}>
-            <span className="settings-card-row">
-              <input
-                type="checkbox"
-                checked={shown}
-                aria-label={`Show ${IDLE_CARD_NAMES[id]}`}
-                onChange={(event) => onChange(event.target.checked ? [...cards, id] : cards.filter((card) => card !== id))}
-              />
-              {docked(id) ? (
-                <span className="settings-hint">in the dock, under the cards</span>
-              ) : (
-                <>
-                  <button type="button" className="settings-button" aria-label={`Move ${IDLE_CARD_NAMES[id]} earlier`} disabled={!shown || index === 0} onClick={() => move(index, -1)}>
-                    ↑
-                  </button>
-                  <button
-                    type="button"
-                    className="settings-button"
-                    aria-label={`Move ${IDLE_CARD_NAMES[id]} later`}
-                    disabled={!shown || index === ordered.length - 1}
-                    onClick={() => move(index, 1)}
-                  >
-                    ↓
-                  </button>
-                </>
-              )}
-            </span>
-          </Field>
-        )
-      })}
+    <Section id="idle screen cards" title="Cards" hint={`${cards.length} of ${IDLE_CARD_IDS.length} shown`}>
+      {IDLE_CARD_IDS.map((id) => (
+        <Field key={id} label={IDLE_CARD_NAMES[id]}>
+          <span className="settings-card-row">
+            <input
+              type="checkbox"
+              checked={cards.includes(id)}
+              aria-label={`Show ${IDLE_CARD_NAMES[id]}`}
+              onChange={(event) => onChange(sanitizeIdleCards(event.target.checked ? [...cards, id] : cards.filter((card) => card !== id)))}
+            />
+            <span className="settings-hint">{IDLE_CARD_HOMES[id]}</span>
+          </span>
+        </Field>
+      ))}
       <p className="settings-note">
-        The cards the idle screen shows, in the order they fill its columns. A card with nothing to show right now — the calendar with no events this month — yields its room to the others. Now Playing shows in the dock under the cards.
+        The cards the idle screen shows. Each has its own place in one of the three columns; hide one and the cards beside it in its column take its room. Now Playing and the Last Page are lines under the clock.
       </p>
     </Section>
   )

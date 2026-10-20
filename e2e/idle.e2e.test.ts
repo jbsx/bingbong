@@ -70,51 +70,55 @@ describe('idle screen e2e: the Last Page and resume', () => {
     const expected = await harness.dashboardEval<{ month: string; day: string }>(
       `({ month: new Date().toLocaleDateString([], { month: 'long' }), day: String(new Date().getDate()) })`,
     )
-    expect(month).toBe(expected.month)
+    // "Tue · October 2026": the weekday, the month and the year beside today's date.
+    expect(month).toContain(expected.month)
+    expect(await harness.dashboardEval<string>(`document.querySelector('.idle-cal-today')?.textContent ?? ''`)).toBe(expected.day)
     expect(await harness.dashboardEval<string>(`document.querySelector('.idle-cal [aria-current="date"] .idle-cal-num')?.textContent ?? ''`)).toBe(expected.day)
-    // Bank holidays are the only entries a day can hold with no source wired.
-    expect(
-      await harness.dashboardEval<number>(`document.querySelectorAll('.idle-cal-entry:not(.idle-cal-entry--holiday), .idle-cal-more, .idle-upnext').length`),
-    ).toBe(0)
+    // No source wired: no entries under the weeks and no Up Next line.
+    expect(await harness.dashboardEval<number>(`document.querySelectorAll('.idle-cal-entry, .idle-upnext').length`)).toBe(0)
   })
 
-  it('lays the pinned cards out in Card Slots, every tile holding its words inside the window', async () => {
-    await waitFor(async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('.idle-slot[data-card="news"] .idle-news')`)) ? true : undefined), {
+  it('puts each pinned card in its home Column and the Last Page in a Clock Line, every card holding its words inside the window', async () => {
+    await waitFor(async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('.idle-home[data-card="news"] .idle-news')`)) ? true : undefined), {
       timeoutMs: 10000,
       intervalMs: 250,
     })
-    const geometry = await harness.dashboardEval<{ cards: string[]; overflowing: string[] }>(`(() => {
+    const geometry = await harness.dashboardEval<{ cards: string[]; lines: string; overflowing: string[] }>(`(() => {
       const screen = document.querySelector('.idle-screen').getBoundingClientRect()
-      const tiles = [...document.querySelectorAll('.idle-screen .idle-card, .idle-screen .idle-tile--bare')]
+      const tiles = [...document.querySelectorAll('.idle-screen .idle-card, .idle-screen .idle-line')]
       return {
-        cards: [...document.querySelectorAll('.idle-slot')].map((slot) => slot.dataset.card),
+        cards: [...document.querySelectorAll('.idle-home')].map((home) => home.closest('.idle-col').className.replace(/.*idle-col--/, '') + ' ' + home.dataset.card),
+        lines: document.querySelector('.idle-lines').dataset.lines,
         overflowing: tiles
           .filter((tile) => {
             const rect = tile.getBoundingClientRect()
             return tile.scrollHeight > tile.clientHeight + 1 || tile.scrollWidth > tile.clientWidth + 1 || rect.right > screen.right + 1 || rect.bottom > screen.bottom + 1
           })
-          .map((tile) => (tile.closest('.idle-slot')?.dataset.card ?? 'dock') + ' ' + tile.className),
+          .map((tile) => (tile.closest('.idle-home')?.dataset.card ?? 'lines') + ' ' + tile.className),
       }
     })()`)
-    // The default pins, in order; the usage card is there only when the dashboard answers or fails, the weather only once its city is set.
-    expect(geometry.cards.filter((card) => card !== 'usage')).toEqual(['weather', 'calendar', 'lastPage', 'weight', 'news'])
+    // The default pins in their homes; the usage card is there only when the dashboard answers or fails. The weather is unset
+    // here, so its home holds its line.
+    expect(geometry.cards.filter((card) => card !== 'middle usage')).toEqual(['left weather', 'right calendar', 'right weight', 'right news'])
+    expect(geometry.lines).toBe('voice lastPage')
     expect(geometry.overflowing).toEqual([])
   })
 
-  it('shows the Weight card from the stand-in Weigh-ins: the weight, its week’s change, the body fat and the 30-day trend (#350)', async () => {
-    const card = await harness.dashboardEval<{ text: string; box: string; trendDots: number }>(`(() => {
-      const slot = document.querySelector('.idle-slot[data-card="weight"]')
+  it('shows the Weight card from the stand-in Weigh-ins: the weight, its change, the body fat and the 30-day trend (#350)', async () => {
+    const card = await harness.dashboardEval<{ text: string; form: string; trendDots: number }>(`(() => {
+      const home = document.querySelector('.idle-home[data-card="weight"]')
       return {
-        text: slot.querySelector('.weight-card').textContent,
-        box: slot.style.gridColumn + '|' + slot.style.gridRow,
-        trendDots: slot.querySelectorAll('.weight-chart-dot').length,
+        text: home.querySelector('.weight-card').textContent,
+        form: home.dataset.form,
+        trendDots: home.querySelectorAll('.weight-chart-dot').length,
       }
     })()`)
-    // A 1×2 Card Slot: where it lands depends on the cards around it (the weather is unset here).
-    expect(card.box).toMatch(/span 1\|\d+ \/ span 2$/)
+    // Under the Calendar in the right Column, in its full form: the change an arrow and its size, what it is against under the line.
+    expect(card.form).toBe('full')
     expect(card.text).toContain('81.25')
-    expect(card.text).toMatch(/[−+]\d+\.\d\d kg since the last Weigh-in/)
-    expect(card.text).toMatch(/Body fat \d+\.\d%/)
+    expect(card.text).toMatch(/[▼▲] \d+\.\d\d|±0/)
+    expect(card.text).toContain('Δ since the last Weigh-in')
+    expect(card.text).toMatch(/\d+\.\d% fat/)
     expect(card.trendDots).toBe(30)
   })
 
@@ -161,7 +165,7 @@ describe('idle screen e2e: the Last Page and resume', () => {
     const rows = await waitFor(
       async () => {
         const found = await harness.dashboardEval<{ name: string; line: string; stars: string; gain: string; language: string }[]>(
-          `[...document.querySelectorAll('.idle-slot[data-card="news"] .idle-repo')].filter((row) => !row.closest('li').hidden).map((row) => ({ name: row.querySelector('.idle-repo-name').textContent, line: row.querySelector('.idle-repo-line')?.textContent ?? '', stars: row.querySelector('.idle-repo-stars').textContent, gain: row.querySelector('.idle-repo-gain').textContent, language: row.querySelector('.idle-repo-language')?.textContent ?? '' }))`,
+          `[...document.querySelectorAll('.idle-home[data-card="news"] .idle-repo')].filter((row) => !row.closest('li').hidden).map((row) => ({ name: row.querySelector('.idle-repo-name').textContent, line: row.querySelector('.idle-repo-line')?.textContent ?? '', stars: row.querySelector('.idle-repo-stars').textContent, gain: row.querySelector('.idle-repo-gain').textContent, language: row.querySelector('.idle-repo-language')?.textContent ?? '' }))`,
         )
         return found.length > 0 ? found : undefined
       },
@@ -172,10 +176,10 @@ describe('idle screen e2e: the Last Page and resume', () => {
       { name: 'acme/memory', line: 'Agent memory that learns', stars: '★ 51.6k', gain: '+27.6kthis month', language: 'TypeScript' },
       { name: 'acme/paperclip', line: 'Runs teams of AI agents toward business goals.', stars: '★ 104.7k', gain: '+23.3kthis month', language: 'TypeScript' },
     ])
-    expect(await harness.dashboardEval<string>(`document.querySelector('.idle-repos .idle-kicker').textContent`)).toBe('Top repos this month')
+    expect(await harness.dashboardEval<string>(`document.querySelector('.idle-repos .idle-kicker').textContent`)).toBe('Top repos ★ this month')
 
     // The usage card lands after the first layout and moves the cards: the row is tapped once it has landed and the row holds still.
-    await waitFor(async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('.idle-slot[data-card="usage"]')`)) ? true : undefined), { timeoutMs: 15000, intervalMs: 250 })
+    await waitFor(async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('.idle-home[data-card="usage"]')`)) ? true : undefined), { timeoutMs: 15000, intervalMs: 250 })
     const rowAt = (): Promise<string> => harness.dashboardEval<string>(`(() => { const r = document.querySelector('.idle-repos li:nth-child(2) .idle-repo').getBoundingClientRect(); return r.x + ',' + r.y })()`)
     let last = ''
     await waitFor(

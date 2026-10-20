@@ -52,3 +52,21 @@ export const TWO_PEOPLE = {
     { id: 'barun', name: 'Barun', body: { heightCm: 172, birthDate: '1995-07-12', sex: 'male' }, guess: true },
   ],
 }
+
+/** One stepping-on: the handshake, the weight moving, settling (the stable frame three times), stepping off. */
+export const STEPPING_ON = [
+  '120f1558c6f738c1a43f013f01046c',
+  '140b150000010000000035',
+  '+600',
+  '100b1502fd00000000002f',
+  '100b151ddd00000000002a',
+  '100b15208a0000000000da',
+  '100b151fae0000000000fd',
+  '+400',
+  '100b151f9001020001f4d7',
+  '100b151f9001020001f4d7',
+  '100b151f9001020001f4d7',
+  '+1500',
+  '100b15112b00000000006c',
+  '100b150000000000000030',
+].join('\n')

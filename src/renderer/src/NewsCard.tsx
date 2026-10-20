@@ -53,25 +53,50 @@ function spoken(repo: TopRepo, line: string): string {
   return `${repo.name}${line === '' ? '' : ` — ${line}`}, ${stars(repo.stars)} stars, ${stars(repo.starsThisMonth)} this month. Open it`
 }
 
+/** The card's head, as round 6 draws it: "TOP REPOS" in small capitals, "★ this month" beside it. */
+function NewsHead() {
+  return (
+    <h3 className="idle-kicker idle-news-head">
+      Top repos <span className="idle-news-span">★ this month</span>
+    </h3>
+  )
+}
+
+/** The News card with no repos read yet: its head, and the note beside a quiet star. */
+export function NewsEmpty() {
+  return (
+    <section className="idle-card idle-news idle-repos idle-news--empty" aria-label="news">
+      <NewsHead />
+      <p className="idle-news-none">
+        <svg width={40} height={40} viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 3.5l2.6 5.5 6 .7-4.4 4.1 1.2 5.9L12 16.8 6.6 19.7l1.2-5.9L3.4 9.7l6-.7z" />
+        </svg>
+        No repos yet
+      </p>
+    </section>
+  )
+}
+
 /**
- * The News card (CONTEXT.md), one tile: the Top Repos — the three
+ * The News card (CONTEXT.md), at the foot of the right Column: the Top Repos — the three
  * repositories that gained the most stars on GitHub this month, each a row
  * read from its figure: the stars it gained this month large at the left
  * with a bar measured against the leader's, so the order reads at a glance;
  * then its owner quiet and its name bold, GLM's one-sentence summary (the
  * repository's own description where none is written yet) on up to three
  * lines, and a quiet foot — the language behind GitHub's dot and the stars
- * in all. Each row is a tap that opens it; a row the box would cut is left
+ * in all; in a short band (`lean`) each row on one line, the gain, the name
+ * and the stars. Each row is a tap that opens it; a row the box would cut is left
  * off whole, and a box too small for even the first sets every row lean —
  * the summary on one line.
  */
-export function NewsCard({ repos }: { repos: TopRepo[] }) {
+export function NewsCard({ repos, lean = false }: { repos: TopRepo[]; lean?: boolean }) {
   const list = useRef<HTMLOListElement>(null)
   useWholeItems(list, repos, 'lean')
   const leader = Math.max(1, ...repos.map((repo) => repo.starsThisMonth))
   return (
-    <section className="idle-card idle-news idle-repos" aria-label="news">
-      <h3 className="idle-kicker">Top repos this month</h3>
+    <section className={lean ? 'idle-card idle-news idle-repos idle-repos--lean' : 'idle-card idle-news idle-repos'} aria-label="news">
+      <NewsHead />
       <ol ref={list}>
         {repos.map((repo) => {
           const [owner, name] = repo.name.split('/')

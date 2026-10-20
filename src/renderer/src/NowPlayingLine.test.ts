@@ -2,11 +2,10 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import type { NowPlaying } from '../../core/music/nowPlaying'
-import type { TimerState } from '../../core/timer/timer'
-import { NowPlayingCard } from './NowPlayingCard'
+import { NowPlayingLine } from './NowPlayingLine'
 
-// The Now Playing card (#344, CONTEXT.md Idle Screen), rendered from the
-// Player's published state.
+// Now Playing (#344), a Clock Line of the Idle Screen (#360), rendered from
+// the Player's published state.
 
 const SONG: NowPlaying = {
   id: 'fJ9rUzIMcZQ',
@@ -19,12 +18,10 @@ const SONG: NowPlaying = {
   ended: false,
   queued: ['Around the World', 'One More Time', 'Digital Love'],
 }
-const OFF: TimerState = { status: 'off' }
-
-const render = (nowPlaying: NowPlaying | null, timer: TimerState = OFF): string => renderToStaticMarkup(createElement(NowPlayingCard, { nowPlaying, timer }))
+const render = (nowPlaying: NowPlaying | null): string => renderToStaticMarkup(createElement(NowPlayingLine, { nowPlaying }))
 const text = (html: string): string => html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
 
-describe('the Now Playing card', () => {
+describe('the Now Playing line', () => {
   it('shows the thumbnail, the title, the channel, the progress with elapsed and total, and the next three', () => {
     const html = render(SONG)
     expect(html).toContain('src="https://i.ytimg.com/vi/fJ9rUzIMcZQ/mqdefault.jpg"')
@@ -53,10 +50,5 @@ describe('the Now Playing card', () => {
 
   it('is absent with no song', () => {
     expect(render(null)).toBe('')
-  })
-
-  it('gives way to a ringing Timer, and stays beside a running one', () => {
-    expect(render(SONG, { status: 'ringing', durationMs: 60_000, rangAt: 1 } as TimerState)).toBe('')
-    expect(render(SONG, { status: 'running', durationMs: 60_000, endsAt: 2 } as TimerState)).not.toBe('')
   })
 })

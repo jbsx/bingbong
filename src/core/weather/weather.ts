@@ -65,6 +65,8 @@ export interface WeatherReport {
   hours?: WeatherHour[]
   /** The {@link OUTLOOK_DAYS} days after today; empty when the daily block carried none. */
   days?: WeatherOutlookDay[]
+  /** The city's offset from UTC in seconds, so now can be read on the city's clock; absent when the response gave none. */
+  utcOffsetSeconds?: number
 }
 
 /** How many coming hours the report carries. */
@@ -218,6 +220,7 @@ export async function fetchWeather(
     today: todayOf(body?.daily),
     hours: upcomingHours(typeof current.time === 'string' ? current.time : '', body?.hourly),
     days: outlookOf(body?.daily),
+    utcOffsetSeconds: typeof body?.utc_offset_seconds === 'number' ? body.utc_offset_seconds : undefined,
   }
 }
 

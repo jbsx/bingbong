@@ -37,6 +37,7 @@ const berlinForecast = { current: { temperature_2m: 12.4, weather_code: 3 } }
 // A fuller forecast: the current block with its local time, the day, and an
 // hourly block spanning the day's end — what the deepened idle screen reads.
 const berlinDay = {
+  utc_offset_seconds: 7200,
   current: { time: '2026-10-18T21:20', temperature_2m: 12.4, weather_code: 3, is_day: 0 },
   daily: {
     time: ['2026-10-18', '2026-10-19', '2026-10-20', '2026-10-21'],
@@ -86,6 +87,8 @@ describe('fetchWeather', () => {
     expect(report.hours?.map((hour) => hour.time)).toEqual(['2026-10-18T22:00', '2026-10-18T23:00', '2026-10-19T00:00', '2026-10-19T01:00', '2026-10-19T02:00', '2026-10-19T03:00'])
     expect(report.hours?.[0]).toEqual({ time: '2026-10-18T22:00', temperature: 12.0, description: 'partly cloudy', sky: 'partly-cloudy', isDay: false, precipitationChance: 0 })
     expect(report.isDay).toBe(false)
+    // The city's offset from UTC, so the screen can put now on the city's clock (#360's day bar).
+    expect(report.utcOffsetSeconds).toBe(7200)
     // The outlook: the three days after today, each with its sky.
     expect(report.days?.map((day) => `${day.date} ${day.low}–${day.high} ${day.sky} ${day.precipitationChance}`)).toEqual([
       '2026-10-19 7.2–15.1 rain 60',

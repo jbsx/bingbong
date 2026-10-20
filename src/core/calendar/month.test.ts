@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { CalendarEvent } from './calendar'
-import { eventsLeftToday, monthGrid, monthRange, upNext, weekStartOf } from './month'
+import { eventsLeftToday, monthEntries, monthGrid, monthRange, twoWeeks, upNext, weekStartOf } from './month'
 import { ukBankHolidays } from './ukBankHolidays'
 
 function event(title: string, start: Date, end: Date, allDay = false): CalendarEvent {
@@ -56,6 +56,38 @@ describe('monthGrid', () => {
     expect(days.get(new Date(2026, 9, 20).getTime())).toBe(2)
     expect(days.get(new Date(2026, 9, 21).getTime())).toBe(1)
     expect(days.get(new Date(2026, 9, 22).getTime())).toBe(0)
+  })
+})
+
+describe('twoWeeks', () => {
+  it('is this week and next from the week’s start, running into the next month, today marked — round 6’s 19 to 1 November', () => {
+    const weeks = twoWeeks(new Date(2026, 9, 20, 9, 52), 1)
+    expect(weeks.map((week) => week.map((day) => day.day))).toEqual([
+      [19, 20, 21, 22, 23, 24, 25],
+      [26, 27, 28, 29, 30, 31, 1],
+    ])
+    expect(weeks.flat().filter((day) => day.isToday).map((day) => day.day)).toEqual([20])
+    expect(weeks[1].map((day) => day.inMonth)).toEqual([true, true, true, true, true, true, false])
+  })
+
+  it('gives each day its events and its holiday', () => {
+    const events = [event('dentist', new Date(2026, 11, 22, 10), new Date(2026, 11, 22, 11))]
+    const days = twoWeeks(new Date(2026, 11, 21, 8), 1, events, ukBankHolidays(2026)).flat()
+    expect(days.find((day) => day.day === 22)?.events.map((e) => e.title)).toEqual(['dentist'])
+    expect(days.find((day) => day.day === 25)?.holiday).toBe('Christmas Day')
+  })
+})
+
+describe('monthEntries', () => {
+  it('lists the month’s entries not yet over, soonest first', () => {
+    const now = new Date(2026, 9, 20, 12)
+    const events = [
+      event('party', new Date(2026, 9, 30, 19), new Date(2026, 9, 30, 23)),
+      event('past', new Date(2026, 9, 2, 9), new Date(2026, 9, 2, 10)),
+      event('lunch', new Date(2026, 9, 20, 11, 30), new Date(2026, 9, 20, 13)),
+      event('november', new Date(2026, 10, 2, 9), new Date(2026, 10, 2, 10)),
+    ]
+    expect(monthEntries(now, events).map((e) => e.title)).toEqual(['lunch', 'party'])
   })
 })
 

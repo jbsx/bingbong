@@ -125,7 +125,7 @@ export function App() {
   const hint = voiceHint(voice, { promptShown: panel.open && view === 'dashboard' })
   const weather = useWeather(settings?.weather ?? null, showIdle)
   const lastPage = useLastPage(showIdle)
-  // Followed always: the Idle Screen's dock shows them, and so do the Toolbar's widgets while the app is in use.
+  // Followed always: the Idle Screen shows them (the Timer Clock, the Now Playing line), and so do the Toolbar's widgets while the app is in use.
   const timer = useTimer()
   const nowPlaying = useNowPlaying()
   const usage = useUsage(settings?.usageDashboard.url ?? null, showIdle)
@@ -153,9 +153,9 @@ export function App() {
             setView('weight')
           }}
           status={status}
-          hint={hint}
+          voice={voice}
+          popup={weighInPopup.phase === 'hidden' ? null : <WeighInPopup state={weighInPopup} />}
         />
-        <WeighInPopup state={weighInPopup} />
       </>
     )
   }

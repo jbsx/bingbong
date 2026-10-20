@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { partialSpans, quietLine } from './voicePrompt'
+import { earPhase, partialSpans, quietLine } from './voicePrompt'
 
 // The Voice Prompt's live words (#359): the partial transcript, a Page Term in it marked.
 
@@ -33,5 +33,26 @@ describe('quietLine', () => {
     expect(quietLine(2000)).toBe('ends when you finish — 2 s at most')
     expect(quietLine(1250)).toBe('ends when you finish — 1.25 s at most')
     expect(quietLine(700)).toBe('ends when you finish — 0.7 s at most')
+  })
+})
+
+describe('earPhase', () => {
+  const ear = (listening: boolean, transcribing: boolean, monitoring: boolean) => ({ listening, transcribing, monitoring })
+
+  it('is at rest while only the wake word listens', () => {
+    expect(earPhase(ear(false, false, true))).toBe('rest')
+  })
+
+  it('is listening only while an Utterance is taken, and transcribing once its words are being read', () => {
+    expect(earPhase(ear(true, false, true))).toBe('listening')
+    expect(earPhase(ear(false, true, true))).toBe('transcribing')
+  })
+
+  it('says the microphone is off when nothing listens, not even for the wake word', () => {
+    expect(earPhase(ear(false, false, false))).toBe('off')
+  })
+
+  it('is at rest before main has said anything', () => {
+    expect(earPhase(null)).toBe('rest')
   })
 })

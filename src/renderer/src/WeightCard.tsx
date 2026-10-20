@@ -1,7 +1,6 @@
-import type { SlotSize } from '../../core/idle/slots'
 import { bodyFigures } from '../../core/scale/bodyComposition'
 import { weighInsOf, type Person } from '../../core/scale/people'
-import { formatChange, formatFigure, formatKg, SINCE_LAST } from '../../core/scale/weightFormat'
+import { formatFigure, formatKg, SINCE_LAST } from '../../core/scale/weightFormat'
 import { changeSinceLast, since, type WeighIn } from '../../core/scale/weighIns'
 import type { WeightSettings } from '../../core/scale/weightSettings'
 import { WeightChart } from './WeightChart'
@@ -33,7 +32,11 @@ function whenLabel(at: number, now: number): string {
   return day.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' })
 }
 
-/** The change since the last Weigh-in as a line: "−0.45 kg since the last Weigh-in", or a quiet note on the first. */
+/**
+ * The change since the last Weigh-in, as round 6 draws it: an arrow and
+ * the size — ▼ 0.30 in green down, ▲ 0.20 in amber up, ±0 flat — what it
+ * is against named once, under the lines; the first Weigh-in a quiet note.
+ */
 function LastChange({ weighIns }: { weighIns: readonly WeighIn[] }) {
   const change = changeSinceLast(weighIns)
   if (change === null)
@@ -42,12 +45,11 @@ function LastChange({ weighIns }: { weighIns: readonly WeighIn[] }) {
         <NoBreakHyphens text="first Weigh-in" />
       </span>
     )
-  const direction = Math.abs(change) < 0.05 ? 'flat' : change < 0 ? 'down' : 'up'
+  const size = Math.abs(Math.round(change * 100) / 100)
+  const direction = size < 0.05 ? 'flat' : change < 0 ? 'down' : 'up'
   return (
-    <span className={`weight-card-change weight-card-change--${direction}`}>
-      {formatChange(change, 2)} kg <span className="weight-card-change-span">
-        <NoBreakHyphens text={SINCE_LAST} />
-      </span>
+    <span className={`weight-card-change weight-card-change--${direction}`} aria-label={`${direction === 'down' ? 'down' : direction === 'up' ? 'up' : 'flat'} ${size.toFixed(2)} kg ${SINCE_LAST}`}>
+      {direction === 'flat' ? '±0' : `${direction === 'down' ? '▼' : '▲'} ${size.toFixed(2)}`}
     </span>
   )
 }
@@ -67,71 +69,74 @@ function tapProps(person: Person, latest: WeighIn, onOpen: (person: string) => v
 }
 
 /**
- * The Weight card (CONTEXT.md), a Pinned Card of each Person's latest
- * Weigh-in. Given a Card Slot two or three cells tall, one tile per Person with a Weigh-in, sharing its height:
- * the name, the weight, its change since their last Weigh-in,
- * the body fat and their own line over the Weight section's
- * range, each line on its own axis; given one cell, each name with the
- * weight and the change. The figures shown are the Weight section's
- * choice. A tap on a row opens the Weight page on that Person on the
- * pointer going down, as the other idle controls do — the same
+ * The Weight card (CONTEXT.md), in the right Column under the Calendar:
+ * per Person with a Weigh-in, the weight, the change since their last
+ * Weigh-in, the name in their colour, when, the body fat and their own
+ * line over the Weight section's range, each line on its own axis, with
+ * "Δ since the last Weigh-in" under the lines. In its smaller form, each
+ * name with the weight and the change. The figures shown are the Weight
+ * section's choice. A tap on a row opens the Weight page on that Person on
+ * the pointer going down, as the other idle controls do — the same
  * pointer-down wakes the dashboard, which unmounts this screen before any
  * click could land.
  */
-export function WeightCard({ rows, weight, size, now, onOpen }: { rows: readonly WeightCardRow[]; weight: WeightSettings; size: SlotSize; now: number; onOpen: (person: string) => void }) {
+export function WeightCard({ rows, weight, form, now, onOpen }: { rows: readonly WeightCardRow[]; weight: WeightSettings; form: 'full' | 'small'; now: number; onOpen: (person: string) => void }) {
   const { card } = weight
-  if (size.h < 2) {
+  if (form === 'small') {
     return (
-      <div className="idle-tiles weight-card" aria-label="weight" style={{ '--w': String(size.w), '--h': String(size.h) } as React.CSSProperties}>
-        <section className="idle-card weight-card--list" style={{ '--rows': String(rows.length) } as React.CSSProperties}>
-          <h3 className="idle-kicker">Weight</h3>
-          {rows.map(({ person, weighIns }) => {
-            const latest = weighIns[weighIns.length - 1]
-            return (
-              <div key={person.id} className="weight-card-line" {...tapProps(person, latest, onOpen)}>
-                <span className="weight-card-name">{person.name}</span>
-                <span className="weight-card-kg">
-                  {formatKg(latest.kg)}
-                  <small> kg</small>
-                </span>
-                {card.change ? <LastChange weighIns={weighIns} /> : null}
-              </div>
-            )
-          })}
-        </section>
-      </div>
+      <section className="idle-card weight-card weight-card--small" aria-label="weight">
+        {rows.map(({ person, weighIns }) => {
+          const latest = weighIns[weighIns.length - 1]
+          return (
+            <div key={person.id} className="weight-card-row weight-card-line" {...tapProps(person, latest, onOpen)}>
+              <span className="weight-card-name">{person.name}</span>
+              <span className="weight-card-kg">
+                {formatKg(latest.kg)}
+                <small> kg</small>
+              </span>
+              {card.change ? <LastChange weighIns={weighIns} /> : null}
+            </div>
+          )
+        })}
+      </section>
     )
   }
   const rangeMs = card.rangeDays * DAY_MS
   return (
-    <div className="idle-tiles weight-card" aria-label="weight" data-rows={rows.length} style={{ '--w': String(size.w), '--h': String(rows.length) } as React.CSSProperties}>
+    <section className="idle-card weight-card weight-card--full" aria-label="weight" data-rows={rows.length}>
       {rows.map(({ person, weighIns }) => {
         const latest = weighIns[weighIns.length - 1]
         const fat = bodyFigures(latest, person.body).fatPercent
         const line = since(weighIns, rangeMs, now).map((weighIn) => ({ at: weighIn.at, value: weighIn.kg }))
         return (
-          <section key={person.id} className="idle-card weight-card-row" {...tapProps(person, latest, onOpen)}>
-            <h3 className="idle-kicker">
-              <span className="weight-card-name">{person.name}</span> · {whenLabel(latest.at, now)}
-            </h3>
+          <div key={person.id} className="weight-card-row" {...tapProps(person, latest, onOpen)}>
             <div className="weight-card-figures">
               <span className="weight-card-kg">
                 {formatKg(latest.kg)}
                 <small> kg</small>
               </span>
-              <span className="weight-card-side">
-                {card.change ? <LastChange weighIns={weighIns} /> : null}
-                {card.fat ? (
-                  <span className="weight-card-fat">
-                    Body fat <b>{fat === 'unavailable' ? '–' : `${formatFigure(fat, 1)}%`}</b>
-                  </span>
-                ) : null}
+              {card.change ? <LastChange weighIns={weighIns} /> : null}
+              <span className="weight-card-who">
+                <span className="weight-card-name">{person.name}</span>
+                <span className="weight-card-when">{whenLabel(latest.at, now)}</span>
+                {card.fat ? <span className="weight-card-fat">{fat === 'unavailable' ? '– fat' : `${formatFigure(fat, 1)}% fat`}</span> : null}
               </span>
             </div>
             {card.line ? <WeightChart points={line} start={now - rangeMs} end={now} digits={1} label={`${person.name}’s weight over the last ${card.rangeDays} days`} compact /> : null}
-          </section>
+          </div>
         )
       })}
-    </div>
+      {card.line || card.change ? (
+        <span className="weight-card-foot" aria-hidden="true">
+          {card.line ? <span>−{card.rangeDays}d</span> : null}
+          {card.change ? (
+            <span>
+              Δ <NoBreakHyphens text={SINCE_LAST} />
+            </span>
+          ) : null}
+          {card.line ? <span>now</span> : null}
+        </span>
+      ) : null}
+    </section>
   )
 }

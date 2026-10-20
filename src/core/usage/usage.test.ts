@@ -5,6 +5,7 @@ import {
   defaultUsagePrefs,
   elapsedPct,
   fetchUsage,
+  pace,
   readUsage,
   resetLabel,
   sanitizeUsagePrefs,
@@ -157,6 +158,33 @@ describe('elapsedPct', () => {
   it('is empty while unarmed and falls back to usage when the length is unknown', () => {
     expect(elapsedPct(window(null, 3_600_000), 0)).toBe(0)
     expect(elapsedPct(window(5_000, null), 0)).toBe(40)
+  })
+})
+
+describe('pace', () => {
+  const HOUR = 3_600_000
+  const window = (usedPct: number, leftMs: number | null, durationMs: number | null): UsageWindow => ({
+    key: '7d',
+    caption: '7d',
+    label: '7-Day',
+    usedPct,
+    history: [],
+    resetAt: leftMs === null ? null : leftMs,
+    durationMs,
+  })
+
+  it('is the share used past the share of the window run, in whole points — round 6’s Claude: 10 % with 6d 15h of 7d left is +5', () => {
+    expect(pace(window(10, (6 * 24 + 15) * HOUR, 168 * HOUR), 0)).toBe(5)
+  })
+
+  it('is nothing while the use is at or behind the window', () => {
+    expect(pace(window(0, (6 * 24 + 23) * HOUR, 168 * HOUR), 0)).toBeNull()
+    expect(pace(window(23, 120 * HOUR, 168 * HOUR), 0)).toBeNull()
+  })
+
+  it('is nothing for a window unarmed or of unknown length', () => {
+    expect(pace(window(50, null, 168 * HOUR), 0)).toBeNull()
+    expect(pace(window(50, 10 * HOUR, null), 0)).toBeNull()
   })
 })
 

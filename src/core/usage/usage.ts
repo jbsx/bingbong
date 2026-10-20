@@ -147,6 +147,19 @@ export function elapsedPct(window: UsageWindow, now: number): number {
   return Math.min(100, Math.max(0, Math.round(100 - left * 100)))
 }
 
+/**
+ * A window's Pace (CONTEXT.md, AI Usage): how far the share of the limit
+ * used runs ahead of the share of the window run, in whole points — "+5
+ * ahead". Nothing while it is at or behind the window, unarmed, or of a
+ * length the key does not name.
+ */
+export function pace(window: UsageWindow, now: number): number | null {
+  if (window.resetAt === null || window.durationMs === null) return null
+  const run = 100 - ((window.resetAt - now) / window.durationMs) * 100
+  const ahead = Math.round(window.usedPct - Math.min(100, Math.max(0, run)))
+  return ahead > 0 ? ahead : null
+}
+
 /** Every provider's every window's samples, keyed `provider\u0000window`, oldest first. */
 function readHistory(history: unknown): Map<string, Array<[number, number]>> {
   const series = new Map<string, Array<[number, number]>>()
