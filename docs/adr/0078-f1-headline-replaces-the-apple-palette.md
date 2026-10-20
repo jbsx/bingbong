@@ -86,7 +86,8 @@ so the look has a guard beyond the Idle Screen.
 - **Peach beyond the short list.** Settings' controls are peach as round 6
   drew them: the index's marker and number, slider fills, checked boxes,
   and the Weight page's span switch. They are the control being set, read
-  as Bing Bong's own; everything else follows E4.
+  as Bing Bong's own; everything else follows E4. This goes past #359's
+  list of where peach is spent and awaits the owner's ruling there.
 - **The Voice Prompt** in the panel says `Say "Bing Bong" or type a
   command`, `Type a command` while a Command runs, and `Microphone off —
   type a command` with the orb grey. Its live words mark the Page Terms

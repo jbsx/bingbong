@@ -45,11 +45,11 @@ function BreaksAtSlashes({ text }: { text: string }) {
 
 /**
  * How the Feed draws one line (#359, ADR 0078): the headline is the newest
- * Answer, drawn at reading size; live is the Command being worked on.
+ * Answer, drawn at reading size; working is the Command being worked on.
  */
 export interface FeedLineEmphasis {
   headline?: boolean
-  live?: boolean
+  working?: boolean
 }
 
 export function FeedLine({ entry, emphasis = {} }: { entry: FeedEntry; emphasis?: FeedLineEmphasis }) {
@@ -63,7 +63,7 @@ export function FeedLine({ entry, emphasis = {} }: { entry: FeedEntry; emphasis?
     // taken; an Utterance read as no Command is the words alone, greyed. A
     // Task (#336) adds one line per later hop that fired.
     return (
-      <p className={`feed-entry feed-entry--user feed-entry--${entry.kind}${entry.muted ? ' feed-entry--muted' : ''}${emphasis.live === true ? ' feed-entry--live' : ''}`}>
+      <p className={`feed-entry feed-entry--user feed-entry--${entry.kind}${entry.muted ? ' feed-entry--muted' : ''}${emphasis.working === true ? ' feed-entry--working' : ''}`}>
         {time}
         <span className="feed-bubble">
           <span className="feed-text">
@@ -233,7 +233,7 @@ export function ActivityFeed({
   const listRef = useRef<HTMLDivElement>(null)
   const headline = headlineAnswerId(entries)
   // The Command being worked on: the newest one, while a run is live.
-  const live = liveRunId == null ? null : (entries.findLast((entry) => entry.role === 'user')?.id ?? null)
+  const working = liveRunId == null ? null : (entries.findLast((entry) => entry.role === 'user')?.id ?? null)
 
   useEffect(() => {
     const list = listRef.current
@@ -252,7 +252,7 @@ export function ActivityFeed({
           item.item === 'run' ? (
             <RunDetails key={`run-${item.runId}`} runId={item.runId} entries={item.entries} live={item.runId === liveRunId} />
           ) : (
-            <FeedLine key={item.entry.id} entry={item.entry} emphasis={{ headline: item.entry.id === headline, live: item.entry.id === live }} />
+            <FeedLine key={item.entry.id} entry={item.entry} emphasis={{ headline: item.entry.id === headline, working: item.entry.id === working }} />
           ),
         )}
       </div>

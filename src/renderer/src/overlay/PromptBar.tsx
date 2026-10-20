@@ -69,7 +69,7 @@ export function PromptBar({ placeholder }: { placeholder: string }) {
           ref={inputRef}
           className="prompt-input"
           type="text"
-          // Whole at the default 380 px panel with Stop beside it (#331).
+          // Named by the Voice Prompt (#359); whole at the default panel with Stop beside it (#331).
           placeholder={placeholder}
           aria-label="Prompt bar"
           aria-describedby={feedback ? 'submission-feedback' : undefined}

@@ -40,6 +40,12 @@ function FigureValue({ text, unit }: { text: string; unit: string }) {
   )
 }
 
+/** Which way the weight moved since the last Weigh-in, for its colours (ADR 0078): down green, up amber. */
+function weightTrend(now: Figure, before: Figure | undefined): 'down' | 'up' | undefined {
+  if (now === 'unavailable' || before === undefined || before === 'unavailable' || now === before) return undefined
+  return now < before ? 'down' : 'up'
+}
+
 function changeText(now: Figure, before: Figure | undefined, digits: number, unit: string): string | null {
   if (now === 'unavailable' || before === undefined || before === 'unavailable') return null
   // A percentage's change is in points, not percent of itself.
@@ -151,9 +157,8 @@ export function WeightPage({ weighIns, people, initialPerson = JAISH, onClose }:
                 {WEIGHT_FIGURES.map(({ key, label, unit, digits }) => {
                   const value = figures[key]
                   const change = changeText(value, before?.[key], digits, unit)
-                  const prior = before?.[key]
-                  // Which way the weight moved, in its own colours (ADR 0078): down green, up amber. The other figures stay neutral.
-                  const trend = key !== 'weightKg' || value === 'unavailable' || prior === undefined || prior === 'unavailable' || value === prior ? undefined : value < prior ? 'down' : 'up'
+                  // The weight's own colours (ADR 0078); the other figures stay neutral.
+                  const trend = key === 'weightKg' ? weightTrend(value, before?.[key]) : undefined
                   return (
                     <li key={key} className="weight-figure" data-figure={key}>
                       <span className="weight-figure-label">{label}</span>

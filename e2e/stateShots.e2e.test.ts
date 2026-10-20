@@ -134,12 +134,13 @@ async function shoot(run: Run, state: string): Promise<void> {
     ['panel', (expression) => run.harness.overlayEval<string[]>(expression)],
   ]
   for (const [surface, evaluate] of surfaces) {
-    for (const issue of await evaluate(CHECK_SCRIPT).catch((): string[] => [])) found.push(`${surface}: ${issue}`)
+    // A surface that cannot be read is a failure too: the guard never passes on what it did not check.
+    for (const issue of await evaluate(CHECK_SCRIPT).catch((error: unknown) => [`not read: ${String(error)}`])) found.push(`${surface}: ${issue}`)
   }
   // The pop-up's own view is read only while the pop-up is in it, not riding the open panel's top.
   const riding = await run.harness.overlayEval<boolean>(`!!document.querySelector('.overlay-chrome--open .weighin-popup')`).catch(() => false)
   if (!riding && (await run.harness.weighInEval<boolean>(`!!document.querySelector('.weighin-popup')`).catch(() => false))) {
-    for (const issue of await run.harness.weighInEval<string[]>(CHECK_SCRIPT).catch((): string[] => [])) found.push(`weigh-in: ${issue}`)
+    for (const issue of await run.harness.weighInEval<string[]>(CHECK_SCRIPT).catch((error: unknown) => [`not read: ${String(error)}`])) found.push(`weigh-in: ${issue}`)
   }
   run.issues.set(state, found)
 }

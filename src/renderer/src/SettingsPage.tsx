@@ -192,7 +192,7 @@ function SettingsIndex({ scrollRef }: { scrollRef: React.RefObject<HTMLDivElemen
  * 2026-10-19): shut, it shows its title and a line of what it holds; which
  * ones are open is remembered for the next visit.
  */
-function Section({ id, title, hint, children }: { id: string; title: string; hint: string; children: React.ReactNode }) {
+function Section({ id, title, hint, children }: { id: string; title: string; hint: React.ReactNode; children: React.ReactNode }) {
   const [open, setOpen] = useState(() => openSections().has(id))
   return (
     <section className="settings-section settings-section--fold" aria-label={id}>
@@ -457,7 +457,22 @@ function WeightSection({
     setNewName('')
   }
   return (
-    <Section id="weight" title="Weight" hint={`${people.map((person) => person.name).join(', ') || 'Nobody yet'} · ${scale.address === '' ? 'no scale yet' : 'scale remembered'}`}>
+    <Section id="weight" title="Weight" hint={
+        <>
+          {/* Each Person in their own colour, as the Weight card and page draw them (ADR 0078). */}
+          {people.length === 0
+            ? 'Nobody yet'
+            : people.map((person, index) => (
+                <Fragment key={person.id}>
+                  {index > 0 ? ', ' : ''}
+                  <span className="settings-hint-person" data-person={person.id}>
+                    {person.name}
+                  </span>
+                </Fragment>
+              ))}
+          {` · ${scale.address === '' ? 'no scale yet' : 'scale remembered'}`}
+        </>
+      }>
       <h3 className="settings-subhead">People</h3>
       {people.map((person) => (
         <PersonFields key={person.id} person={person} weighIns={weighInsOf(weighIns, people, person.id).length} onChange={setPerson} onRemove={() => onRemovePerson(person.id)} />
@@ -793,7 +808,7 @@ export function SettingsPage({
           }}
         />
 
-        <Section id="ai usage" title="AI usage" hint={draft.usageDashboard.url.trim() === '' ? 'No dashboard — the card is hidden' : draft.usageDashboard.url.trim()}>
+        <Section id="ai usage" title="AI usage" hint={draft.usageDashboard.url.trim() === '' ? 'No dashboard — the card is hidden' : <span className="settings-hint-mono">{draft.usageDashboard.url.trim()}</span>}>
           <Field label="Dashboard">
             <input
               type="text"

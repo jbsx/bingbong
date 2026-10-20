@@ -75,6 +75,12 @@
   --up: #c0640f;
   --jaish: #12808f;
   --barun: #a84a90;
+  /* Their quiet forms, for the second rank of a chart or a list. */
+  --codexq: #7d78a8;
+  --kaggleq: #8f7f58;
+  --rainq: #5f7894;
+  --jaishq: #4f8790;
+  --barunq: #8d6d82;
   /* Radii and shadows. */
   --radius-sm: 8px;
   --radius: 12px;
@@ -169,6 +175,11 @@
     --up: #f2a560;
     --jaish: #62c3d2;
     --barun: #d68bc2;
+    --codexq: #8e88b4;
+    --kaggleq: #a8976f;
+    --rainq: #7f97b2;
+    --jaishq: #6f9ea7;
+    --barunq: #a3879a;
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
     --shadow-pop: 0 12px 32px rgba(0, 0, 0, 0.5);
     --focus-ring: 0 0 0 3px rgba(240, 162, 122, 0.28);
@@ -1009,12 +1020,12 @@ details.feed-entry {
 }
 
 /* The Command being worked on: the loud bubble, edged in peach. */
-.feed-entry--live .feed-bubble {
+.feed-entry--working .feed-bubble {
   border: 1.5px solid var(--accent-edge);
   background: var(--accentq);
 }
 
-.feed-entry--live .feed-bubble .feed-text {
+.feed-entry--working .feed-bubble .feed-text {
   font-size: 27px;
   line-height: 1.28;
   font-weight: 500;
@@ -1666,6 +1677,20 @@ details[open] > .settings-summary::before {
 
 .settings-section-body {
   padding: 0 0 34px 46px;
+}
+
+/* An address in a heading's line is set in mono; a Person's name in their colour. */
+.settings-hint-mono {
+  font-family: var(--font-mono);
+  font-size: 17px;
+}
+
+.settings-hint-person[data-person='jaish'] {
+  color: var(--jaish);
+}
+
+.settings-hint-person[data-person='barun'] {
+  color: var(--barun);
 }
 
 /* A part of a long section (the Weight section's People, Scale, card and pop-up). */
