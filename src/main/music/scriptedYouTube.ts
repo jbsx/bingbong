@@ -99,7 +99,7 @@ export class ScriptedYouTube {
     const ended = this.ended
     this.ended = null
     const element = this.element
-    const playing = { elapsed: element.currentTime, duration: element.duration, paused: element.paused, loop: element.loop, volume: element.volume, prompt: this.continuePrompt }
+    const playing = { elapsed: element.currentTime, duration: element.duration, paused: element.paused, loop: element.loop, volume: element.volume, muted: element.muted, prompt: this.continuePrompt }
     if (watch?.fails === 'notWatch' || id === null) return { watch: false, id: null, title: 'Sign in', hasVideo: false, error: false, ad: false, ended: null, channel: '', ...playing }
     return { watch: true, id, title: watch?.title ?? '', hasVideo: watch !== undefined, error: watch?.fails === 'error', ad: this.adShowing, ended, channel: watch?.channel ?? '', ...playing }
   }

@@ -532,8 +532,8 @@ coming days, all in the city's own clock — every temperature in its hue
 from blue through green to red, rain in blue, so the day reads from across
 the room; the hours' temperature row shows even when every hour reads the
 same. Down the middle the clock and date, large and bare, the Timer Clock
-beside it while a Timer is set, the Clock Lines under them, and the AI Usage
-under those. Down the right the Calendar, the Weight card and the News
+beside it while a Timer is set, the Clock Lines under them, and under those
+Now Playing while a song is held, over the AI Usage. Down the right the Calendar, the Weight card and the News
 card. Nothing on it
 moves but the clock, the progress bars and the voice line while it hears. Every redesign keeps every field the screen
 shows and changes only placement, order and styling (owner, 2026-10-19: "i
@@ -564,26 +564,41 @@ screen carries, and the owner's reversal of #70's "clock and weather only".
 _Avoid_: screensaver
 
 **Now Playing**:
-The Idle Screen's Clock Line of the song the Player holds (#344), shown
-while it holds one (a Card Slot for a day on 2026-10-19, a chip in the
-Dock with #352, a Clock Line since 2026-10-20; pinning `music` still
-decides whether it shows): its thumbnail, title · channel, a progress bar
-with the time played and the length, a loop glyph while it loops, a pause
-glyph while paused, and the next three queued titles on one line. It follows the
-Player's once-a-second read, so nothing new crosses CDP for it. A song that
-ran out with nothing queued stays on it, shown ended, and `play` plays it
-again from the start. A tap pauses or plays it, on the pointer going down
+The Idle Screen's card of the song the Player holds (#344), in the middle
+Column over the AI Usage, shown only while it holds one (a Card Slot for a
+day on 2026-10-19, a chip in the Dock with #352, a Clock Line on
+2026-10-20, a card since #365; pinning `music` still decides whether it
+shows). In full: the song's thumbnail — the card's only colour, no tint or
+glow taken from it — beside a mono kicker (`NOW PLAYING` with three bars
+that move while it plays, `PAUSED`, `ENDED`, `STARTING` while its length is
+unknown), `LOOP` and `MUTED` when on, the title on up to two lines, the
+channel and the next three queued titles; under both the time played, the
+bar, the length and three round controls — previous, play/pause, skip.
+Smaller, when the Column runs short: one row of the thumbnail, the kicker
+with both times, the title, the bar and the controls. A pause glyph over
+the picture while paused, a replay glyph once ended; no peach anywhere on
+it (music is not Bing Bong itself). It follows the Player's once-a-second
+read, so nothing new crosses CDP for it. A song that ran out with nothing
+queued stays on it, shown ended, with "Say “play” or tap to hear it again",
+and `play` plays it again from the start. Each control, and the picture as
+the toggle, submits its music verb as a Command on the pointer going down
 like the other idle controls, and unlike them leaves the Idle Screen up.
+There is no control to show the video: the words do that, and it would be
+the one tap that leaves the screen. Ducking is not shown.
 _Avoid_: mini player, media card
 
 **Column**:
 One of the Idle Screen's three fixed columns on the 1920×1080 canvas
 (owner, 2026-10-20, F1 Headline): the weather down the left; the clock, the
-Clock Lines and the AI Usage down the middle; the Calendar, the Weight card
-and the News card down the right. Every card has one home in one Column and
-is drawn there in one form, with a smaller one for when a Column-mate needs
-the height; a card that is not pinned leaves, and its Column-mates take its
-room. Nothing is placed by order or by relevance. It replaced the Card Slot
+Clock Lines, then Now Playing over the AI Usage down the middle; the
+Calendar, the Weight card and the News card down the right. Every card has
+one home in one Column and is drawn there in one form, with a smaller one
+for when a Column-mate needs the height; a card that is not pinned leaves,
+and its Column-mates take its room. The lowest card steps down first and
+spare height goes to the cards that grow: in the middle, under what the
+clock and the Clock Lines leave, the AI Usage gives up its chart — then
+draws its rings smaller — before Now Playing steps down, and takes back
+whatever the card leaves (#365). Nothing is placed by order or by relevance. It replaced the Card Slot
 grid of #352, where cards offered sizes and the ones with something to show
 were sized first. A tile holds to its home: its words fit or step down,
 never sizing the Column.
@@ -601,9 +616,9 @@ _Avoid_: panel, box
 
 **Clock Lines**:
 The one-line rows under the Idle Screen's clock, each shown only while it
-has something, in this order: the Voice Prompt, Now Playing, Up Next, the
-Last Page (owner, 2026-10-20). They replaced the Dock of chips under the
-#352 grid. A ringing Timer pulses the Timer Clock and takes no line's place.
+has something, in this order: the Voice Prompt, Up Next, the Last Page
+(owner, 2026-10-20). They replaced the Dock of chips under the #352 grid;
+Now Playing was one until it became a card (#365). A ringing Timer pulses the Timer Clock and takes no line's place.
 _Avoid_: dock, strip, tray, chips
 
 **Pinned Cards**:
@@ -623,7 +638,9 @@ The Idle Screen's card of AI providers' limits, read from the owner's
 usage dashboard on the LAN (an HTTP server outside this repo,
 `http://192.168.1.73:4321` by default, set in settings; empty hides it;
 2026-10-19 ask: "the line chart and the gauges for codex and claude").
-In the middle Column under the Clock Lines: the rings over the chart.
+In the middle Column under the Clock Lines, and under Now Playing while a
+song is held: the rings over the chart; the rings alone, drawn smaller
+where the card needs the height (#365).
 Each shown provider is a
 ring in its tone (owner, 2026-10-19: "i like the ring progress bars"; F2's
 card since 2026-10-20): the outer arc the share of the limit used, the

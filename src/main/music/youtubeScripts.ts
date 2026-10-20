@@ -34,6 +34,7 @@ export interface WatchStatus {
   readonly loop: boolean
   /** 0–100. */
   readonly volume: number
+  readonly muted: boolean
   /** YouTube's own idle prompt, "Video paused. Continue watching?", is up (#344). */
   readonly prompt: boolean
 }
@@ -108,6 +109,7 @@ export const WATCH_SCRIPT = `(() => {
     paused: video ? video.paused : true,
     loop: video ? video.loop : false,
     volume: video ? Math.round(video.volume * 100) : 0,
+    muted: video ? video.muted : false,
     prompt: continuePrompt() !== null,
   }
 })()`

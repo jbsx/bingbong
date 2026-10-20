@@ -6,18 +6,18 @@ import type { NowPlaying } from '../../core/music/nowPlaying'
 import type { CalendarEvent } from '../../core/calendar/calendar'
 import { monthEntries, twoWeeks, upNext, weekStartOf, type UpNext } from '../../core/calendar/month'
 import { nextHoliday, ukBankHolidays } from '../../core/calendar/ukBankHolidays'
-import { clockLines, columnBands, columnCards, IDLE_CARD_IDS, type BandAsk, type IdleCardId } from '../../core/idle/columns'
+import { clockLines, COLUMN_HEIGHT, columnBands, columnCards, IDLE_CARD_IDS, middleAsks, middleRoom, usageLayout, type BandAsk, type IdleCardId } from '../../core/idle/columns'
 import { earPhase, type EarPhase } from '../../core/voice/voicePrompt'
 import { viewUsage, type UsagePrefs } from '../../core/usage/usage'
 import type { WeighIn } from '../../core/scale/weighIns'
 import { defaultWeightSettings, type WeightSettings } from '../../core/scale/weightSettings'
-import { NowPlayingLine } from './NowPlayingLine'
+import { NowPlayingCard } from './NowPlayingCard'
 import { NewsCard, NewsEmpty } from './NewsCard'
 import type { NewsCardState } from './useNews'
 import { useCalendarEvents } from './useCalendar'
 import type { WeatherState } from './useWeather'
 import type { UsageState } from './useUsage'
-import { UsageCard } from './UsageCard'
+import { ringsHeight, UsageCard } from './UsageCard'
 import { WeightCard, weightCardRows } from './WeightCard'
 import { WeatherColumn } from './IdleWeather'
 import { StatusOrb, StatusPill, VoiceWave } from './AssistantPanel'
@@ -31,9 +31,6 @@ import { GlobeIcon } from './WeatherIcon'
  */
 const DESIGN_WIDTH = 1920
 const DESIGN_HEIGHT = 1080
-
-/** A side Column's height on the canvas (styles.css, .idle-col): the bands its cards share. */
-const COLUMN_HEIGHT = 1000
 
 /** The least height the Weight card's rows with their lines need, for so many People. */
 function weightRowsHeight(people: number): number {
@@ -437,7 +434,8 @@ function IdleStatus({ status }: { status: OrbStatus }) {
  * The at-rest screen (T11, CONTEXT.md Idle Screen): F1 Headline's three
  * Columns (ADR 0078) — the weather down the left; the clock and date, the
  * Timer Clock beside it while a Timer is set, the Clock Lines under them
- * and the AI Usage under those down the middle; the Calendar, the Weight
+ * and, under those, Now Playing while a song is held over the AI Usage
+ * down the middle; the Calendar, the Weight
  * card and the News card down the right. Every pinned card has its home; a
  * hidden one leaves and its Column-mates take its room, stepping down to a
  * smaller form where the Column runs short (core/idle/columns). Over it the
@@ -497,7 +495,7 @@ export function IdleScreen({
   const zoom = useFitZoom()
   // Zoomed, the screen is laid out at the size it would have unzoomed, so it still fills the window.
   const fit = zoom !== 1 ? { zoom, width: `${window.innerWidth / zoom}px`, height: `${window.innerHeight / zoom}px` } : undefined
-  const lines = clockLines(cards, { nowPlaying: nowPlaying !== null, upNext: next !== null, lastPage: lastPage !== null })
+  const lines = clockLines(cards, { upNext: next !== null, lastPage: lastPage !== null })
   const weightRows = weighIns === null ? [] : weightCardRows(weighIns, weight)
   const entries = Math.min(ENTRIES_SHOWN, monthEntries(now, events).length)
 
@@ -542,9 +540,25 @@ export function IdleScreen({
   }
 
   const showWeather = columnCards('left', cards).length > 0
-  const showUsage = columnCards('middle', cards).length > 0 && (usage.status === 'error' || usageViews.length > 0)
-  // Under a Timer Clock and four Clock Lines the AI Usage is left too little height for its chart: it steps down to its rings.
-  const usageForm = timer.status !== 'off' && lines.length >= 4 ? 'small' : 'full'
+  // The middle Column's cards under the clock and its lines: Now Playing while a song is held, over the AI Usage (#365).
+  const rings = ringsHeight(usageViews)
+  const middleUsage = usageViews.length > 0 ? { rings } : usage.status === 'error' ? ('note' as const) : null
+  const middle = columnBands(middleAsks(cards, { music: nowPlaying !== null, usage: middleUsage }), middleRoom({ timer: timer.status !== 'off', lines: lines.length }))
+
+  const middleCard = (id: IdleCardId, form: 'full' | 'small', height: number): React.ReactNode => {
+    switch (id) {
+      case 'music':
+        return nowPlaying !== null ? <NowPlayingCard nowPlaying={nowPlaying} form={form} /> : null
+      case 'usage':
+        return usage.status === 'ready' && usageViews.length > 0 ? (
+          <UsageCard providers={usageViews} updatedAt={usage.snapshot.updatedAt} now={now.getTime()} {...usageLayout(height, rings)} />
+        ) : (
+          <NoteCard label="AI usage">Usage dashboard unreachable</NoteCard>
+        )
+      default:
+        return null
+    }
+  }
 
   return (
     <div className="idle-screen" aria-label="idle screen" style={fit}>
@@ -574,8 +588,6 @@ export function IdleScreen({
             switch (line) {
               case 'voice':
                 return <VoiceLine key={line} voice={voice} />
-              case 'nowPlaying':
-                return <NowPlayingLine key={line} nowPlaying={nowPlaying} />
               case 'upNext':
                 return next !== null ? <UpNextLine key={line} next={next} now={now} /> : null
               case 'lastPage':
@@ -583,13 +595,13 @@ export function IdleScreen({
             }
           })}
         </div>
-        {showUsage ? (
-          <div className="idle-home" data-card="usage" data-form={usageViews.length > 0 ? usageForm : 'small'}>
-            {usage.status === 'ready' && usageViews.length > 0 ? (
-              <UsageCard providers={usageViews} updatedAt={usage.snapshot.updatedAt} now={now.getTime()} form={usageForm} />
-            ) : (
-              <NoteCard label="AI usage">Usage dashboard unreachable</NoteCard>
-            )}
+        {middle.length > 0 ? (
+          <div className="idle-col-panel idle-col-panel--middle">
+            {middle.map((band) => (
+              <div key={band.id} className="idle-home" data-card={band.id} data-form={band.id === 'usage' && middleUsage !== 'note' ? usageLayout(band.height, rings).form : band.form} style={{ height: `${band.height}px` }}>
+                {middleCard(band.id, band.form, band.height)}
+              </div>
+            ))}
           </div>
         ) : null}
         {popup !== null ? <div className="idle-popup-place">{popup}</div> : null}

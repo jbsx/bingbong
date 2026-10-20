@@ -1,6 +1,4 @@
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
-import { createServer, type Server } from 'node:http'
-import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -8,6 +6,7 @@ import { startFixtureServer, type FixtureServer } from './fixtureServer'
 import { startHarness, type Harness } from './harness'
 import { cli } from './cliSupport'
 import { decisionScript, readingOf } from './scriptedJev'
+import { startUsageStandIn, type UsageStandIn, PROVIDERS } from './usageStandIn'
 import { waitFor } from './waitFor'
 import { brotherWeighIns, standInWeighIns, STEPPING_ON, TWO_PEOPLE, weighInsFile } from './weighIns'
 
@@ -19,7 +18,7 @@ import { brotherWeighIns, standInWeighIns, STEPPING_ON, TWO_PEOPLE, weighInsFile
 // repos.json, two People's Weigh-ins, a Last Page, and the Calendar's
 // stand-in source (BINGBONG_CALENDAR_FIXTURE) empty until a state fills it.
 // With BINGBONG_IDLE_SHOT_MUSIC=1 a song plays from the YouTube stand-in so
-// Now Playing takes its Clock Line, then a Timer runs beside the clock. Each
+// Now Playing takes its card over the AI Usage, then a Timer runs beside the clock. Each
 // state is shot into BINGBONG_IDLE_SHOT_DIR (default a temp folder,
 // printed) and held to the screen's rules: nothing overflows, no text under
 // 16 px, each card inside its home and each home inside its Column. The
@@ -27,8 +26,6 @@ import { brotherWeighIns, standInWeighIns, STEPPING_ON, TWO_PEOPLE, weighInsFile
 // ringing Timer; the weather unset; the Weigh-in pop-up live and settled;
 // each card hidden in turn; one Person; and no Weigh-ins. Gated:
 // BINGBONG_IDLE_SHOT=1, so the plain e2e run skips it.
-
-const PROVIDERS = ['Codex', 'Claude', 'Kaggle', 'GLM', 'Grok']
 
 /** The Top Repos a previous run read: the longest name and summary of the month's list among them. */
 function topRepos() {
@@ -49,32 +46,6 @@ function topRepos() {
 
 const HOUR = 3_600_000
 const DAY = 24 * HOUR
-
-function usagePayload(count: number, now: number) {
-  const providers = PROVIDERS.slice(0, count).map((name, index) => ({
-    name,
-    connected: true,
-    plan: index === 1 ? 'Max 20x' : 'pro',
-    windows: [
-      // Claude's gauge runs ahead of its week (+5 ahead, as round 6 drew it); the others behind theirs.
-      { key: '7d', label: '7-Day', usedPct: [14, 10, 41, 22, 63][index], resetAt: now + [130, 159, 60, 100, 40][index] * HOUR },
-      ...(index === 1
-        ? [
-            { key: '7d-fable', label: '7-Day (Fable)', usedPct: 8, resetAt: now + 159 * HOUR },
-            { key: '5h', label: '5-Hour', usedPct: 2, resetAt: now + 107 * 60_000 },
-          ]
-        : []),
-    ],
-  }))
-  const samples = Array.from({ length: 720 }, (_, step) => ({
-    sampledAt: now - step * 60_000,
-    providers: providers.map((provider) => ({
-      name: provider.name,
-      windows: provider.windows.map((window) => ({ key: window.key, label: window.label, usedPct: Math.max(0, window.usedPct - step * 0.01) })),
-    })),
-  }))
-  return { usage: { updatedAt: now, providers }, history: { samples } }
-}
 
 /** London's forecast as Open-Meteo answers it, the hours from the current one, the city an hour ahead of UTC. */
 function forecast() {
@@ -133,7 +104,7 @@ interface Geometry {
 
 describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review (#360)', () => {
   let harness: Harness
-  let server: Server
+  let usage: UsageStandIn | undefined
   let userDataDir: string
   let session: string
   let fixture: FixtureServer | undefined
@@ -144,18 +115,11 @@ describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review 
   const calendarFile = (): string => join(userDataDir, 'calendar.json')
 
   beforeAll(async () => {
-    server = createServer((request, response) => {
-      const payload = usagePayload(count, Date.now())
-      const body = request.url?.startsWith('/api/history') ? payload.history : request.url?.startsWith('/api/usage') ? payload.usage : null
-      response.writeHead(body === null ? 404 : 200, { 'content-type': 'application/json' })
-      response.end(JSON.stringify(body ?? {}))
-    })
-    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
-    const { port } = server.address() as AddressInfo
+    usage = await startUsageStandIn(count)
     userDataDir = await mkdtemp(join(tmpdir(), 'bingbong-e2e-idle-shot-'))
     await writeFile(
       join(userDataDir, 'settings.json'),
-      JSON.stringify({ weather: { city: weatherCity, units: 'metric' }, usageDashboard: { url: `http://127.0.0.1:${port}`, providers: PROVIDERS.slice(0, count) }, weight: TWO_PEOPLE }),
+      JSON.stringify({ weather: { city: weatherCity, units: 'metric' }, usageDashboard: usage.settings, weight: TWO_PEOPLE }),
       'utf8',
     )
     await writeFile(join(userDataDir, 'repos.json'), `${JSON.stringify(topRepos())}\n`, 'utf8')
@@ -207,7 +171,7 @@ describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review 
     )
     if (music) {
       await cli(harness, 'play fixture song', /^(playing: id=|No videos|.*can't be played|YouTube didn't|error:)/)
-      await waitFor(async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('.idle-lines .idle-music')`)) ? true : undefined), {
+      await waitFor(async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('.idle-music-card')`)) ? true : undefined), {
         timeoutMs: 15000,
         intervalMs: 250,
       })
@@ -218,7 +182,7 @@ describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review 
   afterAll(async () => {
     await harness?.quit()
     await fixture?.close().catch(() => {})
-    await new Promise((resolve) => server?.close(resolve))
+    await usage?.close()
     await rm(userDataDir, { recursive: true, force: true }).catch(() => {})
     process.stdout.write(`idle screen shots in ${outDir}\n`)
   })
@@ -227,9 +191,9 @@ describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review 
     const geometry = await screenGeometry()
     expect(geometry.overflowing).toEqual([])
     expect(geometry.smallestText).toBeGreaterThanOrEqual(16)
-    // Weather down the left; the AI Usage under the clock; the Calendar, the Weight card and News down the right.
-    expect(geometry.homes).toEqual({ weather: 'left full', usage: 'middle full', calendar: 'right full', weight: 'right full', news: 'right full' })
-    expect(geometry.lines).toEqual(music ? ['voice', 'nowPlaying', 'lastPage'] : ['voice', 'lastPage'])
+    // Weather down the left; Now Playing, while a song is held, over the AI Usage under the clock; the Calendar, the Weight card and News down the right.
+    expect(geometry.homes).toEqual({ weather: 'left full', ...(music ? { music: 'middle full', usage: 'middle small' } : { usage: 'middle full' }), calendar: 'right full', weight: 'right full', news: 'right full' })
+    expect(geometry.lines).toEqual(['voice', 'lastPage'])
     expect(geometry.rings).toBe(count)
     expect(await text('.idle-voice')).toBe('Say “Bing Bong” or start typing')
     expect(await text('.wx-peak')).toMatch(/^97%rainby \d\d:\d\d$/)
@@ -274,13 +238,16 @@ describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review 
     await reenterIdle()
   })
 
-  it.runIf(music)('runs a Timer beside the clock with Now Playing still in its line', async () => {
+  it.runIf(music)('runs a Timer beside the clock, with Up Next and the Last Page, Now Playing stepped down to its smaller card over the rings and a short chart', async () => {
+    await writeFile(calendarFile(), JSON.stringify(calendarEvents()), 'utf8')
     await harness.dashboardEval(`window.bingbong.assistant.submit('timer 25 minutes')`)
     await reenterIdle()
-    await waitFor(async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('.idle-timer') && !!document.querySelector('.idle-lines .idle-music')`)) ? true : undefined), { timeoutMs: 10000, intervalMs: 250 })
+    await waitFor(async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('.idle-timer') && !!document.querySelector('.idle-upnext') && !!document.querySelector('.idle-music-card--small')`)) ? true : undefined), { timeoutMs: 10000, intervalMs: 250 })
     expect(await text('.idle-timer-sub')).toMatch(/^Timer 25 minutes· ends \d\d:\d\d$/)
+    expect((await screenGeometry()).homes).toMatchObject({ music: 'middle small', usage: 'middle full' })
     for (const scheme of ['dark', 'light'] as const) await held(`idle-${count}-music-timer`, scheme)
     await harness.dashboardEval(`window.bingbong.assistant.submit('timer off')`)
+    await writeFile(calendarFile(), JSON.stringify({ events: [] }), 'utf8')
   })
 
   it('pulses "Time’s up" in the Timer Clock while it rings', async () => {
@@ -299,7 +266,7 @@ describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review 
     await shoot('weighin-live')
     await waitFor(async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('.idle-popup-place .weighin-popup--settled')`)) ? true : undefined), { timeoutMs: 15000, intervalMs: 50 })
     await held('weighin-settled')
-    const place = await harness.dashboardEval<{ chart: number; popup: number }>(`({ chart: document.querySelector('.usage-chart').getBoundingClientRect().bottom, popup: document.querySelector('.idle-popup-place').getBoundingClientRect().bottom })`)
+    const place = await harness.dashboardEval<{ chart: number; popup: number }>(`({ chart: document.querySelector('.idle-home[data-card="usage"]').getBoundingClientRect().bottom, popup: document.querySelector('.idle-popup-place').getBoundingClientRect().bottom })`)
     expect(Math.abs(place.popup - place.chart)).toBeLessThanOrEqual(1)
     await waitFor(async () => ((await harness.dashboardEval<boolean>(`!document.querySelector('.weighin-popup')`)) ? true : undefined), { timeoutMs: 20000, intervalMs: 250 })
   })
@@ -310,7 +277,7 @@ describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review 
       for (const hidden of ['weather', 'calendar', 'weight', 'usage', 'news', 'lastPage', 'music']) {
         if (hidden === 'music' && !music) continue
         await pin(all.filter((id) => id !== hidden))
-        await waitFor(async () => ((await harness.dashboardEval<boolean>(`!document.querySelector('.idle-home[data-card="${hidden}"]') && ${hidden === 'lastPage' ? `!document.querySelector('.idle-last-page')` : hidden === 'music' ? `!document.querySelector('.idle-music')` : 'true'}`)) ? true : undefined), {
+        await waitFor(async () => ((await harness.dashboardEval<boolean>(`!document.querySelector('.idle-home[data-card="${hidden}"]') && ${hidden === 'lastPage' ? `!document.querySelector('.idle-last-page')` : hidden === 'music' ? `!document.querySelector('.idle-music-card')` : 'true'}`)) ? true : undefined), {
           timeoutMs: 5000,
           intervalMs: 100,
         })

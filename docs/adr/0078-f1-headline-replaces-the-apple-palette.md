@@ -102,3 +102,27 @@ so the look has a guard beyond the Idle Screen.
   the owner ruled on 2026-10-20 that the e2e is the source of truth and no
   screenshot is reviewed by hand (`pnpm shot:states` runs it alone).
 
+
+## Amendment 2026-10-20: the middle Column's two homes (#365)
+
+- **Now Playing is a card, not a Clock Line.** The middle Column has two
+  homes under the clock and its Clock Lines — `music` over `usage` — drawn
+  as one panel of bands parted by a hairline, as the right Column is. The
+  Clock Lines are the Voice Prompt, Up Next and the Last Page.
+- **The middle Column runs through `columnBands`** like the right one,
+  replacing the hand rule that stepped the AI Usage down under a Timer and
+  four lines. Its room is the Column less the clock row (or the Timer's)
+  and the Clock Lines shown. Now Playing asks 280 px full or 120 small and
+  never grows; the AI Usage asks its rings over a 240 px chart, or its rings
+  alone, and takes the spare. So the chart goes before the card steps down,
+  and the spare height goes back to the chart. The heights are measured
+  from `styles.css` (`core/idle/columns.ts`); the mockup's 290 px card came
+  down to 280 so a song with the Last Page keeps its full card.
+- **The rings draw smaller under the card.** With one or two providers the
+  rings are 228 px, too tall to sit under a full card in the owner's usual
+  Column; in the AI Usage's smaller form, and in a short chart's, they are
+  drawn at three providers' 184 px. Nothing they show is dropped. The
+  chart's last values keep their least distance apart in pixels, so a
+  shorter chart parts them further.
+- **No peach on the card.** The song's picture is its only colour, as data
+  (E4); the music is not Bing Bong itself.

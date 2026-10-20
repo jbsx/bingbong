@@ -8,13 +8,15 @@ import { startFixtureServer, type FixtureServer } from './fixtureServer'
 import { decisionScript, readingOf } from './scriptedJev'
 import { startHarness, type Harness } from './harness'
 import { promptBarScript } from './scripts'
+import { startUsageStandIn, type UsageStandIn } from './usageStandIn'
 import { sleep, waitFor } from './waitFor'
 import { brotherWeighIns, standInWeighIns, TWO_PEOPLE, weighInsFile } from './weighIns'
 
 // The states' screenshot review (#359, ADR 0078): the
 // round-6 state list replayed against the fixture server at the
 // appliance's 1920×1080, in dark and light — the same Commands in the same
-// order as the shots the F1 theme was drawn over, then Settings section by
+// order as the shots the F1 theme was drawn over, then Now Playing's card on
+// the Idle Screen in each of its states (#365), Settings section by
 // section, the Weight page, a Weigh-in over the pane, and an Utterance
 // being taken over a page with a Page Term on it. Each state is one PNG of
 // the whole screen (the dashboard, the pane and the panel are separate
@@ -111,6 +113,7 @@ type Theme = 'dark' | 'light'
 interface Run {
   harness: Harness
   fixture: FixtureServer
+  usage: UsageStandIn
   userDataDir: string
   theme: Theme
   /** Every state's failures, by state, asserted once the whole walk is shot. */
@@ -119,15 +122,18 @@ interface Run {
 
 async function launch(theme: Theme, env: Record<string, string> = {}): Promise<Run> {
   const fixture = await startFixtureServer()
+  // The owner's two providers, so the Idle Screen's middle Column is laid out as on the appliance.
+  const usage = await startUsageStandIn(2)
   const userDataDir = await mkdtemp(join(tmpdir(), 'bingbong-e2e-state-shot-'))
-  await writeFile(join(userDataDir, 'settings.json'), JSON.stringify({ appearance: theme, weather: { city: 'London', units: 'metric' }, weight: TWO_PEOPLE }), 'utf8')
+  await writeFile(join(userDataDir, 'settings.json'), JSON.stringify({ appearance: theme, weather: { city: 'London', units: 'metric' }, usageDashboard: usage.settings, weight: TWO_PEOPLE }), 'utf8')
   await writeFile(join(userDataDir, 'weighins.json'), weighInsFile([...standInWeighIns(), ...brotherWeighIns()]), 'utf8')
+  await writeFile(calendarFile(userDataDir), JSON.stringify({ events: [] }), 'utf8')
   const harness = await startHarness({
     fixture,
     userDataDir,
     launchArgs: ['--mute-audio'],
     // A wake ear that never fires, so the Voice Prompt waits for "Bing Bong" as the appliance does.
-    env: { DISPLAY: screen?.display, BINGBONG_YOUTUBE_FIXTURE: new URL(fixture.url('/')).origin, BINGBONG_WAKE_ENGINE: 'node', BINGBONG_WAKE_SCRIPT: '[0.01]', BINGBONG_VAD_SCRIPT: '[0.01]', BINGBONG_STT_SCRIPT: '[]', ...env },
+    env: { DISPLAY: screen?.display, BINGBONG_YOUTUBE_FIXTURE: new URL(fixture.url('/')).origin, BINGBONG_WAKE_ENGINE: 'node', BINGBONG_WAKE_SCRIPT: '[0.01]', BINGBONG_VAD_SCRIPT: '[0.01]', BINGBONG_STT_SCRIPT: '[]', BINGBONG_CALENDAR_FIXTURE: calendarFile(userDataDir), ...env },
   })
   // The window at the appliance's size: Electron has no Browser.setWindowBounds, the X server has.
   onScreen(`xdotool search --onlyvisible --name '.*' windowmove %@ 0 0 windowsize %@ ${WIDTH} ${HEIGHT}`)
@@ -137,13 +143,17 @@ async function launch(theme: Theme, env: Record<string, string> = {}): Promise<R
   }, { timeoutMs: 10_000, intervalMs: 100 }).catch(async () => harness.dashboardEval<number>('innerWidth'))
   expect(width, 'the window at the appliance width').toBeGreaterThan(WIDTH - 40)
   await sleep(800)
-  return { harness, fixture, userDataDir, theme, issues: new Map() }
+  return { harness, fixture, usage, userDataDir, theme, issues: new Map() }
 }
 
 async function close(run: Run): Promise<void> {
   await run.harness.quit().catch(() => {})
   await run.fixture.close().catch(() => {})
+  await run.usage.close().catch(() => {})
 }
+
+/** The Calendar's stand-in source (re-read on every ask): empty until a state fills it. */
+const calendarFile = (userDataDir: string): string => join(userDataDir, 'calendar.json')
 
 /** The whole screen as it shows, and what breaks the floor on each of the app's surfaces in it. */
 async function shoot(run: Run, state: string): Promise<void> {
@@ -234,6 +244,7 @@ async function walkTheShell(run: Run): Promise<void> {
   await shoot(run, '24-music-playing')
   await command(run, 'pause')
   await shoot(run, '25-music-paused')
+  await walkTheIdleMusic(run)
 
   // Settings, shut, then each section opened from the index.
   await clickDashboard(run, '.settings-toggle')
@@ -276,6 +287,58 @@ async function walkTheShell(run: Run): Promise<void> {
   await shoot(run, '02-weighin-live')
   await waitFor(async () => ((await harness.weighInEval<boolean>(`!!document.querySelector('.weighin-popup--settled')`).catch(() => false)) ? true : undefined), { timeoutMs: 15_000, intervalMs: 50 })
   await shoot(run, '03-weighin-settled')
+}
+
+/**
+ * Now Playing on the Idle Screen (#365): its full card playing, paused and
+ * ended under the clock and two Clock Lines, then its smaller one under a
+ * Timer with Up Next and the Last Page. The verbs are submitted as the
+ * card's controls submit them, keeping the screen up.
+ */
+async function walkTheIdleMusic(run: Run): Promise<void> {
+  const { harness } = run
+  const submit = (line: string): Promise<unknown> => harness.dashboardEval(`window.bingbong.assistant.submit(${JSON.stringify(line)})`)
+  const shown = (selector: string): Promise<true> =>
+    waitFor(async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector(${JSON.stringify(selector)})`)) ? true : undefined), { timeoutMs: 15_000, intervalMs: 100 }).catch(async (error: unknown) => {
+      await shoot(run, `no-${selector.replace(/\W+/g, '-')}`)
+      throw error
+    })
+  const idle = async (): Promise<void> => {
+    await harness.pressKey('pane', { key: 'L', code: 'KeyL', windowsVirtualKeyCode: 76, modifiers: 2 /* Ctrl */ | 8 /* Shift */ })
+    await shown('.idle-screen')
+  }
+  const wake = async (): Promise<void> => {
+    await harness.clickDashboardElement('.idle-date')
+    await waitFor(async () => ((await harness.dashboardEval<boolean>(`!document.querySelector('.idle-screen')`)) ? true : undefined), { timeoutMs: 10_000, intervalMs: 100 })
+  }
+
+  await command(run, 'timer off')
+  await command(run, 'play')
+  await idle()
+  await shown('.idle-music-card--full.idle-music-card--playing')
+  await shoot(run, '26-idle-music-playing')
+  await submit('pause')
+  await shown('.idle-music-card--full.idle-music-card--paused')
+  await shoot(run, '26-idle-music-paused')
+  await submit('skip')
+  await shown('.idle-music-card--full.idle-music-card--ended')
+  await shoot(run, '26-idle-music-ended')
+
+  // An entry under way, so Up Next takes a Clock Line; the Calendar asks again as the screen mounts afresh.
+  const now = Date.now()
+  await writeFile(calendarFile(run.userDataDir), JSON.stringify({ events: [{ id: 'standup', source: 'stand-in', title: 'Stand-up', start: now - 10 * 60_000, end: now + 50 * 60_000, allDay: false }] }), 'utf8')
+  await submit('play')
+  await submit('timer 25 minutes')
+  await wake()
+  await idle()
+  await shown('.idle-upnext')
+  await shown('.idle-music-card--small.idle-music-card--playing')
+  await shoot(run, '26-idle-music-small')
+
+  await submit('timer off')
+  await writeFile(calendarFile(run.userDataDir), JSON.stringify({ events: [] }), 'utf8')
+  await wake()
+  await sleep(800)
 }
 
 /** An Utterance being taken over a page whose "Fixture Museums" is a Page Term: LISTENING, the live words, the quiet that ends it. */

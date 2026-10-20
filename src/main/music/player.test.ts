@@ -198,6 +198,7 @@ describe('the Player\'s Now Playing (#344)', () => {
       durationS: 200,
       paused: false,
       loop: false,
+      muted: false,
       ended: false,
       queued: ['Song B', 'Song C'],
     })
@@ -205,6 +206,21 @@ describe('the Player\'s Now Playing (#344)', () => {
     await perform({ kind: 'pause' })
     await perform({ kind: 'loop', on: true })
     expect(player.nowPlaying()).toMatchObject({ paused: true, loop: true })
+  })
+
+  it('says the element muted while it is (#365): by the verb, and by the poll when YouTube mutes it itself', async () => {
+    const { youtube, player, perform } = wired()
+    await perform({ kind: 'search', place: 'now' }, 'song a')
+    const seen: unknown[] = []
+    player.onChange((state) => seen.push(state))
+    await perform({ kind: 'mute', on: true })
+    expect(player.nowPlaying()?.muted).toBe(true)
+    expect(seen.at(-1)).toMatchObject({ muted: true })
+    await perform({ kind: 'mute', on: false })
+    expect(player.nowPlaying()?.muted).toBe(false)
+    youtube.element = { ...youtube.element, muted: true }
+    await player.check()
+    expect(player.nowPlaying()?.muted).toBe(true)
   })
 
   it('names the next three queued titles, no more', async () => {

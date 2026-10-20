@@ -134,6 +134,8 @@ export function createPlayer(deps: PlayerDeps): Player {
   let progress: { id: string; channel: string; elapsed: number; duration: number | null } | null = null
   /** The element's volume as last read while not ducked. */
   let knownVolume: number | null = null
+  /** Whether the element was muted when last read or set (#365). */
+  let muted = false
   /** While ducked: the volume the duck puts back. */
   let ducked: { restore: number } | null = null
   /** The ducks and restores, one after the other. */
@@ -153,6 +155,7 @@ export function createPlayer(deps: PlayerDeps): Player {
       durationS: read === null || read.duration === null ? null : Math.round(read.duration),
       paused: state.current !== null && state.paused,
       loop: state.current !== null && state.loop,
+      muted,
       ended: state.current === null,
       queued: state.upNext.slice(0, QUEUED_SHOWN).map((song) => song.title),
     }
@@ -408,6 +411,7 @@ export function createPlayer(deps: PlayerDeps): Player {
     const element = await control(op)
     if (element === null || !element.found) return { result: 'no video on the page', answer: 'Nothing is playing.', failure: true }
     if (ducked === null) knownVolume = element.volume
+    muted = element.muted
     state = then(state)
     return { result: `${op.op}: paused=${element.paused} loop=${element.loop} volume=${element.volume} muted=${element.muted}`, answer: answer(element) }
   }
@@ -445,6 +449,7 @@ export function createPlayer(deps: PlayerDeps): Player {
     const song = state.current
     if (song === null || status.id !== song.id || !status.hasVideo || status.ad) return
     progress = { id: song.id, channel: status.channel, elapsed: status.elapsed, duration: status.duration }
+    muted = status.muted
     if (ducked === null) knownVolume = status.volume
     else if (status.volume > floorOf(ducked.restore)) await control({ op: 'level', to: floorOf(ducked.restore) })
     // A pause the Player did not make, with "Continue watching?" up: YouTube's, after hours of play. Yes.

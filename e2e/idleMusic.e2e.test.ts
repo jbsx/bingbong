@@ -5,13 +5,15 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { YOUTUBE_FIXTURE_SONG, startFixtureServer, type FixtureServer } from './fixtureServer'
 import { startHarness, type Harness } from './harness'
 import { cli } from './cliSupport'
+import { feedText } from './feed'
 import { decisionScript, readingOf } from './scriptedJev'
 import { waitFor } from './waitFor'
 
 // Music over the Idle Screen (#344, AC5): `play <words>` from the Idle
 // Screen keeps it up, the search and the watch page happening in the
 // hidden pane, with the Now Playing card naming the song and its progress
-// moving; a tap on the card pauses it, the screen still up; "show the
+// moving; its controls (#365) pause, play, go back and skip as the words
+// do, the screen still up through every tap; "show the
 // video" wakes the dashboard over the watch page. The fixture server
 // stands in for YouTube under YouTube's own addresses
 // (BINGBONG_YOUTUBE_FIXTURE). The music playing on in the hidden pane is
@@ -106,12 +108,38 @@ describe('idle screen e2e: music over the Idle Screen', () => {
     expect(await idleShown()).toBe(true)
   }, 30_000)
 
-  it('a tap on the card pauses the song, and the Idle Screen stays up', async () => {
-    await harness.clickDashboardElement('.idle-music')
+  it('the card’s controls submit `pause`, `play`, `previous` and `skip`, and the Idle Screen stays up through every tap (#365)', async () => {
+    const cardIs = (state: string): Promise<true> =>
+      waitFor(async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('.idle-music-card--${state}')`)) ? true : undefined), { timeoutMs: 10_000, intervalMs: 250 })
+    const answered = (words: string): Promise<true> => waitFor(async () => ((await feedText(harness)).includes(words) ? true : undefined), { timeoutMs: 10_000, intervalMs: 250 })
+
+    await harness.clickDashboardElement('.idle-music-button[aria-label="Pause"]')
     await waitFor(async () => ((await facts()).paused ? true : undefined), { timeoutMs: 10_000, intervalMs: 250 })
-    await waitFor(async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('.idle-music--paused')`)) ? true : undefined), { timeoutMs: 5_000, intervalMs: 250 })
+    await cardIs('paused')
     expect(await idleShown()).toBe(true)
-  }, 30_000)
+
+    await harness.clickDashboardElement('.idle-music-button[aria-label="Play"]')
+    await waitFor(async () => (!(await facts()).paused ? true : undefined), { timeoutMs: 10_000, intervalMs: 250 })
+    await cardIs('playing')
+    expect(await idleShown()).toBe(true)
+
+    // One song, nothing before it.
+    await harness.clickDashboardElement('.idle-music-button[aria-label="Previous"]')
+    await answered('Nothing before this.')
+    expect(await idleShown()).toBe(true)
+
+    // Nothing queued: the song is shown ended, and the toggle plays it again.
+    await harness.clickDashboardElement('.idle-music-button[aria-label="Skip"]')
+    await answered('Nothing queued.')
+    await cardIs('ended')
+    expect(await dashboardText('.idle-music-next')).toBe('Say “play” or tap to hear it again')
+    expect(await idleShown()).toBe(true)
+
+    // The picture toggles, as the line did.
+    await harness.clickDashboardElement('.idle-music-thumb')
+    await cardIs('playing')
+    expect(await idleShown()).toBe(true)
+  }, 60_000)
 
   it('"show the video" wakes the dashboard with the pane on the watch page', async () => {
     const line = await cli(harness, 'show the video', /^(showing: id=|nothing playing|error:)/)

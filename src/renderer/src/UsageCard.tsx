@@ -1,10 +1,33 @@
+import { useLayoutEffect, useRef, useState } from 'react'
 import { chartCeiling, elapsedPct, pace, resetLabel, USAGE_HISTORY_MS, USAGE_STALE_MS, type UsageView, type UsageWindow } from '../../core/usage/usage'
+import type { RingsHeight } from '../../core/idle/columns'
 
 /** A pause in the dashboard's sampling longer than this breaks the line rather than bridging it. */
 const GAP_MS = 5 * 60 * 1000
 
 /** A ring's width in px by how many providers share the row: two at F2's size, three to five shrinking to stay in one row. */
 const RING_PX = [228, 228, 228, 184, 148, 120]
+
+// The words under a ring, as styles.css sets them (measured, #365): its name and reset; then its other windows' figures, the first larger.
+const RING_WORDS_PX = 57
+const FIGURES_TOP_PX = 4
+const LEAD_FIGURE_PX = { large: 42, small: 29 }
+const FIGURE_PX = 31
+
+/** Drawn smaller, under Now Playing (#365), a ring is at most three providers' size. */
+const COMPACT_RING_PX = RING_PX[3]
+
+function ringPx(providers: number, compact: boolean): number {
+  const ring = RING_PX[Math.min(providers, RING_PX.length - 1)]
+  return compact ? Math.min(ring, COMPACT_RING_PX) : ring
+}
+
+/** The rings' row's height, padding aside, at the rings' own size and drawn smaller: the ring and the most words any provider has under it — what the middle Column sizes the card by. */
+export function ringsHeight(providers: readonly UsageView[]): RingsHeight {
+  const lead = providers.length >= 4 ? LEAD_FIGURE_PX.small : LEAD_FIGURE_PX.large
+  const figures = Math.max(0, ...providers.map((provider) => (provider.bars.length === 0 ? 0 : FIGURES_TOP_PX + lead + FIGURE_PX * (provider.bars.length - 1))))
+  return { large: ringPx(providers.length, false) + RING_WORDS_PX + figures, compact: ringPx(providers.length, true) + RING_WORDS_PX + figures }
+}
 
 /** Each provider's tone, as a class the stylesheet maps to its light and dark color. */
 function toneClass(provider: string): string {
@@ -130,9 +153,9 @@ function ProviderRing({ provider, now }: { provider: UsageView; now: number }) {
   )
 }
 
-/** The providers' rings in one row; three to five shrink their rings to stay in it. */
-function Rings({ providers, now }: { providers: readonly UsageView[]; now: number }) {
-  const ring = RING_PX[Math.min(providers.length, RING_PX.length - 1)]
+/** The providers' rings in one row; three to five shrink their rings to stay in it, and so do fewer, compact. */
+function Rings({ providers, now, compact }: { providers: readonly UsageView[]; now: number; compact: boolean }) {
+  const ring = ringPx(providers.length, compact)
   return (
     <section className="usage-rings" data-providers={providers.length} style={{ '--ring-columns': String(providers.length), '--ring': `${ring}px` } as React.CSSProperties} aria-label="AI usage">
       {providers.map((provider) => (
@@ -163,9 +186,31 @@ function linePaths(points: ReadonlyArray<[number, number]>, start: number, ceili
   return { line, area, end: last ? { x: last[0], y: last[1], pct: Math.round(lastPct) } : null }
 }
 
-/** The least room, as a share of the plot's height, between two last values' middles: a 40 px figure on a plot about 130 px tall; smaller figures for more lines (styles.css, .usage-chart[data-lines]). */
-function lastGap(lines: number): number {
-  return lines <= 2 ? 32 : lines === 3 ? 26 : 19
+/** The plot's height until it is measured: the chart in full. */
+const PLOT_PX = 130
+
+/** The least room, as a share of the plot's height, between two last values' middles: a 40 px figure's, smaller figures for more lines (styles.css, .usage-chart[data-lines]) — so a shorter plot, under Now Playing (#365), parts them further. */
+function lastGap(lines: number, plotPx: number): number {
+  const figure = lines <= 2 ? 42 : lines === 3 ? 34 : 25
+  return (figure / Math.max(1, plotPx)) * 100
+}
+
+/** The height of the element `ref` is on, kept as it resizes; `fallback` until it is laid out. */
+function useHeight(fallback: number): [React.RefObject<HTMLSpanElement | null>, number] {
+  const ref = useRef<HTMLSpanElement>(null)
+  const [height, setHeight] = useState(fallback)
+  useLayoutEffect(() => {
+    const element = ref.current
+    if (element === null) return
+    const measure = (): void => {
+      if (element.clientHeight > 0) setHeight(element.clientHeight)
+    }
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [])
+  return [ref, height]
 }
 
 /**
@@ -215,9 +260,10 @@ function UsageChart({ providers, updatedAt, now }: { providers: readonly UsageVi
   const ceiling = chartCeiling(peak)
   const rows = [1, 0.5, 0].map((share) => Math.round(ceiling * share))
   const drawn = lines.map((entry) => ({ ...entry, ...linePaths(entry.window.history, start, ceiling) }))
+  const [plot, plotPx] = useHeight(PLOT_PX)
   const lastAt = lastValueTops(
     drawn.map(({ end }) => end?.y ?? null),
-    lastGap(drawn.length),
+    lastGap(drawn.length, plotPx),
   )
   // Past three lines the legend names the provider alone, so every entry keeps its place.
   const named = lines.length > 3
@@ -260,7 +306,7 @@ function UsageChart({ providers, updatedAt, now }: { providers: readonly UsageVi
             ),
           )}
         </span>
-        <span className="usage-chart-last" aria-label="the last values">
+        <span ref={plot} className="usage-chart-last" aria-label="the last values">
           {drawn.map(({ provider, window, end }, index) =>
             end === null ? null : (
               <span key={`${provider}:${window.key}:last`} className={`usage-last ${toneClass(provider)}`} style={{ top: `${lastAt[index]}%` }}>
@@ -285,13 +331,14 @@ function UsageChart({ providers, updatedAt, now }: { providers: readonly UsageVi
  * The AI Usage card (CONTEXT.md), F2's card in the middle Column under the
  * Clock Lines: the chosen providers' rings in one row over the dashboard's
  * last twelve hours. In its smaller form the rings alone, with when the
- * dashboard last refreshed. Read-only — a tap wakes the dashboard like
- * anywhere else on the Idle Screen; the choices live in settings.
+ * dashboard last refreshed. Compact, under Now Playing (#365), the rings
+ * are drawn smaller. Read-only — a tap wakes the dashboard like anywhere
+ * else on the Idle Screen; the choices live in settings.
  */
-export function UsageCard({ providers, updatedAt, now, form }: { providers: readonly UsageView[]; updatedAt: number; now: number; form: 'full' | 'small' }) {
+export function UsageCard({ providers, updatedAt, now, form, compact = false }: { providers: readonly UsageView[]; updatedAt: number; now: number; form: 'full' | 'small'; compact?: boolean }) {
   return (
     <section className={`idle-card usage-card usage-card--${form}`} aria-label="AI usage">
-      <Rings providers={providers} now={now} />
+      <Rings providers={providers} now={now} compact={compact} />
       {form === 'full' ? (
         <UsageChart providers={providers} updatedAt={updatedAt} now={now} />
       ) : (
