@@ -33,12 +33,23 @@ describe('the state Jev reads', () => {
       [
         'The user spoke to a web browser: "click the first video"',
         'Page: https://example.com/ — "Example"',
-        'Refs (number, kind, label, address):',
+        'Refs (number, kind, label, address, states):',
         '[1] link "Home" https://example.com/',
         '[2] button "Sign in"',
         '[3] input[search] "Search"',
       ].join('\n'),
     )
+  })
+
+  it("carries each ref's Ref State after its label, so a stale label is not all Jev knows of a switch", () => {
+    const captions = { ref: 4, kind: 'button' as const, label: 'Subtitles/closed captions unavailable', href: null, inputType: null, states: ['pressed=true', 'keyshortcuts="c"'] }
+    const menu = { ref: 5, kind: 'link' as const, label: 'Account', href: 'https://example.com/me', inputType: null, states: ['expanded=false'] }
+    const page = { ...PAGE, refs: [...PAGE.refs, captions, menu] }
+    expect(commandState('turn off captions', page).split('\n').slice(-2)).toEqual([
+      '[4] button "Subtitles/closed captions unavailable" pressed=true keyshortcuts="c"',
+      '[5] link "Account" https://example.com/me expanded=false',
+    ])
+    expect(commandQuestions('turn off captions', page).target.options['ref-4']).toBe('button "Subtitles/closed captions unavailable" pressed=true keyshortcuts="c"')
   })
 })
 

@@ -45,6 +45,8 @@ export interface CollectedElement {
   selectedOption?: string | null
   value?: string | null
   ariaPressed?: string | null
+  /** The Ref State the accessibility tree gave (refStates.ts); the controller adds it after the collect, for the elements that become refs. */
+  states?: readonly string[]
   className?: string
   /**
    * Where this element sat in the collect before this one, or -1 when this
@@ -140,6 +142,8 @@ export interface SnapshotRef {
   selectedOption?: string | null
   value?: string | null
   ariaPressed?: string | null
+  /** The Ref State (refStates.ts): what the accessibility tree says of the element; absent when it said nothing. */
+  states?: readonly string[]
   className?: string
   /** 'dialog' marks a control of the topmost open dialog; 'page' otherwise. */
   layer?: 'dialog' | 'page'
@@ -206,7 +210,7 @@ export const MAX_HREF_LENGTH = 200
 
 const BUTTON_INPUT_TYPES = new Set(['submit', 'button', 'reset', 'image'])
 
-function refKindOf(element: CollectedElement): RefKind {
+export function refKindOf(element: CollectedElement): RefKind {
   if (element.tag === 'iframe') return 'iframe'
   if (element.tag === 'video' || element.tag === 'audio') return 'media'
   if (element.tag === 'a' || element.tag === 'area' || element.role === 'link') return 'link'
@@ -367,7 +371,7 @@ export function truncateText(text: string, maxLength: number): string {
   return `${text.slice(0, maxLength - 1)}…`
 }
 
-function truncateLabel(label: string): string {
+export function truncateLabel(label: string): string {
   return truncateText(label, MAX_LABEL_LENGTH)
 }
 
@@ -426,14 +430,22 @@ function pageTextOf(page: CollectedPage): Pick<PageSnapshot, 'textBlocks' | 'tex
   }
 }
 
+// Dialog-layer elements bypass the viewport bound: the dialog is the page's
+// current interaction layer, and its controls may sit below the fold inside
+// the dialog's own scroller (the click path scrolls them into view).
+function isVisible(element: CollectedElement, page: CollectedPage): boolean {
+  return element.layer === 'dialog' || intersectsViewport(element, page.viewport)
+}
+
+/** The collected elements that become refs, by their index in the collect — the page registry's index. */
+export function refElementIndices(page: CollectedPage, options?: { maxRefs?: number }): number[] {
+  const indices = page.elements.flatMap((element, index) => (isVisible(element, page) ? [index] : []))
+  return indices.slice(0, options?.maxRefs ?? MAX_SNAPSHOT_REFS)
+}
+
 export function buildPageSnapshot(page: CollectedPage, options?: { maxRefs?: number }): PageSnapshot {
   const maxRefs = options?.maxRefs ?? MAX_SNAPSHOT_REFS
-  // Dialog-layer elements bypass the viewport bound: the dialog is the page's
-  // current interaction layer, and its controls may sit below the fold inside
-  // the dialog's own scroller (the click path scrolls them into view).
-  const visible = page.elements.filter(
-    (element) => element.layer === 'dialog' || intersectsViewport(element, page.viewport),
-  )
+  const visible = page.elements.filter((element) => isVisible(element, page))
   const taken = visible.slice(0, maxRefs)
 
   return {
@@ -466,6 +478,7 @@ export function buildPageSnapshot(page: CollectedPage, options?: { maxRefs?: num
       value: element.value ?? null,
       ariaPressed: element.ariaPressed ?? null,
       className: element.className ?? '',
+      ...(element.states !== undefined && element.states.length > 0 ? { states: element.states } : {}),
       layer: element.layer ?? 'page',
       previousIndex: element.previousIndex ?? -1,
     })),

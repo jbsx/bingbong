@@ -100,6 +100,8 @@ export interface CommandRef {
   readonly href: string | null
   /** An input's type (`text`, `checkbox`, …); null for every other kind. */
   readonly inputType: string | null
+  /** Its Ref State (`pressed=true`, `expanded=false`, …); absent when the tree said nothing of it. */
+  readonly states?: readonly string[]
 }
 
 /** The page a Command is read against: its address, its title and its numbered refs. */
@@ -123,7 +125,7 @@ export interface PageDialog {
 }
 
 export function commandRefOf(ref: SnapshotRef): CommandRef {
-  return { ref: ref.ref, kind: ref.kind, label: ref.label, href: ref.href, inputType: ref.inputType }
+  return { ref: ref.ref, kind: ref.kind, label: ref.label, href: ref.href, inputType: ref.inputType, ...(ref.states !== undefined ? { states: ref.states } : {}) }
 }
 
 /** The page a Command is read against, off a collected snapshot: its refs, its Page Terms and the dialog open over it. */

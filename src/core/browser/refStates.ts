@@ -1,0 +1,83 @@
+// A ref's Ref State (CONTEXT.md): what the browser's accessibility tree says
+// about the element — the tree a screen reader reads, so every state the
+// page declares, natively or by ARIA, without a list of our own picking
+// which matter (owner rule: the widest net). A label alone can lie: YouTube's
+// captions button keeps "unavailable" in its name while it is pressed.
+
+import { truncateLabel, type RefKind } from './snapshot'
+
+/** One property of a CDP `Accessibility.AXNode`, as the protocol sends it. */
+export interface AxProperty {
+  readonly name: string
+  readonly value: { readonly type: string; readonly value?: unknown }
+}
+
+/** The part of a CDP `Accessibility.AXNode` a Ref State is read from. */
+export interface AxNode {
+  readonly ignored?: boolean
+  readonly role?: { readonly type: string; readonly value?: unknown }
+  readonly name?: { readonly type: string; readonly value?: unknown }
+  readonly description?: { readonly type: string; readonly value?: unknown }
+  readonly properties?: readonly AxProperty[]
+}
+
+/** What the ref already says of itself, so its states don't repeat it. */
+export interface RefShown {
+  readonly kind: RefKind
+  readonly label: string
+  readonly inputType: string | null
+}
+
+/**
+ * Properties that say nothing about this control in particular: nearly
+ * every control is focusable, and the rest are the tree's own bookkeeping.
+ */
+const UNTOLD = new Set(['focusable', 'settable', 'editable', 'hiddenRoot', 'root', 'url'])
+
+/** The properties whose `false` is news: a switch that is off, a menu that is shut. */
+const TOGGLES = new Set(['pressed', 'checked', 'expanded', 'selected'])
+
+/** Values that point at other nodes: no words a reader could use. */
+const RELATIONS = new Set(['idref', 'idrefList', 'node', 'nodeList'])
+
+/** The roles a text field of any input type takes: an `input[email]` ref already says it. */
+const FIELD_ROLES = new Set(['textbox', 'searchbox', 'spinbutton', 'combobox'])
+
+/** The tree's roles that name no role at all. */
+const NO_ROLE = new Set(['generic', 'none', 'presentation'])
+
+/** Whether the tree's role is what the ref's kind already says: a button's `button`, a video ref's `Video`. */
+function roleRestates(role: string, shown: RefShown): boolean {
+  const said = role.toLowerCase()
+  if (NO_ROLE.has(said) || said === shown.kind || said === shown.inputType) return true
+  if (shown.kind === 'input') return FIELD_ROLES.has(said)
+  if (shown.kind === 'media') return said === 'video' || said === 'audio'
+  return false
+}
+
+const plain = (text: string): string => text.replace(/\s+/g, ' ').trim().toLowerCase()
+
+/** The tree's description — a tooltip, an `aria-describedby` — when it holds words the label lacks. */
+function descriptionOf(node: AxNode, shown: RefShown): string | null {
+  const said = typeof node.description?.value === 'string' ? node.description.value.replace(/\s+/g, ' ').trim() : ''
+  return said === '' || plain(shown.label).includes(plain(said)) ? null : `description=${JSON.stringify(truncateLabel(said))}`
+}
+
+function stateOf(property: AxProperty): string | null {
+  const { name, value } = property
+  if (UNTOLD.has(name) || RELATIONS.has(value.type) || value.value === undefined || value.value === '') return null
+  if ((value.value === false || value.value === 'false') && !TOGGLES.has(name)) return null
+  return `${name}=${value.type === 'string' ? JSON.stringify(value.value) : String(value.value)}`
+}
+
+/** A ref's Ref State, in the order the tree gives it; empty for a node the tree ignores. */
+export function refStatesOf(node: AxNode, shown: RefShown): string[] {
+  if (node.ignored === true) return []
+  const role = typeof node.role?.value === 'string' ? node.role.value : ''
+  const description = descriptionOf(node, shown)
+  return [
+    ...(role !== '' && !roleRestates(role, shown) ? [`role=${role}`] : []),
+    ...(description !== null ? [description] : []),
+    ...(node.properties ?? []).map(stateOf).filter((state): state is string => state !== null),
+  ]
+}

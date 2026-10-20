@@ -3,6 +3,8 @@ import type { CollectedTextBlock } from '../src/core/browser/pageText.ts'
 import { COLLECT_PAGE_SCRIPT } from '../src/main/browser/collectPageScript.ts'
 import { buildPageSnapshot, parseCollectedPage } from '../src/core/browser/snapshot.ts'
 import { commandPageOf } from '../src/core/command/command.ts'
+import { commandState } from '../src/core/command/jevReading.ts'
+import { readRefStates } from '../src/main/browser/readRefStates.ts'
 import { dismissCommand } from '../src/core/command/dismissDialog.ts'
 import { canDriveChrome, serveFixtures, until, type FixtureChrome } from './headlessChrome.ts'
 import { silentWav } from './fixtureServer.ts'
@@ -388,5 +390,44 @@ describe.skipIf(!canDriveChrome)('the collector reads the playing media element 
     await fixtures.open('/unplayed')
     const page = commandPageOf(buildPageSnapshot(parseCollectedPage(await fixtures.chrome.evaluate(COLLECT_PAGE_SCRIPT))))
     expect(page.media).toBeUndefined()
+  })
+})
+
+// The Ref State: what Chrome's accessibility tree says of each ref, read
+// after the collect, through to the lines Jev reads. A captions switch whose
+// name went stale ("unavailable") while it is pressed, the way YouTube's is.
+const STATE_PAGES: Record<string, string> = {
+  '/controls': `<body>
+    <button aria-label="Subtitles/closed captions unavailable" aria-pressed="true" aria-keyshortcuts="c">CC</button>
+    <button aria-haspopup="menu" aria-expanded="false">Account</button>
+    <button disabled>Send</button>
+    <label><input type="checkbox" checked> Remember me</label>
+    <button title="Save to Watch later">Save</button>
+    <a href="https://example.com/home">Home</a>
+  </body>`,
+}
+
+describe.skipIf(!canDriveChrome)('the Ref State read from the accessibility tree', () => {
+  let fixtures: FixtureChrome
+
+  beforeAll(async () => {
+    fixtures = await serveFixtures(STATE_PAGES, 'bingbong-collector-states-')
+  }, 60_000)
+
+  afterAll(() => fixtures?.close())
+
+  it("names each control's setting after its label, and nothing for a control that has none", async () => {
+    await fixtures.open('/controls')
+    const collected = parseCollectedPage(await fixtures.chrome.evaluate(COLLECT_PAGE_SCRIPT))
+    const page = commandPageOf(buildPageSnapshot(await readRefStates(fixtures.chrome.cdp, collected)))
+    expect(commandState('turn off captions', page).split('\n').slice(3)).toEqual([
+      '[1] button "Subtitles/closed captions unavailable CC" pressed=true keyshortcuts="c"',
+      '[2] button "Account" hasPopup=menu expanded=false',
+      '[3] button "Send" disabled=true',
+      '[4] input[checkbox] "Remember me" checked=true',
+      // The label already carries the title: the description adds nothing.
+      '[5] button "Save Save to Watch later"',
+      '[6] link "Home" https://example.com/home',
+    ])
   })
 })

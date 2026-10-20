@@ -37,6 +37,7 @@ import {
   pageReadPartCount,
   parseCollectedPage,
   parsePageLinks,
+  type CollectedPage,
   type PageLink,
   type PageSnapshot,
   type SnapshotRef,
@@ -56,6 +57,7 @@ import {
   type ClickPrep,
   type CoverNaming,
 } from './collectPageScript'
+import { readRefStates } from './readRefStates'
 import { reportFault } from '../../core/trace/fault'
 
 // Minimal CDP surface the controller needs, so tests can drive it with a fake
@@ -609,8 +611,18 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     return reports.length > 0 ? `; ${reports.join('; ')}` : ''
   }
 
+  /** The collect with each ref's Ref State, or as it was when the tree cannot be read. */
+  async function withRefStates(page: CollectedPage): Promise<CollectedPage> {
+    try {
+      return await readRefStates(cdp, page)
+    } catch (error) {
+      reportFault('browser.createCdpBrowserController.refStates', error)
+      return page
+    }
+  }
+
   async function collectSnapshot(): Promise<PageSnapshot> {
-    const snapshot = buildPageSnapshot(parseCollectedPage(await evaluateInPage<unknown>(collectScript)))
+    const snapshot = buildPageSnapshot(await withRefStates(parseCollectedPage(await evaluateInPage<unknown>(collectScript))))
     visualPoints.clear()
     lastSnapshot = snapshot
     return snapshot

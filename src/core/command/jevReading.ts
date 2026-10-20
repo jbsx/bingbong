@@ -92,7 +92,8 @@ export function slotSpans(text: string): SlotSpan[] {
  */
 function describeRef(ref: CommandRef, page?: CommandPage): string {
   const kind = ref.kind === 'input' && ref.inputType !== null ? `input[${ref.inputType}]` : ref.kind
-  return `${kind} ${JSON.stringify(shownLabel(ref, page))}${ref.href !== null ? ` ${ref.href}` : ''}`
+  const states = ref.states !== undefined && ref.states.length > 0 ? ` ${ref.states.join(' ')}` : ''
+  return `${kind} ${JSON.stringify(shownLabel(ref, page))}${ref.href !== null ? ` ${ref.href}` : ''}${states}`
 }
 
 /** The label a ref is shown with: its own, or for the page's one unlabelled media ref, the title of what plays. */
@@ -408,7 +409,7 @@ export function commandState(text: string, page: CommandPage, hop?: HopContext, 
     `Page: ${page.url} — ${JSON.stringify(page.title)}`,
     ...(page.media !== undefined ? [mediaLine(page.media)] : []),
     ...(page.dialog !== undefined ? [`A dialog is open: ${JSON.stringify(page.dialog.text)}`] : []),
-    'Refs (number, kind, label, address):',
+    'Refs (number, kind, label, address, states):',
     ...shown.page.refs.map((ref) => `[${ref.ref}] ${describeRef(ref, page)}`),
     ...(shown.links.length > 0 ? [`${isWebEngineSearch(page.url) ? 'Result links' : 'Links'} further down the page (name, address):`, ...shown.links.map((link) => `[link-${link.n}] ${describeLink(link)}`)] : []),
   ].join('\n')

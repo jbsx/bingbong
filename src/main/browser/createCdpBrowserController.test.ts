@@ -15,6 +15,7 @@ import { FakeClock, flushMicrotasks } from '../../core/testing/doubles'
 import type { ActionEffect, ActionEffects, ArrivalWatch, CdpDebugger, CdpPageDriver, PageArrival } from './createCdpBrowserController'
 import { createCdpBrowserController, READINESS_CAP_MS } from './createCdpBrowserController'
 import type { ClickPrep } from './collectPageScript'
+import type { AxNode } from '../../core/browser/refStates'
 
 const youtubeFixture = youtubeHome as unknown as CollectedPage
 const challengeFixture = challengeIframe as unknown as CollectedPage
@@ -163,11 +164,26 @@ class FakeCdp implements CdpDebugger {
   readyArmed = 0
   readyWaited = 0
 
+  /** What the accessibility tree answers for each registry index (Ref State); an index it lacks answers no node. */
+  readonly axNodes = new Map<number, AxNode>()
+  /** When set, the tree's answer fails (a page mid-navigation). */
+  axException: string | null = null
+
   async send<T = unknown>(method: string, params?: Record<string, unknown>): Promise<T> {
     this.calls.push({ method, params })
     if (method === 'Page.handleJavaScriptDialog') return {} as T
+    if (method === 'Runtime.getProperties') {
+      return { result: this.collectedElements.map((_, index) => ({ name: String(index), value: { type: 'object', objectId: `ref:${index}` } })) } as T
+    }
+    if (method === 'Accessibility.getPartialAXTree') {
+      if (this.axException !== null) throw new Error(this.axException)
+      const node = this.axNodes.get(Number(String(params?.objectId).slice('ref:'.length)))
+      return { nodes: node === undefined ? [] : [node] } as T
+    }
+    if (method === 'Runtime.releaseObjectGroup') return {} as T
     if (method === 'Runtime.evaluate') {
       const expression = typeof params?.expression === 'string' ? params.expression : ''
+      if (expression.includes('/* REF_HANDLES */')) return { result: { type: 'object', objectId: 'registry' } } as T
       if (expression.includes('/* READY_ARM */')) {
         this.readyArmed += 1
         return { result: { value: true } } as T
@@ -660,6 +676,49 @@ describe('a page still loading (#330)', () => {
     const { controller } = makeController({ page })
     await controller.stop()
     expect(stops()).toBe(1)
+  })
+})
+
+describe('createCdpBrowserController Ref State', () => {
+  afterEach(() => setFaultSink(null))
+
+  const page: CollectedPage = {
+    url: 'https://www.youtube.com/watch?v=PCXpGeKKW1k',
+    title: 'Highs and Lows',
+    viewport: { width: 1280, height: 800, scrollY: 0, scrollHeight: 800 },
+    elements: [
+      { tag: 'button', role: null, inputType: null, label: 'Pause (k)', rect: { x: 10, y: 10, width: 40, height: 40 } },
+      { tag: 'button', role: null, inputType: null, label: 'Subtitles/closed captions unavailable', rect: { x: 60, y: 10, width: 40, height: 40 } },
+      // Below the fold: never a ref, so never asked of the tree.
+      { tag: 'button', role: null, inputType: null, label: 'Show more', rect: { x: 10, y: 2000, width: 40, height: 40 } },
+    ],
+  }
+  const pressed: AxNode = { role: { type: 'role', value: 'button' }, properties: [{ name: 'pressed', value: { type: 'tristate', value: 'true' } }] }
+
+  it("puts what the accessibility tree says of each ref on that ref, asking only of the refs, and lets the handles go", async () => {
+    const cdp = new FakeCdp(page)
+    cdp.axNodes.set(1, pressed)
+    const { controller } = makeController({ cdp })
+    const snapshot = await controller.collectPage()
+    expect(snapshot.refs.map((ref) => [ref.label, ref.states])).toEqual([
+      ['Pause (k)', undefined],
+      ['Subtitles/closed captions unavailable', ['pressed=true']],
+    ])
+    expect(cdp.calls.filter((call) => call.method === 'Accessibility.getPartialAXTree').map((call) => call.params?.objectId)).toEqual(['ref:0', 'ref:1'])
+    const methods = cdp.calls.map((call) => call.method)
+    expect(methods.lastIndexOf('Runtime.releaseObjectGroup')).toBeGreaterThan(methods.lastIndexOf('Accessibility.getPartialAXTree'))
+  })
+
+  it('collects the page all the same when the tree cannot be read, and reports why', async () => {
+    const faults: FaultReport[] = []
+    setFaultSink((report) => faults.push(report))
+    const cdp = new FakeCdp(page)
+    cdp.axException = 'Cannot find context with specified id'
+    const { controller } = makeController({ cdp })
+    const snapshot = await controller.collectPage()
+    expect(snapshot.refs.map((ref) => ref.label)).toEqual(['Pause (k)', 'Subtitles/closed captions unavailable'])
+    expect(snapshot.refs.every((ref) => ref.states === undefined)).toBe(true)
+    expect(faults.map((fault) => fault.site)).toEqual(['browser.createCdpBrowserController.refStates'])
   })
 })
 
