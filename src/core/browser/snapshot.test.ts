@@ -147,6 +147,15 @@ describe('parseCollectedPage', () => {
     expect(() => parseCollectedPage(youtubeFixture)).not.toThrow()
   })
 
+  it('carries the playing media element to the snapshot, and none when the payload has none or a malformed one (#363)', () => {
+    const media = { title: 'Fixture Song', paused: false, currentTime: 12.5, duration: 200, loop: true, muted: false }
+    expect(buildPageSnapshot(parseCollectedPage({ ...youtubeFixture, media })).media).toEqual(media)
+    expect(buildPageSnapshot(parseCollectedPage(youtubeFixture)).media).toBeNull()
+    expect(buildPageSnapshot(parseCollectedPage({ ...youtubeFixture, media: { ...media, loop: 'yes' } })).media).toBeNull()
+    // A live stream's duration is Infinity, which JSON carries as null.
+    expect(buildPageSnapshot(parseCollectedPage({ ...youtubeFixture, media: { ...media, duration: null } })).media).toEqual({ ...media, duration: Infinity })
+  })
+
   it('rejects payloads that are not objects', () => {
     expect(() => parseCollectedPage('nope')).toThrow(/collected page payload malformed/)
     expect(() => parseCollectedPage(null)).toThrow(/collected page payload malformed/)

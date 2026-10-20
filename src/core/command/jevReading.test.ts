@@ -49,12 +49,32 @@ describe('the state Jev reads with a dialog open (#336)', () => {
   })
 })
 
+describe('a playing media element in the state Jev reads (#363, ADR 0079)', () => {
+  const SONG = { title: 'Highs and Lows', paused: false, currentTime: 62.4, duration: 124, loop: true, muted: true }
+
+  it('carries one line under the page naming the song, where it is, and its loop and mute', () => {
+    const state = commandState('loop the song', { ...PAGE, media: SONG })
+    expect(state.split('\n')[2]).toBe('Playing: "Highs and Lows" 1:02 / 2:04, loop on, muted')
+    expect(commandState('loop the song', { ...PAGE, media: { ...SONG, paused: true, loop: false, muted: false, duration: Infinity } }).split('\n')[2]).toBe('Paused: "Highs and Lows" 1:02, loop off')
+  })
+
+  it("tells a change the DOM does not show in Done so far: a click that ticked Loop changed something", () => {
+    const before = { ...PAGE, media: { ...SONG, loop: false, muted: false } }
+    const after = { ...PAGE, media: { ...SONG, currentTime: 63 } }
+    const facts = doneFacts(before, after, { changed: false })
+    expect(facts).toEqual({ changed: true, media: ['loop turned on', 'muted'] })
+    expect(doneLine({ verb: 'click', target: 2, slot: null }, before, facts)).toBe('click "Sign in" (loop turned on; muted)')
+    expect(doneFacts(after, { ...after, media: { ...SONG, currentTime: 0.4, paused: true } }, { changed: true })).toEqual({ changed: true, media: ['the video went back to 0:00', 'the video paused'] })
+    expect(doneFacts(before, before, { changed: false })).toEqual({ changed: false })
+  })
+})
+
 describe('the three questions', () => {
   it('asks the verb among the spoken vocabulary, the target among the refs plus none, the Slot among the word spans', () => {
     const questions = commandQuestions('type hello in search', { ...PAGE, url: 'about:blank' })
     expect(Object.keys(questions)).toEqual(['verb', 'target', 'slot'])
     expect(questions.verb.type).toBe('choice')
-    expect(Object.keys(questions.verb.options)).toEqual(['navigate', 'search', 'click', 'type', 'scroll_up', 'scroll_down', 'back', 'forward', 'reload', 'press', 'read', 'clear', 'stop', 'done', 'none'])
+    expect(Object.keys(questions.verb.options)).toEqual(['navigate', 'search', 'click', 'type', 'menu', 'scroll_up', 'scroll_down', 'back', 'forward', 'reload', 'press', 'read', 'clear', 'stop', 'done', 'none'])
     expect(Object.keys(questions.target.options)).toEqual(['none', 'ref-1', 'ref-2', 'ref-3'])
     expect(questions.target.options['ref-2']).toBe('button "Sign in"')
     expect(Object.keys(questions.slot.options)).toEqual(['none', 's0-0', 's0-1', 's0-2', 's0-3', 's1-1', 's1-2', 's1-3', 's2-2', 's2-3', 's3-3'])
@@ -106,7 +126,7 @@ describe('reading the answers', () => {
 
   it('offers the verbs as actions, never a spoken word (#353): navigate and search, no open', () => {
     const questions = commandQuestions('open the tweet', PAGE)
-    expect(Object.keys(questions.verb.options)).toEqual(['navigate', 'search', 'click', 'type', 'scroll_up', 'scroll_down', 'back', 'forward', 'reload', 'press', 'read', 'clear', 'stop', 'done', 'none'])
+    expect(Object.keys(questions.verb.options)).toEqual(['navigate', 'search', 'click', 'type', 'menu', 'scroll_up', 'scroll_down', 'back', 'forward', 'reload', 'press', 'read', 'clear', 'stop', 'done', 'none'])
     expect(questions.verb.options).not.toHaveProperty('open')
   })
 
@@ -124,6 +144,11 @@ describe('reading the answers', () => {
 
   it('drops a click on a page with no refs', () => {
     expect(readCommandAnswers({ verb: choice('click'), target: choice('none'), slot: choice('none') }, 'click it', { ...PAGE, refs: [] })).toEqual({ verb: 'none', target: null, slot: null })
+  })
+
+  it('offers menu with its description, and reads a menu on ref N as that ref (#363)', () => {
+    expect(commandQuestions('loop the video', PAGE).verb.options.menu).toBe('open the menu on one of the numbered refs (a right-click) to see options it hides')
+    expect(readCommandAnswers({ verb: choice('menu'), target: choice('ref-2'), slot: choice('none') }, 'loop the video', PAGE)).toEqual({ verb: 'menu', target: 2, slot: null })
   })
 })
 
@@ -695,7 +720,7 @@ describe('Capabilities (ADR 0079, #362)', () => {
     const offered = playerCapabilities(true)
     for (const questions of [commandQuestions('loop the song', WATCH, undefined, { capabilities: offered }), hopQuestions('loop the song', WATCH, HOP, { capabilities: offered }), partialQuestions('loop the song', WATCH, { capabilities: offered })]) {
       const verbs = Object.keys(questions.verb.options)
-      expect(verbs.slice(0, 15)).toEqual(['navigate', 'search', 'click', 'type', 'scroll_up', 'scroll_down', 'back', 'forward', 'reload', 'press', 'read', 'clear', 'stop', 'done', 'none'])
+      expect(verbs.slice(0, 16)).toEqual(['navigate', 'search', 'click', 'type', 'menu', 'scroll_up', 'scroll_down', 'back', 'forward', 'reload', 'press', 'read', 'clear', 'stop', 'done', 'none'])
       expect(verbs).toEqual(expect.arrayContaining([...SONG_OPS, 'play', 'queue']))
       for (const verb of verbs) expect(questions.verb.options[verb]).not.toBe('')
       expect(questions.verb.instructions).toMatch(/click, press or tap/)
@@ -706,7 +731,7 @@ describe('Capabilities (ADR 0079, #362)', () => {
     const idle = Object.keys(commandQuestions('play highs and lows', WATCH, undefined, { capabilities: playerCapabilities(false) }).verb.options)
     for (const op of SONG_OPS) expect(idle).not.toContain(op)
     expect(idle).toEqual(expect.arrayContaining(['play', 'queue']))
-    expect(Object.keys(commandQuestions('loop the song', WATCH).verb.options)).toHaveLength(15)
+    expect(Object.keys(commandQuestions('loop the song', WATCH).verb.options)).toHaveLength(16)
   })
 
   it('a Capability reading is a `play` Command carrying the Player\'s action', () => {

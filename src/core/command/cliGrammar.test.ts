@@ -183,3 +183,11 @@ describe('parseCliCommand', () => {
     expect(parseCliCommand('frobnicate now')).toEqual({ ok: false, error: "unknown command: 'frobnicate' — try 'help'" })
   })
 })
+
+describe('the menu verb (#363, ADR 0079)', () => {
+  it('parses menu with a ref number, and names the error in plain words', () => {
+    expect(parseCliCommand('menu 7')).toEqual({ ok: true, command: { type: 'menu', ref: 7 } })
+    expect(parseCliCommand('menu')).toEqual({ ok: false, error: "menu: expected a ref number, e.g. 'menu 7'" })
+    expect(grammarErrorOf('menu the player')).toBe('Menu needs the number of an item, like “menu 7”.')
+  })
+})

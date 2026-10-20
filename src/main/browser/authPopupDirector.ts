@@ -87,6 +87,7 @@ export function createAuthPopupDirector(
         },
         pageReadParts: () => target(base).pageReadParts(),
         click: (ref) => target(base).click(ref),
+        openMenu: (ref) => target(base).openMenu(ref),
         type: (ref, text) => target(base).type(ref, text),
         scroll: (direction) => target(base).scroll(direction),
         screenshot: (options) => target(base).screenshot(options),

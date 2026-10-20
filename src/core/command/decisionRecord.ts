@@ -90,6 +90,10 @@ export interface DecisionRecord {
   readonly pick?: PickSource
   /** The hop stepped aside (#354): Jev read the pop-up as in the way, and the runner closed it instead of ending; `verb` and `target` are the dismissal's. */
   readonly stepAside?: true
+  /** The runner closed what the hop before opened (#363): a dead end's Escape, or the opener pressed again; `verb` and `target` are its own. */
+  readonly undo?: true
+  /** The runner opened the previous reading's runner-up target after a dead end (#363): `verb` and `target` are its own. */
+  readonly runnerUp?: true
   /** The action threw: its message, so a failed Command explains itself here and not only in the Feed (post mortem 2026-10-19). */
   readonly error?: string
   /**
@@ -125,9 +129,11 @@ export interface TaskHop {
  * landing, or a sure Verdict that something is in the way); Jev
  * unavailable (hop 0's best guess included); superseded; a Local-Matched
  * hop 0; a terminal verb (read, stop, clear, or `none` at hop 0); two hops
- * in a row that changed nothing (#336).
+ * in a row that changed nothing (#336); a dead end once the Task had
+ * looked again — closed what it opened, tried the runner-up — and found
+ * nothing (`not_found`, #363), said so with the words.
  */
-export type TaskEnded = 'done' | 'unsure' | 'cap' | 'wall' | 'unavailable' | 'superseded' | 'local_match' | 'terminal' | 'unchanged'
+export type TaskEnded = 'done' | 'unsure' | 'cap' | 'wall' | 'unavailable' | 'superseded' | 'local_match' | 'terminal' | 'unchanged' | 'not_found'
 
 /** An Early Fire as the record keeps it. */
 export interface EarlyFireDetail {

@@ -249,3 +249,24 @@ describe('the Local Match: plain verbs', () => {
     expect(localMatch('navigate rust async book', REFS)).toEqual({ verb: 'search', target: null, slot: 'rust async book' })
   })
 })
+
+describe('the Local Match: menu (#363, ADR 0079)', () => {
+  const PLAYER: CommandRef[] = [...REFS, { ref: 7, kind: 'media', label: 'Video player', href: null, inputType: null }]
+
+  it('reads `menu 7` and "right-click <label>" as a menu on the ref, the label exactly one ref carries', () => {
+    expect(localMatch('menu 7', [])).toEqual({ verb: 'menu', target: 7, slot: null })
+    expect(localMatch('right-click the video player', PLAYER)).toEqual({ verb: 'menu', target: 7, slot: null })
+    expect(localMatch('right click on video player', PLAYER)).toEqual({ verb: 'menu', target: 7, slot: null })
+  })
+
+  it("leaves a right-click no one ref names to Jev, and names the menu in the Feed's action line", () => {
+    expect(localMatch('right-click the player', REFS)).toBeNull()
+    expect(localMatch('right-click', PLAYER)).toBeNull()
+    expect(describeCommand({ verb: 'menu', target: 7, slot: null }, { url: '', title: '', refs: PLAYER })).toBe('menu [7] "Video player"')
+  })
+
+  it('offers Jev the menu verb', () => {
+    expect(JEV_VERBS).toContain('menu')
+    expect(GRAMMAR_ONLY_VERBS.has('menu')).toBe(false)
+  })
+})

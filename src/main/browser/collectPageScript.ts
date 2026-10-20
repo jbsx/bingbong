@@ -467,6 +467,24 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
     }
     return { url: location.href, links }
   }
+  // The page's media element (#363, ADR 0079): the one playing, else the
+  // first that has started — its title, where it is, and the flags a
+  // right-click menu toggles that no ref shows. Null when none has started.
+  // A live stream's Infinity duration travels as null.
+  const mediaOf = () => {
+    const media = Array.from(document.querySelectorAll('video, audio'))
+    const el = media.find((candidate) => !candidate.paused && !candidate.ended) || media.find((candidate) => candidate.currentTime > 0)
+    if (!el) return null
+    const title = (el.getAttribute('title') || el.getAttribute('aria-label') || document.title || '').trim()
+    return {
+      title,
+      paused: el.paused,
+      currentTime: el.currentTime,
+      duration: Number.isFinite(el.duration) ? el.duration : null,
+      loop: el.loop,
+      muted: el.muted
+    }
+  }
   window.__bingbongPageProbe = (targetIndex, targetLabel) => {
     const dialogRoot = currentDialogRoot()
     const refs = collectElements(dialogRoot).slice(0, 75)
@@ -482,7 +500,11 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
         scrollY: window.scrollY,
         refCount: refs.length,
         labels,
-        dialogOpen: dialogRoot !== null
+        dialogOpen: dialogRoot !== null,
+        media: (() => {
+          const media = mediaOf()
+          return media === null ? null : { paused: media.paused, loop: media.loop, muted: media.muted }
+        })()
       }
     }
   }
@@ -544,7 +566,8 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
     dialogText: dialogRoot !== null ? textOf(dialogRoot).slice(0, 400) : '',
     textBlocks,
     textCut,
-    elements
+    elements,
+    media: mediaOf()
   }
 })()`
 

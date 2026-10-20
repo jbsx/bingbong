@@ -63,6 +63,21 @@ export interface CollectedViewport {
   scrollHeight: number
 }
 
+/**
+ * The page's media element as the collect reads it (#363, ADR 0079): the
+ * one playing, else the first that has started — its title, where it is,
+ * and the flags a right-click menu toggles that the DOM never shows.
+ * `duration` is Infinity for a live stream.
+ */
+export interface PageMedia {
+  readonly title: string
+  readonly paused: boolean
+  readonly currentTime: number
+  readonly duration: number
+  readonly loop: boolean
+  readonly muted: boolean
+}
+
 // Raw output of the in-page collector script: everything DOM-specific
 // (labeling, rects, visibility) is done in the page; everything policy-ish
 // (kind resolution, numbering, caps, formatting) happens here, fixture-tested.
@@ -90,6 +105,8 @@ export interface CollectedPage {
    */
   viewportText?: string[]
   elements: CollectedElement[]
+  /** The playing media element (#363); absent or null when none has started. */
+  media?: PageMedia | null
 }
 
 export type RefKind = 'link' | 'button' | 'input' | 'media' | 'iframe'
@@ -155,6 +172,8 @@ export interface PageSnapshot {
   refs: SnapshotRef[]
   totalVisible: number
   truncated: boolean
+  /** The playing media element (#363); null, or absent in an older snapshot, when none has started. */
+  media?: PageMedia | null
 }
 
 /**
@@ -247,6 +266,16 @@ function parseTextBlock(entry: unknown): CollectedTextBlock | null {
   }
 }
 
+/** A collected media element, or null for none or one that does not read as one; a null duration is a live stream's Infinity. */
+function parseMedia(raw: unknown): PageMedia | null {
+  if (typeof raw !== 'object' || raw === null) return null
+  const media = raw as Record<string, unknown>
+  const duration = media.duration === null ? Infinity : media.duration
+  if (typeof media.title !== 'string' || typeof media.paused !== 'boolean' || typeof media.loop !== 'boolean' || typeof media.muted !== 'boolean') return null
+  if (!isFiniteNumber(media.currentTime) || typeof duration !== 'number' || Number.isNaN(duration)) return null
+  return { title: media.title, paused: media.paused, currentTime: media.currentTime, duration, loop: media.loop, muted: media.muted }
+}
+
 export function parseCollectedPage(raw: unknown): CollectedPage {
   const malformed = () => new Error('collected page payload malformed')
 
@@ -323,6 +352,7 @@ export function parseCollectedPage(raw: unknown): CollectedPage {
       ? candidate.viewportText.filter((entry): entry is string => typeof entry === 'string' && entry !== '')
       : [],
     elements,
+    media: parseMedia(candidate.media),
   }
 }
 
@@ -412,6 +442,7 @@ export function buildPageSnapshot(page: CollectedPage, options?: { maxRefs?: num
     viewport: page.viewport,
     dialogOpen: page.dialogOpen ?? false,
     dialogText: page.dialogText ?? '',
+    media: page.media ?? null,
     ...pageTextOf(page),
     refs: taken.map((element, index) => ({
       ref: index + 1,

@@ -1,5 +1,5 @@
 import type { BrowserController, PageLanding, VisualGroundingController } from '../../core/ports/browser'
-import { DEFAULT_DECISION_THRESHOLDS, type DecisionModel, type DecisionQuestions, type DecisionResult } from '../../core/ports/decisionModel'
+import { DEFAULT_DECISION_THRESHOLDS, type DecisionChoiceAnswer, type DecisionModel, type DecisionQuestions, type DecisionResult } from '../../core/ports/decisionModel'
 import type { AskKind, AskRecord } from '../../core/decision/askRecord'
 import type { PipelineEvent } from '../../core/pipeline/events'
 import type { CommandRunState } from '../../core/pipeline/runState'
@@ -14,6 +14,7 @@ import { isWebEngineSearch } from '../../core/command/siteScope'
 import {
   commandQuestions,
   commandState,
+  doneAction,
   doneFacts,
   doneLine,
   hopQuestions,
@@ -23,7 +24,11 @@ import {
   readSteps,
   dismissPhraseQuestions,
   readVerdict,
+  freshRefs,
+  refNamed,
+  runnerUpOf,
   setAsideOf,
+  slotWords,
   type DoneResult,
   type HopContext,
   type SetAside,
@@ -48,7 +53,7 @@ import {
 } from '../../core/command/decisionRecord'
 import { pageReadPart, pageReadText } from '../../core/browser/pageText'
 import { SCROLL_END_OF_PAGE } from '../../core/browser/scrollDelta'
-import { SPOKEN_FAILURES, failureLineOf, spokenFailureOf } from '../../core/command/spokenFailure'
+import { SPOKEN_FAILURES, failureLineOf, notHereLine, spokenFailureOf } from '../../core/command/spokenFailure'
 import { STOPPED_ANSWERS, commandAnswer, noResponseAnswer, pageReadCard } from '../../core/command/answer'
 import { grammarErrorOf } from '../../core/command/cliGrammar'
 import { describeDuration } from '../../core/timer/duration'
@@ -107,6 +112,12 @@ import type { Player, PlayerOutcome } from '../music/player'
 // words read as a fresh hop 0, told the line and what the Steps before it
 // did; a later Step runs only once the one before ended done. A partial is
 // never split, nor a line the grammar settles whole.
+//
+// Look then act (#363, ADR 0079): a hop with no next step and no sure yes,
+// after a hop that opened something on the same page — a menu, a panel —
+// closes it, Escape and then the opener again, and fires the reading
+// before's runner-up once; a Task that looked again and found nothing says
+// "I couldn't find <words> here.", leaving nothing it opened open.
 
 export type { CommandRunState }
 
@@ -266,7 +277,7 @@ const RETRY_CHAIN_WINDOW_MS = 60_000
 const MAX_TASK_ACTIONS = 5
 
 /** The verbs a Jev-read Task goes on after (#328); every other verb ends it. */
-const CONTINUING: ReadonlySet<Command['verb']> = new Set(['navigate', 'search', 'click', 'type', 'press', 'scroll_up', 'scroll_down', 'back', 'forward', 'reload'])
+const CONTINUING: ReadonlySet<Command['verb']> = new Set(['navigate', 'search', 'click', 'type', 'menu', 'press', 'scroll_up', 'scroll_down', 'back', 'forward', 'reload'])
 
 /**
  * How a Task ends on this hop's reading alone (#328), before anything
@@ -313,7 +324,7 @@ interface FireResult {
 const MAX_UNCHANGED_HOPS = 2
 
 /** The verbs that say the user moved on from a Slot: the retry chain settles on them. */
-const MOVES_ON: ReadonlySet<Command['verb']> = new Set(['click', 'scroll_up', 'scroll_down', 'read', 'forward'])
+const MOVES_ON: ReadonlySet<Command['verb']> = new Set(['click', 'menu', 'scroll_up', 'scroll_down', 'read', 'forward'])
 
 /** A Name Match as the runner carries it: the words heard, the name they became, and whose spelling it is. */
 interface NameMatched {
@@ -371,6 +382,8 @@ function toolOf(command: Command): { name: string; args: Record<string, unknown>
       return { name: 'click', args: { ref: command.target } }
     case 'type':
       return { name: 'type', args: { ref: command.target, text: command.slot ?? '' } }
+    case 'menu':
+      return { name: 'menu', args: { ref: command.target } }
     case 'scroll_up':
       return { name: 'scroll', args: { direction: 'up' } }
     case 'scroll_down':
@@ -607,6 +620,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     ask?: string
     /** A dismiss phrase's Dismissal Ladder past its first rung (owner's rule 2026-10-19): fired in turn while the pop-up stays. */
     ladder?: readonly Command[]
+    /** Jev's target answer (#363), when it read the line: the runner-up a dead end may try comes from it. */
+    target?: DecisionChoiceAnswer
     /** The line Jev split into Steps (#364): each Step's words; `command` is then the whole line's reading, never fired. */
     steps?: readonly string[]
   }
@@ -703,6 +718,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         jevAsked: true,
         jev: jevDetailOf(result.answers, result.latencyMs, result.model),
         ask: result.askId,
+        target: result.answers.target,
       }
     }
     return {
@@ -806,6 +822,11 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       }
       case 'type': {
         const result = await browser.type(command.target ?? 0, command.slot ?? '')
+        flash(command.target ?? 0)
+        return result
+      }
+      case 'menu': {
+        const result = await browser.openMenu(command.target ?? 0)
         flash(command.target ?? 0)
         return result
       }
@@ -1132,11 +1153,36 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     raised?: { readonly command: Command; readonly page: CommandPage }
     /** In a line read as Steps (#364): where this Step stands in it — every hop's reading is told the line and what the Steps before it did. */
     readonly step?: StepContext
+    /** The Jev reading that fired the last action (#363): its target answer and the page it was read on, where a dead end's runner-up comes from. */
+    reading?: { readonly target: DecisionChoiceAnswer; readonly page: CommandPage }
+    /** What the last action opened on the page it stayed on (#363): the controls it drew, closed at a dead end. */
+    opened?: Opened
+    /** Whether the Task has looked again (#363): closed what it opened and tried, or passed on, the runner-up — once per Task. */
+    lookedAgain?: boolean
   }
 
   /** A hop's place in its Task, and in its line when the line is Steps (#364). */
   function hopOf(task: Pick<Task, 'id' | 'step'>, hop: number): TaskHop {
     return { id: task.id, hop, ...(task.step !== undefined ? { step: task.step.step, of: task.step.of } : {}) }
+  }
+
+  /** What an action opened on the page it stayed on (#363): the action, the page it was read on, and the labels of the controls it drew. */
+  interface Opened {
+    readonly command: Command
+    readonly page: CommandPage
+    readonly appeared: readonly string[]
+  }
+
+  /**
+   * What a click or a right-click opened, when it left the address as it was
+   * and drew controls that were not there; undefined otherwise. Only those
+   * open something: a scroll or a type that brings new refs into view has
+   * opened nothing to close.
+   */
+  function openedBy(command: Command, before: CommandPage, after: CommandPage): Opened | undefined {
+    if ((command.verb !== 'click' && command.verb !== 'menu') || after.url !== before.url) return undefined
+    const appeared = freshRefs(before, after).map((ref) => ref.label)
+    return appeared.length > 0 ? { command, page: before, appeared } : undefined
   }
 
   /** Whether the Verdict is sure: its confidence clears the Choice bar. */
@@ -1328,6 +1374,126 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     }
   }
 
+  /** The Escape a dead end closes what it opened with (#363). */
+  const ESCAPE: Command = { verb: 'press', target: null, slot: 'escape', key: PRESS_KEYS.escape, times: 1 }
+
+  /** A dead end as its hop read it (#363): the reading and its record, the page, the words it looked for, and its turn. */
+  interface DeadEnd {
+    readonly read: Reading
+    readonly record: DecisionRecord
+    readonly page: CommandPage
+    readonly words: string
+    readonly turnId: string
+    readonly firedAt: number
+  }
+
+  /**
+   * Close what an action opened (#363): Escape, then — a click toggling
+   * what it opened — the opener clicked again while it is still open; a
+   * right-click's menu takes Escape alone, as a second right-click would
+   * open it again. Each is the runner's own move, told in "Done so far" and
+   * counted among the Task's actions, so closing spends the cap as any
+   * action does. Resolves to the page it leaves and the last move's record,
+   * not yet written — whoever ends the Task writes its end on it — or to
+   * how the Task ended when a move was superseded or met a wall.
+   */
+  async function closeOpened(task: Task, hop: number, read: Reading, opened: Opened, page: CommandPage): Promise<{ page: CommandPage; last: DecisionRecord } | { ended: TaskEnded }> {
+    let now = page
+    const opener = opened.command.verb === 'click' ? opened.page.refs.find((ref) => ref.ref === opened.command.target) : undefined
+    const steps: (() => Command | null)[] = [
+      () => ESCAPE,
+      ...(opener !== undefined ? [() => clickOn(refNamed(now, setAsideOf(opener, opened.page)))] : []),
+    ]
+    let last: DecisionRecord | null = null
+    for (const step of steps) {
+      const command = step()
+      if (command === null) break
+      const stepTurnId = tracer?.mintTurnId() ?? `${task.id}-hop${hop}-undo`
+      const stepAt = at()
+      if (last !== null) log(last)
+      last = { ...recordOf(stepTurnId, stepAt, task.source, task.text, read, command, null, false), task: hopOf(task, hop), undo: true }
+      const fired = await fire(stepTurnId, task.text, task.source, command, now, 'jev', null, stepAt, { react: () => {}, settled: () => summarize(stepTurnId), ownMove: true }, hopOf(task, hop))
+      const ended: TaskEnded | null = fired.outcome === 'superseded' || superseded(task) ? 'superseded' : fired.outcome === 'wall' ? 'wall' : null
+      if (ended !== null) {
+        log({ ...last, ended })
+        return { ended }
+      }
+      const after = await collectPage(null)
+      const stillOpen = after.refs.some((ref) => opened.appeared.includes(ref.label))
+      task.actions.push(`${doneAction(command, now)} (${stillOpen ? 'it is still open' : 'what it opened closed'})`)
+      now = after
+      if (!stillOpen) break
+    }
+    return { page: now, last: last! }
+  }
+
+  /** A click on a ref the page still shows; null when it shows none. */
+  const clickOn = (ref: { readonly ref: number } | null): Command | null => (ref === null ? null : { verb: 'click', target: ref.ref, slot: null })
+
+  /** A Task that looked again and found nothing (#363): its last record carries the end, and the line names the words on a turn of its own. */
+  function endNotFound(task: Task, hop: number, words: string, last: DecisionRecord, endTurnId: string, endAt: number): { ended: TaskEnded; hop: number } {
+    log({ ...last, ended: 'not_found' })
+    answerFailure(endTurnId, notHereLine(words))
+    dropHop(endTurnId, task, hop, "couldn't find it here", 'done', endAt)
+    return { ended: 'not_found', hop }
+  }
+
+  /** Whether a dead end may try a runner-up (#363): the first time the Task looks again, the opener acted on a ref, and the cap leaves room. */
+  function mayTryRunnerUp(task: Task, opened: Opened): boolean {
+    const { verb, target } = opened.command
+    return task.lookedAgain !== true && task.reading !== undefined && target !== null && (verb === 'click' || verb === 'menu') && task.actions.length < MAX_TASK_ACTIONS
+  }
+
+  /**
+   * Look then act (#363, ADR 0079): a dead end at this hop. Past a hop that
+   * opened something on the same page, that is closed ({@link closeOpened});
+   * then, the first time, the runner-up of the reading that fired the
+   * opener is fired as the next hop. Once the Task has looked again, a dead
+   * end with nothing open ends `not_found` at once, the line naming the
+   * words. Resolves to how it ended, or to the hop the runner-up fired as.
+   */
+  async function lookAgain(task: Task, hop: number, dead: DeadEnd): Promise<{ ended: TaskEnded | null; hop: number }> {
+    const opened = task.opened
+    task.opened = undefined
+    if (opened === undefined) return endNotFound(task, hop, dead.words, dead.record, dead.turnId, dead.firedAt)
+    log(dead.record)
+    dropHop(dead.turnId, task, hop, 'not here: closing what it opened', 'done', dead.firedAt)
+    const closed = await closeOpened(task, hop, dead.read, opened, dead.page)
+    if ('ended' in closed) return { ended: closed.ended, hop }
+    const tryRunnerUp = mayTryRunnerUp(task, opened)
+    const reading = task.reading
+    task.lookedAgain = true
+    task.reading = undefined
+    const named = tryRunnerUp && reading !== undefined ? runnerUpOf(reading.target, reading.page, opened.command.target!, task.setAside) : null
+    const target = named === null ? null : refNamed(closed.page, named)
+    if (target === null) return endNotFound(task, hop, dead.words, closed.last, tracer?.mintTurnId() ?? `${task.id}-hop${hop}-end`, at())
+    log(closed.last)
+    const upHop = hop + 1
+    const upTurnId = tracer?.mintTurnId() ?? `${task.id}-hop${upHop}`
+    const upAt = at()
+    const runnerUp: Command = { verb: opened.command.verb, target: target.ref, slot: null }
+    const upRecord: DecisionRecord = { ...recordOf(upTurnId, upAt, task.source, task.text, dead.read, runnerUp, null, false), task: hopOf(task, upHop), runnerUp: true }
+    const fired = await fire(upTurnId, task.text, task.source, runnerUp, closed.page, 'jev', null, upAt, { react: () => {}, settled: () => summarize(upTurnId), ownMove: true }, hopOf(task, upHop))
+    const ended = settleHop(task, upRecord, null, runnerUp, closed.page, fired)
+    if (ended === 'cap') await closeAtCap(task, upHop, dead.read)
+    return { ended, hop: upHop }
+  }
+
+  /**
+   * A Task ending at the cap closes what its last action opened (#363): the
+   * Task never ends with a menu of its own making left open over the page.
+   * Its end is already on the last hop's record; the closing moves follow it.
+   */
+  async function closeAtCap(task: Task, hop: number, read: Reading): Promise<void> {
+    const last = task.pending
+    if (last === undefined || superseded(task)) return
+    const now = await collectPage(null)
+    const opened = openedBy(last.command, last.page, now)
+    if (opened === undefined) return
+    const closed = await closeOpened(task, hop, read, opened, now)
+    if (!('ended' in closed)) log(closed.last)
+  }
+
   /**
    * The hops past the first (#328): each collects the landing the last
    * action left, asks Jev alone what comes next, and fires it — until the
@@ -1354,6 +1520,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         task.last = { command: last, page: before, fired }
         // The action that raised a pop-up over a clear page (#354): set aside if the Task steps past it.
         task.raised = facts.changed && facts.covered === true ? { command: last, page: before } : undefined
+        task.opened = facts.changed ? openedBy(last, before, page) : undefined
       }
       const links = !superseded(task) ? await wholePageLinks(turnId) : []
       const context: HopContext = { hop, visited: [...task.visited], actions: [...task.actions], links, setAside: [...task.setAside], searched: [...task.searched], terms: [...task.terms] }
@@ -1459,6 +1626,13 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
             return endTask(task, 'superseded', hop + 1)
           }
         }
+        if (ended === 'unsure' && (task.opened !== undefined || task.lookedAgain === true)) {
+          // Look then act (#363): a dead end closes what the last hop opened and tries the reading before's runner-up, once.
+          const looked = await lookAgain(task, hop, { read, record, page, words: slotWords(result.answers.slot, task.text), turnId, firedAt })
+          if (looked.ended !== null) return endTask(task, looked.ended, looked.hop + 1)
+          hop = looked.hop
+          continue
+        }
         log({ ...record, ended })
         if (ended === 'unsure') answerFailure(turnId, SPOKEN_FAILURES.unsure)
         dropHop(turnId, task, hop, ended === 'done' ? 'done' : 'not sure this is it', 'done', firedAt)
@@ -1466,8 +1640,10 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       }
       const ending = endedByReading('jev', command.verb)
       recordBeforeFiring(record, ending, command)
+      task.reading = { target: result.answers.target, page }
       const fired = await fire(turnId, task.text, task.source, command, page, 'jev', matched, firedAt, { react: () => {}, settled: () => summarize(turnId) }, hopOf(task, hop))
       const ended = settleHop(task, record, ending, command, page, fired)
+      if (ended === 'cap') await closeAtCap(task, hop, read)
       if (ended !== null) return endTask(task, ended, hop + 1)
     }
   }
@@ -1503,6 +1679,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     readonly submission: number
     readonly command: Command
     readonly page: CommandPage
+    /** Jev's target answer, when Jev read the partial (#363): the runner-up a dead end may try. */
+    readonly target?: DecisionChoiceAnswer
     /** What its action came to, once it settles: hop 0's, which the Endpoint's Task goes on from (#328). */
     outcome: Promise<FireResult>
     /** The Endpoint's monotonic ms, once it came. */
@@ -1606,7 +1784,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     if (command.verb === 'none') return null
     // A song to play waits for its Endpoint, as an exact `play` does: "play daft" may yet be "play daft punk" (ADR 0079).
     if (command.music?.kind === 'search') return null
-    return { command, page, reading: 'jev', jevAsked: true, jev: jevDetailOf(result.answers, result.latencyMs, result.model), ask: result.askId, noul }
+    return { command, page, reading: 'jev', jevAsked: true, jev: jevDetailOf(result.answers, result.latencyMs, result.model), ask: result.askId, target: result.answers.target, noul }
   }
 
   /** Reads one partial; when it fires, resolves to the action under way (boxed, so it is not awaited here). */
@@ -1635,6 +1813,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       submission: submitted,
       command,
       page: found.page,
+      ...(found.target !== undefined ? { target: found.target } : {}),
       outcome: Promise.resolve({ outcome: 'landed' }),
       endpointAt: null,
       effect: null,
@@ -1675,6 +1854,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     const firedAt = at()
     const task: Task = { id: options.taskId ?? turnId, submission, text: words, source, endpointAt, visited: [], actions: [], setAside: [], unchanged: 0, searched: [], terms: [], rechecked: false, obstacles: [], ...(options.step !== undefined ? { step: options.step } : {}) }
     const hop0 = hopOf(task, 0)
+    if (heard.target !== undefined) task.reading = { target: heard.target, page: heard.page }
     visit(task, heard.page.url || (browser.state().url ?? ''))
     const { command, matched } = matchName(heard.command, heard.page, source === 'spoken')
     const record: DecisionRecord = { ...recordOf(turnId, firedAt, source, words, heard, command, matched, truncated), ...extra, task: hop0 }
@@ -1880,6 +2060,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         if (options?.turnId !== undefined) summarize(options.turnId)
         const task: Task = { id: fired.turnId, submission: fired.submission, text: trimmed, source, endpointAt, visited: [], actions: [], setAside: [], unchanged: 0, searched: [], terms: [], rechecked: false, obstacles: [] }
         visit(task, fired.page.url)
+        if (fired.target !== undefined) task.reading = { target: fired.target, page: fired.page }
         const ended = lands ? settleHop(task, record, ending, fired.command, fired.page, await fired.outcome) : ending
         if (ended !== null) endTask(task, ended, 1)
         else await continueTask(task, 1)

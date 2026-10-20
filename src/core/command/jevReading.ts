@@ -1,5 +1,5 @@
 import type { DecisionChoiceAnswer, DecisionChoiceQuestion, DecisionNoulQuestion } from '../ports/decisionModel'
-import type { PageLink } from '../browser/snapshot'
+import type { PageLink, PageMedia } from '../browser/snapshot'
 import { JEV_VERBS, PRESS_KEYS, describeCommand, normalizeWords, pressKeyOf, targetLabel, verbTakesSlot, verbTakesTarget, type Command, type CommandPage, type CommandRef, type CommandVerb } from './command'
 import { dialogControls, type DismissChoice } from './dismissDialog'
 import { isSearchLanding, pageAddressOf, resultLinksOf, resultRefsOf, wordsAfterVerb } from './localMatch'
@@ -31,6 +31,7 @@ const VERB_DESCRIPTIONS: Readonly<Record<(typeof JEV_VERBS)[number], string>> = 
   search: 'search for the words: on the web, or on this site when they point at something on it',
   click: 'click one of the numbered refs on the page',
   type: 'type words into one of the numbered refs (a text field)',
+  menu: 'open the menu on one of the numbered refs (a right-click) to see options it hides',
   scroll_up: 'scroll the page up',
   scroll_down: 'scroll the page down',
   back: 'go back to the previous page',
@@ -156,6 +157,11 @@ export interface SetAside {
   readonly address: string
 }
 
+/** Whether two set-aside identities name the same target. */
+export function sameAside(a: SetAside, b: SetAside): boolean {
+  return a.label === b.label && a.address === b.address
+}
+
 /** The set-aside identity of a ref on a page. */
 export function setAsideOf(ref: CommandRef, page: CommandPage): SetAside {
   return { label: ref.label, address: pageAddressOf(ref.href ?? page.url) }
@@ -171,7 +177,7 @@ export function setAsideOf(ref: CommandRef, page: CommandPage): SetAside {
  */
 export type DoneResult =
   | { readonly changed: false }
-  | { readonly changed: true; readonly opened?: string; readonly appeared?: readonly string[]; readonly covered?: boolean; readonly closed?: boolean }
+  | { readonly changed: true; readonly opened?: string; readonly appeared?: readonly string[]; readonly covered?: boolean; readonly closed?: boolean; readonly media?: readonly string[] }
 
 /** How many controls that appeared "Done so far" names. */
 const NAMED_APPEARANCES = 3
@@ -184,15 +190,53 @@ const NAMED_APPEARANCES = 3
  * at once is a line told again: the pop-up the action raised closed before
  * the next action, by the page or a collect's consent dismissal.
  */
-export function doneFacts(before: CommandPage, after: CommandPage, result: DoneResult): DoneResult {
-  if (!result.changed) return result
+/** The labelled refs of the page an action left that the page it was read on did not show, in the order the page shows them. */
+export function freshRefs(before: CommandPage, after: CommandPage): CommandRef[] {
   const known = new Set(before.refs.map((ref) => ref.label))
-  const fresh = after.refs.filter((ref) => ref.label !== '' && !known.has(ref.label))
+  return after.refs.filter((ref) => ref.label !== '' && !known.has(ref.label))
+}
+
+export function doneFacts(before: CommandPage, after: CommandPage, result: DoneResult): DoneResult {
+  // A change to the media element is one the DOM does not show (#363): Loop ticked in a right-click menu changes no ref.
+  const media = mediaChanges(before.media, after.media)
+  if (!result.changed) return media.length > 0 ? { changed: true, media } : result
+  const fresh = freshRefs(before, after)
   const inDialog = new Set(after.dialog?.refs ?? [])
   const appeared = [...fresh.filter((ref) => inDialog.has(ref.ref)), ...fresh.filter((ref) => !inDialog.has(ref.ref))].slice(0, NAMED_APPEARANCES).map((ref) => ref.label)
   const covered = after.dialog !== undefined && before.dialog === undefined
   const closed = before.dialog !== undefined && after.dialog === undefined
-  return { ...result, ...(appeared.length > 0 ? { appeared } : {}), ...(covered ? { covered: true } : {}), ...(closed ? { closed: true } : {}) }
+  return { ...result, ...(appeared.length > 0 ? { appeared } : {}), ...(covered ? { covered: true } : {}), ...(closed ? { closed: true } : {}), ...(media.length > 0 ? { media } : {}) }
+}
+
+/** A media position as a player shows it: `1:02`, `1:02:03`. */
+function clockOf(seconds: number): string {
+  const whole = Math.max(0, Math.floor(seconds))
+  const [h, m, s] = [Math.floor(whole / 3600), Math.floor((whole % 3600) / 60), whole % 60]
+  const pad = (n: number): string => String(n).padStart(2, '0')
+  return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`
+}
+
+/** What changed on the media element between two reads (#363), in "Done so far"'s words; none when nothing did. */
+function mediaChanges(before: PageMedia | undefined, after: PageMedia | undefined): string[] {
+  if (after === undefined) return []
+  if (before === undefined) return after.paused ? [] : [`${JSON.stringify(after.title)} started playing`]
+  return [
+    ...(before.loop !== after.loop ? [`loop turned ${after.loop ? 'on' : 'off'}`] : []),
+    ...(before.muted !== after.muted ? [after.muted ? 'muted' : 'unmuted'] : []),
+    // Time runs on between the reads; a position behind the one before is a seek back, a restart at 0:00.
+    ...(after.currentTime + 1 < before.currentTime ? [`the video went back to ${clockOf(after.currentTime)}`] : []),
+    ...(before.paused !== after.paused ? [after.paused ? 'the video paused' : 'the video started playing'] : []),
+  ]
+}
+
+/**
+ * The media line of the state Jev reads (#363, ADR 0079): the element
+ * playing — or paused once started — by title, where it is, and its loop
+ * and mute, so a Verdict sees a change the refs never show.
+ */
+function mediaLine(media: PageMedia): string {
+  const at = Number.isFinite(media.duration) ? `${clockOf(media.currentTime)} / ${clockOf(media.duration)}` : clockOf(media.currentTime)
+  return `${media.paused ? 'Paused' : 'Playing'}: ${JSON.stringify(media.title)} ${at}, loop ${media.loop ? 'on' : 'off'}${media.muted ? ', muted' : ''}`
 }
 
 /** An address as "Done so far" names it: no scheme, no www, no trailing slash. */
@@ -213,6 +257,15 @@ function listOf(labels: readonly string[]): string {
 
 /** What a changed page came to, in facts. */
 function changedFacts(result: Extract<DoneResult, { changed: true }>): string {
+  const page = pageFacts(result)
+  const media = result.media ?? []
+  if (media.length === 0) return page
+  // A change the media element alone shows: the page's own line says only "the page changed", which it adds nothing to.
+  return page === 'the page changed' ? media.join('; ') : `${page}; ${media.join('; ')}`
+}
+
+/** What a changed page came to, in facts of the page alone. */
+function pageFacts(result: Extract<DoneResult, { changed: true }>): string {
   const appeared = result.appeared ?? []
   if (result.opened !== undefined) {
     const opened = `opened ${shortAddress(result.opened)}`
@@ -233,15 +286,45 @@ function changedFacts(result: Extract<DoneResult, { changed: true }>): string {
  * `click "Elon Musk @elonmusk 2h…" (the address did not change; a pop-up appeared over the page: "Close", "Log in" and "Sign up")`.
  */
 export function doneLine(command: Command, page: CommandPage, result: DoneResult): string {
-  const label = targetLabel(command, page)
-  const action =
-    label === undefined
-      ? describeCommand(command)
-      : command.verb === 'type'
-        ? `type ${JSON.stringify(command.slot ?? '')} into ${JSON.stringify(label)}`
-        : `${command.verb} ${JSON.stringify(label)}`
   const outcome = !result.changed ? 'nothing changed' : changedFacts(result)
-  return `${action} (${outcome})`
+  return `${doneAction(command, page)} (${outcome})`
+}
+
+/** An action as "Done so far" names it: the verb and its target by label, a ref's number changing between hops. */
+export function doneAction(command: Command, page: CommandPage): string {
+  const label = targetLabel(command, page)
+  if (label === undefined) return describeCommand(command)
+  return command.verb === 'type' ? `type ${JSON.stringify(command.slot ?? '')} into ${JSON.stringify(label)}` : `${command.verb} ${JSON.stringify(label)}`
+}
+
+/** The least probability a runner-up may have (#363, ADR 0079): under it, Jev did not offer the ref at all. */
+export const RUNNER_UP_FLOOR = 0.05
+
+/**
+ * The runner-up of a reading (#363, ADR 0079): the most probable ref of
+ * its target answer that is not the one it fired, nor one the Task set
+ * aside, at {@link RUNNER_UP_FLOOR} or over — named by its set-aside
+ * identity, since the page it is fired on is collected anew. Null when
+ * there is none.
+ */
+export function runnerUpOf(target: DecisionChoiceAnswer, page: CommandPage, fired: number, setAside: readonly SetAside[]): SetAside | null {
+  const firedRef = page.refs.find((ref) => ref.ref === fired)
+  const excluded = [...setAside, ...(firedRef !== undefined ? [setAsideOf(firedRef, page)] : [])]
+  const ranked = Object.entries(target.probabilities)
+    .filter(([, probability]) => probability >= RUNNER_UP_FLOOR)
+    .sort((a, b) => b[1] - a[1])
+  for (const [label] of ranked) {
+    const ref = page.refs.find((candidate) => candidate.ref === refOfLabel(label))
+    if (ref === undefined) continue
+    const own = setAsideOf(ref, page)
+    if (!excluded.some((aside) => sameAside(aside, own))) return own
+  }
+  return null
+}
+
+/** The ref on a page that a set-aside identity names (#363): its label and its address; null when the page has none. */
+export function refNamed(page: CommandPage, named: SetAside): CommandRef | null {
+  return page.refs.find((ref) => sameAside(setAsideOf(ref, page), named)) ?? null
 }
 
 /** A result link a hop may open, numbered as its `link-N` option. */
@@ -263,7 +346,7 @@ function offered(page: CommandPage, hop: HopContext | undefined): { page: Comman
   const setAside = hop.setAside ?? []
   const kept = (ref: CommandRef): boolean => {
     const own = setAsideOf(ref, page)
-    return !setAside.some((aside) => aside.label === own.label && aside.address === own.address)
+    return !setAside.some((aside) => sameAside(aside, own))
   }
   const refs = page.refs.filter((ref) => fresh(ref.href) && kept(ref))
   const taken = new Set(page.refs.flatMap((ref) => (ref.href === null ? [] : [pageAddressOf(ref.href)])))
@@ -311,6 +394,7 @@ export function commandState(text: string, page: CommandPage, hop?: HopContext, 
         ? [`Done so far: ${done.join('; ')}`]
         : []),
     `Page: ${page.url} — ${JSON.stringify(page.title)}`,
+    ...(page.media !== undefined ? [mediaLine(page.media)] : []),
     ...(page.dialog !== undefined ? [`A dialog is open: ${JSON.stringify(page.dialog.text)}`] : []),
     'Refs (number, kind, label, address):',
     ...shown.page.refs.map((ref) => `[${ref.ref}] ${describeRef(ref)}`),
@@ -650,8 +734,8 @@ function mostProbableFallbackOpening(answer: DecisionChoiceAnswer, page: Command
   })
 }
 
-/** The words the Slot answer names; the words after the verb when it names none. */
-function slotWords(answer: DecisionChoiceAnswer, text: string): string {
+/** The words the Slot answer names; the words after the verb when it names none — what a Task that found nothing says it could not find (#363). */
+export function slotWords(answer: DecisionChoiceAnswer, text: string): string {
   const match = /^s(\d+)-(\d+)$/.exec(answer.choice)
   if (match) {
     const words = wordsOf(text)

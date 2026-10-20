@@ -12,6 +12,40 @@ import { canStepBack } from './paneNavigation'
 // on every page the appliance renders. App chrome (dashboard, overlay)
 // gets no menu: that is deliberate, not an omission.
 
+/**
+ * How long past a hold's release a native menu stays held back (#363):
+ * Chromium raises `context-menu` over IPC after the right button's
+ * release, which can land after the controller's action has returned.
+ */
+const HOLD_GRACE_MS = 500
+
+/** Per page: the holds taken and not released, and when the last released one stops holding. */
+const holds = new WeakMap<Electron.WebContents, { count: number; until: number }>()
+
+/**
+ * Hold the native page menu back on this page until the returned release
+ * (#363, ADR 0079): the right-click the controller dispatches to open a
+ * page's own menu must never pop the appliance's.
+ */
+export function holdPageContextMenu(contents: Electron.WebContents): () => void {
+  const hold = holds.get(contents) ?? { count: 0, until: 0 }
+  hold.count += 1
+  holds.set(contents, hold)
+  let released = false
+  return () => {
+    if (released) return
+    released = true
+    hold.count -= 1
+    hold.until = Date.now() + HOLD_GRACE_MS
+  }
+}
+
+/** Whether a dispatched right-click holds the native menu back on this page now. */
+function menuHeld(contents: Electron.WebContents): boolean {
+  const hold = holds.get(contents)
+  return hold !== undefined && (hold.count > 0 || Date.now() < hold.until)
+}
+
 /** The params an action may need at execution time. */
 interface MenuActionContext {
   linkURL: string
@@ -22,7 +56,7 @@ interface MenuActionContext {
 
 export function attachPageContextMenu(contents: Electron.WebContents): void {
   contents.on('context-menu', (_event, params) => {
-    if (contents.isDestroyed()) return
+    if (contents.isDestroyed() || menuHeld(contents)) return
     const menuParams: PageContextMenuParams = {
       linkURL: params.linkURL,
       mediaType: params.mediaType,

@@ -141,6 +141,31 @@ describe('a Task whose hop 0 Early Fired (#328, AC6)', () => {
     expect(decisions(records)[0]!.ended).toBeUndefined()
   })
 
+  it('keeps an Early-Fired hop 0\'s reading: a dead end after the menu it opened tries that reading\'s runner-up (#363)', async () => {
+    const target: DecisionAnswer = { type: 'choice', choice: 'ref-1', confidence: 0.5, probabilities: { 'ref-1': 0.5, 'ref-2': 0.3, none: 0.2 } }
+    const { browser, perf, runner } = wired([
+      { verb: choice('menu'), target, slot: choice('none'), complete: { type: 'noul', noul: 0.9 } },
+      { verb: choice('none'), target: choice('none'), slot: choice('s0-0') },
+      { verb: choice('done'), target: choice('none'), slot: choice('none') },
+    ])
+    const button = (n: number, label: string) => ({ ...browser.snapshot.refs[0], ref: n, kind: 'button' as const, label, inputType: null, rect: { x: 0, y: n * 10, width: 100, height: 10 }, src: null, href: null, downloadsFile: false, submitsForm: false, credentialField: false, paymentField: false, inForm: false, formHasCredential: false, formHasPayment: false, searchField: false, formHasSearch: false })
+    const page = [button(1, 'Settings'), button(2, 'Video player')]
+    browser.snapshot = { ...browser.snapshot, url: 'https://www.youtube.com/watch?v=x', title: 'Song', refs: page }
+    browser.openMenu = async (n) => {
+      browser.menus.push(n)
+      browser.snapshot = { ...browser.snapshot, refs: [...page, button(3, n === 1 ? 'Subtitles' : 'Loop')] }
+      return `menu [${n}]: urlChanged=false dialogOpen=false; page signature changed`
+    }
+    browser.pressKey = async (press, times = 1) => {
+      browser.pressedKeys.push({ press, times })
+      browser.snapshot = { ...browser.snapshot, refs: page }
+    }
+    await speak(runner, { text: 'Loop the video.', partials: ['loop the video'] }, perf)
+
+    expect(browser.menus).toEqual([1, 2])
+    expect(browser.pressedKeys.map((pressed) => pressed.press.key)).toEqual(['Escape'])
+  })
+
   it('ends after hop 0 when its partials are let go before an Endpoint', async () => {
     const { browser, records, decision, runner } = wired([{ verb: choice('search'), target: choice('none'), slot: choice('s2-3'), complete: { type: 'noul', noul: 0.9 } }])
     void runner.prepare()

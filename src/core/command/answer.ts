@@ -94,6 +94,8 @@ export function commandAnswer(command: Command, facts: AnswerFacts): string | nu
       return `Clicked ${ref()}.`
     case 'type':
       return `Typed into ${ref()}.`
+    case 'menu':
+      return `Opened the menu on ${ref()}.`
     case 'scroll_up':
       return facts.scrollEnded === true ? 'Already at the top.' : 'Scrolled up.'
     case 'scroll_down':

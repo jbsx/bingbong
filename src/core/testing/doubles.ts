@@ -14,7 +14,7 @@ import type {
 import { settledStateFromSnapshot } from '../browser/pageFingerprints'
 import { blockerFactsFromSnapshot } from '../browser/blockerNudge'
 import { linkHrefsOf, type PageLink, type PageSnapshot, type SnapshotRef } from '../browser/snapshot'
-import { blockedActionHead, clickFlagsHead, NO_OBSERVABLE_CHANGE, type BlockedAction } from '../browser/actionOutcome'
+import { blockedActionHead, clickFlagsHead, menuFlagsHead, NO_OBSERVABLE_CHANGE, PAGE_SIGNATURE_CHANGED, type BlockedAction } from '../browser/actionOutcome'
 import { createPerfTracer, type PerfSpanRecord, type PerfTracer } from '../perf/perfTracer'
 
 /**
@@ -128,6 +128,8 @@ export class FailingTts implements TtsSpeaker {
 export class FakeBrowser implements BrowserController, VisualGroundingController {
   readonly navigations: string[] = []
   readonly clicks: number[] = []
+  /** The refs whose right-click menu was opened (#363), in order. */
+  readonly menus: number[] = []
   readonly typed: { ref: number; text: string }[] = []
   readonly scrolls: ('up' | 'down')[] = []
   readonly pressedKeys: { press: KeyPress; times: number }[] = []
@@ -199,6 +201,13 @@ export class FakeBrowser implements BrowserController, VisualGroundingController
     const blocked = this.blockedAt(ref)
     if (blocked !== null) return blockedActionHead('click', ref, blocked)
     return `${clickFlagsHead(ref, false, false)}${NO_OBSERVABLE_CHANGE}`
+  }
+
+  async openMenu(ref: number): Promise<string> {
+    this.menus.push(ref)
+    const blocked = this.blockedAt(ref)
+    if (blocked !== null) return blockedActionHead('menu', ref, blocked)
+    return `${menuFlagsHead(ref, false, false)}${PAGE_SIGNATURE_CHANGED}`
   }
 
   async type(ref: number, text: string): Promise<string> {

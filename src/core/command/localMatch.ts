@@ -39,6 +39,10 @@ const VERB_PHRASES: readonly (readonly [string, VerbKind])[] = [
   ['open', 'open'],
   ['visit', 'open'],
   ['load', 'open'],
+  ['right click on', 'menu'],
+  ['right click', 'menu'],
+  ['right-click on', 'menu'],
+  ['right-click', 'menu'],
   ['click on', 'click'],
   ['click', 'click'],
   ['tap on', 'click'],
@@ -331,6 +335,8 @@ function fromGrammar(parsed: CliCommand): Command | null {
       return command('read')
     case 'click':
       return command('click', { target: parsed.ref })
+    case 'menu':
+      return command('menu', { target: parsed.ref })
     case 'type':
       return command('type', { target: parsed.ref, slot: parsed.text })
     case 'scroll':
@@ -425,6 +431,11 @@ function readSpoken(text: string, refs: readonly CommandRef[], url: string): Com
     }
     case 'click':
       return rest.length === 0 ? null : clickNamed()
+    case 'menu': {
+      // "right-click the player" (#363): the label exactly one ref carries; any other is Jev's.
+      const target = rest.length === 0 ? null : exactlyOneLabelled(spokenOf(rest), refs)
+      return target === null ? null : command('menu', { target })
+    }
     case 'open': {
       if (rest.length === 0) return null
       // A label exactly one ref carries, or the Nth result on a search

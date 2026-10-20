@@ -63,15 +63,19 @@ function coverText(cover: Cover): string {
   return cover.contains.length === 0 ? named : `${named} with ${cover.contains.join(', ')}`
 }
 
-/** Where every Blocked Action head starts: nothing was clicked or typed. */
-function blockedStart(action: 'click' | 'type', ref: number): string {
+/** The actions that aim at a ref's point: a click, a type, and a right-click's menu (#363). */
+export type RefAction = 'click' | 'type' | 'menu'
+
+/** Where every Blocked Action head starts: nothing was clicked, typed or opened. */
+function blockedStart(action: RefAction, ref: number): string {
+  if (action === 'menu') return `menu [${ref}]: not opened — `
   return action === 'click' ? `clicked [${ref}]: not clicked — ` : `typed [${ref}]: not typed — `
 }
 
 const COVERED_BY = 'covered by '
 
 /** The head of a click or a type that reached nothing: what covers the target, or that it is not shown (ADR 0062). */
-export function blockedActionHead(action: 'click' | 'type', ref: number, blocked: BlockedAction): string {
+export function blockedActionHead(action: RefAction, ref: number, blocked: BlockedAction): string {
   return blocked.fact === 'covered'
     ? `${blockedStart(action, ref)}${COVERED_BY}${coverText(blocked.cover)}`
     : `${blockedStart(action, ref)}[${ref}] is not shown: inside a hidden or inert container`
@@ -82,15 +86,22 @@ export function clickFlagsHead(ref: number, urlChanged: boolean, dialogOpen: boo
   return `clicked [${ref}]: urlChanged=${urlChanged} dialogOpen=${dialogOpen}; `
 }
 
+/** The same flags opening a right-click's outcome (#363): what its menu changed follows, `no observable change` when nothing appeared. */
+export function menuFlagsHead(ref: number, urlChanged: boolean, dialogOpen: boolean): string {
+  return `menu [${ref}]: urlChanged=${urlChanged} dialogOpen=${dialogOpen}; `
+}
+
 /** A pattern matching a built head at the start of a text, for any ref number. */
 function headPattern(...heads: string[]): RegExp {
   const escaped = heads.map((head) => head.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replaceAll('\\[0\\]', '\\[\\d+\\]'))
   return new RegExp(`^(?:${escaped.join('|')})`)
 }
 
-const COVERED_HEAD_RE = headPattern(`${blockedStart('click', 0)}${COVERED_BY}`, `${blockedStart('type', 0)}${COVERED_BY}`)
-const NOT_SHOWN_HEAD_RE = headPattern(blockedActionHead('click', 0, { fact: 'notShown' }), blockedActionHead('type', 0, { fact: 'notShown' }))
-const UNMOVED_CLICK_RE = headPattern(clickFlagsHead(0, false, false))
+const REF_ACTIONS: readonly RefAction[] = ['click', 'type', 'menu']
+const COVERED_HEAD_RE = headPattern(...REF_ACTIONS.map((action) => `${blockedStart(action, 0)}${COVERED_BY}`))
+const NOT_SHOWN_HEAD_RE = headPattern(...REF_ACTIONS.map((action) => blockedActionHead(action, 0, { fact: 'notShown' })))
+/** A click or a right-click that reached its target (#363): what its changes clause says decides whether it moved anything. */
+const UNMOVED_REF_ACTION_RE = headPattern(clickFlagsHead(0, false, false), menuFlagsHead(0, false, false))
 
 /**
  * The settled page state a meaningful click carries: the snapshot head's
@@ -111,7 +122,7 @@ export const STATE_DELTA = ' -> '
 export function blockedOrInertAction(text: string): ConsumedNothing | null {
   if (COVERED_HEAD_RE.test(text)) return 'covered'
   if (NOT_SHOWN_HEAD_RE.test(text)) return 'notShown'
-  const unmoved = UNMOVED_CLICK_RE.exec(text)
+  const unmoved = UNMOVED_REF_ACTION_RE.exec(text)
   if (unmoved === null || SETTLED_STATE_RE.test(text)) return null
   const changes = text.slice(unmoved[0].length).split('\n', 1)[0]!.split('; ', 1)[0]!
   return changes === PAGE_SIGNATURE_CHANGED || changes.includes(STATE_DELTA) ? null : 'inert'

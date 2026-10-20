@@ -2370,6 +2370,137 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
     expect(decisions(records).map((record) => record.ended)).toEqual([undefined, undefined, 'unchanged'])
   })
 
+  it('#363: a Jev reading of menu on ref N opens that ref\'s menu, answers so, and the Task goes on; `menu 2` typed is the Local Match\'s', async () => {
+    const { browser, events, records, decision, runner } = harness()
+    decision.script.push(answer('menu', 'ref-2'), answer('done'))
+    await runner.run('see what sign in offers', { source: 'spoken' })
+    expect(browser.menus).toEqual([2])
+    expect(browser.clicks).toEqual([])
+    expect(commands(events)[0]).toMatchObject({ action: 'menu [2] "Sign in"' })
+    expect(events).toContainEqual(expect.objectContaining({ type: 'tool_call', name: 'menu', args: { ref: 2 } }))
+    expect(events).toContainEqual(expect.objectContaining({ type: 'display', text: 'Opened the menu on “Sign in”.' }))
+    expect(decision.requests).toHaveLength(2)
+    expect(decisions(records).map((record) => record.ended)).toEqual([undefined, 'done'])
+
+    await runner.run('menu 1')
+    expect(browser.menus).toEqual([2, 1])
+    expect(decisions(records).at(-1)).toMatchObject({ verb: 'menu', target: 1, reading: 'local_match', ended: 'local_match' })
+  })
+
+  describe('look then act (#363, ADR 0079): a dead end closes what the last hop opened and tries the runner-up once', () => {
+    const WATCH_URL = 'https://www.youtube.com/watch?v=fixtureSng1'
+    const PLAYER_REFS: SnapshotRef[] = [ref(1, 'button', 'Settings'), ref(2, 'media', 'Video player'), ref(3, 'link', 'Home', { href: 'https://www.youtube.com/' })]
+    /** What each ref's menu draws: Settings hides no Loop, the player's own menu does. */
+    const MENUS: Record<number, SnapshotRef[]> = {
+      1: [ref(4, 'button', 'Subtitles'), ref(5, 'button', 'Playback speed')],
+      2: [ref(4, 'button', 'Loop'), ref(5, 'button', 'Copy video URL')],
+    }
+    const hopAnswer = (verb: string, target: Record<string, number>, slot = 'none') => {
+      const top = Object.entries(target).sort((a, b) => b[1] - a[1])[0]![0]
+      return { answers: { verb: choice(verb), target: choice(top, target[top], target), slot: choice(slot) } }
+    }
+
+    /** The watch page: a ref's menu adds its options; Escape closes whatever is open. */
+    function menuHarness() {
+      const h = taskHarness(WATCH_URL)
+      h.browser.snapshot = { ...h.browser.snapshot, title: 'Fixture Song - YouTube', refs: PLAYER_REFS }
+      const openMenu = h.browser.openMenu.bind(h.browser)
+      h.browser.openMenu = async (n) => {
+        const line = await openMenu(n)
+        h.browser.snapshot = { ...h.browser.snapshot, refs: [...PLAYER_REFS, ...(MENUS[n] ?? [])] }
+        return line
+      }
+      const pressKey = h.browser.pressKey.bind(h.browser)
+      h.browser.pressKey = async (press, times) => {
+        await pressKey(press, times)
+        if (press.key === 'Escape') h.browser.snapshot = { ...h.browser.snapshot, refs: PLAYER_REFS }
+      }
+      return h
+    }
+
+    it('AC3: Escape closes the Settings menu, the player — hop 1\'s runner-up — is opened as hop 3, and a second dead end closes it and names the words; five actions, none over', async () => {
+      const { browser, events, records, decision, runner } = menuHarness()
+      decision.script.push(
+        answer('scroll_down'),
+        hopAnswer('menu', { 'ref-1': 0.5, 'ref-2': 0.3, 'ref-3': 0.04, none: 0.16 }),
+        hopAnswer('none', { none: 0.9 }, 's0-0'),
+        hopAnswer('none', { none: 0.9 }, 's0-0'),
+      )
+      await runner.run('loop the video', { source: 'spoken' })
+
+      expect(browser.menus).toEqual([1, 2])
+      expect(browser.pressedKeys.map((pressed) => pressed.press.key)).toEqual(['Escape', 'Escape'])
+      // Nothing it opened is left open: the page has its pre-menu refs.
+      expect(browser.snapshot.refs).toEqual(PLAYER_REFS)
+      expect(failures(events).map((event) => (event as { text: string }).text)).toEqual(["I couldn't find loop here."])
+      const read = decisions(records)
+      expect(read.find((record) => record.runnerUp === true)).toMatchObject({ verb: 'menu', target: 2, targetLabel: 'Video player', task: { hop: 3 } })
+      expect(read.filter((record) => record.undo === true).map((record) => record.verb)).toEqual(['press', 'press'])
+      expect(read.at(-1)).toMatchObject({ undo: true, ended: 'not_found' })
+      // Hop 4 was told the runner's own moves in "Done so far".
+      expect(decision.requests[3]!.state).toContain('press Escape (what it opened closed); menu "Video player" (the address did not change; "Loop" and "Copy video URL" appeared)')
+    })
+
+    it('AC4: tries no ref under 0.05, and a dead end with no runner-up still closes what it opened before it ends', async () => {
+      const { browser, events, records, decision, runner } = menuHarness()
+      decision.script.push(hopAnswer('menu', { 'ref-1': 0.9, 'ref-3': 0.04, none: 0.06 }), hopAnswer('none', { none: 0.9 }, 's0-0'))
+      await runner.run('loop the video', { source: 'spoken' })
+      expect(browser.menus).toEqual([1])
+      expect(browser.clicks).toEqual([])
+      expect(browser.snapshot.refs).toEqual(PLAYER_REFS)
+      expect(failures(events).map((event) => (event as { text: string }).text)).toEqual(["I couldn't find loop here."])
+      expect(decisions(records).at(-1)).toMatchObject({ undo: true, ended: 'not_found' })
+    })
+
+    it('a scroll that brought new refs into view opened nothing: its dead end ends unsure, nothing pressed', async () => {
+      const { browser, events, decision, runner } = menuHarness()
+      browser.scroll = async (direction) => {
+        browser.scrolls.push(direction)
+        browser.snapshot = { ...browser.snapshot, refs: [...PLAYER_REFS, ref(4, 'link', 'Up next', { href: 'https://www.youtube.com/watch?v=next' })] }
+        return `scrolled ${direction}: x=0 y=360`
+      }
+      decision.script.push(answer('scroll_down'), hopAnswer('none', { none: 0.9 }, 's0-0'))
+      await runner.run('loop the video', { source: 'spoken' })
+      expect(browser.pressedKeys).toEqual([])
+      expect(failures(events).map((event) => (event as { text: string }).text)).toEqual(["I'm not sure this is it."])
+    })
+
+    it('a Task that reaches the cap with a menu its last action opened closes it before it ends', async () => {
+      const { browser, records, decision, runner } = menuHarness()
+      decision.script.push(answer('scroll_down'), answer('scroll_down'), answer('scroll_down'), answer('scroll_down'), hopAnswer('menu', { 'ref-1': 0.9 }))
+      await runner.run('loop the video', { source: 'spoken' })
+      expect(browser.menus).toEqual([1])
+      expect(browser.pressedKeys.map((pressed) => pressed.press.key)).toEqual(['Escape'])
+      expect(browser.snapshot.refs).toEqual(PLAYER_REFS)
+      expect(decisions(records).find((record) => record.ended !== undefined)).toMatchObject({ verb: 'menu', ended: 'cap' })
+    })
+
+    it('a dead end after a hop that opened nothing on the page ends unsure as before, nothing pressed', async () => {
+      const { browser, events, decision, runner } = menuHarness()
+      decision.script.push(answer('scroll_down'), hopAnswer('none', { none: 0.9 }))
+      await runner.run('loop the video', { source: 'spoken' })
+      expect(browser.pressedKeys).toEqual([])
+      expect(failures(events).map((event) => (event as { text: string }).text)).toEqual(["I'm not sure this is it."])
+    })
+
+    it('AC5: with a song playing the ask carries the Playing line, and a click that ticked Loop is told as loop turned on — the Verdict\'s yes ends the Task done', async () => {
+      const { browser, records, decision, runner } = menuHarness()
+      const song = { title: 'Fixture Song', paused: false, currentTime: 62, duration: 124, loop: false, muted: false }
+      browser.snapshot = { ...browser.snapshot, media: song }
+      browser.click = async (n) => {
+        browser.clicks.push(n)
+        browser.snapshot = { ...browser.snapshot, media: { ...song, loop: true, currentTime: 63 } }
+        return `clicked [${n}]: urlChanged=false dialogOpen=false; page signature changed`
+      }
+      decision.script.push(hopAnswer('click', { 'ref-1': 0.6 }), answer('done'))
+      await runner.run('loop the video', { source: 'spoken' })
+      expect(decision.requests[0]!.state).toContain('Playing: "Fixture Song" 1:02 / 2:04, loop off')
+      expect(decision.requests[1]!.state).toContain('Done so far: click "Settings" (loop turned on)')
+      expect(decision.requests[1]!.state).toContain('Playing: "Fixture Song" 1:03 / 2:04, loop on')
+      expect(decisions(records).map((record) => record.ended)).toEqual([undefined, 'done'])
+    })
+  })
+
   it('#336: a hop that opened a page says where on the next hop\'s "Done so far"', async () => {
     const { decision, runner } = taskHarness()
     decision.script.push(answer('search', 'none', 's3-6'), answer('click', 'ref-3'), answer('done'))

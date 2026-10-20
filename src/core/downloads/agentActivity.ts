@@ -52,6 +52,7 @@ export function withAgentActivity(
     readPage: (part) => controller.readPage(part),
     pageReadParts: () => controller.pageReadParts(),
     click: (ref) => run(() => controller.click(ref)),
+    openMenu: (ref) => run(() => controller.openMenu(ref)),
     type: (ref, text) => run(() => controller.type(ref, text)),
     scroll: (direction) => controller.scroll(direction),
     screenshot: (options) => controller.screenshot(options),

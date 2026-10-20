@@ -106,6 +106,13 @@ export interface BrowserController {
    */
   pageReadParts(): Promise<number>
   click(ref: number): Promise<string>
+  /**
+   * Open a ref's right-click menu (#363, ADR 0079): a right button pressed
+   * at its point, the appliance's own native menu held back. The outcome
+   * reads as a click's does, under a `menu [N]` head: what the page drew
+   * is the next collect's refs, and nothing drawn is `no observable change`.
+   */
+  openMenu(ref: number): Promise<string>
   type(ref: number, text: string): Promise<string>
   scroll(direction: 'up' | 'down'): Promise<string>
   /** The visible viewport as a JPEG; with options, one magnified region of it. */

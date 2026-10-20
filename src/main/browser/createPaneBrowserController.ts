@@ -6,6 +6,7 @@ import { COLLECT_PAGE_SCRIPT, domQuietScript } from './collectPageScript'
 import { systemClock } from '../../core/ports/clock'
 import { LANDING_CAP_MS, createCdpBrowserController, type ActionEffects, type CdpDebugger } from './createCdpBrowserController'
 import { createPaneNavigation } from './paneNavigation'
+import { holdPageContextMenu } from './attachPageContextMenu'
 
 // Electron glue: adapts webContents.debugger + the pane's navigation surface
 // into the seams the controller already knows. Behavior lives in
@@ -104,6 +105,7 @@ export function createPaneBrowserController(
     ...(pane.consumePopupBlocks ? { consumePopupBlocks: pane.consumePopupBlocks } : {}),
     ...(pane.holdWindowOpens ? { holdWindowOpens: pane.holdWindowOpens } : {}),
     ...(pane.consumeAuthPopupOpens ? { consumeAuthPopupOpens: pane.consumeAuthPopupOpens } : {}),
+    holdContextMenu: () => holdPageContextMenu(wc),
     ...(deps?.subspans ? { subspans: deps.subspans } : {}),
     ...(deps?.effects ? { effects: deps.effects } : {}),
     ...(deps?.chooseConsent ? { chooseConsent: deps.chooseConsent } : {}),

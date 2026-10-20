@@ -1,5 +1,5 @@
 import type { KeyPress } from '../ports/browser'
-import type { PageSnapshot, RefKind, SnapshotRef } from '../browser/snapshot'
+import type { PageMedia, PageSnapshot, RefKind, SnapshotRef } from '../browser/snapshot'
 import { pageTermsOf } from '../voice/pageTerms'
 import { describeDuration } from '../timer/duration'
 import type { MusicAction } from '../music/musicWords'
@@ -24,6 +24,7 @@ export const COMMAND_VERBS = [
   'search',
   'click',
   'type',
+  'menu',
   'scroll_up',
   'scroll_down',
   'back',
@@ -67,7 +68,7 @@ export const PRESS_KEYS: Readonly<Record<string, KeyPress>> = {
 
 export interface Command {
   readonly verb: CommandVerb
-  /** The ref the verb acts on (click, type); null for the rest. */
+  /** The ref the verb acts on (click, type, menu); null for the rest. */
   readonly target: number | null
   /**
    * The Slot: the Utterance's own words the Command carries verbatim — the
@@ -110,6 +111,8 @@ export interface CommandPage {
   readonly terms?: readonly string[]
   /** The dialog open over the page (#336): its text and the refs in its layer; absent when none is open. */
   readonly dialog?: PageDialog
+  /** The media element playing on it (#363): what Jev is told and what "Done so far" compares; absent when none has started. */
+  readonly media?: PageMedia
 }
 
 /** A dialog open over the page (#336). */
@@ -130,6 +133,7 @@ export function commandPageOf(snapshot: PageSnapshot): CommandPage {
     title: snapshot.title,
     refs: snapshot.refs.map(commandRefOf),
     terms: pageTermsOf({ title: snapshot.title, labels: snapshot.refs.map((ref) => ref.label), text: snapshot.viewportText }),
+    ...(snapshot.media != null ? { media: snapshot.media } : {}),
     ...(snapshot.dialogOpen ? { dialog: { text: snapshot.dialogText, refs: snapshot.refs.filter((ref) => ref.layer === 'dialog').map((ref) => ref.ref) } } : {}),
   }
 }
@@ -149,7 +153,7 @@ export function isMounting(page: CommandPage): boolean {
 
 /** The verbs that act on one ref. */
 export function verbTakesTarget(verb: CommandVerb): boolean {
-  return verb === 'click' || verb === 'type'
+  return verb === 'click' || verb === 'type' || verb === 'menu'
 }
 
 /**
@@ -252,6 +256,8 @@ export function describeCommand(command: Command, page?: CommandPage): string {
       return `click${label(command.target)}`
     case 'type':
       return `type ${JSON.stringify(command.slot ?? '')} into${label(command.target)}`
+    case 'menu':
+      return `menu${label(command.target)}`
     case 'scroll_up':
       return 'scroll up'
     case 'scroll_down':

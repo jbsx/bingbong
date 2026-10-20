@@ -78,7 +78,7 @@ function adblockPage(): string {
 export const YOUTUBE_FIXTURE_SONG = { id: 'fixtureSng1', title: 'Fixture Song', channel: 'Fixture Band' }
 
 /** A minute of silence as 8 kHz mono 8-bit WAV: something the element really plays, its time really moving. */
-function silentWav(seconds: number): Buffer {
+export function silentWav(seconds: number): Buffer {
   const rate = 8_000
   const samples = rate * seconds
   const header = Buffer.alloc(44)
@@ -213,6 +213,35 @@ function movedOnPage(): string {
 <head><title>The page landed on</title></head>
 <body style="background:#222;color:#fff">
   <main><p>The object record the tab moved on to.</p><a href="/second">Related object</a></main>
+</body>
+</html>`
+}
+
+// A page that hides an option behind a right-click (#363, e2e/menu.e2e.test.ts):
+// the player draws its own menu on `contextmenu`, as YouTube's does, and
+// Escape closes it; the link beside it has no menu of its own, so a
+// right-click on it is the browser's — which the appliance holds back.
+function contextMenuPage(): string {
+  return `<!doctype html>
+<html>
+<head><title>context menu fixture</title></head>
+<body style="background:#222;color:#fff;margin:0">
+  <div id="player" role="button" aria-label="Fixture video player" tabindex="0" style="width:320px;height:180px;background:#444"></div>
+  <div id="menu" role="menu" hidden style="position:absolute;top:40px;left:40px;background:#666">
+    <button role="menuitem" onclick="document.title='looped'">Loop</button>
+    <button role="menuitem">Copy video URL</button>
+  </div>
+  <a id="plain" href="/second" style="display:inline-block;margin-top:24px;color:#fff">Plain link</a>
+  <script>
+    const menu = document.getElementById('menu')
+    document.getElementById('player').addEventListener('contextmenu', (event) => {
+      event.preventDefault()
+      menu.hidden = false
+    })
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') menu.hidden = true
+    })
+  </script>
 </body>
 </html>`
 }
@@ -1416,6 +1445,10 @@ export async function startFixtureServer(): Promise<FixtureServer> {
     }
     if (req.url === '/interactive') {
       res.end(interactivePage())
+      return
+    }
+    if (req.url === '/context-menu') {
+      res.end(contextMenuPage())
       return
     }
     // #327: a page of plain prose whose sentences the TTS e2e hears spoken, in order.

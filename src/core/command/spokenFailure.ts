@@ -17,7 +17,7 @@ import { pageReadText } from '../browser/pageText'
 // Feed, the Peek Card and the spoken line.
 
 /** What went wrong, as the spoken line names it. */
-export type SpokenFailure = 'failed' | 'blocked' | 'consent' | 'blocker' | 'notFound' | 'unavailable' | 'empty' | 'dialogStayed' | 'noBack' | 'noPage' | 'popup' | 'unsure'
+export type SpokenFailure = 'failed' | 'blocked' | 'consent' | 'blocker' | 'notFound' | 'unavailable' | 'empty' | 'dialogStayed' | 'noBack' | 'noPage' | 'popup' | 'unsure' | 'notHere'
 
 export const SPOKEN_FAILURES: Readonly<Record<SpokenFailure, string>> = {
   failed: "That didn't work.",
@@ -33,6 +33,14 @@ export const SPOKEN_FAILURES: Readonly<Record<SpokenFailure, string>> = {
   // The Verdict's lines: a sure "in the way" over a pop-up, and a Task with no next step and no sure yes.
   popup: 'A pop-up is in the way.',
   unsure: "I'm not sure this is it.",
+  // A Task that looked again (#363) and found nothing: said with the words, `notHereLine`; this when it has none.
+  notHere: "I couldn't find that here.",
+}
+
+/** The end line of a Task that looked again and found nothing (#363, ADR 0079): the words it looked for, said back. */
+export function notHereLine(words: string): string {
+  const said = words.trim()
+  return said === '' ? SPOKEN_FAILURES.notHere : `I couldn't find ${said} here.`
 }
 
 /** A ref the controller refused (ADR 0033) or could not reach: the number, whatever the protocol wording around it. */

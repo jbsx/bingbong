@@ -527,6 +527,8 @@ function makeController(options?: {
   const authQueue = options?.authPopupOpens ? [...options.authPopupOpens] : []
   /** What the pane's hold saw: taken at a click's start, released at its end. */
   const holds = { taken: 0, released: 0 }
+  /** What the native context menu's hold saw (#363): taken around a right-click, released after it. */
+  const menuHolds = { taken: 0, released: 0 }
   const controller = createCdpBrowserController({
     cdp,
     page,
@@ -543,10 +545,16 @@ function makeController(options?: {
         holds.released += 1
       }
     },
+    holdContextMenu: () => {
+      menuHolds.taken += 1
+      return () => {
+        menuHolds.released += 1
+      }
+    },
     ...(options?.subspans ? { subspans: options.subspans } : {}),
     ...(options?.chooseConsent ? { chooseConsent: options.chooseConsent } : {}),
   })
-  return { cdp, page, controller, popupQueue, holds }
+  return { cdp, page, controller, popupQueue, holds, menuHolds }
 }
 
 /** A distinct link element — a distinct DOM node, which is what a ref
@@ -1014,6 +1022,41 @@ describe('createCdpBrowserController click', () => {
       buttons: 0,
       clickCount: 1,
     })
+  })
+
+  it('opens a ref\'s menu with the right button at its centre, the native menu held back for it (#363)', async () => {
+    const { cdp, controller, menuHolds } = makeController()
+    await controller.readPage()
+
+    const outcome = await controller.openMenu(3)
+
+    const input = cdp.inputCalls()
+    expect(input.map((call) => call.params?.type)).toEqual(['mouseMoved', 'mousePressed', 'mouseReleased'])
+    expect(input[1]?.params).toMatchObject({ x: 654, y: 32, button: 'right', buttons: 2, clickCount: 1 })
+    expect(input[2]?.params).toMatchObject({ x: 654, y: 32, button: 'right', buttons: 0 })
+    expect(menuHolds).toEqual({ taken: 1, released: 1 })
+    // Nothing drawn: the right-click consumed nothing, as an inert click.
+    expect(outcome).toBe('menu [3]: urlChanged=false dialogOpen=false; no observable change')
+    expect(blockedOrInertAction(outcome)).toBe('inert')
+  })
+
+  it('reports a menu that drew options as a changed page, and a covered target as blocked (#363)', async () => {
+    const cdp = new FakeCdp()
+    const target = buildPageSnapshot(youtubeFixture).refs[2]!
+    const probe = probeFor(youtubeFixture, { checked: target.checked ?? null, selectedOption: target.selectedOption ?? null, value: target.value ?? null, ariaPressed: target.ariaPressed ?? null, className: target.className ?? '' }) as { target: unknown; signature: { refCount: number } }
+    cdp.actionProbe = { ...probe, signature: { ...probe.signature, refCount: probe.signature.refCount + 2 } }
+    const { controller } = makeController({ cdp })
+    await showRefs(controller)
+    const opened = await controller.openMenu(3)
+    expect(opened.split('\n')[0]).toBe('menu [3]: urlChanged=false dialogOpen=false; page signature changed')
+    expect(blockedOrInertAction(opened)).toBeNull()
+
+    const covered = new FakeCdp()
+    covered.prepCovered = true
+    const blocked = makeController({ cdp: covered })
+    await showRefs(blocked.controller)
+    expect(blockedOrInertAction(await blocked.controller.openMenu(3))).toBe('covered')
+    expect(covered.inputCalls().filter((call) => call.params?.type === 'mousePressed')).toEqual([])
   })
 
   it('refreshes the snapshot the last action invalidated, without costing the model a round', async () => {
@@ -2936,6 +2979,22 @@ describe('createCdpBrowserController outcome heads the Search Loop rail reads (#
     expect(blockedOrInertAction(await controller.type(3, 'Harrison longitude watch'))).toBe('notShown')
   })
 
+
+  it('a click that only ticked the video\'s loop changed the page: the media flags are in the signature (#363)', async () => {
+    const song = { title: 'Fixture Song', paused: false, currentTime: 10, duration: 200, loop: false, muted: false }
+    const cdp = new FakeCdp({ ...youtubeFixture, media: song })
+    const target = buildPageSnapshot(youtubeFixture).refs[2]!
+    const probe = probeFor(youtubeFixture, { checked: target.checked ?? null, selectedOption: target.selectedOption ?? null, value: target.value ?? null, ariaPressed: target.ariaPressed ?? null, className: target.className ?? '' }) as { target: unknown; signature: Record<string, unknown> }
+    const { controller } = makeController({ cdp })
+    await showRefs(controller)
+
+    // The same flags, time run on: nothing a person would call a change.
+    cdp.actionProbe = { ...probe, signature: { ...probe.signature, media: { paused: false, loop: false, muted: false } } }
+    expect(blockedOrInertAction(await controller.click(3))).toBe('inert')
+    cdp.actionProbe = { ...probe, signature: { ...probe.signature, media: { paused: false, loop: true, muted: false } } }
+    const outcome = await controller.click(3)
+    expect(outcome.split('\n')[0]).toBe('clicked [3]: urlChanged=false dialogOpen=false; page signature changed')
+  })
 
   it('a click that changed only the page signature carries settled state and consumed something (fix-258-259 pass 2 round 3)', async () => {
     const cdp = new FakeCdp()

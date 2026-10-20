@@ -7,6 +7,7 @@ export type CliCommand =
   | { type: 'navigate'; input: string }
   | { type: 'read' }
   | { type: 'click'; ref: number }
+  | { type: 'menu'; ref: number }
   | { type: 'type'; ref: number; text: string }
   | { type: 'scroll'; direction: 'up' | 'down' }
   | { type: 'press'; press: KeyPress; times: number }
@@ -62,6 +63,8 @@ export function grammarErrorOf(line: string): string | null {
       return 'Navigate needs an address or something to search for.'
     case 'click':
       return 'Click needs the number of an item, like “click 7”.'
+    case 'menu':
+      return 'Menu needs the number of an item, like “menu 7”.'
     case 'type':
       return 'Type needs the number of a field and the words, like “type 3 hello”.'
     case 'scroll':
@@ -108,6 +111,13 @@ export function parseCliCommand(line: string): ParsedCliCommand {
         return { ok: false, error: "click: expected a ref number, e.g. 'click 7'" }
       }
       return { ok: true, command: { type: 'click', ref: Number(rest) } }
+    }
+    case 'menu': {
+      // Open the ref's right-click menu (#363, ADR 0079): its options are the next read's refs.
+      if (!/^\d+$/.test(rest)) {
+        return { ok: false, error: "menu: expected a ref number, e.g. 'menu 7'" }
+      }
+      return { ok: true, command: { type: 'menu', ref: Number(rest) } }
     }
     case 'type': {
       const refText = space === -1 ? '' : trimmed.slice(space + 1)

@@ -4,7 +4,8 @@ import { COLLECT_PAGE_SCRIPT } from '../src/main/browser/collectPageScript.ts'
 import { buildPageSnapshot, parseCollectedPage } from '../src/core/browser/snapshot.ts'
 import { commandPageOf } from '../src/core/command/command.ts'
 import { dismissCommand } from '../src/core/command/dismissDialog.ts'
-import { canDriveChrome, serveFixtures, type FixtureChrome } from './headlessChrome.ts'
+import { canDriveChrome, serveFixtures, until, type FixtureChrome } from './headlessChrome.ts'
+import { silentWav } from './fixtureServer.ts'
 
 // The collect script itself, run in a real headless Chrome over pages shaped
 // like the captures, for the rules that need what only a browser supplies —
@@ -351,5 +352,41 @@ describe.skipIf(!canDriveChrome)('the collector lists the links of the whole pag
 
   it('is an empty list on a page that holds no link', async () => {
     expect((await open('/bare')).links).toEqual([])
+  })
+})
+
+// A playing media element's state (#363, ADR 0079): what the ask's
+// `Playing:` line and "Done so far" read, and the flags the click
+// signature compares — a Loop ticked in a menu changes no ref.
+const SONG = `data:audio/wav;base64,${silentWav(5).toString('base64')}`
+const MEDIA_PAGES: Record<string, string> = {
+  '/song': `<body><audio id="song" src="${SONG}" title="Fixture Song" muted controls></audio><p>A song page.</p></body>`,
+  '/unplayed': `<body><video src="${SONG}" title="Never played"></video><p>A page with a video no one played.</p></body>`,
+}
+
+describe.skipIf(!canDriveChrome)('the collector reads the playing media element (#363)', () => {
+  let fixtures: FixtureChrome
+
+  beforeAll(async () => {
+    fixtures = await serveFixtures(MEDIA_PAGES, 'bingbong-collector-media-')
+  }, 60_000)
+
+  afterAll(() => fixtures?.close())
+
+  it('carries the playing element\'s title, time and flags to the page Jev reads, and its flags to the probe signature', async () => {
+    await fixtures.open('/song')
+    // As a person's press would: play() needs a gesture in a fresh profile.
+    await fixtures.chrome.cdp.send('Runtime.evaluate', { expression: "(() => { const song = document.getElementById('song'); song.loop = true; return song.play() })()", userGesture: true, awaitPromise: true })
+    await until(() => fixtures.chrome.evaluate<boolean>("document.getElementById('song').currentTime > 0"), 'the song to play')
+    const page = commandPageOf(buildPageSnapshot(parseCollectedPage(await fixtures.chrome.evaluate(COLLECT_PAGE_SCRIPT))))
+    expect(page.media).toMatchObject({ title: 'Fixture Song', paused: false, loop: true, muted: true, duration: 5 })
+    const probe = await fixtures.chrome.evaluate<{ signature: { media: unknown } }>('window.__bingbongPageProbe(0, "")')
+    expect(probe.signature.media).toEqual({ paused: false, loop: true, muted: true })
+  })
+
+  it('reads no media on a page whose element never started', async () => {
+    await fixtures.open('/unplayed')
+    const page = commandPageOf(buildPageSnapshot(parseCollectedPage(await fixtures.chrome.evaluate(COLLECT_PAGE_SCRIPT))))
+    expect(page.media).toBeUndefined()
   })
 })

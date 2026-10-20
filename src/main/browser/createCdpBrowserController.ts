@@ -17,12 +17,14 @@ import {
   ARRIVED_CLAUSE,
   blockedActionHead,
   clickFlagsHead,
+  menuFlagsHead,
   NO_OBSERVABLE_CHANGE,
   PAGE_NOT_READ,
   PAGE_SIGNATURE_CHANGED,
   STATE_DELTA,
   UNFINISHED_LOAD_CLAUSE,
   type BlockedAction,
+  type RefAction,
 } from '../../core/browser/actionOutcome'
 import { chooseConsentDismissal, consentAcceptOf, consentDismissalLine, consentRejectOf, consentRetryNote, isConsentDialog, type ConsentChooser } from '../../core/browser/dialogPolicy'
 import {
@@ -193,6 +195,12 @@ export interface CdpBrowserControllerDeps {
    */
   holdWindowOpens?: () => () => void
   /**
+   * Holds the appliance's own right-click menu back until the returned
+   * release is called (#363, ADR 0079): a right-click the controller
+   * dispatches opens the page's menu, never Electron's native one.
+   */
+  holdContextMenu?: () => () => void
+  /**
    * Verbose sub-span channel (#32): when provided (and the env flag enabled
    * it), the deliberate delays and extra round-trips inside browser actions
    * become sub-spans keyed by the turn scope the pipeline's tool gate opens.
@@ -239,6 +247,9 @@ interface ScreenshotClip {
   scale: number
 }
 
+/** The mouse button a ref action presses: left for a click, right for a menu (#363). */
+type MouseButton = 'left' | 'right'
+
 interface ElementState {
   checked: boolean | null
   selectedOption: string | null
@@ -255,6 +266,15 @@ interface PageSignature {
   refCount: number
   labels: string[]
   dialogOpen: boolean
+  /** The media element's flags (#363): a Loop ticked in a right-click menu changes nothing else. Null or absent with none; its time is left out, as it runs on by itself. */
+  media?: MediaFlags | null
+}
+
+/** The flags of a media element a control can toggle (#363). */
+interface MediaFlags {
+  paused: boolean
+  loop: boolean
+  muted: boolean
 }
 
 interface ActionProbe {
@@ -706,7 +726,14 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
       refCount: snapshot.refs.length,
       labels: snapshot.refs.map((ref) => ref.label),
       dialogOpen: snapshot.dialogOpen,
+      media: snapshot.media != null ? { paused: snapshot.media.paused, loop: snapshot.media.loop, muted: snapshot.media.muted } : null,
     }
+  }
+
+  /** Whether two reads show the media element's flags the same (#363); a page with none matches only one with none, absent and null alike. */
+  function mediaFlagsEqual(before: MediaFlags | null | undefined, after: MediaFlags | null | undefined): boolean {
+    if (before == null || after == null) return (before ?? null) === (after ?? null)
+    return before.paused === after.paused && before.loop === after.loop && before.muted === after.muted
   }
 
   async function probeAction(index: number, expectedLabel = ''): Promise<ActionProbe> {
@@ -738,7 +765,8 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
             scrollY: window.scrollY,
             refCount: Math.min(refs.length, 75),
             labels: [],
-            dialogOpen: false
+            dialogOpen: false,
+            media: null
           }
       return {
         target,
@@ -754,6 +782,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
       before.scrollY === after.scrollY &&
       before.refCount === after.refCount &&
       before.dialogOpen === after.dialogOpen &&
+      mediaFlagsEqual(before.media, after.media) &&
       before.labels.length === after.labels.length &&
       before.labels.every((label, index) => label === after.labels[index])
   }
@@ -1091,9 +1120,11 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     /** The address the snapshot showed for it; null when it is no link. */
     href: string | null
     before: ElementState
+    /** The mouse button pressed: left for a click, right for a menu (#363). */
+    button: MouseButton
   }
 
-  async function performClick(ref: number): Promise<ClickAttempt> {
+  async function performClick(ref: number, button: MouseButton = 'left'): Promise<ClickAttempt> {
     const { snapshot, target } = await resolveRef(ref)
     const visualPoint = visualPoints.get(ref)
     if (visualPoint) {
@@ -1105,12 +1136,12 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
         return top === el || (top !== null && el.contains(top))
       })()`))
       if (!reachable) throw new Error(`ref ${ref} no longer resolves at the visually grounded point`)
-      await dispatchPointClick(visualPoint)
+      await dispatchPointClick(visualPoint, button)
       visualPoints.delete(ref)
       lastSnapshot = undefined
       return { kind: 'acted', direct: null, index, label: target.label, href: target.href, before: elementState(target), signature: signatureOf(snapshot), dismissal: null }
     }
-    const aim: ClickTarget = { ref, index: target.ref - 1, label: target.label, href: target.href, before: elementState(target) }
+    const aim: ClickTarget = { ref, index: target.ref - 1, label: target.label, href: target.href, before: elementState(target), button }
     const attempt = await clickAtIndex(aim, snapshot, null)
     if (attempt.kind === 'acted') return attempt
     return (await clearConsentWall(aim, attempt.blocked)) ?? attempt
@@ -1130,7 +1161,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
    * `snapshot` is the page the attempt is measured against.
    */
   async function clickAtIndex(aim: ClickTarget, snapshot: PageSnapshot, dismissal: string | null, blurred = false): Promise<ClickAttempt> {
-    const { ref, index, label, href, before } = aim
+    const { ref, index, label, href, before, button } = aim
     // A Cover is named by a ref the model holds: any number of the listing
     // this outcome carries after a dismissal, else only a number still shown.
     const naming = { listed: snapshot.refs.length, shownOnly: dismissal === null }
@@ -1154,7 +1185,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     }
     let direct: DirectActivation | null = null
     if (prep.clickable && typeof prep.x === 'number' && typeof prep.y === 'number') {
-      await dispatchPointClick({ x: prep.x, y: prep.y })
+      await dispatchPointClick({ x: prep.x, y: prep.y }, button)
     } else if (prep.blankCover === true) {
       // No part of the target shows, but nothing over it paints anything
       // there (DuckDuckGo's empty header aside over its Search button at the
@@ -1173,19 +1204,22 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
       // and say so in the outcome.
       direct = 'offscreen'
     }
-    if (direct !== null) await activateDirectly(index)
+    if (direct !== null) await activateDirectly(index, button)
     // A click can navigate (link) or mutate the page; never trust old refs.
     lastSnapshot = undefined
     return { kind: 'acted', direct, index, label, href, before, signature: signatureOf(snapshot), dismissal }
   }
 
-  /** Activate the registry node at this index with a DOM click, no mouse pressed: what a Vimium hint does. */
-  async function activateDirectly(index: number): Promise<void> {
+  /** Activate the registry node at this index with a DOM click, no mouse pressed: what a Vimium hint does. A right button sends the node a `contextmenu` event instead (#363). */
+  async function activateDirectly(index: number, button: MouseButton = 'left'): Promise<void> {
     await evaluateInPage(`(() => {
       const el = (window.__bingbongRefs || [])[${index}]
       // No scroll of ours here, or it would be the click's effect (#335).
       if (typeof el.focus === 'function') el.focus({ preventScroll: true })
-      el.click()
+      if (${JSON.stringify(button)} === 'right') {
+        const box = el.getBoundingClientRect()
+        el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, buttons: 2, clientX: box.left + box.width / 2, clientY: box.top + box.height / 2 }))
+      } else el.click()
     })()`)
   }
 
@@ -1315,8 +1349,8 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     return note === null ? '' : `; ${note}`
   }
 
-  /** A blocked click or type: its Cover or that it is Not Shown, any dialog, the dismissal the wall cost, and — when the wall was cleared — the page behind it. */
-  async function blockedOutcome(action: 'click' | 'type', ref: number, attempt: Extract<ClickAttempt, { kind: 'blocked' }>): Promise<string> {
+  /** A blocked click, type or menu: its Cover or that it is Not Shown, any dialog, the dismissal the wall cost, and — when the wall was cleared — the page behind it. */
+  async function blockedOutcome(action: RefAction, ref: number, attempt: Extract<ClickAttempt, { kind: 'blocked' }>): Promise<string> {
     const line = `${blockedActionHead(action, ref, attempt.blocked)}${dialogSuffix(attempt.snapshot)}${consentClause(attempt, ref)}${reportsSuffix(drainedReports())}`
     return attempt.dismissal === null ? line : withSettledState(line, attempt.snapshot)
   }
@@ -1335,13 +1369,15 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     }
   }
 
-  async function clickRef(ref: number): Promise<string> {
+  /** A click on a ref; with the right button, the ref's menu opened (#363), told under a `menu [N]` head. */
+  async function clickRef(ref: number, button: MouseButton = 'left'): Promise<string> {
     const watch = page.watchArrival?.()
     await armReadiness()
-    const attempt = await performClick(ref)
-    if (attempt.kind === 'blocked') return blockedOutcome('click', ref, attempt)
+    const attempt = await performClick(ref, button)
+    if (attempt.kind === 'blocked') return blockedOutcome(button === 'right' ? 'menu' : 'click', ref, attempt)
     const arrival = await settleArrival('click', watch)
-    const openedHere = await followNewWindowLink(attempt)
+    // A right-click opens no link: an open in its wake is the page's, reported with the rest.
+    const openedHere = button === 'left' && (await followNewWindowLink(attempt))
     // A New-window Link followed here is a navigate's arrival, load and all.
     const arrived = arrival !== 'none' || openedHere
     const after = await probeAction(attempt.index, attempt.label)
@@ -1357,7 +1393,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
       ? [...deltas, ...controls].join(', ')
       : pageChanged ? PAGE_SIGNATURE_CHANGED : NO_OBSERVABLE_CHANGE
     const location = urlChanged || arrived ? `; ${urlTitleSuffix(after.signature)}` : ''
-    const prefix = clickFlagsHead(ref, urlChanged, after.signature.dialogOpen)
+    const prefix = (button === 'right' ? menuFlagsHead : clickFlagsHead)(ref, urlChanged, after.signature.dialogOpen)
     const changes = truncateOutcomeText(rawChanges, Math.min(240, Math.max(30, 300 - prefix.length - location.length)))
 
     // Dialog escalation: consent dialogs are dismissed deterministically
@@ -1397,7 +1433,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     return withSettledState(line, settled)
   }
 
-  async function dispatchPointClick(point: ViewportPoint): Promise<void> {
+  async function dispatchPointClick(point: ViewportPoint, button: MouseButton = 'left'): Promise<void> {
     const { x, y } = point
     // Move, press, release back to back (#324): no pointer pacing.
     await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y })
@@ -1405,15 +1441,15 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
       type: 'mousePressed',
       x,
       y,
-      button: 'left',
-      buttons: 1,
+      button,
+      buttons: button === 'right' ? 2 : 1,
       clickCount: 1,
     })
     await cdp.send('Input.dispatchMouseEvent', {
       type: 'mouseReleased',
       x,
       y,
-      button: 'left',
+      button,
       buttons: 0,
       clickCount: 1,
     })
@@ -1793,6 +1829,15 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
   }
 
   const click = (ref: number) => holdingWindowOpens(() => withRefusedStaleRef(() => clickRef(ref)))
+  // A right-click (#363): the page's own menu, with the appliance's native one held back for the length of it.
+  const openMenu = async (ref: number): Promise<string> => {
+    const release = deps.holdContextMenu?.()
+    try {
+      return await holdingWindowOpens(() => withRefusedStaleRef(() => clickRef(ref, 'right')))
+    } finally {
+      release?.()
+    }
+  }
   const type = (ref: number, text: string) => holdingWindowOpens(() => withRefusedStaleRef(() => typeIntoRef(ref, text)))
 
   return {
@@ -1800,6 +1845,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     readPage,
     pageReadParts,
     click,
+    openMenu,
     type,
     scroll,
     screenshot,
