@@ -80,6 +80,14 @@ export function IdlePrompt({ draft, onDraft, onClose, onFocused }: { draft: stri
             <span className="idle-prompt-answer">{reply.kind === 'answer' ? reply.answer : '…'}</span>
           </p>
         )}
+        <footer className="idle-prompt-keys" aria-hidden="true">
+          <span>
+            <kbd>↵</kbd> run
+          </span>
+          <span>
+            <kbd>esc</kbd> close
+          </span>
+        </footer>
       </form>
     </div>
   )
