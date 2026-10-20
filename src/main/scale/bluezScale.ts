@@ -1,6 +1,7 @@
 import * as dbus from 'dbus-next'
 import type { QnCharacteristic } from '../../core/scale/qn'
 import type { ScaleStatus } from '../../core/scale/ipcChannels'
+import { createWakeGate } from '../../core/scale/wakeGate'
 import { reportFault } from '../../core/trace/fault'
 
 // The Scale Listener's Bluetooth (CONTEXT.md): BlueZ over the system D-Bus
@@ -85,6 +86,8 @@ export function createBluezScaleTransport(): ScaleTransport {
     let lastAttempt = 0
     let lastFault = ''
     let retry: ReturnType<typeof setTimeout> | null = null
+    // A scale let go is not connected again until it has slept (core/scale/wakeGate).
+    const wake = createWakeGate()
     const watched = new Map<string, () => void>()
 
     const status = (next: ScaleStatus): void => {
@@ -134,6 +137,7 @@ export function createBluezScaleTransport(): ScaleTransport {
       busy = true
       lastAttempt = Date.now()
       const cleanups: (() => void)[] = []
+      let reached = false
       let device: dbus.ClientInterface | null = null
       try {
         // Discovery may already be off; the connection goes ahead either way.
@@ -177,6 +181,7 @@ export function createBluezScaleTransport(): ScaleTransport {
         }
         // The session exists before notifications start: the scale sends its info frame at once, and it must be answered.
         connected = connection
+        reached = true
         status({ state: 'connected', detail: address })
         events.connected(address, connection)
         for (const notifyUuid of NOTIFY) {
@@ -205,6 +210,7 @@ export function createBluezScaleTransport(): ScaleTransport {
         busy = false
         connected = null
         endSession = () => undefined
+        if (reached) wake.hold(address)
         events.disconnected()
         if (!stopped && adapter !== null) {
           status({ state: 'searching', detail: '' })
@@ -216,7 +222,9 @@ export function createBluezScaleTransport(): ScaleTransport {
     /** An advert (or a property change) from a device: connect when it is the scale and nothing else is under way. */
     const seen = (path: string, props: Props | undefined): void => {
       const address = value<string>(props, 'Address')
-      if (stopped || busy || !isScale(address, props) || Date.now() - lastAttempt < RETRY_CONNECT_MS) return
+      if (stopped || !isScale(address, props)) return
+      const now = Date.now()
+      if (!wake.heard(address!.toUpperCase(), now) || busy || now - lastAttempt < RETRY_CONNECT_MS) return
       void session(path, address!.toUpperCase())
     }
 
