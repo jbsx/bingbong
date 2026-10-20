@@ -50,6 +50,20 @@ describe('createDecisionModel', () => {
     expect(await decision?.ask({ state: 's', questions: QUESTIONS })).toMatchObject({ status: 'unavailable', reason: 'malformed' })
   })
 
+  it('lets a scripted Choice name its label alone: every option it gives no probability has 0, so a script need not know the page\'s refs', async () => {
+    const decision = createDecisionModel({ BINGBONG_DECISION_SCRIPT: JSON.stringify([{ answers: { pick: { type: 'choice', choice: 'p2', confidence: 0.8 }, any: ANSWERS.any } }]) })
+    expect(await decision?.ask({ state: 's', questions: QUESTIONS })).toMatchObject({
+      status: 'answered',
+      answers: { pick: { type: 'choice', choice: 'p2', confidence: 0.8, probabilities: { p1: 0, p2: 0.8 } } },
+    })
+  })
+
+  it('serves an entry with `when` only to an ask whose state carries those words, in place of the next in order', async () => {
+    const decision = createDecisionModel({ BINGBONG_DECISION_SCRIPT: JSON.stringify([{ when: 'play fixture song', answers: ANSWERS }]) })
+    expect(await decision?.ask({ state: 'A cookie consent notice', questions: QUESTIONS })).toMatchObject({ status: 'unavailable', reason: 'failed' })
+    expect(await decision?.ask({ state: 'The user spoke: "play fixture song"', questions: QUESTIONS })).toMatchObject({ status: 'answered' })
+  })
+
   it('keeps one model per configuration, so a script is consumed in order, and rebuilds when the env changes', async () => {
     let env: Record<string, string | undefined> = { BINGBONG_DECISION_SCRIPT: JSON.stringify([{ answers: ANSWERS }, { unavailable: 'http' }]) }
     const source = createDecisionModelSource(() => env)

@@ -1,10 +1,11 @@
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { YOUTUBE_FIXTURE_SONG, startFixtureServer, type FixtureServer } from './fixtureServer'
 import { startHarness, type Harness } from './harness'
 import { cli } from './cliSupport'
+import { decisionScript, readingOf } from './scriptedJev'
 import { waitFor } from './waitFor'
 
 // Music over the Idle Screen (#344, AC5): `play <words>` from the Idle
@@ -33,6 +34,13 @@ describe('idle screen e2e: music over the Idle Screen', () => {
   let userDataDir: string
 
   const facts = (): Promise<VideoFacts> => harness.paneEval<VideoFacts>(VIDEO_FACTS)
+  /** The JSON lines of the app's logs whose file name starts with `prefix`, in order. */
+  const logLines = async <T>(prefix: string): Promise<T[]> => {
+    const dir = join(userDataDir, 'logs')
+    const files = (await readdir(dir)).filter((name) => name.startsWith(prefix)).sort()
+    const text = (await Promise.all(files.map((name) => readFile(join(dir, name), 'utf8')))).join('')
+    return text.split('\n').filter((line) => line.trim() !== '').map((line) => JSON.parse(line) as T)
+  }
   const idleShown = (): Promise<boolean> => harness.dashboardEval<boolean>(`!!document.querySelector('.idle-screen')`)
   const dashboardText = (selector: string): Promise<string> => harness.dashboardEval<string>(`document.querySelector(${JSON.stringify(selector)})?.textContent ?? ''`)
 
@@ -45,7 +53,8 @@ describe('idle screen e2e: music over the Idle Screen', () => {
       wakeFromBootIdle: false,
       launchArgs: ['--browser-cli', '--mute-audio'],
       pipeStdio: true,
-      env: { BINGBONG_YOUTUBE_FIXTURE: new URL(fixture.url('/')).origin },
+      // A line with free words is Jev's (ADR 0079): the stand-in reads `play fixture song` as the Capability, and "loop the song" as `loop`.
+      env: { BINGBONG_YOUTUBE_FIXTURE: new URL(fixture.url('/')).origin, ...decisionScript(readingOf('play fixture song'), readingOf('loop the song', 'loop')) },
     })
     await harness.waitForCliOutput(/bingbong browser harness/)
     await waitFor(async () => ((await idleShown()) ? true : undefined), { timeoutMs: 10_000, intervalMs: 250 })
@@ -83,6 +92,19 @@ describe('idle screen e2e: music over the Idle Screen', () => {
     await waitFor(async () => ((await dashboardText('.idle-music-time')) !== shown ? true : undefined), { timeoutMs: 5_000, intervalMs: 250 })
     expect(await idleShown()).toBe(true)
   }, 60_000)
+
+  it('a line typed over the Idle Screen is asked on the watch page\'s real refs, and a Capability reading loops the song (#362)', async () => {
+    expect(await cli(harness, 'loop the song', /^(loop: |error:|No response)/)).toMatch(/^loop: .*loop=true/)
+    const asks = await logLines<{ type: string; state: string; questions: { verb: { options: Record<string, string> } } }>('asks-')
+    const ask = asks.filter((record) => record.state.includes('"loop the song"')).at(-1)!
+    // The hidden pane lays out off the window at its size (ADR 0079): its refs are read, not dropped as out of sight.
+    expect(ask.state.split('\n').filter((line) => /^\[\d+\] /.test(line)).length).toBeGreaterThan(0)
+    expect(Object.keys(ask.questions.verb.options)).toEqual(expect.arrayContaining(['loop', 'restart']))
+    const records = await logLines<{ type: string; transcript?: string; reading?: string; verb?: string; capability?: string; jevAsked?: boolean }>('decision-')
+    expect(records.filter((record) => record.transcript === 'loop the song').at(-1)).toMatchObject({ reading: 'jev', verb: 'play', capability: 'loop', jevAsked: true })
+    expect(await harness.paneEval<boolean>(`document.querySelector('#movie_player video').loop`)).toBe(true)
+    expect(await idleShown()).toBe(true)
+  }, 30_000)
 
   it('a tap on the card pauses the song, and the Idle Screen stays up', async () => {
     await harness.clickDashboardElement('.idle-music')

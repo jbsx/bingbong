@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { YOUTUBE_FIXTURE_SONG, startFixtureServer, type FixtureServer } from './fixtureServer'
+import { decisionScript, readingOf } from './scriptedJev'
 import { startHarness, type Harness } from './harness'
 import { waitFor } from './waitFor'
 
@@ -31,7 +32,8 @@ describe('idle prompt e2e: music from the Idle Prompt', () => {
       fixture,
       wakeFromBootIdle: false,
       launchArgs: ['--mute-audio'],
-      env: { BINGBONG_YOUTUBE_FIXTURE: new URL(fixture.url('/')).origin },
+      // A line with free words is Jev's (ADR 0079): the stand-in reads `play fixture song` as the Capability.
+      env: { BINGBONG_YOUTUBE_FIXTURE: new URL(fixture.url('/')).origin, ...decisionScript(readingOf('play fixture song')) },
     })
     await waitFor(async () => ((await idleUp()) ? true : undefined), { timeoutMs: 10_000, intervalMs: 250 })
   }, 120_000)

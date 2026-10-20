@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import type { DecisionChoiceAnswer } from '../ports/decisionModel'
 import type { CommandPage } from './command'
-import { commandQuestions, commandState, dismissPhraseQuestions, doneFacts, doneLine, hopQuestions, onResults, partialQuestions, readCommandAnswers, readDismissChoice, readSteps, readVerdict, slotSpans } from './jevReading'
+import { commandQuestions, commandState, dismissPhraseQuestions, doneFacts, doneLine, hopQuestions, onResults, partialQuestions, readCommandAnswers, readDismissChoice, readSteps, readVerdict, slotSpans, type HopContext } from './jevReading'
+import { playerCapabilities } from './capability'
 
 // One Jev call per Command the Local Match cannot settle (#324, ADR
 // 0076): the state is the transcript, the page's address and title and
@@ -678,5 +679,61 @@ describe('the steps Choice (#364, ADR 0076 "a line is Steps")', () => {
       `Step 2 of 2 of the line: ${JSON.stringify(LINE)}`,
       'Done so far: Step 1 "start the song from the beginning": restart',
     ])
+  })
+})
+
+describe('Capabilities (ADR 0079, #362)', () => {
+  const WATCH: CommandPage = {
+    url: 'https://www.youtube.com/watch?v=abc',
+    title: 'Highs and Lows - YouTube',
+    refs: [{ ref: 4, kind: 'button', label: 'Play (k)', href: null, inputType: null }],
+  }
+  const HOP: HopContext = { hop: 1, visited: [WATCH.url], actions: ['click "Play (k)" (nothing changed)'], links: [] }
+  const SONG_OPS = ['loop', 'loop_off', 'restart', 'pause', 'unpause', 'skip', 'previous', 'louder', 'quieter', 'mute', 'unmute', 'volume', 'show']
+
+  it('with a song playing, the command, hop and partial asks offer every Player op beside the browser verbs, each described', () => {
+    const offered = playerCapabilities(true)
+    for (const questions of [commandQuestions('loop the song', WATCH, undefined, { capabilities: offered }), hopQuestions('loop the song', WATCH, HOP, offered), partialQuestions('loop the song', WATCH, offered)]) {
+      const verbs = Object.keys(questions.verb.options)
+      expect(verbs.slice(0, 15)).toEqual(['navigate', 'search', 'click', 'type', 'scroll_up', 'scroll_down', 'back', 'forward', 'reload', 'press', 'read', 'clear', 'stop', 'done', 'none'])
+      expect(verbs).toEqual(expect.arrayContaining([...SONG_OPS, 'play', 'queue']))
+      for (const verb of verbs) expect(questions.verb.options[verb]).not.toBe('')
+      expect(questions.verb.instructions).toMatch(/click, press or tap/)
+    }
+  })
+
+  it('with no song, the song\'s ops are absent and a song can still be played; with no Player, none is offered', () => {
+    const idle = Object.keys(commandQuestions('play highs and lows', WATCH, undefined, { capabilities: playerCapabilities(false) }).verb.options)
+    for (const op of SONG_OPS) expect(idle).not.toContain(op)
+    expect(idle).toEqual(expect.arrayContaining(['play', 'queue']))
+    expect(Object.keys(commandQuestions('loop the song', WATCH).verb.options)).toHaveLength(15)
+  })
+
+  it('a Capability reading is a `play` Command carrying the Player\'s action', () => {
+    const read = (verb: string, text: string, slot = 'none') => readCommandAnswers({ verb: choice(verb), target: choice('none'), slot: choice(slot) }, text, WATCH)
+    expect(read('loop', 'loop the song')).toEqual({ verb: 'play', target: null, slot: null, music: { kind: 'loop', on: true }, capability: 'loop' })
+    expect(read('loop_off', 'stop looping it')).toEqual({ verb: 'play', target: null, slot: null, music: { kind: 'loop', on: false }, capability: 'loop_off' })
+    expect(read('restart', 'start the song from the beginning')).toEqual({ verb: 'play', target: null, slot: null, music: { kind: 'restart' }, capability: 'restart' })
+    expect(read('quieter', 'turn the volume down')).toEqual({ verb: 'play', target: null, slot: null, music: { kind: 'quieter' }, capability: 'quieter' })
+    expect(read('show', 'show me the video')).toEqual({ verb: 'play', target: null, slot: null, music: { kind: 'show' }, capability: 'show' })
+  })
+
+  it('`volume` carries the Slot\'s number, digits or spoken; with no number in the words it is no Command', () => {
+    const read = (text: string, slot: string) => readCommandAnswers({ verb: choice('volume'), target: choice('none'), slot: choice(slot) }, text, WATCH)
+    expect(read('set the volume to 30', 's4-4')).toMatchObject({ verb: 'play', music: { kind: 'volume', to: 30 } })
+    expect(read('volume at fifty please', 's2-2')).toMatchObject({ verb: 'play', music: { kind: 'volume', to: 50 } })
+    expect(read('make it loud', 'none')).toEqual({ verb: 'none', target: null, slot: null })
+    expect(read('volume 400', 's1-1')).toEqual({ verb: 'none', target: null, slot: null })
+  })
+
+  it('`play`, `play_next` and `queue` search for the Slot\'s words, now, next or last', () => {
+    const read = (verb: string, text: string, slot: string) => readCommandAnswers({ verb: choice(verb), target: choice('none'), slot: choice(slot) }, text, WATCH)
+    expect(read('play', 'play highs and lows pomme by kanye west', 's1-7')).toEqual({ verb: 'play', target: null, slot: 'highs and lows pomme by kanye west', music: { kind: 'search', place: 'now' }, capability: 'play' })
+    expect(read('play_next', 'play bohemian rhapsody next', 's1-2')).toMatchObject({ slot: 'bohemian rhapsody', music: { kind: 'search', place: 'front' } })
+    expect(read('queue', 'add bohemian rhapsody to the queue', 's1-2')).toMatchObject({ slot: 'bohemian rhapsody', music: { kind: 'search', place: 'end' } })
+  })
+
+  it('a Capability at a later hop is the same Command', () => {
+    expect(readCommandAnswers({ verb: choice('restart'), target: choice('none'), slot: choice('none'), outcome: choice('not_yet') }, 'start it again', WATCH, HOP)).toEqual({ verb: 'play', target: null, slot: null, music: { kind: 'restart' }, capability: 'restart' })
   })
 })

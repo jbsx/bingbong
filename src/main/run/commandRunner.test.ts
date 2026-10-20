@@ -283,18 +283,74 @@ describe('the Player (#343)', () => {
       videoItem('fJ9rUzIMcZQ', QUEEN),
     )
     youtube.watches.set('fJ9rUzIMcZQ', { title: QUEEN })
-    return { ...wired, youtube }
+    // Jev stands in for a line with free words (ADR 0079): `play <words>` and `queue <words>` read as the Capability, the words the Slot.
+    const run: CommandRunner['run'] = (line, runOptions) => {
+      const head = /^(play|queue)\s+(.+?)[.!?]?$/i.exec(line.trim())
+      const exact = head !== null && /^(?:play )?(?:next|from the beginning|the next song)$/i.test(line.trim())
+      if (head !== null && !exact) wired.decision.script.push({ answers: { verb: choice(head[1]!.toLowerCase()), target: choice('none'), slot: choice(`s1-${line.trim().split(/\s+/).length - 1}`) } })
+      return wired.runner.run(line, runOptions)
+    }
+    return { ...wired, youtube, runner: { ...wired.runner, run } }
   }
 
-  it('`play <words>` opens the results, picks the first plain video past a Short, a channel and a playlist, and plays its watch page', async () => {
+  it('`play <words>` is Jev\'s (ADR 0079): its `play` reading opens the results, picks the first plain video past a Short, a channel and a playlist, and plays its watch page', async () => {
     const { browser, events, records, decision, runner } = music()
     await runner.run('play bohemian rhapsody')
     expect(browser.navigations).toEqual(['https://www.youtube.com/results?search_query=bohemian+rhapsody', 'https://www.youtube.com/watch?v=fJ9rUzIMcZQ'])
-    expect(decision.requests).toEqual([])
+    expect(decision.requests).toHaveLength(1)
     expect(events.filter((event) => event.type === 'command')).toEqual([expect.objectContaining({ action: 'play bohemian rhapsody' })])
     expect(displays(events)).toEqual([`Playing “${QUEEN}”.`])
     expect(events.at(-1)).toMatchObject({ type: 'done', outcome: 'done' })
-    expect(records.filter((record) => record.type === 'decision')).toEqual([expect.objectContaining({ verb: 'play', slot: 'bohemian rhapsody', video: 'fJ9rUzIMcZQ', pick: 'searched', reading: 'local_match', ended: 'local_match' })])
+    expect(records.filter((record) => record.type === 'decision')).toEqual([expect.objectContaining({ verb: 'play', capability: 'play', slot: 'bohemian rhapsody', video: 'fJ9rUzIMcZQ', pick: 'searched', reading: 'jev', jevAsked: true, ended: 'terminal' })])
+  })
+
+  it('with no song, the ask offers a song to play and none of the song\'s ops; with one current, every op (#362)', async () => {
+    const { decision, runner } = music()
+    await runner.run('play bohemian rhapsody')
+    decision.script.push({ answers: { verb: choice('loop'), target: choice('none'), slot: choice('none') } })
+    await runner.run('loop the song')
+    const verbs = decision.requests.map((request) => Object.keys((request.questions.verb as DecisionChoiceQuestion).options))
+    expect(verbs[0]).toEqual(expect.arrayContaining(['play', 'play_next', 'queue']))
+    expect(verbs[0]).not.toContain('loop')
+    expect(verbs[1]).toEqual(expect.arrayContaining(['loop', 'loop_off', 'restart', 'pause', 'unpause', 'skip', 'previous', 'louder', 'quieter', 'mute', 'unmute', 'volume', 'show']))
+  })
+
+  it('a Capability reading fires the Player\'s op, answers its line and ends the Task `terminal`: no hop, no Verdict (#362)', async () => {
+    const { decision, events, records, youtube, runner } = music()
+    await runner.run('play bohemian rhapsody')
+    decision.script.push({ answers: { verb: choice('loop'), target: choice('none'), slot: choice('none') } })
+    await runner.run('put the song on loop')
+    decision.script.push({ answers: { verb: choice('restart'), target: choice('none'), slot: choice('none') } })
+    await runner.run('start the song from the beginning')
+    expect(youtube.controls.map((control) => control.op)).toEqual(expect.arrayContaining(['loop', 'restart']))
+    expect(displays(events).slice(-2)).toEqual([`Looping “${QUEEN}”.`, 'Restarted.'])
+    expect(decision.requests).toHaveLength(3)
+    expect(records.filter((record) => record.type === 'decision').slice(-2)).toEqual([
+      expect.objectContaining({ reading: 'jev', jevAsked: true, verb: 'play', capability: 'loop', ended: 'terminal' }),
+      expect.objectContaining({ reading: 'jev', jevAsked: true, verb: 'play', capability: 'restart', ended: 'terminal' }),
+    ])
+  })
+
+  it('a Jev `volume` carries the Slot\'s number to the Player (#362)', async () => {
+    const { decision, youtube, runner } = music()
+    await runner.run('play bohemian rhapsody')
+    decision.script.push({ answers: { verb: choice('volume'), target: choice('none'), slot: choice('s5-5') } })
+    await runner.run('set the music volume to 30')
+    expect(youtube.controls.at(-1)).toMatchObject({ op: 'volume', to: 30 })
+  })
+
+  it('a partial Jev reads as a song\'s op fires early; one read as `play <words>` waits for its Endpoint (#362)', async () => {
+    const { browser, decision, youtube, runner } = music()
+    await runner.run('play bohemian rhapsody')
+    const navigations = browser.navigations.length
+    decision.script.push({ answers: { verb: choice('play'), target: choice('none'), slot: choice('s1-1'), complete: { type: 'noul', noul: 0.95 } } })
+    await runner.consider('play daft')
+    expect(browser.navigations).toHaveLength(navigations)
+    decision.script.push({ answers: { verb: choice('loop'), target: choice('none'), slot: choice('none'), complete: { type: 'noul', noul: 0.95 } } })
+    await runner.consider('loop the song')
+    await flushMicrotasks()
+    expect(youtube.controls.map((control) => control.op)).toContain('loop')
+    expect(Object.keys((decision.requests.at(-1)!.questions.verb as DecisionChoiceQuestion).options)).toContain('loop')
   })
 
   it('a remembered song (#345) opens with no results page, answers as before, and is recorded `remembered`', async () => {
@@ -318,10 +374,10 @@ describe('the Player (#343)', () => {
     expect(displays(events).at(-1)).toBe('Playing “Panic! – Bohemian Rhapsody” instead.')
   })
 
-  it('a spoken search passes the Name Match\'s Learned Terms, and Jev is never asked', async () => {
+  it('a spoken search Jev reads as `play` passes the Name Match\'s Learned Terms', async () => {
     const { browser, decision, runner } = music({ learned: ['Bohemian Rhapsody'] })
     await runner.run('Play bohemian rapsody.', { source: 'spoken' })
-    expect(decision.requests).toEqual([])
+    expect(decision.requests).toHaveLength(1)
     expect(browser.navigations[0]).toBe('https://www.youtube.com/results?search_query=Bohemian+Rhapsody')
   })
 
@@ -391,9 +447,9 @@ describe('the Player (#343)', () => {
     expect(displays(events).slice(-2)).toEqual([`Showing “${QUEEN}”.`, `Showing “${QUEEN}”.`])
   })
 
-  it('no partial fires a Player verb early, and Jev is not asked about one (#326)', async () => {
+  it('no partial fires an exact Player line early, and Jev is not asked about one (#326)', async () => {
     const { browser, decision, runner } = music()
-    for (const partial of ['play', 'play bohemian', 'skip', 'pause', 'stop', 'go back']) await runner.consider(partial)
+    for (const partial of ['play', 'skip', 'pause', 'stop', 'go back']) await runner.consider(partial)
     expect(browser.navigations).toEqual([])
     expect(browser.evaluations).toEqual([])
     expect(decision.requests).toEqual([])

@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { startFixtureServer, type FixtureServer } from './fixtureServer'
+import { decisionScript, readingOf } from './scriptedJev'
 import { startHarness, type Harness } from './harness'
 import { promptBarScript } from './scripts'
 import { sleep, waitFor } from './waitFor'
@@ -318,7 +319,8 @@ describe('the states screenshot review (#359)', () => {
 
   for (const theme of ['dark', 'light'] as const) {
     it(`shoots every awake state, Settings and the Weight page in ${theme}`, async () => {
-      const run = await launch(theme)
+      // A line with free words is Jev's (ADR 0079): the stand-in reads the nonsense line as no Command and `play fixture song` as the Capability.
+      const run = await launch(theme, decisionScript(readingOf('zorblax the quux thing'), readingOf('play fixture song')))
       try {
         await walkTheShell(run)
       } finally {

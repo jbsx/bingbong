@@ -1,0 +1,95 @@
+{
+  "turnId": "cli-1-mvh3k3vf",
+  "transcript": "play highs and lows pomme by kanye west",
+  "model": "jev-1.14.0",
+  "recordedAt": 1792525764514,
+  "expect": [
+    {
+      "question": "verb",
+      "label": "play"
+    },
+    {
+      "question": "slot",
+      "label": "s1-7"
+    }
+  ],
+  "ask": {
+    "state": "The user spoke to a web browser: \"play highs and lows pomme by kanye west\"\nPage: about:blank — \"\"\nRefs (number, kind, label, address):",
+    "questions": {
+      "verb": {
+        "type": "choice",
+        "instructions": "Which verb did the user ask the browser for? Choose none when the words are not a command for this page. The music verbs act on the song the appliance is playing, whatever page is open. When the words say click, press or tap — \"click play\", \"press pause\" — they name the page's own button: choose click, never a music verb.",
+        "options": {
+          "navigate": "go to a web address the words name: a website, a host or a url",
+          "search": "search for the words: on the web, or on this site when they point at something on it",
+          "click": "click one of the numbered refs on the page",
+          "type": "type words into one of the numbered refs (a text field)",
+          "scroll_up": "scroll the page up",
+          "scroll_down": "scroll the page down",
+          "back": "go back to the previous page",
+          "forward": "go forward",
+          "reload": "reload the page",
+          "press": "press a key: enter, escape, space or an arrow key",
+          "read": "read the page aloud or show its contents",
+          "clear": "clear the text in the focused field",
+          "stop": "stop what the browser is doing",
+          "done": "this page is what the user asked for: nothing more to do",
+          "none": "not a command for this page: a remark, a question, a name, noise",
+          "play": "music: find a song or video on YouTube by the words and play it now — never the page's play button, which is a click",
+          "play_next": "music: find a song by the words and play it after the one playing",
+          "queue": "music: find a song by the words and add it to the end of the queue"
+        }
+      },
+      "target": {
+        "type": "choice",
+        "instructions": "Which numbered ref on the page do the words name as the thing to click or type into? Choose none when the command needs no ref, or names none of them.",
+        "options": {
+          "none": "no ref: the command does not act on one element"
+        }
+      },
+      "slot": {
+        "type": "choice",
+        "instructions": "Which words of the transcript are the thing the command carries verbatim: the address to open, the search terms, the song to play, the text to type, the key to press? Never the command word itself: \"play X\" carries X. Choose none when it carries none.",
+        "options": {
+          "none": "the command carries no words of its own",
+          "s0-0": "play",
+          "s0-1": "play highs",
+          "s0-2": "play highs and",
+          "s0-3": "play highs and lows",
+          "s0-4": "play highs and lows pomme",
+          "s0-5": "play highs and lows pomme by",
+          "s0-6": "play highs and lows pomme by kanye",
+          "s0-7": "play highs and lows pomme by kanye west",
+          "s1-1": "highs",
+          "s1-2": "highs and",
+          "s1-3": "highs and lows",
+          "s1-4": "highs and lows pomme",
+          "s1-5": "highs and lows pomme by",
+          "s1-6": "highs and lows pomme by kanye",
+          "s1-7": "highs and lows pomme by kanye west",
+          "s2-2": "and",
+          "s2-3": "and lows",
+          "s2-4": "and lows pomme",
+          "s2-5": "and lows pomme by",
+          "s2-6": "and lows pomme by kanye",
+          "s2-7": "and lows pomme by kanye west",
+          "s3-3": "lows",
+          "s3-4": "lows pomme",
+          "s3-5": "lows pomme by",
+          "s3-6": "lows pomme by kanye",
+          "s3-7": "lows pomme by kanye west",
+          "s4-4": "pomme",
+          "s4-5": "pomme by",
+          "s4-6": "pomme by kanye",
+          "s4-7": "pomme by kanye west",
+          "s5-5": "by",
+          "s5-6": "by kanye",
+          "s5-7": "by kanye west",
+          "s6-6": "kanye",
+          "s6-7": "kanye west",
+          "s7-7": "west"
+        }
+      }
+    }
+  }
+}

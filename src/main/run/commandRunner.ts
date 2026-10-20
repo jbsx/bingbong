@@ -6,6 +6,7 @@ import type { CommandRunState } from '../../core/pipeline/runState'
 import type { PageLink, PageSnapshot } from '../../core/browser/snapshot'
 import type { PerfTracer } from '../../core/perf/perfTracer'
 import { PRESS_KEYS, commandPageOf, describeCommand, isMounting, targetLabel, commandKeepsIdle, verbNeedsPage, type Command, type CommandPage } from '../../core/command/command'
+import { playerCapabilities, type Capability } from '../../core/command/capability'
 import { dismissalLadder, isDismissPhrase, obstacleOf, ruledDismissal, type DismissChoice } from '../../core/command/dismissDialog'
 import { COMMAND_HELP } from '../../core/command/help'
 import { carriesWordsPastAddress, headsAnotherVerb, isSearchLanding, localMatch, resultRefsOf } from '../../core/command/localMatch'
@@ -196,8 +197,8 @@ export interface CommandRunnerDeps {
   lastPage?(): LastPage | null
   /** The Timer (CONTEXT.md), for `timer` — and `stop`, which silences it ringing; absent leaves `timer` a failure. */
   timer?: Pick<Timer, 'set' | 'cancel' | 'silence'>
-  /** The Player (#343, CONTEXT.md), for `play` — and `stop` with nothing in flight, which pauses it; absent leaves `play` a failure. */
-  player?: Pick<Player, 'perform' | 'pauseIfPlaying'>
+  /** The Player (#343, CONTEXT.md), for `play` — and `stop` with nothing in flight, which pauses it; absent leaves `play` a failure and offers Jev no Capability. */
+  player?: Pick<Player, 'perform' | 'pauseIfPlaying' | 'queue'>
   /** A wait on the clock, for the results of a Web Engine's landing ({@link RESULTS_WAIT_MS}); tests make it immediate. */
   sleep?(ms: number): Promise<void>
 }
@@ -420,6 +421,9 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   let idleAt = -1
   /** Nothing in flight, being read or sounding: what the run state calls idle. */
   const idle = (): boolean => inFlight === null && reading === null && sounding === 0
+
+  /** The Capabilities Jev is offered beside the browser's verbs (ADR 0079): a song to play while a Player is wired, and every op on the song while one is current. */
+  const capabilities = (): readonly Capability[] => (deps.player === undefined ? [] : playerCapabilities(deps.player.queue().current !== null))
 
   /** The music paused for a `stop` (#343); whether a video was playing. A failure to reach it is no pause. */
   async function pauseMusic(): Promise<boolean> {
@@ -646,7 +650,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   async function dismissalOf(turnId: string, text: string, page: CommandPage): Promise<Reading | null> {
     const ruled = ruledDismissal(page)
     const model = ruled === null ? deps.decisionModel() : null
-    const questions = model === null ? null : dismissPhraseQuestions(text, page)
+    const questions = model === null ? null : dismissPhraseQuestions(text, page, capabilities())
     const result = model === null || questions === null ? null : await askJev(model, 'command', turnId, commandState(text, page), questions)
     const chosen = result?.status === 'answered' ? readDismissChoice(result.answers, page) : null
     const ladder = dismissalLadder(page, chosen, DEFAULT_DECISION_THRESHOLDS.choice)
@@ -687,7 +691,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     if (local !== null) return { command: local, page, reading: 'local_match', jevAsked: false }
     const model = deps.decisionModel()
     if (model === null) return { command: UNREAD, page, reading: 'best_guess', jevAsked: false }
-    const result = await askJev(model, 'command', turnId, commandState(text, page, undefined, options.step), commandQuestions(text, page, undefined, { steps: options.split }), options.askId)
+    const result = await askJev(model, 'command', turnId, commandState(text, page, undefined, options.step), commandQuestions(text, page, undefined, { steps: options.split, capabilities: capabilities() }), options.askId)
     if (result.status === 'answered') {
       // Jev split the line (#364): each Step is read on its own, and this reading of the whole fires nothing.
       const split = readSteps(result.answers, text)
@@ -882,6 +886,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       transcript,
       reading: read.reading,
       verb: command.verb,
+      ...(command.capability !== undefined ? { capability: command.capability } : {}),
       target: command.target,
       ...(label !== undefined ? { targetLabel: label } : {}),
       slot: command.slot,
@@ -1353,7 +1358,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       const links = !superseded(task) ? await wholePageLinks(turnId) : []
       const context: HopContext = { hop, visited: [...task.visited], actions: [...task.actions], links, setAside: [...task.setAside], searched: [...task.searched], terms: [...task.terms] }
       const model = deps.decisionModel()
-      const result = superseded(task) || model === null ? null : await askJev(model, 'hop', turnId, commandState(task.text, page, context, task.step), hopQuestions(task.text, page, context))
+      const result = superseded(task) || model === null ? null : await askJev(model, 'hop', turnId, commandState(task.text, page, context, task.step), hopQuestions(task.text, page, context, capabilities()))
       if (reading?.turnId === turnId) reading = null
       const firedAt = at()
       const base = { type: 'decision' as const, turnId, at: firedAt, source: task.source, transcript: task.text, reading: 'jev' as const, task: hopOf(task, hop) }
@@ -1574,7 +1579,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     // A "stop" that may be "stop looping" (#343) still fires at once when there is something to stop: it is only an abort then.
     const stopsSomething = quick?.verb === 'stop' && !idle()
     if (headsAnotherVerb(words) && !stopsSomething) return null
-    // A Player line (#343) is the grammar's alone: it waits for its Endpoint, and Jev is never asked about it.
+    // An exact Player line (#343) is the grammar's: it waits for its Endpoint, and Jev is never asked about it.
     if (quick?.verb === 'play') return null
     const dismissed = await dismissPage(words, quick, prepared)
     if (stale()) return null
@@ -1589,7 +1594,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     if (model === null) return null
     partialCalls += 1
     const askedIn = utterance
-    const result = await askJev(model, 'partial', null, commandState(words, page), partialQuestions(words, page))
+    const result = await askJev(model, 'partial', null, commandState(words, page), partialQuestions(words, page, capabilities()))
     // Kept for its own Utterance's record: one whose Endpoint came while it was read has written its record already.
     if (askedIn === utterance) partialAskIds.push(result.askId)
     // Jev unavailable on a partial: nothing fires, and the Endpoint reads as before.
@@ -1598,6 +1603,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     if (noul < DEFAULT_DECISION_THRESHOLDS.noul) return null
     const command = readCommandAnswers(result.answers, words, page)
     if (command.verb === 'none') return null
+    // A song to play waits for its Endpoint, as an exact `play` does: "play daft" may yet be "play daft punk" (ADR 0079).
+    if (command.music?.kind === 'search') return null
     return { command, page, reading: 'jev', jevAsked: true, jev: jevDetailOf(result.answers, result.latencyMs, result.model), ask: result.askId, noul }
   }
 

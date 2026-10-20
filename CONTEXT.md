@@ -114,7 +114,8 @@ _Avoid_: sub-task, chain, plan, sequence
 **Capability**:
 An action the appliance itself can take, offered to the Decision Model as
 a verb beside the browser's: the Player's loop, restart, pause, skip,
-volume and the rest while a song plays, on any page; the Timer next. A
+volume and the rest while a song plays, on any page, and a song to play
+by its words at any time; the Timer next. A
 Capability Command fires the action, answers its line and ends the Task
 there. The words' own exact phrases ("loop", "pause") are still the
 grammar's first; plain English ("put the song on loop") is the Decision
@@ -972,7 +973,8 @@ the Queue and the verbs in main (2026-10-19 consultation, #343). `play
 (no ad, Short, channel, playlist or "People also watched" shelf), and opens
 its watch page. It reads the results' `ytInitialData`, not the cards (a
 results page that lands before its cards are drawn is no Empty Landing for
-it), and no Jev call is made. A wrong pick is a Misfire. The words are a Slot and
+it), and no Jev call picks it: Jev only reads the line as `play`. A
+wrong pick is a Misfire. The words are a Slot and
 pass the Name Match. `queue <words>` or `add <words>` puts a song at the
 end of the Queue, and `play <words> next` at its front. These search
 without leaving the song playing: main fetches the results with the

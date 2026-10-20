@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { startHarness, type Harness } from './harness'
 import { cli } from './cliSupport'
+import { decisionScript, readingOf } from './scriptedJev'
 import { waitFor } from './waitFor'
 
 // The Player against live YouTube (#343, AC6): `play` lands on a watch page
@@ -59,7 +60,9 @@ describe.skipIf(!process.env.BINGBONG_YOUTUBE_E2E)('the Player against live YouT
   let firstId = ''
 
   beforeAll(async () => {
-    harness = await startHarness({ launchArgs: ['--browser-cli', '--mute-audio'], pipeStdio: true })
+    // A line with free words is Jev's (ADR 0079): the stand-in reads each as the Capability.
+    const env = decisionScript(...['play rick astley never gonna give you up', 'queue daft punk around the world', 'queue queen bohemian rhapsody'].map((line) => readingOf(line)))
+    harness = await startHarness({ launchArgs: ['--browser-cli', '--mute-audio'], pipeStdio: true, env })
     await harness.waitForCliOutput(/bingbong browser harness/)
   }, 120_000)
 

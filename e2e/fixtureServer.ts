@@ -118,7 +118,7 @@ function youtubeWatchPage(): string {
   const { title, channel } = YOUTUBE_FIXTURE_SONG
   return `<!doctype html><html><head><title>${title} - YouTube</title></head>
 <body style="background:#222;color:#fff">
-  <div id="movie_player"><video src="/youtube-fixture/song.wav" autoplay></video></div>
+  <div id="movie_player"><video src="/youtube-fixture/song.wav" autoplay></video><button class="ytp-play-button" aria-label="Pause (k)" onclick="const v = this.previousElementSibling; v.paused ? v.play() : v.pause()">Pause</button></div>
   <script>
     const player = document.getElementById('movie_player')
     const video = player.querySelector('video')

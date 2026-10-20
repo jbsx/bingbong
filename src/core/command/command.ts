@@ -3,6 +3,7 @@ import type { PageSnapshot, RefKind, SnapshotRef } from '../browser/snapshot'
 import { pageTermsOf } from '../voice/pageTerms'
 import { describeDuration } from '../timer/duration'
 import type { MusicAction } from '../music/musicWords'
+import type { Capability } from './capability'
 
 // A Command (CONTEXT.md, ADR 0076): what an Utterance becomes on this
 // branch — one verb, at most one target on the page and one Slot, performed
@@ -14,8 +15,9 @@ import type { MusicAction } from '../music/musicWords'
 
 /**
  * The verbs a Command can carry. The Decision Model is offered
- * {@link JEV_VERBS}; `screenshot`, `help`, `resume` and `timer` are the
- * CLI grammar's alone, reached only through the Local Match.
+ * {@link JEV_VERBS}, and `play` through the Player's Capabilities (ADR
+ * 0079); `screenshot`, `help`, `resume` and `timer` are the CLI grammar's
+ * alone, reached only through the Local Match.
  */
 export const COMMAND_VERBS = [
   'navigate',
@@ -41,11 +43,15 @@ export const COMMAND_VERBS = [
 ] as const
 export type CommandVerb = (typeof COMMAND_VERBS)[number]
 
-/** The verbs the CLI grammar alone reaches: Jev is never offered them. `play` is the Player's (#343, owner's ruling 1). */
-export const GRAMMAR_ONLY_VERBS: ReadonlySet<CommandVerb> = new Set<CommandVerb>(['screenshot', 'help', 'resume', 'timer', 'play'])
+/** The verbs the CLI grammar alone reaches: Jev is never offered them. */
+export const GRAMMAR_ONLY_VERBS: ReadonlySet<CommandVerb> = new Set<CommandVerb>(['screenshot', 'help', 'resume', 'timer'])
 
-/** The verbs the Decision Model chooses among (#324): the spoken vocabulary, `none` included. */
-export const JEV_VERBS = COMMAND_VERBS.filter((verb) => !GRAMMAR_ONLY_VERBS.has(verb)) as readonly Exclude<CommandVerb, 'screenshot' | 'help' | 'resume' | 'timer' | 'play'>[]
+/**
+ * The browser's verbs the Decision Model chooses among (#324), `none`
+ * included. `play` is not one: Jev reaches the Player through its
+ * Capabilities, offered beside these while a Player is wired (ADR 0079).
+ */
+export const JEV_VERBS = COMMAND_VERBS.filter((verb) => !GRAMMAR_ONLY_VERBS.has(verb) && verb !== 'play') as readonly Exclude<CommandVerb, 'screenshot' | 'help' | 'resume' | 'timer' | 'play'>[]
 
 /** The keys `press` speaks: enter, escape, tab, space and the arrows. */
 export const PRESS_KEYS: Readonly<Record<string, KeyPress>> = {
@@ -79,6 +85,8 @@ export interface Command {
   readonly durationMs?: number
   /** For `play` (#343): what the line asks of the Player; a search's words are the Slot. */
   readonly music?: MusicAction
+  /** For a `play` Jev read (ADR 0079): the Capability its verb Choice named; absent for an exact line the grammar settled. */
+  readonly capability?: Capability
   /** The click or the Escape closes an open dialog (#336): its Answer is "Closed the pop-up.", and a dialog still open after it is a failure. */
   readonly dismiss?: true
 }

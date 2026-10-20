@@ -1,6 +1,7 @@
 import type { KeyPress, PageLanding } from '../ports/browser'
 import type { DecisionUnavailableReason } from '../ports/decisionModel'
 import type { CommandVerb } from './command'
+import type { Capability } from './capability'
 import type { CommandAnswers, HopAnswers } from './jevReading'
 
 // The per-Command decision record (#324, ADR 0076): one JSON line per
@@ -54,6 +55,8 @@ export interface DecisionRecord {
   readonly transcript: string
   readonly reading: CommandReading
   readonly verb: CommandVerb
+  /** For a `play` Jev read (ADR 0079): the Capability its verb Choice named; absent otherwise. */
+  readonly capability?: Capability
   readonly target: number | null
   readonly targetLabel?: string
   readonly slot: string | null

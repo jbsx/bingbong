@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { startFixtureServer, type FixtureServer } from './fixtureServer'
 import { startHarness, type Harness } from './harness'
 import { cli } from './cliSupport'
+import { decisionScript, readingOf } from './scriptedJev'
 import { waitFor } from './waitFor'
 import { brotherWeighIns, standInWeighIns, STEPPING_ON, TWO_PEOPLE, weighInsFile } from './weighIns'
 
@@ -171,7 +172,7 @@ describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review 
         wakeFromBootIdle: false,
         launchArgs: ['--browser-cli', '--mute-audio'],
         pipeStdio: true,
-        env: { ...ear, BINGBONG_YOUTUBE_FIXTURE: new URL(fixture.url('/')).origin },
+        env: { ...ear, BINGBONG_YOUTUBE_FIXTURE: new URL(fixture.url('/')).origin, ...decisionScript(readingOf('play fixture song')) },
       })
       await harness.waitForCliOutput(/bingbong browser harness/)
     } else {

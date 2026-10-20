@@ -40,7 +40,9 @@ fast as it can, built on top of this shell.
 - **Music** is the Player (`src/main/music/`, the Queue and the lines in
   `src/core/music/`, #343): `play <words>` opens YouTube in the pane and
   every music verb is one evaluate on the watch page's video. `play` is a
-  grammar-only verb the runner hands to it.
+  verb the runner hands to it: an exact line from the grammar, anything
+  with free words from Jev, which is offered the Player's ops as
+  Capabilities (`src/core/command/capability.ts`, ADR 0079).
 - **The CLI harness** (`pnpm cli`, `--browser-cli`) drives the same
   controller from a terminal.
 

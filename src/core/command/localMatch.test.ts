@@ -61,13 +61,14 @@ describe('the Local Match: the Timer', () => {
 })
 
 describe('the Local Match: the Player (#343)', () => {
-  it('reads a music line as the grammar-only `play` verb, a search\'s words its Slot, without asking the page', () => {
-    expect(localMatch('play bohemian rhapsody', [])).toEqual({ verb: 'play', target: null, slot: 'bohemian rhapsody', music: { kind: 'search', place: 'now' } })
-    expect(localMatch('Queue daft punk.', REFS)).toEqual({ verb: 'play', target: null, slot: 'daft punk', music: { kind: 'search', place: 'end' } })
+  it('reads an exact music line as the `play` verb without asking the page; a line with free words is Jev\'s (ADR 0079)', () => {
+    expect(localMatch('play bohemian rhapsody', [])).toBeNull()
+    expect(localMatch('Queue daft punk.', REFS)).toBeNull()
     expect(localMatch('play', REFS)).toEqual({ verb: 'play', target: null, slot: null, music: { kind: 'unpause' } })
     expect(localMatch('go back a song', REFS)).toEqual({ verb: 'play', target: null, slot: null, music: { kind: 'previous' } })
     expect(localMatch('stop looping', REFS)).toEqual({ verb: 'play', target: null, slot: null, music: { kind: 'loop', on: false } })
-    expect(GRAMMAR_ONLY_VERBS.has('play')).toBe(true)
+    // Jev reaches the Player through its Capabilities, never as a browser verb.
+    expect(GRAMMAR_ONLY_VERBS.has('play')).toBe(false)
     expect(JEV_VERBS).not.toContain('play')
   })
 
@@ -86,9 +87,11 @@ describe('the Local Match: the Player (#343)', () => {
   })
 
   it('the Feed\'s action line names the music line', () => {
-    expect(describeCommand(localMatch('play bohemian rhapsody', [])!)).toBe('play bohemian rhapsody')
-    expect(describeCommand(localMatch('play daft punk next', [])!)).toBe('play daft punk next')
-    expect(describeCommand(localMatch('add daft punk', [])!)).toBe('queue daft punk')
+    expect(describeCommand({ verb: 'play', target: null, slot: 'bohemian rhapsody', music: { kind: 'search', place: 'now' } })).toBe('play bohemian rhapsody')
+    expect(describeCommand({ verb: 'play', target: null, slot: 'daft punk', music: { kind: 'search', place: 'front' } })).toBe('play daft punk next')
+    expect(describeCommand({ verb: 'play', target: null, slot: 'daft punk', music: { kind: 'search', place: 'end' } })).toBe('queue daft punk')
+    // A line with free words is Jev's (ADR 0079): the Local Match settles none.
+    expect(localMatch('play bohemian rhapsody', [])).toBeNull()
     expect(describeCommand(localMatch('next song', [])!)).toBe('skip')
     expect(describeCommand(localMatch('play', [])!)).toBe('play')
     expect(describeCommand(localMatch('volume 40', [])!)).toBe('volume 40')

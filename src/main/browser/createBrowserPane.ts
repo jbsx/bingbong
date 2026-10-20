@@ -1,7 +1,7 @@
 import { app, BrowserWindow, session, WebContentsView } from 'electron'
 import type { BrowserPaneState, PaneRect } from '../../core/browser/paneState'
-import { HIDDEN_PANE_RECT, idleBrowserPaneState } from '../../core/browser/paneState'
-import { toPaneBounds } from '../../core/browser/paneGeometry'
+import { DESKTOP_PANE_SIZE, HIDDEN_PANE_RECT, idleBrowserPaneState } from '../../core/browser/paneState'
+import { hiddenPaneBounds, toPaneBounds, type PaneBounds } from '../../core/browser/paneGeometry'
 import { normalizeUrlInput } from '../../core/browser/urlInput'
 import { browserUserAgent } from '../../core/browser/userAgent'
 import { isAuthUrl, resolveAuthIdentity } from '../../core/browser/authIdentity'
@@ -38,6 +38,8 @@ export interface BrowserPane {
   /** Discards Session-owned navigation while preserving the persistent Browser Profile. */
   reset(): void
   setPaneRect(rect: PaneRect): void
+  /** The window the pane's view is in: hidden, the pane keeps its size off that window's edge (ADR 0079). */
+  setHost(win: BrowserWindow): void
   /** The last rect the renderer reported — reopened subagent panes mirror it (#57). */
   rect(): PaneRect
   onRect(listener: (rect: PaneRect) => void): () => void
@@ -198,6 +200,20 @@ export function createBrowserPane(deps?: {
   let state: BrowserPaneState = { ...idleBrowserPaneState(), url: wc.getURL() }
   const rectListeners = new Set<(rect: PaneRect) => void>()
   let paneRect: PaneRect = HIDDEN_PANE_RECT
+  /** The bounds the pane was last shown at: a hidden pane keeps their size, off the window (ADR 0079). */
+  let shown: PaneBounds | null = null
+  let host: BrowserWindow | null = null
+
+  /** The view's bounds for a reported rect: as reported, or, hidden, off the window at the size it was last shown. */
+  function boundsOf(rect: PaneRect): PaneBounds {
+    const bounds = toPaneBounds(rect)
+    if (bounds.width > 0) {
+      shown = bounds
+      return bounds
+    }
+    const window = host !== null && !host.isDestroyed() ? host.getContentBounds() : DESKTOP_PANE_SIZE
+    return hiddenPaneBounds(shown, window)
+  }
 
   function whenLive(fn: () => void): void {
     if (!wc.isDestroyed()) fn()
@@ -276,8 +292,12 @@ export function createBrowserPane(deps?: {
     },
     setPaneRect(rect) {
       paneRect = rect
-      whenLive(() => view.setBounds(toPaneBounds(rect)))
+      whenLive(() => view.setBounds(boundsOf(rect)))
       for (const listener of rectListeners) listener(rect)
+    },
+    setHost(win) {
+      host = win
+      this.setPaneRect(paneRect)
     },
     rect: () => paneRect,
     onRect(listener) {

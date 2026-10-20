@@ -71,6 +71,20 @@ function numberAt(words: readonly string[], at: number): { value: number; next: 
   return ones !== undefined ? { value: ones, next: at + 1 } : null
 }
 
+/** The first whole number the words name, digits or spoken ("30", "fifty five"); null when they name none. */
+export function firstNumber(text: string): number | null {
+  const words = text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter((word) => word !== '' && word !== 'a' && word !== 'an')
+  for (let at = 0; at < words.length; at += 1) {
+    const found = numberAt(words, at)
+    if (found !== null && Number.isInteger(found.value)) return found.value
+  }
+  return null
+}
+
 /** "1h30m", "90s", "5m": a typed length with its units joined on. */
 function compactMs(word: string): number | null {
   const parts = [...word.matchAll(/(\d+(?:\.\d+)?)(h|hr|m|min|s|sec)/g)]

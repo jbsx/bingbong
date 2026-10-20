@@ -5,6 +5,7 @@ import { dialogControls, type DismissChoice } from './dismissDialog'
 import { isSearchLanding, pageAddressOf, resultLinksOf, resultRefsOf, wordsAfterVerb } from './localMatch'
 import { isAddressShaped } from './openAddress'
 import { isWebEngineSearch, siteOf } from './siteScope'
+import { CAPABILITY_DESCRIPTIONS, CAPABILITY_INSTRUCTIONS, capabilityAction, capabilitySearches, isCapability, type Capability } from './capability'
 
 // One Jev call per Command the Local Match cannot settle (#324, ADR 0076).
 // The state is the transcript, the page's address and title and its
@@ -19,7 +20,8 @@ import { isWebEngineSearch, siteOf } from './siteScope'
 // is a sure answer and never a verb's plurality. Unneeded answers are
 // ignored; the top Choice is acted on at any confidence; only `none` as
 // the verb drops the Utterance. Speed over accuracy: nothing here asks
-// "did you mean".
+// "did you mean". While the appliance can act itself — the Player's ops
+// (ADR 0079) — its Capabilities join the verb Choice beside the browser's.
 
 /** A Choice offers at most 255 options; one is `none`. */
 const MAX_SPANS = 254
@@ -411,21 +413,22 @@ function whereQuestion(site: string): DecisionChoiceQuestion {
  * hop, on a partial, over a pop-up a dismiss phrase closes, or for a Step's
  * own words (`steps: false`).
  */
-export function commandQuestions(text: string, pageRead: CommandPage, hop?: HopContext, options: { readonly steps?: boolean } = {}): CommandQuestions {
-  const three = threeQuestions(text, pageRead, hop)
+export function commandQuestions(text: string, pageRead: CommandPage, hop?: HopContext, options: { readonly steps?: boolean; readonly capabilities?: readonly Capability[] } = {}): CommandQuestions {
+  const three = threeQuestions(text, pageRead, hop, options.capabilities ?? [])
   const site = scopableSite(pageRead.url, hop)
   const reading = site === null ? three : { ...three, where: whereQuestion(site) }
   const steps = hop === undefined && options.steps !== false ? stepsQuestion(text) : null
   return steps === null ? reading : { ...reading, steps }
 }
 
-function threeQuestions(text: string, pageRead: CommandPage, hop: HopContext | undefined): ThreeQuestions {
+function threeQuestions(text: string, pageRead: CommandPage, hop: HopContext | undefined, capabilities: readonly Capability[]): ThreeQuestions {
   const { page, links } = offered(pageRead, hop)
+  const instructions = 'Which verb did the user ask the browser for? Choose none when the words are not a command for this page.'
   return {
     verb: {
       type: 'choice',
-      instructions: 'Which verb did the user ask the browser for? Choose none when the words are not a command for this page.',
-      options: { ...VERB_DESCRIPTIONS },
+      instructions: capabilities.length === 0 ? instructions : `${instructions} ${CAPABILITY_INSTRUCTIONS}`,
+      options: { ...VERB_DESCRIPTIONS, ...Object.fromEntries(capabilities.map((capability) => [capability, CAPABILITY_DESCRIPTIONS[capability]])) },
     },
     target: {
       type: 'choice',
@@ -438,7 +441,7 @@ function threeQuestions(text: string, pageRead: CommandPage, hop: HopContext | u
     },
     slot: {
       type: 'choice',
-      instructions: 'Which words of the transcript are the thing the command carries verbatim: the address to open, the search terms, the text to type, the key to press? Choose none when it carries none.',
+      instructions: 'Which words of the transcript are the thing the command carries verbatim: the address to open, the search terms, the song to play, the text to type, the key to press? Never the command word itself: "play X" carries X. Choose none when it carries none.',
       options: { none: 'the command carries no words of its own', ...Object.fromEntries(slotSpans(text).map((span) => [`s${span.start}-${span.end}`, span.words])) },
     },
   }
@@ -507,17 +510,17 @@ function dismissQuestion(page: CommandPage): DecisionChoiceQuestion | null {
  * spoken "close" walks the Dismissal Ladder with Jev's choice on it as a
  * Step Aside does. Null when the pop-up offers no control to choose.
  */
-export function dismissPhraseQuestions(text: string, page: CommandPage): (CommandQuestions & { readonly dismiss: DecisionChoiceQuestion }) | null {
+export function dismissPhraseQuestions(text: string, page: CommandPage, capabilities: readonly Capability[] = []): (CommandQuestions & { readonly dismiss: DecisionChoiceQuestion }) | null {
   const dismiss = dismissQuestion(page)
-  return dismiss === null ? null : { ...commandQuestions(text, page, undefined, { steps: false }), dismiss }
+  return dismiss === null ? null : { ...commandQuestions(text, page, undefined, { steps: false, capabilities }), dismiss }
 }
 
 /** A hop's questions: the Command's, the Verdict and, with a pop-up open, the dismiss Choice. */
 export type HopQuestions = CommandQuestions & { readonly outcome: DecisionChoiceQuestion; readonly dismiss?: DecisionChoiceQuestion }
 
-export function hopQuestions(text: string, pageRead: CommandPage, hop: HopContext): HopQuestions {
+export function hopQuestions(text: string, pageRead: CommandPage, hop: HopContext, capabilities: readonly Capability[] = []): HopQuestions {
   const dismiss = dismissQuestion(pageRead)
-  return { ...commandQuestions(text, pageRead, hop), outcome: outcomeQuestion(), ...(dismiss !== null ? { dismiss } : {}) }
+  return { ...commandQuestions(text, pageRead, hop, { capabilities }), outcome: outcomeQuestion(), ...(dismiss !== null ? { dismiss } : {}) }
 }
 
 /** The answers to {@link HopQuestions}: the Command's, the Verdict's and, when asked, the dismiss Choice's. */
@@ -547,9 +550,9 @@ export function readVerdict(answers: CommandAnswers | HopAnswers): Verdict | nul
  */
 export type PartialQuestions = CommandQuestions & { readonly complete: DecisionNoulQuestion }
 
-export function partialQuestions(text: string, page: CommandPage): PartialQuestions {
+export function partialQuestions(text: string, page: CommandPage, capabilities: readonly Capability[] = []): PartialQuestions {
   return {
-    ...commandQuestions(text, page, undefined, { steps: false }),
+    ...commandQuestions(text, page, undefined, { steps: false, capabilities }),
     complete: { type: 'noul', instructions: 'Is this a complete command, with nothing still to be said?' },
   }
 }
@@ -658,10 +661,23 @@ function slotWords(answer: DecisionChoiceAnswer, text: string): string {
   return wordsAfterVerb(text)
 }
 
+/**
+ * A Capability reading (ADR 0079): a `play` Command carrying the Player's
+ * action — a search's words, or a `volume`'s number, off the Slot; null for
+ * a `volume` whose words carry no number it takes.
+ */
+function capabilityCommand(capability: Capability, slot: DecisionChoiceAnswer, text: string): Command | null {
+  const searches = capabilitySearches(capability)
+  const words = searches || capability === 'volume' ? slotWords(slot, text) : null
+  const music = capabilityAction(capability, words)
+  return music === null ? null : { verb: 'play', target: null, slot: searches ? words : null, music, capability }
+}
+
 /** The Command Jev's answers make: the top Choice of each, read as the verb needs them. */
 export function readCommandAnswers(answers: CommandAnswers | HopAnswers, text: string, pageRead: CommandPage, hop?: HopContext): Command {
-  const verb = answers.verb.choice as CommandVerb
   const none: Command = { verb: 'none', target: null, slot: null }
+  if (isCapability(answers.verb.choice)) return capabilityCommand(answers.verb.choice, answers.slot, text) ?? none
+  const verb = answers.verb.choice as CommandVerb
   if (!JEV_VERBS.includes(verb as (typeof JEV_VERBS)[number]) || verb === 'none') return none
   if (verb === 'done') return { verb, target: null, slot: null }
   const { page, links } = offered(pageRead, hop)

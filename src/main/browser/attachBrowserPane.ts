@@ -35,6 +35,8 @@ export function attachBrowserPaneToWindow(
 ): void {
   panes.set(win, pane)
   win.contentView.addChildView(pane.view)
+  // A pane no dashboard has shown yet is laid out off the window at its size, so a Command typed over the Idle Screen reads a real page (ADR 0079).
+  pane.setHost(win)
 
   const unsubscribe = pane.onState((state) => {
     publisher.publish({ source: 'browser', state })

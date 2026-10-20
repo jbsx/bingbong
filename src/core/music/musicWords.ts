@@ -1,9 +1,10 @@
-// The Player's lines (#343, CONTEXT.md Player): what a typed or spoken line
-// asks of the music. Grammar-only, like `timer` (owner's ruling 1): the CLI
-// grammar reads them before anything else, so Jev is never offered them,
-// and "click play" or "press play" stay the page's button. `back` stays
-// browser history and `resume` the Task's (ruling 3): music goes back with
-// `previous` and on with a bare `play`.
+// The Player's exact lines (#343, CONTEXT.md Player): the whole lines the
+// CLI grammar settles before anything else, in a millisecond and with Jev
+// down. A line with free words — `play <words>`, `queue <words>` — is no
+// longer the grammar's (ADR 0079): it goes to Jev, which is offered the
+// Player's ops as Capabilities (`capability.ts`) and reads "click play" as
+// the page's button. `back` stays browser history and `resume` the Task's
+// (ruling 3): music goes back with `previous` and on with a bare `play`.
 
 /** What a music line asks of the Player. A search's words ride beside it as the Command's Slot. */
 export type MusicAction =
@@ -92,17 +93,6 @@ const WHOLE_LINES: Readonly<Record<string, MusicAction>> = {
  */
 export const MUSIC_PHRASES: readonly string[] = Object.keys(WHOLE_LINES).filter((line) => line.includes(' '))
 
-/** The words that open a search, and where its song goes. */
-const SEARCH_HEADS: readonly (readonly [string, 'now' | 'end'])[] = [
-  ['play', 'now'],
-  ['queue up', 'end'],
-  ['queue', 'end'],
-  ['add', 'end'],
-]
-
-/** What a queued search's words may end with that is not the song: "add X to the queue". */
-const QUEUE_TAIL_RE = /\s+to (?:the |my )?queue$/i
-
 /** Lower case, apostrophes dropped, letters and digits only, one space between words. */
 function normalize(text: string): string {
   return text
@@ -113,20 +103,10 @@ function normalize(text: string): string {
     .trim()
 }
 
-/** The line's words past its first `count`, as spoken, the edge punctuation off. */
-function wordsPast(line: string, count: number): string {
-  return line
-    .trim()
-    .split(/\s+/)
-    .slice(count)
-    .join(' ')
-    .replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '')
-}
-
 /**
- * The music line the words are, or null for none. `volume` out of 0–100
- * is `'invalid'`, for the grammar's error. "add to …" is the page's ("add to
- * cart"), not a search.
+ * The exact music line the words are, or null for none — never a search:
+ * a line with free words is Jev's (ADR 0079). `volume` out of 0–100 is
+ * `'invalid'`, for the grammar's error.
  */
 export function readMusicLine(line: string): MusicLine | 'invalid' | null {
   const words = normalize(line)
@@ -137,19 +117,6 @@ export function readMusicLine(line: string): MusicLine | 'invalid' | null {
   if (volume !== null) {
     const to = Number(volume[1])
     return to <= 100 ? { music: { kind: 'volume', to }, words: null } : 'invalid'
-  }
-  for (const [head, place] of SEARCH_HEADS) {
-    if (!words.startsWith(`${head} `)) continue
-    const rest = words.slice(head.length + 1)
-    if (head === 'add' && /^to\b/.test(rest)) return null
-    let spoken = wordsPast(line, head.split(' ').length)
-    let at: 'now' | 'front' | 'end' = place
-    if (place === 'now' && / next$/.test(rest) && rest !== 'next') {
-      spoken = spoken.replace(/\s+next[^\p{L}\p{N}]*$/iu, '')
-      at = 'front'
-    }
-    if (place === 'end') spoken = spoken.replace(QUEUE_TAIL_RE, '')
-    return spoken === '' ? null : { music: { kind: 'search', place: at }, words: spoken }
   }
   return null
 }

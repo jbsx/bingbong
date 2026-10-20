@@ -117,16 +117,12 @@ describe('parseCliCommand', () => {
     expect(parseCliCommand('resume')).toEqual({ ok: true, command: { type: 'resume' } })
   })
 
-  it('reads every music line to its Player verb (#343): `play <words>` a search, `play` alone the unpause', () => {
+  it('reads every exact music line to its Player verb (#343): `play` alone the unpause; a line with free words is Jev\'s (ADR 0079)', () => {
     const play = (line: string) => {
       const parsed = parseCliCommand(line)
       return parsed?.ok === true && parsed.command.type === 'play' ? { music: parsed.command.music, words: parsed.command.words } : parsed
     }
-    expect(play('play bohemian rhapsody')).toEqual({ music: { kind: 'search', place: 'now' }, words: 'bohemian rhapsody' })
-    expect(play('Play Bohemian Rhapsody.')).toEqual({ music: { kind: 'search', place: 'now' }, words: 'Bohemian Rhapsody' })
-    expect(play('queue daft punk around the world')).toEqual({ music: { kind: 'search', place: 'end' }, words: 'daft punk around the world' })
-    expect(play('add daft punk')).toEqual({ music: { kind: 'search', place: 'end' }, words: 'daft punk' })
-    expect(play('play daft punk next')).toEqual({ music: { kind: 'search', place: 'front' }, words: 'daft punk' })
+    for (const line of ['play bohemian rhapsody', 'Play Bohemian Rhapsody.', 'queue daft punk around the world', 'add daft punk', 'play daft punk next']) expect(parseCliCommand(line)).toMatchObject({ ok: false })
     expect(play('play')).toEqual({ music: { kind: 'unpause' }, words: null })
     expect(play('pause')).toEqual({ music: { kind: 'pause' }, words: null })
     for (const line of ['skip', 'next', 'next song', 'Next song.']) expect(play(line)).toEqual({ music: { kind: 'skip' }, words: null })

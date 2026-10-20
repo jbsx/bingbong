@@ -15,8 +15,13 @@ import {
 } from '../../core/ports/decisionModel.ts'
 import { createJevDecisionModel } from './createJevDecisionModel.ts'
 
-/** One scripted ask: the raw answers (read against the questions like a vendor's), or an unavailable reason. */
-type ScriptEntry = { readonly answers: unknown } | { readonly unavailable: DecisionUnavailableReason }
+/**
+ * One scripted ask: the raw answers (read against the questions like a
+ * vendor's), or an unavailable reason. With `when`, it answers only an ask
+ * whose state carries those words — a line's reading, never a consent
+ * wall's ask that came first; without, the next ask in order.
+ */
+type ScriptEntry = ({ readonly answers: unknown } | { readonly unavailable: DecisionUnavailableReason }) & { readonly when?: string }
 
 function isScriptEntry(value: unknown): value is ScriptEntry {
   if (typeof value !== 'object' || value === null) return false
@@ -39,11 +44,31 @@ function parseScript(raw: string): { entries: ScriptEntry[] } | { error: string 
   return { entries: [...parsed] }
 }
 
+/**
+ * A script's answers with each Choice's probabilities filled in: the
+ * chosen label at its confidence, every other option at 0 unless the
+ * script gives it one — so a script names a label alone, never every ref
+ * and span of a page it cannot know.
+ */
+function withChoicesFilled(questions: DecisionQuestions, raw: unknown): unknown {
+  if (typeof raw !== 'object' || raw === null) return raw
+  const filled: Record<string, unknown> = { ...raw }
+  for (const [key, question] of Object.entries(questions)) {
+    const answer = filled[key]
+    if (question.type !== 'choice' || typeof answer !== 'object' || answer === null) continue
+    const { choice, confidence, probabilities } = answer as { choice?: unknown; confidence?: unknown; probabilities?: unknown }
+    const given = typeof probabilities === 'object' && probabilities !== null ? probabilities : {}
+    const chosen = typeof choice === 'string' ? { [choice]: confidence } : {}
+    filled[key] = { ...answer, probabilities: { ...Object.fromEntries(Object.keys(question.options).map((label) => [label, 0])), ...chosen, ...given } }
+  }
+  return filled
+}
+
 export function createScriptedDecisionModel(raw: string): DecisionModel {
   const script = parseScript(raw)
   return {
     model: 'scripted',
-    async ask<const Q extends DecisionQuestions>(request: { questions: Q }): Promise<DecisionResult<Q>> {
+    async ask<const Q extends DecisionQuestions>(request: { state: string; questions: Q }): Promise<DecisionResult<Q>> {
       const unavailable = (reason: DecisionUnavailableReason, message: string): DecisionResult<Q> => ({
         status: 'unavailable',
         reason,
@@ -52,10 +77,11 @@ export function createScriptedDecisionModel(raw: string): DecisionModel {
         model: 'scripted',
       })
       if ('error' in script) return unavailable('failed', script.error)
-      const entry = script.entries.shift()
+      const at = script.entries.findIndex((candidate) => candidate.when === undefined || request.state.includes(candidate.when))
+      const entry = at < 0 ? undefined : script.entries.splice(at, 1)[0]
       if (entry === undefined) return unavailable('failed', `${DECISION_SCRIPT_ENV_KEY} ran out of answers`)
       if ('unavailable' in entry) return unavailable(entry.unavailable, `scripted ${entry.unavailable}`)
-      const answers = readDecisionAnswers(request.questions, entry.answers)
+      const answers = readDecisionAnswers(request.questions, withChoicesFilled(request.questions, entry.answers))
       if (answers === null) return unavailable('malformed', 'the scripted answers did not match the questions asked')
       return { status: 'answered', answers, latencyMs: 0, model: 'scripted' }
     },
