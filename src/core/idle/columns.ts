@@ -74,8 +74,11 @@ export interface Band<Id extends string = string> {
 export const COLUMN_HEIGHT = 1000
 
 // The middle Column's heights, as styles.css draws them on the 1920×1080 canvas (measured, #365).
-/** The clock row and the margins around the Clock Lines: the clock alone, or stepped down beside a Timer Clock. */
-const CLOCK_ROW = { plain: 211 + 18 + 22, timer: 170 - 6 + 30 + 22 }
+/** The clock row (the clock alone, or stepped down beside a Timer Clock and lifted 6 px), the Clock Lines' top margin under it, and their bottom margin. */
+const CLOCK = { plain: 211, timer: 170 - 6 }
+const LINES_TOP = { plain: 18, timer: 30 }
+const LINES_BOTTOM = 22
+const CLOCK_ROW = { plain: CLOCK.plain + LINES_TOP.plain + LINES_BOTTOM, timer: CLOCK.timer + LINES_TOP.timer + LINES_BOTTOM }
 /** A Clock Line and the gap between two. */
 const LINE_PX = 36
 const LINE_GAP = 12

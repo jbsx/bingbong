@@ -53,10 +53,12 @@ export interface NowPlayingView {
   readonly toggle: 'pause' | 'play'
   /** The middle control's glyph: an ended song's `play` plays it again. */
   readonly glyph: 'pause' | 'play' | 'replay'
-  /** The queued titles at the card's foot. */
+  /** The queued titles at the card's foot; ended, it says how to hear the song again instead. */
   readonly next: readonly string[]
-  /** Ended: the foot says how to hear it again. */
-  readonly again: boolean
+  /** Where the song stands: starting while its length is unknown. */
+  readonly state: 'playing' | 'paused' | 'ended' | 'starting'
+  /** The glyph over the picture while it does not play. */
+  readonly cover: 'pause' | 'replay' | null
   readonly label: string
 }
 
@@ -76,7 +78,8 @@ export function nowPlayingView(nowPlaying: NowPlaying): NowPlayingView {
     toggle: paused || ended ? 'play' : 'pause',
     glyph: ended ? 'replay' : paused ? 'play' : 'pause',
     next: ended ? [] : queued,
-    again: ended,
+    state: ended ? 'ended' : paused ? 'paused' : durationS === null ? 'starting' : 'playing',
+    cover: ended ? 'replay' : paused ? 'pause' : null,
     label: `${kicker}: ${title}${channel !== '' ? ` by ${channel}` : ''}`,
   }
 }

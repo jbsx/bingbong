@@ -49,13 +49,14 @@ function tap(verb: string) {
   }
 }
 
-/** The song's picture, the card's only colour; a scrim with the pause or replay glyph over it when not playing; the music glyph when there is none. The tap toggles. */
+/** The song's picture, the card's only colour, over the music glyph that shows until it loads or when it fails; a scrim with the pause or replay glyph over it when not playing. The tap toggles. */
 function Thumbnail({ id, cover, verb, label, form }: { id: string; cover: 'pause' | 'replay' | null; verb: string; label: string; form: Form }) {
   const [failed, setFailed] = useState(false)
   const glyph = form === 'full' ? 44 : 28
   return (
     <button type="button" className="idle-music-thumb" aria-label={label} {...tap(verb)}>
-      {failed ? <MusicIcon size={glyph} /> : <img src={thumbnailUrl(id)} alt="" onError={() => setFailed(true)} />}
+      <MusicIcon size={glyph} />
+      {failed ? null : <img src={thumbnailUrl(id)} alt="" onError={() => setFailed(true)} />}
       {cover !== null ? (
         <span className="idle-music-cover">
           <CardGlyph name={cover} size={glyph} />
@@ -92,14 +93,13 @@ function Controls({ toggle, glyph, form }: { toggle: 'pause' | 'play'; glyph: 'p
  * the title, the channel and what is queued next — or, ended, how to hear
  * it again — over the elapsed time, the bar, the length and the controls.
  * Small, one row: the picture, the kicker with both times, the title and
- * the bar, the controls. No accent anywhere: music is not Bing Bong
+ * the bar, the controls. No peach anywhere: music is not Bing Bong
  * itself. Every control and the picture fire their music verb as a Command
  * on the pointer going down, and keep the Idle Screen up.
  */
 export function NowPlayingCard({ nowPlaying, form }: { nowPlaying: NowPlaying; form: Form }) {
   const view = nowPlayingView(nowPlaying)
-  const state = nowPlaying.ended ? 'ended' : nowPlaying.paused ? 'paused' : view.kicker === 'Starting' ? 'starting' : 'playing'
-  const cover = nowPlaying.ended ? 'replay' : nowPlaying.paused ? 'pause' : null
+  const { state, cover } = view
   const bar = (
     <span className="idle-music-bar" aria-hidden="true">
       <span className="idle-music-fill" style={{ width: `${view.fraction * 100}%` }} />
@@ -144,7 +144,7 @@ export function NowPlayingCard({ nowPlaying, form }: { nowPlaying: NowPlaying; f
               {head}
               <span className="idle-music-title">{nowPlaying.title}</span>
               {nowPlaying.channel !== '' ? <span className="idle-music-channel">{nowPlaying.channel}</span> : null}
-              {view.again ? (
+              {state === 'ended' ? (
                 <span className="idle-music-next">Say “play” or tap to hear it again</span>
               ) : view.next.length > 0 ? (
                 <span className="idle-music-next">

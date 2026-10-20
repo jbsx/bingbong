@@ -117,7 +117,6 @@ const GLOBE: Part[] = [{ circle: [12, 12, 10], tone: 'ink' }, { d: 'M12 2a14.5 1
 export const CHEVRON: Part[] = [{ d: 'm9 18 6-6-6-6', tone: 'ink' }]
 const TIMER: Part[] = [{ d: 'M10 2h4', tone: 'ink' }, { d: 'M12 14l3-3', tone: 'ink' }, { circle: [12, 14, 8], tone: 'ink' }]
 const MUSIC: Part[] = [{ d: 'M9 18V5l12-2v13', tone: 'ink' }, { circle: [6, 18, 3], tone: 'ink' }, { circle: [18, 16, 3], tone: 'ink' }]
-const PAUSE: Part[] = [{ d: 'M8 5v14', tone: 'ink' }, { d: 'M16 5v14', tone: 'ink' }]
 const LOOP: Part[] = [{ d: 'm17 2 4 4-4 4', tone: 'ink' }, { d: 'M3 11v-1a4 4 0 0 1 4-4h14', tone: 'ink' }, { d: 'm7 22-4-4 4-4', tone: 'ink' }, { d: 'M21 13v1a4 4 0 0 1-4 4H3', tone: 'ink' }]
 
 export function SunriseIcon({ size }: { size: number }) {
@@ -146,9 +145,6 @@ export function ChevronIcon({ size }: { size: number }) {
 }
 export function MusicIcon({ size }: { size: number }) {
   return <Glyph parts={MUSIC} size={size} strokeWidth={2} />
-}
-export function PauseIcon({ size }: { size: number }) {
-  return <Glyph parts={PAUSE} size={size} label="paused" strokeWidth={3} />
 }
 export function LoopIcon({ size }: { size: number }) {
   return <Glyph parts={LOOP} size={size} label="looping" strokeWidth={2} />

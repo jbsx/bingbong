@@ -6,7 +6,7 @@ import type { NowPlaying } from '../../core/music/nowPlaying'
 import type { CalendarEvent } from '../../core/calendar/calendar'
 import { monthEntries, twoWeeks, upNext, weekStartOf, type UpNext } from '../../core/calendar/month'
 import { nextHoliday, ukBankHolidays } from '../../core/calendar/ukBankHolidays'
-import { clockLines, COLUMN_HEIGHT, columnBands, columnCards, IDLE_CARD_IDS, middleAsks, middleRoom, usageLayout, type BandAsk, type IdleCardId } from '../../core/idle/columns'
+import { clockLines, COLUMN_HEIGHT, columnBands, columnCards, IDLE_CARD_IDS, middleAsks, middleRoom, usageLayout, type Band, type BandAsk, type IdleCardId } from '../../core/idle/columns'
 import { earPhase, type EarPhase } from '../../core/voice/voicePrompt'
 import { viewUsage, type UsagePrefs } from '../../core/usage/usage'
 import type { WeighIn } from '../../core/scale/weighIns'
@@ -545,13 +545,17 @@ export function IdleScreen({
   const middleUsage = usageViews.length > 0 ? { rings } : usage.status === 'error' ? ('note' as const) : null
   const middle = columnBands(middleAsks(cards, { music: nowPlaying !== null, usage: middleUsage }), middleRoom({ timer: timer.status !== 'off', lines: lines.length }))
 
-  const middleCard = (id: IdleCardId, form: 'full' | 'small', height: number): React.ReactNode => {
+  // The AI Usage draws its chart and its rings' size by its band's height; a note, and Now Playing, as their band says.
+  const middleLayout = (band: Band<IdleCardId>): { form: 'full' | 'small'; compact: boolean } =>
+    band.id === 'usage' && middleUsage !== 'note' ? usageLayout(band.height, rings) : { form: band.form, compact: false }
+
+  const middleCard = (id: IdleCardId, layout: { form: 'full' | 'small'; compact: boolean }): React.ReactNode => {
     switch (id) {
       case 'music':
-        return nowPlaying !== null ? <NowPlayingCard nowPlaying={nowPlaying} form={form} /> : null
+        return nowPlaying !== null ? <NowPlayingCard nowPlaying={nowPlaying} form={layout.form} /> : null
       case 'usage':
         return usage.status === 'ready' && usageViews.length > 0 ? (
-          <UsageCard providers={usageViews} updatedAt={usage.snapshot.updatedAt} now={now.getTime()} {...usageLayout(height, rings)} />
+          <UsageCard providers={usageViews} updatedAt={usage.snapshot.updatedAt} now={now.getTime()} {...layout} />
         ) : (
           <NoteCard label="AI usage">Usage dashboard unreachable</NoteCard>
         )
@@ -597,11 +601,14 @@ export function IdleScreen({
         </div>
         {middle.length > 0 ? (
           <div className="idle-col-panel idle-col-panel--middle">
-            {middle.map((band) => (
-              <div key={band.id} className="idle-home" data-card={band.id} data-form={band.id === 'usage' && middleUsage !== 'note' ? usageLayout(band.height, rings).form : band.form} style={{ height: `${band.height}px` }}>
-                {middleCard(band.id, band.form, band.height)}
-              </div>
-            ))}
+            {middle.map((band) => {
+              const layout = middleLayout(band)
+              return (
+                <div key={band.id} className="idle-home" data-card={band.id} data-form={layout.form} style={{ height: `${band.height}px` }}>
+                  {middleCard(band.id, layout)}
+                </div>
+              )
+            })}
           </div>
         ) : null}
         {popup !== null ? <div className="idle-popup-place">{popup}</div> : null}

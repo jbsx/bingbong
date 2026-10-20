@@ -102,7 +102,6 @@ so the look has a guard beyond the Idle Screen.
   the owner ruled on 2026-10-20 that the e2e is the source of truth and no
   screenshot is reviewed by hand (`pnpm shot:states` runs it alone).
 
-
 ## Amendment 2026-10-20: the middle Column's two homes (#365)
 
 - **Now Playing is a card, not a Clock Line.** The middle Column has two

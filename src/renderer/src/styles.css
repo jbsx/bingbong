@@ -2630,7 +2630,8 @@ button.idle-line {
   background: var(--fg3);
 }
 
-.idle-music-card--playing .idle-music-fill {
+.idle-music-card--playing .idle-music-fill,
+.idle-music-card--starting .idle-music-fill {
   background: var(--fgh);
 }
 

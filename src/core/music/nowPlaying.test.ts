@@ -28,13 +28,14 @@ describe('nowPlayingView', () => {
       toggle: 'pause',
       glyph: 'pause',
       next: ['Around the World', 'One More Time'],
-      again: false,
+      state: 'playing',
+      cover: null,
       label: 'Now playing: Bohemian Rhapsody by Queen Official',
     })
   })
 
   it('paused: PAUSED, play as the toggle', () => {
-    expect(nowPlayingView({ ...SONG, paused: true })).toMatchObject({ kicker: 'Paused', toggle: 'play', glyph: 'play', label: 'Paused: Bohemian Rhapsody by Queen Official' })
+    expect(nowPlayingView({ ...SONG, paused: true })).toMatchObject({ kicker: 'Paused', state: 'paused', cover: 'pause', toggle: 'play', glyph: 'play', label: 'Paused: Bohemian Rhapsody by Queen Official' })
   })
 
   it('ended: ENDED, the bar full at the song’s length, `play` to hear it again in place of the queue', () => {
@@ -45,13 +46,16 @@ describe('nowPlayingView', () => {
       toggle: 'play',
       glyph: 'replay',
       next: [],
-      again: true,
+      state: 'ended',
+      cover: 'replay',
     })
   })
 
   it('starting, the length not yet known: STARTING, an empty bar and a dash for the length', () => {
     expect(nowPlayingView({ ...SONG, elapsedS: 0, durationS: null, channel: '' })).toMatchObject({
       kicker: 'Starting',
+      state: 'starting',
+      cover: null,
       fraction: 0,
       elapsed: '0:00',
       length: '–:––',
