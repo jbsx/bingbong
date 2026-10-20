@@ -1,0 +1,349 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Bing Bong Contrast</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Inter+Tight:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600&display=block" rel="stylesheet">
+<style>
+:root{
+  /* flat near-black: no washes, panels barely there — the numbers carry the contrast */
+  --bg:#07090d;
+  --fg:#f2f4f8; --fg2:rgba(220,226,236,.70); --fg3:rgba(200,208,224,.45);
+  --hair:rgba(255,255,255,.055); --track:rgba(255,255,255,.10);
+  --surface:rgba(255,255,255,.018);
+  --rain:#7db8f2; --codex:#a593f0; --claude:#ff9a80; --kaggle:#e2b862;
+  --down:#72d9a3; --up:#f2a462;
+  --jaish:#62c3d2; --barun:#d68bc2;
+  --accent:#f4a57c;
+  /* E4 quiet versions: hue kept, pulled toward slate */
+  --codexq:#9a94c4; --kaggleq:#b6a479; --rainq:#86a0bd; --jaishq:#77a8b1; --barunq:#ae92a5;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:1920px;height:1080px;overflow:hidden}
+body{background:var(--bg);color:var(--fg);font-family:Inter,"Helvetica Neue",Arial,sans-serif;
+  font-feature-settings:"tnum" 1,"cv11" 1;position:relative;-webkit-font-smoothing:antialiased;font-size:16px}
+.mono{font-family:"JetBrains Mono",ui-monospace,monospace}
+/* every number: one tabular semibold face */
+.n6{font-family:"Inter Tight",Inter,sans-serif;font-weight:600;font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1;letter-spacing:-.01em}
+.t16{font-size:16px}.t18{font-size:18px}.t20{font-size:20px}.t24{font-size:24px}.t40{font-size:40px}
+.d2{color:var(--fg2)}.d3{color:var(--fg3)}
+
+.zone{position:absolute;z-index:1;background:var(--surface);border:1px solid var(--hair);border-radius:24px;overflow:hidden}
+.band{position:absolute;left:0;right:0;padding:0 28px}
+.band+.band{border-top:1px solid var(--hair)}
+.bA{top:0;height:340px}.bB{top:340px;height:420px}.bC{top:760px;height:240px}
+#wx{left:48px;top:40px;width:512px;height:1000px}
+#rt{left:1360px;top:40px;width:512px;height:1000px}
+#ai{left:600px;top:380px;width:720px;height:660px}
+#ai .bB2{top:0;height:420px}#ai .bC2{top:420px;height:240px}
+
+svg text{font-family:"JetBrains Mono",monospace;font-size:18px;fill:var(--fg3)}
+svg text.v{font-family:"Inter Tight",Inter,sans-serif;font-weight:600;font-variant-numeric:tabular-nums}
+svg.i{display:block;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+
+/* ---------- weather now ---------- */
+.now{display:flex;align-items:flex-start;gap:20px;padding-top:26px}
+.hero{font-size:184px;line-height:.78;letter-spacing:-.045em;margin-left:-8px}
+.cond{display:flex;flex-direction:column;gap:6px;padding-top:4px}
+.cond .c{display:flex;align-items:center;gap:10px}
+.lohi{display:flex;align-items:center;gap:14px}
+.bar{position:relative;flex:1;height:8px;border-radius:4px;background:var(--track)}
+.bar i{position:absolute;top:0;bottom:0;border-radius:4px}
+.bar em{position:absolute;top:-8px;width:4px;height:24px;border-radius:2px;background:var(--fg)}
+
+/* ---------- days ---------- */
+.days{padding-top:18px}
+.days .d{display:grid;grid-template-columns:50px 32px 84px 1fr;align-items:center;column-gap:10px;height:68px}
+.days .trk{position:relative;height:44px}
+.days .trk:before{content:"";position:absolute;left:0;right:0;top:21px;height:2px;background:var(--hair)}
+.days .trk i{position:absolute;top:17px;height:10px;border-radius:5px}
+.days .trk span{position:absolute;top:0;line-height:44px;font-size:40px}
+
+/* ---------- clock + lines ---------- */
+.clock{position:absolute;z-index:1;left:600px;top:26px;width:720px;text-align:center}
+.clock .t{font-size:176px;font-weight:500;line-height:1;letter-spacing:-.035em;color:var(--fg)}
+.clock .t span{color:var(--accent);position:relative;top:-.06em}
+.clock .dt{font-size:24px;font-weight:500;color:var(--fg2);margin-top:0;letter-spacing:.01em}
+.line{position:absolute;z-index:2;left:600px;width:720px;height:32px;display:flex;align-items:center;justify-content:center;gap:12px;white-space:nowrap}
+.know{top:252px}.voice{top:292px}.last{top:332px}
+.orb{width:14px;height:14px;border-radius:50%;flex:none;background:radial-gradient(circle at 35% 30%,#ffd2b4,#f4a57c 60%,#d9806a);
+  box-shadow:0 0 0 5px rgba(244,165,124,.10),0 0 16px rgba(244,165,124,.45)}
+.voice q{quotes:"\201C" "\201D";color:var(--fg2);font-weight:500}
+.wave{display:flex;gap:3px;align-items:center;height:20px}
+.wave i{width:3px;border-radius:2px;background:var(--accent)}
+.lst{font-family:"JetBrains Mono",monospace;font-size:16px;letter-spacing:.12em;color:var(--accent)}
+.dot{width:9px;height:9px;border-radius:50%;flex:none}
+.say{display:flex;align-items:center;gap:6px;height:28px;padding:0 4px 0 12px;border-radius:14px;border:1px solid var(--hair);color:var(--fg2)}
+.go{width:20px;height:20px;border-radius:50%;display:grid;place-items:center;background:var(--accent);color:#1a1210;font-size:16px;line-height:1}
+
+/* ---------- usage ---------- */
+.rings{display:grid;grid-template-columns:repeat(3,1fr);align-items:start;padding-top:34px}
+.rg{display:flex;flex-direction:column;align-items:center;text-align:center;gap:2px}
+.ringbox{position:relative;width:228px;height:228px}
+.ringbox svg{position:absolute;inset:0;overflow:visible}
+.ringbox .pc{position:absolute;inset:0;display:grid;place-items:center}
+.rg .nm{white-space:nowrap;margin-top:12px}
+.rg .mt{white-space:nowrap}
+
+/* ---------- calendar ---------- */
+.calh{display:flex;justify-content:space-between;font-family:"JetBrains Mono",monospace;font-size:18px;letter-spacing:.08em;font-weight:500;padding-top:28px;color:var(--fg3)}
+.cg{display:grid;grid-template-columns:repeat(7,1fr);text-align:center;margin-top:16px;row-gap:10px}
+.cg .w{font-family:"JetBrains Mono",monospace;font-size:16px;color:var(--fg3);letter-spacing:.06em;padding-bottom:8px;border-bottom:1px solid var(--hair)}
+.cg .w.tw{color:var(--accent);font-weight:600}
+.cg .n{font-size:34px;font-weight:500;height:84px;line-height:84px;position:relative;z-index:0;color:rgba(220,226,236,.62)}
+.cg .nx{color:rgba(200,208,224,.22)}
+.cg .td{color:#140c08;font-weight:700;font-size:40px}
+.cg .td::before{content:"";position:absolute;inset:6px 2px;background:var(--accent);border-radius:10px;z-index:-1;box-shadow:0 0 24px rgba(244,165,124,.35)}
+
+/* ---------- repo ---------- */
+.repo{padding-top:22px}
+.cap{font-size:16px;letter-spacing:.14em;text-transform:uppercase;color:var(--fg3);font-weight:500}
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute">
+ <defs>
+  <symbol id="cloud" viewBox="0 0 32 32"><path d="M9 23h14.5a5.5 5.5 0 0 0 .6-10.97A7.5 7.5 0 0 0 9.6 13.3 5 5 0 0 0 9 23z"/></symbol>
+  <symbol id="rain" viewBox="0 0 32 32"><path d="M9 19h14.5a5.5 5.5 0 0 0 .6-10.97A7.5 7.5 0 0 0 9.6 9.3 5 5 0 0 0 9 19z"/><path d="M11 23l-1.2 4M16.5 23l-1.2 4M22 23l-1.2 4" stroke="var(--rain)"/></symbol>
+  <symbol id="moon" viewBox="0 0 32 32"><path d="M20.5 4.5a6 6 0 1 0 7 7 5 5 0 0 1-7-7z" stroke="#9aa3e0"/><path d="M7 26h12a4.5 4.5 0 0 0 .5-8.97A6 6 0 0 0 8 17.5 4.3 4.3 0 0 0 7 26z"/></symbol>
+  <symbol id="suncloud" viewBox="0 0 32 32"><circle cx="20" cy="11" r="4.5" stroke="#e6bd62"/><path d="M20 2.5v2M27.5 11h2M25.6 5.4l1.4-1.4M14.4 5.4 13 4" stroke="#e6bd62"/><path d="M6 27h13a4.5 4.5 0 0 0 .5-8.97A6 6 0 0 0 7 18.5 4.3 4.3 0 0 0 6 27z"/></symbol>
+  <symbol id="drop" viewBox="0 0 24 24"><path d="M12 3.5c3 4 5.5 7 5.5 10a5.5 5.5 0 0 1-11 0c0-3 2.5-6 5.5-10z" fill="var(--rain)" stroke="none"/></symbol>
+  <symbol id="mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></symbol>
+  <symbol id="cycle" viewBox="0 0 24 24"><path d="M19 12a7 7 0 1 1-2.05-4.95M19 4v4h-4"/></symbol>
+  <filter id="glow" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+ </defs>
+</svg>
+
+<!-- ================= LEFT: weather ================= -->
+<section class="zone" id="wx">
+  <div class="band bA">
+    <div class="now">
+      <div class="hero n6" data-t="11">11°</div>
+      <div class="cond">
+        <div class="t20 d3">London</div>
+        <div class="c t24 d2" style="font-weight:500"><svg class="i" width="30" height="30" style="color:var(--fg2)"><use href="#rain"/></svg>Light Rain</div>
+        <div class="c n6" style="color:var(--rain);font-size:48px;line-height:1.1"><svg width="26" height="26"><use href="#drop"/></svg>69%</div>
+      </div>
+    </div>
+    <div class="lohi n6 t40" style="margin-top:22px">
+      <span data-t="10">10°</span>
+      <div class="bar"><i id="dayrange"></i><em id="tnow"></em></div>
+      <span data-t="14">14°</span>
+    </div>
+    <svg id="sun" width="456" height="84" style="display:block;margin-top:10px;overflow:visible"></svg>
+  </div>
+  <div class="band bB"><svg id="hours" width="456" height="420" style="display:block;overflow:visible"></svg></div>
+  <div class="band bC"><div class="days" id="days"></div></div>
+</section>
+
+<!-- ================= MIDDLE: clock · lines ================= -->
+<div class="clock"><div class="t n6" style="font-weight:500">00<span>:</span>15</div><div class="dt">Tuesday 20 October</div></div>
+
+<div class="line know t18">
+  <span class="dot" style="background:var(--claude)"></span>
+  <span><span style="color:var(--claude);font-weight:600">Claude over pace</span> <span class="d3">· resets 2d 4h</span></span>
+  <span class="d3">·</span>
+  <span class="dot" style="background:var(--rain)"></span>
+  <span><span style="color:var(--rain);font-weight:600">rain 69%</span> <span class="d3">by 06:00</span></span>
+</div>
+
+<div class="line voice t16">
+  <div class="orb"></div>
+  <span class="d3">Say <q>Bing Bong</q> or start typing</span>
+  <span style="width:6px"></span>
+  <div class="wave"><i style="height:4px"></i><i style="height:9px"></i><i style="height:16px"></i><i style="height:11px"></i><i style="height:6px"></i><i style="height:3px"></i></div>
+  <span class="lst">LISTENING</span>
+</div>
+
+<div class="line last t16">
+  <svg width="20" height="20" viewBox="0 0 30 30" style="flex:none;opacity:.7"><circle cx="15" cy="15" r="14" fill="#d9694a"/><circle cx="15" cy="15" r="9" fill="none" stroke="#fff" stroke-width="2.4"/><circle cx="17" cy="12.5" r="1.6" fill="#fff"/></svg>
+  <span class="d3">weather in London at DuckDuckGo</span>
+  <span class="d3" style="opacity:.75">duckduckgo.com</span>
+  <span class="say"><svg class="i" width="16" height="16" style="color:var(--fg3)"><use href="#mic"/></svg>resume<span class="go">›</span></span>
+</div>
+
+<!-- ================= MIDDLE: usage ================= -->
+<section class="zone" id="ai">
+  <div class="band bB2">
+    <div class="rings">
+      <div class="rg">
+        <div class="ringbox" data-v="14" data-reset="1d 2h" data-c="--codex" data-q="--codexq" data-dim="1"></div>
+        <div class="nm t18"><span style="color:var(--codexq);font-weight:600">Codex</span> <span class="d3">pro</span></div>
+        <div class="mt t16 d3" id="r0"></div>
+      </div>
+      <div class="rg">
+        <div class="ringbox" data-v="84" data-reset="2d 4h" data-c="--claude" data-inner="80" data-ireset="21h 0m"></div>
+        <div class="nm t18"><span style="color:var(--claude);font-weight:600">Claude</span> <span class="d3">Max 20x</span></div>
+        <div class="mt t16 d3" id="r1"></div>
+      </div>
+      <div class="rg">
+        <div class="ringbox" data-v="41" data-reset="3d 6h" data-c="--kaggle" data-q="--kaggleq" data-dim="1"></div>
+        <div class="nm t18"><span style="color:var(--kaggleq);font-weight:600">Kaggle</span> <span class="d3">pro</span></div>
+        <div class="mt t16 d3" id="r2"></div>
+      </div>
+    </div>
+    <div class="mono t16 d3" style="position:absolute;right:28px;top:22px">7d</div>
+  </div>
+  <div class="band bC2">
+    <svg id="chart" width="664" height="240" style="display:block;overflow:visible"></svg>
+  </div>
+</section>
+
+<!-- ================= RIGHT: calendar · weight · repo ================= -->
+<section class="zone" id="rt">
+  <div class="band bA">
+    <div class="calh"><span>OCTOBER 2026</span><span>NO EVENTS</span></div>
+    <div class="cg n6">
+      <div class="w">MON</div><div class="w tw">TUE</div><div class="w">WED</div><div class="w">THU</div><div class="w">FRI</div><div class="w">SAT</div><div class="w">SUN</div>
+      <div class="n">19</div><div class="n td">20</div><div class="n">21</div><div class="n">22</div><div class="n">23</div><div class="n">24</div><div class="n">25</div>
+      <div class="n">26</div><div class="n">27</div><div class="n">28</div><div class="n">29</div><div class="n">30</div><div class="n">31</div><div class="n nx">1</div>
+    </div>
+  </div>
+  <div class="band bB"><svg id="wt" width="456" height="420" style="display:block;overflow:visible"></svg></div>
+  <div class="band bC">
+    <div class="repo">
+      <div style="display:flex;justify-content:space-between;align-items:baseline"><span class="cap">Top repo</span><span class="t16 d3">stars this month</span></div>
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:2px">
+        <span class="n6" style="font-size:80px;line-height:.95;color:var(--down)">+42k</span>
+        <span class="n6 t40" style="color:var(--fg2)"><span style="color:#e6bd62;font-size:30px;vertical-align:4px">★</span> 77.3k</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:8px;white-space:nowrap">
+        <span class="t24"><span class="d3">debpalash/</span><b style="font-weight:600">VoiceStudio</b></span>
+        <span class="t16 d3"><i style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#6a9fd4;margin-right:8px"></i>Python</span>
+      </div>
+      <div class="t16 d3" style="line-height:1.4;margin-top:6px">Fully local, open-source voice suite for cloning, dubbing, transcription and audiobooks in 646 languages.</div>
+    </div>
+  </div>
+</section>
+
+<script>
+const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const stops=[[0,[140,148,246]],[5,[118,178,246]],[9,[100,210,214]],[13,[146,220,150]],[17,[238,198,104]],[24,[248,138,104]]];
+function tc(t){for(let i=1;i<stops.length;i++){const[a,c1]=stops[i-1],[b,c2]=stops[i];if(t<=b||i==stops.length-1){const k=Math.max(0,Math.min(1,(t-a)/(b-a)));return`rgb(${c1.map((v,j)=>Math.round(v+(c2[j]-v)*k))})`}}}
+document.querySelectorAll('[data-t]').forEach(e=>e.style.color=tc(+e.dataset.t));
+const dr=document.getElementById('dayrange');dr.style.left='0';dr.style.right='0';dr.style.background=`linear-gradient(90deg,${tc(10)},${tc(14)})`;dr.style.opacity=.8;
+document.getElementById('tnow').style.left='calc(25% - 2px)';
+
+function smooth(P){let d=`M${P[0]}`;for(let i=0;i<P.length-1;i++){const p0=P[i-1]||P[i],p1=P[i],p2=P[i+1],p3=P[i+2]||p2;
+ d+=` C${p1[0]+(p2[0]-p0[0])/6},${p1[1]+(p2[1]-p0[1])/6} ${p2[0]-(p3[0]-p1[0])/6},${p2[1]-(p3[1]-p1[1])/6} ${p2[0]},${p2[1]}`}return d}
+
+// ---- sun: 24 h day bar, times as values
+(()=>{const s=document.getElementById('sun'),W=456,X=h=>W*h/24,ty=14;
+ const r=7+31/60,st=17+58/60,now=15/60;
+ s.innerHTML=`<rect x="0" y="${ty-4}" width="${W}" height="8" rx="4" fill="rgba(255,255,255,.08)"/>
+ <rect x="${X(r)}" y="${ty-4}" width="${X(st)-X(r)}" height="8" rx="4" fill="#e6bd62" fill-opacity=".45"/>
+ <line x1="${X(r)}" x2="${X(r)}" y1="${ty-12}" y2="${ty+12}" stroke="#e6bd62" stroke-width="3"/>
+ <line x1="${X(st)}" x2="${X(st)}" y1="${ty-12}" y2="${ty+12}" stroke="#e6bd62" stroke-width="3"/>
+ <line x1="${X(now)+2}" x2="${X(now)+2}" y1="${ty-11}" y2="${ty+11}" stroke="var(--fg)" stroke-width="4" stroke-linecap="round"/>
+ <text class="v" x="${X(r)}" y="${ty+56}" text-anchor="middle" style="font-size:40px;fill:var(--fg2)">07:31</text>
+ <text class="v" x="${X(st)}" y="${ty+56}" text-anchor="middle" style="font-size:40px;fill:var(--fg2)">17:58</text>`;})();
+
+// ---- next hours: icons on top, temperature line over the rain area; the peak value (69% at 06) is the zone's headline
+(()=>{const s=document.getElementById('hours'),W=456;
+ const H=[['01','rain',56,5],['02','cloud',34,5],['03','cloud',0,5],['04','moon',0,5],['05','moon',0,6],['06','rain',69,6]];
+ const x0=30,x1=W-30,X=i=>x0+(x1-x0)*i/5;
+ const base=354,rY=p=>base-p*2.0;
+ const tY=t=>138-(t-5)*40;
+ let g=`<defs><linearGradient id="ra" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="${css('--rain')}" stop-opacity=".50"/><stop offset="1" stop-color="${css('--rain')}" stop-opacity=".06"/></linearGradient>
+  <linearGradient id="tl" x1="0" x2="1">${H.map((h,i)=>`<stop offset="${i/5}" stop-color="${tc(h[3])}"/>`).join('')}</linearGradient></defs>`;
+ H.forEach((h,i)=>{g+=`<line x1="${X(i)}" x2="${X(i)}" y1="62" y2="${base}" stroke="rgba(255,255,255,.035)"/>`;
+  g+=`<use href="#${h[1]}" x="${X(i)-16}" y="16" width="32" height="32" style="color:rgba(214,220,232,.5);fill:none;stroke:currentColor;stroke-width:1.8"/>`;});
+ const RP=H.map((h,i)=>[X(i),rY(h[2])]);
+ g+=`<clipPath id="rc"><rect x="0" y="0" width="${W}" height="${base}"/></clipPath><g clip-path="url(#rc)"><path d="${smooth(RP)} L${X(5)},${base} L${X(0)},${base}Z" fill="url(#ra)"/>
+  <path d="${smooth(RP)}" fill="none" stroke="${css('--rain')}" stroke-opacity=".85" stroke-width="3"/></g>`;
+ g+=`<line x1="${x0-16}" x2="${x1+16}" y1="${base}" y2="${base}" stroke="rgba(255,255,255,.12)"/>`;
+ H.forEach((h,i)=>{g+=`<text x="${X(i)}" y="${base+34}" text-anchor="middle">${h[0]}</text>`;});
+ // rain values: quiet blue for the past peaks, full blue + biggest for the one that matters (06:00)
+ g+=`<text class="v" x="${X(0)-14}" y="${rY(56)-14}" text-anchor="start" style="font-size:40px;fill:var(--rainq)">56%</text>`;
+ g+=`<text class="v" x="${X(1)+10}" y="${rY(34)-12}" text-anchor="start" style="font-size:40px;fill:var(--rainq)">34%</text>`;
+ g+=`<text class="v" x="${W+6}" y="${rY(69)-16}" text-anchor="end" style="font-size:64px;fill:var(--rain)">69%</text>`;
+ g+=`<circle cx="${X(5)}" cy="${rY(69)}" r="6" fill="${css('--rain')}" stroke="var(--bg)" stroke-width="2"/>`;
+ const TP=H.map((h,i)=>[X(i),tY(h[3])]);
+ g+=`<path d="${smooth(TP)}" fill="none" stroke="url(#tl)" stroke-width="5" stroke-linecap="round"/>`;
+ [[0,5],[4,6],[5,6]].forEach(([i,t])=>g+=`<circle cx="${X(i)}" cy="${tY(t)}" r="6" fill="${tc(t)}" stroke="var(--bg)" stroke-width="2"/>`);
+ g+=`<text class="v" x="${X(0)-12}" y="${tY(5)-16}" text-anchor="start" style="font-size:40px;fill:${tc(5)}">5°</text>`;
+ g+=`<text class="v" x="${X(4)}" y="${tY(6)-16}" text-anchor="middle" style="font-size:40px;fill:${tc(6)}">6°</text>`;
+ s.innerHTML=g;})();
+
+// ---- next days
+(()=>{const D=[['Wed','cloud',40,8,13],['Thu','suncloud',null,9,16],['Fri','rain',85,6,12]],lo=0,hi=22,P=v=>(v-lo)/(hi-lo)*100;
+ document.getElementById('days').innerHTML=D.map(([d,ic,p,a,b])=>`<div class="d"><div class="t24 d2" style="font-weight:500">${d}</div>
+  <svg class="i" width="32" height="32" style="color:var(--fg2)"><use href="#${ic}"/></svg>
+  <div class="n6" style="font-size:${p>=50?40:32}px;color:${p>=50?'var(--rain)':'var(--rainq)'}">${p!=null?p+'%':''}</div>
+  <div class="trk n6"><i style="left:${P(a)}%;right:${100-P(b)}%;background:linear-gradient(90deg,${tc(a)},${tc(b)})"></i>
+   <span style="right:calc(${100-P(a)}% + 8px);color:${tc(a)}">${a}°</span><span style="left:calc(${P(b)}% + 8px);color:${tc(b)}">${b}°</span></div></div>`).join('');})();
+
+// ---- rings: pace tick = where an even burn would be by now; arc past the tick = ahead of pace, brighter + thicker + glow
+const toH=s=>{let h=0;s.replace(/(\d+)d/,(m,a)=>h+=24*a).replace(/(\d+)h/,(m,a)=>h+=+a);return h};
+function lighten(hex,k){const n=parseInt(hex.slice(1),16),r=n>>16,g=n>>8&255,b=n&255;return`rgb(${[r,g,b].map(v=>Math.round(v+(255-v)*k))})`}
+function arc(cx,r,f0,f1){const a0=-Math.PI/2+2*Math.PI*f0,a1=-Math.PI/2+2*Math.PI*f1;
+ return`M${cx+r*Math.cos(a0)},${cx+r*Math.sin(a0)} A${r},${r} 0 ${f1-f0>.5?1:0} 1 ${cx+r*Math.cos(a1)},${cx+r*Math.sin(a1)}`}
+function ringLayer(cx,r,w,v,pace,c){
+ let g=`<circle cx="${cx}" cy="${cx}" r="${r}" fill="none" stroke="rgba(255,255,255,.10)" stroke-width="${w}"/>`;
+ if(v<=pace){
+  g+=`<path d="${arc(cx,r,0,v)}" fill="none" stroke="${c}" stroke-width="${w}" stroke-linecap="round"/>`;
+ }else{
+  const hi=lighten(c,.3),a1=-Math.PI/2+2*Math.PI*v;
+  g+=`<path d="${arc(cx,r,0,pace)}" fill="none" stroke="${c}" stroke-opacity=".85" stroke-width="${w}" stroke-linecap="round"/>`;
+  g+=`<g filter="url(#glow)"><path d="${arc(cx,r,pace,v)}" fill="none" stroke="${hi}" stroke-width="${w+6}" stroke-linecap="butt"/><circle cx="${cx+r*Math.cos(a1)}" cy="${cx+r*Math.sin(a1)}" r="${(w+6)/2}" fill="${hi}"/></g>`;
+ }
+ return g}
+function tick(cx,rad,f,col,len,wd){const a=-Math.PI/2+2*Math.PI*f;
+ return`<line x1="${cx+(rad-len)*Math.cos(a)}" y1="${cx+(rad-len)*Math.sin(a)}" x2="${cx+(rad+len)*Math.cos(a)}" y2="${cx+(rad+len)*Math.sin(a)}" stroke="${col}" stroke-width="${wd}" stroke-linecap="round"/>`}
+document.querySelectorAll('.ringbox').forEach((e,k)=>{const v=+e.dataset.v/100,dim=e.dataset.dim,c=css(dim?e.dataset.q:e.dataset.c),S=228,cx=114,r=100;
+ const pace=1-toH(e.dataset.reset)/168;
+ let g=`<svg width="${S}" height="${S}">`;
+ g+=ringLayer(cx,r,18,v,pace,c);
+ let inner='';
+ if(e.dataset.inner){const ri=76,iv=+e.dataset.inner/100,ip=1-toH(e.dataset.ireset)/168;
+  g+=`<circle cx="${cx}" cy="${cx}" r="${ri}" fill="none" stroke="rgba(255,255,255,.07)" stroke-width="8"/>
+   <path d="${arc(cx,ri,0,iv)}" fill="none" stroke="${c}" stroke-opacity=".6" stroke-width="8" stroke-linecap="round"/>`;
+  g+=tick(cx,ri,ip,'rgba(240,242,246,.8)',9,3);
+  inner=`<div class="mt t16 d3" style="margin-top:2px;display:flex;align-items:baseline;gap:8px;justify-content:center"><span style="color:var(--claude)">fab</span> <span class="n6" style="font-size:40px;line-height:1.05;color:var(--fg2)">80%</span> <span><svg class="i" width="16" height="16" style="display:inline;vertical-align:-2px"><use href="#cycle"/></svg> 21h 0m</span></div>`;}
+ g+=tick(cx,r,pace,'#f4f6fa',14,4)+`</svg>`;
+ const big=!dim,ahead=Math.round((v-pace)*100);
+ e.innerHTML=g+`<div class="pc"><div style="text-align:center"><div class="n6" style="font-size:${big?80:60}px;line-height:.95;letter-spacing:-.03em;color:${big?lighten(c,.12):'var(--fg)'}">${Math.round(v*100)}<span style="font-size:${big?30:24}px;color:var(--fg3);font-weight:500">%</span></div>${ahead>0?`<div class="t18" style="color:${lighten(c,.25)};margin-top:4px;font-weight:600">+${ahead} ahead</div>`:''}</div></div>`;
+ const m=document.getElementById('r'+k);m.innerHTML=`<svg class="i" width="16" height="16" style="display:inline;vertical-align:-2px"><use href="#cycle"/></svg> ${e.dataset.reset}`;
+ if(inner)m.insertAdjacentHTML('afterend',inner);});
+
+// ---- usage chart: thicker strokes, end values large in series colour
+(()=>{const s=document.getElementById('chart'),W=664,Hh=240,x0=44,x1=W-96,y0=36,y1=Hh-46;
+ const X=i=>x0+(x1-x0)*i/12,Y=v=>y1-(y1-y0)*v/100;let g='';
+ g+=`<line x1="${x0}" x2="${x1}" y1="${Y(0)}" y2="${Y(0)}" stroke="rgba(255,255,255,.12)"/>`;
+ g+=`<line x1="${x0}" x2="${x1}" y1="${Y(50)}" y2="${Y(50)}" stroke="rgba(255,255,255,.06)" stroke-dasharray="2 7"/>`;
+ g+=`<line x1="${x0}" x2="${x1}" y1="${Y(100)}" y2="${Y(100)}" stroke="rgba(255,255,255,.06)" stroke-dasharray="2 7"/>`;
+ g+=`<text x="${x0-10}" y="${Y(100)+6}" text-anchor="end">100</text><text x="${x0-10}" y="${Y(0)+6}" text-anchor="end">0</text>`;
+ g+=`<text x="${x0}" y="${Hh-14}">−12h</text><text x="${x1}" y="${Hh-14}" text-anchor="end">00:15</text>`;
+ const ser=[['--kaggleq',[38,38.3,38.5,38.9,39.2,39.4,39.8,40.1,40.5,40.8,41.2,41.6,41],0],['--codexq',[4,4.1,4.3,4.4,4.6,4.8,5,5.1,5.3,5.5,5.7,5.8,6],0],['--claude',[82,82.2,82.4,82.6,82.8,83,83.1,83.3,83.4,83.6,83.7,83.9,84],1]];
+ ser.forEach(([cv,d,o])=>{const c=css(cv),pts=d.map((v,i)=>`${X(i)},${Y(v)}`).join(' ');
+  if(o)g+=`<defs><linearGradient id="cg" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="${c}" stop-opacity=".12"/><stop offset="1" stop-color="${c}" stop-opacity="0"/></linearGradient></defs><polygon points="${X(0)},${y1} ${pts} ${X(12)},${y1}" fill="url(#cg)"/>`;
+  g+=`<polyline points="${pts}" fill="none" stroke="${c}" stroke-width="${o?4:3.5}" stroke-linecap="round"/><circle cx="${X(12)}" cy="${Y(d[12])}" r="7" fill="${c}" stroke="var(--bg)" stroke-width="2"/>`;
+  g+=`<text class="v" x="${X(12)+16}" y="${Y(d[12])+14}" style="font-size:40px;fill:${o?lighten(c,.1):c}">${d[12]}</text>`;});
+ s.innerHTML=g;})();
+
+// ---- weight: per person a compact chart on the left, value block on the right (headline kg, then delta + body fat)
+(()=>{const s=document.getElementById('wt'),W=456,x0=48,x1=190,vx=210;
+ const P=[
+  {n:'Jaish',when:'today 00:14',c:css('--jaish'),d:[82.4,82.6,82.8,82.75,82.5,82.15,81.9,81.85,82,82.2,82.35,82.35,82.1,81.85,81.65,81.6,81.75,81.95,82.1,82.1,81.9,81.6,81.4,81.3,81.45,81.65,81.75,81.6,81.25],mn:81.2,mx:82.8,v:'81.25',dl:'−0.30',dc:css('--down'),bf:'19.2',top:34},
+  {n:'Barun',when:'yesterday',c:css('--barun'),d:[71.85,72.05,72.05,71.85,71.7,71.7,71.95,72.2,72.3,72.2,72.0,71.95,72.1,72.3,72.4],mn:71.5,mx:72.4,v:'72.40',dl:'+0.20',dc:css('--up'),bf:'17.8',top:204}];
+ let g=`<text x="${vx}" y="24" style="font-size:16px">kg</text><text x="${W}" y="24" text-anchor="end" style="font-size:16px">body fat</text>`;
+ P.forEach(p=>{const y0=p.top+40,y1=p.top+140,Y=v=>y1-(y1-y0)*(v-p.mn)/(p.mx-p.mn);
+  const X=i=>x0+(x1-x0)*i/(p.d.length-1);const pts=p.d.map((v,i)=>[X(i),Y(v)]);
+  g+=`<circle cx="7" cy="${p.top+12}" r="7" fill="${p.c}"/><text x="22" y="${p.top+19}" style="fill:${p.c};font-family:Inter;font-weight:600;font-size:20px">${p.n}</text><text x="${22+p.n.length*11.5+12}" y="${p.top+19}" style="font-size:16px">${p.when}</text>`;
+  g+=`<text x="${x0-8}" y="${y0+6}" text-anchor="end" style="font-size:16px">${p.mx.toFixed(1)}</text><text x="${x0-8}" y="${y1+6}" text-anchor="end" style="font-size:16px">${p.mn.toFixed(1)}</text>`;
+  g+=`<line x1="${x0}" x2="${x1}" y1="${y0}" y2="${y0}" stroke="rgba(255,255,255,.06)" stroke-dasharray="2 6"/><line x1="${x0}" x2="${x1}" y1="${y1}" y2="${y1}" stroke="rgba(255,255,255,.06)" stroke-dasharray="2 6"/>`;
+  g+=`<defs><linearGradient id="wf${p.n}" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="${p.c}" stop-opacity=".18"/><stop offset="1" stop-color="${p.c}" stop-opacity="0"/></linearGradient></defs>`;
+  g+=`<path d="${smooth(pts)} L${x1},${y1} L${x0},${y1}Z" fill="url(#wf${p.n})"/>`;
+  g+=`<path d="${smooth(pts)}" fill="none" stroke="${p.c}" stroke-width="3.5" stroke-linejoin="round"/>`;
+  const e=pts[pts.length-1];g+=`<circle cx="${e[0]}" cy="${e[1]}" r="7" fill="${p.dc}" stroke="var(--bg)" stroke-width="2"/>`;
+  g+=`<text class="v" x="${vx-4}" y="${p.top+102}" style="font-size:76px;letter-spacing:-1.5px;fill:var(--fg)">${p.v}</text>`;
+  g+=`<text class="v" x="${vx}" y="${p.top+152}" style="font-size:40px;fill:${p.dc}">${p.dl}</text>`;
+  g+=`<text class="v" x="${W}" y="${p.top+152}" text-anchor="end" style="font-size:40px;fill:var(--fg2)">${p.bf}<tspan style="font-size:22px;fill:var(--fg3)">%</tspan></text>`;});
+ g+=`<line x1="${x0}" x2="${x1}" y1="378" y2="378" stroke="rgba(255,255,255,.1)"/><text x="${x0}" y="402" style="font-size:16px">−30d</text><text x="${x1}" y="402" text-anchor="end" style="font-size:16px">now</text>`;
+ s.innerHTML=g;})();
+</script>
+</body>
+</html>

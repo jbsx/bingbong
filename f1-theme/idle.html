@@ -1,0 +1,458 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Bing Bong Idle</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=block" rel="stylesheet">
+<style>
+/* Round 6 — Idle Screen family. F1 Headline everywhere, with F2 Contrast's AI usage card lifted in. */
+:root{
+  --bg:#07090d;
+  --fg:#f2f4f8; --fgh:#e8ebf2; --fg2:rgba(214,220,232,.62); --fg3:rgba(200,208,224,.40);
+  --hair:rgba(255,255,255,.06); --track:rgba(255,255,255,.07);
+  --surface:rgba(255,255,255,.018);
+  --rain:#7cb6f0; --codex:#a593f0; --claude:#ff8f74; --kaggle:#dcb25e;
+  --down:#6fdca2; --up:#f2a560; --ok:#6fdca2;
+  --jaish:#62c3d2; --barun:#d68bc2;
+  --codexq:#8e88b4; --kaggleq:#a8976f; --rainq:#7f97b2; --jaishq:#6f9ea7; --barunq:#a3879a;
+  --accent:#f0a27a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:1920px;height:1080px;overflow:hidden}
+body{background:var(--bg);color:var(--fg);font-family:Inter,"Helvetica Neue",Arial,sans-serif;
+  font-feature-settings:"tnum" 1,"cv11" 1;position:relative;-webkit-font-smoothing:antialiased;font-size:16px}
+.d2{color:var(--fg2)}.d3{color:var(--fg3)}
+.t16{font-size:16px}.t18{font-size:18px}.t24{font-size:24px}
+.n6{font-family:Inter,sans-serif;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.hl{font-weight:600;line-height:.86;letter-spacing:-.035em;white-space:nowrap}
+.hl small{font-size:.42em;font-weight:500;letter-spacing:0;margin-left:2px}
+.capt{display:flex;flex-direction:column;gap:3px;font-size:16px;color:var(--fg3);white-space:nowrap;line-height:1.25}
+.head{display:flex;align-items:flex-end;gap:16px}
+.cap{font-size:16px;letter-spacing:.14em;text-transform:uppercase;color:var(--fg3);font-weight:500}
+
+.zone{position:absolute;z-index:1;background:var(--surface);border:1px solid var(--hair);border-radius:24px;overflow:hidden}
+.band{position:absolute;left:0;right:0;padding:0 28px}
+.band+.band{border-top:1px solid var(--hair)}
+.bA{top:0;height:340px}.bB{top:340px;height:420px}.bC{top:760px;height:240px}
+#wx{left:48px;top:40px;width:512px;height:1000px}
+#rt{left:1360px;top:40px;width:512px;height:1000px}
+#ai{left:600px;top:380px;width:720px;height:660px}
+#ai .bB2{top:0;height:420px}#ai .bC2{top:420px;height:240px}
+
+svg text{font-family:"JetBrains Mono",monospace;font-size:16px;fill:var(--fg3)}
+svg.i{display:block;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+svg.i.ic{display:inline;vertical-align:-2px}
+
+/* weather now */
+.now{display:flex;align-items:flex-start;gap:20px;padding-top:30px}
+.hero{font-size:172px;font-weight:500;line-height:.78;letter-spacing:-.05em;margin-left:-6px}
+.cond{display:flex;flex-direction:column;gap:8px;padding-top:4px}
+.cond .c{display:flex;align-items:center;gap:10px}
+.lohi{display:flex;align-items:center;gap:14px}
+.lohi span{font-size:28px;font-weight:600}
+.bar{position:relative;flex:1;height:6px;border-radius:3px;background:var(--track)}
+.bar i{position:absolute;top:0;bottom:0;border-radius:3px}
+.bar em{position:absolute;top:-6px;width:3px;height:18px;border-radius:2px;background:var(--fg)}
+.days{padding-top:22px}
+.days .d{display:grid;grid-template-columns:62px 36px 50px 1fr;align-items:center;column-gap:12px;height:66px}
+.days .dn{font-size:26px;font-weight:600;color:var(--fgh)}
+.days .trk{position:relative;height:28px}
+.days .trk:before{content:"";position:absolute;left:0;right:0;top:13px;height:2px;background:var(--hair)}
+.days .trk i{position:absolute;top:9px;height:10px;border-radius:5px}
+.days .trk span{position:absolute;top:0;line-height:28px;font-size:28px;font-weight:600}
+.days .p{color:var(--rainq)}
+.days .p.hot{color:var(--rain);font-weight:600}
+
+/* clock + lines */
+.clock{position:absolute;z-index:1;left:600px;top:40px;width:720px;text-align:center}
+.clock .t{font-size:176px;font-weight:500;line-height:1;letter-spacing:-.045em;color:var(--fg)}
+.clock .t span{color:var(--accent);font-weight:500;position:relative;top:-.06em}
+.clock .dt{font-size:26px;font-weight:500;color:var(--fg2);letter-spacing:.01em}
+.line{position:absolute;z-index:2;left:600px;width:720px;height:36px;display:flex;align-items:center;justify-content:center;gap:12px;white-space:nowrap}
+.voice{top:268px;gap:14px}
+.last{top:316px}
+.orb{width:14px;height:14px;border-radius:50%;flex:none;background:radial-gradient(circle at 35% 30%,#ffd2b4,#f0a27a 60%,#d9806a);
+  box-shadow:0 0 0 5px rgba(240,162,122,.10),0 0 16px rgba(240,162,122,.45)}
+.voice .ph{font-size:16px;color:var(--fg3)}
+.voice .ph q{quotes:"\201C" "\201D";color:var(--fg2);font-weight:500}
+.wave{display:flex;gap:3px;align-items:center;height:20px}
+.wave i{width:3px;border-radius:2px;background:var(--accent)}
+.lst{font-family:"JetBrains Mono",monospace;font-size:16px;letter-spacing:.12em;color:var(--accent);font-weight:500}
+.sep{width:1px;height:18px;background:var(--hair);flex:none}
+.say{display:flex;align-items:center;gap:6px;height:30px;padding:0 4px 0 12px;border-radius:15px;border:1px solid var(--hair);color:var(--fg2);flex:none}
+.go{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;background:var(--accent);color:#1a1210;font-size:16px;line-height:1}
+.last .ttl{color:var(--fg2);white-space:normal;max-width:390px;line-height:1.2;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+
+/* clock split when a Timer runs */
+.split{position:absolute;z-index:1;left:600px;top:34px;width:720px;display:grid;grid-template-columns:1fr 1px 1fr;align-items:start}
+.split .sepv{width:1px;height:150px;margin-top:20px;background:var(--hair)}
+.split .blk{text-align:center}
+.split .big{font-size:112px;font-weight:500;line-height:1.02;letter-spacing:-.045em}
+.split .big span{position:relative;top:-.06em}
+.split .sub{font-size:22px;font-weight:500;color:var(--fg2);margin-top:2px;white-space:nowrap}
+.np .thumb{width:44px;height:28px;border-radius:6px;background:#2a2e36;display:grid;place-items:center;flex:none}
+.np .thumb i{display:flex;gap:3px}.np .thumb i b{width:4px;height:4px;border-radius:50%;background:rgba(255,255,255,.55)}
+.np .prog{position:relative;width:120px;height:4px;border-radius:2px;background:var(--track);flex:none}
+.np .prog i{position:absolute;left:0;top:0;bottom:0;border-radius:2px;background:var(--fgh)}
+.np .prog em{position:absolute;top:-4px;width:12px;height:12px;border-radius:50%;background:var(--fg);margin-left:-6px}
+
+/* usage — lifted from F2 Contrast, F1 tokens */
+.rings{display:grid;grid-template-columns:repeat(2,1fr);align-items:start;padding-top:30px}
+.rg{display:flex;flex-direction:column;align-items:center;text-align:center;gap:2px}
+.ringbox{position:relative;width:228px;height:228px}
+.ringbox svg{position:absolute;inset:0;overflow:visible}
+.ringbox .pc{position:absolute;inset:0;display:grid;place-items:center}
+.rg .nm{white-space:nowrap;margin-top:12px}
+.rg .mt{white-space:nowrap}
+
+/* calendar */
+.cg{display:grid;grid-template-columns:repeat(7,1fr);text-align:center;margin-top:22px;row-gap:6px}
+.cg .w{font-family:"JetBrains Mono",monospace;font-size:16px;color:var(--fg3);letter-spacing:.06em;padding-bottom:8px;border-bottom:1px solid var(--hair)}
+.cg .w.tw{color:var(--accent);font-weight:600}
+.cg .n{font-family:"JetBrains Mono",monospace;font-size:22px;height:50px;line-height:50px;position:relative;z-index:0;color:var(--fg2)}
+.cg .nx{color:rgba(200,208,224,.22)}
+.cg .td{color:#1a1210;font-weight:600}
+.cg .td::before{content:"";position:absolute;inset:4px 12px;background:var(--accent);z-index:-1;border-radius:3px}
+
+/* repo empty */
+.repo{padding-top:26px}
+.empty{margin-top:34px;display:flex;align-items:center;gap:16px}
+.empty .dash{width:44px;height:2px;background:var(--hair);flex:none}
+
+/* weigh-in pop-up */
+.pop{position:absolute;z-index:5;left:600px;top:794px;width:720px;height:246px;border-radius:24px;
+  background:#0f1218;border:1px solid rgba(255,255,255,.10);box-shadow:0 10px 30px rgba(0,0,0,.45);padding:26px 32px}
+.pop .row{display:flex;align-items:center;gap:26px}
+.pop .kg{font-size:132px;font-weight:600;line-height:.8;letter-spacing:-.04em;white-space:nowrap}
+.pop .kg small{font-size:34px;font-weight:500;color:var(--fg3);letter-spacing:0;margin-left:8px}
+.pop .who{margin-top:22px;display:flex;align-items:center;gap:14px;font-size:22px;white-space:nowrap}
+.dot{width:12px;height:12px;border-radius:50%;flex:none;display:inline-block}
+.fix{position:absolute;right:28px;top:34px;display:flex;flex-direction:column;align-items:flex-end;gap:8px}
+.btn{display:flex;align-items:center;gap:10px;height:48px;padding:0 20px;border-radius:24px;border:1px solid rgba(255,255,255,.16);font-size:22px;font-weight:600;color:var(--fgh);background:rgba(255,255,255,.04)}
+.check{width:64px;height:64px;border-radius:50%;background:var(--ok);display:grid;place-items:center;flex:none}
+.spin{width:64px;height:64px;flex:none;position:relative}
+.pulse{box-shadow:0 0 0 8px rgba(240,162,122,.10),0 0 22px rgba(240,162,122,.35);border-radius:50%}
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute">
+ <defs>
+  <symbol id="cloud" viewBox="0 0 32 32"><path d="M9 23h14.5a5.5 5.5 0 0 0 .6-10.97A7.5 7.5 0 0 0 9.6 13.3 5 5 0 0 0 9 23z"/></symbol>
+  <symbol id="rain" viewBox="0 0 32 32"><path d="M9 19h14.5a5.5 5.5 0 0 0 .6-10.97A7.5 7.5 0 0 0 9.6 9.3 5 5 0 0 0 9 19z"/><path d="M11 23l-1.2 4M16.5 23l-1.2 4M22 23l-1.2 4" stroke="var(--rain)"/></symbol>
+  <symbol id="drizzle" viewBox="0 0 32 32"><path d="M9 19h14.5a5.5 5.5 0 0 0 .6-10.97A7.5 7.5 0 0 0 9.6 9.3 5 5 0 0 0 9 19z"/><path d="M11 23.5v.1M16 25.5v.1M21 23.5v.1M13.5 28v.1M18.5 28v.1" stroke="var(--rain)" stroke-width="2.6"/></symbol>
+  <symbol id="drop" viewBox="0 0 24 24"><path d="M12 3.5c3 4 5.5 7 5.5 10a5.5 5.5 0 0 1-11 0c0-3 2.5-6 5.5-10z" fill="var(--rain)" stroke="none"/></symbol>
+  <symbol id="mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></symbol>
+  <symbol id="cycle" viewBox="0 0 24 24"><path d="M19 12a7 7 0 1 1-2.05-4.95M19 4v4h-4"/></symbol>
+  <symbol id="globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.6 2.6 3.6 5.6 3.6 9s-1 6.4-3.6 9c-2.6-2.6-3.6-5.6-3.6-9s1-6.4 3.6-9z"/></symbol>
+  <symbol id="star" viewBox="0 0 24 24"><path d="M12 3.5l2.6 5.5 6 .7-4.4 4.1 1.2 5.9L12 16.8 6.6 19.7l1.2-5.9L3.4 9.7l6-.7z"/></symbol>
+  <filter id="glow" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="2.5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+ </defs>
+</svg>
+
+<!-- LEFT: weather -->
+<section class="zone" id="wx">
+  <div class="band bA">
+    <div class="now">
+      <div class="hero" id="hero"></div>
+      <div class="cond">
+        <div class="t24" id="cond" style="font-weight:600;color:var(--fgh)"></div>
+        <div class="c t16 d3"><svg class="i" width="26" height="26" style="color:var(--fg2)"><use id="condic" href="#rain"/></svg>London</div>
+        <div class="c t24" style="color:var(--rain);font-weight:600"><svg width="20" height="20"><use href="#drop"/></svg><span id="rainnow"></span></div>
+      </div>
+    </div>
+    <div class="lohi" style="margin-top:34px">
+      <span id="lo"></span>
+      <div class="bar"><i id="dayrange"></i><em id="tnow"></em></div>
+      <span id="hi"></span>
+    </div>
+    <svg id="sun" width="456" height="62" style="display:block;margin-top:16px"></svg>
+  </div>
+  <div class="band bB">
+    <div class="head" style="padding-top:26px">
+      <div class="hl" style="font-size:88px;color:var(--rain)"><span id="rpk"></span><small>%</small></div>
+      <div class="capt" style="padding-bottom:4px"><span>rain</span><span class="d2" style="font-size:20px;font-weight:500" id="rby"></span></div>
+    </div>
+    <svg id="hours" width="456" height="300" style="display:block;margin-top:4px;overflow:visible"></svg>
+  </div>
+  <div class="band bC"><div class="days" id="days"></div></div>
+</section>
+
+<!-- MIDDLE: clock · voice line · now playing · last page -->
+<div id="mid"></div>
+
+<!-- MIDDLE: usage (F2 card) -->
+<section class="zone" id="ai">
+  <div class="band bB2">
+    <div class="rings">
+      <div class="rg" id="rgCodex"></div>
+      <div class="rg" id="rgClaude"></div>
+    </div>
+    <div style="position:absolute;left:28px;top:22px" class="mono t16 d3" id="codexwin"></div>
+  </div>
+  <div class="band bC2">
+    <svg id="chart" width="664" height="240" style="display:block;overflow:visible"></svg>
+  </div>
+</section>
+
+<!-- RIGHT: calendar · weight · repos -->
+<section class="zone" id="rt">
+  <div class="band bA">
+    <div class="head" style="padding-top:28px">
+      <div class="hl" style="font-size:88px;color:var(--accent)" id="calday"></div>
+      <div class="capt" style="padding-bottom:4px"><span class="d2" style="font-size:20px;font-weight:500" id="calsub"></span><span>no events</span></div>
+    </div>
+    <div class="cg" id="cal"></div>
+  </div>
+  <div class="band bB"><svg id="wt" width="456" height="420" style="display:block;overflow:visible"></svg></div>
+  <div class="band bC">
+    <div class="repo">
+      <div class="head">
+        <div class="capt" style="flex-direction:row;gap:14px;align-items:baseline"><span class="cap">Top repo</span><span style="color:var(--kaggleq)">★ this month</span></div>
+      </div>
+      <div class="empty">
+        <svg class="i" width="40" height="40" style="color:rgba(200,208,224,.28);stroke-width:1.3"><use href="#star"/></svg>
+        <div>
+          <div style="font-size:28px;font-weight:500;color:var(--fg2)">No repos yet</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div id="popup"></div>
+
+<script>
+const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const $=id=>document.getElementById(id);
+
+/* ================= states: every value read off the current screenshots ================= */
+const JAISH=[82.4,82.6,82.8,82.75,82.5,82.15,81.9,81.85,82,82.2,82.35,82.35,82.1,81.85,81.65,81.6,81.75,81.95,82.1,82.1,81.9,81.6,81.4,81.3,81.45,81.65,81.75,81.6,81.25];
+const BARUN=[71.85,72.05,72.05,71.85,71.7,71.7,71.95,72.2,72.3,72.2,72.0,71.95,72.1,72.3,72.4];
+const step=(segs)=>{const a=[];segs.forEach(([n,v])=>{for(let i=0;i<n;i++)a.push(typeof v=='function'?v(i,n):v)});return a.slice(0,49)};
+const ramp=(a,b)=>(i,n)=>Math.round(a+(b-a)*i/Math.max(1,n-1));
+
+const TUE={
+  clock:['09','52'],date:'Tuesday 20 October',today:20,wd:1,
+  t:12,cond:'Heavy Drizzle',condic:'drizzle',rain:97,lo:11,hi:13,sun:[7+32/60,17+56/60],now:9+52/60,
+  hours:[['10:00','drizzle',73,12],['11:00','drizzle',80,12],['12:00','drizzle',88,12],['13:00','drizzle',94,12],['14:00','drizzle',97,12],['15:00','drizzle',97,12]],
+  days:[['Wed','drizzle',77,8,12],['Thu','rain',85,8,14],['Fri','rain',94,7,13]],
+  last:{icon:'globe',title:'The lighthouse',host:'127.0.0.1:40415'},
+  codex:{v:0,plan:'prolite',win:'7d',reset:'6d 23h',wh:168},
+  claude:{v:10,win:'7d-fab',reset:'6d 15h',wh:168,inner:{w:'7d',v:8,reset:'6d 15h',wh:168},extra:{w:'5h',v:2,reset:'1h 47m'}},
+  chart:{max:100,win:'7d · 7d-fab',cl:'7d-fab',upd:'09:52',
+    claude:step([[2,92],[11,95],[4,0],[11,3],[16,4],[5,ramp(5,10)]]),
+    codex:step([[37,22],[2,23],[10,0]])},
+  jaish:{v:'81.25',when:'today 07:12',dl:'▾ 0.30',bf:'19.2%',d:JAISH,mn:81.2,mx:82.8},
+};
+const S={
+  idle:TUE,
+  'weighin-settled':{...TUE,jaish:{v:'80.80',when:'today 09:52',dl:'▾ 0.45',bf:'19.0%',d:[...JAISH.slice(0,27),81.25,80.8].map((v,i)=>v-0.0*i),mn:80.8,mx:82.8},
+    pop:{settled:true,kg:'80.80',who:'Jaish',dl:'−0.45 kg',other:'Barun'}},
+  'music-timer':{...TUE,clock:['09','53'],
+    jaish:{v:'80.80',when:'today 09:52',dl:'▾ 0.45',bf:'19.0%',d:[...JAISH.slice(0,27),81.25,80.8],mn:80.8,mx:82.8},
+    last:{icon:'yt',title:'Fixture Song - YouTube',host:'youtube.com'},
+    claude:{...TUE.claude,extra:{w:'5h',v:2,reset:'1h 46m'}},
+    chart:{...TUE.chart,upd:'09:53'},
+    timer:{left:['24','48'],of:'25 minutes',ends:'10:18',frac:(24*60+48)/1500},
+    np:{song:'Fixture Song',band:'Fixture Band',pos:'0:08',dur:'1:00',frac:8/60}},
+  'weighin-live':{
+    clock:['22','24'],date:'Monday 19 October',today:19,wd:0,
+    t:13,cond:'Overcast',condic:'cloud',rain:94,lo:10,hi:14,sun:[7+31/60,17+58/60],now:22+24/60,
+    hours:[['23:00','cloud',0,13],['00:00','cloud',22,12],['01:00','cloud',35,13],['02:00','drizzle',49,13],['03:00','drizzle',64,13],['04:00','drizzle',75,13]],
+    days:[['Tue','drizzle',91,11,13],['Wed','rain',66,8,13],['Thu','rain',72,7,14]],
+    last:{icon:'globe',title:'A rather long story page title that keeps going past the card',host:'127.0.0.1:43939'},
+    codex:{v:23,plan:'prolite',win:'7d',reset:'5d 0h',wh:168},
+    claude:{v:10,win:'5h',reset:'3h 5m',wh:5,inner:{w:'7d',v:96,reset:'2h 35m',wh:168},extra:{w:'7d-fab',v:89,reset:'2h 35m'}},
+    chart:{max:50,win:'7d · 5h',cl:'5h',upd:'22:23',
+      claude:step([[2,0],[4,3],[6,7],[6,9],[4,10],[1,0],[6,2],[5,4],[4,7],[5,ramp(10,20)],[1,0],[5,ramp(1,10)]]),
+      codex:step([[2,15],[2,18],[24,22],[21,23]])},
+    jaish:{v:'81.25',when:'today 07:12',dl:'▾ 0.30',bf:'19.2%',d:JAISH,mn:81.2,mx:82.8},
+    pop:{settled:false,kg:'7.65'}},
+};
+const key=(location.hash||'#idle').slice(1);const D=S[key]||S.idle;
+
+/* ================= colour helpers (F1) ================= */
+const stops=[[0,[132,140,236]],[5,[110,168,236]],[9,[96,196,204]],[13,[138,206,146]],[17,[228,190,104]],[24,[238,134,104]]];
+function tc(t){for(let i=1;i<stops.length;i++){const[a,c1]=stops[i-1],[b,c2]=stops[i];if(t<=b||i==stops.length-1){const k=Math.max(0,Math.min(1,(t-a)/(b-a)));return`rgb(${c1.map((v,j)=>Math.round(v+(c2[j]-v)*k))})`}}}
+function tq(t){const m=tc(t).match(/\d+/g).map(Number),s=[150,160,176];return`rgb(${m.map((v,j)=>Math.round(v*.62+s[j]*.38))})`}
+function smooth(P){let d=`M${P[0]}`;for(let i=0;i<P.length-1;i++){const p0=P[i-1]||P[i],p1=P[i],p2=P[i+1],p3=P[i+2]||p2;
+ d+=` C${p1[0]+(p2[0]-p0[0])/6},${p1[1]+(p2[1]-p0[1])/6} ${p2[0]-(p3[0]-p1[0])/6},${p2[1]-(p3[1]-p1[1])/6} ${p2[0]},${p2[1]}`}return d}
+function lighten(hex,k){const n=parseInt(hex.slice(1),16),r=n>>16,g=n>>8&255,b=n&255;return`rgb(${[r,g,b].map(v=>Math.round(v+(255-v)*k))})`}
+const toH=s=>{let h=0;s.replace(/(\d+)d/,(m,a)=>h+=24*a).replace(/(\d+)h/,(m,a)=>h+=+a).replace(/(\d+)m/,(m,a)=>h+=a/60);return h};
+const cyc='<svg class="i ic" width="16" height="16"><use href="#cycle"/></svg>';
+
+/* ================= weather ================= */
+$('hero').textContent=D.t+'°';$('hero').style.color=tc(D.t);
+$('cond').textContent=D.cond;$('condic').setAttribute('href','#'+D.condic);
+$('rainnow').textContent=D.rain+'%';
+$('lo').textContent=D.lo+'°';$('lo').style.color=tq(D.lo);$('hi').textContent=D.hi+'°';$('hi').style.color=tq(D.hi);
+const dr=$('dayrange');dr.style.left='0';dr.style.right='0';dr.style.background=`linear-gradient(90deg,${tq(D.lo)},${tq(D.hi)})`;dr.style.opacity=.7;
+$('tnow').style.left=`calc(${(D.t-D.lo)/(D.hi-D.lo)*100}% - 1.5px)`;
+(()=>{const s=$('sun'),W=456,X=h=>W*h/24,ty=18,[r,st]=D.sun,sq='#a89a74',f=h=>`${String(Math.floor(h)).padStart(2,'0')}:${String(Math.round(h%1*60)).padStart(2,'0')}`;
+ s.innerHTML=`<rect x="0" y="${ty-3}" width="${W}" height="6" rx="3" fill="rgba(255,255,255,.06)"/>
+ <rect x="${X(r)}" y="${ty-3}" width="${X(st)-X(r)}" height="6" rx="3" fill="${sq}" fill-opacity=".35"/>
+ <line x1="${X(r)}" x2="${X(r)}" y1="${ty-10}" y2="${ty+10}" stroke="${sq}" stroke-width="2"/>
+ <line x1="${X(st)}" x2="${X(st)}" y1="${ty-10}" y2="${ty+10}" stroke="${sq}" stroke-width="2"/>
+ <line x1="${X(D.now)}" x2="${X(D.now)}" y1="${ty-9}" y2="${ty+9}" stroke="var(--fg)" stroke-width="3" stroke-linecap="round"/>
+ <text x="${X(r)}" y="${ty+38}" text-anchor="middle">${f(r)}</text>
+ <text x="${X(st)}" y="${ty+38}" text-anchor="middle">${f(st)}</text>`;})();
+
+(()=>{const H=D.hours;let pk=0;H.forEach((h,i)=>{if(h[2]>H[pk][2])pk=i});
+ $('rpk').textContent=H[pk][2];$('rby').textContent='by '+H[pk][0];
+ const s=$('hours'),W=456,x0=30,x1=W-30,X=i=>x0+(x1-x0)*i/5,base=246,rY=p=>base-p*1.42;
+ const tm=H.reduce((a,h)=>a+h[3],0)/H.length,tY=t=>66-(t-tm)*22;
+ let g=`<defs><linearGradient id="ra" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="${css('--rain')}" stop-opacity=".42"/><stop offset="1" stop-color="${css('--rain')}" stop-opacity=".06"/></linearGradient>
+  <linearGradient id="tl" gradientUnits="userSpaceOnUse" x1="30" x2="426" y1="0" y2="0">${H.map((h,i)=>`<stop offset="${i/5}" stop-color="${tq(h[3])}"/>`).join('')}</linearGradient></defs>`;
+ H.forEach((h,i)=>{g+=`<line x1="${X(i)}" x2="${X(i)}" y1="48" y2="${base}" stroke="rgba(255,255,255,.035)"/>`;
+  g+=`<use href="#${h[1]}" x="${X(i)-15}" y="2" width="30" height="30" style="color:rgba(214,220,232,.45);fill:none;stroke:currentColor;stroke-width:1.6"/>`;});
+ const RP=H.map((h,i)=>[X(i),rY(h[2])]);
+ g+=`<path d="${smooth(RP)} L${X(5)},${base} L${X(0)},${base}Z" fill="url(#ra)"/><path d="${smooth(RP)}" fill="none" stroke="${css('--rain')}" stroke-opacity=".6" stroke-width="1.5"/>`;
+ g+=`<line x1="${x0-16}" x2="${x1+16}" y1="${base}" y2="${base}" stroke="rgba(255,255,255,.10)"/>`;
+ H.forEach((h,i)=>{g+=`<text x="${X(i)}" y="${base+28}" text-anchor="middle">${h[0]}</text>`;
+  if(h[2])g+=`<text x="${X(i)}" y="${rY(h[2])-10}" text-anchor="middle" style="fill:${i==pk?css('--rain'):css('--rainq')};${i==pk?'font-weight:600':''}">${h[2]}%</text>`;});
+ const TP=H.map((h,i)=>[X(i),tY(h[3])]);
+ g+=`<path d="${smooth(TP)}" fill="none" stroke="url(#tl)" stroke-width="3.5" stroke-linecap="round"/>`;
+ // temperature labels where it changes, plus ends
+ H.forEach((h,i)=>{const ch=i==0||i==5||h[3]!=H[i-1][3]||(H[i+1]&&h[3]!=H[i+1][3]);if(!ch)return;
+  g+=`<circle cx="${X(i)}" cy="${tY(h[3])}" r="5" fill="${tq(h[3])}" stroke="var(--bg)" stroke-width="2"/>`;
+  const low=(H[i-1]&&H[i-1][3]>h[3])||(H[i+1]&&H[i+1][3]>h[3]);
+  const ax=i==0?'start':i==5?'end':'middle',xx=i==0?X(i)+12:i==5?X(i)-12:X(i);
+  g+=`<text x="${xx}" y="${low?tY(h[3])+30:tY(h[3])-12}" text-anchor="${ax}" style="font-family:Inter;font-weight:600;font-size:20px;fill:${tq(h[3])}">${h[3]}°</text>`;});
+ s.innerHTML=g;})();
+
+(()=>{const lo=2,hi=20,P=v=>(v-lo)/(hi-lo)*100;
+ $('days').innerHTML=D.days.map(([d,ic,p,a,b])=>`<div class="d"><div class="dn">${d}</div>
+  <svg class="i" width="32" height="32" style="color:var(--fg3)"><use href="#${ic}"/></svg>
+  <div class="p t16 ${p>=80?'hot':''}">${p!=null?p+'%':''}</div>
+  <div class="trk"><i style="left:${P(a)}%;right:${100-P(b)}%;background:linear-gradient(90deg,${tq(a)},${tq(b)})"></i>
+   <span style="right:calc(${100-P(a)}% + 10px);color:${tq(a)}">${a}°</span><span style="left:calc(${P(b)}% + 10px);color:${tq(b)}">${b}°</span></div></div>`).join('');})();
+
+/* ================= middle: clock, lines ================= */
+(()=>{const ic=D.last.icon=='yt'
+  ?`<svg width="24" height="18" viewBox="0 0 24 18" style="flex:none"><rect width="24" height="18" rx="5" fill="#d9483b" fill-opacity=".85"/><path d="M10 5.5v7l5.5-3.5z" fill="#fff"/></svg>`
+  :`<svg class="i" width="22" height="22" style="color:var(--fg3);flex:none"><use href="#globe"/></svg>`;
+ const voice=top=>`<div class="line voice" style="top:${top}px"><div class="orb"></div><span class="ph">Say <q>Bing Bong</q> or start typing</span><span class="sep"></span>
+  <div class="wave"><i style="height:4px"></i><i style="height:9px"></i><i style="height:16px"></i><i style="height:11px"></i><i style="height:6px"></i><i style="height:3px"></i></div><span class="lst">LISTENING</span></div>`;
+ const last=top=>`<div class="line last t16" style="top:${top}px">${ic}<span class="cap" style="letter-spacing:.12em;flex:none">Last page</span><span class="ttl">${D.last.title}</span><span class="d3" style="flex:none">${D.last.host}</span>
+  <span class="say"><svg class="i" width="16" height="16" style="color:var(--fg3)"><use href="#mic"/></svg>resume<span class="go">›</span></span></div>`;
+ let h='';
+ if(D.timer){const T=D.timer,R=13,C=2*Math.PI*R;
+  h+=`<div class="split">
+   <div class="blk"><div class="big" style="color:var(--fg)">${D.clock[0]}<span style="color:var(--accent)">:</span>${D.clock[1]}</div><div class="sub">${D.date}</div></div>
+   <div class="sepv"></div>
+   <div class="blk"><div class="big" style="color:var(--accent)">${T.left[0]}<span>:</span>${T.left[1]}</div>
+    <div class="sub" style="display:flex;align-items:center;justify-content:center;gap:10px">
+     <svg width="30" height="30" viewBox="0 0 30 30" style="flex:none"><circle cx="15" cy="15" r="${R}" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="3.5"/><circle cx="15" cy="15" r="${R}" fill="none" stroke="var(--accent)" stroke-width="3.5" stroke-linecap="round" stroke-dasharray="${C*T.frac} ${C}" transform="rotate(-90 15 15)"/></svg>
+     <span style="color:var(--accent);font-weight:600">Timer</span><span>${T.of}</span><span class="d3">· ends ${T.ends}</span></div></div>
+  </div>`;
+  const N=D.np;
+  h+=voice(222)+`<div class="line np t16" style="top:270px"><div class="thumb"><i><b></b><b></b><b></b></i></div>
+   <span class="cap" style="letter-spacing:.12em">Now playing</span><span style="font-weight:600;color:var(--fgh);font-size:18px">${N.song}</span><span class="d3">· ${N.band}</span>
+   <div class="prog"><i style="width:${N.frac*100}%"></i><em style="left:${N.frac*100}%"></em></div><span class="d2" style="font-family:'JetBrains Mono',monospace">${N.pos} / ${N.dur}</span></div>`+last(318);
+ }else{
+  h+=`<div class="clock"><div class="t">${D.clock[0]}<span>:</span>${D.clock[1]}</div><div class="dt">${D.date}</div></div>`+voice(268)+last(316);
+ }
+ $('mid').innerHTML=h;})();
+
+/* ================= usage: F2 rings, two services ================= */
+function arc(cx,r,f0,f1){f1=Math.min(f1,.9999);const a0=-Math.PI/2+2*Math.PI*f0,a1=-Math.PI/2+2*Math.PI*f1;
+ return`M${cx+r*Math.cos(a0)},${cx+r*Math.sin(a0)} A${r},${r} 0 ${f1-f0>.5?1:0} 1 ${cx+r*Math.cos(a1)},${cx+r*Math.sin(a1)}`}
+function ringLayer(cx,r,w,v,pace,c){
+ let g=`<circle cx="${cx}" cy="${cx}" r="${r}" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="${w}"/>`;
+ if(v<=0)return g;
+ if(v<=pace){g+=`<path d="${arc(cx,r,0,v)}" fill="none" stroke="${c}" stroke-width="${w}" stroke-linecap="round"/>`;}
+ else{const hi=lighten(c,.3),a1=-Math.PI/2+2*Math.PI*v;
+  if(pace>0.004)g+=`<path d="${arc(cx,r,0,pace)}" fill="none" stroke="${c}" stroke-opacity=".85" stroke-width="${w}" stroke-linecap="round"/>`;
+  g+=`<g filter="url(#glow)"><path d="${arc(cx,r,pace,v)}" fill="none" stroke="${hi}" stroke-width="${w+6}" stroke-linecap="butt"/><circle cx="${cx+r*Math.cos(a1)}" cy="${cx+r*Math.sin(a1)}" r="${(w+6)/2}" fill="${hi}"/></g>`;}
+ return g}
+function tick(cx,rad,f,col,len,wd){const a=-Math.PI/2+2*Math.PI*f;
+ return`<line x1="${cx+(rad-len)*Math.cos(a)}" y1="${cx+(rad-len)*Math.sin(a)}" x2="${cx+(rad+len)*Math.cos(a)}" y2="${cx+(rad+len)*Math.sin(a)}" stroke="${col}" stroke-width="${wd}" stroke-linecap="round"/>`}
+function ring(el,o,c,big,name,plan,below){const S=228,cx=114,r=100,v=o.v/100,pace=1-toH(o.reset)/o.wh;
+ let g=`<svg width="${S}" height="${S}">`+ringLayer(cx,r,18,v,pace,c);
+ if(o.inner){const ri=76,iv=o.inner.v/100,ip=1-toH(o.inner.reset)/o.inner.wh;
+  g+=`<circle cx="${cx}" cy="${cx}" r="${ri}" fill="none" stroke="rgba(255,255,255,.06)" stroke-width="8"/><path d="${arc(cx,ri,0,iv)}" fill="none" stroke="${c}" stroke-opacity=".6" stroke-width="8" stroke-linecap="round"/>`;
+  g+=tick(cx,ri,ip,'rgba(240,242,246,.8)',9,3);}
+ g+=tick(cx,r,pace,'#f4f6fa',14,4)+`</svg>`;
+ const ahead=Math.round((v-pace)*100);
+ el.innerHTML=`<div class="ringbox">${g}<div class="pc"><div style="text-align:center"><div class="n6" style="font-size:${big?80:60}px;line-height:.95;letter-spacing:-.03em;color:${big?lighten(c,.12):'var(--fg)'}">${o.v}<span style="font-size:${big?30:24}px;color:var(--fg3);font-weight:500">%</span></div>${ahead>0&&big?`<div class="t18" style="color:${lighten(c,.25)};margin-top:4px;font-weight:600">+${ahead} ahead</div>`:''}</div></div></div>
+  <div class="nm t18"><span style="color:${c};font-weight:600">${name}</span> <span class="d3">${plan}</span></div>
+  <div class="mt t16 d3">${o.win} ${cyc} ${o.reset}</div>${below||''}`;}
+(()=>{const C=D.claude,X=D.codex;
+ ring($('rgCodex'),X,css('--codexq'),false,'Codex',X.plan);
+ const inner=`<div class="mt t16 d3" style="margin-top:4px;display:flex;align-items:baseline;gap:8px;justify-content:center"><span style="color:var(--claude)">${C.inner.w}</span> <span class="n6" style="font-size:40px;line-height:1.05;color:var(--fg2)">${C.inner.v}%</span> <span>${cyc} ${C.inner.reset}</span></div>
+  <div class="mt t16 d3" style="display:flex;align-items:baseline;gap:8px;justify-content:center"><span style="color:var(--claude);opacity:.8">${C.extra.w}</span> <span class="n6" style="font-size:24px;color:var(--fg2)">${C.extra.v}%</span> <span>${cyc} ${C.extra.reset}</span></div>`;
+ ring($('rgClaude'),C,css('--claude'),true,'Claude','Max 20x',inner);})();
+
+(()=>{const s=$('chart'),Ch=D.chart,W=664,Hh=240,x0=44,x1=W-96,y0=48,y1=Hh-46,N=Ch.claude.length-1;
+ const X=i=>x0+(x1-x0)*i/N,Y=v=>y1-(y1-y0)*v/Ch.max;let g='';
+ g+=`<line x1="${x0}" x2="${x1}" y1="${Y(0)}" y2="${Y(0)}" stroke="rgba(255,255,255,.12)"/>`;
+ [Ch.max/2,Ch.max].forEach(v=>g+=`<line x1="${x0}" x2="${x1}" y1="${Y(v)}" y2="${Y(v)}" stroke="rgba(255,255,255,.06)" stroke-dasharray="2 7"/>`);
+ g+=`<text x="${x0-10}" y="${Y(Ch.max)+6}" text-anchor="end">${Ch.max}</text><text x="${x0-10}" y="${Y(Ch.max/2)+6}" text-anchor="end">${Ch.max/2}</text><text x="${x0-10}" y="${Y(0)+6}" text-anchor="end">0</text>`;
+ g+=`<text x="${x0}" y="${Hh-14}">−12h</text><text x="${(x0+x1)/2}" y="${Hh-14}" text-anchor="middle">−6h</text><text x="${x1}" y="${Hh-14}" text-anchor="end">now · updated ${Ch.upd}</text>`;
+ // legend: series + windows
+ g+=`<line x1="${x0}" x2="${x0+18}" y1="16" y2="16" stroke="${css('--codexq')}" stroke-width="3.5" stroke-linecap="round"/><text x="${x0+26}" y="21">Codex · 7d</text>`;
+ g+=`<line x1="${x0+150}" x2="${x0+168}" y1="16" y2="16" stroke="${css('--claude')}" stroke-width="4" stroke-linecap="round"/><text x="${x0+176}" y="21">Claude · ${Ch.cl}</text>`;
+ g+=`<text x="${W-6}" y="21" text-anchor="end">last 12 h</text>`;
+ const stepPts=d=>{let p=[];d.forEach((v,i)=>{if(i)p.push(`${X(i)},${Y(d[i-1])}`);p.push(`${X(i)},${Y(v)}`)});return p.join(' ')};
+ [['--codexq',Ch.codex,0],['--claude',Ch.claude,1]].forEach(([cv,d,o])=>{const c=css(cv),pts=stepPts(d),e=d[N];
+  if(o)g+=`<defs><linearGradient id="cg" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="${c}" stop-opacity=".14"/><stop offset="1" stop-color="${c}" stop-opacity="0"/></linearGradient></defs><polygon points="${X(0)},${y1} ${pts} ${X(N)},${y1}" fill="url(#cg)"/>`;
+  g+=`<polyline points="${pts}" fill="none" stroke="${c}" stroke-width="${o?4:3.5}" stroke-linejoin="round" stroke-linecap="round"/><circle cx="${X(N)}" cy="${Y(e)}" r="7" fill="${c}" stroke="var(--bg)" stroke-width="2"/>`;
+  const ly=Math.abs(Y(Ch.codex[N])-Y(Ch.claude[N]))<36?(o?Y(e)-6:Y(e)+30):Y(e)+14;
+  g+=`<text x="${X(N)+16}" y="${ly}" style="font-family:Inter;font-weight:600;font-size:40px;fill:${o?lighten(c,.1):c}">${e}</text>`;});
+ s.innerHTML=g;})();
+
+/* ================= calendar ================= */
+(()=>{const W=['MON','TUE','WED','THU','FRI','SAT','SUN'],wn=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+ $('calday').textContent=D.today;$('calsub').textContent=`${wn[D.wd]} · October 2026`;
+ let h=W.map((w,i)=>`<div class="w ${i==D.wd?'tw':''}">${w}</div>`).join('');
+ [19,20,21,22,23,24,25,26,27,28,29,30,31,1].forEach((n,i)=>h+=`<div class="n ${n==D.today?'td':''} ${i==13?'nx':''}">${n}</div>`);
+ $('cal').innerHTML=h;})();
+
+/* ================= weight (F1) ================= */
+(()=>{const s=$('wt'),W=456,x0=52,x1=W-8,J=D.jaish;
+ const P=[
+  {n:'Jaish',when:J.when,c:css('--jaishq'),d:J.d,mn:J.mn,mx:J.mx,v:J.v,dl:J.dl,dc:css('--down'),bf:J.bf,top:0},
+  {n:'Barun',when:'yesterday',c:css('--barunq'),d:BARUN,mn:71.5,mx:72.4,v:'72.40',dl:'▴ 0.20',dc:css('--up'),bf:'17.8%',top:200}];
+ let g='';
+ P.forEach(p=>{const hb=p.top+86,y0=p.top+108,y1=p.top+172,Y=v=>y1-(y1-y0)*(v-p.mn)/(p.mx-p.mn);
+  g+=`<text x="-3" y="${hb}" style="font-family:Inter;font-weight:600;font-size:68px;letter-spacing:-2px;fill:var(--fgh)">${p.v}</text>`;
+  g+=`<text x="188" y="${hb}" style="font-family:Inter;font-weight:500;font-size:20px;fill:var(--fg3)">kg</text>`;
+  g+=`<text x="222" y="${hb}" style="font-family:Inter;font-weight:600;font-size:38px;fill:${p.dc}">${p.dl}</text>`;
+  g+=`<text x="${W}" y="${hb-48}" text-anchor="end" style="font-family:Inter;font-weight:600;font-size:18px;fill:${p.c}">${p.n}</text>`;
+  g+=`<text x="${W}" y="${hb-24}" text-anchor="end" style="font-family:Inter">${p.when}</text>`;
+  g+=`<text x="${W}" y="${hb}" text-anchor="end" style="font-family:Inter">${p.bf} fat</text>`;
+  const X=i=>x0+(x1-x0)*i/(p.d.length-1);const pts=p.d.map((v,i)=>[X(i),Y(v)]);
+  g+=`<line x1="${x0}" x2="${x1}" y1="${y0}" y2="${y0}" stroke="rgba(255,255,255,.05)" stroke-dasharray="2 6"/><line x1="${x0}" x2="${x1}" y1="${y1}" y2="${y1}" stroke="rgba(255,255,255,.05)" stroke-dasharray="2 6"/>`;
+  g+=`<text x="${x0-8}" y="${y0+5}" text-anchor="end">${p.mx.toFixed(1)}</text><text x="${x0-8}" y="${y1+5}" text-anchor="end">${p.mn.toFixed(1)}</text>`;
+  g+=`<defs><linearGradient id="wf${p.n}" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="${p.c}" stop-opacity=".14"/><stop offset="1" stop-color="${p.c}" stop-opacity="0"/></linearGradient></defs>`;
+  g+=`<path d="${smooth(pts)} L${x1},${y1} L${x0},${y1}Z" fill="url(#wf${p.n})"/>`;
+  g+=`<path d="${smooth(pts)}" fill="none" stroke="${p.c}" stroke-width="2.5" stroke-linejoin="round"/>`;
+  const e=pts[pts.length-1];g+=`<circle cx="${e[0]}" cy="${e[1]}" r="6" fill="${p.dc}" stroke="var(--bg)" stroke-width="2"/>`;});
+ g+=`<text x="${x0}" y="398">−30d</text><text x="${(x0+x1)/2}" y="398" text-anchor="middle">Δ since the last Weigh-in</text><text x="${x1}" y="398" text-anchor="end">now</text>`;
+ s.innerHTML=g;})();
+
+/* ================= weigh-in pop-up ================= */
+(()=>{const p=D.pop;if(!p)return;let h;
+ if(p.settled){
+  h=`<div class="pop"><div class="row">
+    <div class="check"><svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#0b1a12" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div>
+    <div class="kg" style="color:var(--fg)">${p.kg}<small>kg</small></div></div>
+   <div class="who" style="margin-left:90px;font-size:24px"><span class="dot" style="background:var(--jaish)"></span><b style="color:var(--jaish);font-weight:600">${p.who}</b>
+    <span class="d3">·</span><b style="color:var(--down);font-weight:600">${p.dl}</b><span class="d2">since the last Weigh-in</span></div>
+   <div class="fix"><span class="t16 d3">not ${p.who}?</span><div class="btn"><span class="dot" style="background:var(--barun)"></span>${p.other}</div></div>
+  </div>`;
+ }else{
+  const R=26,C=2*Math.PI*R;
+  h=`<div class="pop"><div class="row">
+    <div class="spin pulse"><svg width="64" height="64" viewBox="0 0 64 64"><circle cx="32" cy="32" r="${R}" fill="none" stroke="rgba(240,162,122,.16)" stroke-width="5"/><circle cx="32" cy="32" r="${R}" fill="none" stroke="var(--accent)" stroke-width="5" stroke-linecap="round" stroke-dasharray="${C*.28} ${C}" transform="rotate(-40 32 32)"/></svg></div>
+    <div class="kg" style="color:var(--fg2)">${p.kg}<small>kg</small></div></div>
+   <div class="who" style="margin-left:90px"><span class="dot pulse" style="background:var(--accent);width:10px;height:10px"></span><span style="color:var(--accent);font-weight:600">weighing…</span></div>
+  </div>`;
+ }
+ $('popup').innerHTML=h;})();
+</script>
+</body>
+</html>

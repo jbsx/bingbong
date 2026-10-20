@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Bing Bong Shell</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=block" rel="stylesheet">
+<link rel="stylesheet" href="shell-chrome.css">
+<style>
+html,body{width:1920px;height:1080px;overflow:hidden}
+body{position:relative}
+
+/* ---------- web pane frame ---------- */
+.pane{position:absolute;left:16px;top:var(--tb-h);bottom:16px;right:552px;border-radius:20px;overflow:hidden;
+  border:1px solid var(--hair2);background:#131313}
+body.nofeed .pane{right:16px}
+
+/* ---------- activity feed ---------- */
+.feed{position:absolute;right:16px;top:var(--tb-h);bottom:16px;width:520px;border-radius:20px;
+  background:var(--surface);border:1px solid var(--hair);display:flex;flex-direction:column;overflow:hidden}
+body.nofeed .feed{display:none}
+.fh{height:64px;flex:none;display:flex;align-items:center;padding:0 12px 0 24px;border-bottom:1px solid var(--hair)}
+.fh .t{font-size:16px;font-weight:600;letter-spacing:.16em;color:var(--fg3)}
+.fh .n{font-family:"JetBrains Mono",monospace;font-size:16px;color:var(--fg3);margin-left:12px}
+.fh .sp{flex:1}
+.fh .ib{width:44px;height:44px}
+.fh .ib.dk{background:var(--accentq);color:var(--accent)}
+
+.fl{flex:1;overflow:hidden;position:relative}
+.fs{position:absolute;inset:0;overflow-y:scroll;-webkit-mask-image:linear-gradient(transparent 0,#000 28px);padding:18px 26px 22px 20px;scrollbar-width:none}
+.fs::-webkit-scrollbar{display:none}
+.thumb{position:absolute;right:6px;width:4px;border-radius:2px;background:rgba(255,255,255,.14)}
+.empty{font-size:22px;color:var(--fg3);padding:8px 4px}
+.empty q{quotes:"\201C" "\201D";color:var(--fg2)}
+
+.e{display:grid;grid-template-columns:88px 22px 1fr;align-items:start;margin-bottom:12px}
+.e .ts{font-family:"JetBrains Mono",monospace;font-size:16px;color:var(--fg3);padding-top:6px;white-space:nowrap}
+/* command: what was said/typed */
+.e.c .w{grid-column:2/4;justify-self:end;max-width:100%;text-align:left;
+  background:var(--raise);border:1px solid var(--hair);border-radius:16px 16px 4px 16px;padding:9px 16px 10px}
+.e.c .w .s{font-size:21px;line-height:1.36;color:var(--fgh);overflow-wrap:break-word}
+.e.c .w .a{font-family:"JetBrains Mono",monospace;font-size:16px;color:var(--fg3);margin-top:3px}
+.e.c.cur .w{border-color:rgba(240,162,122,.5);background:rgba(240,162,122,.08);border-width:1.5px}
+.e.c.cur .w .s{font-size:27px;line-height:1.28;font-weight:500;color:var(--fg)}
+.pbar{position:absolute;left:0;top:0;height:4px;width:38%;background:var(--accent);z-index:2;border-radius:0 3px 3px 0;box-shadow:0 0 12px rgba(240,162,122,.5)}
+.e.c.unk .w{background:transparent;border-style:dashed;border-color:var(--hair2)}
+.e.c.unk .w .s{color:var(--fg3)}
+/* run detail */
+.rd{display:grid;grid-template-columns:88px 22px 1fr;margin:-4px 0 10px}
+.rd .r{grid-column:3;display:flex;align-items:center;gap:10px;height:32px;padding:0 12px;border-radius:8px;background:var(--surface);border:1px solid var(--hair);
+  font-size:16px;font-weight:600;letter-spacing:.12em;color:var(--fg3);white-space:nowrap}
+.rd .r .tri{font-size:12px;letter-spacing:0}
+.rd .r .k{font-family:"JetBrains Mono",monospace;font-weight:500;letter-spacing:0;color:var(--fg3)}
+body.docked .rd .r{background:transparent;border-color:transparent}
+.rd.work .r{color:var(--accent);background:var(--accentq);border-color:rgba(240,162,122,.28)}
+.rd.work .r .k{color:var(--accent)}
+.rd.work .r .bar{flex:1;height:3px;border-radius:2px;background:rgba(240,162,122,.18);position:relative;overflow:hidden;margin-left:6px}
+.rd.work .r .bar i{position:absolute;left:0;top:0;bottom:0;width:55%;background:var(--accent);border-radius:2px}
+/* answer */
+.e.ans .mk{width:12px;height:12px;border-radius:50%;margin-top:11px;background:var(--idle)}
+.e.ans .b{border-left:3px solid var(--idle);padding:4px 0 4px 16px}
+.e.ans .b p{font-size:21px;line-height:1.38;color:var(--fg2)}
+.e.ans .b p+p{margin-top:10px}
+.e.ans .b h4{font-size:21px;font-weight:600;color:var(--fg2);margin-bottom:6px}
+.e.ok .mk{background:var(--ok)} .e.ok .b{border-color:rgba(111,220,162,.55)}
+.e.fail .mk{background:var(--fail)} .e.fail .b{border-color:rgba(255,122,107,.6)}
+.e.neu .mk{background:var(--idle)} .e.neu .b{border-color:rgba(200,208,224,.30)}
+/* the newest answer: headline — read from 3 m */
+.e.ans.last .mk{width:22px;height:22px;margin-top:8px;margin-left:-5px;display:grid;place-items:center;color:#07090d}
+.e.ans.last .mk svg{width:14px;height:14px}
+.e.ans.last .b{border-left-width:4px;padding:2px 0 4px 18px}
+.e.ans.last .b p{font-size:28px;line-height:1.3;font-weight:500;color:var(--fg);letter-spacing:-.01em}
+.e.ans.last .b h4{font-size:32px;font-weight:600;color:var(--fg);letter-spacing:-.015em;margin-bottom:8px}
+.e.ans.last .b p+p{margin-top:12px;font-size:24px;color:var(--fgh)}
+.e.ok.last .b{border-color:var(--ok)} .e.fail.last .b{border-color:var(--fail)}
+.e.fail.last .b p:first-child{color:#ffd9d3}
+.e.neu.last .b{border-color:rgba(200,208,224,.55)}
+
+/* ---------- voice / command line ---------- */
+.vl{flex:none;border-top:1px solid var(--hair);padding:14px 16px 16px 20px}
+.vrow{display:flex;align-items:center;gap:14px;height:52px}
+.orb{width:16px;height:16px;border-radius:50%;flex:none;background:radial-gradient(circle at 35% 30%,#ffd2b4,#f0a27a 60%,#d9806a);
+  box-shadow:0 0 0 5px rgba(240,162,122,.10),0 0 16px rgba(240,162,122,.40)}
+.vin{flex:1;height:52px;display:flex;align-items:center;border-bottom:1px solid var(--hair2);font-size:19px;color:var(--fg3);white-space:nowrap;overflow:hidden}
+.vin q{quotes:"\201C" "\201D";color:var(--fg2);font-weight:500}
+.btn{height:48px;padding:0 22px;border-radius:24px;display:grid;place-items:center;font-size:19px;font-weight:600;flex:none}
+.btn.run{background:var(--accent);color:var(--onaccent)}
+.btn.run.dim{background:transparent;color:var(--fg3);border:1px solid var(--hair2)}
+.btn.stop{background:rgba(255,122,107,.12);color:var(--fail);border:1px solid rgba(255,122,107,.55);display:flex;gap:10px}
+.btn.stop i{width:12px;height:12px;border-radius:2px;background:var(--fail)}
+/* listening */
+.vl.listen{background:rgba(240,162,122,.05);border-top-color:rgba(240,162,122,.28)}
+.lh{display:flex;align-items:center;gap:14px;margin:4px 0 12px}
+.lh .lst{font-family:"JetBrains Mono",monospace;font-size:16px;letter-spacing:.14em;color:var(--accent);font-weight:500}
+.lh .hint{font-size:16px;color:var(--fg3);margin-left:auto}
+.lh .hint q{quotes:"\201C" "\201D"}
+.wave{display:flex;gap:3px;align-items:center;height:28px}
+.wave i{width:3px;border-radius:2px;background:var(--accent)}
+.said{font-size:36px;line-height:1.2;font-weight:500;letter-spacing:-.015em;color:var(--fg);padding:2px 0 14px}
+.said em{font-style:normal;color:var(--accent)}
+.said .caret{display:inline-block;width:3px;height:36px;background:var(--accent);vertical-align:-6px;margin-left:3px;border-radius:1px}
+
+/* ---------- edge tab (collapsed) ---------- */
+.edge{position:absolute;right:0;top:470px;width:44px;height:200px;border-radius:14px 0 0 14px;background:var(--raise);border:1px solid var(--hair2);border-right:none;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;z-index:4}
+.edge span{writing-mode:vertical-rl;font-size:16px;font-weight:600;letter-spacing:.18em;color:var(--fg2)}
+.edge svg{color:var(--fg3)}
+
+/* ---------- foreign pages (NOT themed) ---------- */
+.pg{position:absolute;inset:0;font-family:"Times New Roman",Times,"Liberation Serif",serif;color:#fff}
+.pg.story{background:#222;padding:10px 14px}
+.pg.story h1{font-size:42px;font-weight:700;line-height:1.2;margin:0 0 26px}
+.pg.story p{font-size:21px;margin:0 0 21px}
+.pg.blank{background:#131313}
+.pg.nothing{background:#1e1e1e}
+.pg.yt{background:#222}
+.pg.consent{background:#0a0a0a;padding:20px 0 0 0}
+.pg.consent h1{font-size:42px;color:#4b4b4b;font-weight:700;margin:0 0 30px;margin-left:-26px}
+.pg.consent .bb{display:inline-block;background:#3d3d3d;color:#0b0b0b;font-family:Arial,sans-serif;font-size:25px;padding:3px 10px;border:1px solid #555}
+.pg.consent a{color:#06064a;font-size:25px;margin-left:6px}
+.pg.dialog{background:#333;padding:52px 35px}
+.pg.dialog h2{font-size:32px;font-weight:700;margin:0 0 56px}
+.pg.dialog button{font:25px Arial,sans-serif;background:#efefef;color:#000;border:1px solid #767676;padding:3px 9px;margin-right:2px}
+.pg.inter{background:#222}
+.pg.inter h1{font-size:42px;font-weight:700;margin:20px 0 0 -2px}
+.pg.inter .row{position:absolute;left:0;top:250px;display:flex;align-items:flex-end;gap:6px;font-family:Arial,sans-serif}
+.pg.inter button{font:18px Arial,sans-serif;background:#efefef;color:#000;border:1px solid #767676;padding:3px 9px}
+.pg.inter a{color:#0000ee;font:21px "Times New Roman",serif}
+.pg.inter input[type=text]{width:424px;height:42px;font:30px Arial;padding:0 4px;border:1px solid #767676;background:#fff}
+.pg.inter textarea{width:230px;height:46px;font:16px monospace;padding:4px;margin-bottom:10px}
+.pg.inter select{font:18px Arial;height:26px;margin-bottom:6px}
+.pg.inter input[type=checkbox]{width:16px;height:16px;margin-bottom:14px}
+.pg.inter .vid{position:absolute;left:1209px;top:104px;width:330px;height:233px;background:linear-gradient(#3a3a3a,#2b2b2b 60%,#111);}
+.pg.inter .vid .ctl{position:absolute;left:22px;right:0;bottom:44px;display:flex;align-items:center;gap:20px;color:#fff;font:18px Arial}
+.pg.inter .vid .ln{position:absolute;left:22px;right:0;bottom:27px;height:3px;background:#777}
+.pg.emp{background:#222;padding:10px 14px;font-size:21px;line-height:1.17}
+.pg.emp a{color:#00e;text-decoration:underline}
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute">
+ <defs>
+  <symbol id="back" viewBox="0 0 24 24"><path d="M19 12H5M11 6l-6 6 6 6"/></symbol>
+  <symbol id="fwd" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+  <symbol id="panel" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M14.5 4.5v15"/></symbol>
+  <symbol id="gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></symbol>
+  <symbol id="dock" viewBox="0 0 24 24"><path d="M4 12h12M11 7l5 5-5 5M20 5v14"/></symbol>
+  <symbol id="undock" viewBox="0 0 24 24"><path d="M20 12H8M13 7l-5 5 5 5M4 5v14"/></symbol>
+  <symbol id="chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
+  <symbol id="chevl" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></symbol>
+  <symbol id="timer" viewBox="0 0 24 24"><circle cx="12" cy="13.5" r="7.5"/><path d="M12 13.5V9.5M9.5 2.5h5M18 6.5l1.5-1.5"/></symbol>
+  <symbol id="note" viewBox="0 0 24 24"><path d="M9 18V5.5l11-2V16"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="17.5" cy="16" r="2.5"/></symbol>
+  <symbol id="pause" viewBox="0 0 24 24"><path d="M8 5v14M16 5v14"/></symbol>
+  <symbol id="tick" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+  <symbol id="cross" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+  <symbol id="dash" viewBox="0 0 24 24"><path d="M6 12h12"/></symbol>
+  <symbol id="mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></symbol>
+ </defs>
+</svg>
+
+<div id="app"></div>
+
+<script>
+const B='http://127.0.0.1:40415/';
+// ---- the feed, in the order the run produced it (log.txt) ----
+const C=(ts,s,a,o={})=>({k:'c',ts,s,a,...o});
+const A=(ts,st,ps,o={})=>({k:'a',ts,st,ps,...o});
+const R=n=>({k:'r',n});
+const F=[
+ C('09:53:17','navigate '+B+'story'),R(2),A('09:53:18','ok',['Opened story fixture.']),            //0-2
+ C('09:53:19','read','read the page'),R(3),A('09:53:19','ok',['The lighthouse','The keeper climbed the stairs. The lamp was cold.','He lit it before dark.'],{h:'story fixture'}), //3-5
+ C('09:53:20','click 999','click [999]'),R(2),A('09:53:20','fail',["There's no item 999 on this page."]), //6-8
+ C('09:53:21','scroll down'),R(2),A('09:53:22','ok',['Already at the bottom.']),                  //9-11
+ C('09:53:23','zorblax the quux thing',null,{unk:1}),A('09:53:23','neu',['No response.','Jev is off, and the words aren’t a command the grammar knows — try “help”.']), //12-13
+ C('09:53:24','back'),R(2),A('09:53:24','fail',["There's no page to go back to."]),              //14-16
+ C('09:53:28','navigate '+B+'held-response'),R(3),A('09:53:31','neu',['Stopped.']),               //17-19
+ C('09:53:33','navigate '+B+'consent-wall'),R(2),A('09:53:34','ok',['Opened submitted:consent.']), //20-22
+ C('09:53:36','navigate '+B+'dialog-wall'),R(2),A('09:53:36','ok',['Opened dialog wall fixture.']), //23-25
+ C('09:53:37','navigate '+B+'interactive'),R(2),A('09:53:37','ok',['Opened interactive fixture.']), //26-28
+ C('09:53:38','screenshot'),R(2),A('09:53:38','ok',['Saved a screenshot to downloads.']),          //29-31
+ C('09:53:40','navigate http://127.0.0.1:1/nothing'),R(2),A('09:53:40','fail',["That address can't be opened."]), //32-34
+ C('09:53:41','navigate '+B+'empty-main'),R(2),A('09:53:41','fail',["That site can't show the page right now."]), //35-37
+ C('09:53:42','timer 25 minutes'),R(2),A('09:53:42','ok',['Timer set for 25 minutes.']),          //38-40
+ C('09:53:44','play fixture song'),R(2),A('09:53:44','ok',['Playing “Fixture Song”.']),   //41-43
+ C('09:53:47','pause'),R(2),A('09:53:47','ok',['Paused.']),                                        //44-46
+];
+const upto=n=>F.slice(0,n);
+
+// ---- states ----
+const S={
+ '06-awake':        {page:'blank',url:'',feed:'closed',backOff:1},
+ '07-feed-empty':   {page:'blank',url:'',feed:[] ,backOff:1},
+ '08-page-loaded':  {page:'story',url:B+'story',feed:upto(3),backOff:1},
+ '09-read-answer':  {page:'story',url:B+'story',feed:upto(6),backOff:1},
+ '10-failure':      {page:'story',url:B+'story',feed:upto(9),backOff:1},
+ '11-scrolled':     {page:'story',url:B+'story',feed:upto(12),backOff:1},
+ '12-unknown-command':{page:'story',url:B+'story',feed:upto(14),backOff:1},
+ '13-back':         {page:'story',url:B+'story',feed:upto(17),backOff:1},
+ '14-collapsed-peek':{page:'story',url:B+'story',feed:'closed',backOff:1},
+ '15-docked':       {page:'story',url:B+'story',feed:upto(17),docked:1,backOff:1},
+ '16-loading':      {page:'story',url:B+'held-response',feed:upto(18),docked:1,backOff:1,work:1},
+ '17-stopped':      {page:'story',url:B+'story',feed:upto(20),docked:1,backOff:1,status:'stop'},
+ '18-consent-wall': {page:'consent',url:B+'consent-wall',feed:upto(23)},
+ '19-dialog-wall':  {page:'dialog',url:B+'dialog-wall',feed:upto(26)},
+ '20-screenshot-cmd':{page:'inter',url:B+'interactive',feed:upto(32)},
+ '21-nav-failed':   {page:'nothing',url:'http://127.0.0.1:1/nothing',feed:upto(35)},
+ '22-empty-landing':{page:'emp',url:B+'empty-main',feed:upto(38)},
+ '23-timer':        {page:'emp',url:B+'empty-main',feed:upto(41),timer:'24:59'},
+ '24-music-playing':{page:'yt',url:'https://www.youtube.com/watch?v=fixtureSng1',feed:upto(44),timer:'24:56',song:'play'},
+ '25-music-paused': {page:'yt',url:'https://www.youtube.com/watch?v=fixtureSng1',feed:upto(47),timer:'24:54',song:'pause'},
+ '30-listening':    {page:'story',url:B+'story',feed:upto(3),backOff:1,status:'listen'},
+};
+
+const PAGES={
+ blank:'<div class="pg blank"></div>',
+ nothing:'<div class="pg nothing"></div>',
+ yt:'<div class="pg yt"></div>',
+ story:'<div class="pg story"><h1>The lighthouse</h1><p>The keeper climbed the stairs. The lamp was cold.</p><p>He lit it before dark.</p></div>',
+ consent:'<div class="pg consent"><h1>A page behind a consent wall</h1><span class="bb">Background button</span><a href="#">Background link</a></div>',
+ dialog:'<div class="pg dialog"><h2>Sign in to continue to this fixture</h2><button>Sign in</button> <button>Not now</button></div>',
+ inter:`<div class="pg inter"><h1>interactive fixture page</h1>
+   <div class="row"><button>Say hello</button><button>Do nothing</button><button>Open dialog</button><a href="#">Second page</a>
+   <input type="text" placeholder="Type here"><textarea placeholder="Notes"></textarea><select><option>Alpha</option></select><input type="checkbox"></div>
+   <div class="vid"><div class="ctl"><span>&#9654;</span><span>0:00</span><span style="margin-left:150px">&#128264;</span></div><div class="ln"></div></div></div>`,
+ emp:'<div class="pg emp"><a>Fixture Museums</a> <a>Collections</a><br>The search service is currently unavailable. Please try again later.<br><a>Contact us</a></div>',
+};
+
+const ic=(id,s=24)=>`<svg class="i" width="${s}" height="${s}"><use href="#${id}"/></svg>`;
+const esc=s=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;');
+function url(u){
+  if(!u) return '<span class="u ph">Enter address or search</span>';
+  const m=u.match(/^(https?:\/\/)([^/]+)(.*)$/);
+  return `<span class="u"><span class="rest">${m[1]}</span><span class="host">${m[2]}</span><span class="rest">${esc(m[3])}</span></span>`;
+}
+function wave(hs){return '<div class="wave">'+hs.map(h=>`<i style="height:${h}px"></i>`).join('')+'</div>'}
+
+function toolbar(st){
+  let cap;
+  if(st.work) cap=`<div class="cap work"><span class="dot"></span><span class="lbl">Acting…</span><span class="sec">3s</span></div>`;
+  else if(st.status==='stop') cap=`<div class="cap stop"><span class="dot"></span><span class="lbl">Stopped</span></div>`;
+  else if(st.status==='listen') cap=`<div class="cap listen"><span class="dot"></span><span class="lbl">Listening</span>${wave([5,11,19,13,7,4])}</div>`;
+  else cap=`<div class="cap ready"><span class="dot"></span><span class="lbl">Ready</span></div>`;
+  let chips='';
+  if(st.timer) chips+=`<div class="chip">${ic('timer',22)}<span class="tm">${st.timer}</span></div>`;
+  if(st.song==='play') chips+=`<div class="chip">${ic('note',22)}<span class="sg">Fixture Song</span></div>`;
+  if(st.song==='pause') chips+=`<div class="chip paused">${ic('pause',22)}<span class="sg">Fixture Song</span></div>`;
+  const open=Array.isArray(st.feed);
+  return `<header class="tb">
+    <div class="grp">${cap}${chips}</div>
+    <div class="mid">
+      <div class="ib ${st.backOff?'off':''}">${ic('back')}</div>
+      <div class="ib off">${ic('fwd')}</div>
+      <div class="addr">${url(st.url)}${st.work?'<span class="spin"></span><span class="prog"></span>':''}</div>
+    </div>
+    <div class="grp end">
+      <div class="ib ${open?'on':''}">${ic('panel')}</div>
+      <div class="ib">${ic('gear')}</div>
+    </div>
+  </header>`;
+}
+
+function entry(e,isLast){
+  if(e.k==='c') return `<div class="e c${e.unk?' unk':''}${e.cur?' cur':''}"><div class="ts">${e.ts}</div><div class="w"><div class="s">${esc(e.s)}</div>${e.a?`<div class="a">${esc(e.a)}</div>`:''}</div></div>`;
+  if(e.k==='r') return `<div class="rd${e.work?' work':''}"><div class="r"><span class="tri">▶</span>${e.work?'WORKING':'RUN DETAIL'}<span class="k">${e.n}</span>${e.work?'<span class="bar"><i></i></span>':''}</div></div>`;
+  const glyph={ok:'tick',fail:'cross',neu:'dash'}[e.st];
+  return `<div class="e ans ${e.st}${isLast?' last':''}"><div class="ts">${e.ts}</div><div class="mk">${isLast?`<svg class="i" style="stroke-width:3"><use href="#${glyph}"/></svg>`:''}</div>
+    <div class="b">${e.h?`<h4>${esc(e.h)}</h4>`:''}${e.ps.map(p=>`<p>${esc(p)}</p>`).join('')}</div></div>`;
+}
+
+function feed(st){
+  if(!Array.isArray(st.feed)) return `<div class="edge">${ic('chevl',20)}<span>ACTIVITY</span></div>`;
+  let items=st.feed.slice();
+  if(st.work){items[items.length-1]={...items[items.length-1],cur:1};items.push({k:'r',n:2,work:1});}
+  let lastA=-1; items.forEach((e,i)=>{if(e.k==='a')lastA=i});
+  // the newest answer is the headline only while nothing newer was said
+  if(lastA>=0 && items.slice(lastA+1).some(e=>e.k==='c')) lastA=-1;
+  const body=items.length?items.map((e,i)=>entry(e,i===lastA)).join(''):
+    `<div class="empty">Say or type a command to begin.</div>`;
+  const nAns=st.feed.filter(e=>e.k==='c').length;
+  let vl;
+  if(st.status==='listen') vl=`<div class="vl listen">
+      <div class="lh"><span class="orb"></span>${wave([4,8,15,22,14,9,18,24,12,6,10,16,8,4])}<span class="lst">LISTENING</span><span class="hint">after <q>Bing Bong</q></span></div>
+      <div class="said">open the weather in <em>London</em><span class="caret"></span></div>
+      <div class="vrow"><div class="vin" style="border-bottom-color:transparent;color:var(--fg3)">ends after 0.7 s of quiet</div><div class="btn run">Run</div></div>
+    </div>`;
+  else vl=`<div class="vl"><div class="vrow"><span class="orb"></span><div class="vin">${st.work?'Type a command':'Say&nbsp;<q>Bing Bong</q>&nbsp;or type a command'}</div>
+      <div class="btn run${st.work?' dim':''}">Run</div>${st.work?'<div class="btn stop"><i></i>Stop</div>':''}</div></div>`;
+  return `<aside class="feed">
+    <div class="fh"><span class="t">ACTIVITY</span><span class="sp"></span>
+      <div class="ib ${st.docked?'dk':''}">${ic(st.docked?'undock':'dock',22)}</div><div class="ib">${ic('chev',22)}</div></div>
+    <div class="fl"><div class="fs">${body}</div><div class="thumb"></div></div>
+    ${vl}
+  </aside>`;
+}
+
+function render(){
+  const key=location.hash.slice(1)||'09-read-answer';
+  const st=S[key]||S['09-read-answer'];
+  document.body.className=(Array.isArray(st.feed)?'':'nofeed')+(st.docked?' docked':'');
+  document.getElementById('app').innerHTML=toolbar(st)+`<main class="pane">${st.work?'<div class="pbar"></div>':''}${PAGES[st.page]}</main>`+feed(st);
+  const fs=document.querySelector('.fs');
+  if(fs){fs.scrollTop=fs.scrollHeight;
+    const th=document.querySelector('.thumb'),h=fs.clientHeight,H=fs.scrollHeight;
+    if(H>h+2){const t=Math.max(40,h*h/H);th.style.height=t+'px';th.style.top=(fs.scrollTop/(H-h))*(h-t)+'px'}else th.remove();}
+}
+window.addEventListener('hashchange',render);
+document.fonts.ready.then(render); render();
+</script>
+</body>
+</html>

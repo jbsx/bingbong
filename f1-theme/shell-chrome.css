@@ -1,0 +1,66 @@
+/* Bing Bong — F1 Headline theme: tokens + awake-shell toolbar.
+   Reusable: link this file, then use the .tb markup from shell.html.
+   Fonts: Inter 400/500/600 + JetBrains Mono 400/500 (Google Fonts). */
+:root{
+  --bg:#07090d;
+  --fg:#f2f4f8; --fgh:#e8ebf2; --fg2:rgba(214,220,232,.62); --fg3:rgba(200,208,224,.40);
+  --hair:rgba(255,255,255,.06); --hair2:rgba(255,255,255,.10); --track:rgba(255,255,255,.07);
+  --surface:rgba(255,255,255,.018); --raise:rgba(255,255,255,.04); --raise2:rgba(255,255,255,.065);
+  --rain:#7cb6f0; --codex:#a593f0; --claude:#ff8f74; --kaggle:#dcb25e;
+  --down:#6fdca2; --up:#f2a560;
+  --jaish:#62c3d2; --barun:#d68bc2;
+  --codexq:#8e88b4; --kaggleq:#a8976f; --rainq:#7f97b2; --jaishq:#6f9ea7; --barunq:#a3879a;
+  --accent:#f0a27a; --accentq:rgba(240,162,122,.14); --onaccent:#1a1210;
+  /* status (E4: only where they mean something) */
+  --ok:#6fdca2; --fail:#ff7a6b; --warn:#e8b25a; --idle:rgba(200,208,224,.55);
+  --tb-h:76px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--fg);font-family:Inter,"Helvetica Neue",Arial,sans-serif;
+  font-feature-settings:"cv11" 1;-webkit-font-smoothing:antialiased;font-size:16px}
+.mono{font-family:"JetBrains Mono",monospace}
+svg.i{display:block;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+
+/* ---------- toolbar ---------- */
+.tb{position:absolute;left:0;top:0;right:0;height:var(--tb-h);display:flex;align-items:center;padding:0 16px;gap:12px;background:var(--bg);z-index:5}
+.tb .grp{display:flex;align-items:center;gap:10px}
+.tb .mid{position:absolute;left:50%;top:14px;transform:translateX(-50%);display:flex;align-items:center;gap:8px}
+.tb .end{margin-left:auto}
+
+/* status capsule — the one thing readable from 3 m */
+.cap{display:flex;align-items:center;gap:12px;height:52px;padding:0 22px 0 18px;border-radius:26px;
+  background:var(--surface);border:1px solid var(--hair);white-space:nowrap}
+.cap .dot{width:14px;height:14px;border-radius:50%;background:var(--idle);flex:none}
+.cap .lbl{font-size:26px;font-weight:600;letter-spacing:-.01em;color:var(--fgh)}
+.cap .sec{font-family:"JetBrains Mono",monospace;font-size:22px;font-weight:500;color:var(--accent)}
+.cap.ready .lbl{color:var(--fg2)}
+.cap.work{background:var(--accentq);border-color:rgba(240,162,122,.35)}
+.cap.work .dot,.cap.listen .dot{background:radial-gradient(circle at 35% 30%,#ffd2b4,#f0a27a 60%,#d9806a);
+  box-shadow:0 0 0 6px rgba(240,162,122,.14),0 0 18px rgba(240,162,122,.55)}
+.cap.work .lbl,.cap.listen .lbl{color:var(--accent)}
+.cap.listen{background:var(--accentq);border-color:rgba(240,162,122,.35)}
+.cap.stop .dot{background:var(--fgh);border-radius:3px;width:13px;height:13px}
+.cap .wave{display:flex;gap:3px;align-items:center;height:22px}
+.cap .wave i{width:3px;border-radius:2px;background:var(--accent)}
+
+/* widget chips (timer, song) */
+.chip{display:flex;align-items:center;gap:10px;height:48px;padding:0 18px 0 14px;border-radius:24px;
+  border:1px solid var(--hair);background:var(--surface);white-space:nowrap;color:var(--fgh)}
+.chip svg{color:var(--fg2)}
+.chip .tm{font-family:"JetBrains Mono",monospace;font-size:22px;font-weight:500;font-feature-settings:"tnum" 1}
+.chip .sg{font-size:20px;font-weight:500}
+.chip.paused{color:var(--fg2)}
+.chip.paused .sg{color:var(--fg2)}
+
+/* nav + address */
+.ib{width:48px;height:48px;border-radius:14px;display:grid;place-items:center;color:var(--fg2);flex:none}
+.ib.off{color:rgba(200,208,224,.20)}
+.ib.on{background:var(--raise);color:var(--fgh);border:1px solid var(--hair)}
+.addr{position:relative;width:680px;height:48px;border-radius:24px;background:var(--surface);border:1px solid var(--hair);
+  display:flex;align-items:center;padding:0 22px;gap:12px;overflow:hidden}
+.addr .u{font-size:19px;color:var(--fgh);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1}
+.addr .u .host{color:var(--fgh)}
+.addr .u .rest{color:var(--fg2)}
+.addr .u.ph{color:var(--fg3)}
+.addr .spin{width:20px;height:20px;border-radius:50%;border:2.5px solid rgba(240,162,122,.22);border-top-color:var(--accent);flex:none}
+.addr .prog{position:absolute;left:0;bottom:0;height:3px;width:42%;background:var(--accent);border-radius:0 2px 2px 0}

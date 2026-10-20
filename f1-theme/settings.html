@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Bing Bong Settings</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=block" rel="stylesheet">
+<link rel="stylesheet" href="shell-chrome.css">
+<style>
+html,body{width:1920px;height:1080px;overflow:hidden}
+.mono,.fld.mono .grow,.val,.pc,.n,.pos{font-variant-ligatures:none}
+body{position:relative}
+.ib.on.gear{background:var(--accentq);color:var(--accent);border-color:rgba(240,162,122,.30)}
+
+/* ---------- layout: index rail left, sections right ---------- */
+.rail{position:absolute;left:16px;top:var(--tb-h);bottom:16px;width:400px;border-right:1px solid var(--hair);
+  padding:28px 28px 0 20px;display:flex;flex-direction:column}
+.rail h1{font-size:40px;font-weight:600;letter-spacing:-.02em;color:var(--fgh);margin:0 0 30px 16px}
+.rail h1 i{font-style:normal;color:var(--accent)}
+.rail .g{font-size:16px;font-weight:600;letter-spacing:.16em;color:var(--fg3);margin:6px 0 10px 16px}
+.rail .g + .lnk{}
+.lnk{position:relative;display:flex;align-items:baseline;gap:14px;height:50px;padding:0 16px;border-radius:12px;
+  font-size:20px;font-weight:500;color:var(--fg2);align-items:center}
+.lnk .n{font-family:"JetBrains Mono",monospace;font-size:16px;color:var(--fg3);width:22px}
+.lnk.act{background:var(--raise);color:var(--fgh)}
+.lnk.act::before{content:"";position:absolute;left:0;top:12px;bottom:12px;width:3px;border-radius:2px;background:var(--accent)}
+.lnk.act .n{color:var(--accent)}
+.rail .gap{height:26px}
+.rail .foot{margin-top:auto;padding:22px 16px 24px;border-top:1px solid var(--hair);font-size:16px;color:var(--fg3);line-height:1.5}
+
+.main{position:absolute;left:416px;right:16px;top:var(--tb-h);bottom:16px}
+.scroll{position:absolute;left:0;right:0;top:0;bottom:88px;overflow-y:auto;padding:0 64px 0 80px}
+.scroll::-webkit-scrollbar{display:none}
+.col{width:1160px;padding:22px 0 8px}
+.thumbtrack{position:absolute;right:24px;top:22px;bottom:110px;width:4px;border-radius:2px;background:var(--track)}
+.thumb{position:absolute;left:0;width:4px;border-radius:2px;background:rgba(200,208,224,.32)}
+
+/* group label */
+.grp-l{font-size:16px;font-weight:600;letter-spacing:.16em;color:var(--fg3);padding:26px 0 6px}
+.grp-l:first-child{padding-top:6px}
+
+/* a section = hairline + header + body (no box) */
+.sec{border-top:1px solid var(--hair)}
+.sh{display:flex;align-items:center;gap:18px;height:84px}
+.sh .cv{width:28px;height:28px;color:var(--fg3);flex:none;transition:none}
+.sec.open .sh .cv{transform:rotate(90deg);color:var(--fg2)}
+.sh .t{font-size:26px;font-weight:600;letter-spacing:-.01em;color:var(--fgh)}
+.sh .s{font-size:18px;color:var(--fg2)}
+.sh .s .mono{font-size:17px}
+.sb{display:none;padding:0 0 34px 46px}
+.sec.open .sb{display:block}
+.sec.open:last-child .sb{padding-bottom:16px}
+.sec.open{padding-bottom:6px}
+
+/* rows */
+.row{display:grid;grid-template-columns:300px 560px 1fr;align-items:center;column-gap:28px;min-height:58px}
+.row .l{font-size:18px;color:var(--fg2);line-height:1.35}
+.row .v{display:flex;align-items:center;gap:14px}
+.row .val{font-family:"JetBrains Mono",monospace;font-size:18px;font-weight:500;color:var(--fgh);text-align:left;font-feature-settings:"tnum" 1}
+.hint{font-size:16px;line-height:1.5;color:rgba(200,208,224,.50);max-width:1000px;margin:2px 0 14px}
+.sub{font-size:16px;font-weight:600;letter-spacing:.14em;color:var(--fg3);text-transform:uppercase;margin:22px 0 6px}
+
+/* fields */
+.fld{height:50px;width:560px;border-radius:12px;background:var(--surface);border:1px solid var(--hair2);display:flex;align-items:center;
+  padding:0 18px;font-size:18px;color:var(--fgh);gap:12px}
+.fld .grow{flex:1;white-space:nowrap;overflow:hidden}
+.fld .ph{color:var(--fg3)}
+.fld svg{color:var(--fg3);flex:none}
+.fld.mono .grow{font-family:"JetBrains Mono",monospace;font-size:17px}
+.fld.sm{width:280px}
+
+/* slider */
+.sl{position:relative;width:560px;height:28px}
+.sl .tr{position:absolute;left:0;right:0;top:12px;height:4px;border-radius:2px;background:var(--track)}
+.sl .fi{position:absolute;left:0;top:12px;height:4px;border-radius:2px;background:var(--accent)}
+.sl .th{position:absolute;top:4px;width:20px;height:20px;margin-left:-10px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 5px rgba(240,162,122,.14)}
+.sl.zero .th{background:var(--fg2);box-shadow:none}
+
+/* toggle + check + radio */
+.tg{width:52px;height:30px;border-radius:15px;background:var(--track);border:1px solid var(--hair2);position:relative;flex:none}
+.tg::after{content:"";position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:var(--fg2)}
+.tg.on{background:var(--accent);border-color:var(--accent)}
+.tg.on::after{left:25px;background:var(--onaccent)}
+.ck{width:24px;height:24px;border-radius:6px;border:1.5px solid rgba(200,208,224,.38);display:grid;place-items:center;flex:none;--c:var(--accent)}
+.ck.on{background:var(--c);border-color:var(--c)}
+.ck.on::after{content:"";width:11px;height:6px;border-left:2.6px solid var(--onaccent);border-bottom:2.6px solid var(--onaccent);transform:translateY(-2px) rotate(-45deg)}
+.rd{width:24px;height:24px;border-radius:50%;border:1.5px solid rgba(200,208,224,.38);display:grid;place-items:center;flex:none;--c:var(--accent)}
+.rd.on{border-color:var(--c)}
+.rd.on::after{content:"";width:12px;height:12px;border-radius:50%;background:var(--c)}
+
+/* buttons */
+.btn{height:48px;padding:0 24px;border-radius:24px;display:inline-grid;place-items:center;font-size:18px;font-weight:600;flex:none}
+.btn.pri{background:var(--accent);color:var(--onaccent);padding:0 36px}
+.btn.gh{border:1px solid var(--hair2);color:var(--fgh);font-weight:500}
+.btn.gh.dis{color:var(--fg3);border-color:var(--hair)}
+.ord{width:44px;height:44px;border-radius:12px;border:1px solid var(--hair2);display:grid;place-items:center;color:var(--fg2)}
+.ord.dis{color:rgba(200,208,224,.16);border-color:var(--hair)}
+
+/* cards list */
+.cards .row{grid-template-columns:300px auto 1fr;min-height:56px}
+.cards .row .v{gap:12px}
+.cards .pos{font-family:"JetBrains Mono",monospace;font-size:16px;color:var(--fg3);width:26px}
+.cards .row + .row{border-top:1px solid rgba(255,255,255,.035)}
+.cards .note{font-size:18px;color:var(--fg2);margin-left:6px}
+
+/* weight people */
+.people{display:grid;grid-template-columns:1fr 1fr;gap:0 40px;margin-top:4px}
+.pp{border-left:3px solid var(--c);padding:6px 0 6px 24px}
+.pp .hd{display:flex;align-items:center;gap:12px;font-size:22px;font-weight:600;color:var(--c);margin-bottom:6px;height:44px}
+.pp .hd .sp{flex:1}
+.pp .row{grid-template-columns:150px 1fr;column-gap:20px;min-height:58px}
+.pp .fld{width:100%}
+.pp .fld.mono .grow{font-size:17px}
+.addp{display:flex;align-items:center;gap:14px;margin:22px 0 14px}
+.scale{display:flex;align-items:center;gap:12px;font-size:18px;color:var(--fgh)}
+.ok{display:flex;align-items:center;gap:10px;font-size:17px;color:var(--ok)}
+.ok i{width:10px;height:10px;border-radius:50%;background:var(--ok)}
+.sw{width:12px;height:12px;border-radius:50%;background:var(--c);display:inline-block;flex:none}
+
+/* AI usage providers */
+.prov{margin-top:10px;border-top:1px solid var(--hair)}
+.pv{display:grid;grid-template-columns:360px 1fr;column-gap:28px;padding:18px 0;border-bottom:1px solid var(--hair);align-items:start}
+.pv .ph{display:flex;align-items:center;gap:14px;height:40px}
+.pv .nm{font-size:21px;font-weight:600;color:var(--fgh)}
+.pv .pl{font-size:17px;color:var(--fg2)}
+.pv.off .nm{color:var(--fg2)}
+.pv .none{font-size:16px;color:var(--fg3);height:40px;display:flex;align-items:center}
+.mt{display:grid;grid-template-columns:240px 110px 90px 90px 90px;align-items:center;row-gap:0}
+.mt .hh{font-size:16px;letter-spacing:.08em;color:var(--fg3);text-align:center;height:40px;display:flex;align-items:center;justify-content:center}
+.mt .hh.lft{justify-content:flex-start}
+.mt .mn{font-size:18px;color:var(--fgh);height:46px;display:flex;align-items:center}
+.mt .pc{font-family:"JetBrains Mono",monospace;font-size:18px;color:var(--c);height:46px;display:flex;align-items:center;justify-content:flex-end;padding-right:20px}
+.mt .cc{display:flex;justify-content:center;align-items:center;height:46px}
+
+/* footer */
+.ft{position:absolute;left:80px;width:1160px;bottom:0;height:88px;display:flex;align-items:center;border-top:1px solid var(--hair);gap:16px}
+.ft .sp{flex:1}
+.ft .unsaved{font-size:16px;color:var(--fg3)}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute">
+  <defs></defs>
+  <symbol id="panel" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M14.5 4.5v15"/></symbol>
+  <symbol id="gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.650 1.650 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.820.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></symbol>
+  <symbol id="chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
+  <symbol id="down" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
+  <symbol id="timer" viewBox="0 0 24 24"><circle cx="12" cy="13.5" r="7.5"/><path d="M12 13.5V9.5M9.5 2.5h5M18 6.5l1.5-1.5"/></symbol>
+  <symbol id="pause" viewBox="0 0 24 24"><path d="M8 5v14M16 5v14"/></symbol>
+  <symbol id="up" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></symbol>
+  <symbol id="dn" viewBox="0 0 24 24"><path d="M12 5v14M6 13l6 6 6-6"/></symbol>
+  <symbol id="cal" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/></symbol>
+  <symbol id="bt" viewBox="0 0 24 24"><path d="M7 7l10 10-5 4V3l5 4L7 17"/></symbol>
+</svg>
+<div id="app"></div>
+<script>
+const ic=(id,s=24)=>`<svg class="i" width="${s}" height="${s}"><use href="#${id}"/></svg>`;
+const TIMES={overview:'24:44','00':'24:43','01':'24:43','02':'24:42','03':'24:42','04':'24:41','05':'24:41','06':'24:40','07':'24:40'};
+
+function toolbar(t){
+  return `<header class="tb">
+    <div class="grp"><div class="cap ready"><span class="dot"></span><span class="lbl">Ready</span></div>
+      <div class="chip">${ic('timer',22)}<span class="tm">${t}</span></div>
+      <div class="chip paused">${ic('pause',22)}<span class="sg">Fixture Song</span></div></div>
+    <div class="grp end"><div class="ib">${ic('panel')}</div><div class="ib on gear">${ic('gear')}</div></div>
+  </header>`;
+}
+
+/* controls */
+const sel=v=>`<div class="fld"><span class="grow">${v}</span>${ic('down',20)}</div>`;
+const inp=(v,ph)=>`<div class="fld">${v?`<span class="grow">${v}</span>`:`<span class="grow ph">${ph}</span>`}</div>`;
+const date=v=>`<div class="fld mono"><span class="grow">${v}</span>${ic('cal',20)}</div>`;
+const sl=(f)=>`<div class="sl${f===0?' zero':''}"><div class="tr"></div><div class="fi" style="width:${f*100}%"></div><div class="th" style="left:${f*100}%"></div></div>`;
+const tg=on=>`<div class="tg${on?' on':''}"></div>`;
+const ck=(on,c)=>`<div class="ck${on?' on':''}"${c?` style="--c:${c}"`:''}></div>`;
+const rd=(on,c)=>`<div class="rd${on?' on':''}"${c?` style="--c:${c}"`:''}></div>`;
+const row=(l,v,extra='')=>`<div class="row"><div class="l">${l}</div><div class="v">${v}</div>${extra?`<div class="v">${extra}</div>`:'<div></div>'}</div>`;
+const slrow=(l,val,f)=>`<div class="row"><div class="l">${l}</div><div class="v">${sl(f)}</div><div class="val">${val}</div></div>`;
+const hint=s=>`<p class="hint">${s}</p>`;
+
+const SECTIONS=[
+ {g:'GENERAL',t:'Voice',s:'Microphone, wake word, pauses, speech model and voice',b:()=>
+   row('Microphone',sel('System default'))+
+   slrow('Wake-word threshold','0.50',.5)+
+   slrow('Endpoint delay','700 ms',.385)+
+   hint('How long a pause ends your turn — lower responds sooner, higher avoids cutting you off mid-thought. Applies to the next utterance, no restart.')+
+   slrow('Merge window','off',0)+
+   hint('After that pause, how long speech may resume and still join the same turn — 0 submits immediately. Applies to the next utterance, no restart.')+
+   slrow('Hot Listen silence','8.0 s',.115)+
+   hint('After the wake word, the mic stays open for the next command until this much silence follows the last one. Applies at once, no restart.')+
+   row('STT model',sel('Small — default'))+
+   hint('Larger speech models trade a heavier download and decoding for accuracy — Small fits the 4 GB hardware floor; Medium is for capable hardware. Each loads the next time the app starts.')+
+   row('TTS voice',sel('Default (en_US-ryan)'))},
+ {t:'Speech vocabulary',s:'Nothing learned yet',b:()=>
+   hint('Words the assistant learned to hear better — added automatically when the same corrected mishear shows up twice. Removing one keeps it out.')+
+   `<p style="font-size:18px;color:var(--fg2);margin:6px 0 10px">Nothing learned yet.</p>`+
+   row('Add a word',inp('','e.g. linus tech tips'))},
+ {t:'Appearance',s:'Dark',b:()=>
+   row('Theme',sel('Dark'))+
+   hint('Applies to the app and its panels immediately; websites follow their own dark-mode support.')},
+ {t:'Browsing',s:'Ad blocking on · web zoom 130%',b:()=>
+   row('Block ads, trackers and malware domains',tg(true))+
+   hint('Kill switch for the built-in blocker — takes effect without a restart.')+
+   slrow('Web zoom','130%',.44)+
+   hint('How large webpages render in the browser pane — applied on every page load. Manual zoom resets on the next navigation.')},
+ {g:'IDLE SCREEN',t:'Cards',s:'6 of 6 shown, and Now Playing',b:()=>{
+   const L=['Weather','Calendar','Last Page','Weight','AI usage','News'];
+   return `<div class="cards">`+L.map((n,i)=>`<div class="row"><div class="l">${n}</div><div class="v"><span class="pos">${i+1}</span>${ck(true)}<span style="width:14px"></span><div class="ord${i===0?' dis':''}">${ic('up',20)}</div><div class="ord${i===L.length-1?' dis':''}">${ic('dn',20)}</div></div><div></div></div>`).join('')+
+   `<div class="row"><div class="l">Now Playing</div><div class="v"><span class="pos"></span>${ck(true)}<span class="note">in the dock, under the cards</span></div><div></div></div></div>`+
+   hint('The cards the idle screen shows, in the order they fill its columns. A card with nothing to show right now — the calendar with no events this month — yields its room to the others. Now Playing shows in the dock under the cards.')}},
+ {t:'Weather',s:'London · °C',b:()=>
+   row('City',inp('London'))+row('Units',sel('Metric (°C)'))},
+ {t:'Weight',s:'<span style="color:var(--jaish)">Jaish</span>, <span style="color:var(--barun)">Barun</span> · no scale yet',b:()=>{
+   const P=(n,c,h,d,rm)=>`<div class="pp" style="--c:${c}"><div class="hd"><span class="sw"></span>${n}<span class="sp"></span>${rm?'<div class="btn gh" style="height:40px;font-size:17px">Remove</div>':''}</div>
+     <div class="row"><div class="l">Name</div><div class="v">${inp(n)}</div></div>
+     <div class="row"><div class="l">Height (cm)</div><div class="v">${inp(h)}</div></div>
+     <div class="row"><div class="l">Date of birth</div><div class="v">${date(d)}</div></div>
+     <div class="row"><div class="l">Sex</div><div class="v"><div class="fld"><span class="grow">Male</span>${ic('down',20)}</div></div></div>
+     <div class="row"><div class="l">Guess me</div><div class="v">${tg(true)}</div></div></div>`;
+   return `<div class="sub" style="margin-top:0">People</div><div class="people">${P('Jaish','var(--jaish)','180','01/03/1991',false)}${P('Barun','var(--barun)','172','12/07/1995',true)}</div>
+   <div class="addp"><div class="fld sm"><span class="grow ph">Name</span></div><div class="btn gh dis">Add person</div></div>`+
+   hint('A Weigh-in goes to whoever’s last Weigh-in is nearest — never someone with “guess me” off or with no Weigh-in yet, and Jaish when nobody fits — and a tap on the pop-up or on the Weight page moves it. The scale measures weight and impedance; body fat, water, muscle, bone, lean mass and BMR are worked out from them with each Person’s Body Profile. BMI needs the height; the rest need all three. Changing a Body Profile recomputes their every Weigh-in.')+
+   `<div class="sub">Scale</div>`+
+   row('Scale','<span class="scale">None yet — the first QN scale seen is remembered</span>')+
+   `<div class="ok" style="margin:2px 0 8px"><i></i>Bluetooth: replaced by the test stand-in scale</div>`+
+   `<div class="sub">Weight card</div>`+
+   row('Show <span style="color:var(--jaish);font-weight:600">Jaish</span>',ck(true,'var(--jaish)'))+
+   row('Show <span style="color:var(--barun);font-weight:600">Barun</span>',ck(true,'var(--barun)'))+
+   row('Change since the last Weigh-in',tg(true))+
+   row('Body fat',tg(true))+
+   row('Line',tg(true))+
+   row('Line’s range',sel('30 days'))+
+   `<div class="sub">Weigh-in pop-up</div>`+
+   row('Show the pop-up',tg(true))+
+   slrow('Linger after stepping off','8 s',.22)+
+   hint('Kilograms only.')}},
+ {t:'AI usage',s:'<span class="mono">http://192.168.1.73:4321</span>',b:()=>{
+   const head=`<div class="hh"></div><div class="hh"></div><div class="hh">show</div><div class="hh">gauge</div><div class="hh">chart</div>`;
+   const m=(n,p,s,g,c,col)=>`<div class="mn">${n}</div><div class="pc">${p}</div><div class="cc">${ck(s,col)}</div><div class="cc">${rd(g,col)}</div><div class="cc">${ck(c,col)}</div>`;
+   const pv=(on,n,pl,col,ms)=>`<div class="pv${on?'':' off'}"><div class="ph">${ck(on,col)}${col?`<span class="sw" style="--c:${col}"></span>`:''}<span class="nm">${n}</span>${pl?`<span class="pl">${pl}</span>`:''}</div>
+     ${ms?`<div class="mt" style="--c:${col}">${head}${ms}</div>`:''}</div>`;
+   return row('Dashboard',`<div class="fld mono"><span class="grow">http://192.168.1.73:4321</span></div>`)+
+   hint('The usage dashboard whose gauges and history the idle screen shows. Leave empty to hide the card; save a new address to list its metrics.')+
+   `<div class="prov">`+
+   pv(false,'GLM','lite')+
+   pv(true,'Codex','prolite','var(--codex)',m('7-Day','0%',true,true,true,'var(--codex)'))+
+   pv(false,'Grok','Grok Pro')+
+   pv(true,'Claude','Max 20x','var(--claude)',m('5-Hour','2%',true,false,false,'var(--claude)')+m('7-Day','8%',true,false,false,'var(--claude)')+m('7-Day (Fable)','10%',true,true,true,'var(--claude)'))+
+   pv(false,'Kaggle','','var(--kaggle)')+
+   `</div>`}},
+];
+
+function render(){
+  const key=(location.hash.slice(1)||'overview');
+  const open=key!=='overview';
+  const act=open?parseInt(key,10):-1;
+  let rail=`<nav class="rail"><h1>Settings</h1>`;
+  let body='';
+  SECTIONS.forEach((s,i)=>{
+    if(s.g){rail+=(i?'<div class="gap"></div>':'')+`<div class="g">${s.g}</div>`;body+=`<div class="grp-l">${s.g}</div>`;}
+    rail+=`<div class="lnk${i===act?' act':''}"><span class="n">0${i}</span>${s.t}</div>`;
+    body+=`<section class="sec${open?' open':''}" id="s${i}"><div class="sh">${ic('chev',28).replace('class="i"','class="i cv"')}<span class="t">${s.t}</span><span class="s">${s.s}</span></div><div class="sb">${s.b()}</div></section>`;
+  });
+  rail+=`</nav>`;
+  document.getElementById('app').innerHTML=toolbar(TIMES[key]||'24:44')+rail+
+   `<main class="main"><div class="scroll"><div class="col">${body}</div></div><div class="thumbtrack"><div class="thumb"></div></div>
+    <div class="ft"><div class="btn gh">Back</div><span class="sp"></span><div class="btn pri">Save</div></div></main>`;
+  const sc=document.querySelector('.scroll');
+  if(open){const el=document.getElementById('s'+act);sc.scrollTop=el.offsetTop-sc.offsetTop+ (act===0?-1e4:-6);}
+  const tt=document.querySelector('.thumbtrack'),th=document.querySelector('.thumb');
+  const h=sc.clientHeight,H=sc.scrollHeight;
+  if(H>h+2){const T=tt.clientHeight,t=Math.max(40,T*h/H);th.style.height=t+'px';th.style.top=(sc.scrollTop/(H-h))*(T-t)+'px'}else tt.remove();
+}
+window.addEventListener('hashchange',render);
+document.fonts.ready.then(render); render();
+</script>
+</body>
+</html>
