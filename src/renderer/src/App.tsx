@@ -139,8 +139,9 @@ export function App() {
   const news = useNews(showIdle)
 
   // Main sends a key typed on the Idle Screen to the Idle Prompt, so it has to know the screen is up and the Prompt's field focused.
-  const prompting = showIdle && promptDraft !== null && promptFocused
-  useEffect(() => window.bingbong.idle.reportShown({ up: showIdle, prompting }), [showIdle, prompting])
+  const promptOpen = showIdle && promptDraft !== null
+  const prompting = promptOpen && promptFocused
+  useEffect(() => window.bingbong.idle.reportShown({ up: showIdle, open: promptOpen, prompting }), [showIdle, promptOpen, prompting])
   useEffect(() => window.bingbong.idle.onTyped((text) => setPromptDraft((draft) => (draft ?? '') + text)), [])
   // The Prompt goes with the screen.
   useEffect(() => {

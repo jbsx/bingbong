@@ -50,6 +50,8 @@ export interface Harness {
    */
   crashRenderer(target: TargetKind): Promise<void>
   clickDashboardElement(selector: string): Promise<void>
+  /** Click the dashboard at a point in its own CSS pixels — for a spot no element's centre is, like the Idle Prompt's scrim beside its card. */
+  clickDashboardAt(x: number, y: number): Promise<void>
   /**
    * Click an element in the feed panel's overlay webContents (#45). The
    * click waits for the view to settle at `minViewportWidth` (default
@@ -477,6 +479,13 @@ async function buildHarness(
       const sid = paneSid()
       if (!sid) throw new Error('pane target not found')
       await activateFor('pane')
+      await dispatchClick(sid, x, y)
+    },
+
+    async clickDashboardAt(x, y) {
+      const sid = dashboardSid()
+      if (!sid) throw new Error('dashboard target not found')
+      await activateFor('dashboard')
       await dispatchClick(sid, x, y)
     },
 

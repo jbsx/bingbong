@@ -269,7 +269,7 @@ async function createWindow(): Promise<BrowserWindow> {
   // The feed panel overlay (#45) stacks above the browser pane — attached
   // above it before the first frame.
   // What the dashboard last said of the Idle Screen (#361): typing opens its Prompt, and the Feed stays shut under it.
-  let idleShown: IdleShown = { up: false, prompting: false }
+  let idleShown: IdleShown = { up: false, open: false, prompting: false }
   const feedPanel = attachFeedPanelOverlayToWindow(win, {
     preloadDir: join(__dirname, '../preload'),
     defaultWidth: defaultFeedPanelWidth(),
@@ -292,7 +292,7 @@ async function createWindow(): Promise<BrowserWindow> {
   const onIdleShown = (event: Electron.IpcMainEvent, shown: unknown): void => {
     if (event.sender !== win.webContents) return
     const report = shown as Partial<IdleShown> | null | undefined
-    idleShown = { up: report?.up === true, prompting: report?.prompting === true }
+    idleShown = { up: report?.up === true, open: report?.open === true, prompting: report?.prompting === true }
   }
   ipcMain.on(IDLE_IPC.shown, onIdleShown)
   win.on('closed', () => ipcMain.removeListener(IDLE_IPC.shown, onIdleShown))
@@ -306,6 +306,19 @@ async function createWindow(): Promise<BrowserWindow> {
   for (const contents of [win.webContents, pane.view.webContents]) {
     win.on('closed', attachIdleTyping(contents, { shown: () => idleShown.up && !idleShown.prompting, onType: typeFromIdle }))
   }
+  // A load in the hidden pane takes focus (a `play` opening the watch page): with the Idle Prompt open, focus goes back to its field,
+  // or main would go on routing keys itself and Escape, Backspace and Space would never reach it.
+  const onPaneFocus = (): void => {
+    if (!idleShown.up || !idleShown.open) return
+    // After the pane's own focus change has run its course; taken back within it, the pane keeps it.
+    setTimeout(() => {
+      if (!win.isDestroyed() && !win.webContents.isDestroyed()) win.webContents.focus()
+    }, 0)
+  }
+  pane.view.webContents.on('focus', onPaneFocus)
+  win.on('closed', () => {
+    if (!pane.view.webContents.isDestroyed()) pane.view.webContents.removeListener('focus', onPaneFocus)
+  })
 
   const sendToRenderer = (channel: string, payload: unknown): void => {
     if (!win.isDestroyed() && !win.webContents.isDestroyed()) win.webContents.send(channel, payload)

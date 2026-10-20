@@ -1,12 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
-import { foldIdleReply, NO_REPLY, sentReply, type IdleReply } from '../../core/idle/idlePrompt'
+import { foldIdleReply, idleReplyDone, NO_REPLY, sentReply, type IdleReply } from '../../core/idle/idlePrompt'
+
+/** How long a done Command's Answer stays readable before the Prompt closes. */
+const DONE_HOLD_MS = 1200
 
 /**
  * The Idle Prompt (#361): the Prompt Bar over the Idle Screen, with no Feed
  * beneath it. A key typed on the screen opens it with that key in it; Enter
  * runs the line as a Command, as the Prompt Bar would. One that opens a
  * page wakes the dashboard and this goes with the screen; one that leaves
- * the screen up answers here. Escape, or a tap outside, closes it.
+ * the screen up (a `play`, a Timer) answers here and closes it a beat
+ * later, unless a new line has been started — a failure stays to be read.
+ * Escape, or a tap outside, closes it.
  *
  * It tells main its field holds focus (`onFocused`) only once it does —
  * until then main hands each key over IPC, so a key typed fast after the
@@ -27,6 +32,14 @@ export function IdlePrompt({ draft, onDraft, onClose, onFocused }: { draft: stri
   }, [])
 
   useEffect(() => window.bingbong.assistant.onEvent((event) => setReply((current) => foldIdleReply(current, event))), [])
+
+  const done = idleReplyDone(reply)
+  const typing = draft !== ''
+  useEffect(() => {
+    if (!done || typing) return
+    const timeout = setTimeout(onClose, DONE_HOLD_MS)
+    return () => clearTimeout(timeout)
+  }, [done, typing])
 
   const submit = (): void => {
     const text = draft.trim()

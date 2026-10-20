@@ -240,8 +240,8 @@ describe('idle screen e2e: the Last Page and resume', () => {
       expect(await panelOpen()).toBe(false)
       expect(await harness.dashboardEval<boolean>(`!!document.querySelector('.idle-screen')`)).toBe(true)
 
-      // A tap outside the Prompt closes it; the screen stays.
-      await harness.clickDashboardElement('.idle-prompt-backdrop')
+      // A tap outside the Prompt closes it; the screen stays. The card sits in the scrim's middle, so the tap is at its corner.
+      await harness.clickDashboardAt(8, 8)
       expect(await promptIs(null)).toBe(true)
       expect(await harness.dashboardEval<boolean>(`!!document.querySelector('.idle-screen')`)).toBe(true)
       // With a page in the pane, a tap wakes the dashboard as before.

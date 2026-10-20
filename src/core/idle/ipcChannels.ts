@@ -1,6 +1,7 @@
-/** What the dashboard tells main of the Idle Screen: whether it is up, and whether its Prompt is open (#361). */
+/** What the dashboard tells main of the Idle Screen: whether it is up, whether its Prompt is open, and whether the Prompt's field holds focus (#361). */
 export interface IdleShown {
   up: boolean
+  open: boolean
   prompting: boolean
 }
 
