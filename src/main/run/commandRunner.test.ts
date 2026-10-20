@@ -2916,6 +2916,20 @@ describe('a line read as Steps (#364, ADR 0076 "a line is Steps")', () => {
     expect(commands(events).every((event) => event.task?.id === 't1')).toBe(true)
   })
 
+  it('says the line stopped when Step 1 ends with nothing said of its own — changed nothing twice — and greys Step 2 in the Entry', async () => {
+    const speech = new FakeSpeech()
+    const { browser, decision, events, runner } = harness({ speech })
+    const click = (ref: string) => ({ answers: { verb: choice('click'), target: choice(ref), slot: choice('none'), where: choice('page') } })
+    decision.script.push(split('w4', { target: choice('ref-1') }), click('ref-1'), click('ref-2'))
+
+    await runner.run('take me home then scroll down', { source: 'spoken', turnId: 't1' })
+
+    expect(browser.clicks).toEqual([1, 2])
+    expect(browser.scrolls).toEqual([])
+    expect(speech.spoken.map((spoken) => spoken.text)).toEqual(["I'm not sure this is it."])
+    expect(commands(events).at(-1)).toMatchObject({ action: 'Step 2 not run', dropped: true, task: { id: 't1', hop: 0, step: 2, of: 2 } })
+  })
+
   it('ends every Step still to come when a later Command supersedes the line', async () => {
     const { browser, decision, runner } = harness()
     decision.script.push(split('w4'), { answers: { verb: choice('scroll_down'), target: choice('none'), slot: choice('none'), where: choice('page') } })

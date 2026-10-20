@@ -1738,6 +1738,24 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     return (end.ended === 'local_match' || end.ended === 'terminal') && end.outcome === 'landed'
   }
 
+  /** The endings a Task comes to without saying a failure of its own: a Step that ends so stops its line in words (#364). */
+  const ENDS_UNSAID: ReadonlySet<TaskEnded> = new Set(['unchanged', 'cap', 'unavailable'])
+
+  /**
+   * A Step that did not end done stops its line (#364): the next Step is a
+   * greyed line of the line's Entry, and a Step that ended with nothing
+   * said — it changed nothing twice, hit the cap, or Jev did not answer —
+   * says the line is not done; one that met a wall or ended unsure already
+   * said so. A superseded line says nothing: the later Command stands.
+   */
+  function stopSteps(line: Line, lineId: string, end: StepEnd, next: number, of: number): void {
+    if (end.ended === 'superseded' || line.submission !== submitted) return
+    const turnId = tracer?.mintTurnId() ?? `${lineId}-step${next}`
+    publish({ type: 'command', turnId, text: line.text, action: `Step ${next} not run`, dropped: true, task: { id: lineId, hop: 0, step: next, of }, at: at() })
+    if (ENDS_UNSAID.has(end.ended)) answerFailure(turnId, SPOKEN_FAILURES.unsure)
+    publish({ type: 'done', turnId, outcome: 'done', at: at() })
+  }
+
   /**
    * A line Jev read as Steps (#364, ADR 0076 "a line is Steps"): each
    * Step's words are read as a fresh hop 0 — the grammar first, then Jev,
@@ -1761,7 +1779,10 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       if (reading?.turnId === stepTurnId) reading = null
       const split = first && whole.ask !== undefined && whole.jev !== undefined && 'confidence' in whole.jev ? { split: { ask: whole.ask, jev: whole.jev, steps: words } } : {}
       const end = await runStep(line, stepTurnId, words[index]!, heard, first ? { ...extra, ...split } : {}, { measured: first, step, taskId: turnId })
-      if (!stepDone(end)) return
+      if (!stepDone(end)) {
+        stopSteps(line, turnId, end, index + 2, words.length)
+        return
+      }
       done.push(`Step ${index + 1} ${JSON.stringify(words[index])}: ${end.did}`)
     }
   }
@@ -1882,9 +1903,9 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       if (reading !== null && reading.submission === submission) reading = null
       if (source === 'spoken') observeTerms(trimmed)
       const line: Line = { text: trimmed, source, endpointAt, truncated, submission, givenAt }
-      const record = { ...(calls > 0 ? { partialCalls: calls } : {}), ...(callAsks.length > 0 ? { partialAsks: callAsks } : {}) }
-      if (heard.steps !== undefined && submission === submitted) await runSteps(line, turnId, heard, heard.steps, pending, record)
-      else await runStep(line, turnId, trimmed, heard, record, { measured: true })
+      const extra = { ...(calls > 0 ? { partialCalls: calls } : {}), ...(callAsks.length > 0 ? { partialAsks: callAsks } : {}) }
+      if (heard.steps !== undefined && submission === submitted) await runSteps(line, turnId, heard, heard.steps, pending, extra)
+      else await runStep(line, turnId, trimmed, heard, extra, { measured: true })
       return true
     },
   }
