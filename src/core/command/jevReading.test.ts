@@ -58,6 +58,16 @@ describe('a playing media element in the state Jev reads (#363, ADR 0079)', () =
     expect(commandState('loop the song', { ...PAGE, media: { ...SONG, paused: true, loop: false, muted: false, duration: Infinity } }).split('\n')[2]).toBe('Paused: "Highs and Lows" 1:02, loop off')
   })
 
+  it('names the one unlabelled media ref by what plays, in the state and the target options — a page with two leaves them as they are', () => {
+    const player = { ref: 7, kind: 'media' as const, label: '', href: null, inputType: null }
+    const page = { ...PAGE, refs: [...PAGE.refs, player], media: SONG }
+    expect(commandState('loop the song', page).split('\n')).toContain('[7] media "Highs and Lows"')
+    expect(commandQuestions('loop the song', page).target.options['ref-7']).toBe('media "Highs and Lows"')
+    const two = { ...page, refs: [...page.refs, { ...player, ref: 8 }] }
+    expect(commandState('loop the song', two).split('\n')).toContain('[7] media ""')
+    expect(commandState('loop the song', { ...page, media: undefined }).split('\n')).toContain('[7] media ""')
+  })
+
   it("tells a change the DOM does not show in Done so far: a click that ticked Loop changed something", () => {
     const before = { ...PAGE, media: { ...SONG, loop: false, muted: false } }
     const after = { ...PAGE, media: { ...SONG, currentTime: 63 } }
@@ -147,7 +157,7 @@ describe('reading the answers', () => {
   })
 
   it('offers menu with its description, and reads a menu on ref N as that ref (#363)', () => {
-    expect(commandQuestions('loop the video', PAGE).verb.options.menu).toBe('open the menu on one of the numbered refs (a right-click) to see options it hides')
+    expect(commandQuestions('loop the video', PAGE).verb.options.menu).toBe('right-click one of the numbered refs to open its menu, when no ref shown does what the words ask: the options it hides appear as new refs')
     expect(readCommandAnswers({ verb: choice('menu'), target: choice('ref-2'), slot: choice('none') }, 'loop the video', PAGE)).toEqual({ verb: 'menu', target: 2, slot: null })
   })
 })

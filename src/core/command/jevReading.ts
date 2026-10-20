@@ -31,7 +31,7 @@ const VERB_DESCRIPTIONS: Readonly<Record<(typeof JEV_VERBS)[number], string>> = 
   search: 'search for the words: on the web, or on this site when they point at something on it',
   click: 'click one of the numbered refs on the page',
   type: 'type words into one of the numbered refs (a text field)',
-  menu: 'open the menu on one of the numbered refs (a right-click) to see options it hides',
+  menu: 'right-click one of the numbered refs to open its menu, when no ref shown does what the words ask: the options it hides appear as new refs',
   scroll_up: 'scroll the page up',
   scroll_down: 'scroll the page down',
   back: 'go back to the previous page',
@@ -85,9 +85,21 @@ export function slotSpans(text: string): SlotSpan[] {
   return spans
 }
 
-function describeRef(ref: CommandRef): string {
+/**
+ * A ref as Jev is shown it: kind, label, address. A page's one unlabelled
+ * media ref is named by what plays (#363) — a player the page draws no
+ * label on is otherwise `media ""`, which says nothing of what it is.
+ */
+function describeRef(ref: CommandRef, page?: CommandPage): string {
   const kind = ref.kind === 'input' && ref.inputType !== null ? `input[${ref.inputType}]` : ref.kind
-  return `${kind} ${JSON.stringify(ref.label)}${ref.href !== null ? ` ${ref.href}` : ''}`
+  return `${kind} ${JSON.stringify(shownLabel(ref, page))}${ref.href !== null ? ` ${ref.href}` : ''}`
+}
+
+/** The label a ref is shown with: its own, or for the page's one unlabelled media ref, the title of what plays. */
+function shownLabel(ref: CommandRef, page: CommandPage | undefined): string {
+  if (ref.kind !== 'media' || ref.label !== '' || page?.media === undefined) return ref.label
+  const unlabelled = page.refs.filter((candidate) => candidate.kind === 'media' && candidate.label === '')
+  return unlabelled.length === 1 ? page.media.title : ref.label
 }
 
 /**
@@ -397,7 +409,7 @@ export function commandState(text: string, page: CommandPage, hop?: HopContext, 
     ...(page.media !== undefined ? [mediaLine(page.media)] : []),
     ...(page.dialog !== undefined ? [`A dialog is open: ${JSON.stringify(page.dialog.text)}`] : []),
     'Refs (number, kind, label, address):',
-    ...shown.page.refs.map((ref) => `[${ref.ref}] ${describeRef(ref)}`),
+    ...shown.page.refs.map((ref) => `[${ref.ref}] ${describeRef(ref, page)}`),
     ...(shown.links.length > 0 ? [`${isWebEngineSearch(page.url) ? 'Result links' : 'Links'} further down the page (name, address):`, ...shown.links.map((link) => `[link-${link.n}] ${describeLink(link)}`)] : []),
   ].join('\n')
 }
@@ -519,7 +531,7 @@ function threeQuestions(text: string, pageRead: CommandPage, hop: HopContext | u
       instructions: 'Which numbered ref on the page do the words name as the thing to click or type into? Choose none when the command needs no ref, or names none of them.',
       options: {
         none: 'no ref: the command does not act on one element',
-        ...Object.fromEntries(page.refs.map((ref) => [`ref-${ref.ref}`, describeRef(ref)])),
+        ...Object.fromEntries(page.refs.map((ref) => [`ref-${ref.ref}`, describeRef(ref, pageRead)])),
         ...Object.fromEntries(links.map((link) => [`link-${link.n}`, describeLink(link)])),
       },
     },
