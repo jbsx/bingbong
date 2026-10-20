@@ -17,7 +17,12 @@ export function IdlePrompt({ draft, onDraft, onClose, onFocused }: { draft: stri
   const [reply, setReply] = useState<IdleReply>(NO_REPLY)
 
   useEffect(() => {
-    inputRef.current?.focus()
+    // Told from the field itself, not its focus event: StrictMode mounts this
+    // twice, and the second focus() on a field already focused fires none —
+    // main would go on swallowing Backspace and Space for it.
+    const input = inputRef.current
+    input?.focus()
+    onFocused(input !== null && document.activeElement === input)
     return () => onFocused(false)
   }, [])
 

@@ -73,7 +73,13 @@ describe('idle prompt e2e: the blank pane is never shown', () => {
     expect(
       await waitFor(async () => ((await harness.dashboardEval<boolean>(`document.activeElement?.classList.contains('idle-prompt-input') === true`)) ? true : undefined), { timeoutMs: 2000, intervalMs: 50 }),
     ).toBe(true)
-    await harness.typeIntoDashboard('croll down')
+    await harness.typeIntoDashboard('croll')
+    // Space and Backspace are real key presses that edit the field; main does not swallow them.
+    await harness.pressKey('dashboard', { key: ' ', code: 'Space', windowsVirtualKeyCode: 32, text: ' ' })
+    await harness.pressKey('dashboard', { key: 'x', code: 'KeyX', windowsVirtualKeyCode: 88, text: 'x' })
+    await harness.pressKey('dashboard', { key: 'Backspace', code: 'Backspace', windowsVirtualKeyCode: 8 })
+    expect(await promptValue()).toBe('scroll ')
+    await harness.typeIntoDashboard('down')
     expect(await promptValue()).toBe('scroll down')
     await harness.pressKey('dashboard', ENTER)
 
