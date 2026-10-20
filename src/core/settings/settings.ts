@@ -169,7 +169,7 @@ export function asSttModel(value: unknown): SttModel {
  * becomes Parakeet, the lighter tiers stay. Saved once under the new key,
  * any value — Medium too — is the owner's and stays.
  */
-function sttEngine(record: Record<string, unknown>): SttModel {
+function savedSttEngine(record: Record<string, unknown>): SttModel {
   if (record.sttEngine !== undefined) return asSttModel(record.sttEngine)
   return record.sttModel === 'medium' ? 'parakeet' : asSttModel(record.sttModel)
 }
@@ -231,7 +231,7 @@ export function sanitizeSettings(raw: unknown): AppSettings {
     hotListenSilenceMs: asHotListenSilence(record.hotListenSilenceMs, defaults.hotListenSilenceMs),
     webZoomPercent: asWebZoomPercent(record.webZoomPercent, defaults.webZoomPercent),
     ttsVoice: asString(record.ttsVoice, defaults.ttsVoice),
-    sttEngine: sttEngine(record),
+    sttEngine: savedSttEngine(record),
     // Only an explicit false disables the engine — missing/garbage means on.
     adblockEnabled: record.adblockEnabled === false ? false : defaults.adblockEnabled,
     appearance: asAppearance(record.appearance),

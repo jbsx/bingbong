@@ -84,6 +84,8 @@ export interface MoonshineTranscriberDeps {
    * union is stable until the ledger changes it.
    */
   biasPhrases?: BiasInput | (() => BiasInput)
+  /** The name the `stt` span carries (#358): the app names the tier, `moonshine-small`. */
+  engine?: string
 }
 
 /** The bias input: one phrase list at the default boost, or several sets each with its own (Page Terms, ADR 0077). */
@@ -253,7 +255,7 @@ export function createMoonshineTranscriber(deps: MoonshineTranscriberDeps): Tran
   }
 
   return createRollingTranscriber({
-    engine: 'moonshine',
+    engine: deps.engine ?? 'moonshine',
     decodePass,
     partialFaultSite: 'voice.createMoonshineTranscriber.partialPass',
     partialMinSamples: deps.partialMinSamples,

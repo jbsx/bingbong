@@ -3,8 +3,9 @@
 // harness's Moonshine half — replays captured utterance-dump WAVs
 // (BINGBONG_AUDIO_DUMP=1 → <userData>/audio-dumps, #34) through a shipped
 // streaming engine and prints per-file transcripts, the
-// endpoint→transcript wall times and the peak RSS so far (#358), so accuracy on real voice is checked
-// offline (spec #35: "validated on my own voice") and latency is compared
+// endpoint→transcript wall times and the peak RSS so far (#358), so
+// accuracy on real voice is checked offline (spec #35: "validated on my own
+// voice") and latency is compared
 // against the live `stt` perf span in the same units. Frames are pushed at
 // real-time cadence — the way the voice session drives the engine — so
 // partial passes overlap speech exactly as they do live and finish()'s wall

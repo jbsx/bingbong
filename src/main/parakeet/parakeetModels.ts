@@ -15,7 +15,7 @@ const URL_BASE = 'https://huggingface.co/istupakov/parakeet-tdt-0.6b-v2-onnx/res
 /** The export's files, each with the size a finished download is at least. */
 export const PARAKEET_FILES = [
   { name: 'nemo128.onnx', url: `${URL_BASE}/nemo128.onnx`, minBytes: 130_000 },
-  { name: 'encoder-model.int8.onnx', url: `${URL_BASE}/encoder-model.int8.onnx`, minBytes: 650_000_000 },
+  { name: 'encoder-model.int8.onnx', url: `${URL_BASE}/encoder-model.int8.onnx`, minBytes: 600_000_000 },
   { name: 'decoder_joint-model.int8.onnx', url: `${URL_BASE}/decoder_joint-model.int8.onnx`, minBytes: 8_900_000 },
   { name: 'vocab.txt', url: `${URL_BASE}/vocab.txt`, minBytes: 9_000 },
 ] as const

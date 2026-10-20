@@ -154,6 +154,11 @@ async function settlePasses(): Promise<void> {
 }
 
 describe('createMoonshineTranscriber', () => {
+  it('names itself moonshine, or the tier the app gives it, for the stt span (#358)', () => {
+    expect(makeTranscriber(fakeRuntime([])).engine).toBe('moonshine')
+    expect(makeTranscriber(fakeRuntime([]), { engine: 'moonshine-small' }).engine).toBe('moonshine-small')
+  })
+
   it('greedy-decodes: start token, then single tokens, EOS stops, text decodes', async () => {
     const rt = fakeRuntime([[{ next: 3 }, { next: 7 }, { next: 2 }]])
     const transcriber = makeTranscriber(rt)

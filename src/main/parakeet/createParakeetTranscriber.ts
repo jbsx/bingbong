@@ -134,16 +134,16 @@ export function createParakeetTranscriber(deps: ParakeetTranscriberDeps): Transc
     const stateShape = [stateDims.layers, 1, stateDims.hidden]
     let state1: unknown = new runtime.Tensor('float32', new Float32Array(stateSize), stateShape)
     let state2: unknown = new runtime.Tensor('float32', new Float32Array(stateSize), stateShape)
-    const frame = new Float32Array(width)
     const tokens: number[] = []
 
     let t = 0
     let emittedHere = 0
     while (t < length) {
       // The encoder lays frames out [1, width, T]: frame t is column t.
+      const frame = new Float32Array(width)
       for (let d = 0; d < width; d++) frame[d] = frames.data[d * total + t]
       const out = await joint.run({
-        encoder_outputs: new runtime.Tensor('float32', frame.slice(), [1, width, 1]),
+        encoder_outputs: new runtime.Tensor('float32', frame, [1, width, 1]),
         targets: new runtime.Tensor('int32', Int32Array.from([tokens.at(-1) ?? vocab.blankId]), [1, 1]),
         target_length: new runtime.Tensor('int32', Int32Array.from([1]), [1]),
         input_states_1: state1,

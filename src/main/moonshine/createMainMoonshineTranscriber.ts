@@ -42,6 +42,7 @@ export function createMainMoonshineTranscriber(deps: {
     encoderPath: join(dir, 'encoder_model.onnx'),
     decoderPath: join(dir, 'decoder_model_merged.onnx'),
     loadVocab: async () => parseMoonshineTokenizer(await readFile(join(await ensureDir(), 'tokenizer.json'), 'utf8')),
+    engine: `moonshine-${deps.tier}`,
     dims: tier.dims,
     frameSamples: tier.frameSamples,
     biasPhrases: deps.getBiasPhrases ?? (() => BIAS_LEXICON),
