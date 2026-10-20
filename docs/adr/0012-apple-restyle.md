@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted — amended by ADR 0020: the "no dark mode, no toggle" stance is
+Accepted — palette and blue accent superseded by ADR 0078 (F1 Headline,
+2026-10-20). Amended by ADR 0020: the "no dark mode, no toggle" stance is
 lifted; the palette below is the light-mode half of one token sheet.
 Amended by #331: on Linux a fullscreen frameless window kept its client
 frame insets and came up 8 px wider than the screen (x −4), so kiosk sat

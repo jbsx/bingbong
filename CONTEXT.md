@@ -331,8 +331,20 @@ _Avoid_: custom word, user dictionary entry
 The single typed-input surface, living in the Feed Panel's footer. A typed
 line is a Command exactly as a spoken one is, read the same way; a delivered
 draft clears on Enter, and a rejected one is restored — never silently
-dropped.
+dropped. Drawn as the Voice Prompt, not a boxed field (ADR 0078).
 _Avoid_: command box, steer box, input bar, activity bar
+
+**Voice Prompt**:
+The slim line that is both ear and keyboard (owner, 2026-10-20, F1
+Headline): the peach orb, `Say "Bing Bong" or start typing`, a waveform and
+the voice state. It says the real state of the ear, the same word the
+Status Capsule uses: waiting for the wake word it is the orb and the hint
+with the waveform still; `LISTENING`, the waveform live, only while an
+Utterance is being taken; with the microphone off it says so. While an
+Utterance is taken it carries its live words, a Page Term among them in
+peach, and how much quiet ends it. The Prompt Bar is drawn as one; the
+Idle Screen's first Clock Line is one.
+_Avoid_: voice line (that is the Spoken Rendering), input box, omnibar
 
 **Feed**:
 The session-scoped projection of pipeline events. One projection feeds the
@@ -359,6 +371,8 @@ Page Read's Card is the page title over the page's own words (what `read`
 speaks); a failure's plain line, shown once in the failure colour; else the
 verb's fixed sentence filled from facts the Command and the page hold
 ("Opened Lighthouse page.", "Clicked “Say hello”.", "Scrolled down.").
+In the Feed the newest Answer reads from across the room; the ones before
+it step down to the quiet layer (ADR 0078).
 _Avoid_: message, reply, response
 
 **Spoken Rendering**:
@@ -449,26 +463,19 @@ or closing it (owner ruling 2026-10-18, #334).
 _Avoid_: activity bar, sidebar, activity sidebar
 
 **Idle Screen**:
-What renders while nothing is happening: a bento of glass tiles on the Card
-Slot grid over a quiet glow (#352) — the clock and date bare in the
-top-left cell, the owner's Pinned Cards in the rest — the weather (the current
-conditions, today's high, low, rain chance and sun times, the six coming
-hours and the three coming days, all in the city's own clock — the sky as a
-colored glyph, every temperature in its hue from blue through green to red,
-rain in blue, so the day reads from across the room; the hours' temperature
-row shows even when every hour reads the same), the AI Usage card, the
-Calendar, the News card with Today's Highlight and Big News, the Weight
-card with each Person's latest Weigh-in and their line, and the Last Page with its way
-back — and under them, only while any of them is there,
-a dock of chips: the Timer when one is set, today's next event when the
-Calendar has one, and Now Playing while the Player holds a song; the grid's
-rows shrink to make its room. The canvas is the sheet's own with one
-radial glow from above the top edge, tinted by the weather — rain blue for
-anything falling, cloud grey for overcast and fog, sun amber for a clear or
-partly cloudy sky while the sun is up, night violet from today's sunset to
-its sunrise, none with the weather unset — and nothing on it moves but the
-clock and the progress bars (owner, 2026-10-19: "i like e but without the
-distracting background"). Every redesign keeps every field the screen
+What renders while nothing is happening: flat Tiles on a flat near-black
+ground (ADR 0078; the glass bento of #352 before it), in three Columns.
+Down the left the weather: the current conditions, today's high, low and
+rain chance, a day bar of sunrise to sunset with now marked on it, the rain
+chance at its peak and the hour it peaks, the six coming hours and the three
+coming days, all in the city's own clock — every temperature in its hue
+from blue through green to red, rain in blue, so the day reads from across
+the room; the hours' temperature row shows even when every hour reads the
+same. Down the middle the clock and date, large and bare, the Timer Clock
+beside it while a Timer is set, the Clock Lines under them, and the AI Usage
+under those. Down the right the Calendar, the Weight card and the News
+card. Nothing on it
+moves but the clock, the progress bars and the voice line while it hears. Every redesign keeps every field the screen
 shows and changes only placement, order and styling (owner, 2026-10-19: "i
 dont want to collapse the information"). It is laid out for the appliance's 21-inch 1920×1080 display
 (owner, 2026-10-19), to be read from a couple of metres away (owner,
@@ -492,89 +499,73 @@ screen carries, and the owner's reversal of #70's "clock and weather only".
 _Avoid_: screensaver
 
 **Now Playing**:
-The Idle Screen's chip of the song the Player holds (#344), in the dock
-under the grid while it holds one (in a Card Slot for a day on 2026-10-19,
-back in the dock with #352; pinning `music` still decides whether it
-shows): its thumbnail, title · channel, a progress bar
+The Idle Screen's Clock Line of the song the Player holds (#344), shown
+while it holds one (a Card Slot for a day on 2026-10-19, a chip in the
+Dock with #352, a Clock Line since 2026-10-20; pinning `music` still
+decides whether it shows): its thumbnail, title · channel, a progress bar
 with the time played and the length, a loop glyph while it loops, a pause
 glyph while paused, and the next three queued titles on one line. It follows the
 Player's once-a-second read, so nothing new crosses CDP for it. A song that
 ran out with nothing queued stays on it, shown ended, and `play` plays it
 again from the start. A tap pauses or plays it, on the pointer going down
-like the other idle controls, and unlike them leaves the Idle Screen up. A
-ringing Timer takes its place.
+like the other idle controls, and unlike them leaves the Idle Screen up.
 _Avoid_: mini player, media card
 
-**Card Slot**:
-A box of whole cells on the Idle Screen's grid — three columns of 600 px by
-four rows sharing the canvas's height, the dock's row taken off while it
-shows, on the 1920×1080 canvas (#352) — that a card is handed and draws its
-pieces inside as glass tiles, one a cell, with the grid's gap between them,
-so the screen reads as one bento (owner, 2026-10-19: "i plan on having more
-widgets and cards"; the bento picked from the prototype's variants the same
-day). The top-left cell is the clock's, never a card's. The box itself has
-no fill. A card offers the sizes it can draw at, largest first: the weather
-1×3 (now, the hours, the days), 1×2, 1×1; the AI Usage 1×2 (rings, chart),
-1×1; the Calendar 1×2 (the month with entries) only while it has events,
-else 1×1 (this week and next); News 2×2 (the highlight beside Big News),
-1×2 (one over the other), 1×1; the Weight card 1×2 (a row per Person: the
-weight, the change against a week ago and the body fat over their own
-line), 1×1 (each name, the weight and the change) while there is a
-Weigh-in, else a 1×1 note; the
-Last Page 1×1; a note 1×1. As many Pinned Cards are shown as the grid
-holds before any of them takes a larger box (owner, 2026-10-19: "why is the
-calendar hidden now?" — the News card's 2×2 had pushed the event-less
-Calendar off); then each gets the largest that still fits, the cards with
-something to show sized first, so an empty one — the Calendar with no
-events this month — yields its room down to its smallest size, and a card
-that fits nowhere is left off. The boxes are laid down in pinned order a
-column at a time — or, when that order cannot hold every box, the cards
-with something to show first. A tile holds to its box: its words fit or
-step down, never sizing a row (the overlap the 2026-10-19 screenshot
-found). Not yet built: a rotating Card Slot for
-cards past what fits (deferred until pinned cards no longer fit).
-_Avoid_: widget
+**Column**:
+One of the Idle Screen's three fixed columns on the 1920×1080 canvas
+(owner, 2026-10-20, F1 Headline): the weather down the left; the clock, the
+Clock Lines and the AI Usage down the middle; the Calendar, the Weight card
+and the News card down the right. Every card has one home in one Column and
+is drawn there in one form, with a smaller one for when a Column-mate needs
+the height; a card that is not pinned leaves, and its Column-mates take its
+room. Nothing is placed by order or by relevance. It replaced the Card Slot
+grid of #352, where cards offered sizes and the ones with something to show
+were sized first. A tile holds to its home: its words fit or step down,
+never sizing the Column.
+_Avoid_: card slot, grid cell, widget
 
 **Tile**:
-One piece of a card on the Idle Screen, one Card Slot cell or more: glass —
-the panel let through and the canvas blurred behind it, a large radius, no
-hairline, no shadow — or bare, its words straight on the glow (the clock,
-the weather now). A card is drawn as tiles with the grid's gap between
-them, so the screen reads as one bento (#352).
+One piece of a card on the Idle Screen: a flat panel — a faint lift of
+white over the flat near-black ground, a hairline edge, no blur, no glow,
+no shadow — or bare, its words straight on the ground (the clock). Colour
+on it is spent by importance: a status colour only where it means
+something, peach only for Bing Bong itself, data colours for data, the rest
+neutral (ADR 0078). Glass and the weather glow went with it (owner,
+2026-10-20, F1 Headline).
 _Avoid_: panel, box
 
-**Dock**:
-The row of chips under the Idle Screen's grid — the Timer, Up Next and Now
-Playing — shown only while one of them is there; the grid's rows shrink to
-make its room (#352). A ringing Timer takes Now Playing's place.
-_Avoid_: strip, tray
+**Clock Lines**:
+The one-line rows under the Idle Screen's clock, each shown only while it
+has something, in this order: the Voice Prompt, Now Playing, Up Next, the
+Last Page (owner, 2026-10-20). They replaced the Dock of chips under the
+#352 grid. A ringing Timer pulses the Timer Clock and takes no line's place.
+_Avoid_: dock, strip, tray, chips
 
 **Pinned Cards**:
-The Idle Screen's cards the owner chose in settings, in the order they fill
-the grid's columns (untouched: weather, Calendar, Last Page, Weight, AI
-Usage, News, Now Playing — the order that puts the weather down the left,
-the Calendar and the Last Page over the Weight card in the middle and the
-AI Usage over News down the right, #352, #350; the Weight card ahead of
-the AI Usage and News so its two cells come from News's 2×2, not the usage
-chart); one left out is not shown. A card added after the list was saved
+The Idle Screen's cards the owner chose in settings to show (untouched:
+all of them — weather, Calendar, Last Page, Weight, AI Usage, News, Now
+Playing); one left out is not shown. Since the Columns (2026-10-20) a card's
+place is its home, so the list is a set: its order decides nothing. A card added after the list was saved
 (News, #346; Weight, #350) joins its end once; unpinned after that, it
 stays off. A list saved as an earlier default — from before the
 three-by-four grid, or from before the Weight card — is read as today's
 default.
 A card that has nothing to say — the weather unset or loading, the usage
-dashboard unreachable, no news yet — keeps a small Card Slot with its line.
+dashboard unreachable, no news yet — keeps its home, smaller, with its line.
 
 **AI Usage**:
 The Idle Screen's card of AI providers' limits, read from the owner's
 usage dashboard on the LAN (an HTTP server outside this repo,
 `http://192.168.1.73:4321` by default, set in settings; empty hides it;
 2026-10-19 ask: "the line chart and the gauges for codex and claude").
-Two tiles down the right of the grid (#352). Each shown provider is a
+In the middle Column under the Clock Lines: the rings over the chart.
+Each shown provider is a
 ring in its tone (owner, 2026-10-19: "i like the ring progress bars"): the
 outer arc the share of the limit used, the number in the middle, a thin
 inner arc how much of the window has run to its reset — the two clocks the
 dashboard's dot gauge showed — then its name and plan and "7d · resets 1d
-1h". Its other shown windows are smaller rings beside it while the row
+1h", and its Pace when the share used runs ahead of the window run ("+5
+ahead"). Its other shown windows are smaller rings beside it while the row
 holds three or fewer, else bars under it; four or five providers shrink
 their rings to stay in one row. Under them, the last twelve hours of the
 charted windows as lines over a faint fill, a dot where each ends, a
@@ -601,16 +592,16 @@ bank holiday by name on green ("bank holidays in the UK marked", England
 and Wales's), then its events, an all-day one as a red bar and a timed one
 as a dot and its title, "+N" beside the date past one — today's date in a
 red disc, the next bank holiday named in the header when it falls this
-month or next, else "No events" when there are none. A glass tile (#352):
-a 1×2 Card Slot while the month has events, the whole month with its
-entries; a month with no events asks for one cell and yields the rest to
-cards with something to show — in one cell it draws this week and next, a
-dot under a day with an entry. Bank holidays are computed, not
+month or next, else "No events" when there are none. At the top of the
+right Column (2026-10-20): today's date large in peach beside the weekday
+and month, then this week and next with today boxed in peach, a dot under a
+day with an entry, and the month's entries listed under them while it has
+any. Bank holidays are computed, not
 fetched — the rules plus the proclaimed one-offs, matching
 gov.uk/bank-holidays.json 2019–2028; a new proclamation is added by hand.
 Events come from Calendar Sources — one per provider, each
 answering the events in a range — that main asks together, a failing one
-left out; the Idle Screen leads its bottom band with Up Next, today's
+left out; Up Next is the Idle Screen's Clock Line of today's
 timed event under way or coming (an all-day one only when nothing timed
 is left) and how many more today. No source is wired yet: the owner named
 Google Calendar and Outlook as the ones to come, so today the Calendar is
@@ -619,9 +610,8 @@ _Avoid_: agenda (for the month), schedule
 
 **News**:
 The Idle Screen's card of what is going on in the owner's world, one
-glass tile since 2026-10-19: the Top Repos. A Pinned Card offering 1×2
-and 1×1 Card Slots; it draws from its box alone, every row it can hold
-whole. Until then it held two tiles, Today's Highlight and Big News, from
+tile since 2026-10-19: the Top Repos, at the foot of the right Column
+under "TOP REPOS ★ this month", every row it can hold whole. Until then it held two tiles, Today's Highlight and Big News, from
 the News Desk; the owner retired them ("the news cards are kinda useless
 right now. collapse the two cards into one and have the top 3 starred
 repos of the month in the card instead"). With GitHub never read it keeps
@@ -766,11 +756,12 @@ provider (a provider is a Calendar or AI Usage term)
 The page the browser pane last showed — its address and title — kept in
 userData across restarts. While the app runs it is the live page; after a
 restart it is what the pane boots without. The Idle Screen names it in a
-one-cell tile of its grid, the `lastPage` Pinned Card (#352), and
+Clock Line, the `lastPage` Pinned Card (2026-10-20; a tile of the #352
+grid before), and
 `resume` (spoken "resume", "continue", "where was I", "last page", or the
 grammar's `resume`) comes back to it: a pane still on a page needs nothing
 reopened, so the Command names the page and fires no action; a pane that
-boots blank navigates to it. Tapping the Idle Screen's card runs the same
+boots blank navigates to it. Tapping the Idle Screen's line runs the same
 Command. `resume` is the grammar's alone, like `screenshot` and `help`: Jev
 is never offered it.
 _Avoid_: history, recent page, session restore, bookmark
@@ -783,9 +774,10 @@ screen"). Set by the grammar's `timer <length>` (`5m`, `1h30m`, `2:30`,
 timer"); a new one replaces the one running. `timer off`, "cancel the
 timer" or "stop the timer" turns it off; "cancel" and "stop" alone are
 still the stop verb, and a stop also silences a Timer that is ringing.
-The Idle Screen shows it beside the Last Page: the countdown while it
-runs, "Time's up" while it rings, and a tap on the ringing card turns it
-off. At zero it rings: a synthesized alarm, played back to back through
+The Idle Screen shows it as the Timer Clock: a second clock beside the
+time, in peach, with its length and when it ends ("Timer 25 minutes · ends
+10:18") while it runs, "Time's up" pulsing while it rings, and a tap on it
+while it rings turns it off. At zero it rings: a synthesized alarm, played back to back through
 its own player for at most a minute. It lives in main and does not
 survive a restart. `timer` is the grammar's alone: Jev is never offered it.
 _Avoid_: alarm (for the countdown), stopwatch, reminder
@@ -862,10 +854,11 @@ _Avoid_: body settings, scale settings
 **Weight card**:
 The Idle Screen's Pinned Card of each Person's latest Weigh-in (#350,
 #351; owner: "idle screen should show the weights for both me and my
-brother including the line chart"): in a 1×2 Card Slot one row per Person
-with a Weigh-in — the name, the weight, its change against their last
-Weigh-in a week or more before it, the body fat and their own line of the
-last 30 days, each line on its own axis; in one cell each name with the
+brother including the line chart"): in the right Column under the
+Calendar, one row per Person with a Weigh-in — the name in their colour,
+when, the weight, its change against their last Weigh-in a week or more
+before it (green down, amber up), the body fat and their own line of the
+last 30 days, each line on its own axis; smaller, each name with the
 weight and the change. The People, figures and range are chosen in the
 Weight section. With no Weigh-in yet it is a note, "Step on the scale". A
 tap on a row opens the Weight page on that Person, on the pointer going
@@ -889,9 +882,10 @@ whatever is on screen (#350): the live weight while it moves, then the
 settled weight with a stable mark, the guessed Person's name and the change
 since their previous Weigh-in, and a chip per other Person that moves the
 Weigh-in with one tap (#351) — tappable over the browsing pane too; it goes
-about 8 s after stepping off (the linger set in the Weight section). Bottom-centre in
-the Peek Card's place and size — drawn by the dashboard over the Idle
-Screen, Settings and the Weight page, and in the overlay over the browsing
+about 8 s after stepping off (the linger set in the Weight section). Over
+the Idle Screen it takes the AI Usage chart's place in the middle Column
+(2026-10-20); elsewhere bottom-centre in the Peek Card's place and size —
+drawn by the dashboard over Settings and the Weight page, and in the overlay over the browsing
 pane, where it outranks the Peek Card and rides an open panel's top. Never
 spoken (owner: "never spoken"; nor asked by voice, #351), never focused,
 and never activity: it does
@@ -983,7 +977,10 @@ Peek Card's dot, the Feed Answer's mark and rail) takes the failure colour,
 so a failure never reads as a success (owner ruling 2026-10-18, #329).
 Awake and waiting it says "Ready" (never "Idle": the Idle Screen is another
 state); after a Stop it says "Stopped" in a neutral colour — a Stop is the
-user's own act, not a failure (#334).
+user's own act, not a failure (#334). It is the one thing on the Toolbar
+read from across the room, in peach while Bing Bong works or listens; while
+a Voice Prompt is on screen the live words are the Voice Prompt's, and the
+Capsule says only the state (ADR 0078).
 _Avoid_: status bar, status row, status line
 
 **View Preference**:
