@@ -1391,4 +1391,7 @@ target kiosk: a dual-core mobile-class CPU (i3-7100U) with integrated
 graphics and 4 GB of RAM, shared with the dashboard and OS. Defaults are
 chosen against the Floor; capability above it may be offered but is never
 required for acceptable operation.
+One exception, by the owner's ruling (ADR 0019, amended 2026-10-20): the
+Parakeet STT default ships before its fit on the Floor is measured, with
+Moonshine as the lighter engine to fall back to.
 _Avoid_: minimum spec, supported hardware, low-end profile

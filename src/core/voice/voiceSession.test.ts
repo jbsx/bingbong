@@ -142,6 +142,7 @@ async function createSession(overrides?: {
   const pendingStt: { resolve: (text: string) => void }[] = []
   const transcriber = overrides?.perf
     ? {
+        engine: baseTranscriber.engine,
         begin: () => baseTranscriber.begin(),
         push: (frame: Float32Array) => baseTranscriber.push(frame),
         onPartial: (listener: (text: string) => void) => baseTranscriber.onPartial(listener),
@@ -768,6 +769,16 @@ describe('voice session — perf spans (#27)', () => {
 
     const stt = harness.perf.find((record) => record.stage === 'stt')
     expect(stt!.detail).toEqual({ speechMs: 8 * 32, totalMs: (8 + 20) * 32, truncated: false, endedBy: 'cap', silenceMs: SUBMIT_SILENCE * 32 })
+  })
+
+  it('names the engine that transcribed in the stt detail (#358)', async () => {
+    const harness = await createSession({ transcriber: Object.assign(new FakeTranscriber(['go']), { engine: 'parakeet' }), perf: {} })
+
+    harness.session.arm()
+    await harness.speakUtterance()
+
+    const stt = harness.perf.find((record) => record.stage === 'stt')
+    expect(stt!.detail?.engine).toBe('parakeet')
   })
 
   it('carries the turn check that fired the Endpoint in the stt detail (#357)', async () => {

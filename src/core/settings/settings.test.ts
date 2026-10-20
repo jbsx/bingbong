@@ -29,7 +29,7 @@ describe('defaultSettings', () => {
     expect(settings.resumptionMergeMs).toBe(0)
     expect(settings.webZoomPercent).toBe(130)
     expect(settings.ttsVoice).toBe('')
-    expect(settings.sttModel).toBe('small')
+    expect(settings.sttEngine).toBe('parakeet')
     expect(settings.weather).toEqual({ city: '', units: 'metric' })
     expect(settings.adblockEnabled).toBe(true)
     expect(settings.appearance).toBe('system')
@@ -147,15 +147,24 @@ describe('sanitizeSettings', () => {
     expect(sanitizeSettings({ appearance: 1 }).appearance).toBe('system')
   })
 
-  it('keeps explicit STT tiers and defaults everything else to small (#63)', () => {
-    expect(sanitizeSettings({ sttModel: 'medium' }).sttModel).toBe('medium')
-    expect(sanitizeSettings({ sttModel: 'small' }).sttModel).toBe('small')
-    expect(sanitizeSettings({ sttModel: 'base' }).sttModel).toBe('base')
-    // Missing, unknown or garbage tiers keep the 4 GB hardware floor.
-    expect(sanitizeSettings({}).sttModel).toBe('small')
-    expect(sanitizeSettings({ sttModel: 'tiny' }).sttModel).toBe('small')
-    expect(sanitizeSettings({ sttModel: true }).sttModel).toBe('small')
-    expect(sanitizeSettings({ sttModel: null }).sttModel).toBe('small')
+  it('keeps an explicit STT engine and defaults everything else to Parakeet (#358)', () => {
+    expect(sanitizeSettings({ sttEngine: 'parakeet' }).sttEngine).toBe('parakeet')
+    expect(sanitizeSettings({ sttEngine: 'medium' }).sttEngine).toBe('medium')
+    expect(sanitizeSettings({ sttEngine: 'small' }).sttEngine).toBe('small')
+    expect(sanitizeSettings({ sttEngine: 'base' }).sttEngine).toBe('base')
+    expect(sanitizeSettings({}).sttEngine).toBe('parakeet')
+    expect(sanitizeSettings({ sttEngine: 'tiny' }).sttEngine).toBe('parakeet')
+    expect(sanitizeSettings({ sttEngine: true }).sttEngine).toBe('parakeet')
+    expect(sanitizeSettings({ sttEngine: null }).sttEngine).toBe('parakeet')
+  })
+
+  it('moves a Medium saved before Parakeet to Parakeet once, and keeps the lighter Moonshine tiers (#358)', () => {
+    expect(sanitizeSettings({ sttModel: 'medium' }).sttEngine).toBe('parakeet')
+    expect(sanitizeSettings({ sttModel: 'small' }).sttEngine).toBe('small')
+    expect(sanitizeSettings({ sttModel: 'base' }).sttEngine).toBe('base')
+    // Saved once under the new key, Medium is the owner's choice and stays.
+    expect(sanitizeSettings({ sttModel: 'medium', sttEngine: 'medium' }).sttEngine).toBe('medium')
+    expect('sttModel' in sanitizeSettings({ sttModel: 'medium' })).toBe(false)
   })
 
   it('drops unknown weather units and non-string fields', () => {

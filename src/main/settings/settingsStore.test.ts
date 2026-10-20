@@ -35,13 +35,13 @@ describe('settingsStore', () => {
 
   it('persists the opt-in STT tier across restarts — switching is not per-session (#63)', () => {
     const store = createSettingsStore(path)
-    store.update({ ...defaultSettings(), sttModel: 'medium' })
+    store.update({ ...defaultSettings(), sttEngine: 'medium' })
 
     const reopened = createSettingsStore(path)
-    expect(reopened.get().sttModel).toBe('medium')
-    // And a corrupt tier on disk still lands on the Base default.
-    writeFileSync(path, JSON.stringify({ ...defaultSettings(), sttModel: 'gargantuan' }))
-    expect(createSettingsStore(path).get().sttModel).toBe('small')
+    expect(reopened.get().sttEngine).toBe('medium')
+    // And a corrupt engine on disk lands on the Parakeet default (#358).
+    writeFileSync(path, JSON.stringify({ ...defaultSettings(), sttEngine: 'gargantuan' }))
+    expect(createSettingsStore(path).get().sttEngine).toBe('parakeet')
   })
 
   it('sanitizes incoming updates before persisting', () => {

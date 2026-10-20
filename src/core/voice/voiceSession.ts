@@ -476,6 +476,8 @@ export function createVoiceSession(deps: VoiceSessionDeps): VoiceSession {
       // same guard every other perf call site gives its tracer).
       try {
         tracer.span(turnId, 'stt', tracer.now() - endpointAt, {
+          // Which engine transcribed (#358): Parakeet's and Moonshine's spans read apart in perf:report.
+          ...(deps.transcriber.engine !== undefined ? { engine: deps.transcriber.engine } : {}),
           speechMs: utterance.speechMs,
           totalMs: utterance.totalMs,
           truncated: utterance.truncated,

@@ -58,3 +58,29 @@ card targets exactly that).
 - Latency claims must be measured on the Hardware Floor, not extrapolated
   from the development machine — the measurement protocol (audio dumps +
   replay) is the standing check.
+
+## Amendment 2026-10-20 — Parakeet is the default engine (#358)
+
+The owner still had to over-articulate for Moonshine Medium to hear them,
+and the mishears were the model's, not the endpoint's (847d039). The owner
+ruled again that audio stays local, and that Parakeet should replace
+Moonshine.
+
+- **NVIDIA Parakeet TDT 0.6B v2** (English, the int8 onnx-asr export,
+  ~660 MB, under `models/parakeet-tdt-0.6b-v2`) is the default engine, on
+  the same onnxruntime-node stack with a greedy TDT decode. It does not
+  stream, so partials come from the same rolling passes Moonshine's do (1 s
+  in, every 0.5 s after, a pass due while one runs is skipped), and Early
+  Fire reads them unchanged.
+- **Moonshine stays as the lighter engine**, selectable in Settings for a
+  machine too slow for Parakeet. A Medium saved before the change moves to
+  Parakeet once. Small and Base stay as saved.
+- **The bias still applies.** The Seed Lexicon, Learned Terms and Page Terms
+  re-rank which token a frame emits, over Parakeet's vocab. They never turn
+  a blank into a token, so a boost cannot insert a word Parakeet did not
+  hear.
+- **The Hardware Floor fit is not a gate for this default.** It is measured
+  later. The owner's ruling: "if speed is an issue, we can deal with it
+  then." The 2 s p95 gate above still names the Floor, but this default
+  ships without it. If the Floor turns out too slow, the candidate is
+  `parakeet-tdt_ctc-110m` or a Moonshine tier.

@@ -39,12 +39,12 @@ export type WeatherUnits = 'metric' | 'imperial'
 export type Appearance = 'system' | 'light' | 'dark'
 
 /**
- * STT engine tier (#63): Small is the default everywhere (the Hardware
- * Floor — dual-core, 4 GB RAM — fits its ~230 MB fetch comfortably);
- * Medium is the opt-in for capable hardware, Base the legacy tier. The
- * tier applies when the transcriber is constructed — a restart.
+ * STT engine (#358): Parakeet TDT 0.6B is the default; the Moonshine tiers
+ * (#63) are the lighter engines for a machine too slow for it — Small, then
+ * Base, with Medium between Small and Parakeet. The engine applies when the
+ * transcriber is constructed — a restart.
  */
-export type SttModel = 'base' | 'small' | 'medium'
+export type SttModel = 'parakeet' | 'base' | 'small' | 'medium'
 
 export interface AppSettings {
   /** Microphone device id from enumerateDevices; 'default' follows the OS. */
@@ -63,8 +63,8 @@ export interface AppSettings {
   webZoomPercent: number
   /** Piper voice id; '' follows BINGBONG_PIPER_VOICE / the default voice. */
   ttsVoice: string
-  /** STT engine tier — loads at the next transcriber construction (#63). */
-  sttModel: SttModel
+  /** STT engine — loads at the next transcriber construction (#63, #358). */
+  sttEngine: SttModel
   /** Kill switch for the embedder-level adblocker (issue #21). */
   adblockEnabled: boolean
   /** Theme resolution (ADR 0020) — system follows the OS, manual wins. */
@@ -101,7 +101,7 @@ export function defaultSettings(): AppSettings {
     hotListenSilenceMs: HOT_LISTEN_SILENCE_MS_DEFAULT,
     webZoomPercent: WEB_ZOOM_PERCENT_DEFAULT,
     ttsVoice: '',
-    sttModel: 'small',
+    sttEngine: 'parakeet',
     adblockEnabled: true,
     appearance: 'system',
     weather: { city: '', units: 'metric' },
@@ -158,9 +158,20 @@ function asWebZoomPercent(value: unknown, fallback: number): number {
   return Math.min(WEB_ZOOM_PERCENT_MAX, Math.max(WEB_ZOOM_PERCENT_MIN, Math.round(value)))
 }
 
-/** Any explicit tier passes through; anything else falls back to Small. */
+/** Any explicit engine passes through; anything else falls back to Parakeet. */
 export function asSttModel(value: unknown): SttModel {
-  return value === 'base' || value === 'medium' ? value : 'small'
+  return value === 'base' || value === 'small' || value === 'medium' ? value : 'parakeet'
+}
+
+/**
+ * The STT engine as saved (#358). Settings saved before Parakeet hold the
+ * Moonshine tier under its old key: Medium — the most accurate engine then —
+ * becomes Parakeet, the lighter tiers stay. Saved once under the new key,
+ * any value — Medium too — is the owner's and stays.
+ */
+function sttEngine(record: Record<string, unknown>): SttModel {
+  if (record.sttEngine !== undefined) return asSttModel(record.sttEngine)
+  return record.sttModel === 'medium' ? 'parakeet' : asSttModel(record.sttModel)
 }
 
 /** Only the three literals pass; anything else falls back to following the OS. */
@@ -220,7 +231,7 @@ export function sanitizeSettings(raw: unknown): AppSettings {
     hotListenSilenceMs: asHotListenSilence(record.hotListenSilenceMs, defaults.hotListenSilenceMs),
     webZoomPercent: asWebZoomPercent(record.webZoomPercent, defaults.webZoomPercent),
     ttsVoice: asString(record.ttsVoice, defaults.ttsVoice),
-    sttModel: asSttModel(record.sttModel),
+    sttEngine: sttEngine(record),
     // Only an explicit false disables the engine — missing/garbage means on.
     adblockEnabled: record.adblockEnabled === false ? false : defaults.adblockEnabled,
     appearance: asAppearance(record.appearance),

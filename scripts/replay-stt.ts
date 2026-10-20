@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 // The #35 replay tool (`pnpm stt:replay`): the successor of the #39 A/B
 // harness's Moonshine half — replays captured utterance-dump WAVs
-// (BINGBONG_AUDIO_DUMP=1 → <userData>/audio-dumps, #34) through the shipped
-// streaming Moonshine engine and prints per-file transcripts plus the
-// endpoint→transcript wall times, so accuracy on real voice is checked
+// (BINGBONG_AUDIO_DUMP=1 → <userData>/audio-dumps, #34) through a shipped
+// streaming engine and prints per-file transcripts, the
+// endpoint→transcript wall times and the peak RSS so far (#358), so accuracy on real voice is checked
 // offline (spec #35: "validated on my own voice") and latency is compared
 // against the live `stt` perf span in the same units. Frames are pushed at
 // real-time cadence — the way the voice session drives the engine — so
@@ -17,8 +17,10 @@
 //
 // Defaults: ~/.config/bingbong/audio-dumps and ~/.config/bingbong/models
 // (the Moonshine export auto-fetches on first run). With no dumps present
-// the script falls back to the models-dir's jfk.wav fixture. Set
-// BINGBONG_STT_MODEL=medium to replay through the opt-in tier (#63).
+// the script falls back to the models-dir's jfk.wav fixture. Parakeet
+// replays by default (#358); set BINGBONG_STT_MODEL=small|medium|base to
+// replay through a Moonshine tier (#63). Run one engine per process: the
+// peak RSS is the process's, so engines sharing one would blur it.
 // The decode is biased toward the Seed Lexicon as the app's is; set
 // BINGBONG_STT_BIAS="Linus Tech Tips,Elon Musk" to add those as Page
 // Terms (ADR 0077), standing in for the names a page would have shown.
@@ -35,13 +37,17 @@ import { parseMoonshineTokenizer } from '../src/core/moonshine/bpeTokenizer.ts'
 import { createMoonshineTranscriber, type BiasInput } from '../src/main/moonshine/createMoonshineTranscriber.ts'
 import { PAGE_TERMS_BOOST } from '../src/core/voice/biasUnion.ts'
 import { ensureMoonshineModels, fsMoonshineStore, MOONSHINE_TIERS } from '../src/main/moonshine/moonshineModels.ts'
+import { parseParakeetVocab } from '../src/core/parakeet/parakeetVocab.ts'
+import { createParakeetTranscriber } from '../src/main/parakeet/createParakeetTranscriber.ts'
+import { ensureParakeetModels } from '../src/main/parakeet/parakeetModels.ts'
+import type { Transcriber } from '../src/core/ports/stt.ts'
 
 const dumpsDir = process.argv[2] ?? join(homedir(), '.config/bingbong/audio-dumps')
 const modelsDir = process.argv[3] ?? join(homedir(), '.config/bingbong/models')
 // Parsed inline: importing the settings sanitizer would pull the
 // extensionless main-tree module graph into Node's type-stripping runtime.
 const envTier = process.env.BINGBONG_STT_MODEL
-const sttModel: SttModel = envTier === 'base' || envTier === 'medium' || envTier === 'small' ? envTier : 'small'
+const sttModel: SttModel = envTier === 'base' || envTier === 'medium' || envTier === 'small' ? envTier : 'parakeet'
 // The Seed Lexicon, read off its source: biasLexicon.ts imports core
 // without a .ts extension, which this type-stripping runtime cannot follow.
 const seedLexicon = [...readFileSync(new URL('../src/main/moonshine/biasLexicon.ts', import.meta.url), 'utf8').matchAll(/^\s+'([^']+)',$/gm)].map((match) => match[1]!)
@@ -69,21 +75,36 @@ if (files.length === 0) {
   files = [fixture]
 }
 
-// The shipped engine, wired exactly like createMainMoonshineTranscriber
-// (which itself stays off this script's type-stripping runtime graph).
-const moonshine = await ensureMoonshineModels(modelsDir, fsMoonshineStore, sttModel)
-for (const name of moonshine.fetched) console.log(`fetched ${name}`)
-const tier = MOONSHINE_TIERS[sttModel]
-const transcriber = createMoonshineTranscriber({
-  encoderPath: join(moonshine.dir, 'encoder_model.onnx'),
-  decoderPath: join(moonshine.dir, 'decoder_model_merged.onnx'),
-  loadVocab: async () =>
-    parseMoonshineTokenizer(readFileSync(join(moonshine.dir, 'tokenizer.json'), 'utf8')),
-  dims: tier.dims,
-  frameSamples: tier.frameSamples,
-  biasPhrases,
-})
-console.log(`tier ${sttModel}; seed lexicon ${seedLexicon.length} terms${pageTerms.length > 0 ? `; page terms at ${PAGE_TERMS_BOOST}: ${pageTerms.join(' | ')}` : ''}`)
+// The shipped engine, wired exactly like createMainParakeetTranscriber or
+// createMainMoonshineTranscriber (which stay off this script's
+// type-stripping runtime graph).
+async function shippedEngine(): Promise<Transcriber> {
+  if (sttModel === 'parakeet') {
+    const parakeet = await ensureParakeetModels(modelsDir, fsMoonshineStore)
+    for (const name of parakeet.fetched) console.log(`fetched ${name}`)
+    return createParakeetTranscriber({
+      preprocessorPath: join(parakeet.dir, 'nemo128.onnx'),
+      encoderPath: join(parakeet.dir, 'encoder-model.int8.onnx'),
+      decoderJointPath: join(parakeet.dir, 'decoder_joint-model.int8.onnx'),
+      loadVocab: async () => parseParakeetVocab(readFileSync(join(parakeet.dir, 'vocab.txt'), 'utf8')),
+      biasPhrases,
+    })
+  }
+  const moonshine = await ensureMoonshineModels(modelsDir, fsMoonshineStore, sttModel)
+  for (const name of moonshine.fetched) console.log(`fetched ${name}`)
+  const tier = MOONSHINE_TIERS[sttModel]
+  return createMoonshineTranscriber({
+    encoderPath: join(moonshine.dir, 'encoder_model.onnx'),
+    decoderPath: join(moonshine.dir, 'decoder_model_merged.onnx'),
+    loadVocab: async () =>
+      parseMoonshineTokenizer(readFileSync(join(moonshine.dir, 'tokenizer.json'), 'utf8')),
+    dims: tier.dims,
+    frameSamples: tier.frameSamples,
+    biasPhrases,
+  })
+}
+const transcriber = await shippedEngine()
+console.log(`engine ${sttModel}; seed lexicon ${seedLexicon.length} terms${pageTerms.length > 0 ? `; page terms at ${PAGE_TERMS_BOOST}: ${pageTerms.join(' | ')}` : ''}`)
 
 /** Real-time-paced push: partials overlap speech the way they do live. */
 async function replay(file: string): Promise<ReplayRow> {
@@ -101,7 +122,9 @@ async function replay(file: string): Promise<ReplayRow> {
   const endpoint = performance.now()
   const transcript = (await transcriber.finish(pcm)).trim()
   const ms = performance.now() - endpoint
-  return { file: file.split('/').at(-1) ?? file, speechMs: (pcm.length / 16_000) * 1000, ms, transcript }
+  // maxRSS is in KiB and never falls: the peak of the run so far.
+  const peakRssMb = Math.round(process.resourceUsage().maxRSS / 1024)
+  return { file: file.split('/').at(-1) ?? file, speechMs: (pcm.length / 16_000) * 1000, ms, transcript, peakRssMb }
 }
 
 const rows: ReplayRow[] = []

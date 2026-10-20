@@ -1,4 +1,7 @@
-import { existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs'
+import { createWriteStream, existsSync, mkdirSync, renameSync, statSync } from 'node:fs'
+import { Readable } from 'node:stream'
+import { pipeline } from 'node:stream/promises'
+import type { ReadableStream as WebReadableStream } from 'node:stream/web'
 import { dirname, join } from 'node:path'
 import type { SttModel } from '../../core/settings/settings'
 // .ts extension: this module sits on scripts/replay-stt's type-stripping
@@ -63,6 +66,9 @@ export const MOONSHINE_SMALL_FILES = [
   { name: 'tokenizer.json', url: `${SMALL_URL}/tokenizer.json`, minBytes: 3_000_000 },
 ] as const
 
+/** The Moonshine tiers — the lighter engines once Parakeet became the default (#358). */
+export type MoonshineTier = Exclude<SttModel, 'parakeet'>
+
 export interface MoonshineTierSpec {
   dir: string
   files: readonly { name: string; url: string; minBytes: number }[]
@@ -73,7 +79,7 @@ export interface MoonshineTierSpec {
 }
 
 /** Per-tier metadata: fetch set, install dir, decoder shape, framing (#63). */
-export const MOONSHINE_TIERS: Record<SttModel, MoonshineTierSpec> = {
+export const MOONSHINE_TIERS: Record<MoonshineTier, MoonshineTierSpec> = {
   base: { dir: MOONSHINE_BASE_DIR, files: MOONSHINE_BASE_FILES, dims: MOONSHINE_BASE_DIMS, frameSamples: 1 },
   // moonshine-streaming-small config.json: 10 decoder layers, 8 KV heads,
   // 64-dim heads, 5 ms encoder frames (80 samples at 16 kHz).
@@ -118,12 +124,20 @@ function isComplete(store: MoonshineModelStore, path: string, minBytes: number):
 export async function ensureMoonshineModels(
   modelsDir: string,
   store: MoonshineModelStore,
-  tier: SttModel = 'small',
+  tier: MoonshineTier = 'small',
 ): Promise<EnsuredMoonshineModels> {
   const spec = MOONSHINE_TIERS[tier]
-  const dir = join(modelsDir, spec.dir)
+  return ensureModelFiles(join(modelsDir, spec.dir), spec.files, store)
+}
+
+/** Fetches each file missing from dir, or smaller than a finished download (any engine's set, #358). */
+export async function ensureModelFiles(
+  dir: string,
+  files: readonly { name: string; url: string; minBytes: number }[],
+  store: MoonshineModelStore,
+): Promise<EnsuredMoonshineModels> {
   const fetched: string[] = []
-  for (const file of spec.files) {
+  for (const file of files) {
     const dest = join(dir, file.name)
     if (isComplete(store, dest, file.minBytes)) continue
     await store.fetch(file.url, dest)
@@ -146,8 +160,12 @@ export const fsMoonshineStore: MoonshineModelStore = {
   async fetch(url, dest) {
     const response = await fetch(url)
     if (!response.ok) throw new Error(`fetch ${url} → HTTP ${response.status}`)
-    const bytes = new Uint8Array(await response.arrayBuffer())
+    if (!response.body) throw new Error(`fetch ${url} → no body`)
+    // Streamed to disk, never buffered: Parakeet's encoder is 650 MB (#358).
+    // The .part rename means a cut download never sits at dest.
     mkdirSync(dirname(dest), { recursive: true })
-    writeFileSync(dest, bytes)
+    const part = `${dest}.part`
+    await pipeline(Readable.fromWeb(response.body as WebReadableStream<Uint8Array>), createWriteStream(part))
+    renameSync(part, dest)
   },
 }

@@ -663,19 +663,19 @@ export function SettingsPage({
           </p>
           <Field label="STT model">
             <select
-              value={draft.sttModel}
+              value={draft.sttEngine}
               aria-label="STT model"
-              onChange={(event) => setDraft({ ...draft, sttModel: asSttModel(event.target.value) })}
+              onChange={(event) => setDraft({ ...draft, sttEngine: asSttModel(event.target.value) })}
             >
-              <option value="base">Base — fastest, lowest accuracy</option>
-              <option value="small">Small — default</option>
-              <option value="medium">Medium — highest accuracy, ~380 MB download</option>
+              <option value="parakeet">Parakeet — default, most accurate, ~660 MB download</option>
+              <option value="medium">Moonshine Medium — lighter, ~380 MB download</option>
+              <option value="small">Moonshine Small — lighter, fits the 4 GB hardware floor</option>
+              <option value="base">Moonshine Base — lightest, lowest accuracy</option>
             </select>
           </Field>
           <p className="settings-note">
-            Larger speech models trade a heavier download and decoding for accuracy — Small fits the
-            4 GB hardware floor; Medium is for capable hardware. Each loads the next time the app
-            starts.
+            Parakeet hears best. The Moonshine models are lighter, for a machine too slow for it.
+            Each loads the next time the app starts.
           </p>
           <Field label="TTS voice">
             <select

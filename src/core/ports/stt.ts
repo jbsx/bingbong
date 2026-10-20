@@ -1,5 +1,7 @@
-/** Mono 16 kHz PCM in, transcript text out (Moonshine in main). */
+/** Mono 16 kHz PCM in, transcript text out (Parakeet in main, Moonshine the lighter tier). */
 export interface Transcriber {
+  /** The engine behind the port ('parakeet', 'moonshine', …), named on the `stt` perf span (#358). */
+  readonly engine?: string
   /**
    * Streaming transcription (#40): the voice session begins a capture when
    * speech starts and pushes utterance frames as they arrive, so a streaming

@@ -4,7 +4,7 @@ import { decodeMoonshineTokens } from '../../core/moonshine/bpeTokenizer.ts'
 import { createBiasApplier, createBiasIndex, type BiasApplier, type BiasIndex, type BiasPhraseSet, type LogitsTensor } from '../../core/moonshine/contextualBiasing.ts'
 import { WAV_SAMPLE_RATE } from '../../core/voice/utteranceDump.ts'
 import { createRetriable } from './retriable.ts'
-import { reportFault } from '../../core/trace/fault.ts'
+import { createRollingTranscriber } from '../stt/createRollingTranscriber.ts'
 
 // The shipped STT engine (#41): greedy decode over the official merged ONNX
 // export on the app's onnxruntime-node stack, driven as the streaming
@@ -30,11 +30,6 @@ const HARD_TOKEN_CAP = 194
  * encoder raw.
  */
 const DEFAULT_MIN_PASS_SAMPLES = WAV_SAMPLE_RATE
-
-/** First partial pass waits for a second of speech by default. */
-const DEFAULT_PARTIAL_MIN_SAMPLES = WAV_SAMPLE_RATE
-/** New partial passes wait for another half second of speech by default. */
-const DEFAULT_PARTIAL_STRIDE_SAMPLES = WAV_SAMPLE_RATE / 2
 
 /** The onnxruntime-node surface this adapter needs. */
 interface OrtModule {
@@ -118,8 +113,6 @@ export function createMoonshineTranscriber(deps: MoonshineTranscriberDeps): Tran
   const loadRuntime = deps.loadRuntime ?? importOrt
   const minPassSamples = Math.max(1, deps.minPassSamples ?? DEFAULT_MIN_PASS_SAMPLES)
   const frameSamples = Math.max(1, deps.frameSamples ?? 1)
-  const partialMinSamples = deps.partialMinSamples ?? DEFAULT_PARTIAL_MIN_SAMPLES
-  const partialStrideSamples = deps.partialStrideSamples ?? DEFAULT_PARTIAL_STRIDE_SAMPLES
 
   let ort: OrtModule | null = null
 
@@ -259,118 +252,11 @@ export function createMoonshineTranscriber(deps: MoonshineTranscriberDeps): Tran
     return decodeMoonshineTokens(vocab, tokens)
   }
 
-  // ---- streaming capture state -------------------------------------------
-
-  const partialListeners = new Set<(text: string) => void>()
-  /**
-   * Bumped by begin/finish/cancel: passes check it on completion so results
-   * and emissions from an ended capture are dropped — a partial landing
-   * after the endpoint (or a cancel) must never surface.
-   */
-  let generation = 0
-  let frames: Float32Array[] = []
-  let accumulated = 0
-  /** Accumulation at the last partial-pass start (stride bookkeeping). */
-  let lastPartialSamples = 0
-  /** A partial pass for the current capture is queued or running. */
-  let partialActive = false
-  /**
-   * Serializes every decode pass (shared ORT sessions, one pass at a time):
-   * the final pass waits out any in-flight partial instead of racing it.
-   */
-  let passes: Promise<void> = Promise.resolve()
-
-  function resetCapture(): void {
-    frames = []
-    accumulated = 0
-    lastPartialSamples = 0
-    partialActive = false
-  }
-
-  function schedulePartial(gen: number): void {
-    partialActive = true
-    passes = passes.then(async () => {
-      if (gen !== generation) return
-      // The accumulated prefix so far — a partial always transcribes from
-      // the utterance start, never a delta (deltas cut words mid-way).
-      const pcm = concatFrames(frames)
-      lastPartialSamples = pcm.length
-      try {
-        const text = await decodePass(pcm)
-        if (gen === generation) for (const listener of partialListeners) listener(text)
-      } catch (error) {
-        reportFault('voice.createMoonshineTranscriber.partialPass', error)
-        // Partials are advisory: a failed pass must never break the capture
-        // or the final — the same failure surfaces there if it is real.
-      }
-      // A capture that ended mid-pass owns no state anymore (its finish,
-      // cancel or begin already reset the flags).
-      if (gen !== generation) return
-      partialActive = false
-      // Speech kept growing while this pass ran: roll straight into the next.
-      if (accumulated - lastPartialSamples >= partialStrideSamples) schedulePartial(gen)
-    })
-  }
-
-  return {
-    begin() {
-      generation += 1
-      resetCapture()
-    },
-
-    push(frame: Float32Array) {
-      frames.push(frame)
-      accumulated += frame.length
-      if (
-        !partialActive &&
-        accumulated >= partialMinSamples &&
-        accumulated - lastPartialSamples >= partialStrideSamples
-      ) {
-        schedulePartial(generation)
-      }
-    },
-
-    onPartial(listener: (text: string) => void): () => void {
-      partialListeners.add(listener)
-      return () => {
-        partialListeners.delete(listener)
-      }
-    },
-
-    finish(pcm: Float32Array): Promise<string> {
-      if (pcm.length === 0) return Promise.resolve('')
-      // The capture ends here: in-flight partials run out but never emit;
-      // the final pass is the submitted transcript over the complete
-      // utterance (pre-roll and endpoint frame included).
-      generation += 1
-      resetCapture()
-      const pass = passes.then(() => decodePass(pcm))
-      passes = pass.then(
-        () => undefined,
-        () => undefined,
-      )
-      return pass
-    },
-
-    cancel() {
-      generation += 1
-      resetCapture()
-    },
-  }
-}
-
-function totalSamples(frames: Float32Array[]): number {
-  let total = 0
-  for (const frame of frames) total += frame.length
-  return total
-}
-
-function concatFrames(frames: Float32Array[]): Float32Array {
-  const out = new Float32Array(totalSamples(frames))
-  let offset = 0
-  for (const frame of frames) {
-    out.set(frame, offset)
-    offset += frame.length
-  }
-  return out
+  return createRollingTranscriber({
+    engine: 'moonshine',
+    decodePass,
+    partialFaultSite: 'voice.createMoonshineTranscriber.partialPass',
+    partialMinSamples: deps.partialMinSamples,
+    partialStrideSamples: deps.partialStrideSamples,
+  })
 }

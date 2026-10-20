@@ -14,7 +14,7 @@ describe('resolveVoiceConfig', () => {
     expect(resolveVoiceConfig({}, USER_DATA)).toEqual({
       vadModel: `${USER_DATA}/models/silero_vad.onnx`,
       modelsDir: `${USER_DATA}/models`,
-      sttModel: 'small',
+      sttEngine: 'parakeet',
       sttScript: undefined,
       vadScript: undefined,
     })
@@ -33,15 +33,16 @@ describe('resolveVoiceConfig', () => {
     ).toEqual({
       vadModel: '/opt/vad.onnx',
       modelsDir: `${USER_DATA}/models`,
-      sttModel: 'small',
+      sttEngine: 'parakeet',
       sttScript: '["open youtube"]',
       vadScript: '[0.9, 0.1]',
     })
   })
 
   it('carries the settings-selected STT tier (#63)', () => {
-    expect(resolveVoiceConfig({}, USER_DATA, 'medium').sttModel).toBe('medium')
-    expect(resolveVoiceConfig({}, USER_DATA, 'small').sttModel).toBe('small')
-    expect(resolveVoiceConfig({}, USER_DATA, 'base').sttModel).toBe('base')
+    expect(resolveVoiceConfig({}, USER_DATA, 'parakeet').sttEngine).toBe('parakeet')
+    expect(resolveVoiceConfig({}, USER_DATA, 'medium').sttEngine).toBe('medium')
+    expect(resolveVoiceConfig({}, USER_DATA, 'small').sttEngine).toBe('small')
+    expect(resolveVoiceConfig({}, USER_DATA, 'base').sttEngine).toBe('base')
   })
 })

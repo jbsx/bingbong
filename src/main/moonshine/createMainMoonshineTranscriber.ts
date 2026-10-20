@@ -1,11 +1,10 @@
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Transcriber } from '../../core/ports/stt'
-import type { SttModel } from '../../core/settings/settings'
 import { parseMoonshineTokenizer } from '../../core/moonshine/bpeTokenizer'
 import { BIAS_LEXICON } from './biasLexicon'
 import { createMoonshineTranscriber, type BiasInput } from './createMoonshineTranscriber'
-import { ensureMoonshineModels, fsMoonshineStore, MOONSHINE_TIERS } from './moonshineModels'
+import { ensureMoonshineModels, fsMoonshineStore, MOONSHINE_TIERS, type MoonshineTier } from './moonshineModels'
 import { createRetriable } from './retriable'
 
 /**
@@ -15,12 +14,12 @@ import { createRetriable } from './retriable'
  * the export in the background while the window opens; a fetch failure
  * surfaces at the first finish() — the missing-VAD-model story: the session
  * shows the error and disarms, not a startup crash. The tier comes from the
- * STT-model Setting (#63): Small by default (the Hardware Floor), Medium
- * opt-in for capable hardware (~380 MB, its own dir and decoder shape).
+ * STT engine Setting (#63): the lighter engines since Parakeet became the
+ * default (#358) — Small fits the Hardware Floor, Medium is ~380 MB.
  */
 export function createMainMoonshineTranscriber(deps: {
   modelsDir: string
-  sttModel: SttModel
+  tier: MoonshineTier
   /**
    * Live bias input (ADR 0022): the Seed Lexicon unioned with Learned
    * Terms, and the Page Terms of the page spoken over as a set of their
@@ -28,11 +27,11 @@ export function createMainMoonshineTranscriber(deps: {
    */
   getBiasPhrases?: () => BiasInput
 }): Transcriber {
-  const tier = MOONSHINE_TIERS[deps.sttModel]
+  const tier = MOONSHINE_TIERS[deps.tier]
   // A failed fetch un-memoizes so the next utterance retries a transient
   // network failure (retriable, #41 review).
   const ensureDir = createRetriable(async () =>
-    (await ensureMoonshineModels(deps.modelsDir, fsMoonshineStore, deps.sttModel)).dir,
+    (await ensureMoonshineModels(deps.modelsDir, fsMoonshineStore, deps.tier)).dir,
   )
   // Startup prefetch — the rejection is observed (and retried) by the first
   // finish(); this branch only exists to keep it from going unhandled.

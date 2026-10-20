@@ -430,6 +430,8 @@ export class FakeTranscriber implements Transcriber {
   readonly events: string[] = []
   private readonly partialListeners = new Set<(text: string) => void>()
   rejectWith: Error | null = null
+  /** The engine name the `stt` span carries; unset like a fake that names none. */
+  engine?: string
 
   constructor(script: string[] = []) {
     this.queue = [...script]

@@ -34,6 +34,16 @@ describe('formatReplayReport', () => {
     expect(out).toContain('4 utterances')
   })
 
+  it('prints the peak RSS per row and over the run when measured (#358)', () => {
+    const out = formatReplayReport([
+      { ...ROWS[0], peakRssMb: 1210 },
+      { ...ROWS[1], peakRssMb: 1388 },
+    ])
+    expect(out).toMatch(/beckett\.wav .*1210 MB/)
+    expect(out).toContain('peak RSS 1388 MB')
+    expect(formatReplayReport(ROWS)).not.toContain('RSS')
+  })
+
   it('handles the empty replay without throwing', () => {
     const out = formatReplayReport([])
     expect(out).toContain('0 utterances')
