@@ -1197,10 +1197,13 @@ _Avoid_: selector, element id, index
 **Ref State**:
 What the browser's accessibility tree says of a ref beyond its label: a
 switch pressed or not, a menu expanded or shut, a control disabled, a box
-checked, its keyboard shortcut, a role or description the label does not
-carry. It rides after the ref's label in the lines the Decision Model reads,
-every state the tree gives, less the few every control has (focusable) and
-a `false` that is no news, never a list of states picked by hand — a label
+checked, its keyboard shortcut, its current value, a role or description
+the label does not carry. It rides after the ref's label in the lines the
+Decision Model reads: every state the tree gives, less what the line
+already says (a role its kind names, words its label holds, a link's url, a
+text field's being editable), the few every control has (focusable) or that
+point at other nodes, and a `false` that is no news (a switch's or a menu's
+`false` is news); never a list of states picked by hand — a label
 can be stale (YouTube's captions button says "unavailable" while it is
 pressed), and the state is what tells the model. A page whose tree cannot be
 read is read without them.

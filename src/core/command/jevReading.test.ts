@@ -675,6 +675,11 @@ describe('a dismiss phrase over a pop-up (owner\'s rule 2026-10-19)', () => {
   it('tells Jev to decline a cookie notice\'s optional cookies', () => {
     expect(dismissPhraseQuestions('close', SHEET)!.dismiss.instructions).toContain('continue without accepting')
   })
+
+  it("names each control's Ref State among the dismiss options, so the focused close is told from the rest", () => {
+    const focused = { ...SHEET, refs: [SHEET.refs[0], { ...SHEET.refs[1], states: ['focused=true'] }] }
+    expect(Object.values(dismissPhraseQuestions('close', focused)!.dismiss.options)).toContain('button "Close" focused=true')
+  })
 })
 
 describe('the steps Choice (#364, ADR 0076 "a line is Steps")', () => {

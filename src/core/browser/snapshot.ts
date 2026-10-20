@@ -444,9 +444,9 @@ export function refElementIndices(page: CollectedPage, options?: { maxRefs?: num
 }
 
 export function buildPageSnapshot(page: CollectedPage, options?: { maxRefs?: number }): PageSnapshot {
-  const maxRefs = options?.maxRefs ?? MAX_SNAPSHOT_REFS
   const visible = page.elements.filter((element) => isVisible(element, page))
-  const taken = visible.slice(0, maxRefs)
+  // The same elements the controller read Ref States for (readRefStates.ts): one rule picks both.
+  const taken = refElementIndices(page, options).map((index) => page.elements[index])
 
   return {
     url: page.url,

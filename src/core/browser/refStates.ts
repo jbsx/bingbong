@@ -18,6 +18,8 @@ export interface AxNode {
   readonly role?: { readonly type: string; readonly value?: unknown }
   readonly name?: { readonly type: string; readonly value?: unknown }
   readonly description?: { readonly type: string; readonly value?: unknown }
+  /** A slider's or a field's current value. */
+  readonly value?: { readonly type: string; readonly value?: unknown }
   readonly properties?: readonly AxProperty[]
 }
 
@@ -29,10 +31,11 @@ export interface RefShown {
 }
 
 /**
- * Properties that say nothing about this control in particular: nearly
- * every control is focusable, and the rest are the tree's own bookkeeping.
+ * Properties that say nothing the ref line does not: nearly every control
+ * is focusable, a link's url is its address, and the rest are the tree's
+ * own bookkeeping.
  */
-const UNTOLD = new Set(['focusable', 'settable', 'editable', 'hiddenRoot', 'root', 'url'])
+const UNTOLD = new Set(['focusable', 'settable', 'hiddenRoot', 'root', 'url'])
 
 /** The properties whose `false` is news: a switch that is off, a menu that is shut. */
 const TOGGLES = new Set(['pressed', 'checked', 'expanded', 'selected'])
@@ -55,17 +58,24 @@ function roleRestates(role: string, shown: RefShown): boolean {
   return false
 }
 
-const plain = (text: string): string => text.replace(/\s+/g, ' ').trim().toLowerCase()
+const collapsed = (text: string): string => text.replace(/\s+/g, ' ').trim()
 
-/** The tree's description — a tooltip, an `aria-describedby` — when it holds words the label lacks. */
-function descriptionOf(node: AxNode, shown: RefShown): string | null {
-  const said = typeof node.description?.value === 'string' ? node.description.value.replace(/\s+/g, ' ').trim() : ''
-  return said === '' || plain(shown.label).includes(plain(said)) ? null : `description=${JSON.stringify(truncateLabel(said))}`
+/**
+ * The tree's description (a tooltip, an `aria-describedby`) or current value
+ * (a slider's, a field's), named when it holds words the label lacks.
+ */
+function wordsOf(name: 'description' | 'value', node: AxNode, shown: RefShown): string | null {
+  const raw = node[name]?.value
+  if (typeof raw === 'number') return `${name}=${raw}`
+  const said = typeof raw === 'string' ? collapsed(raw) : ''
+  return said === '' || collapsed(shown.label).toLowerCase().includes(said.toLowerCase()) ? null : `${name}=${JSON.stringify(truncateLabel(said))}`
 }
 
-function stateOf(property: AxProperty): string | null {
+function stateOf(property: AxProperty, shown: RefShown): string | null {
   const { name, value } = property
   if (UNTOLD.has(name) || RELATIONS.has(value.type) || value.value === undefined || value.value === '') return null
+  // A text field is editable by its kind: `input[text]` already says so.
+  if (name === 'editable' && shown.kind === 'input') return null
   if ((value.value === false || value.value === 'false') && !TOGGLES.has(name)) return null
   return `${name}=${value.type === 'string' ? JSON.stringify(value.value) : String(value.value)}`
 }
@@ -74,10 +84,10 @@ function stateOf(property: AxProperty): string | null {
 export function refStatesOf(node: AxNode, shown: RefShown): string[] {
   if (node.ignored === true) return []
   const role = typeof node.role?.value === 'string' ? node.role.value : ''
-  const description = descriptionOf(node, shown)
   return [
     ...(role !== '' && !roleRestates(role, shown) ? [`role=${role}`] : []),
-    ...(description !== null ? [description] : []),
-    ...(node.properties ?? []).map(stateOf).filter((state): state is string => state !== null),
-  ]
+    wordsOf('description', node, shown),
+    wordsOf('value', node, shown),
+    ...(node.properties ?? []).map((property) => stateOf(property, shown)),
+  ].filter((state): state is string => state !== null)
 }

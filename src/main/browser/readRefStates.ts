@@ -2,8 +2,9 @@
 // collect: the registry the collector left in the page (ADR 0033) is held
 // as a remote object, each element that becomes a ref is asked of the tree
 // on its own — a ref's node, never the whole page's tree — and the handles
-// are let go. Any failure is the caller's to report: a page without its
-// states is still a page.
+// are let go. A ref whose node is gone costs only its own state, and the
+// misses are one fault; a registry that cannot be held is the caller's to
+// report. A page without its states is still a page.
 
 import { refStatesOf, type AxNode } from '../../core/browser/refStates'
 import { refElementIndices, refKindOf, type CollectedPage } from '../../core/browser/snapshot'
@@ -35,22 +36,30 @@ export async function readRefStates(cdp: CdpDebugger, page: CollectedPage): Prom
       objectGroup: HANDLES,
     })
     const objectId = registry.result?.objectId
-    if (objectId === undefined) return page
+    if (objectId === undefined) throw new Error('the page holds no ref registry')
     const properties = await cdp.send<PropertiesResponse>('Runtime.getProperties', { objectId, ownProperties: true })
     const handles = new Map((properties.result ?? []).map((property) => [property.name, property.value?.objectId]))
     const states = new Map<number, string[]>()
-    await Promise.all(
-      indices.map(async (index) => {
-        const handle = handles.get(String(index))
-        if (handle === undefined) return
-        const tree = await cdp.send<PartialTreeResponse>('Accessibility.getPartialAXTree', { objectId: handle, fetchRelatives: false })
-        const node = tree.nodes?.[0]
-        const element = page.elements[index]
-        if (node === undefined || element === undefined) return
-        const said = refStatesOf(node, { kind: refKindOf(element), label: element.label, inputType: element.inputType })
-        if (said.length > 0) states.set(index, said)
-      }),
-    )
+    // Each ref is its own read: a node gone since the collect costs its own state, not the page's.
+    const misses = (
+      await Promise.all(
+        indices.map(async (index): Promise<string | null> => {
+          const handle = handles.get(String(index))
+          const element = page.elements[index]
+          if (handle === undefined || element === undefined) return null
+          try {
+            const tree = await cdp.send<PartialTreeResponse>('Accessibility.getPartialAXTree', { objectId: handle, fetchRelatives: false })
+            const node = tree.nodes?.[0]
+            const said = node === undefined ? [] : refStatesOf(node, { kind: refKindOf(element), label: element.label, inputType: element.inputType })
+            if (said.length > 0) states.set(index, said)
+            return null
+          } catch (error) {
+            return error instanceof Error ? error.message : String(error)
+          }
+        }),
+      )
+    ).filter((miss): miss is string => miss !== null)
+    if (misses.length > 0) reportFault('browser.readRefStates.refs', new Error(`${misses.length} of ${indices.length} refs unread: ${misses[0]}`))
     return { ...page, elements: page.elements.map((element, index) => (states.has(index) ? { ...element, states: states.get(index) } : element)) }
   } finally {
     // A page gone by now took its handles with it: the states read still stand.

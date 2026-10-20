@@ -166,8 +166,12 @@ class FakeCdp implements CdpDebugger {
 
   /** What the accessibility tree answers for each registry index (Ref State); an index it lacks answers no node. */
   readonly axNodes = new Map<number, AxNode>()
-  /** When set, the tree's answer fails (a page mid-navigation). */
+  /** When set, the tree's answer fails for every ref (a page mid-navigation). */
   axException: string | null = null
+  /** The registry indices whose node is gone by the time the tree is asked. */
+  readonly axGone = new Set<number>()
+  /** When set, the page holds no registry to take handles on. */
+  noRegistry = false
 
   async send<T = unknown>(method: string, params?: Record<string, unknown>): Promise<T> {
     this.calls.push({ method, params })
@@ -176,14 +180,16 @@ class FakeCdp implements CdpDebugger {
       return { result: this.collectedElements.map((_, index) => ({ name: String(index), value: { type: 'object', objectId: `ref:${index}` } })) } as T
     }
     if (method === 'Accessibility.getPartialAXTree') {
+      const index = Number(String(params?.objectId).slice('ref:'.length))
       if (this.axException !== null) throw new Error(this.axException)
-      const node = this.axNodes.get(Number(String(params?.objectId).slice('ref:'.length)))
+      if (this.axGone.has(index)) throw new Error('Could not find object with given id')
+      const node = this.axNodes.get(index)
       return { nodes: node === undefined ? [] : [node] } as T
     }
     if (method === 'Runtime.releaseObjectGroup') return {} as T
     if (method === 'Runtime.evaluate') {
       const expression = typeof params?.expression === 'string' ? params.expression : ''
-      if (expression.includes('/* REF_HANDLES */')) return { result: { type: 'object', objectId: 'registry' } } as T
+      if (expression.includes('/* REF_HANDLES */')) return { result: this.noRegistry ? { type: 'undefined' } : { type: 'object', objectId: 'registry' } } as T
       if (expression.includes('/* READY_ARM */')) {
         this.readyArmed += 1
         return { result: { value: true } } as T
@@ -718,8 +724,32 @@ describe('createCdpBrowserController Ref State', () => {
     const snapshot = await controller.collectPage()
     expect(snapshot.refs.map((ref) => ref.label)).toEqual(['Pause (k)', 'Subtitles/closed captions unavailable'])
     expect(snapshot.refs.every((ref) => ref.states === undefined)).toBe(true)
+    expect(faults.map((fault) => [fault.site, fault.message])).toEqual([['browser.readRefStates.refs', '2 of 2 refs unread: Cannot find context with specified id']])
+  })
+
+  it("keeps every other ref's state when one ref's node is gone, and says how many went unread", async () => {
+    const faults: FaultReport[] = []
+    setFaultSink((report) => faults.push(report))
+    const cdp = new FakeCdp(page)
+    cdp.axNodes.set(1, pressed)
+    cdp.axGone.add(0)
+    const { controller } = makeController({ cdp })
+    const snapshot = await controller.collectPage()
+    expect(snapshot.refs.map((ref) => ref.states)).toEqual([undefined, ['pressed=true']])
+    expect(faults.map((fault) => [fault.site, fault.message])).toEqual([['browser.readRefStates.refs', '1 of 2 refs unread: Could not find object with given id']])
+  })
+
+  it('reports a page that holds no registry to read states for', async () => {
+    const faults: FaultReport[] = []
+    setFaultSink((report) => faults.push(report))
+    const cdp = new FakeCdp(page)
+    cdp.noRegistry = true
+    const { controller } = makeController({ cdp })
+    const snapshot = await controller.collectPage()
+    expect(snapshot.refs).toHaveLength(2)
     expect(faults.map((fault) => fault.site)).toEqual(['browser.createCdpBrowserController.refStates'])
   })
+
 })
 
 describe('createCdpBrowserController readPage', () => {
