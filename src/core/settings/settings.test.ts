@@ -256,7 +256,7 @@ describe('news sources (#348)', () => {
 })
 
 describe('the Weight card and the Weight section (#350, #351)', () => {
-  const EMPTY = { heightCm: null, birthDate: null, sex: null, background: null }
+  const EMPTY = { heightCm: null, birthDate: null, sex: null }
 
   it('pins the Weight card and starts with Jaish and Barun, no Body Profile, every figure on the card, a 30-day line, the pop-up on for 8 s and no remembered scale', () => {
     const settings = defaultSettings()
@@ -282,16 +282,14 @@ describe('the Weight card and the Weight section (#350, #351)', () => {
   it('gives #350’s Body Profile to Jaish on upgrade, with Barun added beside him', () => {
     const { people } = sanitizeSettings({ body: { heightCm: 180, birthDate: '1991-03-01', sex: 'male' } }).weight
     expect(people).toEqual([
-      { id: 'jaish', name: 'Jaish', body: { heightCm: 180, birthDate: '1991-03-01', sex: 'male', background: null }, guess: true },
+      { id: 'jaish', name: 'Jaish', body: { heightCm: 180, birthDate: '1991-03-01', sex: 'male' }, guess: true },
       { id: 'barun', name: 'Barun', body: EMPTY, guess: true },
     ])
   })
 
   it('keeps a sensible profile and drops what is not one', () => {
     const body = (raw: unknown) => sanitizeSettings({ weight: { people: [{ id: 'jaish', name: 'Jaish', body: raw }] } }).weight.people[0].body
-    expect(body({ heightCm: 180, birthDate: '1991-03-01', sex: 'male' })).toEqual({ heightCm: 180, birthDate: '1991-03-01', sex: 'male', background: null })
-    expect(body({ heightCm: 180, birthDate: '1991-03-01', sex: 'male', background: 'southAsian' })).toEqual({ heightCm: 180, birthDate: '1991-03-01', sex: 'male', background: 'southAsian' })
-    expect(body({ background: 'martian' })).toEqual(EMPTY)
+    expect(body({ heightCm: 180, birthDate: '1991-03-01', sex: 'male' })).toEqual({ heightCm: 180, birthDate: '1991-03-01', sex: 'male' })
     expect(body({ heightCm: 18, birthDate: '1991-02-31', sex: 'm' })).toEqual(EMPTY)
     expect(body({ heightCm: '180', birthDate: 19910301, sex: 'female' })).toEqual({ ...EMPTY, sex: 'female' })
   })
