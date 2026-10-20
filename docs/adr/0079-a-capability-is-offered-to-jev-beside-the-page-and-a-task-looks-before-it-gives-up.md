@@ -8,7 +8,7 @@ Accepted on 2026-10-20 by the owner, grilled from the post mortem of the
 grammar's alone and Jev is never offered them) and ADR 0076's Local
 Match (a `play <words>` line now reaches Jev). The Steps decision from the
 same grill is ADR 0076's second amendment. Built as three tickets:
-Capabilities (A), Look-then-act (B), Steps (C).
+Capabilities (#362), Look-then-act (#363), Steps (#364).
 
 ## Context
 
