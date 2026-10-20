@@ -17,6 +17,7 @@ interface PaneState {
   ok: string
   tracker: boolean
   slotHidden: boolean
+  scriptletsAtParse: string[]
 }
 
 async function paneState(harness: Harness): Promise<PaneState> {
@@ -28,6 +29,7 @@ async function paneState(harness: Harness): Promise<PaneState> {
       ok: window.__assets ? window.__assets.ok : 'missing',
       tracker: window.__trackerRan === true,
       slotHidden: slot !== null && getComputedStyle(slot).display === 'none',
+      scriptletsAtParse: window.__scriptletsAtParse || [],
     }
   })()`)
 }
@@ -82,16 +84,19 @@ async function saveAndPersisted(harness: Harness, userDataDir: string, adblockEn
 }
 
 describe('adblock e2e', () => {
+  let fixture: FixtureServer
   let harness: Harness
   let userDataDir: string
 
   beforeAll(async () => {
+    fixture = await startFixtureServer()
     userDataDir = await mkdtemp(join(tmpdir(), 'bingbong-e2e-adblock-'))
-    harness = await startHarness({ userDataDir })
+    harness = await startHarness({ fixture, userDataDir, env: { BINGBONG_ADBLOCK_RESOURCES: fixture.url('/adblock-resources') } })
   })
 
   afterAll(async () => {
     await harness?.quit()
+    await fixture?.close().catch(() => {})
     await rm(userDataDir, { recursive: true, force: true }).catch(() => {})
   })
 
@@ -113,6 +118,12 @@ describe('adblock e2e', () => {
     )
   })
 
+  it('runs scriptlets before the page\'s first script, each in its own scope', async () => {
+    // YouTube's ad-stripping scriptlets must land before its player config is
+    // read; both sharing one top-level class must survive each other.
+    expect((await paneState(harness)).scriptletsAtParse).toEqual(['one', 'two'])
+  })
+
   it('kill switch: settings toggle disables the engine without a restart', async () => {
     await openSettings(harness)
     expect(await harness.dashboardEval<string>(toggleAdblockScript(false))).toBe('ok')
@@ -125,6 +136,7 @@ describe('adblock e2e', () => {
     expect(off.ad).toBe('loaded') // previously blocked asset now loads
     expect(off.tracker).toBe(true)
     expect(off.slotHidden).toBe(false)
+    expect(off.scriptletsAtParse).toEqual([])
   })
 
   it('kill switch: re-enabling restores blocking without a refetch', async () => {
@@ -139,6 +151,7 @@ describe('adblock e2e', () => {
     expect(on.ad).toBe('error')
     expect(on.tracker).toBe(false)
     expect(on.slotHidden).toBe(true)
+    expect(on.scriptletsAtParse).toEqual(['one', 'two'])
   })
 })
 

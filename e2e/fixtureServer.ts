@@ -19,16 +19,36 @@ const ADBLOCK_LIST_BODY = [
   '/ad-banner.png',
   '/tracker.js',
   '##.ad-slot',
+  '127.0.0.1##+js(mark-early, one)',
+  '127.0.0.1##+js(mark-early, two)',
   '',
 ].join('\n')
 
+// The scriptlet resources behind the two `+js` rules above (served when a
+// test sets BINGBONG_ADBLOCK_RESOURCES to /adblock-resources). Both share a
+// top-level class dependency, as every uBlock inbound-object edit shares
+// `class JSONPath`, so the pair only both run when each is scoped on its own.
+const ADBLOCK_RESOURCES_BODY = JSON.stringify({
+  scriptlets: [
+    { name: 'shared-probe.fn', aliases: [], body: 'class SharedProbe{}', dependencies: [] },
+    {
+      name: 'mark-early.js',
+      aliases: [],
+      body: 'function markEarly(name=""){new SharedProbe();(window.__scriptlets=window.__scriptlets||[]).push(name)}',
+      dependencies: ['shared-probe.fn'],
+    },
+  ],
+  redirects: [],
+})
+
 // The page under test: a blocked banner image, an allowed image, a blocked
 // tracker script and a cosmetic ad slot. Asset outcomes land in
-// window.__assets so probes don't depend on naturalWidth heuristics.
+// window.__assets so probes don't depend on naturalWidth heuristics. The
+// head's first script notes which scriptlets had run before it.
 function adblockPage(): string {
   return `<!doctype html>
 <html>
-<head><title>adblock fixture</title></head>
+<head><title>adblock fixture</title><script>window.__scriptletsAtParse = (window.__scriptlets || []).slice()</script></head>
 <body style="background:#222;color:#fff;margin:0">
   <h1>adblock fixture page</h1>
   <div class="ad-slot" id="ad-slot">Sponsored content</div>
@@ -1301,6 +1321,11 @@ export async function startFixtureServer(): Promise<FixtureServer> {
       adblockListHits += 1
       res.writeHead(200, { 'Content-Type': 'text/plain' })
       res.end(ADBLOCK_LIST_BODY)
+      return
+    }
+    if (req.url === '/adblock-resources') {
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(ADBLOCK_RESOURCES_BODY)
       return
     }
     if (req.url === '/set-cookie') {

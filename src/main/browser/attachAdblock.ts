@@ -1,15 +1,18 @@
 import { createHash } from 'node:crypto'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { ElectronBlocker } from '@ghostery/adblocker-electron'
+import { ipcMain, type IpcMainEvent } from 'electron'
+import { ElectronBlocker, Request } from '@ghostery/adblocker-electron'
 import { adblockCachePaths, resolveAdblockConfig, type AdblockCacheMeta } from '../../core/adblock/adblockConfig'
 import {
   createAdblockController,
   type AdblockControllerDeps,
   type AdblockEngine,
 } from '../../core/adblock/adblockController'
+import { ADBLOCK_SCRIPTLETS_CHANNEL, isolateScriptlet } from '../../core/adblock/scriptlets'
 import type { SettingsStore } from '../settings/settingsStore'
 import { reportFault } from '../../core/trace/fault'
+import scriptletsPreloadPath from './adblockScriptletsPreload.cjs?asset'
 
 // Electron glue for the embedder-level adblocker (issue #21): maps the
 // unit-tested controller onto @ghostery/adblocker-electron and the persistent
@@ -18,6 +21,34 @@ import { reportFault } from '../../core/trace/fault'
 // Covered by e2e; the policy lives in core/adblock.
 
 const FETCH_TIMEOUT_MS = 15_000
+
+const libraryCosmetics = ElectronBlocker.prototype.getCosmeticsFilters
+const scriptsTakenOver = new WeakSet<ElectronBlocker>()
+
+/** The library keeps its CSS hiding but injects no scriptlets: its
+ * executeJavaScript waits for the load to finish, so ours run them instead,
+ * from the frame preload at document start (core/adblock/scriptlets). */
+function takeOverScriptlets(blocker: ElectronBlocker): void {
+  if (scriptsTakenOver.has(blocker)) return
+  scriptsTakenOver.add(blocker)
+  blocker.getCosmeticsFilters = (request) => ({ ...libraryCosmetics.call(blocker, request), scripts: [] })
+}
+
+/** The page's scriptlets, each in its own scope; none when the page is allow-listed. */
+function scriptletsFor(blocker: ElectronBlocker, url: string): string[] {
+  const { hostname, domain } = Request.fromRawDetails({ url })
+  const { active, scripts } = libraryCosmetics.call(blocker, {
+    url,
+    hostname,
+    domain,
+    getBaseRules: false,
+    getInjectionRules: true,
+    getExtendedRules: false,
+    getRulesFromHostname: true,
+    getRulesFromDOM: false,
+  })
+  return active === false ? [] : scripts.map(isolateScriptlet)
+}
 
 export interface AdblockAttachment {
   /** Resolves once the initial load finished — engine enforced or degraded. */
@@ -107,6 +138,7 @@ export function attachAdblock(deps: {
       }
       // enableBlockingInSession is idempotent for the same blocker+session.
       if (blocker !== null && enabled) {
+        takeOverScriptlets(blocker)
         blocker.enableBlockingInSession(partitionSession)
         enforced = blocker
       }
@@ -127,6 +159,23 @@ export function attachAdblock(deps: {
 
   const controller = createAdblockController(controllerDeps)
 
+  // Every frame of the partition asks here before its first script runs. The
+  // reply must always be set, or the page's renderer waits on it — and set
+  // once: the first assignment is what the page receives.
+  const scriptletsPreload = partitionSession.registerPreloadScript({ type: 'frame', filePath: scriptletsPreloadPath })
+  const onScriptlets = (event: IpcMainEvent, url: unknown): void => {
+    let scripts: string[] = []
+    if (enforced !== null && typeof url === 'string' && event.sender.session === partitionSession) {
+      try {
+        scripts = scriptletsFor(enforced, url)
+      } catch (error) {
+        reportFault('adblock.attachAdblock.scriptlets', error)
+      }
+    }
+    event.returnValue = scripts
+  }
+  ipcMain.on(ADBLOCK_SCRIPTLETS_CHANNEL, onScriptlets)
+
   // The settings kill switch applies immediately — no restart, no refetch.
   const unsubscribe = settingsStore.subscribe((settings) => controller.setEnabled(settings.adblockEnabled))
 
@@ -134,6 +183,8 @@ export function attachAdblock(deps: {
     ready: () => controller.ready(),
     dispose() {
       unsubscribe()
+      ipcMain.removeListener(ADBLOCK_SCRIPTLETS_CHANNEL, onScriptlets)
+      partitionSession.unregisterPreloadScript(scriptletsPreload)
       controller.dispose()
     },
   }
