@@ -195,8 +195,12 @@ export function caseFromLog(logsDir: string, id: string, expectations: readonly 
     parsed.push(expectation)
   }
   const decision = collectDecisionRecords(logsDir).records.findLast((record): record is DecisionRecord => record.type === 'decision' && record.turnId === id)
-  const askId = decision !== undefined ? decision.ask : id
-  const ask = askId === undefined ? undefined : collectAsks(logsDir).get(askId)
+  const asks = collectAsks(logsDir)
+  // A line read as Steps (#364) holds two asks on its first Step's turn: the Step's own, and the one that split the line — taken when the expectations judge a question only it asked.
+  const askIds = decision !== undefined ? [decision.ask, decision.split?.ask].filter((askId): askId is string => askId !== undefined) : [id]
+  const judged = askIds.find((askId) => parsed.every((expectation) => expectation.question in (asks.get(askId)?.questions ?? {})))
+  const askId = judged ?? askIds[0]
+  const ask = askId === undefined ? undefined : asks.get(askId)
   if (ask === undefined) return { error: `no ask recorded for ${id} in ${logsDir}` }
   for (const expectation of parsed) {
     const problem = expectationProblem(ask.questions, expectation)

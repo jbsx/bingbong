@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { DecisionChoiceAnswer } from '../ports/decisionModel'
 import type { CommandPage } from './command'
-import { commandQuestions, commandState, dismissPhraseQuestions, doneFacts, doneLine, hopQuestions, onResults, readCommandAnswers, readDismissChoice, readVerdict, slotSpans } from './jevReading'
+import { commandQuestions, commandState, dismissPhraseQuestions, doneFacts, doneLine, hopQuestions, onResults, partialQuestions, readCommandAnswers, readDismissChoice, readSteps, readVerdict, slotSpans } from './jevReading'
 
 // One Jev call per Command the Local Match cannot settle (#324, ADR
 // 0076): the state is the transcript, the page's address and title and
@@ -627,5 +627,56 @@ describe('a dismiss phrase over a pop-up (owner\'s rule 2026-10-19)', () => {
 
   it('tells Jev to decline a cookie notice\'s optional cookies', () => {
     expect(dismissPhraseQuestions('close', SHEET)!.dismiss.instructions).toContain('continue without accepting')
+  })
+})
+
+describe('the steps Choice (#364, ADR 0076 "a line is Steps")', () => {
+  const BLANK: CommandPage = { ...PAGE, url: 'about:blank' }
+  const LINE = 'start the song from the beginning and put it on loop'
+  const stepsOf = (text: string) => {
+    const questions = commandQuestions(text, BLANK)
+    return 'steps' in questions ? questions.steps?.options : undefined
+  }
+
+  it('is asked at hop 0 beside the others, one option per conjunction boundary labelled with its two halves, and none', () => {
+    expect(Object.keys(commandQuestions(LINE, BLANK))).toEqual(['verb', 'target', 'slot', 'steps'])
+    expect(stepsOf(LINE)).toEqual({ none: 'one command: the whole line', w7: 'start the song from the beginning | put it on loop' })
+  })
+
+  it('offers each of and, then, and then and a comma once, the conjunction left out of both halves', () => {
+    expect(stepsOf('open youtube then search cats')).toEqual({ none: 'one command: the whole line', w3: 'open youtube | search cats' })
+    expect(stepsOf('open youtube and then search cats')).toEqual({ none: 'one command: the whole line', w4: 'open youtube | search cats' })
+    expect(stepsOf('scroll down, click the first one, and read it')).toEqual({
+      none: 'one command: the whole line',
+      w2: 'scroll down | click the first one, and read it',
+      w7: 'scroll down, click the first one | read it',
+    })
+    expect(stepsOf('play highs and lows pomme')).toEqual({ none: 'one command: the whole line', w3: 'play highs | lows pomme' })
+  })
+
+  it('is not asked for a line with no conjunction, or one that starts or ends on one; nor at a later hop, on a partial, or when left out', () => {
+    expect(Object.keys(commandQuestions('scroll down please', BLANK))).toEqual(['verb', 'target', 'slot'])
+    expect(Object.keys(commandQuestions('and then', BLANK))).toEqual(['verb', 'target', 'slot'])
+    expect(Object.keys(commandQuestions('open youtube and', BLANK))).toEqual(['verb', 'target', 'slot'])
+    expect(Object.keys(hopQuestions(LINE, BLANK, { hop: 1, visited: [], actions: [], links: [] }))).not.toContain('steps')
+    expect(Object.keys(partialQuestions(LINE, BLANK))).toEqual(['verb', 'target', 'slot', 'complete'])
+    expect(Object.keys(commandQuestions(LINE, BLANK, undefined, { steps: false }))).toEqual(['verb', 'target', 'slot'])
+  })
+
+  it('reads a boundary as the two Steps, and none or a label it did not offer as one Command', () => {
+    const answers = (steps: string) => ({ verb: choice('none'), target: choice('none'), slot: choice('none'), steps: choice(steps) })
+    expect(readSteps(answers('w7'), LINE)).toEqual({ at: 7, first: 'start the song from the beginning', rest: 'put it on loop' })
+    expect(readSteps(answers('none'), LINE)).toBeNull()
+    expect(readSteps(answers('w3'), LINE)).toBeNull()
+    expect(readSteps({ verb: choice('none'), target: choice('none'), slot: choice('none') }, LINE)).toBeNull()
+  })
+
+  it('tells a Step its place in the line and what the Steps before it did, the line on its own labelled line', () => {
+    const state = commandState('put it on loop', BLANK, undefined, { line: LINE, step: 2, of: 2, done: ['Step 1 "start the song from the beginning": restart'] })
+    expect(state.split('\n').slice(0, 3)).toEqual([
+      'The user spoke to a web browser: "put it on loop"',
+      `Step 2 of 2 of the line: ${JSON.stringify(LINE)}`,
+      'Done so far: Step 1 "start the song from the beginning": restart',
+    ])
   })
 })

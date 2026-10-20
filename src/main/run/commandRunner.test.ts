@@ -2846,3 +2846,106 @@ describe('a Command on a blank pane (#361)', () => {
     expect(events[0]).not.toHaveProperty('keepsIdle')
   })
 })
+
+describe('a line read as Steps (#364, ADR 0076 "a line is Steps")', () => {
+  const decisions = (records: CommandLogRecord[]) => records.flatMap((record) => (record.type === 'decision' ? [record] : []))
+  const commands = (events: PipelineEvent[]) => events.flatMap((event) => (event.type === 'command' ? [event] : []))
+  const split = (steps: string, rest: Record<string, DecisionAnswer> = {}) => ({ answers: { verb: choice('click'), target: choice('ref-2'), slot: choice('none'), where: choice('page'), steps: choice(steps), ...rest } })
+
+  it('runs each Step as its own Task in order, its words read as a fresh hop 0 — the grammar first — under the line\'s one Task id', async () => {
+    const { browser, decision, events, records, runner } = harness()
+    decision.script.push(split('w4'))
+
+    await runner.run('click sign in and scroll down', { source: 'spoken', turnId: 't1' })
+
+    expect(decision.requests).toHaveLength(1)
+    expect(Object.keys(decision.requests[0]!.questions)).toContain('steps')
+    expect(browser.clicks).toEqual([2])
+    expect(browser.scrolls).toEqual(['down'])
+    // Step 2 fires only once Step 1's action is done.
+    const order = events.flatMap((event) => (event.type === 'tool_call' || event.type === 'done' ? [`${event.type}:${event.turnId}`] : []))
+    expect(order.slice(0, 2)).toEqual(['tool_call:t1', 'done:t1'])
+    expect(commands(events)).toEqual([
+      expect.objectContaining({ turnId: 't1', text: 'click sign in and scroll down', task: { id: 't1', hop: 0, step: 1, of: 2 } }),
+      expect.objectContaining({ action: 'scroll down', task: { id: 't1', hop: 0, step: 2, of: 2 } }),
+    ])
+    const [first, second] = decisions(records)
+    expect(first).toMatchObject({ turnId: 't1', transcript: 'click sign in', verb: 'click', reading: 'local_match', task: { id: 't1', hop: 0, step: 1, of: 2 }, split: { ask: 't1', steps: ['click sign in', 'scroll down'], jev: { confidence: { steps: 0.9 } } }, ended: 'local_match' })
+    expect(second).toMatchObject({ transcript: 'scroll down', verb: 'scroll_down', task: { id: 't1', hop: 0, step: 2, of: 2 }, ended: 'local_match' })
+    expect(second).not.toHaveProperty('split')
+    expect(decisions(records)).toHaveLength(2)
+  })
+
+  it('reads a later Step against the page the last one left, told the line and what the Steps before it did', async () => {
+    const { decision, runner } = harness()
+    decision.script.push(split('w4'), { answers: { verb: choice('scroll_down'), target: choice('none'), slot: choice('none'), where: choice('page') } })
+
+    await runner.run('click sign in and see what is below', { source: 'spoken' })
+
+    // Step 2's scroll goes on to its hop 1, whose Done so far carries Step 1 too.
+    expect(decision.requests).toHaveLength(3)
+    expect(decision.requests[2]!.state).toContain('Done so far: Step 1 "click sign in": click [2] "Sign in"; scroll down')
+    const step2 = decision.requests[1]!
+    expect(Object.keys(step2.questions)).not.toContain('steps')
+    expect(step2.state).toContain('The user spoke to a web browser: "see what is below"')
+    expect(step2.state).toContain('Step 2 of 2 of the line: "click sign in and see what is below"')
+    expect(step2.state).toContain('Done so far: Step 1 "click sign in": click [2] "Sign in"')
+  })
+
+  it('stops the line when Step 1 does not end done: Step 2 never runs, and Step 1\'s failure is said once', async () => {
+    const speech = new FakeSpeech()
+    const { browser, decision, events, records, runner } = harness({ speech })
+    decision.script.push(
+      split('w4', { target: choice('ref-1') }),
+      { answers: { verb: choice('click'), target: choice('ref-1'), slot: choice('none'), where: choice('page') } },
+      { answers: { verb: choice('none'), target: choice('none'), slot: choice('none'), outcome: choice('yes', 0.4) } },
+    )
+
+    await runner.run('take me home then scroll down', { source: 'spoken', turnId: 't1' })
+
+    expect(browser.clicks).toEqual([1])
+    expect(browser.scrolls).toEqual([])
+    expect(decision.requests).toHaveLength(3)
+    expect(speech.spoken.map((spoken) => spoken.text)).toEqual(["I'm not sure this is it."])
+    expect(decisions(records).map((record) => [record.task?.step, record.task?.hop, record.ended])).toEqual([
+      [1, 0, undefined],
+      [1, 1, 'unsure'],
+    ])
+    // Step 1's own reading has its own ask; the record names the split's beside it.
+    expect(decisions(records)[0]).toMatchObject({ ask: 't1-step1', split: { ask: 't1' } })
+    expect(commands(events).every((event) => event.task?.id === 't1')).toBe(true)
+  })
+
+  it('ends every Step still to come when a later Command supersedes the line', async () => {
+    const { browser, decision, runner } = harness()
+    decision.script.push(split('w4'), { answers: { verb: choice('scroll_down'), target: choice('none'), slot: choice('none'), where: choice('page') } })
+    const release = decision.hold(1)
+    const line = runner.run('click sign in and see what is below', { source: 'spoken' })
+    await flushMicrotasks()
+    await runner.run('scroll up')
+    release()
+    await line
+    expect(browser.clicks).toEqual([2])
+    expect(browser.scrolls).toEqual(['up'])
+  })
+
+  it('reads a line Jev answers none as one Command, as before', async () => {
+    const { browser, decision, records, runner } = harness()
+    decision.script.push(split('none'))
+    await runner.run('click sign in and scroll down', { source: 'spoken' })
+    expect(browser.clicks).toEqual([2])
+    expect(browser.scrolls).toEqual([])
+    expect(decisions(records)[0]!.task).toEqual({ id: expect.any(String), hop: 0 })
+    expect(decisions(records)[0]).not.toHaveProperty('split')
+  })
+
+  it('never splits a line the grammar settles whole, nor one fired early on a partial', async () => {
+    const { decision, runner } = harness()
+    await runner.run('scroll down')
+    expect(decision.requests).toHaveLength(0)
+    void runner.prepare()
+    decision.script.push({ answers: { verb: choice('click'), target: choice('ref-2'), slot: choice('none'), where: choice('page'), complete: { type: 'noul', noul: 0.9 } } })
+    await runner.consider('click sign in and')
+    expect(Object.keys(decision.requests[0]!.questions)).not.toContain('steps')
+  })
+})

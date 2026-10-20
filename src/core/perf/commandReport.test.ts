@@ -89,7 +89,7 @@ describe('buildDecisionReport', () => {
       names: { page: 0, learned: 0 },
       earlyFire: { spoken: 5, fired: 0, lead: null, partialCalls: 0, spokenJevAsked: 3 },
       // Records from before #328 carry no Task.
-      tasks: { count: 0, ended: {}, hops: null, overrunsByHop: {} },
+      tasks: { count: 0, ended: {}, hops: null, overrunsByHop: {}, split: 0 },
       picks: { remembered: 0, searched: 0 },
     })
   })
@@ -220,7 +220,19 @@ describe('formatCommandReport', () => {
     ]
     const lines = formatCommandReport(buildReactionReport([]), buildDecisionReport(log))
     expect(lines.at(-1)).toBe('tasks: 4 | ended local_match 2, done 1, unsure 1 | hops p50 1, max 4 | overruns by hop: hop 1 2, hop 2 1')
-    expect(buildDecisionReport(log).tasks).toEqual({ count: 4, ended: { local_match: 2, done: 1, unsure: 1 }, hops: { p50: 1, max: 4 }, overrunsByHop: { 1: 2, 2: 1 } })
+    expect(buildDecisionReport(log).tasks).toEqual({ count: 4, ended: { local_match: 2, done: 1, unsure: 1 }, hops: { p50: 1, max: 4 }, overrunsByHop: { 1: 2, 2: 1 }, split: 0 })
+  })
+
+  it('counts each Step of a split line as its own Task, and the lines that split (#364)', () => {
+    const step = (turnId: string, step: number, hop: number, ended?: TaskEnded): CommandLogRecord => ({
+      ...decision(turnId, 'jev'),
+      task: { id: 'line', hop, step, of: 2 },
+      ...(ended !== undefined ? { ended } : {}),
+    })
+    const log: CommandLogRecord[] = [step('line', 1, 0, 'local_match'), step('s2', 2, 0), step('s2h1', 2, 1, 'done'), { ...decision('one', 'local_match'), task: { id: 'one', hop: 0 }, ended: 'local_match' }]
+    const report = buildDecisionReport(log)
+    expect(report.tasks).toMatchObject({ count: 3, hops: { p50: 1, max: 2 }, split: 1 })
+    expect(formatCommandReport(buildReactionReport([]), report).at(-1)).toBe('tasks: 3 | ended local_match 2, done 1 | hops p50 1, max 2 | overruns by hop: none | lines split into Steps: 1')
   })
 
   it('prints nothing when neither family has a record', () => {

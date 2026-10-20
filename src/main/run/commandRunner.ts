@@ -19,12 +19,14 @@ import {
   partialQuestions,
   readCommandAnswers,
   readDismissChoice,
+  readSteps,
   dismissPhraseQuestions,
   readVerdict,
   setAsideOf,
   type DoneResult,
   type HopContext,
   type SetAside,
+  type StepContext,
   type Verdict,
 } from '../../core/command/jevReading'
 import { blockedOrInertAction } from '../../core/browser/actionOutcome'
@@ -97,6 +99,13 @@ import type { Player, PlayerOutcome } from '../music/player'
 // (#354): the runner fires the dialog's dismissal as that hop and the Task
 // goes on, once per Obstacle — the same dialog raised again is the wall —
 // with the target that raised it set aside.
+//
+// Steps (#364, ADR 0076 "a line is Steps"): hop 0's Jev call on a line with
+// a conjunction also asks where a second Command starts. A split line runs
+// each Step as its own Task, in order, under the line's one Task id: its
+// words read as a fresh hop 0, told the line and what the Steps before it
+// did; a later Step runs only once the one before ended done. A partial is
+// never split, nor a line the grammar settles whole.
 
 export type { CommandRunState }
 
@@ -449,9 +458,11 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     turnId: string | null,
     state: string,
     questions: Q,
+    /** The ask's own id, for a turn asked twice (#364: a line's split, then its first Step); the turn's id otherwise. */
+    ownId?: string,
   ): Promise<DecisionResult<Q> & { readonly askId: string }> {
     const askedAt = at()
-    const askId = turnId ?? `partial-${askedAt.toString(36)}-${(partialAsks += 1)}`
+    const askId = ownId ?? turnId ?? `partial-${askedAt.toString(36)}-${(partialAsks += 1)}`
     const result = await model.ask({ state, questions })
     try {
       deps.askLog?.write({ type: 'ask', id: askId, ...(turnId !== null ? { turnId } : {}), at: askedAt, kind, model: model.model, state, questions })
@@ -592,6 +603,15 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     ask?: string
     /** A dismiss phrase's Dismissal Ladder past its first rung (owner's rule 2026-10-19): fired in turn while the pop-up stays. */
     ladder?: readonly Command[]
+    /** The line Jev split into Steps (#364): each Step's words; `command` is then the whole line's reading, never fired. */
+    steps?: readonly string[]
+  }
+
+  /** How a hop 0 is read (#364): whether Jev may split the line, and, for a Step's own words, where the Step stands and the ask's own id. */
+  interface ReadOptions {
+    readonly split: boolean
+    readonly step?: StepContext
+    readonly askId?: string
   }
 
   /**
@@ -656,7 +676,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
    * spoken Slot that could carry a name waits for the page, so the Name
    * Match can read it against the Page Terms.
    */
-  async function read(turnId: string, text: string, pending: PreparedPage | null, spoken: boolean): Promise<Reading> {
+  async function read(turnId: string, text: string, pending: PreparedPage | null, spoken: boolean, options: ReadOptions = { split: true }): Promise<Reading> {
     const quick = localMatch(text, [])
     const { dismissal, page: dismissed } = await readDismissal(turnId, text, quick, pending)
     if (dismissal !== null) return dismissal
@@ -667,9 +687,12 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     if (local !== null) return { command: local, page, reading: 'local_match', jevAsked: false }
     const model = deps.decisionModel()
     if (model === null) return { command: UNREAD, page, reading: 'best_guess', jevAsked: false }
-    const result = await askJev(model, 'command', turnId, commandState(text, page), commandQuestions(text, page))
+    const result = await askJev(model, 'command', turnId, commandState(text, page, undefined, options.step), commandQuestions(text, page, undefined, { steps: options.split }), options.askId)
     if (result.status === 'answered') {
+      // Jev split the line (#364): each Step is read on its own, and this reading of the whole fires nothing.
+      const split = readSteps(result.answers, text)
       return {
+        ...(split !== null ? { steps: [split.first, split.rest] } : {}),
         command: readCommandAnswers(result.answers, text, page),
         page,
         reading: 'jev',
@@ -900,8 +923,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     task: TaskHop,
   ): Promise<FireResult> {
     // The Misfire signal (ADR 0076): this Command as the recovery of the one
-    // that fired before it. A hop past the first is the Task's own move, never the user's recovery.
-    if (previous !== null && task.hop === 0 && reacting.ownMove !== true) {
+    // that fired before it. A hop past the first is the Task's own move, never the user's recovery; so is a later Step's (#364).
+    if (previous !== null && task.hop === 0 && (task.step ?? 1) === 1 && reacting.ownMove !== true) {
       const signal = misfireSignal(previous, { verb: command.verb, key: command.key, at: firedAt })
       if (signal !== null) log({ type: 'misfire', turnId: previous.turnId, at: firedAt, signal, signalTurnId: turnId, withinMs: firedAt - previous.at })
     }
@@ -1102,6 +1125,13 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     readonly obstacles: string[]
     /** The last action, when it raised a pop-up over a clear page (#354): its target is set aside when the Task steps past that pop-up. */
     raised?: { readonly command: Command; readonly page: CommandPage }
+    /** In a line read as Steps (#364): where this Step stands in it — every hop's reading is told the line and what the Steps before it did. */
+    readonly step?: StepContext
+  }
+
+  /** A hop's place in its Task, and in its line when the line is Steps (#364). */
+  function hopOf(task: Pick<Task, 'id' | 'step'>, hop: number): TaskHop {
+    return { id: task.id, hop, ...(task.step !== undefined ? { step: task.step.step, of: task.step.of } : {}) }
   }
 
   /** Whether the Verdict is sure: its confidence clears the Choice bar. */
@@ -1223,7 +1253,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
 
   /** A hop that fires nothing: its words greyed in the Feed with what it came to, and its turn closed. */
   function dropHop(turnId: string, task: Task, hop: number, action: string, outcome: 'done' | 'cancelled', firedAt: number): void {
-    publish({ type: 'command', turnId, text: task.text, action, dropped: true, task: { id: task.id, hop }, at: firedAt })
+    publish({ type: 'command', turnId, text: task.text, action, dropped: true, task: hopOf(task, hop), at: firedAt })
     publish({ type: 'done', turnId, outcome, at: at() })
   }
 
@@ -1323,10 +1353,10 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       const links = !superseded(task) ? await wholePageLinks(turnId) : []
       const context: HopContext = { hop, visited: [...task.visited], actions: [...task.actions], links, setAside: [...task.setAside], searched: [...task.searched], terms: [...task.terms] }
       const model = deps.decisionModel()
-      const result = superseded(task) || model === null ? null : await askJev(model, 'hop', turnId, commandState(task.text, page, context), hopQuestions(task.text, page, context))
+      const result = superseded(task) || model === null ? null : await askJev(model, 'hop', turnId, commandState(task.text, page, context, task.step), hopQuestions(task.text, page, context))
       if (reading?.turnId === turnId) reading = null
       const firedAt = at()
-      const base = { type: 'decision' as const, turnId, at: firedAt, source: task.source, transcript: task.text, reading: 'jev' as const, task: { id: task.id, hop } }
+      const base = { type: 'decision' as const, turnId, at: firedAt, source: task.source, transcript: task.text, reading: 'jev' as const, task: hopOf(task, hop) }
       const none = { verb: 'none' as const, target: null, slot: null }
 
       if (result === null || result.status !== 'answered') {
@@ -1346,7 +1376,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         ask: result.askId,
       }
       const { command, matched } = matchName(read.command, page, spoken)
-      const record = { ...recordOf(turnId, firedAt, task.source, task.text, read, command, matched, false), task: { id: task.id, hop } }
+      const record = { ...recordOf(turnId, firedAt, task.source, task.text, read, command, matched, false), task: hopOf(task, hop) }
       if (superseded(task)) {
         // A later Command, Escape or the Abort Head came while this hop was read: the reading is data, nothing fires.
         log({ ...record, ended: 'superseded' })
@@ -1383,11 +1413,11 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
             const aside = ladder[rung]!
             const rungTurnId = rung === 0 ? turnId : (tracer?.mintTurnId() ?? `${task.id}-hop${hop}`)
             const rungAt = rung === 0 ? firedAt : at()
-            const stepped: DecisionRecord = { ...recordOf(rungTurnId, rungAt, task.source, task.text, read, aside, null, false), task: { id: task.id, hop }, stepAside: true }
+            const stepped: DecisionRecord = { ...recordOf(rungTurnId, rungAt, task.source, task.text, read, aside, null, false), task: hopOf(task, hop), stepAside: true }
             // Another rung follows while the cap leaves room for it: a dialog still open after this one is not yet the failure.
             const more = rung + 1 < ladder.length && task.actions.length + 1 < MAX_TASK_ACTIONS
             const reacting: Reacting = { react: () => {}, settled: () => summarize(rungTurnId), ...(more ? { deferStay: true as const } : {}) }
-            const fired = await fire(rungTurnId, task.text, task.source, aside, page, 'jev', null, rungAt, reacting, { id: task.id, hop })
+            const fired = await fire(rungTurnId, task.text, task.source, aside, page, 'jev', null, rungAt, reacting, hopOf(task, hop))
             if (fired.outcome === 'stayed') {
               // The pop-up stayed: this rung is an action taken, said so in "Done so far", and the next fires.
               task.actions.push(doneLine(aside, page, { changed: false }))
@@ -1430,7 +1460,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       }
       const ending = endedByReading('jev', command.verb)
       recordBeforeFiring(record, ending, command)
-      const fired = await fire(turnId, task.text, task.source, command, page, 'jev', matched, firedAt, { react: () => {}, settled: () => summarize(turnId) }, { id: task.id, hop })
+      const fired = await fire(turnId, task.text, task.source, command, page, 'jev', matched, firedAt, { react: () => {}, settled: () => summarize(turnId) }, hopOf(task, hop))
       const ended = settleHop(task, record, ending, command, page, fired)
       if (ended !== null) return endTask(task, ended, hop + 1)
     }
@@ -1607,6 +1637,135 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     return { action: fired.outcome.then(() => {}) }
   }
 
+  /** A line given at an Endpoint, or typed (#364): what every Step of it shares. */
+  interface Line {
+    readonly text: string
+    readonly source: CommandSource
+    readonly endpointAt: number
+    readonly truncated: boolean
+    readonly submission: number
+    /** When it was given (#330). */
+    readonly givenAt: number
+  }
+
+  /** How a Step's Task came out (#364): how it ended, how its hop 0's action came out when one fired, and what it did, for the next Step's "Done so far". */
+  interface StepEnd {
+    readonly ended: TaskEnded
+    readonly outcome?: FireOutcome
+    readonly did: string
+  }
+
+  /**
+   * One Task from its hop 0 (#328): the words read, fired, and gone on
+   * from until it ends. A line is one, or, read as Steps, one per Step
+   * (#364): each Step's hop 0 carries the record's extra fields only when
+   * it is the first, and only the first measures the line's Reaction;
+   * every Step's Task carries the line's id (`taskId`).
+   */
+  async function runStep(line: Line, turnId: string, words: string, heard: Reading, extra: Partial<DecisionRecord>, options: { measured: boolean; step?: StepContext; taskId?: string }): Promise<StepEnd> {
+    const { source, endpointAt, truncated, submission, givenAt } = line
+    const firedAt = at()
+    const task: Task = { id: options.taskId ?? turnId, submission, text: words, source, endpointAt, visited: [], actions: [], setAside: [], unchanged: 0, searched: [], terms: [], rechecked: false, obstacles: [], ...(options.step !== undefined ? { step: options.step } : {}) }
+    const hop0 = hopOf(task, 0)
+    visit(task, heard.page.url || (browser.state().url ?? ''))
+    const { command, matched } = matchName(heard.command, heard.page, source === 'spoken')
+    const record: DecisionRecord = { ...recordOf(turnId, firedAt, source, words, heard, command, matched, truncated), ...extra, task: hop0 }
+    const did = (): string => task.actions.join('; ') || describeCommand(command, heard.page)
+
+    if (submission !== submitted) {
+      // A later Command (or an abort) arrived while this one was being
+      // read: the later one stands. The reading is data; nothing fires.
+      log({ ...record, ended: 'superseded' })
+      publish({ type: 'command', turnId, text: line.text, action: abandonedAction(submission), dropped: true, task: hop0, at: givenAt })
+      publish({ type: 'done', turnId, outcome: 'cancelled', at: at() })
+      return { ended: endTask(task, 'superseded', 1), did: '' }
+    }
+
+    // A reading that ends the Task before it fires is recorded so now; a hop that goes on, once its action has landed.
+    // An address with words past it goes on to hop 1 (#341); an Early Fire never fires an open on the Local Match, so only this path sees one.
+    const wordsPast = command.verb === 'navigate' && carriesWordsPastAddress(words)
+    const ending = endedByReading(heard.reading, command.verb, wordsPast)
+    recordBeforeFiring(record, ending, command)
+    if (command.verb === 'none' || command.verb === 'done') {
+      // An Utterance read as no Command, or as the page already being what was asked: a greyed entry of the words,
+      // and "No response." with the reason under it — never a silent fade (owner ruling 2026-10-19).
+      publish({ type: 'command', turnId, text: line.text, ...(command.verb === 'done' ? { action: 'already here' } : {}), dropped: true, task: hop0, at: firedAt })
+      answer(turnId, noResponseAnswer({ verb: command.verb, grammarError: grammarErrorOf(words), jevAsked: heard.jevAsked, jev: heard.jev }), 'muted')
+      publish({ type: 'done', turnId, outcome: 'done', at: at() })
+      return { ended: endTask(task, ending!, 1), did: 'already here' }
+    }
+
+    const ladder = heard.ladder ?? []
+    let result = await fire(
+      turnId,
+      line.text,
+      source,
+      command,
+      heard.page,
+      heard.reading,
+      matched,
+      firedAt,
+      {
+        react: (detail, endedAt) => {
+          if (options.measured) span(turnId, endedAt - endpointAt, detail)
+        },
+        settled: () => summarize(turnId),
+        ...(ladder.length > 0 ? { deferStay: true as const } : {}),
+      },
+      hop0,
+    )
+    // A dismiss phrase's Dismissal Ladder (owner's rule 2026-10-19): while the pop-up stays, the next rung fires, each its own turn; the last says the failure.
+    for (let rung = 0; rung < ladder.length && result.outcome === 'stayed'; rung += 1) {
+      const next = ladder[rung]!
+      const rungTurnId = tracer?.mintTurnId() ?? `${turnId}-rung${rung + 1}`
+      const rungAt = at()
+      log({ ...recordOf(rungTurnId, rungAt, source, words, heard, next, null, truncated), task: hop0, ended: 'local_match' })
+      result = await fire(rungTurnId, line.text, source, next, heard.page, heard.reading, null, rungAt, {
+        react: () => {},
+        settled: () => summarize(rungTurnId),
+        ownMove: true,
+        ...(rung + 1 < ladder.length ? { deferStay: true as const } : {}),
+      }, hop0)
+    }
+    const ended = settleHop(task, record, ending, command, heard.page, result)
+    const outcome = result.outcome
+    return { ended: ended !== null ? endTask(task, ended, 1) : await continueTask(task, 1), outcome, did: did() }
+  }
+
+  /** Whether a Step's Task ended done (#364): a sure yes, the page already what was asked, or a one-Command Task whose action landed. */
+  function stepDone(end: StepEnd): boolean {
+    if (end.ended === 'done') return true
+    return (end.ended === 'local_match' || end.ended === 'terminal') && end.outcome === 'landed'
+  }
+
+  /**
+   * A line Jev read as Steps (#364, ADR 0076 "a line is Steps"): each
+   * Step's words are read as a fresh hop 0 — the grammar first, then Jev,
+   * never split again — and run as its own Task, in order, on the page the
+   * last one left, told the line and what the Steps before it did. A later
+   * Step runs only once the one before ended done: a Step that ends
+   * otherwise stops the line, having said its own failure, and a later
+   * Command or an abort supersedes every Step still to come. The first
+   * Step's record names the ask that split the line.
+   */
+  async function runSteps(line: Line, turnId: string, whole: Reading, words: readonly string[], pending: PreparedPage | null, extra: Partial<DecisionRecord>): Promise<void> {
+    const done: string[] = []
+    for (let index = 0; index < words.length; index += 1) {
+      if (line.submission !== submitted) return
+      const first = index === 0
+      const step: StepContext = { line: line.text, step: index + 1, of: words.length, done: [...done] }
+      const stepTurnId = first ? turnId : (tracer?.mintTurnId() ?? `${turnId}-step${index + 1}`)
+      reading = { turnId: stepTurnId, submission: line.submission }
+      // The first Step's turn already holds the split's ask: its own reading's ask is named apart.
+      const heard = await read(stepTurnId, words[index]!, first ? pending : null, line.source === 'spoken', { split: false, step, ...(first ? { askId: `${turnId}-step1` } : {}) })
+      if (reading?.turnId === stepTurnId) reading = null
+      const split = first && whole.ask !== undefined && whole.jev !== undefined && 'confidence' in whole.jev ? { split: { ask: whole.ask, jev: whole.jev, steps: words } } : {}
+      const end = await runStep(line, stepTurnId, words[index]!, heard, first ? { ...extra, ...split } : {}, { measured: first, step, taskId: turnId })
+      if (!stepDone(end)) return
+      done.push(`Step ${index + 1} ${JSON.stringify(words[index])}: ${end.did}`)
+    }
+  }
+
   return {
     getState: () => (idle() ? 'idle' : 'running'),
 
@@ -1721,74 +1880,11 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
 
       const heard = await read(turnId, trimmed, pending, source === 'spoken')
       if (reading !== null && reading.submission === submission) reading = null
-      const firedAt = at()
       if (source === 'spoken') observeTerms(trimmed)
-
-      // This Utterance is a Task (#328); hop 0 is the Command read above.
-      const task: Task = { id: turnId, submission, text: trimmed, source, endpointAt, visited: [], actions: [], setAside: [], unchanged: 0, searched: [], terms: [], rechecked: false, obstacles: [] }
-      const hop0: TaskHop = { id: turnId, hop: 0 }
-      visit(task, heard.page.url || (browser.state().url ?? ''))
-      const { command, matched } = matchName(heard.command, heard.page, source === 'spoken')
-      const record: DecisionRecord = { ...recordOf(turnId, firedAt, source, trimmed, heard, command, matched, truncated), ...(calls > 0 ? { partialCalls: calls } : {}), ...(callAsks.length > 0 ? { partialAsks: callAsks } : {}), task: hop0 }
-
-      if (submission !== submitted) {
-        // A later Command (or an abort) arrived while this one was being
-        // read: the later one stands. The reading is data; nothing fires.
-        log({ ...record, ended: 'superseded' })
-        publish({ type: 'command', turnId, text: trimmed, action: abandonedAction(submission), dropped: true, task: hop0, at: givenAt })
-        publish({ type: 'done', turnId, outcome: 'cancelled', at: at() })
-        endTask(task, 'superseded', 1)
-        return true
-      }
-
-      // A reading that ends the Task before it fires is recorded so now; a hop that goes on, once its action has landed.
-      // An address with words past it goes on to hop 1 (#341); an Early Fire never fires an open on the Local Match, so only this path sees one.
-      const wordsPast = command.verb === 'navigate' && carriesWordsPastAddress(trimmed)
-      const ending = endedByReading(heard.reading, command.verb, wordsPast)
-      recordBeforeFiring(record, ending, command)
-      if (command.verb === 'none' || command.verb === 'done') {
-        // An Utterance read as no Command, or as the page already being what was asked: a greyed entry of the words,
-        // and "No response." with the reason under it — never a silent fade (owner ruling 2026-10-19).
-        publish({ type: 'command', turnId, text: trimmed, ...(command.verb === 'done' ? { action: 'already here' } : {}), dropped: true, task: hop0, at: firedAt })
-        answer(turnId, noResponseAnswer({ verb: command.verb, grammarError: grammarErrorOf(trimmed), jevAsked: heard.jevAsked, jev: heard.jev }), 'muted')
-        publish({ type: 'done', turnId, outcome: 'done', at: at() })
-        endTask(task, ending!, 1)
-        return true
-      }
-
-      const ladder = heard.ladder ?? []
-      let result = await fire(
-        turnId,
-        trimmed,
-        source,
-        command,
-        heard.page,
-        heard.reading,
-        matched,
-        firedAt,
-        {
-          react: (detail, endedAt) => span(turnId, endedAt - endpointAt, detail),
-          settled: () => summarize(turnId),
-          ...(ladder.length > 0 ? { deferStay: true as const } : {}),
-        },
-        hop0,
-      )
-      // A dismiss phrase's Dismissal Ladder (owner's rule 2026-10-19): while the pop-up stays, the next rung fires, each its own turn; the last says the failure.
-      for (let rung = 0; rung < ladder.length && result.outcome === 'stayed'; rung += 1) {
-        const next = ladder[rung]!
-        const rungTurnId = tracer?.mintTurnId() ?? `${turnId}-rung${rung + 1}`
-        const rungAt = at()
-        log({ ...recordOf(rungTurnId, rungAt, source, trimmed, heard, next, null, truncated), task: hop0, ended: 'local_match' })
-        result = await fire(rungTurnId, trimmed, source, next, heard.page, heard.reading, null, rungAt, {
-          react: () => {},
-          settled: () => summarize(rungTurnId),
-          ownMove: true,
-          ...(rung + 1 < ladder.length ? { deferStay: true as const } : {}),
-        }, hop0)
-      }
-      const ended = settleHop(task, record, ending, command, heard.page, result)
-      if (ended !== null) endTask(task, ended, 1)
-      else await continueTask(task, 1)
+      const line: Line = { text: trimmed, source, endpointAt, truncated, submission, givenAt }
+      const record = { ...(calls > 0 ? { partialCalls: calls } : {}), ...(callAsks.length > 0 ? { partialAsks: callAsks } : {}) }
+      if (heard.steps !== undefined && submission === submitted) await runSteps(line, turnId, heard, heard.steps, pending, record)
+      else await runStep(line, turnId, trimmed, heard, record, { measured: true })
       return true
     },
   }

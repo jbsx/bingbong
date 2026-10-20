@@ -218,4 +218,15 @@ describe('growing the corpus from the logs', () => {
     expect(caseFromLog(logs, 't3', ['target=ref-27'], corpus)).toEqual({ error: `no ask recorded for t3 in ${logs}` })
     expect(readCorpus(corpus)).toEqual([])
   })
+
+  it('jev:case on a line read as Steps (#364) takes the ask that split it when the expectations judge the split', () => {
+    const STEPS: DecisionQuestions = { ...QUESTIONS, steps: { type: 'choice', instructions: 'One command or two?', options: { none: 'one command', w7: 'a | b' } } }
+    const jevDetail = { model: 'jev-1.14.0', latencyMs: 200, confidence: { verb: 0.9, target: 0.9, slot: 0.9, steps: 0.8 }, probabilities: { verb: {}, target: {}, slot: {}, steps: { w7: 0.8 } } }
+    writeFileSync(join(logs, 'decision-1-1.jsonl'), jsonl([decision('s1', { transcript: 'a', ask: 's1-step1', split: { ask: 's1', jev: jevDetail, steps: ['a', 'b'] } })]))
+    writeFileSync(join(logs, 'asks-1-1.jsonl'), jsonl([{ ...ask('s1', 'state-line'), questions: STEPS }, ask('s1-step1', 'state-step1')]))
+    caseFromLog(logs, 's1', ['steps=w7'], corpus)
+    expect(JSON.parse(readFileSync(join(corpus, 's1.json'), 'utf8'))).toMatchObject({ expect: [{ question: 'steps', label: 'w7' }], ask: { state: 'state-line' } })
+    caseFromLog(logs, 's1', ['target=ref-27'], corpus)
+    expect(JSON.parse(readFileSync(join(corpus, 's1.json'), 'utf8'))).toMatchObject({ ask: { state: 'state-step1' } })
+  })
 })

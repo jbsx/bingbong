@@ -147,7 +147,8 @@ export function createFeedProjection(): {
    */
   const foldHop = (event: Extract<PipelineEvent, { type: 'command' }>): boolean => {
     const taskId = event.task?.id
-    if (taskId === undefined || event.task!.hop === 0) return false
+    // A later Step's hop 0 (#364) is a line of the entry its line opened.
+    if (taskId === undefined || (event.task!.hop === 0 && (event.task!.step ?? 1) === 1)) return false
     const entryId = taskEntryIds.get(taskId)
     const entry = entryId === undefined ? undefined : feed.find((shown) => shown.id === entryId)
     if (entry === undefined) return false

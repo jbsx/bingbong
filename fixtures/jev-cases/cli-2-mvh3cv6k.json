@@ -1,0 +1,135 @@
+{
+  "turnId": "cli-2-mvh3cv6k",
+  "transcript": "start the song from the beginning",
+  "model": "jev-1.14.0",
+  "recordedAt": 1792525426671,
+  "expect": [
+    {
+      "question": "steps",
+      "label": "w7"
+    }
+  ],
+  "ask": {
+    "state": "The user spoke to a web browser: \"start the song from the beginning and put it on loop\"\nPage: https://www.youtube.com/watch?v=dQw4w9WgXcQ — \"Rick Astley - Never Gonna Give You Up (Official Video) (4K Remaster) - YouTube\"\nRefs (number, kind, label, address):",
+    "questions": {
+      "verb": {
+        "type": "choice",
+        "instructions": "Which verb did the user ask the browser for? Choose none when the words are not a command for this page.",
+        "options": {
+          "navigate": "go to a web address the words name: a website, a host or a url",
+          "search": "search for the words: on the web, or on this site when they point at something on it",
+          "click": "click one of the numbered refs on the page",
+          "type": "type words into one of the numbered refs (a text field)",
+          "scroll_up": "scroll the page up",
+          "scroll_down": "scroll the page down",
+          "back": "go back to the previous page",
+          "forward": "go forward",
+          "reload": "reload the page",
+          "press": "press a key: enter, escape, space or an arrow key",
+          "read": "read the page aloud or show its contents",
+          "clear": "clear the text in the focused field",
+          "stop": "stop what the browser is doing",
+          "done": "this page is what the user asked for: nothing more to do",
+          "none": "not a command for this page: a remark, a question, a name, noise"
+        }
+      },
+      "target": {
+        "type": "choice",
+        "instructions": "Which numbered ref on the page do the words name as the thing to click or type into? Choose none when the command needs no ref, or names none of them.",
+        "options": {
+          "none": "no ref: the command does not act on one element"
+        }
+      },
+      "slot": {
+        "type": "choice",
+        "instructions": "Which words of the transcript are the thing the command carries verbatim: the address to open, the search terms, the text to type, the key to press? Choose none when it carries none.",
+        "options": {
+          "none": "the command carries no words of its own",
+          "s0-0": "start",
+          "s0-1": "start the",
+          "s0-2": "start the song",
+          "s0-3": "start the song from",
+          "s0-4": "start the song from the",
+          "s0-5": "start the song from the beginning",
+          "s0-6": "start the song from the beginning and",
+          "s0-7": "start the song from the beginning and put",
+          "s0-8": "start the song from the beginning and put it",
+          "s0-9": "start the song from the beginning and put it on",
+          "s0-10": "start the song from the beginning and put it on loop",
+          "s1-1": "the",
+          "s1-2": "the song",
+          "s1-3": "the song from",
+          "s1-4": "the song from the",
+          "s1-5": "the song from the beginning",
+          "s1-6": "the song from the beginning and",
+          "s1-7": "the song from the beginning and put",
+          "s1-8": "the song from the beginning and put it",
+          "s1-9": "the song from the beginning and put it on",
+          "s1-10": "the song from the beginning and put it on loop",
+          "s2-2": "song",
+          "s2-3": "song from",
+          "s2-4": "song from the",
+          "s2-5": "song from the beginning",
+          "s2-6": "song from the beginning and",
+          "s2-7": "song from the beginning and put",
+          "s2-8": "song from the beginning and put it",
+          "s2-9": "song from the beginning and put it on",
+          "s2-10": "song from the beginning and put it on loop",
+          "s3-3": "from",
+          "s3-4": "from the",
+          "s3-5": "from the beginning",
+          "s3-6": "from the beginning and",
+          "s3-7": "from the beginning and put",
+          "s3-8": "from the beginning and put it",
+          "s3-9": "from the beginning and put it on",
+          "s3-10": "from the beginning and put it on loop",
+          "s4-4": "the",
+          "s4-5": "the beginning",
+          "s4-6": "the beginning and",
+          "s4-7": "the beginning and put",
+          "s4-8": "the beginning and put it",
+          "s4-9": "the beginning and put it on",
+          "s4-10": "the beginning and put it on loop",
+          "s5-5": "beginning",
+          "s5-6": "beginning and",
+          "s5-7": "beginning and put",
+          "s5-8": "beginning and put it",
+          "s5-9": "beginning and put it on",
+          "s5-10": "beginning and put it on loop",
+          "s6-6": "and",
+          "s6-7": "and put",
+          "s6-8": "and put it",
+          "s6-9": "and put it on",
+          "s6-10": "and put it on loop",
+          "s7-7": "put",
+          "s7-8": "put it",
+          "s7-9": "put it on",
+          "s7-10": "put it on loop",
+          "s8-8": "it",
+          "s8-9": "it on",
+          "s8-10": "it on loop",
+          "s9-9": "on",
+          "s9-10": "on loop",
+          "s10-10": "loop"
+        }
+      },
+      "where": {
+        "type": "choice",
+        "instructions": "Where do the words point: at something on this page, at something on youtube.com that is not on this page, or somewhere else on the web?",
+        "options": {
+          "page": "on this page: one of the numbered refs",
+          "site": "on youtube.com but not on this page: a page, a person, a post, a section of it",
+          "web": "elsewhere: another website, or a search of the whole web"
+        }
+      },
+      "steps": {
+        "type": "choice",
+        "instructions": "Is the line one command, or two the user wants done one after the other? Choose none when it is one: an \"and\" or a comma inside a name, a title or words to search for or type joins no commands. Otherwise choose where the second command starts.",
+        "options": {
+          "none": "one command: the whole line",
+          "w7": "start the song from the beginning | put it on loop"
+        }
+      }
+    }
+  }
+}

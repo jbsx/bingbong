@@ -89,6 +89,20 @@ describe('a Task is one Feed Entry (#336)', () => {
     expect(conversation(projection)[0]).not.toHaveProperty('hopLines')
     expect(conversation(projection).map((entry) => entry.text)).toEqual([WORDS, 'Opened X.'])
   })
+
+  it('a line read as Steps (#364) is one entry too: the later Step\'s hop 0 is a line of it, and its Answer the one Answer', () => {
+    const LINE = 'click sign in and scroll down'
+    const step = (turnId: string, step: number, action: string, answer: string, at: number): PipelineEvent[] => [
+      { type: 'command', turnId, text: LINE, action, task: { id: 's1', hop: 0, step, of: 2 }, at },
+      { type: 'display', turnId, text: answer, at: at + 1 },
+      { type: 'done', turnId, outcome: 'done', at: at + 2 },
+    ]
+    const projection = project([...step('s1', 1, 'click [2] "Sign in"', 'Clicked “Sign in”.', 100), ...step('s2', 2, 'scroll down', 'Scrolled down.', 200)])
+    expect(conversation(projection).map((entry) => [entry.kind, entry.text, entry.action, entry.hopLines])).toEqual([
+      ['command', LINE, 'click [2] "Sign in"', [{ text: 'scroll down' }]],
+      ['display', 'Scrolled down.', undefined, undefined],
+    ])
+  })
 })
 
 describe('feed projection', () => {

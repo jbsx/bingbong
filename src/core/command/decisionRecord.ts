@@ -23,7 +23,7 @@ export type CommandReading = 'local_match' | 'jev' | 'best_guess'
 export interface JevDetail {
   readonly model: string
   readonly latencyMs: number
-  readonly confidence: { readonly verb: number; readonly target: number; readonly slot: number; readonly where?: number; readonly outcome?: number; readonly dismiss?: number }
+  readonly confidence: { readonly verb: number; readonly target: number; readonly slot: number; readonly where?: number; readonly outcome?: number; readonly dismiss?: number; readonly steps?: number }
   readonly probabilities: {
     readonly verb: Readonly<Record<string, number>>
     readonly target: Readonly<Record<string, number>>
@@ -33,6 +33,8 @@ export interface JevDetail {
     readonly outcome?: Readonly<Record<string, number>>
     /** The dismiss Choice's (#354), at a hop read over a pop-up. */
     readonly dismiss?: Readonly<Record<string, number>>
+    /** The steps Choice's (#364), at hop 0 of a line with a conjunction. */
+    readonly steps?: Readonly<Record<string, number>>
   }
 }
 
@@ -87,15 +89,29 @@ export interface DecisionRecord {
   readonly stepAside?: true
   /** The action threw: its message, so a failed Command explains itself here and not only in the Feed (post mortem 2026-10-19). */
   readonly error?: string
+  /**
+   * The line was read as Steps (#364), on the first Step's hop 0: the ask
+   * that split it — the whole line's, with the steps Choice — Jev's answer
+   * to it, and each Step's words. The record's own `ask` and `jev` are the
+   * first Step's reading.
+   */
+  readonly split?: { readonly ask: string; readonly jev: JevDetail; readonly steps: readonly string[] }
 }
 
 /** Where a `play` search's video came from (#345): the Remembered Songs, or YouTube's results. */
 export type PickSource = 'remembered' | 'searched'
 
-/** Where a Command stands in its Task (#328, ADR 0076 amendment): the Task's id is hop 0's turn id. */
+/**
+ * Where a Command stands in its Task (#328, ADR 0076 amendment): the Task's
+ * id is hop 0's turn id. In a line read as Steps (#364), every Step's Task
+ * carries the line's id — its first Step's hop 0 turn — and which Step of
+ * how many it is; each Step counts its hops from 0.
+ */
 export interface TaskHop {
   readonly id: string
   readonly hop: number
+  readonly step?: number
+  readonly of?: number
 }
 
 /**
@@ -186,6 +202,7 @@ export function jevDetailOf(answers: CommandAnswers | HopAnswers, latencyMs: num
   const where = 'where' in answers ? answers.where : undefined
   const outcome = 'outcome' in answers ? answers.outcome : undefined
   const dismiss = 'dismiss' in answers ? answers.dismiss : undefined
+  const steps = 'steps' in answers ? answers.steps : undefined
   return {
     model,
     latencyMs,
@@ -196,6 +213,7 @@ export function jevDetailOf(answers: CommandAnswers | HopAnswers, latencyMs: num
       ...(where !== undefined ? { where: where.confidence } : {}),
       ...(outcome !== undefined ? { outcome: outcome.confidence } : {}),
       ...(dismiss !== undefined ? { dismiss: dismiss.confidence } : {}),
+      ...(steps !== undefined ? { steps: steps.confidence } : {}),
     },
     probabilities: {
       verb: { ...answers.verb.probabilities },
@@ -204,6 +222,7 @@ export function jevDetailOf(answers: CommandAnswers | HopAnswers, latencyMs: num
       ...(where !== undefined ? { where: { ...where.probabilities } } : {}),
       ...(outcome !== undefined ? { outcome: { ...outcome.probabilities } } : {}),
       ...(dismiss !== undefined ? { dismiss: topProbabilities(dismiss.probabilities, KEPT_PROBABILITIES) } : {}),
+      ...(steps !== undefined ? { steps: topProbabilities(steps.probabilities, KEPT_PROBABILITIES) } : {}),
     },
   }
 }

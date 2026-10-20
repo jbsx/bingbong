@@ -282,14 +282,32 @@ function describeLink(link: PageLink): string {
   return `link ${JSON.stringify(link.label)} ${link.href}`
 }
 
-/** The state the three questions are asked over; at a hop past the first, where the Task stands. */
-export function commandState(text: string, page: CommandPage, hop?: HopContext): string {
+/**
+ * Where a Step stands in its line (#364, ADR 0076 "a line is Steps"): the
+ * whole line, which Step this is, and what the Steps before it did — so a
+ * later Step's reading starts from the page the last one left.
+ */
+export interface StepContext {
+  readonly line: string
+  /** 1 for the first Step. */
+  readonly step: number
+  readonly of: number
+  /** One line per earlier Step: its words and what it did. */
+  readonly done: readonly string[]
+}
+
+/** The state the three questions are asked over; at a hop past the first, where the Task stands; in a Step, where the line stands. */
+export function commandState(text: string, page: CommandPage, hop?: HopContext, step?: StepContext): string {
   const shown = offered(page, hop)
+  const done = [...(step?.done ?? []), ...(hop?.actions ?? [])]
   return [
     `The user spoke to a web browser: ${JSON.stringify(text)}`,
+    ...(step !== undefined ? [`Step ${step.step} of ${step.of} of the line: ${JSON.stringify(step.line)}`] : []),
     ...(hop !== undefined
-      ? [`This is step ${hop.hop + 1} of the task. Done so far: ${hop.actions.join('; ') || 'nothing'}`, `Pages visited: ${hop.visited.join(' ') || 'none'}`]
-      : []),
+      ? [`This is step ${hop.hop + 1} of the task. Done so far: ${done.join('; ') || 'nothing'}`, `Pages visited: ${hop.visited.join(' ') || 'none'}`]
+      : step !== undefined && done.length > 0
+        ? [`Done so far: ${done.join('; ')}`]
+        : []),
     `Page: ${page.url} — ${JSON.stringify(page.title)}`,
     ...(page.dialog !== undefined ? [`A dialog is open: ${JSON.stringify(page.dialog.text)}`] : []),
     'Refs (number, kind, label, address):',
@@ -308,9 +326,67 @@ type ThreeQuestions = {
 /**
  * The reading's questions (#340): the three, or the three and `where` —
  * a union, never an optional key, so each still reads as the port's
- * `DecisionQuestions` record.
+ * `DecisionQuestions` record — and at hop 0, on a line with a conjunction,
+ * `steps` (#364).
  */
-export type CommandQuestions = ThreeQuestions | (ThreeQuestions & { readonly where: DecisionChoiceQuestion })
+type ReadingQuestions = ThreeQuestions | (ThreeQuestions & { readonly where: DecisionChoiceQuestion })
+export type CommandQuestions = ReadingQuestions | (ReadingQuestions & { readonly steps: DecisionChoiceQuestion })
+
+/** Where a line splits into two Steps (#364): the word the second starts at, and each Step's words. */
+export interface StepBoundary {
+  /** The index, among the line's whitespace-split words, of the second Step's first word. */
+  readonly at: number
+  readonly first: string
+  readonly rest: string
+}
+
+/** The words that join two Commands in a line; a comma ending a word joins them too. */
+const CONJUNCTIONS: ReadonlySet<string> = new Set(['and', 'then'])
+
+const bareWord = (token: string): string => token.toLowerCase().replace(/[.,!?;:]+$/, '')
+
+/**
+ * Every place the line could split into two Steps (#364): after a word
+ * that ends in a comma, or at "and", "then" or "and then" — the
+ * conjunctions in neither half, each place once, and both halves words.
+ * Jev chooses among them; which "and" is a title's is its to read.
+ */
+export function stepBoundaries(text: string): StepBoundary[] {
+  const tokens = text.trim().split(/\s+/).filter((token) => token !== '')
+  const joins = (index: number): boolean => CONJUNCTIONS.has(bareWord(tokens[index] ?? ''))
+  const boundaries: StepBoundary[] = []
+  for (let index = 0; index < tokens.length; index += 1) {
+    const comma = /,$/.test(tokens[index]!) && !joins(index)
+    // A run of conjunctions ("and then", ", and") is one place, at its first word.
+    if (!comma && !(joins(index) && !joins(index - 1) && !/,$/.test(tokens[index - 1] ?? ''))) continue
+    const firstEnd = comma ? index + 1 : index
+    let at = comma ? index + 1 : index
+    while (at < tokens.length && joins(at)) at += 1
+    if (firstEnd === 0 || at >= tokens.length) continue
+    const first = tokens.slice(0, firstEnd).join(' ').replace(/,$/, '')
+    boundaries.push({ at, first, rest: tokens.slice(at).join(' ') })
+  }
+  return boundaries.slice(0, MAX_SPANS)
+}
+
+/** The `steps` Choice (#364): one Command, or two split at a boundary; null when the line has none. */
+function stepsQuestion(text: string): DecisionChoiceQuestion | null {
+  const boundaries = stepBoundaries(text)
+  if (boundaries.length === 0) return null
+  return {
+    type: 'choice',
+    instructions:
+      'Is the line one command, or two the user wants done one after the other? Choose none when it is one: an "and" or a comma inside a name, a title or words to search for or type joins no commands. Otherwise choose where the second command starts.',
+    options: { none: 'one command: the whole line', ...Object.fromEntries(boundaries.map((boundary) => [`w${boundary.at}`, `${boundary.first} | ${boundary.rest}`])) },
+  }
+}
+
+/** The Steps Jev split the line into (#364); null for one Command — `none`, no `steps` asked, or a place the line does not offer. */
+export function readSteps(answers: CommandAnswers, text: string): StepBoundary | null {
+  if (!('steps' in answers)) return null
+  const match = /^w(\d+)$/.exec(answers.steps.choice)
+  return match === null ? null : (stepBoundaries(text).find((boundary) => boundary.at === Number(match[1])) ?? null)
+}
 
 /** The `where` Choice (#340): on this page, on this site, or elsewhere on the web. */
 function whereQuestion(site: string): DecisionChoiceQuestion {
@@ -330,12 +406,17 @@ function whereQuestion(site: string): DecisionChoiceQuestion {
  * the targets are what the hop offers. On a site (#340) — a real page that
  * is no Web Engine's web search — `where` is asked beside them in the same
  * call; an Early Fire partial is a hop-0 reading and asks it too; a later
- * hop asks it on a site the Task has not searched (#341).
+ * hop asks it on a site the Task has not searched (#341). At hop 0, on a
+ * line with a conjunction, `steps` is asked too (#364) — never at a later
+ * hop, on a partial, over a pop-up a dismiss phrase closes, or for a Step's
+ * own words (`steps: false`).
  */
-export function commandQuestions(text: string, pageRead: CommandPage, hop?: HopContext): CommandQuestions {
+export function commandQuestions(text: string, pageRead: CommandPage, hop?: HopContext, options: { readonly steps?: boolean } = {}): CommandQuestions {
   const three = threeQuestions(text, pageRead, hop)
   const site = scopableSite(pageRead.url, hop)
-  return site === null ? three : { ...three, where: whereQuestion(site) }
+  const reading = site === null ? three : { ...three, where: whereQuestion(site) }
+  const steps = hop === undefined && options.steps !== false ? stepsQuestion(text) : null
+  return steps === null ? reading : { ...reading, steps }
 }
 
 function threeQuestions(text: string, pageRead: CommandPage, hop: HopContext | undefined): ThreeQuestions {
@@ -428,7 +509,7 @@ function dismissQuestion(page: CommandPage): DecisionChoiceQuestion | null {
  */
 export function dismissPhraseQuestions(text: string, page: CommandPage): (CommandQuestions & { readonly dismiss: DecisionChoiceQuestion }) | null {
   const dismiss = dismissQuestion(page)
-  return dismiss === null ? null : { ...commandQuestions(text, page), dismiss }
+  return dismiss === null ? null : { ...commandQuestions(text, page, undefined, { steps: false }), dismiss }
 }
 
 /** A hop's questions: the Command's, the Verdict and, with a pop-up open, the dismiss Choice. */
@@ -468,7 +549,7 @@ export type PartialQuestions = CommandQuestions & { readonly complete: DecisionN
 
 export function partialQuestions(text: string, page: CommandPage): PartialQuestions {
   return {
-    ...commandQuestions(text, page),
+    ...commandQuestions(text, page, undefined, { steps: false }),
     complete: { type: 'noul', instructions: 'Is this a complete command, with nothing still to be said?' },
   }
 }
@@ -479,8 +560,9 @@ type ThreeAnswers = {
   readonly slot: DecisionChoiceAnswer
 }
 
-/** The answers to {@link CommandQuestions}: the three, or the three and `where`. */
-export type CommandAnswers = ThreeAnswers | (ThreeAnswers & { readonly where: DecisionChoiceAnswer })
+/** The answers to {@link CommandQuestions}: the three, or the three and `where`; `steps` when it was asked (#364). */
+type ReadingAnswers = ThreeAnswers | (ThreeAnswers & { readonly where: DecisionChoiceAnswer })
+export type CommandAnswers = ReadingAnswers | (ReadingAnswers & { readonly steps: DecisionChoiceAnswer })
 
 function refOfLabel(label: string): number | null {
   const match = /^ref-(\d+)$/.exec(label)

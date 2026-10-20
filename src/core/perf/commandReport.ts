@@ -54,10 +54,11 @@ export interface DecisionReport {
   earlyFire: { spoken: number; fired: number; lead: { p50: number; p95: number } | null; partialCalls: number; spokenJevAsked: number }
   /**
    * Tasks (#328): one per Utterance, its hops' records sharing its id —
-   * how each ended, how many hops it took, and the overruns counted
-   * against each hop number.
+   * one per Step of a line read as Steps (#364) — how each ended, how many
+   * hops it took, the overruns counted against each hop number, and how
+   * many lines split into Steps.
    */
-  tasks: { count: number; ended: Partial<Record<TaskEnded, number>>; hops: { p50: number; max: number } | null; overrunsByHop: Record<number, number> }
+  tasks: { count: number; ended: Partial<Record<TaskEnded, number>>; hops: { p50: number; max: number } | null; overrunsByHop: Record<number, number>; split: number }
   /** `play` searches (#345): how many opened a remembered video, the results page skipped, and how many searched. */
   picks: { remembered: number; searched: number }
 }
@@ -127,13 +128,15 @@ export function buildDecisionReport(records: readonly CommandLogRecord[]): Decis
     misfiresBySignal: {},
     names: { page: 0, learned: 0 },
     earlyFire: { spoken: 0, fired: 0, lead: null, partialCalls: 0, spokenJevAsked: 0 },
-    tasks: { count: 0, ended: {}, hops: null, overrunsByHop: {} },
+    tasks: { count: 0, ended: {}, hops: null, overrunsByHop: {}, split: 0 },
     picks: { remembered: 0, searched: 0 },
   }
   const latencies: number[] = []
   const leads: number[] = []
-  /** Each Task's hop count, by its id. */
+  /** Each Task's hop count, by its id and, in a line read as Steps, its Step. */
   const taskHops = new Map<string, number>()
+  /** The lines read as Steps, by their id. */
+  const splitLines = new Set<string>()
   for (const record of records) {
     if (record.type === 'misfire') {
       report.misfires += 1
@@ -142,7 +145,11 @@ export function buildDecisionReport(records: readonly CommandLogRecord[]): Decis
       continue
     }
     report.commands += 1
-    if (record.task !== undefined) taskHops.set(record.task.id, Math.max(taskHops.get(record.task.id) ?? 0, record.task.hop + 1))
+    if (record.task !== undefined) {
+      const key = record.task.step === undefined ? record.task.id : `${record.task.id}#${record.task.step}`
+      taskHops.set(key, Math.max(taskHops.get(key) ?? 0, record.task.hop + 1))
+      if ((record.task.of ?? 1) > 1) splitLines.add(record.task.id)
+    }
     if (record.ended !== undefined) report.tasks.ended[record.ended] = (report.tasks.ended[record.ended] ?? 0) + 1
     if (record.reading in report.readings) report.readings[record.reading] += 1
     if (record.slotFrom === 'page' || record.slotFrom === 'learned') report.names[record.slotFrom] += 1
@@ -165,6 +172,7 @@ export function buildDecisionReport(records: readonly CommandLogRecord[]): Decis
   report.jevLatency = percentiles(latencies)
   report.earlyFire.lead = percentiles(leads)
   report.tasks.count = taskHops.size
+  report.tasks.split = splitLines.size
   const hops = [...taskHops.values()].sort((a, b) => a - b)
   report.tasks.hops = hops.length === 0 ? null : { p50: nearestRankPercentile(hops, 50), max: hops[hops.length - 1]! }
   return report
@@ -244,7 +252,8 @@ export function formatCommandReport(reaction: ReactionReport, decisions: Decisio
       lines.push(
         `tasks: ${tasks.count} | ended ${ended || 'none recorded'}` +
           (tasks.hops ? ` | hops p50 ${tasks.hops.p50}, max ${tasks.hops.max}` : '') +
-          ` | overruns by hop: ${overruns || 'none'}`,
+          ` | overruns by hop: ${overruns || 'none'}` +
+          (tasks.split > 0 ? ` | lines split into Steps: ${tasks.split}` : ''),
       )
     }
     const { picks } = decisions
