@@ -1,0 +1,10 @@
+{
+  "turnId": "turn-mviq8n71-5",
+  "transcript": "turn on ambient mode",
+  "at": 1792624327021,
+  "source": "typed",
+  "stage": "runner",
+  "happened": "After Escape undid the video's context menu, the runner-up of the Where Ask was menu-19 (the player Settings gear, 0.06), but runnerUpOf names it by RefIdentity {label, address} and refNamed found the masthead Settings [7] first: the same label, the page's own address. The right-click on it did nothing ('tooltip Settings' appeared) and cost a hop and an action. The same wrong ref fired in turn-mvilvxyb-2. The label-keyed SetAside (#373) shares the collision",
+  "meant": "Fire the runner-up on the player Settings [19], the ref Jev scored, not on another ref with the same label",
+  "log": "decision-1792624301937-1.jsonl"
+}
