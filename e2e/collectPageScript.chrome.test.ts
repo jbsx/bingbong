@@ -495,3 +495,75 @@ describe.skipIf(!canDriveChrome)('the collector takes every ARIA widget role a c
     expect(card.options['click-1']).toBe('click [1] button "Annotations" role=menuitemcheckbox checked=true')
   })
 })
+
+// Unmarked Controls (#381, ADR 0083): a control the markup does not mark is
+// found by Vimium's link-hint cues and nothing else. Each cue below is a ref,
+// kinded as a button; a weak cue (a btn class, a span) wrapping a ref is not,
+// nor one inside a ref (YouTube's button shapes), and neither is a tabindex,
+// an aria-disabled control or a bare pointer.
+const NARROW_BUTTON = '<button style="width:4px;height:4px;padding:0;border:0"></button>'
+const UNMARKED_PAGES: Record<string, string> = {
+  '/unmarked': `<body>
+    <a href="/home">Home</a>
+    <div onclick="void 0">Onclick div</div>
+    <span jsaction="click:cb.open">Jsaction span</span>
+    <span jsaction="mouseover:cb.hover">Hover span</span>
+    <div class="ng-scope"><div ng-click="go()">Angular div</div></div>
+    <details><summary>More details</summary><p>The body</p></details>
+    <label for="hidden-box">Remember me</label><input id="hidden-box" type="checkbox" style="display:none">
+    <label for="shown-box">Shown box</label><input id="shown-box" type="checkbox">
+    <div class="btn">Btn div</div>
+    <div class="btn-row"><div><button>Wrapped button</button></div></div>
+    <button><div class="ytSpecButtonShapeNextIcon"></div><div class="ytSpecButtonShapeNextButtonTextContent">Subscribe</div></button>
+    <div tabindex="0">Tab region</div>
+    <div onclick="void 0" aria-disabled="true">Disabled onclick</div>
+    <div style="cursor:pointer">Pointer div</div>
+    <div id="host"></div>
+    <script>document.getElementById('host').attachShadow({ mode: 'open' }).innerHTML = '<button>Shadow button</button><div onclick="void 0">Shadow onclick</div>'</script>
+  </body>`,
+  '/crowded-400': `<body><div onclick="void 0">Unmarked first</div>${NARROW_BUTTON.repeat(400)}</body>`,
+  '/crowded-399': `<body><div onclick="void 0">Unmarked first</div>${NARROW_BUTTON.repeat(399)}</body>`,
+}
+
+describe.skipIf(!canDriveChrome)("the collector finds Unmarked Controls by Vimium's cues (#381, ADR 0083)", () => {
+  let fixtures: FixtureChrome
+
+  beforeAll(async () => {
+    fixtures = await serveFixtures(UNMARKED_PAGES, 'bingbong-collector-unmarked-')
+  }, 60_000)
+
+  afterAll(() => fixtures?.close())
+
+  const collect = async (path: string) => {
+    await fixtures.open(path)
+    return parseCollectedPage(await fixtures.chrome.evaluate(COLLECT_PAGE_SCRIPT))
+  }
+
+  it('makes each cue a button ref in document order, open shadow roots included, and leaves the weak, tabindex, disabled and pointer ones out', async () => {
+    const snapshot = buildPageSnapshot(await collect('/unmarked'))
+    expect(snapshot.refs.map((ref) => [ref.kind, ref.label])).toEqual([
+      ['link', 'Home'],
+      ['button', 'Onclick div'],
+      ['button', 'Jsaction span'],
+      ['button', 'Angular div'],
+      ['button', 'More details'],
+      ['button', 'Remember me'],
+      ['input', 'Shown box'],
+      ['button', 'Btn div'],
+      ['button', 'Wrapped button'],
+      ['button', 'Subscribe'],
+      ['button', 'Shadow button'],
+      ['button', 'Shadow onclick'],
+    ])
+  })
+
+  it('gives Unmarked Controls only the room the marked elements leave under the 400', async () => {
+    const full = await collect('/crowded-400')
+    expect(full.elements).toHaveLength(400)
+    expect(full.elements.map((element) => element.label)).not.toContain('Unmarked first')
+
+    const room = await collect('/crowded-399')
+    expect(room.elements).toHaveLength(400)
+    expect(room.elements[0]?.label).toBe('Unmarked first')
+  })
+})

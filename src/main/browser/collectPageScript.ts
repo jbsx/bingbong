@@ -46,7 +46,10 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
     'textarea',
     'video',
     'audio',
-    '[contenteditable="true"]',
+    // Every spelling Vimium takes as editable (#381): an empty value and its own name too.
+    '[contenteditable="true" i]',
+    '[contenteditable=""]',
+    '[contenteditable="contenteditable" i]',
     '[role="button"]',
     '[role="link"]',
     '[role="textbox"]',
@@ -290,21 +293,106 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
     const url = absoluteAttr(el, 'href')
     return url ? url.href : null
   }
-  const collectElements = (dialogRoot) => {
-    const dialogElements = []
-    const pageElements = []
-    for (const el of document.querySelectorAll(SELECTOR)) {
-      if (el.tagName === 'INPUT' && el.type === 'hidden') continue
-      if (insideInert(el)) continue
-      if (dialogRoot !== null && dialogRoot.contains(el)) {
-        if (!hasSize(el)) continue
-        dialogElements.push(el)
-      } else {
-        if (!rectVisible(el)) continue
-        pageElements.push(el)
-      }
+  // Unmarked Controls (#381, ADR 0083): Vimium's link-hint cues, one for one
+  // from its getLocalHintsForElement, for a control no tag or role marks.
+  // A strong cue makes a ref. A weak one — a button/btn class, and any span —
+  // does only when no ref among the 6 after it in document order sits within
+  // 3 levels under it. tabindex alone gives nothing, the cursor and click
+  // listeners are never read, and aria-disabled vetoes.
+  const NG_CLICK = []
+  for (const prefix of ['', 'data-', 'x-']) for (const separator of ['-', ':', '_']) NG_CLICK.push(prefix + 'ng' + separator + 'click')
+  const angular = document.getElementsByClassName('ng-scope').length > 0
+  const CUE_SELECTOR = ['[onclick]', '[jsaction]', 'details', 'object', 'embed', 'label', 'img[style*="zoom" i]', '[class*="button" i]', '[class*="btn" i]']
+    .concat(angular ? NG_CLICK.map((name) => '[' + CSS.escape(name) + ']') : [])
+    .join(',')
+  const CANDIDATE_SELECTOR = SELECTOR + ',' + CUE_SELECTOR
+  // A jsaction rule binds a click when its event is click (or left out), its
+  // namespace is not none and it names an action — Vimium's parse, as it is.
+  const jsactionClicks = (el) => el.getAttribute('jsaction').split(';').some((rule) => {
+    const split = rule.trim().split(':')
+    if (split.length < 1 || split.length > 2) return false
+    const [eventType, namespace, actionName] = split.length === 1
+      ? ['click', ...split[0].trim().split('.'), '_']
+      : [split[0], ...split[1].trim().split('.'), '_']
+    return eventType === 'click' && namespace !== 'none' && actionName !== '_'
+  })
+  // An unmarked element's cue: strong, weak, a label (strong while its
+  // control is no ref, else weak or nothing by its class), or none.
+  const cueOf = (el) => {
+    const ariaDisabled = el.getAttribute('aria-disabled')
+    if (ariaDisabled !== null && ['', 'true'].includes(ariaDisabled.toLowerCase())) return null
+    const tag = el.tagName.toLowerCase()
+    const strong = (angular && NG_CLICK.some((name) => el.hasAttribute(name))) ||
+      el.hasAttribute('onclick') ||
+      (el.hasAttribute('jsaction') && jsactionClicks(el)) ||
+      tag === 'object' || tag === 'embed' || tag === 'details' ||
+      (tag === 'img' && ['zoom-in', 'zoom-out'].includes(el.style.cursor))
+    if (strong) return tag === 'span' ? 'weak' : 'strong'
+    const className = (el.getAttribute('class') || '').toLowerCase()
+    const classed = className.includes('button') || className.includes('btn')
+    if (tag === 'label' && el.control && !el.control.disabled) return classed ? 'labelOrWeak' : 'label'
+    return classed ? 'weak' : null
+  }
+  // Every candidate in document order, each open shadow root's right after
+  // its host, as Vimium walks them: refs of every kind live in shadow roots.
+  const candidatesIn = (root, out) => {
+    const hosts = []
+    for (const el of root.querySelectorAll('*')) if (el.shadowRoot) hosts.push(el)
+    let next = 0
+    for (const el of root.querySelectorAll(CANDIDATE_SELECTOR)) {
+      while (next < hosts.length && hosts[next] !== el && (hosts[next].compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0) candidatesIn(hosts[next++].shadowRoot, out)
+      out.push(el)
+      if (next < hosts.length && hosts[next] === el) candidatesIn(hosts[next++].shadowRoot, out)
     }
-    return dialogElements.concat(pageElements).slice(0, 400)
+    while (next < hosts.length) candidatesIn(hosts[next++].shadowRoot, out)
+    return out
+  }
+  // The collect's Unmarked Controls: kinded as buttons, with no flag of their own.
+  let unmarked = new WeakSet()
+  const collectElements = (dialogRoot) => {
+    const shown = []
+    for (const el of candidatesIn(document, [])) {
+      if (el.tagName === 'INPUT' && el.type === 'hidden') continue
+      const marked = el.matches(SELECTOR)
+      const cue = marked ? null : cueOf(el)
+      if (!marked && cue === null) continue
+      if (insideInert(el)) continue
+      const dialog = dialogRoot !== null && dialogRoot.contains(el)
+      if (dialog ? !hasSize(el) : !rectVisible(el)) continue
+      shown.push({ el, marked, cue, dialog })
+    }
+    const isLabel = (entry) => entry.cue === 'label' || entry.cue === 'labelOrWeak'
+    const hinted = new Set(shown.filter((entry) => !isLabel(entry)).map((entry) => entry.el))
+    const hints = shown.filter((entry) => {
+      if (!isLabel(entry)) return true
+      if (!hinted.has(entry.el.control)) entry.cue = 'strong'
+      else if (entry.cue === 'labelOrWeak') entry.cue = 'weak'
+      else return false
+      return true
+    })
+    const kept = hints.filter((entry, position) => {
+      if (entry.cue !== 'weak') return true
+      // Not Vimium's (measured on a YouTube watch page, 2026-10-21): a weak
+      // cue inside a marked ref is that ref's own icon or text — 24 of the 29
+      // controls Vimium's cues added there, each a second line for one button.
+      if (entry.el.parentElement !== null && entry.el.parentElement.closest(SELECTOR) !== null) return false
+      for (let index = position + 1; index < hints.length && index <= position + 6; index++) {
+        let node = hints[index].el
+        for (let level = 0; level < 3; level++) {
+          node = node && node.parentElement
+          if (node === entry.el) return false
+        }
+      }
+      return true
+    })
+    // Dialog controls first, so they survive the cap; marked elements take
+    // the 400 places first, and Unmarked Controls the room left, each where
+    // it sits in document order.
+    const ordered = kept.filter((entry) => entry.dialog).concat(kept.filter((entry) => !entry.dialog))
+    let room = 400 - ordered.filter((entry) => entry.marked).length
+    const taken = ordered.filter((entry) => entry.marked || room-- > 0).slice(0, 400)
+    unmarked = new WeakSet(taken.filter((entry) => !entry.marked).map((entry) => entry.el))
+    return taken.map((entry) => entry.el)
   }
   const renderedText = (el) => el.innerText || el.textContent || ''
   const textOf = (el) => renderedText(el).replace(/\\s+/g, ' ').trim()
@@ -455,7 +543,7 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
     const formFlags = formFlagsOf(form)
     return {
       tag: el.tagName.toLowerCase(),
-      role: el.getAttribute('role') || (el.hasAttribute('onclick') ? 'button' : null),
+      role: unmarked.has(el) ? 'button' : el.getAttribute('role') || (el.hasAttribute('onclick') ? 'button' : null),
       inputType: el.tagName === 'INPUT' ? el.type : null,
       label: labelOf(el),
       rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
@@ -789,7 +877,10 @@ export function clickPrepScript(index: number, naming: CoverNaming): string {
     const x = Math.round(clamp(rect.x + rect.width / 2, visibleLeft, Math.max(visibleLeft, visibleRight - 1)))
     const y = Math.round(clamp(rect.y + rect.height / 2, visibleTop, Math.max(visibleTop, visibleBottom - 1)))
     if (x < 0 || y < 0 || x >= vw || y >= vh) return { ok: true, clickable: false }
-    const stack = document.elementsFromPoint(x, y)
+    // Hit-tested in the target's own tree: in an open shadow root (#381) the
+    // document's answers its host.
+    const tree = el.getRootNode()
+    const stack = tree.elementsFromPoint(x, y)
     const top = stack.length > 0 ? stack[0] : null
     const reaches = (hit) => hit === el || (hit !== null && el.contains(hit))
     if (reaches(top)) return { ok: true, x, y, clickable: true }
@@ -810,7 +901,7 @@ export function clickPrepScript(index: number, naming: CoverNaming): string {
       }
       points.sort((a, b) => Math.hypot(a[0] - x, a[1] - y) - Math.hypot(b[0] - x, b[1] - y))
       for (const [px, py] of points) {
-        if (reaches(document.elementFromPoint(px, py))) return { ok: true, x: px, y: py, clickable: true, coveredCentre: { x, y } }
+        if (reaches(tree.elementFromPoint(px, py))) return { ok: true, x: px, y: py, clickable: true, coveredCentre: { x, y } }
       }
     }
     const at = stack.indexOf(el)
@@ -935,7 +1026,7 @@ export function blurFocusedFieldScript(index: number, x: number, y: number): str
     const textual = field.isContentEditable || field.tagName === 'TEXTAREA' || (field.tagName === 'INPUT' && TEXT_TYPES.includes((field.getAttribute('type') || '').toLowerCase()))
     if (!textual) return false
     field.blur()
-    const reaches = () => { const hit = document.elementFromPoint(${x}, ${y}); return hit === el || (hit !== null && el.contains(hit)) }
+    const reaches = () => { const hit = el.getRootNode().elementFromPoint(${x}, ${y}); return hit === el || (hit !== null && el.contains(hit)) }
     const started = performance.now()
     return new Promise((resolve) => {
       const check = () => {

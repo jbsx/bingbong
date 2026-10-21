@@ -62,7 +62,8 @@ describe.skipIf(!canDriveChrome)('a cross-origin frame in a real Chrome (#377)',
       if (req.url === '/embed') {
         res.end(`<!doctype html><html><head><title>embed</title></head><body style="margin:0">
           <video src="/song.wav" autoplay loop style="display:block;width:320px;height:180px"></video>
-          <button onclick="window.__pressed = (window.__pressed || 0) + 1">Pause the show</button></body></html>`)
+          <button onclick="window.__pressed = (window.__pressed || 0) + 1">Pause the show</button>
+          <div onclick="void 0">Skip intro</div></body></html>`)
         return
       }
       res.end(`<!doctype html><html><head><title>story</title></head><body style="margin:0">
@@ -108,13 +109,14 @@ describe.skipIf(!canDriveChrome)('a cross-origin frame in a real Chrome (#377)',
     return (await controller.collectPage()).refs.filter((ref) => ref.frame === 'localhost')
   }
 
-  it("lists the frame's video and button at the iframe's place, each named by the frame's host", async () => {
+  it("lists the frame's video, button and Unmarked Control (#381) at the iframe's place, each named by the frame's host", async () => {
     const page = await controller.collectPage()
 
     expect(page.refs.map((ref) => [ref.kind, ref.label, ref.frame ?? null])).toEqual([
       ['link', 'Home', null],
       ['media', '', 'localhost'],
       ['button', 'Pause the show', 'localhost'],
+      ['button', 'Skip intro', 'localhost'],
       ['button', 'Comments', null],
     ])
     // At the page's coordinates: the iframe's left margin, border and padding moved it in.

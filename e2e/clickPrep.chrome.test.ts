@@ -68,6 +68,9 @@ const PAGES: Record<string, string> = {
   // A native modal consent wall: showModal() makes the page behind it inert with no attribute.
   '/modal-wall': `<body>${COLLECTION_SEARCH}<dialog id="wall"><p>We use cookies.</p><button>Reject all cookies</button></dialog>
     <script>document.getElementById('wall').showModal()</script></body>`,
+  // A control inside an open shadow root (#381): the page's hit test answers its host.
+  '/shadow': `<body><div id="host"></div>
+    <script>document.getElementById('host').attachShadow({ mode: 'open' }).innerHTML = '<div onclick="void 0" style="width:120px;height:40px">Shadow control</div>'</script></body>`,
 }
 
 interface Collected {
@@ -119,6 +122,11 @@ describe.skipIf(!canDriveChrome)('the Cover and Not Shown rule in a real Chrome 
   })
 
   describe('click preparation reads the paint-order stack', () => {
+    it('finds a control inside an open shadow root on top, in its own tree (#381)', async () => {
+      const page = await collect('/shadow')
+      expect(await prep(page, 'Shadow control')).toMatchObject({ ok: true, clickable: true })
+    })
+
     it('names a sibling underlay as the Cover over the target', async () => {
       const page = await collect('/underlay')
       expect(await prep(page, 'Search the collection')).toMatchObject({ ok: true, clickable: false, blocked: { fact: 'covered', cover: { tag: 'div', contains: [] } } })
