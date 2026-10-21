@@ -52,6 +52,13 @@ fast as it can, built on top of this shell.
 
 Issues are tracked in GitHub Issues via the `gh` CLI. See `docs/agents/issue-tracker.md`.
 
+### Bugs
+
+Every line that did not do what was meant goes in the Failed Lines ledger
+(`fixtures/failed-lines/`, #371), tagged by the first failing stage;
+`pnpm bugs` prints it grouped by stage, open first. A post mortem ends by
+adding its lines; a fix issue claims the lines it covers. See `docs/agents/bugs.md`.
+
 ### Triage labels
 
 Default five-role vocabulary (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.

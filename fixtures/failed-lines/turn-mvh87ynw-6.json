@@ -1,0 +1,13 @@
+{
+  "turnId": "turn-mvh87ynw-6",
+  "transcript": "enable captions",
+  "at": 1792533596226,
+  "source": "typed",
+  "stage": "reading",
+  "happened": "click-12 turned the captions on, then hop 1 fired show again (Verdict yes 0.69, under the bar) and ended terminal",
+  "meant": "turn the captions on and stop",
+  "log": "decision-1792533537053-1.jsonl",
+  "claimedBy": "#370",
+  "fixedBy": "0aacca0",
+  "case": "turn-mvh87zdn-7"
+}

@@ -1,0 +1,13 @@
+{
+  "turnId": "turn-mvh87plu-5",
+  "transcript": "show captions",
+  "at": 1792533584518,
+  "source": "typed",
+  "stage": "reading",
+  "happened": "the show Capability 0.69 fired over target ref-12 0.94",
+  "meant": "turn the captions on",
+  "log": "decision-1792533537053-1.jsonl",
+  "claimedBy": "#370",
+  "fixedBy": "0aacca0",
+  "case": "turn-mvh87plu-5"
+}

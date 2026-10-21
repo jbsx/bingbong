@@ -1,0 +1,12 @@
+{
+  "turnId": "turn-mvh0x0b9-9",
+  "transcript": "loop the video",
+  "at": 1792521327825,
+  "source": "typed",
+  "stage": "missing_option",
+  "happened": "clicked ref 16: no loop op was offered",
+  "meant": "loop the song",
+  "log": "decision-1792521023837-1.jsonl",
+  "claimedBy": "#362",
+  "fixedBy": "32517cf"
+}

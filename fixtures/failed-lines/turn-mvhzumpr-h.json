@@ -1,0 +1,10 @@
+{
+  "turnId": "turn-mvhzumpr-h",
+  "transcript": "Turn on ambient mode.",
+  "at": 1792580003669,
+  "source": "spoken",
+  "stage": "reading",
+  "happened": "none 0.51 over click-13 (the Settings gear, whose menu holds Ambient mode) 0.33: No response; the verb card read none 0.66–0.70",
+  "meant": "turn YouTube's ambient mode on",
+  "log": "decision-1792579864896-1.jsonl"
+}

@@ -1,0 +1,10 @@
+{
+  "turnId": "turn-mvfpcbk0-5",
+  "transcript": "Cross out the pop-up",
+  "at": 1792441420940,
+  "source": "spoken",
+  "stage": "reading",
+  "happened": "clicked ref 1 and the Task ended unsure; the action card now reads in_the_way at 0.52–0.59, under the 0.7 bar (was 0.70–0.73 on the verb card)",
+  "meant": "close the pop-up over the page",
+  "log": "decision-1792441400168-1.jsonl"
+}

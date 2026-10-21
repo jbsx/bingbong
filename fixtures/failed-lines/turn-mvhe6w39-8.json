@@ -1,0 +1,12 @@
+{
+  "turnId": "turn-mvhe6w39-8",
+  "transcript": "stop showing captions",
+  "at": 1792543623669,
+  "source": "typed",
+  "stage": "local_match",
+  "happened": "the Local Match fired stop on the line's first word",
+  "meant": "turn the captions off",
+  "log": "decision-1792543558321-1.jsonl",
+  "claimedBy": "#368",
+  "fixedBy": "1b3cedb"
+}

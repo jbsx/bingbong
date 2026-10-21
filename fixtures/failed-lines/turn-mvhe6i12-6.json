@@ -1,0 +1,13 @@
+{
+  "turnId": "turn-mvhe6i12-6",
+  "transcript": "disable captions",
+  "at": 1792543605709,
+  "source": "typed",
+  "stage": "reading",
+  "happened": "done 0.35 over ref-12 0.89 again: ended done, captions still on",
+  "meant": "turn the captions off",
+  "log": "decision-1792543558321-1.jsonl",
+  "claimedBy": "#370",
+  "fixedBy": "0aacca0",
+  "case": "turn-mvhe6i12-6"
+}

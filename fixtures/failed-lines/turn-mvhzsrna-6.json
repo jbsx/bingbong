@@ -1,0 +1,10 @@
+{
+  "turnId": "turn-mvhzsrna-6",
+  "transcript": "Start?",
+  "at": 1792579916648,
+  "source": "spoken",
+  "stage": "turn",
+  "happened": "Smart Turn ended the turn after 'Start' (finished 0.98); 'From the beginning.' came as its own line and Jev read the fragment as none 0.48",
+  "meant": "one line: start the song from the beginning",
+  "log": "decision-1792579864896-1.jsonl"
+}

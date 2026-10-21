@@ -1,0 +1,12 @@
+{
+  "turnId": "turn-mvh0vsek-2",
+  "transcript": "start the song from the beginning and put it on loop",
+  "at": 1792521271252,
+  "source": "typed",
+  "stage": "missing_option",
+  "happened": "Jev read none: the Player's loop and restart ops were never offered to it",
+  "meant": "restart the song and loop it",
+  "log": "decision-1792521023837-1.jsonl",
+  "claimedBy": "#362",
+  "fixedBy": "32517cf"
+}

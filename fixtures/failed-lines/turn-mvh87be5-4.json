@@ -1,0 +1,13 @@
+{
+  "turnId": "turn-mvh87be5-4",
+  "transcript": "enable captions",
+  "at": 1792533566088,
+  "source": "typed",
+  "stage": "reading",
+  "happened": "the show Capability 0.43 fired over target ref-12 0.93: the factored verb Choice outvoted the grounded target",
+  "meant": "turn the captions on",
+  "log": "decision-1792533537053-1.jsonl",
+  "claimedBy": "#370",
+  "fixedBy": "0aacca0",
+  "case": "turn-mvh87be5-4"
+}

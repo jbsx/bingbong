@@ -1,0 +1,13 @@
+{
+  "turnId": "turn-mvhe6cqk-5",
+  "transcript": "disable captions",
+  "at": 1792543598840,
+  "source": "typed",
+  "stage": "reading",
+  "happened": "the verb Choice read done 0.34 over target ref-12 0.90: the Task ended done with the captions still on",
+  "meant": "turn the captions off",
+  "log": "decision-1792543558321-1.jsonl",
+  "claimedBy": "#370",
+  "fixedBy": "0aacca0",
+  "case": "turn-mvhe6cqk-5"
+}

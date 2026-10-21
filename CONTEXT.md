@@ -337,6 +337,29 @@ case and leaves no other case worse. Misreads are fixed through the corpus,
 never by a rule for the one case.
 _Avoid_: test prompt, golden, eval
 
+**Failed Line**:
+One spoken or typed line that did not do what was meant, kept as one file
+in the Failed Lines ledger (`fixtures/failed-lines/`, #371): the words,
+when, the log it came from, its Stage, what happened, what was meant, and
+the issue that claims it, the commit that fixed it, the Jev Case or e2e
+test that guards it, or the owner's ruling. The unit is the observed line,
+never the hypothesis about it: `pnpm bugs` prints the ledger grouped by
+Stage, open and unclaimed first, and the stage counts are read before a
+fix is chosen. An issue claims every open line it covers; closing it
+marks each fixed and guarded, or ruled.
+_Avoid_: bug report, ticket, known issue
+
+**Stage**:
+The first point of the pipeline that failed a Failed Line, in the
+pipeline's order: `stt` (the words heard were not the words said), `turn`
+(the Utterance cut or joined wrong), `local_match`, `reading` (Jev picked
+wrong among options that existed), `missing_option` (no Capability, op or
+verb could do it), `runner` (the hop policy: cap, unchanged, undo, the
+Verdict, what was said), `player`, `page` (a stale label, late hydration,
+a wall). Many lines under one Stage is a strategy problem; one is a
+one-off.
+_Avoid_: root cause, component, area
+
 **Bias Lexicon**:
 The app's own vocabulary that the STT decoder is biased toward while decoding
 — the CLI grammar's verbs, settings, dashboard and navigation terms, plus

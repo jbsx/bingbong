@@ -1,0 +1,12 @@
+{
+  "turnId": "turn-mvh0wdd4-4",
+  "transcript": "put the song on loop and start from the beginning",
+  "at": 1792521298287,
+  "source": "typed",
+  "stage": "missing_option",
+  "happened": "clicked ref 10, the time display: no loop op was offered",
+  "meant": "loop the song and restart it",
+  "log": "decision-1792521023837-1.jsonl",
+  "claimedBy": "#362",
+  "fixedBy": "32517cf"
+}

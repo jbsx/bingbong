@@ -1,0 +1,12 @@
+{
+  "turnId": "turn-mvh66j0r-4",
+  "transcript": "disable captions",
+  "at": 1792530170076,
+  "source": "typed",
+  "stage": "page",
+  "happened": "Jev read none 0.40: YouTube's captions button keeps the stale label 'Subtitles/closed captions unavailable' while pressed=true, and the ask dropped the pressed state",
+  "meant": "turn the captions off",
+  "log": "decision-1792530129142-1.jsonl",
+  "fixedBy": "ef27565",
+  "case": "turn-mvh66j0r-4"
+}

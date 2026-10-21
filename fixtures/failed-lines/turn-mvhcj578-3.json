@@ -1,0 +1,12 @@
+{
+  "turnId": "turn-mvhcj578-3",
+  "transcript": "loop the song",
+  "at": 1792540836359,
+  "source": "typed",
+  "stage": "missing_option",
+  "happened": "Jev read none again, same gap",
+  "meant": "loop the song",
+  "log": "decision-1792540815710-1.jsonl",
+  "claimedBy": "#364",
+  "fixedBy": "a2773a6"
+}

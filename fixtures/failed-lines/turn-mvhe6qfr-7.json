@@ -1,0 +1,13 @@
+{
+  "turnId": "turn-mvhe6qfr-7",
+  "transcript": "i dont want to see the captions",
+  "at": 1792543616624,
+  "source": "typed",
+  "stage": "reading",
+  "happened": "none 0.32 over ref-12 0.74: No response",
+  "meant": "turn the captions off",
+  "log": "decision-1792543558321-1.jsonl",
+  "claimedBy": "#370",
+  "fixedBy": "0aacca0",
+  "case": "turn-mvhe6qfr-7"
+}

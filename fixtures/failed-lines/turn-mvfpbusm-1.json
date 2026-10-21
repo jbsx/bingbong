@@ -1,0 +1,11 @@
+{
+  "turnId": "turn-mvfpbusm-1",
+  "transcript": "Open Elon Musk's latest tweet.",
+  "at": 1792441399317,
+  "source": "spoken",
+  "stage": "page",
+  "happened": "walled on the clean profile: Truth Social's sheet and an unhydrated SPA read as a wall / nothing to click",
+  "meant": "open the newest post on Elon Musk's Truth Social page",
+  "log": "decision-1792441400168-1.jsonl",
+  "fixedBy": "fa35bba"
+}

@@ -1,0 +1,10 @@
+{
+  "turnId": "turn-mvfppsc9-k",
+  "transcript": "Open this tweet",
+  "at": 1792442049206,
+  "source": "spoken",
+  "stage": "reading",
+  "happened": "clicked ref 7 and met a wall; on the action card the same ask reads none 0.42, click-7 0.18",
+  "meant": "open the tweet on screen",
+  "log": "decision-1792441982856-1.jsonl"
+}
