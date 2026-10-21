@@ -24,10 +24,10 @@ export type CommandReading = 'local_match' | 'jev' | 'best_guess'
 export interface JevDetail {
   readonly model: string
   readonly latencyMs: number
-  readonly confidence: { readonly verb: number; readonly target: number; readonly slot: number; readonly where?: number; readonly outcome?: number; readonly dismiss?: number; readonly steps?: number }
+  readonly confidence: { readonly action: number; readonly slot: number; readonly where?: number; readonly outcome?: number; readonly dismiss?: number; readonly steps?: number }
   readonly probabilities: {
-    readonly verb: Readonly<Record<string, number>>
-    readonly target: Readonly<Record<string, number>>
+    /** The action card's (#370): its top options. */
+    readonly action: Readonly<Record<string, number>>
     readonly slot: Readonly<Record<string, number>>
     readonly where?: Readonly<Record<string, number>>
     /** The Verdict's, at a hop past the first. */
@@ -170,8 +170,11 @@ export type CommandLogRecord = DecisionRecord | MisfireRecord
 /** The next Command this long after one reads as its recovery. */
 export const MISFIRE_WINDOW_MS = 3_000
 
-/** How many target and Slot probabilities a record keeps — the top ones; the verb's are all kept. */
+/** How many Slot, dismiss and steps probabilities a record keeps — the top ones. */
 const KEPT_PROBABILITIES = 5
+
+/** How many of the action card's probabilities a record keeps (#370): the top ones, so a runner-up and a near miss are both in view. */
+const KEPT_ACTIONS = 8
 
 /**
  * Whether the next Command reads as the recovery of the one before: back,
@@ -217,8 +220,7 @@ export function jevDetailOf(answers: CommandAnswers | HopAnswers, latencyMs: num
     model,
     latencyMs,
     confidence: {
-      verb: answers.verb.confidence,
-      target: answers.target.confidence,
+      action: answers.action.confidence,
       slot: answers.slot.confidence,
       ...(where !== undefined ? { where: where.confidence } : {}),
       ...(outcome !== undefined ? { outcome: outcome.confidence } : {}),
@@ -226,8 +228,7 @@ export function jevDetailOf(answers: CommandAnswers | HopAnswers, latencyMs: num
       ...(steps !== undefined ? { steps: steps.confidence } : {}),
     },
     probabilities: {
-      verb: { ...answers.verb.probabilities },
-      target: topProbabilities(answers.target.probabilities, KEPT_PROBABILITIES),
+      action: topProbabilities(answers.action.probabilities, KEPT_ACTIONS),
       slot: topProbabilities(answers.slot.probabilities, KEPT_PROBABILITIES),
       ...(where !== undefined ? { where: { ...where.probabilities } } : {}),
       ...(outcome !== undefined ? { outcome: { ...outcome.probabilities } } : {}),

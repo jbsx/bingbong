@@ -26,35 +26,33 @@ describe('misfireSignal', () => {
 })
 
 describe('jevDetailOf', () => {
-  it('keeps every verb probability and the five most probable targets and spans', () => {
-    const verb: DecisionChoiceAnswer = { type: 'choice', choice: 'click', confidence: 0.8, probabilities: { click: 0.8, open: 0.1, none: 0.1 } }
-    const target: DecisionChoiceAnswer = {
+  it('keeps the eight most probable actions on the card (#370) and the five most probable spans', () => {
+    const action: DecisionChoiceAnswer = {
       type: 'choice',
-      choice: 'ref-2',
+      choice: 'click-2',
       confidence: 0.5,
-      probabilities: { none: 0.05, 'ref-1': 0.1, 'ref-2': 0.5, 'ref-3': 0.15, 'ref-4': 0.02, 'ref-5': 0.08, 'ref-6': 0.1 },
+      probabilities: { none: 0.01, search: 0.03, 'click-1': 0.1, 'click-2': 0.5, 'click-3': 0.12, 'type-3': 0.02, 'menu-2': 0.04, 'open-1': 0.05, scroll_down: 0.06, loop: 0.07 },
     }
     const slot: DecisionChoiceAnswer = { type: 'choice', choice: 'none', confidence: 0.9, probabilities: { none: 0.9, 's0-0': 0.1 } }
-    expect(jevDetailOf({ verb, target, slot }, 212, 'jev-1.14.0')).toEqual({
+    expect(jevDetailOf({ action, slot }, 212, 'jev-1.14.0')).toEqual({
       model: 'jev-1.14.0',
       latencyMs: 212,
-      confidence: { verb: 0.8, target: 0.5, slot: 0.9 },
+      confidence: { action: 0.5, slot: 0.9 },
       probabilities: {
-        verb: { click: 0.8, open: 0.1, none: 0.1 },
-        target: { 'ref-2': 0.5, 'ref-3': 0.15, 'ref-1': 0.1, 'ref-6': 0.1, 'ref-5': 0.08 },
+        action: { 'click-2': 0.5, 'click-3': 0.12, 'click-1': 0.1, loop: 0.07, scroll_down: 0.06, 'open-1': 0.05, 'menu-2': 0.04, search: 0.03 },
         slot: { none: 0.9, 's0-0': 0.1 },
       },
     })
   })
 
-  it('carries where beside the three when it was asked (#340), and omits it when it was not', () => {
+  it('carries where beside the action card and the Slot when it was asked (#340), and omits it when it was not', () => {
     const one = (label: string, confidence: number): DecisionChoiceAnswer => ({ type: 'choice', choice: label, confidence, probabilities: { [label]: confidence } })
-    const three = { verb: one('open', 0.9), target: one('none', 0.8), slot: one('s2-4', 0.7) }
+    const reading = { action: one('search', 0.9), slot: one('s2-4', 0.7) }
     const where: DecisionChoiceAnswer = { type: 'choice', choice: 'site', confidence: 0.6, probabilities: { page: 0.1, site: 0.6, web: 0.3 } }
-    const scoped = jevDetailOf({ ...three, where }, 212, 'jev-1.14.0')
-    expect(scoped.confidence).toEqual({ verb: 0.9, target: 0.8, slot: 0.7, where: 0.6 })
+    const scoped = jevDetailOf({ ...reading, where }, 212, 'jev-1.14.0')
+    expect(scoped.confidence).toEqual({ action: 0.9, slot: 0.7, where: 0.6 })
     expect(scoped.probabilities.where).toEqual({ page: 0.1, site: 0.6, web: 0.3 })
-    const unscoped = jevDetailOf(three, 212, 'jev-1.14.0')
+    const unscoped = jevDetailOf(reading, 212, 'jev-1.14.0')
     expect('where' in unscoped.confidence).toBe(false)
     expect('where' in unscoped.probabilities).toBe(false)
   })

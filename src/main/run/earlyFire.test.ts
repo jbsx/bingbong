@@ -34,9 +34,8 @@ class ScriptedDecisionModel implements DecisionModel {
     this.requests.push(request as DecisionRequest<DecisionQuestions>)
     const answers = this.script.shift()
     if (answers === undefined) return { status: 'unavailable', reason: 'failed', message: 'scripted', latencyMs: 1, model: this.model }
-    // A hop asked a Verdict the script does not answer gets a sure one: yes after `done`, else not yet.
-    const verb = answers.verb
-    const verdict = 'outcome' in request.questions && !('outcome' in answers) ? { outcome: choice(verb?.type === 'choice' && verb.choice === 'done' ? 'yes' : 'not_yet') } : {}
+    // A hop asked a Verdict the script does not answer gets a sure not yet: a hop that ends done scripts its yes (#370).
+    const verdict = 'outcome' in request.questions && !('outcome' in answers) ? { outcome: choice('not_yet') } : {}
     return { status: 'answered', answers: { ...answers, ...verdict } as never, latencyMs: 1, model: this.model }
   }
 }
@@ -99,8 +98,8 @@ describe('a Task whose hop 0 Early Fired (#328, AC6)', () => {
 
   it('writes each partial\'s ask under its own id, and the Early Fire\'s record names the partial it fired on (#338)', async () => {
     const { records, asks, decision, perf, runner } = wired([
-      { verb: choice('search'), target: choice('none'), slot: choice('s2-3'), complete: { type: 'noul', noul: 0.9 } },
-      { verb: choice('done'), target: choice('none'), slot: choice('none') },
+      { action: choice('search'), slot: choice('s2-3'), complete: { type: 'noul', noul: 0.9 } },
+      { action: choice('none'), slot: choice('none'), outcome: choice('yes') },
     ])
     await speak(runner, { text: 'Pull up some lofi music.', partials: ['pull up some lofi'] }, perf)
 
@@ -114,8 +113,8 @@ describe('a Task whose hop 0 Early Fired (#328, AC6)', () => {
 
   it('names the ask of a partial that fired nothing on the record its Endpoint writes (#338)', async () => {
     const { records, asks, perf, runner } = wired([
-      { verb: choice('search'), target: choice('none'), slot: choice('s2-3'), complete: { type: 'noul', noul: 0.2 } },
-      { verb: choice('none'), target: choice('none'), slot: choice('none') },
+      { action: choice('search'), slot: choice('s2-3'), complete: { type: 'noul', noul: 0.2 } },
+      { action: choice('none'), slot: choice('none') },
     ])
     await speak(runner, { text: 'Pull up some lofi music.', partials: ['pull up some lofi'] }, perf)
 
@@ -126,8 +125,8 @@ describe('a Task whose hop 0 Early Fired (#328, AC6)', () => {
 
   it('goes on only after the Endpoint, and hop 1 reads the final transcript', async () => {
     const { browser, records, perf, decision, runner } = wired([
-      { verb: choice('search'), target: choice('none'), slot: choice('s2-3'), complete: { type: 'noul', noul: 0.9 } },
-      { verb: choice('done'), target: choice('none'), slot: choice('none') },
+      { action: choice('search'), slot: choice('s2-3'), complete: { type: 'noul', noul: 0.9 } },
+      { action: choice('none'), slot: choice('none'), outcome: choice('yes') },
     ])
     await speak(runner, { text: 'Pull up some lofi music.', partials: ['pull up some lofi'] }, perf)
 
@@ -136,17 +135,17 @@ describe('a Task whose hop 0 Early Fired (#328, AC6)', () => {
     expect(decision.requests[1]!.state).toContain('"Pull up some lofi music."')
     expect(decisions(records)).toEqual([
       expect.objectContaining({ verb: 'search', earlyFire: expect.objectContaining({ partial: 'pull up some lofi' }), task: expect.objectContaining({ hop: 0 }) }),
-      expect.objectContaining({ verb: 'done', transcript: 'Pull up some lofi music.', ended: 'done', task: expect.objectContaining({ hop: 1 }) }),
+      expect.objectContaining({ verb: 'none', transcript: 'Pull up some lofi music.', ended: 'done', task: expect.objectContaining({ hop: 1 }) }),
     ])
     expect(decisions(records)[0]!.ended).toBeUndefined()
   })
 
   it('keeps an Early-Fired hop 0\'s reading: a dead end after the menu it opened tries that reading\'s runner-up (#363)', async () => {
-    const target: DecisionAnswer = { type: 'choice', choice: 'ref-1', confidence: 0.5, probabilities: { 'ref-1': 0.5, 'ref-2': 0.3, none: 0.2 } }
+    const action: DecisionAnswer = { type: 'choice', choice: 'menu-1', confidence: 0.5, probabilities: { 'menu-1': 0.5, 'menu-2': 0.3, none: 0.2 } }
     const { browser, perf, runner } = wired([
-      { verb: choice('menu'), target, slot: choice('none'), complete: { type: 'noul', noul: 0.9 } },
-      { verb: choice('none'), target: choice('none'), slot: choice('s0-0') },
-      { verb: choice('done'), target: choice('none'), slot: choice('none') },
+      { action, slot: choice('none'), complete: { type: 'noul', noul: 0.9 } },
+      { action: choice('none'), slot: choice('s0-0') },
+      { action: choice('none'), slot: choice('none'), outcome: choice('yes') },
     ])
     const button = (n: number, label: string) => ({ ...browser.snapshot.refs[0], ref: n, kind: 'button' as const, label, inputType: null, rect: { x: 0, y: n * 10, width: 100, height: 10 }, src: null, href: null, downloadsFile: false, submitsForm: false, credentialField: false, paymentField: false, inForm: false, formHasCredential: false, formHasPayment: false, searchField: false, formHasSearch: false })
     const page = [button(1, 'Settings'), button(2, 'Video player')]
@@ -167,7 +166,7 @@ describe('a Task whose hop 0 Early Fired (#328, AC6)', () => {
   })
 
   it('ends after hop 0 when its partials are let go before an Endpoint', async () => {
-    const { browser, records, decision, runner } = wired([{ verb: choice('search'), target: choice('none'), slot: choice('s2-3'), complete: { type: 'noul', noul: 0.9 } }])
+    const { browser, records, decision, runner } = wired([{ action: choice('search'), slot: choice('s2-3'), complete: { type: 'noul', noul: 0.9 } }])
     void runner.prepare()
     await runner.consider('pull up some lofi')
     expect(browser.navigations).toHaveLength(1)

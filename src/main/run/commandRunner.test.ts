@@ -75,16 +75,24 @@ class CountingDecisionModel implements DecisionModel {
   }
 }
 
-/** A script that answers no Verdict where one is asked gets a sure one, as a plain hop would: yes after `done`, else not yet. */
+/** A script that answers no Verdict where one is asked gets a sure not yet, as a plain hop would: a hop that ends done scripts its yes (#370). */
 function withVerdict(questions: DecisionQuestions, answers: Record<string, DecisionAnswer>): Record<string, DecisionAnswer> {
   if (!('outcome' in questions) || 'outcome' in answers) return answers
-  const verb = answers.verb
-  return { ...answers, outcome: choice(verb?.type === 'choice' && verb.choice === 'done' ? 'yes' : 'not_yet') }
+  return { ...answers, outcome: choice('not_yet') }
 }
 
 function choice(label: string, confidence = 0.9, probabilities: Record<string, number> = { [label]: confidence }): DecisionAnswer {
   return { type: 'choice', choice: label, confidence, probabilities }
 }
+
+/** A later hop whose Verdict is a sure yes (#369, #370): the Task ends done before any action fires. */
+const SURE_YES: { answers: Record<string, DecisionAnswer> } = { answers: { action: choice('none'), slot: choice('none'), outcome: choice('yes') } }
+
+/** An ask's action card (#370). */
+const cardOf = (request: DecisionRequest<DecisionQuestions>): DecisionChoiceQuestion => request.questions.action as DecisionChoiceQuestion
+
+/** The card's options on a ref or a link, in the order it offers them: clicks and types per ref, the opens, then the right-clicks. */
+const cardRefs = (request: DecisionRequest<DecisionQuestions>): string[] => Object.keys(cardOf(request).options).filter((label) => /^(click|type|menu|open)-\d+$/.test(label))
 
 /** A speaker double (#327): records each text, sounds its first sample and finishes it on demand. */
 class FakeSpeech {
@@ -287,7 +295,7 @@ describe('the Player (#343)', () => {
     const run: CommandRunner['run'] = (line, runOptions) => {
       const head = /^(play|queue)\s+(.+?)[.!?]?$/i.exec(line.trim())
       const exact = head !== null && /^(?:play )?(?:next|from the beginning|the next song)$/i.test(line.trim())
-      if (head !== null && !exact) wired.decision.script.push({ answers: { verb: choice(head[1]!.toLowerCase()), target: choice('none'), slot: choice(`s1-${line.trim().split(/\s+/).length - 1}`) } })
+      if (head !== null && !exact) wired.decision.script.push({ answers: { action: choice(head[1]!.toLowerCase()), slot: choice(`s1-${line.trim().split(/\s+/).length - 1}`) } })
       return wired.runner.run(line, runOptions)
     }
     return { ...wired, youtube, runner: { ...wired.runner, run } }
@@ -307,9 +315,9 @@ describe('the Player (#343)', () => {
   it('with no song, the ask offers a song to play and none of the song\'s ops; with one current, every op (#362)', async () => {
     const { decision, runner } = music()
     await runner.run('play bohemian rhapsody')
-    decision.script.push({ answers: { verb: choice('loop'), target: choice('none'), slot: choice('none') } })
+    decision.script.push({ answers: { action: choice('loop'), slot: choice('none') } })
     await runner.run('loop the song')
-    const verbs = decision.requests.map((request) => Object.keys((request.questions.verb as DecisionChoiceQuestion).options))
+    const verbs = decision.requests.map((request) => Object.keys((request.questions.action as DecisionChoiceQuestion).options))
     expect(verbs[0]).toEqual(expect.arrayContaining(['play', 'play_next', 'queue']))
     expect(verbs[0]).not.toContain('loop')
     expect(verbs[1]).toEqual(expect.arrayContaining(['loop', 'loop_off', 'restart', 'pause', 'unpause', 'skip', 'previous', 'louder', 'quieter', 'mute', 'unmute', 'volume', 'show']))
@@ -319,17 +327,17 @@ describe('the Player (#343)', () => {
     const { browser, decision, events, youtube, runner } = music()
     await runner.run('navigate https://www.youtube.com/watch?v=fJ9rUzIMcZQ')
     browser.snapshot = { ...browser.snapshot, media: { title: QUEEN, paused: false, currentTime: 5, duration: 124, loop: false, muted: false } }
-    decision.script.push({ answers: { verb: choice('loop'), target: choice('none'), slot: choice('none') } })
+    decision.script.push({ answers: { action: choice('loop'), slot: choice('none') } })
     await runner.run('loop the song')
-    const verbs = Object.keys((decision.requests[0]!.questions.verb as DecisionChoiceQuestion).options)
+    const verbs = Object.keys((decision.requests[0]!.questions.action as DecisionChoiceQuestion).options)
     expect(verbs).toEqual(expect.arrayContaining(['loop', 'loop_off', 'restart', 'pause', 'unpause', 'skip', 'previous', 'louder', 'quieter', 'mute', 'unmute', 'volume', 'show']))
     expect(youtube.controls.map((control) => control.op)).toEqual(['loop'])
     expect(displays(events).at(-1)).toBe(`Looping “${QUEEN}”.`)
     // The page's media sets the Player's ops on offer; a page with none started offers only a song to play.
     browser.snapshot = { ...browser.snapshot, media: null }
-    decision.script.push({ answers: { verb: choice('none'), target: choice('none'), slot: choice('none') } })
+    decision.script.push({ answers: { action: choice('none'), slot: choice('none') } })
     await runner.run('loop the song')
-    const noSong = Object.keys((decision.requests[1]!.questions.verb as DecisionChoiceQuestion).options)
+    const noSong = Object.keys((decision.requests[1]!.questions.action as DecisionChoiceQuestion).options)
     expect(noSong).toEqual(expect.arrayContaining(['play', 'play_next', 'queue']))
     expect(noSong).not.toContain('loop')
   })
@@ -338,7 +346,7 @@ describe('the Player (#343)', () => {
     const { browser, decision, events, records, youtube, runner } = music()
     await browser.navigate('https://www.youtube.com/watch?v=fJ9rUzIMcZQ')
     browser.snapshot = { ...browser.snapshot, media: { title: QUEEN, paused: false, currentTime: 23, duration: 124, loop: false, muted: false } }
-    decision.script.push({ answers: { verb: choice('restart'), target: choice('none'), slot: choice('none') } })
+    decision.script.push({ answers: { action: choice('restart'), slot: choice('none') } })
     await runner.run('start it from the beginning')
     expect(youtube.controls.map((control) => control.op)).toEqual(['restart'])
     expect(displays(events).at(-1)).toBe('Restarted.')
@@ -353,9 +361,9 @@ describe('the Player (#343)', () => {
     await runner.run('skip')
     // The page shows the song where the skip paused it.
     browser.snapshot = { ...browser.snapshot, media: { title: QUEEN, paused: true, currentTime: 61, duration: 124, loop: false, muted: false } }
-    decision.script.push({ answers: { verb: choice('restart'), target: choice('none'), slot: choice('none') } })
+    decision.script.push({ answers: { action: choice('restart'), slot: choice('none') } })
     await runner.run('start the song from the beginning')
-    const verbs = Object.keys((decision.requests.at(-1)!.questions.verb as DecisionChoiceQuestion).options)
+    const verbs = Object.keys((decision.requests.at(-1)!.questions.action as DecisionChoiceQuestion).options)
     expect(verbs).toEqual(expect.arrayContaining(['loop', 'restart']))
     expect(youtube.controls.map((control) => control.op)).toEqual(['pause', 'restart'])
   })
@@ -363,9 +371,9 @@ describe('the Player (#343)', () => {
   it('a Capability reading fires the Player\'s op, answers its line and ends the Task `terminal`: no hop, no Verdict (#362)', async () => {
     const { decision, events, records, youtube, runner } = music()
     await runner.run('play bohemian rhapsody')
-    decision.script.push({ answers: { verb: choice('loop'), target: choice('none'), slot: choice('none') } })
+    decision.script.push({ answers: { action: choice('loop'), slot: choice('none') } })
     await runner.run('put the song on loop')
-    decision.script.push({ answers: { verb: choice('restart'), target: choice('none'), slot: choice('none') } })
+    decision.script.push({ answers: { action: choice('restart'), slot: choice('none') } })
     await runner.run('start the song from the beginning')
     expect(youtube.controls.map((control) => control.op)).toEqual(expect.arrayContaining(['loop', 'restart']))
     expect(displays(events).slice(-2)).toEqual([`Looping “${QUEEN}”.`, 'Restarted.'])
@@ -386,8 +394,8 @@ describe('the Player (#343)', () => {
       return result
     }
     decision.script.push(
-      { answers: { verb: choice('click'), target: choice('ref-1'), slot: choice('none') } },
-      { answers: { verb: choice('loop'), target: choice('none'), slot: choice('none'), outcome: choice('in_the_way') } },
+      { answers: { action: choice('click-1'), slot: choice('none') } },
+      { answers: { action: choice('loop'), slot: choice('none'), outcome: choice('in_the_way') } },
     )
     await runner.run('open the home page and loop the song')
     expect(youtube.controls.map((control) => control.op)).toContain('loop')
@@ -397,7 +405,7 @@ describe('the Player (#343)', () => {
   it('a Jev `volume` carries the Slot\'s number to the Player (#362)', async () => {
     const { decision, youtube, runner } = music()
     await runner.run('play bohemian rhapsody')
-    decision.script.push({ answers: { verb: choice('volume'), target: choice('none'), slot: choice('s5-5') } })
+    decision.script.push({ answers: { action: choice('volume'), slot: choice('s5-5') } })
     await runner.run('set the music volume to 30')
     expect(youtube.controls.at(-1)).toMatchObject({ op: 'volume', to: 30 })
   })
@@ -406,14 +414,14 @@ describe('the Player (#343)', () => {
     const { browser, decision, youtube, runner } = music()
     await runner.run('play bohemian rhapsody')
     const navigations = browser.navigations.length
-    decision.script.push({ answers: { verb: choice('play'), target: choice('none'), slot: choice('s1-1'), complete: { type: 'noul', noul: 0.95 } } })
+    decision.script.push({ answers: { action: choice('play'), slot: choice('s1-1'), complete: { type: 'noul', noul: 0.95 } } })
     await runner.consider('play daft')
     expect(browser.navigations).toHaveLength(navigations)
-    decision.script.push({ answers: { verb: choice('loop'), target: choice('none'), slot: choice('none'), complete: { type: 'noul', noul: 0.95 } } })
+    decision.script.push({ answers: { action: choice('loop'), slot: choice('none'), complete: { type: 'noul', noul: 0.95 } } })
     await runner.consider('loop the song')
     await flushMicrotasks()
     expect(youtube.controls.map((control) => control.op)).toContain('loop')
-    expect(Object.keys((decision.requests.at(-1)!.questions.verb as DecisionChoiceQuestion).options)).toContain('loop')
+    expect(Object.keys((decision.requests.at(-1)!.questions.action as DecisionChoiceQuestion).options)).toContain('loop')
   })
 
   it('a remembered song (#345) opens with no results page, answers as before, and is recorded `remembered`', async () => {
@@ -570,9 +578,9 @@ describe('a Command the Local Match settles', () => {
     expect(events[0]).toMatchObject({ type: 'command', action: 'click [3] "Elon Musk (@elonmusk) / X"' })
   })
 
-  it('asks Jev for an open whose words are about the page rather than an address; a search Jev gives a ref is a click', async () => {
+  it('asks Jev for an open whose words are about the page rather than an address; the ref on its action card is clicked (#370)', async () => {
     const { browser, decision, runner } = harness()
-    decision.script.push({ answers: { verb: choice('search'), target: choice('ref-1', 0.64), slot: choice('none') } }, { answers: { verb: choice('done'), target: choice('none'), slot: choice('none') } })
+    decision.script.push({ answers: { action: choice('click-1', 0.64), slot: choice('none') } }, { answers: { action: choice('none'), slot: choice('none'), outcome: choice('yes') } })
     await runner.run("open elon musk's profile", { source: 'spoken' })
     // The Command's call, and its Task's next hop saying done (#328).
     expect(decision.requests).toHaveLength(2)
@@ -585,7 +593,7 @@ describe('a Command the Local Match settles', () => {
     await runner.run('open youtube')
     await runner.run('go to news.ycombinator.com')
     expect(decision.requests).toEqual([])
-    decision.script.push({ answers: { verb: choice('search'), target: choice('none'), slot: choice('s2-4') } }, { answers: { verb: choice('done'), target: choice('none'), slot: choice('none') } })
+    decision.script.push({ answers: { action: choice('search'), slot: choice('s2-4') } }, { answers: { action: choice('none'), slot: choice('none'), outcome: choice('yes') } })
     await runner.run('search for rust async book')
     expect(decision.requests).toHaveLength(2)
     expect(browser.navigations).toEqual(['https://youtube.com', 'https://news.ycombinator.com', 'https://duckduckgo.com/?q=rust%20async%20book'])
@@ -596,7 +604,7 @@ describe('a Command the Local Match settles', () => {
     await runner.run('open youtube', { source: 'spoken' })
     await runner.run('click sign in', { source: 'spoken' })
     await runner.run('scroll down', { source: 'spoken' })
-    decision.script.push({ answers: { verb: choice('search'), target: choice('none'), slot: choice('s2-4') } }, { answers: { verb: choice('done'), target: choice('none'), slot: choice('none') } })
+    decision.script.push({ answers: { action: choice('search'), slot: choice('s2-4') } }, { answers: { action: choice('none'), slot: choice('none'), outcome: choice('yes') } })
     await runner.run('search for rust async book', { source: 'spoken' })
     await runner.run('type hello in the search box', { source: 'spoken' })
     // Read before the back: the fake's back lands on a blank pane, where a read has nothing to read (#361).
@@ -616,11 +624,11 @@ describe('a Command the Local Match settles', () => {
     expect(browser.reloads).toBe(2)
     expect(decision.requests).toEqual([])
     expect(events.find((event) => event.type === 'tool_call')).toMatchObject({ name: 'reload' })
-    decision.script.push({ answers: { verb: choice('reload'), target: choice('none'), slot: choice('none') } })
+    decision.script.push({ answers: { action: choice('reload'), slot: choice('none') } })
     await runner.run('give me that page again', { source: 'spoken' })
     expect(browser.reloads).toBe(3)
-    const verbs = (decision.requests[0]!.questions as { verb: DecisionChoiceQuestion }).verb
-    expect(Object.keys(verbs.options)).toContain('reload')
+    const actions = (decision.requests[0]!.questions as { action: DecisionChoiceQuestion }).action
+    expect(Object.keys(actions.options)).toContain('reload')
   })
 
   it('shows a read as a Card and an action as its one-line Answer (#333) — actions stay silent', async () => {
@@ -657,20 +665,23 @@ describe('a Command the Local Match settles', () => {
 describe('a Command the Local Match cannot settle', () => {
   it('makes one Jev call with the questions over the transcript, the page and its refs — where among them on a site (#340) — and its Task one more per hop', async () => {
     const { browser, decision, runner, events } = harness()
-    decision.script.push({ answers: { verb: choice('click'), target: choice('ref-1'), slot: choice('none') } }, { answers: { verb: choice('done'), target: choice('none'), slot: choice('none') } })
+    decision.script.push({ answers: { action: choice('click-1'), slot: choice('none') } }, { answers: { action: choice('none'), slot: choice('none'), outcome: choice('yes') } })
 
     await runner.run('take me home', { source: 'spoken' })
 
     expect(decision.requests).toHaveLength(2)
     const request = decision.requests[0]!
-    expect(Object.keys(request.questions)).toEqual(['verb', 'target', 'slot', 'where'])
+    // One action card in place of a verb and a target (#370), and no Verdict at hop 0.
+    expect(Object.keys(request.questions)).toEqual(['action', 'slot', 'where'])
     expect(request.state).toContain('"take me home"')
     expect(request.state).toContain('Page: https://example.com/ — "Example"')
     expect(request.state).toContain('[1] link "Home" https://example.com/1')
     expect(request.state).toContain('[3] input[search] "Search"')
     expect(request.state).not.toContain('<page>')
-    expect(Object.keys((request.questions.verb as DecisionChoiceQuestion).options)).toEqual([...JEV_VERBS])
-    expect(Object.keys((request.questions.target as DecisionChoiceQuestion).options)).toEqual(['none', 'ref-1', 'ref-2', 'ref-3'])
+    const card = Object.keys((request.questions.action as DecisionChoiceQuestion).options)
+    expect(card).toEqual(expect.arrayContaining(['click-1', 'click-2', 'type-3', 'click-3', 'menu-1', 'menu-2', 'menu-3', ...JEV_VERBS.filter((verb) => verb !== 'click' && verb !== 'type' && verb !== 'menu')]))
+    for (const bare of ['done', 'click', 'type', 'menu']) expect(card).not.toContain(bare)
+    expect(request.questions).not.toHaveProperty('outcome')
     expect(Object.keys((request.questions.slot as DecisionChoiceQuestion).options)).toContain('s0-2')
     expect(browser.clicks).toEqual([1])
     expect(events[0]).toMatchObject({ type: 'command', text: 'take me home', action: 'click [1] "Home"' })
@@ -714,7 +725,7 @@ describe('a Command the Local Match cannot settle', () => {
 
   it('a none verb publishes one greyed Feed Entry and no speak, error or tool_call', async () => {
     const { browser, decision, runner, events, records } = harness()
-    decision.script.push({ answers: { verb: choice('none', 0.7), target: choice('none'), slot: choice('none') } })
+    decision.script.push({ answers: { action: choice('none', 0.7), slot: choice('none') } })
 
     expect(await runner.run('what a lovely day', { source: 'spoken' })).toBe(true)
 
@@ -724,7 +735,7 @@ describe('a Command the Local Match cannot settle', () => {
     expect(events[0]).not.toHaveProperty('action')
     expect(browser.clicks).toEqual([])
     expect(browser.navigations).toEqual([])
-    expect(records[0]).toMatchObject({ type: 'decision', verb: 'none', reading: 'jev', jev: { confidence: { verb: 0.7 } } })
+    expect(records[0]).toMatchObject({ type: 'decision', verb: 'none', reading: 'jev', jev: { confidence: { action: 0.7 } } })
     expect(runner.getState()).toBe('idle')
   })
 })
@@ -734,7 +745,7 @@ describe('an Utterance read as no Command answers "No response." and why (owner 
 
   it("a verb the grammar knows, gone wrong past it, says what went wrong in plain words", async () => {
     const { decision, events, runner } = harness()
-    decision.script.push({ answers: { verb: choice('none'), target: choice('none'), slot: choice('none') } })
+    decision.script.push({ answers: { action: choice('none'), slot: choice('none') } })
     await runner.run('press F5 3')
     expect(answers(events)).toEqual(["No response.\n\nI can't press F5. Keys I know: up, down, left, right, space, enter, tab, escape."])
   })
@@ -794,7 +805,7 @@ describe('a Command still being read', () => {
   it('is superseded by a later Command that fires first: its reading is abandoned, the later Command stands', async () => {
     const { browser, events, decision, runner, records, perf } = harness()
     const release = slowJev(decision)
-    decision.script.push({ answers: { verb: choice('click'), target: choice('ref-1'), slot: choice('none') } })
+    decision.script.push({ answers: { action: choice('click-1'), slot: choice('none') } })
     const first = runner.run('take me home', { source: 'spoken' })
     await flushMicrotasks()
     expect(runner.getState()).toBe('running')
@@ -822,7 +833,7 @@ describe('a Command still being read', () => {
   it('is interrupted by abort while it waits on Jev: nothing fires when the answer comes', async () => {
     const { browser, events, decision, runner } = harness()
     const release = slowJev(decision)
-    decision.script.push({ answers: { verb: choice('click'), target: choice('ref-1'), slot: choice('none') } })
+    decision.script.push({ answers: { action: choice('click-1'), slot: choice('none') } })
     const run = runner.run('take me home', { source: 'spoken' })
     await flushMicrotasks()
 
@@ -847,7 +858,7 @@ describe('a Command still being read', () => {
   ])('says it was stopped when %s ended it (#330)', async (_name, stop) => {
     const { browser, events, decision, runner } = harness()
     const release = slowJev(decision)
-    decision.script.push({ answers: { verb: choice('click'), target: choice('ref-1'), slot: choice('none') } })
+    decision.script.push({ answers: { action: choice('click-1'), slot: choice('none') } })
     const first = runner.run('take me home', { source: 'spoken' })
     await flushMicrotasks()
     await stop(runner)
@@ -861,7 +872,7 @@ describe('a Command still being read', () => {
   it('is filed where it was given, and says a later Command came first (#330)', async () => {
     const { events, decision, runner } = harness()
     const release = slowJev(decision)
-    decision.script.push({ answers: { verb: choice('click'), target: choice('ref-1'), slot: choice('none') } })
+    decision.script.push({ answers: { action: choice('click-1'), slot: choice('none') } })
     const first = runner.run('take me home', { source: 'spoken' })
     await flushMicrotasks()
     await runner.run('scroll down', { source: 'spoken' })
@@ -904,7 +915,7 @@ describe('the Misfire signal', () => {
   it('reads past a dropped Utterance: the recovery counts against the Command that fired', async () => {
     const { decision, runner, records } = harness()
     await runner.run('scroll down', { source: 'spoken' })
-    decision.script.push({ answers: { verb: choice('none'), target: choice('none'), slot: choice('none') } })
+    decision.script.push({ answers: { action: choice('none'), slot: choice('none') } })
     await runner.run('um never mind', { source: 'spoken' })
     await runner.run('back', { source: 'spoken' })
     const scrollTurn = records.find((record) => record.type === 'decision' && record.verb === 'scroll_down')!.turnId
@@ -1016,12 +1027,13 @@ describe('what every Command records', () => {
     expect(reaction).toMatchObject({ durMs: 40, detail: { verb: 'scroll_down', effect: 'settled', source: 'typed' } })
   })
 
-  it('one decision record per Command — transcript, verb, target, Slot, reading, Jev — and no span for a dropped Utterance', async () => {
+  it('one decision record per Command — transcript, verb, target, Slot, reading, Jev with the action card\'s top probabilities (#370) — and no span for a dropped Utterance', async () => {
     const { decision, runner, records, perf } = harness()
-    decision.script.push({ answers: { verb: choice('type', 0.6), target: choice('ref-3', 0.5, { 'ref-3': 0.5, none: 0.3, 'ref-1': 0.2 }), slot: choice('s0-1', 0.8) } })
-    // The type's Task goes on one hop, which says done (#328).
-    decision.script.push({ answers: { verb: choice('done', 0.9), target: choice('none'), slot: choice('none') } })
-    decision.script.push({ answers: { verb: choice('none', 0.9), target: choice('none'), slot: choice('none') } })
+    const card = { 'type-3': 0.5, 'click-3': 0.12, none: 0.1, 'click-1': 0.08, 'click-2': 0.06, search: 0.05, 'menu-3': 0.04, back: 0.03, reload: 0.01, stop: 0.01 }
+    decision.script.push({ answers: { action: choice('type-3', 0.5, card), slot: choice('s0-1', 0.8) } })
+    // The type's Task goes on one hop, whose Verdict says done (#328, #370).
+    decision.script.push({ answers: { action: choice('none'), slot: choice('none'), outcome: choice('yes') } })
+    decision.script.push({ answers: { action: choice('none', 0.9), slot: choice('none') } })
 
     // No plain verb heads the words: the Local Match settles nothing, Jev reads them.
     await runner.run('hello there into search', { source: 'spoken', turnId: 'voice-1' })
@@ -1030,7 +1042,7 @@ describe('what every Command records', () => {
 
     // A new Utterance within 3 s of a Jev-read hop is an overrun of it (#328).
     expect(records.map((record) => record.type)).toEqual(['decision', 'decision', 'misfire', 'decision', 'decision'])
-    expect(records[1]).toMatchObject({ verb: 'done', ended: 'done', task: { id: 'voice-1', hop: 1 } })
+    expect(records[1]).toMatchObject({ verb: 'none', ended: 'done', task: { id: 'voice-1', hop: 1 } })
     expect(records[2]).toMatchObject({ signal: 'overrun', turnId: 'voice-1', signalTurnId: 'voice-2', hop: 0 })
     records.splice(1, 2)
     expect(records[0]).toEqual({
@@ -1049,8 +1061,9 @@ describe('what every Command records', () => {
       jev: {
         model: 'jev-1.14.0',
         latencyMs: 212,
-        confidence: { verb: 0.6, target: 0.5, slot: 0.8 },
-        probabilities: { verb: { type: 0.6 }, target: { 'ref-3': 0.5, none: 0.3, 'ref-1': 0.2 }, slot: { 's0-1': 0.8 } },
+        // The card's top eight options are kept; the two least probable go.
+        confidence: { action: 0.5, slot: 0.8 },
+        probabilities: { action: { 'type-3': 0.5, 'click-3': 0.12, none: 0.1, 'click-1': 0.08, 'click-2': 0.06, search: 0.05, 'menu-3': 0.04, back: 0.03 }, slot: { 's0-1': 0.8 } },
       },
       ask: 'voice-1',
       task: { id: 'voice-1', hop: 0 },
@@ -1093,7 +1106,7 @@ describe('what every Command records', () => {
 describe('what Jev was asked (#338)', () => {
   it('writes every Jev call\'s whole ask — the state and the questions — and each decision record names its ask', async () => {
     const { decision, runner, records, asks } = harness()
-    decision.script.push({ answers: { verb: choice('click'), target: choice('ref-1'), slot: choice('none') } }, { answers: { verb: choice('done'), target: choice('none'), slot: choice('none') } })
+    decision.script.push({ answers: { action: choice('click-1'), slot: choice('none') } }, { answers: { action: choice('none'), slot: choice('none'), outcome: choice('yes') } })
 
     await runner.run('take me home', { source: 'spoken', turnId: 'voice-1' })
 
@@ -1139,8 +1152,8 @@ describe('the Name Match (ADR 0077)', () => {
   }
   /** A search line is Jev's (#353): its reading, and the hop after it saying done. */
   const searched = (slot: string): { answers: Record<string, DecisionAnswer> }[] => [
-    { answers: { verb: choice('search'), target: choice('none'), slot: choice(slot) } },
-    { answers: { verb: choice('done'), target: choice('none'), slot: choice('none') } },
+    { answers: { action: choice('search'), slot: choice(slot) } },
+    { answers: { action: choice('none'), slot: choice('none'), outcome: choice('yes') } },
   ]
 
   it('carries a spoken search whose words sound like a name on the page as that name, records what was heard, and admits the name', async () => {
@@ -1221,8 +1234,8 @@ describe('the Name Match (ADR 0077)', () => {
 describe('learning from a retry chain (ADR 0077)', () => {
   /** A search line is Jev's (#353): its reading, and the hop after it saying done. */
   const searched = (slot: string): { answers: Record<string, DecisionAnswer> }[] => [
-    { answers: { verb: choice('search'), target: choice('none'), slot: choice(slot) } },
-    { answers: { verb: choice('done'), target: choice('none'), slot: choice('none') } },
+    { answers: { action: choice('search'), slot: choice(slot) } },
+    { answers: { action: choice('none'), slot: choice('none'), outcome: choice('yes') } },
   ]
 
   it('proposes the last Slot of a chain of similar-sounding Slots once the user moves on', async () => {
@@ -1283,7 +1296,7 @@ describe('Early Fire (#326)', () => {
   })
 
   const noul = (value: number): DecisionAnswer => ({ type: 'noul', noul: value })
-  const openYoutube = (complete: number): Record<string, DecisionAnswer> => ({ verb: choice('navigate'), target: choice('none'), slot: choice('s1-1'), complete: noul(complete) })
+  const openYoutube = (complete: number): Record<string, DecisionAnswer> => ({ action: choice('navigate'), slot: choice('s1-1'), complete: noul(complete) })
 
   it('never fires a Slot-carrying partial on the Local Match; asks Jev the three Choices and one Noul, and fires only when the Noul clears 0.7', async () => {
     const { browser, events, records, decision, runner } = harness()
@@ -1294,9 +1307,9 @@ describe('Early Fire (#326)', () => {
     expect(decision.requests).toHaveLength(1)
     const questions = decision.requests[0]!.questions
     // example.com is a site, so the partial asks where too (#340).
-    expect(Object.keys(questions).sort()).toEqual(['complete', 'slot', 'target', 'verb', 'where'])
+    expect(Object.keys(questions).sort()).toEqual(['action', 'complete', 'slot', 'where'])
     expect(questions.complete).toEqual({ type: 'noul', instructions: 'Is this a complete command, with nothing still to be said?' })
-    expect([questions.verb, questions.target, questions.slot].map((question) => question.type)).toEqual(['choice', 'choice', 'choice'])
+    expect([questions.action, questions.slot].map((question) => question.type)).toEqual(['choice', 'choice'])
 
     decision.script.push({ answers: openYoutube(0.9) })
     await runner.consider('open youtube')
@@ -1304,7 +1317,7 @@ describe('Early Fire (#326)', () => {
     expect(decision.requests).toHaveLength(2)
 
     // The Endpoint's transcript is not read for hop 0 again: no second navigation. Its Task's next hop reads it (#328).
-    decision.script.push({ answers: { verb: choice('done'), target: choice('none'), slot: choice('none') } })
+    decision.script.push({ answers: { action: choice('none'), slot: choice('none'), outcome: choice('yes') } })
     await runner.run('open youtube please', { source: 'spoken', endpointAt: 0 })
     expect(decision.requests).toHaveLength(3)
     expect(decision.requests[2]!.state).toContain('"open youtube please"')
@@ -1346,7 +1359,7 @@ describe('Early Fire (#326)', () => {
     }) as typeof decision.ask
     const partial = runner.consider('open you')
     await flushMicrotasks()
-    decision.script.push({ answers: { verb: choice('navigate'), target: choice('none'), slot: choice('s1-1') } })
+    decision.script.push({ answers: { action: choice('navigate'), slot: choice('s1-1') } })
     const endpoint = runner.run('open youtube', { source: 'spoken' })
     await flushMicrotasks()
     answer({ status: 'answered', answers: openYoutube(0.95) as never, latencyMs: 1, model: 'jev-1.14.0' })
@@ -1364,7 +1377,7 @@ describe('Early Fire (#326)', () => {
     await runner.consider('open you')
     expect(browser.navigations).toEqual([])
     expect(events).toEqual([])
-    decision.script.push({ answers: { verb: choice('navigate'), target: choice('none'), slot: choice('s1-1') } })
+    decision.script.push({ answers: { action: choice('navigate'), slot: choice('s1-1') } })
     await runner.run('open youtube', { source: 'spoken' })
     expect(browser.navigations).toEqual(['https://youtube.com'])
     expect(events.some((event) => event.type === 'error')).toBe(false)
@@ -1646,7 +1659,7 @@ describe('a Command whose output is speech', () => {
     await runner.run('scroll down')
     await runner.run('back')
     await runner.run('open example.com')
-    decision.script.push({ answers: { verb: choice('none', 0.7), target: choice('none'), slot: choice('none') } })
+    decision.script.push({ answers: { action: choice('none', 0.7), slot: choice('none') } })
     await runner.run('what a lovely day', { source: 'spoken' })
     expect(events.some((event) => event.type === 'command' && event.dropped === true)).toBe(true)
     expect(speech.spoken).toEqual([])
@@ -1671,7 +1684,8 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
   ]
   const POST_REFS: SnapshotRef[] = [ref(1, 'link', 'Elon Musk', { href: 'https://x.com/elonmusk' }), ref(2, 'button', 'Show the post')]
 
-  const answer = (verb: string, target = 'none', slot = 'none'): { answers: Record<string, DecisionAnswer> } => ({ answers: { verb: choice(verb), target: choice(target), slot: choice(slot) } })
+  /** A reading off the action card (#370): `click-3`, `open-1`, a ref-less verb or `none`, and its Slot. */
+  const answer = (action: string, slot = 'none'): { answers: Record<string, DecisionAnswer> } => ({ answers: { action: choice(action), slot: choice(slot) } })
   const decisions = (records: CommandLogRecord[]) => records.flatMap((record) => (record.type === 'decision' ? [record] : []))
   const commands = (events: PipelineEvent[]) => events.flatMap((event) => (event.type === 'command' ? [event] : []))
   /** The failure lines shown (#329): a wall's, or the Verdict's. */
@@ -1694,16 +1708,15 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
 
   it('AC1: searches, opens a result from the whole page, clicks a ref on the landing and ends done — silent, one event and one record per hop', async () => {
     const { browser, events, records, decision, perf, runner } = taskHarness()
-    decision.script.push(answer('search', 'none', 's3-6'), answer('click', 'link-1'), answer('click', 'ref-2'), answer('done'))
+    decision.script.push(answer('search', 's3-6'), answer('open-1'), answer('click-2'), SURE_YES)
     await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
 
     expect(browser.navigations).toEqual([SEARCH, POST])
     expect(browser.clicks).toEqual([2])
     expect(events.filter((event) => event.type === 'speak')).toEqual([])
     // Hop 1 was offered the results, not the engine's own links, and not a ref's link twice.
-    const hop1 = (decision.requests[1]!.questions as { target: DecisionChoiceQuestion }).target
-    expect(Object.keys(hop1.options)).toEqual(['none', 'ref-1', 'ref-2', 'ref-3', 'link-1'])
-    expect(hop1.options['link-1']).toContain(POST)
+    expect(cardRefs(decision.requests[1]!)).toEqual(['click-1', 'type-2', 'click-2', 'click-3', 'open-1', 'menu-1', 'menu-2', 'menu-3'])
+    expect(cardOf(decision.requests[1]!).options['open-1']).toContain(POST)
     // Every hop read the whole transcript.
     for (const request of decision.requests) expect(request.state).toContain('"pull up the latest elon musk tweet"')
 
@@ -1752,29 +1765,33 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
     expect(decisions(records).map((record) => record.ended)).toEqual(['terminal', 'terminal', 'terminal'])
   })
 
-  it('AC3: done at hop 0 fires nothing, writes a record, shows the words as already here, and has no Reaction', async () => {
+  it('AC3: hop 0 asks no Verdict and never ends "already here" (#370): a none fires nothing, writes a record, is dropped with "No response.", and has no Reaction', async () => {
     const { browser, events, records, decision, perf, runner } = harness()
-    decision.script.push(answer('done'))
+    decision.script.push(answer('none'))
     await runner.run('pull up the example page', { source: 'spoken' })
+    expect(decision.requests[0]!.questions).not.toHaveProperty('outcome')
+    expect(Object.keys((decision.requests[0]!.questions.action as DecisionChoiceQuestion).options)).not.toContain('done')
     expect(browser.navigations).toEqual([])
     expect(browser.clicks).toEqual([])
     expect(decision.requests).toHaveLength(1)
-    expect(commands(events)).toEqual([expect.objectContaining({ action: 'already here', dropped: true, task: expect.objectContaining({ hop: 0 }) })])
-    expect(decisions(records)).toEqual([expect.objectContaining({ verb: 'done', ended: 'done' })])
+    expect(commands(events)).toEqual([expect.objectContaining({ dropped: true, task: expect.objectContaining({ hop: 0 }) })])
+    expect(commands(events)[0]).not.toHaveProperty('action')
+    expect(events.find((event) => event.type === 'display')).toMatchObject({ text: 'No response.\n\nJev read no command in the words.' })
+    expect(decisions(records)).toEqual([expect.objectContaining({ verb: 'none', ended: 'terminal' })])
     expect(perf.records.filter((record) => record.stage === 'reaction')).toEqual([])
   })
 
-  it('an unsure done at hop 0 under a sure target is no "already here": the ref is clicked (#367)', async () => {
+  it('a dropped line\'s Answer reads the action card (#370): a click on a ref the page lacks is named as Jev read it', async () => {
     const { browser, events, decision, runner } = harness()
-    decision.script.push({ answers: { verb: choice('done', 0.34), target: choice('ref-2', 0.9), slot: choice('none') } })
-    await runner.run('sign me in', { source: 'spoken' })
-    expect(browser.clicks).toEqual([2])
-    expect(commands(events)[0]).not.toMatchObject({ action: 'already here' })
+    decision.script.push({ answers: { action: choice('click-9', 0.8, { 'click-9': 0.8, none: 0.2 }), slot: choice('none') } })
+    await runner.run('the ninth thing please', { source: 'spoken' })
+    expect(browser.clicks).toEqual([])
+    expect(events.find((event) => event.type === 'display')).toMatchObject({ text: 'No response.\n\nJev read “click [9]”, but nothing on this page fits it.' })
   })
 
   it('AC3: none at hop 1 with no sure yes ends unsure — the page stays, the line says so, the Feed says not sure', async () => {
     const { browser, events, records, decision, runner } = taskHarness()
-    decision.script.push(answer('search', 'none', 's3-6'), answer('none'))
+    decision.script.push(answer('search', 's3-6'), answer('none'))
     await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
     expect(browser.navigations).toEqual([SEARCH])
     expect(failures(events)).toEqual([expect.objectContaining({ text: "I'm not sure this is it." })])
@@ -1797,7 +1814,7 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
 
     it('none with a sure yes ends done, silent: the Verdict decides, not the verb', async () => {
       const { events, records, decision, runner } = taskHarness()
-      decision.script.push(answer('search', 'none', 's3-6'), withOutcome(answer('none'), 'yes'))
+      decision.script.push(answer('search', 's3-6'), SURE_YES)
       await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
       expect(failures(events)).toEqual([])
       expect(commands(events)[1]).toMatchObject({ action: 'done', dropped: true })
@@ -1808,7 +1825,7 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
     describe('a sure yes ends the Task before any verb fires (#369)', () => {
       it('AC1: click with a sure yes at hop 1 fires nothing and ends done, its record says so', async () => {
         const { browser, events, records, decision, runner } = taskHarness()
-        decision.script.push(answer('search', 'none', 's3-6'), withOutcome(answer('click', 'ref-2'), 'yes'))
+        decision.script.push(answer('search', 's3-6'), withOutcome(answer('click-2'), 'yes'))
         await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
         expect(browser.clicks).toEqual([])
         expect(browser.navigations).toEqual([SEARCH])
@@ -1819,7 +1836,7 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
 
       it('AC2: a yes under the bar leaves the verb to decide: the click fires', async () => {
         const { browser, decision, runner } = taskHarness()
-        decision.script.push(answer('search', 'none', 's3-6'), withOutcome(answer('click', 'ref-2'), 'yes', 0.69), withOutcome(answer('done'), 'yes'))
+        decision.script.push(answer('search', 's3-6'), withOutcome(answer('click-2'), 'yes', 0.69), SURE_YES)
         await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
         expect(browser.clicks).toEqual([2])
       })
@@ -1827,7 +1844,7 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
       it('AC4: hop 0 has no Verdict: an outcome there leaves the click to fire', async () => {
         const { browser, decision, runner } = taskHarness(POST)
         browser.snapshot = { ...browser.snapshot, refs: POST_REFS }
-        decision.script.push(withOutcome(answer('click', 'ref-2'), 'yes'), withOutcome(answer('done'), 'yes'))
+        decision.script.push(withOutcome(answer('click-2'), 'yes'), SURE_YES)
         await runner.run('show me the post', { source: 'spoken' })
         expect(browser.clicks).toEqual([2])
         expect(decision.requests[0]!.questions).not.toHaveProperty('outcome')
@@ -1836,7 +1853,7 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
 
     it('done with a yes below the bar ends unsure and says so', async () => {
       const { events, records, decision, runner } = taskHarness()
-      decision.script.push(answer('search', 'none', 's3-6'), withOutcome(answer('done'), 'yes', 0.4))
+      decision.script.push(answer('search', 's3-6'), withOutcome(answer('none'), 'yes', 0.4))
       await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
       expect(failures(events)).toEqual([expect.objectContaining({ text: "I'm not sure this is it." })])
       expect(decisions(records).map((record) => record.ended)).toEqual([undefined, 'unsure'])
@@ -1885,7 +1902,7 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
           if (collects === 3) uncovered(h, SEARCH_REFS)
           return collectPage()
         }
-        decision.script.push(answer('search', 'none', 's3-6'), withOutcome(answer('none'), 'in_the_way', 1), withOutcome(answer('none'), 'yes'))
+        decision.script.push(answer('search', 's3-6'), withOutcome(answer('none'), 'in_the_way', 1), SURE_YES)
         await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
         expect(commands(events).map((event) => event.action)).toEqual(['search latest elon musk tweet', 'the page moved: read again', 'done'])
         // Hop 1 was read over the sheet; hop 2 is told it covered the landing and closed, and reads no dialog.
@@ -1923,7 +1940,7 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
           const h = mountingHarness(2)
           const { browser, sleeps, records, decision, events, runner } = h
           closing(h, SEARCH_REFS)
-          decision.script.push(answer('search', 'none', 's3-6'), withOutcome(answer('click', 'ref-3'), 'in_the_way', 0.85), withOutcome(answer('done'), 'yes'))
+          decision.script.push(answer('search', 's3-6'), withOutcome(answer('click-3'), 'in_the_way', 0.85), SURE_YES)
           await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
           expect(sleeps).toEqual([RESULTS_POLL_MS, RESULTS_POLL_MS, ...WATCH])
           expect(decision.requests[1]!.state).toContain('A dialog is open: "Don’t miss what’s happening"')
@@ -1934,7 +1951,7 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
 
         it('a page that never draws within the wait is read as it stands', async () => {
           const { sleeps, decision, runner } = mountingHarness(Number.POSITIVE_INFINITY)
-          decision.script.push(answer('search', 'none', 's3-6'), answer('none'))
+          decision.script.push(answer('search', 's3-6'), answer('none'))
           await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
           expect(sleeps).toHaveLength(MOUNTING_WAIT_MS / RESULTS_POLL_MS)
           expect(decision.requests[1]!.state).toContain('[1] link "Home" https://truthsocial.com/')
@@ -1964,7 +1981,7 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
           const { browser, events, records, sleeps, decision, runner } = h
           lateSheet(h, 3)
           closing(h, POST_REFS)
-          decision.script.push(answer('search', 'none', 's3-6'), answer('click', 'link-1'), withOutcome(answer('done'), 'yes'), withOutcome(answer('click', 'ref-3'), 'in_the_way', 0.85), withOutcome(answer('done'), 'yes'))
+          decision.script.push(answer('search', 's3-6'), answer('open-1'), SURE_YES, withOutcome(answer('click-3'), 'in_the_way', 0.85), SURE_YES)
           await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
           expect(browser.clicks).toEqual([1])
           expect(commands(events).map((event) => event.action)).toEqual([`search latest elon musk tweet`, `navigate ${POST}`, 'a pop-up opened: read again', 'click [1] "Close"', 'done'])
@@ -1982,7 +1999,7 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
           const { browser, events, records, decision, runner } = h
           lateSheet(h, 3)
           closing(h, POST_REFS)
-          decision.script.push(answer('search', 'none', 's3-6'), answer('click', 'link-1'), withOutcome(answer('click', 'ref-2'), 'yes'), withOutcome(answer('click', 'ref-3'), 'in_the_way', 0.85), withOutcome(answer('click', 'ref-2'), 'yes'))
+          decision.script.push(answer('search', 's3-6'), answer('open-1'), withOutcome(answer('click-2'), 'yes'), withOutcome(answer('click-3'), 'in_the_way', 0.85), withOutcome(answer('click-2'), 'yes'))
           await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
           expect(browser.clicks).toEqual([1])
           expect(commands(events).map((event) => event.action)).toEqual([`search latest elon musk tweet`, `navigate ${POST}`, 'a pop-up opened: read again', 'click [1] "Close"', 'done'])
@@ -2002,7 +2019,7 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
               return false
             },
           })
-          decision.script.push(answer('search', 'none', 's3-6'), answer('click', 'link-1'), withOutcome(answer('done'), 'yes'))
+          decision.script.push(answer('search', 's3-6'), answer('open-1'), SURE_YES)
           await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
           await flushMicrotasks()
           expect(decision.requests).toHaveLength(3)
@@ -2016,7 +2033,7 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
         coveredOnLanding(h)
         closing(h, SEARCH_REFS)
         // Jev would click the post under the sheet: the Verdict says the sheet is in the way.
-        decision.script.push(answer('search', 'none', 's3-6'), withOutcome(answer('click', 'ref-3'), 'in_the_way', 0.85), withOutcome(answer('done'), 'yes'))
+        decision.script.push(answer('search', 's3-6'), withOutcome(answer('click-3'), 'in_the_way', 0.85), SURE_YES)
         await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
         expect(browser.clicks).toEqual([1])
         expect(browser.navigations).toEqual([SEARCH])
@@ -2034,7 +2051,7 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
         const { browser, records, decision, runner } = h
         coveredOnLanding(h)
         closing(h, SEARCH_REFS)
-        decision.script.push(answer('search', 'none', 's3-6'), withOutcome(answer('click', 'ref-3'), 'in_the_way', 0.9), withOutcome(answer('done'), 'yes'))
+        decision.script.push(answer('search', 's3-6'), withOutcome(answer('click-3'), 'in_the_way', 0.9), SURE_YES)
         await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
         expect(browser.clicks).toEqual([1])
         expect(decisions(records)[1]).toMatchObject({ stepAside: true, target: 1 })
@@ -2052,7 +2069,7 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
           return line
         }
         closing(h, SEARCH_REFS)
-        decision.script.push(answer('search', 'none', 's3-6'), withOutcome(answer('click', 'ref-3'), 'in_the_way', 0.85), withOutcome(answer('done'), 'yes'))
+        decision.script.push(answer('search', 's3-6'), withOutcome(answer('click-3'), 'in_the_way', 0.85), SURE_YES)
         await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
         expect(browser.clicks).toEqual([])
         expect(browser.pressedKeys).toEqual([{ press: { key: 'Escape' }, times: 1 }])
@@ -2074,10 +2091,10 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
           return line.replace(NO_OBSERVABLE_CHANGE, PAGE_SIGNATURE_CHANGED)
         }
         decision.script.push(
-          answer('search', 'none', 's3-6'),
-          withOutcome(answer('click', 'ref-3'), 'in_the_way', 0.85),
-          answer('click', 'ref-3'),
-          withOutcome(answer('click', 'ref-3'), 'in_the_way', 0.9),
+          answer('search', 's3-6'),
+          withOutcome(answer('click-3'), 'in_the_way', 0.85),
+          answer('click-3'),
+          withOutcome(answer('click-3'), 'in_the_way', 0.9),
         )
         await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
         expect(browser.clicks).toEqual([1, 3])
@@ -2097,12 +2114,13 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
           covered(h)
           return line.replace(NO_OBSERVABLE_CHANGE, PAGE_SIGNATURE_CHANGED)
         }
-        decision.script.push(answer('search', 'none', 's3-6'), answer('click', 'ref-3'), withOutcome(answer('click', 'ref-3'), 'in_the_way', 0.85), withOutcome(answer('done'), 'yes'))
+        decision.script.push(answer('search', 's3-6'), answer('click-3'), withOutcome(answer('click-3'), 'in_the_way', 0.85), SURE_YES)
         await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
         expect(browser.clicks).toEqual([3, 1])
-        const hop3 = (decision.requests[3]!.questions as { target: DecisionChoiceQuestion }).target
-        expect(Object.keys(hop3.options)).toEqual(['none', 'ref-1', 'ref-2', 'link-1'])
-        expect(hop3.options['link-1']).toContain(POST)
+        const hop3 = (decision.requests[3]!.questions as { action: DecisionChoiceQuestion }).action
+        const onRefs = Object.keys(hop3.options).filter((label) => /^(click|type|menu|open)-\d+$/.test(label))
+        expect(onRefs).toEqual(['click-1', 'type-2', 'click-2', 'open-1', 'menu-1', 'menu-2'])
+        expect(hop3.options['open-1']).toContain(POST)
         expect(decision.requests[3]!.state).toContain('click "Elon Musk (@elonmusk) / X" (the address did not change; a pop-up appeared over the page: "Close", "Log in" and "Elon Musk"); click "Close" (the pop-up closed)')
         expect(decisions(records).map((record) => record.ended)).toEqual([undefined, undefined, undefined, 'done'])
       })
@@ -2112,7 +2130,7 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
         const { browser, events, records, decision, runner } = h
         coveredOnLanding(h)
         closing(h, SEARCH_REFS, true)
-        decision.script.push(answer('search', 'none', 's3-6'), withOutcome(answer('click', 'ref-3'), 'in_the_way', 0.85), withOutcome(answer('done'), 'yes'))
+        decision.script.push(answer('search', 's3-6'), withOutcome(answer('click-3'), 'in_the_way', 0.85), SURE_YES)
         await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
         expect(browser.clicks).toEqual([1])
         expect(browser.pressedKeys).toEqual([{ press: { key: 'Escape' }, times: 1 }])
@@ -2131,12 +2149,12 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
           await press(key, times)
           if (key.key === 'Escape') uncovered(h, SEARCH_REFS)
         }
-        decision.script.push(answer('search', 'none', 's3-6'), withOutcome(answer('click', 'ref-3'), 'in_the_way', 0.85), withOutcome(answer('done'), 'yes'))
+        decision.script.push(answer('search', 's3-6'), withOutcome(answer('click-3'), 'in_the_way', 0.85), SURE_YES)
         await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
         expect(browser.clicks).toEqual([1])
         expect(browser.pressedKeys).toEqual([{ press: { key: 'Escape' }, times: 1 }])
         expect(failures(events)).toEqual([])
-        expect(decisions(records).map((record) => [record.verb, record.stepAside, record.ended])).toEqual([['search', undefined, undefined], ['click', true, undefined], ['press', true, undefined], ['done', undefined, 'done']])
+        expect(decisions(records).map((record) => [record.verb, record.stepAside, record.ended])).toEqual([['search', undefined, undefined], ['click', true, undefined], ['press', true, undefined], ['none', undefined, 'done']])
         expect(decision.requests).toHaveLength(3)
         expect(decision.requests[2]!.state).toContain('click "Close" (nothing changed); press Escape (the pop-up closed)')
       })
@@ -2164,7 +2182,7 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
           uncovered(h, SEARCH_REFS)
           return line.replace(NO_OBSERVABLE_CHANGE, PAGE_SIGNATURE_CHANGED)
         }
-        decision.script.push(answer('search', 'none', 's3-6'), withOutcome(answer('none'), 'in_the_way', 1), withOutcome(answer('done'), 'yes'))
+        decision.script.push(answer('search', 's3-6'), withOutcome(answer('none'), 'in_the_way', 1), SURE_YES)
         await runner.run('open donald trumps truth social profile', { source: 'spoken' })
         expect(browser.clicks).toEqual([11])
         expect(browser.pressedKeys).toEqual([])
@@ -2189,9 +2207,9 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
         }
         closing(h, SEARCH_REFS)
         decision.script.push(
-          answer('search', 'none', 's3-6'),
-          { answers: { ...withOutcome(answer('click', 'ref-3'), 'in_the_way', 0.85).answers, dismiss: choice('ref-1', 0.88) } },
-          withOutcome(answer('done'), 'yes'),
+          answer('search', 's3-6'),
+          { answers: { ...withOutcome(answer('click-3'), 'in_the_way', 0.85).answers, dismiss: choice('ref-1', 0.88) } },
+          SURE_YES,
         )
         await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
         const asked = decision.requests[1]!.questions as { dismiss?: DecisionChoiceQuestion }
@@ -2209,12 +2227,12 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
         coveredOnLanding(h)
         closing(h, SEARCH_REFS)
         decision.script.push(
-          answer('search', 'none', 's3-6'),
-          withOutcome(answer('click', 'ref-3'), 'in_the_way', 0.85),
+          answer('search', 's3-6'),
+          withOutcome(answer('click-3'), 'in_the_way', 0.85),
           answer('scroll_down'),
           answer('scroll_down'),
           answer('scroll_down'),
-          withOutcome(answer('done'), 'yes'),
+          SURE_YES,
         )
         await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
         expect(browser.clicks).toEqual([1])
@@ -2225,7 +2243,7 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
 
     it('a sure in-the-way with no pop-up read speaks the blocked line', async () => {
       const { browser, events, decision, runner } = taskHarness()
-      decision.script.push(answer('search', 'none', 's3-6'), withOutcome(answer('click', 'ref-3'), 'in_the_way', 0.8))
+      decision.script.push(answer('search', 's3-6'), withOutcome(answer('click-3'), 'in_the_way', 0.8))
       await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
       expect(browser.clicks).toEqual([])
       expect(failures(events)).toEqual([expect.objectContaining({ text: 'Something on the page is in the way.' })])
@@ -2240,7 +2258,7 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
         covered(h)
         return line
       }
-      decision.script.push(answer('search', 'none', 's3-6'), withOutcome(answer('click', 'ref-1'), 'in_the_way', 0.85), withOutcome(answer('done'), 'yes'))
+      decision.script.push(answer('search', 's3-6'), withOutcome(answer('click-1'), 'in_the_way', 0.85), SURE_YES)
       await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
       expect(browser.clicks).toEqual([1])
       expect(decisions(records).map((record) => record.ended)).toEqual([undefined, undefined, 'done'])
@@ -2248,7 +2266,7 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
 
     it('an in-the-way below the bar is no wall: the action fires', async () => {
       const { browser, decision, runner } = taskHarness()
-      decision.script.push(answer('search', 'none', 's3-6'), withOutcome(answer('click', 'ref-3'), 'in_the_way', 0.5), withOutcome(answer('done'), 'yes'))
+      decision.script.push(answer('search', 's3-6'), withOutcome(answer('click-3'), 'in_the_way', 0.5), SURE_YES)
       await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
       expect(browser.clicks).toEqual([3])
     })
@@ -2264,7 +2282,7 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
         if (collects === 3) covered(h)
         return collectPage()
       }
-      decision.script.push(answer('search', 'none', 's3-6'), withOutcome(answer('done'), 'yes'), withOutcome(answer('click', 'ref-1'), 'in_the_way', 0.9), withOutcome(answer('done'), 'yes'))
+      decision.script.push(answer('search', 's3-6'), SURE_YES, withOutcome(answer('click-1'), 'in_the_way', 0.9), SURE_YES)
       await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
       expect(commands(events).map((event) => event.action)).toEqual(['search latest elon musk tweet', 'the page moved: read again', 'click [1] "Close"', 'done'])
       expect(decision.requests[2]!.state).toContain('A dialog is open')
@@ -2280,7 +2298,7 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
         covered(h)
         return line.replace(NO_OBSERVABLE_CHANGE, PAGE_SIGNATURE_CHANGED)
       }
-      decision.script.push(answer('search', 'none', 's3-6'), answer('click', 'ref-3'), withOutcome(answer('click', 'ref-1'), 'in_the_way', 0.85), withOutcome(answer('done'), 'yes'))
+      decision.script.push(answer('search', 's3-6'), answer('click-3'), withOutcome(answer('click-1'), 'in_the_way', 0.85), SURE_YES)
       await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
       // The sheet's controls first, then the page's; what was there before is not named.
       expect(decision.requests[2]!.state).toContain('click "Elon Musk (@elonmusk) / X" (the address did not change; a pop-up appeared over the page: "Close", "Log in" and "Elon Musk")')
@@ -2289,10 +2307,10 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
 
   it('#332: a later hop reading open on the same words opens the most probable result instead of searching again', async () => {
     const { browser, records, decision, runner } = taskHarness()
-    // The logged Task's shape: every hop read open with the words, target none on top; on hop 1 a result close behind.
+    // The logged Task's shape: every hop read search with the words on top of its card; on hop 1 a result close behind.
     // The result here is below the fold (a link-N), so the hop opens it; jevReading.test.ts covers a ref clicked.
-    const again = (probabilities: Record<string, number>) => ({ answers: { verb: choice('search'), target: choice('none', probabilities.none, probabilities), slot: choice('s3-6') } })
-    decision.script.push(again({ none: 1 }), again({ none: 0.63, 'link-1': 0.17, 'ref-1': 0.16 }), again({ none: 0.93 }))
+    const again = (card: Record<string, number>) => ({ answers: { action: choice('search', card.search, card), slot: choice('s3-6') } })
+    decision.script.push(again({ search: 1 }), again({ search: 0.63, 'open-1': 0.17, 'click-1': 0.16 }), again({ search: 0.93 }))
     await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
     expect(browser.navigations).toEqual([SEARCH, POST])
     expect(decisions(records).map((record) => [record.verb, record.ended])).toEqual([
@@ -2313,7 +2331,7 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
       ref(2, 'input', 'Search privately', { inputType: 'text' }),
       ref(3, 'button', 'Search'),
     ]
-    const jev = (probabilities: Record<string, number>) => ({ answers: { verb: choice('search', 0.46), target: choice('none', probabilities.none, probabilities), slot: choice('s3-6') } })
+    const jev = (card: Record<string, number>) => ({ answers: { action: choice('search', card.search, card), slot: choice('s3-6') } })
 
     /** The landing's refs by how many polls the hop has waited: chrome until the results draw. */
     function landingHarness(drawnAfterPolls: number) {
@@ -2328,7 +2346,7 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
 
     it("a hop waits for a result to show among the landing's refs, polling, and reads the landing with its results", async () => {
       const { browser, sleeps, decision, runner } = landingHarness(2)
-      decision.script.push(answer('search', 'none', 's3-6'), jev({ none: 0.93, 'ref-3': 0.03 }), answer('done'))
+      decision.script.push(answer('search', 's3-6'), jev({ search: 0.93, 'click-3': 0.03 }), SURE_YES)
       await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
       // Two polls after the first empty read; the third read had the results, and ref 3 is the result, not the Search button.
       expect(sleeps).toEqual([RESULTS_POLL_MS, RESULTS_POLL_MS, ...WATCH])
@@ -2338,7 +2356,7 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
 
     it('a landing that shows no result within the wait is read as it stands: search over none opens nothing — not the Search button, not a footer link — and the Task ends unsure', async () => {
       const { browser, events, sleeps, records, decision, runner } = landingHarness(Number.POSITIVE_INFINITY)
-      decision.script.push(answer('search', 'none', 's3-6'), jev({ none: 0.9, 'link-1': 0.07, 'ref-3': 0.03 }))
+      decision.script.push(answer('search', 's3-6'), jev({ search: 0.9, 'open-1': 0.07, 'click-3': 0.03 }))
       await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
       expect(sleeps).toHaveLength(RESULTS_WAIT_MS / RESULTS_POLL_MS)
       expect(browser.clicks).toEqual([])
@@ -2352,7 +2370,7 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
 
     it("a landing with its results in view, and a site's own page, are read as they stand: no wait", async () => {
       const { sleeps, decision, runner } = taskHarness()
-      decision.script.push(answer('search', 'none', 's3-6'), answer('click', 'link-1'), answer('done'))
+      decision.script.push(answer('search', 's3-6'), answer('open-1'), SURE_YES)
       await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
       // No wait before a reading: the polls are the sure yes watching for a late pop-up.
       expect(sleeps).toEqual(WATCH)
@@ -2370,17 +2388,16 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
 
   it('AC4: an address the Task has visited is not among the next hop\'s targets', async () => {
     const { decision, runner } = taskHarness('https://x.com/elonmusk')
-    decision.script.push(answer('search', 'none', 's3-6'), answer('done'))
+    decision.script.push(answer('search', 's3-6'), SURE_YES)
     await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
-    const hop1 = (decision.requests[1]!.questions as { target: DecisionChoiceQuestion }).target
     // ref 3 links back to where the Task started.
-    expect(Object.keys(hop1.options)).toEqual(['none', 'ref-1', 'ref-2', 'link-1'])
+    expect(cardRefs(decision.requests[1]!)).toEqual(['click-1', 'type-2', 'click-2', 'open-1', 'menu-1', 'menu-2'])
     expect(decision.requests[1]!.state).toContain(`Pages visited: https://x.com/elonmusk ${SEARCH}`)
   })
 
   it('AC4: a Jev call unavailable at hop 1 ends the Task unavailable, with no best guess fired', async () => {
     const { browser, records, decision, runner } = taskHarness()
-    decision.script.push(answer('search', 'none', 's3-6'), { unavailable: 'timeout' })
+    decision.script.push(answer('search', 's3-6'), { unavailable: 'timeout' })
     await runner.run('pull up the latest elon musk tweet and open the first result', { source: 'spoken' })
     expect(browser.navigations).toEqual([SEARCH])
     expect(browser.clicks).toEqual([])
@@ -2401,7 +2418,7 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
     ['Escape or the Abort Head', (runner: CommandRunner) => runner.abort(), 'abandoned: stopped'],
   ])('AC5: %s during hop 1\'s read abandons it: its record is written, nothing fires', async (_name, supersede, action) => {
     const { browser, events, records, decision, runner } = taskHarness()
-    decision.script.push(answer('search', 'none', 's3-6'), answer('click', 'ref-3'))
+    decision.script.push(answer('search', 's3-6'), answer('click-3'))
     const release = decision.hold(1)
     const task = runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
     await flushMicrotasks()
@@ -2419,7 +2436,7 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
   it('AC5: an Escape within 3 s of hop 1 firing is the Misfire signal overrun against hop 1; one later is not', async () => {
     for (const [after, counted] of [[1_000, true], [5_000, false]] as const) {
       const { records, decision, runner, setWall } = taskHarness()
-      decision.script.push(answer('search', 'none', 's3-6'), answer('click', 'ref-3'), answer('done'))
+      decision.script.push(answer('search', 's3-6'), answer('click-3'), SURE_YES)
       const release = decision.hold(2)
       setWall(10_000)
       const task = runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
@@ -2437,7 +2454,7 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
 
   it('AC5: an overrun counts against the hop that fired even after the Task ended done: the user wanted less than it did', async () => {
     const { records, decision, runner, setWall } = taskHarness()
-    decision.script.push(answer('search', 'none', 's3-6'), answer('click', 'ref-3'), answer('done'))
+    decision.script.push(answer('search', 's3-6'), answer('click-3'), SURE_YES)
     setWall(10_000)
     await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
     const hop1 = decisions(records).find((record) => record.task?.hop === 1)!
@@ -2463,14 +2480,13 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
       browser.snapshot = { ...browser.snapshot, refs: renumbered.shift() ?? browser.snapshot.refs }
       return line
     }
-    decision.script.push(answer('click', 'ref-1'), answer('click', 'ref-20'), answer('click', 'ref-22'), answer('click', 'ref-21'))
+    decision.script.push(answer('click-1'), answer('click-20'), answer('click-22'), answer('click-21'))
     await runner.run('open elon musks latest tweet', { source: 'spoken' })
 
     expect(browser.clicks).toEqual([1, 20, 22])
     // Hop 2: the pinned post, now ref 21, is not offered again.
-    const hop2 = (decision.requests[2]!.questions as { target: DecisionChoiceQuestion }).target
-    expect(Object.values(hop2.options).some((option) => String(option).includes(PINNED))).toBe(false)
-    expect(Object.keys(hop2.options)).toEqual(['none', 'ref-1', 'ref-22'])
+    expect(Object.values(cardOf(decision.requests[2]!).options).some((option) => String(option).includes(PINNED))).toBe(false)
+    expect(cardRefs(decision.requests[2]!)).toEqual(['click-1', 'click-22', 'menu-1', 'menu-22'])
     // Jev is told what each action did.
     expect(decision.requests[2]!.state).toContain(`Done so far: click "Posts" (its state did not change); click "${PINNED}" (nothing changed)`)
     expect(decisions(records).map((record) => record.ended)).toEqual([undefined, undefined, 'unchanged'])
@@ -2478,7 +2494,7 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
 
   it('#363: a Jev reading of menu on ref N opens that ref\'s menu, answers so, and the Task goes on; `menu 2` typed is the Local Match\'s', async () => {
     const { browser, events, records, decision, runner } = harness()
-    decision.script.push(answer('menu', 'ref-2'), answer('done'))
+    decision.script.push(answer('menu-2'), SURE_YES)
     await runner.run('see what sign in offers', { source: 'spoken' })
     expect(browser.menus).toEqual([2])
     expect(browser.clicks).toEqual([])
@@ -2501,9 +2517,10 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
       1: [ref(4, 'button', 'Subtitles'), ref(5, 'button', 'Playback speed')],
       2: [ref(4, 'button', 'Loop'), ref(5, 'button', 'Copy video URL')],
     }
-    const hopAnswer = (verb: string, target: Record<string, number>, slot = 'none') => {
-      const top = Object.entries(target).sort((a, b) => b[1] - a[1])[0]![0]
-      return { answers: { verb: choice(verb), target: choice(top, target[top], target), slot: choice(slot) } }
+    /** A hop's action card (#370): its probabilities, the most probable the action; the next action of the opener's kind on it is the runner-up. */
+    const hopAnswer = (card: Record<string, number>, slot = 'none') => {
+      const top = Object.entries(card).sort((a, b) => b[1] - a[1])[0]![0]
+      return { answers: { action: choice(top, card[top], card), slot: choice(slot) } }
     }
 
     /** The watch page: a ref's menu adds its options; Escape closes whatever is open. */
@@ -2528,9 +2545,9 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
       const { browser, events, records, decision, runner } = menuHarness()
       decision.script.push(
         answer('scroll_down'),
-        hopAnswer('menu', { 'ref-1': 0.5, 'ref-2': 0.3, 'ref-3': 0.04, none: 0.16 }),
-        hopAnswer('none', { none: 0.9 }, 's0-0'),
-        hopAnswer('none', { none: 0.9 }, 's0-0'),
+        hopAnswer({ 'menu-1': 0.5, 'menu-2': 0.3, 'menu-3': 0.04, none: 0.16 }),
+        hopAnswer({ none: 0.9 }, 's0-0'),
+        hopAnswer({ none: 0.9 }, 's0-0'),
       )
       await runner.run('loop the video', { source: 'spoken' })
 
@@ -2549,7 +2566,7 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
 
     it('AC4: tries no ref under 0.05, and a dead end with no runner-up still closes what it opened before it ends', async () => {
       const { browser, events, records, decision, runner } = menuHarness()
-      decision.script.push(hopAnswer('menu', { 'ref-1': 0.9, 'ref-3': 0.04, none: 0.06 }), hopAnswer('none', { none: 0.9 }, 's0-0'))
+      decision.script.push(hopAnswer({ 'menu-1': 0.9, 'menu-3': 0.04, none: 0.06 }), hopAnswer({ none: 0.9 }, 's0-0'))
       await runner.run('loop the video', { source: 'spoken' })
       expect(browser.menus).toEqual([1])
       expect(browser.clicks).toEqual([])
@@ -2565,7 +2582,7 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
         browser.snapshot = { ...browser.snapshot, refs: [...PLAYER_REFS, ref(4, 'link', 'Up next', { href: 'https://www.youtube.com/watch?v=next' })] }
         return `scrolled ${direction}: x=0 y=360`
       }
-      decision.script.push(answer('scroll_down'), hopAnswer('none', { none: 0.9 }, 's0-0'))
+      decision.script.push(answer('scroll_down'), hopAnswer({ none: 0.9 }, 's0-0'))
       await runner.run('loop the video', { source: 'spoken' })
       expect(browser.pressedKeys).toEqual([])
       expect(failures(events).map((event) => (event as { text: string }).text)).toEqual(["I'm not sure this is it."])
@@ -2573,7 +2590,7 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
 
     it('a Task that reaches the cap with a menu its last action opened closes it before it ends', async () => {
       const { browser, records, decision, runner } = menuHarness()
-      decision.script.push(answer('scroll_down'), answer('scroll_down'), answer('scroll_down'), answer('scroll_down'), hopAnswer('menu', { 'ref-1': 0.9 }))
+      decision.script.push(answer('scroll_down'), answer('scroll_down'), answer('scroll_down'), answer('scroll_down'), hopAnswer({ 'menu-1': 0.9 }))
       await runner.run('loop the video', { source: 'spoken' })
       expect(browser.menus).toEqual([1])
       expect(browser.pressedKeys.map((pressed) => pressed.press.key)).toEqual(['Escape'])
@@ -2583,7 +2600,7 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
 
     it('a dead end after a hop that opened nothing on the page ends unsure as before, nothing pressed', async () => {
       const { browser, events, decision, runner } = menuHarness()
-      decision.script.push(answer('scroll_down'), hopAnswer('none', { none: 0.9 }))
+      decision.script.push(answer('scroll_down'), hopAnswer({ none: 0.9 }))
       await runner.run('loop the video', { source: 'spoken' })
       expect(browser.pressedKeys).toEqual([])
       expect(failures(events).map((event) => (event as { text: string }).text)).toEqual(["I'm not sure this is it."])
@@ -2598,7 +2615,7 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
         browser.snapshot = { ...browser.snapshot, media: { ...song, loop: true, currentTime: 63 } }
         return `clicked [${n}]: urlChanged=false dialogOpen=false; page signature changed`
       }
-      decision.script.push(hopAnswer('click', { 'ref-1': 0.6 }), answer('done'))
+      decision.script.push(hopAnswer({ 'click-1': 0.6 }), SURE_YES)
       await runner.run('loop the video', { source: 'spoken' })
       expect(decision.requests[0]!.state).toContain('Playing: "Fixture Song" 1:02 / 2:04, loop off')
       expect(decision.requests[1]!.state).toContain('Done so far: click "Settings" (its state did not change; loop turned on)')
@@ -2609,7 +2626,7 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
 
   it('#336: a hop that opened a page says where on the next hop\'s "Done so far"', async () => {
     const { decision, runner } = taskHarness()
-    decision.script.push(answer('search', 'none', 's3-6'), answer('click', 'ref-3'), answer('done'))
+    decision.script.push(answer('search', 's3-6'), answer('click-3'), SURE_YES)
     await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
     expect(decision.requests[1]!.state).toContain('Done so far: search latest elon musk tweet (opened duckduckgo.com/?q=latest%20elon%20musk%20tweet)')
   })
@@ -2623,7 +2640,7 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
       return line
     }
     // "open youtube and search for line stack tips": the Local Match opens youtube (#341), Jev reads hop 1 as a type.
-    decision.script.push(answer('type', 'ref-1', 's5-7'), answer('done'))
+    decision.script.push(answer('type-1', 's5-7'), SURE_YES)
     await runner.run('open youtube and search for line stack tips', { source: 'spoken' })
     expect(browser.navigations).toEqual(['https://youtube.com'])
     expect(browser.typed).toEqual([{ ref: 1, text: 'linus tech tips' }])
@@ -2641,8 +2658,9 @@ describe('the Site Scope at hop 0 (#340)', () => {
   const RESULT_REFS: SnapshotRef[] = [ref(1, 'input', 'Search', { inputType: 'search' })]
   const RESULT_LINKS = [{ label: 'Donald J. Trump (@realDonaldTrump) / X', href: PROFILE }]
 
-  const read = (verb: string, target = 'none', slot = 'none', where?: string): { answers: Record<string, DecisionAnswer> } => ({
-    answers: { verb: choice(verb), target: choice(target), slot: choice(slot), ...(where !== undefined ? { where: choice(where, 0.6, { page: 0.1, site: 0.6, web: 0.3 }) } : {}) },
+  /** A reading off the action card (#370), its Slot and where the words point. */
+  const read = (action: string, slot = 'none', where?: string): { answers: Record<string, DecisionAnswer> } => ({
+    answers: { action: choice(action), slot: choice(slot), ...(where !== undefined ? { where: choice(where, 0.6, { page: 0.1, site: 0.6, web: 0.3 }) } : {}) },
   })
   const decisions = (records: CommandLogRecord[]) => records.flatMap((record) => (record.type === 'decision' ? [record] : []))
   const commands = (events: PipelineEvent[]) => events.flatMap((event) => (event.type === 'command' ? [event] : []))
@@ -2664,35 +2682,35 @@ describe('the Site Scope at hop 0 (#340)', () => {
 
   it('AC1: an open read as on this site searches the site, names it in the Feed and the Answer, and the Task goes on to the results', async () => {
     const { browser, events, records, asks, decision, runner } = siteHarness()
-    decision.script.push(read('search', 'none', 's2-4', 'site'), read('click', 'link-1'), read('done'))
+    decision.script.push(read('search', 's2-4', 'site'), read('open-1'), SURE_YES)
     await runner.run(TEXT, { source: 'spoken' })
 
     expect(browser.navigations).toEqual([SCOPED, PROFILE])
     expect(commands(events).map((event) => event.action)).toEqual(['search donald trumps profile on x.com', `navigate ${PROFILE}`, 'done'])
     expect(events).toContainEqual(expect.objectContaining({ type: 'display', text: 'Searched x.com for “donald trumps profile”.' }))
     // Hop 1 is offered the results and asked no where.
-    expect(asked(decision.requests[0]!)).toEqual(['verb', 'target', 'slot', 'where'])
-    expect(asked(decision.requests[1]!)).toEqual(['verb', 'target', 'slot', 'outcome'])
-    expect(Object.values((decision.requests[1]!.questions as { target: DecisionChoiceQuestion }).target.options)).toContainEqual(expect.stringContaining(PROFILE))
+    expect(asked(decision.requests[0]!)).toEqual(['action', 'slot', 'where'])
+    expect(asked(decision.requests[1]!)).toEqual(['action', 'slot', 'outcome'])
+    expect(Object.values(cardOf(decision.requests[1]!).options)).toContainEqual(expect.stringContaining(PROFILE))
     // The record keeps where for the scoped read, and the ask sidecar the fourth question.
     const [hop0, hop1] = decisions(records)
     expect(hop0).toMatchObject({ verb: 'search', slot: 'donald trumps profile', jev: { confidence: { where: 0.6 }, probabilities: { where: { page: 0.1, site: 0.6, web: 0.3 } } } })
     expect(hop1!.jev).not.toHaveProperty('confidence.where')
-    expect(Object.keys(asks[0]!.questions)).toEqual(['verb', 'target', 'slot', 'where'])
+    expect(Object.keys(asks[0]!.questions)).toEqual(['action', 'slot', 'where'])
   })
 
   it('AC2: where = web searches the whole web as before', async () => {
     const { browser, decision, runner } = siteHarness()
-    decision.script.push(read('search', 'none', 's2-4', 'web'), read('none'))
+    decision.script.push(read('search', 's2-4', 'web'), read('none'))
     await runner.run(TEXT, { source: 'spoken' })
     expect(browser.navigations).toEqual([WEB])
   })
 
-  it('#353: where = page never searches — the most probable ref Jev gave any probability is clicked, or nothing is', async () => {
+  it('#353: where = page never searches — the most probable click on the action card is taken, or nothing is', async () => {
     const pointed = siteHarness()
     pointed.decision.script.push(
-      { answers: { verb: choice('search'), target: choice('none', 0.67, { none: 0.67, 'ref-2': 0.17, 'ref-1': 0.09 }), slot: choice('s1-2'), where: choice('page', 0.64) } },
-      read('done'),
+      { answers: { action: choice('search', 0.67, { search: 0.67, 'click-2': 0.17, 'click-1': 0.09 }), slot: choice('s1-2'), where: choice('page', 0.64) } },
+      SURE_YES,
     )
     await pointed.runner.run('open the tweet', { source: 'spoken' })
     expect(pointed.browser.navigations).toEqual([])
@@ -2700,7 +2718,7 @@ describe('the Site Scope at hop 0 (#340)', () => {
     expect(commands(pointed.events)[0]).toMatchObject({ action: 'click [2] "Elon Musk"' })
 
     const unpointed = siteHarness()
-    unpointed.decision.script.push(read('search', 'none', 's1-2', 'page'))
+    unpointed.decision.script.push(read('search', 's1-2', 'page'))
     await unpointed.runner.run('open the tweet', { source: 'spoken' })
     expect(unpointed.browser.navigations).toEqual([])
     expect(unpointed.browser.clicks).toEqual([])
@@ -2710,17 +2728,17 @@ describe('the Site Scope at hop 0 (#340)', () => {
   it('AC2: on a blank page, a DuckDuckGo results page and an engine’s front page the ask carries no where', async () => {
     for (const start of ['about:blank', 'https://duckduckgo.com/?q=trump', 'https://www.google.com/']) {
       const { decision, runner } = siteHarness(start)
-      decision.script.push(read('search', 'none', 's2-4'), read('none'))
+      decision.script.push(read('search', 's2-4'), read('none'))
       await runner.run(TEXT, { source: 'spoken' })
-      expect(asked(decision.requests[0]!), start).toEqual(['verb', 'target', 'slot'])
+      expect(asked(decision.requests[0]!), start).toEqual(['action', 'slot'])
     }
   })
 
   it('AC3: "open youtube" on x.com is Local-Matched with no Jev call; "search for donald trump" is Jev\'s, and where scopes it (#353)', async () => {
     const { browser, decision, runner } = siteHarness()
-    decision.script.push(read('search', 'none', 's2-3', 'site'), read('none'))
+    decision.script.push(read('search', 's2-3', 'site'), read('none'))
     await runner.run('search for donald trump', { source: 'spoken' })
-    expect(asked(decision.requests[0]!)).toEqual(['verb', 'target', 'slot', 'where'])
+    expect(asked(decision.requests[0]!)).toEqual(['action', 'slot', 'where'])
     await runner.run('open youtube', { source: 'spoken' })
     expect(decision.requests).toHaveLength(2)
     expect(browser.navigations).toEqual(['https://duckduckgo.com/?q=site%3Ax.com%20donald%20trump', 'https://youtube.com'])
@@ -2743,8 +2761,9 @@ describe('the Site Scope at a later hop (#341): one Utterance chains a site and 
   const RESULT_REFS: SnapshotRef[] = [ref(1, 'input', 'Search', { inputType: 'search' })]
   const RESULT_LINKS = [{ label: 'Donald J. Trump (@realDonaldTrump) / X', href: PROFILE }]
 
-  const read = (verb: string, target = 'none', slot = 'none', where?: string): { answers: Record<string, DecisionAnswer> } => ({
-    answers: { verb: choice(verb), target: choice(target), slot: choice(slot), ...(where !== undefined ? { where: choice(where) } : {}) },
+  /** A reading off the action card (#370), its Slot and where the words point. */
+  const read = (action: string, slot = 'none', where?: string): { answers: Record<string, DecisionAnswer> } => ({
+    answers: { action: choice(action), slot: choice(slot), ...(where !== undefined ? { where: choice(where) } : {}) },
   })
   const decisions = (records: CommandLogRecord[]) => records.flatMap((record) => (record.type === 'decision' ? [record] : []))
   const asked = (request: DecisionRequest<DecisionQuestions>): string[] => Object.keys(request.questions)
@@ -2765,21 +2784,21 @@ describe('the Site Scope at a later hop (#341): one Utterance chains a site and 
 
   it('AC1: opens the address, asks where on its landing, searches the site, opens the result and ends done', async () => {
     const { browser, records, decision, perf, runner } = chainHarness()
-    decision.script.push(read('search', 'none', 's5-7', 'site'), read('click', 'link-1'), read('done'))
+    decision.script.push(read('search', 's5-7', 'site'), read('open-1'), SURE_YES)
     await runner.run(TEXT, { source: 'spoken' })
 
     expect(browser.navigations).toEqual([TWITTER, SCOPED, PROFILE])
     // Hop 0 is the Local Match's; hop 1 on the site is asked where; hop 2 on the results is not; hop 3 on the searched site is not.
     expect(decision.requests).toHaveLength(3)
     expect(decision.requests[0]!.state).toContain(`"${TEXT}"`)
-    expect(asked(decision.requests[0]!)).toEqual(['verb', 'target', 'slot', 'where', 'outcome'])
-    expect(asked(decision.requests[1]!)).toEqual(['verb', 'target', 'slot', 'outcome'])
-    expect(asked(decision.requests[2]!)).toEqual(['verb', 'target', 'slot', 'outcome'])
+    expect(asked(decision.requests[0]!)).toEqual(['action', 'slot', 'where', 'outcome'])
+    expect(asked(decision.requests[1]!)).toEqual(['action', 'slot', 'outcome'])
+    expect(asked(decision.requests[2]!)).toEqual(['action', 'slot', 'outcome'])
     expect(decisions(records).map((record) => [record.reading, record.verb, record.ended])).toEqual([
       ['local_match', 'navigate', undefined],
       ['jev', 'search', undefined],
       ['jev', 'navigate', undefined],
-      ['jev', 'done', 'done'],
+      ['jev', 'none', 'done'],
     ])
     expect(decisions(records)[1]).toMatchObject({ slot: 'donald trumps profile', task: { hop: 1 } })
     // The search counts as an action.
@@ -2796,13 +2815,13 @@ describe('the Site Scope at a later hop (#341): one Utterance chains a site and 
   it('AC3: on a site the Task has already searched, where is not asked and open opens the most probable offered target', async () => {
     const { browser, decision, runner } = chainHarness()
     decision.script.push(
-      read('search', 'none', 's5-7', 'site'),
-      read('click', 'link-1'),
+      read('search', 's5-7', 'site'),
+      read('open-1'),
       // On the profile, a search of the same words: no where, no search — #332's dead end with nothing offered.
-      read('search', 'none', 's5-7'),
+      read('search', 's5-7'),
     )
     await runner.run(TEXT, { source: 'spoken' })
-    expect(asked(decision.requests[2]!)).toEqual(['verb', 'target', 'slot', 'outcome'])
+    expect(asked(decision.requests[2]!)).toEqual(['action', 'slot', 'outcome'])
     expect(browser.navigations).toEqual([TWITTER, SCOPED, PROFILE])
   })
 
@@ -2814,9 +2833,9 @@ describe('the Site Scope at a later hop (#341): one Utterance chains a site and 
       if (url === PROFILE) browser.snapshot = { ...browser.snapshot, refs: [ref(1, 'link', 'Search', { href: 'https://twitter.com/explore' })] }
       return line
     }
-    // The live #341 AC5 run's hop 3: open 0.60 over done 0.35, target none 0.97, "Search" at 0.02.
-    const onProfile = { answers: { verb: choice('search', 0.6, { search: 0.6, done: 0.35 }), target: choice('none', 0.97, { none: 0.97, 'ref-1': 0.02 }), slot: choice('s5-7') } }
-    decision.script.push(read('search', 'none', 's5-7', 'site'), read('click', 'link-1'), onProfile)
+    // The live #341 AC5 run's hop 3: search on top, "Search" at 0.02 under it, and no sure Verdict.
+    const onProfile = { answers: { action: choice('search', 0.6, { search: 0.6, none: 0.38, 'click-1': 0.02 }), slot: choice('s5-7') } }
+    decision.script.push(read('search', 's5-7', 'site'), read('open-1'), onProfile)
     await runner.run(TEXT, { source: 'spoken' })
     expect(browser.navigations).toEqual([TWITTER, SCOPED, PROFILE])
     expect(browser.clicks).toEqual([])
@@ -2828,19 +2847,19 @@ describe('the Site Scope at a later hop (#341): one Utterance chains a site and 
 
   it('AC4: hop 0\'s own Site Scope search (#340) is a site the Task has searched: a later hop back on it is asked no where', async () => {
     const { browser, decision, runner } = chainHarness(TWITTER)
-    decision.script.push(read('search', 'none', 's2-4', 'site'), read('click', 'link-1'), read('search', 'none', 's2-4'))
+    decision.script.push(read('search', 's2-4', 'site'), read('open-1'), read('search', 's2-4'))
     await runner.run('go to donald trumps profile', { source: 'spoken' })
     expect(browser.navigations).toEqual([SCOPED, PROFILE])
     expect(decision.requests.map(asked)).toEqual([
-      ['verb', 'target', 'slot', 'where'],
-      ['verb', 'target', 'slot', 'outcome'],
-      ['verb', 'target', 'slot', 'outcome'],
+      ['action', 'slot', 'where'],
+      ['action', 'slot', 'outcome'],
+      ['action', 'slot', 'outcome'],
     ])
   })
 
   it('AC4: the Task records the sites it searched, and the cap counts the search as an action', async () => {
     const { browser, records, decision, runner } = chainHarness()
-    decision.script.push(read('search', 'none', 's5-7', 'site'))
+    decision.script.push(read('search', 's5-7', 'site'))
     for (let hop = 2; hop < 6; hop += 1) decision.script.push(read('scroll_down'))
     await runner.run(TEXT, { source: 'spoken' })
     // Hop 0's open, hop 1's search and three scrolls: the fifth action ends it.
@@ -2884,7 +2903,7 @@ describe('a pop-up covering the page (#336)', () => {
     const { browser, events, records, decision, runner } = sheetHarness()
     await runner.run('exit out of this', { source: 'spoken' })
     // Jev is asked which control closes it (owner's rule 2026-10-19); with no answer the ladder stands without its choice.
-    expect(decision.requests.map((request) => Object.keys(request.questions))).toEqual([['verb', 'target', 'slot', 'where', 'dismiss']])
+    expect(decision.requests.map((request) => Object.keys(request.questions))).toEqual([['action', 'slot', 'where', 'dismiss']])
     expect(browser.clicks).toEqual([9])
     expect(browser.navigations).toEqual([])
     expect(displays(events)).toEqual([expect.objectContaining({ text: 'Closed the pop-up.' })])
@@ -2894,7 +2913,7 @@ describe('a pop-up covering the page (#336)', () => {
   it('a dismiss phrase clicks the control Jev is sure closes the pop-up, one no label list reads as a close', async () => {
     const refs = [...SHEET_REFS, ref(10, 'button', 'Browse as a guest', { layer: 'dialog' })]
     const { browser, events, decision, records, runner } = sheetHarness(refs, false, [10])
-    decision.script.push({ answers: { verb: choice('click'), target: choice('none'), slot: choice('none'), where: choice('page'), dismiss: choice('ref-10') } })
+    decision.script.push({ answers: { action: choice('none'), slot: choice('none'), where: choice('page'), dismiss: choice('ref-10') } })
     await runner.run('close this', { source: 'spoken' })
     const asked = decision.requests[0]!.questions as { dismiss?: DecisionChoiceQuestion }
     // The widest net: every dialog control that is no link and no way through, Escape beside them.
@@ -2907,7 +2926,7 @@ describe('a pop-up covering the page (#336)', () => {
   it('a dismiss phrase walks the whole Dismissal Ladder while the pop-up stays: Jev\'s choice, the close label, then Escape — the failure said once, at the end', async () => {
     const refs = [...SHEET_REFS, ref(10, 'button', 'Maybe', { layer: 'dialog' })]
     const { browser, events, decision, records, runner } = sheetHarness(refs, false, [], true)
-    decision.script.push({ answers: { verb: choice('click'), target: choice('none'), slot: choice('none'), where: choice('page'), dismiss: choice('ref-10') } })
+    decision.script.push({ answers: { action: choice('none'), slot: choice('none'), where: choice('page'), dismiss: choice('ref-10') } })
     await runner.run('close this', { source: 'spoken' })
     expect(browser.clicks).toEqual([10, 9])
     expect(browser.pressedKeys).toEqual([{ press: { key: 'Escape' }, times: 1 }])
@@ -2943,7 +2962,7 @@ describe('a pop-up covering the page (#336)', () => {
   it('with no dialog open, the same words read as before: "cancel" is stop, "exit out of this" goes to Jev', async () => {
     const { browser, decision, records, runner } = harness()
     await runner.run('cancel', { source: 'spoken' })
-    decision.script.push({ answers: { verb: choice('back'), target: choice('none'), slot: choice('none') } })
+    decision.script.push({ answers: { action: choice('back'), slot: choice('none') } })
     await runner.run('exit out of this', { source: 'spoken' })
     expect(records.flatMap((record) => (record.type === 'decision' && record.task?.hop === 0 ? [record.verb] : []))).toEqual(['stop', 'back'])
     expect(decision.requests[0]!.state).not.toContain('A dialog is open')
@@ -2988,12 +3007,11 @@ describe('a pop-up covering the page (#336)', () => {
       return 'went back'
     }
     decision.script.push(
-      { answers: { verb: choice('click'), target: choice('ref-9'), slot: choice('none') } },
+      { answers: { action: choice('click-9'), slot: choice('none') } },
       // Hop 1 as the real Jev read it once told: none over back, a yes under the bar.
       {
         answers: {
-          verb: choice('none', 0.38, { none: 0.38, back: 0.31, click: 0.14 }),
-          target: choice('none'),
+          action: choice('none', 0.38, { none: 0.38, back: 0.31, 'click-1': 0.14 }),
           slot: choice('none'),
           outcome: choice('yes', 0.6, { yes: 0.6, not_yet: 0.22, in_the_way: 0.18 }),
         },
@@ -3012,7 +3030,7 @@ describe('a pop-up covering the page (#336)', () => {
 
   it('Jev reads the dialog when one is open and the words are not a dismiss phrase', async () => {
     const { decision, runner } = sheetHarness()
-    decision.script.push({ answers: { verb: choice('none'), target: choice('none'), slot: choice('none') } })
+    decision.script.push({ answers: { action: choice('none'), slot: choice('none') } })
     await runner.run('what is this thing', { source: 'spoken' })
     expect(decision.requests[0]!.state).toContain('A dialog is open: "Sign in to X"')
   })
@@ -3161,7 +3179,7 @@ describe('a Command on a blank pane (#361)', () => {
 describe('a line read as Steps (#364, ADR 0076 "a line is Steps")', () => {
   const decisions = (records: CommandLogRecord[]) => records.flatMap((record) => (record.type === 'decision' ? [record] : []))
   const commands = (events: PipelineEvent[]) => events.flatMap((event) => (event.type === 'command' ? [event] : []))
-  const split = (steps: string, rest: Record<string, DecisionAnswer> = {}) => ({ answers: { verb: choice('click'), target: choice('ref-2'), slot: choice('none'), where: choice('page'), steps: choice(steps), ...rest } })
+  const split = (steps: string, rest: Record<string, DecisionAnswer> = {}) => ({ answers: { action: choice('click-2'), slot: choice('none'), where: choice('page'), steps: choice(steps), ...rest } })
 
   it('runs each Step as its own Task in order, its words read as a fresh hop 0 — the grammar first — under the line\'s one Task id', async () => {
     const { browser, decision, events, records, runner } = harness()
@@ -3189,7 +3207,7 @@ describe('a line read as Steps (#364, ADR 0076 "a line is Steps")', () => {
 
   it('reads a later Step against the page the last one left, told the line and what the Steps before it did', async () => {
     const { decision, runner } = harness()
-    decision.script.push(split('w4'), { answers: { verb: choice('scroll_down'), target: choice('none'), slot: choice('none'), where: choice('page') } })
+    decision.script.push(split('w4'), { answers: { action: choice('scroll_down'), slot: choice('none'), where: choice('page') } })
 
     await runner.run('click sign in and see what is below', { source: 'spoken' })
 
@@ -3207,9 +3225,9 @@ describe('a line read as Steps (#364, ADR 0076 "a line is Steps")', () => {
     const speech = new FakeSpeech()
     const { browser, decision, events, records, runner } = harness({ speech })
     decision.script.push(
-      split('w4', { target: choice('ref-1') }),
-      { answers: { verb: choice('click'), target: choice('ref-1'), slot: choice('none'), where: choice('page') } },
-      { answers: { verb: choice('none'), target: choice('none'), slot: choice('none'), outcome: choice('yes', 0.4) } },
+      split('w4', { action: choice('click-1') }),
+      { answers: { action: choice('click-1'), slot: choice('none'), where: choice('page') } },
+      { answers: { action: choice('none'), slot: choice('none'), outcome: choice('yes', 0.4) } },
     )
 
     await runner.run('take me home then scroll down', { source: 'spoken', turnId: 't1' })
@@ -3230,8 +3248,8 @@ describe('a line read as Steps (#364, ADR 0076 "a line is Steps")', () => {
   it('says the line stopped when Step 1 ends with nothing said of its own — changed nothing twice — and greys Step 2 in the Entry', async () => {
     const speech = new FakeSpeech()
     const { browser, decision, events, runner } = harness({ speech })
-    const click = (ref: string) => ({ answers: { verb: choice('click'), target: choice(ref), slot: choice('none'), where: choice('page') } })
-    decision.script.push(split('w4', { target: choice('ref-1') }), click('ref-1'), click('ref-2'))
+    const click = (action: string) => ({ answers: { action: choice(action), slot: choice('none'), where: choice('page') } })
+    decision.script.push(split('w4', { action: choice('click-1') }), click('click-1'), click('click-2'))
 
     await runner.run('take me home then scroll down', { source: 'spoken', turnId: 't1' })
 
@@ -3243,7 +3261,7 @@ describe('a line read as Steps (#364, ADR 0076 "a line is Steps")', () => {
 
   it('ends every Step still to come when a later Command supersedes the line', async () => {
     const { browser, decision, runner } = harness()
-    decision.script.push(split('w4'), { answers: { verb: choice('scroll_down'), target: choice('none'), slot: choice('none'), where: choice('page') } })
+    decision.script.push(split('w4'), { answers: { action: choice('scroll_down'), slot: choice('none'), where: choice('page') } })
     const release = decision.hold(1)
     const line = runner.run('click sign in and see what is below', { source: 'spoken' })
     await flushMicrotasks()
@@ -3269,7 +3287,7 @@ describe('a line read as Steps (#364, ADR 0076 "a line is Steps")', () => {
     await runner.run('scroll down')
     expect(decision.requests).toHaveLength(0)
     void runner.prepare()
-    decision.script.push({ answers: { verb: choice('click'), target: choice('ref-2'), slot: choice('none'), where: choice('page'), complete: { type: 'noul', noul: 0.9 } } })
+    decision.script.push({ answers: { action: choice('click-2'), slot: choice('none'), where: choice('page'), complete: { type: 'noul', noul: 0.9 } } })
     await runner.consider('click sign in and')
     expect(Object.keys(decision.requests[0]!.questions)).not.toContain('steps')
   })

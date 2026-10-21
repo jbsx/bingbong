@@ -3,16 +3,16 @@
 // a logged Command was read from — or a partial's ask, by its own id — with
 // the answer each question should have got, written as a case in the Jev
 // corpus for `pnpm jev:replay`. An expectation is a Choice label
-// (`target=ref-27`), a label at a floor (`outcome=yes>=0.7`, #366), a
-// label it must not be (`target!=ref-21`) or a ceiling on whatever it
-// chooses (`verb<0.7`, #367); each is checked against the ask's own
+// (`action=click-27`), a label at a floor (`outcome=yes>=0.7`, #366), a
+// label it must not be (`action!=click-21`) or a ceiling on whatever it
+// chooses (`outcome<0.7`); each is checked against the ask's own
 // questions before anything is written.
 // The asks carry page text from real browsing: a case is committed only
 // when the owner chooses to. Node runs this .ts directly via type
 // stripping (#36).
 //
 // Usage:
-//   pnpm jev:case <turnId> --expect target=ref-27 [target!=ref-21 …] [--logs <dir>] [--corpus <dir>]
+//   pnpm jev:case <turnId> --expect action=click-27 [action!=click-21 …] [--logs <dir>] [--corpus <dir>]
 //
 // Defaults: the logs dir `pnpm perf:report` reads, and fixtures/jev-cases.
 

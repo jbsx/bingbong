@@ -3,21 +3,22 @@
 Replayable Jev cases (#338): each `*.json` here is one recorded ask — the
 state text and the questions with their options, exactly as Jev was sent
 them — and the answer each question should get, as a Choice label
-(`{"question": "target", "label": "ref-27"}`), a label at a floor
+(`{"question": "action", "label": "click-27"}`), a label at a floor
 (`{"question": "outcome", "label": "yes", "atLeast": 0.7}` — the runner acts
 on a Verdict only when it is sure, #366), a label it must not be
-(`{"question": "target", "not": "ref-21"}`) or a ceiling on whatever it
-chooses (`{"question": "verb", "below": 0.7}` — an unsure verb a sure target
-outvotes, #367).
+(`{"question": "action", "not": "click-21"}`) or a ceiling on whatever it
+chooses (`{"question": "outcome", "below": 0.7}`).
 
-A case that expects a Command rather than one answer states it as the
-answers that make it: `click ref-12` from an unsure ref-less verb is
-`target=ref-12>=0.7 verb<0.7 verb!=type verb!=menu` (a sure `click` would
-make it too, and fails such a case — a false alarm, never a hidden misread).
+Jev reads a Command as one whole action (#370), so a case that expects a
+Command names it on the action card: `action=click-12` is a click on ref 12,
+`action=type-3` typing into ref 3, `action=open-2` opening result link 2,
+`action=loop` a Capability. The cases recorded on the verb and target cards
+were converted in #370: each ask's action card rebuilt by the real
+`commandQuestions`, its refs and their lines the same as the target card's.
 
 - `pnpm jev:candidates` lists the logged asks a misfire or overrun signal
   pointed at.
-- `pnpm jev:case <turnId> --expect target=ref-27 [outcome=yes>=0.7 target!=ref-21 …]` writes
+- `pnpm jev:case <turnId> --expect action=click-27 [outcome=yes>=0.7 action!=click-21 …]` writes
   one here.
 - `pnpm jev:replay` asks the real Jev every case again and exits non-zero on
   any failure. It needs `TYPESAFE_API_KEY` and is not part of `pnpm test`.

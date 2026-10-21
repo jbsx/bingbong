@@ -288,8 +288,7 @@ const CONTINUING: ReadonlySet<Command['verb']> = new Set(['navigate', 'search', 
 function endedByReading(reading: CommandReading, verb: Command['verb'], wordsPast = false): TaskEnded | null {
   if (reading === 'local_match') return wordsPast ? null : 'local_match'
   if (reading === 'best_guess') return 'unavailable'
-  if (verb === 'done') return 'done'
-  // At a hop past the first, `done` and `none` are the Verdict's to end (continueTask), never read here.
+  // At a hop past the first, `none` is the Verdict's to end (continueTask), never read here.
   if (verb === 'none') return 'terminal'
   return CONTINUING.has(verb) ? null : 'terminal'
 }
@@ -627,8 +626,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     ask?: string
     /** A dismiss phrase's Dismissal Ladder past its first rung (owner's rule 2026-10-19): fired in turn while the pop-up stays. */
     ladder?: readonly Command[]
-    /** Jev's target answer (#363), when it read the line: the runner-up a dead end may try comes from it. */
-    target?: DecisionChoiceAnswer
+    /** Jev's action card answer (#363, #370), when it read the line: the runner-up a dead end may try comes from it. */
+    action?: DecisionChoiceAnswer
     /** The line Jev split into Steps (#364): each Step's words; `command` is then the whole line's reading, never fired. */
     steps?: readonly string[]
   }
@@ -725,7 +724,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         jevAsked: true,
         jev: jevDetailOf(result.answers, result.latencyMs, result.model),
         ask: result.askId,
-        target: result.answers.target,
+        action: result.answers.action,
       }
     }
     return {
@@ -874,7 +873,6 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       case 'stop':
         return 'stopped'
       case 'none':
-      case 'done':
         return ''
     }
   }
@@ -1161,7 +1159,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     /** In a line read as Steps (#364): where this Step stands in it — every hop's reading is told the line and what the Steps before it did. */
     readonly step?: StepContext
     /** The Jev reading that fired the last action (#363): its target answer and the page it was read on, where a dead end's runner-up comes from. */
-    reading?: { readonly target: DecisionChoiceAnswer; readonly page: CommandPage }
+    reading?: { readonly action: DecisionChoiceAnswer; readonly page: CommandPage }
     /** What the last action opened on the page it stayed on (#363): the controls it drew, closed at a dead end. */
     opened?: Opened
     /** Whether the Task has looked again (#363): closed what it opened and tried, or passed on, the runner-up — once per Task. */
@@ -1471,7 +1469,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     const reading = task.reading
     task.lookedAgain = true
     task.reading = undefined
-    const named = tryRunnerUp && reading !== undefined ? runnerUpOf(reading.target, reading.page, opened.command.target!, task.setAside) : null
+    const named = tryRunnerUp && reading !== undefined ? runnerUpOf(reading.action, reading.page, opened.command.target!, task.setAside, opened.command.verb === 'menu' ? 'menu' : 'click') : null
     const target = named === null ? null : refNamed(closed.page, named)
     if (target === null) return endNotFound(task, hop, dead.words, closed.last, tracer?.mintTurnId() ?? `${task.id}-hop${hop}-end`, at())
     log(closed.last)
@@ -1571,7 +1569,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       // under the reading is read again, once.
       const verdict = readVerdict(result.answers)
       const sureYes = sure(verdict) && verdict.outcome === 'yes'
-      const ends = sureYes || command.verb === 'done' || command.verb === 'none'
+      const ends = sureYes || command.verb === 'none'
       const inTheWay = sure(verdict) && verdict.outcome === 'in_the_way' && !actsOnDialog(command, page) && command.verb !== 'play'
       if ((inTheWay || ends) && !task.rechecked && (await pageMoved(page))) {
         if (superseded(task)) {
@@ -1649,7 +1647,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       }
       const ending = endedByReading('jev', command.verb)
       recordBeforeFiring(record, ending, command)
-      task.reading = { target: result.answers.target, page }
+      task.reading = { action: result.answers.action, page }
       const fired = await fire(turnId, task.text, task.source, command, page, 'jev', matched, firedAt, { react: () => {}, settled: () => summarize(turnId) }, hopOf(task, hop))
       const ended = settleHop(task, record, ending, command, page, fired)
       if (ended === 'cap') await closeAtCap(task, hop, read)
@@ -1688,8 +1686,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     readonly submission: number
     readonly command: Command
     readonly page: CommandPage
-    /** Jev's target answer, when Jev read the partial (#363): the runner-up a dead end may try. */
-    readonly target?: DecisionChoiceAnswer
+    /** Jev's action card answer, when Jev read the partial (#363, #370): the runner-up a dead end may try. */
+    readonly action?: DecisionChoiceAnswer
     /** What its action came to, once it settles: hop 0's, which the Endpoint's Task goes on from (#328). */
     outcome: Promise<FireResult>
     /** The Endpoint's monotonic ms, once it came. */
@@ -1793,7 +1791,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     if (command.verb === 'none') return null
     // A song to play waits for its Endpoint, as an exact `play` does: "play daft" may yet be "play daft punk" (ADR 0079).
     if (command.music?.kind === 'search') return null
-    return { command, page, reading: 'jev', jevAsked: true, jev: jevDetailOf(result.answers, result.latencyMs, result.model), ask: result.askId, target: result.answers.target, noul }
+    return { command, page, reading: 'jev', jevAsked: true, jev: jevDetailOf(result.answers, result.latencyMs, result.model), ask: result.askId, action: result.answers.action, noul }
   }
 
   /** Reads one partial; when it fires, resolves to the action under way (boxed, so it is not awaited here). */
@@ -1822,7 +1820,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       submission: submitted,
       command,
       page: found.page,
-      ...(found.target !== undefined ? { target: found.target } : {}),
+      ...(found.action !== undefined ? { action: found.action } : {}),
       outcome: Promise.resolve({ outcome: 'landed' }),
       endpointAt: null,
       effect: null,
@@ -1863,7 +1861,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     const firedAt = at()
     const task: Task = { id: options.taskId ?? turnId, submission, text: words, source, endpointAt, visited: [], actions: [], setAside: [], unchanged: 0, searched: [], terms: [], rechecked: false, obstacles: [], ...(options.step !== undefined ? { step: options.step } : {}) }
     const hop0 = hopOf(task, 0)
-    if (heard.target !== undefined) task.reading = { target: heard.target, page: heard.page }
+    if (heard.action !== undefined) task.reading = { action: heard.action, page: heard.page }
     visit(task, heard.page.url || (browser.state().url ?? ''))
     const { command, matched } = matchName(heard.command, heard.page, source === 'spoken')
     const record: DecisionRecord = { ...recordOf(turnId, firedAt, source, words, heard, command, matched, truncated), ...extra, task: hop0 }
@@ -1883,13 +1881,13 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     const wordsPast = command.verb === 'navigate' && carriesWordsPastAddress(words)
     const ending = endedByReading(heard.reading, command.verb, wordsPast)
     recordBeforeFiring(record, ending, command)
-    if (command.verb === 'none' || command.verb === 'done') {
-      // An Utterance read as no Command, or as the page already being what was asked: a greyed entry of the words,
-      // and "No response." with the reason under it — never a silent fade (owner ruling 2026-10-19).
-      publish({ type: 'command', turnId, text: line.text, ...(command.verb === 'done' ? { action: 'already here' } : {}), dropped: true, task: hop0, at: firedAt })
-      answer(turnId, noResponseAnswer({ verb: command.verb, grammarError: grammarErrorOf(words), jevAsked: heard.jevAsked, jev: heard.jev }), 'muted')
+    if (command.verb === 'none') {
+      // An Utterance read as no Command — hop 0 has no Verdict, so never as the page already being what was asked (#370):
+      // a greyed entry of the words, and "No response." with the reason under it — never a silent fade (owner ruling 2026-10-19).
+      publish({ type: 'command', turnId, text: line.text, dropped: true, task: hop0, at: firedAt })
+      answer(turnId, noResponseAnswer({ grammarError: grammarErrorOf(words), jevAsked: heard.jevAsked, jev: heard.jev }), 'muted')
       publish({ type: 'done', turnId, outcome: 'done', at: at() })
-      return { ended: endTask(task, ending!, 1), did: 'already here' }
+      return { ended: endTask(task, ending!, 1), did: '' }
     }
 
     const ladder = heard.ladder ?? []
@@ -2069,7 +2067,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         if (options?.turnId !== undefined) summarize(options.turnId)
         const task: Task = { id: fired.turnId, submission: fired.submission, text: trimmed, source, endpointAt, visited: [], actions: [], setAside: [], unchanged: 0, searched: [], terms: [], rechecked: false, obstacles: [] }
         visit(task, fired.page.url)
-        if (fired.target !== undefined) task.reading = { target: fired.target, page: fired.page }
+        if (fired.action !== undefined) task.reading = { action: fired.action, page: fired.page }
         const ended = lands ? settleHop(task, record, ending, fired.command, fired.page, await fired.outcome) : ending
         if (ended !== null) endTask(task, ended, 1)
         else await continueTask(task, 1)

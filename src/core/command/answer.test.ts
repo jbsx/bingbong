@@ -56,7 +56,7 @@ describe('commandAnswer (#333)', () => {
   })
 
   it('leaves the verbs whose Answer is a Card, and the ones that fire nothing, to themselves', () => {
-    for (const verb of ['read', 'screenshot', 'help', 'none', 'done'] as const) expect(answer(command(verb))).toBeNull()
+    for (const verb of ['read', 'screenshot', 'help', 'none'] as const) expect(answer(command(verb))).toBeNull()
   })
 })
 
@@ -99,15 +99,15 @@ describe('pageReadCard (#333)', () => {
 })
 
 describe('noResponseAnswer', () => {
-  const jev = (verb: Record<string, number>) => ({ model: 'jev', latencyMs: 1, confidence: { verb: 0.9, target: 0.9, slot: 0.9 }, probabilities: { verb, target: {}, slot: {} } })
+  const jev = (action: Record<string, number>) => ({ model: 'jev', latencyMs: 1, confidence: { action: 0.9, slot: 0.9 }, probabilities: { action, slot: {} } })
 
-  it('says what Jev read when nothing on the page fits it, and that it read nothing otherwise', () => {
-    expect(noResponseAnswer({ verb: 'none', grammarError: null, jevAsked: true, jev: jev({ click: 0.8, none: 0.2 }) })).toBe('No response.\n\nJev read “click”, but nothing on this page fits it.')
-    expect(noResponseAnswer({ verb: 'none', grammarError: null, jevAsked: true, jev: jev({ none: 0.9 }) })).toBe('No response.\n\nJev read no command in the words.')
+  it('says what Jev read off its action card when nothing on the page fits it, and that it read nothing otherwise (#370)', () => {
+    expect(noResponseAnswer({ grammarError: null, jevAsked: true, jev: jev({ 'click-9': 0.8, none: 0.2 }) })).toBe('No response.\n\nJev read “click [9]”, but nothing on this page fits it.')
+    expect(noResponseAnswer({ grammarError: null, jevAsked: true, jev: jev({ volume: 0.7, none: 0.3 }) })).toBe('No response.\n\nJev read “volume”, but nothing on this page fits it.')
+    expect(noResponseAnswer({ grammarError: null, jevAsked: true, jev: jev({ none: 0.9 }) })).toBe('No response.\n\nJev read no command in the words.')
   })
 
-  it("puts the grammar's error first, and says when the page already is what was asked", () => {
-    expect(noResponseAnswer({ verb: 'none', grammarError: 'I can scroll up or down.', jevAsked: false })).toBe('No response.\n\nI can scroll up or down.')
-    expect(noResponseAnswer({ verb: 'done', grammarError: null, jevAsked: true, jev: jev({ done: 1 }) })).toBe('No response.\n\nThe page already shows what was asked.')
+  it("puts the grammar's error first", () => {
+    expect(noResponseAnswer({ grammarError: 'I can scroll up or down.', jevAsked: false })).toBe('No response.\n\nI can scroll up or down.')
   })
 })

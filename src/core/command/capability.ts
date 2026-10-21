@@ -2,8 +2,8 @@ import type { MusicAction } from '../music/musicWords'
 import { firstNumber } from '../timer/duration'
 
 // A Capability (ADR 0079, CONTEXT.md): an action the appliance itself can
-// take, offered to Jev as a verb beside the browser's, in the same verb
-// Choice. The Player's ops are the first: while a song is on — the
+// take, offered to Jev as an action beside the browser's, on the same
+// action card (#370). The Player's ops are the first: while a song is on — the
 // Player's current song, or a media element the page has started — on
 // any page and under the Idle Screen, every op but a search is offered;
 // a song to play is offered whenever a Player is wired, so `play <words>`
@@ -33,7 +33,7 @@ const PLAYER_ACTIONS: Readonly<Record<Exclude<Capability, 'volume'>, MusicAction
   show: { kind: 'show' },
 }
 
-/** Each Capability's one line in the verb Choice. */
+/** Each Capability's one line on the action card. */
 export const CAPABILITY_DESCRIPTIONS: Readonly<Record<Capability, string>> = {
   play: "music: find a song or video on YouTube by the words and play it now — never the page's play button, which is a click",
   play_next: 'music: find a song by the words and play it after the one playing',
@@ -53,9 +53,9 @@ export const CAPABILITY_DESCRIPTIONS: Readonly<Record<Capability, string>> = {
   show: 'music: show the video playing on the screen',
 }
 
-/** What the verb Choice's instructions add while Capabilities are offered: the page's button is meant when the words say so. */
+/** What the action card's instructions add while Capabilities are offered (#370): the page's own control is meant when a ref names what the words name, or the words say click. */
 export const CAPABILITY_INSTRUCTIONS =
-  'The music verbs act on the song playing — the appliance\'s own, or the video or audio on the page — whatever page is open. When the words say click, press or tap — "click play", "press pause" — they name the page\'s own button: choose click, never a music verb.'
+  'The music options act on the song playing — the appliance\'s own, or the video or audio on the page — whatever page is open; a ref that names what the words name is the page\'s own control for it. When the words say click, press or tap — "click play", "press pause" — they name the page\'s own button: choose its click, never a music option.'
 
 const SONG_CAPABILITIES: readonly Capability[] = ['loop', 'loop_off', 'restart', 'pause', 'unpause', 'skip', 'previous', 'louder', 'quieter', 'mute', 'unmute', 'volume', 'show']
 
@@ -64,7 +64,7 @@ export function playerCapabilities(songOn: boolean): readonly Capability[] {
   return ['play', 'play_next', 'queue', ...(songOn ? SONG_CAPABILITIES : [])]
 }
 
-/** Whether a verb Choice's label names a Capability. */
+/** Whether an action card label names a Capability. */
 export function isCapability(verb: string): verb is Capability {
   return Object.hasOwn(CAPABILITY_DESCRIPTIONS, verb)
 }

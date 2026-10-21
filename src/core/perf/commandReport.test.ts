@@ -26,7 +26,7 @@ function decision(turnId: string, reading: 'local_match' | 'jev' | 'best_guess',
     slot: 'youtube',
     jevAsked: reading !== 'local_match',
     ...(reading === 'jev'
-      ? { jev: { model: 'jev-1.14.0', latencyMs: latencyMs ?? 200, confidence: { verb: 0.9, target: 0.5, slot: 0.8 }, probabilities: { verb: {}, target: {}, slot: {} } } }
+      ? { jev: { model: 'jev-1.14.0', latencyMs: latencyMs ?? 200, confidence: { action: 0.9, slot: 0.8 }, probabilities: { action: {}, slot: {} } } }
       : reading === 'best_guess'
         ? { jev: { model: 'jev-1.14.0', latencyMs: latencyMs ?? 800, reason: 'timeout' as const } }
         : {}),

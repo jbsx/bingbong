@@ -114,7 +114,7 @@ _Avoid_: sub-task, chain, plan, sequence
 
 **Capability**:
 An action the appliance itself can take, offered to the Decision Model as
-a verb beside the browser's: the Player's loop, restart, pause, skip,
+an action beside the browser's: the Player's loop, restart, pause, skip,
 volume and the rest while a song is on (the Player's, or any media the
 page has started), on any page, and a song to play
 by its words at any time; the Timer next. A
@@ -154,11 +154,13 @@ else the Task ends on the page where it stands.
 _Avoid_: step, round, turn, continuation
 
 **Verdict**:
-The fourth answer every Hop carries beside its Command: is this page what
+The answer every Hop past the first carries beside its Command: is this page what
 the user asked for — yes, something is in the way of it (a sign-in prompt, a
 pop-up, a cookie notice, a challenge), or not yet. An end is a Verdict,
-never a verb's plurality: a Task ends `done` only on a sure yes, and a sure
-yes at a Hop past the first ends it before any verb fires; a sure "in
+never an action's: a Task ends `done` only on a sure yes, and a sure
+yes at a Hop past the first ends it before any action fires. Hop 0 carries
+no Verdict — a Command is read before anything was done — so it always acts
+or drops, and never ends "already here"; a sure "in
 the way" over a pop-up the Task has not met is a Step Aside, and otherwise a
 wall, its line spoken ("A pop-up is in the way."), unless the
 Command acts on the pop-up itself, which fires; a reading with no next step
@@ -233,10 +235,11 @@ One verb, at most one target on the page and one Slot, performed at once.
 A verb is an action the browser can take — `navigate` to an address,
 `search` for words, `click`, `type`, scroll, back, press, read, clear, stop
 — never a word the user said: "open" is words, and whether it means a
-navigate, a search or a click is the reading's to settle. In the Decision
-Model's reading the element it is sure the words name outvotes a verb it is
-unsure of that acts on none: the element is clicked, or a text field typed
-into, unless the Verdict is sure the Task is done. There is no plan
+navigate, a search or a click is the reading's to settle. The Decision
+Model reads a Command as one whole action: one Choice among a click, a
+type or a right-click on each element, an open of each link further down,
+each verb that needs no element, each Capability, and none — never "done",
+which is the Verdict's. There is no plan
 and no confirmation: a Command is the unit a Task is made of, and an
 Utterance is a Task of one or more. A Command that is not for the page at
 all is dropped, not answered.
@@ -293,8 +296,7 @@ showing captions" is not `stop`, "back to the results" not `back` (#368)
 <words>`), an opening phrase with an address-shaped Slot ("open youtube",
 "go to x.com"), and a plain verb with the one element the words name
 exactly — the label exactly one element carries, or the Nth result on a
-search page ("the first result"); the Decision Model's reading keeps the
-same precedence, a sure element over an unsure verb. A line with free
+search page ("the first result"). A line with free
 words — search terms, a song's words, words about the page — is never its:
 it goes to the
 Decision Model with every option, Capabilities included.
@@ -327,7 +329,8 @@ _Avoid_: prompt, request log
 
 **Jev Case**:
 An Ask the owner promoted from a real misread, with the answer each
-question should get: a label, or a label it must not be. The Jev Corpus is
+question should get: a label, or a label it must not be — a Command named
+on the action card, `action=click-12`. The Jev Corpus is
 the folder of them that every change to Jev's state text or question
 wording is replayed against. A change is accepted only if it passes its own
 case and leaves no other case worse. Misreads are fixed through the corpus,

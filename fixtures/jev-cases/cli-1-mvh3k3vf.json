@@ -5,7 +5,7 @@
   "recordedAt": 1792525764514,
   "expect": [
     {
-      "question": "verb",
+      "question": "action",
       "label": "play"
     },
     {
@@ -16,14 +16,12 @@
   "ask": {
     "state": "The user spoke to a web browser: \"play highs and lows pomme by kanye west\"\nPage: about:blank — \"\"\nRefs (number, kind, label, address):",
     "questions": {
-      "verb": {
+      "action": {
         "type": "choice",
-        "instructions": "Which verb did the user ask the browser for? Choose none when the words are not a command for this page. The music verbs act on the song playing — the appliance's own, or the video or audio on the page — whatever page is open. When the words say click, press or tap — \"click play\", \"press pause\" — they name the page's own button: choose click, never a music verb.",
+        "instructions": "Which one action does the browser take for the user's words? Each option is a whole action: a numbered ref with what is done to it, or a verb that needs no ref. Choose none when the words are not a command. The music options act on the song playing — the appliance's own, or the video or audio on the page — whatever page is open; a ref that names what the words name is the page's own control for it. When the words say click, press or tap — \"click play\", \"press pause\" — they name the page's own button: choose its click, never a music option.",
         "options": {
           "navigate": "go to a web address the words name: a website, a host or a url",
           "search": "search for the words: on the web, or on this site when they point at something on it",
-          "click": "click one of the numbered refs on the page",
-          "type": "type words into one of the numbered refs (a text field)",
           "scroll_up": "scroll the page up",
           "scroll_down": "scroll the page down",
           "back": "go back to the previous page",
@@ -33,18 +31,10 @@
           "read": "read the page aloud or show its contents",
           "clear": "clear the text in the focused field",
           "stop": "stop what the browser is doing",
-          "done": "this page is what the user asked for: nothing more to do",
           "none": "not a command for this page: a remark, a question, a name, noise",
           "play": "music: find a song or video on YouTube by the words and play it now — never the page's play button, which is a click",
           "play_next": "music: find a song by the words and play it after the one playing",
           "queue": "music: find a song by the words and add it to the end of the queue"
-        }
-      },
-      "target": {
-        "type": "choice",
-        "instructions": "Which numbered ref on the page do the words name as the thing to click or type into? Choose none when the command needs no ref, or names none of them.",
-        "options": {
-          "none": "no ref: the command does not act on one element"
         }
       },
       "slot": {

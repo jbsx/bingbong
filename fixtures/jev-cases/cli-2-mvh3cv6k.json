@@ -12,14 +12,12 @@
   "ask": {
     "state": "The user spoke to a web browser: \"start the song from the beginning and put it on loop\"\nPage: https://www.youtube.com/watch?v=dQw4w9WgXcQ — \"Rick Astley - Never Gonna Give You Up (Official Video) (4K Remaster) - YouTube\"\nRefs (number, kind, label, address):",
     "questions": {
-      "verb": {
+      "action": {
         "type": "choice",
-        "instructions": "Which verb did the user ask the browser for? Choose none when the words are not a command for this page.",
+        "instructions": "Which one action does the browser take for the user's words? Each option is a whole action: a numbered ref with what is done to it, or a verb that needs no ref. Choose none when the words are not a command.",
         "options": {
           "navigate": "go to a web address the words name: a website, a host or a url",
           "search": "search for the words: on the web, or on this site when they point at something on it",
-          "click": "click one of the numbered refs on the page",
-          "type": "type words into one of the numbered refs (a text field)",
           "scroll_up": "scroll the page up",
           "scroll_down": "scroll the page down",
           "back": "go back to the previous page",
@@ -29,15 +27,7 @@
           "read": "read the page aloud or show its contents",
           "clear": "clear the text in the focused field",
           "stop": "stop what the browser is doing",
-          "done": "this page is what the user asked for: nothing more to do",
           "none": "not a command for this page: a remark, a question, a name, noise"
-        }
-      },
-      "target": {
-        "type": "choice",
-        "instructions": "Which numbered ref on the page do the words name as the thing to click or type into? Choose none when the command needs no ref, or names none of them.",
-        "options": {
-          "none": "no ref: the command does not act on one element"
         }
       },
       "slot": {

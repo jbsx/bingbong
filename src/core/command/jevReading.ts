@@ -1,6 +1,6 @@
-import { DEFAULT_DECISION_THRESHOLDS, type DecisionChoiceAnswer, type DecisionChoiceQuestion, type DecisionNoulQuestion } from '../ports/decisionModel'
+import type { DecisionChoiceAnswer, DecisionChoiceQuestion, DecisionNoulQuestion } from '../ports/decisionModel'
 import type { PageLink, PageMedia } from '../browser/snapshot'
-import { JEV_VERBS, PRESS_KEYS, describeCommand, normalizeWords, pressKeyOf, targetLabel, verbTakesSlot, verbTakesTarget, type Command, type CommandPage, type CommandRef, type CommandVerb } from './command'
+import { PRESS_KEYS, describeCommand, normalizeWords, pressKeyOf, targetLabel, verbTakesSlot, type Command, type CommandPage, type CommandRef } from './command'
 import { dialogControls, type DismissChoice } from './dismissDialog'
 import { isSearchLanding, isTextField, pageAddressOf, resultLinksOf, resultRefsOf, wordsAfterVerb } from './localMatch'
 import { isAddressShaped } from './openAddress'
@@ -9,29 +9,31 @@ import { CAPABILITY_DESCRIPTIONS, CAPABILITY_INSTRUCTIONS, capabilityAction, cap
 
 // One Jev call per Command the Local Match cannot settle (#324, ADR 0076).
 // The state is the transcript, the page's address and title and its
-// numbered refs — label, kind, href, no page text. Three Choices are asked
-// in parallel: the verb — an action the browser can take, never a word the
-// user said (#353), so "open the tweet" is Jev's to read as a click, a
-// search or a navigation — the target among the refs plus `none`, and the
-// Slot among the transcript's contiguous word spans; on a site, a fourth
-// beside them — where the words point (#340), at a later hop only on a site
-// the Task has not searched (#341); at every hop past the first, the
-// Verdict beside them — is this page what was asked for — so a Task's end
-// is a sure answer and never a verb's plurality. Unneeded answers are
-// ignored; the top Choice is acted on at any confidence; only `none` as
-// the verb drops the Utterance. Speed over accuracy: nothing here asks
-// "did you mean". While the appliance can act itself — the Player's ops
-// (ADR 0079) — its Capabilities join the verb Choice beside the browser's.
+// numbered refs — label, kind, href, no page text. Jev reads the Command
+// as one whole action (#370): one Choice, the action card, whose every
+// option is an action — a click, a type or a right-click on a numbered
+// ref, an open of a link further down, a verb that needs no ref (an action
+// the browser can take, never a word the user said, #353), a Capability
+// while the appliance can act itself (ADR 0079) — or `none`. Beside it in
+// the same call: the Slot among the transcript's contiguous word spans; on
+// a site, where the words point (#340), at a later hop only on a site the
+// Task has not searched (#341); at every hop past the first, the Verdict —
+// is this page what was asked for — so a Task's end is a sure answer and
+// never an action's: the card offers no `done`. Unneeded answers are
+// ignored; the top Choice is acted on at any confidence; only `none`
+// drops the Utterance. Speed over accuracy: nothing here asks "did you
+// mean".
 
 /** A Choice offers at most 255 options; one is `none`. */
 const MAX_SPANS = 254
 
-const VERB_DESCRIPTIONS: Readonly<Record<(typeof JEV_VERBS)[number], string>> = {
+/** The verbs the action card offers as they are: every browser verb that acts on no ref (#370). */
+const REFLESS_VERBS = ['navigate', 'search', 'scroll_up', 'scroll_down', 'back', 'forward', 'reload', 'press', 'read', 'clear', 'stop'] as const
+type RefLessVerb = (typeof REFLESS_VERBS)[number]
+
+const REFLESS_DESCRIPTIONS: Readonly<Record<RefLessVerb | 'none', string>> = {
   navigate: 'go to a web address the words name: a website, a host or a url',
   search: 'search for the words: on the web, or on this site when they point at something on it',
-  click: 'click one of the numbered refs on the page',
-  type: 'type words into one of the numbered refs (a text field)',
-  menu: 'right-click one of the numbered refs to open its menu, when no ref shown does what the words ask: the options it hides appear as new refs',
   scroll_up: 'scroll the page up',
   scroll_down: 'scroll the page down',
   back: 'go back to the previous page',
@@ -41,8 +43,7 @@ const VERB_DESCRIPTIONS: Readonly<Record<(typeof JEV_VERBS)[number], string>> = 
   read: 'read the page aloud or show its contents',
   clear: 'clear the text in the focused field',
   stop: 'stop what the browser is doing',
-  done: 'this page is what the user asked for: nothing more to do',
-  none: 'not a command for this page: a remark, a question, a name, noise',
+  none:'not a command for this page: a remark, a question, a name, noise',
 }
 
 export interface SlotSpan {
@@ -421,20 +422,22 @@ export function doneAction(command: Command, page: CommandPage): string {
 export const RUNNER_UP_FLOOR = 0.05
 
 /**
- * The runner-up of a reading (#363, ADR 0079): the most probable ref of
- * its target answer that is not the one it fired, nor one the Task set
- * aside, at {@link RUNNER_UP_FLOOR} or over — named by its set-aside
- * identity, since the page it is fired on is collected anew. Null when
- * there is none.
+ * The runner-up of a reading (#363, ADR 0079): the most probable action of
+ * the opener's own kind on its action card (#370) — the next click after a
+ * click, the next right-click after a menu — on a ref that is not the one
+ * it fired, nor one the Task set aside, at {@link RUNNER_UP_FLOOR} or over;
+ * named by its set-aside identity, since the page it is fired on is
+ * collected anew. Null when there is none.
  */
-export function runnerUpOf(target: DecisionChoiceAnswer, page: CommandPage, fired: number, setAside: readonly SetAside[]): SetAside | null {
+export function runnerUpOf(action: DecisionChoiceAnswer, page: CommandPage, fired: number, setAside: readonly SetAside[], kind: 'click' | 'menu' = 'click'): SetAside | null {
   const firedRef = page.refs.find((ref) => ref.ref === fired)
   const excluded = [...setAside, ...(firedRef !== undefined ? [setAsideOf(firedRef, page)] : [])]
-  const ranked = Object.entries(target.probabilities)
+  const ranked = Object.entries(action.probabilities)
     .filter(([, probability]) => probability >= RUNNER_UP_FLOOR)
     .sort((a, b) => b[1] - a[1])
   for (const [label] of ranked) {
-    const ref = page.refs.find((candidate) => candidate.ref === refOfLabel(label))
+    const acted = refActionOf(label)
+    const ref = acted?.act === kind ? page.refs.find((candidate) => candidate.ref === acted.n) : undefined
     if (ref === undefined) continue
     const own = setAsideOf(ref, page)
     if (!excluded.some((aside) => sameAside(aside, own))) return own
@@ -447,7 +450,7 @@ export function refNamed(page: CommandPage, named: SetAside): CommandRef | null 
   return page.refs.find((ref) => sameAside(setAsideOf(ref, page), named)) ?? null
 }
 
-/** A result link a hop may open, numbered as its `link-N` option. */
+/** A result link a hop may open, numbered as its `link-N` line in the state and its `open-N` option. */
 interface OfferedLink extends PageLink {
   readonly n: number
 }
@@ -501,7 +504,7 @@ export interface StepContext {
   readonly done: readonly string[]
 }
 
-/** The state the three questions are asked over; at a hop past the first, where the Task stands; in a Step, where the line stands. */
+/** The state the questions are asked over; at a hop past the first, where the Task stands; in a Step, where the line stands. */
 export function commandState(text: string, page: CommandPage, hop?: HopContext, step?: StepContext): string {
   const shown = offered(page, hop)
   const done = [...(step?.done ?? []), ...(hop?.actions ?? [])]
@@ -523,19 +526,18 @@ export function commandState(text: string, page: CommandPage, hop?: HopContext, 
 }
 
 /** A type, not an interface, so it reads as the port's `DecisionQuestions` record. */
-type ThreeQuestions = {
-  readonly verb: DecisionChoiceQuestion
-  readonly target: DecisionChoiceQuestion
+type ActionQuestions = {
+  readonly action: DecisionChoiceQuestion
   readonly slot: DecisionChoiceQuestion
 }
 
 /**
- * The reading's questions (#340): the three, or the three and `where` —
+ * The reading's questions (#340): the action card and the Slot, or those and `where` —
  * a union, never an optional key, so each still reads as the port's
  * `DecisionQuestions` record — and at hop 0, on a line with a conjunction,
  * `steps` (#364).
  */
-type ReadingQuestions = ThreeQuestions | (ThreeQuestions & { readonly where: DecisionChoiceQuestion })
+type ReadingQuestions = ActionQuestions | (ActionQuestions & { readonly where: DecisionChoiceQuestion })
 export type CommandQuestions = ReadingQuestions | (ReadingQuestions & { readonly steps: DecisionChoiceQuestion })
 
 /** Where a line splits into two Steps (#364): the word the second starts at, and each Step's words. */
@@ -608,8 +610,8 @@ function whereQuestion(site: string): DecisionChoiceQuestion {
 }
 
 /**
- * The questions: the verb, the target, the Slot; at a hop past the first,
- * the targets are what the hop offers. On a site (#340) — a real page that
+ * The questions: the action card and the Slot; at a hop past the first,
+ * the card's refs and links are what the hop offers. On a site (#340) — a real page that
  * is no Web Engine's web search — `where` is asked beside them in the same
  * call; an Early Fire partial is a hop-0 reading and asks it too; a later
  * hop asks it on a site the Task has not searched (#341). At hop 0, on a
@@ -618,36 +620,60 @@ function whereQuestion(site: string): DecisionChoiceQuestion {
  * own words (`steps: false`).
  */
 export function commandQuestions(text: string, pageRead: CommandPage, hop?: HopContext, options: { readonly steps?: boolean; readonly capabilities?: readonly Capability[] } = {}): CommandQuestions {
-  const three = threeQuestions(text, pageRead, hop, options.capabilities ?? [])
+  const { page, links } = offered(pageRead, hop)
+  const reading: ActionQuestions = { action: actionQuestion(page, pageRead, links, hop !== undefined, options.capabilities ?? []), slot: slotQuestion(text) }
   const site = scopableSite(pageRead.url, hop)
-  const reading = site === null ? three : { ...three, where: whereQuestion(site) }
+  const where = site === null ? reading : { ...reading, where: whereQuestion(site) }
   const steps = hop === undefined && options.steps !== false ? stepsQuestion(text) : null
-  return steps === null ? reading : { ...reading, steps }
+  return steps === null ? where : { ...where, steps }
 }
 
-function threeQuestions(text: string, pageRead: CommandPage, hop: HopContext | undefined, capabilities: readonly Capability[]): ThreeQuestions {
-  const { page, links } = offered(pageRead, hop)
-  const instructions = 'Which verb did the user ask the browser for? Choose none when the words are not a command for this page.'
+/**
+ * The action card (#370): one option per whole action — a click on every
+ * ref the reading offers, as the ref is shown; a type into each text
+ * field; an open of each link further down; the ref-less verbs; the
+ * Capabilities on offer; and `none`. No `done`: done-ness is the
+ * Verdict's alone. Under the Choice cap the clicks come first, then the
+ * types, then the opens, and a right-click on each ref fills what room is
+ * left — a menu is the last resort, never chosen over the page's own
+ * control in the logged asks.
+ */
+function actionQuestion(page: CommandPage, pageRead: CommandPage, links: readonly OfferedLink[], later: boolean, capabilities: readonly Capability[]): DecisionChoiceQuestion {
+  let room = MAX_SPANS + 1 - (REFLESS_VERBS.length + 1 + capabilities.length)
+  const take = <T>(items: readonly T[]): readonly T[] => {
+    const taken = items.slice(0, Math.max(0, room))
+    room -= taken.length
+    return taken
+  }
+  const clicked = new Set(take(page.refs).map((ref) => ref.ref))
+  const typed = new Set(take(page.refs.filter((ref) => clicked.has(ref.ref) && isTextField(ref))).map((ref) => ref.ref))
+  const opened = take(links)
+  const menus = take(page.refs.filter((ref) => clicked.has(ref.ref)))
+  // A sentence on when to right-click, or a ref line on each right-click, lowered every sure click (replay 2026-10-21: "disable captions" 0.66–0.72 → 0.41–0.46, its top `none`).
+  const instructions = `${later ? "Which one action comes next for the user's words, given Done so far and the page now?" : "Which one action does the browser take for the user's words?"} Each option is a whole action: a numbered ref with what is done to it, or a verb that needs no ref. Choose none when the words are not a command.`
   return {
-    verb: {
-      type: 'choice',
-      instructions: capabilities.length === 0 ? instructions : `${instructions} ${CAPABILITY_INSTRUCTIONS}`,
-      options: { ...VERB_DESCRIPTIONS, ...Object.fromEntries(capabilities.map((capability) => [capability, CAPABILITY_DESCRIPTIONS[capability]])) },
+    type: 'choice',
+    instructions: capabilities.length === 0 ? instructions : `${instructions} ${CAPABILITY_INSTRUCTIONS}`,
+    options: {
+      ...Object.fromEntries(
+        page.refs.flatMap((ref) => {
+          const line = `[${ref.ref}] ${describeRef(ref, pageRead)}`
+          return [...(typed.has(ref.ref) ? [[`type-${ref.ref}`, `type the words into ${line}`]] : []), ...(clicked.has(ref.ref) ? [[`click-${ref.ref}`, `click ${line}`]] : [])]
+        }),
+      ),
+      ...Object.fromEntries(opened.map((link) => [`open-${link.n}`, `open result ${describeLink(link)}`])),
+      ...Object.fromEntries(menus.map((ref) => [`menu-${ref.ref}`, `right-click [${ref.ref}] to open its menu`])),
+      ...REFLESS_DESCRIPTIONS,
+      ...Object.fromEntries(capabilities.map((capability) => [capability, CAPABILITY_DESCRIPTIONS[capability]])),
     },
-    target: {
-      type: 'choice',
-      instructions: 'Which numbered ref on the page do the words name as the thing to click or type into? Choose none when the command needs no ref, or names none of them.',
-      options: {
-        none: 'no ref: the command does not act on one element',
-        ...Object.fromEntries(page.refs.map((ref) => [`ref-${ref.ref}`, describeRef(ref, pageRead)])),
-        ...Object.fromEntries(links.map((link) => [`link-${link.n}`, describeLink(link)])),
-      },
-    },
-    slot: {
-      type: 'choice',
-      instructions: 'Which words of the transcript are the thing the command carries verbatim: the address to open, the search terms, the song to play, the text to type, the key to press? Never the command word itself: "play X" carries X. Choose none when it carries none.',
-      options: { none: 'the command carries no words of its own', ...Object.fromEntries(slotSpans(text).map((span) => [`s${span.start}-${span.end}`, span.words])) },
-    },
+  }
+}
+
+function slotQuestion(text: string): DecisionChoiceQuestion {
+  return {
+    type: 'choice',
+    instructions: 'Which words of the transcript are the thing the command carries verbatim: the address to open, the search terms, the song to play, the text to type, the key to press? Never the command word itself: "play X" carries X. Choose none when it carries none.',
+    options: { none: 'the command carries no words of its own', ...Object.fromEntries(slotSpans(text).map((span) => [`s${span.start}-${span.end}`, span.words])) },
   }
 }
 
@@ -761,31 +787,36 @@ export function partialQuestions(text: string, page: CommandPage, { capabilities
   }
 }
 
-type ThreeAnswers = {
-  readonly verb: DecisionChoiceAnswer
-  readonly target: DecisionChoiceAnswer
+type ActionAnswers = {
+  readonly action: DecisionChoiceAnswer
   readonly slot: DecisionChoiceAnswer
 }
 
-/** The answers to {@link CommandQuestions}: the three, or the three and `where`; `steps` when it was asked (#364). */
-type ReadingAnswers = ThreeAnswers | (ThreeAnswers & { readonly where: DecisionChoiceAnswer })
+/** The answers to {@link CommandQuestions}: the action card's and the Slot's, or those and `where`; `steps` when it was asked (#364). */
+type ReadingAnswers = ActionAnswers | (ActionAnswers & { readonly where: DecisionChoiceAnswer })
 export type CommandAnswers = ReadingAnswers | (ReadingAnswers & { readonly steps: DecisionChoiceAnswer })
 
-function refOfLabel(label: string): number | null {
-  const match = /^ref-(\d+)$/.exec(label)
-  return match ? Number(match[1]) : null
+/** What an action card label does to a numbered ref or link (#370): `click-12` is a click on ref 12, `open-3` the open of link 3. */
+interface RefAction {
+  readonly act: 'click' | 'type' | 'menu' | 'open'
+  readonly n: number
 }
 
-/** The ref a `ref-N` label names, when the page offers it. */
-function offeredRef(label: string, page: CommandPage): number | null {
-  const ref = refOfLabel(label)
-  return ref !== null && page.refs.some((candidate) => candidate.ref === ref) ? ref : null
+/** The ref or link action a card label names; null for a ref-less verb, a Capability, `none`, or a label the card never offers. */
+function refActionOf(label: string): RefAction | null {
+  const match = /^(click|type|menu|open)-(\d+)$/.exec(label)
+  return match === null ? null : { act: match[1] as RefAction['act'], n: Number(match[2]) }
 }
 
-/** The offered result link a `link-N` label names. */
-function linkOfLabel(label: string, links: readonly OfferedLink[]): OfferedLink | undefined {
-  const match = /^link-(\d+)$/.exec(label)
-  return match === null ? undefined : links.find((candidate) => candidate.n === Number(match[1]))
+/** The ref an action names, when the hop offers it — for a type, only a text field. */
+function offeredRefOf(acted: RefAction, page: CommandPage): CommandRef | null {
+  const ref = page.refs.find((candidate) => candidate.ref === acted.n)
+  return ref === undefined || (acted.act === 'type' && !isTextField(ref)) ? null : ref
+}
+
+/** The offered result link an `open-N` names. */
+function linkOf(acted: RefAction, links: readonly OfferedLink[]): OfferedLink | undefined {
+  return links.find((candidate) => candidate.n === acted.n)
 }
 
 /** What the most probable label the answer gives any probability resolves to; null when none resolves. */
@@ -798,23 +829,25 @@ function mostProbable<T>(answer: DecisionChoiceAnswer, resolve: (label: string) 
   return best?.value ?? null
 }
 
-/** The most probable ref the target answer holds; null when it gives no offered ref any probability — never a ref Jev did not name (owner's rule 2026-10-19). */
-function mostProbableRef(answer: DecisionChoiceAnswer, page: CommandPage): number | null {
-  return offeredRef(answer.choice, page) ?? mostProbable(answer, (label) => offeredRef(label, page))
+/**
+ * The opening a card label names (#332): a click on an offered ref, the
+ * open of an offered link at its address; null for anything else. `refs`,
+ * when given, are the only refs that may be clicked.
+ */
+function openingOf(label: string, page: CommandPage, links: readonly OfferedLink[], refs: ReadonlySet<number> | null = null): Command | null {
+  const acted = refActionOf(label)
+  if (acted?.act === 'open') {
+    const link = linkOf(acted, links)
+    return link === undefined ? null : { verb: 'navigate', target: null, slot: link.href }
+  }
+  if (acted?.act !== 'click') return null
+  const ref = offeredRefOf(acted, page)
+  return ref === null || (refs !== null && !refs.has(ref.ref)) ? null : { verb: 'click', target: ref.ref, slot: null }
 }
 
-/**
- * The opening of the offered target the target answer gives the most
- * probability, `none` set aside (#332): a ref is clicked, a result link
- * opened at its address; null when the answer gives no offered target any.
- */
+/** The opening the action card gives the most probability (#332), the top label set aside; null when it gives no offered ref or link any. */
 function mostProbableOpening(answer: DecisionChoiceAnswer, page: CommandPage, links: readonly OfferedLink[]): Command | null {
-  return mostProbable<Command>(answer, (label) => {
-    const ref = offeredRef(label, page)
-    if (ref !== null) return { verb: 'click', target: ref, slot: null }
-    const link = linkOfLabel(label, links)
-    return link === undefined ? null : { verb: 'navigate', target: null, slot: link.href }
-  })
+  return mostProbable<Command>(answer, (label) => openingOf(label, page, links))
 }
 
 /**
@@ -834,24 +867,10 @@ function fallbackTargets(page: CommandPage, links: readonly OfferedLink[]): { re
   return { refs, links: refs.size === 0 ? [] : links }
 }
 
-/** The most probable ref a later hop may fall back on: on a Web Engine's landing a result alone ({@link fallbackTargets}). */
-function mostProbableFallbackRef(answer: DecisionChoiceAnswer, page: CommandPage): number | null {
-  const { refs } = fallbackTargets(page, [])
-  return mostProbable(answer, (label) => {
-    const ref = offeredRef(label, page)
-    return ref !== null && (refs === null || refs.has(ref)) ? ref : null
-  })
-}
-
 /** {@link mostProbableOpening} for a later hop on a search landing: on a Web Engine's, a result or nothing ({@link fallbackTargets}). */
 function mostProbableFallbackOpening(answer: DecisionChoiceAnswer, page: CommandPage, links: readonly OfferedLink[]): Command | null {
   const targets = fallbackTargets(page, links)
-  return mostProbable<Command>(answer, (label) => {
-    const ref = offeredRef(label, page)
-    if (ref !== null) return targets.refs === null || targets.refs.has(ref) ? { verb: 'click', target: ref, slot: null } : null
-    const link = linkOfLabel(label, targets.links)
-    return link === undefined ? null : { verb: 'navigate', target: null, slot: link.href }
-  })
+  return mostProbable<Command>(answer, (label) => openingOf(label, page, targets.links, targets.refs))
 }
 
 /** The words the Slot answer names; the words after the verb when it names none — what a Task that found nothing says it could not find (#363). */
@@ -882,69 +901,34 @@ function capabilityCommand(capability: Capability, slot: DecisionChoiceAnswer, t
   return music === null ? null : { verb: 'play', target: null, slot: searches ? words : null, music, capability }
 }
 
-/**
- * The ref a sure target names over an unsure verb that takes none (#367,
- * ADR 0076 amendment): the verb Choice's options are abstract words with no
- * page element in them, the target Choice is the one that sees the page, so
- * a target at the Choice bar outvotes a verb under it — any ref-less verb,
- * `done` and `none` among them, and any Capability. A sure verb, a verb that
- * takes a ref, and a target under the bar are left as they were (a hop's
- * sure `yes` ends the Task before any verb fires, #369). Only the ref the
- * target tops with stands, among the refs the hop offers — never a
- * fallback's.
- */
-function sureTargetOf(answers: CommandAnswers | HopAnswers, pageRead: CommandPage, hop: HopContext | undefined): CommandRef | null {
-  const bar = DEFAULT_DECISION_THRESHOLDS.choice
-  const { verb, target } = answers
-  if (verb.confidence >= bar || target.confidence < bar) return null
-  if (!isCapability(verb.choice) && verbTakesTarget(verb.choice as CommandVerb)) return null
-  const { page } = offered(pageRead, hop)
-  const ref = offeredRef(target.choice, page)
-  return ref === null ? null : (page.refs.find((candidate) => candidate.ref === ref) ?? null)
+/** The Command a card label naming a ref or a link makes (#370); null when the hop does not offer what it names. */
+function refCommand(acted: RefAction, answers: CommandAnswers | HopAnswers, text: string, page: CommandPage, links: readonly OfferedLink[]): Command | null {
+  if (acted.act === 'open') return openingOf(`open-${acted.n}`, page, links)
+  const ref = offeredRefOf(acted, page)
+  if (ref === null) return null
+  return { verb: acted.act, target: ref.ref, slot: acted.act === 'type' ? slotWords(answers.slot, text) : null }
 }
 
-/** The Command Jev's answers make: the top Choice of each, read as the verb needs them. */
+/** Whether a card label is a verb the card offers as it is. */
+const isRefLessVerb = (label: string): label is RefLessVerb => (REFLESS_VERBS as readonly string[]).includes(label)
+
+/** The Command Jev's answers make: the action card's top option, with the Slot and `where` read as the action needs them. */
 export function readCommandAnswers(answers: CommandAnswers | HopAnswers, text: string, pageRead: CommandPage, hop?: HopContext): Command {
   const none: Command = { verb: 'none', target: null, slot: null }
-  // A sure target over an unsure ref-less verb (#367): its kind sets the verb — a text field with a Slot is typed into, anything else clicked.
-  const outvoted = sureTargetOf(answers, pageRead, hop)
-  if (outvoted !== null) {
-    if (isTextField(outvoted) && slotSpanOf(answers.slot) !== null) return { verb: 'type', target: outvoted.ref, slot: slotWords(answers.slot, text) }
-    return { verb: 'click', target: outvoted.ref, slot: null }
-  }
-  if (isCapability(answers.verb.choice)) return capabilityCommand(answers.verb.choice, answers.slot, text) ?? none
-  const verb = answers.verb.choice as CommandVerb
-  if (!JEV_VERBS.includes(verb as (typeof JEV_VERBS)[number]) || verb === 'none') return none
-  if (verb === 'done') return { verb, target: null, slot: null }
+  const label = answers.action.choice
+  if (isCapability(label)) return capabilityCommand(label, answers.slot, text) ?? none
   const { page, links } = offered(pageRead, hop)
-  if (verb === 'click' || verb === 'navigate' || verb === 'search') {
-    // A result link further down the page has no ref to click: it is opened at its address.
-    const chosen = linkOfLabel(answers.target.choice, links)
-    if (chosen !== undefined) return { verb: 'navigate', target: null, slot: chosen.href }
-  }
-  let target: number | null = null
-  if (verbTakesTarget(verb)) {
-    // Past the first hop, off a search landing, a ref Jev barely offered
-    // under a top `none` would walk the Task off the page it reached (as
-    // #342 for an open): a click or a type acts only on the ref Jev names.
-    // On a landing the most probable ref stands in for a top `none` — on a
-    // Web Engine's, a result alone, never its chrome (2026-10-19).
-    const later = hop !== undefined && hop.hop > 0
-    if (!later) target = mostProbableRef(answers.target, page)
-    else target = offeredRef(answers.target.choice, page) ?? (onResults(page.url, hop) ? mostProbableFallbackRef(answers.target, page) : null)
-    // A click or a type on a page with nothing to act on is no Command.
-    if (target === null) return none
-  }
+  const acted = refActionOf(label)
+  // A ref or a link the hop does not offer is no Command.
+  if (acted !== null) return refCommand(acted, answers, text, page, links) ?? none
+  if (!isRefLessVerb(label)) return none
+  const verb = label
   const slot = verbTakesSlot(verb) ? slotWords(answers.slot, text) : null
   if ((verb === 'navigate' || verb === 'search') && slot !== null) {
-    // An address-shaped Slot Jev reads as a navigation is navigated to, whatever the target says.
+    // An address-shaped Slot Jev reads as a navigation is navigated to.
     if (verb === 'navigate' && isAddressShaped(slot)) return { verb, target: null, slot }
     // Words about something, not an address (#353): the page, the site or
-    // the web decides, and the verb word never does. A target Choice that
-    // names a ref outright is the thing the words name, and opening it is
-    // clicking it — the Local Match's own rule for a label one ref carries.
-    const chosen = offeredRef(answers.target.choice, page)
-    if (chosen !== null) return { verb: 'click', target: chosen, slot: null }
+    // the web decides, and the verb word never does.
     const where = 'where' in answers ? answers.where.choice : null
     // Words that point on this site but not on this page (#340) are looked
     // for on the site: a search scoped to it, the Slot kept as the words —
@@ -953,25 +937,24 @@ export function readCommandAnswers(answers: CommandAnswers | HopAnswers, text: s
     if (site !== null) return { verb: 'search', target: null, slot, site }
     if (hop === undefined) {
       // Words that point at this page (#353) never search: the most
-      // probable ref Jev gave any probability is opened, `none` set aside;
-      // when it gave none any, the line is no Command. Elsewhere the words
-      // are searched for on the web.
-      if (where === 'page') return mostProbableOpening(answers.target, page, links) ?? none
+      // probable click or open on the card is taken; when it gives none
+      // any probability, the line is no Command. Elsewhere the words are
+      // searched for on the web.
+      if (where === 'page') return mostProbableOpening(answers.action, page, links) ?? none
       return { verb: 'search', target: null, slot }
     }
     // Past the first hop the words were already acted on (#332): a hop
     // never searches again. On a search landing it opens the most probable
-    // target the hop offers, Jev often topping `none` over the right result
-    // — on a Web Engine's landing a result, never the engine's own chrome;
-    // off one the Task has reached a page and a target Jev barely offered
-    // would overrun it (#342), so the hop has no next step — nor on a
-    // landing with nothing to open.
+    // click or open on the card — on a Web Engine's landing a result, never
+    // the engine's own chrome; off one the Task has reached a page and a
+    // target Jev barely offered would overrun it (#342), so the hop has no
+    // next step — nor on a landing with nothing to open.
     if (!onResults(page.url, hop)) return none
-    return mostProbableFallbackOpening(answers.target, page, links) ?? none
+    return mostProbableFallbackOpening(answers.action, page, links) ?? none
   }
   if (verb === 'press') {
     const key = slot === null ? null : pressKeyOf(slot)
     return { verb, target: null, slot, key: key ?? PRESS_KEYS.enter, times: 1 }
   }
-  return { verb, target, slot }
+  return { verb, target: null, slot }
 }

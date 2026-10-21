@@ -1165,6 +1165,9 @@ the title's.
 
 ## Amendment 2026-10-21 — a sure target outvotes an unsure ref-less verb (#367)
 
+(Superseded by the #370 amendment below: Jev reads the Command as one
+whole action, so there is no verb and target to arbitrate between.)
+
 Two live sessions on a YouTube watch page, seven readings of "enable /
 show / disable captions" and "i dont want to see the captions", and none
 toggled the captions. In every one the target Choice named the captions
@@ -1241,3 +1244,82 @@ no verb, site or element in it.
   verb.
 - A no-repeat guard, a mechanical done on an expected Ref State change and
   the joint action Choice stay deferred. Each matters only under the bar.
+  (The joint action Choice landed with #370, below.)
+
+## Amendment 2026-10-21 — Jev reads a Command as one whole action (#370)
+
+#353, #367 and #369 were three arbitration rules for one disagreement.
+Jev's reading was factored: a verb Choice of sixteen abstract words with no
+page element in them, a target Choice among the refs, a Slot, and at later
+hops a Verdict, each argmaxed alone and recomposed by precedence. Where the
+verb and the target disagreed, code decided which won, and each rule was
+written after the failure that exposed it. The confidences it compared are
+not comparable — a verb at 0.43 of sixteen and a ref at 0.93 of sixty
+answer different questions — and the verb question asked again at every
+hop "which verb did the user ask for", so `click` stayed the answer after
+the click had worked.
+
+### Decision
+
+**One `action` Choice replaces the verb and the target.** Every option is a
+whole action: `click-N` for each ref the reading offers, shown as its ref
+line; `type-N` for each text field; `open-N` for each link further down;
+`menu-N` (a right-click) for each ref while the card has room; the ref-less
+verbs (`navigate`, `search`, `scroll_up`, `scroll_down`, `back`,
+`forward`, `reload`, `press`, `read`, `clear`, `stop`); the Capabilities on
+offer (ADR 0079); and `none`. Under the 255-option cap the clicks come
+first, then the types, the opens, and the right-clicks.
+
+**There is no `done`.** Done-ness is the Verdict's alone, asked at every hop
+past the first and read first (#369). Hop 0 asks no Verdict: it always acts
+or drops, and the "already here" ending goes. The `done` verb is gone from
+the Command too.
+
+**The rest is as it was.** The Slot, `where`, `steps`, the dismiss Choice
+and the Early Fire `complete` Noul are asked beside the card, independent of
+it. `navigate` and `search` with words keep #353's path — an address-shaped
+Slot is navigated; `where=site` searches the site (#340, #341); `where=page`
+at hop 0 takes the card's most probable click or open; a later hop never
+searches again and on a results landing takes the most probable click or
+open, on a Web Engine's a result alone (#332, #342) — minus the branch where
+a target naming a ref made a search a click, which the card now says
+outright. A label naming a ref or link the hop does not offer is no
+Command. The runner-up after a dead end (#363) is the card's next action of
+the opener's kind: the next `click-N` after a click, the next `menu-N` after
+a menu. The decision record keeps the card's top eight probabilities as
+`action` in place of `verb` and `target`.
+
+Removed: the #367 rule (`sureTargetOf`), the #353 target-names-a-ref branch,
+and the #367 corpus encoding of a click as `target=ref-12>=0.7 verb<0.7 …`.
+Kept: the Verdict-first precedence of #369, the Dismissal Ladder, Site Scope
+and Steps.
+
+### Consequences
+
+- The wording was measured, not chosen. A `done` on the card was over-eager
+  (an earlier replay's 19–29 `done`s against the Verdict's 11 sure yeses,
+  most on search landings), and a hop-0 Verdict read YouTube's stale
+  "unavailable" captions label as already done (yes 0.76–0.87). A sentence
+  on when to right-click, or each right-click carrying its ref line, cost
+  every sure click about 0.2 ("disable captions" 0.66–0.72 → 0.41–0.46, its
+  top `none`), so each `menu-N` is shown as `right-click [N] to open its
+  menu` and nothing more. The Capability sentence now says a ref that names
+  what the words name is the page's own control for it, and that "click
+  play" is that control's click.
+- The corpus was converted with each ask's card rebuilt by the real
+  `commandQuestions`: in all 23 cases the card offers exactly the refs and
+  links of the recorded target card, each line the same. `pnpm jev:replay`
+  passes 23 of 23; the captions cases read `click-12` at 0.61–0.87. The
+  pre-#366 hop-1 "enable captions" Verdict reads yes at the bar (0.70).
+- A replay of the 322 logged asks (#370, AC7) read with this card against
+  today's code on each ask's own recorded answers: on the asks recorded
+  with today's verbs, 51 of 69 hop-0 and 49 of 81 later-hop readings the
+  same, the Verdict agreeing on 74 of 78, median latency 216 ms, the largest
+  card 195 options. Gained: the hop-0 "disable captions" asks that ended
+  "already here" click the captions, "what is a synonym for posthumous"
+  searches, an empty Web Engine landing scrolls instead of ending unsure, a
+  later hop opens the result link it names. Lost near the bar: "Open this
+  tweet" at hop 0 reads `none` at 0.42; two "Cross out the pop-up" hops read
+  in_the_way at 0.52–0.59 and end unsure rather than step aside.
+- A no-repeat guard, a mechanical done and re-deriving the 0.7 bar for the
+  wider card stay deferred: measure on the new asks first.

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { DecisionChoiceAnswer } from '../ports/decisionModel'
 import type { CommandPage, CommandRef } from './command'
-import { commandQuestions, commandState, dismissPhraseQuestions, doneFacts, doneLine, hopQuestions, onResults, partialQuestions, readCommandAnswers, readDismissChoice, readSteps, readVerdict, slotSpans, type HopContext } from './jevReading'
+import { commandQuestions, commandState, dismissPhraseQuestions, doneFacts, doneLine, hopQuestions, onResults, partialQuestions, readCommandAnswers, readDismissChoice, readSteps, readVerdict, runnerUpOf, setAsideOf, slotSpans, type HopContext } from './jevReading'
 import { playerCapabilities } from './capability'
 
 // One Jev call per Command the Local Match cannot settle (#324, ADR
@@ -49,7 +49,7 @@ describe('the state Jev reads', () => {
       '[4] button "Subtitles/closed captions unavailable" pressed=true keyshortcuts="c"',
       '[5] link "Account" https://example.com/me expanded=false',
     ])
-    expect(commandQuestions('turn off captions', page).target.options['ref-4']).toBe('button "Subtitles/closed captions unavailable" pressed=true keyshortcuts="c"')
+    expect(commandQuestions('turn off captions', page).action.options['click-4']).toBe('click [4] button "Subtitles/closed captions unavailable" pressed=true keyshortcuts="c"')
   })
 })
 
@@ -69,11 +69,11 @@ describe('a playing media element in the state Jev reads (#363, ADR 0079)', () =
     expect(commandState('loop the song', { ...PAGE, media: { ...SONG, paused: true, loop: false, muted: false, duration: Infinity } }).split('\n')[2]).toBe('Paused: "Highs and Lows" 1:02, loop off')
   })
 
-  it('names the one unlabelled media ref by what plays, in the state and the target options — a page with two leaves them as they are', () => {
+  it('names the one unlabelled media ref by what plays, in the state and the action card — a page with two leaves them as they are', () => {
     const player = { ref: 7, kind: 'media' as const, label: '', href: null, inputType: null }
     const page = { ...PAGE, refs: [...PAGE.refs, player], media: SONG }
     expect(commandState('loop the song', page).split('\n')).toContain('[7] media "Highs and Lows"')
-    expect(commandQuestions('loop the song', page).target.options['ref-7']).toBe('media "Highs and Lows"')
+    expect(commandQuestions('loop the song', page).action.options['click-7']).toBe('click [7] media "Highs and Lows"')
     const two = { ...page, refs: [...page.refs, { ...player, ref: 8 }] }
     expect(commandState('loop the song', two).split('\n')).toContain('[7] media ""')
     expect(commandState('loop the song', { ...page, media: undefined }).split('\n')).toContain('[7] media ""')
@@ -90,14 +90,33 @@ describe('a playing media element in the state Jev reads (#363, ADR 0079)', () =
   })
 })
 
-describe('the three questions', () => {
-  it('asks the verb among the spoken vocabulary, the target among the refs plus none, the Slot among the word spans', () => {
+describe('the questions', () => {
+  it('asks the action card among the refs and the ref-less verbs, the Slot among the word spans', () => {
     const questions = commandQuestions('type hello in search', { ...PAGE, url: 'about:blank' })
-    expect(Object.keys(questions)).toEqual(['verb', 'target', 'slot'])
-    expect(questions.verb.type).toBe('choice')
-    expect(Object.keys(questions.verb.options)).toEqual(['navigate', 'search', 'click', 'type', 'menu', 'scroll_up', 'scroll_down', 'back', 'forward', 'reload', 'press', 'read', 'clear', 'stop', 'done', 'none'])
-    expect(Object.keys(questions.target.options)).toEqual(['none', 'ref-1', 'ref-2', 'ref-3'])
-    expect(questions.target.options['ref-2']).toBe('button "Sign in"')
+    expect(Object.keys(questions)).toEqual(['action', 'slot'])
+    expect(questions.action.type).toBe('choice')
+    expect(Object.keys(questions.action.options)).toEqual([
+      'click-1',
+      'click-2',
+      'type-3',
+      'click-3',
+      'menu-1',
+      'menu-2',
+      'menu-3',
+      'navigate',
+      'search',
+      'scroll_up',
+      'scroll_down',
+      'back',
+      'forward',
+      'reload',
+      'press',
+      'read',
+      'clear',
+      'stop',
+      'none',
+    ])
+    expect(questions.action.options['click-2']).toBe('click [2] button "Sign in"')
     expect(Object.keys(questions.slot.options)).toEqual(['none', 's0-0', 's0-1', 's0-2', 's0-3', 's1-1', 's1-2', 's1-3', 's2-2', 's2-3', 's3-3'])
     expect(questions.slot.options['s1-1']).toBe('hello')
     expect(questions.slot.options['s0-3']).toBe('type hello in search')
@@ -114,62 +133,54 @@ describe('the three questions', () => {
 })
 
 describe('reading the answers', () => {
-  it('acts on the top choices: the verb, the ref, the span', () => {
-    expect(
-      readCommandAnswers({ verb: choice('type', 0.4), target: choice('ref-3', 0.3), slot: choice('s1-1', 0.5) }, 'type hello in search', PAGE),
-    ).toEqual({ verb: 'type', target: 3, slot: 'hello' })
+  it('acts on the top choices: the action, the span', () => {
+    expect(readCommandAnswers({ action: choice('type-3', 0.4), slot: choice('s1-1', 0.5) }, 'type hello in search', PAGE)).toEqual({ verb: 'type', target: 3, slot: 'hello' })
   })
 
-  it('drops the Utterance only on a none verb', () => {
-    expect(readCommandAnswers({ verb: choice('none', 0.2), target: choice('ref-2', 0.5), slot: choice('s0-0') }, 'what time is it', PAGE)).toEqual({ verb: 'none', target: null, slot: null })
+  it('drops the Utterance only on a none action', () => {
+    expect(readCommandAnswers({ action: choice('none', 0.2), slot: choice('s0-0') }, 'what time is it', PAGE)).toEqual({ verb: 'none', target: null, slot: null })
   })
 
-  it('ignores the answers a verb does not need', () => {
-    expect(readCommandAnswers({ verb: choice('scroll_down'), target: choice('ref-2'), slot: choice('s0-1') }, 'scroll down please', PAGE)).toEqual({ verb: 'scroll_down', target: null, slot: null })
-    expect(readCommandAnswers({ verb: choice('back'), target: choice('none'), slot: choice('none') }, 'go back', PAGE)).toEqual({ verb: 'back', target: null, slot: null })
+  it('ignores the answers an action does not need', () => {
+    expect(readCommandAnswers({ action: choice('scroll_down'), slot: choice('s0-1') }, 'scroll down please', PAGE)).toEqual({ verb: 'scroll_down', target: null, slot: null })
+    expect(readCommandAnswers({ action: choice('back'), slot: choice('none') }, 'go back', PAGE)).toEqual({ verb: 'back', target: null, slot: null })
+    expect(readCommandAnswers({ action: choice('click-2'), slot: choice('s0-1') }, 'click sign in', PAGE)).toEqual({ verb: 'click', target: 2, slot: null })
   })
 
   it('reads press through the Slot, Enter when the Slot names no key', () => {
-    expect(readCommandAnswers({ verb: choice('press'), target: choice('none'), slot: choice('s1-1') }, 'press escape', PAGE)).toMatchObject({ verb: 'press', slot: 'escape', key: { key: 'Escape' }, times: 1 })
-    expect(readCommandAnswers({ verb: choice('press'), target: choice('none'), slot: choice('none') }, 'submit it', PAGE)).toMatchObject({ verb: 'press', key: { key: 'Enter' } })
+    expect(readCommandAnswers({ action: choice('press'), slot: choice('s1-1') }, 'press escape', PAGE)).toMatchObject({ verb: 'press', slot: 'escape', key: { key: 'Escape' }, times: 1 })
+    expect(readCommandAnswers({ action: choice('press'), slot: choice('none') }, 'submit it', PAGE)).toMatchObject({ verb: 'press', key: { key: 'Enter' } })
   })
 
-  it('takes the most probable ref when the target answers none for a verb that needs one', () => {
-    const target: DecisionChoiceAnswer = { type: 'choice', choice: 'none', confidence: 0.5, probabilities: { none: 0.5, 'ref-1': 0.1, 'ref-2': 0.35, 'ref-3': 0.05 } }
-    expect(readCommandAnswers({ verb: choice('click'), target, slot: choice('none') }, 'click sign', PAGE)).toEqual({ verb: 'click', target: 2, slot: null })
-  })
-
-  it('falls back to the words after the verb when the Slot answers none for a verb that needs one', () => {
-    expect(readCommandAnswers({ verb: choice('navigate'), target: choice('none'), slot: choice('none') }, 'please open youtube', PAGE)).toEqual({ verb: 'search', target: null, slot: 'please open youtube' })
-    expect(readCommandAnswers({ verb: choice('navigate'), target: choice('none'), slot: choice('none') }, 'open youtube', PAGE)).toEqual({ verb: 'navigate', target: null, slot: 'youtube' })
-    expect(readCommandAnswers({ verb: choice('type'), target: choice('ref-3'), slot: choice('none') }, 'type hello', PAGE)).toEqual({ verb: 'type', target: 3, slot: 'hello' })
+  it('falls back to the words after the verb when the Slot answers none for an action that needs one', () => {
+    expect(readCommandAnswers({ action: choice('navigate'), slot: choice('none') }, 'please open youtube', PAGE)).toEqual({ verb: 'search', target: null, slot: 'please open youtube' })
+    expect(readCommandAnswers({ action: choice('navigate'), slot: choice('none') }, 'open youtube', PAGE)).toEqual({ verb: 'navigate', target: null, slot: 'youtube' })
+    expect(readCommandAnswers({ action: choice('type-3'), slot: choice('none') }, 'type hello', PAGE)).toEqual({ verb: 'type', target: 3, slot: 'hello' })
   })
 
   it('offers the verbs as actions, never a spoken word (#353): navigate and search, no open', () => {
-    const questions = commandQuestions('open the tweet', PAGE)
-    expect(Object.keys(questions.verb.options)).toEqual(['navigate', 'search', 'click', 'type', 'menu', 'scroll_up', 'scroll_down', 'back', 'forward', 'reload', 'press', 'read', 'clear', 'stop', 'done', 'none'])
-    expect(questions.verb.options).not.toHaveProperty('open')
+    const options = commandQuestions('open the tweet', PAGE).action.options
+    expect(options).toHaveProperty('navigate')
+    expect(options).toHaveProperty('search')
+    expect(options).not.toHaveProperty('open')
   })
 
-  it('clicks the ref a search or a navigate names as its target when the words are not an address', () => {
-    expect(readCommandAnswers({ verb: choice('search'), target: choice('ref-1', 0.64), slot: choice('none') }, "open elon musk's profile", PAGE)).toEqual({ verb: 'click', target: 1, slot: null })
-    expect(readCommandAnswers({ verb: choice('navigate'), target: choice('ref-1', 0.64), slot: choice('none') }, "open elon musk's profile", PAGE)).toEqual({ verb: 'click', target: 1, slot: null })
-    // An address-shaped navigate is navigated whatever the target says; a search of words with no ref named searches them off a site.
-    expect(readCommandAnswers({ verb: choice('navigate'), target: choice('ref-1'), slot: choice('none') }, 'open youtube', PAGE)).toEqual({ verb: 'navigate', target: null, slot: 'youtube' })
-    expect(readCommandAnswers({ verb: choice('search'), target: choice('none'), slot: choice('none') }, "open elon musk's profile", { ...PAGE, url: 'about:blank' })).toEqual({ verb: 'search', target: null, slot: "elon musk's profile" })
+  it('navigates an address-shaped navigate, and searches words with no ref named off a site', () => {
+    expect(readCommandAnswers({ action: choice('navigate'), slot: choice('none') }, 'open youtube', PAGE)).toEqual({ verb: 'navigate', target: null, slot: 'youtube' })
+    expect(readCommandAnswers({ action: choice('search'), slot: choice('none') }, "open elon musk's profile", { ...PAGE, url: 'about:blank' })).toEqual({ verb: 'search', target: null, slot: "elon musk's profile" })
   })
 
   it('a search of a bare word is a search, not its .com: Jev said search', () => {
-    expect(readCommandAnswers({ verb: choice('search'), target: choice('none'), slot: choice('s1-1') }, 'search rust', { ...PAGE, url: 'about:blank' })).toEqual({ verb: 'search', target: null, slot: 'rust' })
+    expect(readCommandAnswers({ action: choice('search'), slot: choice('s1-1') }, 'search rust', { ...PAGE, url: 'about:blank' })).toEqual({ verb: 'search', target: null, slot: 'rust' })
   })
 
   it('drops a click on a page with no refs', () => {
-    expect(readCommandAnswers({ verb: choice('click'), target: choice('none'), slot: choice('none') }, 'click it', { ...PAGE, refs: [] })).toEqual({ verb: 'none', target: null, slot: null })
+    expect(readCommandAnswers({ action: choice('click-1'), slot: choice('none') }, 'click it', { ...PAGE, refs: [] })).toEqual({ verb: 'none', target: null, slot: null })
   })
 
-  it('offers menu with its description, and reads a menu on ref N as that ref (#363)', () => {
-    expect(commandQuestions('loop the video', PAGE).verb.options.menu).toBe('right-click one of the numbered refs to open its menu, when no ref shown does what the words ask: the options it hides appear as new refs')
-    expect(readCommandAnswers({ verb: choice('menu'), target: choice('ref-2'), slot: choice('none') }, 'loop the video', PAGE)).toEqual({ verb: 'menu', target: 2, slot: null })
+  it('offers a menu per ref with its description, and reads menu-N as a menu on that ref (#363)', () => {
+    expect(commandQuestions('loop the video', PAGE).action.options['menu-2']).toBe('right-click [2] to open its menu')
+    expect(readCommandAnswers({ action: choice('menu-2'), slot: choice('none') }, 'loop the video', PAGE)).toEqual({ verb: 'menu', target: 2, slot: null })
   })
 })
 
@@ -191,19 +202,19 @@ describe('the hop reading (#328, ADR 0076 amendment)', () => {
     { label: 'Elon Musk news', href: 'https://www.reuters.com/elon' },
   ]
 
-  it('offers done among the verbs, at hop 0 too', () => {
-    expect(Object.keys(commandQuestions('pull up the latest elon musk tweet', PAGE).verb.options)).toContain('done')
-    expect(readCommandAnswers({ verb: choice('done'), target: choice('none'), slot: choice('none') }, 'pull it up', PAGE)).toEqual({ verb: 'done', target: null, slot: null })
+  it('offers no done, at hop 0 or a later hop: done-ness is the Verdict\'s alone (#370)', () => {
+    expect(commandQuestions('pull up the latest elon musk tweet', PAGE).action.options).not.toHaveProperty('done')
+    expect(commandQuestions('pull up the latest elon musk tweet', SEARCH, { hop: 1, visited: [], actions: [], links: [] }).action.options).not.toHaveProperty('done')
   })
 
   it("offers the whole page's result links on a search landing — not the engine's own, not a ref's again", () => {
     const hop = { hop: 1, visited: [SEARCH.url], actions: ['open latest elon musk tweet'], links: LINKS }
-    const target = commandQuestions('pull up the latest elon musk tweet', SEARCH, hop).target
-    expect(Object.keys(target.options)).toEqual(['none', 'ref-1', 'ref-2', 'ref-3', 'link-1', 'link-2'])
-    expect(target.options['link-1']).toBe('link "Elon Musk - Wikipedia" https://duckduckgo.com/l/?uddg=https%3A%2F%2Fen.wikipedia.org%2Fwiki%2FElon_Musk')
-    expect(target.options['link-2']).toBe('link "Elon Musk news" https://www.reuters.com/elon')
+    const options = commandQuestions('pull up the latest elon musk tweet', SEARCH, hop).action.options
+    expect(Object.keys(options).filter((label) => /^(click|type|open)-/.test(label))).toEqual(['click-1', 'type-2', 'click-2', 'click-3', 'open-1', 'open-2'])
+    expect(options['open-1']).toBe('open result link "Elon Musk - Wikipedia" https://duckduckgo.com/l/?uddg=https%3A%2F%2Fen.wikipedia.org%2Fwiki%2FElon_Musk')
+    expect(options['open-2']).toBe('open result link "Elon Musk news" https://www.reuters.com/elon')
     // A result link below the fold is opened at its address.
-    expect(readCommandAnswers({ verb: choice('click'), target: choice('link-2'), slot: choice('none') }, 'pull up the latest elon musk tweet', SEARCH, hop)).toEqual({
+    expect(readCommandAnswers({ action: choice('open-2'), slot: choice('none'), outcome: choice('not_yet') }, 'pull up the latest elon musk tweet', SEARCH, hop)).toEqual({
       verb: 'navigate',
       target: null,
       slot: 'https://www.reuters.com/elon',
@@ -212,17 +223,17 @@ describe('the hop reading (#328, ADR 0076 amendment)', () => {
 
   it('offers every page link further down off a search landing, so a link below the fold costs no scroll (owner\'s rule 2026-10-19)', () => {
     const hop = { hop: 1, visited: [], actions: [], links: LINKS }
-    const options = commandQuestions('click it', PAGE, hop).target.options
-    expect(Object.keys(options).slice(0, 4)).toEqual(['none', 'ref-1', 'ref-2', 'ref-3'])
-    expect(Object.keys(options).length).toBeGreaterThan(4)
+    const options = commandQuestions('click it', PAGE, hop).action.options
+    expect(Object.keys(options).slice(0, 4)).toEqual(['click-1', 'click-2', 'type-3', 'click-3'])
+    expect(Object.keys(options).some((label) => label.startsWith('open-'))).toBe(true)
     expect(commandState('click it', PAGE, hop)).toContain('Links further down the page (name, address):')
   })
 
   it('never offers an address already visited in the Task, a redirect to one included', () => {
     const hop = { hop: 2, visited: [SEARCH.url, 'https://x.com/elonmusk', 'https://en.wikipedia.org/wiki/Elon_Musk'], actions: [], links: LINKS }
-    const target = commandQuestions('pull up the latest elon musk tweet', SEARCH, hop).target
-    expect(Object.keys(target.options)).toEqual(['none', 'ref-1', 'ref-2', 'link-1'])
-    expect(target.options['link-1']).toContain('reuters')
+    const options = commandQuestions('pull up the latest elon musk tweet', SEARCH, hop).action.options
+    expect(Object.keys(options).filter((label) => /^(click|type|open)-/.test(label))).toEqual(['click-1', 'type-2', 'click-2', 'open-1'])
+    expect(options['open-1']).toContain('reuters')
   })
 
   it('carries the hop number, the addresses visited and the actions taken in the state', () => {
@@ -247,36 +258,34 @@ describe('open past the first hop (#332)', () => {
   }
   const TEXT = "Open elon musk's latest tweet"
   const hop = { hop: 1, visited: [SEARCH.url], actions: ["Searched the web for “elon musk's latest tweet”"], links: [] }
-  // The target answer the logged hop 1 gave: none on top, two results close behind.
-  const target = (probabilities: Record<string, number>): DecisionChoiceAnswer => ({ type: 'choice', choice: 'none', confidence: probabilities.none ?? 0, probabilities })
+  // The action card a later hop gives: search on top, two results close behind.
+  const action = (probabilities: Record<string, number>, top = 'search'): DecisionChoiceAnswer => ({ type: 'choice', choice: top, confidence: probabilities[top] ?? 0, probabilities })
 
-  it('opens the most probable offered ref, never searching the words again', () => {
-    expect(readCommandAnswers({ verb: choice('search'), target: target({ none: 0.63, 'ref-3': 0.17, 'ref-1': 0.16 }), slot: choice('s1-4') }, TEXT, SEARCH, hop)).toEqual({ verb: 'click', target: 3, slot: null })
+  it('opens the most probable offered click on the card, never searching the words again', () => {
+    expect(readCommandAnswers({ action: action({ search: 0.63, 'click-3': 0.17, 'click-1': 0.16 }), slot: choice('s1-4') }, TEXT, SEARCH, hop)).toEqual({ verb: 'click', target: 3, slot: null })
   })
 
   it('opens a result link further down at its address when it ranks above every ref', () => {
     const links = [{ label: 'Elon Musk news', href: 'https://www.reuters.com/elon' }]
-    expect(
-      readCommandAnswers({ verb: choice('search'), target: target({ none: 0.6, 'link-1': 0.3, 'ref-3': 0.1 }), slot: choice('s1-4') }, TEXT, SEARCH, { ...hop, links }),
-    ).toEqual({ verb: 'navigate', target: null, slot: 'https://www.reuters.com/elon' })
+    expect(readCommandAnswers({ action: action({ search: 0.6, 'open-1': 0.3, 'click-3': 0.1 }), slot: choice('s1-4') }, TEXT, SEARCH, { ...hop, links })).toEqual({ verb: 'navigate', target: null, slot: 'https://www.reuters.com/elon' })
   })
 
-  it('has no next step when the answer gives no offered target any probability', () => {
-    expect(readCommandAnswers({ verb: choice('search'), target: target({ none: 1 }), slot: choice('s1-4') }, TEXT, SEARCH, hop)).toEqual({ verb: 'none', target: null, slot: null })
-    expect(readCommandAnswers({ verb: choice('search'), target: target({ none: 1, 'ref-3': 0 }), slot: choice('s1-4') }, TEXT, SEARCH, hop)).toEqual({ verb: 'none', target: null, slot: null })
+  it('has no next step when the card gives no offered click or open any probability', () => {
+    expect(readCommandAnswers({ action: action({ search: 1 }), slot: choice('s1-4') }, TEXT, SEARCH, hop)).toEqual({ verb: 'none', target: null, slot: null })
+    expect(readCommandAnswers({ action: action({ search: 1, 'click-3': 0 }), slot: choice('s1-4') }, TEXT, SEARCH, hop)).toEqual({ verb: 'none', target: null, slot: null })
     // A visited address is not offered, so its probability counts for nothing.
     const visited = { ...hop, visited: [SEARCH.url, 'https://x.com/elonmusk'] }
-    expect(readCommandAnswers({ verb: choice('search'), target: target({ none: 0.8, 'ref-3': 0.2 }), slot: choice('s1-4') }, TEXT, SEARCH, visited)).toEqual({ verb: 'none', target: null, slot: null })
+    expect(readCommandAnswers({ action: action({ search: 0.8, 'click-3': 0.2 }), slot: choice('s1-4') }, TEXT, SEARCH, visited)).toEqual({ verb: 'none', target: null, slot: null })
   })
 
   it('leaves hop 0 searching the words off a site, and an address navigated at any hop', () => {
-    const answers = { verb: choice('search'), target: target({ none: 0.63, 'ref-3': 0.17 }), slot: choice('s1-4') }
+    const answers = { action: action({ search: 0.63, 'click-3': 0.17 }), slot: choice('s1-4') }
     expect(readCommandAnswers(answers, TEXT, SEARCH)).toEqual({ verb: 'search', target: null, slot: "elon musk's latest tweet" })
-    expect(readCommandAnswers({ ...answers, verb: choice('navigate'), slot: choice('s1-1') }, 'open x.com/elonmusk', SEARCH, hop)).toEqual({ verb: 'navigate', target: null, slot: 'x.com/elonmusk' })
+    expect(readCommandAnswers({ action: choice('navigate'), slot: choice('s1-1') }, 'open x.com/elonmusk', SEARCH, hop)).toEqual({ verb: 'navigate', target: null, slot: 'x.com/elonmusk' })
   })
 })
 
-describe('open past the first hop off a search landing (#342): with no target named, the Task ends where it stands', () => {
+describe('open past the first hop off a search landing (#342): with no click named, the Task ends where it stands', () => {
   // The logged hop 2 of #340's live run: the Task had reached the profile
   // the user asked for, Jev read open over done and named no target.
   const PROFILE: CommandPage = {
@@ -289,25 +298,25 @@ describe('open past the first hop off a search landing (#342): with no target na
   }
   const TEXT = 'go to donald trumps profile'
   const hop = { hop: 2, visited: ['https://x.com/home', 'https://x.com/realDonaldTrump'], actions: [], links: [], searched: ['x.com'] }
-  const target = (probabilities: Record<string, number>, top = 'none'): DecisionChoiceAnswer => ({ type: 'choice', choice: top, confidence: probabilities[top] ?? 0, probabilities })
+  const action = (probabilities: Record<string, number>, top = 'search'): DecisionChoiceAnswer => ({ type: 'choice', choice: top, confidence: probabilities[top] ?? 0, probabilities })
 
-  it('reads search, search terms and target none as no next step, though a ref has some probability', () => {
-    expect(readCommandAnswers({ verb: choice('search'), target: target({ none: 0.99, 'ref-1': 0.01 }), slot: choice('s2-4') }, TEXT, PROFILE, hop)).toEqual({ verb: 'none', target: null, slot: null })
+  it('reads search and search terms on top as no next step, though a click has some probability', () => {
+    expect(readCommandAnswers({ action: action({ search: 0.99, 'click-1': 0.01 }), slot: choice('s2-4') }, TEXT, PROFILE, hop)).toEqual({ verb: 'none', target: null, slot: null })
   })
 
-  it('reads a top target that names nothing offered as no next step too', () => {
-    expect(readCommandAnswers({ verb: choice('search'), target: target({ 'ref-9': 0.6, 'ref-2': 0.3 }, 'ref-9'), slot: choice('s2-4') }, TEXT, PROFILE, hop)).toEqual({ verb: 'none', target: null, slot: null })
+  it('reads a top click that names nothing offered as no next step too, the click under it not reached for', () => {
+    expect(readCommandAnswers({ action: action({ 'click-9': 0.6, 'click-2': 0.3 }, 'click-9'), slot: choice('s2-4') }, TEXT, PROFILE, hop)).toEqual({ verb: 'none', target: null, slot: null })
   })
 
-  it('still clicks a ref Jev names as its top target, off a search landing as on one', () => {
-    expect(readCommandAnswers({ verb: choice('search'), target: target({ 'ref-2': 0.7, none: 0.3 }, 'ref-2'), slot: choice('s2-4') }, TEXT, PROFILE, hop)).toEqual({ verb: 'click', target: 2, slot: null })
+  it('still clicks a ref Jev tops the card with, off a search landing as on one', () => {
+    expect(readCommandAnswers({ action: action({ 'click-2': 0.7, search: 0.3 }, 'click-2'), slot: choice('s2-4') }, TEXT, PROFILE, hop)).toEqual({ verb: 'click', target: 2, slot: null })
   })
 
   it('counts a site’s own search page as a search landing: the most probable offered result is opened there', () => {
     const SITE_SEARCH: CommandPage = { ...PROFILE, url: 'https://x.com/search?q=donald+trump', title: 'donald trump - Search / X' }
-    expect(readCommandAnswers({ verb: choice('search'), target: target({ none: 0.8, 'ref-1': 0.15 }), slot: choice('s2-4') }, TEXT, SITE_SEARCH, hop)).toEqual({ verb: 'click', target: 1, slot: null })
+    expect(readCommandAnswers({ action: action({ search: 0.8, 'click-1': 0.15 }), slot: choice('s2-4') }, TEXT, SITE_SEARCH, hop)).toEqual({ verb: 'click', target: 1, slot: null })
     const links = [{ label: 'donaldjtrump.com', href: 'https://www.donaldjtrump.com/news' }]
-    expect(readCommandAnswers({ verb: choice('search'), target: target({ none: 0.7, 'link-1': 0.2, 'ref-1': 0.1 }), slot: choice('s2-4') }, TEXT, SITE_SEARCH, { ...hop, links })).toEqual({
+    expect(readCommandAnswers({ action: action({ search: 0.7, 'open-1': 0.2, 'click-1': 0.1 }), slot: choice('s2-4') }, TEXT, SITE_SEARCH, { ...hop, links })).toEqual({
       verb: 'navigate',
       target: null,
       slot: 'https://www.donaldjtrump.com/news',
@@ -335,42 +344,41 @@ describe("a Web Engine's landing read before its results drew (2026-10-19): a ho
   // The footer's links leave the engine's host, so the whole page offers them as results.
   const footer = [{ label: 'iOS Browser', href: 'https://apps.apple.com/app/duckduckgo-private-browser/id663592361' }]
   const hop = { hop: 1, visited: [EMPTY.url], actions: ["search Elon Musk's latest tweet (opened duckduckgo.com/?q=Elon+Musk%27s+latest+tweet)"], links: footer }
-  const target = (probabilities: Record<string, number>, top = 'none'): DecisionChoiceAnswer => ({ type: 'choice', choice: top, confidence: probabilities[top] ?? 0, probabilities })
+  const action = (probabilities: Record<string, number>, top = 'search'): DecisionChoiceAnswer => ({ type: 'choice', choice: top, confidence: probabilities[top] ?? 0, probabilities })
   const none = { verb: 'none', target: null, slot: null }
 
-  it('reads search with none on top and the Search button barely offered as no next step', () => {
-    expect(readCommandAnswers({ verb: choice('search', 0.46), target: target({ none: 0.93, 'ref-3': 0.03, 'ref-2': 0.02 }), slot: choice('s1-4') }, TEXT, EMPTY, hop)).toEqual(none)
+  it('reads search on top with the Search button barely offered as no next step', () => {
+    expect(readCommandAnswers({ action: action({ search: 0.46, 'click-3': 0.03, 'type-2': 0.02 }), slot: choice('s1-4') }, TEXT, EMPTY, hop)).toEqual(none)
   })
 
   it('opens no footer link either: with no result in view, nothing further down is one', () => {
-    expect(readCommandAnswers({ verb: choice('search'), target: target({ none: 0.6, 'link-1': 0.3, 'ref-3': 0.1 }), slot: choice('s1-4') }, TEXT, EMPTY, hop)).toEqual(none)
+    expect(readCommandAnswers({ action: action({ search: 0.6, 'open-1': 0.3, 'click-3': 0.1 }), slot: choice('s1-4') }, TEXT, EMPTY, hop)).toEqual(none)
   })
 
-  it('reads click or type with none on top the same way', () => {
-    expect(readCommandAnswers({ verb: choice('click'), target: target({ none: 0.8, 'ref-3': 0.15 }), slot: choice('none') }, TEXT, EMPTY, hop)).toEqual(none)
-    expect(readCommandAnswers({ verb: choice('type'), target: target({ none: 0.8, 'ref-2': 0.15 }), slot: choice('s1-4') }, TEXT, EMPTY, hop)).toEqual(none)
+  it('reads none on top as no next step, whatever the chrome under it holds', () => {
+    expect(readCommandAnswers({ action: action({ none: 0.8, 'click-3': 0.15 }, 'none'), slot: choice('none') }, TEXT, EMPTY, hop)).toEqual(none)
+    expect(readCommandAnswers({ action: action({ none: 0.8, 'type-2': 0.15 }, 'none'), slot: choice('s1-4') }, TEXT, EMPTY, hop)).toEqual(none)
   })
 
-  it('still acts on a ref Jev names as its top target, chrome or not', () => {
-    expect(readCommandAnswers({ verb: choice('search'), target: target({ 'ref-3': 0.7, none: 0.3 }, 'ref-3'), slot: choice('s1-4') }, TEXT, EMPTY, hop)).toEqual({ verb: 'click', target: 3, slot: null })
+  it('still acts on a ref Jev tops the card with, chrome or not', () => {
+    expect(readCommandAnswers({ action: action({ 'click-3': 0.7, search: 0.3 }, 'click-3'), slot: choice('s1-4') }, TEXT, EMPTY, hop)).toEqual({ verb: 'click', target: 3, slot: null })
   })
 
   it('opens the most probable result once the results are drawn, never the chrome ranked above it', () => {
-    expect(readCommandAnswers({ verb: choice('search'), target: target({ none: 0.6, 'ref-3': 0.3, 'ref-7': 0.1 }), slot: choice('s1-4') }, TEXT, DRAWN, hop)).toEqual({ verb: 'click', target: 7, slot: null })
-    expect(readCommandAnswers({ verb: choice('click'), target: target({ none: 0.6, 'ref-1': 0.3, 'ref-7': 0.1 }), slot: choice('none') }, TEXT, DRAWN, hop)).toEqual({ verb: 'click', target: 7, slot: null })
+    expect(readCommandAnswers({ action: action({ search: 0.6, 'click-3': 0.3, 'click-7': 0.1 }), slot: choice('s1-4') }, TEXT, DRAWN, hop)).toEqual({ verb: 'click', target: 7, slot: null })
   })
 
-  it("leaves a site's own search page as it was: the most probable offered ref, whatever it is", () => {
+  it("leaves a site's own search page as it was: the most probable offered click, whatever it is", () => {
     const SITE_SEARCH: CommandPage = { url: 'https://x.com/search?q=elon', title: 'elon - Search / X', refs: [{ ref: 2, kind: 'link', label: 'Elon Musk', href: 'https://x.com/elonmusk', inputType: null }] }
-    expect(readCommandAnswers({ verb: choice('search'), target: target({ none: 0.9, 'ref-2': 0.1 }), slot: choice('s1-4') }, TEXT, SITE_SEARCH, { ...hop, visited: [SITE_SEARCH.url], links: [] })).toEqual({ verb: 'click', target: 2, slot: null })
+    expect(readCommandAnswers({ action: action({ search: 0.9, 'click-2': 0.1 }), slot: choice('s1-4') }, TEXT, SITE_SEARCH, { ...hop, visited: [SITE_SEARCH.url], links: [] })).toEqual({ verb: 'click', target: 2, slot: null })
   })
 
   it('leaves hop 0 as it was: the words are searched', () => {
-    expect(readCommandAnswers({ verb: choice('search'), target: target({ none: 0.93, 'ref-3': 0.03 }), slot: choice('s1-4') }, TEXT, EMPTY)).toEqual({ verb: 'search', target: null, slot: "Elon Musk's latest tweet" })
+    expect(readCommandAnswers({ action: action({ search: 0.93, 'click-3': 0.03 }), slot: choice('s1-4') }, TEXT, EMPTY)).toEqual({ verb: 'search', target: null, slot: "Elon Musk's latest tweet" })
   })
 })
 
-describe('click past the first hop off a search landing: with no target named, the Task ends where it stands', () => {
+describe('none past the first hop: the Task ends where it stands, though a ref has some probability', () => {
   // The logged hop 3 of "cross out the pop-up": hop 0 closed X's login
   // dialog, then each hop read click over a target of none and clicked the
   // ref Jev barely offered — the login page, Back, then the bio's link.
@@ -385,33 +393,21 @@ describe('click past the first hop off a search landing: with no target named, t
   }
   const TEXT = 'cross out the pop-up'
   const hop = { hop: 3, visited: ['https://x.com/ElonMusk'], actions: [], links: [] }
-  const target = (probabilities: Record<string, number>, top = 'none'): DecisionChoiceAnswer => ({ type: 'choice', choice: top, confidence: probabilities[top] ?? 0, probabilities })
+  const action = (probabilities: Record<string, number>, top: string): DecisionChoiceAnswer => ({ type: 'choice', choice: top, confidence: probabilities[top] ?? 0, probabilities })
 
-  it('reads click with target none as no next step, though a ref has some probability', () => {
-    const answers = { verb: choice('click', 0.58), target: target({ none: 0.88, 'ref-11': 0.05, 'ref-50': 0.04, 'ref-2': 0.01 }), slot: choice('none') }
-    expect(readCommandAnswers(answers, TEXT, PROFILE, hop)).toEqual({ verb: 'none', target: null, slot: null })
-    expect(readCommandAnswers({ ...answers, verb: choice('type') }, TEXT, PROFILE, hop)).toEqual({ verb: 'none', target: null, slot: null })
+  it('reads none on top as no next step, though a click has some probability', () => {
+    expect(readCommandAnswers({ action: action({ none: 0.88, 'click-11': 0.05, 'click-50': 0.04, 'click-2': 0.01 }, 'none'), slot: choice('none') }, TEXT, PROFILE, hop)).toEqual({ verb: 'none', target: null, slot: null })
   })
 
-  it('still clicks a ref Jev names as its top target', () => {
-    expect(readCommandAnswers({ verb: choice('click'), target: target({ 'ref-2': 0.7, none: 0.3 }, 'ref-2'), slot: choice('none') }, TEXT, PROFILE, hop)).toEqual({ verb: 'click', target: 2, slot: null })
+  it('still clicks a ref Jev tops the card with', () => {
+    expect(readCommandAnswers({ action: action({ 'click-2': 0.7, none: 0.3 }, 'click-2'), slot: choice('none') }, TEXT, PROFILE, hop)).toEqual({ verb: 'click', target: 2, slot: null })
   })
 
-  it('hop 0 clicks no ref Jev gave no probability: never the page\'s first ref (owner\'s rule 2026-10-19)', () => {
-    const answers = { verb: choice('click'), target: target({ none: 1 }), slot: choice('none') }
-    expect(readCommandAnswers(answers, TEXT, PROFILE)).toEqual({ verb: 'none', target: null, slot: null })
-  })
-
-  it('a site\'s results the Task\'s own words led to are a landing whatever the parameter is called: the most probable ref stands in for none', () => {
-    const answers = { verb: choice('click'), target: target({ none: 0.6, 'ref-11': 0.3 }), slot: choice('none') }
+  it("a site's results the Task's own words led to are a landing whatever the parameter is called: a search on top opens the most probable click", () => {
+    const answers = { action: action({ search: 0.6, 'click-11': 0.3 }, 'search'), slot: choice('none') }
     const results = { ...PROFILE, url: 'https://www.youtube.com/results?search_query=lofi+beats' }
     expect(readCommandAnswers(answers, TEXT, results, { ...hop, terms: ['lofi beats'] })).toEqual({ verb: 'click', target: 11, slot: null })
     expect(readCommandAnswers(answers, TEXT, results, hop)).toEqual({ verb: 'none', target: null, slot: null })
-  })
-
-  it('leaves hop 0 and a search landing clicking the most probable ref', () => {
-    const answers = { verb: choice('click'), target: target({ none: 0.6, 'ref-11': 0.3 }), slot: choice('none') }
-    expect(readCommandAnswers(answers, TEXT, PROFILE)).toEqual({ verb: 'click', target: 11, slot: null })
     expect(readCommandAnswers(answers, TEXT, { ...PROFILE, url: 'https://duckduckgo.com/?q=elon+musk' }, hop)).toEqual({ verb: 'click', target: 11, slot: null })
   })
 })
@@ -426,43 +422,43 @@ describe('the Site Scope (#340): where the words point, asked at hop 0 on a site
     ],
   }
   const TEXT = 'go to donald trumps profile'
-  const read = (where: string, target: string | DecisionChoiceAnswer = 'none', verb = 'search') => ({ verb: choice(verb), target: typeof target === 'string' ? choice(target) : target, slot: choice('s2-4'), where: choice(where) })
+  const read = (where: string, action: string | DecisionChoiceAnswer = 'search') => ({ action: typeof action === 'string' ? choice(action) : action, slot: choice('s2-4'), where: choice(where) })
+  const spread = (top: string): DecisionChoiceAnswer => ({ type: 'choice', choice: top, confidence: 0.67, probabilities: { [top]: 0.67, 'click-2': 0.17, 'click-1': 0.09 } })
 
-  it('asks a fourth Choice on a site: on this page, on this site, or elsewhere on the web', () => {
+  it('asks a third Choice on a site: on this page, on this site, or elsewhere on the web', () => {
     const questions = commandQuestions(TEXT, X)
-    expect(Object.keys(questions)).toEqual(['verb', 'target', 'slot', 'where'])
+    expect(Object.keys(questions)).toEqual(['action', 'slot', 'where'])
     expect('where' in questions && Object.keys(questions.where.options)).toEqual(['page', 'site', 'web'])
     expect('where' in questions && questions.where.options.site).toContain('x.com')
   })
 
   it('asks no where on a blank page, or on a Web Engine’s results or front page', () => {
-    for (const url of ['about:blank', 'https://duckduckgo.com/?q=trump', 'https://www.google.com/']) expect(Object.keys(commandQuestions(TEXT, { ...X, url }))).toEqual(['verb', 'target', 'slot'])
+    for (const url of ['about:blank', 'https://duckduckgo.com/?q=trump', 'https://www.google.com/']) expect(Object.keys(commandQuestions(TEXT, { ...X, url }))).toEqual(['action', 'slot'])
   })
 
-  it('reads search, search terms, no ref and where = site as a search scoped to the site, the Slot kept as the words — a navigate of such words too', () => {
+  it('reads search, search terms and where = site as a search scoped to the site, the Slot kept as the words — a navigate of such words too', () => {
     expect(readCommandAnswers(read('site'), TEXT, X)).toEqual({ verb: 'search', target: null, slot: 'donald trumps profile', site: 'x.com' })
-    expect(readCommandAnswers(read('site', 'none', 'navigate'), TEXT, X)).toEqual({ verb: 'search', target: null, slot: 'donald trumps profile', site: 'x.com' })
+    expect(readCommandAnswers(read('site', 'navigate'), TEXT, X)).toEqual({ verb: 'search', target: null, slot: 'donald trumps profile', site: 'x.com' })
   })
 
   it('reads where = web as the whole web searched', () => {
     expect(readCommandAnswers(read('web'), TEXT, X)).toEqual({ verb: 'search', target: null, slot: 'donald trumps profile' })
   })
 
-  it('reads where = page as the most probable ref Jev gave any probability, none set aside, never a search (#353)', () => {
-    // The logged "Open the tweet." on x.com/ElonMusk: verb open 0.76, target none 0.67 over the top post 0.17, where page 0.64 — and a web search for "the tweet".
-    const spread: DecisionChoiceAnswer = { type: 'choice', choice: 'none', confidence: 0.67, probabilities: { none: 0.67, 'ref-2': 0.17, 'ref-1': 0.09 } }
-    expect(readCommandAnswers(read('page', spread), 'open the tweet', X)).toEqual({ verb: 'click', target: 2, slot: null })
-    expect(readCommandAnswers({ ...read('page', spread, 'navigate'), slot: choice('s1-2') }, 'open the tweet', X)).toEqual({ verb: 'click', target: 2, slot: null })
+  it('reads where = page as the most probable click on the card, never a search (#353)', () => {
+    // The logged "Open the tweet." on x.com/ElonMusk: where page 0.64 — and a web search for "the tweet".
+    expect(readCommandAnswers(read('page', spread('search')), 'open the tweet', X)).toEqual({ verb: 'click', target: 2, slot: null })
+    expect(readCommandAnswers({ ...read('page', spread('navigate')), slot: choice('s1-2') }, 'open the tweet', X)).toEqual({ verb: 'click', target: 2, slot: null })
     // A bare word Jev reads as a navigation is an address, whatever where says: Jev said so.
-    expect(readCommandAnswers(read('page', spread, 'navigate'), 'open the tweet', X)).toEqual({ verb: 'navigate', target: null, slot: 'tweet' })
-    // No ref given any probability: no Command, and no search either.
+    expect(readCommandAnswers(read('page', spread('navigate')), 'open the tweet', X)).toEqual({ verb: 'navigate', target: null, slot: 'tweet' })
+    // No click given any probability: no Command, and no search either.
     expect(readCommandAnswers(read('page'), TEXT, X)).toEqual({ verb: 'none', target: null, slot: null })
-    expect(readCommandAnswers(read('page', { type: 'choice', choice: 'none', confidence: 1, probabilities: { none: 1, 'ref-2': 0 } }), TEXT, X)).toEqual({ verb: 'none', target: null, slot: null })
+    expect(readCommandAnswers(read('page', { type: 'choice', choice: 'search', confidence: 1, probabilities: { search: 1, 'click-2': 0 } }), TEXT, X)).toEqual({ verb: 'none', target: null, slot: null })
   })
 
-  it('keeps a ref chosen a click, and an address-shaped navigate an address, whatever where says', () => {
-    expect(readCommandAnswers(read('site', 'ref-2'), 'go to elon musk', X)).toEqual({ verb: 'click', target: 2, slot: null })
-    expect(readCommandAnswers({ ...read('site', 'none', 'navigate'), slot: choice('s2-2') }, 'go to youtube', X)).toEqual({ verb: 'navigate', target: null, slot: 'youtube' })
+  it('keeps a click a click, and an address-shaped navigate an address, whatever where says', () => {
+    expect(readCommandAnswers(read('site', 'click-2'), 'go to elon musk', X)).toEqual({ verb: 'click', target: 2, slot: null })
+    expect(readCommandAnswers({ ...read('site', 'navigate'), slot: choice('s2-2') }, 'go to youtube', X)).toEqual({ verb: 'navigate', target: null, slot: 'youtube' })
   })
 })
 
@@ -482,35 +478,35 @@ describe('the Site Scope at a later hop (#341): a hop may search once, on a site
   }
   const TEXT = 'go to twitter and open donald trumps profile'
   const hop = { hop: 1, visited: ['https://x.com/'], actions: ['open twitter (opened x.com)'], links: [] }
-  const read = (where: string, target: DecisionChoiceAnswer = choice('none')) => ({ verb: choice('search'), target, slot: choice('s5-7'), where: choice(where) })
-  const target = (probabilities: Record<string, number>): DecisionChoiceAnswer => ({ type: 'choice', choice: 'none', confidence: probabilities.none ?? 0, probabilities })
+  const read = (where: string, action: DecisionChoiceAnswer = choice('search')) => ({ action, slot: choice('s5-7'), where: choice(where) })
+  const card = (probabilities: Record<string, number>): DecisionChoiceAnswer => ({ type: 'choice', choice: 'search', confidence: probabilities.search ?? 0, probabilities })
 
   it('asks where at a later hop on a site the Task has not searched', () => {
     const questions = commandQuestions(TEXT, X, hop)
-    expect(Object.keys(questions)).toEqual(['verb', 'target', 'slot', 'where'])
+    expect(Object.keys(questions)).toEqual(['action', 'slot', 'where'])
     expect('where' in questions && questions.where.options.site).toContain('x.com')
   })
 
   it('asks no where on a results landing, or on a site the Task has already searched', () => {
-    expect(Object.keys(commandQuestions(TEXT, RESULTS, { ...hop, hop: 2 }))).toEqual(['verb', 'target', 'slot'])
-    expect(Object.keys(commandQuestions(TEXT, { ...X, url: 'https://x.com/realDonaldTrump' }, { ...hop, hop: 3, searched: ['x.com'] }))).toEqual(['verb', 'target', 'slot'])
+    expect(Object.keys(commandQuestions(TEXT, RESULTS, { ...hop, hop: 2 }))).toEqual(['action', 'slot'])
+    expect(Object.keys(commandQuestions(TEXT, { ...X, url: 'https://x.com/realDonaldTrump' }, { ...hop, hop: 3, searched: ['x.com'] }))).toEqual(['action', 'slot'])
   })
 
-  it('reads search, search terms, no ref and where = site at a later hop as a search scoped to the site', () => {
+  it('reads search, search terms and where = site at a later hop as a search scoped to the site', () => {
     expect(readCommandAnswers(read('site'), TEXT, X, hop)).toEqual({ verb: 'search', target: null, slot: 'donald trumps profile', site: 'x.com' })
   })
 
   it('reads where = page or web at a later hop as #332 has it: never a search — the most probable offered result on a landing, no next step off one (#342)', () => {
     for (const where of ['page', 'web']) {
-      expect(readCommandAnswers(read(where, target({ none: 0.7, 'ref-3': 0.2 })), TEXT, RESULTS, { ...hop, hop: 2 })).toEqual({ verb: 'click', target: 3, slot: null })
-      expect(readCommandAnswers(read(where, target({ none: 0.7, 'ref-2': 0.2 })), TEXT, X, hop)).toEqual({ verb: 'none', target: null, slot: null })
+      expect(readCommandAnswers(read(where, card({ search: 0.7, 'click-3': 0.2 })), TEXT, RESULTS, { ...hop, hop: 2 })).toEqual({ verb: 'click', target: 3, slot: null })
+      expect(readCommandAnswers(read(where, card({ search: 0.7, 'click-2': 0.2 })), TEXT, X, hop)).toEqual({ verb: 'none', target: null, slot: null })
       expect(readCommandAnswers(read(where), TEXT, X, hop)).toEqual({ verb: 'none', target: null, slot: null })
     }
   })
 
   it('never searches a site twice in one Task, whatever where says', () => {
-    expect(readCommandAnswers(read('site', target({ none: 0.7, 'ref-2': 0.2 })), TEXT, X, { ...hop, searched: ['x.com'] })).toEqual({ verb: 'none', target: null, slot: null })
-    expect(readCommandAnswers(read('site', choice('ref-2')), TEXT, X, { ...hop, searched: ['x.com'] })).toEqual({ verb: 'click', target: 2, slot: null })
+    expect(readCommandAnswers(read('site', card({ search: 0.7, 'click-2': 0.2 })), TEXT, X, { ...hop, searched: ['x.com'] })).toEqual({ verb: 'none', target: null, slot: null })
+    expect(readCommandAnswers(read('site', choice('click-2')), TEXT, X, { ...hop, searched: ['x.com'] })).toEqual({ verb: 'click', target: 2, slot: null })
   })
 })
 
@@ -538,11 +534,11 @@ describe('the Verdict: a hop is asked whether what was asked for is done', () =>
   }
   const hop = { hop: 1, visited: [PROFILE.url], actions: ['search Elon Musk (opened x.com/elonmusk)'], links: [] }
   const answer = (choice: string, confidence = 0.9): DecisionChoiceAnswer => ({ type: 'choice', choice, confidence, probabilities: { [choice]: confidence } })
-  const three = { verb: answer('click'), target: answer('ref-1'), slot: answer('none') }
+  const reading = { action: answer('click-1'), slot: answer('none') }
 
-  it('asks the outcome at a hop, among yes, in the way and not yet, beside the three and where', () => {
+  it('asks the outcome at a hop, among yes, in the way and not yet, beside the action card, the Slot and where', () => {
     const questions = hopQuestions('open elon musks latest tweet', PROFILE, hop)
-    expect(Object.keys(questions)).toEqual(['verb', 'target', 'slot', 'where', 'outcome'])
+    expect(Object.keys(questions)).toEqual(['action', 'slot', 'where', 'outcome'])
     expect(Object.keys(questions.outcome.options)).toEqual(['yes', 'in_the_way', 'not_yet'])
     expect(questions.outcome.instructions).toContain('if a pop-up, sign-in prompt, cookie notice or challenge covers the page now, choose in_the_way')
     expect(questions.outcome.instructions).toContain('the action they asked for has happened')
@@ -561,31 +557,31 @@ describe('the Verdict: a hop is asked whether what was asked for is done', () =>
       dialog: { text: 'Don’t miss what’s happening', refs: [7, 8, 9, 10] },
     }
     const questions = hopQuestions('open elon musks latest tweet', covered, hop)
-    expect(Object.keys(questions)).toEqual(['verb', 'target', 'slot', 'where', 'outcome', 'dismiss'])
+    expect(Object.keys(questions)).toEqual(['action', 'slot', 'where', 'outcome', 'dismiss'])
     expect(Object.keys(questions.dismiss!.options)).toEqual(['escape', 'ref-9', 'ref-10'])
     expect(questions.dismiss!.instructions).toContain('Which control closes it and leaves the page behind as it was')
     expect(questions.dismiss!.instructions).toContain('Never one that goes through it: sign in, sign up, subscribe, accept, agree, allow, install')
     expect(hopQuestions('open elon musks latest tweet', PROFILE, hop).dismiss).toBeUndefined()
     // Only a way through, or links: nothing to offer beside Escape, so nothing is asked.
     expect(hopQuestions('open elon musks latest tweet', { ...covered, dialog: { text: 'Join', refs: [7, 8] } }, hop).dismiss).toBeUndefined()
-    expect(readDismissChoice({ ...three, outcome: answer('in_the_way'), dismiss: answer('ref-10', 0.8) }, covered)).toEqual({ choice: { ref: 10 }, confidence: 0.8 })
-    expect(readDismissChoice({ ...three, outcome: answer('in_the_way'), dismiss: answer('escape', 0.6) }, covered)).toEqual({ choice: 'escape', confidence: 0.6 })
-    expect(readDismissChoice({ ...three, outcome: answer('in_the_way'), dismiss: answer('ref-8', 0.9) }, covered)).toBeNull()
-    expect(readDismissChoice({ ...three, outcome: answer('in_the_way') }, covered)).toBeNull()
+    expect(readDismissChoice({ ...reading, outcome: answer('in_the_way'), dismiss: answer('ref-10', 0.8) }, covered)).toEqual({ choice: { ref: 10 }, confidence: 0.8 })
+    expect(readDismissChoice({ ...reading, outcome: answer('in_the_way'), dismiss: answer('escape', 0.6) }, covered)).toEqual({ choice: 'escape', confidence: 0.6 })
+    expect(readDismissChoice({ ...reading, outcome: answer('in_the_way'), dismiss: answer('ref-8', 0.9) }, covered)).toBeNull()
+    expect(readDismissChoice({ ...reading, outcome: answer('in_the_way') }, covered)).toBeNull()
   })
 
   it('asks no outcome at hop 0: a Command is read before anything was done', () => {
-    expect(Object.keys(commandQuestions('open elon musks latest tweet', PROFILE))).toEqual(['verb', 'target', 'slot', 'where'])
+    expect(Object.keys(commandQuestions('open elon musks latest tweet', PROFILE))).toEqual(['action', 'slot', 'where'])
   })
 
   it('reads the Verdict with its confidence, null when none was asked or the answer names no outcome', () => {
-    expect(readVerdict({ ...three, outcome: answer('in_the_way', 0.85) })).toEqual({ outcome: 'in_the_way', confidence: 0.85 })
-    expect(readVerdict(three)).toBeNull()
-    expect(readVerdict({ ...three, outcome: answer('maybe') })).toBeNull()
+    expect(readVerdict({ ...reading, outcome: answer('in_the_way', 0.85) })).toEqual({ outcome: 'in_the_way', confidence: 0.85 })
+    expect(readVerdict(reading)).toBeNull()
+    expect(readVerdict({ ...reading, outcome: answer('maybe') })).toBeNull()
   })
 
-  it('leaves the Command reading as it was: the Verdict is beside the verb, not in it', () => {
-    expect(readCommandAnswers({ ...three, outcome: answer('yes') }, 'open elon musks latest tweet', PROFILE, hop)).toEqual({ verb: 'click', target: 1, slot: null })
+  it('leaves the Command reading as it was: the Verdict is beside the action card, not in it', () => {
+    expect(readCommandAnswers({ ...reading, outcome: answer('yes') }, 'open elon musks latest tweet', PROFILE, hop)).toEqual({ verb: 'click', target: 1, slot: null })
   })
 
   describe('"Done so far" in facts', () => {
@@ -792,7 +788,7 @@ describe('a dismiss phrase over a pop-up (owner\'s rule 2026-10-19)', () => {
   }
 
   it('asks the Command\'s questions and the dismiss Choice in one call; none with no control to choose', () => {
-    expect(Object.keys(dismissPhraseQuestions('close', SHEET)!)).toEqual(['verb', 'target', 'slot', 'where', 'dismiss'])
+    expect(Object.keys(dismissPhraseQuestions('close', SHEET)!)).toEqual(['action', 'slot', 'where', 'dismiss'])
     expect(dismissPhraseQuestions('close', { ...SHEET, dialog: { text: 'Sign in', refs: [8] } })).toBeNull()
   })
 
@@ -815,7 +811,7 @@ describe('the steps Choice (#364, ADR 0076 "a line is Steps")', () => {
   }
 
   it('is asked at hop 0 beside the others, one option per conjunction boundary labelled with its two halves, and none', () => {
-    expect(Object.keys(commandQuestions(LINE, BLANK))).toEqual(['verb', 'target', 'slot', 'steps'])
+    expect(Object.keys(commandQuestions(LINE, BLANK))).toEqual(['action', 'slot', 'steps'])
     expect(stepsOf(LINE)).toEqual({ none: 'one command: the whole line', w7: 'start the song from the beginning | put it on loop' })
   })
 
@@ -831,20 +827,20 @@ describe('the steps Choice (#364, ADR 0076 "a line is Steps")', () => {
   })
 
   it('is not asked for a line with no conjunction, or one that starts or ends on one; nor at a later hop, on a partial, or when left out', () => {
-    expect(Object.keys(commandQuestions('scroll down please', BLANK))).toEqual(['verb', 'target', 'slot'])
-    expect(Object.keys(commandQuestions('and then', BLANK))).toEqual(['verb', 'target', 'slot'])
-    expect(Object.keys(commandQuestions('open youtube and', BLANK))).toEqual(['verb', 'target', 'slot'])
+    expect(Object.keys(commandQuestions('scroll down please', BLANK))).toEqual(['action', 'slot'])
+    expect(Object.keys(commandQuestions('and then', BLANK))).toEqual(['action', 'slot'])
+    expect(Object.keys(commandQuestions('open youtube and', BLANK))).toEqual(['action', 'slot'])
     expect(Object.keys(hopQuestions(LINE, BLANK, { hop: 1, visited: [], actions: [], links: [] }))).not.toContain('steps')
-    expect(Object.keys(partialQuestions(LINE, BLANK))).toEqual(['verb', 'target', 'slot', 'complete'])
-    expect(Object.keys(commandQuestions(LINE, BLANK, undefined, { steps: false }))).toEqual(['verb', 'target', 'slot'])
+    expect(Object.keys(partialQuestions(LINE, BLANK))).toEqual(['action', 'slot', 'complete'])
+    expect(Object.keys(commandQuestions(LINE, BLANK, undefined, { steps: false }))).toEqual(['action', 'slot'])
   })
 
   it('reads a boundary as the two Steps, and none or a label it did not offer as one Command', () => {
-    const answers = (steps: string) => ({ verb: choice('none'), target: choice('none'), slot: choice('none'), steps: choice(steps) })
+    const answers = (steps: string) => ({ action: choice('none'), slot: choice('none'), steps: choice(steps) })
     expect(readSteps(answers('w7'), LINE)).toEqual({ at: 7, first: 'start the song from the beginning', rest: 'put it on loop' })
     expect(readSteps(answers('none'), LINE)).toBeNull()
     expect(readSteps(answers('w3'), LINE)).toBeNull()
-    expect(readSteps({ verb: choice('none'), target: choice('none'), slot: choice('none') }, LINE)).toBeNull()
+    expect(readSteps({ action: choice('none'), slot: choice('none') }, LINE)).toBeNull()
   })
 
   it('tells a Step its place in the line and what the Steps before it did, the line on its own labelled line', () => {
@@ -866,26 +862,26 @@ describe('Capabilities (ADR 0079, #362)', () => {
   const HOP: HopContext = { hop: 1, visited: [WATCH.url], actions: ['click "Play (k)" (nothing changed)'], links: [] }
   const SONG_OPS = ['loop', 'loop_off', 'restart', 'pause', 'unpause', 'skip', 'previous', 'louder', 'quieter', 'mute', 'unmute', 'volume', 'show']
 
-  it('with a song playing, the command, hop and partial asks offer every Player op beside the browser verbs, each described', () => {
+  it('with a song playing, the command, hop and partial asks offer every Player op on the action card beside the browser\'s actions, each described', () => {
     const offered = playerCapabilities(true)
     for (const questions of [commandQuestions('loop the song', WATCH, undefined, { capabilities: offered }), hopQuestions('loop the song', WATCH, HOP, { capabilities: offered }), partialQuestions('loop the song', WATCH, { capabilities: offered })]) {
-      const verbs = Object.keys(questions.verb.options)
-      expect(verbs.slice(0, 16)).toEqual(['navigate', 'search', 'click', 'type', 'menu', 'scroll_up', 'scroll_down', 'back', 'forward', 'reload', 'press', 'read', 'clear', 'stop', 'done', 'none'])
-      expect(verbs).toEqual(expect.arrayContaining([...SONG_OPS, 'play', 'queue']))
-      for (const verb of verbs) expect(questions.verb.options[verb]).not.toBe('')
-      expect(questions.verb.instructions).toMatch(/click, press or tap/)
+      const labels = Object.keys(questions.action.options)
+      expect(labels.slice(0, 14)).toEqual(['click-4', 'menu-4', 'navigate', 'search', 'scroll_up', 'scroll_down', 'back', 'forward', 'reload', 'press', 'read', 'clear', 'stop', 'none'])
+      expect(labels).toEqual(expect.arrayContaining([...SONG_OPS, 'play', 'queue']))
+      for (const label of labels) expect(questions.action.options[label]).not.toBe('')
+      expect(questions.action.instructions).toMatch(/click, press or tap/)
     }
   })
 
   it('with no song, the song\'s ops are absent and a song can still be played; with no Player, none is offered', () => {
-    const idle = Object.keys(commandQuestions('play highs and lows', WATCH, undefined, { capabilities: playerCapabilities(false) }).verb.options)
+    const idle = Object.keys(commandQuestions('play highs and lows', WATCH, undefined, { capabilities: playerCapabilities(false) }).action.options)
     for (const op of SONG_OPS) expect(idle).not.toContain(op)
     expect(idle).toEqual(expect.arrayContaining(['play', 'queue']))
-    expect(Object.keys(commandQuestions('loop the song', WATCH).verb.options)).toHaveLength(16)
+    expect(Object.keys(commandQuestions('loop the song', WATCH).action.options)).toHaveLength(14)
   })
 
   it('a Capability reading is a `play` Command carrying the Player\'s action', () => {
-    const read = (verb: string, text: string, slot = 'none') => readCommandAnswers({ verb: choice(verb), target: choice('none'), slot: choice(slot) }, text, WATCH)
+    const read = (verb: string, text: string, slot = 'none') => readCommandAnswers({ action: choice(verb), slot: choice(slot) }, text, WATCH)
     expect(read('loop', 'loop the song')).toEqual({ verb: 'play', target: null, slot: null, music: { kind: 'loop', on: true }, capability: 'loop' })
     expect(read('loop_off', 'stop looping it')).toEqual({ verb: 'play', target: null, slot: null, music: { kind: 'loop', on: false }, capability: 'loop_off' })
     expect(read('restart', 'start the song from the beginning')).toEqual({ verb: 'play', target: null, slot: null, music: { kind: 'restart' }, capability: 'restart' })
@@ -894,7 +890,7 @@ describe('Capabilities (ADR 0079, #362)', () => {
   })
 
   it('`volume` carries the Slot\'s number, digits or spoken; with no number in the words it is no Command', () => {
-    const read = (text: string, slot: string) => readCommandAnswers({ verb: choice('volume'), target: choice('none'), slot: choice(slot) }, text, WATCH)
+    const read = (text: string, slot: string) => readCommandAnswers({ action: choice('volume'), slot: choice(slot) }, text, WATCH)
     expect(read('set the volume to 30', 's4-4')).toMatchObject({ verb: 'play', music: { kind: 'volume', to: 30 } })
     expect(read('volume at fifty please', 's2-2')).toMatchObject({ verb: 'play', music: { kind: 'volume', to: 50 } })
     expect(read('make it loud', 'none')).toEqual({ verb: 'none', target: null, slot: null })
@@ -902,68 +898,95 @@ describe('Capabilities (ADR 0079, #362)', () => {
   })
 
   it('`play`, `play_next` and `queue` search for the Slot\'s words, now, next or last', () => {
-    const read = (verb: string, text: string, slot: string) => readCommandAnswers({ verb: choice(verb), target: choice('none'), slot: choice(slot) }, text, WATCH)
+    const read = (verb: string, text: string, slot: string) => readCommandAnswers({ action: choice(verb), slot: choice(slot) }, text, WATCH)
     expect(read('play', 'play highs and lows pomme by kanye west', 's1-7')).toEqual({ verb: 'play', target: null, slot: 'highs and lows pomme by kanye west', music: { kind: 'search', place: 'now' }, capability: 'play' })
     expect(read('play_next', 'play bohemian rhapsody next', 's1-2')).toMatchObject({ slot: 'bohemian rhapsody', music: { kind: 'search', place: 'front' } })
     expect(read('queue', 'add bohemian rhapsody to the queue', 's1-2')).toMatchObject({ slot: 'bohemian rhapsody', music: { kind: 'search', place: 'end' } })
   })
 
   it('a Capability at a later hop is the same Command', () => {
-    expect(readCommandAnswers({ verb: choice('restart'), target: choice('none'), slot: choice('none'), outcome: choice('not_yet') }, 'start it again', WATCH, HOP)).toEqual({ verb: 'play', target: null, slot: null, music: { kind: 'restart' }, capability: 'restart' })
+    expect(readCommandAnswers({ action: choice('restart'), slot: choice('none'), outcome: choice('not_yet') }, 'start it again', WATCH, HOP)).toEqual({ verb: 'play', target: null, slot: null, music: { kind: 'restart' }, capability: 'restart' })
   })
 })
 
-describe('a sure target outvotes an unsure ref-less verb (#367, ADR 0076 amendment)', () => {
-  const WATCH: CommandPage = {
-    url: 'https://www.youtube.com/watch?v=abc',
-    title: 'Highs and Lows - YouTube',
+describe('the action card (#370, ADR 0076 amendment): Jev reads a Command as one whole action', () => {
+  const LANDING: CommandPage = {
+    url: 'https://duckduckgo.com/?q=electron',
+    title: 'electron at DuckDuckGo',
     refs: [
-      { ref: 5, kind: 'input', label: 'Search', href: null, inputType: 'text' },
-      { ref: 12, kind: 'button', label: 'Subtitles/closed captions (c)', href: null, inputType: null, states: ['pressed=false'] },
+      { ref: 1, kind: 'input', label: 'Search', href: null, inputType: 'text' },
+      { ref: 2, kind: 'link', label: 'Electron', href: 'https://www.electronjs.org/', inputType: null },
     ],
   }
-  const read = (verb: DecisionChoiceAnswer, target: DecisionChoiceAnswer, text: string, slot = choice('none'), hop?: HopContext) =>
-    readCommandAnswers({ verb, target, slot, ...(hop !== undefined ? { outcome: choice('not_yet', 0.5) } : {}) }, text, WATCH, hop)
+  const hopOn = (links: HopContext['links']): HopContext => ({ hop: 1, visited: [], actions: ['search "electron" (opened duckduckgo.com/?q=electron)'], links })
 
-  it('a Capability under the bar yields to the ref the target names at it: the ref is clicked', () => {
-    expect(read(choice('show', 0.43), choice('ref-12', 0.93), 'enable captions')).toEqual({ verb: 'click', target: 12, slot: null })
+  it('offers none, a click per offered ref with its ref line, a type per text field, a menu per ref, the ref-less verbs and the Capabilities — never done, nor a bare click, type or menu', () => {
+    const questions = commandQuestions('search for cats', PAGE, undefined, { capabilities: playerCapabilities(false) })
+    const card = questions.action
+    expect(card.options['click-1']).toBe('click [1] link "Home" https://example.com/')
+    expect(card.options['click-2']).toBe('click [2] button "Sign in"')
+    expect(card.options['type-3']).toBe('type the words into [3] input[search] "Search"')
+    expect(card.options['type-2']).toBeUndefined()
+    expect(card.options['menu-2']).toBe('right-click [2] to open its menu')
+    for (const label of ['none', 'navigate', 'search', 'scroll_up', 'scroll_down', 'back', 'forward', 'reload', 'press', 'read', 'clear', 'stop', 'play', 'queue']) expect(card.options).toHaveProperty(label)
+    for (const label of ['done', 'click', 'type', 'menu']) expect(card.options).not.toHaveProperty(label)
+    expect(questions).not.toHaveProperty('verb')
+    expect(questions).not.toHaveProperty('target')
   })
 
-  it('an unsure `done` at hop 0 is no "already here" under a sure target, and an unsure `none` drops nothing', () => {
-    expect(read(choice('done', 0.34), choice('ref-12', 0.9), 'disable captions')).toEqual({ verb: 'click', target: 12, slot: null })
-    expect(read(choice('none', 0.32), choice('ref-12', 0.74), 'i dont want to see the captions')).toEqual({ verb: 'click', target: 12, slot: null })
+  it('offers an open per result link at a later hop, as the link is shown', () => {
+    const card = hopQuestions('open electron', LANDING, hopOn([{ label: 'Electron docs', href: 'https://www.electronjs.org/docs' }])).action
+    expect(card.options['open-1']).toBe('open result link "Electron docs" https://www.electronjs.org/docs')
   })
 
-  it('a sure text field is typed into with the Slot\'s words; with no Slot it is clicked', () => {
-    expect(read(choice('search', 0.5), choice('ref-5', 0.9), 'look up kanye in the box', choice('s2-2'))).toEqual({ verb: 'type', target: 5, slot: 'kanye' })
-    expect(read(choice('read', 0.4), choice('ref-5', 0.9), 'the search box')).toEqual({ verb: 'click', target: 5, slot: null })
+  it('holds at most 255 options on a page with 200 refs: clicks, then fields, then links, then menus while room remains', () => {
+    const refs: CommandRef[] = Array.from({ length: 200 }, (_, n) => ({ ref: n + 1, kind: n % 10 === 0 ? 'input' : 'button', label: `Ref ${n + 1}`, href: null, inputType: n % 10 === 0 ? 'text' : null }))
+    const labels = Object.keys(commandQuestions('do it', { ...PAGE, refs }, undefined, { capabilities: playerCapabilities(true) }).action.options)
+    expect(labels.length).toBeLessThanOrEqual(255)
+    expect(labels.filter((label) => label.startsWith('click-'))).toHaveLength(200)
+    expect(labels.filter((label) => label.startsWith('type-'))).toHaveLength(20)
+    expect(labels.filter((label) => label.startsWith('menu-')).length).toBeGreaterThan(0)
+    expect(labels).toEqual(expect.arrayContaining(['none', 'search', 'volume']))
   })
 
-  it('a sure verb, an unsure target and a verb that takes a ref are left as they were', () => {
-    expect(read(choice('play', 0.97), choice('ref-12', 0.8), 'play highs and lows', choice('s1-3'))).toMatchObject({ verb: 'play', capability: 'play', slot: 'highs and lows' })
-    expect(read(choice('show', 0.43), choice('ref-12', 0.6), 'enable captions')).toMatchObject({ verb: 'play', capability: 'show' })
-    expect(read(choice('click', 0.3), choice('ref-12', 0.9), 'captions')).toEqual({ verb: 'click', target: 12, slot: null })
-    expect(read(choice('menu', 0.3), choice('ref-12', 0.9), 'captions')).toEqual({ verb: 'menu', target: 12, slot: null })
-    expect(read(choice('type', 0.3), choice('ref-5', 0.9), 'type kanye', choice('s1-1'))).toEqual({ verb: 'type', target: 5, slot: 'kanye' })
+  it('reads click-N as a click, type-N as typing the Slot, menu-N as a menu, open-N as a navigate to the link', () => {
+    expect(readCommandAnswers({ action: choice('click-2'), slot: choice('none') }, 'sign in', PAGE)).toEqual({ verb: 'click', target: 2, slot: null })
+    expect(readCommandAnswers({ action: choice('type-3'), slot: choice('s2-2') }, 'type in cats', PAGE)).toEqual({ verb: 'type', target: 3, slot: 'cats' })
+    expect(readCommandAnswers({ action: choice('menu-2'), slot: choice('none') }, 'more on sign in', PAGE)).toEqual({ verb: 'menu', target: 2, slot: null })
+    const hop = hopOn([{ label: 'Electron docs', href: 'https://www.electronjs.org/docs' }])
+    expect(readCommandAnswers({ action: choice('open-1'), slot: choice('none'), outcome: choice('not_yet') }, 'open electron', LANDING, hop)).toEqual({ verb: 'navigate', target: null, slot: 'https://www.electronjs.org/docs' })
   })
 
-  it('at a later hop the target is the ref the hop offers, never a fallback\'s', () => {
-    const hop: HopContext = { hop: 1, visited: [WATCH.url], actions: ['click "Subtitles/closed captions (c)"'], links: [] }
-    expect(read(choice('show', 0.59), choice('ref-12', 0.76), 'enable captions', choice('none'), hop)).toEqual({ verb: 'click', target: 12, slot: null })
-    // A ref set aside is not offered: the sure answer names nothing, and the verb stands.
-    const aside: HopContext = { ...hop, setAside: [{ label: 'Subtitles/closed captions (c)', address: 'https://youtube.com/watch?v=abc' }] }
-    expect(read(choice('done', 0.4), choice('ref-12', 0.9), 'enable captions', choice('none'), aside)).toEqual({ verb: 'done', target: null, slot: null })
-    // On a search landing a sure top the hop does not offer (visited) names nothing, and the offered result under it is not reached for.
-    const SEARCH: CommandPage = {
-      url: 'https://duckduckgo.com/?q=captions',
-      title: 'captions at DuckDuckGo',
-      refs: [
-        { ref: 3, kind: 'link', label: 'Captions help', href: 'https://support.google.com/captions', inputType: null },
-        { ref: 4, kind: 'link', label: 'Turn on captions - YouTube Help', href: 'https://support.google.com/youtube/captions', inputType: null },
-      ],
-    }
-    const target: DecisionChoiceAnswer = { type: 'choice', choice: 'ref-3', confidence: 0.85, probabilities: { 'ref-3': 0.85, 'ref-4': 0.15 } }
-    const landing: HopContext = { ...hop, visited: [SEARCH.url, 'https://support.google.com/captions'] }
-    expect(readCommandAnswers({ verb: choice('done', 0.4), target, slot: choice('none'), outcome: choice('not_yet', 0.5) }, 'enable captions', SEARCH, landing)).toEqual({ verb: 'done', target: null, slot: null })
+  it('types the words after the verb when the Slot names none', () => {
+    expect(readCommandAnswers({ action: choice('type-3'), slot: choice('none') }, 'type hello world', PAGE)).toEqual({ verb: 'type', target: 3, slot: 'hello world' })
+  })
+
+  it('reads a ref-less verb as itself with its Slot, a Capability as its play Command, none as no Command', () => {
+    expect(readCommandAnswers({ action: choice('scroll_down'), slot: choice('none') }, 'scroll down', PAGE)).toEqual({ verb: 'scroll_down', target: null, slot: null })
+    expect(readCommandAnswers({ action: choice('loop'), slot: choice('none') }, 'loop it', PAGE)).toMatchObject({ verb: 'play', capability: 'loop' })
+    expect(readCommandAnswers({ action: choice('none'), slot: choice('none') }, 'hmm', PAGE).verb).toBe('none')
+  })
+
+  it('reads a label naming a ref the hop does not offer as no Command — nor a type on a ref that is no text field, nor done', () => {
+    expect(readCommandAnswers({ action: choice('click-9'), slot: choice('none') }, 'click it', PAGE).verb).toBe('none')
+    expect(readCommandAnswers({ action: choice('type-2'), slot: choice('none') }, 'type it', PAGE).verb).toBe('none')
+    expect(readCommandAnswers({ action: choice('open-4'), slot: choice('none'), outcome: choice('not_yet') }, 'open it', LANDING, hopOn([])).verb).toBe('none')
+    expect(readCommandAnswers({ action: choice('done'), slot: choice('none') }, 'done', PAGE).verb).toBe('none')
+    // A ref the hop set aside is not offered: its click is no Command.
+    const aside: HopContext = { ...hopOn([]), setAside: [setAsideOf(PAGE.refs[1]!, PAGE)] }
+    expect(readCommandAnswers({ action: choice('click-2'), slot: choice('none'), outcome: choice('not_yet') }, 'sign in', PAGE, aside).verb).toBe('none')
+  })
+
+  it("names the runner-up of the opener's own kind: the next click after a click, the next right-click after a menu, never the fired ref", () => {
+    const action: DecisionChoiceAnswer = { type: 'choice', choice: 'click-1', confidence: 0.5, probabilities: { 'click-1': 0.5, 'menu-3': 0.25, 'click-2': 0.15, 'menu-1': 0.06, none: 0.04 } }
+    expect(runnerUpOf(action, PAGE, 1, [])).toEqual(setAsideOf(PAGE.refs[1]!, PAGE))
+    expect(runnerUpOf(action, PAGE, 1, [], 'menu')).toEqual(setAsideOf(PAGE.refs[2]!, PAGE))
+    expect(runnerUpOf(action, PAGE, 3, [], 'menu')).toEqual(setAsideOf(PAGE.refs[0]!, PAGE))
+    expect(runnerUpOf(action, PAGE, 3, [setAsideOf(PAGE.refs[0]!, PAGE)], 'menu')).toBeNull()
+  })
+
+  it('asks the Verdict only at a later hop, beside the card', () => {
+    expect(commandQuestions('enable captions', PAGE)).not.toHaveProperty('outcome')
+    expect(hopQuestions('enable captions', PAGE, hopOn([]))).toHaveProperty('outcome')
   })
 })

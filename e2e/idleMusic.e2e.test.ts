@@ -97,11 +97,11 @@ describe('idle screen e2e: music over the Idle Screen', () => {
 
   it('a line typed over the Idle Screen is asked on the watch page\'s real refs, and a Capability reading loops the song (#362)', async () => {
     expect(await cli(harness, 'loop the song', /^(loop: |error:|No response)/)).toMatch(/^loop: .*loop=true/)
-    const asks = await logLines<{ type: string; state: string; questions: { verb: { options: Record<string, string> } } }>('asks-')
+    const asks = await logLines<{ type: string; state: string; questions: { action: { options: Record<string, string> } } }>('asks-')
     const ask = asks.filter((record) => record.state.includes('"loop the song"')).at(-1)!
     // The hidden pane lays out off the window at its size (ADR 0079): its refs are read, not dropped as out of sight.
     expect(ask.state.split('\n').filter((line) => /^\[\d+\] /.test(line)).length).toBeGreaterThan(0)
-    expect(Object.keys(ask.questions.verb.options)).toEqual(expect.arrayContaining(['loop', 'restart']))
+    expect(Object.keys(ask.questions.action.options)).toEqual(expect.arrayContaining(['loop', 'restart']))
     const records = await logLines<{ type: string; transcript?: string; reading?: string; verb?: string; capability?: string; jevAsked?: boolean }>('decision-')
     expect(records.filter((record) => record.transcript === 'loop the song').at(-1)).toMatchObject({ reading: 'jev', verb: 'play', capability: 'loop', jevAsked: true })
     expect(await harness.paneEval<boolean>(`document.querySelector('#movie_player video').loop`)).toBe(true)

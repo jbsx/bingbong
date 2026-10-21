@@ -66,7 +66,7 @@ export function runCliHarness(deps: CliHarnessDeps): Promise<void> {
       switch (event.type) {
         case 'command':
           if (event.dropped) {
-            // A hop that fired nothing prints what it came to: done, no next step, abandoned (and why), already here.
+            // A hop that fired nothing prints what it came to: done, no next step, abandoned (and why).
             write(event.action !== undefined ? `${event.action}: ${JSON.stringify(event.text)}\n` : `not a command: ${JSON.stringify(event.text)}\n`)
             printed = true
           } else {

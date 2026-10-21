@@ -10,11 +10,11 @@ import type { DecisionChoiceAnswer, DecisionQuestions, DecisionResult } from '..
 // stripping.
 
 /**
- * What one question's answer must be: `target=ref-27` (that label),
+ * What one question's answer must be: `action=click-27` (that label),
  * `outcome=yes>=0.7` (that label at that probability or more, #366 — a
- * sure answer where the runner acts only on one), `target!=ref-21`
- * (anything but it), or `verb<0.7` (whatever it chooses, under that
- * probability, #367 — an unsure answer a sure one outvotes).
+ * sure answer where the runner acts only on one), `action!=click-21`
+ * (anything but it), or `outcome<0.7` (whatever it chooses, under that
+ * probability — an answer that must stay unsure).
  */
 export type JevExpectation =
   | { readonly question: string; readonly label: string; readonly atLeast?: number }
@@ -42,7 +42,7 @@ export interface JevCase {
 /** A probability, as a floor or a ceiling takes it: from 0 to 1. */
 const isProbability = (value: unknown): value is number => typeof value === 'number' && value >= 0 && value <= 1
 
-/** `target=ref-27`, `outcome=yes>=0.7`, `target!=ref-21` or `verb<0.7`, as the CLI takes it; a string is why it cannot be read. */
+/** `action=click-27`, `outcome=yes>=0.7`, `action!=click-21` or `outcome<0.7`, as the CLI takes it; a string is why it cannot be read. */
 export function parseExpectation(text: string): JevExpectation | string {
   const unread = `"${text}" is not <question>=<label>[>=<probability>], <question>!=<label> or <question><<probability>`
   const match = /^([^=!<]+)(!?=|<)(.+)$/.exec(text.trim())

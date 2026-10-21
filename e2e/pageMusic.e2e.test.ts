@@ -77,11 +77,11 @@ describe('music e2e: a song the Player never started', () => {
 
   it('"loop the song" is asked with the song\'s ops offered, and the Capability loops the page\'s video — no search, no page click (#362)', async () => {
     expect(await cli(harness, 'loop the song', /^(loop: |error:|No response|navigated:|playing:)/)).toMatch(/^loop: .*loop=true/)
-    const asks = await logLines<{ state: string; questions: { verb: { options: Record<string, string> } } }>('asks-')
+    const asks = await logLines<{ state: string; questions: { action: { options: Record<string, string> } } }>('asks-')
     const ask = asks.filter((record) => record.state.includes('"loop the song"')).at(-1)!
     // The collect names the media by the document's title, "<song> - YouTube", as on YouTube itself.
     expect(ask.state).toMatch(new RegExp(`^Playing: "${YOUTUBE_FIXTURE_SONG.title}`, 'm'))
-    expect(Object.keys(ask.questions.verb.options)).toEqual(expect.arrayContaining(['loop', 'restart', 'pause', 'show']))
+    expect(Object.keys(ask.questions.action.options)).toEqual(expect.arrayContaining(['loop', 'restart', 'pause', 'show']))
     const records = await logLines<{ type: string; transcript?: string; reading?: string; verb?: string; capability?: string; ended?: string }>('decision-')
     expect(records.filter((record) => record.transcript === 'loop the song').at(-1)).toMatchObject({ reading: 'jev', verb: 'play', capability: 'loop', ended: 'terminal' })
     expect((await facts()).loop).toBe(true)

@@ -34,7 +34,6 @@ export const COMMAND_VERBS = [
   'read',
   'clear',
   'stop',
-  'done',
   'none',
   'screenshot',
   'help',
@@ -159,14 +158,14 @@ export function verbTakesTarget(verb: CommandVerb): boolean {
 }
 
 /**
- * The verbs that need no pane on the screen — the Timer, a Stop, `done`,
+ * The verbs that need no pane on the screen — the Timer, a Stop,
  * `none` and the Player's (#344: the search and the watch page happen in
  * the hidden pane, and the music plays on there). A Command carrying one
  * leaves the Idle Screen up (CONTEXT.md), save "show the video": see
  * {@link commandKeepsIdle}.
  */
 export function verbKeepsIdle(verb: CommandVerb): boolean {
-  return verb === 'timer' || verb === 'stop' || verb === 'done' || verb === 'none' || verb === 'play'
+  return verb === 'timer' || verb === 'stop' || verb === 'none' || verb === 'play'
 }
 
 /** The verbs that act on the page in the pane: with none there (#361), they answer so and touch nothing — the hidden pane would never answer them. */
