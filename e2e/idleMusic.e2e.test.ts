@@ -56,7 +56,7 @@ describe('idle screen e2e: music over the Idle Screen', () => {
       launchArgs: ['--browser-cli', '--mute-audio'],
       pipeStdio: true,
       // A line with free words is Jev's (ADR 0079): the stand-in reads `play fixture song` as the Capability, and "loop the song" as `loop`.
-      env: { BINGBONG_YOUTUBE_FIXTURE: new URL(fixture.url('/')).origin, ...decisionScript(readingOf('play fixture song'), readingOf('loop the song', 'loop')) },
+      env: { BINGBONG_YOUTUBE_FIXTURE: new URL(fixture.url('/')).origin, ...decisionScript(readingOf('play fixture song'), readingOf('loop the song', 'loop-1')) },
     })
     await harness.waitForCliOutput(/bingbong browser harness/)
     await waitFor(async () => ((await idleShown()) ? true : undefined), { timeoutMs: 10_000, intervalMs: 250 })
@@ -95,15 +95,18 @@ describe('idle screen e2e: music over the Idle Screen', () => {
     expect(await idleShown()).toBe(true)
   }, 60_000)
 
-  it('a line typed over the Idle Screen is asked on the watch page\'s real refs, and a Capability reading loops the song (#362)', async () => {
-    expect(await cli(harness, 'loop the song', /^(loop: |error:|No response)/)).toMatch(/^loop: .*loop=true/)
+  it('a line typed over the Idle Screen is asked on the watch page\'s real refs, and the video\'s own Media Op loops it, the Idle Screen staying up (#362, #372)', async () => {
+    expect(await cli(harness, 'loop the song', /^(loop \[\d+\]: |loop: |error:|No response)/)).toBe('loop [1]: loop on')
     const asks = await logLines<{ type: string; state: string; questions: { action: { options: Record<string, string> } } }>('asks-')
     const ask = asks.filter((record) => record.state.includes('"loop the song"')).at(-1)!
     // The hidden pane lays out off the window at its size (ADR 0079): its refs are read, not dropped as out of sight.
     expect(ask.state.split('\n').filter((line) => /^\[\d+\] /.test(line)).length).toBeGreaterThan(0)
-    expect(Object.keys(ask.questions.action.options)).toEqual(expect.arrayContaining(['loop', 'restart']))
-    const records = await logLines<{ type: string; transcript?: string; reading?: string; verb?: string; capability?: string; jevAsked?: boolean }>('decision-')
-    expect(records.filter((record) => record.transcript === 'loop the song').at(-1)).toMatchObject({ reading: 'jev', verb: 'play', capability: 'loop', jevAsked: true })
+    // The video is a media ref on the card, so its ops are the one line for each (ADR 0080): the Player's song ops are withheld, a song to play stays.
+    const card = Object.keys(ask.questions.action.options)
+    expect(card).toEqual(expect.arrayContaining(['loop-1', 'restart-1', 'pause-1', 'play', 'queue']))
+    expect(card).not.toEqual(expect.arrayContaining(['loop']))
+    const records = await logLines<{ type: string; transcript?: string; reading?: string; verb?: string; mediaOp?: { op: string }; jevAsked?: boolean }>('decision-')
+    expect(records.filter((record) => record.transcript === 'loop the song').at(-1)).toMatchObject({ reading: 'jev', verb: 'media', mediaOp: { op: 'loop' }, jevAsked: true })
     expect(await harness.paneEval<boolean>(`document.querySelector('#movie_player video').loop`)).toBe(true)
     expect(await idleShown()).toBe(true)
   }, 30_000)

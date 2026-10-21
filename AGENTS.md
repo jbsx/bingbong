@@ -36,7 +36,11 @@ fast as it can, built on top of this shell.
 - **The browser** is `BrowserController` (`src/core/ports/browser.ts`),
   implemented over CDP in `src/main/browser/createCdpBrowserController.ts`.
   Action Outcome classifiers (blockers, consent walls, empty/not-found/
-  unavailable landings, covered clicks) live in `src/core/browser/`.
+  unavailable landings, covered clicks) live in `src/core/browser/`. A
+  media ref carries the element's own Media Ops on the action card (ADR
+  0080, `src/core/command/mediaOp.ts`, #372): `forward-N`, `mute-N` and
+  the rest, each one `mediaOp` evaluate on that element, the Amount Choice
+  saying how far a seek goes; the ref's line carries its state.
 - **Music** is the Player (`src/main/music/`, the Queue and the lines in
   `src/core/music/`, #343): `play <words>` opens YouTube in the pane and
   every music verb is one evaluate on the watch page's video. `play` is a

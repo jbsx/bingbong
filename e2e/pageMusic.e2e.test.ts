@@ -52,7 +52,8 @@ describe('music e2e: a song the Player never started', () => {
       launchArgs: ['--browser-cli', '--mute-audio'],
       pipeStdio: true,
       // The stand-in reads each plain line as the Capability a real Jev picks for it.
-      env: { BINGBONG_YOUTUBE_FIXTURE: new URL(fixture.url('/')).origin, ...decisionScript(readingOf('loop the song', 'loop'), readingOf('start it from the beginning', 'restart'), readingOf('show the video', 'show')) },
+      // The watch page's video is ref 1, a media ref: its own ops are the lines for loop and restart (ADR 0080); `show` is the Player's still.
+      env: { BINGBONG_YOUTUBE_FIXTURE: new URL(fixture.url('/')).origin, ...decisionScript(readingOf('loop the song', 'loop-1'), readingOf('start it from the beginning', 'restart-1'), readingOf('show the video', 'show')) },
     })
     await harness.waitForCliOutput(/bingbong browser harness/)
   }, 120_000)
@@ -75,22 +76,25 @@ describe('music e2e: a song the Player never started', () => {
     expect(video.loop).toBe(false)
   }, 30_000)
 
-  it('"loop the song" is asked with the song\'s ops offered, and the Capability loops the page\'s video — no search, no page click (#362)', async () => {
-    expect(await cli(harness, 'loop the song', /^(loop: |error:|No response|navigated:|playing:)/)).toMatch(/^loop: .*loop=true/)
+  it('"loop the song" is asked with the video\'s own ops offered — the Player\'s song ops withheld beside a media ref (ADR 0080) — and the op loops the page\'s video: no search, no page click (#362, #372)', async () => {
+    expect(await cli(harness, 'loop the song', /^(loop \[\d+\]: |loop: |error:|No response|navigated:|playing:)/)).toBe('loop [1]: loop on')
     const asks = await logLines<{ state: string; questions: { action: { options: Record<string, string> } } }>('asks-')
     const ask = asks.filter((record) => record.state.includes('"loop the song"')).at(-1)!
-    // The collect names the media by the document's title, "<song> - YouTube", as on YouTube itself.
+    // The collect names the media by the document's title, "<song> - YouTube", as on YouTube itself: the Playing line, and the ref's own, with its state.
     expect(ask.state).toMatch(new RegExp(`^Playing: "${YOUTUBE_FIXTURE_SONG.title}`, 'm'))
-    expect(Object.keys(ask.questions.action.options)).toEqual(expect.arrayContaining(['loop', 'restart', 'pause', 'show']))
-    const records = await logLines<{ type: string; transcript?: string; reading?: string; verb?: string; capability?: string; ended?: string }>('decision-')
-    expect(records.filter((record) => record.transcript === 'loop the song').at(-1)).toMatchObject({ reading: 'jev', verb: 'play', capability: 'loop', ended: 'terminal' })
+    expect(ask.state).toMatch(new RegExp(`^\\[1\\] media "${YOUTUBE_FIXTURE_SONG.title} - YouTube" playing 0:\\d\\d/1:00 volume 100% loop off$`, 'm'))
+    const card = Object.keys(ask.questions.action.options)
+    expect(card).toEqual(expect.arrayContaining(['loop-1', 'restart-1', 'pause-1', 'show', 'play']))
+    for (const op of ['loop', 'restart', 'pause']) expect(card).not.toContain(op)
+    const records = await logLines<{ type: string; transcript?: string; reading?: string; verb?: string; mediaOp?: { op: string }; ended?: string }>('decision-')
+    expect(records.filter((record) => record.transcript === 'loop the song').at(-1)).toMatchObject({ reading: 'jev', verb: 'media', mediaOp: { op: 'loop' }, ended: 'terminal' })
     expect((await facts()).loop).toBe(true)
     expect(await harness.paneUrl()).toBe(WATCH_URL)
   }, 30_000)
 
   it('"start it from the beginning" restarts that video rather than searching for a song by those words', async () => {
     await waitFor(async () => ((await facts()).currentTime >= 2 ? true : undefined), { timeoutMs: 10_000, intervalMs: 250 })
-    expect(await cli(harness, 'start it from the beginning', /^(restart: |error:|No response|navigated:|playing:)/)).toMatch(/^restart: /)
+    expect(await cli(harness, 'start it from the beginning', /^(restart \[\d+\]: |restart: |error:|No response|navigated:|playing:)/)).toMatch(/^restart \[1\]: 0:\d\d → 0:00$/)
     const video = await waitFor(
       async () => {
         const now = await facts()

@@ -67,10 +67,11 @@ export function mediaOpDescription(op: MediaOp, ref: number, title: string): str
       return `play ${named}: start it, or carry on playing it`
     case 'pause':
       return `pause ${named}`
+    // "by a length of time" is what tells "go back a minute" from the browser's `back` (measured 2026-10-21: 0.62–0.65 → 0.85–0.89 on the fixture page, 0.63–0.65 → 0.83–0.89 on the YouTube ask).
     case 'forward':
-      return `skip forward in ${named}, the amount Choice saying how far`
+      return `go forward in ${named} by a length of time, the amount Choice saying how far`
     case 'back':
-      return `skip back in ${named}, the amount Choice saying how far`
+      return `go back in ${named} by a length of time, the amount Choice saying how far`
     case 'restart':
       return `play ${named} again from the start`
     case 'volume':

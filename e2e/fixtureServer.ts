@@ -246,6 +246,25 @@ function contextMenuPage(): string {
 </html>`
 }
 
+// A page with a native `<video>` the Player never touches (#372, ADR 0080):
+// where the Media Ops are proven on a site that is not YouTube. The one
+// video carries a text track, so the captions pair is offered; it plays a
+// minute of silence, its time really moving. The two-video page holds two
+// playing elements named by title, so "pause the Kanye one" has to pick.
+export const MEDIA_FIXTURE_TITLES = { one: 'Kanye West - Highs and Lows', two: 'Queen - Bohemian Rhapsody' } as const
+
+function nativeVideoPage(videos: readonly { readonly id: string; readonly title: string; readonly track?: boolean }[]): string {
+  const elements = videos
+    .map(({ id, title, track }) => `<figure><figcaption>${title}</figcaption><video id="${id}" src="/youtube-fixture/song.wav" title="${title}" width="320" height="180" autoplay>${track === true ? '<track kind="subtitles" srclang="en" label="English" src="/media-fixture/captions.vtt">' : ''}</video></figure>`)
+    .join('\n  ')
+  return `<!doctype html><html><head><title>media fixture</title></head>
+<body style="background:#222;color:#fff">
+  <h1>media fixture page</h1>
+  ${elements}
+  <a href="/second" style="color:#fff">Second page</a>
+</body></html>`
+}
+
 // Interactive elements the CDP controller e2e drives: buttons that record
 // clicks via the title, an input/textarea/select/checkbox/video mix for
 // snapshot coverage, and a below-the-fold button that only appears in the
@@ -1418,6 +1437,12 @@ export async function startFixtureServer(): Promise<FixtureServer> {
       res.end(wav.subarray(start, end + 1))
       return
     }
+    // The native video's text track (#372): served as WebVTT, above the HTML head every page below shares.
+    if (req.url === '/media-fixture/captions.vtt') {
+      res.writeHead(200, { 'Content-Type': 'text/vtt' })
+      res.end('WEBVTT\n\n00:00.000 --> 00:05.000\nA fixture caption\n')
+      return
+    }
     if (req.url?.startsWith('/results?search_query=')) {
       res.writeHead(200, { 'Content-Type': 'text/html' })
       res.end(youtubeResultsPage())
@@ -1445,6 +1470,15 @@ export async function startFixtureServer(): Promise<FixtureServer> {
     }
     if (req.url === '/interactive') {
       res.end(interactivePage())
+      return
+    }
+    if (req.url === '/native-video') {
+      res.end(nativeVideoPage([{ id: 'one', title: MEDIA_FIXTURE_TITLES.one, track: true }]))
+      return
+    }
+    // Two playing videos, the named one second: a pick by title, never the first.
+    if (req.url === '/native-video/two') {
+      res.end(nativeVideoPage([{ id: 'one', title: MEDIA_FIXTURE_TITLES.two }, { id: 'two', title: MEDIA_FIXTURE_TITLES.one }]))
       return
     }
     if (req.url === '/context-menu') {

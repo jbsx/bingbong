@@ -102,7 +102,8 @@ describe('Media Ops (#372, ADR 0080): a media ref offers the element\'s own ops 
     const questions = commandQuestions('skip 10 seconds ahead', WATCH)
     const card = questions.action.options
     for (const op of ELEVEN) expect(card).toHaveProperty(`${op}-7`)
-    expect(card['forward-7']).toBe('skip forward in [7] "YE - HIGHS AND LOWS", the amount Choice saying how far')
+    expect(card['forward-7']).toBe('go forward in [7] "YE - HIGHS AND LOWS" by a length of time, the amount Choice saying how far')
+    expect(card['back-7']).toBe('go back in [7] "YE - HIGHS AND LOWS" by a length of time, the amount Choice saying how far')
     expect(card['mute-7']).toBe('mute [7] "YE - HIGHS AND LOWS"')
     expect(card['unmute-7']).toBe('unmute [7] "YE - HIGHS AND LOWS"')
     // Both of a pair, whatever the state: withholding the inverse sends Jev to the page's toggle (ADR 0080).
