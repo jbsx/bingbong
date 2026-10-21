@@ -197,7 +197,6 @@ describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review 
     expect(geometry.rings).toBe(count)
     expect(await text('.idle-voice')).toBe('Say “Bing Bong” or start typing')
     expect(await text('.wx-peak')).toMatch(/^97%rainby \d\d:\d\d$/)
-    expect(await text('.usage-ring-pace')).toBe('+5 ahead')
     expect(await text('.idle-news-head')).toBe('Top repos ★ this month')
     for (const scheme of ['dark', 'light'] as const) await shoot(`idle-${count}${music ? '-music' : ''}`, scheme)
   })

@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState } from 'react'
-import { chartCeiling, elapsedPct, pace, resetLabel, USAGE_HISTORY_MS, USAGE_STALE_MS, type UsageView, type UsageWindow } from '../../core/usage/usage'
+import { chartCeiling, elapsedPct, resetLabel, USAGE_HISTORY_MS, USAGE_STALE_MS, type UsageView, type UsageWindow } from '../../core/usage/usage'
 import type { RingsHeight } from '../../core/idle/columns'
 
 /** A pause in the dashboard's sampling longer than this breaks the line rather than bridging it. */
@@ -64,14 +64,12 @@ function Tick({ radius, share, length, className }: { radius: number; share: num
 /**
  * A provider's ring, F2's (round 5): the outer arc the share of its gauge's
  * limit used, in its tone, one weight end to end; a tick where the window
- * has run to; and a thin inner ring for
- * its next window, with its own tick. The number in the middle, and under
- * it the Pace when the use runs ahead of the window.
+ * has run to; a thin inner ring for its next window, with its own tick;
+ * and the number in the middle.
  */
 function Ring({ gauge, inner, now }: { gauge: UsageWindow | null; inner: UsageWindow | null; now: number }) {
   const used = gauge === null ? null : Math.max(0, gauge.usedPct) / 100
   const run = gauge === null || gauge.resetAt === null ? null : elapsedPct(gauge, now) / 100
-  const ahead = gauge === null ? null : pace(gauge, now)
   const innerUsed = inner === null ? 0 : Math.min(1, Math.max(0, inner.usedPct) / 100)
   const innerRun = inner === null || inner.resetAt === null ? null : elapsedPct(inner, now) / 100
   return (
@@ -89,11 +87,10 @@ function Ring({ gauge, inner, now }: { gauge: UsageWindow | null; inner: UsageWi
         {run !== null ? <Tick radius={100} share={run} length={14} className="usage-ring-tick" /> : null}
       </svg>
       <span className="usage-ring-middle">
-        <span className={ahead !== null ? 'usage-ring-pct usage-ring-pct--ahead' : 'usage-ring-pct'}>
+        <span className="usage-ring-pct">
           {used === null ? '–' : Math.round(gauge!.usedPct)}
           {used !== null ? <small>%</small> : null}
         </span>
-        {ahead !== null ? <span className="usage-ring-pace">+{ahead} ahead</span> : null}
       </span>
     </span>
   )

@@ -645,9 +645,9 @@ Each shown provider is a
 ring in its tone (owner, 2026-10-19: "i like the ring progress bars"; F2's
 card since 2026-10-20): the outer arc the share of the limit used, the
 number in the middle, a tick across the ring where the window has run to
-its reset — the two clocks the dashboard's dot gauge showed — the use past
-that tick drawn brighter, and under the number its Pace when the share
-used runs ahead of the window run ("+5 ahead"); a thin inner ring for its
+its reset — the two clocks the dashboard's dot gauge showed — the arc one
+weight and tone end to end, and no Pace printed (owner, 2026-10-21: "i want
+the entire guage to be consistent", "stop printing the ahead %"); a thin inner ring for its
 next shown window, with its own tick. Under the ring its name and plan and
 "7d ⟳ 6d 23h", then its other shown windows as figures ("7d 8% ⟳ 6d 15h",
 the first larger). Three to five providers shrink their rings to stay in

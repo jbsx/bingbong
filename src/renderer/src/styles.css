@@ -2899,21 +2899,8 @@ button.idle-line {
   color: var(--fg3);
 }
 
-.usage-ring-pct--ahead {
-  font-size: calc(var(--ring) * 0.35);
-  color: color-mix(in srgb, var(--usage-tone) 88%, white);
-}
-
 .usage-ring--over .usage-ring-pct {
   color: var(--fail);
-}
-
-.usage-ring-pace {
-  margin-top: 4px;
-  font-size: 18px;
-  font-weight: 600;
-  color: color-mix(in srgb, var(--usage-tone) 75%, white);
-  white-space: nowrap;
 }
 
 .usage-ring-name {
