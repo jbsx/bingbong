@@ -1,8 +1,8 @@
-import type { DecisionChoiceAnswer, DecisionChoiceQuestion, DecisionNoulQuestion } from '../ports/decisionModel'
+import { DEFAULT_DECISION_THRESHOLDS, type DecisionChoiceAnswer, type DecisionChoiceQuestion, type DecisionNoulQuestion } from '../ports/decisionModel'
 import type { PageLink, PageMedia } from '../browser/snapshot'
 import { JEV_VERBS, PRESS_KEYS, describeCommand, normalizeWords, pressKeyOf, targetLabel, verbTakesSlot, verbTakesTarget, type Command, type CommandPage, type CommandRef, type CommandVerb } from './command'
 import { dialogControls, type DismissChoice } from './dismissDialog'
-import { isSearchLanding, pageAddressOf, resultLinksOf, resultRefsOf, wordsAfterVerb } from './localMatch'
+import { isSearchLanding, isTextField, pageAddressOf, resultLinksOf, resultRefsOf, wordsAfterVerb } from './localMatch'
 import { isAddressShaped } from './openAddress'
 import { isWebEngineSearch, siteOf } from './siteScope'
 import { CAPABILITY_DESCRIPTIONS, CAPABILITY_INSTRUCTIONS, capabilityAction, capabilitySearches, isCapability, type Capability } from './capability'
@@ -856,13 +856,18 @@ function mostProbableFallbackOpening(answer: DecisionChoiceAnswer, page: Command
 
 /** The words the Slot answer names; the words after the verb when it names none — what a Task that found nothing says it could not find (#363). */
 export function slotWords(answer: DecisionChoiceAnswer, text: string): string {
-  const match = /^s(\d+)-(\d+)$/.exec(answer.choice)
-  if (match) {
-    const words = wordsOf(text)
-    const span = words.slice(Number(match[1]), Number(match[2]) + 1).join(' ')
-    if (span !== '') return span
+  const span = slotSpanOf(answer)
+  if (span !== null) {
+    const words = wordsOf(text).slice(span.start, span.end + 1).join(' ')
+    if (words !== '') return words
   }
   return wordsAfterVerb(text)
+}
+
+/** The span of the transcript's words the Slot answer names; null when it names none. */
+function slotSpanOf(answer: DecisionChoiceAnswer): { start: number; end: number } | null {
+  const match = /^s(\d+)-(\d+)$/.exec(answer.choice)
+  return match === null ? null : { start: Number(match[1]), end: Number(match[2]) }
 }
 
 /**
@@ -877,9 +882,38 @@ function capabilityCommand(capability: Capability, slot: DecisionChoiceAnswer, t
   return music === null ? null : { verb: 'play', target: null, slot: searches ? words : null, music, capability }
 }
 
+/**
+ * The ref a sure target names over an unsure verb that takes none (#367,
+ * ADR 0076 amendment): the verb Choice's options are abstract words with no
+ * page element in them, the target Choice is the one that sees the page, so
+ * a target at the Choice bar outvotes a verb under it — any ref-less verb,
+ * `done` and `none` among them, and any Capability. A sure verb, a verb that
+ * takes a ref, and a target under the bar are left as they were; so is a
+ * hop whose Verdict is a sure `yes`, which a click on the toggle the last
+ * hop flipped would undo. Only the ref the target tops with stands, among
+ * the refs the hop offers — never a fallback's.
+ */
+function sureTargetOf(answers: CommandAnswers | HopAnswers, pageRead: CommandPage, hop: HopContext | undefined): CommandRef | null {
+  const bar = DEFAULT_DECISION_THRESHOLDS.choice
+  const { verb, target } = answers
+  if (verb.confidence >= bar || target.confidence < bar) return null
+  if (!isCapability(verb.choice) && verbTakesTarget(verb.choice as CommandVerb)) return null
+  const verdict = readVerdict(answers)
+  if (verdict !== null && verdict.outcome === 'yes' && verdict.confidence >= bar) return null
+  const { page } = offered(pageRead, hop)
+  const ref = offeredRef(target.choice, page)
+  return ref === null ? null : (page.refs.find((candidate) => candidate.ref === ref) ?? null)
+}
+
 /** The Command Jev's answers make: the top Choice of each, read as the verb needs them. */
 export function readCommandAnswers(answers: CommandAnswers | HopAnswers, text: string, pageRead: CommandPage, hop?: HopContext): Command {
   const none: Command = { verb: 'none', target: null, slot: null }
+  // A sure target over an unsure ref-less verb (#367): its kind sets the verb — a text field with a Slot is typed into, anything else clicked.
+  const outvoted = sureTargetOf(answers, pageRead, hop)
+  if (outvoted !== null) {
+    if (isTextField(outvoted) && slotSpanOf(answers.slot) !== null) return { verb: 'type', target: outvoted.ref, slot: slotWords(answers.slot, text) }
+    return { verb: 'click', target: outvoted.ref, slot: null }
+  }
   if (isCapability(answers.verb.choice)) return capabilityCommand(answers.verb.choice, answers.slot, text) ?? none
   const verb = answers.verb.choice as CommandVerb
   if (!JEV_VERBS.includes(verb as (typeof JEV_VERBS)[number]) || verb === 'none') return none

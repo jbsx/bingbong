@@ -231,7 +231,10 @@ One verb, at most one target on the page and one Slot, performed at once.
 A verb is an action the browser can take — `navigate` to an address,
 `search` for words, `click`, `type`, scroll, back, press, read, clear, stop
 — never a word the user said: "open" is words, and whether it means a
-navigate, a search or a click is the reading's to settle. There is no plan
+navigate, a search or a click is the reading's to settle. In the Decision
+Model's reading the element it is sure the words name outvotes a verb it is
+unsure of that acts on none: the element is clicked, or a text field typed
+into, unless the Verdict is sure the Task is done. There is no plan
 and no confirmation: a Command is the unit a Task is made of, and an
 Utterance is a Task of one or more. A Command that is not for the page at
 all is dropped, not answered.
@@ -288,8 +291,10 @@ showing captions" is not `stop`, "back to the results" not `back` (#368)
 <words>`), an opening phrase with an address-shaped Slot ("open youtube",
 "go to x.com"), and a plain verb with the one element the words name
 exactly — the label exactly one element carries, or the Nth result on a
-search page ("the first result"). A line with free words — search terms,
-a song's words, words about the page — is never its: it goes to the
+search page ("the first result"); the Decision Model's reading keeps the
+same precedence, a sure element over an unsure verb. A line with free
+words — search terms, a song's words, words about the page — is never its:
+it goes to the
 Decision Model with every option, Capabilities included.
 It is the fastest reading, and the only one that fires when the Decision
 Model does not answer — a line it does not settle is then no Command. It

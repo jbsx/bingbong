@@ -1764,6 +1764,14 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
     expect(perf.records.filter((record) => record.stage === 'reaction')).toEqual([])
   })
 
+  it('an unsure done at hop 0 under a sure target is no "already here": the ref is clicked (#367)', async () => {
+    const { browser, events, decision, runner } = harness()
+    decision.script.push({ answers: { verb: choice('done', 0.34), target: choice('ref-2', 0.9), slot: choice('none') } })
+    await runner.run('sign me in', { source: 'spoken' })
+    expect(browser.clicks).toEqual([2])
+    expect(commands(events)[0]).not.toMatchObject({ action: 'already here' })
+  })
+
   it('AC3: none at hop 1 with no sure yes ends unsure — the page stays, the line says so, the Feed says not sure', async () => {
     const { browser, events, records, decision, runner } = taskHarness()
     decision.script.push(answer('search', 'none', 's3-6'), answer('none'))

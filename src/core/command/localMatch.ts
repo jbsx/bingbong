@@ -187,7 +187,8 @@ function sharesALabelWord(phrase: string, refs: readonly CommandRef[]): boolean 
   })
 }
 
-function isTextField(ref: CommandRef): boolean {
+/** Whether a ref is a field words are typed into. */
+export function isTextField(ref: CommandRef): boolean {
   return ref.kind === 'input' && (ref.inputType === null || !NON_TEXT_INPUTS.has(ref.inputType.toLowerCase()))
 }
 

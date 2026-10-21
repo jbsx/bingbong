@@ -121,7 +121,7 @@ describe('reading the answers', () => {
   })
 
   it('drops the Utterance only on a none verb', () => {
-    expect(readCommandAnswers({ verb: choice('none', 0.2), target: choice('ref-2'), slot: choice('s0-0') }, 'what time is it', PAGE)).toEqual({ verb: 'none', target: null, slot: null })
+    expect(readCommandAnswers({ verb: choice('none', 0.2), target: choice('ref-2', 0.5), slot: choice('s0-0') }, 'what time is it', PAGE)).toEqual({ verb: 'none', target: null, slot: null })
   })
 
   it('ignores the answers a verb does not need', () => {
@@ -910,5 +910,63 @@ describe('Capabilities (ADR 0079, #362)', () => {
 
   it('a Capability at a later hop is the same Command', () => {
     expect(readCommandAnswers({ verb: choice('restart'), target: choice('none'), slot: choice('none'), outcome: choice('not_yet') }, 'start it again', WATCH, HOP)).toEqual({ verb: 'play', target: null, slot: null, music: { kind: 'restart' }, capability: 'restart' })
+  })
+})
+
+describe('a sure target outvotes an unsure ref-less verb (#367, ADR 0076 amendment)', () => {
+  const WATCH: CommandPage = {
+    url: 'https://www.youtube.com/watch?v=abc',
+    title: 'Highs and Lows - YouTube',
+    refs: [
+      { ref: 5, kind: 'input', label: 'Search', href: null, inputType: 'text' },
+      { ref: 12, kind: 'button', label: 'Subtitles/closed captions (c)', href: null, inputType: null, states: ['pressed=false'] },
+    ],
+  }
+  const read = (verb: DecisionChoiceAnswer, target: DecisionChoiceAnswer, text: string, slot = choice('none'), hop?: HopContext) =>
+    readCommandAnswers({ verb, target, slot, ...(hop !== undefined ? { outcome: choice('not_yet', 0.5) } : {}) }, text, WATCH, hop)
+
+  it('a Capability under the bar yields to the ref the target names at it: the ref is clicked', () => {
+    expect(read(choice('show', 0.43), choice('ref-12', 0.93), 'enable captions')).toEqual({ verb: 'click', target: 12, slot: null })
+  })
+
+  it('an unsure `done` at hop 0 is no "already here" under a sure target, and an unsure `none` drops nothing', () => {
+    expect(read(choice('done', 0.34), choice('ref-12', 0.9), 'disable captions')).toEqual({ verb: 'click', target: 12, slot: null })
+    expect(read(choice('none', 0.32), choice('ref-12', 0.74), 'i dont want to see the captions')).toEqual({ verb: 'click', target: 12, slot: null })
+  })
+
+  it('a sure text field is typed into with the Slot\'s words; with no Slot it is clicked', () => {
+    expect(read(choice('search', 0.5), choice('ref-5', 0.9), 'look up kanye in the box', choice('s2-2'))).toEqual({ verb: 'type', target: 5, slot: 'kanye' })
+    expect(read(choice('read', 0.4), choice('ref-5', 0.9), 'the search box')).toEqual({ verb: 'click', target: 5, slot: null })
+  })
+
+  it('a sure verb, an unsure target and a verb that takes a ref are left as they were', () => {
+    expect(read(choice('play', 0.97), choice('ref-12', 0.8), 'play highs and lows', choice('s1-3'))).toMatchObject({ verb: 'play', capability: 'play', slot: 'highs and lows' })
+    expect(read(choice('show', 0.43), choice('ref-12', 0.6), 'enable captions')).toMatchObject({ verb: 'play', capability: 'show' })
+    expect(read(choice('click', 0.3), choice('ref-12', 0.9), 'captions')).toEqual({ verb: 'click', target: 12, slot: null })
+    expect(read(choice('menu', 0.3), choice('ref-12', 0.9), 'captions')).toEqual({ verb: 'menu', target: 12, slot: null })
+    expect(read(choice('type', 0.3), choice('ref-5', 0.9), 'type kanye', choice('s1-1'))).toEqual({ verb: 'type', target: 5, slot: 'kanye' })
+  })
+
+  it('at a later hop the target is the ref the hop offers, never a fallback\'s', () => {
+    const hop: HopContext = { hop: 1, visited: [WATCH.url], actions: ['click "Subtitles/closed captions (c)"'], links: [] }
+    expect(read(choice('show', 0.59), choice('ref-12', 0.76), 'enable captions', choice('none'), hop)).toEqual({ verb: 'click', target: 12, slot: null })
+    // A sure Verdict that the Task is done is not outvoted: clicking the toggle the last hop flipped would undo it.
+    expect(readCommandAnswers({ verb: choice('done', 0.4), target: choice('ref-12', 0.9), slot: choice('none'), outcome: choice('yes', 0.8) }, 'enable captions', WATCH, hop)).toEqual({ verb: 'done', target: null, slot: null })
+    expect(readCommandAnswers({ verb: choice('done', 0.4), target: choice('ref-12', 0.9), slot: choice('none'), outcome: choice('yes', 0.6) }, 'enable captions', WATCH, hop)).toEqual({ verb: 'click', target: 12, slot: null })
+    // A ref set aside is not offered: the sure answer names nothing, and the verb stands.
+    const aside: HopContext = { ...hop, setAside: [{ label: 'Subtitles/closed captions (c)', address: 'https://youtube.com/watch?v=abc' }] }
+    expect(read(choice('done', 0.4), choice('ref-12', 0.9), 'enable captions', choice('none'), aside)).toEqual({ verb: 'done', target: null, slot: null })
+    // On a search landing a sure top the hop does not offer (visited) names nothing, and the offered result under it is not reached for.
+    const SEARCH: CommandPage = {
+      url: 'https://duckduckgo.com/?q=captions',
+      title: 'captions at DuckDuckGo',
+      refs: [
+        { ref: 3, kind: 'link', label: 'Captions help', href: 'https://support.google.com/captions', inputType: null },
+        { ref: 4, kind: 'link', label: 'Turn on captions - YouTube Help', href: 'https://support.google.com/youtube/captions', inputType: null },
+      ],
+    }
+    const target: DecisionChoiceAnswer = { type: 'choice', choice: 'ref-3', confidence: 0.85, probabilities: { 'ref-3': 0.85, 'ref-4': 0.15 } }
+    const landing: HopContext = { ...hop, visited: [SEARCH.url, 'https://support.google.com/captions'] }
+    expect(readCommandAnswers({ verb: choice('done', 0.4), target, slot: choice('none'), outcome: choice('not_yet', 0.5) }, 'enable captions', SEARCH, landing)).toEqual({ verb: 'done', target: null, slot: null })
   })
 })

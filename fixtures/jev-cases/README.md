@@ -5,8 +5,15 @@ state text and the questions with their options, exactly as Jev was sent
 them — and the answer each question should get, as a Choice label
 (`{"question": "target", "label": "ref-27"}`), a label at a floor
 (`{"question": "outcome", "label": "yes", "atLeast": 0.7}` — the runner acts
-on a Verdict only when it is sure, #366) or a label it must not be
-(`{"question": "target", "not": "ref-21"}`).
+on a Verdict only when it is sure, #366), a label it must not be
+(`{"question": "target", "not": "ref-21"}`) or a ceiling on whatever it
+chooses (`{"question": "verb", "below": 0.7}` — an unsure verb a sure target
+outvotes, #367).
+
+A case that expects a Command rather than one answer states it as the
+answers that make it: `click ref-12` from an unsure ref-less verb is
+`target=ref-12>=0.7 verb<0.7 verb!=type verb!=menu` (a sure `click` would
+make it too, and fails such a case — a false alarm, never a hidden misread).
 
 - `pnpm jev:candidates` lists the logged asks a misfire or overrun signal
   pointed at.

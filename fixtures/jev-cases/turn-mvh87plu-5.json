@@ -1,0 +1,139 @@
+{
+  "turnId": "turn-mvh87plu-5",
+  "transcript": "show captions",
+  "model": "jev-1.14.0",
+  "recordedAt": 1792533584272,
+  "expect": [
+    {
+      "question": "target",
+      "label": "ref-12",
+      "atLeast": 0.7
+    },
+    {
+      "question": "verb",
+      "below": 0.7
+    },
+    {
+      "question": "verb",
+      "not": "type"
+    },
+    {
+      "question": "verb",
+      "not": "menu"
+    }
+  ],
+  "ask": {
+    "state": "The user spoke to a web browser: \"show captions\"\nPage: https://www.youtube.com/watch?v=PCXpGeKKW1k — \"Kanye West - HIGHS AND LOWS (feat. Pomme) - YouTube\"\nPlaying: \"Kanye West - HIGHS AND LOWS (feat. Pomme) - YouTube\" 0:47 / 2:04, loop on\nRefs (number, kind, label, address, states):\n[1] button \"Guide\"\n[2] link \"YouTube Home\" https://www.youtube.com/\n[3] input[text] \"Search\" autocomplete=list hasPopup=listbox expanded=true\n[4] button \"Search Search\"\n[5] button \"Settings\"\n[6] link \"Sign in Sign in\" https://accounts.google.com/ServiceLogin?service=youtube&uilel=3&passive=true&continue=https%3A%2F%2Fwww.youtube.com%2Fsignin%3Faction_handle_signin%3Dtrue%26app%3Ddesktop%26hl%3Den-GB%26next%3Dhttps%253A%252F%252Fwww.youtube.com%252Fwatch%253Fv%253DPCXpGeKKW1k&hl=en-GB&ec=65620\n[7] media \"Kanye West - HIGHS AND LOWS (feat. Pomme) - YouTube\"\n[8] button \"Pause (k)\" keyshortcuts=\"k\"\n[9] button \"Mute (m)\" keyshortcuts=\"m\"\n[10] button \"0 Minutes 41 Seconds of 2 Minutes 4 Seconds 0:41 / 2:04\"\n[11] button \"Auto-play is off\"\n[12] button \"Subtitles/closed captions unavailable\" pressed=false keyshortcuts=\"c\"\n[13] button \"Settings\" hasPopup=menu expanded=false\n[14] button \"Cinema mode keyboard shortcut t\" keyshortcuts=\"t\"\n[15] button \"Full screen (f)\" keyshortcuts=\"f\"\n[16] link \"\" https://www.youtube.com/@underthemask94\n[17] link \"underthemask\" https://www.youtube.com/@underthemask94\n[18] button \"Subscribe to underthemask. Subscribe\"\n[19] button \"like this video along with 2,043 other people 2k\" pressed=false\n[20] button \"Dislike this video\" pressed=false\n[21] button \"Share\"\n[22] button \"Save to playlist\"\n[23] button \"More actions\"\n[24] link \"#BULLY\" https://www.youtube.com/hashtag/bully\n[25] link \"#KanyeWest\" https://www.youtube.com/hashtag/kanyewest\n[26] link \"#Pomme\" https://www.youtube.com/hashtag/pomme\n[27] link \"#KanyeWest\" https://www.youtube.com/hashtag/kanyewest\n[28] link \"#Pomme\" https://www.youtube.com/hashtag/pomme\n[29] link \"#BULLY\" https://www.youtube.com/hashtag/bully\n[30] button \"more\"\n[31] button \"Sort comments Sort by\" expanded=false\n[32] link \"1:52\" https://www.youtube.com/watch?v=kt_0b4RwerY&list=RDkt_0b4RwerY&start_radio=1&pp=oAcB\n[33] link \"YE - HIGHS AND LOWS 1 minute, 52 seconds YE - HIGHS AND LOWS\" https://www.youtube.com/watch?v=kt_0b4RwerY&list=RDkt_0b4RwerY&start_radio=1&pp=oAcB\n[34] button \"More actions\"\n[35] link \"8:37\" https://www.youtube.com/watch?v=EaTFLknB1wI\n[36] link \"We Are Young by Ye but its an actual song 8 minutes, 37 seconds We Are Young by…\" https://www.youtube.com/watch?v=EaTFLknB1wI\n[37] button \"More actions\"\n[38] button \"Dismiss\"\n[39] button \"Leave history off Leave history off\"\n[40] button \"Turn on history Turn on history\"\n[41] link \"7:58\" https://www.youtube.com/watch?v=dR4mvMem334&list=RDdR4mvMem334&start_radio=1&pp=oAcB\n[42] link \"ALL THE LOVE BY YE, BUT ITS THE EXTENDED VERSION 7 minutes, 58 seconds ALL THE …\" https://www.youtube.com/watch?v=dR4mvMem334&list=RDdR4mvMem334&start_radio=1&pp=oAcB\n[43] button \"More actions\"\n[44] link \"5:02\" https://www.youtube.com/watch?v=OZHjWc0Ssvk&list=RDOZHjWc0Ssvk&start_radio=1&pp=oAcB\n[45] link \"Wolves 5 minutes, 2 seconds Wolves\" https://www.youtube.com/watch?v=OZHjWc0Ssvk&list=RDOZHjWc0Ssvk&start_radio=1&pp=oAcB",
+    "questions": {
+      "verb": {
+        "type": "choice",
+        "instructions": "Which verb did the user ask the browser for? Choose none when the words are not a command for this page. The music verbs act on the song the appliance is playing, whatever page is open. When the words say click, press or tap — \"click play\", \"press pause\" — they name the page's own button: choose click, never a music verb.",
+        "options": {
+          "navigate": "go to a web address the words name: a website, a host or a url",
+          "search": "search for the words: on the web, or on this site when they point at something on it",
+          "click": "click one of the numbered refs on the page",
+          "type": "type words into one of the numbered refs (a text field)",
+          "menu": "right-click one of the numbered refs to open its menu, when no ref shown does what the words ask: the options it hides appear as new refs",
+          "scroll_up": "scroll the page up",
+          "scroll_down": "scroll the page down",
+          "back": "go back to the previous page",
+          "forward": "go forward",
+          "reload": "reload the page",
+          "press": "press a key: enter, escape, space or an arrow key",
+          "read": "read the page aloud or show its contents",
+          "clear": "clear the text in the focused field",
+          "stop": "stop what the browser is doing",
+          "done": "this page is what the user asked for: nothing more to do",
+          "none": "not a command for this page: a remark, a question, a name, noise",
+          "play": "music: find a song or video on YouTube by the words and play it now — never the page's play button, which is a click",
+          "play_next": "music: find a song by the words and play it after the one playing",
+          "queue": "music: find a song by the words and add it to the end of the queue",
+          "loop": "music: put the song playing on loop, so it repeats",
+          "loop_off": "music: stop looping the song playing",
+          "restart": "music: play the song playing again from the beginning",
+          "pause": "music: pause the song playing",
+          "unpause": "music: carry on playing the paused song",
+          "skip": "music: skip to the next song",
+          "previous": "music: go back to the song before",
+          "louder": "music: turn the volume up",
+          "quieter": "music: turn the volume down",
+          "mute": "music: mute the song playing",
+          "unmute": "music: unmute it",
+          "volume": "music: set the volume to a number from 0 to 100 (the number is the words it carries)",
+          "show": "music: show the video playing on the screen"
+        }
+      },
+      "target": {
+        "type": "choice",
+        "instructions": "Which numbered ref on the page do the words name as the thing to click or type into? Choose none when the command needs no ref, or names none of them.",
+        "options": {
+          "none": "no ref: the command does not act on one element",
+          "ref-1": "button \"Guide\"",
+          "ref-2": "link \"YouTube Home\" https://www.youtube.com/",
+          "ref-3": "input[text] \"Search\" autocomplete=list hasPopup=listbox expanded=true",
+          "ref-4": "button \"Search Search\"",
+          "ref-5": "button \"Settings\"",
+          "ref-6": "link \"Sign in Sign in\" https://accounts.google.com/ServiceLogin?service=youtube&uilel=3&passive=true&continue=https%3A%2F%2Fwww.youtube.com%2Fsignin%3Faction_handle_signin%3Dtrue%26app%3Ddesktop%26hl%3Den-GB%26next%3Dhttps%253A%252F%252Fwww.youtube.com%252Fwatch%253Fv%253DPCXpGeKKW1k&hl=en-GB&ec=65620",
+          "ref-7": "media \"Kanye West - HIGHS AND LOWS (feat. Pomme) - YouTube\"",
+          "ref-8": "button \"Pause (k)\" keyshortcuts=\"k\"",
+          "ref-9": "button \"Mute (m)\" keyshortcuts=\"m\"",
+          "ref-10": "button \"0 Minutes 41 Seconds of 2 Minutes 4 Seconds 0:41 / 2:04\"",
+          "ref-11": "button \"Auto-play is off\"",
+          "ref-12": "button \"Subtitles/closed captions unavailable\" pressed=false keyshortcuts=\"c\"",
+          "ref-13": "button \"Settings\" hasPopup=menu expanded=false",
+          "ref-14": "button \"Cinema mode keyboard shortcut t\" keyshortcuts=\"t\"",
+          "ref-15": "button \"Full screen (f)\" keyshortcuts=\"f\"",
+          "ref-16": "link \"\" https://www.youtube.com/@underthemask94",
+          "ref-17": "link \"underthemask\" https://www.youtube.com/@underthemask94",
+          "ref-18": "button \"Subscribe to underthemask. Subscribe\"",
+          "ref-19": "button \"like this video along with 2,043 other people 2k\" pressed=false",
+          "ref-20": "button \"Dislike this video\" pressed=false",
+          "ref-21": "button \"Share\"",
+          "ref-22": "button \"Save to playlist\"",
+          "ref-23": "button \"More actions\"",
+          "ref-24": "link \"#BULLY\" https://www.youtube.com/hashtag/bully",
+          "ref-25": "link \"#KanyeWest\" https://www.youtube.com/hashtag/kanyewest",
+          "ref-26": "link \"#Pomme\" https://www.youtube.com/hashtag/pomme",
+          "ref-27": "link \"#KanyeWest\" https://www.youtube.com/hashtag/kanyewest",
+          "ref-28": "link \"#Pomme\" https://www.youtube.com/hashtag/pomme",
+          "ref-29": "link \"#BULLY\" https://www.youtube.com/hashtag/bully",
+          "ref-30": "button \"more\"",
+          "ref-31": "button \"Sort comments Sort by\" expanded=false",
+          "ref-32": "link \"1:52\" https://www.youtube.com/watch?v=kt_0b4RwerY&list=RDkt_0b4RwerY&start_radio=1&pp=oAcB",
+          "ref-33": "link \"YE - HIGHS AND LOWS 1 minute, 52 seconds YE - HIGHS AND LOWS\" https://www.youtube.com/watch?v=kt_0b4RwerY&list=RDkt_0b4RwerY&start_radio=1&pp=oAcB",
+          "ref-34": "button \"More actions\"",
+          "ref-35": "link \"8:37\" https://www.youtube.com/watch?v=EaTFLknB1wI",
+          "ref-36": "link \"We Are Young by Ye but its an actual song 8 minutes, 37 seconds We Are Young by…\" https://www.youtube.com/watch?v=EaTFLknB1wI",
+          "ref-37": "button \"More actions\"",
+          "ref-38": "button \"Dismiss\"",
+          "ref-39": "button \"Leave history off Leave history off\"",
+          "ref-40": "button \"Turn on history Turn on history\"",
+          "ref-41": "link \"7:58\" https://www.youtube.com/watch?v=dR4mvMem334&list=RDdR4mvMem334&start_radio=1&pp=oAcB",
+          "ref-42": "link \"ALL THE LOVE BY YE, BUT ITS THE EXTENDED VERSION 7 minutes, 58 seconds ALL THE …\" https://www.youtube.com/watch?v=dR4mvMem334&list=RDdR4mvMem334&start_radio=1&pp=oAcB",
+          "ref-43": "button \"More actions\"",
+          "ref-44": "link \"5:02\" https://www.youtube.com/watch?v=OZHjWc0Ssvk&list=RDOZHjWc0Ssvk&start_radio=1&pp=oAcB",
+          "ref-45": "link \"Wolves 5 minutes, 2 seconds Wolves\" https://www.youtube.com/watch?v=OZHjWc0Ssvk&list=RDOZHjWc0Ssvk&start_radio=1&pp=oAcB"
+        }
+      },
+      "slot": {
+        "type": "choice",
+        "instructions": "Which words of the transcript are the thing the command carries verbatim: the address to open, the search terms, the song to play, the text to type, the key to press? Never the command word itself: \"play X\" carries X. Choose none when it carries none.",
+        "options": {
+          "none": "the command carries no words of its own",
+          "s0-0": "show",
+          "s0-1": "show captions",
+          "s1-1": "captions"
+        }
+      },
+      "where": {
+        "type": "choice",
+        "instructions": "Where do the words point: at something on this page, at something on youtube.com that is not on this page, or somewhere else on the web?",
+        "options": {
+          "page": "on this page: one of the numbered refs",
+          "site": "on youtube.com but not on this page: a page, a person, a post, a section of it",
+          "web": "elsewhere: another website, or a search of the whole web"
+        }
+      }
+    }
+  }
+}

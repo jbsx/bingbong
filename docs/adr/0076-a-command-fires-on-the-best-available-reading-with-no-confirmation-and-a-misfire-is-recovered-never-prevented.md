@@ -1162,3 +1162,48 @@ the title's.
 - The decision record's `task` names the Step (`step: 1 of 2`); `pnpm
   perf:report` counts lines that split.
 - The glossary gains **Step**.
+
+## Amendment 2026-10-21 — a sure target outvotes an unsure ref-less verb (#367)
+
+Two live sessions on a YouTube watch page, seven readings of "enable /
+show / disable captions" and "i dont want to see the captions", and none
+toggled the captions. In every one the target Choice named the captions
+button at 0.74 to 0.94, and the verb Choice's winner was under 0.7 and took
+no ref: `show` (a Capability), `done`, `none`. The reading took the verb
+first and heard the target only for a verb that takes one, so the least
+grounded answer overruled the most grounded one. The verb Choice's options
+are abstract words; the target Choice is the one that sees the page. A
+`done` at hop 0 was the worst case: it ended the Task "already here" on a
+0.34 answer that a 0.90 answer said was one click away.
+
+### Decision
+
+**When the target Choice names an offered ref at the Choice bar (0.7) and
+the verb Choice's top is under it and is not `click`, `type` or `menu`,
+the target decides.** A text field with a Slot is typed into, the Slot's
+words as ever; anything else is clicked. It holds for every ref-less verb,
+`done` and `none` included, and every Capability — the #353 rule (a
+`navigate` or `search` whose target names a ref is a click) widened from two
+verbs to all of them, and gated on sureness so a sure verb with a stray ref
+(`play` 0.97, a ref at 0.8) is left alone. The ref is the target's top
+label among the refs the hop offers, never a fallback's (#332, #342). The
+questions and the call are unchanged.
+
+**A sure Verdict that the Task is done is not outvoted.** At a later hop
+whose `outcome` is a sure `yes`, the rule stands aside: the ref the target
+names there is often the toggle the last hop flipped, and clicking it again
+undoes the Task (hop 1 of the 22:58 run, whose corpus case expects `yes`).
+This is no Verdict-before-verb precedence, which stays deferred to #366's
+data: a reading the rule does not touch reads as before.
+
+### Consequences
+
+- A sweep of the 239 logged readings (2026-10-17 to 21) fires the rule on
+  nine: the seven captions misreads and two `open` lines that already
+  clicked under #353. `open` 0.73 over ref-3 0.99 stays with the verb.
+- The corpus gains a ceiling expectation, `verb<0.7`: the six hop-0
+  captions asks are cases expecting `target=ref-12>=0.7 verb<0.7 verb!=type
+  verb!=menu`, the answers that make `click ref-12`. "show captions" reads
+  `show` at 0.69 to 0.76 on replay, straddling the bar, so its case fails
+  about half the time: the rule as decided does not reach a `show` that
+  comes back sure.
