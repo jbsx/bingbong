@@ -6,8 +6,7 @@ Accepted on 2026-10-21 by the owner, grilled from the post mortem of the
 11:50 live run that day (logs `decision-1792579864896`,
 `asks-1792579859609`; the first live session on #370's action card).
 Narrows ADR 0079's Capability: the ops a media element can take come from
-the ref, not from the Player's list, and the list's retirement is #374,
-parked. Built as two tickets in this order: the progress Noul (#373), then
+the ref, not from the Player's list, and the list's retirement is #374. Built as two tickets in this order: the progress Noul (#373), then
 the media ops (#372). The progress bar that reads the Noul is #375.
 
 ## Context
@@ -131,7 +130,8 @@ same thing, and an op or a ref-less verb can be set aside too.
   draws its captions itself, not through text tracks: its captions stay
   the page's button, and the captions ops serve sites on the standard.
 - ADR 0079's Capability narrows to the Player's own: a song to play, the
-  Queue's walk, show. #374 retires the layer once #372 is read live.
+  Queue's walk, show. #374 retires the layer, the Player's own as Appliance
+  Verbs.
 - The glossary gains **Media Op**, **Amount** and **Progress**;
   **Capability** and **Set Aside** are reworded.
 - The browser's `back` and `forward` lines are lures for "go back a

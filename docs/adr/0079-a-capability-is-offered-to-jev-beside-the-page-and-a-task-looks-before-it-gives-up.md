@@ -10,6 +10,15 @@ Match (a `play <words>` line now reaches Jev). The Steps decision from the
 same grill is ADR 0076's second amendment. Built as three tickets:
 Capabilities (#362), Look-then-act (#363), Steps (#364).
 
+**Capability retired by #374 (2026-10-21).** A media element's ops come
+from its ref on any site (ADR 0080), and the Player's own actions — a
+song to play, the Queue's walk, `show` — are Appliance Verbs on the same
+card with the same lines, the Command the grammar's exact lines make. The
+Queue stays: what plays next, what played before and whether the music
+carries on are state no page holds, so its walk is the appliance's and
+not a hand-grown list of page actions. The Look-then-act half (`menu`,
+the undo, media state in the ask, the hidden page's size) stands.
+
 ## Context
 
 With a song playing, four plain-English lines — "start the song from the

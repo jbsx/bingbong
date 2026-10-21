@@ -112,19 +112,21 @@ runs only after the earlier ended done. A line the grammar settles whole
 is never Steps; a line is split only once it is whole, never on a partial.
 _Avoid_: sub-task, chain, plan, sequence
 
-**Capability**:
-An action the appliance itself can take, offered to the Decision Model as
-an action beside the browser's: the Player's loop, restart, pause, skip,
-volume and the rest while a song is on (the Player's, or any media the
-page has started), on any page, and a song to play
-by its words at any time; the Timer next. A
-Capability Command fires the action, answers its line and ends the Task
-there. The words' own exact phrases ("loop", "pause") are still the
-grammar's first; plain English ("put the song on loop") is the Decision
-Model's, which chooses the Capability as it would a ref. While any media
-ref is on the card the song's ops are withheld: the ref's own Media Ops
-are the one line for each (ADR 0080), and the layer's retirement is #374.
-_Avoid_: tool, skill, feature, affordance, intent
+**Appliance Verb**:
+A ref-less option on the action card that acts on the appliance itself,
+never on the page: the Player's search (`play`, `play_next`, `queue`),
+the Queue's walk (`skip`, `previous`) and `show`. The Decision Model
+chooses one as it would a ref, with its own line beside the browser's
+ref-less verbs; the Command is the one the grammar's exact lines make,
+the Player's action by whichever road. Each is offered while there is
+something for it to act on — a song to play whenever a Player is wired,
+the Queue's walk while the Queue holds a song, `show` while any song is
+on, the Player's or the page's — withheld by ability, never by state
+(ADR 0080). A fixed small set that grows only with the appliance's own
+features (the Timer next), never per site: an action on a page's element
+is the ref's own op, never an Appliance Verb (#374, retiring the
+Capability layer of ADR 0079).
+_Avoid_: capability, tool, skill, feature, affordance, intent
 
 **Media Op**:
 An action a media ref carries on the action card because of its kind, the
@@ -282,7 +284,7 @@ A verb is an action the browser can take — `navigate` to an address,
 navigate, a search or a click is the reading's to settle. The Decision
 Model reads a Command as one whole action: one Choice among a click, a
 type or a right-click on each element, an open of each link further down,
-each verb that needs no element, each Capability, and none — never "done",
+each verb that needs no element, each Appliance Verb, and none — never "done",
 which is the Verdict's. There is no plan
 and no confirmation: a Command is the unit a Task is made of, and an
 Utterance is a Task of one or more. A Command that is not for the page at
@@ -345,7 +347,7 @@ exactly — the label exactly one element carries, or the Nth result on a
 search page ("the first result"). A line with free
 words — search terms, a song's words, words about the page — is never its:
 it goes to the
-Decision Model with every option, Capabilities included.
+Decision Model with every option, Appliance Verbs included.
 It is the fastest reading, and the only one that fires when the Decision
 Model does not answer — a line it does not settle is then no Command. It
 never guesses: there is no lenient reading, no nearest label, no words
@@ -399,8 +401,8 @@ _Avoid_: bug report, ticket, known issue
 The first point of the pipeline that failed a Failed Line, in the
 pipeline's order: `stt` (the words heard were not the words said), `turn`
 (the Utterance cut or joined wrong), `local_match`, `reading` (Jev picked
-wrong among options that existed), `missing_option` (no Capability, op or
-verb could do it), `runner` (the hop policy: cap, unchanged, undo, the
+wrong among options that existed), `missing_option` (no Appliance Verb, op or
+ref-less verb could do it), `runner` (the hop policy: cap, unchanged, undo, the
 Verdict, what was said), `player`, `page` (a stale label, late hydration,
 a wall). Many lines under one Stage is a strategy problem; one is a
 one-off.
@@ -1105,15 +1107,16 @@ and Now Playing never shows it paused. "show the video" / "show it" brings
 the dashboard up over the watch page (#344).
 The Player's exact phrases ("loop", "pause", "restart") are the grammar's
 first, and no partial fires them early; `play <words>` and every plain
-music line ("put the song on loop") go to Jev, which is offered the
-Player's ops as Capabilities while a song is on — the Player's, or any
-media the page has started, as after `resume` or a `skip` with nothing
-queued (ADR 0079 and its amendment, amending #343's ruling 1). The ops
-drive YouTube's player first, else the page's own media element as the
-collect picks it — the one playing, else the first that started — so a
-song the Player never started loops, restarts, pauses and shows as the
-Player's own would; a `stop` with nothing in flight and a `skip`'s own
-pause stay YouTube's player's alone (ADR 0076). "click play" and "press
+music line ("put the song on loop") go to Jev. A song to play, the
+Queue's walk and `show` are the Player's Appliance Verbs on the card; the
+song's own ops — loop, restart, pause, volume and the rest — are the
+Media Ops its ref carries, on YouTube as on any site (ADR 0080; ADR 0079's
+Capability retired by #374). The Player's exact lines still drive
+YouTube's player first, else the page's own media element as the collect
+picks it — the one playing, else the first that started — so a song the
+Player never started loops, restarts, pauses and shows as the Player's
+own would; a `stop` with nothing in flight and a `skip`'s own pause stay
+YouTube's player's alone (ADR 0076). "click play" and "press
 play" stay the page's button by the option's own words, not a rule.
 `back` stays history and `resume` the
 Task's.
@@ -1143,7 +1146,10 @@ _Avoid_: music app, media player (for the page's own controls), playlist (for th
 The Player's one queue. It holds the song playing (or paused), the songs
 queued after it, the songs played before it (what `previous` returns to),
 and whether the song loops. `play <words>` replaces the current song and
-keeps the Queue. A song queued with nothing playing plays at once. `skip`
+keeps the Queue. It is state no page can hold — what plays next, what
+played before, whether the music carries on at a song's end — which is
+why its walk is the appliance's own and not a page's control (#374,
+2026-10-21). A song queued with nothing playing plays at once. `skip`
 clears the loop, and a pause keeps it. It lives in main and does not
 survive a restart, as the Timer does not.
 _Avoid_: playlist, up next (for the whole queue)

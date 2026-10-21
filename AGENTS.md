@@ -83,8 +83,8 @@ op its kind allows, and Jev picks the op and the amount.
   `src/core/music/`, #343): `play <words>` opens YouTube in the pane and
   every music verb is one evaluate on the watch page's video. `play` is a
   verb the runner hands to it: an exact line from the grammar, anything
-  with free words from Jev, which is offered the Player's ops as
-  Capabilities (`src/core/command/capability.ts`, ADR 0079). A `play` whose
+  with free words from Jev, which is offered the Player's own as Appliance
+  Verbs (`src/core/command/jevReading.ts`, ADR 0079 as amended by #374). A `play` whose
   words Jev reads as pointing on the site open (`where`, the Site Scope)
   searches that site instead, and the landing's own media plays through
   the media ops; YouTube is the Media Engine (`siteScope.ts`), the default
