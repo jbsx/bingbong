@@ -1,4 +1,4 @@
-import type { DecisionChoiceAnswer, DecisionChoiceQuestion, DecisionNoulQuestion } from '../ports/decisionModel'
+import type { DecisionChoiceAnswer, DecisionChoiceQuestion, DecisionNoulAnswer, DecisionNoulQuestion } from '../ports/decisionModel'
 import type { PageLink, PageMedia } from '../browser/snapshot'
 import { JEV_VERBS, PRESS_KEYS, describeCommand, normalizeWords, pressKeyOf, targetLabel, verbTakesSlot, verbTakesTarget, type Command, type CommandPage, type CommandRef } from './command'
 import { dialogControls, type DismissChoice } from './dismissDialog'
@@ -119,7 +119,7 @@ export interface HopContext {
   /** Each action taken so far and what it did ({@link doneLine}). */
   readonly actions: readonly string[]
   readonly links: readonly PageLink[]
-  /** The targets a hop that changed nothing set aside (#336): never offered again in this Task. */
+  /** The actions a hop that changed nothing (#336) or did not help (#373) set aside, by card label: never offered again in this Task. */
   readonly setAside?: readonly SetAside[]
   /** The sites the Task has searched (#341): a hop on one is never offered its Site Scope again. */
   readonly searched?: readonly string[]
@@ -164,23 +164,56 @@ function scopableSite(url: string, hop: HopContext | undefined): string | null {
 }
 
 /**
- * A target set aside (#336): known by its label and its address — the
- * link's own, or the page's for a control that has none — since a ref's
- * number changes from one hop to the next.
+ * A ref as a Task knows it across hops (#336): its label and its address —
+ * the link's own, or the page's for a control that has none — since a
+ * ref's number changes from one hop to the next.
  */
-export interface SetAside {
+export interface RefIdentity {
   readonly label: string
   readonly address: string
 }
 
-/** Whether two set-aside identities name the same target. */
-export function sameAside(a: SetAside, b: SetAside): boolean {
+/** Whether two identities name the same ref. */
+function sameRef(a: RefIdentity, b: RefIdentity): boolean {
   return a.label === b.label && a.address === b.address
 }
 
-/** The set-aside identity of a ref on a page. */
-export function setAsideOf(ref: CommandRef, page: CommandPage): SetAside {
+/** The identity of a ref on a page. */
+export function refIdentityOf(ref: CommandRef, page: CommandPage): RefIdentity {
   return { label: ref.label, address: pageAddressOf(ref.href ?? page.url) }
+}
+
+/** What an action card label does to a numbered ref, as a set-aside keeps it. */
+type RefAct = 'click' | 'type' | 'menu'
+
+/**
+ * An action set aside (#336, #373, ADR 0080), keyed by its card label: a
+ * ref's action (`click-10`) by its act and the ref's identity, so the ref
+ * keeps its other actions; a ref-less verb or a Capability (`scroll_down`,
+ * `loop`) by its name.
+ */
+export type SetAside = (RefIdentity & { readonly act: RefAct }) | { readonly verb: string }
+
+/** The set-aside of the action a Command fired on a page; null when the page lacks the ref it names, or it is no card action. */
+export function setAsideOf(command: Command, page: CommandPage): SetAside | null {
+  if (command.capability !== undefined) return { verb: command.capability }
+  if (command.verb === 'click' || command.verb === 'type' || command.verb === 'menu') {
+    const ref = page.refs.find((candidate) => candidate.ref === command.target)
+    return ref === undefined ? null : { act: command.verb, ...refIdentityOf(ref, page) }
+  }
+  return isRefLessVerb(command.verb) ? { verb: command.verb } : null
+}
+
+/** Whether the Task set aside what a card label names on this page. */
+function isAside(label: string, page: CommandPage, setAside: readonly SetAside[]): boolean {
+  if (setAside.length === 0) return false
+  const acted = refActionOf(label)
+  if (acted === null) return setAside.some((aside) => 'verb' in aside && aside.verb === label)
+  if (acted.act === 'open') return false
+  const ref = page.refs.find((candidate) => candidate.ref === acted.n)
+  if (ref === undefined) return false
+  const own = refIdentityOf(ref, page)
+  return setAside.some((aside) => 'act' in aside && aside.act === acted.act && sameRef(aside, own))
 }
 
 /**
@@ -427,29 +460,25 @@ export const RUNNER_UP_FLOOR = 0.05
  * The runner-up of a reading (#363, ADR 0079): the most probable action of
  * the opener's own kind on its action card (#370) — the next click after a
  * click, the next right-click after a menu — on a ref that is not the one
- * it fired, nor one the Task set aside, at {@link RUNNER_UP_FLOOR} or over;
- * named by its set-aside identity, since the page it is fired on is
- * collected anew. Null when there is none.
+ * it fired, nor one whose action of that kind the Task set aside, at
+ * {@link RUNNER_UP_FLOOR} or over; named by its identity, since the page
+ * it is fired on is collected anew. Null when there is none.
  */
-export function runnerUpOf(action: DecisionChoiceAnswer, page: CommandPage, fired: number, setAside: readonly SetAside[], kind: 'click' | 'menu' = 'click'): SetAside | null {
-  const firedRef = page.refs.find((ref) => ref.ref === fired)
-  const excluded = [...setAside, ...(firedRef !== undefined ? [setAsideOf(firedRef, page)] : [])]
+export function runnerUpOf(action: DecisionChoiceAnswer, page: CommandPage, fired: number, setAside: readonly SetAside[], kind: 'click' | 'menu' = 'click'): RefIdentity | null {
   const ranked = Object.entries(action.probabilities)
     .filter(([, probability]) => probability >= RUNNER_UP_FLOOR)
     .sort((a, b) => b[1] - a[1])
   for (const [label] of ranked) {
     const acted = refActionOf(label)
-    const ref = acted?.act === kind ? page.refs.find((candidate) => candidate.ref === acted.n) : undefined
-    if (ref === undefined) continue
-    const own = setAsideOf(ref, page)
-    if (!excluded.some((aside) => sameAside(aside, own))) return own
+    const ref = acted?.act === kind && acted.n !== fired ? page.refs.find((candidate) => candidate.ref === acted.n) : undefined
+    if (ref !== undefined && !isAside(label, page, setAside)) return refIdentityOf(ref, page)
   }
   return null
 }
 
-/** The ref on a page that a set-aside identity names (#363): its label and its address; null when the page has none. */
-export function refNamed(page: CommandPage, named: SetAside): CommandRef | null {
-  return page.refs.find((ref) => sameAside(setAsideOf(ref, page), named)) ?? null
+/** The ref on a page that an identity names (#363): its label and its address; null when the page has none. */
+export function refNamed(page: CommandPage, named: RefIdentity): CommandRef | null {
+  return page.refs.find((ref) => sameRef(refIdentityOf(ref, page), named)) ?? null
 }
 
 /** A result link a hop may open, numbered as its `link-N` line in the state and its `open-N` option. */
@@ -468,12 +497,7 @@ function offered(page: CommandPage, hop: HopContext | undefined): { page: Comman
   if (hop === undefined) return { page, links: [] }
   const seen = new Set(hop.visited.map(pageAddressOf))
   const fresh = (href: string | null): boolean => href === null || !seen.has(pageAddressOf(href))
-  const setAside = hop.setAside ?? []
-  const kept = (ref: CommandRef): boolean => {
-    const own = setAsideOf(ref, page)
-    return !setAside.some((aside) => sameAside(aside, own))
-  }
-  const refs = page.refs.filter((ref) => fresh(ref.href) && kept(ref))
+  const refs = page.refs.filter((ref) => fresh(ref.href))
   const taken = new Set(page.refs.flatMap((ref) => (ref.href === null ? [] : [pageAddressOf(ref.href)])))
   const links: OfferedLink[] = []
   // A Choice holds at most 255 options: `none`, the refs, then the links.
@@ -623,7 +647,7 @@ function whereQuestion(site: string): DecisionChoiceQuestion {
  */
 export function commandQuestions(text: string, pageRead: CommandPage, hop?: HopContext, options: { readonly steps?: boolean; readonly capabilities?: readonly Capability[] } = {}): CommandQuestions {
   const { page, links } = offered(pageRead, hop)
-  const reading: ActionQuestions = { action: actionQuestion(page, pageRead, links, hop !== undefined, options.capabilities ?? []), slot: slotQuestion(text) }
+  const reading: ActionQuestions = { action: actionQuestion(page, pageRead, links, hop !== undefined, options.capabilities ?? [], hop?.setAside ?? []), slot: slotQuestion(text) }
   const site = scopableSite(pageRead.url, hop)
   const asked = site === null ? reading : { ...reading, where: whereQuestion(site) }
   const steps = hop === undefined && options.steps !== false ? stepsQuestion(text) : null
@@ -638,19 +662,23 @@ export function commandQuestions(text: string, pageRead: CommandPage, hop?: HopC
  * Verdict's alone. Under the Choice cap the clicks come first, then the
  * types, then the opens, and a right-click on each ref fills what room is
  * left — a menu is the last resort, never chosen over the page's own
- * control in the logged asks.
+ * control in the logged asks. An action the Task set aside is not offered
+ * (#373): a ref's other actions stay.
  */
-function actionQuestion(page: CommandPage, pageRead: CommandPage, links: readonly OfferedLink[], later: boolean, capabilities: readonly Capability[]): DecisionChoiceQuestion {
-  let room = MAX_SPANS + 1 - (REFLESS_VERBS.length + 1 + capabilities.length)
+function actionQuestion(page: CommandPage, pageRead: CommandPage, links: readonly OfferedLink[], later: boolean, offeredCapabilities: readonly Capability[], setAside: readonly SetAside[]): DecisionChoiceQuestion {
+  const kept = (label: string): boolean => !isAside(label, page, setAside)
+  const capabilities = offeredCapabilities.filter(kept)
+  const refLess = Object.entries(REFLESS_DESCRIPTIONS).filter(([verb]) => kept(verb))
+  let room = MAX_SPANS + 1 - (refLess.length + capabilities.length)
   const take = <T>(items: readonly T[]): readonly T[] => {
     const taken = items.slice(0, Math.max(0, room))
     room -= taken.length
     return taken
   }
-  const clicked = new Set(take(page.refs).map((ref) => ref.ref))
-  const typed = new Set(take(page.refs.filter((ref) => clicked.has(ref.ref) && isTextField(ref))).map((ref) => ref.ref))
+  const clicked = new Set(take(page.refs.filter((ref) => kept(`click-${ref.ref}`))).map((ref) => ref.ref))
+  const typed = new Set(take(page.refs.filter((ref) => isTextField(ref) && kept(`type-${ref.ref}`))).map((ref) => ref.ref))
   const opened = take(links)
-  const menus = take(page.refs.filter((ref) => clicked.has(ref.ref)))
+  const menus = take(page.refs.filter((ref) => kept(`menu-${ref.ref}`)))
   // A sentence on when to right-click, or a ref line on each right-click, lowered every sure click (replay 2026-10-21: "disable captions" 0.66–0.72 → 0.41–0.46, its top `none`).
   const instructions = `${later ? "Which one action comes next for the user's words, given Done so far and the page now?" : "Which one action does the browser take for the user's words?"} Each option is a whole action: a numbered ref with what is done to it, or a verb that needs no ref. Choose none when the words are not a command.`
   return {
@@ -665,7 +693,7 @@ function actionQuestion(page: CommandPage, pageRead: CommandPage, links: readonl
       ),
       ...Object.fromEntries(opened.map((link) => [`open-${link.n}`, `open result ${describeLink(link)}`])),
       ...Object.fromEntries(menus.map((ref) => [`menu-${ref.ref}`, `right-click [${ref.ref}] to open its menu`])),
-      ...REFLESS_DESCRIPTIONS,
+      ...Object.fromEntries(refLess),
       ...Object.fromEntries(capabilities.map((capability) => [capability, CAPABILITY_DESCRIPTIONS[capability]])),
     },
   }
@@ -747,16 +775,41 @@ export function dismissPhraseQuestions(text: string, page: CommandPage, { capabi
   return dismiss === null ? null : { ...commandQuestions(text, page, undefined, { steps: false, capabilities }), dismiss }
 }
 
-/** A hop's questions: the Command's, the Verdict and, with a pop-up open, the dismiss Choice. */
-export type HopQuestions = CommandQuestions & { readonly outcome: DecisionChoiceQuestion; readonly dismiss?: DecisionChoiceQuestion }
+/**
+ * The Progress Noul (#373, ADR 0080): did the last action bring the page
+ * closer to what the words ask? Asked beside the Verdict at every hop past
+ * the first; the runner acts on it only when sure it did not help
+ * ({@link PROGRESS_FLOOR}), and it never ends a Task. Measured on the 11:50
+ * run's hop asks and the #370 AC8 ones: wordings naming repeats, or changes
+ * that would have happened anyway, did not lower the clock flips reading
+ * 0.4–0.6, and one lowered the menu step.
+ */
+function progressQuestion(): DecisionNoulQuestion {
+  return {
+    type: 'noul',
+    instructions:
+      "Did the last action in Done so far bring the page closer to what the user's words ask for? Judge by what it did and the page now: closer when it did part or all of what they asked, or opened the way to it; not closer when what changed is not what they asked for.",
+  }
+}
+
+/** At or under it, the Progress Noul is sure the last action did not help (#373): the mirror of the 0.7 Choice bar. */
+export const PROGRESS_FLOOR = 0.3
+
+/** A hop's questions: the Command's, the Verdict, the Progress Noul and, with a pop-up open, the dismiss Choice. */
+export type HopQuestions = CommandQuestions & { readonly outcome: DecisionChoiceQuestion; readonly progress: DecisionNoulQuestion; readonly dismiss?: DecisionChoiceQuestion }
 
 export function hopQuestions(text: string, pageRead: CommandPage, hop: HopContext, { capabilities }: { readonly capabilities?: readonly Capability[] } = {}): HopQuestions {
   const dismiss = dismissQuestion(pageRead)
-  return { ...commandQuestions(text, pageRead, hop, { capabilities }), outcome: outcomeQuestion(), ...(dismiss !== null ? { dismiss } : {}) }
+  return { ...commandQuestions(text, pageRead, hop, { capabilities }), outcome: outcomeQuestion(), progress: progressQuestion(), ...(dismiss !== null ? { dismiss } : {}) }
 }
 
-/** The answers to {@link HopQuestions}: the Command's, the Verdict's and, when asked, the dismiss Choice's. */
-export type HopAnswers = CommandAnswers & { readonly outcome: DecisionChoiceAnswer; readonly dismiss?: DecisionChoiceAnswer }
+/** The answers to {@link HopQuestions}: the Command's, the Verdict's, the Progress Noul's and, when asked, the dismiss Choice's. */
+export type HopAnswers = CommandAnswers & { readonly outcome: DecisionChoiceAnswer; readonly progress?: DecisionNoulAnswer; readonly dismiss?: DecisionChoiceAnswer }
+
+/** The Progress Noul's probability (#373); null when it was not asked. */
+export function readProgress(answers: CommandAnswers | HopAnswers): number | null {
+  return 'progress' in answers && answers.progress !== undefined ? answers.progress.noul : null
+}
 
 /** How Jev answered the dismiss Choice: a dialog control by ref, or Escape, with its confidence. Null when it was not asked, or names nothing offered. */
 export function readDismissChoice(answers: CommandAnswers | HopAnswers, page: CommandPage): DismissChoice | null {
@@ -868,10 +921,10 @@ function fallbackTargets(page: CommandPage, links: readonly OfferedLink[]): { re
   return { refs, links: refs.size === 0 ? [] : links }
 }
 
-/** {@link mostProbableOpening} for a later hop on a search landing: on a Web Engine's, a result or nothing ({@link fallbackTargets}). */
-function mostProbableFallbackOpening(answer: DecisionChoiceAnswer, page: CommandPage, links: readonly OfferedLink[]): Command | null {
+/** {@link mostProbableOpening} for a later hop on a search landing: on a Web Engine's, a result or nothing ({@link fallbackTargets}); never a click the Task set aside. */
+function mostProbableFallbackOpening(answer: DecisionChoiceAnswer, page: CommandPage, links: readonly OfferedLink[], setAside: readonly SetAside[]): Command | null {
   const targets = fallbackTargets(page, links)
-  return mostProbable<Command>(answer, (label) => openingOf(refActionOf(label), page, targets.links, targets.refs))
+  return mostProbable<Command>(answer, (label) => (isAside(label, page, setAside) ? null : openingOf(refActionOf(label), page, targets.links, targets.refs)))
 }
 
 /** The words the Slot answer names; the words after the verb when it names none — what a Task that found nothing says it could not find (#363). */
@@ -913,10 +966,24 @@ function refCommand(acted: RefAction, answers: CommandAnswers | HopAnswers, text
 /** Whether a card label is a verb the card offers as it is. */
 const isRefLessVerb = (label: string): label is RefLessVerb => (REFLESS_VERBS as readonly string[]).includes(label)
 
+/**
+ * The card label a reading acts on: the top choice; or, when the Task set
+ * it aside on the same call that judged it no progress (#373), the most
+ * probable label still offered, at {@link RUNNER_UP_FLOOR} or over —
+ * `none` under it.
+ */
+function offeredChoice(action: DecisionChoiceAnswer, page: CommandPage, setAside: readonly SetAside[]): string {
+  if (!isAside(action.choice, page, setAside)) return action.choice
+  const next = Object.entries(action.probabilities)
+    .filter(([label, probability]) => probability >= RUNNER_UP_FLOOR && !isAside(label, page, setAside))
+    .sort((a, b) => b[1] - a[1])[0]
+  return next?.[0] ?? 'none'
+}
+
 /** The Command Jev's answers make: the action card's top option, with the Slot and `where` read as the action needs them. */
 export function readCommandAnswers(answers: CommandAnswers | HopAnswers, text: string, pageRead: CommandPage, hop?: HopContext): Command {
   const none: Command = { verb: 'none', target: null, slot: null }
-  const label = answers.action.choice
+  const label = offeredChoice(answers.action, pageRead, hop?.setAside ?? [])
   if (isCapability(label)) return capabilityCommand(label, answers.slot, text) ?? none
   const { page, links } = offered(pageRead, hop)
   const acted = refActionOf(label)
@@ -951,7 +1018,7 @@ export function readCommandAnswers(answers: CommandAnswers | HopAnswers, text: s
     // target Jev barely offered would overrun it (#342), so the hop has no
     // next step — nor on a landing with nothing to open.
     if (!onResults(page.url, hop)) return none
-    return mostProbableFallbackOpening(answers.action, page, links) ?? none
+    return mostProbableFallbackOpening(answers.action, page, links, hop.setAside ?? []) ?? none
   }
   if (verb === 'press') {
     const key = slot === null ? null : pressKeyOf(slot)

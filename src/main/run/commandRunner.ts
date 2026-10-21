@@ -21,12 +21,15 @@ import {
   partialQuestions,
   readCommandAnswers,
   readDismissChoice,
+  readProgress,
   readSteps,
   dismissPhraseQuestions,
   readVerdict,
   freshRefs,
+  refIdentityOf,
   refNamed,
   runnerUpOf,
+  PROGRESS_FLOOR,
   setAsideOf,
   slotWords,
   type DoneResult,
@@ -97,8 +100,9 @@ import type { Player, PlayerOutcome } from '../music/player'
 // and asks Jev alone — the same action card and the Verdict, against the
 // whole transcript, the addresses visited and the actions taken — until the
 // Verdict is a sure yes or the card reads `none`, an action meets a wall, five actions have fired, two
-// hops in a row change nothing (#336: each such hop's target is set aside),
-// Jev does not answer, or a later Utterance, Escape or the Abort Head
+// hops in a row change nothing (#336) or are sure not to have helped (the
+// Progress Noul at or under 0.3, #373) — each such action set aside by its
+// card label — Jev does not answer, or a later Utterance, Escape or the Abort Head
 // supersedes it. One `command` event and one decision record per hop. A
 // dismiss phrase over an open dialog closes it before Jev is asked (#336).
 // A hop whose Verdict is a sure "in the way" over a dialog steps aside
@@ -319,8 +323,8 @@ interface FireResult {
   readonly error?: string
 }
 
-/** How many hops in a row that change nothing end a Task (#336). */
-const MAX_UNCHANGED_HOPS = 2
+/** How many hops in a row that change nothing, or that the Progress Noul is sure did not help, end a Task (#336, #373). */
+const MAX_STALLED_HOPS = 2
 
 /** The verbs that say the user moved on from a Slot: the retry chain settles on them. */
 const MOVES_ON: ReadonlySet<Command['verb']> = new Set(['click', 'menu', 'scroll_up', 'scroll_down', 'read', 'forward'])
@@ -1136,10 +1140,10 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     readonly visited: string[]
     /** Each action fired and what it did, as "Done so far" tells it (#336). */
     readonly actions: string[]
-    /** The targets of hops that changed nothing (#336): not offered again. */
+    /** The actions of hops that changed nothing (#336) or did not help (#373), by card label: not offered again. */
     readonly setAside: SetAside[]
-    /** How many hops in a row have changed nothing (#336). */
-    unchanged: number
+    /** How many hops in a row have changed nothing or not helped (#336, #373): one counter. */
+    stalled: number
     /** The sites it has searched (#341): one Site Scope search per site per Task. */
     readonly searched: string[]
     /** The words it has searched for or typed (owner's rule 2026-10-19): a page whose address carries them is their results. */
@@ -1215,8 +1219,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     task.obstacles.push(obstacle)
     const raised = task.raised
     if (raised !== undefined) {
-      const target = raised.page.refs.find((ref) => ref.ref === raised.command.target)
-      if (target !== undefined) task.setAside.push(setAsideOf(target, raised.page))
+      const aside = setAsideOf(raised.command, raised.page)
+      if (aside !== null) task.setAside.push(aside)
     }
     return ladder
   }
@@ -1242,7 +1246,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   function endedByAction(task: Task, outcome: FireOutcome): TaskEnded | null {
     if (outcome === 'superseded' || superseded(task)) return 'superseded'
     if (outcome === 'wall' || outcome === 'stayed') return 'wall'
-    if (task.unchanged >= MAX_UNCHANGED_HOPS) return 'unchanged'
+    if (task.stalled >= MAX_STALLED_HOPS) return 'unchanged'
     return task.actions.length >= MAX_TASK_ACTIONS ? 'cap' : null
   }
 
@@ -1277,12 +1281,10 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     if (command.site !== undefined) task.searched.push(command.site)
     if ((command.verb === 'search' || command.verb === 'type') && command.slot !== null && command.slot !== '') task.terms.push(command.slot)
     if (fired.unchanged === true) {
-      // A hop that changed nothing (#336): its target is not offered again, and a second in a row ends the Task.
-      task.unchanged += 1
-      const target = page.refs.find((ref) => ref.ref === command.target)
-      if (target !== undefined) task.setAside.push(setAsideOf(target, page))
-    } else {
-      task.unchanged = 0
+      // A hop that changed nothing (#336): its action is not offered again, and a second strike in a row ends the Task. One that changed something is struck or cleared by the next hop's Progress Noul (#373).
+      task.stalled += 1
+      const aside = setAsideOf(command, page)
+      if (aside !== null) task.setAside.push(aside)
     }
     const ended = endedByAction(task, fired.outcome)
     log({ ...record, ...landed, ...(ended !== null ? { ended } : {}) })
@@ -1308,8 +1310,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   }
 
   /** A hop that fires nothing: its words greyed in the Feed with what it came to, and its turn closed. */
-  function dropHop(turnId: string, task: Task, hop: number, action: string, outcome: 'done' | 'cancelled', firedAt: number): void {
-    publish({ type: 'command', turnId, text: task.text, action, dropped: true, task: hopOf(task, hop), at: firedAt })
+  function dropHop(turnId: string, task: Task, place: TaskHop, action: string, outcome: 'done' | 'cancelled', firedAt: number): void {
+    publish({ type: 'command', turnId, text: task.text, action, dropped: true, task: place, at: firedAt })
     publish({ type: 'done', turnId, outcome, at: at() })
   }
 
@@ -1407,7 +1409,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     const opener = opened.command.verb === 'click' ? opened.page.refs.find((ref) => ref.ref === opened.command.target) : undefined
     const steps: (() => Command | null)[] = [
       () => ESCAPE,
-      ...(opener !== undefined ? [() => clickOn(refNamed(now, setAsideOf(opener, opened.page)))] : []),
+      ...(opener !== undefined ? [() => clickOn(refNamed(now, refIdentityOf(opener, opened.page)))] : []),
     ]
     let last: DecisionRecord | null = null
     for (const step of steps) {
@@ -1439,7 +1441,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   function endNotFound(task: Task, hop: number, words: string, last: DecisionRecord, endTurnId: string, endAt: number): { ended: TaskEnded; hop: number } {
     log({ ...last, ended: 'not_found' })
     answerFailure(endTurnId, notHereLine(words))
-    dropHop(endTurnId, task, hop, "couldn't find it here", 'done', endAt)
+    dropHop(endTurnId, task, hopOf(task, hop), "couldn't find it here", 'done', endAt)
     return { ended: 'not_found', hop }
   }
 
@@ -1462,7 +1464,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     task.opened = undefined
     if (opened === undefined) return endNotFound(task, hop, dead.words, dead.record, dead.turnId, dead.firedAt)
     log(dead.record)
-    dropHop(dead.turnId, task, hop, 'not here: closing what it opened', 'done', dead.firedAt)
+    dropHop(dead.turnId, task, hopOf(task, hop), 'not here: closing what it opened', 'done', dead.firedAt)
     const closed = await closeOpened(task, hop, dead.read, opened, dead.page)
     if ('ended' in closed) return { ended: closed.ended, hop }
     const tryRunnerUp = mayTryRunnerUp(task, opened)
@@ -1540,12 +1542,24 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         const jev = result === null ? {} : { jev: { model: result.model, latencyMs: result.latencyMs, reason: result.reason }, ask: result.askId }
         const ended: TaskEnded = superseded(task) ? 'superseded' : 'unavailable'
         log({ ...base, ...none, jevAsked: result !== null, ...jev, ended })
-        dropHop(turnId, task, hop, ended === 'superseded' ? abandonedAction(task.submission) : 'not read', ended === 'superseded' ? 'cancelled' : 'done', firedAt)
+        dropHop(turnId, task, hopOf(task, hop), ended === 'superseded' ? abandonedAction(task.submission) : 'not read', ended === 'superseded' ? 'cancelled' : 'done', firedAt)
         return endTask(task, ended, hop + 1)
       }
 
+      // Progress (#373, ADR 0080): the Noul judges the last action; a sure
+      // yes keeps the end whatever it says, and an action that changed
+      // nothing was struck when it settled, so it is judged once. Sure it
+      // did not help, the action is set aside by its card label from this
+      // very reading on: the card asked on this call is read without it.
+      const progress = readProgress(result.answers)
+      const verdict = readVerdict(result.answers)
+      const sureYes = sure(verdict) && verdict.outcome === 'yes'
+      const judged = task.last !== undefined && task.last.fired.unchanged !== true && !sureYes ? task.last : null
+      const stalled = judged !== null && progress !== null && progress <= PROGRESS_FLOOR
+      const aside = stalled ? setAsideOf(judged.command, judged.page) : null
+      const placed: TaskHop = { ...hopOf(task, hop), ...(progress !== null ? { progress } : {}) }
       const read: Reading = {
-        command: readCommandAnswers(result.answers, task.text, page, context),
+        command: readCommandAnswers(result.answers, task.text, page, aside !== null ? { ...context, setAside: [...task.setAside, aside] } : context),
         page,
         reading: 'jev',
         jevAsked: true,
@@ -1553,11 +1567,11 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         ask: result.askId,
       }
       const { command, matched } = matchName(read.command, page, spoken)
-      const record = { ...recordOf(turnId, firedAt, task.source, task.text, read, command, matched, false), task: hopOf(task, hop) }
+      const record = { ...recordOf(turnId, firedAt, task.source, task.text, read, command, matched, false), task: placed }
       if (superseded(task)) {
         // A later Command, Escape or the Abort Head came while this hop was read: the reading is data, nothing fires.
         log({ ...record, ended: 'superseded' })
-        dropHop(turnId, task, hop, abandonedAction(task.submission), 'cancelled', firedAt)
+        dropHop(turnId, task, placed, abandonedAction(task.submission), 'cancelled', firedAt)
         return endTask(task, 'superseded', hop + 1)
       }
       // The Verdict decides the end (ADR 0076): a sure "in the way" is a
@@ -1567,22 +1581,38 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       // no next step and no sure yes ends unsure, said so.
       // Either end is read against the page as it is now: a page that moved
       // under the reading is read again, once.
-      const verdict = readVerdict(result.answers)
-      const sureYes = sure(verdict) && verdict.outcome === 'yes'
       const ends = sureYes || command.verb === 'none'
       const inTheWay = sure(verdict) && verdict.outcome === 'in_the_way' && !actsOnDialog(command, page) && command.verb !== 'play'
       if ((inTheWay || ends) && !task.rechecked && (await pageMoved(page))) {
         if (superseded(task)) {
           log({ ...record, ended: 'superseded' })
-          dropHop(turnId, task, hop, abandonedAction(task.submission), 'cancelled', firedAt)
+          dropHop(turnId, task, placed, abandonedAction(task.submission), 'cancelled', firedAt)
           return endTask(task, 'superseded', hop + 1)
         }
         task.rechecked = true
         // The last action's line is told again against the page the re-read collects.
         if (task.last !== undefined) task.pending = { ...task.last, told: page }
         log(record)
-        dropHop(turnId, task, hop, 'the page moved: read again', 'done', firedAt)
+        dropHop(turnId, task, placed, 'the page moved: read again', 'done', firedAt)
         continue
+      }
+      // The strike lands once the reading stands (a re-read judges again).
+      // Over a pop-up in the way the Step Aside moves next, not the card,
+      // so it neither strikes nor clears; a judged action that helped, or
+      // whose help was unsure, clears the run.
+      if (judged !== null && !inTheWay) {
+        if (!stalled) task.stalled = 0
+        else {
+          task.stalled += 1
+          if (aside !== null) task.setAside.push(aside)
+          if (task.stalled >= MAX_STALLED_HOPS) {
+            // Two hops in a row that changed nothing or did not help (#336, #373): the Task ends unsure, said so.
+            log({ ...record, ended: 'unsure' })
+            answerFailure(turnId, SPOKEN_FAILURES.unsure)
+            dropHop(turnId, task, placed, 'not sure this is it', 'done', firedAt)
+            return endTask(task, 'unsure', hop + 1)
+          }
+        }
       }
       if (inTheWay) {
         const ladder = stepAside(task, page, readDismissChoice(result.answers, page))
@@ -1613,7 +1643,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         }
         log({ ...record, ended: 'wall' })
         answerFailure(turnId, SPOKEN_FAILURES[page.dialog !== undefined ? 'popup' : 'blocked'])
-        dropHop(turnId, task, hop, 'in the way', 'done', firedAt)
+        dropHop(turnId, task, placed, 'in the way', 'done', firedAt)
         return endTask(task, 'wall', hop + 1)
       }
       if (ends) {
@@ -1624,12 +1654,12 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
           if (await popupOpened(task)) {
             if (task.last !== undefined) task.pending = { ...task.last, told: page }
             log(record)
-            dropHop(turnId, task, hop, 'a pop-up opened: read again', 'done', firedAt)
+            dropHop(turnId, task, placed, 'a pop-up opened: read again', 'done', firedAt)
             continue
           }
           if (superseded(task)) {
             log({ ...record, ended: 'superseded' })
-            dropHop(turnId, task, hop, abandonedAction(task.submission), 'cancelled', firedAt)
+            dropHop(turnId, task, placed, abandonedAction(task.submission), 'cancelled', firedAt)
             return endTask(task, 'superseded', hop + 1)
           }
         }
@@ -1642,13 +1672,13 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         }
         log({ ...record, ended })
         if (ended === 'unsure') answerFailure(turnId, SPOKEN_FAILURES.unsure)
-        dropHop(turnId, task, hop, ended === 'done' ? 'done' : 'not sure this is it', 'done', firedAt)
+        dropHop(turnId, task, placed, ended === 'done' ? 'done' : 'not sure this is it', 'done', firedAt)
         return endTask(task, ended, hop + 1)
       }
       const ending = endedByReading('jev', command.verb)
       recordBeforeFiring(record, ending, command)
       task.reading = { action: result.answers.action, page }
-      const fired = await fire(turnId, task.text, task.source, command, page, 'jev', matched, firedAt, { react: () => {}, settled: () => summarize(turnId) }, hopOf(task, hop))
+      const fired = await fire(turnId, task.text, task.source, command, page, 'jev', matched, firedAt, { react: () => {}, settled: () => summarize(turnId) }, placed)
       const ended = settleHop(task, record, ending, command, page, fired)
       if (ended === 'cap') await closeAtCap(task, hop, read)
       if (ended !== null) return endTask(task, ended, hop + 1)
@@ -1859,7 +1889,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   async function runStep(line: Line, turnId: string, words: string, heard: Reading, extra: Partial<DecisionRecord>, options: { measured: boolean; step?: StepContext; taskId?: string }): Promise<StepEnd> {
     const { source, endpointAt, truncated, submission, givenAt } = line
     const firedAt = at()
-    const task: Task = { id: options.taskId ?? turnId, submission, text: words, source, endpointAt, visited: [], actions: [], setAside: [], unchanged: 0, searched: [], terms: [], rechecked: false, obstacles: [], ...(options.step !== undefined ? { step: options.step } : {}) }
+    const task: Task = { id: options.taskId ?? turnId, submission, text: words, source, endpointAt, visited: [], actions: [], setAside: [], stalled: 0, searched: [], terms: [], rechecked: false, obstacles: [], ...(options.step !== undefined ? { step: options.step } : {}) }
     const hop0 = hopOf(task, 0)
     if (heard.action !== undefined) task.reading = { action: heard.action, page: heard.page }
     visit(task, heard.page.url || (browser.state().url ?? ''))
@@ -2065,7 +2095,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         const record = closeEarly(fired, { transcript: trimmed, at: endpointAt, truncated }, lands ? 'deferred' : ending)
         nextUtterance()
         if (options?.turnId !== undefined) summarize(options.turnId)
-        const task: Task = { id: fired.turnId, submission: fired.submission, text: trimmed, source, endpointAt, visited: [], actions: [], setAside: [], unchanged: 0, searched: [], terms: [], rechecked: false, obstacles: [] }
+        const task: Task = { id: fired.turnId, submission: fired.submission, text: trimmed, source, endpointAt, visited: [], actions: [], setAside: [], stalled: 0, searched: [], terms: [], rechecked: false, obstacles: [] }
         visit(task, fired.page.url)
         if (fired.action !== undefined) task.reading = { action: fired.action, page: fired.page }
         const ended = lands ? settleHop(task, record, ending, fired.command, fired.page, await fired.outcome) : ending

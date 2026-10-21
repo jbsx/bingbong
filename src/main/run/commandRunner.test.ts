@@ -2119,7 +2119,7 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
         expect(browser.clicks).toEqual([3, 1])
         const hop3 = (decision.requests[3]!.questions as { action: DecisionChoiceQuestion }).action
         const onRefs = Object.keys(hop3.options).filter((label) => /^(click|type|menu|open)-\d+$/.test(label))
-        expect(onRefs).toEqual(['click-1', 'type-2', 'click-2', 'open-1', 'menu-1', 'menu-2'])
+        expect(onRefs).toEqual(['click-1', 'type-2', 'click-2', 'open-1', 'menu-1', 'menu-2', 'menu-3'])
         expect(hop3.options['open-1']).toContain(POST)
         expect(decision.requests[3]!.state).toContain('click "Elon Musk (@elonmusk) / X" (the address did not change; a pop-up appeared over the page: "Close", "Log in" and "Elon Musk"); click "Close" (the pop-up closed)')
         expect(decisions(records).map((record) => record.ended)).toEqual([undefined, undefined, undefined, 'done'])
@@ -2484,9 +2484,9 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
     await runner.run('open elon musks latest tweet', { source: 'spoken' })
 
     expect(browser.clicks).toEqual([1, 20, 22])
-    // Hop 2: the pinned post, now ref 21, is not offered again.
+    // Hop 2: the pinned post's click, now ref 21, is not offered again (#373: by its card label, so its right-click stays).
     expect(Object.values(cardOf(decision.requests[2]!).options).some((option) => String(option).includes(PINNED))).toBe(false)
-    expect(cardRefs(decision.requests[2]!)).toEqual(['click-1', 'click-22', 'menu-1', 'menu-22'])
+    expect(cardRefs(decision.requests[2]!)).toEqual(['click-1', 'click-22', 'menu-1', 'menu-21', 'menu-22'])
     // Jev is told what each action did.
     expect(decision.requests[2]!.state).toContain(`Done so far: click "Posts" (its state did not change); click "${PINNED}" (nothing changed)`)
     expect(decisions(records).map((record) => record.ended)).toEqual([undefined, undefined, 'unchanged'])
@@ -2507,6 +2507,112 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
     await runner.run('menu 1')
     expect(browser.menus).toEqual([2, 1])
     expect(decisions(records).at(-1)).toMatchObject({ verb: 'menu', target: 1, reading: 'local_match', ended: 'local_match' })
+  })
+
+  describe('Progress (#373, ADR 0080): a hop asks whether the last action helped, and one sure it did not is set aside', () => {
+    const WATCH = 'https://www.youtube.com/watch?v=progress1'
+    /** The 11:50 run's page, cut down: the time display flips its own label, Settings opens a menu, Mute toggles. */
+    const WATCH_REFS: SnapshotRef[] = [ref(1, 'button', '0:16 / 1:51'), ref(2, 'button', 'Settings'), ref(3, 'button', 'Mute (m)')]
+    /** A card reading whose top action carries the probabilities given, beside its Progress Noul. */
+    const judged = (probabilities: Record<string, number>, progress: number, outcome?: DecisionAnswer) => {
+      const [top, confidence] = Object.entries(probabilities).sort((a, b) => b[1] - a[1])[0]!
+      return { answers: { action: choice(top, confidence, probabilities), slot: choice('none'), progress: { type: 'noul' as const, noul: progress }, ...(outcome !== undefined ? { outcome } : {}) } }
+    }
+    const sureYes = (progress: number) => ({ answers: { ...SURE_YES.answers, progress: { type: 'noul' as const, noul: progress } } })
+
+    /** A watch page where every click changes the page; `inert` lists the refs whose click registers nothing. */
+    function watchHarness(inert: readonly number[] = []) {
+      const h = taskHarness(WATCH)
+      h.browser.snapshot = { ...h.browser.snapshot, title: 'Song - YouTube', refs: WATCH_REFS }
+      const click = h.browser.click.bind(h.browser)
+      h.browser.click = async (n) => {
+        const line = await click(n)
+        return inert.includes(n) ? line : line.replace(NO_OBSERVABLE_CHANGE, PAGE_SIGNATURE_CHANGED)
+      }
+      return h
+    }
+
+    it('AC1: every hop past the first asks the Noul beside the Verdict; its record and its command event keep the probability', async () => {
+      const { browser, events, records, decision, runner } = watchHarness()
+      decision.script.push(answer('click-1'), judged({ 'click-2': 0.8, none: 0.2 }, 0.55), sureYes(0.92))
+      await runner.run('skip 10 seconds ahead', { source: 'spoken' })
+      expect(browser.clicks).toEqual([1, 2])
+      expect(decision.requests[0]!.questions).not.toHaveProperty('progress')
+      expect(decision.requests[1]!.questions).toHaveProperty('progress', expect.objectContaining({ type: 'noul' }))
+      expect(decisions(records).map((record) => record.task?.progress)).toEqual([undefined, 0.55, 0.92])
+      expect(commands(events).map((event) => event.task?.progress)).toEqual([undefined, 0.55, 0.92])
+    })
+
+    it('AC2: a hop at or under 0.3 sets the last action aside by label: the same call does not fire it, the next card does not offer it, the ref keeps its menu', async () => {
+      const { browser, decision, records, runner } = watchHarness()
+      decision.script.push(answer('click-1'), judged({ 'click-1': 0.8, 'click-2': 0.15, none: 0.05 }, 0.3), sureYes(0.9))
+      await runner.run('skip 10 seconds ahead', { source: 'spoken' })
+      expect(browser.clicks).toEqual([1, 2])
+      expect(cardRefs(decision.requests[2]!)).not.toContain('click-1')
+      expect(cardRefs(decision.requests[2]!)).toContain('menu-1')
+      expect(decisions(records).map((record) => [record.verb, record.target, record.ended])).toEqual([['click', 1, undefined], ['click', 2, undefined], ['none', null, 'done']])
+    })
+
+    it('AC2: a hop between 0.3 and 0.7 sets nothing aside: the same action fires again and stays on the card', async () => {
+      const { browser, decision, runner } = watchHarness()
+      decision.script.push(answer('click-1'), judged({ 'click-1': 0.8, 'click-2': 0.2 }, 0.5), sureYes(0.9))
+      await runner.run('skip 10 seconds ahead', { source: 'spoken' })
+      expect(browser.clicks).toEqual([1, 1])
+      expect(cardRefs(decision.requests[2]!)).toContain('click-1')
+    })
+
+    it('AC2: a ref-less verb sure not to have helped is set aside too: the next card has no scroll down', async () => {
+      const { browser, decision, runner } = watchHarness()
+      decision.script.push(answer('scroll_down'), judged({ scroll_down: 0.7, 'click-3': 0.3 }, 0.1), sureYes(0.9))
+      await runner.run('mute it', { source: 'spoken' })
+      expect(browser.clicks).toEqual([3])
+      expect(Object.keys(cardOf(decision.requests[2]!).options)).not.toContain('scroll_down')
+      expect(Object.keys(cardOf(decision.requests[2]!).options)).toContain('scroll_up')
+    })
+
+    it('AC2: two hops at or under 0.3 in a row end the Task unsure, said so', async () => {
+      const { browser, events, decision, records, runner } = watchHarness()
+      decision.script.push(answer('click-1'), judged({ 'click-1': 0.85, 'click-2': 0.15 }, 0.2), judged({ 'click-1': 0.5, 'click-3': 0.5 }, 0.1))
+      await runner.run('skip 10 seconds ahead', { source: 'spoken' })
+      expect(browser.clicks).toEqual([1, 2])
+      expect(decision.requests).toHaveLength(3)
+      expect(decisions(records).map((record) => record.ended)).toEqual([undefined, undefined, 'unsure'])
+      expect(failures(events)).toEqual([expect.objectContaining({ text: SPOKEN_FAILURES.unsure })])
+    })
+
+    it('AC2: a hop that helped breaks the run: no-progress, progress, no-progress goes on', async () => {
+      const { browser, decision, records, runner } = watchHarness()
+      decision.script.push(answer('click-1'), judged({ 'click-2': 1 }, 0.2), judged({ 'click-3': 1 }, 0.8), judged({ 'click-2': 0.9, 'menu-3': 0.1 }, 0.2), sureYes(0.95))
+      await runner.run('mute it', { source: 'spoken' })
+      expect(browser.clicks).toEqual([1, 2, 3, 2])
+      expect(decisions(records).at(-1)!.ended).toBe('done')
+    })
+
+    it('AC3: a sure yes ends the Task done whatever the Noul says', async () => {
+      const { browser, decision, records, runner } = watchHarness()
+      decision.script.push(answer('click-3'), sureYes(0.05))
+      await runner.run('mute it', { source: 'spoken' })
+      expect(browser.clicks).toEqual([3])
+      expect(decisions(records).map((record) => record.ended)).toEqual([undefined, 'done'])
+    })
+
+    it('AC3: a no-progress hop then an unchanged one count on one counter: the Task ends unchanged', async () => {
+      const { browser, decision, records, runner } = watchHarness([2])
+      decision.script.push(answer('click-1'), judged({ 'click-1': 0.6, 'click-2': 0.4 }, 0.2), sureYes(0.9))
+      await runner.run('skip 10 seconds ahead', { source: 'spoken' })
+      expect(browser.clicks).toEqual([1, 2])
+      expect(decision.requests).toHaveLength(2)
+      expect(decisions(records).map((record) => record.ended)).toEqual([undefined, 'unchanged'])
+    })
+
+    it('AC3: an unchanged hop then a no-progress one count on one counter, the unchanged action judged once: the Task ends unsure', async () => {
+      const { browser, decision, records, runner } = watchHarness([2])
+      // Hop 1 judges the unchanged click no progress too: it is one strike, not two.
+      decision.script.push(answer('click-2'), judged({ 'click-1': 1 }, 0.1), judged({ 'click-1': 0.9, 'click-3': 0.1 }, 0.2))
+      await runner.run('get me to the playback options', { source: 'spoken' })
+      expect(browser.clicks).toEqual([2, 1])
+      expect(decisions(records).map((record) => record.ended)).toEqual([undefined, undefined, 'unsure'])
+    })
   })
 
   describe('look then act (#363, ADR 0079): a dead end closes what the last hop opened and tries the runner-up once', () => {
@@ -2690,7 +2796,7 @@ describe('the Site Scope at hop 0 (#340)', () => {
     expect(events).toContainEqual(expect.objectContaining({ type: 'display', text: 'Searched x.com for “donald trumps profile”.' }))
     // Hop 1 is offered the results and asked no where.
     expect(asked(decision.requests[0]!)).toEqual(['action', 'slot', 'where'])
-    expect(asked(decision.requests[1]!)).toEqual(['action', 'slot', 'outcome'])
+    expect(asked(decision.requests[1]!)).toEqual(['action', 'slot', 'outcome', 'progress'])
     expect(Object.values(cardOf(decision.requests[1]!).options)).toContainEqual(expect.stringContaining(PROFILE))
     // The record keeps where for the scoped read, and the ask sidecar the fourth question.
     const [hop0, hop1] = decisions(records)
@@ -2791,9 +2897,9 @@ describe('the Site Scope at a later hop (#341): one Utterance chains a site and 
     // Hop 0 is the Local Match's; hop 1 on the site is asked where; hop 2 on the results is not; hop 3 on the searched site is not.
     expect(decision.requests).toHaveLength(3)
     expect(decision.requests[0]!.state).toContain(`"${TEXT}"`)
-    expect(asked(decision.requests[0]!)).toEqual(['action', 'slot', 'where', 'outcome'])
-    expect(asked(decision.requests[1]!)).toEqual(['action', 'slot', 'outcome'])
-    expect(asked(decision.requests[2]!)).toEqual(['action', 'slot', 'outcome'])
+    expect(asked(decision.requests[0]!)).toEqual(['action', 'slot', 'where', 'outcome', 'progress'])
+    expect(asked(decision.requests[1]!)).toEqual(['action', 'slot', 'outcome', 'progress'])
+    expect(asked(decision.requests[2]!)).toEqual(['action', 'slot', 'outcome', 'progress'])
     expect(decisions(records).map((record) => [record.reading, record.verb, record.ended])).toEqual([
       ['local_match', 'navigate', undefined],
       ['jev', 'search', undefined],
@@ -2821,7 +2927,7 @@ describe('the Site Scope at a later hop (#341): one Utterance chains a site and 
       read('search', 's5-7'),
     )
     await runner.run(TEXT, { source: 'spoken' })
-    expect(asked(decision.requests[2]!)).toEqual(['action', 'slot', 'outcome'])
+    expect(asked(decision.requests[2]!)).toEqual(['action', 'slot', 'outcome', 'progress'])
     expect(browser.navigations).toEqual([TWITTER, SCOPED, PROFILE])
   })
 
@@ -2852,8 +2958,8 @@ describe('the Site Scope at a later hop (#341): one Utterance chains a site and 
     expect(browser.navigations).toEqual([SCOPED, PROFILE])
     expect(decision.requests.map(asked)).toEqual([
       ['action', 'slot', 'where'],
-      ['action', 'slot', 'outcome'],
-      ['action', 'slot', 'outcome'],
+      ['action', 'slot', 'outcome', 'progress'],
+      ['action', 'slot', 'outcome', 'progress'],
     ])
   })
 

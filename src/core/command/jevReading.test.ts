@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { DecisionChoiceAnswer } from '../ports/decisionModel'
-import type { CommandPage, CommandRef } from './command'
-import { commandQuestions, commandState, dismissPhraseQuestions, doneFacts, doneLine, hopQuestions, onResults, partialQuestions, readCommandAnswers, readDismissChoice, readSteps, readVerdict, runnerUpOf, setAsideOf, slotSpans, type HopContext } from './jevReading'
+import type { Command, CommandPage, CommandRef } from './command'
+import { commandQuestions, commandState, dismissPhraseQuestions, doneFacts, doneLine, hopQuestions, onResults, partialQuestions, readCommandAnswers, readDismissChoice, readProgress, readSteps, readVerdict, refIdentityOf, runnerUpOf, setAsideOf, slotSpans, type HopContext } from './jevReading'
 import { playerCapabilities } from './capability'
 
 // One Jev call per Command the Local Match cannot settle (#324, ADR
@@ -538,7 +538,7 @@ describe('the Verdict: a hop is asked whether what was asked for is done', () =>
 
   it('asks the outcome at a hop, among yes, in the way and not yet, beside the action card, the Slot and where', () => {
     const questions = hopQuestions('open elon musks latest tweet', PROFILE, hop)
-    expect(Object.keys(questions)).toEqual(['action', 'slot', 'where', 'outcome'])
+    expect(Object.keys(questions)).toEqual(['action', 'slot', 'where', 'outcome', 'progress'])
     expect(Object.keys(questions.outcome.options)).toEqual(['yes', 'in_the_way', 'not_yet'])
     expect(questions.outcome.instructions).toContain('if a pop-up, sign-in prompt, cookie notice or challenge covers the page now, choose in_the_way')
     expect(questions.outcome.instructions).toContain('the action they asked for has happened')
@@ -557,7 +557,7 @@ describe('the Verdict: a hop is asked whether what was asked for is done', () =>
       dialog: { text: 'Don’t miss what’s happening', refs: [7, 8, 9, 10] },
     }
     const questions = hopQuestions('open elon musks latest tweet', covered, hop)
-    expect(Object.keys(questions)).toEqual(['action', 'slot', 'where', 'outcome', 'dismiss'])
+    expect(Object.keys(questions)).toEqual(['action', 'slot', 'where', 'outcome', 'progress', 'dismiss'])
     expect(Object.keys(questions.dismiss!.options)).toEqual(['escape', 'ref-9', 'ref-10'])
     expect(questions.dismiss!.instructions).toContain('Which control closes it and leaves the page behind as it was')
     expect(questions.dismiss!.instructions).toContain('Never one that goes through it: sign in, sign up, subscribe, accept, agree, allow, install')
@@ -972,21 +972,68 @@ describe('the action card (#370, ADR 0076 amendment): Jev reads a Command as one
     expect(readCommandAnswers({ action: choice('type-2'), slot: choice('none') }, 'type it', PAGE).verb).toBe('none')
     expect(readCommandAnswers({ action: choice('open-4'), slot: choice('none'), outcome: choice('not_yet') }, 'open it', LANDING, hopOn([])).verb).toBe('none')
     expect(readCommandAnswers({ action: choice('done'), slot: choice('none') }, 'done', PAGE).verb).toBe('none')
-    // A ref the hop set aside is not offered: its click is no Command.
-    const aside: HopContext = { ...hopOn([]), setAside: [setAsideOf(PAGE.refs[1]!, PAGE)] }
+    // A click the hop set aside is not offered: it is no Command.
+    const aside: HopContext = { ...hopOn([]), setAside: [setAsideOf({ verb: 'click', target: 2, slot: null }, PAGE)!] }
     expect(readCommandAnswers({ action: choice('click-2'), slot: choice('none'), outcome: choice('not_yet') }, 'sign in', PAGE, aside).verb).toBe('none')
   })
 
   it("names the runner-up of the opener's own kind: the next click after a click, the next right-click after a menu, never the fired ref", () => {
     const action: DecisionChoiceAnswer = { type: 'choice', choice: 'click-1', confidence: 0.5, probabilities: { 'click-1': 0.5, 'menu-3': 0.25, 'click-2': 0.15, 'menu-1': 0.06, none: 0.04 } }
-    expect(runnerUpOf(action, PAGE, 1, [])).toEqual(setAsideOf(PAGE.refs[1]!, PAGE))
-    expect(runnerUpOf(action, PAGE, 1, [], 'menu')).toEqual(setAsideOf(PAGE.refs[2]!, PAGE))
-    expect(runnerUpOf(action, PAGE, 3, [], 'menu')).toEqual(setAsideOf(PAGE.refs[0]!, PAGE))
-    expect(runnerUpOf(action, PAGE, 3, [setAsideOf(PAGE.refs[0]!, PAGE)], 'menu')).toBeNull()
+    expect(runnerUpOf(action, PAGE, 1, [])).toEqual(refIdentityOf(PAGE.refs[1]!, PAGE))
+    expect(runnerUpOf(action, PAGE, 1, [], 'menu')).toEqual(refIdentityOf(PAGE.refs[2]!, PAGE))
+    expect(runnerUpOf(action, PAGE, 3, [], 'menu')).toEqual(refIdentityOf(PAGE.refs[0]!, PAGE))
+    expect(runnerUpOf(action, PAGE, 3, [setAsideOf({ verb: 'menu', target: 1, slot: null }, PAGE)!], 'menu')).toBeNull()
+    // A click set aside on ref 1 does not keep its right-click from being the runner-up.
+    expect(runnerUpOf(action, PAGE, 3, [setAsideOf({ verb: 'click', target: 1, slot: null }, PAGE)!], 'menu')).toEqual(refIdentityOf(PAGE.refs[0]!, PAGE))
+  })
+})
+
+describe('a set-aside, keyed by its card label (#373, ADR 0080)', () => {
+  const hopOn = (links: HopContext['links']): HopContext => ({ hop: 1, visited: [], actions: ['click "0:16 / 1:51" ("0:16 / 1:51" now reads "-1:35 / 1:51")'], links })
+  const MEDIA_PAGE: CommandPage = { ...PAGE, refs: [...PAGE.refs, { ref: 4, kind: 'button', label: '0:16 / 1:51', href: null, inputType: null }] }
+  const asideOf = (command: Command): HopContext => ({ ...hopOn([]), setAside: [setAsideOf(command, MEDIA_PAGE)!] })
+  const card = (hop: HopContext, capabilities = playerCapabilities(true)) => Object.keys(hopQuestions('skip ahead', MEDIA_PAGE, hop, { capabilities }).action.options)
+
+  it('names a ref action by its act, label and address; a ref-less verb or a Capability by its name; nothing for a ref the page lacks', () => {
+    expect(setAsideOf({ verb: 'click', target: 4, slot: null }, MEDIA_PAGE)).toEqual({ act: 'click', label: '0:16 / 1:51', address: 'https://example.com' })
+    expect(setAsideOf({ verb: 'type', target: 3, slot: 'cats' }, MEDIA_PAGE)).toEqual({ act: 'type', label: 'Search', address: 'https://example.com' })
+    expect(setAsideOf({ verb: 'scroll_down', target: null, slot: null }, MEDIA_PAGE)).toEqual({ verb: 'scroll_down' })
+    expect(setAsideOf({ verb: 'play', target: null, slot: null, music: { kind: 'loop', on: true }, capability: 'loop' }, MEDIA_PAGE)).toEqual({ verb: 'loop' })
+    expect(setAsideOf({ verb: 'click', target: 9, slot: null }, MEDIA_PAGE)).toBeNull()
+  })
+
+  it('leaves a set-aside ref action off the next card, and only that action: the ref keeps its other actions and its line', () => {
+    const hop = asideOf({ verb: 'click', target: 4, slot: null })
+    expect(card(hop)).not.toContain('click-4')
+    expect(card(hop)).toContain('menu-4')
+    expect(commandState('skip ahead', MEDIA_PAGE, hop)).toContain('[4] button "0:16 / 1:51"')
+  })
+
+  it('leaves a set-aside ref-less verb and a set-aside Capability off the next card', () => {
+    expect(card(asideOf({ verb: 'scroll_down', target: null, slot: null }))).not.toContain('scroll_down')
+    expect(card(asideOf({ verb: 'scroll_down', target: null, slot: null }))).toContain('scroll_up')
+    expect(card(asideOf({ verb: 'play', target: null, slot: null, music: { kind: 'loop', on: true }, capability: 'loop' }))).not.toContain('loop')
+  })
+
+  it('reads a top choice the Task set aside as the most probable label still offered, at the runner-up floor or over; none under it', () => {
+    const hop = asideOf({ verb: 'click', target: 4, slot: null })
+    const answers = (probabilities: Record<string, number>) => ({ action: { type: 'choice' as const, choice: 'click-4', confidence: 0.8, probabilities }, slot: choice('none'), outcome: choice('not_yet') })
+    expect(readCommandAnswers(answers({ 'click-4': 0.8, 'menu-4': 0.12, scroll_down: 0.06, none: 0.02 }), 'skip ahead', MEDIA_PAGE, hop)).toEqual({ verb: 'menu', target: 4, slot: null })
+    expect(readCommandAnswers(answers({ 'click-4': 0.96, 'click-2': 0.03, none: 0.01 }), 'skip ahead', MEDIA_PAGE, hop).verb).toBe('none')
+    const loopAside = asideOf({ verb: 'play', target: null, slot: null, music: { kind: 'loop', on: true }, capability: 'loop' })
+    expect(readCommandAnswers({ ...answers({ loop: 0.7, scroll_down: 0.3 }), action: { type: 'choice', choice: 'loop', confidence: 0.7, probabilities: { loop: 0.7, scroll_down: 0.3 } } }, 'loop it', MEDIA_PAGE, loopAside).verb).toBe('scroll_down')
   })
 
   it('asks the Verdict only at a later hop, beside the card', () => {
     expect(commandQuestions('enable captions', PAGE)).not.toHaveProperty('outcome')
     expect(hopQuestions('enable captions', PAGE, hopOn([]))).toHaveProperty('outcome')
+  })
+
+  it('asks the progress Noul (#373) beside the Verdict at a later hop, never at hop 0, and reads its probability', () => {
+    expect(commandQuestions('skip ahead', PAGE)).not.toHaveProperty('progress')
+    expect(hopQuestions('skip ahead', PAGE, hopOn([])).progress).toMatchObject({ type: 'noul', instructions: expect.stringContaining('closer to what the user') })
+    expect(readProgress({ action: choice('none'), slot: choice('none'), outcome: choice('not_yet'), progress: { type: 'noul', noul: 0.18 } })).toBe(0.18)
+    expect(readProgress({ action: choice('none'), slot: choice('none'), outcome: choice('not_yet') })).toBeNull()
+    expect(readProgress({ action: choice('none'), slot: choice('none') })).toBeNull()
   })
 })

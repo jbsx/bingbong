@@ -14,12 +14,13 @@ export type PipelineStatus = 'thinking' | 'acting' | 'speaking' | 'cancelled'
  * read, the action taken — the Feed's one entry per Command. An Utterance
  * read as no Command is published `dropped`, the words alone, and ends
  * with its `done` like any other; nothing else follows it. Every `command`
- * carries its Task (#328): hop 0's turn id and which hop it is.
+ * carries its Task (#328): hop 0's turn id and which hop it is; past the
+ * first, the Progress Noul's probability that the last action helped (#373).
  * `keepsIdle` marks a Command whose verb never touches the pane (the
  * Timer, a Stop): it leaves the Idle Screen up, as a dropped one does.
  */
 export type PipelineEvent =
-  | { type: 'command'; turnId: string; text: string; action?: string; dropped?: boolean; keepsIdle?: boolean; task?: { id: string; hop: number; step?: number; of?: number }; at: number }
+  | { type: 'command'; turnId: string; text: string; action?: string; dropped?: boolean; keepsIdle?: boolean; task?: { id: string; hop: number; step?: number; of?: number; progress?: number }; at: number }
   | { type: 'status'; turnId: string; status: PipelineStatus; at: number }
   | { type: 'tool_call'; turnId: string; callId: string; name: string; args: Record<string, unknown>; at: number }
   | {

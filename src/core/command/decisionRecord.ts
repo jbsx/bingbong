@@ -120,6 +120,8 @@ export interface TaskHop {
   readonly hop: number
   readonly step?: number
   readonly of?: number
+  /** At a hop past the first: the Progress Noul's probability that the last action brought the page closer to the words (#373). */
+  readonly progress?: number
 }
 
 /**
