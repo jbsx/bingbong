@@ -946,6 +946,12 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     readonly deferStay?: true
     /** A later rung of a dismiss phrase's Dismissal Ladder: the runner's own move, never the user's recovery from the rung before. */
     readonly ownMove?: true
+    /**
+     * A plain `navigate` that ends its Task at hop 0 (2026-10-21 audit): a pop-up open over the page it opened is said as a
+     * Task's hop says it — "A pop-up is in the way." — a fact the page shows, read with no Jev call. A navigate that goes
+     * on leaves the pop-up to its next hop's Verdict and Step Aside (#354).
+     */
+    readonly tellsPopup?: true
   }
 
   /**
@@ -1075,7 +1081,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         const state = browser.state()
         const landedFailure = spokenFailureOf({ tool: name, outcome: { ok: true, result }, ...(state.url ? { url: state.url } : {}), ...(state.title ? { title: state.title } : {}) })
         const stayed = landedFailure === null && command.dismiss === true && (await dialogStillOpen())
-        const failure = landedFailure ?? (stayed ? 'dialogStayed' : null)
+        const covered = landedFailure === null && !stayed && reacting.tellsPopup === true && (await dialogOpenNow())
+        const failure = landedFailure ?? (stayed ? 'dialogStayed' : covered ? 'popup' : null)
         if (!current()) return ended('superseded')
         if (stayed && reacting.deferStay === true) {
           // The next rung of the Dismissal Ladder is the runner's to fire (#354): nothing is said of this one.
@@ -1948,6 +1955,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         },
         settled: () => summarize(turnId),
         ...(ladder.length > 0 ? { deferStay: true as const } : {}),
+        ...(command.verb === 'navigate' && ending !== null ? { tellsPopup: true as const } : {}),
       },
       hop0,
     )

@@ -3323,6 +3323,27 @@ describe('the one Answer every Command leaves (#333)', () => {
     }
   })
 
+  it('a plain navigate that opens a page behind a pop-up says it is in the way, as a Task does, with no model asked (2026-10-21 audit)', async () => {
+    const { browser, decision, events, records, runner } = harness()
+    const navigate = browser.navigate.bind(browser)
+    browser.navigate = async (url) => {
+      const line = await navigate(url)
+      browser.snapshot = { ...browser.snapshot, dialogOpen: true, dialogText: 'Sign in to continue', refs: [ref(1, 'button', 'Sign in', { layer: 'dialog' }), ref(2, 'button', 'Not now', { layer: 'dialog' })] }
+      return line
+    }
+    await runner.run('navigate example.com/dialog-wall')
+    expect(decision.requests).toEqual([])
+    expect(displays(events)).toEqual([expect.objectContaining({ text: SPOKEN_FAILURES.popup, failure: true })])
+    expect(records.filter((record) => record.type === 'decision').at(-1)).toMatchObject({ verb: 'navigate', ended: 'local_match' })
+  })
+
+  it('a plain navigate with no pop-up over its page says what it opened', async () => {
+    const { events, runner } = harness()
+    await runner.run('navigate example.com')
+    expect(displays(events)).toEqual([expect.objectContaining({ text: 'Opened Fake page: https://example.com.' })])
+    expect(displays(events)[0]).not.toMatchObject({ failure: true })
+  })
+
   it('a `read` shows a Card of the page title and its words alone — what is spoken', async () => {
     const speech = new FakeSpeech()
     const { browser, events, runner } = harness({ speech })
