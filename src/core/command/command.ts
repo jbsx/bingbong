@@ -1,9 +1,10 @@
 import type { KeyPress } from '../ports/browser'
-import type { PageMedia, PageSnapshot, RefKind, SnapshotRef } from '../browser/snapshot'
+import type { MediaFacts, PageMedia, PageSnapshot, RefKind, SnapshotRef } from '../browser/snapshot'
 import { pageTermsOf } from '../voice/pageTerms'
 import { describeDuration } from '../timer/duration'
 import type { MusicAction } from '../music/musicWords'
 import type { Capability } from './capability'
+import { describeMediaOp, type MediaOpAction } from './mediaOp'
 
 // A Command (CONTEXT.md, ADR 0076): what an Utterance becomes on this
 // branch — one verb, at most one target on the page and one Slot, performed
@@ -16,9 +17,10 @@ import type { Capability } from './capability'
 /**
  * The verbs a Command can carry. The Decision Model is offered
  * {@link JEV_VERBS} on its action card (#370) — a click, type or menu on
- * each ref, the rest as they are — and `play` through the Player's
- * Capabilities (ADR 0079); `screenshot`, `help`, `resume` and `timer` are the CLI grammar's
- * alone, reached only through the Local Match.
+ * each ref, a media ref's Media Ops (#372, ADR 0080: the `media` verb,
+ * its op on the Command), the rest as they are — and `play` through the
+ * Player's Capabilities (ADR 0079); `screenshot`, `help`, `resume` and
+ * `timer` are the CLI grammar's alone, reached only through the Local Match.
  */
 export const COMMAND_VERBS = [
   'navigate',
@@ -26,6 +28,7 @@ export const COMMAND_VERBS = [
   'click',
   'type',
   'menu',
+  'media',
   'scroll_up',
   'scroll_down',
   'back',
@@ -88,6 +91,8 @@ export interface Command {
   readonly music?: MusicAction
   /** For a `play` Jev read (ADR 0079): the Capability its action card named (#370); absent for an exact line the grammar settled. */
   readonly capability?: Capability
+  /** For `media` (#372, ADR 0080): the Media Op on the target ref's element — a seek's rung and seconds, a volume's or a speed's level. */
+  readonly mediaOp?: MediaOpAction
   /** The click or the Escape closes an open dialog (#336): its Answer is "Closed the pop-up.", and a dialog still open after it is a failure. */
   readonly dismiss?: true
 }
@@ -102,6 +107,8 @@ export interface CommandRef {
   readonly inputType: string | null
   /** Its Ref State (`pressed=true`, `expanded=false`, …); absent when the tree said nothing of it. */
   readonly states?: readonly string[]
+  /** A media ref's own facts (#372, ADR 0080): its line's state, and what its Media Ops are gated by; absent for every other kind. */
+  readonly media?: MediaFacts
 }
 
 /** The page a Command is read against: its address, its title and its numbered refs. */
@@ -125,7 +132,7 @@ export interface PageDialog {
 }
 
 export function commandRefOf(ref: SnapshotRef): CommandRef {
-  return { ref: ref.ref, kind: ref.kind, label: ref.label, href: ref.href, inputType: ref.inputType, ...(ref.states !== undefined ? { states: ref.states } : {}) }
+  return { ref: ref.ref, kind: ref.kind, label: ref.label, href: ref.href, inputType: ref.inputType, ...(ref.states !== undefined ? { states: ref.states } : {}), ...(ref.media !== undefined ? { media: ref.media } : {}) }
 }
 
 /** The page a Command is read against, off a collected snapshot: its refs, its Page Terms and the dialog open over it. */
@@ -155,18 +162,19 @@ export function isMounting(page: CommandPage): boolean {
 
 /** The verbs that act on one ref. */
 export function verbTakesTarget(verb: CommandVerb): boolean {
-  return verb === 'click' || verb === 'type' || verb === 'menu'
+  return verb === 'click' || verb === 'type' || verb === 'menu' || verb === 'media'
 }
 
 /**
  * The verbs that need no pane on the screen — the Timer, a Stop,
- * `none` and the Player's (#344: the search and the watch page happen in
- * the hidden pane, and the music plays on there). A Command carrying one
- * leaves the Idle Screen up (CONTEXT.md), save "show the video": see
- * {@link commandKeepsIdle}.
+ * `none`, the Player's (#344: the search and the watch page happen in
+ * the hidden pane, and the music plays on there) and a Media Op (#372: one
+ * evaluate on the element, which plays on under the Idle Screen as a
+ * song does). A Command carrying one leaves the Idle Screen up
+ * (CONTEXT.md), save "show the video": see {@link commandKeepsIdle}.
  */
 export function verbKeepsIdle(verb: CommandVerb): boolean {
-  return verb === 'timer' || verb === 'stop' || verb === 'none' || verb === 'play'
+  return verb === 'timer' || verb === 'stop' || verb === 'none' || verb === 'play' || verb === 'media'
 }
 
 /** The verbs that act on the page in the pane: with none there (#361), they answer so and touch nothing — the hidden pane would never answer them. */
@@ -260,6 +268,8 @@ export function describeCommand(command: Command, page?: CommandPage): string {
       return `type ${JSON.stringify(command.slot ?? '')} into${label(command.target)}`
     case 'menu':
       return `menu${label(command.target)}`
+    case 'media':
+      return `${command.mediaOp !== undefined ? describeMediaOp(command.mediaOp) : 'media'}${label(command.target)}`
     case 'scroll_up':
       return 'scroll up'
     case 'scroll_down':

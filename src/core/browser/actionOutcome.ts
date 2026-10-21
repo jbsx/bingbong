@@ -1,4 +1,5 @@
 import type { ToolResultOutcome } from '../ports/toolOutcome'
+import { MEDIA_OPS } from '../command/mediaOp'
 
 // #261 (note on ADR 0058): the browser port's click and type outcomes open
 // with fixed heads, and some say the call consumed nothing — a Blocked
@@ -100,8 +101,15 @@ function headPattern(...heads: string[]): RegExp {
 const REF_ACTIONS: readonly RefAction[] = ['click', 'type', 'menu']
 const COVERED_HEAD_RE = headPattern(...REF_ACTIONS.map((action) => `${blockedStart(action, 0)}${COVERED_BY}`))
 const NOT_SHOWN_HEAD_RE = headPattern(...REF_ACTIONS.map((action) => blockedActionHead(action, 0, { fact: 'notShown' })))
+/** The head of a Media Op's outcome (#372, ADR 0080): `forward [7]: `, what changed after it. */
+export function mediaOpHead(op: string, ref: number): string {
+  return `${op} [${ref}]: `
+}
+
 /** A click or a right-click that reached its target (#363): what its changes clause says decides whether it moved anything. */
 const UNMOVED_REF_ACTION_RE = headPattern(clickFlagsHead(0, false, false), menuFlagsHead(0, false, false))
+/** A Media Op that reached its element (#372): its changes clause names what the element's facts changed, or says nothing did. */
+const MEDIA_OP_HEAD_RE = headPattern(...MEDIA_OPS.map((op) => mediaOpHead(op, 0)))
 
 /**
  * The settled page state a meaningful click carries: the snapshot head's
@@ -122,6 +130,8 @@ export const STATE_DELTA = ' -> '
 export function blockedOrInertAction(text: string): ConsumedNothing | null {
   if (COVERED_HEAD_RE.test(text)) return 'covered'
   if (NOT_SHOWN_HEAD_RE.test(text)) return 'notShown'
+  const mediaOp = MEDIA_OP_HEAD_RE.exec(text)
+  if (mediaOp !== null) return text.slice(mediaOp[0].length).split('\n', 1)[0] === NO_OBSERVABLE_CHANGE ? 'inert' : null
   const unmoved = UNMOVED_REF_ACTION_RE.exec(text)
   if (unmoved === null || SETTLED_STATE_RE.test(text)) return null
   const changes = text.slice(unmoved[0].length).split('\n', 1)[0]!.split('; ', 1)[0]!

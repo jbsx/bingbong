@@ -32,6 +32,19 @@ describe('commandAnswer (#333)', () => {
     expect(answer(command('type', { target: 2, slot: 'lisbon' }), { label: 'Search' })).toBe('Typed into “Search”.')
   })
 
+  it('answers a Media Op (#372) with what it did, a seek with where it came to, and says when it changed nothing', () => {
+    expect(answer(command('media', { target: 7, mediaOp: { op: 'forward', rung: 'words', seconds: 10 } }), { mediaChanges: '0:16 → 0:26' })).toBe('Skipped forward 10 s, to 0:26.')
+    expect(answer(command('media', { target: 7, mediaOp: { op: 'back', rung: 'end', seconds: 16.2 } }), { mediaChanges: '0:16 → 0:00' })).toBe('Skipped back 16 s, to 0:00.')
+    expect(answer(command('media', { target: 7, mediaOp: { op: 'pause' } }), { mediaChanges: 'paused' })).toBe('Paused.')
+    expect(answer(command('media', { target: 7, mediaOp: { op: 'play' } }), { mediaChanges: 'playing' })).toBe('Playing.')
+    expect(answer(command('media', { target: 7, mediaOp: { op: 'mute' } }), { mediaChanges: 'no observable change' })).toBe('Muted. Nothing changed: it was already.')
+    expect(answer(command('media', { target: 7, mediaOp: { op: 'volume', to: 30 } }), { mediaChanges: 'volume 100% → 30%' })).toBe('Volume 30.')
+    expect(answer(command('media', { target: 7, mediaOp: { op: 'rate', to: 1.5 } }), { mediaChanges: 'speed 1× → 1.5×' })).toBe('Speed 1.5×.')
+    expect(answer(command('media', { target: 7, mediaOp: { op: 'unloop' } }), { mediaChanges: 'loop off' })).toBe('Loop off.')
+    expect(answer(command('media', { target: 7, mediaOp: { op: 'captions' } }), { mediaChanges: 'captions en' })).toBe('Captions on.')
+    expect(answer(command('media', { target: 7, mediaOp: { op: 'restart' } }), { mediaChanges: '0:16 → 0:00' })).toBe('Restarted.')
+  })
+
   it('steps through history by the page it came to', () => {
     expect(answer(command('back'))).toBe('Went back to Lighthouse page.')
     expect(answer(command('forward'))).toBe('Went forward to Lighthouse page.')

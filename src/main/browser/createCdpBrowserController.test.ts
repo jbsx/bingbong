@@ -114,6 +114,8 @@ class FakeCdp implements CdpDebugger {
   /** The address the clicked link carries right after the click (#299); undefined answers the element's own href. */
   linkAddress: string | null | undefined = undefined
   mediaProbe: unknown = { paused: true, currentTime: 12.5, volume: 0.4 }
+  /** What a Media Op's evaluate answers (#372): the element's facts before and after, or null for an element that is no media. */
+  mediaOpResult: unknown = null
   /** What the in-place links helper answers (#303); null is a page that holds no helper. */
   pageLinks: unknown = null
   collectValues: unknown[] = []
@@ -265,6 +267,7 @@ class FakeCdp implements CdpDebugger {
         return { result: { value: shown !== undefined && shown === this.collectedElements[index] } } as T
       }
       if (expression.includes('/* MEDIA_STATE */')) return { result: { value: this.mediaProbe } } as T
+      if (expression.includes('/* MEDIA_OP */')) return { result: { value: this.mediaOpResult } } as T
       if (expression.includes('/* PAGE_LINKS */')) return { result: { value: this.pageLinks } } as T
       if (expression.includes('/* DIALOG_LABELS */')) {
         if (this.dialogLabelsException) return { exceptionDetails: { text: this.dialogLabelsException } } as T
@@ -1146,6 +1149,46 @@ describe('createCdpBrowserController click', () => {
     await showRefs(blocked.controller)
     expect(blockedOrInertAction(await blocked.controller.openMenu(3))).toBe('covered')
     expect(covered.inputCalls().filter((call) => call.params?.type === 'mousePressed')).toEqual([])
+  })
+
+  describe('a Media Op (#372, ADR 0080): one evaluate on the media ref\'s own element', () => {
+    const facts = { paused: false, ended: false, currentTime: 16.2, duration: 111, volume: 1, muted: false, loop: false, rate: 1, seekable: { start: 0, end: 111 }, tracks: 0, captions: null, buffering: false, failed: false }
+
+    it('evaluates the op on the registry node the number names — no mouse, no collect — and tells what changed from the element\'s facts before and after', async () => {
+      const { cdp, controller } = makeController()
+      await showRefs(controller)
+      cdp.mediaOpResult = { before: facts, after: { ...facts, currentTime: 26.2 } }
+      const collects = cdp.collectCalls().length
+
+      const outcome = await controller.mediaOp(14, { op: 'forward', seconds: 10 })
+
+      const evaluates = cdp.calls.filter((call) => call.method === 'Runtime.evaluate' && String(call.params?.expression ?? '').includes('/* MEDIA_OP */'))
+      expect(evaluates).toHaveLength(1)
+      // The fixture's video is ref 14: registry index 13, and the op as given.
+      expect(String(evaluates[0]!.params?.expression)).toContain('[13]')
+      expect(String(evaluates[0]!.params?.expression)).toContain('{"op":"forward","seconds":10}')
+      expect(cdp.inputCalls()).toHaveLength(0)
+      expect(cdp.collectCalls()).toHaveLength(collects)
+      expect(outcome).toBe('forward [14]: 0:16 → 0:26')
+      expect(blockedOrInertAction(outcome)).toBeNull()
+    })
+
+    it('says an op that changed nothing changed nothing, as an inert click does: mute on a muted element', async () => {
+      const { cdp, controller } = makeController()
+      await showRefs(controller)
+      cdp.mediaOpResult = { before: { ...facts, muted: true }, after: { ...facts, muted: true } }
+      const outcome = await controller.mediaOp(14, { op: 'mute' })
+      expect(outcome).toBe('mute [14]: no observable change')
+      expect(blockedOrInertAction(outcome)).toBe('inert')
+    })
+
+    it('refuses a number the model was never shown, and an element that is no video or audio', async () => {
+      const { cdp, controller } = makeController()
+      await showRefs(controller)
+      await expect(controller.mediaOp(999, { op: 'pause' })).rejects.toThrow(/ref 999 refused/)
+      cdp.mediaOpResult = null
+      await expect(controller.mediaOp(3, { op: 'pause' })).rejects.toThrow('ref 3 is no video or audio element')
+    })
   })
 
   it('refreshes the snapshot the last action invalidated, without costing the model a round', async () => {

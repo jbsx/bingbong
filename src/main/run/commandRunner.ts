@@ -300,9 +300,9 @@ function endedByReading(reading: CommandReading, verb: Command['verb'], wordsPas
 /** The Command a line Jev could not read becomes (#353): the Local Match already settled none, and nothing guesses. */
 const UNREAD: Command = { verb: 'none', target: null, slot: null }
 
-/** The verbs whose record waits for the action (#328): a continuing verb's landing, and the video `play` opened or queued (#343). */
+/** The verbs whose record waits for the action (#328): a continuing verb's landing, the video `play` opened or queued (#343), and a Media Op's refusal (#372). */
 function recordedAfterFiring(verb: Command['verb']): boolean {
-  return CONTINUING.has(verb) || verb === 'play'
+  return CONTINUING.has(verb) || verb === 'play' || verb === 'media'
 }
 
 /** What a fired action came to: it landed, it met a wall (it failed, or speaks a failure's line), or a later Command superseded it. */
@@ -387,6 +387,8 @@ function toolOf(command: Command): { name: string; args: Record<string, unknown>
       return { name: 'type', args: { ref: command.target, text: command.slot ?? '' } }
     case 'menu':
       return { name: 'menu', args: { ref: command.target } }
+    case 'media':
+      return { name: 'media', args: { ref: command.target, ...command.mediaOp } }
     case 'scroll_up':
       return { name: 'scroll', args: { direction: 'up' } }
     case 'scroll_down':
@@ -840,6 +842,12 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         flash(command.target ?? 0)
         return result
       }
+      case 'media': {
+        // A Media Op (#372, ADR 0080): one evaluate on the media ref's own element, beside click and type.
+        const result = await browser.mediaOp(command.target ?? 0, command.mediaOp ?? { op: 'pause' })
+        flash(command.target ?? 0)
+        return result
+      }
       case 'scroll_up':
         return browser.scroll('up')
       case 'scroll_down':
@@ -917,6 +925,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       reading: read.reading,
       verb: command.verb,
       ...(command.capability !== undefined ? { capability: command.capability } : {}),
+      ...(command.mediaOp !== undefined ? { mediaOp: command.mediaOp } : {}),
       target: command.target,
       ...(label !== undefined ? { targetLabel: label } : {}),
       slot: command.slot,
@@ -1085,6 +1094,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
             page: { url: state.url ?? '', title: state.title ?? '' },
             ...(label !== undefined ? { label } : {}),
             ...(result.endsWith(`\n${SCROLL_END_OF_PAGE}`) ? { scrollEnded: true } : {}),
+            // A Media Op's changes clause (#372): what follows its `<op> [N]: ` head.
+            ...(command.verb === 'media' ? { mediaChanges: result.slice(result.indexOf(': ') + 2).split('\n', 1)[0] } : {}),
           })
           if (text !== null) answer(turnId, text)
         }

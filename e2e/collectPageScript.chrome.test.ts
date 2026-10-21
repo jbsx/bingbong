@@ -364,6 +364,7 @@ const SONG = `data:audio/wav;base64,${silentWav(5).toString('base64')}`
 const MEDIA_PAGES: Record<string, string> = {
   '/song': `<body><audio id="song" src="${SONG}" title="Fixture Song" muted controls></audio><p>A song page.</p></body>`,
   '/unplayed': `<body><video src="${SONG}" title="Never played"></video><p>A page with a video no one played.</p></body>`,
+  '/tracks': `<body><video id="v" src="${SONG}" title="Tracked" width="320" height="180"><track kind="subtitles" srclang="en" label="English" src="data:text/vtt,WEBVTT"><track kind="subtitles" srclang="fr" label="French" src="data:text/vtt,WEBVTT"></video><video src="${SONG}" title="Never played" width="320" height="180"></video></body>`,
 }
 
 describe.skipIf(!canDriveChrome)('the collector reads the playing media element (#363)', () => {
@@ -390,6 +391,19 @@ describe.skipIf(!canDriveChrome)('the collector reads the playing media element 
     await fixtures.open('/unplayed')
     const page = commandPageOf(buildPageSnapshot(parseCollectedPage(await fixtures.chrome.evaluate(COLLECT_PAGE_SCRIPT))))
     expect(page.media).toBeUndefined()
+  })
+
+  it("carries each media element's own facts on its ref (#372, ADR 0080): time, volume, loop, rate, the seekable range, its text tracks and the one showing", async () => {
+    await fixtures.open('/tracks')
+    await fixtures.chrome.cdp.send('Runtime.evaluate', { expression: "(() => { const v = document.getElementById('v'); v.playbackRate = 1.5; v.volume = 0.5; v.textTracks[0].mode = 'showing'; return v.play() })()", userGesture: true, awaitPromise: true })
+    await until(() => fixtures.chrome.evaluate<boolean>("document.getElementById('v').currentTime > 0 && document.getElementById('v').seekable.length > 0"), 'the video to play')
+    const page = commandPageOf(buildPageSnapshot(parseCollectedPage(await fixtures.chrome.evaluate(COLLECT_PAGE_SCRIPT))))
+    const [video, never] = page.refs.filter((ref) => ref.kind === 'media')
+    expect(video).toMatchObject({ label: 'Tracked', media: { paused: false, ended: false, duration: 5, volume: 0.5, muted: false, loop: false, rate: 1.5, tracks: 2, captions: 'en', buffering: false, failed: false } })
+    expect(video!.media!.currentTime).toBeGreaterThan(0)
+    expect(video!.media!.seekable).toEqual({ start: 0, end: 5 })
+    // An element that never started still carries its facts: its ops are offered by ability, not by state.
+    expect(never).toMatchObject({ label: 'Never played', media: { paused: true, currentTime: 0, tracks: 0, captions: null } })
   })
 })
 

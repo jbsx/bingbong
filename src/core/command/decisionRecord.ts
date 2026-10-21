@@ -2,6 +2,7 @@ import type { KeyPress, PageLanding } from '../ports/browser'
 import type { DecisionUnavailableReason } from '../ports/decisionModel'
 import type { CommandVerb } from './command'
 import type { Capability } from './capability'
+import type { MediaOpAction } from './mediaOp'
 import type { CommandAnswers, HopAnswers } from './jevReading'
 
 // The per-Command decision record (#324, ADR 0076): one JSON line per
@@ -24,11 +25,13 @@ export type CommandReading = 'local_match' | 'jev' | 'best_guess'
 export interface JevDetail {
   readonly model: string
   readonly latencyMs: number
-  readonly confidence: { readonly action: number; readonly slot: number; readonly where?: number; readonly outcome?: number; readonly dismiss?: number; readonly steps?: number }
+  readonly confidence: { readonly action: number; readonly slot: number; readonly amount?: number; readonly where?: number; readonly outcome?: number; readonly dismiss?: number; readonly steps?: number }
   readonly probabilities: {
     /** The action card's (#370): its top options. */
     readonly action: Readonly<Record<string, number>>
     readonly slot: Readonly<Record<string, number>>
+    /** The Amount's (#372), on an ask that offered a media ref. */
+    readonly amount?: Readonly<Record<string, number>>
     readonly where?: Readonly<Record<string, number>>
     /** The Verdict's, at a hop past the first. */
     readonly outcome?: Readonly<Record<string, number>>
@@ -57,6 +60,8 @@ export interface DecisionRecord {
   readonly verb: CommandVerb
   /** For a `play` Jev read (ADR 0079): the Capability its action card named (#370); absent otherwise. */
   readonly capability?: Capability
+  /** For `media` (#372, ADR 0080): the op, the Amount rung a seek read and the seconds it came to (capped by the element's range when fired), a volume's or a speed's level. */
+  readonly mediaOp?: MediaOpAction
   readonly target: number | null
   readonly targetLabel?: string
   readonly slot: string | null
@@ -214,6 +219,7 @@ function topProbabilities(probabilities: Readonly<Record<string, number>>, keep:
 
 /** Jev's answers as the record keeps them. */
 export function jevDetailOf(answers: CommandAnswers | HopAnswers, latencyMs: number, model: string): JevDetail {
+  const amount = 'amount' in answers ? answers.amount : undefined
   const where = 'where' in answers ? answers.where : undefined
   const outcome = 'outcome' in answers ? answers.outcome : undefined
   const dismiss = 'dismiss' in answers ? answers.dismiss : undefined
@@ -224,6 +230,7 @@ export function jevDetailOf(answers: CommandAnswers | HopAnswers, latencyMs: num
     confidence: {
       action: answers.action.confidence,
       slot: answers.slot.confidence,
+      ...(amount !== undefined ? { amount: amount.confidence } : {}),
       ...(where !== undefined ? { where: where.confidence } : {}),
       ...(outcome !== undefined ? { outcome: outcome.confidence } : {}),
       ...(dismiss !== undefined ? { dismiss: dismiss.confidence } : {}),
@@ -232,6 +239,7 @@ export function jevDetailOf(answers: CommandAnswers | HopAnswers, latencyMs: num
     probabilities: {
       action: topProbabilities(answers.action.probabilities, KEPT_ACTIONS),
       slot: topProbabilities(answers.slot.probabilities, KEPT_PROBABILITIES),
+      ...(amount !== undefined ? { amount: { ...amount.probabilities } } : {}),
       ...(where !== undefined ? { where: { ...where.probabilities } } : {}),
       ...(outcome !== undefined ? { outcome: { ...outcome.probabilities } } : {}),
       ...(dismiss !== undefined ? { dismiss: topProbabilities(dismiss.probabilities, KEPT_PROBABILITIES) } : {}),

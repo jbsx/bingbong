@@ -5,7 +5,8 @@ import { dialogControls, type DismissChoice } from './dismissDialog'
 import { isSearchLanding, isTextField, pageAddressOf, resultLinksOf, resultRefsOf, wordsAfterVerb } from './localMatch'
 import { isAddressShaped } from './openAddress'
 import { isWebEngineSearch, siteOf } from './siteScope'
-import { CAPABILITY_DESCRIPTIONS, CAPABILITY_INSTRUCTIONS, capabilityAction, capabilitySearches, isCapability, type Capability } from './capability'
+import { CAPABILITY_DESCRIPTIONS, CAPABILITY_INSTRUCTIONS, capabilityAction, capabilitySearches, isCapability, withheldByMediaRef, type Capability } from './capability'
+import { AMOUNT_RUNGS, amountQuestion, clockOf, describeMediaOp, isMediaOp, isSeek, mediaChangesOf, mediaOpDescription, mediaOpsOf, mediaStateOf, rateTarget, seekAmount, volumeTarget, type AmountRung, type MediaOp, type MediaOpAction } from './mediaOp'
 
 // One Jev call per Command the Local Match cannot settle (#324, ADR 0076).
 // The state is the transcript, the page's address and title and its
@@ -28,7 +29,7 @@ import { CAPABILITY_DESCRIPTIONS, CAPABILITY_INSTRUCTIONS, capabilityAction, cap
 const MAX_SPANS = 254
 
 /** A browser verb the action card offers as it is (#370): one that acts on no ref. */
-type RefLessVerb = Exclude<(typeof JEV_VERBS)[number], 'click' | 'type' | 'menu' | 'none'>
+type RefLessVerb = Exclude<(typeof JEV_VERBS)[number], 'click' | 'type' | 'menu' | 'media' | 'none'>
 
 /** The verbs the action card offers as they are: every browser verb that acts on no ref. */
 const REFLESS_VERBS = JEV_VERBS.filter((verb): verb is RefLessVerb => verb !== 'none' && !verbTakesTarget(verb))
@@ -96,7 +97,9 @@ export function slotSpans(text: string): SlotSpan[] {
 function describeRef(ref: CommandRef, page?: CommandPage): string {
   const kind = ref.kind === 'input' && ref.inputType !== null ? `input[${ref.inputType}]` : ref.kind
   const states = ref.states !== undefined && ref.states.length > 0 ? ` ${ref.states.join(' ')}` : ''
-  return `${kind} ${JSON.stringify(shownLabel(ref, page))}${ref.href !== null ? ` ${ref.href}` : ''}${states}`
+  // A media ref's own state rides its line (#372, ADR 0080): what its ops change, and what the Verdict reads.
+  const media = ref.media !== undefined ? ` ${mediaStateOf(ref.media)}` : ''
+  return `${kind} ${JSON.stringify(shownLabel(ref, page))}${ref.href !== null ? ` ${ref.href}` : ''}${states}${media}`
 }
 
 /** The label a ref is shown with: its own, or for the page's one unlabelled media ref, the title of what plays. */
@@ -183,8 +186,8 @@ export function refIdentityOf(ref: CommandRef, page: CommandPage): RefIdentity {
   return { label: ref.label, address: pageAddressOf(ref.href ?? page.url) }
 }
 
-/** What an action card label does to a numbered ref, as a set-aside keeps it. */
-type RefAct = 'click' | 'type' | 'menu'
+/** What an action card label does to a numbered ref, as a set-aside keeps it: a click, a type, a right-click or a Media Op (#372). */
+type RefAct = 'click' | 'type' | 'menu' | MediaOp
 
 /**
  * An action set aside (#336, #373, ADR 0080), keyed by its card label: a
@@ -202,9 +205,11 @@ export type SetAside = (RefIdentity & { readonly act: RefAct }) | { readonly ver
  */
 export function setAsideOf(command: Command, page: CommandPage): SetAside | null {
   if (command.capability !== undefined) return { verb: command.capability }
-  if (command.verb === 'click' || command.verb === 'type' || command.verb === 'menu') {
+  // A Media Op by its op and the ref's identity (#372, ADR 0080): `forward-7` is set aside as `click-10` is, the ref's other ops staying.
+  const act = command.verb === 'media' ? command.mediaOp?.op : command.verb === 'click' || command.verb === 'type' || command.verb === 'menu' ? command.verb : undefined
+  if (act !== undefined) {
     const ref = page.refs.find((candidate) => candidate.ref === command.target)
-    return ref === undefined ? null : { act: command.verb, ...refIdentityOf(ref, page) }
+    return ref === undefined ? null : { act, ...refIdentityOf(ref, page) }
   }
   return command.verb !== 'navigate' && isRefLessVerb(command.verb) ? { verb: command.verb } : null
 }
@@ -339,10 +344,11 @@ function targetMoved(change: TargetChange): boolean {
 }
 
 export function doneFacts(before: CommandPage, after: CommandPage, result: DoneResult, target?: number | null): DoneResult {
-  // A change to the media element is one the DOM does not show (#363): Loop ticked in a right-click menu changes no ref.
-  const media = mediaChanges(before.media, after.media)
   // A page another address opened is a new page: what the target did on the old one is no fact of it.
   const change = !result.changed || result.opened === undefined ? targetChange(before, after, target) : undefined
+  // An acted media ref tells its change from its own facts (#372, ADR 0080); otherwise a change to the page's media element is one the DOM does not show (#363): Loop ticked in a right-click menu changes no ref.
+  const ownMedia = change !== undefined ? mediaRefChanges(before, after, target) : null
+  const media = ownMedia ?? mediaChanges(before.media, after.media)
   if (!result.changed) {
     // A page that reads unchanged can still hold a target that changed: a toggle the click signature does not see.
     const moved = change !== undefined && targetMoved(change)
@@ -359,12 +365,17 @@ export function doneFacts(before: CommandPage, after: CommandPage, result: DoneR
   return { ...result, ...(change !== undefined ? { target: change } : {}), ...(appeared.length > 0 ? { appeared } : {}), ...(covered ? { covered: true } : {}), ...(closed ? { closed: true } : {}), ...(media.length > 0 ? { media } : {}) }
 }
 
-/** A media position as a player shows it: `1:02`, `1:02:03`. */
-function clockOf(seconds: number): string {
-  const whole = Math.max(0, Math.floor(seconds))
-  const [h, m, s] = [Math.floor(whole / 3600), Math.floor((whole % 3600) / 60), whole % 60]
-  const pad = (n: number): string => String(n).padStart(2, '0')
-  return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`
+/**
+ * What the acted media ref's own facts changed between the two reads
+ * (#372): the element on the page the action left, matched as the target
+ * is; null when the target is no media ref read with its facts, so the
+ * page's media line tells the change instead.
+ */
+function mediaRefChanges(before: CommandPage, after: CommandPage, ref: number | null | undefined): string[] | null {
+  const target = ref === null || ref === undefined ? undefined : before.refs.find((one) => one.ref === ref)
+  if (target?.media === undefined) return null
+  const now = targetAfter(target, before, after)
+  return now?.media === undefined ? null : mediaChangesOf(target.media, now.media)
 }
 
 /** What changed on the media element between two reads (#363), in "Done so far"'s words; none when nothing did. */
@@ -455,7 +466,10 @@ export function doneLine(command: Command, page: CommandPage, result: DoneResult
 export function doneAction(command: Command, page: CommandPage): string {
   const label = targetLabel(command, page)
   if (label === undefined) return describeCommand(command)
-  return command.verb === 'type' ? `type ${JSON.stringify(command.slot ?? '')} into ${JSON.stringify(label)}` : `${command.verb} ${JSON.stringify(label)}`
+  if (command.verb === 'type') return `type ${JSON.stringify(command.slot ?? '')} into ${JSON.stringify(label)}`
+  // A Media Op by what it did (#372): `skip forward 10 s "Title"`, `mute "Title"`.
+  if (command.verb === 'media' && command.mediaOp !== undefined) return `${describeMediaOp(command.mediaOp)} ${JSON.stringify(label)}`
+  return `${command.verb} ${JSON.stringify(label)}`
 }
 
 /** The least probability a runner-up may have (#363, ADR 0079): under it, Jev did not offer the ref at all. */
@@ -571,14 +585,16 @@ type ActionQuestions = {
   readonly slot: DecisionChoiceQuestion
 }
 
+/** Questions with one more Choice asked beside them, or not: a union, never an optional key, so each still reads as the port's `DecisionQuestions` record. */
+type Asked<Q, K extends string> = Q | (Q & { readonly [key in K]: DecisionChoiceQuestion })
+
 /**
- * The reading's questions (#340): the action card and the Slot, or those and `where` —
- * a union, never an optional key, so each still reads as the port's
- * `DecisionQuestions` record — and at hop 0, on a line with a conjunction,
- * `steps` (#364).
+ * The reading's questions (#340): the action card and the Slot; the
+ * Amount beside them on an ask that offers a media ref (#372); `where` on
+ * a site; and at hop 0, on a line with a conjunction, `steps` (#364).
  */
-type ReadingQuestions = ActionQuestions | (ActionQuestions & { readonly where: DecisionChoiceQuestion })
-export type CommandQuestions = ReadingQuestions | (ReadingQuestions & { readonly steps: DecisionChoiceQuestion })
+type ReadingQuestions = Asked<Asked<ActionQuestions, 'amount'>, 'where'>
+export type CommandQuestions = Asked<ReadingQuestions, 'steps'>
 
 /** Where a line splits into two Steps (#364): the word the second starts at, and each Step's words. */
 export interface StepBoundary {
@@ -661,7 +677,12 @@ function whereQuestion(site: string): DecisionChoiceQuestion {
  */
 export function commandQuestions(text: string, pageRead: CommandPage, hop?: HopContext, options: { readonly steps?: boolean; readonly capabilities?: readonly Capability[] } = {}): CommandQuestions {
   const { page, links } = offered(pageRead, hop)
-  const reading: ActionQuestions = { action: actionQuestion(page, pageRead, links, hop !== undefined, options.capabilities ?? [], hop?.setAside ?? []), slot: slotQuestion(text) }
+  // While a media ref is on the card its own Media Ops are the one line for each song op (#372, ADR 0080): the Player's are withheld.
+  const capabilities = page.refs.some((ref) => ref.kind === 'media' && ref.media !== undefined) ? withheldByMediaRef(options.capabilities ?? []) : (options.capabilities ?? [])
+  const card = actionQuestion(page, pageRead, links, hop !== undefined, capabilities, hop?.setAside ?? [])
+  const action: ActionQuestions = { action: card.question, slot: slotQuestion(text) }
+  // The Amount rides beside a card that offers a media ref's ops (#372, ADR 0080): read only when the action is a seek.
+  const reading: Asked<ActionQuestions, 'amount'> = card.mediaOps ? { ...action, amount: amountQuestion() } : action
   const site = scopableSite(pageRead.url, hop)
   const asked = site === null ? reading : { ...reading, where: whereQuestion(site) }
   const steps = hop === undefined && options.steps !== false ? stepsQuestion(text) : null
@@ -674,12 +695,13 @@ export function commandQuestions(text: string, pageRead: CommandPage, hop?: HopC
  * field; an open of each link further down; the ref-less verbs; the
  * Capabilities on offer; and `none`. No `done`: done-ness is the
  * Verdict's alone. Under the Choice cap the clicks come first, then the
- * types, then the opens, and a right-click on each ref fills what room is
- * left — a menu is the last resort, never chosen over the page's own
- * control in the logged asks. An action the Task set aside is not offered
- * (#373): a ref's other actions stay.
+ * types, then each media ref's Media Ops (#372, ADR 0080) — every op the
+ * element can take, whatever its state — then the opens, and a right-click
+ * on each ref fills what room is left — a menu is the last resort, never
+ * chosen over the page's own control in the logged asks. An action the
+ * Task set aside is not offered (#373): a ref's other actions stay.
  */
-function actionQuestion(page: CommandPage, pageRead: CommandPage, links: readonly OfferedLink[], later: boolean, offeredCapabilities: readonly Capability[], setAside: readonly SetAside[]): DecisionChoiceQuestion {
+function actionQuestion(page: CommandPage, pageRead: CommandPage, links: readonly OfferedLink[], later: boolean, offeredCapabilities: readonly Capability[], setAside: readonly SetAside[]): { question: DecisionChoiceQuestion; mediaOps: boolean } {
   const kept = (label: string): boolean => !isAside(label, page, setAside)
   const capabilities = offeredCapabilities.filter(kept)
   const refLess = Object.entries(REFLESS_DESCRIPTIONS).filter(([verb]) => kept(verb))
@@ -689,15 +711,16 @@ function actionQuestion(page: CommandPage, pageRead: CommandPage, links: readonl
     room -= taken.length
     return taken
   }
-  // The refs the clicks reach under the cap; their types and right-clicks come from these.
+  // The refs the clicks reach under the cap; their types, Media Ops and right-clicks come from these.
   const reached = page.refs.slice(0, Math.max(0, room))
   const clicked = new Set(take(reached.filter((ref) => kept(`click-${ref.ref}`))).map((ref) => ref.ref))
   const typed = new Set(take(reached.filter((ref) => isTextField(ref) && kept(`type-${ref.ref}`))).map((ref) => ref.ref))
+  const ops = take(reached.flatMap((ref) => (ref.kind === 'media' && ref.media !== undefined ? mediaOpsOf(ref.media).filter((op) => kept(`${op}-${ref.ref}`)).map((op): [MediaOp, CommandRef] => [op, ref]) : [])))
   const opened = take(links)
   const menus = take(reached.filter((ref) => kept(`menu-${ref.ref}`)))
   // A sentence on when to right-click, or a ref line on each right-click, lowered every sure click (replay 2026-10-21: "disable captions" 0.66–0.72 → 0.41–0.46, its top `none`).
   const instructions = `${later ? "Which one action comes next for the user's words, given Done so far and the page now?" : "Which one action does the browser take for the user's words?"} Each option is a whole action: a numbered ref with what is done to it, or a verb that needs no ref. Choose none when the words are not a command.`
-  return {
+  const question: DecisionChoiceQuestion = {
     type: 'choice',
     instructions: capabilities.length === 0 ? instructions : `${instructions} ${CAPABILITY_INSTRUCTIONS}`,
     options: {
@@ -707,12 +730,14 @@ function actionQuestion(page: CommandPage, pageRead: CommandPage, links: readonl
           return [...(typed.has(ref.ref) ? [[`type-${ref.ref}`, `type the words into ${line}`]] : []), ...(clicked.has(ref.ref) ? [[`click-${ref.ref}`, `click ${line}`]] : [])]
         }),
       ),
+      ...Object.fromEntries(ops.map(([op, ref]) => [`${op}-${ref.ref}`, mediaOpDescription(op, ref.ref, shownLabel(ref, pageRead))])),
       ...Object.fromEntries(opened.map((link) => [`open-${link.n}`, `open result ${describeLink(link)}`])),
       ...Object.fromEntries(menus.map((ref) => [`menu-${ref.ref}`, `right-click [${ref.ref}] to open its menu`])),
       ...Object.fromEntries(refLess),
       ...Object.fromEntries(capabilities.map((capability) => [capability, CAPABILITY_DESCRIPTIONS[capability]])),
     },
   }
+  return { question, mediaOps: ops.length > 0 }
 }
 
 function slotQuestion(text: string): DecisionChoiceQuestion {
@@ -863,20 +888,49 @@ type ActionAnswers = {
   readonly slot: DecisionChoiceAnswer
 }
 
-/** The answers to {@link CommandQuestions}: the action card's and the Slot's, or those and `where`; `steps` when it was asked (#364). */
-type ReadingAnswers = ActionAnswers | (ActionAnswers & { readonly where: DecisionChoiceAnswer })
-export type CommandAnswers = ReadingAnswers | (ReadingAnswers & { readonly steps: DecisionChoiceAnswer })
+/** Answers with one more Choice's answer beside them, or not. */
+type Answered<A, K extends string> = A | (A & { readonly [key in K]: DecisionChoiceAnswer })
 
-/** What an action card label does to a numbered ref or link (#370): `click-12` is a click on ref 12, `open-3` the open of link 3. */
+/** The answers to {@link CommandQuestions}: the action card's and the Slot's; the Amount's (#372), `where` and `steps` (#364) when they were asked. */
+type ReadingAnswers = Answered<Answered<ActionAnswers, 'amount'>, 'where'>
+export type CommandAnswers = Answered<ReadingAnswers, 'steps'>
+
+/** What an action card label does to a numbered ref or link (#370): `click-12` is a click on ref 12, `open-3` the open of link 3, `forward-7` a Media Op on ref 7 (#372). */
 interface RefAction {
-  readonly act: 'click' | 'type' | 'menu' | 'open'
+  readonly act: 'click' | 'type' | 'menu' | 'open' | MediaOp
   readonly n: number
 }
 
 /** The ref or link action a card label names; null for a ref-less verb, a Capability, `none`, or a label the card never offers. */
 function refActionOf(label: string): RefAction | null {
-  const match = /^(click|type|menu|open)-(\d+)$/.exec(label)
-  return match === null ? null : { act: match[1] as RefAction['act'], n: Number(match[2]) }
+  const match = /^([a-z]+)-(\d+)$/.exec(label)
+  if (match === null) return null
+  const [, act, n] = match as unknown as [string, string, string]
+  return act === 'click' || act === 'type' || act === 'menu' || act === 'open' || isMediaOp(act) ? { act, n: Number(n) } : null
+}
+
+/** The Amount rung the answers name (#372); `little` when none was asked, or the answer names no rung. */
+function amountOf(answers: CommandAnswers | HopAnswers): AmountRung {
+  const choice = 'amount' in answers ? answers.amount.choice : null
+  return AMOUNT_RUNGS.find((rung) => rung === choice) ?? 'little'
+}
+
+/**
+ * The Media Op Command a card label makes (#372, ADR 0080): the op on the
+ * media ref it names, when the element can take it — a seek with the
+ * Amount read into seconds, a volume or a speed with the level the words
+ * give. Null for an op the element cannot take, a ref that is no media
+ * ref, or a level the words leave unsaid.
+ */
+function mediaCommand(op: MediaOp, ref: CommandRef, answers: CommandAnswers | HopAnswers, text: string): Command | null {
+  if (ref.kind !== 'media' || ref.media === undefined || !mediaOpsOf(ref.media).includes(op)) return null
+  const command = (mediaOp: MediaOpAction): Command => ({ verb: 'media', target: ref.ref, slot: null, mediaOp })
+  if (isSeek(op)) return command({ op, ...seekAmount(amountOf(answers), op as 'forward' | 'back', ref.media, text) })
+  if (op === 'volume' || op === 'rate') {
+    const to = op === 'volume' ? volumeTarget(text, ref.media) : rateTarget(text, ref.media)
+    return to === null ? null : command({ op, to })
+  }
+  return command({ op })
 }
 
 /** The ref an action names, when the hop offers it — for a type, only a text field. */
@@ -976,6 +1030,7 @@ function refCommand(acted: RefAction, answers: CommandAnswers | HopAnswers, text
   if (acted.act === 'open') return openingOf(acted, page, links)
   const ref = offeredRefOf(acted, page)
   if (ref === null) return null
+  if (isMediaOp(acted.act)) return mediaCommand(acted.act, ref, answers, text)
   return { verb: acted.act, target: ref.ref, slot: acted.act === 'type' ? slotWords(answers.slot, text) : null }
 }
 

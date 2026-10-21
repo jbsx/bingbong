@@ -679,8 +679,8 @@ describe('a Command the Local Match cannot settle', () => {
     expect(request.state).toContain('[3] input[search] "Search"')
     expect(request.state).not.toContain('<page>')
     const card = Object.keys((request.questions.action as DecisionChoiceQuestion).options)
-    expect(card).toEqual(expect.arrayContaining(['click-1', 'click-2', 'type-3', 'click-3', 'menu-1', 'menu-2', 'menu-3', ...JEV_VERBS.filter((verb) => verb !== 'click' && verb !== 'type' && verb !== 'menu')]))
-    for (const bare of ['done', 'click', 'type', 'menu']) expect(card).not.toContain(bare)
+    expect(card).toEqual(expect.arrayContaining(['click-1', 'click-2', 'type-3', 'click-3', 'menu-1', 'menu-2', 'menu-3', ...JEV_VERBS.filter((verb) => verb !== 'click' && verb !== 'type' && verb !== 'menu' && verb !== 'media')]))
+    for (const bare of ['done', 'click', 'type', 'menu', 'media']) expect(card).not.toContain(bare)
     expect(request.questions).not.toHaveProperty('outcome')
     expect(Object.keys((request.questions.slot as DecisionChoiceQuestion).options)).toContain('s0-2')
     expect(browser.clicks).toEqual([1])
@@ -1664,6 +1664,60 @@ describe('a Command whose output is speech', () => {
     expect(events.some((event) => event.type === 'command' && event.dropped === true)).toBe(true)
     expect(speech.spoken).toEqual([])
     expect(events.filter((event) => event.type === 'speak')).toEqual([])
+  })
+})
+
+describe('a Media Op (#372, ADR 0080): one evaluate on the media ref, the Task ending on it', () => {
+  const WATCH_URL = 'https://www.youtube.com/watch?v=kt_0b4RwerY'
+  const FACTS = { paused: false, ended: false, currentTime: 16.2, duration: 111, volume: 1, muted: false, loop: false, rate: 1, seekable: { start: 0, end: 111 }, tracks: 0, captions: null, buffering: false, failed: false }
+  const WATCH_REFS: SnapshotRef[] = [ref(1, 'button', 'Pause (k)'), ref(7, 'media', 'YE - HIGHS AND LOWS', { media: FACTS }), ref(10, 'button', '0:16 / 1:51')]
+  const card = (top: string, amount?: string) => ({ answers: { action: choice(top, 0.9), slot: choice('none'), ...(amount !== undefined ? { amount: choice(amount, 0.8) } : {}) } })
+
+  function watchHarness() {
+    const h = harness()
+    h.browser.snapshot = { ...h.browser.snapshot, url: WATCH_URL, title: 'YE - HIGHS AND LOWS - YouTube', refs: WATCH_REFS }
+    return h
+  }
+
+  it('AC2: "skip 10 seconds ahead" reads forward-7 with the words rung, fires one op on the controller, answers where it came to, and the record carries the op, the rung and the seconds', async () => {
+    const { browser, decision, records, events, runner, asks } = watchHarness()
+    browser.mediaOpChanges = '0:16 → 0:26'
+    decision.script.push(card('forward-7', 'words'))
+
+    await runner.run('skip 10 seconds ahead', { source: 'spoken', turnId: 'voice-1' })
+
+    expect(browser.mediaOps).toEqual([{ ref: 7, op: { op: 'forward', rung: 'words', seconds: 10 } }])
+    expect(browser.clicks).toEqual([])
+    // One ask, one action, the Task over: no hop asks a Verdict after an op.
+    expect(decision.requests).toHaveLength(1)
+    expect(asks[0]!.questions).toHaveProperty('amount')
+    const record = records.find((entry) => entry.type === 'decision')!
+    expect(record).toMatchObject({ verb: 'media', target: 7, targetLabel: 'YE - HIGHS AND LOWS', mediaOp: { op: 'forward', rung: 'words', seconds: 10 }, ended: 'terminal', jev: { confidence: { amount: 0.8 }, probabilities: { amount: { words: 0.8 } } } })
+    const shown = events.filter((event) => event.type === 'display').map((event) => (event as { text: string }).text)
+    expect(shown).toContain('Skipped forward 10 s, to 0:26.')
+    expect(events.find((event) => event.type === 'command')).toMatchObject({ action: 'skip forward 10 s [7] "YE - HIGHS AND LOWS"', keepsIdle: true })
+    expect(events.find((event) => event.type === 'tool_call')).toMatchObject({ name: 'media', args: { ref: 7, op: 'forward', rung: 'words', seconds: 10 } })
+  })
+
+  it('an op that changed nothing is said so, and still ends the Task: mute on a muted element', async () => {
+    const { browser, decision, records, events, runner } = watchHarness()
+    decision.script.push(card('mute-7'))
+    await runner.run('mute it', { source: 'spoken', turnId: 'voice-1' })
+    expect(browser.mediaOps).toEqual([{ ref: 7, op: { op: 'mute' } }])
+    expect(records.find((entry) => entry.type === 'decision')).toMatchObject({ verb: 'media', mediaOp: { op: 'mute' }, ended: 'terminal' })
+    expect(events.filter((event) => event.type === 'display').map((event) => (event as { text: string }).text)).toContain('Muted. Nothing changed: it was already.')
+    expect(decision.requests).toHaveLength(1)
+  })
+
+  it('an op the controller refuses is a failure the record explains', async () => {
+    const { browser, decision, records, events, runner } = watchHarness()
+    browser.mediaOp = async () => {
+      throw new Error('ref 7 is no video or audio element')
+    }
+    decision.script.push(card('pause-7'))
+    await runner.run('pause the video', { source: 'spoken', turnId: 'voice-1' })
+    expect(records.find((entry) => entry.type === 'decision')).toMatchObject({ verb: 'media', error: 'ref 7 is no video or audio element', ended: 'terminal' })
+    expect(events.some((event) => event.type === 'display' && event.failure === true)).toBe(true)
   })
 })
 

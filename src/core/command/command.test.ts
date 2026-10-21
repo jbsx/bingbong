@@ -44,6 +44,13 @@ describe('commandPageOf', () => {
   it('carries no dialog when none is open', () => {
     expect(commandPageOf({ ...SNAPSHOT, dialogOpen: false, dialogText: '' }).dialog).toBeUndefined()
   })
+
+  it("carries a media ref's own facts (#372), and none for a ref that has none", () => {
+    const media = { paused: false, ended: false, currentTime: 16, duration: 111, volume: 1, muted: false, loop: true, rate: 1, seekable: { start: 0, end: 111 }, tracks: 0, captions: null, buffering: false, failed: false }
+    const page = commandPageOf({ ...SNAPSHOT, refs: [{ ...ref(1, 'Highs and Lows', 'page'), kind: 'media', media }, ref(2, 'Home', 'page')] } as unknown as PageSnapshot)
+    expect(page.refs[0]).toMatchObject({ kind: 'media', media })
+    expect(page.refs[1]).not.toHaveProperty('media')
+  })
 })
 
 describe('isMounting (post mortem 2026-10-19 23:26)', () => {

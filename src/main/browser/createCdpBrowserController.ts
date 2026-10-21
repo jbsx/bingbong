@@ -17,6 +17,7 @@ import {
   ARRIVED_CLAUSE,
   blockedActionHead,
   clickFlagsHead,
+  mediaOpHead,
   menuFlagsHead,
   NO_OBSERVABLE_CHANGE,
   PAGE_NOT_READ,
@@ -38,10 +39,13 @@ import {
   parseCollectedPage,
   parsePageLinks,
   type CollectedPage,
+  type MediaFacts,
   type PageLink,
   type PageSnapshot,
   type SnapshotRef,
 } from '../../core/browser/snapshot'
+import { mediaChangesOf, type MediaOpAction } from '../../core/command/mediaOp'
+import { MEDIA_FACTS_FN } from './pageMediaScript'
 import { SCROLL_END_OF_PAGE, formatNewInView } from '../../core/browser/scrollDelta'
 import { authPopupOpenedLine, formatOpenAddress, judgeWindowOpens, LINK_SELECTOR, NEW_WINDOW_FOLLOWED_CLAUSE, popupBlockedLine } from '../../core/browser/newWindowLink'
 import {
@@ -1667,6 +1671,76 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     return readMediaState()
   }
 
+  /**
+   * A Media Op (#372, ADR 0080): one evaluate on the registry node the
+   * number names — the element Jev was shown, never another — the op
+   * applied to it, and its facts read before and after in the same tick,
+   * so the outcome tells what the op itself changed and nothing time
+   * running on did. Volume and mute are told to YouTube's player too when
+   * the element is its (as the Player does, #343), so its own slider and
+   * remembered volume agree. No mouse, no collect: nothing renumbers.
+   */
+  async function mediaOpOn(ref: number, op: MediaOpAction): Promise<string> {
+    const { target } = await resolveRef(ref)
+    const index = target.ref - 1
+    const read = await evaluateInPage<{ before: MediaFacts; after: MediaFacts } | null>(`((op) => {
+      /* MEDIA_OP */
+      const el = (window.__bingbongRefs || [])[${index}]
+      if (!el || !el.isConnected || !(el instanceof HTMLMediaElement)) return null
+      const facts = ${MEDIA_FACTS_FN}
+      const player = typeof el.closest === 'function' ? el.closest('#movie_player') : null
+      const before = facts(el)
+      const start = el.seekable.length > 0 ? el.seekable.start(0) : 0
+      const end = el.seekable.length > 0 ? el.seekable.end(el.seekable.length - 1) : (Number.isFinite(el.duration) ? el.duration : el.currentTime)
+      const tracks = el.textTracks ? Array.from(el.textTracks) : []
+      switch (op.op) {
+        case 'play': el.play().catch(() => {}); break
+        case 'pause': el.pause(); break
+        case 'forward': el.currentTime = Math.min(end, el.currentTime + (op.seconds || 0)); break
+        case 'back': el.currentTime = Math.max(start, el.currentTime - (op.seconds || 0)); break
+        case 'restart': el.currentTime = start; el.play().catch(() => {}); break
+        case 'volume': {
+          const level = Math.max(0, Math.min(100, Math.round(op.to || 0)))
+          el.volume = level / 100
+          if (player && typeof player.setVolume === 'function') player.setVolume(level)
+          break
+        }
+        case 'mute':
+        case 'unmute':
+          el.muted = op.op === 'mute'
+          if (player && typeof player.mute === 'function' && typeof player.unMute === 'function') op.op === 'mute' ? player.mute() : player.unMute()
+          break
+        case 'loop':
+        case 'unloop': el.loop = op.op === 'loop'; break
+        case 'rate': el.playbackRate = op.to || 1; break
+        case 'captions': {
+          const track = tracks.find((t) => t.kind === 'subtitles' || t.kind === 'captions') || tracks[0]
+          for (const t of tracks) t.mode = t === track ? 'showing' : 'disabled'
+          break
+        }
+        case 'uncaptions': for (const t of tracks) t.mode = 'disabled'; break
+      }
+      const after = facts(el)
+      // A play's pause flag flips in the call; a seek lands in the same tick.
+      if (op.op === 'play' || op.op === 'restart') after.paused = false
+      return { before, after }
+    })(${JSON.stringify(op)})`)
+    // A null comes back as undefined (`evaluateInPage`): either is no media element.
+    if (read == null) throw new Error(`ref ${ref} is no video or audio element`)
+    const before = parseMediaFactsOf(read.before)
+    const after = parseMediaFactsOf(read.after)
+    // The facts on the page's refs moved: the next collect reads them anew.
+    lastSnapshot = undefined
+    const changes = mediaChangesOf(before, after)
+    return `${mediaOpHead(op.op, ref)}${changes.length > 0 ? changes.join(', ') : NO_OBSERVABLE_CHANGE}`
+  }
+
+  /** The facts as the page sent them: an Infinity duration travels as null. */
+  function parseMediaFactsOf(raw: MediaFacts): MediaFacts {
+    const duration = raw.duration as number | null
+    return { ...raw, duration: duration === null ? Infinity : duration }
+  }
+
   async function describeRef(ref: number): Promise<SnapshotRef | undefined> {
     try {
       const { target } = await resolveRef(ref, { carryPage: false })
@@ -1841,6 +1915,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
   }
 
   const click = (ref: number) => holdingWindowOpens(() => withRefusedStaleRef(() => clickRef(ref)))
+  const mediaOp = (ref: number, op: MediaOpAction) => withRefusedStaleRef(() => mediaOpOn(ref, op))
   // A right-click (#363): the page's own menu, with the appliance's native one held back for the length of it.
   const openMenu = async (ref: number): Promise<string> => {
     const release = deps.holdContextMenu?.()
@@ -1858,6 +1933,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     pageReadParts,
     click,
     openMenu,
+    mediaOp,
     type,
     scroll,
     screenshot,

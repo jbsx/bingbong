@@ -260,6 +260,26 @@ describe('parseCollectedPage', () => {
   })
 })
 
+describe("a media element's own facts (#372, ADR 0080)", () => {
+  const facts = { paused: false, ended: false, currentTime: 16.2, duration: 111, volume: 0.8, muted: false, loop: true, rate: 1, seekable: { start: 0, end: 111 }, tracks: 2, captions: 'en', buffering: false, failed: false }
+
+  it("parses each video or audio element's media facts and carries them onto its ref, a null duration read as a live stream's Infinity", () => {
+    const parsed = parseCollectedPage(page({ elements: [element({ tag: 'video', label: 'Highs and Lows', media: facts }), element({ tag: 'audio', label: 'Live', media: { ...facts, duration: null as unknown as number, seekable: null, tracks: 0, captions: null } })] }))
+    expect(parsed.elements[0]?.media).toEqual(facts)
+    expect(parsed.elements[1]?.media).toEqual({ ...facts, duration: Infinity, seekable: null, tracks: 0, captions: null })
+    const refs = buildPageSnapshot(parsed).refs
+    expect(refs[0]).toMatchObject({ kind: 'media', media: facts })
+    expect(refs[1]?.media?.duration).toBe(Infinity)
+  })
+
+  it('drops media facts that are malformed, and carries none for an element that has none', () => {
+    const parsed = parseCollectedPage(page({ elements: [element({ tag: 'video', media: { ...facts, paused: 'no' } as unknown as CollectedElement['media'] }), element({ tag: 'button' })] }))
+    expect(parsed.elements[0]?.media).toBeUndefined()
+    expect(parsed.elements[1]?.media).toBeUndefined()
+    expect(buildPageSnapshot(parsed).refs[0]).not.toHaveProperty('media')
+  })
+})
+
 describe('buildPageSnapshot', () => {
   it('numbers visible interactive elements 1..N in DOM order', () => {    const snapshot = buildPageSnapshot(youtubeFixture)
 

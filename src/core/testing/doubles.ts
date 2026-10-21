@@ -14,7 +14,8 @@ import type {
 import { settledStateFromSnapshot } from '../browser/pageFingerprints'
 import { blockerFactsFromSnapshot } from '../browser/blockerNudge'
 import { linkHrefsOf, type PageLink, type PageSnapshot, type SnapshotRef } from '../browser/snapshot'
-import { blockedActionHead, clickFlagsHead, menuFlagsHead, NO_OBSERVABLE_CHANGE, PAGE_SIGNATURE_CHANGED, type BlockedAction } from '../browser/actionOutcome'
+import { blockedActionHead, clickFlagsHead, mediaOpHead, menuFlagsHead, NO_OBSERVABLE_CHANGE, PAGE_SIGNATURE_CHANGED, type BlockedAction } from '../browser/actionOutcome'
+import type { MediaOpAction } from '../command/mediaOp'
 import { createPerfTracer, type PerfSpanRecord, type PerfTracer } from '../perf/perfTracer'
 
 /**
@@ -208,6 +209,16 @@ export class FakeBrowser implements BrowserController, VisualGroundingController
     const blocked = this.blockedAt(ref)
     if (blocked !== null) return blockedActionHead('menu', ref, blocked)
     return `${menuFlagsHead(ref, false, false)}${PAGE_SIGNATURE_CHANGED}`
+  }
+
+  /** Every Media Op fired (#372), in order. */
+  readonly mediaOps: { ref: number; op: MediaOpAction }[] = []
+  /** What a Media Op's outcome says changed; a test scripts it, and the default says nothing did. */
+  mediaOpChanges: string = NO_OBSERVABLE_CHANGE
+
+  async mediaOp(ref: number, op: MediaOpAction): Promise<string> {
+    this.mediaOps.push({ ref, op })
+    return `${mediaOpHead(op.op, ref)}${this.mediaOpChanges}`
   }
 
   async type(ref: number, text: string): Promise<string> {

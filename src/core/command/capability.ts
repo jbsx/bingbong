@@ -64,6 +64,19 @@ export function playerCapabilities(songOn: boolean): readonly Capability[] {
   return ['play', 'play_next', 'queue', ...(songOn ? SONG_CAPABILITIES : [])]
 }
 
+/**
+ * The song's ops a media ref on the card stands in for (#372, ADR 0080):
+ * withheld while any media ref is offered, so one thing never has two
+ * lines — the ref's own Media Ops are the one line for each. A song to
+ * play, the Queue's walk and `show` are the Player's own, and stay.
+ */
+const MEDIA_REF_OPS: ReadonlySet<Capability> = new Set<Capability>(['loop', 'loop_off', 'restart', 'pause', 'unpause', 'louder', 'quieter', 'mute', 'unmute', 'volume'])
+
+/** The Capabilities to offer beside a card that carries a media ref: the song's ops withheld. */
+export function withheldByMediaRef(capabilities: readonly Capability[]): Capability[] {
+  return capabilities.filter((capability) => !MEDIA_REF_OPS.has(capability))
+}
+
 /** Whether an action card label names a Capability. */
 export function isCapability(label: string): label is Capability {
   return Object.hasOwn(CAPABILITY_DESCRIPTIONS, label)

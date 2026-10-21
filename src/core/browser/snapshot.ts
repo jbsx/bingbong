@@ -47,6 +47,8 @@ export interface CollectedElement {
   ariaPressed?: string | null
   /** The Ref State the accessibility tree gave (refStates.ts); the controller adds it after the collect, for the elements that become refs. */
   states?: readonly string[]
+  /** A video or audio element's own facts (#372); absent for every other element, and in older payloads. */
+  media?: MediaFacts
   className?: string
   /**
    * Where this element sat in the collect before this one, or -1 when this
@@ -78,6 +80,35 @@ export interface PageMedia {
   readonly duration: number
   readonly loop: boolean
   readonly muted: boolean
+}
+
+/**
+ * A media element's own facts (#372, ADR 0080): what its ref line carries
+ * and what its Media Ops are gated by — never its state, only its ability
+ * (a seekable range, text tracks). `duration` is Infinity for a live
+ * stream, whose fractions a seek maps onto the seekable range.
+ */
+export interface MediaFacts {
+  readonly paused: boolean
+  readonly ended: boolean
+  readonly currentTime: number
+  readonly duration: number
+  /** 0–1, as the element holds it. */
+  readonly volume: number
+  readonly muted: boolean
+  readonly loop: boolean
+  /** The playback rate; 1 is normal. */
+  readonly rate: number
+  /** The range a seek can reach; null when the element has none (nothing loaded, or a stream that allows no seek). */
+  readonly seekable: { readonly start: number; readonly end: number } | null
+  /** How many text tracks (captions, subtitles) the element has. */
+  readonly tracks: number
+  /** The language of the text track showing; null when none shows. */
+  readonly captions: string | null
+  /** Waiting for data while meant to play. */
+  readonly buffering: boolean
+  /** The element's load or decode failed. */
+  readonly failed: boolean
 }
 
 // Raw output of the in-page collector script: everything DOM-specific
@@ -144,6 +175,8 @@ export interface SnapshotRef {
   ariaPressed?: string | null
   /** The Ref State (refStates.ts): what the accessibility tree says of the element; absent when it said nothing. */
   states?: readonly string[]
+  /** A media ref's own facts (#372, ADR 0080); absent for every other kind. */
+  media?: MediaFacts
   className?: string
   /** 'dialog' marks a control of the topmost open dialog; 'page' otherwise. */
   layer?: 'dialog' | 'page'
@@ -270,6 +303,34 @@ function parseTextBlock(entry: unknown): CollectedTextBlock | null {
   }
 }
 
+/** A collected element's media facts (#372), or undefined for none or ones that do not read as such; a null duration is a live stream's Infinity. */
+function parseMediaFacts(raw: unknown): MediaFacts | undefined {
+  if (typeof raw !== 'object' || raw === null) return undefined
+  const facts = raw as Record<string, unknown>
+  const duration = facts.duration === null ? Infinity : facts.duration
+  const flags = ['paused', 'ended', 'muted', 'loop', 'buffering', 'failed'] as const
+  if (!flags.every((flag) => typeof facts[flag] === 'boolean')) return undefined
+  if (!isFiniteNumber(facts.currentTime) || !isFiniteNumber(facts.volume) || !isFiniteNumber(facts.rate) || typeof duration !== 'number' || Number.isNaN(duration)) return undefined
+  if (!isFiniteNumber(facts.tracks) || (facts.captions !== null && typeof facts.captions !== 'string')) return undefined
+  const range = facts.seekable
+  const seekable = typeof range === 'object' && range !== null && isFiniteNumber((range as Record<string, unknown>).start) && isFiniteNumber((range as Record<string, unknown>).end) ? (range as { start: number; end: number }) : null
+  return {
+    paused: facts.paused as boolean,
+    ended: facts.ended as boolean,
+    currentTime: facts.currentTime,
+    duration,
+    volume: facts.volume,
+    muted: facts.muted as boolean,
+    loop: facts.loop as boolean,
+    rate: facts.rate,
+    seekable: seekable === null ? null : { start: seekable.start, end: seekable.end },
+    tracks: facts.tracks,
+    captions: facts.captions as string | null,
+    buffering: facts.buffering as boolean,
+    failed: facts.failed as boolean,
+  }
+}
+
 /** A collected media element, or null for none or one that does not read as one; a null duration is a live stream's Infinity. */
 function parseMedia(raw: unknown): PageMedia | null {
   if (typeof raw !== 'object' || raw === null) return null
@@ -325,6 +386,7 @@ export function parseCollectedPage(raw: unknown): CollectedPage {
       searchField: optionalBoolean(el.searchField),
       formHasSearch: optionalBoolean(el.formHasSearch),
       layer: el.layer === 'dialog' || el.layer === 'page' ? el.layer : undefined,
+      ...(el.media !== undefined && el.media !== null ? (() => { const media = parseMediaFacts(el.media); return media !== undefined ? { media } : {} })() : {}),
       checked: nullableBoolean(el.checked),
       selectedOption: optionalString(el.selectedOption),
       value: typeof el.value === 'string' ? el.value : null,
@@ -479,6 +541,7 @@ export function buildPageSnapshot(page: CollectedPage, options?: { maxRefs?: num
       ariaPressed: element.ariaPressed ?? null,
       className: element.className ?? '',
       ...(element.states !== undefined && element.states.length > 0 ? { states: element.states } : {}),
+      ...(element.media !== undefined ? { media: element.media } : {}),
       layer: element.layer ?? 'page',
       previousIndex: element.previousIndex ?? -1,
     })),

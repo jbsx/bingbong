@@ -3,6 +3,8 @@ import { pageReadPart, pageReadText } from '../browser/pageText'
 import type { Command } from './command'
 import type { JevDetail, JevUnavailable } from './decisionRecord'
 import { SPOKEN_FAILURES } from './spokenFailure'
+import { NO_OBSERVABLE_CHANGE } from '../browser/actionOutcome'
+import type { MediaOpAction } from './mediaOp'
 import type { DecisionUnavailableReason } from '../ports/decisionModel'
 import { describeDuration } from '../timer/duration'
 
@@ -81,6 +83,45 @@ export interface AnswerFacts {
   readonly label?: string
   /** A scroll that brought nothing new into view (`SCROLL_END_OF_PAGE`): the page was already at its end. */
   readonly scrollEnded?: boolean
+  /** A Media Op's changes clause (#372): what the element's facts changed, or `no observable change`. */
+  readonly mediaChanges?: string
+}
+
+/** A Media Op's Answer (#372): what it did; a seek says where it came to; one that changed nothing says so. */
+function mediaAnswer(action: MediaOpAction, changes: string | undefined): string {
+  const unchanged = changes === NO_OBSERVABLE_CHANGE
+  const sentence = ((): string => {
+    switch (action.op) {
+      case 'forward':
+      case 'back': {
+        const to = changes === undefined ? undefined : /→ (\S+)/.exec(changes)?.[1]
+        return `Skipped ${action.op}${action.seconds !== undefined ? ` ${Math.round(action.seconds)} s` : ''}${to !== undefined ? `, to ${to}` : ''}.`
+      }
+      case 'play':
+        return 'Playing.'
+      case 'pause':
+        return 'Paused.'
+      case 'restart':
+        return 'Restarted.'
+      case 'volume':
+        return `Volume ${action.to ?? '?'}.`
+      case 'mute':
+        return 'Muted.'
+      case 'unmute':
+        return 'Unmuted.'
+      case 'loop':
+        return 'Looping.'
+      case 'unloop':
+        return 'Loop off.'
+      case 'rate':
+        return `Speed ${action.to ?? '?'}×.`
+      case 'captions':
+        return 'Captions on.'
+      case 'uncaptions':
+        return 'Captions off.'
+    }
+  })()
+  return unchanged ? `${sentence} Nothing changed: it was already.` : sentence
 }
 
 /**
@@ -102,6 +143,8 @@ export function commandAnswer(command: Command, facts: AnswerFacts): string | nu
       return `Typed into ${ref()}.`
     case 'menu':
       return `Opened the menu on ${ref()}.`
+    case 'media':
+      return mediaAnswer(command.mediaOp ?? { op: 'pause' }, facts.mediaChanges)
     case 'scroll_up':
       return facts.scrollEnded === true ? 'Already at the top.' : 'Scrolled up.'
     case 'scroll_down':

@@ -1,4 +1,4 @@
-import { PAGE_MEDIA_JS } from './pageMediaScript'
+import { MEDIA_FACTS_FN, PAGE_MEDIA_JS } from './pageMediaScript'
 import { MAX_COLLECTED_PAGE_TEXT } from '../../core/browser/pageText'
 import { CONSENT_LABEL_RE } from '../../core/browser/dialogPolicy'
 import type { CoverProbe } from '../../core/browser/actionOutcome'
@@ -400,6 +400,7 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
   }
   if (textRoot) walk(textRoot)
 
+  const mediaFactsOf = ${MEDIA_FACTS_FN}
   const describeElement = (el, dialogRoot) => {
     const rect = el.getBoundingClientRect()
     const form = formOf(el)
@@ -430,7 +431,9 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
         ? el.value.slice(0, 160)
         : (el.isContentEditable ? textOf(el).slice(0, 160) : null),
       ariaPressed: el.getAttribute('aria-pressed'),
-      className: typeof el.className === 'string' ? el.className.slice(0, 160) : ''
+      className: typeof el.className === 'string' ? el.className.slice(0, 160) : '',
+      // A media element's own facts (#372): what its ref line carries and its Media Ops are gated by.
+      ...(el.tagName === 'VIDEO' || el.tagName === 'AUDIO' ? { media: mediaFactsOf(el) } : {})
     }
   }
   window.__bingbongDescribeElement = (el) => describeElement(el, currentDialogRoot())

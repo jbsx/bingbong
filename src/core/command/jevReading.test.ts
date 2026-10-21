@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { DecisionChoiceAnswer } from '../ports/decisionModel'
+import type { MediaFacts } from '../browser/snapshot'
 import type { Command, CommandPage, CommandRef } from './command'
 import { commandQuestions, commandState, dismissPhraseQuestions, doneFacts, doneLine, hopQuestions, onResults, partialQuestions, readCommandAnswers, readDismissChoice, readProgress, readSteps, readVerdict, refIdentityOf, runnerUpOf, setAsideOf, slotSpans, type HopContext } from './jevReading'
 import { playerCapabilities } from './capability'
@@ -87,6 +88,151 @@ describe('a playing media element in the state Jev reads (#363, ADR 0079)', () =
     expect(doneLine({ verb: 'click', target: 2, slot: null }, before, facts)).toBe('click "Sign in" (loop turned on; muted)')
     expect(doneFacts(after, { ...after, media: { ...SONG, currentTime: 0.4, paused: true } }, { changed: true })).toEqual({ changed: true, media: ['the video went back to 0:00', 'the video paused'] })
     expect(doneFacts(before, before, { changed: false })).toEqual({ changed: false })
+  })
+})
+
+describe('Media Ops (#372, ADR 0080): a media ref offers the element\'s own ops on the action card, on any site', () => {
+  const FACTS: MediaFacts = { paused: false, ended: false, currentTime: 16.2, duration: 111, volume: 1, muted: false, loop: true, rate: 1, seekable: { start: 0, end: 111 }, tracks: 0, captions: null, buffering: false, failed: false }
+  const VIDEO: CommandRef = { ref: 7, kind: 'media', label: 'YE - HIGHS AND LOWS', href: null, inputType: null, media: FACTS }
+  const WATCH: CommandPage = { url: 'https://www.youtube.com/watch?v=kt_0b4RwerY', title: 'YE - HIGHS AND LOWS - YouTube', refs: [{ ref: 1, kind: 'button', label: 'Pause (k)', href: null, inputType: null }, VIDEO, { ref: 8, kind: 'button', label: 'Mute (m)', href: null, inputType: null }] }
+  const ELEVEN = ['play', 'pause', 'forward', 'back', 'restart', 'volume', 'mute', 'unmute', 'loop', 'unloop', 'rate']
+  const withFacts = (facts: Partial<typeof FACTS>): CommandPage => ({ ...WATCH, refs: WATCH.refs.map((ref) => (ref.ref === 7 ? { ...ref, media: { ...FACTS, ...facts } } : ref)) })
+
+  it('offers every op whatever the element\'s state, each a whole action naming the ref, and the amount Choice beside them', () => {
+    const questions = commandQuestions('skip 10 seconds ahead', WATCH)
+    const card = questions.action.options
+    for (const op of ELEVEN) expect(card).toHaveProperty(`${op}-7`)
+    expect(card['forward-7']).toBe('skip forward in [7] "YE - HIGHS AND LOWS", the amount Choice saying how far')
+    expect(card['mute-7']).toBe('mute [7] "YE - HIGHS AND LOWS"')
+    expect(card['unmute-7']).toBe('unmute [7] "YE - HIGHS AND LOWS"')
+    // Both of a pair, whatever the state: withholding the inverse sends Jev to the page's toggle (ADR 0080).
+    const muted = commandQuestions('mute the video', withFacts({ muted: true, loop: false, paused: true })).action.options
+    for (const op of ELEVEN) expect(muted).toHaveProperty(`${op}-7`)
+    // No op on a button, and none without text tracks.
+    for (const label of Object.keys(card)) expect(label).not.toMatch(/^(play|pause|forward|back|restart|volume|mute|unmute|loop|unloop|rate|captions|uncaptions)-[18]$/)
+    expect(card).not.toHaveProperty('captions-7')
+    expect(questions).toHaveProperty('amount')
+    expect(Object.keys((questions as { amount: { options: Record<string, string> } }).amount.options)).toEqual(['words', 'moment', 'little', 'chunk', 'lot', 'half', 'end'])
+  })
+
+  it('withholds by ability alone: the captions pair only with text tracks, the seeks only with a seekable range', () => {
+    const tracked = commandQuestions('turn on captions', withFacts({ tracks: 2, captions: null })).action.options
+    expect(tracked['captions-7']).toBe('turn captions (subtitles) on for [7] "YE - HIGHS AND LOWS"')
+    expect(tracked['uncaptions-7']).toBe('turn captions off for [7] "YE - HIGHS AND LOWS"')
+    const stream = commandQuestions('skip ahead', withFacts({ seekable: null })).action.options
+    for (const op of ['forward', 'back', 'restart']) expect(stream).not.toHaveProperty(`${op}-7`)
+    for (const op of ['play', 'pause', 'volume', 'mute', 'unmute', 'loop', 'unloop', 'rate']) expect(stream).toHaveProperty(`${op}-7`)
+  })
+
+  it('offers no op, and asks no amount, on a page with no media ref — nor on a media ref read without its facts', () => {
+    const none = commandQuestions('skip 10 seconds ahead', PAGE)
+    expect(Object.keys(none.action.options).some((label) => /^(play|pause|forward)-\d+$/.test(label))).toBe(false)
+    expect(none).not.toHaveProperty('amount')
+    const bare = commandQuestions('pause it', { ...WATCH, refs: [{ ...VIDEO, media: undefined }] })
+    expect(bare.action.options).not.toHaveProperty('pause-7')
+    expect(bare).not.toHaveProperty('amount')
+    expect(hopQuestions('skip ahead', WATCH, { hop: 1, visited: [WATCH.url], actions: [], links: [] })).toHaveProperty('amount')
+    expect(partialQuestions('skip ahead', WATCH)).toHaveProperty('amount')
+  })
+
+  it("carries the element's state on its ref line: playing, elapsed/duration or live, volume or muted, loop, speed when not normal, captions with text tracks, buffering, failed", () => {
+    expect(commandState('mute it', WATCH).split('\n')).toContain('[7] media "YE - HIGHS AND LOWS" playing 0:16/1:51 volume 100% loop on')
+    const line = (facts: Partial<typeof FACTS>): string => commandState('mute it', withFacts(facts)).split('\n').find((l) => l.startsWith('[7] '))!
+    expect(line({ paused: true, muted: true, loop: false, rate: 1.5, tracks: 2, captions: 'en' })).toBe('[7] media "YE - HIGHS AND LOWS" paused 0:16/1:51 muted loop off speed 1.5× captions en')
+    expect(line({ duration: Infinity, seekable: { start: 100, end: 3700 }, currentTime: 3690, tracks: 1, buffering: true })).toBe('[7] media "YE - HIGHS AND LOWS" playing live 1:01:30 volume 100% loop on captions off buffering')
+    expect(line({ ended: true, failed: true })).toBe('[7] media "YE - HIGHS AND LOWS" ended 0:16/1:51 volume 100% loop on failed')
+    // The Ref State the tree gave comes first, as on every ref; the card's click line carries the same.
+    const stated = { ...WATCH, refs: WATCH.refs.map((ref) => (ref.ref === 7 ? { ...ref, states: ['focused'] } : ref)) }
+    expect(commandQuestions('mute it', stated).action.options['click-7']).toBe('click [7] media "YE - HIGHS AND LOWS" focused playing 0:16/1:51 volume 100% loop on')
+  })
+
+  it('reads an op label as a media Command on that ref: a seek with its rung and seconds, a volume or a speed with its level', () => {
+    const read = (label: string, text: string, amount?: string) => readCommandAnswers({ action: choice(label), slot: choice('none'), ...(amount !== undefined ? { amount: choice(amount) } : {}) }, text, WATCH)
+    expect(read('pause-7', 'pause the video', 'words')).toEqual({ verb: 'media', target: 7, slot: null, mediaOp: { op: 'pause' } })
+    expect(read('forward-7', 'skip 10 seconds ahead', 'words')).toEqual({ verb: 'media', target: 7, slot: null, mediaOp: { op: 'forward', rung: 'words', seconds: 10 } })
+    expect(read('back-7', 'go back a minute', 'words')).toMatchObject({ mediaOp: { op: 'back', rung: 'words', seconds: 60 } })
+    expect(read('forward-7', 'skip ahead two minutes', 'words')).toMatchObject({ mediaOp: { op: 'forward', rung: 'words', seconds: 120 } })
+    expect(read('back-7', 'go back to the start', 'end')).toMatchObject({ mediaOp: { op: 'back', rung: 'end', seconds: 16.2 } })
+    expect(read('forward-7', 'skip to the end', 'end')).toMatchObject({ mediaOp: { op: 'forward', rung: 'end', seconds: 94.8 } })
+    expect(read('forward-7', 'skip half of it', 'half')).toMatchObject({ mediaOp: { op: 'forward', rung: 'half', seconds: 55.5 } })
+    expect(read('forward-7', 'skip a bit', 'chunk')).toMatchObject({ mediaOp: { op: 'forward', rung: 'chunk', seconds: 11.1 } })
+    // A `words` rung with no number in the words falls back to a little, told as such; no amount asked reads as a little too.
+    expect(read('forward-7', 'skip ahead', 'words')).toMatchObject({ mediaOp: { op: 'forward', rung: 'little', seconds: 5.55 } })
+    expect(read('forward-7', 'skip ahead')).toMatchObject({ mediaOp: { op: 'forward', rung: 'little' } })
+    expect(read('volume-7', 'set the volume to 30')).toEqual({ verb: 'media', target: 7, slot: null, mediaOp: { op: 'volume', to: 30 } })
+    expect(read('volume-7', 'turn it down')).toMatchObject({ mediaOp: { op: 'volume', to: 90 } })
+    expect(read('rate-7', 'play it at 1.5x')).toMatchObject({ mediaOp: { op: 'rate', to: 1.5 } })
+    expect(read('rate-7', 'slow it down')).toMatchObject({ mediaOp: { op: 'rate', to: 0.75 } })
+    expect(read('loop-7', 'loop it')).toMatchObject({ mediaOp: { op: 'loop' } })
+    expect(read('restart-7', 'start it again')).toMatchObject({ mediaOp: { op: 'restart' } })
+  })
+
+  it('reads an op the element cannot take, or on no media ref, as no Command — and a volume or speed the words give no level for', () => {
+    const read = (label: string, text: string, page: CommandPage = WATCH) => readCommandAnswers({ action: choice(label), slot: choice('none'), amount: choice('words') }, text, page)
+    expect(read('forward-7', 'skip ahead', withFacts({ seekable: null })).verb).toBe('none')
+    expect(read('captions-7', 'captions on').verb).toBe('none')
+    expect(read('captions-7', 'captions on', withFacts({ tracks: 1 }))).toMatchObject({ verb: 'media', mediaOp: { op: 'captions' } })
+    expect(read('pause-1', 'pause').verb).toBe('none')
+    expect(read('pause-9', 'pause').verb).toBe('none')
+    expect(read('volume-7', 'the volume').verb).toBe('none')
+    expect(read('rate-7', 'the speed').verb).toBe('none')
+  })
+
+  it("withholds the Player's song ops while a media ref is on the card, so one thing never has two lines; a song to play, the Queue's walk and show stay (AC6)", () => {
+    const offered = playerCapabilities(true)
+    const withVideo = Object.keys(commandQuestions('loop the song', WATCH, undefined, { capabilities: offered }).action.options)
+    for (const op of ['loop', 'loop_off', 'restart', 'pause', 'unpause', 'louder', 'quieter', 'mute', 'unmute', 'volume']) expect(withVideo).not.toContain(op)
+    expect(withVideo).toEqual(expect.arrayContaining(['play', 'play_next', 'queue', 'skip', 'previous', 'show', 'loop-7', 'pause-7']))
+    expect(Object.keys(hopQuestions('loop the song', WATCH, { hop: 1, visited: [], actions: [], links: [] }, { capabilities: offered }).action.options)).not.toContain('loop')
+    // Under the Idle Screen with no media ref read (the pane blank), the song's ops are the Player's, as before.
+    const noVideo = Object.keys(commandQuestions('loop the song', { ...PAGE, media: { title: 'Highs and Lows', paused: false, currentTime: 3, duration: 100, loop: false, muted: false } }, undefined, { capabilities: offered }).action.options)
+    expect(noVideo).toEqual(expect.arrayContaining(['loop', 'pause', 'volume']))
+  })
+
+  it('orders the card refs, then media ops, then opens, then menus under the cap: the menus give way before the ops', () => {
+    // 232 clicks and the eleven ops fill the 255 exactly beside none and the eleven ref-less verbs: nothing is left for the link or a menu.
+    const refs: CommandRef[] = [...Array.from({ length: 231 }, (_, n) => ({ ref: n + 1, kind: 'button' as const, label: `Ref ${n + 1}`, href: null, inputType: null })), { ...VIDEO, ref: 232 }]
+    const labels = Object.keys(hopQuestions('pause it', { ...WATCH, refs }, { hop: 1, visited: [], actions: [], links: [{ label: 'More', href: 'https://www.youtube.com/more' }] }).action.options)
+    expect(labels.length).toBe(255)
+    expect(labels.filter((label) => label.startsWith('click-'))).toHaveLength(232)
+    expect(labels).toEqual(expect.arrayContaining(['pause-232', 'rate-232']))
+    expect(labels).not.toContain('open-1')
+    expect(labels.some((label) => label.startsWith('menu-'))).toBe(false)
+    expect(labels.indexOf('pause-232')).toBeGreaterThan(labels.indexOf('click-232'))
+    // One ref fewer, and the link takes the room before any menu does.
+    expect(Object.keys(hopQuestions('pause it', { ...WATCH, refs: refs.slice(1) }, { hop: 1, visited: [], actions: [], links: [{ label: 'More', href: 'https://www.youtube.com/more' }] }).action.options)).toContain('open-1')
+  })
+
+  it('AC4: "Done so far" tells what an action changed on a media ref from its own facts — elapsed, paused, muted, loop — and the page\'s media line says nothing twice', () => {
+    const after = withFacts({ currentTime: 26.2, muted: true, loop: false, paused: true })
+    const facts = doneFacts(WATCH, after, { changed: false }, 7)
+    // The ref's Ref State did not flip, so no state clause: the element's own facts are what changed.
+    expect(facts).toEqual({ changed: true, media: ['paused', '0:16 → 0:26', 'muted', 'loop off'] })
+    expect(doneLine({ verb: 'click', target: 7, slot: null }, WATCH, facts)).toBe('click "YE - HIGHS AND LOWS" (paused; 0:16 → 0:26; muted; loop off)')
+    // The page's own media line (#363) tells the same change once, in the ref's words, when the acted ref is the element.
+    const song = { title: 'YE - HIGHS AND LOWS', paused: false, currentTime: 16.2, duration: 111, loop: true, muted: false }
+    expect(doneFacts({ ...WATCH, media: song }, { ...after, media: { ...song, currentTime: 26.2, muted: true, loop: false, paused: true } }, { changed: false }, 7)).toMatchObject({ media: ['paused', '0:16 → 0:26', 'muted', 'loop off'] })
+    // Time running on between two reads is a fact of the element, as the Verdict reads it; a ref that did not move is not told as changed.
+    expect(doneFacts(WATCH, WATCH, { changed: false }, 7)).toEqual({ changed: false })
+    expect(doneLine({ verb: 'media', target: 7, slot: null, mediaOp: { op: 'forward', rung: 'words', seconds: 10 } }, WATCH, { changed: true, media: ['0:16 → 0:26'] })).toBe('skip forward 10 s "YE - HIGHS AND LOWS" (0:16 → 0:26)')
+  })
+
+  it('a Media Op is set aside by its card label (ruling 8, #373): forward-7 goes, the ref\'s click and its other ops stay, and its reading is no Command', () => {
+    const aside = setAsideOf({ verb: 'media', target: 7, slot: null, mediaOp: { op: 'forward', rung: 'words', seconds: 10 } }, WATCH)
+    expect(aside).toEqual({ act: 'forward', ...refIdentityOf(VIDEO, WATCH) })
+    const hop: HopContext = { hop: 1, visited: [WATCH.url], actions: ['skip forward 10 s "YE - HIGHS AND LOWS" (nothing changed)'], links: [], setAside: [aside!] }
+    const card = Object.keys(hopQuestions('skip ahead', WATCH, hop).action.options)
+    expect(card).not.toContain('forward-7')
+    expect(card).toEqual(expect.arrayContaining(['click-7', 'back-7', 'pause-7', 'menu-7']))
+    expect(readCommandAnswers({ action: choice('forward-7'), slot: choice('none'), amount: choice('words'), outcome: choice('not_yet') }, 'skip ahead', WATCH, hop).verb).toBe('none')
+  })
+
+  it('maps a fraction onto a live stream\'s seekable window', () => {
+    const live = withFacts({ duration: Infinity, seekable: { start: 1000, end: 1600 }, currentTime: 1500 })
+    const read = (label: string, amount: string) => readCommandAnswers({ action: choice(label), slot: choice('none'), amount: choice(amount) }, 'go back a bit', live)
+    expect(read('back-7', 'chunk')).toMatchObject({ mediaOp: { op: 'back', rung: 'chunk', seconds: 60 } })
+    expect(read('back-7', 'end')).toMatchObject({ mediaOp: { op: 'back', rung: 'end', seconds: 500 } })
+    expect(read('forward-7', 'end')).toMatchObject({ mediaOp: { op: 'forward', rung: 'end', seconds: 100 } })
   })
 })
 

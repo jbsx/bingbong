@@ -1,5 +1,6 @@
 import type { BlockerPageFacts } from '../browser/blockerNudge'
 import type { PageLink, PageSnapshot, SnapshotRef } from '../browser/snapshot'
+import type { MediaOpAction } from '../command/mediaOp'
 
 /**
  * How a navigation's landing ended (#328, ADR 0076 amendment): the page
@@ -114,6 +115,15 @@ export interface BrowserController {
    */
   openMenu(ref: number): Promise<string>
   type(ref: number, text: string): Promise<string>
+  /**
+   * A Media Op on a media ref's own element (#372, ADR 0080): one evaluate
+   * on the node the number names, beside click and type, on any site. The
+   * outcome reads as a click's does, under an `<op> [N]` head: what the
+   * element's facts changed from and to, and `no observable change` for an
+   * op that changed nothing (mute on a muted element). Rejects for a number
+   * not shown, and for an element that is no video or audio.
+   */
+  mediaOp(ref: number, op: MediaOpAction): Promise<string>
   scroll(direction: 'up' | 'down'): Promise<string>
   /** The visible viewport as a JPEG; with options, one magnified region of it. */
   screenshot(options?: ScreenshotOptions): Promise<Uint8Array>
