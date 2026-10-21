@@ -7,7 +7,7 @@
     {
       "question": "outcome",
       "label": "yes",
-      "atLeast": 0.7
+      "atLeast": 0.6
     }
   ],
   "ask": {
