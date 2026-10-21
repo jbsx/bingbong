@@ -148,8 +148,10 @@ The ops reach the song Jev was shown. The control script drives YouTube's
 `#movie_player video` first, else the page's own media element as the
 collect picks it — the one playing, else the first that started — so a
 Capability chosen for a song on any page acts on that song rather than
-failing with "Nothing is playing." ADR 0076's line stands for what the
-user did not ask of that page: a `stop` with nothing in flight and a
-`skip`'s own pause reach YouTube's player alone, never another site's
-video. The Player's queue is unchanged: a song it never started stays off
+failing with "Nothing is playing." A `skip`'s own pause reaches YouTube's
+player alone, never another site's video. A `stop` with nothing in flight
+pauses every playing media element in the page's top frame, YouTube's
+player among them (#376): it is a grammar line that fires without an ask,
+and pausing is a mechanism by kind, not by site. Media inside frames is
+not reached, as it is not by the collect or the ops. The Player's queue is unchanged: a song it never started stays off
 the Now Playing card and is not remembered.

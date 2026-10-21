@@ -869,9 +869,11 @@ recommended" on its five decisions.
   music line of another kind waits for its Endpoint: "go back" may be "go
   back a song", "stop" may be "stop looping". A partial "stop" still fires
   at once while something is in flight, because it is only an abort then.
-- **Ruling 2: `stop` with nothing in flight pauses the music,** as it
-  silences a ringing Timer. With a Command in flight, being read or
-  sounding, `stop` stays the abort and the music plays on.
+- **Ruling 2: `stop` with nothing in flight pauses what plays,** as it
+  silences a ringing Timer: every playing media element in the page's
+  top frame (#376; at first YouTube's player alone). With a Command in
+  flight, being read or sounding, `stop` stays the abort and the media
+  plays on.
 - **Ruling 3: `back` and `resume` are untouched.** Music goes back with
   `previous` ("last song", "go back a song") and on with a bare `play`.
 - **Ruling 4: with an empty Queue the song ends and the Player stops.**
@@ -911,8 +913,9 @@ recommended" on its five decisions.
   video playing, including both page loads. The suite also checks that a
   song's end opens the queued one, and that with nothing queued it stays
   paused at the end, with no ad and no other video, 12 s on.
-- The control script acts on `#movie_player`'s video alone. A `stop` or
-  a `skip` never pauses another site's video.
+- The control script acts on `#movie_player`'s video alone. A `skip`
+  never pauses another site's video. A `stop` with nothing in flight
+  pauses every playing top-frame media element since #376.
 
 ## Amendment 2026-10-19 — verbs are actions, not words: `open` is gone, the Local Match keeps fixed phrases, nothing guesses (#353)
 
