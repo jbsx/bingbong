@@ -1304,7 +1304,9 @@ details.feed-entry {
 
 /* The Run Detail: run noise — tool lines and stage markers — folds under
    one quiet section per run, collapsed until clicked (#333). Its summary
-   starts where the words do; its lines keep the Feed's time column. */
+   starts where the words do; its lines keep the Feed's time column. It is
+   bare, floating or docked: the panel is already its box. Only a live run
+   draws one (below). */
 .feed-run {
   margin: -4px 0 0;
 }
@@ -1316,9 +1318,9 @@ details.feed-entry {
   gap: 10px;
   height: 32px;
   padding: 0 12px;
-  border: 1px solid var(--hair);
+  border: 1px solid transparent;
   border-radius: var(--radius-sm);
-  background: var(--surface);
+  background: transparent;
   cursor: pointer;
   color: var(--fg3);
   font-size: 16px;

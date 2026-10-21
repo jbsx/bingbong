@@ -86,13 +86,6 @@ body,
   box-shadow: var(--shadow-pop);
 }
 
-/* Docked, the Run Detail drops its box: the panel beside the page is
-   already one. */
-.feed-surface--docked .feed-run:not(.feed-run--live) .feed-run-summary {
-  border-color: transparent;
-  background: transparent;
-}
-
 /* The drag-resize grip: a slim col-resize strip on the surface's left
    edge. Invisible until hovered/dragged, full height, above the feed's
    own scrolling — the drag is the panel's only resize affordance. */
