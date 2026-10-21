@@ -129,6 +129,9 @@ export interface TaskHop {
   readonly progress?: number
 }
 
+/** How many actions a Task may fire, hop 0's and scrolls included (#328): the fifth ends it where it stands (`cap`). */
+export const MAX_TASK_ACTIONS = 5
+
 /**
  * Why a Task ended: a sure Verdict that the page is what was asked for
  * (`done`); a reading with no next step and a sure yes is `done` too, and

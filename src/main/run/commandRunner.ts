@@ -42,6 +42,7 @@ import { blockedOrInertAction, mediaOpHead } from '../../core/browser/actionOutc
 import { navigateAddress, searchAddress } from '../../core/command/openAddress'
 import { nameMatch, soundsAlike } from '../../core/command/nameMatch'
 import {
+  MAX_TASK_ACTIONS,
   MISFIRE_WINDOW_MS,
   jevDetailOf,
   misfireSignal,
@@ -276,9 +277,6 @@ const PREPARED_MAX_AGE_MS = 30_000
  * that moves on inside this window settles the chain on its last Slot.
  */
 const RETRY_CHAIN_WINDOW_MS = 60_000
-
-/** How many actions a Task may fire, hop 0's and scrolls included (#328): the fifth ends it where it stands. */
-const MAX_TASK_ACTIONS = 5
 
 /** The verbs a Jev-read Task goes on after (#328); every other verb ends it. */
 const CONTINUING: ReadonlySet<Command['verb']> = new Set(['navigate', 'search', 'click', 'type', 'menu', 'press', 'scroll_up', 'scroll_down', 'back', 'forward', 'reload'])

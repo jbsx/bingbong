@@ -44,9 +44,9 @@ describe('the Task progress bar (#375)', () => {
     expect(five?.filled).toBeLessThan(1)
   })
 
-  it('fills on a sure yes — the closing hop whose action is `done` — and stands where it got on any other close', () => {
+  it('fills on a sure yes — the closing hop whose action is `done`, its own Noul counted first — and stands where it got on any other close', () => {
     const closed = (close: string) => fold([hop(0), hop(1, 0.9), hop(2, 0.1), closing(3, close, 0.9)])
-    expect(closed('done')).toEqual({ taskId: 'h0', filled: 1, moves: ['forward', 'back', 'full'] })
+    expect(closed('done')).toEqual({ taskId: 'h0', filled: 1, moves: ['forward', 'back', 'forward', 'full'] })
     expect(closed('not sure this is it')).toEqual({ taskId: 'h0', filled: 0.2, moves: ['forward', 'back', 'forward'] })
   })
 

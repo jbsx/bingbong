@@ -1,3 +1,4 @@
+import { MAX_TASK_ACTIONS } from '../command/decisionRecord'
 import { PROGRESS_FLOOR } from '../command/jevReading'
 import { DEFAULT_DECISION_THRESHOLDS } from '../ports/decisionModel'
 import type { PipelineEvent } from './events'
@@ -23,14 +24,10 @@ export interface TaskProgress {
   readonly moves: readonly ProgressMove[]
 }
 
-/**
- * One helping hop's share of the bar: the Task's cap is five actions
- * (`MAX_TASK_ACTIONS` in the runner), so five helping hops reach the brim;
- * only the Verdict's sure yes fills it.
- */
-const STEP = 1 / 5
+/** One helping hop's share of the bar: the Task's cap of actions reaches the brim, and only the Verdict's sure yes fills it. */
+const HOP_SHARE = 1 / MAX_TASK_ACTIONS
 /** Where the bar stops short of full until the Verdict says done. */
-const BRIM = 1 - STEP / 2
+const BRIM = 1 - HOP_SHARE / 2
 
 /** At or above it, the Noul is sure the action helped: the Noul bar, 0.7. */
 const HELPED = DEFAULT_DECISION_THRESHOLDS.noul
@@ -42,19 +39,21 @@ export function moveOf(progress: number): Exclude<ProgressMove, 'full'> {
   return 'held'
 }
 
+/** The word the Feed shows for a Noul's move (#375), beside the action it judged. */
+const MOVE_WORDS: Readonly<Record<Exclude<ProgressMove, 'full'>, string>> = { forward: 'closer', held: 'unsure', back: 'no closer' }
+
 /** The words the Feed shows beside the action a Noul judged (#375): closer, no closer, or unsure between the two. */
 export function describeProgress(progress: number): string {
-  const move = moveOf(progress)
-  return move === 'forward' ? 'closer' : move === 'back' ? 'no closer' : 'unsure'
+  return MOVE_WORDS[moveOf(progress)]
 }
 
-/** Where a move leaves the bar: a step forward to the brim, a step back to the floor, full on the close. */
+/** Where a move leaves the bar: a hop's share forward to the brim, a share back to the floor, full on the close. */
 function advance(filled: number, move: ProgressMove): number {
   switch (move) {
     case 'forward':
-      return Math.min(BRIM, filled + STEP)
+      return Math.min(BRIM, filled + HOP_SHARE)
     case 'back':
-      return Math.max(0, filled - STEP)
+      return Math.max(0, filled - HOP_SHARE)
     case 'held':
       return filled
     case 'full':
@@ -66,7 +65,9 @@ function advance(filled: number, move: ProgressMove): number {
  * Folds pipeline events into the running Task's bar. Pure and
  * renderer-agnostic. No bar until the first Noul arrives: hop 0 alone, or a
  * Local Match, shows none. A new Command's hop 0 clears the last Task's
- * bar; until then it stands where the Task left it.
+ * bar; until then it stands where the Task left it. A line read as Steps
+ * (#364) is one Task per Step, each counting its hops from 0, so each
+ * Step's bar starts afresh though the Feed keeps the line as one entry.
  */
 export function createTaskProgressTracker(): {
   onEvent(event: PipelineEvent): void
@@ -84,10 +85,11 @@ export function createTaskProgressTracker(): {
         return
       }
       const standing = progress?.taskId === task.id ? progress : { taskId: task.id, filled: 0, moves: [] as ProgressMove[] }
-      // The closing hop on a sure yes (#369): it fires nothing, its action reads `done`, and the bar fills.
-      const move: ProgressMove | null = event.dropped === true && event.action === 'done' ? 'full' : task.progress !== undefined ? moveOf(task.progress) : null
-      if (move === null) return
-      progress = { taskId: task.id, filled: advance(standing.filled, move), moves: [...standing.moves, move] }
+      // The hop's Noul moves the bar; the closing hop on a sure yes (#369), which fires nothing and reads `done`, then fills it.
+      const moves: ProgressMove[] = task.progress !== undefined ? [moveOf(task.progress)] : []
+      if (event.dropped === true && event.action === 'done') moves.push('full')
+      if (moves.length === 0) return
+      progress = { taskId: task.id, filled: moves.reduce(advance, standing.filled), moves: [...standing.moves, ...moves] }
     },
     current: () => progress,
   }

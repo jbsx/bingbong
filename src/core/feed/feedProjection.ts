@@ -158,32 +158,28 @@ export function createFeedProjection(): {
     // A later Step's hop 0 (#364) is a line of the entry its line opened.
     if (taskId === undefined || (event.task!.hop === 0 && (event.task!.step ?? 1) === 1)) return false
     const entryId = taskEntryIds.get(taskId)
-    const entry = entryId === undefined ? undefined : feed.find((shown) => shown.id === entryId)
-    if (entry === undefined) return false
+    const shown = entryId === undefined ? undefined : feed.find((candidate) => candidate.id === entryId)
+    if (shown === undefined) return false
     taskOfTurn.set(event.turnId, taskId)
     const action = event.action ?? ''
     // The hop's Noul (#375) judged the last action fired: the last hop line that fired, else hop 0's action.
-    if (event.task!.progress !== undefined) readAction(entry, event.task!.progress)
+    const entry = event.task!.progress !== undefined ? readAction(shown, event.task!.progress) : shown
     if (event.dropped && SILENT_CLOSES.has(action)) return true
     const line: HopLine = event.dropped ? { text: action, muted: true } : { text: action }
-    const lines = feed.find((shown) => shown.id === entry.id)?.hopLines ?? []
+    const lines = entry.hopLines ?? []
     hopLineOfTurn.set(event.turnId, { taskId, index: lines.length })
     updateEntry(entry.id, (shown) => ({ ...shown, hopLines: [...lines, line] }))
     if (!event.dropped) liveRunId = taskId
     return true
   }
 
-  /** The Progress Noul's reading (#375) lands on the action it judged: the last hop line that fired, else hop 0's action on the entry. */
-  const readAction = (entry: FeedEntry, progress: number): void => {
+  /** The Progress Noul's reading (#375) lands on the action it judged — the last hop line that fired, else hop 0's action on the entry — and answers the entry as it now shows. */
+  const readAction = (entry: FeedEntry, progress: number): FeedEntry => {
     const lines = entry.hopLines ?? []
-    let fired = -1
-    for (let index = lines.length - 1; index >= 0; index--) {
-      if (lines[index]!.muted !== true) {
-        fired = index
-        break
-      }
-    }
-    updateEntry(entry.id, (shown) => (fired === -1 ? { ...shown, progress } : { ...shown, hopLines: (shown.hopLines ?? []).map((hop, index) => (index === fired ? { ...hop, progress } : hop)) }))
+    const fired = lines.findLastIndex((hop) => hop.muted !== true)
+    const read: FeedEntry = fired === -1 ? { ...entry, progress } : { ...entry, hopLines: lines.map((hop, index) => (index === fired ? { ...hop, progress } : hop)) }
+    updateEntry(entry.id, () => read)
+    return read
   }
 
   /** A Task's Answer (#336): the latest hop's replaces the one before, so the Task keeps one; a wall's marks its hop's line. */

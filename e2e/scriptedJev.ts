@@ -36,17 +36,20 @@ export function readingOf(line: string, action?: string, more: { readonly amount
 export const HUB_TASK_LINE = 'what defect rate did hub aurora return'
 
 /**
- * The hub Task's readings (#375): the hub's link, then its audit link
- * judged to have helped (0.9), then back with the audit judged not to
- * have (0.1), then a sure yes with back judged to have helped — so the
- * bar reads forward, back, full, and the Feed's three action lines read
- * closer, no closer, closer.
+ * The hub Task's readings (#375), each hop's Noul judging the action
+ * before it, every click on an address the Task has not visited (a visited
+ * one is off the card): hub Aurora's link (judged to have helped, 0.9),
+ * back to the index (unsure, 0.5), hub Borealis's link (judged not to have
+ * helped, 0.1), its audit link (helped, 0.9) and a sure yes — so the bar
+ * reads forward, held, back, forward, full, and the Feed's four action
+ * lines read closer, unsure, no closer, closer.
  */
 export function hubTaskReadings(): Reading[] {
   return [
     readingOf(HUB_TASK_LINE, 'click-1'),
-    readingOf(HUB_TASK_LINE, 'click-1', { progress: 0.9, outcome: 'not_yet' }),
-    readingOf(HUB_TASK_LINE, 'back', { progress: 0.1, outcome: 'not_yet' }),
+    readingOf(HUB_TASK_LINE, 'back', { progress: 0.9, outcome: 'not_yet' }),
+    readingOf(HUB_TASK_LINE, 'click-2', { progress: 0.5, outcome: 'not_yet' }),
+    readingOf(HUB_TASK_LINE, 'click-1', { progress: 0.1, outcome: 'not_yet' }),
     readingOf(HUB_TASK_LINE, 'none', { progress: 0.9, outcome: 'yes' }),
   ]
 }
