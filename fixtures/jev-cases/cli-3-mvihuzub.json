@@ -1,0 +1,89 @@
+{
+  "turnId": "cli-3-mvihuzub",
+  "transcript": "decline the cookies",
+  "model": "jev-1.14.0",
+  "recordedAt": 1792610253310,
+  "expect": [
+    {
+      "question": "action",
+      "label": "click-1"
+    }
+  ],
+  "ask": {
+    "state": "The user spoke to a web browser: \"decline the cookies\"\nPage: https://www.w3schools.com/html/tryit.asp?filename=tryhtml_youtubeiframe — \"W3Schools Tryit Editor\"\nA dialog is open: \"W3Schools seeks your consent to use your personal data, such as unique identifiers and browsing data, in the following cases: Store and/or access information on a device Cookies, device or similar online identifiers (e.g. login-based identifiers, randomly assigned identifiers, network based identifiers) together with other information (e.g. browser type and information, language, screen size, supp\"\nRefs (number, kind, label, address, states):\n[1] button \"none Decline\" in w3schools.com\n[2] link \"1749 partners\" in w3schools.com about:blank#\n[3] link \"Privacy Policy\" in w3schools.com https://www.w3schools.com/about/about_privacy.asp\n[4] button \"all Accept\" in w3schools.com\n[5] button \"Preferences\" in w3schools.com\n[6] link \"w3schools.com Home\" https://www.w3schools.com/\n[7] link \"Open Menu\" javascript:void(0);\n[8] link \"Save code\" javascript:void(0);\n[9] link \"Change Orientation\" javascript:void(0);\n[10] link \"Change Theme\" javascript:void(0);\n[11] button \"Run ❯\"\n[12] link \"Get your website\" https://www.w3schools.com/spaces/\n[13] link \"\" javascript:void(0)\n[14] input \"\" multiline=true",
+    "questions": {
+      "action": {
+        "type": "choice",
+        "instructions": "Which one action does the browser take for the user's words? Each option is a whole action: a numbered ref with what is done to it, or a verb that needs no ref. Choose none when the words are not a command.",
+        "options": {
+          "click-1": "click [1] button \"none Decline\" in w3schools.com",
+          "click-2": "click [2] link \"1749 partners\" in w3schools.com about:blank#",
+          "click-3": "click [3] link \"Privacy Policy\" in w3schools.com https://www.w3schools.com/about/about_privacy.asp",
+          "click-4": "click [4] button \"all Accept\" in w3schools.com",
+          "click-5": "click [5] button \"Preferences\" in w3schools.com",
+          "click-6": "click [6] link \"w3schools.com Home\" https://www.w3schools.com/",
+          "click-7": "click [7] link \"Open Menu\" javascript:void(0);",
+          "click-8": "click [8] link \"Save code\" javascript:void(0);",
+          "click-9": "click [9] link \"Change Orientation\" javascript:void(0);",
+          "click-10": "click [10] link \"Change Theme\" javascript:void(0);",
+          "click-11": "click [11] button \"Run ❯\"",
+          "click-12": "click [12] link \"Get your website\" https://www.w3schools.com/spaces/",
+          "click-13": "click [13] link \"\" javascript:void(0)",
+          "type-14": "type the words into [14] input \"\" multiline=true",
+          "click-14": "click [14] input \"\" multiline=true",
+          "menu-1": "right-click [1] to open its menu",
+          "menu-2": "right-click [2] to open its menu",
+          "menu-3": "right-click [3] to open its menu",
+          "menu-4": "right-click [4] to open its menu",
+          "menu-5": "right-click [5] to open its menu",
+          "menu-6": "right-click [6] to open its menu",
+          "menu-7": "right-click [7] to open its menu",
+          "menu-8": "right-click [8] to open its menu",
+          "menu-9": "right-click [9] to open its menu",
+          "menu-10": "right-click [10] to open its menu",
+          "menu-11": "right-click [11] to open its menu",
+          "menu-12": "right-click [12] to open its menu",
+          "menu-13": "right-click [13] to open its menu",
+          "menu-14": "right-click [14] to open its menu",
+          "navigate": "go to a web address the words name: a website, a host or a url",
+          "search": "search for the words: on the web, or on this site when they point at something on it",
+          "scroll_up": "scroll the page up",
+          "scroll_down": "scroll the page down",
+          "back": "go back to the previous page",
+          "forward": "go forward",
+          "reload": "reload the page",
+          "press": "press a key: enter, escape, space or an arrow key",
+          "read": "read the page aloud or show its contents",
+          "clear": "clear the text in the focused field",
+          "stop": "stop what the browser is doing",
+          "none": "not a command for this page: a remark, a question, a name, noise",
+          "play": "music: find a song or video by the words and play it now, on YouTube or on this site as the words point — never the page's play button, which is a click",
+          "play_next": "music: find a song by the words and play it after the one playing",
+          "queue": "music: find a song by the words and add it to the end of the queue"
+        }
+      },
+      "slot": {
+        "type": "choice",
+        "instructions": "Which words of the transcript are the thing the command carries verbatim: the address to open, the search terms, the song to play, the text to type, the key to press? Never the command word itself: \"play X\" carries X. Choose none when it carries none.",
+        "options": {
+          "none": "the command carries no words of its own",
+          "s0-0": "decline",
+          "s0-1": "decline the",
+          "s0-2": "decline the cookies",
+          "s1-1": "the",
+          "s1-2": "the cookies",
+          "s2-2": "cookies"
+        }
+      },
+      "where": {
+        "type": "choice",
+        "instructions": "Where do the words point: at something on this page, at something on w3schools.com that is not on this page, or somewhere else on the web?",
+        "options": {
+          "page": "on this page: one of the numbered refs",
+          "site": "on w3schools.com but not on this page: a page, a person, a post, a section of it",
+          "web": "elsewhere: another website, or a search of the whole web"
+        }
+      }
+    }
+  }
+}

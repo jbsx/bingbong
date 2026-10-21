@@ -125,4 +125,20 @@ describe("mergeFrames: a frame's text (#378, ADR 0081)", () => {
 
     expect(textsOf(mergeFrames(top, [outer, low, pixel]).page)).toEqual(['Outer', 'Body'])
   })
+
+  it("adds a frame in the top's open dialog to the dialog's text, wherever its iframe sits; a page frame outside the text has no place", () => {
+    // Neither iframe has a place in the page text: both sit outside the main landmark.
+    const top = page('https://news.example/', [iframe(0, { x: 0, y: 0 }, { layer: 'dialog' }), iframe(1, { x: 500, y: 0 })], {
+      dialogOpen: true,
+      dialogText: 'Your privacy',
+      textBlocks: [text('Headline')],
+    })
+    const wall = withText(frame('cmp', null, 0, 'https://cdn.privacy-mgmt.com/', [element('button', 'Yes, I’m happy', { x: 0, y: 0 })]), [text('We use cookies.'), text('Reject all and subscribe for £5 a month.')])
+    const ad = withText(frame('ad', null, 1, 'https://ads.example/', []), [text('Buy now')])
+
+    const merged = mergeFrames(top, [wall, ad]).page
+
+    expect(merged.dialogText).toBe('Your privacy We use cookies. Reject all and subscribe for £5 a month.')
+    expect(textsOf(merged)).toEqual(['Headline'])
+  })
 })

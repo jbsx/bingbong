@@ -6,7 +6,7 @@
 // numbering; underneath, each element keeps its address — the frame it was
 // read in and its index in that frame's own registry.
 
-import type { CollectedTextBlock } from './pageText'
+import { renderPageText, type CollectedTextBlock } from './pageText'
 import type { CollectedElement, CollectedPage } from './snapshot'
 
 /** Where a collected element lives: its frame (null for the top document) and its index in that frame's registry. */
@@ -30,6 +30,9 @@ export interface MergedPage {
 
 /** How many elements the merged page carries at most: the collector's own bound on one document. */
 const MAX_MERGED_ELEMENTS = 400
+
+/** How much of an open dialog's text a collect carries: the collector's own bound on the top's. */
+const MAX_COLLECTED_DIALOG_TEXT = 400
 
 /** A frame's host as a ref line names it, without `www.`; the address itself when it has none. */
 export function frameHostOf(url: string): string {
@@ -70,6 +73,8 @@ export function mergeFrames(top: CollectedPage, frames: readonly CollectedFrame[
   const addresses: FrameAddress[] = []
   // The frames whose elements joined the page: the frames whose text joins it too (#378).
   const joined = new Set<string>()
+  // Those whose iframe sits in the top's open dialog, in document order: the dialog's own text goes on in theirs.
+  const inDialog: string[] = []
   const childOf = (key: string | null, slot: number | undefined): CollectedFrame | undefined =>
     slot === undefined ? undefined : frames.find((candidate) => candidate.parentKey === key && candidate.page.frameIndex === slot)
   const previousPlace = (key: string | null, index: number | undefined): number => {
@@ -87,6 +92,7 @@ export function mergeFrames(top: CollectedPage, frames: readonly CollectedFrame[
         const inView = key === null || layer === 'dialog' || meetsViewport({ ...element.rect, x: element.rect.x + offset.x, y: element.rect.y + offset.y }, top.viewport)
         if (child !== undefined && element.frameBox !== undefined && inView) {
           joined.add(child.key)
+          if (key === null && element.layer === 'dialog') inDialog.push(child.key)
           expand(child.page, child.key, { x: offset.x + element.frameBox.x, y: offset.y + element.frameBox.y }, key === null ? element.layer : layer)
           return
         }
@@ -117,5 +123,15 @@ export function mergeFrames(top: CollectedPage, frames: readonly CollectedFrame[
     })
   const text = top.textBlocks === undefined ? {} : { textBlocks: textOf(top, null), textCut }
 
-  return { page: { ...top, ...text, elements: elements.slice(0, MAX_MERGED_ELEMENTS) }, addresses: addresses.slice(0, MAX_MERGED_ELEMENTS) }
+  // A wall served in a frame (#378): the top's dialog holds only its iframe,
+  // whose own text is no prose of the top's. Its frame's text is the
+  // dialog's, wherever the iframe sits — outside the main landmark, as a
+  // consent manager's container usually is, it has no place in the page text.
+  const framed = inDialog.flatMap((key) => {
+    const read = frames.find((candidate) => candidate.key === key)
+    return read === undefined ? [] : renderPageText(textOf(read.page, key)).blocks
+  })
+  const dialog = framed.length === 0 ? {} : { dialogText: [top.dialogText ?? '', ...framed].filter((part) => part !== '').join(' ').slice(0, MAX_COLLECTED_DIALOG_TEXT) }
+
+  return { page: { ...top, ...text, ...dialog, elements: elements.slice(0, MAX_MERGED_ELEMENTS) }, addresses: addresses.slice(0, MAX_MERGED_ELEMENTS) }
 }

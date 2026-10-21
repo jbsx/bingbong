@@ -52,7 +52,7 @@ describe.skipIf(!canDriveChrome)("a frame's text in a real Chrome (#378)", () =>
     }))
   }
 
-  const PATHS = ['/comments', '/quote', '/wrapped', '/hidden', '/pixel', '/slow', '/low']
+  const PATHS = ['/comments', '/quote', '/wrapped', '/wall', '/hidden', '/pixel', '/slow', '/low']
 
   beforeAll(async () => {
     ;({ server, port } = await listen((req, res) => {
@@ -60,6 +60,7 @@ describe.skipIf(!canDriveChrome)("a frame's text in a real Chrome (#378)", () =>
       const body = (html: string): void => void res.end(`<!doctype html><html><head><title>${req.url}</title></head><body style="margin:0">${html}</body></html>`)
       if (req.url === '/comments') return body(`<p>First comment</p><iframe src="http://127.0.0.1:${port}/quote" style="width:200px;height:60px"></iframe><p>Last comment</p>`)
       if (req.url === '/quote') return body('<p>Quoted line</p>')
+      if (req.url === '/wall') return body('<p>We use cookies. Reject them and pay, or accept.</p><button>Choose later</button>')
       if (req.url?.slice(1) && PATHS.includes(req.url)) return body(`<p>Text of ${req.url}</p>`)
       body(`<main><h1>Story</h1><p>Top intro</p>
         <iframe src="http://localhost:${port}/comments" style="width:400px;height:200px"></iframe>
@@ -70,7 +71,8 @@ describe.skipIf(!canDriveChrome)("a frame's text in a real Chrome (#378)", () =>
         <iframe src="http://localhost:${port}/slow" style="width:300px;height:100px"></iframe>
         <p>Top outro</p><div style="height:3000px"></div>
         <iframe src="http://localhost:${port}/low" style="width:300px;height:100px"></iframe>
-        <p>Top end</p></main>`)
+        <p>Top end</p></main>
+        <div role="dialog" aria-modal="true" style="position:fixed;top:0;left:600px"><iframe src="http://localhost:${port}/wall" style="width:300px;height:100px"></iframe></div>`)
     }))
     chrome = await launchHeadlessChrome('bingbong-frame-text-chrome-')
     chrome.cdp.on('Target.attachedToTarget', (params, parent) => {
@@ -126,5 +128,16 @@ describe.skipIf(!canDriveChrome)("a frame's text in a real Chrome (#378)", () =>
     const read = await controller.readPage()
 
     expect(read).toContain('First comment\nQuoted line\nLast comment')
+  })
+
+  it("gives the open dialog the text of the wall framed in it, though the wall sits outside the page's main text", async () => {
+    const page = await controller.collectPage()
+    const read = await controller.readPage()
+
+    expect(page.dialogOpen).toBe(true)
+    expect(page.dialogText).toBe('We use cookies. Reject them and pay, or accept.')
+    expect(page.refs.find((ref) => ref.label === 'Choose later')).toMatchObject({ layer: 'dialog', frame: 'localhost' })
+    expect(read).toContain('dialog open: "We use cookies. Reject them and pay, or accept."')
+    expect(page.textBlocks).not.toContain('We use cookies. Reject them and pay, or accept.')
   })
 })
