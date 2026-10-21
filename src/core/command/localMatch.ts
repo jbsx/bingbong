@@ -2,14 +2,16 @@ import { parseSearchUrl } from '../browser/urlInput'
 import { parseCliCommand, type CliCommand } from './cliGrammar'
 import { normalizeWords, pressKeyOf, type Command, type CommandRef, type CommandVerb } from './command'
 import { isAddressShaped } from './openAddress'
+import { firstNumber } from '../timer/duration'
 import { readTimerWords } from '../timer/timerWords'
 import { MUSIC_PHRASES } from '../music/musicWords'
 
 // The Local Match (CONTEXT.md, ADR 0076, #324, #353): a Command settled
 // from the Utterance and the page alone, without asking the Decision Model
 // — fixed phrases only. The CLI grammar; the control words (scroll, back,
-// reload, read, clear, stop, resume, a key); the Timer's and the Player's
-// lines; and a plain verb with the one element the words name exactly: a
+// reload, read, clear, stop, resume, a key), a phrase that takes no words
+// only as the whole Utterance (#368); the Timer's and the Player's lines;
+// and a plain verb with the one element the words name exactly: a
 // label exactly one ref carries, the Nth result on a search page ("the
 // first result"), or an address-shaped Slot after an opening phrase ("open
 // youtube"). Search terms and words about the page always go to Jev, whose
@@ -25,9 +27,10 @@ type VerbKind = 'open' | 'click' | 'press' | 'type' | CommandVerb
 
 /**
  * The spoken verb phrases, each the words that open a Command of that kind.
- * Matched longest first, as the whole Utterance or as its head. No search
- * phrase is among them (#353): "search for …", "look up …", "google …" are
- * Jev's, whose `where` scopes them.
+ * Matched longest first, as the whole Utterance or as its head — but a
+ * phrase whose kind takes no words settles a Command only as the whole
+ * Utterance (#368). No search phrase is among them (#353): "search for …",
+ * "look up …", "google …" are Jev's, whose `where` scopes them.
  */
 const VERB_PHRASES: readonly (readonly [string, VerbKind])[] = [
   ['navigate to', 'open'],
@@ -71,8 +74,10 @@ const VERB_PHRASES: readonly (readonly [string, VerbKind])[] = [
   ['go forward', 'forward'],
   ['forward', 'forward'],
   ['reload the page', 'reload'],
+  ['reload page', 'reload'],
   ['reload', 'reload'],
   ['refresh the page', 'reload'],
+  ['refresh page', 'reload'],
   ['refresh', 'reload'],
   ['read the page', 'read'],
   ['read page', 'read'],
@@ -305,6 +310,21 @@ export function resultRefsOf(refs: readonly CommandRef[], url: string): CommandR
   return refs.filter((ref) => isResultLink(ref, engineHost))
 }
 
+/** The one-word counts a spoken press may end with; "<n> times" is the other. */
+const COUNT_WORDS: Readonly<Record<string, number>> = { once: 1, twice: 2, thrice: 3 }
+
+/** The key's words and how many times to press it: a trailing count off ("twice", "three times"), or once. */
+function pressCountOf(words: readonly Token[]): { keyWords: readonly Token[]; times: number } {
+  const last = words[words.length - 1]?.clean ?? ''
+  const counted = COUNT_WORDS[last]
+  if (counted !== undefined && words.length > 1) return { keyWords: words.slice(0, -1), times: counted }
+  if (last === 'times' && words.length > 2) {
+    const times = firstNumber(words[words.length - 2]!.clean)
+    if (times !== null && times >= 1) return { keyWords: words.slice(0, -2), times }
+  }
+  return { keyWords: words, times: 1 }
+}
+
 /** The text to type and the field it names, split at the last "in"/"into"/"on" that leaves words on both sides. */
 function splitTyped(rest: readonly Token[]): { slot: string; field: string | null } {
   for (let at = rest.length - 1; at >= 1; at -= 1) {
@@ -424,9 +444,10 @@ function readSpoken(text: string, refs: readonly CommandRef[], url: string): Com
   }
   switch (kind) {
     case 'press': {
-      // The bare key words: "enter" alone, "press enter".
-      const key = pressKeyOf(cleanOf(rest.length === 0 ? tokens : rest))
-      if (key !== null) return command('press', { slot: cleanOf(rest.length === 0 ? tokens : rest), key, times: 1 })
+      // The bare key words: "enter" alone, "press enter", "press down three times".
+      const { keyWords, times } = pressCountOf(rest.length === 0 ? tokens : rest)
+      const key = pressKeyOf(cleanOf(keyWords))
+      if (key !== null) return command('press', { slot: cleanOf(keyWords), key, times })
       return clickNamed()
     }
     case 'click':
@@ -456,7 +477,8 @@ function readSpoken(text: string, refs: readonly CommandRef[], url: string): Com
       return target === null ? null : command('type', { target, slot })
     }
     default:
-      return command(kind)
+      // A fixed phrase that takes no words is the whole Utterance or no match (#368): "stop showing captions" is Jev's, not `stop`.
+      return rest.length === 0 ? command(kind) : null
   }
 }
 

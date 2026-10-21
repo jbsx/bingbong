@@ -174,6 +174,12 @@ describe('parseCliCommand', () => {
     expect(parseCliCommand('exit')).toEqual({ ok: true, command: { type: 'quit' } })
   })
 
+  it('reads a verb that takes no words only alone: words past it make no grammar line (#368)', () => {
+    for (const line of ['back to the results', 'read the comments', 'read_page now', 'reload the comments', 'resume the video', 'help me', 'quit it', 'exit the menu']) {
+      expect(parseCliCommand(line)).toMatchObject({ ok: false, error: expect.stringMatching(/^unknown command/) })
+    }
+  })
+
   it('treats blank lines as no command', () => {
     expect(parseCliCommand('')).toBeNull()
     expect(parseCliCommand('   ')).toBeNull()

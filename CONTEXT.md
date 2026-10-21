@@ -282,7 +282,9 @@ _Avoid_: fuzzy match, autocorrect, spell check, entity resolution
 A Command settled from the Utterance and the page alone, without asking the
 Decision Model — exact whole lines and numbered refs only: the CLI grammar,
 the control words (scroll, back, reload, read, clear, stop, resume, a key),
-the Timer's and the Player's exact phrases ("loop", "pause", never `play
+a phrase that takes no words matching only as the whole line — "stop
+showing captions" is not `stop`, "back to the results" not `back` (#368)
+— the Timer's and the Player's exact phrases ("loop", "pause", never `play
 <words>`), an opening phrase with an address-shaped Slot ("open youtube",
 "go to x.com"), and a plain verb with the one element the words name
 exactly — the label exactly one element carries, or the Nth result on a

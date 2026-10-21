@@ -82,6 +82,13 @@ export function grammarErrorOf(line: string): string | null {
   }
 }
 
+/** The verbs the grammar reads only as the whole line. */
+const WORDLESS_HEADS: ReadonlySet<string> = new Set(['read', 'read_page', 'back', 'reload', 'resume', 'help', 'quit', 'exit'])
+
+function unknownCommand(head: string): ParsedCliCommand {
+  return { ok: false, error: `unknown command: '${head}' — try 'help'` }
+}
+
 function unescape(text: string): string {
   return text.replace(/\\n/g, '\n').replace(/\\t/g, '\t')
 }
@@ -98,6 +105,9 @@ export function parseCliCommand(line: string): ParsedCliCommand {
   const space = trimmed.indexOf(' ')
   const head = space === -1 ? trimmed : trimmed.slice(0, space)
   const rest = space === -1 ? '' : trimmed.slice(space + 1).trim()
+
+  // A verb that takes no words is the whole line or no grammar line (#368): "back to the results" is the spoken reading's.
+  if (rest !== '' && WORDLESS_HEADS.has(head)) return unknownCommand(head)
 
   switch (head) {
     case 'navigate':
@@ -162,6 +172,6 @@ export function parseCliCommand(line: string): ParsedCliCommand {
     case 'exit':
       return { ok: true, command: { type: 'quit' } }
     default:
-      return { ok: false, error: `unknown command: '${head}' — try 'help'` }
+      return unknownCommand(head)
   }
 }

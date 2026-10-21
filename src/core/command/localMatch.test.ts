@@ -45,6 +45,59 @@ describe('the Local Match: resume (the Last Page)', () => {
   })
 })
 
+describe('the Local Match: a fixed phrase is the whole line (#368)', () => {
+  it("reads a control word only when it is the whole Utterance: words past it are Jev's", () => {
+    expect(localMatch('stop', REFS)).toMatchObject({ verb: 'stop' })
+    expect(localMatch('stop showing captions', REFS)).toBeNull()
+    expect(localMatch('stop it', REFS)).toBeNull()
+    expect(localMatch('never mind', REFS)).toMatchObject({ verb: 'stop' })
+    expect(localMatch('never mind that', REFS)).toBeNull()
+  })
+
+  it('reads the grammar\'s bare words the same way: `back`, `read`, `reload` and `resume` take no words past them', () => {
+    expect(localMatch('back', REFS)).toMatchObject({ verb: 'back' })
+    expect(localMatch('back to the search results', REFS)).toBeNull()
+    expect(localMatch('reload', REFS)).toMatchObject({ verb: 'reload' })
+    expect(localMatch('reload the comments', REFS)).toBeNull()
+    expect(localMatch('read the comments', REFS)).toBeNull()
+    expect(localMatch('resume the video', REFS)).toBeNull()
+    expect(localMatch('help me find a recipe', REFS)).toBeNull()
+  })
+
+  it('matches a listed phrase with words in it as the whole line', () => {
+    expect(localMatch('clear', REFS)).toMatchObject({ verb: 'clear' })
+    expect(localMatch('clear the field', REFS)).toMatchObject({ verb: 'clear' })
+    expect(localMatch('clear the search box', REFS)).toBeNull()
+    expect(localMatch('reload the page', REFS)).toMatchObject({ verb: 'reload' })
+    expect(localMatch('read the page', REFS)).toMatchObject({ verb: 'read' })
+    expect(localMatch('go back', REFS)).toMatchObject({ verb: 'back' })
+    expect(localMatch('go back to the results', REFS)).toBeNull()
+    expect(localMatch('scroll down a bit', REFS)).toBeNull()
+  })
+
+  it('keeps the phrases that take words taking them, settled exactly', () => {
+    const save: CommandRef[] = [...REFS, { ref: 9, kind: 'button', label: 'Save', href: null, inputType: null }]
+    expect(localMatch('click save', save)).toEqual({ verb: 'click', target: 9, slot: null })
+    expect(localMatch('press enter twice', REFS)).toMatchObject({ verb: 'press', key: { key: 'Enter' }, times: 2 })
+    expect(localMatch('scroll down', REFS)).toMatchObject({ verb: 'scroll_down' })
+    expect(localMatch('open youtube', REFS)).toEqual({ verb: 'navigate', target: null, slot: 'youtube' })
+    expect(localMatch('set a timer for 5 minutes', REFS)).toEqual({ verb: 'timer', target: null, slot: null, durationMs: 300_000 })
+    // The Player's exact lines; `play <words>` stays Jev's, offered the Player's ops (ADR 0079).
+    expect(localMatch('play', REFS)).toMatchObject({ verb: 'play' })
+    expect(localMatch('next song', REFS)).toMatchObject({ verb: 'play' })
+    expect(localMatch('play bohemian rhapsody', REFS)).toBeNull()
+    expect(localMatch('stop looping', REFS)).toMatchObject({ verb: 'play' })
+    expect(localMatch('open the first result', RESULTS, SEARCH_URL)).toEqual({ verb: 'click', target: 3, slot: null })
+  })
+
+  it('still holds a partial that may become another Command (Early Fire, #326)', () => {
+    expect(headsAnotherVerb('stop')).toBe(true)
+    expect(headsAnotherVerb('scroll')).toBe(true)
+    expect(headsAnotherVerb('go back')).toBe(true)
+    expect(headsAnotherVerb('clear')).toBe(false)
+  })
+})
+
 describe('the Local Match: the Timer', () => {
   it('reads the grammar and the spoken lines as a timer, without asking the page', () => {
     expect(localMatch('timer 5m', [])).toEqual({ verb: 'timer', target: null, slot: null, durationMs: 300_000 })
@@ -161,6 +214,9 @@ describe('the Local Match: plain verbs', () => {
     expect(localMatch('hit escape', REFS)).toMatchObject({ verb: 'press', key: { key: 'Escape' } })
     expect(localMatch('press the down arrow', REFS)).toMatchObject({ verb: 'press', slot: 'the down arrow', key: { key: 'ArrowDown' } })
     expect(localMatch('enter', REFS)).toMatchObject({ verb: 'press', key: { key: 'Enter' } })
+    expect(localMatch('press down three times', REFS)).toMatchObject({ verb: 'press', slot: 'down', key: { key: 'ArrowDown' }, times: 3 })
+    expect(localMatch('hit tab 2 times', REFS)).toMatchObject({ verb: 'press', key: { key: 'Tab' }, times: 2 })
+    expect(localMatch('press enter many times', REFS)).toBeNull()
   })
 
   it('navigates an address after an opening phrase, and leaves search phrasing to Jev (#353)', () => {
