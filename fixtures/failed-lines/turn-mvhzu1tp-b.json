@@ -6,5 +6,6 @@
   "stage": "missing_option",
   "happened": "no seek op exists: hop 0 tied click-7 and click-10 at 0.31, clicked the time display, whose label toggles, so every hop re-clicked it to the cap (5 clicks, nothing said), then the cap's close pressed Escape; the verb card would have fired browser forward, a no-op",
   "meant": "seek the song 10 seconds forward",
-  "log": "decision-1792579864896-1.jsonl"
+  "log": "decision-1792579864896-1.jsonl",
+  "claimedBy": "#372"
 }
