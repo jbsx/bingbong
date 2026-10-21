@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { emptyPageReadLine, pageReadPartLine, pageReadText } from '../browser/pageText'
-import { commandAnswer, noResponseAnswer, pageReadCard } from './answer'
+import { commandAnswer, controlsOnlyLine, noResponseAnswer, pageReadCard } from './answer'
 import type { Command } from './command'
 
 describe('commandAnswer (#333)', () => {
@@ -108,6 +108,19 @@ describe('pageReadCard (#333)', () => {
   it('says the page shows no text when it has none, as the spoken line does', () => {
     expect(pageReadCard(['# Blank — https://example.com/', 'signature 0000', emptyPageReadLine()].join('\n'))).toEqual({ text: '## Blank\n\nThis page shows no text.', failure: true })
     expect(pageReadCard(read(['# Lighthouse — https://example.com/'], ['Hi.'])).failure).toBe(false)
+  })
+
+  it('names what a page of controls alone holds, by kind, and is no failure (2026-10-21 audit)', () => {
+    const controls = (...refs: string[]): string => ['# context menu fixture — http://127.0.0.1:4100/context-menu', 'signature 0000', ...refs, emptyPageReadLine()].join('\n')
+    expect(pageReadCard(controls('[1] button "Fixture video player"', '[2] button "Loop"', '[3] link "Plain link"'))).toEqual({
+      text: '## context menu fixture\n\nThis page has no text, only 2 buttons and a link.',
+      failure: false,
+    })
+    expect(controlsOnlyLine(controls('[1] media "Song"', '[2] button "Play"'))).toBe('This page has no text, only a media player and a button.')
+    expect(controlsOnlyLine(controls('[1] media "One"', '[2] media "Two"', '[3] button "Play"', '[4] link "Home"', '[5] link "About"'))).toBe('This page has no text, only 2 media players, a button and 2 links.')
+    // An input alone is no content of that kind; a page with words is read as words.
+    expect(controlsOnlyLine(controls('[1] input[search] "Search"'))).toBeNull()
+    expect(controlsOnlyLine(read(['# Lighthouse — https://example.com/'], ['Hi.']))).toBeNull()
   })
 })
 

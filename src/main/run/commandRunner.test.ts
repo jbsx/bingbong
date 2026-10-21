@@ -1611,6 +1611,21 @@ describe('a Command whose output is speech', () => {
     await run
   })
 
+  it('speaks what a page of controls alone holds, and shows it as no failure (2026-10-21 audit)', async () => {
+    const speech = new FakeSpeech()
+    const { browser, events, runner } = harness({ speech })
+    browser.readPage = async () =>
+      ['# context menu fixture — http://127.0.0.1:4100/context-menu', 'signature 0a1b2c3d', '[1] button "Fixture video player"', '[2] button "Loop"', '[3] link "Plain link"', 'page text: part 1 of 1 — this page has no text; there is no part 2'].join('\n')
+    const run = runner.run('read')
+    await flushMicrotasks()
+    expect(speech.spoken.map((line) => line.text)).toEqual(['This page has no text, only 2 buttons and a link.'])
+    speech.finish()
+    await run
+    const card = events.find((event) => event.type === 'display')
+    expect(card).toMatchObject({ text: '## context menu fixture\n\nThis page has no text, only 2 buttons and a link.' })
+    expect(card).not.toMatchObject({ failure: true })
+  })
+
   it('a later Command silences the reading, ends its turn cancelled, and the reading\'s remaining sentences are never synthesized (AC3)', async () => {
     const synthesized: string[] = []
     const renders: (() => void)[] = []

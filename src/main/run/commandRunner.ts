@@ -58,7 +58,7 @@ import {
 import { pageReadPart, pageReadText } from '../../core/browser/pageText'
 import { SCROLL_END_OF_PAGE } from '../../core/browser/scrollDelta'
 import { SPOKEN_FAILURES, failureLineOf, notHereLine, spokenFailureOf } from '../../core/command/spokenFailure'
-import { STOPPED_ANSWERS, commandAnswer, noResponseAnswer, pageReadCard } from '../../core/command/answer'
+import { STOPPED_ANSWERS, commandAnswer, controlsOnlyLine, noResponseAnswer, pageReadCard } from '../../core/command/answer'
 import { grammarErrorOf } from '../../core/command/cliGrammar'
 import { describeDuration } from '../../core/timer/duration'
 import type { Timer } from '../../core/timer/timer'
@@ -587,7 +587,9 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     for (let first = true; ; first = false) {
       const words = pageReadText(page)
       if (first || words !== '') {
-        const outcome = await say(speech, turnId, words || SPOKEN_FAILURES.empty, { ...(first ? { onFirstSound } : {}), failure: words === '' })
+        // A page of controls alone says what it holds (2026-10-21 audit); only a page of nothing is the failure.
+        const said = words || controlsOnlyLine(page) || SPOKEN_FAILURES.empty
+        const outcome = await say(speech, turnId, said, { ...(first ? { onFirstSound } : {}), failure: said === SPOKEN_FAILURES.empty })
         if (!outcome.ok || outcome.stopped === true) return
       }
       const at = pageReadPart(page)

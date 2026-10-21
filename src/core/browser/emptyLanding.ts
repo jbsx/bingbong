@@ -3,11 +3,13 @@
 // click or typing that left for one — and settling on a page the Run was
 // shown no text from, and that is
 // no Blocker, Not-found Page or Unavailable Page. It is a fact about what
-// the Run was shown, never about the page or its address: a site's template
-// around nothing, a document whose text was not collected and a page not
-// yet rendered all land the same. So it is read off the Action Outcome
-// itself — the settled page with no `page text:` section — and never off
-// the title, the refs or a length.
+// the Run was shown, never about the page or its address: a document whose
+// text was not collected and a page not yet rendered land the same. So it
+// is read off the Action Outcome itself — the settled page with no
+// `page text:` section — and never off the title or a length. Links,
+// buttons and media are content too (2026-10-21 audit): a page made only of
+// controls — a player, its buttons, a link — showed something, and is no
+// Empty Landing; the refs count by their kind, never by site.
 //
 // A detected landing yields a marker line (`EMPTY:no-text <host>`) the
 // Search Loop rail, the no-progress rail and the Run Trace consume. The
@@ -45,6 +47,32 @@ export function showedNoPageText(outcome: string): boolean {
   return SIGNATURE_LINE_RE.test(outcome) && !PAGE_TEXT_HEADING_RE.test(outcome)
 }
 
+/** A ref line of a kind that is content in itself: a link, a button or a media element (2026-10-21 audit). */
+const CONTENT_REF_LINE_RE = /^\[\d+\] (link|button|media)\b/
+
+/** How many links, buttons and media elements a page put in front of the Run. */
+export interface PageControls {
+  readonly link: number
+  readonly button: number
+  readonly media: number
+}
+
+/**
+ * The links, buttons and media elements an Action Outcome or a Page Read
+ * lists among its refs, counted by kind (2026-10-21 audit). Read above the
+ * `page text:` heading only: a line of the page's own text that looks like a
+ * ref is text. Null when it lists none.
+ */
+export function pageControls(outcome: string): PageControls | null {
+  const counts = { link: 0, button: 0, media: 0 }
+  for (const line of outcome.split('\n')) {
+    if (line === 'page text:') break
+    const kind = CONTENT_REF_LINE_RE.exec(line)?.[1] as keyof PageControls | undefined
+    if (kind !== undefined) counts[kind] += 1
+  }
+  return counts.link + counts.button + counts.media === 0 ? null : counts
+}
+
 /**
  * Whether a landing's Action Outcome carried no page at all (#308, note on
  * ADR 0027): no settled page's signature line, because no collection could
@@ -59,13 +87,14 @@ export function carriedNoPage(outcome: string): boolean {
 
 /**
  * Classify a settled landing (#304) by the outcome the Run is shown and the
- * address the tab settled on. Null for a page that showed text, for an
- * outcome that holds no page, and for an address with no host —
- * `about:blank` among them. The caller rules out a Blocker, a Not-found
- * Page and an Unavailable Page first: a marker of theirs wins.
+ * address the tab settled on. Null for a page that showed text, or a link,
+ * a button or a media element (2026-10-21 audit), for an outcome that holds
+ * no page, and for an address with no host — `about:blank` among them. The
+ * caller rules out a Blocker, a Not-found Page and an Unavailable Page
+ * first: a marker of theirs wins.
  */
 export function classifyEmptyLanding(landing: { readonly url: string; readonly outcome: string }): EmptyLandingClassification | null {
-  if (!showedNoPageText(landing.outcome)) return null
+  if (!showedNoPageText(landing.outcome) || pageControls(landing.outcome) !== null) return null
   let parsed: URL
   try {
     parsed = new URL(landing.url)

@@ -5,6 +5,7 @@ import {
   carriedNoPage,
   classifyEmptyLanding,
   isPageArrival,
+  pageControls,
   pageReadReturnedText,
   parseEmptyMarker,
   settledOnEmptyLanding,
@@ -62,9 +63,47 @@ describe('carriedNoPage (#308)', () => {
   })
 })
 
+/** A settled page that showed nothing: no text, and no link, button or media among its refs. */
+const RMG_BARE = [
+  `navigated: url=${RMG_URL} title="| Royal Museums Greenwich"`,
+  `# | Royal Museums Greenwich — ${RMG_URL}`,
+  'viewport 985x575 scroll 0/962',
+  'signature 162b2d4d',
+  '[1] input[search] "Search the collections"',
+].join('\n')
+
+/** The context-menu fixture's landing (2026-10-21 audit): a player, two buttons and a link, and no text. */
+const CONTROLS_PAGE = [
+  'navigated: url=http://127.0.0.1:4100/context-menu title="context menu fixture"',
+  '# context menu fixture — http://127.0.0.1:4100/context-menu',
+  'viewport 985x575 scroll 0/575',
+  'signature 0a1b2c3d',
+  '[1] button "Fixture video player"',
+  '[2] link "Plain link" href="http://127.0.0.1:4100/second"',
+].join('\n')
+
+describe('pageControls (2026-10-21 audit)', () => {
+  it('counts the links, buttons and media elements among the refs, by kind', () => {
+    expect(pageControls(CONTROLS_PAGE)).toEqual({ link: 1, button: 1, media: 0 })
+    expect(pageControls(`${RMG_BARE}\n[2] media "Highs and Lows" paused=true\n[3] button "Play"\n[4] button "Mute"`)).toEqual({ link: 0, button: 2, media: 1 })
+  })
+
+  it('counts none of an input, an iframe, or a line of the page’s own text that looks like a ref', () => {
+    expect(pageControls(RMG_BARE)).toBeNull()
+    expect(pageControls(`${RMG_BARE}\n[2] iframe src="https://example.org/embed"`)).toBeNull()
+    expect(pageControls(`${RMG_BARE}\npage text:\n[9] link "a quoted ref"`)).toBeNull()
+  })
+})
+
 describe('classifyEmptyLanding (#304)', () => {
   it('marks the landing with the host of the page it settled on', () => {
-    expect(classifyEmptyLanding({ url: RMG_URL, outcome: RMG_TEMPLATE })).toEqual({ host: 'www.rmg.co.uk', marker: 'EMPTY:no-text www.rmg.co.uk' })
+    expect(classifyEmptyLanding({ url: RMG_URL, outcome: RMG_BARE })).toEqual({ host: 'www.rmg.co.uk', marker: 'EMPTY:no-text www.rmg.co.uk' })
+  })
+
+  it('marks nothing on a page of controls with no text: a link, a button or a media element is content (2026-10-21 audit)', () => {
+    expect(classifyEmptyLanding({ url: 'http://127.0.0.1:4100/context-menu', outcome: CONTROLS_PAGE })).toBeNull()
+    expect(classifyEmptyLanding({ url: RMG_URL, outcome: RMG_TEMPLATE })).toBeNull()
+    expect(classifyEmptyLanding({ url: RMG_URL, outcome: `${RMG_BARE}\n[2] media "Highs and Lows" paused=false` })).toBeNull()
   })
 
   it('marks nothing on a page that showed text, on about:blank, or on an address with no host', () => {
@@ -75,7 +114,7 @@ describe('classifyEmptyLanding (#304)', () => {
 
   it('marks a results page that showed no text: it is a search still, and the marker says what was shown', () => {
     const url = 'https://www.rmg.co.uk/collections/objects-and-stories/search?t=Harrison%20longitude%20watch'
-    expect(classifyEmptyLanding({ url, outcome: RMG_TEMPLATE })?.marker).toBe('EMPTY:no-text www.rmg.co.uk')
+    expect(classifyEmptyLanding({ url, outcome: RMG_BARE })?.marker).toBe('EMPTY:no-text www.rmg.co.uk')
   })
 })
 

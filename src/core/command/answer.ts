@@ -1,5 +1,6 @@
 import { isRealPage, lastPageLabel } from '../browser/lastPage'
 import { pageReadPart, pageReadText } from '../browser/pageText'
+import { pageControls } from '../browser/emptyLanding'
 import type { Command } from './command'
 import type { JevDetail, JevUnavailable } from './decisionRecord'
 import { SPOKEN_FAILURES } from './spokenFailure'
@@ -155,17 +156,36 @@ function pageReadHead(result: string): { url: string; title: string } {
   return split === -1 ? { url: '', title: head.slice(2).trim() } : { url: head.slice(split + 3).trim(), title: head.slice(2, split).trim() }
 }
 
+const counted = (n: number, one: string, many: string): string[] => (n === 0 ? [] : [n === 1 ? one : `${n} ${many}`])
+
+/**
+ * What a Page Read with no words says of a page made only of controls
+ * (2026-10-21 audit): the links, buttons and media players it holds, counted
+ * by kind — no failure, since the page showed something. Null when the read
+ * has words, or lists none of them.
+ */
+export function controlsOnlyLine(result: string): string | null {
+  if (pageReadText(result) !== '') return null
+  const controls = pageControls(result)
+  if (controls === null) return null
+  const kinds = [...counted(controls.media, 'a media player', 'media players'), ...counted(controls.button, 'a button', 'buttons'), ...counted(controls.link, 'a link', 'links')]
+  const listed = kinds.length === 1 ? kinds[0]! : `${kinds.slice(0, -1).join(', ')} and ${kinds.at(-1)!}`
+  return `This page has no text, only ${listed}.`
+}
+
 /**
  * A Page Read's Card (#333): the page title as its heading and the page's
  * own words under it — the words `read` speaks, one paragraph a line, a
  * table's rows kept together, ending "…" when further parts follow —
  * never the controller's viewport, scroll, signature, refs or part lines.
  * `failure` when the page has no words: the Card then says so, as the
- * spoken line does, in the failure colour.
+ * spoken line does, in the failure colour — unless it holds links, buttons
+ * or media, which the Card names instead ({@link controlsOnlyLine}).
  */
 export function pageReadCard(result: string): { text: string; failure: boolean } {
   const words = pageReadText(result)
-  const lines = words === '' ? [SPOKEN_FAILURES.empty] : words.split('\n')
+  const controls = controlsOnlyLine(result)
+  const lines = words !== '' ? words.split('\n') : [controls ?? SPOKEN_FAILURES.empty]
   const part = pageReadPart(result)
   if (part !== null && part.part < part.of) lines.push('…')
   const body = lines.reduce((text, line, index) => {
@@ -174,5 +194,5 @@ export function pageReadCard(result: string): { text: string; failure: boolean }
     return `${text}${tableRow ? '\n' : '\n\n'}${line}`
   }, '')
   const name = pageName(pageReadHead(result))
-  return { text: name === '' ? body : `## ${name}\n\n${body}`, failure: words === '' }
+  return { text: name === '' ? body : `## ${name}\n\n${body}`, failure: words === '' && controls === null }
 }

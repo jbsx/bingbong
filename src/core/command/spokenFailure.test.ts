@@ -36,6 +36,12 @@ describe('spokenFailureOf', () => {
     expect(land('https://example.com/', 'Home', EMPTY_PAGE('https://example.com/'))).toBe('empty')
   })
 
+  it('says nothing of a landing on a page made only of controls: it opened fine (2026-10-21 audit)', () => {
+    const url = 'http://127.0.0.1:4100/context-menu'
+    const controls = `${EMPTY_PAGE(url)}\n[1] button "Fixture video player"\n[2] link "Plain link" href="http://127.0.0.1:4100/second"`
+    expect(spokenFailureOf({ tool: 'navigate', outcome: { ok: true, result: controls }, url, title: 'context menu fixture' })).toBeNull()
+  })
+
   it('names an outage told in the page text under a title that names only the site, not an empty page', () => {
     const url = 'http://127.0.0.1:4100/empty-main'
     const notice = PAGE(url, '| Fixture Museums', 'The search service is currently unavailable. Please try again later.')
