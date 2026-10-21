@@ -247,6 +247,22 @@ function stateFlips(before: readonly string[], after: readonly string[]): StateF
 }
 
 /**
+ * Of the controls sharing the target's label, the target: the one of its
+ * kind and address that kept its number, else the one whose states name
+ * the most of its own — a menu that opens renumbers the page, and two
+ * "Settings" or a "Code" tab beside a "Code" button share a label.
+ */
+function sameOfLabel(target: CommandRef, named: readonly CommandRef[]): CommandRef {
+  const alike = named.filter((ref) => ref.kind === target.kind && ref.href === target.href)
+  const pool = alike.length > 0 ? alike : named
+  const kept = pool.find((ref) => ref.ref === target.ref)
+  if (kept !== undefined) return kept
+  const names = new Set([...statesByName(target.states ?? []).keys()])
+  const shared = (ref: CommandRef): number => [...statesByName(ref.states ?? []).keys()].filter((name) => names.has(name)).length
+  return pool.reduce((best, ref) => (shared(ref) > shared(best) ? ref : best))
+}
+
+/**
  * The acted ref on the page the action left, matched by label (a ref's
  * number changes between hops); else a control that changed its own label
  * — Play to Pause, Follow to Following — known by its place: the same
@@ -256,7 +272,7 @@ function stateFlips(before: readonly string[], after: readonly string[]): StateF
  */
 function targetAfter(target: CommandRef, before: CommandPage, after: CommandPage): CommandRef | undefined {
   const named = after.refs.filter((ref) => ref.label === target.label)
-  if (named.length > 0) return named.find((ref) => ref.ref === target.ref) ?? named[0]
+  if (named.length > 0) return sameOfLabel(target, named)
   const [was, now] = [before.refs.indexOf(target), after.refs.findIndex((ref) => ref.ref === target.ref)]
   const placed = after.refs[now]
   if (placed === undefined || placed.kind !== target.kind || placed.href !== target.href || before.refs.some((ref) => ref.label === placed.label)) return undefined

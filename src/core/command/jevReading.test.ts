@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { DecisionChoiceAnswer } from '../ports/decisionModel'
-import type { CommandPage } from './command'
+import type { CommandPage, CommandRef } from './command'
 import { commandQuestions, commandState, dismissPhraseQuestions, doneFacts, doneLine, hopQuestions, onResults, partialQuestions, readCommandAnswers, readDismissChoice, readSteps, readVerdict, slotSpans, type HopContext } from './jevReading'
 import { playerCapabilities } from './capability'
 
@@ -680,6 +680,27 @@ describe('the Verdict: a hop is asked whether what was asked for is done', () =>
       expect(doneLine(clickRef(1), link, doneFacts(link, { ...link, refs: [{ ...link.refs[0]!, label: 'About', href: 'https://a.com/about' }] }, { changed: true }, 1))).toBe(
         'click "Home" ("Home" is no longer on the page; the address did not change; "About" appeared)',
       )
+    })
+
+    it('tells the target, not another control of its label, when a menu renumbers the page (live run 2026-10-21: two "Settings" on YouTube, a "Code" tab and button on GitHub)', () => {
+      const page: CommandPage = {
+        ...WATCH,
+        refs: [
+          { ref: 5, kind: 'button', label: 'Settings', href: null, inputType: null },
+          { ref: 13, kind: 'button', label: 'Settings', href: null, inputType: null, states: ['hasPopup=menu', 'expanded=false'] },
+          { ref: 14, kind: 'link', label: 'Code', href: 'https://github.com/a/b', inputType: null },
+          { ref: 15, kind: 'button', label: 'Code', href: null, inputType: null, states: ['hasPopup=menu', 'expanded=false'] },
+        ],
+      }
+      const menu = (n: number): CommandRef[] => [1, 2].map((ref) => ({ ref, kind: 'button' as const, label: `Option ${n}.${ref}`, href: null, inputType: null }))
+      const opened = (target: number): CommandPage => ({
+        ...page,
+        refs: [...menu(target), ...page.refs.map((one) => ({ ...one, ref: one.ref + 2, ...(one.ref === target ? { states: ['hasPopup=menu', 'expanded=true'] } : {}) }))],
+      })
+      expect(doneLine(clickRef(13), page, doneFacts(page, opened(13), { changed: true }, 13))).toBe(
+        'click "Settings" ("Settings" went from expanded=false to expanded=true; the address did not change; "Option 13.1" and "Option 13.2" appeared)',
+      )
+      expect(doneLine(clickRef(15), page, doneFacts(page, opened(15), { changed: true }, 15))).toBe('click "Code" ("Code" went from expanded=false to expanded=true; the address did not change; "Option 15.1" and "Option 15.2" appeared)')
     })
 
     it('names the value a type left in its field', () => {
