@@ -1,6 +1,6 @@
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { startHarness, type Harness } from './harness'
 import { cli, refOf } from './cliSupport'
@@ -111,7 +111,8 @@ describe.skipIf(!process.env.BINGBONG_YOUTUBE_E2E)('youtube validation gate (net
 
   afterAll(async () => {
     await harness?.quit()
-    if (screenshotPath) await rm(screenshotPath, { recursive: true, force: true }).catch(() => {})
+    // The shot's own temp folder, not just the shot: it would stay behind in /tmp.
+    if (screenshotPath) await rm(dirname(screenshotPath), { recursive: true, force: true }).catch(() => {})
   })
 
   it('snapshots the youtube home page with numbered refs', async () => {
