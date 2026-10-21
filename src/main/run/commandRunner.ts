@@ -6,7 +6,6 @@ import type { CommandRunState } from '../../core/pipeline/runState'
 import type { PageLink, PageSnapshot } from '../../core/browser/snapshot'
 import type { PerfTracer } from '../../core/perf/perfTracer'
 import { PRESS_KEYS, commandPageOf, describeCommand, isMounting, targetLabel, commandKeepsIdle, verbNeedsPage, type Command, type CommandPage } from '../../core/command/command'
-import { playerCapabilities, type Capability } from '../../core/command/capability'
 import { dismissalLadder, isDismissPhrase, obstacleOf, ruledDismissal, type DismissChoice } from '../../core/command/dismissDialog'
 import { COMMAND_HELP } from '../../core/command/help'
 import { carriesWordsPastAddress, headsAnotherVerb, isSearchLanding, localMatch, resultRefsOf } from '../../core/command/localMatch'
@@ -32,6 +31,7 @@ import {
   PROGRESS_FLOOR,
   setAsideOf,
   slotWords,
+  type Appliance,
   type DoneResult,
   type HopContext,
   type SetAside,
@@ -213,7 +213,7 @@ export interface CommandRunnerDeps {
   lastPage?(): LastPage | null
   /** The Timer (CONTEXT.md), for `timer` — and `stop`, which silences it ringing; absent leaves `timer` a failure. */
   timer?: Pick<Timer, 'set' | 'cancel' | 'silence'>
-  /** The Player (#343, CONTEXT.md), for `play` — and `stop` with nothing in flight, which pauses it; absent leaves `play` a failure and offers Jev no Capability. */
+  /** The Player (#343, CONTEXT.md), for `play` — and `stop` with nothing in flight, which pauses it; absent leaves `play` a failure and offers Jev no Appliance Verb. */
   player?: Pick<Player, 'perform' | 'pauseIfPlaying' | 'queue'>
   /** A wait on the clock, for the results of a Web Engine's landing ({@link RESULTS_WAIT_MS}); tests make it immediate. */
   sleep?(ms: number): Promise<void>
@@ -439,14 +439,12 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   const idle = (): boolean => inFlight === null && reading === null && sounding === 0
 
   /**
-   * The Capabilities Jev is offered beside the browser's verbs (ADR 0079):
-   * a song to play while a Player is wired, and every op on the song while
-   * one is on — the Player's current song, or a media element the page has
-   * started. A song brought back by `resume`, or left on the watch page by
-   * a `skip` with nothing queued, is the Player's no longer, but its ops
-   * act on the page's video all the same (#362, #364 live runs).
+   * What the appliance holds for the card's Appliance Verbs (#374): whether
+   * the Queue holds a current song; absent while no Player is wired. The
+   * card offers each verb by ability, the song's own ops being its media
+   * ref's (ADR 0080).
    */
-  const capabilities = (page: CommandPage): readonly Capability[] => (deps.player === undefined ? [] : playerCapabilities(deps.player.queue().current !== null || page.media !== undefined))
+  const appliance = (): Appliance | undefined => (deps.player === undefined ? undefined : { queued: deps.player.queue().current !== null })
 
   /** The music paused for a `stop` (#343); whether a video was playing. A failure to reach it is no pause. */
   async function pauseMusic(): Promise<boolean> {
@@ -675,7 +673,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   async function dismissalOf(turnId: string, text: string, page: CommandPage): Promise<Reading | null> {
     const ruled = ruledDismissal(page)
     const model = ruled === null ? deps.decisionModel() : null
-    const questions = model === null ? null : dismissPhraseQuestions(text, page, { capabilities: capabilities(page) })
+    const questions = model === null ? null : dismissPhraseQuestions(text, page, { appliance: appliance() })
     const result = model === null || questions === null ? null : await askJev(model, 'command', turnId, commandState(text, page), questions)
     const chosen = result?.status === 'answered' ? readDismissChoice(result.answers, page) : null
     const ladder = dismissalLadder(page, chosen, DEFAULT_DECISION_THRESHOLDS.choice)
@@ -716,7 +714,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     if (local !== null) return { command: local, page, reading: 'local_match', jevAsked: false }
     const model = deps.decisionModel()
     if (model === null) return { command: UNREAD, page, reading: 'best_guess', jevAsked: false }
-    const result = await askJev(model, 'command', turnId, commandState(text, page, undefined, options.step), commandQuestions(text, page, undefined, { steps: options.split, capabilities: capabilities(page) }), options.askId)
+    const result = await askJev(model, 'command', turnId, commandState(text, page, undefined, options.step), commandQuestions(text, page, undefined, { steps: options.split, appliance: appliance() }), options.askId)
     if (result.status === 'answered') {
       // Jev split the line (#364): each Step is read on its own, and this reading of the whole fires nothing.
       const split = readSteps(result.answers, text)
@@ -923,7 +921,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       transcript,
       reading: read.reading,
       verb: command.verb,
-      ...(command.capability !== undefined ? { capability: command.capability } : {}),
+      ...(command.music !== undefined ? { music: command.music } : {}),
       ...(command.mediaOp !== undefined ? { mediaOp: command.mediaOp } : {}),
       target: command.target,
       ...(label !== undefined ? { targetLabel: label } : {}),
@@ -1544,7 +1542,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       const links = !superseded(task) ? await wholePageLinks(turnId) : []
       const context: HopContext = { hop, visited: [...task.visited], actions: [...task.actions], links, setAside: [...task.setAside], searched: [...task.searched], terms: [...task.terms] }
       const model = deps.decisionModel()
-      const result = superseded(task) || model === null ? null : await askJev(model, 'hop', turnId, commandState(task.text, page, context, task.step), hopQuestions(task.text, page, context, { capabilities: capabilities(page) }))
+      const result = superseded(task) || model === null ? null : await askJev(model, 'hop', turnId, commandState(task.text, page, context, task.step), hopQuestions(task.text, page, context, { appliance: appliance() }))
       if (reading?.turnId === turnId) reading = null
       const firedAt = at()
       const base = { type: 'decision' as const, turnId, at: firedAt, source: task.source, transcript: task.text, reading: 'jev' as const, task: hopOf(task, hop) }
@@ -1588,8 +1586,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         return endTask(task, 'superseded', hop + 1)
       }
       // The Verdict decides the end (ADR 0076): a sure "in the way" is a
-      // wall unless the action is on the pop-up itself, or is a Capability,
-      // which never touches the page (ADR 0079); a sure yes ends the Task
+      // wall unless the action is on the pop-up itself, or is the Player's,
+      // which never touches the page (#374); a sure yes ends the Task
       // done whatever the verb, before it fires (#369); and a reading with
       // no next step and no sure yes ends unsure, said so.
       // Either end is read against the page as it is now: a page that moved
@@ -1822,7 +1820,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     if (model === null) return null
     partialCalls += 1
     const askedIn = utterance
-    const result = await askJev(model, 'partial', null, commandState(words, page), partialQuestions(words, page, { capabilities: capabilities(page) }))
+    const result = await askJev(model, 'partial', null, commandState(words, page), partialQuestions(words, page, { appliance: appliance() }))
     // Kept for its own Utterance's record: one whose Endpoint came while it was read has written its record already.
     if (askedIn === utterance) partialAskIds.push(result.askId)
     // Jev unavailable on a partial: nothing fires, and the Endpoint reads as before.

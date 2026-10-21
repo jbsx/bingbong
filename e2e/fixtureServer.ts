@@ -77,6 +77,18 @@ function adblockPage(): string {
 // watch page whose `#movie_player` holds a playing video — offline.
 export const YOUTUBE_FIXTURE_SONG = { id: 'fixtureSng1', title: 'Fixture Song', channel: 'Fixture Band' }
 
+/** The song a search's words find (#374): the fixture song for its own words, else a song of the words' own, so a Queue of songs walks distinct watch pages. */
+function youtubeFixtureSong(words: string): { id: string; title: string } {
+  const slug = words.toLowerCase().replace(/[^a-z0-9]/g, '')
+  if (slug === '' || slug === 'fixturesong') return YOUTUBE_FIXTURE_SONG
+  return { id: `fx${slug}`.padEnd(11, '0').slice(0, 11), title: words }
+}
+
+/** A watch page's song by its id: the fixture song's, else the id itself as the title. */
+function youtubeFixtureTitle(id: string): string {
+  return id === YOUTUBE_FIXTURE_SONG.id ? YOUTUBE_FIXTURE_SONG.title : id
+}
+
 /** A minute of silence as 8 kHz mono 8-bit WAV: something the element really plays, its time really moving. */
 export function silentWav(seconds: number): Buffer {
   const rate = 8_000
@@ -98,8 +110,9 @@ export function silentWav(seconds: number): Buffer {
   return Buffer.concat([header, Buffer.alloc(samples, 0x80)])
 }
 
-function youtubeResultsPage(): string {
-  const { id, title } = YOUTUBE_FIXTURE_SONG
+/** The results page, its `ytInitialData` assigned with `var` as YouTube's own is: a fetched page (`queue <words>`) is parsed for that, a shown one read off `window`. */
+function youtubeResultsPage(words: string): string {
+  const { id, title } = youtubeFixtureSong(words)
   const data = {
     contents: {
       twoColumnSearchResultsRenderer: {
@@ -111,11 +124,12 @@ function youtubeResultsPage(): string {
       },
     },
   }
-  return `<!doctype html><html><head><title>results - YouTube</title><script>window.ytInitialData = ${JSON.stringify(data)}</script></head><body style="background:#222;color:#fff"><h1>results</h1></body></html>`
+  return `<!doctype html><html><head><title>results - YouTube</title><script>var ytInitialData = ${JSON.stringify(data)}</script></head><body style="background:#222;color:#fff"><h1>results</h1></body></html>`
 }
 
-function youtubeWatchPage(): string {
-  const { title, channel } = YOUTUBE_FIXTURE_SONG
+function youtubeWatchPage(id: string): string {
+  const { channel } = YOUTUBE_FIXTURE_SONG
+  const title = youtubeFixtureTitle(id)
   return `<!doctype html><html><head><title>${title} - YouTube</title></head>
 <body style="background:#222;color:#fff">
   <div id="movie_player"><video src="/youtube-fixture/song.wav" autoplay></video><button class="ytp-play-button" aria-label="Pause (k)" onclick="const v = this.previousElementSibling; v.paused ? v.play() : v.pause()">Pause</button></div>
@@ -1445,12 +1459,12 @@ export async function startFixtureServer(): Promise<FixtureServer> {
     }
     if (req.url?.startsWith('/results?search_query=')) {
       res.writeHead(200, { 'Content-Type': 'text/html' })
-      res.end(youtubeResultsPage())
+      res.end(youtubeResultsPage(new URL(req.url, 'http://fixture').searchParams.get('search_query') ?? ''))
       return
     }
     if (req.url?.startsWith('/watch?v=')) {
       res.writeHead(200, { 'Content-Type': 'text/html' })
-      res.end(youtubeWatchPage())
+      res.end(youtubeWatchPage(new URL(req.url, 'http://fixture').searchParams.get('v') ?? ''))
       return
     }
     res.writeHead(200, { 'Content-Type': 'text/html' })

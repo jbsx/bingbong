@@ -67,12 +67,17 @@ describe('listBugCandidates', () => {
   })
 
   it('flags a Command followed within 15 s by resume or a bare play, not the resume itself', () => {
-    const found = candidates([decision('t1', 1_000, 'next song', { verb: 'play', reading: 'local_match' }), decision('t2', 5_000, 'resume', { verb: 'resume', reading: 'local_match', target: null }), decision('t3', 8_000, 'play', { verb: 'play', reading: 'local_match', target: null })])
+    const found = candidates([decision('t1', 1_000, 'next song', { verb: 'play', reading: 'local_match' }), decision('t2', 5_000, 'resume', { verb: 'resume', reading: 'local_match', target: null }), decision('t3', 8_000, 'play', { verb: 'play', reading: 'local_match', target: null, music: { kind: 'unpause' } })])
     expect(found).toEqual([{ turnId: 't1', at: 1_000, transcript: 'next song', signals: ['resumed'] }])
   })
 
   it('does not read a play that opened a song as a resume', () => {
-    expect(candidates([decision('t1', 1_000, 'loop it', { verb: 'play', capability: 'loop' }), decision('t2', 5_000, 'play x', { verb: 'play', slot: 'x', video: 'v' })])).toEqual([])
+    expect(candidates([decision('t1', 1_000, 'next song', { verb: 'play', music: { kind: 'skip' } }), decision('t2', 5_000, 'play x', { verb: 'play', slot: 'x', video: 'v', music: { kind: 'search', place: 'now' } })])).toEqual([])
+  })
+
+  it('reads a bare play logged before #374, with no music, by its missing Slot and video', () => {
+    expect(candidates([decision('t1', 1_000, 'stop'), decision('t2', 5_000, 'play', { verb: 'play', target: null })]).map((found) => found.turnId)).toEqual(['t1'])
+    expect(candidates([decision('t1', 1_000, 'stop'), decision('t2', 5_000, 'loop it', { verb: 'play', target: null, capability: 'loop' })])).toEqual([])
   })
 
   it('flags the Task the runner undid in, and a Misfire signal, once each', () => {

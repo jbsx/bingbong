@@ -6,7 +6,7 @@
   "expect": [
     {
       "question": "action",
-      "label": "quieter"
+      "label": "volume-7"
     }
   ],
   "ask": {
@@ -14,7 +14,7 @@
     "questions": {
       "action": {
         "type": "choice",
-        "instructions": "Which one action does the browser take for the user's words? Each option is a whole action: a numbered ref with what is done to it, or a verb that needs no ref. Choose none when the words are not a command. The music options act on the song playing — the appliance's own, or the video or audio on the page — whatever page is open; a ref that names what the words name is the page's own control for it. When the words say click, press or tap — \"click play\", \"press pause\" — they name the page's own button: choose its click, never a music option.",
+        "instructions": "Which one action does the browser take for the user's words? Each option is a whole action: a numbered ref with what is done to it, or a verb that needs no ref. Choose none when the words are not a command. When the words say click, press or tap — \"click play\" — they name a button on the page: choose its click, never an op on the video or audio itself.",
         "options": {
           "click-1": "click [1] button \"Guide\"",
           "click-2": "click [2] link \"YouTube Home\" https://www.youtube.com/",
@@ -40,6 +40,17 @@
           "click-21": "click [21] button \"Share Share\"",
           "click-22": "click [22] button \"Save to playlist Save\"",
           "click-23": "click [23] button \"More actions\"",
+          "play-7": "play [7] \"Kanye West - HIGHS AND LOWS (feat. Pomme) - YouTube\": start it, or carry on playing it",
+          "pause-7": "pause [7] \"Kanye West - HIGHS AND LOWS (feat. Pomme) - YouTube\"",
+          "forward-7": "go forward in [7] \"Kanye West - HIGHS AND LOWS (feat. Pomme) - YouTube\" by a length of time, the amount Choice saying how far",
+          "back-7": "go back in [7] \"Kanye West - HIGHS AND LOWS (feat. Pomme) - YouTube\" by a length of time, the amount Choice saying how far",
+          "restart-7": "play [7] \"Kanye West - HIGHS AND LOWS (feat. Pomme) - YouTube\" again from the start",
+          "volume-7": "set the volume of [7] \"Kanye West - HIGHS AND LOWS (feat. Pomme) - YouTube\": to the number the words carry (0 to 100), or up or down as they say",
+          "mute-7": "mute [7] \"Kanye West - HIGHS AND LOWS (feat. Pomme) - YouTube\"",
+          "unmute-7": "unmute [7] \"Kanye West - HIGHS AND LOWS (feat. Pomme) - YouTube\"",
+          "loop-7": "put [7] \"Kanye West - HIGHS AND LOWS (feat. Pomme) - YouTube\" on loop, so it repeats",
+          "unloop-7": "stop looping [7] \"Kanye West - HIGHS AND LOWS (feat. Pomme) - YouTube\"",
+          "rate-7": "set the playback speed of [7] \"Kanye West - HIGHS AND LOWS (feat. Pomme) - YouTube\": to the number the words carry (1 is normal), or faster or slower as they say",
           "menu-1": "right-click [1] to open its menu",
           "menu-2": "right-click [2] to open its menu",
           "menu-3": "right-click [3] to open its menu",
@@ -75,21 +86,11 @@
           "clear": "clear the text in the focused field",
           "stop": "stop what the browser is doing",
           "none": "not a command for this page: a remark, a question, a name, noise",
-          "play": "music: find a song or video on YouTube by the words and play it now — never the page's play button, which is a click",
+          "play": "music: find a song or video by the words and play it now, on YouTube or on this site as the words point — never the page's play button, which is a click",
           "play_next": "music: find a song by the words and play it after the one playing",
           "queue": "music: find a song by the words and add it to the end of the queue",
-          "loop": "music: put the song playing on loop, so it repeats",
-          "loop_off": "music: stop looping the song playing",
-          "restart": "music: play the song playing again from the beginning",
-          "pause": "music: pause the song playing",
-          "unpause": "music: carry on playing the paused song",
           "skip": "music: skip to the next song",
           "previous": "music: go back to the song before",
-          "louder": "music: turn the volume up",
-          "quieter": "music: turn the volume down",
-          "mute": "music: mute the song playing",
-          "unmute": "music: unmute it",
-          "volume": "music: set the volume to a number from 0 to 100 (the number is the words it carries)",
           "show": "music: show the video playing on the screen"
         }
       },
@@ -108,6 +109,19 @@
           "s2-2": "volume",
           "s2-3": "volume down",
           "s3-3": "down"
+        }
+      },
+      "amount": {
+        "type": "choice",
+        "instructions": "Only when the action skips forward or back in a video or audio: how far? Choose words when the words say how far — a number of seconds, or of minutes; otherwise the share of its length the words mean. Ignored for every other action.",
+        "options": {
+          "words": "as far as the words say: the number they carry, in seconds, or in minutes when they say minutes",
+          "moment": "a moment: a hundredth of its length",
+          "little": "a little: a twentieth of its length",
+          "chunk": "a chunk: a tenth of its length",
+          "lot": "a lot: a quarter of its length",
+          "half": "half of its length",
+          "end": "all the way: to the end, or back to the start"
         }
       },
       "where": {

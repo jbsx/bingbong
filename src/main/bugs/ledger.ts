@@ -79,7 +79,9 @@ const normal = (text: string): string => text.toLowerCase().replace(/[^\p{L}\p{N
 const hopOf = (record: DecisionRecord): number => record.task?.hop ?? 0
 const taskOf = (record: DecisionRecord): string => record.task?.id ?? record.turnId
 const isHop0 = (record: DecisionRecord): boolean => hopOf(record) === 0 && record.undo !== true && record.runnerUp !== true && record.stepAside !== true
-const resumes = (record: DecisionRecord): boolean => record.verb === 'resume' || (record.verb === 'play' && record.slot === null && record.capability === undefined && record.video === undefined)
+/** A `resume`, or a bare `play` carrying on the paused song; a record logged before #374 carries no music, and its bare `play` is one with no Slot, no video and no Capability named. */
+const resumes = (record: DecisionRecord): boolean =>
+  record.verb === 'resume' || (record.verb === 'play' && (record.music !== undefined ? record.music.kind === 'unpause' : record.slot === null && record.video === undefined && !('capability' in record)))
 
 /** `pnpm bugs:candidates`: the Tasks in the logs a signal points at, in time order, less those the ledger already holds. */
 export function listBugCandidates(logsDir: string, ledger: readonly FailedLine[]): BugCandidate[] {

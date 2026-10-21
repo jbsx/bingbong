@@ -55,7 +55,7 @@ describe('idle screen e2e: music over the Idle Screen', () => {
       wakeFromBootIdle: false,
       launchArgs: ['--browser-cli', '--mute-audio'],
       pipeStdio: true,
-      // A line with free words is Jev's (ADR 0079): the stand-in reads `play fixture song` as the Capability, and "loop the song" as `loop`.
+      // A line with free words is Jev's (ADR 0079): the stand-in reads `play fixture song` as the Appliance Verb, and "loop the song" as the video's `loop-1`.
       env: { BINGBONG_YOUTUBE_FIXTURE: new URL(fixture.url('/')).origin, ...decisionScript(readingOf('play fixture song'), readingOf('loop the song', 'loop-1')) },
     })
     await harness.waitForCliOutput(/bingbong browser harness/)

@@ -388,7 +388,7 @@ describe('the states screenshot review (#359)', () => {
 
   for (const theme of ['dark', 'light'] as const) {
     it(`shoots every awake state, Settings and the Weight page in ${theme}`, async () => {
-      // A line with free words is Jev's (ADR 0079): the stand-in reads the nonsense line as no Command, `play fixture song` as the Capability, and the hub Task hop by hop (#375).
+      // A line with free words is Jev's (ADR 0079): the stand-in reads the nonsense line as no Command, `play fixture song` as the Appliance Verb, and the hub Task hop by hop (#375).
       const run = await launch(theme, decisionScript(readingOf('zorblax the quux thing'), readingOf('play fixture song'), ...hubTaskReadings()))
       try {
         await walkTheShell(run)

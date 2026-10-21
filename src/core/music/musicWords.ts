@@ -2,8 +2,9 @@
 // CLI grammar settles before anything else, in a millisecond and with Jev
 // down. A line with free words — `play <words>`, `queue <words>` — is no
 // longer the grammar's (ADR 0079): it goes to Jev, which is offered the
-// Player's ops as Capabilities (`capability.ts`) and reads "click play" as
-// the page's button. `back` stays browser history and `resume` the Task's
+// Player's search, the Queue's walk and `show` as Appliance Verbs (#374)
+// and the song's own ops on its media ref (ADR 0080), and reads "click
+// play" as the page's button. `back` stays browser history and `resume` the Task's
 // (ruling 3): music goes back with `previous` and on with a bare `play`.
 
 /** What a music line asks of the Player. A search's words ride beside it as the Command's Slot. */

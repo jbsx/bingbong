@@ -3,7 +3,9 @@ import type { DecisionChoiceAnswer } from '../ports/decisionModel'
 import type { MediaFacts } from '../browser/snapshot'
 import type { Command, CommandPage, CommandRef } from './command'
 import { commandQuestions, commandState, dismissPhraseQuestions, doneFacts, doneLine, hopQuestions, onResults, partialQuestions, readCommandAnswers, readDismissChoice, readProgress, readSteps, readVerdict, refIdentityOf, runnerUpOf, setAsideOf, slotSpans, type HopContext } from './jevReading'
-import { playerCapabilities } from './capability'
+
+/** The ten song-op labels the retired Capability layer offered (#374): the media ref's own ops stand for each. */
+const RETIRED_LABELS = ['loop', 'loop_off', 'restart', 'pause', 'unpause', 'louder', 'quieter', 'mute', 'unmute', 'volume']
 
 // One Jev call per Command the Local Match cannot settle (#324, ADR
 // 0076): the state is the transcript, the page's address and title and
@@ -182,15 +184,21 @@ describe('Media Ops (#372, ADR 0080): a media ref offers the element\'s own ops 
     expect(read('rate-7', 'the speed').verb).toBe('none')
   })
 
-  it("withholds the Player's song ops while a media ref is on the card, so one thing never has two lines; a song to play, the Queue's walk and show stay (AC6)", () => {
-    const offered = playerCapabilities(true)
-    const withVideo = Object.keys(commandQuestions('loop the song', WATCH, undefined, { capabilities: offered }).action.options)
-    for (const op of ['loop', 'loop_off', 'restart', 'pause', 'unpause', 'louder', 'quieter', 'mute', 'unmute', 'volume']) expect(withVideo).not.toContain(op)
+  it("gives the song's ops one line each, the media ref's own: the Player has none beside them; a song to play, the Queue's walk and show are its Appliance Verbs (#374)", () => {
+    const appliance = { queued: true }
+    const withVideo = Object.keys(commandQuestions('loop the song', WATCH, undefined, { appliance }).action.options)
+    for (const op of RETIRED_LABELS) expect(withVideo).not.toContain(op)
     expect(withVideo).toEqual(expect.arrayContaining(['play', 'play_next', 'queue', 'skip', 'previous', 'show', 'loop-7', 'pause-7']))
-    expect(Object.keys(hopQuestions('loop the song', WATCH, { hop: 1, visited: [], actions: [], links: [] }, { capabilities: offered }).action.options)).not.toContain('loop')
-    // Under the Idle Screen with no media ref read (the pane blank), the song's ops are the Player's, as before.
-    const noVideo = Object.keys(commandQuestions('loop the song', { ...PAGE, media: { title: 'Highs and Lows', paused: false, currentTime: 3, duration: 100, loop: false, muted: false } }, undefined, { capabilities: offered }).action.options)
-    expect(noVideo).toEqual(expect.arrayContaining(['loop', 'pause', 'volume']))
+    expect(Object.keys(hopQuestions('loop the song', WATCH, { hop: 1, visited: [], actions: [], links: [] }, { appliance }).action.options)).not.toContain('loop')
+    // With no media ref read (the pane blank), no line loops or pauses at all: the song's ops are its ref's alone.
+    const noVideo = Object.keys(commandQuestions('loop the song', { ...PAGE, media: { title: 'Highs and Lows', paused: false, currentTime: 3, duration: 100, loop: false, muted: false } }, undefined, { appliance }).action.options)
+    for (const op of RETIRED_LABELS) expect(noVideo).not.toContain(op)
+    expect(noVideo).toEqual(expect.arrayContaining(['skip', 'show']))
+  })
+
+  it("says beside the ops that words saying click, press or tap name a button on the page, never the element's own op; a card with no ops says nothing of it (#374)", () => {
+    expect(commandQuestions('click play', WATCH).action.instructions).toMatch(/click, press or tap .* never an op on the video or audio itself\.$/)
+    expect(commandQuestions('click play', PAGE).action.instructions).not.toMatch(/click, press or tap/)
   })
 
   it('orders the card refs, then media ops, then opens, then menus under the cap: the menus give way before the ops', () => {
@@ -1023,59 +1031,55 @@ describe('the steps Choice (#364, ADR 0076 "a line is Steps")', () => {
   })
 })
 
-describe('Capabilities (ADR 0079, #362)', () => {
+describe('Appliance Verbs (#374)', () => {
   const WATCH: CommandPage = {
     url: 'https://www.youtube.com/watch?v=abc',
     title: 'Highs and Lows - YouTube',
     refs: [{ ref: 4, kind: 'button', label: 'Play (k)', href: null, inputType: null }],
   }
   const HOP: HopContext = { hop: 1, visited: [WATCH.url], actions: ['click "Play (k)" (nothing changed)'], links: [] }
-  const SONG_OPS = ['loop', 'loop_off', 'restart', 'pause', 'unpause', 'skip', 'previous', 'louder', 'quieter', 'mute', 'unmute', 'volume', 'show']
+  const APPLIANCE_VERBS = ['play', 'play_next', 'queue', 'skip', 'previous', 'show']
+  const PAGE_SONG: CommandPage = { ...WATCH, media: { title: 'Highs and Lows', paused: false, currentTime: 3, duration: 100, loop: false, muted: false } }
 
-  it('with a song playing, the command, hop and partial asks offer every Player op on the action card beside the browser\'s actions, each described', () => {
-    const offered = playerCapabilities(true)
-    for (const questions of [commandQuestions('loop the song', WATCH, undefined, { capabilities: offered }), hopQuestions('loop the song', WATCH, HOP, { capabilities: offered }), partialQuestions('loop the song', WATCH, { capabilities: offered })]) {
+  it("with a song queued, the command, hop and partial asks offer the six beside the browser's ref-less verbs, each described, and no paragraph of their own", () => {
+    const appliance = { queued: true }
+    for (const questions of [commandQuestions('next song', WATCH, undefined, { appliance }), hopQuestions('next song', WATCH, HOP, { appliance }), partialQuestions('next song', WATCH, { appliance })]) {
       const labels = Object.keys(questions.action.options)
-      expect(labels.slice(0, 14)).toEqual(['click-4', 'menu-4', 'navigate', 'search', 'scroll_up', 'scroll_down', 'back', 'forward', 'reload', 'press', 'read', 'clear', 'stop', 'none'])
-      expect(labels).toEqual(expect.arrayContaining([...SONG_OPS, 'play', 'queue']))
-      for (const label of labels) expect(questions.action.options[label]).not.toBe('')
-      expect(questions.action.instructions).toMatch(/click, press or tap/)
+      expect(labels).toEqual(['click-4', 'menu-4', 'navigate', 'search', 'scroll_up', 'scroll_down', 'back', 'forward', 'reload', 'press', 'read', 'clear', 'stop', 'none', ...APPLIANCE_VERBS])
+      for (const verb of APPLIANCE_VERBS) expect(questions.action.options[verb]).toMatch(/^music: /)
+      expect(questions.action.instructions).not.toMatch(/music/)
     }
+    expect(commandQuestions('click play', WATCH, undefined, { appliance }).action.options['play']).toMatch(/never the page's play button/)
   })
 
-  it('with no song, the song\'s ops are absent and a song can still be played; with no Player, none is offered', () => {
-    const idle = Object.keys(commandQuestions('play highs and lows', WATCH, undefined, { capabilities: playerCapabilities(false) }).action.options)
-    for (const op of SONG_OPS) expect(idle).not.toContain(op)
-    expect(idle).toEqual(expect.arrayContaining(['play', 'queue']))
-    expect(Object.keys(commandQuestions('loop the song', WATCH).action.options)).toHaveLength(14)
+  it("offers each by ability: the Queue's walk only while the Queue holds a song, never over a page's own video with nothing queued; show while any song is on; none with no Player (AC4)", () => {
+    const labels = (page: CommandPage, queued: boolean) => Object.keys(commandQuestions('next song', page, undefined, { appliance: { queued } }).action.options).filter((label) => APPLIANCE_VERBS.includes(label))
+    expect(labels(PAGE_SONG, false)).toEqual(['play', 'play_next', 'queue', 'show'])
+    expect(labels(WATCH, false)).toEqual(['play', 'play_next', 'queue'])
+    expect(labels(WATCH, true)).toEqual(APPLIANCE_VERBS)
+    expect(Object.keys(commandQuestions('next song', PAGE_SONG).action.options)).toHaveLength(14)
   })
 
-  it('a Capability reading is a `play` Command carrying the Player\'s action', () => {
-    const read = (verb: string, text: string, slot = 'none') => readCommandAnswers({ action: choice(verb), slot: choice(slot) }, text, WATCH)
-    expect(read('loop', 'loop the song')).toEqual({ verb: 'play', target: null, slot: null, music: { kind: 'loop', on: true }, capability: 'loop' })
-    expect(read('loop_off', 'stop looping it')).toEqual({ verb: 'play', target: null, slot: null, music: { kind: 'loop', on: false }, capability: 'loop_off' })
-    expect(read('restart', 'start the song from the beginning')).toEqual({ verb: 'play', target: null, slot: null, music: { kind: 'restart' }, capability: 'restart' })
-    expect(read('quieter', 'turn the volume down')).toEqual({ verb: 'play', target: null, slot: null, music: { kind: 'quieter' }, capability: 'quieter' })
-    expect(read('show', 'show me the video')).toEqual({ verb: 'play', target: null, slot: null, music: { kind: 'show' }, capability: 'show' })
+  it("an Appliance Verb reading is the `play` Command the grammar's exact line makes", () => {
+    const read = (verb: string, text: string) => readCommandAnswers({ action: choice(verb), slot: choice('none') }, text, WATCH)
+    expect(read('skip', 'next song')).toEqual({ verb: 'play', target: null, slot: null, music: { kind: 'skip' } })
+    expect(read('previous', 'the song before')).toEqual({ verb: 'play', target: null, slot: null, music: { kind: 'previous' } })
+    expect(read('show', 'show me the video')).toEqual({ verb: 'play', target: null, slot: null, music: { kind: 'show' } })
   })
 
-  it('`volume` carries the Slot\'s number, digits or spoken; with no number in the words it is no Command', () => {
-    const read = (text: string, slot: string) => readCommandAnswers({ action: choice('volume'), slot: choice(slot) }, text, WATCH)
-    expect(read('set the volume to 30', 's4-4')).toMatchObject({ verb: 'play', music: { kind: 'volume', to: 30 } })
-    expect(read('volume at fifty please', 's2-2')).toMatchObject({ verb: 'play', music: { kind: 'volume', to: 50 } })
-    expect(read('make it loud', 'none')).toEqual({ verb: 'none', target: null, slot: null })
-    expect(read('volume 400', 's1-1')).toEqual({ verb: 'none', target: null, slot: null })
+  it("no label loops, pauses or sets the volume but a media ref's op: the retired Capabilities read as no Command", () => {
+    for (const label of RETIRED_LABELS) expect(readCommandAnswers({ action: choice(label), slot: choice('none') }, 'loop the song', WATCH).verb).toBe('none')
   })
 
-  it('`play`, `play_next` and `queue` search for the Slot\'s words, now, next or last', () => {
+  it("`play`, `play_next` and `queue` search for the Slot's words, now, next or last", () => {
     const read = (verb: string, text: string, slot: string) => readCommandAnswers({ action: choice(verb), slot: choice(slot) }, text, WATCH)
-    expect(read('play', 'play highs and lows pomme by kanye west', 's1-7')).toEqual({ verb: 'play', target: null, slot: 'highs and lows pomme by kanye west', music: { kind: 'search', place: 'now' }, capability: 'play' })
+    expect(read('play', 'play highs and lows pomme by kanye west', 's1-7')).toEqual({ verb: 'play', target: null, slot: 'highs and lows pomme by kanye west', music: { kind: 'search', place: 'now' } })
     expect(read('play_next', 'play bohemian rhapsody next', 's1-2')).toMatchObject({ slot: 'bohemian rhapsody', music: { kind: 'search', place: 'front' } })
     expect(read('queue', 'add bohemian rhapsody to the queue', 's1-2')).toMatchObject({ slot: 'bohemian rhapsody', music: { kind: 'search', place: 'end' } })
   })
 
-  it('a Capability at a later hop is the same Command', () => {
-    expect(readCommandAnswers({ action: choice('restart'), slot: choice('none'), outcome: choice('not_yet') }, 'start it again', WATCH, HOP)).toEqual({ verb: 'play', target: null, slot: null, music: { kind: 'restart' }, capability: 'restart' })
+  it('an Appliance Verb at a later hop is the same Command', () => {
+    expect(readCommandAnswers({ action: choice('skip'), slot: choice('none'), outcome: choice('not_yet') }, 'next one', WATCH, HOP)).toEqual({ verb: 'play', target: null, slot: null, music: { kind: 'skip' } })
   })
 
   describe('a song to play reads `where` as a search does (AGENTS.md, "Jev decides; code shapes the ask")', () => {
@@ -1089,10 +1093,10 @@ describe('Capabilities (ADR 0079, #362)', () => {
     }
     const TEXT = 'play discover weekly'
     const read = (where: string, page: CommandPage, action = 'play', hop?: HopContext) => readCommandAnswers(where === '' ? { action: choice(action), slot: choice('s1-2'), ...(hop === undefined ? {} : { outcome: choice('not_yet') }) } : { action: choice(action), slot: choice('s1-2'), where: choice(where), ...(hop === undefined ? {} : { outcome: choice('not_yet') }) }, TEXT, page, hop)
-    const PLAYED: Command = { verb: 'play', target: null, slot: 'discover weekly', music: { kind: 'search', place: 'now' }, capability: 'play' }
+    const PLAYED: Command = { verb: 'play', target: null, slot: 'discover weekly', music: { kind: 'search', place: 'now' } }
 
     it('asks `where` beside the Player\'s lines on a site, as on any site', () => {
-      expect(Object.keys(commandQuestions(TEXT, SPOTIFY, undefined, { capabilities: playerCapabilities(false) }))).toEqual(['action', 'slot', 'where'])
+      expect(Object.keys(commandQuestions(TEXT, SPOTIFY, undefined, { appliance: { queued: false } }))).toEqual(['action', 'slot', 'where'])
     })
 
     it('words Jev reads as pointing on the site open are looked for on that site: a Site Scope, the Slot kept as the words', () => {
@@ -1134,8 +1138,8 @@ describe('the action card (#370, ADR 0076 amendment): Jev reads a Command as one
   }
   const hopOn = (links: HopContext['links']): HopContext => ({ hop: 1, visited: [], actions: ['search "electron" (opened duckduckgo.com/?q=electron)'], links })
 
-  it('offers none, a click per offered ref with its ref line, a type per text field, a menu per ref, the ref-less verbs and the Capabilities — never done, nor a bare click, type or menu', () => {
-    const questions = commandQuestions('search for cats', PAGE, undefined, { capabilities: playerCapabilities(false) })
+  it('offers none, a click per offered ref with its ref line, a type per text field, a menu per ref, the ref-less verbs and the Appliance Verbs — never done, nor a bare click, type or menu', () => {
+    const questions = commandQuestions('search for cats', PAGE, undefined, { appliance: { queued: false } })
     const card = questions.action
     expect(card.options['click-1']).toBe('click [1] link "Home" https://example.com/')
     expect(card.options['click-2']).toBe('click [2] button "Sign in"')
@@ -1155,12 +1159,12 @@ describe('the action card (#370, ADR 0076 amendment): Jev reads a Command as one
 
   it('holds at most 255 options on a page with 200 refs: clicks, then fields, then links, then menus while room remains', () => {
     const refs: CommandRef[] = Array.from({ length: 200 }, (_, n) => ({ ref: n + 1, kind: n % 10 === 0 ? 'input' : 'button', label: `Ref ${n + 1}`, href: null, inputType: n % 10 === 0 ? 'text' : null }))
-    const labels = Object.keys(commandQuestions('do it', { ...PAGE, refs }, undefined, { capabilities: playerCapabilities(true) }).action.options)
+    const labels = Object.keys(commandQuestions('do it', { ...PAGE, refs }, undefined, { appliance: { queued: true } }).action.options)
     expect(labels.length).toBeLessThanOrEqual(255)
     expect(labels.filter((label) => label.startsWith('click-'))).toHaveLength(200)
     expect(labels.filter((label) => label.startsWith('type-'))).toHaveLength(20)
     expect(labels.filter((label) => label.startsWith('menu-')).length).toBeGreaterThan(0)
-    expect(labels).toEqual(expect.arrayContaining(['none', 'search', 'volume']))
+    expect(labels).toEqual(expect.arrayContaining(['none', 'search', 'skip']))
   })
 
   it('reads click-N as a click, type-N as typing the Slot, menu-N as a menu, open-N as a navigate to the link', () => {
@@ -1175,9 +1179,9 @@ describe('the action card (#370, ADR 0076 amendment): Jev reads a Command as one
     expect(readCommandAnswers({ action: choice('type-3'), slot: choice('none') }, 'type hello world', PAGE)).toEqual({ verb: 'type', target: 3, slot: 'hello world' })
   })
 
-  it('reads a ref-less verb as itself with its Slot, a Capability as its play Command, none as no Command', () => {
+  it('reads a ref-less verb as itself with its Slot, an Appliance Verb as its play Command, none as no Command', () => {
     expect(readCommandAnswers({ action: choice('scroll_down'), slot: choice('none') }, 'scroll down', PAGE)).toEqual({ verb: 'scroll_down', target: null, slot: null })
-    expect(readCommandAnswers({ action: choice('loop'), slot: choice('none') }, 'loop it', PAGE)).toMatchObject({ verb: 'play', capability: 'loop' })
+    expect(readCommandAnswers({ action: choice('skip'), slot: choice('none') }, 'skip it', PAGE)).toEqual({ verb: 'play', target: null, slot: null, music: { kind: 'skip' } })
     expect(readCommandAnswers({ action: choice('none'), slot: choice('none') }, 'hmm', PAGE).verb).toBe('none')
   })
 
@@ -1206,13 +1210,16 @@ describe('a set-aside, keyed by its card label (#373, ADR 0080)', () => {
   const hopOn = (links: HopContext['links']): HopContext => ({ hop: 1, visited: [], actions: ['click "0:16 / 1:51" ("0:16 / 1:51" now reads "-1:35 / 1:51")'], links })
   const MEDIA_PAGE: CommandPage = { ...PAGE, refs: [...PAGE.refs, { ref: 4, kind: 'button', label: '0:16 / 1:51', href: null, inputType: null }] }
   const asideOf = (command: Command): HopContext => ({ ...hopOn([]), setAside: [setAsideOf(command, MEDIA_PAGE)!] })
-  const card = (hop: HopContext, capabilities = playerCapabilities(true)) => Object.keys(hopQuestions('skip ahead', MEDIA_PAGE, hop, { capabilities }).action.options)
+  const card = (hop: HopContext) => Object.keys(hopQuestions('skip ahead', MEDIA_PAGE, hop, { appliance: { queued: true } }).action.options)
 
-  it('names a ref action by its act, label and address; a ref-less verb or a Capability by its name; nothing for a ref the page lacks', () => {
+  it('names a ref action by its act, label and address; a ref-less verb or an Appliance Verb by its name; nothing for a ref the page lacks', () => {
     expect(setAsideOf({ verb: 'click', target: 4, slot: null }, MEDIA_PAGE)).toEqual({ act: 'click', label: '0:16 / 1:51', address: 'https://example.com' })
     expect(setAsideOf({ verb: 'type', target: 3, slot: 'cats' }, MEDIA_PAGE)).toEqual({ act: 'type', label: 'Search', address: 'https://example.com' })
     expect(setAsideOf({ verb: 'scroll_down', target: null, slot: null }, MEDIA_PAGE)).toEqual({ verb: 'scroll_down' })
-    expect(setAsideOf({ verb: 'play', target: null, slot: null, music: { kind: 'loop', on: true }, capability: 'loop' }, MEDIA_PAGE)).toEqual({ verb: 'loop' })
+    expect(setAsideOf({ verb: 'play', target: null, slot: null, music: { kind: 'skip' } }, MEDIA_PAGE)).toEqual({ verb: 'skip' })
+    expect(setAsideOf({ verb: 'play', target: null, slot: 'x', music: { kind: 'search', place: 'front' } }, MEDIA_PAGE)).toEqual({ verb: 'play_next' })
+    // The grammar's exact `loop` is no card label: nothing to set aside.
+    expect(setAsideOf({ verb: 'play', target: null, slot: null, music: { kind: 'loop', on: true } }, MEDIA_PAGE)).toBeNull()
     expect(setAsideOf({ verb: 'click', target: 9, slot: null }, MEDIA_PAGE)).toBeNull()
     // An open-N fires as a navigate: the address it opened is a visited one, and the navigate verb stays on the card.
     expect(setAsideOf({ verb: 'navigate', target: null, slot: 'https://example.com/docs' }, MEDIA_PAGE)).toBeNull()
@@ -1225,10 +1232,11 @@ describe('a set-aside, keyed by its card label (#373, ADR 0080)', () => {
     expect(commandState('skip ahead', MEDIA_PAGE, hop)).toContain('[4] button "0:16 / 1:51"')
   })
 
-  it('leaves a set-aside ref-less verb and a set-aside Capability off the next card', () => {
+  it('leaves a set-aside ref-less verb and a set-aside Appliance Verb off the next card', () => {
     expect(card(asideOf({ verb: 'scroll_down', target: null, slot: null }))).not.toContain('scroll_down')
     expect(card(asideOf({ verb: 'scroll_down', target: null, slot: null }))).toContain('scroll_up')
-    expect(card(asideOf({ verb: 'play', target: null, slot: null, music: { kind: 'loop', on: true }, capability: 'loop' }))).not.toContain('loop')
+    expect(card(asideOf({ verb: 'play', target: null, slot: null, music: { kind: 'skip' } }))).not.toContain('skip')
+    expect(card(asideOf({ verb: 'play', target: null, slot: null, music: { kind: 'skip' } }))).toContain('previous')
   })
 
   it('reads a top choice the Task set aside as the most probable label still offered, at the runner-up floor or over; none under it', () => {
@@ -1236,8 +1244,8 @@ describe('a set-aside, keyed by its card label (#373, ADR 0080)', () => {
     const answers = (probabilities: Record<string, number>) => ({ action: { type: 'choice' as const, choice: 'click-4', confidence: 0.8, probabilities }, slot: choice('none'), outcome: choice('not_yet') })
     expect(readCommandAnswers(answers({ 'click-4': 0.8, 'menu-4': 0.12, scroll_down: 0.06, none: 0.02 }), 'skip ahead', MEDIA_PAGE, hop)).toEqual({ verb: 'menu', target: 4, slot: null })
     expect(readCommandAnswers(answers({ 'click-4': 0.96, 'click-2': 0.03, none: 0.01 }), 'skip ahead', MEDIA_PAGE, hop).verb).toBe('none')
-    const loopAside = asideOf({ verb: 'play', target: null, slot: null, music: { kind: 'loop', on: true }, capability: 'loop' })
-    expect(readCommandAnswers({ ...answers({ loop: 0.7, scroll_down: 0.3 }), action: { type: 'choice', choice: 'loop', confidence: 0.7, probabilities: { loop: 0.7, scroll_down: 0.3 } } }, 'loop it', MEDIA_PAGE, loopAside).verb).toBe('scroll_down')
+    const skipAside = asideOf({ verb: 'play', target: null, slot: null, music: { kind: 'skip' } })
+    expect(readCommandAnswers({ ...answers({ skip: 0.7, scroll_down: 0.3 }), action: { type: 'choice', choice: 'skip', confidence: 0.7, probabilities: { skip: 0.7, scroll_down: 0.3 } } }, 'skip it', MEDIA_PAGE, skipAside).verb).toBe('scroll_down')
   })
 
   it('asks the Verdict only at a later hop, beside the card', () => {

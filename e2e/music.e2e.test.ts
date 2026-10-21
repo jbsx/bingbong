@@ -60,7 +60,7 @@ describe.skipIf(!process.env.BINGBONG_YOUTUBE_E2E)('the Player against live YouT
   let firstId = ''
 
   beforeAll(async () => {
-    // A line with free words is Jev's (ADR 0079): the stand-in reads each as the Capability.
+    // A line with free words is Jev's (ADR 0079): the stand-in reads each as the Appliance Verb.
     const env = decisionScript(...['play rick astley never gonna give you up', 'queue daft punk around the world', 'queue queen bohemian rhapsody'].map((line) => readingOf(line)))
     harness = await startHarness({ launchArgs: ['--browser-cli', '--mute-audio'], pipeStdio: true, env })
     await harness.waitForCliOutput(/bingbong browser harness/)

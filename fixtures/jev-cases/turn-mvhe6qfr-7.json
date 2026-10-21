@@ -14,7 +14,7 @@
     "questions": {
       "action": {
         "type": "choice",
-        "instructions": "Which one action does the browser take for the user's words? Each option is a whole action: a numbered ref with what is done to it, or a verb that needs no ref. Choose none when the words are not a command. The music options act on the song playing — the appliance's own, or the video or audio on the page — whatever page is open; a ref that names what the words name is the page's own control for it. When the words say click, press or tap — \"click play\", \"press pause\" — they name the page's own button: choose its click, never a music option.",
+        "instructions": "Which one action does the browser take for the user's words? Each option is a whole action: a numbered ref with what is done to it, or a verb that needs no ref. Choose none when the words are not a command. When the words say click, press or tap — \"click play\" — they name a button on the page: choose its click, never an op on the video or audio itself.",
         "options": {
           "click-1": "click [1] button \"Guide\"",
           "click-2": "click [2] link \"YouTube Home\" https://www.youtube.com/",
@@ -104,7 +104,7 @@
           "clear": "clear the text in the focused field",
           "stop": "stop what the browser is doing",
           "none": "not a command for this page: a remark, a question, a name, noise",
-          "play": "music: find a song or video on YouTube by the words and play it now — never the page's play button, which is a click",
+          "play": "music: find a song or video by the words and play it now, on YouTube or on this site as the words point — never the page's play button, which is a click",
           "play_next": "music: find a song by the words and play it after the one playing",
           "queue": "music: find a song by the words and add it to the end of the queue",
           "skip": "music: skip to the next song",

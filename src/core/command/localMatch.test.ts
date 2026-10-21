@@ -120,7 +120,7 @@ describe('the Local Match: the Player (#343)', () => {
     expect(localMatch('play', REFS)).toEqual({ verb: 'play', target: null, slot: null, music: { kind: 'unpause' } })
     expect(localMatch('go back a song', REFS)).toEqual({ verb: 'play', target: null, slot: null, music: { kind: 'previous' } })
     expect(localMatch('stop looping', REFS)).toEqual({ verb: 'play', target: null, slot: null, music: { kind: 'loop', on: false } })
-    // Jev reaches the Player through its Capabilities, never as a browser verb.
+    // Jev reaches the Player through its Appliance Verbs, never as a browser verb.
     expect(GRAMMAR_ONLY_VERBS.has('play')).toBe(false)
     expect(JEV_VERBS).not.toContain('play')
   })

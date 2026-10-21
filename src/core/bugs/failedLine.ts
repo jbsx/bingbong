@@ -12,7 +12,7 @@
 /**
  * The first failing stage, in the pipeline's order: the wake-word/STT
  * transcript; the turn split; the Local Match; Jev's reading (a wrong pick
- * among options that existed); a missing option (no Capability, op or
+ * among options that existed); a missing option (no Appliance Verb, op or
  * verb could do it); the runner's hop policy (cap, unchanged, undo,
  * Verdict); the Player; the page itself (a stale label, late hydration).
  */
@@ -24,7 +24,7 @@ export const STAGE_MEANING: Readonly<Record<FailedLineStage, string>> = {
   turn: 'the Utterance was cut or joined in the wrong place',
   local_match: 'the Local Match fired the wrong thing, or fired where Jev should have read',
   reading: 'Jev picked wrong among options that existed',
-  missing_option: 'no Capability, op or verb could do what was meant',
+  missing_option: 'no Appliance Verb, op or verb could do what was meant',
   runner: 'the hop policy: the cap, unchanged, undo, the Verdict, what was said',
   player: 'the Player did the wrong thing with the right op',
   page: 'the page itself: a stale label, late hydration, a wall',

@@ -3,7 +3,6 @@ import type { MediaFacts, PageMedia, PageSnapshot, RefKind, SnapshotRef } from '
 import { pageTermsOf } from '../voice/pageTerms'
 import { describeDuration } from '../timer/duration'
 import type { MusicAction } from '../music/musicWords'
-import type { Capability } from './capability'
 import { describeMediaOp, type MediaOpAction } from './mediaOp'
 
 // A Command (CONTEXT.md, ADR 0076): what an Utterance becomes on this
@@ -19,7 +18,7 @@ import { describeMediaOp, type MediaOpAction } from './mediaOp'
  * {@link JEV_VERBS} on its action card (#370) — a click, type or menu on
  * each ref, a media ref's Media Ops (#372, ADR 0080: the `media` verb,
  * its op on the Command), the rest as they are — and `play` through the
- * Player's Capabilities (ADR 0079); `screenshot`, `help`, `resume` and
+ * Appliance Verbs (#374); `screenshot`, `help`, `resume` and
  * `timer` are the CLI grammar's alone, reached only through the Local Match.
  */
 export const COMMAND_VERBS = [
@@ -52,8 +51,8 @@ export const GRAMMAR_ONLY_VERBS: ReadonlySet<CommandVerb> = new Set<CommandVerb>
 
 /**
  * The browser's verbs the Decision Model chooses among (#324), `none`
- * included. `play` is not one: Jev reaches the Player through its
- * Capabilities, offered beside these while a Player is wired (ADR 0079).
+ * included. `play` is not one: Jev reaches the Player through the
+ * Appliance Verbs, offered beside these while a Player is wired (#374).
  */
 export const JEV_VERBS = COMMAND_VERBS.filter((verb) => !GRAMMAR_ONLY_VERBS.has(verb) && verb !== 'play') as readonly Exclude<CommandVerb, 'screenshot' | 'help' | 'resume' | 'timer' | 'play'>[]
 
@@ -89,8 +88,6 @@ export interface Command {
   readonly durationMs?: number
   /** For `play` (#343): what the line asks of the Player; a search's words are the Slot. */
   readonly music?: MusicAction
-  /** For a `play` Jev read (ADR 0079): the Capability its action card named (#370); absent for an exact line the grammar settled. */
-  readonly capability?: Capability
   /** For `media` (#372, ADR 0080): the Media Op on the target ref's element — a seek's rung and seconds, a volume's or a speed's level. */
   readonly mediaOp?: MediaOpAction
   /** The click or the Escape closes an open dialog (#336): its Answer is "Closed the pop-up.", and a dialog still open after it is a failure. */

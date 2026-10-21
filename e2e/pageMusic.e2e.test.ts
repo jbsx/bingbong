@@ -10,9 +10,9 @@ import { waitFor } from './waitFor'
 
 // A song the Player never started (#362, ADR 0079): the watch page is
 // opened by hand — as `resume` brings it back after a restart — and its
-// video plays, the Player's queue empty. The song's ops are offered on the
-// page's media all the same, and a Capability reading drives that video:
-// nothing is searched for, and the words are never a song's title. The
+// video plays, the Player's queue empty. The song's ops are its media
+// ref's own (ADR 0080), offered all the same, and a reading drives that
+// video: nothing is searched for, and the words are never a song's title. The
 // fixture server stands in for YouTube under YouTube's own addresses.
 
 interface VideoFacts {
@@ -51,7 +51,7 @@ describe('music e2e: a song the Player never started', () => {
       fixture,
       launchArgs: ['--browser-cli', '--mute-audio'],
       pipeStdio: true,
-      // The stand-in reads each plain line as the Capability a real Jev picks for it.
+      // The stand-in reads each plain line as the action a real Jev picks for it.
       // The watch page's video is ref 1, a media ref: its own ops are the lines for loop and restart (ADR 0080); `show` is the Player's still.
       env: { BINGBONG_YOUTUBE_FIXTURE: new URL(fixture.url('/')).origin, ...decisionScript(readingOf('loop the song', 'loop-1'), readingOf('start it from the beginning', 'restart-1'), readingOf('show the video', 'show')) },
     })

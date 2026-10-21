@@ -7,7 +7,7 @@
 interface Reading {
   /** The line, as typed. */
   readonly line: string
-  /** The action card's label (#370): a ref-less browser verb, `click-N` and the like, a Media Op's `forward-N` (#372), or a Capability. */
+  /** The action card's label (#370): a ref-less browser verb, `click-N` and the like, a Media Op's `forward-N` (#372), or an Appliance Verb (#374). */
   readonly action: string
   /** The Slot's words as a span label (`s1-2`); `none` when it carries none. */
   readonly slot?: string
@@ -24,7 +24,7 @@ type HopReading = Pick<Reading, 'outcome' | 'progress'>
 
 const choice = (label: string) => ({ type: 'choice', choice: label, confidence: 0.9 })
 
-/** A line's reading: `play <words>` and `queue <words>` the Capability with the words past the first as the Slot. */
+/** A line's reading: `play <words>` and `queue <words>` the Appliance Verb with the words past the first as the Slot. */
 export function readingOf(line: string, action?: string, more: { readonly amount?: string } & HopReading = {}): Reading {
   const words = line.trim().split(/\s+/)
   const head = words[0]!.toLowerCase()

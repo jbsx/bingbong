@@ -1,7 +1,7 @@
 import type { KeyPress, PageLanding } from '../ports/browser'
 import type { DecisionUnavailableReason } from '../ports/decisionModel'
 import type { CommandVerb } from './command'
-import type { Capability } from './capability'
+import type { MusicAction } from '../music/musicWords'
 import type { MediaOpAction } from './mediaOp'
 import type { CommandAnswers, HopAnswers } from './jevReading'
 
@@ -58,8 +58,8 @@ export interface DecisionRecord {
   readonly transcript: string
   readonly reading: CommandReading
   readonly verb: CommandVerb
-  /** For a `play` Jev read (ADR 0079): the Capability its action card named (#370); absent otherwise. */
-  readonly capability?: Capability
+  /** For `play` (#343, #374): what it asked of the Player, by the grammar's exact line or an Appliance Verb; absent otherwise. */
+  readonly music?: MusicAction
   /** For `media` (#372, ADR 0080): the op; for a seek the Amount rung read and the seconds it asked for (the outcome line in the Feed tells where the element went, which its range may have capped); for a volume or a speed, the level set. */
   readonly mediaOp?: MediaOpAction
   readonly target: number | null

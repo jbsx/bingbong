@@ -5,7 +5,7 @@ import { dialogControls, type DismissChoice } from './dismissDialog'
 import { isSearchLanding, isTextField, pageAddressOf, resultLinksOf, resultRefsOf, wordsAfterVerb } from './localMatch'
 import { isAddressShaped } from './openAddress'
 import { isMediaEngine, isWebEngineSearch, siteOf } from './siteScope'
-import { CAPABILITY_DESCRIPTIONS, CAPABILITY_INSTRUCTIONS, capabilitiesBesideMediaOps, capabilityAction, capabilitySearches, isCapability, type Capability } from './capability'
+import type { MusicAction } from '../music/musicWords'
 import { AMOUNT_RUNGS, amountQuestion, clockOf, describeMediaOp, isMediaOp, isSeek, mediaChangesOf, mediaOpDescription, mediaOpsOf, mediaStateOf, rateTarget, seekAmount, volumeTarget, type AmountRung, type MediaOp, type MediaOpAction } from './mediaOp'
 
 // One Jev call per Command the Local Match cannot settle (#324, ADR 0076).
@@ -14,8 +14,8 @@ import { AMOUNT_RUNGS, amountQuestion, clockOf, describeMediaOp, isMediaOp, isSe
 // as one whole action (#370): one Choice, the action card, whose every
 // option is an action — a click, a type or a right-click on a numbered
 // ref, an open of a link further down, a verb that needs no ref (an action
-// the browser can take, never a word the user said, #353), a Capability
-// while the appliance can act itself (ADR 0079) — or `none`. Beside it in
+// the browser can take, never a word the user said, #353), an Appliance
+// Verb while the appliance has something to act on (#374) — or `none`. Beside it in
 // the same call: the Slot among the transcript's contiguous word spans; on
 // a site, where the words point (#340), at a later hop only on a site the
 // Task has not searched (#341); at every hop past the first, the Verdict —
@@ -47,6 +47,68 @@ const REFLESS_DESCRIPTIONS: Readonly<Record<RefLessVerb | 'none', string>> = {
   clear: 'clear the text in the focused field',
   stop: 'stop what the browser is doing',
   none: 'not a command for this page: a remark, a question, a name, noise',
+}
+
+/**
+ * An Appliance Verb (CONTEXT.md, #374): a ref-less option that acts on the
+ * appliance itself, never on the page — the Player's search (`play`,
+ * `play_next`, `queue`), the Queue's walk (`skip`, `previous`) and `show`.
+ * A fixed small set beside the browser's ref-less verbs, grown only with
+ * the appliance's own features, never per site: the song's own ops are the
+ * Media Ops its ref carries (ADR 0080).
+ */
+type ApplianceVerb = 'play' | 'play_next' | 'queue' | 'skip' | 'previous' | 'show'
+
+/** Each Appliance Verb's Player action — the Command the grammar's exact lines make — and its one line on the card. */
+const APPLIANCE_VERBS: Readonly<Record<ApplianceVerb, { readonly music: MusicAction; readonly line: string }>> = {
+  play: { music: { kind: 'search', place: 'now' }, line: 'music: find a song or video by the words and play it now, on YouTube or on this site as the words point — never the page\'s play button, which is a click' },
+  play_next: { music: { kind: 'search', place: 'front' }, line: 'music: find a song by the words and play it after the one playing' },
+  queue: { music: { kind: 'search', place: 'end' }, line: 'music: find a song by the words and add it to the end of the queue' },
+  skip: { music: { kind: 'skip' }, line: 'music: skip to the next song' },
+  previous: { music: { kind: 'previous' }, line: 'music: go back to the song before' },
+  show: { music: { kind: 'show' }, line: 'music: show the video playing on the screen' },
+}
+
+/**
+ * What the card's instructions add beside a media ref's ops (#374): words
+ * that say click, press or tap name a button on the page, never the
+ * element's own op — "click play" over a playing video is YouTube's
+ * toggle, not `play-N` (replay 2026-10-21, the "click play" case: click
+ * 0.14–0.20 with the clause on the `play` line, 0.36–0.45 with the
+ * Capabilities' paragraph, 0.64–0.78 with this; a second example, "press
+ * pause", cost the captions cases ~0.06, and none dropped click play to
+ * 0.34–0.48).
+ */
+const CLICK_NAMES_A_BUTTON = 'When the words say click, press or tap — "click play" — they name a button on the page: choose its click, never an op on the video or audio itself.'
+
+/** What the appliance holds that its verbs act on (#374): whether the Queue holds a current song. Absent when no Player is wired. */
+export interface Appliance {
+  readonly queued: boolean
+}
+
+/**
+ * The Appliance Verbs offered by ability (#374), each while there is
+ * something for it to act on: a song to play whenever a Player is wired;
+ * the Queue's walk while the Queue holds a song — never over a page's own
+ * video with nothing queued, where a `skip` fires nothing but a pause;
+ * `show` while any song is on, the Player's or the page's.
+ */
+function applianceVerbsOf(appliance: Appliance | undefined, page: CommandPage): ApplianceVerb[] {
+  if (appliance === undefined) return []
+  const songOn = appliance.queued || page.media !== undefined
+  return ['play', 'play_next', 'queue', ...(appliance.queued ? (['skip', 'previous'] as const) : []), ...(songOn ? (['show'] as const) : [])]
+}
+
+/** Whether an action card label names an Appliance Verb. */
+const isApplianceVerb = (label: string): label is ApplianceVerb => Object.hasOwn(APPLIANCE_VERBS, label)
+
+/** The Appliance Verb whose Player action a `play` Command carries; null for one no Appliance Verb fires (a loop, a pause: the ref's own ops). */
+function applianceVerbOf(music: MusicAction): ApplianceVerb | null {
+  const same = (verb: ApplianceVerb): boolean => {
+    const own = APPLIANCE_VERBS[verb].music
+    return own.kind === music.kind && (own.kind !== 'search' || (music.kind === 'search' && own.place === music.place))
+  }
+  return (Object.keys(APPLIANCE_VERBS) as ApplianceVerb[]).find(same) ?? null
 }
 
 export interface SlotSpan {
@@ -192,8 +254,8 @@ type RefAct = 'click' | 'type' | 'menu' | MediaOp
 /**
  * An action set aside (#336, #373, ADR 0080), keyed by its card label: a
  * ref's action (`click-10`) by its act and the ref's identity, so the ref
- * keeps its other actions; a ref-less verb or a Capability (`scroll_down`,
- * `loop`) by its name.
+ * keeps its other actions; a ref-less verb or an Appliance Verb
+ * (`scroll_down`, `skip`) by its name.
  */
 export type SetAside = (RefIdentity & { readonly act: RefAct }) | { readonly verb: string }
 
@@ -204,7 +266,10 @@ export type SetAside = (RefIdentity & { readonly act: RefAct }) | { readonly ver
  * never offered again anyway (a visited address).
  */
 export function setAsideOf(command: Command, page: CommandPage): SetAside | null {
-  if (command.capability !== undefined) return { verb: command.capability }
+  if (command.verb === 'play') {
+    const verb = command.music === undefined ? null : applianceVerbOf(command.music)
+    return verb === null ? null : { verb }
+  }
   // A Media Op by its op and the ref's identity (#372, ADR 0080): `forward-7` is set aside as `click-10` is, the ref's other ops staying.
   const act = command.verb === 'media' ? command.mediaOp?.op : command.verb === 'click' || command.verb === 'type' || command.verb === 'menu' ? command.verb : undefined
   if (act !== undefined) {
@@ -684,9 +749,9 @@ function whereQuestion(site: string): DecisionChoiceQuestion {
  * hop, on a partial, over a pop-up a dismiss phrase closes, or for a Step's
  * own words (`steps: false`).
  */
-export function commandQuestions(text: string, pageRead: CommandPage, hop?: HopContext, options: { readonly steps?: boolean; readonly capabilities?: readonly Capability[] } = {}): CommandQuestions {
+export function commandQuestions(text: string, pageRead: CommandPage, hop?: HopContext, options: { readonly steps?: boolean; readonly appliance?: Appliance } = {}): CommandQuestions {
   const { page, links } = offered(pageRead, hop)
-  const card = actionQuestion(page, pageRead, links, hop !== undefined, options.capabilities ?? [], hop?.setAside ?? [])
+  const card = actionQuestion(page, pageRead, links, hop !== undefined, applianceVerbsOf(options.appliance, pageRead), hop?.setAside ?? [])
   const action: ActionQuestions = { action: card.question, slot: slotQuestion(text) }
   // The Amount rides beside a card that offers a media ref's ops (#372, ADR 0080): read only when the action is a seek.
   const reading: Asked<ActionQuestions, 'amount'> = card.mediaOps ? { ...action, amount: amountQuestion() } : action
@@ -700,7 +765,7 @@ export function commandQuestions(text: string, pageRead: CommandPage, hop?: HopC
  * The action card (#370): one option per whole action — a click on every
  * ref the reading offers, as the ref is shown; a type into each text
  * field; an open of each link further down; the ref-less verbs; the
- * Capabilities on offer; and `none`. No `done`: done-ness is the
+ * Appliance Verbs on offer; and `none`. No `done`: done-ness is the
  * Verdict's alone. Under the Choice cap the clicks come first, then the
  * types, then each media ref's Media Ops (#372, ADR 0080) — every op the
  * element can take, whatever its state — then the opens, and a right-click
@@ -708,14 +773,13 @@ export function commandQuestions(text: string, pageRead: CommandPage, hop?: HopC
  * chosen over the page's own control in the logged asks. An action the
  * Task set aside is not offered (#373): a ref's other actions stay.
  */
-function actionQuestion(page: CommandPage, pageRead: CommandPage, links: readonly OfferedLink[], later: boolean, offeredCapabilities: readonly Capability[], setAside: readonly SetAside[]): { question: DecisionChoiceQuestion; mediaOps: boolean } {
+function actionQuestion(page: CommandPage, pageRead: CommandPage, links: readonly OfferedLink[], later: boolean, offeredVerbs: readonly ApplianceVerb[], setAside: readonly SetAside[]): { question: DecisionChoiceQuestion; mediaOps: boolean } {
   const kept = (label: string): boolean => !isAside(label, page, setAside)
   // Each media ref's Media Ops the element can take and the Task has not set aside (#372, ADR 0080).
   const opsOf = (ref: CommandRef): [MediaOp, CommandRef][] => (isMediaRef(ref) ? mediaOpsOf(ref.media).filter((op) => kept(`${op}-${ref.ref}`)).map((op) => [op, ref]) : [])
-  // While a media ref's ops are on the card they are the one line for each song op: the Player's are withheld.
-  const capabilities = (page.refs.some((ref) => opsOf(ref).length > 0) ? capabilitiesBesideMediaOps(offeredCapabilities) : offeredCapabilities).filter(kept)
+  const applianceVerbs = offeredVerbs.filter(kept)
   const refLess = Object.entries(REFLESS_DESCRIPTIONS).filter(([verb]) => kept(verb))
-  let room = MAX_SPANS + 1 - (refLess.length + capabilities.length)
+  let room = MAX_SPANS + 1 - (refLess.length + applianceVerbs.length)
   const take = <T>(items: readonly T[]): readonly T[] => {
     const taken = items.slice(0, Math.max(0, room))
     room -= taken.length
@@ -732,7 +796,7 @@ function actionQuestion(page: CommandPage, pageRead: CommandPage, links: readonl
   const instructions = `${later ? "Which one action comes next for the user's words, given Done so far and the page now?" : "Which one action does the browser take for the user's words?"} Each option is a whole action: a numbered ref with what is done to it, or a verb that needs no ref. Choose none when the words are not a command.`
   const question: DecisionChoiceQuestion = {
     type: 'choice',
-    instructions: capabilities.length === 0 ? instructions : `${instructions} ${CAPABILITY_INSTRUCTIONS}`,
+    instructions: ops.length === 0 ? instructions : `${instructions} ${CLICK_NAMES_A_BUTTON}`,
     options: {
       ...Object.fromEntries(
         page.refs.flatMap((ref) => {
@@ -744,7 +808,7 @@ function actionQuestion(page: CommandPage, pageRead: CommandPage, links: readonl
       ...Object.fromEntries(opened.map((link) => [`open-${link.n}`, `open result ${describeLink(link)}`])),
       ...Object.fromEntries(menus.map((ref) => [`menu-${ref.ref}`, `right-click [${ref.ref}] to open its menu`])),
       ...Object.fromEntries(refLess),
-      ...Object.fromEntries(capabilities.map((capability) => [capability, CAPABILITY_DESCRIPTIONS[capability]])),
+      ...Object.fromEntries(applianceVerbs.map((verb) => [verb, APPLIANCE_VERBS[verb].line])),
     },
   }
   return { question, mediaOps: ops.length > 0 }
@@ -821,9 +885,9 @@ function dismissQuestion(page: CommandPage): DecisionChoiceQuestion | null {
  * spoken "close" walks the Dismissal Ladder with Jev's choice on it as a
  * Step Aside does. Null when the pop-up offers no control to choose.
  */
-export function dismissPhraseQuestions(text: string, page: CommandPage, { capabilities }: { readonly capabilities?: readonly Capability[] } = {}): (CommandQuestions & { readonly dismiss: DecisionChoiceQuestion }) | null {
+export function dismissPhraseQuestions(text: string, page: CommandPage, { appliance }: { readonly appliance?: Appliance } = {}): (CommandQuestions & { readonly dismiss: DecisionChoiceQuestion }) | null {
   const dismiss = dismissQuestion(page)
-  return dismiss === null ? null : { ...commandQuestions(text, page, undefined, { steps: false, capabilities }), dismiss }
+  return dismiss === null ? null : { ...commandQuestions(text, page, undefined, { steps: false, appliance }), dismiss }
 }
 
 /**
@@ -849,9 +913,9 @@ export const PROGRESS_FLOOR = Math.round((1 - DEFAULT_DECISION_THRESHOLDS.choice
 /** A hop's questions: the Command's, the Verdict, the Progress Noul and, with a pop-up open, the dismiss Choice. */
 export type HopQuestions = CommandQuestions & { readonly outcome: DecisionChoiceQuestion; readonly progress: DecisionNoulQuestion; readonly dismiss?: DecisionChoiceQuestion }
 
-export function hopQuestions(text: string, pageRead: CommandPage, hop: HopContext, { capabilities }: { readonly capabilities?: readonly Capability[] } = {}): HopQuestions {
+export function hopQuestions(text: string, pageRead: CommandPage, hop: HopContext, { appliance }: { readonly appliance?: Appliance } = {}): HopQuestions {
   const dismiss = dismissQuestion(pageRead)
-  return { ...commandQuestions(text, pageRead, hop, { capabilities }), outcome: outcomeQuestion(), progress: progressQuestion(), ...(dismiss !== null ? { dismiss } : {}) }
+  return { ...commandQuestions(text, pageRead, hop, { appliance }), outcome: outcomeQuestion(), progress: progressQuestion(), ...(dismiss !== null ? { dismiss } : {}) }
 }
 
 /** The answers to {@link HopQuestions}: the Command's, the Verdict's, the Progress Noul's and, when asked, the dismiss Choice's. */
@@ -886,9 +950,9 @@ export function readVerdict(answers: CommandAnswers | HopAnswers): Verdict | nul
  */
 export type PartialQuestions = CommandQuestions & { readonly complete: DecisionNoulQuestion }
 
-export function partialQuestions(text: string, page: CommandPage, { capabilities }: { readonly capabilities?: readonly Capability[] } = {}): PartialQuestions {
+export function partialQuestions(text: string, page: CommandPage, { appliance }: { readonly appliance?: Appliance } = {}): PartialQuestions {
   return {
-    ...commandQuestions(text, page, undefined, { steps: false, capabilities }),
+    ...commandQuestions(text, page, undefined, { steps: false, appliance }),
     complete: { type: 'noul', instructions: 'Is this a complete command, with nothing still to be said?' },
   }
 }
@@ -911,7 +975,7 @@ interface RefAction {
   readonly n: number
 }
 
-/** The ref or link action a card label names; null for a ref-less verb, a Capability, `none`, or a label the card never offers. */
+/** The ref or link action a card label names; null for a ref-less verb, an Appliance Verb, `none`, or a label the card never offers. */
 function refActionOf(label: string): RefAction | null {
   const match = /^([a-z]+)-(\d+)$/.exec(label)
   if (match === null) return null
@@ -1024,13 +1088,12 @@ function slotSpanOf(answer: DecisionChoiceAnswer): { start: number; end: number 
 }
 
 /**
- * A Capability reading (ADR 0079): a `play` Command carrying the Player's
- * action — a search's words, or a `volume`'s number, off the Slot; null for
- * a `volume` whose words carry no number it takes.
+ * An Appliance Verb reading (#374): the `play` Command the grammar's exact
+ * lines make, carrying the Player's action — a search's words off the Slot.
  */
-function capabilityCommand(capability: Capability, slot: DecisionChoiceAnswer, text: string, answers: CommandAnswers | HopAnswers, url: string, hop: HopContext | undefined): Command | null {
-  const searches = capabilitySearches(capability)
-  const words = searches || capability === 'volume' ? slotWords(slot, text) : null
+function applianceCommand(verb: ApplianceVerb, slot: DecisionChoiceAnswer, text: string, answers: CommandAnswers | HopAnswers, url: string, hop: HopContext | undefined): Command {
+  const { music } = APPLIANCE_VERBS[verb]
+  const words = music.kind === 'search' ? slotWords(slot, text) : null
   // A song to play reads `where` as a search does (AGENTS.md, "Jev decides;
   // code shapes the ask"): words Jev reads as pointing on the site open
   // but not on this page are looked for on that site, a Site Scope (#340),
@@ -1038,12 +1101,11 @@ function capabilityCommand(capability: Capability, slot: DecisionChoiceAnswer, t
   // ops (#372). Off a site, or on the Media Engine, where a site scope
   // would be a worse road to the Player's own search, the Player searches.
   // The Queue's own places (`play_next`, `queue`) are the Player's alone.
-  if (capability === 'play' && words !== null && 'where' in answers && answers.where.choice === 'site' && !isMediaEngine(url)) {
+  if (verb === 'play' && words !== null && 'where' in answers && answers.where.choice === 'site' && !isMediaEngine(url)) {
     const site = scopableSite(url, hop)
     if (site !== null) return { verb: 'search', target: null, slot: words, site }
   }
-  const music = capabilityAction(capability, words)
-  return music === null ? null : { verb: 'play', target: null, slot: searches ? words : null, music, capability }
+  return { verb: 'play', target: null, slot: words, music }
 }
 
 /** The Command a card label naming a ref or a link makes (#370); null when the hop does not offer what it names. */
@@ -1072,7 +1134,7 @@ function offeredChoice(action: DecisionChoiceAnswer, page: CommandPage, setAside
 export function readCommandAnswers(answers: CommandAnswers | HopAnswers, text: string, pageRead: CommandPage, hop?: HopContext): Command {
   const none: Command = { verb: 'none', target: null, slot: null }
   const label = offeredChoice(answers.action, pageRead, hop?.setAside ?? [])
-  if (isCapability(label)) return capabilityCommand(label, answers.slot, text, answers, pageRead.url, hop) ?? none
+  if (isApplianceVerb(label)) return applianceCommand(label, answers.slot, text, answers, pageRead.url, hop)
   const { page, links } = offered(pageRead, hop)
   const acted = refActionOf(label)
   // A ref or a link the hop does not offer is no Command.

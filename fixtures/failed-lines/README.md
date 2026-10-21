@@ -11,7 +11,7 @@ one is a one-off.
 Stages, in the pipeline's order: `stt` (the words heard were not the
 words said), `turn` (the Utterance cut or joined wrong), `local_match`
 (the Local Match fired where it should not have), `reading` (Jev picked
-wrong among options that existed), `missing_option` (no Capability, op or
+wrong among options that existed), `missing_option` (no Appliance Verb, op or
 verb could do it), `runner` (the hop policy: cap, unchanged, undo, the
 Verdict, what was said), `player`, `page` (a stale label, late
 hydration, a wall).

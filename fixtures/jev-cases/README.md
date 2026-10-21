@@ -12,7 +12,7 @@ chooses (`{"question": "outcome", "below": 0.7}`).
 Jev reads a Command as one whole action (#370), so a case that expects a
 Command names it on the action card: `action=click-12` is a click on ref 12,
 `action=type-3` typing into ref 3, `action=open-2` opening result link 2,
-`action=loop` a Capability. The cases recorded on the verb and target cards
+`action=loop-7` a Media Op on ref 7, `action=skip` an Appliance Verb (#374). The cases recorded on the verb and target cards
 were converted in #370: each ask's action card rebuilt by the real
 `commandQuestions`, its refs and their lines the same as the target card's.
 
