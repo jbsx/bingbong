@@ -208,7 +208,11 @@ under 0.3, the mirror of the Choice bar, the action is Set Aside; between
 0.3 and 0.7 nothing happens, so an intermediate step (open the menu, then
 click the item) is not punished. Two such Hops in a row end the Task
 unsure, the shape of two unchanged Hops, on one counter. The record and
-the hop event keep the probability (the progress bar, #375).
+the hop event keep the probability, and the UI reads only that: the
+Status Capsule's progress bar moves with each Hop's Noul as it arrives —
+forward at the bar, back at the floor, held between, full on the sure yes
+— and the Feed's line for the action it judged carries the reading in a
+word, "closer", "unsure" or "no closer" (#375).
 _Avoid_: score, reward, confidence (for this), verification
 
 **Set Aside**:
@@ -1159,7 +1163,10 @@ state); after a Stop it says "Stopped" in a neutral colour — a Stop is the
 user's own act, not a failure (#334). It is the one thing on the Toolbar
 read from across the room, in peach while Bing Bong works or listens; while
 a Voice Prompt is on screen the live words are the Voice Prompt's, and the
-Capsule says only the state (ADR 0078).
+Capsule says only the state (ADR 0078). A running Task draws its progress
+bar along the Capsule's foot, inside it, moved by each Hop's Progress Noul
+(#375); the bar stands where the Task left it until the next Command, and
+a Command with no Noul — hop 0 alone, a Local Match — shows none.
 _Avoid_: status bar, status row, status line
 
 **View Preference**:

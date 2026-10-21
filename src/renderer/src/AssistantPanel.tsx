@@ -1,6 +1,32 @@
 import { useEffect, useState } from 'react'
 import type { OrbStatus } from './useAssistant'
 import { describeRunProgress, type RunProgress } from '../../core/pipeline/runProgress'
+import type { TaskProgress } from '../../core/pipeline/taskProgress'
+
+/**
+ * The Task's progress bar (#375): a track along the capsule's foot that
+ * moves with each hop's Progress Noul (#373) as it arrives — forward on a
+ * hop that helped, held in the middle, back on one that did not, full on
+ * a sure yes — drawn in the theme's bar idiom (ADR 0078). The fill and the
+ * moves ride the element as data: the e2e's observation point.
+ */
+export function TaskBar({ progress }: { progress: TaskProgress }) {
+  const percent = Math.round(progress.filled * 100)
+  return (
+    <span
+      className={`task-bar task-bar--${progress.moves.at(-1) ?? 'held'}`}
+      role="progressbar"
+      aria-label="task progress"
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={percent}
+      data-filled={percent}
+      data-moves={progress.moves.join(' ')}
+    >
+      <span className="task-bar-fill" style={{ width: `${percent}%` }} />
+    </span>
+  )
+}
 
 export function StatusOrb({ status }: { status: OrbStatus }) {
   return <div className={`status-orb status-orb--${status}`} aria-label={`assistant ${status}`} />

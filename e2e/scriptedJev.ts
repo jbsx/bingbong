@@ -13,23 +13,56 @@ interface Reading {
   readonly slot?: string
   /** The Amount rung a seek reads (#372, ADR 0080); `little` when the reading names none. */
   readonly amount?: string
+  /** A hop past the first (#328): the Verdict, sure at 0.9 — `yes` ends the Task done. */
+  readonly outcome?: 'yes' | 'in_the_way' | 'not_yet'
+  /** A hop past the first: the Progress Noul (#373), the probability the last action brought the page closer. */
+  readonly progress?: number
 }
+
+/** What a hop's reading adds to the Command's: the Verdict and the Progress Noul. */
+type HopReading = Pick<Reading, 'outcome' | 'progress'>
 
 const choice = (label: string) => ({ type: 'choice', choice: label, confidence: 0.9 })
 
 /** A line's reading: `play <words>` and `queue <words>` the Capability with the words past the first as the Slot. */
-export function readingOf(line: string, action?: string, more: { readonly amount?: string } = {}): Reading {
+export function readingOf(line: string, action?: string, more: { readonly amount?: string } & HopReading = {}): Reading {
   const words = line.trim().split(/\s+/)
   const head = words[0]!.toLowerCase()
   if (action === undefined && (head === 'play' || head === 'queue')) return { line, action: head, slot: `s1-${words.length - 1}`, ...more }
   return { line, action: action ?? 'none', ...more }
 }
 
-/** The env that scripts these readings, in the order they are typed. */
+/** The hub fixture's Task (#375), a line no grammar reads, typed over /hub-index. */
+export const HUB_TASK_LINE = 'what defect rate did hub aurora return'
+
+/**
+ * The hub Task's readings (#375): the hub's link, then its audit link
+ * judged to have helped (0.9), then back with the audit judged not to
+ * have (0.1), then a sure yes with back judged to have helped — so the
+ * bar reads forward, back, full, and the Feed's three action lines read
+ * closer, no closer, closer.
+ */
+export function hubTaskReadings(): Reading[] {
+  return [
+    readingOf(HUB_TASK_LINE, 'click-1'),
+    readingOf(HUB_TASK_LINE, 'click-1', { progress: 0.9, outcome: 'not_yet' }),
+    readingOf(HUB_TASK_LINE, 'back', { progress: 0.1, outcome: 'not_yet' }),
+    readingOf(HUB_TASK_LINE, 'none', { progress: 0.9, outcome: 'yes' }),
+  ]
+}
+
+/** The env that scripts these readings, in the order they are typed: one entry per ask, a Task's hops each their own. */
 export function decisionScript(...readings: Reading[]): { BINGBONG_DECISION_SCRIPT: string } {
   const entries = readings.map((reading) => ({
     when: JSON.stringify(reading.line),
-    answers: { action: choice(reading.action), slot: choice(reading.slot ?? 'none'), amount: choice(reading.amount ?? 'little'), where: choice('web') },
+    answers: {
+      action: choice(reading.action),
+      slot: choice(reading.slot ?? 'none'),
+      amount: choice(reading.amount ?? 'little'),
+      where: choice('web'),
+      ...(reading.outcome !== undefined ? { outcome: choice(reading.outcome) } : {}),
+      ...(reading.progress !== undefined ? { progress: { type: 'noul', noul: reading.progress } } : {}),
+    },
   }))
   return { BINGBONG_DECISION_SCRIPT: JSON.stringify(entries) }
 }

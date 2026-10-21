@@ -60,6 +60,12 @@ export interface FeedEntry {
    */
   hopLines?: readonly HopLine[]
   /**
+   * The Progress Noul's reading of hop 0's action (#375): the probability,
+   * carried by the hop after it, that the action brought the page closer
+   * to the words. Absent until that hop, and on a one-hop Command.
+   */
+  progress?: number
+  /**
    * The turn the entry came from (#329), on every line its event stamps —
    * conversation lines included, unlike `runId` — so a view can pick one
    * Command's Answer without reaching a neighbour's. Absent on unstamped
@@ -68,11 +74,13 @@ export interface FeedEntry {
   turnId?: string
 }
 
-/** One hop's line under a Task's words (#336): its action, greyed or in the failure colour. */
+/** One hop's line under a Task's words (#336): its action, greyed or in the failure colour, and the Noul's reading of it (#375). */
 export interface HopLine {
   readonly text: string
   readonly muted?: true
   readonly failure?: true
+  /** The Progress Noul's reading of this hop's action, carried by the hop after it (#375); absent on a line that fired nothing. */
+  readonly progress?: number
 }
 
 /** The closing hops that fire nothing and add nothing to their Task's entry (#336); an abandoned one shows greyed. */
@@ -154,13 +162,28 @@ export function createFeedProjection(): {
     if (entry === undefined) return false
     taskOfTurn.set(event.turnId, taskId)
     const action = event.action ?? ''
+    // The hop's Noul (#375) judged the last action fired: the last hop line that fired, else hop 0's action.
+    if (event.task!.progress !== undefined) readAction(entry, event.task!.progress)
     if (event.dropped && SILENT_CLOSES.has(action)) return true
     const line: HopLine = event.dropped ? { text: action, muted: true } : { text: action }
-    const lines = entry.hopLines ?? []
+    const lines = feed.find((shown) => shown.id === entry.id)?.hopLines ?? []
     hopLineOfTurn.set(event.turnId, { taskId, index: lines.length })
     updateEntry(entry.id, (shown) => ({ ...shown, hopLines: [...lines, line] }))
     if (!event.dropped) liveRunId = taskId
     return true
+  }
+
+  /** The Progress Noul's reading (#375) lands on the action it judged: the last hop line that fired, else hop 0's action on the entry. */
+  const readAction = (entry: FeedEntry, progress: number): void => {
+    const lines = entry.hopLines ?? []
+    let fired = -1
+    for (let index = lines.length - 1; index >= 0; index--) {
+      if (lines[index]!.muted !== true) {
+        fired = index
+        break
+      }
+    }
+    updateEntry(entry.id, (shown) => (fired === -1 ? { ...shown, progress } : { ...shown, hopLines: (shown.hopLines ?? []).map((hop, index) => (index === fired ? { ...hop, progress } : hop)) }))
   }
 
   /** A Task's Answer (#336): the latest hop's replaces the one before, so the Task keeps one; a wall's marks its hop's line. */

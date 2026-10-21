@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { BrowserNav, BrowserPane } from './BrowserPane'
 import { ChromeIcon } from './ChromeIcon'
-import { capsuleTone, RunHint, StatusOrb, StatusPill, VoiceWave } from './AssistantPanel'
+import { capsuleTone, RunHint, StatusOrb, StatusPill, TaskBar, VoiceWave } from './AssistantPanel'
 import { IdleScreen } from './IdleScreen'
 import { IdlePrompt } from './IdlePrompt'
 import { usePaneHasPage } from './usePaneHasPage'
@@ -202,6 +202,10 @@ export function App() {
                 {hint.text}
               </span>
             ) : null}
+            {/* The Task's progress bar (#375) along the capsule's foot: it
+                moves with each hop's Progress Noul and stands where the
+                Task left it until the next Command. */}
+            {assistant.taskProgress ? <TaskBar progress={assistant.taskProgress} /> : null}
           </div>
           {/* The running Timer and the song Now Playing (owner ruling 2026-10-19), in sight while the app is in use. */}
           <ToolbarWidgets timer={timer} nowPlaying={nowPlaying} />

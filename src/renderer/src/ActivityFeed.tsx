@@ -1,7 +1,17 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
 import { headlineAnswerId, type FeedEntry } from '../../core/feed/feedProjection'
+import { describeProgress, moveOf } from '../../core/pipeline/taskProgress'
 import { ChromeIcon } from './ChromeIcon'
 import { FeedMarkdown } from './FeedMarkdown'
+
+/**
+ * The Progress Noul's reading of an action (#375), in words beside the
+ * action it judged: closer, unsure, no closer — so a stalled Task reads as
+ * such in the log the user scrolls.
+ */
+function ProgressWord({ progress }: { progress: number }) {
+  return <span className={`feed-progress feed-progress--${moveOf(progress)}`}>{describeProgress(progress)}</span>
+}
 
 /**
  * The activity feed list (#44): timestamped entries for commands, tool
@@ -72,11 +82,13 @@ export function FeedLine({ entry, emphasis = {} }: { entry: FeedEntry; emphasis?
           {entry.action !== undefined ? (
             <span className="feed-action">
               <BreaksAtSlashes text={entry.action} />
+              {entry.progress !== undefined ? <ProgressWord progress={entry.progress} /> : null}
             </span>
           ) : null}
           {(entry.hopLines ?? []).map((hop, index) => (
             <span key={index} className={`feed-action feed-action--hop${hop.muted ? ' feed-action--muted' : ''}${hop.failure ? ' feed-action--failed' : ''}`}>
               <BreaksAtSlashes text={hop.text} />
+              {hop.progress !== undefined ? <ProgressWord progress={hop.progress} /> : null}
             </span>
           ))}
         </span>

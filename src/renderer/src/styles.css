@@ -268,6 +268,7 @@ body {
    (#331): a long hint or partial transcript ellipsizes instead of growing
    into the back control. */
 .status-capsule {
+  position: relative;
   flex: 0 1 auto;
   display: flex;
   align-items: center;
@@ -280,6 +281,37 @@ body {
   border: 1px solid var(--hair);
   border-radius: 26px;
   background: var(--surface);
+}
+
+/* The Task's progress bar (#375): the theme's bar (ADR 0078) along the
+   capsule's foot, inside it so the capsule never grows. The fill moves with
+   each hop's Progress Noul: peach while the Task closes in, amber on a hop
+   that did not help, green once the Verdict fills it. */
+.task-bar {
+  position: absolute;
+  left: 20px;
+  right: 24px;
+  bottom: 5px;
+  height: 3px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--track);
+}
+
+.task-bar-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 240ms ease;
+}
+
+.task-bar--back .task-bar-fill {
+  background: var(--warn);
+}
+
+.task-bar--full .task-bar-fill {
+  background: var(--ok);
 }
 
 .status-capsule--working,
@@ -1003,6 +1035,21 @@ details.feed-entry {
 
 .feed-bubble .feed-action--failed {
   color: var(--fail);
+}
+
+/* The Progress Noul's reading of an action (#375), a word after the line it
+   judged: closer in green, no closer in amber, unsure in the quietest text. */
+.feed-progress {
+  margin-left: 10px;
+  color: var(--fg3);
+}
+
+.feed-progress--forward {
+  color: var(--ok);
+}
+
+.feed-progress--back {
+  color: var(--warn);
 }
 
 /* The Command being worked on: the loud bubble, edged in peach. */

@@ -4,6 +4,7 @@ import type { VoiceHeardEvent } from '../../core/voice/ipcChannels'
 import type { FeedEntry } from '../../core/feed/feedProjection'
 import { useFeedProjection } from './useFeedProjection'
 import { createRunProgressTracker, type CapsuleStatus, type RunProgress } from '../../core/pipeline/runProgress'
+import { createTaskProgressTracker, type TaskProgress } from '../../core/pipeline/taskProgress'
 
 export type OrbStatus = CapsuleStatus
 
@@ -23,6 +24,12 @@ export interface Assistant {
    * per-second IPC.
    */
   progress: RunProgress | null
+  /**
+   * The Task's progress bar (#375): where the per-hop Progress Noul has
+   * brought it, folded from the event stream; null until a Task has a
+   * reading, and again at the next Command.
+   */
+  taskProgress: TaskProgress | null
   submit(text: string): void
   abort(): void
   /** A heard-but-not-a-command line (control words, undecided transcripts). */
@@ -34,8 +41,10 @@ export interface Assistant {
 export function useAssistant(): Assistant {
   const [status, setStatus] = useState<OrbStatus>('idle')
   const [progress, setProgress] = useState<RunProgress | null>(null)
+  const [taskProgress, setTaskProgress] = useState<TaskProgress | null>(null)
   const lastStatus = useRef<OrbStatus>('idle')
   const progressTracker = useRef(createRunProgressTracker())
+  const taskProgressTracker = useRef(createTaskProgressTracker())
   // The feed's projection wiring (#44) is shared with the panel's overlay
   // page (#45): same events in, same entries out.
   const feedProjection = useFeedProjection()
@@ -47,6 +56,8 @@ export function useAssistant(): Assistant {
       feedProjection.handleEvent(event)
       progressTracker.current.onEvent(event)
       setProgress(progressTracker.current.current())
+      taskProgressTracker.current.onEvent(event)
+      setTaskProgress(taskProgressTracker.current.current())
       switch (event.type) {
         case 'status':
           lastStatus.current = event.status
@@ -84,5 +95,5 @@ export function useAssistant(): Assistant {
     [feedProjection],
   )
 
-  return { status, feed, liveRunId, progress, submit, abort, appendVoiceHeard, appendVoiceError }
+  return { status, feed, liveRunId, progress, taskProgress, submit, abort, appendVoiceHeard, appendVoiceError }
 }

@@ -84,6 +84,27 @@ describe('a Task is one Feed Entry (#336)', () => {
     ])
   })
 
+  it('the Progress Noul a hop carries (#375) reads on the line of the action it judged: hop 0\'s action, else the last fired hop line', () => {
+    /** A hop whose event carries the Noul that judged the action before it. */
+    const judged = (n: number, action: string, answer: string, at: number, progress: number): PipelineEvent[] =>
+      hop(n, action, answer, at).map((event) => (event.type === 'command' ? { ...event, task: { id: 'h0', hop: n, progress } } : event))
+    const projection = project([
+      ...hop(0, 'click [1] "Regional hub Aurora"', 'Clicked “Regional hub Aurora”.', 100),
+      ...judged(1, 'click [1] "independent audit for hub Aurora"', 'Clicked “independent audit”.', 200, 0.9),
+      ...judged(2, 'back', 'Went back.', 300, 0.1),
+      { type: 'command', turnId: 'h3', text: WORDS, action: 'done', dropped: true, task: { id: 'h0', hop: 3, progress: 0.9 }, at: 400 },
+      { type: 'done', turnId: 'h3', outcome: 'done', at: 401 },
+    ])
+    expect(conversation(projection)[0]).toMatchObject({
+      action: 'click [1] "Regional hub Aurora"',
+      progress: 0.9,
+      hopLines: [
+        { text: 'click [1] "independent audit for hub Aurora"', progress: 0.1 },
+        { text: 'back', progress: 0.9 },
+      ],
+    })
+  })
+
   it('a one-hop Command looks exactly as it did', () => {
     const projection = project([...hop(0, 'open x.com/elonmusk', 'Opened X.', 100)])
     expect(conversation(projection)[0]).not.toHaveProperty('hopLines')

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { startFixtureServer, type FixtureServer } from './fixtureServer'
-import { decisionScript, readingOf } from './scriptedJev'
+import { decisionScript, HUB_TASK_LINE, hubTaskReadings, readingOf } from './scriptedJev'
 import { startHarness, type Harness } from './harness'
 import { promptBarScript } from './scripts'
 import { startUsageStandIn, type UsageStandIn } from './usageStandIn'
@@ -239,6 +239,10 @@ async function walkTheShell(run: Run): Promise<void> {
   await shoot(run, '21-nav-failed')
   await command(run, `navigate ${fixture.url('/empty-main')}`)
   await shoot(run, '22-empty-landing')
+  // A Task walked to a sure yes (#375): the Capsule's bar full where the Task left it, the Feed's lines read closer, no closer, closer.
+  await command(run, `navigate ${fixture.url('/hub-index')}`)
+  await command(run, HUB_TASK_LINE)
+  await shoot(run, '22-task-progress')
   await command(run, 'timer 25 minutes')
   await shoot(run, '23-timer')
   await command(run, 'play fixture song')
@@ -384,8 +388,8 @@ describe('the states screenshot review (#359)', () => {
 
   for (const theme of ['dark', 'light'] as const) {
     it(`shoots every awake state, Settings and the Weight page in ${theme}`, async () => {
-      // A line with free words is Jev's (ADR 0079): the stand-in reads the nonsense line as no Command and `play fixture song` as the Capability.
-      const run = await launch(theme, decisionScript(readingOf('zorblax the quux thing'), readingOf('play fixture song')))
+      // A line with free words is Jev's (ADR 0079): the stand-in reads the nonsense line as no Command, `play fixture song` as the Capability, and the hub Task hop by hop (#375).
+      const run = await launch(theme, decisionScript(readingOf('zorblax the quux thing'), readingOf('play fixture song'), ...hubTaskReadings()))
       try {
         await walkTheShell(run)
       } finally {
