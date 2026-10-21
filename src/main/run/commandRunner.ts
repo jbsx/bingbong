@@ -435,8 +435,15 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   /** Nothing in flight, being read or sounding: what the run state calls idle. */
   const idle = (): boolean => inFlight === null && reading === null && sounding === 0
 
-  /** The Capabilities Jev is offered beside the browser's verbs (ADR 0079): a song to play while a Player is wired, and every op on the song while one is current. */
-  const capabilities = (): readonly Capability[] => (deps.player === undefined ? [] : playerCapabilities(deps.player.queue().current !== null))
+  /**
+   * The Capabilities Jev is offered beside the browser's verbs (ADR 0079):
+   * a song to play while a Player is wired, and every op on the song while
+   * one is on — the Player's current song, or a media element the page has
+   * started. A song brought back by `resume`, or left on the watch page by
+   * a `skip` with nothing queued, is the Player's no longer, but its ops
+   * act on the page's video all the same (#362, #364 live runs).
+   */
+  const capabilities = (page: CommandPage): readonly Capability[] => (deps.player === undefined ? [] : playerCapabilities(deps.player.queue().current !== null || page.media !== undefined))
 
   /** The music paused for a `stop` (#343); whether a video was playing. A failure to reach it is no pause. */
   async function pauseMusic(): Promise<boolean> {
@@ -665,7 +672,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   async function dismissalOf(turnId: string, text: string, page: CommandPage): Promise<Reading | null> {
     const ruled = ruledDismissal(page)
     const model = ruled === null ? deps.decisionModel() : null
-    const questions = model === null ? null : dismissPhraseQuestions(text, page, { capabilities: capabilities() })
+    const questions = model === null ? null : dismissPhraseQuestions(text, page, { capabilities: capabilities(page) })
     const result = model === null || questions === null ? null : await askJev(model, 'command', turnId, commandState(text, page), questions)
     const chosen = result?.status === 'answered' ? readDismissChoice(result.answers, page) : null
     const ladder = dismissalLadder(page, chosen, DEFAULT_DECISION_THRESHOLDS.choice)
@@ -706,7 +713,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     if (local !== null) return { command: local, page, reading: 'local_match', jevAsked: false }
     const model = deps.decisionModel()
     if (model === null) return { command: UNREAD, page, reading: 'best_guess', jevAsked: false }
-    const result = await askJev(model, 'command', turnId, commandState(text, page, undefined, options.step), commandQuestions(text, page, undefined, { steps: options.split, capabilities: capabilities() }), options.askId)
+    const result = await askJev(model, 'command', turnId, commandState(text, page, undefined, options.step), commandQuestions(text, page, undefined, { steps: options.split, capabilities: capabilities(page) }), options.askId)
     if (result.status === 'answered') {
       // Jev split the line (#364): each Step is read on its own, and this reading of the whole fires nothing.
       const split = readSteps(result.answers, text)
@@ -1525,7 +1532,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       const links = !superseded(task) ? await wholePageLinks(turnId) : []
       const context: HopContext = { hop, visited: [...task.visited], actions: [...task.actions], links, setAside: [...task.setAside], searched: [...task.searched], terms: [...task.terms] }
       const model = deps.decisionModel()
-      const result = superseded(task) || model === null ? null : await askJev(model, 'hop', turnId, commandState(task.text, page, context, task.step), hopQuestions(task.text, page, context, { capabilities: capabilities() }))
+      const result = superseded(task) || model === null ? null : await askJev(model, 'hop', turnId, commandState(task.text, page, context, task.step), hopQuestions(task.text, page, context, { capabilities: capabilities(page) }))
       if (reading?.turnId === turnId) reading = null
       const firedAt = at()
       const base = { type: 'decision' as const, turnId, at: firedAt, source: task.source, transcript: task.text, reading: 'jev' as const, task: hopOf(task, hop) }
@@ -1773,7 +1780,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     if (model === null) return null
     partialCalls += 1
     const askedIn = utterance
-    const result = await askJev(model, 'partial', null, commandState(words, page), partialQuestions(words, page, { capabilities: capabilities() }))
+    const result = await askJev(model, 'partial', null, commandState(words, page), partialQuestions(words, page, { capabilities: capabilities(page) }))
     // Kept for its own Utterance's record: one whose Endpoint came while it was read has written its record already.
     if (askedIn === utterance) partialAskIds.push(result.askId)
     // Jev unavailable on a partial: nothing fires, and the Endpoint reads as before.

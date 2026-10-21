@@ -114,7 +114,8 @@ _Avoid_: sub-task, chain, plan, sequence
 **Capability**:
 An action the appliance itself can take, offered to the Decision Model as
 a verb beside the browser's: the Player's loop, restart, pause, skip,
-volume and the rest while a song plays, on any page, and a song to play
+volume and the rest while a song is on (the Player's, or one the page
+has started), on any page, and a song to play
 by its words at any time; the Timer next. A
 Capability Command fires the action, answers its line and ends the Task
 there. The words' own exact phrases ("loop", "pause") are still the
@@ -1021,8 +1022,9 @@ the dashboard up over the watch page (#344).
 The Player's exact phrases ("loop", "pause", "restart") are the grammar's
 first, and no partial fires them early; `play <words>` and every plain
 music line ("put the song on loop") go to Jev, which is offered the
-Player's ops as Capabilities while a song plays (ADR 0079, amending #343's
-ruling 1). "click play" and "press play" stay the page's button by the
+Player's ops as Capabilities while a song is on — the Player's, or one the
+page has started, as after `resume` or a `skip` with nothing queued (ADR
+0079 and its amendment, amending #343's ruling 1). "click play" and "press play" stay the page's button by the
 option's own words, not a rule. `back` stays history and `resume` the
 Task's.
 

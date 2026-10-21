@@ -111,3 +111,22 @@ resume.
 - The glossary gains **Capability**, **Menu** and **Step**; **Local
   Match**, **Task** and **Player** are reworded.
 - The Timer is the next Capability; nothing here is music-shaped.
+
+## Amendment: a song on the page is enough (2026-10-21)
+
+The song's ops were offered only while the Player's queue held a current
+song. Live runs on 2026-10-20 and 2026-10-21 found two ways a song plays
+on the watch page that the Player does not own: `resume` brings the Last
+Page back with its song still going, and `skip` with nothing queued clears
+the current song and pauses the video where it is. On both, "loop the
+song" read `none` and "start it from the beginning" read `play <words>`,
+searching YouTube for a song by that name, because no song op was on
+offer. The ops themselves act on the page's video element whatever the
+queue holds.
+
+**The song's ops are offered while a song is on: the Player's current
+song, or a media element the page has started, playing or paused.** The
+page's media is what #363 already reads into the ask's `Playing:` line, so
+the ask that shows Jev a song also offers what can be done to it. With no
+song anywhere, only a song to play is offered, as before. (Owner's standing
+rule: cast the widest net; not a fix shaped by the two cases seen.)

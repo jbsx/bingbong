@@ -3,7 +3,8 @@ import { firstNumber } from '../timer/duration'
 
 // A Capability (ADR 0079, CONTEXT.md): an action the appliance itself can
 // take, offered to Jev as a verb beside the browser's, in the same verb
-// Choice. The Player's ops are the first: while it has a current song, on
+// Choice. The Player's ops are the first: while a song is on — the
+// Player's current song, or a media element the page has started — on
 // any page and under the Idle Screen, every op but a search is offered;
 // a song to play is offered whenever a Player is wired, so `play <words>`
 // reaches Jev with every option. A Capability reading is a `play` Command
@@ -58,9 +59,9 @@ export const CAPABILITY_INSTRUCTIONS =
 
 const SONG_CAPABILITIES: readonly Capability[] = ['loop', 'loop_off', 'restart', 'pause', 'unpause', 'skip', 'previous', 'louder', 'quieter', 'mute', 'unmute', 'volume', 'show']
 
-/** The Player's Capabilities: a song to play, and while one is current (`songCurrent`) every op on it. */
-export function playerCapabilities(songCurrent: boolean): readonly Capability[] {
-  return ['play', 'play_next', 'queue', ...(songCurrent ? SONG_CAPABILITIES : [])]
+/** The Player's Capabilities: a song to play, and while one is on (`songOn`: the Player's, or a media element the page has started) every op on it. */
+export function playerCapabilities(songOn: boolean): readonly Capability[] {
+  return ['play', 'play_next', 'queue', ...(songOn ? SONG_CAPABILITIES : [])]
 }
 
 /** Whether a verb Choice's label names a Capability. */

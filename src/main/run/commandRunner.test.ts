@@ -315,6 +315,23 @@ describe('the Player (#343)', () => {
     expect(verbs[1]).toEqual(expect.arrayContaining(['loop', 'loop_off', 'restart', 'pause', 'unpause', 'skip', 'previous', 'louder', 'quieter', 'mute', 'unmute', 'volume', 'show']))
   })
 
+  it('a song on the page the Player never started — brought back by `resume`, or left paused by a `skip` with nothing queued — offers every op, and `loop the song` loops it (#362, #364 live runs)', async () => {
+    const { browser, decision, events, youtube, runner } = music()
+    await runner.run('navigate https://www.youtube.com/watch?v=fJ9rUzIMcZQ')
+    browser.snapshot = { ...browser.snapshot, media: { title: QUEEN, paused: false, currentTime: 5, duration: 124, loop: false, muted: false } }
+    decision.script.push({ answers: { verb: choice('loop'), target: choice('none'), slot: choice('none') } })
+    await runner.run('loop the song')
+    const verbs = Object.keys((decision.requests[0]!.questions.verb as DecisionChoiceQuestion).options)
+    expect(verbs).toEqual(expect.arrayContaining(['loop', 'loop_off', 'restart', 'pause', 'unpause', 'skip', 'previous', 'louder', 'quieter', 'mute', 'unmute', 'volume', 'show']))
+    expect(youtube.controls.map((control) => control.op)).toEqual(['loop'])
+    expect(displays(events).at(-1)).toBe(`Looping “${QUEEN}”.`)
+    // The page's media sets the Player's ops on offer; a page with none started offers only a song to play.
+    browser.snapshot = { ...browser.snapshot, media: null }
+    decision.script.push({ answers: { verb: choice('none'), target: choice('none'), slot: choice('none') } })
+    await runner.run('loop the song')
+    expect(Object.keys((decision.requests[1]!.questions.verb as DecisionChoiceQuestion).options)).not.toContain('loop')
+  })
+
   it('a Capability reading fires the Player\'s op, answers its line and ends the Task `terminal`: no hop, no Verdict (#362)', async () => {
     const { decision, events, records, youtube, runner } = music()
     await runner.run('play bohemian rhapsody')
