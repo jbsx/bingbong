@@ -23,8 +23,8 @@ export interface IdleApi {
  * Idle Prompt and one that types nothing is swallowed there, so neither
  * wakes; nor does a chord (a shortcut) or a key typed into the Prompt. A
  * key main was not handed (a key that types a character can reach the
- * dashboard as a key down main never hears) is read here the same way:
- * while `shown` holds, one that types goes to `onType` and none wakes. A
+ * dashboard as a key down main never hears) that types goes to `onType`
+ * while `shown` holds, so it opens the Prompt rather than waking. A
  * tap wakes only while `tapWakes` holds — with no page in the pane there
  * is nothing to wake to.
  */
@@ -53,12 +53,10 @@ export function useIdle(options: { tapWakes: () => boolean; shown: () => boolean
     }
     const onKey = (event: KeyboardEvent): void => {
       if (timer.isIdle() && (event.ctrlKey || event.metaKey || event.altKey || (event.target instanceof Element && event.target.closest('.idle-prompt') !== null))) return
-      if (timer.isIdle() && shownRef.current()) {
-        const text = idlePromptText(idleKeyAction({ type: 'keyDown', key: event.key, control: false, meta: false, alt: false, isComposing: event.isComposing }))
-        if (text !== null) {
-          event.preventDefault()
-          onTypeRef.current(text)
-        }
+      const text = timer.isIdle() && shownRef.current() ? idlePromptText(idleKeyAction({ type: 'keyDown', key: event.key, control: false, meta: false, alt: false, isComposing: event.isComposing })) : null
+      if (text !== null) {
+        event.preventDefault()
+        onTypeRef.current(text)
         return
       }
       timer.ping()
