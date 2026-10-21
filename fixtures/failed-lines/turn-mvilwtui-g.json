@@ -7,5 +7,7 @@
   "happened": "The same line again: the Where Ask opened Settings (click-14 0.41), Ambient mode was not on the card (menuitemcheckbox dropped by the collector), Jev clicked the Cinema mode button 0.47 and Settings twice, then none 0.19: undo, not_found",
   "meant": "Click the Ambient mode row in the Settings menu",
   "log": "decision-1792617006956-1.jsonl",
-  "claimedBy": "#380"
+  "claimedBy": "#380",
+  "fixedBy": "2c0985f",
+  "case": "cli-5-mvineu5g"
 }
