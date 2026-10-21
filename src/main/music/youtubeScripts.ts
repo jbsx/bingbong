@@ -233,8 +233,8 @@ export interface PausedAll {
  * `audio` in the page's top frame that plays is paused — YouTube's player
  * among them, a muted hero loop beside the real clip too, since `stop`
  * means silence — and whether YouTube's player was one, so the Queue
- * holds its song paused. Media inside frames is out of reach, as it is
- * for the collect and the ops (#377).
+ * holds its song paused. The page's frames are paused beside it, each in
+ * its own context (FRAME_PAUSE_ALL_JS, #377).
  */
 export const PAUSE_ALL_SCRIPT = `(() => {
   /* PAGE_PAUSE_ALL */

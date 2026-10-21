@@ -4,7 +4,7 @@ import type { ConsentChooser } from '../../core/browser/dialogPolicy'
 import { authIdentityScript, resolveAuthIdentity, type AuthIdentity } from '../../core/browser/authIdentity'
 import { COLLECT_PAGE_SCRIPT, domQuietScript } from './collectPageScript'
 import { systemClock } from '../../core/ports/clock'
-import { LANDING_CAP_MS, createCdpBrowserController, type ActionEffects, type CdpDebugger } from './createCdpBrowserController'
+import { LANDING_CAP_MS, createCdpBrowserController, type ActionEffects, type CdpDebugger, type PageFrame, type PageFrames } from './createCdpBrowserController'
 import { createPaneNavigation } from './paneNavigation'
 import { holdPageContextMenu } from './attachPageContextMenu'
 
@@ -15,6 +15,35 @@ import { holdPageContextMenu } from './attachPageContextMenu'
 // by e2e.
 
 const DEBUGGER_PROTOCOL_VERSION = '1.3'
+
+/** A frame's key: its process and routing ids, which name its document's host for as long as it holds that process (#377). */
+function frameKey(frame: Electron.WebFrameMain): string {
+  return `${frame.processId}:${frame.routingId}`
+}
+
+/**
+ * Every frame below the tab's top document (#377, ADR 0081), any depth,
+ * any site: Electron's frame API reaches out-of-process frames as it does
+ * same-process ones (the #377 spike), so each is evaluated in its own
+ * context with no CDP session of its own.
+ */
+export function electronPageFrames(wc: Electron.WebContents): PageFrames {
+  return {
+    list() {
+      if (wc.isDestroyed()) return []
+      const top = wc.mainFrame
+      return top.framesInSubtree
+        .filter((frame) => frame !== top && !frame.detached && frame.parent !== null)
+        .map(
+          (frame): PageFrame => ({
+            key: frameKey(frame),
+            parentKey: frame.parent === null || frame.parent.parent === null ? null : frameKey(frame.parent),
+            evaluate: <T,>(expression: string) => frame.executeJavaScript(expression) as Promise<T>,
+          }),
+        )
+    },
+  }
+}
 
 export function createPaneBrowserController(
   pane: {
@@ -109,5 +138,6 @@ export function createPaneBrowserController(
     ...(deps?.subspans ? { subspans: deps.subspans } : {}),
     ...(deps?.effects ? { effects: deps.effects } : {}),
     ...(deps?.chooseConsent ? { chooseConsent: deps.chooseConsent } : {}),
+    frames: electronPageFrames(wc),
   })
 }

@@ -12,7 +12,7 @@ import type { PerfSpanRecord } from '../../core/perf/perfTracer'
 import { fakePerfHarness } from '../../core/testing/doubles'
 import type { Clock } from '../../core/ports/clock'
 import { FakeClock, flushMicrotasks } from '../../core/testing/doubles'
-import type { ActionEffect, ActionEffects, ArrivalWatch, CdpDebugger, CdpPageDriver, PageArrival } from './createCdpBrowserController'
+import type { ActionEffect, ActionEffects, ArrivalWatch, CdpDebugger, CdpPageDriver, PageArrival, PageFrame, PageFrames } from './createCdpBrowserController'
 import { createCdpBrowserController, READINESS_CAP_MS } from './createCdpBrowserController'
 import type { ClickPrep } from './collectPageScript'
 import type { AxNode } from '../../core/browser/refStates'
@@ -133,6 +133,8 @@ class FakeCdp implements CdpDebugger {
   private shownElements: unknown[] = []
   private nodes = new Map<unknown, unknown>()
   private reRendered = false
+  /** Where the iframe's frame starts in the page (#377): what the frame-box probe answers. */
+  frameBox: { x: number; y: number } | null = null
   /** What Page.getLayoutMetrics reports as the visual viewport (a region screenshot's frame, #195). */
   layoutMetrics = { pageX: 0, pageY: 0, clientWidth: 1280, clientHeight: 800 }
   private readonly handlers = new Map<string, ((params: unknown) => void)[]>()
@@ -202,6 +204,7 @@ class FakeCdp implements CdpDebugger {
         return { result: { value: this.readyOutcome } } as T
       }
       if (expression.includes('/* FLASH_REF */')) return { result: { value: true } } as T
+      if (expression.includes('/* FRAME_BOX */')) return { result: { value: this.frameBox } } as T
       if (expression.includes('__bingbongDialogOpen')) return { result: { value: this.dialogOpenValues.length > 0 ? this.dialogOpenValues.shift() : false } } as T
       if (expression.includes('/* CLEAR_FOCUSED */')) return { result: { value: 'input[text]' } } as T
       if (this.evaluateException) return { exceptionDetails: { text: this.evaluateException } } as T
@@ -250,6 +253,12 @@ class FakeCdp implements CdpDebugger {
             },
           },
         } as T
+      }
+      if (expression.includes('__bingbongMarkShownAt')) {
+        const indices = JSON.parse(/__bingbongMarkShownAt\((\[[^)]*\])\)/.exec(expression)?.[1] ?? '[]') as number[]
+        this.shownElements = []
+        for (const index of indices) this.shownElements[index] = this.collectedElements[index]
+        return { result: { value: true } } as T
       }
       if (expression.includes('__bingbongMarkShown')) {
         const count = Number(/__bingbongMarkShown\((\d+)\)/.exec(expression)?.[1] ?? 0)
@@ -380,8 +389,8 @@ class FakeCdp implements CdpDebugger {
     if (page === null || typeof page !== 'object' || !Array.isArray(page.elements)) return page
     const prior = new Map(this.collectedElements.map((node, index) => [node, index]))
     const registry: unknown[] = []
-    const elements = page.elements.map((element) => {
-      if (!refable(element, page.viewport)) return { ...element, previousIndex: -1 }
+    // The real collector returns exactly its registry (#377): an element no ref can name is never in the payload.
+    const elements = page.elements.filter((element) => refable(element, page.viewport)).map((element) => {
       const node = this.nodeFor(element)
       registry.push(node)
       return { ...element, previousIndex: prior.get(node) ?? -1 }
@@ -545,6 +554,7 @@ function makeController(options?: {
   clock?: Clock
   effects?: ActionEffects
   chooseConsent?: ConsentChooser
+  frames?: PageFrames
 }) {
   const cdp = options?.cdp ?? new FakeCdp()
   const page = options?.page ?? new FakePage()
@@ -562,6 +572,7 @@ function makeController(options?: {
     // a test brings its own (the cap is pinned on a FakeClock, #324).
     clock: options?.clock ?? instantClock(),
     ...(options?.effects ? { effects: options.effects } : {}),
+    ...(options?.frames ? { frames: options.frames } : {}),
     consumePopupBlocks: () => popupQueue.splice(0),
     consumeAuthPopupOpens: () => authQueue.splice(0),
     holdWindowOpens: () => {
@@ -2588,6 +2599,8 @@ describe('createCdpBrowserController a landing names the page it carries (#308)'
       ['browser-recollection', { reason: 'settled-state' }],
       // The tab reads the same twice running: one poll settles it.
       ['browser-settle', { action: 'landing-retry', ms: 100 }],
+      // The first collect threw and was never timed; the retry's is.
+      ['browser-collect', { refs: 20, frames: 0, unread: 0 }],
       ['browser-recollection', { reason: 'landing-retry' }],
     ])
   })
@@ -2638,8 +2651,11 @@ describe('createCdpBrowserController a landing names the page it carries (#308)'
     })
 
     expect(records.map((record) => [record.stage, record.detail])).toEqual([
+      ['browser-collect', { refs: 20, frames: 0, unread: 0 }],
       ['browser-recollection', { reason: 'settled-state' }],
+      ['browser-collect', { refs: 20, frames: 0, unread: 0 }],
       ['browser-recollection', { reason: 'settled-state' }],
+      ['browser-collect', { refs: 20, frames: 0, unread: 0 }],
       ['browser-recollection', { reason: 'settled-state' }],
     ])
   })
@@ -2757,13 +2773,14 @@ describe('createCdpBrowserController verbose sub-spans (#32)', () => {
     return { records, subspans: createBrowserSubspans({ tracer, enabled }) }
   }
 
-  it('emits only the recollection for a navigate, keyed by the open turn — the load is its own wait (#324)', async () => {
+  it('emits only the collect and its recollection for a navigate, keyed by the open turn — the load is its own wait (#324, #377)', async () => {
     const { records, subspans } = subspanHarness(true)
     const { controller } = makeController({ subspans })
 
     await subspans.runInTurn('turn-1', () => controller.navigate('youtube.com'))
 
     expect(records).toEqual([
+      { turnId: 'turn-1', stage: 'browser-collect', durMs: 0, at: 1_700_000_000_000, t: 0, detail: { refs: 20, frames: 0, unread: 0 } },
       { turnId: 'turn-1', stage: 'browser-recollection', durMs: 0, at: 1_700_000_000_000, t: 0, detail: { reason: 'settled-state' } },
     ])
   })
@@ -2780,6 +2797,7 @@ describe('createCdpBrowserController verbose sub-spans (#32)', () => {
     await subspans.runInTurn('turn-1', () => controller.click(3))
 
     expect(records.map((record) => [record.turnId, record.stage, record.detail])).toEqual([
+      ['turn-1', 'browser-collect', { refs: 20, frames: 0, unread: 0 }],
       ['turn-1', 'browser-recollection', { reason: 'resolve-ref' }],
       ['turn-1', 'browser-safety', { kind: 'click-prep' }],
       ['turn-1', 'browser-ready', { action: 'click', outcome: 'mutation' }],
@@ -3342,9 +3360,9 @@ describe('createCdpBrowserController readiness wait and effects (#324)', () => {
       settled = true
       return outcome
     })
-    for (let i = 0; i < 20; i += 1) await Promise.resolve()
+    for (let i = 0; i < 60; i += 1) await Promise.resolve()
     clock.advance(READINESS_CAP_MS - 1)
-    for (let i = 0; i < 20; i += 1) await Promise.resolve()
+    for (let i = 0; i < 60; i += 1) await Promise.resolve()
     expect(settled).toBe(false)
     clock.advance(1)
     await click
@@ -3413,5 +3431,140 @@ describe('createCdpBrowserController readiness wait and effects (#324)', () => {
 
     const flash = cdp.calls.find((call) => String(call.params?.expression ?? '').includes('/* FLASH_REF */'))
     expect(String(flash?.params?.expression)).toContain('(window.__bingbongRefs || [])[1]')
+  })
+})
+
+// The page is the top document and every Reachable Frame (#377, ADR 0081):
+// each frame is collected in its own context beside the top, its refs take
+// its iframe's place in one numbering, and every action on a frame's ref
+// runs in that frame — a click at its point plus the iframe's origin.
+describe('frames (#377, ADR 0081)', () => {
+  const FACTS = { paused: false, ended: false, currentTime: 16.2, duration: 111, volume: 1, muted: false, loop: false, rate: 1, seekable: { start: 0, end: 111 }, tracks: 0, captions: null, buffering: false, failed: false }
+  const button = (label: string, y: number): CollectedElement => ({ tag: 'button', role: null, inputType: null, label, rect: { x: 10, y, width: 80, height: 30 }, layer: 'page' })
+  /** A news page: a button, the embed's iframe (window.frames[0]), a button below it. */
+  const TOP: CollectedPage = {
+    url: 'https://news.example/story',
+    title: 'Story',
+    viewport: { width: 1280, height: 800, scrollX: 0, scrollY: 0, scrollHeight: 800 },
+    elements: [button('Share', 10), { tag: 'iframe', role: null, inputType: null, label: '', rect: { x: 100, y: 200, width: 400, height: 300 }, layer: 'page', src: 'https://www.youtube.com/embed/x', frameIndex: 0, frameBox: { x: 102, y: 202 } }, button('Comments', 600)],
+  }
+  const EMBED: CollectedPage = {
+    url: 'https://www.youtube.com/embed/x',
+    title: 'Embed',
+    viewport: { width: 396, height: 296, scrollX: 0, scrollY: 0, scrollHeight: 296 },
+    frameIndex: 0,
+    elements: [{ tag: 'video', role: null, inputType: null, label: '', rect: { x: 0, y: 0, width: 396, height: 296 }, layer: 'page', media: FACTS }, button('Pause', 250)],
+  }
+
+  /** One frame below the top, answering as the collector's helpers would in it. */
+  class FakeFrame implements PageFrame {
+    readonly expressions: string[] = []
+    private shown: number[] = []
+    hangs = false
+    gone = false
+    mediaOpResult: unknown = null
+    constructor(
+      readonly key: string,
+      readonly parentKey: string | null,
+      private readonly page: CollectedPage,
+    ) {}
+
+    async evaluate<T>(expression: string): Promise<T> {
+      if (this.gone) throw new Error('Render frame was disposed before WebFrameMain could be accessed')
+      this.expressions.push(expression)
+      if (this.hangs) return new Promise<T>(() => {})
+      const answer = (value: unknown): T => value as T
+      if (expression === COLLECT_EXPRESSION) return answer(this.page)
+      if (expression.includes('__bingbongMarkShownAt')) {
+        this.shown = JSON.parse(/__bingbongMarkShownAt\((\[[^)]*\])\)/.exec(expression)?.[1] ?? '[]') as number[]
+        return answer(true)
+      }
+      if (expression.includes('__bingbongRefShown')) return answer(this.shown.includes(Number(/__bingbongRefShown\((\d+)\)/.exec(expression)?.[1])))
+      if (expression.includes('/* READY_ARM */')) return answer(true)
+      if (expression.includes('/* READY_WAIT */')) return answer('mutation')
+      if (expression.includes('/* MEDIA_OP */')) return answer(this.mediaOpResult)
+      if (expression.includes('/* ACTION_OUTCOME */')) {
+        return answer({ target: null, signature: { url: this.page.url, title: this.page.title, scrollX: 0, scrollY: 0, refCount: 2, labels: ['', 'Pause'], dialogOpen: false, media: null } })
+      }
+      if (expression.includes('__bingbongRefs')) return answer({ ok: true, clickable: true, x: 30, y: 265 })
+      return answer(undefined)
+    }
+  }
+
+  function framed(embed = new FakeFrame('7:3', null, EMBED)) {
+    const cdp = new FakeCdp(TOP)
+    cdp.frameBox = { x: 102, y: 202 }
+    const made = makeController({ cdp, frames: { list: () => (embed.gone ? [] : [embed]) } })
+    return { ...made, cdp, embed }
+  }
+
+  it("reads the frame beside the top and puts its refs at its iframe's place, named by its host", async () => {
+    const { controller } = framed()
+
+    const page = await controller.readPage()
+
+    expect(page).toContain('[1] button "Share"\n[2] media in youtube.com\n[3] button "Pause" in youtube.com\n[4] button "Comments"')
+    expect(page).not.toContain('iframe')
+  })
+
+  it('leaves a frame that has not answered within the grace as its opaque iframe ref, and the read is not held up', async () => {
+    const embed = new FakeFrame('7:3', null, EMBED)
+    embed.hangs = true
+    const { controller } = framed(embed)
+
+    const page = await controller.readPage()
+
+    expect(page).toContain('[2] iframe src="https://www.youtube.com/embed/x"\n[3] button "Comments"')
+  })
+
+  it("clicks a frame's ref at its own point plus the iframe's content-box origin, one mouse press on the page", async () => {
+    const { controller, cdp, embed } = framed()
+    await controller.readPage()
+
+    await controller.click(3)
+
+    const pressed = cdp.inputCalls().filter((call) => call.params?.type === 'mousePressed')
+    expect(pressed.map((call) => [call.params?.x, call.params?.y])).toEqual([[132, 467]])
+    expect(embed.expressions.some((expression) => expression.includes('__bingbongRefs || [])[1]'))).toBe(true)
+  })
+
+  it("aims a top ref after the frame's refs at its own registry index", async () => {
+    const { controller, cdp } = framed()
+    await controller.readPage()
+
+    await controller.click(4)
+
+    const aimed = cdp.calls.map((call) => String(call.params?.expression ?? '')).filter((expression) => expression.includes('elementsFromPoint'))
+    expect(aimed.at(-1)).toContain('(window.__bingbongRefs || [])[2]')
+  })
+
+  it('refuses a frame ref as stale once its frame is gone', async () => {
+    const { controller, embed, cdp } = framed()
+    await controller.readPage()
+    embed.gone = true
+
+    await expect(controller.click(3)).rejects.toThrow(/ref 3 refused/)
+    expect(cdp.inputCalls().filter((call) => call.params?.type === 'mousePressed')).toEqual([])
+  })
+
+  it("fires a Media Op on a frame's media ref in that frame, and none in the top", async () => {
+    const { controller, cdp, embed } = framed()
+    await controller.readPage()
+    embed.mediaOpResult = { before: FACTS, after: { ...FACTS, paused: true } }
+
+    const outcome = await controller.mediaOp(2, { op: 'pause' })
+
+    expect(outcome).toMatch(/paused/)
+    expect(embed.expressions.find((expression) => expression.includes('/* MEDIA_OP */'))).toContain('(window.__bingbongRefs || [])[0]')
+    expect(cdp.calls.some((call) => String(call.params?.expression ?? '').includes('/* MEDIA_OP */'))).toBe(false)
+  })
+
+  it('evaluates a script in every frame and takes the answers that came within the grace', async () => {
+    const quick = new FakeFrame('7:3', null, EMBED)
+    const slow = new FakeFrame('9:1', null, EMBED)
+    slow.hangs = true
+    const { controller } = makeController({ cdp: new FakeCdp(TOP), frames: { list: () => [quick, slow] } })
+
+    expect(await controller.evaluateInFrames?.('/* COLLECT */')).toEqual([EMBED])
   })
 })

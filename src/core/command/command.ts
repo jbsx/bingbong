@@ -106,6 +106,8 @@ export interface CommandRef {
   readonly states?: readonly string[]
   /** A media ref's own facts (#372, ADR 0080): its line's state, and what its Media Ops are gated by; absent for every other kind. */
   readonly media?: MediaFacts
+  /** The host of the frame it was read in (#377, ADR 0081); absent for the top document's own. */
+  readonly frame?: string
 }
 
 /** The page a Command is read against: its address, its title and its numbered refs. */
@@ -129,7 +131,7 @@ export interface PageDialog {
 }
 
 export function commandRefOf(ref: SnapshotRef): CommandRef {
-  return { ref: ref.ref, kind: ref.kind, label: ref.label, href: ref.href, inputType: ref.inputType, ...(ref.states !== undefined ? { states: ref.states } : {}), ...(ref.media !== undefined ? { media: ref.media } : {}) }
+  return { ref: ref.ref, kind: ref.kind, label: ref.label, href: ref.href, inputType: ref.inputType, ...(ref.states !== undefined ? { states: ref.states } : {}), ...(ref.media !== undefined ? { media: ref.media } : {}), ...(ref.frame !== undefined ? { frame: ref.frame } : {}) }
 }
 
 /** The page a Command is read against, off a collected snapshot: its refs, its Page Terms and the dialog open over it. */

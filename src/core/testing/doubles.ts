@@ -251,6 +251,15 @@ export class FakeBrowser implements BrowserController, VisualGroundingController
     return this.evaluator(expression) as T
   }
 
+  /** What an evaluation in the page's frames answers (#377): one answer per frame; none by default. */
+  frameEvaluator: (expression: string) => unknown[] = () => []
+  readonly frameEvaluations: string[] = []
+
+  async evaluateInFrames<T>(expression: string): Promise<T[]> {
+    this.frameEvaluations.push(expression)
+    return this.frameEvaluator(expression) as T[]
+  }
+
   async screenshot(options?: ScreenshotOptions): Promise<Uint8Array> {
     this.screenshotCalls += 1
     this.screenshotRequests.push(options)

@@ -25,6 +25,7 @@ import {
   STATE_DELTA,
   UNFINISHED_LOAD_CLAUSE,
   type BlockedAction,
+  type CoverProbe,
   type RefAction,
 } from '../../core/browser/actionOutcome'
 import { chooseConsentDismissal, consentAcceptOf, consentDismissalLine, consentRejectOf, consentRetryNote, isConsentDialog, type ConsentChooser } from '../../core/browser/dialogPolicy'
@@ -54,6 +55,7 @@ import {
   blurFocusedFieldScript,
   clickPrepScript,
   flashRefScript,
+  markShownAtScript,
   markShownRefsScript,
   overlayShownRefsScript,
   readinessArmScript,
@@ -61,8 +63,10 @@ import {
   refIsShownScript,
   type ClickPrep,
   type CoverNaming,
+  frameBoxScript,
 } from './collectPageScript'
 import { readRefStates } from './readRefStates'
+import { mergeFrames, type CollectedFrame, type FrameAddress } from '../../core/browser/frames'
 import { reportFault } from '../../core/trace/fault'
 
 // Minimal CDP surface the controller needs, so tests can drive it with a fake
@@ -72,6 +76,32 @@ export interface CdpDebugger {
   /** Subscribe to a CDP domain event (e.g. Page.javascriptDialogOpening). */
   on?(event: string, handler: (params: unknown) => void): void
 }
+
+/**
+ * One frame below the top document (#377, ADR 0081), reached in its own
+ * context: Electron's `WebFrameMain` in the app, an auto-attached target
+ * in a test. `key` names this frame for as long as it holds its document's
+ * process; `parentKey` is its parent's, null when its parent is the top.
+ */
+export interface PageFrame {
+  readonly key: string
+  readonly parentKey: string | null
+  /** One evaluation in the frame, a promise awaited; rejects when the frame is gone. */
+  evaluate<T>(expression: string): Promise<T>
+}
+
+/** Every frame below the top document, at any depth, from any site (#377). */
+export interface PageFrames {
+  list(): readonly PageFrame[]
+}
+
+/**
+ * How long a collect waits for its frames after the top document has
+ * answered (#377, ADR 0081: 50 ms to start, set by measurement): a frame
+ * that has not answered by then stays its opaque iframe for that read, so
+ * no frame ever holds up the read.
+ */
+export const FRAME_GRACE_MS = 50
 
 /**
  * What an action's watch saw of the page it left for (#309, ADR 0027): no
@@ -220,6 +250,8 @@ export interface CdpBrowserControllerDeps {
    * answering null, the privacy-first policy accepts as before.
    */
   chooseConsent?: ConsentChooser
+  /** The frames below the top document (#377, ADR 0081); absent, the page is the top document alone. */
+  frames?: PageFrames
 }
 
 interface EvaluateResponse {
@@ -406,6 +438,15 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
   const subspans = deps.subspans
   let lastSnapshot: PageSnapshot | undefined
   const visualPoints = new Map<number, ViewportPoint>()
+  // Where each element of the last collect lives (#377): its frame and its
+  // index in that frame's registry, element for element — so a ref, its
+  // number less one, has an address. The shown addresses are those of the
+  // numbers last handed to the model (ADR 0033): a number resolves only
+  // while it names the same address it was shown at.
+  let addresses: readonly FrameAddress[] = []
+  let shownAddresses: (FrameAddress | undefined)[] = []
+  // Each frame's own slot in its parent's `window.frames`, from the last collect: what its iframe is found by.
+  let frameSlots = new Map<string, { parentKey: string | null; slot: number }>()
 
   // Verbose sub-span instrumentation (#32). Timing-only wrappers: the wait,
   // collect, or probe always runs exactly as before; a channel is present
@@ -424,16 +465,19 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
    * from here the page records its first mutation, input event or scroll.
    * A page that cannot be armed is waited for by the cap alone.
    */
-  async function armReadiness(): Promise<void> {
+  async function armReadiness(frame: string | null = null): Promise<void> {
     try {
       await evaluateInPage(readinessArmScript())
     } catch (error) {
       reportFault('browser.createCdpBrowserController.armReadiness', error)
     }
+    // An action on a frame's element (#377) acts in that frame: its watch is armed there too.
+    if (frame !== null) await evaluateInFrame(frame, readinessArmScript()).catch((error: unknown) => reportFault('browser.createCdpBrowserController.armReadiness.frame', error))
   }
 
   /** What the armed watch saw: an effect, the cap, or no watch at all — the document went. */
-  async function readinessOutcome(): Promise<ActionEffect | 'timeout'> {
+  async function readinessOutcome(frame: string | null = null): Promise<ActionEffect | 'timeout'> {
+    if (frame !== null) return Promise.race([readinessOutcome(null), frameEffect(frame)])
     try {
       const outcome = await evaluateInPage<unknown>(readinessWaitScript(READINESS_CAP_MS), { awaitPromise: true, duringAction: true })
       if (outcome === 'mutation' || outcome === 'input' || outcome === 'scroll' || outcome === 'timeout') return outcome
@@ -445,15 +489,26 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     }
   }
 
+  /** The first effect the watch armed in a frame saw (#377); never answers for a cap or a frame gone, which the top's own wait ends. */
+  async function frameEffect(frame: string): Promise<ActionEffect> {
+    try {
+      const outcome = await evaluateInFrame<unknown>(frame, readinessWaitScript(READINESS_CAP_MS))
+      if (outcome === 'mutation' || outcome === 'input' || outcome === 'scroll') return outcome
+    } catch {
+      // The frame went: the top's watch tells what that did.
+    }
+    return new Promise<ActionEffect>(() => {})
+  }
+
   /**
    * The post-action wait (#324, ADR 0076): the action's first observable
    * effect, or the cap — never a fixed sleep. The effect is reported the
    * moment it is seen, so the Reaction span closes on it. One
    * `browser-ready` sub-span when verbose.
    */
-  async function awaitReadiness(action: string): Promise<ActionEffect | 'timeout'> {
+  async function awaitReadiness(action: string, frame: string | null = null): Promise<ActionEffect | 'timeout'> {
     const start = subspans?.now()
-    const outcome = (await withDeadline(readinessOutcome(), clock, READINESS_CAP_MS)) ?? 'timeout'
+    const outcome = (await withDeadline(readinessOutcome(frame), clock, READINESS_CAP_MS)) ?? 'timeout'
     if (subspans !== undefined && start !== undefined) subspans.emit('browser-ready', subspans.now() - start, { action, outcome })
     if (outcome !== 'timeout') deps.effects?.observed(outcome)
     return outcome
@@ -472,8 +527,8 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
    * Content is not waited for, and a change of address inside one document
    * is no arrival.
    */
-  async function settleArrival(action: string, watch: ArrivalWatch | undefined): Promise<PageArrival> {
-    await awaitReadiness(action)
+  async function settleArrival(action: string, watch: ArrivalWatch | undefined, frame: string | null = null): Promise<PageArrival> {
+    await awaitReadiness(action, frame)
     const arrival = watch === undefined ? 'none' : await watch.arrival()
     if (arrival !== 'none') lastSnapshot = undefined
     return arrival
@@ -549,9 +604,10 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     const choice = consentRejectOf(labels) ?? (await chosenConsent(snapshot.dialogText, labels)) ?? consentAcceptOf(labels)
     if (choice === null) return null
     const target = controls[choice]
+    const at = addressOfRef(target.ref)
     await armReadiness()
-    const clicked = await evaluateInPage<boolean>(`(() => {
-      const el = (window.__bingbongRefs || [])[${target.ref - 1}]
+    const clicked = await evaluateInFrame<boolean>(at.frame, `(() => {
+      const el = (window.__bingbongRefs || [])[${at.index}]
       if (!el || !el.isConnected) return false
       if (typeof el.focus === 'function') el.focus()
       el.click()
@@ -619,18 +675,59 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
   /** The collect with each ref's Ref State, or as it was when the tree cannot be read. */
   async function withRefStates(page: CollectedPage): Promise<CollectedPage> {
     try {
-      return await readRefStates(cdp, page)
+      // The tree is read over the top document's session: a frame's refs keep no Ref State (#377).
+      return await readRefStates(cdp, page, (index) => (addresses[index]?.frame === null ? addresses[index].index : null))
     } catch (error) {
       reportFault('browser.createCdpBrowserController.refStates', error)
       return page
     }
   }
 
+  /**
+   * Start reading every frame below the top (#377, ADR 0081), each in its
+   * own context, all at once; the returned wait hands over those that have
+   * answered by the grace after it is called. A frame that throws, or
+   * answers what is no page, is a frame not read.
+   */
+  function readFrames(): { listed: number; answered: (graceMs: number) => Promise<CollectedFrame[]> } {
+    let listed: readonly PageFrame[] = []
+    try {
+      listed = deps.frames?.list() ?? []
+    } catch (error) {
+      reportFault('browser.createCdpBrowserController.listFrames', error)
+    }
+    const read: CollectedFrame[] = []
+    const all = Promise.all(
+      listed.map(async (frame) => {
+        try {
+          read.push({ key: frame.key, parentKey: frame.parentKey, page: parseCollectedPage(await frame.evaluate<unknown>(collectScript)) })
+        } catch {
+          // A frame gone, still loading, or holding no page: it stays its opaque iframe.
+        }
+      }),
+    )
+    return {
+      listed: listed.length,
+      async answered(graceMs) {
+        if (listed.length > 0) await Promise.race([all, new Promise<void>((resolve) => clock.setTimer(graceMs, resolve))])
+        return [...read]
+      },
+    }
+  }
+
   async function collectSnapshot(): Promise<PageSnapshot> {
     const start = subspans?.now()
-    const snapshot = buildPageSnapshot(await withRefStates(parseCollectedPage(await evaluateInPage<unknown>(collectScript))))
+    // The frames are read beside the top, never after it (ADR 0081), once a navigation under way has landed.
+    await page.untilLanded?.()
+    const frames = readFrames()
+    const top = parseCollectedPage(await evaluateInPage<unknown>(collectScript))
+    const answered = await frames.answered(FRAME_GRACE_MS)
+    const merged = mergeFrames(top, answered, addresses)
+    addresses = merged.addresses
+    frameSlots = new Map(answered.map((frame) => [frame.key, { parentKey: frame.parentKey, slot: frame.page.frameIndex ?? -1 }]))
+    const snapshot = buildPageSnapshot(await withRefStates(merged.page))
     // Every collect, timed (#377): what the frames' fan-out costs is read off these.
-    if (subspans !== undefined && start !== undefined) subspans.emit('browser-collect', subspans.now() - start, { refs: snapshot.refs.length })
+    if (subspans !== undefined && start !== undefined) subspans.emit('browser-collect', subspans.now() - start, { refs: snapshot.refs.length, frames: answered.length, unread: frames.listed - answered.length })
     visualPoints.clear()
     lastSnapshot = snapshot
     return snapshot
@@ -658,6 +755,30 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     return (response.result?.value ?? undefined) as T
   }
 
+  /**
+   * One evaluation in a frame (#377): the top document's (null) over CDP,
+   * a frame's in its own context. A frame no longer listed — gone, or
+   * navigated to another process — throws, as a stale ref is refused.
+   */
+  async function evaluateInFrame<T>(frame: string | null, expression: string, options?: { awaitPromise?: boolean; duringAction?: boolean }): Promise<T> {
+    if (frame === null) return evaluateInPage<T>(expression, options)
+    const found = deps.frames?.list().find((candidate) => candidate.key === frame)
+    if (found === undefined) throw new Error(`the frame ${frame} is gone`)
+    return (await found.evaluate<T>(expression)) ?? (undefined as T)
+  }
+
+  /** The address a number names in the last collect; a number past it, the top document's index as it always was. */
+  function addressOfRef(ref: number): FrameAddress {
+    return addresses[ref - 1] ?? { frame: null, index: ref - 1 }
+  }
+
+  /** These addresses' indices, grouped by their frame, the top's first. */
+  function byFrame(at: readonly FrameAddress[]): Map<string | null, number[]> {
+    const groups = new Map<string | null, number[]>([[null, []]])
+    for (const address of at) groups.set(address.frame, [...(groups.get(address.frame) ?? []), address.index])
+    return groups
+  }
+
   async function currentSnapshot(): Promise<PageSnapshot> {
     return lastSnapshot ?? recollection('no-snapshot', () => collectSnapshot())
   }
@@ -670,29 +791,48 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
    * standing, which refuses the next ref instead of mis-aiming it.
    */
   async function markShown(count: number): Promise<void> {
-    try {
-      await evaluateInPage(markShownRefsScript(count))
-    } catch (error) {
-      reportFault('browser.createCdpBrowserController.markShown', error)
-    }
+    shownAddresses = Array.from({ length: count }, (_, index) => addressOfRef(index + 1))
+    // Each frame marks its own registry (#377); the top's numbers from one up are its own first `count`.
+    await Promise.all(
+      [...byFrame(shownAddresses.filter((address): address is FrameAddress => address !== undefined))].map(async ([frame, indices]) => {
+        const leading = frame === null && indices.every((index, position) => index === position)
+        try {
+          await evaluateInFrame(frame, leading ? markShownRefsScript(indices.length) : markShownAtScript(indices))
+        } catch (error) {
+          reportFault('browser.createCdpBrowserController.markShown', error)
+        }
+      }),
+    )
   }
 
   /** Overlay just these numbers: a scroll prints only the refs that entered
    * view, so every other number keeps the node it was shown as. */
   async function overlayShown(refs: number[]): Promise<void> {
     if (refs.length === 0) return
-    try {
-      await evaluateInPage(overlayShownRefsScript(refs.map((ref) => ref - 1)))
-    } catch (error) {
-      reportFault('browser.createCdpBrowserController.overlayShown', error)
-    }
+    const at = refs.map(addressOfRef)
+    refs.forEach((ref, position) => {
+      shownAddresses[ref - 1] = at[position]
+    })
+    await Promise.all(
+      [...byFrame(at)].filter(([, indices]) => indices.length > 0).map(async ([frame, indices]) => {
+        try {
+          await evaluateInFrame(frame, overlayShownRefsScript(indices))
+        } catch (error) {
+          reportFault('browser.createCdpBrowserController.overlayShown', error)
+        }
+      }),
+    )
   }
 
   /** Is this number still the element it was shown as? A number with no
    * shown node — past what a read printed, or a guess — answers false. */
   async function refIsShown(ref: number): Promise<boolean> {
+    const at = addressOfRef(ref)
+    const shown = shownAddresses[ref - 1]
+    // The number now names another frame's element, or another place, than it was shown at (#377).
+    if (shown !== undefined && (shown.frame !== at.frame || shown.index !== at.index)) return false
     try {
-      return (await evaluateInPage<boolean>(refIsShownScript(ref - 1))) === true
+      return (await evaluateInFrame<boolean>(at.frame, refIsShownScript(at.index))) === true
     } catch (error) {
       reportFault('browser.createCdpBrowserController.refIsShown', error)
       return false
@@ -756,8 +896,27 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     return before.paused === after.paused && before.loop === after.loop && before.muted === after.muted
   }
 
-  async function probeAction(index: number, expectedLabel = ''): Promise<ActionProbe> {
-    return evaluateInPage<ActionProbe>(`(() => {
+  /**
+   * The target's state and the page's signature, read in place. A target in
+   * a frame (#377) is read in its frame, and its frame's refs join the top
+   * document's in the signature, so what the action did there is a change.
+   */
+  async function probeAction(at: FrameAddress | null, expectedLabel = ''): Promise<ActionProbe> {
+    if (at === null || at.frame === null) return probeInFrame(null, at?.index ?? -1, expectedLabel)
+    const [top, framed] = await Promise.all([probeInFrame(null, -1), probeInFrame(at.frame, at.index, expectedLabel)])
+    return {
+      target: framed.target,
+      signature: {
+        ...top.signature,
+        refCount: top.signature.refCount + framed.signature.refCount,
+        labels: [...top.signature.labels, ...framed.signature.labels],
+        media: framed.signature.media ?? top.signature.media ?? null,
+      },
+    }
+  }
+
+  async function probeInFrame(frame: string | null, index: number, expectedLabel = ''): Promise<ActionProbe> {
+    return evaluateInFrame<ActionProbe>(frame, `(() => {
       /* ACTION_OUTCOME */
       const index = ${index}
       const expectedLabel = ${JSON.stringify(expectedLabel)}
@@ -890,7 +1049,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
       // outcome degrades to the position line, the way withSettledState
       // degrades a navigation.
       reportFault('browser.createCdpBrowserController.scroll', error)
-      const { signature } = await probeAction(-1)
+      const { signature } = await probeAction(null)
       return scrollHeader(direction, signature.scrollX, signature.scrollY)
     }
   }
@@ -1129,13 +1288,14 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
    * target was then retried once, a Not Shown one never.
    */
   type ClickAttempt =
-    | { kind: 'acted'; direct: DirectActivation | null; index: number; label: string; href: string | null; before: ElementState; signature: PageSignature; dismissal: string | null }
+    | { kind: 'acted'; direct: DirectActivation | null; at: FrameAddress; label: string; href: string | null; before: ElementState; signature: PageSignature; dismissal: string | null }
     | { kind: 'blocked'; blocked: BlockedAction; signature: PageSignature; snapshot: PageSnapshot; dismissal: string | null; retried: boolean }
 
   /** The element a click aims at: the ref the model named, the registry index that holds it now, and what it looked like when shown. */
   interface ClickTarget {
     ref: number
-    index: number
+    /** Where the element lives (#377): its frame and its index in that frame's registry. */
+    at: FrameAddress
     label: string
     /** The address the snapshot showed for it; null when it is no link. */
     href: string | null
@@ -1148,7 +1308,8 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     const { snapshot, target } = await resolveRef(ref)
     const visualPoint = visualPoints.get(ref)
     if (visualPoint) {
-      const index = target.ref - 1
+      const at = addressOfRef(target.ref)
+      const index = at.index
       const reachable = await safety('visual-reach', () => evaluateInPage<boolean>(`(() => {
         const el = (window.__bingbongRefs || [])[${index}]
         if (!el || !el.isConnected) return false
@@ -1159,9 +1320,9 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
       await dispatchPointClick(visualPoint, button)
       visualPoints.delete(ref)
       lastSnapshot = undefined
-      return { kind: 'acted', direct: null, index, label: target.label, href: target.href, before: elementState(target), signature: signatureOf(snapshot), dismissal: null }
+      return { kind: 'acted', direct: null, at, label: target.label, href: target.href, before: elementState(target), signature: signatureOf(snapshot), dismissal: null }
     }
-    const aim: ClickTarget = { ref, index: target.ref - 1, label: target.label, href: target.href, before: elementState(target), button }
+    const aim: ClickTarget = { ref, at: addressOfRef(target.ref), label: target.label, href: target.href, before: elementState(target), button }
     const attempt = await clickAtIndex(aim, snapshot, null)
     if (attempt.kind === 'acted') return attempt
     return (await clearConsentWall(aim, attempt.blocked)) ?? attempt
@@ -1181,11 +1342,11 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
    * `snapshot` is the page the attempt is measured against.
    */
   async function clickAtIndex(aim: ClickTarget, snapshot: PageSnapshot, dismissal: string | null, blurred = false): Promise<ClickAttempt> {
-    const { ref, index, label, href, before, button } = aim
+    const { ref, at, label, href, before, button } = aim
     // A Cover is named by a ref the model holds: any number of the listing
     // this outcome carries after a dismissal, else only a number still shown.
     const naming = { listed: snapshot.refs.length, shownOnly: dismissal === null }
-    const prep = await safety('click-prep', () => prepClick(index, naming))
+    const prep = await safety('click-prep', () => prepClick(at, naming))
     if (!prep.ok) {
       // The node the identity check just matched died between the two
       // probes — the registry went with a navigation. Refuse (ADR 0033):
@@ -1194,7 +1355,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
       throw await staleRef(ref, true)
     }
 
-    if (prep.coveredCentre !== undefined && !blurred && (await blurFocusedField(index, prep.coveredCentre.x, prep.coveredCentre.y))) {
+    if (prep.coveredCentre !== undefined && !blurred && (await blurFocusedField(at, prep.coveredCentre.x, prep.coveredCentre.y))) {
       // Covered at its centre by the popup of a field an earlier click focused
       // (DuckDuckGo's suggestions, 2026-10-18): blurred first, as a person's
       // click elsewhere would blur it, so no point of the target is chosen
@@ -1204,8 +1365,12 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
       return clickAtIndex(aim, snapshot, dismissal, true)
     }
     let direct: DirectActivation | null = null
-    if (prep.clickable && typeof prep.x === 'number' && typeof prep.y === 'number') {
-      await dispatchPointClick({ x: prep.x, y: prep.y }, button)
+    // A frame's element is clicked where it shows on the page (#377): its own point plus every ancestor iframe's content-box origin.
+    const offset = at.frame === null ? { x: 0, y: 0 } : await frameOffset(at.frame)
+    if (prep.clickable && typeof prep.x === 'number' && typeof prep.y === 'number' && offset !== null) {
+      await dispatchPointClick({ x: prep.x + offset.x, y: prep.y + offset.y }, button)
+    } else if (prep.clickable && offset === null) {
+      direct = 'offscreen'
     } else if (prep.blankCover === true) {
       // No part of the target shows, but nothing over it paints anything
       // there (DuckDuckGo's empty header aside over its Search button at the
@@ -1224,16 +1389,16 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
       // and say so in the outcome.
       direct = 'offscreen'
     }
-    if (direct !== null) await activateDirectly(index, button)
+    if (direct !== null) await activateDirectly(at, button)
     // A click can navigate (link) or mutate the page; never trust old refs.
     lastSnapshot = undefined
-    return { kind: 'acted', direct, index, label, href, before, signature: signatureOf(snapshot), dismissal }
+    return { kind: 'acted', direct, at, label, href, before, signature: signatureOf(snapshot), dismissal }
   }
 
   /** Activate the registry node at this index with a DOM click, no mouse pressed: what a Vimium hint does. A right button sends the node a `contextmenu` event instead (#363). */
-  async function activateDirectly(index: number, button: MouseButton = 'left'): Promise<void> {
-    await evaluateInPage(`(() => {
-      const el = (window.__bingbongRefs || [])[${index}]
+  async function activateDirectly(at: FrameAddress, button: MouseButton = 'left'): Promise<void> {
+    await evaluateInFrame(at.frame, `(() => {
+      const el = (window.__bingbongRefs || [])[${at.index}]
       // No scroll of ours here, or it would be the click's effect (#335).
       if (typeof el.focus === 'function') el.focus({ preventScroll: true })
       if (${JSON.stringify(button)} === 'right') {
@@ -1245,11 +1410,11 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
 
   /** The address the link at this index carries now — the node itself or
    * the link it sits in; null when it is no link, or went with the page. */
-  async function linkAddressAt(index: number): Promise<string | null> {
+  async function linkAddressAt(at: FrameAddress): Promise<string | null> {
     try {
-      const address = await evaluateInPage<unknown>(`(() => {
+      const address = await evaluateInFrame<unknown>(at.frame, `(() => {
         /* LINK_ADDRESS */
-        const el = (window.__bingbongRefs || [])[${index}]
+        const el = (window.__bingbongRefs || [])[${at.index}]
         if (!el || !el.isConnected || typeof el.closest !== 'function') return null
         const link = el.closest(${JSON.stringify(LINK_SELECTOR)})
         return link && typeof link.href === 'string' ? link.href : null
@@ -1271,7 +1436,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
   async function followNewWindowLink(attempt: Extract<ClickAttempt, { kind: 'acted' }>): Promise<boolean> {
     const opens = deps.consumePopupBlocks?.() ?? []
     if (opens.length === 0) return false
-    const { followed, denied } = judgeWindowOpens(opens, [attempt.href, await linkAddressAt(attempt.index)])
+    const { followed, denied } = judgeWindowOpens(opens, [attempt.href, await linkAddressAt(attempt.at)])
     judgedDenied.push(...denied)
     if (followed === null) return false
     try {
@@ -1326,17 +1491,17 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
 
   /** Keep the node, collect the walled page, dismiss, collect the page behind, and click the node wherever it now sits. */
   async function retryPastConsent(aim: ClickTarget): Promise<ClickAttempt | null> {
-    const { ref, index } = aim
-    await evaluateInPage(`(() => {
+    const { ref, at } = aim
+    await evaluateInFrame(at.frame, `(() => {
       /* CONSENT_RETRY_KEEP */
-      window.__bingbongConsentRetry = (window.__bingbongRefs || [])[${index}] || null
+      window.__bingbongConsentRetry = (window.__bingbongRefs || [])[${at.index}] || null
       return true
     })()`)
     const walled = await recollection('blocked-consent', () => collectSnapshot())
     const dismissal = await dismissConsentIfOpen(walled)
     if (dismissal === null) return null
     const cleared = await recollection('post-dismissal', () => collectSnapshot())
-    const retryIndex = await evaluateInPage<number>(`(() => {
+    const retryIndex = await evaluateInFrame<number>(at.frame, `(() => {
       /* CONSENT_RETRY_FIND */
       const el = window.__bingbongConsentRetry
       window.__bingbongConsentRetry = null
@@ -1353,7 +1518,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     // The node went with the wall (a dismissal that reloaded the page):
     // refuse with the page as it now stands, as any dead ref is.
     if (!Number.isInteger(retryIndex) || retryIndex < 0) throw await staleRef(ref, true)
-    return clickAtIndex({ ...aim, index: retryIndex }, cleared, dismissal)
+    return clickAtIndex({ ...aim, at: { frame: at.frame, index: retryIndex } }, cleared, dismissal)
   }
 
   /** The dismissal a blocked first attempt ran and the retry it earned, in the one wording every outcome uses; null when there was none. */
@@ -1392,15 +1557,16 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
   /** A click on a ref; with the right button, the ref's menu opened (#363), told under a `menu [N]` head. */
   async function clickRef(ref: number, button: MouseButton = 'left'): Promise<string> {
     const watch = page.watchArrival?.()
-    await armReadiness()
+    const frame = addressOfRef(ref).frame
+    await armReadiness(frame)
     const attempt = await performClick(ref, button)
     if (attempt.kind === 'blocked') return blockedOutcome(button === 'right' ? 'menu' : 'click', ref, attempt)
-    const arrival = await settleArrival('click', watch)
+    const arrival = await settleArrival('click', watch, attempt.at.frame)
     // A right-click opens no link: an open in its wake is the page's, reported with the rest.
     const openedHere = button === 'left' && (await followNewWindowLink(attempt))
     // A New-window Link followed here is a navigate's arrival, load and all.
     const arrived = arrival !== 'none' || openedHere
-    const after = await probeAction(attempt.index, attempt.label)
+    const after = await probeAction(attempt.at, attempt.label)
     const urlChanged = attempt.signature.url !== after.signature.url
     const dialogNowOpen = after.signature.dialogOpen
     let fresh: PageSnapshot | undefined
@@ -1479,17 +1645,54 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
    * whether a coordinate click would land on it, and — when it would not —
    * whether it is Covered or Not Shown (ADR 0062). */
   /** Blur another text field holding the focus, for a target its popup covers at (x, y); whether the target shows there again. */
-  async function blurFocusedField(index: number, x: number, y: number): Promise<boolean> {
+  async function blurFocusedField(at: FrameAddress, x: number, y: number): Promise<boolean> {
     try {
-      return (await evaluateInPage<boolean>(blurFocusedFieldScript(index, x, y), { awaitPromise: true })) === true
+      return (await evaluateInFrame<boolean>(at.frame, blurFocusedFieldScript(at.index, x, y), { awaitPromise: true })) === true
     } catch (error) {
       reportFault('browser.createCdpBrowserController.blurFocusedField', error)
       return false
     }
   }
 
-  async function prepClick(index: number, naming: CoverNaming): Promise<ClickPrep> {
-    return evaluateInPage<ClickPrep>(clickPrepScript(index, naming))
+  /**
+   * The click prep, in the element's own frame (#377). The numbers a Cover
+   * is named by come back as that frame's registry indices, and are told
+   * here as the whole page's numbers, any the listing does not hold dropped.
+   */
+  async function prepClick(at: FrameAddress, naming: CoverNaming): Promise<ClickPrep> {
+    const held = addresses.slice(0, naming.listed).filter((address) => address.frame === at.frame)
+    const listed = addresses.length === 0 ? naming.listed : held.reduce((most, address) => Math.max(most, address.index + 1), 0)
+    const prep = await evaluateInFrame<ClickPrep>(at.frame, clickPrepScript(at.index, { ...naming, listed }))
+    if (prep?.blocked?.fact !== 'covered' || addresses.length === 0) return prep
+    const number = (local: number): number => {
+      const flat = addresses.findIndex((address) => address.frame === at.frame && address.index === local - 1) + 1
+      return flat > naming.listed ? 0 : flat
+    }
+    const cover = prep.blocked.cover
+    const named: CoverProbe = 'ref' in cover
+      ? number(cover.ref) > 0 ? { ref: number(cover.ref) } : { tag: 'element', contains: [] }
+      : { ...cover, contains: cover.contains.map(number).filter((ref) => ref > 0) }
+    return { ...prep, blocked: { fact: 'covered', cover: named } }
+  }
+
+  /**
+   * Where a frame starts on the page (#377): every ancestor iframe's
+   * content-box origin, read after the click prep scrolled, summed. Null
+   * when an ancestor no longer holds the frame.
+   */
+  async function frameOffset(frame: string): Promise<{ x: number; y: number } | null> {
+    let x = 0
+    let y = 0
+    for (let key: string | null = frame; key !== null; ) {
+      const hung = frameSlots.get(key)
+      if (hung === undefined) return null
+      const box = await evaluateInFrame<{ x: number; y: number } | null>(hung.parentKey, frameBoxScript(hung.slot))
+      if (box == null) return null
+      x += box.x
+      y += box.y
+      key = hung.parentKey
+    }
+    return { x, y }
   }
 
   /** The prep's hit-test verdict, its Cover named against the snapshot whose numbers the outcome speaks. */
@@ -1502,10 +1705,10 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
    * click on a <select> opens Chromium's select popup, which no DOM click
    * can reach — the type path focuses the element instead (focus scrolls it
    * into view) and never opens the popup. */
-  async function focusSelect(index: number): Promise<boolean> {
-    return evaluateInPage<boolean>(`(() => {
+  async function focusSelect(at: FrameAddress): Promise<boolean> {
+    return evaluateInFrame<boolean>(at.frame, `(() => {
       /* SELECT_FOCUS */
-      const el = (window.__bingbongRefs || [])[${index}]
+      const el = (window.__bingbongRefs || [])[${at.index}]
       if (!el || !el.isConnected) return false
       if (typeof el.focus === 'function') el.focus()
       return true
@@ -1570,8 +1773,8 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     before: PageSignature,
     text: string,
   ): Promise<string> {
-    const index = target.ref - 1
-    const focused = await safety('select-focus', () => focusSelect(index))
+    const at = addressOfRef(target.ref)
+    const focused = await safety('select-focus', () => focusSelect(at))
     // The registry died with the page between the identity check and the
     // focus: refuse rather than re-collect and retry (ADR 0033).
     if (!focused) throw await staleRef(ref, true)
@@ -1583,10 +1786,10 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     // Newlines would send Enter, which opens the select popup — a dead end
     // for synthetic input. Letters carry the whole choice.
     const watch = page.watchArrival?.()
-    await armReadiness()
+    await armReadiness(at.frame)
     await dispatchKeys(text.replace(/[\r\n]+/g, ''))
-    const arrival = await settleArrival('type', watch)
-    const after = await probeAction(index, target.label)
+    const arrival = await settleArrival('type', watch, at.frame)
+    const after = await probeAction(at, target.label)
     if (!after.target) {
       const head = `typed [${ref}]: field unavailable after page change; ${urlTitleSuffix(after.signature)}${arrivalClauses(arrival)}`
       return withSettledState(head)
@@ -1612,10 +1815,10 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     const cleared = consentClause(clicked, ref)
     // The click's focus lands before the insert: input events are processed
     // in order (#324), so nothing is slept between them.
-    await armReadiness()
+    await armReadiness(clicked.at.frame)
     await insertText(text)
-    const arrival = await settleArrival('type', watch)
-    const after = await probeAction(clicked.index, clicked.label)
+    const arrival = await settleArrival('type', watch, clicked.at.frame)
+    const after = await probeAction(clicked.at, clicked.label)
     if (!after.target) {
       // The typing navigated (e.g. a submitted search): the resulting page
       // state and refs ride the outcome (ADR 0027).
@@ -1686,10 +1889,11 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
    */
   async function mediaOpOn(ref: number, op: MediaOpAction): Promise<string> {
     const { target } = await resolveRef(ref)
-    const index = target.ref - 1
-    const read = await evaluateInPage<{ before: unknown; after: unknown } | null>(`((op) => {
+    // One evaluate in the ref's own frame (#377): an embedded player's element is its frame's.
+    const at = addressOfRef(target.ref)
+    const read = await evaluateInFrame<{ before: unknown; after: unknown } | null>(at.frame, `((op) => {
       /* MEDIA_OP */
-      const el = (window.__bingbongRefs || [])[${index}]
+      const el = (window.__bingbongRefs || [])[${at.index}]
       if (!el || !el.isConnected || !(el instanceof HTMLMediaElement)) return null
       const facts = ${MEDIA_FACTS_FN}
       const player = typeof el.closest === 'function' ? el.closest('#movie_player') : null
@@ -1820,7 +2024,9 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     })
     const built = buildPageSnapshot(parsed, { maxRefs: 1 }).refs[0]
     if (!built) throw new Error('element at vision location is not actionable')
-    const ref = result.index + 1
+    // The grounded node is the top document's, numbered after the whole page's (#377).
+    const ref = addresses.length + 1
+    addresses = [...addresses, { frame: null, index: result.index }]
     const target = { ...built, ref }
     lastSnapshot = {
       ...snapshot,
@@ -1840,7 +2046,8 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
   async function showRef(ref: number): Promise<void> {
     await overlayShown([ref])
     try {
-      await evaluateInPage(flashRefScript(ref - 1))
+      const at = addressOfRef(ref)
+      await evaluateInFrame(at.frame, flashRefScript(at.index))
     } catch (error) {
       reportFault('browser.createCdpBrowserController.flashRef', error)
     }
@@ -1874,6 +2081,22 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     const cleared = await evaluateInPage<string | null>(clearFocusedScript())
     await awaitReadiness('clear')
     return cleared === null ? 'nothing to clear: no text field has focus' : `cleared ${cleared}`
+  }
+
+  /** One script in every frame below the top, all at once (#377): the answers within the grace, a frame gone or slow left out. */
+  async function evaluateInFrames<T>(expression: string): Promise<T[]> {
+    await page.untilLanded?.()
+    let listed: readonly PageFrame[] = []
+    try {
+      listed = deps.frames?.list() ?? []
+    } catch (error) {
+      reportFault('browser.createCdpBrowserController.listFrames', error)
+    }
+    if (listed.length === 0) return []
+    const answers: T[] = []
+    const all = Promise.all(listed.map((frame) => frame.evaluate<T>(expression).then((answer) => void answers.push(answer), () => {})))
+    await Promise.race([all, new Promise<void>((resolve) => clock.setTimer(FRAME_GRACE_MS, resolve))])
+    return [...answers]
   }
 
   function state(): BrowserState {
@@ -1944,6 +2167,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     pressKey: (press, times) => holdingWindowOpens(() => pressKey(press, times)),
     mediaState,
     evaluate: (expression) => evaluateInPage(expression),
+    evaluateInFrames,
     state,
     pageFacts,
     settledState,

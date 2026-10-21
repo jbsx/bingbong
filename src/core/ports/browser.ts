@@ -143,6 +143,13 @@ export interface BrowserController {
    * A navigation under way is waited for first, as every page read is.
    */
   evaluate<T>(expression: string): Promise<T>
+  /**
+   * One script evaluated in every frame below the top document (#377, ADR
+   * 0081), each in its own context, all at once: the answers of the frames
+   * that answered within the collect's grace, never waiting on the rest.
+   * Optional: a controller that reaches no frames answers none.
+   */
+  evaluateInFrames?<T>(expression: string): Promise<T[]>
   state(): BrowserState
   /**
    * Facts for the mechanical Blocker classifier (ADR 0010): URL, title,

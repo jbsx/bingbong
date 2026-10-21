@@ -280,6 +280,22 @@ describe("a media element's own facts (#372, ADR 0080)", () => {
   })
 })
 
+describe('a ref read in a frame (#377, ADR 0081)', () => {
+  it('carries its frame’s host onto its ref and names it on the line; a top ref names none', () => {
+    const snapshot = buildPageSnapshot(page({ elements: [element({ label: 'Share' }), element({ label: 'Play', frameHost: 'youtube.com' })] }))
+    expect(snapshot.refs[1]).toMatchObject({ frame: 'youtube.com' })
+    expect(snapshot.refs[0]).not.toHaveProperty('frame')
+    expect(formatPageSnapshot(snapshot)).toContain('[1] button "Share"\n[2] button "Play" in youtube.com')
+  })
+
+  it('parses an iframe’s slot and content-box origin, and a frame’s own slot', () => {
+    const parsed = parseCollectedPage({ ...page({ elements: [element({ tag: 'iframe', frameIndex: 2, frameBox: { x: 12, y: 40 } }), element({ frameIndex: -1 })] }), frameIndex: 0 })
+    expect(parsed.elements[0]).toMatchObject({ frameIndex: 2, frameBox: { x: 12, y: 40 } })
+    expect(parsed.elements[1]).not.toHaveProperty('frameIndex')
+    expect(parsed.frameIndex).toBe(0)
+  })
+})
+
 describe('buildPageSnapshot', () => {
   it('numbers visible interactive elements 1..N in DOM order', () => {    const snapshot = buildPageSnapshot(youtubeFixture)
 

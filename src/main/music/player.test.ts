@@ -176,6 +176,20 @@ describe('the Player', () => {
     expect(await player.pauseAll()).toBe(false)
   })
 
+  it('`pauseAll` pauses what plays in every frame too (#377): an embed playing alone is a pause, and the Queue is left as it was', async () => {
+    const { browser, player } = wired()
+    let playing = 1
+    browser.frameEvaluator = (expression) => {
+      if (!expression.includes('/* FRAME_PAUSE_ALL */')) return []
+      const paused = playing
+      playing = 0
+      return [paused, 0]
+    }
+    expect(await player.pauseAll()).toBe(true)
+    expect(await player.pauseAll()).toBe(false)
+    expect(player.queue().current).toBeNull()
+  })
+
   it('a search superseded mid-way opens nothing more', async () => {
     const { browser, player } = wired()
     const outcome = await player.perform({ kind: 'search', place: 'now' }, 'song a', () => browser.navigations.length < 1)

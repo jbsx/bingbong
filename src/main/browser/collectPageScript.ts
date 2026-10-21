@@ -4,6 +4,23 @@ import { CONSENT_LABEL_RE } from '../../core/browser/dialogPolicy'
 import type { CoverProbe } from '../../core/browser/actionOutcome'
 import { MAX_COLLECTED_PAGE_LINKS, MAX_COVER_REFS } from '../../core/browser/snapshot'
 
+/**
+ * A JS function source `(iframe) => {x, y}`: an iframe's content-box
+ * origin in its document's viewport (#377) — its border box moved in by
+ * its border and padding, where its frame's own coordinates start.
+ */
+const FRAME_BOX_FN = `((iframe) => {
+  const rect = iframe.getBoundingClientRect()
+  const style = window.getComputedStyle(iframe)
+  return { x: rect.left + iframe.clientLeft + (parseFloat(style.paddingLeft) || 0), y: rect.top + iframe.clientTop + (parseFloat(style.paddingTop) || 0) }
+})`
+
+/** A JS function source `(iframe) => slot`: the iframe's slot in `window.frames` (#377), -1 when its window is gone. */
+const FRAME_SLOT_FN = `((iframe) => {
+  for (let i = 0; i < window.frames.length; i++) if (window.frames[i] === iframe.contentWindow) return i
+  return -1
+})`
+
 // Runs inside the pane's page via Runtime.evaluate. Returns the CollectedPage
 // shape consumed by core/browser/snapshot.ts — DOM-specific work (labeling,
 // rects, visibility) happens here; numbering/kinds/formatting happen in core.
@@ -32,8 +49,18 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
     '[role="tab"]',
     '[role="menuitem"]',
     '[role="option"]',
-    'iframe[src]'
+    'iframe'
   ].join(',')
+  // Read in a frame (#377, ADR 0081): this document is one of the page's
+  // frames, paired with its iframe by its own slot in its parent's
+  // window.frames. A frame's text is not read here (#378).
+  const inFrame = window !== window.top
+  const frameSlotOf = ${FRAME_SLOT_FN}
+  const ownSlot = (() => {
+    if (!inFrame) return -1
+    for (let i = 0; i < window.parent.frames.length; i++) if (window.parent.frames[i] === window) return i
+    return -1
+  })()
   // Vimium-style visibility: rect intersection only. Overlays do NOT hide an
   // element from detection — a covered "background" button is still a real
   // target. The click prep then decides (ADR 0062): a real click where any
@@ -259,7 +286,6 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
     const pageElements = []
     for (const el of document.querySelectorAll(SELECTOR)) {
       if (el.tagName === 'INPUT' && el.type === 'hidden') continue
-      if (el.tagName === 'IFRAME' && crossOriginIframeSrc(el) === null) continue
       if (insideInert(el)) continue
       if (dialogRoot !== null && dialogRoot.contains(el)) {
         if (!hasSize(el)) continue
@@ -336,7 +362,7 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
     if (inView) block.inView = true
     textBlocks.push(block)
   }
-  if (heading) take({ kind: 'text', text: textOf(heading), heading: true }, inViewport(heading))
+  if (heading && !inFrame) take({ kind: 'text', text: textOf(heading), heading: true }, inViewport(heading))
   // One recursive pass over the text root in document order (#265). A tag
   // block is taken whole at its element and not descended; an element that
   // never carries prose is skipped; every other element is descended, and
@@ -398,7 +424,7 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
     }
     closeRun()
   }
-  if (textRoot) walk(textRoot)
+  if (textRoot && !inFrame) walk(textRoot)
 
   const mediaFactsOf = ${MEDIA_FACTS_FN}
   const describeElement = (el, dialogRoot) => {
@@ -412,6 +438,8 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
       label: labelOf(el),
       rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
       src: el.tagName === 'IFRAME' ? crossOriginIframeSrc(el) : null,
+      // An iframe's slot and content-box origin (#377): its frame's refs take its place, offset by it.
+      ...(el.tagName === 'IFRAME' ? { frameIndex: frameSlotOf(el), frameBox: ${FRAME_BOX_FN}(el) } : {}),
       href: absoluteHref(el),
       downloadsFile: el.hasAttribute('download'),
       submitsForm: submitsFormOf(el, form),
@@ -521,6 +549,15 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
     window.__bingbongShownRefs = (window.__bingbongRefs || []).slice(0, count)
     return true
   }
+  // The same, for the registry indices a whole numbering holds of this
+  // document when they are not its first (#377): frames' refs sit between.
+  window.__bingbongMarkShownAt = (indices) => {
+    const refs = window.__bingbongRefs || []
+    const shown = []
+    for (const index of indices) shown[index] = refs[index]
+    window.__bingbongShownRefs = shown
+    return true
+  }
   window.__bingbongOverlayShown = (indices) => {
     const refs = window.__bingbongRefs || []
     const shown = window.__bingbongShownRefs || []
@@ -570,7 +607,9 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
     textBlocks,
     textCut,
     elements,
-    media: mediaOf()
+    // The page's playing media is the top document's (#363); a frame's is on its media refs.
+    media: inFrame ? null : mediaOf(),
+    frameIndex: ownSlot
   }
 })()`
 
@@ -583,6 +622,14 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
  */
 export function markShownRefsScript(count: number): string {
   return `(() => typeof window.__bingbongMarkShown === 'function' ? window.__bingbongMarkShown(${count}) : false)()`
+}
+
+/**
+ * Replace the shown registry with just these zero-based registry indices
+ * (#377): a document's share of a numbering that frames' refs interleave.
+ */
+export function markShownAtScript(indices: readonly number[]): string {
+  return `(() => typeof window.__bingbongMarkShownAt === 'function' ? window.__bingbongMarkShownAt(${JSON.stringify(indices)}) : false)()`
 }
 
 /**
@@ -635,6 +682,21 @@ export interface ClickPrep {
 export interface CoverNaming {
   listed: number
   shownOnly: boolean
+}
+
+/**
+ * Where the frame in this document's `window.frames[slot]` starts in this
+ * document's viewport (#377): its iframe's content-box origin, or null when
+ * no iframe holds that frame now. Summed up a frame's ancestors, it is
+ * what a click on the frame's element is offset by.
+ */
+export function frameBoxScript(slot: number): string {
+  return `(() => {
+    /* FRAME_BOX */
+    const slotOf = ${FRAME_SLOT_FN}
+    const iframe = Array.from(document.querySelectorAll('iframe')).find((candidate) => slotOf(candidate) === ${slot})
+    return iframe ? ${FRAME_BOX_FN}(iframe) : null
+  })()`
 }
 
 /** The scroller a scroll event on the document is about. */

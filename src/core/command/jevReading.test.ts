@@ -54,6 +54,12 @@ describe('the state Jev reads', () => {
     ])
     expect(commandQuestions('turn off captions', page).action.options['click-4']).toBe('click [4] button "Subtitles/closed captions unavailable" pressed=true keyshortcuts="c"')
   })
+
+  it("names the host of the frame a ref was read in after its label (#377, ADR 0081): the embedded video is another site's", () => {
+    const play = { ref: 4, kind: 'button' as const, label: 'Play', href: null, inputType: null, frame: 'youtube.com', states: ['pressed=false'] }
+    const state = commandState('play the video', { ...PAGE, refs: [...PAGE.refs, play] })
+    expect(state.split('\n').slice(-2)).toEqual(['[3] input[search] "Search"', '[4] button "Play" in youtube.com pressed=false'])
+  })
 })
 
 describe('the state Jev reads with a dialog open (#336)', () => {

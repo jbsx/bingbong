@@ -64,6 +64,7 @@ export function withAgentActivity(
     pressKey: (press, times) => controller.pressKey(press, times),
     mediaState: () => controller.mediaState(),
     evaluate: (expression) => controller.evaluate(expression),
+    ...(controller.evaluateInFrames !== undefined ? { evaluateInFrames: <T,>(expression: string) => controller.evaluateInFrames!<T>(expression) } : {}),
     state: () => controller.state(),
     pageFacts: () => controller.pageFacts(),
     settledState: () => controller.settledState(),

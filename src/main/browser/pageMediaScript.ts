@@ -5,7 +5,7 @@
 // never on one it was not. A never-started element is no media here.
 // An idle `stop` takes no pick: it pauses every element playing (#376).
 
-/** Every media element, by kind: the top frame's own, never a frame's (#377). */
+/** Every media element, by kind, of the document a script runs in: the top's, or a frame's when run there (#377). */
 const MEDIA_SELECTOR = "'video, audio'"
 
 /**
@@ -42,9 +42,15 @@ export const PAGE_MEDIA_JS = `(() => {
   return media.find((candidate) => !candidate.paused && !candidate.ended) || media.find((candidate) => candidate.currentTime > 0) || null
 })()`
 
-/** A JS expression pausing every media element playing on the page (#376), yielding those it paused. */
+/** A JS expression pausing every media element playing in its document (#376), yielding those it paused. */
 export const PAUSE_PLAYING_JS = `(() => {
   const playing = Array.from(document.querySelectorAll(${MEDIA_SELECTOR})).filter((media) => !media.paused)
   for (const media of playing) media.pause()
   return playing
+})()`
+
+/** The same in one of the page's frames (#377): how many it paused, a count crossing the frame boundary where elements cannot. */
+export const FRAME_PAUSE_ALL_JS = `(() => {
+  /* FRAME_PAUSE_ALL */
+  return ${PAUSE_PLAYING_JS}.length
 })()`

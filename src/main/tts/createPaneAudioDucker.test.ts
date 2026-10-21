@@ -3,8 +3,35 @@ import type { WebContents } from 'electron'
 import { createPaneAudioDucker } from './createPaneAudioDucker'
 import { DUCK_FACTOR } from '../../core/tts/duckVolumes'
 
+/** One frame below the top (#377): its own media volumes, ducked and restored in its own context. */
+class FakeFrame {
+  readonly scripts: string[] = []
+  constructor(
+    private volumes: number[],
+    readonly parent: unknown = {},
+  ) {}
+
+  async executeJavaScript(script: string): Promise<unknown> {
+    this.scripts.push(script)
+    if (script.includes('.map(')) return this.volumes
+    const applied = /const volumes = (\[[^\]]*\])/.exec(script)
+    if (applied) this.volumes = JSON.parse(applied[1]!) as number[]
+    return undefined
+  }
+
+  get current(): number[] {
+    return this.volumes
+  }
+}
+
 class FakeWebContents {
   readonly scripts: string[] = []
+  /** The frame tree: the top itself, then the frames below it (#377). */
+  readonly mainFrame: { framesInSubtree: unknown[] } = { framesInSubtree: [] }
+
+  constructor(frames: FakeFrame[] = []) {
+    this.mainFrame.framesInSubtree = [this.mainFrame, ...frames]
+  }
   private pendingVolumes: { resolve: (volumes: number[]) => void }[] = []
 
   isDestroyed(): boolean {
@@ -78,5 +105,21 @@ describe('pane audio ducker', () => {
     await new Promise((resolve) => setImmediate(resolve))
 
     expect(wc.appliedVolumes).toEqual([[DUCK_FACTOR]])
+  })
+
+  it('ducks the media of every frame below the top too, and puts back each frame\'s own levels (#377)', async () => {
+    const embed = new FakeFrame([1, 0.6])
+    const wc = new FakeWebContents([embed])
+    const ducker = createPaneAudioDucker(asWebContents(wc))
+
+    ducker.duck()
+    wc.respondVolumes([0.5])
+    await new Promise((resolve) => setImmediate(resolve))
+    expect(embed.current).toEqual([DUCK_FACTOR, 0.6 * DUCK_FACTOR])
+
+    ducker.restore()
+    await new Promise((resolve) => setImmediate(resolve))
+    expect(embed.current).toEqual([1, 0.6])
+    expect(wc.appliedVolumes.at(-1)).toEqual([0.5])
   })
 })

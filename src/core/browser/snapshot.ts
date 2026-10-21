@@ -57,6 +57,17 @@ export interface CollectedElement {
    * nodes; absent in older payloads, read as -1.
    */
   previousIndex?: number
+  /**
+   * An iframe's slot in its document's `window.frames` (#377, ADR 0081):
+   * the identity a frame read on its own is paired with its iframe by,
+   * since `frames` follows creation order, not the DOM's. -1 or absent for
+   * every other element, and for an iframe whose window is gone.
+   */
+  frameIndex?: number
+  /** An iframe's content-box origin in its document's viewport (#377): what a frame's own coordinates are offset by. */
+  frameBox?: { x: number; y: number }
+  /** The host of the frame this element was read in, without `www.` (#377); absent for the top document's own. */
+  frameHost?: string
 }
 
 export interface CollectedViewport {
@@ -140,6 +151,8 @@ export interface CollectedPage {
   elements: CollectedElement[]
   /** The playing media element (#363); absent or null when none has started. */
   media?: PageMedia | null
+  /** A frame's own slot in its parent's `window.frames` (#377); -1 or absent for the top document. */
+  frameIndex?: number
 }
 
 export type RefKind = 'link' | 'button' | 'input' | 'media' | 'iframe'
@@ -177,6 +190,8 @@ export interface SnapshotRef {
   states?: readonly string[]
   /** A media ref's own facts (#372, ADR 0080); absent for every other kind. */
   media?: MediaFacts
+  /** The host of the frame the ref was read in (#377, ADR 0081); absent for the top document's own. */
+  frame?: string
   className?: string
   /** 'dialog' marks a control of the topmost open dialog; 'page' otherwise. */
   layer?: 'dialog' | 'page'
@@ -347,6 +362,12 @@ function mediaFactsEntry(raw: unknown): { media: MediaFacts } | Record<string, n
   return media !== undefined ? { media } : {}
 }
 
+function frameBoxEntry(raw: unknown): { frameBox: { x: number; y: number } } | Record<string, never> {
+  if (typeof raw !== 'object' || raw === null) return {}
+  const { x, y } = raw as Record<string, unknown>
+  return isFiniteNumber(x) && isFiniteNumber(y) ? { frameBox: { x, y } } : {}
+}
+
 export function parseCollectedPage(raw: unknown): CollectedPage {
   const malformed = () => new Error('collected page payload malformed')
 
@@ -399,6 +420,8 @@ export function parseCollectedPage(raw: unknown): CollectedPage {
       ariaPressed: optionalString(el.ariaPressed),
       className: typeof el.className === 'string' ? el.className : '',
       previousIndex: isFiniteNumber(el.previousIndex) ? el.previousIndex : -1,
+      ...(isFiniteNumber(el.frameIndex) && el.frameIndex >= 0 ? { frameIndex: el.frameIndex } : {}),
+      ...frameBoxEntry(el.frameBox),
     }
   })
 
@@ -425,6 +448,7 @@ export function parseCollectedPage(raw: unknown): CollectedPage {
       : [],
     elements,
     media: parseMedia(candidate.media),
+    ...(isFiniteNumber(candidate.frameIndex) ? { frameIndex: candidate.frameIndex } : {}),
   }
 }
 
@@ -548,6 +572,7 @@ export function buildPageSnapshot(page: CollectedPage, options?: { maxRefs?: num
       className: element.className ?? '',
       ...(element.states !== undefined && element.states.length > 0 ? { states: element.states } : {}),
       ...(element.media !== undefined ? { media: element.media } : {}),
+      ...(element.frameHost !== undefined ? { frame: element.frameHost } : {}),
       layer: element.layer ?? 'page',
       previousIndex: element.previousIndex ?? -1,
     })),
@@ -572,7 +597,8 @@ export function formatRefLine(ref: SnapshotRef): string {
     ...(ref.ariaPressed ? [`aria-pressed=${JSON.stringify(ref.ariaPressed)}`] : []),
   ]
   const dialogMarker = ref.layer === 'dialog' ? ' (dialog)' : ''
-  return `[${ref.ref}] ${ref.kind}${subtype}${label}${src}${href}${state.length > 0 ? ` ${state.join(' ')}` : ''}${dialogMarker}`
+  const frame = ref.frame !== undefined ? ` in ${ref.frame}` : ''
+  return `[${ref.ref}] ${ref.kind}${subtype}${label}${frame}${src}${href}${state.length > 0 ? ` ${state.join(' ')}` : ''}${dialogMarker}`
 }
 
 /** How many contained refs a labelled or unlabelled Cover names (ADR 0062). */

@@ -7,6 +7,7 @@ import { initialDataOf, plainVideos, resultsUrl, watchUrl } from '../../core/mus
 import { songTerms, stayed } from '../../core/music/rememberedSongs'
 import { SPOKEN_FAILURES, spokenFailureOf } from '../../core/command/spokenFailure'
 import { reportFault } from '../../core/trace/fault'
+import { FRAME_PAUSE_ALL_JS } from '../browser/pageMediaScript'
 import { STOPPED_ANSWERS } from '../../core/command/answer'
 import { CONTINUE_SCRIPT, PAUSE_ALL_SCRIPT, RESULTS_SCRIPT, WATCH_SCRIPT, controlScript, type ControlReach, type ElementOp, type ElementState, type PausedAll, type WatchStatus } from './youtubeScripts'
 
@@ -77,7 +78,7 @@ export interface Player {
 }
 
 export interface PlayerDeps {
-  browser: Pick<BrowserController, 'navigate' | 'evaluate'>
+  browser: Pick<BrowserController, 'navigate' | 'evaluate' | 'evaluateInFrames'>
   /** A results page's HTML, fetched with the pane's session (its cookies, its consent). */
   fetchResults(url: string): Promise<string>
   /** Waits between reads of a page still building; real time when absent. */
@@ -173,6 +174,17 @@ export function createPlayer(deps: PlayerDeps): Player {
   let pick: SearchPick | null = null
 
   const superseded: PlayerOutcome = { result: 'superseded', answer: '', superseded: true }
+
+  /** How many playing media elements the page's frames paused (#377); a failure to reach them pauses none. */
+  async function pauseFrames(): Promise<number> {
+    try {
+      const counts = (await browser.evaluateInFrames?.<unknown>(FRAME_PAUSE_ALL_JS)) ?? []
+      return counts.reduce<number>((sum, count) => sum + (typeof count === 'number' ? count : 0), 0)
+    } catch (error) {
+      reportFault('music.player.pauseFrames', error)
+      return 0
+    }
+  }
 
   async function evaluate<T>(script: string): Promise<T | null> {
     try {
@@ -524,9 +536,10 @@ export function createPlayer(deps: PlayerDeps): Player {
     },
 
     async pauseAll() {
-      const stopped = await evaluate<PausedAll>(PAUSE_ALL_SCRIPT)
-      if (stopped === null || stopped.paused === 0) return false
-      if (stopped.youtube) {
+      // Every frame's media pauses beside the top's (#377), the frames' answers taken within the collect's grace.
+      const [stopped, framed] = await Promise.all([evaluate<PausedAll>(PAUSE_ALL_SCRIPT), pauseFrames()])
+      if ((stopped?.paused ?? 0) + framed === 0) return false
+      if (stopped?.youtube === true) {
         state = pause(state)
         publish()
       }

@@ -161,7 +161,9 @@ function describeRef(ref: CommandRef, page?: CommandPage): string {
   const states = ref.states !== undefined && ref.states.length > 0 ? ` ${ref.states.join(' ')}` : ''
   // A media ref's own state rides its line (#372, ADR 0080): what its ops change, and what the Verdict reads.
   const media = ref.media !== undefined ? ` ${mediaStateOf(ref.media)}` : ''
-  return `${kind} ${JSON.stringify(shownLabel(ref, page))}${ref.href !== null ? ` ${ref.href}` : ''}${states}${media}`
+  // A ref read in a frame names its host (#377, ADR 0081): the embedded player is another site's.
+  const frame = ref.frame !== undefined ? ` in ${ref.frame}` : ''
+  return `${kind} ${JSON.stringify(shownLabel(ref, page))}${frame}${ref.href !== null ? ` ${ref.href}` : ''}${states}${media}`
 }
 
 /** The label a ref is shown with: its own, or for the page's one unlabelled media ref, the title of what plays. */

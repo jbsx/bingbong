@@ -1,0 +1,94 @@
+import { describe, expect, it } from 'vitest'
+import { mergeFrames, type CollectedFrame } from './frames'
+import type { CollectedElement, CollectedPage } from './snapshot'
+
+const VIEWPORT = { width: 1000, height: 600, scrollX: 0, scrollY: 0, scrollHeight: 600 }
+
+function element(tag: string, label: string, rect: { x: number; y: number; width?: number; height?: number }, extra: Partial<CollectedElement> = {}): CollectedElement {
+  return { tag, role: null, inputType: null, label, rect: { width: 40, height: 20, ...rect }, layer: 'page', previousIndex: -1, ...extra }
+}
+
+/** An iframe at (x, y), its content box `border` px further in, holding window.frames[slot]. */
+function iframe(slot: number, rect: { x: number; y: number; width?: number; height?: number }, extra: Partial<CollectedElement> = {}): CollectedElement {
+  return element('iframe', '', { width: 400, height: 300, ...rect }, { frameIndex: slot, frameBox: { x: rect.x + 2, y: rect.y + 2 }, src: null, ...extra })
+}
+
+function page(url: string, elements: CollectedElement[], extra: Partial<CollectedPage> = {}): CollectedPage {
+  return { url, title: url, viewport: VIEWPORT, elements, ...extra }
+}
+
+function frame(key: string, parentKey: string | null, slot: number, url: string, elements: CollectedElement[]): CollectedFrame {
+  return { key, parentKey, page: page(url, elements, { frameIndex: slot, viewport: { ...VIEWPORT, width: 396, height: 296 } }) }
+}
+
+describe('mergeFrames (#377, ADR 0081)', () => {
+  it("puts a frame's refs at its iframe's place, at the page's coordinates, its host named", () => {
+    const top = page('https://news.example/a', [element('a', 'Home', { x: 0, y: 0 }), iframe(0, { x: 100, y: 200 }), element('button', 'Share', { x: 0, y: 550 })])
+    const embed = frame('f1', null, 0, 'https://www.youtube.com/embed/x', [element('video', '', { x: 0, y: 0, width: 396, height: 296 }), element('button', 'Play', { x: 10, y: 250 })])
+
+    const { page: merged, addresses } = mergeFrames(top, [embed])
+
+    expect(merged.elements.map((el) => el.label)).toEqual(['Home', '', 'Play', 'Share'])
+    expect(merged.elements[2]).toMatchObject({ rect: { x: 112, y: 452 }, frameHost: 'youtube.com' })
+    expect(merged.elements[0].frameHost).toBeUndefined()
+    expect(addresses).toEqual([
+      { frame: null, index: 0 },
+      { frame: 'f1', index: 0 },
+      { frame: 'f1', index: 1 },
+      { frame: null, index: 2 },
+    ])
+  })
+
+  it('sums every ancestor iframe’s content-box origin for a frame at any depth, each frame paired by its own slot', () => {
+    // The page's second iframe was created first: frames[0] is the one later in the DOM.
+    const top = page('https://course.example/', [iframe(1, { x: 0, y: 0, width: 50, height: 50 }), iframe(0, { x: 100, y: 100 })])
+    const player = frame('outer', null, 0, 'https://player.example/', [iframe(0, { x: 10, y: 20 })])
+    const nested = frame('inner', 'outer', 0, 'https://cdn.video.example/v', [element('button', 'Pause', { x: 5, y: 5 })])
+    const small = frame('side', null, 1, 'https://side.example/', [element('a', 'Side', { x: 1, y: 1 })])
+
+    const { page: merged, addresses } = mergeFrames(top, [nested, player, small])
+
+    expect(merged.elements.map((el) => [el.label, el.rect.x, el.rect.y, el.frameHost])).toEqual([
+      ['Side', 3, 3, 'side.example'],
+      ['Pause', 119, 129, 'cdn.video.example'],
+    ])
+    expect(addresses).toEqual([
+      { frame: 'side', index: 0 },
+      { frame: 'inner', index: 0 },
+    ])
+  })
+
+  it('keeps a cross-origin frame that was not read as its opaque iframe ref, and drops a same-origin one', () => {
+    const challenge = iframe(0, { x: 0, y: 0 }, { src: 'https://challenges.cloudflare.com/turnstile' })
+    const sameOrigin = iframe(1, { x: 0, y: 300 })
+    const { page: merged, addresses } = mergeFrames(page('https://shop.example/', [challenge, sameOrigin]), [])
+
+    expect(merged.elements).toEqual([challenge])
+    expect(addresses).toEqual([{ frame: null, index: 0 }])
+  })
+
+  it('takes nothing from a frame whose iframe is 2×2 CSS px or smaller, read or not', () => {
+    const pixel = iframe(0, { x: 0, y: 0, width: 2, height: 2 }, { src: 'https://tracker.example/p' })
+    const tracker = frame('t', null, 0, 'https://tracker.example/p', [element('a', 'Opt out', { x: 0, y: 0, width: 1, height: 1 })])
+
+    expect(mergeFrames(page('https://news.example/', [pixel]), [tracker]).page.elements).toEqual([])
+  })
+
+  it("leaves out a frame's element that falls outside the top viewport, unless it is a control of the top's open dialog", () => {
+    const low = iframe(0, { x: 0, y: 500 })
+    const embed = frame('f', null, 0, 'https://embed.example/', [element('button', 'Seen', { x: 0, y: 10 }), element('button', 'Below the fold', { x: 0, y: 200 })])
+    expect(mergeFrames(page('https://a.example/', [low]), [embed]).page.elements.map((el) => el.label)).toEqual(['Seen'])
+
+    const walled = iframe(0, { x: 0, y: 500 }, { layer: 'dialog' })
+    const wall = frame('w', null, 0, 'https://consent.example/', [element('button', 'Reject all', { x: 0, y: 200 })])
+    expect(mergeFrames(page('https://a.example/', [walled], { dialogOpen: true }), [wall]).page.elements).toMatchObject([{ label: 'Reject all', layer: 'dialog' }])
+  })
+
+  it('reads an element as already there by its own frame’s previous collect, at its previous place in the whole page', () => {
+    const top = page('https://a.example/', [element('a', 'Home', { x: 0, y: 0 }, { previousIndex: 0 }), iframe(1, { x: 0, y: 100 })])
+    const embed = frame('f', null, 1, 'https://embed.example/', [element('button', 'Old', { x: 0, y: 0 }, { previousIndex: 3 }), element('button', 'New', { x: 0, y: 30 }, { previousIndex: -1 })])
+    const previous = [{ frame: null, index: 0 }, { frame: 'f', index: 3 }]
+
+    expect(mergeFrames(top, [embed], previous).page.elements.map((el) => el.previousIndex)).toEqual([0, 1, -1])
+  })
+})

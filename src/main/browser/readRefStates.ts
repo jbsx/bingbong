@@ -26,9 +26,14 @@ interface PartialTreeResponse {
   readonly nodes?: readonly AxNode[]
 }
 
-/** The page with each ref's Ref State on its element; elements the tree said nothing of are left as they were. */
-export async function readRefStates(cdp: CdpDebugger, page: CollectedPage): Promise<CollectedPage> {
-  const indices = refElementIndices(page)
+/**
+ * The page with each ref's Ref State on its element; elements the tree said
+ * nothing of are left as they were. `registryIndexOf` says where an element
+ * sits in the top document's registry, null for one read in a frame (#377),
+ * which this session's tree cannot reach; absent, the element's own index.
+ */
+export async function readRefStates(cdp: CdpDebugger, page: CollectedPage, registryIndexOf: (index: number) => number | null = (index) => index): Promise<CollectedPage> {
+  const indices = refElementIndices(page).filter((index) => registryIndexOf(index) !== null)
   if (indices.length === 0) return page
   try {
     const registry = await cdp.send<RemoteObjectResponse>('Runtime.evaluate', {
@@ -44,7 +49,7 @@ export async function readRefStates(cdp: CdpDebugger, page: CollectedPage): Prom
     const misses = (
       await Promise.all(
         indices.map(async (index): Promise<string | null> => {
-          const handle = handles.get(String(index))
+          const handle = handles.get(String(registryIndexOf(index)))
           const element = page.elements[index]
           if (handle === undefined || element === undefined) return null
           try {
