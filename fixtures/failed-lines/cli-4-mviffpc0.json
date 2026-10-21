@@ -7,5 +7,7 @@
   "happened": "not a command: Jev read none on w3schools' YouTube autoplay tryit (the result frame, script-written, holds a cross-origin youtube.com/embed iframe playing muted) — no media ref, so no mute op",
   "meant": "mute the embedded YouTube video",
   "log": "decision-1792606145190-1.jsonl",
-  "claimedBy": "#377"
+  "claimedBy": "#377",
+  "fixedBy": "4f7c341",
+  "case": "cli-6-mvigcxwa"
 }

@@ -7,5 +7,7 @@
   "happened": "'Nothing to stop.' while the embed played on w3schools' YouTube autoplay tryit (the result frame, script-written, holds a cross-origin youtube.com/embed iframe playing muted): the idle stop pauses the top document's media only",
   "meant": "pause the playing embedded video",
   "log": "decision-1792606145190-1.jsonl",
-  "claimedBy": "#377"
+  "claimedBy": "#377",
+  "fixedBy": "4f7c341",
+  "case": "e2e/frames.chrome.test.ts (an idle stop pauses the frame's video); player.test.ts pauseAll in every frame"
 }
