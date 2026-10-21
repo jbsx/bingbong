@@ -386,6 +386,26 @@ describe('the hop reading (#328, ADR 0076 amendment)', () => {
     expect(options['open-1']).toContain('reuters')
   })
 
+  it("keeps a ref whose address is this page's: an href=\"#\" control or an anchor leads nowhere visited (2026-10-21)", () => {
+    const watch: CommandPage = {
+      url: 'https://example.com/watch?v=1',
+      title: 'Watch',
+      refs: [
+        { ref: 1, kind: 'link', label: 'Show more', href: 'https://example.com/watch?v=1#', inputType: null },
+        { ref: 2, kind: 'link', label: 'Comments', href: 'https://example.com/watch?v=1#comments', inputType: null },
+        { ref: 3, kind: 'link', label: 'Home', href: 'https://example.com/', inputType: null },
+        { ref: 4, kind: 'link', label: 'Next video', href: 'https://example.com/watch?v=2', inputType: null },
+      ],
+    }
+    const hop = { hop: 1, visited: ['https://example.com/', watch.url], actions: [], links: [] }
+    const options = Object.keys(commandQuestions('show more', watch, hop).action.options)
+    expect(options).toContain('click-1')
+    expect(options).toContain('click-2')
+    expect(options).toContain('click-4')
+    // The page before is still off the card.
+    expect(options).not.toContain('click-3')
+  })
+
   it('carries the hop number, the addresses visited and the actions taken in the state', () => {
     const hop = { hop: 1, visited: [SEARCH.url], actions: ['open latest elon musk tweet'], links: LINKS }
     const state = commandState('pull up the latest elon musk tweet', SEARCH, hop)

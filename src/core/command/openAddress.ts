@@ -25,13 +25,23 @@ function spokenPunctuation(slot: string): string {
 export function isAddressShaped(slot: string): boolean {
   const spoken = spokenPunctuation(slot)
   if (spoken === '') return false
-  return /^[a-z0-9-]+$/i.test(spoken) || looksLikeDomain(spoken) || /^(?:https?|file|about):/i.test(spoken) || /^localhost(?::\d+)?$/i.test(spoken)
+  return isBareWord(spoken) || looksLikeDomain(spoken) || /^(?:https?|file|about):/i.test(spoken) || /^localhost(?::\d+)?$/i.test(spoken)
+}
+
+/**
+ * Whether a Slot is one bare word with no dot or space — the form that is an
+ * address only by the `.com` rule ("youtube"), and as readily a word about
+ * the page ("settings", "comments"): the Local Match navigates it only when
+ * no ref's label carries the word (2026-10-21, the #341 rule for a span).
+ */
+export function isBareWord(slot: string): boolean {
+  return /^[a-z0-9-]+$/i.test(spokenPunctuation(slot))
 }
 
 /** The address a `navigate` Slot names: a bare word's `.com`, else the browser's reading of it; words that are no address search for themselves. */
 export function navigateAddress(slot: string): string {
   const spoken = spokenPunctuation(slot)
-  if (/^[a-z0-9-]+$/i.test(spoken)) return `https://${spoken.toLowerCase()}.com`
+  if (isBareWord(spoken)) return `https://${spoken.toLowerCase()}.com`
   return normalizeUrlInput(spoken) ?? searchUrl(spoken)
 }
 

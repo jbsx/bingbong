@@ -272,6 +272,22 @@ describe('the Local Match: plain verbs', () => {
     expect(localMatch('go to twitter and scroll down', REFS)).toEqual({ verb: 'navigate', target: null, slot: 'twitter' })
   })
 
+  it("leaves a bare word a ref's label carries to Jev: the page's word, never <word>.com (2026-10-21)", () => {
+    const settings = [...REFS, { ref: 7, kind: 'button' as const, label: 'Settings', href: null, inputType: null }, { ref: 8, kind: 'link' as const, label: 'Settings', href: 'https://example.com/settings', inputType: null }]
+    // Two Settings refs: no exact-label click, and no settings.com either.
+    expect(localMatch('open settings', settings)).toBeNull()
+    const comments = [...REFS, { ref: 7, kind: 'button' as const, label: 'Comments section', href: null, inputType: null }]
+    expect(localMatch('open comments', comments)).toBeNull()
+    // The one ref labelled YouTube is clicked, as before; two refs carrying the word are Jev's; off a page that names it, youtube.com.
+    const youtube = [...REFS, { ref: 7, kind: 'link' as const, label: 'YouTube Music', href: 'https://music.youtube.com/', inputType: null }, { ref: 8, kind: 'link' as const, label: 'YouTube Kids', href: 'https://www.youtubekids.com/', inputType: null }]
+    expect(localMatch('open youtube', [...REFS, { ref: 7, kind: 'link' as const, label: 'YouTube', href: 'https://www.youtube.com/', inputType: null }])).toEqual({ verb: 'click', target: 7, slot: null })
+    expect(localMatch('open youtube', youtube)).toBeNull()
+    expect(localMatch('open youtube', REFS)).toEqual({ verb: 'navigate', target: null, slot: 'youtube' })
+    // A host or a URL is an address whatever the page says.
+    expect(localMatch('open youtube.com', youtube)).toEqual({ verb: 'navigate', target: null, slot: 'youtube.com' })
+    expect(localMatch('open youtube dot com', youtube)).toEqual({ verb: 'navigate', target: null, slot: 'youtube dot com' })
+  })
+
   it('makes no Local Match when the label names no ref, or more than one — never the ref sharing the most words', () => {
     expect(localMatch('click sign', REFS)).toBeNull()
     expect(localMatch('click the first video', REFS)).toBeNull()

@@ -524,12 +524,16 @@ interface OfferedLink extends PageLink {
  * — on a Web Engine's search its results alone, its own chrome left out;
  * on any other page every link (owner's rule 2026-10-19: the widest net,
  * so a link below the fold costs no scroll) — none of them an address the
- * Task has visited, no link twice or already a ref.
+ * Task has visited, no link twice or already a ref. A ref whose address is
+ * this page's stays (2026-10-21): an `<a href="#">` control, a "Show more",
+ * a "Comments" anchor leads nowhere the Task has been, and the page is
+ * always among the addresses visited.
  */
 function offered(page: CommandPage, hop: HopContext | undefined): { page: CommandPage; links: OfferedLink[] } {
   if (hop === undefined) return { page, links: [] }
   const seen = new Set(hop.visited.map(pageAddressOf))
-  const fresh = (href: string | null): boolean => href === null || !seen.has(pageAddressOf(href))
+  const here = pageAddressOf(page.url)
+  const fresh = (href: string | null): boolean => href === null || pageAddressOf(href) === here || !seen.has(pageAddressOf(href))
   const refs = page.refs.filter((ref) => fresh(ref.href))
   const taken = new Set(page.refs.flatMap((ref) => (ref.href === null ? [] : [pageAddressOf(ref.href)])))
   const links: OfferedLink[] = []

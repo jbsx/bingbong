@@ -1,7 +1,7 @@
 import { parseSearchUrl } from '../browser/urlInput'
 import { parseCliCommand, type CliCommand } from './cliGrammar'
 import { normalizeWords, pressKeyOf, type Command, type CommandRef, type CommandVerb } from './command'
-import { isAddressShaped } from './openAddress'
+import { isAddressShaped, isBareWord } from './openAddress'
 import { firstNumber } from '../timer/duration'
 import { readTimerWords } from '../timer/timerWords'
 import { MUSIC_PHRASES } from '../music/musicWords'
@@ -469,7 +469,14 @@ function readSpoken(text: string, refs: readonly CommandRef[], url: string): Com
       // An address with words past it (#341) opens the address; the Task reads the rest on its landing.
       const address = addressBeforeMore(rest, refs)
       if (address !== null) return command('navigate', { slot: address })
-      return isAddressShaped(spokenOf(rest)) ? command('navigate', { slot: spokenOf(rest) }) : null
+      const alone = spokenOf(rest)
+      if (!isAddressShaped(alone)) return null
+      // A bare word a ref's label carries is the page's word, not an address
+      // (the #341 rule, 2026-10-21): "open settings" beside two Settings
+      // refs, "open comments" beside a Comments section, are Jev's with the
+      // refs — never settings.com. A host or a URL is an address whatever
+      // the page says.
+      return isBareWord(alone) && sharesALabelWord(alone, refs) ? null : command('navigate', { slot: alone })
     }
     case 'type': {
       if (rest.length === 0) return null
