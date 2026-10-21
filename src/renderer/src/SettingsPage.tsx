@@ -9,6 +9,7 @@ import type { BodyProfile } from '../../core/scale/bodyComposition'
 import { JAISH, weighInsOf, type Person } from '../../core/scale/people'
 import { defaultWeightSettings, EMPTY_BODY, POPUP_LINGER_MS_MAX, POPUP_LINGER_MS_MIN, WEIGHT_CARD_RANGES, withoutPerson, type WeightSettings } from '../../core/scale/weightSettings'
 import { reportRendererFault } from './diagnostics'
+import { markedSection } from './settingsIndexMark'
 import { useScaleStatus, useWeighIns } from './useWeight'
 
 /** Select value for "the saved mic is not plugged in right now". */
@@ -128,29 +129,53 @@ function sectionElement(scroll: HTMLElement | null, id: string): HTMLElement | n
   return scroll?.querySelector<HTMLElement>(`section[aria-label="${id}"]`) ?? null
 }
 
+/** The keys that scroll the page by hand, ending a click's hold on the index. */
+const SCROLL_KEYS = new Set(['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '])
+
 /**
- * The Settings index: a click opens its section and brings it to the top;
- * the section at the top of the scroll is the one marked.
+ * The Settings index: a click opens its section and brings it to the top,
+ * and that section stays marked until the page is scrolled by hand (the last
+ * sections cannot reach the top, so the scroll that follows a click would
+ * otherwise mark the one above); scrolled by hand, the section at the top is
+ * marked, the last one once the scroll is at its end.
  */
 function SettingsIndex({ scrollRef }: { scrollRef: React.RefObject<HTMLDivElement | null> }) {
   const [current, setCurrent] = useState(SETTINGS_INDEX[0]!.sections[0]!.id)
+  const chosen = useRef(false)
 
   useEffect(() => {
     const scroll = scrollRef.current
     if (!scroll) return
     const follow = (): void => {
-      const top = scroll.getBoundingClientRect().top + 40
-      let at = SETTINGS_INDEX[0]!.sections[0]!.id
-      for (const { sections } of SETTINGS_INDEX) {
-        for (const { id } of sections) {
+      if (chosen.current) return
+      const edge = scroll.getBoundingClientRect().top
+      const tops = SETTINGS_INDEX.flatMap(({ sections }) =>
+        sections.flatMap(({ id }) => {
           const element = sectionElement(scroll, id)
-          if (element && element.getBoundingClientRect().top <= top) at = id
-        }
-      }
-      setCurrent(at)
+          return element ? [{ id, top: element.getBoundingClientRect().top - edge }] : []
+        }),
+      )
+      const at = markedSection(tops, scroll)
+      if (at !== undefined) setCurrent(at)
+    }
+    const byHand = (): void => {
+      chosen.current = false
+    }
+    const byKey = (event: KeyboardEvent): void => {
+      if (SCROLL_KEYS.has(event.key)) byHand()
     }
     scroll.addEventListener('scroll', follow, { passive: true })
-    return () => scroll.removeEventListener('scroll', follow)
+    scroll.addEventListener('wheel', byHand, { passive: true })
+    scroll.addEventListener('touchmove', byHand, { passive: true })
+    scroll.addEventListener('pointerdown', byHand)
+    scroll.addEventListener('keydown', byKey)
+    return () => {
+      scroll.removeEventListener('scroll', follow)
+      scroll.removeEventListener('wheel', byHand)
+      scroll.removeEventListener('touchmove', byHand)
+      scroll.removeEventListener('pointerdown', byHand)
+      scroll.removeEventListener('keydown', byKey)
+    }
   }, [scrollRef])
 
   let number = 0
@@ -172,6 +197,7 @@ function SettingsIndex({ scrollRef }: { scrollRef: React.RefObject<HTMLDivElemen
                   const element = sectionElement(scrollRef.current, id)
                   const details = element?.querySelector('details')
                   if (details && !details.open) details.open = true
+                  chosen.current = true
                   element?.scrollIntoView({ block: 'start' })
                   setCurrent(id)
                 }}
@@ -284,7 +310,7 @@ function LearnedTermsSection() {
   )
 }
 
-const IDLE_CARD_NAMES: Record<IdleCardId, string> = { weather: 'Weather', usage: 'AI usage', calendar: 'Calendar', lastPage: 'Last Page', music: 'Now Playing', news: 'News', weight: 'Weight' }
+const IDLE_CARD_NAMES: Record<IdleCardId, string> = { weather: 'Weather', usage: 'AI usage', calendar: 'Calendar', lastPage: 'Last Page', music: 'Now Playing', news: 'Top Repos', weight: 'Weight' }
 
 /** Where each card lives on the Idle Screen, as the Cards section names it. */
 const IDLE_CARD_HOMES: Record<IdleCardId, string> = {
@@ -294,7 +320,7 @@ const IDLE_CARD_HOMES: Record<IdleCardId, string> = {
   weight: 'right, under the Calendar',
   usage: 'middle, under the clock',
   news: 'bottom right',
-  music: 'a line under the clock',
+  music: 'middle, over the AI usage',
 }
 
 /**
@@ -319,7 +345,7 @@ function IdleCardsSection({ cards, onChange }: { cards: readonly IdleCardId[]; o
         </Field>
       ))}
       <p className="settings-note">
-        The cards the idle screen shows. Each has its own place in one of the three columns; hide one and the cards beside it in its column take its room. Now Playing and the Last Page are lines under the clock.
+        The cards the idle screen shows. Each has its own place in one of the three columns; hide one and the cards beside it in its column take its room. The Last Page is a line under the clock.
       </p>
     </Section>
   )
@@ -450,6 +476,8 @@ function WeightSection({
                 </Fragment>
               ))}
           {` · ${scale.address === '' ? 'no scale yet' : 'scale remembered'}`}
+          {/* The whole section's unit, said at its heading rather than under the last control. */}
+          {' · kilograms only'}
         </>
       }>
       <h3 className="settings-subhead">People</h3>
@@ -528,7 +556,6 @@ function WeightSection({
           onChange={(event) => onChange({ ...weight, popup: { ...popup, lingerMs: Number(event.target.value) } })}
         />
       </Field>
-      <p className="settings-note">Kilograms only.</p>
     </Section>
   )
 }

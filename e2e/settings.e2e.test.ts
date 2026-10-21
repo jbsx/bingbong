@@ -1,8 +1,9 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { startHarness, type Harness } from './harness'
+import { startUsageStandIn, type UsageStandIn } from './usageStandIn'
 import { waitFor } from './waitFor'
 
 // Dashboard settings page smoke: open settings, edit values, save — the
@@ -24,14 +25,19 @@ function setWeatherCityScript(city: string): string {
 describe('settings page e2e', () => {
   let harness: Harness
   let userDataDir: string
+  let usage: UsageStandIn
 
   beforeAll(async () => {
+    // The owner's two providers, so the AI usage section lists their windows, "7-Day (Fable)" among them.
+    usage = await startUsageStandIn(2)
     userDataDir = await mkdtemp(join(tmpdir(), 'bingbong-e2e-settings-'))
+    await writeFile(join(userDataDir, 'settings.json'), JSON.stringify({ usageDashboard: usage.settings }), 'utf8')
     harness = await startHarness({ userDataDir })
   })
 
   afterAll(async () => {
     await harness?.quit()
+    await usage?.close()
     await rm(userDataDir, { recursive: true, force: true }).catch(() => {})
   })
 
@@ -100,5 +106,43 @@ describe('settings page e2e', () => {
       { timeoutMs: 10000, intervalMs: 250 },
     )
     expect(status).toContain('Saved')
+  })
+
+  it('marks the section a click in the index opened, the last ones too, until the page is scrolled by hand', async () => {
+    const titles = await harness.dashboardEval<string[]>(`[...document.querySelectorAll('.settings-index-link')].map((link) => link.lastChild.textContent)`)
+    expect(titles.length).toBeGreaterThan(4)
+    const marked = `document.querySelector('.settings-index-link[aria-current="true"]')?.lastChild.textContent ?? ''`
+    for (let index = 0; index < titles.length; index++) {
+      await harness.dashboardEval(`document.querySelectorAll('.settings-index-link')[${index}].click()`)
+      // The scroll the click set off has come and gone; the mark is still the click's.
+      await new Promise((resolve) => setTimeout(resolve, 400))
+      expect(await harness.dashboardEval<string>(marked)).toBe(titles[index])
+    }
+    // Scrolled by hand to the very top, the first section is marked again.
+    await harness.dashboardEval(`(() => { const scroll = document.querySelector('.settings-scroll'); scroll.dispatchEvent(new WheelEvent('wheel', { deltaY: -100 })); scroll.scrollTop = 0 })()`)
+    await waitFor(async () => ((await harness.dashboardEval<string>(marked)) === titles[0] ? true : undefined), { timeoutMs: 2000, intervalMs: 50 })
+    // And at its end, the last.
+    await harness.dashboardEval(`(() => { const scroll = document.querySelector('.settings-scroll'); scroll.dispatchEvent(new WheelEvent('wheel', { deltaY: 100 })); scroll.scrollTop = scroll.scrollHeight })()`)
+    await waitFor(async () => ((await harness.dashboardEval<string>(marked)) === titles[titles.length - 1] ? true : undefined), { timeoutMs: 2000, intervalMs: 50 })
+  })
+
+  it('keeps every usage window on one line, its figure beside its name', async () => {
+    await harness.dashboardEval(`(() => { const details = document.querySelector('section[aria-label="ai usage"] details'); if (!details.open) details.open = true })()`)
+    // Each provider's card at the narrowest the grid lets it be, as on the appliance's wide screen where they sit side by side.
+    await waitFor(async () => ((await harness.dashboardEval<boolean>(`!!document.querySelector('.usage-set')`)) ? true : undefined), { timeoutMs: 10000, intervalMs: 250 })
+    await harness.dashboardEval(`document.querySelector('.usage-set').style.gridTemplateColumns = 'repeat(auto-fill, 340px)'`)
+    const rows = await waitFor(
+      async () => {
+        const found = await harness.dashboardEval<{ label: string; nameTop: number; figureTop: number; height: number; lineHeight: number }[]>(
+          `[...document.querySelectorAll('.usage-set-label')].map((label) => { const name = label.querySelector('.usage-set-name'); const figure = label.querySelector('.usage-set-hint'); return { label: name.textContent, nameTop: Math.round(name.getBoundingClientRect().top), figureTop: Math.round(figure.getBoundingClientRect().top), height: name.getBoundingClientRect().height, lineHeight: parseFloat(getComputedStyle(name).lineHeight) || parseFloat(getComputedStyle(name).fontSize) * 1.5 } })`,
+        )
+        return found.some((row) => row.label === '7-Day (Fable)') ? found : undefined
+      },
+      { timeoutMs: 10000, intervalMs: 250 },
+    )
+    for (const row of rows) {
+      expect(row.height, row.label).toBeLessThanOrEqual(row.lineHeight + 1)
+      expect(Math.abs(row.figureTop - row.nameTop), row.label).toBeLessThanOrEqual(4)
+    }
   })
 })

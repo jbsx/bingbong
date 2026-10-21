@@ -80,7 +80,9 @@ function ProviderMetrics({
           {provider.windows.map((window) => (
             <div key={window.key} className="usage-set-row">
               <span className="usage-set-label">
-                {window.label}
+                <span className="usage-set-name" title={window.label}>
+                  {window.label}
+                </span>
                 <span className="usage-set-hint">{Math.round(window.usedPct)}%</span>
               </span>
               <input

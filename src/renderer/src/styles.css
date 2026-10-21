@@ -4175,7 +4175,7 @@ button.idle-line {
 
 .usage-set-table {
   display: grid;
-  grid-template-columns: 1fr repeat(3, 72px);
+  grid-template-columns: minmax(0, 1fr) repeat(3, 64px);
   align-items: center;
   row-gap: 6px;
   margin-top: 10px;
@@ -4196,8 +4196,23 @@ button.idle-line {
   display: flex;
   gap: 8px;
   align-items: baseline;
+  min-width: 0;
   font-size: 18px;
   color: var(--fgh);
+}
+
+/* A window's name stays on one line, cut short rather than wrapped, so its
+   figure keeps beside it like every other window's ("7-Day (Fable)"). */
+.usage-set-name {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.usage-set-label .usage-set-hint {
+  flex: none;
+  font-variant-numeric: tabular-nums;
 }
 
 .usage-set-table input,
