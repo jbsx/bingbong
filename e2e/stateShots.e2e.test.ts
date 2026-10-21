@@ -1,6 +1,6 @@
 import { execSync, spawn, type ChildProcess } from 'node:child_process'
 import { mkdirSync } from 'node:fs'
-import { mkdtemp, writeFile } from 'node:fs/promises'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -150,6 +150,8 @@ async function close(run: Run): Promise<void> {
   await run.harness.quit().catch(() => {})
   await run.fixture.close().catch(() => {})
   await run.usage.close().catch(() => {})
+  // The profile was passed in, so the harness leaves it: each launch would strand ~224 MB in /tmp.
+  await rm(run.userDataDir, { recursive: true, force: true }).catch(() => {})
 }
 
 /** The Calendar's stand-in source (re-read on every ask): empty until a state fills it. */
