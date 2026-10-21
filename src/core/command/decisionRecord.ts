@@ -60,7 +60,7 @@ export interface DecisionRecord {
   readonly verb: CommandVerb
   /** For a `play` Jev read (ADR 0079): the Capability its action card named (#370); absent otherwise. */
   readonly capability?: Capability
-  /** For `media` (#372, ADR 0080): the op, the Amount rung a seek read and the seconds it came to (capped by the element's range when fired), a volume's or a speed's level. */
+  /** For `media` (#372, ADR 0080): the op; for a seek the Amount rung read and the seconds it asked for (the outcome line in the Feed tells where the element went, which its range may have capped); for a volume or a speed, the level set. */
   readonly mediaOp?: MediaOpAction
   readonly target: number | null
   readonly targetLabel?: string

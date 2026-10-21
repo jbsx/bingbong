@@ -38,7 +38,7 @@ import {
   type StepContext,
   type Verdict,
 } from '../../core/command/jevReading'
-import { blockedOrInertAction } from '../../core/browser/actionOutcome'
+import { blockedOrInertAction, mediaOpHead } from '../../core/browser/actionOutcome'
 import { navigateAddress, searchAddress } from '../../core/command/openAddress'
 import { nameMatch, soundsAlike } from '../../core/command/nameMatch'
 import {
@@ -844,8 +844,9 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       }
       case 'media': {
         // A Media Op (#372, ADR 0080): one evaluate on the media ref's own element, beside click and type.
-        const result = await browser.mediaOp(command.target ?? 0, command.mediaOp ?? { op: 'pause' })
-        flash(command.target ?? 0)
+        if (command.mediaOp === undefined || command.target === null) throw new Error('a media Command names no op, or no ref')
+        const result = await browser.mediaOp(command.target, command.mediaOp)
+        flash(command.target)
         return result
       }
       case 'scroll_up':
@@ -1095,7 +1096,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
             ...(label !== undefined ? { label } : {}),
             ...(result.endsWith(`\n${SCROLL_END_OF_PAGE}`) ? { scrollEnded: true } : {}),
             // A Media Op's changes clause (#372): what follows its `<op> [N]: ` head.
-            ...(command.verb === 'media' ? { mediaChanges: result.slice(result.indexOf(': ') + 2).split('\n', 1)[0] } : {}),
+            ...(command.verb === 'media' && command.mediaOp !== undefined ? { mediaChanges: result.slice(mediaOpHead(command.mediaOp.op, command.target ?? 0).length).split('\n', 1)[0] } : {}),
           })
           if (text !== null) answer(turnId, text)
         }

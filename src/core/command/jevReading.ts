@@ -1,11 +1,11 @@
 import { DEFAULT_DECISION_THRESHOLDS, type DecisionChoiceAnswer, type DecisionChoiceQuestion, type DecisionNoulAnswer, type DecisionNoulQuestion } from '../ports/decisionModel'
-import type { PageLink, PageMedia } from '../browser/snapshot'
+import type { MediaFacts, PageLink, PageMedia } from '../browser/snapshot'
 import { JEV_VERBS, PRESS_KEYS, describeCommand, normalizeWords, pressKeyOf, targetLabel, verbTakesSlot, verbTakesTarget, type Command, type CommandPage, type CommandRef } from './command'
 import { dialogControls, type DismissChoice } from './dismissDialog'
 import { isSearchLanding, isTextField, pageAddressOf, resultLinksOf, resultRefsOf, wordsAfterVerb } from './localMatch'
 import { isAddressShaped } from './openAddress'
 import { isWebEngineSearch, siteOf } from './siteScope'
-import { CAPABILITY_DESCRIPTIONS, CAPABILITY_INSTRUCTIONS, capabilityAction, capabilitySearches, isCapability, withheldByMediaRef, type Capability } from './capability'
+import { CAPABILITY_DESCRIPTIONS, CAPABILITY_INSTRUCTIONS, capabilitiesBesideMediaOps, capabilityAction, capabilitySearches, isCapability, type Capability } from './capability'
 import { AMOUNT_RUNGS, amountQuestion, clockOf, describeMediaOp, isMediaOp, isSeek, mediaChangesOf, mediaOpDescription, mediaOpsOf, mediaStateOf, rateTarget, seekAmount, volumeTarget, type AmountRung, type MediaOp, type MediaOpAction } from './mediaOp'
 
 // One Jev call per Command the Local Match cannot settle (#324, ADR 0076).
@@ -373,9 +373,14 @@ export function doneFacts(before: CommandPage, after: CommandPage, result: DoneR
  */
 function mediaRefChanges(before: CommandPage, after: CommandPage, ref: number | null | undefined): string[] | null {
   const target = ref === null || ref === undefined ? undefined : before.refs.find((one) => one.ref === ref)
-  if (target?.media === undefined) return null
+  if (target === undefined || !isMediaRef(target)) return null
   const now = targetAfter(target, before, after)
-  return now?.media === undefined ? null : mediaChangesOf(target.media, now.media)
+  return now === undefined || !isMediaRef(now) ? null : mediaChangesOf(target.media, now.media)
+}
+
+/** A media ref read with its facts (#372): the one kind that carries Media Ops. */
+function isMediaRef(ref: CommandRef): ref is CommandRef & { readonly media: MediaFacts } {
+  return ref.kind === 'media' && ref.media !== undefined
 }
 
 /** What changed on the media element between two reads (#363), in "Done so far"'s words; none when nothing did. */
@@ -677,9 +682,7 @@ function whereQuestion(site: string): DecisionChoiceQuestion {
  */
 export function commandQuestions(text: string, pageRead: CommandPage, hop?: HopContext, options: { readonly steps?: boolean; readonly capabilities?: readonly Capability[] } = {}): CommandQuestions {
   const { page, links } = offered(pageRead, hop)
-  // While a media ref is on the card its own Media Ops are the one line for each song op (#372, ADR 0080): the Player's are withheld.
-  const capabilities = page.refs.some((ref) => ref.kind === 'media' && ref.media !== undefined) ? withheldByMediaRef(options.capabilities ?? []) : (options.capabilities ?? [])
-  const card = actionQuestion(page, pageRead, links, hop !== undefined, capabilities, hop?.setAside ?? [])
+  const card = actionQuestion(page, pageRead, links, hop !== undefined, options.capabilities ?? [], hop?.setAside ?? [])
   const action: ActionQuestions = { action: card.question, slot: slotQuestion(text) }
   // The Amount rides beside a card that offers a media ref's ops (#372, ADR 0080): read only when the action is a seek.
   const reading: Asked<ActionQuestions, 'amount'> = card.mediaOps ? { ...action, amount: amountQuestion() } : action
@@ -703,7 +706,10 @@ export function commandQuestions(text: string, pageRead: CommandPage, hop?: HopC
  */
 function actionQuestion(page: CommandPage, pageRead: CommandPage, links: readonly OfferedLink[], later: boolean, offeredCapabilities: readonly Capability[], setAside: readonly SetAside[]): { question: DecisionChoiceQuestion; mediaOps: boolean } {
   const kept = (label: string): boolean => !isAside(label, page, setAside)
-  const capabilities = offeredCapabilities.filter(kept)
+  // Each media ref's Media Ops the element can take and the Task has not set aside (#372, ADR 0080).
+  const opsOf = (ref: CommandRef): [MediaOp, CommandRef][] => (isMediaRef(ref) ? mediaOpsOf(ref.media).filter((op) => kept(`${op}-${ref.ref}`)).map((op) => [op, ref]) : [])
+  // While a media ref's ops are on the card they are the one line for each song op: the Player's are withheld.
+  const capabilities = (page.refs.some((ref) => opsOf(ref).length > 0) ? capabilitiesBesideMediaOps(offeredCapabilities) : offeredCapabilities).filter(kept)
   const refLess = Object.entries(REFLESS_DESCRIPTIONS).filter(([verb]) => kept(verb))
   let room = MAX_SPANS + 1 - (refLess.length + capabilities.length)
   const take = <T>(items: readonly T[]): readonly T[] => {
@@ -715,7 +721,7 @@ function actionQuestion(page: CommandPage, pageRead: CommandPage, links: readonl
   const reached = page.refs.slice(0, Math.max(0, room))
   const clicked = new Set(take(reached.filter((ref) => kept(`click-${ref.ref}`))).map((ref) => ref.ref))
   const typed = new Set(take(reached.filter((ref) => isTextField(ref) && kept(`type-${ref.ref}`))).map((ref) => ref.ref))
-  const ops = take(reached.flatMap((ref) => (ref.kind === 'media' && ref.media !== undefined ? mediaOpsOf(ref.media).filter((op) => kept(`${op}-${ref.ref}`)).map((op): [MediaOp, CommandRef] => [op, ref]) : [])))
+  const ops = take(reached.flatMap(opsOf))
   const opened = take(links)
   const menus = take(reached.filter((ref) => kept(`menu-${ref.ref}`)))
   // A sentence on when to right-click, or a ref line on each right-click, lowered every sure click (replay 2026-10-21: "disable captions" 0.66–0.72 → 0.41–0.46, its top `none`).
@@ -923,9 +929,9 @@ function amountOf(answers: CommandAnswers | HopAnswers): AmountRung {
  * ref, or a level the words leave unsaid.
  */
 function mediaCommand(op: MediaOp, ref: CommandRef, answers: CommandAnswers | HopAnswers, text: string): Command | null {
-  if (ref.kind !== 'media' || ref.media === undefined || !mediaOpsOf(ref.media).includes(op)) return null
+  if (!isMediaRef(ref) || !mediaOpsOf(ref.media).includes(op)) return null
   const command = (mediaOp: MediaOpAction): Command => ({ verb: 'media', target: ref.ref, slot: null, mediaOp })
-  if (isSeek(op)) return command({ op, ...seekAmount(amountOf(answers), op as 'forward' | 'back', ref.media, text) })
+  if (isSeek(op)) return command({ op, ...seekAmount(amountOf(answers), op, ref.media, text) })
   if (op === 'volume' || op === 'rate') {
     const to = op === 'volume' ? volumeTarget(text, ref.media) : rateTarget(text, ref.media)
     return to === null ? null : command({ op, to })

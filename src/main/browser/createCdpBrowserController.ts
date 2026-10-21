@@ -38,13 +38,14 @@ import {
   pageReadPartCount,
   parseCollectedPage,
   parsePageLinks,
+  parseMediaFacts,
   type CollectedPage,
-  type MediaFacts,
   type PageLink,
   type PageSnapshot,
   type SnapshotRef,
 } from '../../core/browser/snapshot'
-import { mediaChangesOf, type MediaOpAction } from '../../core/command/mediaOp'
+import type { MediaOpAction } from '../../core/browser/mediaOp'
+import { mediaChangesOf } from '../../core/command/mediaOp'
 import { MEDIA_FACTS_FN } from './pageMediaScript'
 import { SCROLL_END_OF_PAGE, formatNewInView } from '../../core/browser/scrollDelta'
 import { authPopupOpenedLine, formatOpenAddress, judgeWindowOpens, LINK_SELECTOR, NEW_WINDOW_FOLLOWED_CLAUSE, popupBlockedLine } from '../../core/browser/newWindowLink'
@@ -1683,15 +1684,16 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
   async function mediaOpOn(ref: number, op: MediaOpAction): Promise<string> {
     const { target } = await resolveRef(ref)
     const index = target.ref - 1
-    const read = await evaluateInPage<{ before: MediaFacts; after: MediaFacts } | null>(`((op) => {
+    const read = await evaluateInPage<{ before: unknown; after: unknown } | null>(`((op) => {
       /* MEDIA_OP */
       const el = (window.__bingbongRefs || [])[${index}]
       if (!el || !el.isConnected || !(el instanceof HTMLMediaElement)) return null
       const facts = ${MEDIA_FACTS_FN}
       const player = typeof el.closest === 'function' ? el.closest('#movie_player') : null
       const before = facts(el)
-      const start = el.seekable.length > 0 ? el.seekable.start(0) : 0
-      const end = el.seekable.length > 0 ? el.seekable.end(el.seekable.length - 1) : (Number.isFinite(el.duration) ? el.duration : el.currentTime)
+      // The seeks are offered only with a seekable range (ADR 0080): the bounds are the facts' own.
+      const start = before.seekable ? before.seekable.start : 0
+      const end = before.seekable ? before.seekable.end : el.currentTime
       const tracks = el.textTracks ? Array.from(el.textTracks) : []
       switch (op.op) {
         case 'play': el.play().catch(() => {}); break
@@ -1720,26 +1722,19 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
         }
         case 'uncaptions': for (const t of tracks) t.mode = 'disabled'; break
       }
-      const after = facts(el)
-      // A play's pause flag flips in the call; a seek lands in the same tick.
-      if (op.op === 'play' || op.op === 'restart') after.paused = false
-      return { before, after }
+      // A play() flips the paused flag in the call and a seek lands in the same tick, so the facts read after tell what the op did — a play the policy refuses flips back later, and the next read says so.
+      return { before, after: facts(el) }
     })(${JSON.stringify(op)})`)
     // A null comes back as undefined (`evaluateInPage`): either is no media element.
     if (read == null) throw new Error(`ref ${ref} is no video or audio element`)
-    const before = parseMediaFactsOf(read.before)
-    const after = parseMediaFactsOf(read.after)
+    const [before, after] = [parseMediaFacts(read.before), parseMediaFacts(read.after)]
+    if (before === undefined || after === undefined) throw new Error(`ref ${ref}: the element's media facts could not be read`)
     // The facts on the page's refs moved: the next collect reads them anew.
     lastSnapshot = undefined
     const changes = mediaChangesOf(before, after)
     return `${mediaOpHead(op.op, ref)}${changes.length > 0 ? changes.join(', ') : NO_OBSERVABLE_CHANGE}`
   }
 
-  /** The facts as the page sent them: an Infinity duration travels as null. */
-  function parseMediaFactsOf(raw: MediaFacts): MediaFacts {
-    const duration = raw.duration as number | null
-    return { ...raw, duration: duration === null ? Infinity : duration }
-  }
 
   async function describeRef(ref: number): Promise<SnapshotRef | undefined> {
     try {

@@ -72,8 +72,8 @@ export function playerCapabilities(songOn: boolean): readonly Capability[] {
  */
 const MEDIA_REF_OPS: ReadonlySet<Capability> = new Set<Capability>(['loop', 'loop_off', 'restart', 'pause', 'unpause', 'louder', 'quieter', 'mute', 'unmute', 'volume'])
 
-/** The Capabilities to offer beside a card that carries a media ref: the song's ops withheld. */
-export function withheldByMediaRef(capabilities: readonly Capability[]): Capability[] {
+/** The Capabilities to offer beside a card that carries a media ref's ops: the song's withheld, the Player's own kept. */
+export function capabilitiesBesideMediaOps(capabilities: readonly Capability[]): Capability[] {
   return capabilities.filter((capability) => !MEDIA_REF_OPS.has(capability))
 }
 

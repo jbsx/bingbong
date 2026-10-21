@@ -1,6 +1,6 @@
 import type { BlockerPageFacts } from '../browser/blockerNudge'
 import type { PageLink, PageSnapshot, SnapshotRef } from '../browser/snapshot'
-import type { MediaOpAction } from '../command/mediaOp'
+import type { MediaOpAction } from '../browser/mediaOp'
 
 /**
  * How a navigation's landing ended (#328, ADR 0076 amendment): the page

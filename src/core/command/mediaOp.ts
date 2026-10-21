@@ -1,28 +1,24 @@
 import type { DecisionChoiceQuestion } from '../ports/decisionModel'
 import type { MediaFacts } from '../browser/snapshot'
+import { MEDIA_OPS, isSeek, type AmountRung, type MediaOp, type MediaOpAction } from '../browser/mediaOp'
 import { firstNumber } from '../timer/duration'
+
+export { AMOUNT_RUNGS, MEDIA_OPS, isMediaOp, isSeek, type AmountRung, type MediaOp, type MediaOpAction } from '../browser/mediaOp'
 
 // A Media Op (#372, ADR 0080, CONTEXT.md): an action a media ref carries on
 // the action card because of its kind, the way an input carries `type-N`
 // and a link `open-N`. Every op the element can take is offered whatever
-// its state — mute on a muted element changes nothing, and the next Hop's
-// Verdict ends it — and only what it cannot do is withheld: no seek on an
-// element with no seekable range, no captions on one with no text track.
-// Each op is one evaluate on that element through the browser controller,
-// on any site; the Player is untouched. No grammar line: "skip ahead" is
-// Jev's to read, and how far is the Amount Choice's.
+// its state — mute on a muted element changes nothing — and only what it
+// cannot do is withheld: no seek on an element with no seekable range, no
+// captions on one with no text track. Each op is one evaluate on that
+// element through the browser controller, on any site; the Player is
+// untouched. No grammar line: "skip ahead" is Jev's to read, and how far
+// is the Amount Choice's.
 
-/** The ops a media ref can carry, in the order the card offers them. */
-export const MEDIA_OPS = ['play', 'pause', 'forward', 'back', 'restart', 'volume', 'mute', 'unmute', 'loop', 'unloop', 'rate', 'captions', 'uncaptions'] as const
-export type MediaOp = (typeof MEDIA_OPS)[number]
-
-/** The ops that move the position: the Amount Choice is read for these alone. */
-const SEEKS: ReadonlySet<MediaOp> = new Set<MediaOp>(['forward', 'back', 'restart'])
-const CAPTION_OPS: ReadonlySet<MediaOp> = new Set<MediaOp>(['captions', 'uncaptions'])
-
-/** The Amount's rungs (ADR 0080): how far a seek moves, Jev's to choose; `end` is the start when going back. */
-export const AMOUNT_RUNGS = ['words', 'moment', 'little', 'chunk', 'lot', 'half', 'end'] as const
-export type AmountRung = (typeof AMOUNT_RUNGS)[number]
+/** The ops that need a seekable range: withheld, by ability alone, on an element with none. */
+const NEEDS_SEEKABLE: ReadonlySet<MediaOp> = new Set<MediaOp>(['forward', 'back', 'restart'])
+/** The ops that need text tracks. */
+const NEEDS_TRACKS: ReadonlySet<MediaOp> = new Set<MediaOp>(['captions', 'uncaptions'])
 
 /** The share of the length each fraction rung moves. */
 const FRACTIONS: Readonly<Record<Exclude<AmountRung, 'words' | 'end'>, number>> = { moment: 1 / 100, little: 1 / 20, chunk: 1 / 10, lot: 1 / 4, half: 1 / 2 }
@@ -32,65 +28,72 @@ export const VOLUME_STEP = 10
 /** How much `rate-N` moves the speed when the words carry no number. */
 export const RATE_STEP = 0.25
 
-/** What a Media Op Command carries: the op, and for a seek the rung read and the seconds it came to; for a volume or a rate, the level it sets. */
-export interface MediaOpAction {
-  readonly op: MediaOp
-  readonly rung?: AmountRung
-  readonly seconds?: number
-  readonly to?: number
-}
-
-/** Whether a card label is a Media Op's. */
-export function isMediaOp(label: string): label is MediaOp {
-  return (MEDIA_OPS as readonly string[]).includes(label)
-}
-
-/** Whether an op is a seek: the Amount Choice is read for it. */
-export function isSeek(op: MediaOp): boolean {
-  return op === 'forward' || op === 'back'
-}
-
 /**
  * The ops an element can take, by ability alone (ADR 0080): the seeks
  * only with a seekable range, the captions pair only with text tracks,
  * the rest always — never gated by state.
  */
 export function mediaOpsOf(facts: MediaFacts): MediaOp[] {
-  return MEDIA_OPS.filter((op) => (SEEKS.has(op) ? facts.seekable !== null : CAPTION_OPS.has(op) ? facts.tracks > 0 : true))
+  return MEDIA_OPS.filter((op) => (NEEDS_SEEKABLE.has(op) ? facts.seekable !== null : NEEDS_TRACKS.has(op) ? facts.tracks > 0 : true))
+}
+
+/**
+ * Each op in words, one row: its line on the action card (the ref it acts
+ * on filled in), how "Done so far" and the Feed name it done, and the
+ * Answer it leaves. A seek, a volume and a rate carry their number too.
+ */
+interface OpWords {
+  readonly card: (named: string) => string
+  readonly done: string
+  readonly answer: string
+}
+
+const OP_WORDS: Readonly<Record<MediaOp, OpWords>> = {
+  play: { card: (named) => `play ${named}: start it, or carry on playing it`, done: 'play', answer: 'Playing.' },
+  pause: { card: (named) => `pause ${named}`, done: 'pause', answer: 'Paused.' },
+  // "by a length of time" is what tells "go back a minute" from the browser's `back` (measured 2026-10-21: 0.62–0.65 → 0.85–0.89 on the fixture page, 0.63–0.65 → 0.83–0.89 on the YouTube ask).
+  forward: { card: (named) => `go forward in ${named} by a length of time, the amount Choice saying how far`, done: 'skip forward', answer: 'Skipped forward' },
+  back: { card: (named) => `go back in ${named} by a length of time, the amount Choice saying how far`, done: 'skip back', answer: 'Skipped back' },
+  restart: { card: (named) => `play ${named} again from the start`, done: 'restart', answer: 'Restarted.' },
+  volume: { card: (named) => `set the volume of ${named}: to the number the words carry (0 to 100), or up or down as they say`, done: 'set the volume to', answer: 'Volume' },
+  mute: { card: (named) => `mute ${named}`, done: 'mute', answer: 'Muted.' },
+  unmute: { card: (named) => `unmute ${named}`, done: 'unmute', answer: 'Unmuted.' },
+  loop: { card: (named) => `put ${named} on loop, so it repeats`, done: 'loop', answer: 'Looping.' },
+  unloop: { card: (named) => `stop looping ${named}`, done: 'stop looping', answer: 'Loop off.' },
+  rate: { card: (named) => `set the playback speed of ${named}: to the number the words carry (1 is normal), or faster or slower as they say`, done: 'set the speed to', answer: 'Speed' },
+  captions: { card: (named) => `turn captions (subtitles) on for ${named}`, done: 'turn captions on', answer: 'Captions on.' },
+  uncaptions: { card: (named) => `turn captions off for ${named}`, done: 'turn captions off', answer: 'Captions off.' },
 }
 
 /** Each op's line on the action card: a whole action naming the ref by number and what plays in it. */
 export function mediaOpDescription(op: MediaOp, ref: number, title: string): string {
-  const named = `[${ref}] ${JSON.stringify(title)}`
-  switch (op) {
-    case 'play':
-      return `play ${named}: start it, or carry on playing it`
-    case 'pause':
-      return `pause ${named}`
-    // "by a length of time" is what tells "go back a minute" from the browser's `back` (measured 2026-10-21: 0.62–0.65 → 0.85–0.89 on the fixture page, 0.63–0.65 → 0.83–0.89 on the YouTube ask).
-    case 'forward':
-      return `go forward in ${named} by a length of time, the amount Choice saying how far`
-    case 'back':
-      return `go back in ${named} by a length of time, the amount Choice saying how far`
-    case 'restart':
-      return `play ${named} again from the start`
-    case 'volume':
-      return `set the volume of ${named}: to the number the words carry (0 to 100), or up or down as they say`
-    case 'mute':
-      return `mute ${named}`
-    case 'unmute':
-      return `unmute ${named}`
-    case 'loop':
-      return `put ${named} on loop, so it repeats`
-    case 'unloop':
-      return `stop looping ${named}`
-    case 'rate':
-      return `set the playback speed of ${named}: to the number the words carry (1 is normal), or faster or slower as they say`
-    case 'captions':
-      return `turn captions (subtitles) on for ${named}`
-    case 'uncaptions':
-      return `turn captions off for ${named}`
-  }
+  return OP_WORDS[op].card(`[${ref}] ${JSON.stringify(title)}`)
+}
+
+/** The number an action carries, in its words: ` 10 s` for a seek, ` 30` for a volume, ` 1.5×` for a speed; nothing for the rest. */
+function numberOf(action: MediaOpAction): string {
+  if (isSeek(action.op)) return action.seconds !== undefined ? ` ${Math.round(action.seconds)} s` : ''
+  if (action.op === 'volume') return ` ${action.to ?? '?'}`
+  if (action.op === 'rate') return ` ${action.to ?? '?'}×`
+  return ''
+}
+
+/** A Media Op as "Done so far" and the Feed name it: `pause`, `skip forward 10 s`, `set the volume to 30`. */
+export function describeMediaOp(action: MediaOpAction): string {
+  return `${OP_WORDS[action.op].done}${numberOf(action)}`
+}
+
+/** A Media Op's Answer (#333, #372): what it did; a seek says where it came to; one that changed nothing (an empty list of changes) says so. */
+export function mediaOpAnswer(action: MediaOpAction, changes: readonly string[] | undefined): string {
+  const words = OP_WORDS[action.op].answer
+  const sentence = ((): string => {
+    if (isSeek(action.op)) {
+      const to = changes?.map((change) => /→ (\S+)$/.exec(change)?.[1]).find((at) => at !== undefined)
+      return `${words}${numberOf(action)}${to !== undefined ? `, to ${to}` : ''}.`
+    }
+    return action.op === 'volume' || action.op === 'rate' ? `${words}${numberOf(action)}.` : words
+  })()
+  return changes !== undefined && changes.length === 0 ? `${sentence} Nothing changed: it was already.` : sentence
 }
 
 /** The Amount Choice (ADR 0080): asked on every ask that offers a media ref, read only when the action is a seek. */
@@ -118,6 +121,13 @@ export function clockOf(seconds: number): string {
   return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`
 }
 
+/** playing, paused or ended: the one word the state line and a change both use. */
+const playingOf = (facts: MediaFacts): string => (facts.ended ? 'ended' : facts.paused ? 'paused' : 'playing')
+/** The volume as a percentage. */
+const percentOf = (facts: MediaFacts): number => Math.round(facts.volume * 100)
+const loopOf = (facts: MediaFacts): string => `loop ${facts.loop ? 'on' : 'off'}`
+const captionsOf = (facts: MediaFacts): string => `captions ${facts.captions ?? 'off'}`
+
 /**
  * A media ref's state as its line carries it (ADR 0080): playing, paused
  * or ended; elapsed/duration, or live; the volume as a percentage, or
@@ -127,15 +137,37 @@ export function clockOf(seconds: number): string {
 export function mediaStateOf(facts: MediaFacts): string {
   const live = !Number.isFinite(facts.duration)
   return [
-    facts.ended ? 'ended' : facts.paused ? 'paused' : 'playing',
+    playingOf(facts),
     live ? `live ${clockOf(facts.currentTime)}` : `${clockOf(facts.currentTime)}/${clockOf(facts.duration)}`,
-    facts.muted ? 'muted' : `volume ${Math.round(facts.volume * 100)}%`,
-    `loop ${facts.loop ? 'on' : 'off'}`,
+    facts.muted ? 'muted' : `volume ${percentOf(facts)}%`,
+    loopOf(facts),
     ...(facts.rate !== 1 ? [`speed ${facts.rate}×`] : []),
-    ...(facts.tracks > 0 ? [`captions ${facts.captions ?? 'off'}`] : []),
+    ...(facts.tracks > 0 ? [captionsOf(facts)] : []),
     ...(facts.buffering ? ['buffering'] : []),
     ...(facts.failed ? ['failed'] : []),
   ].join(' ')
+}
+
+/** Whether two positions differ by more than a player's own tick. */
+const moved = (before: number, after: number): boolean => Math.abs(after - before) >= 0.5
+
+/**
+ * What changed on a media element between two reads of its facts (#372,
+ * ADR 0080), in the words the op's outcome and "Done so far" share:
+ * `0:16 → 0:26`, `paused`, `muted`, `loop on`, `volume 100% → 30%`,
+ * `speed 1× → 1.5×`, `captions en`. Empty when nothing did.
+ */
+export function mediaChangesOf(before: MediaFacts, after: MediaFacts): string[] {
+  return [
+    ...(playingOf(before) !== playingOf(after) ? [playingOf(after)] : []),
+    ...(moved(before.currentTime, after.currentTime) ? [`${clockOf(before.currentTime)} → ${clockOf(after.currentTime)}`] : []),
+    ...(before.muted !== after.muted ? [after.muted ? 'muted' : 'unmuted'] : []),
+    ...(percentOf(before) !== percentOf(after) ? [`volume ${percentOf(before)}% → ${percentOf(after)}%`] : []),
+    ...(before.loop !== after.loop ? [loopOf(after)] : []),
+    ...(before.rate !== after.rate ? [`speed ${before.rate}× → ${after.rate}×`] : []),
+    ...(before.captions !== after.captions ? [captionsOf(after)] : []),
+    ...(before.failed !== after.failed && after.failed ? ['failed'] : []),
+  ]
 }
 
 /** The length a fraction rung is a share of: the duration, or a live stream's seekable window. */
@@ -144,12 +176,28 @@ function lengthOf(facts: MediaFacts): number {
   return facts.seekable === null ? 0 : facts.seekable.end - facts.seekable.start
 }
 
-/** The seconds the words name: their number in seconds, or minutes or hours when they say so; "a minute" is one. Null when they name none. */
+const UNITS: Readonly<Record<string, number>> = { hour: 3600, hours: 3600, hr: 3600, hrs: 3600, minute: 60, minutes: 60, min: 60, mins: 60, second: 1, seconds: 1, sec: 1, secs: 1 }
+
+/**
+ * The seconds the words name: each number with the unit after it, summed
+ * ("1 minute 30 seconds" is 90; "a minute" is one); a number with no unit
+ * is seconds. Null when they name none.
+ */
 export function secondsInWords(words: string): number | null {
-  const unit = /\bhours?\b/i.test(words) ? 3600 : /\bmin(?:ute)?s?\b/i.test(words) ? 60 : /\bsec(?:ond)?s?\b/i.test(words) ? 1 : null
-  const number = firstNumber(words)
-  if (number === null) return unit === null ? null : unit
-  return number * (unit ?? 1)
+  const tokens = words.toLowerCase().replace(/[^a-z0-9.\s]/g, ' ').split(/\s+/).filter((token) => token !== '')
+  let total: number | null = null
+  let lastUnitAt = -1
+  for (const [index, token] of tokens.entries()) {
+    const unit = UNITS[token]
+    if (unit === undefined) continue
+    // The number is the words between the unit before and this one: up to three, so "twenty five minutes" reads as one.
+    const before = tokens.slice(Math.max(lastUnitAt + 1, index - 3), index)
+    lastUnitAt = index
+    const number = firstNumber(before.join(' ')) ?? (before.at(-1) === 'a' || before.at(-1) === 'an' ? 1 : null)
+    if (number === null) continue
+    total = (total ?? 0) + number * unit
+  }
+  return total ?? firstNumber(words)
 }
 
 /**
@@ -178,17 +226,17 @@ const hundredths = (seconds: number): number => Math.round(seconds * 100) / 100
 
 const UP = /\b(up|louder|loud|raise|increase|higher|more)\b/i
 const DOWN = /\b(down|quieter|quiet|lower|decrease|softer|less|reduce)\b/i
-const FASTER = /\b(faster|quicker|speed up|double)\b/i
+const FASTER = /\b(faster|quicker|speed (?:it |things )?up|double)\b/i
 const SLOWER = /\b(slower|slow|half)\b/i
 
-/** The level `volume-N` sets, 0–100: the number the words carry, else a step up or down as they say; null when they say neither. */
+/** The level `volume-N` sets, 0–100: the number the words carry — by that much up or down when they say "by" — else a step up or down as they say; null when they say neither. */
 export function volumeTarget(words: string, facts: MediaFacts): number | null {
   const number = firstNumber(words)
-  if (number !== null && number >= 0 && number <= 100) return number
-  const now = Math.round(facts.volume * 100)
-  if (UP.test(words)) return Math.min(100, now + VOLUME_STEP)
-  if (DOWN.test(words)) return Math.max(0, now - VOLUME_STEP)
-  return null
+  const direction = UP.test(words) ? 1 : DOWN.test(words) ? -1 : 0
+  const by = number !== null && direction !== 0 && /\bby\b/i.test(words)
+  if (number !== null && number >= 0 && number <= 100 && !by) return number
+  if (direction === 0) return null
+  return Math.max(0, Math.min(100, percentOf(facts) + direction * (by ? number : VOLUME_STEP)))
 }
 
 /** The speed `rate-N` sets: the number the words carry (1 is normal, "2x" is double), else a step faster or slower as they say; null when they say neither. */
@@ -204,48 +252,4 @@ export function rateTarget(words: string, facts: MediaFacts): number | null {
   if (FASTER.test(words)) return Math.min(16, facts.rate + RATE_STEP)
   if (SLOWER.test(words)) return Math.max(RATE_STEP, facts.rate - RATE_STEP)
   return null
-}
-
-/** Whether two positions differ by more than a player's own tick. */
-const moved = (before: number, after: number): boolean => Math.abs(after - before) >= 0.5
-
-/**
- * What changed on a media element between two reads of its facts (#372,
- * ADR 0080), in the words the op's outcome and "Done so far" share:
- * `0:16 → 0:26`, `paused`, `muted`, `loop on`, `volume 100% → 30%`,
- * `speed 1× → 1.5×`, `captions en`. Empty when nothing did.
- */
-export function mediaChangesOf(before: MediaFacts, after: MediaFacts): string[] {
-  const playing = (facts: MediaFacts): string => (facts.ended ? 'ended' : facts.paused ? 'paused' : 'playing')
-  return [
-    ...(playing(before) !== playing(after) ? [playing(after)] : []),
-    ...(moved(before.currentTime, after.currentTime) ? [`${clockOf(before.currentTime)} → ${clockOf(after.currentTime)}`] : []),
-    ...(before.muted !== after.muted ? [after.muted ? 'muted' : 'unmuted'] : []),
-    ...(Math.round(before.volume * 100) !== Math.round(after.volume * 100) ? [`volume ${Math.round(before.volume * 100)}% → ${Math.round(after.volume * 100)}%`] : []),
-    ...(before.loop !== after.loop ? [`loop ${after.loop ? 'on' : 'off'}`] : []),
-    ...(before.rate !== after.rate ? [`speed ${before.rate}× → ${after.rate}×`] : []),
-    ...(before.captions !== after.captions ? [`captions ${after.captions ?? 'off'}`] : []),
-    ...(before.failed !== after.failed && after.failed ? ['failed'] : []),
-  ]
-}
-
-/** A Media Op as "Done so far" and the Feed name it: `pause`, `skip forward 10 s`, `set the volume to 30`. */
-export function describeMediaOp(action: MediaOpAction): string {
-  switch (action.op) {
-    case 'forward':
-    case 'back':
-      return `skip ${action.op} ${action.seconds !== undefined ? `${Math.round(action.seconds)} s` : ''}`.trim()
-    case 'volume':
-      return `set the volume to ${action.to ?? '?'}`
-    case 'rate':
-      return `set the speed to ${action.to ?? '?'}×`
-    case 'unloop':
-      return 'stop looping'
-    case 'captions':
-      return 'turn captions on'
-    case 'uncaptions':
-      return 'turn captions off'
-    default:
-      return action.op
-  }
 }

@@ -1,5 +1,5 @@
 import type { ToolResultOutcome } from '../ports/toolOutcome'
-import { MEDIA_OPS } from '../command/mediaOp'
+import { MEDIA_OPS } from './mediaOp'
 
 // #261 (note on ADR 0058): the browser port's click and type outcomes open
 // with fixed heads, and some say the call consumed nothing — a Blocked

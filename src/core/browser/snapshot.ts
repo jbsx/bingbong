@@ -303,8 +303,8 @@ function parseTextBlock(entry: unknown): CollectedTextBlock | null {
   }
 }
 
-/** A collected element's media facts (#372), or undefined for none or ones that do not read as such; a null duration is a live stream's Infinity. */
-function parseMediaFacts(raw: unknown): MediaFacts | undefined {
+/** A media element's facts as the page sends them (#372) — the collect's, or a Media Op's before and after — or undefined for none or ones that do not read as such; a null duration is a live stream's Infinity. */
+export function parseMediaFacts(raw: unknown): MediaFacts | undefined {
   if (typeof raw !== 'object' || raw === null) return undefined
   const facts = raw as Record<string, unknown>
   const duration = facts.duration === null ? Infinity : facts.duration
@@ -339,6 +339,12 @@ function parseMedia(raw: unknown): PageMedia | null {
   if (typeof media.title !== 'string' || typeof media.paused !== 'boolean' || typeof media.loop !== 'boolean' || typeof media.muted !== 'boolean') return null
   if (!isFiniteNumber(media.currentTime) || typeof duration !== 'number' || Number.isNaN(duration)) return null
   return { title: media.title, paused: media.paused, currentTime: media.currentTime, duration, loop: media.loop, muted: media.muted }
+}
+
+/** The `media` entry of a collected element: its facts when it sent any that read, nothing otherwise. */
+function mediaFactsEntry(raw: unknown): { media: MediaFacts } | Record<string, never> {
+  const media = parseMediaFacts(raw)
+  return media !== undefined ? { media } : {}
 }
 
 export function parseCollectedPage(raw: unknown): CollectedPage {
@@ -386,7 +392,7 @@ export function parseCollectedPage(raw: unknown): CollectedPage {
       searchField: optionalBoolean(el.searchField),
       formHasSearch: optionalBoolean(el.formHasSearch),
       layer: el.layer === 'dialog' || el.layer === 'page' ? el.layer : undefined,
-      ...(el.media !== undefined && el.media !== null ? (() => { const media = parseMediaFacts(el.media); return media !== undefined ? { media } : {} })() : {}),
+      ...mediaFactsEntry(el.media),
       checked: nullableBoolean(el.checked),
       selectedOption: optionalString(el.selectedOption),
       value: typeof el.value === 'string' ? el.value : null,
