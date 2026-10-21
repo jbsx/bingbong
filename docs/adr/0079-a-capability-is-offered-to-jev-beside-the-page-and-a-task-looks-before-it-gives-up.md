@@ -152,6 +152,6 @@ failing with "Nothing is playing." A `skip`'s own pause reaches YouTube's
 player alone, never another site's video. A `stop` with nothing in flight
 pauses every playing media element in the page's top frame, YouTube's
 player among them (#376): it is a grammar line that fires without an ask,
-and pausing is a mechanism by kind, not by site. Media inside frames is
-not reached, as it is not by the collect or the ops. The Player's queue is unchanged: a song it never started stays off
+and pausing is a mechanism by kind, not by site. Since ADR 0081 (#377)
+it reaches every Reachable Frame too, as the collect and the ops do. The Player's queue is unchanged: a song it never started stays off
 the Now Playing card and is not remembered.

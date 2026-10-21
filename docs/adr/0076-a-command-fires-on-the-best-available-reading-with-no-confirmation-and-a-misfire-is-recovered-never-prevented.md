@@ -871,7 +871,8 @@ recommended" on its five decisions.
   at once while something is in flight, because it is only an abort then.
 - **Ruling 2: `stop` with nothing in flight pauses what plays,** as it
   silences a ringing Timer: every playing media element in the page's
-  top frame (#376; at first YouTube's player alone). With a Command in
+  top frame (#376; at first YouTube's player alone), and in every
+  Reachable Frame since ADR 0081 (#377). With a Command in
   flight, being read or sounding, `stop` stays the abort and the media
   plays on.
 - **Ruling 3: `back` and `resume` are untouched.** Music goes back with
@@ -915,7 +916,8 @@ recommended" on its five decisions.
   paused at the end, with no ad and no other video, 12 s on.
 - The control script acts on `#movie_player`'s video alone. A `skip`
   never pauses another site's video. A `stop` with nothing in flight
-  pauses every playing top-frame media element since #376.
+  pauses every playing top-frame media element since #376, and every
+  Reachable Frame's since ADR 0081 (#377).
 
 ## Amendment 2026-10-19 — verbs are actions, not words: `open` is gone, the Local Match keeps fixed phrases, nothing guesses (#353)
 

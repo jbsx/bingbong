@@ -22,3 +22,12 @@ Today there is zero CAPTCHA handling: the snapshot collector is top-frame text-o
 - No CAPTCHA is ever auto-cleared; the agent stops pretending a blocked page is readable and asks the user instead.
 - `todo` "get past captchas" is resolved as *detect and escalate*, superseding the auto-solve wish.
 - Adding auto-attempt later is additive per-class (the detection layers stand regardless).
+
+## Amendment 2026-10-21 — the collect reaches frames (ADR 0081, #377)
+
+The collector is no longer top-frame only: every Reachable Frame is
+collected in its own context and its refs and text join the page. A
+cross-origin challenge iframe stays the opaque `iframe` ref only when
+it cannot be read in time; when its controls come through, they are on
+the card like any control. The challenge detection keeps reading the
+opaque ref where one remains.

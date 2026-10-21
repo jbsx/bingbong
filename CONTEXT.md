@@ -1115,8 +1115,9 @@ Capability retired by #374). The Player's exact lines still drive
 YouTube's player first, else the page's own media element as the collect
 picks it — the one playing, else the first that started — so a song the
 Player never started loops, restarts, pauses and shows as the Player's
-own would; a `stop` with nothing in flight and a `skip`'s own pause stay
-YouTube's player's alone (ADR 0076). "click play" and "press
+own would; a `skip`'s own pause stays YouTube's player's alone, and a `stop`
+with nothing in flight pauses every playing media element on the page
+(ADR 0076, #376), in every Reachable Frame (ADR 0081, #377). "click play" and "press
 play" stay the page's button by the option's own words, not a rule.
 `back` stays history and `resume` the
 Task's.
@@ -1288,12 +1289,22 @@ _Avoid_: cancel the action, kill the navigation, abort
 
 **Ref**:
 A numbered handle in a page read naming one element in the viewport at the
-moment of that read, never one inside an inert container, for click, type,
-and Look to act on. A number names the same element until the page is
+moment of that read, in the top document or a Reachable Frame, never one
+inside an inert container, for click, type, and Look to act on. One flat
+numbering runs across every frame; a ref from a frame names its frame's
+host on its line. A number names the same element until the page is
 collected again; a number used after a collect the model did not see in full
 names an element only if it still is that element, otherwise the action is
 refused.
 _Avoid_: selector, element id, index
+
+**Reachable Frame**:
+A frame of the page whose box is rendered, meets the viewport and is larger
+than a dot, at any depth and from any site. The page Bing Bong reads and
+acts on is the top document and every Reachable Frame: its refs, its media
+and its text. A frame that does not answer in time stays one opaque
+`iframe` ref for that read.
+_Avoid_: iframe (for the reachable kind), subframe, embed, child frame
 
 **Ref State**:
 What the browser's accessibility tree says of a ref beyond its label: a
