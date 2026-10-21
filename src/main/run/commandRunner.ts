@@ -446,7 +446,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
    */
   const appliance = (): Appliance | undefined => (deps.player === undefined ? undefined : { queued: deps.player.queue().current !== null })
 
-  /** The music paused for a `stop` (#343); whether a video was playing. A failure to reach it is no pause. */
+  /** What plays on the page paused for a `stop` (#343, #376); whether anything was playing. A failure to reach it is no pause. */
   async function pauseMusic(): Promise<boolean> {
     try {
       return (await deps.player?.pauseIfPlaying()) ?? false
@@ -999,7 +999,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       stopLoading()
       // A ringing Timer is what "stop" most often means; a running one is left to run.
       const silenced = deps.timer?.silence() ?? false
-      // With nothing else to stop, the music is what "stop" means; it pauses, as YouTube's own button would.
+      // With nothing else to stop, what plays is what "stop" means: every playing media element on the page pauses, by kind (#376).
       const paused = nothingInFlight && !silenced && deps.player !== undefined && (await pauseMusic())
       inFlight = null
       // Pausing the music is an action done; a Stop is grey, and one that found nothing says so.

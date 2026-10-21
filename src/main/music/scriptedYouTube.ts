@@ -1,6 +1,6 @@
 import type { FakeBrowser } from '../../core/testing/doubles'
 import { videoIdOf } from '../../core/music/youtubeSearch'
-import type { ElementOp, ElementState, WatchStatus } from './youtubeScripts'
+import type { ElementOp, ElementState, PausedAll, WatchStatus } from './youtubeScripts'
 
 // A scripted YouTube for the tests (#343): it answers the Player's tagged
 // scripts the way the real pages would — the results' `ytInitialData` for a
@@ -39,6 +39,10 @@ export class ScriptedYouTube {
   readonly controls: ElementOp[] = []
   readonly fetched: string[] = []
   element = { paused: false, loop: false, volume: 100, muted: false, currentTime: 0, duration: 180 }
+  /** The page's own media elements beside YouTube's player — any site's (#376). */
+  pageMedia: { paused: boolean }[] = []
+  /** How often an idle `stop` paused what plays on the page (#376). */
+  pauseAlls = 0
   /** The volume YouTube's player remembers: what `setVolume` told it, never the duck's floor. */
   playerVolume = 100
   adShowing = false
@@ -89,6 +93,7 @@ export class ScriptedYouTube {
     }
     if (expression.includes('/* YT_WATCH */')) return this.watchStatus()
     if (expression.includes('/* YT_CONTINUE */')) return this.answerPrompt()
+    if (expression.includes('/* PAGE_PAUSE_ALL */')) return this.pauseAll()
     // The op rides at the script's end, `})(<op json>)`; the body holds other IIFEs before it.
     if (expression.includes('/* YT_CONTROL */')) return this.control(JSON.parse(expression.slice(expression.lastIndexOf('})(') + 3, -1)) as ElementOp)
     return undefined
@@ -113,6 +118,17 @@ export class ScriptedYouTube {
     return true
   }
 
+  private pauseAll(): PausedAll {
+    this.pauseAlls += 1
+    const id = this.currentId()
+    const watch = id === null ? undefined : this.watches.get(id)
+    const youtube = watch !== undefined && watch.fails === undefined && !this.element.paused
+    if (youtube) this.element = { ...this.element, paused: true }
+    const playing = this.pageMedia.filter((media) => !media.paused).length
+    this.pageMedia = this.pageMedia.map(() => ({ paused: true }))
+    return { paused: playing + (youtube ? 1 : 0), youtube }
+  }
+
   private control(op: ElementOp): ElementState {
     this.controls.push(op)
     const id = this.currentId()
@@ -126,10 +142,6 @@ export class ScriptedYouTube {
         this.element = { ...element, paused: false }
         break
       case 'pause':
-        this.element = { ...element, paused: true }
-        break
-      case 'pauseIfPlaying':
-        changed = !element.paused
         this.element = { ...element, paused: true }
         break
       case 'loop':

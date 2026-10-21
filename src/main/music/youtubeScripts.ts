@@ -4,8 +4,10 @@
 // YouTube's chrome, its queue, its Autoplay toggle or its Loop menu. A
 // control Jev chose for a song on the page reaches the page's own media
 // where YouTube's player is absent (#362, ADR 0079) — the element the ask
-// showed, picked as the collect picks it. A `stop` with nothing in flight
-// and a `skip`'s own pause reach YouTube's player alone (ADR 0076).
+// showed, picked as the collect picks it. A `skip`'s own pause reaches
+// YouTube's player alone (ADR 0076). A `stop` with nothing in flight pauses
+// every playing media element on the page, YouTube's player among them, by
+// kind and in the top frame only (#376).
 
 import { PAGE_MEDIA_JS } from '../browser/pageMediaScript'
 
@@ -142,8 +144,6 @@ export const CONTINUE_SCRIPT = `(() => {
 export type ElementOp =
   | { readonly op: 'play' }
   | { readonly op: 'pause' }
-  /** Pause only a video that is playing: `stop` with nothing in flight (owner's ruling 2). */
-  | { readonly op: 'pauseIfPlaying' }
   | { readonly op: 'loop'; readonly on: boolean }
   | { readonly op: 'restart' }
   /** Volume to this, 0–100 — the element heard at `heard` instead while ducked (#344). */
@@ -159,7 +159,7 @@ export type ElementOp =
 /** The element after a control, or `found` false when the page has no player video. */
 export interface ElementState {
   readonly found: boolean
-  /** The control changed something (`pauseIfPlaying` on a paused video changes nothing). */
+  /** The control changed something (a `read` changes nothing). */
   readonly changed: boolean
   readonly title: string
   readonly paused: boolean
@@ -177,8 +177,7 @@ export type ControlReach = 'youtube' | 'page'
  * `reach` 'page' the page's own media element as the collect picks it
  * (#362): the one playing, else the first that started; the element the
  * ask showed Jev, never another. 'youtube' is for what the user did not
- * ask of the page — a `stop` with nothing in flight, a `skip`'s pause
- * (ADR 0076). Volume and mute are set on the element and told to
+ * ask of the page — a `skip`'s pause (ADR 0076). Volume and mute are set on the element and told to
  * YouTube's player too, so its own slider and its remembered volume agree.
  */
 export function controlScript(op: ElementOp, reach: ControlReach = 'page'): string {
@@ -196,7 +195,6 @@ export function controlScript(op: ElementOp, reach: ControlReach = 'page'): stri
   switch (op.op) {
     case 'play': video.play().catch(() => {}); break
     case 'pause': video.pause(); break
-    case 'pauseIfPlaying': changed = !video.paused; if (changed) video.pause(); break
     case 'loop': video.loop = op.on; break
     case 'restart': video.currentTime = 0; video.play().catch(() => {}); break
     case 'volume':
@@ -222,3 +220,31 @@ export function controlScript(op: ElementOp, reach: ControlReach = 'page'): stri
   }
 })(${JSON.stringify(op)})`
 }
+
+/** What the pause-all script did: how many elements it paused, and whether YouTube's player was one of them. */
+export interface PausedAll {
+  readonly paused: number
+  readonly youtube: boolean
+}
+
+/**
+ * A `stop` with nothing in flight (#376, ADR 0076): every `video` and
+ * `audio` in the page's top frame that plays is paused — YouTube's player
+ * among them, a muted hero loop beside the real clip too, since `stop`
+ * means silence. Media inside frames is out of reach, as it is for the
+ * collect and the ops (#377).
+ */
+export const PAUSE_ALL_SCRIPT = `(() => {
+  /* PAGE_PAUSE_ALL */
+  const player = document.querySelector('#movie_player')
+  const own = player ? player.querySelector('video') : null
+  let paused = 0
+  let youtube = false
+  for (const media of document.querySelectorAll('video, audio')) {
+    if (media.paused) continue
+    media.pause()
+    paused += 1
+    if (media === own) youtube = true
+  }
+  return { paused, youtube }
+})()`

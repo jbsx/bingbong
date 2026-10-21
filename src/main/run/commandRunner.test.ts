@@ -15,7 +15,7 @@ import { NO_OBSERVABLE_CHANGE, PAGE_SIGNATURE_CHANGED, blockedActionHead } from 
 import { SPOKEN_FAILURES } from '../../core/command/spokenFailure'
 import { createSpeechCoordinator } from '../../core/tts/speechCoordinator'
 import { LATE_POPUP_WATCH_MS, MOUNTING_WAIT_MS, RESULTS_POLL_MS, RESULTS_WAIT_MS, createCommandRunner, type CommandRunner, type CommandRunnerDeps } from './commandRunner'
-import { createPlayer, type SongMemory } from '../music/player'
+import { createPlayer, type Player, type SongMemory } from '../music/player'
 import { ScriptedYouTube, videoItem } from '../music/scriptedYouTube'
 
 /** The ten song-op labels the retired Capability layer offered (#374): the media ref's own ops stand for each. */
@@ -276,14 +276,16 @@ describe('the Player (#343)', () => {
   const QUEEN = 'Queen – Bohemian Rhapsody (Official Video Remastered)'
 
   /** A runner wired to a real Player over a scripted YouTube. */
-  function music(options?: { speech?: Pick<TtsSpeaker, 'speak' | 'stop'>; learned?: string[]; songs?: SongMemory }) {
+  function music(options?: { speech?: Pick<TtsSpeaker, 'speak' | 'stop'>; learned?: string[]; songs?: SongMemory; timer?: CommandRunnerDeps['timer'] }) {
     let youtube!: ScriptedYouTube
+    let player!: Player
     const { songs, ...rest } = options ?? {}
     const wired = harness({
       ...rest,
       player: (browser) => {
         youtube = new ScriptedYouTube(browser)
-        return createPlayer({ browser, fetchResults: youtube.fetchResults, sleep: async () => {}, ...(songs !== undefined ? { songs } : {}) })
+        player = createPlayer({ browser, fetchResults: youtube.fetchResults, sleep: async () => {}, ...(songs !== undefined ? { songs } : {}) })
+        return player
       },
     })
     youtube.search(
@@ -301,7 +303,7 @@ describe('the Player (#343)', () => {
       if (head !== null && !exact) wired.decision.script.push({ answers: { action: choice(head[1]!.toLowerCase()), slot: choice(`s1-${line.trim().split(/\s+/).length - 1}`) } })
       return wired.runner.run(line, runOptions)
     }
-    return { ...wired, youtube, runner: { ...wired.runner, run } }
+    return { ...wired, youtube, player, runner: { ...wired.runner, run } }
   }
 
   it('`play <words>` is Jev\'s (ADR 0079): its `play` reading opens the results, picks the first plain video past a Short, a channel and a playlist, and plays its watch page', async () => {
@@ -471,8 +473,67 @@ describe('the Player (#343)', () => {
     await runner.run('stop', { source: 'spoken' })
     await reading
     expect(youtube.element.paused).toBe(false)
-    expect(youtube.controls.map((control) => control.op)).not.toContain('pauseIfPlaying')
+    expect(youtube.pauseAlls).toBe(0)
     expect(displays(events).at(-1)).toBe('Stopped.')
+  })
+
+  it('an idle `stop` on a page that is not YouTube pauses every media element playing there, a muted hero loop too, and answers "Paused." (#376)', async () => {
+    const { browser, events, youtube, runner } = music()
+    await runner.run('navigate example.com')
+    youtube.pageMedia = [{ paused: false }, { paused: false }, { paused: true }]
+    await runner.run('stop', { source: 'spoken' })
+    expect(youtube.pageMedia).toEqual([{ paused: true }, { paused: true }, { paused: true }])
+    expect(browser.navigations).toEqual(['https://example.com'])
+    // Pausing is an action done, not a grey Stop.
+    expect(events.filter((event) => event.type === 'display').at(-1)).toMatchObject({ text: 'Paused.' })
+    expect(events.filter((event) => event.type === 'display').at(-1)).not.toHaveProperty('muted')
+  })
+
+  it('an idle `stop` on YouTube pauses its player and the page\'s other media alike, and the Queue holds the song paused (#376)', async () => {
+    const { events, youtube, runner, player } = music()
+    await runner.run('play bohemian rhapsody')
+    youtube.pageMedia = [{ paused: false }]
+    await runner.run('stop', { source: 'spoken' })
+    expect(youtube.element.paused).toBe(true)
+    expect(youtube.pageMedia).toEqual([{ paused: true }])
+    expect(player.queue().paused).toBe(true)
+    expect(displays(events).at(-1)).toBe('Paused.')
+  })
+
+  it('an idle `stop` with only paused media, or none, answers "Nothing to stop." in grey (#376)', async () => {
+    const { events, youtube, runner } = music()
+    await runner.run('navigate example.com')
+    await runner.run('stop', { source: 'spoken' })
+    youtube.pageMedia = [{ paused: true }]
+    await runner.run('stop', { source: 'spoken' })
+    expect(youtube.pauseAlls).toBe(2)
+    expect(events.filter((event) => event.type === 'display').slice(-2).map((event) => [(event as { text: string }).text, (event as { muted?: boolean }).muted])).toEqual([
+      ['Nothing to stop.', true],
+      ['Nothing to stop.', true],
+    ])
+  })
+
+  it('a `stop` that silences a ringing Timer leaves the page\'s media playing (#376)', async () => {
+    let ringing = true
+    const timer = { set: () => {}, cancel: () => false, silence: () => [ringing, (ringing = false)][0]! }
+    const { events, youtube, runner } = music({ timer })
+    await runner.run('navigate example.com')
+    youtube.pageMedia = [{ paused: false }]
+    await runner.run('stop', { source: 'spoken' })
+    expect(youtube.pageMedia).toEqual([{ paused: false }])
+    expect(youtube.pauseAlls).toBe(0)
+    expect(displays(events).at(-1)).toBe('Stopped.')
+  })
+
+  it('a `skip` with nothing queued pauses YouTube\'s player alone, the page\'s other media playing on (#376, ADR 0076)', async () => {
+    const { events, youtube, runner } = music()
+    await runner.run('play bohemian rhapsody')
+    youtube.pageMedia = [{ paused: false }]
+    await runner.run('skip')
+    expect(displays(events).at(-1)).toBe('Nothing queued.')
+    expect(youtube.element.paused).toBe(true)
+    expect(youtube.pageMedia).toEqual([{ paused: false }])
+    expect(youtube.pauseAlls).toBe(0)
   })
 
   it('a partial "stop" still fires at once while there is something to stop — it is only an abort then', async () => {

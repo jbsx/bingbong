@@ -8,7 +8,7 @@ import { songTerms, stayed } from '../../core/music/rememberedSongs'
 import { SPOKEN_FAILURES, spokenFailureOf } from '../../core/command/spokenFailure'
 import { reportFault } from '../../core/trace/fault'
 import { STOPPED_ANSWERS } from '../../core/command/answer'
-import { CONTINUE_SCRIPT, RESULTS_SCRIPT, WATCH_SCRIPT, controlScript, type ControlReach, type ElementOp, type ElementState, type WatchStatus } from './youtubeScripts'
+import { CONTINUE_SCRIPT, PAUSE_ALL_SCRIPT, RESULTS_SCRIPT, WATCH_SCRIPT, controlScript, type ControlReach, type ElementOp, type ElementState, type PausedAll, type WatchStatus } from './youtubeScripts'
 
 // The Player (#343, CONTEXT.md): YouTube in the pane is the player; the
 // queue and the verbs live here. `play <words>` navigates the pane to the
@@ -61,7 +61,7 @@ export interface SongMemory {
 export interface Player {
   /** One music line: `words` is a search's Slot. `current` says the Command is still the one in flight. */
   perform(music: MusicAction, words: string | null, current: () => boolean): Promise<PlayerOutcome>
-  /** `stop` with nothing in flight (owner's ruling 2): pause a playing video; whether one was. */
+  /** `stop` with nothing in flight (owner's ruling 2, #376): pause every playing media element on the page; whether one was. */
   pauseIfPlaying(): Promise<boolean>
   /** The poll: hear the song's end and open the next queued one. */
   check(): Promise<void>
@@ -528,10 +528,12 @@ export function createPlayer(deps: PlayerDeps): Player {
     },
 
     async pauseIfPlaying() {
-      const element = await control({ op: 'pauseIfPlaying' }, 'youtube')
-      if (element === null || !element.found || !element.changed) return false
-      state = pause(state)
-      publish()
+      const stopped = await evaluate<PausedAll>(PAUSE_ALL_SCRIPT)
+      if (stopped === null || stopped.paused === 0) return false
+      if (stopped.youtube) {
+        state = pause(state)
+        publish()
+      }
       return true
     },
 
