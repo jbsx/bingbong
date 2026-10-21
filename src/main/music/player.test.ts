@@ -252,6 +252,15 @@ describe('the Player\'s Now Playing (#344)', () => {
     await player.check()
     expect(await perform({ kind: 'show' })).toMatchObject({ answer: 'Showing “Song A”.' })
   })
+
+  it('"show the video" with no song held names the video on the page — one the Player never started (#362)', async () => {
+    const { browser, youtube, perform } = wired()
+    await browser.navigate(`${WATCH}bbbbbbbbbbb`)
+    expect(await perform({ kind: 'show' })).toMatchObject({ result: 'showing: the page\'s video', answer: 'Showing “Song B”.' })
+    expect(youtube.controls).toEqual([{ op: 'read' }])
+    await browser.navigate('https://example.com/')
+    expect(await perform({ kind: 'show' })).toMatchObject({ answer: 'Nothing is playing.', failure: true })
+  })
 })
 
 describe('the Player\'s Ducking (#344)', () => {

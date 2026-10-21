@@ -89,7 +89,8 @@ export class ScriptedYouTube {
     }
     if (expression.includes('/* YT_WATCH */')) return this.watchStatus()
     if (expression.includes('/* YT_CONTINUE */')) return this.answerPrompt()
-    if (expression.includes('/* YT_CONTROL */')) return this.control(JSON.parse(/\}\)\((.*)\)$/s.exec(expression)![1]!) as ElementOp)
+    // The op rides at the script's end, `})(<op json>)`; the body holds other IIFEs before it.
+    if (expression.includes('/* YT_CONTROL */')) return this.control(JSON.parse(expression.slice(expression.lastIndexOf('})(') + 3, -1)) as ElementOp)
     return undefined
   }
 
@@ -147,6 +148,9 @@ export class ScriptedYouTube {
         break
       case 'mute':
         this.element = { ...element, muted: op.on }
+        break
+      case 'read':
+        changed = false
         break
     }
     const { paused, loop, volume, muted } = this.element

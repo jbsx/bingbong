@@ -55,7 +55,7 @@ export const CAPABILITY_DESCRIPTIONS: Readonly<Record<Capability, string>> = {
 
 /** What the verb Choice's instructions add while Capabilities are offered: the page's button is meant when the words say so. */
 export const CAPABILITY_INSTRUCTIONS =
-  'The music verbs act on the song the appliance is playing, whatever page is open. When the words say click, press or tap — "click play", "press pause" — they name the page\'s own button: choose click, never a music verb.'
+  'The music verbs act on the song playing — the appliance\'s own, or the video or audio on the page — whatever page is open. When the words say click, press or tap — "click play", "press pause" — they name the page\'s own button: choose click, never a music verb.'
 
 const SONG_CAPABILITIES: readonly Capability[] = ['loop', 'loop_off', 'restart', 'pause', 'unpause', 'skip', 'previous', 'louder', 'quieter', 'mute', 'unmute', 'volume', 'show']
 

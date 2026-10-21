@@ -1,7 +1,13 @@
 // The scripts the Player (#343) evaluates in the pane: each one CDP
 // evaluate, tagged so a scripted page in the tests can tell them apart.
 // They drive the watch page's `#movie_player video` directly — never
-// YouTube's chrome, its queue, its Autoplay toggle or its Loop menu.
+// YouTube's chrome, its queue, its Autoplay toggle or its Loop menu. A
+// control Jev chose for a song on the page reaches the page's own media
+// where YouTube's player is absent (#362, ADR 0079) — the element the ask
+// showed, picked as the collect picks it. A `stop` with nothing in flight
+// and a `skip`'s own pause reach YouTube's player alone (ADR 0076).
+
+import { PAGE_MEDIA_JS } from '../browser/pageMediaScript'
 
 /** What the results script yields: the page's `ytInitialData` as JSON, or null when it carries none. */
 export const RESULTS_SCRIPT = `(() => {
@@ -147,6 +153,8 @@ export type ElementOp =
   /** Volume by this much, -100–100. */
   | { readonly op: 'nudge'; readonly by: number }
   | { readonly op: 'mute'; readonly on: boolean }
+  /** The element as it is, nothing changed (#362): what `show` names when the Player holds no song. */
+  | { readonly op: 'read' }
 
 /** The element after a control, or `found` false when the page has no player video. */
 export interface ElementState {
@@ -161,18 +169,25 @@ export interface ElementState {
   readonly muted: boolean
 }
 
+/** How far a control reaches: YouTube's player alone, or the page's own media too (#362). */
+export type ControlReach = 'youtube' | 'page'
+
 /**
- * One control on `#movie_player video` — YouTube's player alone: a `stop`
- * or a `pause` never reaches another site's video. Volume and mute are set on the element and told to the player
- * too, so YouTube's own slider and its remembered volume agree.
+ * One control on `#movie_player video` — YouTube's player first, else with
+ * `reach` 'page' the page's own media element as the collect picks it
+ * (#362): the one playing, else the first that started; the element the
+ * ask showed Jev, never another. 'youtube' is for what the user did not
+ * ask of the page — a `stop` with nothing in flight, a `skip`'s pause
+ * (ADR 0076). Volume and mute are set on the element and told to
+ * YouTube's player too, so its own slider and its remembered volume agree.
  */
-export function controlScript(op: ElementOp): string {
+export function controlScript(op: ElementOp, reach: ControlReach = 'page'): string {
   return `((op) => {
   /* YT_CONTROL */
   const player = document.querySelector('#movie_player')
-  const video = player ? player.querySelector('video') : null
+  const video = (player ? player.querySelector('video') : null) || ${reach === 'page' ? PAGE_MEDIA_JS : 'null'}
   if (!video) return { found: false, changed: false, title: '', paused: true, loop: false, volume: 0, muted: false }
-  let changed = true
+  let changed = op.op !== 'read'
   const setVolume = (to) => {
     const level = Math.max(0, Math.min(100, Math.round(to)))
     video.volume = level / 100
@@ -199,7 +214,7 @@ export function controlScript(op: ElementOp): string {
   return {
     found: true,
     changed,
-    title: (data && data.title) || document.title.replace(/ - YouTube$/, ''),
+    title: ((data && data.title) || video.getAttribute('title') || video.getAttribute('aria-label') || document.title.replace(/ - YouTube$/, '')).trim(),
     paused: op.op === 'play' || op.op === 'restart' ? false : video.paused,
     loop: video.loop,
     volume: Math.round(video.volume * 100),

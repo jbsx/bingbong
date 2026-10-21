@@ -1024,9 +1024,14 @@ first, and no partial fires them early; `play <words>` and every plain
 music line ("put the song on loop") go to Jev, which is offered the
 Player's ops as Capabilities while a song is on — the Player's, or any
 media the page has started, as after `resume` or a `skip` with nothing
-queued (ADR 0079 and its amendment, amending #343's ruling 1). "click
-play" and "press play" stay the page's button by the option's own words,
-not a rule. `back` stays history and `resume` the
+queued (ADR 0079 and its amendment, amending #343's ruling 1). The ops
+drive YouTube's player first, else the page's own media element as the
+collect picks it — the one playing, else the first that started — so a
+song the Player never started loops, restarts, pauses and shows as the
+Player's own would; a `stop` with nothing in flight and a `skip`'s own
+pause stay YouTube's player's alone (ADR 0076). "click play" and "press
+play" stay the page's button by the option's own words, not a rule.
+`back` stays history and `resume` the
 Task's.
 
 A wrong pick is corrected in one line (#345). The Player keeps the plain

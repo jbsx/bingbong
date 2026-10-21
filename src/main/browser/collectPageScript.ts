@@ -1,3 +1,4 @@
+import { PAGE_MEDIA_JS } from './pageMediaScript'
 import { MAX_COLLECTED_PAGE_TEXT } from '../../core/browser/pageText'
 import { CONSENT_LABEL_RE } from '../../core/browser/dialogPolicy'
 import type { CoverProbe } from '../../core/browser/actionOutcome'
@@ -472,8 +473,7 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
   // right-click menu toggles that no ref shows. Null when none has started.
   // A live stream's Infinity duration travels as null.
   const mediaOf = () => {
-    const media = Array.from(document.querySelectorAll('video, audio'))
-    const el = media.find((candidate) => !candidate.paused && !candidate.ended) || media.find((candidate) => candidate.currentTime > 0)
+    const el = ${PAGE_MEDIA_JS}
     if (!el) return null
     const title = (el.getAttribute('title') || el.getAttribute('aria-label') || document.title || '').trim()
     return {

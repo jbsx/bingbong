@@ -8,7 +8,7 @@ import { songTerms, stayed } from '../../core/music/rememberedSongs'
 import { SPOKEN_FAILURES, spokenFailureOf } from '../../core/command/spokenFailure'
 import { reportFault } from '../../core/trace/fault'
 import { STOPPED_ANSWERS } from '../../core/command/answer'
-import { CONTINUE_SCRIPT, RESULTS_SCRIPT, WATCH_SCRIPT, controlScript, type ElementOp, type ElementState, type WatchStatus } from './youtubeScripts'
+import { CONTINUE_SCRIPT, RESULTS_SCRIPT, WATCH_SCRIPT, controlScript, type ControlReach, type ElementOp, type ElementState, type WatchStatus } from './youtubeScripts'
 
 // The Player (#343, CONTEXT.md): YouTube in the pane is the player; the
 // queue and the verbs live here. `play <words>` navigates the pane to the
@@ -183,7 +183,7 @@ export function createPlayer(deps: PlayerDeps): Player {
     }
   }
 
-  const control = (op: ElementOp): Promise<ElementState | null> => evaluate<ElementState>(controlScript(op))
+  const control = (op: ElementOp, reach: ControlReach = 'page'): Promise<ElementState | null> => evaluate<ElementState>(controlScript(op, reach))
 
   /** The watch page for this song, once its player holds its video: true; false for any other landing. */
   async function landedOn(song: Song, current: () => boolean): Promise<boolean | 'superseded'> {
@@ -468,7 +468,8 @@ export function createPlayer(deps: PlayerDeps): Player {
         if (pick !== null) pick.staying = false
         const { queue, next } = advance(state)
         if (next === null) {
-          await control({ op: 'pause' })
+          // The Player's own pause: YouTube's player alone, never another site's video (ADR 0076).
+          await control({ op: 'pause' }, 'youtube')
           ended = state.current
           state = queue
           return { result: 'queue empty', answer: 'Nothing queued.' }
@@ -507,7 +508,11 @@ export function createPlayer(deps: PlayerDeps): Player {
       case 'show': {
         // The pane is on the watch page already — a song ended there too: the Command's own event wakes the dashboard over it.
         const shown = state.current ?? ended
-        return shown === null ? { result: 'nothing playing', answer: 'Nothing is playing.', failure: true } : { result: `showing: id=${shown.id}`, answer: `Showing ${quoted(shown.title)}.` }
+        if (shown !== null) return { result: `showing: id=${shown.id}`, answer: `Showing ${quoted(shown.title)}.` }
+        // No song held: the page's own video, one the Player never started (#362).
+        const element = await control({ op: 'read' })
+        if (element === null || !element.found) return { result: 'nothing playing', answer: 'Nothing is playing.', failure: true }
+        return { result: "showing: the page's video", answer: element.title === '' ? 'Showing the video.' : `Showing ${quoted(element.title)}.` }
       }
     }
   }
@@ -523,7 +528,7 @@ export function createPlayer(deps: PlayerDeps): Player {
     },
 
     async pauseIfPlaying() {
-      const element = await control({ op: 'pauseIfPlaying' })
+      const element = await control({ op: 'pauseIfPlaying' }, 'youtube')
       if (element === null || !element.found || !element.changed) return false
       state = pause(state)
       publish()

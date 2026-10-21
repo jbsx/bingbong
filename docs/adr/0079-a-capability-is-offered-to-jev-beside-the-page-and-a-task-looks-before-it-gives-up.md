@@ -37,9 +37,10 @@ offers, take the one that fits — had no verb and no loop to live in.
 ## Decision
 
 **A Capability is an action the appliance itself can take, offered to Jev
-as a verb beside the browser's.** While the Player has a current song, on
-any page and under the Idle Screen, the verb Choice carries every Player
-op but search — loop on and off, restart, pause, unpause, skip, previous,
+as a verb beside the browser's.** While there is a song to act on — the
+Player's, playing, paused or ended, or the video or audio the page itself
+carries, whoever started it (amended 2026-10-21, below) — on any page and
+under the Idle Screen, the verb Choice carries every Player op but search — loop on and off, restart, pause, unpause, skip, previous,
 louder, quieter, mute, unmute, volume N (the Slot carries N), show — each
 with a one-line description, in the same Choice as `click` and
 `scroll_down`, not behind a second question. A Capability Command fires
@@ -130,3 +131,13 @@ page's media is what #363 already reads into the ask's `Playing:` line, so
 the ask that shows Jev a song also offers what can be done to it. With no
 song anywhere, only a song to play is offered, as before. (Owner's standing
 rule: cast the widest net; not a fix shaped by the two cases seen.)
+
+The ops reach the song Jev was shown. The control script drives YouTube's
+`#movie_player video` first, else the page's own media element as the
+collect picks it — the one playing, else the first that started — so a
+Capability chosen for a song on any page acts on that song rather than
+failing with "Nothing is playing." ADR 0076's line stands for what the
+user did not ask of that page: a `stop` with nothing in flight and a
+`skip`'s own pause reach YouTube's player alone, never another site's
+video. The Player's queue is unchanged: a song it never started stays off
+the Now Playing card and is not remembered.

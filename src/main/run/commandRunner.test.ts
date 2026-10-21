@@ -334,6 +334,32 @@ describe('the Player (#343)', () => {
     expect(noSong).not.toContain('loop')
   })
 
+  it('"start it from the beginning" on a song the Player never started restarts the page\'s video rather than searching for a song by those words (#362 live run)', async () => {
+    const { browser, decision, events, records, youtube, runner } = music()
+    await browser.navigate('https://www.youtube.com/watch?v=fJ9rUzIMcZQ')
+    browser.snapshot = { ...browser.snapshot, media: { title: QUEEN, paused: false, currentTime: 23, duration: 124, loop: false, muted: false } }
+    decision.script.push({ answers: { verb: choice('restart'), target: choice('none'), slot: choice('none') } })
+    await runner.run('start it from the beginning')
+    expect(youtube.controls.map((control) => control.op)).toEqual(['restart'])
+    expect(displays(events).at(-1)).toBe('Restarted.')
+    expect(records.filter((record) => record.type === 'decision').at(-1)).toEqual(expect.objectContaining({ reading: 'jev', verb: 'play', capability: 'restart', ended: 'terminal' }))
+    // Nothing was searched for: the words were never a song's title.
+    expect(browser.navigations).toEqual(['https://www.youtube.com/watch?v=fJ9rUzIMcZQ'])
+  })
+
+  it('after a `skip` with nothing queued the song sits paused on the page, and its ops are still offered (#362)', async () => {
+    const { browser, decision, youtube, runner } = music()
+    await runner.run('play bohemian rhapsody')
+    await runner.run('skip')
+    // The page shows the song where the skip paused it.
+    browser.snapshot = { ...browser.snapshot, media: { title: QUEEN, paused: true, currentTime: 61, duration: 124, loop: false, muted: false } }
+    decision.script.push({ answers: { verb: choice('restart'), target: choice('none'), slot: choice('none') } })
+    await runner.run('start the song from the beginning')
+    const verbs = Object.keys((decision.requests.at(-1)!.questions.verb as DecisionChoiceQuestion).options)
+    expect(verbs).toEqual(expect.arrayContaining(['loop', 'restart']))
+    expect(youtube.controls.map((control) => control.op)).toEqual(['pause', 'restart'])
+  })
+
   it('a Capability reading fires the Player\'s op, answers its line and ends the Task `terminal`: no hop, no Verdict (#362)', async () => {
     const { decision, events, records, youtube, runner } = music()
     await runner.run('play bohemian rhapsody')

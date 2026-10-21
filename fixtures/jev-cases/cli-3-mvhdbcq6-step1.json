@@ -14,7 +14,7 @@
     "questions": {
       "verb": {
         "type": "choice",
-        "instructions": "Which verb did the user ask the browser for? Choose none when the words are not a command for this page. The music verbs act on the song the appliance is playing, whatever page is open. When the words say click, press or tap — \"click play\", \"press pause\" — they name the page's own button: choose click, never a music verb.",
+        "instructions": "Which verb did the user ask the browser for? Choose none when the words are not a command for this page. The music verbs act on the song playing — the appliance's own, or the video or audio on the page — whatever page is open. When the words say click, press or tap — \"click play\", \"press pause\" — they name the page's own button: choose click, never a music verb.",
         "options": {
           "navigate": "go to a web address the words name: a website, a host or a url",
           "search": "search for the words: on the web, or on this site when they point at something on it",
