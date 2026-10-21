@@ -101,7 +101,8 @@ Steps, each a Task in order. A Task that opened something and found no
 next step closes it and tries the runner-up once before it gives up, and
 its last line names what it looked for. It searches each site at most
 once. Capped at five actions; ended by the next Utterance, Escape or the
-Abort Head like any Command; never confirmed.
+Abort Head like any Command; never confirmed. A first reading of `none`
+is followed by a Where Ask before the line ends.
 _Avoid_: plan, goal, intent, errand, run, session
 
 **Step**:
@@ -180,6 +181,17 @@ search that site once (a **Site Scope**). A Hop that names no target opens
 the likeliest result only on a page whose address is a Search URL; anywhere
 else the Task ends on the page where it stands.
 _Avoid_: step, round, turn, continuation
+
+**Where Ask**:
+The Choice asked when hop 0 reads `none`: where on this page the thing the
+words name would be. The same action card, asked again with the question
+changed, so every control is offered and nothing is listed by kind; its
+answer is hop 0's action and the Task goes on from there, a dead end
+trying the Where Ask's runner-up. Read only on the whole Utterance, after
+the first reading, at each Step's hop 0. Two `none` readings end the line
+as "No response."; nothing found is remembered.
+_Avoid_: retry, re-ask, fallback, second pass, look again (the dead-end
+runner-up)
 
 **Verdict**:
 The answer every Hop past the first carries beside its Command: is this page what

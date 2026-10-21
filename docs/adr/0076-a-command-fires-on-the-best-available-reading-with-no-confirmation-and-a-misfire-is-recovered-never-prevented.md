@@ -144,7 +144,9 @@ hop 0's alone; a hop never guesses), and when it is superseded: the next
 Utterance, Escape and the Abort Head end a Task as they end a Command,
 abandoning a hop whose read is in flight. There is no retry-with-exclusion
 of a candidate on this increment. (Amended by #336: a hop that changed
-nothing sets its target aside, and two in a row end the Task; see below.)
+nothing sets its target aside, and two in a row end the Task; see below.
+Amended by ADR 0082: at hop 0, a `none` reading asks where first, and
+only a second `none` ends the line.)
 
 **Early Fire**: a hop 0 that fired on a partial does not continue until the
 Endpoint; the hops read against the final transcript. An Utterance that
