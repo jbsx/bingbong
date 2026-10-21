@@ -62,7 +62,7 @@ export interface Player {
   /** One music line: `words` is a search's Slot. `current` says the Command is still the one in flight. */
   perform(music: MusicAction, words: string | null, current: () => boolean): Promise<PlayerOutcome>
   /** `stop` with nothing in flight (owner's ruling 2, #376): pause every playing media element on the page; whether one was. */
-  pauseIfPlaying(): Promise<boolean>
+  pauseAll(): Promise<boolean>
   /** The poll: hear the song's end and open the next queued one. */
   check(): Promise<void>
   /** Resolves when the songs opened in the background (an end, a failed landing) have opened. */
@@ -527,7 +527,7 @@ export function createPlayer(deps: PlayerDeps): Player {
       }
     },
 
-    async pauseIfPlaying() {
+    async pauseAll() {
       const stopped = await evaluate<PausedAll>(PAUSE_ALL_SCRIPT)
       if (stopped === null || stopped.paused === 0) return false
       if (stopped.youtube) {

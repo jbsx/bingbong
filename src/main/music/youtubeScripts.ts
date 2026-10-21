@@ -9,7 +9,7 @@
 // every playing media element on the page, YouTube's player among them, by
 // kind and in the top frame only (#376).
 
-import { PAGE_MEDIA_JS } from '../browser/pageMediaScript'
+import { PAGE_MEDIA_JS, PAUSE_PLAYING_JS } from '../browser/pageMediaScript'
 
 /** What the results script yields: the page's `ytInitialData` as JSON, or null when it carries none. */
 export const RESULTS_SCRIPT = `(() => {
@@ -177,8 +177,9 @@ export type ControlReach = 'youtube' | 'page'
  * `reach` 'page' the page's own media element as the collect picks it
  * (#362): the one playing, else the first that started; the element the
  * ask showed Jev, never another. 'youtube' is for what the user did not
- * ask of the page — a `skip`'s pause (ADR 0076). Volume and mute are set on the element and told to
- * YouTube's player too, so its own slider and its remembered volume agree.
+ * ask of the page — a `skip`'s pause (ADR 0076). Volume and mute are set
+ * on the element and told to YouTube's player too, so its own slider and
+ * its remembered volume agree.
  */
 export function controlScript(op: ElementOp, reach: ControlReach = 'page'): string {
   return `((op) => {
@@ -231,20 +232,14 @@ export interface PausedAll {
  * A `stop` with nothing in flight (#376, ADR 0076): every `video` and
  * `audio` in the page's top frame that plays is paused — YouTube's player
  * among them, a muted hero loop beside the real clip too, since `stop`
- * means silence. Media inside frames is out of reach, as it is for the
- * collect and the ops (#377).
+ * means silence — and whether YouTube's player was one, so the Queue
+ * holds its song paused. Media inside frames is out of reach, as it is
+ * for the collect and the ops (#377).
  */
 export const PAUSE_ALL_SCRIPT = `(() => {
   /* PAGE_PAUSE_ALL */
   const player = document.querySelector('#movie_player')
   const own = player ? player.querySelector('video') : null
-  let paused = 0
-  let youtube = false
-  for (const media of document.querySelectorAll('video, audio')) {
-    if (media.paused) continue
-    media.pause()
-    paused += 1
-    if (media === own) youtube = true
-  }
-  return { paused, youtube }
+  const paused = ${PAUSE_PLAYING_JS}
+  return { paused: paused.length, youtube: own !== null && paused.includes(own) }
 })()`

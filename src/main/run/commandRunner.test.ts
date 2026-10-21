@@ -515,7 +515,12 @@ describe('the Player (#343)', () => {
 
   it('a `stop` that silences a ringing Timer leaves the page\'s media playing (#376)', async () => {
     let ringing = true
-    const timer = { set: () => {}, cancel: () => false, silence: () => [ringing, (ringing = false)][0]! }
+    const silence = (): boolean => {
+      const had = ringing
+      ringing = false
+      return had
+    }
+    const timer = { set: () => {}, cancel: () => false, silence }
     const { events, youtube, runner } = music({ timer })
     await runner.run('navigate example.com')
     youtube.pageMedia = [{ paused: false }]

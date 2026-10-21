@@ -214,7 +214,7 @@ export interface CommandRunnerDeps {
   /** The Timer (CONTEXT.md), for `timer` — and `stop`, which silences it ringing; absent leaves `timer` a failure. */
   timer?: Pick<Timer, 'set' | 'cancel' | 'silence'>
   /** The Player (#343, CONTEXT.md), for `play` — and `stop` with nothing in flight, which pauses it; absent leaves `play` a failure and offers Jev no Appliance Verb. */
-  player?: Pick<Player, 'perform' | 'pauseIfPlaying' | 'queue'>
+  player?: Pick<Player, 'perform' | 'pauseAll' | 'queue'>
   /** A wait on the clock, for the results of a Web Engine's landing ({@link RESULTS_WAIT_MS}); tests make it immediate. */
   sleep?(ms: number): Promise<void>
 }
@@ -447,11 +447,11 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   const appliance = (): Appliance | undefined => (deps.player === undefined ? undefined : { queued: deps.player.queue().current !== null })
 
   /** What plays on the page paused for a `stop` (#343, #376); whether anything was playing. A failure to reach it is no pause. */
-  async function pauseMusic(): Promise<boolean> {
+  async function pauseAll(): Promise<boolean> {
     try {
-      return (await deps.player?.pauseIfPlaying()) ?? false
+      return (await deps.player?.pauseAll()) ?? false
     } catch (error) {
-      reportFault('run.commandRunner.pauseMusic', error)
+      reportFault('run.commandRunner.pauseAll', error)
       return false
     }
   }
@@ -1000,7 +1000,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       // A ringing Timer is what "stop" most often means; a running one is left to run.
       const silenced = deps.timer?.silence() ?? false
       // With nothing else to stop, what plays is what "stop" means: every playing media element on the page pauses, by kind (#376).
-      const paused = nothingInFlight && !silenced && deps.player !== undefined && (await pauseMusic())
+      const paused = nothingInFlight && !silenced && deps.player !== undefined && (await pauseAll())
       inFlight = null
       // Pausing the music is an action done; a Stop is grey, and one that found nothing says so.
       if (paused) answer(turnId, STOPPED_ANSWERS.paused)

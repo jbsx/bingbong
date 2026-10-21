@@ -162,11 +162,11 @@ describe('the Player', () => {
     expect(await perform({ kind: 'pause' })).toMatchObject({ failure: true, answer: 'Nothing is playing.' })
   })
 
-  it('`pauseIfPlaying` pauses a playing video, and leaves a paused one be', async () => {
+  it('`pauseAll` pauses a playing video, and leaves a paused one be', async () => {
     const { player, perform } = wired()
     await perform({ kind: 'search', place: 'now' }, 'song a')
-    expect(await player.pauseIfPlaying()).toBe(true)
-    expect(await player.pauseIfPlaying()).toBe(false)
+    expect(await player.pauseAll()).toBe(true)
+    expect(await player.pauseAll()).toBe(false)
   })
 
   it('a search superseded mid-way opens nothing more', async () => {
