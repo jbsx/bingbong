@@ -8,7 +8,9 @@ text-only"), ADR 0079's ops paragraph and ADR 0076 Ruling 2 ("every
 playing media element in the page's top frame"). Built as two tickets:
 #377 (the frames, every ref kind, the media ops, `stop`, the ducker),
 then the frames' text in the Page Read with an iframe consent wall as its
-check, blocked by #377.
+check, blocked by #377. Amended on 2026-10-21 by the owner's ruling on
+#378 ("widen now"): a frame in the top's open dialog gives the dialog its
+text.
 
 ## Context
 
@@ -78,9 +80,26 @@ Reachable Frame, by kind, with no ask and without waiting on any frame's
 answer (#330). The TTS ducker lowers and restores media in every frame.
 A `skip`'s own pause still reaches YouTube's player alone.
 
-**A frame's text joins the Page Read** at the iframe's place (the second
-ticket): `IFRAME` leaves `NEVER_PROSE`'s role of hiding the frame's
-contents, though the element itself still carries no prose.
+**A frame's text joins the Page Read at its iframe's place** (#378). The
+collect reads each Reachable Frame's text in the frame's own context,
+under the same frame rule and grace. The top's text walk leaves the
+iframe's place where it meets one: an inline wrapper around an iframe is
+descended for it, and an iframe inside a tag block takes the place just
+after that block. The merge puts the text of each frame whose elements
+joined the page at that place, at any depth. A frame that was not read in
+time, is 2×2 px or smaller, is hidden, or sits off the top viewport
+contributes none. The iframe element itself still carries no prose.
+
+An iframe outside the text root (the main landmark, else the body) has no
+place in the Page Read, as the top's own text there has none. The one
+exception is a frame in the top's open dialog: **its text is the
+dialog's.** A wall served in a frame leaves the top's dialog holding only
+an iframe, and a consent manager appends its container outside the main
+landmark. So that frame's text joins `dialogText`, wherever the iframe
+sits, within the collector's 400-character bound. That one field is what
+the read's `dialog open:` line, Jev's card and the consent chooser all
+read. Frames in the page layer outside the text root, such as a sidebar's
+ads, stay out.
 
 **Measured, not assumed.** The build opens with a reproduction on a real
 page with an embedded player, its misses added to the Failed Lines ledger
@@ -102,3 +121,11 @@ passed before failing in `jev:replay`.
   reads it.
 - `nodeIntegrationInSubFrames` stays off; nothing here needs a preload
   in subframes.
+- The Page Read grows by the frames' text and its parts with it. The
+  collected-text bound ends the read wherever it falls, a frame's place
+  included.
+- A consent wall's wording now reaches Jev, but the Tier-1 reject rule
+  still fires before Jev is asked. On a pay-to-reject wall ("Reject all
+  and subscribe") the rule clicks the paid choice: ledger
+  `cli-2-mvihb65g`, a judgement that belongs to Jev and is not settled
+  here.
