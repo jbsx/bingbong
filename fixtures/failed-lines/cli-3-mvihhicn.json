@@ -1,0 +1,10 @@
+{
+  "turnId": "cli-3-mvihhicn",
+  "transcript": "open page information",
+  "at": 1792609624603,
+  "source": "typed",
+  "stage": "reading",
+  "happened": "On a Wikipedia article whose Tools dropdown holds 'Page information', Jev read none 0.21 over click-15 (Tools) 0.17 at hop 0; the line ended 'not a command' and nothing was opened",
+  "meant": "Open Tools and click Page information, as 'click page information' and 'show me the page information' did on the same page",
+  "log": "decision-1792609620715-1.jsonl"
+}
