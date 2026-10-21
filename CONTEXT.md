@@ -89,8 +89,8 @@ _Avoid_: cancel word, stop head
 **Task**:
 What an Utterance becomes on this branch: one or more Commands the shell
 fires on its own reading, without the user speaking between them, until the
-Decision Model reads the page as what was asked for: a sure yes Verdict
-past the first Command ends it, whatever the verb. The first Command is
+Decision Model reads the page as what was asked for: a sure yes Verdict at
+a Hop past the first ends it, whatever the verb. The first Command is
 read as any Command is; a Task goes on after a Command the Decision Model
 read and ends after one the Local Match settled, since the grammar and exact
 labels are whole by construction and plain English is where "and then"

@@ -1235,8 +1235,8 @@ no verb, site or element in it.
 
 ### Consequences
 
-- The decision record of the ending hop keeps the verb Jev read and says
-  `ended: done`; the Feed shows `done`.
+- The decision record of the ending hop keeps the Command the reading made
+  and says `ended: done`; the Feed shows `done`.
 - The #367 reading's sure-yes guard is gone: no sure-yes hop reaches the
   verb.
 - A no-repeat guard, a mechanical done on an expected Ref State change and

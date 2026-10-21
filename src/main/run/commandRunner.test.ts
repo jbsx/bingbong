@@ -1977,7 +1977,7 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
           expect(decisions(records).map((record) => record.ended)).toEqual([undefined, undefined, undefined, undefined, 'done'])
         })
 
-        it('a sure yes over a click verb watches as a done does: the sheet is read again and stepped past, the click never fires (#369 AC3)', async () => {
+        it('AC3 (#369): a sure yes over a click verb watches as a done does: the sheet is read again and stepped past, the click never fires', async () => {
           const h = taskHarness()
           const { browser, events, records, decision, runner } = h
           lateSheet(h, 3)
@@ -2027,6 +2027,17 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
         expect(decisions(records).map((record) => record.ended)).toEqual([undefined, undefined, 'done'])
         expect(decision.requests[2]!.state).toContain('click "Close" (the pop-up closed)')
         expect(decision.requests[2]!.state).not.toContain('A dialog is open')
+      })
+
+      it('AC2 (#369): a sure in-the-way 0.9 over a dialog takes Step Aside, not the sure-yes end, with a click verb', async () => {
+        const h = taskHarness()
+        const { browser, records, decision, runner } = h
+        coveredOnLanding(h)
+        closing(h, SEARCH_REFS)
+        decision.script.push(answer('search', 'none', 's3-6'), withOutcome(answer('click', 'ref-3'), 'in_the_way', 0.9), withOutcome(answer('done'), 'yes'))
+        await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
+        expect(browser.clicks).toEqual([1])
+        expect(decisions(records)[1]).toMatchObject({ stepAside: true, target: 1 })
       })
 
       it('AC2: with no close control the hop presses Escape', async () => {
