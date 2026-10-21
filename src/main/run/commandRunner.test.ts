@@ -3075,6 +3075,21 @@ describe('the Where Ask (#379, ADR 0082): a none reading at hop 0 asks where the
     expect(decisions(records).find((record) => record.whereAsk === true)).toMatchObject({ ask: 't1-step1-where', task: { id: 't1', hop: 0, step: 1, of: 2 } })
   })
 
+  it('a stop while the Where Ask is read reaches it: nothing fires, and its record ends superseded', async () => {
+    const { browser, records, decision, runner } = watchHarness()
+    decision.script.push(NONE_OVER_SETTINGS, reading({ 'click-1': 0.5 }))
+    const release = decision.hold(1)
+    const line = runner.run('turn on ambient mode', { source: 'spoken' })
+    await flushMicrotasks()
+    expect(decision.requests).toHaveLength(2)
+    expect(runner.getState()).toBe('running')
+    expect(runner.abort()).toBe(true)
+    release()
+    await line
+    expect(browser.clicks).toEqual([])
+    expect(decisions(records).at(-1)).toMatchObject({ whereAsk: true, ended: 'superseded' })
+  })
+
   it("AC6: an opener the Where Ask fired that changed nothing is Set Aside by #336's rule", async () => {
     const { browser, decision, runner } = watchHarness([1])
     decision.script.push(NONE_OVER_SETTINGS, reading({ 'click-1': 0.5 }), SURE_YES)

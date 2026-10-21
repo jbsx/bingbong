@@ -14,6 +14,7 @@ import { isWebEngineSearch } from '../../core/command/siteScope'
 import {
   commandQuestions,
   whereQuestions,
+  type CommandQuestions,
   commandState,
   doneAction,
   doneFacts,
@@ -723,11 +724,15 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     const model = deps.decisionModel()
     if (model === null) return { command: UNREAD, page, reading: 'best_guess', jevAsked: false }
     const result = await askJev(model, 'command', turnId, commandState(text, page, undefined, options.step), commandQuestions(text, page, undefined, { steps: options.split, appliance: appliance() }), options.askId)
+    // Jev split the line (#364): each Step is read on its own, and this reading of the whole fires nothing.
+    const split = result.status === 'answered' ? readSteps(result.answers, text) : null
+    return { ...readingOf(result, text, page), ...(split !== null ? { steps: [split.first, split.rest] } : {}) }
+  }
+
+  /** A hop 0 reading of Jev's answer to the action card; one it did not answer is no Command, and nothing guesses (#353). */
+  function readingOf(result: DecisionResult<CommandQuestions> & { readonly askId: string }, text: string, page: CommandPage): Reading {
     if (result.status === 'answered') {
-      // Jev split the line (#364): each Step is read on its own, and this reading of the whole fires nothing.
-      const split = readSteps(result.answers, text)
       return {
-        ...(split !== null ? { steps: [split.first, split.rest] } : {}),
         command: readCommandAnswers(result.answers, text, page),
         page,
         reading: 'jev',
@@ -737,14 +742,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         action: result.answers.action,
       }
     }
-    return {
-      command: UNREAD,
-      page,
-      reading: 'best_guess',
-      jevAsked: true,
-      jev: { model: result.model, latencyMs: result.latencyMs, reason: result.reason },
-      ask: result.askId,
-    }
+    return { command: UNREAD, page, reading: 'best_guess', jevAsked: true, jev: { model: result.model, latencyMs: result.latencyMs, reason: result.reason }, ask: result.askId }
   }
 
   /**
@@ -759,19 +757,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     const model = deps.decisionModel()
     if (model === null) return { command: UNREAD, page, reading: 'best_guess', jevAsked: false, whereAsk: true }
     const result = await askJev(model, 'where', turnId, commandState(text, page, undefined, step), whereQuestions(text, page, { appliance: appliance() }), `${first.ask ?? turnId}-where`)
-    if (result.status === 'answered') {
-      return {
-        command: readCommandAnswers(result.answers, text, page),
-        page,
-        reading: 'jev',
-        jevAsked: true,
-        jev: jevDetailOf(result.answers, result.latencyMs, result.model),
-        ask: result.askId,
-        action: result.answers.action,
-        whereAsk: true,
-      }
-    }
-    return { command: UNREAD, page, reading: 'best_guess', jevAsked: true, jev: { model: result.model, latencyMs: result.latencyMs, reason: result.reason }, ask: result.askId, whereAsk: true }
+    return { ...readingOf(result, text, page), whereAsk: true }
   }
 
   /** Whether a hop 0 reading is followed by a Where Ask (#379): Jev read the line, and its top choice was `none`, at any probability. */
@@ -1958,7 +1944,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     if (heard.action !== undefined) task.reading = { action: heard.action, page: heard.page }
     visit(task, heard.page.url || (browser.state().url ?? ''))
     const { command, matched } = matchName(heard.command, heard.page, source === 'spoken')
-    const record: DecisionRecord = { ...recordOf(turnId, firedAt, source, words, heard, command, matched, truncated), ...(heard === first ? extra : {}), task: hop0 }
+    // The line's extra fields went on the first reading's record when a Where Ask followed it.
+    const record: DecisionRecord = { ...recordOf(turnId, firedAt, source, words, heard, command, matched, truncated), ...(heard.whereAsk === true ? {} : extra), task: hop0 }
     const did = (): string => task.actions.join('; ') || describeCommand(command, heard.page)
 
     if (submission !== submitted) {
