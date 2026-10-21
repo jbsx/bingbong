@@ -1057,6 +1057,50 @@ describe('Capabilities (ADR 0079, #362)', () => {
   it('a Capability at a later hop is the same Command', () => {
     expect(readCommandAnswers({ action: choice('restart'), slot: choice('none'), outcome: choice('not_yet') }, 'start it again', WATCH, HOP)).toEqual({ verb: 'play', target: null, slot: null, music: { kind: 'restart' }, capability: 'restart' })
   })
+
+  describe('a song to play reads `where` as a search does (AGENTS.md, "Jev decides; code shapes the ask")', () => {
+    const SPOTIFY: CommandPage = {
+      url: 'https://open.spotify.com/',
+      title: 'Spotify - Web Player',
+      refs: [
+        { ref: 1, kind: 'input', label: 'What do you want to play?', href: null, inputType: 'text' },
+        { ref: 2, kind: 'link', label: 'Liked Songs', href: 'https://open.spotify.com/collection/tracks', inputType: null },
+      ],
+    }
+    const TEXT = 'play discover weekly'
+    const read = (where: string, page: CommandPage, action = 'play', hop?: HopContext) => readCommandAnswers(where === '' ? { action: choice(action), slot: choice('s1-2'), ...(hop === undefined ? {} : { outcome: choice('not_yet') }) } : { action: choice(action), slot: choice('s1-2'), where: choice(where), ...(hop === undefined ? {} : { outcome: choice('not_yet') }) }, TEXT, page, hop)
+    const PLAYED: Command = { verb: 'play', target: null, slot: 'discover weekly', music: { kind: 'search', place: 'now' }, capability: 'play' }
+
+    it('asks `where` beside the Player\'s lines on a site, as on any site', () => {
+      expect(Object.keys(commandQuestions(TEXT, SPOTIFY, undefined, { capabilities: playerCapabilities(false) }))).toEqual(['action', 'slot', 'where'])
+    })
+
+    it('words Jev reads as pointing on the site open are looked for on that site: a Site Scope, the Slot kept as the words', () => {
+      expect(read('site', SPOTIFY)).toEqual({ verb: 'search', target: null, slot: 'discover weekly', site: 'open.spotify.com' })
+    })
+
+    it('words pointing at this page, or elsewhere, keep the Player\'s search: the page\'s own control already outranks the line when the words name it', () => {
+      expect(read('page', SPOTIFY)).toEqual(PLAYED)
+      expect(read('web', SPOTIFY)).toEqual(PLAYED)
+      expect(read('', SPOTIFY)).toEqual(PLAYED)
+    })
+
+    it('on the Media Engine a `where` of site is the Player\'s own search, never a site-scoped web search', () => {
+      expect(read('site', WATCH)).toEqual(PLAYED)
+      expect(read('site', { ...WATCH, url: 'https://music.youtube.com/' })).toEqual(PLAYED)
+    })
+
+    it('at a later hop, on a site the Task has not searched, the site is searched once (#341); on one it has, the Player searches', () => {
+      const hop: HopContext = { hop: 1, visited: ['https://duckduckgo.com/?q=spotify', SPOTIFY.url], actions: ['open "Spotify"'], links: [] }
+      expect(read('site', SPOTIFY, 'play', hop)).toEqual({ verb: 'search', target: null, slot: 'discover weekly', site: 'open.spotify.com' })
+      expect(read('site', SPOTIFY, 'play', { ...hop, searched: ['open.spotify.com'] })).toEqual(PLAYED)
+    })
+
+    it('the Queue\'s own places are the Player\'s alone, whatever `where` says', () => {
+      expect(read('site', SPOTIFY, 'play_next')).toMatchObject({ verb: 'play', music: { kind: 'search', place: 'front' } })
+      expect(read('site', SPOTIFY, 'queue')).toMatchObject({ verb: 'play', music: { kind: 'search', place: 'end' } })
+    })
+  })
 })
 
 describe('the action card (#370, ADR 0076 amendment): Jev reads a Command as one whole action', () => {

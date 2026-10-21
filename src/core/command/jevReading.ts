@@ -4,7 +4,7 @@ import { JEV_VERBS, PRESS_KEYS, describeCommand, normalizeWords, pressKeyOf, tar
 import { dialogControls, type DismissChoice } from './dismissDialog'
 import { isSearchLanding, isTextField, pageAddressOf, resultLinksOf, resultRefsOf, wordsAfterVerb } from './localMatch'
 import { isAddressShaped } from './openAddress'
-import { isWebEngineSearch, siteOf } from './siteScope'
+import { isMediaEngine, isWebEngineSearch, siteOf } from './siteScope'
 import { CAPABILITY_DESCRIPTIONS, CAPABILITY_INSTRUCTIONS, capabilitiesBesideMediaOps, capabilityAction, capabilitySearches, isCapability, type Capability } from './capability'
 import { AMOUNT_RUNGS, amountQuestion, clockOf, describeMediaOp, isMediaOp, isSeek, mediaChangesOf, mediaOpDescription, mediaOpsOf, mediaStateOf, rateTarget, seekAmount, volumeTarget, type AmountRung, type MediaOp, type MediaOpAction } from './mediaOp'
 
@@ -1024,9 +1024,20 @@ function slotSpanOf(answer: DecisionChoiceAnswer): { start: number; end: number 
  * action — a search's words, or a `volume`'s number, off the Slot; null for
  * a `volume` whose words carry no number it takes.
  */
-function capabilityCommand(capability: Capability, slot: DecisionChoiceAnswer, text: string): Command | null {
+function capabilityCommand(capability: Capability, slot: DecisionChoiceAnswer, text: string, answers: CommandAnswers | HopAnswers, url: string, hop: HopContext | undefined): Command | null {
   const searches = capabilitySearches(capability)
   const words = searches || capability === 'volume' ? slotWords(slot, text) : null
+  // A song to play reads `where` as a search does (AGENTS.md, "Jev decides;
+  // code shapes the ask"): words Jev reads as pointing on the site open
+  // but not on this page are looked for on that site, a Site Scope (#340),
+  // and the landing's own media plays — on any site, through the media
+  // ops (#372). Off a site, or on the Media Engine, where a site scope
+  // would be a worse road to the Player's own search, the Player searches.
+  // The Queue's own places (`play_next`, `queue`) are the Player's alone.
+  if (capability === 'play' && words !== null && 'where' in answers && answers.where.choice === 'site' && !isMediaEngine(url)) {
+    const site = scopableSite(url, hop)
+    if (site !== null) return { verb: 'search', target: null, slot: words, site }
+  }
   const music = capabilityAction(capability, words)
   return music === null ? null : { verb: 'play', target: null, slot: searches ? words : null, music, capability }
 }
@@ -1057,7 +1068,7 @@ function offeredChoice(action: DecisionChoiceAnswer, page: CommandPage, setAside
 export function readCommandAnswers(answers: CommandAnswers | HopAnswers, text: string, pageRead: CommandPage, hop?: HopContext): Command {
   const none: Command = { verb: 'none', target: null, slot: null }
   const label = offeredChoice(answers.action, pageRead, hop?.setAside ?? [])
-  if (isCapability(label)) return capabilityCommand(label, answers.slot, text) ?? none
+  if (isCapability(label)) return capabilityCommand(label, answers.slot, text, answers, pageRead.url, hop) ?? none
   const { page, links } = offered(pageRead, hop)
   const acted = refActionOf(label)
   // A ref or a link the hop does not offer is no Command.

@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { siteOf } from './siteScope'
+import { isMediaEngine, siteOf } from './siteScope'
+
+describe('isMediaEngine', () => {
+  it('is the Player\'s engine by its registrable domain: YouTube, its music and mobile hosts, any page of it', () => {
+    for (const url of ['https://www.youtube.com/watch?v=1', 'https://youtube.com/', 'https://music.youtube.com/', 'https://m.youtube.com/results?search_query=x']) expect(isMediaEngine(url), url).toBe(true)
+  })
+
+  it('is no other site, a name like it, or no address', () => {
+    for (const url of ['https://open.spotify.com/', 'https://youtube.example.com/', 'https://notyoutube.com/', 'about:blank', '']) expect(isMediaEngine(url), url).toBe(false)
+  })
+})
 
 // The Site Scope (#340, ADR 0076): the site an `open` spoken on a page is
 // looked for on — the page's host without `www.`, on a real page that is

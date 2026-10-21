@@ -54,6 +54,22 @@ export function isWebEngineSearch(url: string): boolean {
   return isWebSearchPage(new URL(url))
 }
 
+/**
+ * The Media Engine: the Player's (#343), where `play <words>` searches
+ * unless the words point at the site open. Known by its registrable
+ * domain like a Web Engine, so its music and mobile hosts count. On it a
+ * `where` of site is the Player's own search, never a Site Scope: a
+ * `site:youtube.com` web search would be a worse road to the same place.
+ */
+const MEDIA_ENGINE = /^youtube\.com$/
+
+/** Whether a page is the Media Engine's, by its registrable domain; false for no address. */
+export function isMediaEngine(url: string): boolean {
+  if (!URL.canParse(url)) return false
+  const host = new URL(url).hostname.toLowerCase()
+  return MEDIA_ENGINE.test(host.split('.').slice(-2).join('.'))
+}
+
 /** The site a page is on, for a Site Scope; null for a blank page, a host with no dot and a Web Engine's web search. */
 export function siteOf(url: string): string | null {
   if (!isRealPage(url)) return null

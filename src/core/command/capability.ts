@@ -35,7 +35,7 @@ const PLAYER_ACTIONS: Readonly<Record<Exclude<Capability, 'volume'>, MusicAction
 
 /** Each Capability's one line on the action card. */
 export const CAPABILITY_DESCRIPTIONS: Readonly<Record<Capability, string>> = {
-  play: "music: find a song or video on YouTube by the words and play it now — never the page's play button, which is a click",
+  play: "music: find a song or video by the words and play it now, on YouTube or on this site as the words point — never the page's play button, which is a click",
   play_next: 'music: find a song by the words and play it after the one playing',
   queue: 'music: find a song by the words and add it to the end of the queue',
   loop: 'music: put the song playing on loop, so it repeats',

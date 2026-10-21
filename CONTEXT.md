@@ -299,7 +299,9 @@ _Avoid_: argument, parameter, entity, free text
 **Site Scope**:
 The site a `search` spoken on a page is looked for on, when the Decision Model
 reads its words as pointing on that site but not on that page ("go to donald
-trumps profile" on x.com). The site is the page's host without `www.`
+trumps profile" on x.com) — a `play <words>` too ("play discover weekly" on
+Spotify), except on the Media Engine, where the Player's own search is the
+road. The site is the page's host without `www.`
 (`x.com`, `en.wikipedia.org`), on a real page that is no Web Engine's web
 search (its front page or results; its maps or finance pages are a site); a
 site's own search page is still the site. A scoped `search` is a DuckDuckGo
@@ -1071,8 +1073,11 @@ the Queue and the verbs in main (2026-10-19 consultation, #343). `play
 its watch page. It reads the results' `ytInitialData`, not the cards (a
 results page that lands before its cards are drawn is no Empty Landing for
 it), and no Jev call picks it: Jev only reads the line as `play`. A
-wrong pick is a Misfire. The words are a Slot and
-pass the Name Match. `queue <words>` puts a song at the end of the Queue,
+wrong pick is a Misfire. YouTube is the **Media Engine**: the default a
+`play` searches, as DuckDuckGo is for `search`; a `play` whose words Jev
+reads as pointing on the site open is a Site Scope on that site instead,
+and the landing's own media plays through the Media Ops. The words are a
+Slot and pass the Name Match. `queue <words>` puts a song at the end of the Queue,
 and `play <words> next` at its front. These search
 without leaving the song playing: main fetches the results with the
 pane's session. The other verbs are one evaluate each on `#movie_player`'s
