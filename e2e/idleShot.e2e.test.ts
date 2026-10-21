@@ -318,6 +318,15 @@ describe.skipIf(!process.env.BINGBONG_IDLE_SHOT)('idle screen screenshot review 
 
   /** Wakes the dashboard and brings the Idle Screen back, so it mounts afresh and asks again (the Calendar's events, the Timer). */
   async function reenterIdle(): Promise<void> {
+    if (!music) {
+      // With no page in the pane a tap leaves the Idle Screen up (#361) and there is nothing to wake to: the dashboard
+      // reloads instead, booting into the Idle Screen as the app does, mounted afresh. The session's emulation survives it.
+      await harness.dashboardEval(`window.__idleShotBeforeReload = true`)
+      await harness.cdp.send('Page.reload', {}, session)
+      await waitFor(async () => ((await harness.dashboardEval<boolean>(`window.__idleShotBeforeReload !== true && !!document.querySelector('.idle-screen')`)) ? true : undefined), { timeoutMs: 10000, intervalMs: 100 })
+      await new Promise((resolve) => setTimeout(resolve, 600))
+      return
+    }
     await harness.clickDashboardElement('.idle-date')
     await waitFor(async () => ((await harness.dashboardEval<boolean>(`!document.querySelector('.idle-screen')`)) ? true : undefined), { timeoutMs: 10000, intervalMs: 100 })
     await harness.pressKey('pane', { key: 'L', code: 'KeyL', windowsVirtualKeyCode: 76, modifiers: 2 /* Ctrl */ | 8 /* Shift */ })
