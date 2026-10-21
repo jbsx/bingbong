@@ -1,0 +1,83 @@
+{
+  "turnId": "cli-1-mvhdap1z",
+  "transcript": "play highs and lows pomme",
+  "model": "jev-1.14.0",
+  "recordedAt": 1792542121578,
+  "expect": [
+    {
+      "question": "steps",
+      "label": "none"
+    },
+    {
+      "question": "verb",
+      "label": "play"
+    }
+  ],
+  "ask": {
+    "state": "The user spoke to a web browser: \"play highs and lows pomme\"\nPage: about:blank — \"\"\nRefs (number, kind, label, address, states):",
+    "questions": {
+      "verb": {
+        "type": "choice",
+        "instructions": "Which verb did the user ask the browser for? Choose none when the words are not a command for this page. The music verbs act on the song the appliance is playing, whatever page is open. When the words say click, press or tap — \"click play\", \"press pause\" — they name the page's own button: choose click, never a music verb.",
+        "options": {
+          "navigate": "go to a web address the words name: a website, a host or a url",
+          "search": "search for the words: on the web, or on this site when they point at something on it",
+          "click": "click one of the numbered refs on the page",
+          "type": "type words into one of the numbered refs (a text field)",
+          "menu": "right-click one of the numbered refs to open its menu, when no ref shown does what the words ask: the options it hides appear as new refs",
+          "scroll_up": "scroll the page up",
+          "scroll_down": "scroll the page down",
+          "back": "go back to the previous page",
+          "forward": "go forward",
+          "reload": "reload the page",
+          "press": "press a key: enter, escape, space or an arrow key",
+          "read": "read the page aloud or show its contents",
+          "clear": "clear the text in the focused field",
+          "stop": "stop what the browser is doing",
+          "done": "this page is what the user asked for: nothing more to do",
+          "none": "not a command for this page: a remark, a question, a name, noise",
+          "play": "music: find a song or video on YouTube by the words and play it now — never the page's play button, which is a click",
+          "play_next": "music: find a song by the words and play it after the one playing",
+          "queue": "music: find a song by the words and add it to the end of the queue"
+        }
+      },
+      "target": {
+        "type": "choice",
+        "instructions": "Which numbered ref on the page do the words name as the thing to click or type into? Choose none when the command needs no ref, or names none of them.",
+        "options": {
+          "none": "no ref: the command does not act on one element"
+        }
+      },
+      "slot": {
+        "type": "choice",
+        "instructions": "Which words of the transcript are the thing the command carries verbatim: the address to open, the search terms, the song to play, the text to type, the key to press? Never the command word itself: \"play X\" carries X. Choose none when it carries none.",
+        "options": {
+          "none": "the command carries no words of its own",
+          "s0-0": "play",
+          "s0-1": "play highs",
+          "s0-2": "play highs and",
+          "s0-3": "play highs and lows",
+          "s0-4": "play highs and lows pomme",
+          "s1-1": "highs",
+          "s1-2": "highs and",
+          "s1-3": "highs and lows",
+          "s1-4": "highs and lows pomme",
+          "s2-2": "and",
+          "s2-3": "and lows",
+          "s2-4": "and lows pomme",
+          "s3-3": "lows",
+          "s3-4": "lows pomme",
+          "s4-4": "pomme"
+        }
+      },
+      "steps": {
+        "type": "choice",
+        "instructions": "Is the line one command, or two the user wants done one after the other? Choose none when it is one: an \"and\" or a comma inside a name, a title or words to search for or type joins no commands. Otherwise choose where the second command starts.",
+        "options": {
+          "none": "one command: the whole line",
+          "w3": "play highs | lows pomme"
+        }
+      }
+    }
+  }
+}
