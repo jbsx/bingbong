@@ -1,6 +1,7 @@
 import type { BrowserController, PageLanding, VisualGroundingController } from '../../core/ports/browser'
 import { DEFAULT_DECISION_THRESHOLDS, type DecisionChoiceAnswer, type DecisionModel, type DecisionQuestions, type DecisionResult } from '../../core/ports/decisionModel'
-import type { AskKind, AskRecord } from '../../core/decision/askRecord'
+import { askImageFile, type AskKind } from '../../core/decision/askRecord'
+import type { AskLogSink } from './askLogSink'
 import type { PipelineEvent } from '../../core/pipeline/events'
 import type { CommandRunState } from '../../core/pipeline/runState'
 import type { PageLink, PageSnapshot } from '../../core/browser/snapshot'
@@ -211,7 +212,7 @@ export interface CommandRunnerDeps {
    * it, the ask naming the file `saveImage` answers; absent, or answering
    * null, the ask names none.
    */
-  askLog?: { write(record: AskRecord): void; saveImage?(id: string, bytes: Uint8Array): string | null }
+  askLog?: Pick<AskLogSink, 'write'> & Partial<Pick<AskLogSink, 'saveImage'>>
   /** Hears the browser's first observable effect of an action (#324); the returned release stops hearing. */
   onEffect?(listener: (effect: ActionEffect) => void): () => void
   /** Hears how a navigation landed (#328), for the hop's decision record; the returned release stops hearing. */
@@ -516,7 +517,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
   /** An ask's images saved beside it (#382), each by the file the sink named; null when none was saved. */
   function savedImages(askId: string, images: Readonly<Record<string, Uint8Array>>): Record<string, string> | null {
     const saved = Object.entries(images).flatMap(([reference, bytes], index) => {
-      const file = deps.askLog?.saveImage?.(index === 0 ? askId : `${askId}-${index}`, bytes) ?? null
+      const file = deps.askLog?.saveImage?.(askImageFile(askId, index), bytes) ?? null
       return file === null ? [] : [[reference, file] as const]
     })
     return saved.length === 0 ? null : Object.fromEntries(saved)
@@ -791,7 +792,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
    * pane) — the line then ends as it would have. Its reading is hop 0's,
    * fired with no bar; `none`, or no answer, is no Command.
    */
-  async function readMarks(turnId: string, text: string, where: Reading, step: StepContext | undefined): Promise<Reading | null> {
+  async function readMarks(turnId: string, text: string, first: Reading, where: Reading, step: StepContext | undefined): Promise<Reading | null> {
     const { page } = where
     const model = deps.decisionModel()
     const capture = browser.markedScreenshot?.bind(browser)
@@ -807,7 +808,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       turnId,
       commandState(text, page, undefined, step, marked),
       markQuestions(text, page, { appliance: appliance(), marked }),
-      `${(where.ask ?? turnId).replace(/-where$/, '')}-mark`,
+      `${first.ask ?? turnId}-mark`,
       { [MARKS_IMAGE]: shot.jpeg },
     )
     return { ...readingOf(result, text, page), markAsk: true }
@@ -2000,7 +2001,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       whereRead = heard
       if (asksMarks(whereRead) && submission === submitted) {
         // The Where Ask read none too (#382, ADR 0084): a card with a Textless Ref is asked once more with the marked page, and its record stays.
-        const marked = await readMarks(turnId, words, whereRead, options.step)
+        const marked = await readMarks(turnId, words, first, whereRead, options.step)
         if (marked !== null) {
           log({ ...recordOf(turnId, at(), source, words, whereRead, whereRead.command, null, truncated), task: hop0 })
           heard = marked

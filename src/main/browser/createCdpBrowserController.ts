@@ -209,6 +209,13 @@ const STILL_POLL_MS = 100
  */
 export const DISMISSAL_GONE_MS = 1_000
 
+/**
+ * The most the Mark Ask's capture may take (#382, ADR 0084): the rects
+ * read again, the capture and the painting. A capture runs well under a
+ * tenth of this; past it the pane is taken as giving none.
+ */
+export const MARK_CAPTURE_CAP_MS = 1_500
+
 export interface CdpBrowserControllerDeps {
   cdp: CdpDebugger
   page: CdpPageDriver
@@ -1260,6 +1267,11 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
   async function markedScreenshot(refs: readonly number[]): Promise<MarkedScreenshot | null> {
     const draw = deps.drawMarks
     if (draw === undefined || refs.length === 0) return null
+    // A capture that hangs (a pane that stopped painting) is no capture: the line ends as it would have.
+    return withDeadline(paintedCapture(refs, draw), clock, MARK_CAPTURE_CAP_MS)
+  }
+
+  async function paintedCapture(refs: readonly number[], draw: NonNullable<CdpBrowserControllerDeps['drawMarks']>): Promise<MarkedScreenshot | null> {
     try {
       const view = await evaluateInPage<{ width: number; height: number }>('({ width: window.innerWidth, height: window.innerHeight })')
       const groups = new Map<string | null, number[]>()

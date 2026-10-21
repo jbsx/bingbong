@@ -6,7 +6,7 @@
 // The numbers are a 5×7 pixel font, each pixel a square of `cell` pixels,
 // so they read at any zoom without a font to load.
 
-/** A box in the image's own pixels. */
+/** A box in the image's own pixels (#382, ADR 0084). */
 export interface MarkBox {
   readonly x: number
   readonly y: number
@@ -14,13 +14,13 @@ export interface MarkBox {
   readonly height: number
 }
 
-/** One mark: the ref number written on it, and the box it draws. */
+/** One mark (#382, ADR 0084): the ref number written on it, and the box it draws. */
 export interface Mark {
   readonly ref: number
   readonly box: MarkBox
 }
 
-/** A decoded image, four bytes a pixel, in the channel order its source holds (Electron's bitmaps are BGRA). */
+/** A decoded image (#382), four bytes a pixel, in the channel order its source holds (Electron's bitmaps are BGRA). */
 export interface Bitmap {
   readonly data: Uint8Array
   readonly width: number

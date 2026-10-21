@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { Server } from 'node:http'
 import { COLLECT_PAGE_SCRIPT } from '../src/main/browser/collectPageScript.ts'
-import { createCdpBrowserController, type PageFrame } from '../src/main/browser/createCdpBrowserController.ts'
+import { MARK_CAPTURE_CAP_MS, createCdpBrowserController, type PageFrame } from '../src/main/browser/createCdpBrowserController.ts'
 import type { Mark } from '../src/core/browser/marks.ts'
 import type { BrowserController } from '../src/core/ports/browser.ts'
 import type { PageSnapshot } from '../src/core/browser/snapshot.ts'
@@ -40,6 +40,7 @@ describe.skipIf(!canDriveChrome)('Textless Refs in a real Chrome (#382)', () => 
   /** What the controller handed its painter: the capture and the marks. */
   let painted: { png: Uint8Array; marks: readonly Mark[]; cell: number } | null = null
   let failCapture = false
+  let hangCapture = false
 
   async function inFrame<T>(expression: string): Promise<T> {
     if (frameSession === null) throw new Error('the frame is gone')
@@ -82,6 +83,7 @@ describe.skipIf(!canDriveChrome)('Textless Refs in a real Chrome (#382)', () => 
       cdp: {
         send: async (method, params) => {
           if (method === 'Page.captureScreenshot' && failCapture) throw new Error('the pane is hidden')
+          if (method === 'Page.captureScreenshot' && hangCapture) return new Promise<never>(() => {})
           return chrome.cdp.send(method, params)
         },
         on: (event, handler) => void chrome.cdp.on(event, handler),
@@ -148,13 +150,19 @@ describe.skipIf(!canDriveChrome)('Textless Refs in a real Chrome (#382)', () => 
     await chrome.evaluate(`document.getElementById('bare').style.marginLeft = '200px'`)
   })
 
-  it('makes no marked screenshot when the capture fails, and none for a control scrolled out of view', async () => {
+  it('makes no marked screenshot when the capture fails or hangs, and none for a control scrolled out of view', async () => {
     const page = await controller.collectPage()
     const bare = page.refs.find((ref) => ref.label === '' && ref.frame === undefined)!
 
     failCapture = true
     expect(await controller.markedScreenshot!([bare.ref])).toBeNull()
     failCapture = false
+    // A capture that never answers is none either, once its cap has passed.
+    hangCapture = true
+    const started = Date.now()
+    expect(await controller.markedScreenshot!([bare.ref])).toBeNull()
+    expect(Date.now() - started).toBeGreaterThanOrEqual(MARK_CAPTURE_CAP_MS - 50)
+    hangCapture = false
 
     await chrome.evaluate(`document.getElementById('bare').style.marginTop = '3000px'`)
     expect(await controller.markedScreenshot!([bare.ref])).toBeNull()

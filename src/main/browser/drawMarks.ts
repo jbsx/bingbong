@@ -9,6 +9,7 @@ import { paintMarks, type Mark } from '../../core/browser/marks'
 /** The JPEG quality the set-of-marks image was measured at in the grill (111 KB, 6/6 right). */
 const MARK_JPEG_QUALITY = 70
 
+/** The marks painted on a PNG capture, as a JPEG (#382, ADR 0084); null for bytes Electron cannot decode. */
 export function drawMarks(png: Uint8Array, marks: readonly Mark[], cell: number): Uint8Array | null {
   const image = nativeImage.createFromBuffer(Buffer.from(png))
   if (image.isEmpty()) return null

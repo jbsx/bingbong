@@ -166,9 +166,9 @@ function harness(options?: { decision?: null; learned?: string[]; speech?: Pick<
     decisionLog: { write: (record) => records.push(record) },
     askLog: {
       write: (record) => asks.push(record),
-      saveImage: (id, bytes) => {
-        images.set(`ask-images/${id}.jpg`, bytes)
-        return `ask-images/${id}.jpg`
+      saveImage: (file, bytes) => {
+        images.set(`ask-images/${file}`, bytes)
+        return `ask-images/${file}`
       },
     },
     onLanding: (listener) => {

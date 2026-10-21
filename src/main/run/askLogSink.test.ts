@@ -19,7 +19,7 @@ describe("the asks sidecar's images (#382, ADR 0084)", () => {
     const dir = logsDir()
     const bytes = new Uint8Array([0xff, 0xd8, 1, 2, 0xff, 0xd9])
 
-    const file = createAskLogSink(dir).saveImage('cli-3-abc-mark', bytes)
+    const file = createAskLogSink(dir).saveImage('cli-3-abc-mark.jpg', bytes)
 
     expect(file).toBe('ask-images/cli-3-abc-mark.jpg')
     expect(new Uint8Array(readFileSync(join(dir, file!)))).toEqual(bytes)
@@ -33,7 +33,7 @@ describe("the asks sidecar's images (#382, ADR 0084)", () => {
     const eightDaysAgo = (Date.now() - 8 * 24 * 60 * 60 * 1000) / 1000
     utimesSync(old, eightDaysAgo, eightDaysAgo)
 
-    createAskLogSink(dir).saveImage('new-mark', new Uint8Array([1]))
+    createAskLogSink(dir).saveImage('new-mark.jpg', new Uint8Array([1]))
 
     expect(existsSync(old)).toBe(false)
     expect(existsSync(join(dir, 'ask-images', 'new-mark.jpg'))).toBe(true)

@@ -13,15 +13,17 @@ import { ASK_FILE_PATTERN } from '../perf/perfFiles'
 // in ask-images/ beside it, named by the ask's id, and purged on the same
 // seven days.
 
-/** The folder under the logs dir an ask's images are saved in. */
+/** The folder under the logs dir an ask's images are saved in (#382, ADR 0084). */
 export const ASK_IMAGES_DIR = 'ask-images'
 
+/** The asks sidecar (#338) and the images saved beside it (#382, ADR 0084). */
 export interface AskLogSink {
   write(record: AskRecord): void
-  /** Save an ask's image; answers the file, relative to the logs dir, or null when it could not be written. */
-  saveImage(id: string, bytes: Uint8Array): string | null
+  /** Save an ask's image under the file name given; answers the file, relative to the logs dir, or null when it could not be written. */
+  saveImage(file: string, bytes: Uint8Array): string | null
 }
 
+/** The sidecar under the logs dir; a failure to write either an ask or its image is swallowed, as every log's is. */
 export function createAskLogSink(logsDir: string, options: JsonlSinkOptions = {}): AskLogSink {
   const sink = createJsonlSink<AskRecord>(logsDir, { prefix: 'asks', pattern: ASK_FILE_PATTERN }, options)
   const now = options.now ?? (() => Date.now())
@@ -37,11 +39,11 @@ export function createAskLogSink(logsDir: string, options: JsonlSinkOptions = {}
 
   return {
     write: (record) => sink.write(record),
-    saveImage(id, bytes) {
+    saveImage(name, bytes) {
       try {
         mkdirSync(dir, { recursive: true })
         purge()
-        const file = `${id.replace(/[^\w.-]/g, '_')}.jpg`
+        const file = name.replace(/[^\w.-]/g, '_')
         writeFileSync(join(dir, file), bytes)
         return `${ASK_IMAGES_DIR}/${file}`
       } catch (error) {

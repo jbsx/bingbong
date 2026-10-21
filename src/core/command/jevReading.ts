@@ -636,7 +636,7 @@ export interface StepContext {
   readonly done: readonly string[]
 }
 
-/** The reference the Mark Ask's image is written into its state by (#382): what the ask's `images` key it under. */
+/** Where the Mark Ask's image stands in its state (#382, ADR 0084): the reference the ask's `images` holds it under. */
 export const MARKS_IMAGE = '<marks>'
 
 /** The state the questions are asked over; at a hop past the first, where the Task stands; in a Step, where the line stands; for the Mark Ask, the marked refs and the image of them. */
@@ -818,7 +818,10 @@ export function whereQuestions(text: string, page: CommandPage, { appliance }: {
  * named nothing and the browser named nothing either.
  */
 export function textlessRefsOf(questions: CommandQuestions, page: CommandPage): number[] {
-  const offeredClicks = new Set(Object.keys(questions.action.options).flatMap((label) => (/^click-(\d+)$/.exec(label)?.[1] ?? []) as string[]).map(Number))
+  const offeredClicks = new Set(Object.keys(questions.action.options).flatMap((label) => {
+    const acted = refActionOf(label)
+    return acted?.act === 'click' ? [acted.n] : []
+  }))
   return page.refs.filter((ref) => offeredClicks.has(ref.ref) && shownLabel(ref, page).trim() === '').map((ref) => ref.ref)
 }
 

@@ -2,7 +2,7 @@ import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFi
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { DecisionRecord, MisfireRecord, MisfireSignal } from '../../core/command/decisionRecord'
-import type { AskRecord } from '../../core/decision/askRecord'
+import { askImageFile, type AskRecord } from '../../core/decision/askRecord.ts'
 import { resolveDecisionRouting } from '../../core/decision/decisionRouting.ts'
 import {
   expectationProblem,
@@ -226,7 +226,7 @@ export function caseFromLog(logsDir: string, id: string, expectations: readonly 
     if (problem !== null) return { error: problem }
   }
   // A Mark Ask's images (#382) go into the corpus beside its case, named by it: the logs they were saved in are purged.
-  const images = Object.entries(ask.images ?? {}).map(([reference, file], index) => ({ reference, from: join(logsDir, file), to: `${id}${index === 0 ? '' : `-${index}`}.jpg`, file }))
+  const images = Object.entries(ask.images ?? {}).map(([reference, file], index) => ({ reference, from: join(logsDir, file), to: askImageFile(id, index), file }))
   const lost = images.find((image) => !existsSync(image.from))
   if (lost !== undefined) return { error: `the ask's image ${lost.file} is not in ${logsDir}` }
   // The split's case is the whole line's; a Step's case carries the Step's words.

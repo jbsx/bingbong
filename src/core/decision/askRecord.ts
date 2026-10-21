@@ -10,6 +10,11 @@ import type { DecisionQuestions } from '../ports/decisionModel'
 /** Which call asked: hop 0's reading, the Where Ask after a hop 0 that read none (#379), the Mark Ask after a Where Ask that read none (#382), a later hop of a Task, or an Early Fire partial. */
 export type AskKind = 'command' | 'where' | 'mark' | 'hop' | 'partial'
 
+/** The file an ask's image is saved as (#382, ADR 0084): its ask's id, and the image's place among the ask's after the first. */
+export function askImageFile(askId: string, index: number): string {
+  return `${askId}${index === 0 ? '' : `-${index}`}.jpg`
+}
+
 export interface AskRecord {
   readonly type: 'ask'
   /** The ask's id, which a decision record names: the turn's id for a Command or a hop; a partial's own, since it is asked before its turn exists. */
