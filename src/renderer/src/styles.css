@@ -385,7 +385,7 @@ body {
   font-size: 22px;
   font-weight: 500;
   color: var(--accent);
-  font-feature-settings: 'tnum' 1;
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
@@ -505,7 +505,7 @@ body {
 .toolbar-timer .toolbar-widget-text {
   font-family: var(--font-mono);
   font-size: 22px;
-  font-feature-settings: 'tnum' 1;
+  font-variant-numeric: tabular-nums;
 }
 
 .toolbar-timer--ringing {
@@ -964,7 +964,7 @@ details.feed-entry {
   font-family: var(--font-mono);
   font-size: 16px;
   color: var(--fg3);
-  font-feature-settings: 'tnum' 1;
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
@@ -1989,7 +1989,8 @@ details[open] > .settings-summary::before {
   padding: 40px 48px;
   background: var(--bg);
   color: var(--fg);
-  font-feature-settings: 'tnum' 1, 'cv11' 1;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'cv11' 1;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -2344,7 +2345,8 @@ button.idle-line {
   background: var(--surface-solid);
   box-shadow: 0 32px 96px rgba(0, 0, 0, 0.45);
   color: var(--fg);
-  font-feature-settings: 'tnum' 1, 'cv11' 1;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'cv11' 1;
   overflow: hidden;
 }
 
@@ -3324,6 +3326,15 @@ button.idle-line {
   font-size: 24px;
   font-weight: 600;
   color: var(--rain);
+  white-space: nowrap;
+}
+
+/* "peak today": which rain this is, beside the coming hours' "rain by". */
+.wx-cond-rain-words {
+  margin-left: -2px;
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--fg3);
 }
 
 .wx-drop path {
@@ -3916,9 +3927,27 @@ button.idle-line {
 
 /* A hyphenated word (NoBreakHyphens) never breaks at its hyphen, "Weigh-"
    over "in", and sets proportionally: Inter's tnum widens the hyphen, and
-   "Weigh-in" read "Weigh - in" on a tabular line. */
+   "Weigh-in" read "Weigh - in" on a tabular line. Tabular figures are set
+   with font-variant-numeric throughout, never font-feature-settings 'tnum',
+   which no font-variant-numeric below it can undo. */
 .no-break {
   white-space: nowrap;
+  font-variant-numeric: normal;
+}
+
+/* The Idle Screen's words (titles, names, a repo's owner) set
+   proportionally for the same reason: on the tabular screen "Stand-up"
+   read "Stand - up" and "vectorize-io" read "vectorize - io". The figures
+   and times beside them stay tabular. */
+.idle-upnext-title,
+.idle-last-page-title,
+.idle-last-page-host,
+.idle-music-title,
+.idle-music-channel,
+.idle-cal-holiday,
+.idle-cal-entry-title,
+.idle-repo-name,
+.idle-repo-line {
   font-variant-numeric: normal;
 }
 
@@ -4199,7 +4228,7 @@ button.idle-line {
   font-family: var(--font-mono);
   font-size: 16px;
   color: var(--fg3);
-  font-feature-settings: 'tnum' 1;
+  font-variant-numeric: tabular-nums;
   text-align: right;
 }
 
@@ -4407,7 +4436,7 @@ button.idle-line {
   letter-spacing: -0.02em;
   line-height: 1.1;
   color: var(--fgh);
-  font-feature-settings: 'tnum' 1;
+  font-variant-numeric: tabular-nums;
 }
 
 .weight-figure-value {
@@ -4535,7 +4564,7 @@ button.idle-line {
   border-collapse: collapse;
   font-family: var(--font-mono);
   font-size: 19px;
-  font-feature-settings: 'tnum' 1;
+  font-variant-numeric: tabular-nums;
   color: var(--fgh);
 }
 
@@ -4737,7 +4766,7 @@ button.idle-line {
   letter-spacing: -0.02em;
   line-height: 1.05;
   color: var(--fg);
-  font-feature-settings: 'tnum' 1;
+  font-variant-numeric: tabular-nums;
 }
 
 .weighin-popup--live .weighin-popup-kg {

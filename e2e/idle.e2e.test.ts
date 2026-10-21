@@ -172,7 +172,7 @@ describe('idle screen e2e: the Last Page and resume', () => {
       { timeoutMs: 10000, intervalMs: 250 },
     )
     expect(rows).toEqual([
-      { name: 'acme/voice', line: 'Fully local voice cloning, dubbing and transcription.', stars: '★ 77.3k', gain: '+42kthis month', language: 'TypeScript' },
+      { name: 'acme/voice', line: 'Fully local voice cloning, dubbing and transcription.', stars: '★ 77.3k', gain: '+42.0kthis month', language: 'TypeScript' },
       { name: 'acme/memory', line: 'Agent memory that learns', stars: '★ 51.6k', gain: '+27.6kthis month', language: 'TypeScript' },
       { name: 'acme/paperclip', line: 'Runs teams of AI agents toward business goals.', stars: '★ 104.7k', gain: '+23.3kthis month', language: 'TypeScript' },
     ])

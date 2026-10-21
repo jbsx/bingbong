@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { backLeadsToBlank, isRealPage, lastPageFrom, lastPageLabel, sanitizeLastPage } from './lastPage'
+import { backLeadsToBlank, isRealPage, lastPageFrom, lastPageLabel, sanitizeLastPage, withoutSiteTail } from './lastPage'
 
 describe('the Last Page', () => {
   it('ignores the blank boot page and error pages', () => {
@@ -48,5 +48,29 @@ describe('the Last Page', () => {
   it('labels a page by its title, or its host without www', () => {
     expect(lastPageLabel({ url: 'https://www.youtube.com/watch?v=1', title: 'A video' })).toEqual({ title: 'A video', host: 'youtube.com' })
     expect(lastPageLabel({ url: 'https://www.youtube.com/', title: '' })).toEqual({ title: 'youtube.com', host: 'youtube.com' })
+  })
+
+  it('drops a title tail that only repeats the host beside it', () => {
+    expect(lastPageLabel({ url: 'https://www.youtube.com/watch?v=1', title: 'Fixture Song - YouTube' })).toEqual({ title: 'Fixture Song', host: 'youtube.com' })
+  })
+})
+
+describe('withoutSiteTail', () => {
+  it('drops a trailing site name after any of the usual separators, whatever the case', () => {
+    expect(withoutSiteTail('Fixture Song - YouTube', 'youtube.com')).toBe('Fixture Song')
+    expect(withoutSiteTail('YE - HIGHS AND LOWS - YouTube', 'youtube.com')).toBe('YE - HIGHS AND LOWS')
+    expect(withoutSiteTail('Issues · acme/voice | GitHub', 'github.com')).toBe('Issues · acme/voice')
+    expect(withoutSiteTail('A question – Stack Overflow', 'stackoverflow.com')).toBe('A question')
+    expect(withoutSiteTail('Hacker News — ycombinator', 'news.ycombinator.com')).toBe('Hacker News')
+    expect(withoutSiteTail('Weather - bbc', 'bbc.co.uk')).toBe('Weather')
+    expect(withoutSiteTail('Notes - example.com', 'example.com')).toBe('Notes')
+  })
+
+  it('keeps a tail that says more than the host, or another name', () => {
+    expect(withoutSiteTail('Storm warning - BBC News', 'bbc.co.uk')).toBe('Storm warning - BBC News')
+    expect(withoutSiteTail('Fixture Song - YouTube', 'vimeo.com')).toBe('Fixture Song - YouTube')
+    expect(withoutSiteTail('Stand-up notes', 'example.com')).toBe('Stand-up notes')
+    expect(withoutSiteTail('YouTube', 'youtube.com')).toBe('YouTube')
+    expect(withoutSiteTail('vectorize-io/hindsight', 'github.com')).toBe('vectorize-io/hindsight')
   })
 })

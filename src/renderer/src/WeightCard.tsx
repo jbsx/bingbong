@@ -5,6 +5,7 @@ import { changeSinceLast, since, type WeighIn } from '../../core/scale/weighIns'
 import type { WeightSettings } from '../../core/scale/weightSettings'
 import { WeightChart } from './WeightChart'
 import { NoBreakHyphens } from './NoBreakHyphens'
+import { dateLabel } from './dateLabel'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
@@ -29,7 +30,7 @@ function whenLabel(at: number, now: number): string {
   const days = Math.round((new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime() - new Date(day.getFullYear(), day.getMonth(), day.getDate()).getTime()) / DAY_MS)
   if (days === 0) return `today ${day.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
   if (days === 1) return 'yesterday'
-  return day.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' })
+  return dateLabel(day, { weekday: 'short', day: 'numeric', month: 'short' })
 }
 
 /**

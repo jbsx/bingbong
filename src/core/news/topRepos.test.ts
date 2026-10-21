@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { createTopReposDesk, emptyTopReposState, readmeText, readmeUrl, readSummaries, readTrendingMonth, sanitizeTopReposState, summaryAsk, TOP_REPOS_REFRESH_MS, TOP_REPOS_URL, type RepoSummaryWriter, type TopReposState } from './topRepos'
+import { compactStars, createTopReposDesk, emptyTopReposState, readmeText, readmeUrl, readSummaries, readTrendingMonth, sanitizeTopReposState, summaryAsk, TOP_REPOS_REFRESH_MS, TOP_REPOS_URL, type RepoSummaryWriter, type TopReposState } from './topRepos'
 
 // github.com/trending?since=monthly as it answered on 2026-10-19, cut to four repositories.
 const PAGE = readFileSync(new URL('./fixtures/github-trending-monthly.html', import.meta.url), 'utf8')
@@ -155,5 +155,20 @@ describe('createTopReposDesk', () => {
     at += TOP_REPOS_REFRESH_MS
     await desk.repos()
     expect(writes).toBe(2)
+  })
+})
+
+describe('compactStars', () => {
+  it('keeps one decimal past a thousand, so a column of gains lines up', () => {
+    expect(compactStars(42_036)).toBe('42.0k')
+    expect(compactStars(27_612)).toBe('27.6k')
+    expect(compactStars(104_657)).toBe('104.7k')
+    expect(compactStars(1_000)).toBe('1.0k')
+    expect(compactStars(2_000_000)).toBe('2.0m')
+  })
+
+  it('writes a count under a thousand as itself', () => {
+    expect(compactStars(850)).toBe('850')
+    expect(compactStars(0)).toBe('0')
   })
 })

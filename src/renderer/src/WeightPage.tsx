@@ -6,6 +6,7 @@ import { JAISH, weighInsOf, type Person } from '../../core/scale/people'
 import { reportRendererFault } from './diagnostics'
 import { WeightChart } from './WeightChart'
 import { NoBreakHyphens } from './NoBreakHyphens'
+import { dateLabel } from './dateLabel'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
@@ -54,7 +55,7 @@ function changeText(now: Figure, before: Figure | undefined, digits: number, uni
 }
 
 function stamp(at: number): string {
-  return new Date(at).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+  return dateLabel(at, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
 /**

@@ -50,9 +50,40 @@ export function sanitizeLastPage(raw: unknown): LastPage | null {
   return { url: record.url, title, at }
 }
 
-/** What the Idle Screen shows of a Last Page: its title, or its host when it has none. */
+/** Second-level labels a country's registrable names sit under: bbc.co.uk is "bbc", not "co". */
+const COUNTRY_SECOND_LEVELS = new Set(['co', 'com', 'org', 'net', 'ac', 'gov', 'edu'])
+
+/** Letters and digits only, lower case: "Stack Overflow" and "stackoverflow" read alike. */
+function bare(text: string): string {
+  return text.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '')
+}
+
+/** A host's registrable name: youtube.com is "youtube", news.ycombinator.com "ycombinator", bbc.co.uk "bbc". */
+function siteName(host: string): string {
+  const labels = host.replace(/:\d+$/, '').split('.')
+  if (labels.length < 2) return labels[0] ?? ''
+  const countrySecond = labels.length >= 3 && labels[labels.length - 1].length === 2 && COUNTRY_SECOND_LEVELS.has(labels[labels.length - 2])
+  return labels[labels.length - (countrySecond ? 3 : 2)]
+}
+
+/**
+ * A title without its trailing site name where that only repeats the host
+ * shown beside it: "Fixture Song - YouTube" beside youtube.com is "Fixture
+ * Song", "Issues · x | GitHub" beside github.com loses " | GitHub". A tail
+ * after " - ", " | ", " – " or " — " is dropped only when it is the host's
+ * own name or the host itself, letters and digits alike whatever the case;
+ * "BBC News" beside bbc.co.uk is more than the host says and stays.
+ */
+export function withoutSiteTail(title: string, host: string): string {
+  const match = /^(.*\S)\s+[-|–—]\s+([^|–—]+)$/u.exec(title)
+  if (match === null) return title
+  const tail = bare(match[2])
+  return tail !== '' && (tail === bare(siteName(host)) || tail === bare(host)) ? match[1] : title
+}
+
+/** What the Idle Screen shows of a Last Page: its title, less a tail naming the host beside it, or its host when it has none. */
 export function lastPageLabel(page: Pick<LastPage, 'url' | 'title'>): { title: string; host: string } {
   // A persisted address that no longer parses: the address itself stands in.
   const host = URL.canParse(page.url) ? new URL(page.url).host.replace(/^www\./, '') : page.url
-  return { title: page.title !== '' ? page.title : host, host }
+  return { title: page.title !== '' ? withoutSiteTail(page.title, host) : host, host }
 }

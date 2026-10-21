@@ -23,6 +23,7 @@ import { WeatherColumn } from './IdleWeather'
 import { StatusOrb, StatusPill, VoiceWave } from './AssistantPanel'
 import type { OrbStatus } from './useAssistant'
 import { GlobeIcon } from './WeatherIcon'
+import { dateLabel } from './dateLabel'
 
 /**
  * The display the Idle Screen is laid out for: the appliance's 21-inch 16:9
@@ -294,7 +295,7 @@ function holidayDate(date: string, now: Date): string {
   const days = Math.round((at.getTime() - today.getTime()) / (24 * 60 * 60 * 1000))
   if (days === 0) return 'today'
   if (days === 1) return 'tomorrow'
-  return at.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' })
+  return dateLabel(at, { weekday: 'short', day: 'numeric', month: 'short' })
 }
 
 /** An entry's day and time as the list under the weeks names it: "Fri 30 · 19:00", "Fri 30 · all day". */

@@ -37,6 +37,18 @@ export interface TopRepo extends TrendingRepo {
   summary: string | null
 }
 
+const COMPACT = new Intl.NumberFormat('en-GB', { notation: 'compact', minimumFractionDigits: 1, maximumFractionDigits: 1 })
+
+/**
+ * A star count as the wall reads it from across the room: 42,036 is 42.0k,
+ * 104,657 is 104.7k. Always one decimal past a thousand, so a column of them
+ * lines up ("+42.0k" over "+27.6k", never "+42k"); below a thousand the
+ * count itself.
+ */
+export function compactStars(n: number): string {
+  return Math.abs(n) < 1000 ? String(Math.round(n)) : COMPACT.format(n)
+}
+
 function count(text: string | undefined): number | null {
   if (text === undefined) return null
   const value = Number(text.replace(/,/g, ''))

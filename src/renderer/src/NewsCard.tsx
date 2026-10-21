@@ -1,5 +1,5 @@
 import { useRef } from 'react'
-import type { TopRepo } from '../../core/news/topRepos'
+import { compactStars, type TopRepo } from '../../core/news/topRepos'
 import { useWholeItems } from './useFit'
 
 /**
@@ -20,9 +20,6 @@ function opener(link: string): { onPointerDown: () => void; onKeyDown: (event: R
 }
 
 const stars = (n: number): string => n.toLocaleString('en-GB')
-
-/** A count as the wall reads it from across the room: 42,036 is 42K, 104,657 is 104.7K. */
-const compact = new Intl.NumberFormat('en-GB', { notation: 'compact', maximumFractionDigits: 1 })
 
 /** GitHub's own colour for the languages the month's list tends to hold; any other gets the quiet ink. */
 const LANGUAGE_COLOURS: Record<string, string> = {
@@ -105,7 +102,7 @@ export function NewsCard({ repos, lean = false }: { repos: TopRepo[]; lean?: boo
             <li key={repo.name}>
               <button type="button" className="idle-repo" aria-label={spoken(repo, line)} {...opener(repo.link)}>
                 <span className="idle-repo-gain">
-                  <span className="idle-repo-gain-figure">+{compact.format(repo.starsThisMonth)}</span>
+                  <span className="idle-repo-gain-figure">+{compactStars(repo.starsThisMonth)}</span>
                   <span className="idle-repo-gain-label">this month</span>
                   <span className="idle-repo-bar" style={{ '--share': repo.starsThisMonth / leader } as React.CSSProperties} />
                 </span>
@@ -125,7 +122,7 @@ export function NewsCard({ repos, lean = false }: { repos: TopRepo[]; lean?: boo
                         {repo.language}
                       </span>
                     ) : null}
-                    <span className="idle-repo-stars">★ {compact.format(repo.stars)}</span>
+                    <span className="idle-repo-stars">★ {compactStars(repo.stars)}</span>
                   </span>
                 </span>
               </button>

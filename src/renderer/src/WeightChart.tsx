@@ -1,4 +1,5 @@
 import { chartScale } from '../../core/scale/weightFormat'
+import { dateLabel } from './dateLabel'
 
 /** One figure's value at a Weigh-in. */
 export interface ChartPoint {
@@ -7,7 +8,7 @@ export interface ChartPoint {
 }
 
 function dayLabel(at: number): string {
-  return new Date(at).toLocaleDateString([], { day: 'numeric', month: 'short' })
+  return dateLabel(at, { day: 'numeric', month: 'short' })
 }
 
 /**

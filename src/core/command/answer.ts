@@ -67,9 +67,9 @@ export function noResponseAnswer(facts: NoResponseFacts): string {
   return `No response.\n\n${noResponseReason(facts)}`
 }
 
-/** What a page is called in an Answer: its title, or its site's name when it has none. */
+/** What a page is called in an Answer: its title whole (no host stands beside it here), or its site's name when it has none. */
 export function pageName(page: { url: string; title: string }): string {
-  return lastPageLabel(page).title
+  return page.title !== '' ? page.title : lastPageLabel(page).host
 }
 
 /** A `search`: what it searched for, and on which site when it was scoped to one (#340). */

@@ -76,9 +76,9 @@ function WeatherNow({ report, now }: { report: WeatherReport; now: number }) {
             {report.city}
           </span>
           {today?.precipitationChance != null ? (
-            <span className="wx-cond-rain">
+            <span className="wx-cond-rain" aria-label={`rain ${Math.round(today.precipitationChance)}% at its peak today`}>
               <Drop size={20} />
-              {Math.round(today.precipitationChance)}%
+              {Math.round(today.precipitationChance)}%<span className="wx-cond-rain-words">peak today</span>
             </span>
           ) : null}
         </span>
