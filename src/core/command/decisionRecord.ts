@@ -101,6 +101,8 @@ export interface DecisionRecord {
   readonly runnerUp?: true
   /** The Where Ask's reading (#379, ADR 0082): hop 0 read `none`, and this is the Choice asked after it, its own record beside the first's. */
   readonly whereAsk?: true
+  /** The Mark Ask's reading (#382, ADR 0084): the Where Ask read `none` over a Textless Ref, and this is the card asked again with the marked page, its own record beside the other two. */
+  readonly markAsk?: true
   /** The action threw: its message, so a failed Command explains itself here and not only in the Feed (post mortem 2026-10-19). */
   readonly error?: string
   /**

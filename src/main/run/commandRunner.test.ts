@@ -142,6 +142,8 @@ function harness(options?: { decision?: null; learned?: string[]; speech?: Pick<
   const events: PipelineEvent[] = []
   const records: CommandLogRecord[] = []
   const asks: AskRecord[] = []
+  /** The images the ask log saved beside its asks (#382), by the file each was saved as. */
+  const images = new Map<string, Uint8Array>()
   const screenshots: string[] = []
   /** Each wait on the clock the runner asked for, in ms: none passes. */
   const sleeps: number[] = []
@@ -162,7 +164,13 @@ function harness(options?: { decision?: null; learned?: string[]; speech?: Pick<
     now: () => wall++,
     tracer: perf.tracer,
     decisionLog: { write: (record) => records.push(record) },
-    askLog: { write: (record) => asks.push(record) },
+    askLog: {
+      write: (record) => asks.push(record),
+      saveImage: (id, bytes) => {
+        images.set(`ask-images/${id}.jpg`, bytes)
+        return `ask-images/${id}.jpg`
+      },
+    },
     onLanding: (listener) => {
       landingListeners.add(listener)
       return () => landingListeners.delete(listener)
@@ -197,7 +205,7 @@ function harness(options?: { decision?: null; learned?: string[]; speech?: Pick<
   const land = (landing: PageLanding): void => {
     for (const listener of landingListeners) listener(landing)
   }
-  return { browser, events, records, asks, screenshots, sleeps, perf, decision, runner, observe, land, admitted, proposed, observed, setWall: (at: number) => (wall = at) }
+  return { browser, events, records, asks, images, screenshots, sleeps, perf, decision, runner, observe, land, admitted, proposed, observed, setWall: (at: number) => (wall = at) }
 }
 
 const types = (events: PipelineEvent[]): string[] => events.map((event) => event.type)
@@ -3763,5 +3771,136 @@ describe('a line read as Steps (#364, ADR 0076 "a line is Steps")', () => {
     decision.script.push({ answers: { action: choice('click-2'), slot: choice('none'), where: choice('page'), complete: { type: 'noul', noul: 0.9 } } })
     await runner.consider('click sign in and')
     expect(Object.keys(decision.requests[0]!.questions)).not.toContain('steps')
+  })
+})
+
+describe('the Mark Ask (#382, ADR 0084): a Where Ask that reads none over a Textless Ref asks once more with the marked page', () => {
+  const PLAYER = 'https://video.example/watch'
+  /** A player bar: a gear with no words, a labelled button, and a link with no words. */
+  const TEXTLESS_REFS: SnapshotRef[] = [ref(1, 'button', ''), ref(2, 'button', 'Theater mode (t)'), ref(3, 'link', '', { href: 'https://video.example/home' })]
+  const WORDED_REFS: SnapshotRef[] = [ref(1, 'button', 'Settings'), ref(2, 'button', 'Theater mode (t)')]
+  const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 7, 0xff, 0xd9])
+  const decisions = (records: CommandLogRecord[]) => records.flatMap((record) => (record.type === 'decision' ? [record] : []))
+  const displays = (events: PipelineEvent[]) => events.flatMap((event) => (event.type === 'display' ? [event.text] : []))
+  const reading = (probabilities: Record<string, number>) => {
+    const [top, confidence] = Object.entries(probabilities).sort((a, b) => b[1] - a[1])[0]!
+    return { answers: { action: choice(top, confidence, probabilities), slot: choice('none') } }
+  }
+  const NONE = reading({ none: 0.6, 'click-2': 0.2 })
+  const isMarkAsk = (request: DecisionRequest<DecisionQuestions>): boolean => request.images !== undefined
+
+  /** The player page; its capture marks every ref it is asked for, or the ones `shows` names. */
+  function playerHarness(refs: readonly SnapshotRef[], capture: { shows?: readonly number[]; fails?: true } = {}) {
+    const h = harness()
+    h.browser.snapshot = { ...h.browser.snapshot, url: PLAYER, title: 'A video', refs: [...refs] }
+    const captured: (readonly number[])[] = []
+    h.browser.markedScreenshot = async (asked) => {
+      captured.push(asked)
+      if (capture.fails) return null
+      const shown = asked.filter((n) => capture.shows?.includes(n) ?? true)
+      return { jpeg: JPEG, marks: shown.map((n) => ({ ref: n, box: { x: n * 10, y: 5, width: 8, height: 8 } })) }
+    }
+    return { ...h, captured }
+  }
+
+  it('AC3: asks only on the Where Ask\'s none with a Textless Ref on the card — all four combinations', async () => {
+    const both = playerHarness(TEXTLESS_REFS)
+    both.decision.script.push(NONE, NONE, NONE)
+    await both.runner.run('turn on ambient mode', { source: 'spoken' })
+    expect(both.decision.requests.map(isMarkAsk)).toEqual([false, false, true])
+
+    const noTextless = playerHarness(WORDED_REFS)
+    noTextless.decision.script.push(NONE, NONE)
+    await noTextless.runner.run('turn on ambient mode', { source: 'spoken' })
+    expect(noTextless.decision.requests.map(isMarkAsk)).toEqual([false, false])
+    expect(noTextless.captured).toEqual([])
+
+    const whereActs = playerHarness(TEXTLESS_REFS)
+    whereActs.decision.script.push(NONE, reading({ 'click-2': 0.6 }))
+    await whereActs.runner.run('turn on ambient mode', { source: 'spoken' })
+    expect(whereActs.decision.requests.slice(0, 2).map(isMarkAsk)).toEqual([false, false])
+    expect(whereActs.decision.requests.some(isMarkAsk)).toBe(false)
+    expect(whereActs.captured).toEqual([])
+
+    const neither = playerHarness(WORDED_REFS)
+    neither.decision.script.push(NONE, reading({ 'click-2': 0.6 }))
+    await neither.runner.run('turn on ambient mode', { source: 'spoken' })
+    expect(neither.decision.requests.some(isMarkAsk)).toBe(false)
+
+    // A first reading that is not none asks neither where nor with marks.
+    const read = playerHarness(TEXTLESS_REFS)
+    read.decision.script.push(reading({ 'click-1': 0.9 }))
+    await read.runner.run('press the gear', { source: 'spoken' })
+    expect(read.decision.requests.some(isMarkAsk)).toBe(false)
+    expect(read.captured).toEqual([])
+  })
+
+  it("fires the Mark Ask's reading as hop 0: the same card, the textless refs' options reading the control marked N, and the image the state names", async () => {
+    const { browser, records, asks, images, decision, runner, captured } = playerHarness(TEXTLESS_REFS)
+    decision.script.push(NONE, NONE, reading({ 'click-1': 0.95 }), SURE_YES)
+    await runner.run('turn on ambient mode', { source: 'spoken', turnId: 't1' })
+
+    expect(captured).toEqual([[1, 3]])
+    expect(browser.clicks).toEqual([1])
+    const [first, where, mark] = decision.requests
+    expect(Object.keys(cardOf(mark!).options)).toEqual(Object.keys(cardOf(where!).options))
+    expect(cardOf(mark!).options['click-1']).toBe('click [1] button, the control marked 1')
+    expect(cardOf(mark!).options['click-3']).toBe('click [3] link, the control marked 3 https://video.example/home')
+    expect(cardOf(mark!).options['click-2']).toBe(cardOf(first!).options['click-2'])
+    expect(mark!.state).toContain('[1] button, the control marked 1')
+    expect(mark!.state).toContain('<marks>')
+    expect(mark!.images).toEqual({ '<marks>': JPEG })
+    expect(mark!.questions).not.toHaveProperty('steps')
+
+    // Three records for hop 0: the none, the Where Ask's none, and the Mark Ask's click.
+    const read = decisions(records)
+    expect(read.slice(0, 3).map((record) => [record.verb, record.whereAsk, record.markAsk, record.ask])).toEqual([
+      ['none', undefined, undefined, 't1'],
+      ['none', true, undefined, 't1-where'],
+      ['click', undefined, true, 't1-mark'],
+    ])
+    expect(read[1]).not.toHaveProperty('ended')
+    expect(read.at(-1)).toMatchObject({ ended: 'done' })
+    // The Mark Ask's own ask line names the image saved beside it.
+    expect(asks[2]).toMatchObject({ id: 't1-mark', kind: 'mark', images: { '<marks>': 'ask-images/t1-mark.jpg' } })
+    expect(asks[0]).not.toHaveProperty('images')
+    expect(images.get('ask-images/t1-mark.jpg')).toEqual(JPEG)
+  })
+
+  it('marks only the refs the capture showed: one out of view keeps its line and is never called marked', async () => {
+    const { decision, runner } = playerHarness(TEXTLESS_REFS, { shows: [1] })
+    decision.script.push(NONE, NONE, NONE)
+    await runner.run('turn on ambient mode', { source: 'spoken' })
+
+    const mark = decision.requests[2]!
+    expect(cardOf(mark).options['click-1']).toBe('click [1] button, the control marked 1')
+    expect(cardOf(mark).options['click-3']).toBe('click [3] link "" https://video.example/home')
+  })
+
+  it('a Mark Ask that reads none ends "No response." as before, its record ending the line', async () => {
+    const { browser, events, records, runner, decision } = playerHarness(TEXTLESS_REFS)
+    decision.script.push(NONE, NONE, NONE)
+    await runner.run('thank you', { source: 'spoken', turnId: 't1' })
+
+    expect(browser.clicks).toEqual([])
+    expect(displays(events)).toEqual(['No response.\n\nJev read no command in the words, and nothing on this page to look for.'])
+    expect(decisions(records).map((record) => [record.verb, record.whereAsk, record.markAsk, record.ended])).toEqual([
+      ['none', undefined, undefined, undefined],
+      ['none', true, undefined, undefined],
+      ['none', undefined, true, 'terminal'],
+    ])
+  })
+
+  it('no capture means no Mark Ask: the Where Ask\'s none ends the line as it did', async () => {
+    const { records, runner, decision, captured } = playerHarness(TEXTLESS_REFS, { fails: true })
+    decision.script.push(NONE, NONE)
+    await runner.run('turn on ambient mode', { source: 'spoken' })
+
+    expect(captured).toEqual([[1, 3]])
+    expect(decision.requests).toHaveLength(2)
+    expect(decisions(records).map((record) => [record.whereAsk, record.ended])).toEqual([
+      [undefined, undefined],
+      [true, 'terminal'],
+    ])
   })
 })

@@ -3,6 +3,7 @@ import type { TtsSpeaker } from '../ports/tts'
 import type { Transcriber, VadScorer } from '../ports/stt'
 import { WAKE_HEADS, type WakeScores, type WakeWordDetector } from '../ports/wake'
 import type {
+  MarkedScreenshot,
   BrowserController,
   BrowserState,
   KeyPress,
@@ -136,6 +137,8 @@ export class FakeBrowser implements BrowserController, VisualGroundingController
   readonly pressedKeys: { press: KeyPress; times: number }[] = []
   /** Refs the risk gate can describe; empty means every ref is unknown. */
   readonly refs = new Map<number, SnapshotRef>()
+  /** The Mark Ask's capture (#382), when a test gives one; absent, as for a controller that makes none. */
+  markedScreenshot?: (refs: readonly number[]) => Promise<MarkedScreenshot | null>
   private pageState: BrowserState = { url: null, title: null }
   snapshot: PageSnapshot = {
     url: 'about:blank',

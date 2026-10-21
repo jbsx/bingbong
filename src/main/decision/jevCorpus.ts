@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { DecisionRecord, MisfireRecord, MisfireSignal } from '../../core/command/decisionRecord'
@@ -87,10 +87,28 @@ export async function replayCorpus(dir: string, deps: ReplayDeps): Promise<Repla
       verdicts.push({ name: entry.name, pass: false, problem: entry.case })
       continue
     }
-    const result = await model.ask({ state: entry.case.ask.state, questions: entry.case.ask.questions })
+    const images = caseImages(dir, entry.case)
+    if (typeof images === 'string') {
+      verdicts.push({ name: entry.name, pass: false, problem: images })
+      continue
+    }
+    const result = await model.ask({ state: entry.case.ask.state, questions: entry.case.ask.questions, ...(images !== null ? { images } : {}) })
     verdicts.push(judgeJevCase(entry.name, entry.case, result))
   }
   return { code: verdicts.every((verdict) => verdict.pass) ? 0 : 1, report: formatJevReplay(verdicts, model.model) }
+}
+
+/** A case's images read from beside it (#382), by reference; null for a text ask, a string for an image that is gone. */
+function caseImages(dir: string, jevCase: JevCase): Record<string, Uint8Array> | null | string {
+  const files = Object.entries(jevCase.ask.images ?? {})
+  if (files.length === 0) return null
+  const read: Record<string, Uint8Array> = {}
+  for (const [reference, file] of files) {
+    const path = join(dir, file)
+    if (!existsSync(path)) return `the case's image ${file} is not in ${dir}`
+    read[reference] = new Uint8Array(readFileSync(path))
+  }
+  return read
 }
 
 function parseAsk(line: string): AskRecord | null {
@@ -207,6 +225,10 @@ export function caseFromLog(logsDir: string, id: string, expectations: readonly 
     const problem = expectationProblem(ask.questions, expectation)
     if (problem !== null) return { error: problem }
   }
+  // A Mark Ask's images (#382) go into the corpus beside its case, named by it: the logs they were saved in are purged.
+  const images = Object.entries(ask.images ?? {}).map(([reference, file], index) => ({ reference, from: join(logsDir, file), to: `${id}${index === 0 ? '' : `-${index}`}.jpg`, file }))
+  const lost = images.find((image) => !existsSync(image.from))
+  if (lost !== undefined) return { error: `the ask's image ${lost.file} is not in ${logsDir}` }
   // The split's case is the whole line's; a Step's case carries the Step's words.
   const transcript = decision === undefined ? undefined : askId === decision.split?.ask ? decision.split.line : decision.transcript
   const jevCase: JevCase = {
@@ -215,9 +237,10 @@ export function caseFromLog(logsDir: string, id: string, expectations: readonly 
     model: ask.model,
     recordedAt: ask.at,
     expect: parsed,
-    ask: { state: ask.state, questions: ask.questions },
+    ask: { state: ask.state, questions: ask.questions, ...(images.length > 0 ? { images: Object.fromEntries(images.map((image) => [image.reference, image.to])) } : {}) },
   }
   mkdirSync(corpusDir, { recursive: true })
+  for (const image of images) copyFileSync(image.from, join(corpusDir, image.to))
   const path = join(corpusDir, `${id}.json`)
   // Promoting a case again with other expectations replaces it, and says so.
   const replaced = existsSync(path)

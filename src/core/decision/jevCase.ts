@@ -25,6 +25,8 @@ export type JevExpectation =
 export interface JevAsk {
   readonly state: string
   readonly questions: DecisionQuestions
+  /** The images the state names (#382: a Mark Ask's), by reference: each a file beside the case in the corpus folder. */
+  readonly images?: Readonly<Record<string, string>>
 }
 
 export interface JevCase {
@@ -95,6 +97,7 @@ export function readJevCase(raw: unknown): JevCase | string {
   if (!isRecord(raw)) return 'not a JSON object'
   const ask = raw.ask
   if (!isRecord(ask) || typeof ask.state !== 'string' || !isRecord(ask.questions)) return 'no ask with a state and questions'
+  if (ask.images !== undefined && (!isRecord(ask.images) || Object.values(ask.images).some((file) => typeof file !== 'string'))) return "the ask's images are not a reference → file map"
   if (!Array.isArray(raw.expect) || raw.expect.length === 0) return 'no expectations'
   const expectations = raw.expect.map(readExpectation)
   if (expectations.some((expectation) => expectation === null)) return 'an expectation is not {question, label[, atLeast]}, {question, not} or {question, below}'

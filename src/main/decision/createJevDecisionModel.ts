@@ -10,6 +10,7 @@ import {
   APIError,
   APITimeoutError,
   APIUserAbortError,
+  image,
   TypeSafeClient,
   type Fetch,
   type Questions,
@@ -19,6 +20,7 @@ import {
   readDecisionAnswers,
   type DecisionModel,
   type DecisionQuestions,
+  type DecisionRequest,
   type DecisionResult,
   type DecisionUnavailableReason,
 } from '../../core/ports/decisionModel.ts'
@@ -26,6 +28,13 @@ import { toErrorMessage } from '../../core/errors.ts'
 
 /** The most a Decision Model may cost a round (ADR 0068: "under a second"). */
 export const DECISION_TIMEOUT_MS = 800
+
+/**
+ * The opt-in to the SDK's experimental images (#382, ADR 0084), sent on an
+ * ask that carries one and no other: a change to the experimental API
+ * breaks the Mark Ask alone, never a text ask.
+ */
+const IMAGES_HEADER = { 'TypeSafe-Danger-Zone-Images': 'true' }
 
 export interface JevDecisionModelDeps {
   /** A fetch in place of the global one — tests only. */
@@ -72,7 +81,7 @@ export function createJevDecisionModel(endpoint: ModelEndpointConfig, deps: JevD
 
   return {
     model: endpoint.model,
-    async ask<const Q extends DecisionQuestions>(request: { state: string; questions: Q; signal?: AbortSignal }): Promise<DecisionResult<Q>> {
+    async ask<const Q extends DecisionQuestions>(request: DecisionRequest<Q>): Promise<DecisionResult<Q>> {
       const started = now()
       const unavailable = (reason: DecisionUnavailableReason, message: string, httpStatus?: number): DecisionResult<Q> => ({
         status: 'unavailable',
@@ -83,9 +92,14 @@ export function createJevDecisionModel(endpoint: ModelEndpointConfig, deps: JevD
         ...(httpStatus !== undefined ? { httpStatus } : {}),
       })
       try {
+        const images = Object.entries(request.images ?? {})
         const response: unknown = await client.systemOne(
-          { state: request.state, questions: toSdkQuestions(request.questions) },
-          request.signal ? { signal: request.signal } : {},
+          {
+            state: request.state,
+            questions: toSdkQuestions(request.questions),
+            ...(images.length > 0 ? { assets: Object.fromEntries(images.map(([reference, bytes]) => [reference, image(bytes)])) } : {}),
+          },
+          { ...(request.signal ? { signal: request.signal } : {}), ...(images.length > 0 ? { headers: IMAGES_HEADER } : {}) },
         )
         const body = typeof response === 'object' && response !== null ? (response as Record<string, unknown>) : {}
         const answers = readDecisionAnswers(request.questions, body.answers)

@@ -47,6 +47,8 @@ export interface CollectedElement {
   ariaPressed?: string | null
   /** The Ref State the accessibility tree gave (refStates.ts); the controller adds it after the collect, for the elements that become refs. */
   states?: readonly string[]
+  /** The label is the browser's accessible name (#382, ADR 0084), the page's own being empty; the controller sets it beside the states. */
+  named?: true
   /** A video or audio element's own facts (#372); absent for every other element, and in older payloads. */
   media?: MediaFacts
   className?: string
@@ -190,6 +192,8 @@ export interface SnapshotRef {
   ariaPressed?: string | null
   /** The Ref State (refStates.ts): what the accessibility tree says of the element; absent when it said nothing. */
   states?: readonly string[]
+  /** The label is the browser's accessible name (#382, ADR 0084): the page's own script reads this element's label as empty. */
+  named?: true
   /** A media ref's own facts (#372, ADR 0080); absent for every other kind. */
   media?: MediaFacts
   /** The host of the frame the ref was read in (#377, ADR 0081); absent for the top document's own. */
@@ -586,6 +590,7 @@ export function buildPageSnapshot(page: CollectedPage, options?: { maxRefs?: num
       ariaPressed: element.ariaPressed ?? null,
       className: element.className ?? '',
       ...(element.states !== undefined && element.states.length > 0 ? { states: element.states } : {}),
+      ...(element.named === true ? { named: true as const } : {}),
       ...(element.media !== undefined ? { media: element.media } : {}),
       ...(element.frameHost !== undefined ? { frame: element.frameHost } : {}),
       layer: element.layer ?? 'page',

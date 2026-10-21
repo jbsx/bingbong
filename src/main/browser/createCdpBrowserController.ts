@@ -2,6 +2,7 @@ import type {
   BrowserController,
   BrowserState,
   KeyPress,
+  MarkedScreenshot,
   MediaState,
   PageLanding,
   ScreenshotOptions,
@@ -11,6 +12,7 @@ import type {
 import { settledStateFromSnapshot, type SettledPageState } from '../../core/browser/pageFingerprints'
 import { systemClock, withDeadline, type Clock } from '../../core/ports/clock'
 import { blockerFactsFromSnapshot } from '../../core/browser/blockerNudge'
+import type { Mark } from '../../core/browser/marks'
 import type { BrowserSubspans } from '../../core/perf/browserSubspans'
 import { normalizeUrlInput } from '../../core/browser/urlInput'
 import {
@@ -253,6 +255,12 @@ export interface CdpBrowserControllerDeps {
   chooseConsent?: ConsentChooser
   /** The frames below the top document (#377, ADR 0081); absent, the page is the top document alone. */
   frames?: PageFrames
+  /**
+   * Paints the Mark Ask's marks on a PNG capture and encodes it as a JPEG
+   * (#382, ADR 0084); null when it cannot. Absent, no marked screenshot is
+   * made, and so no Mark Ask.
+   */
+  drawMarks?: (png: Uint8Array, marks: readonly Mark[], cell: number) => Uint8Array | null
 }
 
 interface EvaluateResponse {
@@ -263,6 +271,33 @@ interface EvaluateResponse {
 
 interface ScreenshotResponse {
   data: string
+}
+
+/** A rect as getBoundingClientRect gives it, in the CSS pixels of the document it was read in. */
+interface CssRect {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+/** A PNG's width, from its IHDR chunk: the four bytes after the signature, the chunk length and its type. */
+function pngWidth(png: Uint8Array): number {
+  return png.length < 24 ? 0 : new DataView(png.buffer, png.byteOffset, png.byteLength).getUint32(16)
+}
+
+/** Each of these registry elements' rect now, null for one gone. */
+function markRectsScript(indices: readonly number[]): string {
+  return `(() => {
+    /* MARK_RECTS */
+    const refs = window.__bingbongRefs || []
+    return ${JSON.stringify(indices)}.map((index) => {
+      const el = refs[index]
+      if (!el || !el.isConnected) return null
+      const box = el.getBoundingClientRect()
+      return { x: box.left, y: box.top, width: box.width, height: box.height }
+    })
+  })()`
 }
 
 /**
@@ -891,6 +926,11 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     }
   }
 
+  /** A ref's label as the page's own script reads it: empty for one the browser named (#382, ADR 0084). */
+  function pageLabelOf(ref: SnapshotRef): string {
+    return ref.named === true ? '' : ref.label
+  }
+
   function signatureOf(snapshot: PageSnapshot): PageSignature {
     return {
       url: snapshot.url,
@@ -898,7 +938,8 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
       scrollX: snapshot.viewport.scrollX ?? 0,
       scrollY: snapshot.viewport.scrollY,
       refCount: snapshot.refs.length,
-      labels: snapshot.refs.map((ref) => ref.label),
+      // The page's own script reads a label from the tree as empty (#382), as the probe it is compared with does.
+      labels: snapshot.refs.map(pageLabelOf),
       dialogOpen: snapshot.dialogOpen,
       media: snapshot.media != null ? { paused: snapshot.media.paused, loop: snapshot.media.loop, muted: snapshot.media.muted } : null,
     }
@@ -1208,6 +1249,57 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     return new Uint8Array(Buffer.from(response.data, 'base64'))
   }
 
+  /**
+   * The Mark Ask's image (#382, ADR 0084). The refs' rects are read again
+   * now, each in its own frame with that frame's offset on the page added,
+   * since the page may have moved since the collect; a rect is cut to the
+   * viewport, and one wholly out of it gets no mark. The capture is a PNG
+   * so the marks are painted on lossless pixels, scaled from CSS pixels to
+   * the bitmap's (the pane runs zoomed), and encoded once as a JPEG.
+   */
+  async function markedScreenshot(refs: readonly number[]): Promise<MarkedScreenshot | null> {
+    const draw = deps.drawMarks
+    if (draw === undefined || refs.length === 0) return null
+    try {
+      const view = await evaluateInPage<{ width: number; height: number }>('({ width: window.innerWidth, height: window.innerHeight })')
+      const groups = new Map<string | null, number[]>()
+      for (const ref of refs) {
+        const at = addressOfRef(ref)
+        groups.set(at.frame, [...(groups.get(at.frame) ?? []), ref])
+      }
+      const read = await Promise.all(
+        [...groups].map(async ([frame, numbered]): Promise<{ ref: number; rect: CssRect }[]> => {
+          const offset = frame === null ? { x: 0, y: 0 } : await frameOffset(frame)
+          if (offset === null) return []
+          const rects = await evaluateInFrame<(CssRect | null)[]>(frame, markRectsScript(numbered.map((ref) => addressOfRef(ref).index)))
+          return numbered.flatMap((ref, position) => {
+            const rect = rects?.[position]
+            return rect == null ? [] : [{ ref, rect: { ...rect, x: rect.x + offset.x, y: rect.y + offset.y } }]
+          })
+        }),
+      )
+      const shown = read.flat().flatMap(({ ref, rect }) => {
+        const left = Math.max(0, rect.x)
+        const top = Math.max(0, rect.y)
+        const right = Math.min(view.width, rect.x + rect.width)
+        const bottom = Math.min(view.height, rect.y + rect.height)
+        return right - left < 1 || bottom - top < 1 ? [] : [{ ref, rect: { x: left, y: top, width: right - left, height: bottom - top } }]
+      })
+      if (shown.length === 0) return null
+      const capture = await cdp.send<ScreenshotResponse>('Page.captureScreenshot', { format: 'png' })
+      const png = new Uint8Array(Buffer.from(capture.data, 'base64'))
+      const scale = pngWidth(png) / view.width
+      if (!(scale > 0)) return null
+      const marks = shown.map(({ ref, rect }) => ({ ref, box: { x: rect.x * scale, y: rect.y * scale, width: rect.width * scale, height: rect.height * scale } }))
+      const jpeg = draw(png, marks, Math.max(2, Math.round(2 * scale)))
+      return jpeg === null ? null : { jpeg, marks }
+    } catch (error) {
+      // No capture means no Mark Ask: the line ends as it would have without one.
+      reportFault('browser.createCdpBrowserController.markedScreenshot', error)
+      return null
+    }
+  }
+
   // A step through history waits for its commit (paneNavigation), then for
   // the load it started, not for the commit alone (#309). The commit is the
   // step's first effect (#324); nothing is slept around it.
@@ -1310,6 +1402,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     ref: number
     /** Where the element lives (#377): its frame and its index in that frame's registry. */
     at: FrameAddress
+    /** Its label as the page reads it (pageLabelOf), which the after-probe matches the element by. */
     label: string
     /** The address the snapshot showed for it; null when it is no link. */
     href: string | null
@@ -1333,9 +1426,9 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
       await dispatchPointClick(visualPoint, button)
       visualPoints.delete(ref)
       lastSnapshot = undefined
-      return { kind: 'acted', direct: null, at, label: target.label, href: target.href, before: elementState(target), signature: signatureOf(snapshot), dismissal: null }
+      return { kind: 'acted', direct: null, at, label: pageLabelOf(target), href: target.href, before: elementState(target), signature: signatureOf(snapshot), dismissal: null }
     }
-    const aim: ClickTarget = { ref, at: addressOfRef(target.ref), label: target.label, href: target.href, before: elementState(target), button }
+    const aim: ClickTarget = { ref, at: addressOfRef(target.ref), label: pageLabelOf(target), href: target.href, before: elementState(target), button }
     const attempt = await clickAtIndex(aim, snapshot, null)
     if (attempt.kind === 'acted') return attempt
     return (await clearConsentWall(aim, attempt.blocked)) ?? attempt
@@ -1805,7 +1898,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     await armReadiness(at.frame)
     await dispatchKeys(text.replace(/[\r\n]+/g, ''))
     const arrival = await settleArrival('type', watch, at.frame)
-    const after = await probeAction(at, target.label)
+    const after = await probeAction(at, pageLabelOf(target))
     if (!after.target) {
       const head = `typed [${ref}]: field unavailable after page change; ${urlTitleSuffix(after.signature)}${arrivalClauses(arrival)}`
       return withSettledState(head)
@@ -2164,6 +2257,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     type,
     scroll,
     screenshot,
+    markedScreenshot,
     back,
     forward,
     reload,

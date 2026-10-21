@@ -80,14 +80,35 @@ function stateOf(property: AxProperty, shown: RefShown): string | null {
   return `${name}=${value.type === 'string' ? JSON.stringify(value.value) : String(value.value)}`
 }
 
-/** A ref's Ref State, in the order the tree gives it; empty for a node the tree ignores. */
-export function refStatesOf(node: AxNode, shown: RefShown): string[] {
-  if (node.ignored === true) return []
+/**
+ * What the tree says of a ref (#382, ADR 0084): its Ref State, and, for a
+ * ref the page gave no label of its own, the label the browser computes
+ * for it (an svg `<title>`, an `img` alt, an `aria-labelledby`); absent
+ * when the ref had one, or the tree names it nothing.
+ */
+export interface RefRead {
+  readonly label?: string
+  readonly states: string[]
+}
+
+/** The tree's computed name, collapsed, when it has words; null otherwise. */
+function nameOf(node: AxNode): string | null {
+  const said = typeof node.name?.value === 'string' ? collapsed(node.name.value) : ''
+  return said === '' ? null : truncateLabel(said)
+}
+
+/** A ref's Ref State, in the order the tree gives it, and its label from the tree when the page gave none; nothing for a node the tree ignores. */
+export function refStatesOf(node: AxNode, shown: RefShown): RefRead {
+  if (node.ignored === true) return { states: [] }
+  const named = collapsed(shown.label) === '' ? nameOf(node) : null
+  // A label from the tree is the one the states are read against: a description that repeats it is no news.
+  const read = named === null ? shown : { ...shown, label: named }
   const role = typeof node.role?.value === 'string' ? node.role.value : ''
-  return [
-    ...(role !== '' && !roleRestates(role, shown) ? [`role=${role}`] : []),
-    wordsOf('description', node, shown),
-    wordsOf('value', node, shown),
-    ...(node.properties ?? []).map((property) => stateOf(property, shown)),
+  const states = [
+    ...(role !== '' && !roleRestates(role, read) ? [`role=${role}`] : []),
+    wordsOf('description', node, read),
+    wordsOf('value', node, read),
+    ...(node.properties ?? []).map((property) => stateOf(property, read)),
   ].filter((state): state is string => state !== null)
+  return named === null ? { states } : { label: named, states }
 }

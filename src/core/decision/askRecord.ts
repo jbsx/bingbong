@@ -7,8 +7,8 @@ import type { DecisionQuestions } from '../ports/decisionModel'
 // record names its ask by id; the corpus of replayable cases is grown
 // from these (`pnpm jev:candidates`, `pnpm jev:case`).
 
-/** Which call asked: hop 0's reading, the Where Ask after a hop 0 that read none (#379), a later hop of a Task, or an Early Fire partial. */
-export type AskKind = 'command' | 'where' | 'hop' | 'partial'
+/** Which call asked: hop 0's reading, the Where Ask after a hop 0 that read none (#379), the Mark Ask after a Where Ask that read none (#382), a later hop of a Task, or an Early Fire partial. */
+export type AskKind = 'command' | 'where' | 'mark' | 'hop' | 'partial'
 
 export interface AskRecord {
   readonly type: 'ask'
@@ -23,4 +23,6 @@ export interface AskRecord {
   readonly model: string
   readonly state: string
   readonly questions: DecisionQuestions
+  /** The images the state names (#382: the Mark Ask's), by reference: each the file saved beside the sidecar, relative to the logs dir; absent on a text ask. */
+  readonly images?: Readonly<Record<string, string>>
 }

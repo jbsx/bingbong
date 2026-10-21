@@ -14,6 +14,9 @@ import { isWebEngineSearch } from '../../core/command/siteScope'
 import {
   commandQuestions,
   whereQuestions,
+  markQuestions,
+  textlessRefsOf,
+  MARKS_IMAGE,
   type CommandQuestions,
   commandState,
   doneAction,
@@ -202,8 +205,13 @@ export interface CommandRunnerDeps {
   subspans?: Pick<BrowserSubspans, 'runInTurn'>
   /** The decision log beside the perf log; absent writes nothing. */
   decisionLog?: { write(record: CommandLogRecord): void }
-  /** The asks sidecar beside it (#338): every Jev call's whole ask; absent writes nothing. */
-  askLog?: { write(record: AskRecord): void }
+  /**
+   * The asks sidecar beside it (#338): every Jev call's whole ask; absent
+   * writes nothing. An ask's image (the Mark Ask's, #382) is saved beside
+   * it, the ask naming the file `saveImage` answers; absent, or answering
+   * null, the ask names none.
+   */
+  askLog?: { write(record: AskRecord): void; saveImage?(id: string, bytes: Uint8Array): string | null }
   /** Hears the browser's first observable effect of an action (#324); the returned release stops hearing. */
   onEffect?(listener: (effect: ActionEffect) => void): () => void
   /** Hears how a navigation landed (#328), for the hop's decision record; the returned release stops hearing. */
@@ -490,16 +498,28 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     questions: Q,
     /** The ask's own id, for a turn asked twice (#364: a line's split, then its first Step); the turn's id otherwise. */
     ownId?: string,
+    /** The images the state names (#382: the Mark Ask's), by reference. */
+    images?: Readonly<Record<string, Uint8Array>>,
   ): Promise<DecisionResult<Q> & { readonly askId: string }> {
     const askedAt = at()
     const askId = ownId ?? turnId ?? `partial-${askedAt.toString(36)}-${(partialAsks += 1)}`
-    const result = await model.ask({ state, questions })
+    const result = await model.ask({ state, questions, ...(images !== undefined ? { images } : {}) })
     try {
-      deps.askLog?.write({ type: 'ask', id: askId, ...(turnId !== null ? { turnId } : {}), at: askedAt, kind, model: model.model, state, questions })
+      const saved = images === undefined ? null : savedImages(askId, images)
+      deps.askLog?.write({ type: 'ask', id: askId, ...(turnId !== null ? { turnId } : {}), at: askedAt, kind, model: model.model, state, questions, ...(saved !== null ? { images: saved } : {}) })
     } catch (error) {
       reportFault('run.commandRunner.askLog', error, turnId !== null ? { turnId } : {})
     }
     return { ...result, askId }
+  }
+
+  /** An ask's images saved beside it (#382), each by the file the sink named; null when none was saved. */
+  function savedImages(askId: string, images: Readonly<Record<string, Uint8Array>>): Record<string, string> | null {
+    const saved = Object.entries(images).flatMap(([reference, bytes], index) => {
+      const file = deps.askLog?.saveImage?.(index === 0 ? askId : `${askId}-${index}`, bytes) ?? null
+      return file === null ? [] : [[reference, file] as const]
+    })
+    return saved.length === 0 ? null : Object.fromEntries(saved)
   }
 
   function span(turnId: string, durMs: number, detail: Record<string, unknown>): void {
@@ -641,6 +661,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     steps?: readonly string[]
     /** The Where Ask's reading (#379, ADR 0082), read after a hop 0 whose top choice was `none`. */
     whereAsk?: true
+    /** The Mark Ask's reading (#382, ADR 0084), read after a Where Ask whose top choice was `none`, over a card with a Textless Ref. */
+    markAsk?: true
   }
 
   /** How a hop 0 is read (#364): whether Jev may split the line, and, for a Step's own words, where the Step stands and the ask's own id. */
@@ -759,6 +781,40 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     const result = await askJev(model, 'where', turnId, commandState(text, page, undefined, step), whereQuestions(text, page, { appliance: appliance() }), `${first.ask ?? turnId}-where`)
     return { ...readingOf(result, text, page), whereAsk: true }
   }
+
+  /**
+   * The Mark Ask (#382, ADR 0084): a Where Ask that read `none` over a card
+   * with a Textless Ref is asked once more — the same card, with one image
+   * of the pane on which each Textless Ref is boxed with its number, those
+   * refs' options reading "the control marked N". Null when it is not
+   * made: no Textless Ref on the card, no model, or no capture (a hidden
+   * pane) — the line then ends as it would have. Its reading is hop 0's,
+   * fired with no bar; `none`, or no answer, is no Command.
+   */
+  async function readMarks(turnId: string, text: string, where: Reading, step: StepContext | undefined): Promise<Reading | null> {
+    const { page } = where
+    const model = deps.decisionModel()
+    const capture = browser.markedScreenshot?.bind(browser)
+    if (model === null || capture === undefined) return null
+    const textless = textlessRefsOf(whereQuestions(text, page, { appliance: appliance() }), page)
+    if (textless.length === 0) return null
+    const shot = await capture(textless)
+    if (shot === null || shot.marks.length === 0) return null
+    const marked = new Set(shot.marks.map((mark) => mark.ref))
+    const result = await askJev(
+      model,
+      'mark',
+      turnId,
+      commandState(text, page, undefined, step, marked),
+      markQuestions(text, page, { appliance: appliance(), marked }),
+      `${(where.ask ?? turnId).replace(/-where$/, '')}-mark`,
+      { [MARKS_IMAGE]: shot.jpeg },
+    )
+    return { ...readingOf(result, text, page), markAsk: true }
+  }
+
+  /** Whether a Where Ask's reading is followed by a Mark Ask (#382): Jev answered it, and its top choice was `none`, at any probability. */
+  const asksMarks = (where: Reading): boolean => where.whereAsk === true && asksWhere(where)
 
   /** Whether a hop 0 reading is followed by a Where Ask (#379): Jev read the line, and its top choice was `none`, at any probability. */
   const asksWhere = (first: Reading): boolean => first.reading === 'jev' && first.action?.choice === 'none'
@@ -955,6 +1011,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       ...(read.jev !== undefined ? { jev: read.jev } : {}),
       ...(read.ask !== undefined ? { ask: read.ask } : {}),
       ...(read.whereAsk ? { whereAsk: true as const } : {}),
+      ...(read.markAsk ? { markAsk: true as const } : {}),
       ...(truncated ? { truncated: true } : {}),
     }
   }
@@ -1933,11 +1990,22 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     const task: Task = { id: options.taskId ?? turnId, submission, text: words, source, endpointAt, visited: [], actions: [], setAside: [], stalled: 0, searched: [], terms: [], rechecked: false, obstacles: [], ...(options.step !== undefined ? { step: options.step } : {}) }
     const hop0 = hopOf(task, 0)
     let heard = first
+    // The Where Ask's reading, when one was made: a line that ends on none says it, whether a Mark Ask followed or not.
+    let whereRead: Reading | null = null
     if (asksWhere(first) && submission === submitted) {
       // A none at hop 0 asks where (#379, ADR 0082): its record stays, and the Where Ask's reading is hop 0's, with a record of its own.
       log({ ...recordOf(turnId, at(), source, words, first, first.command, null, truncated), ...extra, task: hop0 })
       reading = { turnId, submission }
       heard = await readWhere(turnId, words, first, options.step)
+      whereRead = heard
+      if (asksMarks(whereRead) && submission === submitted) {
+        // The Where Ask read none too (#382, ADR 0084): a card with a Textless Ref is asked once more with the marked page, and its record stays.
+        const marked = await readMarks(turnId, words, whereRead, options.step)
+        if (marked !== null) {
+          log({ ...recordOf(turnId, at(), source, words, whereRead, whereRead.command, null, truncated), task: hop0 })
+          heard = marked
+        }
+      }
       if (reading?.turnId === turnId) reading = null
     }
     const firedAt = at()
@@ -1945,7 +2013,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     visit(task, heard.page.url || (browser.state().url ?? ''))
     const { command, matched } = matchName(heard.command, heard.page, source === 'spoken')
     // The line's extra fields went on the first reading's record when a Where Ask followed it.
-    const record: DecisionRecord = { ...recordOf(turnId, firedAt, source, words, heard, command, matched, truncated), ...(heard.whereAsk === true ? {} : extra), task: hop0 }
+    const record: DecisionRecord = { ...recordOf(turnId, firedAt, source, words, heard, command, matched, truncated), ...(whereRead !== null ? {} : extra), task: hop0 }
     const did = (): string => task.actions.join('; ') || describeCommand(command, heard.page)
 
     if (submission !== submitted) {
@@ -1966,8 +2034,8 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       // An Utterance read as no Command — hop 0 has no Verdict, so never as the page already being what was asked (#370):
       // a greyed entry of the words, and "No response." with the reason under it — never a silent fade (owner ruling 2026-10-19).
       publish({ type: 'command', turnId, text: line.text, dropped: true, task: hop0, at: firedAt })
-      // After a Where Ask, both readings are the reason.
-      const where = heard.whereAsk === true ? { where: heard.jev } : {}
+      // After a Where Ask, both readings are the reason; a Mark Ask's none adds nothing to them.
+      const where = whereRead !== null ? { where: whereRead.jev } : {}
       answer(turnId, noResponseAnswer({ grammarError: grammarErrorOf(words), jevAsked: first.jevAsked, jev: first.jev, ...where }), 'muted')
       publish({ type: 'done', turnId, outcome: 'done', at: at() })
       return { ended: endTask(task, ending!, 1), did: '' }

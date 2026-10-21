@@ -7,6 +7,7 @@ import { systemClock } from '../../core/ports/clock'
 import { LANDING_CAP_MS, createCdpBrowserController, type ActionEffects, type CdpDebugger, type PageFrame, type PageFrames } from './createCdpBrowserController'
 import { createPaneNavigation } from './paneNavigation'
 import { holdPageContextMenu } from './attachPageContextMenu'
+import { drawMarks } from './drawMarks'
 
 // Electron glue: adapts webContents.debugger + the pane's navigation surface
 // into the seams the controller already knows. Behavior lives in
@@ -139,5 +140,6 @@ export function createPaneBrowserController(
     ...(deps?.effects ? { effects: deps.effects } : {}),
     ...(deps?.chooseConsent ? { chooseConsent: deps.chooseConsent } : {}),
     frames: electronPageFrames(wc),
+    drawMarks,
   })
 }

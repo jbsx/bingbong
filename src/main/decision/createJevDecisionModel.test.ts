@@ -70,6 +70,29 @@ describe('the Jev adapter (#275, ADR 0068)', () => {
     })
   })
 
+  it('sends an image the state names as an asset, with the images header on that ask alone (#382, ADR 0084)', async () => {
+    const { fetch, calls } = fakeFetch(
+      async () => json(200, { model: 'jev-1.14.0', answers: ANSWERS }),
+      async () => json(200, { model: 'jev-1.14.0', answers: ANSWERS }),
+    )
+    const model = createJevDecisionModel(ENDPOINT, { fetch })
+    const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3, 0xff, 0xd9])
+
+    const result = await model.ask({ state: 'The page: <marks>', questions: QUESTIONS, images: { '<marks>': jpeg } })
+    await model.ask({ state: 's', questions: QUESTIONS })
+
+    expect(result.status).toBe('answered')
+    const [marked, text] = calls.map((call) => new Headers(call.init?.headers))
+    expect(marked?.get('typesafe-danger-zone-images')).toBe('true')
+    expect(text?.get('typesafe-danger-zone-images')).toBeNull()
+    const form = await new Response(calls[0]?.init?.body as ConstructorParameters<typeof Response>[0], { headers: { 'content-type': marked?.get('content-type') ?? '' } }).formData()
+    const parts = [...form.values()]
+    const files = parts.filter((part): part is File => typeof part !== 'string')
+    const request = await Promise.all(parts.map((part) => (typeof part === 'string' ? part : part.text())))
+    expect(request.some((part) => part.includes('The page: <marks>'))).toBe(true)
+    expect(files.map((file) => file.size)).toContain(jpeg.length)
+  })
+
   it('reports the model id the vendor answered with, not the one asked for', async () => {
     const { fetch } = fakeFetch(async () => json(200, { model: 'jev-1.13.1', answers: ANSWERS }))
     const result = await createJevDecisionModel(ENDPOINT, { fetch }).ask({ state: 's', questions: QUESTIONS })

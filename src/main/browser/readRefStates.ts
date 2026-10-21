@@ -1,12 +1,13 @@
 // The Ref State of each ref, read from Chrome's accessibility tree after a
-// collect: the registry the collector left in the page (ADR 0033) is held
+// collect, and the label the browser computes for a ref the page gave no
+// words (#382, ADR 0084): the registry the collector left in the page (ADR 0033) is held
 // as a remote object, each element that becomes a ref is asked of the tree
 // on its own — a ref's node, never the whole page's tree — and the handles
 // are let go. A ref whose node is gone costs only its own state, and the
 // misses are one fault; a registry that cannot be held is the caller's to
 // report. A page without its states is still a page.
 
-import { refStatesOf, type AxNode } from '../../core/browser/refStates'
+import { refStatesOf, type AxNode, type RefRead } from '../../core/browser/refStates'
 import { refElementIndices, refKindOf, type CollectedPage } from '../../core/browser/snapshot'
 import { reportFault } from '../../core/trace/fault'
 import type { CdpDebugger } from './createCdpBrowserController'
@@ -44,7 +45,7 @@ export async function readRefStates(cdp: CdpDebugger, page: CollectedPage, regis
     if (objectId === undefined) throw new Error('the page holds no ref registry')
     const properties = await cdp.send<PropertiesResponse>('Runtime.getProperties', { objectId, ownProperties: true })
     const handles = new Map((properties.result ?? []).map((property) => [property.name, property.value?.objectId]))
-    const states = new Map<number, string[]>()
+    const reads = new Map<number, RefRead>()
     // Each ref is its own read: a node gone since the collect costs its own state, not the page's.
     const misses = (
       await Promise.all(
@@ -55,8 +56,8 @@ export async function readRefStates(cdp: CdpDebugger, page: CollectedPage, regis
           try {
             const tree = await cdp.send<PartialTreeResponse>('Accessibility.getPartialAXTree', { objectId: handle, fetchRelatives: false })
             const node = tree.nodes?.[0]
-            const said = node === undefined ? [] : refStatesOf(node, { kind: refKindOf(element), label: element.label, inputType: element.inputType })
-            if (said.length > 0) states.set(index, said)
+            const read = node === undefined ? null : refStatesOf(node, { kind: refKindOf(element), label: element.label, inputType: element.inputType })
+            if (read !== null && (read.label !== undefined || read.states.length > 0)) reads.set(index, read)
             return null
           } catch (error) {
             return error instanceof Error ? error.message : String(error)
@@ -65,7 +66,15 @@ export async function readRefStates(cdp: CdpDebugger, page: CollectedPage, regis
       )
     ).filter((miss): miss is string => miss !== null)
     if (misses.length > 0) reportFault('browser.readRefStates.refs', new Error(`${misses.length} of ${indices.length} refs unread: ${misses[0]}`))
-    return { ...page, elements: page.elements.map((element, index) => (states.has(index) ? { ...element, states: states.get(index) } : element)) }
+    return {
+      ...page,
+      elements: page.elements.map((element, index) => {
+        const read = reads.get(index)
+        if (read === undefined) return element
+        // A ref the page gave no words takes the browser's accessible name (#382, ADR 0084).
+        return { ...element, ...(read.label !== undefined ? { label: read.label, named: true as const } : {}), ...(read.states.length > 0 ? { states: read.states } : {}) }
+      }),
+    }
   } finally {
     // A page gone by now took its handles with it: the states read still stand.
     await cdp.send('Runtime.releaseObjectGroup', { objectGroup: HANDLES }).catch((error: unknown) => reportFault('browser.readRefStates.release', error))

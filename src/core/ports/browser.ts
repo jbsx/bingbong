@@ -1,6 +1,7 @@
 import type { BlockerPageFacts } from '../browser/blockerNudge'
 import type { PageLink, PageSnapshot, SnapshotRef } from '../browser/snapshot'
 import type { MediaOpAction } from '../browser/mediaOp'
+import type { Mark } from '../browser/marks'
 
 /**
  * How a navigation's landing ended (#328, ADR 0076 amendment): the page
@@ -90,6 +91,16 @@ export interface ViewportRegion {
 export interface ScreenshotOptions {
   region: ViewportRegion
   scale: number
+}
+
+/**
+ * The Mark Ask's image (#382, ADR 0084): the pane as a JPEG with each
+ * asked ref boxed and numbered on the image, never on the page, and the
+ * marks it drew in the image's pixels — a ref out of view gets none.
+ */
+export interface MarkedScreenshot {
+  readonly jpeg: Uint8Array
+  readonly marks: readonly Mark[]
 }
 
 export interface BrowserController {
@@ -194,6 +205,15 @@ export interface BrowserController {
   dialogOpen?(): Promise<boolean>
   /** Clear the focused editable element (#324): the `clear` verb. Answers what was cleared. */
   clearFocused(): Promise<string>
+  /**
+   * The pane captured with these refs of the last collect marked on the
+   * image (#382, ADR 0084): their rects read again right before the
+   * capture, frame offsets added, scaled from CSS pixels to the bitmap.
+   * Null when no capture can be made (a hidden pane, no painter), or no
+   * ref asked for shows; never rejects. Optional: a controller without it
+   * makes no Mark Ask.
+   */
+  markedScreenshot?(refs: readonly number[]): Promise<MarkedScreenshot | null>
 }
 
 /** Extra browser capability required only by visual grounding. */

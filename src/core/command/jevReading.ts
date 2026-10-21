@@ -156,14 +156,16 @@ export function slotSpans(text: string): SlotSpan[] {
  * media ref is named by what plays (#363) — a player the page draws no
  * label on is otherwise `media ""`, which says nothing of what it is.
  */
-function describeRef(ref: CommandRef, page?: CommandPage): string {
+function describeRef(ref: CommandRef, page?: CommandPage, marked?: ReadonlySet<number>): string {
   const kind = ref.kind === 'input' && ref.inputType !== null ? `input[${ref.inputType}]` : ref.kind
   const states = ref.states !== undefined && ref.states.length > 0 ? ` ${ref.states.join(' ')}` : ''
   // A media ref's own state rides its line (#372, ADR 0080): what its ops change, and what the Verdict reads.
   const media = ref.media !== undefined ? ` ${mediaStateOf(ref.media)}` : ''
   // A ref read in a frame names its host (#377, ADR 0081): the embedded player is another site's.
   const frame = ref.frame !== undefined ? ` in ${ref.frame}` : ''
-  return `${kind} ${JSON.stringify(shownLabel(ref, page))}${frame}${ref.href !== null ? ` ${ref.href}` : ''}${states}${media}`
+  // A Textless Ref the Mark Ask boxed on the image (#382, ADR 0084) is named by its mark, the one thing Jev can find it by.
+  const label = marked?.has(ref.ref) === true ? `, the control marked ${ref.ref}` : ` ${JSON.stringify(shownLabel(ref, page))}`
+  return `${kind}${label}${frame}${ref.href !== null ? ` ${ref.href}` : ''}${states}${media}`
 }
 
 /** The label a ref is shown with: its own, or for the page's one unlabelled media ref, the title of what plays. */
@@ -634,8 +636,11 @@ export interface StepContext {
   readonly done: readonly string[]
 }
 
-/** The state the questions are asked over; at a hop past the first, where the Task stands; in a Step, where the line stands. */
-export function commandState(text: string, page: CommandPage, hop?: HopContext, step?: StepContext): string {
+/** The reference the Mark Ask's image is written into its state by (#382): what the ask's `images` key it under. */
+export const MARKS_IMAGE = '<marks>'
+
+/** The state the questions are asked over; at a hop past the first, where the Task stands; in a Step, where the line stands; for the Mark Ask, the marked refs and the image of them. */
+export function commandState(text: string, page: CommandPage, hop?: HopContext, step?: StepContext, marked?: ReadonlySet<number>): string {
   const shown = offered(page, hop)
   const done = [...(step?.done ?? []), ...(hop?.actions ?? [])]
   return [
@@ -650,7 +655,8 @@ export function commandState(text: string, page: CommandPage, hop?: HopContext, 
     ...(page.media !== undefined ? [mediaLine(page.media)] : []),
     ...(page.dialog !== undefined ? [`A dialog is open: ${JSON.stringify(page.dialog.text)}`] : []),
     'Refs (number, kind, label, address, states):',
-    ...shown.page.refs.map((ref) => `[${ref.ref}] ${describeRef(ref, page)}`),
+    ...shown.page.refs.map((ref) => `[${ref.ref}] ${describeRef(ref, page, marked)}`),
+    ...(marked !== undefined ? [`The page now, each control with no words boxed in red with its number: ${MARKS_IMAGE}`] : []),
     ...(shown.links.length > 0 ? [`${isWebEngineSearch(page.url) ? 'Result links' : 'Links'} further down the page (name, address):`, ...shown.links.map((link) => `[link-${link.n}] ${describeLink(link)}`)] : []),
   ].join('\n')
 }
@@ -751,9 +757,14 @@ function whereQuestion(site: string): DecisionChoiceQuestion {
  * hop, on a partial, over a pop-up a dismiss phrase closes, or for a Step's
  * own words (`steps: false`).
  */
-export function commandQuestions(text: string, pageRead: CommandPage, hop?: HopContext, options: { readonly steps?: boolean; readonly appliance?: Appliance; readonly asked?: CardAsk } = {}): CommandQuestions {
+export function commandQuestions(
+  text: string,
+  pageRead: CommandPage,
+  hop?: HopContext,
+  options: { readonly steps?: boolean; readonly appliance?: Appliance; readonly asked?: CardAsk; readonly marked?: ReadonlySet<number> } = {},
+): CommandQuestions {
   const { page, links } = offered(pageRead, hop)
-  const card = actionQuestion(page, pageRead, links, options.asked ?? (hop !== undefined ? 'later' : 'first'), applianceVerbsOf(options.appliance, pageRead), hop?.setAside ?? [])
+  const card = actionQuestion(page, pageRead, links, options.asked ?? (hop !== undefined ? 'later' : 'first'), applianceVerbsOf(options.appliance, pageRead), hop?.setAside ?? [], options.marked)
   const action: ActionQuestions = { action: card.question, slot: slotQuestion(text) }
   // The Amount rides beside a card that offers a media ref's ops (#372, ADR 0080): read only when the action is a seek.
   const reading: Asked<ActionQuestions, 'amount'> = card.mediaOps ? { ...action, amount: amountQuestion() } : action
@@ -775,7 +786,7 @@ export function commandQuestions(text: string, pageRead: CommandPage, hop?: HopC
  * "Thank you." and "I'm so hungry." stayed none (0.68–1.00). The first
  * ask's wording stays as it was measured.
  */
-export type CardAsk = 'first' | 'later' | 'where'
+export type CardAsk = 'first' | 'later' | 'where' | 'mark'
 
 const SAYS_NOT_A_COMMAND = { chooseNone: 'Choose none when the words are not a command.', none: REFLESS_DESCRIPTIONS.none }
 
@@ -787,6 +798,8 @@ const CARD_ASKS: Readonly<Record<CardAsk, { readonly question: string; readonly 
     chooseNone: 'Choose none when the words are a remark or noise, nothing to look for.',
     none: 'a remark or noise, nothing to look for',
   },
+  // The Mark Ask (#382, ADR 0084): the first ask's question, the marked controls found on the image.
+  mark: { question: "Which one action does the browser take for the user's words? A control with no words is found by its number on the image.", ...SAYS_NOT_A_COMMAND },
 }
 
 /**
@@ -797,6 +810,25 @@ const CARD_ASKS: Readonly<Record<CardAsk, { readonly question: string; readonly 
  */
 export function whereQuestions(text: string, page: CommandPage, { appliance }: { readonly appliance?: Appliance } = {}): CommandQuestions {
   return commandQuestions(text, page, undefined, { steps: false, appliance, asked: 'where' })
+}
+
+/**
+ * The Textless Refs on a card (#382, ADR 0084): the refs it offers a click
+ * on whose label, as Jev is shown it, has no words — an icon the page
+ * named nothing and the browser named nothing either.
+ */
+export function textlessRefsOf(questions: CommandQuestions, page: CommandPage): number[] {
+  const offeredClicks = new Set(Object.keys(questions.action.options).flatMap((label) => (/^click-(\d+)$/.exec(label)?.[1] ?? []) as string[]).map(Number))
+  return page.refs.filter((ref) => offeredClicks.has(ref.ref) && shownLabel(ref, page).trim() === '').map((ref) => ref.ref)
+}
+
+/**
+ * The Mark Ask's questions (#382, ADR 0084): the Where Ask's card asked
+ * once more with the page's image beside it, every option as it was but
+ * a marked ref's, which reads "the control marked N"; no `steps`.
+ */
+export function markQuestions(text: string, page: CommandPage, { appliance, marked }: { readonly appliance?: Appliance; readonly marked: ReadonlySet<number> }): CommandQuestions {
+  return commandQuestions(text, page, undefined, { steps: false, appliance, asked: 'mark', marked })
 }
 
 /**
@@ -811,7 +843,15 @@ export function whereQuestions(text: string, page: CommandPage, { appliance }: {
  * chosen over the page's own control in the logged asks. An action the
  * Task set aside is not offered (#373): a ref's other actions stay.
  */
-function actionQuestion(page: CommandPage, pageRead: CommandPage, links: readonly OfferedLink[], asked: CardAsk, offeredVerbs: readonly ApplianceVerb[], setAside: readonly SetAside[]): { question: DecisionChoiceQuestion; mediaOps: boolean } {
+function actionQuestion(
+  page: CommandPage,
+  pageRead: CommandPage,
+  links: readonly OfferedLink[],
+  asked: CardAsk,
+  offeredVerbs: readonly ApplianceVerb[],
+  setAside: readonly SetAside[],
+  marked?: ReadonlySet<number>,
+): { question: DecisionChoiceQuestion; mediaOps: boolean } {
   const kept = (label: string): boolean => !isAside(label, page, setAside)
   // Each media ref's Media Ops the element can take and the Task has not set aside (#372, ADR 0080).
   const opsOf = (ref: CommandRef): [MediaOp, CommandRef][] => (isMediaRef(ref) ? mediaOpsOf(ref.media).filter((op) => kept(`${op}-${ref.ref}`)).map((op) => [op, ref]) : [])
@@ -840,7 +880,7 @@ function actionQuestion(page: CommandPage, pageRead: CommandPage, links: readonl
     options: {
       ...Object.fromEntries(
         page.refs.flatMap((ref) => {
-          const line = `[${ref.ref}] ${describeRef(ref, pageRead)}`
+          const line = `[${ref.ref}] ${describeRef(ref, pageRead, marked)}`
           return [...(typed.has(ref.ref) ? [[`type-${ref.ref}`, `type the words into ${line}`]] : []), ...(clicked.has(ref.ref) ? [[`click-${ref.ref}`, `click ${line}`]] : [])]
         }),
       ),

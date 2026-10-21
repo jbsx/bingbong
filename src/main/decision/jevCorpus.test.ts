@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -229,6 +229,37 @@ describe('growing the corpus from the logs', () => {
     const replay = await replayCorpus(corpus, { env: {}, model: jev })
     expect(replay.code).toBe(0)
     expect(replay.report).toContain('PASS  t1\n  target=ref-27  chose ref-27 0.85\n  target!=ref-21  chose ref-27 0.85 · ref-21 0.10')
+  })
+
+  it("jev:case copies a Mark Ask's image into the corpus beside its case, and jev:replay sends it (#382, ADR 0084)", async () => {
+    const image = new Uint8Array([0xff, 0xd8, 9, 8, 7, 0xff, 0xd9])
+    mkdirSync(join(logs, 'ask-images'))
+    writeFileSync(join(logs, 'ask-images', 't9-mark.jpg'), image)
+    writeFileSync(join(logs, 'decision-1-1.jsonl'), jsonl([decision('t9', { ask: 't9-mark', markAsk: true })]))
+    writeFileSync(join(logs, 'asks-1-1.jsonl'), jsonl([{ ...ask('t9-mark', 'marked <marks>'), turnId: 't9', kind: 'mark', images: { '<marks>': 'ask-images/t9-mark.jpg' } }]))
+
+    expect(caseFromLog(logs, 't9-mark', ['target=ref-27'], corpus)).toEqual({ path: join(corpus, 't9-mark.json'), replaced: false })
+    expect(JSON.parse(readFileSync(join(corpus, 't9-mark.json'), 'utf8')).ask).toEqual({ state: 'marked <marks>', questions: QUESTIONS, images: { '<marks>': 't9-mark.jpg' } })
+    expect(new Uint8Array(readFileSync(join(corpus, 't9-mark.jpg')))).toEqual(image)
+
+    const jev = new FakeJev({ 'marked <marks>': { none: 0.05, 'ref-21': 0.1, 'ref-27': 0.85 } })
+    const replay = await replayCorpus(corpus, { env: {}, model: jev })
+    expect(replay.code).toBe(0)
+    expect(jev.requests[0]?.images).toEqual({ '<marks>': image })
+  })
+
+  it("jev:case refuses a Mark Ask whose image is gone from the logs, and jev:replay fails a case whose image is gone from the corpus", async () => {
+    writeFileSync(join(logs, 'decision-1-1.jsonl'), jsonl([decision('t9', { ask: 't9-mark', markAsk: true })]))
+    writeFileSync(join(logs, 'asks-1-1.jsonl'), jsonl([{ ...ask('t9-mark', 'marked <marks>'), turnId: 't9', kind: 'mark', images: { '<marks>': 'ask-images/t9-mark.jpg' } }]))
+
+    expect(caseFromLog(logs, 't9-mark', ['target=ref-27'], corpus)).toEqual({ error: `the ask's image ask-images/t9-mark.jpg is not in ${logs}` })
+    expect(existsSync(join(corpus, 't9-mark.json'))).toBe(false)
+
+    mkdirSync(corpus, { recursive: true })
+    writeFileSync(join(corpus, 'lost.json'), JSON.stringify({ expect: [{ question: 'target', label: 'ref-27' }], ask: { state: 'marked <marks>', questions: QUESTIONS, images: { '<marks>': 'lost.jpg' } } }))
+    const replay = await replayCorpus(corpus, { env: {}, model: new FakeJev({}) })
+    expect(replay.code).toBe(1)
+    expect(replay.report).toContain('lost.jpg')
   })
 
   it('jev:case refuses an expectation the ask cannot be judged by, and a turn with no ask, writing nothing', () => {

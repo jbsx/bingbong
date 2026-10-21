@@ -46,6 +46,12 @@ export interface DecisionRequest<Q extends DecisionQuestions> {
   /** The text the questions are about: what the Run already holds, passages id-prefixed. */
   readonly state: string
   readonly questions: Q
+  /**
+   * Images the state names (#382, ADR 0084): reference → PNG or JPEG bytes,
+   * each reference written into the state where the image stands. Only the
+   * Mark Ask sends one; absent, the ask is text alone.
+   */
+  readonly images?: Readonly<Record<string, Uint8Array>>
   readonly signal?: AbortSignal
 }
 
