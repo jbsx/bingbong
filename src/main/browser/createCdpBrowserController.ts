@@ -494,8 +494,9 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     try {
       const outcome = await evaluateInFrame<unknown>(frame, readinessWaitScript(READINESS_CAP_MS))
       if (outcome === 'mutation' || outcome === 'input' || outcome === 'scroll') return outcome
-    } catch {
+    } catch (error) {
       // The frame went: the top's watch tells what that did.
+      reportFault('browser.createCdpBrowserController.frameEffect', error)
     }
     return new Promise<ActionEffect>(() => {})
   }
@@ -701,8 +702,9 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
       listed.map(async (frame) => {
         try {
           read.push({ key: frame.key, parentKey: frame.parentKey, page: parseCollectedPage(await frame.evaluate<unknown>(collectScript)) })
-        } catch {
+        } catch (error) {
           // A frame gone, still loading, or holding no page: it stays its opaque iframe.
+          reportFault('browser.createCdpBrowserController.readFrame', error)
         }
       }),
     )

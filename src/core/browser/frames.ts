@@ -32,12 +32,8 @@ const MAX_MERGED_ELEMENTS = 400
 
 /** A frame's host as a ref line names it, without `www.`; the address itself when it has none. */
 export function frameHostOf(url: string): string {
-  try {
-    const host = new URL(url).hostname
-    return host === '' ? url : host.replace(/^www\./, '')
-  } catch {
-    return url
-  }
+  const host = URL.canParse(url) ? new URL(url).hostname : ''
+  return host === '' ? url : host.replace(/^www\./, '')
 }
 
 /** A Reachable Frame's iframe is larger than this in both directions (ADR 0081): a tracking pixel is no frame to read. */
