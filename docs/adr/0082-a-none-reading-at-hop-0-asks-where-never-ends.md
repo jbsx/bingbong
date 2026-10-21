@@ -9,7 +9,9 @@ the #363 live check's "open page information" on Wikipedia (ledger
 widens ADR 0079's "a Task looks before it gives up" to the moment before
 the first action. The Question class ("what's the weather like in
 gurgaon") is not this decision: it shares the `none` reading and nothing
-after it, and is grilled on its own.
+after it, and is grilled on its own. Amended on 2026-10-21 by ADR 0084: a
+second `none` makes a Mark Ask before it ends, when a Textless Ref is on
+the card.
 
 ## Context
 

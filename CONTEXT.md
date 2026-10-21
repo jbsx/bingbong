@@ -1335,6 +1335,30 @@ changed (#366), every state but its focus: focus moves to whatever was
 clicked or typed into, so its flip says nothing of what the action did.
 _Avoid_: aria state, control state, accessibility info
 
+**Unmarked Control**:
+An element that acts on a click though neither its tag nor its role marks
+it as a control, found by the cues Vimium's link hints use and a Ref like
+any other: an `onclick` attribute, an Angular click directive, a Google
+`jsaction` click, `contenteditable`; weakly, a `button` or `btn` class and a
+`span`, dropped when a nearby descendant is already a Ref. Never one marked
+`aria-disabled`, and never one found by its cursor or its listeners.
+_Avoid_: clickable div, fake button, hint
+
+**Textless Ref**:
+A Ref whose label is still empty after the browser's own accessible name:
+an icon with no name, alt or title. The Mark Ask shows it to the Decision
+Model.
+_Avoid_: blank ref, unlabelled ref, icon ref
+
+**Mark Ask**:
+A re-ask of the action card that sends one screenshot of the pane with
+each Textless Ref's number drawn on it, those refs' options reading "the
+control marked N". Made only when the line would otherwise end without
+acting (the Where Ask's second `none`) and a Textless Ref is on the card;
+its best reading fires as that hop, and a `none` ends the line as before.
+The marks are drawn on the image, never on the page.
+_Avoid_: vision ask, screenshot ask, set-of-marks
+
 **Cover**:
 What a click or type finds over its target's centre: the element the page's
 own hit test answers with in the target's place. The Action Outcome names it
