@@ -1214,7 +1214,9 @@ point at other nodes, and a `false` that is no news (a switch's or a menu's
 `false` is news); never a list of states picked by hand — a label
 can be stale (YouTube's captions button says "unavailable" while it is
 pressed), and the state is what tells the model. A page whose tree cannot be
-read is read without them.
+read is read without them. "Done so far" tells how the acted ref's Ref State
+changed (#366), every state but its focus: focus moves to whatever was
+clicked or typed into, so its flip says nothing of what the action did.
 _Avoid_: aria state, control state, accessibility info
 
 **Cover**:

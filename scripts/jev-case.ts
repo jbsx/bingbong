@@ -3,7 +3,8 @@
 // a logged Command was read from — or a partial's ask, by its own id — with
 // the answer each question should have got, written as a case in the Jev
 // corpus for `pnpm jev:replay`. An expectation is a Choice label
-// (`target=ref-27`) or a label it must not be (`target!=ref-21`); each is
+// (`target=ref-27`), a label at a floor (`outcome=yes>=0.7`, #366) or a
+// label it must not be (`target!=ref-21`); each is
 // checked against the ask's own questions before anything is written.
 // The asks carry page text from real browsing: a case is committed only
 // when the owner chooses to. Node runs this .ts directly via type
@@ -17,7 +18,7 @@
 import { JEV_CORPUS_DIR, caseFromLog } from '../src/main/decision/jevCorpus.ts'
 import { resolvePerfLogsDir } from '../src/main/perf/collectPerfRecords.ts'
 
-const USAGE = 'usage: pnpm jev:case <turnId> --expect <question>=<label> [<question>!=<label> …] [--logs <dir>] [--corpus <dir>]'
+const USAGE = 'usage: pnpm jev:case <turnId> --expect <question>=<label>[>=<probability>] [<question>!=<label> …] [--logs <dir>] [--corpus <dir>]'
 
 const positional: string[] = []
 const expectations: string[] = []

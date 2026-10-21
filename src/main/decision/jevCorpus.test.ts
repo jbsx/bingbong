@@ -83,6 +83,15 @@ describe('pnpm jev:replay over a corpus folder', () => {
     expect(replay.report).toContain('2 cases: 1 passed, 1 failed')
   })
 
+  it('reads a floor (#366): the label must be chosen at that probability or more — a sure answer, not a plurality', async () => {
+    saveCase('sure', 'state-a', [{ question: 'target', label: 'ref-27', atLeast: 0.85 }])
+    saveCase('surer', 'state-a', [{ question: 'target', label: 'ref-27', atLeast: 0.9 }])
+    const replay = await replayCorpus(dir, { env: {}, model: new FakeJev({ 'state-a': { none: 0.05, 'ref-21': 0.1, 'ref-27': 0.85 } }) })
+    expect(replay.code).toBe(1)
+    expect(replay.report).toContain('PASS  sure\n  target=ref-27>=0.85  chose ref-27 0.85')
+    expect(replay.report).toContain('FAIL  surer\n  target=ref-27>=0.90  chose ref-27 0.85')
+  })
+
   it('fails a case Jev did not answer, and one whose file cannot be read as a case', async () => {
     saveCase('slow', 'state-b', [{ question: 'target', label: 'ref-27' }])
     writeFileSync(join(dir, 'broken.json'), '{"ask": ')
@@ -194,6 +203,8 @@ describe('growing the corpus from the logs', () => {
     writeLogs()
     const made = caseFromLog(logs, 't1', ['target=ref-27', 'target!=ref-21'], corpus)
     expect(made).toEqual({ path: join(corpus, 't1.json'), replaced: false })
+    expect(caseFromLog(logs, 't1', ['target=ref-27>=0.7'], join(corpus, 'floor'))).toEqual({ path: join(corpus, 'floor', 't1.json'), replaced: false })
+    expect(JSON.parse(readFileSync(join(corpus, 'floor', 't1.json'), 'utf8')).expect).toEqual([{ question: 'target', label: 'ref-27', atLeast: 0.7 }])
     expect(caseFromLog(logs, 't1', ['target=ref-27', 'target!=ref-21'], corpus)).toEqual({ path: join(corpus, 't1.json'), replaced: true })
     expect(JSON.parse(readFileSync(join(corpus, 't1.json'), 'utf8'))).toMatchObject({
       turnId: 't1',
@@ -213,7 +224,8 @@ describe('growing the corpus from the logs', () => {
     writeLogs()
     expect(caseFromLog(logs, 't1', ['target=ref-99'], corpus)).toEqual({ error: '"target" offers no label "ref-99"' })
     expect(caseFromLog(logs, 't1', ['colour=red'], corpus)).toEqual({ error: 'no question "colour" (asked: verb, target)' })
-    expect(caseFromLog(logs, 't1', ['target'], corpus)).toEqual({ error: '"target" is not <question>=<label> or <question>!=<label>' })
+    expect(caseFromLog(logs, 't1', ['target'], corpus)).toEqual({ error: '"target" is not <question>=<label>[>=<probability>] or <question>!=<label>' })
+    expect(caseFromLog(logs, 't1', ['target=ref-27>=1.5'], corpus)).toEqual({ error: '"target=ref-27>=1.5" is not <question>=<label>[>=<probability>] or <question>!=<label>' })
     expect(caseFromLog(logs, 't1', [], corpus)).toEqual({ error: 'no --expect given' })
     expect(caseFromLog(logs, 't3', ['target=ref-27'], corpus)).toEqual({ error: `no ask recorded for t3 in ${logs}` })
     expect(readCorpus(corpus)).toEqual([])

@@ -190,7 +190,16 @@ export function setAsideOf(ref: CommandRef, page: CommandPage): SetAside {
  */
 export type DoneResult =
   | { readonly changed: false }
-  | { readonly changed: true; readonly opened?: string; readonly appeared?: readonly string[]; readonly covered?: boolean; readonly closed?: boolean; readonly media?: readonly string[] }
+  | { readonly changed: true; readonly opened?: string; readonly target?: TargetChange; readonly appeared?: readonly string[]; readonly covered?: boolean; readonly closed?: boolean; readonly media?: readonly string[] }
+
+/** One state of the acted ref that differs between the two reads (#366), each side as the ref line shows it: `pressed=false`, `value="…"`, `no value`. */
+export interface StateFlip {
+  readonly from: string
+  readonly to: string
+}
+
+/** What the action did to its own target (#366): the label it now reads, when it changed its own, and its Ref State flips — none is a fact too — or it is no longer on the page. */
+export type TargetChange = { readonly label: string; readonly now?: string; readonly flips: readonly StateFlip[] } | { readonly label: string; readonly gone: true }
 
 /** How many controls that appeared "Done so far" names. */
 const NAMED_APPEARANCES = 3
@@ -209,16 +218,88 @@ export function freshRefs(before: CommandPage, after: CommandPage): CommandRef[]
   return after.refs.filter((ref) => ref.label !== '' && !known.has(ref.label))
 }
 
-export function doneFacts(before: CommandPage, after: CommandPage, result: DoneResult): DoneResult {
+/** A ref's states by name: `pressed=true` is `pressed` → `true`. */
+function statesByName(states: readonly string[]): Map<string, string> {
+  return new Map(
+    states.map((state) => {
+      const at = state.indexOf('=')
+      return at < 0 ? [state, ''] : [state.slice(0, at), state.slice(at + 1)]
+    }),
+  )
+}
+
+/**
+ * States no flip of says what an action did: focus moves to whatever was
+ * clicked or typed into, so told, it reads as a change of every target
+ * (replay 2026-10-21: the captions Verdict's yes fell from ~0.74 to ~0.53).
+ */
+const UNTOLD_FLIPS = new Set(['focused'])
+
+/** How the acted ref's Ref State differs between the two reads, in the order the later read gives it. */
+function stateFlips(before: readonly string[], after: readonly string[]): StateFlip[] {
+  const [was, now] = [statesByName(before), statesByName(after)]
+  for (const name of UNTOLD_FLIPS) [was, now].forEach((states) => states.delete(name))
+  // A side with no such state: Ref State drops a `false` that is no toggle's, so beside a `true` it is `false`; beside anything else, none.
+  const side = (name: string, value: string | undefined, other: string | undefined): string => (value !== undefined ? `${name}=${value}` : other === 'true' ? `${name}=false` : `no ${name}`)
+  return [...new Set([...now.keys(), ...was.keys()])]
+    .filter((name) => was.get(name) !== now.get(name))
+    .map((name) => ({ from: side(name, was.get(name), now.get(name)), to: side(name, now.get(name), was.get(name)) }))
+}
+
+/**
+ * The acted ref on the page the action left, matched by label (a ref's
+ * number changes between hops); else a control that changed its own label
+ * — Play to Pause, Follow to Following — known by its place: the same
+ * number, kind and address between the same neighbours, under a label the
+ * page it was read on did not show. A pop-up's controls renumber the page
+ * under it, so the neighbours are what say the place is the same.
+ */
+function targetAfter(target: CommandRef, before: CommandPage, after: CommandPage): CommandRef | undefined {
+  const named = after.refs.filter((ref) => ref.label === target.label)
+  if (named.length > 0) return named.find((ref) => ref.ref === target.ref) ?? named[0]
+  const [was, now] = [before.refs.indexOf(target), after.refs.findIndex((ref) => ref.ref === target.ref)]
+  const placed = after.refs[now]
+  if (placed === undefined || placed.kind !== target.kind || placed.href !== target.href || before.refs.some((ref) => ref.label === placed.label)) return undefined
+  const sameNeighbour = (step: number): boolean => before.refs[was + step]?.label === after.refs[now + step]?.label
+  const inDialog = (page: CommandPage, ref: number): boolean => page.dialog?.refs.includes(ref) ?? false
+  return sameNeighbour(-1) && sameNeighbour(1) && inDialog(after, placed.ref) === inDialog(before, target.ref) ? placed : undefined
+}
+
+/** What the action did to its target (#366), when it acted on one: gone, relabelled, or its Ref State. */
+function targetChange(before: CommandPage, after: CommandPage, ref: number | null | undefined): TargetChange | undefined {
+  const target = ref === null || ref === undefined ? undefined : before.refs.find((one) => one.ref === ref)
+  if (target === undefined) return undefined
+  const now = targetAfter(target, before, after)
+  // A pop-up that opened or closed explains a missing target: the page under a pop-up is not read whole, and a closed one takes its controls with it.
+  if (now === undefined) return (before.dialog === undefined) === (after.dialog === undefined) ? { label: target.label, gone: true } : undefined
+  // A read drops an empty Ref State: no states is a tree that said nothing of the ref.
+  return { label: target.label, ...(now.label !== target.label ? { now: now.label } : {}), flips: stateFlips(target.states ?? [], now.states ?? []) }
+}
+
+/** Whether the target changed at all: gone, relabelled or a state flipped. */
+function targetMoved(change: TargetChange): boolean {
+  return 'gone' in change || change.now !== undefined || change.flips.length > 0
+}
+
+export function doneFacts(before: CommandPage, after: CommandPage, result: DoneResult, target?: number | null): DoneResult {
   // A change to the media element is one the DOM does not show (#363): Loop ticked in a right-click menu changes no ref.
   const media = mediaChanges(before.media, after.media)
-  if (!result.changed) return media.length > 0 ? { changed: true, media } : result
-  const fresh = freshRefs(before, after)
+  // A page another address opened is a new page: what the target did on the old one is no fact of it.
+  const change = !result.changed || result.opened === undefined ? targetChange(before, after, target) : undefined
+  if (!result.changed) {
+    // A page that reads unchanged can still hold a target that changed: a toggle the click signature does not see.
+    const moved = change !== undefined && targetMoved(change)
+    if (!moved && media.length === 0) return result
+    return { changed: true, ...(moved ? { target: change } : {}), ...(media.length > 0 ? { media } : {}) }
+  }
+  // The target's new label is the target, told as relabelled: not a control that appeared.
+  const relabel = change !== undefined && 'now' in change ? change.now : undefined
+  const fresh = freshRefs(before, after).filter((ref) => ref.label !== relabel)
   const inDialog = new Set(after.dialog?.refs ?? [])
   const appeared = [...fresh.filter((ref) => inDialog.has(ref.ref)), ...fresh.filter((ref) => !inDialog.has(ref.ref))].slice(0, NAMED_APPEARANCES).map((ref) => ref.label)
   const covered = after.dialog !== undefined && before.dialog === undefined
   const closed = before.dialog !== undefined && after.dialog === undefined
-  return { ...result, ...(appeared.length > 0 ? { appeared } : {}), ...(covered ? { covered: true } : {}), ...(closed ? { closed: true } : {}), ...(media.length > 0 ? { media } : {}) }
+  return { ...result, ...(change !== undefined ? { target: change } : {}), ...(appeared.length > 0 ? { appeared } : {}), ...(covered ? { covered: true } : {}), ...(closed ? { closed: true } : {}), ...(media.length > 0 ? { media } : {}) }
 }
 
 /** A media position as a player shows it: `1:02`, `1:02:03`. */
@@ -268,13 +349,23 @@ function listOf(labels: readonly string[]): string {
   return named.length <= 1 ? (named[0] ?? '') : `${named.slice(0, -1).join(', ')} and ${named.at(-1)}`
 }
 
-/** What a changed page came to, in facts. */
+/** What the action did to its target (#366): `"Captions" went from pressed=false to pressed=true`, `"Captions" is no longer on the page`, `its state did not change`. */
+function targetFacts(change: TargetChange): string {
+  if ('gone' in change) return `${JSON.stringify(change.label)} is no longer on the page`
+  // Told, not left out: a stale accessibility tree then reads as unchanged rather than as nothing.
+  if (!targetMoved(change)) return 'its state did not change'
+  const flips = change.flips.map((flip, n) => `${n === 0 ? 'went ' : ''}from ${flip.from} to ${flip.to}`)
+  const told = [...(change.now !== undefined ? [`now reads ${JSON.stringify(change.now)}`] : []), ...(flips.length > 0 ? [flips.join(' and ')] : [])]
+  // Named whole, as the action names it: cut, it reads as another control (replay 2026-10-21).
+  return `${JSON.stringify(change.label)} ${told.join(' and ')}`
+}
+
+/** What a changed page came to, in facts: the target's own change first (#366), so the page's reaction never drowns it. */
 function changedFacts(result: Extract<DoneResult, { changed: true }>): string {
   const page = pageFacts(result)
-  const media = result.media ?? []
-  if (media.length === 0) return page
-  // A change the media element alone shows: the page's own line says only "the page changed", which it adds nothing to.
-  return page === 'the page changed' ? media.join('; ') : `${page}; ${media.join('; ')}`
+  // A change the target or the media element alone shows: the page's own line says only "the page changed", which it adds nothing to.
+  const told = [...(result.target !== undefined ? [targetFacts(result.target)] : []), ...(page === 'the page changed' ? [] : [page]), ...(result.media ?? [])]
+  return told.length > 0 ? told.join('; ') : page
 }
 
 /** What a changed page came to, in facts of the page alone. */

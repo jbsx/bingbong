@@ -631,6 +631,109 @@ describe('the Verdict: a hop is asked whether what was asked for is done', () =>
       expect(doneLine(click, COVERED, doneFacts(COVERED, wide, { changed: true }))).toBe('click "Close" (the address did not change; "A control whose label runs on far past…" appeared)')
     })
   })
+
+  describe('"Done so far" tells what the action did to its target first (#366)', () => {
+    const CAPTIONS = 'Subtitles/closed captions keyboard shortcut c'
+    const WATCH: CommandPage = {
+      url: 'https://www.youtube.com/watch?v=1',
+      title: 'A video',
+      refs: [
+        { ref: 11, kind: 'button', label: 'Play (k)', href: null, inputType: null, states: [] },
+        { ref: 12, kind: 'button', label: CAPTIONS, href: null, inputType: null, states: ['pressed=false'] },
+        { ref: 13, kind: 'input', label: 'Search', href: null, inputType: 'text', states: [] },
+      ],
+    }
+    const withRef = (page: CommandPage, ref: number, change: Partial<CommandPage['refs'][number]>): CommandPage => ({ ...page, refs: page.refs.map((one) => (one.ref === ref ? { ...one, ...change } : one)) })
+    const appeared = (page: CommandPage, ...labels: string[]): CommandPage => ({ ...page, refs: [...page.refs, ...labels.map((label, n) => ({ ref: 20 + n, kind: 'button' as const, label, href: null, inputType: null }))] })
+    const clickRef = (target: number) => ({ verb: 'click' as const, target, slot: null })
+
+    it('leads with the toggle that flipped, the page facts after it', () => {
+      const after = appeared(withRef(WATCH, 12, { states: ['pressed=true'] }), 'Add a comment…')
+      expect(doneLine(clickRef(12), WATCH, doneFacts(WATCH, after, { changed: true }, 12))).toBe(
+        `click "${CAPTIONS}" ("${CAPTIONS}" went from pressed=false to pressed=true; the address did not change; "Add a comment…" appeared)`,
+      )
+    })
+
+    it('leads with the target before a pop-up, and still names at most three controls that appeared', () => {
+      const after = { ...appeared(withRef(WATCH, 12, { states: ['pressed=true'] }), 'One', 'Two', 'Three', 'Four'), dialog: { text: 'Menu', refs: [23] } }
+      expect(doneLine(clickRef(12), WATCH, doneFacts(WATCH, after, { changed: true }, 12))).toBe(
+        `click "${CAPTIONS}" ("${CAPTIONS}" went from pressed=false to pressed=true; the address did not change; a pop-up appeared over the page: "Four", "One" and "Two")`,
+      )
+    })
+
+    it('tells a target that opened another address by the address alone: the page it was on is gone', () => {
+      expect(doneLine(clickRef(12), WATCH, doneFacts(WATCH, { ...WATCH, refs: [] }, { changed: true, opened: 'https://www.youtube.com/watch?v=2' }, 12))).toBe(`click "${CAPTIONS}" (opened youtube.com/watch?v=2)`)
+    })
+
+    it('knows a control that changed its own label by its place: the same number and kind, a label the page did not show', () => {
+      const after = withRef(WATCH, 11, { label: 'Pause (k)' })
+      expect(doneLine(clickRef(11), WATCH, doneFacts(WATCH, after, { changed: true }, 11))).toBe('click "Play (k)" ("Play (k)" now reads "Pause (k)")')
+      const pressed = withRef(WATCH, 11, { label: 'Pause (k)', states: ['pressed=true'] })
+      expect(doneLine(clickRef(11), WATCH, doneFacts(WATCH, pressed, { changed: true }, 11))).toBe('click "Play (k)" ("Play (k)" now reads "Pause (k)" and went from pressed=false to pressed=true)')
+      // Another control in its place, a label the page already showed: the target is gone.
+      const moved = { ...WATCH, refs: [{ ...WATCH.refs[1]!, ref: 11 }, { ...WATCH.refs[2]!, ref: 12 }] }
+      expect(doneLine(clickRef(11), WATCH, doneFacts(WATCH, moved, { changed: true }, 11))).toBe('click "Play (k)" ("Play (k)" is no longer on the page)')
+      // A pop-up's control in its place, or a link to elsewhere: not the target either.
+      const sheet = { ...withRef(WATCH, 11, { label: 'Close' }), dialog: { text: 'Sign in', refs: [11] } }
+      expect(doneLine(clickRef(11), WATCH, doneFacts(WATCH, sheet, { changed: true }, 11))).toBe('click "Play (k)" (the address did not change; a pop-up appeared over the page: "Close")')
+      const link = { ...WATCH, refs: [{ ref: 1, kind: 'link' as const, label: 'Home', href: 'https://a.com/', inputType: null }] }
+      expect(doneLine(clickRef(1), link, doneFacts(link, { ...link, refs: [{ ...link.refs[0]!, label: 'About', href: 'https://a.com/about' }] }, { changed: true }, 1))).toBe(
+        'click "Home" ("Home" is no longer on the page; the address did not change; "About" appeared)',
+      )
+    })
+
+    it('names the value a type left in its field', () => {
+      const typed = { verb: 'type' as const, target: 13, slot: 'weather in London' }
+      const after = withRef(WATCH, 13, { states: ['value="weather in London"'] })
+      expect(doneLine(typed, WATCH, doneFacts(WATCH, after, { changed: true }, 13))).toBe('type "weather in London" into "Search" ("Search" went from no value to value="weather in London")')
+    })
+
+    it('tells each flip of expanded, checked, selected and disabled, and both of two flips on one ref', () => {
+      const told = (from: string[], to: string[]): string => doneLine(clickRef(11), WATCH, doneFacts(withRef(WATCH, 11, { states: from }), withRef(WATCH, 11, { states: to }), { changed: true }, 11))
+      expect(told(['expanded=false'], ['expanded=true'])).toBe('click "Play (k)" ("Play (k)" went from expanded=false to expanded=true)')
+      expect(told(['checked=true'], ['checked=false'])).toBe('click "Play (k)" ("Play (k)" went from checked=true to checked=false)')
+      expect(told(['selected=false'], ['selected=true'])).toBe('click "Play (k)" ("Play (k)" went from selected=false to selected=true)')
+      // Ref State drops a `false` that is no toggle's: a control no longer disabled loses the state.
+      expect(told(['disabled=true'], [])).toBe('click "Play (k)" ("Play (k)" went from disabled=true to disabled=false)')
+      expect(told(['pressed=false', 'expanded=false'], ['pressed=true', 'expanded=true'])).toBe('click "Play (k)" ("Play (k)" went from pressed=false to pressed=true and from expanded=false to expanded=true)')
+    })
+
+    it('leaves focus out: every click and type moves it, so its flip says nothing of what the action did (replay 2026-10-21)', () => {
+      const told = (from: string[], to: string[]): string => doneLine(clickRef(11), WATCH, doneFacts(withRef(WATCH, 11, { states: from }), withRef(WATCH, 11, { states: to }), { changed: true }, 11))
+      expect(told(['pressed=false'], ['focused=true', 'pressed=true'])).toBe('click "Play (k)" ("Play (k)" went from pressed=false to pressed=true)')
+      expect(told([], ['focused=true'])).toBe('click "Play (k)" (its state did not change)')
+    })
+
+    it('reads a ref with no states as one whose tree said nothing: a page read drops an empty list (snapshot)', () => {
+      const bare = withRef(WATCH, 11, { states: undefined })
+      expect(doneLine(clickRef(11), bare, doneFacts(bare, withRef(WATCH, 11, { states: ['pressed=true'] }), { changed: true }, 11))).toBe('click "Play (k)" ("Play (k)" went from pressed=false to pressed=true)')
+      expect(doneLine(clickRef(11), withRef(WATCH, 11, { states: ['disabled=true'] }), doneFacts(withRef(WATCH, 11, { states: ['disabled=true'] }), bare, { changed: true }, 11))).toBe('click "Play (k)" ("Play (k)" went from disabled=true to disabled=false)')
+      expect(doneLine(clickRef(11), bare, doneFacts(bare, bare, { changed: true }, 11))).toBe('click "Play (k)" (its state did not change)')
+    })
+
+    it('tells no target gone when a pop-up opened or closed: the page under a pop-up is not read whole, and a closed pop-up takes its controls with it', () => {
+      const sheet = { ...WATCH, refs: [{ ref: 1, kind: 'button' as const, label: 'Close', href: null, inputType: null }], dialog: { text: 'Sign in', refs: [1] } }
+      expect(doneLine(clickRef(12), WATCH, doneFacts(WATCH, sheet, { changed: true }, 12))).toBe(`click "${CAPTIONS}" (the address did not change; a pop-up appeared over the page: "Close")`)
+      expect(doneLine(clickRef(1), sheet, doneFacts(sheet, WATCH, { changed: true }, 1))).toBe('click "Close" (the pop-up closed)')
+    })
+
+    it('tells a target whose state changed though the page reads unchanged', () => {
+      const after = withRef(WATCH, 12, { states: ['pressed=true'] })
+      expect(doneLine(clickRef(12), WATCH, doneFacts(WATCH, after, { changed: false }, 12))).toBe(`click "${CAPTIONS}" ("${CAPTIONS}" went from pressed=false to pressed=true)`)
+      expect(doneLine(clickRef(12), WATCH, doneFacts(WATCH, WATCH, { changed: false }, 12))).toBe(`click "${CAPTIONS}" (nothing changed)`)
+    })
+
+    it('says the target is no longer on the page when the page it left has no such control', () => {
+      const after = { ...WATCH, refs: WATCH.refs.filter((ref) => ref.ref !== 12) }
+      expect(doneLine(clickRef(12), WATCH, doneFacts(WATCH, after, { changed: true }, 12))).toBe(`click "${CAPTIONS}" ("${CAPTIONS}" is no longer on the page)`)
+    })
+
+    it('says its state did not change when the target is there as it was — a fact, not silence', () => {
+      const after = appeared(WATCH, 'Add a comment…')
+      expect(doneLine(clickRef(12), WATCH, doneFacts(WATCH, after, { changed: true }, 12))).toBe(`click "${CAPTIONS}" (its state did not change; the address did not change; "Add a comment…" appeared)`)
+      expect(doneLine(clickRef(12), WATCH, doneFacts(WATCH, WATCH, { changed: true }, 12))).toBe(`click "${CAPTIONS}" (its state did not change)`)
+    })
+  })
 })
 
 describe('a results page known by the Task\'s words (owner\'s rule 2026-10-19)', () => {

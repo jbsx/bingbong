@@ -1516,9 +1516,9 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       const page = superseded(task) ? blankPage(browser) : await drawn(task, await withResults(task, await collectPage(null)))
       visit(task, page.url)
       if (task.pending !== undefined) {
-        // The last action's "Done so far" line, in the facts of the page it left: what appeared, and whether a pop-up covers it.
+        // The last action's "Done so far" line, in the facts of the page it left: what it did to its target, what appeared, and whether a pop-up covers it.
         const { command: last, page: before, fired, told } = task.pending
-        const found = doneFacts(before, page, doneResult(before, fired))
+        const found = doneFacts(before, page, doneResult(before, fired), last.target)
         // Told again after a re-read (post mortem 2026-10-19): the pop-up the line named over a clear page is gone — closed by the collect's consent dismissal or by the page — and the line says so, or Jev reads a wall over a page with nothing in the way.
         const retold = told?.dialog !== undefined && before.dialog === undefined && page.dialog === undefined && found.changed
         const facts: DoneResult = retold ? { ...found, covered: true, closed: true } : found

@@ -2411,7 +2411,7 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
     expect(Object.values(hop2.options).some((option) => String(option).includes(PINNED))).toBe(false)
     expect(Object.keys(hop2.options)).toEqual(['none', 'ref-1', 'ref-22'])
     // Jev is told what each action did.
-    expect(decision.requests[2]!.state).toContain(`Done so far: click "Posts" (the page changed); click "${PINNED}" (nothing changed)`)
+    expect(decision.requests[2]!.state).toContain(`Done so far: click "Posts" (its state did not change); click "${PINNED}" (nothing changed)`)
     expect(decisions(records).map((record) => record.ended)).toEqual([undefined, undefined, 'unchanged'])
   })
 
@@ -2483,7 +2483,7 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
       expect(read.filter((record) => record.undo === true).map((record) => record.verb)).toEqual(['press', 'press'])
       expect(read.at(-1)).toMatchObject({ undo: true, ended: 'not_found' })
       // Hop 4 was told the runner's own moves in "Done so far".
-      expect(decision.requests[3]!.state).toContain('press Escape (what it opened closed); menu "Video player" (the address did not change; "Loop" and "Copy video URL" appeared)')
+      expect(decision.requests[3]!.state).toContain('press Escape (what it opened closed); menu "Video player" (its state did not change; the address did not change; "Loop" and "Copy video URL" appeared)')
     })
 
     it('AC4: tries no ref under 0.05, and a dead end with no runner-up still closes what it opened before it ends', async () => {
@@ -2540,7 +2540,7 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
       decision.script.push(hopAnswer('click', { 'ref-1': 0.6 }), answer('done'))
       await runner.run('loop the video', { source: 'spoken' })
       expect(decision.requests[0]!.state).toContain('Playing: "Fixture Song" 1:02 / 2:04, loop off')
-      expect(decision.requests[1]!.state).toContain('Done so far: click "Settings" (loop turned on)')
+      expect(decision.requests[1]!.state).toContain('Done so far: click "Settings" (its state did not change; loop turned on)')
       expect(decision.requests[1]!.state).toContain('Playing: "Fixture Song" 1:03 / 2:04, loop on')
       expect(decisions(records).map((record) => record.ended)).toEqual([undefined, 'done'])
     })
