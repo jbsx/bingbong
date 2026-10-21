@@ -1,0 +1,10 @@
+{
+  "turnId": "turn-mvi5adcd-3",
+  "transcript": "Turn on ambient molt.",
+  "at": 1792589135998,
+  "source": "spoken",
+  "stage": "stt",
+  "happened": "heard 'Turn on ambient molt.' for 'ambient mode'; Jev none 0.62 (click-14 0.14), nothing fired",
+  "meant": "switch YouTube's Ambient mode on (it lives in the Settings [13] gear menu)",
+  "log": "decision-1792589115188-1.jsonl"
+}

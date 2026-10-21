@@ -1,0 +1,10 @@
+{
+  "turnId": "turn-mvi5ajrz-4",
+  "transcript": "Turn on ambient mode.",
+  "at": 1792589144314,
+  "source": "spoken",
+  "stage": "reading",
+  "happened": "Jev none 0.55 over click-13 Settings 0.20 and menu-13 0.01 (both on the card); nothing fired. Re-asked x3: none 0.47-0.52. A 'the page does not show it: open a menu' instruction lifts click-13 to 0.53-0.59 but lures 'turn on captions' to Settings (0.40-0.48 from 0.08)",
+  "meant": "open the Settings [13] menu and switch Ambient mode on (a look-then-act Task)",
+  "log": "decision-1792589115188-1.jsonl"
+}
