@@ -55,7 +55,7 @@ export interface DecisionRecord {
   readonly transcript: string
   readonly reading: CommandReading
   readonly verb: CommandVerb
-  /** For a `play` Jev read (ADR 0079): the Capability its verb Choice named; absent otherwise. */
+  /** For a `play` Jev read (ADR 0079): the Capability its action card named (#370); absent otherwise. */
   readonly capability?: Capability
   readonly target: number | null
   readonly targetLabel?: string

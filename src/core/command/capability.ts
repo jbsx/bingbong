@@ -65,8 +65,8 @@ export function playerCapabilities(songOn: boolean): readonly Capability[] {
 }
 
 /** Whether an action card label names a Capability. */
-export function isCapability(verb: string): verb is Capability {
-  return Object.hasOwn(CAPABILITY_DESCRIPTIONS, verb)
+export function isCapability(label: string): label is Capability {
+  return Object.hasOwn(CAPABILITY_DESCRIPTIONS, label)
 }
 
 /** Whether a Capability searches for its Slot's words. */

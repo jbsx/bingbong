@@ -15,8 +15,9 @@ import type { Capability } from './capability'
 
 /**
  * The verbs a Command can carry. The Decision Model is offered
- * {@link JEV_VERBS}, and `play` through the Player's Capabilities (ADR
- * 0079); `screenshot`, `help`, `resume` and `timer` are the CLI grammar's
+ * {@link JEV_VERBS} on its action card (#370) — a click, type or menu on
+ * each ref, the rest as they are — and `play` through the Player's
+ * Capabilities (ADR 0079); `screenshot`, `help`, `resume` and `timer` are the CLI grammar's
  * alone, reached only through the Local Match.
  */
 export const COMMAND_VERBS = [
@@ -85,7 +86,7 @@ export interface Command {
   readonly durationMs?: number
   /** For `play` (#343): what the line asks of the Player; a search's words are the Slot. */
   readonly music?: MusicAction
-  /** For a `play` Jev read (ADR 0079): the Capability its verb Choice named; absent for an exact line the grammar settled. */
+  /** For a `play` Jev read (ADR 0079): the Capability its action card named (#370); absent for an exact line the grammar settled. */
   readonly capability?: Capability
   /** The click or the Escape closes an open dialog (#336): its Answer is "Closed the pop-up.", and a dialog still open after it is a failure. */
   readonly dismiss?: true

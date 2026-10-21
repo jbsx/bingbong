@@ -10,6 +10,10 @@
     },
     {
       "question": "action",
+      "not": "none"
+    },
+    {
+      "question": "action",
       "not": "search"
     },
     {

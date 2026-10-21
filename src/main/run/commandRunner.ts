@@ -67,7 +67,7 @@ import type { Player, PlayerOutcome } from '../music/player'
 // The command seam (kachow, #324, ADR 0076): where a typed or spoken line
 // lands and becomes one Command. The Local Match first — the CLI grammar,
 // or a plain verb and the label exactly one ref carries — fires with no
-// model asked; else one Jev call, three Choices over the transcript and
+// model asked; else one Jev call, the action card over the transcript and
 // the page's refs, the top Choice acted on at any confidence; else, when
 // Jev does not answer, the Local Match's best guess. Nothing asks "did you
 // mean"; a Misfire is recovered by the next Command and counted. Every
@@ -94,9 +94,9 @@ import type { Player, PlayerOutcome } from '../music/player'
 // A Task (#328, ADR 0076 amendment): an Utterance is one or more Commands.
 // Hop 0 is read as above. A Task goes on after a Command Jev read and ends
 // after one the Local Match settled: each further hop collects the landing
-// and asks Jev alone — the same three Choices plus `done`, against the whole
-// transcript, the addresses visited and the actions taken — until it says
-// `done` or `none`, an action meets a wall, five actions have fired, two
+// and asks Jev alone — the same action card and the Verdict, against the
+// whole transcript, the addresses visited and the actions taken — until the
+// Verdict is a sure yes or the card reads `none`, an action meets a wall, five actions have fired, two
 // hops in a row change nothing (#336: each such hop's target is set aside),
 // Jev does not answer, or a later Utterance, Escape or the Abort Head
 // supersedes it. One `command` event and one decision record per hop. A
@@ -1158,7 +1158,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
     raised?: { readonly command: Command; readonly page: CommandPage }
     /** In a line read as Steps (#364): where this Step stands in it — every hop's reading is told the line and what the Steps before it did. */
     readonly step?: StepContext
-    /** The Jev reading that fired the last action (#363): its target answer and the page it was read on, where a dead end's runner-up comes from. */
+    /** The Jev reading that fired the last action (#363): its action card answer (#370) and the page it was read on, where a dead end's runner-up comes from. */
     reading?: { readonly action: DecisionChoiceAnswer; readonly page: CommandPage }
     /** What the last action opened on the page it stayed on (#363): the controls it drew, closed at a dead end. */
     opened?: Opened

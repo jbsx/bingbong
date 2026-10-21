@@ -40,7 +40,7 @@ offers, take the one that fits — had no verb and no loop to live in.
 as a verb beside the browser's.** While there is a song to act on — the
 Player's, playing, paused or ended, or the video or audio the page itself
 carries, whoever started it (amended 2026-10-21, below) — on any page and
-under the Idle Screen, the verb Choice carries every Player op but search — loop on and off, restart, pause, unpause, skip, previous,
+under the Idle Screen, the verb Choice (the action card since #370, ADR 0076) carries every Player op but search — loop on and off, restart, pause, unpause, skip, previous,
 louder, quieter, mute, unmute, volume N (the Slot carries N), show — each
 with a one-line description, in the same Choice as `click` and
 `scroll_down`, not behind a second question. A Capability Command fires

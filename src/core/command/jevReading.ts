@@ -1,6 +1,6 @@
 import type { DecisionChoiceAnswer, DecisionChoiceQuestion, DecisionNoulQuestion } from '../ports/decisionModel'
 import type { PageLink, PageMedia } from '../browser/snapshot'
-import { PRESS_KEYS, describeCommand, normalizeWords, pressKeyOf, targetLabel, verbTakesSlot, type Command, type CommandPage, type CommandRef } from './command'
+import { JEV_VERBS, PRESS_KEYS, describeCommand, normalizeWords, pressKeyOf, targetLabel, verbTakesSlot, verbTakesTarget, type Command, type CommandPage, type CommandRef } from './command'
 import { dialogControls, type DismissChoice } from './dismissDialog'
 import { isSearchLanding, isTextField, pageAddressOf, resultLinksOf, resultRefsOf, wordsAfterVerb } from './localMatch'
 import { isAddressShaped } from './openAddress'
@@ -27,9 +27,11 @@ import { CAPABILITY_DESCRIPTIONS, CAPABILITY_INSTRUCTIONS, capabilityAction, cap
 /** A Choice offers at most 255 options; one is `none`. */
 const MAX_SPANS = 254
 
-/** The verbs the action card offers as they are: every browser verb that acts on no ref (#370). */
-const REFLESS_VERBS = ['navigate', 'search', 'scroll_up', 'scroll_down', 'back', 'forward', 'reload', 'press', 'read', 'clear', 'stop'] as const
-type RefLessVerb = (typeof REFLESS_VERBS)[number]
+/** A browser verb the action card offers as it is (#370): one that acts on no ref. */
+type RefLessVerb = Exclude<(typeof JEV_VERBS)[number], 'click' | 'type' | 'menu' | 'none'>
+
+/** The verbs the action card offers as they are: every browser verb that acts on no ref. */
+const REFLESS_VERBS = JEV_VERBS.filter((verb): verb is RefLessVerb => verb !== 'none' && !verbTakesTarget(verb))
 
 const REFLESS_DESCRIPTIONS: Readonly<Record<RefLessVerb | 'none', string>> = {
   navigate: 'go to a web address the words name: a website, a host or a url',
@@ -43,7 +45,7 @@ const REFLESS_DESCRIPTIONS: Readonly<Record<RefLessVerb | 'none', string>> = {
   read: 'read the page aloud or show its contents',
   clear: 'clear the text in the focused field',
   stop: 'stop what the browser is doing',
-  none:'not a command for this page: a remark, a question, a name, noise',
+  none: 'not a command for this page: a remark, a question, a name, noise',
 }
 
 export interface SlotSpan {
@@ -623,9 +625,9 @@ export function commandQuestions(text: string, pageRead: CommandPage, hop?: HopC
   const { page, links } = offered(pageRead, hop)
   const reading: ActionQuestions = { action: actionQuestion(page, pageRead, links, hop !== undefined, options.capabilities ?? []), slot: slotQuestion(text) }
   const site = scopableSite(pageRead.url, hop)
-  const where = site === null ? reading : { ...reading, where: whereQuestion(site) }
+  const asked = site === null ? reading : { ...reading, where: whereQuestion(site) }
   const steps = hop === undefined && options.steps !== false ? stepsQuestion(text) : null
-  return steps === null ? where : { ...where, steps }
+  return steps === null ? asked : { ...asked, steps }
 }
 
 /**
@@ -774,7 +776,7 @@ export function readVerdict(answers: CommandAnswers | HopAnswers): Verdict | nul
 }
 
 /**
- * A partial transcript's questions (Early Fire, #326): the three Choices
+ * A partial transcript's questions (Early Fire, #326): the action card
  * and one Noul — whether the words so far are the whole Command. The Noul
  * decides only whether to wait for more words, never whether to act.
  */
@@ -830,12 +832,11 @@ function mostProbable<T>(answer: DecisionChoiceAnswer, resolve: (label: string) 
 }
 
 /**
- * The opening a card label names (#332): a click on an offered ref, the
+ * The opening a card action names (#332): a click on an offered ref, the
  * open of an offered link at its address; null for anything else. `refs`,
  * when given, are the only refs that may be clicked.
  */
-function openingOf(label: string, page: CommandPage, links: readonly OfferedLink[], refs: ReadonlySet<number> | null = null): Command | null {
-  const acted = refActionOf(label)
+function openingOf(acted: RefAction | null, page: CommandPage, links: readonly OfferedLink[], refs: ReadonlySet<number> | null = null): Command | null {
   if (acted?.act === 'open') {
     const link = linkOf(acted, links)
     return link === undefined ? null : { verb: 'navigate', target: null, slot: link.href }
@@ -847,7 +848,7 @@ function openingOf(label: string, page: CommandPage, links: readonly OfferedLink
 
 /** The opening the action card gives the most probability (#332), the top label set aside; null when it gives no offered ref or link any. */
 function mostProbableOpening(answer: DecisionChoiceAnswer, page: CommandPage, links: readonly OfferedLink[]): Command | null {
-  return mostProbable<Command>(answer, (label) => openingOf(label, page, links))
+  return mostProbable<Command>(answer, (label) => openingOf(refActionOf(label), page, links))
 }
 
 /**
@@ -870,7 +871,7 @@ function fallbackTargets(page: CommandPage, links: readonly OfferedLink[]): { re
 /** {@link mostProbableOpening} for a later hop on a search landing: on a Web Engine's, a result or nothing ({@link fallbackTargets}). */
 function mostProbableFallbackOpening(answer: DecisionChoiceAnswer, page: CommandPage, links: readonly OfferedLink[]): Command | null {
   const targets = fallbackTargets(page, links)
-  return mostProbable<Command>(answer, (label) => openingOf(label, page, targets.links, targets.refs))
+  return mostProbable<Command>(answer, (label) => openingOf(refActionOf(label), page, targets.links, targets.refs))
 }
 
 /** The words the Slot answer names; the words after the verb when it names none — what a Task that found nothing says it could not find (#363). */
@@ -903,7 +904,7 @@ function capabilityCommand(capability: Capability, slot: DecisionChoiceAnswer, t
 
 /** The Command a card label naming a ref or a link makes (#370); null when the hop does not offer what it names. */
 function refCommand(acted: RefAction, answers: CommandAnswers | HopAnswers, text: string, page: CommandPage, links: readonly OfferedLink[]): Command | null {
-  if (acted.act === 'open') return openingOf(`open-${acted.n}`, page, links)
+  if (acted.act === 'open') return openingOf(acted, page, links)
   const ref = offeredRefOf(acted, page)
   if (ref === null) return null
   return { verb: acted.act, target: ref.ref, slot: acted.act === 'type' ? slotWords(answers.slot, text) : null }
