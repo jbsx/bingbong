@@ -270,7 +270,9 @@ const CLICK_ROLES = new Set(['menuitem', 'menuitemcheckbox', 'menuitemradio', 't
 export function refKindOf(element: CollectedElement): RefKind {
   if (element.tag === 'iframe') return 'iframe'
   if (element.tag === 'video' || element.tag === 'audio') return 'media'
-  if (element.tag === 'a' || element.tag === 'area' || element.role === 'link') return 'link'
+  // An anchor with no address and a button's role goes nowhere (#381): an Unmarked Control <a onclick> is a button.
+  const addressless = element.href === null && element.role === 'button'
+  if (((element.tag === 'a' || element.tag === 'area') && !addressless) || element.role === 'link') return 'link'
   if (
     element.tag === 'button' ||
     element.role === 'button' ||

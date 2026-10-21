@@ -515,8 +515,14 @@ const UNMARKED_PAGES: Record<string, string> = {
     <div class="btn">Btn div</div>
     <div class="btn-row"><div><button>Wrapped button</button></div></div>
     <button><div class="ytSpecButtonShapeNextIcon"></div><div class="ytSpecButtonShapeNextButtonTextContent">Subscribe</div></button>
+    <div class="btn-wrap"><div tabindex="0">Focusable child</div></div>
+    <div role="listbox" aria-label="Sizes"><span onclick="void 0">Small</span></div>
+    <a onclick="void 0">Anchor without href</a>
     <div tabindex="0">Tab region</div>
+    <div onclick="void 0" aria-disabled="">Empty aria-disabled</div>
     <div onclick="void 0" aria-disabled="true">Disabled onclick</div>
+    <div id="inert-host" inert></div>
+    <script>document.getElementById('inert-host').attachShadow({ mode: 'open' }).innerHTML = '<button>Inert shadow button</button>'</script>
     <div style="cursor:pointer">Pointer div</div>
     <div id="host"></div>
     <script>document.getElementById('host').attachShadow({ mode: 'open' }).innerHTML = '<button>Shadow button</button><div onclick="void 0">Shadow onclick</div>'</script>
@@ -552,6 +558,10 @@ describe.skipIf(!canDriveChrome)("the collector finds Unmarked Controls by Vimiu
       ['button', 'Btn div'],
       ['button', 'Wrapped button'],
       ['button', 'Subscribe'],
+      ['input', 'Sizes Small'],
+      ['button', 'Small'],
+      ['button', 'Anchor without href'],
+      ['button', 'Empty aria-disabled'],
       ['button', 'Shadow button'],
       ['button', 'Shadow onclick'],
     ])

@@ -179,7 +179,7 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
     let credential = false
     let payment = false
     let search = false
-    for (const field of form.querySelectorAll('input,select,textarea,[contenteditable="true"],[role="searchbox"],[role="textbox"]')) {
+    for (const field of form.querySelectorAll('input,select,textarea,[contenteditable="true" i],[contenteditable=""],[contenteditable="contenteditable" i],[role="searchbox"],[role="textbox"]')) {
       if (isCredentialField(field)) credential = true
       if (isPaymentField(field)) payment = true
       if (isSearchField(field)) search = true
@@ -302,7 +302,7 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
   const NG_CLICK = []
   for (const prefix of ['', 'data-', 'x-']) for (const separator of ['-', ':', '_']) NG_CLICK.push(prefix + 'ng' + separator + 'click')
   const angular = document.getElementsByClassName('ng-scope').length > 0
-  const CUE_SELECTOR = ['[onclick]', '[jsaction]', 'details', 'object', 'embed', 'label', 'img[style*="zoom" i]', '[class*="button" i]', '[class*="btn" i]']
+  const CUE_SELECTOR = ['a', '[onclick]', '[jsaction]', 'details', 'object', 'embed', 'label', 'img[style*="zoom" i]', '[class*="button" i]', '[class*="btn" i]', '[tabindex]']
     .concat(angular ? NG_CLICK.map((name) => '[' + CSS.escape(name) + ']') : [])
     .join(',')
   const CANDIDATE_SELECTOR = SELECTOR + ',' + CUE_SELECTOR
@@ -316,22 +316,47 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
       : [split[0], ...split[1].trim().split('.'), '_']
     return eventType === 'click' && namespace !== 'none' && actionName !== '_'
   })
-  // An unmarked element's cue: strong, weak, a label (strong while its
-  // control is no ref, else weak or nothing by its class), or none.
+  // An unmarked element's cue: strong; weak; a label, strong while its
+  // control is no ref; tabindex only, which stands in the weak cues'
+  // lookback, as in Vimium, but is never a ref; or none.
   const cueOf = (el) => {
+    // Vimium's test is truthy: an empty aria-disabled vetoes nothing.
     const ariaDisabled = el.getAttribute('aria-disabled')
-    if (ariaDisabled !== null && ['', 'true'].includes(ariaDisabled.toLowerCase())) return null
+    if (ariaDisabled && ariaDisabled.toLowerCase() === 'true') return null
     const tag = el.tagName.toLowerCase()
     const strong = (angular && NG_CLICK.some((name) => el.hasAttribute(name))) ||
       el.hasAttribute('onclick') ||
       (el.hasAttribute('jsaction') && jsactionClicks(el)) ||
-      tag === 'object' || tag === 'embed' || tag === 'details' ||
+      tag === 'a' || tag === 'object' || tag === 'embed' || tag === 'details' ||
       (tag === 'img' && ['zoom-in', 'zoom-out'].includes(el.style.cursor))
     if (strong) return tag === 'span' ? 'weak' : 'strong'
+    if (tag === 'label' && el.control && !el.control.disabled) return 'label'
+    return fallbackCueOf(el)
+  }
+  // What an element that is not clickable yet falls back to: a button/btn
+  // class (weak — a span's too), else a tabindex of 0 or more.
+  const fallbackCueOf = (el) => {
     const className = (el.getAttribute('class') || '').toLowerCase()
-    const classed = className.includes('button') || className.includes('btn')
-    if (tag === 'label' && el.control && !el.control.disabled) return classed ? 'labelOrWeak' : 'label'
-    return classed ? 'weak' : null
+    if (className.includes('button') || className.includes('btn')) return 'weak'
+    const tabIndex = parseInt(el.getAttribute('tabindex'), 10)
+    return tabIndex >= 0 ? 'tabindex' : null
+  }
+  // The refs a click acts on whole (#380's click roles among them): a weak
+  // cue inside one is that ref's own icon or text.
+  const WHOLE_CLICK_SELECTOR = 'a[href], area[href], button, [role="button"], [role="link"], [role="checkbox"], [role="radio"], [role="switch"], [role="tab"], [role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"], [role="treeitem"], [role="option"]'
+  // ADR 0062's inert rule and the dialog layer, across open shadow roots:
+  // an element inside a shadow tree is inside its host's ancestors too.
+  const hostOf = (node) => {
+    const root = node.getRootNode()
+    return root instanceof ShadowRoot ? root.host : null
+  }
+  const insideInertDeep = (el) => {
+    for (let node = el; node !== null; node = hostOf(node)) if (insideInert(node)) return true
+    return false
+  }
+  const containsDeep = (root, el) => {
+    for (let node = el; node !== null; node = hostOf(node)) if (root.contains(node)) return true
+    return false
   }
   // Every candidate in document order, each open shadow root's right after
   // its host, as Vimium walks them: refs of every kind live in shadow roots.
@@ -349,6 +374,7 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
   }
   // The collect's Unmarked Controls: kinded as buttons, with no flag of their own.
   let unmarked = new WeakSet()
+  const MAX_COLLECTED = 400
   const collectElements = (dialogRoot) => {
     const shown = []
     for (const el of candidatesIn(document, [])) {
@@ -356,26 +382,24 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
       const marked = el.matches(SELECTOR)
       const cue = marked ? null : cueOf(el)
       if (!marked && cue === null) continue
-      if (insideInert(el)) continue
-      const dialog = dialogRoot !== null && dialogRoot.contains(el)
+      if (insideInertDeep(el)) continue
+      const dialog = dialogRoot !== null && containsDeep(dialogRoot, el)
       if (dialog ? !hasSize(el) : !rectVisible(el)) continue
       shown.push({ el, marked, cue, dialog })
     }
-    const isLabel = (entry) => entry.cue === 'label' || entry.cue === 'labelOrWeak'
-    const hinted = new Set(shown.filter((entry) => !isLabel(entry)).map((entry) => entry.el))
-    const hints = shown.filter((entry) => {
-      if (!isLabel(entry)) return true
-      if (!hinted.has(entry.el.control)) entry.cue = 'strong'
-      else if (entry.cue === 'labelOrWeak') entry.cue = 'weak'
-      else return false
-      return true
-    })
+    // A label is strong while its control gives no hint; else it falls back as any element does.
+    const hinted = new Set(shown.filter((entry) => entry.cue !== 'label').map((entry) => entry.el))
+    const hints = shown
+      .map((entry) => (entry.cue !== 'label' ? entry : { ...entry, cue: hinted.has(entry.el.control) ? fallbackCueOf(entry.el) : 'strong' }))
+      .filter((entry) => entry.marked || entry.cue !== null)
     const kept = hints.filter((entry, position) => {
+      if (entry.cue === 'tabindex') return false
       if (entry.cue !== 'weak') return true
       // Not Vimium's (measured on a YouTube watch page, 2026-10-21): a weak
-      // cue inside a marked ref is that ref's own icon or text — 24 of the 29
-      // controls Vimium's cues added there, each a second line for one button.
-      if (entry.el.parentElement !== null && entry.el.parentElement.closest(SELECTOR) !== null) return false
+      // cue inside a ref a click acts on whole is that ref's own icon or
+      // text — 24 of the 29 controls Vimium's cues added there, each a
+      // second line for one button.
+      if (entry.el.parentElement !== null && entry.el.parentElement.closest(WHOLE_CLICK_SELECTOR) !== null) return false
       for (let index = position + 1; index < hints.length && index <= position + 6; index++) {
         let node = hints[index].el
         for (let level = 0; level < 3; level++) {
@@ -389,8 +413,8 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
     // the 400 places first, and Unmarked Controls the room left, each where
     // it sits in document order.
     const ordered = kept.filter((entry) => entry.dialog).concat(kept.filter((entry) => !entry.dialog))
-    let room = 400 - ordered.filter((entry) => entry.marked).length
-    const taken = ordered.filter((entry) => entry.marked || room-- > 0).slice(0, 400)
+    let room = MAX_COLLECTED - ordered.filter((entry) => entry.marked).length
+    const taken = ordered.filter((entry) => entry.marked || room-- > 0).slice(0, MAX_COLLECTED)
     unmarked = new WeakSet(taken.filter((entry) => !entry.marked).map((entry) => entry.el))
     return taken.map((entry) => entry.el)
   }
@@ -560,7 +584,7 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
       formHasPayment: formFlags.formHasPayment,
       searchField: isSearchField(el),
       formHasSearch: formFlags.formHasSearch,
-      layer: dialogRoot !== null && dialogRoot.contains(el) ? 'dialog' : 'page',
+      layer: dialogRoot !== null && containsDeep(dialogRoot, el) ? 'dialog' : 'page',
       checked: typeof el.checked === 'boolean' ? el.checked : null,
       selectedOption: el.tagName === 'SELECT' && el.selectedOptions.length > 0
         ? textOf(el.selectedOptions[0]).slice(0, 160)

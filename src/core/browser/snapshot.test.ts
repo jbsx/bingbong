@@ -153,6 +153,13 @@ describe('refKindOf: an ARIA widget role kinds its ref (#380)', () => {
     expect(refKindOf(element({ tag: 'div', role }))).toBe('input')
   })
 
+  it('an anchor with no address and a button role is a button: an Unmarked Control <a onclick> (#381)', () => {
+    expect(refKindOf(element({ tag: 'a', role: 'button', href: null }))).toBe('button')
+    expect(refKindOf(element({ tag: 'a', role: 'button', href: 'https://example.com/' }))).toBe('link')
+    expect(refKindOf(element({ tag: 'a', role: null, href: null }))).toBe('link')
+    expect(refKindOf(element({ tag: 'a', role: null }))).toBe('link')
+  })
+
   it('a native text input stays an input whatever its role', () => {
     expect(refKindOf(element({ tag: 'input', role: 'combobox', inputType: 'text' }))).toBe('input')
     expect(refKindOf(element({ tag: 'input', role: null, inputType: 'search' }))).toBe('input')
