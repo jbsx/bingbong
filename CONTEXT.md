@@ -121,8 +121,34 @@ by its words at any time; the Timer next. A
 Capability Command fires the action, answers its line and ends the Task
 there. The words' own exact phrases ("loop", "pause") are still the
 grammar's first; plain English ("put the song on loop") is the Decision
-Model's, which chooses the Capability as it would a ref.
+Model's, which chooses the Capability as it would a ref. While any media
+ref is on the card the song's ops are withheld: the ref's own Media Ops
+are the one line for each (ADR 0080), and the layer's retirement is #374.
 _Avoid_: tool, skill, feature, affordance, intent
+
+**Media Op**:
+An action a media ref carries on the action card because of its kind, the
+way an input carries `type-N` and a link `open-N`: `play-N`, `pause-N`,
+`forward-N`, `back-N`, `restart-N`, `volume-N`, `mute-N`, `unmute-N`,
+`loop-N`, `unloop-N`, `rate-N`, and `captions-N`/`uncaptions-N` on an
+element with text tracks. Every op the element can take is offered
+whatever its state (mute on a muted element changes nothing); only what it
+cannot do is withheld (no seek on a stream with no seekable range). Each
+is one evaluate on that element, on any site. The ref's line carries its
+state — playing, paused or ended, elapsed/duration or live, volume or
+muted, loop, rate when not 1, captions, buffering, failed — and "Done so
+far" tells what an op changed. Several media refs each carry their own.
+_Avoid_: capability (for these), control, command (for the op itself)
+
+**Amount**:
+How far a seek moves when the Decision Model chooses one: a Choice on
+every Ask that offers a media ref, read only when the action is a seek —
+`words` (the number the words carry, seconds or minutes as they say),
+`moment` (a hundredth of the duration), `little` (a twentieth), `chunk` (a
+tenth), `lot` (a quarter), `half`, `end` (the start, going back). No
+product's step in seconds; a live stream's fractions are of its seekable
+window. The record keeps the rung.
+_Avoid_: default, step size, offset
 
 **Menu**:
 The browser verb that opens a ref's right-click menu to see what it
@@ -173,13 +199,27 @@ a pop-up it named that is gone "covered it, and closed".
 The same Jev call as the Command's reading: no round trip is added.
 _Avoid_: check, verification, judge, confirmation
 
+**Progress**:
+The Noul every Hop past the first carries beside its Verdict, on the same
+call: did the last action bring the page closer to what the words ask,
+judged by "Done so far" and the page now. It never ends a Task — the
+Verdict does — and it only speaks when sure the action did not help: at or
+under 0.3, the mirror of the Choice bar, the action is Set Aside; between
+0.3 and 0.7 nothing happens, so an intermediate step (open the menu, then
+click the item) is not punished. Two such Hops in a row end the Task
+unsure, the shape of two unchanged Hops, on one counter. The record and
+the hop event keep the probability (the progress bar, #375).
+_Avoid_: score, reward, confidence (for this), verification
+
 **Set Aside**:
-A target a Hop acted on that changed nothing: no navigation, and the click's
-own verdict "no observable change". It is known by its label and its address
-(the link's own, or the page's for a control with none), never by its ref
-number, which changes between Hops, and it is not offered again in that Task.
-The target whose action raised a pop-up over a clear page is set aside too,
-as the Task steps past that pop-up.
+An action a Hop fired that changed nothing — no navigation, and the click's
+own verdict "no observable change" — or that the Progress Noul is sure did
+not help. It is known by its card label (`click-10`, `forward-7`, `loop`):
+a ref by its label and its address (the link's own, or the page's for a
+control with none), never by its ref number, which changes between Hops;
+an op or a ref-less verb by its name. It is not offered again in that
+Task. The target whose action raised a pop-up over a clear page is set
+aside too, as the Task steps past that pop-up.
 _Avoid_: excluded, blacklisted, retried
 
 **Step Aside**:

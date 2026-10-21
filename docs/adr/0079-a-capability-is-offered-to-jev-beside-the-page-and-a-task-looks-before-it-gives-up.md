@@ -48,7 +48,10 @@ the Player's op, answers the Player's line ("Looping."), and ends the Task
 there: no hop, no Verdict. The option text says the page's button is
 meant when the words say click, press or tap; Jev decides, no hard rule.
 The exact phrases still settle in the grammar first and are the only
-reading when Jev is unavailable.
+reading when Jev is unavailable. (Narrowed by ADR 0080, 2026-10-21: a
+media element's ops come from its ref, on any site, and the song's
+Capabilities are withheld while a media ref is on the card; the layer's
+retirement is #374.)
 
 **The grammar settles only exact whole lines and numbered refs.** Every
 line with free words goes to Jev with the full option set — `play
