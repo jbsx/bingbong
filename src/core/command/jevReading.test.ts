@@ -950,9 +950,6 @@ describe('a sure target outvotes an unsure ref-less verb (#367, ADR 0076 amendme
   it('at a later hop the target is the ref the hop offers, never a fallback\'s', () => {
     const hop: HopContext = { hop: 1, visited: [WATCH.url], actions: ['click "Subtitles/closed captions (c)"'], links: [] }
     expect(read(choice('show', 0.59), choice('ref-12', 0.76), 'enable captions', choice('none'), hop)).toEqual({ verb: 'click', target: 12, slot: null })
-    // A sure Verdict that the Task is done is not outvoted: clicking the toggle the last hop flipped would undo it.
-    expect(readCommandAnswers({ verb: choice('done', 0.4), target: choice('ref-12', 0.9), slot: choice('none'), outcome: choice('yes', 0.8) }, 'enable captions', WATCH, hop)).toEqual({ verb: 'done', target: null, slot: null })
-    expect(readCommandAnswers({ verb: choice('done', 0.4), target: choice('ref-12', 0.9), slot: choice('none'), outcome: choice('yes', 0.6) }, 'enable captions', WATCH, hop)).toEqual({ verb: 'click', target: 12, slot: null })
     // A ref set aside is not offered: the sure answer names nothing, and the verb stands.
     const aside: HopContext = { ...hop, setAside: [{ label: 'Subtitles/closed captions (c)', address: 'https://youtube.com/watch?v=abc' }] }
     expect(read(choice('done', 0.4), choice('ref-12', 0.9), 'enable captions', choice('none'), aside)).toEqual({ verb: 'done', target: null, slot: null })

@@ -89,7 +89,8 @@ _Avoid_: cancel word, stop head
 **Task**:
 What an Utterance becomes on this branch: one or more Commands the shell
 fires on its own reading, without the user speaking between them, until the
-Decision Model reads the page as what was asked for. The first Command is
+Decision Model reads the page as what was asked for: a sure yes Verdict
+past the first Command ends it, whatever the verb. The first Command is
 read as any Command is; a Task goes on after a Command the Decision Model
 read and ends after one the Local Match settled, since the grammar and exact
 labels are whole by construction and plain English is where "and then"
@@ -156,7 +157,8 @@ _Avoid_: step, round, turn, continuation
 The fourth answer every Hop carries beside its Command: is this page what
 the user asked for — yes, something is in the way of it (a sign-in prompt, a
 pop-up, a cookie notice, a challenge), or not yet. An end is a Verdict,
-never a verb's plurality: a Task ends `done` only on a sure yes; a sure "in
+never a verb's plurality: a Task ends `done` only on a sure yes, and a sure
+yes at a Hop past the first ends it before any verb fires; a sure "in
 the way" over a pop-up the Task has not met is a Step Aside, and otherwise a
 wall, its line spoken ("A pop-up is in the way."), unless the
 Command acts on the pop-up itself, which fires; a reading with no next step

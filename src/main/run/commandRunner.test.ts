@@ -1805,6 +1805,35 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
       expect(decisions(records)[1]!.jev).toMatchObject({ confidence: { outcome: 0.9 }, probabilities: { outcome: { yes: 0.9 } } })
     })
 
+    describe('a sure yes ends the Task before any verb fires (#369)', () => {
+      it('AC1: click with a sure yes at hop 1 fires nothing and ends done, its record says so', async () => {
+        const { browser, events, records, decision, runner } = taskHarness()
+        decision.script.push(answer('search', 'none', 's3-6'), withOutcome(answer('click', 'ref-2'), 'yes'))
+        await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
+        expect(browser.clicks).toEqual([])
+        expect(browser.navigations).toEqual([SEARCH])
+        expect(failures(events)).toEqual([])
+        expect(commands(events)[1]).toMatchObject({ action: 'done', dropped: true, task: { hop: 1 } })
+        expect(decisions(records).map((record) => record.ended)).toEqual([undefined, 'done'])
+      })
+
+      it('AC2: a yes under the bar leaves the verb to decide: the click fires', async () => {
+        const { browser, decision, runner } = taskHarness()
+        decision.script.push(answer('search', 'none', 's3-6'), withOutcome(answer('click', 'ref-2'), 'yes', 0.69), withOutcome(answer('done'), 'yes'))
+        await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
+        expect(browser.clicks).toEqual([2])
+      })
+
+      it('AC4: hop 0 has no Verdict: an outcome there leaves the click to fire', async () => {
+        const { browser, decision, runner } = taskHarness(POST)
+        browser.snapshot = { ...browser.snapshot, refs: POST_REFS }
+        decision.script.push(withOutcome(answer('click', 'ref-2'), 'yes'), withOutcome(answer('done'), 'yes'))
+        await runner.run('show me the post', { source: 'spoken' })
+        expect(browser.clicks).toEqual([2])
+        expect(decision.requests[0]!.questions).not.toHaveProperty('outcome')
+      })
+    })
+
     it('done with a yes below the bar ends unsure and says so', async () => {
       const { events, records, decision, runner } = taskHarness()
       decision.script.push(answer('search', 'none', 's3-6'), withOutcome(answer('done'), 'yes', 0.4))
@@ -1944,6 +1973,19 @@ describe('a Task: one Utterance, one or more Commands (#328, ADR 0076 amendment)
           expect(decision.requests[3]!.state).toContain('A dialog is open')
           // Watched once: three polls before the sheet, none after the second yes.
           expect(sleeps).toHaveLength(3)
+          expect(failures(events)).toEqual([])
+          expect(decisions(records).map((record) => record.ended)).toEqual([undefined, undefined, undefined, undefined, 'done'])
+        })
+
+        it('a sure yes over a click verb watches as a done does: the sheet is read again and stepped past, the click never fires (#369 AC3)', async () => {
+          const h = taskHarness()
+          const { browser, events, records, decision, runner } = h
+          lateSheet(h, 3)
+          closing(h, POST_REFS)
+          decision.script.push(answer('search', 'none', 's3-6'), answer('click', 'link-1'), withOutcome(answer('click', 'ref-2'), 'yes'), withOutcome(answer('click', 'ref-3'), 'in_the_way', 0.85), withOutcome(answer('click', 'ref-2'), 'yes'))
+          await runner.run('pull up the latest elon musk tweet', { source: 'spoken' })
+          expect(browser.clicks).toEqual([1])
+          expect(commands(events).map((event) => event.action)).toEqual([`search latest elon musk tweet`, `navigate ${POST}`, 'a pop-up opened: read again', 'click [1] "Close"', 'done'])
           expect(failures(events)).toEqual([])
           expect(decisions(records).map((record) => record.ended)).toEqual([undefined, undefined, undefined, undefined, 'done'])
         })

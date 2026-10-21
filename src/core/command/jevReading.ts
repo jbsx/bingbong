@@ -888,18 +888,16 @@ function capabilityCommand(capability: Capability, slot: DecisionChoiceAnswer, t
  * page element in them, the target Choice is the one that sees the page, so
  * a target at the Choice bar outvotes a verb under it — any ref-less verb,
  * `done` and `none` among them, and any Capability. A sure verb, a verb that
- * takes a ref, and a target under the bar are left as they were; so is a
- * hop whose Verdict is a sure `yes`, which a click on the toggle the last
- * hop flipped would undo. Only the ref the target tops with stands, among
- * the refs the hop offers — never a fallback's.
+ * takes a ref, and a target under the bar are left as they were (a hop's
+ * sure `yes` ends the Task before any verb fires, #369). Only the ref the
+ * target tops with stands, among the refs the hop offers — never a
+ * fallback's.
  */
 function sureTargetOf(answers: CommandAnswers | HopAnswers, pageRead: CommandPage, hop: HopContext | undefined): CommandRef | null {
   const bar = DEFAULT_DECISION_THRESHOLDS.choice
   const { verb, target } = answers
   if (verb.confidence >= bar || target.confidence < bar) return null
   if (!isCapability(verb.choice) && verbTakesTarget(verb.choice as CommandVerb)) return null
-  const verdict = readVerdict(answers)
-  if (verdict !== null && verdict.outcome === 'yes' && verdict.confidence >= bar) return null
   const { page } = offered(pageRead, hop)
   const ref = offeredRef(target.choice, page)
   return ref === null ? null : (page.refs.find((candidate) => candidate.ref === ref) ?? null)

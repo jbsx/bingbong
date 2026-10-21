@@ -1564,12 +1564,14 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       }
       // The Verdict decides the end (ADR 0076): a sure "in the way" is a
       // wall unless the action is on the pop-up itself, or is a Capability,
-      // which never touches the page (ADR 0079); a reading with no
-      // next step ends done on a sure yes and unsure otherwise, said so.
+      // which never touches the page (ADR 0079); a sure yes ends the Task
+      // done whatever the verb, before it fires (#369), and a reading with
+      // no next step ends done on a sure yes and unsure otherwise, said so.
       // Either end is read against the page as it is now: a page that moved
       // under the reading is read again, once.
       const verdict = readVerdict(result.answers)
-      const noNextStep = command.verb === 'done' || command.verb === 'none'
+      const sureYes = sure(verdict) && verdict.outcome === 'yes'
+      const noNextStep = sureYes || command.verb === 'done' || command.verb === 'none'
       const inTheWay = sure(verdict) && verdict.outcome === 'in_the_way' && !actsOnDialog(command, page) && command.verb !== 'play'
       if ((inTheWay || noNextStep) && !task.rechecked && (await pageMoved(page))) {
         if (superseded(task)) {
@@ -1617,7 +1619,7 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
         return endTask(task, 'wall', hop + 1)
       }
       if (noNextStep) {
-        const ended: TaskEnded = sure(verdict) && verdict.outcome === 'yes' ? 'done' : 'unsure'
+        const ended: TaskEnded = sureYes ? 'done' : 'unsure'
         if (ended === 'done' && page.dialog === undefined && task.watched !== true) {
           // The page reached may raise a pop-up after it was read clear (2026-10-19 23:42 run): watched once before the Task ends, and one that opens is read again, so the Step Aside closes it.
           task.watched = true

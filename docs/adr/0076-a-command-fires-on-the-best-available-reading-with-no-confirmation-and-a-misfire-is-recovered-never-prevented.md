@@ -1195,6 +1195,9 @@ names there is often the toggle the last hop flipped, and clicking it again
 undoes the Task (hop 1 of the 22:58 run, whose corpus case expects `yes`).
 This is no Verdict-before-verb precedence, which stays deferred to #366's
 data: a reading the rule does not touch reads as before.
+(Superseded by the #369 amendment below: a sure `yes` at a later hop now
+ends the Task before any verb fires, so the reading no longer stands
+aside for it.)
 
 ### Consequences
 
@@ -1207,3 +1210,34 @@ data: a reading the rule does not touch reads as before.
   `show` at 0.69 to 0.76 on replay, straddling the bar, so its case fails
   about half the time: the rule as decided does not reach a `show` that
   comes back sure.
+
+## Amendment 2026-10-21 — a sure yes ends the Task before any verb fires (#369)
+
+#366 made "Done so far" tell what the last action did to its target, and
+its live run (AC8, 2026-10-21) showed the Verdict right and sure: `yes`
+read 0.87 to 0.99 at the hops where the target changed the way the words
+asked, and 0.01 to 0.09 where it changed the other way. The Task still
+fired. The runner heard the Verdict only when the verb read `done` or
+`none`. In three of the four sure-yes hops the verb read `click`, and the
+click re-toggled what the user had asked to open: the "Code" menu on the
+Electron repository shut twice, and the Task ended at the cap.
+
+### Decision
+
+**A Task also ends on a sure `yes` Verdict at any hop past the first,
+whatever the verb.** "Sure" is the Choice bar (0.7). The end is the one a
+`done` verb takes: a page that moved under the reading is read again
+once, and a pop-up that opens within the late pop-up watch is read again
+and stepped past, not ended on. A sure `in_the_way` keeps Step Aside.
+`not_yet`, or a Verdict under the bar, leaves the verb to decide as
+before. Hop 0 carries no Verdict and is unchanged. The rule is mechanical:
+no verb, site or element in it.
+
+### Consequences
+
+- The decision record of the ending hop keeps the verb Jev read and says
+  `ended: done`; the Feed shows `done`.
+- The #367 reading's sure-yes guard is gone: no sure-yes hop reaches the
+  verb.
+- A no-repeat guard, a mechanical done on an expected Ref State change and
+  the joint action Choice stay deferred. Each matters only under the bar.
