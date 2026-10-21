@@ -1,0 +1,10 @@
+{
+  "turnId": "turn-mvihv054-1",
+  "transcript": "decline the cookies",
+  "at": 1792610253955,
+  "source": "typed",
+  "stage": "runner",
+  "happened": "On w3schools' tryit, 'decline the cookies' clicked the framed wall's Decline (hop 0, 1.00) and the wall did clear, but hop 1 collected while its sheet was still closing: the Verdict read in_the_way 0.98, Step Aside clicked Decline again ('not shown: inside a hidden or inert container') and the Task ended 'wall'",
+  "meant": "The Task ends done once the wall's Decline has closed it; a hop after a click on a dialog control reads the page once the sheet has left, as a consent dismissal already waits for (awaitDialogGone)",
+  "log": "decision-1792610233419-1.jsonl"
+}
