@@ -1,0 +1,79 @@
+{
+  "turnId": "cli-6-mviqmpbk",
+  "transcript": "click the cog wheel",
+  "model": "jev-1.14.0",
+  "recordedAt": 1792624983350,
+  "expect": [
+    {
+      "question": "action",
+      "label": "click-6"
+    }
+  ],
+  "ask": {
+    "state": "The user spoke to a web browser: \"click the cog wheel\"\nPage: http://127.0.0.1:8765/plain.html — \"Notes\"\nRefs (number, kind, label, address, states):\n[1] link \"Inbox\" http://127.0.0.1:8765/plain.html#a\n[2] link \"Archive\" http://127.0.0.1:8765/plain.html#b\n[3] link \"Help\" http://127.0.0.1:8765/plain.html#c\n[4] button, the control marked 4\n[5] button, the control marked 5\n[6] button, the control marked 6\nThe page now, each control with no words boxed in red with its number: <marks>",
+    "questions": {
+      "action": {
+        "type": "choice",
+        "instructions": "Which one action does the browser take for the user's words? A control with no words is found by its number on the image. Each option is a whole action: a numbered ref with what is done to it, or a verb that needs no ref. Choose none when the words are not a command.",
+        "options": {
+          "click-1": "click [1] link \"Inbox\" http://127.0.0.1:8765/plain.html#a",
+          "click-2": "click [2] link \"Archive\" http://127.0.0.1:8765/plain.html#b",
+          "click-3": "click [3] link \"Help\" http://127.0.0.1:8765/plain.html#c",
+          "click-4": "click [4] button, the control marked 4",
+          "click-5": "click [5] button, the control marked 5",
+          "click-6": "click [6] button, the control marked 6",
+          "menu-1": "right-click [1] to open its menu",
+          "menu-2": "right-click [2] to open its menu",
+          "menu-3": "right-click [3] to open its menu",
+          "menu-4": "right-click [4] to open its menu",
+          "menu-5": "right-click [5] to open its menu",
+          "menu-6": "right-click [6] to open its menu",
+          "navigate": "go to a web address the words name: a website, a host or a url",
+          "search": "search for the words: on the web, or on this site when they point at something on it",
+          "scroll_up": "scroll the page up",
+          "scroll_down": "scroll the page down",
+          "back": "go back to the previous page",
+          "forward": "go forward",
+          "reload": "reload the page",
+          "press": "press a key: enter, escape, space or an arrow key",
+          "read": "read the page aloud or show its contents",
+          "clear": "clear the text in the focused field",
+          "stop": "stop what the browser is doing",
+          "none": "not a command for this page: a remark, a question, a name, noise",
+          "play": "music: find a song or video by the words and play it now, on YouTube or on this site as the words point — never the page's play button, which is a click",
+          "play_next": "music: find a song by the words and play it after the one playing",
+          "queue": "music: find a song by the words and add it to the end of the queue"
+        }
+      },
+      "slot": {
+        "type": "choice",
+        "instructions": "Which words of the transcript are the thing the command carries verbatim: the address to open, the search terms, the song to play, the text to type, the key to press? Never the command word itself: \"play X\" carries X. Choose none when it carries none.",
+        "options": {
+          "none": "the command carries no words of its own",
+          "s0-0": "click",
+          "s0-1": "click the",
+          "s0-2": "click the cog",
+          "s0-3": "click the cog wheel",
+          "s1-1": "the",
+          "s1-2": "the cog",
+          "s1-3": "the cog wheel",
+          "s2-2": "cog",
+          "s2-3": "cog wheel",
+          "s3-3": "wheel"
+        }
+      },
+      "where": {
+        "type": "choice",
+        "instructions": "Where do the words point: at something on this page, at something on 127.0.0.1 that is not on this page, or somewhere else on the web?",
+        "options": {
+          "page": "on this page: one of the numbered refs",
+          "site": "on 127.0.0.1 but not on this page: a page, a person, a post, a section of it",
+          "web": "elsewhere: another website, or a search of the whole web"
+        }
+      }
+    },
+    "images": {
+      "<marks>": "cli-6-mviqmpbk-mark.jpg"
+    }
+  }
+}

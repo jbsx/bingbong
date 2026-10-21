@@ -1,0 +1,10 @@
+{
+  "turnId": "cli-6-mviqcayg",
+  "transcript": "click the cog wheel",
+  "at": 1792624498000,
+  "source": "typed",
+  "stage": "reading",
+  "happened": "hop 0 clicked [4], the heart, at 0.20: text ran dry on three textless icons, but Jev guessed instead of reading none, so no Mark Ask was made",
+  "meant": "click [6], the gear; the Mark Ask chose click-6 at 0.92 (case cli-6-mviqmpbk-mark)",
+  "log": "decision-1792624433583-1.jsonl"
+}

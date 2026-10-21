@@ -132,6 +132,20 @@ describe('createAuthPopupDirector', () => {
     expect(popup.screenshotOptions).toEqual([options])
   })
 
+  it("forwards the Mark Ask's capture to whichever page it routes to, and answers none where that page makes none (#382)", async () => {
+    const { pane, popup, director, openPopup } = harness()
+    const routed = director.route(pane)
+    const shot = { jpeg: new Uint8Array([1]), marks: [] }
+    Object.assign(pane, { markedScreenshot: async (refs: readonly number[]) => (pane.calls.push(`marked ${refs.join(',')}`), shot) })
+
+    expect(await routed.markedScreenshot?.([4, 6])).toBe(shot)
+    await openPopup('https://accounts.google.com/signin')
+    expect(await routed.markedScreenshot?.([2])).toBeNull()
+
+    expect(pane.calls).toEqual(['marked 4,6'])
+    expect(popup.calls).toEqual([])
+  })
+
   it('restores the pane when the popup closes', async () => {
     const { pane, popup, director, openPopup, popups } = harness()
     const routed = director.route(pane)

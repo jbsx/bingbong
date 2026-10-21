@@ -99,6 +99,18 @@ describe('withAgentActivity', () => {
     expect(browser.screenshotRequests).toEqual([options])
   })
 
+  it("forwards the Mark Ask's capture, untracked, and leaves it absent where the controller makes none (#382)", async () => {
+    const browser = new FakeBrowser()
+    const shot = { jpeg: new Uint8Array([1]), marks: [] }
+    browser.markedScreenshot = async () => shot
+    const { tracker } = trackerWithClock()
+    const tracked = withAgentActivity(browser, tracker)
+
+    expect(await tracked.markedScreenshot?.([4])).toBe(shot)
+    expect(tracker.isActive()).toBe(false)
+    expect(withAgentActivity(new FakeBrowser(), tracker).markedScreenshot).toBeUndefined()
+  })
+
   it('keeps the controller surface intact', () => {
     const tracked = withAgentActivity(new FakeBrowser(), trackerWithClock().tracker)
     const verbs: Array<keyof (BrowserController & VisualGroundingController)> = [
