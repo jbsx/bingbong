@@ -1,0 +1,11 @@
+{
+  "turnId": "cli-5-mviffymw",
+  "transcript": "stop",
+  "at": 1792606192665,
+  "source": "typed",
+  "stage": "player",
+  "happened": "'Nothing to stop.' while the embed played on w3schools' YouTube autoplay tryit (the result frame, script-written, holds a cross-origin youtube.com/embed iframe playing muted): the idle stop pauses the top document's media only",
+  "meant": "pause the playing embedded video",
+  "log": "decision-1792606145190-1.jsonl",
+  "claimedBy": "#377"
+}

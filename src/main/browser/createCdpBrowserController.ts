@@ -627,7 +627,10 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
   }
 
   async function collectSnapshot(): Promise<PageSnapshot> {
+    const start = subspans?.now()
     const snapshot = buildPageSnapshot(await withRefStates(parseCollectedPage(await evaluateInPage<unknown>(collectScript))))
+    // Every collect, timed (#377): what the frames' fan-out costs is read off these.
+    if (subspans !== undefined && start !== undefined) subspans.emit('browser-collect', subspans.now() - start, { refs: snapshot.refs.length })
     visualPoints.clear()
     lastSnapshot = snapshot
     return snapshot

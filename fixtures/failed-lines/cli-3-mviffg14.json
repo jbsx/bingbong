@@ -1,0 +1,11 @@
+{
+  "turnId": "cli-3-mviffg14",
+  "transcript": "skip ahead 30 seconds",
+  "at": 1792606169001,
+  "source": "typed",
+  "stage": "missing_option",
+  "happened": "not a command: Jev read none on w3schools' YouTube autoplay tryit (the result frame, script-written, holds a cross-origin youtube.com/embed iframe playing muted) — no media ref, so no forward-N op to seek",
+  "meant": "seek the embedded YouTube video forward 30 s",
+  "log": "decision-1792606145190-1.jsonl",
+  "claimedBy": "#377"
+}

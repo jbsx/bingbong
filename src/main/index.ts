@@ -429,6 +429,7 @@ async function createWindow(): Promise<BrowserWindow> {
     },
     now: systemClock.now,
     tracer: perfTracer,
+    subspans: browserSubspans,
     decisionLog,
     askLog,
     onEffect: (listener) => {

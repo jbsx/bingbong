@@ -5,6 +5,7 @@ import type { PipelineEvent } from '../../core/pipeline/events'
 import type { CommandRunState } from '../../core/pipeline/runState'
 import type { PageLink, PageSnapshot } from '../../core/browser/snapshot'
 import type { PerfTracer } from '../../core/perf/perfTracer'
+import type { BrowserSubspans } from '../../core/perf/browserSubspans'
 import { PRESS_KEYS, commandPageOf, describeCommand, isMounting, targetLabel, commandKeepsIdle, verbNeedsPage, type Command, type CommandPage } from '../../core/command/command'
 import { dismissalLadder, isDismissPhrase, obstacleOf, ruledDismissal, type DismissChoice } from '../../core/command/dismissDialog'
 import { COMMAND_HELP } from '../../core/command/help'
@@ -195,6 +196,8 @@ export interface CommandRunnerDeps {
   now(): number
   /** The perf tracer: turn ids, the monotonic clock the Reaction is measured on, the `reaction` span. Absent keeps the runner unmeasured. */
   tracer?: PerfTracer
+  /** The browser sub-span channel (#32): each Command's browser work is its turn's, so the controller's sub-spans land against it (#377). Absent, none are opened. */
+  subspans?: Pick<BrowserSubspans, 'runInTurn'>
   /** The decision log beside the perf log; absent writes nothing. */
   decisionLog?: { write(record: CommandLogRecord): void }
   /** The asks sidecar beside it (#338): every Jev call's whole ask; absent writes nothing. */
@@ -2145,13 +2148,16 @@ export function createCommandRunner(deps: CommandRunnerDeps): CommandRunner {
       const pending = prepared
       prepared = null
 
-      const heard = await read(turnId, trimmed, pending, source === 'spoken')
-      if (reading !== null && reading.submission === submission) reading = null
-      if (source === 'spoken') observeTerms(trimmed)
-      const line: Line = { text: trimmed, source, endpointAt, truncated, submission, givenAt }
-      const extra = { ...(calls > 0 ? { partialCalls: calls } : {}), ...(callAsks.length > 0 ? { partialAsks: callAsks } : {}) }
-      if (heard.steps !== undefined && submission === submitted) await runSteps(line, turnId, heard, heard.steps, pending, extra)
-      else await runStep(line, turnId, trimmed, heard, extra, { measured: true })
+      const perform = async (): Promise<void> => {
+        const heard = await read(turnId, trimmed, pending, source === 'spoken')
+        if (reading !== null && reading.submission === submission) reading = null
+        if (source === 'spoken') observeTerms(trimmed)
+        const line: Line = { text: trimmed, source, endpointAt, truncated, submission, givenAt }
+        const extra = { ...(calls > 0 ? { partialCalls: calls } : {}), ...(callAsks.length > 0 ? { partialAsks: callAsks } : {}) }
+        if (heard.steps !== undefined && submission === submitted) await runSteps(line, turnId, heard, heard.steps, pending, extra)
+        else await runStep(line, turnId, trimmed, heard, extra, { measured: true })
+      }
+      await (deps.subspans?.runInTurn(turnId, perform) ?? perform())
       return true
     },
   }
