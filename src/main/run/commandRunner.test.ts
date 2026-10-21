@@ -532,13 +532,13 @@ describe('the Player (#343)', () => {
     expect(displays(events).at(-1)).toBe('Stopped.')
   })
 
-  it('a `skip` with nothing queued pauses YouTube\'s player alone, the page\'s other media playing on (#376, ADR 0076)', async () => {
+  it('a `skip` with nothing queued pauses nothing — the song and the page\'s other media play on (#376, ADR 0076, 2026-10-21 audit)', async () => {
     const { events, youtube, runner } = music()
     await runner.run('play bohemian rhapsody')
     youtube.pageMedia = [{ paused: false }]
     await runner.run('skip')
     expect(displays(events).at(-1)).toBe('Nothing queued.')
-    expect(youtube.element.paused).toBe(true)
+    expect(youtube.element.paused).toBe(false)
     expect(youtube.pageMedia).toEqual([{ paused: false }])
     expect(youtube.pauseAlls).toBe(0)
   })
