@@ -21,7 +21,7 @@ describe('voiceHint', () => {
   it('names the wake phrase and the hotkey while only the wake word listens', () => {
     expect(voiceHint({ ...quiet, monitoring: true })).toEqual({
       kind: 'monitoring',
-      text: 'say “bing bong” or press Ctrl+Space',
+      text: 'say “Bing Bong” or press Ctrl+Space',
     })
   })
 

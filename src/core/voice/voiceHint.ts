@@ -23,6 +23,6 @@ export function voiceHint(voice: VoiceHintInput, options: { promptShown?: boolea
   if (voice.listening) {
     return { kind: 'listening', text: voice.partial !== '' ? `“${voice.partial}…”` : 'say a command' }
   }
-  if (voice.monitoring) return { kind: 'monitoring', text: 'say “bing bong” or press Ctrl+Space' }
+  if (voice.monitoring) return { kind: 'monitoring', text: 'say “Bing Bong” or press Ctrl+Space' }
   return null
 }
