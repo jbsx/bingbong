@@ -153,6 +153,8 @@ export interface CollectedPage {
   media?: PageMedia | null
   /** A frame's own slot in its parent's `window.frames` (#377); -1 or absent for the top document. */
   frameIndex?: number
+  /** The document's origin (#377): a script-written frame's is its parent's, where its address is only `about:blank`. */
+  origin?: string
 }
 
 export type RefKind = 'link' | 'button' | 'input' | 'media' | 'iframe'
@@ -449,6 +451,7 @@ export function parseCollectedPage(raw: unknown): CollectedPage {
     elements,
     media: parseMedia(candidate.media),
     ...(isFiniteNumber(candidate.frameIndex) ? { frameIndex: candidate.frameIndex } : {}),
+    ...(typeof candidate.origin === 'string' ? { origin: candidate.origin } : {}),
   }
 }
 

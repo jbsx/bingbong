@@ -39,6 +39,15 @@ describe('mergeFrames (#377, ADR 0081)', () => {
     ])
   })
 
+  it("names a script-written frame by the origin it inherited, never by about:blank", () => {
+    const top = page('https://www.w3schools.com/tryit', [iframe(0, { x: 0, y: 0 }, { layer: 'dialog' })])
+    const wall = { ...frame('cmp', null, 0, 'about:blank', [element('button', 'Decline', { x: 0, y: 0 })]), page: { ...page('about:blank', [element('button', 'Decline', { x: 0, y: 0 })]), frameIndex: 0, origin: 'https://www.w3schools.com' } }
+    const sandboxed = { ...frame('ad', null, 0, 'about:srcdoc', []), page: { ...page('about:srcdoc', [element('a', 'Ad', { x: 0, y: 0 })]), frameIndex: 0, origin: 'null' } }
+
+    expect(mergeFrames(top, [wall]).page.elements[0]?.frameHost).toBe('w3schools.com')
+    expect(mergeFrames(top, [sandboxed]).page.elements[0]?.frameHost).toBe('about:srcdoc')
+  })
+
   it('sums every ancestor iframe’s content-box origin for a frame at any depth, each frame paired by its own slot', () => {
     // The page's second iframe was created first: frames[0] is the one later in the DOM.
     const top = page('https://course.example/', [iframe(1, { x: 0, y: 0, width: 50, height: 50 }), iframe(0, { x: 100, y: 100 })])

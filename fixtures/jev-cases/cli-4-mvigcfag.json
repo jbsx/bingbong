@@ -1,0 +1,107 @@
+{
+  "turnId": "cli-4-mvigcfag",
+  "transcript": "pause the video",
+  "model": "jev-1.14.0",
+  "recordedAt": 1792607707250,
+  "expect": [
+    {
+      "question": "action",
+      "label": "pause-10"
+    }
+  ],
+  "ask": {
+    "state": "The user spoke to a web browser: \"pause the video\"\nPage: https://www.w3schools.com/html/tryit.asp?filename=tryhtml_youtubeiframe_autoplay — \"W3Schools Tryit Editor\"\nRefs (number, kind, label, address, states):\n[1] link \"w3schools.com Home\" https://www.w3schools.com/\n[2] link \"Open Menu\" javascript:void(0);\n[3] link \"Save code\" javascript:void(0);\n[4] link \"Change Orientation\" javascript:void(0);\n[5] link \"Change Theme\" javascript:void(0);\n[6] button \"Run ❯\"\n[7] link \"Get your website\" https://www.w3schools.com/spaces/\n[8] link \"\" javascript:void(0)\n[9] input \"\" multiline=true\n[10] media \"\" in youtube.com playing 0:23/4:46 muted loop off\n[11] button \"Show player controls\" in youtube.com",
+    "questions": {
+      "action": {
+        "type": "choice",
+        "instructions": "Which one action does the browser take for the user's words? Each option is a whole action: a numbered ref with what is done to it, or a verb that needs no ref. Choose none when the words are not a command. When the words say click, press or tap — \"click play\" — they name a button on the page: choose its click, never an op on the video or audio itself.",
+        "options": {
+          "click-1": "click [1] link \"w3schools.com Home\" https://www.w3schools.com/",
+          "click-2": "click [2] link \"Open Menu\" javascript:void(0);",
+          "click-3": "click [3] link \"Save code\" javascript:void(0);",
+          "click-4": "click [4] link \"Change Orientation\" javascript:void(0);",
+          "click-5": "click [5] link \"Change Theme\" javascript:void(0);",
+          "click-6": "click [6] button \"Run ❯\"",
+          "click-7": "click [7] link \"Get your website\" https://www.w3schools.com/spaces/",
+          "click-8": "click [8] link \"\" javascript:void(0)",
+          "type-9": "type the words into [9] input \"\" multiline=true",
+          "click-9": "click [9] input \"\" multiline=true",
+          "click-10": "click [10] media \"\" in youtube.com playing 0:23/4:46 muted loop off",
+          "click-11": "click [11] button \"Show player controls\" in youtube.com",
+          "play-10": "play [10] \"\": start it, or carry on playing it",
+          "pause-10": "pause [10] \"\"",
+          "forward-10": "go forward in [10] \"\" by a length of time, the amount Choice saying how far",
+          "back-10": "go back in [10] \"\" by a length of time, the amount Choice saying how far",
+          "restart-10": "play [10] \"\" again from the start",
+          "volume-10": "set the volume of [10] \"\": to the number the words carry (0 to 100), or up or down as they say",
+          "mute-10": "mute [10] \"\"",
+          "unmute-10": "unmute [10] \"\"",
+          "loop-10": "put [10] \"\" on loop, so it repeats",
+          "unloop-10": "stop looping [10] \"\"",
+          "rate-10": "set the playback speed of [10] \"\": to the number the words carry (1 is normal), or faster or slower as they say",
+          "menu-1": "right-click [1] to open its menu",
+          "menu-2": "right-click [2] to open its menu",
+          "menu-3": "right-click [3] to open its menu",
+          "menu-4": "right-click [4] to open its menu",
+          "menu-5": "right-click [5] to open its menu",
+          "menu-6": "right-click [6] to open its menu",
+          "menu-7": "right-click [7] to open its menu",
+          "menu-8": "right-click [8] to open its menu",
+          "menu-9": "right-click [9] to open its menu",
+          "menu-10": "right-click [10] to open its menu",
+          "menu-11": "right-click [11] to open its menu",
+          "navigate": "go to a web address the words name: a website, a host or a url",
+          "search": "search for the words: on the web, or on this site when they point at something on it",
+          "scroll_up": "scroll the page up",
+          "scroll_down": "scroll the page down",
+          "back": "go back to the previous page",
+          "forward": "go forward",
+          "reload": "reload the page",
+          "press": "press a key: enter, escape, space or an arrow key",
+          "read": "read the page aloud or show its contents",
+          "clear": "clear the text in the focused field",
+          "stop": "stop what the browser is doing",
+          "none": "not a command for this page: a remark, a question, a name, noise",
+          "play": "music: find a song or video by the words and play it now, on YouTube or on this site as the words point — never the page's play button, which is a click",
+          "play_next": "music: find a song by the words and play it after the one playing",
+          "queue": "music: find a song by the words and add it to the end of the queue"
+        }
+      },
+      "slot": {
+        "type": "choice",
+        "instructions": "Which words of the transcript are the thing the command carries verbatim: the address to open, the search terms, the song to play, the text to type, the key to press? Never the command word itself: \"play X\" carries X. Choose none when it carries none.",
+        "options": {
+          "none": "the command carries no words of its own",
+          "s0-0": "pause",
+          "s0-1": "pause the",
+          "s0-2": "pause the video",
+          "s1-1": "the",
+          "s1-2": "the video",
+          "s2-2": "video"
+        }
+      },
+      "amount": {
+        "type": "choice",
+        "instructions": "Only when the action skips forward or back in a video or audio: how far? Choose words when the words say how far — a number of seconds, or of minutes; otherwise the share of its length the words mean. Ignored for every other action.",
+        "options": {
+          "words": "as far as the words say: the number they carry, in seconds, or in minutes when they say minutes",
+          "moment": "a moment: a hundredth of its length",
+          "little": "a little: a twentieth of its length",
+          "chunk": "a chunk: a tenth of its length",
+          "lot": "a lot: a quarter of its length",
+          "half": "half of its length",
+          "end": "all the way: to the end, or back to the start"
+        }
+      },
+      "where": {
+        "type": "choice",
+        "instructions": "Where do the words point: at something on this page, at something on w3schools.com that is not on this page, or somewhere else on the web?",
+        "options": {
+          "page": "on this page: one of the numbered refs",
+          "site": "on w3schools.com but not on this page: a page, a person, a post, a section of it",
+          "web": "elsewhere: another website, or a search of the whole web"
+        }
+      }
+    }
+  }
+}

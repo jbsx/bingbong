@@ -609,7 +609,8 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
     elements,
     // The page's playing media is the top document's (#363); a frame's is on its media refs.
     media: inFrame ? null : mediaOf(),
-    frameIndex: ownSlot
+    frameIndex: ownSlot,
+    origin: window.origin
   }
 })()`
 

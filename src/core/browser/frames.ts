@@ -88,7 +88,7 @@ export function mergeFrames(top: CollectedPage, frames: readonly CollectedFrame[
         const { x, y, width, height } = element.rect
         const rect = { x: x + offset.x, y: y + offset.y, width, height }
         if (layer !== 'dialog' && !meetsViewport(rect, top.viewport)) return
-        elements.push({ ...element, rect, layer: layer ?? 'page', previousIndex, frameHost: frameHostOf(page.url) })
+        elements.push({ ...element, rect, layer: layer ?? 'page', previousIndex, frameHost: frameHostOf(page.origin !== undefined && page.origin !== 'null' ? page.origin : page.url) })
       }
       addresses.push({ frame: key, index })
     })
