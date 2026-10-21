@@ -12,6 +12,44 @@ the Decision Model (`src/main/decision/`, `src/core/ports/decisionModel.ts`),
 armed by `TYPESAFE_API_KEY`. The aim is an agent that completes a task as
 fast as it can, built on top of this shell.
 
+## Jev decides; code shapes the ask
+
+The app is as smart as Jev and the ask put to it, no smarter. Code raises
+that ceiling when it changes how Jev is asked: what it sees on the card,
+what it can choose, in how many steps, and what the loop around it does
+with the answer (hops, the Verdict, the progress Noul, set-asides, learned
+terms). Code lowers it when it answers in Jev's place: a rule, a list, a
+site-specific path written for the line that failed. That patch holds on
+the site it was written for and nowhere else, and the next site is the
+next report.
+
+When a line fails, first ask whether Jev had its best shot: did the card
+carry everything on the page and in the appliance that bore on the line,
+and every action it could have taken? Usually not, and the fix is to widen
+the ask, by rule and for the whole class (every ref of that kind, every
+site), which costs no latency. Only when Jev still fails with the whole
+class in front of it is the ask itself the problem, and then the paid
+strategies come in: a smaller card, a question split in two, a step before
+the step. Each is another call, and the aim is still the fastest Task.
+
+Widening is measured, never assumed. The card has a cap and every line on
+it competes; a lure (the browser's `back` beside a media seek) is a real
+cost. A widening is checked with `jev:replay` and a case that used to pass
+and no longer does is a regression.
+
+Code keeps what is not a judgement: the facts (a media element's state, a
+seekable range) and the mechanisms (one evaluate that fires an op on any
+`<video>`), always by kind and never by site; hard policy; the exact
+grammar lines that fire without an ask; the fallback when Jev is unsure
+or unavailable. Jev keeps every choice.
+
+The Player is the example. Its no-Jev search pick was a speed trade under
+ADR 0076 and stands. The trade then spread: the control ops became a hand
+list of Capabilities wired to YouTube's own scripts, so Jev was never
+shown the media's state and could not be offered its ops on any other
+site. ADR 0080 is the fix shape: the ref carries the state, offers every
+op its kind allows, and Jev picks the op and the amount.
+
 ## Where things land
 
 - **The command seam** is `src/main/run/commandRunner.ts`. A typed or spoken
