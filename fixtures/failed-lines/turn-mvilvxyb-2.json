@@ -1,0 +1,10 @@
+{
+  "turnId": "turn-mvilvxyb-2",
+  "transcript": "turn on ambient mode",
+  "at": 1792617016261,
+  "source": "typed",
+  "stage": "reading",
+  "happened": "YouTube watch page, real display: hop 0 none 0.35, the Where Ask read menu-7 (right-click the video) 0.28 over click-13 (the Settings gear) 0.27; the video's context menu opened, Escape undid it, the runner-up right-clicked the masthead Settings (nothing), hop 3 opened the player Settings menu, which held only Sleep timer, Playback speed and Quality (the collector drops role=menuitemcheckbox rows, Ambient mode among them), hop 4 right-clicked the video again: cap",
+  "meant": "Open the player Settings menu and switch Ambient mode on",
+  "log": "decision-1792617006956-1.jsonl"
+}
