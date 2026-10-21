@@ -3463,6 +3463,10 @@ describe('frames (#377, ADR 0081)', () => {
     hangs = false
     gone = false
     mediaOpResult: unknown = null
+    /** Its slot in the page's window.frames now: an iframe added before it since moves it on. */
+    slot = 0
+    /** Its collects never answer, while everything else does. */
+    collectHangs = false
     constructor(
       readonly key: string,
       readonly parentKey: string | null,
@@ -3474,7 +3478,7 @@ describe('frames (#377, ADR 0081)', () => {
       this.expressions.push(expression)
       if (this.hangs) return new Promise<T>(() => {})
       const answer = (value: unknown): T => value as T
-      if (expression === COLLECT_EXPRESSION) return answer(this.page)
+      if (expression === COLLECT_EXPRESSION) return this.collectHangs ? new Promise<T>(() => {}) : answer(this.page)
       if (expression.includes('__bingbongMarkShownAt')) {
         this.shown = JSON.parse(/__bingbongMarkShownAt\((\[[^)]*\])\)/.exec(expression)?.[1] ?? '[]') as number[]
         return answer(true)
@@ -3482,6 +3486,7 @@ describe('frames (#377, ADR 0081)', () => {
       if (expression.includes('__bingbongRefShown')) return answer(this.shown.includes(Number(/__bingbongRefShown\((\d+)\)/.exec(expression)?.[1])))
       if (expression.includes('/* READY_ARM */')) return answer(true)
       if (expression.includes('/* READY_WAIT */')) return answer('mutation')
+      if (expression.includes('window.parent.frames')) return answer(this.slot)
       if (expression.includes('/* MEDIA_OP */')) return answer(this.mediaOpResult)
       if (expression.includes('/* ACTION_OUTCOME */')) {
         return answer({ target: null, signature: { url: this.page.url, title: this.page.title, scrollX: 0, scrollY: 0, refCount: 2, labels: ['', 'Pause'], dialogOpen: false, media: null } })
@@ -3526,6 +3531,28 @@ describe('frames (#377, ADR 0081)', () => {
     const pressed = cdp.inputCalls().filter((call) => call.params?.type === 'mousePressed')
     expect(pressed.map((call) => [call.params?.x, call.params?.y])).toEqual([[132, 467]])
     expect(embed.expressions.some((expression) => expression.includes('__bingbongRefs || [])[1]'))).toBe(true)
+  })
+
+  it('finds the iframe by the slot its frame holds at click time, not the one it held at the collect', async () => {
+    const { controller, cdp, embed } = framed()
+    await controller.readPage()
+    // An ad's iframe was created before it since: the embed is window.frames[1] now.
+    embed.slot = 1
+
+    await controller.click(3)
+
+    const boxes = cdp.calls.map((call) => String(call.params?.expression ?? '')).filter((expression) => expression.includes('/* FRAME_BOX */'))
+    expect(boxes.at(-1)).toContain('=== 1)')
+  })
+
+  it('empties the shown registry of a frame the next numbering leaves out, so its old numbers are refused', async () => {
+    const { controller, embed } = framed()
+    await controller.readPage()
+    embed.collectHangs = true
+
+    await controller.readPage()
+
+    expect(embed.expressions.at(-1)).toContain('__bingbongMarkShownAt([])')
   })
 
   it("aims a top ref after the frame's refs at its own registry index", async () => {

@@ -21,6 +21,16 @@ const FRAME_SLOT_FN = `((iframe) => {
   return -1
 })`
 
+/** A JS function source `() => slot`: this document's own slot in its parent's `window.frames` (#377), -1 for the top. */
+const OWN_SLOT_FN = `(() => {
+  if (window === window.top) return -1
+  for (let i = 0; i < window.parent.frames.length; i++) if (window.parent.frames[i] === window) return i
+  return -1
+})`
+
+/** This frame's slot in its parent's `window.frames` now (#377): what its iframe is found by at click time. */
+export const OWN_SLOT_SCRIPT = `${OWN_SLOT_FN}()`
+
 // Runs inside the pane's page via Runtime.evaluate. Returns the CollectedPage
 // shape consumed by core/browser/snapshot.ts — DOM-specific work (labeling,
 // rects, visibility) happens here; numbering/kinds/formatting happen in core.
@@ -56,11 +66,7 @@ export const COLLECT_PAGE_SCRIPT = `(() => {
   // window.frames. A frame's text is not read here (#378).
   const inFrame = window !== window.top
   const frameSlotOf = ${FRAME_SLOT_FN}
-  const ownSlot = (() => {
-    if (!inFrame) return -1
-    for (let i = 0; i < window.parent.frames.length; i++) if (window.parent.frames[i] === window) return i
-    return -1
-  })()
+  const ownSlot = ${OWN_SLOT_FN}()
   // Vimium-style visibility: rect intersection only. Overlays do NOT hide an
   // element from detection — a covered "background" button is still a real
   // target. The click prep then decides (ADR 0062): a real click where any

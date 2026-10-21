@@ -64,6 +64,7 @@ import {
   type ClickPrep,
   type CoverNaming,
   frameBoxScript,
+  OWN_SLOT_SCRIPT,
 } from './collectPageScript'
 import { readRefStates } from './readRefStates'
 import { mergeFrames, type CollectedFrame, type FrameAddress } from '../../core/browser/frames'
@@ -447,6 +448,8 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
   let shownAddresses: (FrameAddress | undefined)[] = []
   // Each frame's own slot in its parent's `window.frames`, from the last collect: what its iframe is found by.
   let frameSlots = new Map<string, { parentKey: string | null; slot: number }>()
+  // The frames whose registries hold shown numbers: a marking that leaves one out empties it, as the top's empties past its count.
+  let markedFrames = new Set<string>()
 
   // Verbose sub-span instrumentation (#32). Timing-only wrappers: the wait,
   // collect, or probe always runs exactly as before; a channel is present
@@ -690,31 +693,36 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
    * answered by the grace after it is called. A frame that throws, or
    * answers what is no page, is a frame not read.
    */
-  function readFrames(): { listed: number; answered: (graceMs: number) => Promise<CollectedFrame[]> } {
+  function fanOut<T>(read: (frame: PageFrame) => Promise<T>): { listed: number; answered: () => Promise<T[]> } {
     let listed: readonly PageFrame[] = []
     try {
       listed = deps.frames?.list() ?? []
     } catch (error) {
       reportFault('browser.createCdpBrowserController.listFrames', error)
     }
-    const read: CollectedFrame[] = []
+    const answers: T[] = []
     const all = Promise.all(
       listed.map(async (frame) => {
         try {
-          read.push({ key: frame.key, parentKey: frame.parentKey, page: parseCollectedPage(await frame.evaluate<unknown>(collectScript)) })
+          answers.push(await read(frame))
         } catch (error) {
-          // A frame gone, still loading, or holding no page: it stays its opaque iframe.
-          reportFault('browser.createCdpBrowserController.readFrame', error)
+          // A frame gone, still loading, or holding no page: it has no answer, and a collect leaves it its opaque iframe.
+          reportFault('browser.createCdpBrowserController.frameAnswer', error)
         }
       }),
     )
     return {
       listed: listed.length,
-      async answered(graceMs) {
-        if (listed.length > 0) await Promise.race([all, new Promise<void>((resolve) => clock.setTimer(graceMs, resolve))])
-        return [...read]
+      async answered() {
+        if (listed.length > 0) await Promise.race([all, new Promise<void>((resolve) => clock.setTimer(FRAME_GRACE_MS, resolve))])
+        return [...answers]
       },
     }
+  }
+
+  /** Every frame's own collect, started now (#377). */
+  function readFrames(): { listed: number; answered: () => Promise<CollectedFrame[]> } {
+    return fanOut(async (frame) => ({ key: frame.key, parentKey: frame.parentKey, page: parseCollectedPage(await frame.evaluate<unknown>(collectScript)) }))
   }
 
   async function collectSnapshot(): Promise<PageSnapshot> {
@@ -723,7 +731,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     await page.untilLanded?.()
     const frames = readFrames()
     const top = parseCollectedPage(await evaluateInPage<unknown>(collectScript))
-    const answered = await frames.answered(FRAME_GRACE_MS)
+    const answered = await frames.answered()
     const merged = mergeFrames(top, answered, addresses)
     addresses = merged.addresses
     frameSlots = new Map(answered.map((frame) => [frame.key, { parentKey: frame.parentKey, slot: frame.page.frameIndex ?? -1 }]))
@@ -794,9 +802,12 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
    */
   async function markShown(count: number): Promise<void> {
     shownAddresses = Array.from({ length: count }, (_, index) => addressOfRef(index + 1))
+    const groups = byFrame(shownAddresses.filter((address): address is FrameAddress => address !== undefined))
+    for (const frame of markedFrames) if (!groups.has(frame)) groups.set(frame, [])
+    markedFrames = new Set([...groups.keys()].filter((frame): frame is string => frame !== null && (groups.get(frame)?.length ?? 0) > 0))
     // Each frame marks its own registry (#377); the top's numbers from one up are its own first `count`.
     await Promise.all(
-      [...byFrame(shownAddresses.filter((address): address is FrameAddress => address !== undefined))].map(async ([frame, indices]) => {
+      [...groups].map(async ([frame, indices]) => {
         const leading = frame === null && indices.every((index, position) => index === position)
         try {
           await evaluateInFrame(frame, leading ? markShownRefsScript(indices.length) : markShownAtScript(indices))
@@ -815,6 +826,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     refs.forEach((ref, position) => {
       shownAddresses[ref - 1] = at[position]
     })
+    for (const address of at) if (address.frame !== null) markedFrames.add(address.frame)
     await Promise.all(
       [...byFrame(at)].filter(([, indices]) => indices.length > 0).map(async ([frame, indices]) => {
         try {
@@ -1311,9 +1323,8 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     const visualPoint = visualPoints.get(ref)
     if (visualPoint) {
       const at = addressOfRef(target.ref)
-      const index = at.index
-      const reachable = await safety('visual-reach', () => evaluateInPage<boolean>(`(() => {
-        const el = (window.__bingbongRefs || [])[${index}]
+      const reachable = await safety('visual-reach', () => evaluateInFrame<boolean>(at.frame, `(() => {
+        const el = (window.__bingbongRefs || [])[${at.index}]
         if (!el || !el.isConnected) return false
         const top = document.elementFromPoint(${JSON.stringify(visualPoint.x)}, ${JSON.stringify(visualPoint.y)})
         return top === el || (top !== null && el.contains(top))
@@ -1688,7 +1699,10 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
     for (let key: string | null = frame; key !== null; ) {
       const hung = frameSlots.get(key)
       if (hung === undefined) return null
-      const box = await evaluateInFrame<{ x: number; y: number } | null>(hung.parentKey, frameBoxScript(hung.slot))
+      // The frame's slot asked of the frame now, not taken from the collect: an iframe added before it since would hold the old one.
+      const slot = await evaluateInFrame<number>(key, OWN_SLOT_SCRIPT)
+      if (typeof slot !== 'number' || slot < 0) return null
+      const box = await evaluateInFrame<{ x: number; y: number } | null>(hung.parentKey, frameBoxScript(slot))
       if (box == null) return null
       x += box.x
       y += box.y
@@ -2088,17 +2102,7 @@ export function createCdpBrowserController(deps: CdpBrowserControllerDeps): Brow
   /** One script in every frame below the top, all at once (#377): the answers within the grace, a frame gone or slow left out. */
   async function evaluateInFrames<T>(expression: string): Promise<T[]> {
     await page.untilLanded?.()
-    let listed: readonly PageFrame[] = []
-    try {
-      listed = deps.frames?.list() ?? []
-    } catch (error) {
-      reportFault('browser.createCdpBrowserController.listFrames', error)
-    }
-    if (listed.length === 0) return []
-    const answers: T[] = []
-    const all = Promise.all(listed.map((frame) => frame.evaluate<T>(expression).then((answer) => void answers.push(answer), () => {})))
-    await Promise.race([all, new Promise<void>((resolve) => clock.setTimer(FRAME_GRACE_MS, resolve))])
-    return [...answers]
+    return fanOut((frame) => frame.evaluate<T>(expression)).answered()
   }
 
   function state(): BrowserState {

@@ -67,13 +67,13 @@ describe('mergeFrames (#377, ADR 0081)', () => {
     ])
   })
 
-  it('keeps a cross-origin frame that was not read as its opaque iframe ref, and drops a same-origin one', () => {
+  it('keeps a frame that was not read, of any origin, as its opaque iframe ref', () => {
     const challenge = iframe(0, { x: 0, y: 0 }, { src: 'https://challenges.cloudflare.com/turnstile' })
     const sameOrigin = iframe(1, { x: 0, y: 300 })
     const { page: merged, addresses } = mergeFrames(page('https://shop.example/', [challenge, sameOrigin]), [])
 
-    expect(merged.elements).toEqual([challenge])
-    expect(addresses).toEqual([{ frame: null, index: 0 }])
+    expect(merged.elements).toEqual([challenge, sameOrigin])
+    expect(addresses).toEqual([{ frame: null, index: 0 }, { frame: null, index: 1 }])
   })
 
   it('takes nothing from a frame whose iframe is 2×2 CSS px or smaller, read or not', () => {

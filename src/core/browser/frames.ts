@@ -55,9 +55,9 @@ function meetsViewport(rect: CollectedElement['rect'], viewport: CollectedPage['
  * A frame's elements take its iframe's place and its layer — a frame in
  * the top's open dialog is the dialog's — and those of the page layer that
  * fall outside the top viewport are left out, as a top element would be.
- * A cross-origin iframe whose frame did not answer stays its opaque ref,
- * the challenge detection's signal (ADR 0007); a same-origin one, and any
- * frame 2×2 px or smaller, contributes nothing. `previous` is the last
+ * An iframe whose frame did not answer stays its opaque ref — the
+ * challenge detection's signal (ADR 0007) — and any frame 2×2 px or
+ * smaller contributes nothing. `previous` is the last
  * collect's addresses: an element's `previousIndex`, its own frame's,
  * becomes its place in that whole page; without it, the top's stand.
  */
@@ -79,7 +79,6 @@ export function mergeFrames(top: CollectedPage, frames: readonly CollectedFrame[
           expand(child.page, child.key, { x: offset.x + element.frameBox.x, y: offset.y + element.frameBox.y }, key === null ? element.layer : layer)
           return
         }
-        if (element.src == null) return
       }
       const previousIndex = previousPlace(key, element.previousIndex)
       if (key === null) {

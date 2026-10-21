@@ -36,7 +36,7 @@ export function createPaneAudioDucker(wc: WebContents, factor: number = DUCK_FAC
   function frames(): DuckedFrame[] {
     if (wc.isDestroyed()) return []
     const top = wc.mainFrame
-    return top.framesInSubtree.filter((frame) => frame !== top)
+    return top.framesInSubtree.filter((frame) => frame !== top && !frame.detached)
   }
 
   function duckFrames(): void {
