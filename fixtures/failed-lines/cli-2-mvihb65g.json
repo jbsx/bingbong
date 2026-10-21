@@ -1,0 +1,10 @@
+{
+  "turnId": "cli-2-mvihb65g",
+  "transcript": "read",
+  "at": 1792609328357,
+  "source": "typed",
+  "stage": "runner",
+  "happened": "On theguardian.com/uk (Sourcepoint wall in a frame) the Tier-1 consent rule clicked 'Reject all and subscribe' — its reject regex matches a pay-to-reject choice — which opened the £5/month Guardian Ad-Lite checkout; the wall was not cleared",
+  "meant": "Clear the consent wall and read the Guardian's front page (the free choice there is 'Yes, I'm happy'); which control clears a wall is Jev's to choose with the wall's wording in front of it, not a reject regex",
+  "log": "decision-1792609315259-1.jsonl"
+}

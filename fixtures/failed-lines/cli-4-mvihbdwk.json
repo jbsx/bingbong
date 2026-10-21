@@ -1,0 +1,10 @@
+{
+  "turnId": "cli-4-mvihbdwk",
+  "transcript": "open the first headline",
+  "at": 1792609338807,
+  "source": "typed",
+  "stage": "runner",
+  "happened": "After the paid reject opened the Ad-Lite checkout, 'open the first headline' clicked 'Return to the Guardian', landed back under the same Sourcepoint wall and ended 'not read'",
+  "meant": "Open the front page's first headline, the consent wall cleared on the way",
+  "log": "decision-1792609315259-1.jsonl"
+}
