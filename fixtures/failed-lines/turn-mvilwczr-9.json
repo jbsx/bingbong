@@ -6,5 +6,6 @@
   "stage": "missing_option",
   "happened": "The Where Ask opened the player Settings menu (click-13 0.35), but the card listed only its role=menuitem rows (Sleep timer, Playback speed, Quality): YouTube's toggles, Ambient mode and Annotations, are role=menuitemcheckbox and the collector's SELECTOR has no such role. Jev clicked Cinema mode (t) 0.36 (theatre mode left on), Settings again, the video's menu, then none: Escape, not_found",
   "meant": "Click the Ambient mode row in the Settings menu",
-  "log": "decision-1792617006956-1.jsonl"
+  "log": "decision-1792617006956-1.jsonl",
+  "claimedBy": "#380"
 }

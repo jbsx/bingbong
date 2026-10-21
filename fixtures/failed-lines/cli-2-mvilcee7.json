@@ -4,7 +4,8 @@
   "at": 1792616105694,
   "source": "typed",
   "stage": "missing_option",
-  "happened": "Live CLI run under Xvfb (dark appearance, SwiftShader WebGL): none 0.53, the Where Ask opened Settings (click-13 0.35), but the card showed only the Settings menu's role=menuitem rows (Sleep timer, Playback speed, Quality); its role=menuitemcheckbox toggles never reach the card (the collector's SELECTOR has no such role, re-read 2026-10-21 from the real-display run), and Ambient mode may also be absent under Xvfb's WebGL \u2014 and the Task clicked Cinema mode, Settings twice and right-clicked the video to the cap",
+  "happened": "Live CLI run under Xvfb (dark appearance, SwiftShader WebGL): none 0.53, the Where Ask opened Settings (click-13 0.35), but the card showed only the Settings menu's role=menuitem rows (Sleep timer, Playback speed, Quality); its role=menuitemcheckbox toggles never reach the card (the collector's SELECTOR has no such role, re-read 2026-10-21 from the real-display run), and Ambient mode may also be absent under Xvfb's WebGL — and the Task clicked Cinema mode, Settings twice and right-clicked the video to the cap",
   "meant": "Open Settings and switch Ambient mode on",
-  "log": "decision-1792616095733-1.jsonl"
+  "log": "decision-1792616095733-1.jsonl",
+  "claimedBy": "#380"
 }
